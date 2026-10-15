@@ -80,6 +80,10 @@ Do these once, before the first release.
    The workflow checks that the tag matches the workspace version, builds
    and tests again, then publishes to PyPI and crates.io.
 
+   A cloud session can do steps 1 and 2 but cannot push the tag: its git
+   access stops at its own branch, and the push comes back `403`. The
+   owner pushes the tag.
+
 Neither registry lets a version be replaced. A bad release is yanked
 (`cargo yank`, or *Manage project* on PyPI) and fixed in the next version.
 `cargo publish --workspace` uploads the crates one at a time. If it stops

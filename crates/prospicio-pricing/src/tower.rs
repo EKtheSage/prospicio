@@ -78,7 +78,8 @@ impl TowerModel {
         for (ti, ai) in t.iter().zip(a) {
             if *ai < min_alpha {
                 warnings.push(format!(
-                    "the piece from {ti} has alpha {ai:.4}, below {min_alpha}"
+                    "the piece from {} has alpha {ai:.4}, below {min_alpha}",
+                    six_figures(*ti)
                 ));
             }
         }
@@ -92,7 +93,7 @@ impl TowerModel {
                      above {max_ratio}",
                     w[0],
                     w[1],
-                    t[i + 1]
+                    six_figures(t[i + 1])
                 ));
             }
         }
@@ -101,7 +102,7 @@ impl TowerModel {
         if infinite_mean {
             warnings.push(format!(
                 "the last piece, from {}, has alpha {last:.4}: the severity's mean is infinite",
-                t[t.len() - 1]
+                six_figures(t[t.len() - 1])
             ));
         }
         TowerDiagnostics {
@@ -111,6 +112,21 @@ impl TowerModel {
             infinite_mean,
             warnings,
         }
+    }
+}
+
+/// A loss size for a message: six significant figures, trailing zeros
+/// dropped (`23520382.744` is `23520383`, `1.2900809` is `1.29008`).
+fn six_figures(x: f64) -> String {
+    if x == 0.0 || !x.is_finite() {
+        return format!("{x}");
+    }
+    let decimals = (5 - x.abs().log10().floor() as i32).max(0) as usize;
+    let s = format!("{x:.decimals$}");
+    if s.contains('.') {
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        s
     }
 }
 
@@ -1468,6 +1484,33 @@ mod issue_211 {
         assert!(d.min_alpha < 0.6 && !d.infinite_mean);
         assert!(d.warnings.iter().any(|w| w.contains("below 1")));
         assert!(m.diagnostics(0.1, 10.0).warnings.is_empty());
+        // Positions print at six significant figures, not every digit.
+        assert!(
+            d.warnings
+                .iter()
+                .any(|w| w.contains("the piece from 1.28998 has alpha 0.6431")),
+            "{:?}",
+            d.warnings
+        );
+        let long = long_number(&d.warnings.join(" "));
+        assert!(long.is_none(), "{long:?} in {:?}", d.warnings);
+    }
+
+    /// A run of more than six digits in a message, if any.
+    fn long_number(text: &str) -> Option<String> {
+        text.split(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .find(|w| w.chars().filter(char::is_ascii_digit).count() > 6)
+            .map(str::to_string)
+    }
+
+    #[test]
+    fn six_figures_rounds_and_trims() {
+        assert_eq!(six_figures(23_520_382.744_261_9), "23520383");
+        assert_eq!(six_figures(1.290_080_989_139_248_6), "1.29008");
+        assert_eq!(six_figures(10.0), "10");
+        assert_eq!(six_figures(5.0), "5");
+        assert_eq!(six_figures(0.000_123_456_78), "0.000123457");
+        assert_eq!(six_figures(1e6), "1000000");
     }
 
     #[test]
