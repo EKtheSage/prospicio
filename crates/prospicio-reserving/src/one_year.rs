@@ -71,7 +71,10 @@ pub struct ClaimsDevelopmentResult {
 impl ClaimsDevelopmentResult {
     /// Standard error of each origin's full run-off: the square root of the
     /// sum of its MSEPs over the future calendar years. Equals Mack's
-    /// standard error of the ultimate, as R's `Mack.S.E.` column shows.
+    /// standard error of the ultimate, as R's `Mack.S.E.` column shows,
+    /// without a selected pattern or with every factor fully selected; with
+    /// a blend strictly between 0 and 1 the years' CDRs are correlated and
+    /// this sum need not equal Mack's (decision 12, item 7).
     pub fn run_off_standard_error(&self) -> Vec<f64> {
         (0..self.origins.len())
             .map(|o| {
@@ -85,7 +88,8 @@ impl ClaimsDevelopmentResult {
     }
 
     /// Standard error of the total full run-off; equals Mack's total
-    /// standard error.
+    /// standard error, with the same exception for a blended pattern as
+    /// [`run_off_standard_error`](Self::run_off_standard_error).
     pub fn total_run_off_standard_error(&self) -> f64 {
         self.total_by_calendar_year
             .iter()
@@ -112,21 +116,32 @@ impl MackFit {
     /// imputed cell included, and differs here.
     ///
     /// With a selected pattern ([`Development::pattern`](crate::Development::pattern))
-    /// the factors in use are `f = w s + (1 - w) e` and next year's are
-    /// `w s + (1 - w) e'`, `e'` the re-estimate. Under Merz and Wüthrich's
-    /// conditional resampling the true factor varies around `f` with the
-    /// blend's parameter variance `(1 - w)^2 sigma^2 / S`, so with
-    /// `g = 1 - w`, `s` the share of the new cell in the re-estimate and
-    /// `t` each existing parameter term: the process term is unchanged,
-    /// the own link's parameter term is `g^2 t`, a later re-estimated
-    /// link's `g^2 (1 - s (1 - g^2)) t`, and the covariance of an origin's
-    /// own link with a younger origin's re-estimate of it
-    /// `g (1 - s (1 - g^2)) t`. With every factor fully selected only the
-    /// process error remains, with no covariance between origins. Between
-    /// 0 and 1 the re-estimates drift towards the triangle's own factors,
-    /// so the CDR's mean is not zero (these are its standard deviations)
-    /// and the years' variances no longer add up to Mack's
-    /// (`docs/design/reserving-v02.md`, decision 12).
+    /// the factors in use are `f = w s + (1 - w) e` and each later year's
+    /// are `w s + (1 - w) e'`, `e'` that year's re-estimate. Under Merz and
+    /// Wüthrich's conditional resampling the true factor varies around `f`
+    /// with the blend's parameter variance `(1 - w)^2 sigma^2 / S` (Mack's
+    /// lifetime view with the pattern). With `g = 1 - w`, `t` each
+    /// existing parameter term of the year (it carries the estimate's
+    /// variance at the year's start, `sigma^2 / S'`), `k = S / S'` the
+    /// share of that volume already there at the valuation, `a = 1 - k`,
+    /// and `s` the share of the year's new cell in the re-estimate, the
+    /// process term is unchanged and, to first order:
+    ///
+    /// * the own link's parameter term is `g^2 ((1 - g a)^2 / k + a) t`;
+    /// * a later re-estimated link's is `g^2 (1 - s k (1 - g^2)) t`;
+    /// * the covariance of an origin's own link with a younger origin's
+    ///   re-estimate of it is `g (1 - s (1 - g^2 (1 - g a) - g a)) t`.
+    ///
+    /// In the coming year (`k = 1`) these are `g^2 t`,
+    /// `g^2 (1 - s (1 - g^2)) t` and `g (1 - s (1 - g^2)) t`. Without a
+    /// pattern (`g = 1`) every factor is 1, Merz and Wüthrich's terms. With
+    /// every factor fully selected only the process error remains, with no
+    /// covariance between origins. In between, a used factor follows the
+    /// data less than the estimate does, so the CDRs of different years are
+    /// correlated: the years' variances no longer add up to Mack's, and
+    /// when the pattern differs from the estimate the CDR's mean is not
+    /// zero (these are its standard deviations;
+    /// `docs/design/reserving-v02.md`, decision 12, item 7).
     pub fn claims_development_result(&self) -> Result<ClaimsDevelopmentResult> {
         let cl = &self.chain_ladder;
         let dev = &cl.development;
@@ -205,23 +220,25 @@ impl MackFit {
                 let c = projections[o][year];
                 let process = c * cl.cdf[j].powi(2) * ratio[j];
                 // With a selected pattern each term is scaled by what the
-                // estimate's error still reaches (decision 12): `g = 1 - w`
-                // on the own link, and on a re-estimated later link
-                // `g^2 (1 - s (1 - g^2))`, `s` the new cell's share, since
-                // the new cell's link ratio has the blended factor's
-                // parameter error. All 1 without a pattern.
+                // estimate's error still reaches (decision 12, item 7), with
+                // `g = 1 - w`, `k` the share of the year-start volume there
+                // at the valuation and `a = 1 - k`. Every scale is 1 without
+                // a pattern and 0 on a fully selected link.
                 let term = |l: usize| kept(l, year) * ratio[l] / volume[l];
-                let own = g[j] * g[j] * term(j);
+                let (gj, kj) = (g[j], kept(j, year));
+                let aj = 1.0 - kj;
+                let own = gj * gj * ((1.0 - gj * aj).powi(2) / kj + aj) * term(j);
                 let later: f64 = (j + 1..n_links)
                     .map(|l| {
                         let s = share[l - year];
-                        g[l] * g[l] * (1.0 - s * (1.0 - g[l] * g[l])) * s * term(l)
+                        let scale = g[l] * g[l] * (1.0 - s * kept(l, year) * (1.0 - g[l] * g[l]));
+                        scale * s * term(l)
                     })
                     .sum();
                 // The covariance of this origin's own link with a younger
                 // origin's re-estimate of it.
                 let s = share[j - year];
-                let cross = g[j] * (1.0 - s * (1.0 - g[j] * g[j])) * term(j);
+                let cross = gj * (1.0 - s * (1.0 - gj * gj * (1.0 - gj * aj) - gj * aj)) * term(j);
                 let u = ultimate[o];
                 msep[o] = process + (own + later) * u * u;
                 // The pairs (o, o') with o' younger share the older origin's

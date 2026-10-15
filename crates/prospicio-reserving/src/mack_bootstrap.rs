@@ -104,10 +104,10 @@ use crate::dependence::{Resample, SegmentDependence, SharedPool, synchronize};
 use crate::development::{Development, DevelopmentFit};
 use crate::error::{Error, Result};
 use crate::mack::{Mack, MackFit};
-use crate::pattern::Blend;
 use crate::one_year_bootstrap::{
     NextCells, NextYear, OneYearFit, OneYearFits, OneYearMethod, Sims, YearCells,
 };
+use crate::pattern::Blend;
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Segment, Triangle};

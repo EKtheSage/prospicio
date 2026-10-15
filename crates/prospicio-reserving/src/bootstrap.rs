@@ -42,8 +42,8 @@ use prospicio_prob::{
 
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::dependence::{Resample, SegmentDependence, synchronize};
-use crate::error::{Error, Result};
 use crate::development::Development;
+use crate::error::{Error, Result};
 use crate::one_year_bootstrap::Failures;
 use crate::pattern::{Blend, SelectedPattern};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};

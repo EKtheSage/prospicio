@@ -75,6 +75,7 @@ fn development(average: &str, sigma_interpolation: &str) -> Result<Development> 
     Ok(Development {
         average,
         sigma_interpolation,
+        pattern: None,
     })
 }
 

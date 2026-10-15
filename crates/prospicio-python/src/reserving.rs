@@ -166,6 +166,7 @@ fn development(average_: &str, sigma_interpolation_: &str) -> PyResult<Developme
     Ok(Development {
         average: average(average_)?,
         sigma_interpolation: sigma_interpolation(sigma_interpolation_)?,
+        pattern: None,
     })
 }
 
@@ -1694,7 +1695,7 @@ impl PyChainLadder {
         triangle: PyRef<'_, PyTriangle>,
         column: &str,
     ) -> PyResult<PyChainLadderFit> {
-        let (cl, tri) = (self.inner, &triangle.inner);
+        let (cl, tri) = (self.inner.clone(), &triangle.inner);
         let inner = py.detach(|| cl.fit_segments(tri, column)).map_err(err)?;
         Ok(PyChainLadderFit { inner })
     }
@@ -2180,7 +2181,7 @@ impl PyMack {
         triangle: PyRef<'_, PyTriangle>,
         column: &str,
     ) -> PyResult<PyMackFit> {
-        let (mack, tri) = (self.inner, &triangle.inner);
+        let (mack, tri) = (self.inner.clone(), &triangle.inner);
         let inner = py.detach(|| mack.fit_segments(tri, column)).map_err(err)?;
         Ok(PyMackFit { inner })
     }
@@ -2729,7 +2730,7 @@ impl PyExpectedLoss {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyExpectedLossFit> {
-        let (m, tri) = (self.inner, &triangle.inner);
+        let (m, tri) = (self.inner.clone(), &triangle.inner);
         let inner = py
             .detach(|| m.fit_segments(tri, column, exposure))
             .map_err(err)?;
@@ -2847,7 +2848,7 @@ impl PyBornhuetterFerguson {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyExpectedLossFit> {
-        let (m, tri) = (self.inner, &triangle.inner);
+        let (m, tri) = (self.inner.clone(), &triangle.inner);
         let inner = py
             .detach(|| m.fit_segments(tri, column, exposure))
             .map_err(err)?;
@@ -2975,7 +2976,7 @@ impl PyBenktander {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyExpectedLossFit> {
-        let (m, tri) = (self.inner, &triangle.inner);
+        let (m, tri) = (self.inner.clone(), &triangle.inner);
         let inner = py
             .detach(|| m.fit_segments(tri, column, exposure))
             .map_err(err)?;
@@ -3110,7 +3111,7 @@ impl PyCapeCod {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyCapeCodFit> {
-        let (m, tri) = (self.inner, &triangle.inner);
+        let (m, tri) = (self.inner.clone(), &triangle.inner);
         let inner = py
             .detach(|| m.fit_segments(tri, column, exposure))
             .map_err(err)?;
@@ -4146,6 +4147,7 @@ impl PyOdpBootstrap {
                 tail: tail_arg(tail)?,
                 tail_std_err,
                 dependence: segment_dependence(dependence, spearman)?,
+                pattern: None,
             },
         })
     }
@@ -4517,7 +4519,7 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
                 "ChainLadder takes no exposure column",
             ));
         }
-        return Ok(OneYearMethod::ChainLadder(m.inner));
+        return Ok(OneYearMethod::ChainLadder(m.inner.clone()));
     }
     let needs_exposure = |name: &str| {
         exposure.clone().ok_or_else(|| {
@@ -4528,24 +4530,27 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
     };
     if let Ok(m) = method.extract::<PyRef<'_, PyExpectedLoss>>() {
         return Ok(OneYearMethod::ExpectedLoss(
-            m.inner,
+            m.inner.clone(),
             needs_exposure("ExpectedLoss")?,
         ));
     }
     if let Ok(m) = method.extract::<PyRef<'_, PyBornhuetterFerguson>>() {
         return Ok(OneYearMethod::BornhuetterFerguson(
-            m.inner,
+            m.inner.clone(),
             needs_exposure("BornhuetterFerguson")?,
         ));
     }
     if let Ok(m) = method.extract::<PyRef<'_, PyBenktander>>() {
         return Ok(OneYearMethod::Benktander(
-            m.inner,
+            m.inner.clone(),
             needs_exposure("Benktander")?,
         ));
     }
     if let Ok(m) = method.extract::<PyRef<'_, PyCapeCod>>() {
-        return Ok(OneYearMethod::CapeCod(m.inner, needs_exposure("CapeCod")?));
+        return Ok(OneYearMethod::CapeCod(
+            m.inner.clone(),
+            needs_exposure("CapeCod")?,
+        ));
     }
     Err(PyTypeError::new_err(format!(
         "method must be ChainLadder, ExpectedLoss, BornhuetterFerguson, Benktander or \

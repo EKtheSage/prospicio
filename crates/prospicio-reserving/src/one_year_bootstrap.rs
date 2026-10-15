@@ -86,8 +86,7 @@ use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::bootstrap::{
     OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, TailDraw, component_sums,
-    hash_segment, origin_keys, pick_segment, pool_at, prepare_selected, push_moments,
-    segment_sums,
+    hash_segment, origin_keys, pick_segment, pool_at, prepare_selected, push_moments, segment_sums,
 };
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::dependence::{Resample, SegmentDependence, Shared, SharedPool, synchronize};
@@ -1275,7 +1274,11 @@ mod tests {
             ..Default::default()
         };
         let fit = boot(100, 4)
-            .one_year(&tri, "paid", &OneYearMethod::CapeCod(cc.clone(), "premium".into()))
+            .one_year(
+                &tri,
+                "paid",
+                &OneYearMethod::CapeCod(cc.clone(), "premium".into()),
+            )
             .unwrap();
         assert_eq!(
             fit.opening_ultimate,

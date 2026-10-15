@@ -157,7 +157,10 @@ impl SelectedPattern {
             PatternKind::AgeToAge => {
                 for (&(age, f), &p) in values.iter().zip(&positions) {
                     if !f.is_finite() || f <= 0.0 {
-                        return err(Some(age), "an age-to-age factor must be finite and positive");
+                        return err(
+                            Some(age),
+                            "an age-to-age factor must be finite and positive",
+                        );
                     }
                     if p == n_links {
                         return err(
@@ -182,10 +185,16 @@ impl SelectedPattern {
                         cdf.push(1.0 / v);
                     } else {
                         if !(v.is_finite() && v >= 1.0) {
-                            return err(Some(age), "a factor to ultimate must be finite and at least 1");
+                            return err(
+                                Some(age),
+                                "a factor to ultimate must be finite and at least 1",
+                            );
                         }
                         if i > 0 && v > values[i - 1].1 {
-                            return err(Some(age), "factors to ultimate must not increase with age");
+                            return err(
+                                Some(age),
+                                "factors to ultimate must not increase with age",
+                            );
                         }
                         cdf.push(v);
                     }
@@ -245,7 +254,12 @@ impl SelectedPattern {
                     let w = check_weight(Some(age), w)?;
                     match ages.iter().position(|&a| a == age) {
                         Some(k) if k < n_links && selected[k].is_some() => weight[k] = w,
-                        _ => return err(Some(age), "a weight is given at an age with no selected factor"),
+                        _ => {
+                            return err(
+                                Some(age),
+                                "a weight is given at an age with no selected factor",
+                            );
+                        }
                     }
                 }
             }
@@ -297,10 +311,14 @@ pub(crate) struct Blend {
 impl Blend {
     /// The blend of a development fit, `None` when nothing is selected.
     pub(crate) fn of(development: &crate::DevelopmentFit) -> Option<Self> {
-        development.selected.iter().any(Option::is_some).then(|| Self {
-            selected: development.selected.clone(),
-            weight: development.weight.clone(),
-        })
+        development
+            .selected
+            .iter()
+            .any(Option::is_some)
+            .then(|| Self {
+                selected: development.selected.clone(),
+                weight: development.weight.clone(),
+            })
     }
 
     /// `pseudo` blended: `w * selected + (1 - w) * pseudo` per link.
@@ -370,19 +388,29 @@ mod tests {
     fn round_trips_between_kinds() {
         // Age-to-age factors to CDFs and percents developed and back.
         let f = [1.7, 1.2, 1.05];
-        let mut cdf = vec![1.0; 4];
+        let mut cdf = [1.0; 4];
         for k in (0..3).rev() {
             cdf[k] = cdf[k + 1] * f[k];
         }
         let as_cdf: Vec<(Lag, f64)> = AGES.iter().copied().zip(cdf.iter().copied()).collect();
-        let as_pct: Vec<(Lag, f64)> = AGES.iter().copied().zip(cdf.iter().map(|c| 1.0 / c)).collect();
+        let as_pct: Vec<(Lag, f64)> = AGES
+            .iter()
+            .copied()
+            .zip(cdf.iter().map(|c| 1.0 / c))
+            .collect();
         let want: Vec<Option<f64>> = f.iter().map(|&x| Some(x)).collect();
         close(
-            &pattern(PatternKind::AgeToUltimate, &as_cdf).resolve(&AGES).unwrap().selected,
+            &pattern(PatternKind::AgeToUltimate, &as_cdf)
+                .resolve(&AGES)
+                .unwrap()
+                .selected,
             &want,
         );
         close(
-            &pattern(PatternKind::PercentDeveloped, &as_pct).resolve(&AGES).unwrap().selected,
+            &pattern(PatternKind::PercentDeveloped, &as_pct)
+                .resolve(&AGES)
+                .unwrap()
+                .selected,
             &want,
         );
     }
@@ -405,14 +433,20 @@ mod tests {
         close(&old.selected, &[None, Some(1.125), Some(1.0 / 0.9)]);
         assert_eq!(old.level, Some((3, 1.0)));
         // Age-to-age: any ages but the oldest, below 1 allowed.
-        let ata = pattern(PatternKind::AgeToAge, &[(36, 0.98)]).resolve(&AGES).unwrap();
+        let ata = pattern(PatternKind::AgeToAge, &[(36, 0.98)])
+            .resolve(&AGES)
+            .unwrap();
         close(&ata.selected, &[None, None, Some(0.98)]);
     }
 
     #[test]
     fn weights_all_and_by_age() {
         let p = pattern(PatternKind::AgeToAge, &[(12, 2.0), (24, 1.5)]);
-        let all = p.clone().with_weight(PatternWeight::All(0.25)).resolve(&AGES).unwrap();
+        let all = p
+            .clone()
+            .with_weight(PatternWeight::All(0.25))
+            .resolve(&AGES)
+            .unwrap();
         assert_eq!(all.weight, [0.25, 0.25, 0.0]);
         let by_age = p
             .with_weight(PatternWeight::ByAge(vec![(24, 0.4)]))
@@ -442,29 +476,64 @@ mod tests {
     fn every_error_names_its_age() {
         use PatternKind::*;
         assert_eq!(reason(&pattern(AgeToAge, &[])).0, None);
-        assert_eq!(reason(&pattern(AgeToAge, &[(12, 2.0), (12, 2.0)])).0, Some(12));
-        assert_eq!(reason(&pattern(AgeToAge, &[(18, 2.0)])), (Some(18), "not a development age of the triangle"));
-        assert_eq!(reason(&pattern(AgeToAge, &[(12, 0.0)])).0, Some(12));
-        assert_eq!(reason(&pattern(AgeToAge, &[(12, f64::NAN)])).0, Some(12));
-        assert_eq!(reason(&pattern(AgeToAge, &[(48, 1.01)])).0, Some(48));
-        assert_eq!(reason(&pattern(AgeToUltimate, &[(12, 0.99), (24, 0.9)])).0, Some(12));
-        assert_eq!(reason(&pattern(AgeToUltimate, &[(12, 1.5), (24, 1.6)])).0, Some(24));
-        assert_eq!(reason(&pattern(PercentDeveloped, &[(12, 0.0), (24, 0.5)])).0, Some(12));
-        assert_eq!(reason(&pattern(PercentDeveloped, &[(12, 0.5), (24, 1.2)])).0, Some(24));
-        assert_eq!(reason(&pattern(PercentDeveloped, &[(12, 0.6), (24, 0.5)])).0, Some(24));
-        assert_eq!(reason(&pattern(PercentDeveloped, &[(24, 0.5)])).0, Some(24));
-        // A gap names the missing age.
-        assert_eq!(reason(&pattern(AgeToUltimate, &[(12, 2.0), (36, 1.2)])).0, Some(24));
-        let ata = pattern(AgeToAge, &[(12, 2.0)]);
-        for w in [-0.1, 1.5, f64::NAN] {
-            assert_eq!(reason(&ata.clone().with_weight(PatternWeight::All(w))).0, None);
-        }
         assert_eq!(
-            reason(&ata.clone().with_weight(PatternWeight::ByAge(vec![(12, 2.0)]))).0,
+            reason(&pattern(AgeToAge, &[(12, 2.0), (12, 2.0)])).0,
             Some(12)
         );
         assert_eq!(
-            reason(&ata.clone().with_weight(PatternWeight::ByAge(vec![(24, 0.5)]))).0,
+            reason(&pattern(AgeToAge, &[(18, 2.0)])),
+            (Some(18), "not a development age of the triangle")
+        );
+        assert_eq!(reason(&pattern(AgeToAge, &[(12, 0.0)])).0, Some(12));
+        assert_eq!(reason(&pattern(AgeToAge, &[(12, f64::NAN)])).0, Some(12));
+        assert_eq!(reason(&pattern(AgeToAge, &[(48, 1.01)])).0, Some(48));
+        assert_eq!(
+            reason(&pattern(AgeToUltimate, &[(12, 0.99), (24, 0.9)])).0,
+            Some(12)
+        );
+        assert_eq!(
+            reason(&pattern(AgeToUltimate, &[(12, 1.5), (24, 1.6)])).0,
+            Some(24)
+        );
+        assert_eq!(
+            reason(&pattern(PercentDeveloped, &[(12, 0.0), (24, 0.5)])).0,
+            Some(12)
+        );
+        assert_eq!(
+            reason(&pattern(PercentDeveloped, &[(12, 0.5), (24, 1.2)])).0,
+            Some(24)
+        );
+        assert_eq!(
+            reason(&pattern(PercentDeveloped, &[(12, 0.6), (24, 0.5)])).0,
+            Some(24)
+        );
+        assert_eq!(reason(&pattern(PercentDeveloped, &[(24, 0.5)])).0, Some(24));
+        // A gap names the missing age.
+        assert_eq!(
+            reason(&pattern(AgeToUltimate, &[(12, 2.0), (36, 1.2)])).0,
+            Some(24)
+        );
+        let ata = pattern(AgeToAge, &[(12, 2.0)]);
+        for w in [-0.1, 1.5, f64::NAN] {
+            assert_eq!(
+                reason(&ata.clone().with_weight(PatternWeight::All(w))).0,
+                None
+            );
+        }
+        assert_eq!(
+            reason(
+                &ata.clone()
+                    .with_weight(PatternWeight::ByAge(vec![(12, 2.0)]))
+            )
+            .0,
+            Some(12)
+        );
+        assert_eq!(
+            reason(
+                &ata.clone()
+                    .with_weight(PatternWeight::ByAge(vec![(24, 0.5)]))
+            )
+            .0,
             Some(24)
         );
         assert_eq!(
@@ -537,7 +606,9 @@ mod fits {
             PatternKind::PercentDeveloped,
             vec![(12, 0.5), (24, 0.8), (36, 0.95)],
         );
-        let cl = chain_ladder(p, 1.02.into()).fit(&small(), "values").unwrap();
+        let cl = chain_ladder(p, 1.02.into())
+            .fit(&small(), "values")
+            .unwrap();
         close(cl.ldf()[0], 1.6, 1e-15);
         close(cl.ldf()[1], 1.1875, 1e-15);
         let rescale = cl.pattern_rescale.unwrap();
@@ -563,7 +634,9 @@ mod fits {
     #[test]
     fn age_to_age_pattern_stops_and_the_tail_multiplies() {
         let p = SelectedPattern::new(PatternKind::AgeToAge, vec![(12, 1.6), (24, 1.1)]);
-        let cl = chain_ladder(p, 1.05.into()).fit(&small(), "values").unwrap();
+        let cl = chain_ladder(p, 1.05.into())
+            .fit(&small(), "values")
+            .unwrap();
         assert_eq!(cl.pattern_rescale, None);
         close(cl.ultimate[2], 120.0 * 1.6 * 1.1 * 1.05, 1e-15);
         close(cl.cdf[2], 1.05, 1e-15);
@@ -766,15 +839,15 @@ mod fits {
         for k in 0..f.len() {
             shared[k] = (dev.sigma[k] / f[k]).powi(2) * g[k] * g[k] / dev.volume[k];
         }
-        for o in 0..n {
+        for (o, m) in mse.iter_mut().enumerate() {
             let mut c = cl.latest[o];
             for k in cl.latest_position[o]..f.len() {
                 let s2 = (dev.sigma[k] / f[k]).powi(2);
-                mse[o] += s2 * (1.0 / c + g[k] * g[k] / dev.volume[k]);
+                *m += s2 * (1.0 / c + g[k] * g[k] / dev.volume[k]);
                 c *= f[k];
             }
-            mse[o] *= cl.ultimate[o].powi(2);
-            close(mack.standard_error[o], mse[o].sqrt(), 1e-10);
+            *m *= cl.ultimate[o].powi(2);
+            close(mack.standard_error[o], m.sqrt(), 1e-10);
         }
         let mut total: f64 = mse.iter().sum();
         for a in 0..n {
