@@ -12,7 +12,10 @@ chain_ladder(
   column = NULL,
   average = "volume",
   sigma_interpolation = "log-linear",
-  tail = 1
+  tail = 1,
+  ldf = NULL,
+  ldf_kind = NULL,
+  ldf_weight = 1
 )
 }
 \arguments{
@@ -32,6 +35,22 @@ default of R ChainLadder) or \code{"mack"} (Mack 1993).}
 \item{tail}{Development past the oldest age: a number, the factor from
 the oldest age to ultimate (1 means no tail), or a \code{\link[=tail_constant]{tail_constant()}},
 \code{\link[=tail_curve]{tail_curve()}}, \code{\link[=tail_bondy]{tail_bondy()}} or \code{\link[=tail_log_linear]{tail_log_linear()}}.}
+
+\item{ldf}{A selected development pattern (above): a numeric vector
+named by age in months, or a data.frame with columns \code{age} and
+\code{value}; each age a development age of the triangle. \code{NULL} (the
+default) estimates every factor.}
+
+\item{ldf_kind}{How \code{ldf} is expressed: \code{"ldf"} (age-to-age factors),
+\code{"cdf"} (factors to ultimate, at least 1 and not increasing with age)
+or \code{"percent_developed"} (in (0, 1] and not decreasing with age).
+Required with \code{ldf}, since age-to-age factors and factors to ultimate
+cannot be told apart.}
+
+\item{ldf_weight}{The weight \code{w} on each selected factor, from 0 (the
+estimate) to 1 (the selection, the default): a number for every
+selected factor, or a numeric vector named by age (the age that starts
+the factor's link), the others fully selected.}
 }
 \value{
 A \code{chain_ladder_fit} object.
@@ -58,12 +77,36 @@ estimated by \code{\link[=tail_constant]{tail_constant()}}, \code{\link[=tail_cu
 and \code{reserving_tails_r.csv}). A tail attached before the oldest age
 replaces the estimated factors from there.
 
+A selected development pattern (\code{ldf}, with \code{ldf_kind} and
+\code{ldf_weight}) replaces, or blends with, the factors estimated from the
+triangle at the ages it gives; the other ages stay estimated, so a
+benchmark for the immature ages only is a partial pattern. Its values
+are age-to-age factors (any ages but the oldest: development past it is
+the tail's), or factors to ultimate or percents developed at consecutive
+ages, which select the factors between them (\verb{cdf[a] / cdf[next age]}).
+A cumulative pattern's level at its last age selects nothing: it is
+rescaled to the factors and tail in use, and \code{pattern_rescale} reports
+the factor that multiplies the given percents developed (and divides the
+given factors to ultimate), so that a pattern given to the oldest age,
+rescaled, times the tail is 100\%. With a weight \code{w}, the factor used is
+\code{w * selected + (1 - w) * estimated}. A selected factor at or after a
+tail's attachment age is an error. In \code{\link[=mack]{mack()}} and the bootstraps a
+selected factor carries no parameter error and a blended one \code{1 - w}
+times the estimate's, while the process error stays the triangle's: a
+supplied pattern lowers the reported uncertainty, and a wrong benchmark
+is not reflected in it. Results match chainladder-python's
+\code{DevelopmentConstant} (\code{validation/reference/reserving_patterns_python.csv}).
+
 Properties of the fit, per origin: \code{latest}, \code{ultimate}, \code{reserve}; per
 link (named \code{"12-24"} and so on): \code{ldf} (the selected factors, which the
-projection uses: the estimated ones, replaced by the tail's from its
-attachment age), \code{estimated_ldf} (the factors as estimated, before the
-tail replaced any), \code{sigma} (with unestimable ones interpolated),
-\code{std_err}; per age: \code{cdf} (age to ultimate, including the tail); the
+projection uses: the estimated ones or a selected pattern's, replaced by
+the tail's from its attachment age), \code{estimated_ldf} (the factors as
+estimated, before a pattern or the tail replaced any), \code{sigma} (with
+unestimable ones interpolated), \code{std_err} (of the factors used, \code{1 - ldf_weight} times \code{estimated_std_err}), \code{estimated_std_err},
+\code{selected_ldf} (the pattern's age-to-age factors, \code{NA} where it selects
+none), \code{ldf_weight} (0 where none is selected) and \code{blended_ldf} (the
+factors before the tail); \code{pattern_rescale} (\code{NULL} for an age-to-age
+pattern or none); per age: \code{cdf} (age to ultimate, including the tail); the
 tail: \code{tail} (the factor from the oldest age to ultimate),
 \code{tail_attachment_age} (the age from which \code{ldf} holds the tail's
 factors; the oldest age when it replaced none), \code{tail_ldf} (the factors
@@ -98,6 +141,17 @@ fits <- chain_ladder(triangle(by_lob, "year", "age", "paid", keys = "lob"))
 fits@reserve
 as.data.frame(fits)
 totals_frame(fits)
+
+# A benchmark for the immature ages only: 50\% developed at 12 months and
+# 80\% at 24 select the factor 1.6 from 12 to 24; 24 to 36 stays estimated.
+bench <- chain_ladder(triangle(long, "year", "age", "paid"),
+                      ldf = c("12" = 0.5, "24" = 0.8), ldf_kind = "percent_developed")
+bench@ldf
+bench@estimated_ldf
+bench@pattern_rescale
+# Half credibility on the benchmark.
+chain_ladder(triangle(long, "year", "age", "paid"), ldf = c("12" = 0.5, "24" = 0.8),
+             ldf_kind = "percent_developed", ldf_weight = 0.5)@ldf
 }
 \seealso{
 \code{\link[=mack]{mack()}} for standard errors, \code{\link[=segment]{segment()}} for one segment.

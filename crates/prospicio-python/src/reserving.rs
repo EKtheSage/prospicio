@@ -13,9 +13,9 @@ use prospicio_reserving::{
     ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development,
     DevelopmentColumn, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, Long, Mack,
     MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap,
-    OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, ProcessDistribution,
-    ReserveFit, SegmentDependence, SegmentFits, SigmaInterpolation, Tail, TailBondy, TailConstant,
-    TailCurve, Triangle, view,
+    OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, PatternKind, PatternWeight,
+    ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits, SelectedPattern,
+    SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -163,12 +163,187 @@ fn sigma_interpolation_name(s: SigmaInterpolation) -> &'static str {
     }
 }
 
-fn development(average_: &str, sigma_interpolation_: &str) -> PyResult<Development> {
+fn development(
+    average_: &str,
+    sigma_interpolation_: &str,
+    pattern: Option<SelectedPattern>,
+) -> PyResult<Development> {
     Ok(Development {
         average: average(average_)?,
         sigma_interpolation: sigma_interpolation(sigma_interpolation_)?,
-        pattern: None,
+        pattern,
     })
+}
+
+fn pattern_kind(name: &str) -> PyResult<PatternKind> {
+    match name {
+        "ldf" => Ok(PatternKind::AgeToAge),
+        "cdf" => Ok(PatternKind::AgeToUltimate),
+        "percent_developed" => Ok(PatternKind::PercentDeveloped),
+        _ => Err(PyValueError::new_err(format!(
+            "ldf_kind must be \"ldf\" (age-to-age factors), \"cdf\" (factors to ultimate) \
+             or \"percent_developed\", got {name:?}"
+        ))),
+    }
+}
+
+fn pattern_kind_name(kind: PatternKind) -> &'static str {
+    match kind {
+        PatternKind::AgeToAge => "ldf",
+        PatternKind::AgeToUltimate => "cdf",
+        PatternKind::PercentDeveloped => "percent_developed",
+    }
+}
+
+fn py_repr(obj: &Bound<'_, PyAny>) -> String {
+    obj.repr().map_or_else(|_| "?".into(), |r| r.to_string())
+}
+
+/// `(age, value)` pairs of a dict (or any mapping, a pandas Series too)
+/// from age in months to a number.
+fn age_values(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Vec<(Lag, f64)>> {
+    if obj.is_instance_of::<PyString>() || !obj.hasattr("items")? {
+        return Err(PyTypeError::new_err(format!(
+            "{what} must be a dict from age in months to a number, got {}",
+            py_repr(obj)
+        )));
+    }
+    let mut out = Vec::new();
+    for item in obj.call_method0("items")?.try_iter()? {
+        let (key, value): (Bound<'_, PyAny>, Bound<'_, PyAny>) = item?.extract()?;
+        let age: i64 = if key.is_instance_of::<PyBool>() {
+            None
+        } else {
+            key.extract().ok()
+        }
+        .ok_or_else(|| {
+            PyTypeError::new_err(format!(
+                "{what}: an age must be a whole number of months, got {}",
+                py_repr(&key)
+            ))
+        })?;
+        let age = Lag::try_from(age)
+            .map_err(|_| PyValueError::new_err(format!("{what}: {age} is not an age in months")))?;
+        let value: f64 = if value.is_instance_of::<PyBool>() {
+            None
+        } else {
+            value.extract().ok()
+        }
+        .ok_or_else(|| {
+            PyTypeError::new_err(format!(
+                "{what}: the value at age {age} must be a number, got {}",
+                py_repr(&value)
+            ))
+        })?;
+        out.push((age, value));
+    }
+    Ok(out)
+}
+
+/// The selected pattern of the ``ldf``, ``ldf_kind`` and ``ldf_weight``
+/// arguments: ``None`` without ``ldf``. The kind is required: age-to-age
+/// factors and factors to ultimate cannot be told apart.
+fn selected_pattern(
+    ldf: Option<&Bound<'_, PyAny>>,
+    ldf_kind: Option<&str>,
+    ldf_weight: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<SelectedPattern>> {
+    let ldf_weight = ldf_weight.filter(|o| !o.is_none());
+    let Some(ldf) = ldf.filter(|o| !o.is_none()) else {
+        if ldf_kind.is_some() {
+            return Err(PyValueError::new_err("ldf_kind is given without ldf"));
+        }
+        if ldf_weight.is_some() {
+            return Err(PyValueError::new_err("ldf_weight is given without ldf"));
+        }
+        return Ok(None);
+    };
+    let Some(kind) = ldf_kind else {
+        return Err(PyValueError::new_err(
+            "ldf needs ldf_kind: \"ldf\" (age-to-age factors), \"cdf\" (factors to \
+             ultimate) or \"percent_developed\"; age-to-age factors and factors to \
+             ultimate cannot be told apart",
+        ));
+    };
+    let pattern = SelectedPattern::new(pattern_kind(kind)?, age_values(ldf, "ldf")?);
+    let weight = match ldf_weight {
+        None => PatternWeight::default(),
+        Some(w) if w.hasattr("items")? => PatternWeight::ByAge(age_values(w, "ldf_weight")?),
+        Some(w) if !w.is_instance_of::<PyBool>() => {
+            PatternWeight::All(w.extract().map_err(|_| {
+                PyTypeError::new_err(format!(
+                    "ldf_weight must be a number or a dict from age in months to a number, got {}",
+                    py_repr(w)
+                ))
+            })?)
+        }
+        Some(w) => {
+            return Err(PyTypeError::new_err(format!(
+                "ldf_weight must be a number or a dict from age in months to a number, got {}",
+                py_repr(w)
+            )));
+        }
+    };
+    Ok(Some(pattern.with_weight(weight)))
+}
+
+/// A dict from age in months to value.
+fn age_dict<'py>(py: Python<'py>, pairs: &[(Lag, f64)]) -> PyResult<Bound<'py, PyDict>> {
+    let d = PyDict::new(py);
+    for &(age, v) in pairs {
+        d.set_item(age, v)?;
+    }
+    Ok(d)
+}
+
+/// A method's ``ldf`` as Python sees it: a dict from age to value, or
+/// ``None`` without a pattern.
+fn pattern_values<'py>(
+    py: Python<'py>,
+    pattern: Option<&SelectedPattern>,
+) -> PyResult<Option<Bound<'py, PyDict>>> {
+    pattern.map(|p| age_dict(py, &p.values)).transpose()
+}
+
+/// A method's ``ldf_kind``, ``None`` without a pattern.
+fn pattern_kind_of(pattern: Option<&SelectedPattern>) -> Option<&'static str> {
+    pattern.map(|p| pattern_kind_name(p.kind))
+}
+
+/// A method's ``ldf_weight``: a float, a dict from age to weight, or
+/// ``None`` without a pattern.
+fn pattern_weight<'py>(
+    py: Python<'py>,
+    pattern: Option<&SelectedPattern>,
+) -> PyResult<Option<Bound<'py, PyAny>>> {
+    pattern
+        .map(|p| match &p.weight {
+            PatternWeight::All(w) => Ok(PyFloat::new(py, *w).into_any()),
+            PatternWeight::ByAge(by_age) => Ok(age_dict(py, by_age)?.into_any()),
+        })
+        .transpose()
+}
+
+/// `, ldf={...}, ldf_kind=..., ldf_weight=...` for a method's repr; empty
+/// without a pattern, and no weight when it is the default.
+fn pattern_arg_repr(pattern: Option<&SelectedPattern>) -> String {
+    let Some(p) = pattern else {
+        return String::new();
+    };
+    let map = |pairs: &[(Lag, f64)]| {
+        let items: Vec<String> = pairs.iter().map(|(a, v)| format!("{a}: {v:?}")).collect();
+        format!("{{{}}}", items.join(", "))
+    };
+    let weight = match &p.weight {
+        PatternWeight::All(w) if *w == 1.0 => String::new(),
+        PatternWeight::All(w) => format!(", ldf_weight={w:?}"),
+        PatternWeight::ByAge(by_age) => format!(", ldf_weight={}", map(by_age)),
+    };
+    format!(
+        ", ldf={}, ldf_kind={:?}{weight}",
+        map(&p.values),
+        pattern_kind_name(p.kind)
+    )
 }
 
 /// A column as a plain Python sequence: numpy arrays and pandas or Polars
@@ -1622,6 +1797,36 @@ fn tail_arg_repr(tail: &Tail) -> String {
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     Development past the oldest age: a number is a constant factor from
 ///     the oldest age to ultimate. No tail (a factor of 1) by default.
+/// ldf : dict, optional
+///     A selected development pattern, from age in months to value, which
+///     replaces (or, with ``ldf_weight``, blends with) the factors
+///     estimated from the triangle at the ages it gives; the other ages
+///     stay estimated, so a benchmark for the immature ages only is a
+///     partial pattern. Each age must be a development age of the
+///     triangle. As ``ldf_kind`` says, the values are age-to-age factors
+///     (any ages but the oldest: development past it is the tail's), or
+///     factors to ultimate or percents developed at consecutive ages, which
+///     select the factors between them (``cdf[a] / cdf[next age]``); their
+///     level at their last age selects nothing, and is rescaled to the
+///     factors and tail in use (``ChainLadderFit.pattern_rescale``). A
+///     selected factor at or after a tail's attachment age is an error.
+/// ldf_kind : {"ldf", "cdf", "percent_developed"}, optional
+///     How ``ldf`` is expressed; required with it, since age-to-age factors
+///     and factors to ultimate cannot be told apart. Factors to ultimate
+///     must be at least 1 and not increase with age; percents developed in
+///     (0, 1] and not decrease with age.
+/// ldf_weight : float or dict, optional
+///     The credibility ``w`` on each selected factor, from 0 to 1: the
+///     factor used is ``w * selected + (1 - w) * estimated``. A number
+///     applies to every selected factor, a dict from age (the age that
+///     starts the factor's link) to weight to those listed, the others
+///     fully selected. Not given, every selected factor is used as is
+///     (``w = 1``).
+///
+/// A selected factor carries no parameter error, and a blended one
+/// ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the
+/// process error stays the triangle's. A supplied pattern therefore lowers
+/// the reported uncertainty, and a wrong benchmark is not reflected in it.
 ///
 /// Examples
 /// --------
@@ -1630,6 +1835,21 @@ fn tail_arg_repr(tail: &Tail) -> String {
 /// >>> fit = ChainLadder().fit(tri, "paid")
 /// >>> fit.ldf, fit.ultimate, fit.total_reserve
 /// ([1.5], [150.0, 300.0], 100.0)
+///
+/// A benchmark for the immature ages only: 50% developed at 12 months and
+/// 80% at 24, so the factor from 12 to 24 is 1.6; the factor from 24 to 36
+/// stays the triangle's.
+///
+/// >>> tri = Triangle.from_long(
+/// ...     [2020, 2020, 2020, 2021, 2021, 2022],
+/// ...     [12, 24, 36, 12, 24, 12],
+/// ...     {"paid": [100.0, 150.0, 165.0, 110.0, 170.0, 120.0]},
+/// ... )
+/// >>> bench = ChainLadder(ldf={12: 0.5, 24: 0.8}, ldf_kind="percent_developed").fit(tri, "paid")
+/// >>> [round(f, 4) for f in bench.ldf], [round(f, 4) for f in bench.estimated_ldf]
+/// ([1.6, 1.1], [1.5238, 1.1])
+/// >>> round(bench.ultimate[2], 2), round(bench.pattern_rescale, 4)
+/// (211.2, 1.1364)
 #[pyclass(name = "ChainLadder", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyChainLadder {
     inner: ChainLadder,
@@ -1638,15 +1858,26 @@ pub(crate) struct PyChainLadder {
 #[pymethods]
 impl PyChainLadder {
     #[new]
-    #[pyo3(signature = (average = "volume", sigma_interpolation = "log-linear", tail = None))]
+    #[pyo3(signature = (
+        average = "volume",
+        sigma_interpolation = "log-linear",
+        tail = None,
+        ldf = None,
+        ldf_kind = None,
+        ldf_weight = None,
+    ))]
     fn new(
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
+        ldf: Option<&Bound<'_, PyAny>>,
+        ldf_kind: Option<&str>,
+        ldf_weight: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
+        let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
         Ok(Self {
             inner: ChainLadder {
-                development: development(average, sigma_interpolation)?,
+                development: development(average, sigma_interpolation, pattern)?,
                 tail: tail_arg(tail)?,
             },
         })
@@ -1668,6 +1899,26 @@ impl PyChainLadder {
     #[getter]
     fn tail<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         tail_object(py, &self.inner.tail)
+    }
+
+    /// The selected pattern by age, as given; ``None`` without one.
+    #[getter]
+    fn ldf<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        pattern_values(py, self.inner.development.pattern.as_ref())
+    }
+
+    /// How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+    /// ``"percent_developed"``; ``None`` without a pattern.
+    #[getter]
+    fn ldf_kind(&self) -> Option<&'static str> {
+        pattern_kind_of(self.inner.development.pattern.as_ref())
+    }
+
+    /// The weight on the selected factors: a number, a dict by age, or
+    /// ``None`` without a pattern.
+    #[getter]
+    fn ldf_weight<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        pattern_weight(py, self.inner.development.pattern.as_ref())
     }
 
     /// Fits one measure column in every segment of a triangle, each on its
@@ -1703,10 +1954,11 @@ impl PyChainLadder {
 
     fn __repr__(&self) -> String {
         format!(
-            "ChainLadder(average={:?}, sigma_interpolation={:?}, tail={})",
+            "ChainLadder(average={:?}, sigma_interpolation={:?}, tail={}{})",
             self.average(),
             self.sigma_interpolation(),
-            tail_arg_repr(&self.inner.tail)
+            tail_arg_repr(&self.inner.tail),
+            pattern_arg_repr(self.inner.development.pattern.as_ref())
         )
     }
 }
@@ -1883,8 +2135,9 @@ impl PyChainLadderFit {
     }
 
     /// Selected age-to-age factors, which the projection uses: the
-    /// estimated ones, replaced by the tail's from its attachment age.
-    /// Factor ``k`` links age ``k`` to ``k + 1``.
+    /// estimated ones (or a selected pattern's, ``blended_ldf``), replaced
+    /// by the tail's from its attachment age. Factor ``k`` links age ``k``
+    /// to ``k + 1``.
     #[getter]
     fn ldf(&self) -> PyResult<Vec<f64>> {
         let f = single(&self.inner, "ldf", "development_frame()")?;
@@ -1907,18 +2160,63 @@ impl PyChainLadderFit {
         Ok(f.development.sigma.clone())
     }
 
-    /// Standard error of each factor.
+    /// Standard error of each factor used before the tail: ``(1 -
+    /// ldf_weight)`` times ``estimated_std_err``, so 0 where a selected
+    /// pattern replaces the estimate.
     #[getter]
     fn std_err(&self) -> PyResult<Vec<f64>> {
         let f = single(&self.inner, "std_err", "development_frame()")?;
-        Ok(f.development.std_err.clone())
+        Ok(f.development.blended_std_err())
     }
 
-    /// Age-to-age factors as estimated, before the tail replaced any.
+    /// Age-to-age factors as estimated from the triangle, before a selected
+    /// pattern or the tail replaced any.
     #[getter]
     fn estimated_ldf(&self) -> PyResult<Vec<f64>> {
         let f = single(&self.inner, "estimated_ldf", "")?;
         Ok(f.development.ldf.clone())
+    }
+
+    /// Standard error of each estimated factor.
+    #[getter]
+    fn estimated_std_err(&self) -> PyResult<Vec<f64>> {
+        let f = single(&self.inner, "estimated_std_err", "development_frame()")?;
+        Ok(f.development.std_err.clone())
+    }
+
+    /// The selected pattern's age-to-age factor of each link, after
+    /// conversion from ``ldf_kind``; ``None`` where it selects none.
+    #[getter]
+    fn selected_ldf(&self) -> PyResult<Vec<Option<f64>>> {
+        let f = single(&self.inner, "selected_ldf", "development_frame()")?;
+        Ok(f.development.selected.clone())
+    }
+
+    /// The weight on each link's selected factor; 0 where none is
+    /// selected.
+    #[getter]
+    fn ldf_weight(&self) -> PyResult<Vec<f64>> {
+        let f = single(&self.inner, "ldf_weight", "development_frame()")?;
+        Ok(f.development.weight.clone())
+    }
+
+    /// The factors before the tail: ``w * selected + (1 - w) * estimated``
+    /// where a factor is selected, the estimate elsewhere.
+    #[getter]
+    fn blended_ldf(&self) -> PyResult<Vec<f64>> {
+        let f = single(&self.inner, "blended_ldf", "development_frame()")?;
+        Ok(f.development.blended_ldf())
+    }
+
+    /// For a pattern given as factors to ultimate or percents developed,
+    /// the factor that multiplies the given percents developed (and divides
+    /// the given factors to ultimate) to match the factors and tail in use:
+    /// ``cdf_given / cdf_used`` at the pattern's last age, so that a pattern
+    /// given to the oldest age, rescaled, times the tail is 100%. ``None``
+    /// for an age-to-age pattern or none.
+    #[getter]
+    fn pattern_rescale(&self) -> PyResult<Option<f64>> {
+        Ok(single(&self.inner, "pattern_rescale", "totals_frame()")?.pattern_rescale)
     }
 
     /// Age from which ``ldf`` holds the tail's factors rather than the
@@ -2005,7 +2303,9 @@ impl PyChainLadderFit {
 
     /// One row per segment: the key columns, the segment's total
     /// ``latest``, ``ultimate`` and ``reserve``, and its ``tail``,
-    /// ``tail_sigma`` and ``tail_std_err``. Needs pandas.
+    /// ``tail_sigma`` and ``tail_std_err``; with a selected pattern, its
+    /// ``pattern_rescale`` too (``nan`` for an age-to-age pattern). Needs
+    /// pandas.
     ///
     /// Returns
     /// -------
@@ -2018,7 +2318,9 @@ impl PyChainLadderFit {
     /// ``ldf`` (the selected factor to the next age), ``cdf`` (to ultimate,
     /// with the tail), ``sigma`` and ``std_err``; the oldest age has ``nan``
     /// for ``ldf``, ``sigma`` and ``std_err``, and the tail factor as its
-    /// ``cdf``. Needs pandas.
+    /// ``cdf``. With a selected pattern, also ``estimated_ldf``,
+    /// ``selected_ldf`` (``nan`` where none), ``ldf_weight``,
+    /// ``blended_ldf`` and ``estimated_std_err``. Needs pandas.
     ///
     /// Returns
     /// -------
@@ -2082,6 +2384,15 @@ impl PyChainLadderFit {
 /// tail_std_err : float, optional
 ///     The tail factor's standard error (R's ``tail.se``); extrapolated if
 ///     not given. Unused when the tail factor is 1.
+/// ldf, ldf_kind, ldf_weight : optional
+///     A selected development pattern, as in ``ChainLadder``. A selected
+///     factor is taken as known: it has no parameter error, and a blended
+///     one ``(1 - w)`` times the estimate's standard error, so the
+///     parameter risk is ``(1 - w)`` times Mack's on those links (none for
+///     a fully selected pattern). The process risk keeps the triangle's
+///     sigmas, around the factors used. A supplied pattern therefore lowers
+///     the reported standard errors, and a wrong benchmark is not reflected
+///     in them. ``claims_development_result()`` takes the pattern too.
 ///
 /// Examples
 /// --------
@@ -2108,17 +2419,25 @@ impl PyMack {
         tail = None,
         tail_sigma = None,
         tail_std_err = None,
+        ldf = None,
+        ldf_kind = None,
+        ldf_weight = None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
         tail_sigma: Option<f64>,
         tail_std_err: Option<f64>,
+        ldf: Option<&Bound<'_, PyAny>>,
+        ldf_kind: Option<&str>,
+        ldf_weight: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
+        let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
         Ok(Self {
             inner: Mack {
-                development: development(average, sigma_interpolation)?,
+                development: development(average, sigma_interpolation, pattern)?,
                 tail: tail_arg(tail)?,
                 tail_sigma,
                 tail_std_err,
@@ -2157,6 +2476,26 @@ impl PyMack {
         self.inner.tail_std_err
     }
 
+    /// The selected pattern by age, as given; ``None`` without one.
+    #[getter]
+    fn ldf<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        pattern_values(py, self.inner.development.pattern.as_ref())
+    }
+
+    /// How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+    /// ``"percent_developed"``; ``None`` without a pattern.
+    #[getter]
+    fn ldf_kind(&self) -> Option<&'static str> {
+        pattern_kind_of(self.inner.development.pattern.as_ref())
+    }
+
+    /// The weight on the selected factors: a number, a dict by age, or
+    /// ``None`` without a pattern.
+    #[getter]
+    fn ldf_weight<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        pattern_weight(py, self.inner.development.pattern.as_ref())
+    }
+
     /// Fits one measure column in every segment of a triangle, each on its
     /// own.
     ///
@@ -2191,12 +2530,13 @@ impl PyMack {
         let given =
             |name: &str, v: Option<f64>| v.map_or(String::new(), |v| format!(", {name}={v:?}"));
         format!(
-            "Mack(average={:?}, sigma_interpolation={:?}, tail={}{}{})",
+            "Mack(average={:?}, sigma_interpolation={:?}, tail={}{}{}{})",
             self.average(),
             self.sigma_interpolation(),
             tail_arg_repr(&self.inner.tail),
             given("tail_sigma", self.inner.tail_sigma),
             given("tail_std_err", self.inner.tail_std_err),
+            pattern_arg_repr(self.inner.development.pattern.as_ref()),
         )
     }
 }
@@ -2285,6 +2625,57 @@ impl PyMackFit {
         Ok(self.one("estimated_ldf", "")?.development.ldf.clone())
     }
 
+    /// Standard error of each estimated factor, as
+    /// ``ChainLadderFit.estimated_std_err``.
+    #[getter]
+    fn estimated_std_err(&self) -> PyResult<Vec<f64>> {
+        Ok(self
+            .one("estimated_std_err", "development_frame()")?
+            .development
+            .std_err
+            .clone())
+    }
+
+    /// The selected pattern's factor of each link, as
+    /// ``ChainLadderFit.selected_ldf``.
+    #[getter]
+    fn selected_ldf(&self) -> PyResult<Vec<Option<f64>>> {
+        Ok(self
+            .one("selected_ldf", "development_frame()")?
+            .development
+            .selected
+            .clone())
+    }
+
+    /// The weight on each link's selected factor, as
+    /// ``ChainLadderFit.ldf_weight``.
+    #[getter]
+    fn ldf_weight(&self) -> PyResult<Vec<f64>> {
+        Ok(self
+            .one("ldf_weight", "development_frame()")?
+            .development
+            .weight
+            .clone())
+    }
+
+    /// The factors before the tail, as ``ChainLadderFit.blended_ldf``.
+    #[getter]
+    fn blended_ldf(&self) -> PyResult<Vec<f64>> {
+        Ok(self
+            .one("blended_ldf", "development_frame()")?
+            .development
+            .blended_ldf())
+    }
+
+    /// The rescale of a cumulative pattern, as
+    /// ``ChainLadderFit.pattern_rescale``.
+    #[getter]
+    fn pattern_rescale(&self) -> PyResult<Option<f64>> {
+        Ok(self
+            .one("pattern_rescale", "totals_frame()")?
+            .pattern_rescale)
+    }
+
     /// Age from which ``ldf`` holds the tail's factors, as
     /// ``ChainLadderFit.tail_attachment_age``.
     #[getter]
@@ -2323,14 +2714,14 @@ impl PyMackFit {
             .clone())
     }
 
-    /// Standard error of each factor.
+    /// Standard error of each factor used before the tail, as
+    /// ``ChainLadderFit.std_err``: the parameter risk's.
     #[getter]
     fn std_err(&self) -> PyResult<Vec<f64>> {
         Ok(self
             .one("std_err", "development_frame()")?
             .development
-            .std_err
-            .clone())
+            .blended_std_err())
     }
 
     /// Latest observed cumulative value per origin.
@@ -2443,6 +2834,13 @@ impl PyMackFit {
     /// claims development result of each origin and in total, in the next
     /// calendar year and in every later one, as R ChainLadder's
     /// ``CDR(MackChainLadder(x), dev = "all")``.
+    ///
+    /// With a selected pattern (``Mack(ldf=...)``), each factor used varies
+    /// with ``1 - w`` times the estimate's parameter error, so a fully
+    /// selected link adds process error only; with weights strictly
+    /// between 0 and 1 the calendar years' CDRs are correlated, and their
+    /// standard errors need not add up to Mack's
+    /// (``docs/design/reserving-v02.md``, decision 12).
     ///
     /// Returns
     /// -------
@@ -2611,9 +3009,13 @@ fn pattern(
     average: &str,
     sigma_interpolation: &str,
     tail: Option<&Bound<'_, PyAny>>,
+    ldf: Option<&Bound<'_, PyAny>>,
+    ldf_kind: Option<&str>,
+    ldf_weight: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<ChainLadder> {
+    let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
     Ok(ChainLadder {
-        development: development(average, sigma_interpolation)?,
+        development: development(average, sigma_interpolation, pattern)?,
         tail: tail_arg(tail)?,
     })
 }
@@ -2621,10 +3023,11 @@ fn pattern(
 /// The ``repr`` arguments describing a method's development pattern.
 fn pattern_repr(cl: &ChainLadder) -> String {
     format!(
-        "average={:?}, sigma_interpolation={:?}, tail={}",
+        "average={:?}, sigma_interpolation={:?}, tail={}{}",
         average_name(cl.development.average),
         sigma_interpolation_name(cl.development.sigma_interpolation),
-        tail_arg_repr(&cl.tail)
+        tail_arg_repr(&cl.tail),
+        pattern_arg_repr(cl.development.pattern.as_ref())
     )
 }
 
@@ -2644,6 +3047,10 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
+/// ldf, ldf_kind, ldf_weight : optional
+///     A selected development pattern, as in ``ChainLadder``: the
+///     development pattern's factors at the ages it gives, so ``cdf`` and
+///     the share developed ``1 / cdf`` follow it.
 ///
 /// Examples
 /// --------
@@ -2663,17 +3070,27 @@ pub(crate) struct PyExpectedLoss {
 #[pymethods]
 impl PyExpectedLoss {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None))]
+    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None))]
     fn new(
         apriori: f64,
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
+        ldf: Option<&Bound<'_, PyAny>>,
+        ldf_kind: Option<&str>,
+        ldf_weight: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: ExpectedLoss {
                 apriori,
-                chain_ladder: pattern(average, sigma_interpolation, tail)?,
+                chain_ladder: pattern(
+                    average,
+                    sigma_interpolation,
+                    tail,
+                    ldf,
+                    ldf_kind,
+                    ldf_weight,
+                )?,
             },
         })
     }
@@ -2700,6 +3117,26 @@ impl PyExpectedLoss {
     #[getter]
     fn tail<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         tail_object(py, &self.inner.chain_ladder.tail)
+    }
+
+    /// The selected pattern by age, as given; ``None`` without one.
+    #[getter]
+    fn ldf<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        pattern_values(py, self.inner.chain_ladder.development.pattern.as_ref())
+    }
+
+    /// How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+    /// ``"percent_developed"``; ``None`` without a pattern.
+    #[getter]
+    fn ldf_kind(&self) -> Option<&'static str> {
+        pattern_kind_of(self.inner.chain_ladder.development.pattern.as_ref())
+    }
+
+    /// The weight on the selected factors: a number, a dict by age, or
+    /// ``None`` without a pattern.
+    #[getter]
+    fn ldf_weight<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        pattern_weight(py, self.inner.chain_ladder.development.pattern.as_ref())
     }
 
     /// Fits one loss column in every segment of a triangle, each with its
@@ -2764,6 +3201,10 @@ impl PyExpectedLoss {
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
+/// ldf, ldf_kind, ldf_weight : optional
+///     A selected development pattern, as in ``ChainLadder``: the
+///     development pattern's factors at the ages it gives, so ``cdf`` and
+///     the share developed ``1 / cdf`` follow it.
 ///
 /// Examples
 /// --------
@@ -2783,17 +3224,27 @@ pub(crate) struct PyBornhuetterFerguson {
 #[pymethods]
 impl PyBornhuetterFerguson {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None))]
+    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None))]
     fn new(
         apriori: f64,
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
+        ldf: Option<&Bound<'_, PyAny>>,
+        ldf_kind: Option<&str>,
+        ldf_weight: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: BornhuetterFerguson {
                 apriori,
-                chain_ladder: pattern(average, sigma_interpolation, tail)?,
+                chain_ladder: pattern(
+                    average,
+                    sigma_interpolation,
+                    tail,
+                    ldf,
+                    ldf_kind,
+                    ldf_weight,
+                )?,
             },
         })
     }
@@ -2820,6 +3271,26 @@ impl PyBornhuetterFerguson {
     #[getter]
     fn tail<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         tail_object(py, &self.inner.chain_ladder.tail)
+    }
+
+    /// The selected pattern by age, as given; ``None`` without one.
+    #[getter]
+    fn ldf<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        pattern_values(py, self.inner.chain_ladder.development.pattern.as_ref())
+    }
+
+    /// How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+    /// ``"percent_developed"``; ``None`` without a pattern.
+    #[getter]
+    fn ldf_kind(&self) -> Option<&'static str> {
+        pattern_kind_of(self.inner.chain_ladder.development.pattern.as_ref())
+    }
+
+    /// The weight on the selected factors: a number, a dict by age, or
+    /// ``None`` without a pattern.
+    #[getter]
+    fn ldf_weight<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        pattern_weight(py, self.inner.chain_ladder.development.pattern.as_ref())
     }
 
     /// Fits one loss column in every segment of a triangle, each with its
@@ -2884,6 +3355,10 @@ impl PyBornhuetterFerguson {
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
+/// ldf, ldf_kind, ldf_weight : optional
+///     A selected development pattern, as in ``ChainLadder``: the
+///     development pattern's factors at the ages it gives, so ``cdf`` and
+///     the share developed ``1 / cdf`` follow it.
 ///
 /// Examples
 /// --------
@@ -2903,19 +3378,30 @@ pub(crate) struct PyBenktander {
 #[pymethods]
 impl PyBenktander {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None))]
+    #[pyo3(signature = (apriori = 1.0, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         apriori: f64,
         n_iters: usize,
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
+        ldf: Option<&Bound<'_, PyAny>>,
+        ldf_kind: Option<&str>,
+        ldf_weight: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: Benktander {
                 apriori,
                 n_iters,
-                chain_ladder: pattern(average, sigma_interpolation, tail)?,
+                chain_ladder: pattern(
+                    average,
+                    sigma_interpolation,
+                    tail,
+                    ldf,
+                    ldf_kind,
+                    ldf_weight,
+                )?,
             },
         })
     }
@@ -2948,6 +3434,26 @@ impl PyBenktander {
     #[getter]
     fn tail<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         tail_object(py, &self.inner.chain_ladder.tail)
+    }
+
+    /// The selected pattern by age, as given; ``None`` without one.
+    #[getter]
+    fn ldf<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        pattern_values(py, self.inner.chain_ladder.development.pattern.as_ref())
+    }
+
+    /// How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+    /// ``"percent_developed"``; ``None`` without a pattern.
+    #[getter]
+    fn ldf_kind(&self) -> Option<&'static str> {
+        pattern_kind_of(self.inner.chain_ladder.development.pattern.as_ref())
+    }
+
+    /// The weight on the selected factors: a number, a dict by age, or
+    /// ``None`` without a pattern.
+    #[getter]
+    fn ldf_weight<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        pattern_weight(py, self.inner.chain_ladder.development.pattern.as_ref())
     }
 
     /// Fits one loss column in every segment of a triangle, each with its
@@ -3018,6 +3524,10 @@ impl PyBenktander {
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
+/// ldf, ldf_kind, ldf_weight : optional
+///     A selected development pattern, as in ``ChainLadder``: the
+///     development pattern's factors at the ages it gives, so ``cdf`` and
+///     the share developed ``1 / cdf`` follow it.
 ///
 /// Examples
 /// --------
@@ -3037,19 +3547,30 @@ pub(crate) struct PyCapeCod {
 #[pymethods]
 impl PyCapeCod {
     #[new]
-    #[pyo3(signature = (trend = 0.0, decay = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None))]
+    #[pyo3(signature = (trend = 0.0, decay = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         trend: f64,
         decay: f64,
         average: &str,
         sigma_interpolation: &str,
         tail: Option<&Bound<'_, PyAny>>,
+        ldf: Option<&Bound<'_, PyAny>>,
+        ldf_kind: Option<&str>,
+        ldf_weight: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: CapeCod {
                 trend,
                 decay,
-                chain_ladder: pattern(average, sigma_interpolation, tail)?,
+                chain_ladder: pattern(
+                    average,
+                    sigma_interpolation,
+                    tail,
+                    ldf,
+                    ldf_kind,
+                    ldf_weight,
+                )?,
             },
         })
     }
@@ -3082,6 +3603,26 @@ impl PyCapeCod {
     #[getter]
     fn tail<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         tail_object(py, &self.inner.chain_ladder.tail)
+    }
+
+    /// The selected pattern by age, as given; ``None`` without one.
+    #[getter]
+    fn ldf<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        pattern_values(py, self.inner.chain_ladder.development.pattern.as_ref())
+    }
+
+    /// How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+    /// ``"percent_developed"``; ``None`` without a pattern.
+    #[getter]
+    fn ldf_kind(&self) -> Option<&'static str> {
+        pattern_kind_of(self.inner.chain_ladder.development.pattern.as_ref())
+    }
+
+    /// The weight on the selected factors: a number, a dict by age, or
+    /// ``None`` without a pattern.
+    #[getter]
+    fn ldf_weight<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        pattern_weight(py, self.inner.chain_ladder.development.pattern.as_ref())
     }
 
     /// Fits one loss column in every segment of a triangle, each with its
@@ -4086,6 +4627,19 @@ impl PyClarkFit {
 ///     order, symmetric with a unit diagonal. It is converted to the normal
 ///     scores' correlation ``2 sin(pi rho / 6)``, which must be positive
 ///     definite.
+/// ldf, ldf_kind, ldf_weight : optional
+///     A selected development pattern, as in ``ChainLadder``. The residuals
+///     and the scale come from the triangle's own volume-weighted factors;
+///     each simulation then uses ``w * selected + (1 - w) * pseudo`` at
+///     the selected ages, so a fully selected factor is the same in every
+///     simulation (no parameter error) and a blended one moves by ``1 - w``
+///     times the pseudo factor's deviation. The origins' level still moves
+///     (each simulation projects from its pseudo latest values), so even a
+///     fully selected pattern keeps part of the spread (about 73% of it on
+///     RAA). A supplied pattern lowers the reported uncertainty. In
+///     ``one_year``, a bootstrap with a pattern needs ``method`` to have the
+///     same pattern; a method with a pattern may use a bootstrap without
+///     one.
 ///
 /// Raises
 /// ------
@@ -4127,7 +4681,11 @@ impl PyOdpBootstrap {
         tail_std_err = None,
         dependence = "independent",
         spearman = None,
+        ldf = None,
+        ldf_kind = None,
+        ldf_weight = None,
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         n_sims: usize,
         seed: u64,
@@ -4136,6 +4694,9 @@ impl PyOdpBootstrap {
         tail_std_err: Option<f64>,
         dependence: &str,
         spearman: Option<Vec<Vec<f64>>>,
+        ldf: Option<&Bound<'_, PyAny>>,
+        ldf_kind: Option<&str>,
+        ldf_weight: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -4148,7 +4709,7 @@ impl PyOdpBootstrap {
                 tail: tail_arg(tail)?,
                 tail_std_err,
                 dependence: segment_dependence(dependence, spearman)?,
-                pattern: None,
+                pattern: selected_pattern(ldf, ldf_kind, ldf_weight)?,
             },
         })
     }
@@ -4183,6 +4744,26 @@ impl PyOdpBootstrap {
     #[getter]
     fn tail_std_err(&self) -> Option<f64> {
         self.inner.tail_std_err
+    }
+
+    /// The selected pattern by age, as given; ``None`` without one.
+    #[getter]
+    fn ldf<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        pattern_values(py, self.inner.pattern.as_ref())
+    }
+
+    /// How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+    /// ``"percent_developed"``; ``None`` without a pattern.
+    #[getter]
+    fn ldf_kind(&self) -> Option<&'static str> {
+        pattern_kind_of(self.inner.pattern.as_ref())
+    }
+
+    /// The weight on the selected factors: a number, a dict by age, or
+    /// ``None`` without a pattern.
+    #[getter]
+    fn ldf_weight<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        pattern_weight(py, self.inner.pattern.as_ref())
     }
 
     /// How the segments depend on each other: ``"independent"``,
@@ -4339,12 +4920,13 @@ impl PyOdpBootstrap {
             .tail_std_err
             .map_or(String::new(), |v| format!(", tail_std_err={v:?}"));
         format!(
-            "OdpBootstrap(n_sims={}, seed={}, process={:?}, tail={}{std_err}{})",
+            "OdpBootstrap(n_sims={}, seed={}, process={:?}, tail={}{std_err}{}{})",
             self.inner.n_sims,
             self.inner.seed,
             self.process(),
             tail_arg_repr(&self.inner.tail),
             dependence_repr(&self.inner.dependence),
+            pattern_arg_repr(self.inner.pattern.as_ref()),
         )
     }
 }
@@ -4642,6 +5224,16 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 ///     order, symmetric with a unit diagonal. It is converted to the normal
 ///     scores' correlation ``2 sin(pi rho / 6)``, which must be positive
 ///     definite.
+/// ldf, ldf_kind, ldf_weight : optional
+///     A selected development pattern, as in ``ChainLadder``. Mack's sigmas
+///     and residuals come from the triangle's own estimate; each simulation
+///     then uses ``w * selected + (1 - w) * pseudo`` at the selected ages,
+///     so a fully selected factor has no parameter error and a blended one
+///     ``1 - w`` times the pseudo factor's deviation, as ``Mack`` charges
+///     it; the process error is unchanged. A supplied pattern lowers the
+///     reported uncertainty. In ``one_year``, a bootstrap with a pattern
+///     needs ``method`` to have the same pattern; a method with a pattern
+///     may use a bootstrap without one.
 ///
 /// Raises
 /// ------
@@ -4711,6 +5303,9 @@ impl PyMackBootstrap {
         tail_std_err = None,
         dependence = "independent",
         spearman = None,
+        ldf = None,
+        ldf_kind = None,
+        ldf_weight = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -4725,6 +5320,9 @@ impl PyMackBootstrap {
         tail_std_err: Option<f64>,
         dependence: &str,
         spearman: Option<Vec<Vec<f64>>>,
+        ldf: Option<&Bound<'_, PyAny>>,
+        ldf_kind: Option<&str>,
+        ldf_weight: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -4734,7 +5332,11 @@ impl PyMackBootstrap {
                 n_sims,
                 seed,
                 process: mack_process(process)?,
-                development: development(average, sigma_interpolation)?,
+                development: development(
+                    average,
+                    sigma_interpolation,
+                    selected_pattern(ldf, ldf_kind, ldf_weight)?,
+                )?,
                 centre_residuals,
                 tail: tail_arg(tail)?,
                 tail_sigma,
@@ -4799,6 +5401,26 @@ impl PyMackBootstrap {
     #[getter]
     fn tail_std_err(&self) -> Option<f64> {
         self.inner.tail_std_err
+    }
+
+    /// The selected pattern by age, as given; ``None`` without one.
+    #[getter]
+    fn ldf<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        pattern_values(py, self.inner.development.pattern.as_ref())
+    }
+
+    /// How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+    /// ``"percent_developed"``; ``None`` without a pattern.
+    #[getter]
+    fn ldf_kind(&self) -> Option<&'static str> {
+        pattern_kind_of(self.inner.development.pattern.as_ref())
+    }
+
+    /// The weight on the selected factors: a number, a dict by age, or
+    /// ``None`` without a pattern.
+    #[getter]
+    fn ldf_weight<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        pattern_weight(py, self.inner.development.pattern.as_ref())
     }
 
     /// How the segments depend on each other: ``"independent"``,
@@ -4939,7 +5561,7 @@ impl PyMackBootstrap {
             |name: &str, v: Option<f64>| v.map_or(String::new(), |v| format!(", {name}={v:?}"));
         format!(
             "MackBootstrap(n_sims={}, seed={}, process={:?}, average={:?}, \
-             sigma_interpolation={:?}, centre_residuals={}, tail={}{}{}{})",
+             sigma_interpolation={:?}, centre_residuals={}, tail={}{}{}{}{})",
             self.inner.n_sims,
             self.inner.seed,
             self.process(),
@@ -4954,6 +5576,7 @@ impl PyMackBootstrap {
             given("tail_sigma", self.inner.tail_sigma),
             given("tail_std_err", self.inner.tail_std_err),
             dependence_repr(&self.inner.dependence),
+            pattern_arg_repr(self.inner.development.pattern.as_ref()),
         )
     }
 }

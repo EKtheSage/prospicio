@@ -20,7 +20,10 @@ mack_bootstrap(
   tail_sigma = NULL,
   tail_std_err = NULL,
   dependence = c("independent", "synchronized", "rank_correlation"),
-  spearman = NULL
+  spearman = NULL,
+  ldf = NULL,
+  ldf_kind = NULL,
+  ldf_weight = 1
 )
 }
 \arguments{
@@ -66,6 +69,13 @@ and an error with an estimated tail.}
 
 \item{dependence, spearman}{How the segments depend on each other, as in
 \code{\link[=odp_bootstrap]{odp_bootstrap()}}.}
+
+\item{ldf, ldf_kind, ldf_weight}{A selected development pattern, as in
+\code{\link[=chain_ladder]{chain_ladder()}}. Mack's sigmas and residuals come from the triangle's
+own estimate; each simulation then uses \code{w * selected + (1 - w) * pseudo} at the selected ages, so a fully selected factor has no
+parameter error and a blended one \code{1 - w} times the pseudo factor's
+deviation, as \code{\link[=mack]{mack()}} charges it; the process error is unchanged. A
+supplied pattern lowers the reported uncertainty.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.

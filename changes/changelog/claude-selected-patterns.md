@@ -23,3 +23,16 @@
   and the four expected-loss settings are no longer `Copy`; `Development`,
   `OdpBootstrap`, `DevelopmentFit` and `ChainLadderFit` gain public
   fields, and `Error` gains `Pattern`.
+- Selected development patterns in Python and R: `ChainLadder`, `Mack`,
+  `ExpectedLoss`, `BornhuetterFerguson`, `Benktander`, `CapeCod`,
+  `OdpBootstrap` and `MackBootstrap` (in R `chain_ladder()`, `mack()`,
+  `expected_loss()`, `bornhuetter_ferguson()`, `benktander()`,
+  `cape_cod()`, `odp_bootstrap()`, `mack_bootstrap()`, `odp_one_year()`
+  and `mack_one_year()`) take `ldf` (a dict, or a named vector or
+  data.frame in R, from age in months to value), `ldf_kind` (`"ldf"`,
+  `"cdf"` or `"percent_developed"`, required with `ldf`) and `ldf_weight`
+  (a number or a weight by age); R's one-year functions also take
+  `bootstrap_ldf`. Chain-ladder and Mack fits gain `selected_ldf`,
+  `ldf_weight`, `blended_ldf`, `estimated_std_err` and `pattern_rescale`,
+  and their `std_err` is the standard error of the factor in use
+  (unchanged without a pattern).

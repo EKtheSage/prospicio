@@ -16,7 +16,10 @@ expected_loss(
   apriori = 1,
   average = "volume",
   sigma_interpolation = "log-linear",
-  tail = 1
+  tail = 1,
+  ldf = NULL,
+  ldf_kind = NULL,
+  ldf_weight = 1
 )
 
 bornhuetter_ferguson(
@@ -26,7 +29,10 @@ bornhuetter_ferguson(
   apriori = 1,
   average = "volume",
   sigma_interpolation = "log-linear",
-  tail = 1
+  tail = 1,
+  ldf = NULL,
+  ldf_kind = NULL,
+  ldf_weight = 1
 )
 
 benktander(
@@ -37,7 +43,10 @@ benktander(
   n_iters = 1,
   average = "volume",
   sigma_interpolation = "log-linear",
-  tail = 1
+  tail = 1,
+  ldf = NULL,
+  ldf_kind = NULL,
+  ldf_weight = 1
 )
 }
 \arguments{
@@ -55,6 +64,10 @@ exposure; positive.}
 
 \item{average, sigma_interpolation, tail}{The development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}.}
+
+\item{ldf, ldf_kind, ldf_weight}{A selected development pattern, as in
+\code{\link[=chain_ladder]{chain_ladder()}}: the development pattern's factors at the ages it
+gives, so \code{cdf} and the share developed \code{1 / cdf} follow it.}
 
 \item{n_iters}{Number of Bornhuetter-Ferguson steps; a non-negative whole
 number.}

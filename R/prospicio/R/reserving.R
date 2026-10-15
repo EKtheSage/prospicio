@@ -565,6 +565,17 @@ chain_ladder_properties <- function(cl) {
     cdf =per_age(function(p) p$cdf(), function(self) paste0(cl(self)$development(), "-Ult")),
     sigma = per_age(function(p) p$sigma(), links),
     std_err = per_age(function(p) p$std_err(), links),
+    estimated_std_err = per_age(function(p) p$estimated_std_err(), links),
+    selected_ldf = S7::new_property(S7::class_double, getter = function(self) {
+      v <- rust_result(cl(self)$selected_ldf(), call = NULL)
+      stats::setNames(replace(v, is.nan(v), NA_real_), links(self))
+    }),
+    ldf_weight = per_age(function(p) p$ldf_weight(), links),
+    blended_ldf = per_age(function(p) p$blended_ldf(), links),
+    pattern_rescale = S7::new_property(NULL | S7::class_double, getter = function(self) {
+      v <- rust_result(cl(self)$pattern_rescale(), call = NULL)
+      if (is.nan(v)) NULL else v
+    }),
     alpha = S7::new_property(S7::class_double, getter = function(self) cl(self)$alpha()),
     tail = S7::new_property(S7::class_double, getter = function(self) {
       rust_result(cl(self)$tail(), call = NULL)
@@ -592,6 +603,64 @@ chain_ladder_properties <- function(cl) {
 development_args <- function(average, sigma_interpolation) {
   list(average = match.arg(average, c("volume", "simple", "regression")),
        sigma = match.arg(sigma_interpolation, c("log-linear", "mack")))
+}
+
+# A selected pattern as the binding takes it: NULL without `ldf`, or a list
+# of `kind`, `ages`, `values`, `weight_ages` (NULL for one weight) and
+# `weights`. `ldf` is a named numeric vector (names are ages in months) or
+# a data.frame with columns `age` and `value`; `ldf_weight` a number or a
+# named numeric vector. The kind is required: age-to-age factors and factors
+# to ultimate cannot be told apart.
+ldf_pattern <- function(ldf, ldf_kind, ldf_weight) {
+  default_weight <- is.numeric(ldf_weight) && length(ldf_weight) == 1 &&
+    is.null(names(ldf_weight)) && isTRUE(ldf_weight == 1)
+  if (is.null(ldf)) {
+    if (!is.null(ldf_kind)) stop("ldf_kind is given without ldf", call. = FALSE)
+    if (!default_weight) stop("ldf_weight is given without ldf", call. = FALSE)
+    return(NULL)
+  }
+  kinds <- c("ldf", "cdf", "percent_developed")
+  if (is.null(ldf_kind)) {
+    stop('ldf needs ldf_kind: "ldf" (age-to-age factors), "cdf" (factors to ultimate) or ',
+         '"percent_developed"; age-to-age factors and factors to ultimate cannot be told apart',
+         call. = FALSE)
+  }
+  if (!is.character(ldf_kind) || length(ldf_kind) != 1 || !ldf_kind %in% kinds) {
+    stop(sprintf('ldf_kind must be "ldf", "cdf" or "percent_developed", got %s',
+                 paste(deparse(ldf_kind), collapse = " ")), call. = FALSE)
+  }
+  values <- age_values(ldf, "ldf")
+  if (is.numeric(ldf_weight) && length(ldf_weight) == 1 && is.null(names(ldf_weight))) {
+    if (is.na(ldf_weight)) stop("ldf_weight must not be NA", call. = FALSE)
+    weight <- list(weight_ages = NULL, weights = as.double(ldf_weight))
+  } else {
+    w <- age_values(ldf_weight, "ldf_weight")
+    weight <- list(weight_ages = w$ages, weights = w$values)
+  }
+  c(list(kind = ldf_kind, ages = values$ages, values = values$values), weight)
+}
+
+# Ages and values of a named numeric vector (names are ages in months) or a
+# data.frame with columns `age` and `value`.
+age_values <- function(x, arg) {
+  if (is.data.frame(x)) {
+    if (!all(c("age", "value") %in% names(x))) {
+      stop(sprintf("%s as a data.frame needs the columns age and value", arg), call. = FALSE)
+    }
+    ages <- x$age
+    values <- x$value
+  } else if (is.numeric(x) && !is.null(names(x))) {
+    ages <- suppressWarnings(as.numeric(names(x)))
+    values <- unname(x)
+  } else {
+    stop(sprintf(paste("%s must be a named numeric vector, the names ages in months,",
+                       "or a data.frame with columns age and value"), arg), call. = FALSE)
+  }
+  if (!is.numeric(ages) || anyNA(ages) || any(ages != round(ages)) || any(ages < 0)) {
+    stop(sprintf("%s: every age must be a whole number of months", arg), call. = FALSE)
+  }
+  if (!is.numeric(values)) stop(sprintf("%s: every value must be a number", arg), call. = FALSE)
+  list(ages = as.double(ages), values = as.double(values))
 }
 
 single_number <- function(x, arg) {
@@ -852,12 +921,37 @@ S7::method(print, tail_log_linear) <- tail_print
 #' and `reserving_tails_r.csv`). A tail attached before the oldest age
 #' replaces the estimated factors from there.
 #'
+#' A selected development pattern (`ldf`, with `ldf_kind` and
+#' `ldf_weight`) replaces, or blends with, the factors estimated from the
+#' triangle at the ages it gives; the other ages stay estimated, so a
+#' benchmark for the immature ages only is a partial pattern. Its values
+#' are age-to-age factors (any ages but the oldest: development past it is
+#' the tail's), or factors to ultimate or percents developed at consecutive
+#' ages, which select the factors between them (`cdf[a] / cdf[next age]`).
+#' A cumulative pattern's level at its last age selects nothing: it is
+#' rescaled to the factors and tail in use, and `pattern_rescale` reports
+#' the factor that multiplies the given percents developed (and divides the
+#' given factors to ultimate), so that a pattern given to the oldest age,
+#' rescaled, times the tail is 100%. With a weight `w`, the factor used is
+#' `w * selected + (1 - w) * estimated`. A selected factor at or after a
+#' tail's attachment age is an error. In [mack()] and the bootstraps a
+#' selected factor carries no parameter error and a blended one `1 - w`
+#' times the estimate's, while the process error stays the triangle's: a
+#' supplied pattern lowers the reported uncertainty, and a wrong benchmark
+#' is not reflected in it. Results match chainladder-python's
+#' `DevelopmentConstant` (`validation/reference/reserving_patterns_python.csv`).
+#'
 #' Properties of the fit, per origin: `latest`, `ultimate`, `reserve`; per
 #' link (named `"12-24"` and so on): `ldf` (the selected factors, which the
-#' projection uses: the estimated ones, replaced by the tail's from its
-#' attachment age), `estimated_ldf` (the factors as estimated, before the
-#' tail replaced any), `sigma` (with unestimable ones interpolated),
-#' `std_err`; per age: `cdf` (age to ultimate, including the tail); the
+#' projection uses: the estimated ones or a selected pattern's, replaced by
+#' the tail's from its attachment age), `estimated_ldf` (the factors as
+#' estimated, before a pattern or the tail replaced any), `sigma` (with
+#' unestimable ones interpolated), `std_err` (of the factors used, `1 -
+#' ldf_weight` times `estimated_std_err`), `estimated_std_err`,
+#' `selected_ldf` (the pattern's age-to-age factors, `NA` where it selects
+#' none), `ldf_weight` (0 where none is selected) and `blended_ldf` (the
+#' factors before the tail); `pattern_rescale` (`NULL` for an age-to-age
+#' pattern or none); per age: `cdf` (age to ultimate, including the tail); the
 #' tail: `tail` (the factor from the oldest age to ultimate),
 #' `tail_attachment_age` (the age from which `ldf` holds the tail's
 #' factors; the oldest age when it replaced none), `tail_ldf` (the factors
@@ -886,6 +980,19 @@ S7::method(print, tail_log_linear) <- tail_print
 #' @param tail Development past the oldest age: a number, the factor from
 #'   the oldest age to ultimate (1 means no tail), or a [tail_constant()],
 #'   [tail_curve()], [tail_bondy()] or [tail_log_linear()].
+#' @param ldf A selected development pattern (above): a numeric vector
+#'   named by age in months, or a data.frame with columns `age` and
+#'   `value`; each age a development age of the triangle. `NULL` (the
+#'   default) estimates every factor.
+#' @param ldf_kind How `ldf` is expressed: `"ldf"` (age-to-age factors),
+#'   `"cdf"` (factors to ultimate, at least 1 and not increasing with age)
+#'   or `"percent_developed"` (in (0, 1] and not decreasing with age).
+#'   Required with `ldf`, since age-to-age factors and factors to ultimate
+#'   cannot be told apart.
+#' @param ldf_weight The weight `w` on each selected factor, from 0 (the
+#'   estimate) to 1 (the selection, the default): a number for every
+#'   selected factor, or a numeric vector named by age (the age that starts
+#'   the factor's link), the others fully selected.
 #' @param ptr A `ChainLadderFit` pointer; used internally.
 #' @returns A `chain_ladder_fit` object.
 #' @seealso [mack()] for standard errors, [segment()] for one segment.
@@ -906,6 +1013,17 @@ S7::method(print, tail_log_linear) <- tail_print
 #' fits@reserve
 #' as.data.frame(fits)
 #' totals_frame(fits)
+#'
+#' # A benchmark for the immature ages only: 50% developed at 12 months and
+#' # 80% at 24 select the factor 1.6 from 12 to 24; 24 to 36 stays estimated.
+#' bench <- chain_ladder(triangle(long, "year", "age", "paid"),
+#'                       ldf = c("12" = 0.5, "24" = 0.8), ldf_kind = "percent_developed")
+#' bench@ldf
+#' bench@estimated_ldf
+#' bench@pattern_rescale
+#' # Half credibility on the benchmark.
+#' chain_ladder(triangle(long, "year", "age", "paid"), ldf = c("12" = 0.5, "24" = 0.8),
+#'              ldf_kind = "percent_developed", ldf_weight = 0.5)@ldf
 chain_ladder_fit <- S7::new_class(
   "chain_ladder_fit",
   package = "prospicio",
@@ -919,10 +1037,12 @@ chain_ladder_fit <- S7::new_class(
 #' @rdname chain_ladder_fit
 #' @export
 chain_ladder <- function(triangle, column = NULL, average = "volume",
-                         sigma_interpolation = "log-linear", tail = 1) {
+                         sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                         ldf_kind = NULL, ldf_weight = 1) {
   column <- fit_column(triangle, column)
   args <- development_args(average, sigma_interpolation)
-  ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, tail_ptr(tail)))
+  ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, tail_ptr(tail),
+                                               ldf_pattern(ldf, ldf_kind, ldf_weight)))
   chain_ladder_fit(ptr = ptr)
 }
 
@@ -955,6 +1075,15 @@ chain_ladder <- function(triangle, column = NULL, average = "volume",
 #' segments use [totals_frame()], which has them per segment, or
 #' [segment()]. [claims_development_result()] gives Merz and Wuthrich's
 #' one-year view of a single-segment fit without a tail.
+#'
+#' With a selected pattern (`ldf`), a selected factor is taken as known: its
+#' parameter risk is `1 - w` times Mack's (none for a fully selected
+#' factor), checked against R's `MackChainLadder()` on the triangle's own
+#' factors (`validation/tests/reserving_patterns.rs`); the process risk
+#' keeps the triangle's sigmas, around the factors used. A supplied pattern
+#' therefore lowers the reported standard errors. [claims_development_result()]
+#' takes the pattern too: with weights strictly between 0 and 1 its calendar
+#' years need not add up to Mack's.
 #'
 #' @inheritParams chain_ladder_fit
 #' @param tail_sigma The tail's sigma (R's `tail.sigma`), or `NULL` to
@@ -1012,12 +1141,14 @@ mack_fit <- S7::new_class(
 #' @rdname mack_fit
 #' @export
 mack <- function(triangle, column = NULL, average = "volume", sigma_interpolation = "log-linear",
-                 tail = 1, tail_sigma = NULL, tail_std_err = NULL) {
+                 tail = 1, tail_sigma = NULL, tail_std_err = NULL, ldf = NULL, ldf_kind = NULL,
+                 ldf_weight = 1) {
   column <- fit_column(triangle, column)
   args <- development_args(average, sigma_interpolation)
   ptr <- rust_result(triangle@ptr$mack(
     column, args$average, args$sigma, tail_ptr(tail),
-    optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err")
+    optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
+    ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   mack_fit(ptr = ptr)
 }
@@ -1126,6 +1257,9 @@ expected_loss_properties <- function(el, cl) {
 #'   exposure; positive.
 #' @param n_iters Number of Bornhuetter-Ferguson steps; a non-negative whole
 #'   number.
+#' @param ldf,ldf_kind,ldf_weight A selected development pattern, as in
+#'   [chain_ladder()]: the development pattern's factors at the ages it
+#'   gives, so `cdf` and the share developed `1 / cdf` follow it.
 #' @param average,sigma_interpolation,tail The development pattern, as in
 #'   [chain_ladder()].
 #' @param ptr An `ExpectedLossFit` pointer; used internally.
@@ -1161,12 +1295,13 @@ expected_loss_fit <- S7::new_class(
 #' @rdname expected_loss_fit
 #' @export
 expected_loss <- function(triangle, column, exposure, apriori = 1, average = "volume",
-                          sigma_interpolation = "log-linear", tail = 1) {
+                          sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                          ldf_kind = NULL, ldf_weight = 1) {
   cols <- exposure_columns(triangle, column, exposure)
   args <- development_args(average, sigma_interpolation)
   ptr <- rust_result(triangle@ptr$expected_loss(
     cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma,
-    tail_ptr(tail)
+    tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   expected_loss_fit(ptr = ptr)
 }
@@ -1174,12 +1309,13 @@ expected_loss <- function(triangle, column, exposure, apriori = 1, average = "vo
 #' @rdname expected_loss_fit
 #' @export
 bornhuetter_ferguson <- function(triangle, column, exposure, apriori = 1, average = "volume",
-                                 sigma_interpolation = "log-linear", tail = 1) {
+                                 sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                                 ldf_kind = NULL, ldf_weight = 1) {
   cols <- exposure_columns(triangle, column, exposure)
   args <- development_args(average, sigma_interpolation)
   ptr <- rust_result(triangle@ptr$bornhuetter_ferguson(
     cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma,
-    tail_ptr(tail)
+    tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   expected_loss_fit(ptr = ptr)
 }
@@ -1187,12 +1323,13 @@ bornhuetter_ferguson <- function(triangle, column, exposure, apriori = 1, averag
 #' @rdname expected_loss_fit
 #' @export
 benktander <- function(triangle, column, exposure, apriori = 1, n_iters = 1, average = "volume",
-                       sigma_interpolation = "log-linear", tail = 1) {
+                       sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                       ldf_kind = NULL, ldf_weight = 1) {
   cols <- exposure_columns(triangle, column, exposure)
   args <- development_args(average, sigma_interpolation)
   ptr <- rust_result(triangle@ptr$benktander(
     cols[1], cols[2], single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
-    args$average, args$sigma, tail_ptr(tail)
+    args$average, args$sigma, tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   expected_loss_fit(ptr = ptr)
 }
@@ -1268,12 +1405,13 @@ cape_cod_fit <- S7::new_class(
 #' @rdname cape_cod_fit
 #' @export
 cape_cod <- function(triangle, column, exposure, trend = 0, decay = 1, average = "volume",
-                     sigma_interpolation = "log-linear", tail = 1) {
+                     sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                     ldf_kind = NULL, ldf_weight = 1) {
   cols <- exposure_columns(triangle, column, exposure)
   args <- development_args(average, sigma_interpolation)
   ptr <- rust_result(triangle@ptr$cape_cod(
     cols[1], cols[2], single_number(trend, "trend"), single_number(decay, "decay"),
-    args$average, args$sigma, tail_ptr(tail)
+    args$average, args$sigma, tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   cape_cod_fit(ptr = ptr)
 }
@@ -1459,6 +1597,16 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #'   diagonal and one row and column per segment in index order. It is
 #'   converted to the normal scores' correlation `2 sin(pi rho / 6)`, which
 #'   must be positive definite.
+#' @param ldf,ldf_kind,ldf_weight A selected development pattern, as in
+#'   [chain_ladder()]. The residuals and the scale come from the triangle's
+#'   own volume-weighted factors; each simulation then uses
+#'   `w * selected + (1 - w) * pseudo` at the selected ages, so a fully
+#'   selected factor is the same in every simulation (no parameter error)
+#'   and a blended one moves by `1 - w` times the pseudo factor's
+#'   deviation. The origins' level still moves (each simulation projects
+#'   from its pseudo latest values), so even a fully selected pattern keeps
+#'   part of the spread (about 73% of it on RAA). A supplied pattern lowers
+#'   the reported uncertainty.
 #' @param ptr An `OdpBootstrapFit` pointer; used internally.
 #' @returns An `odp_bootstrap_fit` object.
 #' @seealso [chain_ladder()], [mack()]; [odp_one_year()] for the one-year
@@ -1517,7 +1665,7 @@ origin_matrix <- function(fit, flat) {
 odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                           process = c("gamma", "none"), tail = 1, tail_std_err = NULL,
                           dependence = c("independent", "synchronized", "rank_correlation"),
-                          spearman = NULL) {
+                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
@@ -1525,7 +1673,8 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                                                 single_number(seed, "seed"), process,
                                                 tail_ptr(tail),
                                                 optional_number(tail_std_err, "tail_std_err"),
-                                                dependence, spearman_arg(spearman)))
+                                                dependence, spearman_arg(spearman),
+                                                ldf_pattern(ldf, ldf_kind, ldf_weight)))
   odp_bootstrap_fit(ptr = ptr)
 }
 
@@ -2674,6 +2823,13 @@ bayes_bf <- function(triangle, column, exposure, apriori = 1, cv = 0.1, developm
 #'   and an error with an estimated tail.
 #' @param dependence,spearman How the segments depend on each other, as in
 #'   [odp_bootstrap()].
+#' @param ldf,ldf_kind,ldf_weight A selected development pattern, as in
+#'   [chain_ladder()]. Mack's sigmas and residuals come from the triangle's
+#'   own estimate; each simulation then uses `w * selected + (1 - w) *
+#'   pseudo` at the selected ages, so a fully selected factor has no
+#'   parameter error and a blended one `1 - w` times the pseudo factor's
+#'   deviation, as [mack()] charges it; the process error is unchanged. A
+#'   supplied pattern lowers the reported uncertainty.
 #' @param ptr A `MackBootstrapFit` pointer; used internally.
 #' @returns A `mack_bootstrap_fit` object.
 #' @seealso [mack()] for the analytic standard errors, [mack_one_year()]
@@ -2723,7 +2879,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                            centre_residuals = TRUE, tail = 1, tail_sigma = NULL,
                            tail_std_err = NULL,
                            dependence = c("independent", "synchronized", "rank_correlation"),
-                           spearman = NULL) {
+                           spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
@@ -2732,7 +2888,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
     column, single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
     model$average, model$sigma, isTRUE(centre_residuals), tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
-    dependence, spearman_arg(spearman)
+    dependence, spearman_arg(spearman), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   mack_bootstrap_fit(ptr = ptr)
 }
@@ -2876,6 +3032,13 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' @param trend,decay As in [cape_cod()].
 #' @param average,sigma_interpolation,tail The chain ladder or development
 #'   pattern of `method`, as in [chain_ladder()].
+#' @param ldf,ldf_kind,ldf_weight A selected development pattern of
+#'   `method`, as in [chain_ladder()].
+#' @param bootstrap_ldf Whether the bootstrap takes `method`'s selected
+#'   pattern too (the default), so that its simulations blend the pseudo
+#'   factors with it as [odp_bootstrap()] and [mack_bootstrap()] do;
+#'   `FALSE` simulates from the triangle's own factors and applies the
+#'   pattern only when `method` is refitted.
 #' @param bootstrap_tail Whether the bootstrap takes `method`'s `tail` too,
 #'   developing past the oldest age in the coming year (above); `FALSE` by
 #'   default.
@@ -2969,7 +3132,8 @@ odp_one_year <- function(triangle, column = NULL,
                          bootstrap_tail = FALSE, tail_std_err = NULL,
                          n_sims = 10000, seed = 0, process = c("gamma", "none"),
                          dependence = c("independent", "synchronized", "rank_correlation"),
-                         spearman = NULL) {
+                         spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
+                         bootstrap_ldf = TRUE) {
   column <- fit_column(triangle, column)
   method <- match.arg(method)
   process <- match.arg(process)
@@ -2984,7 +3148,8 @@ odp_one_year <- function(triangle, column = NULL,
     single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
     tail_ptr(tail), isTRUE(bootstrap_tail),
     optional_number(tail_std_err, "tail_std_err"), single_number(n_sims, "n_sims"),
-    single_number(seed, "seed"), process, dependence, spearman_arg(spearman)
+    single_number(seed, "seed"), process, dependence, spearman_arg(spearman),
+    ldf_pattern(ldf, ldf_kind, ldf_weight), isTRUE(bootstrap_ldf)
   ))
   one_year_fit(ptr = ptr)
 }
@@ -3002,7 +3167,8 @@ mack_one_year <- function(triangle, column = NULL,
                           mack_average = "volume", mack_sigma_interpolation = "log-linear",
                           centre_residuals = TRUE,
                           dependence = c("independent", "synchronized", "rank_correlation"),
-                          spearman = NULL) {
+                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
+                          bootstrap_ldf = TRUE) {
   column <- fit_column(triangle, column)
   method <- match.arg(method)
   process <- match.arg(process)
@@ -3020,7 +3186,8 @@ mack_one_year <- function(triangle, column = NULL,
     tail_ptr(tail), isTRUE(bootstrap_tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
     single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
-    model$average, model$sigma, isTRUE(centre_residuals), dependence, spearman_arg(spearman)
+    model$average, model$sigma, isTRUE(centre_residuals), dependence, spearman_arg(spearman),
+    ldf_pattern(ldf, ldf_kind, ldf_weight), isTRUE(bootstrap_ldf)
   ))
   one_year_fit(ptr = ptr)
 }

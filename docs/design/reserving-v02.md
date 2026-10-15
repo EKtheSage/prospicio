@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built in Rust on branch `claude/selected-patterns`, bindings to follow on the same branch) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -1568,10 +1568,10 @@ the bootstrap would have no tail to apply it to.
 
 ### 12. Selected development patterns
 
-Status: **Built in Rust** (2026-10-14), branch `claude/selected-patterns`;
-the Python and R bindings follow on the same branch. What changed from the
-proposal while building it is listed under "As built" at the end of this
-decision; items 7, 8 and the Checks below are the built versions.
+Status: **Built** (2026-10-14), branch `claude/selected-patterns`, in Rust,
+Python and R. What changed from the proposal while building it is listed
+under "As built" at the end of this decision; items 7, 8, the Bindings and
+the Checks below are the built versions.
 
 Every factor-based method estimates its age-to-age factors from the
 triangle alone. The only outside input is `TailConstant { factor,
@@ -1885,18 +1885,33 @@ pub struct Development {
 
 #### Bindings
 
-* Python: every class above takes `ldf=None` (a `dict` from age in months
-  to value), `ldf_kind=None` (`"ldf"`, `"cdf"` or `"percent_developed"`;
-  required when `ldf` is given, since the kind cannot be guessed) and
-  `ldf_weight=1.0` (a float or a `dict` from age to weight). The fits gain
-  the properties of item 10.
+* Python: `ChainLadder`, `Mack`, `ExpectedLoss`, `BornhuetterFerguson`,
+  `Benktander`, `CapeCod`, `OdpBootstrap` and `MackBootstrap` take
+  `ldf=None` (a `dict`, or any mapping, from age in months to value),
+  `ldf_kind=None` (`"ldf"`, `"cdf"` or `"percent_developed"`; required
+  when `ldf` is given, since the kind cannot be guessed) and
+  `ldf_weight=None` (a float or a `dict` from age to weight; not given, 1),
+  and read them back as properties of the same names (`None` without a
+  pattern) and in their `repr`. `ChainLadderFit` and `MackFit` gain
+  `selected_ldf` (`None` where none), `ldf_weight`, `blended_ldf`,
+  `estimated_std_err` and `pattern_rescale` (`None` for an age-to-age
+  pattern or none); `std_err` is the factor in use's. The other fits
+  reach them through `chain_ladder` and their frames. The one-year view
+  takes the method's pattern from the method object, and the bootstrap's
+  from the bootstrap object.
 * R: `chain_ladder()`, `mack()`, `expected_loss()`,
   `bornhuetter_ferguson()`, `benktander()`, `cape_cod()`,
-  `odp_bootstrap()`, `mack_bootstrap()` and the one-year functions take
-  `ldf = NULL` (a named numeric vector whose names are ages, or a
-  `data.frame` with columns `age` and `value`), `ldf_kind = NULL` (the
-  same three strings; required with `ldf`) and `ldf_weight = 1` (a number
-  or a named vector).
+  `odp_bootstrap()`, `mack_bootstrap()`, `odp_one_year()` and
+  `mack_one_year()` take `ldf = NULL` (a named numeric vector whose names
+  are ages, or a `data.frame` with columns `age` and `value`),
+  `ldf_kind = NULL` (the same three strings; required with `ldf`) and
+  `ldf_weight = 1` (a number or a named vector). The one-year functions
+  also take `bootstrap_ldf = TRUE`: the bootstrap takes the method's
+  pattern too, as item 8 requires of a bootstrap with one; `FALSE`
+  simulates from the triangle's own factors. A `chain_ladder_fit` (and so
+  a `mack_fit`) gains the properties `selected_ldf` (`NA` where none),
+  `ldf_weight`, `blended_ldf`, `estimated_std_err` and `pattern_rescale`
+  (`NULL` for an age-to-age pattern or none).
 * No new dependency: `prospicio-reserving`'s default path stays
   `wasm32-unknown-unknown` clean.
 
@@ -2002,6 +2017,18 @@ Changes from the proposal, made while building it:
 * **Provenance.** `Development`'s `Debug` leaves out `pattern` when there is
   none, and `OdpBootstrap` records `pattern` only when it has one, so the
   provenance of results without a pattern is as before.
+* **Bindings.** Python's `ldf_weight` defaults to `None` (meaning 1), not
+  `1.0`: PyO3 cannot give a float default to an argument that also takes
+  a dict, and `None` lets an `ldf_weight` given without `ldf` be an error.
+  R's one-year functions gained `bootstrap_ldf` (default `TRUE`), since
+  they build the bootstrap and the method from one set of arguments.
+  Python's `std_err` (and R's) on a fit is now the factor in use's,
+  `(1 - w)` times the estimate's, as the tables already were; without a
+  pattern it is unchanged. Tests: `python/tests/test_reserving_patterns.py`
+  and `R/prospicio/tests/test-reserving-patterns.R` (each kind, partial
+  patterns, blends uniform and by age, the tail rescale, the five methods,
+  Mack's risks, both bootstraps and their one-year views, segments, and
+  every error, a missing or wrong kind label included).
 * **Breaking (Rust)**, as proposed: `Development` loses `Copy` and `Eq`, and
   `ChainLadder`, `Mack`, `MackBootstrap`'s contents and the four
   expected-loss settings lose `Copy`; `Development`, `OdpBootstrap`,

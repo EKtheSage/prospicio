@@ -1726,6 +1726,10 @@ class Benktander:
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
+    ldf, ldf_kind, ldf_weight : optional
+        A selected development pattern, as in ``ChainLadder``: the
+        development pattern's factors at the ages it gives, so ``cdf`` and
+        the share developed ``1 / cdf`` follow it.
     
     Examples
     --------
@@ -1738,7 +1742,7 @@ class Benktander:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 288.89]
     """
-    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> Benktander: ...
+    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> Benktander: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -1772,6 +1776,23 @@ class Benktander:
         ------
         ValueError
             As ``ExpectedLoss.fit``.
+        """
+    @property
+    def ldf(self, /) -> dict |None:
+        """
+        The selected pattern by age, as given; ``None`` without one.
+        """
+    @property
+    def ldf_kind(self, /) -> str |None:
+        """
+        How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+        ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_weight(self, /) -> Any |None:
+        """
+        The weight on the selected factors: a number, a dict by age, or
+        ``None`` without a pattern.
         """
     @property
     def n_iters(self, /) -> int:
@@ -2296,6 +2317,10 @@ class BornhuetterFerguson:
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
+    ldf, ldf_kind, ldf_weight : optional
+        A selected development pattern, as in ``ChainLadder``: the
+        development pattern's factors at the ages it gives, so ``cdf`` and
+        the share developed ``1 / cdf`` follow it.
     
     Examples
     --------
@@ -2308,7 +2333,7 @@ class BornhuetterFerguson:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 266.67]
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> BornhuetterFerguson: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> BornhuetterFerguson: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -2342,6 +2367,23 @@ class BornhuetterFerguson:
         ------
         ValueError
             As ``ExpectedLoss.fit``.
+        """
+    @property
+    def ldf(self, /) -> dict |None:
+        """
+        The selected pattern by age, as given; ``None`` without one.
+        """
+    @property
+    def ldf_kind(self, /) -> str |None:
+        """
+        How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+        ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_weight(self, /) -> Any |None:
+        """
+        The weight on the selected factors: a number, a dict by age, or
+        ``None`` without a pattern.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -2660,6 +2702,10 @@ class CapeCod:
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
+    ldf, ldf_kind, ldf_weight : optional
+        A selected development pattern, as in ``ChainLadder``: the
+        development pattern's factors at the ages it gives, so ``cdf`` and
+        the share developed ``1 / cdf`` follow it.
     
     Examples
     --------
@@ -2672,7 +2718,7 @@ class CapeCod:
     >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
     ([0.6774, 0.6774], [150.0, 290.32])
     """
-    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> CapeCod: ...
+    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> CapeCod: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -2707,6 +2753,23 @@ class CapeCod:
         ValueError
             As ``ChainLadder.fit``, if ``trend`` or ``decay`` is out of
             range, or if an origin has no observed, finite, positive exposure.
+        """
+    @property
+    def ldf(self, /) -> dict |None:
+        """
+        The selected pattern by age, as given; ``None`` without one.
+        """
+    @property
+    def ldf_kind(self, /) -> str |None:
+        """
+        How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+        ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_weight(self, /) -> Any |None:
+        """
+        The weight on the selected factors: a number, a dict by age, or
+        ``None`` without a pattern.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -2920,6 +2983,36 @@ class ChainLadder:
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         Development past the oldest age: a number is a constant factor from
         the oldest age to ultimate. No tail (a factor of 1) by default.
+    ldf : dict, optional
+        A selected development pattern, from age in months to value, which
+        replaces (or, with ``ldf_weight``, blends with) the factors
+        estimated from the triangle at the ages it gives; the other ages
+        stay estimated, so a benchmark for the immature ages only is a
+        partial pattern. Each age must be a development age of the
+        triangle. As ``ldf_kind`` says, the values are age-to-age factors
+        (any ages but the oldest: development past it is the tail's), or
+        factors to ultimate or percents developed at consecutive ages, which
+        select the factors between them (``cdf[a] / cdf[next age]``); their
+        level at their last age selects nothing, and is rescaled to the
+        factors and tail in use (``ChainLadderFit.pattern_rescale``). A
+        selected factor at or after a tail's attachment age is an error.
+    ldf_kind : {"ldf", "cdf", "percent_developed"}, optional
+        How ``ldf`` is expressed; required with it, since age-to-age factors
+        and factors to ultimate cannot be told apart. Factors to ultimate
+        must be at least 1 and not increase with age; percents developed in
+        (0, 1] and not decrease with age.
+    ldf_weight : float or dict, optional
+        The credibility ``w`` on each selected factor, from 0 to 1: the
+        factor used is ``w * selected + (1 - w) * estimated``. A number
+        applies to every selected factor, a dict from age (the age that
+        starts the factor's link) to weight to those listed, the others
+        fully selected. Not given, every selected factor is used as is
+        (``w = 1``).
+    
+    A selected factor carries no parameter error, and a blended one
+    ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the
+    process error stays the triangle's. A supplied pattern therefore lowers
+    the reported uncertainty, and a wrong benchmark is not reflected in it.
     
     Examples
     --------
@@ -2928,8 +3021,23 @@ class ChainLadder:
     >>> fit = ChainLadder().fit(tri, "paid")
     >>> fit.ldf, fit.ultimate, fit.total_reserve
     ([1.5], [150.0, 300.0], 100.0)
+    
+    A benchmark for the immature ages only: 50% developed at 12 months and
+    80% at 24, so the factor from 12 to 24 is 1.6; the factor from 24 to 36
+    stays the triangle's.
+    
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2020, 2021, 2021, 2022],
+    ...     [12, 24, 36, 12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 165.0, 110.0, 170.0, 120.0]},
+    ... )
+    >>> bench = ChainLadder(ldf={12: 0.5, 24: 0.8}, ldf_kind="percent_developed").fit(tri, "paid")
+    >>> [round(f, 4) for f in bench.ldf], [round(f, 4) for f in bench.estimated_ldf]
+    ([1.6, 1.1], [1.5238, 1.1])
+    >>> round(bench.ultimate[2], 2), round(bench.pattern_rescale, 4)
+    (211.2, 1.1364)
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> ChainLadder: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> ChainLadder: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -2958,6 +3066,23 @@ class ChainLadder:
             cannot be fitted (a constant that is not positive, a curve with
             fewer than two factors above 1 to fit); with keys, the message
             names the segment.
+        """
+    @property
+    def ldf(self, /) -> dict |None:
+        """
+        The selected pattern by age, as given; ``None`` without one.
+        """
+    @property
+    def ldf_kind(self, /) -> str |None:
+        """
+        How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+        ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_weight(self, /) -> Any |None:
+        """
+        The weight on the selected factors: a number, a dict by age, or
+        ``None`` without a pattern.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -3000,6 +3125,12 @@ class ChainLadderFit:
     """
     def __repr__(self, /) -> str: ...
     @property
+    def blended_ldf(self, /) -> list[float]:
+        """
+        The factors before the tail: ``w * selected + (1 - w) * estimated``
+        where a factor is selected, the estimate elsewhere.
+        """
+    @property
     def cdf(self, /) -> list[float]:
         """
         Age-to-ultimate factors, one per age, including the tail.
@@ -3015,7 +3146,9 @@ class ChainLadderFit:
         ``ldf`` (the selected factor to the next age), ``cdf`` (to ultimate,
         with the tail), ``sigma`` and ``std_err``; the oldest age has ``nan``
         for ``ldf``, ``sigma`` and ``std_err``, and the tail factor as its
-        ``cdf``. Needs pandas.
+        ``cdf``. With a selected pattern, also ``estimated_ldf``,
+        ``selected_ldf`` (``nan`` where none), ``ldf_weight``,
+        ``blended_ldf`` and ``estimated_std_err``. Needs pandas.
         
         Returns
         -------
@@ -3024,7 +3157,13 @@ class ChainLadderFit:
     @property
     def estimated_ldf(self, /) -> list[float]:
         """
-        Age-to-age factors as estimated, before the tail replaced any.
+        Age-to-age factors as estimated from the triangle, before a selected
+        pattern or the tail replaced any.
+        """
+    @property
+    def estimated_std_err(self, /) -> list[float]:
+        """
+        Standard error of each estimated factor.
         """
     @property
     def index(self, /) -> list[Any]:
@@ -3045,13 +3184,30 @@ class ChainLadderFit:
     def ldf(self, /) -> list[float]:
         """
         Selected age-to-age factors, which the projection uses: the
-        estimated ones, replaced by the tail's from its attachment age.
-        Factor ``k`` links age ``k`` to ``k + 1``.
+        estimated ones (or a selected pattern's, ``blended_ldf``), replaced
+        by the tail's from its attachment age. Factor ``k`` links age ``k``
+        to ``k + 1``.
+        """
+    @property
+    def ldf_weight(self, /) -> list[float]:
+        """
+        The weight on each link's selected factor; 0 where none is
+        selected.
         """
     @property
     def origins(self, /) -> list[str]:
         """
         Origin period of each per-origin value.
+        """
+    @property
+    def pattern_rescale(self, /) -> float |None:
+        """
+        For a pattern given as factors to ultimate or percents developed,
+        the factor that multiplies the given percents developed (and divides
+        the given factors to ultimate) to match the factors and tail in use:
+        ``cdf_given / cdf_used`` at the pattern's last age, so that a pattern
+        given to the oldest age, rescaled, times the tail is 100%. ``None``
+        for an age-to-age pattern or none.
         """
     @property
     def reserve(self, /) -> list[float]:
@@ -3075,6 +3231,12 @@ class ChainLadderFit:
             segments.
         """
     @property
+    def selected_ldf(self, /) -> list[float |None]:
+        """
+        The selected pattern's age-to-age factor of each link, after
+        conversion from ``ldf_kind``; ``None`` where it selects none.
+        """
+    @property
     def sigma(self, /) -> list[float]:
         """
         Variance parameter of each factor, with unestimable ones
@@ -3083,7 +3245,9 @@ class ChainLadderFit:
     @property
     def std_err(self, /) -> list[float]:
         """
-        Standard error of each factor.
+        Standard error of each factor used before the tail: ``(1 -
+        ldf_weight)`` times ``estimated_std_err``, so 0 where a selected
+        pattern replaces the estimate.
         """
     @property
     def tail(self, /) -> float:
@@ -3140,7 +3304,9 @@ class ChainLadderFit:
         """
         One row per segment: the key columns, the segment's total
         ``latest``, ``ultimate`` and ``reserve``, and its ``tail``,
-        ``tail_sigma`` and ``tail_std_err``. Needs pandas.
+        ``tail_sigma`` and ``tail_std_err``; with a selected pattern, its
+        ``pattern_rescale`` too (``nan`` for an age-to-age pattern). Needs
+        pandas.
         
         Returns
         -------
@@ -6435,6 +6601,10 @@ class ExpectedLoss:
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
+    ldf, ldf_kind, ldf_weight : optional
+        A selected development pattern, as in ``ChainLadder``: the
+        development pattern's factors at the ages it gives, so ``cdf`` and
+        the share developed ``1 / cdf`` follow it.
     
     Examples
     --------
@@ -6447,7 +6617,7 @@ class ExpectedLoss:
     >>> fit.ultimate, fit.reserve
     ([125.0, 200.0], [-25.0, 0.0])
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None) -> ExpectedLoss: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> ExpectedLoss: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -6483,6 +6653,23 @@ class ExpectedLoss:
             As ``ChainLadder.fit``, if ``apriori`` is not positive, or if an
             origin has no observed, finite, positive exposure (the message
             names it and, with keys, its segment).
+        """
+    @property
+    def ldf(self, /) -> dict |None:
+        """
+        The selected pattern by age, as given; ``None`` without one.
+        """
+    @property
+    def ldf_kind(self, /) -> str |None:
+        """
+        How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+        ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_weight(self, /) -> Any |None:
+        """
+        The weight on the selected factors: a number, a dict by age, or
+        ``None`` without a pattern.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -10374,6 +10561,15 @@ class Mack:
     tail_std_err : float, optional
         The tail factor's standard error (R's ``tail.se``); extrapolated if
         not given. Unused when the tail factor is 1.
+    ldf, ldf_kind, ldf_weight : optional
+        A selected development pattern, as in ``ChainLadder``. A selected
+        factor is taken as known: it has no parameter error, and a blended
+        one ``(1 - w)`` times the estimate's standard error, so the
+        parameter risk is ``(1 - w)`` times Mack's on those links (none for
+        a fully selected pattern). The process risk keeps the triangle's
+        sigmas, around the factors used. A supplied pattern therefore lowers
+        the reported standard errors, and a wrong benchmark is not reflected
+        in them. ``claims_development_result()`` takes the pattern too.
     
     Examples
     --------
@@ -10387,7 +10583,7 @@ class Mack:
     >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
     True
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None) -> Mack: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> Mack: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -10415,6 +10611,23 @@ class Mack:
             ages, a variance parameter can be neither estimated nor
             interpolated, or the tail's sigma or standard error can neither be
             extrapolated nor is given.
+        """
+    @property
+    def ldf(self, /) -> dict |None:
+        """
+        The selected pattern by age, as given; ``None`` without one.
+        """
+    @property
+    def ldf_kind(self, /) -> str |None:
+        """
+        How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+        ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_weight(self, /) -> Any |None:
+        """
+        The weight on the selected factors: a number, a dict by age, or
+        ``None`` without a pattern.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -10523,6 +10736,16 @@ class MackBootstrap:
         order, symmetric with a unit diagonal. It is converted to the normal
         scores' correlation ``2 sin(pi rho / 6)``, which must be positive
         definite.
+    ldf, ldf_kind, ldf_weight : optional
+        A selected development pattern, as in ``ChainLadder``. Mack's sigmas
+        and residuals come from the triangle's own estimate; each simulation
+        then uses ``w * selected + (1 - w) * pseudo`` at the selected ages,
+        so a fully selected factor has no parameter error and a blended one
+        ``1 - w`` times the pseudo factor's deviation, as ``Mack`` charges
+        it; the process error is unchanged. A supplied pattern lowers the
+        reported uncertainty. In ``one_year``, a bootstrap with a pattern
+        needs ``method`` to have the same pattern; a method with a pattern
+        may use a bootstrap without one.
     
     Raises
     ------
@@ -10549,7 +10772,7 @@ class MackBootstrap:
     >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> MackBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> MackBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -10621,6 +10844,23 @@ class MackBootstrap:
         [('2020',), ('2021',), ('2022',), ('2023',)]
         >>> abs(fit.reserves.mean() / fit.chain_ladder.total_reserve - 1) < 0.05
         True
+        """
+    @property
+    def ldf(self, /) -> dict |None:
+        """
+        The selected pattern by age, as given; ``None`` without one.
+        """
+    @property
+    def ldf_kind(self, /) -> str |None:
+        """
+        How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+        ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_weight(self, /) -> Any |None:
+        """
+        The weight on the selected factors: a number, a dict by age, or
+        ``None`` without a pattern.
         """
     @property
     def n_sims(self, /) -> int:
@@ -10830,6 +11070,11 @@ class MackFit:
     """
     def __repr__(self, /) -> str: ...
     @property
+    def blended_ldf(self, /) -> list[float]:
+        """
+        The factors before the tail, as ``ChainLadderFit.blended_ldf``.
+        """
+    @property
     def cdf(self, /) -> list[float]:
         """
         Age-to-ultimate factors, including the tail.
@@ -10845,6 +11090,13 @@ class MackFit:
         claims development result of each origin and in total, in the next
         calendar year and in every later one, as R ChainLadder's
         ``CDR(MackChainLadder(x), dev = "all")``.
+        
+        With a selected pattern (``Mack(ldf=...)``), each factor used varies
+        with ``1 - w`` times the estimate's parameter error, so a fully
+        selected link adds process error only; with weights strictly
+        between 0 and 1 the calendar years' CDRs are correlated, and their
+        standard errors need not add up to Mack's
+        (``docs/design/reserving-v02.md``, decision 12).
         
         Returns
         -------
@@ -10879,6 +11131,12 @@ class MackFit:
         Factors as estimated, as ``ChainLadderFit.estimated_ldf``.
         """
     @property
+    def estimated_std_err(self, /) -> list[float]:
+        """
+        Standard error of each estimated factor, as
+        ``ChainLadderFit.estimated_std_err``.
+        """
+    @property
     def index(self, /) -> list[Any]:
         """
         Label of each segment, as ``Triangle.index``.
@@ -10899,6 +11157,12 @@ class MackFit:
         Selected age-to-age factors, as ``ChainLadderFit.ldf``.
         """
     @property
+    def ldf_weight(self, /) -> list[float]:
+        """
+        The weight on each link's selected factor, as
+        ``ChainLadderFit.ldf_weight``.
+        """
+    @property
     def origins(self, /) -> list[str]:
         """
         Origin period of each per-origin value.
@@ -10907,6 +11171,12 @@ class MackFit:
     def parameter_risk(self, /) -> list[float]:
         """
         Parameter (estimation) standard error per origin.
+        """
+    @property
+    def pattern_rescale(self, /) -> float |None:
+        """
+        The rescale of a cumulative pattern, as
+        ``ChainLadderFit.pattern_rescale``.
         """
     @property
     def process_risk(self, /) -> list[float]:
@@ -10928,6 +11198,12 @@ class MackFit:
         MackFit
         """
     @property
+    def selected_ldf(self, /) -> list[float |None]:
+        """
+        The selected pattern's factor of each link, as
+        ``ChainLadderFit.selected_ldf``.
+        """
+    @property
     def sigma(self, /) -> list[float]:
         """
         Variance parameter of each factor.
@@ -10940,7 +11216,8 @@ class MackFit:
     @property
     def std_err(self, /) -> list[float]:
         """
-        Standard error of each factor.
+        Standard error of each factor used before the tail, as
+        ``ChainLadderFit.std_err``: the parameter risk's.
         """
     @property
     def tail(self, /) -> float:
@@ -12330,6 +12607,19 @@ class OdpBootstrap:
         order, symmetric with a unit diagonal. It is converted to the normal
         scores' correlation ``2 sin(pi rho / 6)``, which must be positive
         definite.
+    ldf, ldf_kind, ldf_weight : optional
+        A selected development pattern, as in ``ChainLadder``. The residuals
+        and the scale come from the triangle's own volume-weighted factors;
+        each simulation then uses ``w * selected + (1 - w) * pseudo`` at
+        the selected ages, so a fully selected factor is the same in every
+        simulation (no parameter error) and a blended one moves by ``1 - w``
+        times the pseudo factor's deviation. The origins' level still moves
+        (each simulation projects from its pseudo latest values), so even a
+        fully selected pattern keeps part of the spread (about 73% of it on
+        RAA). A supplied pattern lowers the reported uncertainty. In
+        ``one_year``, a bootstrap with a pattern needs ``method`` to have the
+        same pattern; a method with a pattern may use a bootstrap without
+        one.
     
     Raises
     ------
@@ -12356,7 +12646,7 @@ class OdpBootstrap:
     >>> fit.reserves.mean() > 0
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> OdpBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> OdpBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def dependence(self, /) -> str:
@@ -12392,6 +12682,23 @@ class OdpBootstrap:
             not fit the segments; with an estimated ``tail``, if it cannot be
             refitted on some simulation's pseudo factors (the message counts
             them and gives one).
+        """
+    @property
+    def ldf(self, /) -> dict |None:
+        """
+        The selected pattern by age, as given; ``None`` without one.
+        """
+    @property
+    def ldf_kind(self, /) -> str |None:
+        """
+        How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
+        ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_weight(self, /) -> Any |None:
+        """
+        The weight on the selected factors: a number, a dict by age, or
+        ``None`` without a pattern.
         """
     @property
     def n_sims(self, /) -> int:
