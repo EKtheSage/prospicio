@@ -33,10 +33,10 @@ when from experience, and which pricing method fits which scenario.
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
 | v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R) |
 | v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
-| v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done except vine and nested Archimedean copulas |
+| v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C- and D-vine copulas (#261, #262) |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
-| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Part done: P-splines with GCV/UBRE, ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium. P-splines with REML too, tensor product smooths |
+| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done except cyclic and monotone smooths: P-splines and tensor product smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
 | v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp` by PSIS reweighting (Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
@@ -94,9 +94,7 @@ what it is aiming for by v1.0.
     others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
   - `Discrete`, a distribution on finitely many values of either sign,
     for the P&L ledger's rows (`docs/design/pnl.md`).
-- **Next:**
-  1. Nested Archimedean and vine copulas (`docs/design/risk.md`).
-  2. Threshold diagnostics for EVT.
+- **Next:** threshold diagnostics for EVT.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
@@ -143,18 +141,10 @@ what it is aiming for by v1.0.
     the two lines' losses in an event coupled by a copula; renewal claim
     counts, with any law for the waits between claims, and their eventual
     ruin by Wiener–Hopf.
-- **Next:**
-  1. The last large item parked from `aggregate` parity
-     (`docs/design/aggregate.md`): the P&L ledger, planned in six PRs in
-     `docs/design/pnl.md`; the signed distribution, the ledger kernel
-     with its scenario columns, rebucketed legs, the ratio exhibit, the
-     stack, the builders for annual covers and occurrence covers on the
-     joint gross and ceded loss, variable terms, `pnl_program` and
-     reinstatement premiums are done: the P&L ledger is complete, with
-     the follow-ups (`pnl_program`'s rates, a loss expense per atom on the
-     consolidated face, the stitched peel).
-  2. Deficit and credit carry-forward in profit commissions and sliding
-     scales, once multi-year simulation exists.
+- **Next:** deficit and credit carry-forward in profit commissions and
+  sliding scales, once multi-year simulation exists. (The P&L ledger, the
+  last large item parked from `aggregate` parity, is done:
+  `docs/design/pnl.md`, PRs 1 to 6b and follow-ups 7a to 7c.)
 - **v1.0:** a reinsurance programme described once and applied to any
   loss source.
 
