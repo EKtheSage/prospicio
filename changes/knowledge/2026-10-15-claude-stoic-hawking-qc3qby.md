@@ -1,0 +1,1 @@
+* **Update**: [Publishing](/environment/publishing.md), from the v0.0.3 release (branch claude/stoic-hawking-qc3qby): every registry took 0.0.3 at the first try; a cloud session's tag push comes back `HTTP 403` (its git access stops at its own branch), so the owner pushes the release tag. `docs/release.md` says so.

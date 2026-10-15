@@ -22,6 +22,9 @@ sources:
   - id: crates-tp
     resource: https://crates.io/docs/trusted-publishing
     title: crates.io, Trusted Publishing
+  - id: v003
+    resource: https://github.com/EKtheSage/prospicio/actions/runs/38807078590
+    title: Release workflow run for v0.0.3
   - id: pypi-tp
     resource: https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/
     title: PyPI, creating a project through OIDC
@@ -90,6 +93,15 @@ sources:
   configs, rerunning only the failed job (`gh run rerun <id> --failed`)
   published all 11 crates. A rerun uses the workflow as of the tag, so the
   fix belongs on crates.io, not in `release.yml`.
+* v0.0.3 (2026-10-15) went to PyPI (an sdist and four wheels) and all 11
+  crates on crates.io at the first try.[^v003] A cloud session did the
+  release PR, merged it and ran the dry run (`workflow_dispatch` through
+  the GitHub API), but its `git push origin v0.0.3` came back `HTTP 403`:
+  the session's git proxy lets it push only its own branch, and the GitHub
+  tools it has cannot create a tag. The owner pushed the tag from their
+  own machine. Plan a cloud-session release so the last step, the tag, is
+  the owner's.
 
 [^crates-rl]: crates.io, rate limits
 [^v001]: Release workflow run for v0.0.1
+[^v003]: Release workflow run for v0.0.3
