@@ -3075,9 +3075,10 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #'   pattern to the oldest age and no `tail` implies a tail (its level
 #'   there, [chain_ladder()]): the bootstrap develops past the oldest age
 #'   with it in the coming year, as with `bootstrap_tail`, and closes the
-#'   origins it falls on; with a `tail` of `method`'s own and
-#'   `bootstrap_tail = FALSE`, such a pattern is an error (the two tails
-#'   differ), so take the tail too or give `bootstrap_ldf = FALSE`.
+#'   origins it falls on. With a `tail`, `method` rescales the pattern's
+#'   level to it, and the bootstrap reads the pattern the same way: it
+#'   implies no tail, and with `bootstrap_tail = FALSE` the bootstrap has
+#'   none.
 #' @param bootstrap_tail Whether the bootstrap takes `method`'s `tail` too,
 #'   developing past the oldest age in the coming year (above); `FALSE` by
 #'   default.

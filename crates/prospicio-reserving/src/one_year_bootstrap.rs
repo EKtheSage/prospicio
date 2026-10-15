@@ -591,6 +591,36 @@ impl NextYear for OdpBootstrapSegment {
     }
 }
 
+/// Whether a bootstrap with `own` pattern and `tail` reads `taken`, the
+/// pattern it simulates the one-year view of `method` with, without its
+/// level: when it takes the method's pattern, has no tail of its own, and
+/// the method has one. The method rescales the pattern's level to its
+/// tail, and the bootstrap reads the pattern the same way: it implies no
+/// tail (decision 12).
+pub(crate) fn inherits_level_free(
+    own: Option<&SelectedPattern>,
+    taken: &Option<SelectedPattern>,
+    tail: Tail,
+    method: &OneYearMethod,
+) -> bool {
+    own.is_none() && taken.is_some() && tail.is_none() && !method.tail().is_none()
+}
+
+/// Whether two tails develop past the oldest age the same way: equal, or
+/// both a plain constant factor (at the oldest age, as a number converts
+/// to) equal to rounding, as a cumulative pattern's implied tail and the
+/// same factor given as a tail are.
+fn same_tail(a: Tail, b: Tail) -> bool {
+    match (a, b) {
+        (Tail::Constant(x), Tail::Constant(y))
+            if a == Tail::from(x.factor) && b == Tail::from(y.factor) =>
+        {
+            (x.factor - y.factor).abs() <= 1e-12 * x.factor.abs().max(y.factor.abs())
+        }
+        _ => a == b,
+    }
+}
+
 /// One segment, prepared: its bootstrap and opening ultimate, what each
 /// simulation draws from, its cells and exposure, and the cells of its
 /// coming year.
@@ -603,9 +633,9 @@ struct Prepared<B: NextYear> {
 }
 
 impl<B: NextYear> Prepared<B> {
-    /// `model` fits the bootstrap model to the segment; `tail` is whether
-    /// it has a tail, and `pattern` is the bootstrap's selected pattern,
-    /// which must select what the method's does.
+    /// `model` fits the bootstrap model to the segment; `tail` is the
+    /// bootstrap's own tail, and `pattern` is the bootstrap's selected
+    /// pattern, which must select what the method's does.
     #[allow(clippy::too_many_arguments)]
     fn new(
         triangle: &Triangle,
@@ -613,30 +643,27 @@ impl<B: NextYear> Prepared<B> {
         exposure: Option<&Segment>,
         method: &OneYearMethod,
         opening: Month,
-        tail: bool,
+        tail: Tail,
         pattern: Option<&SelectedPattern>,
         model: &impl Fn(&Segment) -> Result<(B, B::Draw)>,
     ) -> Result<Self> {
         let (bootstrap, draw) = model(segment)?;
         same_pattern(pattern, method, &segment.ages)?;
-        // With no tail of its own, the bootstrap develops past the oldest
-        // age with the constant tail its pattern implies, which the method
-        // must use too (decision 12, as decision 11 for a bootstrap's tail).
-        let implied = bootstrap.chain_ladder().pattern_tail.filter(|&t| t != 1.0);
-        if let Some(t) = implied {
-            let same = match method.chain_ladder().tail_in_use(&segment.ages)? {
-                Tail::Constant(c) => {
-                    Tail::Constant(c) == Tail::from(c.factor) && (c.factor - t).abs() <= 1e-12 * t
-                }
-                _ => false,
-            };
-            if !same {
-                return Err(Error::Bootstrap(
-                    "the tail the bootstrap's pattern implies must be the re-reserving method's tail",
-                ));
-            }
+        // The tail the bootstrap develops past the oldest age with: its
+        // own, or with none the constant one its pattern implies. The
+        // method must use the same tail, its own or the one its pattern
+        // implies, so both are compared as they are used (decisions 11 and
+        // 12).
+        let in_use = bootstrap.chain_ladder().tail_in_use(tail);
+        let tailed = !in_use.is_none();
+        if tailed && !same_tail(in_use, method.chain_ladder().tail_in_use(&segment.ages)?) {
+            return Err(Error::Bootstrap(if tail.is_none() {
+                "the tail the bootstrap's pattern implies must be the re-reserving method's tail"
+            } else {
+                "the bootstrap's tail must be the re-reserving method's tail"
+            }));
         }
-        let tail = tail || implied.is_some();
+        let tail = tailed;
         let year = YearCells::of(
             segment,
             &bootstrap.chain_ladder().latest_position,
@@ -796,7 +823,10 @@ impl Sims {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
-        if self.tailed() && method.tail() != self.tail {
+        // A method without a tail of its own may use the one its pattern
+        // implies, which is compared per segment, on its ages
+        // ([`Prepared::new`]).
+        if self.tailed() && method.tail() != self.tail && !method.tail().is_none() {
             return Err(Error::Bootstrap(
                 "the bootstrap's tail must be the re-reserving method's tail",
             ));
@@ -828,7 +858,7 @@ impl Sims {
             exposure.as_ref(),
             method,
             opening,
-            self.tailed(),
+            self.tail,
             self.pattern.as_ref(),
             &model,
         )?;
@@ -877,7 +907,7 @@ impl Sims {
     ) -> Result<OneYearFits<B>> {
         self.check(method)?;
         let (opening, closing) = valuations(triangle)?;
-        let tailed = self.tailed();
+        let tailed = self.tail;
         let pattern = self.pattern.as_ref();
         let mut prepared = match method.exposure() {
             None => fit_each(triangle, column, |s| {
@@ -1008,8 +1038,12 @@ impl OdpBootstrap {
     /// observed from the first age to its latest (it may stop short of the
     /// latest diagonal), and an expected-loss method's exposure column must
     /// have a positive value for every origin. With a
-    /// [`tail`](Self::tail), the method's tail must be the same, or the
-    /// call returns [`Error::Bootstrap`]; a simulation whose pseudo factors
+    /// [`tail`](Self::tail), or with none and a pattern of its own that
+    /// implies one, the method's tail must be the same (its own, or the one
+    /// its pattern implies), or the call returns [`Error::Bootstrap`]; a
+    /// pattern taken from the method is read as the method reads it
+    /// ([`OneYearPattern::Method`](crate::OneYearPattern::Method)). A
+    /// simulation whose pseudo factors
     /// the tail cannot be refitted on fails like a failed refit, counted in
     /// [`Error::OneYear`].
     pub fn one_year(
@@ -1018,12 +1052,12 @@ impl OdpBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFit> {
-        let boot = self.for_method(method)?;
+        let (boot, level_free) = self.for_method(method)?;
         boot.sims().one_year(
             triangle,
             column,
             method,
-            |s| boot.model(s),
+            |s| boot.one_year_model(s, level_free),
             |hasher| boot.one_year_provenance(column, method, hasher),
         )
     }
@@ -1040,26 +1074,50 @@ impl OdpBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFits> {
-        let boot = self.for_method(method)?;
+        let (boot, level_free) = self.for_method(method)?;
         boot.sims().one_year_segments(
             triangle,
             column,
             method,
             &boot.dependence,
-            |s| boot.model(s),
+            |s| boot.one_year_model(s, level_free),
             |hasher| boot.one_year_provenance(column, method, hasher),
         )
     }
 
     /// The bootstrap with the pattern it simulates the one-year view of
-    /// `method` with ([`one_year_pattern`](Self::one_year_pattern)).
-    fn for_method(&self, method: &OneYearMethod) -> Result<Self> {
-        Ok(Self {
-            pattern: self
-                .one_year_pattern
-                .resolve(self.pattern.as_ref(), method.pattern())?,
-            ..self.clone()
-        })
+    /// `method` with ([`one_year_pattern`](Self::one_year_pattern)), and
+    /// whether it reads that pattern without its level
+    /// ([`inherits_level_free`]).
+    fn for_method(&self, method: &OneYearMethod) -> Result<(Self, bool)> {
+        let pattern = self
+            .one_year_pattern
+            .resolve(self.pattern.as_ref(), method.pattern())?;
+        let level_free = inherits_level_free(self.pattern.as_ref(), &pattern, self.tail, method);
+        Ok((
+            Self {
+                pattern,
+                ..self.clone()
+            },
+            level_free,
+        ))
+    }
+
+    /// [`model`](Self::model), with the pattern read without its level
+    /// when `level_free`.
+    fn one_year_model(
+        &self,
+        segment: &Segment,
+        level_free: bool,
+    ) -> Result<(OdpBootstrapSegment, OdpDraw)> {
+        match (&self.pattern, level_free) {
+            (Some(p), true) => Self {
+                pattern: Some(p.without_level(&segment.ages)?),
+                ..self.clone()
+            }
+            .model(segment),
+            _ => self.model(segment),
+        }
     }
 
     fn sims(&self) -> Sims {
@@ -1099,8 +1157,9 @@ impl OdpBootstrap {
         let provenance = Provenance::new("odp_bootstrap_one_year")
             .param("n_sims", self.n_sims)
             .param("process", format!("{:?}", self.process));
-        // Without a tail, the provenance is as it was before tails.
-        let provenance = if self.tail.is_none() {
+        // Without a tail, the provenance is as it was before tails; with a
+        // pattern, which may imply a tail, the tail settings are named.
+        let provenance = if self.tail.is_none() && self.pattern.is_none() {
             provenance
         } else {
             provenance
@@ -1873,9 +1932,16 @@ mod tests {
         let method = chain_ladder();
         let (opening, closing) = valuations(&tri).unwrap();
         let odp = boot(1, 0);
-        let prepared = Prepared::new(&tri, &segment, None, &method, opening, false, None, &|s| {
-            odp.model(s)
-        })
+        let prepared = Prepared::new(
+            &tri,
+            &segment,
+            None,
+            &method,
+            opening,
+            Tail::default(),
+            None,
+            &|s| odp.model(s),
+        )
         .unwrap();
         let run = Run {
             prepared: &prepared,

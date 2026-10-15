@@ -61,7 +61,12 @@ pub enum OneYearPattern {
     /// The method's pattern: each simulation's pseudo factors are blended
     /// with it as the method's factors are, so the coming year develops as
     /// the method projects it. The default, as the Python and R bindings'
-    /// `bootstrap_ldf = True`.
+    /// `bootstrap_ldf = True`. A bootstrap with no tail of its own reads
+    /// the pattern as the method does: a cumulative pattern to the oldest
+    /// age implies its tail when the method has no tail either, and none
+    /// when the method has a tail of its own (to which the method rescales
+    /// the pattern's level), so the method's tail never makes the default
+    /// fail.
     #[default]
     Method,
     /// The triangle's own estimated factors, unblended: the method's
@@ -395,6 +400,29 @@ impl Resolved {
         self.level
             .filter(|&(last, _)| last + 1 == ages.len())
             .map(|(_, cdf)| cdf)
+    }
+}
+
+impl SelectedPattern {
+    /// The age-to-age pattern on `ages` that selects the same factors with
+    /// the same weights and has no level, so it implies no tail: how a
+    /// bootstrap reads the pattern it takes from a re-reserving method that
+    /// has a tail of its own, as the method reads it (the method rescales
+    /// the level to its tail).
+    pub(crate) fn without_level(&self, ages: &[Lag]) -> Result<Self> {
+        let resolved = self.resolve(ages)?;
+        let links: Vec<(Lag, f64, f64)> = resolved
+            .selected
+            .iter()
+            .zip(&resolved.weight)
+            .enumerate()
+            .filter_map(|(k, (s, &w))| s.map(|f| (ages[k], f, w)))
+            .collect();
+        Ok(Self {
+            kind: PatternKind::AgeToAge,
+            values: links.iter().map(|&(a, f, _)| (a, f)).collect(),
+            weight: PatternWeight::ByAge(links.iter().map(|&(a, _, w)| (a, w)).collect()),
+        })
     }
 }
 
@@ -1577,10 +1605,19 @@ mod fits {
         let one = boot.one_year(&exact(), "values", &method).unwrap();
         assert_eq!(one.bootstrap.chain_ladder.pattern_tail, Some(1.0 / 0.9));
         assert!(one.cdr.draw_matrix().iter().all(|x| x.abs() < 1e-9));
-        // A method with another tail is not the bootstrap's.
+        // A method with a tail of its own rescales the pattern's level to
+        // it, and the bootstrap that takes the pattern reads it the same
+        // way: no implied tail. A bootstrap's own pattern implies its tail,
+        // which is not the method's.
         let other = OneYearMethod::ChainLadder(chain_ladder(p.clone(), 1.02.into()));
+        let taken = boot.one_year(&exact(), "values", &other).unwrap();
+        assert_eq!(taken.bootstrap.chain_ladder.pattern_tail, None);
+        let own = OdpBootstrap {
+            pattern: Some(p.clone()),
+            ..boot.clone()
+        };
         assert_eq!(
-            boot.one_year(&exact(), "values", &other).unwrap_err(),
+            own.one_year(&exact(), "values", &other).unwrap_err(),
             Error::Bootstrap(
                 "the tail the bootstrap's pattern implies must be the re-reserving method's tail"
             )
@@ -1596,6 +1633,154 @@ mod fits {
             ..boot
         };
         assert!(estimated.one_year(&exact(), "values", &other).is_ok());
+    }
+
+    #[test]
+    fn a_taken_pattern_is_read_as_the_method_with_a_tail_reads_it() {
+        // 90% developed at the oldest age and a method tail of 1.05: the
+        // method rescales the level to its tail, so the pattern it lends a
+        // bootstrap without a tail implies none, in both bootstraps, and
+        // the default one-year view runs.
+        let p = SelectedPattern::new(
+            PatternKind::PercentDeveloped,
+            vec![(12, 0.24), (24, 0.48), (36, 0.72), (48, 0.9)],
+        );
+        let method = OneYearMethod::ChainLadder(chain_ladder(p, 1.05.into()));
+        let boot = OdpBootstrap {
+            n_sims: 20,
+            seed: 2,
+            ..Default::default()
+        };
+        let taken = boot.one_year(&exact(), "values", &method).unwrap();
+        assert_eq!(taken.bootstrap.chain_ladder.pattern_tail, None);
+        assert_eq!(taken.bootstrap.chain_ladder.tail.factor, 1.0);
+        // The same as a bootstrap given the selected factors age to age.
+        let factors = SelectedPattern::new(
+            PatternKind::AgeToAge,
+            vec![(12, 2.0), (24, 1.5), (36, 1.25)],
+        );
+        let given = OdpBootstrap {
+            pattern: Some(factors),
+            ..boot.clone()
+        }
+        .one_year(&exact(), "values", &method)
+        .unwrap();
+        for (a, b) in taken.cdr.draw_matrix().iter().zip(given.cdr.draw_matrix()) {
+            assert!((a - b).abs() < 1e-9, "{a} vs {b}");
+        }
+        assert!(boot.one_year_segments(&exact(), "values", &method).is_ok());
+        // Mack's bootstrap on RAA, its own factors to ultimate with 95% at
+        // the oldest age.
+        let method = OneYearMethod::ChainLadder(chain_ladder(own_cdf(1.0 / 0.95), 1.05.into()));
+        let mack = MackBootstrap {
+            n_sims: 20,
+            seed: 2,
+            ..Default::default()
+        };
+        let taken = mack.one_year(&raa(), "values", &method).unwrap();
+        assert_eq!(taken.bootstrap.mack.chain_ladder.pattern_tail, None);
+        assert!(mack.one_year_segments(&raa(), "values", &method).is_ok());
+        let own = MackBootstrap {
+            development: with(own_cdf(1.0 / 0.95)),
+            ..mack
+        };
+        assert_eq!(
+            own.one_year(&raa(), "values", &method).unwrap_err(),
+            Error::Bootstrap(
+                "the tail the bootstrap's pattern implies must be the re-reserving method's tail"
+            )
+        );
+    }
+
+    #[test]
+    fn a_bootstraps_tail_may_be_the_one_the_methods_pattern_implies() {
+        // A method with no tail whose pattern implies 1 / 0.9, and a
+        // bootstrap with that factor as its own constant tail: the same
+        // tail, compared as each uses it.
+        let p = SelectedPattern::new(
+            PatternKind::PercentDeveloped,
+            vec![(12, 0.24), (24, 0.48), (36, 0.72), (48, 0.9)],
+        );
+        let method = OneYearMethod::ChainLadder(chain_ladder(p, Tail::default()));
+        let tailed = OdpBootstrap {
+            n_sims: 20,
+            seed: 2,
+            tail: (1.0 / 0.9).into(),
+            ..Default::default()
+        };
+        let one = tailed.one_year(&exact(), "values", &method).unwrap();
+        assert!(one.cdr.draw_matrix().iter().all(|x| x.abs() < 1e-9));
+        assert!(
+            tailed
+                .one_year_segments(&exact(), "values", &method)
+                .is_ok()
+        );
+        let mack = MackBootstrap {
+            n_sims: 20,
+            seed: 2,
+            tail: (1.0 / 0.95).into(),
+            ..Default::default()
+        };
+        let implied =
+            OneYearMethod::ChainLadder(chain_ladder(own_cdf(1.0 / 0.95), Tail::default()));
+        assert!(mack.one_year(&raa(), "values", &implied).is_ok());
+        // Another factor is another tail.
+        let other = OdpBootstrap {
+            tail: 1.02.into(),
+            ..tailed
+        };
+        assert_eq!(
+            other.one_year(&exact(), "values", &method).unwrap_err(),
+            Error::Bootstrap("the bootstrap's tail must be the re-reserving method's tail")
+        );
+        // A method with neither a tail nor a pattern has no tail.
+        let plain = OneYearMethod::ChainLadder(ChainLadder::default());
+        assert_eq!(
+            other.one_year(&exact(), "values", &plain).unwrap_err(),
+            Error::Bootstrap("the bootstrap's tail must be the re-reserving method's tail")
+        );
+    }
+
+    #[test]
+    fn the_provenance_names_the_settings_of_an_implied_tail() {
+        // The implied tail's standard error (and Mack's sigma) change the
+        // draws, so they change the provenance too.
+        let p = SelectedPattern::new(
+            PatternKind::PercentDeveloped,
+            vec![(12, 0.24), (24, 0.48), (36, 0.72), (48, 0.9)],
+        );
+        let odp = |tail_std_err| OdpBootstrap {
+            n_sims: 20,
+            seed: 2,
+            pattern: Some(p.clone()),
+            tail_std_err,
+            ..Default::default()
+        };
+        let (a, b) = (odp(None), odp(Some(0.01)));
+        let fa = a.fit(&exact(), "values").unwrap();
+        let fb = b.fit(&exact(), "values").unwrap();
+        assert_ne!(fa.reserves.draw_matrix(), fb.reserves.draw_matrix());
+        assert_ne!(fa.reserves.provenance(), fb.reserves.provenance());
+        let method = OneYearMethod::ChainLadder(chain_ladder(p.clone(), Tail::default()));
+        let (oa, ob) = (
+            a.one_year(&exact(), "values", &method).unwrap(),
+            b.one_year(&exact(), "values", &method).unwrap(),
+        );
+        assert_ne!(oa.cdr.provenance(), ob.cdr.provenance());
+        let mack = |tail_sigma, tail_std_err| MackBootstrap {
+            n_sims: 20,
+            seed: 2,
+            development: with(own_cdf(1.05)),
+            tail_sigma,
+            tail_std_err,
+            ..Default::default()
+        };
+        let t = raa();
+        let base = mack(None, None).fit(&t, "values").unwrap();
+        let sigma = mack(Some(0.1), None).fit(&t, "values").unwrap();
+        let std_err = mack(None, Some(0.01)).fit(&t, "values").unwrap();
+        assert_ne!(base.reserves.provenance(), sigma.reserves.provenance());
+        assert_ne!(base.reserves.provenance(), std_err.reserves.provenance());
     }
 
     #[test]

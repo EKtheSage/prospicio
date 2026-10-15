@@ -23,9 +23,11 @@
   100%). In the one-year view a bootstrap without a pattern takes the
   method's (`OneYearPattern::Method`, the default, on `OdpBootstrap` and
   `MackBootstrap`; `OneYearPattern::Estimated` simulates from the
-  triangle's own factors); a bootstrap's own pattern must select the same
-  factors and weights as the method's, in any order, kind or form of
-  weight, and the tail it implies must be the method's. The ODP bootstrap
+  triangle's own factors) and reads it as the method does (no implied
+  tail when the method has a tail of its own); a bootstrap's own pattern
+  must select the same factors and weights as the method's, in any order,
+  kind or form of weight, and the tail it implies must be the one the
+  method uses (its own, or the one its pattern implies). The ODP bootstrap
   keeps the origins' level error with every factor selected (about 73% of
   the unblended standard deviation on RAA); Mack's bootstrap keeps only
   the process error. Fits

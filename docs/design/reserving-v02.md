@@ -1798,7 +1798,19 @@ pub struct Development {
    level at the oldest age) or an explicit constant tail of the same
    factor at the oldest age, or the call fails with `Error::Bootstrap("the
    tail the bootstrap's pattern implies must be the re-reserving method's
-   tail")`.
+   tail")`. The check compares the tails as each model uses them, both
+   ways: a bootstrap's explicit constant tail is equally the tail a
+   method's pattern implies when the factors agree (to a relative
+   `1e-12`). A bootstrap that takes the method's pattern
+   (`OneYearPattern::Method`, no pattern and no tail of its own) reads it
+   as the method does: when the method has a tail of its own, to which it
+   rescales the pattern's level, the pattern implies no tail for the
+   bootstrap either (it is used as the age-to-age factors it selects), so
+   the default never fails on the method's tail; only a bootstrap's own
+   pattern can imply a tail the method does not use. Since an implied
+   tail's `tail_std_err` (and Mack's `tail_sigma`) change the draws, a
+   bootstrap with a pattern records the tail settings in its provenance
+   even without a tail of its own.
 
    **With a tail, the tail is kept** and a cumulative pattern's level is
    rescaled to it; the same rule rescales a pattern that stops before the

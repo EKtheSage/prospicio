@@ -204,9 +204,16 @@ stopifnot(m95@chain_ladder@tail_std_err == 0)
 one95 <- odp_one_year(tri, "paid", n_sims = 100, seed = 1, ldf = pct95,
                       ldf_kind = "percent_developed")
 stopifnot(is.finite(variance(one95@cdr)))
-expect_error_like(odp_one_year(tri, "paid", n_sims = 20, seed = 1, tail = 1.02, ldf = pct95,
-                               ldf_kind = "percent_developed"),
-                  "the tail the bootstrap's pattern implies")
+# With a tail, method rescales the pattern's level to it and the bootstrap
+# reads the pattern the same way: no implied tail, with or without the tail.
+for (bootstrap_tail in c(FALSE, TRUE)) {
+  tailed95 <- odp_one_year(tri, "paid", n_sims = 20, seed = 1, tail = 1.02, ldf = pct95,
+                           ldf_kind = "percent_developed", bootstrap_tail = bootstrap_tail)
+  stopifnot(is.finite(variance(tailed95@cdr)))
+}
+mk95 <- mack_one_year(tri, "paid", n_sims = 20, seed = 1, tail = 1.02, ldf = pct95,
+                      ldf_kind = "percent_developed")
+stopifnot(is.finite(variance(mk95@cdr)))
 
 # A skipped age is interpolated: log cdf linear in age.
 gap <- chain_ladder(tri, "paid", ldf = c("12" = 0.5, "60" = 0.98), ldf_kind = "percent_developed")

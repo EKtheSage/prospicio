@@ -123,9 +123,10 @@ pattern only when \code{method} is refitted. With the default, a cumulative
 pattern to the oldest age and no \code{tail} implies a tail (its level
 there, \code{\link[=chain_ladder]{chain_ladder()}}): the bootstrap develops past the oldest age
 with it in the coming year, as with \code{bootstrap_tail}, and closes the
-origins it falls on; with a \code{tail} of \code{method}'s own and
-\code{bootstrap_tail = FALSE}, such a pattern is an error (the two tails
-differ), so take the tail too or give \code{bootstrap_ldf = FALSE}.}
+origins it falls on. With a \code{tail}, \code{method} rescales the pattern's
+level to it, and the bootstrap reads the pattern the same way: it
+implies no tail, and with \code{bootstrap_tail = FALSE} the bootstrap has
+none.}
 
 \item{tail_sigma}{For \code{mack_one_year()} with \code{bootstrap_tail}, the tail's
 sigma (R's \code{tail.sigma}), or \code{NULL} to extrapolate it, as in

@@ -4925,7 +4925,12 @@ impl PyOdpBootstrap {
     ///     own ``ldf``. A bootstrap's own ``ldf`` must select the same factors
     ///     and weights as ``method``'s, in any order or kind; and when it
     ///     implies a tail (a cumulative pattern to the oldest age, no
-    ///     ``tail``), ``method`` must use the same tail.
+    ///     ``tail``), ``method`` must use the same tail. The ``ldf`` taken
+    ///     from ``method`` is read as ``method`` reads it: with no ``tail``
+    ///     on either, a cumulative pattern to the oldest age implies the
+    ///     same tail for both; when ``method`` has a ``tail``, to which it
+    ///     rescales the pattern's level, the pattern implies no tail for
+    ///     the bootstrap either.
     ///
     /// Returns
     /// -------
@@ -4938,8 +4943,9 @@ impl PyOdpBootstrap {
     /// ValueError
     ///     As ``fit`` and the method's own ``fit``; if ``exposure`` is
     ///     missing for an expected-loss method or given for
-    ///     ``ChainLadder``; if the bootstrap has a ``tail`` that is not
-    ///     ``method``'s, or an ``ldf`` that selects other factors or weights
+    ///     ``ChainLadder``; if the bootstrap has a ``tail`` that is not the
+    ///     one ``method`` uses (its own, or the one its ``ldf`` implies), or
+    ///     an ``ldf`` that selects other factors or weights
     ///     than ``method``'s; or if the refit (or the bootstrap's tail refit)
     ///     fails in any simulation (the message counts them and gives one).
     ///
@@ -5616,8 +5622,9 @@ impl PyMackBootstrap {
     ///     taken by ``ChainLadder``.
     /// bootstrap_ldf : bool, default True
     ///     As ``OdpBootstrap.one_year``: without an ``ldf`` of its own, the
-    ///     bootstrap takes ``method``'s selected pattern; ``False`` simulates
-    ///     from the triangle's own factors.
+    ///     bootstrap takes ``method``'s selected pattern and reads it as
+    ///     ``method`` does (no implied tail when ``method`` has a ``tail``);
+    ///     ``False`` simulates from the triangle's own factors.
     ///
     /// Returns
     /// -------

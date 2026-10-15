@@ -373,10 +373,20 @@ def test_bootstraps_keep_the_implied_tail(tri):
     method = ChainLadder(ldf=percent, ldf_kind="percent_developed")
     odp = OdpBootstrap(n_sims=200, seed=1).one_year(tri, "paid", method)
     assert math.isfinite(odp.cdr.variance())
+    # A method with a tail rescales the pattern's level to it, and the
+    # bootstrap that takes the pattern reads it the same way: no implied
+    # tail. A bootstrap's own ldf implies its tail, which is not the method's.
+    tailed = ChainLadder(ldf=percent, ldf_kind="percent_developed", tail=1.02)
+    for boot in [OdpBootstrap(n_sims=50, seed=1), MackBootstrap(n_sims=50, seed=1)]:
+        taken = boot.one_year(tri, "paid", tailed)
+        assert math.isfinite(taken.cdr.variance())
     with pytest.raises(ValueError, match="the tail the bootstrap's pattern implies"):
-        OdpBootstrap(n_sims=50, seed=1).one_year(
-            tri, "paid", ChainLadder(ldf=percent, ldf_kind="percent_developed", tail=1.02)
+        OdpBootstrap(n_sims=50, seed=1, ldf=percent, ldf_kind="percent_developed").one_year(
+            tri, "paid", tailed
         )
+    # A bootstrap tail of the factor the method's pattern implies is the same tail.
+    same = OdpBootstrap(n_sims=50, seed=1, tail=1 / 0.95).one_year(tri, "paid", method)
+    assert math.isfinite(same.cdr.variance())
     life = OdpBootstrap(
         n_sims=200, seed=1, process="none", ldf=percent, ldf_kind="percent_developed"
     ).fit(tri, "paid")

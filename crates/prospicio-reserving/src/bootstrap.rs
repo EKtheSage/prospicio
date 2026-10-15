@@ -561,8 +561,9 @@ impl OdpBootstrap {
         let provenance = Provenance::new("odp_bootstrap")
             .param("n_sims", self.n_sims)
             .param("process", format!("{:?}", self.process));
-        // Without a tail, the provenance is as it was before tails.
-        let provenance = if self.tail.is_none() {
+        // Without a tail, the provenance is as it was before tails; with a
+        // pattern, which may imply a tail, the tail settings are named.
+        let provenance = if self.tail.is_none() && self.pattern.is_none() {
             provenance
         } else {
             provenance

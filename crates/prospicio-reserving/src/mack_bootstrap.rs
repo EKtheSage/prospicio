@@ -106,6 +106,7 @@ use crate::error::{Error, Result};
 use crate::mack::{Mack, MackFit};
 use crate::one_year_bootstrap::{
     NextCells, NextYear, OneYearFit, OneYearFits, OneYearMethod, Sims, YearCells,
+    inherits_level_free,
 };
 use crate::pattern::{Blend, OneYearPattern};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
@@ -850,8 +851,9 @@ impl MackBootstrap {
     /// diagonal), with no negative value, and Mack's model must fit
     /// ([`Mack::fit`]). Without a [`tail`](Self::tail), development past
     /// the oldest age moves only through the refitted method's tail; with
-    /// one, it must be the method's (or the call returns
-    /// [`Error::Bootstrap`]), and the origins whose tail step falls in the
+    /// one (or the one a pattern of its own implies), it must be the tail
+    /// the method uses, its own or the one its pattern implies (or the call
+    /// returns [`Error::Bootstrap`]), and the origins whose tail step falls in the
     /// coming year take it and are closed (see
     /// [`crate::one_year_bootstrap`]). A simulation whose pseudo factors
     /// the tail cannot be refitted on is counted in [`Error::OneYear`].
@@ -861,12 +863,12 @@ impl MackBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFit<MackBootstrapSegment>> {
-        let boot = self.for_method(method)?;
+        let (boot, level_free) = self.for_method(method)?;
         boot.sims().one_year(
             triangle,
             column,
             method,
-            |s| boot.model(s),
+            |s| boot.one_year_model(s, level_free),
             |hasher| boot.provenance(column, method, hasher),
         )
     }
@@ -882,25 +884,50 @@ impl MackBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFits<MackBootstrapSegment>> {
-        let boot = self.for_method(method)?;
+        let (boot, level_free) = self.for_method(method)?;
         boot.sims().one_year_segments(
             triangle,
             column,
             method,
             &boot.dependence,
-            |s| boot.model(s),
+            |s| boot.one_year_model(s, level_free),
             |hasher| boot.provenance(column, method, hasher),
         )
     }
 
     /// The bootstrap with the pattern it simulates the one-year view of
-    /// `method` with ([`one_year_pattern`](Self::one_year_pattern)).
-    fn for_method(&self, method: &OneYearMethod) -> Result<Self> {
+    /// `method` with ([`one_year_pattern`](Self::one_year_pattern)), and
+    /// whether it reads that pattern without its level
+    /// ([`inherits_level_free`]).
+    fn for_method(&self, method: &OneYearMethod) -> Result<(Self, bool)> {
         let mut boot = self.clone();
         boot.development.pattern = self
             .one_year_pattern
             .resolve(self.development.pattern.as_ref(), method.pattern())?;
-        Ok(boot)
+        let level_free = inherits_level_free(
+            self.development.pattern.as_ref(),
+            &boot.development.pattern,
+            self.tail,
+            method,
+        );
+        Ok((boot, level_free))
+    }
+
+    /// [`model`](Self::model), with the pattern read without its level
+    /// when `level_free`.
+    fn one_year_model(
+        &self,
+        segment: &Segment,
+        level_free: bool,
+    ) -> Result<(MackBootstrapSegment, MackDraw)> {
+        match (&self.development.pattern, level_free) {
+            (Some(p), true) => {
+                let mut boot = self.clone();
+                boot.development.pattern = Some(p.without_level(&segment.ages)?);
+                boot.model(segment)
+            }
+            _ => self.model(segment),
+        }
     }
 
     fn sims(&self) -> Sims {
@@ -1005,10 +1032,11 @@ impl MackBootstrap {
         .input_hash(hasher.finish())
     }
 
-    /// `provenance` with the tail's settings when there is a tail; without
-    /// one, as it was before tails.
+    /// `provenance` with the tail's settings when there is a tail or a
+    /// pattern, which may imply one (its sigma and standard error then
+    /// change the draws); without either, as it was before tails.
     fn with_tail(&self, provenance: Provenance) -> Provenance {
-        if self.tail.is_none() {
+        if self.tail.is_none() && self.development.pattern.is_none() {
             provenance
         } else {
             provenance
