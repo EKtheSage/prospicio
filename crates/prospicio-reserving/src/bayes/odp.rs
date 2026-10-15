@@ -2341,4 +2341,71 @@ mod tests {
             &fitted[1].2.posterior,
         );
     }
+
+    /// A year whose log likelihood is not a number in some posterior draw
+    /// fails its simulation, reported as a failed refit is, where PSIS
+    /// cannot smooth the ratios (decision 16, "PSIS").
+    #[test]
+    fn a_log_likelihood_that_is_not_a_number_is_an_error() {
+        use crate::bayes::one_year::YearModel;
+
+        /// `OdpYear` with the year's log likelihood NaN at one draw.
+        struct NanAt<'a, M>(&'a M, Vec<f64>);
+        impl<M: YearModel> YearModel for NanAt<'_, M> {
+            fn n_origins(&self) -> usize {
+                self.0.n_origins()
+            }
+            fn n_year(&self) -> usize {
+                self.0.n_year()
+            }
+            fn draw_year(&self, theta: &[f64], rng: &mut StreamRng, year: &mut [f64]) {
+                self.0.draw_year(theta, rng, year);
+            }
+            fn year_log_likelihood(&self, theta: &[f64], year: &[f64]) -> f64 {
+                if theta == self.1.as_slice() {
+                    f64::NAN
+                } else {
+                    self.0.year_log_likelihood(theta, year)
+                }
+            }
+            fn paid(&self, year: &[f64], paid: &mut [f64]) {
+                self.0.paid(year, paid);
+            }
+            fn opening(&self, theta: &[f64], reserve: &mut [f64]) {
+                self.0.opening(theta, reserve);
+            }
+            fn closing(&self, theta: &[f64], year: &[f64], reserve: &mut [f64]) {
+                self.0.closing(theta, year, reserve);
+            }
+            fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)> {
+                self.0.refit(year, seed)
+            }
+            fn log_posterior(&self, theta: &[f64], year: &[f64]) -> f64 {
+                self.0.log_posterior(theta, year)
+            }
+        }
+
+        let model = quick(4);
+        let tri = genins();
+        let segment = tri.segment("values").unwrap();
+        let (fit, _) = model
+            .fit_segment(&segment, "values", Stream::Chains, Stream::Predictive)
+            .unwrap();
+        let cells = OdpRefit::new(&model, &fit);
+        let year = OdpYear::new(
+            &cells,
+            model.process,
+            &tri,
+            &segment,
+            &fit.chain_ladder.latest_position,
+        );
+        let poisoned = NanAt(&year, fit.posterior.draw(7).to_vec());
+        let e = one_year::simulate(&poisoned, &fit.posterior, &BayesOneYear::default(), 20, 1)
+            .unwrap_err();
+        assert!(
+            matches!(&e, Error::Bayes(m) if m.contains("in 20 of 20 simulations")
+                && m.contains("not a number")),
+            "{e}"
+        );
+    }
 }

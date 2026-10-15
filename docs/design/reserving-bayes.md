@@ -1717,7 +1717,8 @@ were the same algorithm line for line (the tail length
 seed-pinned views of decision 17 are unchanged bit for bit. The copy's
 test against `elpd::loo` went with it; #273 tests `psis` against `loo`.
 A log ratio that is NaN or `+inf` is now an error of the simulation,
-reported as a refit failure is, where the copy went on silently.
+reported as a refit failure is, where the copy went on silently (a
+unit test).
 
 **The engine and other models.** `bayes/one_year.rs` knows no model: a
 model implements `YearModel` (decision 17). `closing` takes the year,
@@ -2013,7 +2014,7 @@ for any correct model, so a model that fails one has a bug.
   within 4.5 standard errors of 0 over 2,000 reweighted simulations; a
   seed replays bit for bit on one thread against many and another seed
   differs; a fully developed square gives a zero CDR, `k̂` 0 and no
-  refit under every `refit`. About 5 s for the three.
+  refit under every `refit`. About 2 s for the three in a debug build.
 * Release half (`validation/tests/reserving_bayes_one_year_conformance.rs`,
   about 30 s, on `BayesOdp` RAA and GenIns and `BayesBf` GenIns at
   `cv` 0.2): the mean CDR within 5 standard errors over 10,000
