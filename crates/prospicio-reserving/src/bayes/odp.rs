@@ -555,6 +555,7 @@ impl BayesOdp {
             opening_reserve: year.opening.clone(),
             pareto_k: year.pareto_k.clone(),
             refitted: year.refitted.clone(),
+            moment_matched: year.moment_matched.clone(),
             refit_warnings: year.refit_warnings,
             k_threshold: settings.k_threshold,
         });
@@ -1262,6 +1263,10 @@ impl OdpCells for OdpRefit<'_> {
     /// the whitened one NUTS samples, so no Jacobian enters.
     fn log_posterior(&self, theta: &[f64], extra: &[(usize, usize, f64)]) -> f64 {
         let mut grad = vec![0.0; theta.len()];
+        if extra.is_empty() {
+            // Moment matching's many calls on the observed triangle.
+            return self.model.log_posterior(theta, &mut grad);
+        }
         self.extended(extra).log_posterior(theta, &mut grad)
     }
 

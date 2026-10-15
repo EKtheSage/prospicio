@@ -9,7 +9,9 @@
 //! the time-1 reserve as the weighted posterior mean of the reserve that
 //! remains after the year. A simulation whose weights are unreliable
 //! (Pareto `k̂` above a threshold) is refitted with NUTS on the extended
-//! triangle instead, as [`BayesOneYear::refit`] says.
+//! triangle instead, or first moment-matched (decision 18,
+//! [`moment_match`](super::moment_match)), as [`BayesOneYear::refit`]
+//! says.
 //!
 //! The engine knows nothing of a particular model (decision 17): a model
 //! plugs in through [`YearModel`], the one interface every Bayesian
@@ -29,6 +31,7 @@ use prospicio_core::StreamRng;
 use prospicio_prob::{PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
+use super::moment_match;
 use crate::bootstrap::{
     ProcessDistribution, component_sums, pick_segment, process_draw, push_moments, segment_sums,
 };
@@ -52,6 +55,12 @@ pub enum OneYearRefit {
     /// Refit every simulation: exact up to the refits' Monte Carlo error,
     /// one NUTS run per simulation; for checking the reweighting.
     RefitAll,
+    /// Moment-match the flagged simulations (Paananen et al. 2021, as R's
+    /// `loo::loo_moment_match`: the posterior draws moved by affine maps
+    /// to the weighted moments until `k̂` is at most the threshold), and
+    /// refit with NUTS only those it cannot bring there; reweight the
+    /// others. Opt-in (decision 18).
+    MomentMatchThenRefit,
 }
 
 /// Settings of the one-year view of a Bayesian model
@@ -96,13 +105,16 @@ impl BayesOneYear {
         Ok(())
     }
 
-    /// Whether a simulation with Pareto `k` is refitted.
+    /// Whether a simulation with Pareto `k` is not simply reweighted:
+    /// refitted, or (`MomentMatchThenRefit`) moment-matched first.
     fn refits(&self, k: f64) -> bool {
         match self.refit {
             OneYearRefit::ReweightOnly => false,
             // A NaN k is flagged, and an infinite one (too few draws to fit the
             // tail) is above any finite threshold.
-            OneYearRefit::RefitFlagged => flagged(k, self.k_threshold),
+            OneYearRefit::RefitFlagged | OneYearRefit::MomentMatchThenRefit => {
+                flagged(k, self.k_threshold)
+            }
             OneYearRefit::RefitAll => true,
         }
     }
@@ -153,14 +165,14 @@ pub(crate) trait YearModel: Sync {
     fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)>;
     /// The log posterior density of `theta` up to a constant, on the scale
     /// the draws are stored on, given the observed triangle extended by
-    /// `year` (an empty `year` is the observed triangle alone): the target
-    /// of moment matching (open decision 12 (b), next), and the check of
-    /// the conformance suite that the year's log likelihood is the
-    /// posterior's change. Every model so far stores its draws on an
-    /// unconstrained scale that is an affine map of its sampling scale, so
-    /// no Jacobian term is needed; a model with constrained draws adds its
-    /// own.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// `year` (an empty `year` is the observed triangle alone). Moment
+    /// matching (decision 18) evaluates it at moved draws with an empty
+    /// year, where it should be cheap, and adds
+    /// [`year_log_likelihood`](Self::year_log_likelihood), which the
+    /// conformance suite checks is the year's change to it. Every model so
+    /// far stores its draws on an unconstrained scale that is an affine
+    /// map of its sampling scale, so no Jacobian term is needed; a model
+    /// with constrained draws adds its own.
     fn log_posterior(&self, theta: &[f64], year: &[f64]) -> f64;
 }
 
@@ -175,6 +187,9 @@ pub(crate) struct YearDraws {
     pub(crate) pareto_k: Vec<f64>,
     /// The simulations refitted with NUTS, in order.
     pub(crate) refitted: Vec<usize>,
+    /// The simulations moment matching brought to `k̂` at most the
+    /// threshold, in order.
+    pub(crate) moment_matched: Vec<usize>,
     /// How many refits had a diagnostic warning.
     pub(crate) refit_warnings: usize,
 }
@@ -184,6 +199,7 @@ struct Sim {
     cdr: Vec<f64>,
     k: f64,
     refitted: bool,
+    matched: bool,
     warned: bool,
 }
 
@@ -219,6 +235,9 @@ pub(crate) fn simulate<M: YearModel>(
     mean_over(&opening_by_draw, &|_| 1.0 / s as f64, &mut opening);
     let closing_by_draw = (!model.closing_uses_year())
         .then(|| per_draw(&|theta, row| model.closing(theta, &[], row)));
+    // The opening draws' log posterior, once, for moment matching.
+    let matching = (settings.refit == OneYearRefit::MomentMatchThenRefit)
+        .then(|| moment_match::Opening::new(model, posterior));
 
     let failures = Mutex::new(Failures::default());
     let fail = |e: Error| {
@@ -262,8 +281,31 @@ pub(crate) fn simulate<M: YearModel>(
                 }
             };
             let mut closing = vec![0.0; no];
-            let (refitted, mut warned) = (!uninformative && settings.refits(k), false);
-            if refitted {
+            let flagged = !uninformative && settings.refits(k);
+            // Under `MomentMatchThenRefit` a flagged simulation is
+            // moment-matched first; one it cannot bring to the threshold
+            // (or with a NaN k̂) is refitted on the seed the other settings
+            // use.
+            let rescued = match &matching {
+                Some(opening) if flagged && !k.is_nan() => {
+                    moment_match::moment_match(
+                        model,
+                        opening,
+                        closing_by_draw.as_deref(),
+                        &year,
+                        &log_w,
+                        k,
+                        settings.k_threshold,
+                    )
+                    .1
+                }
+                _ => None,
+            };
+            let matched = rescued.is_some();
+            let (refitted, mut warned) = (flagged && !matched, false);
+            if let Some(c) = rescued {
+                closing = c;
+            } else if refitted {
                 match model.refit(&year, refit_seed) {
                     Ok((draws, warn)) => {
                         warned = warn;
@@ -305,6 +347,7 @@ pub(crate) fn simulate<M: YearModel>(
                 cdr,
                 k,
                 refitted,
+                matched,
                 warned,
             })
         })
@@ -323,6 +366,7 @@ pub(crate) fn simulate<M: YearModel>(
         cdr: Vec::with_capacity(n_sims * no),
         pareto_k: Vec::with_capacity(n_sims),
         refitted: Vec::new(),
+        moment_matched: Vec::new(),
         refit_warnings: 0,
     };
     for (i, sim) in sims.into_iter().enumerate() {
@@ -331,6 +375,9 @@ pub(crate) fn simulate<M: YearModel>(
         out.pareto_k.push(sim.k);
         if sim.refitted {
             out.refitted.push(i);
+        }
+        if sim.matched {
+            out.moment_matched.push(i);
         }
         out.refit_warnings += usize::from(sim.warned);
     }
@@ -362,6 +409,7 @@ pub(crate) fn assemble<F: ReserveFit>(
         cdr,
         pareto_k: year.pareto_k,
         refitted: year.refitted,
+        moment_matched: year.moment_matched,
         refit_warnings: year.refit_warnings,
         k_threshold: settings.k_threshold,
     })
@@ -392,7 +440,6 @@ pub(crate) trait OdpCells: Sync {
     /// The log posterior of `theta` (a posterior draw) with the
     /// observed increments `extra` (origin, development, value) added, as
     /// [`YearModel::log_posterior`].
-    #[cfg_attr(not(test), allow(dead_code))]
     fn log_posterior(&self, theta: &[f64], extra: &[(usize, usize, f64)]) -> f64;
     /// The posterior with the increments `extra` added, as
     /// [`YearModel::refit`].
@@ -555,6 +602,11 @@ pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     pub pareto_k: Vec<f64>,
     /// The simulations refitted with NUTS, in order.
     pub refitted: Vec<usize>,
+    /// The simulations that moment matching rescued (their `k̂` brought to
+    /// at most the threshold), in order; empty unless the settings'
+    /// `refit` is [`OneYearRefit::MomentMatchThenRefit`]. Each flagged
+    /// simulation is then in this or in `refitted`.
+    pub moment_matched: Vec<usize>,
     /// How many of the refits had a diagnostic warning (R-hat, ESS or a
     /// divergence).
     pub refit_warnings: usize,
@@ -661,6 +713,8 @@ pub struct BayesOneYearSegment<S = super::BayesOdpSegment> {
     pub pareto_k: Vec<f64>,
     /// The simulations of this segment refitted with NUTS.
     pub refitted: Vec<usize>,
+    /// The simulations of this segment that moment matching rescued.
+    pub moment_matched: Vec<usize>,
     /// How many of this segment's refits had a diagnostic warning.
     pub refit_warnings: usize,
     /// The settings' threshold.
@@ -760,6 +814,11 @@ mod tests {
             ..s
         };
         assert!(all.refits(-1.0));
+        let matching = BayesOneYear {
+            refit: OneYearRefit::MomentMatchThenRefit,
+            ..s
+        };
+        assert!(!matching.refits(0.69) && matching.refits(0.71) && matching.refits(f64::NAN));
         assert_eq!(flagged_share(&[0.1, 0.8, f64::INFINITY, 0.7], 0.7), 0.5);
         assert!(
             BayesOneYear {
@@ -794,7 +853,7 @@ pub(crate) mod conformance {
     /// 3. a seed replays the view bit for bit, whatever the threads, and
     ///    another seed gives another view;
     /// 4. a year with no cells gives a zero claims development result,
-    ///    `k̂` 0 and no refit, even under `RefitAll`.
+    ///    `k̂` 0 and no refit or moment matching, even under `RefitAll`.
     pub(crate) fn check<M: YearModel, C: YearModel>(
         name: &str,
         model: &M,
@@ -873,6 +932,7 @@ pub(crate) mod conformance {
             OneYearRefit::ReweightOnly,
             OneYearRefit::RefitFlagged,
             OneYearRefit::RefitAll,
+            OneYearRefit::MomentMatchThenRefit,
         ] {
             let settings = BayesOneYear {
                 refit,
@@ -880,6 +940,7 @@ pub(crate) mod conformance {
             };
             let view = simulate(closed, closed_posterior, &settings, 50, 7).unwrap();
             assert!(view.refitted.is_empty(), "{name}: {refit:?} refitted");
+            assert!(view.moment_matched.is_empty(), "{name}: {refit:?} matched");
             assert!(view.pareto_k.iter().all(|&k| k == 0.0), "{name}: {refit:?}");
             assert!(
                 view.cdr.iter().all(|v| v.abs() <= 1e-9 * (1.0 + v.abs())),

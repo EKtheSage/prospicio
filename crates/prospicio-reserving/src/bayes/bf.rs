@@ -777,6 +777,12 @@ impl OdpCells for BfRefit<'_> {
 
     fn log_posterior(&self, theta: &[f64], extra: &[(usize, usize, f64)]) -> f64 {
         let mut grad = vec![0.0; theta.len()];
+        if extra.is_empty() {
+            // Moment matching's many calls on the observed triangle.
+            return self
+                .model
+                .log_posterior(&self.model.sampling(theta), &mut grad);
+        }
         self.extended(extra)
             .log_posterior(&self.model.sampling(theta), &mut grad)
     }

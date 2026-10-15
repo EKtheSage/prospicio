@@ -65,6 +65,7 @@ mod compartmental;
 mod dual;
 mod laplace;
 mod meyers;
+mod moment_match;
 mod odp;
 mod one_year;
 mod scalar;

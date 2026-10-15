@@ -19,6 +19,10 @@
 //! 4. on 300 simulations, `RefitAll` sees `ReweightOnly`'s years (the
 //!    same `k̂`), and `RefitFlagged` gives `RefitAll`'s rows for the
 //!    flagged simulations and `ReweightOnly`'s for the others;
+//!    `MomentMatchThenRefit` sees the same years, moment-matches or
+//!    refits each flagged simulation (never both), and gives `RefitAll`'s
+//!    rows for those it refits and `ReweightOnly`'s for the unflagged
+//!    (decision 18);
 //! 5. on those 300, the root mean square gap between a reweighted and a
 //!    refitted simulation's total, in units of the total's sd, is below
 //!    `UNFLAGGED_GAP` where `k̂` is at most 0.7 and below `FLAGGED_GAP`
@@ -138,6 +142,25 @@ fn conform<F: Sync>(
             "{name}: RefitFlagged's simulation {i}"
         );
     }
+    let m = run(REFIT_SIMS, seed, OneYearRefit::MomentMatchThenRefit);
+    assert_eq!(
+        m.pareto_k, a.pareto_k,
+        "{name}: MomentMatchThenRefit's years"
+    );
+    let mut either = m.moment_matched.clone();
+    either.extend(&m.refitted);
+    either.sort_unstable();
+    assert_eq!(
+        either, c.refitted,
+        "{name}: matched or refitted, never both"
+    );
+    for i in 0..REFIT_SIMS {
+        if m.refitted.contains(&i) {
+            assert_eq!(row(&m, i), row(&b, i), "{name}: refit {i} after matching");
+        } else if !is_flagged[i] {
+            assert_eq!(row(&m, i), row(&a, i), "{name}: unflagged {i}");
+        }
+    }
     // 5. The reweighting is close to the refits.
     let (ta, tb) = (totals(&a.cdr), totals(&b.cdr));
     let s = sd(&total);
@@ -163,9 +186,15 @@ fn conform<F: Sync>(
         "{name}: rms gap {gap_flagged} sd where k > 0.7 ({flagged} simulations)"
     );
     // 6. A year without cells changes and refits nothing.
-    for refit in [only, OneYearRefit::RefitFlagged, OneYearRefit::RefitAll] {
+    for refit in [
+        only,
+        OneYearRefit::RefitFlagged,
+        OneYearRefit::RefitAll,
+        OneYearRefit::MomentMatchThenRefit,
+    ] {
         let v = closed(200, seed, refit);
         assert!(v.refitted.is_empty(), "{name}: {refit:?} refitted");
+        assert!(v.moment_matched.is_empty(), "{name}: {refit:?} matched");
         assert!(v.pareto_k.iter().all(|&k| k == 0.0), "{name}: {refit:?}");
         assert!(
             v.cdr.draw_matrix().iter().all(|x| x.abs() < 1e-6),
