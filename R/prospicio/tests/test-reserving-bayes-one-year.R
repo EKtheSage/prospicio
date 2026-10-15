@@ -119,7 +119,7 @@ short <- function(...) {
   suppressWarnings(bayes_odp_one_year(tiny, tune = 200, draws = 200, n_sims = 12, seed = 2, ...))
 }
 only <- short(refit = "reweight_only")
-flagged <- short(k_threshold = 0.3)
+flagged <- short(k_threshold = 0.3, refit = "refit_flagged")
 every <- short(refit = "refit_all")
 expected <- which(is.nan(flagged@pareto_k) | flagged@pareto_k > 0.3)
 stopifnot(
@@ -140,8 +140,12 @@ stopifnot(
 # or refitted (never both), a refitted row refit_all's and an unflagged one
 # reweight_only's.
 matched <- short(k_threshold = 0.3, refit = "moment_match_then_refit")
+# Moment matching is the default (decision 18).
+default <- short(k_threshold = 0.3)
 unflagged <- setdiff(1:12, expected)
 stopifnot(
+  identical(draw_matrix(default@cdr), draw_matrix(matched@cdr)),
+  identical(default@moment_matched, matched@moment_matched),
   identical(matched@pareto_k, only@pareto_k),
   length(intersect(matched@moment_matched, matched@refitted)) == 0,
   identical(sort(c(matched@moment_matched, matched@refitted)), expected),

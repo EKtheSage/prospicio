@@ -6434,13 +6434,19 @@ impl PyBayesOdp {
     /// payments and ``R'`` the expected run-off after the year, each
     /// expectation the (weighted) mean over the posterior draws; its mean
     /// is about zero. A simulation whose ``k`` is above ``k_threshold`` is
-    /// flagged and, with ``refit="refit_flagged"`` (the default), refitted
-    /// with NUTS on the triangle extended by its year, with this model's
-    /// sampler. A refit takes about 40 ms in a release build, and 14% to
-    /// 26% of the simulations are flagged on RAA and GenIns, so a default
-    /// run of 10,000 simulations takes one to two minutes there;
-    /// ``"reweight_only"`` takes about a second and leaves the total's
-    /// standard deviation about 1% low. Every cell up to the end of the
+    /// flagged. With ``refit="moment_match_then_refit"`` (the default) its
+    /// posterior draws are first moved by affine maps to the moments the
+    /// weights estimate (moment matching, as R's
+    /// ``loo::loo_moment_match``), and only a simulation whose ``k`` stays
+    /// above ``k_threshold`` is refitted with NUTS on the triangle extended
+    /// by its year, with this model's sampler. 14% to 26% of the
+    /// simulations are flagged on RAA and GenIns; matching rescues nearly
+    /// all of them, within 0.04 to 0.06 sd of their refits, at about 1 ms
+    /// each against about 26 ms for a refit, so a default run of 10,000
+    /// simulations takes a few seconds in a release build.
+    /// ``"refit_flagged"`` refits every flagged simulation (one to two
+    /// minutes there), and ``"reweight_only"`` takes about a second and
+    /// leaves the flagged simulations' reweighting as it is. Every cell up to the end of the
     /// year is observed and conditioned on, also for an origin that lags
     /// the valuation. Raises one ``UserWarning`` listing the failed
     /// diagnostics of the fit, and another if any refit failed its
@@ -6455,15 +6461,13 @@ impl PyBayesOdp {
     ///     The Pareto ``k`` above which a simulation's importance weights
     ///     are not trusted (the threshold of Vehtari et al. 2024 for a few
     ///     thousand draws).
-    /// refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
-    ///     What happens to a flagged simulation: refitted with NUTS, or
-    ///     reweighted anyway (fast, biased where ``k`` is high);
-    ///     ``"refit_all"`` refits every simulation, to check the
-    ///     reweighting; ``"moment_match_then_refit"`` first moves the
-    ///     posterior draws by affine maps to the moments the weights
-    ///     estimate (moment matching, as R's ``loo::loo_moment_match``)
-    ///     and refits only a simulation whose ``k`` stays above
-    ///     ``k_threshold`` (``moment_matched`` lists the others).
+    /// refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+    ///     What happens to a flagged simulation: moment-matched, and
+    ///     refitted only if its ``k`` stays above ``k_threshold``
+    ///     (``moment_matched`` lists the rescued); refitted with NUTS
+    ///     (``"refit_flagged"``); or reweighted anyway (fast, biased where
+    ///     ``k`` is high); ``"refit_all"`` refits every simulation, to
+    ///     check the reweighting.
     ///
     /// Returns
     /// -------
@@ -6489,7 +6493,7 @@ impl PyBayesOdp {
     /// (1000, [])
     /// >>> view.cdr.variance() < view.fit.reserves.variance()
     /// True
-    #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "refit_flagged"))]
+    #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "moment_match_then_refit"))]
     fn one_year(
         &self,
         py: Python<'_>,
@@ -6532,7 +6536,7 @@ impl PyBayesOdp {
     /// column : str
     /// k_threshold : float, default 0.7
     ///     As in ``one_year``.
-    /// refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
+    /// refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
     ///     As in ``one_year``.
     ///
     /// Returns
@@ -6564,7 +6568,7 @@ impl PyBayesOdp {
     /// (['Auto', 'Home'], ['lob', 'origin'])
     /// >>> len(views.segment(lob="Home").pareto_k)
     /// 500
-    #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "refit_flagged"))]
+    #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "moment_match_then_refit"))]
     fn one_year_segments(
         &self,
         py: Python<'_>,
@@ -7152,8 +7156,8 @@ fn one_year_settings(k_threshold: f64, refit: &str) -> PyResult<BayesOneYear> {
         "moment_match_then_refit" => OneYearRefit::MomentMatchThenRefit,
         _ => {
             return Err(PyValueError::new_err(format!(
-                "refit must be \"refit_flagged\", \"reweight_only\", \"refit_all\" or \
-                 \"moment_match_then_refit\", got {refit:?}"
+                "refit must be \"moment_match_then_refit\", \"refit_flagged\", \
+                 \"reweight_only\" or \"refit_all\", got {refit:?}"
             )));
         }
     };
@@ -7933,7 +7937,7 @@ impl PyBayesBf {
     /// k_threshold : float, default 0.7
     ///     The Pareto ``k`` above which a simulation's importance weights
     ///     are not trusted.
-    /// refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
+    /// refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
     ///     What happens to a flagged simulation, as in ``BayesOdp.one_year``.
     ///
     /// Returns
@@ -7965,7 +7969,7 @@ impl PyBayesBf {
     /// ('BayesBfFit', 1000)
     /// >>> view.cdr.variance() < view.fit.reserves.variance()
     /// True
-    #[pyo3(signature = (triangle, column, exposure, k_threshold = 0.7, refit = "refit_flagged"))]
+    #[pyo3(signature = (triangle, column, exposure, k_threshold = 0.7, refit = "moment_match_then_refit"))]
     fn one_year(
         &self,
         py: Python<'_>,

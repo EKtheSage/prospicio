@@ -414,10 +414,11 @@ impl BayesOdp {
     /// the increments after the year, each expectation the (weighted) mean
     /// over the posterior draws. Its mean is zero up to Monte Carlo and
     /// importance sampling error. A simulation whose `k̂` is above
-    /// [`BayesOneYear::k_threshold`] is refitted with NUTS on the triangle
-    /// extended by its year, with this model's sampler and a seed drawn
-    /// from the simulation's own stream, when [`BayesOneYear::refit`] says
-    /// so. An origin with every remaining cell in the year has its whole
+    /// [`BayesOneYear::k_threshold`] is handled as [`BayesOneYear::refit`]
+    /// says: by default moment-matched (decision 18) and, only if that
+    /// cannot bring its `k̂` to the threshold, refitted with NUTS on the
+    /// triangle extended by its year, with this model's sampler and a seed
+    /// drawn from the simulation's own stream. An origin with every remaining cell in the year has its whole
     /// run-off as its one-year view; one at the last age has none. A
     /// triangle with no cells in the year (every origin at the last age)
     /// leaves the posterior unchanged: `k̂` is 0 and nothing is refitted.

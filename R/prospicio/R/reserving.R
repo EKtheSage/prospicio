@@ -2003,13 +2003,18 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #' year is observed and conditioned on, also for an origin that lags the
 #' valuation.
 #'
-#' A simulation whose Pareto k is above `k_threshold` is flagged and, with
-#' `refit = "refit_flagged"` (the default), refitted with NUTS on the
-#' triangle extended by its year, with the model's sampler. A refit takes
-#' about 40 ms in a release build, and 14% to 26% of the simulations are
-#' flagged on RAA and GenIns, so a default run of 10,000 simulations takes
-#' one to two minutes there; `"reweight_only"` takes about a second and
-#' leaves the total's standard deviation about 1% low. On RAA and GenIns
+#' A simulation whose Pareto k is above `k_threshold` is flagged. With
+#' `refit = "moment_match_then_refit"` (the default) its posterior draws
+#' are first moved by affine maps to the moments the weights estimate
+#' (moment matching, as `loo::loo_moment_match()`), and only a simulation
+#' whose k stays above `k_threshold` is refitted with NUTS on the triangle
+#' extended by its year, with the model's sampler. 14% to 26% of the
+#' simulations are flagged on RAA and GenIns; matching rescues nearly all
+#' of them, within 0.04 to 0.06 sd of their refits, at about 1 ms each
+#' against about 26 ms for a refit, so a default run of 10,000 simulations
+#' takes a few seconds in a release build. `"refit_flagged"` refits every
+#' flagged simulation (one to two minutes there), and `"reweight_only"`
+#' takes about a second. On RAA and GenIns
 #' the standard deviation of the total CDR agrees with [odp_one_year()]'s
 #' on average over seeds (with `"reweight_only"`, a ratio of 1.001 on RAA
 #' and 1.006 on GenIns over 80 seeds); any single run of 10,000
@@ -2066,13 +2071,13 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #' @param k_threshold The Pareto k above which a simulation's importance
 #'   weights are not trusted (the threshold of Vehtari et al. 2024 for a
 #'   few thousand draws).
-#' @param refit What happens to a flagged simulation: `"refit_flagged"`
-#'   refits it with NUTS, `"reweight_only"` reweights it anyway (fast,
-#'   biased where k is high), `"refit_all"` refits every simulation, to
-#'   check the reweighting, and `"moment_match_then_refit"` first moves the
-#'   posterior draws by affine maps to the moments the weights estimate
-#'   (moment matching, as `loo::loo_moment_match()`), refitting only a
-#'   simulation whose k stays above `k_threshold`.
+#' @param refit What happens to a flagged simulation:
+#'   `"moment_match_then_refit"` (the default) moves the posterior draws by
+#'   affine maps to the moments the weights estimate (moment matching, as
+#'   `loo::loo_moment_match()`), refitting only a simulation whose k stays
+#'   above `k_threshold`; `"refit_flagged"` refits it with NUTS;
+#'   `"reweight_only"` reweights it anyway (fast, biased where k is high);
+#'   `"refit_all"` refits every simulation, to check the reweighting.
 #' @param ptr A `BayesOneYearFit` or `BayesOneYearFits` pointer; used
 #'   internally.
 #' @returns A `bayes_one_year_fit` or `bayes_one_year_fits` object.
@@ -2235,8 +2240,8 @@ bayes_odp_one_year <- function(triangle, column = NULL, intercept_sd = 10, origi
                                development_sd = 10, process = c("gamma", "none"), chains = 4,
                                tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
                                target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
-                               refit = c("refit_flagged", "reweight_only", "refit_all",
-                                         "moment_match_then_refit")) {
+                               refit = c("moment_match_then_refit", "refit_flagged",
+                                         "reweight_only", "refit_all")) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   refit <- match.arg(refit)
@@ -2264,8 +2269,8 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
                                         dependence = c("independent", "rank_correlation",
                                                        "synchronized"),
                                         spearman = NULL, k_threshold = 0.7,
-                                        refit = c("refit_flagged", "reweight_only",
-                                                  "refit_all", "moment_match_then_refit")) {
+                                        refit = c("moment_match_then_refit", "refit_flagged",
+                                                  "reweight_only", "refit_all")) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
@@ -2800,8 +2805,8 @@ bayes_bf <- function(triangle, column, exposure, apriori = 1, cv = 0.1, developm
 #' priors and the prior ultimates unchanged), and takes each origin's CDR as
 #' its posterior mean reserve at the opening less its payment in the year
 #' and its weighted posterior mean reserve after it; a simulation whose
-#' Pareto k is above `k_threshold` is refitted with NUTS when `refit` says
-#' so.
+#' Pareto k is above `k_threshold` is moment-matched and, if that cannot
+#' rescue it, refitted with NUTS, as `refit` says.
 #'
 #' The prior's strength moves the view between two limits. A flat prior
 #' (`cv = Inf`) is the Bayesian chain ladder: on GenIns its CDR's
@@ -2844,8 +2849,8 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
                               development_sd = 10, process = c("gamma", "none"), chains = 4,
                               tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
                               target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
-                              refit = c("refit_flagged", "reweight_only", "refit_all",
-                                        "moment_match_then_refit")) {
+                              refit = c("moment_match_then_refit", "refit_flagged",
+                                        "reweight_only", "refit_all")) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
   refit <- match.arg(refit)

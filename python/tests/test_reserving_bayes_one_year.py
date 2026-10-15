@@ -172,7 +172,7 @@ def test_refits():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # short chains may miss a threshold
         only = model.one_year(tri, "paid", refit="reweight_only")
-        flagged = model.one_year(tri, "paid", k_threshold=0.3)
+        flagged = model.one_year(tri, "paid", k_threshold=0.3, refit="refit_flagged")
         every = model.one_year(tri, "paid", refit="refit_all")
     # The flagged simulations are those above the threshold, refitted or not.
     expected = [i for i, k in enumerate(flagged.pareto_k) if math.isnan(k) or k > 0.3]
@@ -197,6 +197,10 @@ def test_moment_matching():
         only = model.one_year(tri, "paid", refit="reweight_only")
         every = model.one_year(tri, "paid", refit="refit_all")
         matched = model.one_year(tri, "paid", k_threshold=0.3, refit="moment_match_then_refit")
+        # Moment matching is the default (decision 18).
+        default = model.one_year(tri, "paid", k_threshold=0.3)
+    assert default.cdr.draw_matrix() == matched.cdr.draw_matrix()
+    assert default.moment_matched == matched.moment_matched
     # The same years; each flagged simulation is moment-matched or refitted,
     # never both.
     assert matched.pareto_k == only.pareto_k

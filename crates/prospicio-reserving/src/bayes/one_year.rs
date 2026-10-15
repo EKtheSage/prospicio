@@ -8,10 +8,10 @@
 //! weights (`prospicio_bayes::elpd::psis`, Vehtari et al. 2024) and takes
 //! the time-1 reserve as the weighted posterior mean of the reserve that
 //! remains after the year. A simulation whose weights are unreliable
-//! (Pareto `k̂` above a threshold) is refitted with NUTS on the extended
-//! triangle instead, or first moment-matched (decision 18,
-//! [`moment_match`](super::moment_match)), as [`BayesOneYear::refit`]
-//! says.
+//! (Pareto `k̂` above a threshold) is first moment-matched (decision 18,
+//! [`moment_match`](super::moment_match), the default) and refitted with
+//! NUTS on the extended triangle only when matching cannot rescue it, or
+//! refitted directly, as [`BayesOneYear::refit`] says.
 //!
 //! The engine knows nothing of a particular model (decision 17): a model
 //! plugs in through [`YearModel`], the one interface every Bayesian
@@ -49,8 +49,7 @@ pub enum OneYearRefit {
     /// where `k̂` is high.
     ReweightOnly,
     /// Refit the flagged simulations with NUTS on the triangle extended by
-    /// their year, reweight the others (the default).
-    #[default]
+    /// their year, reweight the others.
     RefitFlagged,
     /// Refit every simulation: exact up to the refits' Monte Carlo error,
     /// one NUTS run per simulation; for checking the reweighting.
@@ -59,7 +58,9 @@ pub enum OneYearRefit {
     /// `loo::loo_moment_match`: the posterior draws moved by affine maps
     /// to the weighted moments until `k̂` is at most the threshold), and
     /// refit with NUTS only those it cannot bring there; reweight the
-    /// others. Opt-in (decision 18).
+    /// others. The default (decision 18): on the checked triangles as
+    /// accurate as `RefitFlagged` at a fifteenth of its cost or less.
+    #[default]
     MomentMatchThenRefit,
 }
 
@@ -73,7 +74,7 @@ pub enum OneYearRefit {
 ///
 /// let settings = BayesOneYear::default();
 /// assert_eq!(settings.k_threshold, 0.7);
-/// assert_eq!(settings.refit, OneYearRefit::RefitFlagged);
+/// assert_eq!(settings.refit, OneYearRefit::MomentMatchThenRefit);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BayesOneYear {
@@ -88,7 +89,7 @@ impl Default for BayesOneYear {
     fn default() -> Self {
         Self {
             k_threshold: 0.7,
-            refit: OneYearRefit::RefitFlagged,
+            refit: OneYearRefit::MomentMatchThenRefit,
         }
     }
 }

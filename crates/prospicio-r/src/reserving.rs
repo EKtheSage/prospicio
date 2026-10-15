@@ -1004,8 +1004,9 @@ impl Triangle {
     /// column by PSIS reweighting: `priors` are `intercept_sd`, `origin_sd`
     /// and `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
     /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
-    /// k is above `k_threshold` is refitted as `refit` ("refit_flagged",
-    /// "reweight_only", "refit_all" or "moment_match_then_refit") says.
+    /// k is above `k_threshold` is handled as `refit`
+    /// ("moment_match_then_refit", "refit_flagged", "reweight_only" or
+    /// "refit_all") says.
     fn bayes_odp_one_year(
         &self,
         column: &str,
@@ -1242,8 +1243,9 @@ impl Triangle {
     /// by PSIS reweighting: `priors` are `apriori`, `cv` and
     /// `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
     /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
-    /// k is above `k_threshold` is refitted as `refit` ("refit_flagged",
-    /// "reweight_only", "refit_all" or "moment_match_then_refit") says.
+    /// k is above `k_threshold` is handled as `refit`
+    /// ("moment_match_then_refit", "refit_flagged", "reweight_only" or
+    /// "refit_all") says.
     #[allow(clippy::too_many_arguments)]
     fn bayes_bf_one_year(
         &self,
@@ -2617,8 +2619,8 @@ fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
         "moment_match_then_refit" => OneYearRefit::MomentMatchThenRefit,
         _ => {
             return Err(Error::Other(format!(
-                "refit must be \"refit_flagged\", \"reweight_only\", \"refit_all\" or \
-                 \"moment_match_then_refit\", got \"{refit}\""
+                "refit must be \"moment_match_then_refit\", \"refit_flagged\", \
+                 \"reweight_only\" or \"refit_all\", got \"{refit}\""
             )));
         }
     };
