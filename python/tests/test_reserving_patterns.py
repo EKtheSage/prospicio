@@ -209,6 +209,47 @@ def test_bootstraps_take_the_pattern(tri):
         )
 
 
+def test_one_year_compares_patterns_by_what_they_select(tri):
+    base = Mack().fit(tri, "paid")
+    own = {age: f for age, f in zip(base.development, base.ldf)}
+    reversed_own = dict(reversed(list(own.items())))
+    assert list(reversed_own) != list(own)
+    method = ChainLadder(ldf=own, ldf_kind="ldf")
+    # The same pattern with its keys in another order, or with the weight
+    # given per age, is the method's.
+    for kwargs in (
+        {"ldf": reversed_own, "ldf_kind": "ldf"},
+        {"ldf": own, "ldf_kind": "ldf", "ldf_weight": {12: 1.0}},
+    ):
+        for boot in (OdpBootstrap, MackBootstrap):
+            fit = boot(n_sims=50, seed=1, **kwargs).one_year(tri, "paid", method)
+            assert math.isfinite(fit.cdr.variance())
+    # Another weight is not.
+    with pytest.raises(ValueError, match="pattern"):
+        OdpBootstrap(n_sims=20, seed=1, ldf=own, ldf_kind="ldf", ldf_weight=0.5).one_year(
+            tri, "paid", method
+        )
+
+
+def test_one_year_bootstrap_takes_the_methods_pattern_by_default(tri):
+    # As R's bootstrap_ldf = TRUE: a bootstrap without ldf takes the
+    # method's, so its simulations are blended exactly as one given it.
+    base = Mack().fit(tri, "paid")
+    own = {age: f for age, f in zip(base.development, base.ldf)}
+    method = ChainLadder(ldf=own, ldf_kind="ldf", ldf_weight=0.5)
+    implicit = OdpBootstrap(n_sims=300, seed=3).one_year(tri, "paid", method)
+    explicit = OdpBootstrap(n_sims=300, seed=3, ldf=own, ldf_kind="ldf", ldf_weight=0.5).one_year(
+        tri, "paid", method
+    )
+    assert implicit.cdr.variance() == explicit.cdr.variance()
+    free = OdpBootstrap(n_sims=300, seed=3).one_year(tri, "paid", method, bootstrap_ldf=False)
+    assert free.cdr.variance() != implicit.cdr.variance()
+    with pytest.raises(ValueError, match="bootstrap_ldf=False"):
+        OdpBootstrap(n_sims=20, seed=1, ldf=own, ldf_kind="ldf").one_year(
+            tri, "paid", method, bootstrap_ldf=False
+        )
+
+
 @pytest.mark.parametrize(
     ("kwargs", "error", "match"),
     [

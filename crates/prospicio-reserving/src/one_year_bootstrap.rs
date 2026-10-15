@@ -81,7 +81,7 @@
 
 use std::sync::Mutex;
 
-use prospicio_core::{Month, StreamRng};
+use prospicio_core::{Lag, Month, StreamRng};
 use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::bootstrap::{
@@ -600,7 +600,9 @@ struct Prepared<B: NextYear> {
 
 impl<B: NextYear> Prepared<B> {
     /// `model` fits the bootstrap model to the segment; `tail` is whether
-    /// it has a tail.
+    /// it has a tail, and `pattern` is the bootstrap's selected pattern,
+    /// which must select what the method's does.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         triangle: &Triangle,
         segment: &Segment,
@@ -608,9 +610,11 @@ impl<B: NextYear> Prepared<B> {
         method: &OneYearMethod,
         opening: Month,
         tail: bool,
+        pattern: Option<&SelectedPattern>,
         model: &impl Fn(&Segment) -> Result<(B, B::Draw)>,
     ) -> Result<Self> {
         let (bootstrap, draw) = model(segment)?;
+        same_pattern(pattern, method, &segment.ages)?;
         let year = YearCells::of(
             segment,
             &bootstrap.chain_ladder().latest_position,
@@ -717,6 +721,25 @@ impl Failures {
 }
 
 /// The simulations of a one-year bootstrap: how many, from which seed.
+const PATTERN_MISMATCH: Error =
+    Error::Bootstrap("the bootstrap's pattern must be the re-reserving method's pattern");
+
+/// The bootstrap's pattern, if any, is the method's on the segment's
+/// `ages`: the same selected factors and weights, whatever the order, kind
+/// or form of weight they were given in
+/// ([`SelectedPattern::same_selection`]).
+fn same_pattern(
+    bootstrap: Option<&SelectedPattern>,
+    method: &OneYearMethod,
+    ages: &[Lag],
+) -> Result<()> {
+    match (bootstrap, method.pattern()) {
+        (None, _) => Ok(()),
+        (Some(b), Some(m)) if b.same_selection(m, ages)? => Ok(()),
+        _ => Err(PATTERN_MISMATCH),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Sims {
     pub(crate) n_sims: usize,
@@ -742,8 +765,11 @@ impl Sims {
     ///
     /// The same holds for a selected pattern: the bootstrap's says how the
     /// coming year develops, and a method that re-reserves with another
-    /// would move the CDR's mean for a reason the user did not choose. A
-    /// method with a pattern and a bootstrap without one is allowed.
+    /// would move the CDR's mean for a reason the user did not choose. Here
+    /// only a method without any pattern is rejected; whether the two
+    /// patterns select the same factors and weights is checked per segment,
+    /// on its ages ([`same_pattern`]). A method with a pattern and a
+    /// bootstrap without one is allowed.
     fn check(&self, method: &OneYearMethod) -> Result<()> {
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
@@ -753,10 +779,8 @@ impl Sims {
                 "the bootstrap's tail must be the re-reserving method's tail",
             ));
         }
-        if self.pattern.is_some() && method.pattern() != self.pattern.as_ref() {
-            return Err(Error::Bootstrap(
-                "the bootstrap's pattern must be the re-reserving method's pattern",
-            ));
+        if self.pattern.is_some() && method.pattern().is_none() {
+            return Err(PATTERN_MISMATCH);
         }
         Ok(())
     }
@@ -783,6 +807,7 @@ impl Sims {
             method,
             opening,
             self.tailed(),
+            self.pattern.as_ref(),
             &model,
         )?;
 
@@ -831,12 +856,22 @@ impl Sims {
         self.check(method)?;
         let (opening, closing) = valuations(triangle)?;
         let tailed = self.tailed();
+        let pattern = self.pattern.as_ref();
         let mut prepared = match method.exposure() {
             None => fit_each(triangle, column, |s| {
-                Prepared::new(triangle, s, None, method, opening, tailed, &model)
+                Prepared::new(triangle, s, None, method, opening, tailed, pattern, &model)
             })?,
             Some(exposure) => fit_each_with_exposure(triangle, column, exposure, |s, e| {
-                Prepared::new(triangle, s, Some(e), method, opening, tailed, &model)
+                Prepared::new(
+                    triangle,
+                    s,
+                    Some(e),
+                    method,
+                    opening,
+                    tailed,
+                    pattern,
+                    &model,
+                )
             })?,
         };
         let shared = match dependence {
@@ -1803,7 +1838,7 @@ mod tests {
         let method = chain_ladder();
         let (opening, closing) = valuations(&tri).unwrap();
         let odp = boot(1, 0);
-        let prepared = Prepared::new(&tri, &segment, None, &method, opening, false, &|s| {
+        let prepared = Prepared::new(&tri, &segment, None, &method, opening, false, None, &|s| {
             odp.model(s)
         })
         .unwrap();

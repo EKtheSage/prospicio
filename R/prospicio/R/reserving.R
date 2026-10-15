@@ -931,8 +931,11 @@ S7::method(print, tail_log_linear) <- tail_print
 #' A cumulative pattern's level at its last age selects nothing: it is
 #' rescaled to the factors and tail in use, and `pattern_rescale` reports
 #' the factor that multiplies the given percents developed (and divides the
-#' given factors to ultimate), so that a pattern given to the oldest age,
-#' rescaled, times the tail is 100%. With a weight `w`, the factor used is
+#' given factors to ultimate) to reconcile the level at the last age, so
+#' that a pattern given to the oldest age, rescaled, times the tail is 100%.
+#' At earlier ages the rescaled values are the projection's only where the
+#' links are fully selected; with a blend, read `cdf` for the percents in
+#' use. With a weight `w`, the factor used is
 #' `w * selected + (1 - w) * estimated`. A selected factor at or after a
 #' tail's attachment age is an error. In [mack()] and the bootstraps a
 #' selected factor carries no parameter error and a blended one `1 - w`

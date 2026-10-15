@@ -272,6 +272,31 @@ impl SelectedPattern {
     }
 }
 
+impl SelectedPattern {
+    /// Whether `self` and `other` select the same factors with the same
+    /// weights on the development `ages`: the comparison of their resolved
+    /// forms, so the order of `values`, the kind they are given in and the
+    /// form of the weight do not matter (`All(1.0)` is `ByAge` with every
+    /// weight 1). The factors agree to a relative `1e-12`, since a pattern
+    /// given as percents developed and as factors to ultimate differ by
+    /// rounding. A cumulative pattern's level at its last age, which only
+    /// reports `pattern_rescale`, is not compared. An error if either
+    /// pattern does not resolve on `ages`.
+    pub(crate) fn same_selection(&self, other: &Self, ages: &[Lag]) -> Result<bool> {
+        let (a, b) = (self.resolve(ages)?, other.resolve(ages)?);
+        let factors = a
+            .selected
+            .iter()
+            .zip(&b.selected)
+            .all(|(x, y)| match (x, y) {
+                (Some(x), Some(y)) => (x - y).abs() <= 1e-12 * x.abs().max(y.abs()),
+                (None, None) => true,
+                _ => false,
+            });
+        Ok(factors && a.weight == b.weight)
+    }
+}
+
 /// A [`SelectedPattern`] on a triangle's development ages.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Resolved {
@@ -1093,6 +1118,65 @@ mod fits {
             ..Default::default()
         };
         assert!(free.one_year(&t, "values", &patterned).is_ok());
+    }
+
+    #[test]
+    fn one_year_bootstrap_pattern_is_compared_by_what_it_selects() {
+        // The same selection given in another order, as factors to ultimate
+        // or percents developed, or with the weight in another form, is the
+        // method's pattern; another factor or weight is not.
+        let t = raa();
+        let base = own(PatternWeight::All(1.0));
+        let mut cdf: Vec<(Lag, f64)> = Vec::new();
+        let mut c = 1.0;
+        for &(age, f) in base.values.iter().rev() {
+            c *= f;
+            cdf.push((age, c));
+        }
+        // The level at 120 months: 1, so the pattern selects every factor.
+        cdf.push((120, 1.0));
+        let percent: Vec<(Lag, f64)> = cdf.iter().map(|&(a, v)| (a, 1.0 / v)).collect();
+        let method = OneYearMethod::ChainLadder(chain_ladder(base.clone(), Tail::default()));
+        let run = |p: SelectedPattern| {
+            OdpBootstrap {
+                n_sims: 10,
+                pattern: Some(p),
+                ..Default::default()
+            }
+            .one_year(&t, "values", &method)
+        };
+        let mut reversed = base.clone();
+        reversed.values.reverse();
+        let by_age = base
+            .clone()
+            .with_weight(PatternWeight::ByAge(vec![(36, 1.0), (12, 1.0)]));
+        let same = [
+            reversed,
+            by_age,
+            SelectedPattern::new(PatternKind::AgeToUltimate, cdf),
+            SelectedPattern::new(PatternKind::PercentDeveloped, percent),
+        ];
+        for p in same {
+            assert!(run(p.clone()).is_ok(), "{p:?}");
+        }
+        let want =
+            Error::Bootstrap("the bootstrap's pattern must be the re-reserving method's pattern");
+        let mut other = base.clone();
+        other.values[0].1 *= 1.01;
+        assert_eq!(run(other).unwrap_err(), want);
+        let blended = base.clone().with_weight(PatternWeight::All(0.5));
+        assert_eq!(run(blended).unwrap_err(), want);
+        let partial = SelectedPattern::new(PatternKind::AgeToAge, base.values[..3].to_vec());
+        assert_eq!(run(partial).unwrap_err(), want);
+        // Mack's bootstrap compares the same way.
+        let mut reversed = base;
+        reversed.values.reverse();
+        let mack = MackBootstrap {
+            n_sims: 10,
+            development: with(reversed),
+            ..Default::default()
+        };
+        assert!(mack.one_year(&t, "values", &method).is_ok());
     }
 
     #[test]

@@ -1749,8 +1749,18 @@ pub struct Development {
    ```
 
    the factor that multiplies the supplied percents developed (and divides
-   the supplied CDFs) to make them consistent with what is used. When the
-   pattern ends at the oldest age, `CDF_used = T`, so the rescaled percent
+   the supplied CDFs) to reconcile the pattern's level at its last age with
+   what is used there. It reconciles that level only: at an earlier age
+   `a`, the rescaled percent developed is
+   `CDF_given(a_L) / (CDF_given(a) * CDF_used(a_L))`, which is the
+   projection's `1 / CDF_used(a)` only when every link from `a` to `a_L` is
+   fully selected. A blended link uses `w * s + (1 - w) * e`, not the
+   given factor, so with a blend the rescaled percents at earlier ages are
+   not the projection's (with `p = (0.5, 1.0)` at 12 and 24 months, an
+   estimate of 2.4 for 12-24, `w = 0.5` and no tail, the factor used is
+   2.2 and the rescale 1, but the projection's percent developed at 12
+   months is `1 / 2.2 = 0.4545`, not 0.5). `ChainLadderFit::cdf` is the
+   projection's at every age. When the pattern ends at the oldest age, `CDF_used = T`, so the rescaled percent
    developed at the oldest age times the tail factor is 100%, the user's
    rule; ending at a `TailConstant`'s attachment age, `CDF_used` is that
    tail's factor and the same holds there. The rescale changes no factor
@@ -1860,9 +1870,20 @@ pub struct Development {
    user's selection. In the one-year view the re-reserving method's
    pattern must equal the bootstrap's when the bootstrap has one, by the
    argument of decision 11 item 4 (`Error::Bootstrap("the bootstrap's
-   pattern must be the re-reserving method's pattern")`); a method with a
-   pattern and a bootstrap without one is allowed, as with tails. The
-   rescale factor is reported for the deterministic fit only.
+   pattern must be the re-reserving method's pattern")`). Equal means
+   the same selection: the two are resolved on each segment's ages and
+   compared by their selected factors (to a relative `1e-12`) and weights,
+   so the order of the values, the kind they are given in (an age-to-age
+   pattern and the factors to ultimate it implies are the same) and the
+   form of the weight (`All(1.0)` or `ByAge` with weights of 1) do not
+   matter; the level at a cumulative pattern's last age only reports the
+   rescale and is not compared. In Rust a method with a pattern and a
+   bootstrap without one is allowed, as with tails: the pattern then
+   enters only when the method re-reserves, and the pseudo factors are
+   simulated unblended. Both bindings default to giving the bootstrap the
+   method's pattern instead (`bootstrap_ldf`, below), so the same analysis
+   gives the same CDR distribution in Python and R. The rescale factor is
+   reported for the deterministic fit only.
 
 9. **Segments.** One pattern applies to every segment, as one tail does
    now, and is checked against each segment's own ages (an error names the
@@ -1898,7 +1919,11 @@ pub struct Development {
   pattern or none); `std_err` is the factor in use's. The other fits
   reach them through `chain_ladder` and their frames. The one-year view
   takes the method's pattern from the method object, and the bootstrap's
-  from the bootstrap object.
+  from the bootstrap object. `OdpBootstrap.one_year` and
+  `MackBootstrap.one_year` take `bootstrap_ldf=True`, as R's one-year
+  functions: a bootstrap without `ldf` of its own takes the method's, so
+  its simulations are blended; `False` simulates from the triangle's own
+  factors, and is an error with a bootstrap that has its own `ldf`.
 * R: `chain_ladder()`, `mack()`, `expected_loss()`,
   `bornhuetter_ferguson()`, `benktander()`, `cape_cod()`,
   `odp_bootstrap()`, `mack_bootstrap()`, `odp_one_year()` and

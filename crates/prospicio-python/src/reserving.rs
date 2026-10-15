@@ -2210,10 +2210,13 @@ impl PyChainLadderFit {
 
     /// For a pattern given as factors to ultimate or percents developed,
     /// the factor that multiplies the given percents developed (and divides
-    /// the given factors to ultimate) to match the factors and tail in use:
-    /// ``cdf_given / cdf_used`` at the pattern's last age, so that a pattern
-    /// given to the oldest age, rescaled, times the tail is 100%. ``None``
-    /// for an age-to-age pattern or none.
+    /// the given factors to ultimate) to reconcile the pattern's level at
+    /// its last age with the factors and tail in use: ``cdf_given /
+    /// cdf_used`` there, so that a pattern given to the oldest age,
+    /// rescaled, times the tail is 100%. At earlier ages the rescaled
+    /// values are the projection's only where every link is fully selected;
+    /// with ``ldf_weight`` below 1, read ``cdf`` for the factors in use.
+    /// ``None`` for an age-to-age pattern or none.
     #[getter]
     fn pattern_rescale(&self) -> PyResult<Option<f64>> {
         Ok(single(&self.inner, "pattern_rescale", "totals_frame()")?.pattern_rescale)
@@ -4860,6 +4863,15 @@ impl PyOdpBootstrap {
     ///     The exposure column; required by the expected-loss methods, not
     ///     taken by ``ChainLadder``. Its latest value per origin is kept for
     ///     the end of the year.
+    /// bootstrap_ldf : bool, default True
+    ///     With a bootstrap that has no ``ldf`` of its own, whether it takes
+    ///     ``method``'s selected pattern, so that each simulation's pseudo
+    ///     factors are blended with it as the method's factors are (as R's
+    ///     ``odp_one_year(bootstrap_ldf = TRUE)``). ``False`` simulates from
+    ///     the triangle's own factors and lets the pattern enter only when
+    ///     the method re-reserves; it is an error with a bootstrap that has
+    ///     its own ``ldf``. A bootstrap's own ``ldf`` must select the same
+    ///     factors and weights as ``method``'s, in any order or kind.
     ///
     /// Returns
     /// -------
@@ -4873,7 +4885,8 @@ impl PyOdpBootstrap {
     ///     As ``fit`` and the method's own ``fit``; if ``exposure`` is
     ///     missing for an expected-loss method or given for
     ///     ``ChainLadder``; if the bootstrap has a ``tail`` that is not
-    ///     ``method``'s; or if the refit (or the bootstrap's tail refit)
+    ///     ``method``'s, or an ``ldf`` that selects other factors or weights
+    ///     than ``method``'s; or if the refit (or the bootstrap's tail refit)
     ///     fails in any simulation (the message counts them and gives one).
     ///
     /// Examples
@@ -4895,7 +4908,7 @@ impl PyOdpBootstrap {
     /// 0.0
     /// >>> fit.cdr.variance() < boot.fit(tri, "paid").reserves.variance()
     /// True
-    #[pyo3(signature = (triangle, column, method, exposure = None))]
+    #[pyo3(signature = (triangle, column, method, exposure = None, bootstrap_ldf = true))]
     fn one_year(
         &self,
         py: Python<'_>,
@@ -4903,9 +4916,12 @@ impl PyOdpBootstrap {
         column: &str,
         method: &Bound<'_, PyAny>,
         exposure: Option<String>,
+        bootstrap_ldf: bool,
     ) -> PyResult<PyOneYearFit> {
         let method = one_year_method(method, exposure)?;
-        let (boot, tri) = (&self.inner, &triangle.inner);
+        let mut boot = self.inner.clone();
+        boot.pattern = bootstrap_pattern(boot.pattern, &method, bootstrap_ldf)?;
+        let tri = &triangle.inner;
         let inner = py
             .detach(|| boot.one_year_segments(tri, column, &method))
             .map_err(err)?;
@@ -5095,6 +5111,24 @@ impl PyOdpBootstrapFit {
 
 /// The method of ``OdpBootstrap.one_year``: a chain ladder without
 /// exposure, or an expected-loss method with its exposure column.
+/// The pattern a bootstrap simulates the one-year view with: its own, or
+/// with `bootstrap_ldf` and none of its own the method's, as R's one-year
+/// functions do by default.
+fn bootstrap_pattern(
+    own: Option<SelectedPattern>,
+    method: &OneYearMethod,
+    bootstrap_ldf: bool,
+) -> PyResult<Option<SelectedPattern>> {
+    match (own, bootstrap_ldf) {
+        (None, true) => Ok(method.pattern().cloned()),
+        (None, false) => Ok(None),
+        (Some(p), true) => Ok(Some(p)),
+        (Some(_), false) => Err(PyValueError::new_err(
+            "bootstrap_ldf=False takes a bootstrap without ldf: the bootstrap has its own",
+        )),
+    }
+}
+
 fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyResult<OneYearMethod> {
     if let Ok(m) = method.extract::<PyRef<'_, PyChainLadder>>() {
         if exposure.is_some() {
@@ -5523,6 +5557,10 @@ impl PyMackBootstrap {
     /// exposure : str, optional
     ///     The exposure column; required by the expected-loss methods, not
     ///     taken by ``ChainLadder``.
+    /// bootstrap_ldf : bool, default True
+    ///     As ``OdpBootstrap.one_year``: without an ``ldf`` of its own, the
+    ///     bootstrap takes ``method``'s selected pattern; ``False`` simulates
+    ///     from the triangle's own factors.
     ///
     /// Returns
     /// -------
@@ -5537,7 +5575,7 @@ impl PyMackBootstrap {
     ///     As ``OdpBootstrap.one_year`` and ``Mack.fit``, if a cumulative
     ///     value is negative, and if the bootstrap has a ``tail`` that is
     ///     not ``method``'s.
-    #[pyo3(signature = (triangle, column, method, exposure = None))]
+    #[pyo3(signature = (triangle, column, method, exposure = None, bootstrap_ldf = true))]
     fn one_year(
         &self,
         py: Python<'_>,
@@ -5545,9 +5583,13 @@ impl PyMackBootstrap {
         column: &str,
         method: &Bound<'_, PyAny>,
         exposure: Option<String>,
+        bootstrap_ldf: bool,
     ) -> PyResult<PyOneYearFit> {
         let method = one_year_method(method, exposure)?;
-        let (boot, tri) = (&self.inner, &triangle.inner);
+        let mut boot = self.inner.clone();
+        boot.development.pattern =
+            bootstrap_pattern(boot.development.pattern, &method, bootstrap_ldf)?;
+        let tri = &triangle.inner;
         let inner = py
             .detach(|| boot.one_year_segments(tri, column, &method))
             .map_err(err)?;

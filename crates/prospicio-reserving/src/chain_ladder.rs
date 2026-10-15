@@ -66,12 +66,16 @@ pub struct ChainLadderFit {
     /// For a cumulative selected pattern (factors to ultimate or percents
     /// developed), its given factor to ultimate at its last age over the
     /// factor to ultimate in use there (the factors from that age on and
-    /// the tail): the factor that multiplies the given percents developed,
-    /// and divides the given factors to ultimate, to make them consistent
-    /// with the projection. Ending at the oldest age, the rescaled percent
-    /// developed there times the tail factor is 100%. `None` for an
-    /// age-to-age pattern, which stops at its last factor and lets the
-    /// tail multiply on top, or without a pattern.
+    /// the tail). It reconciles the pattern's level at its last age only:
+    /// the given percent developed there times it is the projection's
+    /// (`1 / cdf` there), and, ending at the oldest age, the rescaled
+    /// percent developed there times the tail factor is 100%. At an earlier
+    /// age, the given percent developed times it is the projection's only
+    /// when every link from that age to the last is fully selected (weight
+    /// 1); a blended link uses `w * selected + (1 - w) * estimated`, which
+    /// the given values do not show. `None` for an age-to-age pattern,
+    /// which stops at its last factor and lets the tail multiply on top, or
+    /// without a pattern.
     pub pattern_rescale: Option<f64>,
 }
 

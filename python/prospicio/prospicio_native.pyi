@@ -3204,10 +3204,13 @@ class ChainLadderFit:
         """
         For a pattern given as factors to ultimate or percents developed,
         the factor that multiplies the given percents developed (and divides
-        the given factors to ultimate) to match the factors and tail in use:
-        ``cdf_given / cdf_used`` at the pattern's last age, so that a pattern
-        given to the oldest age, rescaled, times the tail is 100%. ``None``
-        for an age-to-age pattern or none.
+        the given factors to ultimate) to reconcile the pattern's level at
+        its last age with the factors and tail in use: ``cdf_given /
+        cdf_used`` there, so that a pattern given to the oldest age,
+        rescaled, times the tail is 100%. At earlier ages the rescaled
+        values are the projection's only where every link is fully selected;
+        with ``ldf_weight`` below 1, read ``cdf`` for the factors in use.
+        ``None`` for an age-to-age pattern or none.
         """
     @property
     def reserve(self, /) -> list[float]:
@@ -10867,7 +10870,7 @@ class MackBootstrap:
         """
         Number of simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, method: Any, exposure: str |None = None) -> OneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, method: Any, exposure: str |None = None, bootstrap_ldf: bool = True) -> OneYearFit:
         """
         The one-year view of any reserving method under Mack's process, as
         ``OdpBootstrap.one_year``: each simulation draws the cells of the
@@ -10892,6 +10895,10 @@ class MackBootstrap:
         exposure : str, optional
             The exposure column; required by the expected-loss methods, not
             taken by ``ChainLadder``.
+        bootstrap_ldf : bool, default True
+            As ``OdpBootstrap.one_year``: without an ``ldf`` of its own, the
+            bootstrap takes ``method``'s selected pattern; ``False`` simulates
+            from the triangle's own factors.
         
         Returns
         -------
@@ -12705,7 +12712,7 @@ class OdpBootstrap:
         """
         Number of simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, method: Any, exposure: str |None = None) -> OneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, method: Any, exposure: str |None = None, bootstrap_ldf: bool = True) -> OneYearFit:
         """
         The one-year view of any reserving method: the claims development
         result over the coming year, by re-reserving on the bootstrap
@@ -12750,6 +12757,15 @@ class OdpBootstrap:
             The exposure column; required by the expected-loss methods, not
             taken by ``ChainLadder``. Its latest value per origin is kept for
             the end of the year.
+        bootstrap_ldf : bool, default True
+            With a bootstrap that has no ``ldf`` of its own, whether it takes
+            ``method``'s selected pattern, so that each simulation's pseudo
+            factors are blended with it as the method's factors are (as R's
+            ``odp_one_year(bootstrap_ldf = TRUE)``). ``False`` simulates from
+            the triangle's own factors and lets the pattern enter only when
+            the method re-reserves; it is an error with a bootstrap that has
+            its own ``ldf``. A bootstrap's own ``ldf`` must select the same
+            factors and weights as ``method``'s, in any order or kind.
         
         Returns
         -------
@@ -12763,7 +12779,8 @@ class OdpBootstrap:
             As ``fit`` and the method's own ``fit``; if ``exposure`` is
             missing for an expected-loss method or given for
             ``ChainLadder``; if the bootstrap has a ``tail`` that is not
-            ``method``'s; or if the refit (or the bootstrap's tail refit)
+            ``method``'s, or an ``ldf`` that selects other factors or weights
+            than ``method``'s; or if the refit (or the bootstrap's tail refit)
             fails in any simulation (the message counts them and gives one).
         
         Examples

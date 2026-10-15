@@ -87,8 +87,11 @@ ages, which select the factors between them (\verb{cdf[a] / cdf[next age]}).
 A cumulative pattern's level at its last age selects nothing: it is
 rescaled to the factors and tail in use, and \code{pattern_rescale} reports
 the factor that multiplies the given percents developed (and divides the
-given factors to ultimate), so that a pattern given to the oldest age,
-rescaled, times the tail is 100\%. With a weight \code{w}, the factor used is
+given factors to ultimate) to reconcile the level at the last age, so
+that a pattern given to the oldest age, rescaled, times the tail is 100\%.
+At earlier ages the rescaled values are the projection's only where the
+links are fully selected; with a blend, read \code{cdf} for the percents in
+use. With a weight \code{w}, the factor used is
 \code{w * selected + (1 - w) * estimated}. A selected factor at or after a
 tail's attachment age is an error. In \code{\link[=mack]{mack()}} and the bootstraps a
 selected factor carries no parameter error and a blended one \code{1 - w}
