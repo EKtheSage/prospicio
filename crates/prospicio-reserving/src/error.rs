@@ -58,6 +58,13 @@ pub enum Error {
     Factor { age: usize, reason: &'static str },
     /// The tail factor is not finite and positive.
     InvalidTail(f64),
+    /// A selected development pattern is invalid, or does not fit the
+    /// triangle or the tail; `age` (months) is the age it concerns, when
+    /// one does.
+    Pattern {
+        age: Option<prospicio_core::Lag>,
+        reason: &'static str,
+    },
     /// A tail cannot be fitted with these settings, or its variance cannot
     /// be extrapolated.
     Tail(&'static str),
@@ -155,6 +162,11 @@ impl fmt::Display for Error {
             }
             Self::InvalidTail(t) => write!(f, "tail factor {t} is not finite and positive"),
             Self::Tail(why) => write!(f, "tail: {why}"),
+            Self::Pattern {
+                age: Some(age),
+                reason,
+            } => write!(f, "selected pattern, age {age} months: {reason}"),
+            Self::Pattern { age: None, reason } => write!(f, "selected pattern: {reason}"),
             Self::TooFewAges { needed, found } => write!(
                 f,
                 "method needs at least {needed} development ages, triangle has {found}"

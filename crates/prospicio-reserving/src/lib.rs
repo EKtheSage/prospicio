@@ -10,7 +10,8 @@
 //! any method, [`OdpBootstrap::one_year`] (or [`MackBootstrap::one_year`]
 //! with Mack's process), Mack's bootstrap of the lifetime view
 //! ([`MackBootstrap::fit`]), and Clark's growth curves
-//! ([`ClarkLdf`], [`ClarkCapeCod`]) (`docs/design/reserving-v02.md`).
+//! ([`ClarkLdf`], [`ClarkCapeCod`]), and selected development patterns
+//! ([`SelectedPattern`], decision 12) (`docs/design/reserving-v02.md`).
 //! Results are checked against R ChainLadder and chainladder-python in
 //! `validation/tests/reserving*.rs`.
 //!
@@ -56,6 +57,7 @@ pub mod mack_bootstrap;
 pub mod odp_glm;
 pub mod one_year;
 pub mod one_year_bootstrap;
+pub mod pattern;
 pub mod segments;
 pub mod tail;
 pub mod triangle;
@@ -87,6 +89,7 @@ pub use mack_bootstrap::{
 pub use odp_glm::{OdpGlm, OdpGlmFit};
 pub use one_year::ClaimsDevelopmentResult;
 pub use one_year_bootstrap::{OneYearFit, OneYearFits, OneYearMethod, OneYearSegment};
+pub use pattern::{PatternKind, PatternWeight, SelectedPattern};
 pub use prospicio_core::{Grain, Lag, Month, Period};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
 pub use tail::{CurveShape, Tail, TailBondy, TailConstant, TailCurve, TailFit};

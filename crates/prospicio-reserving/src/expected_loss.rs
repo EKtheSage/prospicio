@@ -56,7 +56,7 @@ use crate::triangle::{Segment, Triangle};
 /// assert_eq!(fit.reserves(), vec![-25.0, 0.0]);
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExpectedLoss {
     /// Expected loss ratio: the ultimate per unit of exposure.
     pub apriori: f64,
@@ -90,7 +90,7 @@ pub struct ExpectedLoss {
 /// assert!((fit.ultimate[1] - (200.0 + 200.0 / 3.0)).abs() < 1e-12);
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BornhuetterFerguson {
     /// Expected loss ratio: the expected ultimate per unit of exposure.
     pub apriori: f64,
@@ -131,7 +131,7 @@ pub struct BornhuetterFerguson {
 /// assert!((fit.ultimate[1] - 300.0).abs() < 1e-9);
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Benktander {
     /// Expected loss ratio of the starting ultimate.
     pub apriori: f64,
@@ -177,7 +177,7 @@ pub struct Benktander {
 /// assert!((fit.expected_loss.apriori[1] - elr).abs() < 1e-12);
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CapeCod {
     /// Annual trend of the loss ratio; above -1.
     pub trend: f64,
@@ -404,7 +404,7 @@ impl ExpectedLoss {
         Benktander {
             apriori: self.apriori,
             n_iters: 0,
-            chain_ladder: self.chain_ladder,
+            chain_ladder: self.chain_ladder.clone(),
         }
     }
 }
@@ -438,7 +438,7 @@ impl BornhuetterFerguson {
         Benktander {
             apriori: self.apriori,
             n_iters: 1,
-            chain_ladder: self.chain_ladder,
+            chain_ladder: self.chain_ladder.clone(),
         }
     }
 }

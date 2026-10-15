@@ -328,7 +328,12 @@ impl<T: ReserveFit> SegmentFits<T> {
     /// method's own totals (for Mack the standard errors of the total; for
     /// the chain ladder and Mack the segment's `tail`, `tail_sigma` and
     /// `tail_std_err`).
+    ///
+    /// With a selected pattern, also its `pattern_rescale` (NaN for an
+    /// age-to-age pattern; see
+    /// [`ChainLadderFit::pattern_rescale`](crate::ChainLadderFit::pattern_rescale)).
     pub fn totals(&self) -> FitTable {
+        let patterned = self.has_pattern();
         let mut values = Vec::new();
         push_columns(
             &mut values,
@@ -339,6 +344,10 @@ impl<T: ReserveFit> SegmentFits<T> {
                     ("reserve", vec![total_reserve(f)]),
                 ];
                 columns.extend(f.total_columns().into_iter().map(|(n, v)| (n, vec![v])));
+                if patterned {
+                    let rescale = f.chain_ladder().pattern_rescale.unwrap_or(f64::NAN);
+                    columns.push(("pattern_rescale", vec![rescale]));
+                }
                 columns
             }),
         );
@@ -350,12 +359,19 @@ impl<T: ReserveFit> SegmentFits<T> {
         }
     }
 
-    /// One row per segment × development age: `ldf` (the selected factor
+    /// One row per segment × development age: `ldf` (the factor in use
     /// from this age to the next), `cdf` (to ultimate, with the tail),
-    /// `sigma` and `std_err` (as estimated). The oldest age has no next age,
-    /// so its `ldf`, `sigma` and `std_err` are NaN; its `cdf` is the tail
-    /// factor.
+    /// `sigma` (as estimated) and `std_err` (of the factor in use). The
+    /// oldest age has no next age, so its `ldf`, `sigma` and `std_err` are
+    /// NaN; its `cdf` is the tail factor.
+    ///
+    /// With a selected pattern, side by side: `estimated_ldf` (the
+    /// triangle's), `selected_ldf` (the pattern's after conversion, NaN
+    /// where it selects none), `ldf_weight` (0 where none), `blended_ldf`
+    /// (before the tail), and `estimated_std_err`; `std_err` is then `1 -
+    /// ldf_weight` times `estimated_std_err`.
     pub fn development_table(&self) -> FitTable {
+        let patterned = self.has_pattern();
         let n_ages = |s: usize| self.fits[s].chain_ladder().cdf.len();
         let padded = |v: &[f64]| {
             let mut v = v.to_vec();
@@ -368,12 +384,24 @@ impl<T: ReserveFit> SegmentFits<T> {
             self.fits.iter().map(|f| {
                 let cl = f.chain_ladder();
                 let dev = &cl.development;
-                vec![
+                let mut columns = vec![
                     ("ldf", padded(cl.ldf())),
                     ("cdf", cl.cdf.clone()),
                     ("sigma", padded(&dev.sigma)),
-                    ("std_err", padded(&dev.std_err)),
-                ]
+                    ("std_err", padded(&dev.blended_std_err())),
+                ];
+                if patterned {
+                    let selected: Vec<f64> =
+                        dev.selected.iter().map(|s| s.unwrap_or(f64::NAN)).collect();
+                    columns.extend([
+                        ("estimated_ldf", padded(&dev.ldf)),
+                        ("selected_ldf", padded(&selected)),
+                        ("ldf_weight", padded(&dev.weight)),
+                        ("blended_ldf", padded(&dev.blended_ldf())),
+                        ("estimated_std_err", padded(&dev.std_err)),
+                    ]);
+                }
+                columns
             }),
         );
         FitTable {
@@ -387,6 +415,13 @@ impl<T: ReserveFit> SegmentFits<T> {
             ),
             values,
         }
+    }
+
+    /// Whether a selected pattern selects any factor of any segment.
+    fn has_pattern(&self) -> bool {
+        self.fits
+            .iter()
+            .any(|f| f.chain_ladder().development.has_pattern())
     }
 
     /// Total ultimate over every segment and origin.

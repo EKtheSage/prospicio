@@ -104,6 +104,7 @@ use crate::dependence::{Resample, SegmentDependence, SharedPool, synchronize};
 use crate::development::{Development, DevelopmentFit};
 use crate::error::{Error, Result};
 use crate::mack::{Mack, MackFit};
+use crate::pattern::Blend;
 use crate::one_year_bootstrap::{
     NextCells, NextYear, OneYearFit, OneYearFits, OneYearMethod, Sims, YearCells,
 };
@@ -462,6 +463,9 @@ pub(crate) struct MackDraw {
     tail: Option<(TailDraw, f64)>,
     /// Whether the pool is centred.
     centre: bool,
+    /// The selected pattern the pseudo factors are blended with; `None`
+    /// without one.
+    blend: Option<Blend>,
 }
 
 impl SharedPool for MackDraw {
@@ -562,6 +566,10 @@ impl MackDraw {
         picks: Option<&[usize]>,
     ) -> Result<(Vec<f64>, Option<TailStep>)> {
         let factors = self.factors(dev, rng, picks);
+        let factors = match &self.blend {
+            Some(blend) => blend.apply(&factors),
+            None => factors,
+        };
         Ok(match &self.tail {
             None => (factors, None),
             Some((tail, sigma)) => {
@@ -866,6 +874,7 @@ impl MackBootstrap {
             n_sims: self.n_sims,
             seed: self.seed,
             tail: self.tail,
+            pattern: self.development.pattern.clone(),
         }
     }
 
@@ -891,7 +900,7 @@ impl MackBootstrap {
             }
         }
         let mack = Mack {
-            development: self.development,
+            development: self.development.clone(),
             tail: self.tail,
             tail_sigma: self.tail_sigma,
             tail_std_err: self.tail_std_err,
@@ -934,6 +943,7 @@ impl MackBootstrap {
         if pool.is_empty() && sigma.iter().any(|&s| s != 0.0) {
             return Err(Error::Bootstrap("no residuals to resample"));
         }
+        let blend = Blend::of(&cl.development);
         Ok((
             MackBootstrapSegment { mack, residuals },
             MackDraw {
@@ -942,6 +952,7 @@ impl MackBootstrap {
                 process: self.process,
                 tail,
                 centre: self.centre_residuals,
+                blend,
             },
         ))
     }
@@ -1302,7 +1313,7 @@ mod tests {
             apriori: 0.8,
             ..Default::default()
         };
-        let method = OneYearMethod::BornhuetterFerguson(bf, "premium".into());
+        let method = OneYearMethod::BornhuetterFerguson(bf.clone(), "premium".into());
         let fit = b.one_year(&tri, "paid", &method).unwrap();
         assert_eq!(
             fit.opening_ultimate,

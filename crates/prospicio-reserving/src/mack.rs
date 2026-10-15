@@ -24,6 +24,16 @@ use prospicio_core::Lag;
 /// scales the ultimates and carries the risk read where a tail of 1.001
 /// would be. R's `MackChainLadder` ignores a tail below 1 altogether.
 ///
+/// With a selected pattern ([`Development::pattern`]), a selected factor
+/// is taken as known: its parameter error is zero, and a blended one with
+/// weight `w` keeps the estimate's share, `(1 - w)` times its standard
+/// error, so that
+/// `mse(R_i) = U_i^2 sum_k (sigma_k^2 / f_k^2) (1 / C_ik + (1 - w_k)^2 / S_k)`
+/// with `f_k` the factors used. The process error is the triangle's (its
+/// sigmas, estimated around its own factors). A pattern therefore lowers
+/// the reported standard errors, and a wrong benchmark is not reflected in
+/// them (`docs/design/reserving-v02.md`, decision 12).
+///
 /// ```
 /// use prospicio_reserving::{Mack, Tail};
 /// # use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
@@ -42,7 +52,7 @@ use prospicio_core::Lag;
 /// assert!(mack.chain_ladder.tail.factor > 1.0);
 /// assert!(mack.standard_error[0] > 0.0);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Mack {
     /// How factors are estimated and unestimable sigmas filled in.
     pub development: Development,
@@ -104,7 +114,7 @@ impl Mack {
             });
         }
         let mut chain_ladder = ChainLadder {
-            development: self.development,
+            development: self.development.clone(),
             tail: self.tail,
         }
         .fit_segment(segment, ages)?;
@@ -148,7 +158,14 @@ impl Mack {
             .chain([tail.factor])
             .collect();
         let sigma: Vec<f64> = dev.sigma.iter().copied().chain([tail.sigma]).collect();
-        let std_err: Vec<f64> = dev.std_err.iter().copied().chain([tail.std_err]).collect();
+        // A selected factor carries no estimation error and a blended one
+        // the estimate's share, `(1 - w) std_err` (decision 12); the process
+        // error is the triangle's sigma, unchanged.
+        let std_err: Vec<f64> = dev
+            .blended_std_err()
+            .into_iter()
+            .chain([tail.std_err])
+            .collect();
         let n_origins = chain_ladder.origins.len();
 
         // Per-origin recursions over the projected ages, and the total

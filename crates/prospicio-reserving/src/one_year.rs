@@ -110,6 +110,23 @@ impl MackFit {
     /// the hole stays out now and next year and the run-off adds up to
     /// Mack's. R's `CDR` takes the volumes from the full triangle, the
     /// imputed cell included, and differs here.
+    ///
+    /// With a selected pattern ([`Development::pattern`](crate::Development::pattern))
+    /// the factors in use are `f = w s + (1 - w) e` and next year's are
+    /// `w s + (1 - w) e'`, `e'` the re-estimate. Under Merz and Wüthrich's
+    /// conditional resampling the true factor varies around `f` with the
+    /// blend's parameter variance `(1 - w)^2 sigma^2 / S`, so with
+    /// `g = 1 - w`, `s` the share of the new cell in the re-estimate and
+    /// `t` each existing parameter term: the process term is unchanged,
+    /// the own link's parameter term is `g^2 t`, a later re-estimated
+    /// link's `g^2 (1 - s (1 - g^2)) t`, and the covariance of an origin's
+    /// own link with a younger origin's re-estimate of it
+    /// `g (1 - s (1 - g^2)) t`. With every factor fully selected only the
+    /// process error remains, with no covariance between origins. Between
+    /// 0 and 1 the re-estimates drift towards the triangle's own factors,
+    /// so the CDR's mean is not zero (these are its standard deviations)
+    /// and the years' variances no longer add up to Mack's
+    /// (`docs/design/reserving-v02.md`, decision 12).
     pub fn claims_development_result(&self) -> Result<ClaimsDevelopmentResult> {
         let cl = &self.chain_ladder;
         let dev = &cl.development;
@@ -159,6 +176,9 @@ impl MackFit {
         let kept = |k: usize, years: usize| -> f64 {
             (k + 1 - years..=k).map(|i| 1.0 - share[i]).product()
         };
+        // The estimate's share of each factor in use, `1 - w`: 1 without a
+        // selected pattern, 0 where a factor is fully selected.
+        let g: Vec<f64> = dev.weight.iter().map(|w| 1.0 - w).collect();
 
         let projections: Vec<Vec<f64>> = (0..n_origins).map(|o| cl.projection(o)).collect();
         let ultimate = &cl.ultimate;
@@ -184,17 +204,29 @@ impl MackFit {
                 // factor (R's CL_MSEPs).
                 let c = projections[o][year];
                 let process = c * cl.cdf[j].powi(2) * ratio[j];
-                let parameter: f64 = (j..n_links)
+                // With a selected pattern each term is scaled by what the
+                // estimate's error still reaches (decision 12): `g = 1 - w`
+                // on the own link, and on a re-estimated later link
+                // `g^2 (1 - s (1 - g^2))`, `s` the new cell's share, since
+                // the new cell's link ratio has the blended factor's
+                // parameter error. All 1 without a pattern.
+                let term = |l: usize| kept(l, year) * ratio[l] / volume[l];
+                let own = g[j] * g[j] * term(j);
+                let later: f64 = (j + 1..n_links)
                     .map(|l| {
-                        let first = if l == j { 1.0 } else { share[l - year] };
-                        kept(l, year) * first * ratio[l] / volume[l]
+                        let s = share[l - year];
+                        g[l] * g[l] * (1.0 - s * (1.0 - g[l] * g[l])) * s * term(l)
                     })
                     .sum();
+                // The covariance of this origin's own link with a younger
+                // origin's re-estimate of it.
+                let s = share[j - year];
+                let cross = g[j] * (1.0 - s * (1.0 - g[j] * g[j])) * term(j);
                 let u = ultimate[o];
-                msep[o] = process + parameter * u * u;
+                msep[o] = process + (own + later) * u * u;
                 // The pairs (o, o') with o' younger share the older origin's
                 // parameter term.
-                total += process + parameter * u * (u + 2.0 * younger[o]);
+                total += process + (own + later) * u * u + 2.0 * (cross + later) * u * younger[o];
             }
             by_calendar_year.push(msep.iter().map(|m| m.sqrt()).collect::<Vec<f64>>());
             total_by_calendar_year.push(total.sqrt());

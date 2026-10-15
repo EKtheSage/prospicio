@@ -2,7 +2,10 @@
 //! standard errors, estimated as the weighted regressions of Mack (1993,
 //! 1999) used by R ChainLadder and chainladder-python.
 
+use std::fmt;
+
 use crate::error::{Error, Result};
+use crate::pattern::{SelectedPattern, blend};
 use crate::triangle::{Segment, Triangle};
 use prospicio_core::Lag;
 
@@ -64,10 +67,34 @@ pub enum SigmaInterpolation {
 /// let fit = Development::default().fit(&tri, "paid").unwrap();
 /// assert_eq!(fit.ldf, vec![1.5]);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// With a [`pattern`](Self::pattern) the fit also carries the selected
+/// factors and their weights ([`DevelopmentFit::selected`],
+/// [`DevelopmentFit::weight`]); its estimated fields stay the triangle's.
+#[derive(Clone, PartialEq, Default)]
 pub struct Development {
     pub average: Average,
     pub sigma_interpolation: SigmaInterpolation,
+    /// Factors chosen by the user, which replace or blend with the
+    /// estimated ones at the ages they give; `None` estimates every factor.
+    /// See [`SelectedPattern`]: a selected factor carries no parameter
+    /// error, so a pattern lowers the reported uncertainty.
+    pub pattern: Option<SelectedPattern>,
+}
+
+/// As derived, but without `pattern` when there is none, so that the
+/// settings recorded in a bootstrap's provenance are as they were before
+/// patterns.
+impl fmt::Debug for Development {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut d = f.debug_struct("Development");
+        d.field("average", &self.average)
+            .field("sigma_interpolation", &self.sigma_interpolation);
+        if let Some(pattern) = &self.pattern {
+            d.field("pattern", pattern);
+        }
+        d.finish()
+    }
 }
 
 /// Estimated development pattern of one triangle segment.
@@ -87,6 +114,36 @@ pub struct DevelopmentFit {
     pub volume: Vec<f64>,
     /// Mack's `alpha` the factors were estimated with.
     pub alpha: f64,
+    /// The selected pattern's age-to-age factor of each link, after
+    /// conversion; `None` where the pattern selects none (or there is no
+    /// pattern).
+    pub selected: Vec<Option<f64>>,
+    /// The weight `w` on each selected factor; 0 where none is selected.
+    pub weight: Vec<f64>,
+}
+
+impl DevelopmentFit {
+    /// The factors before the tail: `w * selected + (1 - w) * ldf` where a
+    /// factor is selected, the estimate `ldf` elsewhere.
+    pub fn blended_ldf(&self) -> Vec<f64> {
+        blend(&self.selected, &self.weight, &self.ldf)
+    }
+
+    /// Standard error of each blended factor, `(1 - w) * std_err`: a
+    /// selected factor carries no estimation error (0, even where the
+    /// estimate's is NaN), a blended one the estimate's share.
+    pub fn blended_std_err(&self) -> Vec<f64> {
+        self.std_err
+            .iter()
+            .zip(&self.weight)
+            .map(|(s, w)| if *w == 1.0 { 0.0 } else { (1.0 - w) * s })
+            .collect()
+    }
+
+    /// Whether a pattern selects any factor.
+    pub fn has_pattern(&self) -> bool {
+        self.selected.iter().any(Option::is_some)
+    }
 }
 
 impl Development {
@@ -102,6 +159,15 @@ impl Development {
     pub(crate) fn fit_segment(&self, segment: &Segment) -> Result<DevelopmentFit> {
         let alpha = self.average.alpha();
         let n_links = segment.n_dev.saturating_sub(1);
+        // The pattern is checked before the estimate, so that a bad pattern
+        // is reported as such.
+        let (selected, weight) = match &self.pattern {
+            Some(p) => {
+                let r = p.resolve(&segment.ages)?;
+                (r.selected, r.weight)
+            }
+            None => (vec![None; n_links], vec![0.0; n_links]),
+        };
         let mut ldf = Vec::with_capacity(n_links);
         let mut sigma = Vec::with_capacity(n_links);
         let mut volume = Vec::with_capacity(n_links);
@@ -161,12 +227,14 @@ impl Development {
             .map(|(s, v)| s / v.sqrt())
             .collect();
         Ok(DevelopmentFit {
-            development: Vec::new(),
+            development: segment.ages.clone(),
             ldf,
             sigma,
             std_err,
             volume,
             alpha,
+            selected,
+            weight,
         })
     }
 }

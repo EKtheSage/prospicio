@@ -23,6 +23,14 @@
 //! A constant tail attached before the oldest age moves each factor it
 //! replaces by the pseudo factor's deviation from the estimate, so those
 //! ages keep their parameter error.
+//!
+//! With a selected pattern ([`OdpBootstrap::pattern`], decision 12) the
+//! residuals, fitted values and scale are still the triangle's estimate's,
+//! and each simulation blends its pseudo factors with the selection,
+//! `w s + (1 - w) f*`: a fully selected factor is the same in every
+//! simulation. The ODP projects from each origin's pseudo latest value, so
+//! the estimation error of the origins' levels remains even with every
+//! factor selected.
 
 use std::sync::Mutex;
 
@@ -35,7 +43,9 @@ use prospicio_prob::{
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::dependence::{Resample, SegmentDependence, synchronize};
 use crate::error::{Error, Result};
+use crate::development::Development;
 use crate::one_year_bootstrap::Failures;
+use crate::pattern::{Blend, SelectedPattern};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
@@ -120,6 +130,14 @@ pub struct OdpBootstrap {
     /// [`one_year_segments`](Self::one_year_segments) depend on each other;
     /// independent by default.
     pub dependence: SegmentDependence,
+    /// Factors chosen by the user (see [`SelectedPattern`]), which each
+    /// simulation blends its pseudo factors with: a fully selected factor
+    /// has no parameter error, a blended one `(1 - w)` times the pseudo
+    /// factor's deviation. The residuals and scale stay the triangle's, and
+    /// the origins' pseudo latest values keep their estimation error.
+    /// `None`, the default, re-estimates every factor. In the one-year view
+    /// the method's pattern must then be this one.
+    pub pattern: Option<SelectedPattern>,
 }
 
 impl Default for OdpBootstrap {
@@ -131,6 +149,7 @@ impl Default for OdpBootstrap {
             tail: Tail::default(),
             tail_std_err: None,
             dependence: SegmentDependence::Independent,
+            pattern: None,
         }
     }
 }
@@ -387,8 +406,9 @@ impl OdpBootstrap {
         }
         let segment = triangle.segment(column)?;
         let ages = &segment.ages;
-        let (fit, pool) = prepare(&segment, ages, self.tail)?;
+        let (fit, pool) = prepare_selected(&segment, ages, self.tail, self.pattern.as_ref())?;
         let tail = self.tail_draw(&fit.chain_ladder)?;
+        let blend = Blend::of(&fit.chain_ladder.development);
 
         let mut hasher = InputHasher::new();
         hasher.str(column);
@@ -401,6 +421,7 @@ impl OdpBootstrap {
             scale: fit.scale,
             process: self.process,
             tail: tail.as_ref(),
+            blend: blend.as_ref(),
         };
         let reserves = simulate_lifetime(
             vec!["origin".into()],
@@ -435,9 +456,10 @@ impl OdpBootstrap {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
         let mut prepared = fit_each(triangle, column, |s| {
-            let (fit, pool) = prepare(s, &s.ages, self.tail)?;
+            let (fit, pool) = prepare_selected(s, &s.ages, self.tail, self.pattern.as_ref())?;
             let tail = self.tail_draw(&fit.chain_ladder)?;
-            Ok((fit, pool, tail, s.clone()))
+            let blend = Blend::of(&fit.chain_ladder.development);
+            Ok((fit, pool, (tail, blend), s.clone()))
         })?;
         let shared = match self.dependence {
             SegmentDependence::Synchronized => {
@@ -458,7 +480,7 @@ impl OdpBootstrap {
         dims.push("origin".into());
         let mut components = Vec::new();
         let mut sims = Vec::with_capacity(prepared.len());
-        for (label, (fit, pool, tail, segment)) in prepared.iter() {
+        for (label, (fit, pool, (tail, blend), segment)) in prepared.iter() {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, segment, &fit.chain_ladder, &segment.ages);
             components.extend(origin_keys(label, &segment.origins));
@@ -470,6 +492,7 @@ impl OdpBootstrap {
                 scale: fit.scale,
                 process: self.process,
                 tail: tail.as_ref(),
+                blend: blend.as_ref(),
             };
             sims.push((sim, keyed.then(|| label.to_string())));
         }
@@ -498,6 +521,15 @@ impl OdpBootstrap {
         Ok(OdpBootstrapFits { segments, reserves })
     }
 
+    /// `provenance` with the pattern when there is one; without one, as it
+    /// was before patterns.
+    pub(crate) fn with_pattern(&self, provenance: Provenance) -> Provenance {
+        match &self.pattern {
+            None => provenance,
+            Some(p) => provenance.param("pattern", format!("{p:?}")),
+        }
+    }
+
     /// The tail each simulation draws, `None` without one; see
     /// [`tail`](Self::tail).
     pub(crate) fn tail_draw(&self, cl: &ChainLadderFit) -> Result<Option<TailDraw>> {
@@ -516,7 +548,7 @@ impl OdpBootstrap {
                 .param("tail", format!("{:?}", self.tail))
                 .param("tail_std_err", format!("{:?}", self.tail_std_err))
         };
-        provenance
+        self.with_pattern(provenance)
             .param("column", column)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
             .input_hash(hasher.finish())
@@ -690,10 +722,24 @@ pub(crate) fn prepare(
     ages: &[Lag],
     tail: Tail,
 ) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
+    prepare_selected(segment, ages, tail, None)
+}
+
+/// [`prepare`] with a selected pattern, which the chain ladder projects
+/// with; the fitted values and residuals stay the estimate's.
+pub(crate) fn prepare_selected(
+    segment: &Segment,
+    ages: &[Lag],
+    tail: Tail,
+    pattern: Option<&SelectedPattern>,
+) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
     let (no, nd) = (segment.n_origins, segment.n_dev);
     let chain_ladder = ChainLadder {
         tail,
-        ..Default::default()
+        development: Development {
+            pattern: pattern.cloned(),
+            ..Default::default()
+        },
     }
     .fit_segment(segment, ages)?;
     let ldf = &chain_ladder.development.ldf;
@@ -780,6 +826,9 @@ pub(crate) struct Simulation<'a> {
     /// The lifetime view's tail; `None` in the one-year view, which draws
     /// the tail itself.
     pub(crate) tail: Option<&'a TailDraw>,
+    /// The lifetime view's selected pattern; `None` without one, and in
+    /// the one-year view, which blends itself.
+    pub(crate) blend: Option<&'a Blend>,
 }
 
 impl Simulation<'_> {
@@ -800,6 +849,10 @@ impl Simulation<'_> {
     ) -> Result<()> {
         let nd = self.segment.n_dev;
         let (pseudo, factors) = self.resample(rng, picks);
+        let factors = match self.blend {
+            Some(blend) => blend.apply(&factors),
+            None => factors,
+        };
         let (factors, tail) = match self.tail {
             None => (factors, None),
             Some(tail) => {
@@ -1008,6 +1061,7 @@ mod tests {
             tail,
             tail_std_err,
             dependence: SegmentDependence::Independent,
+            pattern: None,
         }
     }
 
@@ -1024,6 +1078,7 @@ mod tests {
             scale: fit.scale,
             process: ProcessDistribution::None,
             tail: None,
+            blend: None,
         };
         let mut rng = StreamRng::new(seed, i);
         let (pseudo, factors) = sim.resample(&mut rng, None);

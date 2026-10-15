@@ -1,7 +1,7 @@
 //! Deterministic chain ladder.
 
 use crate::development::{Development, DevelopmentFit, cumulative_factors};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::segments::{SegmentFits, fit_each};
 use crate::tail::{Tail, TailFit};
 use crate::triangle::{Segment, Triangle};
@@ -9,6 +9,11 @@ use prospicio_core::{Lag, Period};
 
 /// Chain-ladder method: project each origin's latest value to ultimate with
 /// the estimated age-to-age factors and a [`Tail`].
+///
+/// With a selected pattern ([`Development::pattern`]) the projection uses
+/// the selected factors where it gives them, blended with the estimate by
+/// their weight; the estimate is still reported
+/// ([`ChainLadderFit::development`]).
 ///
 /// ```
 /// use prospicio_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Month, Triangle};
@@ -29,7 +34,7 @@ use prospicio_core::{Lag, Period};
 /// assert_eq!(cl.total_reserve(), 100.0);
 /// assert_eq!(cl.origins[1].to_string(), "2021");
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ChainLadder {
     /// How the age-to-age factors are estimated.
     pub development: Development,
@@ -43,7 +48,8 @@ pub struct ChainLadder {
 pub struct ChainLadderFit {
     /// Origin periods, oldest first; every per-origin vector follows them.
     pub origins: Vec<Period>,
-    /// The estimated development pattern.
+    /// The estimated development pattern, with the selected factors and
+    /// their weights when there is a pattern.
     pub development: DevelopmentFit,
     /// The fitted tail: the selected factors, which the projection uses,
     /// and the factor from the oldest age to ultimate.
@@ -57,6 +63,16 @@ pub struct ChainLadderFit {
     pub latest: Vec<f64>,
     /// Projected ultimate per origin.
     pub ultimate: Vec<f64>,
+    /// For a cumulative selected pattern (factors to ultimate or percents
+    /// developed), its given factor to ultimate at its last age over the
+    /// factor to ultimate in use there (the factors from that age on and
+    /// the tail): the factor that multiplies the given percents developed,
+    /// and divides the given factors to ultimate, to make them consistent
+    /// with the projection. Ending at the oldest age, the rescaled percent
+    /// developed there times the tail factor is 100%. `None` for an
+    /// age-to-age pattern, which stops at its last factor and lets the
+    /// tail multiply on top, or without a pattern.
+    pub pattern_rescale: Option<f64>,
 }
 
 impl ChainLadder {
@@ -80,7 +96,26 @@ impl ChainLadder {
         let mut development = self.development.fit_segment(segment)?;
         development.development = ages.to_vec();
         let tail = self.tail.fit(&development)?;
+        // A factor is the pattern's or the tail's, never both.
+        if let Some(k) = (tail.attachment..development.selected.len())
+            .find(|&k| development.selected[k].is_some())
+        {
+            return Err(Error::Pattern {
+                age: Some(ages[k]),
+                reason: "the factor is selected and replaced by the tail: \
+                         select factors before the tail's attachment age only",
+            });
+        }
         let cdf = cumulative_factors(&tail.ldf[..development.ldf.len()], tail.factor);
+        // The given level of a cumulative pattern at its last age, against
+        // the factor to ultimate in use there.
+        let pattern_rescale = match &self.development.pattern {
+            Some(p) => p
+                .resolve(ages)?
+                .level
+                .map(|(last, given)| given / cdf[last]),
+            None => None,
+        };
         let (latest_position, latest): (Vec<usize>, Vec<f64>) = (0..segment.n_origins)
             .map(|o| segment.latest(o))
             .collect::<Result<Vec<_>>>()?
@@ -99,14 +134,16 @@ impl ChainLadder {
             latest_position,
             latest,
             ultimate,
+            pattern_rescale,
         })
     }
 }
 
 impl ChainLadderFit {
-    /// Selected age-to-age factors within the triangle, which the projection
-    /// uses: the estimated ones, replaced by the tail's from its attachment.
-    /// Element `k` links age `k` to `k + 1`.
+    /// Age-to-age factors within the triangle, which the projection uses:
+    /// the estimated ones (blended with a selected pattern where it gives
+    /// them), replaced by the tail's from its attachment. Element `k` links
+    /// age `k` to `k + 1`.
     pub fn ldf(&self) -> &[f64] {
         &self.tail.ldf[..self.development.ldf.len()]
     }
