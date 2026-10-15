@@ -5,4 +5,4 @@
   Mack's model as worksheet functions (`PRO.CL`, `PRO.CL.LDF`,
   `PRO.CL.CDF`, `PRO.CL.ULTIMATE`, `PRO.CL.RESERVE`, `PRO.CL.FACTORS`,
   `PRO.MACK`, `PRO.VERSION`), built with `cargo xtask xll`. Not yet
-  distributed; unsigned.
+  distributed; unsigned (#278).
