@@ -8,11 +8,14 @@ root:
 
 Each case selects a full benchmark pattern, made from the triangle's own
 volume-weighted factors as s_k = 1 + 1.1 (e_k - 1) for every age but the
-oldest, and gives it to DevelopmentConstant in one of four ways:
+oldest, and gives it to DevelopmentConstant in one of five ways:
 
 * style=ldf: the age-to-age factors s_k;
 * style=cdf: the factors to ultimate, 1 at the oldest age (where the two
   libraries' conventions for the level agree);
+* style=cdf;level=1.03: the factors to ultimate times 1.03 and no tail: both
+  libraries keep the level 1.03 at the oldest age as the tail (prospicio's
+  implied tail, decided 2026-10-15);
 * style=cdf;tail=1.05: the factors to ultimate times 1.03, so the level at
   the oldest age is 1.03, followed by TailConstant(tail=1.05), which replaces
   that level with the tail (chainladder-python and prospicio agree here too);
@@ -48,7 +51,13 @@ LEVEL = 1.03
 TAIL = 1.05
 WEIGHT = 0.6
 
-STYLES = ["style=ldf", "style=cdf", "style=cdf;tail=1.05", "style=ldf;weight=0.6"]
+STYLES = [
+    "style=ldf",
+    "style=cdf",
+    "style=cdf;level=1.03",
+    "style=cdf;tail=1.05",
+    "style=ldf;weight=0.6",
+]
 CHAIN_LADDER = [("raa", "value"), ("genins", "value")]
 EXPOSURE_METHODS = [
     ("expected_loss;apriori=0.75", lambda: cl.ExpectedLoss(apriori=0.75)),
@@ -83,6 +92,9 @@ def patterns(tri, style):
         return given, given, "ldf", None
     if style == "style=cdf":
         given = dict(zip(ages, cdf))
+        return given, given, "cdf", None
+    if style == "style=cdf;level=1.03":
+        given = {a: LEVEL * c for a, c in zip(ages, cdf)}
         return given, given, "cdf", None
     if style == "style=cdf;tail=1.05":
         given = {a: LEVEL * c for a, c in zip(ages, cdf)}

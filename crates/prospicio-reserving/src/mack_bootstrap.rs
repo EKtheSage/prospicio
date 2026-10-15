@@ -107,7 +107,7 @@ use crate::mack::{Mack, MackFit};
 use crate::one_year_bootstrap::{
     NextCells, NextYear, OneYearFit, OneYearFits, OneYearMethod, Sims, YearCells,
 };
-use crate::pattern::Blend;
+use crate::pattern::{Blend, OneYearPattern};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Segment, Triangle};
@@ -261,8 +261,17 @@ pub struct MackBootstrap {
     /// `w s + (1 - w) f*` for its pseudo factors `f*`: a fully selected
     /// factor is the same in every simulation, so the pattern lowers the
     /// simulated uncertainty, and a wrong benchmark is not reflected in it.
-    /// In the one-year view the re-reserving method must then have the same
-    /// pattern (decision 12).
+    /// Each origin is projected from its observed latest value, so with
+    /// every factor selected no parameter error is left, only the process
+    /// error (unlike [`OdpBootstrap::pattern`](crate::OdpBootstrap::pattern),
+    /// whose pseudo latest values keep the origins' level error). With no
+    /// [`tail`](Self::tail), a cumulative pattern to the oldest age implies
+    /// a constant tail ([`ChainLadderFit::pattern_tail`]), the same in
+    /// every simulation unless [`tail_std_err`](Self::tail_std_err) is
+    /// given, its step to ultimate with Mack's process error and the
+    /// extrapolated tail sigma. Without a pattern, the one-year view takes
+    /// the method's ([`one_year_pattern`](Self::one_year_pattern)); with
+    /// one, the method's must select the same factors (decision 12).
     pub development: Development,
     /// Subtract the pool's mean from the residuals before resampling them,
     /// for the pseudo factors and the `Residuals` process, so that the
@@ -299,6 +308,12 @@ pub struct MackBootstrap {
     /// independent by default. Synchronized, every segment resamples the
     /// link-ratio residuals of the same origins and factors.
     pub dependence: SegmentDependence,
+    /// In the one-year view ([`one_year`](Self::one_year)), with no pattern
+    /// in [`development`](Self::development), whether each simulation
+    /// blends its pseudo factors with the re-reserving method's pattern
+    /// (the default) or simulates from the triangle's own estimated
+    /// factors.
+    pub one_year_pattern: OneYearPattern,
 }
 
 impl Default for MackBootstrap {
@@ -313,6 +328,7 @@ impl Default for MackBootstrap {
             tail_sigma: None,
             tail_std_err: None,
             dependence: SegmentDependence::Independent,
+            one_year_pattern: OneYearPattern::Method,
         }
     }
 }
@@ -845,12 +861,13 @@ impl MackBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFit<MackBootstrapSegment>> {
-        self.sims().one_year(
+        let boot = self.for_method(method)?;
+        boot.sims().one_year(
             triangle,
             column,
             method,
-            |s| self.model(s),
-            |hasher| self.provenance(column, method, hasher),
+            |s| boot.model(s),
+            |hasher| boot.provenance(column, method, hasher),
         )
     }
 
@@ -865,14 +882,25 @@ impl MackBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFits<MackBootstrapSegment>> {
-        self.sims().one_year_segments(
+        let boot = self.for_method(method)?;
+        boot.sims().one_year_segments(
             triangle,
             column,
             method,
-            &self.dependence,
-            |s| self.model(s),
-            |hasher| self.provenance(column, method, hasher),
+            &boot.dependence,
+            |s| boot.model(s),
+            |hasher| boot.provenance(column, method, hasher),
         )
+    }
+
+    /// The bootstrap with the pattern it simulates the one-year view of
+    /// `method` with ([`one_year_pattern`](Self::one_year_pattern)).
+    fn for_method(&self, method: &OneYearMethod) -> Result<Self> {
+        let mut boot = self.clone();
+        boot.development.pattern = self
+            .one_year_pattern
+            .resolve(self.development.pattern.as_ref(), method.pattern())?;
+        Ok(boot)
     }
 
     fn sims(&self) -> Sims {

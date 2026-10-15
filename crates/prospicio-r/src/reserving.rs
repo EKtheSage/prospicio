@@ -16,8 +16,8 @@ use prospicio_reserving::{
     ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
     ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve, Label, Lag,
     Long, Mack, MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit as MackInner,
-    MackProcess, Month, OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, PatternKind,
-    PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits,
+    MackProcess, Month, OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, OneYearPattern,
+    PatternKind, PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits,
     SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve,
     Triangle as TriangleInner,
 };
@@ -1330,11 +1330,6 @@ impl Triangle {
         } else {
             Tail::default()
         };
-        let boot_pattern = if bootstrap_ldf {
-            selected_pattern(&ldf)?
-        } else {
-            None
-        };
         let method = one_year_method(
             method,
             exposure,
@@ -1348,7 +1343,7 @@ impl Triangle {
         let inner = OdpBootstrap {
             tail: boot_tail,
             tail_std_err: optional(tail_std_err),
-            pattern: boot_pattern,
+            one_year_pattern: one_year_pattern(bootstrap_ldf),
             ..bootstrap(n_sims, seed, process, dependence)?
         }
         .one_year_segments(&self.inner, column, &method)
@@ -1398,11 +1393,6 @@ impl Triangle {
         } else {
             Tail::default()
         };
-        let boot_pattern = if bootstrap_ldf {
-            selected_pattern(&ldf)?
-        } else {
-            None
-        };
         let method = one_year_method(
             method,
             exposure,
@@ -1416,6 +1406,7 @@ impl Triangle {
             tail: boot_tail,
             tail_sigma: optional(tail_sigma),
             tail_std_err: optional(tail_std_err),
+            one_year_pattern: one_year_pattern(bootstrap_ldf),
             ..mack_bootstrap(
                 n_sims,
                 seed,
@@ -1424,7 +1415,7 @@ impl Triangle {
                 mack_sigma_interpolation,
                 centre_residuals,
                 segment_dependence(dependence, spearman)?,
-                boot_pattern,
+                None,
             )?
         }
         .one_year_segments(&self.inner, column, &method)
@@ -1751,6 +1742,12 @@ impl ChainLadderFit {
     fn pattern_rescale(&self) -> Result<f64> {
         let f = single(&self.inner, "pattern_rescale", "totals_frame()")?;
         Ok(f.pattern_rescale.unwrap_or(f64::NAN))
+    }
+
+    /// The tail a cumulative pattern implies; NaN where it implies none.
+    fn pattern_tail(&self) -> Result<f64> {
+        let f = single(&self.inner, "pattern_tail", "totals_frame()")?;
+        Ok(f.pattern_tail.unwrap_or(f64::NAN))
     }
 
     fn alpha(&self) -> f64 {
@@ -3646,4 +3643,14 @@ extendr_module! {
     impl MackBootstrapFit;
     impl OneYearFit;
     impl ClarkFit;
+}
+
+/// Which factors a one-year bootstrap simulates: with `bootstrap_ldf` the
+/// method's pattern (the Rust default), without it the triangle's own.
+fn one_year_pattern(bootstrap_ldf: bool) -> OneYearPattern {
+    if bootstrap_ldf {
+        OneYearPattern::Method
+    } else {
+        OneYearPattern::Estimated
+    }
 }

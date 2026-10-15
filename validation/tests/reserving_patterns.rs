@@ -2,8 +2,9 @@
 //! `docs/design/reserving-v02.md`).
 //!
 //! * chainladder-python parity: full patterns through `DevelopmentConstant`
-//!   (age-to-age, to ultimate with the level 1 at the oldest age, and to
-//!   ultimate followed by `TailConstant`), with the chain ladder on RAA and
+//!   (age-to-age, to ultimate with the level 1 at the oldest age, to
+//!   ultimate with the level 1.03 and no tail, which both keep as the tail,
+//!   and to ultimate followed by `TailConstant`), with the chain ladder on RAA and
 //!   GenIns and the four expected-loss methods on the CAS workers'
 //!   compensation triangle (`reference/reserving_patterns_python.csv`, from
 //!   `scripts/reserving_patterns_python.py`). The percents developed of the
@@ -200,14 +201,16 @@ fn percents_developed_match_the_same_factors_to_ultimate() {
 }
 
 #[test]
-fn rescale_is_one_at_100_percent_and_the_tail_otherwise() {
-    // A cumulative pattern to 100% at the oldest age with no tail is not
-    // rescaled; with the level 1.03 at the oldest age and a tail of 1.05,
-    // the level is replaced by the tail: 1.03 / 1.05.
+fn rescale_is_one_without_a_tail_and_the_tail_otherwise() {
+    // A cumulative pattern to the oldest age with no tail is not rescaled:
+    // at 100% it implies no tail, at the level 1.03 a tail of 1.03. With
+    // the level 1.03 and a tail of 1.05, the level is replaced by the
+    // tail: 1.03 / 1.05.
     let cases = reference("reserving_patterns_python.csv");
-    for (method, want) in [
-        ("chain_ladder;style=cdf", 1.0),
-        ("chain_ladder;style=cdf;tail=1.05", 1.03 / 1.05),
+    for (method, want, implied) in [
+        ("chain_ladder;style=cdf", 1.0, Some(1.0)),
+        ("chain_ladder;style=cdf;tail=1.05", 1.03 / 1.05, None),
+        ("chain_ladder;style=cdf;level=1.03", 1.0, Some(1.03)),
     ] {
         let values: Vec<(Lag, f64)> = cases
             .iter()
@@ -221,11 +224,13 @@ fn rescale_is_one_at_100_percent_and_the_tail_otherwise() {
                 )
             })
             .collect();
-        let got = fit("raa", method, &values, false)
-            .chain_ladder
-            .pattern_rescale
-            .unwrap();
+        let cl = fit("raa", method, &values, false).chain_ladder;
+        let got = cl.pattern_rescale.unwrap();
         assert!((got - want).abs() < 1e-12, "{method}: {got} vs {want}");
+        match (cl.pattern_tail, implied) {
+            (Some(t), Some(want)) => assert!((t - want).abs() < 1e-12, "{method}: {t}"),
+            (got, want) => assert_eq!(got, want, "{method}"),
+        }
     }
 }
 

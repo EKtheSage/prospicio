@@ -119,7 +119,13 @@ variance); or \code{"none"}.}
 pattern too (the default), so that its simulations blend the pseudo
 factors with it as \code{\link[=odp_bootstrap]{odp_bootstrap()}} and \code{\link[=mack_bootstrap]{mack_bootstrap()}} do;
 \code{FALSE} simulates from the triangle's own factors and applies the
-pattern only when \code{method} is refitted.}
+pattern only when \code{method} is refitted. With the default, a cumulative
+pattern to the oldest age and no \code{tail} implies a tail (its level
+there, \code{\link[=chain_ladder]{chain_ladder()}}): the bootstrap develops past the oldest age
+with it in the coming year, as with \code{bootstrap_tail}, and closes the
+origins it falls on; with a \code{tail} of \code{method}'s own and
+\code{bootstrap_tail = FALSE}, such a pattern is an error (the two tails
+differ), so take the tail too or give \code{bootstrap_ldf = FALSE}.}
 
 \item{tail_sigma}{For \code{mack_one_year()} with \code{bootstrap_tail}, the tail's
 sigma (R's \code{tail.sigma}), or \code{NULL} to extrapolate it, as in

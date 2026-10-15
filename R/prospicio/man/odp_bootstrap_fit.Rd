@@ -86,8 +86,15 @@ selected factor is the same in every simulation (no parameter error)
 and a blended one moves by \code{1 - w} times the pseudo factor's
 deviation. The origins' level still moves (each simulation projects
 from its pseudo latest values), so even a fully selected pattern keeps
-part of the spread (about 73\% of it on RAA). A supplied pattern lowers
-the reported uncertainty.}
+part of the spread: with every factor selected and no process error,
+about 73\% of the unblended standard deviation on RAA. This is the
+ODP's parameter error in the origins' levels, which a development
+pattern does not fix, and it is kept on purpose; \code{\link[=mack_bootstrap]{mack_bootstrap()}}
+projects from the observed latest values and keeps only the process
+error. A supplied pattern lowers the reported uncertainty. With no
+\code{tail}, a cumulative pattern to the oldest age implies a constant tail
+(\code{pattern_tail} of \code{\link[=chain_ladder]{chain_ladder()}}), the same in every simulation
+unless \code{tail_std_err} is given.}
 }
 \value{
 An \code{odp_bootstrap_fit} object.

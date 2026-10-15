@@ -61,9 +61,13 @@ def test_each_kind_selects_the_same_factors(tri):
         assert all(s > 0 for s in fit.estimated_std_err[:3])
         assert fit.estimated_ldf != fit.ldf
     assert fits["ldf"].pattern_rescale is None
-    # Given to the oldest age with no tail, a cumulative pattern ends at 100%.
+    # Given to the oldest age at 100% with no tail, a cumulative pattern
+    # implies a tail of 1: none.
     assert fits["cdf"].pattern_rescale == pytest.approx(1.0)
     assert fits["percent_developed"].pattern_rescale == pytest.approx(1.0)
+    assert fits["cdf"].pattern_tail == pytest.approx(1.0)
+    assert fits["ldf"].pattern_tail is None
+    assert fits["cdf"].tail == 1.0
 
 
 def test_settings_read_back(tri):
@@ -281,7 +285,6 @@ def test_argument_errors(kwargs, error, match):
         ({"ldf": {12: 0.9, 24: 1.2}, "ldf_kind": "cdf"}, "at least 1"),
         ({"ldf": {12: 1.2, 24: 1.5}, "ldf_kind": "cdf"}, "not increase"),
         ({"ldf": {12: 1.5}, "ldf_kind": "cdf"}, "two or more ages"),
-        ({"ldf": {12: 2.0, 36: 1.2}, "ldf_kind": "cdf"}, "every development age between"),
         ({"ldf": {12: 1.5}, "ldf_kind": "ldf", "ldf_weight": 1.5}, "between 0 and 1"),
         ({"ldf": {12: 1.5}, "ldf_kind": "ldf", "ldf_weight": {24: 0.5}}, "no selected factor"),
         (
@@ -323,3 +326,58 @@ def test_segments_report_the_pattern():
     plain = ChainLadder().fit(tri, "paid")
     assert "selected_ldf" not in plain.development_frame().columns
     assert "pattern_rescale" not in plain.totals_frame().columns
+    assert "pattern_tail" not in plain.totals_frame().columns
+
+
+def test_a_pattern_to_the_oldest_age_without_a_tail_keeps_its_level_as_the_tail(tri):
+    percent = {12: 0.5, 24: 0.8, 36: 0.9, 48: 0.93, 60: 0.95}
+    fit = ChainLadder(ldf=percent, ldf_kind="percent_developed").fit(tri, "paid")
+    assert fit.pattern_tail == pytest.approx(1 / 0.95)
+    assert fit.tail == pytest.approx(1 / 0.95)
+    assert fit.pattern_rescale == pytest.approx(1.0)
+    assert fit.tail_std_err == 0.0
+    # The youngest origin is 50% developed.
+    assert fit.ultimate[-1] == pytest.approx(140.0 / 0.5)
+    assert fit.totals_frame()["pattern_tail"][0] == pytest.approx(1 / 0.95)
+    # With a tail, the level is rescaled to it and implies nothing.
+    tailed = ChainLadder(ldf=percent, ldf_kind="percent_developed", tail=1.02).fit(tri, "paid")
+    assert tailed.pattern_tail is None
+    # A pattern that stops before the oldest age implies no tail.
+    young = ChainLadder(ldf={12: 0.5, 24: 0.8}, ldf_kind="percent_developed").fit(tri, "paid")
+    assert young.pattern_tail is None and young.tail == 1.0
+    # Mack: the tail carries no parameter error unless one is given.
+    mack = Mack(ldf=percent, ldf_kind="percent_developed", tail_sigma=1.0).fit(tri, "paid")
+    assert mack.pattern_tail == pytest.approx(1 / 0.95)
+    assert mack.chain_ladder.tail_std_err == 0.0
+    given = Mack(
+        ldf=percent, ldf_kind="percent_developed", tail_sigma=1.0, tail_std_err=0.01
+    ).fit(tri, "paid")
+    assert given.chain_ladder.tail_std_err == 0.01
+    assert given.total_parameter_risk > mack.total_parameter_risk
+
+
+def test_missing_ages_are_interpolated(tri):
+    # 50% at 12 and 98% at 60: log cdf is linear in age between them.
+    fit = ChainLadder(ldf={12: 0.5, 60: 0.98}, ldf_kind="percent_developed").fit(tri, "paid")
+    step = (0.98 / 0.5) ** 0.25
+    close(fit.selected_ldf, [step] * 4)
+    assert fit.pattern_tail == pytest.approx(1 / 0.98)
+    # The same factors given in full select the same.
+    full = {age: 0.5 * step ** ((age - 12) // 12) for age in [12, 24, 36, 48, 60]}
+    same = ChainLadder(ldf=full, ldf_kind="percent_developed").fit(tri, "paid")
+    close(same.ultimate, fit.ultimate, 1e-10)
+
+
+def test_bootstraps_keep_the_implied_tail(tri):
+    percent = {12: 0.5, 24: 0.8, 36: 0.9, 48: 0.93, 60: 0.95}
+    method = ChainLadder(ldf=percent, ldf_kind="percent_developed")
+    odp = OdpBootstrap(n_sims=200, seed=1).one_year(tri, "paid", method)
+    assert math.isfinite(odp.cdr.variance())
+    with pytest.raises(ValueError, match="the tail the bootstrap's pattern implies"):
+        OdpBootstrap(n_sims=50, seed=1).one_year(
+            tri, "paid", ChainLadder(ldf=percent, ldf_kind="percent_developed", tail=1.02)
+        )
+    life = OdpBootstrap(
+        n_sims=200, seed=1, process="none", ldf=percent, ldf_kind="percent_developed"
+    ).fit(tri, "paid")
+    assert life.chain_ladder.tail == pytest.approx(1 / 0.95)

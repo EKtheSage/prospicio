@@ -75,7 +75,13 @@ and an error with an estimated tail.}
 own estimate; each simulation then uses \code{w * selected + (1 - w) * pseudo} at the selected ages, so a fully selected factor has no
 parameter error and a blended one \code{1 - w} times the pseudo factor's
 deviation, as \code{\link[=mack]{mack()}} charges it; the process error is unchanged. A
-supplied pattern lowers the reported uncertainty.}
+supplied pattern lowers the reported uncertainty. Each origin is
+projected from its observed latest value, so with every factor
+selected only the process error is left (unlike \code{\link[=odp_bootstrap]{odp_bootstrap()}},
+which keeps the origins' level error). With no \code{tail}, a cumulative
+pattern to the oldest age implies a constant tail (\code{pattern_tail} of
+\code{\link[=chain_ladder]{chain_ladder()}}), the same in every simulation unless \code{tail_std_err}
+is given.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.

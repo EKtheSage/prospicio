@@ -89,7 +89,7 @@ pub use mack_bootstrap::{
 pub use odp_glm::{OdpGlm, OdpGlmFit};
 pub use one_year::ClaimsDevelopmentResult;
 pub use one_year_bootstrap::{OneYearFit, OneYearFits, OneYearMethod, OneYearSegment};
-pub use pattern::{PatternKind, PatternWeight, SelectedPattern};
+pub use pattern::{OneYearPattern, PatternKind, PatternWeight, SelectedPattern};
 pub use prospicio_core::{Grain, Lag, Month, Period};
 pub use segments::{FitTable, ReserveFit, SegmentFits};
 pub use tail::{CurveShape, Tail, TailBondy, TailConstant, TailCurve, TailFit};

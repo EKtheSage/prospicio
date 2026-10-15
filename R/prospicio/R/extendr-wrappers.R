@@ -1781,6 +1781,8 @@ ChainLadderFit$blended_ldf <- function() .Call(wrap__ChainLadderFit__blended_ldf
 
 ChainLadderFit$pattern_rescale <- function() .Call(wrap__ChainLadderFit__pattern_rescale, self)
 
+ChainLadderFit$pattern_tail <- function() .Call(wrap__ChainLadderFit__pattern_tail, self)
+
 ChainLadderFit$alpha <- function() .Call(wrap__ChainLadderFit__alpha, self)
 
 ChainLadderFit$estimated_ldf <- function() .Call(wrap__ChainLadderFit__estimated_ldf, self)

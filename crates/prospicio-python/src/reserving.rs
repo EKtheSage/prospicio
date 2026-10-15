@@ -13,9 +13,9 @@ use prospicio_reserving::{
     ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development,
     DevelopmentColumn, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, Long, Mack,
     MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap,
-    OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, PatternKind, PatternWeight,
-    ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits, SelectedPattern,
-    SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle, view,
+    OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, OneYearPattern, PatternKind,
+    PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits,
+    SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -1805,11 +1805,20 @@ fn tail_arg_repr(tail: &Tail) -> String {
 ///     partial pattern. Each age must be a development age of the
 ///     triangle. As ``ldf_kind`` says, the values are age-to-age factors
 ///     (any ages but the oldest: development past it is the tail's), or
-///     factors to ultimate or percents developed at consecutive ages, which
-///     select the factors between them (``cdf[a] / cdf[next age]``); their
-///     level at their last age selects nothing, and is rescaled to the
-///     factors and tail in use (``ChainLadderFit.pattern_rescale``). A
-///     selected factor at or after a tail's attachment age is an error.
+///     factors to ultimate or percents developed at two or more ages, which
+///     select the factors between the first and the last (``cdf[a] /
+///     cdf[next age]``). A development age they skip is interpolated:
+///     between two given ages ``b < c``, ``log(cdf)`` is linear in the
+///     age, so the factor from ``a`` to the next age ``a'`` is ``(cdf[b] /
+///     cdf[c]) ** ((a' - a) / (c - b))`` (percents developed are converted
+///     to factors to ultimate first). Their level at their last age selects
+///     nothing. With no ``tail`` and a last age that is the oldest, the
+///     level is the tail: a constant tail factor equal to the factor to
+///     ultimate there (1 over the percent developed), with no parameter
+///     error, as chainladder-python's ``DevelopmentConstant`` keeps it
+///     (``ChainLadderFit.pattern_tail``). Otherwise the level is rescaled
+///     to the factors and tail in use (``ChainLadderFit.pattern_rescale``).
+///     A selected factor at or after a tail's attachment age is an error.
 /// ldf_kind : {"ldf", "cdf", "percent_developed"}, optional
 ///     How ``ldf`` is expressed; required with it, since age-to-age factors
 ///     and factors to ultimate cannot be told apart. Factors to ultimate
@@ -1850,6 +1859,14 @@ fn tail_arg_repr(tail: &Tail) -> String {
 /// ([1.6, 1.1], [1.5238, 1.1])
 /// >>> round(bench.ultimate[2], 2), round(bench.pattern_rescale, 4)
 /// (211.2, 1.1364)
+///
+/// A pattern to the oldest age with no tail keeps its level as the tail:
+/// 95% developed at 36 months is a tail of 1 / 0.95.
+///
+/// >>> full = ChainLadder(ldf={12: 0.5, 24: 0.8, 36: 0.95}, ldf_kind="percent_developed")
+/// >>> fit = full.fit(tri, "paid")
+/// >>> round(fit.pattern_tail, 4), round(fit.ultimate[2], 2)
+/// (1.0526, 240.0)
 #[pyclass(name = "ChainLadder", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyChainLadder {
     inner: ChainLadder,
@@ -2212,14 +2229,28 @@ impl PyChainLadderFit {
     /// the factor that multiplies the given percents developed (and divides
     /// the given factors to ultimate) to reconcile the pattern's level at
     /// its last age with the factors and tail in use: ``cdf_given /
-    /// cdf_used`` there, so that a pattern given to the oldest age,
-    /// rescaled, times the tail is 100%. At earlier ages the rescaled
-    /// values are the projection's only where every link is fully selected;
-    /// with ``ldf_weight`` below 1, read ``cdf`` for the factors in use.
-    /// ``None`` for an age-to-age pattern or none.
+    /// cdf_used`` there, so that a pattern given to the oldest age with a
+    /// ``tail``, rescaled, times the tail is 100%. 1 for a pattern to the
+    /// oldest age with no tail, whose level is the tail (``pattern_tail``).
+    /// At earlier ages the rescaled values are the projection's only where
+    /// every link is fully selected; with ``ldf_weight`` below 1, read
+    /// ``cdf`` for the factors in use. ``None`` for an age-to-age pattern
+    /// or none.
     #[getter]
     fn pattern_rescale(&self) -> PyResult<Option<f64>> {
         Ok(single(&self.inner, "pattern_rescale", "totals_frame()")?.pattern_rescale)
+    }
+
+    /// The tail a pattern of factors to ultimate or percents developed
+    /// implies: with no ``tail`` and a pattern to the oldest age, its
+    /// factor to ultimate there (1 over its percent developed), used as a
+    /// constant tail with no parameter error (``tail_std_err`` 0, its sigma
+    /// extrapolated as a constant tail's). ``None`` with a ``tail``, for a
+    /// pattern that stops before the oldest age, an age-to-age pattern, or
+    /// none.
+    #[getter]
+    fn pattern_tail(&self) -> PyResult<Option<f64>> {
+        Ok(single(&self.inner, "pattern_tail", "totals_frame()")?.pattern_tail)
     }
 
     /// Age from which ``ldf`` holds the tail's factors rather than the
@@ -2307,7 +2338,8 @@ impl PyChainLadderFit {
     /// One row per segment: the key columns, the segment's total
     /// ``latest``, ``ultimate`` and ``reserve``, and its ``tail``,
     /// ``tail_sigma`` and ``tail_std_err``; with a selected pattern, its
-    /// ``pattern_rescale`` too (``nan`` for an age-to-age pattern). Needs
+    /// ``pattern_rescale`` and ``pattern_tail`` too (``nan`` where there is
+    /// none). Needs
     /// pandas.
     ///
     /// Returns
@@ -2395,7 +2427,11 @@ impl PyChainLadderFit {
 ///     a fully selected pattern). The process risk keeps the triangle's
 ///     sigmas, around the factors used. A supplied pattern therefore lowers
 ///     the reported standard errors, and a wrong benchmark is not reflected
-///     in them. ``claims_development_result()`` takes the pattern too.
+///     in them. ``claims_development_result()`` takes the pattern too. With
+///     no ``tail``, a cumulative pattern to the oldest age implies a constant
+///     tail (``ChainLadderFit.pattern_tail``) with no parameter error
+///     (``tail_std_err`` 0 unless given) and its sigma extrapolated, as a
+///     constant tail without ``tail_sigma``.
 ///
 /// Examples
 /// --------
@@ -2677,6 +2713,13 @@ impl PyMackFit {
         Ok(self
             .one("pattern_rescale", "totals_frame()")?
             .pattern_rescale)
+    }
+
+    /// The tail a cumulative pattern implies, as
+    /// ``ChainLadderFit.pattern_tail``.
+    #[getter]
+    fn pattern_tail(&self) -> PyResult<Option<f64>> {
+        Ok(self.one("pattern_tail", "totals_frame()")?.pattern_tail)
     }
 
     /// Age from which ``ldf`` holds the tail's factors, as
@@ -4638,11 +4681,18 @@ impl PyClarkFit {
 ///     simulation (no parameter error) and a blended one moves by ``1 - w``
 ///     times the pseudo factor's deviation. The origins' level still moves
 ///     (each simulation projects from its pseudo latest values), so even a
-///     fully selected pattern keeps part of the spread (about 73% of it on
-///     RAA). A supplied pattern lowers the reported uncertainty. In
-///     ``one_year``, a bootstrap with a pattern needs ``method`` to have the
-///     same pattern; a method with a pattern may use a bootstrap without
-///     one.
+///     fully selected pattern keeps part of the spread: with every factor
+///     selected and no process error, about 73% of the unblended standard
+///     deviation on RAA. This is the ODP's parameter error in the origins'
+///     levels, which a development pattern does not fix, and it is kept on
+///     purpose; ``MackBootstrap`` projects from the observed latest values
+///     and keeps only the process error. A supplied pattern lowers the
+///     reported uncertainty. With no ``tail``, a cumulative pattern to the
+///     oldest age implies a constant tail (``ChainLadderFit.pattern_tail``),
+///     the same in every simulation unless ``tail_std_err`` is given. In
+///     ``one_year``, a bootstrap without a pattern takes ``method``'s
+///     (``bootstrap_ldf``); one with a pattern needs ``method`` to select the
+///     same factors, and the tail its pattern implies to be ``method``'s.
 ///
 /// Raises
 /// ------
@@ -4713,6 +4763,7 @@ impl PyOdpBootstrap {
                 tail_std_err,
                 dependence: segment_dependence(dependence, spearman)?,
                 pattern: selected_pattern(ldf, ldf_kind, ldf_weight)?,
+                one_year_pattern: OneYearPattern::Method,
             },
         })
     }
@@ -4867,11 +4918,14 @@ impl PyOdpBootstrap {
     ///     With a bootstrap that has no ``ldf`` of its own, whether it takes
     ///     ``method``'s selected pattern, so that each simulation's pseudo
     ///     factors are blended with it as the method's factors are (as R's
-    ///     ``odp_one_year(bootstrap_ldf = TRUE)``). ``False`` simulates from
-    ///     the triangle's own factors and lets the pattern enter only when
-    ///     the method re-reserves; it is an error with a bootstrap that has
-    ///     its own ``ldf``. A bootstrap's own ``ldf`` must select the same
-    ///     factors and weights as ``method``'s, in any order or kind.
+    ///     ``odp_one_year(bootstrap_ldf = TRUE)`` and the Rust default,
+    ///     ``OneYearPattern::Method``). ``False`` simulates from the
+    ///     triangle's own factors and lets the pattern enter only when the
+    ///     method re-reserves; it is an error with a bootstrap that has its
+    ///     own ``ldf``. A bootstrap's own ``ldf`` must select the same factors
+    ///     and weights as ``method``'s, in any order or kind; and when it
+    ///     implies a tail (a cumulative pattern to the oldest age, no
+    ///     ``tail``), ``method`` must use the same tail.
     ///
     /// Returns
     /// -------
@@ -4920,7 +4974,7 @@ impl PyOdpBootstrap {
     ) -> PyResult<PyOneYearFit> {
         let method = one_year_method(method, exposure)?;
         let mut boot = self.inner.clone();
-        boot.pattern = bootstrap_pattern(boot.pattern, &method, bootstrap_ldf)?;
+        boot.one_year_pattern = one_year_pattern(boot.pattern.is_some(), bootstrap_ldf)?;
         let tri = &triangle.inner;
         let inner = py
             .detach(|| boot.one_year_segments(tri, column, &method))
@@ -5109,26 +5163,22 @@ impl PyOdpBootstrapFit {
     }
 }
 
-/// The method of ``OdpBootstrap.one_year``: a chain ladder without
-/// exposure, or an expected-loss method with its exposure column.
-/// The pattern a bootstrap simulates the one-year view with: its own, or
-/// with `bootstrap_ldf` and none of its own the method's, as R's one-year
-/// functions do by default.
-fn bootstrap_pattern(
-    own: Option<SelectedPattern>,
-    method: &OneYearMethod,
-    bootstrap_ldf: bool,
-) -> PyResult<Option<SelectedPattern>> {
+/// Which factors a bootstrap simulates the one-year view with: with
+/// `bootstrap_ldf`, the method's pattern when it has none of its own (the
+/// Rust default, as R's); without, the triangle's own factors. `own` is
+/// whether the bootstrap has a pattern of its own.
+fn one_year_pattern(own: bool, bootstrap_ldf: bool) -> PyResult<OneYearPattern> {
     match (own, bootstrap_ldf) {
-        (None, true) => Ok(method.pattern().cloned()),
-        (None, false) => Ok(None),
-        (Some(p), true) => Ok(Some(p)),
-        (Some(_), false) => Err(PyValueError::new_err(
+        (_, true) => Ok(OneYearPattern::Method),
+        (false, false) => Ok(OneYearPattern::Estimated),
+        (true, false) => Err(PyValueError::new_err(
             "bootstrap_ldf=False takes a bootstrap without ldf: the bootstrap has its own",
         )),
     }
 }
 
+/// The method of ``OdpBootstrap.one_year``: a chain ladder without
+/// exposure, or an expected-loss method with its exposure column.
 fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyResult<OneYearMethod> {
     if let Ok(m) = method.extract::<PyRef<'_, PyChainLadder>>() {
         if exposure.is_some() {
@@ -5265,9 +5315,15 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 ///     so a fully selected factor has no parameter error and a blended one
 ///     ``1 - w`` times the pseudo factor's deviation, as ``Mack`` charges
 ///     it; the process error is unchanged. A supplied pattern lowers the
-///     reported uncertainty. In ``one_year``, a bootstrap with a pattern
-///     needs ``method`` to have the same pattern; a method with a pattern
-///     may use a bootstrap without one.
+///     reported uncertainty. Each origin is projected from its observed
+///     latest value, so with every factor selected only the process error
+///     is left (unlike ``OdpBootstrap``, which keeps the origins' level
+///     error). With no ``tail``, a cumulative pattern to the oldest age
+///     implies a constant tail (``ChainLadderFit.pattern_tail``), the same
+///     in every simulation unless ``tail_std_err`` is given. In
+///     ``one_year``, a bootstrap without a pattern takes ``method``'s
+///     (``bootstrap_ldf``); one with a pattern needs ``method`` to select
+///     the same factors.
 ///
 /// Raises
 /// ------
@@ -5376,6 +5432,7 @@ impl PyMackBootstrap {
                 tail_sigma,
                 tail_std_err,
                 dependence: segment_dependence(dependence, spearman)?,
+                one_year_pattern: OneYearPattern::Method,
             },
         })
     }
@@ -5587,8 +5644,8 @@ impl PyMackBootstrap {
     ) -> PyResult<PyOneYearFit> {
         let method = one_year_method(method, exposure)?;
         let mut boot = self.inner.clone();
-        boot.development.pattern =
-            bootstrap_pattern(boot.development.pattern, &method, bootstrap_ldf)?;
+        boot.one_year_pattern =
+            one_year_pattern(boot.development.pattern.is_some(), bootstrap_ldf)?;
         let tri = &triangle.inner;
         let inner = py
             .detach(|| boot.one_year_segments(tri, column, &method))

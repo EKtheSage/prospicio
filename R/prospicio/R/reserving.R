@@ -576,6 +576,10 @@ chain_ladder_properties <- function(cl) {
       v <- rust_result(cl(self)$pattern_rescale(), call = NULL)
       if (is.nan(v)) NULL else v
     }),
+    pattern_tail = S7::new_property(NULL | S7::class_double, getter = function(self) {
+      v <- rust_result(cl(self)$pattern_tail(), call = NULL)
+      if (is.nan(v)) NULL else v
+    }),
     alpha = S7::new_property(S7::class_double, getter = function(self) cl(self)$alpha()),
     tail = S7::new_property(S7::class_double, getter = function(self) {
       rust_result(cl(self)$tail(), call = NULL)
@@ -926,13 +930,22 @@ S7::method(print, tail_log_linear) <- tail_print
 #' triangle at the ages it gives; the other ages stay estimated, so a
 #' benchmark for the immature ages only is a partial pattern. Its values
 #' are age-to-age factors (any ages but the oldest: development past it is
-#' the tail's), or factors to ultimate or percents developed at consecutive
-#' ages, which select the factors between them (`cdf[a] / cdf[next age]`).
-#' A cumulative pattern's level at its last age selects nothing: it is
-#' rescaled to the factors and tail in use, and `pattern_rescale` reports
-#' the factor that multiplies the given percents developed (and divides the
-#' given factors to ultimate) to reconcile the level at the last age, so
-#' that a pattern given to the oldest age, rescaled, times the tail is 100%.
+#' the tail's), or factors to ultimate or percents developed at two or more
+#' ages, which select the factors between the first and the last (`cdf[a] /
+#' cdf[next age]`). A development age they skip is interpolated: between
+#' two given ages `b < c`, `log(cdf)` is linear in the age, so the factor
+#' from `a` to the next age `a'` is `(cdf[b] / cdf[c])^((a' - a) / (c - b))`
+#' (percents developed are converted to factors to ultimate first).
+#' A cumulative pattern's level at its last age selects nothing. With no
+#' `tail` (1) and a last age that is the oldest, the level is the tail: a
+#' constant tail factor equal to the factor to ultimate there (1 over the
+#' percent developed), with no parameter error, as chainladder-python's
+#' `DevelopmentConstant` keeps it; `pattern_tail` reports it. Otherwise
+#' the level is rescaled to the factors and tail in use, and
+#' `pattern_rescale` reports the factor that multiplies the given percents
+#' developed (and divides the given factors to ultimate) to reconcile the
+#' level at the last age, so that a pattern given to the oldest age with a
+#' tail, rescaled, times the tail is 100%.
 #' At earlier ages the rescaled values are the projection's only where the
 #' links are fully selected; with a blend, read `cdf` for the percents in
 #' use. With a weight `w`, the factor used is
@@ -954,7 +967,8 @@ S7::method(print, tail_log_linear) <- tail_print
 #' `selected_ldf` (the pattern's age-to-age factors, `NA` where it selects
 #' none), `ldf_weight` (0 where none is selected) and `blended_ldf` (the
 #' factors before the tail); `pattern_rescale` (`NULL` for an age-to-age
-#' pattern or none); per age: `cdf` (age to ultimate, including the tail); the
+#' pattern or none) and `pattern_tail` (the tail a cumulative pattern to
+#' the oldest age implies with no `tail`; `NULL` otherwise); per age: `cdf` (age to ultimate, including the tail); the
 #' tail: `tail` (the factor from the oldest age to ultimate),
 #' `tail_attachment_age` (the age from which `ldf` holds the tail's
 #' factors; the oldest age when it replaced none), `tail_ldf` (the factors
@@ -1086,7 +1100,10 @@ chain_ladder <- function(triangle, column = NULL, average = "volume",
 #' keeps the triangle's sigmas, around the factors used. A supplied pattern
 #' therefore lowers the reported standard errors. [claims_development_result()]
 #' takes the pattern too: with weights strictly between 0 and 1 its calendar
-#' years need not add up to Mack's.
+#' years need not add up to Mack's. A tail implied by a cumulative pattern
+#' with no `tail` ([chain_ladder()]'s `pattern_tail`) has no parameter
+#' error (`tail_std_err` 0 unless given), and its sigma is extrapolated as
+#' a constant tail's unless `tail_sigma` is given.
 #'
 #' @inheritParams chain_ladder_fit
 #' @param tail_sigma The tail's sigma (R's `tail.sigma`), or `NULL` to
@@ -1608,8 +1625,15 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #'   and a blended one moves by `1 - w` times the pseudo factor's
 #'   deviation. The origins' level still moves (each simulation projects
 #'   from its pseudo latest values), so even a fully selected pattern keeps
-#'   part of the spread (about 73% of it on RAA). A supplied pattern lowers
-#'   the reported uncertainty.
+#'   part of the spread: with every factor selected and no process error,
+#'   about 73% of the unblended standard deviation on RAA. This is the
+#'   ODP's parameter error in the origins' levels, which a development
+#'   pattern does not fix, and it is kept on purpose; [mack_bootstrap()]
+#'   projects from the observed latest values and keeps only the process
+#'   error. A supplied pattern lowers the reported uncertainty. With no
+#'   `tail`, a cumulative pattern to the oldest age implies a constant tail
+#'   (`pattern_tail` of [chain_ladder()]), the same in every simulation
+#'   unless `tail_std_err` is given.
 #' @param ptr An `OdpBootstrapFit` pointer; used internally.
 #' @returns An `odp_bootstrap_fit` object.
 #' @seealso [chain_ladder()], [mack()]; [odp_one_year()] for the one-year
@@ -2832,7 +2856,13 @@ bayes_bf <- function(triangle, column, exposure, apriori = 1, cv = 0.1, developm
 #'   pseudo` at the selected ages, so a fully selected factor has no
 #'   parameter error and a blended one `1 - w` times the pseudo factor's
 #'   deviation, as [mack()] charges it; the process error is unchanged. A
-#'   supplied pattern lowers the reported uncertainty.
+#'   supplied pattern lowers the reported uncertainty. Each origin is
+#'   projected from its observed latest value, so with every factor
+#'   selected only the process error is left (unlike [odp_bootstrap()],
+#'   which keeps the origins' level error). With no `tail`, a cumulative
+#'   pattern to the oldest age implies a constant tail (`pattern_tail` of
+#'   [chain_ladder()]), the same in every simulation unless `tail_std_err`
+#'   is given.
 #' @param ptr A `MackBootstrapFit` pointer; used internally.
 #' @returns A `mack_bootstrap_fit` object.
 #' @seealso [mack()] for the analytic standard errors, [mack_one_year()]
@@ -3041,7 +3071,13 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #'   pattern too (the default), so that its simulations blend the pseudo
 #'   factors with it as [odp_bootstrap()] and [mack_bootstrap()] do;
 #'   `FALSE` simulates from the triangle's own factors and applies the
-#'   pattern only when `method` is refitted.
+#'   pattern only when `method` is refitted. With the default, a cumulative
+#'   pattern to the oldest age and no `tail` implies a tail (its level
+#'   there, [chain_ladder()]): the bootstrap develops past the oldest age
+#'   with it in the coming year, as with `bootstrap_tail`, and closes the
+#'   origins it falls on; with a `tail` of `method`'s own and
+#'   `bootstrap_tail = FALSE`, such a pattern is an error (the two tails
+#'   differ), so take the tail too or give `bootstrap_ldf = FALSE`.
 #' @param bootstrap_tail Whether the bootstrap takes `method`'s `tail` too,
 #'   developing past the oldest age in the coming year (above); `FALSE` by
 #'   default.

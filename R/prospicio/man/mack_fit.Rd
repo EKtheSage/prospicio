@@ -100,7 +100,10 @@ factors (\code{validation/tests/reserving_patterns.rs}); the process risk
 keeps the triangle's sigmas, around the factors used. A supplied pattern
 therefore lowers the reported standard errors. \code{\link[=claims_development_result]{claims_development_result()}}
 takes the pattern too: with weights strictly between 0 and 1 its calendar
-years need not add up to Mack's.
+years need not add up to Mack's. A tail implied by a cumulative pattern
+with no \code{tail} (\code{\link[=chain_ladder]{chain_ladder()}}'s \code{pattern_tail}) has no parameter
+error (\code{tail_std_err} 0 unless given), and its sigma is extrapolated as
+a constant tail's unless \code{tail_sigma} is given.
 }
 \examples{
 long <- data.frame(year = rep(2018:2021, 4:1),

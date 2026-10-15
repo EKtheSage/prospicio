@@ -68,15 +68,30 @@ pub struct ChainLadderFit {
     /// factor to ultimate in use there (the factors from that age on and
     /// the tail). It reconciles the pattern's level at its last age only:
     /// the given percent developed there times it is the projection's
-    /// (`1 / cdf` there), and, ending at the oldest age, the rescaled
-    /// percent developed there times the tail factor is 100%. At an earlier
-    /// age, the given percent developed times it is the projection's only
-    /// when every link from that age to the last is fully selected (weight
-    /// 1); a blended link uses `w * selected + (1 - w) * estimated`, which
-    /// the given values do not show. `None` for an age-to-age pattern,
-    /// which stops at its last factor and lets the tail multiply on top, or
-    /// without a pattern.
+    /// (`1 / cdf` there), and, ending at the oldest age with a tail, the
+    /// rescaled percent developed there times the tail factor is 100%. At
+    /// an earlier age, the given percent developed times it is the
+    /// projection's only when every link from that age to the last is
+    /// fully selected (weight 1); a blended link uses `w * selected + (1 -
+    /// w) * estimated`, which the given values do not show. 1 when the
+    /// pattern ends at the oldest age with no tail, since its level is then
+    /// the tail ([`pattern_tail`](Self::pattern_tail)). `None` for an
+    /// age-to-age pattern, which stops at its last factor and lets the tail
+    /// multiply on top, or without a pattern.
     pub pattern_rescale: Option<f64>,
+    /// The tail a cumulative selected pattern implies: with no [`Tail`]
+    /// (a constant 1 at the oldest age), a pattern of factors to ultimate
+    /// or percents developed that reaches the oldest age keeps its level
+    /// there as the tail, as chainladder-python's `DevelopmentConstant`
+    /// does. The tail factor is the pattern's factor to ultimate at the
+    /// oldest age (1 over its percent developed there), a constant
+    /// ([`TailConstant`](crate::TailConstant) at the oldest age) with no
+    /// parameter error: [`tail`](Self::tail)'s `std_err` is 0, its `sigma`
+    /// extrapolated as a constant tail's. `None` with a tail (the level is
+    /// rescaled to it), for a pattern that stops before the oldest age (its
+    /// level is rescaled to the estimated factors after it), for an
+    /// age-to-age pattern, or without a pattern.
+    pub pattern_tail: Option<f64>,
 }
 
 impl ChainLadder {
@@ -96,10 +111,42 @@ impl ChainLadder {
         fit_each(triangle, column, |s| self.fit_segment(s, &s.ages))
     }
 
+    /// The tail in use on a segment with development `ages`: the given
+    /// one, or with none the constant one a cumulative pattern to the
+    /// oldest age implies ([`ChainLadderFit::pattern_tail`]).
+    pub(crate) fn tail_in_use(&self, ages: &[Lag]) -> Result<Tail> {
+        if !self.tail.is_none() {
+            return Ok(self.tail);
+        }
+        Ok(match &self.development.pattern {
+            Some(p) => p
+                .resolve(ages)?
+                .implied_tail(ages)
+                .map_or(self.tail, Tail::from),
+            None => self.tail,
+        })
+    }
+
     pub(crate) fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<ChainLadderFit> {
         let mut development = self.development.fit_segment(segment)?;
         development.development = ages.to_vec();
-        let tail = self.tail.fit(&development)?;
+        let resolved = match &self.development.pattern {
+            Some(p) => Some(p.resolve(ages)?),
+            None => None,
+        };
+        // With no tail, a cumulative pattern to the oldest age keeps its
+        // level there as the tail: a constant factor, which carries no
+        // parameter error (its sigma is extrapolated as a constant tail's).
+        let pattern_tail = resolved
+            .as_ref()
+            .filter(|_| self.tail.is_none())
+            .and_then(|r| r.implied_tail(ages));
+        let mut tail = pattern_tail
+            .map_or(self.tail, Tail::from)
+            .fit(&development)?;
+        if pattern_tail.is_some() {
+            tail.std_err = 0.0;
+        }
         // A factor is the pattern's or the tail's, never both.
         if let Some(k) = (tail.attachment..development.selected.len())
             .find(|&k| development.selected[k].is_some())
@@ -113,13 +160,9 @@ impl ChainLadder {
         let cdf = cumulative_factors(&tail.ldf[..development.ldf.len()], tail.factor);
         // The given level of a cumulative pattern at its last age, against
         // the factor to ultimate in use there.
-        let pattern_rescale = match &self.development.pattern {
-            Some(p) => p
-                .resolve(ages)?
-                .level
-                .map(|(last, given)| given / cdf[last]),
-            None => None,
-        };
+        let pattern_rescale = resolved
+            .and_then(|r| r.level)
+            .map(|(last, given)| given / cdf[last]);
         let (latest_position, latest): (Vec<usize>, Vec<f64>) = (0..segment.n_origins)
             .map(|o| segment.latest(o))
             .collect::<Result<Vec<_>>>()?
@@ -139,11 +182,18 @@ impl ChainLadder {
             latest,
             ultimate,
             pattern_rescale,
+            pattern_tail,
         })
     }
 }
 
 impl ChainLadderFit {
+    /// The tail this fit used, given it was fitted with `tail`: `tail`, or
+    /// the constant one its pattern implied ([`pattern_tail`](Self::pattern_tail)).
+    pub(crate) fn tail_in_use(&self, tail: Tail) -> Tail {
+        self.pattern_tail.map_or(tail, Tail::from)
+    }
+
     /// Age-to-age factors within the triangle, which the projection uses:
     /// the estimated ones (blended with a selected pattern where it gives
     /// them), replaced by the tail's from its attachment. Element `k` links

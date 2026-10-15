@@ -82,13 +82,21 @@ A selected development pattern (\code{ldf}, with \code{ldf_kind} and
 triangle at the ages it gives; the other ages stay estimated, so a
 benchmark for the immature ages only is a partial pattern. Its values
 are age-to-age factors (any ages but the oldest: development past it is
-the tail's), or factors to ultimate or percents developed at consecutive
-ages, which select the factors between them (\verb{cdf[a] / cdf[next age]}).
-A cumulative pattern's level at its last age selects nothing: it is
-rescaled to the factors and tail in use, and \code{pattern_rescale} reports
-the factor that multiplies the given percents developed (and divides the
-given factors to ultimate) to reconcile the level at the last age, so
-that a pattern given to the oldest age, rescaled, times the tail is 100\%.
+the tail's), or factors to ultimate or percents developed at two or more
+ages, which select the factors between the first and the last (\verb{cdf[a] / cdf[next age]}). A development age they skip is interpolated: between
+two given ages \code{b < c}, \code{log(cdf)} is linear in the age, so the factor
+from \code{a} to the next age \verb{a'} is \verb{(cdf[b] / cdf[c])^((a' - a) / (c - b))}
+(percents developed are converted to factors to ultimate first).
+A cumulative pattern's level at its last age selects nothing. With no
+\code{tail} (1) and a last age that is the oldest, the level is the tail: a
+constant tail factor equal to the factor to ultimate there (1 over the
+percent developed), with no parameter error, as chainladder-python's
+\code{DevelopmentConstant} keeps it; \code{pattern_tail} reports it. Otherwise
+the level is rescaled to the factors and tail in use, and
+\code{pattern_rescale} reports the factor that multiplies the given percents
+developed (and divides the given factors to ultimate) to reconcile the
+level at the last age, so that a pattern given to the oldest age with a
+tail, rescaled, times the tail is 100\%.
 At earlier ages the rescaled values are the projection's only where the
 links are fully selected; with a blend, read \code{cdf} for the percents in
 use. With a weight \code{w}, the factor used is
@@ -109,7 +117,8 @@ unestimable ones interpolated), \code{std_err} (of the factors used, \code{1 - l
 \code{selected_ldf} (the pattern's age-to-age factors, \code{NA} where it selects
 none), \code{ldf_weight} (0 where none is selected) and \code{blended_ldf} (the
 factors before the tail); \code{pattern_rescale} (\code{NULL} for an age-to-age
-pattern or none); per age: \code{cdf} (age to ultimate, including the tail); the
+pattern or none) and \code{pattern_tail} (the tail a cumulative pattern to
+the oldest age implies with no \code{tail}; \code{NULL} otherwise); per age: \code{cdf} (age to ultimate, including the tail); the
 tail: \code{tail} (the factor from the oldest age to ultimate),
 \code{tail_attachment_age} (the age from which \code{ldf} holds the tail's
 factors; the oldest age when it replaced none), \code{tail_ldf} (the factors

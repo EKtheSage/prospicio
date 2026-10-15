@@ -165,8 +165,6 @@ expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 1.2, "24" = 1.5), ldf
                   "not increase")
 expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 1.5), ldf_kind = "cdf"),
                   "two or more ages")
-expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 2, "36" = 1.2), ldf_kind = "cdf"),
-                  "every development age between")
 expect_error_like(chain_ladder(tri, "paid", ldf = sel, ldf_kind = "ldf", ldf_weight = 1.5),
                   "between 0 and 1")
 expect_error_like(chain_ladder(tri, "paid", ldf = sel[1], ldf_kind = "ldf",
@@ -184,5 +182,34 @@ stopifnot(identical(tail(names(development_frame(fits)), 5),
 near(totals_frame(fits)$pattern_rescale,
      c(segment(fits, lob = "auto")@pattern_rescale, segment(fits, lob = "home")@pattern_rescale))
 stopifnot(!"selected_ldf" %in% names(development_frame(base)))
+
+cat("test-reserving-patterns.R: ok\n")
+stopifnot(is.null(totals_frame(chain_ladder(tri, "paid"))$pattern_tail))
+
+# A cumulative pattern to the oldest age with no tail keeps its level as
+# the tail; with a tail it is rescaled, and a partial one implies none.
+pct95 <- c("12" = 0.5, "24" = 0.8, "36" = 0.9, "48" = 0.93, "60" = 0.95)
+implied <- chain_ladder(tri, "paid", ldf = pct95, ldf_kind = "percent_developed")
+near(implied@pattern_tail, 1 / 0.95)
+near(implied@tail, 1 / 0.95)
+near(implied@pattern_rescale, 1)
+stopifnot(implied@tail_std_err == 0)
+near(implied@ultimate[5], 140 / 0.5)
+stopifnot(is.null(chain_ladder(tri, "paid", tail = 1.02, ldf = pct95,
+                               ldf_kind = "percent_developed")@pattern_tail))
+stopifnot(is.null(part@pattern_tail), is.null(by_ldf@pattern_tail))
+near(by_cdf@pattern_tail, 1)
+m95 <- mack(tri, "paid", tail_sigma = 1, ldf = pct95, ldf_kind = "percent_developed")
+stopifnot(m95@chain_ladder@tail_std_err == 0)
+one95 <- odp_one_year(tri, "paid", n_sims = 100, seed = 1, ldf = pct95,
+                      ldf_kind = "percent_developed")
+stopifnot(is.finite(variance(one95@cdr)))
+expect_error_like(odp_one_year(tri, "paid", n_sims = 20, seed = 1, tail = 1.02, ldf = pct95,
+                               ldf_kind = "percent_developed"),
+                  "the tail the bootstrap's pattern implies")
+
+# A skipped age is interpolated: log cdf linear in age.
+gap <- chain_ladder(tri, "paid", ldf = c("12" = 0.5, "60" = 0.98), ldf_kind = "percent_developed")
+near(gap@selected_ldf, rep((0.98 / 0.5)^0.25, 4))
 
 cat("test-reserving-patterns.R: ok\n")

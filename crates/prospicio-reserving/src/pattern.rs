@@ -13,6 +13,11 @@
 //! the bootstraps charge a blended factor `(1 - w)` times the estimate's
 //! error, and a fully selected one none. A supplied pattern therefore lowers
 //! the reported uncertainty, and a wrong benchmark is not reflected in it.
+//! The ODP bootstrap keeps one source of parameter error even with every
+//! factor selected: it projects each origin from its pseudo latest value,
+//! so the estimation error of the origins' levels remains (on RAA about
+//! 73% of the unblended standard deviation, with no process error). Mack's
+//! bootstrap projects from the observed latest value and keeps none.
 
 use prospicio_core::Lag;
 
@@ -46,6 +51,46 @@ pub enum PatternWeight {
     ByAge(Vec<(Lag, f64)>),
 }
 
+/// Which factors a bootstrap without a [`SelectedPattern`] of its own
+/// simulates in the one-year view
+/// ([`OdpBootstrap::one_year`](crate::OdpBootstrap::one_year),
+/// [`MackBootstrap::one_year`](crate::MackBootstrap::one_year)), when the
+/// re-reserving method has one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OneYearPattern {
+    /// The method's pattern: each simulation's pseudo factors are blended
+    /// with it as the method's factors are, so the coming year develops as
+    /// the method projects it. The default, as the Python and R bindings'
+    /// `bootstrap_ldf = True`.
+    #[default]
+    Method,
+    /// The triangle's own estimated factors, unblended: the method's
+    /// pattern enters only when it re-reserves (the bindings'
+    /// `bootstrap_ldf = False`). An error for a bootstrap with a pattern of
+    /// its own.
+    Estimated,
+}
+
+impl OneYearPattern {
+    /// The pattern a bootstrap with `own` simulates the one-year view of a
+    /// method with `method`'s pattern with.
+    pub(crate) fn resolve(
+        self,
+        own: Option<&SelectedPattern>,
+        method: Option<&SelectedPattern>,
+    ) -> Result<Option<SelectedPattern>> {
+        match (own, self) {
+            (Some(_), Self::Estimated) => Err(Error::Bootstrap(
+                "a bootstrap with a pattern of its own cannot simulate from the estimated \
+                 factors: give it no pattern, or OneYearPattern::Method",
+            )),
+            (Some(p), Self::Method) => Ok(Some(p.clone())),
+            (None, Self::Method) => Ok(method.cloned()),
+            (None, Self::Estimated) => Ok(None),
+        }
+    }
+}
+
 impl Default for PatternWeight {
     fn default() -> Self {
         Self::All(1.0)
@@ -59,12 +104,25 @@ impl Default for PatternWeight {
 ///   that age to the next; any ages but the oldest (development past it is
 ///   the tail's).
 /// * A cumulative pattern ([`PatternKind::AgeToUltimate`] or
-///   [`PatternKind::PercentDeveloped`]) gives consecutive ages and selects
-///   the factors between them, `CDF(a_k) / CDF(a_k+1)`. Its level at its
-///   last age selects no factor: what develops after that age comes from
-///   the estimated factors and the tail, and the chain ladder reports how
-///   much the given level is rescaled to match them
-///   ([`ChainLadderFit::pattern_rescale`](crate::ChainLadderFit::pattern_rescale)).
+///   [`PatternKind::PercentDeveloped`]) gives two or more ages and selects
+///   the factors between its first and last, `CDF(a_k) / CDF(a_k+1)`. A
+///   development age it skips is interpolated: between two given ages `b <
+///   c`, `ln CDF` is linear in the age, so the link from `a_k` to `a_k+1`
+///   is `(CDF(b) / CDF(c))^((a_k+1 - a_k) / (c - b))` (percents developed
+///   are converted to CDFs first). Ages before the first and after the
+///   last given age stay estimated.
+/// * A cumulative pattern's level at its last age selects no factor. With
+///   no [`Tail`](crate::Tail) (a constant 1 at the oldest age) and a last
+///   age that is the oldest, the level is the tail: the tail factor is the
+///   pattern's CDF there (1 over its percent developed), a constant with no
+///   parameter error, as chainladder-python's `DevelopmentConstant` keeps it
+///   ([`ChainLadderFit::pattern_tail`](crate::ChainLadderFit::pattern_tail)).
+///   Otherwise what develops after the last age comes from the estimated
+///   factors and the tail, and the chain ladder reports how much the given
+///   level is rescaled to match them
+///   ([`ChainLadderFit::pattern_rescale`](crate::ChainLadderFit::pattern_rescale)):
+///   with a tail, percent developed at the oldest age times the tail is
+///   100%.
 ///
 /// Factors the pattern does not select are estimated, as without one, and
 /// the triangle must still estimate every factor (the estimate is reported
@@ -101,6 +159,19 @@ impl Default for PatternWeight {
 /// // The triangle's own estimate is kept next to the selection.
 /// assert!((cl.development.ldf[1] - 165.0 / 150.0).abs() < 1e-12);
 /// assert_eq!(cl.pattern_rescale, Some(1.0));
+///
+/// // 40% at 12 and 95% at the oldest age, 36 months, with no tail: 24
+/// // months is interpolated, and the 5% left is the tail.
+/// let pattern = SelectedPattern::new(PatternKind::PercentDeveloped, vec![(12, 0.4), (36, 0.95)]);
+/// let cl = ChainLadder {
+///     development: Development { pattern: Some(pattern), ..Default::default() },
+///     ..Default::default()
+/// }
+/// .fit(&tri, "paid")
+/// .unwrap();
+/// assert!((cl.ldf()[0] - (0.95f64 / 0.4).sqrt()).abs() < 1e-12);
+/// assert!((cl.pattern_tail.unwrap() - 1.0 / 0.95).abs() < 1e-12);
+/// assert!((cl.ultimate[2] - 120.0 / 0.4).abs() < 1e-9);
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectedPattern {
@@ -205,14 +276,21 @@ impl SelectedPattern {
                         "a cumulative pattern needs two or more ages: one value selects no factor",
                     );
                 }
+                // Between two given ages `b < c`, ln CDF is linear in the
+                // age: the link from `a_k` to `a_k+1` gets the given ratio
+                // raised to its share of the span, `(CDF(b) / CDF(c))^((a_k+1
+                // - a_k) / (c - b))`.
                 for (i, w) in positions.windows(2).enumerate() {
-                    if w[1] != w[0] + 1 {
-                        return err(
-                            Some(ages[w[0] + 1]),
-                            "a cumulative pattern must give every development age between its first and last",
-                        );
+                    let ratio = cdf[i] / cdf[i + 1];
+                    if w[1] == w[0] + 1 {
+                        selected[w[0]] = Some(ratio);
+                        continue;
                     }
-                    selected[w[0]] = Some(cdf[i] / cdf[i + 1]);
+                    let span = (ages[w[1]] - ages[w[0]]) as f64;
+                    for k in w[0]..w[1] {
+                        let share = (ages[k + 1] - ages[k]) as f64 / span;
+                        selected[k] = Some((ratio.ln() * share).exp());
+                    }
                 }
                 let last = positions.len() - 1;
                 level = Some((positions[last], cdf[last]));
@@ -307,6 +385,17 @@ pub(crate) struct Resolved {
     /// For a cumulative pattern, the position of its last age and its
     /// factor to ultimate there.
     pub(crate) level: Option<(usize, f64)>,
+}
+
+impl Resolved {
+    /// The tail the pattern implies on `ages` when no tail is given: a
+    /// cumulative pattern's factor to ultimate at the oldest age; `None`
+    /// for one that stops before the oldest age, or an age-to-age pattern.
+    pub(crate) fn implied_tail(&self, ages: &[Lag]) -> Option<f64> {
+        self.level
+            .filter(|&(last, _)| last + 1 == ages.len())
+            .map(|(_, cdf)| cdf)
+    }
 }
 
 /// `w * selected + (1 - w) * estimated` per link: the selected factors
@@ -465,6 +554,58 @@ mod tests {
     }
 
     #[test]
+    fn missing_ages_are_interpolated_log_linearly_in_age() {
+        // CDF 4 at 12 and 1 at 48: ln CDF falls by ln 4 over 36 months, a
+        // third per 12-month link.
+        let p = pattern(PatternKind::AgeToUltimate, &[(12, 4.0), (48, 1.0)])
+            .resolve(&AGES)
+            .unwrap();
+        let third = 4f64.powf(1.0 / 3.0);
+        close(&p.selected, &[Some(third), Some(third), Some(third)]);
+        assert_eq!(p.level, Some((3, 1.0)));
+        // Percents developed are converted to CDFs first: 25% at 12, 50% at
+        // 36 and 100% at 48 give sqrt(2), sqrt(2) and 2.
+        let p = pattern(
+            PatternKind::PercentDeveloped,
+            &[(12, 0.25), (36, 0.5), (48, 1.0)],
+        )
+        .resolve(&AGES)
+        .unwrap();
+        let root = 2f64.sqrt();
+        close(&p.selected, &[Some(root), Some(root), Some(2.0)]);
+        // Uneven ages: each link gets its share of the span in months.
+        let ages = [12, 24, 48, 60];
+        let p = pattern(PatternKind::AgeToUltimate, &[(12, 3.0), (60, 1.0)])
+            .resolve(&ages)
+            .unwrap();
+        close(
+            &p.selected,
+            &[
+                Some(3f64.powf(0.25)),
+                Some(3f64.powf(0.5)),
+                Some(3f64.powf(0.25)),
+            ],
+        );
+        // Ages before the first and after the last given age stay
+        // estimated, and an interpolated age takes a weight.
+        let p = pattern(PatternKind::AgeToUltimate, &[(12, 2.0), (36, 1.21)])
+            .with_weight(PatternWeight::ByAge(vec![(24, 0.5)]))
+            .resolve(&AGES)
+            .unwrap();
+        let half = 2f64.sqrt() / 1.1;
+        close(&p.selected, &[Some(half), Some(half), None]);
+        assert_eq!(p.weight, [1.0, 0.5, 0.0]);
+        // The interpolated pattern selects what the same factors given in
+        // full do.
+        let full = pattern(
+            PatternKind::AgeToUltimate,
+            &[(12, 4.0), (24, 4.0 / third), (36, third), (48, 1.0)],
+        );
+        let gapped = pattern(PatternKind::AgeToUltimate, &[(12, 4.0), (48, 1.0)]);
+        assert!(gapped.same_selection(&full, &AGES).unwrap());
+    }
+
+    #[test]
     fn weights_all_and_by_age() {
         let p = pattern(PatternKind::AgeToAge, &[(12, 2.0), (24, 1.5)]);
         let all = p
@@ -533,11 +674,6 @@ mod tests {
             Some(24)
         );
         assert_eq!(reason(&pattern(PercentDeveloped, &[(24, 0.5)])).0, Some(24));
-        // A gap names the missing age.
-        assert_eq!(
-            reason(&pattern(AgeToUltimate, &[(12, 2.0), (36, 1.2)])).0,
-            Some(24)
-        );
         let ata = pattern(AgeToAge, &[(12, 2.0)]);
         for w in [-0.1, 1.5, f64::NAN] {
             assert_eq!(
@@ -582,7 +718,8 @@ mod fits {
     use crate::triangle::{DevelopmentColumn, Long};
     use crate::{
         BornhuetterFerguson, ChainLadder, Development, Grain, Mack, MackBootstrap, MackProcess,
-        OdpBootstrap, OneYearMethod, ProcessDistribution, Tail, TailConstant, Triangle,
+        OdpBootstrap, OneYearMethod, OneYearPattern, ProcessDistribution, Tail, TailConstant,
+        Triangle,
     };
     use prospicio_core::Month;
     use prospicio_prob::Distribution;
@@ -1112,7 +1249,8 @@ mod fits {
             ..Default::default()
         };
         assert_eq!(mack.one_year(&t, "values", &plain).unwrap_err(), want);
-        // A method with a pattern and a bootstrap without one is allowed.
+        // A method with a pattern and a bootstrap without one is allowed: the
+        // bootstrap takes the method's (OneYearPattern::Method).
         let free = OdpBootstrap {
             n_sims: 10,
             ..Default::default()
@@ -1223,13 +1361,19 @@ mod fits {
         assert_eq!(table.column("ldf_weight").unwrap()[..2], [1.0, 1.0]);
         assert_eq!(table.column("std_err").unwrap()[..2], [0.0, 0.0]);
         let totals = fits.totals();
+        // 95% at the oldest age with no tail: the level is the tail.
         let rescale = totals.column("pattern_rescale").unwrap();
-        close(rescale[0], 1.0 / 0.95, 1e-15);
-        close(rescale[1], 1.0 / 0.95, 1e-15);
+        close(rescale[0], 1.0, 1e-15);
+        close(rescale[1], 1.0, 1e-15);
+        let implied = totals.column("pattern_tail").unwrap();
+        close(implied[0], 1.0 / 0.95, 1e-15);
+        close(implied[1], 1.0 / 0.95, 1e-15);
+        close(totals.column("tail").unwrap()[0], 1.0 / 0.95, 1e-14);
         // Without a pattern the tables are as before.
         let plain = ChainLadder::default().fit_segments(&t, "paid").unwrap();
         assert_eq!(plain.development_table().values.len(), 4);
         assert!(plain.totals().column("pattern_rescale").is_none());
+        assert!(plain.totals().column("pattern_tail").is_none());
         // An age the segment does not have names the segment.
         let bad = SelectedPattern::new(PatternKind::AgeToAge, vec![(48, 1.1)]);
         assert_eq!(
@@ -1244,6 +1388,262 @@ mod fits {
                 })
             }
         );
+    }
+
+    /// RAA's own factors as factors to ultimate, with `level` at the
+    /// oldest age.
+    fn own_cdf(level: f64) -> SelectedPattern {
+        let base = own(PatternWeight::All(1.0));
+        let mut values = vec![(120, level)];
+        let mut c = level;
+        for &(age, f) in base.values.iter().rev() {
+            c *= f;
+            values.push((age, c));
+        }
+        SelectedPattern::new(PatternKind::AgeToUltimate, values)
+    }
+
+    #[test]
+    fn a_cumulative_pattern_without_a_tail_keeps_its_level_as_the_tail() {
+        // 50%, 80% and 95% at 12, 24 and 36 months, the oldest age: the 5%
+        // left is the tail, 1 / 0.95.
+        let p = SelectedPattern::new(
+            PatternKind::PercentDeveloped,
+            vec![(12, 0.5), (24, 0.8), (36, 0.95)],
+        );
+        let cl = chain_ladder(p.clone(), Tail::default())
+            .fit(&small(), "values")
+            .unwrap();
+        close(cl.pattern_tail.unwrap(), 1.0 / 0.95, 1e-15);
+        close(cl.tail.factor, 1.0 / 0.95, 1e-14);
+        close(cl.pattern_rescale.unwrap(), 1.0, 1e-14);
+        assert_eq!(cl.tail.std_err, 0.0);
+        close(cl.ultimate[2], 120.0 / 0.5, 1e-14);
+        close(cl.ultimate[0], 165.0 / 0.95, 1e-14);
+        // It is the constant tail of that factor, but with no parameter
+        // error.
+        let constant = chain_ladder(p.clone(), (1.0 / 0.95).into())
+            .fit(&small(), "values")
+            .unwrap();
+        assert_eq!(constant.pattern_tail, None);
+        close(constant.pattern_rescale.unwrap(), 1.0, 1e-14);
+        assert_eq!(constant.ultimate, cl.ultimate);
+        assert_eq!(constant.tail.sigma.to_bits(), cl.tail.sigma.to_bits());
+        // With a tail the level is rescaled to it, as before.
+        let tailed = chain_ladder(p, 1.02.into())
+            .fit(&small(), "values")
+            .unwrap();
+        assert_eq!(tailed.pattern_tail, None);
+        close(tailed.tail.factor, 1.02, 1e-14);
+        // A pattern that stops before the oldest age implies no tail: its
+        // level is rescaled to the estimated factors after it.
+        let young = SelectedPattern::new(PatternKind::AgeToUltimate, vec![(12, 9.0), (24, 3.0)]);
+        let cl = chain_ladder(young, Tail::default())
+            .fit(&raa(), "values")
+            .unwrap();
+        assert_eq!(cl.pattern_tail, None);
+        assert_eq!(cl.tail.factor, 1.0);
+        // An age-to-age pattern implies none either.
+        let ata = chain_ladder(own(PatternWeight::All(1.0)), Tail::default())
+            .fit(&raa(), "values")
+            .unwrap();
+        assert_eq!((ata.pattern_tail, ata.tail.factor), (None, 1.0));
+        // 100% at the oldest age implies a tail of 1: no tail.
+        let full = chain_ladder(own_cdf(1.0), Tail::default())
+            .fit(&raa(), "values")
+            .unwrap();
+        assert_eq!(full.pattern_tail, Some(1.0));
+        assert_eq!(full.ultimate, ata.ultimate);
+    }
+
+    #[test]
+    fn mack_takes_the_implied_tail_without_parameter_error() {
+        let t = raa();
+        let implied = Mack {
+            development: with(own_cdf(1.05)),
+            ..Default::default()
+        }
+        .fit(&t, "values")
+        .unwrap();
+        // The same as the constant tail with a standard error of 0: sigma
+        // extrapolated, no parameter error anywhere.
+        let constant = Mack {
+            development: with(own(PatternWeight::All(1.0))),
+            tail: 1.05.into(),
+            tail_std_err: Some(0.0),
+            ..Default::default()
+        }
+        .fit(&t, "values")
+        .unwrap();
+        assert_eq!(implied.chain_ladder.pattern_tail, Some(1.05));
+        assert_eq!(implied.chain_ladder.tail.std_err, 0.0);
+        close(
+            implied.chain_ladder.tail.sigma,
+            constant.chain_ladder.tail.sigma,
+            1e-12,
+        );
+        assert!(implied.chain_ladder.tail.sigma > 0.0);
+        assert_eq!(implied.total_parameter_risk, 0.0);
+        for (a, b) in implied.process_risk.iter().zip(&constant.process_risk) {
+            close(*a, *b, 1e-10);
+        }
+        close(
+            implied.total_standard_error,
+            constant.total_standard_error,
+            1e-10,
+        );
+        // A tail standard error from the user applies.
+        let given = Mack {
+            development: with(own_cdf(1.05)),
+            tail_std_err: Some(0.01),
+            ..Default::default()
+        }
+        .fit(&t, "values")
+        .unwrap();
+        assert_eq!(given.chain_ladder.tail.std_err, 0.01);
+        assert!(given.total_parameter_risk > 0.0);
+        // Merz and Wüthrich's closed form has no tail.
+        assert_eq!(
+            implied.claims_development_result().unwrap_err(),
+            Error::ClaimsDevelopment("needs no tail factor")
+        );
+    }
+
+    #[test]
+    fn bootstraps_keep_the_implied_tail_fixed() {
+        // Exact factors 2, 1.5 and 1.25, 90% developed at the oldest age:
+        // no residuals, so every ODP simulation's reserve is the chain
+        // ladder's with the tail 1 / 0.9.
+        let p = SelectedPattern::new(
+            PatternKind::PercentDeveloped,
+            vec![(12, 0.24), (24, 0.48), (36, 0.72), (48, 0.9)],
+        );
+        let fit = OdpBootstrap {
+            n_sims: 50,
+            seed: 1,
+            pattern: Some(p.clone()),
+            ..Default::default()
+        }
+        .fit(&exact(), "values")
+        .unwrap();
+        close(fit.chain_ladder.tail.factor, 1.0 / 0.9, 1e-14);
+        let reserves = fit.chain_ladder.reserves();
+        close(reserves[0], 15.0 / 0.9 - 15.0, 1e-12);
+        for row in fit.reserves.draw_matrix().chunks(4) {
+            for (got, want) in row.iter().zip(&reserves) {
+                assert!((got - want).abs() < 1e-9, "{row:?} vs {reserves:?}");
+            }
+        }
+        // Mack's bootstrap with every factor selected and no process error:
+        // the deterministic reserve, tail included, in every simulation.
+        let t = raa();
+        let fit = MackBootstrap {
+            n_sims: 100,
+            seed: 3,
+            process: MackProcess::None,
+            development: with(own_cdf(1.05)),
+            ..Default::default()
+        }
+        .fit(&t, "values")
+        .unwrap();
+        let reserves = fit.mack.chain_ladder.reserves();
+        let free = ChainLadder::default().fit(&t, "values").unwrap();
+        close(reserves[0], free.latest[0] * 0.05, 1e-12);
+        for row in fit.reserves.draw_matrix().chunks(10) {
+            for (got, want) in row.iter().zip(&reserves) {
+                assert!(
+                    (got - want).abs() <= 1e-9 * want.abs().max(1.0),
+                    "{got} vs {want}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn one_year_views_share_the_implied_tail() {
+        let p = SelectedPattern::new(
+            PatternKind::PercentDeveloped,
+            vec![(12, 0.24), (24, 0.48), (36, 0.72), (48, 0.9)],
+        );
+        let method = OneYearMethod::ChainLadder(chain_ladder(p.clone(), Tail::default()));
+        // The bootstrap takes the method's pattern and so its tail; on the
+        // exact triangle the year develops as projected, the oldest origin
+        // takes its tail step and closes, and every CDR is 0.
+        let boot = OdpBootstrap {
+            n_sims: 20,
+            seed: 2,
+            ..Default::default()
+        };
+        let one = boot.one_year(&exact(), "values", &method).unwrap();
+        assert_eq!(one.bootstrap.chain_ladder.pattern_tail, Some(1.0 / 0.9));
+        assert!(one.cdr.draw_matrix().iter().all(|x| x.abs() < 1e-9));
+        // A method with another tail is not the bootstrap's.
+        let other = OneYearMethod::ChainLadder(chain_ladder(p.clone(), 1.02.into()));
+        assert_eq!(
+            boot.one_year(&exact(), "values", &other).unwrap_err(),
+            Error::Bootstrap(
+                "the tail the bootstrap's pattern implies must be the re-reserving method's tail"
+            )
+        );
+        // The same factor as a constant tail is the same tail.
+        let constant = OneYearMethod::ChainLadder(chain_ladder(p, (1.0 / 0.9).into()));
+        let same = boot.one_year(&exact(), "values", &constant).unwrap();
+        assert_eq!(same.cdr.draw_matrix(), one.cdr.draw_matrix());
+        // Simulating from the estimated factors, the bootstrap has no tail
+        // and the method's is allowed.
+        let estimated = OdpBootstrap {
+            one_year_pattern: OneYearPattern::Estimated,
+            ..boot
+        };
+        assert!(estimated.one_year(&exact(), "values", &other).is_ok());
+    }
+
+    #[test]
+    fn a_bootstrap_without_a_pattern_takes_the_methods_in_the_one_year_view() {
+        let t = raa();
+        let p = own(PatternWeight::All(0.5));
+        let method = OneYearMethod::ChainLadder(chain_ladder(p.clone(), Tail::default()));
+        let odp = |pattern: Option<SelectedPattern>, choice: OneYearPattern| {
+            OdpBootstrap {
+                n_sims: 200,
+                seed: 4,
+                pattern,
+                one_year_pattern: choice,
+                ..Default::default()
+            }
+            .one_year(&t, "values", &method)
+        };
+        let by_default = odp(None, OneYearPattern::Method).unwrap();
+        let given = odp(Some(p.clone()), OneYearPattern::Method).unwrap();
+        let estimated = odp(None, OneYearPattern::Estimated).unwrap();
+        assert_eq!(by_default.cdr.draw_matrix(), given.cdr.draw_matrix());
+        assert_ne!(by_default.cdr.draw_matrix(), estimated.cdr.draw_matrix());
+        assert!(by_default.bootstrap.chain_ladder.development.has_pattern());
+        let want = Error::Bootstrap(
+            "a bootstrap with a pattern of its own cannot simulate from the estimated \
+             factors: give it no pattern, or OneYearPattern::Method",
+        );
+        assert_eq!(
+            odp(Some(p.clone()), OneYearPattern::Estimated).unwrap_err(),
+            want
+        );
+        // Mack's bootstrap the same way.
+        let mack = |development: Development, choice: OneYearPattern| {
+            MackBootstrap {
+                n_sims: 200,
+                seed: 4,
+                development,
+                one_year_pattern: choice,
+                ..Default::default()
+            }
+            .one_year(&t, "values", &method)
+        };
+        let by_default = mack(Development::default(), OneYearPattern::Method).unwrap();
+        let given = mack(with(p.clone()), OneYearPattern::Method).unwrap();
+        let estimated = mack(Development::default(), OneYearPattern::Estimated).unwrap();
+        assert_eq!(by_default.cdr.draw_matrix(), given.cdr.draw_matrix());
+        assert_ne!(by_default.cdr.draw_matrix(), estimated.cdr.draw_matrix());
+        assert_eq!(mack(with(p), OneYearPattern::Estimated).unwrap_err(), want);
     }
 
     #[test]

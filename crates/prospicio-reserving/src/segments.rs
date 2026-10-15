@@ -329,9 +329,10 @@ impl<T: ReserveFit> SegmentFits<T> {
     /// the chain ladder and Mack the segment's `tail`, `tail_sigma` and
     /// `tail_std_err`).
     ///
-    /// With a selected pattern, also its `pattern_rescale` (NaN for an
-    /// age-to-age pattern; see
-    /// [`ChainLadderFit::pattern_rescale`](crate::ChainLadderFit::pattern_rescale)).
+    /// With a selected pattern, also its `pattern_rescale` and
+    /// `pattern_tail` (NaN where there is none; see
+    /// [`ChainLadderFit::pattern_rescale`](crate::ChainLadderFit::pattern_rescale)
+    /// and [`ChainLadderFit::pattern_tail`](crate::ChainLadderFit::pattern_tail)).
     pub fn totals(&self) -> FitTable {
         let patterned = self.has_pattern();
         let mut values = Vec::new();
@@ -345,8 +346,11 @@ impl<T: ReserveFit> SegmentFits<T> {
                 ];
                 columns.extend(f.total_columns().into_iter().map(|(n, v)| (n, vec![v])));
                 if patterned {
-                    let rescale = f.chain_ladder().pattern_rescale.unwrap_or(f64::NAN);
+                    let cl = f.chain_ladder();
+                    let rescale = cl.pattern_rescale.unwrap_or(f64::NAN);
                     columns.push(("pattern_rescale", vec![rescale]));
+                    let tail = cl.pattern_tail.unwrap_or(f64::NAN);
+                    columns.push(("pattern_tail", vec![tail]));
                 }
                 columns
             }),

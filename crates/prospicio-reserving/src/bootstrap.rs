@@ -45,7 +45,7 @@ use crate::dependence::{Resample, SegmentDependence, synchronize};
 use crate::development::Development;
 use crate::error::{Error, Result};
 use crate::one_year_bootstrap::Failures;
-use crate::pattern::{Blend, SelectedPattern};
+use crate::pattern::{Blend, OneYearPattern, SelectedPattern};
 use crate::segments::{FitTable, ReserveFit, SegmentFits, fit_each};
 use crate::tail::Tail;
 use crate::triangle::{Label, Segment, Triangle};
@@ -133,11 +133,31 @@ pub struct OdpBootstrap {
     /// Factors chosen by the user (see [`SelectedPattern`]), which each
     /// simulation blends its pseudo factors with: a fully selected factor
     /// has no parameter error, a blended one `(1 - w)` times the pseudo
-    /// factor's deviation. The residuals and scale stay the triangle's, and
-    /// the origins' pseudo latest values keep their estimation error.
-    /// `None`, the default, re-estimates every factor. In the one-year view
-    /// the method's pattern must then be this one.
+    /// factor's deviation. The residuals and scale stay the triangle's.
+    ///
+    /// The ODP projects each origin from its pseudo latest value, so the
+    /// estimation error of the origins' levels remains even with every
+    /// factor selected: on RAA, with every factor selected and no process
+    /// error, the reserve's standard deviation is about 73% of the
+    /// unblended one. Mack's bootstrap projects from the observed latest
+    /// value and has no parameter error left in that case
+    /// ([`MackBootstrap::development`](crate::MackBootstrap::development)).
+    ///
+    /// With no [`tail`](Self::tail), a cumulative pattern to the oldest age
+    /// implies a constant tail, its level there
+    /// ([`ChainLadderFit::pattern_tail`]), the same in every simulation
+    /// unless [`tail_std_err`](Self::tail_std_err) is given.
+    ///
+    /// `None`, the default, re-estimates every factor; in the one-year view
+    /// the bootstrap then takes the method's pattern, unless
+    /// [`one_year_pattern`](Self::one_year_pattern) says otherwise. With a
+    /// pattern of its own, the method's must select the same factors.
     pub pattern: Option<SelectedPattern>,
+    /// In the one-year view ([`one_year`](Self::one_year)), with no
+    /// [`pattern`](Self::pattern), whether each simulation blends its
+    /// pseudo factors with the re-reserving method's pattern (the default)
+    /// or simulates from the triangle's own estimated factors.
+    pub one_year_pattern: OneYearPattern,
 }
 
 impl Default for OdpBootstrap {
@@ -150,6 +170,7 @@ impl Default for OdpBootstrap {
             tail_std_err: None,
             dependence: SegmentDependence::Independent,
             pattern: None,
+            one_year_pattern: OneYearPattern::Method,
         }
     }
 }
@@ -582,6 +603,8 @@ impl TailDraw {
         cl: &ChainLadderFit,
         std_err: Option<f64>,
     ) -> Result<Option<Self>> {
+        // With no tail, the constant one a cumulative pattern implies.
+        let tail = cl.tail_in_use(tail);
         if tail.is_none() {
             return Ok(None);
         }
@@ -1065,6 +1088,7 @@ mod tests {
             tail_std_err,
             dependence: SegmentDependence::Independent,
             pattern: None,
+            one_year_pattern: OneYearPattern::Method,
         }
     }
 

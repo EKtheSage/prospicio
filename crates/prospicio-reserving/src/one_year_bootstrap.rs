@@ -163,14 +163,18 @@ impl OneYearMethod {
     /// assert_eq!(OneYearMethod::ChainLadder(ChainLadder::default()).pattern(), None);
     /// ```
     pub fn pattern(&self) -> Option<&SelectedPattern> {
-        let chain_ladder = match self {
+        self.chain_ladder().development.pattern.as_ref()
+    }
+
+    /// The method's chain ladder.
+    fn chain_ladder(&self) -> &ChainLadder {
+        match self {
             Self::ChainLadder(cl) => cl,
             Self::ExpectedLoss(m, _) => &m.chain_ladder,
             Self::BornhuetterFerguson(m, _) => &m.chain_ladder,
             Self::Benktander(m, _) => &m.chain_ladder,
             Self::CapeCod(m, _) => &m.chain_ladder,
-        };
-        chain_ladder.development.pattern.as_ref()
+        }
     }
 
     /// The method's ultimate per origin of `segment`, with `exposure` the
@@ -615,6 +619,24 @@ impl<B: NextYear> Prepared<B> {
     ) -> Result<Self> {
         let (bootstrap, draw) = model(segment)?;
         same_pattern(pattern, method, &segment.ages)?;
+        // With no tail of its own, the bootstrap develops past the oldest
+        // age with the constant tail its pattern implies, which the method
+        // must use too (decision 12, as decision 11 for a bootstrap's tail).
+        let implied = bootstrap.chain_ladder().pattern_tail.filter(|&t| t != 1.0);
+        if let Some(t) = implied {
+            let same = match method.chain_ladder().tail_in_use(&segment.ages)? {
+                Tail::Constant(c) => {
+                    Tail::Constant(c) == Tail::from(c.factor) && (c.factor - t).abs() <= 1e-12 * t
+                }
+                _ => false,
+            };
+            if !same {
+                return Err(Error::Bootstrap(
+                    "the tail the bootstrap's pattern implies must be the re-reserving method's tail",
+                ));
+            }
+        }
+        let tail = tail || implied.is_some();
         let year = YearCells::of(
             segment,
             &bootstrap.chain_ladder().latest_position,
@@ -996,12 +1018,13 @@ impl OdpBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFit> {
-        self.sims().one_year(
+        let boot = self.for_method(method)?;
+        boot.sims().one_year(
             triangle,
             column,
             method,
-            |s| self.model(s),
-            |hasher| self.one_year_provenance(column, method, hasher),
+            |s| boot.model(s),
+            |hasher| boot.one_year_provenance(column, method, hasher),
         )
     }
 
@@ -1017,14 +1040,26 @@ impl OdpBootstrap {
         column: &str,
         method: &OneYearMethod,
     ) -> Result<OneYearFits> {
-        self.sims().one_year_segments(
+        let boot = self.for_method(method)?;
+        boot.sims().one_year_segments(
             triangle,
             column,
             method,
-            &self.dependence,
-            |s| self.model(s),
-            |hasher| self.one_year_provenance(column, method, hasher),
+            &boot.dependence,
+            |s| boot.model(s),
+            |hasher| boot.one_year_provenance(column, method, hasher),
         )
+    }
+
+    /// The bootstrap with the pattern it simulates the one-year view of
+    /// `method` with ([`one_year_pattern`](Self::one_year_pattern)).
+    fn for_method(&self, method: &OneYearMethod) -> Result<Self> {
+        Ok(Self {
+            pattern: self
+                .one_year_pattern
+                .resolve(self.pattern.as_ref(), method.pattern())?,
+            ..self.clone()
+        })
     }
 
     fn sims(&self) -> Sims {
