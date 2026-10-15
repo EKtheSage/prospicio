@@ -445,9 +445,10 @@ fn monotone_gams_match_scam() {
             _ => None,
         }
     });
-    // Monotone in x, as fitted.
+    // Monotone in x, inside the data's range and past it (where the
+    // smooth holds its end value).
     for (name, fit) in &fits {
-        let grid: Vec<f64> = (0..=200).map(|i| f64::from(i) / 200.0).collect();
+        let grid: Vec<f64> = (0..=200).map(|i| f64::from(i) / 100.0 - 0.5).collect();
         let g = Design::new(
             vec!["(Intercept)".to_string(), "x".to_string()],
             vec![vec![1.0; 201], grid],

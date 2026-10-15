@@ -5,6 +5,7 @@ description: How mgcv builds s(x, bs = "cp"), the reference for prospicio_glm's 
 resource: https://cran.r-project.org/package=mgcv
 tags: [gam, cyclic, smoothing, reference-implementation, r]
 status: stable
+verified: { by: process:ci, at: 2026-10-15T14:00:00Z }
 generated: { by: claude-code/cloud-session, at: 2026-10-15T14:00:00Z }
 sources:
   - id: mgcv

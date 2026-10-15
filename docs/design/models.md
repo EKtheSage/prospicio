@@ -226,7 +226,10 @@ models and compares them.
   does; REML is refused, as scam has none. The fit reports `β = exp(γ)`
   on the monotone columns, so prediction stays linear in the expanded
   design, and their covariance by the delta method from
-  `φ (JᵀWJ + S)⁻¹`. scam scales each penalty, `S = c DᵀD`: a scam `sp`
+  `φ (JᵀWJ + S)⁻¹`. New data outside the training range is clamped to
+  it, so the smooth extrapolates flat and stays monotone (scam
+  extrapolates the B-splines, which stop summing to 1 there and can turn
+  back). scam scales each penalty, `S = c DᵀD`: a scam `sp`
   is `λ = c sp` here. Parity: `validation/reference/gam_monotone_scam.csv`
   (`validation/scripts/r_gam_monotone.R`, data computed in the script and
   the test): at scam's fixed `sp`, an increasing Gaussian and a decreasing

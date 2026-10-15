@@ -5,6 +5,7 @@ description: ismev 1.43's gpd.fit, gpd.fitrange and mrl.plot, the reference for 
 resource: https://cran.r-project.org/package=ismev
 tags: [probability, evt, gpd, threshold, parity, r]
 status: stable
+verified: { by: process:ci, at: 2026-10-15T12:00:00Z }
 generated: { by: claude-code/cloud-session, at: 2026-10-15T12:00:00Z }
 sources:
   - id: ismev

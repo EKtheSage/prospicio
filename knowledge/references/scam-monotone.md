@@ -5,6 +5,7 @@ description: How scam builds and fits shape-constrained smooths, the reference f
 resource: https://cran.r-project.org/package=scam
 tags: [gam, monotone, smoothing, reference-implementation, r]
 status: stable
+verified: { by: process:ci, at: 2026-10-15T16:00:00Z }
 generated: { by: claude-code/cloud-session, at: 2026-10-15T16:00:00Z }
 sources:
   - id: scam

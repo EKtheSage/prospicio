@@ -51,6 +51,8 @@ pub enum SmoothKind {
     /// unpenalized). The basis is centered by its column means over the
     /// training data, as scam does. Smoothing by GCV, UBRE or fixed
     /// parameters: scam has no REML, and neither do monotone smooths here.
+    /// New data outside the training range takes the value at its end, so
+    /// the smooth stays monotone everywhere.
     Increasing,
     /// A monotone decreasing P-spline, scam's `bs = "mpd"`: the
     /// [`Increasing`](Self::Increasing) basis negated.
@@ -407,8 +409,15 @@ impl Basis {
 
     /// A monotone smooth's uncentered columns at `x`: `Σ_{i≥j} Bᵢ(x)` for
     /// `j = 1..k` (the first, a constant, dropped), negated if decreasing.
+    /// `x` is clamped to the training range first: past it the B-splines
+    /// no longer sum to 1 and the smooth could turn back, so it holds
+    /// its value at the end instead (scam extrapolates the splines).
     fn cumulative(&self, x: f64) -> Vec<f64> {
-        let b = self.raw(x);
+        let (lo, hi) = (
+            self.knots[self.spline.degree],
+            self.knots[self.spline.n_basis],
+        );
+        let b = self.raw(x.clamp(lo, hi));
         let sign = if self.spline.kind == SmoothKind::Decreasing {
             -1.0
         } else {
