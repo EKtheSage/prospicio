@@ -3,6 +3,7 @@
 \name{compartmental_fit}
 \alias{compartmental_fit}
 \alias{compartmental}
+\alias{compartmental_model_2}
 \title{Gesmann and Morris' compartmental model}
 \usage{
 compartmental_fit(ptr)
@@ -28,6 +29,24 @@ compartmental(
   target_accept = 0.99,
   max_depth = 10
 )
+
+compartmental_model_2(
+  triangle,
+  paid,
+  premium,
+  priors,
+  outstanding = NULL,
+  incurred = NULL,
+  rate_order = c("free", "ordered"),
+  start = c("data", "prior_centre"),
+  chains = 4,
+  tune = 2000,
+  draws = 8000,
+  n_sims = 10000,
+  seed = 0,
+  target_accept = 0.999,
+  max_depth = 10
+)
 }
 \arguments{
 \item{ptr}{A \code{CompartmentalFit} pointer; used internally.}
@@ -48,14 +67,15 @@ incurred less paid, cell by cell (the papers' outstanding on company
 337 is incurred with bulk and IBNR less paid). Give exactly one of
 \code{outstanding} and \code{incurred}.}
 
-\item{likelihood}{\code{"normal"} (model 1); \code{"lognormal"} is not yet built.}
+\item{likelihood}{\code{"normal"} (model 1) or \code{"lognormal"} (model 2).}
 
-\item{scale}{\code{"amount"} (model 1); \code{"loss_ratio"} is not yet built.}
+\item{scale}{The response scale: \code{"amount"} (model 1) or \code{"loss_ratio"},
+amounts over the origin's premium (model 2).}
 
-\item{paid_response}{\code{"cumulative"} (model 1); \code{"incremental"} is not
-yet built.}
+\item{paid_response}{\code{"cumulative"} (model 1) or \code{"incremental"} (model
+2).}
 
-\item{fitted}{\code{"paid_and_outstanding"} (model 1); \code{"paid_and_incurred"},
+\item{fitted}{\code{"paid_and_outstanding"}; \code{"paid_and_incurred"},
 \code{"paid_only"} and \code{"incurred_only"} are not yet built.}
 
 \item{rate_order}{\code{"free"} or \code{"ordered"}, as above.}
@@ -82,8 +102,8 @@ A \code{compartmental_fit} object.
 }
 \description{
 Gesmann and Morris' (2020) hierarchical compartmental reserving model
-with one outstanding compartment, their model 1, fitted to paid and
-outstanding jointly with NUTS. Claims flow from exposure into outstanding
+with one outstanding compartment, their models 1 and 2, fitted to paid
+and outstanding jointly with NUTS. Claims flow from exposure into outstanding
 as they are reported, at rate \code{k_er}, and from outstanding into paid as
 they settle, at rate \code{k_p}. For origin \code{i} with premium \code{P_i} and
 development time \code{t} in years, with
@@ -91,22 +111,38 @@ development time \code{t} in years, with
 \verb{OS_i(t) = P_i RLR_i k_er g(t)} and
 \verb{PD_i(t) = P_i RLR_i RRF_i [(1 - exp(-k_p t)) - k_p g(t)]}, so \code{RLR_i} is
 the reported loss ratio, \code{RRF_i} the reserve robustness factor (paid over
-reported) and \verb{RLR_i RRF_i} the ultimate loss ratio. The rates are
-shared; \code{RLR} and \code{RRF} vary by origin with correlated effects (LKJ
-prior on the correlation) on the priors' \code{o} scale. Outstanding and
-cumulative paid amounts are normal about these curves, each type with
-its own sigma. NUTS samples on a pilot run's dense scale, with the
-gradient from dual numbers (\code{docs/design/reserving-compartmental.md}).
+reported) and \verb{RLR_i RRF_i} the ultimate loss ratio. \code{RLR} and \code{RRF}
+vary by origin with correlated effects (LKJ prior on the correlation) on
+the priors' \code{o} scale; the priors can add origin effects on the rates
+and development-year effects on any of the four
+(\code{\link[=compartmental_priors]{compartmental_priors()}}), each cell then taking its own parameters.
+NUTS samples on a pilot run's dense scale, with the gradient from dual
+numbers (\code{docs/design/reserving-compartmental.md}).
 }
 \details{
-\code{priors} is required (\code{\link[=gesmann_morris_priors]{gesmann_morris_priors()}} is the paper's case
-study). \code{likelihood}, \code{scale}, \code{paid_response} and \code{fitted} take the
-values of model 1 by default; their other values are accepted but the
-fit stops with an error saying they are not yet built.
+Model 1 (the defaults) has normal outstanding and cumulative paid
+amounts about these curves, each type with its own sigma. Model 2
+(\code{compartmental_model_2()}, with \code{\link[=gesmann_morris_2_priors]{gesmann_morris_2_priors()}}) has
+log-normal outstanding and incremental paid loss ratios to premium;
+every combination of \code{likelihood}, \code{scale} and \code{paid_response} is
+built. Under \code{likelihood = "lognormal"} every response must be
+positive, and under \code{paid_response = "incremental"} each paid cell needs
+the paid at the age before; the fit stops with an error naming the cell
+otherwise. \code{fitted} other than \code{"paid_and_outstanding"} is accepted, but
+the fit stops with an error saying it is not yet built.
+
+\code{compartmental_model_2()} is \code{compartmental()} with model 2's
+likelihood, scale and paid response, and a longer, finer sampler: four
+chains of 2,000 warm-up and 8,000 kept draws with target acceptance
+0.999. With 87 parameters, effect sds whose posteriors pile up near 0
+and a slowly mixing \code{k_p}, model 1's sampler left divergent transitions
+or an R-hat above 1.01 on most seeds; this one passes every threshold
+on 195 of 200 seeds on company 337. A fit takes about a minute.
 
 An origin with a premium and no observed cell (the papers' training
 triangle has one) draws its effects from the population in each
-simulation. The reserve is the paid at the square's last age less the
+simulation, and so does a development age with no observed cell. The
+reserve is the paid at the square's last age less the
 latest paid; the square has as many ages as the premium column has
 origins, and the origin and development grains must be equal. One \code{seed}
 replays a fit exactly: the chains and the simulations each take a seed
@@ -115,14 +151,19 @@ derived from it.
 The means are exactly invariant under swapping the two rates (with \code{RLR}
 and \code{RRF} rescaled), so only the priors tell the two modes apart. Under
 \code{rate_order = "free"} (the paper's priors) the fit warns when any
-posterior draw has \code{k_er <= k_p}; \code{rate_order = "ordered"} samples
-\code{k_er = k_p + exp(delta)}, the same priors restricted to \code{k_er > k_p}.
+posterior draw has population rates with \code{k_er <= k_p};
+\code{rate_order = "ordered"} samples \code{k_er = k_p + exp(delta)}, the same
+priors restricted to \code{k_er > k_p}. With effects on the rates, the fit's
+\code{cell_rate_swaps} is the share of draws and observed cells with
+\code{k_er <= k_p} (\code{NA} when the rates are shared).
 
 Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS below 100
 per chain, any divergent transition) and rate swaps do not fail the fit:
 \code{compartmental()} raises one \code{\link[=warning]{warning()}} listing them, and they stay in
 the fit's \code{diagnostics}. With the defaults, 194 of 200 seeds on company
-337 passed every threshold; each of the other six just missed one.
+337 passed every threshold for model 1, and with
+\code{compartmental_model_2()}'s sampler 195 of 200 for model 2; each of the
+others just missed one.
 
 Properties of the fit: \code{origins} (those of the premium column),
 \code{premium}, \code{latest_paid} (0 for an origin with none),
@@ -131,21 +172,30 @@ Properties of the fit: \code{origins} (those of the premium column),
 \code{\link[=odp_bootstrap]{odp_bootstrap()}}'s), \code{paid} and \code{outstanding} (the future cells of the
 square, dimensions \code{origin} and \code{age} in months, from the same
 simulations), \code{ultimate_loss_ratio} (each origin's posterior mean
-\verb{RLR_i RRF_i}), \code{rate_swaps}, \code{diagnostics}, \code{summary} (also
-\code{summary(fit)}), \code{draws} (a matrix of the posterior draws of \code{k_er},
-\code{k_p}, \code{RLR}, \code{RRF}, \code{sigma_os}, \code{sigma_pd}, \code{RLR[o]} and \code{RRF[o]} for
-each origin with an observed cell, then \code{b_ker}, \code{b_kp}, \code{b_RLR},
-\code{b_RRF}, \code{tau_RLR}, \code{tau_RRF}, \code{rho}, \code{log_sigma_os} and
-\code{log_sigma_pd}), and \code{paid_table} and \code{outstanding_table} (one row per
+\verb{RLR_i RRF_i}), \code{rate_swaps}, \code{cell_rate_swaps}, \code{diagnostics},
+\code{summary} (also \code{summary(fit)}), \code{draws} (a matrix of the posterior
+draws: on the natural scale \code{k_er}, \code{k_p}, \code{RLR}, \code{RRF} (population
+values, at a zero effect), \code{sigma_os}, \code{sigma_pd}, \code{RLR[o]} and
+\code{RRF[o]} for each origin \code{o} with an observed cell, with origin effects
+on the rates \code{k_er[o]} and \code{k_p[o]} too, and with development effects
+\code{dev_ker[a]}, \code{dev_kp[a]}, \code{dev_RLR[a]} and \code{dev_RRF[a]} for each
+development age \code{a} (months) with an observed cell, on the \code{o} scale;
+then \code{b_ker}, \code{b_kp}, \code{b_RLR}, \code{b_RRF}, \code{tau_RLR}, \code{tau_RRF} (and
+\code{tau_ker}, \code{tau_kp}), \code{rho} (and \code{tau_dev_ker}, \code{tau_dev_kp},
+\code{tau_dev_RLR}, \code{tau_dev_RRF}), \code{log_sigma_os} and \code{log_sigma_pd}, a name
+in parentheses only when the priors have that effect), and \code{paid_table} and \code{outstanding_table} (one row per
 future cell: \code{origin}, \code{development}, \code{mean}, \code{std_dev}, \code{q05}, \code{q50}
 and \code{q95}). \code{as.data.frame()} has one row per origin with the \code{premium},
 \code{latest_paid}, the \code{mean} and \code{std_dev} of the posterior predictive
 reserve and the \code{ultimate_loss_ratio}; \code{\link[=totals_frame]{totals_frame()}} has the totals.
 \code{\link[=bayes_loo]{bayes_loo()}} gives the PSIS-LOO of the observed cells, outstanding
-first, with the full normal log density of each amount (brms'
-\code{log_lik}), plus \code{n_outstanding}, \code{elpd_outstanding} and \code{elpd_paid}.
+first, with the full log density of each response, normal or log-normal
+(with its \verb{-log y} term), as brms' \code{log_lik}, on the response's scale
+(compare it only with fits of the same responses), plus \code{n_outstanding}, \code{elpd_outstanding} and \code{elpd_paid}.
 
-Errors: if a setting is not yet built; if not exactly one of
+Errors: if \code{fitted} is not yet built; if a response is not positive
+under the log-normal, or a paid cell has no paid at the age before
+under incremental paid; if not exactly one of
 \code{outstanding} and \code{incurred} is given; if a column is missing, the
 triangle has several segments, a premium is missing or not positive, or
 the origin and development grains differ; if a prior or sampler setting
@@ -170,6 +220,15 @@ fit <- suppressWarnings(compartmental(tri, "paid", "premium", gesmann_morris_pri
                                       draws = 150, target_accept = 0.9, n_sims = 1000))
 head(fit@summary)
 as.data.frame(fit)
+# Model 2, with short chains for the example (the defaults take about a
+# minute on company 337).
+fit2 <- suppressWarnings(compartmental_model_2(tri, "paid", "premium",
+                                               gesmann_morris_2_priors(),
+                                               incurred = "incurred", chains = 2,
+                                               tune = 150, draws = 150,
+                                               target_accept = 0.9, n_sims = 1000))
+fit2@cell_rate_swaps
+as.data.frame(fit2)
 }
 \seealso{
 \code{\link[=compartmental_priors]{compartmental_priors()}}, \code{\link[=compartmental_prior_predictive]{compartmental_prior_predictive()}},

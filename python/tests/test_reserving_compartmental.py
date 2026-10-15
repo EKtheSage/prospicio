@@ -1,8 +1,9 @@
-"""Gesmann and Morris' compartmental model 1 (docs/design/reserving-compartmental.md).
+"""Gesmann and Morris' compartmental models 1 and 2 (docs/design/reserving-compartmental.md).
 
 The parity with the paper's brms code in Stan and its printed posterior is
-validation/tests/reserving_compartmental.rs; these tests check the
-binding: the priors and their preset, the settings, the fit's fields and
+validation/tests/reserving_compartmental.rs (model 1) and
+reserving_compartmental_gm2.rs (model 2); these tests check the
+binding: the priors and their presets, the settings, the fit's fields and
 frames, the prior predictive check, replay by seed, the diagnostics
 warning and the errors, on company 337 workers' compensation as the
 papers fit it (accident years 1988 to 1997 at calendar years up to 1996,
@@ -128,9 +129,6 @@ def test_settings_and_defaults():
 
 
 @pytest.mark.parametrize("setting", [
-    dict(likelihood="lognormal"),
-    dict(scale="loss_ratio"),
-    dict(paid_response="incremental"),
     dict(fitted="paid_and_incurred"),
     dict(fitted="paid_only"),
     dict(fitted="incurred_only"),
@@ -265,3 +263,177 @@ def test_failed_diagnostics_warn(tri):
         fit = m.fit(tri, "paid", "premium", incurred="incurred")
     assert fit.diagnostics["warnings"]
     assert not math.isnan(fit.reserves.mean())
+
+
+# ---------------------------------------------------------------------------
+# Model 2 (PR C): the log-normal likelihood on loss ratios with incremental
+# paid, and the hierarchy of CompartmentalPriors.gesmann_morris_2().
+# ---------------------------------------------------------------------------
+
+GM2 = CompartmentalPriors.gesmann_morris_2()
+HALF = ("student_t", 10.0, 0.3)
+
+
+def test_the_model_2_preset():
+    p = GM2
+    assert (p.k_er, p.k_p, p.rlr, p.rrf) == ((3.0, 0.1), (1.0, 0.1), (0.7, 0.2), (0.8, 0.1))
+    assert p.rlr_effect_sd == ("student_t", 10.0, 0.7)
+    assert p.rrf_effect_sd == ("student_t", 10.0, 0.5)
+    assert p.ker_effect_sd == HALF and p.kp_effect_sd == HALF
+    assert p.development_effect_sd == [HALF, HALF, ("student_t", 10.0, 0.7),
+                                       ("student_t", 10.0, 0.5)]
+    assert p.log_sigma == [("normal", math.log(0.2), 0.2)] * 2
+    # Model 1 has none of the new effects.
+    assert GM.ker_effect_sd is None and GM.kp_effect_sd is None
+    assert GM.development_effect_sd == [None] * 4
+    built = CompartmentalPriors(
+        k_er=(3.0, 0.1), k_p=(1.0, 0.1), rlr=(0.7, 0.2), rrf=(0.8, 0.1),
+        rlr_effect_sd=("student_t", 10, 0.7), rrf_effect_sd=("student_t", 10, 0.5),
+        lkj_eta=1.0, log_sigma=[("normal", math.log(0.2), 0.2)] * 2,
+        ker_effect_sd=HALF, kp_effect_sd=HALF,
+        development_effect_sd=[HALF, HALF, ("student_t", 10, 0.7), ("student_t", 10, 0.5)])
+    assert built == p
+    assert 'kp_effect_sd=("student_t", 10.0, 0.3)' in repr(p)
+    assert repr(GM).endswith("ker_effect_sd=None, kp_effect_sd=None, development_effect_sd=None)")
+
+
+def test_replace_the_effects():
+    # None keeps an effect, False removes it, a tuple sets it.
+    assert GM2.replace(k_er=(2.0, 0.3)).kp_effect_sd == HALF
+    q = GM2.replace(ker_effect_sd=False, kp_effect_sd=("normal", 0.2))
+    assert q.ker_effect_sd is None and q.kp_effect_sd == ("normal", 0.2)
+    # A development_effect_sd replaces all four.
+    q = GM2.replace(development_effect_sd=[None, None, ("normal", 0.5), None])
+    assert q.development_effect_sd == [None, None, ("normal", 0.5), None]
+    one = GM.replace(development_effect_sd=[None, HALF, None, None])
+    assert one.development_effect_sd[1] == HALF and one.ker_effect_sd is None
+    off = GM2.replace(ker_effect_sd=False, kp_effect_sd=False,
+                      development_effect_sd=[None] * 4,
+                      rlr_effect_sd=GM.rlr_effect_sd, rrf_effect_sd=GM.rrf_effect_sd,
+                      log_sigma=GM.log_sigma)
+    assert off == GM
+
+
+def test_bad_effect_priors():
+    with pytest.raises(ValueError, match="ker_effect_sd must be"):
+        GM.replace(ker_effect_sd=("cauchy", 1.0))
+    with pytest.raises(ValueError, match="ker_effect_sd must be"):
+        GM.replace(ker_effect_sd=0.3)
+    with pytest.raises(ValueError, match="not True"):
+        GM.replace(kp_effect_sd=True)
+    with pytest.raises(ValueError, match="development_effect_sd must be None or four"):
+        GM.replace(development_effect_sd=[HALF])
+    with pytest.raises(ValueError, match=r"development_effect_sd\[2\] must be"):
+        GM.replace(development_effect_sd=[None, None, ("normal",), None])
+
+
+def test_model_2_settings():
+    m = Compartmental.model_2(GM2)
+    assert m.priors == GM2
+    assert (m.likelihood, m.scale, m.paid_response, m.fitted) == (
+        "lognormal", "loss_ratio", "incremental", "paid_and_outstanding")
+    assert (m.chains, m.tune, m.draws, m.target_accept, m.max_depth) == (4, 2000, 8000, 0.999, 10)
+    assert (m.rate_order, m.start, m.n_sims, m.seed) == ("free", "data", 10_000, 0)
+    m = Compartmental.model_2(GM2, draws=500, seed=3, rate_order="ordered")
+    assert (m.draws, m.seed, m.rate_order, m.likelihood) == (500, 3, "ordered", "lognormal")
+    with pytest.raises(TypeError):
+        Compartmental.model_2()
+
+
+@pytest.fixture(scope="module")
+def fit2(tri):
+    # Shorter chains than model_2's (4 x 2,000 warm-up and 8,000 draws,
+    # about a minute, warning-free at seed 0; the Rust validation runs
+    # them): about 20 seconds in a release build. They may miss an ESS
+    # threshold.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return Compartmental.model_2(GM2, tune=1000, draws=2000, n_sims=2000).fit(
+            tri, "paid", "premium", incurred="incurred")
+
+
+def test_model_2_fit(fit2):
+    years = [str(y) for y in range(1988, 1998)]
+    assert fit2.origins == years and fit2.population_origins == ["1997"]
+    assert fit2.reserves.provenance()["model"] == "compartmental_gm2"
+    # Stan (4 x 25,000 draws): total reserve 152,242 (sd 13,938).
+    assert fit2.reserves.mean() == pytest.approx(152_242, rel=0.03)
+    names = fit2.parameter_names
+    assert names[:6] == ["k_er", "k_p", "RLR", "RRF", "sigma_os", "sigma_pd"]
+    for o in years[:-1]:
+        assert f"k_er[{o}]" in names and f"k_p[{o}]" in names and f"RLR[{o}]" in names
+    # Development effects at each observed age, 12 to 108 months; 120 has no
+    # cell and takes a new effect in each simulation.
+    for a in range(12, 120, 12):
+        for p in ("ker", "kp", "RLR", "RRF"):
+            assert f"dev_{p}[{a}]" in names
+    assert "dev_kp[120]" not in names
+    for n in ("tau_ker", "tau_kp", "tau_dev_ker", "tau_dev_kp", "tau_dev_RLR", "tau_dev_RRF",
+              "rho", "b_kp"):
+        assert n in names
+    swaps = fit2.cell_rate_swaps
+    assert swaps is not None and 0.0 <= swaps <= 1.0
+    s = fit2.summary().set_index("parameter")
+    # Stan: b_kp -5.064 (sd 1.722).
+    assert s.loc["b_kp", "mean"] == pytest.approx(-5.064, abs=0.5)
+    # Stan: elpd_loo 204.29, on the loss ratios.
+    loo = fit2.loo()
+    assert loo.elpd == pytest.approx(204.29, abs=3)
+    assert len(loo.pointwise) == 90
+    f = fit2.to_frame()
+    assert len(f) == 10 and (f["mean"] > 0).all()
+    assert len(fit2.paid_frame()) == 55
+
+
+def test_model_1_has_no_cell_rate_swaps(fit):
+    assert fit.cell_rate_swaps is None
+
+
+@pytest.mark.parametrize("setting", [
+    dict(scale="loss_ratio"),
+    dict(paid_response="incremental"),
+    dict(likelihood="lognormal"),
+    dict(likelihood="lognormal", scale="loss_ratio", paid_response="incremental"),
+])
+def test_mixed_settings_fit(tri, setting):
+    # Model 1's hierarchy under each other setting; short chains.
+    priors = GM.replace(log_sigma=GM2.log_sigma) if "likelihood" in setting else GM
+    m = Compartmental(priors, chains=2, tune=100, draws=100, n_sims=200, **setting)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fit = m.fit(tri, "paid", "premium", incurred="incurred")
+    assert all(math.isfinite(v) for v in fit.reserves.draw_matrix()[0])
+    assert fit.cell_rate_swaps is None  # the rates are shared
+
+
+def small_triangle(paid_88_12=9.6, incurred_88_12=62.7):
+    paid = [[paid_88_12, 22.8, 33.3], [7.9, 19.5], [8.7]]
+    incurred = [[incurred_88_12, 64.0, 65.6], [62.1, 56.7], [64.0]]
+    premium = [104.4, 88.9, 86.0]
+    rows = [(1988 + w, 12 * (d + 1), paid[w][d], incurred[w][d], premium[w])
+            for w in range(3) for d in range(len(paid[w]))]
+    origin, age, pd, inc, prem = map(list, zip(*rows))
+    return Triangle.from_long(origin, age, {"paid": pd, "incurred": inc, "premium": prem})
+
+
+def test_model_2_response_errors():
+    m = Compartmental.model_2(GM2, chains=1, tune=10, draws=10, n_sims=10)
+    # An outstanding of 0 has no log.
+    zero = small_triangle(incurred_88_12=9.6)
+    with pytest.raises(ValueError, match="origin 1988 at development age 12 months has "
+                                         "outstanding 0"):
+        m.fit(zero, "paid", "premium", incurred="incurred")
+    # Incremental paid needs the paid of the age before.
+    gap = small_triangle(paid_88_12=float("nan"))
+    with pytest.raises(ValueError, match="incremental paid needs the paid of the age before"):
+        m.fit(gap, "paid", "premium", outstanding="incurred")
+
+
+def test_model_2_prior_predictive(tri):
+    paths = Compartmental.model_2(GM2, seed=4).prior_predictive(tri, "premium", n_sims=300)
+    assert paths["paid"].dims == ["origin", "age"] and paths["paid"].n_sims == 300
+    assert len(paths["outstanding"].components()) == 100
+    paid_120 = paths["paid"].marginal(("1988", 120)).mean()
+    assert 0.2 < paid_120 / 104_437 < 1.5
+    again = Compartmental.model_2(GM2, seed=4).prior_predictive(tri, "premium", n_sims=300)
+    assert again["paid"].draw_matrix() == paths["paid"].draw_matrix()

@@ -2191,6 +2191,8 @@ CompartmentalFit$ultimate_loss_ratio <- function() .Call(wrap__CompartmentalFit_
 
 CompartmentalFit$rate_swaps <- function() .Call(wrap__CompartmentalFit__rate_swaps, self)
 
+CompartmentalFit$cell_rate_swaps <- function() .Call(wrap__CompartmentalFit__cell_rate_swaps, self)
+
 CompartmentalFit$diagnostics <- function() .Call(wrap__CompartmentalFit__diagnostics, self)
 
 CompartmentalFit$parameter_names <- function() .Call(wrap__CompartmentalFit__parameter_names, self)

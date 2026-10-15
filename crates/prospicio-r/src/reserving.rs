@@ -1141,8 +1141,8 @@ impl Triangle {
         Ok(MeyersFits { inner })
     }
 
-    /// Gesmann and Morris' compartmental model 1 of a single-segment
-    /// triangle: cumulative paid from the `paid` column, outstanding from
+    /// Gesmann and Morris' compartmental model of a single-segment
+    /// triangle: paid from the `paid` column, outstanding from
     /// the `outstanding` column ("column") or as the `outstanding` column
     /// of incurred less paid ("incurred"), each origin's premium from the
     /// `premium` column. `priors` and `families` are encoded as
@@ -3313,16 +3313,19 @@ impl MeyersFits {
     }
 }
 
-/// The `CompartmentalPriors` of `priors` (19 numbers) and `families` (4
+/// The `CompartmentalPriors` of `priors` (31 numbers) and `families` (10
 /// names): `k_er`, `k_p`, `rlr` and `rrf` as (median, sd); the half priors
-/// on the effect sds as (nu, scale) for "student_t" or (scale, NaN) for
-/// "normal"; `lkj_eta`; and the priors on `log sigma_os` and
+/// on the effect sds of `RLR` and `RRF` as (nu, scale) for "student_t" or
+/// (scale, NaN) for "normal"; `lkj_eta`; the priors on `log sigma_os` and
 /// `log sigma_pd` as (nu, location, scale) for "student_t" or (mean, sd,
-/// NaN) for "normal".
+/// NaN) for "normal"; then the optional half priors on the origin effect
+/// sds of `k_er` and `k_p` and on the development effect sds of `k_er`,
+/// `k_p`, `rlr` and `rrf`, each two numbers with family "none" (NaN, NaN)
+/// for no such effect.
 fn compartmental_priors(priors: &[f64], families: &[String]) -> Result<CompartmentalPriors> {
-    if priors.len() != 19 || families.len() != 4 {
+    if priors.len() != 31 || families.len() != 10 {
         return Err(Error::Other(
-            "priors must hold 19 numbers and 4 family names".into(),
+            "priors must hold 31 numbers and 10 family names".into(),
         ));
     }
     let positive = |i: usize| PositivePrior::LogNormal {
@@ -3357,6 +3360,14 @@ fn compartmental_priors(priors: &[f64], families: &[String]) -> Result<Compartme
             ))),
         }
     };
+    let optional = |j: usize, arg: &str| -> Result<Option<HalfPrior>> {
+        let family = &families[4 + j];
+        if family == "none" {
+            Ok(None)
+        } else {
+            half(family, 19 + 2 * j, arg).map(Some)
+        }
+    };
     Ok(CompartmentalPriors {
         k_er: positive(0),
         k_p: positive(2),
@@ -3368,6 +3379,14 @@ fn compartmental_priors(priors: &[f64], families: &[String]) -> Result<Compartme
         log_sigma: [
             real(&families[2], 13, "log_sigma[[1]]")?,
             real(&families[3], 16, "log_sigma[[2]]")?,
+        ],
+        ker_effect_sd: optional(0, "ker_effect_sd")?,
+        kp_effect_sd: optional(1, "kp_effect_sd")?,
+        development_effect_sd: [
+            optional(2, "development_effect_sd$k_er")?,
+            optional(3, "development_effect_sd$k_p")?,
+            optional(4, "development_effect_sd$rlr")?,
+            optional(5, "development_effect_sd$rrf")?,
         ],
     })
 }
@@ -3454,7 +3473,7 @@ fn compartmental_settings(
     })
 }
 
-/// Gesmann and Morris' compartmental model 1 of a single-segment triangle.
+/// A fitted Gesmann and Morris compartmental model of a single-segment triangle.
 #[extendr]
 pub(crate) struct CompartmentalFit {
     inner: CompartmentalInner,
@@ -3506,6 +3525,14 @@ impl CompartmentalFit {
 
     fn rate_swaps(&self) -> f64 {
         self.inner.rate_swaps as f64
+    }
+
+    /// The share of draws and observed cells with `k_er <= k_p` when the
+    /// rates vary by cell; NA when they are shared.
+    fn cell_rate_swaps(&self) -> Rfloat {
+        self.inner
+            .cell_rate_swaps
+            .map_or(Rfloat::na(), Rfloat::from)
     }
 
     /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
