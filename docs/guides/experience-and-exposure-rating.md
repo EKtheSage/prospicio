@@ -81,7 +81,7 @@ from prospicio.distributions import Lognormal, Pareto, Poisson
 from prospicio.pricing import (
     CollectiveModel, DevelopmentPattern, IndexClause, LargeLossExperience, Mbbefd, RiskProfile,
     TabulatedCurve, alpha_between_layers, credibility_weighted, fit_pml_curve, fit_references, ilf,
-    loss_elimination_ratio, match_tower, pareto_extrapolation, severity_exposure_curve, trend_factor,
+    layer_cv, loss_elimination_ratio, match_tower, pareto_extrapolation, severity_exposure_curve, trend_factor,
 )
 from prospicio.reinsurance import Layer, Tower
 
@@ -427,13 +427,33 @@ plausible `c` (here 3 to 4). The rest of this guide uses `c = 3`. Because the hi
 see that `c = 3` happens to sit near the process that drew it (its layers in the table above, 1.771, 1.060,
 0.675 and 0.295, against 1.701, 1.122, 0.648 and 0.427), which a real pricing never knows.
 
+Two calibrations solve for `c` directly. `Mbbefd.swiss_re_for_mean_rate(rate)` takes a mean destruction rate
+(the mean loss as a share of the sum insured, from the cedant's claims or a market study), and
+`Mbbefd.swiss_re_for_layer_share(limit, attachment, mpl, share)` takes the share of one risk's loss that a layer
+should carry. Each returns the curve and its `c`:
+
+```python
+curve, c = Mbbefd.swiss_re_for_mean_rate(0.10)
+print(f"mean destruction rate 0.10: c = {c:.3f}, total-loss probability {curve.total_loss_probability():.4f}")
+share = Mbbefd.swiss_re(3.0).layer_share(1.0, 1.0, 4.0)
+curve, c = Mbbefd.swiss_re_for_layer_share(1.0, 1.0, 4.0, share)
+print(f"a share of {share:.4f} for 1 xs 1 on a risk of 4: c = {c:.3f}")
+```
+
+```text
+mean destruction rate 0.10: c = 2.861, total-loss probability 0.0402
+a share of 0.1767 for 1 xs 1 on a risk of 4: c = 3.000
+```
+
+The second call recovers the `c = 3` that made the share.
+
 The curve also needs the profile to be right. If a band covers a wide range of sums insured, give its bounds.
 
 ```python
 c3 = Mbbefd.swiss_re(3.0)
 # 400 risks from 1 to 5 with a total sum insured of 800, a mean of 2 each
 for label, kw in [("one sum insured of 2", {}),
-                  ("uniform between 1 and 5", dict(lower=[1.0], upper=[5.0])),
+                  ("uniform between 1 and 5", dict(lower=[1.0], upper=[5.0], spread="uniform")),
                   ("tilted to a mean of 2", dict(lower=[1.0], upper=[5.0], spread="tilted"))]:
     band = RiskProfile([2.0], [400], c3, expected_losses=[1.2], **kw)
     print(f"{label:25s} 3 xs 2: {band.expected_layer_loss(3.0, 2.0):.3f}, surplus: {band.expected_surplus_loss(2.0, 4.0):.3f}")
@@ -448,8 +468,9 @@ tilted to a mean of 2     3 xs 2: 0.090, surplus: 0.210
 With every risk set at the band's mean of 2, nothing exceeds 2 and a layer attaching at 2 is worth nothing. A
 uniform spread between the bounds puts the mean at 3, which overstates the band's total sum insured.
 `spread="tilted"` keeps the mean at 2 and leans toward the small risks, which is what a total of 800 over 400
-risks says: 0.090 for the layer against 0.200. The default spread is uniform, so give `spread="tilted"` when you
-know the band's total.
+risks says: 0.090 for the layer against 0.200. Give the spread you mean: left out, it is uniform and
+`RiskProfile` warns for each band whose mean it moves, and `spread="auto"` tilts every band whose sum insured lies
+between its bounds.
 
 ### Surplus treaties
 
@@ -532,35 +553,36 @@ limit: the ILF from 0.25 to 10 is 2.561 for the lognormal and 1.531 for the Pare
 the answer, and the tail beyond the largest limit you sell is the part the data does not contain.
 
 To rate a layer over a profile of policy limits, make one exposure curve per limit with
-`severity_exposure_curve(severity, mpl, x)`, which returns `LEV(x * mpl) / LEV(mpl)` at each `x`, put it in a
-`TabulatedCurve`, and give the profile a list of curves, one per band.
+`TabulatedCurve.from_severity(severity, mpl)`, which tabulates `G(x) = LEV(x * mpl) / LEV(mpl)` at 200 points
+(`severity_exposure_curve(severity, mpl, x)` gives the same values at the `x` you choose), and give the profile a
+list of curves, one per band.
 
 ```python
 LIMITS = [1.0, 2.0, 5.0, 10.0]
 POLICIES = [800, 300, 100, 40]
 CASUALTY_PREMIUM = [8.0, 6.0, 4.0, 3.0]
-xs = [0.0] + [0.0005 * 1.25**k for k in range(60) if 0.0005 * 1.25**k < 1.0] + [1.0]
-curves = [TabulatedCurve(xs, severity_exposure_curve(ground_up, limit, xs)) for limit in LIMITS]
+curves = [TabulatedCurve.from_severity(ground_up, limit) for limit in LIMITS]
 casualty = RiskProfile(LIMITS, POLICIES, curves, premiums=CASUALTY_PREMIUM, loss_ratio=0.65)
 exact = (ground_up.lev(10.0) - ground_up.lev(5.0)) / ground_up.lev(10.0)
-print(f"{len(xs)} points; share of a 10m policy in 5 xs 5: table {curves[3].layer_share(5.0, 5.0, 10.0):.4f}, exact {exact:.4f}")
+print(f"{len(curves[3].x)} points; share of a 10m policy in 5 xs 5: table {curves[3].layer_share(5.0, 5.0, 10.0):.4f}, exact {exact:.4f}")
 print(f"expected loss {casualty.expected_loss():.3f}")
 for limit, att in [(1.0, 1.0), (4.0, 1.0), (5.0, 5.0), (5.0, 2.0)]:
     print(f"{limit:g} xs {att:g}: {casualty.expected_layer_loss(limit, att):.3f}")
 ```
 
 ```text
-37 points; share of a 10m policy in 5 xs 5: table 0.0619, exact 0.0617
+201 points; share of a 10m policy in 5 xs 5: table 0.0617, exact 0.0617
 expected loss 13.650
-1 xs 1: 1.248
-4 xs 1: 1.862
-5 xs 5: 0.121
+1 xs 1: 1.245
+4 xs 1: 1.857
+5 xs 5: 0.120
 5 xs 2: 0.677
 ```
 
-The 37 points start at 0.0005 of the limit and grow by a quarter at each step. The table reproduces the exact
-share of a policy with a limit of 10 in 5 xs 5 to three decimals (0.0619 against 0.0617). A policy with a limit
-of 1 has no loss above 1, so 1 xs 1 comes from the other three bands. 5 xs 5 is small (0.121) because only the
+Half of the 201 points are geometric in `x` from 1e-6 of the limit, where the curve is steepest, and half evenly
+spaced in `G`. The table reproduces the exact share of a policy with a limit of 10 in 5 xs 5 to four decimals. A
+coarser hand-made grid misprices layers: 37 geometric points gave 0.0619 here. A policy with a limit
+of 1 has no loss above 1, so 1 xs 1 comes from the other three bands. 5 xs 5 is small (0.120) because only the
 policies with a limit of 10 reach it.
 
 The severity must be at the cost level of the treaty period, and trend does not reach a layer one for one.
@@ -617,10 +639,7 @@ lf = LimitedFluctuation(0.90, 0.10)
 print(f"frequency standard {lf.frequency_standard():.0f} claims; at k = 0.05 it is {LimitedFluctuation(0.90, 0.05).frequency_standard():.0f}")
 rows = []
 for limit, att in LAYERS:
-    s = 1.0 - severity.cdf(att)
-    m1 = severity.layer(limit, att) / s
-    m2 = severity.layer_second_moment(limit, att) / s
-    cv = math.sqrt(m2 / m1**2 - 1.0)
+    cv = layer_cv(severity, limit, att)
     standard = lf.pure_premium_standard(cv)
     z = lf.credibility(pierced(att), standard)
     rows.append(z)
@@ -638,7 +657,7 @@ frequency standard 271 claims; at k = 0.05 it is 1082
 `LimitedFluctuation(p, k)` asks that the observed value lie within `k` of its mean with probability `p`; here
 10% with probability 90%. The default `k = 0.05` quadruples every standard (1082 claims for the frequency alone
 against 271). `p` and `k` are judgements to document. The pure premium standard needs the coefficient of
-variation `cv` of the loss to the layer per claim that pierces it, which the block computes from the layer
+variation `cv` of the loss to the layer per claim that pierces it, which `layer_cv` computes from the layer
 moments of the fitted Pareto. These four layers, each with limit equal to attachment, share one `cv` by the
 scale invariance of the Pareto, so only the number of claims differs.
 
@@ -778,7 +797,8 @@ refs = fit_references([(1.0, 1.0, credibility_weighted(burning_cost(1.0, 1.0), r
                       [(1.0, len(LOSSES) / YEARS)], default_alpha=2.0)
 print("references:", ", ".join(f"{refs.layer_loss(l, a):.3f}" for l, a in [(1.0, 1.0), (5.0, 5.0), (math.inf, 10.0)]))
 print("between and above:", ", ".join(f"{refs.layer_loss(l, a):.3f}" for l, a in [(2.0, 2.0), (10.0, 10.0), (15.0, 15.0)]))
-print(f"smallest alpha in the fit {min(refs.severity.alpha):.2f}")
+diag = refs.diagnostics()
+print(f"alphas {diag['min_alpha']:.2f} to {diag['max_alpha']:.2f}; {len(diag['warnings'])} warnings")
 pml = fit_pml_curve([2, 5, 10, 25], [2.5, 4.0, 6.0, 10.0], tail_alpha=1.8)
 print(f"PML curve: excess frequency of 4 is {pml.excess_frequency(4.0):.2f}; 5 xs 5 {pml.layer_loss(5.0, 5.0):.3f}")
 ```
@@ -789,7 +809,7 @@ frequency above 1: 2.80; above 5: 0.238 (experience 0.20)
 15 xs 15: 0.102
 references: 1.706, 0.675, 0.295
 between and above: 2.117, 0.234, 0.093
-smallest alpha in the fit 0.55
+alphas 0.55 to 7.28; 7 warnings
 PML curve: excess frequency of 4 is 0.20; 5 xs 5 0.369
 ```
 
@@ -803,7 +823,9 @@ above it (15 xs 15: 0.102).
 plus the frequency, and reproduces all three. Three cautions for this family of fits:
 
 - **They reproduce the inputs exactly, noise included.** Alphas can jump between pieces (the smallest in this
-  fit is 0.55). Read the layer losses and frequencies, not the alphas piece by piece.
+  fit is 0.55). `diagnostics()` lists each alpha below 1 and each pair of neighbouring alphas more than twice
+  apart (both thresholds are arguments): here two pieces below 1 and five jumps; `fit_references(..., alpha_bounds=(lo, hi))` keeps the alphas in a range instead.
+  Read the layer losses and frequencies, not the alphas piece by piece.
 - **They leave a gap between references to the fit.** 2 xs 2 comes out at 2.117 here, against 1.060 by exposure
   and 1.014 in the blend. Add a reference for any layer you care about and compare with the other evidence.
 - **The tail above the highest reference is an assumption**: the alpha of the unlimited layer, or
@@ -828,10 +850,10 @@ capped = [min(x, 5.0) for x in LOSSES]
 flags = [x >= 5.0 for x in LOSSES]
 print(f"alpha ignoring a 5m policy limit {Pareto.fit(capped, 1.0).alpha:.3f}, with censoring {Pareto.fit(capped, 1.0, censored=flags).alpha:.3f}")
 few = LOSSES[-8:]
-alpha_few = Pareto.fit(few, 1.0).alpha
-print(f"alpha from the last {len(few)} losses {alpha_few:.3f} against {alpha_hat:.3f} from all")
-print(f"standard error, about alpha / sqrt(n): {alpha_few / math.sqrt(len(few)):.3f} with {len(few)} losses, "
-      f"{alpha_hat / math.sqrt(len(LOSSES)):.3f} with {len(LOSSES)}")
+fit_few, se_few = Pareto.fit_with_standard_error(few, 1.0)
+fit_all, se_all = Pareto.fit_with_standard_error(LOSSES, 1.0)
+print(f"alpha from the last {len(few)} losses {fit_few.alpha:.3f} against {fit_all.alpha:.3f} from all")
+print(f"standard error, about alpha / sqrt(n): {se_few:.3f} with {len(few)} losses, {se_all:.3f} with {len(LOSSES)}")
 ```
 
 ```text
@@ -858,11 +880,10 @@ and `DevelopmentPattern` for the patterns. The gaps left are filed for the lanes
   curve, credibility blending of a layer's own development with benchmark patterns, and a Bornhuetter–Ferguson
   prior from the Pareto layer share. Until then, development of layer losses is unstable with many zero cells.
 
-Smaller awkward spots met while writing this guide: no helper turns a severity into a `TabulatedCurve` (section
-4 builds the grid by hand), nothing calibrates `c` to experience (section 3 scans by hand), and the `cv` of the
-loss to a layer per claim is computed by hand from the layer moments (section 5), all three filed as #212;
-`fit_references` and `match_tower` accept references that give jagged alphas without a warning (#211); and no
-benchmark alphas or curves by line ship with the library (section 7).
+One smaller gap: no benchmark alphas or curves by line ship with the library (section 7). The calibrations of
+section 3 fit `c` to one number, a mean destruction rate or a layer share; fitting it to several layers'
+burning costs at once is still the scan. After `fit_references` or `match_tower`, read `diagnostics()` on the
+result (section 6) to catch implausible alphas.
 
 ## See also
 

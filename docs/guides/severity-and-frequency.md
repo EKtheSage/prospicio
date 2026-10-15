@@ -105,6 +105,7 @@ import random
 from prospicio.distributions import (
     Count, Gamma, GeneralizedPareto, Lognormal, Mixture, NegativeBinomial,
     Pareto, PiecewisePareto, Poisson, Sampled, Truncated, claim_count,
+    fit_severity, goodness_of_fit,
 )
 from prospicio.models import BayesGlm, Glm, Terms
 from prospicio.risk import Gpd, PotTail, hill, mean_excess
@@ -295,17 +296,18 @@ same GLM then gives the annual trend and its standard error.
 | `Lognormal(meanlog, sdlog)` | Medium: its local alpha keeps rising | The body of most lines | Closed-form fit from the mean and standard deviation of the logs |
 | `Gamma(shape, scale)` | Light (exponential) | Average size by segment; homogeneous or capped claims | The GLM family for severity; `Gamma.from_mean_cv` |
 | `Weibull` | Light for shape above 1; heavier than exponential (but lighter than a power tail) for shape below 1 | Sizes with a natural scale | |
-| `Burr`, `Loglogistic` | Heavy (a power tail) with a flexible body | One family for body and moderate tail; liability | Fit by maximum likelihood outside prospicio |
+| `Burr`, `Loglogistic` | Heavy (a power tail) with a flexible body | One family for body and moderate tail; liability | `fit_severity("burr", ...)`; the loglogistic is fitted outside prospicio |
 | `InverseGamma` | Heavy (a power tail) | Skewed bodies with a heavy tail | |
 | `InverseGaussian` | Light (exponential) | Skewed bodies | Lighter in the tail than the lognormal |
-| `Pareto(t, alpha)` and its relatives | Heavy (a power tail) | Large losses above a threshold | The only family with fitting routines, section 7 |
+| `Pareto(t, alpha)` and its relatives | Heavy (a power tail) | Large losses above a threshold | Fitted with truncation and censoring, section 7 |
 | `Truncated(severity, lower, upper)` | As the base | A claim given that it falls in a window | Section 6 |
 | `Mixture`, `Mixture.splice` | What you give it | Body and tail together | Section 8 |
 
 Every parametric family has `cdf`, `quantile`, `mean`, `sample`, `lev` (the
-limited expected value `E[min(X, limit)]`) and `layer`. Except for the Pareto
-family and the `Gpd` of section 7, prospicio has **no fitting routine** for them:
-fit with `scipy` or a formula and pass the parameters in. The lognormal is closed
+limited expected value `E[min(X, limit)]`) and `layer`. Besides the Pareto
+family and the `Gpd` of section 7, `fit_severity` fits the lognormal, gamma,
+Weibull and Burr, with reporting thresholds and censoring (section 6); for the
+others, fit with `scipy` or a formula and pass the parameters in. The lognormal is closed
 form (the mean and standard deviation of the logs), so we can fit one to all the
 claims and see how it prices layers:
 
@@ -456,16 +458,26 @@ layers); the `censored` flags bring it back to 1.749. The thresholds case is
 the noisier because it has fewer losses; section 7.3 puts a number on how much a
 small sample can move the alpha.
 
-### The gap outside the Pareto family
+### Fitting the body: `fit_severity`
 
 `Truncated(severity, lower, upper)` models a claim **given** that it lies in a
 window, and is the right object once you have fitted a body to truncated data.
-But prospicio has no routine that **fits** a lognormal, gamma or Burr to
-truncated or censored data; only the Pareto family has one (issue #194). You
-write the likelihood. For a lognormal seen only between `lower` and `upper`, it
-depends on the data through the count, the sum of the log losses and the sum of
-their squares, and the normalizing term subtracts the log of the probability of
-the window:
+To **fit** one, `fit_severity(family, losses, reporting_thresholds=,
+censored=)` takes a lognormal, gamma, Weibull or Burr by maximum likelihood,
+each loss conditioned on exceeding its own reporting threshold and a loss capped
+by a policy limit counted as at least that limit. It returns the distribution,
+its parameters with standard errors, and the AIC and BIC.
+`goodness_of_fit(distribution, losses, reporting_thresholds=)` sets a fit beside
+the product-limit estimate of the same losses: the largest gap between the two
+survival functions, and the Q-Q pairs.
+
+`fit_severity` has no upper truncation: a sample cut at 1 because the claims
+above 1 went to the tail fit is not the same as claims capped at 1, and
+censoring them at 1 would put the body's own mass above 1 where the tail's is.
+For a window, write the likelihood. For a lognormal seen only between `lower`
+and `upper`, it depends on the data through the count, the sum of the log losses
+and the sum of their squares, and the normalizing term subtracts the log of the
+probability of the window:
 
 ```python
 def normal_between(a, b):
@@ -497,32 +509,45 @@ def fit_lognormal_between(xs, lower=0.0, upper=INF):
 
 
 reported = [x for x in losses if x > 0.1]
+thresholds = [0.1] * len(reported)
 naive_mu = sum(math.log(x) for x in reported) / len(reported)
-mu_hat, sd_hat = fit_lognormal_between(reported, lower=0.1)
+fit = fit_severity("lognormal", reported, reporting_thresholds=thresholds)
+mu_hat, sd_hat = fit.parameters["meanlog"], fit.parameters["sdlog"]
+se = fit.standard_errors
 window = [x for x in reported if x <= 1.0]
 mu_win, sd_win = fit_lognormal_between(window, lower=0.1, upper=1.0)
 print(f"{len(reported)} of {len(losses)} claims are above the reporting threshold of 0.1")
 print(f"ignoring the threshold:        meanlog {naive_mu:.2f}")
-print(f"above 0.1, truncated at 0.1:   meanlog {mu_hat:.2f}, sdlog {sd_hat:.2f}")
+print(f"above 0.1, truncated at 0.1:   meanlog {mu_hat:.2f} (se {se['meanlog']:.2f}), "
+      f"sdlog {sd_hat:.2f} (se {se['sdlog']:.2f})")
 print(f"0.1 to 1, truncated at both:   meanlog {mu_win:.2f}, sdlog {sd_win:.2f}")
 print("truth for the body:            meanlog -2.00, sdlog 1.20")
+gof = goodness_of_fit(fit.distribution, reported, reporting_thresholds=thresholds)
+print(f"largest gap to the product-limit survival: {gof['max_distance']:.3f}")
+print(f"largest three losses: {', '.join(f'{x:.1f}' for x in gof['x'][-3:])}; "
+      f"the fit's quantiles there: {', '.join(f'{q:.1f}' for q in gof['model_quantile'][-3:])}")
 ```
 
 ```text
 4681 of 8000 claims are above the reporting threshold of 0.1
 ignoring the threshold:        meanlog -1.32
-above 0.1, truncated at 0.1:   meanlog -1.93, sdlog 1.04
+above 0.1, truncated at 0.1:   meanlog -1.93 (se 0.05), sdlog 1.04 (se 0.03)
 0.1 to 1, truncated at both:   meanlog -2.21, sdlog 1.33
 truth for the body:            meanlog -2.00, sdlog 1.20
+largest gap to the product-limit survival: 0.017
+largest three losses: 11.0, 11.7, 12.6; the fit's quantiles there: 5.0, 5.8, 7.8
 ```
 
 Accounting for the threshold moves the meanlog from -1.32 to -1.93, close to the
 true -2.00. The sdlog, 1.04, stays short of 1.20, because the claims above 1
-follow the Pareto and not the lognormal (section 4). Cutting the sample at 1 as
-well, and putting both cuts in the likelihood, removes that mix-up; the estimate
-(-2.21 and 1.33) is noisier, because the window from 0.1 to 1 shows only part of
-the body's shape. Section 8 uses the same function to fit the body below the
-tail threshold.
+follow the Pareto and not the lognormal (section 4). The goodness of fit shows
+where: the survival functions never differ by more than 2 percent, since most
+claims are in the body, but the largest losses run well past the fit's
+quantiles. A small distance alone does not clear a tail. Cutting the sample at 1
+as well, and putting both cuts in the likelihood, removes that mix-up; the
+estimate (-2.21 and 1.33) is noisier, because the window from 0.1 to 1 shows
+only part of the body's shape. Section 8 uses the same function to fit the body
+below the tail threshold.
 
 ## 7. The tail
 
@@ -535,14 +560,15 @@ losses still holds after inflation) and because layers price from each other
 (see `docs/design/pareto.md`). Use it when the alpha looks stable as you vary
 the threshold (section 7.2) and there are enough losses above the threshold to
 pin it down. The standard error of the alpha is about `alpha / sqrt(n)` for `n`
-losses, so the last line below shows how wide a 90 percent range of the alpha
-is for a given number of losses:
+losses (`Pareto.fit_with_standard_error` returns it, from the observed
+information, which also covers truncation and censoring), so the last line below
+shows how wide a 90 percent range of the alpha is for a given number of losses:
 
 ```python
-tail = Pareto.fit(large, 1.0)
+tail, a_se = Pareto.fit_with_standard_error(large, 1.0)
 a_hat = tail.alpha
 print(f"alpha {a_hat:.3f} from {len(large)} losses above 1 (the truth is 1.8)")
-print(f"standard error about alpha / sqrt(n) = {a_hat / math.sqrt(len(large)):.3f}")
+print(f"standard error {a_se:.3f}; alpha / sqrt(n) = {a_hat / math.sqrt(len(large)):.3f}")
 print(f"expected loss per large loss, 5 xs 5: {tail.layer(5, 5):.4f}; 10 xs 10: {tail.layer(10, 10):.4f}")
 print("90% range of the alpha, as a share of it, for n losses:",
       ", ".join(f"n={n}: +-{1.645 / math.sqrt(n):.0%}" for n in (10, 30, 100, 156)))
@@ -550,7 +576,7 @@ print("90% range of the alpha, as a share of it, for n losses:",
 
 ```text
 alpha 1.765 from 156 losses above 1 (the truth is 1.8)
-standard error about alpha / sqrt(n) = 0.141
+standard error 0.141; alpha / sqrt(n) = 0.141
 expected loss per large loss, 5 xs 5: 0.1572; 10 xs 10: 0.0925
 90% range of the alpha, as a share of it, for n losses: n=10: +-52%, n=30: +-30%, n=100: +-16%, n=156: +-13%
 ```
@@ -994,9 +1020,9 @@ your belief.
 
 ## What prospicio does not do yet
 
-- The body families (`Lognormal`, `Gamma`, `Weibull`, `Burr`, `Loglogistic`, the
-  inverse families) have no fitting routine, with or without truncation and
-  censoring (issue #194). Only the Pareto family and `Gpd` fit.
+- `fit_severity` covers the lognormal, gamma, Weibull and Burr with reporting
+  thresholds and censoring, but not upper truncation (a sample cut at a
+  window's top), and not the loglogistic or the inverse families.
 - `Lognormal` has no `survival` and no `layer_variance`, which the other
   families have.
 - `Glm("negative_binomial")` needs `theta` and does not estimate it.

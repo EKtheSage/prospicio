@@ -265,8 +265,11 @@ common. Treat the blend as an illustration of the steps, not a rule.
   under each year's own program beside the proposed one, use
   `PreparedLosses.as_if(historical_towers, years, proposed)`.
 - `Pareto.fit` takes a threshold, optional per-loss reporting thresholds, flags
-  for losses capped by a policy limit (`censored`) and a `truncation`. Other
-  families have no truncation or censoring in the fit (issue #194).
+  for losses capped by a policy limit (`censored`) and a `truncation`, and
+  `Pareto.fit_with_standard_error` returns the alpha's standard error too. For
+  the lognormal, gamma, Weibull and Burr, `fit_severity(family, losses,
+  reporting_thresholds=, censored=)` fits the same data by maximum likelihood,
+  and `goodness_of_fit` sets the fit beside the product-limit estimate.
 - A surplus treaty (where each risk cedes a share of its sum insured above a
   retention) needs simulated events that carry sums insured; section 5 runs one
   on this profile.
@@ -355,8 +358,10 @@ it against a burning cost on developed, trended large losses
   per layer.
 - `match_tower` and `fit_references` refuse inputs that cannot come from a
   decreasing, convex excess loss function (rates on line that rise up the tower,
-  say), but they do not judge whether the alphas they find are plausible (issue
-  #211). Print `tower.severity.alpha` and inspect it.
+  say). A match reproduces its references exactly, so read
+  `tower.diagnostics()` afterwards: its `warnings` list an alpha below 1 or
+  neighbouring alphas more than twice apart. `fit_references(...,
+  alpha_bounds=(lo, hi))` keeps the fitted alphas inside a range you set.
 - `compound_moments` raises an error when you ask for the moments of a severity
   without three finite moments (a Pareto with alpha below 3), so its normal or
   gamma `approximate` is out of reach there. Use the grid or simulation for
@@ -454,8 +459,9 @@ times (`EventSet.with_uniform_times`, `with_seasonal_times`).
   clause; it needs each loss's time (`from_years(..., times=)`,
   `with_uniform_times` or `with_seasonal_times`), as a fraction of a year, with
   the window in hours (a year is 8,760 hours). `EventSet.merge` adds a non-cat set year by year. Clash
-  across lines (one event hitting several lines) is not supported; it is parked in
-  `docs/design/cat-inputs.md`.
+  across two lines (one event hitting both) is `Clash` or `fft_bivariate` on a
+  joint grid (`prospicio.aggregate`), with a copula between the lines within an
+  event if you need one.
 
 **Goes deeper.** [Aggregate distributions](aggregate-distributions.md) for the
 grid and simulation, [What a reinsurance price is](reinsurance-price.md) for
@@ -854,8 +860,9 @@ diversification benefit.
 - `capital`, `price_portfolio` and `allocate` need components that add up to the
   whole: lines or contracts, not gross, ceded and net side by side.
 - `Tower.apply` returns a `PredictiveDistribution` with every kind (gross, ceded,
-  net, premiums, commissions). Its total adds them all, which double counts
-  silently (issue #193). Pull out one component by hand, as below.
+  net, premiums, commissions). Its total adds them all, which double counts.
+  Take one kind with `select("kind", ["ceded"])` before you join it to a book,
+  as below.
 - After `calibrate`, read a distortion's family and parameters with `d.family`
   and `d.parameters` (properties), for example `d.parameters["rho"]` for a
   proportional hazard.
@@ -864,18 +871,19 @@ The double count, and the way round it:
 
 ```python
 from prospicio.aggregate import simulate_events
-from prospicio.distributions import Pareto, Poisson, PredictiveDistribution
+from prospicio.distributions import Pareto, Poisson
 from prospicio.reinsurance import Layer, Tower
 
 res = Tower([Layer("5x5", 5.0, 5.0)]).apply(simulate_events(Poisson(4.0), Pareto(1.0, 1.8), 2000, 1))
 print("components:", res.components())
-draws = res.marginal(("ceded", "5x5")).draws          # a property, not a method
-treaty = PredictiveDistribution(["segment"], [("treaty",)], [[x] for x in draws])
-print(f"total of everything {res.total().mean():.2f}; the ceded loss alone {treaty.mean():.2f}")
+treaty = res.select("kind", ["ceded"])
+print("selected:", treaty.components())
+print(f"total of everything {res.total().mean():.2f}; the ceded loss alone {treaty.total().mean():.2f}")
 ```
 
 ```text
 components: [('gross', 'ground_up'), ('ceded', '5x5'), ('net', 'retained')]
+selected: [('ceded', '5x5')]
 total of everything 17.76; the ceded loss alone 0.55
 ```
 
@@ -961,18 +969,12 @@ contract; a cedant sees only the price.
 
 ## What the library does not do yet
 
-The honest list. Each is a filed issue, except clash, which is parked in a
-design note.
+The honest list.
 
 | Gap | Effect on this map | Issue |
 |---|---|---|
 | Development of excess layers (excess LDFs, benchmark blending) | Layer development is a chain ladder on layer losses, or judgement | #192 |
-| Select one component of a `Tower.apply` result | Joining a ceded total into a book is by hand, and a naive join double counts | #193 |
-| Severity fitting with truncation and censoring beyond the Pareto family | Lognormal, Burr and Weibull fits have no censoring | #194 |
-| Tower matching that warns on implausible fits | `match_tower` and `fit_references` accept any alphas that fit; inspect them yourself | #211 |
-| Exposure rating helpers: a curve from a severity, calibrating Swiss Re c, the CV of a layer loss | Each is a few lines you write | #212 |
-| Severity under a mix of policy limits, and standard errors from `Pareto.fit` | A severity for losses capped at different policy limits, and a standard error for the fitted alpha, are worked by hand | #213 |
-| Clash across lines (several lines hit by one event) | Cat work and per-risk work treat lines separately | none (parked, `docs/design/cat-inputs.md`) |
+| Clash across more than two lines | `fft_bivariate` and `Clash` hit two lines with the same events (coupled within an event by a copula if you like); three or more lines share events only by simulation | none (`docs/design/cat-inputs.md`) |
 
 ## See also
 
