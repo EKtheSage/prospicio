@@ -2043,6 +2043,8 @@ BayesOneYearFit$pareto_k <- function() .Call(wrap__BayesOneYearFit__pareto_k, se
 
 BayesOneYearFit$refitted <- function() .Call(wrap__BayesOneYearFit__refitted, self)
 
+BayesOneYearFit$moment_matched <- function() .Call(wrap__BayesOneYearFit__moment_matched, self)
+
 BayesOneYearFit$refit_warnings <- function() .Call(wrap__BayesOneYearFit__refit_warnings, self)
 
 BayesOneYearFit$k_threshold <- function() .Call(wrap__BayesOneYearFit__k_threshold, self)
@@ -2078,6 +2080,8 @@ BayesOneYearFits$scale <- function() .Call(wrap__BayesOneYearFits__scale, self)
 BayesOneYearFits$pareto_k <- function() .Call(wrap__BayesOneYearFits__pareto_k, self)
 
 BayesOneYearFits$refitted <- function() .Call(wrap__BayesOneYearFits__refitted, self)
+
+BayesOneYearFits$moment_matched <- function() .Call(wrap__BayesOneYearFits__moment_matched, self)
 
 BayesOneYearFits$refit_warnings <- function() .Call(wrap__BayesOneYearFits__refit_warnings, self)
 

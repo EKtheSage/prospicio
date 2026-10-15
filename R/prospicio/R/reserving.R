@@ -2038,13 +2038,17 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #' `-quantile(fit@cdr, 0.005)` is the one-year loss at 99.5%); `pareto_k`
 #' (one per simulation, `Inf` when too few weights differ to fit the tail),
 #' `refitted` (the simulations refitted with NUTS, 1-based),
+#' `moment_matched` (the simulations moment matching rescued, 1-based;
+#' empty unless `refit = "moment_match_then_refit"`, when each flagged
+#' simulation is in it or in `refitted`),
 #' `refit_warnings` (how many refits had a diagnostic warning),
 #' `k_threshold` and `flagged_share` (the share of simulations above it,
 #' whether or not they were refitted). A `bayes_one_year_fits` has the
 #' same, without `fit`, with `keys`, `index`, `scale` and `diagnostics` (a
 #' data.frame as [bayes_odp_segments()]'s), and with `cdr` keyed by the
 #' triangle's keys and `origin`; `scale`, `pareto_k`, `refitted`,
-#' `refit_warnings` and `flagged_share` need a single-segment fit: use
+#' `moment_matched`, `refit_warnings` and `flagged_share` need a
+#' single-segment fit: use
 #' [segment()] or [totals_frame()]. `as.data.frame()` has one row per
 #' segment and origin: `origin`, `latest`, `opening_ultimate`,
 #' `opening_reserve`, and the `cdr_mean` and `cdr_std_dev` of the CDR;
@@ -2064,8 +2068,11 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #'   few thousand draws).
 #' @param refit What happens to a flagged simulation: `"refit_flagged"`
 #'   refits it with NUTS, `"reweight_only"` reweights it anyway (fast,
-#'   biased where k is high), and `"refit_all"` refits every simulation, to
-#'   check the reweighting.
+#'   biased where k is high), `"refit_all"` refits every simulation, to
+#'   check the reweighting, and `"moment_match_then_refit"` first moves the
+#'   posterior draws by affine maps to the moments the weights estimate
+#'   (moment matching, as `loo::loo_moment_match()`), refitting only a
+#'   simulation whose k stays above `k_threshold`.
 #' @param ptr A `BayesOneYearFit` or `BayesOneYearFits` pointer; used
 #'   internally.
 #' @returns A `bayes_one_year_fit` or `bayes_one_year_fits` object.
@@ -2111,6 +2118,9 @@ bayes_one_year_fit <- S7::new_class(
       pareto_k = S7::new_property(S7::class_double, getter = function(self) self@ptr$pareto_k()),
       refitted = S7::new_property(S7::class_integer, getter = function(self) {
         as.integer(self@ptr$refitted())
+      }),
+      moment_matched = S7::new_property(S7::class_integer, getter = function(self) {
+        as.integer(self@ptr$moment_matched())
       }),
       refit_warnings = S7::new_property(S7::class_integer, getter = function(self) {
         as.integer(self@ptr$refit_warnings())
@@ -2175,6 +2185,9 @@ bayes_one_year_fits <- S7::new_class(
       }),
       pareto_k = one(S7::class_double, function(p) p$pareto_k()),
       refitted = one(S7::class_integer, function(p) as.integer(rust_result(p$refitted()))),
+      moment_matched = one(S7::class_integer, function(p) {
+        as.integer(rust_result(p$moment_matched()))
+      }),
       refit_warnings = one(S7::class_integer, function(p) {
         as.integer(rust_result(p$refit_warnings()))
       }),
@@ -2222,7 +2235,8 @@ bayes_odp_one_year <- function(triangle, column = NULL, intercept_sd = 10, origi
                                development_sd = 10, process = c("gamma", "none"), chains = 4,
                                tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
                                target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
-                               refit = c("refit_flagged", "reweight_only", "refit_all")) {
+                               refit = c("refit_flagged", "reweight_only", "refit_all",
+                                         "moment_match_then_refit")) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   refit <- match.arg(refit)
@@ -2251,7 +2265,7 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
                                                        "synchronized"),
                                         spearman = NULL, k_threshold = 0.7,
                                         refit = c("refit_flagged", "reweight_only",
-                                                  "refit_all")) {
+                                                  "refit_all", "moment_match_then_refit")) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
@@ -2830,7 +2844,8 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
                               development_sd = 10, process = c("gamma", "none"), chains = 4,
                               tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
                               target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
-                              refit = c("refit_flagged", "reweight_only", "refit_all")) {
+                              refit = c("refit_flagged", "reweight_only", "refit_all",
+                                        "moment_match_then_refit")) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
   refit <- match.arg(refit)

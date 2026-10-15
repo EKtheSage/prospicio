@@ -6455,11 +6455,15 @@ impl PyBayesOdp {
     ///     The Pareto ``k`` above which a simulation's importance weights
     ///     are not trusted (the threshold of Vehtari et al. 2024 for a few
     ///     thousand draws).
-    /// refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+    /// refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
     ///     What happens to a flagged simulation: refitted with NUTS, or
     ///     reweighted anyway (fast, biased where ``k`` is high);
     ///     ``"refit_all"`` refits every simulation, to check the
-    ///     reweighting.
+    ///     reweighting; ``"moment_match_then_refit"`` first moves the
+    ///     posterior draws by affine maps to the moments the weights
+    ///     estimate (moment matching, as R's ``loo::loo_moment_match``)
+    ///     and refits only a simulation whose ``k`` stays above
+    ///     ``k_threshold`` (``moment_matched`` lists the others).
     ///
     /// Returns
     /// -------
@@ -6528,7 +6532,7 @@ impl PyBayesOdp {
     /// column : str
     /// k_threshold : float, default 0.7
     ///     As in ``one_year``.
-    /// refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+    /// refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
     ///     As in ``one_year``.
     ///
     /// Returns
@@ -7145,10 +7149,11 @@ fn one_year_settings(k_threshold: f64, refit: &str) -> PyResult<BayesOneYear> {
         "refit_flagged" => OneYearRefit::RefitFlagged,
         "reweight_only" => OneYearRefit::ReweightOnly,
         "refit_all" => OneYearRefit::RefitAll,
+        "moment_match_then_refit" => OneYearRefit::MomentMatchThenRefit,
         _ => {
             return Err(PyValueError::new_err(format!(
-                "refit must be \"refit_flagged\", \"reweight_only\" or \"refit_all\", got \
-                 {refit:?}"
+                "refit must be \"refit_flagged\", \"reweight_only\", \"refit_all\" or \
+                 \"moment_match_then_refit\", got {refit:?}"
             )));
         }
     };
@@ -7189,8 +7194,9 @@ fn warn_refits(py: Python<'_>, model: &str, refits: &[(String, usize, usize)]) -
 /// value is an adverse development and ``cdr.quantile(0.005)`` is minus
 /// the one-year value at risk at 99.5%. ``pareto_k`` has one Pareto ``k``
 /// per simulation; ``flagged_share`` is the share above ``k_threshold``,
-/// whether or not they were refitted, and ``refitted`` lists the
-/// simulations refitted with NUTS. ``fit`` is the model's own lifetime fit,
+/// whether or not they were refitted, ``refitted`` lists the simulations
+/// refitted with NUTS and ``moment_matched`` those moment matching
+/// rescued (``refit="moment_match_then_refit"``). ``fit`` is the model's own lifetime fit,
 /// a ``BayesOdpFit`` or a ``BayesBfFit``.
 #[pyclass(name = "BayesOneYearFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBayesOneYearFit {
@@ -7318,6 +7324,15 @@ impl PyBayesOneYearFit {
     #[getter]
     fn refitted(&self) -> Vec<usize> {
         each_bayes_one_year!(&self.inner, f => f.refitted.clone())
+    }
+
+    /// The simulations moment matching rescued (their ``k`` brought to at
+    /// most ``k_threshold``), in order (0-based); empty unless ``refit``
+    /// was ``"moment_match_then_refit"``, when each flagged simulation is
+    /// in this or in ``refitted``.
+    #[getter]
+    fn moment_matched(&self) -> Vec<usize> {
+        each_bayes_one_year!(&self.inner, f => f.moment_matched.clone())
     }
 
     /// How many of the refits had a diagnostic warning (R-hat, ESS or a
@@ -7506,6 +7521,13 @@ impl PyBayesOneYearFits {
     #[getter]
     fn refitted(&self) -> PyResult<Vec<usize>> {
         Ok(self.one("refitted", "")?.refitted.clone())
+    }
+
+    /// The simulations of a single-segment fit that moment matching
+    /// rescued.
+    #[getter]
+    fn moment_matched(&self) -> PyResult<Vec<usize>> {
+        Ok(self.one("moment_matched", "")?.moment_matched.clone())
     }
 
     /// How many of a single-segment fit's refits had a diagnostic warning.
@@ -7911,7 +7933,7 @@ impl PyBayesBf {
     /// k_threshold : float, default 0.7
     ///     The Pareto ``k`` above which a simulation's importance weights
     ///     are not trusted.
-    /// refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+    /// refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
     ///     What happens to a flagged simulation, as in ``BayesOdp.one_year``.
     ///
     /// Returns

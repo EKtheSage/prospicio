@@ -1005,7 +1005,7 @@ impl Triangle {
     /// and `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
     /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
     /// k is above `k_threshold` is refitted as `refit` ("refit_flagged",
-    /// "reweight_only" or "refit_all") says.
+    /// "reweight_only", "refit_all" or "moment_match_then_refit") says.
     fn bayes_odp_one_year(
         &self,
         column: &str,
@@ -1243,7 +1243,7 @@ impl Triangle {
     /// `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
     /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
     /// k is above `k_threshold` is refitted as `refit` ("refit_flagged",
-    /// "reweight_only" or "refit_all") says.
+    /// "reweight_only", "refit_all" or "moment_match_then_refit") says.
     #[allow(clippy::too_many_arguments)]
     fn bayes_bf_one_year(
         &self,
@@ -2614,10 +2614,11 @@ fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
         "refit_flagged" => OneYearRefit::RefitFlagged,
         "reweight_only" => OneYearRefit::ReweightOnly,
         "refit_all" => OneYearRefit::RefitAll,
+        "moment_match_then_refit" => OneYearRefit::MomentMatchThenRefit,
         _ => {
             return Err(Error::Other(format!(
-                "refit must be \"refit_flagged\", \"reweight_only\" or \"refit_all\", got \
-                 \"{refit}\""
+                "refit must be \"refit_flagged\", \"reweight_only\", \"refit_all\" or \
+                 \"moment_match_then_refit\", got \"{refit}\""
             )));
         }
     };
@@ -2712,6 +2713,15 @@ impl BayesOneYearFit {
             .collect())
     }
 
+    /// The simulations moment matching rescued, 1-based.
+    fn moment_matched(&self) -> Vec<f64> {
+        each_bayes_one_year!(&self.inner, f => f
+            .moment_matched
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect())
+    }
+
     fn refit_warnings(&self) -> f64 {
         each_bayes_one_year!(&self.inner, f => f.refit_warnings as f64)
     }
@@ -2801,6 +2811,17 @@ impl BayesOneYearFits {
         Ok(self
             .one("refitted", "")?
             .refitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect())
+    }
+
+    /// The simulations of a single-segment fit that moment matching
+    /// rescued, 1-based.
+    fn moment_matched(&self) -> Result<Vec<f64>> {
+        Ok(self
+            .one("moment_matched", "")?
+            .moment_matched
             .iter()
             .map(|&i| (i + 1) as f64)
             .collect())
