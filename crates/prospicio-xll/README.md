@@ -68,10 +68,14 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander exhibit |
 | `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod exhibit |
 | `PRO.VERSION()` | Version |
-| `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value per limit |
-| `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to the layer per ground-up loss |
-| `PRO.LAYER.CV(limit, attachment, family, p1, p2, [truncation])` | CV of the layer loss given a loss above the attachment |
-| `PRO.ILF(limit, basic_limit, family, p1, p2, [truncation])` | Increased limit factor |
+| `PRO.SEV.CDF(x, family, p1, p2, [p3])`, `PRO.SEV.SURVIVAL(...)` | Distribution or survival function at each x |
+| `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Quantile (VaR) at each probability |
+| `PRO.SEV.STATS(family, p1, p2, [p3])` | Family, mean, SD, CV |
+| `PRO.LER(deductible, family, p1, p2, [p3])` | Loss elimination ratio of a deductible |
+| `PRO.LEV(limit, family, p1, p2, [p3])` | Limited expected value per limit |
+| `PRO.LAYER(limit, attachment, family, p1, p2, [p3])` | Expected loss to the layer per ground-up loss |
+| `PRO.LAYER.CV(limit, attachment, family, p1, p2, [p3])` | CV of the layer loss given a loss above the attachment |
+| `PRO.ILF(limit, basic_limit, family, p1, p2, [p3])` | Increased limit factor |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
   one column per age; blank or `#N/A` where unobserved.
@@ -92,9 +96,12 @@ Ctrl+Alt+F9 to recalculate.
   `{0.75,0.95,0.995}`), `process` (`"gamma"` or `"none"`; Mack's
   bootstrap also takes `"lognormal"`, `"normal"` and `"residuals"`).
 
-- `family`: `"pareto"` (`p1` = threshold t, `p2` = alpha, optional
-  `truncation`), `"lognormal"` (meanlog, sdlog) or `"lognormal_cv"` (mean,
-  CV).
+- `family` and `p1`, `p2`, `p3`: `"pareto"` (t, alpha, optional
+  truncation), `"lognormal"` (meanlog, sdlog), `"lognormal_cv"` (mean,
+  CV), `"gamma"` (shape, scale), `"gamma_cv"` (mean, CV), `"weibull"`
+  (shape, scale), `"loglogistic"` (shape, scale), `"inverse_gamma"`
+  (shape, scale), `"inverse_gaussian"` (mean, shape), `"burr"` (alpha,
+  gamma, scale), `"gpd"` (xi, beta).
 - `limit`, `attachment`, `basic_limit`: a number, a range or
   `"unlimited"`. A column of attachments against a row of limits gives a
   table, e.g. `=PRO.LAYER(B1:E1, A2:A4, "pareto", 500, 2)`.

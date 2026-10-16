@@ -124,6 +124,26 @@ for i, (name, f, x) in enumerate([
     ly[f"A{row}"] = name; ly[f"B{row}"] = f; ly[f"C{row}"] = x
     ly[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-9"
 ly["A27"] = "Valid only with the inputs above unchanged."; ly["A27"].font = note
+
+ly["A30"] = "Every severity family: mean, 99.5% quantile and LEV at 1,000,000"; ly["A30"].font = bold
+for h, col in zip(["Family", "p1", "p2", "p3", "Mean", "Q 99.5%", "LEV 1m", "LER at 10,000"], "ABCDEFGH"):
+    ly[f"{col}31"] = h; ly[f"{col}31"].font = bold
+for i, (fam, ps) in enumerate([
+        ("pareto", [500, 2]), ("lognormal_cv", [50000, 3]), ("gamma_cv", [50000, 1]),
+        ("weibull", [0.7, 30000]), ("loglogistic", [2.5, 30000]), ("inverse_gamma", [3, 100000]),
+        ("inverse_gaussian", [50000, 20000]), ("burr", [3, 1.5, 60000]), ("gpd", [0.3, 30000])]):
+    r = 32 + i
+    ly[f"A{r}"] = fam
+    for c, x in zip("BCD", ps):
+        ly[f"{c}{r}"] = x; ly[f"{c}{r}"].fill = inp
+    a = f'A{r},B{r},C{r},D{r}'
+    ly[f"E{r}"] = ArrayFormula(f"E{r}", f"=INDEX(PRO.SEV.STATS({a}),2,2)")
+    ly[f"F{r}"] = ArrayFormula(f"F{r}", f"=PRO.SEV.QUANTILE(0.995,{a})")
+    ly[f"G{r}"] = ArrayFormula(f"G{r}", f"=PRO.LEV(1000000,{a})")
+    ly[f"H{r}"] = ArrayFormula(f"H{r}", f"=PRO.LER(10000,{a})")
+    for c in "EFG":
+        ly[f"{c}{r}"].number_format = "#,##0"
+    ly[f"H{r}"].number_format = "0.0000"
 ly.column_dimensions["A"].width = 34
 for col in "BCDEGHIJ":
     ly.column_dimensions[col].width = 14

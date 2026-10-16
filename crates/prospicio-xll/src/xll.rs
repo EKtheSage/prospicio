@@ -425,8 +425,13 @@ mod exports {
     udf!(pro_tri_cumulative, triangle);
     udf!(pro_tri_linkratios, triangle);
     udf!(pro_tri_latest, triangle);
-    udf!(pro_lev, limit, family, p1, p2, truncation);
-    udf!(pro_layer, limit, attachment, family, p1, p2, truncation);
-    udf!(pro_layer_cv, limit, attachment, family, p1, p2, truncation);
-    udf!(pro_ilf, limit, basic_limit, family, p1, p2, truncation);
+    udf!(pro_sev_cdf, x, family, p1, p2, p3);
+    udf!(pro_sev_survival, x, family, p1, p2, p3);
+    udf!(pro_sev_quantile, p, family, p1, p2, p3);
+    udf!(pro_sev_stats, family, p1, p2, p3);
+    udf!(pro_ler, deductible, family, p1, p2, p3);
+    udf!(pro_lev, limit, family, p1, p2, p3);
+    udf!(pro_layer, limit, attachment, family, p1, p2, p3);
+    udf!(pro_layer_cv, limit, attachment, family, p1, p2, p3);
+    udf!(pro_ilf, limit, basic_limit, family, p1, p2, p3);
 }

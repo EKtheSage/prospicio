@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("thirty functions registered", registered == 30);
+    check("thirty-five functions registered", registered == 35);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -371,6 +371,19 @@ int main(int argc, char **argv) {
     check("PRO.TRI.CUMULATIVE(PRO.TRI.INCREMENTAL(RAA)) is RAA", same);
     free12(inc);
     free12(cum);
+
+    /* A gamma severity's cdf at its quantile: the exponential's 1 - e^-1. */
+    static wchar_t gamma_s[] = L"\x05" L"gamma";
+    XLOPER12 gfam, one, thousand;
+    gfam.xltype = xltypeStr;
+    gfam.val.str = gamma_s;
+    one.xltype = thousand.xltype = xltypeNum;
+    one.val.num = 1;
+    thousand.val.num = 1000;
+    XLOPER12 *gc = ((Fn5)GetProcAddress(xll, "pro_sev_cdf"))(&thousand, &gfam, &one, &thousand, &missing);
+    check("PRO.SEV.CDF(1000, \"gamma\", 1, 1000) is 1 - 1/e",
+          (gc->xltype & 0xFFF) == xltypeNum && fabs(gc->val.num - (1 - exp(-1.0))) < 1e-15);
+    free12(gc);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

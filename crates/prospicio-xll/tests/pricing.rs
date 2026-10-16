@@ -161,7 +161,7 @@ fn errors_come_back_as_text() {
         bad(vec![
             n(1.0),
             n(1.0),
-            t("gamma"),
+            t("poisson"),
             n(1.0),
             n(1.0),
             Grid::missing()
@@ -177,7 +177,7 @@ fn errors_come_back_as_text() {
             n(1.0),
             n(10.0)
         ])
-        .contains("truncation is taken only")
+        .contains("p3 is taken only")
     );
     assert!(bad(pareto(n(1.0), n(-1.0))).contains("non-negative attachment"));
     assert!(bad(pareto(t("a lot"), n(1.0))).contains("must be a number or \"unlimited\""));

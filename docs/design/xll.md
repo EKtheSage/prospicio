@@ -41,10 +41,14 @@ category of Insert Function:
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
 | `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod (Stanard-Buhlmann) |
 | `PRO.VERSION()` | The prospicio version the add-in was built from |
-| `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value `E[min(X, limit)]`, per limit |
-| `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to `limit` xs `attachment` per ground-up loss |
-| `PRO.LAYER.CV(limit, attachment, family, p1, p2, [truncation])` | CV of the layer loss given a loss above the attachment |
-| `PRO.ILF(limit, basic_limit, family, p1, p2, [truncation])` | Increased limit factor `LEV(limit) / LEV(basic_limit)` |
+| `PRO.SEV.CDF(x, family, p1, p2, [p3])`, `PRO.SEV.SURVIVAL(...)` | A severity's distribution or survival function at each `x` |
+| `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Its quantile (VaR) at each probability |
+| `PRO.SEV.STATS(family, p1, p2, [p3])` | Its family, mean, SD and CV |
+| `PRO.LER(deductible, family, p1, p2, [p3])` | The loss elimination ratio of a deductible |
+| `PRO.LEV(limit, family, p1, p2, [p3])` | Limited expected value `E[min(X, limit)]`, per limit |
+| `PRO.LAYER(limit, attachment, family, p1, p2, [p3])` | Expected loss to `limit` xs `attachment` per ground-up loss |
+| `PRO.LAYER.CV(limit, attachment, family, p1, p2, [p3])` | CV of the layer loss given a loss above the attachment |
+| `PRO.ILF(limit, basic_limit, family, p1, p2, [p3])` | Increased limit factor `LEV(limit) / LEV(basic_limit)` |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
 omitted (none), a number (a constant factor to ultimate at the oldest age)
@@ -99,11 +103,22 @@ total row. On GenIns with R's `?ClarkCapeCod` premium all 28 totals in
 `validation/reference/reserving_expected_loss_python.csv`
 (chainladder-python 0.10.1) match.
 
-The pricing functions wrap `prospicio_pricing::layer` (`ilf`, `layer_cv`)
-and `prospicio_prob::Severity` (`lev`, `layer`). `family` is `"pareto"`
-(`p1` the threshold `t`, `p2` alpha; `truncation` optional), `"lognormal"`
-(`meanlog`, `sdlog`, as Excel's `LOGNORM.DIST`) or `"lognormal_cv"` (mean
-and CV). Limits and attachments are a number, a range or `"unlimited"`;
+The severity and pricing functions build a `prospicio_prob::Dist` (as a
+`SeverityDist`, so every family has exact limited moments) and wrap
+`prospicio_pricing::layer` (`ilf`, `layer_cv`, `loss_elimination_ratio`)
+and the `Distribution` and `Severity` traits. `family` and its parameters:
+`"pareto"` (`t`, alpha, optional truncation as `p3`), `"lognormal"`
+(meanlog, sdlog, as Excel's `LOGNORM.DIST`), `"lognormal_cv"` (mean, CV),
+`"gamma"` (shape, scale), `"gamma_cv"` (mean, CV), `"weibull"` (shape,
+scale), `"loglogistic"` (shape, scale), `"inverse_gamma"` (shape, scale),
+`"inverse_gaussian"` (mean, shape), `"burr"` (alpha, gamma, scale as
+`p3`), `"gpd"` (xi, beta). The sixth argument of the layer functions,
+first `truncation`, is now `p3`: same position and meaning for the Pareto
+(decision 17). On the gamma, log-logistic, lognormal and Weibull every
+LEV, layer and stop loss in `validation/reference/severity_mpmath.csv`
+matches at its tolerance (`tests/severities.rs`). TVaR is not offered for
+a parametric severity: neither the R nor the Python package has it
+(theirs is on grid, sampled and predictive distributions). Limits and attachments are a number, a range or `"unlimited"`;
 blank cells give blank results.
 
 **Checks.** `cargo test -p prospicio-xll` runs the worksheet functions on
@@ -241,11 +256,10 @@ order, one small PR each, those already done struck through:
    Cape Cod~~; ~~triangle helpers (link ratios, incremental and cumulative,
    the latest diagonal)~~.
 2. Severities: ~~the Pareto and the lognormal's LEV, layer, CV, ILF~~;
-   more families (gamma, Weibull, Burr, log-logistic, inverse gamma,
-   generalized Pareto, piecewise Pareto) and their cdf, quantile, mean,
-   VaR and TVaR; the Pareto helpers (alpha between layers or
-   frequencies, extrapolation), the loss elimination ratio, the layer
-   variance, the stop loss.
+   ~~more families (gamma, Weibull, Burr, log-logistic, inverse gamma and
+   Gaussian, generalized Pareto) and their cdf, quantile, mean and SD,
+   the loss elimination ratio~~; the piecewise Pareto; the Pareto helpers (alpha between layers or
+   frequencies, extrapolation), the layer variance.
 3. Pricing: exposure curves (MBBEFD, Swiss Re) and a layer's share;
    credibility (Buhlmann-Straub, limited fluctuation); ratemaking (trend,
    rate level, the indicated rate); burning cost.
