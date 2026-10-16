@@ -9,7 +9,10 @@
 //! attachments and a row of limits give every layer in one formula. A
 //! blank cell gives a blank result; a limit of `"unlimited"` is no limit.
 
-use prospicio_pricing::layer::loss_elimination_ratio;
+use prospicio_pricing::layer::{
+    XsLayer, alpha_between_frequencies, alpha_between_frequency_and_layer, alpha_between_layers,
+    loss_elimination_ratio, pareto_extrapolation,
+};
 use prospicio_pricing::layer::{ilf, layer_cv};
 use prospicio_prob::evt::Gpd;
 use prospicio_prob::{
@@ -331,4 +334,95 @@ pub fn ler(args: &[Grid]) -> Result<Grid> {
     map1(&args[0], "deductible", false, |d| {
         loss_elimination_ratio(&sev, d).map_err(|e| e.to_string())
     })
+}
+
+/// An optional `truncation` argument of the Pareto helpers: omitted (or
+/// "unlimited") for none.
+fn truncation(grid: &Grid) -> Result<Option<f64>> {
+    match grid.as_scalar() {
+        Some(v) if v.is_blank() => Ok(None),
+        Some(v) => match amount(v, "truncation", 0, 0, true)? {
+            Some(x) if x.is_infinite() => Ok(None),
+            x => Ok(x),
+        },
+        None => Err("truncation must be a single number".into()),
+    }
+}
+
+/// A layer `limit` xs `attachment` for the Pareto helpers; `limit` may be
+/// "unlimited".
+fn xs_layer(limit: &Grid, attachment: &Grid, which: &str) -> Result<XsLayer> {
+    let l = match limit.as_scalar() {
+        Some(v) => amount(v, &format!("{which} limit"), 0, 0, true)?,
+        None => None,
+    }
+    .ok_or_else(|| format!("{which} limit must be a single number or \"unlimited\""))?;
+    XsLayer::new(l, scalar(attachment, &format!("{which} attachment"))?).map_err(|e| e.to_string())
+}
+
+/// The expected loss of each `to` layer per unit of the `from` layer's,
+/// under a Pareto with this `alpha` (R's `Pareto_Extrapolation`); the `to`
+/// limits and attachments broadcast as `PRO.LAYER`'s:
+/// `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])`.
+pub fn pareto_extrapolate(args: &[Grid]) -> Result<Grid> {
+    let from = xs_layer(&args[0], &args[1], "from")?;
+    let alpha = scalar(&args[4], "alpha")?;
+    let t = truncation(&args[5])?;
+    map2(
+        &args[2],
+        &args[3],
+        ("to_limit", "to_attachment"),
+        (true, false),
+        |l, a| {
+            let to = XsLayer::new(l, a).map_err(|e| e.to_string())?;
+            pareto_extrapolation(from, to, alpha, t).map_err(|e| e.to_string())
+        },
+    )
+}
+
+/// The Pareto alpha at which two layers have the given expected losses
+/// (R's `Pareto_Find_Alpha_btw_Layers`):
+/// `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])`.
+pub fn pareto_alpha_layers(args: &[Grid]) -> Result<Grid> {
+    let a = (
+        xs_layer(&args[0], &args[1], "first")?,
+        scalar(&args[2], "loss1")?,
+    );
+    let b = (
+        xs_layer(&args[3], &args[4], "second")?,
+        scalar(&args[5], "loss2")?,
+    );
+    let alpha = alpha_between_layers(a, b, truncation(&args[6])?).map_err(|e| e.to_string())?;
+    Ok(Grid::scalar(Value::number(alpha)))
+}
+
+/// The Pareto alpha at which `frequency` losses a year above `threshold`
+/// give the layer an expected loss of `loss` (R's
+/// `Pareto_Find_Alpha_btw_FQ_Layer`):
+/// `PRO.PARETO.ALPHA.FREQLAYER(threshold, frequency, limit, attachment, loss, [truncation])`.
+pub fn pareto_alpha_frequency_layer(args: &[Grid]) -> Result<Grid> {
+    let alpha = alpha_between_frequency_and_layer(
+        scalar(&args[0], "threshold")?,
+        scalar(&args[1], "frequency")?,
+        xs_layer(&args[2], &args[3], "the")?,
+        scalar(&args[4], "loss")?,
+        truncation(&args[5])?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(Grid::scalar(Value::number(alpha)))
+}
+
+/// The Pareto alpha between two frequencies above two thresholds (R's
+/// `Pareto_Find_Alpha_btw_FQs`):
+/// `PRO.PARETO.ALPHA.FREQS(threshold1, frequency1, threshold2, frequency2, [truncation])`.
+pub fn pareto_alpha_frequencies(args: &[Grid]) -> Result<Grid> {
+    let alpha = alpha_between_frequencies(
+        scalar(&args[0], "threshold1")?,
+        scalar(&args[1], "frequency1")?,
+        scalar(&args[2], "threshold2")?,
+        scalar(&args[3], "frequency2")?,
+        truncation(&args[4])?,
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(Grid::scalar(Value::number(alpha)))
 }

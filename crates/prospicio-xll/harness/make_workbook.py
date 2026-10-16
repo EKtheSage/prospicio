@@ -144,6 +144,18 @@ for i, (fam, ps) in enumerate([
     for c in "EFG":
         ly[f"{c}{r}"].number_format = "#,##0"
     ly[f"H{r}"].number_format = "0.0000"
+
+ly["A43"] = "Pareto helpers (R package Pareto)"; ly["A43"].font = bold
+ly["A44"] = "Alpha from two layers: 1m xs 1m expects 1, 2m xs 3m expects"; ly["F44"] = 0.6; ly["F44"].fill = inp
+ly["G44"] = ArrayFormula("G44", "=PRO.PARETO.ALPHA(1000000,1000000,1,2000000,3000000,F44)")
+ly["A45"] = "Alpha from 4 losses above 1m and 1 above 2m"
+ly["G45"] = ArrayFormula("G45", "=PRO.PARETO.ALPHA.FREQS(1000000,4,2000000,1)")
+ly["A46"] = "1m xs 1m at alpha G44, extrapolated to each layer below (per unit)"
+for c, lim in enumerate([1000000, 2000000, 5000000]):
+    ly.cell(row=47, column=2+c, value=lim).fill = inp
+for r, att in enumerate([2000000, 3000000]):
+    ly.cell(row=48+r, column=1, value=att).fill = inp
+ly["B48"] = ArrayFormula("B48:D49", "=PRO.PARETO.EXTRAPOLATE(1000000,1000000,B47:D47,A48:A49,G44)")
 ly.column_dimensions["A"].width = 34
 for col in "BCDEGHIJ":
     ly.column_dimensions[col].width = 14

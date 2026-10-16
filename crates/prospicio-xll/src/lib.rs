@@ -133,6 +133,14 @@ const MAX_AGE: Arg = Arg {
     help: "Age in months development stops at, such as 240; omitted (or \"inf\") for none",
 };
 
+const TRUNCATION: Arg = Arg {
+    name: "truncation",
+    help: "Loss size the Pareto is truncated at; omitted (or \"unlimited\") for none",
+};
+const fn arg(name: &'static str, help: &'static str) -> Arg {
+    Arg { name, help }
+}
+
 const LIMIT: Arg = Arg {
     name: "limit",
     help: "Limit(s): a number, a range, or \"unlimited\"",
@@ -482,6 +490,80 @@ pub static FUNCTIONS: &[Function] = &[
             P3,
         ],
         run: pricing::ler,
+    },
+    Function {
+        symbol: "pro_pareto_extrapolate",
+        name: "PRO.PARETO.EXTRAPOLATE",
+        help: "Pareto extrapolation: expected loss of each to layer per unit of the from layer's, at this alpha.",
+        args: &[
+            arg("from_limit", "The rated layer's limit, or \"unlimited\""),
+            arg("from_attachment", "The rated layer's attachment"),
+            arg(
+                "to_limit",
+                "Limit(s) of the layer(s) to rate: a number, a range or \"unlimited\"",
+            ),
+            arg(
+                "to_attachment",
+                "Attachment(s) of the layer(s) to rate; a column against a row of limits gives a table",
+            ),
+            arg("alpha", "The Pareto alpha"),
+            TRUNCATION,
+        ],
+        run: pricing::pareto_extrapolate,
+    },
+    Function {
+        symbol: "pro_pareto_alpha",
+        name: "PRO.PARETO.ALPHA",
+        help: "The Pareto alpha at which two layers have the given expected losses.",
+        args: &[
+            arg("limit1", "First layer's limit, or \"unlimited\""),
+            arg("attachment1", "First layer's attachment"),
+            arg("loss1", "First layer's expected loss"),
+            arg("limit2", "Second layer's limit, or \"unlimited\""),
+            arg("attachment2", "Second layer's attachment"),
+            arg("loss2", "Second layer's expected loss"),
+            TRUNCATION,
+        ],
+        run: pricing::pareto_alpha_layers,
+    },
+    Function {
+        symbol: "pro_pareto_alpha_freqlayer",
+        name: "PRO.PARETO.ALPHA.FREQLAYER",
+        help: "The Pareto alpha at which a frequency of losses above a threshold gives a layer its expected loss.",
+        args: &[
+            arg(
+                "threshold",
+                "The loss size the frequency counts losses above",
+            ),
+            arg(
+                "frequency",
+                "Expected number of losses above the threshold a year",
+            ),
+            arg("limit", "The layer's limit, or \"unlimited\""),
+            arg("attachment", "The layer's attachment"),
+            arg("loss", "The layer's expected loss a year"),
+            TRUNCATION,
+        ],
+        run: pricing::pareto_alpha_frequency_layer,
+    },
+    Function {
+        symbol: "pro_pareto_alpha_freqs",
+        name: "PRO.PARETO.ALPHA.FREQS",
+        help: "The Pareto alpha between two frequencies above two thresholds.",
+        args: &[
+            arg("threshold1", "First threshold"),
+            arg(
+                "frequency1",
+                "Expected number of losses above the first threshold a year",
+            ),
+            arg("threshold2", "Second threshold"),
+            arg(
+                "frequency2",
+                "Expected number of losses above the second threshold a year",
+            ),
+            TRUNCATION,
+        ],
+        run: pricing::pareto_alpha_frequencies,
     },
     Function {
         symbol: "pro_lev",

@@ -72,6 +72,10 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Quantile (VaR) at each probability |
 | `PRO.SEV.STATS(family, p1, p2, [p3])` | Family, mean, SD, CV |
 | `PRO.LER(deductible, family, p1, p2, [p3])` | Loss elimination ratio of a deductible |
+| `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Pareto extrapolation from one layer to others |
+| `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])` | Alpha between two layers |
+| `PRO.PARETO.ALPHA.FREQLAYER(threshold, frequency, limit, attachment, loss, [truncation])` | Alpha between a frequency and a layer |
+| `PRO.PARETO.ALPHA.FREQS(threshold1, frequency1, threshold2, frequency2, [truncation])` | Alpha between two frequencies |
 | `PRO.LEV(limit, family, p1, p2, [p3])` | Limited expected value per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [p3])` | Expected loss to the layer per ground-up loss |
 | `PRO.LAYER.CV(limit, attachment, family, p1, p2, [p3])` | CV of the layer loss given a loss above the attachment |
