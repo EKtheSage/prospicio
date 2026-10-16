@@ -64,10 +64,10 @@
   `apply_aggregate_term`, `EventSet.term_years`; R
   `with_profit_commission_carry_forward()`,
   `with_sliding_scale_carry_forward()`, `apply_tower_term()`,
-  `term_years()`.
+  `term_years()` (#301).
 
 ### Breaking changes
 
 - Rust: `Layer` gains the public fields `profit_commission_carry` and
   `sliding_scale_carry`; code that builds it in full adds them (`None`)
-  or uses the builders.
+  or uses the builders (#301).
