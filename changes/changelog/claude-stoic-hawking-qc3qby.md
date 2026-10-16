@@ -96,4 +96,4 @@
   `posterior_predictive_check` and `loo_pit`. Python
   `BayesGlmFit.replicate`, `.posterior_predictive_check`, `.loo_pit`,
   `models.ppc_check`, `models.loo_pit`; R `bayes_replicate()`,
-  `bayes_ppc()`, `bayes_loo_pit()`, `ppc_check()`, `loo_pit()`.
+  `bayes_ppc()`, `bayes_loo_pit()`, `ppc_check()`, `loo_pit()` (#305).
