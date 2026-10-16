@@ -78,6 +78,7 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.PARETO.ALPHA.FREQS(threshold1, frequency1, threshold2, frequency2, [truncation])` | Alpha between two frequencies |
 | `PRO.LEV(limit, family, p1, p2, [p3])` | Limited expected value per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [p3])` | Expected loss to the layer per ground-up loss |
+| `PRO.LAYER.VAR(limit, attachment, family, p1, p2, [p3])` | Variance of the layer loss per ground-up loss |
 | `PRO.LAYER.CV(limit, attachment, family, p1, p2, [p3])` | CV of the layer loss given a loss above the attachment |
 | `PRO.ILF(limit, basic_limit, family, p1, p2, [p3])` | Increased limit factor |
 
@@ -105,7 +106,11 @@ Ctrl+Alt+F9 to recalculate.
   CV), `"gamma"` (shape, scale), `"gamma_cv"` (mean, CV), `"weibull"`
   (shape, scale), `"loglogistic"` (shape, scale), `"inverse_gamma"`
   (shape, scale), `"inverse_gaussian"` (mean, shape), `"burr"` (alpha,
-  gamma, scale), `"gpd"` (xi, beta).
+  gamma, scale), `"gpd"` (xi, beta), `"piecewise_pareto"` (a range of
+  thresholds, a range of alphas, optionally a truncation point alone or
+  with `"lp"`, the last piece only and the default, or `"wd"`, the whole
+  distribution, in a second cell), `"gen_pareto"` (Riegel's: t,
+  alpha_ini, alpha_tail).
 - `limit`, `attachment`, `basic_limit`: a number, a range or
   `"unlimited"`. A column of attachments against a row of limits gives a
   table, e.g. `=PRO.LAYER(B1:E1, A2:A4, "pareto", 500, 2)`.

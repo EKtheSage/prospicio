@@ -436,6 +436,7 @@ mod exports {
     udf!(pro_pareto_alpha_freqs, threshold1, frequency1, threshold2, frequency2, truncation);
     udf!(pro_lev, limit, family, p1, p2, p3);
     udf!(pro_layer, limit, attachment, family, p1, p2, p3);
+    udf!(pro_layer_var, limit, attachment, family, p1, p2, p3);
     udf!(pro_layer_cv, limit, attachment, family, p1, p2, p3);
     udf!(pro_ilf, limit, basic_limit, family, p1, p2, p3);
 }

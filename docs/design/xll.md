@@ -51,6 +51,7 @@ category of Insert Function:
 | `PRO.PARETO.ALPHA.FREQS(threshold1, frequency1, threshold2, frequency2, [truncation])` | The alpha between two frequencies |
 | `PRO.LEV(limit, family, p1, p2, [p3])` | Limited expected value `E[min(X, limit)]`, per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [p3])` | Expected loss to `limit` xs `attachment` per ground-up loss |
+| `PRO.LAYER.VAR(limit, attachment, family, p1, p2, [p3])` | Variance of the loss to the layer per ground-up loss |
 | `PRO.LAYER.CV(limit, attachment, family, p1, p2, [p3])` | CV of the layer loss given a loss above the attachment |
 | `PRO.ILF(limit, basic_limit, family, p1, p2, [p3])` | Increased limit factor `LEV(limit) / LEV(basic_limit)` |
 
@@ -265,8 +266,9 @@ order, one small PR each, those already done struck through:
 2. Severities: ~~the Pareto and the lognormal's LEV, layer, CV, ILF~~;
    ~~more families (gamma, Weibull, Burr, log-logistic, inverse gamma and
    Gaussian, generalized Pareto) and their cdf, quantile, mean and SD,
-   the loss elimination ratio~~; the piecewise Pareto; ~~the Pareto helpers (alpha between layers or
-   frequencies, extrapolation)~~; the layer variance.
+   the loss elimination ratio~~; ~~the piecewise Pareto and Riegel's
+   generalized Pareto~~; ~~the Pareto helpers (alpha between layers or
+   frequencies, extrapolation)~~; ~~the layer variance~~.
 3. Pricing: exposure curves (MBBEFD, Swiss Re) and a layer's share;
    credibility (Buhlmann-Straub, limited fluctuation); ratemaking (trend,
    rate level, the indicated rate); burning cost.
@@ -280,9 +282,7 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan above. More severity families (gamma, Weibull, Burr, the piecewise
-  Pareto) and the Pareto helpers (`pareto_extrapolation`,
-  `alpha_between_layers`) are each a few lines when wanted.
+- **Next functions:** the parity plan above: pricing, then aggregates.
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and

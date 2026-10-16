@@ -17,7 +17,7 @@ use prospicio_pricing::layer::{ilf, layer_cv};
 use prospicio_prob::evt::Gpd;
 use prospicio_prob::{
     Burr, Dist, Distribution, Gamma, InverseGamma, InverseGaussian, Loglogistic, Lognormal, Pareto,
-    Severity, SeverityDist, Weibull,
+    PiecewisePareto, Severity, SeverityDist, Truncation, Weibull,
 };
 
 use crate::sheet::{Grid, Value, position};
@@ -37,7 +37,67 @@ fn scalar(grid: &Grid, name: &str) -> Result<f64> {
 pub const FAMILIES: &str = "pareto (t, alpha, [truncation]), lognormal (meanlog, sdlog), \
 lognormal_cv (mean, cv), gamma (shape, scale), gamma_cv (mean, cv), weibull (shape, scale), \
 loglogistic (shape, scale), inverse_gamma (shape, scale), inverse_gaussian (mean, shape), \
-burr (alpha, gamma, scale), gpd (xi, beta)";
+burr (alpha, gamma, scale), gpd (xi, beta), piecewise_pareto (thresholds, alphas, \
+[truncation, [\"lp\" or \"wd\"]]), gen_pareto (t, alpha_ini, alpha_tail)";
+
+/// The numbers of a range, in reading order, skipping blank cells.
+fn numbers(grid: &Grid, name: &str) -> Result<Vec<f64>> {
+    let mut out = Vec::with_capacity(grid.cells.len());
+    for r in 0..grid.rows {
+        for c in 0..grid.columns {
+            match grid.get(r, c) {
+                Value::Number(x) => out.push(*x),
+                v if v.is_blank() => {}
+                other => {
+                    return Err(format!(
+                        "{name} {} must be a number, got {other:?}",
+                        position(r, c)
+                    ));
+                }
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(format!("{name} is required"));
+    }
+    Ok(out)
+}
+
+/// A piecewise Pareto's truncation: a point, or a point and its kind
+/// (`"lp"`, the last piece only, R's default, or `"wd"`, the whole
+/// distribution) in two cells.
+fn piecewise_truncation(p3: &Grid) -> Result<(f64, Truncation)> {
+    let cells: Vec<&Value> = p3.cells.iter().filter(|v| !v.is_blank()).collect();
+    let point = match cells.first() {
+        Some(Value::Number(x)) => *x,
+        _ => {
+            return Err(
+                "p3 (truncation) must be a number, then optionally \"lp\" or \"wd\"".into(),
+            );
+        }
+    };
+    let kind = match cells.get(1) {
+        None => Truncation::LastPiece,
+        Some(Value::Text(s)) => match s.trim().to_ascii_lowercase().as_str() {
+            "lp" | "last_piece" => Truncation::LastPiece,
+            "wd" | "whole_distribution" => Truncation::WholeDistribution,
+            other => {
+                return Err(format!(
+                    "the truncation kind must be \"lp\" or \"wd\", got {other:?}"
+                ));
+            }
+        },
+        Some(other) => {
+            return Err(format!(
+                "the truncation kind must be \"lp\" or \"wd\", got {other:?}"
+            ));
+        }
+    };
+    if cells.len() > 2 {
+        return Err("p3 takes a truncation point and at most its kind".into());
+    }
+    Ok((point, kind))
+}
 
 /// The severity named by `family` with parameters `p1`, `p2` and `p3`
 /// (see [`FAMILIES`]): a `prospicio_prob` distribution with exact limited
@@ -54,7 +114,7 @@ pub(crate) fn severity(family: &Grid, p1: &Grid, p2: &Grid, p3: &Grid) -> Result
             Ok(dist)
         } else {
             Err(format!(
-                "p3 is taken only by \"pareto\" (truncation) and \"burr\", not {name:?}"
+                "p3 is taken only by \"pareto\", \"burr\", \"piecewise_pareto\" and \"gen_pareto\", not {name:?}"
             ))
         }
     };
@@ -117,6 +177,23 @@ pub(crate) fn severity(family: &Grid, p1: &Grid, p2: &Grid, p3: &Grid) -> Result
                 .and_then(|(xi, beta)| Gpd::new(xi, beta).map_err(e))?
                 .into(),
         )?,
+        "piecewise_pareto" => {
+            let p =
+                PiecewisePareto::new(numbers(p1, "p1 (thresholds)")?, numbers(p2, "p2 (alphas)")?)
+                    .map_err(e)?;
+            if p3.is_blank() {
+                p.into()
+            } else {
+                let (point, kind) = piecewise_truncation(p3)?;
+                p.truncated(point, kind).map_err(e)?.into()
+            }
+        }
+        "gen_pareto" => {
+            let (t, alpha_ini) = two()?;
+            Gpd::riegel(t, alpha_ini, scalar(p3, "p3 (alpha_tail)")?)
+                .map_err(e)?
+                .into()
+        }
         other => return Err(format!("family must be one of: {FAMILIES}; got {other:?}")),
     };
     SeverityDist::try_from(dist).map_err(|_| "not a severity".into())
@@ -241,6 +318,25 @@ pub fn layer(args: &[Grid]) -> Result<Grid> {
         |l, a| {
             check_layer(l, a)?;
             Ok(sev.layer(l, a))
+        },
+    )
+}
+
+/// Variance of the loss to the layer `limit` xs `attachment` per loss,
+/// `Var[min((X - attachment)+, limit)]`:
+/// `PRO.LAYER.VAR(limit, attachment, family, p1, p2, [p3])`. A limit of
+/// `"unlimited"` gives the stop loss's variance, infinite when the second
+/// moment is.
+pub fn layer_variance(args: &[Grid]) -> Result<Grid> {
+    let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
+    map2(
+        &args[0],
+        &args[1],
+        ("limit", "attachment"),
+        (true, false),
+        |l, a| {
+            check_layer(l, a)?;
+            Ok(sev.layer_variance(l, a))
         },
     )
 }

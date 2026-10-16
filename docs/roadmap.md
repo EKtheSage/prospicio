@@ -368,11 +368,12 @@ what it is aiming for by v1.0.
   methods (expected loss, BF, Benktander, Cape Cod); Mack's sigma rule and
   selected factors; the one-year view (Merz-Wuthrich, both bootstraps);
   Clark's LDF and Cape Cod; triangle helpers; severities over every
-  parametric family; the Pareto helpers.
+  parametric family; the Pareto helpers; the piecewise and generalized
+  Pareto, the layer variance.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): the piecewise Pareto, then pricing
-     (exposure curves, credibility, ratemaking) and aggregates.
+     form (`xll.md`, parity plan): pricing (exposure curves,
+     credibility, ratemaking), then aggregates.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

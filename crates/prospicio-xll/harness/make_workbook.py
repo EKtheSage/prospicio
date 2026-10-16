@@ -156,6 +156,25 @@ for c, lim in enumerate([1000000, 2000000, 5000000]):
 for r, att in enumerate([2000000, 3000000]):
     ly.cell(row=48+r, column=1, value=att).fill = inp
 ly["B48"] = ArrayFormula("B48:D49", "=PRO.PARETO.EXTRAPOLATE(1000000,1000000,B47:D47,A48:A49,G44)")
+
+ly["A52"] = "Piecewise Pareto: thresholds and alphas as rows, truncated at 50m (last piece)"; ly["A52"].font = bold
+for c, x in zip("BCD", [1000000, 2000000, 5000000]):
+    ly[f"{c}53"] = x; ly[f"{c}53"].fill = inp
+for c, x in zip("BCD", [1.2, 1.8, 2.5]):
+    ly[f"{c}54"] = x; ly[f"{c}54"].fill = inp
+ly["A53"] = "Thresholds"; ly["A54"] = "Alphas"; ly["A55"] = "Truncation"
+ly["B55"] = 50000000; ly["B55"].fill = inp; ly["C55"] = "lp"; ly["C55"].fill = inp
+ly["A56"] = "Layer"; ly["B56"] = "Expected loss"; ly["C56"] = "SD"
+for h in ("A56", "B56", "C56"):
+    ly[h].font = bold
+for i, (lim, att) in enumerate([(1000000, 1000000), (3000000, 2000000), (5000000, 5000000)]):
+    r = 57 + i
+    ly[f"A{r}"] = f"{lim // 1000000}m xs {att // 1000000}m"
+    a = f'{lim},{att},"piecewise_pareto",$B$53:$D$53,$B$54:$D$54,$B$55:$C$55'
+    ly[f"B{r}"] = ArrayFormula(f"B{r}", f"=PRO.LAYER({a})")
+    ly[f"C{r}"] = ArrayFormula(f"C{r}", f"=SQRT(PRO.LAYER.VAR({a}))")
+    for c in "BC":
+        ly[f"{c}{r}"].number_format = "#,##0"
 ly.column_dimensions["A"].width = 34
 for col in "BCDEGHIJ":
     ly.column_dimensions[col].width = 14
