@@ -124,4 +124,5 @@
   CANN's `attention` gives a `TokenAttention` of per-row, per-head
   weights), and `OnnxModel` and `OnnxPredictor` for networks trained
   elsewhere (onnxruntime parity). The wheel links Burn through the
-  bindings' default `nn` feature, and the bindings now need Rust 1.92.
+  bindings' default `nn` feature, and the bindings now need Rust 1.92
+  (#308).
