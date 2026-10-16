@@ -91,6 +91,11 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.CRED.Z(n, standard)` | Square root rule |
 | `PRO.BUHLMANN(ratios, [weights], [estimator], [groups])` | Buhlmann-Straub by group |
 | `PRO.BUHLMANN.PARAMS(ratios, [weights], [estimator])` | Buhlmann-Straub structure parameters |
+| `PRO.YEARFRACTION(date)` | Excel date as a half-month year fraction |
+| `PRO.ONLEVEL(effective, changes, from, to, [period], [term], [applies], [given])` | On-level factor of each period (parallelogram method) |
+| `PRO.RATELEVEL(effective, changes, from, to, [period], [term], [applies], [given])` | One period's premium by rate level |
+| `PRO.AVGDATE(from, to, [period], [term], [basis])` | Average written or earned date of each period |
+| `PRO.TREND.FIT(times, values, [kind])` | Exponential or linear trend fit |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | Exposure-rated risk profile by band, with a total |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
@@ -132,6 +137,12 @@ Ctrl+Alt+F9 to recalculate.
   blank where missing; `weights` (exposures) has the same shape, omitted
   for Buhlmann's model; `estimator` is `"unbiased"` (default) or
   `"iterative"` (Bichsel-Straub), as R's `actuar::cm`.
+- Ratemaking dates (`effective`, `from`, `to`, `times`) are Excel dates
+  or year fractions (`2011.5` is 1 July 2011); a period is `[from, to)`,
+  so calendar year 2011 is `2011, 2012`. `period` is `"calendar"`
+  (default) or `"policy"`, `term` the policy term in years (1 if
+  omitted), `applies` `"written"` (default) or `"in_force"`, and `given`
+  `"levels"` reads `changes` as cumulative levels.
 - `PRO.PROFILE`: one sum insured and expected loss per band; `p1` (and
   `p2`) may give each band its own Swiss Re c (or MBBEFD b, g); `lower`
   and `upper` spread a band's sums insured between bounds (`spread`:
