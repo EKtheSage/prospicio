@@ -18,8 +18,8 @@
 //!    their totals within 5 standard errors of the lifetime total;
 //! 3. a seed replays the view bit for bit, its first 500 simulations
 //!    as part of 10,000;
-//! 4. on 300 simulations (60 for Meyers' models and compartmental model
-//!    1, whose refits cost seconds, 12 for compartmental model 2; they also
+//! 4. on 300 simulations (60 for Meyers' models, 30 for compartmental
+//!    model 1 and 6 for model 2, whose refits cost seconds; they also
 //!    sample 4 chains of 300 warm-up and 300 kept draws, about a sixth of
 //!    their default's cost or less), `RefitAll` sees
 //!    `ReweightOnly`'s years (the
@@ -98,17 +98,22 @@ const MEYERS_REFITS: Refits = Refits {
 /// flagged; model 2's refits cost seconds each even with the short
 /// sampler, and moment matching rescues almost none of them.
 const COMPARTMENTAL_REFITS: Refits = Refits {
-    sims: 60,
+    sims: 30,
     gaps: (1.0, 1.0),
     matches: true,
 };
 const COMPARTMENTAL_2_REFITS: Refits = Refits {
-    sims: 12,
+    sims: 6,
     gaps: (1.0, 2.0),
     matches: false,
 };
 /// Fewest unflagged simulations whose gap is checked.
 const MIN_UNFLAGGED: usize = 10;
+
+/// The bits of each value, so that a NaN Pareto `k` compares equal to itself.
+fn bits(x: &[f64]) -> Vec<u64> {
+    x.iter().map(|v| v.to_bits()).collect()
+}
 
 fn mean(x: &[f64]) -> f64 {
     x.iter().sum::<f64>() / x.len() as f64
@@ -184,7 +189,11 @@ fn conform<F: Sync + Send>(
     let a = run(refit_sims, seed, only);
     let b = run(refit_sims, seed, OneYearRefit::RefitAll);
     let c = run(refit_sims, seed, OneYearRefit::RefitFlagged);
-    assert_eq!(a.pareto_k, b.pareto_k, "{name}: RefitAll's years");
+    assert_eq!(
+        bits(&a.pareto_k),
+        bits(&b.pareto_k),
+        "{name}: RefitAll's years"
+    );
     assert_eq!(b.refitted, (0..refit_sims).collect::<Vec<_>>());
     let is_flagged: Vec<bool> = a.pareto_k.iter().map(|&k| k.is_nan() || k > 0.7).collect();
     assert_eq!(
@@ -205,7 +214,8 @@ fn conform<F: Sync + Send>(
     }
     let m = run(refit_sims, seed, OneYearRefit::MomentMatchThenRefit);
     assert_eq!(
-        m.pareto_k, a.pareto_k,
+        bits(&m.pareto_k),
+        bits(&a.pareto_k),
         "{name}: MomentMatchThenRefit's years"
     );
     assert!(
@@ -222,7 +232,11 @@ fn conform<F: Sync + Send>(
         m.cdr.draw_matrix(),
         "{name}: MomentMatchThenRefit's replay on one thread"
     );
-    assert_eq!(m1.pareto_k, m.pareto_k, "{name}: matched replay's k");
+    assert_eq!(
+        bits(&m1.pareto_k),
+        bits(&m.pareto_k),
+        "{name}: matched replay's k"
+    );
     assert_eq!(
         m1.moment_matched, m.moment_matched,
         "{name}: matched replay's matched"

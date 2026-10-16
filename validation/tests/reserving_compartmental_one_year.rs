@@ -125,6 +125,11 @@ fn training() -> &'static Triangle {
     })
 }
 
+/// The bits of each value, so that a NaN Pareto `k` compares equal to itself.
+fn bits(x: &[f64]) -> Vec<u64> {
+    x.iter().map(|v| v.to_bits()).collect()
+}
+
 fn mean(x: &[f64]) -> f64 {
     x.iter().sum::<f64>() / x.len() as f64
 }
@@ -188,6 +193,9 @@ struct Measured {
     refitted: usize,
     gap_matched: f64,
     gap_reweighted: f64,
+    /// The rms gap between reweighting only and the refit over every
+    /// flagged simulation among the first `refit_sims`.
+    gap_flagged_reweighted: f64,
     /// The rescued simulations' total sd under the default and under
     /// `ReweightOnly`, over their sd refitted.
     sd_matched: f64,
@@ -213,12 +221,13 @@ fn measure(
     let (all, t_all) = view(two, refit_sims, seed, OneYearRefit::RefitAll, None);
     // The same years under every setting.
     assert_eq!(
-        only.pareto_k, default.pareto_k,
+        bits(&only.pareto_k),
+        bits(&default.pareto_k),
         "{name}: the default's years"
     );
     assert_eq!(
-        all.pareto_k,
-        only.pareto_k[..refit_sims],
+        bits(&all.pareto_k),
+        bits(&only.pareto_k[..refit_sims]),
         "{name}: RefitAll's years"
     );
     let (t_only_, t_def, t_all_) = (totals(&only.cdr), totals(&default.cdr), totals(&all.cdr));
@@ -249,6 +258,10 @@ fn measure(
         if sq.is_empty() { 0.0 } else { mean(&sq).sqrt() }
     };
     let sd_refit = sd(&pick(&t_all_));
+    let flagged_refit: Vec<f64> = (0..refit_sims)
+        .filter(|&i| only.pareto_k[i].is_nan() || only.pareto_k[i] > 0.7)
+        .map(|i| ((t_only_[i] - t_all_[i]) / s).powi(2))
+        .collect();
     let life = default.fit.reserves.total().std_dev();
     let m = Measured {
         mean_z,
@@ -257,6 +270,11 @@ fn measure(
         refitted: default.refitted.len() + default.unrefitted.len(),
         gap_matched: rms(&t_def),
         gap_reweighted: rms(&t_only_),
+        gap_flagged_reweighted: if flagged_refit.is_empty() {
+            0.0
+        } else {
+            mean(&flagged_refit).sqrt()
+        },
         sd_matched: sd(&pick(&t_def)) / sd_refit,
         sd_reweighted: sd(&pick(&t_only_)) / sd_refit,
         life_ratio: s / life,
@@ -306,6 +324,7 @@ fn summarise(name: &str, ms: &[Measured]) {
         ("refitted", |m| m.refitted as f64),
         ("gap_matched", |m| m.gap_matched),
         ("gap_reweighted", |m| m.gap_reweighted),
+        ("gap_flag_rew", |m| m.gap_flagged_reweighted),
         ("sd_matched", |m| m.sd_matched),
         ("sd_reweighted", |m| m.sd_reweighted),
         ("life_ratio", |m| m.life_ratio),
