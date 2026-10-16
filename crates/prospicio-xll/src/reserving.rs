@@ -10,10 +10,11 @@
 //! say which.
 
 use prospicio_core::{Grain, Lag, Month};
-use prospicio_prob::{Distribution, Sampled};
+use prospicio_prob::{Distribution, PredictiveDistribution, Sampled};
 use prospicio_reserving::{
     Average, ChainLadder, ChainLadderFit, CurveShape, Development, DevelopmentColumn, Long, Mack,
-    OdpBootstrap, OdpBootstrapFit, ProcessDistribution, Tail, TailBondy, TailCurve, Triangle,
+    MackBootstrap, MackBootstrapFit, MackProcess, OdpBootstrap, OdpBootstrapFit,
+    ProcessDistribution, Tail, TailBondy, TailCurve, Triangle,
 };
 
 use crate::sheet::{CellError, Grid, Value, position};
@@ -404,6 +405,71 @@ fn percentile_label(p: f64) -> String {
     format!("P{}", pct.trim_end_matches('0').trim_end_matches('.'))
 }
 
+/// A bootstrap's exhibit: per origin, the chain-ladder reserve and the
+/// simulated reserve's mean, SD, CV and `probabilities`' percentiles, then
+/// the total, whose percentiles are of the simulated total.
+fn bootstrap_exhibit(
+    reserves: &PredictiveDistribution,
+    cl: &ChainLadderFit,
+    labels: Vec<Value>,
+    probabilities: &[f64],
+) -> Result<Grid> {
+    let n = reserves.n_components();
+    let draws = reserves.draw_matrix();
+    let column = |j: usize| -> Vec<f64> { draws.iter().skip(j).step_by(n).copied().collect() };
+    let stats = |s: &Sampled, reserve: f64| -> Result<Vec<Value>> {
+        let (mean, sd) = (s.mean(), s.std_dev());
+        let mut row = vec![
+            Value::number(reserve),
+            Value::number(mean),
+            Value::number(sd),
+            if mean > 0.0 {
+                Value::number(sd / mean)
+            } else {
+                Value::Empty
+            },
+        ];
+        for &p in probabilities {
+            row.push(Value::number(s.quantile(p).map_err(|e| e.to_string())?));
+        }
+        Ok(row)
+    };
+    let mut header: Vec<Value> = ["Origin", "CL reserve", "Mean", "SD", "CV"]
+        .map(Value::from)
+        .to_vec();
+    header.extend(
+        probabilities
+            .iter()
+            .map(|&p| Value::Text(percentile_label(p))),
+    );
+    let mut rows = vec![header];
+    let cl_reserves = cl.reserves();
+    for (j, label) in labels.into_iter().enumerate() {
+        let s = Sampled::new(column(j)).map_err(|e| e.to_string())?;
+        let mut row = vec![label];
+        row.extend(stats(&s, cl_reserves[j])?);
+        rows.push(row);
+    }
+    let mut total = vec![Value::from("Total")];
+    total.extend(stats(reserves.total(), cl.total_reserve())?);
+    rows.push(total);
+    Ok(Grid::from_rows(rows))
+}
+
+/// A bootstrap's draws: a header of the origin labels and "Total", then
+/// one row per simulation.
+fn draws_table(reserves: &PredictiveDistribution, mut header: Vec<Value>) -> Grid {
+    header.push(Value::from("Total"));
+    let n = reserves.n_components();
+    let mut rows = vec![header];
+    for row in reserves.draw_matrix().chunks_exact(n) {
+        let mut cells: Vec<Value> = row.iter().map(|&x| Value::number(x)).collect();
+        cells.push(Value::number(row.iter().sum()));
+        rows.push(cells);
+    }
+    Grid::from_rows(rows)
+}
+
 /// The ODP bootstrap of a triangle argument with its options; `sims` at
 /// most `max`.
 fn odp_fit(
@@ -434,50 +500,8 @@ fn odp_fit(
 pub fn odp_summary(args: &[Grid]) -> Result<Grid> {
     let probabilities = percentiles(&args[3])?;
     let fit = odp_fit(&args[0], &args[1], &args[2], &args[4], &args[5], MAX_SIMS)?;
-    let cl = &fit.chain_ladder;
-    let labels = origin_labels(&args[6], cl.origins.len())?;
-
-    let n = fit.reserves.n_components();
-    let draws = fit.reserves.draw_matrix();
-    let column = |j: usize| -> Vec<f64> { draws.iter().skip(j).step_by(n).copied().collect() };
-    let stats = |s: &Sampled, reserve: f64| -> Result<Vec<Value>> {
-        let (mean, sd) = (s.mean(), s.std_dev());
-        let mut row = vec![
-            Value::number(reserve),
-            Value::number(mean),
-            Value::number(sd),
-            if mean > 0.0 {
-                Value::number(sd / mean)
-            } else {
-                Value::Empty
-            },
-        ];
-        for &p in &probabilities {
-            row.push(Value::number(s.quantile(p).map_err(|e| e.to_string())?));
-        }
-        Ok(row)
-    };
-
-    let mut header: Vec<Value> = ["Origin", "CL reserve", "Mean", "SD", "CV"]
-        .map(Value::from)
-        .to_vec();
-    header.extend(
-        probabilities
-            .iter()
-            .map(|&p| Value::Text(percentile_label(p))),
-    );
-    let mut rows = vec![header];
-    let reserves = cl.reserves();
-    for (j, label) in labels.into_iter().enumerate() {
-        let s = Sampled::new(column(j)).map_err(|e| e.to_string())?;
-        let mut row = vec![label];
-        row.extend(stats(&s, reserves[j])?);
-        rows.push(row);
-    }
-    let mut total = vec![Value::from("Total")];
-    total.extend(stats(fit.reserves.total(), cl.total_reserve())?);
-    rows.push(total);
-    Ok(Grid::from_rows(rows))
+    let labels = origin_labels(&args[6], fit.chain_ladder.origins.len())?;
+    bootstrap_exhibit(&fit.reserves, &fit.chain_ladder, labels, &probabilities)
 }
 
 /// The most simulations `PRO.ODP.SIMS` returns: each is a row of cells
@@ -499,14 +523,75 @@ pub fn odp_sims(args: &[Grid]) -> Result<Grid> {
         &args[4],
         MAX_SIM_ROWS,
     )?;
-    let mut header = origin_labels(&args[5], fit.chain_ladder.origins.len())?;
-    header.push(Value::from("Total"));
-    let n = fit.reserves.n_components();
-    let mut rows = vec![header];
-    for row in fit.reserves.draw_matrix().chunks_exact(n) {
-        let mut cells: Vec<Value> = row.iter().map(|&x| Value::number(x)).collect();
-        cells.push(Value::number(row.iter().sum()));
-        rows.push(cells);
+    let labels = origin_labels(&args[5], fit.chain_ladder.origins.len())?;
+    Ok(draws_table(&fit.reserves, labels))
+}
+
+/// The `process` argument of Mack's bootstrap: "gamma" (default),
+/// "lognormal", "normal", "residuals" or "none" (parameter error only).
+fn mack_process(grid: &Grid) -> Result<MackProcess> {
+    match text_option(grid, "process")?.as_deref() {
+        None | Some("gamma") => Ok(MackProcess::Gamma),
+        Some("lognormal") => Ok(MackProcess::Lognormal),
+        Some("normal") => Ok(MackProcess::Normal),
+        Some("residuals") => Ok(MackProcess::Residuals),
+        Some("none") => Ok(MackProcess::None),
+        Some(other) => Err(format!(
+            "process must be \"gamma\", \"lognormal\", \"normal\", \"residuals\" or \"none\", \
+             got {other:?}"
+        )),
     }
-    Ok(Grid::from_rows(rows))
+}
+
+/// Mack's bootstrap (England, Verrall and Wuthrich) of a triangle argument
+/// with its options, centred residuals; `sims` at most `max`.
+#[allow(clippy::too_many_arguments)]
+fn mack_bootstrap_fit(
+    triangle_arg: &Grid,
+    sims: &Grid,
+    seed_arg: &Grid,
+    average_arg: &Grid,
+    tail_arg: &Grid,
+    process_arg: &Grid,
+    max: usize,
+) -> Result<MackBootstrapFit> {
+    let tri = triangle(triangle_arg)?;
+    MackBootstrap {
+        n_sims: count(sims, "sims", 10_000, max)?,
+        seed: seed(seed_arg)?,
+        process: mack_process(process_arg)?,
+        development: development(average(average_arg)?),
+        tail: tail(tail_arg)?,
+        ..MackBootstrap::default()
+    }
+    .fit(&tri, COLUMN)
+    .map_err(|e| e.to_string())
+}
+
+/// Mack's bootstrap exhibit, laid out as `PRO.ODP`'s:
+/// `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins])`.
+pub fn mack_bootstrap_summary(args: &[Grid]) -> Result<Grid> {
+    let probabilities = percentiles(&args[3])?;
+    let fit = mack_bootstrap_fit(
+        &args[0], &args[1], &args[2], &args[4], &args[5], &args[6], MAX_SIMS,
+    )?;
+    let cl = &fit.mack.chain_ladder;
+    let labels = origin_labels(&args[7], cl.origins.len())?;
+    bootstrap_exhibit(&fit.reserves, cl, labels, &probabilities)
+}
+
+/// Mack's bootstrap's simulated reserves, laid out as `PRO.ODP.SIMS`':
+/// `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins])`.
+pub fn mack_bootstrap_sims(args: &[Grid]) -> Result<Grid> {
+    let fit = mack_bootstrap_fit(
+        &args[0],
+        &args[1],
+        &args[2],
+        &args[3],
+        &args[4],
+        &args[5],
+        MAX_SIM_ROWS,
+    )?;
+    let labels = origin_labels(&args[6], fit.mack.chain_ladder.origins.len())?;
+    Ok(draws_table(&fit.reserves, labels))
 }

@@ -25,6 +25,8 @@ category of Insert Function:
 | `PRO.MACK(triangle, [average], [tail], [origins])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap: CL reserve, simulated mean, SD, CV and percentiles per origin, and the total |
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's simulated reserves: one row per simulation, a column per origin and the total |
+| `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins])` | Mack's bootstrap (England, Verrall and Wuthrich), laid out as `PRO.ODP` |
+| `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins])` | Its simulated reserves, laid out as `PRO.ODP.SIMS` |
 | `PRO.VERSION()` | The prospicio version the add-in was built from |
 | `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value `E[min(X, limit)]`, per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to `limit` xs `attachment` per ground-up loss |
@@ -41,6 +43,11 @@ extrapolated log-linearly, as R's `MackChainLadder(est.sigma =
 defaults to 10,000 (at most 1,000,000), `seed` to 0, `percentiles` to
 75%, 90%, 95% and 99.5%, `process` to `"gamma"` (`"none"` for parameter
 error only); `tail` is read as for the chain ladder.
+
+`PRO.MACK.BOOT` wraps `MackBootstrap::fit` with centred residuals (the
+crate's default, which reconciles with Mack's standard errors); `process`
+is `"gamma"` (default), `"lognormal"`, `"normal"`, `"residuals"` or
+`"none"`.
 
 The pricing functions wrap `prospicio_pricing::layer` (`ilf`, `layer_cv`)
 and `prospicio_prob::Severity` (`lev`, `layer`). `family` is `"pareto"`
@@ -162,10 +169,40 @@ real Excel.
     ticking Unblock; it does not by itself lift Excel's block on add-ins
     from the internet.
 
+## Parity plan
+
+The user's direction (2026-10-16): move toward parity with the Python and
+R packages. Not every one of R's 386 exports has a sheet form: a fitted
+model object, a NUTS sampler or a P&L ledger is not a range of cells. The
+order, one small PR each, those already done struck through:
+
+1. Reserving: ~~chain ladder, Mack~~, ~~ODP bootstrap and its draws~~,
+   ~~Mack's bootstrap and its draws~~; Mack's options (the sigma rule,
+   selected factors); the expected-loss methods (expected loss,
+   Bornhuetter-Ferguson, Benktander, Cape Cod) on a premium column; the
+   one-year view (Merz-Wuthrich, the bootstraps' CDR); Clark's LDF and
+   Cape Cod; triangle helpers (link ratios, incremental and cumulative,
+   the latest diagonal).
+2. Severities: ~~the Pareto and the lognormal's LEV, layer, CV, ILF~~;
+   more families (gamma, Weibull, Burr, log-logistic, inverse gamma,
+   generalized Pareto, piecewise Pareto) and their cdf, quantile, mean,
+   VaR and TVaR; the Pareto helpers (alpha between layers or
+   frequencies, extrapolation), the loss elimination ratio, the layer
+   variance, the stop loss.
+3. Pricing: exposure curves (MBBEFD, Swiss Re) and a layer's share;
+   credibility (Buhlmann-Straub, limited fluctuation); ratemaking (trend,
+   rate level, the indicated rate); burning cost.
+4. Aggregate: a compound distribution of a count and a severity, its
+   moments, VaR, TVaR and layer statistics.
+
+Left out unless asked: model fitting and prediction (GLM, GAM, boosting,
+Bayesian models), copulas and vines, the P&L ledger, catastrophe event
+sets. These want a table of data and an object kept between calls, which
+an XLL function (decision 4: no state) does not hold.
+
 ## Open (for the user)
 
-- **Next functions:** open. Mack's bootstrap and the one-year view are
-  each one function over existing crates. More severity families (gamma, Weibull, Burr, the piecewise
+- **Next functions:** the parity plan above. More severity families (gamma, Weibull, Burr, the piecewise
   Pareto) and the Pareto helpers (`pareto_extrapolation`,
   `alpha_between_layers`) are each a few lines when wanted.
 - **A code-signing certificate**, if the add-in goes beyond a few

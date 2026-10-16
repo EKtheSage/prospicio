@@ -206,6 +206,34 @@ for row in dr.iter_rows(min_row=5, max_row=200, min_col=1, max_col=11):
         c.number_format = "#,##0"
 dr["O4"].number_format = dr["O5"].number_format = "#,##0.00"
 
+# Mack's bootstrap on the RAA sheet's triangle, beside Mack's closed form.
+mk = wb.create_sheet("Mack bootstrap")
+mk["A1"] = "prospicio XLL test: Mack's bootstrap on RAA (England, Verrall and Wuthrich)"
+mk["A1"].font = Font(bold=True, size=13)
+mk["A2"] = "Centred residuals: the simulated SD is Mack's standard error (the RAA sheet's PRO.MACK)."
+mk["A2"].font = note
+for row, (label, value) in enumerate([("Simulations", 20000), ("Seed", 1)], start=4):
+    mk[f"A{row}"] = label; mk[f"A{row}"].font = bold
+    mk[f"B{row}"] = value; mk[f"B{row}"].fill = inp
+mk["A7"] = "Gamma process error"; mk["A7"].font = bold
+mk["A8"] = ArrayFormula("A8:I19", f"=PRO.MACK.BOOT({TRI},$B$4,$B$5,,,,,{ORI})")
+mk["K7"] = "Check: total against Mack's closed form"; mk["K7"].font = bold
+for h, col in zip(["Quantity", "Bootstrap", "Mack", "Tolerance", "Within"], "KLMNO"):
+    mk[f"{col}8"] = h; mk[f"{col}8"].font = bold
+# Mack's SD with the parameter risk scaled by the residual pool's variance
+# 0.981 on RAA (validation/tests/reserving_mack_bootstrap.rs).
+mk["K9"] = "Mean"; mk["L9"] = "=C19"; mk["M9"] = "=RAA!D30"; mk["N9"] = "=5*D19/SQRT($B$4)"
+mk["K10"] = "SD"; mk["L10"] = "=D19"; mk["M10"] = "=SQRT(RAA!E30^2+0.981*RAA!F30^2)"
+mk["N10"] = "=5*D19*SQRT(5/(4*$B$4))"
+for r in (9, 10):
+    mk[f"O{r}"] = f"=ABS(L{r}-M{r})<N{r}"
+mk.column_dimensions["K"].width = 14
+for col in "ABCDEFGHILMNO":
+    mk.column_dimensions[col].width = 12
+for row in mk.iter_rows(min_row=9, max_row=19, min_col=2, max_col=14):
+    for c in row:
+        c.number_format = "0.000" if c.column == 5 else "#,##0"
+
 wb.calculation.fullCalcOnLoad = True
 wb.save(out)
 

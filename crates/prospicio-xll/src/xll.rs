@@ -413,6 +413,27 @@ udf!(
     origins
 );
 udf!(pro_odp_sims, triangle, sims, seed, tail, process, origins);
+udf!(
+    pro_mack_boot,
+    triangle,
+    sims,
+    seed,
+    percentiles,
+    average,
+    tail,
+    process,
+    origins
+);
+udf!(
+    pro_mack_boot_sims,
+    triangle,
+    sims,
+    seed,
+    average,
+    tail,
+    process,
+    origins
+);
 udf!(pro_lev, limit, family, p1, p2, truncation);
 udf!(pro_layer, limit, attachment, family, p1, p2, truncation);
 udf!(pro_layer_cv, limit, attachment, family, p1, p2, truncation);
