@@ -56,7 +56,9 @@ An \code{xol_layer} object with read-only properties for each term
 (\code{loss_corridor} is \code{c(lower, upper, retained)}, \code{ceding_commission} the
 flat rate, \code{sliding_scale} a data frame of \code{commission} and \code{loss_ratio}
 (or \code{NULL}), \code{profit_commission} \code{c(share, allowance)} and
-\code{swing_rating} \code{c(basic, lcm, minimum, maximum)}; each empty when there
+\code{swing_rating} \code{c(basic, lcm, minimum, maximum)}; \code{profit_commission_carry}
+\code{list(years)} and \code{sliding_scale_carry} \code{list(deficit, credit, years)}
+(\code{NULL} when nothing is carried, \code{years} \code{NULL} without limit); each empty when there
 is none).
 }
 \description{

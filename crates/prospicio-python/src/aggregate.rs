@@ -711,6 +711,37 @@ impl PyEventSet {
         self.inner.n_sims()
     }
 
+    /// Splits the simulations into a term of ``n_years`` consecutive
+    /// blocks, for ``Tower.apply_term``: year ``t`` (from 0) holds
+    /// simulations ``t * n`` to ``(t + 1) * n - 1``, with ``n = n_sims //
+    /// n_years``, so path ``j``'s year ``t`` is simulation ``t * n + j``.
+    /// Sums insured and times go with their losses.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_years : int
+    ///     Must divide ``n_sims``.
+    ///
+    /// Returns
+    /// -------
+    /// list of EventSet
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[1.0], [2.0], [3.0], [4.0]])
+    /// >>> [y.events(1) for y in e.term_years(2)]
+    /// [[2.0], [4.0]]
+    fn term_years(&self, n_years: usize) -> PyResult<Vec<Self>> {
+        Ok(self
+            .inner
+            .term_years(n_years)
+            .map_err(to_py)?
+            .into_iter()
+            .map(|inner| Self { inner })
+            .collect())
+    }
+
     /// The seed the years were drawn from.
     #[getter]
     fn seed(&self) -> u64 {

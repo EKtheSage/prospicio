@@ -290,6 +290,29 @@ def test_contract_terms():
     with pytest.raises(ValueError):
         qs.with_sliding_scale([(0.2, 0.6), (0.3, 0.7)])
 
+    # Deficits and credits carried over a term.
+    base = Layer.quota_share("QS", 1.0).with_premium_rate(1.0, 100.0)
+    pcc = base.with_profit_commission(0.5, 0.2).with_profit_commission_carry_forward()
+    assert pcc.profit_commission_carry == {"years": None}
+    assert pc.profit_commission_carry is None
+    ceded = [120.0, 70.0, 30.0, 85.0, 50.0]
+    assert pcc.profit_commissions_over(ceded) == pytest.approx([0.0, 0.0, 10.0, 0.0, 12.5])
+    pc1 = base.with_profit_commission(0.5, 0.2).with_profit_commission_carry_forward(years=1)
+    assert pc1.profit_commissions_over(ceded) == pytest.approx([0.0, 0.0, 25.0, 0.0, 12.5])
+    ss = base.with_sliding_scale([(0.4, 0.5), (0.2, 0.7)])
+    ssc = ss.with_sliding_scale_carry_forward(deficit=False, credit=True)
+    assert ssc.sliding_scale_carry == {"deficit": False, "credit": True, "years": None}
+    assert ssc.ceding_commissions_over([90.0, 40.0, 30.0, 60.0]) == pytest.approx(
+        [20.0, 40.0, 40.0, 40.0]
+    )
+    assert ssc.with_ceding_commission(0.3).sliding_scale_carry is None
+    with pytest.raises(ValueError, match="profit commission first"):
+        base.with_profit_commission_carry_forward()
+    with pytest.raises(ValueError):
+        ss.with_sliding_scale_carry_forward(deficit=False, credit=False)
+    with pytest.raises(ValueError):
+        ss.with_sliding_scale_carry_forward(years=0)
+
     # Swing rating at a 40% share: amounts scale, the factor does not.
     swing = Layer("L", 1000.0, 0.0, share=0.4).with_swing_rating(20.0, 1.25, 50.0, 300.0)
     assert swing.swing_rating == (20.0, 1.25, 50.0, 300.0)
@@ -955,3 +978,34 @@ def test_select_ceded_before_joining_a_book():
         res.select("lob", ["ceded"])
     two = res.select("kind", ["gross", "net"])
     assert len(two.components()) == 2
+
+
+def test_tower_over_a_term_carries_deficits():
+    events = simulate_events(Poisson(3.0), Lognormal.from_mean_cv(10.0, 1.5), 3_000, seed=11)
+    years = events.term_years(3)
+    assert [y.n_sims for y in years] == [1_000] * 3
+    assert years[2].events(7) == events.events(2_007)
+    layer = (
+        Layer.quota_share("QS", 1.0)
+        .with_premium_rate(1.0, 30.0)
+        .with_profit_commission(0.3, 0.25)
+        .with_profit_commission_carry_forward()
+    )
+    tower = Tower([layer])
+    term = tower.apply_term(years)
+    assert term.dims == ["kind", "layer", "year"]
+    import numpy as np
+
+    m = np.array(term.draw_matrix())
+    assert m.shape == (1_000, 12)
+    for j in (0, 16, 499):
+        assert list(m[j, [3, 7, 11]]) == pytest.approx(
+            layer.profit_commissions_over(list(m[j, [1, 5, 9]]))
+        )
+    alone = np.array(tower.apply(years[0]).draw_matrix())
+    assert (alone == m[:, :4]).all()
+    agg = tower.apply_aggregate_term([y.totals() for y in years[:2]])
+    assert np.array(agg.draw_matrix()).shape == (1_000, 8)
+    assert Tower.from_json(Tower([layer]).to_json()).to_json() == Tower([layer]).to_json()
+    with pytest.raises(ValueError):
+        events.term_years(7)

@@ -6758,6 +6758,30 @@ class EventSet:
         -------
         list of float or None
         """
+    def term_years(self, /, n_years: int) -> list[EventSet]:
+        """
+        Splits the simulations into a term of ``n_years`` consecutive
+        blocks, for ``Tower.apply_term``: year ``t`` (from 0) holds
+        simulations ``t * n`` to ``(t + 1) * n - 1``, with ``n = n_sims //
+        n_years``, so path ``j``'s year ``t`` is simulation ``t * n + j``.
+        Sums insured and times go with their losses.
+        
+        Parameters
+        ----------
+        n_years : int
+            Must divide ``n_sims``.
+        
+        Returns
+        -------
+        list of EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[1.0], [2.0], [3.0], [4.0]])
+        >>> [y.events(1) for y in e.term_years(2)]
+        [[2.0], [4.0]]
+        """
     def times(self, /, sim: int) -> list[float] |None:
         """
         Year ``sim``'s times, one per loss, or ``None``.
@@ -9357,6 +9381,20 @@ class Layer:
         -------
         float
         """
+    def ceding_commissions_over(self, /, ceded: Sequence[float]) -> list[float]:
+        """
+        The ceding commissions over consecutive years of a term with these
+        ceded losses, carrying the sliding scale's deficits and credits
+        forward if the layer does.
+        
+        Parameters
+        ----------
+        ceded : list of float
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def limit(self, /) -> float:
         """
@@ -9406,6 +9444,12 @@ class Layer:
         """
         The profit commission as ``(share, allowance)``, or ``None``.
         """
+    @property
+    def profit_commission_carry(self, /) -> dict |None:
+        """
+        The profit commission's carry-forward as ``{"years": n}`` (``n`` is
+        ``None`` without limit), or ``None``.
+        """
     def profit_commission_for(self, /, ceded: float) -> float:
         """
         The year's profit commission given its ceded loss.
@@ -9417,6 +9461,20 @@ class Layer:
         Returns
         -------
         float
+        """
+    def profit_commissions_over(self, /, ceded: Sequence[float]) -> list[float]:
+        """
+        The profit commissions over consecutive years of a term with these
+        ceded losses, carrying deficits forward if the layer does.
+        
+        Parameters
+        ----------
+        ceded : list of float
+            The layer's ceded loss in each year, at the placed share.
+        
+        Returns
+        -------
+        list of float
         """
     @staticmethod
     def quota_share(name: str, cession: float) -> Layer:
@@ -9478,6 +9536,12 @@ class Layer:
         """
         The sliding scale's ``(commission, loss_ratio)`` anchors in
         increasing loss ratio, or ``None``.
+        """
+    @property
+    def sliding_scale_carry(self, /) -> dict |None:
+        """
+        The sliding scale's carry-forward as ``{"deficit", "credit",
+        "years"}``, or ``None``.
         """
     @staticmethod
     def stop_loss(name: str, limit: float, retention: float) -> Layer:
@@ -9658,6 +9722,36 @@ class Layer:
         >>> round(qs.profit_commission_for(60.0), 12)
         7.5
         """
+    def with_profit_commission_carry_forward(self, /, years: int |None = None) -> Layer:
+        """
+        The same layer, carrying the profit commission's deficits forward
+        between the years of a term (``Tower.apply_term``).
+        
+        A year whose ceded loss exceeds ``premium * (1 - allowance)`` pays no
+        commission and carries the excess, which later years' profits cover
+        before any commission is paid. Deficits are used up oldest first.
+        Set the profit commission first. A single year (``Tower.apply``)
+        starts with nothing carried.
+        
+        Parameters
+        ----------
+        years : int, optional
+            How many later years a deficit may be carried into; ``None``
+            (the default) carries it until it is used up.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+        ...       .with_profit_commission(0.25, 0.1)
+        ...       .with_profit_commission_carry_forward())
+        >>> qs.profit_commissions_over([120.0, 40.0])
+        [0.0, 5.0]
+        """
     def with_rate_on_line(self, /, rol: float) -> Layer:
         """
         The same layer with its premium set from a rate on line:
@@ -9705,6 +9799,39 @@ class Layer:
         ...       .with_sliding_scale([(0.45, 0.60), (0.25, 0.70), (0.19, 0.80)]))
         >>> round(qs.ceding_commission_for(65.0), 12)
         35.0
+        """
+    def with_sliding_scale_carry_forward(self, /, deficit: bool = True, credit: bool = False, years: int |None = None) -> Layer:
+        """
+        The same layer, carrying the sliding scale's deficits (ceded loss
+        above the last anchor's loss ratio), credits (below the first
+        anchor's) or both forward between the years of a term
+        (``Tower.apply_term``).
+        
+        Each year adds what was carried to its own ceded loss before the
+        commission is read off the scale, and carries what is then still
+        beyond the scale's ends. Amounts are used up oldest first. Set the
+        sliding scale first.
+        
+        Parameters
+        ----------
+        deficit : bool, default True
+        credit : bool, default False
+        years : int, optional
+            How many later years an amount may be carried into; ``None``
+            (the default) without limit.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+        ...       .with_sliding_scale([(0.45, 0.60), (0.25, 0.70)])
+        ...       .with_sliding_scale_carry_forward())
+        >>> [round(c, 12) for c in qs.ceding_commissions_over([80.0, 55.0])]
+        [25.0, 35.0]
         """
     def with_swing_rating(self, /, basic: float, lcm: float, minimum: float |None = None, maximum: float |None = None) -> Layer:
         """
@@ -16964,6 +17091,54 @@ class Tower:
         Returns
         -------
         PredictiveDistribution
+        """
+    def apply_aggregate_term(self, /, years: Sequence[PredictiveDistribution]) -> PredictiveDistribution:
+        """
+        ``apply_term`` on aggregate losses: year ``t`` of path ``j`` is
+        simulation ``j``'s total of ``years[t]``, as in ``apply_aggregate``.
+        
+        Parameters
+        ----------
+        years : list of PredictiveDistribution
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    def apply_term(self, /, years: Sequence[EventSet]) -> PredictiveDistribution:
+        """
+        Applies the tower over a contract term: ``years[t]`` holds year
+        ``t + 1``'s simulated losses, and simulation ``j`` of every year
+        belongs to the same path.
+        
+        The result has dimensions ``["kind", "layer", "year"]``: each of
+        ``apply``'s components once per year, keyed by the year ``1..T``.
+        Each year's ceded and net loss and premiums are what ``apply`` gives
+        for that year alone; a profit commission or sliding scale that
+        carries deficits or credits forward reads what the path's earlier
+        years left. ``EventSet.term_years`` splits one simulation into the
+        years of a term.
+        
+        Parameters
+        ----------
+        years : list of EventSet
+            One per year, each with the same number of simulations.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> qs = (Layer.quota_share("QS", 1.0).with_premium_rate(1.0, 100.0)
+        ...       .with_profit_commission(0.25, 0.1)
+        ...       .with_profit_commission_carry_forward())
+        >>> years = [EventSet.from_years([[120.0], [40.0]]), EventSet.from_years([[40.0], [40.0]])]
+        >>> term = Tower([qs]).apply_term(years)
+        >>> term.select("year", [2]).select("kind", ["profit_commission"]).mean()
+        8.75
         """
     def ceded(self, /, losses: Sequence[float]) -> list[float]:
         """

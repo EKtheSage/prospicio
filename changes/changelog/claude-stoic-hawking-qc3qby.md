@@ -46,3 +46,28 @@
 
 - Rust: `PSpline` gains a public `kind` field (`SmoothKind`); code that
   builds a `PSpline` in full adds it or uses `PSpline::new` (#282).
+
+### Aggregate and reinsurance
+
+- Multi-year contract terms: `Tower::apply_term` applies a tower to
+  consecutive years of the same simulated paths (one `EventSet` per year;
+  `EventSet::term_years` splits one simulation into the years of a term),
+  and `apply_aggregate_term` does the same on aggregate losses; the result
+  has a `year` dimension. A profit commission can carry its deficits
+  forward (`Layer::profit_commission_carry_forward`) and a sliding scale
+  its deficits, credits or both (`Layer::sliding_scale_carry_forward`),
+  to extinction or for a number of years, used up oldest first;
+  `profit_commissions_over` and `ceding_commissions_over` give the
+  commissions over consecutive years. Tower documents with a carry are
+  format version 2. Python `Layer.with_profit_commission_carry_forward`,
+  `with_sliding_scale_carry_forward`, `Tower.apply_term`,
+  `apply_aggregate_term`, `EventSet.term_years`; R
+  `with_profit_commission_carry_forward()`,
+  `with_sliding_scale_carry_forward()`, `apply_tower_term()`,
+  `term_years()` (#301).
+
+### Breaking changes
+
+- Rust: `Layer` gains the public fields `profit_commission_carry` and
+  `sliding_scale_carry`; code that builds it in full adds them (`None`)
+  or uses the builders (#301).

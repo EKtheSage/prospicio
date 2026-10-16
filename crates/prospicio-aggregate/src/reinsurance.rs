@@ -68,6 +68,12 @@ pub struct Layer {
     pub commission: Option<Commission>,
     /// Profit commission; see [`Layer::profit_commission`].
     pub profit_commission: Option<ProfitCommission>,
+    /// Deficits of the profit commission carried into later years of a
+    /// term; see [`Layer::profit_commission_carry_forward`].
+    pub profit_commission_carry: Option<CarryForward>,
+    /// Deficits and credits of the sliding scale carried into later years
+    /// of a term; see [`Layer::sliding_scale_carry_forward`].
+    pub sliding_scale_carry: Option<CarryForward>,
     /// Swing rating at 100% of the layer: the year's premium as a function
     /// of its ceded loss, in place of `premium`; see [`Layer::swing_rated`].
     pub swing: Option<LossSensitivePremium>,
@@ -196,6 +202,35 @@ pub struct ProfitCommission {
     pub allowance: f64,
 }
 
+/// What a profit commission or sliding scale carries from one year of a
+/// contract term into the next ([`Tower::apply_term`]).
+///
+/// A *deficit* is the part of a year's result the term could not absorb:
+/// for a profit commission the loss above the premium after the allowance,
+/// `ceded − premium × (1 − allowance)` when positive; for a sliding scale
+/// the ceded loss above the loss ratio of the last anchor (where the
+/// commission reaches its minimum), `ceded − lr_max × premium`. A *credit*
+/// (sliding scales only) is the ceded loss below the loss ratio of the
+/// first anchor (where the commission reaches its maximum), carried as a
+/// negative amount. The next year adds what was carried to its own ceded
+/// loss before the commission is figured, and carries forward whatever is
+/// then still beyond the band.
+///
+/// Amounts are used up oldest first, so what is carried out of a year is
+/// the newest part. With `years = Some(n)`, an amount from year `t` can be
+/// used in years `t + 1` to `t + n` and is then dropped; `None` carries it
+/// until it is used up (to extinction).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CarryForward {
+    /// Carry deficits forward.
+    pub deficit: bool,
+    /// Carry credits forward (sliding scales only).
+    pub credit: bool,
+    /// How many later years an amount may be carried into; `None` without
+    /// limit.
+    pub years: Option<u32>,
+}
+
 /// A loss corridor: of the annual layer loss at 100% after the annual
 /// deductible, the cedant keeps `retained` of the part between `lower`
 /// and `upper`.
@@ -268,6 +303,8 @@ impl Layer {
             corridor: None,
             commission: None,
             profit_commission: None,
+            profit_commission_carry: None,
+            sliding_scale_carry: None,
             swing: None,
         })
     }
@@ -609,6 +646,7 @@ impl Layer {
             return Err(invalid("rate", rate, "must be in [0, 1]"));
         }
         self.commission = Some(Commission::Flat(rate));
+        self.sliding_scale_carry = None;
         Ok(self)
     }
 
@@ -694,6 +732,160 @@ impl Layer {
         }
         self.profit_commission = Some(ProfitCommission { share, allowance });
         Ok(self)
+    }
+
+    /// Carries the profit commission's deficits forward between the years
+    /// of a term ([`Tower::apply_term`]): a year whose ceded loss exceeds
+    /// `premium × (1 − allowance)` pays no commission and carries the
+    /// excess, which later years' profits must cover before any commission
+    /// is paid. `years` limits how many later years a deficit may be
+    /// carried into (`None` until it is used up). Set the profit commission
+    /// first. A single year ([`Tower::apply`]) starts with nothing carried,
+    /// so the term has no effect there.
+    ///
+    /// Over a term with deficits carried to extinction, the commissions
+    /// telescope: `Σ PC_t = share × (Σ_t (premium (1 − allowance) − ceded_t)
+    /// + D_T)`, with `D_T` the deficit left at the end.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// let qs = Layer::quota_share("QS", 0.5).unwrap()
+    ///     .premium_rate(1.0, 200.0).unwrap()
+    ///     .profit_commission(0.25, 0.1).unwrap()
+    ///     .profit_commission_carry_forward(None).unwrap();
+    /// // Premium 100, so 90 after the allowance. Year 1 cedes 120 (a deficit
+    /// // of 30); year 2 cedes 40 (a profit of 50, less 30 carried).
+    /// assert_eq!(qs.profit_commissions_over(&[120.0, 40.0]), [0.0, 5.0]);
+    /// ```
+    pub fn profit_commission_carry_forward(mut self, years: Option<u32>) -> Result<Self> {
+        if self.profit_commission.is_none() {
+            return Err(invalid(
+                "profit_commission_carry_forward",
+                0.0,
+                "needs a profit commission first",
+            ));
+        }
+        check_carry_years(years)?;
+        self.profit_commission_carry = Some(CarryForward {
+            deficit: true,
+            credit: false,
+            years,
+        });
+        Ok(self)
+    }
+
+    /// Carries the sliding scale's deficits (ceded loss above the last
+    /// anchor's loss ratio), its credits (ceded loss below the first
+    /// anchor's), or both forward between the years of a term
+    /// ([`Tower::apply_term`]); see [`CarryForward`]. `years` limits how
+    /// many later years an amount may be carried into (`None` until it is
+    /// used up). Set the sliding scale first; a later flat
+    /// [`ceding_commission`](Self::ceding_commission) removes it.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// // 45% at a 60% loss ratio, sliding to 25% at 70%, on a premium of 100.
+    /// let qs = Layer::quota_share("QS", 0.5).unwrap()
+    ///     .premium_rate(1.0, 200.0).unwrap()
+    ///     .sliding_scale(vec![(0.45, 0.60), (0.25, 0.70)]).unwrap()
+    ///     .sliding_scale_carry_forward(true, false, None).unwrap();
+    /// // Year 1 at 80%: the minimum 25%, with 10 carried. Year 2 at 55%
+    /// // reads 65%: a 35% commission.
+    /// let c = qs.ceding_commissions_over(&[80.0, 55.0]);
+    /// assert!((c[0] - 25.0).abs() < 1e-12 && (c[1] - 35.0).abs() < 1e-12);
+    /// ```
+    pub fn sliding_scale_carry_forward(
+        mut self,
+        deficit: bool,
+        credit: bool,
+        years: Option<u32>,
+    ) -> Result<Self> {
+        if !matches!(self.commission, Some(Commission::SlidingScale(_))) {
+            return Err(invalid(
+                "sliding_scale_carry_forward",
+                0.0,
+                "needs a sliding scale first",
+            ));
+        }
+        if !(deficit || credit) {
+            return Err(invalid(
+                "sliding_scale_carry_forward",
+                0.0,
+                "must carry deficits, credits or both",
+            ));
+        }
+        check_carry_years(years)?;
+        self.sliding_scale_carry = Some(CarryForward {
+            deficit,
+            credit,
+            years,
+        });
+        Ok(self)
+    }
+
+    /// The profit commissions over consecutive years of a term with these
+    /// ceded losses, carrying deficits forward if the layer does
+    /// ([`profit_commission_carry_forward`](Self::profit_commission_carry_forward));
+    /// without a carry each is [`profit_commission_for`](Self::profit_commission_for).
+    pub fn profit_commissions_over(&self, ceded: &[f64]) -> Vec<f64> {
+        let mut carry = Carried::default();
+        ceded
+            .iter()
+            .enumerate()
+            .map(|(t, &c)| self.profit_commission_in(c, t, &mut carry))
+            .collect()
+    }
+
+    /// The ceding commissions over consecutive years of a term with these
+    /// ceded losses, carrying the sliding scale's deficits and credits
+    /// forward if the layer does
+    /// ([`sliding_scale_carry_forward`](Self::sliding_scale_carry_forward));
+    /// without a carry each is [`ceding_commission_for`](Self::ceding_commission_for).
+    pub fn ceding_commissions_over(&self, ceded: &[f64]) -> Vec<f64> {
+        let mut carry = Carried::default();
+        ceded
+            .iter()
+            .enumerate()
+            .map(|(t, &c)| self.ceding_commission_in(c, t, &mut carry))
+            .collect()
+    }
+
+    /// Year `t`'s profit commission in a term, updating what is carried.
+    pub(crate) fn profit_commission_in(&self, ceded: f64, t: usize, carry: &mut Carried) -> f64 {
+        let (Some(pc), Some(cf)) = (&self.profit_commission, &self.profit_commission_carry) else {
+            return self.profit_commission_for(ceded);
+        };
+        let threshold = self.premium * (1.0 - pc.allowance);
+        // Signed loss beyond the threshold, with what earlier years left.
+        let total = carry.step(ceded - threshold, t, cf.years, |x| x.max(0.0));
+        pc.share * (-total).max(0.0)
+    }
+
+    /// Year `t`'s ceding commission in a term, updating what is carried.
+    pub(crate) fn ceding_commission_in(&self, ceded: f64, t: usize, carry: &mut Carried) -> f64 {
+        let (Some(Commission::SlidingScale(anchors)), Some(cf)) =
+            (&self.commission, &self.sliding_scale_carry)
+        else {
+            return self.ceding_commission_for(ceded);
+        };
+        let premium = self.premium;
+        let (lr_min, lr_max) = (anchors[0].1, anchors[anchors.len() - 1].1);
+        let cf = *cf;
+        let total = carry.step(ceded, t, cf.years, |x| {
+            let mut out = 0.0;
+            if cf.deficit {
+                out += (x - lr_max * premium).max(0.0);
+            }
+            if cf.credit {
+                out += (x - lr_min * premium).min(0.0);
+            }
+            out
+        });
+        self.commission
+            .as_ref()
+            .map_or(0.0, |c| c.rate(total / premium) * premium)
     }
 
     /// Swing rating: the year's premium is `terms.premium(ceded loss)`,
@@ -1239,69 +1431,68 @@ impl Tower {
         n_sims: usize,
         base: Provenance,
     ) -> Result<PredictiveDistribution> {
-        let paid: Vec<bool> = self
-            .layers
-            .iter()
-            .map(|l| !l.reinstatement_rates.is_empty())
-            .collect();
-        // Layers with each term that varies with the year's ceded loss.
-        let swing: Vec<usize> = self.indices(|l| l.swing.is_some());
-        let commission: Vec<usize> = self.indices(|l| l.commission.is_some());
-        let profit: Vec<usize> = self.indices(|l| l.profit_commission.is_some());
-        let n_components = self.layers.len()
-            + 2
-            + paid.iter().filter(|&&p| p).count()
-            + swing.len()
-            + commission.len()
-            + profit.len();
-        let mut draws = Vec::with_capacity(n_sims * n_components);
+        let columns = Columns::new(self);
+        let mut draws = Vec::with_capacity(n_sims * columns.len(self));
         for (losses, si, times) in years {
-            let gross: f64 = losses.iter().sum();
-            draws.push(gross);
-            let year = self.year(losses, si, times);
-            let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
-            draws.extend(year.iter().map(|(c, _)| c));
-            draws.push(gross - ceded_total);
-            draws.extend(
-                year.iter()
-                    .zip(&paid)
-                    .filter(|(_, p)| **p)
-                    .map(|((_, rp), _)| rp),
-            );
-            let ceded = |i: usize| year[i].0;
-            draws.extend(swing.iter().map(|&i| self.layers[i].premium_for(ceded(i))));
-            draws.extend(
-                commission
-                    .iter()
-                    .map(|&i| self.layers[i].ceding_commission_for(ceded(i))),
-            );
-            draws.extend(
-                profit
-                    .iter()
-                    .map(|&i| self.layers[i].profit_commission_for(ceded(i))),
-            );
+            // A single year starts with nothing carried.
+            let mut carried = vec![Carried::default(); 2 * self.layers.len()];
+            self.push_year(&columns, &mut draws, losses, si, times, 0, &mut carried);
         }
+        let components = columns.keys(self);
+        PredictiveDistribution::from_draws(
+            vec!["kind".into(), "layer".into()],
+            components,
+            draws,
+            self.terms_provenance(base),
+        )
+    }
 
-        let key = |kind: &str, layer: &str| -> ComponentKey {
-            vec![KeyValue::from(kind), KeyValue::from(layer)]
-        };
-        let mut components = vec![key("gross", "ground_up")];
-        components.extend(self.layers.iter().map(|l| key("ceded", &l.name)));
-        components.push(key("net", "retained"));
-        components.extend(
-            self.layers
-                .iter()
-                .filter(|l| !l.reinstatement_rates.is_empty())
-                .map(|l| key("reinstatement_premium", &l.name)),
+    /// Appends one year's components (in the order of [`Columns::keys`])
+    /// to `draws`: year `t` of a term, with what earlier years carried in
+    /// `carried` (two per layer: the profit commission's, then the sliding
+    /// scale's).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn push_year(
+        &self,
+        columns: &Columns,
+        draws: &mut Vec<f64>,
+        losses: &[f64],
+        si: Option<&[f64]>,
+        times: Option<&[f64]>,
+        t: usize,
+        carried: &mut [Carried],
+    ) {
+        let gross: f64 = losses.iter().sum();
+        draws.push(gross);
+        let year = self.year(losses, si, times);
+        let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
+        draws.extend(year.iter().map(|(c, _)| c));
+        draws.push(gross - ceded_total);
+        draws.extend(
+            year.iter()
+                .zip(&columns.paid)
+                .filter(|(_, p)| **p)
+                .map(|((_, rp), _)| rp),
         );
-        for (kind, layers) in [
-            ("swing_premium", &swing),
-            ("ceding_commission", &commission),
-            ("profit_commission", &profit),
-        ] {
-            components.extend(layers.iter().map(|&i| key(kind, &self.layers[i].name)));
+        let ceded = |i: usize| year[i].0;
+        draws.extend(
+            columns
+                .swing
+                .iter()
+                .map(|&i| self.layers[i].premium_for(ceded(i))),
+        );
+        for &i in &columns.commission {
+            let c = self.layers[i].ceding_commission_in(ceded(i), t, &mut carried[2 * i + 1]);
+            draws.push(c);
         }
+        for &i in &columns.profit {
+            let c = self.layers[i].profit_commission_in(ceded(i), t, &mut carried[2 * i]);
+            draws.push(c);
+        }
+    }
 
+    /// The provenance of a result: `base` with every layer's terms.
+    pub(crate) fn terms_provenance(&self, base: Provenance) -> Provenance {
         let mut provenance = base;
         for (l, stage) in self.layers.iter().zip(&self.stages) {
             let mut terms = format!(
@@ -1339,14 +1530,146 @@ impl Tower {
             if let Some(pc) = &l.profit_commission {
                 terms += &format!(", profit commission {} after {}", pc.share, pc.allowance);
             }
+            if let Some(cf) = &l.profit_commission_carry {
+                terms += &format!(", profit commission deficits carried {}", carry_text(cf));
+            }
+            if let Some(cf) = &l.sliding_scale_carry {
+                let what = match (cf.deficit, cf.credit) {
+                    (true, true) => "deficits and credits",
+                    (true, false) => "deficits",
+                    _ => "credits",
+                };
+                terms += &format!(", sliding scale {what} carried {}", carry_text(cf));
+            }
             provenance = provenance.param(format!("layer:{}", l.name), terms);
         }
-        PredictiveDistribution::from_draws(
-            vec!["kind".into(), "layer".into()],
-            components,
-            draws,
-            provenance,
-        )
+        provenance
+    }
+}
+
+fn carry_text(cf: &CarryForward) -> String {
+    match cf.years {
+        Some(n) => format!("up to {n} years"),
+        None => "to extinction".into(),
+    }
+}
+
+/// Which layers get a component for each term that varies with the year's
+/// ceded loss, in the order a year's components are written.
+pub(crate) struct Columns {
+    paid: Vec<bool>,
+    swing: Vec<usize>,
+    commission: Vec<usize>,
+    profit: Vec<usize>,
+}
+
+impl Columns {
+    pub(crate) fn new(tower: &Tower) -> Self {
+        Self {
+            paid: tower
+                .layers
+                .iter()
+                .map(|l| !l.reinstatement_rates.is_empty())
+                .collect(),
+            swing: tower.indices(|l| l.swing.is_some()),
+            commission: tower.indices(|l| l.commission.is_some()),
+            profit: tower.indices(|l| l.profit_commission.is_some()),
+        }
+    }
+
+    /// Components a year has.
+    pub(crate) fn len(&self, tower: &Tower) -> usize {
+        tower.layers.len()
+            + 2
+            + self.paid.iter().filter(|&&p| p).count()
+            + self.swing.len()
+            + self.commission.len()
+            + self.profit.len()
+    }
+
+    /// The `(kind, layer)` key of each of a year's components.
+    pub(crate) fn keys(&self, tower: &Tower) -> Vec<ComponentKey> {
+        let s = tower;
+        let key = |kind: &str, layer: &str| -> ComponentKey {
+            vec![KeyValue::from(kind), KeyValue::from(layer)]
+        };
+        let mut components = vec![key("gross", "ground_up")];
+        components.extend(s.layers.iter().map(|l| key("ceded", &l.name)));
+        components.push(key("net", "retained"));
+        components.extend(
+            s.layers
+                .iter()
+                .filter(|l| !l.reinstatement_rates.is_empty())
+                .map(|l| key("reinstatement_premium", &l.name)),
+        );
+        for (kind, layers) in [
+            ("swing_premium", &self.swing),
+            ("ceding_commission", &self.commission),
+            ("profit_commission", &self.profit),
+        ] {
+            components.extend(layers.iter().map(|&i| key(kind, &s.layers[i].name)));
+        }
+        components
+    }
+}
+
+fn check_carry_years(years: Option<u32>) -> Result<()> {
+    if years == Some(0) {
+        return Err(invalid(
+            "years",
+            0.0,
+            "must be at least 1 (or None, without limit)",
+        ));
+    }
+    Ok(())
+}
+
+/// What a profit commission or sliding scale has carried so far in one
+/// simulated term: amounts by the year they arose in, oldest first, all of
+/// one sign.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Carried {
+    amounts: Vec<(usize, f64)>,
+}
+
+impl Carried {
+    /// Year `t`: drops amounts older than `years`, adds what is left to the
+    /// year's own `own` amount, and keeps `beyond(total)`, the part still
+    /// outside the band, attributed to the newest contributions of its
+    /// sign (older ones are used up first). Returns the total the year's
+    /// commission reads.
+    pub(crate) fn step(
+        &mut self,
+        own: f64,
+        t: usize,
+        years: Option<u32>,
+        beyond: impl Fn(f64) -> f64,
+    ) -> f64 {
+        if let Some(n) = years {
+            self.amounts.retain(|&(o, _)| t - o <= n as usize);
+        }
+        let total = own + self.amounts.iter().map(|&(_, a)| a).sum::<f64>();
+        let mut rest = beyond(total);
+        let mut items = std::mem::take(&mut self.amounts);
+        items.push((t, own));
+        let mut kept = Vec::new();
+        for &(o, a) in items.iter().rev() {
+            if rest == 0.0 {
+                break;
+            }
+            if a * rest > 0.0 {
+                let take = a.signum() * a.abs().min(rest.abs());
+                kept.push((o, take));
+                rest -= take;
+            }
+        }
+        // Round-off: anything not matched stays with this year.
+        if rest != 0.0 {
+            kept.push((t, rest));
+        }
+        kept.reverse();
+        self.amounts = kept;
+        total
     }
 }
 
