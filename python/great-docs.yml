@@ -115,7 +115,7 @@ reference:
       - reinsurance.aggregate_layer_statistics
       - reinsurance.AggregateLayerStatistics
   - title: Models
-    desc: Terms and design matrices, GLMs and GAMs, metrics, resampling and MCMC diagnostics.
+    desc: Terms and design matrices, GLMs and GAMs, neural networks, metrics, resampling and MCMC diagnostics.
     contents:
       - models.Terms
       - models.Coding
@@ -129,6 +129,13 @@ reference:
       - models.CvPath
       - models.Gam
       - models.GamFit
+      - models.Cann
+      - models.CannFit
+      - models.AttentionCann
+      - models.AttentionCannFit
+      - models.TokenAttention
+      - models.OnnxModel
+      - models.OnnxPredictor
       - models.deviance
       - models.gini
       - models.lift

@@ -310,6 +310,133 @@ class AsIf:
         """
 
 @final
+class AttentionCann:
+    """
+    A CANN whose correction is a transformer over feature tokens (an
+    FT-Transformer in the CANN setting).
+    
+    Each numeric column is a token, and each factor's indicator columns
+    (``region[B]``, ``region[C]``, ...) together form one token. A learned
+    ``[CLS]`` token joins them; pre-norm blocks of multi-head
+    self-attention and a feed-forward layer mix them; the ``[CLS]`` state,
+    through a zero-initialized head, corrects the linear predictor, so
+    training starts exactly at the GLM.
+    
+    Parameters
+    ----------
+    family : {"poisson", "gamma", "tweedie", "gaussian"}
+    link : str, optional
+        As for ``Cann``: log, or identity for the Gaussian.
+    d_model : int, default 16
+        Token width; a multiple of ``heads``.
+    heads : int, default 2
+    layers : int, default 2
+        Transformer blocks.
+    feed_forward : int, default 32
+        Width of each block's feed-forward layer.
+    epochs : int, default 100
+    batch_size : int, default 64
+    learning_rate : float, default 1e-3
+    seed : int, default 0
+    validation_share : float, optional
+        Turns on early stopping, as for ``Cann``.
+    patience : int, default 10
+    power : float, optional
+        The Tweedie power.
+    """
+    def __new__(cls, /, family: str, link: str |None = None, d_model: int = 16, heads: int = 2, layers: int = 2, feed_forward: int = 32, epochs: int = 100, batch_size: int = 64, learning_rate: float = 1e-3, seed: int = 0, validation_share: float |None = None, patience: int = 10, power: float |None = None) -> AttentionCann: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> AttentionCannFit:
+        """
+        Fits the network.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        
+        Returns
+        -------
+        AttentionCannFit
+        
+        Raises
+        ------
+        ValueError
+            If the family or link is not supported, ``d_model`` is not a
+            multiple of ``heads``, or a response is out of range.
+        """
+
+@final
+class AttentionCannFit:
+    """
+    A fitted attention CANN, from ``AttentionCann.fit``.
+    """
+    def __repr__(self, /) -> str: ...
+    def attention(self, /, design: Design) -> TokenAttention:
+        """
+        The last block's attention from ``[CLS]`` to each feature token, per
+        row of ``design`` and head: where the model looked for each risk. A
+        diagnostic, not a decomposition of the prediction.
+        
+        Returns
+        -------
+        TokenAttention
+        
+        Raises
+        ------
+        ValueError
+            If the model has no blocks (``layers=0``).
+        """
+    @property
+    def best_epoch(self, /) -> int |None:
+        """
+        With early stopping, the epoch (from 1) whose network was kept.
+        """
+    def correction(self, /, design: Design) -> list[float]:
+        """
+        The network's correction to the linear predictor, per row.
+        """
+    @property
+    def dispersion(self, /) -> float:
+        """
+        Dispersion: 1 for the Poisson, otherwise Pearson's estimate.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        Fitted means on the training rows.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row of ``design``.
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Joint predictive distribution across the rows: process draws from
+        the family around the predicted means.
+        
+        Parameters
+        ----------
+        design : Design
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    @property
+    def tokens(self, /) -> list[str]:
+        """
+        Feature tokens, in column order.
+        """
+    @property
+    def validation_history(self, /) -> list[float]:
+        """
+        With early stopping, the validation mean deviance after each epoch.
+        """
+
+@final
 class BayesBf:
     """
     The Bayesian Bornhuetter–Ferguson of England, Verrall and Wüthrich
@@ -2821,6 +2948,125 @@ class Burr:
         Returns
         -------
         float
+        """
+
+@final
+class Cann:
+    """
+    A Combined Actuarial Neural Network (Wüthrich and Merz): the design's
+    offset, a GLM's linear predictor, plus a feed-forward network of the
+    design's columns, ``eta = offset + NN(x)``.
+    
+    The output layer starts at zero, so training starts exactly at the GLM
+    and learns only what it misses. Training minimizes the family's
+    weighted deviance by Adam on mini-batches, on the CPU in ``float64``,
+    and is reproducible from ``seed``.
+    
+    Parameters
+    ----------
+    family : {"poisson", "gamma", "tweedie", "gaussian"}
+    link : str, optional
+        ``"log"`` for the Poisson, gamma and Tweedie, ``"identity"`` for the
+        Gaussian: the only links supported, and the defaults.
+    hidden : list of int, default [16, 8]
+        Widths of the hidden ReLU layers.
+    epochs : int, default 200
+    batch_size : int, default 64
+    learning_rate : float, default 1e-3
+    seed : int, default 0
+        Seeds the initial weights and the mini-batch order.
+    validation_share : float, optional
+        Turns on early stopping: hold out this share of the rows, score the
+        mean deviance on them after each epoch, and keep the best epoch.
+    patience : int, default 10
+        With early stopping, epochs without improvement before stopping.
+    power : float, optional
+        The Tweedie power.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Cann, Design
+    >>> x = [i / 50 - 1 for i in range(100)]
+    >>> d = Design([x], ["x"], offset=[0.0] * 100)
+    >>> fit = Cann("poisson", hidden=[8], epochs=5, seed=1).fit(d, [1.0] * 100)
+    >>> len(fit.predict(d))
+    100
+    """
+    def __new__(cls, /, family: str, link: str |None = None, hidden: Sequence[int] |None = None, epochs: int = 200, batch_size: int = 64, learning_rate: float = 1e-3, seed: int = 0, validation_share: float |None = None, patience: int = 10, power: float |None = None) -> Cann: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> CannFit:
+        """
+        Fits the network.
+        
+        Parameters
+        ----------
+        design : Design
+            Columns are standardized internally; the offset carries the
+            GLM's linear predictor (zeros for a network alone).
+        y : list of float
+        
+        Returns
+        -------
+        CannFit
+        
+        Raises
+        ------
+        ValueError
+            If the family or link is not supported, a setting is out of
+            range, or a response is out of the family's range.
+        """
+
+@final
+class CannFit:
+    """
+    A fitted CANN, from ``Cann.fit``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def best_epoch(self, /) -> int |None:
+        """
+        With early stopping, the epoch (from 1) whose network was kept.
+        """
+    def correction(self, /, design: Design) -> list[float]:
+        """
+        The network's correction to the linear predictor, ``NN(x)``, per row.
+        """
+    @property
+    def dispersion(self, /) -> float:
+        """
+        Dispersion: 1 for the Poisson, otherwise Pearson's estimate on the
+        training data.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        Fitted means on the training rows.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row of ``design`` (same columns as the
+        training design), ``g^-1(offset + NN(x))``.
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Joint predictive distribution across the rows, keyed ``row = 0, 1,
+        ...``: process draws from the family around the predicted means (a
+        trained network carries no parameter uncertainty).
+        
+        Parameters
+        ----------
+        design : Design
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    @property
+    def validation_history(self, /) -> list[float]:
+        """
+        With early stopping, the validation mean deviance after each epoch.
         """
 
 @final
@@ -13627,6 +13873,135 @@ class OneYearFit:
         """
 
 @final
+class OnnxModel:
+    """
+    A network trained elsewhere (PyTorch, Keras), loaded from an ONNX file
+    and run in ``float64``.
+    
+    Supports the operators a tabular network exports: ``Gemm``, ``Linear``,
+    ``MatMul``, broadcasting arithmetic, the common activations,
+    ``Softmax``, ``Concat``, ``Gather`` embeddings, reshapes and reductions.
+    Anything else is refused at load, with the operators the file uses.
+    
+    Parameters
+    ----------
+    path : str
+    
+    Raises
+    ------
+    ValueError
+        If the file cannot be read or parsed, or uses an unsupported
+        operator.
+    """
+    def __new__(cls, /, path: str) -> OnnxModel: ...
+    def __repr__(self, /) -> str: ...
+    @staticmethod
+    def from_bytes(data: Sequence[int]) -> OnnxModel:
+        """
+        Loads a model from the bytes of an ONNX file.
+        
+        Parameters
+        ----------
+        data : bytes
+        
+        Returns
+        -------
+        OnnxModel
+        """
+    @property
+    def inputs(self, /) -> list[dict]:
+        """
+        The graph's inputs as dicts with ``name``, ``rank``, ``shape`` (sizes
+        the file fixes, ``None`` where it leaves one free) and ``integer``
+        (category codes for an embedding).
+        """
+    @property
+    def ops(self, /) -> list[str]:
+        """
+        The operators the graph uses.
+        """
+    @property
+    def outputs(self, /) -> list[str]:
+        """
+        The graph's output names.
+        """
+    def run(self, /, inputs: Sequence[tuple[Sequence[int], Sequence[float]]]) -> list[tuple[list[int], list[float]]]:
+        """
+        Runs the graph.
+        
+        Parameters
+        ----------
+        inputs : list of (list of int, list of float)
+            One ``(shape, values)`` per graph input, in input order, values
+            row-major.
+        
+        Returns
+        -------
+        list of (list of int, list of float)
+            One ``(shape, values)`` per output.
+        """
+
+@final
+class OnnxPredictor:
+    """
+    An ``OnnxModel`` behind the model interface: each graph input bound to
+    design columns, one output read as each row's mean, and a family for
+    predictive draws.
+    
+    Parameters
+    ----------
+    model : OnnxModel
+    family : str
+        The family of the predictive draws (``poisson``, ``gamma``, ...).
+    inputs : dict of str to list of str
+        Each graph input's design columns: a rank-2 input takes its columns
+        in order (``[rows, columns]``), a rank-1 input one column. An
+        integer input (an embedding's category codes) must hold whole
+        numbers.
+    output : int, default 0
+        Which output is the mean.
+    scale : {"mean", "link"}, default "mean"
+        ``"mean"``: the output is the mean. ``"link"``: the output is on the
+        link's scale and added to the design's offset,
+        ``mu = g^-1(offset + output)`` (a CANN's correction, or a network
+        trained with an exposure offset).
+    link : str, optional
+        The link for ``scale="link"``; the family's canonical link by
+        default.
+    dispersion : float, default 1
+        The family's dispersion for predictive draws.
+    theta, power : float, optional
+        The negative binomial's ``theta`` or the Tweedie power.
+    """
+    def __new__(cls, /, model: OnnxModel, family: str, inputs: dict[str, Sequence[str]], output: int = 0, scale: str = "mean", link: str |None = None, dispersion: float = 1.0, theta: float |None = None, power: float |None = None) -> OnnxPredictor: ...
+    def __repr__(self, /) -> str: ...
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row of ``design``.
+        
+        Raises
+        ------
+        ValueError
+            If a graph input is not bound, a bound column is missing, or an
+            integer input holds a fraction.
+        """
+    def predict_distribution(self, /, design: Design, n_sims: int, seed: int) -> PredictiveDistribution:
+        """
+        Joint predictive distribution across the rows: process draws from
+        the family and dispersion around the predicted means.
+        
+        Parameters
+        ----------
+        design : Design
+        n_sims : int
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+
+@final
 class PairCopula:
     """
     A bivariate copula for a vine: a family, its parameter and a rotation.
@@ -17148,6 +17523,48 @@ class Terms:
         Returns
         -------
         Terms
+        """
+
+@final
+class TokenAttention:
+    """
+    Attention from ``[CLS]`` to each feature token in the last block, per
+    row and head, from ``AttentionCannFit.attention``.
+    """
+    def __repr__(self, /) -> str: ...
+    def get(self, /, row: int, head: int, token: int) -> float:
+        """
+        Weight of token ``token`` (an index into ``tokens``) for ``row``
+        and ``head``. Per row and head the weights over the feature tokens
+        and ``[CLS]`` itself sum to 1.
+        """
+    @property
+    def heads(self, /) -> int:
+        """
+        Number of heads.
+        """
+    def mean(self, /, rows: Sequence[int] |None = None) -> list[float]:
+        """
+        Mean weight per token over the rows and heads, or over ``rows``
+        only: what the model attends to in a segment.
+        
+        Parameters
+        ----------
+        rows : list of int, optional
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def rows(self, /) -> int:
+        """
+        Number of rows.
+        """
+    @property
+    def tokens(self, /) -> list[str]:
+        """
+        Feature tokens, in column order.
         """
 
 @final
