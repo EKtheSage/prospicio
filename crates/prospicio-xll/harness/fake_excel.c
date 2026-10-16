@@ -46,6 +46,7 @@ typedef struct xloper12 {
 typedef XLOPER12 *(*Fn0)(void);
 typedef XLOPER12 *(*Fn3)(XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn4)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef XLOPER12 *(*Fn6)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*Free12)(XLOPER12 *);
 
 static int registered = 0, failures = 0;
@@ -141,7 +142,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("eight functions registered", registered == 8);
+    check("twelve functions registered", registered == 12);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -199,6 +200,50 @@ int main(int argc, char **argv) {
     /* Many calls, freed each time: a leak or a double free shows here. */
     for (int i = 0; i < 2000; i++) free12(mack(&tri, &missing, &missing, &missing));
     check("2000 calls and frees", 1);
+
+    /* Layer pricing: Pareto(t = 500, alpha = 2), a column of attachments
+     * against a row of limits, the last "unlimited" (R package Pareto:
+     * 4000 xs 1000 is 200; unlimited xs 1000 is 250). */
+    static wchar_t pareto_s[] = L"\x06" L"pareto";
+    static wchar_t unlimited_s[] = L"\x09" L"unlimited";
+    XLOPER12 att_cells[2], lim_cells[2], att, lim, fam, t, alpha;
+    att_cells[0].xltype = att_cells[1].xltype = xltypeNum;
+    att_cells[0].val.num = 1000;
+    att_cells[1].val.num = 5000;
+    att.xltype = xltypeMulti;
+    att.val.array.lparray = att_cells;
+    att.val.array.rows = 2;
+    att.val.array.columns = 1;
+    lim_cells[0].xltype = xltypeNum;
+    lim_cells[0].val.num = 4000;
+    lim_cells[1].xltype = xltypeStr;
+    lim_cells[1].val.str = unlimited_s;
+    lim.xltype = xltypeMulti;
+    lim.val.array.lparray = lim_cells;
+    lim.val.array.rows = 1;
+    lim.val.array.columns = 2;
+    fam.xltype = xltypeStr;
+    fam.val.str = pareto_s;
+    t.xltype = xltypeNum;
+    t.val.num = 500;
+    alpha.xltype = xltypeNum;
+    alpha.val.num = 2;
+    XLOPER12 *layer = ((Fn6)GetProcAddress(xll, "pro_layer"))(&lim, &att, &fam, &t, &alpha, &missing);
+    print_result("PRO.LAYER({4000,\"unlimited\"}, {1000;5000}, \"pareto\", 500, 2)", layer);
+    check("layer table is 2 x 2", (layer->xltype & 0xFFF) == xltypeMulti && layer->val.array.rows == 2 &&
+                                       layer->val.array.columns == 2);
+    check("4000 xs 1000 is 200 (R package Pareto)", fabs(layer->val.array.lparray[0].val.num - 200) < 1e-9);
+    check("unlimited xs 1000 is 250", fabs(layer->val.array.lparray[1].val.num - 250) < 1e-9);
+    free12(layer);
+    XLOPER12 basic, lim1m;
+    basic.xltype = xltypeNum;
+    basic.val.num = 1000;
+    lim1m.xltype = xltypeNum;
+    lim1m.val.num = 1000;
+    XLOPER12 *f = ((Fn6)GetProcAddress(xll, "pro_ilf"))(&lim1m, &basic, &fam, &t, &alpha, &missing);
+    print_result("PRO.ILF(1000, 1000, \"pareto\", 500, 2)", f);
+    check("ILF at the basic limit is 1", (f->xltype & 0xFFF) == xltypeNum && f->val.num == 1.0);
+    free12(f);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

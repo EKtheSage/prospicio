@@ -12,9 +12,11 @@ repository.workspace = true
 [lib]
 name = "prospicio_xll"
 # cdylib is the .xll on Windows (a DLL renamed); rlib lets the portable
-# core (`sheet`, `reserving`) be tested on any host with plain `cargo test`.
+# core (`sheet`, `reserving`, `pricing`) be tested on any host with plain `cargo test`.
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 prospicio-core.workspace = true
 prospicio-reserving.workspace = true
+prospicio-prob.workspace = true
+prospicio-pricing.workspace = true

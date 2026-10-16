@@ -83,6 +83,57 @@ for row in ws.iter_rows(min_row=4, max_row=43):
     for c in row:
         if c.column > 1 and c.number_format == "General":
             c.number_format = "#,##0.0000" if c.row in (14,15,16) or (33 <= c.row <= 43 and c.column <= 5) else "#,##0"
+# Layer pricing: parameters in cells, a column of attachments against a
+# row of limits, so one formula fills the table.
+ly = wb.create_sheet("Layers")
+ly["A1"] = "prospicio XLL test: layer pricing"; ly["A1"].font = Font(bold=True, size=13)
+ly["A2"] = "Change the yellow cells; every table recalculates."; ly["A2"].font = note
+for row, (label, value) in enumerate([
+    ("Pareto t", 500), ("Pareto alpha", 2),
+    ("Lognormal mean", 50000), ("Lognormal CV", 3), ("Basic limit", 100000)], start=4):
+    ly[f"A{row}"] = label; ly[f"A{row}"].font = bold
+    ly[f"B{row}"] = value; ly[f"B{row}"].fill = inp
+PAR = '"pareto",$B$4,$B$5'
+LOG = '"lognormal_cv",$B$6,$B$7'
+ly["A10"] = "Pareto: expected loss per ground-up loss, PRO.LAYER"; ly["A10"].font = bold
+ly["A11"] = "Attachment \\ limit"; ly["A11"].font = note
+for c, lim in enumerate([1000, 4000, 10000, "unlimited"]):
+    cell = ly.cell(row=11, column=2+c, value=lim); cell.fill = inp; cell.font = bold
+for r, a in enumerate([1000, 5000, 10000]):
+    cell = ly.cell(row=12+r, column=1, value=a); cell.fill = inp; cell.font = bold
+ly["B12"] = ArrayFormula("B12:E14", f"=PRO.LAYER(B11:E11,A12:A14,{PAR})")
+ly["A16"] = "Layer CV given a loss above the attachment, PRO.LAYER.CV"; ly["A16"].font = note
+ly["B17"] = ArrayFormula("B17:E19", f"=PRO.LAYER.CV(B11:E11,A12:A14,{PAR})")
+
+ly["G10"] = "Lognormal: ILF and LEV by limit"; ly["G10"].font = bold
+for col, h in zip("GHIJ", ["Limit", "ILF", "LEV", "LEV, Pareto"]):
+    ly[f"{col}11"] = h; ly[f"{col}11"].font = bold
+for r, lim in enumerate([100000, 250000, 500000, 1000000, 2000000, 5000000, "unlimited"]):
+    ly.cell(row=12+r, column=7, value=lim).fill = inp
+ly["H12"] = ArrayFormula("H12:H18", f"=PRO.ILF(G12:G18,$B$8,{LOG})")
+ly["I12"] = ArrayFormula("I12:I18", f"=PRO.LEV(G12:G18,{LOG})")
+ly["J12"] = ArrayFormula("J12:J18", f"=PRO.LEV(G12:G18,{PAR})")
+
+ly["A22"] = "Check against the R package Pareto (vignette, t = 500, alpha = 2)"; ly["A22"].font = bold
+for h, col in zip(["Quantity", "prospicio", "Expected", "Match"], "ABCD"):
+    ly[f"{col}23"] = h; ly[f"{col}23"].font = bold
+for i, (name, f, x) in enumerate([
+        ("4000 xs 1000", "=C12", 200),
+        ("unlimited xs 1000, t^a d^(1-a)/(a-1)", "=E12", 250)]):
+    row = 24 + i
+    ly[f"A{row}"] = name; ly[f"B{row}"] = f; ly[f"C{row}"] = x
+    ly[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-9"
+ly["A27"] = "Valid only with the inputs above unchanged."; ly["A27"].font = note
+ly.column_dimensions["A"].width = 34
+for col in "BCDEGHIJ":
+    ly.column_dimensions[col].width = 14
+for row in ly.iter_rows(min_row=12, max_row=19, min_col=2, max_col=10):
+    for c in row:
+        c.number_format = "0.0000" if (c.row >= 17 and c.column <= 5) or c.column == 8 else "#,##0.00"
+for row in ly.iter_rows(min_row=11, max_row=18, min_col=7, max_col=7):
+    for c in row:
+        c.number_format = "#,##0"
+
 wb.calculation.fullCalcOnLoad = True
 wb.save(out)
 
@@ -106,9 +157,13 @@ def make_dynamic(path):
     """Turns every legacy array formula in `path` into a spilling one."""
     with zipfile.ZipFile(path) as z:
         parts = {name: z.read(name) for name in z.namelist()}
-    sheet = parts["xl/worksheets/sheet1.xml"].decode()
-    sheet, n = re.subn(r'<c (r="[A-Z]+[0-9]+")([^>]*)><f t="array"', r'<c \1\2 cm="1"><f t="array"', sheet)
-    parts["xl/worksheets/sheet1.xml"] = sheet.encode()
+    n = 0
+    for name in [p for p in parts if p.startswith("xl/worksheets/sheet")]:
+        sheet, k = re.subn(
+            r'<c (r="[A-Z]+[0-9]+")([^>]*)><f t="array"', r'<c \1\2 cm="1"><f t="array"', parts[name].decode()
+        )
+        parts[name] = sheet.encode()
+        n += k
     rels = parts["xl/_rels/workbook.xml.rels"].decode()
     parts["xl/_rels/workbook.xml.rels"] = rels.replace("</Relationships>", REL + "</Relationships>").encode()
     types = parts["[Content_Types].xml"].decode()
