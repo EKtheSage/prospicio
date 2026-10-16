@@ -31,9 +31,10 @@ build (measured locally on 2026-10-13: 17.5 s wall, 15 s of test
 time).[^ci]
 
 Each has a `[[test]]` entry in `validation/Cargo.toml` with
-`required-features = ["slow-bayes"]`, an empty feature of
-`prospicio-validation`.[^cargo] Without the feature cargo skips the target
-silently, so `cargo test` neither builds nor runs them. That list is the
+`required-features = ["slow-bayes"]`, a feature of
+`prospicio-validation` that also turns on
+`prospicio-reserving/slow-tests`.[^cargo] Without the feature cargo skips
+the target silently, so `cargo test` neither builds nor runs them. That list is the
 one place: CI's `bayes` job reads it with Python's `tomllib` and passes one
 `--test` per entry. The rust job lints them with
 `cargo clippy --all-targets --features prospicio-validation/slow-bayes`.
