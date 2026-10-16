@@ -70,6 +70,7 @@ stopifnot(
   all(cdr_rows[, 1] == 0),
   length(view@pareto_k) == n_sims,
   identical(view@refitted, integer()),
+  identical(view@moment_matched, integer()),
   identical(view@refit_warnings, 0L),
   identical(view@k_threshold, 0.7),
   isTRUE(all.equal(view@flagged_share, mean(is.nan(view@pareto_k) | view@pareto_k > 0.7))),
@@ -131,7 +132,23 @@ stopifnot(
   identical(draw_matrix(only@cdr)[-expected, , drop = FALSE],
             draw_matrix(flagged@cdr)[-expected, , drop = FALSE]),
   identical(draw_matrix(every@cdr)[expected, , drop = FALSE],
-            draw_matrix(flagged@cdr)[expected, , drop = FALSE])
+            draw_matrix(flagged@cdr)[expected, , drop = FALSE]),
+  identical(flagged@moment_matched, integer())
+)
+
+# Moment matching: the same years, each flagged simulation moment-matched
+# or refitted (never both), a refitted row refit_all's and an unflagged one
+# reweight_only's.
+matched <- short(k_threshold = 0.3, refit = "moment_match_then_refit")
+unflagged <- setdiff(1:12, expected)
+stopifnot(
+  identical(matched@pareto_k, only@pareto_k),
+  length(intersect(matched@moment_matched, matched@refitted)) == 0,
+  identical(sort(c(matched@moment_matched, matched@refitted)), expected),
+  identical(draw_matrix(matched@cdr)[matched@refitted, , drop = FALSE],
+            draw_matrix(every@cdr)[matched@refitted, , drop = FALSE]),
+  identical(draw_matrix(matched@cdr)[unflagged, , drop = FALSE],
+            draw_matrix(only@cdr)[unflagged, , drop = FALSE])
 )
 
 # Twenty draws per chain cannot reach the ESS threshold: the fit and its
@@ -163,7 +180,8 @@ stopifnot(
   identical(totals_frame(views)$lob, c("auto", "home")),
   "flagged_share" %in% names(totals_frame(views))
 )
-for (field in c("scale", "pareto_k", "refitted", "refit_warnings", "flagged_share")) {
+for (field in c("scale", "pareto_k", "refitted", "moment_matched", "refit_warnings",
+                "flagged_share")) {
   expect_error_like(S7::prop(views, field), "single-segment")
 }
 home <- segment(views, lob = "home")
@@ -171,6 +189,7 @@ stopifnot(
   S7::S7_inherits(home, bayes_one_year_fits),
   length(home@pareto_k) == 1000,
   identical(home@refitted, integer()),
+  identical(home@moment_matched, integer()),
   home@scale > 0,
   isTRUE(all.equal(home@flagged_share, totals_frame(views)$flagged_share[2]))
 )
@@ -189,3 +208,31 @@ expect_error_like(bayes_odp_one_year(genins, n_sims = 10, refit = "sometimes"), 
 expect_error_like(bayes_odp_one_year(genins, n_sims = 10, k_threshold = NaN), "k_threshold")
 expect_error_like(bayes_odp_one_year_segments(two, n_sims = 10, dependence = "synchronized"),
                   "ynchroni")
+
+# bayes_bf_one_year() (decision 17): the same class, with the bayes_bf_fit.
+# Its comparison with bayes_odp and the strong-prior limit is in
+# validation/tests/reserving_bayes_bf_one_year.rs.
+prem_long <- transform(tiny_long, premium = rep(c(200, 220, 240, 260), 4:1))
+prem <- triangle(prem_long, "year", "age", c("paid", "premium"))
+bf_view <- suppressWarnings(bayes_bf_one_year(
+  prem, "paid", "premium", apriori = 0.85, cv = 0.1, tune = 300, draws = 300, n_sims = 1000,
+  seed = 3, refit = "reweight_only"))
+bf_fit <- suppressWarnings(bayes_bf(prem, "paid", "premium", apriori = 0.85, cv = 0.1,
+                                    tune = 300, draws = 300, n_sims = 1000, seed = 3))
+stopifnot(
+  S7::S7_inherits(bf_view, bayes_one_year_fit),
+  S7::S7_inherits(bf_view@fit, bayes_bf_fit),
+  identical(bf_view@fit@draws, bf_fit@draws),
+  identical(draw_matrix(bf_view@fit@reserves), draw_matrix(bf_fit@reserves)),
+  length(bf_view@pareto_k) == 1000,
+  identical(bf_view@refitted, integer()),
+  all(draw_matrix(bf_view@cdr)[, 1] == 0),
+  variance(bf_view@cdr) < variance(bf_fit@reserves),
+  isTRUE(all.equal(as.data.frame(bf_view)$prior_ultimate, bf_fit@prior_ultimate)),
+  "cdr_std_dev" %in% names(as.data.frame(bf_view)),
+  isTRUE(all.equal(totals_frame(bf_view)$flagged_share, bf_view@flagged_share))
+)
+out <- capture.output(print(bf_view))
+stopifnot(grepl("<bayes_one_year_fit> 1000 simulations", out[1], fixed = TRUE))
+expect_error_like(bayes_bf_one_year(prem, "paid", "premium", n_sims = 10, k_threshold = NaN),
+                  "k_threshold")

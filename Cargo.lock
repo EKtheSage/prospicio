@@ -4015,6 +4015,7 @@ dependencies = [
  "prospicio-pricing",
  "prospicio-prob",
  "prospicio-reserving",
+ "rayon",
 ]
 
 [[package]]

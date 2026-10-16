@@ -20,6 +20,7 @@ prospicio-math.workspace = true
 prospicio-models.workspace = true
 prospicio-pricing.workspace = true
 prospicio-prob = { workspace = true, features = ["arrow"] }
+rayon.workspace = true
 
 [features]
 # The Bayesian (NUTS) parity tests: about 220 s in a debug build, about 17 s
@@ -66,4 +67,16 @@ required-features = ["slow-bayes"]
 
 [[test]]
 name = "reserving_bayes_one_year"
+required-features = ["slow-bayes"]
+
+[[test]]
+name = "reserving_bayes_one_year_conformance"
+required-features = ["slow-bayes"]
+
+[[test]]
+name = "reserving_bayes_bf_one_year"
+required-features = ["slow-bayes"]
+
+[[test]]
+name = "reserving_bayes_one_year_moment_match"
 required-features = ["slow-bayes"]
