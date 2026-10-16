@@ -5,4 +5,4 @@
   three views of one fit: the reserve exhibit, the parameters' posterior
   with R-hat and ESS, and the sampler's diagnostics and warnings. Recent
   fits are kept, so a sheet showing all three samples once. At parity
-  with the same model in Stan on RAA and GenIns.
+  with the same model in Stan on RAA and GenIns (#310).
