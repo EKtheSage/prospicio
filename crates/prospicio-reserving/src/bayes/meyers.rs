@@ -552,7 +552,7 @@ impl Meyers {
     /// };
     /// // Reweighting only, for speed: the default moment-matches and refits
     /// // the flagged simulations, nearly all of them for this model.
-    /// let only = BayesOneYear { refit: OneYearRefit::ReweightOnly, ..BayesOneYear::default() };
+    /// let only = BayesOneYear { refit: Some(OneYearRefit::ReweightOnly), ..BayesOneYear::default() };
     /// let view = model.one_year(&tri, "paid", "premium", &only)?;
     /// assert_eq!(view.cdr.n_components(), 6);
     /// // 1988 is fully developed: no cell in the year, no change.
@@ -3808,7 +3808,7 @@ pub(crate) mod tests {
     fn the_one_year_view_reweights_the_fits_posterior() {
         let model = quick(MeyersModel::Csr, 6);
         let only = BayesOneYear {
-            refit: crate::bayes::OneYearRefit::ReweightOnly,
+            refit: Some(crate::bayes::OneYearRefit::ReweightOnly),
             ..BayesOneYear::default()
         };
         let view = model
@@ -3883,7 +3883,7 @@ pub(crate) mod tests {
     )]
     fn the_one_year_view_over_segments() {
         let only = BayesOneYear {
-            refit: crate::bayes::OneYearRefit::ReweightOnly,
+            refit: Some(crate::bayes::OneYearRefit::ReweightOnly),
             ..BayesOneYear::default()
         };
         let tri = twins();

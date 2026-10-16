@@ -4,8 +4,9 @@
 //! `reserving_compartmental.rs` trains it (calendar years up to 1996, and
 //! 1997 with premium only), at the defaults of each model (model 1: 4
 //! chains of 1,000 warm-up and 2,000 kept draws; model 2: 4 chains of
-//! 2,000 and 8,000) and the default one-year settings (moment matching,
-//! then a refit for what it cannot rescue).
+//! 2,000 and 8,000) and model 1's default one-year refit mode (moment
+//! matching, then a refit for what it cannot rescue), set explicitly with
+//! each view's number of simulations.
 //!
 //! There is no external reference for a Bayesian one-year view of these
 //! models, so the checks are internal, against refits on the same years.
@@ -30,10 +31,18 @@
 //! prospicio-validation --features slow-bayes --test
 //! reserving_compartmental_one_year -- --ignored seed_sweep --nocapture`).
 //!
-//! Model 2 is measured, not checked in CI (`model_2_comparison`, ignored):
-//! moment matching rescues none of its simulations, and a refit
-//! takes about a minute, so its default view at 10,000 simulations is
-//! days of refits; `runtime` (ignored) measures both models' wall times.
+//! Model 2 is measured (`model_2_comparison`, ignored): moment matching
+//! rescues none of its simulations, and a refit takes about a minute, so
+//! by the user's decision of 2026-10-16 its default view reweights only,
+//! with a warning that it is approximate, and every model's default view
+//! runs at most 2,000 simulations. `the_default_view_of_model_2_reweights`
+//! checks those defaults end to end; it runs only when
+//! `RISK_RS_FULL_BAYES` is set, as in CI's weekly and manual runs
+//! (`prospicio_validation::full_bayes`). A pull request runs model 1 alone
+//! and without its `RefitAll` comparison (the smoke run: `mean_z`,
+//! `rescued` and `life_ratio` at the sizes and bounds above, about 3
+//! minutes in release locally, against 6 for the full test). `runtime`
+//! (ignored) measures both models' wall times.
 
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -44,6 +53,7 @@ use prospicio_reserving::bayes::{
     OneYearRefit, Outstanding,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
+use prospicio_validation::full_bayes;
 
 /// Simulations of model 1's default view.
 const SIMS: usize = 500;
@@ -173,8 +183,10 @@ fn view(
         Outstanding::FromIncurred("incurred"),
         "premium",
         &BayesOneYear {
-            refit,
+            refit: Some(refit),
             max_refits,
+            // By default the view runs at most 2,000 simulations.
+            n_sims: Some(n_sims),
             ..BayesOneYear::default()
         },
     )
@@ -207,7 +219,8 @@ struct Measured {
 }
 
 /// Model 1 (or 2) at one seed: `sims` simulations reweighted only and at
-/// the default (with `max_refits`), the first `refit_sims` refitted.
+/// the default (with `max_refits`), the first `refit_sims` refitted (none
+/// with 0: the gaps and sd ratios are then not measured).
 fn measure(
     two: bool,
     sims: usize,
@@ -218,19 +231,27 @@ fn measure(
     let name = if two { "model 2" } else { "model 1" };
     let (only, t_only) = view(two, sims, seed, OneYearRefit::ReweightOnly, None);
     let (default, t_default) = view(two, sims, seed, OneYearRefit::default(), max_refits);
-    let (all, t_all) = view(two, refit_sims, seed, OneYearRefit::RefitAll, None);
+    let (all, t_all) = if refit_sims > 0 {
+        let (all, t) = view(two, refit_sims, seed, OneYearRefit::RefitAll, None);
+        (Some(all), t)
+    } else {
+        (None, 0.0)
+    };
     // The same years under every setting.
     assert_eq!(
         bits(&only.pareto_k),
         bits(&default.pareto_k),
         "{name}: the default's years"
     );
-    assert_eq!(
-        bits(&all.pareto_k),
-        bits(&only.pareto_k[..refit_sims]),
-        "{name}: RefitAll's years"
-    );
-    let (t_only_, t_def, t_all_) = (totals(&only.cdr), totals(&default.cdr), totals(&all.cdr));
+    if let Some(all) = &all {
+        assert_eq!(
+            bits(&all.pareto_k),
+            bits(&only.pareto_k[..refit_sims]),
+            "{name}: RefitAll's years"
+        );
+    }
+    let (t_only_, t_def) = (totals(&only.cdr), totals(&default.cdr));
+    let t_all_ = all.as_ref().map(|a| totals(&a.cdr)).unwrap_or_default();
     let s = sd(&t_def);
     let mean_z = mean(&t_def) / (s / (sims as f64).sqrt());
     let n_flagged = only
@@ -284,23 +305,73 @@ fn measure(
     m
 }
 
+/// Model 1's checks. A pull request (the smoke run, without
+/// `RISK_RS_FULL_BAYES`) checks `mean_z`, `rescued` and `life_ratio` at the
+/// same sizes and bounds and skips the `RefitAll` comparison (40 refits,
+/// more than half the test's time), so not `gap_matched`; the weekly and
+/// manual runs check everything.
 #[test]
 fn the_one_year_view_of_model_1_matches_its_refits() {
-    let m = measure(false, SIMS, REFIT_SIMS, None, 0);
+    let full = full_bayes();
+    let m = measure(false, SIMS, if full { REFIT_SIMS } else { 0 }, None, 0);
     assert!(m.mean_z.abs() < 5.0, "mean z {}", m.mean_z);
     assert!(m.rescued >= RESCUED_FLOOR, "rescued {}", m.rescued);
-    assert!(m.gap_matched < GAP_BOUND, "gap {}", m.gap_matched);
-    assert!(
-        m.gap_matched < m.gap_reweighted,
-        "matching {} is no closer than reweighting {}",
-        m.gap_matched,
-        m.gap_reweighted
-    );
+    if full {
+        assert!(m.gap_matched < GAP_BOUND, "gap {}", m.gap_matched);
+        assert!(
+            m.gap_matched < m.gap_reweighted,
+            "matching {} is no closer than reweighting {}",
+            m.gap_matched,
+            m.gap_reweighted
+        );
+    }
     assert!(
         (LIFE_BAND.0..LIFE_BAND.1).contains(&m.life_ratio),
         "one-year over lifetime sd {}",
         m.life_ratio
     );
+}
+
+/// Model 2's default one-year view (the user's decision of 2026-10-16):
+/// 2,000 simulations from the model's 10,000, every flagged one reweighted
+/// (none moment-matched or refitted), with the warning that the view is
+/// approximate (an explicit refit mode carries none: the unit test
+/// `the_one_year_defaults_follow_the_model`). Full run only
+/// (`RISK_RS_FULL_BAYES`): about a minute and a half in release.
+#[test]
+fn the_default_view_of_model_2_reweights() {
+    if !full_bayes() {
+        eprintln!("skipped: model 2's default view runs when RISK_RS_FULL_BAYES is set");
+        return;
+    }
+    let model = preset(true);
+    assert_eq!(model.n_sims, 10_000);
+    let default = model
+        .one_year(
+            training(),
+            "paid",
+            Outstanding::FromIncurred("incurred"),
+            "premium",
+            &BayesOneYear::default(),
+        )
+        .unwrap();
+    assert_eq!(default.pareto_k.len(), Compartmental::ONE_YEAR_SIMS);
+    assert!(
+        default.flagged_share() > 0.9,
+        "flagged {}",
+        default.flagged_share()
+    );
+    assert!(default.moment_matched.is_empty() && default.refitted.is_empty());
+    assert!(default.unrefitted.is_empty());
+    let warning = default.approximate.as_deref().expect("the default warns");
+    assert!(warning.contains("approximate"), "{warning}");
+    let parameters = &default.cdr.provenance().parameters;
+    for (key, value) in [("refit", "ReweightOnly"), ("one_year_sims", "2000")] {
+        assert!(
+            parameters.contains(&(key.into(), value.into())),
+            "{key} in {parameters:?}"
+        );
+    }
 }
 
 fn summary(name: &str, row: &str, v: &[f64]) {
@@ -369,9 +440,10 @@ fn model_2_comparison() {
 }
 
 /// Wall times (ignored; release build): model 1 at 10,000 simulations
-/// reweighting only and at the default; model 2 at 10,000 reweighting only
-/// and at 1,000 moment matching without refits (`max_refits` 0), with the
-/// number of refits the default would make.
+/// reweighting only and moment matching (its default mode); model 2 at
+/// 10,000 reweighting only (its default mode) and at 1,000 moment matching
+/// without refits (`max_refits` 0), with the number of refits matching
+/// would make.
 #[test]
 #[ignore]
 fn runtime() {

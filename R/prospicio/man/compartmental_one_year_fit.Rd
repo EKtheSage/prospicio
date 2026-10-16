@@ -28,8 +28,9 @@ compartmental_one_year(
   target_accept = 0.99,
   max_depth = 10,
   k_threshold = 0.7,
-  refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
-  max_refits = NULL
+  refit = NULL,
+  max_refits = NULL,
+  one_year_sims = NULL
 )
 
 compartmental_model_2_one_year(
@@ -49,8 +50,9 @@ compartmental_model_2_one_year(
   target_accept = 0.999,
   max_depth = 10,
   k_threshold = 0.7,
-  refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
-  max_refits = NULL
+  refit = NULL,
+  max_refits = NULL,
+  one_year_sims = NULL
 )
 }
 \arguments{
@@ -103,13 +105,10 @@ whole number.}
 weights are not trusted (the threshold of Vehtari et al. 2024 for a
 few thousand draws).}
 
-\item{refit}{What happens to a flagged simulation:
-\code{"moment_match_then_refit"} (the default) moves the posterior draws by
-affine maps to the moments the weights estimate (moment matching, as
-\code{loo::loo_moment_match()}), refitting only a simulation whose k stays
-above \code{k_threshold}; \code{"refit_flagged"} refits it with NUTS;
-\code{"reweight_only"} reweights it anyway (fast, biased where k is high);
-\code{"refit_all"} refits every simulation, to check the reweighting.}
+\item{refit}{What happens to a flagged simulation, as in
+\code{\link[=bayes_odp_one_year]{bayes_odp_one_year()}}, or \code{NULL} (the default) for the model's own:
+\code{"moment_match_then_refit"} without development effects (model 1),
+\code{"reweight_only"} with them (model 2), with a warning.}
 
 \item{max_refits}{The most simulations refitted with NUTS: the first
 this many due for a refit, in simulation order; the others are
@@ -117,6 +116,10 @@ reweighted as they are (as unreliable as their k says), listed in
 \code{unrefitted} and warned about. \code{NULL} (the default) refits every one,
 \code{0} none. In the \verb{_segments} functions it applies to each segment, so
 k segments refit at most k times this many.}
+
+\item{one_year_sims}{The number of one-year simulations, or \code{NULL} (the
+default) for \code{n_sims} capped at 2,000. The lifetime reserves keep
+\code{n_sims}. A smaller count gives the first simulations of a larger one.}
 }
 \value{
 A \code{compartmental_one_year_fit} object.
@@ -140,20 +143,24 @@ the year's cells update them.
 }
 \details{
 A simulation whose k is above \code{k_threshold} is flagged and handled as
-\code{refit} says (as \code{\link[=bayes_odp_one_year]{bayes_odp_one_year()}}): by default moment-matched,
-and refitted with NUTS (this model's sampler, as long as the fit) only
-if its k stays above the threshold. On company 337 about four in five of
-model 1's simulations are flagged and all of model 2's;
-for model 1 matching rescues about nineteen in
-twenty of them, for model 2 none, so model 2's default view
-refits nearly every simulation, each refit as long as a fit (about 31 s of
-wall time with 8 running side by side): set \code{max_refits}
-to bound it. \code{compartmental_model_2_one_year()} takes model 2's
-settings, as \code{\link[=compartmental_model_2]{compartmental_model_2()}}.
+\code{refit} says (as \code{\link[=bayes_odp_one_year]{bayes_odp_one_year()}}). On company 337 about four in
+five of model 1's simulations are flagged and all of model 2's; for
+model 1 moment matching rescues about nineteen in twenty of them, for
+model 2 none, and a refit takes as long as a fit (for model 2 about
+31 s of wall time with 8 running side by side). So by default
+(\code{refit = NULL}, the user's decision of 2026-10-16) model 1
+moment-matches its flagged simulations and refits with NUTS only those
+whose k stays above the threshold, and a model with development effects
+(model 2) reweights them only: that view is approximate, about 0.4 sd of
+the total claims development result off a refit per simulation, and
+warns so (\code{approximate}). Set \code{refit} to refit them, with \code{max_refits}
+as a budget. The view runs \code{one_year_sims} simulations, by default
+\code{n_sims} capped at 2,000. \code{compartmental_model_2_one_year()} takes model
+2's settings, as \code{\link[=compartmental_model_2]{compartmental_model_2()}}.
 
 Failed MCMC diagnostics of the fit raise one \code{\link[=warning]{warning()}} listing them,
-refits that failed theirs raise another, and simulations left
-unrefitted by \code{max_refits} another.
+refits that failed theirs raise another, simulations left unrefitted by
+\code{max_refits} another, and a default view that is approximate another.
 
 Properties of a \code{compartmental_one_year_fit}: \code{fit} (the
 \link{compartmental_fit}), \code{origins} (the premium column's), per origin
@@ -163,7 +170,8 @@ mean reserve on the observed triangle); \code{cdr}, a
 dimension \code{origin} (a negative value is an adverse development);
 \code{pareto_k}, \code{refitted}, \code{moment_matched} and \code{unrefitted} (1-based),
 \code{refit_warnings}, \code{k_threshold} and \code{flagged_share}, as a
-\link{bayes_one_year_fit}'s. \code{as.data.frame()} has one row per origin:
+\link{bayes_one_year_fit}'s; \code{approximate}, why the view is approximate
+(\code{NULL} unless the model's default reweighted only). \code{as.data.frame()} has one row per origin:
 \code{origin}, \code{premium}, \code{latest_paid}, \code{opening_ultimate},
 \code{opening_reserve}, and the \code{cdr_mean} and \code{cdr_std_dev} of the claims
 development result; \code{\link[=totals_frame]{totals_frame()}} their totals and the

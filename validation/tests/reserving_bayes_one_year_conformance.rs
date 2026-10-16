@@ -391,7 +391,7 @@ fn square() -> Triangle {
 
 fn settings(refit: OneYearRefit) -> BayesOneYear {
     BayesOneYear {
-        refit,
+        refit: Some(refit),
         ..BayesOneYear::default()
     }
 }

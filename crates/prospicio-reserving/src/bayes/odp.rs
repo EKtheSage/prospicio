@@ -1990,7 +1990,7 @@ mod tests {
     fn the_one_year_view_reweights_the_fits_posterior() {
         let model = quick(4);
         let settings = BayesOneYear {
-            refit: OneYearRefit::ReweightOnly,
+            refit: Some(OneYearRefit::ReweightOnly),
             ..BayesOneYear::default()
         };
         let view = model.one_year(&genins(), "values", &settings).unwrap();
@@ -2091,7 +2091,7 @@ mod tests {
                     "values",
                     &BayesOneYear {
                         k_threshold,
-                        refit,
+                        refit: Some(refit),
                         ..BayesOneYear::default()
                     },
                 )
@@ -2211,7 +2211,7 @@ mod tests {
     )]
     fn the_one_year_view_over_segments() {
         let settings = BayesOneYear {
-            refit: OneYearRefit::ReweightOnly,
+            refit: Some(OneYearRefit::ReweightOnly),
             ..BayesOneYear::default()
         };
         let tri = twins();
@@ -2264,7 +2264,7 @@ mod tests {
             ..quick(9)
         };
         let settings = |max_refits| BayesOneYear {
-            refit: OneYearRefit::RefitFlagged,
+            refit: Some(OneYearRefit::RefitFlagged),
             max_refits,
             ..BayesOneYear::default()
         };
@@ -2304,7 +2304,7 @@ mod tests {
                 &genins(),
                 "values",
                 &BayesOneYear {
-                    refit: OneYearRefit::ReweightOnly,
+                    refit: Some(OneYearRefit::ReweightOnly),
                     ..BayesOneYear::default()
                 },
             )
@@ -2317,7 +2317,7 @@ mod tests {
             &genins(),
             "values",
             &BayesOneYear {
-                refit: OneYearRefit::RefitAll,
+                refit: Some(OneYearRefit::RefitAll),
                 ..BayesOneYear::default()
             },
         )
@@ -2360,7 +2360,7 @@ mod tests {
                 &twins(),
                 "values",
                 &BayesOneYear {
-                    refit: OneYearRefit::ReweightOnly,
+                    refit: Some(OneYearRefit::ReweightOnly),
                     ..BayesOneYear::default()
                 },
             )

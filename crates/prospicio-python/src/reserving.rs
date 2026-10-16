@@ -6504,6 +6504,7 @@ impl PyBayesOdp {
     /// >>> view.cdr.variance() < view.fit.reserves.variance()
     /// True
     #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
+    #[allow(clippy::too_many_arguments)]
     fn one_year(
         &self,
         py: Python<'_>,
@@ -6511,9 +6512,10 @@ impl PyBayesOdp {
         column: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,        n_sims: Option<usize>,
+        max_refits: Option<usize>,
+        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFit> {
-        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year(tri, column, &settings))
@@ -6590,6 +6592,7 @@ impl PyBayesOdp {
     /// >>> len(views.segment(lob="Home").pareto_k)
     /// 500
     #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
+    #[allow(clippy::too_many_arguments)]
     fn one_year_segments(
         &self,
         py: Python<'_>,
@@ -6597,9 +6600,10 @@ impl PyBayesOdp {
         column: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,        n_sims: Option<usize>,
+        max_refits: Option<usize>,
+        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFits> {
-        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year_segments(tri, column, &settings))
@@ -7157,20 +7161,22 @@ impl PyBayesOdpFits {
 }
 
 /// The settings of a Bayesian one-year view: `k_threshold`, the `refit`
-/// policy by name, the refit budget and the number of simulations (`None` for the model's
+/// policy by name (`None` for the model's one-year default), the refit
+/// budget and the number of simulations (`None` for the model's
 /// one-year default).
 fn one_year_settings(
     k_threshold: f64,
-    refit: &str,
+    refit: Option<&str>,
     max_refits: Option<usize>,
     n_sims: Option<usize>,
 ) -> PyResult<BayesOneYear> {
     let refit = match refit {
-        "refit_flagged" => OneYearRefit::RefitFlagged,
-        "reweight_only" => OneYearRefit::ReweightOnly,
-        "refit_all" => OneYearRefit::RefitAll,
-        "moment_match_then_refit" => OneYearRefit::MomentMatchThenRefit,
-        _ => {
+        None => None,
+        Some("refit_flagged") => Some(OneYearRefit::RefitFlagged),
+        Some("reweight_only") => Some(OneYearRefit::ReweightOnly),
+        Some("refit_all") => Some(OneYearRefit::RefitAll),
+        Some("moment_match_then_refit") => Some(OneYearRefit::MomentMatchThenRefit),
+        Some(refit) => {
             return Err(PyValueError::new_err(format!(
                 "refit must be \"moment_match_then_refit\", \"refit_flagged\", \
                  \"reweight_only\" or \"refit_all\", got {refit:?}"
@@ -8165,9 +8171,10 @@ impl PyBayesBf {
         exposure: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,        n_sims: Option<usize>,
+        max_refits: Option<usize>,
+        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFit> {
-        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year(tri, column, exposure, &settings))
@@ -8921,9 +8928,10 @@ impl PyMeyers {
         premium: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,        n_sims: Option<usize>,
+        max_refits: Option<usize>,
+        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFit> {
-        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year(tri, column, premium, &settings))
@@ -9012,9 +9020,10 @@ impl PyMeyers {
         premium: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,        n_sims: Option<usize>,
+        max_refits: Option<usize>,
+        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFits> {
-        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year_segments(tri, column, premium, &settings))
@@ -10472,18 +10481,23 @@ impl PyCompartmental {
     /// the papers' triangle) and, with development effects (model 2), an
     /// age with none take their effects as part of each posterior draw, so
     /// the year's cells update them. A simulation whose ``k`` is above
-    /// ``k_threshold`` is flagged and handled as ``refit`` says: by default
-    /// moment-matched, and refitted with NUTS (this model's sampler, as
-    /// long as ``fit``) only if its ``k`` stays above the threshold. On
-    /// company 337 about four in five of model 1's simulations are flagged
-    /// and all of model 2's; for model 1
-    /// matching rescues about nineteen in twenty of them, for model 2
-    /// none, so model 2's default view refits nearly every
-    /// simulation, each refit as long as a fit (about 31 s of wall time with 8
-    /// running side by side): set ``max_refits`` to bound it.
+    /// ``k_threshold`` is flagged and handled as ``refit`` says. On company
+    /// 337 about four in five of model 1's simulations are flagged and all
+    /// of model 2's; for model 1 moment matching rescues about nineteen in
+    /// twenty of them, for model 2 none, and a refit takes as long as a fit
+    /// (for model 2 about 31 s of wall time with 8 running side by side).
+    /// So by default (``refit=None``, the user's decision of 2026-10-16)
+    /// model 1 moment-matches its flagged simulations and refits with NUTS
+    /// only those whose ``k`` stays above the threshold, and a model with
+    /// development effects (model 2) reweights them only: that view is
+    /// approximate, about 0.4 sd of the total claims development result off
+    /// a refit per simulation, and warns so (``approximate``). Set
+    /// ``refit`` to refit them, with ``max_refits`` as a budget. The view
+    /// runs at most 2,000 simulations by default (``n_sims``).
     /// Raises one ``UserWarning`` listing the failed diagnostics of the
-    /// fit, another if any refit failed its diagnostics, and another if
-    /// ``max_refits`` left simulations unrefitted.
+    /// fit, another if any refit failed its diagnostics, another if
+    /// ``max_refits`` left simulations unrefitted, and another if the
+    /// default view is approximate.
     ///
     /// Parameters
     /// ----------
@@ -10497,10 +10511,19 @@ impl PyCompartmental {
     /// k_threshold : float, default 0.7
     ///     The Pareto ``k`` above which a simulation's importance weights
     ///     are not trusted.
-    /// refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+    /// refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, optional
     ///     What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+    ///     ``None`` (the default) takes the model's own:
+    ///     ``"moment_match_then_refit"`` without development effects (model
+    ///     1), ``"reweight_only"`` with them (model 2), with a warning.
     /// max_refits : int, optional
     ///     As in ``BayesOdp.one_year``.
+    /// n_sims : int, optional
+    ///     The number of one-year simulations. By default this model's
+    ///     ``n_sims``, at most 2,000: nearly every simulation of these
+    ///     models is flagged. The lifetime view in ``fit`` keeps
+    ///     ``n_sims``; a smaller count gives the first simulations of a
+    ///     larger one.
     ///
     /// Returns
     /// -------
@@ -10542,8 +10565,9 @@ impl PyCompartmental {
         outstanding = None,
         incurred = None,
         k_threshold = 0.7,
-        refit = "moment_match_then_refit",
+        refit = None,
         max_refits = None,
+        n_sims = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn one_year(
@@ -10555,11 +10579,12 @@ impl PyCompartmental {
         outstanding: Option<&str>,
         incurred: Option<&str>,
         k_threshold: f64,
-        refit: &str,
+        refit: Option<&str>,
         max_refits: Option<usize>,
+        n_sims: Option<usize>,
     ) -> PyResult<PyCompartmentalOneYearFit> {
         let os = compartmental_outstanding(outstanding, incurred)?;
-        let settings = one_year_settings(k_threshold, refit, max_refits, None)?;
+        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year(tri, paid, os, premium, &settings))
@@ -10575,6 +10600,12 @@ impl PyCompartmental {
                 inner.unrefitted.len(),
             )],
         )?;
+        if let Some(message) = &inner.approximate {
+            let message = std::ffi::CString::new(format!("Compartmental: {message}"))
+                .map_err(|e| PyValueError::new_err(e.to_string()))?;
+            let category = py.get_type::<pyo3::exceptions::PyUserWarning>();
+            PyErr::warn(py, category.as_any(), &message, 1)?;
+        }
         Ok(PyCompartmentalOneYearFit { inner })
     }
 
@@ -10677,7 +10708,8 @@ fn compartmental_outstanding<'a>(
 /// is an adverse development. ``pareto_k`` holds one Pareto ``k`` per
 /// simulation, ``flagged_share`` the share above ``k_threshold``;
 /// ``moment_matched``, ``refitted`` and ``unrefitted`` list what happened
-/// to the flagged simulations.
+/// to the flagged simulations; ``approximate`` says why the view is
+/// approximate when its model's default reweighted them only.
 #[pyclass(
     name = "CompartmentalOneYearFit",
     module = "prospicio.reserving",
@@ -10759,6 +10791,14 @@ impl PyCompartmentalOneYearFit {
     #[getter]
     fn unrefitted(&self) -> Vec<usize> {
         self.inner.unrefitted.clone()
+    }
+
+    /// Why the view is approximate, or ``None``: set when ``refit`` was
+    /// left to a model with development effects (model 2), whose default
+    /// reweights the flagged simulations only.
+    #[getter]
+    fn approximate(&self) -> Option<String> {
+        self.inner.approximate.clone()
     }
 
     /// How many of the refits had a diagnostic warning.

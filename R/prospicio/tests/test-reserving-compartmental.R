@@ -359,3 +359,49 @@ stopifnot(
 expect_error_like(development_frame(view), "development table")
 expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, n_sims = 10),
                   "exactly one")
+
+# The user's decisions of 2026-10-16: at most 2,000 one-year simulations
+# by default (one_year_sims sets the count; a smaller count gives the first
+# simulations of a larger one), and model 2's default view reweights only,
+# with a warning that it is approximate.
+capped <- suppressWarnings(compartmental_one_year(tri, "paid", "premium", gm,
+                                                  incurred = "incurred",
+                                                  refit = "reweight_only"))
+first <- suppressWarnings(compartmental_one_year(tri, "paid", "premium", gm,
+                                                 incurred = "incurred",
+                                                 refit = "reweight_only",
+                                                 one_year_sims = 300))
+stopifnot(
+  length(capped@pareto_k) == 2000,
+  identical(first@pareto_k, capped@pareto_k[1:300]),
+  is.null(capped@approximate)
+)
+expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
+                                         one_year_sims = 0), "n_sims")
+# Model 2 with short chains (they may miss a diagnostic threshold).
+two <- with_warnings(compartmental_model_2_one_year(tri, "paid", "premium", gm2,
+                                                    incurred = "incurred", chains = 2,
+                                                    tune = 200, draws = 200,
+                                                    target_accept = 0.9,
+                                                    one_year_sims = 50))
+stopifnot(
+  length(two$value@pareto_k) == 50,
+  identical(two$value@refitted, integer()),
+  identical(two$value@moment_matched, integer()),
+  grepl("approximate", two$value@approximate, fixed = TRUE),
+  any(grepl("approximate", two$warnings, fixed = TRUE))
+)
+# Refits stay a choice: an explicit mode carries no warning.
+chosen <- with_warnings(compartmental_model_2_one_year(tri, "paid", "premium", gm2,
+                                                       incurred = "incurred", chains = 2,
+                                                       tune = 200, draws = 200,
+                                                       target_accept = 0.9,
+                                                       one_year_sims = 50,
+                                                       refit = "reweight_only"))
+stopifnot(
+  is.null(chosen$value@approximate),
+  !any(grepl("approximate", chosen$warnings, fixed = TRUE)),
+  identical(chosen$value@pareto_k, two$value@pareto_k)
+)
+expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
+                                         refit = "sometimes"), "should be one of")

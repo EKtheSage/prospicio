@@ -1766,7 +1766,7 @@ Triangle$meyers_one_year_segments <- function(column, premium, model, priors, ru
 
 Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
 
-Triangle$compartmental_one_year <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits) .Call(wrap__Triangle__compartmental_one_year, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits)
+Triangle$compartmental_one_year <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__compartmental_one_year, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims)
 
 Triangle$compartmental_prior_predictive <- function(premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental_prior_predictive, self, premium, priors, families, settings, run)
 
@@ -2322,6 +2322,8 @@ CompartmentalOneYearFit$moment_matched <- function() .Call(wrap__CompartmentalOn
 CompartmentalOneYearFit$unrefitted <- function() .Call(wrap__CompartmentalOneYearFit__unrefitted, self)
 
 CompartmentalOneYearFit$refit_warnings <- function() .Call(wrap__CompartmentalOneYearFit__refit_warnings, self)
+
+CompartmentalOneYearFit$approximate <- function() .Call(wrap__CompartmentalOneYearFit__approximate, self)
 
 CompartmentalOneYearFit$k_threshold <- function() .Call(wrap__CompartmentalOneYearFit__k_threshold, self)
 

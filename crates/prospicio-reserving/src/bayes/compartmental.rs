@@ -18,13 +18,21 @@ use prospicio_prob::{
 
 use super::dual::{CHUNK, Dual, gradient};
 use super::laplace::{Posterior, Whitened, mode};
-use super::one_year::{self, BayesOneYear, BayesOneYearFit};
+use super::one_year::{self, BayesOneYear, BayesOneYearFit, OneYearRefit};
 use super::scalar::{Scalar, exprel_neg};
 use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
 use crate::bootstrap::{component_sums, push_moments};
 use crate::error::{Error, Result};
 use crate::segments::FitTable;
 use crate::triangle::{Segment, Triangle};
+
+/// The warning of a one-year view that reweights only by its model's
+/// default ([`Compartmental::one_year_refit`]).
+const APPROXIMATE: &str = "the one-year view reweights its flagged simulations only, the \
+default with development effects (model 2): moment matching rescues none of them and each \
+refit takes about as long as a fit. The view is approximate, about 0.4 sd of the total \
+claims development result off a refit per simulation on company 337; set refit (with \
+max_refits as a budget) to refit them";
 
 /// The one-compartment closed form (decision 2) per unit of premium:
 /// `OS(t) / (Π RLR) = k_er g(t)` and
@@ -639,7 +647,9 @@ pub struct Compartmental {
     /// NUTS settings. Its `seed` is not used: the chains take a seed derived
     /// from [`seed`](Self::seed) (module docs, "Seeds").
     pub sampler: Sampler,
-    /// Number of predictive simulations.
+    /// Number of predictive simulations. The one-year view runs at most
+    /// [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS) of them unless its settings'
+    /// [`n_sims`](BayesOneYear::n_sims) says otherwise.
     pub n_sims: usize,
     /// Seed of the chains (and the pilot run) and of the simulations, each
     /// through its own derived seed (module docs, "Seeds").
@@ -647,6 +657,15 @@ pub struct Compartmental {
 }
 
 impl Compartmental {
+    /// The most one-year simulations [`one_year`](Self::one_year) runs by
+    /// default (`BayesOneYear::n_sims` `None`): 2,000, against the 10,000
+    /// of the lifetime view, since nearly every simulation of these models
+    /// is flagged and costs a moment match, a NUTS refit or (model 2) the
+    /// reweighting of 95 parameters (the user's decision of 2026-10-16,
+    /// `docs/design/reserving-bayes.md` decision 20). A model whose
+    /// [`n_sims`](Self::n_sims) is smaller runs that many.
+    pub const ONE_YEAR_SIMS: usize = 2_000;
+
     /// The model with `priors` and the defaults: model 1 (normal on amounts,
     /// cumulative paid, paid and outstanding), free rate order, the
     /// data-based start, four chains of 1,000 warm-up and 2,000 kept draws
@@ -857,6 +876,17 @@ impl Compartmental {
     /// the triangle extended by its year) only when matching cannot bring
     /// its `k̂` to the threshold, or as [`BayesOneYear::refit`] says.
     ///
+    /// The defaults (the user's decision of 2026-10-16, decision 20): at
+    /// most [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS) simulations, and the
+    /// refit mode of [`one_year_refit`](Self::one_year_refit) when the
+    /// settings' `refit` is `None`. With development effects (model 2) that
+    /// is reweighting only: moment matching rescues none of its flagged
+    /// simulations on company 337 and a refit takes about as long as a fit,
+    /// so the default view is approximate (about 0.4 sd of the total claims
+    /// development result off a refit per simulation) and says so in
+    /// [`approximate`](BayesOneYearFit::approximate). Set `refit` to refit
+    /// (with [`max_refits`](BayesOneYear::max_refits) as a budget).
+    ///
     /// An origin with no observed cell (the papers' 1997) and, with
     /// development effects (model 2), an age with none take their effects
     /// from the population in [`fit`](Self::fit)'s simulations; here they
@@ -915,13 +945,16 @@ impl Compartmental {
     ///     n_sims: 500,
     ///     ..preset
     /// };
-    /// // Reweighting only, for speed: the default moment-matches the
+    /// // Reweighting only, for speed: model 1's default moment-matches the
     /// // flagged simulations and refits those it cannot rescue.
-    /// let only = BayesOneYear { refit: OneYearRefit::ReweightOnly, ..BayesOneYear::default() };
+    /// assert_eq!(model.one_year_refit(), OneYearRefit::MomentMatchThenRefit);
+    /// let only = BayesOneYear { refit: Some(OneYearRefit::ReweightOnly), ..BayesOneYear::default() };
     /// let view = model.one_year(&tri, "paid", Outstanding::FromIncurred("incurred"), "premium", &only)?;
     /// assert_eq!(view.cdr.n_components(), 5);
     /// // 1988 is at the square's last age: no cell in the year, no change.
     /// assert!(view.cdr.draw_matrix().chunks(5).all(|row| row[0] == 0.0));
+    /// // A refit mode the settings choose is used as it is: not approximate.
+    /// assert_eq!(view.approximate, None);
     /// # Ok::<(), prospicio_reserving::Error>(())
     /// ```
     pub fn one_year(
@@ -933,6 +966,8 @@ impl Compartmental {
         settings: &BayesOneYear,
     ) -> Result<BayesOneYearFit<CompartmentalFit>> {
         settings.validate()?;
+        let (settings, n_sims, approximate) = self.one_year_defaults(settings);
+        let settings = &settings;
         let fit = self.fit(triangle, paid, outstanding, premium)?;
         let view_seed = one_year_seed(derive_seed(self.seed, Stream::Predictive));
         let year = year::CompartmentalYear::new(self, &fit.data)?;
@@ -943,7 +978,6 @@ impl Compartmental {
             &fit.sampled,
             StreamRng::new(view_seed, u64::MAX).next_u64(),
         )?;
-        let n_sims = settings.sims(self.n_sims);
         let draws = one_year::simulate(&year, &opening, settings, n_sims, view_seed)?;
         let mut provenance = fit.reserves.provenance().clone();
         provenance.parameters.retain(|(k, _)| k != "output");
@@ -971,7 +1005,45 @@ impl Compartmental {
             unrefitted: draws.unrefitted,
             refit_warnings: draws.refit_warnings,
             k_threshold: settings.k_threshold,
+            approximate,
         })
+    }
+
+    /// The one-year view's refit mode when its settings' `refit` is `None`
+    /// (the user's decision of 2026-10-16, `docs/design/reserving-bayes.md`
+    /// decision 20): [`OneYearRefit::ReweightOnly`] with development effects
+    /// in the priors (model 2), whose flagged simulations moment matching
+    /// does not rescue and whose refits each take about as long as a fit;
+    /// [`OneYearRefit::MomentMatchThenRefit`] without (model 1).
+    pub fn one_year_refit(&self) -> OneYearRefit {
+        if self
+            .priors
+            .development_effect_sd
+            .iter()
+            .any(Option::is_some)
+        {
+            OneYearRefit::ReweightOnly
+        } else {
+            OneYearRefit::MomentMatchThenRefit
+        }
+    }
+
+    /// `settings` with this model's one-year defaults in place of a `None`
+    /// refit mode ([`one_year_refit`](Self::one_year_refit)), the number of
+    /// one-year simulations (the settings' `n_sims`, or this model's capped
+    /// at [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS)), and the view's
+    /// [`approximate`](BayesOneYearFit::approximate) warning: set when the
+    /// default leaves the flagged simulations reweighted only.
+    fn one_year_defaults(&self, settings: &BayesOneYear) -> (BayesOneYear, usize, Option<String>) {
+        let default_refit = self.one_year_refit();
+        let approximate = (settings.refit.is_none() && default_refit == OneYearRefit::ReweightOnly)
+            .then(|| APPROXIMATE.to_string());
+        let n_sims = settings.sims(self.n_sims.min(Self::ONE_YEAR_SIMS));
+        (
+            settings.with_refit_default(default_refit),
+            n_sims,
+            approximate,
+        )
     }
 
     /// Paths of the mean outstanding and cumulative paid of each origin of
@@ -3183,6 +3255,54 @@ mod tests {
         Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
     }
 
+    /// The one-year defaults of the user's decision of 2026-10-16: model 1
+    /// moment-matches, model 2 (development effects) reweights only with a
+    /// warning, a refit mode the settings choose is kept without one, and
+    /// both run at most 2,000 one-year simulations unless told otherwise.
+    #[test]
+    fn the_one_year_defaults_follow_the_model() {
+        let default = BayesOneYear::default();
+        let (one, sims, warning) = preset().one_year_defaults(&default);
+        assert_eq!(one.refit, Some(OneYearRefit::MomentMatchThenRefit));
+        assert_eq!((sims, warning), (Compartmental::ONE_YEAR_SIMS, None));
+        let (two, sims, warning) = preset_2().one_year_defaults(&default);
+        assert_eq!(two.refit, Some(OneYearRefit::ReweightOnly));
+        assert_eq!(sims, 2_000);
+        let warning = warning.expect("model 2's default view warns");
+        assert!(warning.contains("approximate") && warning.contains("0.4 sd"));
+        // Refits stay a choice: an explicit mode, even the other models'
+        // default, is used as it is and is not approximate.
+        for refit in [
+            OneYearRefit::MomentMatchThenRefit,
+            OneYearRefit::RefitFlagged,
+            OneYearRefit::ReweightOnly,
+        ] {
+            let chosen = BayesOneYear {
+                refit: Some(refit),
+                n_sims: Some(300),
+                ..default
+            };
+            let (two, sims, warning) = preset_2().one_year_defaults(&chosen);
+            assert_eq!((two.refit, sims, warning), (Some(refit), 300, None));
+        }
+        // A model with fewer simulations runs that many; more are capped.
+        let small = Compartmental {
+            n_sims: 500,
+            ..preset_2()
+        };
+        assert_eq!(small.one_year_defaults(&default).1, 500);
+        let large = Compartmental {
+            n_sims: 50_000,
+            ..preset()
+        };
+        assert_eq!(large.one_year_defaults(&default).1, 2_000);
+        let more = BayesOneYear {
+            n_sims: Some(20_000),
+            ..default
+        };
+        assert_eq!(large.one_year_defaults(&more).1, 20_000);
+    }
+
     /// Points around the paper's posterior (model 1's, or model 2's when
     /// the model has effects by cell): `theta` at the printed means with a
     /// deterministic spread.
@@ -4317,7 +4437,7 @@ mod tests {
     fn the_opening_reserve_is_the_fits() {
         use crate::bayes::one_year::YearModel;
         let only = BayesOneYear {
-            refit: OneYearRefit::ReweightOnly,
+            refit: Some(OneYearRefit::ReweightOnly),
             ..BayesOneYear::default()
         };
         for preset in [preset(), preset_2()] {
@@ -4394,7 +4514,7 @@ mod tests {
                 incurred(),
                 "premium",
                 &BayesOneYear {
-                    refit,
+                    refit: Some(refit),
                     max_refits,
                     ..BayesOneYear::default()
                 },

@@ -4688,20 +4688,24 @@ S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
 #' the year's cells update them.
 #'
 #' A simulation whose k is above `k_threshold` is flagged and handled as
-#' `refit` says (as [bayes_odp_one_year()]): by default moment-matched,
-#' and refitted with NUTS (this model's sampler, as long as the fit) only
-#' if its k stays above the threshold. On company 337 about four in five of
-#' model 1's simulations are flagged and all of model 2's;
-#' for model 1 matching rescues about nineteen in
-#' twenty of them, for model 2 none, so model 2's default view
-#' refits nearly every simulation, each refit as long as a fit (about 31 s of
-#' wall time with 8 running side by side): set `max_refits`
-#' to bound it. `compartmental_model_2_one_year()` takes model 2's
-#' settings, as [compartmental_model_2()].
+#' `refit` says (as [bayes_odp_one_year()]). On company 337 about four in
+#' five of model 1's simulations are flagged and all of model 2's; for
+#' model 1 moment matching rescues about nineteen in twenty of them, for
+#' model 2 none, and a refit takes as long as a fit (for model 2 about
+#' 31 s of wall time with 8 running side by side). So by default
+#' (`refit = NULL`, the user's decision of 2026-10-16) model 1
+#' moment-matches its flagged simulations and refits with NUTS only those
+#' whose k stays above the threshold, and a model with development effects
+#' (model 2) reweights them only: that view is approximate, about 0.4 sd of
+#' the total claims development result off a refit per simulation, and
+#' warns so (`approximate`). Set `refit` to refit them, with `max_refits`
+#' as a budget. The view runs `one_year_sims` simulations, by default
+#' `n_sims` capped at 2,000. `compartmental_model_2_one_year()` takes model
+#' 2's settings, as [compartmental_model_2()].
 #'
 #' Failed MCMC diagnostics of the fit raise one [warning()] listing them,
-#' refits that failed theirs raise another, and simulations left
-#' unrefitted by `max_refits` another.
+#' refits that failed theirs raise another, simulations left unrefitted by
+#' `max_refits` another, and a default view that is approximate another.
 #'
 #' Properties of a `compartmental_one_year_fit`: `fit` (the
 #' [compartmental_fit]), `origins` (the premium column's), per origin
@@ -4711,7 +4715,8 @@ S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
 #' dimension `origin` (a negative value is an adverse development);
 #' `pareto_k`, `refitted`, `moment_matched` and `unrefitted` (1-based),
 #' `refit_warnings`, `k_threshold` and `flagged_share`, as a
-#' [bayes_one_year_fit]'s. `as.data.frame()` has one row per origin:
+#' [bayes_one_year_fit]'s; `approximate`, why the view is approximate
+#' (`NULL` unless the model's default reweighted only). `as.data.frame()` has one row per origin:
 #' `origin`, `premium`, `latest_paid`, `opening_ultimate`,
 #' `opening_reserve`, and the `cdr_mean` and `cdr_std_dev` of the claims
 #' development result; [totals_frame()] their totals and the
@@ -4724,6 +4729,13 @@ S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
 #'
 #' @inheritParams compartmental_fit
 #' @inheritParams bayes_one_year_fit
+#' @param refit What happens to a flagged simulation, as in
+#'   [bayes_odp_one_year()], or `NULL` (the default) for the model's own:
+#'   `"moment_match_then_refit"` without development effects (model 1),
+#'   `"reweight_only"` with them (model 2), with a warning.
+#' @param one_year_sims The number of one-year simulations, or `NULL` (the
+#'   default) for `n_sims` capped at 2,000. The lifetime reserves keep
+#'   `n_sims`. A smaller count gives the first simulations of a larger one.
 #' @param ptr A `CompartmentalOneYearFit` pointer; used internally.
 #' @returns A `compartmental_one_year_fit` object.
 #' @seealso [compartmental()], [bayes_odp_one_year()], [meyers_one_year()].
@@ -4782,6 +4794,10 @@ compartmental_one_year_fit <- S7::new_class(
       }),
       flagged_share = S7::new_property(S7::class_double, getter = function(self) {
         self@ptr$flagged_share()
+      }),
+      approximate = S7::new_property(NULL | S7::class_character, getter = function(self) {
+        a <- self@ptr$approximate()
+        if (length(a)) a else NULL
       })
     )
   }),
@@ -4801,9 +4817,7 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
                                    start = c("data", "prior_centre"), chains = 4, tune = 1000,
                                    draws = 2000, n_sims = 10000, seed = 0,
                                    target_accept = 0.99, max_depth = 10, k_threshold = 0.7,
-                                   refit = c("moment_match_then_refit", "refit_flagged",
-                                             "reweight_only", "refit_all"),
-                                   max_refits = NULL) {
+                                   refit = NULL, max_refits = NULL, one_year_sims = NULL) {
   call <- sys.call()
   check_triangle(triangle)
   for (arg in c("paid", "premium")) {
@@ -4829,11 +4843,15 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
   }
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
                 "paid_and_outstanding", match.arg(rate_order), match.arg(start))
-  refit <- match.arg(refit)
+  if (!is.null(refit)) {
+    refit <- match.arg(refit, c("moment_match_then_refit", "refit_flagged", "reweight_only",
+                                "refit_all"))
+  }
   ptr <- rust_result(triangle@ptr$compartmental_one_year(
     paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth),
-    single_number(k_threshold, "k_threshold"), refit, max_refits_arg(max_refits)),
+    single_number(k_threshold, "k_threshold"), refit, max_refits_arg(max_refits),
+    optional_number(one_year_sims, "one_year_sims")),
     call = call)
   view <- compartmental_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
@@ -4843,6 +4861,9 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
   }
   warn_refits("compartmental_one_year", "", length(view@refitted), view@refit_warnings,
               length(view@unrefitted))
+  if (!is.null(view@approximate)) {
+    warning("compartmental_one_year: ", view@approximate, call. = FALSE)
+  }
   view
 }
 
@@ -4853,11 +4874,8 @@ compartmental_model_2_one_year <- function(triangle, paid, premium, priors, outs
                                            start = c("data", "prior_centre"), chains = 4,
                                            tune = 2000, draws = 8000, n_sims = 10000, seed = 0,
                                            target_accept = 0.999, max_depth = 10,
-                                           k_threshold = 0.7,
-                                           refit = c("moment_match_then_refit",
-                                                     "refit_flagged", "reweight_only",
-                                                     "refit_all"),
-                                           max_refits = NULL) {
+                                           k_threshold = 0.7, refit = NULL,
+                                           max_refits = NULL, one_year_sims = NULL) {
   if (missing(priors)) {
     stop(paste0("priors are required: use gesmann_morris_2_priors() for the paper's model 2, ",
                 "or compartmental_priors(), and check them with compartmental_prior_predictive()"),
@@ -4869,7 +4887,8 @@ compartmental_model_2_one_year <- function(triangle, paid, premium, priors, outs
                          start = match.arg(start), chains = chains, tune = tune, draws = draws,
                          n_sims = n_sims, seed = seed, target_accept = target_accept,
                          max_depth = max_depth, k_threshold = k_threshold,
-                         refit = match.arg(refit), max_refits = max_refits)
+                         refit = refit, max_refits = max_refits,
+                         one_year_sims = one_year_sims)
 }
 
 S7::method(as.data.frame, compartmental_one_year_fit) <- function(x, ...) {

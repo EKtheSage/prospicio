@@ -60,8 +60,10 @@ pub enum OneYearRefit {
     /// `loo::loo_moment_match`: the posterior draws moved by affine maps
     /// to the weighted moments until `k̂` is at most the threshold), and
     /// refit with NUTS only those it cannot bring there; reweight the
-    /// others. The default (decision 18): on the checked triangles as
-    /// accurate as `RefitFlagged` at a fifteenth of its cost or less.
+    /// others. The default of every model (decision 18) but `Compartmental`
+    /// with development effects (model 2), whose flagged simulations it
+    /// does not rescue (decision 20): on the checked triangles as accurate
+    /// as `RefitFlagged` at a fifteenth of its cost or less.
     #[default]
     MomentMatchThenRefit,
 }
@@ -76,7 +78,11 @@ pub enum OneYearRefit {
 ///
 /// let settings = BayesOneYear::default();
 /// assert_eq!(settings.k_threshold, 0.7);
-/// assert_eq!(settings.refit, OneYearRefit::MomentMatchThenRefit);
+/// // The model's own default: moment matching, or reweighting only for
+/// // `Compartmental` with development effects (model 2).
+/// assert_eq!(settings.refit, None);
+/// let matched = BayesOneYear { refit: Some(OneYearRefit::MomentMatchThenRefit), ..settings };
+/// assert_ne!(matched, settings);
 /// assert_eq!(settings.max_refits, None);
 /// // The model's own default number of one-year simulations.
 /// assert_eq!(settings.n_sims, None);
@@ -86,8 +92,16 @@ pub struct BayesOneYear {
     /// A simulation whose Pareto `k̂` is above this is flagged (0.7, the
     /// threshold of Vehtari et al. 2024 for a few thousand draws).
     pub k_threshold: f64,
-    /// What happens to a flagged simulation.
-    pub refit: OneYearRefit,
+    /// What happens to a flagged simulation. `None` (the default) takes the
+    /// model's one-year default: [`OneYearRefit::MomentMatchThenRefit`] for
+    /// every model but `Compartmental` with development effects (model 2),
+    /// which reweights only ([`OneYearRefit::ReweightOnly`]) and says in the
+    /// view's [`approximate`](BayesOneYearFit::approximate) that the view is
+    /// approximate, since moment matching rescues none of its flagged
+    /// simulations and each refit takes as long as a fit (the user's
+    /// decision of 2026-10-16, `docs/design/reserving-bayes.md` decision
+    /// 20). `Some` mode is used as it is, for any model.
+    pub refit: Option<OneYearRefit>,
     /// The most simulations refitted with NUTS (decision 20): the first
     /// this many that `refit` sends to a refit, in simulation order; the
     /// others are reweighted as they are and listed in the view's
@@ -115,7 +129,7 @@ impl Default for BayesOneYear {
     fn default() -> Self {
         Self {
             k_threshold: 0.7,
-            refit: OneYearRefit::MomentMatchThenRefit,
+            refit: None,
             max_refits: None,
             n_sims: None,
         }
@@ -147,10 +161,26 @@ impl BayesOneYear {
         self.n_sims.unwrap_or(model_default)
     }
 
+    /// These settings with [`refit`](Self::refit) set to `model_default`
+    /// when it is `None`.
+    pub(crate) fn with_refit_default(&self, model_default: OneYearRefit) -> Self {
+        Self {
+            refit: Some(self.refit.unwrap_or(model_default)),
+            ..*self
+        }
+    }
+
+    /// What happens to a flagged simulation: [`refit`](Self::refit), or
+    /// moment matching (every model's default but one, which resolves its
+    /// own with [`with_refit_default`](Self::with_refit_default)).
+    pub(crate) fn mode(&self) -> OneYearRefit {
+        self.refit.unwrap_or_default()
+    }
+
     /// Whether a simulation with Pareto `k` is not simply reweighted:
     /// refitted, or (`MomentMatchThenRefit`) moment-matched first.
     fn refits(&self, k: f64) -> bool {
-        match self.refit {
+        match self.mode() {
             OneYearRefit::ReweightOnly => false,
             // A NaN k is flagged, and an infinite one (too few draws to fit the
             // tail) is above any finite threshold.
@@ -309,7 +339,7 @@ pub(crate) fn simulate<M: YearModel>(
     let closing_by_draw = (!model.closing_uses_year())
         .then(|| per_draw(&|theta, row| model.closing(theta, &[], row)));
     // The opening draws' log posterior, once, for moment matching.
-    let matching = (settings.refit == OneYearRefit::MomentMatchThenRefit)
+    let matching = (settings.mode() == OneYearRefit::MomentMatchThenRefit)
         .then(|| moment_match::Opening::new(model, posterior));
 
     let failures = Mutex::new(Failures::default());
@@ -559,6 +589,7 @@ pub(crate) fn assemble<F: ReserveFit>(
         unrefitted: year.unrefitted,
         refit_warnings: year.refit_warnings,
         k_threshold: settings.k_threshold,
+        approximate: None,
     })
 }
 
@@ -752,9 +783,11 @@ pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     /// The simulations refitted with NUTS, in order.
     pub refitted: Vec<usize>,
     /// The simulations that moment matching rescued (their `k̂` brought to
-    /// at most the threshold), in order; empty unless the settings'
-    /// `refit` is [`OneYearRefit::MomentMatchThenRefit`]. Each flagged
-    /// simulation is then in this, in `refitted` or in `unrefitted`.
+    /// at most the threshold), in order; empty unless the view
+    /// moment-matches ([`OneYearRefit::MomentMatchThenRefit`], the default
+    /// of every model but `Compartmental` with development effects). Each
+    /// flagged simulation is then in this, in `refitted` or in
+    /// `unrefitted`.
     pub moment_matched: Vec<usize>,
     /// The simulations due for a refit beyond
     /// [`BayesOneYear::max_refits`], reweighted instead (their
@@ -766,6 +799,11 @@ pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     pub refit_warnings: usize,
     /// The settings' threshold, for [`flagged_share`](Self::flagged_share).
     pub k_threshold: f64,
+    /// Why the view is approximate by its model's default, or `None`: set
+    /// when the settings left [`refit`](BayesOneYear::refit) to a model that
+    /// then reweights its flagged simulations only (`Compartmental` with
+    /// development effects, model 2, decision 20). Python and R warn with it.
+    pub approximate: Option<String>,
 }
 
 impl<F: ReserveFit> BayesOneYearFit<F> {
@@ -954,7 +992,7 @@ pub(crate) fn provenance(
 ) -> Provenance {
     let provenance = provenance
         .param("k_threshold", settings.k_threshold)
-        .param("refit", format!("{:?}", settings.refit))
+        .param("refit", format!("{:?}", settings.mode()))
         .param("one_year_sims", n_sims);
     match settings.max_refits {
         // Unchanged without a budget, as before decision 20.
@@ -973,17 +1011,17 @@ mod tests {
         assert!(!s.refits(0.69) && s.refits(0.71) && s.refits(f64::INFINITY));
         assert!(s.refits(f64::NAN));
         let only = BayesOneYear {
-            refit: OneYearRefit::ReweightOnly,
+            refit: Some(OneYearRefit::ReweightOnly),
             ..s
         };
         assert!(!only.refits(f64::INFINITY));
         let all = BayesOneYear {
-            refit: OneYearRefit::RefitAll,
+            refit: Some(OneYearRefit::RefitAll),
             ..s
         };
         assert!(all.refits(-1.0));
         let matching = BayesOneYear {
-            refit: OneYearRefit::MomentMatchThenRefit,
+            refit: Some(OneYearRefit::MomentMatchThenRefit),
             ..s
         };
         assert!(!matching.refits(0.69) && matching.refits(0.71) && matching.refits(f64::NAN));
@@ -1070,7 +1108,7 @@ pub(crate) mod conformance {
 
         // 2. The claims development result has mean zero.
         let only = BayesOneYear {
-            refit: OneYearRefit::ReweightOnly,
+            refit: Some(OneYearRefit::ReweightOnly),
             ..BayesOneYear::default()
         };
         let n = 2_000;
@@ -1109,7 +1147,7 @@ pub(crate) mod conformance {
             OneYearRefit::MomentMatchThenRefit,
         ] {
             let settings = BayesOneYear {
-                refit,
+                refit: Some(refit),
                 ..BayesOneYear::default()
             };
             let view = simulate(closed, closed_posterior, &settings, 50, 7).unwrap();

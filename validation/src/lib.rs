@@ -137,7 +137,8 @@ pub fn check(cases: &[Case], mut eval: impl FnMut(&Case) -> Option<f64>) {
 /// to anything but the empty string, as CI's weekly and manual
 /// (`workflow_dispatch`) runs set it. Without it, a pull request runs a
 /// smoke version of the slowest one-year checks (Meyers' and the
-/// compartmental models' one-year views: one model each; the user's
+/// compartmental models' one-year views: Meyers' CRC, and compartmental model
+/// 1 without its refit comparison; the user's
 /// decision of 2026-10-16). Every arm compiles either way, so clippy lints
 /// it; only what runs depends on the variable.
 pub fn full_bayes() -> bool {

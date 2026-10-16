@@ -9,7 +9,8 @@ name: CI
 # Bayesian parity files sit behind prospicio-validation's `slow-bayes`, and
 # prospicio-reserving's NUTS unit tests are ignored without its `slow-tests`.
 # Of the slowest Bayesian checks, Meyers' and the compartmental models'
-# one-year views, a PR runs a smoke version (one model each); the weekly
+# one-year views, a PR runs a smoke version (Meyers' CRC; compartmental
+# model 1 without its refit comparison); the weekly
 # and manual runs set RISK_RS_FULL_BAYES and run them all.
 # The scheduled run also keeps main's caches warm for new PRs.
 on:
