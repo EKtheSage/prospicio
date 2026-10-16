@@ -106,4 +106,4 @@
   others at load. `OnnxPredictor` binds graph inputs to design columns,
   reads the output as a mean or on a link's scale with the offset, and
   implements `Fitted` with process draws from a family. Matches
-  onnxruntime within float32 rounding.
+  onnxruntime within float32 rounding (#306).
