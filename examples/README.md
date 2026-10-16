@@ -25,6 +25,17 @@ For explanations in prose, with runnable code and checked numbers, see the
 explains the pricing that the notebook `reinsurance_pricing.ipynb` checks.
 The guides are on the docs site too, in the same User Guide.
 
+## R versions
+
+`one_year_view.qmd` and `reinsurance_pricing.qmd` are Quarto twins of the first two notebooks for the R package, with the same data, seeds and model. Rendered against the library they give the notebooks' numbers: `one_year_view.qmd` every printed digit, `reinsurance_pricing.qmd` the same 343 comparisons (321 independent). Install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`) and `ggplot2`, then from anywhere in the repository:
+
+```sh
+quarto render examples/one_year_view.qmd
+quarto render examples/reinsurance_pricing.qmd
+```
+
+CI does not render the `.qmd` files yet; render them after a change to the R bindings. Rendered `.html` is not committed.
+
 ## Running a notebook
 
 To run one, clone the repository (the notebooks read their data from
