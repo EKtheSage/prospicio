@@ -78,6 +78,8 @@ category of Insert Function:
 | `PRO.CRED.WEIGHTED(estimate, credibility, complement)` | A credibility-weighted estimate |
 | `PRO.EXPENSES(ratios, [fixed_shares])` | The premium-based projection's fixed and variable expense ratios |
 | `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost from large losses: each accident year's trended layer losses, developed, over its premium |
+| `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], [probabilities], [step], [points])` | The annual aggregate loss, ground up or to a per-occurrence layer: mean, SD, CV, skewness, VaR, TVaR and the grid |
+| `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits, attachments, [shares], [step], [points])` | Per-occurrence layer statistics, one column per layer (`aggregate`'s `reins_stats_df`) |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
@@ -303,6 +305,21 @@ real Excel.
     is the exception: `PRO.BURNINGCOST` puts an Excel date at its exact
     decimal year (day of the year over the days in it), since the grid
     would move 31 December into the next accident year.
+20. **An aggregate is a count by mean and dispersion and a severity by
+    family** (decision 12): `count_mean, [dispersion]` picks the Panjer
+    class (dispersion 1 Poisson, above negative binomial, below binomial),
+    so `aggregate`'s mixing CV `c` is the dispersion `1 + c² E N`. The
+    FFT grid is sized as `prospicio_aggregate::fft_auto` sizes it ground
+    up; for a finite layer the severity's grid splits the layer's top
+    into about 4,096 steps and the total runs to its mean plus 12 SDs
+    (at most 2^20 points). `step` and `points` override both, rounding the
+    severity onto `points` buckets with the mass above lumped at the top,
+    as `aggregate` caps it, so a sheet can reproduce `aggregate`'s
+    numbers. Ground-up moments are exact when finite (the grid's mean is
+    shown beside them); a layer's are the grid's; VaR and TVaR are the
+    grid's. The count is unwrapped from `PanjerClass` into its concrete
+    family, whose third cumulant is closed form
+    (`knowledge/findings/panjer-class-third-cumulant.md`).
 
 ## Parity plan
 
@@ -330,8 +347,8 @@ order, one small PR each, those already done struck through:
    ~~credibility (Buhlmann-Straub, limited fluctuation)~~; ~~ratemaking
    (trend fits and lengths, the rate level, the experience methods and
    the indicated rate)~~; ~~burning cost~~.
-4. Aggregate: a compound distribution of a count and a severity, its
-   moments, VaR, TVaR and layer statistics.
+4. ~~Aggregate: a compound distribution of a count and a severity, its
+   moments, VaR, TVaR and layer statistics~~.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting,
 Bayesian models), copulas and vines, the P&L ledger, catastrophe event
