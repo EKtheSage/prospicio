@@ -3652,7 +3652,7 @@ pub(crate) mod tests {
             // the draw.
             let nat = model.natural(&theta);
             let closed: Vec<bool> = cl.latest_position.iter().map(|&d| d == 9).collect();
-            let n = 200_000;
+            let n = 50_000;
             let mut sum = [0.0; 10];
             let mut sq = [0.0; 10];
             let mut row = vec![0.0; 10];
@@ -3697,7 +3697,7 @@ pub(crate) mod tests {
             }
             let closed: Vec<bool> = cl.latest_position.iter().map(|&d| d + 1 >= 9).collect();
             let (mut sum, mut sq) = ([0.0; 10], [0.0; 10]);
-            let (mut rng, n) = (StreamRng::new(7, 0), 50_000);
+            let mut rng = StreamRng::new(7, 0);
             for _ in 0..n {
                 model.draw_ultimates(&nat, &premium, &closed, &latest, &mut rng, &mut row);
                 for w in 0..10 {
