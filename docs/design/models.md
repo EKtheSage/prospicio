@@ -301,6 +301,14 @@ models and compares them.
   binding: a density written in Python or R would call back into the
   interpreter at every gradient. Passing external traces to the
   diagnostics is not built yet (see above).
+- **Bayesian hierarchical credibility** (`prospicio_bayes::credibility`):
+  Bühlmann–Straub's model and Jewell's hierarchy of it as a normal
+  random-effects model, the group and node means integrated out in closed
+  form so NUTS samples only the standard deviations; the premiums are
+  the credibility formula averaged over their posterior. Designed and
+  validated in `docs/design/credibility.md` ("Bayesian hierarchical
+  credibility"): parity with `actuar::cm` at given structure parameters,
+  and with grid integration of the posterior.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

@@ -1,10 +1,15 @@
-//! Aggregate lane: classical credibility for the R `credibility.R` API
+//! Aggregate lane: classical credibility, and Models lane: Bayesian
+//! hierarchical credibility, for the R `credibility.R` API
 //! (`docs/design/credibility.md`).
 
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
+use prospicio_bayes::credibility::{
+    CredibilityPriors, HierarchicalCredibility, HierarchicalCredibilityFit, Sampler, ScalePrior,
+};
 use prospicio_pricing::credibility::{BuhlmannStraub, LimitedFluctuation, StructureEstimator};
 
+use crate::distributions::PredictiveDistribution;
 use crate::{to_r, whole};
 
 /// Full limited-fluctuation standards for `p`, `k` and severity `cv`:
@@ -78,8 +83,215 @@ fn buhlmann_straub_rust(
     ))
 }
 
+/// The hierarchy from R: a list of integer vectors, one per level
+/// (outermost first), each group's node from 1.
+fn levels_from(levels: List, groups: usize) -> Result<Vec<Vec<usize>>> {
+    levels
+        .values()
+        .map(|v| {
+            let v = v
+                .as_real_vector()
+                .ok_or_else(|| Error::Other("each level must be a numeric vector".into()))?;
+            if v.len() != groups {
+                return Err(Error::Other(format!(
+                    "a level names {} nodes for {groups} groups",
+                    v.len()
+                )));
+            }
+            v.iter()
+                .map(|&x| {
+                    let k = whole(x, "levels")?;
+                    if k == 0 {
+                        return Err(Error::Other("levels' nodes run from 1".into()));
+                    }
+                    Ok(k as usize - 1)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// A scale prior from `kind` ("half_normal" or "half_cauchy") and `scale`.
+fn scale_prior(kind: &str, scale: f64) -> Result<ScalePrior> {
+    match kind {
+        "half_normal" => Ok(ScalePrior::HalfNormal(scale)),
+        "half_cauchy" => Ok(ScalePrior::HalfCauchy(scale)),
+        other => Err(Error::Other(format!(
+            "a scale prior is \"half_normal\" or \"half_cauchy\", got {other}"
+        ))),
+    }
+}
+
+/// Bayesian hierarchical credibility on a groups x periods matrix
+/// (column-major). `collective_mean` empty for a flat prior or
+/// `c(mean, sd)`; `within_kind` empty for the default; `between_kinds`
+/// and `between_scales` empty for the defaults or one per level.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn hierarchical_credibility_rust(
+    ratios: &[f64],
+    weights: &[f64],
+    nrow: f64,
+    ncol: f64,
+    levels: List,
+    collective_mean: &[f64],
+    within_kind: &str,
+    within_scale: f64,
+    between_kinds: Vec<String>,
+    between_scales: &[f64],
+    chains: f64,
+    tune: f64,
+    draws: f64,
+    seed: f64,
+) -> Result<HierarchicalCredibilityR> {
+    let (nrow, ncol) = (whole(nrow, "nrow")? as usize, whole(ncol, "ncol")? as usize);
+    let r = rows(ratios, nrow, ncol)?;
+    let w = rows(weights, nrow, ncol)?;
+    let levels = levels_from(levels, nrow)?;
+    let collective_mean = match collective_mean {
+        [] => None,
+        [m, s] => Some((*m, *s)),
+        _ => {
+            return Err(Error::Other(
+                "collective_mean is c(mean, sd) or NULL".into(),
+            ));
+        }
+    };
+    let within = if within_kind.is_empty() {
+        None
+    } else {
+        Some(scale_prior(within_kind, within_scale)?)
+    };
+    if between_kinds.len() != between_scales.len() {
+        return Err(Error::Other("one scale per between prior".into()));
+    }
+    let between = between_kinds
+        .iter()
+        .zip(between_scales)
+        .map(|(k, &s)| scale_prior(k, s))
+        .collect::<Result<Vec<_>>>()?;
+    let spec = HierarchicalCredibility::default()
+        .priors(CredibilityPriors {
+            collective_mean,
+            within,
+            between,
+        })
+        .sampler(Sampler {
+            chains: whole(chains, "chains")? as usize,
+            tune: whole(tune, "tune")? as usize,
+            draws: whole(draws, "draws")? as usize,
+            seed: whole(seed, "seed")?,
+            ..Sampler::default()
+        });
+    let inner = spec.fit(&r, &w, &levels).map_err(to_r)?;
+    Ok(HierarchicalCredibilityR { inner })
+}
+
+/// Credibility premiums at given structure parameters.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn credibility_premiums_rust(
+    ratios: &[f64],
+    weights: &[f64],
+    nrow: f64,
+    ncol: f64,
+    levels: List,
+    within_variance: f64,
+    between_variances: &[f64],
+    collective_mean: &[f64],
+) -> Result<List> {
+    let (nrow, ncol) = (whole(nrow, "nrow")? as usize, whole(ncol, "ncol")? as usize);
+    let r = rows(ratios, nrow, ncol)?;
+    let w = rows(weights, nrow, ncol)?;
+    let levels = levels_from(levels, nrow)?;
+    let collective_mean = match collective_mean {
+        [] => None,
+        [m, s] => Some((*m, *s)),
+        _ => {
+            return Err(Error::Other(
+                "collective_mean is c(mean, sd) or NULL".into(),
+            ));
+        }
+    };
+    let p = prospicio_bayes::credibility::credibility_premiums(
+        &r,
+        &w,
+        &levels,
+        within_variance,
+        between_variances,
+        collective_mean,
+    )
+    .map_err(to_r)?;
+    Ok(list!(
+        premiums = p.premiums,
+        credibility = p.credibility,
+        level_premiums = List::from_values(p.level_premiums),
+        level_credibility = List::from_values(p.level_credibility),
+        collective_mean = p.collective_mean
+    ))
+}
+
+/// A fitted Bayesian hierarchical credibility model.
+#[extendr]
+pub(crate) struct HierarchicalCredibilityR {
+    inner: HierarchicalCredibilityFit,
+}
+
+#[extendr]
+impl HierarchicalCredibilityR {
+    fn values(&self) -> List {
+        let f = &self.inner;
+        list!(
+            premiums = f.premiums.clone(),
+            credibility = f.credibility.clone(),
+            level_premiums = List::from_values(f.level_premiums.clone()),
+            collective_mean = f.collective_mean,
+            group_means = f.group_means.clone(),
+            group_weights = f.group_weights.clone(),
+            divergences = f.divergences() as f64
+        )
+    }
+
+    /// `name, mean, sd, q05, q50, q95, rhat, ess_bulk, ess_tail` columns.
+    fn summary(&self) -> Result<List> {
+        let s = self.inner.summary().map_err(to_r)?;
+        let col = |f: fn(&prospicio_bayes::credibility::ParamSummary) -> f64| -> Vec<f64> {
+            s.iter().map(f).collect()
+        };
+        Ok(list!(
+            name = s.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
+            mean = col(|p| p.mean),
+            sd = col(|p| p.sd),
+            q05 = col(|p| p.q05),
+            q50 = col(|p| p.q50),
+            q95 = col(|p| p.q95),
+            rhat = col(|p| p.rhat),
+            ess_bulk = col(|p| p.ess_bulk),
+            ess_tail = col(|p| p.ess_tail)
+        ))
+    }
+
+    /// `weights` empty for the risk premiums.
+    fn predictive(
+        &self,
+        weights: &[f64],
+        n_sims: f64,
+        seed: f64,
+    ) -> Result<PredictiveDistribution> {
+        let w = (!weights.is_empty()).then_some(weights);
+        let inner = self
+            .inner
+            .predictive(w, whole(n_sims, "n_sims")? as usize, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
 extendr_module! {
     mod credibility;
     fn credibility_standards;
     fn buhlmann_straub_rust;
+    fn hierarchical_credibility_rust;
+    fn credibility_premiums_rust;
+    impl HierarchicalCredibilityR;
 }

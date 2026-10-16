@@ -71,3 +71,18 @@
 - Rust: `Layer` gains the public fields `profit_commission_carry` and
   `sliding_scale_carry`; code that builds it in full adds them (`None`)
   or uses the builders (#301).
+
+### Models
+
+- Bayesian hierarchical credibility: `prospicio_bayes::credibility::
+  HierarchicalCredibility` fits Bühlmann–Straub's model, or Jewell's
+  hierarchy of it (groups in cohorts in regions...), as a normal
+  random-effects model sampled with NUTS, the means integrated out in
+  closed form so only the standard deviations are sampled. The premiums
+  are the credibility formula averaged over the structure parameters'
+  posterior; `predictive` draws risk premiums or next-period ratios.
+  `credibility_premiums` gives the formula at given structure parameters:
+  Bühlmann–Straub's and Bühlmann–Gisler's hierarchical premiums, matching
+  `actuar::cm` at `1e-10`. Python `prospicio.credibility.hierarchical_credibility`,
+  `credibility_premiums`; R `hierarchical_credibility()`,
+  `credibility_premiums()`, `credibility_predictive()`.

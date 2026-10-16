@@ -8495,6 +8495,82 @@ class Group:
         """
 
 @final
+class HierarchicalCredibilityFit:
+    """
+    A fitted Bayesian hierarchical credibility model, from
+    ``hierarchical_credibility``.
+    """
+    @property
+    def collective_mean(self, /) -> float:
+        """
+        Posterior mean of the collective mean.
+        """
+    @property
+    def credibility(self, /) -> list[float]:
+        """
+        Posterior mean of each group's credibility factor.
+        """
+    @property
+    def divergences(self, /) -> int:
+        """
+        Divergent transitions over all chains.
+        """
+    @property
+    def group_means(self, /) -> list[float]:
+        """
+        Each group's weighted mean.
+        """
+    @property
+    def group_weights(self, /) -> list[float]:
+        """
+        Each group's total weight.
+        """
+    @property
+    def level_premiums(self, /) -> list[list[float]]:
+        """
+        Posterior mean of each node's mean, level by level (outermost first).
+        """
+    def predictive(self, /, weights: Sequence[float] |None = None, n_sims: int = 10000, seed: int = 0) -> PredictiveDistribution:
+        """
+        Posterior predictive draws by group (dimension ``group``): with
+        ``weights``, each group's next-period ratio ``N(theta_i, sigma**2 /
+        w_i)``; without, its risk premium ``theta_i``.
+        
+        Parameters
+        ----------
+        weights : list of float, optional
+            Each group's weight next period.
+        n_sims : int, default 10000
+        seed : int, default 0
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    @property
+    def premiums(self, /) -> list[float]:
+        """
+        Posterior mean of each group's risk premium.
+        """
+    @property
+    def priors(self, /) -> dict:
+        """
+        The priors used, with the defaults filled in: a dict with
+        ``collective_mean``, ``within`` and ``between``.
+        """
+    def summary(self, /) -> list[dict]:
+        """
+        Posterior summaries of ``within_variance`` and
+        ``between_variance[l]`` (outermost level first): one dict each with
+        ``name``, ``mean``, ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``,
+        ``ess_bulk`` and ``ess_tail``.
+        
+        Returns
+        -------
+        list of dict
+        """
+
+@final
 class HierarchicalStacking:
     """
     Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
@@ -19244,6 +19320,40 @@ def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: floa
     5.0
     """
 
+def credibility_premiums(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]], within_variance: float, between_variances: Sequence[float], levels: Sequence[Sequence[int]] |None = None, collective_mean: tuple[float, float] |None = None) -> dict:
+    """
+    The credibility premiums at given structure parameters: Bühlmann–Straub's
+    with one level, Bühlmann–Gisler's hierarchical ones (as ``actuar::cm``)
+    with more, which are the posterior means of the normal model with the
+    variances known.
+    
+    Parameters
+    ----------
+    ratios, weights, levels
+        As for ``hierarchical_credibility``.
+    within_variance : float
+        ``s**2``.
+    between_variances : list of float
+        One per level, outermost first and the groups' last (``a`` with one
+        level; ``b`` then ``a`` with two).
+    collective_mean : (float, float), optional
+        ``(mean, sd)`` of a normal prior on ``mu``; flat if omitted.
+    
+    Returns
+    -------
+    dict
+        ``premiums``, ``credibility``, ``level_premiums``,
+        ``level_credibility`` and ``collective_mean``.
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import credibility_premiums
+    >>> p = credibility_premiums([[1.0, 2.0, 3.0], [4.0, 5.0, 9.0]], [[1.0] * 3] * 2,
+    ...                          within_variance=4.0, between_variances=[8.0 - 4.0 / 3.0])
+    >>> round(p["collective_mean"], 12)
+    4.0
+    """
+
 def credibility_weighted(estimate: float, credibility: float, complement: float) -> float:
     """
     ``Z * estimate + (1 - Z) * complement``.
@@ -19754,6 +19864,54 @@ def group_k_fold(groups: Sequence[str], k: int, seed: int) -> list[tuple[list[in
     Returns
     -------
     list of (list of int, list of int)
+    """
+
+def hierarchical_credibility(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]], levels: Sequence[Sequence[int]] |None = None, collective_mean: tuple[float, float] |None = None, within_prior: tuple[str, float] |None = None, between_priors: Sequence[tuple[str, float]] |None = None, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalCredibilityFit:
+    """
+    Bayesian hierarchical credibility, sampled with NUTS: Bühlmann–Straub's
+    model, or Jewell's hierarchy of it, as a normal random-effects model.
+    
+    Group ``i`` in period ``j`` has ratio ``X_ij ~ N(theta_i, sigma**2 /
+    w_ij)``; each group's risk premium ``theta_i`` is normal about its node
+    at the level above (``levels``), each node about its own parent, and
+    the top about the collective mean ``mu``. The means are integrated out
+    exactly, so NUTS samples only the standard deviations; given them, each
+    premium is the credibility formula ``Z * M + (1 - Z) * E[parent]``, and
+    the Bayesian premium averages it over their posterior.
+    
+    Parameters
+    ----------
+    ratios : list of list of float
+        One row per group, one column per period; NaN for a missing cell.
+    weights : list of list of float
+        The same shape, NaN in the same places.
+    levels : list of list of int, optional
+        The hierarchy above the groups, outermost level first:
+        ``levels[k][i]`` is group ``i``'s node (from 0) at level ``k``.
+        Omitted for Bühlmann–Straub's model.
+    collective_mean : (float, float), optional
+        ``(mean, sd)`` of a normal prior on ``mu``; flat if omitted.
+    within_prior : (str, float), optional
+        ``("half_normal", scale)`` or ``("half_cauchy", scale)`` on
+        ``sigma``; half-normal at five times the pooled within standard
+        deviation if omitted.
+    between_priors : list of (str, float), optional
+        One per level, outermost first and the groups' last; half-normal at
+        five times each level's spread if omitted.
+    chains, tune, draws, seed : int
+        NUTS settings.
+    
+    Returns
+    -------
+    HierarchicalCredibilityFit
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import hierarchical_credibility
+    >>> x = [[1.0, 2.0, 3.0, 2.0], [4.0, 5.0, 6.0, 5.0], [2.0, 3.0, 4.0, 3.0]]
+    >>> fit = hierarchical_credibility(x, [[1.0] * 4] * 3, chains=2, tune=300, draws=300)
+    >>> fit.collective_mean < fit.premiums[1] < 5.0
+    True
     """
 
 def hill(draws: Sequence[float], ks: Sequence[int]) -> list[float]:

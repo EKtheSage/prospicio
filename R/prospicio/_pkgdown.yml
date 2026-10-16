@@ -163,6 +163,7 @@ reference:
     contents:
       - credibility_standard
       - buhlmann_straub
+      - hierarchical_credibility
   - title: Ratemaking
     contents:
       - year_fraction

@@ -1,0 +1,16 @@
+case,param,quantity,expected,abs_tol,rel_tol,source
+hachemeister,within_variance,mean,147075932.91078955,2936268.8328686147,0.0,NumPy grid integration
+hachemeister,within_variance,sd,29362688.328686148,0.0,0.08,NumPy grid integration
+hachemeister,between_variance[0],mean,204652.27584198705,35675.95601656792,0.0,NumPy grid integration
+hachemeister,between_variance[0],sd,356759.5601656792,0.0,0.2,NumPy grid integration
+hachemeister,collective_mean,mean,1684.2046927499791,1.2487803963948896,0.0,NumPy grid integration
+hachemeister,premium[0],mean,2054.332865802187,0.5836899456407048,0.0,NumPy grid integration
+hachemeister,credibility[0],mean,0.9819586996997504,0.0017133621452232444,0.0,NumPy grid integration
+hachemeister,premium[1],mean,1525.9586706999999,1.3768858776777848,0.0,NumPy grid integration
+hachemeister,credibility[1],mean,0.9195822707515748,0.0066425183057119055,0.0,NumPy grid integration
+hachemeister,premium[2],mean,1793.5361486703882,0.7791721976576037,0.0,NumPy grid integration
+hachemeister,credibility[2],mean,0.8900362816553393,0.008584536950658438,0.0,NumPy grid integration
+hachemeister,premium[3],mean,1442.8585283109483,5.778179638352118,0.0,NumPy grid integration
+hachemeister,credibility[3],mean,0.7346089214049116,0.015964855455790412,0.0,NumPy grid integration
+hachemeister,premium[4],mean,1604.3306451080562,0.5044763671626297,0.0,NumPy grid integration
+hachemeister,credibility[4],mean,0.952741206927566,0.004184198649233641,0.0,NumPy grid integration

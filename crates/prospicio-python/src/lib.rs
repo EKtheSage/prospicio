@@ -47,7 +47,10 @@ mod prospicio_native {
     #[pymodule_export]
     use super::counts::PyCount;
     #[pymodule_export]
-    use super::credibility::{PyBuhlmannStraubFit, PyLimitedFluctuation, buhlmann_straub};
+    use super::credibility::{
+        PyBuhlmannStraubFit, PyHierarchicalCredibilityFit, PyLimitedFluctuation, buhlmann_straub,
+        credibility_premiums, hierarchical_credibility,
+    };
     #[pymodule_export]
     use super::discrete::PyDiscrete;
     #[pymodule_export]

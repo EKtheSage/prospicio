@@ -1,13 +1,14 @@
-# Design note: classical credibility
+# Design note: credibility
 
-Status: **Decided; implemented** (limited fluctuation, Bühlmann–Straub) · v0.6 · Depends on: nothing · Lane: Aggregate
+Status: **Decided; implemented** (limited fluctuation, Bühlmann–Straub, v0.6; Bayesian hierarchical credibility, v0.7) · Depends on: `prospicio-bayes` for the Bayesian side · Lanes: Aggregate (classical), Models (Bayesian)
 
 ## Goal
 
 Weigh a group's own experience against the collective's: the classical
 standards for how much experience is enough (limited fluctuation), and the
-greatest-accuracy weights of Bühlmann and Bühlmann–Straub. Hierarchical
-and Bayesian credibility come with v0.7 (`roadmap.md`, order of work).
+greatest-accuracy weights of Bühlmann and Bühlmann–Straub; and their
+Bayesian, hierarchical form, with the structure parameters' uncertainty in
+the premium (v0.7, below).
 
 ## What exists
 
@@ -59,3 +60,83 @@ and premium, at `1e-12` (`1e-10` on the between variance, `1e-11` on the
 factors). Nine limited fluctuation standards match R's `qnorm` at `1e-13`.
 The R tests also compare the premiums with `actuar::cm` live when it is
 installed.
+
+## Bayesian hierarchical credibility (decided 2026-10-16)
+
+Status: implemented in `prospicio_bayes::credibility` (Models lane), in
+Rust, Python (`prospicio.credibility.hierarchical_credibility`,
+`credibility_premiums`) and R (`hierarchical_credibility()`,
+`credibility_premiums()`, `credibility_predictive()`).
+
+### Model
+
+Bühlmann–Straub's model, and Jewell's hierarchy of it, as a normal
+random-effects model: `X_ij | θ_i ~ N(θ_i, σ²/w_ij)`; each group's risk
+premium is normal about its node at the level above, `θ_i ~ N(ν_p(i),
+τ_L²)`, each node about its parent, `ν_k ~ N(ν_p(k), τ_l²)`, and the top
+level about the collective mean `μ`, flat or `N(m, s²)`. The hierarchy is
+given as `levels[k][i]`, group `i`'s node at level `k`, outermost first;
+nesting is checked.
+
+### Decisions
+
+5. **Integrate the means out.** Given `σ` and the `τ_l` every mean is
+   Gaussian, so one pass up the tree (each node's children's messages
+   `N(M_c; value, V_c)` combined after integrating the child,
+   `V_c + τ²`) gives the likelihood of the data in closed form, and NUTS
+   samples only `log σ` and the `log τ_l`, `L + 1` parameters with no
+   funnel between a group's mean and its scale. The gradient is forward
+   mode, one coordinate a pass (a small dual type in the module), checked
+   against finite differences. The means are drawn afterwards from their
+   Gaussian conditionals, top down.
+6. **The premium is the credibility formula averaged over the posterior.**
+   Given the structure parameters, each node's posterior mean is
+   `Z M + (1 − Z) E[parent]`, with `M` the credibility-weighted mean of its
+   children and `Z = P τ² / (P τ² + 1)` (`P` the precision of its
+   children's message; `w_i τ² / (w_i τ² + σ²)` for a group): exactly
+   Bühlmann–Straub's premiums with one level and Bühlmann–Gisler's
+   hierarchical ones with more, with a flat prior on `μ`.
+   `credibility_premiums` exposes that formula at given variances; the
+   fit's `premiums` are its mean over the posterior draws
+   (Rao–Blackwellized), and `predictive` draws the risk premiums or a
+   next period's ratios, with parameter and process uncertainty.
+7. **Weakly informative defaults, from the data.** Half-normal priors at
+   five times the spread the data show (`σ`: the pooled within standard
+   deviation; each `τ_l`: the standard deviation of that level's weighted
+   means, or the groups' where a level has one node), and a flat `μ`.
+   Every prior can be set: half-normal or half-Cauchy scales, a normal on
+   `μ`.
+8. **Where it lives.** The Bayesian side sits in `prospicio-bayes`, next
+   to its sampler; the bindings join the classical functions in the one
+   `credibility` namespace (decision 4). A `prospicio-credibility` crate is
+   still not needed.
+
+### Validation
+
+- `validation/tests/models.rs`, `credibility_premiums_match_actuar`: the
+  formula at `actuar::cm`'s structure parameters reproduces its premiums,
+  factors and collective means on Hachemeister's data at `1e-10`, for
+  Bühlmann–Straub and for the hierarchy of actuar's own example (states
+  1 and 3 in one cohort, 2, 4 and 5 in the other) with the
+  Bühlmann–Gisler, Ohlsson and iterative estimators
+  (`validation/scripts/r_credibility_hierarchical.R`).
+- `bayesian_credibility_matches_grid_integration`: the NUTS fit on
+  Hachemeister's data (half-normal priors of 60,000 on `σ` and 1,500 on
+  `τ`) against exact posterior moments by grid integration, with `μ` and
+  the group means integrated by quadrature written independently
+  (`validation/scripts/credibility_bayes_grid.py`): the premiums, factors
+  and collective mean within a tenth of a posterior standard deviation,
+  the variances' means likewise, their standard deviations within 8%
+  (20% for `τ²`, whose long right tail makes its sample standard
+  deviation noisy: 14% low at 10,000 draws on one seed, 1% at 100,000).
+- Unit tests: the integrated likelihood against quadrature over `μ`, the
+  gradient against finite differences with and without a hierarchy and a
+  prior on `μ`, a group with no weight taking its parent's premium, the
+  refused hierarchies, and a simulated structure recovered by NUTS with
+  the predictive's means equal to the premiums.
+
+### Not done
+
+Classical estimators of the hierarchy's structure parameters (actuar's
+Bühlmann–Gisler and Ohlsson for more than one level) are not built: the
+Bayesian fit estimates them, and `credibility_premiums` takes any.
