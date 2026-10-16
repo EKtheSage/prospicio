@@ -44,8 +44,8 @@ typedef struct xloper12 {
 } XLOPER12;
 
 typedef XLOPER12 *(*Fn0)(void);
-typedef XLOPER12 *(*Fn3)(XLOPER12 *, XLOPER12 *, XLOPER12 *);
-typedef XLOPER12 *(*Fn4)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef XLOPER12 *(*Fn9)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                         XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn8)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                          XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn7)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
@@ -175,34 +175,44 @@ int main(int argc, char **argv) {
     print_result("PRO.VERSION()", v);
     free12(v);
 
-    XLOPER12 *ldf = ((Fn3)GetProcAddress(xll, "pro_cl_ldf"))(&tri, &missing, &tail);
+    XLOPER12 *ldf = ((Fn6)GetProcAddress(xll, "pro_cl_ldf"))(&tri, &missing, &tail, &missing, &missing, &missing);
     print_result("PRO.CL.LDF(RAA,,1.05)", ldf);
     check("LDF is 1 x 10", (ldf->xltype & 0xFFF) == xltypeMulti && ldf->val.array.rows == 1 &&
                                ldf->val.array.columns == 10);
     check("last LDF is the tail", ldf->val.array.lparray[9].val.num == 1.05);
     free12(ldf);
 
-    Fn4 mack = (Fn4)GetProcAddress(xll, "pro_mack");
-    XLOPER12 *m = mack(&tri, &missing, &missing, &missing);
+    Fn8 mack = (Fn8)GetProcAddress(xll, "pro_mack");
+    XLOPER12 *m = mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &missing);
     print_result("PRO.MACK(RAA)", m);
     XLOPER12 *total = &m->val.array.lparray[11 * 8];
     check("total reserve 52135.228 (R ChainLadder)", fabs(total[3].val.num - 52135.2282612101) < 1e-6);
     check("total Mack SE 26880.740 (R ChainLadder)", fabs(total[6].val.num - 26880.7403298914) < 1e-6);
     free12(m);
 
-    XLOPER12 *bad = mack(&tri, &tail, &missing, &missing);
+    /* Mack's rule for the last sigma: R's MackChainLadder(est.sigma = "Mack"). */
+    static wchar_t mack_s[] = L"\x04" L"mack";
+    XLOPER12 rule;
+    rule.xltype = xltypeStr;
+    rule.val.str = mack_s;
+    XLOPER12 *rs = mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &rule);
+    check("Mack SE with Mack's sigma rule 26909.011 (R ChainLadder)",
+          fabs(rs->val.array.lparray[11 * 8 + 6].val.num - 26909.0111556436) < 1e-6);
+    free12(rs);
+
+    XLOPER12 *bad = mack(&tri, &tail, &missing, &missing, &missing, &missing, &missing, &missing);
     print_result("PRO.MACK(RAA, 1.05)", bad);
     check("a bad argument comes back as text", (bad->xltype & 0xFFF) == xltypeStr);
     free12(bad);
 
-    XLOPER12 *s = ((Fn4)GetProcAddress(xll, "pro_cl"))(&tri, &simple, &missing, &missing);
+    XLOPER12 *s = ((Fn7)GetProcAddress(xll, "pro_cl"))(&tri, &simple, &missing, &missing, &missing, &missing, &missing);
     print_result("PRO.CL(RAA, \"simple\")", s);
     check("simple-average reserve 93643.031 (R ChainLadder)",
           fabs(s->val.array.lparray[11 * 5 + 4].val.num - 93643.0313432212) < 1e-6);
     free12(s);
 
     /* Many calls, freed each time: a leak or a double free shows here. */
-    for (int i = 0; i < 2000; i++) free12(mack(&tri, &missing, &missing, &missing));
+    for (int i = 0; i < 2000; i++) free12(mack(&tri, &missing, &missing, &missing, &missing, &missing, &missing, &missing));
     check("2000 calls and frees", 1);
 
     /* Layer pricing: Pareto(t = 500, alpha = 2), a column of attachments
@@ -289,8 +299,8 @@ int main(int argc, char **argv) {
      * Mack's sqrt(process^2 + 0.981 parameter^2) = 26845 (R ChainLadder's
      * risks), within five Monte Carlo standard errors (about 1000). */
     sims.val.num = 20000;
-    XLOPER12 *mb = ((Fn8)GetProcAddress(xll, "pro_mack_boot"))(&tri, &sims, &seed, &missing, &missing, &missing,
-                                                               &missing, &missing);
+    XLOPER12 *mb = ((Fn9)GetProcAddress(xll, "pro_mack_boot"))(&tri, &sims, &seed, &missing, &missing, &missing,
+                                                               &missing, &missing, &missing);
     print_result("PRO.MACK.BOOT(RAA, 20000, 1)", mb);
     check("Mack bootstrap table is 12 x 9", (mb->xltype & 0xFFF) == xltypeMulti && mb->val.array.rows == 12 &&
                                                 mb->val.array.columns == 9);

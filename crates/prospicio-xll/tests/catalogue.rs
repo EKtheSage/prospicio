@@ -41,3 +41,36 @@ fn every_symbol_dispatches() {
     }
     assert!(format!("{:?}", call("pro_nothing", vec![]).cells).contains("no function"));
 }
+
+/// Every catalogue entry has an export in `src/xll.rs` taking exactly its
+/// arguments, and every export is in the catalogue: a mismatch would call
+/// a function with the wrong number of arguments, which only Excel (and
+/// the fake-Excel harness) would see.
+#[test]
+fn exports_match_the_catalogue() {
+    let src = include_str!("../src/xll.rs");
+    let exports: Vec<(String, usize)> = src
+        .lines()
+        .filter_map(|l| {
+            l.trim()
+                .strip_prefix("udf!(")?
+                .strip_suffix(");")
+                .map(str::to_owned)
+        })
+        .map(|inner| {
+            let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
+            (parts[0].to_owned(), parts.len() - 1)
+        })
+        .collect();
+    assert_eq!(exports.len(), FUNCTIONS.len(), "one export per function");
+    for f in FUNCTIONS {
+        let found = exports.iter().find(|(s, _)| s == f.symbol);
+        assert_eq!(
+            found.map(|e| e.1),
+            Some(f.args.len()),
+            "{} ({})",
+            f.name,
+            f.symbol
+        );
+    }
+}

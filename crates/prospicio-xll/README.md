@@ -44,16 +44,16 @@ Ctrl+Alt+F9 to recalculate.
 
 | Function | Returns |
 |---|---|
-| `PRO.CL(triangle, [average], [tail], [origins])` | Chain ladder exhibit with a total row |
-| `PRO.CL.LDF(triangle, [average], [tail])` | Age-to-age factors, one per column; the last is the tail |
-| `PRO.CL.CDF(triangle, [average], [tail])` | Age-to-ultimate factors, one per column |
+| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight])` | Chain ladder exhibit with a total row |
+| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-age factors, one per column; the last is the tail |
+| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-ultimate factors, one per column |
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One value per origin |
-| `PRO.CL.FACTORS(triangle, [average], [tail])` | LDF, CDF, sigma and standard error per link, and the tail |
-| `PRO.MACK(triangle, [average], [tail], [origins])` | Mack exhibit: process, parameter and total SE and CV, with a total |
+| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma])` | LDF, CDF, sigma and standard error per link, and the tail |
+| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Mack exhibit: process, parameter and total SE and CV, with a total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap exhibit: CL reserve, mean, SD, CV and percentiles, with a total |
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's draws: a row per simulation, a column per origin and the total (at most 100000 rows) |
-| `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins])` | Mack bootstrap exhibit, laid out as `PRO.ODP` |
-| `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins])` | Mack bootstrap's draws, laid out as `PRO.ODP.SIMS` |
+| `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap exhibit, laid out as `PRO.ODP` |
+| `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's draws, laid out as `PRO.ODP.SIMS` |
 | `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method exhibit |
 | `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson exhibit |
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander exhibit |
@@ -70,6 +70,10 @@ Ctrl+Alt+F9 to recalculate.
 - `tail`: omitted for none, a factor such as `1.05`, or `"exponential"`,
   `"inverse_power"` or `"bondy"`.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...
+- `selected`: selected factors, a row with a cell per triangle column (a
+  blank keeps the estimate); `kind`: `"ldf"` (default), `"cdf"` or
+  `"percent"`; `weight`: 0 to 1 on the selection, 1 if omitted.
+- `sigma`: Mack's last sigma, `"log-linear"` (default) or `"mack"`.
 - `exposure`: premium per origin, a row or column of positive values;
   `apriori`: the expected loss ratio, such as `0.75`.
 - `sims` (default 10000, at most 1000000), `seed` (default 0; the same seed
