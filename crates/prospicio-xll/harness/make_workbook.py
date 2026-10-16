@@ -10,9 +10,11 @@ cell gets `cm="1"`, pointing at a dynamic-array entry in `xl/metadata.xml`,
 which is how Excel itself saves a spilling formula.
 """
 
+import csv
 import re
 import sys
 import zipfile
+from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.worksheet.formula import ArrayFormula
@@ -440,6 +442,45 @@ ex.column_dimensions["A"].width = 26
 for col in "BCDEFG":
     ex.column_dimensions[col].width = 15
 
+
+# Credibility: Hachemeister's data (R actuar), and the limited fluctuation table.
+cr = wb.create_sheet("Credibility")
+cr["A1"] = "Buhlmann-Straub on Hachemeister's data (R actuar): ratios, then weights"; cr["A1"].font = bold
+HACHEMEISTER = Path(__file__).resolve().parents[3] / "validation" / "reference" / "hachemeister.csv"
+with open(HACHEMEISTER, newline="") as f:
+    hach = list(csv.DictReader(f))
+for q in range(12):
+    cr.cell(row=2, column=2 + q, value=f"Q{q + 1}").font = bold
+    cr.cell(row=9, column=2 + q, value=f"Q{q + 1}").font = bold
+for st in range(5):
+    cr.cell(row=3 + st, column=1, value=f"State {st + 1}")
+    cr.cell(row=10 + st, column=1, value=f"State {st + 1}")
+for h in hach:
+    i, j = int(h["state"]) - 1, int(h["quarter"]) - 1
+    cr.cell(row=3 + i, column=2 + j, value=float(h["ratio"])).fill = inp
+    cr.cell(row=10 + i, column=2 + j, value=float(h["weight"])).fill = inp
+cr["A17"] = ArrayFormula("A17:E22", "=PRO.BUHLMANN(B3:M7,B10:M14,,A3:A7)")
+cr["G17"] = ArrayFormula("G17:H21", "=PRO.BUHLMANN.PARAMS(B3:M7,B10:M14)")
+cr["J16"] = "Iterative (Bichsel-Straub)"; cr["J16"].font = bold
+cr["J17"] = ArrayFormula("J17:K21", '=PRO.BUHLMANN.PARAMS(B3:M7,B10:M14,"iterative")')
+cr["A23"] = "Matches R: premium of state 1 is 2055.17"
+cr["A24"] = "=ROUND(E18,2)=2055.17"
+cr["A26"] = "Limited fluctuation: full credibility standards in claims"; cr["A26"].font = bold
+cr["A27"] = "p by k"
+for c, k in enumerate([0.025, 0.05, 0.1]):
+    cr.cell(row=27, column=2 + c, value=k).fill = inp
+for r, p in enumerate([0.9, 0.95, 0.99]):
+    cr.cell(row=28 + r, column=1, value=p).fill = inp
+cr["B28"] = ArrayFormula("B28:D30", "=PRO.CRED.STANDARD(A28:A30,B27:D27)")
+cr["A32"] = "Credibility of 500 claims against each standard"
+cr["B32"] = ArrayFormula("B32:D34", "=PRO.CRED.Z(500,B28:D30)")
+for row in cr.iter_rows(min_row=28, max_row=30, min_col=2, max_col=4):
+    for c in row:
+        c.number_format = "#,##0"
+for row in cr.iter_rows(min_row=32, max_row=34, min_col=2, max_col=4):
+    for c in row:
+        c.number_format = "0.000"
+cr.column_dimensions["A"].width = 18
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

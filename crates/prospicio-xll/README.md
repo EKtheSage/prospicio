@@ -87,6 +87,10 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.EXPOSURE.STATS(curve, p1, [p2], [p3])` | b, g, mean rate, total loss probability |
 | `PRO.SWISSRE.C(rate)` | Swiss Re c of a mean destruction rate |
 | `PRO.SWISSRE.C.LAYER(limit, attachment, mpl, share)` | Swiss Re c of a layer's share |
+| `PRO.CRED.STANDARD(p, k, [kind], [cv])` | Full credibility standard in claims |
+| `PRO.CRED.Z(n, standard)` | Square root rule |
+| `PRO.BUHLMANN(ratios, [weights], [estimator], [groups])` | Buhlmann-Straub by group |
+| `PRO.BUHLMANN.PARAMS(ratios, [weights], [estimator])` | Buhlmann-Straub structure parameters |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | Exposure-rated risk profile by band, with a total |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
@@ -124,6 +128,10 @@ Ctrl+Alt+F9 to recalculate.
   0 to 1, and optionally `"linear"` or `"log-log"` interpolation);
   `mpl`: a risk's maximum possible loss or sum insured, a number or a
   range that broadcasts against the limits and attachments.
+- Credibility: `ratios` has one row per group and one column per period,
+  blank where missing; `weights` (exposures) has the same shape, omitted
+  for Buhlmann's model; `estimator` is `"unbiased"` (default) or
+  `"iterative"` (Bichsel-Straub), as R's `actuar::cm`.
 - `PRO.PROFILE`: one sum insured and expected loss per band; `p1` (and
   `p2`) may give each band its own Swiss Re c (or MBBEFD b, g); `lower`
   and `upper` spread a band's sums insured between bounds (`spread`:
