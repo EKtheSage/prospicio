@@ -17,7 +17,7 @@
   incurred=None, k_threshold=0.7, refit="moment_match_then_refit",
   max_refits=None)`, returning a `CompartmentalOneYearFit`; in R
   `compartmental_one_year()` and `compartmental_model_2_one_year()`,
-  returning a `compartmental_one_year_fit` (#NNN).
+  returning a `compartmental_one_year_fit` (#303).
 - A refit budget for every Bayesian one-year view:
   `BayesOneYear::max_refits` refits at most that many simulations (the
   first due for a refit, in order) and reweights the others, listing them
@@ -30,4 +30,4 @@
   `max_refits = NULL` and their views have `@unrefitted`. A warning names
   the simulations left unrefitted. **Breaking (Rust):** `BayesOneYear`,
   `BayesOneYearFit` and `BayesOneYearSegment` have a new public field, so
-  a struct literal of them without `..` must set it (#NNN).
+  a struct literal of them without `..` must set it (#303).
