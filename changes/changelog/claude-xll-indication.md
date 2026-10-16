@@ -7,4 +7,4 @@
   rates complement, a credibility-weighted estimate and the premium-based
   expense split (`PRO.PERMISSIBLE.LR`, `PRO.TRENDED.PRESENT`,
   `PRO.CRED.WEIGHTED`, `PRO.EXPENSES`); Werner and Modlin's Appendices A
-  to C reproduced end to end.
+  to C reproduced end to end (#299).
