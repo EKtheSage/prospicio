@@ -635,6 +635,55 @@ so `prospicio-nn` seeds, builds and initializes every parameter under one lock.
 Without it, fits running in parallel (tests, cross-validation) interleave
 their draws and stop being reproducible.
 
+## ONNX import
+
+Status: done (2026-10-16), Rust only: `prospicio_nn::onnx`, behind the
+crate's default `onnx` feature.
+
+- **Parse with Burn, run here.** `OnnxModel::load` (or `from_bytes`)
+  parses the file with `onnx-ir` 0.21, the front end of `burn-import`
+  (`knowledge/references/onnx-ir.md`), whose simplification already fuses
+  `MatMul` then `Add` into `Linear` and drops `Identity` and no-op
+  `Flatten`s. The graph is copied at load into an owned plan of steps
+  with `f64` constants (`onnx-ir`'s graph holds `Rc`s and cannot be
+  shared across threads) and run by a small interpreter in `f64`, so a
+  float32 file evaluates within float32 rounding of onnxruntime. Burn's
+  own tensors are rank-typed at compile time, which suits a network we
+  build but not a graph read at run time; a tabular network is a few
+  small matrix products, which a loop does at the cost of one pass.
+- **Operators: what a tabular network exports.** `Gemm` (`alpha`,
+  `beta`, `transA`, `transB`), `Linear`, `MatMul`; `Add`, `Sub`, `Mul`,
+  `Div`, `Pow` with NumPy broadcasting; `Relu`, `LeakyRelu`, `Sigmoid`,
+  `Tanh`, `Softplus`, `Exp`, `Log`, `Neg`, `Abs`, `Sqrt`, `Clip`,
+  `Softmax`; `Concat`, `Gather` (embeddings), `Flatten`, `Reshape`,
+  `Squeeze`, `Unsqueeze`, `ReduceSum`, `ReduceMean`, `Cast`, `Identity`,
+  `Constant`. Shapes and axes must be constants. Anything else
+  (convolutions, recurrent cells, control flow) is refused at load with
+  the operators the file uses.
+- **Behind the protocol.** `OnnxPredictor` binds each graph input to
+  design columns (a rank-2 input takes several in order, a rank-1 input
+  one; integer inputs, category codes for an embedding, must be whole
+  numbers), reads one output as each row's mean or on a link's scale
+  with the design's offset (`OutputScale::Link`, `μ = g⁻¹(offset +
+  output)`, CANN-style), and implements `Fitted`: `predict`, and
+  `predict_distribution` as process draws from a family and dispersion
+  the caller gives (`simulate::from_means`), since an imported network
+  carries no parameter uncertainty and the file no family.
+- **Rust only for now, as CANN.** `prospicio-nn` has no Python or R
+  bindings yet: binding it puts Burn into the wheel and the R package.
+  The user expects to add them, for CANN and ONNX import alike, and has
+  left the timing open (2026-10-16). Until then this import serves Rust
+  pipelines, and Python users have onnxruntime.
+- **Validation.** `crates/prospicio-nn/tests/onnx.rs` against
+  onnxruntime 1.31.0 (`validation/scripts/onnx_models.py`, models built
+  with `onnx.helper`, no PyTorch needed): an MLP of two `Gemm`s
+  (`transB`, as `torch.nn.Linear` exports), a network with an embedding
+  (`Gather`, `Concat`, `MatMul` and `Add`, `Softplus`, `Squeeze`), and a
+  `Gemm` with `alpha`, `beta` and a broadcast bias through every
+  elementwise operator, `Flatten`, `Identity` and `ReduceSum`; 36 rows
+  within `1e-5` relative. Also the predictor's column binding, the log
+  scale with an offset, predictive means, and refused inputs.
+
 ## Decisions
 
 - **Burn for neural networks** (replaces PyTorch-only, `architecture.md`).
@@ -643,7 +692,10 @@ their draws and stop being reproducible.
   (tabular MLPs with embeddings, CANN) are small enough for CPU training.
   The default backend is `ndarray` on the CPU; GPU (`wgpu`) is opt-in.
   Models trained in PyTorch come in for inference through Burn's ONNX
-  import.
+  import: at run time, by `onnx-ir`, `burn-import`'s parser ("ONNX
+  import", below), since `burn-import` itself generates Rust source at
+  build time and cannot load a user's file (it stays available to a
+  user's own crate).
 - **Gradient boosting stays an adapter.** LightGBM and XGBoost are mature
   and fast; a Rust reimplementation would not change what users can do.
   Done in Python (`prospicio.boosting`): `Booster(family, engine,

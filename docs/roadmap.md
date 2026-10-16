@@ -39,7 +39,7 @@ when from experience, and which pricing method fits which scenario.
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
 | v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp` and `BayesBf` by PSIS reweighting, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
-| v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
+| v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R), ONNX import (`prospicio_nn::onnx`, Rust). Still to do: WASM |
 | ◆ Gate | API review and deprecation pass | — |
 | v1.0: Stable core APIs | Semver for distributions, reserving, aggregate, reinsurance, risk, capital | — |
 
@@ -324,10 +324,13 @@ what it is aiming for by v1.0.
 ### `prospicio-nn` (Models lane, opt-in)
 
 - **Now:** CANN and the attention CANN on Burn, with random search and
-  early stopping.
+  early stopping; networks trained elsewhere imported from ONNX for
+  inference (`prospicio_nn::onnx`, v0.9).
 - **Next:**
-  1. Importing PyTorch models through ONNX (v0.9).
-  2. Tabular MLPs with embeddings, and multi-task claim models.
+  1. Tabular MLPs with embeddings, and multi-task claim models.
+  2. Bindings for `prospicio-nn` (CANN and ONNX import) in Python and R,
+     most likely to be added (user, 2026-10-16); the timing is open,
+     since they put Burn in the wheel and the R package.
 - **v1.0:** networks behind the shared model protocol, in every front
   end.
 
