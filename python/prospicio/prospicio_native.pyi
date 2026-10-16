@@ -475,7 +475,7 @@ class BayesBf:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit") -> BayesOneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFit:
         """
         The one-year view of one loss column of a single-segment cumulative
         triangle, with each origin's exposure from another column: the
@@ -512,6 +512,10 @@ class BayesBf:
             are not trusted.
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+        n_sims : int, optional
+            The number of one-year simulations; by default this model's
+            ``n_sims``. A smaller count gives the first simulations of a
+            larger one.
         
         Returns
         -------
@@ -1091,7 +1095,7 @@ class BayesOdp:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit") -> BayesOneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFit:
         """
         The one-year view of one measure column of a single-segment
         cumulative triangle: the claims development result over the coming
@@ -1145,6 +1149,10 @@ class BayesOdp:
             (``"refit_flagged"``); or reweighted anyway (fast, biased where
             ``k`` is high); ``"refit_all"`` refits every simulation, to
             check the reweighting.
+        n_sims : int, optional
+            The number of one-year simulations; by default this model's
+            ``n_sims``. A smaller count gives the first simulations of a
+            larger one.
         
         Returns
         -------
@@ -1171,7 +1179,7 @@ class BayesOdp:
         >>> view.cdr.variance() < view.fit.reserves.variance()
         True
         """
-    def one_year_segments(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit") -> BayesOneYearFits:
+    def one_year_segments(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFits:
         """
         The one-year view of one measure column in every segment of a
         cumulative triangle: each segment's posterior and simulations as in
@@ -1192,6 +1200,8 @@ class BayesOdp:
         k_threshold : float, default 0.7
             As in ``one_year``.
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+            As in ``one_year``.
+        n_sims : int, optional
             As in ``one_year``.
         
         Returns
@@ -12290,7 +12300,7 @@ class Meyers:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit") -> BayesOneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFit:
         """
         The one-year view of one measure column of a single-segment
         cumulative triangle with premium: the claims development result over
@@ -12316,7 +12326,9 @@ class Meyers:
         group 353 nearly every simulation is flagged and matching rescues
         about nine in ten, so 10,000 simulations take 4 to 7 minutes on 16
         threads in a release build, and ``"refit_flagged"`` about 6.7 times
-        as long; fewer ``n_sims`` cost proportionally less. Raises one ``UserWarning``
+        as long. The view therefore runs at most 2,000 simulations by
+        default (about a fifth of that time), whatever the model's
+        ``n_sims`` is above that; ``n_sims`` here sets the count. Raises one ``UserWarning``
         listing the failed diagnostics of the fit, and another if any refit
         failed its diagnostics.
         
@@ -12333,6 +12345,12 @@ class Meyers:
             are not trusted.
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+        n_sims : int, optional
+            The number of one-year simulations. By default this model's
+            ``n_sims``, at most 2,000: nearly every simulation of these
+            models is flagged and costs a moment match or a refit. The
+            lifetime view in ``fit`` keeps ``n_sims``; a smaller count
+            gives the first simulations of a larger one.
         
         Returns
         -------
@@ -12364,7 +12382,7 @@ class Meyers:
         >>> view.cdr.variance() < view.fit.reserves.variance()
         True
         """
-    def one_year_segments(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit") -> BayesOneYearFits:
+    def one_year_segments(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFits:
         """
         The one-year view of one measure column in every segment of a
         cumulative triangle with premium: each segment's posterior and
@@ -12386,6 +12404,8 @@ class Meyers:
         k_threshold : float, default 0.7
             As in ``one_year``.
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+            As in ``one_year``.
+        n_sims : int, optional
             As in ``one_year``.
         
         Returns

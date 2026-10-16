@@ -1752,17 +1752,17 @@ Triangle$bayes_odp <- function(column, intercept_sd, origin_sd, development_sd, 
 
 Triangle$bayes_odp_segments <- function(column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__bayes_odp_segments, self, column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
 
-Triangle$bayes_odp_one_year <- function(column, priors, process, run, k_threshold, refit) .Call(wrap__Triangle__bayes_odp_one_year, self, column, priors, process, run, k_threshold, refit)
+Triangle$bayes_odp_one_year <- function(column, priors, process, run, k_threshold, refit, one_year_sims) .Call(wrap__Triangle__bayes_odp_one_year, self, column, priors, process, run, k_threshold, refit, one_year_sims)
 
-Triangle$bayes_odp_one_year_segments <- function(column, priors, process, run, k_threshold, refit, dependence, spearman) .Call(wrap__Triangle__bayes_odp_one_year_segments, self, column, priors, process, run, k_threshold, refit, dependence, spearman)
+Triangle$bayes_odp_one_year_segments <- function(column, priors, process, run, k_threshold, refit, one_year_sims, dependence, spearman) .Call(wrap__Triangle__bayes_odp_one_year_segments, self, column, priors, process, run, k_threshold, refit, one_year_sims, dependence, spearman)
 
 Triangle$meyers <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__meyers, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
 Triangle$meyers_segments <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__meyers_segments, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
 
-Triangle$meyers_one_year <- function(column, premium, model, priors, run, k_threshold, refit) .Call(wrap__Triangle__meyers_one_year, self, column, premium, model, priors, run, k_threshold, refit)
+Triangle$meyers_one_year <- function(column, premium, model, priors, run, k_threshold, refit, one_year_sims) .Call(wrap__Triangle__meyers_one_year, self, column, premium, model, priors, run, k_threshold, refit, one_year_sims)
 
-Triangle$meyers_one_year_segments <- function(column, premium, model, priors, run, k_threshold, refit, dependence, spearman) .Call(wrap__Triangle__meyers_one_year_segments, self, column, premium, model, priors, run, k_threshold, refit, dependence, spearman)
+Triangle$meyers_one_year_segments <- function(column, premium, model, priors, run, k_threshold, refit, one_year_sims, dependence, spearman) .Call(wrap__Triangle__meyers_one_year_segments, self, column, premium, model, priors, run, k_threshold, refit, one_year_sims, dependence, spearman)
 
 Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
 
@@ -1770,7 +1770,7 @@ Triangle$compartmental_prior_predictive <- function(premium, priors, families, s
 
 Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
-Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit)
+Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, one_year_sims) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit, one_year_sims)
 
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
 
