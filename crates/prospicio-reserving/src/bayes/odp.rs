@@ -2250,6 +2250,37 @@ mod tests {
         assert!((r - 0.7).abs() < 0.05, "rank correlation {r}");
     }
 
+    /// `BayesOneYear::max_refits` applies to each segment: each refits the
+    /// first simulations due for a refit within its own budget.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_refit_budget_applies_to_each_segment() {
+        let model = BayesOdp {
+            n_sims: 200,
+            ..quick(9)
+        };
+        let settings = |max_refits| BayesOneYear {
+            refit: OneYearRefit::RefitFlagged,
+            max_refits,
+            ..BayesOneYear::default()
+        };
+        let all = model
+            .one_year_segments(&twins(), "values", &settings(None))
+            .unwrap();
+        let one = model
+            .one_year_segments(&twins(), "values", &settings(Some(1)))
+            .unwrap();
+        assert_eq!(one.segments.fits.len(), 2);
+        for (a, b) in all.segments.fits.iter().zip(&one.segments.fits) {
+            assert!(a.refitted.len() >= 2, "{:?}", a.refitted);
+            assert_eq!(b.refitted, a.refitted[..1]);
+            assert_eq!(b.unrefitted, a.refitted[1..]);
+        }
+    }
+
     /// An FNV-1a hash of the bits of `values`, to pin a run exactly.
     fn bits_hash(values: &[f64]) -> u64 {
         values.iter().fold(0xcbf2_9ce4_8422_2325, |h, v| {

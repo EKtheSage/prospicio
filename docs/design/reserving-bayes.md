@@ -2416,8 +2416,16 @@ segment's), with a warning in Python and R. The engine now runs in two
 passes: the first draws each year, smooths its weights and matches it;
 the second refits the simulations due one within the budget. The refit
 seed is still drawn in the first pass, so a simulation's refit is the
-same with or without a budget. Python and R take `max_refits` in every
-`one_year` and `one_year_segments`.
+same with or without a budget. Under a budget the first pass also keeps
+each such simulation's reweighted closing reserve (one value per origin),
+not its weights (one per posterior draw, which would hold `n_sims` times
+`n_draws` values until the second pass: 1.2 GB on GenIns at 16,000 draws
+and 10,000 simulations, 24 MB with the closing reserves); without one
+every such simulation is refitted and nothing is kept. Over segments the
+budget applies to each segment (`one_year_segments` runs the engine once
+per segment), so `k` segments refit at most `k` times `max_refits`.
+Python and R take `max_refits` in every `one_year` and
+`one_year_segments`.
 
 **Results, model 1** (`validation/tests/reserving_compartmental_one_year.rs`,
 release, 16 threads; company 337, the defaults; 500 simulations under

@@ -535,10 +535,14 @@ impl YearModel for CompartmentalYear<'_> {
         Ok((sampled, !diagnostics.warnings.is_empty()))
     }
 
-    /// The log density of [`Model::full`] (with the year's cells when
-    /// `year` has values): the draws are on the unconstrained scale, an
-    /// affine map of the whitened one NUTS samples, and the added `z` are
-    /// standard normal, so no Jacobian enters.
+    /// The log density of the centred draws: that of [`Model::full`] (with
+    /// the year's cells when `year` has values) at `theta` mapped back to
+    /// the sampled `z` scale, plus the log Jacobian of that map
+    /// (`log_jacobian`:
+    /// `-(log τ₁ + log τ₂ + ½ log(1 - ρ²))` per origin pair and `-log τ`
+    /// per other effect). Without it the density would be the sampled
+    /// scale's, not the stored draws', which check 5 of the conformance
+    /// suite catches.
     fn log_posterior(&self, theta: &[f64], year: &[f64]) -> f64 {
         let x = self.to_sampled(theta);
         let f = self.log_jacobian(theta)

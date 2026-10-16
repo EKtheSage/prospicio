@@ -22,7 +22,7 @@
   `BayesOneYear::max_refits` refits at most that many simulations (the
   first due for a refit, in order) and reweights the others, listing them
   in the view's new `unrefitted`; `None`, the default, refits every one as
-  before, bit for bit. Python's `one_year` and `one_year_segments` of
+  before, bit for bit. Over segments the budget applies to each segment. Python's `one_year` and `one_year_segments` of
   `BayesOdp`, `BayesBf` and `Meyers` take `max_refits=None` and their
   views have `unrefitted`; R's `bayes_odp_one_year()`,
   `bayes_odp_one_year_segments()`, `bayes_bf_one_year()`,

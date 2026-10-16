@@ -2086,7 +2086,8 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #'   this many due for a refit, in simulation order; the others are
 #'   reweighted as they are (as unreliable as their k says), listed in
 #'   `unrefitted` and warned about. `NULL` (the default) refits every one,
-#'   `0` none.
+#'   `0` none. In the `_segments` functions it applies to each segment, so
+#'   k segments refit at most k times this many.
 #' @param ptr A `BayesOneYearFit` or `BayesOneYearFits` pointer; used
 #'   internally.
 #' @returns A `bayes_one_year_fit` or `bayes_one_year_fits` object.

@@ -4374,7 +4374,8 @@ mod tests {
 
     /// A refit budget refits the first simulations due for one, in
     /// order, and reweights and lists the others; the years, the `k̂` and
-    /// the simulations within the budget are those without one.
+    /// the simulations within the budget are those without one, and those
+    /// beyond it are `ReweightOnly`'s, bit for bit.
     #[test]
     #[cfg_attr(
         not(feature = "slow-tests"),
@@ -4385,20 +4386,21 @@ mod tests {
             n_sims: 12,
             ..quick(4)
         };
-        let view = |max_refits: Option<usize>| {
+        let with = |refit: OneYearRefit, max_refits: Option<usize>| {
             m.one_year(
                 &triangle(true),
                 "paid",
                 incurred(),
                 "premium",
                 &BayesOneYear {
-                    refit: OneYearRefit::RefitFlagged,
+                    refit,
                     max_refits,
                     ..BayesOneYear::default()
                 },
             )
             .unwrap()
         };
+        let view = |max_refits: Option<usize>| with(OneYearRefit::RefitFlagged, max_refits);
         let all = view(None);
         assert!(all.refitted.len() >= 3, "{:?}", all.pareto_k);
         assert!(all.unrefitted.is_empty());
@@ -4421,6 +4423,19 @@ mod tests {
         let none = view(Some(0));
         assert!(none.refitted.is_empty());
         assert_eq!(none.unrefitted, all.refitted);
+        let only = with(OneYearRefit::ReweightOnly, None);
+        assert_eq!(none.cdr.draw_matrix(), only.cdr.draw_matrix());
+        for (a, b) in two
+            .cdr
+            .draw_matrix()
+            .chunks(n)
+            .zip(only.cdr.draw_matrix().chunks(n))
+            .enumerate()
+            .filter(|(i, _)| two.unrefitted.contains(i))
+            .map(|(_, r)| r)
+        {
+            assert_eq!(a, b);
+        }
         assert!(
             none.cdr
                 .provenance()

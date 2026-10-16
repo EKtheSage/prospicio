@@ -64,7 +64,14 @@ default view refits nearly every simulation; a refit at model 2's
 sampler (4 chains of 2,000 warm-up and 8,000 kept draws) took about 31
 s of wall time with 8 running side by side, so 10,000 simulations would
 take days. `BayesOneYear::max_refits` bounds it; the default is the
-user's call (open decision 15 of the design note).[^test]
+user's call (open decision 15 of the design note).[^test] The budget
+applies to each segment of `one_year_segments`. A simulation beyond it
+is kept between the engine's two passes as its reweighted closing
+reserve, one value per origin: keeping its weights instead (one per
+posterior draw) held `n_sims` times `n_draws` values, a peak of 1,239 MB
+against 24 MB for `BayesOdp` on GenIns (4 chains of 4,000 draws, 10,000
+simulations, `RefitAll` with a budget of 0; release build, Windows,
+measured on 2026-10-16), and about 2.6 GB at model 2's 32,000 draws.
 
 Model 1's checks run in CI at seed 0 (rescued at least 0.88, matched
 gap below 0.20 and below the reweighted gap, the CDR sd between 0.68

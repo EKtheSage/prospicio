@@ -92,7 +92,9 @@ pub struct BayesOneYear {
     /// `unrefitted`. `None` (the default) refits every one; `Some(0)`
     /// never refits. A refit of a compartmental model takes seconds to a
     /// minute, so a budget bounds the view's run time where moment
-    /// matching rescues few simulations.
+    /// matching rescues few simulations. Over segments
+    /// (`one_year_segments`) the budget applies to each segment, so `k`
+    /// segments refit at most `k` times this many.
     pub max_refits: Option<usize>,
 }
 
@@ -233,13 +235,16 @@ struct Sim {
 }
 
 /// A simulation after the first pass: done, or due for a refit, with what
-/// the refit (or, over the budget, the reweighting) needs.
+/// the refit needs and, under a budget, its reweighted closing reserve
+/// for when it falls beyond the budget (one value per origin, not the
+/// weights: one per posterior draw would hold `n_sims × n_draws` values
+/// until the second pass).
 enum Pass {
     Done(Sim),
     Refit {
         year: Vec<f64>,
         refit_seed: u64,
-        log_w: Vec<f64>,
+        reweighted: Option<Vec<f64>>,
         k: f64,
     },
 }
@@ -371,11 +376,17 @@ pub(crate) fn simulate<M: YearModel>(
             if let Some(c) = rescued {
                 closing = c;
             } else if flagged {
-                // Refitted in the second pass, within the budget.
+                // Refitted in the second pass, within the budget; beyond
+                // it, reweighted as here. Without a budget every one is
+                // refitted, so the reweighting is skipped.
+                let reweighted = settings
+                    .max_refits
+                    .is_some()
+                    .then(|| reweighted(&log_w, &year));
                 return Some(Pass::Refit {
                     year,
                     refit_seed,
-                    log_w,
+                    reweighted,
                     k,
                 });
             } else {
@@ -412,11 +423,13 @@ pub(crate) fn simulate<M: YearModel>(
             Pass::Refit {
                 year,
                 refit_seed,
-                log_w,
+                reweighted,
                 k,
             } => {
                 if !within {
-                    let closing = reweighted(&log_w, &year);
+                    // Beyond the budget, so a budget is set and the
+                    // reweighted closing reserve was kept.
+                    let closing = reweighted.expect("a budget keeps the reweighting");
                     return Some(Sim {
                         cdr: cdr_of(&year, &closing),
                         k,
