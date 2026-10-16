@@ -255,6 +255,25 @@ stopifnot(nrow(draw_matrix(bpd)) == 100)
 bg <- bayes_glm_fit(claims ~ x, bd, family = "gaussian", chains = 2, tune = 300, draws = 300)
 stopifnot(tail(bg@summary$parameter, 1) == "dispersion")
 
+# Posterior predictive checks.
+brep <- bayes_replicate(bm, seed = 2)
+stopifnot(identical(dim(brep), c(600L, 80L)), identical(brep, bayes_replicate(bm, seed = 2)))
+bc <- bayes_ppc(bm, c("mean", "sd", 0.9, "proportion_zero"), seed = 2)
+stopifnot(identical(bc$name, c("mean", "sd", "q0.9", "proportion_zero")))
+stopifnot(bc$p_value[1] > 0.05, bc$p_value[1] < 0.95, bc$p_value[2] > 0.95)
+stopifnot(identical(dim(attr(bc, "replicated")), c(600L, 4L)))
+# The same from the replicates directly.
+bc2 <- ppc_check(bd$claims, brep, c("mean", "sd", 0.9, "proportion_zero"))
+stopifnot(isTRUE(all.equal(bc2$p_value, bc$p_value)))
+bgc <- ppc_check(bd$claims, brep, "mean", groups = rep(1:4, 20))
+stopifnot(identical(bgc$name, paste0("mean[", 0:3, "]")))
+bp <- bayes_loo_pit(bm, seed = 2)
+stopifnot(length(bp$pit) == 80, all(bp$pit >= 0 & bp$pit <= 1), length(bp$pareto_k) == 80)
+ll_m <- matrix(bm@ptr$log_likelihood(), nrow = 600, byrow = TRUE)
+bp2 <- loo_pit(bd$claims, brep, ll_m, seed = 2)
+stopifnot(length(bp2$pit) == 80, bp2$ks >= 0)
+stopifnot(inherits(try(ppc_check(bd$claims, brep, "median"), silent = TRUE), "try-error"))
+
 # Bayesian and hierarchical stacking.
 hx <- seq(-0.5, 0.5, length.out = 100)
 hl <- cbind(a = ifelse(hx < 0, -0.5, -2), b = ifelse(hx < 0, -2, -0.5))

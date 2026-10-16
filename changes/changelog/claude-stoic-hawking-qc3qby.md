@@ -86,3 +86,14 @@
   `actuar::cm` at `1e-10`. Python `prospicio.credibility.hierarchical_credibility`,
   `credibility_premiums`; R `hierarchical_credibility()`,
   `credibility_premiums()`, `credibility_predictive()` (#304).
+- Posterior predictive checks in `prospicio_bayes::ppc`: `check` (and
+  `check_grouped`, `check_with`) compares test statistics of the data
+  (mean, sd, extremes, quantiles, the share of zeros, or any function)
+  with their distribution over replicated datasets, with posterior
+  predictive p-values; `loo_pit` gives each observation's leave-one-out
+  PIT under its Pareto-smoothed importance weights, randomized over ties,
+  matching R `loo`'s `E_loo` at `1e-9`. `BayesGlmFit::replicate`,
+  `posterior_predictive_check` and `loo_pit`. Python
+  `BayesGlmFit.replicate`, `.posterior_predictive_check`, `.loo_pit`,
+  `models.ppc_check`, `models.loo_pit`; R `bayes_replicate()`,
+  `bayes_ppc()`, `bayes_loo_pit()`, `ppc_check()`, `loo_pit()`.

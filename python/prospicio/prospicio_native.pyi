@@ -795,6 +795,24 @@ class BayesGlmFit:
         -------
         Elpd
         """
+    def loo_pit(self, /, design: Design, y: Sequence[float], seed: int = 0) -> dict:
+        """
+        The leave-one-out PIT of ``y`` given ``design``, by Pareto-smoothed
+        importance weights on ``replicate``'s datasets, randomized over ties;
+        uniform for a calibrated model.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        seed : int, default 0
+        
+        Returns
+        -------
+        dict
+            ``pit`` and ``pareto_k`` per observation, and ``ks``, the
+            Kolmogorov–Smirnov distance from the uniform.
+        """
     @property
     def names(self, /) -> list[str]:
         """
@@ -804,6 +822,27 @@ class BayesGlmFit:
     def posterior_mean(self, /) -> list[float]:
         """
         Posterior means of the coefficients.
+        """
+    def posterior_predictive_check(self, /, design: Design, y: Sequence[float], statistics: Sequence[Any] |None = None, seed: int = 0) -> list[dict]:
+        """
+        Posterior predictive checks of ``y`` given ``design``: each test
+        statistic of ``y`` against its distribution over ``replicate``'s
+        datasets, with the p-value ``P(T(y_rep) >= T(y))`` (ties count half).
+        A p-value near 0 or 1 says the model cannot reproduce that feature.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        statistics : list of str or float, default ["mean", "sd", "min", "max"]
+            ``"mean"``, ``"sd"``, ``"min"``, ``"max"``, ``"proportion_zero"``,
+            or a probability for that quantile.
+        seed : int, default 0
+        
+        Returns
+        -------
+        list of dict
+            ``name``, ``observed``, ``replicated`` and ``p_value`` per statistic.
         """
     def predict(self, /, design: Design) -> list[float]:
         """
@@ -820,6 +859,21 @@ class BayesGlmFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def replicate(self, /, design: Design, seed: int = 0) -> list[list[float]]:
+        """
+        One replicated dataset per posterior draw: one row per draw, one
+        column per row of ``design``, each response drawn from the family at
+        that draw's coefficients and dispersion.
+        
+        Parameters
+        ----------
+        design : Design
+        seed : int, default 0
+        
+        Returns
+        -------
+        list of list of float
         """
     def summary(self, /) -> list[dict]:
         """
@@ -20159,6 +20213,37 @@ def log_score(family: str, y: Sequence[float], mu: Sequence[float], dispersion: 
     1.0
     """
 
+def loo_pit(observed: Sequence[float], replicated: Sequence[Sequence[float]], log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None, seed: int = 0) -> dict:
+    """
+    The leave-one-out PIT of any model's observations: each observation's
+    place among its replicates under the Pareto-smoothed importance weights
+    for leaving it out, randomized over ties; uniform for a calibrated
+    model. Matches R ``loo``'s ``E_loo`` of ``y_rep <= y``.
+    
+    Parameters
+    ----------
+    observed : list of float
+    replicated : list of list of float
+        One replicated dataset per posterior draw.
+    log_lik : list of list of float
+        The pointwise log-likelihood, one row per draw (as ``elpd_loo``).
+    r_eff : list of float, optional
+        Each observation's relative efficiency; 1 if omitted.
+    seed : int, default 0
+        Seeds the randomization over ties.
+    
+    Returns
+    -------
+    dict
+        ``pit`` and ``pareto_k`` per observation, and ``ks``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import loo_pit
+    >>> loo_pit([2.5], [[1.0], [2.0], [3.0], [4.0]], [[-1.0]] * 4)["pit"]
+    [0.5]
+    """
+
 def loss_elimination_ratio(severity: Any, deductible: float) -> float:
     """
     Loss elimination ratio of a deductible, ``LEV(deductible) / E[X]``.
@@ -20670,6 +20755,38 @@ def pnl_program_stated(stated: float, expense_ratio: float, layers: Sequence[dic
     >>> from prospicio.aggregate import pnl_program_stated
     >>> round(pnl_program_stated(1000.0, 0.25)["premium"], 6)
     1333.333333
+    """
+
+def ppc_check(observed: Sequence[float], replicated: Sequence[Sequence[float]], statistics: Sequence[Any] |None = None, groups: Sequence[int] |None = None) -> list[dict]:
+    """
+    Posterior predictive checks of any model: each test statistic of
+    ``observed`` against its distribution over the replicated datasets,
+    with the p-value ``P(T(y_rep) >= T(y))`` (ties count half). With
+    ``groups``, each statistic is checked within each group.
+    
+    Parameters
+    ----------
+    observed : list of float
+    replicated : list of list of float
+        One replicated dataset per posterior draw, each as long as
+        ``observed``.
+    statistics : list of str or float, default ["mean", "sd", "min", "max"]
+        ``"mean"``, ``"sd"``, ``"min"``, ``"max"``, ``"proportion_zero"``, or a
+        probability for that quantile.
+    groups : list of int, optional
+        Each observation's group, from 0.
+    
+    Returns
+    -------
+    list of dict
+        ``name``, ``observed``, ``replicated`` and ``p_value``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import ppc_check
+    >>> c = ppc_check([1.0, 3.0], [[0.0, 2.0], [2.0, 4.0], [1.0, 3.0]], ["mean"])
+    >>> c[0]["observed"], c[0]["p_value"]
+    (2.0, 0.5)
     """
 
 def premium_based_expenses(ratios: Sequence[float], fixed_shares: Sequence[float]) -> tuple[float, float]:

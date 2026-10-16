@@ -579,6 +579,89 @@ bayes_loo <- function(model) {
   elpd_result(rust_result(model@ptr$loo()))
 }
 
+#' Posterior predictive checks
+#'
+#' Does data simulated from the fitted model look like the data it was
+#' fitted to? Each check compares the observed outcomes with replicated
+#' data, one replicated dataset per posterior draw.
+#'
+#' - `bayes_ppc()` and `ppc_check()`: a test statistic of the observed data
+#'   against its distribution over the replicates, with the posterior
+#'   predictive p-value `P(T(y_rep) >= T(y))` (ties count half). A p-value
+#'   near 0 or 1 says the model cannot reproduce that feature of the data.
+#' - `bayes_loo_pit()` and `loo_pit()`: each observation's leave-one-out
+#'   probability integral transform, its place among its replicates under
+#'   the Pareto-smoothed importance weights for leaving it out (as R
+#'   `loo`'s `E_loo` of `y_rep <= y`), randomized over ties. Uniform for a
+#'   calibrated model; U-shaped when the predictive distributions are too
+#'   narrow, humped when too wide.
+#' - `bayes_replicate()`: the replicated training datasets.
+#'
+#' @param model A [bayes_glm_model]; the checks run on its training data.
+#' @param statistics Test statistics: `"mean"`, `"sd"`, `"min"`, `"max"`,
+#'   `"proportion_zero"`, or numbers (probabilities) for quantiles.
+#' @param seed Seed of the replicates (and of the randomization over ties).
+#' @param observed The observed outcomes.
+#' @param replicated A matrix, one replicated dataset per row (posterior
+#'   draw), one column per observation.
+#' @param groups Each observation's group, from 1, to check each statistic
+#'   within each group; `NULL` for none.
+#' @param log_lik The pointwise log-likelihood, draws by observations.
+#' @param r_eff Each observation's relative efficiency; `NULL` for 1.
+#' @returns `bayes_ppc()` and `ppc_check()`: a data frame with `name`,
+#'   `observed` and `p_value`, and an attribute `replicated`, a matrix of
+#'   each statistic of each replicate. `bayes_loo_pit()` and `loo_pit()`: a
+#'   list with `pit` and `pareto_k` per observation and `ks`, the
+#'   Kolmogorov–Smirnov distance from the uniform. `bayes_replicate()`: a
+#'   matrix, draws by observations.
+#' @export
+#' @examples
+#' d <- data.frame(claims = rep(c(1, 2, 3, 5), 10), x = rep(c(-1.5, -0.5, 0.5, 1.5), 10))
+#' m <- bayes_glm_fit(claims ~ x, d, family = "poisson", chains = 2, tune = 300, draws = 300)
+#' bayes_ppc(m, c("mean", "sd", 0.9))
+#' summary(bayes_loo_pit(m)$pit)
+bayes_ppc <- function(model, statistics = c("mean", "sd", "min", "max"), seed = 0) {
+  checks_frame(rust_result(model@ptr$ppc(as.character(statistics), as.double(seed))))
+}
+
+#' @rdname bayes_ppc
+#' @export
+bayes_loo_pit <- function(model, seed = 0) {
+  rust_result(model@ptr$loo_pit(as.double(seed)))
+}
+
+#' @rdname bayes_ppc
+#' @export
+bayes_replicate <- function(model, seed = 0) {
+  r <- rust_result(model@ptr$replicate(as.double(seed)))
+  # One dispersion per draw, so one row per draw.
+  matrix(r, nrow = length(model@ptr$dispersion_draws()), byrow = TRUE)
+}
+
+#' @rdname bayes_ppc
+#' @export
+ppc_check <- function(observed, replicated, statistics = c("mean", "sd", "min", "max"),
+                      groups = NULL) {
+  replicated <- as.matrix(replicated)
+  checks_frame(rust_result(ppc_check_rust(as.double(observed), as.double(t(replicated)),
+                                          as.character(statistics), as.double(groups))))
+}
+
+#' @rdname bayes_ppc
+#' @export
+loo_pit <- function(observed, replicated, log_lik, r_eff = NULL, seed = 0) {
+  rust_result(loo_pit_rust(as.double(observed), as.double(t(as.matrix(replicated))),
+                           as.double(t(as.matrix(log_lik))), as.double(r_eff),
+                           as.double(seed)))
+}
+
+checks_frame <- function(r) {
+  out <- data.frame(name = r$name, observed = r$observed, p_value = r$p_value)
+  attr(out, "replicated") <- matrix(r$replicated, ncol = length(r$name), byrow = TRUE,
+                                    dimnames = list(NULL, r$name))
+  out
+}
+
 for (cls in list(glm_model, gam_model, bayes_glm_model)) {
   S7::method(coef, cls) <- function(object, ...) object@coefficients
   S7::method(predict, cls) <- function(object, newdata, offset = NULL, ...) {

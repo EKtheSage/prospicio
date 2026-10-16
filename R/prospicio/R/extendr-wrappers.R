@@ -10,6 +10,10 @@ actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta,
 
 bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
 
+ppc_check_rust <- function(observed, replicated, statistics, groups) .Call(wrap__ppc_check_rust, observed, replicated, statistics, groups)
+
+loo_pit_rust <- function(observed, replicated, log_lik, r_eff, seed) .Call(wrap__loo_pit_rust, observed, replicated, log_lik, r_eff, seed)
+
 bayes_stacking_rust <- function(lpd, k, concentration, sampler) .Call(wrap__bayes_stacking_rust, lpd, k, concentration, sampler)
 
 hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, discrete, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, pooling, adaptive, discrete, sampler)
@@ -703,6 +707,12 @@ BayesGlmModel$summary <- function() .Call(wrap__BayesGlmModel__summary, self)
 BayesGlmModel$loo <- function() .Call(wrap__BayesGlmModel__loo, self)
 
 BayesGlmModel$log_likelihood <- function() .Call(wrap__BayesGlmModel__log_likelihood, self)
+
+BayesGlmModel$replicate <- function(seed) .Call(wrap__BayesGlmModel__replicate, self, seed)
+
+BayesGlmModel$ppc <- function(statistics, seed) .Call(wrap__BayesGlmModel__ppc, self, statistics, seed)
+
+BayesGlmModel$loo_pit <- function(seed) .Call(wrap__BayesGlmModel__loo_pit, self, seed)
 
 BayesGlmModel$predict <- function(x, names, offset) .Call(wrap__BayesGlmModel__predict, self, x, names, offset)
 
