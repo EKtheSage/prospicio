@@ -114,6 +114,11 @@ const APRIORI: Arg = Arg {
     help: "The a priori expected loss ratio, ultimate per unit of exposure, such as 0.75",
 };
 
+const CDR_PERCENTILES: Arg = Arg {
+    name: "percentiles",
+    help: "Probabilities to report, a row or column; omitted for 0.5%, 5%, 95%, 99.5% (a negative CDR is adverse)",
+};
+
 const LIMIT: Arg = Arg {
     name: "limit",
     help: "Limit(s): a number, a range, or \"unlimited\"",
@@ -263,6 +268,56 @@ pub static FUNCTIONS: &[Function] = &[
             SIGMA,
         ],
         run: reserving::mack_bootstrap_sims,
+    },
+    Function {
+        symbol: "pro_mack_cdr",
+        name: "PRO.MACK.CDR",
+        help: "Merz-Wuthrich one-year view: reserve, CDR(1) SE and run-off (Mack) SE per origin, with a total.",
+        args: &[
+            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+        ],
+        run: reserving::mack_cdr,
+    },
+    Function {
+        symbol: "pro_mack_cdr_years",
+        name: "PRO.MACK.CDR.YEARS",
+        help: "Merz-Wuthrich CDR standard error per origin in each future calendar year, with the total.",
+        args: &[
+            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+        ],
+        run: reserving::mack_cdr_years,
+    },
+    Function {
+        symbol: "pro_odp_cdr",
+        name: "PRO.ODP.CDR",
+        help: "ODP bootstrap one-year view: simulated CDR mean, SD and percentiles per origin; negative is adverse.",
+        args: &[
+            TRIANGLE,
+            SIMS,
+            SEED,
+            CDR_PERCENTILES,
+            TAIL,
+            PROCESS,
+            ORIGINS,
+        ],
+        run: reserving::odp_cdr,
+    },
+    Function {
+        symbol: "pro_mack_boot_cdr",
+        name: "PRO.MACK.BOOT.CDR",
+        help: "Mack bootstrap one-year view: simulated CDR mean, SD and percentiles per origin; negative is adverse.",
+        args: &[
+            TRIANGLE,
+            SIMS,
+            SEED,
+            CDR_PERCENTILES,
+            AVERAGE,
+            TAIL,
+            MACK_PROCESS,
+            ORIGINS,
+            SIGMA,
+        ],
+        run: reserving::mack_bootstrap_cdr,
     },
     Function {
         symbol: "pro_el",

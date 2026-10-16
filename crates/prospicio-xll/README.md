@@ -25,7 +25,7 @@ is found, under Wine off Windows.
 
 `python3 harness/make_workbook.py prospicio-xll-test.xlsx` (needs
 openpyxl) writes a test workbook: RAA with every function in place and R
-ChainLadder's totals beside them, plus Layers, ODP, ODP draws, Mack bootstrap and Expected loss (GenIns with premium) sheets.
+ChainLadder's totals beside them, plus Layers, ODP, ODP draws, Mack bootstrap, Expected loss (GenIns with premium) and One-year sheets.
 
 ## Install in Excel
 
@@ -54,6 +54,10 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's draws: a row per simulation, a column per origin and the total (at most 100000 rows) |
 | `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap exhibit, laid out as `PRO.ODP` |
 | `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's draws, laid out as `PRO.ODP.SIMS` |
+| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Merz-Wuthrich one-year view: CDR(1) SE and run-off SE |
+| `PRO.MACK.CDR.YEARS(...)`, same arguments | CDR SE by future calendar year |
+| `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap's simulated one-year CDR (negative is adverse) |
+| `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's simulated one-year CDR |
 | `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method exhibit |
 | `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson exhibit |
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander exhibit |
