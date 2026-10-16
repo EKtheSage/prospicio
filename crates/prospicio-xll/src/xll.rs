@@ -430,6 +430,10 @@ mod exports {
     udf!(pro_sev_quantile, p, family, p1, p2, p3);
     udf!(pro_sev_stats, family, p1, p2, p3);
     udf!(pro_ler, deductible, family, p1, p2, p3);
+    udf!(pro_pareto_extrapolate, from_limit, from_attachment, to_limit, to_attachment, alpha, truncation);
+    udf!(pro_pareto_alpha, limit1, attachment1, loss1, limit2, attachment2, loss2, truncation);
+    udf!(pro_pareto_alpha_freqlayer, threshold, frequency, limit, attachment, loss, truncation);
+    udf!(pro_pareto_alpha_freqs, threshold1, frequency1, threshold2, frequency2, truncation);
     udf!(pro_lev, limit, family, p1, p2, p3);
     udf!(pro_layer, limit, attachment, family, p1, p2, p3);
     udf!(pro_layer_cv, limit, attachment, family, p1, p2, p3);

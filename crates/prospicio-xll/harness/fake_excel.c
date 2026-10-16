@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("thirty-five functions registered", registered == 35);
+    check("thirty-nine functions registered", registered == 39);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -384,6 +384,17 @@ int main(int argc, char **argv) {
     check("PRO.SEV.CDF(1000, \"gamma\", 1, 1000) is 1 - 1/e",
           (gc->xltype & 0xFFF) == xltypeNum && fabs(gc->val.num - (1 - exp(-1.0))) < 1e-15);
     free12(gc);
+
+    /* Pareto alpha between two frequencies: ln(4) / ln(2) = 2. */
+    XLOPER12 t1, f1, t2, f2;
+    t1.xltype = f1.xltype = t2.xltype = f2.xltype = xltypeNum;
+    t1.val.num = 1e6;
+    f1.val.num = 4;
+    t2.val.num = 2e6;
+    f2.val.num = 1;
+    XLOPER12 *pa = ((Fn5)GetProcAddress(xll, "pro_pareto_alpha_freqs"))(&t1, &f1, &t2, &f2, &missing);
+    check("PRO.PARETO.ALPHA.FREQS(1e6, 4, 2e6, 1) is 2", (pa->xltype & 0xFFF) == xltypeNum && fabs(pa->val.num - 2) < 1e-14);
+    free12(pa);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

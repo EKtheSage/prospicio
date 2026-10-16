@@ -45,6 +45,10 @@ category of Insert Function:
 | `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Its quantile (VaR) at each probability |
 | `PRO.SEV.STATS(family, p1, p2, [p3])` | Its family, mean, SD and CV |
 | `PRO.LER(deductible, family, p1, p2, [p3])` | The loss elimination ratio of a deductible |
+| `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Each layer's expected loss per unit of the rated layer's, under a Pareto (R's `Pareto_Extrapolation`) |
+| `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])` | The alpha between two layers' expected losses |
+| `PRO.PARETO.ALPHA.FREQLAYER(threshold, frequency, limit, attachment, loss, [truncation])` | The alpha between a frequency above a threshold and a layer's expected loss |
+| `PRO.PARETO.ALPHA.FREQS(threshold1, frequency1, threshold2, frequency2, [truncation])` | The alpha between two frequencies |
 | `PRO.LEV(limit, family, p1, p2, [p3])` | Limited expected value `E[min(X, limit)]`, per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [p3])` | Expected loss to `limit` xs `attachment` per ground-up loss |
 | `PRO.LAYER.CV(limit, attachment, family, p1, p2, [p3])` | CV of the layer loss given a loss above the attachment |
@@ -116,7 +120,10 @@ scale), `"loglogistic"` (shape, scale), `"inverse_gamma"` (shape, scale),
 first `truncation`, is now `p3`: same position and meaning for the Pareto
 (decision 17). On the gamma, log-logistic, lognormal and Weibull every
 LEV, layer and stop loss in `validation/reference/severity_mpmath.csv`
-matches at its tolerance (`tests/severities.rs`). TVaR is not offered for
+matches at its tolerance (`tests/severities.rs`). The Pareto helpers wrap `prospicio_pricing::layer`'s
+`pareto_extrapolation` and three alpha solvers; every case in
+`validation/reference/pareto_rating_r.csv` (R package Pareto 2.4.5, 58,
+truncated ones included) matches (`tests/pareto_helpers.rs`). TVaR is not offered for
 a parametric severity: neither the R nor the Python package has it
 (theirs is on grid, sampled and predictive distributions). Limits and attachments are a number, a range or `"unlimited"`;
 blank cells give blank results.
@@ -258,8 +265,8 @@ order, one small PR each, those already done struck through:
 2. Severities: ~~the Pareto and the lognormal's LEV, layer, CV, ILF~~;
    ~~more families (gamma, Weibull, Burr, log-logistic, inverse gamma and
    Gaussian, generalized Pareto) and their cdf, quantile, mean and SD,
-   the loss elimination ratio~~; the piecewise Pareto; the Pareto helpers (alpha between layers or
-   frequencies, extrapolation), the layer variance.
+   the loss elimination ratio~~; the piecewise Pareto; ~~the Pareto helpers (alpha between layers or
+   frequencies, extrapolation)~~; the layer variance.
 3. Pricing: exposure curves (MBBEFD, Swiss Re) and a layer's share;
    credibility (Buhlmann-Straub, limited fluctuation); ratemaking (trend,
    rate level, the indicated rate); burning cost.
