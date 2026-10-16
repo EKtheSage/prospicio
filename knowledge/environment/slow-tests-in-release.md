@@ -85,7 +85,10 @@ one after another (the lifetime fit is about 0.2 s and the 10,000
 reweighted simulations 0.6 to 1.3 s). Replaying only the first 20 of the
 60 simulations (matched and refitted ones in each model at seed 0) cut
 the arms to 57 s and the suite to 94 s. A 4-core runner takes about 3 to
-4 times as long on the parallel parts.
+4 times as long on the parallel parts. On CI, before that cut (run
+38843505221, 2026-10-16), the `bayes` job took 19 min 42 s, 17 min 39 s
+of it the parity tests and 1 min 42 s the unit tests, against 10 min 54 s
+for the rust job: the PR's slowest check.
 
 ```
 cargo test --release -p prospicio-reserving --features slow-tests --lib
