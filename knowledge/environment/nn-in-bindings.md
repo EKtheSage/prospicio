@@ -1,7 +1,7 @@
 ---
 type: Environment Fact
 title: prospicio-nn in the Python bindings
-description: The wheel links Burn through the bindings' default nn feature; it adds about 8 MB to the native module (18.3 MB without, 26.5 MB with, release, unstripped, Linux x86_64), raises the bindings' minimum Rust to 1.92, and Burn 0.21's fitted NdArray networks are Send and Sync, so frozen pyclasses hold them without a lock.
+description: The wheel links Burn through the bindings' default nn feature; it adds about 8 MB to the native module (18.3 MB without, 26.5 MB with, release, unstripped, Linux x86_64), needs Rust 1.92 to build, and Burn 0.21's fitted NdArray networks are Send and Sync, so frozen pyclasses hold them without a lock.
 tags: [environment, python, bindings, burn, prospicio-nn, wheel]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-16T15:00:00Z }
@@ -25,8 +25,11 @@ sources:
 * Size of `prospicio_native.abi3.so`, release, unstripped, Linux x86_64:
   18,271,560 bytes without `nn`, 26,540,520 bytes with it, about 8 MB
   more.
-* Burn 0.21 needs Rust 1.92, so the bindings' `rust-version` is 1.92
-  while the rest of the workspace keeps 1.85.
+* Burn 0.21 needs Rust 1.92, so a build with `nn` does too. The
+  bindings' `rust-version` stays the workspace's 1.85 anyway: raised to
+  1.92 it turns on clippy lints that the lower minimum suppresses
+  (`collapsible_if` with let chains, `manual_is_multiple_of`) in every
+  lane's binding files, which fails CI's `-D warnings`.
 * `CannFit` and `AttentionCannFit` (Burn `Param<Tensor<NdArray<f64>>>`
   inside) and `OnnxModel` (an owned plan, `onnx-ir`'s `Rc` graph dropped
   at load) are `Send + Sync`: they sit in `#[pyclass(frozen)]` wrappers

@@ -3,9 +3,10 @@ name = "prospicio-python"
 description = "Python bindings (PyO3). Thin wrappers only: no algorithms live here."
 version.workspace = true
 edition.workspace = true
-# prospicio-nn (Burn 0.21) needs Rust 1.92; the `nn` feature is on by
-# default, so the bindings need it too.
-rust-version = "1.92"
+# The workspace minimum; the default `nn` feature (prospicio-nn, Burn 0.21)
+# needs Rust 1.92. Kept at the workspace value so clippy lints the shared
+# binding files against one minimum.
+rust-version.workspace = true
 publish = false
 license.workspace = true
 authors.workspace = true

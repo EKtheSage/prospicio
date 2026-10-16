@@ -367,8 +367,11 @@ life cycle; each heavy engine sits in its own crate behind a feature flag.
   wheel and the R package link `prospicio-bayes` always and
   `prospicio-nn` through their `nn` cargo feature, which is on by default
   (user, 2026-10-16), so the shipped packages carry the networks and a
-  build without them stays possible (`--no-default-features`). Burn sets
-  the bindings' minimum Rust to 1.92.
+  build without them stays possible (`--no-default-features`). Burn needs
+  Rust 1.92, so building the bindings with `nn` does too; their
+  `rust-version` stays the workspace's 1.85, since raising it turns on
+  clippy lints (let chains, `is_multiple_of`) across every lane's binding
+  files.
 
 ## Life cycle
 
