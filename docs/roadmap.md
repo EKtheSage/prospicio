@@ -340,6 +340,16 @@ what it is aiming for by v1.0.
   2. (Done: the docs sites are published to GitHub Pages from `main`.)
 - **v1.0:** API review and deprecation pass, then semver.
 
+### `prospicio-xll` (Excel lane)
+
+- **Now:** a prototype XLL for 64-bit desktop Excel (`docs/design/xll.md`):
+  the chain ladder and Mack with standard errors as worksheet functions,
+  built by `cargo xtask xll`, a local file, tested by the user in Excel 365.
+- **Next** (user's order, 2026-10-15):
+  1. Layer pricing: Pareto or lognormal layer loss, ILF.
+  2. An ODP bootstrap summary.
+  3. Distribution: a CI artifact or a release asset, then signing.
+
 ## Order of work (set by the user 2026-10-09)
 
 1. Contract terms in `prospicio-aggregate` (done).

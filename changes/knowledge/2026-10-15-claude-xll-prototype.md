@@ -1,0 +1,1 @@
+* **Creation**: [Building and testing the Excel XLL](/environment/xll-builds.md), from the XLL prototype (branch claude/xll-prototype): MinGW and Wine install with apt in the cloud container; the GNU-target XLL imports only system DLLs; a host exporting `MdCallBack12` drives the C API without Excel.

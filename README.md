@@ -1,23 +1,86 @@
 # prospicio
 
-Actuarial and risk modeling on a Rust core, exposed to Python and R.
+prospicio is a library for actuarial and risk models. The core is in Rust.
+The Python and R packages call the same Rust code, so all three languages
+give the same numbers.
 
-The plan: [docs/architecture.md](docs/architecture.md). Design notes for the
-core abstractions: [docs/design/](docs/design/).
+## What prospicio does
 
-## Layout
+- **Reserving.** Make loss triangles. Estimate reserves with Chain Ladder,
+  Mack, Bornhuetter–Ferguson, Cape Cod, Clark, the ODP bootstrap and the
+  Bayesian chain ladder. Calculate the one-year view for capital.
+- **Aggregate losses and reinsurance.** Combine a claim count and a claim
+  size into an aggregate loss distribution. Apply layers, towers,
+  reinstatements and other treaty terms.
+- **Pricing.** Price a layer or a tower with a risk load. Calculate
+  credibility and the overall rate indication.
+- **Distributions.** Use parametric distributions, copulas and extreme value
+  methods. Save a distribution as JSON and load it again.
+- **Models.** Fit GLMs, GAMs, elastic nets, neural networks and Bayesian
+  models through one model interface.
+
+The tests in `validation/` compare the results with reference
+implementations, for example R ChainLadder, chainladder-python, actuar,
+SciPy and statsmodels.
+
+## How the crates work together
+
+![The prospicio crates in three layers: the packages, the actuarial methods and the foundation](docs/images/crates.svg)
+
+An arrow means "uses". All arrows point down, so the crates have no
+dependency cycles.
+
+**Foundation**
+
+- `prospicio-core` holds the error type, the random-number streams and the
+  calendar periods. All crates use it.
+- `prospicio-math` is the numerical engine: special functions, linear
+  algebra, splines and root finding.
+- `prospicio-prob` holds the distributions and `PredictiveDistribution`.
+  The method crates read and write these types, so the result of one crate
+  can go into another crate.
+
+**Actuarial methods**
+
+- `prospicio-aggregate` builds aggregate loss distributions and
+  reinsurance towers.
+- `prospicio-pricing` prices treaties from the `aggregate` models. It also
+  holds credibility and ratemaking.
+- `prospicio-models` defines the interface that every model engine uses.
+- `prospicio-glm` fits GLMs, GAMs and elastic nets through that interface.
+- `prospicio-bayes` samples Bayesian models with NUTS and checks the draws.
+- `prospicio-nn` trains neural networks with the Burn library.
+- `prospicio-reserving` holds the `Triangle` and the reserving methods. It
+  uses `glm` for the ODP GLM. It uses `bayes` only when you turn on the
+  `bayes` feature.
+
+**Packages**
+
+- `prospicio` is the Rust umbrella crate. It re-exports the other crates.
+  The `bayes`, `nn` and `arrow` features are optional.
+- `prospicio-python` (with `python/`) and `prospicio-r` (with
+  `R/prospicio`) wrap the Rust code for Python and R. Neither package
+  includes `nn` at this time.
+
+**Example: the price of a reinsurance layer**
+
+1. `prob` supplies a claim size distribution and a claim count
+   distribution.
+2. `aggregate` combines them into the aggregate loss distribution of the
+   layer.
+3. `pricing` adds the risk load and gives the price.
+4. The Python or R package returns the result to you.
+
+## Where to read more
 
 | Path | What |
 |---|---|
-| `crates/prospicio` | Umbrella crate: re-exports the others (`prospicio::reserving`, ...) |
-| `crates/prospicio-core` | Error type, reproducible RNG streams |
-| `crates/prospicio-math` | Numerical engine (Phase 0: normal special functions) |
-| `crates/prospicio-prob` | Distributions (Phase 0: `Distribution` trait, `Lognormal`) |
-| `crates/prospicio-reserving` | Reserving (v0.1 so far: Triangle, Chain Ladder, Mack, ODP bootstrap) |
-| `crates/prospicio-aggregate` | Aggregate loss and reinsurance (empty until v0.3) |
-| `crates/prospicio-python`, `python/` | Python package `prospicio` (PyO3 + maturin) |
-| `crates/prospicio-r`, `R/prospicio` | R package `prospicio` (extendr) |
-| `validation/` | Parity harness: reference datasets and results from SciPy, R ChainLadder and chainladder-python |
+| [docs/guides/](docs/guides/) | Guides for actuaries, for example how a reinsurer arrives at a price |
+| [examples/](examples/) | Notebooks that use the Python package from start to end |
+| [docs/architecture.md](docs/architecture.md) | The plan for the library |
+| [docs/design/](docs/design/) | Design notes for the core abstractions |
+| [validation/](validation/) | Reference datasets and the parity tests |
+| [knowledge/](knowledge/) | Facts collected while building the library |
 
 ## Build and test
 

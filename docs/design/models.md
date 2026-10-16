@@ -257,7 +257,13 @@ models and compares them.
   et al.'s weakly informative prior, truncated at the largest raw ratio),
   with `k̂` per observation as the reliability diagnostic. Written from the
   papers; parity with R's `loo` 2.6.0 (`validation/scripts/r_loo.R`):
-  every estimate, pointwise ELPD to `1e-9` and `k̂` to `1e-6`.
+  every estimate, pointwise ELPD to `1e-9` and `k̂` to `1e-6`. The
+  smoothing itself is public as `psis(log_ratios, r_eff)`, returning the
+  unnormalized smoothed log weights (shifted so the largest raw ratio is
+  0) and `k̂`, for reweighting posterior draws outside LOO; the Bayesian
+  one-year view in `prospicio-reserving` uses it (decision 13 of
+  `reserving-bayes.md`, decided by the user 2026-10-15). A unit test checks
+  that `loo` is `psis` applied to `-log p(yᵢ | θₛ)`, bit for bit.
 - **Sampling: nutpie** (decided 2026-10-04). Native models (Bayesian GLM,
   Bayesian chain ladder, credibility) will sample with nutpie's Rust core
   `nuts-rs`, so R gets NUTS too. The nutpie Python package itself is not

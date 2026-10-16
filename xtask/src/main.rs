@@ -11,6 +11,9 @@
 //!   package, run the tests, render the pkgdown site.
 //! - `rust`: rustdoc for the pure-Rust crates, warnings denied.
 //! - `docs`: all three, collected into one site under `target/docs-site`.
+//! - `xll`: build the 64-bit Excel add-in as `target/xll/prospicio.xll`
+//!   and, when a MinGW compiler (and off Windows, Wine) is found, run the
+//!   fake-Excel smoke test on it (docs/design/xll.md).
 //!
 //! `--check` fails if a build changed a generated file that is committed
 //! (the Python stub, R's `man/` and `NAMESPACE`): someone changed a doc
@@ -32,6 +35,8 @@ tasks:
   r        install the R package, regenerate man/ and NAMESPACE, test, render its docs
   rust     build rustdoc for the pure-Rust crates
   docs     all of the above, collected into target/docs-site
+  xll      build the 64-bit Excel add-in as target/xll/prospicio.xll and
+           smoke-test it in a fake Excel when MinGW (and Wine) are found
 
   --check  fail if the build changed a committed generated file
 ";
@@ -56,6 +61,7 @@ fn main() -> ExitCode {
         ["r"] => r(check),
         ["rust"] => rust(),
         ["docs"] => docs(check),
+        ["xll"] => xll(),
         [] | ["help"] | ["-h"] | ["--help"] => {
             print!("{USAGE}");
             return ExitCode::SUCCESS;
@@ -400,6 +406,78 @@ fn git(args: &[&str], paths: &[&str]) -> Result<String> {
 fn rscript(dir: &Path, expr: &str) -> Result {
     debug_assert!(!expr.contains('\n'), "Rscript -e takes one line");
     run(Command::new("Rscript").args(["-e", expr]).current_dir(dir))
+}
+
+/// The MinGW C compiler for 64-bit Windows, as named on Linux and in MSYS2.
+const MINGW_GCC: &str = "x86_64-w64-mingw32-gcc";
+
+fn found(program: &str) -> bool {
+    Command::new(program)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok()
+}
+
+fn xll() -> Result {
+    let root = root();
+    // MSVC on a Windows host; elsewhere the GNU target with MinGW's linker.
+    let target = if cfg!(windows) {
+        "x86_64-pc-windows-msvc"
+    } else {
+        "x86_64-pc-windows-gnu"
+    };
+    step(&format!("cargo build prospicio-xll ({target})"));
+    let mut build = Command::new(cargo());
+    build
+        .current_dir(&root)
+        .args([
+            "build",
+            "--release",
+            "-p",
+            "prospicio-xll",
+            "--target",
+            target,
+        ])
+        .args(["--config", "profile.release.strip=true"]);
+    let linker = "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER";
+    if !cfg!(windows) && env::var_os(linker).is_none() {
+        build.env(linker, MINGW_GCC);
+    }
+    run(&mut build)?;
+
+    let out = root.join("target/xll");
+    fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let dll = root.join(format!("target/{target}/release/prospicio_xll.dll"));
+    let xll = out.join("prospicio.xll");
+    fs::copy(&dll, &xll).map_err(|e| format!("copy {}: {e}", dll.display()))?;
+    println!("built {}", xll.display());
+
+    // The smoke test: a C host standing in for Excel (harness/fake_excel.c).
+    let wine = !cfg!(windows);
+    if !found(MINGW_GCC) || (wine && !found("wine")) {
+        println!(
+            "skipping the fake-Excel smoke test: needs {MINGW_GCC}{}",
+            if wine { " and wine" } else { "" }
+        );
+        return Ok(());
+    }
+    step("fake-Excel smoke test");
+    let exe = out.join("fake_excel.exe");
+    run(Command::new(MINGW_GCC)
+        .arg("-O2")
+        .arg("-o")
+        .arg(&exe)
+        .arg(root.join("crates/prospicio-xll/harness/fake_excel.c")))?;
+    let mut smoke = if wine {
+        let mut c = Command::new("wine");
+        c.arg(&exe).env("WINEDEBUG", "-all");
+        c
+    } else {
+        Command::new(&exe)
+    };
+    run(smoke.arg("prospicio.xll").current_dir(&out))
 }
 
 fn cargo() -> std::ffi::OsString {
