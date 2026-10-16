@@ -1,0 +1,126 @@
+name: XLL
+
+# The Excel add-in (docs/design/xll.md, decision 15): built for 64-bit
+# Windows on Ubuntu with MinGW, smoke-tested in a fake Excel under Wine,
+# and kept as a CI artifact with the test workbook. A version tag also
+# attaches it to a draft GitHub release, which a person publishes.
+#
+# Cost: Ubuntu only, and on PRs and main only when the add-in's inputs
+# change. Signing runs only when the XLL_SIGNING_PFX secret is set.
+on:
+  pull_request:
+    paths:
+      - "crates/prospicio-xll/**"
+      - "crates/prospicio-core/**"
+      - "crates/prospicio-math/**"
+      - "crates/prospicio-prob/**"
+      - "crates/prospicio-pricing/**"
+      - "crates/prospicio-reserving/**"
+      - "crates/prospicio-glm/**"
+      - "crates/prospicio-models/**"
+      - "crates/prospicio-aggregate/**"
+      - "Cargo.lock"
+      - "xtask/**"
+      - ".github/workflows/xll.yml"
+  push:
+    branches: [main]
+    # Path filters are not applied to tag pushes, so every version tag
+    # builds.
+    paths:
+      - "crates/prospicio-xll/**"
+      - "crates/prospicio-core/**"
+      - "crates/prospicio-math/**"
+      - "crates/prospicio-prob/**"
+      - "crates/prospicio-pricing/**"
+      - "crates/prospicio-reserving/**"
+      - "crates/prospicio-glm/**"
+      - "crates/prospicio-models/**"
+      - "crates/prospicio-aggregate/**"
+      - "Cargo.lock"
+      - "xtask/**"
+      - ".github/workflows/xll.yml"
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: xll-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # A step's own env is not visible to its `if`, so the signing step
+      # reads this job-level flag.
+      SIGN: ${{ secrets.XLL_SIGNING_PFX != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+      - uses: Swatinem/rust-cache@v2
+      - name: Install MinGW, Wine and osslsigncode
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-mingw-w64-x86-64 wine64 osslsigncode
+      # Builds target/xll/prospicio.xll, then runs harness/fake_excel.c on
+      # it under Wine; a failed check fails the job.
+      - run: cargo xtask xll
+      - name: Sign
+        env:
+          PFX: ${{ secrets.XLL_SIGNING_PFX }}
+          PASSWORD: ${{ secrets.XLL_SIGNING_PASSWORD }}
+        if: env.SIGN == 'true'
+        run: |
+          echo "$PFX" | base64 -d > "$RUNNER_TEMP/signing.pfx"
+          osslsigncode sign -pkcs12 "$RUNNER_TEMP/signing.pfx" -pass "$PASSWORD" \
+            -n prospicio -i https://github.com/${{ github.repository }} -h sha256 \
+            -t http://timestamp.digicert.com \
+            -in target/xll/prospicio.xll -out target/xll/prospicio-signed.xll
+          rm "$RUNNER_TEMP/signing.pfx"
+          mv target/xll/prospicio-signed.xll target/xll/prospicio.xll
+          osslsigncode verify -CAfile /etc/ssl/certs/ca-certificates.crt \
+            -in target/xll/prospicio.xll | grep "Signature verification: ok"
+      - name: Test workbook
+        run: |
+          python3 -m pip install --quiet openpyxl
+          python3 -I crates/prospicio-xll/harness/make_workbook.py target/xll/prospicio-xll-test.xlsx
+      - name: Bundle
+        run: |
+          mkdir -p dist/prospicio-xll
+          cp target/xll/prospicio.xll target/xll/prospicio-xll-test.xlsx crates/prospicio-xll/README.md dist/prospicio-xll/
+          (cd dist/prospicio-xll && sha256sum prospicio.xll > prospicio.xll.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prospicio-xll
+          path: dist/prospicio-xll
+          retention-days: 30
+
+  # A version tag: the bundle as an asset of that tag's GitHub release,
+  # created as a draft when none exists, so nothing is public until a
+  # person publishes it.
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: prospicio-xll
+          path: prospicio-xll
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          zip -qr "prospicio-xll-$TAG.zip" prospicio-xll
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "${{ github.repository }}" --draft --verify-tag \
+              --title "$TAG" --notes "prospicio $TAG. The Excel add-in for 64-bit Excel on Windows is attached; see its README for installing."
+          fi
+          gh release upload "$TAG" "prospicio-xll-$TAG.zip" --repo "${{ github.repository }}" --clobber

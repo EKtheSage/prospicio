@@ -362,9 +362,14 @@ what it is aiming for by v1.0.
   the chain ladder and Mack with standard errors as worksheet functions,
   built by `cargo xtask xll`, a local file, tested by the user in Excel 365;
   layer pricing (LEV, layer loss, layer CV, ILF) on a Pareto or lognormal
-  severity; the ODP bootstrap exhibit.
-- **Next** (user's order, 2026-10-15):
-  1. Distribution: a CI artifact or a release asset, then signing.
+  severity; the ODP bootstrap exhibit; built, smoke-tested and kept as an
+  artifact by CI, attached to a draft release on a version tag.
+- **Next:**
+  1. More worksheet functions over existing crates: the bootstrap's draws
+     as a column, Mack's bootstrap, the one-year view, more severity
+     families.
+  2. Signing, once the owner has a code-signing certificate (`xll.md`,
+     decision 16).
 
 ## Order of work (set by the user 2026-10-09)
 

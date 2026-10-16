@@ -3,6 +3,14 @@
 prospicio's reserving and layer pricing methods as Excel worksheet functions: an XLL add-in
 for 64-bit Excel on Windows. Design and decisions: `docs/design/xll.md`.
 
+## Get it
+
+- From CI: the **XLL** workflow's run on `main` (or on a PR) has a
+  `prospicio-xll` artifact with `prospicio.xll`, the test workbook, this
+  README and a SHA-256 (*Actions → XLL → a run → Artifacts*).
+- From a release: a version's GitHub release carries
+  `prospicio-xll-<version>.zip` once the owner publishes it.
+
 ## Build
 
 ```sh

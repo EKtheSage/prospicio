@@ -1,0 +1,1 @@
+* **Creation**: [Signing the Excel XLL](/environment/xll-signing.md), from the XLL distribution workflow (branch claude/xll-distribution): osslsigncode signs the MinGW-built XLL on Linux and the signed file passes the smoke test; publicly trusted code-signing keys live in HSMs since June 2023, so a CI secret fits only an organization's own CA certificate.

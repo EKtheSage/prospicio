@@ -7,6 +7,7 @@
 * [Bayesian parity tests run in release](slow-tests-in-release.md) - The NUTS parity tests sit behind the slow-bayes feature of prospicio-validation, so cargo test skips them; CI's bayes job runs them in release (about 17 s against 220 s in debug); how to run them locally and add one.
 * [Notebooks without outputs, executed on the docs site](notebooks-on-site.md) - Notebooks in examples/ are committed without outputs under an nbstripout git filter; cargo xtask python stages the guides and the executed notebooks as the great-docs User Guide; the filter's git status quirk and great-docs 0.17's user guide limits.
 * [Publishing](publishing.md) - How the crates and the Python package package for PyPI and crates.io, and what trusted publishing on each needs.
+* [Signing the Excel XLL](xll-signing.md) - Authenticode signing with osslsigncode on Linux, checked with a self-signed certificate, and which certificates fit a CI secret.
 * [Building and testing the Excel XLL](xll-builds.md) - Cross-building the 64-bit XLL from Linux with MinGW, its system-only imports, and the fake-Excel host under Wine that drives the C API.
 * [WebAssembly builds](wasm-builds.md) - Which crates build for wasm32, how to run their tests under WASI with Node, and how Rayon behaves without threads.
 * [CmdStan on the local Windows machine](local-cmdstan.md) - CmdStan 2.39.0 at ~/.cmdstan builds models with RTools 4.5's make and g++ from PowerShell or cmd only; cmdstanpy 1.3.0 needs MAKE set, since it looks for mingw32-make.
