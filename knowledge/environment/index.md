@@ -1,5 +1,6 @@
 # Environment
 
+* [Cloud session disk space](cloud-disk.md) - The writable disk is a fixed allowance that a full build and test fills (target/debug reached 25 GB); deleting target/debug/incremental frees about 9 GB.
 * [Cloud network](cloud-network.md) - Which hosts the cloud environment reaches, which need allowlisting, and the OpenML host quirk.
 * [Installing the R package from GitHub](r-install-from-github.md) - remotes::install_github(subdir=) builds a tarball of R/prospicio alone, so the Rust crates must be copied into it first; pkgbuild's Config/build/bootstrap runs bootstrap.R to do that.
 * [Local checks](local-checks.md) - What runs locally before a push, what cannot, how to install R and uv when the container lacks them, and the generated-file churn cargo xtask r leaves to revert.

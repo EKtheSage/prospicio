@@ -97,3 +97,13 @@
   `BayesGlmFit.replicate`, `.posterior_predictive_check`, `.loo_pit`,
   `models.ppc_check`, `models.loo_pit`; R `bayes_replicate()`,
   `bayes_ppc()`, `bayes_loo_pit()`, `ppc_check()`, `loo_pit()` (#305).
+- ONNX import in `prospicio_nn::onnx` (Rust, behind the default `onnx`
+  feature): `OnnxModel::load` parses a network trained elsewhere
+  (PyTorch, Keras) with Burn's ONNX parser `onnx-ir` and runs it in
+  `f64` for the operators a tabular network exports (`Gemm`, `Linear`,
+  `MatMul`, broadcasting arithmetic, the common activations, `Softmax`,
+  `Concat`, `Gather` embeddings, reshapes and reductions), refusing
+  others at load. `OnnxPredictor` binds graph inputs to design columns,
+  reads the output as a mean or on a link's scale with the offset, and
+  implements `Fitted` with process draws from a family. Matches
+  onnxruntime within float32 rounding.

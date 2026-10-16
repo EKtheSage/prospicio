@@ -29,7 +29,7 @@ v2 keeps the v1 layering, principle and target scope; it changes priorities, bui
 | Bayesian | Native Gibbs, MH, HMC, NUTS | Own model specs and diagnostics; sampling via nutpie |
 | GAM | Aim at mgcv's useful portion | P-splines, tensor smooths, GCV/REML for Tweedie/Poisson/Gamma only |
 | Tree boosting | Rust adapters for LightGBM/XGBoost | Adapters in the Python/R layer, emitting shared prediction objects |
-| Neural | Burn-native training | Burn in Rust behind the shared model interface (decided 2026-10-03, `docs/design/models.md`); PyTorch models imported for inference through ONNX |
+| Neural | Burn-native training | Burn in Rust behind the shared model interface (decided 2026-10-03, `docs/design/models.md`); PyTorch models imported for inference through ONNX, parsed at run time by Burn's `onnx-ir` (done, Rust) |
 | Crates | ~25 crates planned | ~5 crates at start; split when compile time or dependency weight forces it |
 | Core abstractions | Named, not designed | Distribution representations, joint predictive distributions, Triangle model, RNG streams designed in Phase 0 |
 | Front ends | Python + R | Python first; R skeleton in Phase 0, parity later; WASM target added |
@@ -230,7 +230,7 @@ model.diagnostics()
 | Survival | Rust | Kaplan-Meier, Cox, parametric, competing risks, multi-state |
 | Bayesian | Specs + diagnostics in Rust; sampling via nutpie | Hierarchical severity, Bayesian CL, compartmental reserving, credibility; R-hat, ESS, divergences, PPC, ELPD (LOO, WAIC) |
 | Gradient boosting | Python/R adapters over LightGBM, XGBoost | Poisson/Gamma/Tweedie/quantile objectives, monotone constraints, exposure via offsets |
-| Neural | Rust (`prospicio-nn`, Burn) behind the protocol; PyTorch models via ONNX import | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
+| Neural | Rust (`prospicio-nn`, Burn) behind the protocol; PyTorch models via ONNX import (`prospicio_nn::onnx`, Rust only) | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
 
 Delegated engines are thin: they convert inputs, call the engine, and wrap outputs in shared objects. They add no evaluation logic of their own.
 
@@ -388,7 +388,7 @@ Each release is a vertical slice exposed in Python the same day it lands in Rust
 | ~~License~~ | Decided 2026-10-07: MIT OR Apache-2.0 at the user's option (`LICENSE-MIT`, `LICENSE-APACHE`; R `MIT + file LICENSE \| Apache License (== 2.0)`, which CRAN accepts). No contributor licence agreement for now: contributions come in under the same licence (inbound = outbound); a CLA can be added before outside contributions start if relicensing rights are needed | — |
 | ~~IP ownership~~ | Decided 2026-10-07: Ethan Kang owns the project's IP; it is built on his own time and resources | — |
 | ~~Bayesian backend~~ | Decided 2026-10-04: nutpie. Native models sample with its Rust core `nuts-rs` (from R too); Python users can hand nutpie traces of PyMC or Stan models to the shared diagnostics (`docs/design/models.md`) | — |
-| ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`) | — |
+| ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`); the import parses files at run time with Burn's `onnx-ir` (2026-10-16) | — |
 | ~~WASM scope~~ | Decided 2026-10-07: `prospicio-core`, `prospicio-math`, `prospicio-prob`, `prospicio-aggregate` (with reinsurance), `prospicio-pricing` and `prospicio-reserving` must build for `wasm32-unknown-unknown`; CI checks it. Without threads Rayon's global pool runs on the calling thread, so results are the same, only slower; an explicit multi-thread pool fails there | — |
 | ~~Docs hosting~~ | Decided 2026-10-07: GitHub Pages, now that the repository is public. `.github/workflows/pages.yml` builds the site (`cargo xtask docs`: Python, R and Rust API docs) and deploys it on each merge to `main` that touches code or docs, and on demand | — |
 

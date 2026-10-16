@@ -15,6 +15,8 @@
 //! (`ndarray` backend, `f64`), and is reproducible from its seed.
 
 pub mod attention;
+#[cfg(feature = "onnx")]
+pub mod onnx;
 
 pub use attention::{AttentionCann, AttentionCannFit, TokenAttention};
 
