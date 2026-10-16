@@ -693,6 +693,60 @@ pub static FUNCTIONS: &[Function] = &[
         ],
         run: exposure::swiss_re_c_layer,
     },
+    Function {
+        symbol: "pro_profile",
+        name: "PRO.PROFILE",
+        help: "Exposure-rated risk profile: each band's expected claims, surplus cession and loss to a per-risk layer, with a total.",
+        args: &[
+            Arg {
+                name: "sums_insured",
+                help: "Each band's sum insured (its representative risk, taken as the MPL): a row or column",
+            },
+            Arg {
+                name: "expected_losses",
+                help: "Each band's expected annual loss (premium times loss ratio): one per band",
+            },
+            Arg {
+                name: "limit",
+                help: "The per-risk layer's limit, or \"unlimited\"",
+            },
+            Arg {
+                name: "attachment",
+                help: "The per-risk layer's attachment; 0 if omitted",
+            },
+            EXPOSURE_CURVE,
+            Arg {
+                name: "p1",
+                help: "Swiss Re c or MBBEFD b (one, or one per band), or a tabulated curve's x values",
+            },
+            Arg {
+                name: "p2",
+                help: "MBBEFD g (one, or one per band), or a tabulated curve's G(x) values",
+            },
+            CP3,
+            Arg {
+                name: "lower",
+                help: "Each band's lowest sum insured, a blank for a band without bounds; omitted for none",
+            },
+            Arg {
+                name: "upper",
+                help: "Each band's highest sum insured, a blank for a band without bounds",
+            },
+            Arg {
+                name: "spread",
+                help: "How a band spreads its sums insured between its bounds: \"uniform\" (default), \"tilted\" or \"auto\"",
+            },
+            Arg {
+                name: "retention",
+                help: "A surplus treaty's retention line, which the layer inures to; omitted for none",
+            },
+            Arg {
+                name: "lines",
+                help: "The surplus treaty's number of lines",
+            },
+        ],
+        run: exposure::profile,
+    },
 ];
 
 /// Runs the function exported as `symbol` on `args`, catching a panic so

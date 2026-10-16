@@ -60,6 +60,7 @@ category of Insert Function:
 | `PRO.EXPOSURE.STATS(curve, p1, [p2], [p3])` | The curve's `b`, `g`, mean destruction rate and probability of a total loss |
 | `PRO.SWISSRE.C(rate)` | The Swiss Re `c` of a mean destruction rate |
 | `PRO.SWISSRE.C.LAYER(limit, attachment, mpl, share)` | The Swiss Re `c` of a layer's share |
+| `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
 omitted (none), a number (a constant factor to ultimate at the oldest age)
@@ -263,6 +264,13 @@ real Excel.
     insured gives each band's share of one layer, and a row of layers
     against it a table. A severity's own curve, `LEV(x MPL) / LEV(MPL)`,
     is `PRO.LEV` over `PRO.LEV` and needs no function of its own.
+    `PRO.PROFILE` takes one curve, or a Swiss Re `c` or an MBBEFD `b` and
+    `g` per band (a range with one cell per band), as Python's
+    `RiskProfile` takes one curve or a list. A band spreads its sums
+    insured between `lower` and `upper` when it has both; the spread is
+    uniform unless `spread` says `"tilted"` or `"auto"` (Python's default
+    too, without its warning: the exhibit's mean SI column shows where a
+    band's mean moved).
 
 ## Parity plan
 
@@ -285,7 +293,8 @@ order, one small PR each, those already done struck through:
    generalized Pareto~~; ~~the Pareto helpers (alpha between layers or
    frequencies, extrapolation)~~; ~~the layer variance~~.
 3. Pricing: ~~exposure curves (MBBEFD, Swiss Re, tabulated) and a
-   layer's share, the Swiss Re calibrations~~; a risk profile's layer loss;
+   layer's share, the Swiss Re calibrations~~; ~~a risk profile's layer
+   loss and surplus cession~~;
    credibility (Buhlmann-Straub, limited fluctuation); ratemaking (trend,
    rate level, the indicated rate); burning cost.
 4. Aggregate: a compound distribution of a count and a severity, its
