@@ -26,6 +26,12 @@ rayon = { workspace = true, optional = true }
 
 [features]
 bayes = ["dep:prospicio-bayes", "dep:rayon"]
+# Runs the unit tests that sample with NUTS (`bayes::*`). They are ignored
+# without it: in a debug build they took about 220 s single-threaded and
+# about 5 minutes of CI's 4-core `cargo test`, against seconds in release.
+# CI's `bayes` job runs them with
+#   cargo test --release -p prospicio-reserving --features slow-tests --lib
+slow-tests = ["bayes"]
 
 [dev-dependencies]
 rayon.workspace = true

@@ -1,10 +1,10 @@
 ---
 type: Environment Fact
-title: Bayesian parity tests run in release, outside cargo test
-description: The NUTS parity tests take about 220 s in a debug build and about 17 s in release, so they sit behind the slow-bayes feature of prospicio-validation and CI's bayes job runs them in release; how to run them locally and add one.
+title: Bayesian tests run in release, outside cargo test
+description: The NUTS parity tests sit behind the slow-bayes feature of prospicio-validation and prospicio-reserving's NUTS unit tests are ignored without its slow-tests feature, so a debug cargo test skips both and CI's bayes job runs them in release; how to run them locally and add one.
 tags: [environment, ci, bayes, testing]
 status: stable
-generated: { by: claude-code/local-session, at: 2026-10-13T00:00:00Z }
+generated: { by: claude-code/local-session, at: 2026-10-15T00:00:00Z }
 stale_after: 2027-04-13T00:00:00Z
 sources:
   - id: ci
@@ -16,21 +16,25 @@ sources:
   - id: agents
     resource: ../AGENTS.md
     title: AGENTS.md, Checks
+  - id: reserving
+    resource: ../crates/prospicio-reserving/Cargo.toml
+    title: prospicio-reserving, the slow-tests feature
 ---
 
 # The split
 
-Six parity files sample with NUTS: `reserving_bayes`, `reserving_bayes_bf`,
-`reserving_bayes_segments`, `reserving_meyers`, `reserving_meyers_cay` and
-`reserving_meyers_segments`. In CI's debug `cargo test` they took about
-220 s of the rust job's 10 to 12 minutes; in a release build they take
-about 17 s (measured locally on 2026-10-13: 17.5 s wall, 15 s of test
+The parity files that sample with NUTS are the `reserving_bayes*`,
+`reserving_meyers*` and `reserving_compartmental*` targets (twelve on
+2026-10-15). When there were six, they took about 220 s of the rust job's
+10 to 12 minutes in CI's debug `cargo test`, and about 17 s in a release
+build (measured locally on 2026-10-13: 17.5 s wall, 15 s of test
 time).[^ci]
 
 Each has a `[[test]]` entry in `validation/Cargo.toml` with
-`required-features = ["slow-bayes"]`, an empty feature of
-`prospicio-validation`.[^cargo] Without the feature cargo skips the target
-silently, so `cargo test` neither builds nor runs them. That list is the
+`required-features = ["slow-bayes"]`, a feature of
+`prospicio-validation` that also turns on
+`prospicio-reserving/slow-tests`.[^cargo] Without the feature cargo skips
+the target silently, so `cargo test` neither builds nor runs them. That list is the
 one place: CI's `bayes` job reads it with Python's `tomllib` and passes one
 `--test` per entry. The rust job lints them with
 `cargo clippy --all-targets --features prospicio-validation/slow-bayes`.
@@ -38,7 +42,7 @@ one place: CI's `bayes` job reads it with Python's `tomllib` and passes one
 # Running them
 
 ```
-cargo test --release -p prospicio-validation --features slow-bayes --test 'reserving_bayes*' --test 'reserving_meyers*'
+cargo test --release -p prospicio-validation --features slow-bayes --test 'reserving_bayes*' --test 'reserving_meyers*' --test 'reserving_compartmental*'
 ```
 
 Cargo accepts glob patterns in `--test`. Running the whole package in
@@ -50,6 +54,38 @@ debug and release (the `discrete3` case's `tvar_threshold` and stand-alone
 prices off by one grid step) while CI on Ubuntu passed it, so a local
 `cargo test` on Windows can fail there for a reason unrelated to the
 Bayesian tests.[^agents]
+
+# The unit tests
+
+The same split applies to `prospicio-reserving`'s unit tests in `bayes::*`
+since 2026-10-15. As the one-year engine, its conformance suite and
+compartmental model 2 grew, that crate's unit-test binary took 295 s of
+the rust job's 17.6 minutes on CI's 4-core runner (debug, run 38813063744),
+and 232 s single-threaded locally, 226 s of it in `bayes::`. The 29 tests
+that fit with NUTS and took more than about a second carry
+`#[cfg_attr(not(feature = "slow-tests"), ignore = "...")]`; the crate's
+`slow-tests` feature (which turns on `bayes`) un-ignores them.[^reserving]
+Without it the binary takes 12 s single-threaded in debug (282 run, 32
+ignored: the 29 and three plain `#[ignore]`s); with it, in release, all
+311 run in about 4 s. The attribute, unlike a `cfg` on the module, keeps
+them compiled, so clippy lints them in every build. Cheap checks (errors,
+layouts, gradients, the prior predictive, a short run per model, one
+one-year fit) stay in the debug run.
+
+```
+cargo test --release -p prospicio-reserving --features slow-tests --lib
+```
+
+CI's `bayes` job runs this after the parity tests, and `slow-bayes` turns
+`prospicio-reserving/slow-tests` on, so one flag covers both. A seed-pinned
+test that is platform-specific stays plainly `#[ignore]`d and runs only by
+name with `--ignored`. Measured locally on 2026-10-15 (Windows, 16
+threads): the debug unit tests of `prospicio-reserving --features bayes`
+fell from 61 s to 6.5 s wall, and from 233 s to 12 s single-threaded.
+
+`prospicio-bayes` has one slow unit test of its own,
+`stacking::tests::pooled_and_adaptive_fits_find_the_better_model` (26 s
+single-threaded in debug, most of that crate's 29 s); it is not gated.
 
 # When CI runs them
 
@@ -64,3 +100,4 @@ the PR already did.
 [^ci]: CI, bayes job
 [^cargo]: prospicio-validation, the slow-bayes feature and its [[test]] entries
 [^agents]: AGENTS.md, Checks
+[^reserving]: prospicio-reserving, the slow-tests feature

@@ -1099,6 +1099,10 @@ mod tests {
     /// error: the means within `0.1 s` and the sds within 10% by origin
     /// and in total, `s` the sd of `BayesOdp`'s reserve.
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn a_flat_prior_reproduces_bayes_odp() {
         let tri = genins();
         let bf = BayesBf {
@@ -1146,6 +1150,10 @@ mod tests {
     /// ultimates are the chain ladder's, the limit's mean is the classical
     /// Bornhuetter–Ferguson reserve, which is then the chain ladder's.
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn a_tight_prior_reproduces_the_bornhuetter_ferguson_limit() {
         let tri = genins();
         let tight = BayesBf {
@@ -1213,6 +1221,10 @@ mod tests {
     /// Between the limits, the total mean reserve moves monotonically from
     /// the flat prior's to the tight prior's as `cv` falls.
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn an_intermediate_prior_sits_between_the_limits() {
         let tri = genins();
         let total = |cv: f64| {
@@ -1239,6 +1251,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn a_seed_replays_whatever_the_threads() {
         let tri = genins();
         let a = quick(3).fit(&tri, "values", "premium").unwrap();
@@ -1442,6 +1458,10 @@ mod tests {
     /// informative and a flat prior, with a fully developed square as the
     /// triangle without a year.
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_one_year_view_conforms() {
         let square = with_premium(
             2001,

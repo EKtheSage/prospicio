@@ -17,6 +17,7 @@
 pub mod credibility;
 pub mod exposure;
 pub mod pricing;
+pub mod ratemaking;
 pub mod reserving;
 pub mod sheet;
 pub mod triangles;
@@ -202,6 +203,38 @@ const ESTIMATOR: Arg = Arg {
 const GROUPS: Arg = Arg {
     name: "groups",
     help: "Labels for the groups, one per row of ratios; omitted for 1, 2, ...",
+};
+const EFFECTIVE: Arg = Arg {
+    name: "effective",
+    help: "Each rate change's effective date (a year fraction such as 2011.5, or an Excel date), in order",
+};
+const CHANGES: Arg = Arg {
+    name: "changes",
+    help: "Each rate change, 0.05 for +5% (or the cumulative levels, with given \"levels\")",
+};
+const FROM: Arg = Arg {
+    name: "from",
+    help: "Each period's start (a year fraction or an Excel date): a number or a range",
+};
+const TO: Arg = Arg {
+    name: "to",
+    help: "Each period's end, exclusive (2012 for calendar year 2011)",
+};
+const PERIOD: Arg = Arg {
+    name: "period",
+    help: "\"calendar\" (default: premium earned, losses occurring in the window) or \"policy\" (policies written in it)",
+};
+const TERM: Arg = Arg {
+    name: "term",
+    help: "Policy term in years, 1 if omitted (0.5 for six-month policies)",
+};
+const APPLIES: Arg = Arg {
+    name: "applies",
+    help: "\"written\" (default: new and renewal policies) or \"in_force\" (all premium earned after the date), one or one per change",
+};
+const GIVEN: Arg = Arg {
+    name: "given",
+    help: "\"changes\" (default) or \"levels\": whether changes holds each change or the cumulative level after it",
 };
 const X: Arg = Arg {
     name: "x",
@@ -817,6 +850,66 @@ pub static FUNCTIONS: &[Function] = &[
         help: "Buhlmann-Straub structure parameters: collective mean, between and within variances, k.",
         args: &[RATIOS, WEIGHTS, ESTIMATOR],
         run: credibility::buhlmann_params,
+    },
+    Function {
+        symbol: "pro_yearfraction",
+        name: "PRO.YEARFRACTION",
+        help: "An Excel date on Werner and Modlin's half-month grid, as a year fraction (30 June 2013 is 2013.5).",
+        args: &[Arg {
+            name: "date",
+            help: "Excel date(s): a date or a range",
+        }],
+        run: ratemaking::year_fraction_of,
+    },
+    Function {
+        symbol: "pro_onlevel",
+        name: "PRO.ONLEVEL",
+        help: "On-level factor of each period's premium by the parallelogram method: current over average rate level.",
+        args: &[EFFECTIVE, CHANGES, FROM, TO, PERIOD, TERM, APPLIES, GIVEN],
+        run: ratemaking::on_level,
+    },
+    Function {
+        symbol: "pro_ratelevel",
+        name: "PRO.RATELEVEL",
+        help: "One period's premium by rate level (the parallelogram's cells), average and current levels, on-level factor.",
+        args: &[EFFECTIVE, CHANGES, FROM, TO, PERIOD, TERM, APPLIES, GIVEN],
+        run: ratemaking::rate_level,
+    },
+    Function {
+        symbol: "pro_avgdate",
+        name: "PRO.AVGDATE",
+        help: "Average written or earned (accident) date of each period, for trend lengths.",
+        args: &[
+            FROM,
+            TO,
+            PERIOD,
+            TERM,
+            Arg {
+                name: "basis",
+                help: "\"earned\" (default; the average accident date of losses) or \"written\"",
+            },
+        ],
+        run: ratemaking::average_date,
+    },
+    Function {
+        symbol: "pro_trend_fit",
+        name: "PRO.TREND.FIT",
+        help: "Least-squares trend of values over time: annual change, intercept, slope, R-squared.",
+        args: &[
+            Arg {
+                name: "times",
+                help: "Times in years (2011.25 for a quarter) or Excel dates",
+            },
+            Arg {
+                name: "values",
+                help: "Values at those times (frequencies, severities, average premiums), the same number of cells",
+            },
+            Arg {
+                name: "kind",
+                help: "\"exponential\" (default; ln y on time) or \"linear\"",
+            },
+        ],
+        run: ratemaking::trend_fit,
     },
 ];
 

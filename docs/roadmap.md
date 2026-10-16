@@ -385,11 +385,11 @@ what it is aiming for by v1.0.
   parametric family; the Pareto helpers; the piecewise and generalized
   Pareto, the layer variance; exposure curves (MBBEFD, Swiss Re,
   tabulated) and their calibrations; an exposure-rated risk profile;
-  classical credibility.
+  classical credibility; rate level and trend.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): pricing (ratemaking, burning cost),
-     then aggregates.
+     form (`xll.md`, parity plan): pricing (the experience methods and
+     the indicated rate, burning cost), then aggregates.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

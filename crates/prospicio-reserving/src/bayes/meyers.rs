@@ -2132,6 +2132,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn cay_draws_the_oldest_age_as_a_moving_average() {
         // Given one natural-scale draw with a large sigma_m and rho, the
         // log ultimates down age m follow Meyers' recursion: origin 2's
@@ -2327,6 +2331,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn a_seed_replays_whatever_the_threads() {
         let tri = comauto();
         let a = quick(MeyersModel::Csr, 3)
@@ -2392,6 +2400,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn ultimates_and_reserves_by_origin() {
         let fit = quick(MeyersModel::Crc, 5)
             .fit(&comauto(), "paid", "premium")
@@ -2453,6 +2465,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn provenance_records_the_settings() {
         let fit = quick(MeyersModel::Csr, 5)
             .fit(&comauto(), "paid", "premium")
@@ -2526,6 +2542,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn errors() {
         let tri = comauto();
         for (name, model) in [
@@ -2752,6 +2772,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn each_segment_has_its_own_seeds() {
         let tri = twins();
         let fits = quick(MeyersModel::Crc, 9)
@@ -2886,6 +2910,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn rank_correlation_moves_reserves_and_ultimates_together() {
         let tri = twins();
         let independent = quick(MeyersModel::Cay, 10)
@@ -2939,6 +2967,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_backtest_model_is_the_fit_on_the_train_rows() {
         // The latest diagonal held out: the train rows are the triangle of
         // the first nine origins without it (row 10 w + d is origin w at
@@ -3019,6 +3051,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_next_cell_simulates_as_the_fit() {
         // On the whole triangle, origin 1989's cell at 120 months is its
         // ultimate: the backtest's draws of its increment are the fit's
@@ -3053,6 +3089,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn an_origin_path_telescopes() {
         // Origin 1997's nine future cells, one path per simulation: the
         // increments sum to its ultimate less its latest value, with the

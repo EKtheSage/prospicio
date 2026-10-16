@@ -11,6 +11,7 @@ which is how Excel itself saves a spilling formula.
 """
 
 import csv
+import datetime
 import re
 import sys
 import zipfile
@@ -481,6 +482,42 @@ for row in cr.iter_rows(min_row=32, max_row=34, min_col=2, max_col=4):
     for c in row:
         c.number_format = "0.000"
 cr.column_dimensions["A"].width = 18
+
+# Ratemaking: Werner and Modlin's chapter 5 parallelogram and Table 6.14's trends.
+rm = wb.create_sheet("Ratemaking")
+rm["A1"] = "Rate level by the parallelogram method (Werner and Modlin, ch. 5)"; rm["A1"].font = bold
+rm["A2"] = "Effective"; rm["B2"] = "Change"; rm["A2"].font = rm["B2"].font = bold
+for k, (d, c) in enumerate([(datetime.date(2010, 7, 1), 0.05), (datetime.date(2011, 1, 1), 0.10), (datetime.date(2012, 4, 1), -0.01)]):
+    rm.cell(row=3 + k, column=1, value=d).number_format = "yyyy-mm-dd"
+    rm.cell(row=3 + k, column=2, value=c).number_format = "0.0%"
+    rm.cell(row=3 + k, column=1).fill = rm.cell(row=3 + k, column=2).fill = inp
+rm["D2"] = "Calendar year"; rm["E2"] = "On-level factor"; rm["F2"] = "Six-month policies"
+for h in ("D2", "E2", "F2"):
+    rm[h].font = bold
+for k, y in enumerate(range(2010, 2014)):
+    rm.cell(row=3 + k, column=4, value=y).fill = inp
+rm["E3"] = ArrayFormula("E3:E6", "=PRO.ONLEVEL(A3:A5,B3:B5,D3:D6,D3:D6+1)")
+rm["F3"] = ArrayFormula("F3:F6", '=PRO.ONLEVEL(A3:A5,B3:B5,D3:D6,D3:D6+1,"calendar",0.5)')
+for r in range(3, 7):
+    rm[f"E{r}"].number_format = rm[f"F{r}"].number_format = "0.0000"
+rm["A9"] = "Calendar year 2011's cells (Figure 5.17)"; rm["A9"].font = bold
+rm["A10"] = ArrayFormula("A10:D16", "=PRO.RATELEVEL(A3:A5,B3:B5,2011,2012)")
+rm["A18"] = "Trend length: CY2011 losses to rates effective 1/1/2015 for a year"
+rm["A19"] = ArrayFormula("A19", '=PRO.AVGDATE(2015,2016,"policy")-PRO.AVGDATE(2011,2012)')
+rm["A21"] = "Exponential trend of Table 6.14's severities, quarterly"; rm["A21"].font = bold
+sev = [1061.45, 1076.56, 1085.56, 1098.02, 1102.46, 1107.52, 1117.71, 1123.70, 1127.63, 1124.01,
+       1116.42, 1109.48, 1105.38, 1102.61, 1096.67, 1093.77, 1100.67, 1108.79, 1122.13, 1126.46]
+rm["A22"] = "Time"; rm["B22"] = "Severity"; rm["A22"].font = rm["B22"].font = bold
+for k, v in enumerate(sev):
+    rm.cell(row=23 + k, column=1, value=2010 + k / 4)
+    rm.cell(row=23 + k, column=2, value=v).fill = inp
+rm["D22"] = "20 points"; rm["G22"] = "Last 8"; rm["D22"].font = rm["G22"].font = bold
+rm["D23"] = ArrayFormula("D23:E28", "=PRO.TREND.FIT(A23:A42,B23:B42)")
+rm["G23"] = ArrayFormula("G23:H28", "=PRO.TREND.FIT(A35:A42,B35:B42)")
+rm["E24"].number_format = rm["H24"].number_format = "0.0%"
+rm.column_dimensions["A"].width = 16
+for col in "BCDEFGH":
+    rm.column_dimensions[col].width = 15
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("fifty-one functions registered", registered == 51);
+    check("fifty-six functions registered", registered == 56);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -427,6 +427,14 @@ int main(int argc, char **argv) {
     XLOPER12 *cz = ((Fn2)GetProcAddress(xll, "pro_cred_z"))(&quarter, &full);
     check("PRO.CRED.Z(250, 1000) is 0.5", (cz->xltype & 0xFFF) == xltypeNum && fabs(cz->val.num - 0.5) < 1e-15);
     free12(cz);
+
+    /* An Excel date on the half-month grid: 30 June 2013 is 2013.5. */
+    XLOPER12 june30;
+    june30.xltype = xltypeNum;
+    june30.val.num = 41455;
+    XLOPER12 *yf = ((Fn1)GetProcAddress(xll, "pro_yearfraction"))(&june30);
+    check("PRO.YEARFRACTION(DATE(2013,6,30)) is 2013.5", (yf->xltype & 0xFFF) == xltypeNum && yf->val.num == 2013.5);
+    free12(yf);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;
