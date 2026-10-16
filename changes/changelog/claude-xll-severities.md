@@ -6,4 +6,4 @@
   `PRO.LAYER`, `PRO.LAYER.CV` and `PRO.ILF`, with new `PRO.SEV.CDF`,
   `PRO.SEV.SURVIVAL`, `PRO.SEV.QUANTILE`, `PRO.SEV.STATS` and `PRO.LER`.
   The layer functions' last argument, formerly `truncation`, is now `p3`
-  (the same for the Pareto; the Burr's scale).
+  (the same for the Pareto; the Burr's scale) (#292).
