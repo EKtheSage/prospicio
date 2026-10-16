@@ -89,3 +89,7 @@ required-features = ["slow-bayes"]
 [[test]]
 name = "reserving_meyers_one_year"
 required-features = ["slow-bayes"]
+
+[[test]]
+name = "reserving_compartmental_one_year"
+required-features = ["slow-bayes"]

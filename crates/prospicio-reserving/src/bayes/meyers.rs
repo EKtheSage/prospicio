@@ -660,6 +660,7 @@ impl Meyers {
             pareto_k: year.pareto_k.clone(),
             refitted: year.refitted.clone(),
             moment_matched: year.moment_matched.clone(),
+            unrefitted: year.unrefitted.clone(),
             refit_warnings: year.refit_warnings,
             k_threshold: settings.k_threshold,
         });

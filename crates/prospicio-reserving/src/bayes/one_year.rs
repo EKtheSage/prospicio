@@ -77,6 +77,7 @@ pub enum OneYearRefit {
 /// let settings = BayesOneYear::default();
 /// assert_eq!(settings.k_threshold, 0.7);
 /// assert_eq!(settings.refit, OneYearRefit::MomentMatchThenRefit);
+/// assert_eq!(settings.max_refits, None);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BayesOneYear {
@@ -85,6 +86,14 @@ pub struct BayesOneYear {
     pub k_threshold: f64,
     /// What happens to a flagged simulation.
     pub refit: OneYearRefit,
+    /// The most simulations refitted with NUTS (decision 20): the first
+    /// this many that `refit` sends to a refit, in simulation order; the
+    /// others are reweighted as they are and listed in the view's
+    /// `unrefitted`. `None` (the default) refits every one; `Some(0)`
+    /// never refits. A refit of a compartmental model takes seconds to a
+    /// minute, so a budget bounds the view's run time where moment
+    /// matching rescues few simulations.
+    pub max_refits: Option<usize>,
 }
 
 impl Default for BayesOneYear {
@@ -92,6 +101,7 @@ impl Default for BayesOneYear {
         Self {
             k_threshold: 0.7,
             refit: OneYearRefit::MomentMatchThenRefit,
+            max_refits: None,
         }
     }
 }
@@ -205,6 +215,9 @@ pub(crate) struct YearDraws {
     /// The simulations moment matching brought to `k̂` at most the
     /// threshold, in order.
     pub(crate) moment_matched: Vec<usize>,
+    /// The simulations a refit was due for beyond
+    /// [`BayesOneYear::max_refits`], reweighted instead, in order.
+    pub(crate) unrefitted: Vec<usize>,
     /// How many refits had a diagnostic warning.
     pub(crate) refit_warnings: usize,
 }
@@ -215,7 +228,20 @@ struct Sim {
     k: f64,
     refitted: bool,
     matched: bool,
+    unrefitted: bool,
     warned: bool,
+}
+
+/// A simulation after the first pass: done, or due for a refit, with what
+/// the refit (or, over the budget, the reweighting) needs.
+enum Pass {
+    Done(Sim),
+    Refit {
+        year: Vec<f64>,
+        refit_seed: u64,
+        log_w: Vec<f64>,
+        k: f64,
+    },
 }
 
 /// The one-year view of `model` under `posterior`: `n_sims` simulations,
@@ -261,7 +287,32 @@ pub(crate) fn simulate<M: YearModel>(
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .record(e);
     };
-    let sims: Vec<Option<Sim>> = (0..n_sims)
+    // The closing reserve of the reweighted posterior draws.
+    let reweighted = |log_w: &[f64], year: &[f64]| -> Vec<f64> {
+        let mut closing = vec![0.0; no];
+        let max = log_w.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let w: Vec<f64> = log_w.iter().map(|v| (v - max).exp()).collect();
+        let total: f64 = w.iter().sum();
+        match &closing_by_draw {
+            Some(by_draw) => mean_over(by_draw, &|d| w[d] / total, &mut closing),
+            None => {
+                let mut row = vec![0.0; no];
+                for (d, wd) in w.iter().enumerate() {
+                    model.closing(posterior.draw(d), year, &mut row);
+                    for (c, v) in closing.iter_mut().zip(&row) {
+                        *c += wd / total * v;
+                    }
+                }
+            }
+        }
+        closing
+    };
+    let cdr_of = |year: &[f64], closing: &[f64]| -> Vec<f64> {
+        let mut paid = vec![0.0; no];
+        model.paid(year, &mut paid);
+        (0..no).map(|o| opening[o] - paid[o] - closing[o]).collect()
+    };
+    let first: Vec<Option<Pass>> = (0..n_sims)
         .into_par_iter()
         .map(|i| {
             let mut rng = StreamRng::new(seed, i as u64);
@@ -317,14 +368,68 @@ pub(crate) fn simulate<M: YearModel>(
                 _ => None,
             };
             let matched = rescued.is_some();
-            let (refitted, mut warned) = (flagged && !matched, false);
             if let Some(c) = rescued {
                 closing = c;
-            } else if refitted {
+            } else if flagged {
+                // Refitted in the second pass, within the budget.
+                return Some(Pass::Refit {
+                    year,
+                    refit_seed,
+                    log_w,
+                    k,
+                });
+            } else {
+                closing = reweighted(&log_w, &year);
+            }
+            Some(Pass::Done(Sim {
+                cdr: cdr_of(&year, &closing),
+                k,
+                refitted: false,
+                matched,
+                unrefitted: false,
+                warned: false,
+            }))
+        })
+        .collect();
+    // The second pass: the first `max_refits` simulations due for a refit,
+    // in simulation order, are refitted; the others are reweighted.
+    let budget = settings.max_refits.unwrap_or(usize::MAX);
+    let mut due = 0usize;
+    let first: Vec<(Option<Pass>, bool)> = first
+        .into_iter()
+        .map(|pass| {
+            let within = matches!(pass, Some(Pass::Refit { .. })) && {
+                due += 1;
+                due <= budget
+            };
+            (pass, within)
+        })
+        .collect();
+    let sims: Vec<Option<Sim>> = first
+        .into_par_iter()
+        .map(|(pass, within)| match pass? {
+            Pass::Done(sim) => Some(sim),
+            Pass::Refit {
+                year,
+                refit_seed,
+                log_w,
+                k,
+            } => {
+                if !within {
+                    let closing = reweighted(&log_w, &year);
+                    return Some(Sim {
+                        cdr: cdr_of(&year, &closing),
+                        k,
+                        refitted: false,
+                        matched: false,
+                        unrefitted: true,
+                        warned: false,
+                    });
+                }
                 match model.refit(&year, refit_seed) {
-                    Ok((draws, warn)) => {
-                        warned = warn;
+                    Ok((draws, warned)) => {
                         let n = draws.n_draws();
+                        let mut closing = vec![0.0; no];
                         let mut row = vec![0.0; no];
                         for d in 0..n {
                             model.closing(draws.draw(d), &year, &mut row);
@@ -332,39 +437,21 @@ pub(crate) fn simulate<M: YearModel>(
                                 *c += v / n as f64;
                             }
                         }
+                        Some(Sim {
+                            cdr: cdr_of(&year, &closing),
+                            k,
+                            refitted: true,
+                            matched: false,
+                            unrefitted: false,
+                            warned,
+                        })
                     }
                     Err(e) => {
                         fail(e);
-                        return None;
-                    }
-                }
-            } else {
-                let max = log_w.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-                let w: Vec<f64> = log_w.iter().map(|v| (v - max).exp()).collect();
-                let total: f64 = w.iter().sum();
-                match &closing_by_draw {
-                    Some(by_draw) => mean_over(by_draw, &|d| w[d] / total, &mut closing),
-                    None => {
-                        let mut row = vec![0.0; no];
-                        for (d, wd) in w.iter().enumerate() {
-                            model.closing(posterior.draw(d), &year, &mut row);
-                            for (c, v) in closing.iter_mut().zip(&row) {
-                                *c += wd / total * v;
-                            }
-                        }
+                        None
                     }
                 }
             }
-            let mut paid = vec![0.0; no];
-            model.paid(&year, &mut paid);
-            let cdr = (0..no).map(|o| opening[o] - paid[o] - closing[o]).collect();
-            Some(Sim {
-                cdr,
-                k,
-                refitted,
-                matched,
-                warned,
-            })
         })
         .collect();
     let failures = failures
@@ -382,6 +469,7 @@ pub(crate) fn simulate<M: YearModel>(
         pareto_k: Vec::with_capacity(n_sims),
         refitted: Vec::new(),
         moment_matched: Vec::new(),
+        unrefitted: Vec::new(),
         refit_warnings: 0,
     };
     for (i, sim) in sims.into_iter().enumerate() {
@@ -393,6 +481,9 @@ pub(crate) fn simulate<M: YearModel>(
         }
         if sim.matched {
             out.moment_matched.push(i);
+        }
+        if sim.unrefitted {
+            out.unrefitted.push(i);
         }
         out.refit_warnings += usize::from(sim.warned);
     }
@@ -425,6 +516,7 @@ pub(crate) fn assemble<F: ReserveFit>(
         pareto_k: year.pareto_k,
         refitted: year.refitted,
         moment_matched: year.moment_matched,
+        unrefitted: year.unrefitted,
         refit_warnings: year.refit_warnings,
         k_threshold: settings.k_threshold,
     })
@@ -622,8 +714,13 @@ pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     /// The simulations that moment matching rescued (their `k̂` brought to
     /// at most the threshold), in order; empty unless the settings'
     /// `refit` is [`OneYearRefit::MomentMatchThenRefit`]. Each flagged
-    /// simulation is then in this or in `refitted`.
+    /// simulation is then in this, in `refitted` or in `unrefitted`.
     pub moment_matched: Vec<usize>,
+    /// The simulations due for a refit beyond
+    /// [`BayesOneYear::max_refits`], reweighted instead (their
+    /// reweighting is as unreliable as their `k̂` says), in order; empty
+    /// without a budget.
+    pub unrefitted: Vec<usize>,
     /// How many of the refits had a diagnostic warning (R-hat, ESS or a
     /// divergence).
     pub refit_warnings: usize,
@@ -682,7 +779,7 @@ fn flagged(k: f64, threshold: f64) -> bool {
 }
 
 /// The share of `pareto_k` above `threshold` or NaN.
-fn flagged_share(pareto_k: &[f64], threshold: f64) -> f64 {
+pub(crate) fn flagged_share(pareto_k: &[f64], threshold: f64) -> f64 {
     let n = pareto_k.iter().filter(|&&k| flagged(k, threshold)).count();
     n as f64 / pareto_k.len().max(1) as f64
 }
@@ -732,6 +829,9 @@ pub struct BayesOneYearSegment<S = super::BayesOdpSegment> {
     pub refitted: Vec<usize>,
     /// The simulations of this segment that moment matching rescued.
     pub moment_matched: Vec<usize>,
+    /// The simulations of this segment due for a refit beyond the budget,
+    /// reweighted instead.
+    pub unrefitted: Vec<usize>,
     /// How many of this segment's refits had a diagnostic warning.
     pub refit_warnings: usize,
     /// The settings' threshold.
@@ -808,9 +908,14 @@ impl<S: ReserveFit + Clone> BayesOneYearFits<S> {
 
 /// The provenance fields of the one-year view's settings.
 pub(crate) fn provenance(provenance: Provenance, settings: &BayesOneYear) -> Provenance {
-    provenance
+    let provenance = provenance
         .param("k_threshold", settings.k_threshold)
-        .param("refit", format!("{:?}", settings.refit))
+        .param("refit", format!("{:?}", settings.refit));
+    match settings.max_refits {
+        // Unchanged without a budget, as before decision 20.
+        None => provenance,
+        Some(m) => provenance.param("max_refits", m),
+    }
 }
 
 #[cfg(test)]
