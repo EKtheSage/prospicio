@@ -281,13 +281,13 @@ impl BayesBf {
             &year,
             &fit.posterior,
             settings,
-            self.n_sims,
+            settings.sims(self.n_sims),
             one_year_seed(derive_seed(self.seed, Stream::Predictive)),
         )?;
         let hasher = input_hasher(column, exposure, &segment, &fit.chain_ladder, &fit.exposure);
         let mut provenance = self.provenance(column, exposure, &fit.model, hasher);
         provenance.model = "bayes_bf_one_year".into();
-        let provenance = one_year::provenance(provenance, settings);
+        let provenance = one_year::provenance(provenance, settings, settings.sims(self.n_sims));
         one_year::assemble(fit, draws, &segment, settings, provenance)
     }
 

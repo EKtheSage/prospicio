@@ -536,8 +536,9 @@ impl BayesOdp {
             hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
             components.extend(origin_keys(label, &segment.origins));
         }
-        let mut draws = Vec::with_capacity(self.n_sims * components.len());
-        for i in 0..self.n_sims {
+        let n_sims = settings.sims(self.n_sims);
+        let mut draws = Vec::with_capacity(n_sims * components.len());
+        for i in 0..n_sims {
             for (_, year) in &fitted.fits {
                 let m = year.opening.len();
                 draws.extend_from_slice(&year.cdr[i * m..(i + 1) * m]);
@@ -599,7 +600,7 @@ impl BayesOdp {
             &year,
             &fit.posterior,
             settings,
-            self.n_sims,
+            settings.sims(self.n_sims),
             one_year_seed(derive_seed(self.seed, predictive)),
         )
     }
@@ -612,7 +613,7 @@ impl BayesOdp {
     ) -> Provenance {
         let mut provenance = self.base_provenance(column);
         provenance.model = "bayes_odp_one_year".into();
-        one_year::provenance(provenance, settings)
+        one_year::provenance(provenance, settings, settings.sims(self.n_sims))
             .param("c0", model.c0)
             .param("scale", model.phi)
     }
@@ -2084,7 +2085,15 @@ mod tests {
         };
         let run = |refit, k_threshold| {
             model
-                .one_year(&genins(), "values", &BayesOneYear { k_threshold, refit })
+                .one_year(
+                    &genins(),
+                    "values",
+                    &BayesOneYear {
+                        k_threshold,
+                        refit,
+                        ..BayesOneYear::default()
+                    },
+                )
                 .unwrap()
         };
         let only = run(OneYearRefit::ReweightOnly, 0.7);
