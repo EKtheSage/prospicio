@@ -115,10 +115,12 @@ pub struct BayesOneYear {
     /// The number of one-year simulations. `None` (the default) takes the
     /// model's one-year default: its own `n_sims` for `BayesOdp` and
     /// `BayesBf` (10,000 by default), and its `n_sims` capped at
-    /// [`Meyers::ONE_YEAR_SIMS`](super::Meyers::ONE_YEAR_SIMS) (2,000) for
-    /// `Meyers`, whose flagged simulations cost a moment match or a NUTS
-    /// refit each (the user's decision of 2026-10-16,
-    /// `docs/design/reserving-bayes.md` decision 19). The lifetime view keeps
+    /// 2,000 for `Meyers` and `Compartmental` (models 1 and 2)
+    /// ([`Meyers::ONE_YEAR_SIMS`](super::Meyers::ONE_YEAR_SIMS),
+    /// [`Compartmental::ONE_YEAR_SIMS`](super::Compartmental::ONE_YEAR_SIMS)),
+    /// whose flagged simulations cost a moment match or a NUTS refit each
+    /// (the user's decision of 2026-10-16, `docs/design/reserving-bayes.md`
+    /// decisions 19 and 20). The lifetime view keeps
     /// the model's `n_sims` either way. Simulation `i` is on stream `i`
     /// whatever the count, so a smaller count gives the first simulations of
     /// a larger one.
