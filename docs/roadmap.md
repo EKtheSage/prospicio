@@ -363,11 +363,11 @@ what it is aiming for by v1.0.
   built by `cargo xtask xll`, a local file, tested by the user in Excel 365;
   layer pricing (LEV, layer loss, layer CV, ILF) on a Pareto or lognormal
   severity; the ODP bootstrap exhibit; built, smoke-tested and kept as an
-  artifact by CI, attached to a draft release on a version tag.
+  artifact by CI, attached to a draft release on a version tag; the
+  bootstrap's draws as a table.
 - **Next:**
-  1. More worksheet functions over existing crates: the bootstrap's draws
-     as a column, Mack's bootstrap, the one-year view, more severity
-     families.
+  1. More worksheet functions over existing crates: Mack's bootstrap, the
+     one-year view, more severity families.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

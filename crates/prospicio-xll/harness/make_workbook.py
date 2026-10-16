@@ -179,6 +179,33 @@ for row in od.iter_rows(min_row=9, max_row=33, min_col=2, max_col=14):
 for c in od[4][4:8]:
     c.number_format = "0.0%"
 
+# The draws behind the ODP sheet's gamma table: same simulations and seed.
+dr = wb.create_sheet("ODP draws")
+dr["A1"] = "prospicio XLL test: the ODP bootstrap's draws (PRO.ODP.SIMS)"; dr["A1"].font = Font(bold=True, size=13)
+dr["A2"] = "Simulations and seed come from the ODP sheet; the average of each column is that sheet's Mean."
+dr["A2"].font = note
+dr["N3"] = "Check"; dr["N3"].font = bold
+dr["N4"] = "Mean total, here"; dr["O4"] = "=AVERAGE(K5:K100004)"
+dr["N5"] = "Mean total, ODP sheet"; dr["O5"] = "=ODP!C19"
+dr["N6"] = "Match"; dr["O6"] = "=ABS(O4-O5)<1E-6*O5"
+dr["N8"] = "Total reserve histogram"; dr["N8"].font = bold
+dr["N9"] = "Up to"; dr["O9"] = "Count"
+for h in ("N3", "N9", "O9"):
+    dr[h].font = bold
+for i, b in enumerate(range(20000, 160001, 20000)):
+    dr.cell(row=10+i, column=14, value=b).fill = inp
+dr["N18"] = "more"
+# FREQUENCY returns one count per bin and one for everything above.
+dr["O10"] = ArrayFormula("O10:O18", "=FREQUENCY(K5:K100004,N10:N17)")
+dr["A4"] = ArrayFormula("A4:K20004", f"=PRO.ODP.SIMS({TRI},ODP!$B$4,ODP!$B$5,,,{ORI})")
+dr.column_dimensions["N"].width = 22
+for col in "ABCDEFGHIJKO":
+    dr.column_dimensions[col].width = 11
+for row in dr.iter_rows(min_row=5, max_row=200, min_col=1, max_col=11):
+    for c in row:
+        c.number_format = "#,##0"
+dr["O4"].number_format = dr["O5"].number_format = "#,##0.00"
+
 wb.calculation.fullCalcOnLoad = True
 wb.save(out)
 
