@@ -583,6 +583,33 @@ for r in range(20, 30):
 bc.column_dimensions["A"].width = 14
 for col in "BCDEFGHI":
     bc.column_dimensions[col].width = 16
+
+# Aggregate distributions: a compound total and a layer table.
+ag = wb.create_sheet("Aggregate")
+ag["A1"] = "Annual aggregate loss: 3 claims a year (dispersion 2), gamma severity mean 50,000, CV 1.5"; ag["A1"].font = bold
+for r, (label, x) in enumerate([("Claims a year", 3), ("Dispersion", 2), ("Family", "gamma_cv"), ("Mean", 50000), ("CV", 1.5)]):
+    ag.cell(row=2 + r, column=1, value=label)
+    ag.cell(row=2 + r, column=2, value=x).fill = inp
+ag["D1"] = "Ground up"; ag["G1"] = "100,000 xs 50,000 per claim"; ag["D1"].font = ag["G1"].font = bold
+ag["D2"] = ArrayFormula("D2:E18", "=PRO.AGG.STATS(B2,B3,B4,B5,B6)")
+ag["G2"] = ArrayFormula("G2:H18", "=PRO.AGG.STATS(B2,B3,B4,B5,B6,,100000,50000)")
+for c in ("E", "H"):
+    for r in range(2, 19):
+        ag[f"{c}{r}"].number_format = "#,##0.0000" if r in (4, 5) or r >= 16 else "#,##0"
+ag["A21"] = "Per-occurrence layers (aggregate's reins_stats_df)"; ag["A21"].font = bold
+ag["A22"] = "Limits"; ag["A23"] = "Attachments"
+for c, (l, a) in enumerate([(50000, 50000), (100000, 100000), (300000, 200000)]):
+    ag.cell(row=22, column=2 + c, value=l).fill = inp
+    ag.cell(row=23, column=2 + c, value=a).fill = inp
+ag["A25"] = ArrayFormula("A25:D39", "=PRO.AGG.LAYERS(B2,B3,B4,B5,B6,,B22:D22,B23:D23)")
+for row in ag.iter_rows(min_row=26, max_row=39, min_col=2, max_col=4):
+    for c in row:
+        c.number_format = "0.0000"
+ag.column_dimensions["A"].width = 18
+ag.column_dimensions["D"].width = 16
+ag.column_dimensions["G"].width = 16
+for col in "BCEH":
+    ag.column_dimensions[col].width = 14
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

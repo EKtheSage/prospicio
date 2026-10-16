@@ -14,6 +14,7 @@
 //! prospicio-xll --target x86_64-pc-windows-msvc`, or `-gnu` from Linux)
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
+pub mod aggregate;
 pub mod credibility;
 pub mod experience;
 pub mod exposure;
@@ -1155,6 +1156,86 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: experience::burning_cost,
+    },
+    Function {
+        symbol: "pro_agg_stats",
+        name: "PRO.AGG.STATS",
+        help: "Aggregate (compound) annual loss, ground up or to a per-occurrence layer: mean, SD, CV, skewness, VaR, TVaR.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of claims a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "limit",
+                help: "A per-occurrence layer's limit (or \"unlimited\"); ground up if limit and attachment are omitted",
+            },
+            Arg {
+                name: "attachment",
+                help: "The per-occurrence layer's attachment; 0 if omitted",
+            },
+            Arg {
+                name: "probabilities",
+                help: "Probabilities for VaR and TVaR: a row or column; 0.99, 0.995, 0.999 if omitted",
+            },
+            Arg {
+                name: "step",
+                help: "The grid's step, with points; sized automatically if both are omitted",
+            },
+            Arg {
+                name: "points",
+                help: "The grid's number of points: the severity is rounded onto it, its mass above lumped at the top",
+            },
+        ],
+        run: aggregate::stats,
+    },
+    Function {
+        symbol: "pro_agg_layers",
+        name: "PRO.AGG.LAYERS",
+        help: "Per-occurrence layer statistics, one column per layer: chances of attaching and exhausting, annual moments.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of claims a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "limits",
+                help: "Each layer's limit (or \"unlimited\"): a row",
+            },
+            Arg {
+                name: "attachments",
+                help: "Each layer's attachment: one, or one per limit",
+            },
+            Arg {
+                name: "shares",
+                help: "Each layer's placed share: one, or one per limit; 1 if omitted",
+            },
+            Arg {
+                name: "step",
+                help: "The grid's step, with points; sized automatically if both are omitted",
+            },
+            Arg {
+                name: "points",
+                help: "The grid's number of points: the severity is rounded onto it, its mass above lumped at the top",
+            },
+        ],
+        run: aggregate::layers,
     },
 ];
 
