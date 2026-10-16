@@ -183,7 +183,7 @@ pub fn tail(grid: &Grid) -> Result<Tail> {
 
 /// The origin labels for a result table: the `origins` argument when
 /// given, one cell per origin as a row or a column, else 1, 2, ...
-fn origin_labels(grid: &Grid, n: usize) -> Result<Vec<Value>> {
+pub(crate) fn origin_labels(grid: &Grid, n: usize) -> Result<Vec<Value>> {
     if grid.is_blank() {
         return Ok((1..=n).map(|i| Value::Number(i as f64)).collect());
     }
@@ -463,7 +463,7 @@ pub const MAX_SIMS: usize = 1_000_000;
 pub const PERCENTILES: [f64; 4] = [0.75, 0.9, 0.95, 0.995];
 
 /// An optional whole-number argument within `1..=max`.
-fn count(grid: &Grid, name: &str, default: usize, max: usize) -> Result<usize> {
+pub(crate) fn count(grid: &Grid, name: &str, default: usize, max: usize) -> Result<usize> {
     match grid.as_scalar() {
         Some(v) if v.is_blank() => Ok(default),
         Some(Value::Number(x)) if x.fract() == 0.0 && *x >= 1.0 && *x <= max as f64 => {
@@ -474,7 +474,7 @@ fn count(grid: &Grid, name: &str, default: usize, max: usize) -> Result<usize> {
 }
 
 /// The `seed` argument: a whole number from 0, default 0.
-fn seed(grid: &Grid) -> Result<u64> {
+pub(crate) fn seed(grid: &Grid) -> Result<u64> {
     match grid.as_scalar() {
         Some(v) if v.is_blank() => Ok(0),
         Some(Value::Number(x)) if x.fract() == 0.0 && *x >= 0.0 && *x < 2f64.powi(53) => {
@@ -486,7 +486,7 @@ fn seed(grid: &Grid) -> Result<u64> {
 
 /// The `percentiles` argument: probabilities strictly between 0 and 1, as
 /// a row or a column; blanks are skipped.
-fn percentiles(grid: &Grid) -> Result<Vec<f64>> {
+pub(crate) fn percentiles(grid: &Grid) -> Result<Vec<f64>> {
     if grid.is_blank() {
         return Ok(PERCENTILES.to_vec());
     }
@@ -507,7 +507,7 @@ fn percentiles(grid: &Grid) -> Result<Vec<f64>> {
 
 /// The `process` argument: "gamma" (default) or "none" (parameter error
 /// only).
-fn process(grid: &Grid) -> Result<ProcessDistribution> {
+pub(crate) fn process(grid: &Grid) -> Result<ProcessDistribution> {
     match text_option(grid, "process")?.as_deref() {
         None | Some("gamma") => Ok(ProcessDistribution::Gamma),
         Some("none") => Ok(ProcessDistribution::None),
@@ -526,7 +526,7 @@ fn percentile_label(p: f64) -> String {
 /// A bootstrap's exhibit: per origin, the chain-ladder reserve and the
 /// simulated reserve's mean, SD, CV and `probabilities`' percentiles, then
 /// the total, whose percentiles are of the simulated total.
-fn bootstrap_exhibit(
+pub(crate) fn bootstrap_exhibit(
     reserves: &PredictiveDistribution,
     cl: &ChainLadderFit,
     labels: Vec<Value>,

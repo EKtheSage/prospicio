@@ -15,6 +15,7 @@
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
 pub mod aggregate;
+pub mod bayes;
 pub mod credibility;
 pub mod experience;
 pub mod exposure;
@@ -1236,6 +1237,36 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: aggregate::layers,
+    },
+    Function {
+        symbol: "pro_bayes_odp",
+        name: "PRO.BAYES.ODP",
+        help: "Bayesian ODP chain ladder sampled by MCMC (NUTS): reserves, parameters' posterior, or diagnostics.",
+        args: &[
+            TRIANGLE,
+            Arg {
+                name: "output",
+                help: "\"reserves\" (default), \"params\" (posterior with R-hat and ESS) or \"diagnostics\"",
+            },
+            Arg {
+                name: "draws",
+                help: "Kept draws per chain, after as many warm-up draws (1000 if omitted, at most 20000)",
+            },
+            Arg {
+                name: "chains",
+                help: "Number of chains, run in parallel (4 if omitted, at most 8)",
+            },
+            SEED,
+            SIMS,
+            PERCENTILES,
+            Arg {
+                name: "prior_sd",
+                help: "SD of the normal priors on the log-scale intercept, origin and development effects (10 if omitted)",
+            },
+            PROCESS,
+            ORIGINS,
+        ],
+        run: bayes::bayes_odp,
     },
 ];
 

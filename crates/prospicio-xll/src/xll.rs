@@ -466,4 +466,5 @@ mod exports {
     udf!(pro_burningcost, accident, amounts, limits, attachments, years, premiums, development, trend, trend_to, threshold, agg_deductible, agg_limit);
     udf!(pro_agg_stats, count_mean, dispersion, family, p1, p2, p3, limit, attachment, probabilities, step, points);
     udf!(pro_agg_layers, count_mean, dispersion, family, p1, p2, p3, limits, attachments, shares, step, points);
+    udf!(pro_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
 }
