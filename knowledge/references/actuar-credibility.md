@@ -1,12 +1,12 @@
 ---
 type: Reference
 title: R actuar's credibility models
-description: actuar 3.3.7's cm(), the reference for prospicio_pricing::credibility; with one level its "Buhlmann-Gisler" and "Ohlsson" methods are the same unbiased Bühlmann–Straub estimator, the collective mean is credibility-weighted, a negative between variance zeroes every factor, and Hachemeister's data come with it.
+description: actuar 3.3.7's cm(), the reference for prospicio_pricing::credibility and, for its hierarchy, prospicio_bayes::credibility; a hierarchy is written ~cohort + cohort:state (~cohort + state is refused), its variances are labelled by the level above them, and its premiums are the normal model's posterior means at its estimates; with one level its "Buhlmann-Gisler" and "Ohlsson" methods are the same unbiased Bühlmann–Straub estimator, the collective mean is credibility-weighted, a negative between variance zeroes every factor, and Hachemeister's data come with it.
 resource: https://cran.r-project.org/package=actuar
 tags: [pricing, credibility, buhlmann-straub, parity, r]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-12T03:00:00Z }
-verified: { by: process:ci, at: 2026-10-12T02:58:59Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-16T10:00:00Z }
+verified: { by: process:ci, at: 2026-10-16T10:00:00Z }
 sources:
   - id: actuar
     resource: https://cran.r-project.org/package=actuar
@@ -14,6 +14,9 @@ sources:
   - id: script
     resource: ../validation/scripts/r_credibility.R
     title: r_credibility.R, the reference values for prospicio's credibility
+  - id: hierarchy
+    resource: ../validation/scripts/r_credibility_hierarchical.R
+    title: r_credibility_hierarchical.R, the hierarchical reference values
 ---
 
 # How cm() fits one level
@@ -36,6 +39,28 @@ sources:
 * Missing cells must be `NA` in the same places in ratios and weights;
   without weights, missing ratios are refused.
 
+# How cm() fits a hierarchy
+
+* A hierarchy is a nested formula: `cm(~cohort + cohort:state, data, ...)`.
+  `~cohort + state` is refused ("unsupported interactions in
+  'formula'").[^hierarchy]
+* `fit$unbiased` (or `fit$iterative`) names each variance by the level
+  *above* it: `portfolio` is the cohorts' between variance `b`, `cohort`
+  the states' between variance `a`, and `state` the within variance
+  `s²`.[^hierarchy]
+* Each level's collective is credibility-weighted: a cohort's mean is
+  `Σ Z_i X̄_i / Σ Z_i` over its states, the portfolio's `Σ z_c M_c / Σ
+  z_c`, with the cohort's factor `z_c = b Σ Z_i / (b Σ Z_i + a)`
+  (`fit$weights$cohort` is `Σ Z_i`). Given the variances, these are the
+  posterior means of the normal model with a flat prior at the top, so
+  `prospicio_bayes::credibility::credibility_premiums` at actuar's
+  estimates matches every premium, factor and collective mean at
+  `1e-10`, with the Bühlmann–Gisler, Ohlsson and iterative
+  estimators.[^hierarchy]
+* With states 1 and 3 in cohort 1 and 2, 4 and 5 in cohort 2 and the
+  Bühlmann–Gisler estimator: `b` = 87,263.70, `a` = 13,414.84,
+  portfolio 1,742.22, cohorts 1,941.675 and 1,542.765.
+
 # Hachemeister's data
 
 `data(hachemeister)`: five US states, twelve quarters of average claim
@@ -48,3 +73,4 @@ prospicio_pricing::credibility matches every value at `1e-12`.[^script]
 
 [^actuar]: `R/bstraub.R` and `R/hierarc.R` in the actuar 3.3.7 sources.
 [^script]: `validation/scripts/r_credibility.R` and `validation/tests/pricing.rs`.
+[^hierarchy]: `validation/scripts/r_credibility_hierarchical.R` and `credibility_premiums_match_actuar` in `validation/tests/models.rs`.

@@ -21,7 +21,7 @@ bayes_bf_one_year(
   max_depth = 10,
   k_threshold = 0.7,
   refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
-  max_refits = NULL
+  one_year_sims = NULL
 )
 }
 \arguments{
@@ -74,12 +74,11 @@ above \code{k_threshold}; \code{"refit_flagged"} refits it with NUTS;
 \code{"reweight_only"} reweights it anyway (fast, biased where k is high);
 \code{"refit_all"} refits every simulation, to check the reweighting.}
 
-\item{max_refits}{The most simulations refitted with NUTS: the first
-this many due for a refit, in simulation order; the others are
-reweighted as they are (as unreliable as their k says), listed in
-\code{unrefitted} and warned about. \code{NULL} (the default) refits every one,
-\code{0} none. In the \verb{_segments} functions it applies to each segment, so
-k segments refit at most k times this many.}
+\item{one_year_sims}{The number of one-year simulations, or \code{NULL} (the
+default) for the model's one-year default: \code{n_sims} for
+\code{bayes_odp_one_year()} and \code{bayes_bf_one_year()}, and \code{n_sims} capped
+at 2,000 for \code{meyers_one_year()}. The lifetime reserves keep \code{n_sims}.
+A smaller count gives the first simulations of a larger one.}
 }
 \value{
 A \code{bayes_one_year_fit} object.

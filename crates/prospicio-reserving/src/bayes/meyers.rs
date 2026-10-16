@@ -193,7 +193,9 @@ pub struct Meyers {
     /// derived from [`seed`](Self::seed) (module docs, "Seeds").
     pub sampler: Sampler,
     /// Number of predictive simulations, independent of the number of
-    /// posterior draws.
+    /// posterior draws. The one-year view runs at most
+    /// [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS) of them unless its settings'
+    /// [`n_sims`](BayesOneYear::n_sims) says otherwise.
     pub n_sims: usize,
     /// Seed of the chains and of the simulations, each through its own
     /// derived seed (module docs, "Seeds").
@@ -435,6 +437,16 @@ impl MeyersFits {
 }
 
 impl Meyers {
+    /// The most one-year simulations [`one_year`](Self::one_year) and
+    /// [`one_year_segments`](Self::one_year_segments) run by default
+    /// (`BayesOneYear::n_sims` `None`): 2,000, against the 10,000 of the
+    /// lifetime view, since nearly every simulation of these models is
+    /// flagged and costs a moment match or a NUTS refit (about 249 s at
+    /// 10,000 for CRC on group 353 in release on 16 threads; the user's
+    /// decision of 2026-10-16, `docs/design/reserving-bayes.md` decision
+    /// 19). A model whose [`n_sims`](Self::n_sims) is smaller runs that many.
+    pub const ONE_YEAR_SIMS: usize = 2_000;
+
     /// Fits `column` of a single-segment cumulative triangle with premium
     /// from its `premium` column (the latest value per origin, as
     /// [`CapeCod`](crate::CapeCod) reads exposure). Every origin must be
@@ -464,9 +476,11 @@ impl Meyers {
     /// (decisions 16 to 19 of `docs/design/reserving-bayes.md`).
     ///
     /// The posterior and the lifetime ultimates and reserves are
-    /// [`fit`](Self::fit)'s, draw for draw. Each of [`n_sims`](Self::n_sims)
-    /// simulations picks a posterior draw `θ`, draws the cumulative values
-    /// `C` of the year's cells (the cells valued in the twelve months, as
+    /// [`fit`](Self::fit)'s, draw for draw. Each of the one-year
+    /// simulations (the settings' [`n_sims`](BayesOneYear::n_sims), by
+    /// default [`n_sims`](Self::n_sims) capped at
+    /// [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS), 2,000) picks a posterior draw
+    /// `θ`, draws the cumulative values `C` of the year's cells (the cells valued in the twelve months, as
     /// in [`OdpBootstrap::one_year`](crate::OdpBootstrap::one_year); one per
     /// open origin with an annual grain) from the model given `θ`, weights
     /// every posterior draw by the likelihood of those values given the
@@ -641,8 +655,9 @@ impl Meyers {
             hasher.f64s(&fit.premium);
             components.extend(origin_keys(label, &segment.origins));
         }
-        let mut draws = Vec::with_capacity(self.n_sims * components.len());
-        for i in 0..self.n_sims {
+        let n_sims = self.one_year_sims(settings);
+        let mut draws = Vec::with_capacity(n_sims * components.len());
+        for i in 0..n_sims {
             for (_, year) in &fitted.fits {
                 let m = year.opening.len();
                 draws.extend_from_slice(&year.cdr[i * m..(i + 1) * m]);
@@ -690,9 +705,16 @@ impl Meyers {
             &year,
             &fit.sampled,
             settings,
-            self.n_sims,
+            self.one_year_sims(settings),
             one_year_seed(derive_seed(self.seed, predictive)),
         )
+    }
+
+    /// The number of one-year simulations under `settings`: their
+    /// [`n_sims`](BayesOneYear::n_sims), or this model's
+    /// [`n_sims`](Self::n_sims) capped at [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS).
+    fn one_year_sims(&self, settings: &BayesOneYear) -> usize {
+        settings.sims(self.n_sims.min(Self::ONE_YEAR_SIMS))
     }
 
     fn one_year_provenance(
@@ -704,7 +726,7 @@ impl Meyers {
     ) -> Provenance {
         let mut provenance = self.provenance(column, premium, hasher);
         provenance.model = format!("meyers_{}_one_year", self.model.name());
-        one_year::provenance(provenance, settings)
+        one_year::provenance(provenance, settings, self.one_year_sims(settings))
     }
 
     /// Fits `column` in every segment of a cumulative triangle, with
@@ -3804,6 +3826,23 @@ pub(crate) mod tests {
         assert_eq!(view.cdr.n_components(), 10);
         assert_eq!(view.pareto_k.len(), 2_000);
         assert!(view.refitted.is_empty() && view.moment_matched.is_empty());
+        // The settings' n_sims overrides the model's for the year only, and
+        // gives the first simulations of the larger count.
+        let fewer = model
+            .one_year(
+                &comauto(),
+                "paid",
+                "premium",
+                &BayesOneYear {
+                    n_sims: Some(500),
+                    ..only
+                },
+            )
+            .unwrap();
+        assert_eq!(fewer.cdr.n_sims(), 500);
+        assert_eq!(fewer.fit.reserves.n_sims(), 2_000);
+        assert_eq!(fewer.pareto_k, view.pareto_k[..500]);
+        assert_eq!(fewer.cdr.draw_matrix(), &view.cdr.draw_matrix()[..500 * 10]);
         // 1988 is fully developed.
         assert!(view.cdr.draw_matrix().chunks(10).all(|r| r[0] == 0.0));
         // The opening reserve is the lifetime reserve's posterior mean.
@@ -3919,5 +3958,38 @@ pub(crate) mod tests {
             Meyers::default().one_year(&twins(), "paid", "premium", &BayesOneYear::default()),
             Err(Error::MultipleSegments(2))
         ));
+        let e = Meyers::default()
+            .one_year(
+                &comauto(),
+                "paid",
+                "premium",
+                &BayesOneYear {
+                    n_sims: Some(0),
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(e, Error::InvalidSetting { name: "n_sims", .. }),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn the_one_year_view_runs_at_most_2000_simulations_by_default() {
+        let s = BayesOneYear::default();
+        assert_eq!(Meyers::default().n_sims, 10_000);
+        assert_eq!(Meyers::default().one_year_sims(&s), 2_000);
+        let small = Meyers {
+            n_sims: 500,
+            ..Meyers::default()
+        };
+        assert_eq!(small.one_year_sims(&s), 500);
+        let more = BayesOneYear {
+            n_sims: Some(10_000),
+            ..s
+        };
+        assert_eq!(Meyers::default().one_year_sims(&more), 10_000);
+        assert_eq!(small.one_year_sims(&more), 10_000);
     }
 }

@@ -431,6 +431,27 @@ def test_meyers_one_year():
         model.one_year(tri, "paid", "premium", refit="sometimes")
 
 
+def test_one_year_sims():
+    # Meyers' view runs at most 2,000 simulations by default (the user's
+    # decision of 2026-10-16); n_sims sets the count for any model, and a
+    # smaller count gives the first simulations of a larger one.
+    tri = meyers_triangle()
+    model = Meyers(tune=200, draws=200, n_sims=3000, seed=1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        capped = model.one_year(tri, "paid", "premium", refit="reweight_only")
+        fewer = model.one_year(tri, "paid", "premium", refit="reweight_only", n_sims=100)
+    assert capped.cdr.n_sims == 2000 and capped.fit.reserves.n_sims == 3000
+    assert fewer.cdr.n_sims == 100 and fewer.pareto_k == capped.pareto_k[:100]
+    with pytest.raises(ValueError, match="n_sims"):
+        Meyers(n_sims=10).one_year(tri, "paid", "premium", n_sims=0)
+    odp = BayesOdp(n_sims=300, seed=11)
+    whole = odp.one_year(tiny(), "paid", refit="reweight_only")
+    part = odp.one_year(tiny(), "paid", refit="reweight_only", n_sims=50)
+    assert whole.cdr.n_sims == 300 and part.cdr.n_sims == 50
+    assert part.pareto_k == whole.pareto_k[:50]
+
+
 def test_meyers_one_year_segments():
     tri = meyers_triangle(keys=True)
     model = Meyers(tune=200, draws=200, n_sims=500, seed=2)

@@ -97,12 +97,14 @@ reference:
       - event_set
       - events
       - event_counts
+      - term_years
   - title: Reinsurance
     contents:
       - xol_layer
       - with_loss_corridor
       - with_rate_on_line
       - with_ceding_commission
+      - with_profit_commission_carry_forward
       - with_swing_rating
       - premium_for
       - retro_premium
@@ -117,6 +119,7 @@ reference:
       - tower_to_json
       - tower_ceded
       - apply_tower
+      - apply_tower_term
       - tower_on_grid
       - tower_on_annual_grid
       - tower_price
@@ -160,6 +163,7 @@ reference:
     contents:
       - credibility_standard
       - buhlmann_straub
+      - hierarchical_credibility
   - title: Ratemaking
     contents:
       - year_fraction
@@ -189,6 +193,7 @@ reference:
       - bayes_glm_fit
       - bayes_glm_model
       - bayes_loo
+      - bayes_ppc
       - save_model
       - elastic_net_fit
       - elastic_net_model
@@ -223,6 +228,7 @@ reference:
     contents:
       - pot_tail
       - tail_diagnostics
+      - threshold_diagnostics
       - gpd_fit
   - title: Reserving
     contents:

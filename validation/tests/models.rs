@@ -289,6 +289,185 @@ fn gams_match_mgcv() {
 }
 
 #[test]
+fn cyclic_gams_match_mgcv() {
+    use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
+    use prospicio_math::spline::{cyclic_bspline_basis, cyclic_difference_penalty};
+    use prospicio_models::Fitted;
+    // The data in validation/scripts/r_gam_cyclic.R.
+    let n = 300;
+    let (mut t, mut gauss, mut count) = (Vec::new(), Vec::new(), Vec::new());
+    for i in 1..=n {
+        let ti = ((37 * i) % 300) as f64 / 25.0 + 0.5 / 25.0;
+        let e = ((7919 * i) % 13) as f64 / 6.0 - 1.0;
+        let a = std::f64::consts::TAU * ti / 12.0;
+        t.push(ti);
+        gauss.push(2.0 + a.sin() + 0.5 * (2.0 * a).cos() + 0.4 * e);
+        count.push(
+            ((0.5 + 0.6 * a.sin()).exp() + 1.2 * e + 1.5)
+                .round()
+                .max(0.0),
+        );
+    }
+    let names = vec!["(Intercept)".to_string(), "t".to_string()];
+    let design = Design::new(names.clone(), vec![vec![1.0; n], t]).unwrap();
+    let ends = Design::new(names, vec![vec![1.0; 2], vec![0.0, 12.0]]).unwrap();
+    let fit_case = |case: &str| -> GamFit {
+        let spline = PSpline::cyclic("t");
+        let spline = if case == "cyclic_range_gaussian" {
+            spline
+        } else {
+            spline.period(0.0, 12.0)
+        };
+        let (glm, y) = if case.ends_with("poisson") {
+            (Glm::new(Family::Poisson, Link::Log), &count)
+        } else {
+            (Glm::new(Family::Gaussian, Link::Identity), &gauss)
+        };
+        let gam = Gam::new(glm, vec![spline]);
+        let gam = if case.starts_with("reml_") {
+            gam.smoothing(Smoothing::Reml)
+        } else {
+            gam
+        };
+        gam.fit(&design, y)
+            .unwrap_or_else(|e| panic!("{case}: {e}"))
+    };
+    let penalty = cyclic_difference_penalty(10, 2);
+    let mut fits: Vec<(String, GamFit)> = Vec::new();
+    check(&reference("gam_cyclic_mgcv.csv"), |c| {
+        let name = c.get("case");
+        if name == "basis" {
+            let arg = c.get("arg");
+            let (a, b) = arg.split_once(';')?;
+            return match c.get("quantity") {
+                "raw" => {
+                    let x: f64 = a.parse().ok()?;
+                    Some(cyclic_bspline_basis(x, 0.0, 12.0, 10, 3)[b.parse::<usize>().ok()?])
+                }
+                "penalty" => {
+                    Some(penalty[a.parse::<usize>().ok()? * 10 + b.parse::<usize>().ok()?])
+                }
+                _ => None,
+            };
+        }
+        if !fits.iter().any(|(n, _)| n == name) {
+            fits.push((name.to_string(), fit_case(name)));
+        }
+        let fit = &fits.iter().find(|(n, _)| n == name).unwrap().1;
+        match c.get("quantity") {
+            "deviance" => Some(fit.deviance()),
+            "edf" => Some(fit.edf()),
+            "scale" => Some(fit.dispersion()),
+            "score" => Some(fit.score()),
+            "reml_scale" => fit.reml_scale(),
+            "fitted" => Some(fit.fitted()[c.number("arg")? as usize]),
+            "predict" => {
+                let p = fit.predict(&ends).ok()?;
+                Some(if c.get("arg") == "0" { p[0] } else { p[1] })
+            }
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn monotone_gams_match_scam() {
+    use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
+    use prospicio_models::Fitted;
+    // The data in validation/scripts/r_gam_monotone.R.
+    let n = 300;
+    let logistic = |v: f64| 1.0 / (1.0 + (-v).exp());
+    let (mut x, mut rise, mut fall) = (Vec::new(), Vec::new(), Vec::new());
+    for i in 1..=n {
+        let xi = (((37 * i) % 300) as f64 + 0.5) / 300.0;
+        let e = ((7919 * i) % 13) as f64 / 6.0 - 1.0;
+        x.push(xi);
+        rise.push(1.0 + 2.0 * logistic(10.0 * (xi - 0.5)) + 0.3 * e);
+        fall.push(
+            ((2.5 - 2.0 * logistic(12.0 * (xi - 0.4))).exp() + 1.5 * e)
+                .round()
+                .max(0.0),
+        );
+    }
+    let design = Design::new(
+        vec!["(Intercept)".to_string(), "x".to_string()],
+        vec![vec![1.0; n], x],
+    )
+    .unwrap();
+    let cases = reference("gam_monotone_scam.csv");
+    let lambda_of = |case: &str| -> f64 {
+        cases
+            .iter()
+            .find(|c| c.get("case") == case && c.get("quantity") == "lambda")
+            .and_then(|c| c.number("expected"))
+            .unwrap()
+    };
+    let fit_case = |case: &str| -> GamFit {
+        // An exact_ case is the selected fit, against the refined optimum.
+        let case = case.strip_prefix("exact_").unwrap_or(case);
+        let (glm, y, spline) = if case.starts_with("mpi") {
+            (
+                Glm::new(Family::Gaussian, Link::Identity),
+                &rise,
+                PSpline::increasing("x"),
+            )
+        } else {
+            (
+                Glm::new(Family::Poisson, Link::Log),
+                &fall,
+                PSpline::decreasing("x"),
+            )
+        };
+        let gam = Gam::new(glm, vec![spline]);
+        let gam = if case.ends_with("fixed") {
+            gam.smoothing(Smoothing::Fixed(vec![lambda_of(case)]))
+        } else {
+            gam
+        };
+        gam.fit(&design, y)
+            .unwrap_or_else(|e| panic!("{case}: {e}"))
+    };
+    let mut fits: Vec<(String, GamFit)> = Vec::new();
+    check(&cases, |c| {
+        let name = c.get("case");
+        if !fits.iter().any(|(n, _)| n == name) {
+            fits.push((name.to_string(), fit_case(name)));
+        }
+        let fit = &fits.iter().find(|(n, _)| n == name).unwrap().1;
+        match c.get("quantity") {
+            "lambda" => Some(fit.lambdas()[0]),
+            "deviance" => Some(fit.deviance()),
+            "edf" => Some(fit.edf()),
+            "score" => Some(fit.score()),
+            "scale" => Some(fit.dispersion()),
+            "fitted" => Some(fit.fitted()[c.number("arg")? as usize]),
+            "coef" => Some(fit.coefficients()[c.number("arg")? as usize]),
+            _ => None,
+        }
+    });
+    // Monotone in x, inside the data's range and past it (where the
+    // smooth holds its end value).
+    for (name, fit) in &fits {
+        let grid: Vec<f64> = (0..=200).map(|i| f64::from(i) / 100.0 - 0.5).collect();
+        let g = Design::new(
+            vec!["(Intercept)".to_string(), "x".to_string()],
+            vec![vec![1.0; 201], grid],
+        )
+        .unwrap();
+        let p = fit.predict(&g).unwrap();
+        let up = name.trim_start_matches("exact_").starts_with("mpi");
+        assert!(
+            p.windows(2).all(|w| if up {
+                w[1] >= w[0] - 1e-12
+            } else {
+                w[1] <= w[0] + 1e-12
+            }),
+            "{name} is not monotone"
+        );
+    }
+}
+
+#[test]
 fn mcmc_diagnostics_match_posterior() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/mcmc_chains.csv");
     let text = std::fs::read_to_string(path).expect("mcmc_chains.csv");
@@ -1149,4 +1328,165 @@ fn tensor_gams_match_mgcv() {
         back.predict(&design).unwrap(),
     );
     assert!((a[7] - b[7]).abs() < 1e-12 && (a[7] - fit.fitted()[7]).abs() < 1e-9);
+}
+
+/// Credibility premiums given the structure parameters, against
+/// `actuar::cm` on Hachemeister's data: Bühlmann–Straub with one level, and
+/// Bühlmann–Gisler's hierarchy (two cohorts of states) with each of
+/// actuar's estimators. The structure parameters are read from the
+/// reference and plugged in; the premiums, factors and collective mean are
+/// checked (`validation/scripts/r_credibility_hierarchical.R`).
+#[test]
+fn credibility_premiums_match_actuar() {
+    use prospicio_bayes::credibility::credibility_premiums;
+
+    let data = reference("hachemeister.csv");
+    let mut ratios = vec![vec![0.0; 12]; 5];
+    let mut weights = vec![vec![0.0; 12]; 5];
+    for row in &data {
+        let i = row.number("state").unwrap() as usize - 1;
+        let j = row.number("quarter").unwrap() as usize - 1;
+        ratios[i][j] = row.number("ratio").unwrap();
+        weights[i][j] = row.number("weight").unwrap();
+    }
+    let cases = reference("credibility_hierarchical_actuar.csv");
+    let value = |params: &str, quantity: &str, arg: &str| -> f64 {
+        cases
+            .iter()
+            .find(|c| {
+                c.get("params") == params && c.get("quantity") == quantity && c.get("arg") == arg
+            })
+            .and_then(|c| c.number("expected"))
+            .unwrap_or_else(|| panic!("{params} {quantity} {arg}"))
+    };
+    check(&cases, |c| {
+        let params = c.get("params");
+        let hierarchy = params.contains("levels=cohort");
+        let levels: Vec<Vec<usize>> = if hierarchy {
+            vec![vec![0, 1, 0, 1, 1]]
+        } else {
+            Vec::new()
+        };
+        let s2 = value(params, "within_variance", "");
+        let between: Vec<f64> = if hierarchy {
+            vec![
+                value(params, "between_variance", "0"),
+                value(params, "between_variance", "1"),
+            ]
+        } else {
+            vec![value(params, "between_variance", "0")]
+        };
+        let p = credibility_premiums(&ratios, &weights, &levels, s2, &between, None).ok()?;
+        let index = || Some(c.number("arg")? as usize - 1);
+        match c.get("quantity") {
+            "within_variance" => Some(s2),
+            "between_variance" => Some(between[c.number("arg")? as usize]),
+            "collective_mean" => Some(p.collective_mean),
+            "credibility" => Some(p.credibility[index()?]),
+            "premium" => Some(p.premiums[index()?]),
+            "cohort_credibility" => Some(p.level_credibility[0][index()?]),
+            "cohort_premium" => Some(p.level_premiums[0][index()?]),
+            _ => None,
+        }
+    });
+}
+
+/// The Bayesian Bühlmann–Straub model sampled with NUTS against its exact
+/// posterior moments by grid integration
+/// (`validation/scripts/credibility_bayes_grid.py`), on Hachemeister's
+/// data with half-normal priors of 60,000 on `σ` and 1,500 on `τ`.
+#[test]
+fn bayesian_credibility_matches_grid_integration() {
+    use prospicio_bayes::credibility::{
+        CredibilityPriors, HierarchicalCredibility, Sampler, ScalePrior,
+    };
+
+    let data = reference("hachemeister.csv");
+    let mut ratios = vec![vec![0.0; 12]; 5];
+    let mut weights = vec![vec![0.0; 12]; 5];
+    for row in &data {
+        let i = row.number("state").unwrap() as usize - 1;
+        let j = row.number("quarter").unwrap() as usize - 1;
+        ratios[i][j] = row.number("ratio").unwrap();
+        weights[i][j] = row.number("weight").unwrap();
+    }
+    let fit = HierarchicalCredibility::default()
+        .priors(CredibilityPriors {
+            collective_mean: None,
+            within: Some(ScalePrior::HalfNormal(60000.0)),
+            between: vec![ScalePrior::HalfNormal(1500.0)],
+        })
+        .sampler(Sampler {
+            chains: 4,
+            tune: 1000,
+            draws: 2500,
+            seed: 20261016,
+            ..Sampler::default()
+        })
+        .fit(&ratios, &weights, &[])
+        .unwrap();
+    let summary = fit.summary().unwrap();
+    assert!(summary.iter().all(|s| s.rhat < 1.01), "{summary:?}");
+    check(&reference("credibility_bayes_grid.csv"), |c| {
+        let param = c.get("param");
+        let index = |name: &str| -> Option<usize> {
+            param
+                .strip_prefix(name)?
+                .strip_prefix('[')?
+                .strip_suffix(']')?
+                .parse()
+                .ok()
+        };
+        match (param, c.get("quantity")) {
+            ("within_variance", q) => Some(if q == "mean" {
+                summary[0].mean
+            } else {
+                summary[0].sd
+            }),
+            ("between_variance[0]", q) => Some(if q == "mean" {
+                summary[1].mean
+            } else {
+                summary[1].sd
+            }),
+            ("collective_mean", _) => Some(fit.collective_mean),
+            _ => {
+                if let Some(i) = index("premium") {
+                    Some(fit.premiums[i])
+                } else {
+                    index("credibility").map(|i| fit.credibility[i])
+                }
+            }
+        }
+    });
+}
+
+/// The leave-one-out PIT against R `loo`'s `E_loo` of `y_rep <= y` under
+/// the PSIS weights (`validation/scripts/r_loo_pit.R`), on the normal model
+/// of `elpd_matches_loo` with one replicated dataset per draw.
+#[test]
+fn loo_pit_matches_loo() {
+    use prospicio_bayes::ppc::loo_pit;
+    let read = |name: &str| -> (usize, Vec<f64>) {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(name);
+        let text = std::fs::read_to_string(path).expect(name);
+        let mut lines = text.lines();
+        let n = lines.next().unwrap().split(',').count();
+        let values = lines
+            .flat_map(|l| {
+                l.split(',')
+                    .map(|v| v.parse::<f64>().unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        (n, values)
+    };
+    let (n, ll) = read("data/loo_loglik.csv");
+    let (_, y_rep) = read("data/loo_pit_yrep.csv");
+    let (_, y) = read("data/loo_pit_y.csv");
+    assert_eq!(y.len(), n);
+    let p = loo_pit(&y, &y_rep, &ll, None, 0).unwrap();
+    check(&reference("loo_pit.csv"), |c| match c.get("quantity") {
+        "loo_pit" => Some(p.pit[c.number("index")? as usize]),
+        _ => None,
+    });
 }

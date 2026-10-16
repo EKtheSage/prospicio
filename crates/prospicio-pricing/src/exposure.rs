@@ -14,7 +14,8 @@
 //! - [`SeverityCurve`]: the exposure curve of any [`Severity`] capped at
 //!   an MPL, `LEV(x M) / LEV(M)` (a Pareto gives Riebesell's scale).
 //! - [`TabulatedCurve`]: a published table of `(x, G(x))` points (Salzmann,
-//!   Ludwig, ISO PSOLD, a reinsurer's curves), interpolated linearly.
+//!   Ludwig, ISO PSOLD, a reinsurer's curves), interpolated linearly or
+//!   log-log ([`Interpolation`]).
 //!
 //! Every curve is also a destruction-rate distribution: the survival is
 //! `G'(x) / G'(0)`, so [`ExposureCurve::rate_quantile`] draws the loss as a
@@ -367,10 +368,26 @@ impl<S: Severity + ?Sized> ExposureCurve for SeverityCurve<'_, S> {
     }
 }
 
+/// How a [`TabulatedCurve`] runs between its points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Interpolation {
+    /// Straight lines between the points (the default).
+    #[default]
+    Linear,
+    /// Straight lines on log-log axes: `G(x) = Gₖ (x / xₖ)^pₖ` between
+    /// `xₖ` and `xₖ₊₁`, with `pₖ = ln(Gₖ₊₁ / Gₖ) / ln(xₖ₊₁ / xₖ)`, the
+    /// curve's elasticity on the piece. A power law follows a curve's bend
+    /// between sparse points better than a chord, the way published
+    /// scales are read off log-scaled charts. The first piece, from
+    /// `(0, 0)`, stays straight: `ln 0` is undefined, and a power below 1
+    /// there would make `G'(0)` infinite and the mean rate 0.
+    LogLog,
+}
+
 /// A tabulated exposure curve: points `(x, G(x))` from `(0, 0)` to
-/// `(1, 1)`, interpolated linearly, as published curves are given
-/// (Salzmann's homeowners scale, Ludwig's, ISO PSOLD tables, the
-/// reinsurers' own).
+/// `(1, 1)`, interpolated linearly (or log-log, [`Interpolation`]), as
+/// published curves are given (Salzmann's homeowners scale, Ludwig's, ISO
+/// PSOLD tables, the reinsurers' own).
 ///
 /// The table must be concave (slopes that never increase), as every
 /// exposure curve is. Linear interpolation keeps it so, and makes the
@@ -379,6 +396,16 @@ impl<S: Severity + ?Sized> ExposureCurve for SeverityCurve<'_, S> {
 /// `sₙ/s₁`. Its mean rate is `x₁ / G(x₁)`, the first chord's: a curve is
 /// steepest near 0, so a table needs fine first points for the expected
 /// loss of a risk (MPL × mean rate) to be right.
+///
+/// Interpolated log-log ([`with_interpolation`](Self::with_interpolation)),
+/// the curve is concave when the elasticities `pₖ` never increase and stay
+/// at most 1 after the straight first piece, which the constructor checks
+/// (a table concave in straight lines can fail it). Its destruction rate
+/// is then continuous within each piece past the first: `F(x) = 1 −
+/// G'(x)/G'(0)` rises as `x^(pₖ − 1)` there, with an atom `(pₖ₋₁ − pₖ)
+/// Gₖ / (xₖ G'(0))` at each interior point `xₖ` and a total loss with the
+/// last piece's elasticity over `G'(0)` as its probability. The mean rate
+/// is the first chord's, as for linear.
 ///
 /// ```
 /// use prospicio_pricing::exposure::{ExposureCurve, TabulatedCurve};
@@ -394,14 +421,39 @@ pub struct TabulatedCurve {
     x: Vec<f64>,
     g: Vec<f64>,
     /// `F(xₖ)` at each point after the first: `1 − s_{k+1}/s₁` at interior
-    /// points, 1 at `x = 1`.
+    /// points, 1 at `x = 1` (linear interpolation).
     cdf: Vec<f64>,
+    interpolation: Interpolation,
+    /// The elasticity `pₖ` of each piece, from point `k` to `k + 1`: 1 for
+    /// the first, which is straight (log-log interpolation; empty for
+    /// linear).
+    powers: Vec<f64>,
 }
 
 impl TabulatedCurve {
-    /// The curve through the points; `x` increases from 0 to 1 and `g`
-    /// from 0 to 1 (both ends within 1e-9), concave.
+    /// The curve through the points, interpolated linearly; `x` increases
+    /// from 0 to 1 and `g` from 0 to 1 (both ends within 1e-9), concave.
     pub fn new(x: &[f64], g: &[f64]) -> Result<Self> {
+        Self::with_interpolation(x, g, Interpolation::Linear)
+    }
+
+    /// The curve through the points, interpolated as `interpolation` says.
+    /// Log-log also needs the elasticities `pₖ` (see [`Interpolation`]) to
+    /// be at most 1 and never to increase, which makes the interpolated
+    /// curve concave.
+    ///
+    /// ```
+    /// use prospicio_pricing::exposure::{ExposureCurve, Interpolation, TabulatedCurve};
+    ///
+    /// let (x, g) = ([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0]);
+    /// let t = TabulatedCurve::with_interpolation(&x, &g, Interpolation::LogLog).unwrap();
+    /// // Between 0.1 and 0.5: 0.4 (x / 0.1)^p with p = ln 2 / ln 5.
+    /// let p = 2f64.ln() / 5f64.ln();
+    /// assert!((t.g(0.3) - 0.4 * 3f64.powf(p)).abs() < 1e-15);
+    /// assert!(t.g(0.3) > 0.6); // above the chord: the power law bends
+    /// assert!((t.mean_rate() - 0.25).abs() < 1e-15); // the first chord's
+    /// ```
+    pub fn with_interpolation(x: &[f64], g: &[f64], interpolation: Interpolation) -> Result<Self> {
         if x.len() != g.len() || x.len() < 2 {
             return Err(Error::Data(
                 "a tabulated curve needs at least two points, as many x as g".into(),
@@ -447,7 +499,33 @@ impl TabulatedCurve {
         g[0] = 0.0;
         x[n - 1] = 1.0;
         g[n - 1] = 1.0;
-        Ok(Self { x, g, cdf })
+        let mut powers = Vec::new();
+        if interpolation == Interpolation::LogLog {
+            powers.push(1.0);
+            for k in 2..n {
+                let p = (g[k] / g[k - 1]).ln() / (x[k] / x[k - 1]).ln();
+                let prev = powers[k - 2];
+                if p.is_nan() || p > prev * (1.0 + 1e-9) + 1e-12 {
+                    // Name the point where the elasticity rises: past it the
+                    // power law bends convex.
+                    return Err(invalid(
+                        "x",
+                        x[k - 1],
+                        "is where the table's elasticity ln(G_k+1 / G_k) / ln(x_k+1 / x_k) \
+                         rises (or exceeds 1 after the first piece), so log-log interpolation \
+                         is not concave there; interpolate linearly",
+                    ));
+                }
+                powers.push(p.min(prev));
+            }
+        }
+        Ok(Self {
+            x,
+            g,
+            cdf,
+            interpolation,
+            powers,
+        })
     }
 
     /// The curve of `severity` capped at `mpl` ([`SeverityCurve`]),
@@ -518,6 +596,47 @@ impl TabulatedCurve {
     pub fn g_values(&self) -> &[f64] {
         &self.g
     }
+
+    /// How the curve runs between its points.
+    pub fn interpolation(&self) -> Interpolation {
+        self.interpolation
+    }
+
+    /// `G'(x)` on a log-log piece past the first, for tests.
+    #[cfg(test)]
+    fn g_prime_for_test(&self, x: f64) -> f64 {
+        let k = self
+            .x
+            .partition_point(|&p| p < x)
+            .clamp(2, self.x.len() - 1);
+        let p = self.powers[k - 1];
+        p * self.g(x) / x
+    }
+
+    /// The log-log destruction rate at `u`: the smallest `x` with
+    /// `F(x) = 1 − G'(x)/s₁ ≥ u`.
+    fn log_log_rate_quantile(&self, u: f64) -> f64 {
+        let (x, g, p) = (&self.x, &self.g, &self.powers);
+        let n = x.len();
+        let s1 = g[1] / x[1];
+        // F just after point k (1 ≤ k < n − 1): 1 − p_k G_k / (x_k s₁),
+        // with p_k the power of the piece from k to k + 1.
+        let after = |k: usize| 1.0 - p[k] * g[k] / (x[k] * s1);
+        for k in 1..n - 1 {
+            if u <= after(k) {
+                return x[k];
+            }
+            // On the piece from k to k + 1, F rises to its value just
+            // before point k + 1.
+            let before_next = 1.0 - p[k] * g[k + 1] / (x[k + 1] * s1);
+            if u <= before_next && p[k] < 1.0 {
+                // p_k G_k (x/x_k)^(p_k − 1) / x_k = (1 − u) s₁.
+                let ratio = (1.0 - u) * s1 * x[k] / (p[k] * g[k]);
+                return (x[k] * ratio.powf(1.0 / (p[k] - 1.0))).clamp(x[k], x[k + 1]);
+            }
+        }
+        1.0
+    }
 }
 
 impl ExposureCurve for TabulatedCurve {
@@ -528,11 +647,18 @@ impl ExposureCurve for TabulatedCurve {
             .partition_point(|&p| p < x)
             .clamp(1, self.x.len() - 1);
         let (x0, x1, g0, g1) = (self.x[k - 1], self.x[k], self.g[k - 1], self.g[k]);
+        if self.interpolation == Interpolation::LogLog && k > 1 {
+            return (g0 * (x / x0).powf(self.powers[k - 1])).min(g1);
+        }
         g0 + (g1 - g0) * (x - x0) / (x1 - x0)
     }
 
-    /// The smallest point `xₖ` (k ≥ 1) with `F(xₖ) ≥ u`.
+    /// Linear: the smallest point `xₖ` (k ≥ 1) with `F(xₖ) ≥ u`. Log-log:
+    /// the smallest `x` with `F(x) ≥ u`, a point or within a piece.
     fn rate_quantile(&self, u: f64) -> f64 {
+        if self.interpolation == Interpolation::LogLog {
+            return self.log_log_rate_quantile(u);
+        }
         let k = self.cdf.partition_point(|&f| f < u);
         self.x[(k + 1).min(self.x.len() - 1)]
     }
@@ -650,6 +776,79 @@ mod tests {
         assert_eq!(t.rate_quantile(0.76), 0.5);
         assert_eq!(t.rate_quantile(0.9), 0.5);
         assert_eq!(t.rate_quantile(0.91), 1.0);
+    }
+
+    #[test]
+    fn log_log_tables_are_destruction_rate_distributions() {
+        let (x, g) = ([0.0, 0.1, 0.5, 1.0], [0.0, 0.4, 0.8, 1.0]);
+        let t = TabulatedCurve::with_interpolation(&x, &g, Interpolation::LogLog).unwrap();
+        check_sampling(&t);
+        // Elasticities 1, ln 2 / ln 5, ln 1.25 / ln 2; s₁ = 4.
+        let (p1, p2) = (2f64.ln() / 5f64.ln(), 1.25f64.ln() / 2f64.ln());
+        // F jumps at 0.1 from 0 to 1 − p₁ 0.4 / (0.1 · 4).
+        let f1 = 1.0 - p1;
+        assert_eq!(t.rate_quantile(f1 * 0.999), 0.1);
+        let mid = t.rate_quantile(f1 + 0.01);
+        assert!(mid > 0.1 && mid < 0.5);
+        assert!((1.0 - t.g_prime_for_test(mid) / 4.0 - (f1 + 0.01)).abs() < 1e-12);
+        // A total loss with probability p₂ / 4.
+        assert_eq!(t.rate_quantile(1.0 - p2 / 4.0 * 0.999), 1.0);
+        assert!(t.rate_quantile(1.0 - p2 / 4.0 * 1.001) < 1.0);
+        for (k, (&xk, &gk)) in x.iter().zip(&g).enumerate() {
+            assert!((t.g(xk) - gk).abs() < 1e-15, "point {k}");
+        }
+        // A piece boundary: u exactly at F just before 0.5 is 0.5.
+        let before = 1.0 - p1 * 0.8 / (0.5 * 4.0);
+        assert!((t.rate_quantile(before) - 0.5).abs() < 1e-12);
+        assert_eq!(t.rate_quantile(before + 1e-9), 0.5);
+        // A flat top: elasticity 0, no mass above 0.5.
+        let (x, g) = ([0.0, 0.2, 0.5, 1.0], [0.0, 0.6, 1.0, 1.0]);
+        let t = TabulatedCurve::with_interpolation(&x, &g, Interpolation::LogLog).unwrap();
+        check_sampling(&t);
+        assert_eq!(t.rate_quantile(0.999), 0.5);
+    }
+
+    #[test]
+    fn log_log_reads_a_sparse_table_closer_to_the_curve() {
+        // Ten points of a curve whose elasticity falls throughout: log-log
+        // interpolation follows it closer than straight lines.
+        let x: Vec<f64> = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0].to_vec();
+        let ln = prospicio_prob::Lognormal::from_mean_cv(2e5, 2.0).unwrap();
+        let pa = prospicio_prob::Pareto::new(1e4, 1.5).unwrap();
+        let curves: Vec<Box<dyn ExposureCurve>> = vec![
+            Box::new(Mbbefd::swiss_re(4.0).unwrap()),
+            Box::new(Mbbefd::swiss_re(5.0).unwrap()),
+            Box::new(SeverityCurve::new(&ln, 1e6).unwrap()),
+            Box::new(SeverityCurve::new(&pa, 1e6).unwrap()),
+        ];
+        for (i, m) in curves.iter().enumerate() {
+            let g: Vec<f64> = x.iter().map(|&v| m.g(v)).collect();
+            let lin = TabulatedCurve::new(&x, &g).unwrap();
+            let log = TabulatedCurve::with_interpolation(&x, &g, Interpolation::LogLog).unwrap();
+            let (mut e_lin, mut e_log) = (0.0f64, 0.0f64);
+            // From the first point on: the first piece is straight in both.
+            for v in (10..1000).map(|i| i as f64 / 1000.0) {
+                e_lin = e_lin.max((lin.g(v) - m.g(v)).abs());
+                e_log = e_log.max((log.g(v) - m.g(v)).abs());
+            }
+            // Measured: 0.36 to 0.67 of the linear error.
+            assert!(
+                e_log < 0.75 * e_lin,
+                "curve {i}: log-log {e_log}, linear {e_lin}"
+            );
+        }
+    }
+
+    #[test]
+    fn log_log_refuses_a_table_whose_elasticity_rises() {
+        // Swiss Re c = 3: the total-loss atom makes the elasticity rise over
+        // the top half, so no power law through the points is concave.
+        let x = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0];
+        let m = Mbbefd::swiss_re(3.0).unwrap();
+        let g: Vec<f64> = x.iter().map(|&v| m.g(v)).collect();
+        assert!(TabulatedCurve::new(&x, &g).is_ok());
+        let err = TabulatedCurve::with_interpolation(&x, &g, Interpolation::LogLog).unwrap_err();
+        assert!(matches!(err, Error::InvalidParameter { name: "x", value, .. } if value == 0.7));
     }
 
     #[test]

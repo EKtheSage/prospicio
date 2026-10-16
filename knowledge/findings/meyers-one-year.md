@@ -64,7 +64,15 @@ At 10,000 simulations (release, 16 threads) the default takes 249 s
 (CRC), 411 s (CSR) and 396 s (CAY), most of it in the 9% to 13% of the
 simulations it refits; `RefitFlagged` would take about 6.7 times as long
 (171 to 276 s per 1,000 simulations), `ReweightOnly` 3 to 8 s.[^test]
+Since the cost is the same per simulation, the user decided on 2026-10-16
+that the view runs at most 2,000 simulations by default
+(`Meyers::ONE_YEAR_SIMS`; `BayesOneYear::n_sims` sets any count), about a
+fifth of those times (estimated about 50 s for CRC to about 80 s for CSR
+and CAY), with the total's sd known to about 1.6% instead of 0.7%. The
+lifetime view keeps 10,000.[^design]
 
 Checked by CI at seed 0 (rescued at least 0.75, 0.74 and 0.62; matched
 gap below 0.20, 0.16 and 0.20 and below the reweighted gap), not yet
-`verified` in this bundle's sense until it has run there.
+`verified` in this bundle's sense until it has run there. Pull requests
+check CRC alone; CSR and CAY run in the weekly and manual runs, which set
+`RISK_RS_FULL_BAYES` (the user's decision of 2026-10-16).

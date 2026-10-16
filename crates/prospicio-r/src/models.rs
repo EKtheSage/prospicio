@@ -5,6 +5,7 @@
 
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
+use prospicio_bayes::ppc::{self, Statistic, StatisticCheck};
 use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
 use prospicio_glm::net::{ElasticNet, ElasticNetFit};
 use prospicio_glm::{Dispersion, Glm, GlmFit, Robust};
@@ -503,6 +504,8 @@ fn gam_fit_design(
     power: f64,
     smooths: Vec<String>,
     n_basis: &[f64],
+    bs: Vec<String>,
+    periods: &[f64],
     smoothing: &str,
     lambdas: &[f64],
     tensors: List,
@@ -516,13 +519,38 @@ fn gam_fit_design(
         dispersion_value,
         base.dispersion,
     )?);
-    if n_basis.len() != smooths.len() {
-        return Err(Error::Other("give one n_basis per smooth".into()));
+    if n_basis.len() != smooths.len()
+        || bs.len() != smooths.len()
+        || periods.len() != 2 * smooths.len()
+    {
+        return Err(Error::Other(
+            "give one n_basis, bs and period per smooth".into(),
+        ));
     }
     let splines = smooths
         .iter()
-        .zip(n_basis)
-        .map(|(s, &k)| Ok(PSpline::new(s).n_basis(whole(k, "n_basis")? as usize)))
+        .enumerate()
+        .map(|(i, s)| {
+            let (lo, hi) = (periods[2 * i], periods[2 * i + 1]);
+            let spline = match (bs[i].as_str(), lo.is_nan()) {
+                ("ps", true) => PSpline::new(s),
+                ("cp", true) => PSpline::cyclic(s),
+                ("cp", false) => PSpline::cyclic(s).period(lo, hi),
+                ("mpi", true) => PSpline::increasing(s),
+                ("mpd", true) => PSpline::decreasing(s),
+                ("ps" | "mpi" | "mpd", false) => {
+                    return Err(Error::Other(format!(
+                        "smooth {s}: a period needs bs = \"cp\""
+                    )));
+                }
+                (other, _) => {
+                    return Err(Error::Other(format!(
+                        "bs must be \"ps\", \"cp\", \"mpi\" or \"mpd\", not {other:?}"
+                    )));
+                }
+            };
+            Ok(spline.n_basis(whole(n_basis[i], "n_basis")? as usize))
+        })
         .collect::<Result<Vec<_>>>()?;
     let smoothing = match smoothing {
         "auto" => Smoothing::Auto,
@@ -1035,6 +1063,33 @@ impl BayesGlmModel {
         self.inner.log_likelihood(d, y).map_err(to_r)
     }
 
+    /// Replicated training datasets, row-major `n_draws × n`.
+    fn replicate(&self, seed: f64) -> Result<Vec<f64>> {
+        let (d, _) = &self.training;
+        self.inner.replicate(d, whole(seed, "seed")?).map_err(to_r)
+    }
+
+    /// Posterior predictive checks on the training data.
+    fn ppc(&self, statistics: Vec<String>, seed: f64) -> Result<List> {
+        let (d, y) = &self.training;
+        let stats = ppc_statistics(&statistics)?;
+        let checks = self
+            .inner
+            .posterior_predictive_check(d, y, &stats, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(checks_list(checks))
+    }
+
+    /// The leave-one-out PIT of the training data.
+    fn loo_pit(&self, seed: f64) -> Result<List> {
+        let (d, y) = &self.training;
+        let p = self
+            .inner
+            .loo_pit(d, y, whole(seed, "seed")?)
+            .map_err(to_r)?;
+        Ok(list!(pit = p.pit, pareto_k = p.pareto_k, ks = p.ks))
+    }
+
     fn predict(&self, x: &[f64], names: Vec<String>, offset: &[f64]) -> Result<Vec<f64>> {
         let d = design(x, names, offset, &[])?;
         self.inner.predict(&d).map_err(to_r)
@@ -1179,6 +1234,90 @@ impl StackingModel {
     }
 }
 
+/// Test statistics from R: names, or numbers (or `"q<p>"`) for quantiles.
+fn ppc_statistics(names: &[String]) -> Result<Vec<Statistic>> {
+    names
+        .iter()
+        .map(|name| match name.as_str() {
+            "mean" => Ok(Statistic::Mean),
+            "sd" => Ok(Statistic::Sd),
+            "min" => Ok(Statistic::Min),
+            "max" => Ok(Statistic::Max),
+            "proportion_zero" => Ok(Statistic::ProportionZero),
+            other => other
+                .strip_prefix('q')
+                .unwrap_or(other)
+                .parse::<f64>()
+                .map(Statistic::Quantile)
+                .map_err(|_| {
+                    Error::Other(format!(
+                        "a statistic is \"mean\", \"sd\", \"min\", \"max\", \"proportion_zero\" or a quantile's probability, got {other}"
+                    ))
+                }),
+        })
+        .collect()
+}
+
+/// `list(name, observed, p_value, replicated)`, `replicated` row-major
+/// draws × statistics.
+fn checks_list(checks: Vec<StatisticCheck>) -> List {
+    let s = checks.first().map_or(0, |c| c.replicated.len());
+    let mut replicated = Vec::with_capacity(s * checks.len());
+    for d in 0..s {
+        replicated.extend(checks.iter().map(|c| c.replicated[d]));
+    }
+    list!(
+        name = checks.iter().map(|c| c.name.clone()).collect::<Vec<_>>(),
+        observed = checks.iter().map(|c| c.observed).collect::<Vec<_>>(),
+        p_value = checks.iter().map(|c| c.p_value).collect::<Vec<_>>(),
+        replicated = replicated
+    )
+}
+
+/// Posterior predictive checks of any model's replicates (row-major
+/// `S × n`); `groups` empty for none, else from 1.
+#[extendr]
+fn ppc_check_rust(
+    observed: &[f64],
+    replicated: &[f64],
+    statistics: Vec<String>,
+    groups: &[f64],
+) -> Result<List> {
+    let stats = ppc_statistics(&statistics)?;
+    let checks = if groups.is_empty() {
+        ppc::check(observed, replicated, &stats)
+    } else {
+        let g = groups
+            .iter()
+            .map(|&v| {
+                let k = whole(v, "groups")?;
+                if k == 0 {
+                    return Err(Error::Other("groups run from 1".into()));
+                }
+                Ok(k as usize - 1)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        ppc::check_grouped(observed, replicated, &g, &stats)
+    }
+    .map_err(to_r)?;
+    Ok(checks_list(checks))
+}
+
+/// The leave-one-out PIT of any model (`replicated` and `log_lik` row-major
+/// `S × n`; `r_eff` empty for 1).
+#[extendr]
+fn loo_pit_rust(
+    observed: &[f64],
+    replicated: &[f64],
+    log_lik: &[f64],
+    r_eff: &[f64],
+    seed: f64,
+) -> Result<List> {
+    let r = (!r_eff.is_empty()).then_some(r_eff);
+    let p = ppc::loo_pit(observed, replicated, log_lik, r, whole(seed, "seed")?).map_err(to_r)?;
+    Ok(list!(pit = p.pit, pareto_k = p.pareto_k, ks = p.ks))
+}
+
 extendr_module! {
     mod models;
     fn bayes_stacking_rust;
@@ -1186,6 +1325,8 @@ extendr_module! {
     impl StackingModel;
     fn bayes_glm_fit_design;
     impl BayesGlmModel;
+    fn ppc_check_rust;
+    fn loo_pit_rust;
     fn actual_vs_expected_rust;
     fn stacking_weights_rust;
     fn pseudo_bma_weights_rust;

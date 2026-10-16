@@ -212,6 +212,43 @@ close(g$expected_premium[["QS"]], 15, 1e-12)
 stopifnot(abs(g$expected_ceding_commission[["QS"]] - mean(m[, 6])) < 4 * sd(m[, 6]) / sqrt(nrow(m)))
 stopifnot(identical(tower_to_json(tower_from_json(tower_to_json(tw))), tower_to_json(tw)))
 
+# Deficits and credits carried over a contract term.
+pcc <- with_profit_commission_carry_forward(with_profit_commission(
+  with_premium_rate(quota_share("QS", 1), 1, 100), 0.5, 0.2))
+stopifnot(is.null(pcc@profit_commission_carry$years), is.null(pc@profit_commission_carry))
+close(profit_commissions_over(pcc, c(120, 70, 30, 85, 50)), c(0, 0, 10, 0, 12.5), 1e-12)
+pc1 <- with_profit_commission_carry_forward(with_profit_commission(
+  with_premium_rate(quota_share("QS", 1), 1, 100), 0.5, 0.2), years = 1)
+stopifnot(pc1@profit_commission_carry$years == 1)
+close(profit_commissions_over(pc1, c(120, 70, 30, 85, 50)), c(0, 0, 25, 0, 12.5), 1e-12)
+ss <- with_sliding_scale(with_premium_rate(quota_share("QS", 1), 1, 100), c(0.4, 0.2), c(0.5, 0.7))
+ssc <- with_sliding_scale_carry_forward(ss, deficit = FALSE, credit = TRUE)
+stopifnot(identical(ssc@sliding_scale_carry, list(deficit = FALSE, credit = TRUE, years = NULL)))
+close(ceding_commissions_over(ssc, c(90, 40, 30, 60)), c(20, 40, 40, 40), 1e-12)
+stopifnot(inherits(try(with_profit_commission_carry_forward(qs), silent = TRUE), "try-error"))
+stopifnot(inherits(try(with_sliding_scale_carry_forward(ss, FALSE, FALSE), silent = TRUE), "try-error"))
+ev <- simulate_events(poisson_count(3), lognormal_from_mean_cv(10, 1.5), 3 * 1000, seed = 11)
+yrs <- term_years(ev, 3)
+stopifnot(length(yrs) == 3, yrs[[2]]@n_sims == 1000)
+stopifnot(identical(events(yrs[[2]], 5), events(ev, 1005)))
+ptc <- with_profit_commission_carry_forward(with_profit_commission(
+  with_premium_rate(quota_share("QS", 1), 1, 30), 0.3, 0.25))
+term <- apply_tower_term(reinsurance_tower(list(ptc)), yrs)
+stopifnot(identical(term@dims, c("kind", "layer", "year")))
+tm <- draw_matrix(term)
+stopifnot(ncol(tm) == 3 * 4)
+# Each path's commissions are the layer's over its own ceded losses; year 1's
+# match apply_tower alone.
+for (j in c(1, 17, 500)) {
+  close(tm[j, c(4, 8, 12)], profit_commissions_over(ptc, tm[j, c(2, 6, 10)]), 1e-12)
+}
+alone <- draw_matrix(apply_tower(reinsurance_tower(list(ptc)), yrs[[1]]))
+stopifnot(isTRUE(all.equal(unname(alone), unname(tm[, 1:4]))))
+agg <- apply_tower_term(reinsurance_tower(list(pcc)), lapply(yrs[1:2], total))
+stopifnot(ncol(draw_matrix(agg)) == 8)
+stopifnot(identical(tower_to_json(tower_from_json(tower_to_json(reinsurance_tower(list(ssc))))),
+                    tower_to_json(reinsurance_tower(list(ssc)))))
+
 # Towers save and load as JSON.
 tw <- inuring_tower(list(list(quota_share("QS", 0.3), surplus_treaty("S", 1e6, 4)),
                          list(xol_layer("xl", 2e6, 1e6, premium = 3e5, reinstatement_rates = c(1, 0.5),

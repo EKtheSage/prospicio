@@ -26,3 +26,16 @@
   `bayes_one_year_fit` (its `fit` a `MeyersFit`) and `BayesOneYearFits` /
   `bayes_one_year_fits`, which now has `premium` for Meyers' views
   (`scale` is the ODP's only) (#280).
+- **Behaviour change:** `Meyers::one_year` and `one_year_segments` run at
+  most 2,000 one-year simulations by default (`Meyers::ONE_YEAR_SIMS`),
+  not the model's `n_sims` (10,000 by default), since nearly every
+  simulation of these models costs a moment match or a NUTS refit; the
+  lifetime view keeps `n_sims`. A new `BayesOneYear::n_sims`
+  (`Option<usize>`, `None` by default) sets the count for any Bayesian
+  one-year view; `None` keeps `BayesOdp`'s and `BayesBf`'s own `n_sims`.
+  In Python `n_sims=None` on `one_year` and `one_year_segments`, in R
+  `one_year_sims = NULL` on `bayes_odp_one_year()`,
+  `bayes_odp_one_year_segments()`, `bayes_bf_one_year()`,
+  `meyers_one_year()` and `meyers_one_year_segments()`. Adding the field
+  breaks a `BayesOneYear { .. }` literal without `..Default::default()`
+  (#280).

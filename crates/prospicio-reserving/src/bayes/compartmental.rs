@@ -943,11 +943,12 @@ impl Compartmental {
             &fit.sampled,
             StreamRng::new(view_seed, u64::MAX).next_u64(),
         )?;
-        let draws = one_year::simulate(&year, &opening, settings, self.n_sims, view_seed)?;
+        let n_sims = settings.sims(self.n_sims);
+        let draws = one_year::simulate(&year, &opening, settings, n_sims, view_seed)?;
         let mut provenance = fit.reserves.provenance().clone();
         provenance.parameters.retain(|(k, _)| k != "output");
         provenance.model = format!("{}_one_year", provenance.model);
-        let provenance = one_year::provenance(provenance, settings);
+        let provenance = one_year::provenance(provenance, settings, n_sims);
         let cdr = PredictiveDistribution::from_draws(
             vec!["origin".into()],
             fit.origins.iter().map(|&o| vec![o.into()]).collect(),

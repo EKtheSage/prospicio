@@ -2088,6 +2088,11 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #'   `unrefitted` and warned about. `NULL` (the default) refits every one,
 #'   `0` none. In the `_segments` functions it applies to each segment, so
 #'   k segments refit at most k times this many.
+#' @param one_year_sims The number of one-year simulations, or `NULL` (the
+#'   default) for the model's one-year default: `n_sims` for
+#'   `bayes_odp_one_year()` and `bayes_bf_one_year()`, and `n_sims` capped
+#'   at 2,000 for `meyers_one_year()`. The lifetime reserves keep `n_sims`.
+#'   A smaller count gives the first simulations of a larger one.
 #' @param ptr A `BayesOneYearFit` or `BayesOneYearFits` pointer; used
 #'   internally.
 #' @returns A `bayes_one_year_fit` or `bayes_one_year_fits` object.
@@ -2273,7 +2278,7 @@ bayes_odp_one_year <- function(triangle, column = NULL, intercept_sd = 10, origi
                                target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
                                refit = c("moment_match_then_refit", "refit_flagged",
                                          "reweight_only", "refit_all"),
-                               max_refits = NULL) {
+                               max_refits = NULL, one_year_sims = NULL) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   refit <- match.arg(refit)
@@ -2281,7 +2286,7 @@ bayes_odp_one_year <- function(triangle, column = NULL, intercept_sd = 10, origi
                      target_accept, max_depth)
   ptr <- rust_result(triangle@ptr$bayes_odp_one_year(
     column, s$priors, process, s$run, single_number(k_threshold, "k_threshold"), refit,
-    max_refits_arg(max_refits)))
+    max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims")))
   view <- bayes_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
   if (length(failed)) {
@@ -2305,7 +2310,7 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
                                         spearman = NULL, k_threshold = 0.7,
                                         refit = c("moment_match_then_refit", "refit_flagged",
                                                   "reweight_only", "refit_all"),
-                                        max_refits = NULL) {
+                                        max_refits = NULL, one_year_sims = NULL) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
@@ -2314,7 +2319,7 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
                      target_accept, max_depth)
   ptr <- rust_result(triangle@ptr$bayes_odp_one_year_segments(
     column, s$priors, process, s$run, single_number(k_threshold, "k_threshold"), refit,
-    max_refits_arg(max_refits),
+    max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims"),
     dependence, spearman_arg(spearman)))
   view <- bayes_one_year_fits(ptr = ptr)
   d <- view@diagnostics
@@ -2697,7 +2702,10 @@ meyers_segments <- function(triangle, column, premium, model = c("crc", "csr", "
 #' its k stays above the threshold. On Meyers' group 353 nearly every
 #' simulation is flagged and matching rescues about nine in ten, so 10,000
 #' simulations take 4 to 7 minutes on 16 threads, and `"refit_flagged"`
-#' about 6.7 times as long; fewer `n_sims` cost proportionally less.
+#' about 6.7 times as long. The view therefore runs at most 2,000
+#' simulations by default (under a minute and a half there), whatever
+#' `n_sims` (the lifetime reserves' count) is above that; `one_year_sims`
+#' sets the count. Fewer simulations cost proportionally less.
 #'
 #' `meyers_one_year_segments()` does the same in every segment of the
 #' triangle, each segment's posterior and simulations as in
@@ -2712,7 +2720,7 @@ meyers_segments <- function(triangle, column, premium, model = c("crc", "csr", "
 #' origin's `premium`), or a [bayes_one_year_fits] with `premium`.
 #'
 #' Errors: as [meyers()] (or [meyers_segments()]); a `k_threshold` that is
-#' `NaN`.
+#' `NaN`; a `one_year_sims` of 0.
 #'
 #' These are Python's `Meyers.one_year()` and `Meyers.one_year_segments()`.
 #'
@@ -2743,7 +2751,7 @@ meyers_one_year <- function(triangle, column, premium, model = c("crc", "csr", "
                             target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
                             refit = c("moment_match_then_refit", "refit_flagged",
                                       "reweight_only", "refit_all"),
-                            max_refits = NULL) {
+                            max_refits = NULL, one_year_sims = NULL) {
   s <- meyers_args(triangle, column, premium, logelr_mean, logelr_sd, origin_sd,
                    development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed,
                    target_accept, max_depth)
@@ -2751,7 +2759,7 @@ meyers_one_year <- function(triangle, column, premium, model = c("crc", "csr", "
   refit <- match.arg(refit)
   ptr <- rust_result(triangle@ptr$meyers_one_year(
     column, premium, model, s$priors, s$run, single_number(k_threshold, "k_threshold"), refit,
-    max_refits_arg(max_refits)))
+    max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims")))
   view <- bayes_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
   if (length(failed)) {
@@ -2775,7 +2783,7 @@ meyers_one_year_segments <- function(triangle, column, premium, model = c("crc",
                                      spearman = NULL, k_threshold = 0.7,
                                      refit = c("moment_match_then_refit", "refit_flagged",
                                                "reweight_only", "refit_all"),
-                                     max_refits = NULL) {
+                                     max_refits = NULL, one_year_sims = NULL) {
   s <- meyers_args(triangle, column, premium, logelr_mean, logelr_sd, origin_sd,
                    development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed,
                    target_accept, max_depth)
@@ -2784,7 +2792,7 @@ meyers_one_year_segments <- function(triangle, column, premium, model = c("crc",
   refit <- match.arg(refit)
   ptr <- rust_result(triangle@ptr$meyers_one_year_segments(
     column, premium, model, s$priors, s$run, single_number(k_threshold, "k_threshold"), refit,
-    max_refits_arg(max_refits),
+    max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims"),
     dependence, spearman_arg(spearman)))
   view <- bayes_one_year_fits(ptr = ptr)
   d <- view@diagnostics
@@ -3045,7 +3053,7 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
                               target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
                               refit = c("moment_match_then_refit", "refit_flagged",
                                         "reweight_only", "refit_all"),
-                              max_refits = NULL) {
+                              max_refits = NULL, one_year_sims = NULL) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
   refit <- match.arg(refit)
@@ -3057,7 +3065,7 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
            single_number(max_depth, "max_depth"))
   ptr <- rust_result(triangle@ptr$bayes_bf_one_year(
     cols[1], cols[2], priors, process, run, single_number(k_threshold, "k_threshold"), refit,
-    max_refits_arg(max_refits)))
+    max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims")))
   view <- bayes_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
   if (length(failed)) {

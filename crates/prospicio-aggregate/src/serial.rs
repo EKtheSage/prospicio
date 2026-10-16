@@ -23,7 +23,10 @@
 //! way, only when present: `"ceding_commission": rate`, `"sliding_scale":
 //! [[commission, loss_ratio], …]`, `"profit_commission": {"share": …,
 //! "allowance": …}` and `"swing": {"basic": …, "lcm": …, "minimum": …,
-//! "maximum": …}` (at 100% of the layer).
+//! "maximum": …}` (at 100% of the layer). A carry-forward over a term is
+//! `"profit_commission_carry": {"years": n}` and `"sliding_scale_carry":
+//! {"deficit": …, "credit": …, "years": n}`, with `years` null without
+//! limit; documents without them load with none (format version 1).
 
 use prospicio_core::{Error, Result};
 use serde_json::{Map, Number, Value, json};
@@ -32,8 +35,10 @@ use crate::reinsurance::{Basis, Commission, Layer, LossSensitivePremium, Tower};
 
 /// Value of the `format` field.
 const FORMAT: &str = "risk_rs.tower";
-/// The format version this build writes and the newest it reads.
-const FORMAT_VERSION: u64 = 1;
+/// The newest format version this build reads. A document is stamped at
+/// the oldest version that reads it: 2 when a layer carries deficits or
+/// credits over a term (which version 1 readers would drop), else 1.
+const FORMAT_VERSION: u64 = 2;
 
 impl Tower {
     /// The programme as a JSON document; [`from_json`](Self::from_json)
@@ -61,9 +66,13 @@ impl Tower {
                 s.push(layer_json(layer));
             }
         }
+        let carries = self
+            .layers
+            .iter()
+            .any(|l| l.profit_commission_carry.is_some() || l.sliding_scale_carry.is_some());
         let doc = json!({
             "format": FORMAT,
-            "format_version": FORMAT_VERSION,
+            "format_version": if carries { 2 } else { 1 },
             "stages": stages,
         });
         serde_json::to_string(&doc).expect("a JSON value serializes")
@@ -157,6 +166,15 @@ fn layer_json(l: &Layer) -> Value {
             json!({"share": num(pc.share), "allowance": num(pc.allowance)}),
         );
     }
+    if let Some(cf) = &l.profit_commission_carry {
+        m.insert("profit_commission_carry".into(), json!({"years": cf.years}));
+    }
+    if let Some(cf) = &l.sliding_scale_carry {
+        m.insert(
+            "sliding_scale_carry".into(),
+            json!({"deficit": cf.deficit, "credit": cf.credit, "years": cf.years}),
+        );
+    }
     if let Some(s) = &l.swing {
         m.insert(
             "swing".into(),
@@ -165,6 +183,18 @@ fn layer_json(l: &Layer) -> Value {
         );
     }
     Value::Object(m)
+}
+
+/// A carry's `years`: a positive integer, or null without limit.
+fn carry_years(cf: &Map<String, Value>) -> Result<Option<u32>> {
+    match cf.get("years") {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| Error::Data("a carry's years must be a whole number or null".into())),
+    }
 }
 
 fn layer_from(m: &Map<String, Value>) -> Result<Layer> {
@@ -256,6 +286,34 @@ fn layer_from(m: &Map<String, Value>) -> Result<Layer> {
         }
         Some(_) => return Err(Error::Data("profit_commission must be an object".into())),
     }
+    // Carry-forward over a term, after the terms it carries.
+    match m.get("profit_commission_carry") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(cf)) => {
+            layer = layer.profit_commission_carry_forward(carry_years(cf)?)?;
+        }
+        Some(_) => {
+            return Err(Error::Data(
+                "profit_commission_carry must be an object".into(),
+            ));
+        }
+    }
+    match m.get("sliding_scale_carry") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(cf)) => {
+            let flag = |k: &str| {
+                cf.get(k)
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| Error::Data(format!("sliding_scale_carry needs a boolean {k}")))
+            };
+            layer = layer.sliding_scale_carry_forward(
+                flag("deficit")?,
+                flag("credit")?,
+                carry_years(cf)?,
+            )?;
+        }
+        Some(_) => return Err(Error::Data("sliding_scale_carry must be an object".into())),
+    }
     match m.get("swing") {
         None | Some(Value::Null) => {}
         Some(Value::Object(s)) => {
@@ -332,6 +390,10 @@ mod tests {
                     .sliding_scale(vec![(0.35, 0.55), (0.3, 0.6), (0.2, 0.75)])
                     .unwrap()
                     .profit_commission(0.15, 0.35)
+                    .unwrap()
+                    .sliding_scale_carry_forward(true, true, Some(3))
+                    .unwrap()
+                    .profit_commission_carry_forward(None)
                     .unwrap(),
                 Layer::surplus("surplus", 1e6, 4.0)
                     .unwrap()
@@ -375,9 +437,15 @@ mod tests {
             "profit_commission",
             "ceding_commission",
             "swing",
+            "sliding_scale_carry",
+            "profit_commission_carry",
         ] {
             assert!(text.contains(key), "{key}");
         }
+        // A carry needs version 2; a tower without one stays version 1.
+        assert!(text.contains("\"format_version\":2"));
+        let plain = Tower::new(vec![Layer::xol("L", 1.0, 1.0).unwrap()]).unwrap();
+        assert!(plain.to_json().contains("\"format_version\":1"));
         let back = Tower::from_json(&text).unwrap();
         assert_eq!(back, tower);
         assert_eq!(back.to_json(), text);
@@ -408,7 +476,7 @@ mod tests {
         assert!(Tower::from_json("not json").is_err());
         assert!(Tower::from_json(&good.replace("risk_rs.tower", "risk_rs.distribution")).is_err());
         assert!(
-            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":2"))
+            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":3"))
                 .is_err()
         );
         assert!(Tower::from_json(&good.replace("\"loss\"", "\"cat\"")).is_err());

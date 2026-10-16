@@ -195,6 +195,54 @@ impl XolLayer {
         self.map(|l| l.profit_commission(share, allowance))
     }
 
+    /// `years` NaN without limit.
+    fn with_profit_commission_carry_forward(&self, years: f64) -> Result<Self> {
+        let years = carry_years(years)?;
+        self.map(|l| l.profit_commission_carry_forward(years))
+    }
+
+    /// `years` NaN without limit.
+    fn with_sliding_scale_carry_forward(
+        &self,
+        deficit: bool,
+        credit: bool,
+        years: f64,
+    ) -> Result<Self> {
+        let years = carry_years(years)?;
+        self.map(|l| l.sliding_scale_carry_forward(deficit, credit, years))
+    }
+
+    /// `c(years)` (NaN without limit), empty when deficits are not carried.
+    fn profit_commission_carry(&self) -> Vec<f64> {
+        self.inner
+            .profit_commission_carry
+            .map(|cf| vec![cf.years.map_or(f64::NAN, f64::from)])
+            .unwrap_or_default()
+    }
+
+    /// `c(deficit, credit, years)` (1 or 0, and NaN without limit), empty
+    /// when nothing is carried.
+    fn sliding_scale_carry(&self) -> Vec<f64> {
+        self.inner
+            .sliding_scale_carry
+            .map(|cf| {
+                vec![
+                    f64::from(u8::from(cf.deficit)),
+                    f64::from(u8::from(cf.credit)),
+                    cf.years.map_or(f64::NAN, f64::from),
+                ]
+            })
+            .unwrap_or_default()
+    }
+
+    fn profit_commissions_over(&self, ceded: &[f64]) -> Vec<f64> {
+        self.inner.profit_commissions_over(ceded)
+    }
+
+    fn ceding_commissions_over(&self, ceded: &[f64]) -> Vec<f64> {
+        self.inner.ceding_commissions_over(ceded)
+    }
+
     /// `minimum` and `maximum` NaN for the defaults.
     fn with_swing_rating(&self, basic: f64, lcm: f64, minimum: f64, maximum: f64) -> Result<Self> {
         let terms = loss_sensitive(basic, lcm, minimum, maximum)?;
@@ -403,6 +451,48 @@ impl ReinsuranceTower {
         let inner = self.inner.apply(&events.inner).map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }
+
+    /// `years` a list of event sets, one per year of the term.
+    fn apply_term(&self, years: List) -> Result<PredictiveDistribution> {
+        let years = years
+            .values()
+            .map(|y| {
+                <&EventSet>::try_from(&y)
+                    .map(|e| e.inner.clone())
+                    .map_err(|_| Error::Other("each year must be an event_set".into()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let inner = self.inner.apply_term(&years).map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+
+    /// `years` a list of predictive distributions, one per year.
+    fn apply_aggregate_term(&self, years: List) -> Result<PredictiveDistribution> {
+        let years = years
+            .values()
+            .map(|y| {
+                <&PredictiveDistribution>::try_from(&y)
+                    .map(|p| p.inner.clone())
+                    .map_err(|_| Error::Other("each year must be a predictive_distribution".into()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let inner = self.inner.apply_aggregate_term(&years).map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+}
+
+/// A carry's `years` from R: NaN without limit, else a positive whole
+/// number.
+fn carry_years(years: f64) -> Result<Option<u32>> {
+    if years.is_nan() {
+        return Ok(None);
+    }
+    if !(years.fract() == 0.0 && years >= 1.0 && years <= f64::from(u32::MAX)) {
+        return Err(Error::Other(
+            "years must be a positive whole number or NULL".into(),
+        ));
+    }
+    Ok(Some(years as u32))
 }
 
 impl XolLayer {

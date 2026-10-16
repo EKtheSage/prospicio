@@ -6474,6 +6474,10 @@ impl PyBayesOdp {
     ///     they are (as unreliable as their ``k`` says), listed in
     ///     ``unrefitted`` and warned about. ``None`` (the default) refits
     ///     every one, ``0`` none.
+    /// n_sims : int, optional
+    ///     The number of one-year simulations; by default this model's
+    ///     ``n_sims``. A smaller count gives the first simulations of a
+    ///     larger one.
     ///
     /// Returns
     /// -------
@@ -6499,7 +6503,7 @@ impl PyBayesOdp {
     /// (1000, [])
     /// >>> view.cdr.variance() < view.fit.reserves.variance()
     /// True
-    #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None))]
+    #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
     fn one_year(
         &self,
         py: Python<'_>,
@@ -6507,9 +6511,9 @@ impl PyBayesOdp {
         column: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,
+        max_refits: Option<usize>,        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFit> {
-        let settings = one_year_settings(k_threshold, refit, max_refits)?;
+        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year(tri, column, &settings))
@@ -6553,6 +6557,8 @@ impl PyBayesOdp {
     /// max_refits : int, optional
     ///     As in ``BayesOdp.one_year``, for each segment: ``k`` segments
     ///     refit at most ``k`` times this many.
+    /// n_sims : int, optional
+    ///     As in ``one_year``.
     ///
     /// Returns
     /// -------
@@ -6583,7 +6589,7 @@ impl PyBayesOdp {
     /// (['Auto', 'Home'], ['lob', 'origin'])
     /// >>> len(views.segment(lob="Home").pareto_k)
     /// 500
-    #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None))]
+    #[pyo3(signature = (triangle, column, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
     fn one_year_segments(
         &self,
         py: Python<'_>,
@@ -6591,9 +6597,9 @@ impl PyBayesOdp {
         column: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,
+        max_refits: Option<usize>,        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFits> {
-        let settings = one_year_settings(k_threshold, refit, max_refits)?;
+        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year_segments(tri, column, &settings))
@@ -7150,12 +7156,14 @@ impl PyBayesOdpFits {
     }
 }
 
-/// The settings of a Bayesian one-year view: `k_threshold` and the `refit`
-/// policy by name.
+/// The settings of a Bayesian one-year view: `k_threshold`, the `refit`
+/// policy by name, the refit budget and the number of simulations (`None` for the model's
+/// one-year default).
 fn one_year_settings(
     k_threshold: f64,
     refit: &str,
     max_refits: Option<usize>,
+    n_sims: Option<usize>,
 ) -> PyResult<BayesOneYear> {
     let refit = match refit {
         "refit_flagged" => OneYearRefit::RefitFlagged,
@@ -7173,6 +7181,7 @@ fn one_year_settings(
         k_threshold,
         refit,
         max_refits,
+        n_sims,
     })
 }
 
@@ -8112,6 +8121,10 @@ impl PyBayesBf {
     ///     What happens to a flagged simulation, as in ``BayesOdp.one_year``.
     /// max_refits : int, optional
     ///     As in ``BayesOdp.one_year``.
+    /// n_sims : int, optional
+    ///     The number of one-year simulations; by default this model's
+    ///     ``n_sims``. A smaller count gives the first simulations of a
+    ///     larger one.
     ///
     /// Returns
     /// -------
@@ -8142,7 +8155,7 @@ impl PyBayesBf {
     /// ('BayesBfFit', 1000)
     /// >>> view.cdr.variance() < view.fit.reserves.variance()
     /// True
-    #[pyo3(signature = (triangle, column, exposure, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None))]
+    #[pyo3(signature = (triangle, column, exposure, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
     #[allow(clippy::too_many_arguments)]
     fn one_year(
         &self,
@@ -8152,9 +8165,9 @@ impl PyBayesBf {
         exposure: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,
+        max_refits: Option<usize>,        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFit> {
-        let settings = one_year_settings(k_threshold, refit, max_refits)?;
+        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year(tri, column, exposure, &settings))
@@ -8841,7 +8854,9 @@ impl PyMeyers {
     /// group 353 nearly every simulation is flagged and matching rescues
     /// about nine in ten, so 10,000 simulations take 4 to 7 minutes on 16
     /// threads in a release build, and ``"refit_flagged"`` about 6.7 times
-    /// as long; fewer ``n_sims`` cost proportionally less. Raises one ``UserWarning``
+    /// as long. The view therefore runs at most 2,000 simulations by
+    /// default (about a fifth of that time), whatever the model's
+    /// ``n_sims`` is above that; ``n_sims`` here sets the count. Raises one ``UserWarning``
     /// listing the failed diagnostics of the fit, and another if any refit
     /// failed its diagnostics.
     ///
@@ -8860,6 +8875,12 @@ impl PyMeyers {
     ///     What happens to a flagged simulation, as in ``BayesOdp.one_year``.
     /// max_refits : int, optional
     ///     As in ``BayesOdp.one_year``.
+    /// n_sims : int, optional
+    ///     The number of one-year simulations. By default this model's
+    ///     ``n_sims``, at most 2,000: nearly every simulation of these
+    ///     models is flagged and costs a moment match or a refit. The
+    ///     lifetime view in ``fit`` keeps ``n_sims``; a smaller count
+    ///     gives the first simulations of a larger one.
     ///
     /// Returns
     /// -------
@@ -8890,7 +8911,7 @@ impl PyMeyers {
     /// ('MeyersFit', [('1988',), ('1989',)])
     /// >>> view.cdr.variance() < view.fit.reserves.variance()
     /// True
-    #[pyo3(signature = (triangle, column, premium, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None))]
+    #[pyo3(signature = (triangle, column, premium, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
     #[allow(clippy::too_many_arguments)]
     fn one_year(
         &self,
@@ -8900,9 +8921,9 @@ impl PyMeyers {
         premium: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,
+        max_refits: Option<usize>,        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFit> {
-        let settings = one_year_settings(k_threshold, refit, max_refits)?;
+        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year(tri, column, premium, &settings))
@@ -8947,6 +8968,8 @@ impl PyMeyers {
     /// max_refits : int, optional
     ///     As in ``BayesOdp.one_year``, for each segment: ``k`` segments
     ///     refit at most ``k`` times this many.
+    /// n_sims : int, optional
+    ///     As in ``one_year``.
     ///
     /// Returns
     /// -------
@@ -8979,7 +9002,7 @@ impl PyMeyers {
     /// (['Auto', 'Home'], ['lob', 'origin'])
     /// >>> views.segment(lob="Home").premium[:2]
     /// [11624.0, 9816.0]
-    #[pyo3(signature = (triangle, column, premium, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None))]
+    #[pyo3(signature = (triangle, column, premium, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
     #[allow(clippy::too_many_arguments)]
     fn one_year_segments(
         &self,
@@ -8989,9 +9012,9 @@ impl PyMeyers {
         premium: &str,
         k_threshold: f64,
         refit: &str,
-        max_refits: Option<usize>,
+        max_refits: Option<usize>,        n_sims: Option<usize>,
     ) -> PyResult<PyBayesOneYearFits> {
-        let settings = one_year_settings(k_threshold, refit, max_refits)?;
+        let settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year_segments(tri, column, premium, &settings))
@@ -10536,7 +10559,7 @@ impl PyCompartmental {
         max_refits: Option<usize>,
     ) -> PyResult<PyCompartmentalOneYearFit> {
         let os = compartmental_outstanding(outstanding, incurred)?;
-        let settings = one_year_settings(k_threshold, refit, max_refits)?;
+        let settings = one_year_settings(k_threshold, refit, max_refits, None)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.one_year(tri, paid, os, premium, &settings))

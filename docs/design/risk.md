@@ -109,6 +109,14 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   with counts above each threshold, linear above a threshold where a GPD
   fits) and `evt::hill` (Hill estimates of the tail index for a range of
   `k`), the usual aids to choosing a threshold before `PotTail::fit`.
+  `evt::threshold_diagnostics` gives, at each threshold, the mean excess
+  with its standard error (as `ismev::mrl.plot`'s bands) and the GPD
+  fitted to the exceedances with the shape `ξ`, the modified scale
+  `β - ξ u` and their standard errors (as `ismev::gpd.fitrange`): above a
+  threshold where a GPD fits, the mean excess is linear and both
+  parameters are constant. `Gpd::fit_with_covariance` returns the fit with
+  the covariance of `(ξ, β)`. Python `threshold_diagnostics` (a dict of
+  columns), R `threshold_diagnostics()` (a data frame).
 
 - `prospicio_pricing::natural`: the pricing and natural allocation of
   Mildenhall and Major (*Pricing Insurance Risk*, 2022) and CAS Monograph
@@ -242,6 +250,17 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   to the exceedances; `P(X > x) = p_u S_GPD(x - u)`, so VaR and TVaR at
   levels above `level` have closed forms and extend past the largest
   draw. Choosing the threshold stays the caller's job.
+- **Threshold diagnostics report standard errors from the observed
+  information**, the inverse negative Hessian of the log-likelihood at the
+  estimate, as `ismev::gpd.fit` does from a numerical Hessian, not the
+  expected information (`Var ξ = (1 + ξ)² / n`), which ignores how the
+  sample departs from the model. The second derivatives are analytic;
+  `ℓ_ξξ` cancels near `ξ = 0`, so there a series in `ξ y / β` takes over.
+  The normal approximation needs `ξ > -1/2` (Smith 1985); below it the
+  standard errors are NaN. The modified scale's comes by the delta method,
+  `Var β - 2 u Cov(ξ, β) + u² Var ξ`. A threshold with too few values
+  above it gives NaN in the fields it cannot estimate, not an error, so a
+  scan over many thresholds never stops at its top end.
 - **The GPD fit maximizes the profile likelihood in `θ = ξ / β`**
   (Grimshaw): a log-spaced scan over `θ` in `(-1/max, ∞)` finds the
   maximum, then bisection on the analytic score refines it, since a search
@@ -367,6 +386,16 @@ the score root by the Illinois method) on four data sets with
 `ξ` from -0.2 to 1.1, at `1e-8`. Unit tests check that fits recover
 known parameters from 50,000 draws, the GPD's closed forms, and that a
 `PotTail` built from known parts gives `P(X > VaR(p)) = 1 - p`.
+`validation/reference/evt_thresholds_r.csv` checks `threshold_diagnostics`
+on a Burr and a Weibull sample (`validation/scripts/r_evt_thresholds.R`):
+the mean excess and its standard error against `ismev::mrl.plot`'s
+arithmetic at `1e-12`; the estimates and standard errors against
+`ismev::gpd.fit` (Nelder-Mead and a numerical Hessian) at `2e-3` and
+`2e-2`, and against the exact estimate (the root of the profile score by
+`uniroot`) with the observed information from R's symbolic `deriv()` at
+`1e-9` and `1e-8`. A unit test checks the covariance against central
+differences of the log-likelihood, at `ξ` from -0.2 to 1.1 and within
+`1e-7` of 0.
 
 Allocation tests check, on simulated dependent lines, that contributions
 sum to the measure of the total for every distortion, that the mean
@@ -397,5 +426,5 @@ Fréchet–Hoeffding bounds and the errors.
 
 ## Next
 
-1. Nested Archimedean and vine copulas; threshold diagnostics (mean
-   excess plots) for EVT.
+1. Done: nested Archimedean and vine copulas; threshold diagnostics for
+   EVT (`evt::threshold_diagnostics`).

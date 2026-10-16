@@ -46,6 +46,15 @@
 //!    the compartmental models, whose fit needs a future cell: their unit
 //!    half samples such a square directly).
 //!
+//! A pull request runs Meyers' CRC alone of Meyers' three models and
+//! compartmental model 1 alone of the two (the smoke run, with the same
+//! sizes and bounds); CSR, CAY and compartmental model 2 join when
+//! `RISK_RS_FULL_BAYES` is set, as in CI's weekly and manual runs
+//! (`prospicio_validation::full_bayes`, the user's decision of
+//! 2026-10-16). The other models always run. Meyers' and the
+//! compartmental views get their `n_sims` explicitly: by default their
+//! `one_year` runs at most 2,000.
+//!
 //! Every bound is at least the largest model's mean (or mean offset) plus
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
 //! 4.75, both GenIns under `BayesOdp`; gaps 0.071, `BayesBf`, and 0.455,
@@ -69,7 +78,7 @@ use prospicio_reserving::bayes::{
     Outstanding,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
-use prospicio_validation::{triangle, triangle_columns};
+use prospicio_validation::{full_bayes, triangle, triangle_columns};
 
 /// The simulations of the mean check.
 const SIMS: usize = 10_000;
@@ -477,7 +486,15 @@ fn meyers<'a>(tri: &'a Triangle, model: MeyersModel, column: &'a str) -> Box<Run
             seed,
             ..Meyers::default()
         }
-        .one_year(tri, column, "premium", &settings(refit))
+        .one_year(
+            tri,
+            column,
+            "premium",
+            &BayesOneYear {
+                n_sims: Some(n_sims),
+                ..settings(refit)
+            },
+        )
         .unwrap()
     })
 }
@@ -555,7 +572,10 @@ fn compartmental(tri: &Triangle, two: bool) -> Box<Run<'_, CompartmentalFit>> {
             "paid",
             Outstanding::FromIncurred("incurred"),
             "premium",
-            &settings(refit),
+            &BayesOneYear {
+                n_sims: Some(n_sims),
+                ..settings(refit)
+            },
         )
         .unwrap()
     })
@@ -619,16 +639,20 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
             ),
         ]
     };
-    let meyers_models: &[(&str, MeyersModel, &str)] = if compartmental_only {
-        &[]
-    } else {
-        &[
-            ("Meyers CRC paid", MeyersModel::Crc, "paid"),
-            ("Meyers CSR paid", MeyersModel::Csr, "paid"),
-            ("Meyers CAY incurred", MeyersModel::Cay, "incurred"),
-        ]
+    // A strict run without the full gate (a pull request): CRC alone.
+    let meyers_models = match (compartmental_only, strict && !full_bayes()) {
+        (true, _) => 0,
+        (false, true) => 1,
+        (false, false) => 3,
     };
-    for &(name, model, column) in meyers_models {
+    for (name, model, column) in [
+        ("Meyers CRC paid", MeyersModel::Crc, "paid"),
+        ("Meyers CSR paid", MeyersModel::Csr, "paid"),
+        ("Meyers CAY incurred", MeyersModel::Cay, "incurred"),
+    ]
+    .into_iter()
+    .take(meyers_models)
+    {
         let measured = conform(
             name,
             &*meyers(group, model, column),
@@ -648,10 +672,15 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     // unit half only (`compartmental::tests`, sampling the closed square
     // directly).
     let training = wkcomp_337();
+    // A strict run without the full gate (a pull request): model 1 alone.
+    let compartmental_models = if strict && !full_bayes() { 1 } else { 2 };
     for (name, two, refits) in [
         ("Compartmental 1", false, COMPARTMENTAL_REFITS),
         ("Compartmental 2", true, COMPARTMENTAL_2_REFITS),
-    ] {
+    ]
+    .into_iter()
+    .take(compartmental_models)
+    {
         let measured = conform(
             name,
             &*compartmental(&training, two),

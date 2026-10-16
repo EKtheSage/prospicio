@@ -1,0 +1,947 @@
+---
+title: "Pricing reinsurance with prospicio, beside aggregate"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+---
+
+This document prices six reinsurance contracts with the `prospicio` R package and sets each result beside the number that Stephen Mildenhall's Python package [`aggregate`](https://github.com/mynl/aggregate) (1.0.1) gives for the same contract. It is the R twin of [`reinsurance_pricing.ipynb`](reinsurance_pricing.ipynb), written for a reinsurance pricing actuary who already knows `aggregate`. Each section says what the contract is (with the DecL line that builds it in `aggregate`), shows the R code, prints the result, and compares it with `aggregate`'s.
+
+| Section | Contract | Source in `aggregate`'s examples |
+|---|---|---|
+| 1 | A gross book and a five-layer occurrence tower | Reinsurance Functions (`ReTester`) |
+| 2 | Ceded and net of a two-layer program, and an 80% share | `net of` and `po` clauses |
+| 3 | An annual aggregate limit, then paid reinstatements | Bear and Nemlick Treaty 2 |
+| 4 | Aggregate stop loss, and an aggregate deductible | `ReTester` stop loss, Treaty 1 |
+| 5 | Retro and swing premium, profit commission, sliding scale | Treaties 4, 5 and 6 |
+| 6 | Risk-adjusted premium (loss plus cost of capital) with distortions | `calibrate_distortions` |
+
+To run it, clone the repository, install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`) and `ggplot2`, then render with `quarto render examples/reinsurance_pricing.qmd` from anywhere in the repository. It does not need `aggregate`: the reference numbers are in `validation/reference/re_pricing_aggregate.csv`, written by `validation/scripts/aggregate_re_pricing.py` (which does need `aggregate` 1.0.1). Nothing here is simulated, so there is no simulation count to set.
+
+**Same grid.** Both packages round the severity to buckets of size `bs`, put the mass beyond a policy limit on the limit itself, and compound with an FFT on `2^16` points, with no normalising (`aggregate`'s `normalize=False`). Wherever a comparison depends on the grid, `prospicio` is given the bucket size that `aggregate` used. Contract terms then act on the same discretized severity in both packages: exactly where a layer boundary is a grid point, and split linearly between the two neighbouring buckets where it is not. So means agree far inside the tolerances below. The bucket is passed by hand only for this parity; section 1 says how to choose it in your own work.
+
+**Tolerances.** They were set after a first run (in the Python notebook), from the differences that the last section explains. The summary at the end prints the worst difference observed in each class beside its tolerance.
+
+| Quantity | Tolerance | Reason |
+|---|---|---|
+| Means, probabilities, premiums, commissions, prices | 1e-6 relative | Same grid |
+| Standard deviation and CV | 1e-6 relative | Same grid |
+| Standard deviation and CV of a share placed off the grid (sections 2 and 4) | 1e-5 relative | `aggregate` re-buckets the ceded amounts |
+| Skewness, against the skewness of `aggregate`'s density | 2e-5 relative | FFT rounding noise at the top of the grid enters the third moment (last section) |
+| Quantiles | The same grid point | A quantile is a point of the shared grid, and at none of those compared is the cdf within 7e-8 of a tie |
+| Quantiles of a share placed off the grid | Within one bucket | `aggregate` re-buckets the ceded amounts |
+| A stop loss far in the tail (the loss above 2,800 in section 3) | 1e-5 relative | `prospicio` lumps the cut tail on the last point |
+
+Some rows hold by construction rather than by agreement: a calibrated distortion prices `min(X, a)` at the premium it was calibrated to, the CCoC return on capital is the cost of capital the premium was built from, and a maximum reinstatement premium is the deposit times the rates. They are kept as consistency checks, marked `*` in the summary and counted apart from the independent comparisons.
+
+```{r}
+#| label: setup
+library(ggplot2)
+library(prospicio)  # after ggplot2, so that its layer() masks ggplot2::layer()
+
+POINTS <- 2^16  # aggregate's log2 = 16 in every example
+
+# The repository's reference folder, from wherever the document renders.
+find_reference <- function(start = getwd()) {
+  dir <- normalizePath(start, winslash = "/")
+  repeat {
+    candidate <- file.path(dir, "validation", "reference")
+    if (dir.exists(candidate)) return(candidate)
+    parent <- dirname(dir)
+    if (identical(parent, dir)) stop("validation/reference not found above ", start)
+    dir <- parent
+  }
+}
+REFERENCE <- find_reference()
+ref <- read.csv(file.path(REFERENCE, "re_pricing_aggregate.csv"))
+AGG <- setNames(ref$value, paste(ref$example, ref$quantity, sep = "|"))
+cat(sprintf("%d reference values from aggregate 1.0.1 in validation/reference/re_pricing_aggregate.csv\n",
+            length(AGG)))
+
+money <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+
+# Mean, standard deviation, CV and skewness of a grid. The third central moment is summed here.
+moments <- function(grid) {
+  h <- grid@step
+  p <- grid@probs
+  mean <- mean(grid)
+  sd <- sqrt(variance(grid))
+  x <- (seq_along(p) - 1) * h
+  m3 <- sum((x - mean)^3 * p)
+  c(mean = mean, sd = sd, cv = sd / mean, skew = m3 / sd^3)
+}
+
+# P(X >= x) on a grid whose points may not include x: the cdf half a step below x.
+prob_at_least <- function(grid, x) 1 - cdf(grid, x - grid@step / 2)
+
+# Round the severity to buckets of size bs, with the policy limit as the last point: the mass
+# beyond the last point sits there, aggregate's `limit xs 0`.
+discretize_limited <- function(severity, bs, limit) {
+  discretize(severity, bs, round(limit / bs) + 1, method = "rounding")
+}
+
+# Gamma-mixed Poisson (aggregate's `mixed gamma cv`): a negative binomial with Var/E = 1 + cv^2 n.
+mixed_poisson <- function(n, mixing_cv) claim_count(n, 1 + mixing_cv^2 * n)
+
+# aggregate's `exposure at rate`, severity `scale * pareto shape - scale` (a Lomax) limited to
+# `limit`. The expected loss of class i is subject * rate; its claim count is solved from it. All
+# classes share one mixing variable, so they are one mixed Poisson over a severity mixture.
+exposure_book <- function(subject, rate, shapes, scale, limit) {
+  lomax <- lapply(shapes, function(a) burr_distribution(a, 1, scale))
+  counts <- subject * rate / vapply(lomax, lev, numeric(1), limit = limit)
+  n <- sum(counts)
+  list(counts = counts, n = n, mix = mixture_distribution(counts / n, lomax))
+}
+
+# E[min(X, limit)^2] by integrating 2 x S(x) over [0, limit]. The package has no closed form for a
+# mixture's layer second moment, so this stands in for `layer_second_moment`.
+limited_second_moment <- function(dist, limit) {
+  integrate(function(x) 2 * x * (1 - cdf(dist, x)), 0, limit,
+            rel.tol = 1e-12, subdivisions = 2000L)$value
+}
+
+# Tolerance by class, as (tolerance, unit); see the table above.
+TOLERANCES <- list(
+  mean = c(1e-6, "rel"),
+  sd = c(1e-6, "rel"),
+  `share sd` = c(1e-5, "rel"),
+  skew = c(2e-5, "rel"),
+  quantile = c(0, "buckets"),
+  `share quantile` = c(1, "buckets"),
+  tail = c(1e-5, "rel")
+)
+
+STATE <- new.env()
+STATE$comparisons <- list()
+STATE$shown <- list()
+
+record <- function(section, name, agg, pro, diff, cls, show, check) {
+  tol <- as.numeric(TOLERANCES[[cls]][1])
+  unit <- TOLERANCES[[cls]][2]
+  row <- data.frame(section = section, name = name, aggregate = agg, prospicio = pro, diff = diff,
+                    cls = cls, unit = unit, tol = tol, ok = isTRUE(diff <= tol), check = check)
+  STATE$comparisons[[length(STATE$comparisons) + 1]] <- row
+  if (show) STATE$shown[[length(STATE$shown) + 1]] <- row
+  invisible(NULL)
+}
+
+agg_value <- function(example, quantity) {
+  v <- AGG[paste(example, quantity, sep = "|")]
+  if (is.na(v)) stop("no reference value for ", example, " / ", quantity)
+  unname(v)
+}
+
+# Relative difference from aggregate's number. check = TRUE marks a consistency check: a row that
+# holds by construction, not by agreement.
+compare <- function(section, name, example, quantity, value, cls = "mean", show = TRUE, check = FALSE) {
+  agg <- agg_value(example, quantity)
+  diff <- if (agg != 0) abs(value - agg) / abs(agg) else abs(value)
+  record(section, name, agg, value, diff, cls, show, check)
+}
+
+# Difference of a quantile in buckets.
+compare_quantile <- function(section, name, example, quantity, value, bs, cls = "quantile", show = TRUE) {
+  agg <- agg_value(example, quantity)
+  record(section, name, agg, value, abs(value - agg) / bs, cls, show, FALSE)
+}
+
+# share = TRUE: a share placed off the grid, which aggregate re-buckets. Skewness is compared with
+# the skewness of aggregate's density (`_skew_central`); the skew aggregate quotes (`_skew`) also
+# counts the density's rounding deficit (see the last section).
+compare_distribution <- function(section, name, example, prefix, grid, bs, share = FALSE,
+                                 shown = c("mean", "sd", "cv", "skew", "q0.5", "q0.9", "q0.99", "q0.999")) {
+  m <- moments(grid)
+  sd_cls <- if (share) "share sd" else "sd"
+  stats <- list(list("mean", "mean", m[["mean"]], "mean"), list("sd", "sd", m[["sd"]], sd_cls),
+                list("cv", "cv", m[["cv"]], sd_cls), list("skew", "skew_central", m[["skew"]], "skew"))
+  for (s in stats) {
+    compare(section, paste(name, s[[1]]), example, paste0(prefix, "_", s[[2]]), s[[3]], s[[4]],
+            s[[1]] %in% shown)
+  }
+  for (p in c(0.5, 0.9, 0.99, 0.999)) {
+    compare_quantile(section, paste0(name, " q", p), example, paste0(prefix, "_q", p),
+                     quantile(grid, p), bs, if (share) "share quantile" else "quantile",
+                     paste0("q", p) %in% shown)
+  }
+}
+
+# Print the comparisons made since the last report; * marks a consistency check.
+report <- function() {
+  if (length(STATE$shown)) {
+    rows <- do.call(rbind, STATE$shown)
+    rows$difference <- ifelse(rows$unit == "rel", sprintf("%.1e", rows$diff), sprintf("%.2f bkt", rows$diff))
+    out <- data.frame(
+      quantity = paste0(rows$name, ifelse(rows$check, " *", "")),
+      aggregate = signif(rows$aggregate, 8), prospicio = signif(rows$prospicio, 8),
+      difference = rows$difference, pass = ifelse(rows$ok, "yes", "NO")
+    )
+    print(out, row.names = FALSE, right = FALSE)
+  }
+  STATE$shown <- list()
+}
+```
+
+## 1. A gross book and an occurrence tower
+
+**The contract.** A book of ground-up claims, Poisson with 10 a year, each lognormal with mean 100 and CV 5 and limited by the policy to 5,000. A tower of five layers, each placed at 100% and per occurrence with no annual terms: 250 xs 0, 250 xs 250, 500 xs 500, 1,000 xs 1,000 and 3,000 xs 2,000. The tower covers the whole policy limit, so the layers add up to the gross loss.
+
+In `aggregate` this is
+
+```
+agg Re.T 10 claims 5000 xs 0 sev lognorm 100 cv 5
+    occurrence ceded to 250 xs 0 and 250 xs 250 and 500 xs 500 and 1000 xs 1000 and 3000 xs 2000 poisson
+```
+
+built with `normalize=False`. It picks the bucket `bs = 4` itself. The bucket does not divide 250, where 250 xs 0 detaches and 250 xs 250 attaches, so those two layers are split linearly between the two neighbouring buckets; `aggregate` does the same. The split keeps each layer consistent with the discretized severity, so the five layers still add up to the gross loss on the grid. The other boundaries (500, 1,000, 2,000 and 5,000) are grid points.
+
+**In R.** `discretize_limited()` rounds the severity to the grid, `compound_distribution(method = "fft")` compounds it into the gross annual loss, and `tower_on_grid()` gives each layer's annual ceded loss from the same severity grid and claim count.
+
+```{r}
+#| label: s1-gross
+S1 <- "1 tower"
+BS1 <- 4
+claims <- poisson_count(10)
+severity <- lognormal_from_mean_cv(100, 5)
+sev_grid <- discretize_limited(severity, BS1, 5000)
+gross <- compound_distribution(claims, sev_grid, POINTS, method = "fft")
+gross_report <- gross@report
+
+cat(sprintf("mean claim: exact %.4f, on the grid %.4f\n", lev(severity, 5000), mean(sev_grid)))
+cat(sprintf("annual gross: exact %.4f, on the grid %.4f\n", 10 * lev(severity, 5000), mean(gross)))
+size <- recommend_grid(claims, severity)
+cat(sprintf("recommend_grid on the unlimited lognormal: step %g; aggregate, which sees the 5,000 limit, used %g\n",
+            size$step, agg_value("tower_gross", "bs")))
+cat(sprintf("aliasing error %.1e, mass beyond the grid %.1e\n", gross_report$aliasing_error, gross_report$tail_mass))
+
+compare(S1, "mean claim, exact", "tower_gross", "sev_mean_exact", lev(severity, 5000))
+compare(S1, "mean claim, grid", "tower_gross", "sev_mean_grid", mean(sev_grid))
+compare(S1, "annual gross mean, exact", "tower_gross", "gross_mean_exact", 10 * lev(severity, 5000))
+compare_distribution(S1, "gross", "tower_gross", "gross", gross, BS1)
+report()
+```
+
+The gross loss agrees with `aggregate` to rounding. The mean on the grid (950.16) is 0.044% below the exact mean (950.58) because rounding to buckets of 4 moves each claim by a bit; `aggregate` has the same gap, so the right comparison is grid against grid, which is what the table does. The exact row is a check of the closed form (`lev()`) on both sides.
+
+**Choosing the bucket.** The bucket is passed by hand here, and in every section, only so that the grids match `aggregate`'s. In your own work let `compound_auto()` choose it: it calls `recommend_grid()` and compounds on the grid it picks. Neither can see a policy limit, because there is no limited severity to give them, so on this book they size the grid for the unlimited lognormal and pick 2 where `aggregate`, which sees the 5,000 limit, picks 4. The finer step is the safer side; it moves the grid numbers by discretisation, away from `aggregate`'s.
+
+Now the tower. `TOWER` lists limit and attachment; `tower_grids$ceded` holds each layer's annual ceded distribution.
+
+```{r}
+#| label: s1-tower
+TOWER <- list(c(250, 0), c(250, 250), c(500, 500), c(1000, 1000), c(3000, 2000))
+layer_name <- function(lim, att) sprintf("%s xs %s", format(lim), format(att))
+tower_layers <- lapply(TOWER, function(t) xol_layer(layer_name(t[1], t[2]), t[1], t[2]))
+tower_grids <- tower_on_grid(reinsurance_tower(tower_layers), claims, sev_grid, POINTS)
+
+layer_table <- NULL
+for (i in seq_along(TOWER)) {
+  lim <- TOWER[[i]][1]
+  att <- TOWER[[i]][2]
+  layer_grid <- tower_grids$ceded[[i]]
+  name <- layer_name(lim, att)
+  tag <- sprintf("layer_%sx%s", format(lim), format(att))  # the reference file's name
+  ex <- "tower_gross"
+  compare_distribution(S1, paste("layer", name), ex, paste0(tag, "_ceded"), layer_grid, BS1, shown = "mean")
+  compare(S1, paste("layer", name, "mean, exact"), ex, paste0(tag, "_ceded_mean_exact"),
+          10 * layer(severity, lim, att), show = FALSE)
+  reaches <- 1 - cdf(sev_grid, att)
+  cond <- layer(sev_grid, lim, att) / reaches
+  compare(S1, paste("layer", name, "loss on line"), ex, paste0(tag, "_loss_on_line"), mean(layer_grid) / lim, show = FALSE)
+  compare(S1, paste("layer", name, "P(claim reaches layer)"), ex, paste0(tag, "_pr_attach_grid"), reaches, show = FALSE)
+  compare(S1, paste("layer", name, "P(claim exhausts layer)"), ex, paste0(tag, "_pr_detach_grid"),
+          prob_at_least(sev_grid, att + lim), show = FALSE)
+  compare(S1, paste("layer", name, "mean given it reaches"), ex, paste0(tag, "_cond_sev_mean"), cond, show = FALSE)
+  layer_table <- rbind(layer_table, data.frame(
+    layer = name, mean = mean(layer_grid), cv = moments(layer_grid)[["cv"]],
+    `loss on line` = mean(layer_grid) / lim, `P(claim reaches)` = reaches, `mean | reaches` = cond,
+    check.names = FALSE
+  ))
+}
+print(layer_table, row.names = FALSE, digits = 5)
+
+cat(sprintf("claims below half a bucket, which round to 0: %.4f; exact mean claim in 250 xs 0: %.3f\n",
+            cdf(severity, BS1 / 2), layer(severity, 250, 0)))
+total <- sum(vapply(tower_grids$ceded, mean, numeric(1)))
+compare(S1, "sum of layers equals gross", "tower_gross", "tower_ceded_total_mean", total)
+cat(sprintf("layers add up to %.4f, gross is %.4f; on grid points: %s\n", total, mean(gross), tower_grids$on_points))
+report()
+```
+
+Every layer's mean, standard deviation, skewness, quantiles, loss on line, attachment and exhaustion probability and conditional severity match `aggregate`'s single-layer builds (the table above shows the means; all of the others are in the summary at the end). The "mean | reaches" column is conditional on the claim reaching the layer, as in `aggregate`'s `reins_stats_df`; the loss on line is the unconditional annual mean over the limit.
+
+The first row reads as if a tenth of the claims never reach a layer that attaches at 0. That is the grid: the lognormal puts 10.3% of claims below 2, half a bucket, and rounding sends them to 0, where they cede nothing. The 60.7 in the last column is therefore the mean over the 89.7% of claims that survive rounding; over all claims the exact mean claim in the layer is 54.5. `aggregate` reports the same 89.7% and 60.7.
+
+`tower_on_grid()` says `on_points` is `FALSE` because the bucket of 4 does not divide 250, where 250 xs 0 detaches and 250 xs 250 attaches. It still agrees with `aggregate`, which splits the same way; the flag warns that the shape of those two layers is smeared by up to a bucket, not their means.
+
+## 2. Ceded and net of a program, and a share
+
+**The contract.** The same book, now with a program of two layers, 500 xs 500 and 1,000 xs 1,000, both at 100% and per occurrence. The reinsurer pays the loss in those layers; the cedant retains the rest. Then a different placement: an 80% share of 1,000 xs 1,000.
+
+In `aggregate`:
+
+```
+agg Re.T 10 claims 5000 xs 0 sev lognorm 100 cv 5 occurrence net of 500 xs 500 and 1000 xs 1000 poisson
+agg Re.T 10 claims 5000 xs 0 sev lognorm 100 cv 5 occurrence ceded to 80% po 1000 xs 1000 poisson
+```
+
+**In R.** `tower_on_grid()` gives the net annual loss and each layer's ceded loss. The two layers are contiguous, so the annual loss ceded to the whole program is that of the single layer 1,500 xs 500, which `tower_on_grid()` also gives. A program with a gap would need the severity grid mapped through its layers and compounded; the chunk does that too and checks that the two agree. The share is `xol_layer(share = 0.8)`: its ceded grid has step `0.8 * 4 = 3.2`, so the share adds no rounding of its own (the severity underneath is still rounded to 4), where `aggregate` re-buckets it onto the grid of 4.
+
+```{r}
+#| label: s2-program
+S2 <- "2 program"
+PROGRAM <- list(c(500, 500), c(1000, 1000))
+program_grids <- tower_on_grid(
+  reinsurance_tower(lapply(PROGRAM, function(t) xol_layer(layer_name(t[1], t[2]), t[1], t[2]))),
+  claims, sev_grid, POINTS
+)
+net <- program_grids$net
+
+# The two layers are contiguous, so the whole program is the single layer 1,500 xs 500.
+program_ceded <- tower_on_grid(reinsurance_tower(list(xol_layer("1500 xs 500", 1500, 500))),
+                               claims, sev_grid, POINTS)$ceded[[1]]
+# The way a program with a gap is built: map the severity through its layers, then compound.
+ceded_severity <- map_grid(sev_grid, function(x) {
+  Reduce(`+`, lapply(PROGRAM, function(t) pmin(pmax(x - t[2], 0), t[1])))
+})$grid
+mapped <- compound_distribution(claims, ceded_severity, POINTS, method = "fft")
+cat(sprintf("single layer against the mapped severity: largest difference in probability %.1e\n\n",
+            max(abs(program_ceded@probs - mapped@probs))))
+
+exact_ceded <- 10 * sum(vapply(PROGRAM, function(t) layer(severity, t[1], t[2]), numeric(1)))
+exact_gross <- 10 * lev(severity, 5000)
+program_table <- NULL
+for (v in list(list("gross", gross, exact_gross), list("ceded", program_ceded, exact_ceded),
+               list("net", net, exact_gross - exact_ceded))) {
+  m <- moments(v[[2]])
+  program_table <- rbind(program_table, data.frame(
+    view = v[[1]], mean = m[["mean"]], `exact mean` = v[[3]], sd = m[["sd"]], cv = m[["cv"]],
+    `99% quantile` = quantile(v[[2]], 0.99), check.names = FALSE
+  ))
+}
+print(program_table, row.names = FALSE, digits = 5)
+
+compare_distribution(S2, "gross", "tower_program", "gross", gross, BS1, shown = c("mean", "q0.99"))
+compare_distribution(S2, "ceded", "tower_program", "ceded", program_ceded, BS1)
+compare_distribution(S2, "net", "tower_program", "net", net, BS1)
+compare(S2, "ceded mean, exact", "tower_program", "ceded_mean_exact", exact_ceded)
+compare(S2, "net mean, exact", "tower_program", "net_mean_exact", exact_gross - exact_ceded)
+compare(S2, "net mean claim, grid", "tower_program", "net_sev_mean", mean(sev_grid) - mean(ceded_severity))
+for (i in seq_along(PROGRAM)) {
+  lim <- PROGRAM[[i]][1]
+  att <- PROGRAM[[i]][2]
+  tag <- sprintf("layer_%sx%s", format(lim), format(att))
+  compare_distribution(S2, paste("layer", layer_name(lim, att)), "tower_program", paste0(tag, "_ceded"),
+                       program_grids$ceded[[i]], BS1, shown = c("mean", "cv"))
+}
+report()
+```
+
+Gross, ceded and net all match, including the net view that `aggregate` holds in `reins_density_df`. Ceded and net add up in the mean (950.16 = 201.90 + 748.26) but not in the standard deviation: 456.1 + 640.7 = 1,096.8 is more than the gross 1,016.6. Ceded and net come from the same claims, so they move together, but not in lockstep (a year of many small claims is all net), and the gross spread is less than the sum of the two. That diversification is what a reinsurer cannot see from inside its own layer.
+
+Now the 80% share of 1,000 xs 1,000.
+
+```{r}
+#| label: s2-share
+share_grids <- tower_on_grid(
+  reinsurance_tower(list(xol_layer("80% of 1000 xs 1000", 1000, 1000, share = 0.8))),
+  claims, sev_grid, POINTS
+)
+share_ceded <- share_grids$ceded[[1]]
+cat(sprintf("step of the ceded grid %g, mean %.4f, exact %.4f\n", share_ceded@step, mean(share_ceded),
+            0.8 * 10 * layer(severity, 1000, 1000)))
+
+compare_distribution(S2, "80% of 1000 xs 1000", "tower_program", "share80_1000x1000_ceded", share_ceded, BS1,
+                     share = TRUE)
+compare(S2, "80% of 1000 xs 1000 mean, exact", "tower_program", "share80_1000x1000_ceded_mean_exact",
+        0.8 * 10 * layer(severity, 1000, 1000), show = FALSE)
+report()
+```
+
+The mean agrees to rounding. The standard deviation differs by 2.6e-6, the skewness by 3.7e-6, and the 90% quantile by 0.8, a fifth of a bucket: `aggregate` spreads each ceded amount that falls between its buckets of 4 over the two neighbours, which adds a little variance, where `prospicio` keeps the ceded grid at step 3.2. The standard deviation and quantiles of a share placed off the grid therefore have their own tolerances (1e-5 and one bucket), and the difference is the one that `aggregate`'s re-bucketing introduces.
+
+The program's gross, ceded and net annual distributions:
+
+```{r}
+#| label: s2-plot
+#| fig-width: 7
+#| fig-height: 3.8
+xs <- (0:200) * 40
+exceed <- function(grid, label) data.frame(x = xs, p = 1 - cdf(grid, xs), view = label)
+ggplot(rbind(exceed(gross, "gross"), exceed(net, "net of the program"),
+             exceed(program_ceded, "ceded to the program")), aes(x, p, colour = view)) +
+  geom_line() +
+  scale_y_log10(limits = c(1e-4, 1.2)) +
+  labs(x = "annual loss (currency units)", y = "probability of exceeding",
+       title = "Exceedance curves, 10 claims, 500 xs 500 and 1,000 xs 1,000")
+```
+
+## 3. An annual aggregate limit and reinstatements
+
+**The contract.** Bear and Nemlick's Treaty 2: three classes of business with subject premium 2,000 each and expected layer loss 10%, 14% and 21% of it. The layer is 700 xs 300 of a single-parameter Pareto with shape 1.5, 1.3 and 1.1, which is a Lomax of that shape, scale 300, limited to 700. The claim count is gamma-mixed Poisson with mixing CV 0.07, one mixing variable shared by all classes. The treaty has an annual aggregate limit of 2,800, which is three reinstatements plus the original 700.
+
+```
+agg Re.BN2 [2000 2000 2000] exposure at [.1 .14 .21] rate 700 xs 0
+    sev 300 * pareto [1.5 1.3 1.1] - 300 mixed gamma 0.07              (bs = 1/8)
+agg Re.BN2 ... aggregate ceded to 2800 xs 0
+```
+
+`exposure at rate` fixes the expected loss of each class, and the claim count is solved from it. `exposure_book()` does the same with `burr_distribution(shape, 1, scale)` (the Lomax) and its limited expected value; the three counts are a check on that step. With one shared mixing variable the three classes are one mixed Poisson over a mixture of the three severities, so a single FFT gives the gross annual loss.
+
+**Reinstatements.** The `aggregate` docs have no reinstatement example, so the schedules here are designed: three reinstatements at 100% (A), and the first free, the second at 50% and the third at 100% (B). They are pro rata as to amount, the only kind `aggregate` has: in a year whose layer loss is `L`, the k-th reinstatement restores the k-th 700 of limit used up, and its premium is `deposit x rate_k x min(max(L - (k - 1) 700, 0), 700) / 700`, summed over k = 1, 2, 3. `aggregate` computes it with its own `ReinstatementTerms` on the annual layer loss.
+
+The deposit of 1,200 (a rate on line of 171%) is a designed input to the comparison, not a price: it is not set from the loss cost. Because the reinstatement premium is proportional to the deposit, a price comes from solving for the deposit that gives a target loss ratio, which the chunk after the comparison does for each schedule.
+
+```{r}
+#| label: s3-gross
+S3 <- "3 limit and reinstatements"
+BS3 <- 1 / 8
+book3 <- exposure_book(rep(2000, 3), c(0.10, 0.14, 0.21), c(1.5, 1.3, 1.1), 300, 700)
+counts3 <- book3$counts
+n3 <- book3$n
+mix3 <- book3$mix
+freq3 <- mixed_poisson(n3, 0.07)
+sev3 <- discretize_limited(mix3, BS3, 700)
+gross3 <- compound_distribution(freq3, sev3, POINTS, method = "fft")
+cat(sprintf("expected claims by class %s, total %.4f\n", paste(round(counts3, 4), collapse = ", "), n3))
+cat(sprintf("mass beyond the grid %.1e\n", gross3@report$tail_mass))
+
+for (i in seq_along(counts3)) {
+  compare(S3, sprintf("class %d expected claims", i), "agg_limit_reinst", sprintf("class%d_expected_count", i), counts3[i])
+}
+compare(S3, "expected claims", "agg_limit_reinst", "claim_count_mean", n3)
+compare(S3, "gross mean, exact", "agg_limit_reinst", "gross_mean_exact", n3 * lev(mix3, 700))
+exact_cv3 <- sqrt(n3 * limited_second_moment(mix3, 700) + 0.07^2 * (n3 * lev(mix3, 700))^2) / (n3 * lev(mix3, 700))
+compare(S3, "gross CV, exact", "agg_limit_reinst", "gross_cv_exact", exact_cv3)
+compare_distribution(S3, "gross", "agg_limit_reinst", "gross", gross3, BS3)
+report()
+```
+
+```{r}
+#| label: s3-limit
+limit_layer <- xol_layer("2800 aggregate limit", 700, 0, aggregate_limit = 2800)
+limited <- tower_on_grid(reinsurance_tower(list(limit_layer)), freq3, sev3, POINTS)$ceded[[1]]
+beyond <- stop_loss(gross3, 2800)
+cat(sprintf("mean recovery %s, P(limit used up) %.5f, loss above the limit %.4f\n",
+            money(mean(limited)), prob_at_least(gross3, 2800), beyond))
+
+compare_distribution(S3, "recovery under 2800", "agg_limit_reinst", "agglimit2800_ceded", limited, BS3,
+                     shown = c("mean", "sd", "q0.99"))
+compare(S3, "P(limit used up)", "agg_limit_reinst", "agglimit2800_pr_hit", prob_at_least(gross3, 2800))
+compare(S3, "loss above the limit", "agg_limit_reinst", "agglimit2800_mean_loss_beyond", beyond, "tail")
+report()
+```
+
+```{r}
+#| label: s3-reinstatements
+DEPOSIT <- 1200
+LIMIT3 <- 700
+TARGET_LR <- 0.65
+per_deposit <- list()
+for (sch in list(list("A", c(1, 1, 1)), list("B", c(0, 0.5, 1)))) {
+  tag <- sch[[1]]
+  rates <- sch[[2]]
+  lyr <- with_deposit_premium(xol_layer(paste("schedule", tag), LIMIT3, 0, reinstatement_rates = rates), DEPOSIT)
+  grids <- tower_on_grid(reinsurance_tower(list(lyr)), freq3, sev3, POINTS)
+  reinstatement <- unname(grids$expected_reinstatement_premium[1])
+  recovery <- mean(grids$ceded[[1]])
+  total_premium <- lyr@premium + reinstatement
+  per_deposit[[tag]] <- c(k = reinstatement / lyr@premium, recovery = recovery)
+  cat(sprintf("schedule %s (%s): deposit %s (rate on line %.0f%%), expected reinstatement premium %s, total %s\n",
+              tag, paste(rates, collapse = ", "), money(lyr@premium), 100 * lyr@premium / LIMIT3,
+              money(reinstatement), money(total_premium)))
+  cat(sprintf("    expected recovery %s, loss ratio %.1f%%, margin %s\n", money(recovery),
+              100 * recovery / total_premium, money(total_premium - recovery)))
+  compare(S3, paste0(tag, ": expected reinstatement premium"), "agg_limit_reinst", paste0("reinst", tag, "_premium_mean"), reinstatement)
+  compare(S3, paste0(tag, ": total premium"), "agg_limit_reinst", paste0("reinst", tag, "_total_premium_mean"), total_premium)
+  compare(S3, paste0(tag, ": recovery"), "agg_limit_reinst", paste0("reinst", tag, "_recovery_mean"), recovery)
+  compare(S3, paste0(tag, ": P(any loss to the layer)"), "agg_limit_reinst", paste0("reinst", tag, "_pr_any_reinstatement"),
+          1 - gross3@probs[1])
+  compare(S3, paste0(tag, ": maximum premium"), "agg_limit_reinst", paste0("reinst", tag, "_max_premium"),
+          lyr@premium * sum(rates), show = FALSE, check = TRUE)
+}
+report()
+
+# The deposit that prices each schedule at the target loss ratio. The total premium is the deposit
+# times (1 + k), where k is the expected reinstatement premium per unit of deposit.
+cat("\n")
+for (tag in names(per_deposit)) {
+  k <- per_deposit[[tag]][["k"]]
+  recovery <- per_deposit[[tag]][["recovery"]]
+  deposit <- recovery / TARGET_LR / (1 + k)
+  cat(sprintf("schedule %s: a deposit of %s (rate on line %.0f%%) prices it at a %.0f%% loss ratio, total %s, %.0f%% of it from reinstatements\n",
+              tag, money(deposit), 100 * deposit / LIMIT3, 100 * TARGET_LR, money(deposit * (1 + k)),
+              100 * k / (1 + k)))
+}
+```
+
+The expected reinstatement premium and the recovery agree to 1e-8 or better. The recovery under schedule A or B is the same 894.68, because both have the same annual limit of 2,800, and it is the mean of the aggregate-limit layer above. `aggregate`'s probability of a reinstatement is the probability of any loss to the layer, `P(L > 0)`; under schedule B the first reinstatement is free, so a reinstatement premium is due only when `L` passes 700.
+
+At the designed deposit, schedule A collects 2,695.57 against an expected recovery of 894.68 (a 33% loss ratio) and B collects 1,571.58 (57%). Priced to the same 65% loss ratio, both collect 1,376.43 in expectation, but A needs the smaller deposit: it charges for every reinstatement, so more of its premium arrives after losses and less is paid up front. The choice of schedule moves premium between the deposit and the loss-contingent part, not the expected total.
+
+The one looser tolerance in this section is the stop loss at 2,800, deep in the tail (the loss above the limit). It reads the far tail, and `prospicio` keeps the 6e-10 of probability beyond the grid's top on its last point where `aggregate` cuts it; that shifts the result by 6e-7 relative, inside the 1e-5 set for it.
+
+The gross annual loss and the recovery under the limit (the steps at multiples of 700 are probability mass from claims that hit the 700 limit):
+
+```{r}
+#| label: s3-plot
+#| fig-width: 7
+#| fig-height: 3.8
+xs <- (0:420) * 10
+ggplot(rbind(data.frame(x = xs, p = 1 - cdf(gross3, xs), view = "gross annual layer loss"),
+             data.frame(x = xs, p = 1 - cdf(limited, xs), view = "recovery under the 2,800 limit")),
+       aes(x, p, colour = view)) +
+  geom_line() +
+  geom_vline(xintercept = 2800, linetype = "dashed", colour = "grey50") +
+  scale_y_log10(limits = c(1e-4, 1.2)) +
+  labs(x = "annual loss (currency units)", y = "probability of exceeding",
+       title = "Treaty 2: the limit cuts the tail at 2,800")
+```
+
+## 4. Aggregate stop loss and aggregate deductible
+
+**Stop loss.** On the book of section 1, a cover on the annual total: 250 xs 750, 1,500 xs 1,000, the two together (750 to 2,500) and a 50% share of 1,500 xs 1,000. `aggregate_stop_loss(name, limit, retention)` builds the three covers at 100%. It takes no share, so the 50% share is `xol_layer(share = 0.5)` with no per-occurrence limit, and the retention and limit as annual terms. The book has no premium, so the covers are quoted in amounts. In the market a stop loss is usually quoted in loss ratio points of subject premium, and the amounts are the points times the premium: on a subject premium of 1,000 (an expected loss ratio of 95%), 250 xs 750 would be 25% xs 75%.
+
+```
+agg Re.T 10 claims 5000 xs 0 sev lognorm 100 cv 5 poisson aggregate ceded to 250 xs 750
+agg Re.T ...                                    poisson aggregate ceded to 50% po 1500 xs 1000
+```
+
+**Aggregate deductible.** Bear and Nemlick's Treaty 1: the 160 xs 40 layer of a single-parameter Pareto with shape 0.9 and 0.95 on two classes (subject premiums 9,000 and 3,000, expected layer loss 4% and 3% of them, 450 in all), gamma-mixed Poisson with the mixing CV that gives the CV the text quotes, `((1.036 - 1) / 5.154)^0.5`. The reinsurer pays above an annual aggregate deductible of 360 (3% of 12,000), `aggregate net of 360 xs 0` in `aggregate`. The guide's table gives the subject premiums as 3,000 and 6,000, but its code uses 9,000 and 3,000 at 4% and 3%, which gives the 450 (3.75% of 12,000) that its Treaty 4 text states; this document follows the code.
+
+```{r}
+#| label: s4-stop-loss
+S4 <- "4 stop loss"
+annual_cover <- function(lyr) tower_on_grid(reinsurance_tower(list(lyr)), claims, sev_grid, POINTS)
+
+for (t in list(c(250, 750), c(1500, 1000))) {
+  lim <- t[1]
+  att <- t[2]
+  name <- layer_name(lim, att)
+  cover <- annual_cover(aggregate_stop_loss(name, lim, att))
+  tag <- sprintf("asl_%sx%s", format(lim), format(att))
+  compare_distribution(S4, name, "stop_loss", paste0(tag, "_ceded"), cover$ceded[[1]], BS1,
+                       shown = c("mean", "cv", "q0.9"))
+  compare(S4, paste(name, "P(attach)"), "stop_loss", paste0(tag, "_pr_attach"), 1 - cdf(gross, att))
+  compare(S4, paste(name, "P(exhaust)"), "stop_loss", paste0(tag, "_pr_exhaust"), prob_at_least(gross, att + lim))
+  compare(S4, paste(name, "loss on line"), "stop_loss", paste0(tag, "_loss_on_line"), mean(cover$ceded[[1]]) / lim)
+}
+
+both <- annual_cover(aggregate_stop_loss("750 to 2500", 1750, 750))
+# aggregate_stop_loss takes no share: a share of a stop loss is a layer with no per-occurrence limit
+# and the retention and limit as annual terms.
+half <- annual_cover(xol_layer("50% of 1500 xs 1000", Inf, 0, share = 0.5,
+                               aggregate_deductible = 1000, aggregate_limit = 1500))
+compare_distribution(S4, "both layers, ceded", "stop_loss", "asl_both_ceded", both$ceded[[1]], BS1,
+                     shown = c("mean", "cv"))
+compare_distribution(S4, "both layers, net", "stop_loss", "asl_both_net", both$net, BS1,
+                     shown = c("mean", "cv", "q0.9"))
+compare_distribution(S4, "50% of 1500 xs 1000", "stop_loss", "asl_50pct_1500x1000_ceded", half$ceded[[1]], BS1,
+                     share = TRUE, shown = c("mean", "cv"))
+cat(sprintf("750 to 2,500: ceded %.3f + net %.3f = %.3f\n", mean(both$ceded[[1]]), mean(both$net), mean(gross)))
+report()
+```
+
+The stop-loss covers agree on every statistic. The 50% share has the same off-grid explanation as the 80% share in section 2.
+
+The aggregate deductible:
+
+```{r}
+#| label: s4-aad
+S4B <- "4 aggregate deductible"
+BS4 <- 0.0625
+MIX_CV4 <- sqrt((1.036 - 1) / 5.154)
+book4 <- exposure_book(c(9000, 3000), c(0.04, 0.03), c(0.9, 0.95), 40, 160)
+counts4 <- book4$counts
+n4 <- book4$n
+mix4 <- book4$mix
+sev4 <- discretize_limited(mix4, BS4, 160)
+aad <- reinsurance_tower(list(xol_layer("AAD 360", Inf, 0, aggregate_deductible = 360)))
+
+gross4 <- compound_distribution(mixed_poisson(n4, MIX_CV4), sev4, POINTS, method = "fft")
+after_aad <- tower_on_grid(aad, mixed_poisson(n4, MIX_CV4), sev4, POINTS)$ceded[[1]]
+gross4_poisson <- compound_distribution(poisson_count(n4), sev4, POINTS, method = "fft")
+after_aad_poisson <- tower_on_grid(aad, poisson_count(n4), sev4, POINTS)$ceded[[1]]
+
+absorbed <- lev(gross4, 360)
+cat(sprintf("expected claims %.4f, gross CV %.4f (the text quotes 0.528)\n", n4, moments(gross4)[["cv"]]))
+cat(sprintf("expected loss %s; after the deductible %s; absorbed by the deductible %s\n",
+            money(mean(gross4)), money(mean(after_aad)), money(absorbed)))
+cat(sprintf("loss elimination ratio (the cedant's credit) %.4f; excess ratio (the reinsurer's share, aggregate's insurance charge) %.4f\n",
+            absorbed / mean(gross4), mean(after_aad) / mean(gross4)))
+cat(sprintf("with Poisson counts the loss after the deductible falls to %s\n", money(mean(after_aad_poisson))))
+
+for (i in seq_along(counts4)) {
+  compare(S4B, sprintf("class %d expected claims", i), "stop_loss_aad", sprintf("class%d_expected_count", i),
+          counts4[i], show = FALSE)
+}
+compare(S4B, "gross mean, exact", "stop_loss_aad", "gross_mean_exact", n4 * lev(mix4, 160))
+exact_cv4 <- sqrt(n4 * limited_second_moment(mix4, 160) + MIX_CV4^2 * (n4 * lev(mix4, 160))^2) / (n4 * lev(mix4, 160))
+compare(S4B, "gross CV, exact", "stop_loss_aad", "gross_cv_exact", exact_cv4)
+compare_distribution(S4B, "gross", "stop_loss_aad", "gross", gross4, BS4, shown = c("mean", "cv", "q0.99"))
+compare_distribution(S4B, "after the deductible", "stop_loss_aad", "after_aad", after_aad, BS4)
+compare(S4B, "value of the deductible", "stop_loss_aad", "aad_value", absorbed)
+compare(S4B, "excess ratio (insurance charge)", "stop_loss_aad", "aad_insurance_charge",
+        mean(after_aad) / mean(gross4))
+compare_distribution(S4B, "Poisson, after the deductible", "stop_loss_aad", "poisson_after_aad",
+                     after_aad_poisson, BS4, shown = c("mean", "cv"))
+compare(S4B, "Poisson gross mean", "stop_loss_aad", "poisson_gross_mean", mean(gross4_poisson), show = FALSE)
+report()
+```
+
+`aggregate net of 360 xs 0` removes the first 360 of each year's loss (the cedant's deductible), so its density is the reinsurer's loss above 360; `xol_layer(aggregate_deductible = 360)` is that side too. The deductible's value to the cedant is `E[min(X, 360)]`, `lev(grid, 360)`: 307.24, a loss elimination ratio of 68.3% of the 450 expected loss. The other 31.7%, the excess ratio, reaches the reinsurer. `aggregate` calls that ratio the insurance charge, which is the Table M charge at an entry ratio of 360 / 450 = 0.8.
+
+## 5. Retro and swing premium, profit commission and sliding scale
+
+Four contracts whose price depends on the loss. In `aggregate` each is a map `phi` of the year's loss, from `aggregate.contract_terms`, applied to the density; in `prospicio` they are terms of the layer that `tower_on_grid()` averages over the annual distribution (`expected_premium`, `expected_profit_commission`, `expected_ceding_commission`).
+
+**Retro rating** (Treaty 4). The Treaty 1 book with Poisson counts, the whole 160 xs 40 layer at 100%. Subject premium 12,000, loss conversion factor 100/75, minimum rate 3% (360), maximum rate 10% (1,200): premium `clip(lcf x loss, 360, 1200)`. Retro terms are quoted as rates on subject premium and the loss as an amount; the map works in amounts, so each rate is multiplied by the 12,000. That is a swing premium with no basic premium, so `with_swing_rating(layer, 0, lcf, 360, 1200)`; `retro_premium()` is the same map as a stand-alone function.
+
+**Swing rating** (designed). The same loss: premium `clip(300 + 1.25 loss, 360, 1200)`, at 100% and at a 40% placed share. The terms are quoted for 100%. `prospicio` scales the basic premium, the minimum and the maximum by the share, as `aggregate`'s underwriter does, and not the loss conversion factor.
+
+**Profit commission** (Treaty 5). Three independent years of the Treaty 2 book with Poisson counts, so the sum is a compound Poisson with three times the claim count. The reinsurer takes 80% of the layer for a ceded premium of 4,500 (25% of 18,000). Profit commission is 25% of what is left after a 20% allowance and the losses, `0.25 max(0, 1 - 0.2 - LR)`, with the loss ratio on the ceded premium. This is the one-period form: the commission is settled once on the three-year total, with no deficit carried forward from a bad year, and the years are independent (Treaty 2's mixing variable is dropped). A deficit carry-forward or a mixing variable shared across the years would make the commission more variable and change the gap between its mean and its value at the expected loss ratio.
+
+**Sliding scale** (Treaty 6). A 900 xs 100 layer of a Pareto with shape 1.05 on 25,000 of subject premium (expected loss 2,500, gamma mixing CV 0.095), ceded premium 5,000. The commission is 40% at or below a 35% loss ratio, 25% at 55%, 20% at 65%, linear between and flat outside.
+
+```{r}
+#| label: s5-retro-swing
+S5 <- "5 retro and swing"
+BS5 <- 0.0625
+book5 <- exposure_book(c(9000, 3000), c(0.04, 0.03), c(0.9, 0.95), 40, 160)
+n5 <- book5$n
+sev5 <- discretize_limited(book5$mix, BS5, 160)
+LCF <- 100 / 75
+
+retro <- with_swing_rating(xol_layer("retro", Inf, 0), 0, LCF, 360, 1200)
+retro_grids <- tower_on_grid(reinsurance_tower(list(retro)), poisson_count(n5), sev5, POINTS)
+layer_loss <- retro_grids$ceded[[1]]
+
+# The same premium from the stand-alone map, averaged by hand over the annual distribution.
+points <- (seq_along(layer_loss@probs) - 1) * layer_loss@step
+by_hand <- sum(retro_premium(points, 0, LCF, 360, 1200) * layer_loss@probs)
+at_min <- sum(layer_loss@probs[LCF * points <= 360])
+at_max <- sum(layer_loss@probs[LCF * points >= 1200])
+retro_mean <- unname(retro_grids$expected_premium[1])
+
+cat(sprintf("expected layer loss %s, expected retro premium %s (%.3f%% of 12,000)\n",
+            money(mean(layer_loss)), money(retro_mean), 100 * retro_mean / 12000))
+cat(sprintf("P(minimum premium) %.4f, P(maximum premium) %.4f\n", at_min, at_max))
+
+compare_distribution(S5, "layer loss", "variable_retro", "ceded_loss", layer_loss, BS5,
+                     shown = c("mean", "cv", "q0.99"))
+compare(S5, "retro premium", "variable_retro", "retro_premium_mean", retro_mean)
+compare(S5, "retro premium, retro_premium()", "variable_retro", "retro_premium_mean_via_terms", by_hand)
+compare(S5, "retro rate on subject premium", "variable_retro", "retro_rate_mean", retro_mean / 12000)
+compare(S5, "P(minimum premium)", "variable_retro", "pr_min_binds", at_min)
+compare(S5, "P(maximum premium)", "variable_retro", "pr_max_binds", at_max)
+
+for (s in list(list(1, "share100"), list(0.4, "share40"))) {
+  swing <- with_swing_rating(xol_layer("swing", Inf, 0, share = s[[1]]), 300, 1.25, 360, 1200)
+  premium <- unname(tower_on_grid(reinsurance_tower(list(swing)), poisson_count(n5), sev5, POINTS)$expected_premium[1])
+  cat(sprintf("swing premium at %.0f%% placed: %s\n", 100 * s[[1]], money(premium)))
+  compare(S5, sprintf("swing premium, %.0f%% placed", 100 * s[[1]]), "variable_swing", paste0(s[[2]], "_premium_mean"), premium)
+}
+report()
+```
+
+```{r}
+#| label: s5-profit-commission
+S5B <- "5 profit commission"
+BS5B <- 0.25
+book5b <- exposure_book(rep(2000, 3), c(0.10, 0.14, 0.21), c(1.5, 1.3, 1.1), 300, 700)
+sev5b <- discretize_limited(book5b$mix, BS5B, 700)
+three_years <- poisson_count(3 * book5b$n)  # three independent years of Poisson counts
+
+PREMIUM5B <- 0.25 * 18000
+pc_layer <- with_profit_commission(
+  xol_layer("treaty 5", 700, 0, share = 0.8, premium = PREMIUM5B), 0.25, allowance = 0.2
+)
+pc_grids <- tower_on_grid(reinsurance_tower(list(pc_layer)), three_years, sev5b, POINTS)
+total_loss <- compound_distribution(three_years, sev5b, POINTS, method = "fft")
+pc_ceded <- pc_grids$ceded[[1]]
+lr <- mean(pc_ceded) / PREMIUM5B
+commission <- unname(pc_grids$expected_profit_commission[1])
+at_expected_pc <- profit_commission_for(pc_layer, mean(pc_ceded)) / PREMIUM5B
+
+cat(sprintf("three years: expected loss %s, CV %.4f\n", money(mean(total_loss)), moments(total_loss)[["cv"]]))
+cat(sprintf("ceded loss ratio %.4f; expected profit commission %s = %.3f%% of the ceded premium\n",
+            lr, money(commission), 100 * commission / PREMIUM5B))
+cat(sprintf("at the expected loss ratio alone it would be %.3f%%\n", 100 * at_expected_pc))
+
+compare_distribution(S5B, "three-year loss", "variable_pc", "three_year_loss", total_loss, BS5B,
+                     shown = c("mean", "cv", "q0.99"))
+compare(S5B, "ceded loss ratio", "variable_pc", "ceded_lr_mean", lr)
+compare(S5B, "profit commission", "variable_pc", "pc_amount_mean", commission)
+compare(S5B, "profit commission rate", "variable_pc", "pc_rate_mean", commission / PREMIUM5B)
+compare(S5B, "rate at the expected loss ratio", "variable_pc", "pc_at_expected_lr", at_expected_pc)
+pc_points <- (seq_along(pc_ceded@probs) - 1) * pc_ceded@step
+compare(S5B, "P(profit commission > 0)", "variable_pc", "pr_pc_positive",
+        sum(pc_ceded@probs[pc_points / PREMIUM5B < 1 - 0.2]))
+report()
+```
+
+```{r}
+#| label: s5-sliding-scale
+S5C <- "5 sliding scale"
+BS5C <- 0.5
+book5c <- exposure_book(25000, 0.10, 1.05, 100, 900)
+n5c <- book5c$n
+sev5c <- discretize_limited(book5c$mix, BS5C, 900)
+frequency5c <- mixed_poisson(n5c, 0.095)
+
+PREMIUM5C <- 25000 * 0.20
+slide <- with_sliding_scale(xol_layer("treaty 6", 900, 0, premium = PREMIUM5C),
+                            commission = c(0.40, 0.25, 0.20), loss_ratio = c(0.35, 0.55, 0.65))
+slide_grids <- tower_on_grid(reinsurance_tower(list(slide)), frequency5c, sev5c, POINTS)
+slide_loss <- slide_grids$ceded[[1]]
+slide_commission <- unname(slide_grids$expected_ceding_commission[1])
+at_expected <- ceding_commission_for(slide, mean(slide_loss)) / PREMIUM5C
+lr_x <- ((seq_along(slide_loss@probs) - 1) * slide_loss@step) / PREMIUM5C
+lr_p <- slide_loss@probs
+
+cat(sprintf("expected claims %.4f; expected ceded loss %s, loss ratio %.3f\n", n5c, money(mean(slide_loss)),
+            mean(slide_loss) / PREMIUM5C))
+cat(sprintf("expected commission %s = %.2f%% of premium\n", money(slide_commission), 100 * slide_commission / PREMIUM5C))
+cat(sprintf("commission at the expected loss ratio %.2f%%\n", 100 * at_expected))
+
+# The gap between the two comes from where the scale leaves its middle segment (slope -0.75),
+# extended in a straight line: capped at 40% below a 35% loss ratio, flatter above 55%.
+scale_at <- ceding_commission_for(slide, lr_x * PREMIUM5C) / PREMIUM5C
+middle <- 0.40 - 0.75 * (lr_x - 0.35)
+below <- sum(lr_p[lr_x < 0.35] * (scale_at - middle)[lr_x < 0.35])
+above <- sum(lr_p[lr_x > 0.55] * (scale_at - middle)[lr_x > 0.55])
+cat(sprintf("against the middle segment extended, years below a 35%% loss ratio take %.2f%% off the expected commission and years above 55%% add %.2f%%\n",
+            -100 * below, 100 * above))
+
+compare(S5C, "expected claims", "variable_slide", "claim_count_mean", n5c, show = FALSE)
+compare_distribution(S5C, "ceded loss", "variable_slide", "ceded_loss", slide_loss, BS5C,
+                     shown = c("mean", "cv", "q0.99"))
+compare(S5C, "ceded loss ratio", "variable_slide", "ceded_lr_mean", mean(slide_loss) / PREMIUM5C)
+compare(S5C, "expected commission", "variable_slide", "slide_commission_amount_mean", slide_commission)
+compare(S5C, "expected commission rate", "variable_slide", "slide_commission_rate_mean", slide_commission / PREMIUM5C)
+compare(S5C, "rate at the expected loss ratio", "variable_slide", "slide_commission_at_expected_lr", at_expected)
+compare(S5C, "P(loss ratio <= 35%)", "variable_slide", "pr_lr_below_35", sum(lr_p[lr_x <= 0.35]))
+compare(S5C, "P(loss ratio >= 65%)", "variable_slide", "pr_lr_above_65", sum(lr_p[lr_x >= 0.65]))
+report()
+```
+
+All four agree. Three points of reading:
+
+* A variable premium or commission is a function of the whole annual distribution, not of the expected loss, and the average of a non-linear map differs from the map at the average. The profit commission, `0.25 max(0, 0.8 - LR)`, is convex in the loss ratio, so its average (8.24% of premium) is above its value at the expected loss ratio (8.00%), as Jensen's inequality says it must be. The sliding scale is not convex: it bends down at 35% (where it stops at 40%) and up at 55% and 65%. Its average (30.3%) is above its value at the expected loss ratio (28.8%) only because this loss ratio is skewed to the right: the years above 55%, where the scale flattens, add more than the 29.5% of years below 35% take off (the chunk above splits the gap). For a book with a different spread the gap could have the other sign. The `expected_*` results average the terms over the distribution, which a price from the expected loss alone misses.
+* `aggregate`'s documentation for the sliding scale builds the same schedule in code with a slope of 0.25 on the first segment where its text says 0.75, which gives a commission of 35.7%, not 30.3%. The table compares the terms the text states, which are what `with_sliding_scale()` takes.
+* `aggregate`'s profit commission does not deduct a ceding commission; `with_profit_commission()` follows it, and its allowance covers any commission the contract takes before profit.
+
+The commission scale and the loss ratio it is applied to:
+
+```{r}
+#| label: s5-plot
+#| fig-width: 7
+#| fig-height: 3.8
+dx <- slide_loss@step / PREMIUM5C
+upto <- lr_x <= 0.8
+density_df <- data.frame(lr = lr_x[upto], density = lr_p[upto] / dx)
+scale_df <- data.frame(lr = (0:160) / 200)
+scale_df$commission <- ceding_commission_for(slide, scale_df$lr * PREMIUM5C) / PREMIUM5C
+# The commission is drawn on the density's axis by scaling it to the density's maximum.
+k <- max(density_df$density) / 0.5
+ggplot() +
+  geom_area(data = density_df, aes(lr, density), alpha = 0.35) +
+  geom_line(data = scale_df, aes(lr, commission * k), colour = "firebrick") +
+  scale_y_continuous("probability density (area)",
+                     sec.axis = sec_axis(~ . / k, name = "commission (fraction of ceded premium, line)")) +
+  labs(x = "ceded loss ratio (loss / 5,000 ceded premium)",
+       title = "Treaty 6: sliding-scale commission and the loss ratio")
+```
+
+## 6. Risk-adjusted premium with distortions
+
+**The contract.** The program of section 2 priced as a risk, in two views: the reinsurer's ceded loss (the annual loss to 500 xs 500 and 1,000 xs 1,000) and the cedant's gross annual loss. The capital standard is assets `a` at the 99% quantile of the view; the cost of capital is 10%, so the premium `P` solves `P = L + 0.10 (a - P)` with `L = E[min(X, a)]`, the CCoC premium. It is a risk-adjusted loss cost: the expected loss plus the cost of the capital it ties up, before expenses, brokerage and ceding commission, and with no investment income. Each of the proportional hazard, Wang, dual power and TVaR distortions is then calibrated so that its price of `min(X, a)` equals `P`, and a second set of fixed-parameter distortions is priced at the same assets.
+
+`aggregate` does this with `Aggregate.calibrate_distortions(0.10, p=0.99, reins_view=...)`. These examples are designed: its pricing pages hold no worked example for this book.
+
+**In R.** CCoC is itself a distortion, `g(s) = (r + s) / (1 + r)` for `s > 0`, so `risk_measure(min(X, a), distortion("ccoc", 0.10))` is the premium, and `lev(grid, a)` is `L`. `calibrate_distortion(family, dist, premium, assets = a)` finds the parameter whose price of `min(X, a)` is the premium; `risk_measure()` prices a grid. `aggregate` takes `a` as the lower 99% quantile on the grid, and so does `quantile()` on a grid, so `F(a)` is a little above 99%. The parameters are not read off the objects. They are compared through the distortion function `g(s)` at two survival probabilities, evaluated with `aggregate`'s own parameter.
+
+**Reading the table.** "price of min(X, a)" is the premium each calibrated distortion charges at the capital standard, so it equals `P` by construction. "unlimited" is the same distortion applied to `X` with no cap: the premium it would charge if the reinsurer's liability were not limited to the assets. The gap between the two is the load the distortion puts on the tail beyond the 99% standard. CCoC shows n/a, because its jump at `s = 0` charges the cost of capital on the largest possible loss, so the cap is part of its definition.
+
+```{r}
+#| label: s6-distortions
+S6 <- "6 risk pricing"
+AGG_G <- list(  # g(s) from the parameter aggregate calibrated
+  ccoc = function(r, s) pmin(1, (r + s) / (1 + r)),
+  ph = function(rho, s) s^rho,
+  wang = function(lam, s) pnorm(qnorm(s) + lam),
+  dual = function(b, s) 1 - (1 - s)^b,
+  tvar = function(p, s) pmin(1, s / (1 - p))
+)
+FAMILY <- c(ccoc = "ccoc", ph = "proportional_hazard", wang = "wang", dual = "dual_power", tvar = "tvar")
+COC <- 0.10
+CAPITAL_P <- 0.99
+OCCURRENCE_LIMIT <- 1500  # the program's limit per occurrence: 500 xs 500 and 1,000 xs 1,000
+FIXED <- list(ph0.7 = distortion("proportional_hazard", 0.7), wang0.4 = distortion("wang", 0.4),
+              dual1.8 = distortion("dual_power", 1.8), tvar0.3 = distortion("tvar", 0.3),
+              ccoc0.1 = distortion("ccoc", 0.1))
+priced <- list()
+
+for (view in list(list("ceded", "risk_pricing_ceded", program_ceded), list("gross", "risk_pricing_gross", gross))) {
+  name <- view[[1]]
+  example <- view[[2]]
+  x <- view[[3]]
+  s <- paste("6", name, "view")
+  assets <- quantile(x, CAPITAL_P)
+  capped <- map_grid(x, function(v) pmin(v, assets))$grid
+  loss <- lev(x, assets)  # E[min(X, a)]
+  premium <- risk_measure(capped, distortion("ccoc", COC))  # (L + r a) / (1 + r)
+  capital <- assets - premium
+  compare(s, "assets, the 99% quantile", example, "cal_a", assets)
+  compare(s, "F(assets)", example, "cal_F(a)", cdf(x, assets))
+  compare(s, "expected loss E[min(X, a)]", example, "cal_L", loss)
+  compare(s, "CCoC premium", example, "cal_P", premium)
+  # a - P, and (P - L) / (a - P) = r: they follow from the rows above.
+  compare(s, "capital", example, "cal_Q", capital, check = TRUE)
+  compare(s, "return on capital", example, "cal_ROE", (premium - loss) / capital, check = TRUE)
+  report()
+
+  cat(sprintf("%s: assets %s, expected loss %s, premium %s, capital %s\n", name, money(assets), money(loss),
+              money(premium), money(capital)))
+  rate_on_line <- if (name == "ceded") sprintf(", rate on line %.1f%%", 100 * premium / OCCURRENCE_LIMIT) else ""
+  cat(sprintf("    loss ratio %.1f%%, margin %s (%.0f%% of the capital)%s\n", 100 * loss / premium,
+              money(premium - loss), 100 * COC, rate_on_line))
+
+  calibrated <- NULL
+  for (family in names(FAMILY)) {
+    d <- calibrate_distortion(FAMILY[[family]], x, premium, assets = assets)
+    parameter <- agg_value(example, paste0("param_", family))
+    for (sv in c(0.05, 0.5)) {
+      agg_g <- AGG_G[[family]](parameter, sv)
+      # The calibrated CCoC is the cost of capital the premium was built from: a consistency check.
+      record(s, sprintf("%s: g(%s) at aggregate's parameter", family, sv), agg_g, distortion_g(d, sv),
+             abs(distortion_g(d, sv) - agg_g) / agg_g, "mean", FALSE, family == "ccoc")
+    }
+    # Calibrated to the premium, so its price of min(X, a) is the premium: a consistency check.
+    compare(s, paste0(family, ": price of min(X, a)"), example, paste0("price_ask_", family),
+            risk_measure(capped, d), check = TRUE)
+    unlimited <- NA_real_
+    if (family != "ccoc") {
+      unlimited <- risk_measure(x, d)
+      compare(s, paste0(family, ": unlimited price"), example, paste0("unlimited_price_ask_", family),
+              unlimited, show = FALSE)
+    }
+    priced[[paste(name, family)]] <- d
+    calibrated <- rbind(calibrated, data.frame(
+      family = family, `g(0.05)` = distortion_g(d, 0.05), `price of min(X, a)` = risk_measure(capped, d),
+      unlimited = unlimited, check.names = FALSE
+    ))
+  }
+  print(calibrated, row.names = FALSE, digits = 7)
+  for (nm in names(FIXED)) {
+    compare(s, paste0("fixed ", nm, ": price of min(X, a)"), example, paste0("fixed_price_ask_", nm),
+            risk_measure(capped, FIXED[[nm]]), show = FALSE, check = startsWith(nm, "ccoc"))
+  }
+  report()
+}
+```
+
+The CCoC premium agrees to rounding, and so do the calibrated distortions: their parameters are reproduced, checked through `g(s)` at `aggregate`'s parameter. Those `g` rows, the unlimited prices and the fixed-parameter prices are the independent comparisons in this section. The other rows hold by construction and are counted as consistency checks: each calibrated price of `min(X, a)` is the premium it was calibrated to, the capital is `a - P`, the return on capital is the 10% the premium was built from, and the calibrated and fixed CCoC reproduce that 10%.
+
+`aggregate` stops its Newton iteration at a premium error (4.3e-6 for the gross view's TVaR), where `prospicio` bisects to rounding. The TVaR premium moves by over a thousand per unit of its parameter, so that error moves the parameter, and `g`, only at the 1e-9 level: the TVaR `g` rows differ by 4.9e-9 on the gross view and 1.0e-9 on the ceded view, inside the same 1e-6 as the other families. It shows in `aggregate`'s TVaR price of `min(X, a)`, which is off the target premium in the ninth digit where `prospicio`'s is not.
+
+## Summary of every comparison
+
+The table below lists every quantity compared in this document: `aggregate`'s value from the reference file, `prospicio`'s value, the difference (relative, or in buckets for quantiles) and whether it is inside the tolerance stated for its type. First, the totals by section.
+
+```{r}
+#| label: summary
+all_rows <- do.call(rbind, STATE$comparisons)
+independent <- all_rows[!all_rows$check, ]
+checks <- all_rows[all_rows$check, ]
+
+by_section <- do.call(rbind, lapply(split(independent, factor(independent$section, unique(independent$section))), function(r) {
+  rel <- r[r$unit == "rel", ]
+  worst <- rel[which.max(rel$diff), ]
+  data.frame(section = r$section[1], compared = nrow(r), passed = sum(r$ok),
+             worst = sprintf("%.1e (%s)", worst$diff, worst$name))
+}))
+cat("independent comparisons by section\n")
+print(by_section, row.names = FALSE, right = FALSE)
+
+by_class <- do.call(rbind, lapply(names(TOLERANCES), function(cls) {
+  r <- independent[independent$cls == cls, ]
+  unit <- TOLERANCES[[cls]][2]
+  tol <- as.numeric(TOLERANCES[[cls]][1])
+  w <- r[which.max(r$diff), ]
+  fmt <- function(v) if (unit == "rel") sprintf("%.1e", v) else sprintf("%g bkt", v)
+  data.frame(class = cls, tolerance = fmt(tol), rows = nrow(r), worst = fmt(w$diff),
+             where = paste0(w$section, ": ", w$name))
+}))
+cat("\nindependent comparisons by tolerance class\n")
+print(by_class, row.names = FALSE, right = FALSE)
+
+failed <- all_rows[!all_rows$ok, ]
+cat(sprintf("\n%d of %d comparisons are inside their tolerance: %d independent comparisons and %d consistency checks that hold by construction%s\n",
+            sum(all_rows$ok), nrow(all_rows), nrow(independent), nrow(checks),
+            if (nrow(failed)) paste("; outside:", paste(failed$name, collapse = ", ")) else ""))
+```
+
+```{r}
+#| label: summary-full
+full <- data.frame(
+  section = all_rows$section,
+  quantity = paste0(all_rows$name, ifelse(all_rows$check, " *", "")),
+  aggregate = signif(all_rows$aggregate, 9), prospicio = signif(all_rows$prospicio, 9),
+  difference = ifelse(all_rows$unit == "rel", sprintf("%.1e", all_rows$diff), sprintf("%.2f bkt", all_rows$diff)),
+  tolerance = ifelse(all_rows$unit == "rel", sprintf("%.0e", all_rows$tol), sprintf("%g bkt", all_rows$tol)),
+  pass = ifelse(all_rows$ok, "yes", "NO")
+)
+knitr::kable(full, row.names = FALSE)
+```
+
+## Where and why the numbers differ
+
+Nothing above is outside its tolerance. The tolerances were set after a first run in the Python notebook, from the differences explained here; the summary prints the worst observed difference in each class beside its tolerance, and most results agree far better. What differences there are come from six places.
+
+1. **The grid.** The bucket size sets every grid number: the severity is rounded to it and the loss beyond a limit sits on the limit. `prospicio` takes the bucket from the caller, so each section passes the one `aggregate` chose, for parity only. Left to `recommend_grid()` or `compound_auto()` the answer can differ: for section 1's book they see only the unlimited lognormal and recommend a step of 2, where `aggregate`, which sees the policy limit, uses 4. A finer step is the safer choice, but its numbers then differ from `aggregate`'s by discretisation. On a shared grid the quantiles agree exactly: at every compared quantile the cdf is at least 7e-8 away from the probability, far above rounding, so none sits on a tie.
+2. **The grid mean is not the exact mean.** `est_m` in `aggregate` and the grid's mean here are the mean of the rounded severity compounded: 950.16 against an exact 950.58 in section 1, 0.044% low, and 544.17 against 544.59 for the layer 250 xs 0. Contract terms are exact for the discretized severity, not for the continuous one. Quote the exact value (`lev()`, `layer()`) when it matters, and compare grid with grid, as the tables do.
+3. **A share off the grid.** `aggregate` re-buckets a ceded amount between its buckets, which adds a little variance; `prospicio` gives a share its own step (`share x bs`), which adds no rounding of its own. Means agree; the standard deviation differs by 2.6e-6 for the 80% share and 7.4e-6 for the 50% stop-loss share, the skewness by up to 9.5e-6, and a quantile by at most half a bucket (sections 2 and 4).
+4. **The tail beyond the grid.** `prospicio` puts the probability beyond the last grid point on that point; `aggregate` (with `normalize=False`) drops it. The effect is the probability beyond the grid times the distance to the layer, which is why the stop loss at 2,800 deep in section 3's tail carries a 1e-5 tolerance (5.7e-7 observed). Unnormalised is the setting that matches; `aggregate`'s default `normalize=True` thins the tail instead.
+5. **Skewness.** An FFT leaves rounding noise of order 1e-16 on every point of the grid, up to its top at `2^16 x bs` (262,144 for a bucket of 4), and the two packages leave different noise. The third moment weights a point by the cube of its distance from the mean, so noise at the top of the grid moves the skewness of a light-tailed cover in the fifth or sixth digit. Against the skewness of `aggregate`'s density (`*_skew_central` in the reference file) the worst difference is 1.2e-5, for the layer 250 xs 250; dropping `prospicio`'s probability beyond 10,000, which that layer's annual loss cannot reach with any real probability, brings it to 4e-11 (the chunk below). The skew that `aggregate` quotes (`*_skew`) differs again, by up to 8.1e-5: `xsden_to_meancvskew` places the density's rounding deficit (`1 - sum(p)`, about 1e-15) one bucket past the grid. That is a convention, not a property of the distribution, so this document compares the density's skewness, with a 2e-5 tolerance against the 1.2e-5 observed. Skewness is the one statistic whose tolerance rests on a modelling choice rather than on the grid.
+6. **Definitions.** A few quantities mean something specific in `aggregate`, and the comparison uses the same meaning: its quantiles are the lower quantile on the grid; `cond_sev_mean` and the attachment probability are conditional on the claim reaching the layer; `net of` holds the loss on the *other* side of the layer; the "insurance charge" of an aggregate deductible is the excess ratio (the Table M charge), not the loss elimination ratio; the probability of a reinstatement is the probability of any loss to the layer; reinstatements are pro rata as to amount only (`prospicio` also has them pro rata as to time, which is not compared); a swing premium's terms are scaled by the placed share, but not its loss conversion factor; a profit commission does not deduct a ceding commission; and the calibration of the distortions stops at a premium error.
+
+Not compared: bid prices (they need the dual distortion applied through `aggregate`'s `Distortion.price`), the Gini and the standard deviation of the reinstatement premium. The exposure-rated cat and casualty examples, the loss corridor (the two packages define it differently when an annual limit exists) and multi-line limit profiles are left out; see `knowledge/references/aggregate-mildenhall.md`.
+
+```{r}
+#| label: skewness
+skew_names <- grep("_skew$", names(AGG), value = TRUE)
+keys <- sub("\\|", "\\\\|", skew_names)
+quoted <- NULL
+for (k in skew_names) {
+  central <- sub("_skew$", "_skew_central", k)
+  if (central %in% names(AGG)) quoted <- c(quoted, setNames(AGG[[k]] / AGG[[central]] - 1, k))
+}
+quoted <- quoted[order(-abs(quoted))]
+cat(sprintf("%d skewness values; aggregate's quoted skew is within %.1e of its density's.\n",
+            length(quoted), abs(quoted[[1]])))
+cat("largest differences, with the density deficit that aggregate places one bucket past the grid:\n")
+for (k in names(quoted)[1:4]) {
+  parts <- strsplit(k, "|", fixed = TRUE)[[1]]
+  deficit <- agg_value(parts[1], sub("_skew$", "_density_deficit", parts[2]))
+  beyond <- POINTS * agg_value(parts[1], "bs")  # one bucket past the grid's top
+  cat(sprintf("  %s %s: %+.1e (deficit %.1e at %s adds about %s to the third moment)\n", parts[1], parts[2],
+              quoted[[k]], deficit, format(beyond, big.mark = ","), format(round(deficit * beyond^3), big.mark = ",")))
+}
+
+# prospicio's skewness of 250 xs 250 against aggregate's density, with and without the noise at the top of the grid.
+lyr <- tower_grids$ceded[[2]]
+central <- agg_value("tower_gross", "layer_250x250_ceded_skew_central")
+x <- (seq_along(lyr@probs) - 1) * lyr@step
+keep <- x < 10000
+mean_k <- sum(x[keep] * lyr@probs[keep])
+var_k <- sum((x[keep] - mean_k)^2 * lyr@probs[keep])
+below <- sum((x[keep] - mean_k)^3 * lyr@probs[keep]) / var_k^1.5
+whole <- moments(lyr)[["skew"]]
+cat(sprintf("\nlayer 250 xs 250, skewness of aggregate's density %.10f; prospicio's on the whole grid %.10f (%+.1e), below 10,000 %.10f (%+.1e); probability dropped %.1e\n",
+            central, whole, whole / central - 1, below, below / central - 1, sum(lyr@probs[!keep])))
+```

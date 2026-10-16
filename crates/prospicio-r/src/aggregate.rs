@@ -283,6 +283,17 @@ impl EventSet {
         })
     }
 
+    /// A list of `n_years` event sets, the term's consecutive blocks.
+    fn term_years(&self, n_years: f64) -> Result<List> {
+        let years = self
+            .inner
+            .term_years(whole(n_years, "n_years")? as usize)
+            .map_err(to_r)?;
+        Ok(List::from_values(
+            years.into_iter().map(|inner| Robj::from(Self { inner })),
+        ))
+    }
+
     fn grouped(&self, window_hours: f64) -> Result<Self> {
         Ok(Self {
             inner: self.inner.grouped(window_hours).map_err(to_r)?,

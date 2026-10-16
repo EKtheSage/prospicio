@@ -1,0 +1,231 @@
+---
+title: "A one-year view of a small P&C insurer"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+---
+
+This document uses `prospicio` end to end from R. It is the R twin of
+[`one_year_view.ipynb`](one_year_view.ipynb): same data, same seeds, same
+model, and the numbers agree with the notebook's. It models three risks, each
+where it lives, then puts them together:
+
+1. **Reserve risk**: an ODP bootstrap of the GenIns paid triangle.
+2. **Fleet motor premium risk**: a Poisson GLM for claim frequency and a gamma GLM for severity on a policy file, into a collective model that carries the GLM's parameter uncertainty.
+3. **Property per-risk**: a risk profile by sum-insured band, with a surplus treaty inuring to a per-risk excess of loss that has a paid reinstatement, pro rata as to time.
+
+Then it prices the per-risk XL from its simulated losses, joins the three risks with a rank correlation, and sets and allocates capital at TVaR 99%, gross and net of reinsurance.
+
+To run it, clone the repository, install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`) and `ggplot2`, then render from anywhere in the repository with `quarto render examples/one_year_view.qmd`. Set the environment variable `PROSPICIO_EXAMPLE_SIMS` to run fewer simulations.
+
+```{r}
+#| label: setup
+library(prospicio)
+library(ggplot2)
+
+N_SIMS <- as.integer(Sys.getenv("PROSPICIO_EXAMPLE_SIMS", "20000"))
+
+# The repository's data folder, from wherever the document renders.
+find_data <- function(start = getwd()) {
+  dir <- normalizePath(start, winslash = "/")
+  repeat {
+    candidate <- file.path(dir, "validation", "data")
+    if (dir.exists(candidate)) return(candidate)
+    parent <- dirname(dir)
+    if (identical(parent, dir)) stop("validation/data not found above ", start)
+    dir <- parent
+  }
+}
+DATA <- find_data()
+
+read_data <- function(name) read.csv(file.path(DATA, name), comment.char = "#")
+
+money <- function(x) sprintf("%.2fm", x / 1e6)
+```
+
+## 1. Reserve risk
+
+GenIns is a cumulative paid triangle, ten origin years by ten ages. The ODP bootstrap resamples its scaled Pearson residuals and adds process noise. The result is a **joint** distribution of the reserve by origin, so the total keeps the dependence between origins.
+
+```{r}
+#| label: reserve
+genins <- read_data("genins.csv")
+tri <- triangle(
+  data.frame(origin = genins$origin, age = genins$development, paid = genins$value),
+  origin = "origin", development = "age", columns = "paid"
+)
+boot <- odp_bootstrap(tri, "paid", n_sims = N_SIMS, seed = 1)
+reserve <- total(boot@reserves)
+cat(sprintf("mean reserve %s, 99.5%% %s\n", money(mean(reserve)), money(quantile(reserve, 0.995))))
+```
+
+## 2. Fleet motor premium risk
+
+The policy file has 600 fleet policies with age, region, exposure and claims; its amounts are in hundreds. Frequency is a Poisson GLM with log exposure as the offset. Severity is a gamma GLM on each policy's average claim, weighted by its number of claims, so its dispersion is a single claim's squared CV.
+
+```{r}
+#| label: motor-fit
+policies <- read_data("glm_policies.csv")
+
+frequency <- glm_fit(claims ~ age + region + offset(log(exposure)), policies, family = "poisson")
+print(round(data.frame(coefficient = coef(frequency), se = frequency@std_errors), 4))
+
+policies$avg_claim <- 100 * policies$avg_sev
+severity_fit <- glm_fit(avg_claim ~ 1, policies, family = "gamma", link = "log",
+                        weights = policies$n_sev)
+severity <- gamma_from_mean_cv(exp(coef(severity_fit)[[1]]), sqrt(severity_fit@dispersion))
+cat(sprintf("mean claim %s, CV %.2f\n", format(round(mean(severity)), big.mark = ","),
+            sqrt(variance(severity)) / mean(severity)))
+```
+
+Next year every policy renews for a full year. The GLM's predictive distribution of the book's claim count includes parameter uncertainty (coefficients drawn from their asymptotic normal) as well as Poisson noise. A negative binomial with the same mean and variance carries both into a collective model.
+
+```{r}
+#| label: motor-sim
+counts <- total(predict_distribution(frequency, transform(policies, exposure = 1), N_SIMS, 2))
+count_model <- claim_count(mean(counts), variance(counts) / mean(counts))
+motor <- total(total(simulate_events(count_model, severity, N_SIMS, 3)))
+cat(sprintf("claims %.0f, Var/E %.2f\n", mean(counts), variance(counts) / mean(counts)))
+cat(sprintf("mean loss %s, 99.5%% %s\n", money(mean(motor)), money(quantile(motor, 0.995))))
+```
+
+## 3. Property per-risk
+
+Three bands of sum insured, each with its bounds, an expected loss and its own MBBEFD exposure curve (Swiss Re c = 2, 3, 4). Within a band, risks are spread evenly between the bounds.
+
+The reinsurance has two stages:
+
+- a **surplus treaty** with a 2m retention line and 4 lines (8m capacity);
+- inuring to it, a **per-risk XL** of 3m xs 1m with one paid reinstatement at 100%, pro rata as to time.
+
+The XL's upfront premium is its exposure-rated cost over a 70% loss ratio. Simulated losses are dated uniformly over the year, so each reinstatement is charged for the part of the year left after the loss.
+
+```{r}
+#| label: property
+profile <- risk_profile(
+  sums_insured = c(0.5e6, 3e6, 15e6), risks = c(4000, 600, 60),
+  curves = list(swiss_re_curve(2), swiss_re_curve(3), swiss_re_curve(4)),
+  expected_loss = c(2.5e6, 2.0e6, 1.5e6),
+  lower = c(0.1e6, 1e6, 5e6), upper = c(1e6, 5e6, 25e6)
+)
+retention <- 2e6
+lines <- 4
+xl_limit <- 3e6
+xl_attachment <- 1e6
+xl_cost <- profile_layer_loss(profile, xl_limit, xl_attachment, retention, lines)
+xl <- xol_layer("per_risk_xl", xl_limit, xl_attachment, premium = xl_cost / 0.7,
+                reinstatement_rates = 1, pro_rata_time = TRUE)
+tower <- inuring_tower(list(list(surplus_treaty("surplus", retention, lines)), list(xl)))
+
+events <- with_uniform_times(profile_simulate(profile, N_SIMS, 4))
+result <- apply_tower(tower, events)
+gross <- marginal(result, c("gross", "ground_up"))
+net <- marginal(result, c("net", "retained"))
+surplus_loss <- marginal(result, c("ceded", "surplus"))
+xl_loss <- marginal(result, c("ceded", "per_risk_xl"))
+reinstated <- marginal(result, c("reinstatement_premium", "per_risk_xl"))
+
+cat(sprintf("gross mean %s\n", money(mean(gross))))
+cat(sprintf("surplus cedes %s  (exposure rating %s)\n", money(mean(surplus_loss)),
+            money(profile_surplus_loss(profile, retention, lines))))
+cat(sprintf("per-risk XL   %s  (exposure rating %s)\n", money(mean(xl_loss)), money(xl_cost)))
+cat(sprintf("reinstatement premium %s\n", money(mean(reinstated))))
+cat(sprintf("net mean %s, 99.5%% %s\n", money(mean(net)), money(quantile(net, 0.995))))
+```
+
+The simulated cessions agree with exposure rating, which checks the simulation. But the net 99.5% is high: the top band runs to 25m, past the surplus's 2m + 8m, so its largest risks keep most of a total loss. More lines cut the net tail:
+
+```{r}
+#| label: more-lines
+for (more in c(4, 8, 12)) {
+  alt <- apply_tower(
+    inuring_tower(list(list(surplus_treaty("surplus", retention, more)), list(xl))), events
+  )
+  cat(sprintf("%4.0f lines: net 99.5%% %s\n", more,
+              money(quantile(marginal(alt, c("net", "retained")), 0.995))))
+}
+```
+
+**Pricing the XL** from its simulated losses: assets at TVaR 99% and a 10% cost of capital on the capital above the premium. The reinstatement premium the reinsurer expects to collect comes off.
+
+```{r}
+#| label: xl-price
+xl_price <- risk_loaded_price(xl_loss, distortion("tvar", 0.99), cost_of_capital = 0.10)
+cat(sprintf("risk-loaded premium %s, capital %s\n", money(xl_price$premium), money(xl_price$capital)))
+cat(sprintf("net of expected reinstatements %s\n", money(xl_price$premium - mean(reinstated))))
+```
+
+## 4. The company
+
+The three lines are joined into one `predictive_distribution`. Each was simulated on its own, so Iman-Conover reorders the draws to a rank correlation: 0.4 between reserve and motor (shared claims inflation), 0.1 for property. TVaR 99% of the year's losses is then allocated by Euler (each line's CoTVaR), gross and net of the property reinsurance.
+
+```{r}
+#| label: company
+corr <- matrix(c(1.0, 0.4, 0.1,
+                 0.4, 1.0, 0.1,
+                 0.1, 0.1, 1.0), nrow = 3, byrow = TRUE)
+
+company <- function(property_line) {
+  parts <- predictive_distribution(
+    cbind(reserve@draws, motor@draws, property_line@draws),
+    data.frame(risk = c("reserve", "motor", "property"))
+  )
+  iman_conover(parts, corr, seed = 5)
+}
+
+tvar <- distortion("tvar", 0.99)
+companies <- list(gross = company(gross), net = company(net))
+allocations <- lapply(companies, capital_allocation, distortion = tvar)
+
+by_line <- data.frame(
+  risk = allocations$gross$by_component$risk,
+  gross = allocations$gross$by_component$allocated,
+  net = allocations$net$by_component$allocated
+)
+summary_table <- rbind(
+  by_line,
+  data.frame(risk = c("total", "diversif."),
+             gross = c(allocations$gross$total, allocations$gross$diversification_benefit),
+             net = c(allocations$net$total, allocations$net$diversification_benefit))
+)
+summary_table[c("gross", "net")] <- lapply(summary_table[c("gross", "net")], money)
+summary_table
+
+saved <- allocations$gross$total - allocations$net$total
+cat(sprintf("reinsurance cuts the company's TVaR by %s\n", money(saved)))
+```
+
+The charts below show the distribution of the company's total, gross and net, and each line's share of TVaR 99%.
+
+```{r}
+#| label: charts
+#| fig-width: 10
+#| fig-height: 4
+total_draws <- function(pd) rowSums(draw_matrix(pd)) / 1e6
+loss_draws <- rbind(
+  data.frame(view = "gross", loss = total_draws(companies$gross)),
+  data.frame(view = "net", loss = total_draws(companies$net))
+)
+ggplot(loss_draws, aes(loss, colour = view)) +
+  geom_freqpoly(aes(y = after_stat(density)), bins = 80) +
+  labs(x = "company loss (m)", y = "density", title = "Year's total loss")
+
+allocated <- rbind(
+  data.frame(view = "gross", risk = by_line$risk, cotvar = by_line$gross / 1e6),
+  data.frame(view = "net", risk = by_line$risk, cotvar = by_line$net / 1e6)
+)
+ggplot(allocated, aes(risk, cotvar, fill = view)) +
+  geom_col(position = "dodge") +
+  labs(x = NULL, y = "CoTVaR 99% (m)", title = "TVaR 99% by line")
+```
+
+## Reading the result
+
+- Reserve and motor dominate the tail. They are larger and correlated with each other.
+- Reinsurance cuts property's share of TVaR sharply. The company's TVaR falls by less than that, because property's tail was partly diversified already.
+- Reserve and motor take *more* of the net TVaR than of the gross. Once property's extreme years are reinsured, the worst company years are the ones driven by reserve and motor.

@@ -36,10 +36,10 @@ when from experience, and which pricing method fits which scenario.
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C- and D-vine copulas (#261, #262) |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
-| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done except cyclic and monotone smooths: P-splines and tensor product smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
+| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
-| v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
+| v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R), ONNX import (`prospicio_nn::onnx`, Rust). Still to do: WASM |
 | ◆ Gate | API review and deprecation pass | — |
 | v1.0: Stable core APIs | Semver for distributions, reserving, aggregate, reinsurance, risk, capital | — |
 
@@ -91,10 +91,12 @@ what it is aiming for by v1.0.
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean,
     nested Archimedean, C- and D-vines)
     with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
-    others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
+    others), EVT (GPD, POT, Hill, and threshold diagnostics: the mean
+    excess and the GPD's shape and modified scale at each threshold with
+    standard errors, as R's `ismev`); TVaR of a grid and `tvar_threshold`.
   - `Discrete`, a distribution on finitely many values of either sign,
     for the P&L ledger's rows (`docs/design/pnl.md`).
-- **Next:** threshold diagnostics for EVT.
+- **Next:** open.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
@@ -111,8 +113,10 @@ what it is aiming for by v1.0.
   - Contract terms on a layer, with `aggregate`'s definitions: premium
     as a rate on line, a rate or a deposit; flat and sliding-scale ceding
     commissions, profit commissions, swing rating; retro premiums.
-    (Also done: towers saved as JSON, seasonal event times, loss
-    corridors.)
+    Over a multi-year term (`Tower::apply_term`), profit commission
+    deficits and sliding scale deficits and credits carried forward,
+    to extinction or for a number of years. (Also done: towers saved as
+    JSON, seasonal event times, loss corridors.)
   - The occurrence exceedance (OEP) curve and occurrence PMLs for any
     count, exact and simulated; compound moments to third order and the
     moment approximations (normal, gamma, lognormal, shifted gamma and
@@ -141,10 +145,11 @@ what it is aiming for by v1.0.
     the two lines' losses in an event coupled by a copula; renewal claim
     counts, with any law for the waits between claims, and their eventual
     ruin by Wiener–Hopf.
-- **Next:** deficit and credit carry-forward in profit commissions and
-  sliding scales, once multi-year simulation exists. (The P&L ledger, the
-  last large item parked from `aggregate` parity, is done:
-  `docs/design/pnl.md`, PRs 1 to 6b and follow-ups 7a to 7c.)
+- **Next:** open. (Done: deficit and credit carry-forward in profit
+  commissions and sliding scales over multi-year terms,
+  `Tower::apply_term`, `docs/design/aggregate.md`; the P&L ledger, the
+  last large item parked from `aggregate` parity: `docs/design/pnl.md`,
+  PRs 1 to 6b and follow-ups 7a to 7c.)
 - **v1.0:** a reinsurance programme described once and applied to any
   loss source.
 
@@ -157,16 +162,17 @@ what it is aiming for by v1.0.
     profiles with spread sums insured.
   - Risk-loaded prices from simulated losses.
   - Classical credibility: limited fluctuation standards and the
-    Bühlmann–Straub model (`docs/design/credibility.md`). It may become
-    `prospicio-credibility` once it has a Bayesian side.
+    Bühlmann–Straub model (`docs/design/credibility.md`). Its Bayesian,
+    hierarchical side is in `prospicio-bayes`; no `prospicio-credibility`
+    crate is needed yet.
   - Ratemaking: premium at the current rate level by the parallelogram
     method, trend fits, factors and lengths, and the overall rate
     indication by the loss ratio and pure premium methods with credibility
     against a complement (`docs/design/ratemaking.md`). This finishes the
     v0.6 pricing scope.
-- **Next:**
-  1. Log-log interpolation for tabulated curves (the tilted spread within
-     bands is done).
+  - Log-log interpolation of tabulated exposure curves, where it keeps
+    the curve concave.
+- **Next:** open.
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)
@@ -274,7 +280,10 @@ what it is aiming for by v1.0.
     353 nearly every simulation is flagged (each year cell has its
     origin's smallest variance); moment matching rescues 83% to 90% of
     them within about 0.08 sd of their refits, and the rest are
-    refitted.
+    refitted. By the user's decision of 2026-10-16 the view runs at most
+    2,000 simulations by default (`BayesOneYear::n_sims` sets the count
+    for any model), and CI's pull requests run only CRC of its
+    validation, the weekly and manual runs all of it.
   - The one-year view of Gesmann and Morris' compartmental models 1 and
     2 (`reserving-bayes.md` PR 11, decision 20; `Compartmental::one_year`,
     in Rust, Python and R): the effects of an origin or age with no
@@ -284,9 +293,13 @@ what it is aiming for by v1.0.
     model 2's; matching rescues about
     95% of model 1's within about 0.05 sd of their refits, and none
     of model 2's, whose refits each take as long as a fit (about 31 s of
-    wall time with 8 side by side). A refit budget
-    (`max_refits`) bounds any model's view; its default for model 2 is
-    the user's (open decision 15).
+    wall time with 8 side by side). So by the user's decision of
+    2026-10-16 (open decision 15) model 2's view reweights only by
+    default, with a warning that it is approximate (about 0.4 sd of the
+    total off a refit; refits stay a choice), both models run at most
+    2,000 one-year simulations by default, and CI's pull requests run
+    only model 1 of the compartmental one-year validation. A refit
+    budget (`max_refits`) bounds any model's view.
   - Selected development patterns (`reserving-v02.md`, decision 12;
     branch `claude/selected-patterns`, in Rust, Python and R):
     `SelectedPattern` on `Development` as age-to-age factors, factors
@@ -307,10 +320,9 @@ what it is aiming for by v1.0.
   Rust, Python and R) and PR C (model 2, in Rust, Python and R) are
   done (the 200-triangle calibration study can now use `TriangleModel
   for Meyers`);
-  `Compartmental` has its one-year view too (PR 11); the refit cost of
-  model 2's view waits on the user (`reserving-bayes.md` open decision
-  15), and `Compartmental::fit_segments` with the backtest is
-  `reserving-compartmental.md` PR E.
+  `Compartmental` has its one-year view too (PR 11, with the user's
+  defaults of 2026-10-16), and `Compartmental::fit_segments` with the
+  backtest is `reserving-compartmental.md` PR E.
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
@@ -319,9 +331,10 @@ what it is aiming for by v1.0.
 
 - **Now:** families, links, `Terms` to `Design`, metrics, resampling,
   tuning, `compare`, stacking, monitoring, simulation from means.
+  The model artifact format is decided: versioned JSON with one
+  envelope and per-format versions (`docs/design/models.md`).
 - **Next:**
-  1. Decide the model artifact format (`docs/design/models.md`).
-  2. Survival models (Kaplan–Meier, Cox, parametric), for lapse and
+  1. Survival models (Kaplan–Meier, Cox, parametric), for lapse and
      claim-closure models. Not urgent while claim-level reserving is
      parked.
 - **v1.0:** one model protocol for every engine, native or delegated.
@@ -329,19 +342,22 @@ what it is aiming for by v1.0.
 ### `prospicio-glm` (Models lane)
 
 - **Now:** GLM by IRLS, Tweedie with power profiling, elastic net with a
-  cross-validated path, robust covariance, GAM with P-splines and tensor
-  product smooths (GCV/UBRE and REML).
-- **Next:** cyclic and monotone smooths. This completes the GAM scope of
-  v0.6.
+  cross-validated path, robust covariance, GAM with P-splines, tensor
+  product, cyclic and monotone smooths (GCV/UBRE and REML; monotone ones
+  GCV/UBRE, as scam). This completes the GAM scope of v0.6.
+- **Next:** open.
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.
 
 ### `prospicio-nn` (Models lane, opt-in)
 
 - **Now:** CANN and the attention CANN on Burn, with random search and
-  early stopping.
+  early stopping; networks trained elsewhere imported from ONNX for
+  inference (`prospicio_nn::onnx`, v0.9).
 - **Next:**
-  1. Importing PyTorch models through ONNX (v0.9).
-  2. Tabular MLPs with embeddings, and multi-task claim models.
+  1. Tabular MLPs with embeddings, and multi-task claim models.
+  2. Bindings for `prospicio-nn` (CANN and ONNX import) in Python and R,
+     most likely to be added (user, 2026-10-16); the timing is open,
+     since they put Burn in the wheel and the R package.
 - **v1.0:** networks behind the shared model protocol, in every front
   end.
 
@@ -358,8 +374,15 @@ what it is aiming for by v1.0.
      `Meyers` over segments and in the backtest (PRs 2 and 6), with no
      change here;
      compartmental reserving follows in a later note.
-  2. Hierarchical credibility.
-  3. Posterior predictive checks.
+  2. (Done: hierarchical credibility, `prospicio_bayes::credibility`,
+     Bühlmann–Straub's model and Jewell's hierarchy sampled with the means
+     integrated out; parity with `actuar` at given structure parameters
+     and with grid integration of the posterior;
+     `docs/design/credibility.md`.)
+  3. (Done: posterior predictive checks, `prospicio_bayes::ppc`: test
+     statistics with posterior predictive p-values, within groups too,
+     and the LOO-PIT at parity with R loo; on `BayesGlmFit` and for any
+     model's replicates; `docs/design/models.md`.)
 - **v1.0:** our own model specs and diagnostics, with sampling delegated.
 
 ### `prospicio-python`, `prospicio-r`, `python/`, `R/` (each lane its own module)
@@ -373,6 +396,31 @@ what it is aiming for by v1.0.
      over them (`wasm-bindgen`) for a browser page or an Excel add-in.
   2. (Done: the docs sites are published to GitHub Pages from `main`.)
 - **v1.0:** API review and deprecation pass, then semver.
+
+### `prospicio-xll` (Excel lane)
+
+- **Now:** a prototype XLL for 64-bit desktop Excel (`docs/design/xll.md`):
+  the chain ladder and Mack with standard errors as worksheet functions,
+  built by `cargo xtask xll`, a local file, tested by the user in Excel 365;
+  layer pricing (LEV, layer loss, layer CV, ILF) on a Pareto or lognormal
+  severity; the ODP bootstrap exhibit; built, smoke-tested and kept as an
+  artifact by CI, attached to a draft release on a version tag; the
+  bootstrap's draws as a table; Mack's bootstrap; the expected-loss
+  methods (expected loss, BF, Benktander, Cape Cod); Mack's sigma rule and
+  selected factors; the one-year view (Merz-Wuthrich, both bootstraps);
+  Clark's LDF and Cape Cod; triangle helpers; severities over every
+  parametric family; the Pareto helpers; the piecewise and generalized
+  Pareto, the layer variance; exposure curves (MBBEFD, Swiss Re,
+  tabulated) and their calibrations; an exposure-rated risk profile;
+  classical credibility; ratemaking (rate level, trend and the
+  indication); the burning cost; aggregate distributions and layer
+  statistics.
+- **Next:**
+  1. Parity with the Python and R packages where a function has a sheet
+     form (`xll.md`, parity plan): the plan's four groups are done;
+     next, the occurrence PMLs, aggregate covers and towers on a grid.
+  2. Signing, once the owner has a code-signing certificate (`xll.md`,
+     decision 16).
 
 ## Order of work (set by the user 2026-10-09)
 

@@ -3,7 +3,9 @@
 //! `prospicio_pricing` (`docs/design/pareto.md`).
 
 use prospicio_aggregate::CollectiveModel;
-use prospicio_pricing::exposure::{ExposureCurve, Mbbefd, SeverityCurve, TabulatedCurve};
+use prospicio_pricing::exposure::{
+    ExposureCurve, Interpolation, Mbbefd, SeverityCurve, TabulatedCurve,
+};
 use prospicio_pricing::layer::XsLayer;
 use prospicio_pricing::quote::{Loads, Quote};
 use prospicio_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price};
@@ -1070,7 +1072,7 @@ impl PyMbbefd {
 }
 
 /// A tabulated exposure curve: points ``(x, G(x))`` from ``(0, 0)`` to
-/// ``(1, 1)``, interpolated linearly, as published curves are given
+/// ``(1, 1)``, interpolated linearly or log-log, as published curves are given
 /// (Salzmann's homeowners scale, Ludwig's curves, ISO PSOLD tables, a
 /// reinsurer's own).
 ///
@@ -1080,12 +1082,22 @@ impl PyMbbefd {
 /// mean rate is the first chord's, ``x1 / G(x1)``, so a table needs fine
 /// first points for the expected loss to be right.
 ///
+/// With ``interpolation="log-log"`` the curve runs as a power law between
+/// points (straight on log-log axes), ``G(x) = G_k (x / x_k) ** p_k``, which
+/// follows a curve's bend between sparse points better than a chord; the
+/// first piece, from ``(0, 0)``, stays straight. The interpolated curve must
+/// be concave, so the elasticities ``p_k`` may not rise from piece to piece:
+/// a table with a total-loss mass at the top (the Swiss Re curves with ``c``
+/// up to 3, read at a few points) fails and keeps linear interpolation. The
+/// destruction rate is then continuous within each piece past the first.
+///
 /// Parameters
 /// ----------
 /// x : list of float
 ///     Increasing from 0 to 1.
 /// g : list of float
 ///     ``G(x)``, from 0 to 1.
+/// interpolation : {"linear", "log-log"}, default "linear"
 ///
 /// Raises
 /// ------
@@ -1107,10 +1119,30 @@ pub(crate) struct PyTabulatedCurve {
 #[pymethods]
 impl PyTabulatedCurve {
     #[new]
-    fn new(x: Vec<f64>, g: Vec<f64>) -> PyResult<Self> {
+    #[pyo3(signature = (x, g, interpolation = "linear"))]
+    fn new(x: Vec<f64>, g: Vec<f64>, interpolation: &str) -> PyResult<Self> {
+        let how = match interpolation {
+            "linear" => Interpolation::Linear,
+            "log-log" => Interpolation::LogLog,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "interpolation must be \"linear\" or \"log-log\", not {other:?}"
+                )));
+            }
+        };
         Ok(Self {
-            inner: TabulatedCurve::new(&x, &g).map_err(to_py)?,
+            inner: TabulatedCurve::with_interpolation(&x, &g, how).map_err(to_py)?,
         })
+    }
+
+    /// How the curve runs between its points: ``"linear"`` or
+    /// ``"log-log"``.
+    #[getter]
+    fn interpolation(&self) -> &'static str {
+        match self.inner.interpolation() {
+            Interpolation::Linear => "linear",
+            Interpolation::LogLog => "log-log",
+        }
     }
 
     /// The exposure curve of ``severity`` capped at ``mpl``, tabulated at
@@ -1210,12 +1242,20 @@ impl PyTabulatedCurve {
             .map_err(to_py)
     }
 
-    fn __getnewargs__(&self) -> (Vec<f64>, Vec<f64>) {
-        (self.inner.x().to_vec(), self.inner.g_values().to_vec())
+    fn __getnewargs__(&self) -> (Vec<f64>, Vec<f64>, &'static str) {
+        (
+            self.inner.x().to_vec(),
+            self.inner.g_values().to_vec(),
+            self.interpolation(),
+        )
     }
 
     fn __repr__(&self) -> String {
-        format!("TabulatedCurve({} points)", self.inner.x().len())
+        format!(
+            "TabulatedCurve({} points, {})",
+            self.inner.x().len(),
+            self.interpolation()
+        )
     }
 }
 
