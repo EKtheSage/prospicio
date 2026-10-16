@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("twenty-six functions registered", registered == 26);
+    check("thirty functions registered", registered == 30);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -358,6 +358,19 @@ int main(int argc, char **argv) {
     check("Clark LDF total reserve 111006.63 (R ChainLadder)",
           fabs(ck->val.array.lparray[11 * 7 + 3].val.num - 111006.625765179) < 1.2);
     free12(ck);
+
+    /* Triangle helpers: incremental and back is the triangle again. */
+    typedef XLOPER12 *(*Fn1)(XLOPER12 *);
+    XLOPER12 *inc = ((Fn1)GetProcAddress(xll, "pro_tri_incremental"))(&tri);
+    XLOPER12 *cum = ((Fn1)GetProcAddress(xll, "pro_tri_cumulative"))(inc);
+    int same = (cum->xltype & 0xFFF) == xltypeMulti && cum->val.array.rows == 10 && cum->val.array.columns == 10;
+    for (int i = 0; same && i < 100; i++) {
+        XLOPER12 *a = &cells[i], *b = &cum->val.array.lparray[i];
+        same = (a->xltype == xltypeNil) ? (b->xltype & 0xFFF) == xltypeStr : b->val.num == a->val.num;
+    }
+    check("PRO.TRI.CUMULATIVE(PRO.TRI.INCREMENTAL(RAA)) is RAA", same);
+    free12(inc);
+    free12(cum);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

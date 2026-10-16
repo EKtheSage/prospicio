@@ -421,6 +421,10 @@ mod exports {
     udf!(pro_capecod, triangle, exposure, trend, decay, average, tail, origins);
     udf!(pro_clark, triangle, exposure, curve, max_age, origins);
     udf!(pro_clark_params, triangle, exposure, curve, max_age);
+    udf!(pro_tri_incremental, triangle);
+    udf!(pro_tri_cumulative, triangle);
+    udf!(pro_tri_linkratios, triangle);
+    udf!(pro_tri_latest, triangle);
     udf!(pro_lev, limit, family, p1, p2, truncation);
     udf!(pro_layer, limit, attachment, family, p1, p2, truncation);
     udf!(pro_layer_cv, limit, attachment, family, p1, p2, truncation);
