@@ -16,6 +16,17 @@ mod credibility;
 mod discrete;
 mod distributions;
 mod models;
+#[cfg(feature = "nn")]
+mod nn;
+/// Without the `nn` feature the module registers nothing, and the R
+/// functions that call it fail when called.
+#[cfg(not(feature = "nn"))]
+mod nn {
+    use extendr_api::prelude::*;
+    extendr_module! {
+        mod nn;
+    }
+}
 mod pareto;
 mod pnl;
 mod pricing;
@@ -47,6 +58,7 @@ extendr_module! {
     use discrete;
     use distributions;
     use models;
+    use nn;
     use pareto;
     use pnl;
     use pricing;

@@ -4033,6 +4033,7 @@ dependencies = [
  "prospicio-core",
  "prospicio-glm",
  "prospicio-models",
+ "prospicio-nn",
  "prospicio-pricing",
  "prospicio-prob",
  "prospicio-reserving",
