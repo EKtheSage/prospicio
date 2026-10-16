@@ -1710,6 +1710,10 @@ Triangle$meyers <- function(column, premium, model, logelr_mean, logelr_sd, orig
 
 Triangle$meyers_segments <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__meyers_segments, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
 
+Triangle$meyers_one_year <- function(column, premium, model, priors, run, k_threshold, refit) .Call(wrap__Triangle__meyers_one_year, self, column, premium, model, priors, run, k_threshold, refit)
+
+Triangle$meyers_one_year_segments <- function(column, premium, model, priors, run, k_threshold, refit, dependence, spearman) .Call(wrap__Triangle__meyers_one_year_segments, self, column, premium, model, priors, run, k_threshold, refit, dependence, spearman)
+
 Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
 
 Triangle$compartmental_prior_predictive <- function(premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental_prior_predictive, self, premium, priors, families, settings, run)
@@ -2033,6 +2037,8 @@ BayesOneYearFit$fit <- function() .Call(wrap__BayesOneYearFit__fit, self)
 
 BayesOneYearFit$bf_fit <- function() .Call(wrap__BayesOneYearFit__bf_fit, self)
 
+BayesOneYearFit$meyers_fit <- function() .Call(wrap__BayesOneYearFit__meyers_fit, self)
+
 BayesOneYearFit$opening_ultimate <- function() .Call(wrap__BayesOneYearFit__opening_ultimate, self)
 
 BayesOneYearFit$opening_reserve <- function() .Call(wrap__BayesOneYearFit__opening_reserve, self)
@@ -2067,6 +2073,8 @@ BayesOneYearFit$segment <- function(keys, values) .Call(wrap__BayesOneYearFit__s
 
 BayesOneYearFits <- new.env(parent = emptyenv())
 
+BayesOneYearFits$model <- function() .Call(wrap__BayesOneYearFits__model, self)
+
 BayesOneYearFits$chain_ladder <- function() .Call(wrap__BayesOneYearFits__chain_ladder, self)
 
 BayesOneYearFits$opening_ultimate <- function() .Call(wrap__BayesOneYearFits__opening_ultimate, self)
@@ -2076,6 +2084,8 @@ BayesOneYearFits$opening_reserve <- function() .Call(wrap__BayesOneYearFits__ope
 BayesOneYearFits$cdr <- function() .Call(wrap__BayesOneYearFits__cdr, self)
 
 BayesOneYearFits$scale <- function() .Call(wrap__BayesOneYearFits__scale, self)
+
+BayesOneYearFits$premium <- function() .Call(wrap__BayesOneYearFits__premium, self)
 
 BayesOneYearFits$pareto_k <- function() .Call(wrap__BayesOneYearFits__pareto_k, self)
 

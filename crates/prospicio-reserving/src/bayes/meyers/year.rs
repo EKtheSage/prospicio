@@ -10,8 +10,9 @@
 //! innovation, `log C - mean`) at the same age, so the cells of an age
 //! form a moving average of order 1 down the origins: a year cell's
 //! residual is known given the draw, the observed cells and the year's
-//! earlier cells, provided its previous origin's cell at that age is
-//! observed or in the year ([`MeyersYear::new`] checks it). Nothing else
+//! earlier cells, since its previous origin's cell at that age is observed
+//! or in the year (the older origin's cell is valued twelve months
+//! earlier; [`MeyersYear::new`] keeps the check as a guard). Nothing else
 //! that the year informs is drawn afresh: every parameter is in the draw,
 //! and the residual of an unobserved cell the year does not reach (the
 //! previous origin's at the oldest age, for an origin that stays open) is
@@ -70,7 +71,8 @@ impl<'a> MeyersYear<'a> {
     /// The coming year of `segment` of `triangle` under `model` (the
     /// segment's observed cells), with the chain ladder's latest positions
     /// and values and each origin's premium. CAY's year needs each cell's
-    /// previous origin observed or in the year at the same age.
+    /// previous origin observed or in the year at the same age, which a
+    /// triangle CAY fits always has (a guard, an `Error::Bayes` otherwise).
     pub(super) fn new(
         meyers: &'a Meyers,
         model: &'a Model,

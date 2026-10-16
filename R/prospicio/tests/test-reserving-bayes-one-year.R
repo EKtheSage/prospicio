@@ -240,3 +240,61 @@ out <- capture.output(print(bf_view))
 stopifnot(grepl("<bayes_one_year_fit> 1000 simulations", out[1], fixed = TRUE))
 expect_error_like(bayes_bf_one_year(prem, "paid", "premium", n_sims = 10, k_threshold = NaN),
                   "k_threshold")
+
+# meyers_one_year() and meyers_one_year_segments() (decision 19): the same
+# classes, with the meyers_fit. Their checks against refits are in
+# validation/tests/reserving_meyers_one_year.rs.
+m_long <- data.frame(
+  year = rep(1988:1993, 6:1),
+  age = 12 * sequence(6:1),
+  paid = c(952, 1529, 2813, 3647, 3724, 3832, 849, 1564, 2202, 2432, 2468,
+           983, 2211, 2830, 3832, 1657, 2685, 3169, 932, 1940, 1162),
+  premium = rep(c(5812, 4908, 5454, 5165, 5214, 5230), 6:1))
+m_tri <- triangle(m_long, "year", "age", c("paid", "premium"))
+m_view <- suppressWarnings(meyers_one_year(m_tri, "paid", "premium", model = "cay", tune = 300,
+                                           draws = 300, n_sims = 600, seed = 5,
+                                           refit = "reweight_only"))
+m_fit <- suppressWarnings(meyers(m_tri, "paid", "premium", model = "cay", tune = 300,
+                                 draws = 300, n_sims = 600, seed = 5))
+m_default <- suppressWarnings(meyers_one_year(m_tri, "paid", "premium", model = "cay",
+                                              tune = 300, draws = 300, n_sims = 40, seed = 5))
+m_flagged <- which(is.nan(m_default@pareto_k) | m_default@pareto_k > 0.7)
+stopifnot(
+  S7::S7_inherits(m_view, bayes_one_year_fit),
+  S7::S7_inherits(m_view@fit, meyers_fit),
+  identical(m_view@fit@draws, m_fit@draws),
+  identical(draw_matrix(m_view@fit@reserves), draw_matrix(m_fit@reserves)),
+  identical(m_view@origins, as.character(1988:1993)),
+  length(m_view@pareto_k) == 600,
+  identical(m_view@refitted, integer()),
+  all(draw_matrix(m_view@cdr)[, 1] == 0),
+  variance(m_view@cdr) < variance(m_fit@reserves),
+  isTRUE(all.equal(as.data.frame(m_view)$premium, c(5812, 4908, 5454, 5165, 5214, 5230))),
+  identical(m_default@pareto_k, m_view@pareto_k[1:40]),
+  identical(sort(c(m_default@moment_matched, m_default@refitted)), m_flagged)
+)
+# The opening reserve is the lifetime reserve's posterior mean, within Monte
+# Carlo error (the total is heavy-tailed on six origins).
+m_total <- rowSums(draw_matrix(m_fit@reserves))
+near(sum(m_view@opening_reserve), mean(m_total), 5 * sd(m_total) / sqrt(length(m_total)))
+
+m_two_long <- rbind(cbind(lob = "auto", m_long),
+                    cbind(lob = "home", transform(m_long, paid = 2 * paid, premium = 2 * premium)))
+m_two <- triangle(m_two_long, "year", "age", c("paid", "premium"), keys = "lob")
+m_views <- suppressWarnings(meyers_one_year_segments(m_two, "paid", "premium", tune = 200,
+                                                     draws = 200, n_sims = 500, seed = 2,
+                                                     refit = "reweight_only"))
+m_home <- segment(m_views, lob = "home")
+stopifnot(
+  S7::S7_inherits(m_views, bayes_one_year_fits),
+  identical(m_views@cdr@dims, c("lob", "origin")),
+  nrow(m_views@diagnostics) == 2,
+  isTRUE(all.equal(m_home@premium, 2 * c(5812, 4908, 5454, 5165, 5214, 5230))),
+  length(m_home@pareto_k) == 500,
+  "premium" %in% names(totals_frame(m_views))
+)
+expect_error_like(m_home@scale, "scale")
+expect_error_like(meyers_one_year(m_tri, "paid", "premium", n_sims = 10, k_threshold = NaN),
+                  "k_threshold")
+expect_error_like(meyers_one_year_segments(m_two, "paid", "premium", n_sims = 10,
+                                           dependence = "synchronized"), "ynchroni")

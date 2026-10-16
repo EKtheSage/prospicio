@@ -26,7 +26,7 @@ bayes_odp_one_year(
   target_accept = 0.95,
   max_depth = 10,
   k_threshold = 0.7,
-  refit = c("refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit")
+  refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all")
 )
 
 bayes_odp_one_year_segments(
@@ -46,7 +46,7 @@ bayes_odp_one_year_segments(
   dependence = c("independent", "rank_correlation", "synchronized"),
   spearman = NULL,
   k_threshold = 0.7,
-  refit = c("refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit")
+  refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all")
 )
 }
 \arguments{
@@ -90,13 +90,13 @@ usually leaves a few divergent transitions.}
 weights are not trusted (the threshold of Vehtari et al. 2024 for a
 few thousand draws).}
 
-\item{refit}{What happens to a flagged simulation: \code{"refit_flagged"}
-refits it with NUTS, \code{"reweight_only"} reweights it anyway (fast,
-biased where k is high), \code{"refit_all"} refits every simulation, to
-check the reweighting, and \code{"moment_match_then_refit"} first moves the
-posterior draws by affine maps to the moments the weights estimate
-(moment matching, as \code{loo::loo_moment_match()}), refitting only a
-simulation whose k stays above \code{k_threshold}.}
+\item{refit}{What happens to a flagged simulation:
+\code{"moment_match_then_refit"} (the default) moves the posterior draws by
+affine maps to the moments the weights estimate (moment matching, as
+\code{loo::loo_moment_match()}), refitting only a simulation whose k stays
+above \code{k_threshold}; \code{"refit_flagged"} refits it with NUTS;
+\code{"reweight_only"} reweights it anyway (fast, biased where k is high);
+\code{"refit_all"} refits every simulation, to check the reweighting.}
 
 \item{dependence}{How the segments depend on each other:
 \code{"independent"}, each segment's own posterior and simulations; or
@@ -130,13 +130,18 @@ year is observed and conditioned on, also for an origin that lags the
 valuation.
 }
 \details{
-A simulation whose Pareto k is above \code{k_threshold} is flagged and, with
-\code{refit = "refit_flagged"} (the default), refitted with NUTS on the
-triangle extended by its year, with the model's sampler. A refit takes
-about 40 ms in a release build, and 14\% to 26\% of the simulations are
-flagged on RAA and GenIns, so a default run of 10,000 simulations takes
-one to two minutes there; \code{"reweight_only"} takes about a second and
-leaves the total's standard deviation about 1\% low. On RAA and GenIns
+A simulation whose Pareto k is above \code{k_threshold} is flagged. With
+\code{refit = "moment_match_then_refit"} (the default) its posterior draws
+are first moved by affine maps to the moments the weights estimate
+(moment matching, as \code{loo::loo_moment_match()}), and only a simulation
+whose k stays above \code{k_threshold} is refitted with NUTS on the triangle
+extended by its year, with the model's sampler. 14\% to 26\% of the
+simulations are flagged on RAA and GenIns; matching rescues nearly all
+of them, within 0.04 to 0.06 sd of their refits, at about 1 ms each
+against about 26 ms for a refit, so a default run of 10,000 simulations
+takes a few seconds in a release build. \code{"refit_flagged"} refits every
+flagged simulation (one to two minutes there), and \code{"reweight_only"}
+takes about a second. On RAA and GenIns
 the standard deviation of the total CDR agrees with \code{\link[=odp_one_year]{odp_one_year()}}'s
 on average over seeds (with \code{"reweight_only"}, a ratio of 1.001 on RAA
 and 1.006 on GenIns over 80 seeds); any single run of 10,000
@@ -155,9 +160,10 @@ Failed MCMC diagnostics of the fit raise one \code{\link[=warning]{warning()}} l
 and refits that failed theirs raise another (each prefixed with its
 segment's label over segments).
 
-Properties of a \code{bayes_one_year_fit}: \code{fit} (the \link{bayes_odp_fit}, or the
-\link{bayes_bf_fit} from \code{\link[=bayes_bf_one_year]{bayes_bf_one_year()}}, with the posterior and
-lifetime reserves), \code{chain_ladder}, \code{origins},
+Properties of a \code{bayes_one_year_fit}: \code{fit} (the \link{bayes_odp_fit}, the
+\link{bayes_bf_fit} from \code{\link[=bayes_bf_one_year]{bayes_bf_one_year()}} or the \link{meyers_fit} from
+\code{\link[=meyers_one_year]{meyers_one_year()}}, with the posterior and lifetime reserves),
+\code{chain_ladder}, \code{origins},
 \code{development}; per origin (named as a \link{chain_ladder_fit}'s) \code{latest},
 \code{opening_ultimate} and \code{opening_reserve} (the posterior mean reserve on
 the observed triangle); \code{cdr}, a \link{predictive_distribution} of the CDR
@@ -171,9 +177,10 @@ simulation is in it or in \code{refitted}),
 \code{refit_warnings} (how many refits had a diagnostic warning),
 \code{k_threshold} and \code{flagged_share} (the share of simulations above it,
 whether or not they were refitted). A \code{bayes_one_year_fits} has the
-same, without \code{fit}, with \code{keys}, \code{index}, \code{scale} and \code{diagnostics} (a
-data.frame as \code{\link[=bayes_odp_segments]{bayes_odp_segments()}}'s), and with \code{cdr} keyed by the
-triangle's keys and \code{origin}; \code{scale}, \code{pareto_k}, \code{refitted},
+same, without \code{fit}, with \code{keys}, \code{index}, \code{scale} (the ODP's only),
+\code{premium} (Meyers' only) and \code{diagnostics} (a data.frame as
+\code{\link[=bayes_odp_segments]{bayes_odp_segments()}}'s), and with \code{cdr} keyed by the triangle's keys
+and \code{origin}; \code{scale}, \code{premium}, \code{pareto_k}, \code{refitted},
 \code{moment_matched}, \code{refit_warnings} and \code{flagged_share} need a
 single-segment fit: use
 \code{\link[=segment]{segment()}} or \code{\link[=totals_frame]{totals_frame()}}. \code{as.data.frame()} has one row per
