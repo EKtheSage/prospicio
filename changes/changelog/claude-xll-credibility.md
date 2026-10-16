@@ -5,4 +5,4 @@
   column of probabilities against a row of tolerances giving the table)
   and the square root rule (`PRO.CRED.Z`), and the Bühlmann–Straub model
   (`PRO.BUHLMANN`, `PRO.BUHLMANN.PARAMS`) with the unbiased or iterative
-  estimator and blank cells as missing; at parity with R's `actuar`.
+  estimator and blank cells as missing; at parity with R's `actuar` (#297).
