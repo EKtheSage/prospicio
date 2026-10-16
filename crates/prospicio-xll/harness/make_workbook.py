@@ -280,10 +280,16 @@ for i, (name, f, x) in enumerate([
     row = 48 + i
     el[f"A{row}"] = name; el[f"B{row}"] = f; el[f"C{row}"] = x
     el[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-6*C{row}"
+el["A54"] = "Clark's Cape Cod, log-logistic, max age 240 (R's ClarkCapeCod)"; el["A54"].font = bold
+el["A55"] = ArrayFormula("A55:G66", f"=PRO.CLARK({G},{P},,240,{O})")
+el["I54"] = "Its parameters"; el["I54"].font = bold
+el["I55"] = ArrayFormula("I55:J60", f"=PRO.CLARK.PARAMS({G},{P},,240)")
+el["A69"] = "Clark's LDF method on GenIns, Weibull"; el["A69"].font = bold
+el["A70"] = ArrayFormula("A70:G81", f'=PRO.CLARK({G},,"weibull",,{O})')
 el.column_dimensions["A"].width = 22
 for col in "BCDEFGHIJKLMNO":
     el.column_dimensions[col].width = 12
-for row in el.iter_rows(min_row=17, max_row=50, min_col=2, max_col=15):
+for row in el.iter_rows(min_row=17, max_row=81, min_col=2, max_col=15):
     for c in row:
         c.number_format = "#,##0"
 

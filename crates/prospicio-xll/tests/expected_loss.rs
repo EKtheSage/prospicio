@@ -7,48 +7,10 @@
 mod common;
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
-use common::{n, num, t, text};
+use common::{genins, n, num, t, text, validation};
 use prospicio_xll::call;
 use prospicio_xll::sheet::{Grid, Value};
-
-fn validation(path: &str) -> String {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../validation")
-        .join(path);
-    std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
-}
-
-/// GenIns paid as a sheet range, and its premium as a column.
-fn genins() -> (Grid, Grid) {
-    let mut paid: BTreeMap<i32, BTreeMap<u32, f64>> = BTreeMap::new();
-    let mut premium: BTreeMap<i32, f64> = BTreeMap::new();
-    for line in validation("data/genins_premium.csv")
-        .lines()
-        .skip_while(|l| l.starts_with('#'))
-        .skip(1)
-    {
-        let f: Vec<&str> = line.split(',').collect();
-        let origin: i32 = f[0].parse().unwrap();
-        paid.entry(origin)
-            .or_default()
-            .insert(f[1].parse().unwrap(), f[2].parse().unwrap());
-        premium.insert(origin, f[3].parse().unwrap());
-    }
-    let ages = paid.values().map(BTreeMap::len).max().unwrap();
-    let rows = paid
-        .values()
-        .map(|row| {
-            let cells: Vec<f64> = row.values().copied().collect();
-            (0..ages)
-                .map(|c| cells.get(c).map_or(Value::Empty, |&x| Value::Number(x)))
-                .collect()
-        })
-        .collect();
-    let premium = Grid::from_rows(premium.values().map(|&p| vec![Value::Number(p)]).collect());
-    (Grid::from_rows(rows), premium)
-}
 
 /// The method spec's settings: `bornhuetter_ferguson;apriori=0.75;average=volume`.
 fn settings(spec: &str) -> (String, BTreeMap<String, String>) {

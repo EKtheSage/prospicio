@@ -119,6 +119,19 @@ const CDR_PERCENTILES: Arg = Arg {
     help: "Probabilities to report, a row or column; omitted for 0.5%, 5%, 95%, 99.5% (a negative CDR is adverse)",
 };
 
+const CLARK_EXPOSURE: Arg = Arg {
+    name: "exposure",
+    help: "Premium per origin for Clark's Cape Cod; omitted for Clark's LDF method",
+};
+const CURVE: Arg = Arg {
+    name: "curve",
+    help: "Growth curve: \"loglogistic\" (default) or \"weibull\"",
+};
+const MAX_AGE: Arg = Arg {
+    name: "max_age",
+    help: "Age in months development stops at, such as 240; omitted (or \"inf\") for none",
+};
+
 const LIMIT: Arg = Arg {
     name: "limit",
     help: "Limit(s): a number, a range, or \"unlimited\"",
@@ -371,6 +384,20 @@ pub static FUNCTIONS: &[Function] = &[
             ORIGINS,
         ],
         run: reserving::cape_cod,
+    },
+    Function {
+        symbol: "pro_clark",
+        name: "PRO.CLARK",
+        help: "Clark's growth curve: LDF method, or Cape Cod with exposure; reserve and its SEs per origin, with a total.",
+        args: &[TRIANGLE, CLARK_EXPOSURE, CURVE, MAX_AGE, ORIGINS],
+        run: reserving::clark,
+    },
+    Function {
+        symbol: "pro_clark_params",
+        name: "PRO.CLARK.PARAMS",
+        help: "Clark's fitted parameters: curve, omega, theta, the ELR (Cape Cod), the scale and the observations.",
+        args: &[TRIANGLE, CLARK_EXPOSURE, CURVE, MAX_AGE],
+        run: reserving::clark_params,
     },
     Function {
         symbol: "pro_lev",

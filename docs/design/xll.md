@@ -31,6 +31,8 @@ category of Insert Function:
 | `PRO.MACK.CDR.YEARS(...)`, same arguments | The CDR SE per origin in each future calendar year (R's `CDR(k)S.E.`) |
 | `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | The ODP bootstrap's one-year view: simulated CDR mean, SD and percentiles |
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap's one-year view, laid out as `PRO.ODP.CDR` |
+| `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's growth curve: the LDF method, or Cape Cod with `exposure`; reserve and its process, parameter and total SE |
+| `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Its fitted omega, theta, ELR (Cape Cod), scale and observations |
 | `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method: exposure times the a priori loss ratio |
 | `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson |
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
@@ -75,6 +77,15 @@ for Mack its average and sigma rule) as the re-reserving method; the CDR
 is the opening ultimate less the re-estimated one, so a negative CDR is
 adverse, and the default percentiles are 0.5%, 5%, 95% and 99.5%. The
 re-reserving with the expected-loss methods is not exposed yet.
+
+`PRO.CLARK` wraps `ClarkLdf` without `exposure` and `ClarkCapeCod` with
+it (R's `ClarkLDF` and `ClarkCapeCod`, `adol = TRUE`); `curve` is
+`"loglogistic"` (default) or `"weibull"`, `max_age` an age in months
+(omitted or `"inf"` for none). Against R run to convergence (`optim=tight`
+in `validation/reference/reserving_clark_r.csv`, rel_tol 1e-5), every
+parameter and every origin's and total's ultimate, reserve and standard
+error match on RAA (LDF) and GenIns with premium (Cape Cod), both curves,
+both `max_age` settings (`tests/clark.rs`).
 
 The expected-loss methods wrap `ExpectedLoss`, `BornhuetterFerguson`,
 `Benktander` and `CapeCod`. `exposure` (premium) is a row or column with
@@ -223,8 +234,8 @@ order, one small PR each, those already done struck through:
    ~~Mack's bootstrap and its draws~~; ~~Mack's options (the sigma rule,
    selected factors)~~; ~~the expected-loss methods (expected loss,
    Bornhuetter-Ferguson, Benktander, Cape Cod) on a premium column~~; ~~the
-   one-year view (Merz-Wuthrich, the bootstraps' CDR)~~; Clark's LDF and
-   Cape Cod; triangle helpers (link ratios, incremental and cumulative,
+   one-year view (Merz-Wuthrich, the bootstraps' CDR)~~; ~~Clark's LDF and
+   Cape Cod~~; triangle helpers (link ratios, incremental and cumulative,
    the latest diagonal).
 2. Severities: ~~the Pareto and the lognormal's LEV, layer, CV, ILF~~;
    more families (gamma, Weibull, Burr, log-logistic, inverse gamma,

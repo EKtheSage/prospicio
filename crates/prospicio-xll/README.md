@@ -58,6 +58,8 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.MACK.CDR.YEARS(...)`, same arguments | CDR SE by future calendar year |
 | `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap's simulated one-year CDR (negative is adverse) |
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's simulated one-year CDR |
+| `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's LDF method (or Cape Cod with exposure): reserve and SEs |
+| `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Clark's fitted parameters |
 | `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method exhibit |
 | `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson exhibit |
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander exhibit |
@@ -80,6 +82,8 @@ Ctrl+Alt+F9 to recalculate.
 - `sigma`: Mack's last sigma, `"log-linear"` (default) or `"mack"`.
 - `exposure`: premium per origin, a row or column of positive values;
   `apriori`: the expected loss ratio, such as `0.75`.
+- `curve`: Clark's growth curve, `"loglogistic"` (default) or
+  `"weibull"`; `max_age`: months development stops at, omitted for none.
 - `sims` (default 10000, at most 1000000), `seed` (default 0; the same seed
   gives the same table), `percentiles` (a row or column such as
   `{0.75,0.95,0.995}`), `process` (`"gamma"` or `"none"`; Mack's
