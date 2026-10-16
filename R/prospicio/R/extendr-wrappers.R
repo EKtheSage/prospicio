@@ -2584,3 +2584,93 @@ RiskCopula$simulate <- function(marginals, n_sims, seed, dims, keys) .Call(wrap_
 
 #' @export
 `[[.RiskCopula` <- `$.RiskCopula`
+
+# Models lane: neural networks (nn.rs).
+
+cann_fit_design <- function(x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience) .Call(wrap__cann_fit_design, x, names, y, offset, weights, family_name, link_name, power, hidden, epochs, batch_size, learning_rate, seed, validation_share, patience)
+
+attention_cann_fit_design <- function(x, names, y, offset, weights, family_name, link_name, power, shape, epochs, batch_size, learning_rate, seed, validation_share, patience) .Call(wrap__attention_cann_fit_design, x, names, y, offset, weights, family_name, link_name, power, shape, epochs, batch_size, learning_rate, seed, validation_share, patience)
+
+onnx_load_rust <- function(path) .Call(wrap__onnx_load_rust, path)
+
+onnx_from_bytes_rust <- function(bytes) .Call(wrap__onnx_from_bytes_rust, bytes)
+
+onnx_predictor_rust <- function(net, family_name, inputs, columns, output, scale, link_name, dispersion, theta, power) .Call(wrap__onnx_predictor_rust, net, family_name, inputs, columns, output, scale, link_name, dispersion, theta, power)
+
+CannModel <- new.env(parent = emptyenv())
+
+CannModel$fitted <- function() .Call(wrap__CannModel__fitted, self)
+
+CannModel$dispersion <- function() .Call(wrap__CannModel__dispersion, self)
+
+CannModel$best_epoch <- function() .Call(wrap__CannModel__best_epoch, self)
+
+CannModel$validation_history <- function() .Call(wrap__CannModel__validation_history, self)
+
+CannModel$predict <- function(x, names, offset) .Call(wrap__CannModel__predict, self, x, names, offset)
+
+CannModel$correction <- function(x, names) .Call(wrap__CannModel__correction, self, x, names)
+
+CannModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__CannModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+
+#' @export
+`$.CannModel` <- function (self, name) { func <- CannModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CannModel` <- `$.CannModel`
+
+AttentionCannModel <- new.env(parent = emptyenv())
+
+AttentionCannModel$tokens <- function() .Call(wrap__AttentionCannModel__tokens, self)
+
+AttentionCannModel$fitted <- function() .Call(wrap__AttentionCannModel__fitted, self)
+
+AttentionCannModel$dispersion <- function() .Call(wrap__AttentionCannModel__dispersion, self)
+
+AttentionCannModel$best_epoch <- function() .Call(wrap__AttentionCannModel__best_epoch, self)
+
+AttentionCannModel$validation_history <- function() .Call(wrap__AttentionCannModel__validation_history, self)
+
+AttentionCannModel$predict <- function(x, names, offset) .Call(wrap__AttentionCannModel__predict, self, x, names, offset)
+
+AttentionCannModel$correction <- function(x, names) .Call(wrap__AttentionCannModel__correction, self, x, names)
+
+AttentionCannModel$attention <- function(x, names) .Call(wrap__AttentionCannModel__attention, self, x, names)
+
+AttentionCannModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__AttentionCannModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+
+#' @export
+`$.AttentionCannModel` <- function (self, name) { func <- AttentionCannModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.AttentionCannModel` <- `$.AttentionCannModel`
+
+OnnxNet <- new.env(parent = emptyenv())
+
+OnnxNet$inputs <- function() .Call(wrap__OnnxNet__inputs, self)
+
+OnnxNet$outputs <- function() .Call(wrap__OnnxNet__outputs, self)
+
+OnnxNet$ops <- function() .Call(wrap__OnnxNet__ops, self)
+
+OnnxNet$run <- function(shapes, values) .Call(wrap__OnnxNet__run, self, shapes, values)
+
+#' @export
+`$.OnnxNet` <- function (self, name) { func <- OnnxNet[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.OnnxNet` <- `$.OnnxNet`
+
+OnnxPredictorModel <- new.env(parent = emptyenv())
+
+OnnxPredictorModel$family <- function() .Call(wrap__OnnxPredictorModel__family, self)
+
+OnnxPredictorModel$predict <- function(x, names, offset) .Call(wrap__OnnxPredictorModel__predict, self, x, names, offset)
+
+OnnxPredictorModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed) .Call(wrap__OnnxPredictorModel__predict_distribution, self, x, names, offset, weights, n_sims, seed)
+
+#' @export
+`$.OnnxPredictorModel` <- function (self, name) { func <- OnnxPredictorModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.OnnxPredictorModel` <- `$.OnnxPredictorModel`

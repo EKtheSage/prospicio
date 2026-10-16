@@ -3,6 +3,9 @@ name = "prospicio-r"
 description = "R bindings (extendr). Thin wrappers only: no algorithms live here."
 version.workspace = true
 edition.workspace = true
+# The workspace minimum; the default `nn` feature (prospicio-nn, Burn 0.21)
+# needs Rust 1.92. Kept at the workspace value so clippy lints the shared
+# binding files against one minimum.
 rust-version.workspace = true
 publish = false
 license.workspace = true
@@ -19,6 +22,8 @@ prospicio-aggregate.workspace = true
 prospicio-bayes.workspace = true
 prospicio-glm.workspace = true
 prospicio-models.workspace = true
+# Neural networks on Burn, behind the default `nn` feature.
+prospicio-nn = { workspace = true, optional = true }
 prospicio-prob.workspace = true
 prospicio-pricing.workspace = true
 # The bayes feature: BayesOdp (docs/design/reserving-bayes.md, decision 2).
@@ -27,3 +32,8 @@ prospicio-reserving = { workspace = true, features = ["bayes"] }
 # R/prospicio/R/distributions.R) instead of panics, so R prints no Rust
 # panic message for ordinary input errors.
 extendr-api = { version = "0.9.0", features = ["result_condition"] }
+
+[features]
+default = ["nn"]
+# The CANN, the attention CANN and ONNX import (`prospicio-nn`, Burn).
+nn = ["dep:prospicio-nn"]

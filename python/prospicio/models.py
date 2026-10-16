@@ -1,5 +1,6 @@
-"""Models: terms and design matrices, GLMs, elastic nets and GAMs, metrics, resampling,
-tuning, and MCMC diagnostics (docs/design/models.md)."""
+"""Models: terms and design matrices, GLMs, elastic nets and GAMs, neural networks (the
+CANN, the attention CANN and ONNX import), metrics, resampling, tuning, and MCMC
+diagnostics (docs/design/models.md)."""
 
 import math
 import random
@@ -47,6 +48,29 @@ from .prospicio_native import (
     stacking_weights,
     time_ordered,
 )
+
+try:  # The neural networks, behind the native build's default `nn` feature.
+    from .prospicio_native import (
+        AttentionCann,
+        AttentionCannFit,
+        Cann,
+        CannFit,
+        OnnxModel,
+        OnnxPredictor,
+        TokenAttention,
+    )
+except ImportError:  # pragma: no cover - a build without `nn`
+    _NN = []
+else:
+    _NN = [
+        "Cann",
+        "CannFit",
+        "AttentionCann",
+        "AttentionCannFit",
+        "TokenAttention",
+        "OnnxModel",
+        "OnnxPredictor",
+    ]
 
 __all__ = [
     "Terms",
@@ -97,7 +121,7 @@ __all__ = [
     "BayesStacking",
     "HierarchicalStacking",
     "StackingFit",
-]
+] + _NN
 
 
 def pinball_score(alpha):

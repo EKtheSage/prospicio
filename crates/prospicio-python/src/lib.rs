@@ -21,6 +21,8 @@ mod distributions;
 mod experience;
 mod models;
 mod natural;
+#[cfg(feature = "nn")]
+mod nn;
 mod pareto;
 mod payout;
 mod pnl;
@@ -76,6 +78,12 @@ mod prospicio_native {
     use super::natural::{
         PyNaturalPrice, PyPentagon, PyPortfolio, PyPricingBounds, PyStandAlone,
         calibrate_classical, classical_premium, distortion_envelope,
+    };
+    #[cfg(feature = "nn")]
+    #[pymodule_export]
+    use super::nn::{
+        PyAttentionCann, PyAttentionCannFit, PyCann, PyCannFit, PyOnnxModel, PyOnnxPredictor,
+        PyTokenAttention,
     };
     #[pymodule_export]
     use super::pareto::{

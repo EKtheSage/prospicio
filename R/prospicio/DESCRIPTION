@@ -6,7 +6,7 @@ Description: R front end to the prospicio-* Rust crates. Wrappers only: every
     algorithm lives in Rust and is shared with the Python package.
 License: MIT + file LICENSE | Apache License (== 2.0)
 Encoding: UTF-8
-SystemRequirements: Cargo (Rust's package manager), rustc >= 1.85
+SystemRequirements: Cargo (Rust's package manager), rustc >= 1.92 (Burn, for the neural networks)
 Depends: R (>= 4.2.0)
 Imports: S7, stats
 Suggests: lightgbm, xgboost
@@ -23,6 +23,7 @@ Collate:
     'pareto.R'
     'discrete.R'
     'extendr-wrappers.R'
+    'nn.R'
     'pnl.R'
     'pricing.R'
     'ratemaking.R'

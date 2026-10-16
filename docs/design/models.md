@@ -361,9 +361,17 @@ life cycle; each heavy engine sits in its own crate behind a feature flag.
 - **GAM lives inside `prospicio-glm`.** A GAM is a penalized GLM: same IRLS loop,
   plus a penalty and smoothing-parameter selection. A separate crate would
   duplicate the solver.
-- **Chain Ladder never compiles Burn or a sampler.** `prospicio-nn` and
-  `prospicio-bayes` are opt-in features of the bindings, and nothing in the
-  default build depends on them.
+- **The Rust crates stay light; the bindings carry the engines.** No
+  reserving or pricing crate depends on Burn or a sampler, so a Rust user
+  of the chain ladder never compiles either. The bindings do: the Python
+  wheel and the R package link `prospicio-bayes` always and
+  `prospicio-nn` through their `nn` cargo feature, which is on by default
+  (user, 2026-10-16), so the shipped packages carry the networks and a
+  build without them stays possible (`--no-default-features`). Burn needs
+  Rust 1.92, so building the bindings with `nn` does too; their
+  `rust-version` stays the workspace's 1.85, since raising it turns on
+  clippy lints (let chains, `is_multiple_of`) across every lane's binding
+  files.
 
 ## Life cycle
 
@@ -637,7 +645,7 @@ their draws and stop being reproducible.
 
 ## ONNX import
 
-Status: done (2026-10-16), Rust only: `prospicio_nn::onnx`, behind the
+Status: done (2026-10-16): `prospicio_nn::onnx`, behind the
 crate's default `onnx` feature.
 
 - **Parse with Burn, run here.** `OnnxModel::load` (or `from_bytes`)
@@ -669,11 +677,21 @@ crate's default `onnx` feature.
   `predict_distribution` as process draws from a family and dispersion
   the caller gives (`simulate::from_means`), since an imported network
   carries no parameter uncertainty and the file no family.
-- **Rust only for now, as CANN.** `prospicio-nn` has no Python or R
-  bindings yet: binding it puts Burn into the wheel and the R package.
-  The user expects to add them, for CANN and ONNX import alike, and has
-  left the timing open (2026-10-16). Until then this import serves Rust
-  pipelines, and Python users have onnxruntime.
+- **In Python and R, with the CANN.** `prospicio.models` has `Cann`,
+  `CannFit`, `AttentionCann`, `AttentionCannFit`, `TokenAttention`,
+  `OnnxModel` and `OnnxPredictor` (the graph's inputs bound by a dict of
+  design columns, `scale="mean"` or `"link"`); R has `cann_fit()` and
+  `attention_cann_fit()` on a formula (with `predict()`,
+  `predict_distribution()`, `network_correction()` and
+  `attention_weights()`, an array `[row, head, token]`), `onnx_model()`,
+  `onnx_run()` and `onnx_predictor()` (a named list of data frame
+  columns per graph input). Both sit behind the bindings' default `nn`
+  feature. Unspecified, a network's link is log (identity for the
+  Gaussian), the only links it supports, not the family's canonical link.
+  R's `model.matrix()` names a factor's indicators `regionB`; the R layer
+  renames them `region[B]`, as Python's coding does, so the attention
+  CANN reads one token per factor. A fitted network has no artifact yet
+  (no `to_json`), so it neither pickles nor goes through `save_model()`.
 - **Validation.** `crates/prospicio-nn/tests/onnx.rs` against
   onnxruntime 1.31.0 (`validation/scripts/onnx_models.py`, models built
   with `onnx.helper`, no PyTorch needed): an MLP of two `Gemm`s

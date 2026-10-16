@@ -320,6 +320,20 @@ mod tests {
         assert!((c.mean - 60.0).abs() < 1e-12);
     }
 
+    /// A count chosen by mean and dispersion gives the same exact third
+    /// cumulant as its family (it was 1.2e-7 off at 1,000 claims while
+    /// `PanjerClass` left the trait's default to convert the raw moment).
+    #[test]
+    fn panjer_class_compound_skewness_is_exact() {
+        let x = Lognormal::from_mean_cv(10.0, 0.5).unwrap();
+        let n = prospicio_prob::PanjerClass::from_mean_dispersion(1000.0, 1.0).unwrap();
+        let m = compound_moments(&n, &x).unwrap();
+        // 1000 E[X³] = 1000 × 10³ × (1 + 0.5²)³ = 1,953,125.
+        assert!((m.third_cumulant / 1_953_125.0 - 1.0).abs() < 1e-13);
+        let exact = compound_moments(&Poisson::new(1000.0).unwrap(), &x).unwrap();
+        assert_eq!(m, exact);
+    }
+
     #[test]
     fn refuses_what_it_cannot_fit() {
         use prospicio_prob::Pareto;

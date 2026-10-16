@@ -10,5 +10,6 @@
 * [Publishing](publishing.md) - How the crates and the Python package package for PyPI and crates.io, and what trusted publishing on each needs.
 * [Signing the Excel XLL](xll-signing.md) - Authenticode signing with osslsigncode on Linux, checked with a self-signed certificate, and which certificates fit a CI secret.
 * [Building and testing the Excel XLL](xll-builds.md) - Cross-building the 64-bit XLL from Linux with MinGW, its system-only imports, and the fake-Excel host under Wine that drives the C API.
+* [prospicio-nn in the Python and R bindings](nn-in-bindings.md) - The wheel and the R package link Burn through the default nn feature: about 8 MB more native module (18.3 MB to 26.5 MB, release), Rust 1.92 to build (the bindings' rust-version stays 1.85 for clippy), and the fitted networks are Send and Sync, so frozen pyclasses need no lock; R renames factor indicators to name[level] for attention tokens, and the extendr wrappers are appended by hand.
 * [WebAssembly builds](wasm-builds.md) - Which crates build for wasm32, how to run their tests under WASI with Node, and how Rayon behaves without threads.
 * [CmdStan on the local Windows machine](local-cmdstan.md) - CmdStan 2.39.0 at ~/.cmdstan builds models with RTools 4.5's make and g++ from PowerShell or cmd only; cmdstanpy 1.3.0 needs MAKE set, since it looks for mingw32-make.
