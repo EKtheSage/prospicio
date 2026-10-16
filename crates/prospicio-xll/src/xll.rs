@@ -434,6 +434,28 @@ udf!(
     process,
     origins
 );
+udf!(pro_el, triangle, exposure, apriori, average, tail, origins);
+udf!(pro_bf, triangle, exposure, apriori, average, tail, origins);
+udf!(
+    pro_benktander,
+    triangle,
+    exposure,
+    apriori,
+    iterations,
+    average,
+    tail,
+    origins
+);
+udf!(
+    pro_capecod,
+    triangle,
+    exposure,
+    trend,
+    decay,
+    average,
+    tail,
+    origins
+);
 udf!(pro_lev, limit, family, p1, p2, truncation);
 udf!(pro_layer, limit, attachment, family, p1, p2, truncation);
 udf!(pro_layer_cv, limit, attachment, family, p1, p2, truncation);

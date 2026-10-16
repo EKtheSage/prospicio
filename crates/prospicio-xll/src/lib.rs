@@ -89,6 +89,15 @@ const MACK_PROCESS: Arg = Arg {
     help: "\"gamma\" (default), \"lognormal\", \"normal\", \"residuals\", or \"none\" for parameter error only",
 };
 
+const EXPOSURE: Arg = Arg {
+    name: "exposure",
+    help: "Exposure (premium) per origin, a row or column, one value per triangle row",
+};
+const APRIORI: Arg = Arg {
+    name: "apriori",
+    help: "The a priori expected loss ratio, ultimate per unit of exposure, such as 0.75",
+};
+
 const LIMIT: Arg = Arg {
     name: "limit",
     help: "Limit(s): a number, a range, or \"unlimited\"",
@@ -234,6 +243,59 @@ pub static FUNCTIONS: &[Function] = &[
             ORIGINS,
         ],
         run: reserving::mack_bootstrap_sims,
+    },
+    Function {
+        symbol: "pro_el",
+        name: "PRO.EL",
+        help: "Expected loss method: ultimate is exposure times the a priori loss ratio.",
+        args: &[TRIANGLE, EXPOSURE, APRIORI, AVERAGE, TAIL, ORIGINS],
+        run: reserving::expected_loss,
+    },
+    Function {
+        symbol: "pro_bf",
+        name: "PRO.BF",
+        help: "Bornhuetter-Ferguson: latest plus the a priori ultimate's unreported share, per origin, with a total.",
+        args: &[TRIANGLE, EXPOSURE, APRIORI, AVERAGE, TAIL, ORIGINS],
+        run: reserving::bornhuetter_ferguson,
+    },
+    Function {
+        symbol: "pro_benktander",
+        name: "PRO.BENKTANDER",
+        help: "Benktander: Bornhuetter-Ferguson iterated on its own ultimate (1 iteration is BF).",
+        args: &[
+            TRIANGLE,
+            EXPOSURE,
+            APRIORI,
+            Arg {
+                name: "iterations",
+                help: "Number of iterations, 1 (Bornhuetter-Ferguson) if omitted",
+            },
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+        ],
+        run: reserving::benktander,
+    },
+    Function {
+        symbol: "pro_capecod",
+        name: "PRO.CAPECOD",
+        help: "Cape Cod (Stanard-Buhlmann): the a priori loss ratio estimated from the triangle and exposure.",
+        args: &[
+            TRIANGLE,
+            EXPOSURE,
+            Arg {
+                name: "trend",
+                help: "Annual trend of the loss ratio between origins, 0 if omitted",
+            },
+            Arg {
+                name: "decay",
+                help: "Weight decay by distance between origins, 0 to 1; 1 if omitted",
+            },
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+        ],
+        run: reserving::cape_cod,
     },
     Function {
         symbol: "pro_lev",

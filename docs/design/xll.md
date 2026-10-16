@@ -27,6 +27,10 @@ category of Insert Function:
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's simulated reserves: one row per simulation, a column per origin and the total |
 | `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins])` | Mack's bootstrap (England, Verrall and Wuthrich), laid out as `PRO.ODP` |
 | `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins])` | Its simulated reserves, laid out as `PRO.ODP.SIMS` |
+| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method: exposure times the a priori loss ratio |
+| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson |
+| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
+| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod (Stanard-Buhlmann) |
 | `PRO.VERSION()` | The prospicio version the add-in was built from |
 | `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value `E[min(X, limit)]`, per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to `limit` xs `attachment` per ground-up loss |
@@ -48,6 +52,15 @@ error only); `tail` is read as for the chain ladder.
 crate's default, which reconciles with Mack's standard errors); `process`
 is `"gamma"` (default), `"lognormal"`, `"normal"`, `"residuals"` or
 `"none"`.
+
+The expected-loss methods wrap `ExpectedLoss`, `BornhuetterFerguson`,
+`Benktander` and `CapeCod`. `exposure` (premium) is a row or column with
+one positive value per triangle row, put on the triangle as an exposure
+measure; each returns Origin, Exposure, Latest, CDF, A priori (the loss
+ratio applied; Cape Cod's detrended estimate), Ultimate and Reserve, and a
+total row. On GenIns with R's `?ClarkCapeCod` premium all 28 totals in
+`validation/reference/reserving_expected_loss_python.csv`
+(chainladder-python 0.10.1) match.
 
 The pricing functions wrap `prospicio_pricing::layer` (`ilf`, `layer_cv`)
 and `prospicio_prob::Severity` (`lev`, `layer`). `family` is `"pareto"`
@@ -178,8 +191,8 @@ order, one small PR each, those already done struck through:
 
 1. Reserving: ~~chain ladder, Mack~~, ~~ODP bootstrap and its draws~~,
    ~~Mack's bootstrap and its draws~~; Mack's options (the sigma rule,
-   selected factors); the expected-loss methods (expected loss,
-   Bornhuetter-Ferguson, Benktander, Cape Cod) on a premium column; the
+   selected factors); ~~the expected-loss methods (expected loss,
+   Bornhuetter-Ferguson, Benktander, Cape Cod) on a premium column~~; the
    one-year view (Merz-Wuthrich, the bootstraps' CDR); Clark's LDF and
    Cape Cod; triangle helpers (link ratios, incremental and cumulative,
    the latest diagonal).

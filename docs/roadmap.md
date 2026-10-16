@@ -364,11 +364,11 @@ what it is aiming for by v1.0.
   layer pricing (LEV, layer loss, layer CV, ILF) on a Pareto or lognormal
   severity; the ODP bootstrap exhibit; built, smoke-tested and kept as an
   artifact by CI, attached to a draft release on a version tag; the
-  bootstrap's draws as a table; Mack's bootstrap.
+  bootstrap's draws as a table; Mack's bootstrap; the expected-loss
+  methods (expected loss, BF, Benktander, Cape Cod).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): Mack's options, the expected-loss
-     methods, the one-year view, Clark, triangle helpers; then
+     form (`xll.md`, parity plan): Mack's options, the one-year view, Clark, triangle helpers; then
      severities, pricing and aggregates.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).

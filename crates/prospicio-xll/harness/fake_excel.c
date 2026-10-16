@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("sixteen functions registered", registered == 16);
+    check("twenty functions registered", registered == 20);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -298,6 +298,33 @@ int main(int argc, char **argv) {
     check("Mack bootstrap total SD 26845 +- 1000 (Mack, R ChainLadder)", fabs(mt[3].val.num - 26845) < 1000);
     check("Mack bootstrap total mean 52135 +- 950 (chain ladder)", fabs(mt[2].val.num - 52135.23) < 950);
     free12(mb);
+
+    /* Bornhuetter-Ferguson on RAA with a flat exposure of 20000 and a
+     * priori 1: the oldest origin's ultimate is its latest, and the total
+     * reserve sums the a priori ultimate's unreported shares. */
+    XLOPER12 exp_cells[10], expo, apriori;
+    for (int i = 0; i < 10; i++) {
+        exp_cells[i].xltype = xltypeNum;
+        exp_cells[i].val.num = 20000;
+    }
+    expo.xltype = xltypeMulti;
+    expo.val.array.lparray = exp_cells;
+    expo.val.array.rows = 10;
+    expo.val.array.columns = 1;
+    apriori.xltype = xltypeNum;
+    apriori.val.num = 1.0;
+    XLOPER12 *bf = ((Fn6)GetProcAddress(xll, "pro_bf"))(&tri, &expo, &apriori, &missing, &missing, &missing);
+    print_result("PRO.BF(RAA, 20000 each, 1)", bf);
+    check("BF table is 12 x 7", (bf->xltype & 0xFFF) == xltypeMulti && bf->val.array.rows == 12 &&
+                                    bf->val.array.columns == 7);
+    double expect = 0;
+    for (int i = 1; i <= 10; i++) {
+        double cdf = bf->val.array.lparray[i * 7 + 3].val.num;
+        expect += 20000 * (1 - 1 / cdf);
+    }
+    check("BF reserve is the unreported share of 20000 each",
+          fabs(bf->val.array.lparray[11 * 7 + 6].val.num - expect) < 1e-6);
+    free12(bf);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;
