@@ -548,6 +548,41 @@ for c in ("E62", "E63", "E66", "E67"):
 rm.column_dimensions["A"].width = 16
 for col in "BCDEFGH":
     rm.column_dimensions[col].width = 15
+
+# Burning cost: Clark's per-risk example (Basics of Reinsurance Pricing, A.4.a).
+bc = wb.create_sheet("Burning cost")
+bc["A1"] = "Burning cost of 400,000 xs 100,000, trended at 4% to 7/1/1997 (Clark, A.4.a)"; bc["A1"].font = bold
+bc["A2"] = "Accident date"; bc["B2"] = "Amount"; bc["A2"].font = bc["B2"].font = bold
+clark = [((1988, 9, 20), 240946), ((1988, 10, 11), 821499), ((1989, 3, 15), 158129), ((1990, 6, 21), 114051),
+         ((1990, 10, 24), 78043), ((1991, 1, 10), 162533), ((1992, 2, 23), 324298), ((1992, 4, 30), 100549),
+         ((1992, 9, 22), 75476), ((1993, 1, 1), 171885), ((1993, 5, 18), 94218), ((1993, 8, 1), 170297),
+         ((1994, 8, 15), 87133), ((1995, 7, 12), 771249)]
+for r, ((y, m, d), x) in enumerate(clark):
+    c = bc.cell(row=3 + r, column=1, value=datetime.date(y, m, d)); c.number_format = "yyyy-mm-dd"; c.fill = inp
+    c = bc.cell(row=3 + r, column=2, value=x); c.number_format = "#,##0"; c.fill = inp
+bc["D2"] = "Year"; bc["E2"] = "Premium"; bc["F2"] = "Excess LDF"
+for h in ("D2", "E2", "F2"):
+    bc[h].font = bold
+years = [(1988, 1422554, 1.0), (1989, 1823103, 1.0), (1990, 2054034, 1.0), (1991, 2147147, 1.0),
+         (1992, 2151541, 1.01), (1993, 2159198, 1.05), (1994, 2167158, 1.15), (1995, 2187654, 1.3)]
+for r, (y, p_, f) in enumerate(years):
+    for c, x in enumerate((y, p_, f)):
+        bc.cell(row=3 + r, column=4 + c, value=x).fill = inp
+    bc.cell(row=3 + r, column=5).number_format = "#,##0"
+bc["H2"] = "Limit"; bc["H3"] = 400000; bc["I2"] = "Attachment"; bc["I3"] = 100000
+bc["H4"] = "Trend"; bc["H5"] = 0.04; bc["I4"] = "Trended to"; bc["I5"] = datetime.date(1997, 7, 1)
+bc["I5"].number_format = "yyyy-mm-dd"
+for c in ("H3", "I3", "H5", "I5"):
+    bc[c].fill = inp
+bc["A19"] = ArrayFormula("A19:G29", "=PRO.BURNINGCOST(A3:A16,B3:B16,H3,I3,D3:D10,E3:E10,F3:F10,H5,I5)")
+for row in bc.iter_rows(min_row=20, max_row=29, min_col=2, max_col=6):
+    for c in row:
+        c.number_format = "0.000" if c.column == 4 else "#,##0"
+for r in range(20, 30):
+    bc[f"G{r}"].number_format = "0.0%"
+bc.column_dimensions["A"].width = 14
+for col in "BCDEFGHI":
+    bc.column_dimensions[col].width = 16
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

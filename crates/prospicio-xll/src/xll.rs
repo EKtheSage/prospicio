@@ -463,4 +463,5 @@ mod exports {
     udf!(pro_trended_present, prior_indicated, prior_implemented, trend);
     udf!(pro_cred_weighted, estimate, credibility, complement);
     udf!(pro_expenses, ratios, fixed_shares);
+    udf!(pro_burningcost, accident, amounts, limits, attachments, years, premiums, development, trend, trend_to, threshold, agg_deductible, agg_limit);
 }

@@ -77,6 +77,7 @@ category of Insert Function:
 | `PRO.TRENDED.PRESENT(prior_indicated, prior_implemented, trend)` | The trended present rates complement, as a change |
 | `PRO.CRED.WEIGHTED(estimate, credibility, complement)` | A credibility-weighted estimate |
 | `PRO.EXPENSES(ratios, [fixed_shares])` | The premium-based projection's fixed and variable expense ratios |
+| `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost from large losses: each accident year's trended layer losses, developed, over its premium |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
@@ -298,7 +299,10 @@ real Excel.
     interest falls below it, so the two never mix. `PRO.YEARFRACTION`
     shows the conversion. `PRO.ONLEVEL`'s `given` reads its changes as
     the cumulative levels an exhibit prints (`RateHistory::from_levels`),
-    so a sheet can reproduce a book's rounded factors.
+    so a sheet can reproduce a book's rounded factors. An accident date
+    is the exception: `PRO.BURNINGCOST` puts an Excel date at its exact
+    decimal year (day of the year over the days in it), since the grid
+    would move 31 December into the next accident year.
 
 ## Parity plan
 
@@ -325,7 +329,7 @@ order, one small PR each, those already done struck through:
    loss and surplus cession~~;
    ~~credibility (Buhlmann-Straub, limited fluctuation)~~; ~~ratemaking
    (trend fits and lengths, the rate level, the experience methods and
-   the indicated rate)~~; burning cost.
+   the indicated rate)~~; ~~burning cost~~.
 4. Aggregate: a compound distribution of a count and a severity, its
    moments, VaR, TVaR and layer statistics.
 

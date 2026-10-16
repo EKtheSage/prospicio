@@ -104,6 +104,7 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.TRENDED.PRESENT(prior_indicated, prior_implemented, trend)` | Trended present rates complement |
 | `PRO.CRED.WEIGHTED(estimate, credibility, complement)` | Credibility-weighted estimate |
 | `PRO.EXPENSES(ratios, [fixed_shares])` | Fixed and variable expense ratios |
+| `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost by accident year |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | Exposure-rated risk profile by band, with a total |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),

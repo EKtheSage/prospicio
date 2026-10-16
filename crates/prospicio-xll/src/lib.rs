@@ -15,6 +15,7 @@
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
 pub mod credibility;
+pub mod experience;
 pub mod exposure;
 pub mod pricing;
 pub mod ratemaking;
@@ -1098,6 +1099,62 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: ratemaking::expenses,
+    },
+    Function {
+        symbol: "pro_burningcost",
+        name: "PRO.BURNINGCOST",
+        help: "Burning cost from large losses: each accident year's trended layer losses, developed, over its premium.",
+        args: &[
+            Arg {
+                name: "accident",
+                help: "Each loss's accident date (an Excel date or a decimal year): a column",
+            },
+            Arg {
+                name: "amounts",
+                help: "Each loss's amount (incurred at the latest valuation), the same count",
+            },
+            Arg {
+                name: "limits",
+                help: "Each layer's limit, a row (or \"unlimited\")",
+            },
+            Arg {
+                name: "attachments",
+                help: "Each layer's attachment: one, or one per limit",
+            },
+            Arg {
+                name: "years",
+                help: "The accident years to rate, a column",
+            },
+            Arg {
+                name: "premiums",
+                help: "Each year's on-level subject premium (or exposure)",
+            },
+            Arg {
+                name: "development",
+                help: "Each year's excess development factor for its layer losses: one, or one per year; 1 if omitted",
+            },
+            Arg {
+                name: "trend",
+                help: "Annual severity trend (0.05 for 5%) to trend_to, or a trend factor per loss; none if omitted",
+            },
+            Arg {
+                name: "trend_to",
+                help: "The prospective period's average accident date the losses are trended to",
+            },
+            Arg {
+                name: "threshold",
+                help: "The reporting threshold: losses trended below threshold times the largest trend factor are left out",
+            },
+            Arg {
+                name: "agg_deductible",
+                help: "Each layer's annual aggregate deductible: one, or one per layer; none if omitted",
+            },
+            Arg {
+                name: "agg_limit",
+                help: "Each layer's annual aggregate limit: one, or one per layer; none if omitted",
+            },
+        ],
+        run: experience::burning_cost,
     },
 ];
 

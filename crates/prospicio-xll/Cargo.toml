@@ -19,4 +19,5 @@ crate-type = ["cdylib", "rlib"]
 prospicio-core.workspace = true
 prospicio-reserving.workspace = true
 prospicio-prob.workspace = true
+prospicio-aggregate.workspace = true
 prospicio-pricing.workspace = true
