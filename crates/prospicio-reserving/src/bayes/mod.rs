@@ -24,14 +24,14 @@
 //! over a number type and differentiated with forward-mode dual numbers;
 //! its `reserves` are a [`PredictiveDistribution`] by origin.
 //!
-//! [`BayesOdp::one_year`] and [`BayesBf::one_year`] give the one-year view,
-//! the claims development result over the coming year, by reweighting the
-//! posterior draws with Pareto smoothed importance sampling and refitting
-//! the simulations whose Pareto `k` is too high ([`BayesOneYear`],
-//! decision 16). The view is written once over one internal interface
-//! that every model's one-year view implements, and a conformance suite
-//! runs on each (decision 17), so Meyers' models and [`Compartmental`] can
-//! follow.
+//! [`BayesOdp::one_year`], [`BayesBf::one_year`], [`Meyers::one_year`] and
+//! [`Compartmental::one_year`] give the one-year view, the claims
+//! development result over the coming year, by reweighting the posterior
+//! draws with Pareto smoothed importance sampling, moment-matching the
+//! simulations whose Pareto `k` is too high and refitting those matching
+//! cannot rescue ([`BayesOneYear`], decisions 16, 18 and 20). The view is
+//! written once over one internal interface that every model's one-year
+//! view implements, and a conformance suite runs on each (decision 17).
 //!
 //! # Seeds
 //!
@@ -49,7 +49,11 @@
 //! The one-year view's simulations take the first value of stream
 //! `u64::MAX` of the simulations' derived seed (the fit's, or the
 //! segment's), and simulation `i` stream `i` of it; a refitted simulation
-//! samples from a seed drawn on its own stream.
+//! samples from a seed drawn on its own stream. [`Compartmental`]'s view
+//! adds standard normal effects for the origins and ages with no observed
+//! cell to each posterior draw: draw `d` from stream `d` of the first
+//! value of stream `u64::MAX` of the view's seed, which no simulation
+//! reaches (decision 20).
 //! The pilot run of [`Meyers`] and [`Compartmental`], which sets the
 //! sampling scale, takes stream
 //! `u64::MAX` of its chains' seed (the segment's, over segments), which no

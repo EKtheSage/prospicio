@@ -24,7 +24,8 @@ meyers_one_year(
   target_accept = 0.95,
   max_depth = 10,
   k_threshold = 0.7,
-  refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all")
+  refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
+  max_refits = NULL
 )
 
 meyers_one_year_segments(
@@ -48,7 +49,8 @@ meyers_one_year_segments(
   dependence = c("independent", "rank_correlation", "synchronized"),
   spearman = NULL,
   k_threshold = 0.7,
-  refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all")
+  refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
+  max_refits = NULL
 )
 }
 \arguments{
@@ -108,6 +110,12 @@ affine maps to the moments the weights estimate (moment matching, as
 above \code{k_threshold}; \code{"refit_flagged"} refits it with NUTS;
 \code{"reweight_only"} reweights it anyway (fast, biased where k is high);
 \code{"refit_all"} refits every simulation, to check the reweighting.}
+
+\item{max_refits}{The most simulations refitted with NUTS: the first
+this many due for a refit, in simulation order; the others are
+reweighted as they are (as unreliable as their k says), listed in
+\code{unrefitted} and warned about. \code{NULL} (the default) refits every one,
+\code{0} none.}
 
 \item{dependence}{How the segments depend on each other:
 \code{"independent"}, each segment's own posterior and simulations; or

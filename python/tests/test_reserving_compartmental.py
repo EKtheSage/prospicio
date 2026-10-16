@@ -437,3 +437,48 @@ def test_model_2_prior_predictive(tri):
     assert 0.2 < paid_120 / 104_437 < 1.5
     again = Compartmental.model_2(GM2, seed=4).prior_predictive(tri, "premium", n_sims=300)
     assert again["paid"].draw_matrix() == paths["paid"].draw_matrix()
+
+
+def test_one_year(tri, fit):
+    from prospicio.reserving import CompartmentalOneYearFit
+
+    model = Compartmental(GM, **QUICK)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        view = model.one_year(
+            tri, "paid", "premium", incurred="incurred", refit="reweight_only"
+        )
+    assert isinstance(view, CompartmentalOneYearFit)
+    assert isinstance(view.fit, CompartmentalFit)
+    # The lifetime fit is fit's.
+    assert view.fit.reserves.draw_matrix() == fit.reserves.draw_matrix()
+    assert view.origins == fit.origins and len(view.origins) == 10
+    assert isinstance(view.cdr, PredictiveDistribution)
+    assert view.cdr.n_sims == 2000 and len(view.cdr.components()) == 10
+    assert len(view.pareto_k) == 2000
+    assert view.refitted == [] and view.moment_matched == [] and view.unrefitted == []
+    assert 0.0 <= view.flagged_share <= 1.0 and view.k_threshold == 0.7
+    assert view.cdr.variance() < view.fit.reserves.variance()
+    for o, l, r, u in zip(view.origins, view.latest_paid, view.opening_reserve, view.opening_ultimate):
+        assert math.isclose(l + r, u)
+    frame = view.to_frame()
+    assert list(frame.columns) == [
+        "origin", "premium", "latest_paid", "opening_ultimate", "opening_reserve",
+        "cdr_mean", "cdr_std_dev",
+    ]
+    totals = view.totals_frame()
+    assert "flagged_share" in totals.columns
+    assert "CompartmentalOneYearFit(origins=10" in repr(view)
+    # Moment matching without refits (max_refits=0) lists and warns about
+    # what it leaves.
+    small = Compartmental(GM, n_sims=40)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        budget = small.one_year(tri, "paid", "premium", incurred="incurred", max_refits=0)
+    assert budget.refitted == []
+    flagged = [i for i, k in enumerate(budget.pareto_k) if math.isnan(k) or k > 0.7]
+    assert sorted(budget.moment_matched + budget.unrefitted) == flagged
+    if budget.unrefitted:
+        assert any("beyond max_refits" in str(w.message) for w in record)
+    with pytest.raises(ValueError, match="exactly one"):
+        model.one_year(tri, "paid", "premium")

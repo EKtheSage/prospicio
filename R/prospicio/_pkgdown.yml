@@ -251,6 +251,7 @@ reference:
       - meyers_fit
       - meyers_fits
       - compartmental_fit
+      - compartmental_one_year_fit
       - compartmental_priors
       - compartmental_prior_predictive
       - one_year_fit

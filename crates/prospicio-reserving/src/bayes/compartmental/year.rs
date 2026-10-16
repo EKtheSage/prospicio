@@ -20,6 +20,16 @@
 //! reweighting the draws by the year's cells updates them, where the
 //! lifetime fit draws them afresh in each simulation. Nothing else the
 //! year informs is drawn afresh.
+//!
+//! `theta` holds every effect centred, `u = τ z` (for an origin's `RLR`
+//! and `RRF` pair `u₁ = τ₁ z₁`, `u₂ = τ₂ (ρ z₁ + sqrt(1 - ρ²) z₂)`), not
+//! the `z` NUTS samples: the year's cells pin an origin's effect, which on
+//! the `z` scale is a curved ridge `z = u / τ` that the affine maps of
+//! moment matching cannot follow, and on the centred scale a shift and a
+//! scaling. On company 337 matching rescues about 1 in 10 of model 1's
+//! flagged simulations on the `z` scale and about 19 in 20 on the centred
+//! one. The map is smooth and one to one; its log Jacobian enters
+//! [`YearModel::log_posterior`] (conformance check 5 checks it).
 
 use std::cell::Cell;
 
@@ -245,8 +255,10 @@ impl<'a> CompartmentalYear<'a> {
 
     /// The fit's draws `sampled` (the observed cells' model `observed`, on
     /// the unconstrained scale) with a standard normal `z` for every level
-    /// the observed cells do not have, draw `d` from stream `d` of `seed`:
-    /// the posterior of [`Model::full`], whose draws this year takes.
+    /// the observed cells do not have, draw `d` from stream `d` of `seed`,
+    /// then centred: the posterior of [`Model::full`], whose draws this
+    /// year takes. It counts the draws as `PosteriorDraws::transform`
+    /// visits them, which is in order.
     pub(super) fn opening_draws(
         &self,
         observed: &Model,

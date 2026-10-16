@@ -51,11 +51,15 @@ const SIMS: usize = 500;
 const REFIT_SIMS: usize = 40;
 
 /// Model 1's floor on `rescued`, bound on `gap_matched` and band on
-/// `life_ratio`, from `seed_sweep` over seeds 0 to 19 (mean, sd and the
-/// extreme seed are in the design note's decision 20).
-const RESCUED_FLOOR: f64 = 0.0;
-const GAP_BOUND: f64 = 1.0;
-const LIFE_BAND: (f64, f64) = (0.0, 2.0);
+/// `life_ratio`, from `seed_sweep` over seeds 0 to 19 (mean, sd, extreme
+/// seed): `rescued` 0.955 (0.017, min 0.911); `gap_matched` 0.051
+/// (0.025, max 0.150 at seed 14, the next 0.072), against
+/// `gap_reweighted` 0.156 (0.037), above it at every seed; `life_ratio`
+/// 0.804 (0.031, from 0.756 to 0.865). The gap's tail is heavy (one seed
+/// at 4 sds), so its bound is 0.20, above the mean plus 4 sds (0.150).
+const RESCUED_FLOOR: f64 = 0.88;
+const GAP_BOUND: f64 = 0.20;
+const LIFE_BAND: (f64, f64) = (0.68, 0.93);
 
 /// Model 2's comparison: simulations matched (no refit) and refitted.
 const SIMS_2: usize = 200;
@@ -345,21 +349,23 @@ fn model_2_comparison() {
     summarise("model 2", &ms);
 }
 
-/// Wall times at 10,000 simulations (ignored; release build): model 1
-/// reweighting only and at the default, model 2 reweighting only and
-/// moment matching without refits (`max_refits` 0), with the number of
-/// refits the default would make.
+/// Wall times (ignored; release build): model 1 at 10,000 simulations
+/// reweighting only and at the default; model 2 at 10,000 reweighting only
+/// and at 1,000 moment matching without refits (`max_refits` 0), with the
+/// number of refits the default would make.
 #[test]
 #[ignore]
 fn runtime() {
     for two in [false, true] {
         let (only, t_only) = view(two, 10_000, 0, OneYearRefit::ReweightOnly, None);
-        let budget = two.then_some(0);
-        let (default, t_default) = view(two, 10_000, 0, OneYearRefit::default(), budget);
+        let (sims, budget) = if two {
+            (1_000, Some(0))
+        } else {
+            (10_000, None)
+        };
+        let (default, t_default) = view(two, sims, 0, OneYearRefit::default(), budget);
         println!(
-            "model {}: 10,000 simulations: ReweightOnly {t_only:.1} s (flagged {:.3}), default \
-             with max_refits {budget:?} {t_default:.1} s (matched {}, refitted {}, left \
-             unrefitted {})",
+            "model {}: 10,000 simulations ReweightOnly {t_only:.1} s (flagged {:.3}); {sims}              simulations at the default with max_refits {budget:?} {t_default:.1} s (matched              {}, refitted {}, left unrefitted {})",
             if two { 2 } else { 1 },
             only.flagged_share(),
             default.moment_matched.len(),

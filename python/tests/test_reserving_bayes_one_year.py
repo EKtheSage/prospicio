@@ -452,3 +452,26 @@ def test_meyers_one_year_segments():
     assert len(views.diagnostics_frame()) == 2
     with pytest.raises(ValueError, match="(?i)synchroni"):
         Meyers(n_sims=10, dependence="synchronized").one_year_segments(tri, "paid", "premium")
+
+
+def test_max_refits():
+    # A budget refits the first simulations due for a refit and reweights
+    # the others, listing them and warning; the years are the same.
+    tri = tiny()
+    model = BayesOdp(tune=200, draws=200, n_sims=12, seed=2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # short chains may miss a threshold
+        flagged = model.one_year(tri, "paid", k_threshold=0.3, refit="refit_flagged")
+    assert len(flagged.refitted) >= 2 and flagged.unrefitted == []
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        one = model.one_year(
+            tri, "paid", k_threshold=0.3, refit="refit_flagged", max_refits=1
+        )
+    assert one.pareto_k == flagged.pareto_k
+    assert one.refitted == flagged.refitted[:1]
+    assert one.unrefitted == flagged.refitted[1:]
+    left = [str(w.message) for w in record if "beyond max_refits" in str(w.message)]
+    assert len(left) == 1 and str(len(one.unrefitted)) in left[0]
+    with pytest.raises(OverflowError):
+        model.one_year(tri, "paid", max_refits=-1)

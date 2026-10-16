@@ -2046,7 +2046,9 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #' `refitted` (the simulations refitted with NUTS, 1-based),
 #' `moment_matched` (the simulations moment matching rescued, 1-based;
 #' empty unless `refit = "moment_match_then_refit"`, when each flagged
-#' simulation is in it or in `refitted`),
+#' simulation is in it, in `refitted` or in `unrefitted`), `unrefitted`
+#' (the simulations due for a refit beyond `max_refits`, reweighted
+#' instead, 1-based),
 #' `refit_warnings` (how many refits had a diagnostic warning),
 #' `k_threshold` and `flagged_share` (the share of simulations above it,
 #' whether or not they were refitted). A `bayes_one_year_fits` has the
@@ -2054,7 +2056,7 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #' `premium` (Meyers' only) and `diagnostics` (a data.frame as
 #' [bayes_odp_segments()]'s), and with `cdr` keyed by the triangle's keys
 #' and `origin`; `scale`, `premium`, `pareto_k`, `refitted`,
-#' `moment_matched`, `refit_warnings` and `flagged_share` need a
+#' `moment_matched`, `unrefitted`, `refit_warnings` and `flagged_share` need a
 #' single-segment fit: use
 #' [segment()] or [totals_frame()]. `as.data.frame()` has one row per
 #' segment and origin: `origin`, `latest`, `opening_ultimate`,
@@ -2080,6 +2082,11 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #'   above `k_threshold`; `"refit_flagged"` refits it with NUTS;
 #'   `"reweight_only"` reweights it anyway (fast, biased where k is high);
 #'   `"refit_all"` refits every simulation, to check the reweighting.
+#' @param max_refits The most simulations refitted with NUTS: the first
+#'   this many due for a refit, in simulation order; the others are
+#'   reweighted as they are (as unreliable as their k says), listed in
+#'   `unrefitted` and warned about. `NULL` (the default) refits every one,
+#'   `0` none.
 #' @param ptr A `BayesOneYearFit` or `BayesOneYearFits` pointer; used
 #'   internally.
 #' @returns A `bayes_one_year_fit` or `bayes_one_year_fits` object.
@@ -2128,6 +2135,9 @@ bayes_one_year_fit <- S7::new_class(
       }),
       moment_matched = S7::new_property(S7::class_integer, getter = function(self) {
         as.integer(self@ptr$moment_matched())
+      }),
+      unrefitted = S7::new_property(S7::class_integer, getter = function(self) {
+        as.integer(self@ptr$unrefitted())
       }),
       refit_warnings = S7::new_property(S7::class_integer, getter = function(self) {
         as.integer(self@ptr$refit_warnings())
@@ -2196,6 +2206,9 @@ bayes_one_year_fits <- S7::new_class(
       moment_matched = one(S7::class_integer, function(p) {
         as.integer(rust_result(p$moment_matched()))
       }),
+      unrefitted = one(S7::class_integer, function(p) {
+        as.integer(rust_result(p$unrefitted()))
+      }),
       refit_warnings = one(S7::class_integer, function(p) {
         as.integer(rust_result(p$refit_warnings()))
       }),
@@ -2225,9 +2238,10 @@ bayes_odp_run <- function(intercept_sd, origin_sd, development_sd, chains, tune,
   )
 }
 
-# One warning if any NUTS refit of a one-year view failed its diagnostics;
-# `labels` prefix each segment's count, `refits` and `warned` count them.
-warn_refits <- function(caller, labels, refits, warned) {
+# One warning if any NUTS refit of a one-year view failed its diagnostics,
+# and another if max_refits left simulations unrefitted; `labels` prefix
+# each segment's count, `refits`, `warned` and `unrefitted` count them.
+warn_refits <- function(caller, labels, refits, warned, unrefitted) {
   failed <- warned > 0
   if (any(failed)) {
     warning(caller, ": the MCMC diagnostics of NUTS refits in the one-year view failed ",
@@ -2235,6 +2249,19 @@ warn_refits <- function(caller, labels, refits, warned) {
             paste0(labels[failed], warned[failed], " of ", refits[failed], " refits",
                    collapse = "; "), call. = FALSE)
   }
+  left <- unrefitted > 0
+  if (any(left)) {
+    warning(caller, ": simulations due for a refit beyond max_refits were reweighted ",
+            "instead, their reweighting as unreliable as their Pareto k (listed in ",
+            "unrefitted): ", paste0(labels[left], unrefitted[left], collapse = "; "),
+            call. = FALSE)
+  }
+}
+
+# `max_refits` as Rust takes it: NULL for no limit, else a non-negative
+# whole number.
+max_refits_arg <- function(max_refits) {
+  if (is.null(max_refits)) NULL else single_number(max_refits, "max_refits")
 }
 
 #' @rdname bayes_one_year_fit
@@ -2244,21 +2271,24 @@ bayes_odp_one_year <- function(triangle, column = NULL, intercept_sd = 10, origi
                                tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
                                target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
                                refit = c("moment_match_then_refit", "refit_flagged",
-                                         "reweight_only", "refit_all")) {
+                                         "reweight_only", "refit_all"),
+                               max_refits = NULL) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   refit <- match.arg(refit)
   s <- bayes_odp_run(intercept_sd, origin_sd, development_sd, chains, tune, draws, n_sims, seed,
                      target_accept, max_depth)
   ptr <- rust_result(triangle@ptr$bayes_odp_one_year(
-    column, s$priors, process, s$run, single_number(k_threshold, "k_threshold"), refit))
+    column, s$priors, process, s$run, single_number(k_threshold, "k_threshold"), refit,
+    max_refits_arg(max_refits)))
   view <- bayes_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
   if (length(failed)) {
     warning("bayes_odp_one_year: the MCMC diagnostics failed; check them before relying on the ",
             "fit: ", paste(failed, collapse = "; "), call. = FALSE)
   }
-  warn_refits("bayes_odp_one_year", "", length(view@refitted), view@refit_warnings)
+  warn_refits("bayes_odp_one_year", "", length(view@refitted), view@refit_warnings,
+              length(view@unrefitted))
   view
 }
 
@@ -2273,7 +2303,8 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
                                                        "synchronized"),
                                         spearman = NULL, k_threshold = 0.7,
                                         refit = c("moment_match_then_refit", "refit_flagged",
-                                                  "reweight_only", "refit_all")) {
+                                                  "reweight_only", "refit_all"),
+                                        max_refits = NULL) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
@@ -2282,6 +2313,7 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
                      target_accept, max_depth)
   ptr <- rust_result(triangle@ptr$bayes_odp_one_year_segments(
     column, s$priors, process, s$run, single_number(k_threshold, "k_threshold"), refit,
+    max_refits_arg(max_refits),
     dependence, spearman_arg(spearman)))
   view <- bayes_one_year_fits(ptr = ptr)
   d <- view@diagnostics
@@ -2299,7 +2331,8 @@ bayes_odp_one_year_segments <- function(triangle, column = NULL, intercept_sd = 
             call. = FALSE)
   }
   counts <- view@ptr$refit_counts()
-  warn_refits("bayes_odp_one_year_segments", labels, counts$refits, counts$warned)
+  warn_refits("bayes_odp_one_year_segments", labels, counts$refits, counts$warned,
+              counts$unrefitted)
   view
 }
 
@@ -2708,21 +2741,24 @@ meyers_one_year <- function(triangle, column, premium, model = c("crc", "csr", "
                             chains = 4, tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
                             target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
                             refit = c("moment_match_then_refit", "refit_flagged",
-                                      "reweight_only", "refit_all")) {
+                                      "reweight_only", "refit_all"),
+                            max_refits = NULL) {
   s <- meyers_args(triangle, column, premium, logelr_mean, logelr_sd, origin_sd,
                    development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed,
                    target_accept, max_depth)
   model <- match.arg(model)
   refit <- match.arg(refit)
   ptr <- rust_result(triangle@ptr$meyers_one_year(
-    column, premium, model, s$priors, s$run, single_number(k_threshold, "k_threshold"), refit))
+    column, premium, model, s$priors, s$run, single_number(k_threshold, "k_threshold"), refit,
+    max_refits_arg(max_refits)))
   view <- bayes_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
   if (length(failed)) {
     warning("meyers_one_year: the MCMC diagnostics failed; check them before relying on the ",
             "fit: ", paste(failed, collapse = "; "), call. = FALSE)
   }
-  warn_refits("meyers_one_year", "", length(view@refitted), view@refit_warnings)
+  warn_refits("meyers_one_year", "", length(view@refitted), view@refit_warnings,
+              length(view@unrefitted))
   view
 }
 
@@ -2737,7 +2773,8 @@ meyers_one_year_segments <- function(triangle, column, premium, model = c("crc",
                                                     "synchronized"),
                                      spearman = NULL, k_threshold = 0.7,
                                      refit = c("moment_match_then_refit", "refit_flagged",
-                                               "reweight_only", "refit_all")) {
+                                               "reweight_only", "refit_all"),
+                                     max_refits = NULL) {
   s <- meyers_args(triangle, column, premium, logelr_mean, logelr_sd, origin_sd,
                    development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed,
                    target_accept, max_depth)
@@ -2746,6 +2783,7 @@ meyers_one_year_segments <- function(triangle, column, premium, model = c("crc",
   refit <- match.arg(refit)
   ptr <- rust_result(triangle@ptr$meyers_one_year_segments(
     column, premium, model, s$priors, s$run, single_number(k_threshold, "k_threshold"), refit,
+    max_refits_arg(max_refits),
     dependence, spearman_arg(spearman)))
   view <- bayes_one_year_fits(ptr = ptr)
   d <- view@diagnostics
@@ -2763,7 +2801,8 @@ meyers_one_year_segments <- function(triangle, column, premium, model = c("crc",
             call. = FALSE)
   }
   counts <- view@ptr$refit_counts()
-  warn_refits("meyers_one_year_segments", labels, counts$refits, counts$warned)
+  warn_refits("meyers_one_year_segments", labels, counts$refits, counts$warned,
+              counts$unrefitted)
   view
 }
 
@@ -3004,7 +3043,8 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
                               tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
                               target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
                               refit = c("moment_match_then_refit", "refit_flagged",
-                                        "reweight_only", "refit_all")) {
+                                        "reweight_only", "refit_all"),
+                              max_refits = NULL) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
   refit <- match.arg(refit)
@@ -3015,14 +3055,16 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
            single_number(seed, "seed"), single_number(target_accept, "target_accept"),
            single_number(max_depth, "max_depth"))
   ptr <- rust_result(triangle@ptr$bayes_bf_one_year(
-    cols[1], cols[2], priors, process, run, single_number(k_threshold, "k_threshold"), refit))
+    cols[1], cols[2], priors, process, run, single_number(k_threshold, "k_threshold"), refit,
+    max_refits_arg(max_refits)))
   view <- bayes_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
   if (length(failed)) {
     warning("bayes_bf_one_year: the MCMC diagnostics failed; check them before relying on the ",
             "fit: ", paste(failed, collapse = "; "), call. = FALSE)
   }
-  warn_refits("bayes_bf_one_year", "", length(view@refitted), view@refit_warnings)
+  warn_refits("bayes_bf_one_year", "", length(view@refitted), view@refit_warnings,
+              length(view@unrefitted))
   view
 }
 
@@ -3707,12 +3749,12 @@ check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
                   mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, meyers_fit,
                   meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, clark_fit,
-                  compartmental_fit)
+                  compartmental_fit, compartmental_one_year_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
          "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, ",
          "meyers_fit, meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, ",
-         "clark_fit or compartmental_fit",
+         "clark_fit, compartmental_fit or compartmental_one_year_fit",
          call. = FALSE)
   }
 }
@@ -3766,9 +3808,9 @@ check_fit <- function(fit) {
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
 #'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
-#'   [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit] or
-#'   [compartmental_fit] (a [clark_fit] or
-#'   [compartmental_fit] not for `development_frame()`).
+#'   [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit],
+#'   [compartmental_fit] or [compartmental_one_year_fit] (a [clark_fit] or
+#'   a compartmental fit not for `development_frame()`).
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
 #' @name fit_frames
@@ -3800,6 +3842,10 @@ development_frame <- function(fit) {
   if (S7::S7_inherits(fit, compartmental_fit)) {
     stop("a compartmental_fit has no development table; see its paid_table and outstanding_table",
          call. = FALSE)
+  }
+  if (S7::S7_inherits(fit, compartmental_one_year_fit)) {
+    stop("a compartmental_one_year_fit has no development table; see the paid_table and ",
+         "outstanding_table of its fit", call. = FALSE)
   }
   fit_table_frame(fit@ptr$development_table())
 }
@@ -4612,6 +4658,219 @@ compartmental_prior_predictive <- function(triangle, premium, priors,
 
 S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
   fit_table_frame(x@ptr$long_table())
+}
+
+#' One-year view of the compartmental model
+#'
+#' The claims development result over the coming year of Gesmann and
+#' Morris' compartmental model ([compartmental()]), by Pareto smoothed
+#' importance sampling of its posterior (decision 20 of
+#' `docs/design/reserving-bayes.md`). The posterior and the lifetime
+#' reserves are [compartmental()]'s for the same settings. Each simulation
+#' picks a posterior draw, draws the paid and outstanding of the cells
+#' valued in the next twelve months from it (every origin's next diagonal),
+#' reweights every posterior draw by the likelihood of those cells, and
+#' smooths the weights (one Pareto k per simulation). Origin `w`'s claims
+#' development result is the expected paid to the square's last age given
+#' the observed cells, less the year's paid and the same expectation given
+#' the year too; its mean is about zero. An origin with no observed cell
+#' (1997 on the papers' triangle) and, with development effects (model 2),
+#' an age with none take their effects as part of each posterior draw, so
+#' the year's cells update them.
+#'
+#' A simulation whose k is above `k_threshold` is flagged and handled as
+#' `refit` says (as [bayes_odp_one_year()]): by default moment-matched,
+#' and refitted with NUTS (this model's sampler, as long as the fit) only
+#' if its k stays above the threshold. On company 337 about four in five
+#' simulations are flagged; for model 1 matching rescues about nineteen in
+#' twenty of them, for model 2 almost none, so model 2's default view
+#' refits nearly every simulation at about a minute each: set `max_refits`
+#' to bound it. `compartmental_model_2_one_year()` takes model 2's
+#' settings, as [compartmental_model_2()].
+#'
+#' Failed MCMC diagnostics of the fit raise one [warning()] listing them,
+#' refits that failed theirs raise another, and simulations left
+#' unrefitted by `max_refits` another.
+#'
+#' Properties of a `compartmental_one_year_fit`: `fit` (the
+#' [compartmental_fit]), `origins` (the premium column's), per origin
+#' `latest_paid`, `opening_ultimate` and `opening_reserve` (the posterior
+#' mean reserve on the observed triangle); `cdr`, a
+#' [predictive_distribution] of the claims development result with
+#' dimension `origin` (a negative value is an adverse development);
+#' `pareto_k`, `refitted`, `moment_matched` and `unrefitted` (1-based),
+#' `refit_warnings`, `k_threshold` and `flagged_share`, as a
+#' [bayes_one_year_fit]'s. `as.data.frame()` has one row per origin:
+#' `origin`, `premium`, `latest_paid`, `opening_ultimate`,
+#' `opening_reserve`, and the `cdr_mean` and `cdr_std_dev` of the claims
+#' development result; [totals_frame()] their totals and the
+#' `flagged_share`.
+#'
+#' Errors: as [compartmental()]; a `k_threshold` that is `NaN`.
+#'
+#' This is Python's `Compartmental.one_year()`, which returns a
+#' `CompartmentalOneYearFit`.
+#'
+#' @inheritParams compartmental_fit
+#' @inheritParams bayes_one_year_fit
+#' @param ptr A `CompartmentalOneYearFit` pointer; used internally.
+#' @returns A `compartmental_one_year_fit` object.
+#' @seealso [compartmental()], [bayes_odp_one_year()], [meyers_one_year()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(1988:1992, 5:1),
+#'                    age = unlist(lapply(5:1, function(k) 12 * seq_len(k))),
+#'                    paid = c(9.6, 22.8, 33.3, 40.3, 45.1, 7.9, 19.5, 29.6, 36.8,
+#'                             8.7, 24.3, 35.4, 13.3, 33.0, 11.4),
+#'                    incurred = c(62.7, 64.0, 65.6, 65.3, 62.3, 62.1, 56.7, 56.6, 56.8,
+#'                                 64.0, 61.5, 63.2, 73.9, 75.1, 77.1),
+#'                    premium = rep(c(104.4, 88.9, 86.0, 99.3, 104.9), 5:1))
+#' tri <- triangle(long, "year", "age", c("paid", "incurred", "premium"))
+#' # Short chains, and reweighting only, for the example.
+#' view <- suppressWarnings(compartmental_one_year(
+#'   tri, "paid", "premium", gesmann_morris_priors(), incurred = "incurred", chains = 2,
+#'   tune = 150, draws = 150, target_accept = 0.9, n_sims = 500, refit = "reweight_only"))
+#' view@flagged_share
+#' # The one-year view is narrower than the lifetime view.
+#' c(one_year = sqrt(variance(view@cdr)), lifetime = sqrt(variance(view@fit@reserves)))
+#' as.data.frame(view)
+compartmental_one_year_fit <- S7::new_class(
+  "compartmental_one_year_fit",
+  package = "prospicio",
+  properties = local({
+    by_origin <- function(f) {
+      S7::new_property(S7::class_double, getter = function(self) {
+        stats::setNames(f(self@ptr), self@ptr$origins())
+      })
+    }
+    list(
+      ptr = S7::new_S3_class("CompartmentalOneYearFit"),
+      fit = compartmental_fit,
+      origins = S7::new_property(S7::class_character, getter = function(self) {
+        self@ptr$origins()
+      }),
+      latest_paid = by_origin(function(p) p$latest_paid()),
+      opening_ultimate = by_origin(function(p) p$opening_ultimate()),
+      opening_reserve = by_origin(function(p) p$opening_reserve()),
+      cdr = predictive_distribution,
+      pareto_k = S7::new_property(S7::class_double, getter = function(self) self@ptr$pareto_k()),
+      refitted = S7::new_property(S7::class_integer, getter = function(self) {
+        as.integer(self@ptr$refitted())
+      }),
+      moment_matched = S7::new_property(S7::class_integer, getter = function(self) {
+        as.integer(self@ptr$moment_matched())
+      }),
+      unrefitted = S7::new_property(S7::class_integer, getter = function(self) {
+        as.integer(self@ptr$unrefitted())
+      }),
+      refit_warnings = S7::new_property(S7::class_integer, getter = function(self) {
+        as.integer(self@ptr$refit_warnings())
+      }),
+      k_threshold = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$k_threshold()
+      }),
+      flagged_share = S7::new_property(S7::class_double, getter = function(self) {
+        self@ptr$flagged_share()
+      })
+    )
+  }),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr, fit = compartmental_fit(ptr = ptr$fit()),
+                   cdr = predictive_distribution(ptr = ptr$cdr()))
+  }
+)
+
+#' @rdname compartmental_one_year_fit
+#' @export
+compartmental_one_year <- function(triangle, paid, premium, priors, outstanding = NULL,
+                                   incurred = NULL, likelihood = c("normal", "lognormal"),
+                                   scale = c("amount", "loss_ratio"),
+                                   paid_response = c("cumulative", "incremental"),
+                                   rate_order = c("free", "ordered"),
+                                   start = c("data", "prior_centre"), chains = 4, tune = 1000,
+                                   draws = 2000, n_sims = 10000, seed = 0,
+                                   target_accept = 0.99, max_depth = 10, k_threshold = 0.7,
+                                   refit = c("moment_match_then_refit", "refit_flagged",
+                                             "reweight_only", "refit_all"),
+                                   max_refits = NULL) {
+  call <- sys.call()
+  check_triangle(triangle)
+  for (arg in c("paid", "premium")) {
+    value <- get(arg)
+    if (!is.character(value) || length(value) != 1 || is.na(value)) {
+      stop(sprintf("%s must be the name of a column", arg), call. = FALSE)
+    }
+  }
+  if (missing(priors)) {
+    stop(paste0("priors are required: use gesmann_morris_priors() for the paper's case study, ",
+                "or compartmental_priors(), and check them with compartmental_prior_predictive()"),
+         call. = FALSE)
+  }
+  p <- compartmental_prior_values(priors, call)
+  if (is.null(outstanding) == is.null(incurred)) {
+    stop(paste0("give exactly one of outstanding (a column of outstanding amounts) and ",
+                "incurred (a column of incurred amounts)"), call. = FALSE)
+  }
+  os <- if (is.null(incurred)) outstanding else incurred
+  if (!is.character(os) || length(os) != 1 || is.na(os)) {
+    stop(sprintf("%s must be the name of a column",
+                 if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
+  }
+  settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
+                "paid_and_outstanding", match.arg(rate_order), match.arg(start))
+  refit <- match.arg(refit)
+  ptr <- rust_result(triangle@ptr$compartmental_one_year(
+    paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
+    settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth),
+    single_number(k_threshold, "k_threshold"), refit, max_refits_arg(max_refits)),
+    call = call)
+  view <- compartmental_one_year_fit(ptr = ptr)
+  failed <- view@fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("compartmental_one_year: the MCMC diagnostics failed; check them before relying ",
+            "on the fit: ", paste(failed, collapse = "; "), call. = FALSE)
+  }
+  warn_refits("compartmental_one_year", "", length(view@refitted), view@refit_warnings,
+              length(view@unrefitted))
+  view
+}
+
+#' @rdname compartmental_one_year_fit
+#' @export
+compartmental_model_2_one_year <- function(triangle, paid, premium, priors, outstanding = NULL,
+                                           incurred = NULL, rate_order = c("free", "ordered"),
+                                           start = c("data", "prior_centre"), chains = 4,
+                                           tune = 2000, draws = 8000, n_sims = 10000, seed = 0,
+                                           target_accept = 0.999, max_depth = 10,
+                                           k_threshold = 0.7,
+                                           refit = c("moment_match_then_refit",
+                                                     "refit_flagged", "reweight_only",
+                                                     "refit_all"),
+                                           max_refits = NULL) {
+  if (missing(priors)) {
+    stop(paste0("priors are required: use gesmann_morris_2_priors() for the paper's model 2, ",
+                "or compartmental_priors(), and check them with compartmental_prior_predictive()"),
+         call. = FALSE)
+  }
+  compartmental_one_year(triangle, paid, premium, priors, outstanding = outstanding,
+                         incurred = incurred, likelihood = "lognormal", scale = "loss_ratio",
+                         paid_response = "incremental", rate_order = match.arg(rate_order),
+                         start = match.arg(start), chains = chains, tune = tune, draws = draws,
+                         n_sims = n_sims, seed = seed, target_accept = target_accept,
+                         max_depth = max_depth, k_threshold = k_threshold,
+                         refit = match.arg(refit), max_refits = max_refits)
+}
+
+S7::method(as.data.frame, compartmental_one_year_fit) <- function(x, ...) {
+  fit_table_frame(x@ptr$long_table())
+}
+S7::method(print, compartmental_one_year_fit) <- function(x, ...) {
+  cat(sprintf(paste0("<compartmental_one_year_fit> %d simulations, flagged share %s ",
+                     "(%d moment-matched, %d refitted, %d unrefitted)\n"),
+              length(x@pareto_k), format(x@flagged_share, digits = 3),
+              length(x@moment_matched), length(x@refitted), length(x@unrefitted)))
+  print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
 }
 S7::method(summary, compartmental_fit) <- function(object, ...) object@summary
 S7::method(print, compartmental_fit) <- function(x, ...) {
