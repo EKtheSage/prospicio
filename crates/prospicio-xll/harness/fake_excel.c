@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("fifty-six functions registered", registered == 56);
+    check("sixty-four functions registered", registered == 64);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -435,6 +435,19 @@ int main(int argc, char **argv) {
     XLOPER12 *yf = ((Fn1)GetProcAddress(xll, "pro_yearfraction"))(&june30);
     check("PRO.YEARFRACTION(DATE(2013,6,30)) is 2013.5", (yf->xltype & 0xFFF) == xltypeNum && yf->val.num == 2013.5);
     free12(yf);
+
+    /* Werner and Modlin, ch. 8: LR 65%, V 25%, Q 10%, F 6.5% is +10%. */
+    typedef XLOPER12 *(*Fn4)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+    XLOPER12 lr, vv, qq, ff;
+    lr.xltype = vv.xltype = qq.xltype = ff.xltype = xltypeNum;
+    lr.val.num = 0.65;
+    vv.val.num = 0.25;
+    qq.val.num = 0.10;
+    ff.val.num = 0.065;
+    XLOPER12 *ic = ((Fn4)GetProcAddress(xll, "pro_indicated_change"))(&lr, &vv, &qq, &ff);
+    check("PRO.INDICATED.CHANGE(0.65, 0.25, 0.10, 0.065) is +10%",
+          (ic->xltype & 0xFFF) == xltypeNum && fabs(ic->val.num - 0.10) < 1e-12);
+    free12(ic);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

@@ -96,6 +96,14 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.RATELEVEL(effective, changes, from, to, [period], [term], [applies], [given])` | One period's premium by rate level |
 | `PRO.AVGDATE(from, to, [period], [term], [basis])` | Average written or earned date of each period |
 | `PRO.TREND.FIT(times, values, [kind])` | Exponential or linear trend fit |
+| `PRO.LR.EXPERIENCE(earned_premium, losses, [on_level], [premium_trend], [development], [loss_trend], [lae])` | Loss ratio method experience |
+| `PRO.PP.EXPERIENCE(exposure, losses, [development], [loss_trend], [lae])` | Pure premium method experience |
+| `PRO.INDICATED.CHANGE(loss_ratio, variable, profit, [fixed_ratio])` | Indicated change (loss ratio method) |
+| `PRO.INDICATED.RATE(pure_premium, variable, profit, [fixed_per_exposure])` | Indicated rate (pure premium method) |
+| `PRO.PERMISSIBLE.LR(variable, profit, [fixed_ratio])` | Permissible loss ratio |
+| `PRO.TRENDED.PRESENT(prior_indicated, prior_implemented, trend)` | Trended present rates complement |
+| `PRO.CRED.WEIGHTED(estimate, credibility, complement)` | Credibility-weighted estimate |
+| `PRO.EXPENSES(ratios, [fixed_shares])` | Fixed and variable expense ratios |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | Exposure-rated risk profile by band, with a total |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
