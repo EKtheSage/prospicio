@@ -51,7 +51,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Pinned: the apt packages (wine64, gcc-mingw-w64-x86-64, osslsigncode)
+    # were checked on 24.04, and ubuntu-latest moves to 26.04 in October
+    # 2026.
+    runs-on: ubuntu-24.04
     env:
       # A step's own env is not visible to its `if`, so the signing step
       # reads this job-level flag.
@@ -87,7 +90,8 @@ jobs:
       - name: Test workbook
         run: |
           python3 -m pip install --quiet openpyxl
-          python3 -I crates/prospicio-xll/harness/make_workbook.py target/xll/prospicio-xll-test.xlsx
+          # Not -I: pip installs into the user site, which -I leaves out.
+          python3 crates/prospicio-xll/harness/make_workbook.py target/xll/prospicio-xll-test.xlsx
       - name: Bundle
         run: |
           mkdir -p dist/prospicio-xll
@@ -105,7 +109,7 @@ jobs:
   release:
     if: github.ref_type == 'tag'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
