@@ -64,6 +64,11 @@ category of Insert Function:
 | `PRO.CRED.Z(n, standard)` | Partial credibility by the square root rule |
 | `PRO.BUHLMANN(ratios, [weights], [estimator], [groups])` | Buhlmann-Straub: each group's weight, mean, credibility and premium |
 | `PRO.BUHLMANN.PARAMS(ratios, [weights], [estimator])` | Buhlmann-Straub structure parameters |
+| `PRO.YEARFRACTION(date)` | An Excel date on Werner and Modlin's half-month grid, as a year fraction |
+| `PRO.ONLEVEL(effective, changes, from, to, [period], [term], [applies], [given])` | Each period's on-level factor by the parallelogram method |
+| `PRO.RATELEVEL(effective, changes, from, to, [period], [term], [applies], [given])` | One period's premium by rate level, average and current levels |
+| `PRO.AVGDATE(from, to, [period], [term], [basis])` | Each period's average written or earned (accident) date, for trend lengths |
+| `PRO.TREND.FIT(times, values, [kind])` | An exponential or linear least-squares trend: annual change, R-squared |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
@@ -275,6 +280,17 @@ real Excel.
     uniform unless `spread` says `"tilted"` or `"auto"` (Python's default
     too, without its warning: the exhibit's mean SI column shows where a
     band's mean moved).
+19. **A date is a year fraction or an Excel date.** Ratemaking works in
+    year fractions on Werner and Modlin's half-month grid (`2011.5` is 1
+    July 2011, `ratemaking.md`), but a sheet holds dates. Every date
+    argument takes either: a number of 10,000 or more is an Excel date
+    (10,000 is 18 May 1927) and is put on the grid as `year_fraction`
+    puts a calendar date (30 June is 1 July), anything smaller is a year
+    fraction. No ratemaking year reaches 10,000 and no Excel date of
+    interest falls below it, so the two never mix. `PRO.YEARFRACTION`
+    shows the conversion. `PRO.ONLEVEL`'s `given` reads its changes as
+    the cumulative levels an exhibit prints (`RateHistory::from_levels`),
+    so a sheet can reproduce a book's rounded factors.
 
 ## Parity plan
 
@@ -299,8 +315,9 @@ order, one small PR each, those already done struck through:
 3. Pricing: ~~exposure curves (MBBEFD, Swiss Re, tabulated) and a
    layer's share, the Swiss Re calibrations~~; ~~a risk profile's layer
    loss and surplus cession~~;
-   ~~credibility (Buhlmann-Straub, limited fluctuation)~~; ratemaking (trend,
-   rate level, the indicated rate); burning cost.
+   ~~credibility (Buhlmann-Straub, limited fluctuation)~~; ratemaking
+   (~~trend fits and lengths, the rate level~~, the experience methods
+   and the indicated rate); burning cost.
 4. Aggregate: a compound distribution of a count and a severity, its
    moments, VaR, TVaR and layer statistics.
 

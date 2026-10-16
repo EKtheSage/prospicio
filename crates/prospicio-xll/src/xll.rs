@@ -450,4 +450,9 @@ mod exports {
     udf!(pro_cred_z, n, standard);
     udf!(pro_buhlmann, ratios, weights, estimator, groups);
     udf!(pro_buhlmann_params, ratios, weights, estimator);
+    udf!(pro_yearfraction, date);
+    udf!(pro_onlevel, effective, changes, from, to, period, term, applies, given);
+    udf!(pro_ratelevel, effective, changes, from, to, period, term, applies, given);
+    udf!(pro_avgdate, from, to, period, term, basis);
+    udf!(pro_trend_fit, times, values, kind);
 }
