@@ -234,6 +234,59 @@ for row in mk.iter_rows(min_row=9, max_row=19, min_col=2, max_col=14):
     for c in row:
         c.number_format = "0.000" if c.column == 5 else "#,##0"
 
+# The expected-loss methods on GenIns with R ChainLadder's ClarkCapeCod
+# premium, against chainladder-python 0.10.1's totals.
+GENINS = [
+    [357848, 1124788, 1735330, 2218270, 2745596, 3319994, 3466336, 3606286, 3833515, 3901463],
+    [352118, 1236139, 2170033, 3353322, 3799067, 4120063, 4647867, 4914039, 5339085],
+    [290507, 1292306, 2218525, 3235179, 3985995, 4132918, 4628910, 4909315],
+    [310608, 1418858, 2195047, 3757447, 4029929, 4381982, 4588268],
+    [443160, 1136350, 2128333, 2897821, 3402672, 3873311],
+    [396132, 1333217, 2180715, 2985752, 3691712],
+    [440832, 1288463, 2419861, 3483130],
+    [359480, 1421128, 2864498],
+    [376686, 1363294],
+    [344014],
+]
+el = wb.create_sheet("Expected loss")
+el["A1"] = "prospicio XLL test: expected-loss methods on GenIns (premium as in R's ?ClarkCapeCod)"
+el["A1"].font = Font(bold=True, size=13)
+el["A3"] = "AY"; el["L3"] = "Premium"; el["A3"].font = el["L3"].font = bold
+for c in range(10):
+    el.cell(row=3, column=2+c, value=12*(c+1)).font = bold
+for r, row in enumerate(GENINS):
+    el.cell(row=4+r, column=1, value=2001+r).font = bold
+    for c, x in enumerate(row):
+        el.cell(row=4+r, column=2+c, value=x).fill = inp
+    el.cell(row=4+r, column=12, value=10_000_000 + 400_000*r).fill = inp
+el["N3"] = "A priori LR"; el["N3"].font = bold; el["O3"] = 0.75; el["O3"].fill = inp
+G, P, O = "$B$4:$K$13", "$L$4:$L$13", "$A$4:$A$13"
+el["A16"] = "Bornhuetter-Ferguson"; el["A16"].font = bold
+el["A17"] = ArrayFormula("A17:G28", f"=PRO.BF({G},{P},$O$3,,,{O})")
+el["I16"] = "Benktander, 2 iterations"; el["I16"].font = bold
+el["I17"] = ArrayFormula("I17:O28", f"=PRO.BENKTANDER({G},{P},$O$3,2,,,{O})")
+el["A31"] = "Cape Cod, trend 5%, decay 0.75"; el["A31"].font = bold
+el["A32"] = ArrayFormula("A32:G43", f"=PRO.CAPECOD({G},{P},0.05,0.75,,,{O})")
+el["I31"] = "Expected loss"; el["I31"].font = bold
+el["I32"] = ArrayFormula("I32:O43", f"=PRO.EL({G},{P},$O$3,,,{O})")
+el["A46"] = "Check: total reserve against chainladder-python 0.10.1 (with a priori 0.75)"; el["A46"].font = bold
+for h, col in zip(["Method", "prospicio", "chainladder-python", "Match"], "ABCD"):
+    el[f"{col}47"] = h; el[f"{col}47"].font = bold
+for i, (name, f, x) in enumerate([
+        ("Bornhuetter-Ferguson", "=G28", 32357669.898322247),
+        ("Benktander, 2", "=O28", 27674175.15049441),
+        ("Cape Cod 5%, 0.75", "=G43", 22446795.86898648),
+        ("Expected loss", "=O43", 54141910.0)]):
+    row = 48 + i
+    el[f"A{row}"] = name; el[f"B{row}"] = f; el[f"C{row}"] = x
+    el[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-6*C{row}"
+el.column_dimensions["A"].width = 22
+for col in "BCDEFGHIJKLMNO":
+    el.column_dimensions[col].width = 12
+for row in el.iter_rows(min_row=17, max_row=50, min_col=2, max_col=15):
+    for c in row:
+        c.number_format = "#,##0"
+
 wb.calculation.fullCalcOnLoad = True
 wb.save(out)
 

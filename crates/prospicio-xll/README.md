@@ -25,7 +25,7 @@ is found, under Wine off Windows.
 
 `python3 harness/make_workbook.py prospicio-xll-test.xlsx` (needs
 openpyxl) writes a test workbook: RAA with every function in place and R
-ChainLadder's totals beside them, plus Layers, ODP, ODP draws and Mack bootstrap sheets.
+ChainLadder's totals beside them, plus Layers, ODP, ODP draws, Mack bootstrap and Expected loss (GenIns with premium) sheets.
 
 ## Install in Excel
 
@@ -54,6 +54,10 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's draws: a row per simulation, a column per origin and the total (at most 100000 rows) |
 | `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins])` | Mack bootstrap exhibit, laid out as `PRO.ODP` |
 | `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins])` | Mack bootstrap's draws, laid out as `PRO.ODP.SIMS` |
+| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method exhibit |
+| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson exhibit |
+| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander exhibit |
+| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod exhibit |
 | `PRO.VERSION()` | Version |
 | `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to the layer per ground-up loss |
@@ -66,6 +70,8 @@ Ctrl+Alt+F9 to recalculate.
 - `tail`: omitted for none, a factor such as `1.05`, or `"exponential"`,
   `"inverse_power"` or `"bondy"`.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...
+- `exposure`: premium per origin, a row or column of positive values;
+  `apriori`: the expected loss ratio, such as `0.75`.
 - `sims` (default 10000, at most 1000000), `seed` (default 0; the same seed
   gives the same table), `percentiles` (a row or column such as
   `{0.75,0.95,0.995}`), `process` (`"gamma"` or `"none"`; Mack's

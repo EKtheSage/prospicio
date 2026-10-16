@@ -12,9 +12,10 @@
 use prospicio_core::{Grain, Lag, Month};
 use prospicio_prob::{Distribution, PredictiveDistribution, Sampled};
 use prospicio_reserving::{
-    Average, ChainLadder, ChainLadderFit, CurveShape, Development, DevelopmentColumn, Long, Mack,
-    MackBootstrap, MackBootstrapFit, MackProcess, OdpBootstrap, OdpBootstrapFit,
-    ProcessDistribution, Tail, TailBondy, TailCurve, Triangle,
+    Average, Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ChainLadderFit, CurveShape,
+    Development, DevelopmentColumn, ExpectedLoss, ExpectedLossFit, Long, Mack, MackBootstrap,
+    MackBootstrapFit, MackProcess, OdpBootstrap, OdpBootstrapFit, ProcessDistribution, Tail,
+    TailBondy, TailCurve, Triangle,
 };
 
 use crate::sheet::{CellError, Grid, Value, position};
@@ -26,12 +27,31 @@ type Result<T> = std::result::Result<T, String>;
 
 /// The triangle laid out in `grid`.
 pub fn triangle(grid: &Grid) -> Result<Triangle> {
+    triangle_with(grid, None)
+}
+
+/// The measure name of an exposure column inside the triangle.
+const EXPOSURE: &str = "exposure";
+
+/// The triangle laid out in `grid`, with `exposure` (one value per origin)
+/// as a second measure on every observed cell of its origin when given.
+fn triangle_with(grid: &Grid, exposure: Option<&[f64]>) -> Result<Triangle> {
     if grid.rows < 1 || grid.columns < 2 {
         return Err("the triangle needs at least two development columns".into());
     }
     let mut origin = Vec::new();
     let mut age: Vec<Lag> = Vec::new();
     let mut values = Vec::new();
+    let mut exposures = Vec::new();
+    if let Some(e) = exposure {
+        if e.len() != grid.rows {
+            return Err(format!(
+                "exposure must have {} values, one per triangle row, got {}",
+                grid.rows,
+                e.len()
+            ));
+        }
+    }
     for r in 0..grid.rows {
         let mut ended = false;
         let mut observed = 0;
@@ -70,17 +90,24 @@ pub fn triangle(grid: &Grid) -> Result<Triangle> {
             origin.push(Month::january(2001 + r as i32));
             age.push(12 * (c as Lag + 1));
             values.push(x);
+            if let Some(e) = exposure {
+                exposures.push(e[r]);
+            }
             observed += 1;
         }
         if observed == 0 {
             return Err(format!("triangle row {} has no values", r + 1));
         }
     }
+    let mut measures: Vec<(&str, &[f64])> = vec![(COLUMN, &values)];
+    if exposure.is_some() {
+        measures.push((EXPOSURE, &exposures));
+    }
     Triangle::from_long(&Long {
         keys: &[],
         origin: &origin,
         development: DevelopmentColumn::Age(&age),
-        values: &[(COLUMN, &values)],
+        values: &measures,
         origin_grain: Grain::Year,
         development_grain: Grain::Year,
         cumulative: true,
@@ -594,4 +621,153 @@ pub fn mack_bootstrap_sims(args: &[Grid]) -> Result<Grid> {
     )?;
     let labels = origin_labels(&args[6], fit.mack.chain_ladder.origins.len())?;
     Ok(draws_table(&fit.reserves, labels))
+}
+
+/// The `exposure` argument: one positive number per origin, as a row or a
+/// column.
+fn exposure(grid: &Grid, origins: usize) -> Result<Vec<f64>> {
+    if grid.cells.len() != origins || (grid.rows != 1 && grid.columns != 1) {
+        return Err(format!(
+            "exposure must be a row or column of {origins} values, one per triangle row"
+        ));
+    }
+    grid.cells
+        .iter()
+        .enumerate()
+        .map(|(i, v)| match v {
+            Value::Number(x) if *x > 0.0 => Ok(*x),
+            other => Err(format!(
+                "exposure {} must be a positive number, got {other:?}",
+                i + 1
+            )),
+        })
+        .collect()
+}
+
+/// A required number argument.
+fn number(grid: &Grid, name: &str) -> Result<f64> {
+    match grid.as_scalar() {
+        Some(Value::Number(x)) => Ok(*x),
+        Some(v) if v.is_blank() => Err(format!("{name} is required")),
+        _ => Err(format!("{name} must be a single number")),
+    }
+}
+
+/// An optional number argument with a default.
+fn number_or(grid: &Grid, name: &str, default: f64) -> Result<f64> {
+    match grid.as_scalar() {
+        Some(v) if v.is_blank() => Ok(default),
+        _ => number(grid, name),
+    }
+}
+
+/// The triangle and exposure arguments of an expected-loss method.
+fn exposed_triangle(triangle_arg: &Grid, exposure_arg: &Grid) -> Result<Triangle> {
+    let e = exposure(exposure_arg, triangle_arg.rows)?;
+    triangle_with(triangle_arg, Some(&e))
+}
+
+/// The expected-loss methods' exhibit: Origin, Exposure, Latest, CDF,
+/// A priori (the loss ratio applied), Ultimate and Reserve per origin, then
+/// a total row.
+fn expected_loss_exhibit(fit: &ExpectedLossFit, labels: Vec<Value>) -> Grid {
+    let cl = &fit.chain_ladder;
+    let reserves = fit.reserves();
+    let mut rows = vec![
+        [
+            "Origin", "Exposure", "Latest", "CDF", "A priori", "Ultimate", "Reserve",
+        ]
+        .map(Value::from)
+        .to_vec(),
+    ];
+    for (i, label) in labels.into_iter().enumerate() {
+        rows.push(vec![
+            label,
+            Value::number(fit.exposure[i]),
+            Value::number(cl.latest[i]),
+            Value::number(cl.cdf[cl.latest_position[i]]),
+            Value::number(fit.apriori[i]),
+            Value::number(fit.ultimate[i]),
+            Value::number(reserves[i]),
+        ]);
+    }
+    rows.push(vec![
+        Value::from("Total"),
+        Value::number(fit.exposure.iter().sum()),
+        Value::number(cl.latest.iter().sum()),
+        Value::Empty,
+        Value::Empty,
+        Value::number(fit.total_ultimate()),
+        Value::number(fit.total_reserve()),
+    ]);
+    Grid::from_rows(rows)
+}
+
+/// The chain ladder an expected-loss method takes its pattern from.
+fn pattern(average_arg: &Grid, tail_arg: &Grid) -> Result<ChainLadder> {
+    Ok(ChainLadder {
+        development: development(average(average_arg)?),
+        tail: tail(tail_arg)?,
+    })
+}
+
+/// The expected loss method: exposure times the a priori loss ratio:
+/// `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])`.
+pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
+    let tri = exposed_triangle(&args[0], &args[1])?;
+    let fit = ExpectedLoss {
+        apriori: number(&args[2], "apriori")?,
+        chain_ladder: pattern(&args[3], &args[4])?,
+    }
+    .fit(&tri, COLUMN, EXPOSURE)
+    .map_err(|e| e.to_string())?;
+    let labels = origin_labels(&args[5], fit.chain_ladder.origins.len())?;
+    Ok(expected_loss_exhibit(&fit, labels))
+}
+
+/// Bornhuetter-Ferguson: the latest plus the a priori ultimate's
+/// unreported share:
+/// `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])`.
+pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
+    let tri = exposed_triangle(&args[0], &args[1])?;
+    let fit = BornhuetterFerguson {
+        apriori: number(&args[2], "apriori")?,
+        chain_ladder: pattern(&args[3], &args[4])?,
+    }
+    .fit(&tri, COLUMN, EXPOSURE)
+    .map_err(|e| e.to_string())?;
+    let labels = origin_labels(&args[5], fit.chain_ladder.origins.len())?;
+    Ok(expected_loss_exhibit(&fit, labels))
+}
+
+/// Benktander: Bornhuetter-Ferguson iterated, each pass taking the last
+/// ultimate as its a priori (1 is Bornhuetter-Ferguson):
+/// `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])`.
+pub fn benktander(args: &[Grid]) -> Result<Grid> {
+    let tri = exposed_triangle(&args[0], &args[1])?;
+    let fit = Benktander {
+        apriori: number(&args[2], "apriori")?,
+        n_iters: count(&args[3], "iterations", 1, 10_000)?,
+        chain_ladder: pattern(&args[4], &args[5])?,
+    }
+    .fit(&tri, COLUMN, EXPOSURE)
+    .map_err(|e| e.to_string())?;
+    let labels = origin_labels(&args[6], fit.chain_ladder.origins.len())?;
+    Ok(expected_loss_exhibit(&fit, labels))
+}
+
+/// Cape Cod (Stanard-Buhlmann): the a priori loss ratio estimated from the
+/// triangle, trended and decayed by distance between origins:
+/// `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])`.
+pub fn cape_cod(args: &[Grid]) -> Result<Grid> {
+    let tri = exposed_triangle(&args[0], &args[1])?;
+    let fit = CapeCod {
+        trend: number_or(&args[2], "trend", 0.0)?,
+        decay: number_or(&args[3], "decay", 1.0)?,
+        chain_ladder: pattern(&args[4], &args[5])?,
+    }
+    .fit(&tri, COLUMN, EXPOSURE)
+    .map_err(|e| e.to_string())?;
+    let labels = origin_labels(&args[6], fit.expected_loss.chain_ladder.origins.len())?;
+    Ok(expected_loss_exhibit(&fit.expected_loss, labels))
 }
