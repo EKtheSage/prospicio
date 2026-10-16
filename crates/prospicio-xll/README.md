@@ -81,6 +81,12 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.LAYER.VAR(limit, attachment, family, p1, p2, [p3])` | Variance of the layer loss per ground-up loss |
 | `PRO.LAYER.CV(limit, attachment, family, p1, p2, [p3])` | CV of the layer loss given a loss above the attachment |
 | `PRO.ILF(limit, basic_limit, family, p1, p2, [p3])` | Increased limit factor |
+| `PRO.EXPOSURE.CURVE(x, curve, p1, [p2], [p3])` | Exposure curve G(x) |
+| `PRO.EXPOSURE.SHARE(limit, attachment, mpl, curve, p1, [p2], [p3])` | Share of a risk's expected loss in a layer |
+| `PRO.EXPOSURE.QUANTILE(p, curve, p1, [p2], [p3])` | Destruction rate at each probability |
+| `PRO.EXPOSURE.STATS(curve, p1, [p2], [p3])` | b, g, mean rate, total loss probability |
+| `PRO.SWISSRE.C(rate)` | Swiss Re c of a mean destruction rate |
+| `PRO.SWISSRE.C.LAYER(limit, attachment, mpl, share)` | Swiss Re c of a layer's share |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
   one column per age; blank or `#N/A` where unobserved.
@@ -111,6 +117,12 @@ Ctrl+Alt+F9 to recalculate.
   with `"lp"`, the last piece only and the default, or `"wd"`, the whole
   distribution, in a second cell), `"gen_pareto"` (Riegel's: t,
   alpha_ini, alpha_tail).
+- `curve` and `p1`, `p2`, `p3` (exposure curves): `"swiss_re"` (c, such
+  as 1.5, 2, 3 or 4 for Swiss Re's Y1 to Y4, 5 for Lloyd's), `"mbbefd"`
+  (b, g) or `"tabulated"` (a range of x from 0 to 1, a range of G(x) from
+  0 to 1, and optionally `"linear"` or `"log-log"` interpolation);
+  `mpl`: a risk's maximum possible loss or sum insured, a number or a
+  range that broadcasts against the limits and attachments.
 - `limit`, `attachment`, `basic_limit`: a number, a range or
   `"unlimited"`. A column of attachments against a row of limits gives a
   table, e.g. `=PRO.LAYER(B1:E1, A2:A4, "pareto", 500, 2)`.
