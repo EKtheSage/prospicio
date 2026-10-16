@@ -18,7 +18,7 @@ use crate::distributions::{KeyArg, PyPredictiveDistribution, key_from_py};
 use crate::to_py;
 
 /// A family from its name and parameter.
-fn family(name: &str, theta: Option<f64>, power: Option<f64>) -> PyResult<Family> {
+pub(crate) fn family(name: &str, theta: Option<f64>, power: Option<f64>) -> PyResult<Family> {
     let f = match name {
         "gaussian" => Family::Gaussian,
         "poisson" => Family::Poisson,
@@ -43,7 +43,7 @@ fn family(name: &str, theta: Option<f64>, power: Option<f64>) -> PyResult<Family
 }
 
 /// A link from its name (`None` for the family's canonical link).
-fn link(name: Option<&str>, family: Family, power: Option<f64>) -> PyResult<Link> {
+pub(crate) fn link(name: Option<&str>, family: Family, power: Option<f64>) -> PyResult<Link> {
     Ok(match name {
         None => family.canonical_link(),
         Some("identity") => Link::Identity,
@@ -65,7 +65,7 @@ fn link(name: Option<&str>, family: Family, power: Option<f64>) -> PyResult<Link
     })
 }
 
-fn link_name(link: Link) -> String {
+pub(crate) fn link_name(link: Link) -> String {
     match link {
         Link::Identity => "identity".into(),
         Link::Log => "log".into(),
@@ -273,7 +273,7 @@ impl PyCoding {
 /// (2, ['(Intercept)', 'x'])
 #[pyclass(name = "Design", module = "prospicio.models", frozen)]
 pub(crate) struct PyDesign {
-    inner: Design,
+    pub(crate) inner: Design,
 }
 
 #[pymethods]

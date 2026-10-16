@@ -115,3 +115,13 @@
   third cumulant had fallen to the trait's default, which cancels at large
   means: compound skewness at 1,000 claims was 1.2e-7 off; it is now exact
   (#307).
+
+### Models
+
+- Python: the neural networks of `prospicio-nn` in `prospicio.models`:
+  `Cann` and `AttentionCann` (fit on a `Design`, `predict`,
+  `predict_distribution`, `correction`, early stopping; the attention
+  CANN's `attention` gives a `TokenAttention` of per-row, per-head
+  weights), and `OnnxModel` and `OnnxPredictor` for networks trained
+  elsewhere (onnxruntime parity). The wheel links Burn through the
+  bindings' default `nn` feature, which needs Rust 1.92 (#308).
