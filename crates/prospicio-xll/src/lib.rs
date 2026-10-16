@@ -179,6 +179,23 @@ pub static FUNCTIONS: &[Function] = &[
         run: reserving::odp_summary,
     },
     Function {
+        symbol: "pro_odp_sims",
+        name: "PRO.ODP.SIMS",
+        help: "ODP bootstrap's simulated reserves: one row per simulation, a column per origin and the total.",
+        args: &[
+            TRIANGLE,
+            Arg {
+                name: "sims",
+                help: "Number of simulations, 10000 if omitted (at most 100000, one row each)",
+            },
+            SEED,
+            TAIL,
+            PROCESS,
+            ORIGINS,
+        ],
+        run: reserving::odp_sims,
+    },
+    Function {
         symbol: "pro_lev",
         name: "PRO.LEV",
         help: "Limited expected value E[min(X, limit)] of a Pareto or lognormal severity, per limit.",

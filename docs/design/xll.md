@@ -24,6 +24,7 @@ category of Insert Function:
 | `PRO.CL.FACTORS(triangle, [average], [tail])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
 | `PRO.MACK(triangle, [average], [tail], [origins])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap: CL reserve, simulated mean, SD, CV and percentiles per origin, and the total |
+| `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's simulated reserves: one row per simulation, a column per origin and the total |
 | `PRO.VERSION()` | The prospicio version the add-in was built from |
 | `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value `E[min(X, limit)]`, per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to `limit` xs `attachment` per ground-up loss |
@@ -132,6 +133,10 @@ real Excel.
     about 0.2 s). The total's percentiles are of the simulated total, not
     the sum of the origins' percentiles; percentiles are the inverse of
     the empirical distribution function (R `type = 1`), as `Sampled`'s.
+    `PRO.ODP.SIMS` returns the draws themselves, the same ones for the
+    same `sims`, `seed`, `tail` and `process`, so a sheet can chart them or
+    compute its own statistics; it is capped at 100,000 rows (about 1 s and
+    35 MB of cells in Excel), under the sheet's 1,048,576 rows.
 
 15. **Distribution: CI builds it, a draft release carries it** (user,
     2026-10-16, "the next items"). `.github/workflows/xll.yml` builds the
@@ -159,8 +164,7 @@ real Excel.
 
 ## Open (for the user)
 
-- **Next functions:** open. The bootstrap's draws as a spilled column (for
-  a histogram on the sheet), Mack's bootstrap and the one-year view are
+- **Next functions:** open. Mack's bootstrap and the one-year view are
   each one function over existing crates. More severity families (gamma, Weibull, Burr, the piecewise
   Pareto) and the Pareto helpers (`pareto_extrapolation`,
   `alpha_between_layers`) are each a few lines when wanted.

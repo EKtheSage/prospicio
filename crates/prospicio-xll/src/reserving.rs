@@ -13,7 +13,7 @@ use prospicio_core::{Grain, Lag, Month};
 use prospicio_prob::{Distribution, Sampled};
 use prospicio_reserving::{
     Average, ChainLadder, ChainLadderFit, CurveShape, Development, DevelopmentColumn, Long, Mack,
-    OdpBootstrap, ProcessDistribution, Tail, TailBondy, TailCurve, Triangle,
+    OdpBootstrap, OdpBootstrapFit, ProcessDistribution, Tail, TailBondy, TailCurve, Triangle,
 };
 
 use crate::sheet::{CellError, Grid, Value, position};
@@ -404,23 +404,36 @@ fn percentile_label(p: f64) -> String {
     format!("P{}", pct.trim_end_matches('0').trim_end_matches('.'))
 }
 
+/// The ODP bootstrap of a triangle argument with its options; `sims` at
+/// most `max`.
+fn odp_fit(
+    triangle_arg: &Grid,
+    sims: &Grid,
+    seed_arg: &Grid,
+    tail_arg: &Grid,
+    process_arg: &Grid,
+    max: usize,
+) -> Result<OdpBootstrapFit> {
+    let tri = triangle(triangle_arg)?;
+    OdpBootstrap {
+        n_sims: count(sims, "sims", 10_000, max)?,
+        seed: seed(seed_arg)?,
+        tail: tail(tail_arg)?,
+        process: process(process_arg)?,
+        ..OdpBootstrap::default()
+    }
+    .fit(&tri, COLUMN)
+    .map_err(|e| e.to_string())
+}
+
 /// The ODP bootstrap exhibit: per origin, the chain-ladder reserve and the
 /// simulated reserve's mean, standard deviation, CV and percentiles, then
 /// the total, whose percentiles are of the simulated total (not the sum of
 /// the origins'):
 /// `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])`.
 pub fn odp_summary(args: &[Grid]) -> Result<Grid> {
-    let tri = triangle(&args[0])?;
     let probabilities = percentiles(&args[3])?;
-    let fit = OdpBootstrap {
-        n_sims: count(&args[1], "sims", 10_000, MAX_SIMS)?,
-        seed: seed(&args[2])?,
-        tail: tail(&args[4])?,
-        process: process(&args[5])?,
-        ..OdpBootstrap::default()
-    }
-    .fit(&tri, COLUMN)
-    .map_err(|e| e.to_string())?;
+    let fit = odp_fit(&args[0], &args[1], &args[2], &args[4], &args[5], MAX_SIMS)?;
     let cl = &fit.chain_ladder;
     let labels = origin_labels(&args[6], cl.origins.len())?;
 
@@ -464,5 +477,36 @@ pub fn odp_summary(args: &[Grid]) -> Result<Grid> {
     let mut total = vec![Value::from("Total")];
     total.extend(stats(fit.reserves.total(), cl.total_reserve())?);
     rows.push(total);
+    Ok(Grid::from_rows(rows))
+}
+
+/// The most simulations `PRO.ODP.SIMS` returns: each is a row of cells
+/// Excel holds in memory (100,000 rows of 11 cells is about 35 MB), well
+/// under its 1,048,576 rows.
+pub const MAX_SIM_ROWS: usize = 100_000;
+
+/// The ODP bootstrap's simulated reserves, one row per simulation: a
+/// column per origin, then the total, under a header row of the origin
+/// labels and "Total". The same `sims`, `seed`, `tail` and `process` give
+/// the draws `PRO.ODP` summarizes:
+/// `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])`.
+pub fn odp_sims(args: &[Grid]) -> Result<Grid> {
+    let fit = odp_fit(
+        &args[0],
+        &args[1],
+        &args[2],
+        &args[3],
+        &args[4],
+        MAX_SIM_ROWS,
+    )?;
+    let mut header = origin_labels(&args[5], fit.chain_ladder.origins.len())?;
+    header.push(Value::from("Total"));
+    let n = fit.reserves.n_components();
+    let mut rows = vec![header];
+    for row in fit.reserves.draw_matrix().chunks_exact(n) {
+        let mut cells: Vec<Value> = row.iter().map(|&x| Value::number(x)).collect();
+        cells.push(Value::number(row.iter().sum()));
+        rows.push(cells);
+    }
     Ok(Grid::from_rows(rows))
 }

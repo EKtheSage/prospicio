@@ -144,7 +144,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("thirteen functions registered", registered == 13);
+    check("fourteen functions registered", registered == 14);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -265,6 +265,23 @@ int main(int argc, char **argv) {
     check("ODP total mean 53842 +- 589 (R BootChainLadder)", fabs(ot[2].val.num - 53842.27) < 589.4);
     check("ODP total SD 18965 +- 484 (R BootChainLadder)", fabs(ot[3].val.num - 18965.35) < 483.9);
     free12(o);
+
+    /* The draws: 100000 rows of 11 cells and a header, allocated by the
+     * XLL and freed by xlAutoFree12. */
+    sims.val.num = 100000;
+    t0 = GetTickCount();
+    XLOPER12 *d = ((Fn6)GetProcAddress(xll, "pro_odp_sims"))(&tri, &sims, &seed, &missing, &missing, &missing);
+    ms = GetTickCount() - t0;
+    printf("PRO.ODP.SIMS(RAA, 100000, 1): %d x %d (%lu ms)\n", d->val.array.rows, d->val.array.columns, ms);
+    check("draws are 100001 x 11", (d->xltype & 0xFFF) == xltypeMulti && d->val.array.rows == 100001 &&
+                                       d->val.array.columns == 11);
+    char head[16];
+    narrow(d->val.array.lparray[10].val.str, head, sizeof head);
+    check("last column is the total", strcmp(head, "Total") == 0);
+    double sum = 0;
+    for (int r = 1; r <= 100000; r++) sum += d->val.array.lparray[r * 11 + 10].val.num;
+    check("mean total within R's tolerance of 53842", fabs(sum / 100000 - 53842.27) < 589.4);
+    free12(d);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;
