@@ -1,5 +1,5 @@
-//! The reserving functions: the chain ladder and Mack's model on a
-//! triangle laid out on the sheet (`docs/design/xll.md`).
+//! The reserving functions: the chain ladder, Mack's model and the ODP
+//! bootstrap on a triangle laid out on the sheet (`docs/design/xll.md`).
 //!
 //! A triangle argument is a range of cumulative values, one row per origin
 //! (oldest first) and one column per development age (youngest first).
@@ -10,9 +10,10 @@
 //! say which.
 
 use prospicio_core::{Grain, Lag, Month};
+use prospicio_prob::{Distribution, Sampled};
 use prospicio_reserving::{
     Average, ChainLadder, ChainLadderFit, CurveShape, Development, DevelopmentColumn, Long, Mack,
-    Tail, TailBondy, TailCurve, Triangle,
+    OdpBootstrap, ProcessDistribution, Tail, TailBondy, TailCurve, Triangle,
 };
 
 use crate::sheet::{CellError, Grid, Value, position};
@@ -332,5 +333,136 @@ pub fn mack_summary(args: &[Grid]) -> Result<Grid> {
         Value::number(fit.total_standard_error),
         cv(fit.total_standard_error, cl.total_reserve()),
     ]);
+    Ok(Grid::from_rows(rows))
+}
+
+/// The most simulations `PRO.ODP` runs: a recalculation should not hang
+/// Excel for minutes.
+pub const MAX_SIMS: usize = 1_000_000;
+
+/// The percentiles `PRO.ODP` reports when none are given.
+pub const PERCENTILES: [f64; 4] = [0.75, 0.9, 0.95, 0.995];
+
+/// An optional whole-number argument within `1..=max`.
+fn count(grid: &Grid, name: &str, default: usize, max: usize) -> Result<usize> {
+    match grid.as_scalar() {
+        Some(v) if v.is_blank() => Ok(default),
+        Some(Value::Number(x)) if x.fract() == 0.0 && *x >= 1.0 && *x <= max as f64 => {
+            Ok(*x as usize)
+        }
+        _ => Err(format!("{name} must be a whole number from 1 to {max}")),
+    }
+}
+
+/// The `seed` argument: a whole number from 0, default 0.
+fn seed(grid: &Grid) -> Result<u64> {
+    match grid.as_scalar() {
+        Some(v) if v.is_blank() => Ok(0),
+        Some(Value::Number(x)) if x.fract() == 0.0 && *x >= 0.0 && *x < 2f64.powi(53) => {
+            Ok(*x as u64)
+        }
+        _ => Err("seed must be a whole number from 0".into()),
+    }
+}
+
+/// The `percentiles` argument: probabilities strictly between 0 and 1, as
+/// a row or a column; blanks are skipped.
+fn percentiles(grid: &Grid) -> Result<Vec<f64>> {
+    if grid.is_blank() {
+        return Ok(PERCENTILES.to_vec());
+    }
+    if grid.rows != 1 && grid.columns != 1 {
+        return Err("percentiles must be a row or a column".into());
+    }
+    grid.cells
+        .iter()
+        .filter(|v| !v.is_blank())
+        .map(|v| match v {
+            Value::Number(p) if *p > 0.0 && *p < 1.0 => Ok(*p),
+            other => Err(format!(
+                "percentiles must be probabilities between 0 and 1, such as 0.995, got {other:?}"
+            )),
+        })
+        .collect()
+}
+
+/// The `process` argument: "gamma" (default) or "none" (parameter error
+/// only).
+fn process(grid: &Grid) -> Result<ProcessDistribution> {
+    match text_option(grid, "process")?.as_deref() {
+        None | Some("gamma") => Ok(ProcessDistribution::Gamma),
+        Some("none") => Ok(ProcessDistribution::None),
+        Some(other) => Err(format!(
+            "process must be \"gamma\" or \"none\", got {other:?}"
+        )),
+    }
+}
+
+/// A percentile's column heading: "P99.5" for 0.995.
+fn percentile_label(p: f64) -> String {
+    let pct = format!("{:.4}", p * 100.0);
+    format!("P{}", pct.trim_end_matches('0').trim_end_matches('.'))
+}
+
+/// The ODP bootstrap exhibit: per origin, the chain-ladder reserve and the
+/// simulated reserve's mean, standard deviation, CV and percentiles, then
+/// the total, whose percentiles are of the simulated total (not the sum of
+/// the origins'):
+/// `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])`.
+pub fn odp_summary(args: &[Grid]) -> Result<Grid> {
+    let tri = triangle(&args[0])?;
+    let probabilities = percentiles(&args[3])?;
+    let fit = OdpBootstrap {
+        n_sims: count(&args[1], "sims", 10_000, MAX_SIMS)?,
+        seed: seed(&args[2])?,
+        tail: tail(&args[4])?,
+        process: process(&args[5])?,
+        ..OdpBootstrap::default()
+    }
+    .fit(&tri, COLUMN)
+    .map_err(|e| e.to_string())?;
+    let cl = &fit.chain_ladder;
+    let labels = origin_labels(&args[6], cl.origins.len())?;
+
+    let n = fit.reserves.n_components();
+    let draws = fit.reserves.draw_matrix();
+    let column = |j: usize| -> Vec<f64> { draws.iter().skip(j).step_by(n).copied().collect() };
+    let stats = |s: &Sampled, reserve: f64| -> Result<Vec<Value>> {
+        let (mean, sd) = (s.mean(), s.std_dev());
+        let mut row = vec![
+            Value::number(reserve),
+            Value::number(mean),
+            Value::number(sd),
+            if mean > 0.0 {
+                Value::number(sd / mean)
+            } else {
+                Value::Empty
+            },
+        ];
+        for &p in &probabilities {
+            row.push(Value::number(s.quantile(p).map_err(|e| e.to_string())?));
+        }
+        Ok(row)
+    };
+
+    let mut header: Vec<Value> = ["Origin", "CL reserve", "Mean", "SD", "CV"]
+        .map(Value::from)
+        .to_vec();
+    header.extend(
+        probabilities
+            .iter()
+            .map(|&p| Value::Text(percentile_label(p))),
+    );
+    let mut rows = vec![header];
+    let reserves = cl.reserves();
+    for (j, label) in labels.into_iter().enumerate() {
+        let s = Sampled::new(column(j)).map_err(|e| e.to_string())?;
+        let mut row = vec![label];
+        row.extend(stats(&s, reserves[j])?);
+        rows.push(row);
+    }
+    let mut total = vec![Value::from("Total")];
+    total.extend(stats(fit.reserves.total(), cl.total_reserve())?);
+    rows.push(total);
     Ok(Grid::from_rows(rows))
 }

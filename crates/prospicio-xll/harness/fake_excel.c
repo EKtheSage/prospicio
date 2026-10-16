@@ -46,6 +46,8 @@ typedef struct xloper12 {
 typedef XLOPER12 *(*Fn0)(void);
 typedef XLOPER12 *(*Fn3)(XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn4)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef XLOPER12 *(*Fn7)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                         XLOPER12 *);
 typedef XLOPER12 *(*Fn6)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*Free12)(XLOPER12 *);
 
@@ -142,7 +144,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("twelve functions registered", registered == 12);
+    check("thirteen functions registered", registered == 13);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -244,6 +246,25 @@ int main(int argc, char **argv) {
     print_result("PRO.ILF(1000, 1000, \"pareto\", 500, 2)", f);
     check("ILF at the basic limit is 1", (f->xltype & 0xFFF) == xltypeNum && f->val.num == 1.0);
     free12(f);
+
+    /* ODP bootstrap: 20000 simulations, seed 1; RAA's total within four
+     * standard errors of R ChainLadder's BootChainLadder (100000 sims). */
+    XLOPER12 sims, seed;
+    sims.xltype = xltypeNum;
+    sims.val.num = 20000;
+    seed.xltype = xltypeNum;
+    seed.val.num = 1;
+    DWORD t0 = GetTickCount();
+    XLOPER12 *o = ((Fn7)GetProcAddress(xll, "pro_odp"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing);
+    DWORD ms = GetTickCount() - t0;
+    print_result("PRO.ODP(RAA, 20000, 1)", o);
+    printf("  (%lu ms)\n", ms);
+    check("ODP table is 12 x 9", (o->xltype & 0xFFF) == xltypeMulti && o->val.array.rows == 12 &&
+                                     o->val.array.columns == 9);
+    XLOPER12 *ot = &o->val.array.lparray[11 * 9];
+    check("ODP total mean 53842 +- 589 (R BootChainLadder)", fabs(ot[2].val.num - 53842.27) < 589.4);
+    check("ODP total SD 18965 +- 484 (R BootChainLadder)", fabs(ot[3].val.num - 18965.35) < 483.9);
+    free12(o);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

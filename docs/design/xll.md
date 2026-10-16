@@ -23,6 +23,7 @@ category of Insert Function:
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One column, one row per origin |
 | `PRO.CL.FACTORS(triangle, [average], [tail])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
 | `PRO.MACK(triangle, [average], [tail], [origins])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
+| `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap: CL reserve, simulated mean, SD, CV and percentiles per origin, and the total |
 | `PRO.VERSION()` | The prospicio version the add-in was built from |
 | `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value `E[min(X, limit)]`, per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to `limit` xs `attachment` per ground-up loss |
@@ -34,6 +35,11 @@ omitted (none), a number (a constant factor to ultimate at the oldest age)
 or `"exponential"`, `"inverse_power"` or `"bondy"`. Mack's sigma is
 extrapolated log-linearly, as R's `MackChainLadder(est.sigma =
 "log-linear")`.
+
+`PRO.ODP` wraps `OdpBootstrap::fit` (R's `BootChainLadder`): `sims`
+defaults to 10,000 (at most 1,000,000), `seed` to 0, `percentiles` to
+75%, 90%, 95% and 99.5%, `process` to `"gamma"` (`"none"` for parameter
+error only); `tail` is read as for the chain ladder.
 
 The pricing functions wrap `prospicio_pricing::layer` (`ilf`, `layer_cv`)
 and `prospicio_prob::Severity` (`lev`, `layer`). `family` is `"pareto"`
@@ -50,7 +56,11 @@ host that exports `MdCallBack12` as Excel does, loads the XLL, checks the
 registrations and calls the functions with real XLOPER12 arguments (RAA's
 Mack totals against R to 1e-6, an error, 2000 calls and frees, and a
 2 x 2 Pareto layer table against the R package Pareto).
-`cargo test` also checks the pricing functions against the crates, the R
+`cargo test` checks `PRO.ODP` against `OdpBootstrap` draw for draw and
+its RAA total (mean, SD, 75%, 95% and 99.5% percentiles, gamma and
+parameter-only) against R ChainLadder's `BootChainLadder` targets in
+`validation/reference/reserving_bootstrap_r.csv`, and the harness repeats
+the mean and SD through XLOPER12 values. It also checks the pricing functions against the crates, the R
 package Pareto's vignette (4000 xs 1000 under Pareto(500, 2) is 200) and
 mpmath's lognormal targets (`validation/reference/severity_mpmath.csv`).
 `harness/make_workbook.py` writes a workbook with RAA and every function
@@ -114,11 +124,20 @@ real Excel.
     a layer table from one formula. `"unlimited"` (or `"inf"`) is no
     limit, a blank cell gives a blank, and a value Excel cannot hold (an
     infinite CV) is left blank.
+14. **The ODP bootstrap is reproducible and bounded.** The same `seed`
+    gives the same table on every recalculation and machine (the
+    workspace's RNG contract, `rng.md`), so a sheet does not move when
+    Excel recalculates; the function is not volatile. `sims` is capped at
+    1,000,000 so a recalculation cannot hang Excel (20,000 on RAA take
+    about 0.2 s). The total's percentiles are of the simulated total, not
+    the sum of the origins' percentiles; percentiles are the inverse of
+    the empirical distribution function (R `type = 1`), as `Sampled`'s.
 
 ## Open (for the user)
 
-- **Next functions** (user's order, 2026-10-15): an ODP bootstrap
-  summary. More severity families (gamma, Weibull, Burr, the piecewise
+- **Next functions:** open. The bootstrap's draws as a spilled column (for
+  a histogram on the sheet), Mack's bootstrap and the one-year view are
+  each one function over existing crates. More severity families (gamma, Weibull, Burr, the piecewise
   Pareto) and the Pareto helpers (`pareto_extrapolation`,
   `alpha_between_layers`) are each a few lines when wanted.
 - **Distribution after testing:** CI artifact or GitHub release asset;

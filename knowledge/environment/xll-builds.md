@@ -33,5 +33,9 @@ sources:
   prospicio.xll`), it checks every `xlfRegister` call and RAA's Mack
   totals through real XLOPER12 values.[^harness] Wine's first run prints a
   harmless `syswow64\rundll32.exe` warning while it creates `~/.wine`.
+* Under Wine the release XLL runs `PRO.ODP` on RAA with 20,000
+  simulations in about 0.2 s (177 ms, checked 2026-10-16), so the
+  bootstrap's 1,000,000 cap is about 10 s, the longest one recalculation
+  can take.
 * XLOPER12 is 32 bytes on 64-bit Windows: a 24-byte value union (its
   largest member is `flow`) and the 4-byte `xltype`, padded.

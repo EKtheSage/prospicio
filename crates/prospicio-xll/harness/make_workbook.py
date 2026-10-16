@@ -134,6 +134,51 @@ for row in ly.iter_rows(min_row=11, max_row=18, min_col=7, max_col=7):
     for c in row:
         c.number_format = "#,##0"
 
+# ODP bootstrap on the RAA sheet's triangle.
+od = wb.create_sheet("ODP")
+od["A1"] = "prospicio XLL test: ODP bootstrap on RAA"; od["A1"].font = Font(bold=True, size=13)
+od["A2"] = "The triangle is on the RAA sheet. Change the yellow cells; the same seed gives the same table."
+od["A2"].font = note
+for row, (label, value) in enumerate([("Simulations", 20000), ("Seed", 1)], start=4):
+    od[f"A{row}"] = label; od[f"A{row}"].font = bold
+    od[f"B{row}"] = value; od[f"B{row}"].fill = inp
+od["D4"] = "Percentiles"; od["D4"].font = bold
+for c, p in enumerate([0.75, 0.9, 0.95, 0.995]):
+    cell = od.cell(row=4, column=5+c, value=p); cell.fill = inp
+TRI, ORI = "RAA!$B$4:$K$13", "RAA!$A$4:$A$13"
+od["A7"] = "Gamma process error (R's process.distr = 'gamma')"; od["A7"].font = bold
+od["A8"] = ArrayFormula("A8:I19", f"=PRO.ODP({TRI},$B$4,$B$5,$E$4:$H$4,,,{ORI})")
+od["A21"] = "Parameter error only (process \"none\")"; od["A21"].font = bold
+od["A22"] = ArrayFormula("A22:I33", f'=PRO.ODP({TRI},$B$4,$B$5,$E$4:$H$4,,"none",{ORI})')
+
+od["K7"] = "Check: total against R ChainLadder 0.2.21 BootChainLadder (100,000 sims)"; od["K7"].font = bold
+for h, col in zip(["Quantity", "prospicio", "R", "Tolerance", "Within"], "KLMNO"):
+    od[f"{col}8"] = h; od[f"{col}8"].font = bold
+checks = [
+    ("Gamma: mean", "=C19", 53842.2718407722, 589.413),
+    ("Gamma: SD", "=D19", 18965.3468418162, 483.93),
+    ("Gamma: P95", "=G19", 87856.1780690262, 1854.44),
+    ("None: mean", "=C33", 53928.2509498396, 506.674),
+    ("None: SD", "=D33", 17453.9114703321, 513.428),
+    ("None: P95", "=G33", 85236.8809859552, 1701.59),
+]
+for i, (name, f, r, tol) in enumerate(checks):
+    row = 9 + i
+    od[f"K{row}"] = name; od[f"L{row}"] = f; od[f"M{row}"] = r; od[f"N{row}"] = tol
+    od[f"O{row}"] = f"=ABS(L{row}-M{row})<N{row}"
+od["K16"] = "Tolerance: four standard errors at 20,000 simulations; use 20000 or more."
+od["K16"].font = note
+od.column_dimensions["A"].width = 12
+od.column_dimensions["K"].width = 16
+for col in "BCDEFGHILMNO":
+    od.column_dimensions[col].width = 12
+for row in od.iter_rows(min_row=9, max_row=33, min_col=2, max_col=14):
+    for c in row:
+        if not (c.column >= 11 and c.row > 14):
+            c.number_format = "0.000" if c.column == 5 and c.row != 4 else "#,##0"
+for c in od[4][4:8]:
+    c.number_format = "0.0%"
+
 wb.calculation.fullCalcOnLoad = True
 wb.save(out)
 
