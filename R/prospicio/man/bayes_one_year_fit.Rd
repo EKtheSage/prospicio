@@ -27,6 +27,7 @@ bayes_odp_one_year(
   max_depth = 10,
   k_threshold = 0.7,
   refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
+  max_refits = NULL,
   one_year_sims = NULL
 )
 
@@ -48,6 +49,7 @@ bayes_odp_one_year_segments(
   spearman = NULL,
   k_threshold = 0.7,
   refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
+  max_refits = NULL,
   one_year_sims = NULL
 )
 }
@@ -99,6 +101,13 @@ affine maps to the moments the weights estimate (moment matching, as
 above \code{k_threshold}; \code{"refit_flagged"} refits it with NUTS;
 \code{"reweight_only"} reweights it anyway (fast, biased where k is high);
 \code{"refit_all"} refits every simulation, to check the reweighting.}
+
+\item{max_refits}{The most simulations refitted with NUTS: the first
+this many due for a refit, in simulation order; the others are
+reweighted as they are (as unreliable as their k says), listed in
+\code{unrefitted} and warned about. \code{NULL} (the default) refits every one,
+\code{0} none. In the \verb{_segments} functions it applies to each segment, so
+k segments refit at most k times this many.}
 
 \item{one_year_sims}{The number of one-year simulations, or \code{NULL} (the
 default) for the model's one-year default: \code{n_sims} for
@@ -181,7 +190,9 @@ with dimension \code{origin} (a negative value is an adverse development, and
 \code{refitted} (the simulations refitted with NUTS, 1-based),
 \code{moment_matched} (the simulations moment matching rescued, 1-based;
 empty unless \code{refit = "moment_match_then_refit"}, when each flagged
-simulation is in it or in \code{refitted}),
+simulation is in it, in \code{refitted} or in \code{unrefitted}), \code{unrefitted}
+(the simulations due for a refit beyond \code{max_refits}, reweighted
+instead, 1-based),
 \code{refit_warnings} (how many refits had a diagnostic warning),
 \code{k_threshold} and \code{flagged_share} (the share of simulations above it,
 whether or not they were refitted). A \code{bayes_one_year_fits} has the
@@ -189,7 +200,7 @@ same, without \code{fit}, with \code{keys}, \code{index}, \code{scale} (the ODP'
 \code{premium} (Meyers' only) and \code{diagnostics} (a data.frame as
 \code{\link[=bayes_odp_segments]{bayes_odp_segments()}}'s), and with \code{cdr} keyed by the triangle's keys
 and \code{origin}; \code{scale}, \code{premium}, \code{pareto_k}, \code{refitted},
-\code{moment_matched}, \code{refit_warnings} and \code{flagged_share} need a
+\code{moment_matched}, \code{unrefitted}, \code{refit_warnings} and \code{flagged_share} need a
 single-segment fit: use
 \code{\link[=segment]{segment()}} or \code{\link[=totals_frame]{totals_frame()}}. \code{as.data.frame()} has one row per
 segment and origin: \code{origin}, \code{latest}, \code{opening_ultimate},

@@ -1006,7 +1006,9 @@ impl Triangle {
     /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
     /// k is above `k_threshold` is handled as `refit`
     /// ("moment_match_then_refit", "refit_flagged", "reweight_only" or
-    /// "refit_all") says.
+    /// "refit_all") says, refitting at most `max_refits` (`NULL` for no
+    /// limit), with `one_year_sims` simulations (`NULL` for the
+    /// model's one-year default).
     #[allow(clippy::too_many_arguments)]
     fn bayes_odp_one_year(
         &self,
@@ -1016,10 +1018,11 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        max_refits: Nullable<f64>,
         one_year_sims: Nullable<f64>,
     ) -> Result<BayesOneYearFit> {
         let model = bayes_odp_model(&priors, process, &run, SegmentDependence::Independent)?;
-        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, one_year_sims)?;
         let inner = model
             .one_year(&self.inner, column, &settings)
             .map_err(to_r)?;
@@ -1042,13 +1045,14 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        max_refits: Nullable<f64>,
         one_year_sims: Nullable<f64>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
     ) -> Result<BayesOneYearFits> {
         let dependence = segment_dependence(dependence, spearman)?;
         let model = bayes_odp_model(&priors, process, &run, dependence)?;
-        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, one_year_sims)?;
         let inner = model
             .one_year_segments(&self.inner, column, &settings)
             .map_err(to_r)?;
@@ -1166,6 +1170,7 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        max_refits: Nullable<f64>,
         one_year_sims: Nullable<f64>,
     ) -> Result<BayesOneYearFit> {
         let meyers = meyers_settings(
@@ -1174,7 +1179,7 @@ impl Triangle {
             fixed::<7>(&run, "run")?,
             SegmentDependence::Independent,
         )?;
-        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, one_year_sims)?;
         let inner = meyers
             .one_year(&self.inner, column, premium, &settings)
             .map_err(to_r)?;
@@ -1198,6 +1203,7 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        max_refits: Nullable<f64>,
         one_year_sims: Nullable<f64>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
@@ -1209,7 +1215,7 @@ impl Triangle {
             fixed::<7>(&run, "run")?,
             dependence,
         )?;
-        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, one_year_sims)?;
         let inner = meyers
             .one_year_segments(&self.inner, column, premium, &settings)
             .map_err(to_r)?;
@@ -1240,17 +1246,45 @@ impl Triangle {
         run: Vec<f64>,
     ) -> Result<CompartmentalFit> {
         let model = compartmental_settings(&priors, &families, &settings, &run)?;
-        let os = match outstanding_from {
-            "column" => Outstanding::Column(outstanding),
-            "incurred" => Outstanding::FromIncurred(outstanding),
-            _ => {
-                return Err(Error::Other(format!(
-                    "outstanding_from must be \"column\" or \"incurred\", got \"{outstanding_from}\""
-                )));
-            }
-        };
+        let os = compartmental_outstanding(outstanding, outstanding_from)?;
         let inner = model.fit(&self.inner, paid, os, premium).map_err(to_r)?;
         Ok(CompartmentalFit { inner })
+    }
+
+    /// The one-year view of `compartmental` by PSIS reweighting, with the
+    /// arguments of `compartmental`; a simulation whose Pareto k is above
+    /// `k_threshold` is handled as `refit` says (`NULL` for the model's
+    /// default: moment matching, or reweighting only with development
+    /// effects), refitting at most `max_refits` (`NULL` for no limit), with
+    /// `one_year_sims` simulations (`NULL` for the model's `n_sims` capped
+    /// at 2,000).
+    #[allow(clippy::too_many_arguments)]
+    fn compartmental_one_year(
+        &self,
+        paid: &str,
+        outstanding: &str,
+        outstanding_from: &str,
+        premium: &str,
+        priors: Vec<f64>,
+        families: Vec<String>,
+        settings: Vec<String>,
+        run: Vec<f64>,
+        k_threshold: f64,
+        refit: Nullable<String>,
+        max_refits: Nullable<f64>,
+        one_year_sims: Nullable<f64>,
+    ) -> Result<CompartmentalOneYearFit> {
+        let model = compartmental_settings(&priors, &families, &settings, &run)?;
+        let os = compartmental_outstanding(outstanding, outstanding_from)?;
+        let refit = match &refit {
+            Nullable::NotNull(r) => Some(r.as_str()),
+            Nullable::Null => None,
+        };
+        let view = one_year_settings(k_threshold, refit, max_refits, one_year_sims)?;
+        let inner = model
+            .one_year(&self.inner, paid, os, premium, &view)
+            .map_err(to_r)?;
+        Ok(CompartmentalOneYearFit { inner })
     }
 
     /// Paths of the mean outstanding and cumulative paid drawn from the
@@ -1330,10 +1364,11 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        max_refits: Nullable<f64>,
         one_year_sims: Nullable<f64>,
     ) -> Result<BayesOneYearFit> {
         let model = bayes_bf_model(&priors, process, &run)?;
-        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, one_year_sims)?;
         let inner = model
             .one_year(&self.inner, column, exposure, &settings)
             .map_err(to_r)?;
@@ -2685,24 +2720,31 @@ fn bayes_bf_model(priors: &[f64], process: &str, run: &[f64]) -> Result<BayesBf>
 }
 
 /// The settings of a Bayesian one-year view: `k_threshold`, the `refit`
-/// policy by name and the number of simulations (`NULL` for the model's
-/// one-year default).
+/// policy by name (`None` for the model's one-year default), the most refits
+/// (`NULL` for no limit) and the number
+/// of simulations (`NULL` for the model's one-year default).
 fn one_year_settings(
     k_threshold: f64,
-    refit: &str,
+    refit: Option<&str>,
+    max_refits: Nullable<f64>,
     one_year_sims: Nullable<f64>,
 ) -> Result<BayesOneYear> {
     let refit = match refit {
-        "refit_flagged" => OneYearRefit::RefitFlagged,
-        "reweight_only" => OneYearRefit::ReweightOnly,
-        "refit_all" => OneYearRefit::RefitAll,
-        "moment_match_then_refit" => OneYearRefit::MomentMatchThenRefit,
-        _ => {
+        None => None,
+        Some("refit_flagged") => Some(OneYearRefit::RefitFlagged),
+        Some("reweight_only") => Some(OneYearRefit::ReweightOnly),
+        Some("refit_all") => Some(OneYearRefit::RefitAll),
+        Some("moment_match_then_refit") => Some(OneYearRefit::MomentMatchThenRefit),
+        Some(refit) => {
             return Err(Error::Other(format!(
                 "refit must be \"moment_match_then_refit\", \"refit_flagged\", \
                  \"reweight_only\" or \"refit_all\", got \"{refit}\""
             )));
         }
+    };
+    let max_refits = match max_refits {
+        Nullable::NotNull(m) => Some(whole(m, "max_refits")? as usize),
+        Nullable::Null => None,
     };
     let n_sims = match one_year_sims {
         Nullable::NotNull(n) => Some(whole(n, "one_year_sims")? as usize),
@@ -2711,6 +2753,7 @@ fn one_year_settings(
     Ok(BayesOneYear {
         k_threshold,
         refit,
+        max_refits,
         n_sims,
     })
 }
@@ -2825,6 +2868,16 @@ impl BayesOneYearFit {
     fn moment_matched(&self) -> Vec<f64> {
         each_bayes_one_year!(&self.inner, f => f
             .moment_matched
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect())
+    }
+
+    /// The simulations due for a refit beyond `max_refits`, reweighted
+    /// instead, 1-based.
+    fn unrefitted(&self) -> Vec<f64> {
+        each_bayes_one_year!(&self.inner, f => f
+            .unrefitted
             .iter()
             .map(|&i| (i + 1) as f64)
             .collect())
@@ -2982,6 +3035,14 @@ impl BayesOneYearFits {
             .collect()))
     }
 
+    fn unrefitted(&self) -> Result<Vec<f64>> {
+        each_bayes_one_years!(&self.inner, f => Ok(single(&f.segments, "unrefitted", "")?
+            .unrefitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect()))
+    }
+
     fn refit_warnings(&self) -> Result<f64> {
         each_bayes_one_years!(&self.inner, f => Ok(single(&f.segments, "refit_warnings", "")?
             .refit_warnings as f64))
@@ -3000,6 +3061,10 @@ impl BayesOneYearFits {
                 warned = fits
                     .iter()
                     .map(|s| s.refit_warnings as f64)
+                    .collect::<Vec<_>>(),
+                unrefitted = fits
+                    .iter()
+                    .map(|s| s.unrefitted.len() as f64)
                     .collect::<Vec<_>>()
             )
         })
@@ -3755,6 +3820,138 @@ fn compartmental_settings(
     })
 }
 
+/// Where a compartmental fit's outstanding comes from: the `outstanding`
+/// column itself ("column") or incurred less paid ("incurred").
+fn compartmental_outstanding<'a>(
+    outstanding: &'a str,
+    outstanding_from: &str,
+) -> Result<Outstanding<'a>> {
+    match outstanding_from {
+        "column" => Ok(Outstanding::Column(outstanding)),
+        "incurred" => Ok(Outstanding::FromIncurred(outstanding)),
+        _ => Err(Error::Other(format!(
+            "outstanding_from must be \"column\" or \"incurred\", got \"{outstanding_from}\""
+        ))),
+    }
+}
+
+/// The one-year view of a compartmental model: the lifetime fit, the
+/// opening reserve, the claims development result and each simulation's
+/// Pareto k, by the premium column's origins.
+#[extendr]
+pub(crate) struct CompartmentalOneYearFit {
+    inner: BayesOneYearInner<CompartmentalInner>,
+}
+
+#[extendr]
+impl CompartmentalOneYearFit {
+    fn fit(&self) -> CompartmentalFit {
+        CompartmentalFit {
+            inner: self.inner.fit.clone(),
+        }
+    }
+
+    fn origins(&self) -> Vec<String> {
+        self.inner
+            .fit
+            .origins
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    fn latest_paid(&self) -> Vec<f64> {
+        self.inner.fit.latest_paid.clone()
+    }
+
+    fn opening_ultimate(&self) -> Vec<f64> {
+        self.inner.opening_ultimate.clone()
+    }
+
+    fn opening_reserve(&self) -> Vec<f64> {
+        self.inner.opening_reserve.clone()
+    }
+
+    fn cdr(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.cdr.clone(),
+        }
+    }
+
+    fn pareto_k(&self) -> Vec<f64> {
+        self.inner.pareto_k.clone()
+    }
+
+    /// The simulations refitted with NUTS, 1-based.
+    fn refitted(&self) -> Vec<f64> {
+        self.inner
+            .refitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect()
+    }
+
+    /// The simulations moment matching rescued, 1-based.
+    fn moment_matched(&self) -> Vec<f64> {
+        self.inner
+            .moment_matched
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect()
+    }
+
+    /// The simulations due for a refit beyond `max_refits`, reweighted
+    /// instead, 1-based.
+    fn unrefitted(&self) -> Vec<f64> {
+        self.inner
+            .unrefitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect()
+    }
+
+    fn refit_warnings(&self) -> f64 {
+        self.inner.refit_warnings as f64
+    }
+
+    /// Why the view is approximate (one string), or none: set when `refit`
+    /// was left to a model with development effects, whose default
+    /// reweights the flagged simulations only.
+    fn approximate(&self) -> Vec<String> {
+        self.inner.approximate.iter().cloned().collect()
+    }
+
+    fn k_threshold(&self) -> f64 {
+        self.inner.k_threshold
+    }
+
+    fn flagged_share(&self) -> f64 {
+        self.inner.flagged_share()
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    /// The view itself, as for any single-segment fit without keys: a
+    /// condition on a key is an error.
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        let one = SegmentFits {
+            key_names: Vec::new(),
+            labels: vec![Label::new(Vec::<String>::new())],
+            fits: vec![()],
+        };
+        pick(&one, keys, values)?;
+        Ok(Self {
+            inner: self.inner.clone(),
+        })
+    }
+}
+
 /// A fitted Gesmann and Morris compartmental model of a single-segment triangle.
 #[extendr]
 pub(crate) struct CompartmentalFit {
@@ -3924,6 +4121,7 @@ extendr_module! {
     impl MeyersFit;
     impl MeyersFits;
     impl CompartmentalFit;
+    impl CompartmentalOneYearFit;
     impl BayesBfFit;
     impl MackBootstrapFit;
     impl OneYearFit;

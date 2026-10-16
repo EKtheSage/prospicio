@@ -111,7 +111,7 @@ fn view(dataset: &str, model: &BayesOdp, refit: OneYearRefit) -> BayesOneYearFit
             &triangle(dataset),
             "values",
             &BayesOneYear {
-                refit,
+                refit: Some(refit),
                 ..BayesOneYear::default()
             },
         )

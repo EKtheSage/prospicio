@@ -437,3 +437,87 @@ def test_model_2_prior_predictive(tri):
     assert 0.2 < paid_120 / 104_437 < 1.5
     again = Compartmental.model_2(GM2, seed=4).prior_predictive(tri, "premium", n_sims=300)
     assert again["paid"].draw_matrix() == paths["paid"].draw_matrix()
+
+
+def test_one_year(tri, fit):
+    from prospicio.reserving import CompartmentalOneYearFit
+
+    model = Compartmental(GM, **QUICK)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        view = model.one_year(
+            tri, "paid", "premium", incurred="incurred", refit="reweight_only"
+        )
+    assert isinstance(view, CompartmentalOneYearFit)
+    assert isinstance(view.fit, CompartmentalFit)
+    # The lifetime fit is fit's.
+    assert view.fit.reserves.draw_matrix() == fit.reserves.draw_matrix()
+    assert view.origins == fit.origins and len(view.origins) == 10
+    assert isinstance(view.cdr, PredictiveDistribution)
+    assert view.cdr.n_sims == 2000 and len(view.cdr.components()) == 10
+    assert len(view.pareto_k) == 2000
+    assert view.refitted == [] and view.moment_matched == [] and view.unrefitted == []
+    assert 0.0 <= view.flagged_share <= 1.0 and view.k_threshold == 0.7
+    assert view.cdr.variance() < view.fit.reserves.variance()
+    for o, l, r, u in zip(view.origins, view.latest_paid, view.opening_reserve, view.opening_ultimate):
+        assert math.isclose(l + r, u)
+    frame = view.to_frame()
+    assert list(frame.columns) == [
+        "origin", "premium", "latest_paid", "opening_ultimate", "opening_reserve",
+        "cdr_mean", "cdr_std_dev",
+    ]
+    totals = view.totals_frame()
+    assert "flagged_share" in totals.columns
+    assert "CompartmentalOneYearFit(origins=10" in repr(view)
+    # Moment matching without refits (max_refits=0) lists and warns about
+    # what it leaves.
+    small = Compartmental(GM, n_sims=40)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        budget = small.one_year(tri, "paid", "premium", incurred="incurred", max_refits=0)
+    assert budget.refitted == []
+    flagged = [i for i, k in enumerate(budget.pareto_k) if math.isnan(k) or k > 0.7]
+    assert sorted(budget.moment_matched + budget.unrefitted) == flagged
+    if budget.unrefitted:
+        assert any("beyond max_refits" in str(w.message) for w in record)
+    with pytest.raises(ValueError, match="exactly one"):
+        model.one_year(tri, "paid", "premium")
+
+
+def test_one_year_defaults(tri):
+    # The user's decisions of 2026-10-16: at most 2,000 one-year
+    # simulations by default (n_sims sets the count; a smaller count gives
+    # the first simulations of a larger one), and model 2's default view
+    # reweights only, with a warning that it is approximate.
+    model = Compartmental(GM)
+    assert model.n_sims == 10_000
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        capped = model.one_year(tri, "paid", "premium", incurred="incurred",
+                                refit="reweight_only")
+        first = model.one_year(tri, "paid", "premium", incurred="incurred",
+                               refit="reweight_only", n_sims=300)
+    assert len(capped.pareto_k) == 2000 and capped.cdr.n_sims == 2000
+    assert first.pareto_k == capped.pareto_k[:300]
+    assert capped.approximate is None
+    assert dict(capped.cdr.provenance()["parameters"])["one_year_sims"] == "2000"
+    with pytest.raises(ValueError, match="n_sims"):
+        model.one_year(tri, "paid", "premium", incurred="incurred", n_sims=0)
+    # Model 2 with short chains (they may miss a diagnostic threshold).
+    short = Compartmental.model_2(GM2, chains=2, tune=200, draws=200, target_accept=0.9)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        view = short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=50)
+    assert len(view.pareto_k) == 50
+    assert view.refitted == [] and view.moment_matched == [] and view.unrefitted == []
+    assert "approximate" in view.approximate
+    assert dict(view.cdr.provenance()["parameters"])["refit"] == "ReweightOnly"
+    assert any("approximate" in str(w.message) for w in record)
+    # Refits stay a choice: an explicit mode carries no warning.
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        chosen = short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=50,
+                                refit="reweight_only")
+    assert chosen.approximate is None
+    assert not any("approximate" in str(w.message) for w in record)
+    assert chosen.pareto_k == view.pareto_k

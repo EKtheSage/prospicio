@@ -220,7 +220,7 @@ fn measure<F>(name: &str, v: &Views<F>, n: usize) -> Measured {
 
 fn settings(refit: OneYearRefit) -> BayesOneYear {
     BayesOneYear {
-        refit,
+        refit: Some(refit),
         ..BayesOneYear::default()
     }
 }

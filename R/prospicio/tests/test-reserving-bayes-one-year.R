@@ -136,6 +136,20 @@ stopifnot(
   identical(flagged@moment_matched, integer())
 )
 
+# A refit budget: the first max_refits simulations due for a refit are
+# refitted, the others reweighted, listed in unrefitted and warned about.
+budget <- with_warnings(bayes_odp_one_year(tiny, tune = 200, draws = 200, n_sims = 12, seed = 2,
+                                           k_threshold = 0.3, refit = "refit_flagged",
+                                           max_refits = 1))
+stopifnot(
+  identical(budget$value@pareto_k, flagged@pareto_k),
+  identical(budget$value@refitted, expected[1]),
+  identical(budget$value@unrefitted, expected[-1]),
+  identical(flagged@unrefitted, integer()),
+  any(grepl("beyond max_refits", budget$warnings, fixed = TRUE))
+)
+expect_error_like(bayes_odp_one_year(tiny, n_sims = 10, max_refits = -1), "max_refits")
+
 # Moment matching: the same years, each flagged simulation moment-matched
 # or refitted (never both), a refitted row refit_all's and an unflagged one
 # reweight_only's.

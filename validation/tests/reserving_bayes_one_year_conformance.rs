@@ -3,8 +3,9 @@
 //! the checks of the generic engine that need no external reference and
 //! too many NUTS refits for a unit test. [`conform`] runs on every model
 //! with a one-year view (`BayesOdp` on RAA and GenIns, `BayesBf` on GenIns
-//! with premium, and Meyers' CRC and CSR on group 353's paid and CAY on
-//! its incurred, decision 19); a new Bayesian model's one-year view is added to
+//! with premium, Meyers' CRC and CSR on group 353's paid and CAY on
+//! its incurred, decision 19, and the compartmental models 1 and 2 on
+//! company 337, decision 20); a new Bayesian model's one-year view is added to
 //! [`every_model_conforms`] before it ships (AGENTS.md, "Checks"). The
 //! unit-test half of the suite, run on each model's `YearModel`, is
 //! `prospicio_reserving::bayes::one_year::conformance` (crate-private).
@@ -17,20 +18,23 @@
 //!    their totals within 5 standard errors of the lifetime total;
 //! 3. a seed replays the view bit for bit, its first 500 simulations
 //!    as part of 10,000;
-//! 4. on 300 simulations (60 for Meyers' models, whose refits cost
-//!    seconds; they also sample 4 chains of 300 warm-up and 300 kept
-//!    draws, about a sixth of their default's cost), `RefitAll` sees
+//! 4. on 300 simulations (60 for Meyers' models, 30 for compartmental
+//!    model 1 and 6 for model 2, whose refits cost seconds; they also
+//!    sample 4 chains of 300 warm-up and 300 kept draws, about a sixth of
+//!    their default's cost or less), `RefitAll` sees
 //!    `ReweightOnly`'s years (the
 //!    same `k̂`), and `RefitFlagged` gives `RefitAll`'s rows for the
 //!    flagged simulations and `ReweightOnly`'s for the others;
 //!    `MomentMatchThenRefit` sees the same years, moment-matches or
 //!    refits each flagged simulation (never both), and gives `RefitAll`'s
 //!    rows for those it refits and `ReweightOnly`'s for the unflagged
-//!    (decision 18); it matches at least one, and its first simulations
-//!    (all 300, or 20 for Meyers' models, whose refits on one thread run
-//!    one after another) replay bit for bit (rows, `k̂`, the matched and
-//!    the refitted) on one thread against the default pool, matching's
-//!    own parallel steps nested in the simulations' included;
+//!    (decision 18); it matches at least one (not required of
+//!    compartmental model 2, whose simulations matching almost never
+//!    rescues), and its first simulations (all of them, or 20 of 60 for
+//!    Meyers' models, whose refits on one thread run one after another)
+//!    replay bit for bit (rows, `k̂`, the matched and the refitted) on one
+//!    thread against the default pool, matching's own parallel steps
+//!    nested in the simulations' included;
 //! 5. on those simulations, the root mean square gap between a reweighted and a
 //!    refitted simulation's total, in units of the total's sd, is below
 //!    `REFITS.gaps.0` where `k̂` is at most 0.7 (over at least
@@ -38,23 +42,30 @@
 //!    (`MEYERS_REFITS` for Meyers' models, nearly all of whose simulations
 //!    are flagged);
 //! 6. a triangle whose every origin is at the last age gives a zero claims
-//!    development result, `k̂` 0 and no refit under every setting.
+//!    development result, `k̂` 0 and no refit under every setting (not for
+//!    the compartmental models, whose fit needs a future cell: their unit
+//!    half samples such a square directly).
 //!
-//! A pull request runs Meyers' CRC alone of Meyers' three models (the smoke
-//! run, with the same sizes and bounds); CSR and CAY join when
+//! A pull request runs Meyers' CRC alone of Meyers' three models and
+//! compartmental model 1 alone of the two (the smoke run, with the same
+//! sizes and bounds); CSR, CAY and compartmental model 2 join when
 //! `RISK_RS_FULL_BAYES` is set, as in CI's weekly and manual runs
 //! (`prospicio_validation::full_bayes`, the user's decision of
-//! 2026-10-16). The other models always run. Meyers' views get their
-//! `n_sims` explicitly: by default `Meyers::one_year` runs at most 2,000.
+//! 2026-10-16). The other models always run. Meyers' and the
+//! compartmental views get their `n_sims` explicitly: by default their
+//! `one_year` runs at most 2,000.
 //!
 //! Every bound is at least the largest model's mean (or mean offset) plus
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
 //! 4.75, both GenIns under `BayesOdp`; gaps 0.071, `BayesBf`, and 0.455,
-//! RAA; Meyers' flagged gap 0.606, CSR), and every seed passes
+//! RAA; Meyers' flagged gap 0.606, CSR; the compartmental models' over
+//! seeds 0 to 9 only, for their cost, with their own bounds below), and
+//! every seed passes
 //! (`seed_sweep`, ignored: `SWEEP_SEEDS=20 cargo test --release -p
 //! prospicio-validation --features slow-bayes --test
 //! reserving_bayes_one_year_conformance -- --ignored seed_sweep
-//! --nocapture`; `SWEEP_MEYERS_ONLY=1` runs Meyers' models alone).
+//! --nocapture`; `SWEEP_MEYERS_ONLY=1` runs Meyers' models alone,
+//! `SWEEP_COMPARTMENTAL_ONLY=1` the compartmental models).
 
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -62,8 +73,9 @@ use std::time::Instant;
 use prospicio_bayes::nuts::Sampler;
 use prospicio_prob::{Distribution, PredictiveDistribution};
 use prospicio_reserving::bayes::{
-    BayesBf, BayesBfFit, BayesOdp, BayesOdpFit, BayesOneYear, BayesOneYearFit, Meyers, MeyersFit,
-    MeyersModel, OneYearRefit,
+    BayesBf, BayesBfFit, BayesOdp, BayesOdpFit, BayesOneYear, BayesOneYearFit, Compartmental,
+    CompartmentalFit, CompartmentalPriors, Meyers, MeyersFit, MeyersModel, OneYearRefit,
+    Outstanding,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
 use prospicio_validation::{full_bayes, triangle, triangle_columns};
@@ -71,20 +83,25 @@ use prospicio_validation::{full_bayes, triangle, triangle_columns};
 /// The simulations of the mean check.
 const SIMS: usize = 10_000;
 /// A model's refit checks: the simulations refitted for the gap and the
-/// refit settings, and the bounds on the root mean square gap, in units of
-/// the total's sd, where `k̂` is at most 0.7 and above it, and the first
-/// simulations `MomentMatchThenRefit` replays on one thread (at most
-/// `sims`).
+/// refit settings, the bounds on the root mean square gap, in units of
+/// the total's sd, where `k̂` is at most 0.7 and above it, whether
+/// moment matching must rescue at least one simulation, the bound on
+/// the opening reserve's z score, and the first simulations
+/// `MomentMatchThenRefit` replays on one thread (at most `sims`).
 #[derive(Clone, Copy)]
 struct Refits {
     sims: usize,
     gaps: (f64, f64),
+    matches: bool,
+    opening: f64,
     replay: usize,
 }
 
 const REFITS: Refits = Refits {
     sims: 300,
     gaps: (0.08, 0.5),
+    matches: true,
+    opening: 5.0,
     replay: 300,
 };
 /// Meyers' models, whose refits cost seconds and nearly all of whose
@@ -96,10 +113,40 @@ const REFITS: Refits = Refits {
 const MEYERS_REFITS: Refits = Refits {
     sims: 60,
     gaps: (0.08, 0.65),
+    matches: true,
+    opening: 5.0,
     replay: 20,
+};
+/// The compartmental models on company 337, most of whose simulations are
+/// flagged; model 2's refits cost seconds each even with the short
+/// sampler, and moment matching rescues none of them. Over seeds 0 to 9
+/// the flagged gap is 0.255 (sd 0.040, largest 0.317) for model 1 and
+/// 0.403 (sd 0.111, largest 0.644) for model 2. The opening z score
+/// counts only the lifetime simulations' error, not the opening's own
+/// over the draws, each with its own effects for 1997 (1,200 draws), so
+/// it is wider: -1.03 (sd 1.43, lowest -3.21) and -0.77 (sd 1.33, lowest
+/// -3.30), bounded at 7.
+const COMPARTMENTAL_REFITS: Refits = Refits {
+    sims: 30,
+    gaps: (0.08, 0.45),
+    matches: true,
+    opening: 7.0,
+    replay: 30,
+};
+const COMPARTMENTAL_2_REFITS: Refits = Refits {
+    sims: 6,
+    gaps: (0.08, 0.9),
+    matches: false,
+    opening: 7.0,
+    replay: 6,
 };
 /// Fewest unflagged simulations whose gap is checked.
 const MIN_UNFLAGGED: usize = 10;
+
+/// The bits of each value, so that a NaN Pareto `k` compares equal to itself.
+fn bits(x: &[f64]) -> Vec<u64> {
+    x.iter().map(|v| v.to_bits()).collect()
+}
 
 fn mean(x: &[f64]) -> f64 {
     x.iter().sum::<f64>() / x.len() as f64
@@ -134,7 +181,7 @@ struct Measured {
 fn conform<F: Sync + Send>(
     name: &str,
     run: &Run<'_, F>,
-    closed: &Run<'_, F>,
+    closed: Option<&Run<'_, F>>,
     reserves: fn(&F) -> &PredictiveDistribution,
     refits: Refits,
     seed: u64,
@@ -144,6 +191,8 @@ fn conform<F: Sync + Send>(
     let Refits {
         sims: refit_sims,
         gaps,
+        matches,
+        opening: opening_bound,
         replay,
     } = refits;
     assert!(replay <= refit_sims);
@@ -159,7 +208,7 @@ fn conform<F: Sync + Send>(
     let n_life = reserves(&full.fit).n_sims() as f64;
     let opening_z = (opening - lifetime.mean()) / (lifetime.std_dev() / n_life.sqrt());
     assert!(
-        !strict || opening_z.abs() < 5.0,
+        !strict || opening_z.abs() < opening_bound,
         "{name}: opening z {opening_z}"
     );
     // 3. A seed replays the view: simulation i depends only on the seed
@@ -176,7 +225,11 @@ fn conform<F: Sync + Send>(
     let a = run(refit_sims, seed, only);
     let b = run(refit_sims, seed, OneYearRefit::RefitAll);
     let c = run(refit_sims, seed, OneYearRefit::RefitFlagged);
-    assert_eq!(a.pareto_k, b.pareto_k, "{name}: RefitAll's years");
+    assert_eq!(
+        bits(&a.pareto_k),
+        bits(&b.pareto_k),
+        "{name}: RefitAll's years"
+    );
     assert_eq!(b.refitted, (0..refit_sims).collect::<Vec<_>>());
     let is_flagged: Vec<bool> = a.pareto_k.iter().map(|&k| k.is_nan() || k > 0.7).collect();
     assert_eq!(
@@ -197,11 +250,12 @@ fn conform<F: Sync + Send>(
     }
     let m = run(refit_sims, seed, OneYearRefit::MomentMatchThenRefit);
     assert_eq!(
-        m.pareto_k, a.pareto_k,
+        bits(&m.pareto_k),
+        bits(&a.pareto_k),
         "{name}: MomentMatchThenRefit's years"
     );
     assert!(
-        !m.moment_matched.is_empty(),
+        !matches || !m.moment_matched.is_empty(),
         "{name}: MomentMatchThenRefit matched nothing"
     );
     // The first `replay` simulations on one thread are `m`'s first
@@ -218,8 +272,8 @@ fn conform<F: Sync + Send>(
         "{name}: MomentMatchThenRefit's replay on one thread"
     );
     assert_eq!(
-        m1.pareto_k,
-        m.pareto_k[..replay],
+        bits(&m1.pareto_k),
+        bits(&m.pareto_k[..replay]),
         "{name}: matched replay's k"
     );
     assert_eq!(
@@ -271,12 +325,13 @@ fn conform<F: Sync + Send>(
         "{name}: rms gap {gap_flagged} sd where k > 0.7 ({flagged} simulations)"
     );
     // 6. A year without cells changes and refits nothing.
-    for refit in [
+    let every = [
         only,
         OneYearRefit::RefitFlagged,
         OneYearRefit::RefitAll,
         OneYearRefit::MomentMatchThenRefit,
-    ] {
+    ];
+    for (closed, refit) in closed.iter().flat_map(|c| every.map(|r| (c, r))) {
         let v = closed(200, seed, refit);
         assert!(v.refitted.is_empty(), "{name}: {refit:?} refitted");
         assert!(v.moment_matched.is_empty(), "{name}: {refit:?} matched");
@@ -336,7 +391,7 @@ fn square() -> Triangle {
 
 fn settings(refit: OneYearRefit) -> BayesOneYear {
     BayesOneYear {
-        refit,
+        refit: Some(refit),
         ..BayesOneYear::default()
     }
 }
@@ -444,6 +499,88 @@ fn meyers<'a>(tri: &'a Triangle, model: MeyersModel, column: &'a str) -> Box<Run
     })
 }
 
+/// Company 337 workers' compensation (`data/clrd_wkcomp_337.csv`), columns
+/// `paid`, `incurred` and `premium`: the papers' training triangle (the
+/// cells at calendar years up to 1996, and 1997 with its premium only).
+fn wkcomp_337() -> Triangle {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/data/clrd_wkcomp_337.csv");
+    let text = std::fs::read_to_string(path).expect("data/clrd_wkcomp_337.csv");
+    let mut lines = text.lines().filter(|l| !l.starts_with('#'));
+    assert_eq!(
+        lines.next(),
+        Some("origin,development,paid,incurred,case_incurred,premium,premium_net")
+    );
+    let all: Vec<(i32, Lag, [f64; 3])> = lines
+        .map(|l| {
+            let f: Vec<&str> = l.split(',').collect();
+            let v = |k: usize| -> f64 { f[k].parse().unwrap() };
+            (
+                f[0].parse().unwrap(),
+                f[1].parse().unwrap(),
+                [v(2), v(3), v(5)],
+            )
+        })
+        .collect();
+    let mut rows: Vec<_> = all
+        .iter()
+        .copied()
+        .filter(|r| r.0 + (r.1 / 12) as i32 - 1 <= 1996)
+        .collect();
+    let premium = all.iter().find(|r| r.0 == 1997).unwrap().2[2];
+    rows.push((1997, 12, [f64::NAN, f64::NAN, premium]));
+    let origin: Vec<Month> = rows.iter().map(|r| Month::january(r.0)).collect();
+    let ages: Vec<Lag> = rows.iter().map(|r| r.1).collect();
+    let column = |k: usize| -> Vec<f64> { rows.iter().map(|r| r.2[k]).collect() };
+    let (paid, incurred, premium) = (column(0), column(1), column(2));
+    Triangle::from_long(&Long {
+        keys: &[],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&ages),
+        values: &[
+            ("paid", &paid),
+            ("incurred", &incurred),
+            ("premium", &premium),
+        ],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap()
+}
+
+/// Compartmental model 1 (or, with `two`, model 2) on `tri` with
+/// outstanding from incurred, 4 chains of 300 warm-up and 300 kept draws.
+fn compartmental(tri: &Triangle, two: bool) -> Box<Run<'_, CompartmentalFit>> {
+    Box::new(move |n_sims, seed, refit| {
+        let preset = if two {
+            Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
+        } else {
+            Compartmental::new(CompartmentalPriors::gesmann_morris())
+        };
+        Compartmental {
+            sampler: Sampler {
+                tune: 300,
+                draws: 300,
+                ..preset.sampler
+            },
+            n_sims,
+            seed,
+            ..preset
+        }
+        .one_year(
+            tri,
+            "paid",
+            Outstanding::FromIncurred("incurred"),
+            "premium",
+            &BayesOneYear {
+                n_sims: Some(n_sims),
+                ..settings(refit)
+            },
+        )
+        .unwrap()
+    })
+}
+
 /// Runs the suite on every model at `seed`.
 fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     let (raa, genins, premium, closed) = (
@@ -456,9 +593,11 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     let bf_reserves: fn(&BayesBfFit) -> &PredictiveDistribution = |f| &f.reserves;
     let meyers_reserves: fn(&MeyersFit) -> &PredictiveDistribution = |f| &f.reserves;
     let group = comauto_353();
-    // SWEEP_MEYERS_ONLY (the sweep): Meyers' models alone.
+    // SWEEP_MEYERS_ONLY and SWEEP_COMPARTMENTAL_ONLY (the sweep): those
+    // models alone.
     let meyers_only = !strict && std::env::var("SWEEP_MEYERS_ONLY").is_ok();
-    let mut out = if meyers_only {
+    let compartmental_only = !strict && std::env::var("SWEEP_COMPARTMENTAL_ONLY").is_ok();
+    let mut out = if meyers_only || compartmental_only {
         Vec::new()
     } else {
         vec![
@@ -467,7 +606,7 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
                 conform(
                     "BayesOdp RAA",
                     &*odp(&raa, "values"),
-                    &*odp(&closed, "paid"),
+                    Some(&*odp(&closed, "paid")),
                     odp_reserves,
                     REFITS,
                     seed,
@@ -479,7 +618,7 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
                 conform(
                     "BayesOdp GenIns",
                     &*odp(&genins, "values"),
-                    &*odp(&closed, "paid"),
+                    Some(&*odp(&closed, "paid")),
                     odp_reserves,
                     REFITS,
                     seed,
@@ -491,7 +630,7 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
                 conform(
                     "BayesBf GenIns",
                     &*bf(&premium),
-                    &*bf(&closed),
+                    Some(&*bf(&closed)),
                     bf_reserves,
                     REFITS,
                     seed,
@@ -501,7 +640,11 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
         ]
     };
     // A strict run without the full gate (a pull request): CRC alone.
-    let meyers_models = if strict && !full_bayes() { 1 } else { 3 };
+    let meyers_models = match (compartmental_only, strict && !full_bayes()) {
+        (true, _) => 0,
+        (false, true) => 1,
+        (false, false) => 3,
+    };
     for (name, model, column) in [
         ("Meyers CRC paid", MeyersModel::Crc, "paid"),
         ("Meyers CSR paid", MeyersModel::Csr, "paid"),
@@ -513,9 +656,37 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
         let measured = conform(
             name,
             &*meyers(group, model, column),
-            &*meyers(&closed, model, "paid"),
+            Some(&*meyers(&closed, model, "paid")),
             meyers_reserves,
             MEYERS_REFITS,
+            seed,
+            strict,
+        );
+        out.push((name, measured));
+    }
+    if meyers_only {
+        return out;
+    }
+    let compartmental_reserves: fn(&CompartmentalFit) -> &PredictiveDistribution = |f| &f.reserves;
+    // A compartmental fit needs a future cell, so check 6 runs in the
+    // unit half only (`compartmental::tests`, sampling the closed square
+    // directly).
+    let training = wkcomp_337();
+    // A strict run without the full gate (a pull request): model 1 alone.
+    let compartmental_models = if strict && !full_bayes() { 1 } else { 2 };
+    for (name, two, refits) in [
+        ("Compartmental 1", false, COMPARTMENTAL_REFITS),
+        ("Compartmental 2", true, COMPARTMENTAL_2_REFITS),
+    ]
+    .into_iter()
+    .take(compartmental_models)
+    {
+        let measured = conform(
+            name,
+            &*compartmental(&training, two),
+            None,
+            compartmental_reserves,
+            refits,
             seed,
             strict,
         );

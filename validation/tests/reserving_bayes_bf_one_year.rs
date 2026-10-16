@@ -91,7 +91,7 @@ fn columns(draws: &[f64], n: usize) -> Vec<Vec<f64>> {
 
 fn reweight() -> BayesOneYear {
     BayesOneYear {
-        refit: OneYearRefit::ReweightOnly,
+        refit: Some(OneYearRefit::ReweightOnly),
         ..BayesOneYear::default()
     }
 }

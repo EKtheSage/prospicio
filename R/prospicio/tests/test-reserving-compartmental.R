@@ -312,3 +312,96 @@ stopifnot(
 )
 paid2_120 <- mean(marginal(p2$paid, list(origin = "1988", age = 120)))
 stopifnot(paid2_120 / 104437 > 0.2, paid2_120 / 104437 < 1.5)
+
+# The one-year view (docs/design/reserving-bayes.md, decision 20): the
+# lifetime fit is compartmental()'s, the CDR by premium origin; with
+# reweighting only, nothing is matched or refitted. The checks against
+# refits are in validation/tests/reserving_compartmental_one_year.rs.
+view <- suppressWarnings(compartmental_one_year(tri, "paid", "premium", gm,
+                                                incurred = "incurred", n_sims = 2000,
+                                                refit = "reweight_only"))
+lifetime <- suppressWarnings(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
+                                           n_sims = 2000))
+stopifnot(
+  S7::S7_inherits(view, compartmental_one_year_fit),
+  S7::S7_inherits(view@fit, compartmental_fit),
+  identical(draw_matrix(view@fit@reserves), draw_matrix(lifetime@reserves)),
+  identical(view@origins, as.character(1988:1997)),
+  identical(names(view@opening_reserve), view@origins),
+  isTRUE(all.equal(unname(view@latest_paid + view@opening_reserve),
+                   unname(view@opening_ultimate))),
+  identical(view@cdr@dims, "origin"),
+  length(view@pareto_k) == 2000,
+  identical(view@refitted, integer()),
+  identical(view@moment_matched, integer()),
+  identical(view@unrefitted, integer()),
+  view@flagged_share > 0 && view@flagged_share < 1,
+  variance(view@cdr) < variance(view@fit@reserves),
+  identical(names(as.data.frame(view)),
+            c("origin", "premium", "latest_paid", "opening_ultimate", "opening_reserve",
+              "cdr_mean", "cdr_std_dev")),
+  "flagged_share" %in% names(totals_frame(view))
+)
+out <- capture.output(print(view))
+stopifnot(grepl("<compartmental_one_year_fit> 2000 simulations", out[1], fixed = TRUE))
+# Moment matching without refits: the flagged simulations are matched or
+# left unrefitted, with a warning for the latter.
+budget <- with_warnings(compartmental_one_year(tri, "paid", "premium", gm,
+                                               incurred = "incurred", n_sims = 40,
+                                               max_refits = 0))
+flagged <- which(is.nan(budget$value@pareto_k) | budget$value@pareto_k > 0.7)
+stopifnot(
+  identical(budget$value@refitted, integer()),
+  identical(sort(c(budget$value@moment_matched, budget$value@unrefitted)), flagged),
+  length(budget$value@unrefitted) == 0 ||
+    any(grepl("beyond max_refits", budget$warnings, fixed = TRUE))
+)
+expect_error_like(development_frame(view), "development table")
+expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, n_sims = 10),
+                  "exactly one")
+
+# The user's decisions of 2026-10-16: at most 2,000 one-year simulations
+# by default (one_year_sims sets the count; a smaller count gives the first
+# simulations of a larger one), and model 2's default view reweights only,
+# with a warning that it is approximate.
+capped <- suppressWarnings(compartmental_one_year(tri, "paid", "premium", gm,
+                                                  incurred = "incurred",
+                                                  refit = "reweight_only"))
+first <- suppressWarnings(compartmental_one_year(tri, "paid", "premium", gm,
+                                                 incurred = "incurred",
+                                                 refit = "reweight_only",
+                                                 one_year_sims = 300))
+stopifnot(
+  length(capped@pareto_k) == 2000,
+  identical(first@pareto_k, capped@pareto_k[1:300]),
+  is.null(capped@approximate)
+)
+expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
+                                         one_year_sims = 0), "n_sims")
+# Model 2 with short chains (they may miss a diagnostic threshold).
+two <- with_warnings(compartmental_model_2_one_year(tri, "paid", "premium", gm2,
+                                                    incurred = "incurred", chains = 2,
+                                                    tune = 200, draws = 200,
+                                                    target_accept = 0.9,
+                                                    one_year_sims = 50))
+stopifnot(
+  length(two$value@pareto_k) == 50,
+  identical(two$value@refitted, integer()),
+  identical(two$value@moment_matched, integer()),
+  grepl("approximate", two$value@approximate, fixed = TRUE),
+  any(grepl("approximate", two$warnings, fixed = TRUE))
+)
+# Refits stay a choice: an explicit mode carries no warning.
+chosen <- with_warnings(compartmental_model_2_one_year(tri, "paid", "premium", gm2,
+                                                       incurred = "incurred", chains = 2,
+                                                       tune = 200, draws = 200,
+                                                       target_accept = 0.9,
+                                                       one_year_sims = 50,
+                                                       refit = "reweight_only"))
+stopifnot(
+  is.null(chosen$value@approximate),
+  !any(grepl("approximate", chosen$warnings, fixed = TRUE)),
+  identical(chosen$value@pareto_k, two$value@pareto_k)
+)
+expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
+                                         refit = "sometimes"), "should be one of")

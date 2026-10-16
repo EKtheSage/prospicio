@@ -1523,7 +1523,7 @@ mod tests {
             ..quick(7)
         };
         let settings = BayesOneYear {
-            refit: crate::bayes::OneYearRefit::ReweightOnly,
+            refit: Some(crate::bayes::OneYearRefit::ReweightOnly),
             ..BayesOneYear::default()
         };
         let view = model

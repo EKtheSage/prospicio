@@ -6,6 +6,8 @@
 //! or with per-cell duals and a hand-written chain rule when the priors put
 //! effects on each cell (model 2).
 
+mod year;
+
 use prospicio_bayes::elpd::Loo;
 use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
 use prospicio_core::{Grain, Lag, Period, StreamRng};
@@ -16,12 +18,21 @@ use prospicio_prob::{
 
 use super::dual::{CHUNK, Dual, gradient};
 use super::laplace::{Posterior, Whitened, mode};
+use super::one_year::{self, BayesOneYear, BayesOneYearFit, OneYearRefit};
 use super::scalar::{Scalar, exprel_neg};
-use super::{Diagnostics, Stream, derive_seed, pilot_seed};
-use crate::bootstrap::component_sums;
+use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
+use crate::bootstrap::{component_sums, push_moments};
 use crate::error::{Error, Result};
 use crate::segments::FitTable;
 use crate::triangle::{Segment, Triangle};
+
+/// The warning of a one-year view that reweights only by its model's
+/// default ([`Compartmental::one_year_refit`]).
+const APPROXIMATE: &str = "the one-year view reweights its flagged simulations only, the \
+default with development effects (model 2): moment matching rescues none of them and each \
+refit takes about as long as a fit. The view is approximate, about 0.4 sd of the total \
+claims development result off a refit per simulation on company 337; set refit (with \
+max_refits as a budget) to refit them";
 
 /// The one-compartment closed form (decision 2) per unit of premium:
 /// `OS(t) / (Π RLR) = k_er g(t)` and
@@ -636,7 +647,9 @@ pub struct Compartmental {
     /// NUTS settings. Its `seed` is not used: the chains take a seed derived
     /// from [`seed`](Self::seed) (module docs, "Seeds").
     pub sampler: Sampler,
-    /// Number of predictive simulations.
+    /// Number of predictive simulations. The one-year view runs at most
+    /// [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS) of them unless its settings'
+    /// [`n_sims`](BayesOneYear::n_sims) says otherwise.
     pub n_sims: usize,
     /// Seed of the chains (and the pilot run) and of the simulations, each
     /// through its own derived seed (module docs, "Seeds").
@@ -644,6 +657,15 @@ pub struct Compartmental {
 }
 
 impl Compartmental {
+    /// The most one-year simulations [`one_year`](Self::one_year) runs by
+    /// default (`BayesOneYear::n_sims` `None`): 2,000, against the 10,000
+    /// of the lifetime view, since nearly every simulation of these models
+    /// is flagged and costs a moment match, a NUTS refit or (model 2) the
+    /// reweighting of 95 parameters (the user's decision of 2026-10-16,
+    /// `docs/design/reserving-bayes.md` decision 20). A model whose
+    /// [`n_sims`](Self::n_sims) is smaller runs that many.
+    pub const ONE_YEAR_SIMS: usize = 2_000;
+
     /// The model with `priors` and the defaults: model 1 (normal on amounts,
     /// cumulative paid, paid and outstanding), free rate order, the
     /// data-based start, four chains of 1,000 warm-up and 2,000 kept draws
@@ -721,7 +743,7 @@ impl Compartmental {
                 model.dim()
             )));
         }
-        let (posterior, mut diagnostics) =
+        let (posterior, sampled, mut diagnostics) =
             self.sample(&model, derive_seed(self.seed, Stream::Chains))?;
         let rate_swaps = {
             let (j_er, j_p) = (0, 1);
@@ -834,7 +856,194 @@ impl Compartmental {
             outstanding: os_pd,
             ultimate_loss_ratio,
             model,
+            sampled,
+            data,
         })
+    }
+
+    /// The one-year view (`docs/design/reserving-bayes.md`, decisions 16
+    /// to 18 and 20): fits as [`fit`](Self::fit), then draws
+    /// [`n_sims`](Self::n_sims) years of the paid and outstanding cells
+    /// valued in the twelve months after the valuation (each from a
+    /// posterior draw, with the likelihood's noise), reweights the
+    /// posterior draws by each year's likelihood with Pareto smoothed
+    /// importance sampling, and takes the claims development result of
+    /// each origin as the opening reserve less the year's payment and the
+    /// reserve after the year, each reserve the (weighted) posterior mean
+    /// of the expected paid to the square's last age less the paid so
+    /// far. A simulation whose Pareto `k̂` is above the settings' threshold
+    /// is moment-matched, and refitted with NUTS (this model's sampler, on
+    /// the triangle extended by its year) only when matching cannot bring
+    /// its `k̂` to the threshold, or as [`BayesOneYear::refit`] says.
+    ///
+    /// The defaults (the user's decision of 2026-10-16, decision 20): at
+    /// most [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS) simulations, and the
+    /// refit mode of [`one_year_refit`](Self::one_year_refit) when the
+    /// settings' `refit` is `None`. With development effects (model 2) that
+    /// is reweighting only: moment matching rescues none of its flagged
+    /// simulations on company 337 and a refit takes about as long as a fit,
+    /// so the default view is approximate (about 0.4 sd of the total claims
+    /// development result off a refit per simulation) and says so in
+    /// [`approximate`](BayesOneYearFit::approximate). Set `refit` to refit
+    /// (with [`max_refits`](BayesOneYear::max_refits) as a budget).
+    ///
+    /// An origin with no observed cell (the papers' 1997) and, with
+    /// development effects (model 2), an age with none take their effects
+    /// from the population in [`fit`](Self::fit)'s simulations; here they
+    /// are part of each posterior draw (standard normal `z` added to the
+    /// fit's draws, which is their posterior), so the year's cells update
+    /// them. A refit takes about as long as the fit: on the papers'
+    /// triangle about 5.5 s for model 1 and about a minute for model 2 in a
+    /// release build. The view's seed is the simulations' derived seed of
+    /// [`seed`](Self::seed); the fit is the same as `fit`'s.
+    ///
+    /// ```
+    /// use prospicio_bayes::nuts::Sampler;
+    /// use prospicio_reserving::bayes::{
+    ///     BayesOneYear, Compartmental, CompartmentalPriors, OneYearRefit, Outstanding,
+    /// };
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+    /// use prospicio_prob::Distribution;
+    ///
+    /// let paid: [&[f64]; 5] = [
+    ///     &[9.6, 22.8, 33.3, 40.3, 45.1],
+    ///     &[7.9, 19.5, 29.6, 36.8],
+    ///     &[8.7, 24.3, 35.4],
+    ///     &[13.3, 33.0],
+    ///     &[11.4],
+    /// ];
+    /// let incurred: [&[f64]; 5] = [
+    ///     &[62.7, 64.0, 65.6, 65.3, 62.3],
+    ///     &[62.1, 56.7, 56.6, 56.8],
+    ///     &[64.0, 61.5, 63.2],
+    ///     &[73.9, 75.1],
+    ///     &[77.1],
+    /// ];
+    /// let premium = [104.4, 88.9, 86.0, 99.3, 104.9];
+    /// let (mut origin, mut age, mut pd, mut inc, mut prem) = (vec![], vec![], vec![], vec![], vec![]);
+    /// for w in 0..5 {
+    ///     for d in 0..paid[w].len() {
+    ///         origin.push(Month::january(1988 + w as i32));
+    ///         age.push(12 * (d as u32 + 1));
+    ///         pd.push(paid[w][d]);
+    ///         inc.push(incurred[w][d]);
+    ///         prem.push(premium[w]);
+    ///     }
+    /// }
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&age),
+    ///     values: &[("paid", &pd), ("incurred", &inc), ("premium", &prem)],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let preset = Compartmental::new(CompartmentalPriors::gesmann_morris());
+    /// let model = Compartmental {
+    ///     sampler: Sampler { chains: 2, tune: 150, draws: 150, target_accept: 0.9, ..preset.sampler },
+    ///     n_sims: 500,
+    ///     ..preset
+    /// };
+    /// // Reweighting only, for speed: model 1's default moment-matches the
+    /// // flagged simulations and refits those it cannot rescue.
+    /// assert_eq!(model.one_year_refit(), OneYearRefit::MomentMatchThenRefit);
+    /// let only = BayesOneYear { refit: Some(OneYearRefit::ReweightOnly), ..BayesOneYear::default() };
+    /// let view = model.one_year(&tri, "paid", Outstanding::FromIncurred("incurred"), "premium", &only)?;
+    /// assert_eq!(view.cdr.n_components(), 5);
+    /// // 1988 is at the square's last age: no cell in the year, no change.
+    /// assert!(view.cdr.draw_matrix().chunks(5).all(|row| row[0] == 0.0));
+    /// // A refit mode the settings choose is used as it is: not approximate.
+    /// assert_eq!(view.approximate, None);
+    /// # Ok::<(), prospicio_reserving::Error>(())
+    /// ```
+    pub fn one_year(
+        &self,
+        triangle: &Triangle,
+        paid: &str,
+        outstanding: Outstanding<'_>,
+        premium: &str,
+        settings: &BayesOneYear,
+    ) -> Result<BayesOneYearFit<CompartmentalFit>> {
+        settings.validate()?;
+        let (settings, n_sims, approximate) = self.one_year_defaults(settings);
+        let settings = &settings;
+        let fit = self.fit(triangle, paid, outstanding, premium)?;
+        let view_seed = one_year_seed(derive_seed(self.seed, Stream::Predictive));
+        let year = year::CompartmentalYear::new(self, &fit.data)?;
+        // The added `z` of each draw: stream `d` of a seed that the
+        // simulations' streams (`0..n_sims` of `view_seed`) do not reach.
+        let opening = year.opening_draws(
+            &fit.model,
+            &fit.sampled,
+            StreamRng::new(view_seed, u64::MAX).next_u64(),
+        )?;
+        let draws = one_year::simulate(&year, &opening, settings, n_sims, view_seed)?;
+        let mut provenance = fit.reserves.provenance().clone();
+        provenance.parameters.retain(|(k, _)| k != "output");
+        provenance.model = format!("{}_one_year", provenance.model);
+        let provenance = one_year::provenance(provenance, settings, n_sims);
+        let cdr = PredictiveDistribution::from_draws(
+            vec!["origin".into()],
+            fit.origins.iter().map(|&o| vec![o.into()]).collect(),
+            draws.cdr,
+            provenance,
+        )?;
+        Ok(BayesOneYearFit {
+            opening_ultimate: fit
+                .latest_paid
+                .iter()
+                .zip(&draws.opening)
+                .map(|(l, r)| l + r)
+                .collect(),
+            fit,
+            opening_reserve: draws.opening,
+            cdr,
+            pareto_k: draws.pareto_k,
+            refitted: draws.refitted,
+            moment_matched: draws.moment_matched,
+            unrefitted: draws.unrefitted,
+            refit_warnings: draws.refit_warnings,
+            k_threshold: settings.k_threshold,
+            approximate,
+        })
+    }
+
+    /// The one-year view's refit mode when its settings' `refit` is `None`
+    /// (the user's decision of 2026-10-16, `docs/design/reserving-bayes.md`
+    /// decision 20): [`OneYearRefit::ReweightOnly`] with development effects
+    /// in the priors (model 2), whose flagged simulations moment matching
+    /// does not rescue and whose refits each take about as long as a fit;
+    /// [`OneYearRefit::MomentMatchThenRefit`] without (model 1).
+    pub fn one_year_refit(&self) -> OneYearRefit {
+        if self
+            .priors
+            .development_effect_sd
+            .iter()
+            .any(Option::is_some)
+        {
+            OneYearRefit::ReweightOnly
+        } else {
+            OneYearRefit::MomentMatchThenRefit
+        }
+    }
+
+    /// `settings` with this model's one-year defaults in place of a `None`
+    /// refit mode ([`one_year_refit`](Self::one_year_refit)), the number of
+    /// one-year simulations (the settings' `n_sims`, or this model's capped
+    /// at [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS)), and the view's
+    /// [`approximate`](BayesOneYearFit::approximate) warning: set when the
+    /// default leaves the flagged simulations reweighted only.
+    fn one_year_defaults(&self, settings: &BayesOneYear) -> (BayesOneYear, usize, Option<String>) {
+        let default_refit = self.one_year_refit();
+        let approximate = (settings.refit.is_none() && default_refit == OneYearRefit::ReweightOnly)
+            .then(|| APPROXIMATE.to_string());
+        let n_sims = settings.sims(self.n_sims.min(Self::ONE_YEAR_SIMS));
+        (
+            settings.with_refit_default(default_refit),
+            n_sims,
+            approximate,
+        )
     }
 
     /// Paths of the mean outstanding and cumulative paid of each origin of
@@ -1011,8 +1220,14 @@ impl Compartmental {
     /// NUTS on `model` with the chains' seed `chains`: a pilot run on a
     /// scale whitened at the start, then the main run on the pilot draws'
     /// scale, as [`Meyers`](super::Meyers) samples. The draws on the
-    /// natural scale and their diagnostics.
-    fn sample(&self, model: &Model, chains: u64) -> Result<(PosteriorDraws, Diagnostics)> {
+    /// natural scale, the same draws on the unconstrained scale of `theta`
+    /// (an affine map of the whitened scale NUTS samples on, for the
+    /// one-year view) and their diagnostics.
+    fn sample(
+        &self,
+        model: &Model,
+        chains: u64,
+    ) -> Result<(PosteriorDraws, PosteriorDraws, Diagnostics)> {
         let p = model.dim();
         let start = model.start(self.start);
         let rough = Whitened::regularised(model, &start)?;
@@ -1035,14 +1250,15 @@ impl Compartmental {
                 ..self.sampler
             },
         )?;
-        let posterior = draws.transform(model.names(), |z| model.natural(&whitened.theta(z)))?;
+        let sampled = draws.transform(model.sampled_names(), |z| whitened.theta(z))?;
+        let posterior = sampled.transform(model.names(), |theta| model.natural(theta))?;
         let summary = posterior.summary()?;
         let diagnostics = Diagnostics::new(
             &summary,
             posterior.chains(),
             posterior.divergences().iter().sum(),
         );
-        Ok((posterior, diagnostics))
+        Ok((posterior, sampled, diagnostics))
     }
 
     fn validate_priors(&self) -> Result<()> {
@@ -1198,6 +1414,63 @@ pub struct CompartmentalFit {
     /// error past the square.
     pub ultimate_loss_ratio: Vec<f64>,
     model: Model,
+    /// The same draws on the unconstrained scale of `theta`, for the
+    /// one-year view (`docs/design/reserving-bayes.md`, decision 20).
+    sampled: PosteriorDraws,
+    /// The observed cells, for the one-year view.
+    data: Data,
+}
+
+/// The one-year view of a compartmental model
+/// ([`Compartmental::one_year`]): its tables, by the premium column's
+/// origins, as [`CompartmentalFit`]'s.
+impl BayesOneYearFit<CompartmentalFit> {
+    /// The share of simulations whose `k̂` is above the threshold (or
+    /// NaN), whether or not they were refitted.
+    pub fn flagged_share(&self) -> f64 {
+        one_year::flagged_share(&self.pareto_k, self.k_threshold)
+    }
+
+    /// One row per origin: `premium`, `latest_paid`, `opening_ultimate`,
+    /// `opening_reserve`, and the `cdr_mean` and `cdr_std_dev` of the
+    /// claims development result.
+    pub fn to_long(&self) -> FitTable {
+        let mut table = FitTable {
+            keys: Vec::new(),
+            origin: Some(self.fit.origins.clone()),
+            age: None,
+            values: vec![
+                ("premium".into(), self.fit.premium.clone()),
+                ("latest_paid".into(), self.fit.latest_paid.clone()),
+                ("opening_ultimate".into(), self.opening_ultimate.clone()),
+                ("opening_reserve".into(), self.opening_reserve.clone()),
+            ],
+        };
+        push_moments(&mut table, "cdr_", &component_sums(&self.cdr));
+        table
+    }
+
+    /// One row: the totals of [`to_long`](Self::to_long)'s columns, the
+    /// `flagged_share`, and the `cdr_mean` and `cdr_std_dev` of the total
+    /// claims development result.
+    pub fn totals(&self) -> FitTable {
+        let total = self.cdr.total();
+        let sum = |v: &[f64]| vec![v.iter().sum::<f64>()];
+        FitTable {
+            keys: Vec::new(),
+            origin: None,
+            age: None,
+            values: vec![
+                ("premium".into(), sum(&self.fit.premium)),
+                ("latest_paid".into(), sum(&self.fit.latest_paid)),
+                ("opening_ultimate".into(), sum(&self.opening_ultimate)),
+                ("opening_reserve".into(), sum(&self.opening_reserve)),
+                ("flagged_share".into(), vec![self.flagged_share()]),
+                ("cdr_mean".into(), vec![total.mean()]),
+                ("cdr_std_dev".into(), vec![total.std_dev()]),
+            ],
+        }
+    }
 }
 
 /// [`CompartmentalFit::loo`]: PSIS-LOO over every observed cell, with the
@@ -1500,28 +1773,49 @@ impl Data {
             .max()
             .unwrap_or(0);
         let n_ages = n.max(observed_ages);
-        let mut latest_paid = vec![None; n];
-        for &(i, k, v) in &paid_cells {
-            if latest_paid[i].is_none_or(|(l, _)| k > l) {
-                latest_paid[i] = Some((k, v));
-            }
-        }
-        let mut latest_outstanding: Vec<Option<usize>> = vec![None; n];
-        for &(i, k, _) in &os_cells {
-            if latest_outstanding[i].is_none_or(|l| k > l) {
-                latest_outstanding[i] = Some(k);
-            }
-        }
-        Ok(Self {
+        let mut data = Self {
             origins,
             premium: premiums,
             grain,
             n_ages,
             outstanding: os_cells,
             paid: paid_cells,
-            latest_paid,
-            latest_outstanding,
-        })
+            latest_paid: Vec::new(),
+            latest_outstanding: Vec::new(),
+        };
+        data.set_latest();
+        Ok(data)
+    }
+
+    /// Each origin's latest paid and outstanding, from the cells.
+    fn set_latest(&mut self) {
+        let n = self.origins.len();
+        self.latest_paid = vec![None; n];
+        for &(i, k, v) in &self.paid {
+            if self.latest_paid[i].is_none_or(|(l, _)| k > l) {
+                self.latest_paid[i] = Some((k, v));
+            }
+        }
+        self.latest_outstanding = vec![None; n];
+        for &(i, k, _) in &self.outstanding {
+            if self.latest_outstanding[i].is_none_or(|l| k > l) {
+                self.latest_outstanding[i] = Some(k);
+            }
+        }
+    }
+
+    /// The same data with the cells `paid` (cumulative) and `outstanding`
+    /// added, each `(origin, age index, value)` within the square.
+    fn extended(
+        &self,
+        paid: impl IntoIterator<Item = (usize, usize, f64)>,
+        outstanding: impl IntoIterator<Item = (usize, usize, f64)>,
+    ) -> Self {
+        let mut data = self.clone();
+        data.paid.extend(paid);
+        data.outstanding.extend(outstanding);
+        data.set_latest();
+        data
     }
 
     /// The age in months of age index `k`.
@@ -1789,15 +2083,41 @@ const LOG_TAU: usize = 4;
 const ATANH_RHO: usize = 6;
 
 impl Model {
+    /// The model of `data`'s observed cells: a level (with its `z`) for
+    /// each origin and each age with an observed cell.
     fn new(
         data: &Data,
         priors: CompartmentalPriors,
         ordered: bool,
         response: Response,
     ) -> Result<Self> {
+        Self::build(data, priors, ordered, response, false)
+    }
+
+    /// The model of `data`'s observed cells with a level for every origin
+    /// of the premium column and every age of the square, observed or not
+    /// (`docs/design/reserving-bayes.md`, decision 20): an effect no cell
+    /// informs has only its prior, so this posterior is [`new`](Self::new)'s
+    /// with independent standard normal `z` for the unobserved levels.
+    fn full(
+        data: &Data,
+        priors: CompartmentalPriors,
+        ordered: bool,
+        response: Response,
+    ) -> Result<Self> {
+        Self::build(data, priors, ordered, response, true)
+    }
+
+    fn build(
+        data: &Data,
+        priors: CompartmentalPriors,
+        ordered: bool,
+        response: Response,
+        all_levels: bool,
+    ) -> Result<Self> {
         let n = data.origins.len();
-        let mut has = vec![false; n];
-        let mut has_age = vec![false; data.n_ages];
+        let mut has = vec![all_levels; n];
+        let mut has_age = vec![all_levels; data.n_ages];
         for c in data.outstanding.iter().chain(&data.paid) {
             has[c.0] = true;
             has_age[c.1] = true;
@@ -2801,6 +3121,7 @@ impl Posterior for LeastSquares<'_> {
 mod tests {
     use super::*;
     use crate::bayes::laplace::tests::assert_gradient;
+    use crate::bayes::one_year::OneYearRefit;
     use crate::triangle::Long;
     use crate::{DevelopmentColumn, Month};
     use prospicio_math::special::norm_pdf;
@@ -2932,6 +3253,54 @@ mod tests {
 
     fn preset_2() -> Compartmental {
         Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
+    }
+
+    /// The one-year defaults of the user's decision of 2026-10-16: model 1
+    /// moment-matches, model 2 (development effects) reweights only with a
+    /// warning, a refit mode the settings choose is kept without one, and
+    /// both run at most 2,000 one-year simulations unless told otherwise.
+    #[test]
+    fn the_one_year_defaults_follow_the_model() {
+        let default = BayesOneYear::default();
+        let (one, sims, warning) = preset().one_year_defaults(&default);
+        assert_eq!(one.refit, Some(OneYearRefit::MomentMatchThenRefit));
+        assert_eq!((sims, warning), (Compartmental::ONE_YEAR_SIMS, None));
+        let (two, sims, warning) = preset_2().one_year_defaults(&default);
+        assert_eq!(two.refit, Some(OneYearRefit::ReweightOnly));
+        assert_eq!(sims, 2_000);
+        let warning = warning.expect("model 2's default view warns");
+        assert!(warning.contains("approximate") && warning.contains("0.4 sd"));
+        // Refits stay a choice: an explicit mode, even the other models'
+        // default, is used as it is and is not approximate.
+        for refit in [
+            OneYearRefit::MomentMatchThenRefit,
+            OneYearRefit::RefitFlagged,
+            OneYearRefit::ReweightOnly,
+        ] {
+            let chosen = BayesOneYear {
+                refit: Some(refit),
+                n_sims: Some(300),
+                ..default
+            };
+            let (two, sims, warning) = preset_2().one_year_defaults(&chosen);
+            assert_eq!((two.refit, sims, warning), (Some(refit), 300, None));
+        }
+        // A model with fewer simulations runs that many; more are capped.
+        let small = Compartmental {
+            n_sims: 500,
+            ..preset_2()
+        };
+        assert_eq!(small.one_year_defaults(&default).1, 500);
+        let large = Compartmental {
+            n_sims: 50_000,
+            ..preset()
+        };
+        assert_eq!(large.one_year_defaults(&default).1, 2_000);
+        let more = BayesOneYear {
+            n_sims: Some(20_000),
+            ..default
+        };
+        assert_eq!(large.one_year_defaults(&more).1, 20_000);
     }
 
     /// Points around the paper's posterior (model 1's, or model 2's when
@@ -3937,5 +4306,264 @@ mod tests {
                 grad / value
             );
         }
+    }
+
+    /// The training triangle's square of 1988 to 1992 at ages up to 60
+    /// months: every origin at the square's last age, so no year.
+    fn closed_triangle() -> Triangle {
+        let (mut origin, mut ages) = (vec![], vec![]);
+        let (mut paid, mut inc, mut prem) = (vec![], vec![], vec![]);
+        for w in 0..5 {
+            for d in 0..5 {
+                origin.push(Month::january(1988 + w as i32));
+                ages.push(12 * (d as Lag + 1));
+                paid.push(PAID[w][d]);
+                inc.push(INCURRED[w][d]);
+                prem.push(PREMIUM[w]);
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("incurred", &inc), ("premium", &prem)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn the_coming_year_of_the_training_triangle() {
+        use crate::bayes::one_year::YearModel;
+        for (preset, cells) in [(preset(), 20), (preset_2(), 20)] {
+            let data = Data::new(&triangle(true), "paid", incurred(), "premium").unwrap();
+            let year = year::CompartmentalYear::new(&preset, &data).unwrap();
+            // Every origin's next diagonal, paid and outstanding: 1988 at
+            // 120 months, ..., 1997 at 12 months.
+            assert_eq!(year.n_year(), cells);
+            let data = Data::new(&triangle(false), "paid", incurred(), "premium").unwrap();
+            // Without 1997 the square has 9 ages and 1988 is at the last.
+            assert_eq!(
+                year::CompartmentalYear::new(&preset, &data)
+                    .unwrap()
+                    .n_year(),
+                16
+            );
+            let data = Data::new(&closed_triangle(), "paid", incurred(), "premium").unwrap();
+            assert_eq!(
+                year::CompartmentalYear::new(&preset, &data)
+                    .unwrap()
+                    .n_year(),
+                0
+            );
+        }
+    }
+
+    /// The one-year conformance suite (`one_year::conformance`) on
+    /// `preset` with a small sampler: the training triangle with 1997, and
+    /// the closed square of [`closed_triangle`], each sampled directly (the
+    /// closed square has fewer cells than model 2 has parameters, which
+    /// `fit` refuses but the posterior does not need).
+    fn one_year_conformance(name: &str, preset: Compartmental) {
+        use crate::bayes::one_year::YearModel;
+        let m = Compartmental {
+            sampler: Sampler {
+                chains: 2,
+                tune: 100,
+                draws: 100,
+                target_accept: 0.9,
+                ..preset.sampler
+            },
+            ..preset
+        };
+        let fitted = |tri: &Triangle| {
+            let data = Data::new(tri, "paid", incurred(), "premium").unwrap();
+            let model = Model::new(&data, m.priors, false, m.response()).unwrap();
+            let (_, sampled, _) = m.sample(&model, 5).unwrap();
+            (data, model, sampled)
+        };
+        let (open, closed) = (fitted(&triangle(true)), fitted(&closed_triangle()));
+        let year = year::CompartmentalYear::new(&m, &open.0).unwrap();
+        let opening = year.opening_draws(&open.1, &open.2, 9).unwrap();
+        let closed_year = year::CompartmentalYear::new(&m, &closed.0).unwrap();
+        let closed_opening = closed_year.opening_draws(&closed.1, &closed.2, 9).unwrap();
+        // 1997's two `z` (and, with development effects, age 10's) are
+        // added to each draw.
+        let added = if m.priors.hierarchy() == Hierarchy::Model1 {
+            2
+        } else {
+            4 + 4
+        };
+        assert_eq!(opening.dim(), open.2.dim() + added);
+        assert_eq!(year.n_year(), 20);
+        crate::bayes::one_year::conformance::check(
+            name,
+            &year,
+            &opening,
+            &closed_year,
+            &closed_opening,
+        );
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_of_model_1_conforms() {
+        one_year_conformance("compartmental model 1", preset());
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_of_model_2_conforms() {
+        one_year_conformance("compartmental model 2", preset_2());
+    }
+
+    /// The opening reserve, the posterior mean over the draws with 1997's
+    /// effects added, is the fit's mean reserve, whose simulations draw
+    /// them from the population, within Monte Carlo error; the tables have
+    /// one row per premium origin.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_opening_reserve_is_the_fits() {
+        use crate::bayes::one_year::YearModel;
+        let only = BayesOneYear {
+            refit: Some(OneYearRefit::ReweightOnly),
+            // Above the default cap of `ONE_YEAR_SIMS`.
+            n_sims: Some(4000),
+            ..BayesOneYear::default()
+        };
+        for preset in [preset(), preset_2()] {
+            let m = Compartmental {
+                sampler: Sampler {
+                    chains: 2,
+                    tune: 100,
+                    draws: 100,
+                    target_accept: 0.9,
+                    ..preset.sampler
+                },
+                n_sims: 4000,
+                seed: 2,
+                ..preset
+            };
+            let view = m
+                .one_year(&triangle(true), "paid", incurred(), "premium", &only)
+                .unwrap();
+            let total = view.fit.reserves.total();
+            let opening: f64 = view.opening_reserve.iter().sum();
+            // The error of both means: the simulations', and the draws'
+            // (each with its own 1997 effects) of the opening.
+            let year = year::CompartmentalYear::new(&m, &view.fit.data).unwrap();
+            let draws = year
+                .opening_draws(&view.fit.model, &view.fit.sampled, 1)
+                .unwrap();
+            let mut row = vec![0.0; 10];
+            let by_draw: Vec<f64> = (0..draws.n_draws())
+                .map(|d| {
+                    year.opening(draws.draw(d), &mut row);
+                    row.iter().sum()
+                })
+                .collect();
+            let s = by_draw.len() as f64;
+            let mean_d = by_draw.iter().sum::<f64>() / s;
+            let var_d = by_draw.iter().map(|v| (v - mean_d).powi(2)).sum::<f64>() / s;
+            let se = (total.variance() / m.n_sims as f64 + var_d / s).sqrt();
+
+            assert!(
+                (opening - total.mean()).abs() < 4.0 * se,
+                "opening {opening}, fit {} (se {se})",
+                total.mean()
+            );
+            assert_eq!(view.cdr.n_components(), 10);
+            assert_eq!(view.pareto_k.len(), 4000);
+            assert!(view.refitted.is_empty() && view.moment_matched.is_empty());
+            assert!(view.cdr.std_dev() < view.fit.reserves.std_dev());
+            let long = view.to_long();
+            assert_eq!(long.origin.as_ref().unwrap().len(), 10);
+            let totals = view.totals();
+            assert!(totals.values.iter().any(|(n, _)| n == "flagged_share"));
+            assert!(view.cdr.provenance().model.ends_with("_one_year"));
+        }
+    }
+
+    /// A refit budget refits the first simulations due for one, in
+    /// order, and reweights and lists the others; the years, the `k̂` and
+    /// the simulations within the budget are those without one, and those
+    /// beyond it are `ReweightOnly`'s, bit for bit.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_refit_budget_refits_the_first_and_lists_the_rest() {
+        let m = Compartmental {
+            n_sims: 12,
+            ..quick(4)
+        };
+        let with = |refit: OneYearRefit, max_refits: Option<usize>| {
+            m.one_year(
+                &triangle(true),
+                "paid",
+                incurred(),
+                "premium",
+                &BayesOneYear {
+                    refit: Some(refit),
+                    max_refits,
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap()
+        };
+        let view = |max_refits: Option<usize>| with(OneYearRefit::RefitFlagged, max_refits);
+        let all = view(None);
+        assert!(all.refitted.len() >= 3, "{:?}", all.pareto_k);
+        assert!(all.unrefitted.is_empty());
+        let two = view(Some(2));
+        assert_eq!(two.pareto_k, all.pareto_k);
+        assert_eq!(two.refitted, all.refitted[..2]);
+        assert_eq!(two.unrefitted, all.refitted[2..]);
+        let n = 10;
+        for (a, b) in two
+            .cdr
+            .draw_matrix()
+            .chunks(n)
+            .zip(all.cdr.draw_matrix().chunks(n))
+            .enumerate()
+            .filter(|(i, _)| !two.unrefitted.contains(i))
+            .map(|(_, r)| r)
+        {
+            assert_eq!(a, b);
+        }
+        let none = view(Some(0));
+        assert!(none.refitted.is_empty());
+        assert_eq!(none.unrefitted, all.refitted);
+        let only = with(OneYearRefit::ReweightOnly, None);
+        assert_eq!(none.cdr.draw_matrix(), only.cdr.draw_matrix());
+        for (a, b) in two
+            .cdr
+            .draw_matrix()
+            .chunks(n)
+            .zip(only.cdr.draw_matrix().chunks(n))
+            .enumerate()
+            .filter(|(i, _)| two.unrefitted.contains(i))
+            .map(|(_, r)| r)
+        {
+            assert_eq!(a, b);
+        }
+        assert!(
+            none.cdr
+                .provenance()
+                .parameters
+                .contains(&("max_refits".into(), "0".into()))
+        );
     }
 }

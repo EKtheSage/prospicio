@@ -1752,25 +1752,27 @@ Triangle$bayes_odp <- function(column, intercept_sd, origin_sd, development_sd, 
 
 Triangle$bayes_odp_segments <- function(column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__bayes_odp_segments, self, column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
 
-Triangle$bayes_odp_one_year <- function(column, priors, process, run, k_threshold, refit, one_year_sims) .Call(wrap__Triangle__bayes_odp_one_year, self, column, priors, process, run, k_threshold, refit, one_year_sims)
+Triangle$bayes_odp_one_year <- function(column, priors, process, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__bayes_odp_one_year, self, column, priors, process, run, k_threshold, refit, max_refits, one_year_sims)
 
-Triangle$bayes_odp_one_year_segments <- function(column, priors, process, run, k_threshold, refit, one_year_sims, dependence, spearman) .Call(wrap__Triangle__bayes_odp_one_year_segments, self, column, priors, process, run, k_threshold, refit, one_year_sims, dependence, spearman)
+Triangle$bayes_odp_one_year_segments <- function(column, priors, process, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman) .Call(wrap__Triangle__bayes_odp_one_year_segments, self, column, priors, process, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman)
 
 Triangle$meyers <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__meyers, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
 Triangle$meyers_segments <- function(column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman) .Call(wrap__Triangle__meyers_segments, self, column, premium, model, logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape, chains, tune, draws, n_sims, seed, target_accept, max_depth, dependence, spearman)
 
-Triangle$meyers_one_year <- function(column, premium, model, priors, run, k_threshold, refit, one_year_sims) .Call(wrap__Triangle__meyers_one_year, self, column, premium, model, priors, run, k_threshold, refit, one_year_sims)
+Triangle$meyers_one_year <- function(column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__meyers_one_year, self, column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims)
 
-Triangle$meyers_one_year_segments <- function(column, premium, model, priors, run, k_threshold, refit, one_year_sims, dependence, spearman) .Call(wrap__Triangle__meyers_one_year_segments, self, column, premium, model, priors, run, k_threshold, refit, one_year_sims, dependence, spearman)
+Triangle$meyers_one_year_segments <- function(column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman) .Call(wrap__Triangle__meyers_one_year_segments, self, column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman)
 
 Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
+
+Triangle$compartmental_one_year <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__compartmental_one_year, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims)
 
 Triangle$compartmental_prior_predictive <- function(premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental_prior_predictive, self, premium, priors, families, settings, run)
 
 Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
-Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, one_year_sims) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit, one_year_sims)
+Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims)
 
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
 
@@ -2101,6 +2103,8 @@ BayesOneYearFit$refitted <- function() .Call(wrap__BayesOneYearFit__refitted, se
 
 BayesOneYearFit$moment_matched <- function() .Call(wrap__BayesOneYearFit__moment_matched, self)
 
+BayesOneYearFit$unrefitted <- function() .Call(wrap__BayesOneYearFit__unrefitted, self)
+
 BayesOneYearFit$refit_warnings <- function() .Call(wrap__BayesOneYearFit__refit_warnings, self)
 
 BayesOneYearFit$k_threshold <- function() .Call(wrap__BayesOneYearFit__k_threshold, self)
@@ -2142,6 +2146,8 @@ BayesOneYearFits$pareto_k <- function() .Call(wrap__BayesOneYearFits__pareto_k, 
 BayesOneYearFits$refitted <- function() .Call(wrap__BayesOneYearFits__refitted, self)
 
 BayesOneYearFits$moment_matched <- function() .Call(wrap__BayesOneYearFits__moment_matched, self)
+
+BayesOneYearFits$unrefitted <- function() .Call(wrap__BayesOneYearFits__unrefitted, self)
 
 BayesOneYearFits$refit_warnings <- function() .Call(wrap__BayesOneYearFits__refit_warnings, self)
 
@@ -2292,6 +2298,48 @@ CompartmentalFit$segment <- function(keys, values) .Call(wrap__CompartmentalFit_
 
 #' @export
 `[[.CompartmentalFit` <- `$.CompartmentalFit`
+
+CompartmentalOneYearFit <- new.env(parent = emptyenv())
+
+CompartmentalOneYearFit$fit <- function() .Call(wrap__CompartmentalOneYearFit__fit, self)
+
+CompartmentalOneYearFit$origins <- function() .Call(wrap__CompartmentalOneYearFit__origins, self)
+
+CompartmentalOneYearFit$latest_paid <- function() .Call(wrap__CompartmentalOneYearFit__latest_paid, self)
+
+CompartmentalOneYearFit$opening_ultimate <- function() .Call(wrap__CompartmentalOneYearFit__opening_ultimate, self)
+
+CompartmentalOneYearFit$opening_reserve <- function() .Call(wrap__CompartmentalOneYearFit__opening_reserve, self)
+
+CompartmentalOneYearFit$cdr <- function() .Call(wrap__CompartmentalOneYearFit__cdr, self)
+
+CompartmentalOneYearFit$pareto_k <- function() .Call(wrap__CompartmentalOneYearFit__pareto_k, self)
+
+CompartmentalOneYearFit$refitted <- function() .Call(wrap__CompartmentalOneYearFit__refitted, self)
+
+CompartmentalOneYearFit$moment_matched <- function() .Call(wrap__CompartmentalOneYearFit__moment_matched, self)
+
+CompartmentalOneYearFit$unrefitted <- function() .Call(wrap__CompartmentalOneYearFit__unrefitted, self)
+
+CompartmentalOneYearFit$refit_warnings <- function() .Call(wrap__CompartmentalOneYearFit__refit_warnings, self)
+
+CompartmentalOneYearFit$approximate <- function() .Call(wrap__CompartmentalOneYearFit__approximate, self)
+
+CompartmentalOneYearFit$k_threshold <- function() .Call(wrap__CompartmentalOneYearFit__k_threshold, self)
+
+CompartmentalOneYearFit$flagged_share <- function() .Call(wrap__CompartmentalOneYearFit__flagged_share, self)
+
+CompartmentalOneYearFit$long_table <- function() .Call(wrap__CompartmentalOneYearFit__long_table, self)
+
+CompartmentalOneYearFit$totals_table <- function() .Call(wrap__CompartmentalOneYearFit__totals_table, self)
+
+CompartmentalOneYearFit$segment <- function(keys, values) .Call(wrap__CompartmentalOneYearFit__segment, self, keys, values)
+
+#' @export
+`$.CompartmentalOneYearFit` <- function (self, name) { func <- CompartmentalOneYearFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CompartmentalOneYearFit` <- `$.CompartmentalOneYearFit`
 
 BayesBfFit <- new.env(parent = emptyenv())
 

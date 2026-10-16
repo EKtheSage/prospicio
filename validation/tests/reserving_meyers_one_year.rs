@@ -182,7 +182,7 @@ fn view(
         column,
         "premium",
         &BayesOneYear {
-            refit,
+            refit: Some(refit),
             n_sims: Some(n_sims),
             ..BayesOneYear::default()
         },

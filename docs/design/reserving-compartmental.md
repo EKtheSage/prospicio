@@ -5,8 +5,9 @@ the end, all as recommended, with decision 1 widened: see there). PR A
 built (decision 4); PR B built (decisions 2, 5, 6, 7 and 9, each with its
 "Built" paragraph: the Rust core and its Python and R bindings); PR C
 built (decisions 1, 2, 4, 5, 6, 7 and 9, each with its "Built (PR C)"
-paragraph: the Rust core and its Python and R bindings); PRs D and E not
-yet · Lane:
+paragraph: the Rust core and its Python and R bindings); PR F (the
+one-year view, decision 11) built, with the defaults the user decided on
+2026-10-16; PRs D and E not yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -61,6 +62,7 @@ in `reserving-v02.md` decision 7 and `reserving-bayes.md` open decision 10.
 | C | `claude/bayes-compartmental-lognormal` | model 2's likelihood (log-normal on outstanding and incremental paid loss ratios) and its development-year random effects (decision 2) | PR B |
 | D | `claude/bayes-compartmental-two-os` | the two-OS model (fast and slow settlement), the generic RK4 solver as its oracle (decision 3) | PR B |
 | E | `claude/bayes-compartmental-segments` | `Compartmental::fit_segments` with `SegmentDependence`, and `TriangleModel` for the diagonal backtest (decision 8) | PR B, and the Meyers segments branch merged |
+| F | `claude/bayes-one-year-compartmental` | the one-year view of models 1 and 2 through `YearModel` (decision 11; `reserving-bayes.md` decision 20), a refit budget for every model's view; Python and R bindings | the Meyers one-year PR (#280) |
 | later | | multistage exposure on the RK4 solver; market cycles; AR(1) residuals (open decision 8) | PR D |
 
 PRs B to E touch the same binding files as the other Bayesian models
@@ -1219,6 +1221,49 @@ guide page belongs in `docs/guides/`, which the Guides lane owns, so it
 is left to that lane (or to the user's go-ahead for this one) rather than
 written in this PR, tracked as
 [#253](https://github.com/EKtheSage/prospicio/issues/253).
+
+### 11. The one-year view (PR F)
+
+Built in Rust, Python and R on `claude/bayes-one-year-compartmental`
+(2026-10-15), at the user's decisions of 2026-10-15 (`reserving-bayes.md`
+open decisions 12 and 14: every Bayesian model gets the one-year view
+through `YearModel`, with moment matching as its default) and of
+2026-10-16 (its open decision 15: the defaults below). The engine, the
+measurements and the decision are in `reserving-bayes.md` decision 20 and
+open decision 15; what is particular to this model:
+
+* `CompartmentalFit` keeps its draws on the unconstrained scale beside
+  `posterior` (unchanged, bit for bit), and the view takes the model
+  with a level for every origin of the premium column and every age of
+  the square: 1997 (no observed cell) and, in model 2, the age-120
+  development effects get standard normal `z` added to each draw, their
+  posterior, where `fit`'s simulations draw them from the population
+  (decision 2). The year's cells then update them.
+* The year is every origin's next diagonal of paid and outstanding (1997
+  at 12 months, 1988 at 120 on the papers' triangle: 20 cells), as
+  amounts; the likelihood converts them to the fit's response (loss
+  ratios, increments). The reserve given a draw is `fit`'s, the expected
+  paid to the square's last age less the paid so far (decision 5).
+* Every effect is stored centred (`u = τ z`) for moment matching, which
+  on the `z` scale cannot follow the curved ridge the year's cells make;
+  on model 1 that took matching from about 1 in 10 flagged simulations
+  rescued to about 19 in 20. On model 2 (87 parameters, effect sds near
+  0) matching rescues none on either scale, and a refit takes as long as
+  a fit (about 31 s of wall time with 8 running side by side).
+* The defaults, as the user decided on 2026-10-16 (`reserving-bayes.md`
+  open decision 15): model 1's view moment-matches and refits what
+  matching cannot rescue; with development effects in the priors (model
+  2, `Compartmental::one_year_refit`) the view reweights only and its
+  `approximate` says so (about 0.4 sd of the total off a refit; Python
+  and R warn), unless the settings choose a refit mode. Both run at most
+  `Compartmental::ONE_YEAR_SIMS` (2,000) simulations unless
+  `BayesOneYear::n_sims` says otherwise; the lifetime view keeps
+  `n_sims`. Pull requests run model 1's one-year validation without its
+  refit comparison; the weekly and manual runs run all of it, model 2
+  included.
+* A fit needs a future cell, so a fully developed square has no fit and
+  no view; the conformance suite's "no year" check samples such a square
+  directly in the unit tests.
 
 ## Risks
 

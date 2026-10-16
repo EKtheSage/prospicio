@@ -33,7 +33,8 @@ rayon.workspace = true
 # A new Bayesian parity file gets a [[test]] entry below, and nothing else:
 # the CI job reads this list.
 # The slowest arms (the Meyers and compartmental one-year views) run a
-# smoke version (one model each) unless RISK_RS_FULL_BAYES is set, as CI's
+# smoke version (Meyers' CRC, compartmental model 1 without its refit
+# comparison) unless RISK_RS_FULL_BAYES is set, as CI's
 # weekly and manual runs set it: prefix the command above with
 # RISK_RS_FULL_BAYES=1 for all of them (prospicio_validation::full_bayes).
 # prospicio-reserving's own NUTS unit tests run in release with
@@ -92,4 +93,8 @@ required-features = ["slow-bayes"]
 
 [[test]]
 name = "reserving_meyers_one_year"
+required-features = ["slow-bayes"]
+
+[[test]]
+name = "reserving_compartmental_one_year"
 required-features = ["slow-bayes"]
