@@ -143,19 +143,27 @@ const ATTACHMENT: Arg = Arg {
 };
 const FAMILY: Arg = Arg {
     name: "family",
-    help: "\"pareto\" (p1 = threshold t, p2 = alpha), \"lognormal\" (meanlog, sdlog) or \"lognormal_cv\" (mean, CV)",
+    help: "pareto, lognormal, lognormal_cv, gamma, gamma_cv, weibull, loglogistic, inverse_gamma, inverse_gaussian, burr or gpd (see the README for p1, p2, p3)",
 };
 const P1: Arg = Arg {
     name: "p1",
-    help: "First parameter: the Pareto threshold t, the lognormal meanlog, or the mean",
+    help: "First parameter: Pareto t, lognormal meanlog, the mean (_cv families, inverse Gaussian), shape, Burr alpha or GPD xi",
 };
 const P2: Arg = Arg {
     name: "p2",
-    help: "Second parameter: the Pareto alpha, the lognormal sdlog, or the CV",
+    help: "Second parameter: Pareto alpha, lognormal sdlog, the CV (_cv families), scale, inverse Gaussian shape, Burr gamma or GPD beta",
 };
-const TRUNCATION: Arg = Arg {
-    name: "truncation",
-    help: "Pareto only: the loss size the Pareto is truncated at; omitted for none",
+const P3: Arg = Arg {
+    name: "p3",
+    help: "Third parameter: the Burr scale, or a Pareto truncation; omitted otherwise",
+};
+const X: Arg = Arg {
+    name: "x",
+    help: "Loss size(s): a number or a range",
+};
+const PROBABILITY: Arg = Arg {
+    name: "p",
+    help: "Probability or probabilities, between 0 and 1: a number or a range",
 };
 
 fn version(_: &[Grid]) -> Result<Grid, String> {
@@ -432,30 +440,74 @@ pub static FUNCTIONS: &[Function] = &[
         run: triangles::latest,
     },
     Function {
+        symbol: "pro_sev_cdf",
+        name: "PRO.SEV.CDF",
+        help: "A severity's distribution function P(X <= x) at each x.",
+        args: &[X, FAMILY, P1, P2, P3],
+        run: pricing::cdf,
+    },
+    Function {
+        symbol: "pro_sev_survival",
+        name: "PRO.SEV.SURVIVAL",
+        help: "A severity's survival function P(X > x) at each x.",
+        args: &[X, FAMILY, P1, P2, P3],
+        run: pricing::survival,
+    },
+    Function {
+        symbol: "pro_sev_quantile",
+        name: "PRO.SEV.QUANTILE",
+        help: "A severity's quantile (VaR) at each probability p.",
+        args: &[PROBABILITY, FAMILY, P1, P2, P3],
+        run: pricing::quantile,
+    },
+    Function {
+        symbol: "pro_sev_stats",
+        name: "PRO.SEV.STATS",
+        help: "A severity's family, mean, SD and CV.",
+        args: &[FAMILY, P1, P2, P3],
+        run: pricing::stats,
+    },
+    Function {
+        symbol: "pro_ler",
+        name: "PRO.LER",
+        help: "Loss elimination ratio of a deductible, LEV(d) / E[X]: the credit for a straight deductible.",
+        args: &[
+            Arg {
+                name: "deductible",
+                help: "Deductible(s): a number or a range",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+        ],
+        run: pricing::ler,
+    },
+    Function {
         symbol: "pro_lev",
         name: "PRO.LEV",
-        help: "Limited expected value E[min(X, limit)] of a Pareto or lognormal severity, per limit.",
-        args: &[LIMIT, FAMILY, P1, P2, TRUNCATION],
+        help: "Limited expected value E[min(X, limit)] of a severity, per limit.",
+        args: &[LIMIT, FAMILY, P1, P2, P3],
         run: pricing::lev,
     },
     Function {
         symbol: "pro_layer",
         name: "PRO.LAYER",
-        help: "Expected loss to the layer limit xs attachment per ground-up loss, Pareto or lognormal.",
-        args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, TRUNCATION],
+        help: "Expected loss to the layer limit xs attachment per ground-up loss.",
+        args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, P3],
         run: pricing::layer,
     },
     Function {
         symbol: "pro_layer_cv",
         name: "PRO.LAYER.CV",
         help: "CV of the loss to the layer, given a loss above its attachment.",
-        args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, TRUNCATION],
+        args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, P3],
         run: pricing::layer_coefficient_of_variation,
     },
     Function {
         symbol: "pro_ilf",
         name: "PRO.ILF",
-        help: "Increased limit factor LEV(limit) / LEV(basic_limit), Pareto or lognormal.",
+        help: "Increased limit factor LEV(limit) / LEV(basic_limit).",
         args: &[
             LIMIT,
             Arg {
@@ -465,7 +517,7 @@ pub static FUNCTIONS: &[Function] = &[
             FAMILY,
             P1,
             P2,
-            TRUNCATION,
+            P3,
         ],
         run: pricing::increased_limit_factor,
     },
