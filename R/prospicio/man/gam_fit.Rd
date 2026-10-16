@@ -18,7 +18,9 @@ gam_fit(
   power = NULL,
   smoothing = "auto",
   tensors = list(),
-  tensor_basis = 5
+  tensor_basis = 5,
+  bs = "ps",
+  period = list()
 )
 }
 \arguments{
@@ -60,6 +62,16 @@ more numeric terms. Each margin has its own smoothing parameter.}
 
 \item{tensor_basis}{Basis functions per margin of each tensor: one number
 (recycled) or a list with one vector per tensor (5 by default).}
+
+\item{bs}{The basis of each smooth (recycled): \code{"ps"}, a P-spline;
+\code{"cp"}, a cyclic P-spline (mgcv's \code{bs = "cp"}), whose ends meet in value
+and slope over its period; or \code{"mpi"} / \code{"mpd"}, a monotone increasing
+or decreasing P-spline (scam's), which takes GCV, UBRE or fixed
+smoothing but not REML.}
+
+\item{period}{A named list of \code{c(lo, hi)} periods for cyclic smooths
+(mgcv's \code{knots = list(x = c(lo, hi))}); a cyclic smooth left out takes
+the data's range.}
 }
 \value{
 A \code{gam_model} with properties \code{coefficients}, \code{lambdas}, \code{edf},
@@ -80,4 +92,10 @@ d$y <- sin(6 * d$x) + 2
 m <- gam_fit(y ~ x, d, smooths = "x", family = "gaussian")
 m@edf
 predict(m, data.frame(x = 0.5)) - (sin(3) + 2)
+# A seasonal effect whose ends meet: months 0 to 12.
+s <- data.frame(month = seq(0.25, 11.75, by = 0.5))
+s$y <- 2 + sin(2 * pi * s$month / 12)
+cm <- gam_fit(y ~ month, s, smooths = "month", family = "gaussian", bs = "cp",
+              period = list(month = c(0, 12)))
+predict(cm, data.frame(month = c(0, 12)))
 }

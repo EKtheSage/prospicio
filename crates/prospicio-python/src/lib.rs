@@ -47,7 +47,10 @@ mod prospicio_native {
     #[pymodule_export]
     use super::counts::PyCount;
     #[pymodule_export]
-    use super::credibility::{PyBuhlmannStraubFit, PyLimitedFluctuation, buhlmann_straub};
+    use super::credibility::{
+        PyBuhlmannStraubFit, PyHierarchicalCredibilityFit, PyLimitedFluctuation, buhlmann_straub,
+        credibility_premiums, hierarchical_credibility,
+    };
     #[pymodule_export]
     use super::discrete::PyDiscrete;
     #[pymodule_export]
@@ -65,9 +68,9 @@ mod prospicio_native {
         PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyElasticNet,
         PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyHierarchicalStacking,
         PyStackingFit, PyTerms, actual_vs_expected, crps, deviance, elpd_loo, elpd_waic, gini,
-        group_k_fold, k_fold, ks_uniform, lift, log_score, lppd, mcmc_diagnostics, pinball_loss,
-        pit, pit_from_draws, pit_histogram, pseudo_bma_weights, simulate_from_means,
-        stacking_weights, time_ordered,
+        group_k_fold, k_fold, ks_uniform, lift, log_score, loo_pit, lppd, mcmc_diagnostics,
+        pinball_loss, pit, pit_from_draws, pit_histogram, ppc_check, pseudo_bma_weights,
+        simulate_from_means, stacking_weights, time_ordered,
     };
     #[pymodule_export]
     use super::natural::{
@@ -123,6 +126,6 @@ mod prospicio_native {
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
         PyNestedArchimedeanCopula, PyPairCopula, PyPotTail, PyStudentTCopula, PyVineCopula,
         allocate, calibrate, capital, covar, entropic, esscher, esscher_allocation, hill,
-        iman_conover, marginal_expected_shortfall, mean_excess, simulate,
+        iman_conover, marginal_expected_shortfall, mean_excess, simulate, threshold_diagnostics,
     };
 }

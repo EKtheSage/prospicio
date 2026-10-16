@@ -143,6 +143,8 @@ reference:
       - models.time_ordered
       - models.mcmc_diagnostics
       - models.elpd_loo
+      - models.ppc_check
+      - models.loo_pit
       - models.stacking_weights
       - models.pseudo_bma_weights
       - models.BayesStacking
@@ -213,11 +215,14 @@ reference:
       - pricing.IndexClause
       - pricing.AsIf
   - title: Credibility
-    desc: Classical credibility, the limited fluctuation standards and the Bühlmann–Straub model.
+    desc: Classical credibility, the limited fluctuation standards and the Bühlmann–Straub model, and Bayesian hierarchical credibility sampled with NUTS.
     contents:
       - credibility.LimitedFluctuation
       - credibility.buhlmann_straub
       - credibility.BuhlmannStraubFit
+      - credibility.hierarchical_credibility
+      - credibility.HierarchicalCredibilityFit
+      - credibility.credibility_premiums
   - title: Ratemaking
     desc: Premium at the current rate level by the parallelogram method, trend fits, factors and lengths, and the overall indication by the loss ratio and pure premium methods (Werner and Modlin).
     contents:
@@ -288,3 +293,4 @@ reference:
       - risk.PotTail
       - risk.mean_excess
       - risk.hill
+      - risk.threshold_diagnostics

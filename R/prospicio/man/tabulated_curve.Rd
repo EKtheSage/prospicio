@@ -5,7 +5,7 @@
 \alias{tabulated_curve_from_severity}
 \title{Tabulated exposure curve}
 \usage{
-tabulated_curve(x, g, ptr = NULL)
+tabulated_curve(x, g, interpolation = c("linear", "log-log"), ptr = NULL)
 
 tabulated_curve_from_severity(severity, mpl, points = 200)
 }
@@ -13,6 +13,8 @@ tabulated_curve_from_severity(severity, mpl, points = 200)
 \item{x}{Increasing from 0 to 1.}
 
 \item{g}{\code{G(x)}, from 0 to 1.}
+
+\item{interpolation}{\code{"linear"} (the default) or \code{"log-log"}.}
 
 \item{ptr}{Internal.}
 
@@ -24,11 +26,12 @@ Pareto-family distribution.}
 \item{points}{Number of points, at least 4.}
 }
 \value{
-A \code{tabulated_curve} object with properties \code{x}, \code{g} and \code{mean}.
+A \code{tabulated_curve} object with properties \code{x}, \code{g}, \code{mean} and
+\code{interpolation}.
 }
 \description{
 An exposure curve from a published table of points \verb{(x, G(x))} from
-\verb{(0, 0)} to \verb{(1, 1)}, interpolated linearly: Salzmann's homeowners scale,
+\verb{(0, 0)} to \verb{(1, 1)}, interpolated linearly (or log-log): Salzmann's homeowners scale,
 Ludwig's curves, ISO PSOLD tables or a reinsurer's own. The table must be
 concave (its slopes never increase). Its destruction rate is discrete:
 the points' \code{x} with probabilities from the drops in slope, and a total
@@ -37,6 +40,15 @@ is the first chord's, \code{x1 / G(x1)}, so a table needs fine first points
 for the expected loss to be right.
 }
 \details{
+With \code{interpolation = "log-log"} the curve runs as a power law between
+points (straight on log-log axes), \code{G(x) = G_k (x / x_k)^p_k}, which
+follows a curve's bend between sparse points better than a chord; the
+first piece, from \verb{(0, 0)}, stays straight. The interpolated curve must be
+concave, so the elasticities \code{p_k} may not rise from piece to piece: a
+table with a total-loss mass at the top (the Swiss Re curves with \code{c} up
+to 3, read at a few points) fails and keeps linear interpolation. The
+destruction rate is then continuous within each piece past the first.
+
 Works with \code{\link[=exposure_curve]{exposure_curve()}}, \code{\link[=exposure_layer_share]{exposure_layer_share()}} and
 \code{\link[=rate_quantile]{rate_quantile()}}, like an \link{mbbefd} curve.
 
@@ -49,6 +61,7 @@ so a risk profile's band can use it.
 t <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1))
 exposure_curve(t, 0.3)
 t@mean
+exposure_curve(tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1), "log-log"), 0.3)
 s <- tabulated_curve_from_severity(lognormal_from_mean_cv(1e5, 2), 1e6)
 exposure_curve(s, 0.5)
 }

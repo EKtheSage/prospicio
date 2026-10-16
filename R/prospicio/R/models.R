@@ -374,6 +374,14 @@ S7::method(print, elastic_net_model) <- function(x, ...) {
 #' @inheritParams glm_fit
 #' @param smooths Names of numeric terms to smooth.
 #' @param n_basis Basis functions per smooth (recycled; 10 by default).
+#' @param bs The basis of each smooth (recycled): `"ps"`, a P-spline;
+#'   `"cp"`, a cyclic P-spline (mgcv's `bs = "cp"`), whose ends meet in value
+#'   and slope over its period; or `"mpi"` / `"mpd"`, a monotone increasing
+#'   or decreasing P-spline (scam's), which takes GCV, UBRE or fixed
+#'   smoothing but not REML.
+#' @param period A named list of `c(lo, hi)` periods for cyclic smooths
+#'   (mgcv's `knots = list(x = c(lo, hi))`); a cyclic smooth left out takes
+#'   the data's range.
 #' @param smoothing `"auto"`, `"gcv"`, `"ubre"`, `"reml"`, or a numeric vector of
 #'   fixed smoothing parameters: one per smooth, then one per tensor margin.
 #' @param tensors A list of tensor product smooths (mgcv's
@@ -391,17 +399,32 @@ S7::method(print, elastic_net_model) <- function(x, ...) {
 #' m <- gam_fit(y ~ x, d, smooths = "x", family = "gaussian")
 #' m@edf
 #' predict(m, data.frame(x = 0.5)) - (sin(3) + 2)
+#' # A seasonal effect whose ends meet: months 0 to 12.
+#' s <- data.frame(month = seq(0.25, 11.75, by = 0.5))
+#' s$y <- 2 + sin(2 * pi * s$month / 12)
+#' cm <- gam_fit(y ~ month, s, smooths = "month", family = "gaussian", bs = "cp",
+#'               period = list(month = c(0, 12)))
+#' predict(cm, data.frame(month = c(0, 12)))
 gam_fit <- function(formula, data, smooths, n_basis = 10, family = "poisson", link = NULL,
                     offset = NULL, weights = NULL, dispersion = NULL, theta = NULL,
-                    power = NULL, smoothing = "auto", tensors = list(), tensor_basis = 5) {
+                    power = NULL, smoothing = "auto", tensors = list(), tensor_basis = 5,
+                    bs = "ps", period = list()) {
   des <- model_design(formula, data, offset, weights)
+  smooths <- as.character(smooths)
+  unknown <- setdiff(names(period), smooths)
+  if (length(unknown)) stop("period given for terms that are not smooths: ", toString(unknown))
+  periods <- unlist(lapply(smooths, function(s) {
+    p <- period[[s]]
+    if (is.null(p)) c(NaN, NaN) else as.double(p)
+  }))
   fa <- family_args(theta, power)
   da <- dispersion_args(dispersion)
   fixed <- is.numeric(smoothing)
   ptr <- rust_result(gam_fit_design(
     as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
     if (is.null(link)) "" else link, da$kind, da$value, fa$theta, fa$power,
-    as.character(smooths), rep_len(as.double(n_basis), length(smooths)),
+    smooths, rep_len(as.double(n_basis), length(smooths)),
+    rep_len(as.character(bs), length(smooths)), as.double(periods),
     if (fixed) "fixed" else smoothing, if (fixed) as.double(smoothing) else double(),
     lapply(tensors, as.character),
     if (is.list(tensor_basis)) lapply(tensor_basis, as.double) else
@@ -554,6 +577,89 @@ S7::method(print, bayes_glm_model) <- function(x, ...) {
 #' bayes_loo(m)$estimates
 bayes_loo <- function(model) {
   elpd_result(rust_result(model@ptr$loo()))
+}
+
+#' Posterior predictive checks
+#'
+#' Does data simulated from the fitted model look like the data it was
+#' fitted to? Each check compares the observed outcomes with replicated
+#' data, one replicated dataset per posterior draw.
+#'
+#' - `bayes_ppc()` and `ppc_check()`: a test statistic of the observed data
+#'   against its distribution over the replicates, with the posterior
+#'   predictive p-value `P(T(y_rep) >= T(y))` (ties count half). A p-value
+#'   near 0 or 1 says the model cannot reproduce that feature of the data.
+#' - `bayes_loo_pit()` and `loo_pit()`: each observation's leave-one-out
+#'   probability integral transform, its place among its replicates under
+#'   the Pareto-smoothed importance weights for leaving it out (as R
+#'   `loo`'s `E_loo` of `y_rep <= y`), randomized over ties. Uniform for a
+#'   calibrated model; U-shaped when the predictive distributions are too
+#'   narrow, humped when too wide.
+#' - `bayes_replicate()`: the replicated training datasets.
+#'
+#' @param model A [bayes_glm_model]; the checks run on its training data.
+#' @param statistics Test statistics: `"mean"`, `"sd"`, `"min"`, `"max"`,
+#'   `"proportion_zero"`, or numbers (probabilities) for quantiles.
+#' @param seed Seed of the replicates (and of the randomization over ties).
+#' @param observed The observed outcomes.
+#' @param replicated A matrix, one replicated dataset per row (posterior
+#'   draw), one column per observation.
+#' @param groups Each observation's group, from 1, to check each statistic
+#'   within each group; `NULL` for none.
+#' @param log_lik The pointwise log-likelihood, draws by observations.
+#' @param r_eff Each observation's relative efficiency; `NULL` for 1.
+#' @returns `bayes_ppc()` and `ppc_check()`: a data frame with `name`,
+#'   `observed` and `p_value`, and an attribute `replicated`, a matrix of
+#'   each statistic of each replicate. `bayes_loo_pit()` and `loo_pit()`: a
+#'   list with `pit` and `pareto_k` per observation and `ks`, the
+#'   Kolmogorov–Smirnov distance from the uniform. `bayes_replicate()`: a
+#'   matrix, draws by observations.
+#' @export
+#' @examples
+#' d <- data.frame(claims = rep(c(1, 2, 3, 5), 10), x = rep(c(-1.5, -0.5, 0.5, 1.5), 10))
+#' m <- bayes_glm_fit(claims ~ x, d, family = "poisson", chains = 2, tune = 300, draws = 300)
+#' bayes_ppc(m, c("mean", "sd", 0.9))
+#' summary(bayes_loo_pit(m)$pit)
+bayes_ppc <- function(model, statistics = c("mean", "sd", "min", "max"), seed = 0) {
+  checks_frame(rust_result(model@ptr$ppc(as.character(statistics), as.double(seed))))
+}
+
+#' @rdname bayes_ppc
+#' @export
+bayes_loo_pit <- function(model, seed = 0) {
+  rust_result(model@ptr$loo_pit(as.double(seed)))
+}
+
+#' @rdname bayes_ppc
+#' @export
+bayes_replicate <- function(model, seed = 0) {
+  r <- rust_result(model@ptr$replicate(as.double(seed)))
+  # One dispersion per draw, so one row per draw.
+  matrix(r, nrow = length(model@ptr$dispersion_draws()), byrow = TRUE)
+}
+
+#' @rdname bayes_ppc
+#' @export
+ppc_check <- function(observed, replicated, statistics = c("mean", "sd", "min", "max"),
+                      groups = NULL) {
+  replicated <- as.matrix(replicated)
+  checks_frame(rust_result(ppc_check_rust(as.double(observed), as.double(t(replicated)),
+                                          as.character(statistics), as.double(groups))))
+}
+
+#' @rdname bayes_ppc
+#' @export
+loo_pit <- function(observed, replicated, log_lik, r_eff = NULL, seed = 0) {
+  rust_result(loo_pit_rust(as.double(observed), as.double(t(as.matrix(replicated))),
+                           as.double(t(as.matrix(log_lik))), as.double(r_eff),
+                           as.double(seed)))
+}
+
+checks_frame <- function(r) {
+  out <- data.frame(name = r$name, observed = r$observed, p_value = r$p_value)
+  attr(out, "replicated") <- matrix(r$replicated, ncol = length(r$name), byrow = TRUE,
+                                    dimnames = list(NULL, r$name))
+  out
 }
 
 for (cls in list(glm_model, gam_model, bayes_glm_model)) {

@@ -1,7 +1,8 @@
 [workspace]
 members = ["crates/*", "validation", "xtask"]
-# Binding crates need a Python or R toolchain at build time, so plain
-# `cargo build` / `cargo test` skip them; see python/ and R/ for their builds.
+# The Python and R binding crates need their toolchain at build time, so
+# plain `cargo build` / `cargo test` skip them; see python/ and R/ for their
+# builds.
 default-members = [
     "crates/prospicio",
     "crates/prospicio-core",
@@ -14,6 +15,9 @@ default-members = [
     "crates/prospicio-glm",
     "crates/prospicio-bayes",
     "crates/prospicio-nn",
+    # Pure Rust off Windows too: the Excel C API layer is cfg(windows), so
+    # cargo test covers the worksheet functions on any host.
+    "crates/prospicio-xll",
     "validation",
     "xtask",
 ]

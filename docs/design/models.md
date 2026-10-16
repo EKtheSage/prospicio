@@ -181,6 +181,65 @@ models and compares them.
   prospicio's score, so its fitted values are compared to 2e-4. Python
   `Gam(..., tensors=[["x", "z"]])`; R `gam_fit(..., tensors = list(c("x",
   "z")), tensor_basis = 5)`.
+- Cyclic smooths (`PSpline::cyclic`, `SmoothKind::Cyclic`, decided
+  2026-10-15): mgcv's `s(x, bs = "cp")`. `k` cyclic cubic B-splines on
+  `k + 1` equally spaced knots from the period's start to its end (no
+  0.1% widening, unlike `"ps"`), each function that starts below the
+  period wrapped onto its top (`prospicio_math::spline::
+  cyclic_bspline_basis`, as mgcv's `cSplineDes`), and the second-order
+  difference penalty taken around the circle (`cyclic_difference_penalty`),
+  which leaves only a constant unpenalized; the centering constraint then
+  removes it, so a cyclic block's penalty has full rank. The period is
+  `PSpline::period(lo, hi)` (mgcv's `knots = list(x = c(lo, hi))`) or the
+  data's range, and new data outside it wraps around (mgcv's `cwrap`), so
+  the fit and its derivatives meet at the ends. The GAM artifact writes
+  the smooth's `kind` and version 2 for it (see "Model artifacts"). Parity:
+  `validation/reference/gam_cyclic_mgcv.csv`
+  (`validation/scripts/r_gam_cyclic.R`, data computed in the script and
+  the test): the raw basis at the period's ends and inside, and the
+  penalty, at 1e-12; Gaussian by GCV with the period and over the data's
+  range, Gaussian and Poisson by REML: deviance, edf, scale, score, fitted
+  values and the mean at both ends at 1e-6 (1e-5 for edf). Python
+  `Gam(glm, [{"column": "month", "bs": "cp", "period": (0, 12)}])`; R
+  `gam_fit(..., bs = "cp", period = list(month = c(0, 12)))`.
+- Monotone smooths (`PSpline::increasing`, `PSpline::decreasing`,
+  decided 2026-10-15): scam's `s(x, bs = "mpi")` and `"mpd"` (Pya and
+  Wood 2015), not mgcv's `mono.con` and `pcls`, which hold only for a
+  Gaussian response with fixed smoothing. Cubic B-splines on `k − 3`
+  equal intervals over the data's range (not widened), coefficients
+  `β₁ + Σ_{i≤j} exp(γᵢ)`: the basis is the cumulative sums
+  `Σ_{i≥j} Bᵢ` for `j ≥ 2` (the constant first dropped, negated for
+  decreasing), centered by its training column means as scam does (not by
+  the Householder constraint), with a first-order difference penalty on
+  `γ`, which leaves a straight line unpenalized. Fitting is Gauss–Newton
+  IRLS in `θ` (`γ` on the monotone columns, the coefficients elsewhere):
+  the working model is linearized at `θ` through the Jacobian
+  `X diag(∂β/∂θ)`, each step capped so no `γ` moves by more than 2 (the
+  linearized `exp` is poor further out, and uncapped steps halved for
+  hundreds of iterations), and convergence is judged on `β`, since an
+  increment that wants to be 0 sends its `γ` towards `−∞` in steps that
+  never shrink. The fixed point solves the penalized score equations, so
+  at the same smoothing parameter it is scam's estimate (scam itself takes
+  full Newton steps). The edf is scam's, `tr((JᵀWJ − E + S)⁻¹ JᵀWJ)` with
+  the Newton Hessian (`E` diagonal on the monotone columns,
+  `Σᵢ wᵢ (yᵢ − μᵢ) μ'ᵢ/Vᵢ Xᵢⱼ exp(γⱼ)`), so GCV and UBRE select as scam
+  does; REML is refused, as scam has none. The fit reports `β = exp(γ)`
+  on the monotone columns, so prediction stays linear in the expanded
+  design, and their covariance by the delta method from
+  `φ (JᵀWJ + S)⁻¹`. New data outside the training range is clamped to
+  it, so the smooth extrapolates flat and stays monotone (scam
+  extrapolates the B-splines, which stop summing to 1 there and can turn
+  back). scam scales each penalty, `S = c DᵀD`: a scam `sp`
+  is `λ = c sp` here. Parity: `validation/reference/gam_monotone_scam.csv`
+  (`validation/scripts/r_gam_monotone.R`, data computed in the script and
+  the test): at scam's fixed `sp`, an increasing Gaussian and a decreasing
+  Poisson fit, deviance, edf, scale and fitted values at 1e-7 and the
+  increments at 1e-6; selected by GCV and UBRE, against scam at 1e-3 and
+  against its score's refined minimum (`optimize` over scam's own fixed-sp
+  fits, since scam's BFGS stops about 1e-4 short in edf) at 1e-9 for the
+  score, 1e-6 for the fit and 1e-5 for the edf, where the score is flat;
+  every fit is checked monotone on a grid. Python
+  `Gam(glm, [{"column": "x", "bs": "mpi"}])`; R `gam_fit(..., bs = "mpi")`.
 - `prospicio-bayes`: MCMC diagnostics for any sampler's draws, the estimators
   of Vehtari et al. (2021) as R's `posterior` implements them:
   rank-normalized split `rhat` (the larger of the bulk and folded
@@ -242,6 +301,38 @@ models and compares them.
   binding: a density written in Python or R would call back into the
   interpreter at every gradient. Passing external traces to the
   diagnostics is not built yet (see above).
+- **Posterior predictive checks** (`prospicio_bayes::ppc`, decided
+  2026-10-16): replicated data, one dataset per posterior draw (`S × n`,
+  row-major like the log-likelihood), against the observed. `check` (and
+  `check_grouped`, within groups) compares a test statistic (mean, sd,
+  min, max, a type 7 quantile, the share of zeros, or any function
+  through `check_with`) of the data with its distribution over the
+  replicates, with the p-value `P(T(y_rep) ≥ T(y))`, ties counted half.
+  `loo_pit` is each observation's leave-one-out PIT under its PSIS
+  weights (`elpd::psis`, log ratios `−log p(yᵢ | θₛ)`), randomized over
+  ties as the PIT in `metrics` is, with each `k̂` and the KS distance from
+  the uniform; it is the PIT to use for a Bayesian fit, since the PIT
+  under the full posterior counts each observation as evidence for
+  itself. `BayesGlmFit` gives `replicate` (draw `s` on stream `s`), and
+  `posterior_predictive_check` and `loo_pit` on any data, `r_eff` from
+  the chains as `loo` uses. Parity: `loo_pit` against R loo 2.10.1's
+  `E_loo` of `y_rep ≤ y` under the PSIS weights at 1e-9
+  (`validation/scripts/r_loo_pit.R`); unit tests: statistics by hand,
+  calibrated and too-wide replicates (uniform and humped PITs, central
+  and extreme p-values), ties randomized, and a Poisson GLM fitted to
+  negative binomial counts flagged by the sd and zeros p-values (below
+  0.01) and U-shaped PITs. Python `BayesGlmFit.replicate`,
+  `posterior_predictive_check`, `loo_pit`, and `models.ppc_check`,
+  `models.loo_pit` for any model; R `bayes_replicate()`, `bayes_ppc()`,
+  `bayes_loo_pit()`, `ppc_check()` and `loo_pit()`.
+- **Bayesian hierarchical credibility** (`prospicio_bayes::credibility`):
+  Bühlmann–Straub's model and Jewell's hierarchy of it as a normal
+  random-effects model, the group and node means integrated out in closed
+  form so NUTS samples only the standard deviations; the premiums are
+  the credibility formula averaged over their posterior. Designed and
+  validated in `docs/design/credibility.md` ("Bayesian hierarchical
+  credibility"): parity with `actuar::cm` at given structure parameters,
+  and with grid integration of the posterior.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 
@@ -348,6 +439,50 @@ and Python's `GlmFit` pickles through the artifact. `GamFit`
 so new data gets exactly the training basis) and `ElasticNetFit`
 (`"risk_rs.elastic_net_fit"`, one per `λ`; R saves the whole path) work
 the same way.
+
+**The format, decided 2026-10-15.** Model artifacts are versioned JSON,
+for every engine; CBOR and Arrow are not used for them.
+
+- **One envelope.** Every artifact is a JSON object with `format`
+  (`"risk_rs.<kind>"`), `format_version` and `provenance` (crate version,
+  `input_hash`), then the kind's own fields, as `"risk_rs.distribution"`
+  and `"risk_rs.tower"` already are. The name keeps its `risk_rs` prefix:
+  renaming it would break every saved file for no gain.
+- **Why JSON.** An artifact is read by people auditing a model and by
+  tools that are not prospicio (a reviewer's script, a model inventory),
+  so it must be readable without our code; JSON is, and it diffs. Numbers
+  round-trip bit for bit already. Size does not argue for CBOR: the
+  arrays are the coefficients, the covariance (`p²` values), the knots
+  and constraints, and the fitted values (one per training row), at about
+  20 bytes a number; only the fitted values grow with the data, a few
+  megabytes for a million rows. If an artifact ever needs arrays far
+  larger than that (draws, a large network's weights), those arrays go
+  into an Arrow IPC file beside the JSON under a new format version, as
+  `PredictiveDistribution` already stores draws, rather than turning the
+  whole artifact binary.
+- **Versions are per format.** Each format has its own version and each
+  reader the newest it knows (`artifact.rs`: `FORMAT_VERSION`, and
+  `GAM_FORMAT_VERSION` = 2 since cyclic and monotone smooths). A writer
+  stamps the oldest version whose readers read that artifact correctly,
+  so a GAM with only ordinary smooths stays version 1 and older builds
+  still load it. A reader refuses a newer version. A new field that an
+  older reader would ignore and so misread (a smooth's `kind`) bumps the
+  version; one an older reader cannot ignore without failing its own
+  checks (the tensors, which change the number of smoothing parameters)
+  or that changes nothing it computes needs no bump.
+- **Delegated and later engines.** A boosting adapter, when it saves,
+  puts the engine's own text model (LightGBM's model string, XGBoost's
+  JSON) in a field of the same envelope; a network (`prospicio-nn`) or a
+  Bayesian fit (`prospicio-bayes`) uses the envelope with its weights or
+  draws as above. None of them saves yet. The JSON helpers stay in
+  `prospicio_glm::artifact` until a second crate writes an artifact; then
+  the envelope (the format check, the version rule, the non-finite
+  numbers) moves to `prospicio_models::artifact`, the module the life
+  cycle table names.
+- **The coding stays with the bindings**, as above: factor levels and
+  formula terms are front-end objects (Python's `Coding`, R's `terms`), so
+  the R package stores them beside the artifact in its RDS file and the
+  Rust artifact carries only the numeric design it was fitted on.
 
 Monitoring (`prospicio_models::monitor::actual_vs_expected`): a stored model's
 predictions against actuals by period, `A = Σ w y` and `E = Σ w μ`, each
@@ -500,6 +635,55 @@ so `prospicio-nn` seeds, builds and initializes every parameter under one lock.
 Without it, fits running in parallel (tests, cross-validation) interleave
 their draws and stop being reproducible.
 
+## ONNX import
+
+Status: done (2026-10-16), Rust only: `prospicio_nn::onnx`, behind the
+crate's default `onnx` feature.
+
+- **Parse with Burn, run here.** `OnnxModel::load` (or `from_bytes`)
+  parses the file with `onnx-ir` 0.21, the front end of `burn-import`
+  (`knowledge/references/onnx-ir.md`), whose simplification already fuses
+  `MatMul` then `Add` into `Linear` and drops `Identity` and no-op
+  `Flatten`s. The graph is copied at load into an owned plan of steps
+  with `f64` constants (`onnx-ir`'s graph holds `Rc`s and cannot be
+  shared across threads) and run by a small interpreter in `f64`, so a
+  float32 file evaluates within float32 rounding of onnxruntime. Burn's
+  own tensors are rank-typed at compile time, which suits a network we
+  build but not a graph read at run time; a tabular network is a few
+  small matrix products, which a loop does at the cost of one pass.
+- **Operators: what a tabular network exports.** `Gemm` (`alpha`,
+  `beta`, `transA`, `transB`), `Linear`, `MatMul`; `Add`, `Sub`, `Mul`,
+  `Div`, `Pow` with NumPy broadcasting; `Relu`, `LeakyRelu`, `Sigmoid`,
+  `Tanh`, `Softplus`, `Exp`, `Log`, `Neg`, `Abs`, `Sqrt`, `Clip`,
+  `Softmax`; `Concat`, `Gather` (embeddings), `Flatten`, `Reshape`,
+  `Squeeze`, `Unsqueeze`, `ReduceSum`, `ReduceMean`, `Cast`, `Identity`,
+  `Constant`. Shapes and axes must be constants. Anything else
+  (convolutions, recurrent cells, control flow) is refused at load with
+  the operators the file uses.
+- **Behind the protocol.** `OnnxPredictor` binds each graph input to
+  design columns (a rank-2 input takes several in order, a rank-1 input
+  one; integer inputs, category codes for an embedding, must be whole
+  numbers), reads one output as each row's mean or on a link's scale
+  with the design's offset (`OutputScale::Link`, `μ = g⁻¹(offset +
+  output)`, CANN-style), and implements `Fitted`: `predict`, and
+  `predict_distribution` as process draws from a family and dispersion
+  the caller gives (`simulate::from_means`), since an imported network
+  carries no parameter uncertainty and the file no family.
+- **Rust only for now, as CANN.** `prospicio-nn` has no Python or R
+  bindings yet: binding it puts Burn into the wheel and the R package.
+  The user expects to add them, for CANN and ONNX import alike, and has
+  left the timing open (2026-10-16). Until then this import serves Rust
+  pipelines, and Python users have onnxruntime.
+- **Validation.** `crates/prospicio-nn/tests/onnx.rs` against
+  onnxruntime 1.31.0 (`validation/scripts/onnx_models.py`, models built
+  with `onnx.helper`, no PyTorch needed): an MLP of two `Gemm`s
+  (`transB`, as `torch.nn.Linear` exports), a network with an embedding
+  (`Gather`, `Concat`, `MatMul` and `Add`, `Softplus`, `Squeeze`), and a
+  `Gemm` with `alpha`, `beta` and a broadcast bias through every
+  elementwise operator, `Flatten`, `Identity` and `ReduceSum`; 36 rows
+  within `1e-5` relative. Also the predictor's column binding, the log
+  scale with an offset, predictive means, and refused inputs.
+
 ## Decisions
 
 - **Burn for neural networks** (replaces PyTorch-only, `architecture.md`).
@@ -508,7 +692,10 @@ their draws and stop being reproducible.
   (tabular MLPs with embeddings, CANN) are small enough for CPU training.
   The default backend is `ndarray` on the CPU; GPU (`wgpu`) is opt-in.
   Models trained in PyTorch come in for inference through Burn's ONNX
-  import.
+  import: at run time, by `onnx-ir`, `burn-import`'s parser ("ONNX
+  import", below), since `burn-import` itself generates Rust source at
+  build time and cannot load a user's file (it stays available to a
+  user's own crate).
 - **Gradient boosting stays an adapter.** LightGBM and XGBoost are mature
   and fast; a Rust reimplementation would not change what users can do.
   Done in Python (`prospicio.boosting`): `Booster(family, engine,
@@ -555,8 +742,8 @@ their draws and stop being reproducible.
 
 ## Open questions
 
-- Serialization format for model artifacts (a versioned JSON or CBOR
-  schema, or Arrow for large coefficient sets).
+- (Decided 2026-10-15: model artifacts are versioned JSON; see "Model
+  artifacts".)
 - Whether `Design` stores dense or sparse columns (high-cardinality factors
   favour sparse).
 - Burn version pinning, given its API churn.

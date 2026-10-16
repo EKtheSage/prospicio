@@ -617,6 +617,24 @@ S7::method(print, event_set) <- function(x, ...) {
   invisible(x)
 }
 
+#' Split simulated years into a contract term
+#'
+#' The simulations in `n_years` consecutive blocks, for
+#' [apply_tower_term()]: year `t` holds simulations `(t - 1) * n + 1` to
+#' `t * n`, with `n = x@n_sims / n_years`, so path `j`'s year `t` is
+#' simulation `(t - 1) * n + j`. Sums insured and times go with their losses.
+#'
+#' @param x An [event_set].
+#' @param n_years The number of years in the term; must divide `x@n_sims`.
+#' @returns A list of `n_years` [event_set]s.
+#' @export
+#' @examples
+#' ev <- simulate_events(poisson_count(2), lognormal(0, 1), 30, seed = 1)
+#' length(term_years(ev, 3))
+term_years <- function(x, n_years) {
+  lapply(rust_result(x@ptr$term_years(as.double(n_years))), event_set)
+}
+
 #' Year loss table in long form
 #'
 #' Years of losses from a year loss table: one row per loss with its year,

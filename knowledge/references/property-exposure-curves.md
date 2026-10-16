@@ -51,7 +51,13 @@ sources:
   0.[^code]
 * `SeverityCurve` turns any severity into a curve at an MPL, which covers
   Riebesell (a Pareto).[^code]
-* Not covered yet: log-log interpolation between table points.
+* `TabulatedCurve` also interpolates log-log (a power law between points)
+  when that keeps the curve concave: the elasticity `x G'(x) / G(x)` must
+  fall from piece to piece. A total-loss mass makes it rise near `x = 1`:
+  ten points of the Swiss Re c = 3 curve fail at 0.7 (elasticities 0.368,
+  0.361, 0.367 over the pieces from 0.3), while c = 4, 5 and severity
+  curves pass, with log-log's largest error at 0.36 to 0.67 of
+  linear's.[^code]
 
 # Surplus and per-risk XL from a profile
 

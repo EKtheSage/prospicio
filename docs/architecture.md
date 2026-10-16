@@ -13,7 +13,7 @@ Build a composable actuarial modeling runtime: a Rust core that owns the numeric
 **Rust earns its place in three ways, and the plan is prioritized around them:**
 
 1. **Simulation speed** — bootstrap, Monte Carlo, FFT aggregation, towers applied to millions of events, claim-level models. Deterministic methods on small triangles gain nothing from Rust.
-2. **One kernel, many front ends** — Python, R, and a WASM build that can run inside the browser and an Office.js Excel add-in with no server.
+2. **One kernel, many front ends** — Python, R, a native XLL add-in for desktop Excel on Windows (`docs/design/xll.md`), and a WASM build that can run inside the browser and an Office.js Excel add-in with no server.
 3. **Reproducibility** — deterministic parallel results, which model governance requires.
 
 **Rust for the math we own, protocols for everything else.** Where a mature engine exists (samplers, gradient boosting, deep learning), the platform defines the interface and delegates the engine.
@@ -29,7 +29,7 @@ v2 keeps the v1 layering, principle and target scope; it changes priorities, bui
 | Bayesian | Native Gibbs, MH, HMC, NUTS | Own model specs and diagnostics; sampling via nutpie |
 | GAM | Aim at mgcv's useful portion | P-splines, tensor smooths, GCV/REML for Tweedie/Poisson/Gamma only |
 | Tree boosting | Rust adapters for LightGBM/XGBoost | Adapters in the Python/R layer, emitting shared prediction objects |
-| Neural | Burn-native training | Burn in Rust behind the shared model interface (decided 2026-10-03, `docs/design/models.md`); PyTorch models imported for inference through ONNX |
+| Neural | Burn-native training | Burn in Rust behind the shared model interface (decided 2026-10-03, `docs/design/models.md`); PyTorch models imported for inference through ONNX, parsed at run time by Burn's `onnx-ir` (done, Rust) |
 | Crates | ~25 crates planned | ~5 crates at start; split when compile time or dependency weight forces it |
 | Core abstractions | Named, not designed | Distribution representations, joint predictive distributions, Triangle model, RNG streams designed in Phase 0 |
 | Front ends | Python + R | Python first; R skeleton in Phase 0, parity later; WASM target added |
@@ -42,7 +42,7 @@ v2 keeps the v1 layering, principle and target scope; it changes priorities, bui
 Five layers, each depending only on the layers below it; the three-way split from v1 (math primitives, modeling engines, actuarial applications) is unchanged.
 
 ```text
-Front ends          Python (PyO3 + maturin) · R (extendr) · WASM (browser, Excel add-in)
+Front ends          Python (PyO3 + maturin) · R (extendr) · Excel XLL (C API) · WASM (browser, Excel add-in)
                     Thin wrappers only: no algorithms live here
         │
         ▼
@@ -230,7 +230,7 @@ model.diagnostics()
 | Survival | Rust | Kaplan-Meier, Cox, parametric, competing risks, multi-state |
 | Bayesian | Specs + diagnostics in Rust; sampling via nutpie | Hierarchical severity, Bayesian CL, compartmental reserving, credibility; R-hat, ESS, divergences, PPC, ELPD (LOO, WAIC) |
 | Gradient boosting | Python/R adapters over LightGBM, XGBoost | Poisson/Gamma/Tweedie/quantile objectives, monotone constraints, exposure via offsets |
-| Neural | Rust (`prospicio-nn`, Burn) behind the protocol; PyTorch models via ONNX import | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
+| Neural | Rust (`prospicio-nn`, Burn) behind the protocol; PyTorch models via ONNX import (`prospicio_nn::onnx`, Rust only) | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
 
 Delegated engines are thin: they convert inputs, call the engine, and wrap outputs in shared objects. They add no evaluation logic of their own.
 
@@ -354,7 +354,7 @@ Reserving and risk ship before pricing, with four gates on the way to v1.0.
 | **v0.4 — Risk and capital** | VaR, TVaR, CoTVaR, distortions, copulas, Iman-Conover, capital allocation, EVT tails |
 | ◆ *Gate* | Bootstrap reserve and tower results feed capital allocation end to end |
 | **v0.5 — GLM** | IRLS, Tweedie, NB, regularization, GLM reserving; R feature parity |
-| **v0.6 — GAM and pricing** | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility |
+| **v0.6 — GAM and pricing** | P-splines, tensor, cyclic and monotone smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility |
 | **v0.7 — Bayesian** | Model specs and diagnostics; nutpie sampling; Bayesian reserving and credibility |
 | **v0.8 — Claim-level reserving** | Event histories, payment and closure hazards, severity, ultimate; aggregate to a joint distribution. *Parked 2026-10-06 until the design is thought through (`roadmap.md`)* |
 | **v0.9 — Integrations** | LightGBM / XGBoost and PyTorch adapters on the shared protocol; WASM build |
@@ -388,7 +388,7 @@ Each release is a vertical slice exposed in Python the same day it lands in Rust
 | ~~License~~ | Decided 2026-10-07: MIT OR Apache-2.0 at the user's option (`LICENSE-MIT`, `LICENSE-APACHE`; R `MIT + file LICENSE \| Apache License (== 2.0)`, which CRAN accepts). No contributor licence agreement for now: contributions come in under the same licence (inbound = outbound); a CLA can be added before outside contributions start if relicensing rights are needed | — |
 | ~~IP ownership~~ | Decided 2026-10-07: Ethan Kang owns the project's IP; it is built on his own time and resources | — |
 | ~~Bayesian backend~~ | Decided 2026-10-04: nutpie. Native models sample with its Rust core `nuts-rs` (from R too); Python users can hand nutpie traces of PyMC or Stan models to the shared diagnostics (`docs/design/models.md`) | — |
-| ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`) | — |
+| ~~Neural backend~~ | Decided 2026-10-03: Burn, with PyTorch models imported through ONNX (`docs/design/models.md`); the import parses files at run time with Burn's `onnx-ir` (2026-10-16) | — |
 | ~~WASM scope~~ | Decided 2026-10-07: `prospicio-core`, `prospicio-math`, `prospicio-prob`, `prospicio-aggregate` (with reinsurance), `prospicio-pricing` and `prospicio-reserving` must build for `wasm32-unknown-unknown`; CI checks it. Without threads Rayon's global pool runs on the calling thread, so results are the same, only slower; an explicit multi-thread pool fails there | — |
 | ~~Docs hosting~~ | Decided 2026-10-07: GitHub Pages, now that the repository is public. `.github/workflows/pages.yml` builds the site (`cargo xtask docs`: Python, R and Rust API docs) and deploys it on each merge to `main` that touches code or docs, and on demand | — |
 

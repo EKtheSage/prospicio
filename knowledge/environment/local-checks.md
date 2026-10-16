@@ -40,6 +40,11 @@ installed and ran the R and Python checks:
   --release --generate-stubs`, `uv run pytest tests`.
 * `rustup target add wasm32-unknown-unknown`.
 
+When R is installed but `install.packages()` stops with "lib is not
+writable" (2026-10-15), create the user library first:
+`mkdir -p ~/R/x86_64-pc-linux-gnu-library/4.3`. CRAN then installs
+reference packages such as `ismev`, `evir` and `scam` through the proxy.
+
 That install (R 4.3.3, roxygen2 8.1.0) left none of the noise below:
 `cargo xtask r` changed only the files the code change called for.
 

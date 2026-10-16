@@ -12,7 +12,12 @@ does the work; this note is the checklist around it.
 | crates.io | `prospicio` | `crates/prospicio`: the umbrella crate. It re-exports the others as modules (`prospicio::reserving`, `prospicio::prob`, ...); `bayes` and `nn` are features |
 | crates.io | `prospicio-core`, `-math`, `-prob`, `-aggregate`, `-pricing`, `-reserving`, `-models`, `-glm`, `-bayes`, `-nn` | `crates/prospicio-*` |
 
-`prospicio-python`, `prospicio-r`, `validation` and `xtask` set
+The Excel add-in is not on a registry: `.github/workflows/xll.yml` attaches
+`prospicio-xll-<tag>.zip` (`prospicio.xll`, the test workbook, its README
+and a SHA-256) to a **draft** GitHub release for the tag, which the owner
+reviews and publishes (`docs/design/xll.md`, decision 15).
+
+`prospicio-python`, `prospicio-r`, `prospicio-xll`, `validation` and `xtask` set
 `publish = false`. CRAN is separate and not set up yet. The R package
 installs from GitHub with `remotes::install_github("EKtheSage/prospicio",
 subdir = "R/prospicio")`: `R/prospicio/bootstrap.R`, which pkgbuild runs
@@ -79,6 +84,10 @@ Do these once, before the first release.
 
    The workflow checks that the tag matches the workspace version, builds
    and tests again, then publishes to PyPI and crates.io.
+
+   The **XLL** workflow builds the Excel add-in for the same tag and
+   attaches it to a draft GitHub release; publish the draft (*Releases*)
+   when the add-in is to go out with the version.
 
    A cloud session can do steps 1 and 2 but cannot push the tag: its git
    access stops at its own branch, and the push comes back `403`. The

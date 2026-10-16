@@ -796,6 +796,24 @@ class BayesGlmFit:
         -------
         Elpd
         """
+    def loo_pit(self, /, design: Design, y: Sequence[float], seed: int = 0) -> dict:
+        """
+        The leave-one-out PIT of ``y`` given ``design``, by Pareto-smoothed
+        importance weights on ``replicate``'s datasets, randomized over ties;
+        uniform for a calibrated model.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        seed : int, default 0
+        
+        Returns
+        -------
+        dict
+            ``pit`` and ``pareto_k`` per observation, and ``ks``, the
+            Kolmogorov–Smirnov distance from the uniform.
+        """
     @property
     def names(self, /) -> list[str]:
         """
@@ -805,6 +823,27 @@ class BayesGlmFit:
     def posterior_mean(self, /) -> list[float]:
         """
         Posterior means of the coefficients.
+        """
+    def posterior_predictive_check(self, /, design: Design, y: Sequence[float], statistics: Sequence[Any] |None = None, seed: int = 0) -> list[dict]:
+        """
+        Posterior predictive checks of ``y`` given ``design``: each test
+        statistic of ``y`` against its distribution over ``replicate``'s
+        datasets, with the p-value ``P(T(y_rep) >= T(y))`` (ties count half).
+        A p-value near 0 or 1 says the model cannot reproduce that feature.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        statistics : list of str or float, default ["mean", "sd", "min", "max"]
+            ``"mean"``, ``"sd"``, ``"min"``, ``"max"``, ``"proportion_zero"``,
+            or a probability for that quantile.
+        seed : int, default 0
+        
+        Returns
+        -------
+        list of dict
+            ``name``, ``observed``, ``replicated`` and ``p_value`` per statistic.
         """
     def predict(self, /, design: Design) -> list[float]:
         """
@@ -821,6 +860,21 @@ class BayesGlmFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def replicate(self, /, design: Design, seed: int = 0) -> list[list[float]]:
+        """
+        One replicated dataset per posterior draw: one row per draw, one
+        column per row of ``design``, each response drawn from the family at
+        that draw's coefficients and dispersion.
+        
+        Parameters
+        ----------
+        design : Design
+        seed : int, default 0
+        
+        Returns
+        -------
+        list of list of float
         """
     def summary(self, /) -> list[dict]:
         """
@@ -6785,6 +6839,30 @@ class EventSet:
         -------
         list of float or None
         """
+    def term_years(self, /, n_years: int) -> list[EventSet]:
+        """
+        Splits the simulations into a term of ``n_years`` consecutive
+        blocks, for ``Tower.apply_term``: year ``t`` (from 0) holds
+        simulations ``t * n`` to ``(t + 1) * n - 1``, with ``n = n_sims //
+        n_years``, so path ``j``'s year ``t`` is simulation ``t * n + j``.
+        Sums insured and times go with their losses.
+        
+        Parameters
+        ----------
+        n_years : int
+            Must divide ``n_sims``.
+        
+        Returns
+        -------
+        list of EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[1.0], [2.0], [3.0], [4.0]])
+        >>> [y.events(1) for y in e.term_years(2)]
+        [[2.0], [4.0]]
+        """
     def times(self, /, sim: int) -> list[float] |None:
         """
         Year ``sim``'s times, one per loss, or ``None``.
@@ -7142,9 +7220,15 @@ class Gam:
     ----------
     glm : Glm
         Family, link and dispersion.
-    smooths : list of str or (str, int)
+    smooths : list of str, (str, int) or dict
         The design columns to smooth, optionally with the number of basis
-        functions (10 by default).
+        functions (10 by default), or a dict ``{"column": ..., "n_basis":
+        ..., "bs": ..., "period": ...}``: ``bs`` is ``"ps"`` (the default)
+        or ``"cp"`` for a cyclic smooth (mgcv's ``bs = "cp"``), whose ends
+        meet over ``period``, a ``(lo, hi)`` pair (the data's range when
+        left out), or ``"mpi"`` / ``"mpd"`` for a monotone increasing or
+        decreasing smooth (scam's), which takes GCV, UBRE or fixed
+        smoothing but not REML.
     smoothing : str or list of float, default "auto"
         ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
         ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
@@ -8492,6 +8576,82 @@ class Group:
         """
 
 @final
+class HierarchicalCredibilityFit:
+    """
+    A fitted Bayesian hierarchical credibility model, from
+    ``hierarchical_credibility``.
+    """
+    @property
+    def collective_mean(self, /) -> float:
+        """
+        Posterior mean of the collective mean.
+        """
+    @property
+    def credibility(self, /) -> list[float]:
+        """
+        Posterior mean of each group's credibility factor.
+        """
+    @property
+    def divergences(self, /) -> int:
+        """
+        Divergent transitions over all chains.
+        """
+    @property
+    def group_means(self, /) -> list[float]:
+        """
+        Each group's weighted mean.
+        """
+    @property
+    def group_weights(self, /) -> list[float]:
+        """
+        Each group's total weight.
+        """
+    @property
+    def level_premiums(self, /) -> list[list[float]]:
+        """
+        Posterior mean of each node's mean, level by level (outermost first).
+        """
+    def predictive(self, /, weights: Sequence[float] |None = None, n_sims: int = 10000, seed: int = 0) -> PredictiveDistribution:
+        """
+        Posterior predictive draws by group (dimension ``group``): with
+        ``weights``, each group's next-period ratio ``N(theta_i, sigma**2 /
+        w_i)``; without, its risk premium ``theta_i``.
+        
+        Parameters
+        ----------
+        weights : list of float, optional
+            Each group's weight next period.
+        n_sims : int, default 10000
+        seed : int, default 0
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    @property
+    def premiums(self, /) -> list[float]:
+        """
+        Posterior mean of each group's risk premium.
+        """
+    @property
+    def priors(self, /) -> dict:
+        """
+        The priors used, with the defaults filled in: a dict with
+        ``collective_mean``, ``within`` and ``between``.
+        """
+    def summary(self, /) -> list[dict]:
+        """
+        Posterior summaries of ``within_variance`` and
+        ``between_variance[l]`` (outermost level first): one dict each with
+        ``name``, ``mean``, ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``,
+        ``ess_bulk`` and ``ess_tail``.
+        
+        Returns
+        -------
+        list of dict
+        """
+
+@final
 class HierarchicalStacking:
     """
     Hierarchical stacking (Yao, Pirš, Vehtari and Gelman, 2022): model
@@ -9378,6 +9538,20 @@ class Layer:
         -------
         float
         """
+    def ceding_commissions_over(self, /, ceded: Sequence[float]) -> list[float]:
+        """
+        The ceding commissions over consecutive years of a term with these
+        ceded losses, carrying the sliding scale's deficits and credits
+        forward if the layer does.
+        
+        Parameters
+        ----------
+        ceded : list of float
+        
+        Returns
+        -------
+        list of float
+        """
     @property
     def limit(self, /) -> float:
         """
@@ -9427,6 +9601,12 @@ class Layer:
         """
         The profit commission as ``(share, allowance)``, or ``None``.
         """
+    @property
+    def profit_commission_carry(self, /) -> dict |None:
+        """
+        The profit commission's carry-forward as ``{"years": n}`` (``n`` is
+        ``None`` without limit), or ``None``.
+        """
     def profit_commission_for(self, /, ceded: float) -> float:
         """
         The year's profit commission given its ceded loss.
@@ -9438,6 +9618,20 @@ class Layer:
         Returns
         -------
         float
+        """
+    def profit_commissions_over(self, /, ceded: Sequence[float]) -> list[float]:
+        """
+        The profit commissions over consecutive years of a term with these
+        ceded losses, carrying deficits forward if the layer does.
+        
+        Parameters
+        ----------
+        ceded : list of float
+            The layer's ceded loss in each year, at the placed share.
+        
+        Returns
+        -------
+        list of float
         """
     @staticmethod
     def quota_share(name: str, cession: float) -> Layer:
@@ -9499,6 +9693,12 @@ class Layer:
         """
         The sliding scale's ``(commission, loss_ratio)`` anchors in
         increasing loss ratio, or ``None``.
+        """
+    @property
+    def sliding_scale_carry(self, /) -> dict |None:
+        """
+        The sliding scale's carry-forward as ``{"deficit", "credit",
+        "years"}``, or ``None``.
         """
     @staticmethod
     def stop_loss(name: str, limit: float, retention: float) -> Layer:
@@ -9679,6 +9879,36 @@ class Layer:
         >>> round(qs.profit_commission_for(60.0), 12)
         7.5
         """
+    def with_profit_commission_carry_forward(self, /, years: int |None = None) -> Layer:
+        """
+        The same layer, carrying the profit commission's deficits forward
+        between the years of a term (``Tower.apply_term``).
+        
+        A year whose ceded loss exceeds ``premium * (1 - allowance)`` pays no
+        commission and carries the excess, which later years' profits cover
+        before any commission is paid. Deficits are used up oldest first.
+        Set the profit commission first. A single year (``Tower.apply``)
+        starts with nothing carried.
+        
+        Parameters
+        ----------
+        years : int, optional
+            How many later years a deficit may be carried into; ``None``
+            (the default) carries it until it is used up.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+        ...       .with_profit_commission(0.25, 0.1)
+        ...       .with_profit_commission_carry_forward())
+        >>> qs.profit_commissions_over([120.0, 40.0])
+        [0.0, 5.0]
+        """
     def with_rate_on_line(self, /, rol: float) -> Layer:
         """
         The same layer with its premium set from a rate on line:
@@ -9726,6 +9956,39 @@ class Layer:
         ...       .with_sliding_scale([(0.45, 0.60), (0.25, 0.70), (0.19, 0.80)]))
         >>> round(qs.ceding_commission_for(65.0), 12)
         35.0
+        """
+    def with_sliding_scale_carry_forward(self, /, deficit: bool = True, credit: bool = False, years: int |None = None) -> Layer:
+        """
+        The same layer, carrying the sliding scale's deficits (ceded loss
+        above the last anchor's loss ratio), credits (below the first
+        anchor's) or both forward between the years of a term
+        (``Tower.apply_term``).
+        
+        Each year adds what was carried to its own ceded loss before the
+        commission is read off the scale, and carries what is then still
+        beyond the scale's ends. Amounts are used up oldest first. Set the
+        sliding scale first.
+        
+        Parameters
+        ----------
+        deficit : bool, default True
+        credit : bool, default False
+        years : int, optional
+            How many later years an amount may be carried into; ``None``
+            (the default) without limit.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+        ...       .with_sliding_scale([(0.45, 0.60), (0.25, 0.70)])
+        ...       .with_sliding_scale_carry_forward())
+        >>> [round(c, 12) for c in qs.ceding_commissions_over([80.0, 55.0])]
+        [25.0, 35.0]
         """
     def with_swing_rating(self, /, basic: float, lcm: float, minimum: float |None = None, maximum: float |None = None) -> Layer:
         """
@@ -16654,7 +16917,7 @@ class StudentTCopula:
 class TabulatedCurve:
     """
     A tabulated exposure curve: points ``(x, G(x))`` from ``(0, 0)`` to
-    ``(1, 1)``, interpolated linearly, as published curves are given
+    ``(1, 1)``, interpolated linearly or log-log, as published curves are given
     (Salzmann's homeowners scale, Ludwig's curves, ISO PSOLD tables, a
     reinsurer's own).
     
@@ -16664,12 +16927,22 @@ class TabulatedCurve:
     mean rate is the first chord's, ``x1 / G(x1)``, so a table needs fine
     first points for the expected loss to be right.
     
+    With ``interpolation="log-log"`` the curve runs as a power law between
+    points (straight on log-log axes), ``G(x) = G_k (x / x_k) ** p_k``, which
+    follows a curve's bend between sparse points better than a chord; the
+    first piece, from ``(0, 0)``, stays straight. The interpolated curve must
+    be concave, so the elasticities ``p_k`` may not rise from piece to piece:
+    a table with a total-loss mass at the top (the Swiss Re curves with ``c``
+    up to 3, read at a few points) fails and keeps linear interpolation. The
+    destruction rate is then continuous within each piece past the first.
+    
     Parameters
     ----------
     x : list of float
         Increasing from 0 to 1.
     g : list of float
         ``G(x)``, from 0 to 1.
+    interpolation : {"linear", "log-log"}, default "linear"
     
     Raises
     ------
@@ -16684,8 +16957,8 @@ class TabulatedCurve:
     >>> round(t.curve([0.3])[0], 12), t.mean_rate()
     (0.6, 0.25)
     """
-    def __getnewargs__(self, /) -> tuple[list[float], list[float]]: ...
-    def __new__(cls, /, x: Sequence[float], g: Sequence[float]) -> TabulatedCurve: ...
+    def __getnewargs__(self, /) -> tuple[list[float], list[float], str]: ...
+    def __new__(cls, /, x: Sequence[float], g: Sequence[float], interpolation: str = "linear") -> TabulatedCurve: ...
     def __repr__(self, /) -> str: ...
     def curve(self, /, x: Sequence[float]) -> list[float]:
         """
@@ -16730,6 +17003,12 @@ class TabulatedCurve:
     def g(self, /) -> list[float]:
         """
         The table's ``G(x)``.
+        """
+    @property
+    def interpolation(self, /) -> str:
+        """
+        How the curve runs between its points: ``"linear"`` or
+        ``"log-log"``.
         """
     def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
         """
@@ -17099,6 +17378,54 @@ class Tower:
         Returns
         -------
         PredictiveDistribution
+        """
+    def apply_aggregate_term(self, /, years: Sequence[PredictiveDistribution]) -> PredictiveDistribution:
+        """
+        ``apply_term`` on aggregate losses: year ``t`` of path ``j`` is
+        simulation ``j``'s total of ``years[t]``, as in ``apply_aggregate``.
+        
+        Parameters
+        ----------
+        years : list of PredictiveDistribution
+        
+        Returns
+        -------
+        PredictiveDistribution
+        """
+    def apply_term(self, /, years: Sequence[EventSet]) -> PredictiveDistribution:
+        """
+        Applies the tower over a contract term: ``years[t]`` holds year
+        ``t + 1``'s simulated losses, and simulation ``j`` of every year
+        belongs to the same path.
+        
+        The result has dimensions ``["kind", "layer", "year"]``: each of
+        ``apply``'s components once per year, keyed by the year ``1..T``.
+        Each year's ceded and net loss and premiums are what ``apply`` gives
+        for that year alone; a profit commission or sliding scale that
+        carries deficits or credits forward reads what the path's earlier
+        years left. ``EventSet.term_years`` splits one simulation into the
+        years of a term.
+        
+        Parameters
+        ----------
+        years : list of EventSet
+            One per year, each with the same number of simulations.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> qs = (Layer.quota_share("QS", 1.0).with_premium_rate(1.0, 100.0)
+        ...       .with_profit_commission(0.25, 0.1)
+        ...       .with_profit_commission_carry_forward())
+        >>> years = [EventSet.from_years([[120.0], [40.0]]), EventSet.from_years([[40.0], [40.0]])]
+        >>> term = Tower([qs]).apply_term(years)
+        >>> term.select("year", [2]).select("kind", ["profit_commission"]).mean()
+        8.75
         """
     def ceded(self, /, losses: Sequence[float]) -> list[float]:
         """
@@ -19204,6 +19531,40 @@ def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: floa
     5.0
     """
 
+def credibility_premiums(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]], within_variance: float, between_variances: Sequence[float], levels: Sequence[Sequence[int]] |None = None, collective_mean: tuple[float, float] |None = None) -> dict:
+    """
+    The credibility premiums at given structure parameters: Bühlmann–Straub's
+    with one level, Bühlmann–Gisler's hierarchical ones (as ``actuar::cm``)
+    with more, which are the posterior means of the normal model with the
+    variances known.
+    
+    Parameters
+    ----------
+    ratios, weights, levels
+        As for ``hierarchical_credibility``.
+    within_variance : float
+        ``s**2``.
+    between_variances : list of float
+        One per level, outermost first and the groups' last (``a`` with one
+        level; ``b`` then ``a`` with two).
+    collective_mean : (float, float), optional
+        ``(mean, sd)`` of a normal prior on ``mu``; flat if omitted.
+    
+    Returns
+    -------
+    dict
+        ``premiums``, ``credibility``, ``level_premiums``,
+        ``level_credibility`` and ``collective_mean``.
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import credibility_premiums
+    >>> p = credibility_premiums([[1.0, 2.0, 3.0], [4.0, 5.0, 9.0]], [[1.0] * 3] * 2,
+    ...                          within_variance=4.0, between_variances=[8.0 - 4.0 / 3.0])
+    >>> round(p["collective_mean"], 12)
+    4.0
+    """
+
 def credibility_weighted(estimate: float, credibility: float, complement: float) -> float:
     """
     ``Z * estimate + (1 - Z) * complement``.
@@ -19716,6 +20077,54 @@ def group_k_fold(groups: Sequence[str], k: int, seed: int) -> list[tuple[list[in
     list of (list of int, list of int)
     """
 
+def hierarchical_credibility(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]], levels: Sequence[Sequence[int]] |None = None, collective_mean: tuple[float, float] |None = None, within_prior: tuple[str, float] |None = None, between_priors: Sequence[tuple[str, float]] |None = None, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalCredibilityFit:
+    """
+    Bayesian hierarchical credibility, sampled with NUTS: Bühlmann–Straub's
+    model, or Jewell's hierarchy of it, as a normal random-effects model.
+    
+    Group ``i`` in period ``j`` has ratio ``X_ij ~ N(theta_i, sigma**2 /
+    w_ij)``; each group's risk premium ``theta_i`` is normal about its node
+    at the level above (``levels``), each node about its own parent, and
+    the top about the collective mean ``mu``. The means are integrated out
+    exactly, so NUTS samples only the standard deviations; given them, each
+    premium is the credibility formula ``Z * M + (1 - Z) * E[parent]``, and
+    the Bayesian premium averages it over their posterior.
+    
+    Parameters
+    ----------
+    ratios : list of list of float
+        One row per group, one column per period; NaN for a missing cell.
+    weights : list of list of float
+        The same shape, NaN in the same places.
+    levels : list of list of int, optional
+        The hierarchy above the groups, outermost level first:
+        ``levels[k][i]`` is group ``i``'s node (from 0) at level ``k``.
+        Omitted for Bühlmann–Straub's model.
+    collective_mean : (float, float), optional
+        ``(mean, sd)`` of a normal prior on ``mu``; flat if omitted.
+    within_prior : (str, float), optional
+        ``("half_normal", scale)`` or ``("half_cauchy", scale)`` on
+        ``sigma``; half-normal at five times the pooled within standard
+        deviation if omitted.
+    between_priors : list of (str, float), optional
+        One per level, outermost first and the groups' last; half-normal at
+        five times each level's spread if omitted.
+    chains, tune, draws, seed : int
+        NUTS settings.
+    
+    Returns
+    -------
+    HierarchicalCredibilityFit
+    
+    Examples
+    --------
+    >>> from prospicio.credibility import hierarchical_credibility
+    >>> x = [[1.0, 2.0, 3.0, 2.0], [4.0, 5.0, 6.0, 5.0], [2.0, 3.0, 4.0, 3.0]]
+    >>> fit = hierarchical_credibility(x, [[1.0] * 4] * 3, chains=2, tune=300, draws=300)
+    >>> fit.collective_mean < fit.premiums[1] < 5.0
+    True
+    """
+
 def hill(draws: Sequence[float], ks: Sequence[int]) -> list[float]:
     """
     Hill estimates of the tail index ``xi`` (``1 / alpha``) from the ``k``
@@ -19959,6 +20368,37 @@ def log_score(family: str, y: Sequence[float], mu: Sequence[float], dispersion: 
     >>> from prospicio.models import log_score
     >>> round(log_score("poisson", [0.0], [1.0]), 12)
     1.0
+    """
+
+def loo_pit(observed: Sequence[float], replicated: Sequence[Sequence[float]], log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None, seed: int = 0) -> dict:
+    """
+    The leave-one-out PIT of any model's observations: each observation's
+    place among its replicates under the Pareto-smoothed importance weights
+    for leaving it out, randomized over ties; uniform for a calibrated
+    model. Matches R ``loo``'s ``E_loo`` of ``y_rep <= y``.
+    
+    Parameters
+    ----------
+    observed : list of float
+    replicated : list of list of float
+        One replicated dataset per posterior draw.
+    log_lik : list of list of float
+        The pointwise log-likelihood, one row per draw (as ``elpd_loo``).
+    r_eff : list of float, optional
+        Each observation's relative efficiency; 1 if omitted.
+    seed : int, default 0
+        Seeds the randomization over ties.
+    
+    Returns
+    -------
+    dict
+        ``pit`` and ``pareto_k`` per observation, and ``ks``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import loo_pit
+    >>> loo_pit([2.5], [[1.0], [2.0], [3.0], [4.0]], [[-1.0]] * 4)["pit"]
+    [0.5]
     """
 
 def loss_elimination_ratio(severity: Any, deductible: float) -> float:
@@ -20474,6 +20914,38 @@ def pnl_program_stated(stated: float, expense_ratio: float, layers: Sequence[dic
     1333.333333
     """
 
+def ppc_check(observed: Sequence[float], replicated: Sequence[Sequence[float]], statistics: Sequence[Any] |None = None, groups: Sequence[int] |None = None) -> list[dict]:
+    """
+    Posterior predictive checks of any model: each test statistic of
+    ``observed`` against its distribution over the replicated datasets,
+    with the p-value ``P(T(y_rep) >= T(y))`` (ties count half). With
+    ``groups``, each statistic is checked within each group.
+    
+    Parameters
+    ----------
+    observed : list of float
+    replicated : list of list of float
+        One replicated dataset per posterior draw, each as long as
+        ``observed``.
+    statistics : list of str or float, default ["mean", "sd", "min", "max"]
+        ``"mean"``, ``"sd"``, ``"min"``, ``"max"``, ``"proportion_zero"``, or a
+        probability for that quantile.
+    groups : list of int, optional
+        Each observation's group, from 0.
+    
+    Returns
+    -------
+    list of dict
+        ``name``, ``observed``, ``replicated`` and ``p_value``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import ppc_check
+    >>> c = ppc_check([1.0, 3.0], [[0.0, 2.0], [2.0, 4.0], [1.0, 3.0]], ["mean"])
+    >>> c[0]["observed"], c[0]["p_value"]
+    (2.0, 0.5)
+    """
+
 def premium_based_expenses(ratios: Sequence[float], fixed_shares: Sequence[float]) -> tuple[float, float]:
     """
     The premium-based projection of expenses: each expense ratio split by
@@ -20963,6 +21435,42 @@ def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     >>> w = stacking_weights([[-0.1, -0.1, -3.0, -3.0], [-3.0, -3.0, -0.1, -0.1]])
     >>> [round(x, 9) for x in w]
     [0.5, 0.5]
+    """
+
+def threshold_diagnostics(draws: Sequence[float], thresholds: Sequence[float]) -> dict:
+    """
+    Threshold diagnostics for peaks over threshold: at each threshold the
+    mean excess and the generalized Pareto fitted to the exceedances, with
+    standard errors (the numbers behind ``ismev``'s ``mrl.plot`` and
+    ``gpd.fitrange``).
+    
+    Above a threshold where a GPD fits, the mean excess is linear in the
+    threshold and the shape ``xi`` and modified scale ``beta - xi * u`` are
+    constant up to their sampling error: pick the lowest threshold above
+    which they are stable, then fit a :class:`PotTail` there. Standard
+    errors come from the observed information and hold for ``xi > -0.5``.
+    A threshold with too few values above it gives NaN where it cannot
+    estimate (2 for the mean excess's standard error, 3 for the GPD).
+    
+    Parameters
+    ----------
+    draws : list of float
+    thresholds : list of float
+    
+    Returns
+    -------
+    dict of str to list
+        Columns ``threshold``, ``n_above``, ``mean_excess``,
+        ``mean_excess_se``, ``xi``, ``xi_se``, ``beta``,
+        ``modified_scale`` and ``modified_scale_se``, one entry per
+        threshold (``pandas.DataFrame`` takes it as is).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import threshold_diagnostics
+    >>> d = threshold_diagnostics([1.0, 2.0, 3.0, 4.0, 5.0], [2.5])
+    >>> d["n_above"], d["mean_excess"]
+    ([3], [1.5])
     """
 
 def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], list[int]]]:

@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use prospicio_bayes::ppc::{self, LooPit, Statistic, StatisticCheck};
 use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing, TensorSpline};
 use prospicio_glm::net::{CvPath, ElasticNet, ElasticNetFit};
 use prospicio_glm::{Dispersion, Glm, GlmFit, Robust};
@@ -1240,6 +1241,58 @@ impl PyElasticNetFit {
     }
 }
 
+/// A smooth from ``{"column": ..., "n_basis": ..., "bs": ..., "period": ...}``.
+fn smooth_from_dict(d: &Bound<'_, pyo3::types::PyDict>) -> PyResult<PSpline> {
+    for key in d.keys() {
+        let key: String = key.extract()?;
+        if !matches!(key.as_str(), "column" | "n_basis" | "bs" | "period") {
+            return Err(PyValueError::new_err(format!(
+                "unknown smooth key {key:?}: use column, n_basis, bs and period"
+            )));
+        }
+    }
+    let column: String = d
+        .get_item("column")?
+        .ok_or_else(|| PyValueError::new_err("a smooth needs a \"column\""))?
+        .extract()?;
+    let bs: String = match d.get_item("bs")? {
+        Some(v) => v.extract()?,
+        None => "ps".into(),
+    };
+    let period: Option<(f64, f64)> = match d.get_item("period")? {
+        Some(v) if !v.is_none() => Some(v.extract()?),
+        _ => None,
+    };
+    let mut spline = match bs.as_str() {
+        "ps" if period.is_none() => PSpline::new(&column),
+        "ps" => {
+            return Err(PyValueError::new_err(
+                "a period needs a cyclic smooth (bs=\"cp\")",
+            ));
+        }
+        "cp" => match period {
+            Some((lo, hi)) => PSpline::cyclic(&column).period(lo, hi),
+            None => PSpline::cyclic(&column),
+        },
+        "mpi" | "mpd" if period.is_some() => {
+            return Err(PyValueError::new_err(
+                "a period needs a cyclic smooth (bs=\"cp\")",
+            ));
+        }
+        "mpi" => PSpline::increasing(&column),
+        "mpd" => PSpline::decreasing(&column),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "bs must be \"ps\", \"cp\", \"mpi\" or \"mpd\", not {other:?}"
+            )));
+        }
+    };
+    if let Some(k) = d.get_item("n_basis")? {
+        spline = spline.n_basis(k.extract()?);
+    }
+    Ok(spline)
+}
+
 /// A generalized additive model: a ``Glm`` plus P-spline smooths of
 /// numeric design columns, with smoothing chosen by GCV or UBRE.
 ///
@@ -1247,9 +1300,15 @@ impl PyElasticNetFit {
 /// ----------
 /// glm : Glm
 ///     Family, link and dispersion.
-/// smooths : list of str or (str, int)
+/// smooths : list of str, (str, int) or dict
 ///     The design columns to smooth, optionally with the number of basis
-///     functions (10 by default).
+///     functions (10 by default), or a dict ``{"column": ..., "n_basis":
+///     ..., "bs": ..., "period": ...}``: ``bs`` is ``"ps"`` (the default)
+///     or ``"cp"`` for a cyclic smooth (mgcv's ``bs = "cp"``), whose ends
+///     meet over ``period``, a ``(lo, hi)`` pair (the data's range when
+///     left out), or ``"mpi"`` / ``"mpd"`` for a monotone increasing or
+///     decreasing smooth (scam's), which takes GCV, UBRE or fixed
+///     smoothing but not REML.
 /// smoothing : str or list of float, default "auto"
 ///     ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
 ///     ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
@@ -1310,9 +1369,12 @@ impl PyGam {
                     Ok(PSpline::new(&name))
                 } else if let Ok((name, k)) = s.extract::<(String, usize)>() {
                     Ok(PSpline::new(&name).n_basis(k))
+                } else if let Ok(d) = s.cast::<pyo3::types::PyDict>() {
+                    smooth_from_dict(d)
                 } else {
                     Err(PyTypeError::new_err(
-                        "each smooth must be a column name or (column name, n_basis)",
+                        "each smooth must be a column name, (column name, n_basis) or a dict \
+                         with column, n_basis, bs and period",
                     ))
                 }
             })
@@ -2430,6 +2492,250 @@ impl PyBayesGlmFit {
             .map_err(to_py)?;
         Ok(PyPredictiveDistribution { inner })
     }
+
+    /// One replicated dataset per posterior draw: one row per draw, one
+    /// column per row of ``design``, each response drawn from the family at
+    /// that draw's coefficients and dispersion.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// seed : int, default 0
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    #[pyo3(signature = (design, seed = 0))]
+    fn replicate(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        seed: u64,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let n = d.n_rows().max(1);
+        let reps = py.detach(|| fit.replicate(d, seed)).map_err(to_py)?;
+        Ok(reps.chunks(n).map(<[f64]>::to_vec).collect())
+    }
+
+    /// Posterior predictive checks of ``y`` given ``design``: each test
+    /// statistic of ``y`` against its distribution over ``replicate``'s
+    /// datasets, with the p-value ``P(T(y_rep) >= T(y))`` (ties count half).
+    /// A p-value near 0 or 1 says the model cannot reproduce that feature.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// statistics : list of str or float, default ["mean", "sd", "min", "max"]
+    ///     ``"mean"``, ``"sd"``, ``"min"``, ``"max"``, ``"proportion_zero"``,
+    ///     or a probability for that quantile.
+    /// seed : int, default 0
+    ///
+    /// Returns
+    /// -------
+    /// list of dict
+    ///     ``name``, ``observed``, ``replicated`` and ``p_value`` per statistic.
+    #[pyo3(signature = (design, y, statistics = None, seed = 0))]
+    fn posterior_predictive_check<'py>(
+        &self,
+        py: Python<'py>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        statistics: Option<Vec<Bound<'py, PyAny>>>,
+        seed: u64,
+    ) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+        let stats = ppc_statistics(statistics)?;
+        let (fit, d) = (&self.inner, &design.inner);
+        let checks = py
+            .detach(|| fit.posterior_predictive_check(d, &y, &stats, seed))
+            .map_err(to_py)?;
+        checks_to_py(py, checks)
+    }
+
+    /// The leave-one-out PIT of ``y`` given ``design``, by Pareto-smoothed
+    /// importance weights on ``replicate``'s datasets, randomized over ties;
+    /// uniform for a calibrated model.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// seed : int, default 0
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``pit`` and ``pareto_k`` per observation, and ``ks``, the
+    ///     Kolmogorov–Smirnov distance from the uniform.
+    #[pyo3(signature = (design, y, seed = 0))]
+    fn loo_pit<'py>(
+        &self,
+        py: Python<'py>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        seed: u64,
+    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let p = py.detach(|| fit.loo_pit(d, &y, seed)).map_err(to_py)?;
+        loo_pit_to_py(py, p)
+    }
+}
+
+/// Test statistics from Python: names, or probabilities for quantiles.
+fn ppc_statistics(statistics: Option<Vec<Bound<'_, PyAny>>>) -> PyResult<Vec<Statistic>> {
+    let Some(list) = statistics else {
+        return Ok(vec![
+            Statistic::Mean,
+            Statistic::Sd,
+            Statistic::Min,
+            Statistic::Max,
+        ]);
+    };
+    list.iter()
+        .map(|v| {
+            if let Ok(p) = v.extract::<f64>() {
+                return Ok(Statistic::Quantile(p));
+            }
+            let name: String = v.extract()?;
+            match name.as_str() {
+                "mean" => Ok(Statistic::Mean),
+                "sd" => Ok(Statistic::Sd),
+                "min" => Ok(Statistic::Min),
+                "max" => Ok(Statistic::Max),
+                "proportion_zero" => Ok(Statistic::ProportionZero),
+                other => Err(PyValueError::new_err(format!(
+                    "a statistic is \"mean\", \"sd\", \"min\", \"max\", \"proportion_zero\" or a quantile's probability, got {other:?}"
+                ))),
+            }
+        })
+        .collect()
+}
+
+fn checks_to_py(
+    py: Python<'_>,
+    checks: Vec<StatisticCheck>,
+) -> PyResult<Vec<Bound<'_, pyo3::types::PyDict>>> {
+    checks
+        .into_iter()
+        .map(|c| {
+            let d = pyo3::types::PyDict::new(py);
+            d.set_item("name", c.name)?;
+            d.set_item("observed", c.observed)?;
+            d.set_item("replicated", c.replicated)?;
+            d.set_item("p_value", c.p_value)?;
+            Ok(d)
+        })
+        .collect()
+}
+
+fn loo_pit_to_py(py: Python<'_>, p: LooPit) -> PyResult<Bound<'_, pyo3::types::PyDict>> {
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("pit", p.pit)?;
+    d.set_item("pareto_k", p.pareto_k)?;
+    d.set_item("ks", p.ks)?;
+    Ok(d)
+}
+
+/// Rows of a list of equal-length lists, flattened row-major.
+fn flatten_rows(rows: &[Vec<f64>], n: usize, what: &str) -> PyResult<Vec<f64>> {
+    if rows.iter().any(|r| r.len() != n) {
+        return Err(PyValueError::new_err(format!(
+            "every row of {what} needs {n} values, one per observation"
+        )));
+    }
+    Ok(rows.concat())
+}
+
+/// Posterior predictive checks of any model: each test statistic of
+/// ``observed`` against its distribution over the replicated datasets,
+/// with the p-value ``P(T(y_rep) >= T(y))`` (ties count half). With
+/// ``groups``, each statistic is checked within each group.
+///
+/// Parameters
+/// ----------
+/// observed : list of float
+/// replicated : list of list of float
+///     One replicated dataset per posterior draw, each as long as
+///     ``observed``.
+/// statistics : list of str or float, default ["mean", "sd", "min", "max"]
+///     ``"mean"``, ``"sd"``, ``"min"``, ``"max"``, ``"proportion_zero"``, or a
+///     probability for that quantile.
+/// groups : list of int, optional
+///     Each observation's group, from 0.
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``name``, ``observed``, ``replicated`` and ``p_value``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import ppc_check
+/// >>> c = ppc_check([1.0, 3.0], [[0.0, 2.0], [2.0, 4.0], [1.0, 3.0]], ["mean"])
+/// >>> c[0]["observed"], c[0]["p_value"]
+/// (2.0, 0.5)
+#[pyfunction]
+#[pyo3(signature = (observed, replicated, statistics = None, groups = None))]
+pub(crate) fn ppc_check<'py>(
+    py: Python<'py>,
+    observed: Vec<f64>,
+    replicated: Vec<Vec<f64>>,
+    statistics: Option<Vec<Bound<'py, PyAny>>>,
+    groups: Option<Vec<usize>>,
+) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+    let stats = ppc_statistics(statistics)?;
+    let reps = flatten_rows(&replicated, observed.len(), "replicated")?;
+    let checks = match groups {
+        Some(g) => ppc::check_grouped(&observed, &reps, &g, &stats),
+        None => ppc::check(&observed, &reps, &stats),
+    }
+    .map_err(to_py)?;
+    checks_to_py(py, checks)
+}
+
+/// The leave-one-out PIT of any model's observations: each observation's
+/// place among its replicates under the Pareto-smoothed importance weights
+/// for leaving it out, randomized over ties; uniform for a calibrated
+/// model. Matches R ``loo``'s ``E_loo`` of ``y_rep <= y``.
+///
+/// Parameters
+/// ----------
+/// observed : list of float
+/// replicated : list of list of float
+///     One replicated dataset per posterior draw.
+/// log_lik : list of list of float
+///     The pointwise log-likelihood, one row per draw (as ``elpd_loo``).
+/// r_eff : list of float, optional
+///     Each observation's relative efficiency; 1 if omitted.
+/// seed : int, default 0
+///     Seeds the randomization over ties.
+///
+/// Returns
+/// -------
+/// dict
+///     ``pit`` and ``pareto_k`` per observation, and ``ks``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import loo_pit
+/// >>> loo_pit([2.5], [[1.0], [2.0], [3.0], [4.0]], [[-1.0]] * 4)["pit"]
+/// [0.5]
+#[pyfunction]
+#[pyo3(signature = (observed, replicated, log_lik, r_eff = None, seed = 0))]
+pub(crate) fn loo_pit<'py>(
+    py: Python<'py>,
+    observed: Vec<f64>,
+    replicated: Vec<Vec<f64>>,
+    log_lik: Vec<Vec<f64>>,
+    r_eff: Option<Vec<f64>>,
+    seed: u64,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let n = observed.len();
+    let reps = flatten_rows(&replicated, n, "replicated")?;
+    let ll = flatten_rows(&log_lik, n, "log_lik")?;
+    let p = ppc::loo_pit(&observed, &reps, &ll, r_eff.as_deref(), seed).map_err(to_py)?;
+    loo_pit_to_py(py, p)
 }
 
 fn stacking_sampler(

@@ -29,9 +29,11 @@
 //! assert!(ess_bulk(&chains).unwrap() > 100.0);
 //! ```
 
+pub mod credibility;
 pub mod elpd;
 pub mod glm;
 pub mod nuts;
+pub mod ppc;
 pub mod stacking;
 
 use prospicio_core::{Error, Result};

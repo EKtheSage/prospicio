@@ -10,6 +10,10 @@ actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta,
 
 bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
 
+ppc_check_rust <- function(observed, replicated, statistics, groups) .Call(wrap__ppc_check_rust, observed, replicated, statistics, groups)
+
+loo_pit_rust <- function(observed, replicated, log_lik, r_eff, seed) .Call(wrap__loo_pit_rust, observed, replicated, log_lik, r_eff, seed)
+
 bayes_stacking_rust <- function(lpd, k, concentration, sampler) .Call(wrap__bayes_stacking_rust, lpd, k, concentration, sampler)
 
 hierarchical_stacking_rust <- function(lpd, k, x, p, priors, pooling, adaptive, discrete, sampler) .Call(wrap__hierarchical_stacking_rust, lpd, k, x, p, priors, pooling, adaptive, discrete, sampler)
@@ -76,6 +80,10 @@ credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
 
+hierarchical_credibility_rust <- function(ratios, weights, nrow, ncol, levels, collective_mean, within_kind, within_scale, between_kinds, between_scales, chains, tune, draws, seed) .Call(wrap__hierarchical_credibility_rust, ratios, weights, nrow, ncol, levels, collective_mean, within_kind, within_scale, between_kinds, between_scales, chains, tune, draws, seed)
+
+credibility_premiums_rust <- function(ratios, weights, nrow, ncol, levels, within_variance, between_variances, collective_mean) .Call(wrap__credibility_premiums_rust, ratios, weights, nrow, ncol, levels, within_variance, between_variances, collective_mean)
+
 stacking_weights_rust <- function(lpd, k) .Call(wrap__stacking_weights_rust, lpd, k)
 
 pseudo_bma_weights_rust <- function(lpd, k, n_draws, seed) .Call(wrap__pseudo_bma_weights_rust, lpd, k, n_draws, seed)
@@ -86,7 +94,7 @@ elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, li
 
 elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid)
 
-gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas, tensors, tensor_basis) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas, tensors, tensor_basis)
+gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis)
 
 family_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Call(wrap__family_deviance_rust, family_name, theta, power, y, mu, weights)
 
@@ -222,6 +230,8 @@ mean_excess_rust <- function(draws, thresholds) .Call(wrap__mean_excess_rust, dr
 
 hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
+threshold_diagnostics_rust <- function(draws, thresholds) .Call(wrap__threshold_diagnostics_rust, draws, thresholds)
+
 EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)
@@ -231,6 +241,8 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 EventSet$from_long <- function(years, losses, n_years, seed) .Call(wrap__EventSet__from_long, years, losses, n_years, seed)
 
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
+
+EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
 
 EventSet$grouped <- function(window_hours) .Call(wrap__EventSet__grouped, self, window_hours)
 
@@ -263,6 +275,20 @@ EventSet$maxima <- function() .Call(wrap__EventSet__maxima, self)
 
 #' @export
 `[[.EventSet` <- `$.EventSet`
+
+HierarchicalCredibilityR <- new.env(parent = emptyenv())
+
+HierarchicalCredibilityR$values <- function() .Call(wrap__HierarchicalCredibilityR__values, self)
+
+HierarchicalCredibilityR$summary <- function() .Call(wrap__HierarchicalCredibilityR__summary, self)
+
+HierarchicalCredibilityR$predictive <- function(weights, n_sims, seed) .Call(wrap__HierarchicalCredibilityR__predictive, self, weights, n_sims, seed)
+
+#' @export
+`$.HierarchicalCredibilityR` <- function (self, name) { func <- HierarchicalCredibilityR[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.HierarchicalCredibilityR` <- `$.HierarchicalCredibilityR`
 
 XolLayer <- new.env(parent = emptyenv())
 
@@ -316,6 +342,18 @@ XolLayer$with_sliding_scale <- function(commission, loss_ratio) .Call(wrap__XolL
 
 XolLayer$with_profit_commission <- function(share, allowance) .Call(wrap__XolLayer__with_profit_commission, self, share, allowance)
 
+XolLayer$with_profit_commission_carry_forward <- function(years) .Call(wrap__XolLayer__with_profit_commission_carry_forward, self, years)
+
+XolLayer$with_sliding_scale_carry_forward <- function(deficit, credit, years) .Call(wrap__XolLayer__with_sliding_scale_carry_forward, self, deficit, credit, years)
+
+XolLayer$profit_commission_carry <- function() .Call(wrap__XolLayer__profit_commission_carry, self)
+
+XolLayer$sliding_scale_carry <- function() .Call(wrap__XolLayer__sliding_scale_carry, self)
+
+XolLayer$profit_commissions_over <- function(ceded) .Call(wrap__XolLayer__profit_commissions_over, self, ceded)
+
+XolLayer$ceding_commissions_over <- function(ceded) .Call(wrap__XolLayer__ceding_commissions_over, self, ceded)
+
 XolLayer$with_swing_rating <- function(basic, lcm, minimum, maximum) .Call(wrap__XolLayer__with_swing_rating, self, basic, lcm, minimum, maximum)
 
 XolLayer$ceding_commission <- function() .Call(wrap__XolLayer__ceding_commission, self)
@@ -363,6 +401,10 @@ ReinsuranceTower$on_annual_grid <- function(annual) .Call(wrap__ReinsuranceTower
 ReinsuranceTower$apply_aggregate <- function(losses) .Call(wrap__ReinsuranceTower__apply_aggregate, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
+
+ReinsuranceTower$apply_term <- function(years) .Call(wrap__ReinsuranceTower__apply_term, self, years)
+
+ReinsuranceTower$apply_aggregate_term <- function(years) .Call(wrap__ReinsuranceTower__apply_aggregate_term, self, years)
 
 #' @export
 `$.ReinsuranceTower` <- function (self, name) { func <- ReinsuranceTower[[name]]; environment(func) <- environment(); func }
@@ -665,6 +707,12 @@ BayesGlmModel$summary <- function() .Call(wrap__BayesGlmModel__summary, self)
 BayesGlmModel$loo <- function() .Call(wrap__BayesGlmModel__loo, self)
 
 BayesGlmModel$log_likelihood <- function() .Call(wrap__BayesGlmModel__log_likelihood, self)
+
+BayesGlmModel$replicate <- function(seed) .Call(wrap__BayesGlmModel__replicate, self, seed)
+
+BayesGlmModel$ppc <- function(statistics, seed) .Call(wrap__BayesGlmModel__ppc, self, statistics, seed)
+
+BayesGlmModel$loo_pit <- function(seed) .Call(wrap__BayesGlmModel__loo_pit, self, seed)
 
 BayesGlmModel$predict <- function(x, names, offset) .Call(wrap__BayesGlmModel__predict, self, x, names, offset)
 
@@ -1588,7 +1636,9 @@ Mbbefd$rate_quantile <- function(u) .Call(wrap__Mbbefd__rate_quantile, self, u)
 
 Tabulated <- new.env(parent = emptyenv())
 
-Tabulated$new <- function(x, g) .Call(wrap__Tabulated__new, x, g)
+Tabulated$new <- function(x, g, interpolation) .Call(wrap__Tabulated__new, x, g, interpolation)
+
+Tabulated$interpolation <- function() .Call(wrap__Tabulated__interpolation, self)
 
 Tabulated$from_severity <- function(severity, mpl, points) .Call(wrap__Tabulated__from_severity, severity, mpl, points)
 

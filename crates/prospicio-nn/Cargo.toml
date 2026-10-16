@@ -19,3 +19,11 @@ prospicio-core.workspace = true
 prospicio-models.workspace = true
 prospicio-prob.workspace = true
 burn = { version = "0.21", default-features = false, features = ["std", "ndarray", "autodiff"] }
+# Burn's ONNX parser (the front end of burn-import), for loading networks
+# trained elsewhere at run time (`onnx` module). Pure Rust: protobuf's
+# parser needs no protoc.
+onnx-ir = { version = "0.21", optional = true }
+
+[features]
+default = ["onnx"]
+onnx = ["dep:onnx-ir"]

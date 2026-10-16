@@ -2000,6 +2000,76 @@ pub(crate) fn mean_excess(draws: Vec<f64>, thresholds: Vec<f64>) -> Vec<(f64, f6
     prospicio_prob::evt::mean_excess(&draws, &thresholds)
 }
 
+/// Threshold diagnostics for peaks over threshold: at each threshold the
+/// mean excess and the generalized Pareto fitted to the exceedances, with
+/// standard errors (the numbers behind ``ismev``'s ``mrl.plot`` and
+/// ``gpd.fitrange``).
+///
+/// Above a threshold where a GPD fits, the mean excess is linear in the
+/// threshold and the shape ``xi`` and modified scale ``beta - xi * u`` are
+/// constant up to their sampling error: pick the lowest threshold above
+/// which they are stable, then fit a :class:`PotTail` there. Standard
+/// errors come from the observed information and hold for ``xi > -0.5``.
+/// A threshold with too few values above it gives NaN where it cannot
+/// estimate (2 for the mean excess's standard error, 3 for the GPD).
+///
+/// Parameters
+/// ----------
+/// draws : list of float
+/// thresholds : list of float
+///
+/// Returns
+/// -------
+/// dict of str to list
+///     Columns ``threshold``, ``n_above``, ``mean_excess``,
+///     ``mean_excess_se``, ``xi``, ``xi_se``, ``beta``,
+///     ``modified_scale`` and ``modified_scale_se``, one entry per
+///     threshold (``pandas.DataFrame`` takes it as is).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import threshold_diagnostics
+/// >>> d = threshold_diagnostics([1.0, 2.0, 3.0, 4.0, 5.0], [2.5])
+/// >>> d["n_above"], d["mean_excess"]
+/// ([3], [1.5])
+#[pyfunction]
+pub(crate) fn threshold_diagnostics<'py>(
+    py: Python<'py>,
+    draws: Vec<f64>,
+    thresholds: Vec<f64>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let rows = py.detach(|| prospicio_prob::evt::threshold_diagnostics(&draws, &thresholds));
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item(
+        "threshold",
+        rows.iter().map(|r| r.threshold).collect::<Vec<_>>(),
+    )?;
+    d.set_item(
+        "n_above",
+        rows.iter().map(|r| r.n_above).collect::<Vec<_>>(),
+    )?;
+    d.set_item(
+        "mean_excess",
+        rows.iter().map(|r| r.mean_excess).collect::<Vec<_>>(),
+    )?;
+    d.set_item(
+        "mean_excess_se",
+        rows.iter().map(|r| r.mean_excess_se).collect::<Vec<_>>(),
+    )?;
+    d.set_item("xi", rows.iter().map(|r| r.xi).collect::<Vec<_>>())?;
+    d.set_item("xi_se", rows.iter().map(|r| r.xi_se).collect::<Vec<_>>())?;
+    d.set_item("beta", rows.iter().map(|r| r.beta).collect::<Vec<_>>())?;
+    d.set_item(
+        "modified_scale",
+        rows.iter().map(|r| r.modified_scale).collect::<Vec<_>>(),
+    )?;
+    d.set_item(
+        "modified_scale_se",
+        rows.iter().map(|r| r.modified_scale_se).collect::<Vec<_>>(),
+    )?;
+    Ok(d)
+}
+
 /// Hill estimates of the tail index ``xi`` (``1 / alpha``) from the ``k``
 /// largest draws, for each ``k``.
 ///

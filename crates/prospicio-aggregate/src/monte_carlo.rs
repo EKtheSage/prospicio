@@ -560,6 +560,22 @@ impl EventSet {
             .map(|t| &t[self.offsets[sim]..self.offsets[sim + 1]])
     }
 
+    /// Simulations `range` alone, with their sums insured and times.
+    pub(crate) fn slice(&self, range: std::ops::Range<usize>) -> EventSet {
+        let (lo, hi) = (self.offsets[range.start], self.offsets[range.end]);
+        EventSet {
+            offsets: self.offsets[range.start..=range.end]
+                .iter()
+                .map(|o| o - lo)
+                .collect(),
+            losses: self.losses[lo..hi].to_vec(),
+            sums_insured: self.sums_insured.as_ref().map(|s| s[lo..hi].to_vec()),
+            times: self.times.as_ref().map(|t| t[lo..hi].to_vec()),
+            seed: self.seed,
+            samplers: self.samplers.clone(),
+        }
+    }
+
     /// Whether the losses carry sums insured.
     pub fn has_sums_insured(&self) -> bool {
         self.sums_insured.is_some()
