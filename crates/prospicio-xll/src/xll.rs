@@ -402,3 +402,7 @@ udf!(pro_cl_ultimate, triangle, average, tail);
 udf!(pro_cl_reserve, triangle, average, tail);
 udf!(pro_cl_factors, triangle, average, tail);
 udf!(pro_mack, triangle, average, tail, origins);
+udf!(pro_lev, limit, family, p1, p2, truncation);
+udf!(pro_layer, limit, attachment, family, p1, p2, truncation);
+udf!(pro_layer_cv, limit, attachment, family, p1, p2, truncation);
+udf!(pro_ilf, limit, basic_limit, family, p1, p2, truncation);

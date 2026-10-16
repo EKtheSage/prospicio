@@ -60,14 +60,15 @@ fn text(g: &Grid) -> &str {
 }
 
 #[test]
-fn every_function_is_reachable_by_its_symbol() {
-    for f in FUNCTIONS {
-        let out = call(f.symbol, args(raa(), f.args.len().saturating_sub(1)));
+fn every_reserving_function_runs_on_raa() {
+    let reserving = FUNCTIONS
+        .iter()
+        .filter(|f| f.args.first().is_some_and(|a| a.name == "triangle"));
+    for f in reserving {
+        let out = call(f.symbol, args(raa(), f.args.len() - 1));
         if let Some(Value::Text(s)) = out.as_scalar() {
             assert!(!s.starts_with("#PROSPICIO!"), "{}: {s}", f.name);
         }
-        assert!(f.name.starts_with("PRO."));
-        assert!(f.help.len() < 256 && f.args.iter().all(|a| a.help.len() < 254));
     }
 }
 

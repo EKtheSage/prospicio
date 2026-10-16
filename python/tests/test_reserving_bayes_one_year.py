@@ -7,7 +7,9 @@ reweighting against refits are in
 validation/tests/reserving_bayes_one_year.rs; these tests check the binding:
 the settings, the fields and frames, the lifetime fit against ``fit``, which
 simulations are refitted, segments, replay by seed, the warnings and the
-errors.
+errors. ``BayesBf.one_year`` (decision 17) returns the same class with a
+``BayesBfFit``; its comparison with ``BayesOdp`` and the strong-prior limit is
+in validation/tests/reserving_bayes_bf_one_year.rs.
 """
 
 import csv
@@ -19,6 +21,8 @@ import pytest
 
 from prospicio.distributions import PredictiveDistribution
 from prospicio.reserving import (
+    BayesBf,
+    BayesBfFit,
     BayesOdp,
     BayesOdpFit,
     BayesOneYearFit,
@@ -107,6 +111,7 @@ def test_fields(view, genins):
 
     assert len(view.pareto_k) == N_SIMS
     assert view.refitted == [] and view.refit_warnings == 0
+    assert view.moment_matched == []
     assert view.k_threshold == 0.7
     flagged = sum(1 for k in view.pareto_k if math.isnan(k) or k > 0.7) / N_SIMS
     assert view.flagged_share == pytest.approx(flagged, abs=1e-15)
@@ -181,6 +186,32 @@ def test_refits():
     rows_every = every.cdr.draw_matrix()
     for i in range(12):
         assert rows_flagged[i] == (rows_every[i] if i in expected else rows_only[i])
+    assert flagged.moment_matched == [] and every.moment_matched == []
+
+
+def test_moment_matching():
+    tri = tiny()
+    model = BayesOdp(tune=200, draws=200, n_sims=12, seed=2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # short chains may miss a threshold
+        only = model.one_year(tri, "paid", refit="reweight_only")
+        every = model.one_year(tri, "paid", refit="refit_all")
+        matched = model.one_year(tri, "paid", k_threshold=0.3, refit="moment_match_then_refit")
+    # The same years; each flagged simulation is moment-matched or refitted,
+    # never both.
+    assert matched.pareto_k == only.pareto_k
+    expected = [i for i, k in enumerate(matched.pareto_k) if math.isnan(k) or k > 0.3]
+    assert expected, "the threshold should flag some simulations"
+    assert not set(matched.moment_matched) & set(matched.refitted)
+    assert sorted(matched.moment_matched + matched.refitted) == expected
+    # A refitted row is refit_all's, an unflagged one reweight_only's.
+    rows = matched.cdr.draw_matrix()
+    rows_only, rows_every = only.cdr.draw_matrix(), every.cdr.draw_matrix()
+    for i in range(12):
+        if i in matched.refitted:
+            assert rows[i] == rows_every[i]
+        elif i not in expected:
+            assert rows[i] == rows_only[i]
 
 
 def test_refit_warning():
@@ -216,7 +247,14 @@ def test_segments(views):
     assert views.latest == [170.0, 180.0, 175.0, 130.0, 340.0, 360.0, 350.0, 260.0]
     assert views.k_threshold == 0.7
     assert repr(views).startswith("BayesOneYearFits(segments=2, origins=8, n_sims=1000")
-    for field in ["scale", "pareto_k", "refitted", "refit_warnings", "flagged_share"]:
+    for field in [
+        "scale",
+        "pareto_k",
+        "refitted",
+        "moment_matched",
+        "refit_warnings",
+        "flagged_share",
+    ]:
         with pytest.raises(ValueError, match="single-segment"):
             getattr(views, field)
     with pytest.raises(ValueError, match="single-segment"):
@@ -226,7 +264,7 @@ def test_segments(views):
     assert isinstance(home, BayesOneYearFits)
     assert home.cdr.dims == ["lob", "origin"]
     assert len(home.pareto_k) == 1000
-    assert home.refitted == []
+    assert home.refitted == [] and home.moment_matched == []
     assert home.scale > 0
     assert set(home.diagnostics) >= {"max_rhat", "warnings"}
     assert repr(home).startswith("BayesOneYearFits(origins=4, n_sims=1000, flagged_share=")
@@ -286,3 +324,39 @@ def test_errors(genins):
         model.one_year(tiny(keys=True), "paid")
     with pytest.raises(ValueError, match="(?i)synchroni"):
         BayesOdp(n_sims=10, dependence="synchronized").one_year_segments(tiny(keys=True), "paid")
+
+
+def tiny_premium():
+    return Triangle.from_long(
+        TINY["origin"],
+        TINY["development"],
+        {"paid": PAID, "premium": [200.0] * 4 + [220.0] * 3 + [240.0] * 2 + [260.0]},
+    )
+
+
+def test_bayes_bf_one_year():
+    tri = tiny_premium()
+    model = BayesBf(apriori=0.85, cv=0.1, tune=300, draws=300, n_sims=1000, seed=3)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        view = model.one_year(tri, "paid", "premium", refit="reweight_only")
+        fit = model.fit(tri, "paid", "premium")
+    assert isinstance(view, BayesOneYearFit)
+    assert isinstance(view.fit, BayesBfFit)
+    # The posterior and lifetime reserves are fit's, draw for draw.
+    assert view.fit.draws == fit.draws
+    assert view.fit.reserves.draw_matrix() == fit.reserves.draw_matrix()
+    assert view.origins == ["2020", "2021", "2022", "2023"]
+    assert len(view.pareto_k) == 1000 and view.refitted == []
+    assert all(row[0] == 0.0 for row in view.cdr.draw_matrix())
+    assert view.cdr.variance() < fit.reserves.variance()
+    frame = view.to_frame()
+    assert list(frame["prior_ultimate"]) == pytest.approx(fit.prior_ultimate)
+    assert "opening_reserve" in frame.columns and "cdr_std_dev" in frame.columns
+    totals = view.totals_frame()
+    assert totals["flagged_share"][0] == pytest.approx(view.flagged_share)
+    assert "BayesOneYearFit(origins=4, n_sims=1000" in repr(view)
+    with pytest.raises(ValueError, match="refit must be"):
+        model.one_year(tri, "paid", "premium", refit="sometimes")
+    with pytest.raises(ValueError, match="k_threshold"):
+        model.one_year(tri, "paid", "premium", k_threshold=float("nan"))

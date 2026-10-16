@@ -5,7 +5,7 @@
 //! halves:
 //!
 //! - a portable core: worksheet values ([`sheet`]), the functions on them
-//!   ([`reserving`]) and the catalogue Excel registers ([`FUNCTIONS`]),
+//!   ([`reserving`], [`pricing`]) and the catalogue Excel registers ([`FUNCTIONS`]),
 //!   tested with plain `cargo test` on any host;
 //! - the Excel C API layer (`xll`, Windows only): XLOPER12 conversion, the
 //!   exported functions and `xlAutoOpen`, which registers the catalogue.
@@ -14,6 +14,7 @@
 //! prospicio-xll --target x86_64-pc-windows-msvc`, or `-gnu` from Linux)
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
+pub mod pricing;
 pub mod reserving;
 pub mod sheet;
 #[cfg(windows)]
@@ -60,6 +61,31 @@ const TAIL: Arg = Arg {
 const ORIGINS: Arg = Arg {
     name: "origins",
     help: "Origin labels, one per triangle row; omitted for 1, 2, ...",
+};
+
+const LIMIT: Arg = Arg {
+    name: "limit",
+    help: "Limit(s): a number, a range, or \"unlimited\"",
+};
+const ATTACHMENT: Arg = Arg {
+    name: "attachment",
+    help: "Attachment(s): a number or a range; a column against a row of limits gives a table",
+};
+const FAMILY: Arg = Arg {
+    name: "family",
+    help: "\"pareto\" (p1 = threshold t, p2 = alpha), \"lognormal\" (meanlog, sdlog) or \"lognormal_cv\" (mean, CV)",
+};
+const P1: Arg = Arg {
+    name: "p1",
+    help: "First parameter: the Pareto threshold t, the lognormal meanlog, or the mean",
+};
+const P2: Arg = Arg {
+    name: "p2",
+    help: "Second parameter: the Pareto alpha, the lognormal sdlog, or the CV",
+};
+const TRUNCATION: Arg = Arg {
+    name: "truncation",
+    help: "Pareto only: the loss size the Pareto is truncated at; omitted for none",
 };
 
 fn version(_: &[Grid]) -> Result<Grid, String> {
@@ -127,6 +153,44 @@ pub static FUNCTIONS: &[Function] = &[
         help: "Mack exhibit: ultimate, reserve, process, parameter and total standard error and CV per origin, with a total.",
         args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS],
         run: reserving::mack_summary,
+    },
+    Function {
+        symbol: "pro_lev",
+        name: "PRO.LEV",
+        help: "Limited expected value E[min(X, limit)] of a Pareto or lognormal severity, per limit.",
+        args: &[LIMIT, FAMILY, P1, P2, TRUNCATION],
+        run: pricing::lev,
+    },
+    Function {
+        symbol: "pro_layer",
+        name: "PRO.LAYER",
+        help: "Expected loss to the layer limit xs attachment per ground-up loss, Pareto or lognormal.",
+        args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, TRUNCATION],
+        run: pricing::layer,
+    },
+    Function {
+        symbol: "pro_layer_cv",
+        name: "PRO.LAYER.CV",
+        help: "CV of the loss to the layer, given a loss above its attachment.",
+        args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, TRUNCATION],
+        run: pricing::layer_coefficient_of_variation,
+    },
+    Function {
+        symbol: "pro_ilf",
+        name: "PRO.ILF",
+        help: "Increased limit factor LEV(limit) / LEV(basic_limit), Pareto or lognormal.",
+        args: &[
+            LIMIT,
+            Arg {
+                name: "basic_limit",
+                help: "The basic limit the factors are relative to",
+            },
+            FAMILY,
+            P1,
+            P2,
+            TRUNCATION,
+        ],
+        run: pricing::increased_limit_factor,
     },
 ];
 

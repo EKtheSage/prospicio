@@ -1,6 +1,6 @@
 # prospicio-xll
 
-prospicio's reserving methods as Excel worksheet functions: an XLL add-in
+prospicio's reserving and layer pricing methods as Excel worksheet functions: an XLL add-in
 for 64-bit Excel on Windows. Design and decisions: `docs/design/xll.md`.
 
 ## Build
@@ -17,7 +17,7 @@ is found, under Wine off Windows.
 
 `python3 harness/make_workbook.py prospicio-xll-test.xlsx` (needs
 openpyxl) writes a test workbook: RAA with every function in place and R
-ChainLadder's totals beside them.
+ChainLadder's totals beside them, plus a Layers sheet.
 
 ## Install in Excel
 
@@ -43,6 +43,10 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.CL.FACTORS(triangle, [average], [tail])` | LDF, CDF, sigma and standard error per link, and the tail |
 | `PRO.MACK(triangle, [average], [tail], [origins])` | Mack exhibit: process, parameter and total SE and CV, with a total |
 | `PRO.VERSION()` | Version |
+| `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value per limit |
+| `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to the layer per ground-up loss |
+| `PRO.LAYER.CV(limit, attachment, family, p1, p2, [truncation])` | CV of the layer loss given a loss above the attachment |
+| `PRO.ILF(limit, basic_limit, family, p1, p2, [truncation])` | Increased limit factor |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
   one column per age; blank or `#N/A` where unobserved.
@@ -50,6 +54,13 @@ Ctrl+Alt+F9 to recalculate.
 - `tail`: omitted for none, a factor such as `1.05`, or `"exponential"`,
   `"inverse_power"` or `"bondy"`.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...
+
+- `family`: `"pareto"` (`p1` = threshold t, `p2` = alpha, optional
+  `truncation`), `"lognormal"` (meanlog, sdlog) or `"lognormal_cv"` (mean,
+  CV).
+- `limit`, `attachment`, `basic_limit`: a number, a range or
+  `"unlimited"`. A column of attachments against a row of limits gives a
+  table, e.g. `=PRO.LAYER(B1:E1, A2:A4, "pareto", 500, 2)`.
 
 Type a function in one cell: in Excel 365 its table spills from there
 (older Excel needs it entered as an array formula, Ctrl+Shift+Enter, over

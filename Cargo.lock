@@ -4015,6 +4015,7 @@ dependencies = [
  "prospicio-pricing",
  "prospicio-prob",
  "prospicio-reserving",
+ "rayon",
 ]
 
 [[package]]
@@ -4022,6 +4023,8 @@ name = "prospicio-xll"
 version = "0.0.3"
 dependencies = [
  "prospicio-core",
+ "prospicio-pricing",
+ "prospicio-prob",
  "prospicio-reserving",
 ]
 

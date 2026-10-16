@@ -1720,6 +1720,8 @@ Triangle$compartmental_prior_predictive <- function(premium, priors, families, s
 
 Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
+Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit)
+
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
 
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf)
@@ -2029,7 +2031,11 @@ BayesOdpFits$segment <- function(keys, values) .Call(wrap__BayesOdpFits__segment
 
 BayesOneYearFit <- new.env(parent = emptyenv())
 
+BayesOneYearFit$model <- function() .Call(wrap__BayesOneYearFit__model, self)
+
 BayesOneYearFit$fit <- function() .Call(wrap__BayesOneYearFit__fit, self)
+
+BayesOneYearFit$bf_fit <- function() .Call(wrap__BayesOneYearFit__bf_fit, self)
 
 BayesOneYearFit$opening_ultimate <- function() .Call(wrap__BayesOneYearFit__opening_ultimate, self)
 
@@ -2040,6 +2046,8 @@ BayesOneYearFit$cdr <- function() .Call(wrap__BayesOneYearFit__cdr, self)
 BayesOneYearFit$pareto_k <- function() .Call(wrap__BayesOneYearFit__pareto_k, self)
 
 BayesOneYearFit$refitted <- function() .Call(wrap__BayesOneYearFit__refitted, self)
+
+BayesOneYearFit$moment_matched <- function() .Call(wrap__BayesOneYearFit__moment_matched, self)
 
 BayesOneYearFit$refit_warnings <- function() .Call(wrap__BayesOneYearFit__refit_warnings, self)
 
@@ -2076,6 +2084,8 @@ BayesOneYearFits$scale <- function() .Call(wrap__BayesOneYearFits__scale, self)
 BayesOneYearFits$pareto_k <- function() .Call(wrap__BayesOneYearFits__pareto_k, self)
 
 BayesOneYearFits$refitted <- function() .Call(wrap__BayesOneYearFits__refitted, self)
+
+BayesOneYearFits$moment_matched <- function() .Call(wrap__BayesOneYearFits__moment_matched, self)
 
 BayesOneYearFits$refit_warnings <- function() .Call(wrap__BayesOneYearFits__refit_warnings, self)
 
