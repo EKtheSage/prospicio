@@ -1621,7 +1621,8 @@ pub enum OneYearRefit { ReweightOnly, RefitFlagged /* default */, RefitAll }
 
 pub struct BayesOneYear {
     pub k_threshold: f64,    // 0.7
-    pub refit: OneYearRefit, // RefitFlagged
+    pub refit: OneYearRefit, // RefitFlagged (MomentMatchThenRefit since decision 19)
+    pub n_sims: Option<usize>, // added in decision 19: None, the model's one-year default
 }
 
 impl BayesOdp {
@@ -2332,8 +2333,54 @@ the 903, 975 and 1,347 it cannot rescue are refitted at about 0.17 to
 `ReweightOnly` takes 3 to 8 s and is 0.19 to 0.21 sd off per simulation.
 Against the ODP models (decision 18: a few seconds by default) a Meyers
 view is still minutes, because nearly every simulation is flagged and one
-in six to ten needs a refit; fewer simulations (`n_sims`) or a lighter
-sampler for the refits are the levers, left to the user.
+in six to ten needs a refit; fewer simulations or a lighter sampler for
+the refits are the levers. The user chose fewer simulations on
+2026-10-16 (below).
+
+**Fewer one-year simulations by default** (the user's decision of
+2026-10-16). `BayesOneYear` gains `n_sims: Option<usize>`, the number of
+one-year simulations, `None` by default; `Some(0)` is an
+`InvalidSetting`. `None` takes the model's one-year default:
+`BayesOdp` and `BayesBf` keep their own `n_sims` (10,000 by default, so
+their views are unchanged bit for bit), and `Meyers` takes its `n_sims`
+capped at `Meyers::ONE_YEAR_SIMS`, 2,000, so a default Meyers view runs
+2,000 simulations instead of 10,000 while its lifetime view keeps 10,000.
+A model whose `n_sims` is below 2,000 runs that many, as before, and
+`Some(n)` runs `n` for any model. Simulation `i` stays on stream `i`, so
+any count gives the first simulations of a larger one (unit tests in
+Rust, Python and R). The time is proportional to the count (each
+simulation's matching or refit costs the same), so the default views
+take about a fifth of the 10,000-simulation times above: about 50 s
+(CRC), 82 s (CSR) and 79 s (CAY) on 16 threads, estimated from those
+runs. The Monte Carlo error of the total's sd at 2,000 simulations is
+about 1.6% (sd / sqrt(2 n)), against 0.7% at 10,000. The provenance of
+every Bayesian one-year view records the count as `one_year_sims`.
+Bindings: Python's `one_year` and `one_year_segments` take `n_sims=None`
+(`BayesOdp`, `BayesBf`, `Meyers`); R's `bayes_odp_one_year()`,
+`bayes_odp_one_year_segments()`, `bayes_bf_one_year()`,
+`meyers_one_year()` and `meyers_one_year_segments()` take
+`one_year_sims = NULL`, since their `n_sims` is the model's. The same
+decision gives `Compartmental` (models 1 and 2) the same 2,000 default
+when it gets its view (PR 11, decision 20).
+
+**CI: a smoke run on pull requests** (the user's decision of
+2026-10-16). The Meyers arms made the bayes job the PR's slowest check
+(19 min 42 s on CI before the conformance replay cut). A pull request now
+runs a smoke version: CRC alone in
+`reserving_meyers_one_year.rs` and among the Meyers arms of the
+conformance suite, at the same sizes and bounds (seed 0, calibrated by
+the sweeps above). The weekly and manual (`workflow_dispatch`) runs set
+`RISK_RS_FULL_BAYES` (`prospicio_validation::full_bayes`) and run CSR
+and CAY too. The gate is an environment variable, not a feature, so one
+build compiles and clippy lints every arm; only what runs depends on it.
+The compartmental one-year validation takes the same gate (decision 20).
+Measured locally (release, 16 threads, 2026-10-16):
+`reserving_meyers_one_year` takes 28 s in the smoke run and 114 s in the
+full one, the conformance suite 54 s and 102 s, and the Bayesian parity
+files together 230 s and 390 s. On CI, whose 4-core runner took about
+2.5 times the local time for these files before, that is about 10
+minutes of parity tests on a pull request and about 16 in the weekly
+run, plus about 2 minutes of unit tests and the build.
 
 Every tolerance in the validation file is the sweep's mean minus (floors)
 or plus (bounds) at least 4 seed-to-seed sds, and every seed passes.

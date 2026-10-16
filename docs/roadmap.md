@@ -280,7 +280,10 @@ what it is aiming for by v1.0.
     353 nearly every simulation is flagged (each year cell has its
     origin's smallest variance); moment matching rescues 83% to 90% of
     them within about 0.08 sd of their refits, and the rest are
-    refitted.
+    refitted. By the user's decision of 2026-10-16 the view runs at most
+    2,000 simulations by default (`BayesOneYear::n_sims` sets the count
+    for any model), and CI's pull requests run only CRC of its
+    validation, the weekly and manual runs all of it.
   - Selected development patterns (`reserving-v02.md`, decision 12;
     branch `claude/selected-patterns`, in Rust, Python and R):
     `SelectedPattern` on `Development` as age-to-age factors, factors
@@ -302,9 +305,10 @@ what it is aiming for by v1.0.
   done (the 200-triangle calibration study can now use `TriangleModel
   for Meyers`);
   then the same one-year view for `Compartmental` (models 1 and 2)
-  through the generic interface (decision 17), with moment matching as
-  its default (the user's decision of 2026-10-15; `Meyers` has its view,
-  PR 10).
+  through the generic interface (decision 17; `Meyers` has its view,
+  PR 10), as the user decided on 2026-10-16: model 1 with moment
+  matching, model 2 reweighting only with a warning that it is
+  approximate, both at 2,000 one-year simulations by default (#303).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.

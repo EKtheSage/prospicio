@@ -90,6 +90,19 @@ the arms to 57 s and the suite to 94 s. A 4-core runner takes about 3 to
 of it the parity tests and 1 min 42 s the unit tests, against 10 min 54 s
 for the rust job: the PR's slowest check.
 
+Since the user's decision of 2026-10-16 a pull request runs a smoke
+version of the slowest arms, Meyers' one-year views (CRC alone in
+`reserving_meyers_one_year` and among the conformance suite's Meyers
+arms), and the weekly and manual runs set `RISK_RS_FULL_BAYES` and run
+all of them (`prospicio_validation::full_bayes`, read at run time so one
+build compiles and clippy lints every arm). Measured locally on
+2026-10-16 (release, 16 threads): `reserving_meyers_one_year` 28 s smoke
+against 114 s full, the conformance suite 54 s against 102 s, and every
+Bayesian parity file together 230 s against 390 s. At the roughly 2.5
+times local seen on CI for these files, that is about 10 minutes of
+parity tests on a pull request and about 16 in the weekly run. The
+compartmental one-year views take the same gate.
+
 ```
 cargo test --release -p prospicio-reserving --features slow-tests --lib
 ```
