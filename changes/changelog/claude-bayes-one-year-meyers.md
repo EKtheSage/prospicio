@@ -11,7 +11,7 @@
   refitted, so a default run of `BayesOdp` or `BayesBf` takes seconds
   instead of minutes and its rows differ from before within the refits'
   accuracy. Pass `RefitFlagged` (`refit="refit_flagged"`) for the old
-  behaviour (#PR).
+  behaviour (#280).
 - The one-year view of Meyers' CRC, CSR and CAY models,
   `Meyers::one_year` and `Meyers::one_year_segments` (behind the `bayes`
   feature): the claims development result over the coming year by Pareto
@@ -25,4 +25,4 @@
   `meyers_one_year_segments()`, returning the same `BayesOneYearFit` /
   `bayes_one_year_fit` (its `fit` a `MeyersFit`) and `BayesOneYearFits` /
   `bayes_one_year_fits`, which now has `premium` for Meyers' views
-  (`scale` is the ODP's only) (#PR).
+  (`scale` is the ODP's only) (#280).
