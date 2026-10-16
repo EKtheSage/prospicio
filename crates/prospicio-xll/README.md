@@ -105,6 +105,8 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.CRED.WEIGHTED(estimate, credibility, complement)` | Credibility-weighted estimate |
 | `PRO.EXPENSES(ratios, [fixed_shares])` | Fixed and variable expense ratios |
 | `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost by accident year |
+| `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], [probabilities], [step], [points])` | Annual aggregate loss: moments, VaR, TVaR |
+| `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits, attachments, [shares], [step], [points])` | Per-occurrence layer statistics |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | Exposure-rated risk profile by band, with a total |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
@@ -152,6 +154,9 @@ Ctrl+Alt+F9 to recalculate.
   (default) or `"policy"`, `term` the policy term in years (1 if
   omitted), `applies` `"written"` (default) or `"in_force"`, and `given`
   `"levels"` reads `changes` as cumulative levels.
+- Aggregates: `count_mean` claims a year with `dispersion` Var N / E N
+  (1, Poisson, if omitted; a mixing CV c is `1 + c^2 * count_mean`); the
+  grid is sized automatically unless `step` and `points` are given.
 - `PRO.PROFILE`: one sum insured and expected loss per band; `p1` (and
   `p2`) may give each band its own Swiss Re c (or MBBEFD b, g); `lower`
   and `upper` spread a band's sums insured between bounds (`spread`:
