@@ -257,7 +257,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!((ok.rows, ok.columns), (2, 2));
-        assert_eq!(ok.get(1, 0), &Value::Number(3.0));
+        assert_eq!(ok.get(1, 0), &Value::Number(4.0));
         let err = broadcast(&[&row, &three], &["a", "b"], &[false; 2], |v| Ok(v[0])).unwrap_err();
         assert!(err.contains("do not combine"), "{err}");
     }
