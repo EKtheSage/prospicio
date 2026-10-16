@@ -74,6 +74,19 @@ one-year fit) stay in the debug run. Meyers' one-year view (branch
 claude/bayes-one-year-meyers) added three such tests and two cheap ones:
 284 run and 35 ignored in debug with `bayes`, 319 in all.
 
+It also adds to the `bayes` job's release parity tests (measured locally
+on 2026-10-16, 16 threads). `reserving_meyers_one_year` takes 109 s: per
+model, the default view of 500 simulations at the full sampler (13 to
+26 s) and `RefitAll` on 60 of them (11 to 19 s); its bounds come from a
+20-seed sweep at those sizes, so cutting them needs a new sweep. The
+conformance suite's three Meyers arms took 89 s of its 128 s, about 50 s
+of it in the one-thread replay of `MomentMatchThenRefit`, whose refits run
+one after another (the lifetime fit is about 0.2 s and the 10,000
+reweighted simulations 0.6 to 1.3 s). Replaying only the first 20 of the
+60 simulations (matched and refitted ones in each model at seed 0) cut
+the arms to 57 s and the suite to 94 s. A 4-core runner takes about 3 to
+4 times as long on the parallel parts.
+
 ```
 cargo test --release -p prospicio-reserving --features slow-tests --lib
 ```

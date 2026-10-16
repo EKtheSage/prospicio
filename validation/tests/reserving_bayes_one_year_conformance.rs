@@ -26,10 +26,11 @@
 //!    `MomentMatchThenRefit` sees the same years, moment-matches or
 //!    refits each flagged simulation (never both), and gives `RefitAll`'s
 //!    rows for those it refits and `ReweightOnly`'s for the unflagged
-//!    (decision 18); it matches at least one, and replays bit for bit
-//!    (rows, `k̂`, the matched and the refitted) on one thread against
-//!    the default pool, matching's own parallel steps nested in the
-//!    simulations' included;
+//!    (decision 18); it matches at least one, and its first simulations
+//!    (all 300, or 20 for Meyers' models, whose refits on one thread run
+//!    one after another) replay bit for bit (rows, `k̂`, the matched and
+//!    the refitted) on one thread against the default pool, matching's
+//!    own parallel steps nested in the simulations' included;
 //! 5. on those simulations, the root mean square gap between a reweighted and a
 //!    refitted simulation's total, in units of the total's sd, is below
 //!    `REFITS.gaps.0` where `k̂` is at most 0.7 (over at least
@@ -64,24 +65,31 @@ use prospicio_validation::{triangle, triangle_columns};
 const SIMS: usize = 10_000;
 /// A model's refit checks: the simulations refitted for the gap and the
 /// refit settings, and the bounds on the root mean square gap, in units of
-/// the total's sd, where `k̂` is at most 0.7 and above it.
+/// the total's sd, where `k̂` is at most 0.7 and above it, and the first
+/// simulations `MomentMatchThenRefit` replays on one thread (at most
+/// `sims`).
 #[derive(Clone, Copy)]
 struct Refits {
     sims: usize,
     gaps: (f64, f64),
+    replay: usize,
 }
 
 const REFITS: Refits = Refits {
     sims: 300,
     gaps: (0.08, 0.5),
+    replay: 300,
 };
 /// Meyers' models, whose refits cost seconds and nearly all of whose
 /// simulations are flagged (a year cell has its origin's smallest
 /// `sigma_d`): the unflagged gap is checked only over at least
-/// `MIN_UNFLAGGED` simulations.
+/// `MIN_UNFLAGGED` simulations, and the one-thread replay, whose refits
+/// run one after another, covers the first 20 simulations (at seed 0
+/// they include matched and refitted ones in every Meyers model).
 const MEYERS_REFITS: Refits = Refits {
     sims: 60,
     gaps: (0.08, 0.65),
+    replay: 20,
 };
 /// Fewest unflagged simulations whose gap is checked.
 const MIN_UNFLAGGED: usize = 10;
@@ -129,7 +137,9 @@ fn conform<F: Sync + Send>(
     let Refits {
         sims: refit_sims,
         gaps,
+        replay,
     } = refits;
+    assert!(replay <= refit_sims);
     let only = OneYearRefit::ReweightOnly;
     // 1. The mean is zero.
     let full = run(SIMS, seed, only);
@@ -187,22 +197,34 @@ fn conform<F: Sync + Send>(
         !m.moment_matched.is_empty(),
         "{name}: MomentMatchThenRefit matched nothing"
     );
+    // The first `replay` simulations on one thread are `m`'s first
+    // `replay`, run on the default pool as part of `refit_sims`.
     let m1 = rayon::ThreadPoolBuilder::new()
         .num_threads(1)
         .build()
         .unwrap()
-        .install(|| run(refit_sims, seed, OneYearRefit::MomentMatchThenRefit));
+        .install(|| run(replay, seed, OneYearRefit::MomentMatchThenRefit));
+    let first = |v: &[usize]| -> Vec<usize> { v.iter().copied().filter(|&i| i < replay).collect() };
     assert_eq!(
         m1.cdr.draw_matrix(),
-        m.cdr.draw_matrix(),
+        &m.cdr.draw_matrix()[..replay * n],
         "{name}: MomentMatchThenRefit's replay on one thread"
     );
-    assert_eq!(m1.pareto_k, m.pareto_k, "{name}: matched replay's k");
     assert_eq!(
-        m1.moment_matched, m.moment_matched,
+        m1.pareto_k,
+        m.pareto_k[..replay],
+        "{name}: matched replay's k"
+    );
+    assert_eq!(
+        m1.moment_matched,
+        first(&m.moment_matched),
         "{name}: matched replay's matched"
     );
-    assert_eq!(m1.refitted, m.refitted, "{name}: matched replay's refitted");
+    assert_eq!(
+        m1.refitted,
+        first(&m.refitted),
+        "{name}: matched replay's refitted"
+    );
     let mut either = m.moment_matched.clone();
     either.extend(&m.refitted);
     either.sort_unstable();
@@ -259,8 +281,11 @@ fn conform<F: Sync + Send>(
     }
     println!(
         "{name} seed {seed}: mean z {mean_z:.3}, opening z {opening_z:.3}, gap {gap_unflagged:.4} \
-         ({} unflagged) and {gap_flagged:.4} ({flagged} flagged), {:.1?}",
+         ({} unflagged) and {gap_flagged:.4} ({flagged} flagged); replay of {replay}: {} \
+         matched, {} refitted; {:.1?}",
         refit_sims - flagged,
+        m1.moment_matched.len(),
+        m1.refitted.len(),
         t.elapsed()
     );
     Measured {

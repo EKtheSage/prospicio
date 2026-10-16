@@ -66,5 +66,5 @@ simulations it refits; `RefitFlagged` would take about 6.7 times as long
 (171 to 276 s per 1,000 simulations), `ReweightOnly` 3 to 8 s.[^test]
 
 Checked by CI at seed 0 (rescued at least 0.75, 0.74 and 0.62; matched
-gap below 0.20, 0.15 and 0.20 and below the reweighted gap), not yet
+gap below 0.20, 0.16 and 0.20 and below the reweighted gap), not yet
 `verified` in this bundle's sense until it has run there.

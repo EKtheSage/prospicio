@@ -3592,9 +3592,10 @@ pub(crate) mod tests {
 
     /// The year's pieces without sampling: the importance ratio is the
     /// change in the log posterior, the expected ultimate of CRC and CSR
-    /// does not depend on the year, and the opening reserve is the mean of
-    /// the lifetime simulation's reserve given a draw (with CAY's
-    /// integrated residual).
+    /// does not depend on the year, and the opening and closing reserves
+    /// are the means of the lifetime simulation's reserve given a draw
+    /// (with CAY's integrated residual), the closing one on the triangle
+    /// extended by the year.
     #[test]
     fn the_year_follows_the_model() {
         use crate::bayes::one_year::YearModel;
@@ -3671,6 +3672,47 @@ pub(crate) mod tests {
                     (mean - opening[w]).abs() < 5.0 * se,
                     "{kind:?} origin {w}: simulated {mean}, opening {} (se {se})",
                     opening[w]
+                );
+            }
+            // 4. The closing reserve is the lifetime reserve's mean given
+            // the draw on the triangle extended by the year: each origin's
+            // latest value is its year value, and 1989, which the year
+            // takes to the oldest age, is closed. In CAY this checks the
+            // conditioning on the year independently of `closing`: `rho`
+            // times 1989's residual at the oldest age for 1990, and the
+            // integrated residual of the previous origin for the others.
+            // At a draw with `rho` 0.6 (CAY) and `sigma_10^2` about 0.5,
+            // where both terms move the closing reserve by many standard
+            // errors (near the mode they are within the noise).
+            let mut wide = theta.clone();
+            if kind == MeyersModel::Cay {
+                wide[model.after_beta()] = 0.6f64.atanh();
+            }
+            wide[model.u0() + 9] = 0.0;
+            year.closing(&wide, &values, &mut closing);
+            let nat = model.natural(&wide);
+            let mut latest = cl.latest.clone();
+            for (j, &v) in values.iter().enumerate() {
+                latest[j + 1] = v;
+            }
+            let closed: Vec<bool> = cl.latest_position.iter().map(|&d| d + 1 >= 9).collect();
+            let (mut sum, mut sq) = ([0.0; 10], [0.0; 10]);
+            let (mut rng, n) = (StreamRng::new(7, 0), 50_000);
+            for _ in 0..n {
+                model.draw_ultimates(&nat, &premium, &closed, &latest, &mut rng, &mut row);
+                for w in 0..10 {
+                    let r = row[w] - latest[w];
+                    sum[w] += r;
+                    sq[w] += r * r;
+                }
+            }
+            for w in 2..10 {
+                let mean = sum[w] / n as f64;
+                let se = ((sq[w] / n as f64 - mean * mean) / n as f64).sqrt();
+                assert!(
+                    (mean - closing[w]).abs() < 5.0 * se,
+                    "{kind:?} origin {w}: simulated {mean}, closing {} (se {se})",
+                    closing[w]
                 );
             }
         }

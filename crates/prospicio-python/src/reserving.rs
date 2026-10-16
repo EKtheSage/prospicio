@@ -8022,8 +8022,9 @@ impl PyBayesBf {
     /// claims development result as its posterior mean reserve at the
     /// opening less its payment in the year and its weighted posterior mean
     /// reserve after it. A simulation whose Pareto ``k`` is above
-    /// ``k_threshold`` is refitted with NUTS on the extended triangle when
-    /// ``refit`` says so. A flat prior (``cv=inf``) gives about
+    /// ``k_threshold`` is handled as ``refit`` says: by default
+    /// moment-matched, and refitted with NUTS on the extended triangle
+    /// only if matching cannot bring its ``k`` to the threshold. A flat prior (``cv=inf``) gives about
     /// ``BayesOdp.one_year``'s view; a tighter prior a narrower one, in
     /// which the development pattern learns from the year and the origins'
     /// levels hardly do. Raises one ``UserWarning`` listing the failed
