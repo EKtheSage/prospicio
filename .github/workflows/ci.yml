@@ -4,7 +4,10 @@ name: CI
 # Pull requests run Ubuntu only; Windows runs on the weekly schedule and on
 # demand. A push to main runs only the Rust job, since its PR already passed;
 # the jobs that run a slow suite in a release build (bayes, fremtpl2) run on
-# a PR that touches their inputs and on the weekly and manual runs.
+# a PR that touches their inputs and on the weekly and manual runs. Tests
+# that sample with NUTS stay out of the rust job's debug `cargo test`: the
+# Bayesian parity files sit behind prospicio-validation's `slow-bayes`, and
+# prospicio-reserving's NUTS unit tests are ignored without its `slow-tests`.
 # The scheduled run also keeps main's caches warm for new PRs.
 on:
   push:
@@ -35,8 +38,9 @@ jobs:
       # Change fragments (changes/README.md) are valid and fold cleanly.
       - run: python3 validation/scripts/fold_changes.py --self-test && python3 validation/scripts/fold_changes.py --check
       # Default members: pure-Rust crates and the parity suite. The feature
-      # lints the Bayesian parity tests too; `cargo test` skips them (the
-      # bayes job runs them in release).
+      # lints the Bayesian parity tests too, and turns on
+      # prospicio-reserving/slow-tests; `cargo test` skips the parity files
+      # and ignores the NUTS unit tests (the bayes job runs both in release).
       - run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
       - run: cargo test
       # The crates in the WASM scope (docs/architecture.md, "Open
@@ -227,12 +231,16 @@ jobs:
         env:
           RISK_RS_REQUIRE_FREMTPL2: "1"
 
-  # The Bayesian (NUTS) parity tests: the [[test]] targets of
-  # validation/Cargo.toml that require the `slow-bayes` feature, the one
-  # place that lists them. A debug build takes about 220 s on them, a
-  # release build about 17 s, so the rust job's `cargo test` skips them and
-  # this job runs them in release. On a pull request it runs only when
-  # their inputs change; otherwise its steps are skipped and it passes.
+  # The Bayesian (NUTS) tests, in release:
+  # - the parity tests, the [[test]] targets of validation/Cargo.toml that
+  #   require the `slow-bayes` feature, the one place that lists them;
+  # - prospicio-reserving's unit tests with its `slow-tests` feature, which
+  #   un-ignores the ones that sample with NUTS (about 230 s single-threaded
+  #   in debug and about 5 minutes of the rust job on 2026-10-15; about 4 s
+  #   in release).
+  # The rust job's debug `cargo test` skips or ignores them. On a pull
+  # request this job runs only when their inputs change; otherwise its
+  # steps are skipped and it passes.
   bayes:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
@@ -265,3 +273,6 @@ jobs:
           tests=$(python3 -c "import tomllib; t = tomllib.load(open('validation/Cargo.toml', 'rb')); print(' '.join('--test ' + x['name'] for x in t['test'] if 'slow-bayes' in x.get('required-features', [])))")
           echo "cargo test --release -p prospicio-validation --features slow-bayes $tests"
           cargo test --release -p prospicio-validation --features slow-bayes $tests
+      - if: steps.changes.outputs.run == 'true'
+        name: Run the NUTS unit tests in release
+        run: cargo test --release -p prospicio-reserving --features slow-tests --lib

@@ -31,7 +31,11 @@ rayon.workspace = true
 #     --test 'reserving_compartmental*'
 # A new Bayesian parity file gets a [[test]] entry below, and nothing else:
 # the CI job reads this list.
-slow-bayes = []
+# prospicio-reserving's own NUTS unit tests run in release with
+#   cargo test --release -p prospicio-reserving --features slow-tests --lib
+# `slow-bayes` turns that feature on too, so one flag covers every slow
+# Bayesian test.
+slow-bayes = ["prospicio-reserving/slow-tests"]
 
 [[test]]
 name = "reserving_bayes"

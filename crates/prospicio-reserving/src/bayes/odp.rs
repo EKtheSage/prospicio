@@ -1445,6 +1445,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn a_seed_replays_whatever_the_threads() {
         let a = quick(3).fit(&raa(), "values").unwrap();
         let pool = rayon::ThreadPoolBuilder::new()
@@ -1639,6 +1643,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn process_error_widens_the_distribution() {
         let full = quick(6).fit(&raa(), "values").unwrap();
         let param = BayesOdp {
@@ -1740,6 +1748,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn each_segment_has_its_own_seeds() {
         let tri = twins();
         let fits = quick(9).fit_segments(&tri, "values").unwrap();
@@ -1839,6 +1851,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn rank_correlation_reorders_whole_simulations() {
         let tri = twins();
         let independent = quick(10).fit_segments(&tri, "values").unwrap();
@@ -1875,6 +1891,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_backtest_model_is_the_fit_on_the_train_rows() {
         let tri = genins();
         let cells = TriangleFrame::new(&tri, "values", None).unwrap();
@@ -1960,6 +1980,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_one_year_view_reweights_the_fits_posterior() {
         let model = quick(4);
         let settings = BayesOneYear {
@@ -2048,6 +2072,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn refits_see_the_same_years_and_agree_with_the_reweighting() {
         let model = BayesOdp {
             n_sims: 40,
@@ -2166,6 +2194,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_one_year_view_over_segments() {
         let settings = BayesOneYear {
             refit: OneYearRefit::ReweightOnly,
@@ -2306,6 +2338,10 @@ mod tests {
     /// The one-year conformance suite (decision 17) on GenIns, with a
     /// fully developed square as the triangle without a year.
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_one_year_view_conforms() {
         let model = quick(4);
         let square = annual(

@@ -3114,6 +3114,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn a_seed_replays_whatever_the_threads() {
         let tri = triangle(true);
         let fit = |m: &Compartmental| m.fit(&tri, "paid", incurred(), "premium").unwrap();
@@ -3131,6 +3135,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_fit_and_its_tables() {
         let tri = triangle(true);
         let fit = quick(1)
@@ -3186,6 +3194,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn an_origin_observed_at_the_last_age_has_no_reserve() {
         // Without 1997 the square has 9 ages, and 1988 is observed at age 9.
         let tri = triangle(false);
@@ -3200,6 +3212,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_rate_swap_warns() {
         // Rate priors centred on the mirror image of the paper's posterior:
         // the posterior sits at k_er < k_p and the fit says so.
@@ -3730,6 +3746,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn model_2_fits_and_predicts_increments() {
         let tri = triangle(true);
         let fit = Compartmental {
