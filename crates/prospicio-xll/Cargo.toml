@@ -1,0 +1,20 @@
+[package]
+name = "prospicio-xll"
+description = "Excel add-in (XLL, 64-bit Windows). Thin wrappers only: no algorithms live here."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+name = "prospicio_xll"
+# cdylib is the .xll on Windows (a DLL renamed); rlib lets the portable
+# core (`sheet`, `reserving`) be tested on any host with plain `cargo test`.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+prospicio-core.workspace = true
+prospicio-reserving.workspace = true
