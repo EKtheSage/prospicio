@@ -11,7 +11,8 @@ use prospicio_prob::{InputHasher, PredictiveDistribution, Provenance};
 use rayon::prelude::*;
 
 use super::laplace::{Posterior, Whitened, mode};
-use super::{Diagnostics, Stream, derive_seed};
+use super::one_year::{self, BayesOneYear, BayesOneYearFit, OdpCells, OdpYear};
+use super::{Diagnostics, Stream, derive_seed, one_year_seed};
 use crate::bootstrap::{
     ProcessDistribution, component_sums, hash_segment, prepare, process_draw, push_moments,
     segment_sums,
@@ -194,31 +195,115 @@ impl BayesBf {
         self.validate()?;
         let segment = triangle.segment(column)?;
         let exposures = origin_exposure(&segment, &triangle.segment(exposure)?, exposure)?;
-        let (chain_ladder, model, start) = self.prepare(&segment, &exposures)?;
-        let p = model.dim();
-        let mode = mode(&model, start)?;
-        let whitened = Whitened::new(&model, &mode)?;
-        let draws = sample(
-            &whitened,
-            &vec![0.0; p],
-            Sampler {
-                seed: derive_seed(self.seed, Stream::Chains),
-                ..self.sampler
-            },
-        )?;
-        let posterior = draws.transform(model.names(), |z| model.natural(&whitened.theta(z)))?;
-        let summary = posterior.summary()?;
-        let diagnostics = Diagnostics::new(
-            &summary,
-            posterior.chains(),
-            posterior.divergences().iter().sum(),
-        );
+        self.fit_segment(&segment, column, exposure, exposures)
+    }
 
-        let mut hasher = InputHasher::new();
-        hasher.str(column);
-        hasher.str(exposure);
-        hash_segment(&mut hasher, &segment, &chain_ladder, &segment.ages);
-        hasher.f64s(&exposures);
+    /// The one-year view of loss `column` of a single-segment cumulative
+    /// triangle with exposure from its `exposure` column (decisions 16 and
+    /// 17): the claims development result over the twelve months after the
+    /// valuation, by reweighting [`fit`](Self::fit)'s posterior, draw for
+    /// draw, with Pareto smoothed importance sampling.
+    ///
+    /// The method is [`BayesOdp::one_year`](super::BayesOdp::one_year)'s
+    /// with this model's means `exp(alpha_w + beta_d)`: each of
+    /// [`n_sims`](Self::n_sims) simulations draws the increments of the
+    /// year's cells from a posterior draw with [`process`](Self::process)
+    /// error, weights every posterior draw by the year's quasi likelihood
+    /// (`phi`, the priors and the prior ultimates unchanged), and takes
+    /// origin `w`'s claims development result as its posterior mean reserve
+    /// at the opening less its payment in the year and its weighted
+    /// posterior mean reserve after it. A simulation whose Pareto `k̂` is
+    /// above [`BayesOneYear::k_threshold`] is refitted with NUTS on the
+    /// triangle extended by its year when [`BayesOneYear::refit`] says so.
+    /// A triangle with no cells in the year leaves the posterior unchanged
+    /// (`k̂` 0, no refit). The prior's strength moves the view between the
+    /// Bayesian chain ladder's (`cv = f64::INFINITY`) and a narrower one
+    /// that tends, as `cv -> 0`, to the strong-prior limit, in which only
+    /// the development pattern learns from the year. There is no view over
+    /// segments: `BayesBf` fits one segment.
+    ///
+    /// ```
+    /// use prospicio_bayes::nuts::Sampler;
+    /// use prospicio_reserving::bayes::{BayesBf, BayesOneYear};
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
+    /// use prospicio_prob::Distribution;
+    ///
+    /// let origin = [2020, 2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023].map(Month::january);
+    /// let premium = [200.0, 200.0, 200.0, 200.0, 220.0, 220.0, 220.0, 240.0, 240.0, 260.0];
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 48, 12, 24, 36, 12, 24, 12]),
+    ///     values: &[
+    ///         ("paid", &[100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0]),
+    ///         ("premium", &premium),
+    ///     ],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let model = BayesBf {
+    ///     apriori: 0.85,
+    ///     cv: 0.1,
+    ///     sampler: Sampler { tune: 300, draws: 300, ..Sampler::default() },
+    ///     n_sims: 500,
+    ///     ..BayesBf::default()
+    /// };
+    /// let view = model.one_year(&tri, "paid", "premium", &BayesOneYear::default())?;
+    /// assert_eq!(view.cdr.n_components(), 4);
+    /// // 2020 is fully developed: no cell in the year, no change.
+    /// assert!(view.cdr.draw_matrix().chunks(4).all(|row| row[0] == 0.0));
+    /// assert!(view.cdr.std_dev() < view.fit.reserves.std_dev());
+    /// # Ok::<(), prospicio_reserving::Error>(())
+    /// ```
+    pub fn one_year(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        exposure: &str,
+        settings: &BayesOneYear,
+    ) -> Result<BayesOneYearFit<BayesBfFit>> {
+        self.validate()?;
+        settings.validate()?;
+        let segment = triangle.segment(column)?;
+        let exposures = origin_exposure(&segment, &triangle.segment(exposure)?, exposure)?;
+        let fit = self.fit_segment(&segment, column, exposure, exposures)?;
+        let cells = BfRefit::new(self, &fit);
+        let year = OdpYear::new(
+            &cells,
+            self.process,
+            triangle,
+            &segment,
+            &fit.chain_ladder.latest_position,
+        );
+        let draws = one_year::simulate(
+            &year,
+            &fit.posterior,
+            settings,
+            self.n_sims,
+            one_year_seed(derive_seed(self.seed, Stream::Predictive)),
+        )?;
+        let hasher = input_hasher(column, exposure, &segment, &fit.chain_ladder, &fit.exposure);
+        let mut provenance = self.provenance(column, exposure, &fit.model, hasher);
+        provenance.model = "bayes_bf_one_year".into();
+        let provenance = one_year::provenance(provenance, settings);
+        one_year::assemble(fit, draws, &segment, settings, provenance)
+    }
+
+    /// The fit of one segment, with exposure `exposures` from the column
+    /// named `exposure`.
+    fn fit_segment(
+        &self,
+        segment: &Segment,
+        column: &str,
+        exposure: &str,
+        exposures: Vec<f64>,
+    ) -> Result<BayesBfFit> {
+        let (chain_ladder, model, start) = self.prepare(segment, &exposures)?;
+        let (posterior, diagnostics) =
+            self.sample(&model, start, derive_seed(self.seed, Stream::Chains))?;
+
+        let hasher = input_hasher(column, exposure, segment, &chain_ladder, &exposures);
         let latest = &chain_ladder.latest_position;
         let (no, nd) = (segment.n_origins, segment.n_dev);
         let (process, phi) = (self.process, model.phi);
@@ -248,6 +333,36 @@ impl BayesBf {
             reserves,
             model,
         })
+    }
+
+    /// NUTS on `model` whitened at its mode (found from `start`, on the
+    /// sampling scale `(u, beta)`), with the chains' `seed`; the draws on
+    /// the natural scale `(alpha, beta)` and their diagnostics.
+    fn sample(
+        &self,
+        model: &Model,
+        start: Vec<f64>,
+        seed: u64,
+    ) -> Result<(PosteriorDraws, Diagnostics)> {
+        let p = model.dim();
+        let mode = mode(model, start)?;
+        let whitened = Whitened::new(model, &mode)?;
+        let draws = sample(
+            &whitened,
+            &vec![0.0; p],
+            Sampler {
+                seed,
+                ..self.sampler
+            },
+        )?;
+        let posterior = draws.transform(model.names(), |z| model.natural(&whitened.theta(z)))?;
+        let summary = posterior.summary()?;
+        let diagnostics = Diagnostics::new(
+            &summary,
+            posterior.chains(),
+            posterior.divergences().iter().sum(),
+        );
+        Ok((posterior, diagnostics))
     }
 
     fn validate(&self) -> Result<()> {
@@ -586,11 +701,99 @@ impl Model {
         }
         natural
     }
+
+    /// `(u, beta)` from the natural scale's `(alpha, beta)`.
+    fn sampling(&self, natural: &[f64]) -> Vec<f64> {
+        let mut theta = natural.to_vec();
+        for (u, l) in theta.iter_mut().zip(&self.log_prior) {
+            *u -= l;
+        }
+        theta
+    }
 }
 
 /// `eta_wd` from a draw of `(alpha, beta)` with `n_origins` origins.
 fn natural_eta(n_origins: usize, theta: &[f64], w: usize, d: usize) -> f64 {
     theta[w] + theta[n_origins + d]
+}
+
+/// The input hash of a fit: the column names, the segment and the
+/// exposures.
+fn input_hasher(
+    column: &str,
+    exposure: &str,
+    segment: &Segment,
+    chain_ladder: &ChainLadderFit,
+    exposures: &[f64],
+) -> InputHasher {
+    let mut hasher = InputHasher::new();
+    hasher.str(column);
+    hasher.str(exposure);
+    hash_segment(&mut hasher, segment, chain_ladder, &segment.ages);
+    hasher.f64s(exposures);
+    hasher
+}
+
+/// A fitted [`BayesBf`] as the one-year view sees it ([`OdpCells`],
+/// decision 17): the draws are stored as `(alpha, beta)`, the model
+/// samples `(u, beta)` with `u_w = alpha_w - log m_w`, a shift, so the log
+/// posterior moves to `u` and needs no Jacobian, and a refit starts Newton
+/// at the opening posterior mean moved to `u`. Every origin and age has an
+/// observed cell, so the draws carry every effect a future cell needs; the
+/// prior ultimates and `phi` stay at their opening values.
+struct BfRefit<'a> {
+    bf: &'a BayesBf,
+    model: &'a Model,
+    /// The opening posterior mean on the sampling scale, the refits'
+    /// Newton start.
+    start: Vec<f64>,
+}
+
+impl<'a> BfRefit<'a> {
+    fn new(bf: &'a BayesBf, fit: &'a BayesBfFit) -> Self {
+        let model = &fit.model;
+        Self {
+            bf,
+            model,
+            start: model.sampling(&fit.posterior.mean()),
+        }
+    }
+
+    fn extended(&self, extra: &[(usize, usize, f64)]) -> Model {
+        let mut extended = self.model.clone();
+        extended.cells.extend_from_slice(extra);
+        extended
+    }
+}
+
+impl OdpCells for BfRefit<'_> {
+    fn eta(&self, theta: &[f64], w: usize, d: usize) -> f64 {
+        natural_eta(self.model.n_origins, theta, w, d)
+    }
+
+    fn phi(&self) -> f64 {
+        self.model.phi
+    }
+
+    fn log_posterior(&self, theta: &[f64], extra: &[(usize, usize, f64)]) -> f64 {
+        let mut grad = vec![0.0; theta.len()];
+        if extra.is_empty() {
+            // Moment matching's many calls on the observed triangle.
+            return self
+                .model
+                .log_posterior(&self.model.sampling(theta), &mut grad);
+        }
+        self.extended(extra)
+            .log_posterior(&self.model.sampling(theta), &mut grad)
+    }
+
+    /// Sampled as [`BayesBf::fit`] samples.
+    fn refit(&self, extra: &[(usize, usize, f64)], seed: u64) -> Result<(PosteriorDraws, bool)> {
+        let (posterior, diagnostics) =
+            self.bf
+                .sample(&self.extended(extra), self.start.clone(), seed)?;
+        Ok((posterior, !diagnostics.warnings.is_empty()))
+    }
 }
 
 /// The log posterior of [`BayesBf`], on `(u, beta)`. Each term is concave and the normal
@@ -1233,5 +1436,129 @@ mod tests {
             .unwrap();
         assert_eq!(loo.pareto_k.len(), 55);
         assert!(loo.estimate.elpd.is_finite());
+    }
+
+    /// The one-year conformance suite (decision 17) on GenIns with an
+    /// informative and a flat prior, with a fully developed square as the
+    /// triangle without a year.
+    #[test]
+    fn the_one_year_view_conforms() {
+        let square = with_premium(
+            2001,
+            &[
+                &[357.0, 1124.0, 1735.0, 2218.0],
+                &[352.0, 1236.0, 2170.0, 3353.0],
+                &[290.0, 1292.0, 2219.0, 3235.0],
+                &[310.0, 1418.0, 2195.0, 3757.0],
+            ],
+            &[5000.0, 6000.0, 6000.0, 7000.0],
+        );
+        for (name, cv) in [("BayesBf cv 0.2", 0.2), ("BayesBf flat", f64::INFINITY)] {
+            let model = BayesBf { cv, ..quick(6) };
+            let fitted: Vec<(Triangle, Segment, BayesBfFit)> = [genins(), square.clone()]
+                .into_iter()
+                .map(|tri| {
+                    let segment = tri.segment("values").unwrap();
+                    let exposure =
+                        origin_exposure(&segment, &tri.segment("premium").unwrap(), "premium")
+                            .unwrap();
+                    let fit = model
+                        .fit_segment(&segment, "values", "premium", exposure)
+                        .unwrap();
+                    (tri, segment, fit)
+                })
+                .collect();
+            let cells: Vec<BfRefit> = fitted
+                .iter()
+                .map(|(_, _, fit)| BfRefit::new(&model, fit))
+                .collect();
+            let years: Vec<_> = fitted
+                .iter()
+                .zip(&cells)
+                .map(|((tri, segment, fit), cells)| {
+                    OdpYear::new(
+                        cells,
+                        model.process,
+                        tri,
+                        segment,
+                        &fit.chain_ladder.latest_position,
+                    )
+                })
+                .collect();
+            crate::bayes::one_year::conformance::check(
+                name,
+                &years[0],
+                &fitted[0].2.posterior,
+                &years[1],
+                &fitted[1].2.posterior,
+            );
+        }
+    }
+
+    #[test]
+    fn the_one_year_view_reweights_the_fits_posterior() {
+        let model = BayesBf {
+            n_sims: 1_000,
+            ..quick(7)
+        };
+        let settings = BayesOneYear {
+            refit: crate::bayes::OneYearRefit::ReweightOnly,
+            ..BayesOneYear::default()
+        };
+        let view = model
+            .one_year(&genins(), "values", "premium", &settings)
+            .unwrap();
+        // The posterior and lifetime reserves are fit()'s, draw for draw.
+        let fit = model.fit(&genins(), "values", "premium").unwrap();
+        assert_eq!(view.fit.posterior, fit.posterior);
+        assert_eq!(view.fit.reserves.draw_matrix(), fit.reserves.draw_matrix());
+        assert_eq!(view.cdr.dims(), ["origin"]);
+        assert_eq!(view.pareto_k.len(), 1_000);
+        assert!(view.refitted.is_empty());
+        // 2001 is at the last age: no cell, no change.
+        assert!(view.cdr.draw_matrix().chunks(10).all(|r| r[0] == 0.0));
+        assert_eq!(view.opening_reserve[0], 0.0);
+        // The tables carry the prior's columns, as the lifetime fit's do.
+        let long = view.to_long();
+        assert_eq!(long.n_rows(), 10);
+        assert_eq!(long.column("prior_ultimate").unwrap(), fit.prior_ultimate);
+        assert!(long.column("opening_reserve").is_some());
+        let totals = view.totals();
+        assert_eq!(totals.column("exposure").unwrap(), [118e6]);
+        assert_eq!(
+            totals.column("flagged_share").unwrap(),
+            [view.flagged_share()]
+        );
+        let provenance = view.cdr.provenance();
+        assert_eq!(provenance.model, "bayes_bf_one_year");
+        for key in ["apriori", "cv", "k_threshold", "refit", "exposure"] {
+            assert!(
+                provenance.parameters.iter().any(|(k, _)| k == key),
+                "{key} missing"
+            );
+        }
+        // The one-year view is narrower than the lifetime view.
+        assert!(view.cdr.total().std_dev() < fit.reserves.total().std_dev());
+        let e = model
+            .one_year(
+                &genins(),
+                "values",
+                "premium",
+                &BayesOneYear {
+                    k_threshold: f64::NAN,
+                    ..settings
+                },
+            )
+            .unwrap_err();
+        assert!(
+            matches!(
+                e,
+                Error::InvalidSetting {
+                    name: "k_threshold",
+                    ..
+                }
+            ),
+            "{e}"
+        );
     }
 }

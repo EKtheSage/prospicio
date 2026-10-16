@@ -16,7 +16,7 @@ use prospicio_core::{Error, Result};
 use prospicio_models::{Family, Link};
 use serde_json::{Map, Number, Value, json};
 
-use crate::gam::{Basis, Gam, GamFit, PSpline, Smoothing, TensorBasis, TensorSpline};
+use crate::gam::{Basis, Gam, GamFit, PSpline, SmoothKind, Smoothing, TensorBasis, TensorSpline};
 use crate::net::{ElasticNet, ElasticNetFit};
 use crate::{Dispersion, Glm, GlmFit};
 
@@ -24,8 +24,15 @@ use crate::{Dispersion, Glm, GlmFit};
 const FORMAT: &str = "risk_rs.glm_fit";
 const GAM_FORMAT: &str = "risk_rs.gam_fit";
 const NET_FORMAT: &str = "risk_rs.elastic_net_fit";
-/// The format version this build writes and the newest it reads.
+/// The newest format version this build reads, per format. A writer
+/// stamps the oldest version whose readers read the artifact correctly
+/// (`docs/design/models.md`, "Model artifacts"), so an artifact that needs
+/// nothing new stays readable by older builds.
 const FORMAT_VERSION: u64 = 1;
+/// The GAM format: version 2 adds cyclic and monotone smooths
+/// (`smooth.kind`), which a version 1 reader would misread as ordinary
+/// ones.
+const GAM_FORMAT_VERSION: u64 = 2;
 
 impl GlmFit {
     /// The fit as a JSON artifact; [`from_json`](Self::from_json) reads it
@@ -68,7 +75,7 @@ impl GlmFit {
     /// malformed JSON, another format, a newer format version, or fields
     /// that are missing or inconsistent.
     pub fn from_json(text: &str) -> Result<Self> {
-        let doc = parse(text, FORMAT)?;
+        let doc = parse(text, FORMAT, FORMAT_VERSION)?;
         let top = object(&doc, "artifact")?;
         let input_hash = input_hash(top)?;
         let glm = glm_from(object(field(top, "spec")?, "spec")?)?;
@@ -110,7 +117,11 @@ impl GamFit {
         let spec = &self.spec;
         let doc = json!({
             "format": GAM_FORMAT,
-            "format_version": FORMAT_VERSION,
+            "format_version": if spec.smooths.iter().any(|s| s.kind != SmoothKind::Ordinary) {
+                GAM_FORMAT_VERSION
+            } else {
+                1
+            },
             "provenance": provenance("gam", &self.input_hash),
             "spec": {
                 "glm": glm_json(&spec.glm),
@@ -150,7 +161,7 @@ impl GamFit {
 
     /// Reads an artifact written by [`to_json`](Self::to_json).
     pub fn from_json(text: &str) -> Result<Self> {
-        let doc = parse(text, GAM_FORMAT)?;
+        let doc = parse(text, GAM_FORMAT, GAM_FORMAT_VERSION)?;
         let top = object(&doc, "artifact")?;
         let spec_o = object(field(top, "spec")?, "spec")?;
         let glm = glm_from(object(field(spec_o, "glm")?, "glm")?)?;
@@ -291,7 +302,7 @@ impl ElasticNetFit {
 
     /// Reads an artifact written by [`to_json`](Self::to_json).
     pub fn from_json(text: &str) -> Result<Self> {
-        let doc = parse(text, NET_FORMAT)?;
+        let doc = parse(text, NET_FORMAT, FORMAT_VERSION)?;
         let top = object(&doc, "artifact")?;
         let spec = object(field(top, "spec")?, "spec")?;
         let family = family_from(object(field(spec, "family")?, "family")?)?;
@@ -341,8 +352,8 @@ fn provenance(model: &str, input_hash: &str) -> Value {
     })
 }
 
-/// Parses `text` and checks its format and version.
-fn parse(text: &str, format: &str) -> Result<Value> {
+/// Parses `text` and checks its format and version (at most `newest`).
+fn parse(text: &str, format: &str, newest: u64) -> Result<Value> {
     let doc: Value = serde_json::from_str(text)
         .map_err(|e| Error::Data(format!("model artifact is not JSON: {e}")))?;
     let top = object(&doc, "artifact")?;
@@ -350,9 +361,9 @@ fn parse(text: &str, format: &str) -> Result<Value> {
         return Err(Error::Data(format!("not a {format} artifact")));
     }
     let version = uint(top, "format_version")?;
-    if version == 0 || version > FORMAT_VERSION {
+    if version == 0 || version > newest {
         return Err(Error::Data(format!(
-            "artifact format version {version}; this build reads 1 to {FORMAT_VERSION}"
+            "artifact format version {version}; this build reads 1 to {newest}"
         )));
     }
     Ok(doc)
@@ -401,7 +412,19 @@ fn glm_from(spec: &Map<String, Value>) -> Result<Glm> {
 }
 
 fn spline_json(s: &PSpline) -> Value {
-    json!({"column": s.column, "n_basis": s.n_basis, "degree": s.degree, "order": s.order})
+    let mut v =
+        json!({"column": s.column, "n_basis": s.n_basis, "degree": s.degree, "order": s.order});
+    // Written only when not ordinary, so an ordinary smooth's JSON is as
+    // in version 1.
+    match s.kind {
+        SmoothKind::Ordinary => {}
+        SmoothKind::Cyclic { period } => {
+            v["kind"] = json!({"kind": "cyclic", "period": period.map(|(a, b)| nums(&[a, b]))});
+        }
+        SmoothKind::Increasing => v["kind"] = json!({"kind": "increasing"}),
+        SmoothKind::Decreasing => v["kind"] = json!({"kind": "decreasing"}),
+    }
+    v
 }
 
 fn tensor_json(t: &TensorSpline) -> Value {
@@ -433,6 +456,26 @@ fn spline_from(o: &Map<String, Value>) -> Result<PSpline> {
         n_basis: uint(o, "n_basis")? as usize,
         degree: uint(o, "degree")? as usize,
         order: uint(o, "order")? as usize,
+        kind: match o.get("kind") {
+            None => SmoothKind::Ordinary,
+            Some(k) => {
+                let k = object(k, "smooth.kind")?;
+                match field(k, "kind")?.as_str() {
+                    Some("cyclic") => SmoothKind::Cyclic {
+                        period: match k.get("period") {
+                            None | Some(Value::Null) => None,
+                            Some(_) => match floats(k, "period")?.as_slice() {
+                                [a, b] => Some((*a, *b)),
+                                _ => return Err(bad("smooth.kind.period")),
+                            },
+                        },
+                    },
+                    Some("increasing") => SmoothKind::Increasing,
+                    Some("decreasing") => SmoothKind::Decreasing,
+                    _ => return Err(bad("smooth.kind.kind")),
+                }
+            }
+        },
     })
 }
 
@@ -631,6 +674,39 @@ mod tests {
         let back = GamFit::from_json(&gam.to_json()).unwrap();
         assert_eq!(back, gam);
         assert_eq!(back.predict(&d).unwrap(), gam.predict(&d).unwrap());
+
+        // An ordinary GAM is a version 1 artifact; a cyclic smooth makes it 2.
+        assert!(gam.to_json().contains("\"format_version\":1"));
+        let cyc = Gam::new(
+            Glm::new(Family::Gamma, Link::Log),
+            vec![PSpline::cyclic("x").n_basis(8).period(-1.0, 11.0)],
+        )
+        .fit(&d, &y)
+        .unwrap();
+        let text = cyc.to_json();
+        assert!(text.contains("\"format_version\":2"));
+        let back = GamFit::from_json(&text).unwrap();
+        assert_eq!(back, cyc);
+        assert_eq!(back.predict(&d).unwrap(), cyc.predict(&d).unwrap());
+        for spline in [PSpline::increasing("x"), PSpline::decreasing("x")] {
+            let mono = Gam::new(Glm::new(Family::Gamma, Link::Log), vec![spline.n_basis(8)])
+                .fit(&d, &y)
+                .unwrap();
+            let back = GamFit::from_json(&mono.to_json()).unwrap();
+            assert_eq!(back, mono);
+            assert_eq!(back.predict(&d).unwrap(), mono.predict(&d).unwrap());
+        }
+
+        // Monotone smooths have no REML.
+        assert!(
+            Gam::new(
+                Glm::new(Family::Gamma, Link::Log),
+                vec![PSpline::increasing("x")]
+            )
+            .smoothing(crate::gam::Smoothing::Reml)
+            .fit(&d, &y)
+            .is_err()
+        );
 
         let mut spec = ElasticNet::new(Family::Gaussian, Link::Identity, 0.5, 0.05);
         spec.penalty_factor = Some(vec![0.0, 1.0, 2.0]);

@@ -475,6 +475,73 @@ class BayesBf:
         """
         Number of predictive simulations.
         """
+    def one_year(self, /, triangle: Triangle, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "refit_flagged") -> BayesOneYearFit:
+        """
+        The one-year view of one loss column of a single-segment cumulative
+        triangle, with each origin's exposure from another column: the
+        claims development result over the coming year, by Pareto smoothed
+        importance sampling of ``fit``'s posterior (decisions 16 and 17 of
+        ``docs/design/reserving-bayes.md``), exactly as
+        ``BayesOdp.one_year`` with this model's means
+        ``mu[w] * gamma[d]``. Each simulation draws the year's increments
+        from a posterior draw with ``process`` error, reweights every
+        posterior draw by the year's quasi likelihood (``scale``, the
+        priors and the prior ultimates unchanged), and takes each origin's
+        claims development result as its posterior mean reserve at the
+        opening less its payment in the year and its weighted posterior mean
+        reserve after it. A simulation whose Pareto ``k`` is above
+        ``k_threshold`` is refitted with NUTS on the extended triangle when
+        ``refit`` says so. A flat prior (``cv=inf``) gives about
+        ``BayesOdp.one_year``'s view; a tighter prior a narrower one, in
+        which the development pattern learns from the year and the origins'
+        levels hardly do. Raises one ``UserWarning`` listing the failed
+        diagnostics of the fit, and another if any refit failed its
+        diagnostics.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with one segment.
+        column : str
+            The losses to project.
+        exposure : str
+            The exposure column, as in ``fit``.
+        k_threshold : float, default 0.7
+            The Pareto ``k`` above which a simulation's importance weights
+            are not trusted.
+        refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
+            What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+        
+        Returns
+        -------
+        BayesOneYearFit
+            With ``fit`` a ``BayesBfFit``.
+        
+        Raises
+        ------
+        ValueError
+            As ``fit``; if ``k_threshold`` is NaN or ``refit`` is unknown.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import BayesBf, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+        ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        ...     {
+        ...         "paid": [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+        ...         "premium": [200.0] * 4 + [220.0] * 3 + [240.0] * 2 + [260.0],
+        ...     },
+        ... )
+        >>> model = BayesBf(apriori=0.85, cv=0.1, n_sims=1000, seed=1)
+        >>> view = model.one_year(tri, "paid", "premium", refit="reweight_only")
+        >>> view.cdr.components()
+        [('2020',), ('2021',), ('2022',), ('2023',)]
+        >>> type(view.fit).__name__, len(view.pareto_k)
+        ('BayesBfFit', 1000)
+        >>> view.cdr.variance() < view.fit.reserves.variance()
+        True
+        """
     @property
     def process(self, /) -> str:
         """
@@ -1010,11 +1077,15 @@ class BayesOdp:
             The Pareto ``k`` above which a simulation's importance weights
             are not trusted (the threshold of Vehtari et al. 2024 for a few
             thousand draws).
-        refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+        refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
             What happens to a flagged simulation: refitted with NUTS, or
             reweighted anyway (fast, biased where ``k`` is high);
             ``"refit_all"`` refits every simulation, to check the
-            reweighting.
+            reweighting; ``"moment_match_then_refit"`` first moves the
+            posterior draws by affine maps to the moments the weights
+            estimate (moment matching, as R's ``loo::loo_moment_match``)
+            and refits only a simulation whose ``k`` stays above
+            ``k_threshold`` (``moment_matched`` lists the others).
         
         Returns
         -------
@@ -1061,7 +1132,7 @@ class BayesOdp:
         column : str
         k_threshold : float, default 0.7
             As in ``one_year``.
-        refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+        refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
             As in ``one_year``.
         
         Returns
@@ -1405,9 +1476,9 @@ class BayesOdpFits:
 class BayesOneYearFit:
     """
     The one-year view of a Bayesian model on a single-segment triangle,
-    from ``BayesOdp.one_year``: the lifetime fit, the opening reserve, the
-    claims development result over the coming year and how reliable each
-    simulation's importance reweighting was.
+    from ``BayesOdp.one_year`` or ``BayesBf.one_year``: the lifetime fit,
+    the opening reserve, the claims development result over the coming
+    year and how reliable each simulation's importance reweighting was.
     
     ``cdr`` is the joint distribution of the claims development result by
     origin (dimension ``"origin"``), the opening reserve less the year's
@@ -1415,8 +1486,10 @@ class BayesOneYearFit:
     value is an adverse development and ``cdr.quantile(0.005)`` is minus
     the one-year value at risk at 99.5%. ``pareto_k`` has one Pareto ``k``
     per simulation; ``flagged_share`` is the share above ``k_threshold``,
-    whether or not they were refitted, and ``refitted`` lists the
-    simulations refitted with NUTS.
+    whether or not they were refitted, ``refitted`` lists the simulations
+    refitted with NUTS and ``moment_matched`` those moment matching
+    rescued (``refit="moment_match_then_refit"``). ``fit`` is the model's own lifetime fit,
+    a ``BayesOdpFit`` or a ``BayesBfFit``.
     """
     def __repr__(self, /) -> str: ...
     @property
@@ -1446,10 +1519,16 @@ class BayesOneYearFit:
         pandas.DataFrame
         """
     @property
-    def fit(self, /) -> BayesOdpFit:
+    def fit(self, /) -> Any:
         """
         The model fitted to the observed triangle, with its posterior and
-        lifetime reserves, as ``BayesOdp.fit`` gives it.
+        lifetime reserves, as the model's ``fit`` gives it: a
+        ``BayesOdpFit`` from ``BayesOdp.one_year``, a ``BayesBfFit`` from
+        ``BayesBf.one_year``.
+        
+        Returns
+        -------
+        BayesOdpFit or BayesBfFit
         """
     @property
     def flagged_share(self, /) -> float:
@@ -1466,6 +1545,14 @@ class BayesOneYearFit:
     def latest(self, /) -> list[float]:
         """
         Latest observed value per origin.
+        """
+    @property
+    def moment_matched(self, /) -> list[int]:
+        """
+        The simulations moment matching rescued (their ``k`` brought to at
+        most ``k_threshold``), in order (0-based); empty unless ``refit``
+        was ``"moment_match_then_refit"``, when each flagged simulation is
+        in this or in ``refitted``.
         """
     @property
     def opening_reserve(self, /) -> list[float]:
@@ -1503,8 +1590,9 @@ class BayesOneYearFit:
     def to_frame(self, /) -> Any:
         """
         One row per origin: ``origin``, ``latest``, ``opening_ultimate``,
-        ``opening_reserve``, and the ``cdr_mean`` and ``cdr_std_dev`` of the
-        claims development result. Needs pandas.
+        ``opening_reserve``, the model's own columns (``BayesBf``'s
+        ``exposure`` and ``prior_ultimate``), and the ``cdr_mean`` and
+        ``cdr_std_dev`` of the claims development result. Needs pandas.
         
         Returns
         -------
@@ -1606,6 +1694,12 @@ class BayesOneYearFits:
     def latest(self, /) -> list[float]:
         """
         Latest observed value per origin.
+        """
+    @property
+    def moment_matched(self, /) -> list[int]:
+        """
+        The simulations of a single-segment fit that moment matching
+        rescued.
         """
     @property
     def opening_reserve(self, /) -> list[float]:
@@ -7021,9 +7115,15 @@ class Gam:
     ----------
     glm : Glm
         Family, link and dispersion.
-    smooths : list of str or (str, int)
+    smooths : list of str, (str, int) or dict
         The design columns to smooth, optionally with the number of basis
-        functions (10 by default).
+        functions (10 by default), or a dict ``{"column": ..., "n_basis":
+        ..., "bs": ..., "period": ...}``: ``bs`` is ``"ps"`` (the default)
+        or ``"cp"`` for a cyclic smooth (mgcv's ``bs = "cp"``), whose ends
+        meet over ``period``, a ``(lo, hi)`` pair (the data's range when
+        left out), or ``"mpi"`` / ``"mpd"`` for a monotone increasing or
+        decreasing smooth (scam's), which takes GCV, UBRE or fixed
+        smoothing but not REML.
     smoothing : str or list of float, default "auto"
         ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
         ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
@@ -16403,7 +16503,7 @@ class StudentTCopula:
 class TabulatedCurve:
     """
     A tabulated exposure curve: points ``(x, G(x))`` from ``(0, 0)`` to
-    ``(1, 1)``, interpolated linearly, as published curves are given
+    ``(1, 1)``, interpolated linearly or log-log, as published curves are given
     (Salzmann's homeowners scale, Ludwig's curves, ISO PSOLD tables, a
     reinsurer's own).
     
@@ -16413,12 +16513,22 @@ class TabulatedCurve:
     mean rate is the first chord's, ``x1 / G(x1)``, so a table needs fine
     first points for the expected loss to be right.
     
+    With ``interpolation="log-log"`` the curve runs as a power law between
+    points (straight on log-log axes), ``G(x) = G_k (x / x_k) ** p_k``, which
+    follows a curve's bend between sparse points better than a chord; the
+    first piece, from ``(0, 0)``, stays straight. The interpolated curve must
+    be concave, so the elasticities ``p_k`` may not rise from piece to piece:
+    a table with a total-loss mass at the top (the Swiss Re curves with ``c``
+    up to 3, read at a few points) fails and keeps linear interpolation. The
+    destruction rate is then continuous within each piece past the first.
+    
     Parameters
     ----------
     x : list of float
         Increasing from 0 to 1.
     g : list of float
         ``G(x)``, from 0 to 1.
+    interpolation : {"linear", "log-log"}, default "linear"
     
     Raises
     ------
@@ -16433,8 +16543,8 @@ class TabulatedCurve:
     >>> round(t.curve([0.3])[0], 12), t.mean_rate()
     (0.6, 0.25)
     """
-    def __getnewargs__(self, /) -> tuple[list[float], list[float]]: ...
-    def __new__(cls, /, x: Sequence[float], g: Sequence[float]) -> TabulatedCurve: ...
+    def __getnewargs__(self, /) -> tuple[list[float], list[float], str]: ...
+    def __new__(cls, /, x: Sequence[float], g: Sequence[float], interpolation: str = "linear") -> TabulatedCurve: ...
     def __repr__(self, /) -> str: ...
     def curve(self, /, x: Sequence[float]) -> list[float]:
         """
@@ -16479,6 +16589,12 @@ class TabulatedCurve:
     def g(self, /) -> list[float]:
         """
         The table's ``G(x)``.
+        """
+    @property
+    def interpolation(self, /) -> str:
+        """
+        How the curve runs between its points: ``"linear"`` or
+        ``"log-log"``.
         """
     def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
         """
@@ -20712,6 +20828,42 @@ def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     >>> w = stacking_weights([[-0.1, -0.1, -3.0, -3.0], [-3.0, -3.0, -0.1, -0.1]])
     >>> [round(x, 9) for x in w]
     [0.5, 0.5]
+    """
+
+def threshold_diagnostics(draws: Sequence[float], thresholds: Sequence[float]) -> dict:
+    """
+    Threshold diagnostics for peaks over threshold: at each threshold the
+    mean excess and the generalized Pareto fitted to the exceedances, with
+    standard errors (the numbers behind ``ismev``'s ``mrl.plot`` and
+    ``gpd.fitrange``).
+    
+    Above a threshold where a GPD fits, the mean excess is linear in the
+    threshold and the shape ``xi`` and modified scale ``beta - xi * u`` are
+    constant up to their sampling error: pick the lowest threshold above
+    which they are stable, then fit a :class:`PotTail` there. Standard
+    errors come from the observed information and hold for ``xi > -0.5``.
+    A threshold with too few values above it gives NaN where it cannot
+    estimate (2 for the mean excess's standard error, 3 for the GPD).
+    
+    Parameters
+    ----------
+    draws : list of float
+    thresholds : list of float
+    
+    Returns
+    -------
+    dict of str to list
+        Columns ``threshold``, ``n_above``, ``mean_excess``,
+        ``mean_excess_se``, ``xi``, ``xi_se``, ``beta``,
+        ``modified_scale`` and ``modified_scale_se``, one entry per
+        threshold (``pandas.DataFrame`` takes it as is).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import threshold_diagnostics
+    >>> d = threshold_diagnostics([1.0, 2.0, 3.0, 4.0, 5.0], [2.5])
+    >>> d["n_above"], d["mean_excess"]
+    ([3], [1.5])
     """
 
 def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], list[int]]]:

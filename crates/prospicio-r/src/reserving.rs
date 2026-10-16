@@ -1005,7 +1005,7 @@ impl Triangle {
     /// and `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
     /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
     /// k is above `k_threshold` is refitted as `refit` ("refit_flagged",
-    /// "reweight_only" or "refit_all") says.
+    /// "reweight_only", "refit_all" or "moment_match_then_refit") says.
     fn bayes_odp_one_year(
         &self,
         column: &str,
@@ -1020,7 +1020,9 @@ impl Triangle {
         let inner = model
             .one_year(&self.inner, column, &settings)
             .map_err(to_r)?;
-        Ok(BayesOneYearFit { inner })
+        Ok(BayesOneYearFit {
+            inner: BayesOneYearOf::Odp(inner),
+        })
     }
 
     /// The one-year view of `bayes_odp_segments` on every segment of a
@@ -1227,25 +1229,40 @@ impl Triangle {
         target_accept: f64,
         max_depth: f64,
     ) -> Result<BayesBfFit> {
-        let boot = bootstrap(n_sims, seed, process, SegmentDependence::Independent)?;
-        let model = BayesBf {
-            apriori,
-            cv,
-            development_sd,
-            process: boot.process,
-            sampler: BayesSampler {
-                chains: whole(chains, "chains")? as usize,
-                tune: whole(tune, "tune")? as usize,
-                draws: whole(draws, "draws")? as usize,
-                seed: 0,
-                target_accept,
-                max_depth: whole(max_depth, "max_depth")?,
-            },
-            n_sims: boot.n_sims,
-            seed: boot.seed,
-        };
+        let model = bayes_bf_model(
+            &[apriori, cv, development_sd],
+            process,
+            &[chains, tune, draws, n_sims, seed, target_accept, max_depth],
+        )?;
         let inner = model.fit(&self.inner, column, exposure).map_err(to_r)?;
         Ok(BayesBfFit { inner })
+    }
+
+    /// The one-year view of `bayes_bf` on a single-segment triangle column
+    /// by PSIS reweighting: `priors` are `apriori`, `cv` and
+    /// `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
+    /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
+    /// k is above `k_threshold` is refitted as `refit` ("refit_flagged",
+    /// "reweight_only", "refit_all" or "moment_match_then_refit") says.
+    #[allow(clippy::too_many_arguments)]
+    fn bayes_bf_one_year(
+        &self,
+        column: &str,
+        exposure: &str,
+        priors: Vec<f64>,
+        process: &str,
+        run: Vec<f64>,
+        k_threshold: f64,
+        refit: &str,
+    ) -> Result<BayesOneYearFit> {
+        let model = bayes_bf_model(&priors, process, &run)?;
+        let settings = one_year_settings(k_threshold, refit)?;
+        let inner = model
+            .one_year(&self.inner, column, exposure, &settings)
+            .map_err(to_r)?;
+        Ok(BayesOneYearFit {
+            inner: BayesOneYearOf::Bf(inner),
+        })
     }
 
     /// The lifetime view under Mack's bootstrap: each origin's reserve
@@ -2560,6 +2577,36 @@ fn bayes_odp_model(
     })
 }
 
+/// The `BayesBf` of `bayes_bf` and `bayes_bf_one_year`: `priors` are
+/// `apriori`, `cv` and `development_sd`, `run` is `chains`, `tune`,
+/// `draws`, `n_sims`, `seed`, `target_accept` and `max_depth`.
+fn bayes_bf_model(priors: &[f64], process: &str, run: &[f64]) -> Result<BayesBf> {
+    let (&[apriori, cv, development_sd], &[chains, tune, draws, n_sims, seed, ta, md]) =
+        (priors, run)
+    else {
+        return Err(Error::Other(
+            "bayes_bf_model takes 3 priors and 7 run settings".into(),
+        ));
+    };
+    let boot = bootstrap(n_sims, seed, process, SegmentDependence::Independent)?;
+    Ok(BayesBf {
+        apriori,
+        cv,
+        development_sd,
+        process: boot.process,
+        sampler: BayesSampler {
+            chains: whole(chains, "chains")? as usize,
+            tune: whole(tune, "tune")? as usize,
+            draws: whole(draws, "draws")? as usize,
+            seed: 0,
+            target_accept: ta,
+            max_depth: whole(md, "max_depth")?,
+        },
+        n_sims: boot.n_sims,
+        seed: boot.seed,
+    })
+}
+
 /// The settings of a Bayesian one-year view: `k_threshold` and the
 /// `refit` policy by name.
 fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
@@ -2567,10 +2614,11 @@ fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
         "refit_flagged" => OneYearRefit::RefitFlagged,
         "reweight_only" => OneYearRefit::ReweightOnly,
         "refit_all" => OneYearRefit::RefitAll,
+        "moment_match_then_refit" => OneYearRefit::MomentMatchThenRefit,
         _ => {
             return Err(Error::Other(format!(
-                "refit must be \"refit_flagged\", \"reweight_only\" or \"refit_all\", got \
-                 \"{refit}\""
+                "refit must be \"refit_flagged\", \"reweight_only\", \"refit_all\" or \
+                 \"moment_match_then_refit\", got \"{refit}\""
             )));
         }
     };
@@ -2582,67 +2630,120 @@ fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
 /// result and each simulation's Pareto k.
 #[extendr]
 pub(crate) struct BayesOneYearFit {
-    inner: BayesOneYearInner,
+    inner: BayesOneYearOf,
+}
+
+/// The one-year view of each Bayesian model with one, by its lifetime fit.
+#[derive(Clone)]
+enum BayesOneYearOf {
+    Odp(BayesOneYearInner<BayesOdpInner>),
+    Bf(BayesOneYearInner<BayesBfInner>),
+}
+
+/// Evaluates `$body` with `$f` bound to the view, whatever its model.
+macro_rules! each_bayes_one_year {
+    ($view:expr, $f:ident => $body:expr) => {
+        match $view {
+            BayesOneYearOf::Odp($f) => $body,
+            BayesOneYearOf::Bf($f) => $body,
+        }
+    };
 }
 
 #[extendr]
 impl BayesOneYearFit {
-    /// The lifetime fit, as `bayes_odp` gives it.
-    fn fit(&self) -> BayesOdpFit {
-        BayesOdpFit {
-            inner: self.inner.fit.clone(),
+    /// The model behind the view: "bayes_odp" or "bayes_bf".
+    fn model(&self) -> &'static str {
+        match &self.inner {
+            BayesOneYearOf::Odp(_) => "bayes_odp",
+            BayesOneYearOf::Bf(_) => "bayes_bf",
+        }
+    }
+
+    /// The lifetime fit, as `bayes_odp` gives it; an error for another
+    /// model.
+    fn fit(&self) -> Result<BayesOdpFit> {
+        match &self.inner {
+            BayesOneYearOf::Odp(f) => Ok(BayesOdpFit {
+                inner: f.fit.clone(),
+            }),
+            BayesOneYearOf::Bf(_) => Err(Error::Other(
+                "the one-year view is bayes_bf's: use bf_fit()".into(),
+            )),
+        }
+    }
+
+    /// The lifetime fit, as `bayes_bf` gives it; an error for another
+    /// model.
+    fn bf_fit(&self) -> Result<BayesBfFit> {
+        match &self.inner {
+            BayesOneYearOf::Bf(f) => Ok(BayesBfFit {
+                inner: f.fit.clone(),
+            }),
+            BayesOneYearOf::Odp(_) => Err(Error::Other(
+                "the one-year view is bayes_odp's: use fit()".into(),
+            )),
         }
     }
 
     fn opening_ultimate(&self) -> Vec<f64> {
-        self.inner.opening_ultimate.clone()
+        each_bayes_one_year!(&self.inner, f => f.opening_ultimate.clone())
     }
 
     fn opening_reserve(&self) -> Vec<f64> {
-        self.inner.opening_reserve.clone()
+        each_bayes_one_year!(&self.inner, f => f.opening_reserve.clone())
     }
 
     fn cdr(&self) -> PredictiveDistribution {
         PredictiveDistribution {
-            inner: self.inner.cdr.clone(),
+            inner: each_bayes_one_year!(&self.inner, f => f.cdr.clone()),
         }
     }
 
     fn pareto_k(&self) -> Vec<f64> {
-        self.inner.pareto_k.clone()
+        each_bayes_one_year!(&self.inner, f => f.pareto_k.clone())
     }
 
     /// The simulations refitted with NUTS, 1-based.
     fn refitted(&self) -> Vec<f64> {
-        self.inner
+        each_bayes_one_year!(&self.inner, f => f
             .refitted
             .iter()
             .map(|&i| (i + 1) as f64)
-            .collect()
+            .collect())
+    }
+
+    /// The simulations moment matching rescued, 1-based.
+    fn moment_matched(&self) -> Vec<f64> {
+        each_bayes_one_year!(&self.inner, f => f
+            .moment_matched
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect())
     }
 
     fn refit_warnings(&self) -> f64 {
-        self.inner.refit_warnings as f64
+        each_bayes_one_year!(&self.inner, f => f.refit_warnings as f64)
     }
 
     fn k_threshold(&self) -> f64 {
-        self.inner.k_threshold
+        each_bayes_one_year!(&self.inner, f => f.k_threshold)
     }
 
     fn flagged_share(&self) -> f64 {
-        self.inner.flagged_share()
+        each_bayes_one_year!(&self.inner, f => f.flagged_share())
     }
 
     fn long_table(&self) -> List {
-        fit_table(self.inner.to_long())
+        fit_table(each_bayes_one_year!(&self.inner, f => f.to_long()))
     }
 
     fn totals_table(&self) -> List {
-        fit_table(self.inner.totals())
+        fit_table(each_bayes_one_year!(&self.inner, f => f.totals()))
     }
 
     fn development_table(&self) -> List {
-        fit_table(self.inner.fit.development_table())
+        fit_table(each_bayes_one_year!(&self.inner, f => f.fit.development_table()))
     }
 
     /// The fit itself, as for any single-segment fit without keys: a
@@ -2710,6 +2811,17 @@ impl BayesOneYearFits {
         Ok(self
             .one("refitted", "")?
             .refitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect())
+    }
+
+    /// The simulations of a single-segment fit that moment matching
+    /// rescued, 1-based.
+    fn moment_matched(&self) -> Result<Vec<f64>> {
+        Ok(self
+            .one("moment_matched", "")?
+            .moment_matched
             .iter()
             .map(|&i| (i + 1) as f64)
             .collect())

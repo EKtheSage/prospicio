@@ -13,7 +13,7 @@ Build a composable actuarial modeling runtime: a Rust core that owns the numeric
 **Rust earns its place in three ways, and the plan is prioritized around them:**
 
 1. **Simulation speed** — bootstrap, Monte Carlo, FFT aggregation, towers applied to millions of events, claim-level models. Deterministic methods on small triangles gain nothing from Rust.
-2. **One kernel, many front ends** — Python, R, and a WASM build that can run inside the browser and an Office.js Excel add-in with no server.
+2. **One kernel, many front ends** — Python, R, a native XLL add-in for desktop Excel on Windows (`docs/design/xll.md`), and a WASM build that can run inside the browser and an Office.js Excel add-in with no server.
 3. **Reproducibility** — deterministic parallel results, which model governance requires.
 
 **Rust for the math we own, protocols for everything else.** Where a mature engine exists (samplers, gradient boosting, deep learning), the platform defines the interface and delegates the engine.
@@ -42,7 +42,7 @@ v2 keeps the v1 layering, principle and target scope; it changes priorities, bui
 Five layers, each depending only on the layers below it; the three-way split from v1 (math primitives, modeling engines, actuarial applications) is unchanged.
 
 ```text
-Front ends          Python (PyO3 + maturin) · R (extendr) · WASM (browser, Excel add-in)
+Front ends          Python (PyO3 + maturin) · R (extendr) · Excel XLL (C API) · WASM (browser, Excel add-in)
                     Thin wrappers only: no algorithms live here
         │
         ▼
@@ -354,7 +354,7 @@ Reserving and risk ship before pricing, with four gates on the way to v1.0.
 | **v0.4 — Risk and capital** | VaR, TVaR, CoTVaR, distortions, copulas, Iman-Conover, capital allocation, EVT tails |
 | ◆ *Gate* | Bootstrap reserve and tower results feed capital allocation end to end |
 | **v0.5 — GLM** | IRLS, Tweedie, NB, regularization, GLM reserving; R feature parity |
-| **v0.6 — GAM and pricing** | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility |
+| **v0.6 — GAM and pricing** | P-splines, tensor, cyclic and monotone smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility |
 | **v0.7 — Bayesian** | Model specs and diagnostics; nutpie sampling; Bayesian reserving and credibility |
 | **v0.8 — Claim-level reserving** | Event histories, payment and closure hazards, severity, ultimate; aggregate to a joint distribution. *Parked 2026-10-06 until the design is thought through (`roadmap.md`)* |
 | **v0.9 — Integrations** | LightGBM / XGBoost and PyTorch adapters on the shared protocol; WASM build |

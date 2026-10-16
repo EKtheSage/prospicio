@@ -6455,11 +6455,15 @@ impl PyBayesOdp {
     ///     The Pareto ``k`` above which a simulation's importance weights
     ///     are not trusted (the threshold of Vehtari et al. 2024 for a few
     ///     thousand draws).
-    /// refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+    /// refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
     ///     What happens to a flagged simulation: refitted with NUTS, or
     ///     reweighted anyway (fast, biased where ``k`` is high);
     ///     ``"refit_all"`` refits every simulation, to check the
-    ///     reweighting.
+    ///     reweighting; ``"moment_match_then_refit"`` first moves the
+    ///     posterior draws by affine maps to the moments the weights
+    ///     estimate (moment matching, as R's ``loo::loo_moment_match``)
+    ///     and refits only a simulation whose ``k`` stays above
+    ///     ``k_threshold`` (``moment_matched`` lists the others).
     ///
     /// Returns
     /// -------
@@ -6505,7 +6509,9 @@ impl PyBayesOdp {
             "BayesOdp",
             &[(String::new(), inner.refitted.len(), inner.refit_warnings)],
         )?;
-        Ok(PyBayesOneYearFit { inner })
+        Ok(PyBayesOneYearFit {
+            inner: BayesOneYearOf::Odp(inner),
+        })
     }
 
     /// The one-year view of one measure column in every segment of a
@@ -6526,7 +6532,7 @@ impl PyBayesOdp {
     /// column : str
     /// k_threshold : float, default 0.7
     ///     As in ``one_year``.
-    /// refit : {"refit_flagged", "reweight_only", "refit_all"}, default "refit_flagged"
+    /// refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
     ///     As in ``one_year``.
     ///
     /// Returns
@@ -7143,10 +7149,11 @@ fn one_year_settings(k_threshold: f64, refit: &str) -> PyResult<BayesOneYear> {
         "refit_flagged" => OneYearRefit::RefitFlagged,
         "reweight_only" => OneYearRefit::ReweightOnly,
         "refit_all" => OneYearRefit::RefitAll,
+        "moment_match_then_refit" => OneYearRefit::MomentMatchThenRefit,
         _ => {
             return Err(PyValueError::new_err(format!(
-                "refit must be \"refit_flagged\", \"reweight_only\" or \"refit_all\", got \
-                 {refit:?}"
+                "refit must be \"refit_flagged\", \"reweight_only\", \"refit_all\" or \
+                 \"moment_match_then_refit\", got {refit:?}"
             )));
         }
     };
@@ -7177,9 +7184,9 @@ fn warn_refits(py: Python<'_>, model: &str, refits: &[(String, usize, usize)]) -
 }
 
 /// The one-year view of a Bayesian model on a single-segment triangle,
-/// from ``BayesOdp.one_year``: the lifetime fit, the opening reserve, the
-/// claims development result over the coming year and how reliable each
-/// simulation's importance reweighting was.
+/// from ``BayesOdp.one_year`` or ``BayesBf.one_year``: the lifetime fit,
+/// the opening reserve, the claims development result over the coming
+/// year and how reliable each simulation's importance reweighting was.
 ///
 /// ``cdr`` is the joint distribution of the claims development result by
 /// origin (dimension ``"origin"``), the opening reserve less the year's
@@ -7187,59 +7194,113 @@ fn warn_refits(py: Python<'_>, model: &str, refits: &[(String, usize, usize)]) -
 /// value is an adverse development and ``cdr.quantile(0.005)`` is minus
 /// the one-year value at risk at 99.5%. ``pareto_k`` has one Pareto ``k``
 /// per simulation; ``flagged_share`` is the share above ``k_threshold``,
-/// whether or not they were refitted, and ``refitted`` lists the
-/// simulations refitted with NUTS.
+/// whether or not they were refitted, ``refitted`` lists the simulations
+/// refitted with NUTS and ``moment_matched`` those moment matching
+/// rescued (``refit="moment_match_then_refit"``). ``fit`` is the model's own lifetime fit,
+/// a ``BayesOdpFit`` or a ``BayesBfFit``.
 #[pyclass(name = "BayesOneYearFit", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBayesOneYearFit {
-    inner: BayesOneYearFit,
+    inner: BayesOneYearOf,
+}
+
+/// The one-year view of each Bayesian model with one, by its lifetime fit.
+enum BayesOneYearOf {
+    Odp(BayesOneYearFit<BayesOdpFit>),
+    Bf(BayesOneYearFit<BayesBfFit>),
+}
+
+/// Evaluates `$body` with `$f` bound to the view, whatever its model.
+macro_rules! each_bayes_one_year {
+    ($view:expr, $f:ident => $body:expr) => {
+        match $view {
+            BayesOneYearOf::Odp($f) => $body,
+            BayesOneYearOf::Bf($f) => $body,
+        }
+    };
+}
+
+impl PyBayesOneYearFit {
+    /// The lifetime fit's chain ladder.
+    fn chain_ladder_fit(&self) -> &ChainLadderFit {
+        each_bayes_one_year!(&self.inner, f => f.fit.chain_ladder())
+    }
 }
 
 #[pymethods]
 impl PyBayesOneYearFit {
     /// The model fitted to the observed triangle, with its posterior and
-    /// lifetime reserves, as ``BayesOdp.fit`` gives it.
+    /// lifetime reserves, as the model's ``fit`` gives it: a
+    /// ``BayesOdpFit`` from ``BayesOdp.one_year``, a ``BayesBfFit`` from
+    /// ``BayesBf.one_year``.
+    ///
+    /// Returns
+    /// -------
+    /// BayesOdpFit or BayesBfFit
     #[getter]
-    fn fit(&self) -> PyBayesOdpFit {
-        PyBayesOdpFit {
-            inner: self.inner.fit.clone(),
-        }
+    fn fit(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        Ok(match &self.inner {
+            BayesOneYearOf::Odp(f) => Py::new(
+                py,
+                PyBayesOdpFit {
+                    inner: f.fit.clone(),
+                },
+            )?
+            .into_any(),
+            BayesOneYearOf::Bf(f) => Py::new(
+                py,
+                PyBayesBfFit {
+                    inner: f.fit.clone(),
+                },
+            )?
+            .into_any(),
+        })
     }
 
     /// The model's volume-weighted chain ladder.
     #[getter]
     fn chain_ladder(&self) -> PyChainLadderFit {
-        self.fit().chain_ladder()
+        PyChainLadderFit {
+            inner: SegmentFits {
+                key_names: Vec::new(),
+                labels: vec![Label::new(Vec::<String>::new())],
+                fits: vec![self.chain_ladder_fit().clone()],
+            },
+        }
     }
 
     /// Origin period of each per-origin value and CDR component.
     #[getter]
     fn origins(&self) -> Vec<String> {
-        self.fit().origins()
+        self.chain_ladder_fit()
+            .origins
+            .iter()
+            .map(ToString::to_string)
+            .collect()
     }
 
     /// Development ages in months.
     #[getter]
     fn development(&self) -> Vec<Lag> {
-        self.inner.fit.chain_ladder.development.development.clone()
+        self.chain_ladder_fit().development.development.clone()
     }
 
     /// Latest observed value per origin.
     #[getter]
     fn latest(&self) -> Vec<f64> {
-        self.inner.fit.chain_ladder.latest.clone()
+        self.chain_ladder_fit().latest.clone()
     }
 
     /// The latest value plus the opening reserve, per origin.
     #[getter]
     fn opening_ultimate(&self) -> Vec<f64> {
-        self.inner.opening_ultimate.clone()
+        each_bayes_one_year!(&self.inner, f => f.opening_ultimate.clone())
     }
 
     /// Each origin's posterior mean reserve on the observed triangle: the
     /// mean over the posterior draws of the expected future increments.
     #[getter]
     fn opening_reserve(&self) -> Vec<f64> {
-        self.inner.opening_reserve.clone()
+        each_bayes_one_year!(&self.inner, f => f.opening_reserve.clone())
     }
 
     /// Joint distribution of the claims development result by origin:
@@ -7248,7 +7309,7 @@ impl PyBayesOneYearFit {
     #[getter]
     fn cdr(&self) -> PyPredictiveDistribution {
         PyPredictiveDistribution {
-            inner: self.inner.cdr.clone(),
+            inner: each_bayes_one_year!(&self.inner, f => f.cdr.clone()),
         }
     }
 
@@ -7256,44 +7317,54 @@ impl PyBayesOneYearFit {
     /// (``inf`` when too few weights differ to fit the tail).
     #[getter]
     fn pareto_k(&self) -> Vec<f64> {
-        self.inner.pareto_k.clone()
+        each_bayes_one_year!(&self.inner, f => f.pareto_k.clone())
     }
 
     /// The simulations refitted with NUTS, in order (0-based).
     #[getter]
     fn refitted(&self) -> Vec<usize> {
-        self.inner.refitted.clone()
+        each_bayes_one_year!(&self.inner, f => f.refitted.clone())
+    }
+
+    /// The simulations moment matching rescued (their ``k`` brought to at
+    /// most ``k_threshold``), in order (0-based); empty unless ``refit``
+    /// was ``"moment_match_then_refit"``, when each flagged simulation is
+    /// in this or in ``refitted``.
+    #[getter]
+    fn moment_matched(&self) -> Vec<usize> {
+        each_bayes_one_year!(&self.inner, f => f.moment_matched.clone())
     }
 
     /// How many of the refits had a diagnostic warning (R-hat, ESS or a
     /// divergence).
     #[getter]
     fn refit_warnings(&self) -> usize {
-        self.inner.refit_warnings
+        each_bayes_one_year!(&self.inner, f => f.refit_warnings)
     }
 
     /// The Pareto ``k`` above which a simulation is flagged.
     #[getter]
     fn k_threshold(&self) -> f64 {
-        self.inner.k_threshold
+        each_bayes_one_year!(&self.inner, f => f.k_threshold)
     }
 
     /// The share of simulations whose ``k`` is above ``k_threshold`` (or
     /// NaN), whether or not they were refitted.
     #[getter]
     fn flagged_share(&self) -> f64 {
-        self.inner.flagged_share()
+        each_bayes_one_year!(&self.inner, f => f.flagged_share())
     }
 
     /// One row per origin: ``origin``, ``latest``, ``opening_ultimate``,
-    /// ``opening_reserve``, and the ``cdr_mean`` and ``cdr_std_dev`` of the
-    /// claims development result. Needs pandas.
+    /// ``opening_reserve``, the model's own columns (``BayesBf``'s
+    /// ``exposure`` and ``prior_ultimate``), and the ``cdr_mean`` and
+    /// ``cdr_std_dev`` of the claims development result. Needs pandas.
     ///
     /// Returns
     /// -------
     /// pandas.DataFrame
     fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        table_frame(py, self.inner.to_long())
+        table_frame(py, each_bayes_one_year!(&self.inner, f => f.to_long()))
     }
 
     /// One row: the totals of ``to_frame()``'s columns, the ``scale``, the
@@ -7304,7 +7375,7 @@ impl PyBayesOneYearFit {
     /// -------
     /// pandas.DataFrame
     fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        table_frame(py, self.inner.totals())
+        table_frame(py, each_bayes_one_year!(&self.inner, f => f.totals()))
     }
 
     /// The chain ladder's development factors, one row per age, as
@@ -7314,17 +7385,20 @@ impl PyBayesOneYearFit {
     /// -------
     /// pandas.DataFrame
     fn development_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        table_frame(py, self.inner.fit.development_table())
+        table_frame(
+            py,
+            each_bayes_one_year!(&self.inner, f => f.fit.development_table()),
+        )
     }
 
     fn __repr__(&self) -> String {
-        format!(
+        each_bayes_one_year!(&self.inner, f => format!(
             "BayesOneYearFit(origins={}, n_sims={}, flagged_share={:?}, refitted={})",
-            self.inner.opening_reserve.len(),
-            self.inner.cdr.n_sims(),
-            self.inner.flagged_share(),
-            self.inner.refitted.len(),
-        )
+            f.opening_reserve.len(),
+            f.cdr.n_sims(),
+            f.flagged_share(),
+            f.refitted.len(),
+        ))
     }
 }
 
@@ -7447,6 +7521,13 @@ impl PyBayesOneYearFits {
     #[getter]
     fn refitted(&self) -> PyResult<Vec<usize>> {
         Ok(self.one("refitted", "")?.refitted.clone())
+    }
+
+    /// The simulations of a single-segment fit that moment matching
+    /// rescued.
+    #[getter]
+    fn moment_matched(&self) -> PyResult<Vec<usize>> {
+        Ok(self.one("moment_matched", "")?.moment_matched.clone())
     }
 
     /// How many of a single-segment fit's refits had a diagnostic warning.
@@ -7818,6 +7899,96 @@ impl PyBayesBf {
             PyErr::warn(py, category.as_any(), &message, 1)?;
         }
         Ok(PyBayesBfFit { inner })
+    }
+
+    /// The one-year view of one loss column of a single-segment cumulative
+    /// triangle, with each origin's exposure from another column: the
+    /// claims development result over the coming year, by Pareto smoothed
+    /// importance sampling of ``fit``'s posterior (decisions 16 and 17 of
+    /// ``docs/design/reserving-bayes.md``), exactly as
+    /// ``BayesOdp.one_year`` with this model's means
+    /// ``mu[w] * gamma[d]``. Each simulation draws the year's increments
+    /// from a posterior draw with ``process`` error, reweights every
+    /// posterior draw by the year's quasi likelihood (``scale``, the
+    /// priors and the prior ultimates unchanged), and takes each origin's
+    /// claims development result as its posterior mean reserve at the
+    /// opening less its payment in the year and its weighted posterior mean
+    /// reserve after it. A simulation whose Pareto ``k`` is above
+    /// ``k_threshold`` is refitted with NUTS on the extended triangle when
+    /// ``refit`` says so. A flat prior (``cv=inf``) gives about
+    /// ``BayesOdp.one_year``'s view; a tighter prior a narrower one, in
+    /// which the development pattern learns from the year and the origins'
+    /// levels hardly do. Raises one ``UserWarning`` listing the failed
+    /// diagnostics of the fit, and another if any refit failed its
+    /// diagnostics.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative, with one segment.
+    /// column : str
+    ///     The losses to project.
+    /// exposure : str
+    ///     The exposure column, as in ``fit``.
+    /// k_threshold : float, default 0.7
+    ///     The Pareto ``k`` above which a simulation's importance weights
+    ///     are not trusted.
+    /// refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
+    ///     What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+    ///
+    /// Returns
+    /// -------
+    /// BayesOneYearFit
+    ///     With ``fit`` a ``BayesBfFit``.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``fit``; if ``k_threshold`` is NaN or ``refit`` is unknown.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reserving import BayesBf, Triangle
+    /// >>> tri = Triangle.from_long(
+    /// ...     [2020] * 4 + [2021] * 3 + [2022] * 2 + [2023],
+    /// ...     [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+    /// ...     {
+    /// ...         "paid": [100.0, 150.0, 165.0, 170.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0],
+    /// ...         "premium": [200.0] * 4 + [220.0] * 3 + [240.0] * 2 + [260.0],
+    /// ...     },
+    /// ... )
+    /// >>> model = BayesBf(apriori=0.85, cv=0.1, n_sims=1000, seed=1)
+    /// >>> view = model.one_year(tri, "paid", "premium", refit="reweight_only")
+    /// >>> view.cdr.components()
+    /// [('2020',), ('2021',), ('2022',), ('2023',)]
+    /// >>> type(view.fit).__name__, len(view.pareto_k)
+    /// ('BayesBfFit', 1000)
+    /// >>> view.cdr.variance() < view.fit.reserves.variance()
+    /// True
+    #[pyo3(signature = (triangle, column, exposure, k_threshold = 0.7, refit = "refit_flagged"))]
+    fn one_year(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        exposure: &str,
+        k_threshold: f64,
+        refit: &str,
+    ) -> PyResult<PyBayesOneYearFit> {
+        let settings = one_year_settings(k_threshold, refit)?;
+        let (model, tri) = (&self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| model.one_year(tri, column, exposure, &settings))
+            .map_err(err)?;
+        warn_diagnostics(py, "BayesBf", &inner.fit.diagnostics.warnings)?;
+        warn_refits(
+            py,
+            "BayesBf",
+            &[(String::new(), inner.refitted.len(), inner.refit_warnings)],
+        )?;
+        Ok(PyBayesOneYearFit {
+            inner: BayesOneYearOf::Bf(inner),
+        })
     }
 
     fn __repr__(&self) -> String {

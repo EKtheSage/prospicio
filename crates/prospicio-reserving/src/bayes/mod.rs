@@ -24,12 +24,14 @@
 //! over a number type and differentiated with forward-mode dual numbers;
 //! its `reserves` are a [`PredictiveDistribution`] by origin.
 //!
-//! [`BayesOdp::one_year`] gives the one-year view, the claims development
-//! result over the coming year, by reweighting the posterior draws with
-//! Pareto smoothed importance sampling and refitting the simulations whose
-//! Pareto `k` is too high ([`BayesOneYear`], decision 16). The engine takes
-//! any model through an internal trait, so Meyers' models, [`BayesBf`] and
-//! [`Compartmental`] can follow.
+//! [`BayesOdp::one_year`] and [`BayesBf::one_year`] give the one-year view,
+//! the claims development result over the coming year, by reweighting the
+//! posterior draws with Pareto smoothed importance sampling and refitting
+//! the simulations whose Pareto `k` is too high ([`BayesOneYear`],
+//! decision 16). The view is written once over one internal interface
+//! that every model's one-year view implements, and a conformance suite
+//! runs on each (decision 17), so Meyers' models and [`Compartmental`] can
+//! follow.
 //!
 //! # Seeds
 //!
@@ -63,6 +65,7 @@ mod compartmental;
 mod dual;
 mod laplace;
 mod meyers;
+mod moment_match;
 mod odp;
 mod one_year;
 mod scalar;

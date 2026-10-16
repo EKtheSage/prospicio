@@ -96,6 +96,79 @@ pub fn difference_penalty(k: usize, order: usize) -> Vec<f64> {
     p
 }
 
+/// The values at `x` of the `k` cyclic B-splines of degree `degree` with
+/// period `[lo, hi)`: equally spaced knots `lo + i (hi - lo) / k`, each
+/// basis function wrapped around the period, as mgcv's `cSplineDes` for its
+/// `"cp"` basis. `x` outside the period is wrapped into it first. The
+/// values sum to 1 everywhere.
+///
+/// ```
+/// use prospicio_math::spline::cyclic_bspline_basis;
+///
+/// let b = cyclic_bspline_basis(0.37, 0.0, 1.0, 8, 3);
+/// assert_eq!(b.len(), 8);
+/// assert!((b.iter().sum::<f64>() - 1.0).abs() < 1e-14);
+/// // The ends of the period meet.
+/// let (a, z) = (cyclic_bspline_basis(0.0, 0.0, 1.0, 8, 3), cyclic_bspline_basis(1.0, 0.0, 1.0, 8, 3));
+/// assert!(a.iter().zip(&z).all(|(u, v)| (u - v).abs() < 1e-14));
+/// ```
+pub fn cyclic_bspline_basis(x: f64, lo: f64, hi: f64, k: usize, degree: usize) -> Vec<f64> {
+    let period = hi - lo;
+    let h = period / k as f64;
+    // Wrap into [lo, hi), as mgcv's cwrap.
+    let mut x = x;
+    if x > hi {
+        x = lo + (x - hi).rem_euclid(period);
+    } else if x < lo {
+        x = hi - (lo - x).rem_euclid(period);
+    }
+    // k + degree + 1 knots from lo - degree h: B_j starts at lo + (j - degree) h,
+    // and the functions that start below lo wrap onto the top of the period.
+    let knots: Vec<f64> = (0..=k + degree)
+        .map(|i| lo + h * (i as f64 - degree as f64))
+        .collect();
+    let mut b = bspline_basis(x, &knots, degree);
+    for (bj, wrapped) in b.iter_mut().zip(bspline_basis(x - period, &knots, degree)) {
+        *bj += wrapped;
+    }
+    b
+}
+
+/// `Dᵀ D` for the cyclic `order`-th difference matrix on `k` coefficients
+/// (each row a difference of `order + 1` neighbours, taken around the
+/// circle), row-major `k × k`: mgcv's `"cp"` penalty. Only constants are
+/// unpenalized.
+///
+/// ```
+/// use prospicio_math::spline::cyclic_difference_penalty;
+///
+/// // First differences around 3 coefficients.
+/// assert_eq!(
+///     cyclic_difference_penalty(3, 1),
+///     [2.0, -1.0, -1.0, -1.0, 2.0, -1.0, -1.0, -1.0, 2.0]
+/// );
+/// ```
+pub fn cyclic_difference_penalty(k: usize, order: usize) -> Vec<f64> {
+    let mut row = vec![1.0];
+    for _ in 0..order {
+        let mut next = vec![0.0; row.len() + 1];
+        for (i, v) in row.iter().enumerate() {
+            next[i] -= v;
+            next[i + 1] += v;
+        }
+        row = next;
+    }
+    let mut p = vec![0.0; k * k];
+    for start in 0..k {
+        for (a, va) in row.iter().enumerate() {
+            for (b, vb) in row.iter().enumerate() {
+                p[((start + a) % k) * k + (start + b) % k] += va * vb;
+            }
+        }
+    }
+    p
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

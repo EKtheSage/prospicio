@@ -1240,6 +1240,58 @@ impl PyElasticNetFit {
     }
 }
 
+/// A smooth from ``{"column": ..., "n_basis": ..., "bs": ..., "period": ...}``.
+fn smooth_from_dict(d: &Bound<'_, pyo3::types::PyDict>) -> PyResult<PSpline> {
+    for key in d.keys() {
+        let key: String = key.extract()?;
+        if !matches!(key.as_str(), "column" | "n_basis" | "bs" | "period") {
+            return Err(PyValueError::new_err(format!(
+                "unknown smooth key {key:?}: use column, n_basis, bs and period"
+            )));
+        }
+    }
+    let column: String = d
+        .get_item("column")?
+        .ok_or_else(|| PyValueError::new_err("a smooth needs a \"column\""))?
+        .extract()?;
+    let bs: String = match d.get_item("bs")? {
+        Some(v) => v.extract()?,
+        None => "ps".into(),
+    };
+    let period: Option<(f64, f64)> = match d.get_item("period")? {
+        Some(v) if !v.is_none() => Some(v.extract()?),
+        _ => None,
+    };
+    let mut spline = match bs.as_str() {
+        "ps" if period.is_none() => PSpline::new(&column),
+        "ps" => {
+            return Err(PyValueError::new_err(
+                "a period needs a cyclic smooth (bs=\"cp\")",
+            ));
+        }
+        "cp" => match period {
+            Some((lo, hi)) => PSpline::cyclic(&column).period(lo, hi),
+            None => PSpline::cyclic(&column),
+        },
+        "mpi" | "mpd" if period.is_some() => {
+            return Err(PyValueError::new_err(
+                "a period needs a cyclic smooth (bs=\"cp\")",
+            ));
+        }
+        "mpi" => PSpline::increasing(&column),
+        "mpd" => PSpline::decreasing(&column),
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "bs must be \"ps\", \"cp\", \"mpi\" or \"mpd\", not {other:?}"
+            )));
+        }
+    };
+    if let Some(k) = d.get_item("n_basis")? {
+        spline = spline.n_basis(k.extract()?);
+    }
+    Ok(spline)
+}
+
 /// A generalized additive model: a ``Glm`` plus P-spline smooths of
 /// numeric design columns, with smoothing chosen by GCV or UBRE.
 ///
@@ -1247,9 +1299,15 @@ impl PyElasticNetFit {
 /// ----------
 /// glm : Glm
 ///     Family, link and dispersion.
-/// smooths : list of str or (str, int)
+/// smooths : list of str, (str, int) or dict
 ///     The design columns to smooth, optionally with the number of basis
-///     functions (10 by default).
+///     functions (10 by default), or a dict ``{"column": ..., "n_basis":
+///     ..., "bs": ..., "period": ...}``: ``bs`` is ``"ps"`` (the default)
+///     or ``"cp"`` for a cyclic smooth (mgcv's ``bs = "cp"``), whose ends
+///     meet over ``period``, a ``(lo, hi)`` pair (the data's range when
+///     left out), or ``"mpi"`` / ``"mpd"`` for a monotone increasing or
+///     decreasing smooth (scam's), which takes GCV, UBRE or fixed
+///     smoothing but not REML.
 /// smoothing : str or list of float, default "auto"
 ///     ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
 ///     ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
@@ -1310,9 +1368,12 @@ impl PyGam {
                     Ok(PSpline::new(&name))
                 } else if let Ok((name, k)) = s.extract::<(String, usize)>() {
                     Ok(PSpline::new(&name).n_basis(k))
+                } else if let Ok(d) = s.cast::<pyo3::types::PyDict>() {
+                    smooth_from_dict(d)
                 } else {
                     Err(PyTypeError::new_err(
-                        "each smooth must be a column name or (column name, n_basis)",
+                        "each smooth must be a column name, (column name, n_basis) or a dict \
+                         with column, n_basis, bs and period",
                     ))
                 }
             })

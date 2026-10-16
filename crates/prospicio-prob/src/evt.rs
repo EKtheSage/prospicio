@@ -248,6 +248,81 @@ impl Gpd {
         let xi = y.iter().map(|&v| (theta * v).ln_1p()).sum::<f64>() / n as f64;
         Self::new(xi, xi / theta)
     }
+
+    /// [`fit`](Self::fit), with the covariance matrix of `(ξ, β)`: the
+    /// inverse of the observed information (the negative Hessian of the
+    /// log-likelihood at the estimate), as R's `ismev::gpd.fit` reports
+    /// it from a numerical Hessian. The second derivatives are analytic,
+    /// with a series near `ξ = 0`.
+    ///
+    /// The normal approximation holds for `ξ > -1/2` (Smith 1985); below
+    /// it, or where the information is not positive definite, the
+    /// covariance is NaN.
+    ///
+    /// ```
+    /// use prospicio_core::StreamRng;
+    /// use prospicio_prob::{Distribution, evt::Gpd};
+    ///
+    /// let y = Gpd::new(0.2, 1.0).unwrap().sample(&mut StreamRng::new(2, 0), 5_000);
+    /// let (fit, cov) = Gpd::fit_with_covariance(&y).unwrap();
+    /// // Close to the expected information's (1 + ξ)² / n.
+    /// let n = y.len() as f64;
+    /// assert!((cov[0][0] / ((1.0 + fit.xi()).powi(2) / n) - 1.0).abs() < 0.1);
+    /// ```
+    pub fn fit_with_covariance(exceedances: &[f64]) -> Result<(Self, [[f64; 2]; 2])> {
+        let fit = Self::fit(exceedances)?;
+        Ok((fit, fit.covariance(exceedances)))
+    }
+
+    /// The inverse observed information of `(ξ, β)` at this GPD for the
+    /// exceedances `y`; NaN below `ξ = -1/2` or if not positive definite.
+    fn covariance(&self, y: &[f64]) -> [[f64; 2]; 2] {
+        const NAN: [[f64; 2]; 2] = [[f64::NAN; 2]; 2];
+        let (xi, beta) = (self.xi, self.beta);
+        if xi <= -0.5 {
+            return NAN;
+        }
+        // Information: minus the second derivatives of the log-likelihood
+        // ℓ = -ln β - (1 + 1/ξ) ln(1 + ξ t), t = y / β, w = 1 + ξ t:
+        //   ℓ_ββ = (1 - (1 + ξ) t (2 + ξ t) / w²) / β²
+        //   ℓ_ξβ = t (1 - t) / (β w²)
+        //   ℓ_ξξ = t² / w² + t³ f(ξ t),
+        // with f(s) = [2 (s / (1 + s) - ln(1 + s)) + s² / (1 + s)²] / s³
+        //           = Σ_{k≥3} (-1)^k (k-1)(k-2)/k s^(k-3), -2/3 at s = 0.
+        let f = |s: f64| -> f64 {
+            if s.abs() < 0.05 {
+                let mut sum = 0.0;
+                let mut pow = 1.0;
+                for k in 3..40 {
+                    let k = k as f64;
+                    let sign = if k as u32 % 2 == 0 { 1.0 } else { -1.0 };
+                    sum += sign * (k - 1.0) * (k - 2.0) / k * pow;
+                    pow *= s;
+                }
+                sum
+            } else {
+                let w = 1.0 + s;
+                (2.0 * (s / w - s.ln_1p()) + s * s / (w * w)) / (s * s * s)
+            }
+        };
+        let (mut i_xx, mut i_xb, mut i_bb) = (0.0, 0.0, 0.0);
+        for &v in y {
+            let t = v / beta;
+            let w = 1.0 + xi * t;
+            if w <= 0.0 {
+                return NAN;
+            }
+            let w2 = w * w;
+            i_bb -= (1.0 - (1.0 + xi) * t * (2.0 + xi * t) / w2) / (beta * beta);
+            i_xb -= t * (1.0 - t) / (beta * w2);
+            i_xx -= t * t / w2 + t * t * t * f(xi * t);
+        }
+        let det = i_xx * i_bb - i_xb * i_xb;
+        if !(i_xx > 0.0 && det > 0.0) {
+            return NAN;
+        }
+        [[i_bb / det, -i_xb / det], [-i_xb / det, i_xx / det]]
+    }
 }
 
 impl Distribution for Gpd {
@@ -593,6 +668,106 @@ pub fn mean_excess(draws: &[f64], thresholds: &[f64]) -> Vec<(f64, f64, usize)> 
         .collect()
 }
 
+/// What [`threshold_diagnostics`] reports at one threshold `u`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ThresholdDiagnostic {
+    /// The threshold `u`.
+    pub threshold: f64,
+    /// The number of draws above `u`.
+    pub n_above: usize,
+    /// The empirical mean excess `e(u) = E[X - u | X > u]`; NaN with no
+    /// draw above `u`.
+    pub mean_excess: f64,
+    /// Its standard error, the sample standard deviation of the
+    /// exceedances over `sqrt(n_above)`, as `ismev::mrl.plot`'s bands;
+    /// NaN with fewer than 2 draws above `u`.
+    pub mean_excess_se: f64,
+    /// The shape `ξ` of the GPD fitted to the exceedances; NaN with
+    /// fewer than 3 exceedances or all equal.
+    pub xi: f64,
+    /// The standard error of `ξ` (observed information).
+    pub xi_se: f64,
+    /// The fitted scale `β`.
+    pub beta: f64,
+    /// The modified scale `β* = β - ξ u`, constant in `u` above a
+    /// threshold where a GPD fits (the scale at `u` of the GPD above a
+    /// lower threshold is `β + ξ (u - u₀)`).
+    pub modified_scale: f64,
+    /// Its standard error by the delta method,
+    /// `sqrt(Var β - 2 u Cov(ξ, β) + u² Var ξ)`.
+    pub modified_scale_se: f64,
+}
+
+/// Threshold diagnostics for peaks over threshold: at each threshold the
+/// mean excess and the GPD fitted to the exceedances, with standard
+/// errors, the numbers behind the mean residual life plot and the
+/// parameter stability plots (Coles 2001, section 4.3.4) that R's
+/// `ismev::mrl.plot` and `ismev::gpd.fitrange` draw.
+///
+/// Above a threshold where a GPD fits, the mean excess is linear in `u`
+/// and the shape `ξ` and modified scale `β - ξ u` are constant, up to
+/// their sampling error: choose the lowest threshold above which the
+/// estimates are stable, then fit [`PotTail`] there. Choosing it stays the
+/// caller's job. A threshold with too few draws above it gives NaN in the
+/// fields it cannot estimate, not an error.
+///
+/// ```
+/// use prospicio_prob::evt::{Gpd, threshold_diagnostics};
+/// use prospicio_prob::Distribution;
+///
+/// // Exact GPD(0.25, 1) quantiles: every threshold fits ξ near 0.25.
+/// let g = Gpd::new(0.25, 1.0).unwrap();
+/// let n = 4_000;
+/// let x: Vec<f64> = (1..=n).map(|i| g.quantile((i as f64 - 0.5) / n as f64).unwrap()).collect();
+/// let d = threshold_diagnostics(&x, &[0.5, 1.0, 2.0]);
+/// for row in &d {
+///     assert!((row.xi - 0.25).abs() < 2.0 * row.xi_se);
+///     assert!((row.modified_scale - 1.0).abs() < 2.0 * row.modified_scale_se);
+/// }
+/// assert_eq!(d[0].n_above, x.iter().filter(|&&v| v > 0.5).count());
+/// ```
+pub fn threshold_diagnostics(draws: &[f64], thresholds: &[f64]) -> Vec<ThresholdDiagnostic> {
+    let mut sorted = draws.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    thresholds
+        .iter()
+        .map(|&u| {
+            let first = sorted.partition_point(|&x| x <= u);
+            let y: Vec<f64> = sorted[first..].iter().map(|&x| x - u).collect();
+            let n = y.len();
+            let (mean_excess, mean_excess_se) = match n {
+                0 => (f64::NAN, f64::NAN),
+                _ => {
+                    let mean = y.iter().sum::<f64>() / n as f64;
+                    let se = if n < 2 {
+                        f64::NAN
+                    } else {
+                        let ss = y.iter().map(|v| (v - mean).powi(2)).sum::<f64>();
+                        (ss / (n - 1) as f64 / n as f64).sqrt()
+                    };
+                    (mean, se)
+                }
+            };
+            let (xi, beta, cov) = match Gpd::fit_with_covariance(&y) {
+                Ok((g, cov)) => (g.xi, g.beta, cov),
+                Err(_) => (f64::NAN, f64::NAN, [[f64::NAN; 2]; 2]),
+            };
+            let ms_var = cov[1][1] - 2.0 * u * cov[0][1] + u * u * cov[0][0];
+            ThresholdDiagnostic {
+                threshold: u,
+                n_above: n,
+                mean_excess,
+                mean_excess_se,
+                xi,
+                xi_se: cov[0][0].sqrt(),
+                beta,
+                modified_scale: beta - xi * u,
+                modified_scale_se: ms_var.sqrt(),
+            }
+        })
+        .collect()
+}
+
 /// Hill estimates of the tail index `ξ` (`1/α` for a Pareto tail) from the
 /// `k` largest draws, for each `k` in `ks`:
 /// `ξ̂_k = (1/k) Σ_{i=1..k} ln X_(n-i+1) - ln X_(n-k)`.
@@ -640,6 +815,88 @@ pub fn hill(draws: &[f64], ks: &[usize]) -> Result<Vec<f64>> {
 mod tests {
     use super::*;
     use prospicio_core::StreamRng;
+
+    /// The log-likelihood of `(ξ, β)` for exceedances `y`.
+    fn loglik(xi: f64, beta: f64, y: &[f64]) -> f64 {
+        y.iter()
+            .map(|&v| {
+                let s = xi * v / beta;
+                if xi == 0.0 {
+                    -beta.ln() - v / beta
+                } else {
+                    -beta.ln() - (1.0 + 1.0 / xi) * s.ln_1p()
+                }
+            })
+            .sum()
+    }
+
+    #[test]
+    fn gpd_covariance_inverts_the_numerical_hessian() {
+        for (xi0, beta0, xi, beta) in [
+            (0.3, 2.0, 0.31, 2.05),
+            (-0.2, 1.0, -0.19, 1.02),
+            (0.01, 1.0, 1e-3, 1.0),
+            (0.01, 1.0, 1e-7, 1.0),
+            (1.2, 0.5, 1.1, 0.55),
+        ] {
+            let g = Gpd::new(xi0, beta0).unwrap();
+            let y: Vec<f64> = (1..=300)
+                .map(|i| g.quantile((i as f64 - 0.5) / 300.0).unwrap())
+                .collect();
+            // The covariance at an arbitrary point, against central
+            // differences of the log-likelihood there.
+            let at = Gpd::new(xi, beta).unwrap();
+            let cov = at.covariance(&y);
+            let (hx, hb) = (1e-4, 1e-4 * beta);
+            let l = |a: f64, b: f64| loglik(a, b, &y);
+            let lxx = (l(xi + hx, beta) - 2.0 * l(xi, beta) + l(xi - hx, beta)) / (hx * hx);
+            let lbb = (l(xi, beta + hb) - 2.0 * l(xi, beta) + l(xi, beta - hb)) / (hb * hb);
+            let lxb = (l(xi + hx, beta + hb) - l(xi + hx, beta - hb) - l(xi - hx, beta + hb)
+                + l(xi - hx, beta - hb))
+                / (4.0 * hx * hb);
+            let det = lxx * lbb - lxb * lxb;
+            let num = [[-lbb / det, lxb / det], [lxb / det, -lxx / det]];
+            for i in 0..2 {
+                for j in 0..2 {
+                    let rel = (cov[i][j] / num[i][j] - 1.0).abs();
+                    assert!(
+                        rel < 1e-5,
+                        "xi {xi}: cov[{i}][{j}] {} vs {}",
+                        cov[i][j],
+                        num[i][j]
+                    );
+                }
+            }
+        }
+        // ξ = 0 exactly takes the series' constant term.
+        let y = [0.5, 1.0, 2.0, 3.5];
+        let c0 = Gpd::new(0.0, 1.5).unwrap().covariance(&y);
+        let c1 = Gpd::new(1e-9, 1.5).unwrap().covariance(&y);
+        assert!((c0[0][0] / c1[0][0] - 1.0).abs() < 1e-7);
+        assert!(
+            Gpd::new(-0.6, 1.0)
+                .unwrap()
+                .covariance(&[0.1, 0.2])
+                .iter()
+                .flatten()
+                .all(|v| v.is_nan())
+        );
+    }
+
+    #[test]
+    fn threshold_diagnostics_handle_few_exceedances() {
+        let d = threshold_diagnostics(&[1.0, 2.0, 3.0, 4.0, 5.0], &[2.5, 3.5, 4.5, 5.0]);
+        assert_eq!(d[0].n_above, 3);
+        assert!((d[0].mean_excess - 1.5).abs() < 1e-15);
+        assert!((d[0].mean_excess_se - (1.0f64 / 3.0).sqrt()).abs() < 1e-15);
+        assert!(d[0].xi.is_finite());
+        assert_eq!(d[1].n_above, 2);
+        assert!(d[1].mean_excess_se.is_finite() && d[1].xi.is_nan());
+        assert_eq!(d[2].n_above, 1);
+        assert!(d[2].mean_excess_se.is_nan());
+        assert_eq!(d[3].n_above, 0);
+        assert!(d[3].mean_excess.is_nan());
+    }
 
     #[test]
     fn gpd_closed_forms() {

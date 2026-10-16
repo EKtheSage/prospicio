@@ -86,7 +86,7 @@ elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, li
 
 elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid)
 
-gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas, tensors, tensor_basis) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas, tensors, tensor_basis)
+gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis)
 
 family_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Call(wrap__family_deviance_rust, family_name, theta, power, y, mu, weights)
 
@@ -221,6 +221,8 @@ gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
 mean_excess_rust <- function(draws, thresholds) .Call(wrap__mean_excess_rust, draws, thresholds)
 
 hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
+
+threshold_diagnostics_rust <- function(draws, thresholds) .Call(wrap__threshold_diagnostics_rust, draws, thresholds)
 
 EventSet <- new.env(parent = emptyenv())
 
@@ -1588,7 +1590,9 @@ Mbbefd$rate_quantile <- function(u) .Call(wrap__Mbbefd__rate_quantile, self, u)
 
 Tabulated <- new.env(parent = emptyenv())
 
-Tabulated$new <- function(x, g) .Call(wrap__Tabulated__new, x, g)
+Tabulated$new <- function(x, g, interpolation) .Call(wrap__Tabulated__new, x, g, interpolation)
+
+Tabulated$interpolation <- function() .Call(wrap__Tabulated__interpolation, self)
 
 Tabulated$from_severity <- function(severity, mpl, points) .Call(wrap__Tabulated__from_severity, severity, mpl, points)
 
@@ -1715,6 +1719,8 @@ Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium,
 Triangle$compartmental_prior_predictive <- function(premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental_prior_predictive, self, premium, priors, families, settings, run)
 
 Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
+
+Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit)
 
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
 
@@ -2025,7 +2031,11 @@ BayesOdpFits$segment <- function(keys, values) .Call(wrap__BayesOdpFits__segment
 
 BayesOneYearFit <- new.env(parent = emptyenv())
 
+BayesOneYearFit$model <- function() .Call(wrap__BayesOneYearFit__model, self)
+
 BayesOneYearFit$fit <- function() .Call(wrap__BayesOneYearFit__fit, self)
+
+BayesOneYearFit$bf_fit <- function() .Call(wrap__BayesOneYearFit__bf_fit, self)
 
 BayesOneYearFit$opening_ultimate <- function() .Call(wrap__BayesOneYearFit__opening_ultimate, self)
 
@@ -2036,6 +2046,8 @@ BayesOneYearFit$cdr <- function() .Call(wrap__BayesOneYearFit__cdr, self)
 BayesOneYearFit$pareto_k <- function() .Call(wrap__BayesOneYearFit__pareto_k, self)
 
 BayesOneYearFit$refitted <- function() .Call(wrap__BayesOneYearFit__refitted, self)
+
+BayesOneYearFit$moment_matched <- function() .Call(wrap__BayesOneYearFit__moment_matched, self)
 
 BayesOneYearFit$refit_warnings <- function() .Call(wrap__BayesOneYearFit__refit_warnings, self)
 
@@ -2072,6 +2084,8 @@ BayesOneYearFits$scale <- function() .Call(wrap__BayesOneYearFits__scale, self)
 BayesOneYearFits$pareto_k <- function() .Call(wrap__BayesOneYearFits__pareto_k, self)
 
 BayesOneYearFits$refitted <- function() .Call(wrap__BayesOneYearFits__refitted, self)
+
+BayesOneYearFits$moment_matched <- function() .Call(wrap__BayesOneYearFits__moment_matched, self)
 
 BayesOneYearFits$refit_warnings <- function() .Call(wrap__BayesOneYearFits__refit_warnings, self)
 

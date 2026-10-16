@@ -374,6 +374,14 @@ S7::method(print, elastic_net_model) <- function(x, ...) {
 #' @inheritParams glm_fit
 #' @param smooths Names of numeric terms to smooth.
 #' @param n_basis Basis functions per smooth (recycled; 10 by default).
+#' @param bs The basis of each smooth (recycled): `"ps"`, a P-spline;
+#'   `"cp"`, a cyclic P-spline (mgcv's `bs = "cp"`), whose ends meet in value
+#'   and slope over its period; or `"mpi"` / `"mpd"`, a monotone increasing
+#'   or decreasing P-spline (scam's), which takes GCV, UBRE or fixed
+#'   smoothing but not REML.
+#' @param period A named list of `c(lo, hi)` periods for cyclic smooths
+#'   (mgcv's `knots = list(x = c(lo, hi))`); a cyclic smooth left out takes
+#'   the data's range.
 #' @param smoothing `"auto"`, `"gcv"`, `"ubre"`, `"reml"`, or a numeric vector of
 #'   fixed smoothing parameters: one per smooth, then one per tensor margin.
 #' @param tensors A list of tensor product smooths (mgcv's
@@ -391,17 +399,32 @@ S7::method(print, elastic_net_model) <- function(x, ...) {
 #' m <- gam_fit(y ~ x, d, smooths = "x", family = "gaussian")
 #' m@edf
 #' predict(m, data.frame(x = 0.5)) - (sin(3) + 2)
+#' # A seasonal effect whose ends meet: months 0 to 12.
+#' s <- data.frame(month = seq(0.25, 11.75, by = 0.5))
+#' s$y <- 2 + sin(2 * pi * s$month / 12)
+#' cm <- gam_fit(y ~ month, s, smooths = "month", family = "gaussian", bs = "cp",
+#'               period = list(month = c(0, 12)))
+#' predict(cm, data.frame(month = c(0, 12)))
 gam_fit <- function(formula, data, smooths, n_basis = 10, family = "poisson", link = NULL,
                     offset = NULL, weights = NULL, dispersion = NULL, theta = NULL,
-                    power = NULL, smoothing = "auto", tensors = list(), tensor_basis = 5) {
+                    power = NULL, smoothing = "auto", tensors = list(), tensor_basis = 5,
+                    bs = "ps", period = list()) {
   des <- model_design(formula, data, offset, weights)
+  smooths <- as.character(smooths)
+  unknown <- setdiff(names(period), smooths)
+  if (length(unknown)) stop("period given for terms that are not smooths: ", toString(unknown))
+  periods <- unlist(lapply(smooths, function(s) {
+    p <- period[[s]]
+    if (is.null(p)) c(NaN, NaN) else as.double(p)
+  }))
   fa <- family_args(theta, power)
   da <- dispersion_args(dispersion)
   fixed <- is.numeric(smoothing)
   ptr <- rust_result(gam_fit_design(
     as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
     if (is.null(link)) "" else link, da$kind, da$value, fa$theta, fa$power,
-    as.character(smooths), rep_len(as.double(n_basis), length(smooths)),
+    smooths, rep_len(as.double(n_basis), length(smooths)),
+    rep_len(as.character(bs), length(smooths)), as.double(periods),
     if (fixed) "fixed" else smoothing, if (fixed) as.double(smoothing) else double(),
     lapply(tensors, as.character),
     if (is.list(tensor_basis)) lapply(tensor_basis, as.double) else
