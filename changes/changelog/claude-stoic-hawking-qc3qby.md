@@ -125,3 +125,9 @@
   weights), and `OnnxModel` and `OnnxPredictor` for networks trained
   elsewhere (onnxruntime parity). The wheel links Burn through the
   bindings' default `nn` feature, which needs Rust 1.92 (#308).
+- R: the same networks: `cann_fit()` and `attention_cann_fit()` on a
+  formula (`predict()`, `predict_distribution()`, `network_correction()`,
+  `attention_weights()`), and `onnx_model()`, `onnx_run()` and
+  `onnx_predictor()` for networks trained elsewhere. The package builds
+  Burn through the default `nn` feature and now needs Rust 1.92
+  (`SystemRequirements`) (#309).

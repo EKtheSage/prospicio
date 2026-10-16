@@ -200,6 +200,17 @@ reference:
       - elastic_net_cv
       - gam_fit
       - gam_model
+      - cann_fit
+      - cann_model
+      - attention_cann_fit
+      - attention_cann_model
+      - network_correction
+      - attention_weights
+      - onnx_model
+      - onnx_model_class
+      - onnx_run
+      - onnx_predictor
+      - onnx_predictor_class
       - booster_fit
       - booster_model
       - simulate_from_means

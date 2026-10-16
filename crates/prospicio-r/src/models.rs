@@ -16,7 +16,7 @@ use crate::distributions::PredictiveDistribution;
 use crate::{to_r, whole};
 
 /// A family from its name; `theta` and `power` are NA when not used.
-fn family(name: &str, theta: f64, power: f64) -> Result<Family> {
+pub(crate) fn family(name: &str, theta: f64, power: f64) -> Result<Family> {
     let f = match name {
         "gaussian" => Family::Gaussian,
         "poisson" => Family::Poisson,
@@ -37,7 +37,7 @@ fn family(name: &str, theta: f64, power: f64) -> Result<Family> {
 }
 
 /// A link from its name; "" for the family's canonical link.
-fn link(name: &str, family: Family, link_power: f64) -> Result<Link> {
+pub(crate) fn link(name: &str, family: Family, link_power: f64) -> Result<Link> {
     Ok(match name {
         "" => family.canonical_link(),
         "identity" => Link::Identity,
@@ -72,7 +72,12 @@ fn dispersion(kind: &str, value: f64, default: Dispersion) -> Result<Dispersion>
 
 /// A design from a column-major matrix `x` with `names`, offset and
 /// weights (empty for none).
-fn design(x: &[f64], names: Vec<String>, offset: &[f64], weights: &[f64]) -> Result<Design> {
+pub(crate) fn design(
+    x: &[f64],
+    names: Vec<String>,
+    offset: &[f64],
+    weights: &[f64],
+) -> Result<Design> {
     let p = names.len();
     if p == 0 || x.len() % p != 0 {
         return Err(Error::Other(

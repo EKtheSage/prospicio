@@ -230,7 +230,7 @@ model.diagnostics()
 | Survival | Rust | Kaplan-Meier, Cox, parametric, competing risks, multi-state |
 | Bayesian | Specs + diagnostics in Rust; sampling via nutpie | Hierarchical severity, Bayesian CL, compartmental reserving, credibility; R-hat, ESS, divergences, PPC, ELPD (LOO, WAIC) |
 | Gradient boosting | Python/R adapters over LightGBM, XGBoost | Poisson/Gamma/Tweedie/quantile objectives, monotone constraints, exposure via offsets |
-| Neural | Rust (`prospicio-nn`, Burn) behind the protocol; PyTorch models via ONNX import (`prospicio_nn::onnx`; in Rust and Python, R next) | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
+| Neural | Rust (`prospicio-nn`, Burn) behind the protocol; PyTorch models via ONNX import (`prospicio_nn::onnx`; in Rust, Python and R) | CANN (GLM offset plus a network correction) first, then tabular MLPs with embeddings, multi-task claim models, sequence models for claim trajectories |
 
 Delegated engines are thin: they convert inputs, call the engine, and wrap outputs in shared objects. They add no evaluation logic of their own.
 

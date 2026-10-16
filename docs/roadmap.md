@@ -325,13 +325,11 @@ what it is aiming for by v1.0.
 
 - **Now:** CANN and the attention CANN on Burn, with random search and
   early stopping; networks trained elsewhere imported from ONNX for
-  inference (`prospicio_nn::onnx`, v0.9).
+  inference (`prospicio_nn::onnx`, v0.9); all of it in Python and R,
+  behind the bindings' default `nn` feature.
 - **Next:**
   1. Tabular MLPs with embeddings, and multi-task claim models.
-  2. R bindings for `prospicio-nn`, the Python ones done (`Cann`,
-     `AttentionCann`, `OnnxModel`, `OnnxPredictor` in
-     `prospicio.models`, behind the default `nn` feature).
-  3. Network artifacts (`to_json` / `from_json`), so fitted networks
+  2. Network artifacts (`to_json` / `from_json`), so fitted networks
      save, load and pickle like the GLM.
 - **v1.0:** networks behind the shared model protocol, in every front
   end.
