@@ -234,6 +234,8 @@ EventSet$from_long <- function(years, losses, n_years, seed) .Call(wrap__EventSe
 
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
+EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
+
 EventSet$grouped <- function(window_hours) .Call(wrap__EventSet__grouped, self, window_hours)
 
 EventSet$with_uniform_times <- function() .Call(wrap__EventSet__with_uniform_times, self)
@@ -318,6 +320,18 @@ XolLayer$with_sliding_scale <- function(commission, loss_ratio) .Call(wrap__XolL
 
 XolLayer$with_profit_commission <- function(share, allowance) .Call(wrap__XolLayer__with_profit_commission, self, share, allowance)
 
+XolLayer$with_profit_commission_carry_forward <- function(years) .Call(wrap__XolLayer__with_profit_commission_carry_forward, self, years)
+
+XolLayer$with_sliding_scale_carry_forward <- function(deficit, credit, years) .Call(wrap__XolLayer__with_sliding_scale_carry_forward, self, deficit, credit, years)
+
+XolLayer$profit_commission_carry <- function() .Call(wrap__XolLayer__profit_commission_carry, self)
+
+XolLayer$sliding_scale_carry <- function() .Call(wrap__XolLayer__sliding_scale_carry, self)
+
+XolLayer$profit_commissions_over <- function(ceded) .Call(wrap__XolLayer__profit_commissions_over, self, ceded)
+
+XolLayer$ceding_commissions_over <- function(ceded) .Call(wrap__XolLayer__ceding_commissions_over, self, ceded)
+
 XolLayer$with_swing_rating <- function(basic, lcm, minimum, maximum) .Call(wrap__XolLayer__with_swing_rating, self, basic, lcm, minimum, maximum)
 
 XolLayer$ceding_commission <- function() .Call(wrap__XolLayer__ceding_commission, self)
@@ -365,6 +379,10 @@ ReinsuranceTower$on_annual_grid <- function(annual) .Call(wrap__ReinsuranceTower
 ReinsuranceTower$apply_aggregate <- function(losses) .Call(wrap__ReinsuranceTower__apply_aggregate, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
+
+ReinsuranceTower$apply_term <- function(years) .Call(wrap__ReinsuranceTower__apply_term, self, years)
+
+ReinsuranceTower$apply_aggregate_term <- function(years) .Call(wrap__ReinsuranceTower__apply_aggregate_term, self, years)
 
 #' @export
 `$.ReinsuranceTower` <- function (self, name) { func <- ReinsuranceTower[[name]]; environment(func) <- environment(); func }

@@ -113,8 +113,10 @@ what it is aiming for by v1.0.
   - Contract terms on a layer, with `aggregate`'s definitions: premium
     as a rate on line, a rate or a deposit; flat and sliding-scale ceding
     commissions, profit commissions, swing rating; retro premiums.
-    (Also done: towers saved as JSON, seasonal event times, loss
-    corridors.)
+    Over a multi-year term (`Tower::apply_term`), profit commission
+    deficits and sliding scale deficits and credits carried forward,
+    to extinction or for a number of years. (Also done: towers saved as
+    JSON, seasonal event times, loss corridors.)
   - The occurrence exceedance (OEP) curve and occurrence PMLs for any
     count, exact and simulated; compound moments to third order and the
     moment approximations (normal, gamma, lognormal, shifted gamma and
@@ -143,10 +145,11 @@ what it is aiming for by v1.0.
     the two lines' losses in an event coupled by a copula; renewal claim
     counts, with any law for the waits between claims, and their eventual
     ruin by Wiener–Hopf.
-- **Next:** deficit and credit carry-forward in profit commissions and
-  sliding scales, once multi-year simulation exists. (The P&L ledger, the
-  last large item parked from `aggregate` parity, is done:
-  `docs/design/pnl.md`, PRs 1 to 6b and follow-ups 7a to 7c.)
+- **Next:** open. (Done: deficit and credit carry-forward in profit
+  commissions and sliding scales over multi-year terms,
+  `Tower::apply_term`, `docs/design/aggregate.md`; the P&L ledger, the
+  last large item parked from `aggregate` parity: `docs/design/pnl.md`,
+  PRs 1 to 6b and follow-ups 7a to 7c.)
 - **v1.0:** a reinsurance programme described once and applied to any
   loss source.
 

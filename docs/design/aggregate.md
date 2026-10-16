@@ -352,11 +352,10 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
     ceded grid. Tower documents write each term only when present
     (`ceding_commission`, `sliding_scale`, `profit_commission`, `swing`),
     so older documents load unchanged (format version 1).
-  - *Not done*: a deficit or credit carried forward between years in a
-    profit commission or sliding scale (simulated years are independent;
-    it needs multi-year simulation), and premium quoted as a rate of the
-    gross premium the programme itself prices (`aggregate` refuses that
-    loop too).
+  - *Not done*: premium quoted as a rate of the gross premium the
+    programme itself prices (`aggregate` refuses that loop too). The
+    deficit and credit carry-forward is done (below, "Contract terms over
+    several years").
   Tested: hand-worked years and `aggregate`'s own examples for each term,
   the refused combinations, every simulated year's components against
   the per-year functions with gross = ceded + net, the grid's
@@ -371,6 +370,65 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `ceding_commission_for`, `profit_commission_for` and
   `LossSensitivePremium`; R the same `with_*()` and `*_for()` functions
   and `retro_premium()`.
+- **Contract terms over several years (decided 2026-10-16).** A profit
+  commission or sliding scale may carry what a year could not absorb into
+  the next years of a term, which needs years in sequence on the same
+  simulated path. `aggregate` has no such term, so the definitions are
+  ours, written to match how treaty wordings state them:
+  - *Multi-year simulation*: `Tower::apply_term(&[EventSet])` takes one
+    event set per year, all with the same number of simulations, and
+    simulation `j` of every year is path `j`. The years are whatever the
+    caller gives: independent years (`EventSet::term_years(n)` splits one
+    simulation into `n` consecutive blocks, so path `j`'s year `t` is
+    simulation `t·n_paths + j` and replays alone), or years that share a
+    trend or a parameter drawn once per path. `apply_aggregate_term`
+    does the same on aggregate losses. The result has dimensions `["kind",
+    "layer", "year"]`, `apply`'s components once per year with the year
+    `1..=T`, so `select("year", ...)` takes one year and `aggregate(&["kind",
+    "layer"])` totals the term. Every year's ceded and net loss,
+    reinstatement and swing premium is what `apply` gives for that year
+    alone; only the carried terms read earlier years.
+  - *Profit commission deficits*
+    (`Layer::profit_commission_carry_forward(years)`): with `M = premium
+    (1 − allowance)` and `D` the deficit carried in, the year pays `share ×
+    max(M − ceded − D, 0)` and carries `max(ceded + D − M, 0)`. Carried to
+    extinction, the commissions telescope: `Σ PC_t = share × (Σ (M −
+    ceded_t) + D_T)`. Profit commissions carry no credits: a profit pays
+    out in its year.
+  - *Sliding scale deficits and credits*
+    (`Layer::sliding_scale_carry_forward(deficit, credit, years)`): the
+    year reads the scale at `(ceded + carried) / premium`; a deficit is
+    the part above the last anchor's loss ratio (where the commission is
+    at its minimum), a credit the part below the first anchor's (at its
+    maximum), carried as a negative amount. Either or both may be carried.
+  - *Oldest first, and a limit in years*: carried amounts are kept by the
+    year they arose in and used up oldest first, so what a year carries
+    out is its newest part. With `years = Some(n)` an amount from year `t`
+    can be used in years `t + 1` to `t + n`, then is dropped (a common
+    wording: "deficits carried forward for three years"); `None` carries
+    it to extinction. `years = Some(0)` is refused.
+  - *Elsewhere*: a single year (`apply`, `on_grid`, the P&L ledger) starts
+    with nothing carried, so the term changes nothing there. A flat
+    `ceding_commission` replaces a sliding scale and drops its carry.
+    `Layer::profit_commissions_over` and `ceding_commissions_over` give
+    the commissions over given ceded losses in consecutive years. Tower
+    documents write `"profit_commission_carry": {"years"}` and
+    `"sliding_scale_carry": {"deficit", "credit", "years"}` (`years` null
+    without limit) only when present, and a document with one is stamped
+    format version 2, the oldest that reads it, since a version 1 reader
+    would drop the carry; others stay version 1.
+  Tested (`prospicio-aggregate`'s `term` module): hand-worked paths
+  through each rule (to extinction, a one- and two-year limit, deficits
+  used oldest first, a sliding scale with deficits, credits and both),
+  every year of a term against `apply` on that year alone without a
+  carry, the telescoping identity on all 2,000 simulated paths of a
+  four-year term, the refused builders, and JSON round trips. Python
+  `Layer.with_profit_commission_carry_forward`,
+  `with_sliding_scale_carry_forward`, `profit_commissions_over`,
+  `ceding_commissions_over`, `Tower.apply_term`, `apply_aggregate_term`
+  and `EventSet.term_years`; R `with_profit_commission_carry_forward()`,
+  `with_sliding_scale_carry_forward()`, `profit_commissions_over()`,
+  `ceding_commissions_over()`, `apply_tower_term()` and `term_years()`.
 - **Towers are data.** `Tower::to_json` writes a programme as a versioned
   document (`"format": "risk_rs.tower"`, version 1): its stages in inuring
   order, each a list of layers with every term (basis, and for a surplus
@@ -1082,5 +1140,6 @@ copula, the t copula, a trigger outside `[0, 1]`).
    eventual ruin for renewal claims, see "Eventual ruin for renewal
    claims"); then the P&L ledger (`pnl` and `xpnl`), planned in
    `pnl.md`.
-2. Deficit and credit carry-forward in profit commissions and sliding
-   scales, once multi-year simulation exists.
+2. (Done: deficit and credit carry-forward in profit commissions and
+   sliding scales, over multi-year terms; see "Contract terms over
+   several years".)

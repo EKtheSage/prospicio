@@ -37,7 +37,9 @@ NULL
 #'   (`loss_corridor` is `c(lower, upper, retained)`, `ceding_commission` the
 #'   flat rate, `sliding_scale` a data frame of `commission` and `loss_ratio`
 #'   (or `NULL`), `profit_commission` `c(share, allowance)` and
-#'   `swing_rating` `c(basic, lcm, minimum, maximum)`; each empty when there
+#'   `swing_rating` `c(basic, lcm, minimum, maximum)`; `profit_commission_carry`
+#'   `list(years)` and `sliding_scale_carry` `list(deficit, credit, years)`
+#'   (`NULL` when nothing is carried, `years` `NULL` without limit); each empty when there
 #'   is none).
 #' @seealso [quota_share()] and [aggregate_stop_loss()] for the other contract
 #'   types, which are layers too; [with_loss_corridor()] for a corridor;
@@ -88,6 +90,17 @@ xol_layer <- S7::new_class(
     swing_rating = S7::new_property(S7::class_double, getter = function(self) {
       p <- self@ptr$swing_rating()
       if (length(p)) stats::setNames(p, c("basic", "lcm", "minimum", "maximum")) else p
+    }),
+    profit_commission_carry = S7::new_property(S7::class_any, getter = function(self) {
+      p <- self@ptr$profit_commission_carry()
+      if (!length(p)) return(NULL)
+      list(years = if (is.nan(p[[1]])) NULL else p[[1]])
+    }),
+    sliding_scale_carry = S7::new_property(S7::class_any, getter = function(self) {
+      p <- self@ptr$sliding_scale_carry()
+      if (!length(p)) return(NULL)
+      list(deficit = p[[1]] == 1, credit = p[[2]] == 1,
+           years = if (is.nan(p[[3]])) NULL else p[[3]])
     })
   ),
   constructor = function(name, limit, attachment, share = 1, aggregate_deductible = 0,
@@ -219,6 +232,65 @@ with_sliding_scale <- function(layer, commission, loss_ratio) {
 #' @export
 with_profit_commission <- function(layer, share, allowance = 0) {
   xol_layer(ptr = rust_result(layer@ptr$with_profit_commission(as.double(share), as.double(allowance))))
+}
+
+#' Deficits and credits carried over a contract term
+#'
+#' The same layer, carrying amounts between the years of a term
+#' ([apply_tower_term()]):
+#'
+#' - `with_profit_commission_carry_forward()`: a year whose ceded loss
+#'   exceeds `premium * (1 - allowance)` pays no profit commission and
+#'   carries the excess, which later years' profits cover before any
+#'   commission is paid.
+#' - `with_sliding_scale_carry_forward()`: deficits (ceded loss above the
+#'   last anchor's loss ratio), credits (below the first anchor's) or both.
+#'   Each year adds what was carried to its own ceded loss before the
+#'   commission is read off the scale, and carries what is then still beyond
+#'   the scale's ends.
+#'
+#' Amounts are used up oldest first. Set the profit commission or sliding
+#' scale first. A single year ([apply_tower()]) starts with nothing carried.
+#' `profit_commissions_over()` and `ceding_commissions_over()` give the
+#' commissions over consecutive years with the given ceded losses.
+#'
+#' @param layer An [xol_layer].
+#' @param years How many later years an amount may be carried into; `NULL`
+#'   (the default) until it is used up.
+#' @param deficit,credit Whether to carry deficits and credits.
+#' @param ceded Numeric vector of the layer's ceded loss in consecutive
+#'   years, at the placed share.
+#' @returns An [xol_layer]; for the `*_over()` functions, a numeric vector,
+#'   one commission per year.
+#' @export
+#' @examples
+#' qs <- with_premium_rate(quota_share("QS", 0.5), 1, 200)
+#' pc <- with_profit_commission_carry_forward(with_profit_commission(qs, 0.25, 0.1))
+#' profit_commissions_over(pc, c(120, 40))
+#' slid <- with_sliding_scale(qs, c(0.45, 0.25), c(0.60, 0.70))
+#' ceding_commissions_over(with_sliding_scale_carry_forward(slid), c(80, 55))
+with_profit_commission_carry_forward <- function(layer, years = NULL) {
+  xol_layer(ptr = rust_result(layer@ptr$with_profit_commission_carry_forward(nan_if_null(years))))
+}
+
+#' @rdname with_profit_commission_carry_forward
+#' @export
+with_sliding_scale_carry_forward <- function(layer, deficit = TRUE, credit = FALSE, years = NULL) {
+  xol_layer(ptr = rust_result(layer@ptr$with_sliding_scale_carry_forward(
+    isTRUE(deficit), isTRUE(credit), nan_if_null(years)
+  )))
+}
+
+#' @rdname with_profit_commission_carry_forward
+#' @export
+profit_commissions_over <- function(layer, ceded) {
+  layer@ptr$profit_commissions_over(as.double(ceded))
+}
+
+#' @rdname with_profit_commission_carry_forward
+#' @export
+ceding_commissions_over <- function(layer, ceded) {
+  layer@ptr$ceding_commissions_over(as.double(ceded))
 }
 
 #' Swing-rated premium
@@ -559,6 +631,43 @@ S7::method(apply_tower, reinsurance_tower) <- function(tower, events, ...) {
   }
   predictive_distribution(ptr = rust_result(ptr, s7_call()))
 }
+#' Reinsurance tower over a contract term
+#'
+#' Applies the tower to consecutive years of the same simulated paths:
+#' `years[[t]]` holds year `t`'s losses, and simulation `j` of every year
+#' belongs to path `j`. Each year's ceded and net loss and premiums are what
+#' [apply_tower()] gives for that year alone; a profit commission or sliding
+#' scale that carries deficits or credits forward
+#' ([with_profit_commission_carry_forward()]) reads what the path's earlier
+#' years left. [term_years()] splits one simulation into the years of a term.
+#'
+#' @param tower A [reinsurance_tower].
+#' @param years A list of [event_set]s, or of [predictive_distribution]s
+#'   (each simulation's total taken as one aggregate loss), one per year,
+#'   each with the same number of simulations.
+#' @returns A [predictive_distribution] with dimensions `kind`, `layer` and
+#'   `year`: each of [apply_tower()]'s components once per year, `year` from
+#'   1.
+#' @export
+#' @examples
+#' qs <- with_premium_rate(quota_share("QS", 1), 1, 100)
+#' qs <- with_profit_commission_carry_forward(with_profit_commission(qs, 0.25, 0.1))
+#' ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(30, 1), 3000, seed = 7)
+#' term <- apply_tower_term(reinsurance_tower(list(qs)), term_years(ev, 3))
+#' term@dims
+apply_tower_term <- function(tower, years) {
+  if (!is.list(years) || length(years) == 0) {
+    stop("years must be a non-empty list", call. = FALSE)
+  }
+  ptrs <- lapply(years, function(y) y@ptr)
+  ptr <- if (S7::S7_inherits(years[[1]], predictive_distribution)) {
+    tower@ptr$apply_aggregate_term(ptrs)
+  } else {
+    tower@ptr$apply_term(ptrs)
+  }
+  predictive_distribution(ptr = rust_result(ptr))
+}
+
 S7::method(print, reinsurance_tower) <- function(x, ...) {
   cat(sprintf("<reinsurance_tower> %s\n", paste(x@layer_names, collapse = ", ")))
   invisible(x)
