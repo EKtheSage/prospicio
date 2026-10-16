@@ -14,8 +14,8 @@ use prospicio_prob::{Distribution, PredictiveDistribution, Sampled};
 use prospicio_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ChainLadderFit, CurveShape,
     Development, DevelopmentColumn, ExpectedLoss, ExpectedLossFit, Long, Mack, MackBootstrap,
-    MackBootstrapFit, MackProcess, OdpBootstrap, OdpBootstrapFit, ProcessDistribution, Tail,
-    TailBondy, TailCurve, Triangle,
+    MackBootstrapFit, MackProcess, OdpBootstrap, OdpBootstrapFit, PatternKind, PatternWeight,
+    ProcessDistribution, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailCurve, Triangle,
 };
 
 use crate::sheet::{CellError, Grid, Value, position};
@@ -203,26 +203,108 @@ fn development(average: Average) -> Development {
     }
 }
 
+/// The `sigma` argument: how Mack's last sigma is filled in,
+/// "log-linear" (default, R's and chainladder-python's) or "mack" (Mack
+/// 1993).
+fn sigma(grid: &Grid) -> Result<SigmaInterpolation> {
+    match text_option(grid, "sigma")?.as_deref() {
+        None | Some("log-linear" | "loglinear" | "log_linear") => Ok(SigmaInterpolation::LogLinear),
+        Some("mack") => Ok(SigmaInterpolation::Mack),
+        Some(other) => Err(format!(
+            "sigma must be \"log-linear\" or \"mack\", got {other:?}"
+        )),
+    }
+}
+
+/// The `selected`, `kind` and `weight` arguments: factors chosen by the
+/// user, one cell per triangle column (blank keeps the estimate), as
+/// age-to-age factors ("ldf", the default), factors to ultimate ("cdf") or
+/// percents developed ("percent"), blended `weight * selected + (1 -
+/// weight) * estimated` (1, fully selected, if omitted). `None` when no
+/// factor is selected.
+fn selected(selected: &Grid, kind: &Grid, weight: &Grid) -> Result<Option<SelectedPattern>> {
+    if selected.is_blank() {
+        if !kind.is_blank() || !weight.is_blank() {
+            return Err("kind and weight need selected factors".into());
+        }
+        return Ok(None);
+    }
+    if selected.rows != 1 && selected.columns != 1 {
+        return Err("selected must be a row or a column, one cell per triangle column".into());
+    }
+    let kind = match text_option(kind, "kind")?.as_deref() {
+        None | Some("ldf" | "age-to-age") => PatternKind::AgeToAge,
+        Some("cdf" | "age-to-ultimate") => PatternKind::AgeToUltimate,
+        Some("percent" | "percent developed" | "percent_developed") => {
+            PatternKind::PercentDeveloped
+        }
+        Some(other) => {
+            return Err(format!(
+                "kind must be \"ldf\", \"cdf\" or \"percent\", got {other:?}"
+            ));
+        }
+    };
+    let mut values = Vec::new();
+    for (c, v) in selected.cells.iter().enumerate() {
+        match v {
+            Value::Number(x) => values.push((12 * (c as Lag + 1), *x)),
+            v if v.is_blank() => {}
+            other => {
+                return Err(format!(
+                    "selected {} must be a number, got {other:?}",
+                    c + 1
+                ));
+            }
+        }
+    }
+    let mut pattern = SelectedPattern::new(kind, values);
+    if !weight.is_blank() {
+        pattern.weight = PatternWeight::All(number(weight, "weight")?);
+    }
+    Ok(Some(pattern))
+}
+
+/// The development options of a chain-ladder function.
+fn development_with(
+    average_arg: &Grid,
+    selected_args: [&Grid; 3],
+    sigma_arg: &Grid,
+) -> Result<Development> {
+    let [s, kind, weight] = selected_args;
+    Ok(Development {
+        average: average(average_arg)?,
+        sigma_interpolation: sigma(sigma_arg)?,
+        pattern: selected(s, kind, weight)?,
+    })
+}
+
 /// The chain-ladder fit of a triangle argument and its options.
 fn chain_ladder(
     triangle_arg: &Grid,
-    average_arg: &Grid,
+    development: Development,
     tail_arg: &Grid,
 ) -> Result<ChainLadderFit> {
     let tri = triangle(triangle_arg)?;
     ChainLadder {
-        development: development(average(average_arg)?),
+        development,
         tail: tail(tail_arg)?,
     }
     .fit(&tri, COLUMN)
     .map_err(|e| e.to_string())
 }
 
+/// The chain-ladder fit of a vector function's arguments: `triangle,
+/// [average], [tail], [selected], [kind], [weight]`.
+fn chain_ladder_args(args: &[Grid]) -> Result<ChainLadderFit> {
+    let dev = development_with(&args[1], [&args[3], &args[4], &args[5]], &Grid::missing())?;
+    chain_ladder(&args[0], dev, &args[2])
+}
+
 /// Selected age-to-age factors, one per development column: the factors
 /// within the triangle, then the tail factor to ultimate (1 without a
 /// tail), so the row sits under the triangle's columns.
 pub fn cl_ldf(args: &[Grid]) -> Result<Grid> {
-    let fit = chain_ladder(&args[0], &args[1], &args[2])?;
+    let fit = chain_ladder_args(args)?;
     let mut ldf = fit.ldf().to_vec();
     ldf.push(fit.tail.factor);
     Ok(Grid::row(&ldf))
@@ -230,26 +312,27 @@ pub fn cl_ldf(args: &[Grid]) -> Result<Grid> {
 
 /// Factors from each development column's age to ultimate.
 pub fn cl_cdf(args: &[Grid]) -> Result<Grid> {
-    let fit = chain_ladder(&args[0], &args[1], &args[2])?;
+    let fit = chain_ladder_args(args)?;
     Ok(Grid::row(&fit.cdf))
 }
 
 /// Projected ultimate per origin, a column beside the triangle.
 pub fn cl_ultimate(args: &[Grid]) -> Result<Grid> {
-    let fit = chain_ladder(&args[0], &args[1], &args[2])?;
+    let fit = chain_ladder_args(args)?;
     Ok(Grid::column(&fit.ultimate))
 }
 
 /// Reserve (ultimate less latest, IBNR) per origin.
 pub fn cl_reserve(args: &[Grid]) -> Result<Grid> {
-    let fit = chain_ladder(&args[0], &args[1], &args[2])?;
+    let fit = chain_ladder_args(args)?;
     Ok(Grid::column(&fit.reserves()))
 }
 
 /// The chain-ladder exhibit: Origin, Latest, CDF, Ultimate, Reserve per
 /// origin, then a total row.
 pub fn cl_summary(args: &[Grid]) -> Result<Grid> {
-    let fit = chain_ladder(&args[0], &args[1], &args[2])?;
+    let dev = development_with(&args[1], [&args[4], &args[5], &args[6]], &Grid::missing())?;
+    let fit = chain_ladder(&args[0], dev, &args[2])?;
     let labels = origin_labels(&args[3], fit.origins.len())?;
     let reserves = fit.reserves();
     let mut rows = vec![
@@ -279,7 +362,8 @@ pub fn cl_summary(args: &[Grid]) -> Result<Grid> {
 /// The development exhibit: per link, the selected factor, the factor to
 /// ultimate, Mack's sigma and the factor's standard error, then the tail.
 pub fn cl_factors(args: &[Grid]) -> Result<Grid> {
-    let fit = chain_ladder(&args[0], &args[1], &args[2])?;
+    let dev = development_with(&args[1], [&args[3], &args[4], &args[5]], &args[6])?;
+    let fit = chain_ladder(&args[0], dev, &args[2])?;
     let ldf = fit.ldf();
     let n = ldf.len();
     let mut rows = vec![
@@ -309,7 +393,7 @@ pub fn cl_factors(args: &[Grid]) -> Result<Grid> {
 pub fn mack_summary(args: &[Grid]) -> Result<Grid> {
     let tri = triangle(&args[0])?;
     let fit = Mack {
-        development: development(average(&args[1])?),
+        development: development_with(&args[1], [&args[4], &args[5], &args[6]], &args[7])?,
         tail: tail(&args[2])?,
         ..Mack::default()
     }
@@ -580,6 +664,7 @@ fn mack_bootstrap_fit(
     average_arg: &Grid,
     tail_arg: &Grid,
     process_arg: &Grid,
+    sigma_arg: &Grid,
     max: usize,
 ) -> Result<MackBootstrapFit> {
     let tri = triangle(triangle_arg)?;
@@ -587,7 +672,10 @@ fn mack_bootstrap_fit(
         n_sims: count(sims, "sims", 10_000, max)?,
         seed: seed(seed_arg)?,
         process: mack_process(process_arg)?,
-        development: development(average(average_arg)?),
+        development: Development {
+            sigma_interpolation: sigma(sigma_arg)?,
+            ..development(average(average_arg)?)
+        },
         tail: tail(tail_arg)?,
         ..MackBootstrap::default()
     }
@@ -596,11 +684,11 @@ fn mack_bootstrap_fit(
 }
 
 /// Mack's bootstrap exhibit, laid out as `PRO.ODP`'s:
-/// `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins])`.
+/// `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])`.
 pub fn mack_bootstrap_summary(args: &[Grid]) -> Result<Grid> {
     let probabilities = percentiles(&args[3])?;
     let fit = mack_bootstrap_fit(
-        &args[0], &args[1], &args[2], &args[4], &args[5], &args[6], MAX_SIMS,
+        &args[0], &args[1], &args[2], &args[4], &args[5], &args[6], &args[8], MAX_SIMS,
     )?;
     let cl = &fit.mack.chain_ladder;
     let labels = origin_labels(&args[7], cl.origins.len())?;
@@ -608,7 +696,7 @@ pub fn mack_bootstrap_summary(args: &[Grid]) -> Result<Grid> {
 }
 
 /// Mack's bootstrap's simulated reserves, laid out as `PRO.ODP.SIMS`':
-/// `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins])`.
+/// `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])`.
 pub fn mack_bootstrap_sims(args: &[Grid]) -> Result<Grid> {
     let fit = mack_bootstrap_fit(
         &args[0],
@@ -617,6 +705,7 @@ pub fn mack_bootstrap_sims(args: &[Grid]) -> Result<Grid> {
         &args[3],
         &args[4],
         &args[5],
+        &args[7],
         MAX_SIM_ROWS,
     )?;
     let labels = origin_labels(&args[6], fit.mack.chain_ladder.origins.len())?;

@@ -17,16 +17,16 @@ category of Insert Function:
 
 | Function | Returns |
 |---|---|
-| `PRO.CL(triangle, [average], [tail], [origins])` | Origin, Latest, CDF, Ultimate, Reserve per origin, and a total row |
-| `PRO.CL.LDF(triangle, [average], [tail])` | Selected age-to-age factors, one per triangle column; the last is the tail factor |
-| `PRO.CL.CDF(triangle, [average], [tail])` | Age-to-ultimate factors, one per triangle column |
+| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight])` | Origin, Latest, CDF, Ultimate, Reserve per origin, and a total row |
+| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight])` | Selected age-to-age factors, one per triangle column; the last is the tail factor |
+| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-ultimate factors, one per triangle column |
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One column, one row per origin |
-| `PRO.CL.FACTORS(triangle, [average], [tail])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
-| `PRO.MACK(triangle, [average], [tail], [origins])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
+| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
+| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap: CL reserve, simulated mean, SD, CV and percentiles per origin, and the total |
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's simulated reserves: one row per simulation, a column per origin and the total |
-| `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins])` | Mack's bootstrap (England, Verrall and Wuthrich), laid out as `PRO.ODP` |
-| `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins])` | Its simulated reserves, laid out as `PRO.ODP.SIMS` |
+| `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap (England, Verrall and Wuthrich), laid out as `PRO.ODP` |
+| `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Its simulated reserves, laid out as `PRO.ODP.SIMS` |
 | `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method: exposure times the a priori loss ratio |
 | `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson |
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
@@ -39,9 +39,17 @@ category of Insert Function:
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
 omitted (none), a number (a constant factor to ultimate at the oldest age)
-or `"exponential"`, `"inverse_power"` or `"bondy"`. Mack's sigma is
-extrapolated log-linearly, as R's `MackChainLadder(est.sigma =
-"log-linear")`.
+or `"exponential"`, `"inverse_power"` or `"bondy"`. `sigma` is how Mack's
+last sigma is filled in: `"log-linear"` (default, R's
+`MackChainLadder(est.sigma = "log-linear")` and chainladder-python's) or
+`"mack"` (Mack 1993). `selected` is a row with a cell per triangle column,
+a blank keeping the estimated factor, as age-to-age factors (`kind`
+`"ldf"`, the default), factors to ultimate (`"cdf"`) or percents developed
+(`"percent"`), blended `weight * selected + (1 - weight) * estimated` (a
+`SelectedPattern` on `Development`, `reserving-v02.md` decision 12). On
+RAA, `sigma = "mack"` matches R's sigmas, their standard errors and the
+total Mack SE, and the selections match chainladder-python's
+`DevelopmentConstant` (`tests/mack_options.rs`).
 
 `PRO.ODP` wraps `OdpBootstrap::fit` (R's `BootChainLadder`): `sims`
 defaults to 10,000 (at most 1,000,000), `seed` to 0, `percentiles` to
@@ -182,6 +190,13 @@ real Excel.
     ticking Unblock; it does not by itself lift Excel's block on add-ins
     from the internet.
 
+17. **New arguments go last.** An option added to an existing function is
+    appended after its present arguments, so every saved formula still
+    means what it did (Excel passes an omitted argument as missing).
+    `call` treats arguments past those given as omitted, and
+    `tests/catalogue.rs` parses `src/xll.rs` to check that every export
+    takes exactly its catalogue entry's arguments.
+
 ## Parity plan
 
 The user's direction (2026-10-16): move toward parity with the Python and
@@ -190,8 +205,8 @@ model object, a NUTS sampler or a P&L ledger is not a range of cells. The
 order, one small PR each, those already done struck through:
 
 1. Reserving: ~~chain ladder, Mack~~, ~~ODP bootstrap and its draws~~,
-   ~~Mack's bootstrap and its draws~~; Mack's options (the sigma rule,
-   selected factors); ~~the expected-loss methods (expected loss,
+   ~~Mack's bootstrap and its draws~~; ~~Mack's options (the sigma rule,
+   selected factors)~~; ~~the expected-loss methods (expected loss,
    Bornhuetter-Ferguson, Benktander, Cape Cod) on a premium column~~; the
    one-year view (Merz-Wuthrich, the bootstraps' CDR); Clark's LDF and
    Cape Cod; triangle helpers (link ratios, incremental and cumulative,

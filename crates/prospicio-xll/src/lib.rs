@@ -50,6 +50,22 @@ const TRIANGLE: Arg = Arg {
     name: "triangle",
     help: "Cumulative values: one row per origin (oldest first), one column per age; blank where unobserved",
 };
+const SELECTED: Arg = Arg {
+    name: "selected",
+    help: "Selected factors, one cell per triangle column; a blank keeps the estimate",
+};
+const KIND: Arg = Arg {
+    name: "kind",
+    help: "How selected is expressed: \"ldf\" (age-to-age, default), \"cdf\" (to ultimate) or \"percent\" (developed)",
+};
+const WEIGHT: Arg = Arg {
+    name: "weight",
+    help: "Weight on the selected factors against the estimates, 0 to 1; 1 if omitted",
+};
+const SIGMA: Arg = Arg {
+    name: "sigma",
+    help: "How Mack's last sigma is filled in: \"log-linear\" (default) or \"mack\" (Mack 1993)",
+};
 const AVERAGE: Arg = Arg {
     name: "average",
     help: "\"volume\" (default), \"simple\" or \"regression\"",
@@ -144,49 +160,51 @@ pub static FUNCTIONS: &[Function] = &[
         symbol: "pro_cl",
         name: "PRO.CL",
         help: "Chain ladder exhibit: latest, CDF, ultimate and reserve per origin, with a total.",
-        args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS],
+        args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT],
         run: reserving::cl_summary,
     },
     Function {
         symbol: "pro_cl_ldf",
         name: "PRO.CL.LDF",
         help: "Selected age-to-age factors, one per triangle column; the last is the tail.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
         run: reserving::cl_ldf,
     },
     Function {
         symbol: "pro_cl_cdf",
         name: "PRO.CL.CDF",
         help: "Age-to-ultimate factors, one per triangle column.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
         run: reserving::cl_cdf,
     },
     Function {
         symbol: "pro_cl_ultimate",
         name: "PRO.CL.ULTIMATE",
         help: "Chain ladder ultimate per origin.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
         run: reserving::cl_ultimate,
     },
     Function {
         symbol: "pro_cl_reserve",
         name: "PRO.CL.RESERVE",
         help: "Chain ladder reserve (ultimate less latest) per origin.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
         run: reserving::cl_reserve,
     },
     Function {
         symbol: "pro_cl_factors",
         name: "PRO.CL.FACTORS",
         help: "Development exhibit: LDF, CDF, Mack sigma and standard error per link, and the tail.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT, SIGMA],
         run: reserving::cl_factors,
     },
     Function {
         symbol: "pro_mack",
         name: "PRO.MACK",
         help: "Mack exhibit: ultimate, reserve, process, parameter and total standard error and CV per origin, with a total.",
-        args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS],
+        args: &[
+            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+        ],
         run: reserving::mack_summary,
     },
     Function {
@@ -226,6 +244,7 @@ pub static FUNCTIONS: &[Function] = &[
             TAIL,
             MACK_PROCESS,
             ORIGINS,
+            SIGMA,
         ],
         run: reserving::mack_bootstrap_summary,
     },
@@ -241,6 +260,7 @@ pub static FUNCTIONS: &[Function] = &[
             TAIL,
             MACK_PROCESS,
             ORIGINS,
+            SIGMA,
         ],
         run: reserving::mack_bootstrap_sims,
     },
@@ -340,10 +360,22 @@ pub static FUNCTIONS: &[Function] = &[
 /// Runs the function exported as `symbol` on `args`, catching a panic so
 /// that it never unwinds into Excel. An error comes back as a single text
 /// cell starting with `#PROSPICIO!`, which shows the user why.
-pub fn call(symbol: &str, args: Vec<Grid>) -> Grid {
+///
+/// Arguments past those given are omitted ones, as Excel passes for an
+/// optional argument left out.
+pub fn call(symbol: &str, mut args: Vec<Grid>) -> Grid {
     let Some(f) = FUNCTIONS.iter().find(|f| f.symbol == symbol) else {
         return error_cell(&format!("no function {symbol}"));
     };
+    if args.len() > f.args.len() {
+        return error_cell(&format!(
+            "{} takes {} arguments, got {}",
+            f.name,
+            f.args.len(),
+            args.len()
+        ));
+    }
+    args.resize_with(f.args.len(), Grid::missing);
     match std::panic::catch_unwind(|| (f.run)(&args)) {
         Ok(Ok(grid)) => grid,
         Ok(Err(message)) => error_cell(&message),
