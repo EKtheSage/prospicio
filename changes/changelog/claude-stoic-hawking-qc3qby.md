@@ -130,4 +130,4 @@
   `attention_weights()`), and `onnx_model()`, `onnx_run()` and
   `onnx_predictor()` for networks trained elsewhere. The package builds
   Burn through the default `nn` feature and now needs Rust 1.92
-  (`SystemRequirements`).
+  (`SystemRequirements`) (#309).
