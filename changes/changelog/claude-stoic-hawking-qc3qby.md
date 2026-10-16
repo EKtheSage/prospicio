@@ -85,4 +85,4 @@
   Bühlmann–Straub's and Bühlmann–Gisler's hierarchical premiums, matching
   `actuar::cm` at `1e-10`. Python `prospicio.credibility.hierarchical_credibility`,
   `credibility_premiums`; R `hierarchical_credibility()`,
-  `credibility_premiums()`, `credibility_predictive()`.
+  `credibility_premiums()`, `credibility_predictive()` (#304).
