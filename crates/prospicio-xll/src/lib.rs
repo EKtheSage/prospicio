@@ -151,19 +151,19 @@ const ATTACHMENT: Arg = Arg {
 };
 const FAMILY: Arg = Arg {
     name: "family",
-    help: "pareto, lognormal, lognormal_cv, gamma, gamma_cv, weibull, loglogistic, inverse_gamma, inverse_gaussian, burr or gpd (see the README for p1, p2, p3)",
+    help: "pareto, lognormal, lognormal_cv, gamma, gamma_cv, weibull, loglogistic, inverse_gamma, inverse_gaussian, burr, gpd, piecewise_pareto or gen_pareto (see the README for p1, p2, p3)",
 };
 const P1: Arg = Arg {
     name: "p1",
-    help: "First parameter: Pareto t, lognormal meanlog, the mean (_cv families, inverse Gaussian), shape, Burr alpha or GPD xi",
+    help: "First parameter: Pareto t, lognormal meanlog, the mean (_cv families, inverse Gaussian), shape, Burr alpha, GPD xi, piecewise thresholds (a range) or gen_pareto t",
 };
 const P2: Arg = Arg {
     name: "p2",
-    help: "Second parameter: Pareto alpha, lognormal sdlog, the CV (_cv families), scale, inverse Gaussian shape, Burr gamma or GPD beta",
+    help: "Second parameter: Pareto alpha, lognormal sdlog, the CV (_cv families), scale, inverse Gaussian shape, Burr gamma, GPD beta, piecewise alphas (a range) or gen_pareto alpha_ini",
 };
 const P3: Arg = Arg {
     name: "p3",
-    help: "Third parameter: the Burr scale, or a Pareto truncation; omitted otherwise",
+    help: "Third parameter: the Burr scale, gen_pareto alpha_tail, a Pareto truncation, or a piecewise truncation and \"lp\" or \"wd\"; omitted otherwise",
 };
 const X: Arg = Arg {
     name: "x",
@@ -578,6 +578,13 @@ pub static FUNCTIONS: &[Function] = &[
         help: "Expected loss to the layer limit xs attachment per ground-up loss.",
         args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, P3],
         run: pricing::layer,
+    },
+    Function {
+        symbol: "pro_layer_var",
+        name: "PRO.LAYER.VAR",
+        help: "Variance of the loss to the layer limit xs attachment per ground-up loss.",
+        args: &[LIMIT, ATTACHMENT, FAMILY, P1, P2, P3],
+        run: pricing::layer_variance,
     },
     Function {
         symbol: "pro_layer_cv",
