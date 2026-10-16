@@ -22,10 +22,10 @@ use prospicio_prob::{
 
 use crate::sheet::{Grid, Value, position};
 
-type Result<T> = std::result::Result<T, String>;
+pub(crate) type Result<T> = std::result::Result<T, String>;
 
 /// One number argument, which must be a single value.
-fn scalar(grid: &Grid, name: &str) -> Result<f64> {
+pub(crate) fn scalar(grid: &Grid, name: &str) -> Result<f64> {
     match grid.as_scalar() {
         Some(Value::Number(x)) => Ok(*x),
         Some(v) if v.is_blank() => Err(format!("{name} is required")),
@@ -41,7 +41,7 @@ burr (alpha, gamma, scale), gpd (xi, beta), piecewise_pareto (thresholds, alphas
 [truncation, [\"lp\" or \"wd\"]]), gen_pareto (t, alpha_ini, alpha_tail)";
 
 /// The numbers of a range, in reading order, skipping blank cells.
-fn numbers(grid: &Grid, name: &str) -> Result<Vec<f64>> {
+pub(crate) fn numbers(grid: &Grid, name: &str) -> Result<Vec<f64>> {
     let mut out = Vec::with_capacity(grid.cells.len());
     for r in 0..grid.rows {
         for c in 0..grid.columns {
@@ -200,7 +200,13 @@ pub(crate) fn severity(family: &Grid, p1: &Grid, p2: &Grid, p3: &Grid) -> Result
 }
 
 /// One cell of a limit or attachment range: `None` for a blank.
-fn amount(v: &Value, name: &str, r: usize, c: usize, unlimited: bool) -> Result<Option<f64>> {
+pub(crate) fn amount(
+    v: &Value,
+    name: &str,
+    r: usize,
+    c: usize,
+    unlimited: bool,
+) -> Result<Option<f64>> {
     match v {
         Value::Number(x) => Ok(Some(*x)),
         v if v.is_blank() => Ok(None),
@@ -238,7 +244,7 @@ fn combined(a: &Grid, b: &Grid, names: (&str, &str)) -> Result<(usize, usize)> {
 }
 
 /// Cell `(r, c)` of `g` stretched along a side of length 1.
-fn at(g: &Grid, r: usize, c: usize) -> &Value {
+pub(crate) fn at(g: &Grid, r: usize, c: usize) -> &Value {
     g.get(
         if g.rows == 1 { 0 } else { r },
         if g.columns == 1 { 0 } else { c },
@@ -368,7 +374,12 @@ pub fn increased_limit_factor(args: &[Grid]) -> Result<Grid> {
 }
 
 /// `f(x)` over one range, blank where a cell is; `name` for errors.
-fn map1(xs: &Grid, name: &str, unlimited: bool, f: impl Fn(f64) -> Result<f64>) -> Result<Grid> {
+pub(crate) fn map1(
+    xs: &Grid,
+    name: &str,
+    unlimited: bool,
+    f: impl Fn(f64) -> Result<f64>,
+) -> Result<Grid> {
     let mut cells = Vec::with_capacity(xs.cells.len());
     for r in 0..xs.rows {
         for c in 0..xs.columns {
