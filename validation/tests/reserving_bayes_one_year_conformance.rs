@@ -48,11 +48,14 @@
 //! Every bound is at least the largest model's mean (or mean offset) plus
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
 //! 4.75, both GenIns under `BayesOdp`; gaps 0.071, `BayesBf`, and 0.455,
-//! RAA; Meyers' flagged gap 0.606, CSR), and every seed passes
+//! RAA; Meyers' flagged gap 0.606, CSR; the compartmental models' over
+//! seeds 0 to 9 only, for their cost, with their own bounds below), and
+//! every seed passes
 //! (`seed_sweep`, ignored: `SWEEP_SEEDS=20 cargo test --release -p
 //! prospicio-validation --features slow-bayes --test
 //! reserving_bayes_one_year_conformance -- --ignored seed_sweep
-//! --nocapture`; `SWEEP_MEYERS_ONLY=1` runs Meyers' models alone).
+//! --nocapture`; `SWEEP_MEYERS_ONLY=1` runs Meyers' models alone,
+//! `SWEEP_COMPARTMENTAL_ONLY=1` the compartmental models).
 
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -71,19 +74,22 @@ use prospicio_validation::{triangle, triangle_columns};
 const SIMS: usize = 10_000;
 /// A model's refit checks: the simulations refitted for the gap and the
 /// refit settings, the bounds on the root mean square gap, in units of
-/// the total's sd, where `k̂` is at most 0.7 and above it, and whether
-/// moment matching must rescue at least one simulation.
+/// the total's sd, where `k̂` is at most 0.7 and above it, whether
+/// moment matching must rescue at least one simulation, and the bound on
+/// the opening reserve's z score.
 #[derive(Clone, Copy)]
 struct Refits {
     sims: usize,
     gaps: (f64, f64),
     matches: bool,
+    opening: f64,
 }
 
 const REFITS: Refits = Refits {
     sims: 300,
     gaps: (0.08, 0.5),
     matches: true,
+    opening: 5.0,
 };
 /// Meyers' models, whose refits cost seconds and nearly all of whose
 /// simulations are flagged (a year cell has its origin's smallest
@@ -93,19 +99,28 @@ const MEYERS_REFITS: Refits = Refits {
     sims: 60,
     gaps: (0.08, 0.65),
     matches: true,
+    opening: 5.0,
 };
 /// The compartmental models on company 337, most of whose simulations are
 /// flagged; model 2's refits cost seconds each even with the short
-/// sampler, and moment matching rescues almost none of them.
+/// sampler, and moment matching rescues none of them. Over seeds 0 to 9
+/// the flagged gap is 0.255 (sd 0.040, largest 0.317) for model 1 and
+/// 0.403 (sd 0.111, largest 0.644) for model 2. The opening z score
+/// counts only the lifetime simulations' error, not the opening's own
+/// over the draws, each with its own effects for 1997 (1,200 draws), so
+/// it is wider: -1.03 (sd 1.43, lowest -3.21) and -0.77 (sd 1.33, lowest
+/// -3.30), bounded at 7.
 const COMPARTMENTAL_REFITS: Refits = Refits {
     sims: 30,
-    gaps: (1.0, 1.0),
+    gaps: (0.08, 0.45),
     matches: true,
+    opening: 7.0,
 };
 const COMPARTMENTAL_2_REFITS: Refits = Refits {
     sims: 6,
-    gaps: (1.0, 2.0),
+    gaps: (0.08, 0.9),
     matches: false,
+    opening: 7.0,
 };
 /// Fewest unflagged simulations whose gap is checked.
 const MIN_UNFLAGGED: usize = 10;
@@ -159,6 +174,7 @@ fn conform<F: Sync + Send>(
         sims: refit_sims,
         gaps,
         matches,
+        opening: opening_bound,
     } = refits;
     let only = OneYearRefit::ReweightOnly;
     // 1. The mean is zero.
@@ -172,7 +188,7 @@ fn conform<F: Sync + Send>(
     let n_life = reserves(&full.fit).n_sims() as f64;
     let opening_z = (opening - lifetime.mean()) / (lifetime.std_dev() / n_life.sqrt());
     assert!(
-        !strict || opening_z.abs() < 5.0,
+        !strict || opening_z.abs() < opening_bound,
         "{name}: opening z {opening_z}"
     );
     // 3. A seed replays the view: simulation i depends only on the seed

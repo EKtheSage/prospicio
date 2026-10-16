@@ -384,7 +384,9 @@ fn runtime() {
         };
         let (default, t_default) = view(two, sims, 0, OneYearRefit::default(), budget);
         println!(
-            "model {}: 10,000 simulations ReweightOnly {t_only:.1} s (flagged {:.3}); {sims}              simulations at the default with max_refits {budget:?} {t_default:.1} s (matched              {}, refitted {}, left unrefitted {})",
+            "model {}: 10,000 simulations ReweightOnly {t_only:.1} s (flagged {:.3}); {sims} \
+             simulations at the default with max_refits {budget:?} {t_default:.1} s (matched \
+             {}, refitted {}, left unrefitted {})",
             if two { 2 } else { 1 },
             only.flagged_share(),
             default.moment_matched.len(),

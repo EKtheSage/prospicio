@@ -37,7 +37,7 @@ when from experience, and which pricing method fits which scenario.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done except cyclic and monotone smooths: P-splines and tensor product smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf` and `Meyers` by PSIS reweighting with moment matching by default, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `Meyers`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -275,6 +275,16 @@ what it is aiming for by v1.0.
     origin's smallest variance); moment matching rescues 83% to 90% of
     them within about 0.08 sd of their refits, and the rest are
     refitted.
+  - The one-year view of Gesmann and Morris' compartmental models 1 and
+    2 (`reserving-bayes.md` PR 11, decision 20; `Compartmental::one_year`,
+    in Rust, Python and R): the effects of an origin or age with no
+    observed cell carried with each posterior draw, every effect stored
+    centred so that moment matching can follow the year. On company 337
+    about four in five simulations are flagged; matching rescues about
+    95% of model 1's within about 0.05 sd of their refits, and almost none
+    of model 2's, whose refits take about a minute each. A refit budget
+    (`max_refits`) bounds any model's view; its default for model 2 is
+    the user's (open decision 15).
   - Selected development patterns (`reserving-v02.md`, decision 12;
     branch `claude/selected-patterns`, in Rust, Python and R):
     `SelectedPattern` on `Development` as age-to-age factors, factors
@@ -295,10 +305,10 @@ what it is aiming for by v1.0.
   Rust, Python and R) and PR C (model 2, in Rust, Python and R) are
   done (the 200-triangle calibration study can now use `TriangleModel
   for Meyers`);
-  then the same one-year view for `Compartmental` (models 1 and 2)
-  through the generic interface (decision 17), with moment matching as
-  its default (the user's decision of 2026-10-15; `Meyers` has its view,
-  PR 10).
+  `Compartmental` has its one-year view too (PR 11); the refit cost of
+  model 2's view waits on the user (`reserving-bayes.md` open decision
+  15), and `Compartmental::fit_segments` with the backtest is
+  `reserving-compartmental.md` PR E.
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.

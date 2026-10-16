@@ -71,10 +71,13 @@ an affine map of their sampling scale and need no Jacobian; `Meyers`
 keeps such a copy beside its natural-scale posterior for its one-year
 view (see [Meyers' one-year view](/findings/meyers-one-year.md), where
 matching rescues 83% to 90% of the flagged simulations, fewer than
-here). `Compartmental` stores natural-scale values (exponentials,
-rates): a move can leave the support there, the ratio turns NaN and
-counts as a zero weight, and matching falls back to refits without
-saying so. A Jacobian left out cancels in the check that the year's log
+here). `Compartmental` keeps such a copy too, with every hierarchical
+effect stored centred (`u = τ z`, with its log Jacobian): on the
+non-centred scale matching rescued about 1 in 10 of model 1's flagged
+simulations, centred about 19 in 20, and model 2's none on either scale
+(see [the compartmental one-year view](/findings/compartmental-one-year.md)).
+An affine map is a good proposal only where the posterior is close to
+normal on the stored scale. A Jacobian left out cancels in the check that the year's log
 likelihood is the year's change to the log posterior; the score
 identity (the mean finite-difference score over the posterior draws is
 zero) catches it, at `z` 18 for draws stored as `exp` against 1.1 to 1.7
