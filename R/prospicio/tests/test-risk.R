@@ -115,6 +115,14 @@ me <- mean_excess(c(1, 2, 3, 4), 2)
 stopifnot(me$mean_excess == 1.5, me$n_above == 2)
 hx <- (1 - (seq_len(2000) - 0.5) / 2000)^-0.5
 stopifnot(abs(hill_estimator(hx, 200) - 0.5) < 0.02)
+p <- (seq_len(1000) - 0.5) / 1000
+bx <- ((1 - p)^(-1 / 2) - 1)^(1 / 1.5)
+td <- threshold_diagnostics(bx, c(1, 2, 1e9))
+stopifnot(nrow(td) == 3, td$n_above[1] == sum(bx > 1), td$n_above[3] == 0)
+# Against ismev::gpd.fit on the same data at u = 1 (validation/reference/evt_thresholds_r.csv).
+stopifnot(abs(td$xi[1] - 0.26834735586661257) < 1e-9)
+stopifnot(abs(td$xi_se[1] - 0.079570667971910328) < 1e-8)
+stopifnot(is.nan(td$xi[3]))
 
 # Exponential spectral, entropic, Esscher, MES, CoVaR.
 k <- 3

@@ -289,6 +289,185 @@ fn gams_match_mgcv() {
 }
 
 #[test]
+fn cyclic_gams_match_mgcv() {
+    use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
+    use prospicio_math::spline::{cyclic_bspline_basis, cyclic_difference_penalty};
+    use prospicio_models::Fitted;
+    // The data in validation/scripts/r_gam_cyclic.R.
+    let n = 300;
+    let (mut t, mut gauss, mut count) = (Vec::new(), Vec::new(), Vec::new());
+    for i in 1..=n {
+        let ti = ((37 * i) % 300) as f64 / 25.0 + 0.5 / 25.0;
+        let e = ((7919 * i) % 13) as f64 / 6.0 - 1.0;
+        let a = std::f64::consts::TAU * ti / 12.0;
+        t.push(ti);
+        gauss.push(2.0 + a.sin() + 0.5 * (2.0 * a).cos() + 0.4 * e);
+        count.push(
+            ((0.5 + 0.6 * a.sin()).exp() + 1.2 * e + 1.5)
+                .round()
+                .max(0.0),
+        );
+    }
+    let names = vec!["(Intercept)".to_string(), "t".to_string()];
+    let design = Design::new(names.clone(), vec![vec![1.0; n], t]).unwrap();
+    let ends = Design::new(names, vec![vec![1.0; 2], vec![0.0, 12.0]]).unwrap();
+    let fit_case = |case: &str| -> GamFit {
+        let spline = PSpline::cyclic("t");
+        let spline = if case == "cyclic_range_gaussian" {
+            spline
+        } else {
+            spline.period(0.0, 12.0)
+        };
+        let (glm, y) = if case.ends_with("poisson") {
+            (Glm::new(Family::Poisson, Link::Log), &count)
+        } else {
+            (Glm::new(Family::Gaussian, Link::Identity), &gauss)
+        };
+        let gam = Gam::new(glm, vec![spline]);
+        let gam = if case.starts_with("reml_") {
+            gam.smoothing(Smoothing::Reml)
+        } else {
+            gam
+        };
+        gam.fit(&design, y)
+            .unwrap_or_else(|e| panic!("{case}: {e}"))
+    };
+    let penalty = cyclic_difference_penalty(10, 2);
+    let mut fits: Vec<(String, GamFit)> = Vec::new();
+    check(&reference("gam_cyclic_mgcv.csv"), |c| {
+        let name = c.get("case");
+        if name == "basis" {
+            let arg = c.get("arg");
+            let (a, b) = arg.split_once(';')?;
+            return match c.get("quantity") {
+                "raw" => {
+                    let x: f64 = a.parse().ok()?;
+                    Some(cyclic_bspline_basis(x, 0.0, 12.0, 10, 3)[b.parse::<usize>().ok()?])
+                }
+                "penalty" => {
+                    Some(penalty[a.parse::<usize>().ok()? * 10 + b.parse::<usize>().ok()?])
+                }
+                _ => None,
+            };
+        }
+        if !fits.iter().any(|(n, _)| n == name) {
+            fits.push((name.to_string(), fit_case(name)));
+        }
+        let fit = &fits.iter().find(|(n, _)| n == name).unwrap().1;
+        match c.get("quantity") {
+            "deviance" => Some(fit.deviance()),
+            "edf" => Some(fit.edf()),
+            "scale" => Some(fit.dispersion()),
+            "score" => Some(fit.score()),
+            "reml_scale" => fit.reml_scale(),
+            "fitted" => Some(fit.fitted()[c.number("arg")? as usize]),
+            "predict" => {
+                let p = fit.predict(&ends).ok()?;
+                Some(if c.get("arg") == "0" { p[0] } else { p[1] })
+            }
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn monotone_gams_match_scam() {
+    use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
+    use prospicio_models::Fitted;
+    // The data in validation/scripts/r_gam_monotone.R.
+    let n = 300;
+    let logistic = |v: f64| 1.0 / (1.0 + (-v).exp());
+    let (mut x, mut rise, mut fall) = (Vec::new(), Vec::new(), Vec::new());
+    for i in 1..=n {
+        let xi = (((37 * i) % 300) as f64 + 0.5) / 300.0;
+        let e = ((7919 * i) % 13) as f64 / 6.0 - 1.0;
+        x.push(xi);
+        rise.push(1.0 + 2.0 * logistic(10.0 * (xi - 0.5)) + 0.3 * e);
+        fall.push(
+            ((2.5 - 2.0 * logistic(12.0 * (xi - 0.4))).exp() + 1.5 * e)
+                .round()
+                .max(0.0),
+        );
+    }
+    let design = Design::new(
+        vec!["(Intercept)".to_string(), "x".to_string()],
+        vec![vec![1.0; n], x],
+    )
+    .unwrap();
+    let cases = reference("gam_monotone_scam.csv");
+    let lambda_of = |case: &str| -> f64 {
+        cases
+            .iter()
+            .find(|c| c.get("case") == case && c.get("quantity") == "lambda")
+            .and_then(|c| c.number("expected"))
+            .unwrap()
+    };
+    let fit_case = |case: &str| -> GamFit {
+        // An exact_ case is the selected fit, against the refined optimum.
+        let case = case.strip_prefix("exact_").unwrap_or(case);
+        let (glm, y, spline) = if case.starts_with("mpi") {
+            (
+                Glm::new(Family::Gaussian, Link::Identity),
+                &rise,
+                PSpline::increasing("x"),
+            )
+        } else {
+            (
+                Glm::new(Family::Poisson, Link::Log),
+                &fall,
+                PSpline::decreasing("x"),
+            )
+        };
+        let gam = Gam::new(glm, vec![spline]);
+        let gam = if case.ends_with("fixed") {
+            gam.smoothing(Smoothing::Fixed(vec![lambda_of(case)]))
+        } else {
+            gam
+        };
+        gam.fit(&design, y)
+            .unwrap_or_else(|e| panic!("{case}: {e}"))
+    };
+    let mut fits: Vec<(String, GamFit)> = Vec::new();
+    check(&cases, |c| {
+        let name = c.get("case");
+        if !fits.iter().any(|(n, _)| n == name) {
+            fits.push((name.to_string(), fit_case(name)));
+        }
+        let fit = &fits.iter().find(|(n, _)| n == name).unwrap().1;
+        match c.get("quantity") {
+            "lambda" => Some(fit.lambdas()[0]),
+            "deviance" => Some(fit.deviance()),
+            "edf" => Some(fit.edf()),
+            "score" => Some(fit.score()),
+            "scale" => Some(fit.dispersion()),
+            "fitted" => Some(fit.fitted()[c.number("arg")? as usize]),
+            "coef" => Some(fit.coefficients()[c.number("arg")? as usize]),
+            _ => None,
+        }
+    });
+    // Monotone in x, inside the data's range and past it (where the
+    // smooth holds its end value).
+    for (name, fit) in &fits {
+        let grid: Vec<f64> = (0..=200).map(|i| f64::from(i) / 100.0 - 0.5).collect();
+        let g = Design::new(
+            vec!["(Intercept)".to_string(), "x".to_string()],
+            vec![vec![1.0; 201], grid],
+        )
+        .unwrap();
+        let p = fit.predict(&g).unwrap();
+        let up = name.trim_start_matches("exact_").starts_with("mpi");
+        assert!(
+            p.windows(2).all(|w| if up {
+                w[1] >= w[0] - 1e-12
+            } else {
+                w[1] <= w[0] + 1e-12
+            }),
+            "{name} is not monotone"
+        );
+    }
+}
+
+#[test]
 fn mcmc_diagnostics_match_posterior() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/mcmc_chains.csv");
     let text = std::fs::read_to_string(path).expect("mcmc_chains.csv");

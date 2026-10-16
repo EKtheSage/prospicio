@@ -7115,9 +7115,15 @@ class Gam:
     ----------
     glm : Glm
         Family, link and dispersion.
-    smooths : list of str or (str, int)
+    smooths : list of str, (str, int) or dict
         The design columns to smooth, optionally with the number of basis
-        functions (10 by default).
+        functions (10 by default), or a dict ``{"column": ..., "n_basis":
+        ..., "bs": ..., "period": ...}``: ``bs`` is ``"ps"`` (the default)
+        or ``"cp"`` for a cyclic smooth (mgcv's ``bs = "cp"``), whose ends
+        meet over ``period``, a ``(lo, hi)`` pair (the data's range when
+        left out), or ``"mpi"`` / ``"mpd"`` for a monotone increasing or
+        decreasing smooth (scam's), which takes GCV, UBRE or fixed
+        smoothing but not REML.
     smoothing : str or list of float, default "auto"
         ``"auto"`` (UBRE for a fixed dispersion, GCV otherwise), ``"gcv"``,
         ``"ubre"``, ``"reml"`` (mgcv's ``method = "REML"``, estimating an
@@ -16497,7 +16503,7 @@ class StudentTCopula:
 class TabulatedCurve:
     """
     A tabulated exposure curve: points ``(x, G(x))`` from ``(0, 0)`` to
-    ``(1, 1)``, interpolated linearly, as published curves are given
+    ``(1, 1)``, interpolated linearly or log-log, as published curves are given
     (Salzmann's homeowners scale, Ludwig's curves, ISO PSOLD tables, a
     reinsurer's own).
     
@@ -16507,12 +16513,22 @@ class TabulatedCurve:
     mean rate is the first chord's, ``x1 / G(x1)``, so a table needs fine
     first points for the expected loss to be right.
     
+    With ``interpolation="log-log"`` the curve runs as a power law between
+    points (straight on log-log axes), ``G(x) = G_k (x / x_k) ** p_k``, which
+    follows a curve's bend between sparse points better than a chord; the
+    first piece, from ``(0, 0)``, stays straight. The interpolated curve must
+    be concave, so the elasticities ``p_k`` may not rise from piece to piece:
+    a table with a total-loss mass at the top (the Swiss Re curves with ``c``
+    up to 3, read at a few points) fails and keeps linear interpolation. The
+    destruction rate is then continuous within each piece past the first.
+    
     Parameters
     ----------
     x : list of float
         Increasing from 0 to 1.
     g : list of float
         ``G(x)``, from 0 to 1.
+    interpolation : {"linear", "log-log"}, default "linear"
     
     Raises
     ------
@@ -16527,8 +16543,8 @@ class TabulatedCurve:
     >>> round(t.curve([0.3])[0], 12), t.mean_rate()
     (0.6, 0.25)
     """
-    def __getnewargs__(self, /) -> tuple[list[float], list[float]]: ...
-    def __new__(cls, /, x: Sequence[float], g: Sequence[float]) -> TabulatedCurve: ...
+    def __getnewargs__(self, /) -> tuple[list[float], list[float], str]: ...
+    def __new__(cls, /, x: Sequence[float], g: Sequence[float], interpolation: str = "linear") -> TabulatedCurve: ...
     def __repr__(self, /) -> str: ...
     def curve(self, /, x: Sequence[float]) -> list[float]:
         """
@@ -16573,6 +16589,12 @@ class TabulatedCurve:
     def g(self, /) -> list[float]:
         """
         The table's ``G(x)``.
+        """
+    @property
+    def interpolation(self, /) -> str:
+        """
+        How the curve runs between its points: ``"linear"`` or
+        ``"log-log"``.
         """
     def layer_share(self, /, limit: float, attachment: float, mpl: float) -> float:
         """
@@ -20806,6 +20828,42 @@ def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     >>> w = stacking_weights([[-0.1, -0.1, -3.0, -3.0], [-3.0, -3.0, -0.1, -0.1]])
     >>> [round(x, 9) for x in w]
     [0.5, 0.5]
+    """
+
+def threshold_diagnostics(draws: Sequence[float], thresholds: Sequence[float]) -> dict:
+    """
+    Threshold diagnostics for peaks over threshold: at each threshold the
+    mean excess and the generalized Pareto fitted to the exceedances, with
+    standard errors (the numbers behind ``ismev``'s ``mrl.plot`` and
+    ``gpd.fitrange``).
+    
+    Above a threshold where a GPD fits, the mean excess is linear in the
+    threshold and the shape ``xi`` and modified scale ``beta - xi * u`` are
+    constant up to their sampling error: pick the lowest threshold above
+    which they are stable, then fit a :class:`PotTail` there. Standard
+    errors come from the observed information and hold for ``xi > -0.5``.
+    A threshold with too few values above it gives NaN where it cannot
+    estimate (2 for the mean excess's standard error, 3 for the GPD).
+    
+    Parameters
+    ----------
+    draws : list of float
+    thresholds : list of float
+    
+    Returns
+    -------
+    dict of str to list
+        Columns ``threshold``, ``n_above``, ``mean_excess``,
+        ``mean_excess_se``, ``xi``, ``xi_se``, ``beta``,
+        ``modified_scale`` and ``modified_scale_se``, one entry per
+        threshold (``pandas.DataFrame`` takes it as is).
+    
+    Examples
+    --------
+    >>> from prospicio.risk import threshold_diagnostics
+    >>> d = threshold_diagnostics([1.0, 2.0, 3.0, 4.0, 5.0], [2.5])
+    >>> d["n_above"], d["mean_excess"]
+    ([3], [1.5])
     """
 
 def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], list[int]]]:

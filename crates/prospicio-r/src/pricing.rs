@@ -11,7 +11,7 @@ use prospicio_pricing::experience::{
     LargeLoss, Prepared, Trend, YearBasis,
 };
 use prospicio_pricing::exposure::{
-    ExposureCurve, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve,
+    ExposureCurve, Interpolation, Mbbefd as MbbefdInner, SeverityCurve, TabulatedCurve,
 };
 use prospicio_pricing::layer::XsLayer;
 use prospicio_pricing::natural::{
@@ -395,7 +395,7 @@ impl Mbbefd {
     }
 }
 
-/// A tabulated exposure curve, interpolated linearly.
+/// A tabulated exposure curve, interpolated linearly or log-log.
 #[extendr]
 pub(crate) struct Tabulated {
     pub(crate) inner: TabulatedCurve,
@@ -403,10 +403,26 @@ pub(crate) struct Tabulated {
 
 #[extendr]
 impl Tabulated {
-    fn new(x: &[f64], g: &[f64]) -> Result<Self> {
+    fn new(x: &[f64], g: &[f64], interpolation: &str) -> Result<Self> {
+        let how = match interpolation {
+            "linear" => Interpolation::Linear,
+            "log-log" => Interpolation::LogLog,
+            other => {
+                return Err(Error::Other(format!(
+                    "interpolation must be \"linear\" or \"log-log\", not {other:?}"
+                )));
+            }
+        };
         Ok(Self {
-            inner: TabulatedCurve::new(x, g).map_err(to_r)?,
+            inner: TabulatedCurve::with_interpolation(x, g, how).map_err(to_r)?,
         })
+    }
+
+    fn interpolation(&self) -> &'static str {
+        match self.inner.interpolation() {
+            Interpolation::Linear => "linear",
+            Interpolation::LogLog => "log-log",
+        }
     }
 
     fn from_severity(severity: Robj, mpl: f64, points: f64) -> Result<Self> {

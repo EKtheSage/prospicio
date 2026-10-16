@@ -288,3 +288,4 @@ reference:
       - risk.PotTail
       - risk.mean_excess
       - risk.hill
+      - risk.threshold_diagnostics

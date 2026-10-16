@@ -698,3 +698,33 @@ mean_excess <- function(x, thresholds) {
 #' @rdname tail_diagnostics
 #' @export
 hill_estimator <- function(x, k) rust_result(hill_rust(as.double(x), as.double(k)))
+
+#' Threshold diagnostics for peaks over threshold
+#'
+#' At each threshold, the mean excess and the generalized Pareto fitted to
+#' the exceedances, with standard errors: the numbers behind the mean
+#' residual life plot and the parameter stability plots of
+#' `ismev::mrl.plot()` and `ismev::gpd.fitrange()`. Above a threshold where
+#' a GPD fits, the mean excess is linear in the threshold and the shape `xi`
+#' and modified scale `beta - xi * u` are constant up to their sampling
+#' error: pick the lowest threshold above which they are stable, then fit
+#' [pot_tail()] there. Standard errors come from the observed information
+#' and hold for `xi > -0.5`.
+#'
+#' @param x Numeric vector of losses or draws.
+#' @param thresholds Thresholds.
+#' @returns A data frame with one row per threshold: `threshold`, `n_above`,
+#'   `mean_excess`, `mean_excess_se` (the standard deviation of the
+#'   exceedances over `sqrt(n_above)`), `xi`, `xi_se`, `beta`,
+#'   `modified_scale` and `modified_scale_se`. Fields that cannot be
+#'   estimated (fewer than 2 values above for the standard error of the mean
+#'   excess, 3 for the GPD) are `NaN`.
+#' @seealso [mean_excess()], [hill_estimator()], [pot_tail()]
+#' @export
+#' @examples
+#' p <- (seq_len(2000) - 0.5) / 2000
+#' x <- ((1 - p)^(-1 / 2) - 1)^(1 / 1.5) # a Burr: xi tends to 1/3
+#' threshold_diagnostics(x, c(0.5, 1, 2))
+threshold_diagnostics <- function(x, thresholds) {
+  as.data.frame(threshold_diagnostics_rust(as.double(x), as.double(thresholds)))
+}

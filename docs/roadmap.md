@@ -36,7 +36,7 @@ when from experience, and which pricing method fits which scenario.
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C- and D-vine copulas (#261, #262) |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
-| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done except cyclic and monotone smooths: P-splines and tensor product smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
+| v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
 | v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp` and `BayesBf` by PSIS reweighting, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
@@ -91,10 +91,12 @@ what it is aiming for by v1.0.
   - Risk measures and distortions, copulas (Gaussian, t, Archimedean,
     nested Archimedean, C- and D-vines)
     with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
-    others), EVT (GPD, POT, Hill); TVaR of a grid and `tvar_threshold`.
+    others), EVT (GPD, POT, Hill, and threshold diagnostics: the mean
+    excess and the GPD's shape and modified scale at each threshold with
+    standard errors, as R's `ismev`); TVaR of a grid and `tvar_threshold`.
   - `Discrete`, a distribution on finitely many values of either sign,
     for the P&L ledger's rows (`docs/design/pnl.md`).
-- **Next:** threshold diagnostics for EVT.
+- **Next:** open.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
@@ -164,9 +166,9 @@ what it is aiming for by v1.0.
     indication by the loss ratio and pure premium methods with credibility
     against a complement (`docs/design/ratemaking.md`). This finishes the
     v0.6 pricing scope.
-- **Next:**
-  1. Log-log interpolation for tabulated curves (the tilted spread within
-     bands is done).
+  - Log-log interpolation of tabulated exposure curves, where it keeps
+    the curve concave.
+- **Next:** open.
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)
@@ -298,9 +300,10 @@ what it is aiming for by v1.0.
 
 - **Now:** families, links, `Terms` to `Design`, metrics, resampling,
   tuning, `compare`, stacking, monitoring, simulation from means.
+  The model artifact format is decided: versioned JSON with one
+  envelope and per-format versions (`docs/design/models.md`).
 - **Next:**
-  1. Decide the model artifact format (`docs/design/models.md`).
-  2. Survival models (Kaplan–Meier, Cox, parametric), for lapse and
+  1. Survival models (Kaplan–Meier, Cox, parametric), for lapse and
      claim-closure models. Not urgent while claim-level reserving is
      parked.
 - **v1.0:** one model protocol for every engine, native or delegated.
@@ -308,10 +311,10 @@ what it is aiming for by v1.0.
 ### `prospicio-glm` (Models lane)
 
 - **Now:** GLM by IRLS, Tweedie with power profiling, elastic net with a
-  cross-validated path, robust covariance, GAM with P-splines and tensor
-  product smooths (GCV/UBRE and REML).
-- **Next:** cyclic and monotone smooths. This completes the GAM scope of
-  v0.6.
+  cross-validated path, robust covariance, GAM with P-splines, tensor
+  product, cyclic and monotone smooths (GCV/UBRE and REML; monotone ones
+  GCV/UBRE, as scam). This completes the GAM scope of v0.6.
+- **Next:** open.
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.
 
 ### `prospicio-nn` (Models lane, opt-in)

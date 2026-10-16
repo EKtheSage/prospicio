@@ -503,6 +503,8 @@ fn gam_fit_design(
     power: f64,
     smooths: Vec<String>,
     n_basis: &[f64],
+    bs: Vec<String>,
+    periods: &[f64],
     smoothing: &str,
     lambdas: &[f64],
     tensors: List,
@@ -516,13 +518,38 @@ fn gam_fit_design(
         dispersion_value,
         base.dispersion,
     )?);
-    if n_basis.len() != smooths.len() {
-        return Err(Error::Other("give one n_basis per smooth".into()));
+    if n_basis.len() != smooths.len()
+        || bs.len() != smooths.len()
+        || periods.len() != 2 * smooths.len()
+    {
+        return Err(Error::Other(
+            "give one n_basis, bs and period per smooth".into(),
+        ));
     }
     let splines = smooths
         .iter()
-        .zip(n_basis)
-        .map(|(s, &k)| Ok(PSpline::new(s).n_basis(whole(k, "n_basis")? as usize)))
+        .enumerate()
+        .map(|(i, s)| {
+            let (lo, hi) = (periods[2 * i], periods[2 * i + 1]);
+            let spline = match (bs[i].as_str(), lo.is_nan()) {
+                ("ps", true) => PSpline::new(s),
+                ("cp", true) => PSpline::cyclic(s),
+                ("cp", false) => PSpline::cyclic(s).period(lo, hi),
+                ("mpi", true) => PSpline::increasing(s),
+                ("mpd", true) => PSpline::decreasing(s),
+                ("ps" | "mpi" | "mpd", false) => {
+                    return Err(Error::Other(format!(
+                        "smooth {s}: a period needs bs = \"cp\""
+                    )));
+                }
+                (other, _) => {
+                    return Err(Error::Other(format!(
+                        "bs must be \"ps\", \"cp\", \"mpi\" or \"mpd\", not {other:?}"
+                    )));
+                }
+            };
+            Ok(spline.n_basis(whole(n_basis[i], "n_basis")? as usize))
+        })
         .collect::<Result<Vec<_>>>()?;
     let smoothing = match smoothing {
         "auto" => Smoothing::Auto,

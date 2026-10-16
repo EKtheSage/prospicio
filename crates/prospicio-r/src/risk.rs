@@ -668,6 +668,28 @@ fn mean_excess_rust(draws: &[f64], thresholds: &[f64]) -> List {
     )
 }
 
+/// Threshold diagnostics at each threshold: `list(threshold, n_above,
+/// mean_excess, mean_excess_se, xi, xi_se, beta, modified_scale,
+/// modified_scale_se)`.
+#[extendr]
+fn threshold_diagnostics_rust(draws: &[f64], thresholds: &[f64]) -> List {
+    let rows = prospicio_prob::evt::threshold_diagnostics(draws, thresholds);
+    let col = |f: fn(&prospicio_prob::evt::ThresholdDiagnostic) -> f64| {
+        rows.iter().map(f).collect::<Vec<_>>()
+    };
+    list!(
+        threshold = col(|r| r.threshold),
+        n_above = col(|r| r.n_above as f64),
+        mean_excess = col(|r| r.mean_excess),
+        mean_excess_se = col(|r| r.mean_excess_se),
+        xi = col(|r| r.xi),
+        xi_se = col(|r| r.xi_se),
+        beta = col(|r| r.beta),
+        modified_scale = col(|r| r.modified_scale),
+        modified_scale_se = col(|r| r.modified_scale_se)
+    )
+}
+
 /// Hill estimates of the tail index for each `k`.
 #[extendr]
 fn hill_rust(draws: &[f64], ks: &[f64]) -> Result<Vec<f64>> {
@@ -689,6 +711,7 @@ extendr_module! {
     fn gpd_mle;
     fn mean_excess_rust;
     fn hill_rust;
+    fn threshold_diagnostics_rust;
     impl EvtTail;
     impl RiskDistortion;
     impl RiskCopula;

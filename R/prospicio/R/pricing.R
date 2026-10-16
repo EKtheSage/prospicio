@@ -526,13 +526,22 @@ rate_quantile <- function(curve, u) curve@ptr$rate_quantile(as.double(u))
 #' Tabulated exposure curve
 #'
 #' An exposure curve from a published table of points `(x, G(x))` from
-#' `(0, 0)` to `(1, 1)`, interpolated linearly: Salzmann's homeowners scale,
+#' `(0, 0)` to `(1, 1)`, interpolated linearly (or log-log): Salzmann's homeowners scale,
 #' Ludwig's curves, ISO PSOLD tables or a reinsurer's own. The table must be
 #' concave (its slopes never increase). Its destruction rate is discrete:
 #' the points' `x` with probabilities from the drops in slope, and a total
 #' loss with probability last slope over first. Its mean rate (`curve@mean`)
 #' is the first chord's, `x1 / G(x1)`, so a table needs fine first points
 #' for the expected loss to be right.
+#'
+#' With `interpolation = "log-log"` the curve runs as a power law between
+#' points (straight on log-log axes), `G(x) = G_k (x / x_k)^p_k`, which
+#' follows a curve's bend between sparse points better than a chord; the
+#' first piece, from `(0, 0)`, stays straight. The interpolated curve must be
+#' concave, so the elasticities `p_k` may not rise from piece to piece: a
+#' table with a total-loss mass at the top (the Swiss Re curves with `c` up
+#' to 3, read at a few points) fails and keeps linear interpolation. The
+#' destruction rate is then continuous within each piece past the first.
 #'
 #' Works with [exposure_curve()], [exposure_layer_share()] and
 #' [rate_quantile()], like an [mbbefd] curve.
@@ -544,13 +553,16 @@ rate_quantile <- function(curve, u) curve@ptr$rate_quantile(as.double(u))
 #'
 #' @param x Increasing from 0 to 1.
 #' @param g `G(x)`, from 0 to 1.
+#' @param interpolation `"linear"` (the default) or `"log-log"`.
 #' @param ptr Internal.
-#' @returns A `tabulated_curve` object with properties `x`, `g` and `mean`.
+#' @returns A `tabulated_curve` object with properties `x`, `g`, `mean` and
+#'   `interpolation`.
 #' @export
 #' @examples
 #' t <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1))
 #' exposure_curve(t, 0.3)
 #' t@mean
+#' exposure_curve(tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1), "log-log"), 0.3)
 #' s <- tabulated_curve_from_severity(lognormal_from_mean_cv(1e5, 2), 1e6)
 #' exposure_curve(s, 0.5)
 tabulated_curve <- S7::new_class(
@@ -560,10 +572,16 @@ tabulated_curve <- S7::new_class(
     ptr = S7::new_S3_class("Tabulated"),
     x = S7::new_property(S7::class_double, getter = function(self) self@ptr$x()),
     g = S7::new_property(S7::class_double, getter = function(self) self@ptr$g()),
-    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean())
+    mean = S7::new_property(S7::class_double, getter = function(self) self@ptr$mean()),
+    interpolation = S7::new_property(
+      S7::class_character, getter = function(self) self@ptr$interpolation()
+    )
   ),
-  constructor = function(x, g, ptr = NULL) {
-    if (is.null(ptr)) ptr <- rust_result(Tabulated$new(as.double(x), as.double(g)))
+  constructor = function(x, g, interpolation = c("linear", "log-log"), ptr = NULL) {
+    if (is.null(ptr)) {
+      interpolation <- match.arg(interpolation)
+      ptr <- rust_result(Tabulated$new(as.double(x), as.double(g), interpolation))
+    }
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
