@@ -388,6 +388,38 @@ def test_bayes_glm():
         BayesGlm("poisson", dispersion_scale=1.0, dispersion=None, draws=1).fit(d, y)
 
 
+def test_posterior_predictive_checks():
+    from prospicio.models import BayesGlm, loo_pit, ppc_check
+
+    x = [(i % 4) - 1.5 for i in range(80)]
+    y = [[1.0, 2.0, 3.0, 5.0][i % 4] for i in range(80)]
+    d = Design([[1.0] * 80, x], ["(Intercept)", "x"])
+    fit = BayesGlm("poisson", chains=2, tune=300, draws=300, seed=4).fit(d, y)
+    reps = fit.replicate(d, seed=2)
+    assert len(reps) == 600 and len(reps[0]) == 80
+    assert reps == fit.replicate(d, seed=2)
+    checks = fit.posterior_predictive_check(d, y, ["mean", "sd", 0.9, "proportion_zero"], seed=2)
+    assert [c["name"] for c in checks] == ["mean", "sd", "q0.9", "proportion_zero"]
+    assert 0.05 < checks[0]["p_value"] < 0.95
+    # These counts are far less spread than a Poisson's: the observed sd
+    # sits low in its replicates, and the zeros never appear.
+    assert checks[1]["p_value"] > 0.95
+    assert checks[3]["observed"] == 0.0
+    # The same checks from the replicates directly.
+    again = ppc_check(y, reps, ["mean", "sd", 0.9, "proportion_zero"])
+    assert [c["p_value"] for c in again] == [c["p_value"] for c in checks]
+    grouped = ppc_check(y, reps, ["mean"], groups=[i % 4 for i in range(80)])
+    assert [c["name"] for c in grouped] == ["mean[0]", "mean[1]", "mean[2]", "mean[3]"]
+    p = fit.loo_pit(d, y, seed=2)
+    assert len(p["pit"]) == 80 and all(0.0 <= v <= 1.0 for v in p["pit"])
+    direct = loo_pit(y, reps, fit.log_likelihood(d, y), seed=2)
+    assert len(direct["pareto_k"]) == 80 and direct["ks"] >= 0.0
+    with pytest.raises(ValueError):
+        ppc_check(y, reps, ["median"])
+    with pytest.raises(ValueError):
+        ppc_check(y, [r[:10] for r in reps])
+
+
 def test_bayesian_and_hierarchical_stacking():
     from prospicio.distributions import PredictiveDistribution
     from prospicio.models import BayesStacking, HierarchicalStacking

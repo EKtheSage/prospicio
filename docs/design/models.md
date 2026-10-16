@@ -301,6 +301,30 @@ models and compares them.
   binding: a density written in Python or R would call back into the
   interpreter at every gradient. Passing external traces to the
   diagnostics is not built yet (see above).
+- **Posterior predictive checks** (`prospicio_bayes::ppc`, decided
+  2026-10-16): replicated data, one dataset per posterior draw (`S × n`,
+  row-major like the log-likelihood), against the observed. `check` (and
+  `check_grouped`, within groups) compares a test statistic (mean, sd,
+  min, max, a type 7 quantile, the share of zeros, or any function
+  through `check_with`) of the data with its distribution over the
+  replicates, with the p-value `P(T(y_rep) ≥ T(y))`, ties counted half.
+  `loo_pit` is each observation's leave-one-out PIT under its PSIS
+  weights (`elpd::psis`, log ratios `−log p(yᵢ | θₛ)`), randomized over
+  ties as the PIT in `metrics` is, with each `k̂` and the KS distance from
+  the uniform; it is the PIT to use for a Bayesian fit, since the PIT
+  under the full posterior counts each observation as evidence for
+  itself. `BayesGlmFit` gives `replicate` (draw `s` on stream `s`), and
+  `posterior_predictive_check` and `loo_pit` on any data, `r_eff` from
+  the chains as `loo` uses. Parity: `loo_pit` against R loo 2.10.1's
+  `E_loo` of `y_rep ≤ y` under the PSIS weights at 1e-9
+  (`validation/scripts/r_loo_pit.R`); unit tests: statistics by hand,
+  calibrated and too-wide replicates (uniform and humped PITs, central
+  and extreme p-values), ties randomized, and a Poisson GLM fitted to
+  negative binomial counts flagged by the sd and zeros p-values (below
+  0.01) and U-shaped PITs. Python `BayesGlmFit.replicate`,
+  `posterior_predictive_check`, `loo_pit`, and `models.ppc_check`,
+  `models.loo_pit` for any model; R `bayes_replicate()`, `bayes_ppc()`,
+  `bayes_loo_pit()`, `ppc_check()` and `loo_pit()`.
 - **Bayesian hierarchical credibility** (`prospicio_bayes::credibility`):
   Bühlmann–Straub's model and Jewell's hierarchy of it as a normal
   random-effects model, the group and node means integrated out in closed

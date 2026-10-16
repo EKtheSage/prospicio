@@ -349,7 +349,10 @@ what it is aiming for by v1.0.
      integrated out; parity with `actuar` at given structure parameters
      and with grid integration of the posterior;
      `docs/design/credibility.md`.)
-  3. Posterior predictive checks.
+  3. (Done: posterior predictive checks, `prospicio_bayes::ppc`: test
+     statistics with posterior predictive p-values, within groups too,
+     and the LOO-PIT at parity with R loo; on `BayesGlmFit` and for any
+     model's replicates; `docs/design/models.md`.)
 - **v1.0:** our own model specs and diagnostics, with sampling delegated.
 
 ### `prospicio-python`, `prospicio-r`, `python/`, `R/` (each lane its own module)

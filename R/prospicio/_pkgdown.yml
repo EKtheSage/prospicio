@@ -193,6 +193,7 @@ reference:
       - bayes_glm_fit
       - bayes_glm_model
       - bayes_loo
+      - bayes_ppc
       - save_model
       - elastic_net_fit
       - elastic_net_model

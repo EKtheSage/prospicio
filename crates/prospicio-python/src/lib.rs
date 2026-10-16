@@ -68,9 +68,9 @@ mod prospicio_native {
         PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyElasticNet,
         PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyHierarchicalStacking,
         PyStackingFit, PyTerms, actual_vs_expected, crps, deviance, elpd_loo, elpd_waic, gini,
-        group_k_fold, k_fold, ks_uniform, lift, log_score, lppd, mcmc_diagnostics, pinball_loss,
-        pit, pit_from_draws, pit_histogram, pseudo_bma_weights, simulate_from_means,
-        stacking_weights, time_ordered,
+        group_k_fold, k_fold, ks_uniform, lift, log_score, loo_pit, lppd, mcmc_diagnostics,
+        pinball_loss, pit, pit_from_draws, pit_histogram, ppc_check, pseudo_bma_weights,
+        simulate_from_means, stacking_weights, time_ordered,
     };
     #[pymodule_export]
     use super::natural::{

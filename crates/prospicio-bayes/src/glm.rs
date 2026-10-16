@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use nuts_rs::{CpuLogpFunc, CpuMathError, HasDims, LogpError};
-use prospicio_core::{Error, Result};
+use prospicio_core::{Error, Result, StreamRng};
 use prospicio_math::special::digamma;
 use prospicio_models::{Design, Family, Fitted, Link, Model};
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
@@ -484,9 +484,15 @@ impl BayesGlmFit {
     /// chains, as `loo::relative_eff` does.
     pub fn loo(&self, design: &Design, y: &[f64]) -> Result<crate::elpd::Loo> {
         let ll = self.log_likelihood(design, y)?;
-        let n = y.len();
+        let r_eff = self.relative_efficiency(&ll, y.len());
+        crate::elpd::loo(&ll, y.len(), Some(&r_eff))
+    }
+
+    /// Each observation's relative efficiency from the chains of its
+    /// likelihood, as `loo::relative_eff` does.
+    fn relative_efficiency(&self, ll: &[f64], n: usize) -> Vec<f64> {
         let s = self.n_draws() as f64;
-        let r_eff: Vec<f64> = (0..n)
+        (0..n)
             .map(|i| {
                 let chains = self.chains_of(|d| ll[d * n + i].exp());
                 let refs: Vec<&[f64]> = chains.iter().map(Vec::as_slice).collect();
@@ -498,8 +504,80 @@ impl BayesGlmFit {
                     1.0
                 }
             })
+            .collect()
+    }
+
+    /// One replicated dataset per posterior draw, row-major `n_draws × n`:
+    /// draw `s`'s coefficients and dispersion, then each row's response
+    /// from the family, with stream `s` of `seed`. The input of
+    /// [`crate::ppc`].
+    pub fn replicate(&self, design: &Design, seed: u64) -> Result<Vec<f64>> {
+        self.check_design(design)?;
+        let p = self.names.len();
+        let w = design.weights();
+        let (family, link) = (self.spec.family, self.spec.link);
+        let rows: Vec<Vec<f64>> = self
+            .coefficients
+            .par_chunks_exact(p)
+            .zip(self.dispersion.par_iter())
+            .enumerate()
+            .map(|(d, (beta, &phi))| {
+                let mut rng = StreamRng::new(seed, d as u64);
+                design
+                    .linear_predictor(beta)
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &e)| {
+                        let mu = link.inverse(e);
+                        if family.valid_mu(mu) {
+                            family
+                                .draw(mu, phi, w[i], rng.next_open01())
+                                .unwrap_or(f64::NAN)
+                        } else {
+                            f64::NAN
+                        }
+                    })
+                    .collect()
+            })
             .collect();
-        crate::elpd::loo(&ll, n, Some(&r_eff))
+        Ok(rows.concat())
+    }
+
+    /// Posterior predictive checks of `y` given `design` (normally the
+    /// training data): each statistic of `y` against its distribution over
+    /// [`replicate`](Self::replicate)'s datasets.
+    pub fn posterior_predictive_check(
+        &self,
+        design: &Design,
+        y: &[f64],
+        statistics: &[crate::ppc::Statistic],
+        seed: u64,
+    ) -> Result<Vec<crate::ppc::StatisticCheck>> {
+        self.check_y(design, y)?;
+        crate::ppc::check(y, &self.replicate(design, seed)?, statistics)
+    }
+
+    /// The leave-one-out PIT of `y` given `design`: [`crate::ppc::loo_pit`]
+    /// on [`replicate`](Self::replicate)'s datasets and the pointwise
+    /// log-likelihood, with each observation's relative efficiency from the
+    /// chains (as [`loo`](Self::loo)). Counts are randomized over ties with
+    /// stream 0 of `seed`.
+    pub fn loo_pit(&self, design: &Design, y: &[f64], seed: u64) -> Result<crate::ppc::LooPit> {
+        self.check_y(design, y)?;
+        let ll = self.log_likelihood(design, y)?;
+        let r_eff = self.relative_efficiency(&ll, y.len());
+        crate::ppc::loo_pit(y, &self.replicate(design, seed)?, &ll, Some(&r_eff), seed)
+    }
+
+    fn check_y(&self, design: &Design, y: &[f64]) -> Result<()> {
+        if y.len() != design.n_rows() {
+            return Err(Error::Data(format!(
+                "{} responses for {} design rows",
+                y.len(),
+                design.n_rows()
+            )));
+        }
+        Ok(())
     }
 
     fn check_design(&self, design: &Design) -> Result<()> {
@@ -714,5 +792,57 @@ mod tests {
         no_draws.sampler.draws = 1;
         assert!(no_draws.fit(&d, &y).is_err());
         assert!(poisson.fit(&d, &[1.0, -1.0, 0.0, 1.0]).is_err());
+    }
+
+    #[test]
+    fn posterior_predictive_checks_flag_overdispersion() {
+        use crate::ppc::Statistic;
+        // 300 rows; counts with mean exp(0.5 + 0.4 x), Poisson or negative
+        // binomial (theta 1.5), fitted by a Poisson GLM.
+        let n = 300;
+        let x: Vec<f64> = (0..n).map(|i| (i % 10) as f64 / 5.0 - 0.9).collect();
+        let d = Design::new(
+            vec!["(Intercept)".into(), "x".into()],
+            vec![vec![1.0; n], x.clone()],
+        )
+        .unwrap();
+        let draw = |family: Family, seed: u64| -> Vec<f64> {
+            let mut rng = StreamRng::new(seed, 0);
+            x.iter()
+                .map(|v| {
+                    family
+                        .draw((0.5 + 0.4 * v).exp(), 1.0, 1.0, rng.next_open01())
+                        .unwrap()
+                })
+                .collect()
+        };
+        let spec = BayesGlm::new(Family::Poisson, Link::Log).sampler(small());
+        let stats = [Statistic::Mean, Statistic::Sd, Statistic::ProportionZero];
+
+        let y = draw(Family::Poisson, 1);
+        let fit = spec.fit(&d, &y).unwrap();
+        let reps = fit.replicate(&d, 4).unwrap();
+        assert_eq!(reps.len(), 800 * n);
+        assert_eq!(reps, fit.replicate(&d, 4).unwrap());
+        let checks = fit.posterior_predictive_check(&d, &y, &stats, 4).unwrap();
+        assert!(
+            checks.iter().all(|c| c.p_value > 0.01 && c.p_value < 0.99),
+            "{checks:?}"
+        );
+        let pit = fit.loo_pit(&d, &y, 4).unwrap();
+        assert!(pit.ks < 1.63 / (n as f64).sqrt(), "{}", pit.ks);
+        assert!(pit.pareto_k.iter().all(|&k| k < 0.7));
+
+        let y = draw(Family::NegativeBinomial { theta: 1.5 }, 2);
+        let fit = spec.fit(&d, &y).unwrap();
+        let checks = fit.posterior_predictive_check(&d, &y, &stats, 4).unwrap();
+        // The Poisson cannot reproduce the spread or the zeros.
+        assert!(checks[1].p_value < 0.01, "{checks:?}");
+        assert!(checks[2].p_value < 0.01, "{checks:?}");
+        let pit = fit.loo_pit(&d, &y, 4).unwrap();
+        let h = pit.histogram(5).unwrap();
+        // Too narrow: the PITs pile up at both ends.
+        assert!(h[0] + h[4] > h[1] + h[2] + h[3], "{h:?}");
+        assert!(fit.loo_pit(&d, &y[..10], 4).is_err());
     }
 }

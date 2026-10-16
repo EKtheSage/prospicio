@@ -1459,3 +1459,34 @@ fn bayesian_credibility_matches_grid_integration() {
         }
     });
 }
+
+/// The leave-one-out PIT against R `loo`'s `E_loo` of `y_rep <= y` under
+/// the PSIS weights (`validation/scripts/r_loo_pit.R`), on the normal model
+/// of `elpd_matches_loo` with one replicated dataset per draw.
+#[test]
+fn loo_pit_matches_loo() {
+    use prospicio_bayes::ppc::loo_pit;
+    let read = |name: &str| -> (usize, Vec<f64>) {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(name);
+        let text = std::fs::read_to_string(path).expect(name);
+        let mut lines = text.lines();
+        let n = lines.next().unwrap().split(',').count();
+        let values = lines
+            .flat_map(|l| {
+                l.split(',')
+                    .map(|v| v.parse::<f64>().unwrap())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        (n, values)
+    };
+    let (n, ll) = read("data/loo_loglik.csv");
+    let (_, y_rep) = read("data/loo_pit_yrep.csv");
+    let (_, y) = read("data/loo_pit_y.csv");
+    assert_eq!(y.len(), n);
+    let p = loo_pit(&y, &y_rep, &ll, None, 0).unwrap();
+    check(&reference("loo_pit.csv"), |c| match c.get("quantity") {
+        "loo_pit" => Some(p.pit[c.number("index")? as usize]),
+        _ => None,
+    });
+}
