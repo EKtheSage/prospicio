@@ -323,6 +323,23 @@ for row in oy.iter_rows(min_row=6, max_row=38, min_col=2, max_col=17):
     for c in row:
         c.number_format = "#,##0"
 
+# Triangle helpers on the RAA sheet's triangle.
+th = wb.create_sheet("Triangle helpers")
+th["A1"] = "prospicio XLL test: triangle helpers on RAA"; th["A1"].font = Font(bold=True, size=13)
+th["A3"] = "Incremental (PRO.TRI.INCREMENTAL)"; th["A3"].font = bold
+th["A4"] = ArrayFormula("A4:J13", f"=PRO.TRI.INCREMENTAL({TRI})")
+th["L3"] = "Latest diagonal"; th["L3"].font = bold
+th["L4"] = ArrayFormula("L4:L13", f"=PRO.TRI.LATEST({TRI})")
+th["A16"] = "Link ratios (PRO.TRI.LINKRATIOS)"; th["A16"].font = bold
+th["A17"] = ArrayFormula("A17:I26", f"=PRO.TRI.LINKRATIOS({TRI})")
+th["A29"] = "Cumulative again (PRO.TRI.CUMULATIVE of the incremental)"; th["A29"].font = bold
+th["A30"] = ArrayFormula("A30:J39", "=PRO.TRI.CUMULATIVE(A4:J13)")
+th["L29"] = "Same as RAA"; th["L29"].font = bold
+th["L30"] = f"=SUMPRODUCT((A30:J39={TRI})*1)=100"
+for row in th.iter_rows(min_row=4, max_row=39, min_col=1, max_col=12):
+    for c in row:
+        c.number_format = "0.0000" if 17 <= c.row <= 26 else "#,##0"
+
 wb.calculation.fullCalcOnLoad = True
 wb.save(out)
 

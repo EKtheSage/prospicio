@@ -367,11 +367,11 @@ what it is aiming for by v1.0.
   bootstrap's draws as a table; Mack's bootstrap; the expected-loss
   methods (expected loss, BF, Benktander, Cape Cod); Mack's sigma rule and
   selected factors; the one-year view (Merz-Wuthrich, both bootstraps);
-  Clark's LDF and Cape Cod.
+  Clark's LDF and Cape Cod; triangle helpers.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): triangle helpers; then
-     severities, pricing and aggregates.
+     form (`xll.md`, parity plan): severities (more families, cdf,
+     quantile, TVaR, the Pareto helpers), then pricing and aggregates.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

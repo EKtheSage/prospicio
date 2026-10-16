@@ -17,6 +17,7 @@
 pub mod pricing;
 pub mod reserving;
 pub mod sheet;
+pub mod triangles;
 #[cfg(windows)]
 mod xll;
 
@@ -398,6 +399,37 @@ pub static FUNCTIONS: &[Function] = &[
         help: "Clark's fitted parameters: curve, omega, theta, the ELR (Cape Cod), the scale and the observations.",
         args: &[TRIANGLE, CLARK_EXPOSURE, CURVE, MAX_AGE],
         run: reserving::clark_params,
+    },
+    Function {
+        symbol: "pro_tri_incremental",
+        name: "PRO.TRI.INCREMENTAL",
+        help: "A cumulative triangle's incremental values, laid out as the triangle.",
+        args: &[TRIANGLE],
+        run: triangles::incremental,
+    },
+    Function {
+        symbol: "pro_tri_cumulative",
+        name: "PRO.TRI.CUMULATIVE",
+        help: "An incremental triangle's cumulative values, laid out as the triangle.",
+        args: &[Arg {
+            name: "triangle",
+            help: "Incremental values: one row per origin (oldest first), one column per age; blank where unobserved",
+        }],
+        run: triangles::cumulative,
+    },
+    Function {
+        symbol: "pro_tri_linkratios",
+        name: "PRO.TRI.LINKRATIOS",
+        help: "A cumulative triangle's age-to-age link ratios, one column fewer than its ages.",
+        args: &[TRIANGLE],
+        run: triangles::link_ratios,
+    },
+    Function {
+        symbol: "pro_tri_latest",
+        name: "PRO.TRI.LATEST",
+        help: "Each origin's latest observed value (the latest diagonal), a column.",
+        args: &[TRIANGLE],
+        run: triangles::latest,
     },
     Function {
         symbol: "pro_lev",

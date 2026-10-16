@@ -33,6 +33,9 @@ category of Insert Function:
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap's one-year view, laid out as `PRO.ODP.CDR` |
 | `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's growth curve: the LDF method, or Cape Cod with `exposure`; reserve and its process, parameter and total SE |
 | `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Its fitted omega, theta, ELR (Cape Cod), scale and observations |
+| `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | The triangle turned incremental, or an incremental one cumulative, laid out as it is |
+| `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios, one column fewer than the ages |
+| `PRO.TRI.LATEST(triangle)` | Each origin's latest value, a column |
 | `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method: exposure times the a priori loss ratio |
 | `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson |
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
@@ -235,8 +238,8 @@ order, one small PR each, those already done struck through:
    selected factors)~~; ~~the expected-loss methods (expected loss,
    Bornhuetter-Ferguson, Benktander, Cape Cod) on a premium column~~; ~~the
    one-year view (Merz-Wuthrich, the bootstraps' CDR)~~; ~~Clark's LDF and
-   Cape Cod~~; triangle helpers (link ratios, incremental and cumulative,
-   the latest diagonal).
+   Cape Cod~~; ~~triangle helpers (link ratios, incremental and cumulative,
+   the latest diagonal)~~.
 2. Severities: ~~the Pareto and the lognormal's LEV, layer, CV, ILF~~;
    more families (gamma, Weibull, Burr, log-logistic, inverse gamma,
    generalized Pareto, piecewise Pareto) and their cdf, quantile, mean,

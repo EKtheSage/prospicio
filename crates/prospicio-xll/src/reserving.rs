@@ -24,6 +24,9 @@ use crate::sheet::{CellError, Grid, Value, position};
 /// The measure name inside the triangle; never shown on the sheet.
 const COLUMN: &str = "values";
 
+/// Its position among the triangle's measures: the first.
+pub(crate) const COLUMN_POSITION: usize = 0;
+
 type Result<T> = std::result::Result<T, String>;
 
 /// The triangle laid out in `grid`.
@@ -37,6 +40,16 @@ const EXPOSURE: &str = "exposure";
 /// The triangle laid out in `grid`, with `exposure` (one value per origin)
 /// as a second measure on every observed cell of its origin when given.
 fn triangle_with(grid: &Grid, exposure: Option<&[f64]>) -> Result<Triangle> {
+    triangle_of(grid, exposure, true)
+}
+
+/// The triangle laid out in `grid`, of cumulative values or, with
+/// `cumulative` false, of incremental ones.
+pub(crate) fn triangle_of(
+    grid: &Grid,
+    exposure: Option<&[f64]>,
+    cumulative: bool,
+) -> Result<Triangle> {
     if grid.rows < 1 || grid.columns < 2 {
         return Err("the triangle needs at least two development columns".into());
     }
@@ -111,7 +124,7 @@ fn triangle_with(grid: &Grid, exposure: Option<&[f64]>) -> Result<Triangle> {
         values: &measures,
         origin_grain: Grain::Year,
         development_grain: Grain::Year,
-        cumulative: true,
+        cumulative,
     })
     .map_err(|e| e.to_string())
 }
