@@ -1,6 +1,6 @@
 # Design note: the Excel add-in (XLL)
 
-Status: **Prototype, tested by the user in Excel 365 (2026-10-15)** · Lane: Excel (cloud) · Depends on: `triangle.md`, `reserving-v02.md` (the functions it wraps)
+Status: **Prototype, tested by the user in Excel 365 (2026-10-15); built and kept by CI (2026-10-16)** · Lane: Excel (cloud) · Depends on: `triangle.md`, `reserving-v02.md` (the functions it wraps)
 
 ## Goal
 
@@ -133,6 +133,30 @@ real Excel.
     the sum of the origins' percentiles; percentiles are the inverse of
     the empirical distribution function (R `type = 1`), as `Sampled`'s.
 
+15. **Distribution: CI builds it, a draft release carries it** (user,
+    2026-10-16, "the next items"). `.github/workflows/xll.yml` builds the
+    add-in on Ubuntu with MinGW and runs the fake-Excel smoke test under
+    Wine on every PR and `main` push that touches its inputs, and keeps
+    the `.xll`, the test workbook, the README and a SHA-256 as the
+    `prospicio-xll` artifact (30 days). A version tag attaches the same
+    bundle to that tag's GitHub release, created as a **draft** when there
+    is none, so nothing is public until the owner publishes it. Its own
+    workflow file, so `ci.yml` and `release.yml` are unchanged. The
+    artifact can be downloaded from the run's page for testing instead of
+    a file passed by hand.
+16. **Signing when a certificate is given, not before.** With the
+    repository secrets `XLL_SIGNING_PFX` (a base64 PKCS#12 code-signing
+    certificate) and `XLL_SIGNING_PASSWORD`, the workflow signs the XLL
+    with `osslsigncode` (Authenticode, SHA-256, a DigiCert timestamp) and
+    checks the signature; without them it ships unsigned, as now. The step
+    was checked with a self-signed certificate: the signed XLL verifies
+    and passes the smoke test. The secrets fit a certificate from an
+    organization's own CA; a publicly trusted one lives in an HSM and
+    needs a signing service's step instead (Open, below). A signature lets
+    an organization trust the publisher by policy instead of each user
+    ticking Unblock; it does not by itself lift Excel's block on add-ins
+    from the internet.
+
 ## Open (for the user)
 
 - **Next functions:** open. The bootstrap's draws as a spilled column (for
@@ -140,6 +164,11 @@ real Excel.
   each one function over existing crates. More severity families (gamma, Weibull, Burr, the piecewise
   Pareto) and the Pareto helpers (`pareto_extrapolation`,
   `alpha_between_layers`) are each a few lines when wanted.
-- **Distribution after testing:** CI artifact or GitHub release asset;
-  signing so that Excel's block on XLLs from the internet can be lifted
-  by policy instead of per file.
+- **A code-signing certificate**, if the add-in goes beyond a few
+  testers (decision 16). A certificate from the organization's own CA,
+  trusted on its machines by group policy, comes as a PKCS#12 file and
+  works with the two secrets as they are. A publicly trusted certificate
+  (OV or EV) must keep its key on a hardware token or a cloud HSM since
+  June 2023, so it cannot be a file in a secret; it would need a cloud
+  signing service's own step (Azure Trusted Signing, DigiCert KeyLocker,
+  SSL.com eSigner) in place of `osslsigncode`.
