@@ -383,10 +383,10 @@ what it is aiming for by v1.0.
   Pareto, the layer variance; exposure curves (MBBEFD, Swiss Re,
   tabulated) and their calibrations; an exposure-rated risk profile;
   classical credibility; ratemaking (rate level, trend and the
-  indication).
+  indication); the burning cost.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): burning cost, then aggregates.
+     form (`xll.md`, parity plan): aggregates.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

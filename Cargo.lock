@@ -4022,6 +4022,7 @@ dependencies = [
 name = "prospicio-xll"
 version = "0.0.3"
 dependencies = [
+ "prospicio-aggregate",
  "prospicio-core",
  "prospicio-pricing",
  "prospicio-prob",

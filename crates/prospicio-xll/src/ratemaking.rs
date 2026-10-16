@@ -43,6 +43,33 @@ fn civil(serial: f64) -> Result<(i32, u8, u8)> {
     Ok((year, month, day))
 }
 
+/// An Excel date (10,000 or more) as an exact decimal year, `year +
+/// (day of year - 1) / days in the year`, keeping the date in its own
+/// year (for accident dates); anything else as it is.
+pub(crate) fn decimal_year(x: f64) -> Result<f64> {
+    if x < FIRST_SERIAL {
+        return Ok(x);
+    }
+    let (y, _, _) = civil(x)?;
+    let jan1 = serial_of(y, 1, 1);
+    let days = serial_of(y + 1, 1, 1) - jan1;
+    Ok(f64::from(y) + (x.floor() - jan1) / days + (x - x.floor()) / days)
+}
+
+/// The Excel serial of a civil date (after February 1900).
+fn serial_of(y: i32, m: u32, d: u32) -> f64 {
+    let (y, m) = if m <= 2 {
+        (i64::from(y) - 1, m + 9)
+    } else {
+        (i64::from(y), m - 3)
+    };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * i64::from(m) + 2) / 5 + i64::from(d) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    (era * 146_097 + doe - 719_468 + 25_569) as f64
+}
+
 /// A date argument as a year fraction: an Excel date (10,000 or more) on
 /// the half-month grid, anything else as it is.
 pub(crate) fn date(x: f64) -> Result<f64> {
@@ -590,5 +617,12 @@ mod tests {
         assert!(civil(60.0).is_err());
         assert_eq!(date(41_455.0).unwrap(), 2013.5);
         assert_eq!(date(2011.25).unwrap(), 2011.25);
+        for serial in [61.0, 25_569.0, 41_455.0, 42_369.0, 43_890.0] {
+            let (y, m, d) = civil(serial).unwrap();
+            assert_eq!(serial_of(y, u32::from(m), u32::from(d)), serial);
+        }
+        // 31 December stays in its year; 1 July 2016 is day 182 of 366.
+        assert!(decimal_year(42_369.0).unwrap() < 2016.0);
+        assert_eq!(decimal_year(42_552.0).unwrap(), 2016.0 + 182.0 / 366.0);
     }
 }
