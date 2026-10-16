@@ -50,6 +50,7 @@ typedef XLOPER12 *(*Fn8)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER1
                          XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn7)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                          XLOPER12 *);
+typedef XLOPER12 *(*Fn5)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn6)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef void (*Free12)(XLOPER12 *);
 
@@ -146,7 +147,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("twenty-four functions registered", registered == 24);
+    check("twenty-six functions registered", registered == 26);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -349,6 +350,14 @@ int main(int argc, char **argv) {
     check("ODP one-year table is 12 x 8", (oc->xltype & 0xFFF) == xltypeMulti && oc->val.array.rows == 12 &&
                                               oc->val.array.columns == 8);
     free12(oc);
+
+    /* Clark's LDF method on RAA, log-logistic to infinity: total reserve
+     * 111006.63 (R ChainLadder's ClarkLDF run to convergence, 1e-5). */
+    XLOPER12 *ck = ((Fn5)GetProcAddress(xll, "pro_clark"))(&tri, &missing, &missing, &missing, &missing);
+    print_result("PRO.CLARK(RAA)", ck);
+    check("Clark LDF total reserve 111006.63 (R ChainLadder)",
+          fabs(ck->val.array.lparray[11 * 7 + 3].val.num - 111006.625765179) < 1.2);
+    free12(ck);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

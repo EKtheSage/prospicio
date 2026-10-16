@@ -12,11 +12,11 @@
 use prospicio_core::{Grain, Lag, Month};
 use prospicio_prob::{Distribution, PredictiveDistribution, Sampled};
 use prospicio_reserving::{
-    Average, Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ChainLadderFit, CurveShape,
-    Development, DevelopmentColumn, ExpectedLoss, ExpectedLossFit, Long, Mack, MackBootstrap,
-    MackBootstrapFit, MackFit, MackProcess, OdpBootstrap, OdpBootstrapFit, OneYearMethod,
-    PatternKind, PatternWeight, ProcessDistribution, SelectedPattern, SigmaInterpolation, Tail,
-    TailBondy, TailCurve, Triangle,
+    Average, Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ChainLadderFit, ClarkCapeCod,
+    ClarkFit, ClarkLdf, CurveShape, Development, DevelopmentColumn, ExpectedLoss, ExpectedLossFit,
+    GrowthCurve, Long, Mack, MackBootstrap, MackBootstrapFit, MackFit, MackProcess, OdpBootstrap,
+    OdpBootstrapFit, OneYearMethod, PatternKind, PatternWeight, ProcessDistribution,
+    SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailCurve, Triangle,
 };
 
 use crate::sheet::{CellError, Grid, Value, position};
@@ -1045,4 +1045,123 @@ pub fn mack_bootstrap_cdr(args: &[Grid]) -> Result<Grid> {
     .map_err(|e| e.to_string())?;
     let labels = origin_labels(&args[7], fit.opening_reserve.len())?;
     cdr_exhibit(&fit.cdr, &fit.opening_reserve, labels, &probabilities)
+}
+
+/// The `curve` argument of Clark's methods: "loglogistic" (default) or
+/// "weibull".
+fn growth_curve(grid: &Grid) -> Result<GrowthCurve> {
+    match text_option(grid, "curve")?.as_deref() {
+        None | Some("loglogistic" | "log-logistic" | "log_logistic") => {
+            Ok(GrowthCurve::LogLogistic)
+        }
+        Some("weibull") => Ok(GrowthCurve::Weibull),
+        Some(other) => Err(format!(
+            "curve must be \"loglogistic\" or \"weibull\", got {other:?}"
+        )),
+    }
+}
+
+/// The `max_age` argument: the age in months development stops at;
+/// omitted (or "inf") develops to infinity, as R's `maxage = Inf`.
+fn max_age(grid: &Grid) -> Result<Option<f64>> {
+    match grid.as_scalar() {
+        Some(v) if v.is_blank() => Ok(None),
+        Some(Value::Text(s))
+            if matches!(s.trim().to_ascii_lowercase().as_str(), "inf" | "unlimited") =>
+        {
+            Ok(None)
+        }
+        Some(Value::Number(x)) if *x > 0.0 => Ok(Some(*x)),
+        _ => Err("max_age must be a positive age in months, or \"inf\"".into()),
+    }
+}
+
+/// Clark's growth-curve fit: the LDF method without `exposure`, Cape Cod
+/// with it.
+fn clark_fit(
+    triangle_arg: &Grid,
+    exposure_arg: &Grid,
+    curve: &Grid,
+    max: &Grid,
+) -> Result<ClarkFit> {
+    let (curve, max_age) = (growth_curve(curve)?, max_age(max)?);
+    if exposure_arg.is_blank() {
+        let tri = triangle(triangle_arg)?;
+        ClarkLdf { curve, max_age }.fit(&tri, COLUMN)
+    } else {
+        let tri = exposed_triangle(triangle_arg, exposure_arg)?;
+        ClarkCapeCod { curve, max_age }.fit(&tri, COLUMN, EXPOSURE)
+    }
+    .map_err(|e| e.to_string())
+}
+
+/// Clark's exhibit (R's `ClarkLDF` and `ClarkCapeCod`): per origin the
+/// latest, the ultimate, the reserve and its process, parameter and total
+/// standard errors, then the total:
+/// `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])`.
+pub fn clark(args: &[Grid]) -> Result<Grid> {
+    let fit = clark_fit(&args[0], &args[1], &args[2], &args[3])?;
+    let cl = &fit.chain_ladder;
+    let labels = origin_labels(&args[4], cl.origins.len())?;
+    let reserves = fit.reserves();
+    let mut rows = vec![
+        [
+            "Origin",
+            "Latest",
+            "Ultimate",
+            "Reserve",
+            "Process SE",
+            "Parameter SE",
+            "Total SE",
+        ]
+        .map(Value::from)
+        .to_vec(),
+    ];
+    for (i, label) in labels.into_iter().enumerate() {
+        rows.push(vec![
+            label,
+            Value::number(cl.latest[i]),
+            Value::number(fit.ultimate[i]),
+            Value::number(reserves[i]),
+            Value::number(fit.process_risk[i]),
+            Value::number(fit.parameter_risk[i]),
+            Value::number(fit.standard_error[i]),
+        ]);
+    }
+    rows.push(vec![
+        Value::from("Total"),
+        Value::number(cl.latest.iter().sum()),
+        Value::number(fit.total_ultimate()),
+        Value::number(fit.total_reserve()),
+        Value::number(fit.total_process_risk),
+        Value::number(fit.total_parameter_risk),
+        Value::number(fit.total_standard_error),
+    ]);
+    Ok(Grid::from_rows(rows))
+}
+
+/// Clark's fitted parameters, a name and a value per row: the curve,
+/// omega, theta, the expected loss ratio (Cape Cod only), the scale
+/// (R's `sigma2`) and the number of incremental observations:
+/// `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])`.
+pub fn clark_params(args: &[Grid]) -> Result<Grid> {
+    let fit = clark_fit(&args[0], &args[1], &args[2], &args[3])?;
+    let curve = match fit.curve {
+        GrowthCurve::LogLogistic => "loglogistic",
+        GrowthCurve::Weibull => "weibull",
+    };
+    let mut rows = vec![
+        vec![Value::from("Curve"), Value::from(curve)],
+        vec![Value::from("Omega"), Value::number(fit.omega)],
+        vec![Value::from("Theta"), Value::number(fit.theta)],
+    ];
+    if let Some(elr) = fit.elr {
+        rows.push(vec![Value::from("ELR"), Value::number(elr)]);
+    }
+    rows.push(vec![Value::from("Scale"), Value::number(fit.scale)]);
+    rows.push(vec![
+        Value::from("Observations"),
+        Value::Number(fit.n_observations as f64),
+    ]);
+    Ok(Grid::from_rows(rows))
 }
