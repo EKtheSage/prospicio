@@ -24,6 +24,10 @@ category of Insert Function:
 | `PRO.CL.FACTORS(triangle, [average], [tail])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
 | `PRO.MACK(triangle, [average], [tail], [origins])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
 | `PRO.VERSION()` | The prospicio version the add-in was built from |
+| `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value `E[min(X, limit)]`, per limit |
+| `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to `limit` xs `attachment` per ground-up loss |
+| `PRO.LAYER.CV(limit, attachment, family, p1, p2, [truncation])` | CV of the layer loss given a loss above the attachment |
+| `PRO.ILF(limit, basic_limit, family, p1, p2, [truncation])` | Increased limit factor `LEV(limit) / LEV(basic_limit)` |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
 omitted (none), a number (a constant factor to ultimate at the oldest age)
@@ -31,15 +35,27 @@ or `"exponential"`, `"inverse_power"` or `"bondy"`. Mack's sigma is
 extrapolated log-linearly, as R's `MackChainLadder(est.sigma =
 "log-linear")`.
 
+The pricing functions wrap `prospicio_pricing::layer` (`ilf`, `layer_cv`)
+and `prospicio_prob::Severity` (`lev`, `layer`). `family` is `"pareto"`
+(`p1` the threshold `t`, `p2` alpha; `truncation` optional), `"lognormal"`
+(`meanlog`, `sdlog`, as Excel's `LOGNORM.DIST`) or `"lognormal_cv"` (mean
+and CV). Limits and attachments are a number, a range or `"unlimited"`;
+blank cells give blank results.
+
 **Checks.** `cargo test -p prospicio-xll` runs the worksheet functions on
 RAA through the same catalogue Excel calls, against `prospicio-reserving`
 and R ChainLadder's totals. `cargo xtask xll` builds the add-in and, when
 MinGW (and off Windows, Wine) are found, runs `harness/fake_excel.c`: a
 host that exports `MdCallBack12` as Excel does, loads the XLL, checks the
 registrations and calls the functions with real XLOPER12 arguments (RAA's
-Mack totals against R to 1e-6, an error, 2000 calls and frees).
+Mack totals against R to 1e-6, an error, 2000 calls and frees, and a
+2 x 2 Pareto layer table against the R package Pareto).
+`cargo test` also checks the pricing functions against the crates, the R
+package Pareto's vignette (4000 xs 1000 under Pareto(500, 2) is 200) and
+mpmath's lognormal targets (`validation/reference/severity_mpmath.csv`).
 `harness/make_workbook.py` writes a workbook with RAA and every function
-in place, with R's totals beside them, for a test in real Excel.
+in place, with R's totals beside them, and a Layers sheet, for a test in
+real Excel.
 
 ## Decisions
 
@@ -86,11 +102,25 @@ in place, with R's totals beside them, for a test in real Excel.
 11. **Errors stay text** (user, 2026-10-15): `#PROSPICIO! <reason>`, which
     says why; `ISERROR` does not see it (test with `LEFT(x, 11) =
     "#PROSPICIO!"`).
+12. **A severity is a family name and two parameters**, not an object
+    held in a cell: every pricing function takes `family, p1, p2,
+    [truncation]`, so the parameters stay in cells the sheet can change
+    and audit, and no state lives between calls (decision 4). Families
+    are added by name; the Pareto and the lognormal come first (user,
+    2026-10-15).
+13. **Limits and attachments broadcast as Excel's arithmetic does.** Two
+    ranges of one size combine cell by cell; a side of length 1 stretches
+    to the other's, so a column of attachments against a row of limits is
+    a layer table from one formula. `"unlimited"` (or `"inf"`) is no
+    limit, a blank cell gives a blank, and a value Excel cannot hold (an
+    infinite CV) is left blank.
 
 ## Open (for the user)
 
-- **Next functions** (user's order, 2026-10-15): layer pricing (Pareto or
-  lognormal layer loss, ILF), then an ODP bootstrap summary.
+- **Next functions** (user's order, 2026-10-15): an ODP bootstrap
+  summary. More severity families (gamma, Weibull, Burr, the piecewise
+  Pareto) and the Pareto helpers (`pareto_extrapolation`,
+  `alpha_between_layers`) are each a few lines when wanted.
 - **Distribution after testing:** CI artifact or GitHub release asset;
   signing so that Excel's block on XLLs from the internet can be lifted
   by policy instead of per file.
