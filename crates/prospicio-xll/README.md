@@ -25,7 +25,7 @@ is found, under Wine off Windows.
 
 `python3 harness/make_workbook.py prospicio-xll-test.xlsx` (needs
 openpyxl) writes a test workbook: RAA with every function in place and R
-ChainLadder's totals beside them, plus Layers, ODP and ODP draws sheets.
+ChainLadder's totals beside them, plus Layers, ODP, ODP draws and Mack bootstrap sheets.
 
 ## Install in Excel
 
@@ -52,6 +52,8 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.MACK(triangle, [average], [tail], [origins])` | Mack exhibit: process, parameter and total SE and CV, with a total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap exhibit: CL reserve, mean, SD, CV and percentiles, with a total |
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's draws: a row per simulation, a column per origin and the total (at most 100000 rows) |
+| `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins])` | Mack bootstrap exhibit, laid out as `PRO.ODP` |
+| `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins])` | Mack bootstrap's draws, laid out as `PRO.ODP.SIMS` |
 | `PRO.VERSION()` | Version |
 | `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to the layer per ground-up loss |
@@ -66,7 +68,8 @@ Ctrl+Alt+F9 to recalculate.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...
 - `sims` (default 10000, at most 1000000), `seed` (default 0; the same seed
   gives the same table), `percentiles` (a row or column such as
-  `{0.75,0.95,0.995}`), `process` (`"gamma"` or `"none"`).
+  `{0.75,0.95,0.995}`), `process` (`"gamma"` or `"none"`; Mack's
+  bootstrap also takes `"lognormal"`, `"normal"` and `"residuals"`).
 
 - `family`: `"pareto"` (`p1` = threshold t, `p2` = alpha, optional
   `truncation`), `"lognormal"` (meanlog, sdlog) or `"lognormal_cv"` (mean,

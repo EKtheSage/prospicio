@@ -80,6 +80,15 @@ const PROCESS: Arg = Arg {
     help: "\"gamma\" (default) for process error on future values, or \"none\" for parameter error only",
 };
 
+const SIM_ROWS: Arg = Arg {
+    name: "sims",
+    help: "Number of simulations, 10000 if omitted (at most 100000, one row each)",
+};
+const MACK_PROCESS: Arg = Arg {
+    name: "process",
+    help: "\"gamma\" (default), \"lognormal\", \"normal\", \"residuals\", or \"none\" for parameter error only",
+};
+
 const LIMIT: Arg = Arg {
     name: "limit",
     help: "Limit(s): a number, a range, or \"unlimited\"",
@@ -194,6 +203,37 @@ pub static FUNCTIONS: &[Function] = &[
             ORIGINS,
         ],
         run: reserving::odp_sims,
+    },
+    Function {
+        symbol: "pro_mack_boot",
+        name: "PRO.MACK.BOOT",
+        help: "Mack bootstrap exhibit: CL reserve, simulated mean, SD, CV and percentiles per origin, with a total.",
+        args: &[
+            TRIANGLE,
+            SIMS,
+            SEED,
+            PERCENTILES,
+            AVERAGE,
+            TAIL,
+            MACK_PROCESS,
+            ORIGINS,
+        ],
+        run: reserving::mack_bootstrap_summary,
+    },
+    Function {
+        symbol: "pro_mack_boot_sims",
+        name: "PRO.MACK.BOOT.SIMS",
+        help: "Mack bootstrap's simulated reserves: one row per simulation, a column per origin and the total.",
+        args: &[
+            TRIANGLE,
+            SIM_ROWS,
+            SEED,
+            AVERAGE,
+            TAIL,
+            MACK_PROCESS,
+            ORIGINS,
+        ],
+        run: reserving::mack_bootstrap_sims,
     },
     Function {
         symbol: "pro_lev",

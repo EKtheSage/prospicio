@@ -46,6 +46,8 @@ typedef struct xloper12 {
 typedef XLOPER12 *(*Fn0)(void);
 typedef XLOPER12 *(*Fn3)(XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn4)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef XLOPER12 *(*Fn8)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                         XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn7)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                          XLOPER12 *);
 typedef XLOPER12 *(*Fn6)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
@@ -144,7 +146,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("fourteen functions registered", registered == 14);
+    check("sixteen functions registered", registered == 16);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -282,6 +284,20 @@ int main(int argc, char **argv) {
     for (int r = 1; r <= 100000; r++) sum += d->val.array.lparray[r * 11 + 10].val.num;
     check("mean total within R's tolerance of 53842", fabs(sum / 100000 - 53842.27) < 589.4);
     free12(d);
+
+    /* Mack's bootstrap: 20000 simulations; the total SD reconciles with
+     * Mack's sqrt(process^2 + 0.981 parameter^2) = 26845 (R ChainLadder's
+     * risks), within five Monte Carlo standard errors (about 1000). */
+    sims.val.num = 20000;
+    XLOPER12 *mb = ((Fn8)GetProcAddress(xll, "pro_mack_boot"))(&tri, &sims, &seed, &missing, &missing, &missing,
+                                                               &missing, &missing);
+    print_result("PRO.MACK.BOOT(RAA, 20000, 1)", mb);
+    check("Mack bootstrap table is 12 x 9", (mb->xltype & 0xFFF) == xltypeMulti && mb->val.array.rows == 12 &&
+                                                mb->val.array.columns == 9);
+    XLOPER12 *mt = &mb->val.array.lparray[11 * 9];
+    check("Mack bootstrap total SD 26845 +- 1000 (Mack, R ChainLadder)", fabs(mt[3].val.num - 26845) < 1000);
+    check("Mack bootstrap total mean 52135 +- 950 (chain ladder)", fabs(mt[2].val.num - 52135.23) < 950);
+    free12(mb);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;
