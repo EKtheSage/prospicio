@@ -301,5 +301,30 @@ stopifnot(grepl("<bayes_one_year_fits> 500 simulations", out[1], fixed = TRUE))
 invisible(capture.output(print(m_views)))
 expect_error_like(meyers_one_year(m_tri, "paid", "premium", n_sims = 10, k_threshold = NaN),
                   "k_threshold")
+
+# Meyers' view runs at most 2,000 simulations by default (the user's
+# decision of 2026-10-16); one_year_sims sets the count for any model, and
+# a smaller count gives the first simulations of a larger one.
+m_capped <- suppressWarnings(meyers_one_year(m_tri, "paid", "premium", tune = 200, draws = 200,
+                                             n_sims = 3000, seed = 1, refit = "reweight_only"))
+m_fewer <- suppressWarnings(meyers_one_year(m_tri, "paid", "premium", tune = 200, draws = 200,
+                                            n_sims = 3000, seed = 1, refit = "reweight_only",
+                                            one_year_sims = 100))
+stopifnot(
+  length(m_capped@pareto_k) == 2000,
+  nrow(draw_matrix(m_capped@fit@reserves)) == 3000,
+  length(m_fewer@pareto_k) == 100,
+  identical(m_fewer@pareto_k, m_capped@pareto_k[1:100])
+)
+expect_error_like(meyers_one_year(m_tri, "paid", "premium", n_sims = 10, one_year_sims = 0),
+                  "n_sims")
+o_whole <- bayes_odp_one_year(tiny, n_sims = 300, seed = 11, refit = "reweight_only")
+o_part <- bayes_odp_one_year(tiny, n_sims = 300, seed = 11, refit = "reweight_only",
+                             one_year_sims = 50)
+stopifnot(
+  length(o_whole@pareto_k) == 300,
+  length(o_part@pareto_k) == 50,
+  identical(o_part@pareto_k, o_whole@pareto_k[1:50])
+)
 expect_error_like(meyers_one_year_segments(m_two, "paid", "premium", n_sims = 10,
                                            dependence = "synchronized"), "ynchroni")

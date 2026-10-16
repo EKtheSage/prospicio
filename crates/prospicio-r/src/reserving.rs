@@ -1007,6 +1007,7 @@ impl Triangle {
     /// k is above `k_threshold` is handled as `refit`
     /// ("moment_match_then_refit", "refit_flagged", "reweight_only" or
     /// "refit_all") says.
+    #[allow(clippy::too_many_arguments)]
     fn bayes_odp_one_year(
         &self,
         column: &str,
@@ -1015,9 +1016,10 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        one_year_sims: Nullable<f64>,
     ) -> Result<BayesOneYearFit> {
         let model = bayes_odp_model(&priors, process, &run, SegmentDependence::Independent)?;
-        let settings = one_year_settings(k_threshold, refit)?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
         let inner = model
             .one_year(&self.inner, column, &settings)
             .map_err(to_r)?;
@@ -1040,12 +1042,13 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        one_year_sims: Nullable<f64>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
     ) -> Result<BayesOneYearFits> {
         let dependence = segment_dependence(dependence, spearman)?;
         let model = bayes_odp_model(&priors, process, &run, dependence)?;
-        let settings = one_year_settings(k_threshold, refit)?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
         let inner = model
             .one_year_segments(&self.inner, column, &settings)
             .map_err(to_r)?;
@@ -1163,6 +1166,7 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        one_year_sims: Nullable<f64>,
     ) -> Result<BayesOneYearFit> {
         let meyers = meyers_settings(
             model,
@@ -1170,7 +1174,7 @@ impl Triangle {
             fixed::<7>(&run, "run")?,
             SegmentDependence::Independent,
         )?;
-        let settings = one_year_settings(k_threshold, refit)?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
         let inner = meyers
             .one_year(&self.inner, column, premium, &settings)
             .map_err(to_r)?;
@@ -1194,6 +1198,7 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        one_year_sims: Nullable<f64>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
     ) -> Result<BayesOneYearFits> {
@@ -1204,7 +1209,7 @@ impl Triangle {
             fixed::<7>(&run, "run")?,
             dependence,
         )?;
-        let settings = one_year_settings(k_threshold, refit)?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
         let inner = meyers
             .one_year_segments(&self.inner, column, premium, &settings)
             .map_err(to_r)?;
@@ -1325,9 +1330,10 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        one_year_sims: Nullable<f64>,
     ) -> Result<BayesOneYearFit> {
         let model = bayes_bf_model(&priors, process, &run)?;
-        let settings = one_year_settings(k_threshold, refit)?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
         let inner = model
             .one_year(&self.inner, column, exposure, &settings)
             .map_err(to_r)?;
@@ -2678,9 +2684,14 @@ fn bayes_bf_model(priors: &[f64], process: &str, run: &[f64]) -> Result<BayesBf>
     })
 }
 
-/// The settings of a Bayesian one-year view: `k_threshold` and the
-/// `refit` policy by name.
-fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
+/// The settings of a Bayesian one-year view: `k_threshold`, the `refit`
+/// policy by name and the number of simulations (`NULL` for the model's
+/// one-year default).
+fn one_year_settings(
+    k_threshold: f64,
+    refit: &str,
+    one_year_sims: Nullable<f64>,
+) -> Result<BayesOneYear> {
     let refit = match refit {
         "refit_flagged" => OneYearRefit::RefitFlagged,
         "reweight_only" => OneYearRefit::ReweightOnly,
@@ -2693,7 +2704,15 @@ fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
             )));
         }
     };
-    Ok(BayesOneYear { k_threshold, refit })
+    let n_sims = match one_year_sims {
+        Nullable::NotNull(n) => Some(whole(n, "one_year_sims")? as usize),
+        Nullable::Null => None,
+    };
+    Ok(BayesOneYear {
+        k_threshold,
+        refit,
+        n_sims,
+    })
 }
 
 /// The one-year view of a Bayesian model on a single-segment triangle
