@@ -446,4 +446,8 @@ mod exports {
     udf!(pro_swissre_c, rate);
     udf!(pro_swissre_c_layer, limit, attachment, mpl, share);
     udf!(pro_profile, sums_insured, expected_losses, limit, attachment, curve, p1, p2, p3, lower, upper, spread, retention, lines);
+    udf!(pro_cred_standard, p, k, kind, cv);
+    udf!(pro_cred_z, n, standard);
+    udf!(pro_buhlmann, ratios, weights, estimator, groups);
+    udf!(pro_buhlmann_params, ratios, weights, estimator);
 }

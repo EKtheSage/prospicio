@@ -14,6 +14,7 @@
 //! prospicio-xll --target x86_64-pc-windows-msvc`, or `-gnu` from Linux)
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
+pub mod credibility;
 pub mod exposure;
 pub mod pricing;
 pub mod reserving;
@@ -185,6 +186,22 @@ const CP3: Arg = Arg {
 const MPL: Arg = Arg {
     name: "mpl",
     help: "Maximum possible loss (or sum insured) of the risk(s): a number or a range",
+};
+const RATIOS: Arg = Arg {
+    name: "ratios",
+    help: "Loss per unit of exposure, one row per group and one column per period; blank where missing",
+};
+const WEIGHTS: Arg = Arg {
+    name: "weights",
+    help: "Exposures of the same shape as ratios, blank where missing; omitted for Buhlmann's model (equal weights)",
+};
+const ESTIMATOR: Arg = Arg {
+    name: "estimator",
+    help: "Between-group variance: \"unbiased\" (default) or \"iterative\" (Bichsel-Straub)",
+};
+const GROUPS: Arg = Arg {
+    name: "groups",
+    help: "Labels for the groups, one per row of ratios; omitted for 1, 2, ...",
 };
 const X: Arg = Arg {
     name: "x",
@@ -746,6 +763,60 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: exposure::profile,
+    },
+    Function {
+        symbol: "pro_cred_standard",
+        name: "PRO.CRED.STANDARD",
+        help: "Full credibility standard in expected claims (limited fluctuation): within k of the mean with probability p.",
+        args: &[
+            Arg {
+                name: "p",
+                help: "Probability, such as 0.90: a number or a range",
+            },
+            Arg {
+                name: "k",
+                help: "Tolerance, such as 0.05: a number or a range; a row against a column of p gives a table",
+            },
+            Arg {
+                name: "kind",
+                help: "\"frequency\" (default), \"severity\" or \"pure_premium\"",
+            },
+            Arg {
+                name: "cv",
+                help: "The severity's coefficient of variation, for the severity and pure premium standards",
+            },
+        ],
+        run: credibility::standard,
+    },
+    Function {
+        symbol: "pro_cred_z",
+        name: "PRO.CRED.Z",
+        help: "Partial credibility by the square root rule, min(1, sqrt(n / standard)).",
+        args: &[
+            Arg {
+                name: "n",
+                help: "Observed claims: a number or a range",
+            },
+            Arg {
+                name: "standard",
+                help: "The full credibility standard in claims: a number or a range",
+            },
+        ],
+        run: credibility::z,
+    },
+    Function {
+        symbol: "pro_buhlmann",
+        name: "PRO.BUHLMANN",
+        help: "Buhlmann-Straub credibility: each group's weight, mean, credibility factor and premium.",
+        args: &[RATIOS, WEIGHTS, ESTIMATOR, GROUPS],
+        run: credibility::buhlmann,
+    },
+    Function {
+        symbol: "pro_buhlmann_params",
+        name: "PRO.BUHLMANN.PARAMS",
+        help: "Buhlmann-Straub structure parameters: collective mean, between and within variances, k.",
+        args: &[RATIOS, WEIGHTS, ESTIMATOR],
+        run: credibility::buhlmann_params,
     },
 ];
 

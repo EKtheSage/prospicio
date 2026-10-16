@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("forty-seven functions registered", registered == 47);
+    check("fifty-one functions registered", registered == 51);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -417,6 +417,16 @@ int main(int argc, char **argv) {
     check("PRO.EXPOSURE.CURVE(1, \"swiss_re\", 3) is 1",
           (g1->xltype & 0xFFF) == xltypeNum && fabs(g1->val.num - 1) < 1e-15);
     free12(g1);
+
+    /* Square root rule: a quarter of the standard gives half credibility. */
+    typedef XLOPER12 *(*Fn2)(XLOPER12 *, XLOPER12 *);
+    XLOPER12 quarter, full;
+    quarter.xltype = full.xltype = xltypeNum;
+    quarter.val.num = 250;
+    full.val.num = 1000;
+    XLOPER12 *cz = ((Fn2)GetProcAddress(xll, "pro_cred_z"))(&quarter, &full);
+    check("PRO.CRED.Z(250, 1000) is 0.5", (cz->xltype & 0xFFF) == xltypeNum && fabs(cz->val.num - 0.5) < 1e-15);
+    free12(cz);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

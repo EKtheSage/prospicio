@@ -60,6 +60,10 @@ category of Insert Function:
 | `PRO.EXPOSURE.STATS(curve, p1, [p2], [p3])` | The curve's `b`, `g`, mean destruction rate and probability of a total loss |
 | `PRO.SWISSRE.C(rate)` | The Swiss Re `c` of a mean destruction rate |
 | `PRO.SWISSRE.C.LAYER(limit, attachment, mpl, share)` | The Swiss Re `c` of a layer's share |
+| `PRO.CRED.STANDARD(p, k, [kind], [cv])` | Limited fluctuation full credibility standard in claims (frequency, severity or pure premium) |
+| `PRO.CRED.Z(n, standard)` | Partial credibility by the square root rule |
+| `PRO.BUHLMANN(ratios, [weights], [estimator], [groups])` | Buhlmann-Straub: each group's weight, mean, credibility and premium |
+| `PRO.BUHLMANN.PARAMS(ratios, [weights], [estimator])` | Buhlmann-Straub structure parameters |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
@@ -295,7 +299,7 @@ order, one small PR each, those already done struck through:
 3. Pricing: ~~exposure curves (MBBEFD, Swiss Re, tabulated) and a
    layer's share, the Swiss Re calibrations~~; ~~a risk profile's layer
    loss and surplus cession~~;
-   credibility (Buhlmann-Straub, limited fluctuation); ratemaking (trend,
+   ~~credibility (Buhlmann-Straub, limited fluctuation)~~; ratemaking (trend,
    rate level, the indicated rate); burning cost.
 4. Aggregate: a compound distribution of a count and a severity, its
    moments, VaR, TVaR and layer statistics.
