@@ -8761,9 +8761,11 @@ impl PyMeyers {
     /// its value there instead of the second term. The mean is about zero.
     /// A simulation whose ``k`` is above ``k_threshold`` is flagged and
     /// handled as ``refit`` says: by default moment-matched, and refitted
-    /// with NUTS only if its ``k`` stays above the threshold. A Meyers
-    /// refit takes about half a second, so ``"refit_flagged"`` costs
-    /// minutes where the default costs seconds. Raises one ``UserWarning``
+    /// with NUTS only if its ``k`` stays above the threshold. On Meyers'
+    /// group 353 nearly every simulation is flagged and matching rescues
+    /// about nine in ten, so 10,000 simulations take 4 to 7 minutes on 16
+    /// threads in a release build, and ``"refit_flagged"`` about 6.7 times
+    /// as long; fewer ``n_sims`` cost proportionally less. Raises one ``UserWarning``
     /// listing the failed diagnostics of the fit, and another if any refit
     /// failed its diagnostics.
     ///

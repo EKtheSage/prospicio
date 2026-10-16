@@ -21,7 +21,8 @@
 //!   value, in units of the total's sd, is below a bound and below
 //!   `gap_reweighted`, the same simulations' gap without matching;
 //! * `life_ratio`: the default's total sd over the lifetime reserve's is
-//!   in a band below 1 (the year resolves part of the run-off);
+//!   in a band around its sweep mean (0.77 to 0.82: about four fifths of
+//!   the lifetime uncertainty emerges in the first year);
 //! * against the ODP bootstrap's one-year view of the same paid triangle
 //!   (`OdpBootstrap::one_year`, chain ladder), CRC's `life_ratio` over the
 //!   bootstrap's own is in a wide band. The models differ (log-normal
@@ -61,15 +62,23 @@ const CASES: &[(&str, MeyersModel, &str)] = &[
 ];
 
 /// Per case: the floor on `rescued`, the bound on `gap_matched` and the
-/// band on `life_ratio`.
+/// band on `life_ratio`. Over seeds 0 to 19 (mean, sd, and the extreme
+/// seed): `rescued` 0.904 (0.034, min 0.795), 0.900 (0.039, min 0.803)
+/// and 0.833 (0.052, min 0.734); `gap_matched` 0.080 (0.029, max 0.158),
+/// 0.075 (0.019, max 0.137) and 0.084 (0.027, max 0.160), against
+/// `gap_reweighted` 0.21, 0.19 and 0.21 (at every seed above
+/// `gap_matched`, the largest ratio 0.88); `life_ratio` 0.769 (0.081),
+/// 0.798 (0.071) and 0.825 (0.083).
 const BOUNDS: &[(&str, f64, f64, (f64, f64))] = &[
-    ("CRC paid", 0.0, 1.0, (0.0, 1.0)),
-    ("CSR paid", 0.0, 1.0, (0.0, 1.0)),
-    ("CAY incurred", 0.0, 1.0, (0.0, 1.0)),
+    ("CRC paid", 0.75, 0.20, (0.44, 1.10)),
+    ("CSR paid", 0.74, 0.15, (0.51, 1.09)),
+    ("CAY incurred", 0.62, 0.20, (0.49, 1.16)),
 ];
 
-/// The band on CRC's `life_ratio` over the ODP bootstrap's.
-const ODP_BAND: (f64, f64) = (0.0, 10.0);
+/// The band on CRC's `life_ratio` over the ODP bootstrap's: 0.957 (sd
+/// 0.097, from 0.635 to 1.141) over seeds 0 to 19; the bootstrap's own is
+/// 0.803 (sd 0.008).
+const ODP_BAND: (f64, f64) = (0.56, 1.35);
 
 /// The rows of `data/clrd_comauto_353.csv`: origin, age in months, paid,
 /// incurred, premium.

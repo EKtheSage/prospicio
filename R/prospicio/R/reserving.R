@@ -2660,9 +2660,10 @@ meyers_segments <- function(triangle, column, premium, model = c("crc", "csr", "
 #'
 #' A simulation whose Pareto k is above `k_threshold` is handled as
 #' `refit` says: by default moment-matched, and refitted with NUTS only if
-#' its k stays above the threshold. A Meyers refit takes about half a
-#' second, so `"refit_flagged"` costs minutes where the default costs
-#' seconds.
+#' its k stays above the threshold. On Meyers' group 353 nearly every
+#' simulation is flagged and matching rescues about nine in ten, so 10,000
+#' simulations take 4 to 7 minutes on 16 threads, and `"refit_flagged"`
+#' about 6.7 times as long; fewer `n_sims` cost proportionally less.
 #'
 #' `meyers_one_year_segments()` does the same in every segment of the
 #' triangle, each segment's posterior and simulations as in

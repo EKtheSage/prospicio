@@ -32,22 +32,24 @@
 //!    simulations' included;
 //! 5. on those simulations, the root mean square gap between a reweighted and a
 //!    refitted simulation's total, in units of the total's sd, is below
-//!    `UNFLAGGED_GAP` where `k̂` is at most 0.7 and below `FLAGGED_GAP`
-//!    above it;
+//!    `REFITS.gaps.0` where `k̂` is at most 0.7 (over at least
+//!    `MIN_UNFLAGGED` such simulations) and below `REFITS.gaps.1` above it
+//!    (`MEYERS_REFITS` for Meyers' models, nearly all of whose simulations
+//!    are flagged);
 //! 6. a triangle whose every origin is at the last age gives a zero claims
 //!    development result, `k̂` 0 and no refit under every setting.
 //!
 //! Every bound is at least the largest model's mean (or mean offset) plus
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
 //! 4.75, both GenIns under `BayesOdp`; gaps 0.071, `BayesBf`, and 0.455,
-//! RAA), and every seed passes (`seed_sweep`, ignored:
-//! `SWEEP_SEEDS=20 cargo test --release -p prospicio-validation --features
-//! slow-bayes --test reserving_bayes_one_year_conformance -- --ignored
-//! seed_sweep --nocapture`).
-
-use std::time::Instant;
+//! RAA; Meyers' flagged gap 0.606, CSR), and every seed passes
+//! (`seed_sweep`, ignored: `SWEEP_SEEDS=20 cargo test --release -p
+//! prospicio-validation --features slow-bayes --test
+//! reserving_bayes_one_year_conformance -- --ignored seed_sweep
+//! --nocapture`; `SWEEP_MEYERS_ONLY=1` runs Meyers' models alone).
 
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use prospicio_bayes::nuts::Sampler;
 use prospicio_prob::{Distribution, PredictiveDistribution};
@@ -60,13 +62,29 @@ use prospicio_validation::{triangle, triangle_columns};
 
 /// The simulations of the mean check.
 const SIMS: usize = 10_000;
-/// The simulations refitted for the gap and the refit settings.
-const REFIT_SIMS: usize = 300;
-/// The same for Meyers' models.
-const MEYERS_REFIT_SIMS: usize = 60;
-/// Bounds on the root mean square gap, in units of the total's sd.
-const UNFLAGGED_GAP: f64 = 0.08;
-const FLAGGED_GAP: f64 = 0.5;
+/// A model's refit checks: the simulations refitted for the gap and the
+/// refit settings, and the bounds on the root mean square gap, in units of
+/// the total's sd, where `k̂` is at most 0.7 and above it.
+#[derive(Clone, Copy)]
+struct Refits {
+    sims: usize,
+    gaps: (f64, f64),
+}
+
+const REFITS: Refits = Refits {
+    sims: 300,
+    gaps: (0.08, 0.5),
+};
+/// Meyers' models, whose refits cost seconds and nearly all of whose
+/// simulations are flagged (a year cell has its origin's smallest
+/// `sigma_d`): the unflagged gap is checked only over at least
+/// `MIN_UNFLAGGED` simulations.
+const MEYERS_REFITS: Refits = Refits {
+    sims: 60,
+    gaps: (0.08, 0.65),
+};
+/// Fewest unflagged simulations whose gap is checked.
+const MIN_UNFLAGGED: usize = 10;
 
 fn mean(x: &[f64]) -> f64 {
     x.iter().sum::<f64>() / x.len() as f64
@@ -103,11 +121,15 @@ fn conform<F: Sync + Send>(
     run: &Run<'_, F>,
     closed: &Run<'_, F>,
     reserves: fn(&F) -> &PredictiveDistribution,
-    refit_sims: usize,
+    refits: Refits,
     seed: u64,
     strict: bool,
 ) -> Measured {
     let t = Instant::now();
+    let Refits {
+        sims: refit_sims,
+        gaps,
+    } = refits;
     let only = OneYearRefit::ReweightOnly;
     // 1. The mean is zero.
     let full = run(SIMS, seed, only);
@@ -212,11 +234,11 @@ fn conform<F: Sync + Send>(
     let (gap_unflagged, gap_flagged) = (gap(false), gap(true));
     let flagged = is_flagged.iter().filter(|&&f| f).count();
     assert!(
-        !strict || gap_unflagged < UNFLAGGED_GAP,
+        !strict || refit_sims - flagged < MIN_UNFLAGGED || gap_unflagged < gaps.0,
         "{name}: rms gap {gap_unflagged} sd where k <= 0.7"
     );
     assert!(
-        !strict || gap_flagged < FLAGGED_GAP,
+        !strict || gap_flagged < gaps.1,
         "{name}: rms gap {gap_flagged} sd where k > 0.7 ({flagged} simulations)"
     );
     // 6. A year without cells changes and refits nothing.
@@ -407,7 +429,7 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
                     &*odp(&raa, "values"),
                     &*odp(&closed, "paid"),
                     odp_reserves,
-                    REFIT_SIMS,
+                    REFITS,
                     seed,
                     strict,
                 ),
@@ -419,7 +441,7 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
                     &*odp(&genins, "values"),
                     &*odp(&closed, "paid"),
                     odp_reserves,
-                    REFIT_SIMS,
+                    REFITS,
                     seed,
                     strict,
                 ),
@@ -431,7 +453,7 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
                     &*bf(&premium),
                     &*bf(&closed),
                     bf_reserves,
-                    REFIT_SIMS,
+                    REFITS,
                     seed,
                     strict,
                 ),
@@ -448,7 +470,7 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
             &*meyers(group, model, column),
             &*meyers(&closed, model, "paid"),
             meyers_reserves,
-            MEYERS_REFIT_SIMS,
+            MEYERS_REFITS,
             seed,
             strict,
         );
