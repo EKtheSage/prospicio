@@ -63,6 +63,23 @@ const ORIGINS: Arg = Arg {
     help: "Origin labels, one per triangle row; omitted for 1, 2, ...",
 };
 
+const SIMS: Arg = Arg {
+    name: "sims",
+    help: "Number of simulations, 10000 if omitted (at most 1000000)",
+};
+const SEED: Arg = Arg {
+    name: "seed",
+    help: "Random seed, 0 if omitted; the same seed gives the same result",
+};
+const PERCENTILES: Arg = Arg {
+    name: "percentiles",
+    help: "Probabilities to report, a row or column such as {0.75,0.95,0.995}; omitted for 75%, 90%, 95%, 99.5%",
+};
+const PROCESS: Arg = Arg {
+    name: "process",
+    help: "\"gamma\" (default) for process error on future values, or \"none\" for parameter error only",
+};
+
 const LIMIT: Arg = Arg {
     name: "limit",
     help: "Limit(s): a number, a range, or \"unlimited\"",
@@ -153,6 +170,13 @@ pub static FUNCTIONS: &[Function] = &[
         help: "Mack exhibit: ultimate, reserve, process, parameter and total standard error and CV per origin, with a total.",
         args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS],
         run: reserving::mack_summary,
+    },
+    Function {
+        symbol: "pro_odp",
+        name: "PRO.ODP",
+        help: "ODP bootstrap exhibit: CL reserve, simulated mean, SD, CV and percentiles per origin, with a total.",
+        args: &[TRIANGLE, SIMS, SEED, PERCENTILES, TAIL, PROCESS, ORIGINS],
+        run: reserving::odp_summary,
     },
     Function {
         symbol: "pro_lev",

@@ -17,7 +17,7 @@ is found, under Wine off Windows.
 
 `python3 harness/make_workbook.py prospicio-xll-test.xlsx` (needs
 openpyxl) writes a test workbook: RAA with every function in place and R
-ChainLadder's totals beside them, plus a Layers sheet.
+ChainLadder's totals beside them, plus Layers and ODP sheets.
 
 ## Install in Excel
 
@@ -42,6 +42,7 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One value per origin |
 | `PRO.CL.FACTORS(triangle, [average], [tail])` | LDF, CDF, sigma and standard error per link, and the tail |
 | `PRO.MACK(triangle, [average], [tail], [origins])` | Mack exhibit: process, parameter and total SE and CV, with a total |
+| `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap exhibit: CL reserve, mean, SD, CV and percentiles, with a total |
 | `PRO.VERSION()` | Version |
 | `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to the layer per ground-up loss |
@@ -54,6 +55,9 @@ Ctrl+Alt+F9 to recalculate.
 - `tail`: omitted for none, a factor such as `1.05`, or `"exponential"`,
   `"inverse_power"` or `"bondy"`.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...
+- `sims` (default 10000, at most 1000000), `seed` (default 0; the same seed
+  gives the same table), `percentiles` (a row or column such as
+  `{0.75,0.95,0.995}`), `process` (`"gamma"` or `"none"`).
 
 - `family`: `"pareto"` (`p1` = threshold t, `p2` = alpha, optional
   `truncation`), `"lognormal"` (meanlog, sdlog) or `"lognormal_cv"` (mean,
