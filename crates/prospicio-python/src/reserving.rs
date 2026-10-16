@@ -10449,10 +10449,12 @@ impl PyCompartmental {
     /// ``k_threshold`` is flagged and handled as ``refit`` says: by default
     /// moment-matched, and refitted with NUTS (this model's sampler, as
     /// long as ``fit``) only if its ``k`` stays above the threshold. On
-    /// company 337 about four in five simulations are flagged; for model 1
+    /// company 337 about four in five of model 1's simulations are flagged
+    /// and all of model 2's; for model 1
     /// matching rescues about nineteen in twenty of them, for model 2
-    /// almost none, so model 2's default view refits nearly every
-    /// simulation at about a minute each: set ``max_refits`` to bound it.
+    /// none, so model 2's default view refits nearly every
+    /// simulation, each refit as long as a fit (about 31 s of wall time with 8
+    /// running side by side): set ``max_refits`` to bound it.
     /// Raises one ``UserWarning`` listing the failed diagnostics of the
     /// fit, another if any refit failed its diagnostics, and another if
     /// ``max_refits`` left simulations unrefitted.

@@ -1247,7 +1247,8 @@ decision 20 and open decision 15; what is particular to this model:
   on model 1 that took matching from about 1 in 10 flagged simulations
   rescued to about 19 in 20. On model 2 (87 parameters, effect sds near
   0) matching rescues none on either scale, so its default view refits
-  every flagged simulation, nearly all of them, at about a minute each.
+  every flagged simulation, nearly all of them, each as long as a fit
+  (about 31 s of wall time with 8 running side by side).
 * A fit needs a future cell, so a fully developed square has no fit and
   no view; the conformance suite's "no year" check samples such a square
   directly in the unit tests.

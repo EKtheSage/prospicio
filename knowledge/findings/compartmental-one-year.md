@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: The compartmental one-year view needs centred effects for moment matching, and model 2 defeats it
-description: In the one-year view of Gesmann and Morris' compartmental models on company 337, about four in five (model 1) and all (model 2) simulations have Pareto k above 0.7; with every origin and development effect stored centred, moment matching rescues about 95% of model 1's within about 0.05 sd of their NUTS refits (about 1 in 10 on the non-centred scale NUTS samples), and none of model 2's, whose refits take about a minute each.
+description: In the one-year view of Gesmann and Morris' compartmental models on company 337, about four in five (model 1) and all (model 2) simulations have Pareto k above 0.7; with every origin and development effect stored centred, moment matching rescues about 95% of model 1's within about 0.05 sd of their NUTS refits (about 1 in 10 on the non-centred scale NUTS samples), and none of model 2's, whose refits each take as long as a fit (about 31 s of wall time with 8 running side by side).
 tags: [bayes, reserving, one-year, psis, importance-sampling, moment-matching, compartmental, gesmann-morris, clrd]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-15T00:00:00-07:00 }

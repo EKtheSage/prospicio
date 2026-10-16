@@ -31,7 +31,7 @@
 //! reserving_compartmental_one_year -- --ignored seed_sweep --nocapture`).
 //!
 //! Model 2 is measured, not checked in CI (`model_2_comparison`, ignored):
-//! moment matching rescues almost none of its simulations, and a refit
+//! moment matching rescues none of its simulations, and a refit
 //! takes about a minute, so its default view at 10,000 simulations is
 //! days of refits; `runtime` (ignored) measures both models' wall times.
 

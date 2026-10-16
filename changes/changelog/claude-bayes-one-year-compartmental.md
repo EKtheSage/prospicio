@@ -7,10 +7,12 @@
   for the flagged simulations, as the other Bayesian models' views. An
   origin with no observed cell (and, in model 2, an age with none) has
   its effects in each posterior draw, so the year's cells update them. On
-  company 337 about four in five simulations are flagged; for model 1
+  company 337 about four in five of model 1's simulations are flagged and all
+  of model 2's; for model 1
   matching rescues about 95% of them within a twentieth of an sd of their
-  refits, for model 2 almost none, so model 2's default view refits nearly
-  every simulation at about a minute each. In Python
+  refits, for model 2 none, so model 2's default view refits nearly
+  every simulation, each refit as long as a fit (about 31 s of wall time
+  with 8 running side by side). In Python
   `Compartmental.one_year(triangle, paid, premium, *, outstanding=None,
   incurred=None, k_threshold=0.7, refit="moment_match_then_refit",
   max_refits=None)`, returning a `CompartmentalOneYearFit`; in R

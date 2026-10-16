@@ -4681,10 +4681,12 @@ S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
 #' A simulation whose k is above `k_threshold` is flagged and handled as
 #' `refit` says (as [bayes_odp_one_year()]): by default moment-matched,
 #' and refitted with NUTS (this model's sampler, as long as the fit) only
-#' if its k stays above the threshold. On company 337 about four in five
-#' simulations are flagged; for model 1 matching rescues about nineteen in
-#' twenty of them, for model 2 almost none, so model 2's default view
-#' refits nearly every simulation at about a minute each: set `max_refits`
+#' if its k stays above the threshold. On company 337 about four in five of
+#' model 1's simulations are flagged and all of model 2's;
+#' for model 1 matching rescues about nineteen in
+#' twenty of them, for model 2 none, so model 2's default view
+#' refits nearly every simulation, each refit as long as a fit (about 31 s of
+#' wall time with 8 running side by side): set `max_refits`
 #' to bound it. `compartmental_model_2_one_year()` takes model 2's
 #' settings, as [compartmental_model_2()].
 #'

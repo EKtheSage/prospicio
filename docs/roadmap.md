@@ -280,9 +280,11 @@ what it is aiming for by v1.0.
     in Rust, Python and R): the effects of an origin or age with no
     observed cell carried with each posterior draw, every effect stored
     centred so that moment matching can follow the year. On company 337
-    about four in five simulations are flagged; matching rescues about
-    95% of model 1's within about 0.05 sd of their refits, and almost none
-    of model 2's, whose refits take about a minute each. A refit budget
+    about four in five of model 1's simulations are flagged and all of
+    model 2's; matching rescues about
+    95% of model 1's within about 0.05 sd of their refits, and none
+    of model 2's, whose refits each take as long as a fit (about 31 s of
+    wall time with 8 side by side). A refit budget
     (`max_refits`) bounds any model's view; its default for model 2 is
     the user's (open decision 15).
   - Selected development patterns (`reserving-v02.md`, decision 12;
