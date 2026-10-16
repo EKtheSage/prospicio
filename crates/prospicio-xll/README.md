@@ -87,6 +87,7 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.EXPOSURE.STATS(curve, p1, [p2], [p3])` | b, g, mean rate, total loss probability |
 | `PRO.SWISSRE.C(rate)` | Swiss Re c of a mean destruction rate |
 | `PRO.SWISSRE.C.LAYER(limit, attachment, mpl, share)` | Swiss Re c of a layer's share |
+| `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | Exposure-rated risk profile by band, with a total |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
   one column per age; blank or `#N/A` where unobserved.
@@ -123,6 +124,12 @@ Ctrl+Alt+F9 to recalculate.
   0 to 1, and optionally `"linear"` or `"log-log"` interpolation);
   `mpl`: a risk's maximum possible loss or sum insured, a number or a
   range that broadcasts against the limits and attachments.
+- `PRO.PROFILE`: one sum insured and expected loss per band; `p1` (and
+  `p2`) may give each band its own Swiss Re c (or MBBEFD b, g); `lower`
+  and `upper` spread a band's sums insured between bounds (`spread`:
+  `"uniform"`, the default, `"tilted"` to keep the band's sum insured
+  as the mean, or `"auto"`); `retention` and `lines` put a surplus
+  treaty under the per-risk layer.
 - `limit`, `attachment`, `basic_limit`: a number, a range or
   `"unlimited"`. A column of attachments against a row of limits gives a
   table, e.g. `=PRO.LAYER(B1:E1, A2:A4, "pareto", 500, 2)`.

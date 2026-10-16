@@ -427,9 +427,18 @@ for k, x in enumerate([0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 1]):
 ex["B18"] = ArrayFormula("B18:F26", '=PRO.EXPOSURE.CURVE(A18:A26,"swiss_re",B17:F17)')
 ex["A28"] = "The c whose mean rate is"; ex["B28"] = 0.05; ex["B28"].fill = inp
 ex["C28"] = ArrayFormula("C28", "=PRO.SWISSRE.C(B28)")
+ex["A30"] = "The same profile by PRO.PROFILE, net of a surplus of 4 lines on 1,000,000"; ex["A30"].font = bold
+ex["A31"] = "Retention"; ex["B31"] = 1000000; ex["B31"].fill = inp
+ex["A32"] = "Lines"; ex["B32"] = 4; ex["B32"].fill = inp
+ex["A33"] = ArrayFormula("A33:G39", '=PRO.PROFILE(A9:A13,D9:D13,B3,B4,"swiss_re",B2,,,,,,B31,B32)')
+for row in ex.iter_rows(min_row=34, max_row=39, min_col=1, max_col=6):
+    for c in row:
+        c.number_format = "#,##0.00" if c.column == 4 else "#,##0"
+for r in range(34, 40):
+    ex[f"G{r}"].number_format = "0.0000"
 ex.column_dimensions["A"].width = 26
-for col in "BCDEF":
-    ex.column_dimensions[col].width = 14
+for col in "BCDEFG":
+    ex.column_dimensions[col].width = 15
 
 wb.save(out)
 
