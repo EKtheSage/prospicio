@@ -6,4 +6,4 @@
   `PRO.EXPOSURE.QUANTILE` and `PRO.EXPOSURE.STATS` on Swiss Re, MBBEFD and
   tabulated curves, and the Swiss Re `c` of a mean rate or of a layer's
   share (`PRO.SWISSRE.C`, `PRO.SWISSRE.C.LAYER`); at parity with mpmath's
-  quadrature of the MBBEFD curves.
+  quadrature of the MBBEFD curves (#295).
