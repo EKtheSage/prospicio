@@ -1,7 +1,8 @@
-//! Ratemaking, part one (`docs/design/xll.md`): dates on Werner and
-//! Modlin's half-month grid, premium at the current rate level by the
+//! Ratemaking (`docs/design/xll.md`): dates on Werner and Modlin's
+//! half-month grid, premium at the current rate level by the
 //! parallelogram method, the average written and earned dates that set
-//! trend lengths, and fitted trends, over
+//! trend lengths, fitted trends, the loss ratio and pure premium
+//! methods' experience and the indicated rate with its complements, over
 //! `prospicio_pricing::ratemaking`.
 //!
 //! A date argument is a year fraction (`2011.5` is 1 July 2011) or an
@@ -10,7 +11,9 @@
 //! 19).
 
 use prospicio_pricing::ratemaking::{
-    Applies, Period, RateChange, RateHistory, TrendFit, year_fraction,
+    Applies, ExpenseCategory, LossRatioExperience, LossRatioYear, Period, Provisions,
+    PurePremiumExperience, PurePremiumYear, RateChange, RateHistory, TrendFit,
+    credibility_weighted, premium_based_expenses, trended_present_rates, year_fraction,
 };
 
 use crate::exposure::broadcast;
@@ -340,6 +343,235 @@ pub fn trend_fit(args: &[Grid]) -> Result<Grid> {
         vec![Value::from("Slope"), Value::number(fit.slope)],
         vec![Value::from("R-squared"), Value::number(fit.r_squared)],
         vec![Value::from("Points"), Value::Number(fit.n as f64)],
+    ]))
+}
+
+/// A factor per year: omitted for 1, one value for every year, or one
+/// per year.
+fn factors(g: &Grid, name: &str, n: usize) -> Result<Vec<f64>> {
+    if g.is_blank() {
+        return Ok(vec![1.0; n]);
+    }
+    each(g, name, n, "year")
+}
+
+/// One value for all `n`, or one per `unit`.
+fn each(g: &Grid, name: &str, n: usize, unit: &str) -> Result<Vec<f64>> {
+    if g.cells.len() == 1 {
+        return Ok(vec![scalar(g, name)?; n]);
+    }
+    let v = numbers(g, name)?;
+    if v.len() == n && g.cells.len() == n {
+        Ok(v)
+    } else {
+        Err(format!(
+            "{name} must be one value, or one per {unit} ({n}), got {} cells",
+            g.cells.len()
+        ))
+    }
+}
+
+/// Per-year values, one per year, all present.
+fn per_year(g: &Grid, name: &str, n: Option<usize>) -> Result<Vec<f64>> {
+    let v = numbers(g, name)?;
+    if v.len() != g.cells.len() {
+        return Err(format!("{name} must have a number in every cell"));
+    }
+    match n {
+        Some(n) if v.len() != n => Err(format!(
+            "{name} must have one value per year ({n}), got {}",
+            v.len()
+        )),
+        _ => Ok(v),
+    }
+}
+
+/// The loss ratio method's experience (Werner and Modlin, ch. 8): each
+/// year's premium at the current rate level, trended, and its losses
+/// developed, trended and loaded for LAE, its loss ratio, and the total
+/// (the ratio of the totals): `PRO.LR.EXPERIENCE(earned_premium, losses,
+/// [on_level], [premium_trend], [development], [loss_trend], [lae])`. A
+/// factor is omitted (1), one for every year, or one per year.
+pub fn lr_experience(args: &[Grid]) -> Result<Grid> {
+    let premium = per_year(&args[0], "earned_premium", None)?;
+    let n = premium.len();
+    let losses = per_year(&args[1], "losses", Some(n))?;
+    let olf = factors(&args[2], "on_level", n)?;
+    let pt = factors(&args[3], "premium_trend", n)?;
+    let dev = factors(&args[4], "development", n)?;
+    let lt = factors(&args[5], "loss_trend", n)?;
+    let lae = factors(&args[6], "lae", n)?;
+    let years: Vec<LossRatioYear> = (0..n)
+        .map(|k| LossRatioYear {
+            earned_premium: premium[k],
+            on_level_factor: olf[k],
+            premium_trend: pt[k],
+            losses: losses[k],
+            development: dev[k],
+            loss_trend: lt[k],
+            lae_factor: lae[k],
+        })
+        .collect();
+    let e = LossRatioExperience::new(&years).map_err(|e| e.to_string())?;
+    let mut rows = vec![
+        ["Projected premium", "Projected losses", "Loss ratio"]
+            .map(Value::from)
+            .to_vec(),
+    ];
+    for y in e.years() {
+        rows.push(vec![
+            Value::number(y.projected_premium()),
+            Value::number(y.projected_losses()),
+            Value::number(y.loss_ratio()),
+        ]);
+    }
+    rows.push(vec![
+        Value::number(e.projected_premium()),
+        Value::number(e.projected_losses()),
+        Value::number(e.loss_ratio()),
+    ]);
+    Ok(Grid::from_rows(rows))
+}
+
+/// The pure premium method's experience: each year's exposure, losses
+/// developed, trended and loaded for LAE, and pure premium, then the total:
+/// `PRO.PP.EXPERIENCE(exposure, losses, [development], [loss_trend],
+/// [lae])`.
+pub fn pp_experience(args: &[Grid]) -> Result<Grid> {
+    let exposure = per_year(&args[0], "exposure", None)?;
+    let n = exposure.len();
+    let losses = per_year(&args[1], "losses", Some(n))?;
+    let dev = factors(&args[2], "development", n)?;
+    let lt = factors(&args[3], "loss_trend", n)?;
+    let lae = factors(&args[4], "lae", n)?;
+    let years: Vec<PurePremiumYear> = (0..n)
+        .map(|k| PurePremiumYear {
+            exposure: exposure[k],
+            losses: losses[k],
+            development: dev[k],
+            loss_trend: lt[k],
+            lae_factor: lae[k],
+        })
+        .collect();
+    let e = PurePremiumExperience::new(&years).map_err(|e| e.to_string())?;
+    let mut rows = vec![
+        ["Exposure", "Projected losses", "Pure premium"]
+            .map(Value::from)
+            .to_vec(),
+    ];
+    for y in e.years() {
+        rows.push(vec![
+            Value::number(y.exposure),
+            Value::number(y.projected_losses()),
+            Value::number(y.pure_premium()),
+        ]);
+    }
+    rows.push(vec![
+        Value::number(e.exposure()),
+        Value::number(e.projected_losses()),
+        Value::number(e.pure_premium()),
+    ]);
+    Ok(Grid::from_rows(rows))
+}
+
+fn provisions(variable: &Grid, profit: &Grid) -> Result<Provisions> {
+    Provisions::new(scalar(variable, "variable")?, scalar(profit, "profit")?)
+        .map_err(|e| e.to_string())
+}
+
+/// An optional ratio or amount, 0 if omitted.
+fn or_zero(g: &Grid, name: &str) -> Result<f64> {
+    if g.is_blank() {
+        Ok(0.0)
+    } else {
+        scalar(g, name)
+    }
+}
+
+/// The loss ratio method's indicated change, `(LR + F) / (1 - V - Q) - 1`:
+/// `PRO.INDICATED.CHANGE(loss_ratio, variable, profit, [fixed_ratio])`.
+pub fn indicated_change(args: &[Grid]) -> Result<Grid> {
+    let p = provisions(&args[1], &args[2])?;
+    let fixed = or_zero(&args[3], "fixed_ratio")?;
+    broadcast(&[&args[0]], &["loss_ratio"], &[false], |v| {
+        Ok(p.loss_ratio_change(v[0], fixed))
+    })
+}
+
+/// The pure premium method's indicated rate, `(PP + fixed) / (1 - V -
+/// Q)`: `PRO.INDICATED.RATE(pure_premium, variable, profit,
+/// [fixed_per_exposure])`.
+pub fn indicated_rate(args: &[Grid]) -> Result<Grid> {
+    let p = provisions(&args[1], &args[2])?;
+    let fixed = or_zero(&args[3], "fixed_per_exposure")?;
+    broadcast(&[&args[0]], &["pure_premium"], &[false], |v| {
+        Ok(p.pure_premium_rate(v[0], fixed))
+    })
+}
+
+/// The permissible loss ratio, `1 - F - V - Q`:
+/// `PRO.PERMISSIBLE.LR(variable, profit, [fixed_ratio])`.
+pub fn permissible_lr(args: &[Grid]) -> Result<Grid> {
+    let p = provisions(&args[0], &args[1])?;
+    let fixed = or_zero(&args[2], "fixed_ratio")?;
+    Ok(Grid::scalar(Value::number(p.permissible_loss_ratio(fixed))))
+}
+
+/// The trended present rates complement as an indicated change,
+/// `(1 + prior indicated) / (1 + prior implemented) * trend - 1`:
+/// `PRO.TRENDED.PRESENT(prior_indicated, prior_implemented, trend)`.
+pub fn trended_present(args: &[Grid]) -> Result<Grid> {
+    broadcast(
+        &[&args[0], &args[1], &args[2]],
+        &["prior_indicated", "prior_implemented", "trend"],
+        &[false; 3],
+        |v| {
+            if v[1] <= -1.0 {
+                return Err("prior_implemented must be above -1".into());
+            }
+            Ok(trended_present_rates(v[0], v[1], v[2]))
+        },
+    )
+}
+
+/// `Z * estimate + (1 - Z) * complement`:
+/// `PRO.CRED.WEIGHTED(estimate, credibility, complement)`.
+pub fn cred_weighted(args: &[Grid]) -> Result<Grid> {
+    broadcast(
+        &[&args[0], &args[1], &args[2]],
+        &["estimate", "credibility", "complement"],
+        &[false; 3],
+        |v| {
+            if (0.0..=1.0).contains(&v[1]) {
+                Ok(credibility_weighted(v[0], v[1], v[2]))
+            } else {
+                Err(format!("credibility must be in [0, 1], got {}", v[1]))
+            }
+        },
+    )
+}
+
+/// The premium-based projection's fixed and variable expense ratios: each
+/// category's ratio split by its fixed share, summed:
+/// `PRO.EXPENSES(ratios, fixed_shares)`.
+pub fn expenses(args: &[Grid]) -> Result<Grid> {
+    let ratios = per_year(&args[0], "ratios", None)?;
+    let shares = factors(&args[1], "fixed_shares", ratios.len())
+        .map_err(|e| e.replace("per year", "per ratio"))?;
+    let shares = if args[1].is_blank() {
+        vec![0.0; ratios.len()]
+    } else {
+        shares
+    };
+    let categories: Vec<ExpenseCategory> = ratios
+        .iter()
+        .zip(&shares)
+        .map(|(&ratio, &fixed_share)| ExpenseCategory { ratio, fixed_share })
+        .collect();
+    let (fixed, variable) = premium_based_expenses(&categories).map_err(|e| e.to_string())?;
+    Ok(Grid::from_rows(vec![
+        vec![Value::from("Fixed"), Value::number(fixed)],
+        vec![Value::from("Variable"), Value::number(variable)],
     ]))
 }
 

@@ -911,6 +911,194 @@ pub static FUNCTIONS: &[Function] = &[
         ],
         run: ratemaking::trend_fit,
     },
+    Function {
+        symbol: "pro_lr_experience",
+        name: "PRO.LR.EXPERIENCE",
+        help: "Loss ratio method: each year's projected premium, losses and loss ratio, and the total.",
+        args: &[
+            Arg {
+                name: "earned_premium",
+                help: "Earned premium per experience year",
+            },
+            Arg {
+                name: "losses",
+                help: "Reported (or paid) losses per year, the same count",
+            },
+            Arg {
+                name: "on_level",
+                help: "Factor to the current rate level: one value for every year, or one per year; 1 if omitted",
+            },
+            Arg {
+                name: "premium_trend",
+                help: "Premium trend factor: one value for every year, or one per year; 1 if omitted",
+            },
+            Arg {
+                name: "development",
+                help: "Loss development factor to ultimate: one value for every year, or one per year; 1 if omitted",
+            },
+            Arg {
+                name: "loss_trend",
+                help: "Loss trend factor: one value for every year, or one per year; 1 if omitted",
+            },
+            Arg {
+                name: "lae",
+                help: "1 + the LAE ratio not in losses: one value for every year, or one per year; 1 if omitted",
+            },
+        ],
+        run: ratemaking::lr_experience,
+    },
+    Function {
+        symbol: "pro_pp_experience",
+        name: "PRO.PP.EXPERIENCE",
+        help: "Pure premium method: each year's exposure, projected losses and pure premium, and the total.",
+        args: &[
+            Arg {
+                name: "exposure",
+                help: "Earned exposure per experience year",
+            },
+            Arg {
+                name: "losses",
+                help: "Reported (or paid) losses per year, the same count",
+            },
+            Arg {
+                name: "development",
+                help: "Loss development factor to ultimate: one value for every year, or one per year; 1 if omitted",
+            },
+            Arg {
+                name: "loss_trend",
+                help: "Loss trend factor: one value for every year, or one per year; 1 if omitted",
+            },
+            Arg {
+                name: "lae",
+                help: "1 + the LAE ratio not in losses: one value for every year, or one per year; 1 if omitted",
+            },
+        ],
+        run: ratemaking::pp_experience,
+    },
+    Function {
+        symbol: "pro_indicated_change",
+        name: "PRO.INDICATED.CHANGE",
+        help: "Loss ratio method's indicated change, (LR + F) / (1 - V - Q) - 1.",
+        args: &[
+            Arg {
+                name: "loss_ratio",
+                help: "Projected loss and LAE ratio at current rates: a number or a range",
+            },
+            Arg {
+                name: "variable",
+                help: "Variable expense provision, a fraction of premium (0.25 for 25%)",
+            },
+            Arg {
+                name: "profit",
+                help: "Underwriting profit provision, a fraction of premium (may be negative)",
+            },
+            Arg {
+                name: "fixed_ratio",
+                help: "Fixed expense ratio to premium; 0 if omitted",
+            },
+        ],
+        run: ratemaking::indicated_change,
+    },
+    Function {
+        symbol: "pro_indicated_rate",
+        name: "PRO.INDICATED.RATE",
+        help: "Pure premium method's indicated rate, (PP + fixed) / (1 - V - Q).",
+        args: &[
+            Arg {
+                name: "pure_premium",
+                help: "Projected pure premium with LAE (and other costs per exposure): a number or a range",
+            },
+            Arg {
+                name: "variable",
+                help: "Variable expense provision, a fraction of premium (0.25 for 25%)",
+            },
+            Arg {
+                name: "profit",
+                help: "Underwriting profit provision, a fraction of premium (may be negative)",
+            },
+            Arg {
+                name: "fixed_per_exposure",
+                help: "Fixed expense per exposure; 0 if omitted",
+            },
+        ],
+        run: ratemaking::indicated_rate,
+    },
+    Function {
+        symbol: "pro_permissible_lr",
+        name: "PRO.PERMISSIBLE.LR",
+        help: "Permissible loss ratio, 1 - F - V - Q.",
+        args: &[
+            Arg {
+                name: "variable",
+                help: "Variable expense provision, a fraction of premium (0.25 for 25%)",
+            },
+            Arg {
+                name: "profit",
+                help: "Underwriting profit provision, a fraction of premium (may be negative)",
+            },
+            Arg {
+                name: "fixed_ratio",
+                help: "Fixed expense ratio to premium; 0 if omitted",
+            },
+        ],
+        run: ratemaking::permissible_lr,
+    },
+    Function {
+        symbol: "pro_trended_present",
+        name: "PRO.TRENDED.PRESENT",
+        help: "Trended present rates complement as a change: (1 + indicated) / (1 + implemented) * trend - 1.",
+        args: &[
+            Arg {
+                name: "prior_indicated",
+                help: "The last review's indicated change",
+            },
+            Arg {
+                name: "prior_implemented",
+                help: "The change taken then",
+            },
+            Arg {
+                name: "trend",
+                help: "Trend factor from the last target effective date to the new one",
+            },
+        ],
+        run: ratemaking::trended_present,
+    },
+    Function {
+        symbol: "pro_cred_weighted",
+        name: "PRO.CRED.WEIGHTED",
+        help: "Credibility-weighted estimate, Z * estimate + (1 - Z) * complement.",
+        args: &[
+            Arg {
+                name: "estimate",
+                help: "The indication: a number or a range",
+            },
+            Arg {
+                name: "credibility",
+                help: "Z, between 0 and 1",
+            },
+            Arg {
+                name: "complement",
+                help: "The complement of credibility",
+            },
+        ],
+        run: ratemaking::cred_weighted,
+    },
+    Function {
+        symbol: "pro_expenses",
+        name: "PRO.EXPENSES",
+        help: "Premium-based projection: fixed and variable expense ratios from each category's ratio and fixed share.",
+        args: &[
+            Arg {
+                name: "ratios",
+                help: "Each expense category's ratio to premium",
+            },
+            Arg {
+                name: "fixed_shares",
+                help: "Each category's fixed share, 0 to 1; all variable if omitted",
+            },
+        ],
+        run: ratemaking::expenses,
+    },
 ];
 
 /// Runs the function exported as `symbol` on `args`, catching a panic so

@@ -69,6 +69,14 @@ category of Insert Function:
 | `PRO.RATELEVEL(effective, changes, from, to, [period], [term], [applies], [given])` | One period's premium by rate level, average and current levels |
 | `PRO.AVGDATE(from, to, [period], [term], [basis])` | Each period's average written or earned (accident) date, for trend lengths |
 | `PRO.TREND.FIT(times, values, [kind])` | An exponential or linear least-squares trend: annual change, R-squared |
+| `PRO.LR.EXPERIENCE(earned_premium, losses, [on_level], [premium_trend], [development], [loss_trend], [lae])` | Loss ratio method: each year's projected premium, losses and loss ratio, and the total |
+| `PRO.PP.EXPERIENCE(exposure, losses, [development], [loss_trend], [lae])` | Pure premium method: each year's projected losses and pure premium, and the total |
+| `PRO.INDICATED.CHANGE(loss_ratio, variable, profit, [fixed_ratio])` | The loss ratio method's indicated change |
+| `PRO.INDICATED.RATE(pure_premium, variable, profit, [fixed_per_exposure])` | The pure premium method's indicated rate |
+| `PRO.PERMISSIBLE.LR(variable, profit, [fixed_ratio])` | The permissible loss ratio |
+| `PRO.TRENDED.PRESENT(prior_indicated, prior_implemented, trend)` | The trended present rates complement, as a change |
+| `PRO.CRED.WEIGHTED(estimate, credibility, complement)` | A credibility-weighted estimate |
+| `PRO.EXPENSES(ratios, [fixed_shares])` | The premium-based projection's fixed and variable expense ratios |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
@@ -315,9 +323,9 @@ order, one small PR each, those already done struck through:
 3. Pricing: ~~exposure curves (MBBEFD, Swiss Re, tabulated) and a
    layer's share, the Swiss Re calibrations~~; ~~a risk profile's layer
    loss and surplus cession~~;
-   ~~credibility (Buhlmann-Straub, limited fluctuation)~~; ratemaking
-   (~~trend fits and lengths, the rate level~~, the experience methods
-   and the indicated rate); burning cost.
+   ~~credibility (Buhlmann-Straub, limited fluctuation)~~; ~~ratemaking
+   (trend fits and lengths, the rate level, the experience methods and
+   the indicated rate)~~; burning cost.
 4. Aggregate: a compound distribution of a count and a severity, its
    moments, VaR, TVaR and layer statistics.
 
