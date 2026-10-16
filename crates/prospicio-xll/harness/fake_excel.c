@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("forty functions registered", registered == 40);
+    check("forty-seven functions registered", registered == 47);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -407,6 +407,16 @@ int main(int argc, char **argv) {
     check("PRO.LAYER.VAR(\"unlimited\", 0, \"pareto\", 1, 3) is 0.75",
           (lv->xltype & 0xFFF) == xltypeNum && fabs(lv->val.num - 0.75) < 1e-12);
     free12(lv);
+
+    /* Swiss Re c = 3: G(1) = 1, and the c recovered from G's mean rate. */
+    static wchar_t swiss_s[] = L"\x08" L"swiss_re";
+    XLOPER12 sfam;
+    sfam.xltype = xltypeStr;
+    sfam.val.str = swiss_s;
+    XLOPER12 *g1 = ((Fn5)GetProcAddress(xll, "pro_exposure_curve"))(&one, &sfam, &three, &missing, &missing);
+    check("PRO.EXPOSURE.CURVE(1, \"swiss_re\", 3) is 1",
+          (g1->xltype & 0xFFF) == xltypeNum && fabs(g1->val.num - 1) < 1e-15);
+    free12(g1);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

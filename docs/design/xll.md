@@ -54,6 +54,13 @@ category of Insert Function:
 | `PRO.LAYER.VAR(limit, attachment, family, p1, p2, [p3])` | Variance of the loss to the layer per ground-up loss |
 | `PRO.LAYER.CV(limit, attachment, family, p1, p2, [p3])` | CV of the layer loss given a loss above the attachment |
 | `PRO.ILF(limit, basic_limit, family, p1, p2, [p3])` | Increased limit factor `LEV(limit) / LEV(basic_limit)` |
+| `PRO.EXPOSURE.CURVE(x, curve, p1, [p2], [p3])` | An exposure curve's `G(x)` at each fraction `x` of the MPL |
+| `PRO.EXPOSURE.SHARE(limit, attachment, mpl, curve, p1, [p2], [p3])` | Share of a risk's expected loss in a layer; limits, attachments and MPLs broadcast |
+| `PRO.EXPOSURE.QUANTILE(p, curve, p1, [p2], [p3])` | The destruction rate (loss over MPL) at each probability |
+| `PRO.EXPOSURE.STATS(curve, p1, [p2], [p3])` | The curve's `b`, `g`, mean destruction rate and probability of a total loss |
+| `PRO.SWISSRE.C(rate)` | The Swiss Re `c` of a mean destruction rate |
+| `PRO.SWISSRE.C.LAYER(limit, attachment, mpl, share)` | The Swiss Re `c` of a layer's share |
+| `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
 omitted (none), a number (a constant factor to ultimate at the oldest age)
@@ -248,6 +255,22 @@ real Excel.
     `call` treats arguments past those given as omitted, and
     `tests/catalogue.rs` parses `src/xll.rs` to check that every export
     takes exactly its catalogue entry's arguments.
+18. **An exposure curve is named as a severity is** (decision 12):
+    `curve, p1, [p2], [p3]`, with `"swiss_re"` (`c`), `"mbbefd"` (`b`,
+    `g`) and `"tabulated"` (a range of `x`, a range of `G(x)` and the
+    interpolation), so a sheet keeps the parameters in cells.
+    `PRO.EXPOSURE.SHARE` broadcasts its limits, attachments and MPLs
+    against each other (decision 13), so a column of a risk profile's sums
+    insured gives each band's share of one layer, and a row of layers
+    against it a table. A severity's own curve, `LEV(x MPL) / LEV(MPL)`,
+    is `PRO.LEV` over `PRO.LEV` and needs no function of its own.
+    `PRO.PROFILE` takes one curve, or a Swiss Re `c` or an MBBEFD `b` and
+    `g` per band (a range with one cell per band), as Python's
+    `RiskProfile` takes one curve or a list. A band spreads its sums
+    insured between `lower` and `upper` when it has both; the spread is
+    uniform unless `spread` says `"tilted"` or `"auto"` (Python's default
+    too, without its warning: the exhibit's mean SI column shows where a
+    band's mean moved).
 
 ## Parity plan
 
@@ -269,7 +292,9 @@ order, one small PR each, those already done struck through:
    the loss elimination ratio~~; ~~the piecewise Pareto and Riegel's
    generalized Pareto~~; ~~the Pareto helpers (alpha between layers or
    frequencies, extrapolation)~~; ~~the layer variance~~.
-3. Pricing: exposure curves (MBBEFD, Swiss Re) and a layer's share;
+3. Pricing: ~~exposure curves (MBBEFD, Swiss Re, tabulated) and a
+   layer's share, the Swiss Re calibrations~~; ~~a risk profile's layer
+   loss and surplus cession~~;
    credibility (Buhlmann-Straub, limited fluctuation); ratemaking (trend,
    rate level, the indicated rate); burning cost.
 4. Aggregate: a compound distribution of a count and a severity, its

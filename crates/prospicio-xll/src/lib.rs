@@ -14,6 +14,7 @@
 //! prospicio-xll --target x86_64-pc-windows-msvc`, or `-gnu` from Linux)
 //! and rename `prospicio_xll.dll` to `prospicio.xll`.
 
+pub mod exposure;
 pub mod pricing;
 pub mod reserving;
 pub mod sheet;
@@ -164,6 +165,26 @@ const P2: Arg = Arg {
 const P3: Arg = Arg {
     name: "p3",
     help: "Third parameter: the Burr scale, gen_pareto alpha_tail, a Pareto truncation, or a piecewise truncation and \"lp\" or \"wd\"; omitted otherwise",
+};
+const EXPOSURE_CURVE: Arg = Arg {
+    name: "curve",
+    help: "swiss_re (p1 = c), mbbefd (p1 = b, p2 = g) or tabulated (p1 = x, p2 = G(x), p3 = \"linear\" or \"log-log\")",
+};
+const CP1: Arg = Arg {
+    name: "p1",
+    help: "Swiss Re c, MBBEFD b, or a tabulated curve's x values (a range from 0 to 1)",
+};
+const CP2: Arg = Arg {
+    name: "p2",
+    help: "MBBEFD g, or a tabulated curve's G(x) values (a range from 0 to 1); omitted for swiss_re",
+};
+const CP3: Arg = Arg {
+    name: "p3",
+    help: "A tabulated curve's interpolation, \"linear\" (default) or \"log-log\"; omitted otherwise",
+};
+const MPL: Arg = Arg {
+    name: "mpl",
+    help: "Maximum possible loss (or sum insured) of the risk(s): a number or a range",
 };
 const X: Arg = Arg {
     name: "x",
@@ -609,6 +630,122 @@ pub static FUNCTIONS: &[Function] = &[
             P3,
         ],
         run: pricing::increased_limit_factor,
+    },
+    Function {
+        symbol: "pro_exposure_curve",
+        name: "PRO.EXPOSURE.CURVE",
+        help: "Exposure curve G(x): the share of a risk's expected loss below a fraction x of its MPL.",
+        args: &[
+            Arg {
+                name: "x",
+                help: "Fraction(s) of the MPL, between 0 and 1: a number or a range",
+            },
+            EXPOSURE_CURVE,
+            CP1,
+            CP2,
+            CP3,
+        ],
+        run: exposure::exposure_curve,
+    },
+    Function {
+        symbol: "pro_exposure_share",
+        name: "PRO.EXPOSURE.SHARE",
+        help: "Share of a risk's expected loss in the layer limit xs attachment, for a risk of the given MPL.",
+        args: &[LIMIT, ATTACHMENT, MPL, EXPOSURE_CURVE, CP1, CP2, CP3],
+        run: exposure::share,
+    },
+    Function {
+        symbol: "pro_exposure_quantile",
+        name: "PRO.EXPOSURE.QUANTILE",
+        help: "Destruction rate (loss over MPL) at each probability, for simulating losses from the curve.",
+        args: &[PROBABILITY, EXPOSURE_CURVE, CP1, CP2, CP3],
+        run: exposure::quantile,
+    },
+    Function {
+        symbol: "pro_exposure_stats",
+        name: "PRO.EXPOSURE.STATS",
+        help: "The curve's b, g, mean destruction rate and probability of a total loss.",
+        args: &[EXPOSURE_CURVE, CP1, CP2, CP3],
+        run: exposure::stats,
+    },
+    Function {
+        symbol: "pro_swissre_c",
+        name: "PRO.SWISSRE.C",
+        help: "The Swiss Re c whose mean destruction rate (expected loss over MPL) is rate.",
+        args: &[Arg {
+            name: "rate",
+            help: "Mean destruction rate(s), in (0, 1]: a number or a range",
+        }],
+        run: exposure::swiss_re_c,
+    },
+    Function {
+        symbol: "pro_swissre_c_layer",
+        name: "PRO.SWISSRE.C.LAYER",
+        help: "The Swiss Re c whose share of a risk's expected loss in limit xs attachment is share.",
+        args: &[
+            LIMIT,
+            ATTACHMENT,
+            MPL,
+            Arg {
+                name: "share",
+                help: "The layer's share(s) of the risk's expected loss, between 0 and 1",
+            },
+        ],
+        run: exposure::swiss_re_c_layer,
+    },
+    Function {
+        symbol: "pro_profile",
+        name: "PRO.PROFILE",
+        help: "Exposure-rated risk profile: each band's expected claims, surplus cession and loss to a per-risk layer, with a total.",
+        args: &[
+            Arg {
+                name: "sums_insured",
+                help: "Each band's sum insured (its representative risk, taken as the MPL): a row or column",
+            },
+            Arg {
+                name: "expected_losses",
+                help: "Each band's expected annual loss (premium times loss ratio): one per band",
+            },
+            Arg {
+                name: "limit",
+                help: "The per-risk layer's limit, or \"unlimited\"",
+            },
+            Arg {
+                name: "attachment",
+                help: "The per-risk layer's attachment; 0 if omitted",
+            },
+            EXPOSURE_CURVE,
+            Arg {
+                name: "p1",
+                help: "Swiss Re c or MBBEFD b (one, or one per band), or a tabulated curve's x values",
+            },
+            Arg {
+                name: "p2",
+                help: "MBBEFD g (one, or one per band), or a tabulated curve's G(x) values",
+            },
+            CP3,
+            Arg {
+                name: "lower",
+                help: "Each band's lowest sum insured, a blank for a band without bounds; omitted for none",
+            },
+            Arg {
+                name: "upper",
+                help: "Each band's highest sum insured, a blank for a band without bounds",
+            },
+            Arg {
+                name: "spread",
+                help: "How a band spreads its sums insured between its bounds: \"uniform\" (default), \"tilted\" or \"auto\"",
+            },
+            Arg {
+                name: "retention",
+                help: "A surplus treaty's retention line, which the layer inures to; omitted for none",
+            },
+            Arg {
+                name: "lines",
+                help: "The surplus treaty's number of lines",
+            },
+        ],
+        run: exposure::profile,
     },
 ];
 

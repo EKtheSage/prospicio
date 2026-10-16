@@ -439,4 +439,11 @@ mod exports {
     udf!(pro_layer_var, limit, attachment, family, p1, p2, p3);
     udf!(pro_layer_cv, limit, attachment, family, p1, p2, p3);
     udf!(pro_ilf, limit, basic_limit, family, p1, p2, p3);
+    udf!(pro_exposure_curve, x, curve, p1, p2, p3);
+    udf!(pro_exposure_share, limit, attachment, mpl, curve, p1, p2, p3);
+    udf!(pro_exposure_quantile, p, curve, p1, p2, p3);
+    udf!(pro_exposure_stats, curve, p1, p2, p3);
+    udf!(pro_swissre_c, rate);
+    udf!(pro_swissre_c_layer, limit, attachment, mpl, share);
+    udf!(pro_profile, sums_insured, expected_losses, limit, attachment, curve, p1, p2, p3, lower, upper, spread, retention, lines);
 }

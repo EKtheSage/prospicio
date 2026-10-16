@@ -392,6 +392,54 @@ for row in th.iter_rows(min_row=4, max_row=39, min_col=1, max_col=12):
         c.number_format = "0.0000" if 17 <= c.row <= 26 else "#,##0"
 
 wb.calculation.fullCalcOnLoad = True
+
+# Exposure curves: a risk profile rated with a Swiss Re curve.
+ex = wb.create_sheet("Exposure")
+ex["A1"] = "Exposure rating with a Swiss Re curve (MBBEFD)"; ex["A1"].font = bold
+ex["A2"] = "Swiss Re c"; ex["B2"] = 3; ex["B2"].fill = inp
+ex["A3"] = "Layer limit"; ex["B3"] = 4000000; ex["B3"].fill = inp
+ex["A4"] = "Layer attachment"; ex["B4"] = 1000000; ex["B4"].fill = inp
+ex["D2"] = ArrayFormula("D2:E6", '=PRO.EXPOSURE.STATS("swiss_re",B2)')
+for h, col in zip(["Sum insured", "Premium", "Loss ratio", "Expected loss", "Layer share", "Layer loss"], "ABCDEF"):
+    ex[f"{col}8"] = h; ex[f"{col}8"].font = bold
+for k, (si, prem) in enumerate([(500000, 2000000), (2000000, 3000000), (5000000, 2500000), (10000000, 1500000), (25000000, 1000000)]):
+    r = 9 + k
+    ex[f"A{r}"] = si; ex[f"B{r}"] = prem; ex[f"C{r}"] = 0.6
+    for c in "ABC":
+        ex[f"{c}{r}"].fill = inp
+    ex[f"D{r}"] = f"=B{r}*C{r}"
+for c in "ABDF":
+    for r in range(9, 14):
+        ex[f"{c}{r}"].number_format = "#,##0"
+ex["E9"] = ArrayFormula("E9:E13", '=PRO.EXPOSURE.SHARE($B$3,$B$4,A9:A13,"swiss_re",$B$2)')
+for r in range(9, 14):
+    ex[f"E{r}"].number_format = "0.0000"
+    ex[f"F{r}"] = f"=D{r}*E{r}"
+ex["A14"] = "Total"; ex["A14"].font = bold
+ex["D14"] = "=SUM(D9:D13)"; ex["F14"] = "=SUM(F9:F13)"
+ex["D14"].number_format = ex["F14"].number_format = "#,##0"
+ex["A16"] = "G(x) for c = 1.5, 2, 3, 4, 5"; ex["A16"].font = bold
+ex["A17"] = "x"
+for k, c in enumerate([1.5, 2, 3, 4, 5]):
+    ex.cell(row=17, column=2 + k, value=c).fill = inp
+for k, x in enumerate([0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 0.9, 1]):
+    ex.cell(row=18 + k, column=1, value=x).fill = inp
+ex["B18"] = ArrayFormula("B18:F26", '=PRO.EXPOSURE.CURVE(A18:A26,"swiss_re",B17:F17)')
+ex["A28"] = "The c whose mean rate is"; ex["B28"] = 0.05; ex["B28"].fill = inp
+ex["C28"] = ArrayFormula("C28", "=PRO.SWISSRE.C(B28)")
+ex["A30"] = "The same profile by PRO.PROFILE, net of a surplus of 4 lines on 1,000,000"; ex["A30"].font = bold
+ex["A31"] = "Retention"; ex["B31"] = 1000000; ex["B31"].fill = inp
+ex["A32"] = "Lines"; ex["B32"] = 4; ex["B32"].fill = inp
+ex["A33"] = ArrayFormula("A33:G39", '=PRO.PROFILE(A9:A13,D9:D13,B3,B4,"swiss_re",B2,,,,,,B31,B32)')
+for row in ex.iter_rows(min_row=34, max_row=39, min_col=1, max_col=6):
+    for c in row:
+        c.number_format = "#,##0.00" if c.column == 4 else "#,##0"
+for r in range(34, 40):
+    ex[f"G{r}"].number_format = "0.0000"
+ex.column_dimensions["A"].width = 26
+for col in "BCDEFG":
+    ex.column_dimensions[col].width = 15
+
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
