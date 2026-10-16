@@ -17,7 +17,8 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 prospicio-core.workspace = true
-prospicio-reserving.workspace = true
+prospicio-reserving = { workspace = true, features = ["bayes"] }
+prospicio-bayes.workspace = true
 prospicio-prob.workspace = true
 prospicio-aggregate.workspace = true
 prospicio-pricing.workspace = true

@@ -414,7 +414,7 @@ what it is aiming for by v1.0.
   tabulated) and their calibrations; an exposure-rated risk profile;
   classical credibility; ratemaking (rate level, trend and the
   indication); the burning cost; aggregate distributions and layer
-  statistics.
+  statistics; the Bayesian ODP chain ladder by MCMC.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
      form (`xll.md`, parity plan): the plan's four groups are done;

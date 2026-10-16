@@ -44,6 +44,8 @@ typedef struct xloper12 {
 } XLOPER12;
 
 typedef XLOPER12 *(*Fn0)(void);
+typedef XLOPER12 *(*Fn10)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn9)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                          XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn8)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
@@ -147,7 +149,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("sixty-seven functions registered", registered == 67);
+    check("sixty-eight functions registered", registered == 68);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -448,6 +450,21 @@ int main(int argc, char **argv) {
     check("PRO.INDICATED.CHANGE(0.65, 0.25, 0.10, 0.065) is +10%",
           (ic->xltype & 0xFFF) == xltypeNum && fabs(ic->val.num - 0.10) < 1e-12);
     free12(ic);
+
+    /* The Bayesian ODP chain ladder by NUTS on RAA, its chains on worker
+     * threads: the diagnostics' first row is the largest R-hat. */
+    static wchar_t diag_s[] = L"\x0b" L"diagnostics";
+    XLOPER12 diag;
+    diag.xltype = xltypeStr;
+    diag.val.str = diag_s;
+    XLOPER12 *bd = ((Fn10)GetProcAddress(xll, "pro_bayes_odp"))(&tri, &diag, &missing, &missing, &missing,
+                                                                 &missing, &missing, &missing, &missing, &missing);
+    int bd_ok = (bd->xltype & 0xFFF) == xltypeMulti && bd->val.array.columns == 2 &&
+                (bd->val.array.lparray[1].xltype & 0xFFF) == xltypeNum;
+    double rhat = bd_ok ? bd->val.array.lparray[1].val.num : 99;
+    printf("PRO.BAYES.ODP(RAA, \"diagnostics\"): max R-hat %.4f\n", rhat);
+    check("PRO.BAYES.ODP samples RAA with R-hat under 1.01", bd_ok && rhat < 1.01);
+    free12(bd);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

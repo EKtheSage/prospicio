@@ -610,6 +610,33 @@ ag.column_dimensions["D"].width = 16
 ag.column_dimensions["G"].width = 16
 for col in "BCEH":
     ag.column_dimensions[col].width = 14
+
+# Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
+by = wb.create_sheet("Bayesian")
+by["A1"] = "Bayesian ODP chain ladder on RAA, sampled with NUTS (4 chains, 1,000 warm-up and 1,000 kept draws each)"; by["A1"].font = bold
+by["A2"] = "The triangle is the RAA sheet's; change the seed or draws below and the fit reruns."
+by["A3"] = "Draws per chain"; by["B3"] = 1000; by["B3"].fill = inp
+by["A4"] = "Chains"; by["B4"] = 4; by["B4"].fill = inp
+by["A5"] = "Seed"; by["B5"] = 0; by["B5"].fill = inp
+by["A6"] = "Prior SD"; by["B6"] = 10; by["B6"].fill = inp
+args = "RAA!B4:K13,{out},B3,B4,B5,,,B6"
+by["A8"] = "Diagnostics (check these first: R-hat under 1.01, ESS above 400, no divergences)"; by["A8"].font = bold
+by["A9"] = ArrayFormula("A9:B16", "=PRO.BAYES.ODP(" + args.format(out='"diagnostics"') + ")")
+by["D8"] = "Reserves: chain ladder, posterior mean, SD, CV and percentiles"; by["D8"].font = bold
+by["D9"] = ArrayFormula("D9:L20", "=PRO.BAYES.ODP(" + args.format(out='"reserves"') + ")")
+by["A23"] = "Posterior of the log-scale parameters: c, the origin effects a[w] and development effects b[d]"; by["A23"].font = bold
+by["A24"] = ArrayFormula("A24:I43", "=PRO.BAYES.ODP(" + args.format(out='"params"') + ")")
+by["D22"] = "Compare: the ODP bootstrap's total SD"
+by["H22"] = ArrayFormula("H22", "=INDEX(PRO.ODP(RAA!B4:K13,20000),12,4)")
+for row in by.iter_rows(min_row=10, max_row=20, min_col=5, max_col=12):
+    for c in row:
+        c.number_format = "0.000" if c.column == 8 else "#,##0"
+for row in by.iter_rows(min_row=25, max_row=43, min_col=2, max_col=9):
+    for c in row:
+        c.number_format = "0.0000" if c.column <= 7 else "#,##0"
+by.column_dimensions["A"].width = 20
+for col in "BCDEFGHIJKL":
+    by.column_dimensions[col].width = 13
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
