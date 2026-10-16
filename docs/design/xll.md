@@ -27,6 +27,10 @@ category of Insert Function:
 | `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's simulated reserves: one row per simulation, a column per origin and the total |
 | `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap (England, Verrall and Wuthrich), laid out as `PRO.ODP` |
 | `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Its simulated reserves, laid out as `PRO.ODP.SIMS` |
+| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Merz-Wuthrich: reserve, CDR(1) SE and run-off (Mack) SE per origin, and the total |
+| `PRO.MACK.CDR.YEARS(...)`, same arguments | The CDR SE per origin in each future calendar year (R's `CDR(k)S.E.`) |
+| `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | The ODP bootstrap's one-year view: simulated CDR mean, SD and percentiles |
+| `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap's one-year view, laid out as `PRO.ODP.CDR` |
 | `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method: exposure times the a priori loss ratio |
 | `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson |
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
@@ -60,6 +64,17 @@ error only); `tail` is read as for the chain ladder.
 crate's default, which reconciles with Mack's standard errors); `process`
 is `"gamma"` (default), `"lognormal"`, `"normal"`, `"residuals"` or
 `"none"`.
+
+The one-year view: `PRO.MACK.CDR` and `PRO.MACK.CDR.YEARS` wrap
+`MackFit::claims_development_result` (Merz and Wuthrich), and on RAA
+every reserve, `CDR(1)S.E.`, Mack S.E. and `CDR(k)S.E.` R's
+`CDR(MackChainLadder(RAA), dev = "all")` gives matches
+(`tests/one_year.rs`). `PRO.ODP.CDR` and `PRO.MACK.BOOT.CDR` wrap the
+bootstraps' `one_year` with the chain ladder (the bootstrap's tail, and
+for Mack its average and sigma rule) as the re-reserving method; the CDR
+is the opening ultimate less the re-estimated one, so a negative CDR is
+adverse, and the default percentiles are 0.5%, 5%, 95% and 99.5%. The
+re-reserving with the expected-loss methods is not exposed yet.
 
 The expected-loss methods wrap `ExpectedLoss`, `BornhuetterFerguson`,
 `Benktander` and `CapeCod`. `exposure` (premium) is a row or column with
@@ -207,8 +222,8 @@ order, one small PR each, those already done struck through:
 1. Reserving: ~~chain ladder, Mack~~, ~~ODP bootstrap and its draws~~,
    ~~Mack's bootstrap and its draws~~; ~~Mack's options (the sigma rule,
    selected factors)~~; ~~the expected-loss methods (expected loss,
-   Bornhuetter-Ferguson, Benktander, Cape Cod) on a premium column~~; the
-   one-year view (Merz-Wuthrich, the bootstraps' CDR); Clark's LDF and
+   Bornhuetter-Ferguson, Benktander, Cape Cod) on a premium column~~; ~~the
+   one-year view (Merz-Wuthrich, the bootstraps' CDR)~~; Clark's LDF and
    Cape Cod; triangle helpers (link ratios, incremental and cumulative,
    the latest diagonal).
 2. Severities: ~~the Pareto and the lognormal's LEV, layer, CV, ILF~~;

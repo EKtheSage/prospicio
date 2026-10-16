@@ -287,6 +287,36 @@ for row in el.iter_rows(min_row=17, max_row=50, min_col=2, max_col=15):
     for c in row:
         c.number_format = "#,##0"
 
+# The one-year view on the RAA sheet's triangle.
+oy = wb.create_sheet("One-year")
+oy["A1"] = "prospicio XLL test: the one-year view on RAA"; oy["A1"].font = Font(bold=True, size=13)
+oy["A2"] = "CDR = opening ultimate less the re-estimated one: a negative CDR is adverse."
+oy["A2"].font = note
+oy["A4"] = "Merz-Wuthrich (closed form)"; oy["A4"].font = bold
+oy["A5"] = ArrayFormula("A5:D16", f"=PRO.MACK.CDR({TRI},,,{ORI})")
+oy["F4"] = "CDR SE by future calendar year"; oy["F4"].font = bold
+oy["F5"] = ArrayFormula("F5:O16", f"=PRO.MACK.CDR.YEARS({TRI},,,{ORI})")
+oy["A19"] = "ODP bootstrap, 20000 simulations, seed 1"; oy["A19"].font = bold
+oy["A20"] = ArrayFormula("A20:H31", f"=PRO.ODP.CDR({TRI},20000,1,,,,{ORI})")
+oy["J19"] = "Mack bootstrap, 20000 simulations, seed 1"; oy["J19"].font = bold
+oy["J20"] = ArrayFormula("J20:Q31", f"=PRO.MACK.BOOT.CDR({TRI},20000,1,,,,,{ORI})")
+oy["A34"] = "Check against R ChainLadder 0.2.21 CDR(MackChainLadder(RAA))"; oy["A34"].font = bold
+for h, col in zip(["Quantity", "prospicio", "R", "Match"], "ABCD"):
+    oy[f"{col}35"] = h; oy[f"{col}35"].font = bold
+for i, (name, f, x) in enumerate([
+        ("Total CDR(1) SE", "=C16", 25166.3025264382),
+        ("Total Mack SE", "=D16", 26880.7403298914),
+        ("Total CDR SE, year 2", "=H16", 7306.52121591382)]):
+    row = 36 + i
+    oy[f"A{row}"] = name; oy[f"B{row}"] = f; oy[f"C{row}"] = x
+    oy[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-6"
+oy.column_dimensions["A"].width = 22
+for col in "BCDEFGHIJKLMNOPQ":
+    oy.column_dimensions[col].width = 12
+for row in oy.iter_rows(min_row=6, max_row=38, min_col=2, max_col=17):
+    for c in row:
+        c.number_format = "#,##0"
+
 wb.calculation.fullCalcOnLoad = True
 wb.save(out)
 

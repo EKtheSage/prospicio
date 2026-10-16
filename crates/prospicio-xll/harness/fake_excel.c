@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("twenty functions registered", registered == 20);
+    check("twenty-four functions registered", registered == 24);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -335,6 +335,20 @@ int main(int argc, char **argv) {
     check("BF reserve is the unreported share of 20000 each",
           fabs(bf->val.array.lparray[11 * 7 + 6].val.num - expect) < 1e-6);
     free12(bf);
+
+    /* Merz-Wuthrich: RAA's total CDR(1) SE 25166.303 (R ChainLadder's CDR). */
+    XLOPER12 *cd = ((Fn8)GetProcAddress(xll, "pro_mack_cdr"))(&tri, &missing, &missing, &missing, &missing,
+                                                              &missing, &missing, &missing);
+    print_result("PRO.MACK.CDR(RAA)", cd);
+    check("total CDR(1) SE 25166.303 (R ChainLadder)",
+          fabs(cd->val.array.lparray[11 * 4 + 2].val.num - 25166.3025264382) < 1e-6);
+    free12(cd);
+    sims.val.num = 2000;
+    XLOPER12 *oc = ((Fn7)GetProcAddress(xll, "pro_odp_cdr"))(&tri, &sims, &seed, &missing, &missing, &missing,
+                                                             &missing);
+    check("ODP one-year table is 12 x 8", (oc->xltype & 0xFFF) == xltypeMulti && oc->val.array.rows == 12 &&
+                                              oc->val.array.columns == 8);
+    free12(oc);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

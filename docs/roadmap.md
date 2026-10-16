@@ -366,10 +366,10 @@ what it is aiming for by v1.0.
   artifact by CI, attached to a draft release on a version tag; the
   bootstrap's draws as a table; Mack's bootstrap; the expected-loss
   methods (expected loss, BF, Benktander, Cape Cod); Mack's sigma rule and
-  selected factors.
+  selected factors; the one-year view (Merz-Wuthrich, both bootstraps).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): the one-year view, Clark, triangle helpers; then
+     form (`xll.md`, parity plan): Clark, triangle helpers; then
      severities, pricing and aggregates.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).

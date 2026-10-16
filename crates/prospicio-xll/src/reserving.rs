@@ -14,8 +14,9 @@ use prospicio_prob::{Distribution, PredictiveDistribution, Sampled};
 use prospicio_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ChainLadderFit, CurveShape,
     Development, DevelopmentColumn, ExpectedLoss, ExpectedLossFit, Long, Mack, MackBootstrap,
-    MackBootstrapFit, MackProcess, OdpBootstrap, OdpBootstrapFit, PatternKind, PatternWeight,
-    ProcessDistribution, SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailCurve, Triangle,
+    MackBootstrapFit, MackFit, MackProcess, OdpBootstrap, OdpBootstrapFit, OneYearMethod,
+    PatternKind, PatternWeight, ProcessDistribution, SelectedPattern, SigmaInterpolation, Tail,
+    TailBondy, TailCurve, Triangle,
 };
 
 use crate::sheet::{CellError, Grid, Value, position};
@@ -391,14 +392,7 @@ pub fn cl_factors(args: &[Grid]) -> Result<Grid> {
 /// Mack's exhibit: Origin, Latest, Ultimate, Reserve, Process SE,
 /// Parameter SE, Mack SE and CV per origin, then a total row.
 pub fn mack_summary(args: &[Grid]) -> Result<Grid> {
-    let tri = triangle(&args[0])?;
-    let fit = Mack {
-        development: development_with(&args[1], [&args[4], &args[5], &args[6]], &args[7])?,
-        tail: tail(&args[2])?,
-        ..Mack::default()
-    }
-    .fit(&tri, COLUMN)
-    .map_err(|e| e.to_string())?;
+    let fit = mack_fit(args)?;
     let cl = &fit.chain_ladder;
     let labels = origin_labels(&args[3], cl.origins.len())?;
     let reserves = cl.reserves();
@@ -859,4 +853,196 @@ pub fn cape_cod(args: &[Grid]) -> Result<Grid> {
     .map_err(|e| e.to_string())?;
     let labels = origin_labels(&args[6], fit.expected_loss.chain_ladder.origins.len())?;
     Ok(expected_loss_exhibit(&fit.expected_loss, labels))
+}
+
+/// Mack's model of a triangle argument with the chain-ladder options at
+/// `args[1]` (average), `args[2]` (tail) and `args[4..8]` (selected, kind,
+/// weight, sigma).
+fn mack_fit(args: &[Grid]) -> Result<MackFit> {
+    let tri = triangle(&args[0])?;
+    Mack {
+        development: development_with(&args[1], [&args[4], &args[5], &args[6]], &args[7])?,
+        tail: tail(&args[2])?,
+        ..Mack::default()
+    }
+    .fit(&tri, COLUMN)
+    .map_err(|e| e.to_string())
+}
+
+/// Merz and Wuthrich's one-year view of Mack's model: per origin the
+/// reserve, the standard error of the claims development result in the
+/// coming year (R's `CDR(1)S.E.`) and of the full run-off (Mack's), then
+/// the total:
+/// `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])`.
+pub fn mack_cdr(args: &[Grid]) -> Result<Grid> {
+    let fit = mack_fit(args)?;
+    let cdr = fit.claims_development_result().map_err(|e| e.to_string())?;
+    let cl = &fit.chain_ladder;
+    let labels = origin_labels(&args[3], cl.origins.len())?;
+    let reserves = cl.reserves();
+    let run_off = cdr.run_off_standard_error();
+    let mut rows = vec![
+        ["Origin", "Reserve", "CDR(1) SE", "Run-off SE"]
+            .map(Value::from)
+            .to_vec(),
+    ];
+    for (i, label) in labels.into_iter().enumerate() {
+        rows.push(vec![
+            label,
+            Value::number(reserves[i]),
+            Value::number(cdr.one_year_standard_error[i]),
+            Value::number(run_off[i]),
+        ]);
+    }
+    rows.push(vec![
+        Value::from("Total"),
+        Value::number(cl.total_reserve()),
+        Value::number(cdr.total_one_year_standard_error),
+        Value::number(fit.total_standard_error),
+    ]);
+    Ok(Grid::from_rows(rows))
+}
+
+/// The standard error of each origin's claims development result in each
+/// future calendar year (R's `CDR(k)S.E.`), a column per year, then the
+/// total's:
+/// `PRO.MACK.CDR.YEARS(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])`.
+pub fn mack_cdr_years(args: &[Grid]) -> Result<Grid> {
+    let fit = mack_fit(args)?;
+    let cdr = fit.claims_development_result().map_err(|e| e.to_string())?;
+    let labels = origin_labels(&args[3], cdr.origins.len())?;
+    let years = cdr.by_calendar_year.len();
+    let mut header = vec![Value::from("Origin")];
+    header.extend((1..=years).map(|t| Value::Text(format!("Year {t}"))));
+    let mut rows = vec![header];
+    for (o, label) in labels.into_iter().enumerate() {
+        let mut row = vec![label];
+        row.extend(
+            cdr.by_calendar_year
+                .iter()
+                .map(|year| Value::number(year[o])),
+        );
+        rows.push(row);
+    }
+    let mut total = vec![Value::from("Total")];
+    total.extend(cdr.total_by_calendar_year.iter().map(|&x| Value::number(x)));
+    rows.push(total);
+    Ok(Grid::from_rows(rows))
+}
+
+/// The percentiles a simulated CDR exhibit reports when none are given:
+/// the adverse tail (a negative CDR is adverse) and its mirror.
+pub const CDR_PERCENTILES: [f64; 4] = [0.005, 0.05, 0.95, 0.995];
+
+/// A simulated one-year exhibit: per origin the opening reserve and the
+/// simulated claims development result's mean, SD and percentiles, then
+/// the total, whose percentiles are of the simulated total CDR.
+fn cdr_exhibit(
+    cdr: &PredictiveDistribution,
+    opening_reserve: &[f64],
+    labels: Vec<Value>,
+    probabilities: &[f64],
+) -> Result<Grid> {
+    let n = cdr.n_components();
+    let draws = cdr.draw_matrix();
+    let stats = |s: &Sampled, reserve: f64| -> Result<Vec<Value>> {
+        let mut row = vec![
+            Value::number(reserve),
+            Value::number(s.mean()),
+            Value::number(s.std_dev()),
+        ];
+        for &p in probabilities {
+            row.push(Value::number(s.quantile(p).map_err(|e| e.to_string())?));
+        }
+        Ok(row)
+    };
+    let mut header: Vec<Value> = ["Origin", "Opening reserve", "Mean CDR", "SD"]
+        .map(Value::from)
+        .to_vec();
+    header.extend(
+        probabilities
+            .iter()
+            .map(|&p| Value::Text(percentile_label(p))),
+    );
+    let mut rows = vec![header];
+    for (j, label) in labels.into_iter().enumerate() {
+        let column: Vec<f64> = draws.iter().skip(j).step_by(n).copied().collect();
+        let s = Sampled::new(column).map_err(|e| e.to_string())?;
+        let mut row = vec![label];
+        row.extend(stats(&s, opening_reserve[j])?);
+        rows.push(row);
+    }
+    let mut total = vec![Value::from("Total")];
+    total.extend(stats(cdr.total(), opening_reserve.iter().sum())?);
+    rows.push(total);
+    Ok(Grid::from_rows(rows))
+}
+
+/// The `percentiles` argument of a CDR exhibit, [`CDR_PERCENTILES`] when
+/// omitted.
+fn cdr_percentiles(grid: &Grid) -> Result<Vec<f64>> {
+    if grid.is_blank() {
+        Ok(CDR_PERCENTILES.to_vec())
+    } else {
+        percentiles(grid)
+    }
+}
+
+/// The ODP bootstrap's one-year view, re-reserving with the chain ladder
+/// on each simulated year:
+/// `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])`.
+pub fn odp_cdr(args: &[Grid]) -> Result<Grid> {
+    let tri = triangle(&args[0])?;
+    let probabilities = cdr_percentiles(&args[3])?;
+    let tail = tail(&args[4])?;
+    let fit = OdpBootstrap {
+        n_sims: count(&args[1], "sims", 10_000, MAX_SIMS)?,
+        seed: seed(&args[2])?,
+        tail,
+        process: process(&args[5])?,
+        ..OdpBootstrap::default()
+    }
+    .one_year(
+        &tri,
+        COLUMN,
+        &OneYearMethod::ChainLadder(ChainLadder {
+            tail,
+            ..ChainLadder::default()
+        }),
+    )
+    .map_err(|e| e.to_string())?;
+    let labels = origin_labels(&args[6], fit.opening_reserve.len())?;
+    cdr_exhibit(&fit.cdr, &fit.opening_reserve, labels, &probabilities)
+}
+
+/// Mack's bootstrap's one-year view, re-reserving with the chain ladder
+/// (the same average and sigma rule) on each simulated year:
+/// `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])`.
+pub fn mack_bootstrap_cdr(args: &[Grid]) -> Result<Grid> {
+    let tri = triangle(&args[0])?;
+    let probabilities = cdr_percentiles(&args[3])?;
+    let dev = Development {
+        sigma_interpolation: sigma(&args[8])?,
+        ..development(average(&args[4])?)
+    };
+    let tail = tail(&args[5])?;
+    let fit = MackBootstrap {
+        n_sims: count(&args[1], "sims", 10_000, MAX_SIMS)?,
+        seed: seed(&args[2])?,
+        process: mack_process(&args[6])?,
+        development: dev.clone(),
+        tail,
+        ..MackBootstrap::default()
+    }
+    .one_year(
+        &tri,
+        COLUMN,
+        &OneYearMethod::ChainLadder(ChainLadder {
+            development: dev,
+            tail,
+        }),
+    )
+    .map_err(|e| e.to_string())?;
+    let labels = origin_labels(&args[7], fit.opening_reserve.len())?;
+    cdr_exhibit(&fit.cdr, &fit.opening_reserve, labels, &probabilities)
 }
