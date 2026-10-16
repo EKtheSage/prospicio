@@ -8,6 +8,9 @@ name: CI
 # that sample with NUTS stay out of the rust job's debug `cargo test`: the
 # Bayesian parity files sit behind prospicio-validation's `slow-bayes`, and
 # prospicio-reserving's NUTS unit tests are ignored without its `slow-tests`.
+# Of the slowest Bayesian checks, Meyers' and the compartmental models'
+# one-year views, a PR runs a smoke version (one model each); the weekly
+# and manual runs set RISK_RS_FULL_BAYES and run them all.
 # The scheduled run also keeps main's caches warm for new PRs.
 on:
   push:
@@ -240,7 +243,10 @@ jobs:
   #   in release).
   # The rust job's debug `cargo test` skips or ignores them. On a pull
   # request this job runs only when their inputs change; otherwise its
-  # steps are skipped and it passes.
+  # steps are skipped and it passes. A pull request runs the smoke version
+  # of the Meyers and compartmental one-year validation; the weekly and
+  # manual runs set RISK_RS_FULL_BAYES and run all of it
+  # (prospicio_validation::full_bayes; the user's decision of 2026-10-16).
   bayes:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
@@ -269,7 +275,10 @@ jobs:
           key: release
       - if: steps.changes.outputs.run == 'true'
         name: Run the Bayesian parity tests in release
+        env:
+          RISK_RS_FULL_BAYES: ${{ github.event_name != 'pull_request' && '1' || '' }}
         run: |
+          echo "RISK_RS_FULL_BAYES=${RISK_RS_FULL_BAYES:-} (empty: the pull request's smoke run)"
           tests=$(python3 -c "import tomllib; t = tomllib.load(open('validation/Cargo.toml', 'rb')); print(' '.join('--test ' + x['name'] for x in t['test'] if 'slow-bayes' in x.get('required-features', [])))")
           echo "cargo test --release -p prospicio-validation --features slow-bayes $tests"
           cargo test --release -p prospicio-validation --features slow-bayes $tests

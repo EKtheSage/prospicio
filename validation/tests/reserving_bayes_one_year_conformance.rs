@@ -40,6 +40,13 @@
 //! 6. a triangle whose every origin is at the last age gives a zero claims
 //!    development result, `k̂` 0 and no refit under every setting.
 //!
+//! A pull request runs Meyers' CRC alone of Meyers' three models (the smoke
+//! run, with the same sizes and bounds); CSR and CAY join when
+//! `RISK_RS_FULL_BAYES` is set, as in CI's weekly and manual runs
+//! (`prospicio_validation::full_bayes`, the user's decision of
+//! 2026-10-16). The other models always run. Meyers' views get their
+//! `n_sims` explicitly: by default `Meyers::one_year` runs at most 2,000.
+//!
 //! Every bound is at least the largest model's mean (or mean offset) plus
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
 //! 4.75, both GenIns under `BayesOdp`; gaps 0.071, `BayesBf`, and 0.455,
@@ -59,7 +66,7 @@ use prospicio_reserving::bayes::{
     MeyersModel, OneYearRefit,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
-use prospicio_validation::{triangle, triangle_columns};
+use prospicio_validation::{full_bayes, triangle, triangle_columns};
 
 /// The simulations of the mean check.
 const SIMS: usize = 10_000;
@@ -424,7 +431,15 @@ fn meyers<'a>(tri: &'a Triangle, model: MeyersModel, column: &'a str) -> Box<Run
             seed,
             ..Meyers::default()
         }
-        .one_year(tri, column, "premium", &settings(refit))
+        .one_year(
+            tri,
+            column,
+            "premium",
+            &BayesOneYear {
+                n_sims: Some(n_sims),
+                ..settings(refit)
+            },
+        )
         .unwrap()
     })
 }
@@ -485,11 +500,16 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
             ),
         ]
     };
+    // A strict run without the full gate (a pull request): CRC alone.
+    let meyers_models = if strict && !full_bayes() { 1 } else { 3 };
     for (name, model, column) in [
         ("Meyers CRC paid", MeyersModel::Crc, "paid"),
         ("Meyers CSR paid", MeyersModel::Csr, "paid"),
         ("Meyers CAY incurred", MeyersModel::Cay, "incurred"),
-    ] {
+    ]
+    .into_iter()
+    .take(meyers_models)
+    {
         let measured = conform(
             name,
             &*meyers(group, model, column),

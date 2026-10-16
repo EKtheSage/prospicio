@@ -31,6 +31,12 @@
 //!   only the share of the lifetime uncertainty that emerges in the first
 //!   year is expected to be of the same order.
 //!
+//! A pull request runs CRC alone (the smoke run, with the same sizes and
+//! bounds); every case runs when `RISK_RS_FULL_BAYES` is set, as in CI's
+//! weekly and manual runs (`prospicio_validation::full_bayes`, the user's
+//! decision of 2026-10-16). The view's `n_sims` is set explicitly here: by
+//! default `Meyers::one_year` runs at most 2,000 simulations.
+//!
 //! Every bound is the sweep's mean minus (floors) or plus (bounds) at
 //! least 4 seed-to-seed sds over seeds 0 to 19, and every seed passes
 //! (`seed_sweep`, ignored: `SWEEP_SEEDS=20 cargo test --release -p
@@ -48,18 +54,25 @@ use prospicio_reserving::bayes::{
 use prospicio_reserving::{
     ChainLadder, DevelopmentColumn, Grain, Lag, Long, Month, OdpBootstrap, OneYearMethod, Triangle,
 };
+use prospicio_validation::full_bayes;
 
 /// Simulations of the default view.
 const SIMS: usize = 500;
 /// Of those, the simulations refitted with `RefitAll` for the gaps.
 const REFIT_SIMS: usize = 60;
 
-/// The cases: name, model and column.
+/// The cases: name, model and column. The first, CRC, is the smoke run.
 const CASES: &[(&str, MeyersModel, &str)] = &[
     ("CRC paid", MeyersModel::Crc, "paid"),
     ("CSR paid", MeyersModel::Csr, "paid"),
     ("CAY incurred", MeyersModel::Cay, "incurred"),
 ];
+
+/// The cases the strict test runs: every case in the full run, CRC alone
+/// otherwise.
+fn strict_cases() -> &'static [(&'static str, MeyersModel, &'static str)] {
+    if full_bayes() { CASES } else { &CASES[..1] }
+}
 
 /// Per case: the floor on `rescued`, the bound on `gap_matched` and the
 /// band on `life_ratio`. Over seeds 0 to 19 (mean, sd, and the extreme
@@ -170,6 +183,7 @@ fn view(
         "premium",
         &BayesOneYear {
             refit,
+            n_sims: Some(n_sims),
             ..BayesOneYear::default()
         },
     )
@@ -283,7 +297,7 @@ fn bounds(name: &str) -> (f64, f64, (f64, f64)) {
 #[test]
 fn the_one_year_view_matches_its_refits() {
     let mut crc_ratio = None;
-    for &(name, model, column) in CASES {
+    for &(name, model, column) in strict_cases() {
         let m = measure(name, model, column, 0);
         let (floor, gap, (lo, hi)) = bounds(name);
         assert!(m.mean_z.abs() < 5.0, "{name}: mean z {}", m.mean_z);
