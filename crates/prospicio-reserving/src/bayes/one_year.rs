@@ -19,7 +19,9 @@
 //! written once over it. A model whose cells are over-dispersed Poisson
 //! increments with a log-linear mean ([`BayesOdp`](super::BayesOdp),
 //! [`BayesBf`](super::BayesBf)) gets its [`YearModel`] from [`OdpYear`] by
-//! implementing the smaller [`OdpCells`]. The conformance suite in this
+//! implementing the smaller [`OdpCells`]; [`Meyers`](super::Meyers)'
+//! models implement it directly (`meyers::year::MeyersYear`, decision 19).
+//! The conformance suite in this
 //! module's tests (and its release-build twin,
 //! `validation/tests/reserving_bayes_one_year_conformance.rs`) runs on every
 //! implementor.
@@ -65,7 +67,7 @@ pub enum OneYearRefit {
 }
 
 /// Settings of the one-year view of a Bayesian model
-/// (`BayesOdp::one_year`, `BayesBf::one_year`): the Pareto `k̂` above
+/// (`BayesOdp::one_year`, `BayesBf::one_year`, `Meyers::one_year`): the Pareto `k̂` above
 /// which a simulation's importance weights are not trusted, and what is
 /// done then.
 ///
@@ -133,10 +135,10 @@ impl BayesOneYear {
 /// moves the draws by affine maps on it, which on a constrained scale (a
 /// standard deviation, `tanh` of a correlation) can leave the support;
 /// a Jacobian term does not mend that. `BayesOdp` and `BayesBf` store
-/// such draws. `Meyers` and `Compartmental` store natural-scale values
-/// (`tanh`, square roots of variances, exponentials) and must store or
-/// expose their unconstrained sampling scale before they implement this
-/// trait.
+/// such draws, and `Meyers` keeps such a copy beside its natural-scale
+/// posterior (decision 19). `Compartmental` stores natural-scale values
+/// (exponentials, rates) and must store or expose its unconstrained
+/// sampling scale before it implements this trait.
 ///
 /// Everything a simulation's predictive step would draw afresh that the
 /// year's cells inform (an effect of an origin or an age with no observed
@@ -587,13 +589,15 @@ impl<C: OdpCells> YearModel for OdpYear<'_, C> {
 
 /// The one-year view of a Bayesian model on one segment
 /// ([`BayesOdp::one_year`](super::BayesOdp::one_year),
-/// [`BayesBf::one_year`](super::BayesBf::one_year)): the lifetime fit, the
+/// [`BayesBf::one_year`](super::BayesBf::one_year),
+/// [`Meyers::one_year`](super::Meyers::one_year)): the lifetime fit, the
 /// opening reserve, the claims development result and how reliable each
 /// simulation's reweighting was.
 ///
 /// `F` is the model's lifetime fit: [`BayesOdpFit`](super::BayesOdpFit)
 /// for the Bayesian ODP, [`BayesBfFit`](super::BayesBfFit) for the
-/// Bayesian Bornhuetter–Ferguson.
+/// Bayesian Bornhuetter–Ferguson, [`MeyersFit`](super::MeyersFit) for
+/// Meyers' models.
 #[derive(Debug, Clone)]
 pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     /// The model fitted to the observed triangle, with its lifetime
@@ -763,8 +767,9 @@ impl<S: ReserveFit> ReserveFit for BayesOneYearSegment<S> {
 }
 
 /// The one-year view of a Bayesian model in every segment of a triangle
-/// ([`BayesOdp::one_year_segments`](super::BayesOdp::one_year_segments)),
-/// with the layout of [`OneYearFits`](crate::OneYearFits).
+/// ([`BayesOdp::one_year_segments`](super::BayesOdp::one_year_segments),
+/// [`Meyers::one_year_segments`](super::Meyers::one_year_segments)), with
+/// the layout of [`OneYearFits`](crate::OneYearFits).
 #[derive(Debug, Clone)]
 pub struct BayesOneYearFits<S = super::BayesOdpSegment> {
     /// Each segment's posterior, opening reserve and Pareto `k̂`.

@@ -3998,8 +3998,12 @@ S7::method(print, one_year_fit) <- function(x, ...) {
 }
 S7::method(print, bayes_one_year_fit) <- function(x, ...) {
   cdr <- x@cdr
-  cat(sprintf("<bayes_one_year_fit> %d simulations, scale %s\n", as.integer(cdr@n_sims),
-              format(x@fit@scale, digits = 6)))
+  detail <- if (x@ptr$model() == "meyers") {
+    sprintf("Meyers' %s", toupper(x@fit@model))
+  } else {
+    sprintf("scale %s", format(x@fit@scale, digits = 6))
+  }
+  cat(sprintf("<bayes_one_year_fit> %d simulations, %s\n", as.integer(cdr@n_sims), detail))
   cat(sprintf("Pareto k above %s: %s of the simulations, %d refitted%s\n",
               format(x@k_threshold), format(x@flagged_share, digits = 3), length(x@refitted),
               if (x@refit_warnings > 0) sprintf(" (%d with warnings)", x@refit_warnings) else ""))
@@ -4013,8 +4017,13 @@ S7::method(print, bayes_one_year_fits) <- function(x, ...) {
   cdr <- x@cdr
   p <- x@chain_ladder@ptr
   cat(sprintf("<bayes_one_year_fits> %d simulations%s\n", as.integer(cdr@n_sims),
-              if (p$n_segments() > 1) segments_note(p) else
-                sprintf(", scale %s", format(x@scale, digits = 6))))
+              if (p$n_segments() > 1) {
+                segments_note(p)
+              } else if (x@ptr$model() == "meyers") {
+                ""
+              } else {
+                sprintf(", scale %s", format(x@scale, digits = 6))
+              }))
   cat(sprintf("total opening reserve %s; claims development result mean %s, sd %s\n",
               format(sum(x@opening_reserve), digits = 10), format(mean(cdr), digits = 10),
               format(sqrt(variance(cdr)), digits = 10)))

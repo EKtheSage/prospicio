@@ -24,8 +24,8 @@ sources:
 # The split
 
 The parity files that sample with NUTS are the `reserving_bayes*`,
-`reserving_meyers*` and `reserving_compartmental*` targets (twelve on
-2026-10-15). When there were six, they took about 220 s of the rust job's
+`reserving_meyers*` and `reserving_compartmental*` targets (thirteen on
+2026-10-15, with `reserving_meyers_one_year`). When there were six, they took about 220 s of the rust job's
 10 to 12 minutes in CI's debug `cargo test`, and about 17 s in a release
 build (measured locally on 2026-10-13: 17.5 s wall, 15 s of test
 time).[^ci]
@@ -69,7 +69,9 @@ ignored: the 29 and three plain `#[ignore]`s); with it, in release, all
 311 run in about 4 s. The attribute, unlike a `cfg` on the module, keeps
 them compiled, so clippy lints them in every build. Cheap checks (errors,
 layouts, gradients, the prior predictive, a short run per model, one
-one-year fit) stay in the debug run.
+one-year fit) stay in the debug run. Meyers' one-year view (branch
+claude/bayes-one-year-meyers) added three such tests and two cheap ones:
+284 run and 35 ignored in debug with `bayes`, 319 in all.
 
 ```
 cargo test --release -p prospicio-reserving --features slow-tests --lib

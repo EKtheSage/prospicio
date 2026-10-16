@@ -294,6 +294,11 @@ stopifnot(
   "premium" %in% names(totals_frame(m_views))
 )
 expect_error_like(m_home@scale, "scale")
+out <- capture.output(print(m_view))
+stopifnot(grepl("<bayes_one_year_fit> 600 simulations, Meyers' CAY", out[1], fixed = TRUE))
+out <- capture.output(print(m_home))
+stopifnot(grepl("<bayes_one_year_fits> 500 simulations", out[1], fixed = TRUE))
+invisible(capture.output(print(m_views)))
 expect_error_like(meyers_one_year(m_tri, "paid", "premium", n_sims = 10, k_threshold = NaN),
                   "k_threshold")
 expect_error_like(meyers_one_year_segments(m_two, "paid", "premium", n_sims = 10,

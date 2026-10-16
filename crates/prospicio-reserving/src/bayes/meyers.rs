@@ -500,7 +500,7 @@ impl Meyers {
     ///
     /// ```
     /// use prospicio_bayes::nuts::Sampler;
-    /// use prospicio_reserving::bayes::{BayesOneYear, Meyers};
+    /// use prospicio_reserving::bayes::{BayesOneYear, Meyers, OneYearRefit};
     /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
     /// use prospicio_prob::Distribution;
     ///
@@ -536,7 +536,10 @@ impl Meyers {
     ///     n_sims: 500,
     ///     ..Meyers::default()
     /// };
-    /// let view = model.one_year(&tri, "paid", "premium", &BayesOneYear::default())?;
+    /// // Reweighting only, for speed: the default moment-matches and refits
+    /// // the flagged simulations, nearly all of them for this model.
+    /// let only = BayesOneYear { refit: OneYearRefit::ReweightOnly, ..BayesOneYear::default() };
+    /// let view = model.one_year(&tri, "paid", "premium", &only)?;
     /// assert_eq!(view.cdr.n_components(), 6);
     /// // 1988 is fully developed: no cell in the year, no change.
     /// assert!(view.cdr.draw_matrix().chunks(6).all(|row| row[0] == 0.0));
