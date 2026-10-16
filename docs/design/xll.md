@@ -80,6 +80,7 @@ category of Insert Function:
 | `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost from large losses: each accident year's trended layer losses, developed, over its premium |
 | `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], [probabilities], [step], [points])` | The annual aggregate loss, ground up or to a per-occurrence layer: mean, SD, CV, skewness, VaR, TVaR and the grid |
 | `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits, attachments, [shares], [step], [points])` | Per-occurrence layer statistics, one column per layer (`aggregate`'s `reins_stats_df`) |
+| `PRO.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | The Bayesian ODP chain ladder sampled with NUTS: the reserve exhibit, the parameters' posterior with R-hat and ESS, or the sampler's diagnostics |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
@@ -320,6 +321,26 @@ real Excel.
     grid's. The count is unwrapped from `PanjerClass` into its concrete
     family, whose third cumulant is closed form
     (`knowledge/findings/panjer-class-third-cumulant.md`).
+21. **MCMC on a sheet: one function, three views, kept fits** (user,
+    2026-10-16, "how you do Bayesian MCMC methods"). `PRO.BAYES.ODP` runs
+    the Reserving lane's `BayesOdp` (England and Verrall's ODP chain
+    ladder, NUTS on the posterior whitened at its mode, chains on worker
+    threads) at its defaults: four chains of 1,000 warm-up and 1,000 kept
+    draws, target acceptance 0.95, normal priors of SD 10 on the log
+    scale, Gamma process error, 10,000 simulations. Its `output` picks the
+    view of one fit: the reserve exhibit (`PRO.ODP`'s layout), each
+    parameter's posterior (mean, SD, 5/50/95% quantiles, R-hat, bulk and
+    tail ESS) or the diagnostics (largest R-hat, smallest ESS,
+    divergences, the plugged-in scale, and the library's warnings as text,
+    so a sheet sees a fit that did not converge). One function rather than
+    three keeps the arguments in one place. The last eight fits are kept,
+    keyed on every input: a fit is a pure function of its inputs and seed
+    (decision 14), so a kept fit is exactly what a refit gives and
+    decision 4 still holds for the results; a sheet showing all three
+    views samples once. A default fit on RAA takes about 0.25 s in a
+    release build, a kept one 30 µs. Draws are capped at 20,000 per chain
+    and chains at 8. Other Bayesian models (`BayesBf`, Meyers', the
+    compartmental models) follow the same pattern when wanted.
 
 ## Parity plan
 
@@ -350,8 +371,9 @@ order, one small PR each, those already done struck through:
 4. ~~Aggregate: a compound distribution of a count and a severity, its
    moments, VaR, TVaR and layer statistics~~.
 
-Left out unless asked: model fitting and prediction (GLM, GAM, boosting,
-Bayesian models), copulas and vines, the P&L ledger, catastrophe event
+Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
+Bayesian reserving models other than the ODP chain ladder, decision 21),
+copulas and vines, the P&L ledger, catastrophe event
 sets. These want a table of data and an object kept between calls, which
 an XLL function (decision 4: no state) does not hold.
 
