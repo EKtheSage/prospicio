@@ -37,5 +37,15 @@ sources:
   simulations in about 0.2 s (177 ms, checked 2026-10-16), so the
   bootstrap's 1,000,000 cap is about 10 s, the longest one recalculation
   can take.
+* On GitHub's `ubuntu-24.04` runner the XLL workflow's build job (apt
+  install of MinGW and Wine, the release build, the Wine smoke test, the
+  workbook and the artifact) takes about two minutes (checked 2026-10-16,
+  PR #284). Wine runs headless there with no display. `python3 -m pip
+  install` puts packages in the user site on that runner, which
+  `python3 -I` leaves out, so the workbook script runs without `-I`.
+* A cloud session cannot download Actions logs or artifacts: both are
+  served from `*.blob.core.windows.net`, which its egress proxy refuses.
+  The job's steps and annotations come from the API
+  (`actions/jobs/<id>`, `check-runs/<id>/annotations`).
 * XLOPER12 is 32 bytes on 64-bit Windows: a 24-byte value union (its
   largest member is `flow`) and the 4-byte `xltype`, padded.
