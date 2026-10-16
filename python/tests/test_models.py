@@ -82,6 +82,34 @@ def test_gam_smooths_a_curve():
     assert 0.002 < reml.reml_scale < 0.02 and 4 < reml.edf < 12
 
 
+def test_gam_cyclic_smooth():
+    t = [(i + 0.5) / 20 for i in range(240)]
+    y = [2.0 + math.sin(math.tau * v / 12) for v in t]
+    d = Design([[1.0] * 240, t], ["(Intercept)", "month"])
+    fit = Gam(Glm("gaussian"), [{"column": "month", "bs": "cp", "period": (0.0, 12.0)}]).fit(d, y)
+    ends = fit.predict(Design([[1.0, 1.0], [0.0, 12.0]], ["(Intercept)", "month"]))
+    assert abs(ends[0] - ends[1]) < 1e-12 and abs(ends[0] - 2.0) < 0.01
+    # The period wraps: month 13 is month 1.
+    p = fit.predict(Design([[1.0, 1.0], [1.0, 13.0]], ["(Intercept)", "month"]))
+    assert abs(p[0] - p[1]) < 1e-12
+    with pytest.raises(ValueError):
+        Gam(Glm("gaussian"), [{"column": "month", "bs": "zz"}])
+    with pytest.raises(ValueError):
+        Gam(Glm("gaussian"), [{"column": "month", "period": (0.0, 12.0)}])
+
+
+def test_gam_monotone_smooth():
+    x = [i / 199 for i in range(200)]
+    y = [v * v + 0.05 * math.sin(1.7 * i) for i, v in enumerate(x)]
+    d = Design([[1.0] * 200, x], ["(Intercept)", "x"])
+    up = Gam(Glm("gaussian"), [{"column": "x", "bs": "mpi"}]).fit(d, y)
+    assert all(b >= a - 1e-12 for a, b in zip(up.fitted, up.fitted[1:]))
+    down = Gam(Glm("gaussian"), [{"column": "x", "bs": "mpd"}]).fit(d, [-v for v in y])
+    assert all(b <= a + 1e-12 for a, b in zip(down.fitted, down.fitted[1:]))
+    with pytest.raises(ValueError):
+        Gam(Glm("gaussian"), [{"column": "x", "bs": "mpi"}], smoothing="reml").fit(d, y)
+
+
 def test_gam_tensor_smooth():
     n = 200
     x = [((i * 37) % 101) / 100 for i in range(n)]

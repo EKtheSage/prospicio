@@ -170,6 +170,25 @@ def test_weibull_mixture_and_tail_diagnostics():
     assert abs(hill(x, [200])[0] - 0.5) < 0.02
 
 
+def test_threshold_diagnostics():
+    from prospicio.risk import Gpd, threshold_diagnostics
+
+    g = Gpd(0.25, 1.0)
+    n = 4000
+    x = [g.quantile((i - 0.5) / n) for i in range(1, n + 1)]
+    d = threshold_diagnostics(x, [0.5, 1.0, 2.0, 1e9])
+    assert set(d) == {
+        "threshold", "n_above", "mean_excess", "mean_excess_se", "xi", "xi_se",
+        "beta", "modified_scale", "modified_scale_se",
+    }
+    for i in range(3):
+        assert abs(d["xi"][i] - 0.25) < 2 * d["xi_se"][i]
+        assert abs(d["modified_scale"][i] - 1.0) < 2 * d["modified_scale_se"][i]
+    assert d["n_above"][0] == sum(v > 0.5 for v in x)
+    # No value above the last threshold: NaN, not an error.
+    assert d["n_above"][3] == 0 and d["xi"][3] != d["xi"][3]
+
+
 def test_loglogistic_growth_curve_and_heavy_tail():
     import math
 

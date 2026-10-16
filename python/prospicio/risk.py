@@ -24,6 +24,7 @@ from .prospicio_native import (
     marginal_expected_shortfall,
     mean_excess,
     simulate,
+    threshold_diagnostics,
 )
 
 __all__ = [
@@ -49,4 +50,5 @@ __all__ = [
     "PotTail",
     "mean_excess",
     "hill",
+    "threshold_diagnostics",
 ]

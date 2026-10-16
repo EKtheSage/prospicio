@@ -89,6 +89,12 @@ stopifnot(abs(exposure_curve(tc, 0.3) - 0.6) < 1e-15, abs(tc@mean - 0.25) < 1e-1
 stopifnot(identical(rate_quantile(tc, c(0.75, 0.76, 0.91)), c(0.1, 0.5, 1)))
 stopifnot(abs(exposure_layer_share(tc, 5e6, 5e6, 10e6) - 0.2) < 1e-12)
 stopifnot(inherits(try(tabulated_curve(c(0, 0.5, 1), c(0, 0.3, 1)), silent = TRUE), "try-error"))
+ll <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1), interpolation = "log-log")
+stopifnot(abs(exposure_curve(ll, 0.3) - 0.4 * 3^(log(2) / log(5))) < 1e-15)
+stopifnot(ll@interpolation == "log-log", tc@interpolation == "linear")
+xs <- c(0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1)
+stopifnot(inherits(try(tabulated_curve(xs, exposure_curve(swiss_re_curve(3), xs), "log-log"),
+                       silent = TRUE), "try-error"))
 c3 <- swiss_re_curve(3)
 u <- (seq_len(100000) - 0.5) / 100000
 stopifnot(abs(mean(rate_quantile(c3, u)) / c3@mean - 1) < 1e-3)

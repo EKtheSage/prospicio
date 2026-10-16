@@ -86,7 +86,7 @@ elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, li
 
 elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid)
 
-gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas, tensors, tensor_basis) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, smoothing, lambdas, tensors, tensor_basis)
+gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis)
 
 family_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Call(wrap__family_deviance_rust, family_name, theta, power, y, mu, weights)
 
@@ -221,6 +221,8 @@ gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
 mean_excess_rust <- function(draws, thresholds) .Call(wrap__mean_excess_rust, draws, thresholds)
 
 hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
+
+threshold_diagnostics_rust <- function(draws, thresholds) .Call(wrap__threshold_diagnostics_rust, draws, thresholds)
 
 EventSet <- new.env(parent = emptyenv())
 
@@ -1588,7 +1590,9 @@ Mbbefd$rate_quantile <- function(u) .Call(wrap__Mbbefd__rate_quantile, self, u)
 
 Tabulated <- new.env(parent = emptyenv())
 
-Tabulated$new <- function(x, g) .Call(wrap__Tabulated__new, x, g)
+Tabulated$new <- function(x, g, interpolation) .Call(wrap__Tabulated__new, x, g, interpolation)
+
+Tabulated$interpolation <- function() .Call(wrap__Tabulated__interpolation, self)
 
 Tabulated$from_severity <- function(severity, mpl, points) .Call(wrap__Tabulated__from_severity, severity, mpl, points)
 
