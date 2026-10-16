@@ -4438,6 +4438,8 @@ mod tests {
         use crate::bayes::one_year::YearModel;
         let only = BayesOneYear {
             refit: Some(OneYearRefit::ReweightOnly),
+            // Above the default cap of `ONE_YEAR_SIMS`.
+            n_sims: Some(4000),
             ..BayesOneYear::default()
         };
         for preset in [preset(), preset_2()] {

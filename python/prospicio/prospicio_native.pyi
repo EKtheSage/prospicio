@@ -602,7 +602,7 @@ class BayesBf:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> BayesOneYearFit:
         """
         The one-year view of one loss column of a single-segment cumulative
         triangle, with each origin's exposure from another column: the
@@ -639,6 +639,8 @@ class BayesBf:
             are not trusted.
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+        max_refits : int, optional
+            As in ``BayesOdp.one_year``.
         n_sims : int, optional
             The number of one-year simulations; by default this model's
             ``n_sims``. A smaller count gives the first simulations of a
@@ -1222,7 +1224,7 @@ class BayesOdp:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> BayesOneYearFit:
         """
         The one-year view of one measure column of a single-segment
         cumulative triangle: the claims development result over the coming
@@ -1276,6 +1278,12 @@ class BayesOdp:
             (``"refit_flagged"``); or reweighted anyway (fast, biased where
             ``k`` is high); ``"refit_all"`` refits every simulation, to
             check the reweighting.
+        max_refits : int, optional
+            The most simulations refitted with NUTS: the first this many due
+            for a refit, in simulation order; the others are reweighted as
+            they are (as unreliable as their ``k`` says), listed in
+            ``unrefitted`` and warned about. ``None`` (the default) refits
+            every one, ``0`` none.
         n_sims : int, optional
             The number of one-year simulations; by default this model's
             ``n_sims``. A smaller count gives the first simulations of a
@@ -1306,7 +1314,7 @@ class BayesOdp:
         >>> view.cdr.variance() < view.fit.reserves.variance()
         True
         """
-    def one_year_segments(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFits:
+    def one_year_segments(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> BayesOneYearFits:
         """
         The one-year view of one measure column in every segment of a
         cumulative triangle: each segment's posterior and simulations as in
@@ -1328,6 +1336,9 @@ class BayesOdp:
             As in ``one_year``.
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
             As in ``one_year``.
+        max_refits : int, optional
+            As in ``BayesOdp.one_year``, for each segment: ``k`` segments
+            refit at most ``k`` times this many.
         n_sims : int, optional
             As in ``one_year``.
         
@@ -4696,7 +4707,7 @@ class Compartmental:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None) -> CompartmentalOneYearFit:
+    def one_year(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None, k_threshold: float = 0.7, refit: str |None = None, max_refits: int |None = None, n_sims: int |None = None) -> CompartmentalOneYearFit:
         """
         The one-year view: the claims development result over the coming
         year, by Pareto smoothed importance sampling of the posterior
@@ -4713,18 +4724,23 @@ class Compartmental:
         the papers' triangle) and, with development effects (model 2), an
         age with none take their effects as part of each posterior draw, so
         the year's cells update them. A simulation whose ``k`` is above
-        ``k_threshold`` is flagged and handled as ``refit`` says: by default
-        moment-matched, and refitted with NUTS (this model's sampler, as
-        long as ``fit``) only if its ``k`` stays above the threshold. On
-        company 337 about four in five of model 1's simulations are flagged
-        and all of model 2's; for model 1
-        matching rescues about nineteen in twenty of them, for model 2
-        none, so model 2's default view refits nearly every
-        simulation, each refit as long as a fit (about 31 s of wall time with 8
-        running side by side): set ``max_refits`` to bound it.
+        ``k_threshold`` is flagged and handled as ``refit`` says. On company
+        337 about four in five of model 1's simulations are flagged and all
+        of model 2's; for model 1 moment matching rescues about nineteen in
+        twenty of them, for model 2 none, and a refit takes as long as a fit
+        (for model 2 about 31 s of wall time with 8 running side by side).
+        So by default (``refit=None``, the user's decision of 2026-10-16)
+        model 1 moment-matches its flagged simulations and refits with NUTS
+        only those whose ``k`` stays above the threshold, and a model with
+        development effects (model 2) reweights them only: that view is
+        approximate, about 0.4 sd of the total claims development result off
+        a refit per simulation, and warns so (``approximate``). Set
+        ``refit`` to refit them, with ``max_refits`` as a budget. The view
+        runs at most 2,000 simulations by default (``n_sims``).
         Raises one ``UserWarning`` listing the failed diagnostics of the
-        fit, another if any refit failed its diagnostics, and another if
-        ``max_refits`` left simulations unrefitted.
+        fit, another if any refit failed its diagnostics, another if
+        ``max_refits`` left simulations unrefitted, and another if the
+        default view is approximate.
         
         Parameters
         ----------
@@ -4738,10 +4754,19 @@ class Compartmental:
         k_threshold : float, default 0.7
             The Pareto ``k`` above which a simulation's importance weights
             are not trusted.
-        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, optional
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+            ``None`` (the default) takes the model's own:
+            ``"moment_match_then_refit"`` without development effects (model
+            1), ``"reweight_only"`` with them (model 2), with a warning.
         max_refits : int, optional
             As in ``BayesOdp.one_year``.
+        n_sims : int, optional
+            The number of one-year simulations. By default this model's
+            ``n_sims``, at most 2,000: nearly every simulation of these
+            models is flagged. The lifetime view in ``fit`` keeps
+            ``n_sims``; a smaller count gives the first simulations of a
+            larger one.
         
         Returns
         -------
@@ -5039,9 +5064,17 @@ class CompartmentalOneYearFit:
     is an adverse development. ``pareto_k`` holds one Pareto ``k`` per
     simulation, ``flagged_share`` the share above ``k_threshold``;
     ``moment_matched``, ``refitted`` and ``unrefitted`` list what happened
-    to the flagged simulations.
+    to the flagged simulations; ``approximate`` says why the view is
+    approximate when its model's default reweighted them only.
     """
     def __repr__(self, /) -> str: ...
+    @property
+    def approximate(self, /) -> str |None:
+        """
+        Why the view is approximate, or ``None``: set when ``refit`` was
+        left to a model with development effects (model 2), whose default
+        reweights the flagged simulations only.
+        """
     @property
     def cdr(self, /) -> PredictiveDistribution:
         """
@@ -12747,7 +12780,7 @@ class Meyers:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> BayesOneYearFit:
         """
         The one-year view of one measure column of a single-segment
         cumulative triangle with premium: the claims development result over
@@ -12792,6 +12825,8 @@ class Meyers:
             are not trusted.
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+        max_refits : int, optional
+            As in ``BayesOdp.one_year``.
         n_sims : int, optional
             The number of one-year simulations. By default this model's
             ``n_sims``, at most 2,000: nearly every simulation of these
@@ -12829,7 +12864,7 @@ class Meyers:
         >>> view.cdr.variance() < view.fit.reserves.variance()
         True
         """
-    def one_year_segments(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFits:
+    def one_year_segments(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> BayesOneYearFits:
         """
         The one-year view of one measure column in every segment of a
         cumulative triangle with premium: each segment's posterior and
@@ -12852,6 +12887,9 @@ class Meyers:
             As in ``one_year``.
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
             As in ``one_year``.
+        max_refits : int, optional
+            As in ``BayesOdp.one_year``, for each segment: ``k`` segments
+            refit at most ``k`` times this many.
         n_sims : int, optional
             As in ``one_year``.
         

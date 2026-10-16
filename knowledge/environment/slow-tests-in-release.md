@@ -101,7 +101,15 @@ against 114 s full, the conformance suite 54 s against 102 s, and every
 Bayesian parity file together 230 s against 390 s. At the roughly 2.5
 times local seen on CI for these files, that is about 10 minutes of
 parity tests on a pull request and about 16 in the weekly run. The
-compartmental one-year views take the same gate.
+compartmental one-year views take the same gate (#303): a pull request
+runs compartmental model 1 alone among the conformance suite's arms and
+`reserving_compartmental_one_year` without its 40 `RefitAll` refits. With
+both PRs' gates, measured locally on 2026-10-16 (release, 16 threads,
+with an R build and R tests running beside it, so somewhat slow): the
+whole validation suite 9 min 44 s smoke against 20 min 37 s full, the
+conformance suite 250 s against 501 s (compartmental model 1's arm, with
+its 30 refits, is most of the smoke run's), `reserving_compartmental_one_year`
+74 s against 421 s, and `reserving_meyers_one_year` 19 s against 119 s.
 
 ```
 cargo test --release -p prospicio-reserving --features slow-tests --lib
