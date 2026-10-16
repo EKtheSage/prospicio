@@ -76,6 +76,10 @@ credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
 
+hierarchical_credibility_rust <- function(ratios, weights, nrow, ncol, levels, collective_mean, within_kind, within_scale, between_kinds, between_scales, chains, tune, draws, seed) .Call(wrap__hierarchical_credibility_rust, ratios, weights, nrow, ncol, levels, collective_mean, within_kind, within_scale, between_kinds, between_scales, chains, tune, draws, seed)
+
+credibility_premiums_rust <- function(ratios, weights, nrow, ncol, levels, within_variance, between_variances, collective_mean) .Call(wrap__credibility_premiums_rust, ratios, weights, nrow, ncol, levels, within_variance, between_variances, collective_mean)
+
 stacking_weights_rust <- function(lpd, k) .Call(wrap__stacking_weights_rust, lpd, k)
 
 pseudo_bma_weights_rust <- function(lpd, k, n_draws, seed) .Call(wrap__pseudo_bma_weights_rust, lpd, k, n_draws, seed)
@@ -267,6 +271,20 @@ EventSet$maxima <- function() .Call(wrap__EventSet__maxima, self)
 
 #' @export
 `[[.EventSet` <- `$.EventSet`
+
+HierarchicalCredibilityR <- new.env(parent = emptyenv())
+
+HierarchicalCredibilityR$values <- function() .Call(wrap__HierarchicalCredibilityR__values, self)
+
+HierarchicalCredibilityR$summary <- function() .Call(wrap__HierarchicalCredibilityR__summary, self)
+
+HierarchicalCredibilityR$predictive <- function(weights, n_sims, seed) .Call(wrap__HierarchicalCredibilityR__predictive, self, weights, n_sims, seed)
+
+#' @export
+`$.HierarchicalCredibilityR` <- function (self, name) { func <- HierarchicalCredibilityR[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.HierarchicalCredibilityR` <- `$.HierarchicalCredibilityR`
 
 XolLayer <- new.env(parent = emptyenv())
 

@@ -1329,3 +1329,133 @@ fn tensor_gams_match_mgcv() {
     );
     assert!((a[7] - b[7]).abs() < 1e-12 && (a[7] - fit.fitted()[7]).abs() < 1e-9);
 }
+
+/// Credibility premiums given the structure parameters, against
+/// `actuar::cm` on Hachemeister's data: Bühlmann–Straub with one level, and
+/// Bühlmann–Gisler's hierarchy (two cohorts of states) with each of
+/// actuar's estimators. The structure parameters are read from the
+/// reference and plugged in; the premiums, factors and collective mean are
+/// checked (`validation/scripts/r_credibility_hierarchical.R`).
+#[test]
+fn credibility_premiums_match_actuar() {
+    use prospicio_bayes::credibility::credibility_premiums;
+
+    let data = reference("hachemeister.csv");
+    let mut ratios = vec![vec![0.0; 12]; 5];
+    let mut weights = vec![vec![0.0; 12]; 5];
+    for row in &data {
+        let i = row.number("state").unwrap() as usize - 1;
+        let j = row.number("quarter").unwrap() as usize - 1;
+        ratios[i][j] = row.number("ratio").unwrap();
+        weights[i][j] = row.number("weight").unwrap();
+    }
+    let cases = reference("credibility_hierarchical_actuar.csv");
+    let value = |params: &str, quantity: &str, arg: &str| -> f64 {
+        cases
+            .iter()
+            .find(|c| {
+                c.get("params") == params && c.get("quantity") == quantity && c.get("arg") == arg
+            })
+            .and_then(|c| c.number("expected"))
+            .unwrap_or_else(|| panic!("{params} {quantity} {arg}"))
+    };
+    check(&cases, |c| {
+        let params = c.get("params");
+        let hierarchy = params.contains("levels=cohort");
+        let levels: Vec<Vec<usize>> = if hierarchy {
+            vec![vec![0, 1, 0, 1, 1]]
+        } else {
+            Vec::new()
+        };
+        let s2 = value(params, "within_variance", "");
+        let between: Vec<f64> = if hierarchy {
+            vec![
+                value(params, "between_variance", "0"),
+                value(params, "between_variance", "1"),
+            ]
+        } else {
+            vec![value(params, "between_variance", "0")]
+        };
+        let p = credibility_premiums(&ratios, &weights, &levels, s2, &between, None).ok()?;
+        let index = || Some(c.number("arg")? as usize - 1);
+        match c.get("quantity") {
+            "within_variance" => Some(s2),
+            "between_variance" => Some(between[c.number("arg")? as usize]),
+            "collective_mean" => Some(p.collective_mean),
+            "credibility" => Some(p.credibility[index()?]),
+            "premium" => Some(p.premiums[index()?]),
+            "cohort_credibility" => Some(p.level_credibility[0][index()?]),
+            "cohort_premium" => Some(p.level_premiums[0][index()?]),
+            _ => None,
+        }
+    });
+}
+
+/// The Bayesian Bühlmann–Straub model sampled with NUTS against its exact
+/// posterior moments by grid integration
+/// (`validation/scripts/credibility_bayes_grid.py`), on Hachemeister's
+/// data with half-normal priors of 60,000 on `σ` and 1,500 on `τ`.
+#[test]
+fn bayesian_credibility_matches_grid_integration() {
+    use prospicio_bayes::credibility::{
+        CredibilityPriors, HierarchicalCredibility, Sampler, ScalePrior,
+    };
+
+    let data = reference("hachemeister.csv");
+    let mut ratios = vec![vec![0.0; 12]; 5];
+    let mut weights = vec![vec![0.0; 12]; 5];
+    for row in &data {
+        let i = row.number("state").unwrap() as usize - 1;
+        let j = row.number("quarter").unwrap() as usize - 1;
+        ratios[i][j] = row.number("ratio").unwrap();
+        weights[i][j] = row.number("weight").unwrap();
+    }
+    let fit = HierarchicalCredibility::default()
+        .priors(CredibilityPriors {
+            collective_mean: None,
+            within: Some(ScalePrior::HalfNormal(60000.0)),
+            between: vec![ScalePrior::HalfNormal(1500.0)],
+        })
+        .sampler(Sampler {
+            chains: 4,
+            tune: 1000,
+            draws: 2500,
+            seed: 20261016,
+            ..Sampler::default()
+        })
+        .fit(&ratios, &weights, &[])
+        .unwrap();
+    let summary = fit.summary().unwrap();
+    assert!(summary.iter().all(|s| s.rhat < 1.01), "{summary:?}");
+    check(&reference("credibility_bayes_grid.csv"), |c| {
+        let param = c.get("param");
+        let index = |name: &str| -> Option<usize> {
+            param
+                .strip_prefix(name)?
+                .strip_prefix('[')?
+                .strip_suffix(']')?
+                .parse()
+                .ok()
+        };
+        match (param, c.get("quantity")) {
+            ("within_variance", q) => Some(if q == "mean" {
+                summary[0].mean
+            } else {
+                summary[0].sd
+            }),
+            ("between_variance[0]", q) => Some(if q == "mean" {
+                summary[1].mean
+            } else {
+                summary[1].sd
+            }),
+            ("collective_mean", _) => Some(fit.collective_mean),
+            _ => {
+                if let Some(i) = index("premium") {
+                    Some(fit.premiums[i])
+                } else {
+                    index("credibility").map(|i| fit.credibility[i])
+                }
+            }
+        }
+    });
+}

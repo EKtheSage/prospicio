@@ -37,7 +37,7 @@ when from experience, and which pricing method fits which scenario.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp` and `BayesBf` by PSIS reweighting, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) and credibility |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp` and `BayesBf` by PSIS reweighting, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R). Still to do: ONNX import, WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -162,8 +162,9 @@ what it is aiming for by v1.0.
     profiles with spread sums insured.
   - Risk-loaded prices from simulated losses.
   - Classical credibility: limited fluctuation standards and the
-    Bühlmann–Straub model (`docs/design/credibility.md`). It may become
-    `prospicio-credibility` once it has a Bayesian side.
+    Bühlmann–Straub model (`docs/design/credibility.md`). Its Bayesian,
+    hierarchical side is in `prospicio-bayes`; no `prospicio-credibility`
+    crate is needed yet.
   - Ratemaking: premium at the current rate level by the parallelogram
     method, trend fits, factors and lengths, and the overall rate
     indication by the loss ratio and pure premium methods with credibility
@@ -343,7 +344,11 @@ what it is aiming for by v1.0.
      `Meyers` over segments and in the backtest (PRs 2 and 6), with no
      change here;
      compartmental reserving follows in a later note.
-  2. Hierarchical credibility.
+  2. (Done: hierarchical credibility, `prospicio_bayes::credibility`,
+     Bühlmann–Straub's model and Jewell's hierarchy sampled with the means
+     integrated out; parity with `actuar` at given structure parameters
+     and with grid integration of the posterior;
+     `docs/design/credibility.md`.)
   3. Posterior predictive checks.
 - **v1.0:** our own model specs and diagnostics, with sampling delegated.
 
