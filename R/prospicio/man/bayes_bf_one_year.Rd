@@ -20,7 +20,8 @@ bayes_bf_one_year(
   target_accept = 0.95,
   max_depth = 10,
   k_threshold = 0.7,
-  refit = c("refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit")
+  refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
+  one_year_sims = NULL
 )
 }
 \arguments{
@@ -65,13 +66,19 @@ adaptation.}
 weights are not trusted (the threshold of Vehtari et al. 2024 for a
 few thousand draws).}
 
-\item{refit}{What happens to a flagged simulation: \code{"refit_flagged"}
-refits it with NUTS, \code{"reweight_only"} reweights it anyway (fast,
-biased where k is high), \code{"refit_all"} refits every simulation, to
-check the reweighting, and \code{"moment_match_then_refit"} first moves the
-posterior draws by affine maps to the moments the weights estimate
-(moment matching, as \code{loo::loo_moment_match()}), refitting only a
-simulation whose k stays above \code{k_threshold}.}
+\item{refit}{What happens to a flagged simulation:
+\code{"moment_match_then_refit"} (the default) moves the posterior draws by
+affine maps to the moments the weights estimate (moment matching, as
+\code{loo::loo_moment_match()}), refitting only a simulation whose k stays
+above \code{k_threshold}; \code{"refit_flagged"} refits it with NUTS;
+\code{"reweight_only"} reweights it anyway (fast, biased where k is high);
+\code{"refit_all"} refits every simulation, to check the reweighting.}
+
+\item{one_year_sims}{The number of one-year simulations, or \code{NULL} (the
+default) for the model's one-year default: \code{n_sims} for
+\code{bayes_odp_one_year()} and \code{bayes_bf_one_year()}, and \code{n_sims} capped
+at 2,000 for \code{meyers_one_year()}. The lifetime reserves keep \code{n_sims}.
+A smaller count gives the first simulations of a larger one.}
 }
 \value{
 A \code{bayes_one_year_fit} object.
@@ -88,8 +95,8 @@ every posterior draw by the year's quasi likelihood (the \code{scale}, the
 priors and the prior ultimates unchanged), and takes each origin's CDR as
 its posterior mean reserve at the opening less its payment in the year
 and its weighted posterior mean reserve after it; a simulation whose
-Pareto k is above \code{k_threshold} is refitted with NUTS when \code{refit} says
-so.
+Pareto k is above \code{k_threshold} is moment-matched and, if that cannot
+rescue it, refitted with NUTS, as \code{refit} says.
 }
 \details{
 The prior's strength moves the view between two limits. A flat prior

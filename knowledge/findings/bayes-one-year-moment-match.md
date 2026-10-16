@@ -67,15 +67,21 @@ at the test's seed) where reweighting alone is 0.25 off.[^engine]
 Matching's affine maps act on the scale the posterior draws are stored
 on, so that scale must be unconstrained and the model's log posterior
 must be the density of the draws on it. `BayesOdp` and `BayesBf` store
-an affine map of their sampling scale and need no Jacobian. `Meyers`
-and `Compartmental` store natural-scale values (`tanh`, square roots,
-exponentials): a move can leave the support there, the ratio turns NaN
-and counts as a zero weight, and matching falls back to refits without
+an affine map of their sampling scale and need no Jacobian; `Meyers`
+keeps such a copy beside its natural-scale posterior for its one-year
+view (see [Meyers' one-year view](/findings/meyers-one-year.md), where
+matching rescues 83% to 90% of the flagged simulations, fewer than
+here). `Compartmental` stores natural-scale values (exponentials,
+rates): a move can leave the support there, the ratio turns NaN and
+counts as a zero weight, and matching falls back to refits without
 saying so. A Jacobian left out cancels in the check that the year's log
 likelihood is the year's change to the log posterior; the score
 identity (the mean finite-difference score over the posterior draws is
 zero) catches it, at `z` 18 for draws stored as `exp` against 1.1 to 1.7
 for the two models.[^engine]
+
+Moment matching became the default fallback (`OneYearRefit::default()`
+and the bindings' `refit`) on 2026-10-15, the user's decision.
 
 Checked by CI at 1,000 simulations and seed 0 (rescued at least 0.99,
 gap below 0.11 and 0.07), not yet `verified` in this bundle's sense

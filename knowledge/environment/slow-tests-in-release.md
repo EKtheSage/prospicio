@@ -24,8 +24,8 @@ sources:
 # The split
 
 The parity files that sample with NUTS are the `reserving_bayes*`,
-`reserving_meyers*` and `reserving_compartmental*` targets (twelve on
-2026-10-15). When there were six, they took about 220 s of the rust job's
+`reserving_meyers*` and `reserving_compartmental*` targets (thirteen on
+2026-10-15, with `reserving_meyers_one_year`). When there were six, they took about 220 s of the rust job's
 10 to 12 minutes in CI's debug `cargo test`, and about 17 s in a release
 build (measured locally on 2026-10-13: 17.5 s wall, 15 s of test
 time).[^ci]
@@ -70,7 +70,38 @@ ignored: the 29 and three plain `#[ignore]`s); with it, in release, all
 311 run in about 4 s. The attribute, unlike a `cfg` on the module, keeps
 them compiled, so clippy lints them in every build. Cheap checks (errors,
 layouts, gradients, the prior predictive, a short run per model, one
-one-year fit) stay in the debug run.
+one-year fit) stay in the debug run. Meyers' one-year view (branch
+claude/bayes-one-year-meyers) added three such tests and two cheap ones:
+284 run and 35 ignored in debug with `bayes`, 319 in all.
+
+It also adds to the `bayes` job's release parity tests (measured locally
+on 2026-10-16, 16 threads). `reserving_meyers_one_year` takes 109 s: per
+model, the default view of 500 simulations at the full sampler (13 to
+26 s) and `RefitAll` on 60 of them (11 to 19 s); its bounds come from a
+20-seed sweep at those sizes, so cutting them needs a new sweep. The
+conformance suite's three Meyers arms took 89 s of its 128 s, about 50 s
+of it in the one-thread replay of `MomentMatchThenRefit`, whose refits run
+one after another (the lifetime fit is about 0.2 s and the 10,000
+reweighted simulations 0.6 to 1.3 s). Replaying only the first 20 of the
+60 simulations (matched and refitted ones in each model at seed 0) cut
+the arms to 57 s and the suite to 94 s. A 4-core runner takes about 3 to
+4 times as long on the parallel parts. On CI, before that cut (run
+38843505221, 2026-10-16), the `bayes` job took 19 min 42 s, 17 min 39 s
+of it the parity tests and 1 min 42 s the unit tests, against 10 min 54 s
+for the rust job: the PR's slowest check.
+
+Since the user's decision of 2026-10-16 a pull request runs a smoke
+version of the slowest arms, Meyers' one-year views (CRC alone in
+`reserving_meyers_one_year` and among the conformance suite's Meyers
+arms), and the weekly and manual runs set `RISK_RS_FULL_BAYES` and run
+all of them (`prospicio_validation::full_bayes`, read at run time so one
+build compiles and clippy lints every arm). Measured locally on
+2026-10-16 (release, 16 threads): `reserving_meyers_one_year` 28 s smoke
+against 114 s full, the conformance suite 54 s against 102 s, and every
+Bayesian parity file together 230 s against 390 s. At the roughly 2.5
+times local seen on CI for these files, that is about 10 minutes of
+parity tests on a pull request and about 16 in the weekly run. The
+compartmental one-year views take the same gate.
 
 ```
 cargo test --release -p prospicio-reserving --features slow-tests --lib

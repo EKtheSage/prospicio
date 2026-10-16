@@ -119,7 +119,7 @@ short <- function(...) {
   suppressWarnings(bayes_odp_one_year(tiny, tune = 200, draws = 200, n_sims = 12, seed = 2, ...))
 }
 only <- short(refit = "reweight_only")
-flagged <- short(k_threshold = 0.3)
+flagged <- short(k_threshold = 0.3, refit = "refit_flagged")
 every <- short(refit = "refit_all")
 expected <- which(is.nan(flagged@pareto_k) | flagged@pareto_k > 0.3)
 stopifnot(
@@ -140,8 +140,12 @@ stopifnot(
 # or refitted (never both), a refitted row refit_all's and an unflagged one
 # reweight_only's.
 matched <- short(k_threshold = 0.3, refit = "moment_match_then_refit")
+# Moment matching is the default (decision 18).
+default <- short(k_threshold = 0.3)
 unflagged <- setdiff(1:12, expected)
 stopifnot(
+  identical(draw_matrix(default@cdr), draw_matrix(matched@cdr)),
+  identical(default@moment_matched, matched@moment_matched),
   identical(matched@pareto_k, only@pareto_k),
   length(intersect(matched@moment_matched, matched@refitted)) == 0,
   identical(sort(c(matched@moment_matched, matched@refitted)), expected),
@@ -236,3 +240,91 @@ out <- capture.output(print(bf_view))
 stopifnot(grepl("<bayes_one_year_fit> 1000 simulations", out[1], fixed = TRUE))
 expect_error_like(bayes_bf_one_year(prem, "paid", "premium", n_sims = 10, k_threshold = NaN),
                   "k_threshold")
+
+# meyers_one_year() and meyers_one_year_segments() (decision 19): the same
+# classes, with the meyers_fit. Their checks against refits are in
+# validation/tests/reserving_meyers_one_year.rs.
+m_long <- data.frame(
+  year = rep(1988:1993, 6:1),
+  age = 12 * sequence(6:1),
+  paid = c(952, 1529, 2813, 3647, 3724, 3832, 849, 1564, 2202, 2432, 2468,
+           983, 2211, 2830, 3832, 1657, 2685, 3169, 932, 1940, 1162),
+  premium = rep(c(5812, 4908, 5454, 5165, 5214, 5230), 6:1))
+m_tri <- triangle(m_long, "year", "age", c("paid", "premium"))
+m_view <- suppressWarnings(meyers_one_year(m_tri, "paid", "premium", model = "cay", tune = 300,
+                                           draws = 300, n_sims = 600, seed = 5,
+                                           refit = "reweight_only"))
+m_fit <- suppressWarnings(meyers(m_tri, "paid", "premium", model = "cay", tune = 300,
+                                 draws = 300, n_sims = 600, seed = 5))
+m_default <- suppressWarnings(meyers_one_year(m_tri, "paid", "premium", model = "cay",
+                                              tune = 300, draws = 300, n_sims = 40, seed = 5))
+m_flagged <- which(is.nan(m_default@pareto_k) | m_default@pareto_k > 0.7)
+stopifnot(
+  S7::S7_inherits(m_view, bayes_one_year_fit),
+  S7::S7_inherits(m_view@fit, meyers_fit),
+  identical(m_view@fit@draws, m_fit@draws),
+  identical(draw_matrix(m_view@fit@reserves), draw_matrix(m_fit@reserves)),
+  identical(m_view@origins, as.character(1988:1993)),
+  length(m_view@pareto_k) == 600,
+  identical(m_view@refitted, integer()),
+  all(draw_matrix(m_view@cdr)[, 1] == 0),
+  variance(m_view@cdr) < variance(m_fit@reserves),
+  isTRUE(all.equal(as.data.frame(m_view)$premium, c(5812, 4908, 5454, 5165, 5214, 5230))),
+  identical(m_default@pareto_k, m_view@pareto_k[1:40]),
+  identical(sort(c(m_default@moment_matched, m_default@refitted)), m_flagged)
+)
+# The opening reserve is the lifetime reserve's posterior mean, within Monte
+# Carlo error (the total is heavy-tailed on six origins).
+m_total <- rowSums(draw_matrix(m_fit@reserves))
+near(sum(m_view@opening_reserve), mean(m_total), 5 * sd(m_total) / sqrt(length(m_total)))
+
+m_two_long <- rbind(cbind(lob = "auto", m_long),
+                    cbind(lob = "home", transform(m_long, paid = 2 * paid, premium = 2 * premium)))
+m_two <- triangle(m_two_long, "year", "age", c("paid", "premium"), keys = "lob")
+m_views <- suppressWarnings(meyers_one_year_segments(m_two, "paid", "premium", tune = 200,
+                                                     draws = 200, n_sims = 500, seed = 2,
+                                                     refit = "reweight_only"))
+m_home <- segment(m_views, lob = "home")
+stopifnot(
+  S7::S7_inherits(m_views, bayes_one_year_fits),
+  identical(m_views@cdr@dims, c("lob", "origin")),
+  nrow(m_views@diagnostics) == 2,
+  isTRUE(all.equal(m_home@premium, 2 * c(5812, 4908, 5454, 5165, 5214, 5230))),
+  length(m_home@pareto_k) == 500,
+  "premium" %in% names(totals_frame(m_views))
+)
+expect_error_like(m_home@scale, "scale")
+out <- capture.output(print(m_view))
+stopifnot(grepl("<bayes_one_year_fit> 600 simulations, Meyers' CAY", out[1], fixed = TRUE))
+out <- capture.output(print(m_home))
+stopifnot(grepl("<bayes_one_year_fits> 500 simulations", out[1], fixed = TRUE))
+invisible(capture.output(print(m_views)))
+expect_error_like(meyers_one_year(m_tri, "paid", "premium", n_sims = 10, k_threshold = NaN),
+                  "k_threshold")
+
+# Meyers' view runs at most 2,000 simulations by default (the user's
+# decision of 2026-10-16); one_year_sims sets the count for any model, and
+# a smaller count gives the first simulations of a larger one.
+m_capped <- suppressWarnings(meyers_one_year(m_tri, "paid", "premium", tune = 200, draws = 200,
+                                             n_sims = 3000, seed = 1, refit = "reweight_only"))
+m_fewer <- suppressWarnings(meyers_one_year(m_tri, "paid", "premium", tune = 200, draws = 200,
+                                            n_sims = 3000, seed = 1, refit = "reweight_only",
+                                            one_year_sims = 100))
+stopifnot(
+  length(m_capped@pareto_k) == 2000,
+  nrow(draw_matrix(m_capped@fit@reserves)) == 3000,
+  length(m_fewer@pareto_k) == 100,
+  identical(m_fewer@pareto_k, m_capped@pareto_k[1:100])
+)
+expect_error_like(meyers_one_year(m_tri, "paid", "premium", n_sims = 10, one_year_sims = 0),
+                  "n_sims")
+o_whole <- bayes_odp_one_year(tiny, n_sims = 300, seed = 11, refit = "reweight_only")
+o_part <- bayes_odp_one_year(tiny, n_sims = 300, seed = 11, refit = "reweight_only",
+                             one_year_sims = 50)
+stopifnot(
+  length(o_whole@pareto_k) == 300,
+  length(o_part@pareto_k) == 50,
+  identical(o_part@pareto_k, o_whole@pareto_k[1:50])
+)
+expect_error_like(meyers_one_year_segments(m_two, "paid", "premium", n_sims = 10,
+                                           dependence = "synchronized"), "ynchroni")

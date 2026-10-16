@@ -3,7 +3,8 @@
 //! the checks of the generic engine that need no external reference and
 //! too many NUTS refits for a unit test. [`conform`] runs on every model
 //! with a one-year view (`BayesOdp` on RAA and GenIns, `BayesBf` on GenIns
-//! with premium); a new Bayesian model's one-year view is added to
+//! with premium, and Meyers' CRC and CSR on group 353's paid and CAY on
+//! its incurred, decision 19); a new Bayesian model's one-year view is added to
 //! [`every_model_conforms`] before it ships (AGENTS.md, "Checks"). The
 //! unit-test half of the suite, run on each model's `YearModel`, is
 //! `prospicio_reserving::bayes::one_year::conformance` (crate-private).
@@ -16,47 +17,89 @@
 //!    their totals within 5 standard errors of the lifetime total;
 //! 3. a seed replays the view bit for bit, its first 500 simulations
 //!    as part of 10,000;
-//! 4. on 300 simulations, `RefitAll` sees `ReweightOnly`'s years (the
+//! 4. on 300 simulations (60 for Meyers' models, whose refits cost
+//!    seconds; they also sample 4 chains of 300 warm-up and 300 kept
+//!    draws, about a sixth of their default's cost), `RefitAll` sees
+//!    `ReweightOnly`'s years (the
 //!    same `k̂`), and `RefitFlagged` gives `RefitAll`'s rows for the
 //!    flagged simulations and `ReweightOnly`'s for the others;
 //!    `MomentMatchThenRefit` sees the same years, moment-matches or
 //!    refits each flagged simulation (never both), and gives `RefitAll`'s
 //!    rows for those it refits and `ReweightOnly`'s for the unflagged
-//!    (decision 18); it matches at least one, and replays bit for bit
-//!    (rows, `k̂`, the matched and the refitted) on one thread against
-//!    the default pool, matching's own parallel steps nested in the
-//!    simulations' included;
-//! 5. on those 300, the root mean square gap between a reweighted and a
+//!    (decision 18); it matches at least one, and its first simulations
+//!    (all 300, or 20 for Meyers' models, whose refits on one thread run
+//!    one after another) replay bit for bit (rows, `k̂`, the matched and
+//!    the refitted) on one thread against the default pool, matching's
+//!    own parallel steps nested in the simulations' included;
+//! 5. on those simulations, the root mean square gap between a reweighted and a
 //!    refitted simulation's total, in units of the total's sd, is below
-//!    `UNFLAGGED_GAP` where `k̂` is at most 0.7 and below `FLAGGED_GAP`
-//!    above it;
+//!    `REFITS.gaps.0` where `k̂` is at most 0.7 (over at least
+//!    `MIN_UNFLAGGED` such simulations) and below `REFITS.gaps.1` above it
+//!    (`MEYERS_REFITS` for Meyers' models, nearly all of whose simulations
+//!    are flagged);
 //! 6. a triangle whose every origin is at the last age gives a zero claims
 //!    development result, `k̂` 0 and no refit under every setting.
+//!
+//! A pull request runs Meyers' CRC alone of Meyers' three models (the smoke
+//! run, with the same sizes and bounds); CSR and CAY join when
+//! `RISK_RS_FULL_BAYES` is set, as in CI's weekly and manual runs
+//! (`prospicio_validation::full_bayes`, the user's decision of
+//! 2026-10-16). The other models always run. Meyers' views get their
+//! `n_sims` explicitly: by default `Meyers::one_year` runs at most 2,000.
 //!
 //! Every bound is at least the largest model's mean (or mean offset) plus
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
 //! 4.75, both GenIns under `BayesOdp`; gaps 0.071, `BayesBf`, and 0.455,
-//! RAA), and every seed passes (`seed_sweep`, ignored:
-//! `SWEEP_SEEDS=20 cargo test --release -p prospicio-validation --features
-//! slow-bayes --test reserving_bayes_one_year_conformance -- --ignored
-//! seed_sweep --nocapture`).
+//! RAA; Meyers' flagged gap 0.606, CSR), and every seed passes
+//! (`seed_sweep`, ignored: `SWEEP_SEEDS=20 cargo test --release -p
+//! prospicio-validation --features slow-bayes --test
+//! reserving_bayes_one_year_conformance -- --ignored seed_sweep
+//! --nocapture`; `SWEEP_MEYERS_ONLY=1` runs Meyers' models alone).
 
+use std::sync::OnceLock;
 use std::time::Instant;
 
+use prospicio_bayes::nuts::Sampler;
 use prospicio_prob::{Distribution, PredictiveDistribution};
 use prospicio_reserving::bayes::{
-    BayesBf, BayesBfFit, BayesOdp, BayesOdpFit, BayesOneYear, BayesOneYearFit, OneYearRefit,
+    BayesBf, BayesBfFit, BayesOdp, BayesOdpFit, BayesOneYear, BayesOneYearFit, Meyers, MeyersFit,
+    MeyersModel, OneYearRefit,
 };
-use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
-use prospicio_validation::{triangle, triangle_columns};
+use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
+use prospicio_validation::{full_bayes, triangle, triangle_columns};
 
 /// The simulations of the mean check.
 const SIMS: usize = 10_000;
-/// The simulations refitted for the gap and the refit settings.
-const REFIT_SIMS: usize = 300;
-/// Bounds on the root mean square gap, in units of the total's sd.
-const UNFLAGGED_GAP: f64 = 0.08;
-const FLAGGED_GAP: f64 = 0.5;
+/// A model's refit checks: the simulations refitted for the gap and the
+/// refit settings, and the bounds on the root mean square gap, in units of
+/// the total's sd, where `k̂` is at most 0.7 and above it, and the first
+/// simulations `MomentMatchThenRefit` replays on one thread (at most
+/// `sims`).
+#[derive(Clone, Copy)]
+struct Refits {
+    sims: usize,
+    gaps: (f64, f64),
+    replay: usize,
+}
+
+const REFITS: Refits = Refits {
+    sims: 300,
+    gaps: (0.08, 0.5),
+    replay: 300,
+};
+/// Meyers' models, whose refits cost seconds and nearly all of whose
+/// simulations are flagged (a year cell has its origin's smallest
+/// `sigma_d`): the unflagged gap is checked only over at least
+/// `MIN_UNFLAGGED` simulations, and the one-thread replay, whose refits
+/// run one after another, covers the first 20 simulations (at seed 0
+/// they include matched and refitted ones in every Meyers model).
+const MEYERS_REFITS: Refits = Refits {
+    sims: 60,
+    gaps: (0.08, 0.65),
+    replay: 20,
+};
+/// Fewest unflagged simulations whose gap is checked.
+const MIN_UNFLAGGED: usize = 10;
 
 fn mean(x: &[f64]) -> f64 {
     x.iter().sum::<f64>() / x.len() as f64
@@ -93,10 +136,17 @@ fn conform<F: Sync + Send>(
     run: &Run<'_, F>,
     closed: &Run<'_, F>,
     reserves: fn(&F) -> &PredictiveDistribution,
+    refits: Refits,
     seed: u64,
     strict: bool,
 ) -> Measured {
     let t = Instant::now();
+    let Refits {
+        sims: refit_sims,
+        gaps,
+        replay,
+    } = refits;
+    assert!(replay <= refit_sims);
     let only = OneYearRefit::ReweightOnly;
     // 1. The mean is zero.
     let full = run(SIMS, seed, only);
@@ -123,15 +173,15 @@ fn conform<F: Sync + Send>(
         "{name}: replay"
     );
     // 4. The refit settings see the same years.
-    let a = run(REFIT_SIMS, seed, only);
-    let b = run(REFIT_SIMS, seed, OneYearRefit::RefitAll);
-    let c = run(REFIT_SIMS, seed, OneYearRefit::RefitFlagged);
+    let a = run(refit_sims, seed, only);
+    let b = run(refit_sims, seed, OneYearRefit::RefitAll);
+    let c = run(refit_sims, seed, OneYearRefit::RefitFlagged);
     assert_eq!(a.pareto_k, b.pareto_k, "{name}: RefitAll's years");
-    assert_eq!(b.refitted, (0..REFIT_SIMS).collect::<Vec<_>>());
+    assert_eq!(b.refitted, (0..refit_sims).collect::<Vec<_>>());
     let is_flagged: Vec<bool> = a.pareto_k.iter().map(|&k| k.is_nan() || k > 0.7).collect();
     assert_eq!(
         c.refitted,
-        (0..REFIT_SIMS)
+        (0..refit_sims)
             .filter(|&i| is_flagged[i])
             .collect::<Vec<_>>(),
         "{name}: RefitFlagged refits the flagged"
@@ -145,7 +195,7 @@ fn conform<F: Sync + Send>(
             "{name}: RefitFlagged's simulation {i}"
         );
     }
-    let m = run(REFIT_SIMS, seed, OneYearRefit::MomentMatchThenRefit);
+    let m = run(refit_sims, seed, OneYearRefit::MomentMatchThenRefit);
     assert_eq!(
         m.pareto_k, a.pareto_k,
         "{name}: MomentMatchThenRefit's years"
@@ -154,22 +204,34 @@ fn conform<F: Sync + Send>(
         !m.moment_matched.is_empty(),
         "{name}: MomentMatchThenRefit matched nothing"
     );
+    // The first `replay` simulations on one thread are `m`'s first
+    // `replay`, run on the default pool as part of `refit_sims`.
     let m1 = rayon::ThreadPoolBuilder::new()
         .num_threads(1)
         .build()
         .unwrap()
-        .install(|| run(REFIT_SIMS, seed, OneYearRefit::MomentMatchThenRefit));
+        .install(|| run(replay, seed, OneYearRefit::MomentMatchThenRefit));
+    let first = |v: &[usize]| -> Vec<usize> { v.iter().copied().filter(|&i| i < replay).collect() };
     assert_eq!(
         m1.cdr.draw_matrix(),
-        m.cdr.draw_matrix(),
+        &m.cdr.draw_matrix()[..replay * n],
         "{name}: MomentMatchThenRefit's replay on one thread"
     );
-    assert_eq!(m1.pareto_k, m.pareto_k, "{name}: matched replay's k");
     assert_eq!(
-        m1.moment_matched, m.moment_matched,
+        m1.pareto_k,
+        m.pareto_k[..replay],
+        "{name}: matched replay's k"
+    );
+    assert_eq!(
+        m1.moment_matched,
+        first(&m.moment_matched),
         "{name}: matched replay's matched"
     );
-    assert_eq!(m1.refitted, m.refitted, "{name}: matched replay's refitted");
+    assert_eq!(
+        m1.refitted,
+        first(&m.refitted),
+        "{name}: matched replay's refitted"
+    );
     let mut either = m.moment_matched.clone();
     either.extend(&m.refitted);
     either.sort_unstable();
@@ -188,7 +250,7 @@ fn conform<F: Sync + Send>(
     let (ta, tb) = (totals(&a.cdr), totals(&b.cdr));
     let s = sd(&total);
     let gap = |flagged: bool| {
-        let squares: Vec<f64> = (0..REFIT_SIMS)
+        let squares: Vec<f64> = (0..refit_sims)
             .filter(|&i| is_flagged[i] == flagged)
             .map(|i| ((ta[i] - tb[i]) / s).powi(2))
             .collect();
@@ -201,11 +263,11 @@ fn conform<F: Sync + Send>(
     let (gap_unflagged, gap_flagged) = (gap(false), gap(true));
     let flagged = is_flagged.iter().filter(|&&f| f).count();
     assert!(
-        !strict || gap_unflagged < UNFLAGGED_GAP,
+        !strict || refit_sims - flagged < MIN_UNFLAGGED || gap_unflagged < gaps.0,
         "{name}: rms gap {gap_unflagged} sd where k <= 0.7"
     );
     assert!(
-        !strict || gap_flagged < FLAGGED_GAP,
+        !strict || gap_flagged < gaps.1,
         "{name}: rms gap {gap_flagged} sd where k > 0.7 ({flagged} simulations)"
     );
     // 6. A year without cells changes and refits nothing.
@@ -226,8 +288,11 @@ fn conform<F: Sync + Send>(
     }
     println!(
         "{name} seed {seed}: mean z {mean_z:.3}, opening z {opening_z:.3}, gap {gap_unflagged:.4} \
-         ({} unflagged) and {gap_flagged:.4} ({flagged} flagged), {:.1?}",
-        REFIT_SIMS - flagged,
+         ({} unflagged) and {gap_flagged:.4} ({flagged} flagged); replay of {replay}: {} \
+         matched, {} refitted; {:.1?}",
+        refit_sims - flagged,
+        m1.moment_matched.len(),
+        m1.refitted.len(),
         t.elapsed()
     );
     Measured {
@@ -305,6 +370,80 @@ fn bf(tri: &Triangle) -> Box<Run<'_, BayesBfFit>> {
     })
 }
 
+/// Group 353 Commercial Auto (`data/clrd_comauto_353.csv`), the cells at
+/// calendar years up to 1997, columns `paid`, `incurred` and `premium`, as
+/// in `reserving_meyers.rs`.
+fn comauto_353() -> &'static Triangle {
+    static TRIANGLE: OnceLock<Triangle> = OnceLock::new();
+    TRIANGLE.get_or_init(|| {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/data/clrd_comauto_353.csv");
+        let text = std::fs::read_to_string(path).expect("data/clrd_comauto_353.csv");
+        let mut lines = text.lines().filter(|l| !l.starts_with('#'));
+        assert_eq!(
+            lines.next(),
+            Some("origin,development,paid,incurred,premium")
+        );
+        let rows: Vec<(i32, Lag, [f64; 3])> = lines
+            .map(|l| {
+                let f: Vec<&str> = l.split(',').collect();
+                let v = |k: usize| -> f64 { f[k].parse().unwrap() };
+                (
+                    f[0].parse().unwrap(),
+                    f[1].parse().unwrap(),
+                    [v(2), v(3), v(4)],
+                )
+            })
+            .filter(|r| r.0 + (r.1 / 12) as i32 - 1 <= 1997)
+            .collect();
+        let origin: Vec<Month> = rows.iter().map(|r| Month::january(r.0)).collect();
+        let ages: Vec<Lag> = rows.iter().map(|r| r.1).collect();
+        let column = |k: usize| -> Vec<f64> { rows.iter().map(|r| r.2[k]).collect() };
+        let (paid, incurred, premium) = (column(0), column(1), column(2));
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[
+                ("paid", &paid),
+                ("incurred", &incurred),
+                ("premium", &premium),
+            ],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    })
+}
+
+/// Meyers' `model` on `column` of `tri` with premium, 4 chains of 300
+/// warm-up and 300 kept draws.
+fn meyers<'a>(tri: &'a Triangle, model: MeyersModel, column: &'a str) -> Box<Run<'a, MeyersFit>> {
+    Box::new(move |n_sims, seed, refit| {
+        Meyers {
+            model,
+            sampler: Sampler {
+                tune: 300,
+                draws: 300,
+                ..Meyers::default().sampler
+            },
+            n_sims,
+            seed,
+            ..Meyers::default()
+        }
+        .one_year(
+            tri,
+            column,
+            "premium",
+            &BayesOneYear {
+                n_sims: Some(n_sims),
+                ..settings(refit)
+            },
+        )
+        .unwrap()
+    })
+}
+
 /// Runs the suite on every model at `seed`.
 fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     let (raa, genins, premium, closed) = (
@@ -315,41 +454,74 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     );
     let odp_reserves: fn(&BayesOdpFit) -> &PredictiveDistribution = |f| &f.reserves;
     let bf_reserves: fn(&BayesBfFit) -> &PredictiveDistribution = |f| &f.reserves;
-    vec![
-        (
-            "BayesOdp RAA",
-            conform(
+    let meyers_reserves: fn(&MeyersFit) -> &PredictiveDistribution = |f| &f.reserves;
+    let group = comauto_353();
+    // SWEEP_MEYERS_ONLY (the sweep): Meyers' models alone.
+    let meyers_only = !strict && std::env::var("SWEEP_MEYERS_ONLY").is_ok();
+    let mut out = if meyers_only {
+        Vec::new()
+    } else {
+        vec![
+            (
                 "BayesOdp RAA",
-                &*odp(&raa, "values"),
-                &*odp(&closed, "paid"),
-                odp_reserves,
-                seed,
-                strict,
+                conform(
+                    "BayesOdp RAA",
+                    &*odp(&raa, "values"),
+                    &*odp(&closed, "paid"),
+                    odp_reserves,
+                    REFITS,
+                    seed,
+                    strict,
+                ),
             ),
-        ),
-        (
-            "BayesOdp GenIns",
-            conform(
+            (
                 "BayesOdp GenIns",
-                &*odp(&genins, "values"),
-                &*odp(&closed, "paid"),
-                odp_reserves,
-                seed,
-                strict,
+                conform(
+                    "BayesOdp GenIns",
+                    &*odp(&genins, "values"),
+                    &*odp(&closed, "paid"),
+                    odp_reserves,
+                    REFITS,
+                    seed,
+                    strict,
+                ),
             ),
-        ),
-        (
-            "BayesBf GenIns",
-            conform(
+            (
                 "BayesBf GenIns",
-                &*bf(&premium),
-                &*bf(&closed),
-                bf_reserves,
-                seed,
-                strict,
+                conform(
+                    "BayesBf GenIns",
+                    &*bf(&premium),
+                    &*bf(&closed),
+                    bf_reserves,
+                    REFITS,
+                    seed,
+                    strict,
+                ),
             ),
-        ),
+        ]
+    };
+    // A strict run without the full gate (a pull request): CRC alone.
+    let meyers_models = if strict && !full_bayes() { 1 } else { 3 };
+    for (name, model, column) in [
+        ("Meyers CRC paid", MeyersModel::Crc, "paid"),
+        ("Meyers CSR paid", MeyersModel::Csr, "paid"),
+        ("Meyers CAY incurred", MeyersModel::Cay, "incurred"),
     ]
+    .into_iter()
+    .take(meyers_models)
+    {
+        let measured = conform(
+            name,
+            &*meyers(group, model, column),
+            &*meyers(&closed, model, "paid"),
+            meyers_reserves,
+            MEYERS_REFITS,
+            seed,
+            strict,
+        );
+        out.push((name, measured));
+    }
+    out
 }
 
 #[test]

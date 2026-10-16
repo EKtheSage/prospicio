@@ -25,11 +25,11 @@ use prospicio_reserving::{
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
     BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment, BayesOneYear,
-    BayesOneYearFit as BayesOneYearInner, BayesOneYearFits as BayesOneYearFitsInner,
-    BayesOneYearSegment, Compartmental, CompartmentalFit as CompartmentalInner,
-    CompartmentalLikelihood, CompartmentalPriors, CompartmentalStart, Fitted, HalfPrior,
-    MeyersFits as MeyersFitsInner, MeyersSegment, OneYearRefit, Outstanding, PaidResponse,
-    PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
+    BayesOneYearFit as BayesOneYearInner, BayesOneYearFits as BayesOneYearFitsInner, Compartmental,
+    CompartmentalFit as CompartmentalInner, CompartmentalLikelihood, CompartmentalPriors,
+    CompartmentalStart, Fitted, HalfPrior, MeyersFits as MeyersFitsInner, MeyersSegment,
+    OneYearRefit, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior,
+    Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     BayesBf, BayesBfFit as BayesBfInner, BayesOdp, BayesOdpFit as BayesOdpInner, Diagnostics,
@@ -1004,8 +1004,10 @@ impl Triangle {
     /// column by PSIS reweighting: `priors` are `intercept_sd`, `origin_sd`
     /// and `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
     /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
-    /// k is above `k_threshold` is refitted as `refit` ("refit_flagged",
-    /// "reweight_only", "refit_all" or "moment_match_then_refit") says.
+    /// k is above `k_threshold` is handled as `refit`
+    /// ("moment_match_then_refit", "refit_flagged", "reweight_only" or
+    /// "refit_all") says.
+    #[allow(clippy::too_many_arguments)]
     fn bayes_odp_one_year(
         &self,
         column: &str,
@@ -1014,9 +1016,10 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        one_year_sims: Nullable<f64>,
     ) -> Result<BayesOneYearFit> {
         let model = bayes_odp_model(&priors, process, &run, SegmentDependence::Independent)?;
-        let settings = one_year_settings(k_threshold, refit)?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
         let inner = model
             .one_year(&self.inner, column, &settings)
             .map_err(to_r)?;
@@ -1039,16 +1042,19 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        one_year_sims: Nullable<f64>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
     ) -> Result<BayesOneYearFits> {
         let dependence = segment_dependence(dependence, spearman)?;
         let model = bayes_odp_model(&priors, process, &run, dependence)?;
-        let settings = one_year_settings(k_threshold, refit)?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
         let inner = model
             .one_year_segments(&self.inner, column, &settings)
             .map_err(to_r)?;
-        Ok(BayesOneYearFits { inner })
+        Ok(BayesOneYearFits {
+            inner: BayesOneYearFitsOf::Odp(inner),
+        })
     }
 
     /// Meyers' CRC, CSR or CAY model (`model`, "crc", "csr" or "cay") of a
@@ -1141,6 +1147,75 @@ impl Triangle {
             .fit_segments(&self.inner, column, premium)
             .map_err(to_r)?;
         Ok(MeyersFits { inner })
+    }
+
+    /// The one-year view of `meyers` on a single-segment triangle column
+    /// by PSIS reweighting: `priors` are `logelr_mean`, `logelr_sd`,
+    /// `origin_sd`, `development_sd`, `gamma_sd` and `rho_shape`, `run` is
+    /// `chains`, `tune`, `draws`, `n_sims`, `seed`, `target_accept` and
+    /// `max_depth`; a simulation whose Pareto k is above `k_threshold` is
+    /// handled as `refit` ("moment_match_then_refit", "refit_flagged",
+    /// "reweight_only" or "refit_all") says.
+    #[allow(clippy::too_many_arguments)]
+    fn meyers_one_year(
+        &self,
+        column: &str,
+        premium: &str,
+        model: &str,
+        priors: Vec<f64>,
+        run: Vec<f64>,
+        k_threshold: f64,
+        refit: &str,
+        one_year_sims: Nullable<f64>,
+    ) -> Result<BayesOneYearFit> {
+        let meyers = meyers_settings(
+            model,
+            fixed::<6>(&priors, "priors")?,
+            fixed::<7>(&run, "run")?,
+            SegmentDependence::Independent,
+        )?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
+        let inner = meyers
+            .one_year(&self.inner, column, premium, &settings)
+            .map_err(to_r)?;
+        Ok(BayesOneYearFit {
+            inner: BayesOneYearOf::Meyers(Box::new(inner)),
+        })
+    }
+
+    /// The one-year view of `meyers_segments` on every segment of a
+    /// triangle column, with the settings of `meyers_one_year` and the
+    /// segments depending on each other as `dependence` ("independent",
+    /// "rank_correlation" with the row-major `spearman` matrix, or
+    /// "synchronized", an error) says.
+    #[allow(clippy::too_many_arguments)]
+    fn meyers_one_year_segments(
+        &self,
+        column: &str,
+        premium: &str,
+        model: &str,
+        priors: Vec<f64>,
+        run: Vec<f64>,
+        k_threshold: f64,
+        refit: &str,
+        one_year_sims: Nullable<f64>,
+        dependence: &str,
+        spearman: Nullable<Vec<f64>>,
+    ) -> Result<BayesOneYearFits> {
+        let dependence = segment_dependence(dependence, spearman)?;
+        let meyers = meyers_settings(
+            model,
+            fixed::<6>(&priors, "priors")?,
+            fixed::<7>(&run, "run")?,
+            dependence,
+        )?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
+        let inner = meyers
+            .one_year_segments(&self.inner, column, premium, &settings)
+            .map_err(to_r)?;
+        Ok(BayesOneYearFits {
+            inner: BayesOneYearFitsOf::Meyers(inner),
+        })
     }
 
     /// Gesmann and Morris' compartmental model of a single-segment
@@ -1242,8 +1317,9 @@ impl Triangle {
     /// by PSIS reweighting: `priors` are `apriori`, `cv` and
     /// `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
     /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
-    /// k is above `k_threshold` is refitted as `refit` ("refit_flagged",
-    /// "reweight_only", "refit_all" or "moment_match_then_refit") says.
+    /// k is above `k_threshold` is handled as `refit`
+    /// ("moment_match_then_refit", "refit_flagged", "reweight_only" or
+    /// "refit_all") says.
     #[allow(clippy::too_many_arguments)]
     fn bayes_bf_one_year(
         &self,
@@ -1254,9 +1330,10 @@ impl Triangle {
         run: Vec<f64>,
         k_threshold: f64,
         refit: &str,
+        one_year_sims: Nullable<f64>,
     ) -> Result<BayesOneYearFit> {
         let model = bayes_bf_model(&priors, process, &run)?;
-        let settings = one_year_settings(k_threshold, refit)?;
+        let settings = one_year_settings(k_threshold, refit, one_year_sims)?;
         let inner = model
             .one_year(&self.inner, column, exposure, &settings)
             .map_err(to_r)?;
@@ -2607,9 +2684,14 @@ fn bayes_bf_model(priors: &[f64], process: &str, run: &[f64]) -> Result<BayesBf>
     })
 }
 
-/// The settings of a Bayesian one-year view: `k_threshold` and the
-/// `refit` policy by name.
-fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
+/// The settings of a Bayesian one-year view: `k_threshold`, the `refit`
+/// policy by name and the number of simulations (`NULL` for the model's
+/// one-year default).
+fn one_year_settings(
+    k_threshold: f64,
+    refit: &str,
+    one_year_sims: Nullable<f64>,
+) -> Result<BayesOneYear> {
     let refit = match refit {
         "refit_flagged" => OneYearRefit::RefitFlagged,
         "reweight_only" => OneYearRefit::ReweightOnly,
@@ -2617,12 +2699,20 @@ fn one_year_settings(k_threshold: f64, refit: &str) -> Result<BayesOneYear> {
         "moment_match_then_refit" => OneYearRefit::MomentMatchThenRefit,
         _ => {
             return Err(Error::Other(format!(
-                "refit must be \"refit_flagged\", \"reweight_only\", \"refit_all\" or \
-                 \"moment_match_then_refit\", got \"{refit}\""
+                "refit must be \"moment_match_then_refit\", \"refit_flagged\", \
+                 \"reweight_only\" or \"refit_all\", got \"{refit}\""
             )));
         }
     };
-    Ok(BayesOneYear { k_threshold, refit })
+    let n_sims = match one_year_sims {
+        Nullable::NotNull(n) => Some(whole(n, "one_year_sims")? as usize),
+        Nullable::Null => None,
+    };
+    Ok(BayesOneYear {
+        k_threshold,
+        refit,
+        n_sims,
+    })
 }
 
 /// The one-year view of a Bayesian model on a single-segment triangle
@@ -2638,6 +2728,7 @@ pub(crate) struct BayesOneYearFit {
 enum BayesOneYearOf {
     Odp(BayesOneYearInner<BayesOdpInner>),
     Bf(BayesOneYearInner<BayesBfInner>),
+    Meyers(Box<BayesOneYearInner<MeyersInner>>),
 }
 
 /// Evaluates `$body` with `$f` bound to the view, whatever its model.
@@ -2646,17 +2737,19 @@ macro_rules! each_bayes_one_year {
         match $view {
             BayesOneYearOf::Odp($f) => $body,
             BayesOneYearOf::Bf($f) => $body,
+            BayesOneYearOf::Meyers($f) => $body,
         }
     };
 }
 
 #[extendr]
 impl BayesOneYearFit {
-    /// The model behind the view: "bayes_odp" or "bayes_bf".
+    /// The model behind the view: "bayes_odp", "bayes_bf" or "meyers".
     fn model(&self) -> &'static str {
         match &self.inner {
             BayesOneYearOf::Odp(_) => "bayes_odp",
             BayesOneYearOf::Bf(_) => "bayes_bf",
+            BayesOneYearOf::Meyers(_) => "meyers",
         }
     }
 
@@ -2667,9 +2760,10 @@ impl BayesOneYearFit {
             BayesOneYearOf::Odp(f) => Ok(BayesOdpFit {
                 inner: f.fit.clone(),
             }),
-            BayesOneYearOf::Bf(_) => Err(Error::Other(
-                "the one-year view is bayes_bf's: use bf_fit()".into(),
-            )),
+            _ => Err(Error::Other(format!(
+                "the one-year view is {}'s, not bayes_odp's",
+                self.model()
+            ))),
         }
     }
 
@@ -2680,9 +2774,23 @@ impl BayesOneYearFit {
             BayesOneYearOf::Bf(f) => Ok(BayesBfFit {
                 inner: f.fit.clone(),
             }),
-            BayesOneYearOf::Odp(_) => Err(Error::Other(
-                "the one-year view is bayes_odp's: use fit()".into(),
-            )),
+            _ => Err(Error::Other(format!(
+                "the one-year view is {}'s, not bayes_bf's",
+                self.model()
+            ))),
+        }
+    }
+
+    /// The lifetime fit, as `meyers` gives it; an error for another model.
+    fn meyers_fit(&self) -> Result<MeyersFit> {
+        match &self.inner {
+            BayesOneYearOf::Meyers(f) => Ok(MeyersFit {
+                inner: f.fit.clone(),
+            }),
+            _ => Err(Error::Other(format!(
+                "the one-year view is {}'s, not meyers'",
+                self.model()
+            ))),
         }
     }
 
@@ -2766,119 +2874,184 @@ impl BayesOneYearFit {
 /// joint claims development result.
 #[extendr]
 pub(crate) struct BayesOneYearFits {
-    inner: BayesOneYearFitsInner,
+    inner: BayesOneYearFitsOf,
 }
 
-impl BayesOneYearFits {
-    fn one(&self, field: &str, instead: &str) -> Result<&BayesOneYearSegment> {
-        single(&self.inner.segments, field, instead)
-    }
+/// The one-year view over segments of each Bayesian model with one, by
+/// its segment fit.
+enum BayesOneYearFitsOf {
+    Odp(BayesOneYearFitsInner<BayesOdpSegment>),
+    Meyers(BayesOneYearFitsInner<MeyersSegment>),
+}
+
+/// Evaluates `$body` with `$f` bound to the views over segments, whatever
+/// the model.
+macro_rules! each_bayes_one_years {
+    ($views:expr, $f:ident => $body:expr) => {
+        match $views {
+            BayesOneYearFitsOf::Odp($f) => $body,
+            BayesOneYearFitsOf::Meyers($f) => $body,
+        }
+    };
 }
 
 #[extendr]
 impl BayesOneYearFits {
+    /// The model behind the view: "bayes_odp" or "meyers".
+    fn model(&self) -> &'static str {
+        match &self.inner {
+            BayesOneYearFitsOf::Odp(_) => "bayes_odp",
+            BayesOneYearFitsOf::Meyers(_) => "meyers",
+        }
+    }
+
     /// The volume-weighted chain ladder of every segment.
     fn chain_ladder(&self) -> ChainLadderFit {
         ChainLadderFit {
-            inner: self.inner.segments.map(|s| s.fit.chain_ladder.clone()),
+            inner: each_bayes_one_years!(&self.inner, f => f
+                .segments
+                .map(|s| s.fit.chain_ladder.clone())),
         }
     }
 
     fn opening_ultimate(&self) -> Vec<f64> {
-        by_origin(&self.inner.segments, |s| s.opening_ultimate.clone())
+        each_bayes_one_years!(&self.inner, f => by_origin(&f.segments, |s| s
+            .opening_ultimate
+            .clone()))
     }
 
     fn opening_reserve(&self) -> Vec<f64> {
-        by_origin(&self.inner.segments, |s| s.opening_reserve.clone())
+        each_bayes_one_years!(&self.inner, f => by_origin(&f.segments, |s| s
+            .opening_reserve
+            .clone()))
     }
 
     fn cdr(&self) -> PredictiveDistribution {
         PredictiveDistribution {
-            inner: self.inner.cdr.clone(),
+            inner: each_bayes_one_years!(&self.inner, f => f.cdr.clone()),
         }
     }
 
+    /// The plugged-in scale of a single-segment `bayes_odp` view.
     fn scale(&self) -> Result<f64> {
-        Ok(self.one("scale", "totals_frame()")?.fit.scale)
+        match &self.inner {
+            BayesOneYearFitsOf::Odp(f) => {
+                Ok(single(&f.segments, "scale", "totals_frame()")?.fit.scale)
+            }
+            BayesOneYearFitsOf::Meyers(_) => Err(Error::Other(
+                "scale is the ODP's plugged-in dispersion; Meyers' models have none".into(),
+            )),
+        }
+    }
+
+    /// The premium of each origin of a single-segment `meyers` view.
+    fn premium(&self) -> Result<Vec<f64>> {
+        match &self.inner {
+            BayesOneYearFitsOf::Meyers(f) => Ok(single(&f.segments, "premium", "totals_frame()")?
+                .fit
+                .premium
+                .clone()),
+            BayesOneYearFitsOf::Odp(_) => Err(Error::Other(
+                "premium is Meyers' input; bayes_odp has none".into(),
+            )),
+        }
     }
 
     fn pareto_k(&self) -> Result<Vec<f64>> {
-        Ok(self.one("pareto_k", "")?.pareto_k.clone())
+        each_bayes_one_years!(&self.inner, f => Ok(single(&f.segments, "pareto_k", "")?
+            .pareto_k
+            .clone()))
     }
 
     /// The simulations of a single-segment fit refitted with NUTS, 1-based.
     fn refitted(&self) -> Result<Vec<f64>> {
-        Ok(self
-            .one("refitted", "")?
+        each_bayes_one_years!(&self.inner, f => Ok(single(&f.segments, "refitted", "")?
             .refitted
             .iter()
             .map(|&i| (i + 1) as f64)
-            .collect())
+            .collect()))
     }
 
     /// The simulations of a single-segment fit that moment matching
     /// rescued, 1-based.
     fn moment_matched(&self) -> Result<Vec<f64>> {
-        Ok(self
-            .one("moment_matched", "")?
+        each_bayes_one_years!(&self.inner, f => Ok(single(&f.segments, "moment_matched", "")?
             .moment_matched
             .iter()
             .map(|&i| (i + 1) as f64)
-            .collect())
+            .collect()))
     }
 
     fn refit_warnings(&self) -> Result<f64> {
-        Ok(self.one("refit_warnings", "")?.refit_warnings as f64)
+        each_bayes_one_years!(&self.inner, f => Ok(single(&f.segments, "refit_warnings", "")?
+            .refit_warnings as f64))
     }
 
     /// Each segment's number of refits and of refits with a diagnostic
-    /// warning, for the warning of `bayes_odp_one_year_segments()`.
+    /// warning, for the warning of the one-year views over segments.
     fn refit_counts(&self) -> List {
-        let fits = &self.inner.segments.fits;
-        list!(
-            refits = fits
-                .iter()
-                .map(|s| s.refitted.len() as f64)
-                .collect::<Vec<_>>(),
-            warned = fits
-                .iter()
-                .map(|s| s.refit_warnings as f64)
-                .collect::<Vec<_>>()
-        )
+        each_bayes_one_years!(&self.inner, f => {
+            let fits = &f.segments.fits;
+            list!(
+                refits = fits
+                    .iter()
+                    .map(|s| s.refitted.len() as f64)
+                    .collect::<Vec<_>>(),
+                warned = fits
+                    .iter()
+                    .map(|s| s.refit_warnings as f64)
+                    .collect::<Vec<_>>()
+            )
+        })
     }
 
     fn k_threshold(&self) -> f64 {
-        self.inner.segments.fits[0].k_threshold
+        each_bayes_one_years!(&self.inner, f => f.segments.fits[0].k_threshold)
     }
 
     fn flagged_share(&self) -> Result<f64> {
-        Ok(self.one("flagged_share", "totals_frame()")?.flagged_share())
+        each_bayes_one_years!(&self.inner, f => Ok(single(
+            &f.segments,
+            "flagged_share",
+            "totals_frame()"
+        )?
+        .flagged_share()))
     }
 
     /// One row per segment: `list(table, warnings)`, as
     /// `segment_diagnostics`.
     fn diagnostics_table(&self) -> List {
-        segment_diagnostics(&self.inner.segments, self.inner.totals(), |s| {
-            &s.fit.diagnostics
-        })
+        match &self.inner {
+            BayesOneYearFitsOf::Odp(f) => {
+                segment_diagnostics(&f.segments, f.totals(), |s| &s.fit.diagnostics)
+            }
+            BayesOneYearFitsOf::Meyers(f) => {
+                segment_diagnostics(&f.segments, f.totals(), |s| &s.fit.diagnostics)
+            }
+        }
     }
 
     fn long_table(&self) -> List {
-        fit_table(self.inner.to_long())
+        fit_table(each_bayes_one_years!(&self.inner, f => f.to_long()))
     }
 
     fn totals_table(&self) -> List {
-        fit_table(self.inner.totals())
+        fit_table(each_bayes_one_years!(&self.inner, f => f.totals()))
     }
 
     fn development_table(&self) -> List {
-        fit_table(self.inner.segments.development_table())
+        fit_table(each_bayes_one_years!(&self.inner, f => f.segments.development_table()))
     }
 
     fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
-        Ok(Self {
-            inner: self.inner.segment(&choice(&keys, &values)?).map_err(to_r)?,
-        })
+        let keys = choice(&keys, &values)?;
+        let inner = match &self.inner {
+            BayesOneYearFitsOf::Odp(f) => BayesOneYearFitsOf::Odp(f.segment(&keys).map_err(to_r)?),
+            BayesOneYearFitsOf::Meyers(f) => {
+                BayesOneYearFitsOf::Meyers(f.segment(&keys).map_err(to_r)?)
+            }
+        };
+        Ok(Self { inner })
     }
 }
 
@@ -3765,4 +3938,11 @@ fn one_year_pattern(bootstrap_ldf: bool) -> OneYearPattern {
     } else {
         OneYearPattern::Estimated
     }
+}
+
+/// `values` as an array of `N`, or an error naming `name`.
+fn fixed<const N: usize>(values: &[f64], name: &str) -> Result<[f64; N]> {
+    values
+        .try_into()
+        .map_err(|_| Error::Other(format!("{name} must have {N} values, got {}", values.len())))
 }

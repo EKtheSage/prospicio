@@ -8,10 +8,10 @@
 //! weights (`prospicio_bayes::elpd::psis`, Vehtari et al. 2024) and takes
 //! the time-1 reserve as the weighted posterior mean of the reserve that
 //! remains after the year. A simulation whose weights are unreliable
-//! (Pareto `k̂` above a threshold) is refitted with NUTS on the extended
-//! triangle instead, or first moment-matched (decision 18,
-//! [`moment_match`](super::moment_match)), as [`BayesOneYear::refit`]
-//! says.
+//! (Pareto `k̂` above a threshold) is first moment-matched (decision 18,
+//! [`moment_match`](super::moment_match), the default) and refitted with
+//! NUTS on the extended triangle only when matching cannot rescue it, or
+//! refitted directly, as [`BayesOneYear::refit`] says.
 //!
 //! The engine knows nothing of a particular model (decision 17): a model
 //! plugs in through [`YearModel`], the one interface every Bayesian
@@ -19,7 +19,9 @@
 //! written once over it. A model whose cells are over-dispersed Poisson
 //! increments with a log-linear mean ([`BayesOdp`](super::BayesOdp),
 //! [`BayesBf`](super::BayesBf)) gets its [`YearModel`] from [`OdpYear`] by
-//! implementing the smaller [`OdpCells`]. The conformance suite in this
+//! implementing the smaller [`OdpCells`]; [`Meyers`](super::Meyers)'
+//! models implement it directly (`meyers::year::MeyersYear`, decision 19).
+//! The conformance suite in this
 //! module's tests (and its release-build twin,
 //! `validation/tests/reserving_bayes_one_year_conformance.rs`) runs on every
 //! implementor.
@@ -49,8 +51,7 @@ pub enum OneYearRefit {
     /// where `k̂` is high.
     ReweightOnly,
     /// Refit the flagged simulations with NUTS on the triangle extended by
-    /// their year, reweight the others (the default).
-    #[default]
+    /// their year, reweight the others.
     RefitFlagged,
     /// Refit every simulation: exact up to the refits' Monte Carlo error,
     /// one NUTS run per simulation; for checking the reweighting.
@@ -59,21 +60,25 @@ pub enum OneYearRefit {
     /// `loo::loo_moment_match`: the posterior draws moved by affine maps
     /// to the weighted moments until `k̂` is at most the threshold), and
     /// refit with NUTS only those it cannot bring there; reweight the
-    /// others. Opt-in (decision 18).
+    /// others. The default (decision 18): on the checked triangles as
+    /// accurate as `RefitFlagged` at a fifteenth of its cost or less.
+    #[default]
     MomentMatchThenRefit,
 }
 
 /// Settings of the one-year view of a Bayesian model
-/// (`BayesOdp::one_year`, `BayesBf::one_year`): the Pareto `k̂` above
-/// which a simulation's importance weights are not trusted, and what is
-/// done then.
+/// (`BayesOdp::one_year`, `BayesBf::one_year`, `Meyers::one_year`): the Pareto `k̂` above
+/// which a simulation's importance weights are not trusted, what is
+/// done then, and how many simulations the view runs.
 ///
 /// ```
 /// use prospicio_reserving::bayes::{BayesOneYear, OneYearRefit};
 ///
 /// let settings = BayesOneYear::default();
 /// assert_eq!(settings.k_threshold, 0.7);
-/// assert_eq!(settings.refit, OneYearRefit::RefitFlagged);
+/// assert_eq!(settings.refit, OneYearRefit::MomentMatchThenRefit);
+/// // The model's own default number of one-year simulations.
+/// assert_eq!(settings.n_sims, None);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BayesOneYear {
@@ -82,13 +87,25 @@ pub struct BayesOneYear {
     pub k_threshold: f64,
     /// What happens to a flagged simulation.
     pub refit: OneYearRefit,
+    /// The number of one-year simulations. `None` (the default) takes the
+    /// model's one-year default: its own `n_sims` for `BayesOdp` and
+    /// `BayesBf` (10,000 by default), and its `n_sims` capped at
+    /// [`Meyers::ONE_YEAR_SIMS`](super::Meyers::ONE_YEAR_SIMS) (2,000) for
+    /// `Meyers`, whose flagged simulations cost a moment match or a NUTS
+    /// refit each (the user's decision of 2026-10-16,
+    /// `docs/design/reserving-bayes.md` decision 19). The lifetime view keeps
+    /// the model's `n_sims` either way. Simulation `i` is on stream `i`
+    /// whatever the count, so a smaller count gives the first simulations of
+    /// a larger one.
+    pub n_sims: Option<usize>,
 }
 
 impl Default for BayesOneYear {
     fn default() -> Self {
         Self {
             k_threshold: 0.7,
-            refit: OneYearRefit::RefitFlagged,
+            refit: OneYearRefit::MomentMatchThenRefit,
+            n_sims: None,
         }
     }
 }
@@ -102,7 +119,20 @@ impl BayesOneYear {
                 expected: "a number, the Pareto k above which a simulation is flagged",
             });
         }
+        if self.n_sims == Some(0) {
+            return Err(Error::InvalidSetting {
+                name: "n_sims",
+                value: 0.0,
+                expected: "at least one one-year simulation, or None for the model's default",
+            });
+        }
         Ok(())
+    }
+
+    /// The number of one-year simulations: [`n_sims`](Self::n_sims), or
+    /// `model_default` when it is `None`.
+    pub(crate) fn sims(&self, model_default: usize) -> usize {
+        self.n_sims.unwrap_or(model_default)
     }
 
     /// Whether a simulation with Pareto `k` is not simply reweighted:
@@ -132,10 +162,10 @@ impl BayesOneYear {
 /// moves the draws by affine maps on it, which on a constrained scale (a
 /// standard deviation, `tanh` of a correlation) can leave the support;
 /// a Jacobian term does not mend that. `BayesOdp` and `BayesBf` store
-/// such draws. `Meyers` and `Compartmental` store natural-scale values
-/// (`tanh`, square roots of variances, exponentials) and must store or
-/// expose their unconstrained sampling scale before they implement this
-/// trait.
+/// such draws, and `Meyers` keeps such a copy beside its natural-scale
+/// posterior (decision 19). `Compartmental` stores natural-scale values
+/// (exponentials, rates) and must store or expose its unconstrained
+/// sampling scale before it implements this trait.
 ///
 /// Everything a simulation's predictive step would draw afresh that the
 /// year's cells inform (an effect of an origin or an age with no observed
@@ -586,13 +616,15 @@ impl<C: OdpCells> YearModel for OdpYear<'_, C> {
 
 /// The one-year view of a Bayesian model on one segment
 /// ([`BayesOdp::one_year`](super::BayesOdp::one_year),
-/// [`BayesBf::one_year`](super::BayesBf::one_year)): the lifetime fit, the
+/// [`BayesBf::one_year`](super::BayesBf::one_year),
+/// [`Meyers::one_year`](super::Meyers::one_year)): the lifetime fit, the
 /// opening reserve, the claims development result and how reliable each
 /// simulation's reweighting was.
 ///
 /// `F` is the model's lifetime fit: [`BayesOdpFit`](super::BayesOdpFit)
 /// for the Bayesian ODP, [`BayesBfFit`](super::BayesBfFit) for the
-/// Bayesian Bornhuetter–Ferguson.
+/// Bayesian Bornhuetter–Ferguson, [`MeyersFit`](super::MeyersFit) for
+/// Meyers' models.
 #[derive(Debug, Clone)]
 pub struct BayesOneYearFit<F = super::BayesOdpFit> {
     /// The model fitted to the observed triangle, with its lifetime
@@ -762,8 +794,9 @@ impl<S: ReserveFit> ReserveFit for BayesOneYearSegment<S> {
 }
 
 /// The one-year view of a Bayesian model in every segment of a triangle
-/// ([`BayesOdp::one_year_segments`](super::BayesOdp::one_year_segments)),
-/// with the layout of [`OneYearFits`](crate::OneYearFits).
+/// ([`BayesOdp::one_year_segments`](super::BayesOdp::one_year_segments),
+/// [`Meyers::one_year_segments`](super::Meyers::one_year_segments)), with
+/// the layout of [`OneYearFits`](crate::OneYearFits).
 #[derive(Debug, Clone)]
 pub struct BayesOneYearFits<S = super::BayesOdpSegment> {
     /// Each segment's posterior, opening reserve and Pareto `k̂`.
@@ -801,10 +834,15 @@ impl<S: ReserveFit + Clone> BayesOneYearFits<S> {
 }
 
 /// The provenance fields of the one-year view's settings.
-pub(crate) fn provenance(provenance: Provenance, settings: &BayesOneYear) -> Provenance {
+pub(crate) fn provenance(
+    provenance: Provenance,
+    settings: &BayesOneYear,
+    n_sims: usize,
+) -> Provenance {
     provenance
         .param("k_threshold", settings.k_threshold)
         .param("refit", format!("{:?}", settings.refit))
+        .param("one_year_sims", n_sims)
 }
 
 #[cfg(test)]

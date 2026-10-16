@@ -602,7 +602,7 @@ class BayesBf:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "refit_flagged") -> BayesOneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, exposure: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFit:
         """
         The one-year view of one loss column of a single-segment cumulative
         triangle, with each origin's exposure from another column: the
@@ -617,8 +617,9 @@ class BayesBf:
         claims development result as its posterior mean reserve at the
         opening less its payment in the year and its weighted posterior mean
         reserve after it. A simulation whose Pareto ``k`` is above
-        ``k_threshold`` is refitted with NUTS on the extended triangle when
-        ``refit`` says so. A flat prior (``cv=inf``) gives about
+        ``k_threshold`` is handled as ``refit`` says: by default
+        moment-matched, and refitted with NUTS on the extended triangle
+        only if matching cannot bring its ``k`` to the threshold. A flat prior (``cv=inf``) gives about
         ``BayesOdp.one_year``'s view; a tighter prior a narrower one, in
         which the development pattern learns from the year and the origins'
         levels hardly do. Raises one ``UserWarning`` listing the failed
@@ -636,8 +637,12 @@ class BayesBf:
         k_threshold : float, default 0.7
             The Pareto ``k`` above which a simulation's importance weights
             are not trusted.
-        refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+        n_sims : int, optional
+            The number of one-year simulations; by default this model's
+            ``n_sims``. A smaller count gives the first simulations of a
+            larger one.
         
         Returns
         -------
@@ -1217,7 +1222,7 @@ class BayesOdp:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "refit_flagged") -> BayesOneYearFit:
+    def one_year(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFit:
         """
         The one-year view of one measure column of a single-segment
         cumulative triangle: the claims development result over the coming
@@ -1237,13 +1242,19 @@ class BayesOdp:
         payments and ``R'`` the expected run-off after the year, each
         expectation the (weighted) mean over the posterior draws; its mean
         is about zero. A simulation whose ``k`` is above ``k_threshold`` is
-        flagged and, with ``refit="refit_flagged"`` (the default), refitted
-        with NUTS on the triangle extended by its year, with this model's
-        sampler. A refit takes about 40 ms in a release build, and 14% to
-        26% of the simulations are flagged on RAA and GenIns, so a default
-        run of 10,000 simulations takes one to two minutes there;
-        ``"reweight_only"`` takes about a second and leaves the total's
-        standard deviation about 1% low. Every cell up to the end of the
+        flagged. With ``refit="moment_match_then_refit"`` (the default) its
+        posterior draws are first moved by affine maps to the moments the
+        weights estimate (moment matching, as R's
+        ``loo::loo_moment_match``), and only a simulation whose ``k`` stays
+        above ``k_threshold`` is refitted with NUTS on the triangle extended
+        by its year, with this model's sampler. 14% to 26% of the
+        simulations are flagged on RAA and GenIns; matching rescues nearly
+        all of them, within 0.04 to 0.06 sd of their refits, at about 1 ms
+        each against about 26 ms for a refit, so a default run of 10,000
+        simulations takes a few seconds in a release build.
+        ``"refit_flagged"`` refits every flagged simulation (one to two
+        minutes there), and ``"reweight_only"`` takes about a second and
+        leaves the flagged simulations' reweighting as it is. Every cell up to the end of the
         year is observed and conditioned on, also for an origin that lags
         the valuation. Raises one ``UserWarning`` listing the failed
         diagnostics of the fit, and another if any refit failed its
@@ -1258,15 +1269,17 @@ class BayesOdp:
             The Pareto ``k`` above which a simulation's importance weights
             are not trusted (the threshold of Vehtari et al. 2024 for a few
             thousand draws).
-        refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
-            What happens to a flagged simulation: refitted with NUTS, or
-            reweighted anyway (fast, biased where ``k`` is high);
-            ``"refit_all"`` refits every simulation, to check the
-            reweighting; ``"moment_match_then_refit"`` first moves the
-            posterior draws by affine maps to the moments the weights
-            estimate (moment matching, as R's ``loo::loo_moment_match``)
-            and refits only a simulation whose ``k`` stays above
-            ``k_threshold`` (``moment_matched`` lists the others).
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+            What happens to a flagged simulation: moment-matched, and
+            refitted only if its ``k`` stays above ``k_threshold``
+            (``moment_matched`` lists the rescued); refitted with NUTS
+            (``"refit_flagged"``); or reweighted anyway (fast, biased where
+            ``k`` is high); ``"refit_all"`` refits every simulation, to
+            check the reweighting.
+        n_sims : int, optional
+            The number of one-year simulations; by default this model's
+            ``n_sims``. A smaller count gives the first simulations of a
+            larger one.
         
         Returns
         -------
@@ -1293,7 +1306,7 @@ class BayesOdp:
         >>> view.cdr.variance() < view.fit.reserves.variance()
         True
         """
-    def one_year_segments(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "refit_flagged") -> BayesOneYearFits:
+    def one_year_segments(self, /, triangle: Triangle, column: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFits:
         """
         The one-year view of one measure column in every segment of a
         cumulative triangle: each segment's posterior and simulations as in
@@ -1313,7 +1326,9 @@ class BayesOdp:
         column : str
         k_threshold : float, default 0.7
             As in ``one_year``.
-        refit : {"refit_flagged", "reweight_only", "refit_all", "moment_match_then_refit"}, default "refit_flagged"
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+            As in ``one_year``.
+        n_sims : int, optional
             As in ``one_year``.
         
         Returns
@@ -1657,7 +1672,8 @@ class BayesOdpFits:
 class BayesOneYearFit:
     """
     The one-year view of a Bayesian model on a single-segment triangle,
-    from ``BayesOdp.one_year`` or ``BayesBf.one_year``: the lifetime fit,
+    from ``BayesOdp.one_year``, ``BayesBf.one_year`` or
+    ``Meyers.one_year``: the lifetime fit,
     the opening reserve, the claims development result over the coming
     year and how reliable each simulation's importance reweighting was.
     
@@ -1669,8 +1685,9 @@ class BayesOneYearFit:
     per simulation; ``flagged_share`` is the share above ``k_threshold``,
     whether or not they were refitted, ``refitted`` lists the simulations
     refitted with NUTS and ``moment_matched`` those moment matching
-    rescued (``refit="moment_match_then_refit"``). ``fit`` is the model's own lifetime fit,
-    a ``BayesOdpFit`` or a ``BayesBfFit``.
+    rescued (``refit="moment_match_then_refit"``, the default). ``fit`` is
+    the model's own lifetime fit, a ``BayesOdpFit``, a ``BayesBfFit`` or a
+    ``MeyersFit``.
     """
     def __repr__(self, /) -> str: ...
     @property
@@ -1705,11 +1722,11 @@ class BayesOneYearFit:
         The model fitted to the observed triangle, with its posterior and
         lifetime reserves, as the model's ``fit`` gives it: a
         ``BayesOdpFit`` from ``BayesOdp.one_year``, a ``BayesBfFit`` from
-        ``BayesBf.one_year``.
+        ``BayesBf.one_year``, a ``MeyersFit`` from ``Meyers.one_year``.
         
         Returns
         -------
-        BayesOdpFit or BayesBfFit
+        BayesOdpFit, BayesBfFit or MeyersFit
         """
     @property
     def flagged_share(self, /) -> float:
@@ -1794,17 +1811,19 @@ class BayesOneYearFit:
 class BayesOneYearFits:
     """
     The one-year view of a Bayesian model in every segment of a triangle,
-    from ``BayesOdp.one_year_segments``, laid out as ``OneYearFit``.
+    from ``BayesOdp.one_year_segments`` or ``Meyers.one_year_segments``,
+    laid out as ``OneYearFit``.
     
     ``cdr`` is one joint distribution of the claims development result with
     the triangle's keys and ``"origin"`` as dimensions, so
     ``cdr.aggregate(["lob"])`` keeps the dependence between segments.
     Per-origin lists run over the origins of each segment in turn, like the
-    rows of ``to_frame()`` and the components of ``cdr``. ``scale``,
-    ``diagnostics``, ``pareto_k``, ``refitted``, ``refit_warnings`` and
-    ``flagged_share`` are one segment's and need a single-segment fit: for
-    several segments use ``segment(...)``, ``totals_frame()`` (the scales
-    and flagged shares) or ``diagnostics_frame()``.
+    rows of ``to_frame()`` and the components of ``cdr``. ``scale`` (the
+    ODP's only), ``premium`` (Meyers' only), ``diagnostics``, ``pareto_k``,
+    ``refitted``, ``refit_warnings`` and ``flagged_share`` are one
+    segment's and need a single-segment fit: for several segments use
+    ``segment(...)``, ``totals_frame()`` (the scales or premiums and the
+    flagged shares) or ``diagnostics_frame()``.
     """
     def __repr__(self, /) -> str: ...
     @property
@@ -1903,6 +1922,17 @@ class BayesOneYearFits:
         Each simulation's Pareto ``k`` in a single-segment fit.
         """
     @property
+    def premium(self, /) -> list[float]:
+        """
+        The premium of each origin of a single-segment ``Meyers`` view.
+        
+        Raises
+        ------
+        ValueError
+            For several segments, or for a model without premium
+            (``BayesOdp``).
+        """
+    @property
     def refit_warnings(self, /) -> int:
         """
         How many of a single-segment fit's refits had a diagnostic warning.
@@ -1915,7 +1945,13 @@ class BayesOneYearFits:
     @property
     def scale(self, /) -> float:
         """
-        The plugged-in scale ``phi`` of a single-segment fit.
+        The plugged-in scale ``phi`` of a single-segment ``BayesOdp`` view.
+        
+        Raises
+        ------
+        ValueError
+            For several segments, or for a model without a scale
+            (``Meyers``).
         """
     def segment(self, /, **keys) -> BayesOneYearFits:
         """
@@ -1930,9 +1966,9 @@ class BayesOneYearFits:
     def to_frame(self, /) -> Any:
         """
         One row per segment and origin: the key columns, ``origin``,
-        ``latest``, ``opening_ultimate``, ``opening_reserve``, and the
-        ``cdr_mean`` and ``cdr_std_dev`` of the claims development result.
-        Needs pandas.
+        ``latest``, ``opening_ultimate``, ``opening_reserve``, the model's
+        own columns (Meyers' ``premium``), and the ``cdr_mean`` and
+        ``cdr_std_dev`` of the claims development result. Needs pandas.
         
         Returns
         -------
@@ -1941,9 +1977,10 @@ class BayesOneYearFits:
     def totals_frame(self, /) -> Any:
         """
         One row per segment: the key columns, the totals of ``to_frame()``'s
-        columns, the ``scale``, the ``flagged_share``, and the ``cdr_mean``
-        and ``cdr_std_dev`` of the segment's total claims development
-        result. Needs pandas.
+        columns, the model's own totals (the ODP's ``scale``, Meyers'
+        ``premium``), the ``flagged_share``, and the ``cdr_mean`` and
+        ``cdr_std_dev`` of the segment's total claims development result.
+        Needs pandas.
         
         Returns
         -------
@@ -12508,6 +12545,146 @@ class Meyers:
     def n_sims(self, /) -> int:
         """
         Number of predictive simulations.
+        """
+    def one_year(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFit:
+        """
+        The one-year view of one measure column of a single-segment
+        cumulative triangle with premium: the claims development result over
+        the coming year, by Pareto smoothed importance sampling of the
+        posterior (decision 19 of ``docs/design/reserving-bayes.md``). The
+        posterior and the lifetime ultimates and reserves are ``fit``'s for
+        the same settings. Each simulation picks a posterior draw, draws the
+        cumulative values of the year's cells from it (the cells valued in
+        the next twelve months, as in ``OdpBootstrap.one_year``), reweights
+        every posterior draw by the likelihood of those values, and smooths
+        the weights (one Pareto ``k`` per simulation). Origin ``w``'s claims
+        development result is
+        
+        ``CDR[w] = E[U[w] | D0] - E[U[w] | D0, C]``
+        
+        with ``U`` the ultimate (the value at the oldest age) and each
+        expectation the (weighted) posterior mean of the ultimate's expected
+        value given a draw; an origin the year takes to the oldest age has
+        its value there instead of the second term. The mean is about zero.
+        A simulation whose ``k`` is above ``k_threshold`` is flagged and
+        handled as ``refit`` says: by default moment-matched, and refitted
+        with NUTS only if its ``k`` stays above the threshold. On Meyers'
+        group 353 nearly every simulation is flagged and matching rescues
+        about nine in ten, so 10,000 simulations take 4 to 7 minutes on 16
+        threads in a release build, and ``"refit_flagged"`` about 6.7 times
+        as long. The view therefore runs at most 2,000 simulations by
+        default (about a fifth of that time), whatever the model's
+        ``n_sims`` is above that; ``n_sims`` here sets the count. Raises one ``UserWarning``
+        listing the failed diagnostics of the fit, and another if any refit
+        failed its diagnostics.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with one segment.
+        column : str
+            The losses: paid, or case incurred.
+        premium : str
+            The premium of each origin, as in ``fit``.
+        k_threshold : float, default 0.7
+            The Pareto ``k`` above which a simulation's importance weights
+            are not trusted.
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+            What happens to a flagged simulation, as in ``BayesOdp.one_year``.
+        n_sims : int, optional
+            The number of one-year simulations. By default this model's
+            ``n_sims``, at most 2,000: nearly every simulation of these
+            models is flagged and costs a moment match or a refit. The
+            lifetime view in ``fit`` keeps ``n_sims``; a smaller count
+            gives the first simulations of a larger one.
+        
+        Returns
+        -------
+        BayesOneYearFit
+            With ``fit`` a ``MeyersFit``.
+        
+        Raises
+        ------
+        ValueError
+            As ``fit``; if ``k_threshold`` is NaN or ``refit`` is unknown.
+        
+        Examples
+        --------
+        >>> import warnings
+        >>> from prospicio.reserving import Meyers, Triangle
+        >>> paid = [[952, 1529, 2813, 3647, 3724, 3832], [849, 1564, 2202, 2432, 2468],
+        ...         [983, 2211, 2830, 3832], [1657, 2685, 3169], [932, 1940], [1162]]
+        >>> premium = [5812, 4908, 5454, 5165, 5214, 5230]
+        >>> rows = [(1988 + w, 12 * (d + 1), v, premium[w])
+        ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+        >>> origin, age, values, prem = map(list, zip(*rows))
+        >>> tri = Triangle.from_long(origin, age, {"paid": values, "premium": prem})
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+        ...     view = Meyers(tune=300, draws=300, n_sims=1000, seed=1).one_year(
+        ...         tri, "paid", "premium", refit="reweight_only")
+        >>> type(view.fit).__name__, view.cdr.components()[:2]
+        ('MeyersFit', [('1988',), ('1989',)])
+        >>> view.cdr.variance() < view.fit.reserves.variance()
+        True
+        """
+    def one_year_segments(self, /, triangle: Triangle, column: str, premium: str, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", n_sims: int |None = None) -> BayesOneYearFits:
+        """
+        The one-year view of one measure column in every segment of a
+        cumulative triangle with premium: each segment's posterior and
+        simulations as in ``fit_segments`` (segment ``k``'s own seeds), its
+        view as in ``one_year``, into one joint claims development result,
+        the segments depending on each other as ``dependence`` says:
+        ``"independent"``, or ``"rank_correlation"`` by Iman–Conover on the
+        segments' total claims development results. Raises one
+        ``UserWarning`` listing the failed diagnostics of every segment's
+        fit, and another if any refit failed its diagnostics, each message
+        prefixed with its segment's label.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments.
+        column : str
+        premium : str
+        k_threshold : float, default 0.7
+            As in ``one_year``.
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
+            As in ``one_year``.
+        n_sims : int, optional
+            As in ``one_year``.
+        
+        Returns
+        -------
+        BayesOneYearFits
+        
+        Raises
+        ------
+        ValueError
+            As ``one_year`` and ``fit_segments``, including
+            ``dependence="synchronized"``.
+        
+        Examples
+        --------
+        >>> import warnings
+        >>> from prospicio.reserving import Meyers, Triangle
+        >>> paid = [[952, 1529, 2813, 3647, 3724], [849, 1564, 2202, 2432],
+        ...         [983, 2211, 2830], [1657, 2685], [932]]
+        >>> premium = [5812, 4908, 5454, 5165, 5214]
+        >>> rows = [(lob, 1988 + w, 12 * (d + 1), k * v, k * premium[w])
+        ...         for lob, k in [("Auto", 1.0), ("Home", 2.0)]
+        ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+        >>> lob, origin, age, values, prem = map(list, zip(*rows))
+        >>> tri = Triangle.from_long(
+        ...     origin, age, {"paid": values, "premium": prem}, keys={"lob": lob})
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+        ...     views = Meyers(tune=200, draws=200, n_sims=500).one_year_segments(
+        ...         tri, "paid", "premium", refit="reweight_only")
+        >>> views.index, views.cdr.dims
+        (['Auto', 'Home'], ['lob', 'origin'])
+        >>> views.segment(lob="Home").premium[:2]
+        [11624.0, 9816.0]
         """
     @property
     def origin_sd(self, /) -> float:

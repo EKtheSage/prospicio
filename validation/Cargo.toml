@@ -23,14 +23,19 @@ prospicio-prob = { workspace = true, features = ["arrow"] }
 rayon.workspace = true
 
 [features]
-# The Bayesian (NUTS) parity tests: about 220 s in a debug build, about 17 s
-# in release, so a plain `cargo test` skips them and CI runs them in release
+# The Bayesian (NUTS) parity tests: about 220 s in a debug build and 17 s in
+# release when there were six files (thirteen now, with the one-year views'
+# refits, minutes in release), so a plain `cargo test` skips them and CI runs them in release
 # (the `bayes` job of .github/workflows/ci.yml). Run them locally with
 #   cargo test --release -p prospicio-validation --features slow-bayes \
 #     --test 'reserving_bayes*' --test 'reserving_meyers*' \
 #     --test 'reserving_compartmental*'
 # A new Bayesian parity file gets a [[test]] entry below, and nothing else:
 # the CI job reads this list.
+# The slowest arms (the Meyers and compartmental one-year views) run a
+# smoke version (one model each) unless RISK_RS_FULL_BAYES is set, as CI's
+# weekly and manual runs set it: prefix the command above with
+# RISK_RS_FULL_BAYES=1 for all of them (prospicio_validation::full_bayes).
 # prospicio-reserving's own NUTS unit tests run in release with
 #   cargo test --release -p prospicio-reserving --features slow-tests --lib
 # `slow-bayes` turns that feature on too, so one flag covers every slow
@@ -83,4 +88,8 @@ required-features = ["slow-bayes"]
 
 [[test]]
 name = "reserving_bayes_one_year_moment_match"
+required-features = ["slow-bayes"]
+
+[[test]]
+name = "reserving_meyers_one_year"
 required-features = ["slow-bayes"]

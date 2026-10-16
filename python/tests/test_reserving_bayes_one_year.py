@@ -9,7 +9,10 @@ the settings, the fields and frames, the lifetime fit against ``fit``, which
 simulations are refitted, segments, replay by seed, the warnings and the
 errors. ``BayesBf.one_year`` (decision 17) returns the same class with a
 ``BayesBfFit``; its comparison with ``BayesOdp`` and the strong-prior limit is
-in validation/tests/reserving_bayes_bf_one_year.rs.
+in validation/tests/reserving_bayes_bf_one_year.rs. ``Meyers.one_year`` and
+``one_year_segments`` (decision 19) return the same classes with a
+``MeyersFit``; their checks against refits are in
+validation/tests/reserving_meyers_one_year.rs.
 """
 
 import csv
@@ -29,6 +32,8 @@ from prospicio.reserving import (
     BayesOneYearFits,
     ChainLadder,
     ChainLadderFit,
+    Meyers,
+    MeyersFit,
     OdpBootstrap,
     Triangle,
 )
@@ -172,7 +177,7 @@ def test_refits():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # short chains may miss a threshold
         only = model.one_year(tri, "paid", refit="reweight_only")
-        flagged = model.one_year(tri, "paid", k_threshold=0.3)
+        flagged = model.one_year(tri, "paid", k_threshold=0.3, refit="refit_flagged")
         every = model.one_year(tri, "paid", refit="refit_all")
     # The flagged simulations are those above the threshold, refitted or not.
     expected = [i for i, k in enumerate(flagged.pareto_k) if math.isnan(k) or k > 0.3]
@@ -197,6 +202,10 @@ def test_moment_matching():
         only = model.one_year(tri, "paid", refit="reweight_only")
         every = model.one_year(tri, "paid", refit="refit_all")
         matched = model.one_year(tri, "paid", k_threshold=0.3, refit="moment_match_then_refit")
+        # Moment matching is the default (decision 18).
+        default = model.one_year(tri, "paid", k_threshold=0.3)
+    assert default.cdr.draw_matrix() == matched.cdr.draw_matrix()
+    assert default.moment_matched == matched.moment_matched
     # The same years; each flagged simulation is moment-matched or refitted,
     # never both.
     assert matched.pareto_k == only.pareto_k
@@ -360,3 +369,107 @@ def test_bayes_bf_one_year():
         model.one_year(tri, "paid", "premium", refit="sometimes")
     with pytest.raises(ValueError, match="k_threshold"):
         model.one_year(tri, "paid", "premium", k_threshold=float("nan"))
+
+
+MEYERS_PAID = [
+    [952, 1529, 2813, 3647, 3724, 3832],
+    [849, 1564, 2202, 2432, 2468],
+    [983, 2211, 2830, 3832],
+    [1657, 2685, 3169],
+    [932, 1940],
+    [1162],
+]
+MEYERS_PREMIUM = [5812, 4908, 5454, 5165, 5214, 5230]
+
+
+def meyers_triangle(keys=False):
+    lines = [("Auto", 1.0), ("Home", 2.0)] if keys else [("Auto", 1.0)]
+    rows = [
+        (lob, 1988 + w, 12 * (d + 1), k * v, k * MEYERS_PREMIUM[w])
+        for lob, k in lines
+        for w, row in enumerate(MEYERS_PAID)
+        for d, v in enumerate(row)
+    ]
+    lob, origin, age, values, prem = map(list, zip(*rows))
+    return Triangle.from_long(
+        origin, age, {"paid": values, "premium": prem}, keys={"lob": lob} if keys else None
+    )
+
+
+def test_meyers_one_year():
+    tri = meyers_triangle()
+    model = Meyers("cay", tune=300, draws=300, n_sims=600, seed=5)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        view = model.one_year(tri, "paid", "premium", refit="reweight_only")
+        fit = model.fit(tri, "paid", "premium")
+        default = Meyers("cay", tune=300, draws=300, n_sims=40, seed=5).one_year(
+            tri, "paid", "premium"
+        )
+    assert isinstance(view, BayesOneYearFit)
+    assert isinstance(view.fit, MeyersFit) and view.fit.model == "cay"
+    # The posterior and lifetime predictive are fit's, draw for draw.
+    assert view.fit.draws == fit.draws
+    assert view.fit.reserves.draw_matrix() == fit.reserves.draw_matrix()
+    assert view.origins == [str(y) for y in range(1988, 1994)]
+    assert view.cdr.components() == [(o,) for o in view.origins]
+    assert all(row[0] == 0.0 for row in view.cdr.draw_matrix())
+    assert len(view.pareto_k) == 600 and view.refitted == [] and view.moment_matched == []
+    assert view.cdr.variance() < fit.reserves.variance()
+    # The opening reserve is the lifetime reserve's posterior mean, within
+    # Monte Carlo error (the total is heavy-tailed on six origins).
+    lifetime = total_draws(fit.reserves)
+    se = sd(lifetime) / math.sqrt(len(lifetime))
+    assert abs(sum(view.opening_reserve) - sum(lifetime) / len(lifetime)) < 5 * se
+    frame = view.to_frame()
+    assert list(frame["premium"]) == pytest.approx(MEYERS_PREMIUM)
+    # The default moment-matches the flagged simulations and refits the rest.
+    flagged = [i for i, k in enumerate(default.pareto_k) if math.isnan(k) or k > 0.7]
+    assert default.pareto_k == view.pareto_k[:40]
+    assert sorted(default.moment_matched + default.refitted) == flagged
+    with pytest.raises(ValueError, match="refit must be"):
+        model.one_year(tri, "paid", "premium", refit="sometimes")
+
+
+def test_one_year_sims():
+    # Meyers' view runs at most 2,000 simulations by default (the user's
+    # decision of 2026-10-16); n_sims sets the count for any model, and a
+    # smaller count gives the first simulations of a larger one.
+    tri = meyers_triangle()
+    model = Meyers(tune=200, draws=200, n_sims=3000, seed=1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        capped = model.one_year(tri, "paid", "premium", refit="reweight_only")
+        fewer = model.one_year(tri, "paid", "premium", refit="reweight_only", n_sims=100)
+    assert capped.cdr.n_sims == 2000 and capped.fit.reserves.n_sims == 3000
+    assert fewer.cdr.n_sims == 100 and fewer.pareto_k == capped.pareto_k[:100]
+    with pytest.raises(ValueError, match="n_sims"):
+        Meyers(n_sims=10).one_year(tri, "paid", "premium", n_sims=0)
+    odp = BayesOdp(n_sims=300, seed=11)
+    whole = odp.one_year(tiny(), "paid", refit="reweight_only")
+    part = odp.one_year(tiny(), "paid", refit="reweight_only", n_sims=50)
+    assert whole.cdr.n_sims == 300 and part.cdr.n_sims == 50
+    assert part.pareto_k == whole.pareto_k[:50]
+
+
+def test_meyers_one_year_segments():
+    tri = meyers_triangle(keys=True)
+    model = Meyers(tune=200, draws=200, n_sims=500, seed=2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        views = model.one_year_segments(tri, "paid", "premium", refit="reweight_only")
+    assert isinstance(views, BayesOneYearFits)
+    assert views.index == ["Auto", "Home"] and views.cdr.dims == ["lob", "origin"]
+    assert views.cdr.n_components == 12
+    home = views.segment(lob="Home")
+    assert home.premium == pytest.approx([2 * p for p in MEYERS_PREMIUM])
+    assert len(home.pareto_k) == 500 and home.refitted == []
+    with pytest.raises(ValueError, match="scale"):
+        home.scale
+    with pytest.raises(ValueError):
+        views.premium
+    totals = views.totals_frame()
+    assert list(totals["lob"]) == ["Auto", "Home"] and "premium" in totals.columns
+    assert len(views.diagnostics_frame()) == 2
+    with pytest.raises(ValueError, match="(?i)synchroni"):
+        Meyers(n_sims=10, dependence="synchronized").one_year_segments(tri, "paid", "premium")

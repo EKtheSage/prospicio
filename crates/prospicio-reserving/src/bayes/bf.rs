@@ -213,9 +213,10 @@ impl BayesBf {
     /// origin `w`'s claims development result as its posterior mean reserve
     /// at the opening less its payment in the year and its weighted
     /// posterior mean reserve after it. A simulation whose Pareto `k̂` is
-    /// above [`BayesOneYear::k_threshold`] is refitted with NUTS on the
-    /// triangle extended by its year when [`BayesOneYear::refit`] says so.
-    /// A triangle with no cells in the year leaves the posterior unchanged
+    /// above [`BayesOneYear::k_threshold`] is handled as
+    /// [`BayesOneYear::refit`] says: by default moment-matched (decision 18)
+    /// and, only if that cannot bring its `k̂` to the threshold, refitted
+    /// with NUTS on the triangle extended by its year. A triangle with no cells in the year leaves the posterior unchanged
     /// (`k̂` 0, no refit). The prior's strength moves the view between the
     /// Bayesian chain ladder's (`cv = f64::INFINITY`) and a narrower one
     /// that tends, as `cv -> 0`, to the strong-prior limit, in which only
@@ -280,13 +281,13 @@ impl BayesBf {
             &year,
             &fit.posterior,
             settings,
-            self.n_sims,
+            settings.sims(self.n_sims),
             one_year_seed(derive_seed(self.seed, Stream::Predictive)),
         )?;
         let hasher = input_hasher(column, exposure, &segment, &fit.chain_ladder, &fit.exposure);
         let mut provenance = self.provenance(column, exposure, &fit.model, hasher);
         provenance.model = "bayes_bf_one_year".into();
-        let provenance = one_year::provenance(provenance, settings);
+        let provenance = one_year::provenance(provenance, settings, settings.sims(self.n_sims));
         one_year::assemble(fit, draws, &segment, settings, provenance)
     }
 

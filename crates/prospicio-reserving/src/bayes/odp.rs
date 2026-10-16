@@ -414,10 +414,11 @@ impl BayesOdp {
     /// the increments after the year, each expectation the (weighted) mean
     /// over the posterior draws. Its mean is zero up to Monte Carlo and
     /// importance sampling error. A simulation whose `k̂` is above
-    /// [`BayesOneYear::k_threshold`] is refitted with NUTS on the triangle
-    /// extended by its year, with this model's sampler and a seed drawn
-    /// from the simulation's own stream, when [`BayesOneYear::refit`] says
-    /// so. An origin with every remaining cell in the year has its whole
+    /// [`BayesOneYear::k_threshold`] is handled as [`BayesOneYear::refit`]
+    /// says: by default moment-matched (decision 18) and, only if that
+    /// cannot bring its `k̂` to the threshold, refitted with NUTS on the
+    /// triangle extended by its year, with this model's sampler and a seed
+    /// drawn from the simulation's own stream. An origin with every remaining cell in the year has its whole
     /// run-off as its one-year view; one at the last age has none. A
     /// triangle with no cells in the year (every origin at the last age)
     /// leaves the posterior unchanged: `k̂` is 0 and nothing is refitted.
@@ -535,8 +536,9 @@ impl BayesOdp {
             hash_segment(&mut hasher, &segment, &fit.chain_ladder, &segment.ages);
             components.extend(origin_keys(label, &segment.origins));
         }
-        let mut draws = Vec::with_capacity(self.n_sims * components.len());
-        for i in 0..self.n_sims {
+        let n_sims = settings.sims(self.n_sims);
+        let mut draws = Vec::with_capacity(n_sims * components.len());
+        for i in 0..n_sims {
             for (_, year) in &fitted.fits {
                 let m = year.opening.len();
                 draws.extend_from_slice(&year.cdr[i * m..(i + 1) * m]);
@@ -598,7 +600,7 @@ impl BayesOdp {
             &year,
             &fit.posterior,
             settings,
-            self.n_sims,
+            settings.sims(self.n_sims),
             one_year_seed(derive_seed(self.seed, predictive)),
         )
     }
@@ -611,7 +613,7 @@ impl BayesOdp {
     ) -> Provenance {
         let mut provenance = self.base_provenance(column);
         provenance.model = "bayes_odp_one_year".into();
-        one_year::provenance(provenance, settings)
+        one_year::provenance(provenance, settings, settings.sims(self.n_sims))
             .param("c0", model.c0)
             .param("scale", model.phi)
     }
@@ -2083,7 +2085,15 @@ mod tests {
         };
         let run = |refit, k_threshold| {
             model
-                .one_year(&genins(), "values", &BayesOneYear { k_threshold, refit })
+                .one_year(
+                    &genins(),
+                    "values",
+                    &BayesOneYear {
+                        k_threshold,
+                        refit,
+                        ..BayesOneYear::default()
+                    },
+                )
                 .unwrap()
         };
         let only = run(OneYearRefit::ReweightOnly, 0.7);
