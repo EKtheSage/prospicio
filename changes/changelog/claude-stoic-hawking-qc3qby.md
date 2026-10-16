@@ -107,3 +107,11 @@
   reads the output as a mean or on a link's scale with the offset, and
   implements `Fitted` with process draws from a family. Matches
   onnxruntime within float32 rounding (#306).
+
+### Distributions and probability
+
+- `PanjerClass` (a count chosen by mean and dispersion) forwards its third
+  moment and cumulant, `cdf`, `quantile` and `sample` to its family. The
+  third cumulant had fallen to the trait's default, which cancels at large
+  means: compound skewness at 1,000 claims was 1.2e-7 off; it is now exact
+  (#307).

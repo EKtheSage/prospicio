@@ -594,6 +594,26 @@ impl Counting for PanjerClass {
     fn pgf_complex(&self, z: (f64, f64)) -> (f64, f64) {
         self.inner().pgf_complex(z)
     }
+
+    fn third_moment(&self) -> f64 {
+        self.inner().third_moment()
+    }
+
+    fn third_cumulant(&self) -> f64 {
+        self.inner().third_cumulant()
+    }
+
+    fn cdf(&self, k: u64) -> f64 {
+        self.inner().cdf(k)
+    }
+
+    fn quantile(&self, p: f64) -> Result<u64> {
+        self.inner().quantile(p)
+    }
+
+    fn sample(&self, rng: &mut StreamRng, n: usize) -> Vec<u64> {
+        self.inner().sample(rng, n)
+    }
 }
 
 #[cfg(test)]
@@ -645,6 +665,32 @@ mod tests {
         assert!(PanjerClass::from_mean_dispersion(1.0, 0.0).is_err());
         assert!(PanjerClass::from_mean_dispersion(-1.0, 1.0).is_err());
         check_recursion(&up);
+    }
+
+    /// Every method reaches the concrete family, the third cumulant above
+    /// all: the trait's default converts the raw moment and cancels at a
+    /// mean of 1,000 (six digits lost on a Poisson).
+    #[test]
+    fn panjer_class_forwards_to_its_family() {
+        for d in [0.5, 1.0, 2.0] {
+            let n = PanjerClass::from_mean_dispersion(1000.0, d).unwrap();
+            let k3 = n.third_cumulant();
+            assert_eq!(k3, n.inner().third_cumulant(), "dispersion {d}");
+            assert_eq!(n.third_moment(), n.inner().third_moment());
+            assert_eq!(n.cdf(990), n.inner().cdf(990));
+            assert_eq!(n.quantile(0.9).unwrap(), n.inner().quantile(0.9).unwrap());
+        }
+        let po = PanjerClass::from_mean_dispersion(1000.0, 1.0).unwrap();
+        assert_eq!(po.third_cumulant(), 1000.0);
+        // The negative binomial's κ₃ = rβ(1 + β)(1 + 2β) in closed form.
+        let nb = PanjerClass::from_mean_dispersion(1000.0, 2.0).unwrap();
+        assert!((nb.third_cumulant() / (1000.0 * 2.0 * 3.0) - 1.0).abs() < 1e-14);
+        let mut a = StreamRng::new(7, 0);
+        let mut b = StreamRng::new(7, 0);
+        assert_eq!(
+            po.sample(&mut a, 5),
+            Poisson::new(1000.0).unwrap().sample(&mut b, 5)
+        );
     }
 
     #[test]
