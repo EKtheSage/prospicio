@@ -394,25 +394,35 @@ macro_rules! udf {
     };
 }
 
-udf!(pro_version);
-udf!(pro_cl, triangle, average, tail, origins);
-udf!(pro_cl_ldf, triangle, average, tail);
-udf!(pro_cl_cdf, triangle, average, tail);
-udf!(pro_cl_ultimate, triangle, average, tail);
-udf!(pro_cl_reserve, triangle, average, tail);
-udf!(pro_cl_factors, triangle, average, tail);
-udf!(pro_mack, triangle, average, tail, origins);
-udf!(
-    pro_odp,
-    triangle,
-    sims,
-    seed,
-    percentiles,
-    tail,
-    process,
-    origins
-);
-udf!(pro_lev, limit, family, p1, p2, truncation);
-udf!(pro_layer, limit, attachment, family, p1, p2, truncation);
-udf!(pro_layer_cv, limit, attachment, family, p1, p2, truncation);
-udf!(pro_ilf, limit, basic_limit, family, p1, p2, truncation);
+// One line per export; tests/catalogue.rs checks each against FUNCTIONS.
+#[rustfmt::skip]
+mod exports {
+    use super::*;
+
+    udf!(pro_version);
+    udf!(pro_cl, triangle, average, tail, origins, selected, kind, weight);
+    udf!(pro_cl_ldf, triangle, average, tail, selected, kind, weight);
+    udf!(pro_cl_cdf, triangle, average, tail, selected, kind, weight);
+    udf!(pro_cl_ultimate, triangle, average, tail, selected, kind, weight);
+    udf!(pro_cl_reserve, triangle, average, tail, selected, kind, weight);
+    udf!(pro_cl_factors, triangle, average, tail, selected, kind, weight, sigma);
+    udf!(pro_mack, triangle, average, tail, origins, selected, kind, weight, sigma);
+    udf!(pro_odp, triangle, sims, seed, percentiles, tail, process, origins);
+    udf!(pro_odp_sims, triangle, sims, seed, tail, process, origins);
+    udf!(pro_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf!(pro_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
+    udf!(pro_mack_cdr, triangle, average, tail, origins, selected, kind, weight, sigma);
+    udf!(pro_mack_cdr_years, triangle, average, tail, origins, selected, kind, weight, sigma);
+    udf!(pro_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins);
+    udf!(pro_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
+    udf!(pro_el, triangle, exposure, apriori, average, tail, origins);
+    udf!(pro_bf, triangle, exposure, apriori, average, tail, origins);
+    udf!(pro_benktander, triangle, exposure, apriori, iterations, average, tail, origins);
+    udf!(pro_capecod, triangle, exposure, trend, decay, average, tail, origins);
+    udf!(pro_clark, triangle, exposure, curve, max_age, origins);
+    udf!(pro_clark_params, triangle, exposure, curve, max_age);
+    udf!(pro_lev, limit, family, p1, p2, truncation);
+    udf!(pro_layer, limit, attachment, family, p1, p2, truncation);
+    udf!(pro_layer_cv, limit, attachment, family, p1, p2, truncation);
+    udf!(pro_ilf, limit, basic_limit, family, p1, p2, truncation);
+}

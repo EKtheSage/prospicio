@@ -176,3 +176,52 @@ fn errors_come_back_as_text() {
     );
     assert!(text(&odp(100.0, 0.0, Grid::missing(), t("normal"))).contains("process must be"));
 }
+
+fn sims(sims: f64, seed: f64, origins: Grid) -> Grid {
+    call(
+        "pro_odp_sims",
+        vec![
+            raa(),
+            n(sims),
+            n(seed),
+            Grid::missing(),
+            Grid::missing(),
+            origins,
+        ],
+    )
+}
+
+#[test]
+fn sims_are_the_draws_odp_summarizes() {
+    let draws = sims(3_000.0, 11.0, Grid::missing());
+    assert_eq!((draws.rows, draws.columns), (3_001, 11));
+    assert_eq!(draws.get(0, 9), &Value::Number(10.0));
+    assert_eq!(draws.get(0, 10), &Value::from("Total"));
+    let summary = odp(3_000.0, 11.0, Grid::missing(), Grid::missing());
+    let column = |c: usize| -> Vec<f64> { (1..draws.rows).map(|r| num(draws.get(r, c))).collect() };
+    let mean = |x: &[f64]| x.iter().sum::<f64>() / x.len() as f64;
+    for c in 0..11 {
+        let m = mean(&column(c));
+        let expected = num(summary.get(c + 1, 2));
+        assert!(
+            (m - expected).abs() <= 1e-9 * expected.abs().max(1.0),
+            "column {c}: {m} vs {expected}"
+        );
+    }
+    // Each row's total is the sum of its origins.
+    for r in 1..draws.rows {
+        let sum: f64 = (0..10).map(|c| num(draws.get(r, c))).sum();
+        assert!((num(draws.get(r, 10)) - sum).abs() < 1e-9 * sum.abs().max(1.0));
+    }
+}
+
+#[test]
+fn sims_take_origin_labels_and_cap_the_rows() {
+    let labels = Grid::from_rows(vec![
+        (1981..=1990).map(|y| Value::Number(y as f64)).collect(),
+    ]);
+    let draws = sims(10.0, 0.0, labels);
+    assert_eq!(draws.get(0, 0), &Value::Number(1981.0));
+    assert_eq!(draws.rows, 11);
+    assert!(text(&sims(100_001.0, 0.0, Grid::missing())).contains("100000"));
+}

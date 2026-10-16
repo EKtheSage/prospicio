@@ -17,13 +17,26 @@ category of Insert Function:
 
 | Function | Returns |
 |---|---|
-| `PRO.CL(triangle, [average], [tail], [origins])` | Origin, Latest, CDF, Ultimate, Reserve per origin, and a total row |
-| `PRO.CL.LDF(triangle, [average], [tail])` | Selected age-to-age factors, one per triangle column; the last is the tail factor |
-| `PRO.CL.CDF(triangle, [average], [tail])` | Age-to-ultimate factors, one per triangle column |
+| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight])` | Origin, Latest, CDF, Ultimate, Reserve per origin, and a total row |
+| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight])` | Selected age-to-age factors, one per triangle column; the last is the tail factor |
+| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-ultimate factors, one per triangle column |
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One column, one row per origin |
-| `PRO.CL.FACTORS(triangle, [average], [tail])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
-| `PRO.MACK(triangle, [average], [tail], [origins])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
+| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma])` | Per link: LDF, CDF, Mack sigma and the factor's standard error; then the tail |
+| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Latest, Ultimate, Reserve, Process SE, Parameter SE, Mack SE and CV per origin, and the total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap: CL reserve, simulated mean, SD, CV and percentiles per origin, and the total |
+| `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's simulated reserves: one row per simulation, a column per origin and the total |
+| `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap (England, Verrall and Wuthrich), laid out as `PRO.ODP` |
+| `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Its simulated reserves, laid out as `PRO.ODP.SIMS` |
+| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Merz-Wuthrich: reserve, CDR(1) SE and run-off (Mack) SE per origin, and the total |
+| `PRO.MACK.CDR.YEARS(...)`, same arguments | The CDR SE per origin in each future calendar year (R's `CDR(k)S.E.`) |
+| `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | The ODP bootstrap's one-year view: simulated CDR mean, SD and percentiles |
+| `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack's bootstrap's one-year view, laid out as `PRO.ODP.CDR` |
+| `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's growth curve: the LDF method, or Cape Cod with `exposure`; reserve and its process, parameter and total SE |
+| `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Its fitted omega, theta, ELR (Cape Cod), scale and observations |
+| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method: exposure times the a priori loss ratio |
+| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson |
+| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
+| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod (Stanard-Buhlmann) |
 | `PRO.VERSION()` | The prospicio version the add-in was built from |
 | `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value `E[min(X, limit)]`, per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to `limit` xs `attachment` per ground-up loss |
@@ -32,14 +45,56 @@ category of Insert Function:
 
 `average` is `"volume"` (default), `"simple"` or `"regression"`; `tail` is
 omitted (none), a number (a constant factor to ultimate at the oldest age)
-or `"exponential"`, `"inverse_power"` or `"bondy"`. Mack's sigma is
-extrapolated log-linearly, as R's `MackChainLadder(est.sigma =
-"log-linear")`.
+or `"exponential"`, `"inverse_power"` or `"bondy"`. `sigma` is how Mack's
+last sigma is filled in: `"log-linear"` (default, R's
+`MackChainLadder(est.sigma = "log-linear")` and chainladder-python's) or
+`"mack"` (Mack 1993). `selected` is a row with a cell per triangle column,
+a blank keeping the estimated factor, as age-to-age factors (`kind`
+`"ldf"`, the default), factors to ultimate (`"cdf"`) or percents developed
+(`"percent"`), blended `weight * selected + (1 - weight) * estimated` (a
+`SelectedPattern` on `Development`, `reserving-v02.md` decision 12). On
+RAA, `sigma = "mack"` matches R's sigmas, their standard errors and the
+total Mack SE, and the selections match chainladder-python's
+`DevelopmentConstant` (`tests/mack_options.rs`).
 
 `PRO.ODP` wraps `OdpBootstrap::fit` (R's `BootChainLadder`): `sims`
 defaults to 10,000 (at most 1,000,000), `seed` to 0, `percentiles` to
 75%, 90%, 95% and 99.5%, `process` to `"gamma"` (`"none"` for parameter
 error only); `tail` is read as for the chain ladder.
+
+`PRO.MACK.BOOT` wraps `MackBootstrap::fit` with centred residuals (the
+crate's default, which reconciles with Mack's standard errors); `process`
+is `"gamma"` (default), `"lognormal"`, `"normal"`, `"residuals"` or
+`"none"`.
+
+The one-year view: `PRO.MACK.CDR` and `PRO.MACK.CDR.YEARS` wrap
+`MackFit::claims_development_result` (Merz and Wuthrich), and on RAA
+every reserve, `CDR(1)S.E.`, Mack S.E. and `CDR(k)S.E.` R's
+`CDR(MackChainLadder(RAA), dev = "all")` gives matches
+(`tests/one_year.rs`). `PRO.ODP.CDR` and `PRO.MACK.BOOT.CDR` wrap the
+bootstraps' `one_year` with the chain ladder (the bootstrap's tail, and
+for Mack its average and sigma rule) as the re-reserving method; the CDR
+is the opening ultimate less the re-estimated one, so a negative CDR is
+adverse, and the default percentiles are 0.5%, 5%, 95% and 99.5%. The
+re-reserving with the expected-loss methods is not exposed yet.
+
+`PRO.CLARK` wraps `ClarkLdf` without `exposure` and `ClarkCapeCod` with
+it (R's `ClarkLDF` and `ClarkCapeCod`, `adol = TRUE`); `curve` is
+`"loglogistic"` (default) or `"weibull"`, `max_age` an age in months
+(omitted or `"inf"` for none). Against R run to convergence (`optim=tight`
+in `validation/reference/reserving_clark_r.csv`, rel_tol 1e-5), every
+parameter and every origin's and total's ultimate, reserve and standard
+error match on RAA (LDF) and GenIns with premium (Cape Cod), both curves,
+both `max_age` settings (`tests/clark.rs`).
+
+The expected-loss methods wrap `ExpectedLoss`, `BornhuetterFerguson`,
+`Benktander` and `CapeCod`. `exposure` (premium) is a row or column with
+one positive value per triangle row, put on the triangle as an exposure
+measure; each returns Origin, Exposure, Latest, CDF, A priori (the loss
+ratio applied; Cape Cod's detrended estimate), Ultimate and Reserve, and a
+total row. On GenIns with R's `?ClarkCapeCod` premium all 28 totals in
+`validation/reference/reserving_expected_loss_python.csv`
+(chainladder-python 0.10.1) match.
 
 The pricing functions wrap `prospicio_pricing::layer` (`ilf`, `layer_cv`)
 and `prospicio_prob::Severity` (`lev`, `layer`). `family` is `"pareto"`
@@ -132,6 +187,10 @@ real Excel.
     about 0.2 s). The total's percentiles are of the simulated total, not
     the sum of the origins' percentiles; percentiles are the inverse of
     the empirical distribution function (R `type = 1`), as `Sampled`'s.
+    `PRO.ODP.SIMS` returns the draws themselves, the same ones for the
+    same `sims`, `seed`, `tail` and `process`, so a sheet can chart them or
+    compute its own statistics; it is capped at 100,000 rows (about 1 s and
+    35 MB of cells in Excel), under the sheet's 1,048,576 rows.
 
 15. **Distribution: CI builds it, a draft release carries it** (user,
     2026-10-16, "the next items"). `.github/workflows/xll.yml` builds the
@@ -157,11 +216,47 @@ real Excel.
     ticking Unblock; it does not by itself lift Excel's block on add-ins
     from the internet.
 
+17. **New arguments go last.** An option added to an existing function is
+    appended after its present arguments, so every saved formula still
+    means what it did (Excel passes an omitted argument as missing).
+    `call` treats arguments past those given as omitted, and
+    `tests/catalogue.rs` parses `src/xll.rs` to check that every export
+    takes exactly its catalogue entry's arguments.
+
+## Parity plan
+
+The user's direction (2026-10-16): move toward parity with the Python and
+R packages. Not every one of R's 386 exports has a sheet form: a fitted
+model object, a NUTS sampler or a P&L ledger is not a range of cells. The
+order, one small PR each, those already done struck through:
+
+1. Reserving: ~~chain ladder, Mack~~, ~~ODP bootstrap and its draws~~,
+   ~~Mack's bootstrap and its draws~~; ~~Mack's options (the sigma rule,
+   selected factors)~~; ~~the expected-loss methods (expected loss,
+   Bornhuetter-Ferguson, Benktander, Cape Cod) on a premium column~~; ~~the
+   one-year view (Merz-Wuthrich, the bootstraps' CDR)~~; ~~Clark's LDF and
+   Cape Cod~~; triangle helpers (link ratios, incremental and cumulative,
+   the latest diagonal).
+2. Severities: ~~the Pareto and the lognormal's LEV, layer, CV, ILF~~;
+   more families (gamma, Weibull, Burr, log-logistic, inverse gamma,
+   generalized Pareto, piecewise Pareto) and their cdf, quantile, mean,
+   VaR and TVaR; the Pareto helpers (alpha between layers or
+   frequencies, extrapolation), the loss elimination ratio, the layer
+   variance, the stop loss.
+3. Pricing: exposure curves (MBBEFD, Swiss Re) and a layer's share;
+   credibility (Buhlmann-Straub, limited fluctuation); ratemaking (trend,
+   rate level, the indicated rate); burning cost.
+4. Aggregate: a compound distribution of a count and a severity, its
+   moments, VaR, TVaR and layer statistics.
+
+Left out unless asked: model fitting and prediction (GLM, GAM, boosting,
+Bayesian models), copulas and vines, the P&L ledger, catastrophe event
+sets. These want a table of data and an object kept between calls, which
+an XLL function (decision 4: no state) does not hold.
+
 ## Open (for the user)
 
-- **Next functions:** open. The bootstrap's draws as a spilled column (for
-  a histogram on the sheet), Mack's bootstrap and the one-year view are
-  each one function over existing crates. More severity families (gamma, Weibull, Burr, the piecewise
+- **Next functions:** the parity plan above. More severity families (gamma, Weibull, Burr, the piecewise
   Pareto) and the Pareto helpers (`pareto_extrapolation`,
   `alpha_between_layers`) are each a few lines when wanted.
 - **A code-signing certificate**, if the add-in goes beyond a few

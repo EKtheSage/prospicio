@@ -25,7 +25,7 @@ is found, under Wine off Windows.
 
 `python3 harness/make_workbook.py prospicio-xll-test.xlsx` (needs
 openpyxl) writes a test workbook: RAA with every function in place and R
-ChainLadder's totals beside them, plus Layers and ODP sheets.
+ChainLadder's totals beside them, plus Layers, ODP, ODP draws, Mack bootstrap, Expected loss (GenIns with premium) and One-year sheets.
 
 ## Install in Excel
 
@@ -44,13 +44,26 @@ Ctrl+Alt+F9 to recalculate.
 
 | Function | Returns |
 |---|---|
-| `PRO.CL(triangle, [average], [tail], [origins])` | Chain ladder exhibit with a total row |
-| `PRO.CL.LDF(triangle, [average], [tail])` | Age-to-age factors, one per column; the last is the tail |
-| `PRO.CL.CDF(triangle, [average], [tail])` | Age-to-ultimate factors, one per column |
+| `PRO.CL(triangle, [average], [tail], [origins], [selected], [kind], [weight])` | Chain ladder exhibit with a total row |
+| `PRO.CL.LDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-age factors, one per column; the last is the tail |
+| `PRO.CL.CDF(triangle, [average], [tail], [selected], [kind], [weight])` | Age-to-ultimate factors, one per column |
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One value per origin |
-| `PRO.CL.FACTORS(triangle, [average], [tail])` | LDF, CDF, sigma and standard error per link, and the tail |
-| `PRO.MACK(triangle, [average], [tail], [origins])` | Mack exhibit: process, parameter and total SE and CV, with a total |
+| `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma])` | LDF, CDF, sigma and standard error per link, and the tail |
+| `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Mack exhibit: process, parameter and total SE and CV, with a total |
 | `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap exhibit: CL reserve, mean, SD, CV and percentiles, with a total |
+| `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's draws: a row per simulation, a column per origin and the total (at most 100000 rows) |
+| `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap exhibit, laid out as `PRO.ODP` |
+| `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's draws, laid out as `PRO.ODP.SIMS` |
+| `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Merz-Wuthrich one-year view: CDR(1) SE and run-off SE |
+| `PRO.MACK.CDR.YEARS(...)`, same arguments | CDR SE by future calendar year |
+| `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap's simulated one-year CDR (negative is adverse) |
+| `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's simulated one-year CDR |
+| `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's LDF method (or Cape Cod with exposure): reserve and SEs |
+| `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Clark's fitted parameters |
+| `PRO.EL(triangle, exposure, apriori, [average], [tail], [origins])` | Expected loss method exhibit |
+| `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson exhibit |
+| `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander exhibit |
+| `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod exhibit |
 | `PRO.VERSION()` | Version |
 | `PRO.LEV(limit, family, p1, p2, [truncation])` | Limited expected value per limit |
 | `PRO.LAYER(limit, attachment, family, p1, p2, [truncation])` | Expected loss to the layer per ground-up loss |
@@ -63,9 +76,18 @@ Ctrl+Alt+F9 to recalculate.
 - `tail`: omitted for none, a factor such as `1.05`, or `"exponential"`,
   `"inverse_power"` or `"bondy"`.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...
+- `selected`: selected factors, a row with a cell per triangle column (a
+  blank keeps the estimate); `kind`: `"ldf"` (default), `"cdf"` or
+  `"percent"`; `weight`: 0 to 1 on the selection, 1 if omitted.
+- `sigma`: Mack's last sigma, `"log-linear"` (default) or `"mack"`.
+- `exposure`: premium per origin, a row or column of positive values;
+  `apriori`: the expected loss ratio, such as `0.75`.
+- `curve`: Clark's growth curve, `"loglogistic"` (default) or
+  `"weibull"`; `max_age`: months development stops at, omitted for none.
 - `sims` (default 10000, at most 1000000), `seed` (default 0; the same seed
   gives the same table), `percentiles` (a row or column such as
-  `{0.75,0.95,0.995}`), `process` (`"gamma"` or `"none"`).
+  `{0.75,0.95,0.995}`), `process` (`"gamma"` or `"none"`; Mack's
+  bootstrap also takes `"lognormal"`, `"normal"` and `"residuals"`).
 
 - `family`: `"pareto"` (`p1` = threshold t, `p2` = alpha, optional
   `truncation`), `"lognormal"` (meanlog, sdlog) or `"lognormal_cv"` (mean,

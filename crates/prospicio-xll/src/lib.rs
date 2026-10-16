@@ -50,6 +50,22 @@ const TRIANGLE: Arg = Arg {
     name: "triangle",
     help: "Cumulative values: one row per origin (oldest first), one column per age; blank where unobserved",
 };
+const SELECTED: Arg = Arg {
+    name: "selected",
+    help: "Selected factors, one cell per triangle column; a blank keeps the estimate",
+};
+const KIND: Arg = Arg {
+    name: "kind",
+    help: "How selected is expressed: \"ldf\" (age-to-age, default), \"cdf\" (to ultimate) or \"percent\" (developed)",
+};
+const WEIGHT: Arg = Arg {
+    name: "weight",
+    help: "Weight on the selected factors against the estimates, 0 to 1; 1 if omitted",
+};
+const SIGMA: Arg = Arg {
+    name: "sigma",
+    help: "How Mack's last sigma is filled in: \"log-linear\" (default) or \"mack\" (Mack 1993)",
+};
 const AVERAGE: Arg = Arg {
     name: "average",
     help: "\"volume\" (default), \"simple\" or \"regression\"",
@@ -78,6 +94,42 @@ const PERCENTILES: Arg = Arg {
 const PROCESS: Arg = Arg {
     name: "process",
     help: "\"gamma\" (default) for process error on future values, or \"none\" for parameter error only",
+};
+
+const SIM_ROWS: Arg = Arg {
+    name: "sims",
+    help: "Number of simulations, 10000 if omitted (at most 100000, one row each)",
+};
+const MACK_PROCESS: Arg = Arg {
+    name: "process",
+    help: "\"gamma\" (default), \"lognormal\", \"normal\", \"residuals\", or \"none\" for parameter error only",
+};
+
+const EXPOSURE: Arg = Arg {
+    name: "exposure",
+    help: "Exposure (premium) per origin, a row or column, one value per triangle row",
+};
+const APRIORI: Arg = Arg {
+    name: "apriori",
+    help: "The a priori expected loss ratio, ultimate per unit of exposure, such as 0.75",
+};
+
+const CDR_PERCENTILES: Arg = Arg {
+    name: "percentiles",
+    help: "Probabilities to report, a row or column; omitted for 0.5%, 5%, 95%, 99.5% (a negative CDR is adverse)",
+};
+
+const CLARK_EXPOSURE: Arg = Arg {
+    name: "exposure",
+    help: "Premium per origin for Clark's Cape Cod; omitted for Clark's LDF method",
+};
+const CURVE: Arg = Arg {
+    name: "curve",
+    help: "Growth curve: \"loglogistic\" (default) or \"weibull\"",
+};
+const MAX_AGE: Arg = Arg {
+    name: "max_age",
+    help: "Age in months development stops at, such as 240; omitted (or \"inf\") for none",
 };
 
 const LIMIT: Arg = Arg {
@@ -126,49 +178,51 @@ pub static FUNCTIONS: &[Function] = &[
         symbol: "pro_cl",
         name: "PRO.CL",
         help: "Chain ladder exhibit: latest, CDF, ultimate and reserve per origin, with a total.",
-        args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS],
+        args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT],
         run: reserving::cl_summary,
     },
     Function {
         symbol: "pro_cl_ldf",
         name: "PRO.CL.LDF",
         help: "Selected age-to-age factors, one per triangle column; the last is the tail.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
         run: reserving::cl_ldf,
     },
     Function {
         symbol: "pro_cl_cdf",
         name: "PRO.CL.CDF",
         help: "Age-to-ultimate factors, one per triangle column.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
         run: reserving::cl_cdf,
     },
     Function {
         symbol: "pro_cl_ultimate",
         name: "PRO.CL.ULTIMATE",
         help: "Chain ladder ultimate per origin.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
         run: reserving::cl_ultimate,
     },
     Function {
         symbol: "pro_cl_reserve",
         name: "PRO.CL.RESERVE",
         help: "Chain ladder reserve (ultimate less latest) per origin.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT],
         run: reserving::cl_reserve,
     },
     Function {
         symbol: "pro_cl_factors",
         name: "PRO.CL.FACTORS",
         help: "Development exhibit: LDF, CDF, Mack sigma and standard error per link, and the tail.",
-        args: &[TRIANGLE, AVERAGE, TAIL],
+        args: &[TRIANGLE, AVERAGE, TAIL, SELECTED, KIND, WEIGHT, SIGMA],
         run: reserving::cl_factors,
     },
     Function {
         symbol: "pro_mack",
         name: "PRO.MACK",
         help: "Mack exhibit: ultimate, reserve, process, parameter and total standard error and CV per origin, with a total.",
-        args: &[TRIANGLE, AVERAGE, TAIL, ORIGINS],
+        args: &[
+            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+        ],
         run: reserving::mack_summary,
     },
     Function {
@@ -177,6 +231,173 @@ pub static FUNCTIONS: &[Function] = &[
         help: "ODP bootstrap exhibit: CL reserve, simulated mean, SD, CV and percentiles per origin, with a total.",
         args: &[TRIANGLE, SIMS, SEED, PERCENTILES, TAIL, PROCESS, ORIGINS],
         run: reserving::odp_summary,
+    },
+    Function {
+        symbol: "pro_odp_sims",
+        name: "PRO.ODP.SIMS",
+        help: "ODP bootstrap's simulated reserves: one row per simulation, a column per origin and the total.",
+        args: &[
+            TRIANGLE,
+            Arg {
+                name: "sims",
+                help: "Number of simulations, 10000 if omitted (at most 100000, one row each)",
+            },
+            SEED,
+            TAIL,
+            PROCESS,
+            ORIGINS,
+        ],
+        run: reserving::odp_sims,
+    },
+    Function {
+        symbol: "pro_mack_boot",
+        name: "PRO.MACK.BOOT",
+        help: "Mack bootstrap exhibit: CL reserve, simulated mean, SD, CV and percentiles per origin, with a total.",
+        args: &[
+            TRIANGLE,
+            SIMS,
+            SEED,
+            PERCENTILES,
+            AVERAGE,
+            TAIL,
+            MACK_PROCESS,
+            ORIGINS,
+            SIGMA,
+        ],
+        run: reserving::mack_bootstrap_summary,
+    },
+    Function {
+        symbol: "pro_mack_boot_sims",
+        name: "PRO.MACK.BOOT.SIMS",
+        help: "Mack bootstrap's simulated reserves: one row per simulation, a column per origin and the total.",
+        args: &[
+            TRIANGLE,
+            SIM_ROWS,
+            SEED,
+            AVERAGE,
+            TAIL,
+            MACK_PROCESS,
+            ORIGINS,
+            SIGMA,
+        ],
+        run: reserving::mack_bootstrap_sims,
+    },
+    Function {
+        symbol: "pro_mack_cdr",
+        name: "PRO.MACK.CDR",
+        help: "Merz-Wuthrich one-year view: reserve, CDR(1) SE and run-off (Mack) SE per origin, with a total.",
+        args: &[
+            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+        ],
+        run: reserving::mack_cdr,
+    },
+    Function {
+        symbol: "pro_mack_cdr_years",
+        name: "PRO.MACK.CDR.YEARS",
+        help: "Merz-Wuthrich CDR standard error per origin in each future calendar year, with the total.",
+        args: &[
+            TRIANGLE, AVERAGE, TAIL, ORIGINS, SELECTED, KIND, WEIGHT, SIGMA,
+        ],
+        run: reserving::mack_cdr_years,
+    },
+    Function {
+        symbol: "pro_odp_cdr",
+        name: "PRO.ODP.CDR",
+        help: "ODP bootstrap one-year view: simulated CDR mean, SD and percentiles per origin; negative is adverse.",
+        args: &[
+            TRIANGLE,
+            SIMS,
+            SEED,
+            CDR_PERCENTILES,
+            TAIL,
+            PROCESS,
+            ORIGINS,
+        ],
+        run: reserving::odp_cdr,
+    },
+    Function {
+        symbol: "pro_mack_boot_cdr",
+        name: "PRO.MACK.BOOT.CDR",
+        help: "Mack bootstrap one-year view: simulated CDR mean, SD and percentiles per origin; negative is adverse.",
+        args: &[
+            TRIANGLE,
+            SIMS,
+            SEED,
+            CDR_PERCENTILES,
+            AVERAGE,
+            TAIL,
+            MACK_PROCESS,
+            ORIGINS,
+            SIGMA,
+        ],
+        run: reserving::mack_bootstrap_cdr,
+    },
+    Function {
+        symbol: "pro_el",
+        name: "PRO.EL",
+        help: "Expected loss method: ultimate is exposure times the a priori loss ratio.",
+        args: &[TRIANGLE, EXPOSURE, APRIORI, AVERAGE, TAIL, ORIGINS],
+        run: reserving::expected_loss,
+    },
+    Function {
+        symbol: "pro_bf",
+        name: "PRO.BF",
+        help: "Bornhuetter-Ferguson: latest plus the a priori ultimate's unreported share, per origin, with a total.",
+        args: &[TRIANGLE, EXPOSURE, APRIORI, AVERAGE, TAIL, ORIGINS],
+        run: reserving::bornhuetter_ferguson,
+    },
+    Function {
+        symbol: "pro_benktander",
+        name: "PRO.BENKTANDER",
+        help: "Benktander: Bornhuetter-Ferguson iterated on its own ultimate (1 iteration is BF).",
+        args: &[
+            TRIANGLE,
+            EXPOSURE,
+            APRIORI,
+            Arg {
+                name: "iterations",
+                help: "Number of iterations, 1 (Bornhuetter-Ferguson) if omitted",
+            },
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+        ],
+        run: reserving::benktander,
+    },
+    Function {
+        symbol: "pro_capecod",
+        name: "PRO.CAPECOD",
+        help: "Cape Cod (Stanard-Buhlmann): the a priori loss ratio estimated from the triangle and exposure.",
+        args: &[
+            TRIANGLE,
+            EXPOSURE,
+            Arg {
+                name: "trend",
+                help: "Annual trend of the loss ratio between origins, 0 if omitted",
+            },
+            Arg {
+                name: "decay",
+                help: "Weight decay by distance between origins, 0 to 1; 1 if omitted",
+            },
+            AVERAGE,
+            TAIL,
+            ORIGINS,
+        ],
+        run: reserving::cape_cod,
+    },
+    Function {
+        symbol: "pro_clark",
+        name: "PRO.CLARK",
+        help: "Clark's growth curve: LDF method, or Cape Cod with exposure; reserve and its SEs per origin, with a total.",
+        args: &[TRIANGLE, CLARK_EXPOSURE, CURVE, MAX_AGE, ORIGINS],
+        run: reserving::clark,
+    },
+    Function {
+        symbol: "pro_clark_params",
+        name: "PRO.CLARK.PARAMS",
+        help: "Clark's fitted parameters: curve, omega, theta, the ELR (Cape Cod), the scale and the observations.",
+        args: &[TRIANGLE, CLARK_EXPOSURE, CURVE, MAX_AGE],
+        run: reserving::clark_params,
     },
     Function {
         symbol: "pro_lev",
@@ -221,10 +442,22 @@ pub static FUNCTIONS: &[Function] = &[
 /// Runs the function exported as `symbol` on `args`, catching a panic so
 /// that it never unwinds into Excel. An error comes back as a single text
 /// cell starting with `#PROSPICIO!`, which shows the user why.
-pub fn call(symbol: &str, args: Vec<Grid>) -> Grid {
+///
+/// Arguments past those given are omitted ones, as Excel passes for an
+/// optional argument left out.
+pub fn call(symbol: &str, mut args: Vec<Grid>) -> Grid {
     let Some(f) = FUNCTIONS.iter().find(|f| f.symbol == symbol) else {
         return error_cell(&format!("no function {symbol}"));
     };
+    if args.len() > f.args.len() {
+        return error_cell(&format!(
+            "{} takes {} arguments, got {}",
+            f.name,
+            f.args.len(),
+            args.len()
+        ));
+    }
+    args.resize_with(f.args.len(), Grid::missing);
     match std::panic::catch_unwind(|| (f.run)(&args)) {
         Ok(Ok(grid)) => grid,
         Ok(Err(message)) => error_cell(&message),

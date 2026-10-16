@@ -179,6 +179,150 @@ for row in od.iter_rows(min_row=9, max_row=33, min_col=2, max_col=14):
 for c in od[4][4:8]:
     c.number_format = "0.0%"
 
+# The draws behind the ODP sheet's gamma table: same simulations and seed.
+dr = wb.create_sheet("ODP draws")
+dr["A1"] = "prospicio XLL test: the ODP bootstrap's draws (PRO.ODP.SIMS)"; dr["A1"].font = Font(bold=True, size=13)
+dr["A2"] = "Simulations and seed come from the ODP sheet; the average of each column is that sheet's Mean."
+dr["A2"].font = note
+dr["N3"] = "Check"; dr["N3"].font = bold
+dr["N4"] = "Mean total, here"; dr["O4"] = "=AVERAGE(K5:K100004)"
+dr["N5"] = "Mean total, ODP sheet"; dr["O5"] = "=ODP!C19"
+dr["N6"] = "Match"; dr["O6"] = "=ABS(O4-O5)<1E-6*O5"
+dr["N8"] = "Total reserve histogram"; dr["N8"].font = bold
+dr["N9"] = "Up to"; dr["O9"] = "Count"
+for h in ("N3", "N9", "O9"):
+    dr[h].font = bold
+for i, b in enumerate(range(20000, 160001, 20000)):
+    dr.cell(row=10+i, column=14, value=b).fill = inp
+dr["N18"] = "more"
+# FREQUENCY returns one count per bin and one for everything above.
+dr["O10"] = ArrayFormula("O10:O18", "=FREQUENCY(K5:K100004,N10:N17)")
+dr["A4"] = ArrayFormula("A4:K20004", f"=PRO.ODP.SIMS({TRI},ODP!$B$4,ODP!$B$5,,,{ORI})")
+dr.column_dimensions["N"].width = 22
+for col in "ABCDEFGHIJKO":
+    dr.column_dimensions[col].width = 11
+for row in dr.iter_rows(min_row=5, max_row=200, min_col=1, max_col=11):
+    for c in row:
+        c.number_format = "#,##0"
+dr["O4"].number_format = dr["O5"].number_format = "#,##0.00"
+
+# Mack's bootstrap on the RAA sheet's triangle, beside Mack's closed form.
+mk = wb.create_sheet("Mack bootstrap")
+mk["A1"] = "prospicio XLL test: Mack's bootstrap on RAA (England, Verrall and Wuthrich)"
+mk["A1"].font = Font(bold=True, size=13)
+mk["A2"] = "Centred residuals: the simulated SD is Mack's standard error (the RAA sheet's PRO.MACK)."
+mk["A2"].font = note
+for row, (label, value) in enumerate([("Simulations", 20000), ("Seed", 1)], start=4):
+    mk[f"A{row}"] = label; mk[f"A{row}"].font = bold
+    mk[f"B{row}"] = value; mk[f"B{row}"].fill = inp
+mk["A7"] = "Gamma process error"; mk["A7"].font = bold
+mk["A8"] = ArrayFormula("A8:I19", f"=PRO.MACK.BOOT({TRI},$B$4,$B$5,,,,,{ORI})")
+mk["K7"] = "Check: total against Mack's closed form"; mk["K7"].font = bold
+for h, col in zip(["Quantity", "Bootstrap", "Mack", "Tolerance", "Within"], "KLMNO"):
+    mk[f"{col}8"] = h; mk[f"{col}8"].font = bold
+# Mack's SD with the parameter risk scaled by the residual pool's variance
+# 0.981 on RAA (validation/tests/reserving_mack_bootstrap.rs).
+mk["K9"] = "Mean"; mk["L9"] = "=C19"; mk["M9"] = "=RAA!D30"; mk["N9"] = "=5*D19/SQRT($B$4)"
+mk["K10"] = "SD"; mk["L10"] = "=D19"; mk["M10"] = "=SQRT(RAA!E30^2+0.981*RAA!F30^2)"
+mk["N10"] = "=5*D19*SQRT(5/(4*$B$4))"
+for r in (9, 10):
+    mk[f"O{r}"] = f"=ABS(L{r}-M{r})<N{r}"
+mk.column_dimensions["K"].width = 14
+for col in "ABCDEFGHILMNO":
+    mk.column_dimensions[col].width = 12
+for row in mk.iter_rows(min_row=9, max_row=19, min_col=2, max_col=14):
+    for c in row:
+        c.number_format = "0.000" if c.column == 5 else "#,##0"
+
+# The expected-loss methods on GenIns with R ChainLadder's ClarkCapeCod
+# premium, against chainladder-python 0.10.1's totals.
+GENINS = [
+    [357848, 1124788, 1735330, 2218270, 2745596, 3319994, 3466336, 3606286, 3833515, 3901463],
+    [352118, 1236139, 2170033, 3353322, 3799067, 4120063, 4647867, 4914039, 5339085],
+    [290507, 1292306, 2218525, 3235179, 3985995, 4132918, 4628910, 4909315],
+    [310608, 1418858, 2195047, 3757447, 4029929, 4381982, 4588268],
+    [443160, 1136350, 2128333, 2897821, 3402672, 3873311],
+    [396132, 1333217, 2180715, 2985752, 3691712],
+    [440832, 1288463, 2419861, 3483130],
+    [359480, 1421128, 2864498],
+    [376686, 1363294],
+    [344014],
+]
+el = wb.create_sheet("Expected loss")
+el["A1"] = "prospicio XLL test: expected-loss methods on GenIns (premium as in R's ?ClarkCapeCod)"
+el["A1"].font = Font(bold=True, size=13)
+el["A3"] = "AY"; el["L3"] = "Premium"; el["A3"].font = el["L3"].font = bold
+for c in range(10):
+    el.cell(row=3, column=2+c, value=12*(c+1)).font = bold
+for r, row in enumerate(GENINS):
+    el.cell(row=4+r, column=1, value=2001+r).font = bold
+    for c, x in enumerate(row):
+        el.cell(row=4+r, column=2+c, value=x).fill = inp
+    el.cell(row=4+r, column=12, value=10_000_000 + 400_000*r).fill = inp
+el["N3"] = "A priori LR"; el["N3"].font = bold; el["O3"] = 0.75; el["O3"].fill = inp
+G, P, O = "$B$4:$K$13", "$L$4:$L$13", "$A$4:$A$13"
+el["A16"] = "Bornhuetter-Ferguson"; el["A16"].font = bold
+el["A17"] = ArrayFormula("A17:G28", f"=PRO.BF({G},{P},$O$3,,,{O})")
+el["I16"] = "Benktander, 2 iterations"; el["I16"].font = bold
+el["I17"] = ArrayFormula("I17:O28", f"=PRO.BENKTANDER({G},{P},$O$3,2,,,{O})")
+el["A31"] = "Cape Cod, trend 5%, decay 0.75"; el["A31"].font = bold
+el["A32"] = ArrayFormula("A32:G43", f"=PRO.CAPECOD({G},{P},0.05,0.75,,,{O})")
+el["I31"] = "Expected loss"; el["I31"].font = bold
+el["I32"] = ArrayFormula("I32:O43", f"=PRO.EL({G},{P},$O$3,,,{O})")
+el["A46"] = "Check: total reserve against chainladder-python 0.10.1 (with a priori 0.75)"; el["A46"].font = bold
+for h, col in zip(["Method", "prospicio", "chainladder-python", "Match"], "ABCD"):
+    el[f"{col}47"] = h; el[f"{col}47"].font = bold
+for i, (name, f, x) in enumerate([
+        ("Bornhuetter-Ferguson", "=G28", 32357669.898322247),
+        ("Benktander, 2", "=O28", 27674175.15049441),
+        ("Cape Cod 5%, 0.75", "=G43", 22446795.86898648),
+        ("Expected loss", "=O43", 54141910.0)]):
+    row = 48 + i
+    el[f"A{row}"] = name; el[f"B{row}"] = f; el[f"C{row}"] = x
+    el[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-6*C{row}"
+el["A54"] = "Clark's Cape Cod, log-logistic, max age 240 (R's ClarkCapeCod)"; el["A54"].font = bold
+el["A55"] = ArrayFormula("A55:G66", f"=PRO.CLARK({G},{P},,240,{O})")
+el["I54"] = "Its parameters"; el["I54"].font = bold
+el["I55"] = ArrayFormula("I55:J60", f"=PRO.CLARK.PARAMS({G},{P},,240)")
+el["A69"] = "Clark's LDF method on GenIns, Weibull"; el["A69"].font = bold
+el["A70"] = ArrayFormula("A70:G81", f'=PRO.CLARK({G},,"weibull",,{O})')
+el.column_dimensions["A"].width = 22
+for col in "BCDEFGHIJKLMNO":
+    el.column_dimensions[col].width = 12
+for row in el.iter_rows(min_row=17, max_row=81, min_col=2, max_col=15):
+    for c in row:
+        c.number_format = "#,##0"
+
+# The one-year view on the RAA sheet's triangle.
+oy = wb.create_sheet("One-year")
+oy["A1"] = "prospicio XLL test: the one-year view on RAA"; oy["A1"].font = Font(bold=True, size=13)
+oy["A2"] = "CDR = opening ultimate less the re-estimated one: a negative CDR is adverse."
+oy["A2"].font = note
+oy["A4"] = "Merz-Wuthrich (closed form)"; oy["A4"].font = bold
+oy["A5"] = ArrayFormula("A5:D16", f"=PRO.MACK.CDR({TRI},,,{ORI})")
+oy["F4"] = "CDR SE by future calendar year"; oy["F4"].font = bold
+oy["F5"] = ArrayFormula("F5:O16", f"=PRO.MACK.CDR.YEARS({TRI},,,{ORI})")
+oy["A19"] = "ODP bootstrap, 20000 simulations, seed 1"; oy["A19"].font = bold
+oy["A20"] = ArrayFormula("A20:H31", f"=PRO.ODP.CDR({TRI},20000,1,,,,{ORI})")
+oy["J19"] = "Mack bootstrap, 20000 simulations, seed 1"; oy["J19"].font = bold
+oy["J20"] = ArrayFormula("J20:Q31", f"=PRO.MACK.BOOT.CDR({TRI},20000,1,,,,,{ORI})")
+oy["A34"] = "Check against R ChainLadder 0.2.21 CDR(MackChainLadder(RAA))"; oy["A34"].font = bold
+for h, col in zip(["Quantity", "prospicio", "R", "Match"], "ABCD"):
+    oy[f"{col}35"] = h; oy[f"{col}35"].font = bold
+for i, (name, f, x) in enumerate([
+        ("Total CDR(1) SE", "=C16", 25166.3025264382),
+        ("Total Mack SE", "=D16", 26880.7403298914),
+        ("Total CDR SE, year 2", "=H16", 7306.52121591382)]):
+    row = 36 + i
+    oy[f"A{row}"] = name; oy[f"B{row}"] = f; oy[f"C{row}"] = x
+    oy[f"D{row}"] = f"=ABS(B{row}-C{row})<1E-6"
+oy.column_dimensions["A"].width = 22
+for col in "BCDEFGHIJKLMNOPQ":
+    oy.column_dimensions[col].width = 12
+for row in oy.iter_rows(min_row=6, max_row=38, min_col=2, max_col=17):
+    for c in row:
+        c.number_format = "#,##0"
+
 wb.calculation.fullCalcOnLoad = True
 wb.save(out)
 
