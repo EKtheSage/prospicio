@@ -515,6 +515,36 @@ rm["D22"] = "20 points"; rm["G22"] = "Last 8"; rm["D22"].font = rm["G22"].font =
 rm["D23"] = ArrayFormula("D23:E28", "=PRO.TREND.FIT(A23:A42,B23:B42)")
 rm["G23"] = ArrayFormula("G23:H28", "=PRO.TREND.FIT(A35:A42,B35:B42)")
 rm["E24"].number_format = rm["H24"].number_format = "0.0%"
+rm["A45"] = "Loss ratio indication (Werner and Modlin, Appendix A)"; rm["A45"].font = bold
+heads = ["Earned premium", "On-level", "Premium trend", "Losses", "Development", "Loss trend"]
+appendix_a = [
+    (1122372, 1.2161, 1.1342, 856495, 1.0000, 0.9912), (1154508, 1.2176, 1.1116, 867184, 0.9799, 0.9962),
+    (1280545, 1.1311, 1.0879, 835120, 1.0003, 1.0012), (1369976, 1.0892, 1.0663, 821509, 1.0282, 1.0062),
+    (1397750, 1.0991, 1.0452, 797866, 1.0966, 1.0113)]
+for c, h in enumerate(heads):
+    rm.cell(row=46, column=1 + c, value=h).font = bold
+for r, row in enumerate(appendix_a):
+    for c, x in enumerate(row):
+        rm.cell(row=47 + r, column=1 + c, value=x).fill = inp
+rm["H46"] = "ULAE factor"; rm["H46"].font = bold; rm["H47"] = 1.143; rm["H47"].fill = inp
+rm["A53"] = ArrayFormula("A53:C59", "=PRO.LR.EXPERIENCE(A47:A51,D47:D51,B47:B51,C47:C51,E47:E51,F47:F51,H47)")
+for row in rm.iter_rows(min_row=54, max_row=59, min_col=1, max_col=2):
+    for c in row:
+        c.number_format = "#,##0"
+for r in range(54, 60):
+    rm[f"C{r}"].number_format = "0.0%"
+rm["A61"] = "Expenses (premium-based): ratio, fixed share"; rm["A61"].font = bold
+for r, (x, sh) in enumerate([(0.063, 0.75), (0.085, 0.75), (0.002, 1.0), (0.112, 0.0), (0.021, 0.0)]):
+    rm.cell(row=62 + r, column=1, value=x).fill = inp
+    rm.cell(row=62 + r, column=2, value=sh).fill = inp
+rm["D62"] = ArrayFormula("D62:E63", "=PRO.EXPENSES(A62:A66,B62:B66)")
+rm["D65"] = "Profit"; rm["E65"] = 0.05; rm["E65"].fill = inp
+rm["D66"] = "Indicated change"
+rm["E66"] = ArrayFormula("E66", "=PRO.INDICATED.CHANGE(C59,E63,E65,E62)")
+rm["D67"] = "Permissible loss ratio"
+rm["E67"] = ArrayFormula("E67", "=PRO.PERMISSIBLE.LR(E63,E65,E62)")
+for c in ("E62", "E63", "E66", "E67"):
+    rm[c].number_format = "0.0%"
 rm.column_dimensions["A"].width = 16
 for col in "BCDEFGH":
     rm.column_dimensions[col].width = 15
