@@ -115,7 +115,8 @@ above \code{k_threshold}; \code{"refit_flagged"} refits it with NUTS;
 this many due for a refit, in simulation order; the others are
 reweighted as they are (as unreliable as their k says), listed in
 \code{unrefitted} and warned about. \code{NULL} (the default) refits every one,
-\code{0} none.}
+\code{0} none. In the \verb{_segments} functions it applies to each segment, so
+k segments refit at most k times this many.}
 }
 \value{
 A \code{compartmental_one_year_fit} object.

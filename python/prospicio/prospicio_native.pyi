@@ -1148,7 +1148,8 @@ class BayesOdp:
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
             As in ``one_year``.
         max_refits : int, optional
-            As in ``BayesOdp.one_year``.
+            As in ``BayesOdp.one_year``, for each segment: ``k`` segments
+            refit at most ``k`` times this many.
         
         Returns
         -------
@@ -12338,7 +12339,8 @@ class Meyers:
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, default "moment_match_then_refit"
             As in ``one_year``.
         max_refits : int, optional
-            As in ``BayesOdp.one_year``.
+            As in ``BayesOdp.one_year``, for each segment: ``k`` segments
+            refit at most ``k`` times this many.
         
         Returns
         -------
