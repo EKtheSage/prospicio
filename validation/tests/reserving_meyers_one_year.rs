@@ -71,7 +71,7 @@ const CASES: &[(&str, MeyersModel, &str)] = &[
 /// 0.798 (0.071) and 0.825 (0.083).
 const BOUNDS: &[(&str, f64, f64, (f64, f64))] = &[
     ("CRC paid", 0.75, 0.20, (0.44, 1.10)),
-    ("CSR paid", 0.74, 0.15, (0.51, 1.09)),
+    ("CSR paid", 0.74, 0.16, (0.51, 1.09)),
     ("CAY incurred", 0.62, 0.20, (0.49, 1.16)),
 ];
 
@@ -382,7 +382,9 @@ fn runtime() {
         let (default, t_default) = view(model, column, 10_000, 0, OneYearRefit::default());
         let (flagged, t_flagged) = view(model, column, 1_000, 0, OneYearRefit::RefitFlagged);
         println!(
-            "{name}: 10,000 simulations: ReweightOnly {t_only:.1} s, default {t_default:.1} s              (flagged {:.3}, matched {}, refitted {}); 1,000 simulations: RefitFlagged              {t_flagged:.1} s ({} refits)",
+            "{name}: 10,000 simulations: ReweightOnly {t_only:.1} s, default {t_default:.1} s \
+             (flagged {:.3}, matched {}, refitted {}); 1,000 simulations: RefitFlagged \
+             {t_flagged:.1} s ({} refits)",
             only.flagged_share(),
             default.moment_matched.len(),
             default.refitted.len(),

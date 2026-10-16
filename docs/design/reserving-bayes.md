@@ -2172,7 +2172,9 @@ matched or refitted but not both, and that a refitted row is
 conformance suite checks the same for every model on 300 simulations
 against `RefitAll`, that matching matches at least one of them and
 replays bit for bit on one thread against the default pool (its own
-parallel steps nest inside the simulations'), and a triangle without a year matches and refits
+parallel steps nest inside the simulations'; for Meyers' models, whose
+refits on one thread run one after another, the first 20 simulations of
+60), and a triangle without a year matches and refits
 nothing. A unit test on a conjugate normal model (six parameters, `k̂`
 about 5) shows matching landing within 0.05 of the exact posterior mean
 on every parameter (0.029 at its seed) where reweighting is 0.25 off, and another that each step's moved draws
