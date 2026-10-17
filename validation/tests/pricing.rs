@@ -1678,3 +1678,68 @@ mod payment_pattern {
         }
     }
 }
+
+/// Clark's casualty exposure rating (*Basics of Reinsurance Pricing*,
+/// section 3A(b)): its one numeric example, workers compensation by excess
+/// loss factors, 750,000 xs 250,000, with one ELF curve per state and
+/// hazard group and no policy limits. Every printed factor and treaty loss,
+/// the 13,695 total and the 3.42% loss cost.
+mod clark_casualty {
+    use prospicio_pricing::casualty::{
+        Alae, CasualtyCurve, CasualtyPolicy, CasualtyProfile, ElfTable,
+    };
+    use prospicio_pricing::layer::XsLayer;
+
+    /// (state, hazard group, premium, ELR, ELF at 250K, ELF at 1M, factor,
+    /// treaty losses), as printed.
+    type Printed = (&'static str, &'static str, f64, f64, f64, f64, f64, f64);
+    const ROWS: [Printed; 4] = [
+        ("AL", "B", 100_000.0, 0.70, 0.030, 0.006, 0.024, 1_680.0),
+        ("AL", "C", 100_000.0, 0.70, 0.040, 0.008, 0.032, 2_240.0),
+        ("NJ", "B", 100_000.0, 0.85, 0.070, 0.020, 0.050, 4_250.0),
+        ("NJ", "D", 100_000.0, 0.85, 0.100, 0.035, 0.065, 5_525.0),
+    ];
+
+    #[test]
+    fn the_workers_compensation_example() {
+        let curves = ROWS
+            .iter()
+            .map(|r| CasualtyCurve::Elf(ElfTable::new(&[250e3, 1e6], &[r.4, r.5]).unwrap()))
+            .collect();
+        let policies = ROWS
+            .iter()
+            .enumerate()
+            .map(|(i, r)| {
+                CasualtyPolicy::new(f64::INFINITY, r.2, r.3)
+                    .curve(i)
+                    .tag(r.0)
+            })
+            .collect();
+        let book = CasualtyProfile::new(curves, policies).unwrap();
+        let treaty = XsLayer::new(750e3, 250e3).unwrap();
+        let rating = book.rate(&treaty, Alae::InSeverity).unwrap();
+        for (r, got) in ROWS.iter().zip(rating.rows()) {
+            assert!(
+                (got.factor - r.6).abs() < 1e-15,
+                "{} {}: {}",
+                r.0,
+                r.1,
+                got.factor
+            );
+            assert!(
+                (got.ceded - r.7).abs() < 1e-9,
+                "{} {}: {}",
+                r.0,
+                r.1,
+                got.ceded
+            );
+        }
+        assert!((rating.ceded() - 13_695.0).abs() < 1e-9);
+        assert_eq!(rating.premium(), 400_000.0);
+        // 3.42% as printed (13,695 / 400,000 = 3.42375%).
+        assert_eq!((rating.loss_cost() * 1e4).round() / 1e2, 3.42);
+        // New Jersey alone, by its tag.
+        let nj = rating.without("AL");
+        assert!((nj.ceded() - 9_775.0).abs() < 1e-9);
+    }
+}
