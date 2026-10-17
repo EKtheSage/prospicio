@@ -1,0 +1,1 @@
+* **Update**: [Clark's Basics of Reinsurance Pricing](/references/clark-reinsurance-pricing.md), from reading its casualty exposure section for the casualty rater (branch claude/stoic-hawking-qc3qby): one numeric example, workers compensation by ELF, which reproduces exactly (13,695, 3.42%); the liability formulas carry no numbers.

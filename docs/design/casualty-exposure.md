@@ -1,6 +1,7 @@
 # Design note: casualty exposure rating
 
-Status: **Proposed** (method approved by the user 2026-10-16; no code yet) ·
+Status: **Accepted** (method approved by the user 2026-10-16, open
+questions answered 2026-10-17; no code yet) ·
 Depends on: `prospicio_prob::Pareto` and its censored fit,
 `prospicio_pricing::layer`, `prospicio_pricing::experience` · Lane: Aggregate
 
@@ -25,11 +26,34 @@ with its own attachment, limit and premium. This note adds that rater, the
 range of results across tail weights, and two checks against the book's own
 experience.
 
-The reference is Clark's *Basics of Reinsurance Pricing*, the casualty
-exposure rating section with increased limits factors (ILFs) and allocated
-loss adjustment expense (ALAE) treatment. Whether its worked example can be
-reproduced exactly is to be confirmed at the start of PR 1, as was done for
-its experience rating example (`knowledge/references/clark-reinsurance-pricing.md`).
+The reference is Clark's *Basics of Reinsurance Pricing*, section 3A(b)
+(casualty exposure rating) and 3B(a) (umbrella policies), checked
+2026-10-17 against the 2014 revision. What it prints:
+
+- **One numeric example, and it is workers compensation.** Four state and
+  hazard group rows, each with a standard premium, an ELR and two excess
+  loss factors (ELFs), for a 750,000 xs 250,000 treaty:
+  `exposure factor = ELF(250,000) − ELF(1,000,000)`, treaty losses =
+  premium × ELR × factor (1,680, 2,240, 4,250 and 5,525), 13,695 in
+  total and a 3.42% loss cost on 400,000. The arithmetic reproduces
+  exactly from the printed inputs, so it is PR 1's parity target.
+- **The liability formulas, without numbers.** The exposure factor
+  `[E[X; min(PL, AP + Lim)] − E[X; min(PL, AP)]] / E[X; PL]` for a
+  primary policy; with ALAE included in the treaty's loss,
+  `[E[X; min(PL, (AP + Lim)/(1 + e))] − E[X; min(PL, AP/(1 + e))]] /
+  E[X; PL]`; and for an umbrella `UL` xs, limit `PL`,
+  `[E[X; min(UL + PL, UL + AP + Lim)] − E[X; min(UL + PL, UL + AP)]] /
+  [E[X; UL + PL] − E[X; UL]]`. Its two illustrations are symbolic, not
+  numeric: an umbrella 1M xs 1M under a 500K xs 500K treaty gives
+  `[E[X;2M] − E[X;1.5M]] / [E[X;2M] − E[X;1M]]`, and a 1M policy limit
+  with an ALAE loading of 1.5 leaves a treaty attaching at 1.5M
+  unexposed. Its truncated Pareto ("BQPST") and mixed exponential
+  severities have no printed parameters, so no liability number can be
+  reproduced. These formulas are checked instead against closed forms on
+  a Pareto, and the two illustrations as identities.
+- **The drop-down of an umbrella** uses an aggregate excess factor `ϕ` on
+  the underlying policy, defined only in the note's later section on
+  aggregate distributions; it is left out of PR 1 (decision 11).
 
 ## Method
 
@@ -61,7 +85,7 @@ Two forms give the treaty's expected loss, and the rater supports both:
    curve below `t` never enters. In the motivating case, this is the form
    the primary book anchors.
 
-## Decisions (proposed)
+## Decisions
 
 1. **Both forms, one policy table.** A `CasualtyProfile` holds rows of
    `(attachment, limit, share, premium, elr)`, with an optional
@@ -75,11 +99,17 @@ Two forms give the treaty's expected loss, and the rater supports both:
    must stay concave, as with the log-log `TabulatedCurve`. Beyond the last
    limit it is an error rather than an extrapolation. For a Pareto layer
    above the table, use the frequency form or a spliced severity.
-3. **ALAE is an explicit choice:**
-   - `Included`: the severity is loss plus ALAE, and limits apply to the sum.
-   - `ProRata(e)`: the limits apply to loss only, and every ceded amount
-     carries a factor `1 + e`.
-   - `Excluded`: no ALAE.
+3. **ALAE is an explicit choice**, in Clark's two treatments and a
+   third for a severity fitted to loss and ALAE together:
+   - `ProRata`: the treaty shares ALAE in proportion to loss. The exposure
+     factor is the loss-only one, applied to premium times an expected
+     loss and ALAE ratio (Clark's first case).
+   - `OnTop(e)`: the policy limit applies to loss only, ALAE is `e` times
+     the capped loss, and the treaty's attachment and limit apply to loss
+     plus ALAE: Clark's second formula, with `AP` and `AP + Lim` divided
+     by `1 + e` before they are capped at the policy limit.
+   - `InSeverity`: the severity is loss plus ALAE, and the limits apply to
+     the sum.
 
    There is no default, because the treatment moves an excess layer
    materially. In the motivating case, a largest primary loss of 2.8M on
@@ -131,15 +161,41 @@ Two forms give the treaty's expected loss, and the rater supports both:
     construction defect are both exposed to that. The result says so, and a
     clash load is the user's input until an event-linked model of policies
     is designed.
+11. **Premium and ELR per policy** (user, 2026-10-17). Each row carries its
+    own on-level premium and expected loss ratio. A segment's single ELR is
+    given by repeating it on the segment's rows; a per-segment form, with a
+    policy's premium as its weight, can come later if the per-policy table
+    proves too granular in use.
+12. **No market data ships with the library** (user, 2026-10-17). Benchmark
+    alphas, ILF tables and excess loss factors are always the caller's
+    input, and the report names the source the caller gives.
+13. **A curve per row.** A row names its severity curve: a `Severity`, an
+    `IlfTable`, or an `ElfTable` of excess loss factors (`ELF(x) = E[(X −
+    x)+] / E[X]`, read between its limits as the ILF table is). Clark's
+    workers compensation example has one ELF curve per state and hazard
+    group, and the treaty rates each row on its own curve; a policy
+    limit is optional, since compensation has none, and with no limit the
+    factor is `ELF(AP) − ELF(AP + Lim)`.
+14. **The umbrella's drop-down is left out of PR 1.** It needs an
+    aggregate excess factor on the underlying policy, which Clark defines
+    with the aggregate distributions; without it the umbrella's factor is
+    the formula above, which ignores exhaustion of the underlying
+    aggregate. The result says so.
 
 ## Plan
 
 - **PR 1:** `CasualtyProfile`, `IlfTable` and the two forms with ALAE, in
   `prospicio_pricing::casualty`. Validation:
-  - closed forms on a Pareto (the ILF form and the frequency form agree
-    for an excess policy above the threshold);
-  - the ILF form against `ilf` and `layer` for one policy;
-  - Clark's casualty exposure example, if it reproduces.
+  - Clark's workers compensation example exactly (each row's factor and
+    treaty loss, 13,695 and 3.42%);
+  - Clark's liability formulas against closed forms on a Pareto: the
+    primary factor, the ALAE `OnTop` factor (and its zero when
+    `AP/(1 + e)` reaches the policy limit, Clark's 1.5 loading example),
+    the umbrella factor (his 1M xs 1M under 500K xs 500K as the identity
+    he prints);
+  - the ILF form and the frequency form agree for an excess policy above
+    the threshold;
+  - the ILF form against `ilf` and `layer` for one policy.
 - **PR 2:** the sweep, the censored anchor with its standard error, the
   count test and the burning-cost comparison with and without a segment.
   Validation: the Poisson tail against `prospicio-prob`, and the anchor
@@ -149,10 +205,12 @@ Two forms give the treaty's expected loss, and the rater supports both:
   to the Guides lane.
 - Excel, if wanted, is the Excel lane's to wrap afterwards.
 
-## Open questions for the user
+## Answered questions
 
-- Should the rater take on-level premium and ELR per policy, or per segment
-  with a policy's premium as weight? The note assumes per policy.
-- Should the market alpha benchmarks be shipped as data in the library, or
-  always be the user's input? The note assumes the user's input, with the
-  source named in the report.
+- Premium and ELR per policy or per segment: per policy, to try first
+  (decision 11).
+- Market alpha benchmarks shipped or the user's input: the user's input;
+  prospicio ships no data (decision 12).
+- Whether Clark's example reproduces: its one numeric example (workers
+  compensation, by ELF) does, exactly; its liability formulas print no
+  numbers and are checked against closed forms instead (Goal, above).
