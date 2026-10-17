@@ -1,0 +1,862 @@
+---
+title: "Claim size, layers, limits and deductibles: Bahnemann's Distributions for Actuaries reproduced"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+This is the R twin of the Python guide
+[`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md),
+which recomputes the worked examples and problem answers of chapters 2, 5 and 6
+of CAS Monograph 2, *Distributions for Actuaries* by David Bahnemann (2015):
+the same sections, the same examples and the same numbers. The R package calls
+the same Rust code as the Python one, so every number printed below equals the
+Python guide's; read that guide for the full discussion of each result, and the
+monograph for the derivations. The companion R guide,
+[`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd),
+covers chapters 3 and 4.
+
+Each R chunk is followed by the text it prints, and
+`R/prospicio/tests/test-guides.R` requires each chunk to print exactly that
+text. The monograph's printed value is a literal in the code, printed next to
+prospicio's. Example and problem numbers are the monograph's ("Ex 2.7",
+"P6.13"). Where the Python guide uses SciPy's Nelder–Mead, this one uses R's
+`optim()`; both find the same minima to the digits printed.
+
+## 1. Translating the parameters
+
+| Monograph | Its formula | prospicio (R) |
+|---|---|---|
+| gamma (α, β), β a scale | mean αβ | `gamma_distribution(α, β)` |
+| exponential β | mean β | `gamma_distribution(1, β)` |
+| lognormal (μ, σ) | log X normal (μ, σ) | `lognormal(μ, σ)` |
+| Weibull (β, δ) | F = 1 − exp(−(x/β)^δ) | `weibull_distribution(shape = δ, scale = β)` |
+| Pareto (α, β), the "shifted" one used in all examples | F = 1 − (β/(x+β))^α, from 0 | `generalized_pareto(1/α, β/α)`, or `burr_distribution(α, 1, β)` |
+| classical Pareto (γ, α) | F = 1 − (γ/x)^α, from γ | `pareto(γ, α)` |
+
+The monograph's Pareto starts at zero (a Lomax); prospicio's `pareto()` is the
+single-parameter Pareto above a threshold. The helpers below are used
+throughout; `limited_second_moment` builds E[X²; l] from `layer_variance` and
+`layer` of a `truncated_distribution()` with no bounds, which gives any
+severity layer moments.
+
+```{r}
+#| label: setup
+library(prospicio)
+
+shifted_pareto <- function(alpha, beta) generalized_pareto(1 / alpha, beta / alpha)
+surv <- function(sev, x) 1 - cdf(sev, x)
+limited_second_moment <- function(sev, limit) {
+  t <- truncated_distribution(sev)
+  layer_variance(t, limit, 0) + layer(t, limit, 0)^2
+}
+layer_second_moment <- function(sev, limit, attachment) {
+  t <- truncated_distribution(sev)
+  layer_variance(t, limit, attachment) + layer(t, limit, attachment)^2
+}
+num <- function(x, digits = 0) formatC(x, format = "f", digits = digits, big.mark = ",")
+show <- function(label, book, ours, digits = 0) {
+  cat(sprintf("%-40s book %12s   prospicio %12s\n", label, num(book, digits), num(ours, digits)))
+}
+vec <- function(x, digits = 4) {
+  paste0("[", paste(formatC(round(x, digits), format = "f", digits = digits), collapse = ", "), "]")
+}
+
+p <- shifted_pareto(2, 3000)
+closed_form <- 3000 / (2 - 1) * (1 - 3000 / (8000 + 3000))
+show("E[X; 8,000], Pareto (2; 3,000)", 2182, lev(p, 8000))
+cat(sprintf("closed form %s, prospicio %s, Burr %s\n", num(closed_form, 2),
+            num(lev(p, 8000), 2), num(lev(burr_distribution(2, 1, 3000), 8000), 2)))
+```
+
+```text
+E[X; 8,000], Pareto (2; 3,000)           book        2,182   prospicio        2,182
+closed form 2,181.82, prospicio 2,181.82, Burr 2,181.82
+```
+
+## 2. Limited expected values
+
+```{r}
+#| label: lev
+x <- gamma_distribution(1, 250)
+show("Ex 2.4  E[X; 400]", 199.53, lev(x, 400), 2)
+show("Ex 2.4  E[X^2; 400]", 59384, limited_second_moment(x, 400))
+
+x <- pareto(1000, 3)
+show("P2.1   mean", 1500, mean(x))
+show("P2.1   variance", 750000, variance(x))
+show("P2.1   Pr{X > 2,000}", 0.1250, survival(x, 2000), 4)
+show("P2.1   E[X; 2,000]", 1375, lev(x, 2000))
+
+cases <- list(
+  list("P2.17", lognormal(6.3210, 1.6000), c(556, 0.1461, 0.2108, 1023, 9689)),
+  list("P2.19", shifted_pareto(3, 4000), c(1040, 0.1866, 0.3254, 1347, 6500))
+)
+for (case in cases) {
+  name <- case[[1]]; x <- case[[2]]; book <- case[[3]]
+  s3 <- surv(x, 3000)
+  show(paste0(name, "  median"), book[1], quantile(x, 0.5))
+  show(paste0(name, "  Pr{X > 3,000}"), book[2], s3, 4)
+  show(paste0(name, "  Pr{1,000 < X <= 3,000}"), book[3], cdf(x, 3000) - cdf(x, 1000), 4)
+  show(paste0(name, "  E[X; 3,000]"), book[4], lev(x, 3000))
+  show(paste0(name, "  E[X | X > 3,000]"), book[5], 3000 + stop_loss(x, 3000) / s3)
+}
+```
+
+```text
+Ex 2.4  E[X; 400]                        book       199.53   prospicio       199.53
+Ex 2.4  E[X^2; 400]                      book       59,384   prospicio       59,384
+P2.1   mean                              book        1,500   prospicio        1,500
+P2.1   variance                          book      750,000   prospicio      750,000
+P2.1   Pr{X > 2,000}                     book       0.1250   prospicio       0.1250
+P2.1   E[X; 2,000]                       book        1,375   prospicio        1,375
+P2.17  median                            book          556   prospicio          556
+P2.17  Pr{X > 3,000}                     book       0.1461   prospicio       0.1461
+P2.17  Pr{1,000 < X <= 3,000}            book       0.2108   prospicio       0.2108
+P2.17  E[X; 3,000]                       book        1,023   prospicio        1,023
+P2.17  E[X | X > 3,000]                  book        9,689   prospicio        9,689
+P2.19  median                            book        1,040   prospicio        1,040
+P2.19  Pr{X > 3,000}                     book       0.1866   prospicio       0.1866
+P2.19  Pr{1,000 < X <= 3,000}            book       0.3254   prospicio       0.3254
+P2.19  E[X; 3,000]                       book        1,347   prospicio        1,347
+P2.19  E[X | X > 3,000]                  book        6,500   prospicio        6,500
+```
+
+P2.25: with mean 1,000 and standard deviation 2,000, how many of 5,000 claims
+exceed 1,000 under each family?
+
+```{r}
+#| label: p225
+fits <- list(gamma = gamma_from_mean_cv(1000, 2), lognormal = lognormal_from_mean_cv(1000, 2),
+             Pareto = shifted_pareto(8 / 3, 1000 * (8 / 3 - 1)))
+book <- c(gamma = 1282, lognormal = 1315, Pareto = 1428)
+for (name in names(fits)) {
+  show(paste0("P2.25  claims > 1,000, ", name), book[[name]], 5000 * surv(fits[[name]], 1000))
+}
+```
+
+```text
+P2.25  claims > 1,000, gamma             book        1,282   prospicio        1,282
+P2.25  claims > 1,000, lognormal         book        1,315   prospicio        1,315
+P2.25  claims > 1,000, Pareto            book        1,428   prospicio        1,428
+```
+
+## 3. Fitting grouped data
+
+The method of moments for the gamma of Ex 2.7, from the sample moments
+M1 = 1,555 and M2 = 3,036,875 of the 200 claims of Ex 2.6; the printed scale
+397.931 is a slip for 397.974, but the monograph's tables use it, so the table
+below does too:
+
+```{r}
+#| label: ex27
+M1 <- 1555; M2 <- 3036875
+show("Ex 2.7  alpha", 3.907288, M1^2 / (M2 - M1^2), 6)
+show("Ex 2.7  beta", 397.931, (M2 - M1^2) / M1, 3)
+
+CUTS <- c(0, 1000, 1500, 2000, 2500, 3000, Inf)
+OBSERVED <- c(42, 61, 47, 26, 14, 10)
+cell_probs <- function(sev, cuts) {
+  F <- sapply(cuts, function(c) if (c == 0) 0 else if (is.infinite(c)) 1 else cdf(sev, c))
+  diff(F)
+}
+chi_square <- function(sev, cuts = CUTS, observed = OBSERVED) {
+  n <- sum(observed)
+  e <- n * cell_probs(sev, cuts)
+  sum((observed - e)^2 / e)
+}
+g <- gamma_distribution(3.907288, 397.931)
+xs <- c(1000, 1500, 2000, 2500, 3000)
+cat("Ex 2.7  Pr{X > x}  book ", vec(c(0.7382, 0.4604, 0.2465, 0.1186, 0.0528)), "\n")
+cat("                   ours ", vec(surv(g, xs)), "\n")
+cat("        E[X; x]    book ", vec(c(924, 1223, 1396, 1484, 1525), 0), "\n")
+cat("                   ours ", vec(sapply(xs, function(x) lev(g, x)), 0), "\n")
+show("Ex 2.7  chi-square", 3.096, chi_square(g), 3)
+```
+
+```text
+Ex 2.7  alpha                            book     3.907288   prospicio     3.907288
+Ex 2.7  beta                             book      397.931   prospicio      397.974
+Ex 2.7  Pr{X > x}  book  [0.7382, 0.4604, 0.2465, 0.1186, 0.0528] 
+                   ours  [0.7382, 0.4604, 0.2465, 0.1186, 0.0528] 
+        E[X; x]    book  [924, 1223, 1396, 1484, 1525] 
+                   ours  [924, 1223, 1396, 1484, 1525] 
+Ex 2.7  chi-square                       book        3.096   prospicio        3.095
+```
+
+Minimum chi-square, Ex 2.8 and P2.16. At the monograph's lognormal the
+statistic is 1.020, not the printed 1.828, and the true minimum is lower:
+
+```{r}
+#| label: ex28
+min_chi_square <- function(make, start, ...) {
+  fit <- optim(start, function(p) chi_square(make(p[1], p[2]), ...), method = "Nelder-Mead",
+               control = list(reltol = 1e-14, maxit = 4000))
+  list(par = fit$par, value = fit$value)
+}
+ln <- lognormal(7.274670, 0.442525)
+cat("Ex 2.8  Pr{X > x}  book ", vec(c(0.7965, 0.4653, 0.2305, 0.1072, 0.0491)), "\n")
+cat("                   ours ", vec(surv(ln, xs)), "\n")
+cat("        E[X; x]    book ", vec(c(958, 1273, 1441, 1522, 1559), 0), "\n")
+cat("                   ours ", vec(sapply(xs, function(x) lev(ln, x)), 0), "\n")
+show("Ex 2.8  chi-square at its fit", 1.828, chi_square(ln), 3)
+f <- min_chi_square(function(m, s) lognormal(m, abs(s)), c(7.2, 0.5))
+cat(sprintf("        smallest chi-square %.3f at (%.4f, %.4f)\n", f$value, f$par[1], abs(f$par[2])))
+f <- min_chi_square(function(a, b) gamma_distribution(abs(a), abs(b)), c(4, 400))
+show("P2.16  gamma by min chi-square: a", 4.7432, abs(f$par[1]), 4)
+show("P2.16  b", 337.31, abs(f$par[2]), 2)
+```
+
+```text
+Ex 2.8  Pr{X > x}  book  [0.7965, 0.4653, 0.2305, 0.1072, 0.0491] 
+                   ours  [0.7965, 0.4653, 0.2305, 0.1072, 0.0491] 
+        E[X; x]    book  [958, 1273, 1441, 1522, 1559] 
+                   ours  [958, 1273, 1441, 1522, 1559] 
+Ex 2.8  chi-square at its fit            book        1.828   prospicio        1.020
+        smallest chi-square 0.614 at (7.2857, 0.4570)
+P2.16  gamma by min chi-square: a        book       4.7432   prospicio       4.7432
+P2.16  b                                 book       337.31   prospicio       337.31
+```
+
+Ex 2.9's shifted Pareto, α held at 6:
+
+```{r}
+#| label: ex29
+p <- shifted_pareto(6, 34355.3719)
+xs <- c(2000, 4000, 6000, 8000, 10000)
+cat("Ex 2.9  Pr{X > x}  book ", vec(c(0.7121, 0.5164, 0.3807, 0.2848, 0.2159)), "\n")
+cat("                   ours ", vec(survival(p, xs)), "\n")
+cat("        E[X; x]    book ", vec(c(1693, 2910, 3799, 4459, 4956), 0), "\n")
+cat("                   ours ", vec(sapply(xs, function(x) lev(p, x)), 0), "\n")
+```
+
+```text
+Ex 2.9  Pr{X > x}  book  [0.7121, 0.5164, 0.3807, 0.2848, 0.2159] 
+                   ours  [0.7121, 0.5164, 0.3807, 0.2848, 0.2159] 
+        E[X; x]    book  [1693, 2910, 3799, 4459, 4956] 
+                   ours  [1693, 2910, 3799, 4459, 4956] 
+```
+
+## 4. Censored and truncated data
+
+Minimum limited-mean distance for the censored samples of Ex 2.10 and P2.39:
+
+```{r}
+#| label: censored
+min_distance <- function(sizes, empirical, start) {
+  distance <- function(p) {
+    ln <- lognormal(p[1], abs(p[2]))
+    sum((sapply(sizes, function(x) lev(ln, x)) - empirical)^2)
+  }
+  fit <- optim(start, distance, method = "Nelder-Mead", control = list(reltol = 1e-14, maxit = 4000))
+  c(fit$par[1], abs(fit$par[2]))
+}
+sizes <- c(1000, 5000, 10000, 25000, 50000, 100000, 200000, 300000)
+below <- c(729, 1096, 1208, 1326, 1391, 1440, 1468, 1500)
+total_below <- c(225138, 1102272, 1918947, 3752091, 6007543, 9234739, 13100561, 22343455)
+emp <- (total_below + sizes * (1500 - below)) / 1500
+f <- min_distance(sizes, emp, c(7, 2.5))
+show("Ex 2.10 mu", 6.9852, f[1], 4)
+show("Ex 2.10 sigma", 2.5850, f[2], 4)
+cat("Ex 2.10 E[X; x] book ", vec(c(648, 2091, 3239, 5410, 7580, 10168, 13069, 14850), 0), "\n")
+cat("            prospicio", vec(sapply(sizes, function(x) lev(lognormal(f[1], f[2]), x)), 0), "\n")
+
+sizes <- c(10000, 20000, 30000, 40000, 50000, 60000, 80000, 100000)
+counts <- c(78, 27, 21, 15, 12, 10, 8, 7)          # 22 more at the 100,000 limit
+mids <- c(5000, 15000, 25000, 35000, 45000, 55000, 70000, 90000)
+emp <- (cumsum(counts * mids) + sizes * (200 - cumsum(counts))) / 200
+f <- min_distance(sizes, emp, c(9.7, 1.4))
+show("P2.39 mu", 9.778102, f[1], 4)
+show("P2.39 sigma", 1.444776, f[2], 4)
+```
+
+```text
+Ex 2.10 mu                               book       6.9852   prospicio       6.9852
+Ex 2.10 sigma                            book       2.5850   prospicio       2.5850
+Ex 2.10 E[X; x] book  [648, 2091, 3239, 5410, 7580, 10168, 13069, 14850] 
+            prospicio [648, 2091, 3239, 5410, 7580, 10168, 13069, 14850] 
+P2.39 mu                                 book       9.7781   prospicio       9.7781
+P2.39 sigma                              book       1.4448   prospicio       1.4448
+```
+
+Truncation from below (Ex 2.11, a 1,000 deductible and a 200,000 limit) and
+from above (P2.43), with `truncated_distribution()`:
+
+```{r}
+#| label: truncated
+cuts <- c(1000, 5000, 10000, 25000, 50000, 75000, 100000, 125000, 150000, 175000, 200000, Inf)
+observed <- c(367, 112, 118, 65, 36, 13, 10, 8, 6, 4, 31)
+f <- min_chi_square(function(m, s) truncated_distribution(lognormal(m, abs(s)), lower = 1000),
+                    c(6.7, 2.7), cuts = cuts, observed = observed)
+show("Ex 2.11 mu", 6.6916, f$par[1], 4)
+show("Ex 2.11 sigma", 2.6965, abs(f$par[2]), 4)
+show("Ex 2.11 chi-square", 4.691, f$value, 3)
+fitted <- truncated_distribution(lognormal(f$par[1], abs(f$par[2])), lower = 1000)
+cat("Ex 2.11 expected book ", vec(c(360, 122, 121, 63, 27, 16, 10, 7, 5, 4, 34), 0), "\n")
+cat("            prospicio ", vec(770 * cell_probs(fitted, cuts), 0), "\n")
+
+cuts <- 5000 * (0:10)
+observed <- c(104, 120, 81, 54, 45, 32, 26, 18, 12, 8)
+f <- min_chi_square(function(m, s) truncated_distribution(lognormal(m, abs(s)), upper = 50000),
+                    c(9.5, 1.1), cuts = cuts, observed = observed)
+show("P2.43 mu", 9.495111, f$par[1], 4)
+show("P2.43 sigma", 1.084180, abs(f$par[2]), 4)
+```
+
+```text
+Ex 2.11 mu                               book       6.6916   prospicio       6.6916
+Ex 2.11 sigma                            book       2.6965   prospicio       2.6965
+Ex 2.11 chi-square                       book        4.691   prospicio        4.691
+Ex 2.11 expected book  [360, 122, 121, 63, 27, 16, 10, 7, 5, 4, 34] 
+            prospicio  [360, 122, 121, 63, 27, 16, 10, 7, 5, 4, 34] 
+P2.43 mu                                 book       9.4951   prospicio       9.4951
+P2.43 sigma                              book       1.0842   prospicio       1.0842
+```
+
+`severity_fit()` by maximum likelihood on individual claims, with the
+deductible as a reporting threshold and the limit as censoring; the same
+20,000 draws as the Python guide (the generator is shared):
+
+```{r}
+#| label: fit
+truth <- lognormal(6.6916, 2.6965)
+ground_up <- draws(truth, 20000, seed = 2)
+kept <- ground_up[ground_up > 1000]
+recorded <- pmin(kept, 200000)
+at_limit <- kept >= 200000
+cat(sprintf("%s of 20,000 claims recorded, %d at the limit\n", num(length(kept)), sum(at_limit)))
+fits <- list(
+  "ignoring both" = severity_fit("lognormal", recorded),
+  "censoring only" = severity_fit("lognormal", recorded, censored = at_limit),
+  "truncation and censoring" = severity_fit("lognormal", recorded, censored = at_limit,
+                                            reporting_thresholds = rep(1000, length(kept)))
+)
+for (label in names(fits)) {
+  f <- fits[[label]]
+  cat(sprintf("%-25s mu %5.2f (se %.2f)  sigma %4.2f\n", label, f$parameters[["meanlog"]],
+              f$standard_errors[["meanlog"]], f$parameters[["sdlog"]]))
+}
+```
+
+```text
+9,551 of 20,000 claims recorded, 415 at the limit
+ignoring both             mu  8.94 (se 0.01)  sigma 1.46
+censoring only            mu  8.96 (se 0.02)  sigma 1.52
+truncation and censoring  mu  6.76 (se 0.15)  sigma 2.67
+```
+
+## 5. Inflation and claim size
+
+```{r}
+#| label: inflation
+p <- shifted_pareto(2, 3000)
+base <- lev(p, 8000)
+up <- lev(shifted_pareto(2, 3000 * 1.10), 8000)
+down <- 0.95 * lev(p, 8000 / 0.95)
+show("Ex 2.15 E[X; 8,000]", 2182, base)
+show("        after +10%", 2336, up)
+show("        effective rate, %", 7.1, 100 * (up / base - 1), 1)
+show("        after -5%", 2101, down)
+show("        effective rate, %", -3.7, 100 * (down / base - 1), 1)
+
+before <- lognormal(7.2, 0.476)
+after <- lognormal(1.0183 * 7.2 + log(0.96), 1.0183 * 0.476)
+show("Ex 2.16 mean before", 1500, mean(before))
+show("        mean after", 1650, mean(after))
+cat(sprintf("        inflation of a claim of 1,000: %.2f%%, of 5,000: %.2f%%\n",
+            100 * (0.96 * 1000^0.0183 - 1), 100 * (0.96 * 5000^0.0183 - 1)))
+```
+
+```text
+Ex 2.15 E[X; 8,000]                      book        2,182   prospicio        2,182
+        after +10%                       book        2,336   prospicio        2,336
+        effective rate, %                book          7.1   prospicio          7.1
+        after -5%                        book        2,101   prospicio        2,101
+        effective rate, %                book         -3.7   prospicio         -3.7
+Ex 2.16 mean before                      book        1,500   prospicio        1,500
+        mean after                       book        1,650   prospicio        1,650
+        inflation of a claim of 1,000: 8.94%, of 5,000: 12.19%
+```
+
+## 6. Excess claims and layers
+
+```{r}
+#| label: excess
+cases <- list(
+  list("uniform [0; 4,000]", 500, beta_distribution(1, 1, 4000)),
+  list("gamma (2; 1,000)", 1250, gamma_distribution(2, 1000)),
+  list("exponential 2,000", 2000, gamma_distribution(1, 2000)),
+  list("Pareto (3; 4,000)", 3500, shifted_pareto(3, 4000)),
+  list("lognormal (5.9809; 1.8)", 8518, lognormal(5.9809, 1.8))
+)
+for (case in cases) {
+  show(paste0("P5.2  e(3,000), ", case[[1]]), case[[2]], stop_loss(case[[3]], 3000) / surv(case[[3]], 3000))
+}
+alpha <- 1 + 1 / 0.257335
+beta <- 1208.50 * (alpha - 1)
+show("Ex 5.4  alpha", 4.88599, alpha, 5)
+show("Ex 5.4  beta", 4696.22, beta, 2)
+p <- shifted_pareto(alpha, beta)
+xs <- c(500, 1000, 2000, 5000, 10000)
+cat("Ex 5.4  F(x)     book ", vec(c(0.3900, 0.6106, 0.8233, 0.9711, 0.9962)), "\n")
+cat("                 ours ", vec(cdf(p, xs)), "\n")
+cat("        E[X; x]  book ", vec(c(393, 638, 904, 1136, 1194), 0), "\n")
+cat("                 ours ", vec(sapply(xs, function(x) lev(p, x)), 0), "\n")
+
+p <- shifted_pareto(2, 3000)
+show("Ex 5.7  E[X; 5,000]", 1875, lev(p, 5000))
+show("        E[X; 9,000]", 2250, lev(p, 9000))
+show("        layer mean per excess claim", 2667, layer(p, 4000, 5000) / survival(p, 5000))
+show("        as Pareto (2; 8,000) at 4,000", 2667, lev(shifted_pareto(2, 8000), 4000))
+```
+
+```text
+P5.2  e(3,000), uniform [0; 4,000]       book          500   prospicio          500
+P5.2  e(3,000), gamma (2; 1,000)         book        1,250   prospicio        1,250
+P5.2  e(3,000), exponential 2,000        book        2,000   prospicio        2,000
+P5.2  e(3,000), Pareto (3; 4,000)        book        3,500   prospicio        3,500
+P5.2  e(3,000), lognormal (5.9809; 1.8)  book        8,518   prospicio        8,518
+Ex 5.4  alpha                            book      4.88599   prospicio      4.88599
+Ex 5.4  beta                             book     4,696.22   prospicio     4,696.21
+Ex 5.4  F(x)     book  [0.3900, 0.6106, 0.8233, 0.9711, 0.9962] 
+                 ours  [0.3900, 0.6106, 0.8233, 0.9711, 0.9962] 
+        E[X; x]  book  [393, 638, 904, 1136, 1194] 
+                 ours  [393, 638, 904, 1136, 1194] 
+Ex 5.7  E[X; 5,000]                      book        1,875   prospicio        1,875
+        E[X; 9,000]                      book        2,250   prospicio        2,250
+        layer mean per excess claim      book        2,667   prospicio        2,667
+        as Pareto (2; 8,000) at 4,000    book        2,667   prospicio        2,667
+```
+
+Coefficients of variation of the lognormal (5.9809; 1.8) and its layers (Ex 5.8,
+P5.10); the monograph's differences of rounded limited means account for the
+third and fourth figures:
+
+```{r}
+#| label: ex58
+ln <- lognormal(5.9809, 1.8)
+s3 <- surv(ln, 3000)
+layer_mean <- layer(ln, 5000, 3000) / s3
+layer_m2 <- layer_second_moment(ln, 5000, 3000) / s3
+cv_limited <- function(l) sqrt(limited_second_moment(ln, l) - lev(ln, l)^2) / lev(ln, l)
+show("Ex 5.8  F(3,000)", 0.869761, cdf(ln, 3000), 6)
+show("        E[X; 3,000]", 891, lev(ln, 3000))
+show("        E[X^2; 3,000]", 1853050, limited_second_moment(ln, 3000))
+show("        E[X^2; 8,000]", 5774970, limited_second_moment(ln, 8000))
+show("        CV[X]", 4.9531, sqrt(variance(ln)) / mean(ln), 4)
+show("        E[X_3K], the excess mean", 8515, stop_loss(ln, 3000) / s3)
+show("        CV of the layer 5K xs 3K", 0.6452, sqrt(layer_m2 - layer_mean^2) / layer_mean, 4)
+show("P5.10   CV[X; 3,000]", 1.1551, cv_limited(3000), 4)
+show("P5.10   CV[X; 8,000]", 1.5959, cv_limited(8000), 4)
+m <- (1276 - 891) / 0.130239
+m2 <- (5774970 - 1853050 - 2 * 3000 * (1276 - 891)) / 0.130239
+cat(sprintf("        layer CV from the printed, rounded inputs: %.4f\n", sqrt(m2 - m * m) / m))
+```
+
+```text
+Ex 5.8  F(3,000)                         book     0.869761   prospicio     0.869761
+        E[X; 3,000]                      book          891   prospicio          891
+        E[X^2; 3,000]                    book    1,853,050   prospicio    1,853,050
+        E[X^2; 8,000]                    book    5,774,970   prospicio    5,774,970
+        CV[X]                            book       4.9531   prospicio       4.9532
+        E[X_3K], the excess mean         book        8,515   prospicio        8,518
+        CV of the layer 5K xs 3K         book       0.6452   prospicio       0.6385
+P5.10   CV[X; 3,000]                     book       1.1551   prospicio       1.1561
+P5.10   CV[X; 8,000]                     book       1.5959   prospicio       1.5955
+        layer CV from the printed, rounded inputs: 0.6452
+```
+
+P5.12's three layers of a policy with a 100 deductible and a 3,000 limit,
+Pareto (3; 5,000), 5 ground-up claims:
+
+```{r}
+#| label: p512
+p <- shifted_pareto(3, 5000)
+layers <- list(list("[0; 100]", 0, 100, c(1.0000, 97.08, 485)),
+               list("(100; 3,000]", 100, 2900, c(0.9423, 1513.66, 7132)),
+               list("(3,000; inf)", 3000, Inf, c(0.2441, 4000.00, 4883)))
+total <- 0
+for (L in layers) {
+  reach <- survival(p, L[[2]])
+  loss <- if (is.infinite(L[[3]])) stop_loss(p, L[[2]]) else layer(p, L[[3]], L[[2]])
+  total <- total + 5 * loss
+  show(paste("P5.12", L[[1]], "share reaching"), L[[4]][1], reach, 4)
+  show(paste("P5.12", L[[1]], "severity"), L[[4]][2], loss / reach, 2)
+  show(paste("P5.12", L[[1]], "expected loss"), L[[4]][3], 5 * loss)
+}
+show("P5.12 total = 5 x mean", 12500, total)
+for (case in list(list("Ex 5.3", 43, c(8.67593, 1.18109), 300, 1500),
+                  list("P5.23", 125, c(7.960294, 1.428801), 1000, 500))) {
+  f <- cdf(lognormal(case[[3]][1], case[[3]][2]), case[[5]])
+  show(paste(case[[1]], "claims hidden by the deductible"), case[[2]], case[[4]] * f / (1 - f))
+}
+```
+
+```text
+P5.12 [0; 100] share reaching            book       1.0000   prospicio       1.0000
+P5.12 [0; 100] severity                  book        97.08   prospicio        97.08
+P5.12 [0; 100] expected loss             book          485   prospicio          485
+P5.12 (100; 3,000] share reaching        book       0.9423   prospicio       0.9423
+P5.12 (100; 3,000] severity              book     1,513.66   prospicio     1,513.66
+P5.12 (100; 3,000] expected loss         book        7,132   prospicio        7,132
+P5.12 (3,000; inf) share reaching        book       0.2441   prospicio       0.2441
+P5.12 (3,000; inf) severity              book     4,000.00   prospicio     4,000.00
+P5.12 (3,000; inf) expected loss         book        4,883   prospicio        4,883
+P5.12 total = 5 x mean                   book       12,500   prospicio       12,500
+Ex 5.3 claims hidden by the deductible   book           43   prospicio           43
+P5.23 claims hidden by the deductible    book          125   prospicio          125
+```
+
+## 7. Inflation above an attachment: the leveraging effect
+
+```{r}
+#| label: leverage
+p <- shifted_pareto(2, 3000); t <- 1.10
+e0 <- stop_loss(p, 5000) / survival(p, 5000)
+e1 <- t * stop_loss(p, 5000 / t) / survival(p, 5000 / t)
+show("Ex 5.10 e(5,000)", 8000, e0)
+show("        e(5,000) after inflation", 8300, e1)
+show("        excess severity trend, %", 3.75, 100 * (e1 / e0 - 1), 2)
+layer0 <- layer(p, 4000, 5000) / survival(p, 5000)
+layer1 <- t * layer(p, 4000 / t, 5000 / t) / survival(p, 5000 / t)
+show("        layer 4K xs 5K severity, trended", 2701, layer1)
+show("        layer severity trend, %", 1.27, 100 * (layer1 / layer0 - 1), 2)
+count <- survival(p, 5000 / t) / survival(p, 5000)
+show("Ex 5.11 excess count factor", 1.1241, count, 4)
+show("Ex 5.12 excess count trend, %", 18.03, 100 * (1.05 * count - 1), 2)
+show("        excess loss trend, %", 22.46, 100 * (1.05 * count * e1 / e0 - 1), 2)
+show("        of which from claim size, %", 16.6, 100 * (count * e1 / e0 - 1), 1)
+
+x <- gamma_distribution(1, 1000)
+s <- survival(x, 1000)
+lm <- layer(x, 2000, 1000) / s
+show("P5.1  layer mean per excess claim", 865, lm)
+show("      its variance", 440343, layer_second_moment(x, 2000, 1000) / s - lm^2)
+show("      excess claims, of 20", 7.4, 20 * s, 1)
+sev <- t * layer(x, 2000 / t, 1000 / t) / survival(x, 1000 / t) / lm - 1
+cnt <- survival(x, 1000 / t) / s - 1
+show("      severity trend, %", 6.6, 100 * sev, 1)
+show("      count trend, %", 9.5, 100 * cnt, 1)
+show("      loss trend, %", 16.7, 100 * ((1 + sev) * (1 + cnt) - 1), 1)
+ln <- lognormal(5.9809, 1.8)
+for (case in list(c(3000, 8.9), c(8000, 11.5))) {
+  show(sprintf("P5.21 count trend above %s, %%", num(case[1])), case[2],
+       100 * (surv(ln, case[1] / t) / surv(ln, case[1]) - 1), 1)
+}
+for (case in list(c(2000, 9.5), c(5000, 10.2))) {
+  show(sprintf("P5.22 loss trend, layer to %s, %%", num(3000 + case[1])), case[2],
+       100 * (t * layer(ln, case[1] / t, 3000 / t) / layer(ln, case[1], 3000) - 1), 1)
+}
+show("Ex 5.13 E[S]", 5775, 15 * layer(ln, 5000, 3000))
+show("        Var[S]", 24178800, 15 * layer_second_moment(ln, 5000, 3000))
+show("        expected layer claims", 1.9536, 15 * surv(ln, 3000), 4)
+```
+
+```text
+Ex 5.10 e(5,000)                         book        8,000   prospicio        8,000
+        e(5,000) after inflation         book        8,300   prospicio        8,300
+        excess severity trend, %         book         3.75   prospicio         3.75
+        layer 4K xs 5K severity, trended book        2,701   prospicio        2,699
+        layer severity trend, %          book         1.27   prospicio         1.22
+Ex 5.11 excess count factor              book       1.1241   prospicio       1.1241
+Ex 5.12 excess count trend, %            book        18.03   prospicio        18.03
+        excess loss trend, %             book        22.46   prospicio        22.46
+        of which from claim size, %      book         16.6   prospicio         16.6
+P5.1  layer mean per excess claim        book          865   prospicio          865
+      its variance                       book      440,343   prospicio      440,343
+      excess claims, of 20               book          7.4   prospicio          7.4
+      severity trend, %                  book          6.6   prospicio          6.6
+      count trend, %                     book          9.5   prospicio          9.5
+      loss trend, %                      book         16.7   prospicio         16.7
+P5.21 count trend above 3,000, %         book          8.9   prospicio          8.9
+P5.21 count trend above 8,000, %         book         11.5   prospicio         11.5
+P5.22 loss trend, layer to 5,000, %      book          9.5   prospicio          9.5
+P5.22 loss trend, layer to 8,000, %      book         10.2   prospicio         10.2
+Ex 5.13 E[S]                             book        5,775   prospicio        5,785
+        Var[S]                           book   24,178,800   prospicio   24,117,273
+        expected layer claims            book       1.9536   prospicio       1.9536
+```
+
+## 8. Increased limit factors
+
+```{r}
+#| label: ilf
+ln <- lognormal(7, 2.4)
+b <- 100000
+limits <- c(100e3, 500e3, 1e6, 2e6, 3e6, 4e6, 5e6)
+levs <- sapply(limits, function(l) lev(ln, l))
+cat("Ex 6.3  E[X; l]      book ", vec(c(8896, 13626, 15345, 16738, 17390, 17782, 18048), 0), "\n")
+cat("                     ours ", vec(levs, 0), "\n")
+cat("        I(l), e      book ", vec(c(1.0, 1.4263, 1.5812, 1.7067, 1.7655, 1.8008, 1.8248)), "\n")
+cat("                     ours ", vec((levs + 2200) / (lev(ln, b) + 2200)), "\n")
+cat("        I(l), u      book ", vec(c(1.0, 1.5317, 1.7249, 1.8815, 1.9548, 1.9989, 2.0288)), "\n")
+cat("                     ours ", vec(sapply(limits, function(l) ilf(ln, l, b))), "\n")
+basic_e <- 0.2 * (lev(ln, b) + 2200) / (1 - 0.35)
+basic_u <- 0.2 * lev(ln, b) * 1.2 / (1 - 0.35)
+show("Ex 6.3  basic premium, e", 3414, basic_e)
+show("        1M premium, e", 5398, basic_e * (lev(ln, 1e6) + 2200) / (lev(ln, b) + 2200))
+show("        basic premium, u", 3285, basic_u)
+show("        1M premium, u", 5666, basic_u * ilf(ln, 1e6, b))
+bands <- list(c(1e6, 2e6, 428), c(2e6, 3e6, 201), c(3e6, 4e6, 121), c(4e6, 5e6, 82))
+for (bd in bands) {
+  show(sprintf("Ex 6.4  layer %.0fM to %.0fM premium, e", bd[1] / 1e6, bd[2] / 1e6), bd[3],
+       basic_e * layer(ln, bd[2] - bd[1], bd[1]) / (lev(ln, b) + 2200))
+}
+
+ln2 <- lognormal(6.8, 2.6)
+limits2 <- c(100e3, 250e3, 500e3, 1e6, 2e6, 5e6)
+levs2 <- sapply(limits2, function(l) lev(ln2, l))
+cat("P6.5  E[X; l]   book ", vec(c(9178, 12548, 15180, 17702, 19968, 22404), 0), "\n")
+cat("                ours ", vec(levs2, 0), "\n")
+cat("      I(l), e   book ", vec(c(1.0, 1.2885, 1.5139, 1.7299, 1.9240, 2.1325)), "\n")
+cat("                ours ", vec((levs2 + 2500) / (lev(ln2, b) + 2500)), "\n")
+cat("      I(l), u   book ", vec(c(1.0, 1.3671, 1.6539, 1.9288, 2.1756, 2.4410)), "\n")
+cat("                ours ", vec(sapply(limits2, function(l) ilf(ln2, l, b))), "\n")
+hybrid <- function(l) lev(ln, l) + 0.2 * lev(ln, min(l, 750e3))
+limits3 <- c(100e3, 500e3, 750e3, 1e6, 2e6, 3e6, 4e6, 5e6)
+cat("P6.7  I(l)      book ", vec(c(1.0, 1.5317, 1.6488, 1.7122, 1.8427, 1.9038, 1.9405, 1.9655)), "\n")
+cat("                ours ", vec(sapply(limits3, hybrid) / hybrid(b)), "\n")
+```
+
+```text
+Ex 6.3  E[X; l]      book  [8896, 13626, 15345, 16738, 17390, 17782, 18048] 
+                     ours  [8896, 13626, 15345, 16738, 17390, 17782, 18048] 
+        I(l), e      book  [1.0000, 1.4263, 1.5812, 1.7067, 1.7655, 1.8008, 1.8248] 
+                     ours  [1.0000, 1.4262, 1.5812, 1.7067, 1.7655, 1.8008, 1.8248] 
+        I(l), u      book  [1.0000, 1.5317, 1.7249, 1.8815, 1.9548, 1.9989, 2.0288] 
+                     ours  [1.0000, 1.5316, 1.7249, 1.8815, 1.9548, 1.9989, 2.0288] 
+Ex 6.3  basic premium, e                 book        3,414   prospicio        3,414
+        1M premium, e                    book        5,398   prospicio        5,399
+        basic premium, u                 book        3,285   prospicio        3,285
+        1M premium, u                    book        5,666   prospicio        5,666
+Ex 6.4  layer 1M to 2M premium, e        book          428   prospicio          429
+Ex 6.4  layer 2M to 3M premium, e        book          201   prospicio          201
+Ex 6.4  layer 3M to 4M premium, e        book          121   prospicio          121
+Ex 6.4  layer 4M to 5M premium, e        book           82   prospicio           82
+P6.5  E[X; l]   book  [9178, 12548, 15180, 17702, 19968, 22404] 
+                ours  [9178, 12548, 15180, 17702, 19968, 22404] 
+      I(l), e   book  [1.0000, 1.2885, 1.5139, 1.7299, 1.9240, 2.1325] 
+                ours  [1.0000, 1.2885, 1.5139, 1.7299, 1.9240, 2.1325] 
+      I(l), u   book  [1.0000, 1.3671, 1.6539, 1.9288, 2.1756, 2.4410] 
+                ours  [1.0000, 1.3671, 1.6539, 1.9288, 2.1756, 2.4410] 
+P6.7  I(l)      book  [1.0000, 1.5317, 1.6488, 1.7122, 1.8427, 1.9038, 1.9405, 1.9655] 
+                ours  [1.0000, 1.5316, 1.6488, 1.7123, 1.8427, 1.9038, 1.9405, 1.9654] 
+```
+
+## 9. Risk loads
+
+```{r}
+#| label: risk-load
+sd_load <- function(sev, l, k, delta) k * sqrt(limited_second_moment(sev, l) + delta * lev(sev, l)^2)
+var_load <- function(sev, l, k, delta) k * (limited_second_moment(sev, l) + delta * lev(sev, l)^2)
+loaded_ilf <- function(sev, l, base, k, delta, load = sd_load, u = 0.2) {
+  premium <- function(x) (1 + u) * lev(sev, x) + load(sev, x, k, delta)
+  premium(l) / premium(base)
+}
+cat("Ex 6.5  rho(l)     book ", vec(c(627, 1473, 2013, 2663, 3090, 3410, 3668), 0), "\n")
+cat("                   ours ", vec(sapply(limits, function(l) sd_load(ln, l, 0.0277, 0)), 0), "\n")
+loaded <- sapply(limits, function(l) loaded_ilf(ln, l, b, 0.0277, 0))
+cat("        loaded I   book ", vec(c(1.0, 1.5770, 1.8074, 2.0128, 2.1197, 2.1897, 2.2407)), "\n")
+cat("                   ours ", vec(loaded), "\n")
+mix <- c(0.15, 0.10, 0.30, 0.20, 0.10, 0.10, 0.05)
+plain <- sum(mix * sapply(limits, function(l) ilf(ln, l, b)))
+risky <- sum(mix * loaded)
+show("        average I, no load", 1.6938, plain, 4)
+show("        average I, loaded", 1.7955, risky, 4)
+show("        the load's effect, %", 6.0, 100 * (risky / plain - 1), 1)
+
+p <- shifted_pareto(3, 6000)
+limits4 <- c(1000, 2000, 3000, 4000, 5000, 7500, 10000)
+cat("P6.8   I, no load  book ", vec(c(1.0, 1.6490, 2.0940, 2.4123, 2.6478, 3.0247, 3.2392)), "\n")
+cat("                   ours ", vec(sapply(limits4, function(l) ilf(p, l, 1000))), "\n")
+cat("       I, loaded   book ", vec(c(1.0, 1.6787, 2.1645, 2.5267, 2.8055, 3.2805, 3.5759)), "\n")
+cat("                   ours ", vec(sapply(limits4, function(l) loaded_ilf(p, l, 1000, 0.5, 0.1))), "\n")
+p <- shifted_pareto(0.78, 100)
+f <- sapply((1:10) * 1e6, function(l) loaded_ilf(p, l, 1e6, 5e-7, 0, load = var_load, u = 0))
+cat("P6.10  I(l)        book ", vec(c(1.0, 1.3858, 1.7458, 2.1014, 2.4585, 2.8194, 3.1849,
+                                       3.5553, 3.9309, 3.4114)), "\n")
+cat("                   ours ", vec(f), "\n")
+cat("       layer factor book ", vec(c(0.3556, 0.3571, 0.3609, 0.3655, 0.3705, 0.3755, 0.3806)), "\n")
+cat("                   ours ", vec(diff(f)[3:9]), "\n")
+```
+
+```text
+Ex 6.5  rho(l)     book  [627, 1473, 2013, 2663, 3090, 3410, 3668] 
+                   ours  [627, 1473, 2013, 2663, 3090, 3410, 3668] 
+        loaded I   book  [1.0000, 1.5770, 1.8074, 2.0128, 2.1197, 2.1897, 2.2407] 
+                   ours  [1.0000, 1.5770, 1.8074, 2.0127, 2.1197, 2.1897, 2.2407] 
+        average I, no load               book       1.6938   prospicio       1.6938
+        average I, loaded                book       1.7955   prospicio       1.7954
+        the load's effect, %             book          6.0   prospicio          6.0
+P6.8   I, no load  book  [1.0000, 1.6490, 2.0940, 2.4123, 2.6478, 3.0247, 3.2392] 
+                   ours  [1.0000, 1.6490, 2.0940, 2.4123, 2.6478, 3.0247, 3.2392] 
+       I, loaded   book  [1.0000, 1.6787, 2.1645, 2.5267, 2.8055, 3.2805, 3.5759] 
+                   ours  [1.0000, 1.6787, 2.1645, 2.5267, 2.8055, 3.2805, 3.5759] 
+P6.10  I(l)        book  [1.0000, 1.3858, 1.7458, 2.1014, 2.4585, 2.8194, 3.1849, 3.5553, 3.9309, 3.4114] 
+                   ours  [1.0000, 1.3858, 1.7458, 2.1014, 2.4585, 2.8194, 3.1849, 3.5553, 3.9309, 4.3114] 
+       layer factor book  [0.3556, 0.3571, 0.3609, 0.3655, 0.3705, 0.3755, 0.3806] 
+                   ours  [0.3556, 0.3571, 0.3609, 0.3655, 0.3705, 0.3755, 0.3806] 
+```
+
+## 10. Deductibles
+
+```{r}
+#| label: deductibles
+base <- lev(ln, b)
+deds <- c(1000, 2000, 3000, 4000, 5000, 10000)
+dlev <- sapply(deds, function(d) lev(ln, d))
+straight <- dlev / base
+franchise <- (dlev - deds * surv(ln, deds)) / base
+diminishing <- (dlev - deds * (sapply(deds + 1000, function(d) lev(ln, d)) - dlev) / 1000) / base
+cat("Ex 6.7  C(d) straight     book ", vec(c(0.0741, 0.1249, 0.1661, 0.2016, 0.2328, 0.3534)), "\n")
+cat("                          ours ", vec(straight), "\n")
+cat("        frequency x 10^6  book ", vec(c(258, 201, 169, 147, 132, 89), 0), "\n")
+cat("                          ours ", vec(1e6 * 0.0005 * surv(ln, deds), 0), "\n")
+cat("        pure premium      book ", vec(c(4.942, 4.671, 4.451, 4.262, 4.095, 3.451), 3), "\n")
+cat("                          ours ", vec(0.0005 * 1.2 * (base - dlev), 3), "\n")
+cat("Ex 6.8  C(d) franchise    book ", vec(c(0.0162, 0.0347, 0.0523, 0.0690, 0.0846, 0.1528)), "\n")
+cat("                          ours ", vec(franchise), "\n")
+cat("Ex 6.9  C(d) diminishing  book ", vec(c(0.0233, 0.0424, 0.0599, 0.0766, 0.0917)), "\n")
+cat("                          ours ", vec(diminishing[1:5]), "\n")
+show("Ex 6.7  1M limit, 2,000 deductible", 5527,
+     basic_u * (loaded_ilf(ln, 1e6, b, 0.0277, 0) - straight[2]))
+cat(sprintf("prospicio's loss_elimination_ratio(2,000) = E[X; 2,000] / E[X] = %.4f\n",
+            loss_elimination_ratio(ln, 2000)))
+
+losses <- c(1000, 1550, 1700, 2200, 2500, 3000, 5200, 9000, 11000, 12500, 15000, 19800)
+for (case in list(list("P6.13", 20000, c(62200, 0.2635, 80200, 0.0503)),
+                  list("P6.14", 12000, c(50900, 0.3973, 68900, 0.1841)))) {
+  capped <- pmin(losses, case[[2]])
+  paid_straight <- sum(pmax(capped - 2000, 0))
+  paid_franchise <- sum(capped[losses > 2000])
+  bk <- case[[3]]
+  show(paste(case[[1]], "straight: insurer pays"), bk[1], paid_straight)
+  show(paste(case[[1]], "straight: LER"), bk[2], 1 - paid_straight / sum(losses), 4)
+  show(paste(case[[1]], "franchise: insurer pays"), bk[3], paid_franchise)
+  show(paste(case[[1]], "franchise: LER"), bk[4], 1 - paid_franchise / sum(losses), 4)
+}
+```
+
+```text
+Ex 6.7  C(d) straight     book  [0.0741, 0.1249, 0.1661, 0.2016, 0.2328, 0.3534] 
+                          ours  [0.0741, 0.1249, 0.1661, 0.2015, 0.2328, 0.3535] 
+        frequency x 10^6  book  [258, 201, 169, 147, 132, 89] 
+                          ours  [258, 201, 169, 147, 132, 89] 
+        pure premium      book  [4.942, 4.671, 4.451, 4.262, 4.095, 3.451] 
+                          ours  [4.942, 4.671, 4.451, 4.262, 4.095, 3.451] 
+Ex 6.8  C(d) franchise    book  [0.0162, 0.0347, 0.0523, 0.0690, 0.0846, 0.1528] 
+                          ours  [0.0162, 0.0347, 0.0523, 0.0689, 0.0846, 0.1528] 
+Ex 6.9  C(d) diminishing  book  [0.0233, 0.0424, 0.0599, 0.0766, 0.0917] 
+                          ours  [0.0234, 0.0424, 0.0599, 0.0763, 0.0917] 
+Ex 6.7  1M limit, 2,000 deductible       book        5,527   prospicio        5,527
+prospicio's loss_elimination_ratio(2,000) = E[X; 2,000] / E[X] = 0.0569
+P6.13 straight: insurer pays             book       62,200   prospicio       62,200
+P6.13 straight: LER                      book       0.2635   prospicio       0.2635
+P6.13 franchise: insurer pays            book       80,200   prospicio       80,200
+P6.13 franchise: LER                     book       0.0503   prospicio       0.0503
+P6.14 straight: insurer pays             book       50,900   prospicio       50,900
+P6.14 straight: LER                      book       0.3973   prospicio       0.3973
+P6.14 franchise: insurer pays            book       68,900   prospicio       68,900
+P6.14 franchise: LER                     book       0.1841   prospicio       0.1841
+```
+
+```{r}
+#| label: deductibles-alae
+e <- 500
+cat("P6.16  straight C(d)    book ", vec(c(0.0959, 0.1501, 0.1926, 0.2283, 0.2596, 0.3783)), "\n")
+cat("                        ours ", vec((dlev + e * cdf(ln, deds)) / (base + e)), "\n")
+cat("       pure premium     book ", vec(c(4.247, 3.993, 3.973, 3.625, 3.478, 2.921), 3), "\n")
+cat("                        ours ", vec(0.0005 * (base - dlev + e * surv(ln, deds)), 3), "\n")
+cat("       franchise C(d)   book ", vec(c(0.0411, 0.0647, 0.0848, 0.1028, 0.1193, 0.1884)), "\n")
+cat("                        ours ", vec((dlev - deds * surv(ln, deds) + e * cdf(ln, deds)) / (base + e)), "\n")
+
+p <- shifted_pareto(3, 10000)
+deds2 <- c(0, 250, 500, 750, 1000)
+plev <- sapply(deds2, function(d) lev(p, d))
+base2 <- lev(p, 5000) + 250
+cat("P6.17  straight C(d)    book ", vec(c(0.0, 0.0855, 0.1648, 0.2385, 0.3071)), "\n")
+cat("                        ours ", vec((plev + 250 * cdf(p, deds2)) / base2), "\n")
+cat("       pure premium     book ", vec(c(15.139, 13.845, 12.644, 11.528, 10.489), 3), "\n")
+cat("                        ours ", vec(0.005 * (base2 - plev - 250 * cdf(p, deds2)), 3), "\n")
+cat("       franchise C(d)   book ", vec(c(0.0088, 0.0221, 0.0391, 0.0590)), "\n")
+cat("                        ours ", vec(((plev - deds2 * survival(p, deds2) + 250 * cdf(p, deds2)) / base2)[-1]), "\n")
+
+d5 <- deds[1:5]
+cat("P6.21  claims removed   book ", vec(c(242, 299, 331, 353, 368), 0), "\n")
+cat("                        ours ", vec(500 * cdf(ln, d5), 0), "\n")
+cat("       after inflation  book ", vec(c(234, 292, 324, 346, 362), 0), "\n")
+cat("                        ours ", vec(500 * cdf(ln, d5 / 1.1), 0), "\n")
+cat("       share removed, % book ", vec(c(7.1, 12.0, 16.1, 19.5, 22.6), 1), "\n")
+cat("                        ours ", vec(100 * sapply(d5, function(d) lev(ln, d / 1.1)) / lev(ln, b / 1.1), 1), "\n")
+
+pure_premium <- function(sev, top, d, e, phi = 0.25) {
+  capped <- if (is.null(top)) mean(sev) else lev(sev, top)
+  phi * (capped - lev(sev, d) + surv(sev, d) * e)
+}
+now <- shifted_pareto(2, 8000); later <- shifted_pareto(2, 8400)
+for (case in list(list(NULL, c(1893, 1994, 5.3), 0, "no limit"),
+                  list(5000, c(662.7, 677.3, 2.2), 1, "5,000 limit"))) {
+  p0 <- pure_premium(now, case[[1]], 500, 50)
+  p1 <- pure_premium(later, case[[1]], 500, 52.5)
+  show(paste0("Ex 6.10 ", case[[4]], ": pure premium"), case[[2]][1], p0, case[[3]])
+  show("        after 5% inflation", case[[2]][2], p1, case[[3]])
+  show("        effective trend, %", case[[2]][3], 100 * (p1 / p0 - 1), 1)
+}
+```
+
+```text
+P6.16  straight C(d)    book  [0.0959, 0.1501, 0.1926, 0.2283, 0.2596, 0.3783] 
+                        ours  [0.0960, 0.1501, 0.1925, 0.2283, 0.2596, 0.3784] 
+       pure premium     book  [4.247, 3.993, 3.973, 3.625, 3.478, 2.921] 
+                        ours  [4.247, 3.993, 3.794, 3.625, 3.478, 2.920] 
+       franchise C(d)   book  [0.0411, 0.0647, 0.0848, 0.1028, 0.1193, 0.1884] 
+                        ours  [0.0411, 0.0647, 0.0848, 0.1028, 0.1193, 0.1884] 
+P6.17  straight C(d)    book  [0.0000, 0.0855, 0.1648, 0.2385, 0.3071] 
+                        ours  [0.0000, 0.0855, 0.1648, 0.2385, 0.3071] 
+       pure premium     book  [15.139, 13.845, 12.644, 11.528, 10.489] 
+                        ours  [15.139, 13.845, 12.644, 11.528, 10.489] 
+       franchise C(d)   book  [0.0088, 0.0221, 0.0391, 0.0590] 
+                        ours  [0.0088, 0.0221, 0.0391, 0.0590] 
+P6.21  claims removed   book  [242, 299, 331, 353, 368] 
+                        ours  [242, 299, 331, 353, 368] 
+       after inflation  book  [234, 292, 324, 346, 362] 
+                        ours  [234, 292, 324, 346, 362] 
+       share removed, % book  [7.1, 12.0, 16.1, 19.5, 22.6] 
+                        ours  [7.1, 12.0, 16.1, 19.5, 22.6] 
+Ex 6.10 no limit: pure premium           book        1,893   prospicio        1,893
+        after 5% inflation               book        1,994   prospicio        1,994
+        effective trend, %               book          5.3   prospicio          5.3
+Ex 6.10 5,000 limit: pure premium        book        662.7   prospicio        662.7
+        after 5% inflation               book        677.3   prospicio        677.3
+        effective trend, %               book          2.2   prospicio          2.2
+```
+
+## 11. What agreed, what did not, and what the R package does not do
+
+The comparisons, and the reasons for each disagreement (rounding carried into
+differences, misprints, spreadsheet solver results), are the Python guide's
+section 11, with the same numbers. What the R package lacks for these chapters,
+beyond what the Python package lacks there (grouped-data estimators, a Lomax
+family in the fits, third limited moments, premium formulas with ALAE, risk
+loads and deductible credits, a `lev` on sampled data):
+
+- **`survival()` and `layer_variance()` on `lognormal()`**: the lognormal has
+  `cdf`, `lev`, `layer` and `stop_loss` but no `survival` and no layer
+  variance, so this guide uses `1 - cdf()` and wraps it in
+  `truncated_distribution()`. (Python's `Lognormal` has no `survival` or
+  `layer_second_moment` either.)
+- **No `layer_second_moment()`**: the R package exposes `layer_variance()`
+  only, so E[X²; l] is rebuilt as `layer_variance + layer^2`.
+- **No `std()`**: `sqrt(variance())`.
+
+Where to go next: the Python guides
+[severity and frequency](severity-and-frequency.md),
+[aggregate distributions](aggregate-distributions.md) and
+[experience and exposure rating](experience-and-exposure-rating.md), and the
+companion R guide on claim counts and aggregate claims.
