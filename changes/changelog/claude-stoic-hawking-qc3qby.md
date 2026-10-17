@@ -131,3 +131,14 @@
   `onnx_predictor()` for networks trained elsewhere. The package builds
   Burn through the default `nn` feature and now needs Rust 1.92
   (`SystemRequirements`) (#309).
+
+### Pricing
+
+- Casualty exposure rating in `prospicio_pricing::casualty`: a
+  `CasualtyProfile` of policies (attachment, limit, share, premium, ELR,
+  and a curve each: a severity, an `IlfTable` or an `ElfTable`), rated
+  for a per-policy treaty in the ILF form (`rate`) or the frequency form
+  (`rate_by_frequency`), with ALAE pro rata, on top of the capped loss,
+  or in the severity (`Alae`), kept policy by policy so a tagged segment
+  can be left out. Clark's workers compensation example reproduces
+  exactly (13,695, 3.42%) (#312).

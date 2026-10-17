@@ -3,6 +3,10 @@
 //! - [`bounds`]: pricing bounds, the range of another risk's price over
 //!   the distortions that price a reference risk at a premium, and the
 //!   envelope of those distortions (Mildenhall 2022).
+//! - [`casualty`]: casualty exposure rating over a table of policies, each
+//!   with its attachment, limit, share, premium, ELR and curve (a severity,
+//!   an ILF table or an ELF table), in the ILF and frequency forms with an
+//!   explicit ALAE treatment (Clark's casualty exposure rating).
 //! - [`classical`]: the classical premium principles (expected value,
 //!   variance, standard deviation, semi-variance, exponential, Esscher,
 //!   Dutch, Fischer, VaR), each calibrated to a premium.
@@ -30,6 +34,7 @@
 //! See `docs/design/pareto.md`.
 
 pub mod bounds;
+pub mod casualty;
 pub mod classical;
 pub mod credibility;
 pub mod experience;

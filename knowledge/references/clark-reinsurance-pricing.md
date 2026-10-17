@@ -6,7 +6,7 @@ resource: https://www.casact.org/sites/default/files/2021-03/8_Clark.pdf
 tags: [pricing, reinsurance, experience-rating, burning-cost, parity]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-13T11:20:00Z }
-verified: { by: process:ci, at: 2026-10-13T17:31:26Z }
+verified: { by: process:ci, at: 2026-10-17T02:00:00Z }
 sources:
   - id: clark
     resource: https://www.casact.org/sites/default/files/2021-03/8_Clark.pdf
@@ -17,6 +17,9 @@ sources:
   - id: dev
     resource: ../validation/tests/pricing.rs
     title: Per-claim development against the chain ladder (module claim_development)
+  - id: casualty
+    resource: ../validation/tests/pricing.rs
+    title: Casualty exposure rating, the workers compensation example (module clark_casualty)
 ---
 
 # What it is
@@ -64,6 +67,7 @@ moved by hand.[^clark]
 [^clark]: Clark, Basics of Reinsurance Pricing.
 [^tests]: `validation/tests/pricing.rs`, module `clark_experience`.
 [^dev]: `validation/tests/pricing.rs`, module `claim_development`.
+[^casualty]: `validation/tests/pricing.rs`, module `clark_casualty`.
 
 # The casualty exposure section
 

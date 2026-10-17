@@ -1,7 +1,7 @@
 # Design note: casualty exposure rating
 
-Status: **Accepted** (method approved by the user 2026-10-16, open
-questions answered 2026-10-17; no code yet) ·
+Status: **In progress** (method approved by the user 2026-10-16, open
+questions answered 2026-10-17; PR 1 done: `prospicio_pricing::casualty`) ·
 Depends on: `prospicio_prob::Pareto` and its censored fit,
 `prospicio_pricing::layer`, `prospicio_pricing::experience` · Lane: Aggregate
 
@@ -67,17 +67,18 @@ For policy `i`, take:
 
 The policy pays `Y_i = s_i · min((X − a_i)+, l_i)`. A per-policy treaty
 `R xs D` cedes `min((Y_i − D)+, R)`. The part ceded lies on the ground-up
-interval `[a_i + D/s_i, a_i + min((D + R)/s_i, l_i)]`, which is empty when
-the policy cannot reach the treaty.
+interval `[a_i + min(D/s_i, l_i), a_i + min((D + R)/s_i, l_i)]`, which is
+empty when the policy cannot reach the treaty.
 
 Two forms give the treaty's expected loss, and the rater supports both:
 
 1. **The ILF form.** The policy's expected loss `P_i · ELR_i` is shared out
    by limited expected values (LEVs):
-   `ceded_i = P_i · ELR_i · [LEV(top_i) − LEV(bottom_i)] / [LEV(a_i + l_i) − LEV(a_i)] · s_i`,
-   with `bottom_i` and `top_i` the ends of the ceded interval (the share
-   rescales back to the policy's own amounts). This form needs a curve from
-   the ground up: a severity, or an ILF table, which is a LEV curve up to a
+   `ceded_i = P_i · ELR_i · [LEV(top_i) − LEV(bottom_i)] / [LEV(a_i + l_i) − LEV(a_i)]`,
+   with `bottom_i` and `top_i` the ends of the ceded interval. The share
+   cancels: it scales the ceded amount and the policy's loss alike, and
+   enters only through the interval. This form needs a curve from the
+   ground up: a severity, or an ILF or ELF table, each a LEV curve up to a
    constant.
 2. **The frequency form.** The expected number `n_i` of occurrences that
    reach a threshold `t` under policy `i`, times the expected treaty loss
@@ -88,26 +89,30 @@ Two forms give the treaty's expected loss, and the rater supports both:
 ## Decisions
 
 1. **Both forms, one policy table.** A `CasualtyProfile` holds rows of
-   `(attachment, limit, share, premium, elr)`, with an optional
-   `expected_count_above(t)` for the frequency form and an optional tag
-   (segment, line) for reporting. A treaty is a per-policy `XsLayer`. The
+   `(attachment, limit, share, premium, elr, curve)` with an optional tag
+   (segment, line) for reporting; the frequency form
+   (`rate_by_frequency`) takes each policy's expected count above the
+   threshold as an argument, with a severity of the losses above it. A treaty is a per-policy `XsLayer`. The
    result keeps every policy's ceded expected loss, so that a segment can be
    shown or left out without refitting.
 2. **The severity is any `Severity`, or an ILF table.** An `IlfTable`
-   (limits and factors at a basic limit) is read as a LEV curve. Between
-   the table's limits it interpolates in log of the limit, and the result
-   must stay concave, as with the log-log `TabulatedCurve`. Beyond the last
-   limit it is an error rather than an extrapolation. For a Pareto layer
+   (limits and factors at a basic limit) is read as a LEV curve. It is
+   linear between the table's limits and from the origin to the first
+   (`LEV(0) = 0`), so it is exact at every printed limit, and it must be
+   concave (slopes that never increase), which the constructor checks.
+   Beyond the last limit it is an error rather than an extrapolation. For a Pareto layer
    above the table, use the frequency form or a spliced severity.
 3. **ALAE is an explicit choice**, in Clark's two treatments and a
    third for a severity fitted to loss and ALAE together:
-   - `ProRata`: the treaty shares ALAE in proportion to loss. The exposure
-     factor is the loss-only one, applied to premium times an expected
-     loss and ALAE ratio (Clark's first case).
+   - `ProRata(e)`: the treaty shares ALAE in proportion to loss. The
+     exposure factor is the loss-only one, and the ceded amount carries
+     `1 + e` on a loss-only ELR. With an ELR that already holds ALAE,
+     `ProRata(0)` is Clark's first case.
    - `OnTop(e)`: the policy limit applies to loss only, ALAE is `e` times
      the capped loss, and the treaty's attachment and limit apply to loss
      plus ALAE: Clark's second formula, with `AP` and `AP + Lim` divided
-     by `1 + e` before they are capped at the policy limit.
+     by `1 + e` before they are capped at the policy limit. The ELR is
+     loss only, and the ceded amount carries `1 + e`.
    - `InSeverity`: the severity is loss plus ALAE, and the limits apply to
      the sum.
 
@@ -184,8 +189,8 @@ Two forms give the treaty's expected loss, and the rater supports both:
 
 ## Plan
 
-- **PR 1:** `CasualtyProfile`, `IlfTable` and the two forms with ALAE, in
-  `prospicio_pricing::casualty`. Validation:
+- **PR 1 (done):** `CasualtyProfile`, `IlfTable`, `ElfTable` and the two
+  forms with ALAE, in `prospicio_pricing::casualty`. Validation:
   - Clark's workers compensation example exactly (each row's factor and
     treaty loss, 13,695 and 3.42%);
   - Clark's liability formulas against closed forms on a Pareto: the
