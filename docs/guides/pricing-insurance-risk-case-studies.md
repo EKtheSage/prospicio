@@ -487,23 +487,26 @@ LIFTED_030 = {  # aggregate 0.30.1, lifted: (P NonCat, Q NonCat, P Cat, Q Cat)
     "dual": (85.4756, 63.0400, 29.6755, 89.0144),
     "tvar": (86.4562, 63.1853, 28.6949, 88.8705),
 }
-print(f"{'':5s} {'NonCat P':>18s} {'NonCat Q':>18s} {'Cat P':>18s} {'Cat Q':>18s}")
+print(f"{'':5s} {'NonCat P':>17s} {'NonCat Q':>17s} {'Cat P':>17s} {'Cat Q':>17s}")
 for f, d in cnc_d.items():
     nc, ct = cnc.price(d, p=0.999, allocation="lifted").allocated
     got = (nc.premium, nc.capital, ct.premium, ct.capital)
-    print(f"{f:5s} " + " ".join(f"{g:8.3f} ({w:7.3f})" for g, w in zip(got, LIFTED_030[f])))
+    print(f"{f:5s} " + " ".join(f"{g:7.2f} ({w:7.2f})" for g, w in zip(got, LIFTED_030[f])))
 ```
 
 ```text
-                NonCat P           NonCat Q              Cat P              Cat Q
-ccoc    75.430 ( 74.640)  -45.576 (-39.591)   39.721 ( 40.511)  197.627 (191.643)
-ph      82.257 ( 82.257)   48.804 ( 48.535)   32.894 ( 32.894)  103.248 (103.517)
-wang    83.886 ( 83.886)   59.875 ( 59.874)   31.265 ( 31.265)   92.177 ( 92.178)
-dual    85.476 ( 85.476)   63.040 ( 63.040)   29.676 ( 29.675)   89.012 ( 89.014)
-tvar    86.456 ( 86.456)   63.185 ( 63.185)   28.695 ( 28.695)   88.867 ( 88.871)
+               NonCat P          NonCat Q             Cat P             Cat Q
+ccoc    75.43 (  74.64)  -45.58 ( -39.59)   39.72 (  40.51)  197.63 ( 191.64)
+ph      82.26 (  82.26)   48.80 (  48.54)   32.89 (  32.89)  103.25 ( 103.52)
+wang    83.89 (  83.89)   59.88 (  59.87)   31.26 (  31.26)   92.18 (  92.18)
+dual    85.48 (  85.48)   63.04 (  63.04)   29.68 (  29.68)   89.01 (  89.01)
+tvar    86.46 (  86.46)   63.18 (  63.19)   28.69 (  28.69)   88.87 (  88.87)
 ```
 
-Wang, the dual power and TVaR agree to about 0.004. Under PH the premiums agree
+The table is printed to two decimals because the CCoC row of the lifted
+allocation is sensitive to round-off: it moves in the fourth decimal when the
+CCoC's `r` changes in its last bit. Wang, the dual power and TVaR agree to
+about 0.004. Under PH the premiums agree
 and the capital does not (NonCat 48.80 against 48.54). Under the CCoC even the
 lifted premiums differ (NonCat 75.43 against 74.64), and both programs give
 NonCat a negative capital. The totals agree in every row. As in the monograph
