@@ -5,4 +5,4 @@
   distortions, the natural allocation, the 35 xs 65 stop loss and the
   correlated Auto, GL and WC book): every number equal to the Python guide's,
   the seeded Iman-Conover samples included. CI's R job runs its chunks and
-  checks every printed number (`R/prospicio/tests/test-guides.R`).
+  checks every printed number (`R/prospicio/tests/test-guides.R`) (#321).
