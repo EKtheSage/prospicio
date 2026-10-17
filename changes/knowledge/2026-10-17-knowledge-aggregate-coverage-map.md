@@ -1,0 +1,1 @@
+* **Creation**: [aggregate 1.2.0 documentation against prospicio, a coverage map](/references/aggregate-docs-coverage.md), from a read of the 1.2.0 docs against the Python stub (branch knowledge/aggregate-coverage-map).
