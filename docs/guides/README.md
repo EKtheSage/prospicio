@@ -49,6 +49,7 @@ and sends you to the guide that goes deeper.
 |---|---|
 | [`severity-and-frequency.md`](severity-and-frequency.md) | Choosing and fitting a severity and a claim count: lognormal, Pareto family, mixtures, censoring and truncation, and count families by dispersion |
 | [`aggregate-distributions.md`](aggregate-distributions.md) | The distribution of a year's total loss: FFT, Panjer, simulation or moments, the grid, and when each is exact, fast or unsafe |
+| [`prospicio-for-aggregate-users.md`](prospicio-for-aggregate-users.md) | The twenty-minute tour of Mildenhall's `aggregate` package run in prospicio: the same books, with both libraries' numbers side by side, a DecL-to-prospicio table and what prospicio does not have |
 
 **Reserving**
 
