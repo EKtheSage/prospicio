@@ -1,0 +1,547 @@
+---
+title: "Capital modeling and portfolio pricing: CAS Monograph 15 reproduced"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+CAS Monograph 15, *Introduction to Capital Modeling and Portfolio Management*
+(John Major and Stephen Mildenhall, 2026), shows how an insurer can price its
+risk and split the price over its business units, from a distribution of
+outcomes alone. Its worked examples run in Mildenhall's Python package
+`aggregate`. This guide runs them in prospicio from R and prints both sets of
+numbers next to each other, so you can see what the method does, what each
+step costs in code, and where the two programs agree or differ.
+
+This is the R twin of the Python guide
+[`capital-modeling-monograph-15.md`](capital-modeling-monograph-15.md): the
+same sections, the same examples and the same numbers. The R package calls the
+same Rust code as the Python one, so the parameters, premiums and allocations
+agree to every digit printed, including the Iman-Conover samples drawn by seed.
+
+The text of the monograph is the authors'; what follows is an explanation in
+new words with the numbers recomputed. Read the monograph for the reasoning
+(its chapters 3 to 6 and 8) and this guide for the mechanics (its chapter 9).
+Table numbers below are the monograph's. Money is in the units of its
+examples.
+
+Each R chunk is followed by the text it prints.
+`R/prospicio/tests/test-guides.R` runs the chunks in order and requires each
+one to print exactly that text, so a number below cannot go stale when the
+library changes. To render the page, install the R package
+(`remotes::install_github`, see `R/prospicio/bootstrap.R`) and run
+`quarto render docs/guides/capital-modeling-monograph-15.qmd`.
+
+```{r}
+#| label: setup
+library(prospicio)
+
+# Thousands separators, as Python's {:,.0f}. Rounding first rounds a half to
+# even, as Python does, on every platform's C library.
+comma <- function(x, digits = 0) {
+  formatC(round(x, digits), format = "f", digits = digits, big.mark = ",")
+}
+```
+
+## 1. The example company
+
+The monograph's running example, InsCo, has three units, A, B and C, and ten
+equally likely simulated years. Each row is a year and each cell the unit's
+loss in it:
+
+```{r}
+ROWS <- rbind(
+  c(5, 20, 11), c(7, 33, 0), c(15, 13, 0), c(15, 7, 0), c(13, 20, 7),
+  c(5, 27, 8), c(15, 16, 9), c(26, 19, 10), c(17, 8, 40), c(16, 20, 64)
+)
+colnames(ROWS) <- c("A", "B", "C")
+insco <- capital_portfolio(ROWS)
+totals <- rowSums(ROWS)
+
+for (name in c("A", "B", "C", "Total")) {
+  losses <- if (name == "Total") totals else ROWS[, name]
+  s <- sampled(losses)
+  sd <- sqrt(variance(s)) # sampled() divides by n, as the monograph does
+  cat(sprintf("%-6s mean %6.2f  cv %.3f\n", name, mean(s), sd / mean(s)))
+}
+```
+
+```text
+A      mean  13.40  cv 0.453
+B      mean  18.30  cv 0.412
+C      mean  14.90  cv 1.324
+Total  mean  46.60  cv 0.455
+```
+
+This is Table 9.1's last two rows: means of 13.4, 18.3, 14.9 and 46.6, and CVs
+of 0.453, 0.412, 1.324 and 0.455. Unit C is the volatile one: a small mean, and
+a 64 in the worst year. A `capital_portfolio()` is built from the matrix of
+rows directly, one named column per unit, so there is no frequency-severity
+model or grid here, and no approximation: every number below is computed on the
+ten years as they are.
+
+Pricing works on the distinct totals, not on the years. Four of the years (the
+second, fifth, sixth and seventh) all total 40, so the portfolio keeps one
+scenario at 40 with probability 0.4 and each unit's average loss given that
+total, which the monograph calls its conditional expectation, `kappa`. The
+portfolio holds these, but the R package does not export them (Python has
+`Portfolio.kappa(unit)`), so the chunk computes them from the rows with base R,
+which on a portfolio built from scenarios is the same calculation:
+
+```{r}
+cat("totals ", insco@totals, "\n")
+cat("probs  ", round(insco@probs, 1), "\n")
+for (unit in c("A", "B", "C")) {
+  kappa <- tapply(ROWS[, unit], totals, mean) # E[X_unit | X = total]
+  cat(sprintf("kappa %s", unit), sprintf("%.2f", kappa), "\n")
+}
+```
+
+```text
+totals  22 28 36 40 55 65 100
+probs   0.1 0.1 0.1 0.4 0.1 0.1 0.1
+kappa A 15.00 15.00 5.00 10.00 26.00 17.00 16.00
+kappa B 7.00 13.00 20.00 24.00 19.00 8.00 20.00
+kappa C 0.00 0.00 11.00 6.00 10.00 40.00 64.00
+```
+
+At a total of 40, A is expected to lose 10, B 24 and C 6, the row of Table 9.4.
+The conditional expectations always add up to the total, so splitting the
+portfolio's price by them can never create or lose money.
+
+## 2. The capital standard
+
+A price needs a capital standard: how many assets stand behind the book. The
+monograph's chapter 3 introduces value at risk (VaR, a quantile) and tail value
+at risk (TVaR, the average above it). The `aggregate` package, and prospicio,
+read a standard of "p" as assets equal to the p quantile of the total. The R
+package has no function for a portfolio's assets at `p` (Python's
+`Portfolio.assets(p)`); `natural_price(port, d, p = p)` reports them in its
+`"total"` row, whatever the distortion `d`:
+
+```{r}
+total <- sampled(totals)
+assets_at <- function(port, p) {
+  priced <- natural_price(port, distortion("ccoc", 0.15), p = p)
+  priced$assets[priced$unit == "total"]
+}
+cat(sprintf("%5s %6s %8s  assets at p\n", "p", "VaR", "TVaR"))
+for (p in c(0.8, 0.85, 0.9, 1.0)) {
+  cat(sprintf("%5.2f %6.0f %8.3f  %.0f\n", p, quantile(total, p), TVaR(total, p),
+              assets_at(insco, p)))
+}
+```
+
+```text
+    p    VaR     TVaR  assets at p
+ 0.80     55   82.500  55
+ 0.85     65   88.333  65
+ 0.90     65  100.000  65
+ 1.00    100  100.000  100
+```
+
+These are Table 9.5. With ten years the standard of 100% is the worst year, and
+TVaR reaches 100 from 90% up, which is why the monograph's main example speaks
+of full capitalization: assets of 100, the largest loss. With only ten
+scenarios a 99.5% standard would also be the worst year, so the example uses
+the cleanest one.
+
+## 3. Calibrating five distortions
+
+The monograph prices by a **distortion** (a spectral risk measure): a function
+`g` that raises the probability of bad outcomes before taking the expected
+loss. A distortion is chosen from a family and then calibrated, here to one
+requirement: the whole book earns a 15% return on capital, with assets of 100.
+The expected loss is 46.6, so the premium `P` and capital `Q = 100 - P` must
+satisfy `P - 46.6 = 0.15 Q`, which gives `P = 53.565`. Each of five families, a
+constant cost of capital (CCoC), proportional hazard (PH), Wang, dual power and
+TVaR, has one parameter, and `calibrate_portfolio()` finds the value that hits
+that premium:
+
+```{r}
+FAMILIES <- c("ccoc", "ph", "wang", "dual", "tvar")
+distortions <- lapply(stats::setNames(FAMILIES, FAMILIES), function(family) {
+  calibrate_portfolio(insco, family, assets = 100, return_on_capital = 0.15)
+})
+for (family in FAMILIES) {
+  value <- distortions[[family]]@parameters
+  cat(sprintf("%-5s %-7s %.3f\n", family, names(value), value))
+}
+```
+
+```text
+ccoc  r       0.150
+ph    rho     0.720
+wang  lambda  0.343
+dual  beta    1.595
+tvar  p       0.271
+```
+
+Table 9.3 prints 0.150, 0.720, 0.343, 1.595 and 0.271 for these parameters, and
+the values agree. Mind the names: in `aggregate` the CCoC distortion is built
+from a risk discount `d = 0.15 / 1.15`, in prospicio from the cost of capital
+`r = 0.15`, and `distortion("ccoc", 0.15)` is the same function.
+
+## 4. The price and its allocation to units
+
+With a distortion calibrated, `natural_price()` returns the premium of the
+loss capped at the assets, and the **natural allocation** of it to the units,
+as a data frame with one row per unit and a `"total"` row: each unit pays the
+distorted average of its own loss in the bad years, so a unit that loses most
+when the total is large pays more. With `allocation = "linear"` the assets are
+also split by expected shares above the asset level.
+
+```{r}
+BOOK_LINEAR <- c(A = 13.739, B = 18.522, C = 21.304) # Table 9.6 for CCoC: premium by unit
+priced <- natural_price(insco, distortions$ccoc, assets = 100, allocation = "linear")
+cat(sprintf("%-6s %7s %7s %7s %7s %7s %6s\n", "", "L", "a", "Q", "P", "M", "COC"))
+for (i in seq_len(nrow(priced))) {
+  u <- priced[i, ]
+  name <- if (u$unit == "total") "Total" else u$unit
+  margin <- u$premium - u$loss
+  cat(sprintf("%-6s %7.3f %7.3f %7.3f %7.3f %7.3f %6.3f\n", name, u$loss, u$assets,
+              u$capital, u$premium, margin, margin / u$capital))
+}
+```
+
+```text
+             L       a       Q       P       M    COC
+A       13.400  16.000   2.261  13.739   0.339  0.150
+B       18.300  20.000   1.478  18.522   0.222  0.150
+C       14.900  64.000  42.696  21.304   6.404  0.150
+Total   46.600 100.000  46.435  53.565   6.965  0.150
+```
+
+This is Table 9.6, the "industry standard" CCoC pricing: every unit earns 15%
+on the capital allocated to it, because that is what the capital was allocated
+to mean. Unit C takes 64 of the 100 of assets and pays 21.3 of the premium for
+an expected loss of 14.9, so most of the margin (6.4 of 7.0) is C's. The
+units' premiums add up to the 53.565 of the book. The data frame also carries
+each row's `margin`, `loss_ratio` and `return_on_capital`; the chunk computes
+the margin and its return by hand to show where they come from.
+
+The same premium holds for every distortion in the five, because each was
+calibrated to it; the distortions differ in who pays. The monograph's Table 9.8
+shows the premiums by unit, and they agree here:
+
+```{r}
+BOOK_P <- list( # Table 9.8, premium by unit (A, B, C)
+  ccoc = c(13.739, 18.522, 21.304),
+  ph = c(14.060, 18.349, 21.156),
+  wang = c(14.109, 18.637, 20.819),
+  dual = c(14.127, 19.117, 20.322),
+  tvar = c(13.783, 20.412, 19.371)
+)
+units_only <- function(priced) priced[priced$unit != "total", ]
+cat(sprintf("%-5s %20s %20s %20s\n", "", "A", "B", "C"))
+for (family in FAMILIES) {
+  got <- units_only(natural_price(insco, distortions[[family]], assets = 100))$premium
+  cells <- sprintf("%7.3f (book %6.3f)", got, BOOK_P[[family]])
+  cat(sprintf("%-5s ", family), paste(cells, collapse = " "), "\n", sep = "")
+}
+```
+
+```text
+                         A                    B                    C
+ccoc   13.739 (book 13.739)  18.522 (book 18.522)  21.304 (book 21.304)
+ph     14.060 (book 14.060)  18.349 (book 18.349)  21.156 (book 21.156)
+wang   14.109 (book 14.109)  18.637 (book 18.637)  20.819 (book 20.819)
+dual   14.127 (book 14.127)  19.117 (book 19.117)  20.322 (book 20.322)
+tvar   13.783 (book 13.783)  20.412 (book 20.412)  19.371 (book 19.371)
+```
+
+All fifteen premiums match to the three decimals printed. The pattern across
+the rows is the substance: the CCoC prices unit C at 21.3 and unit B at 18.5,
+the TVaR prices B at 20.4 and C at 19.4. TVaR charges for the units' losses in
+the worst years only, where B's 20 is a larger share of the total than its
+average share; CCoC charges for the volume of capital each unit consumes, and C
+uses 64 of the 100. Neither is the right answer; the distortion is a statement
+about what you are paid to bear (see
+[Risk loads and distortions](risk-loads-and-distortions.md)).
+
+## 5. Capital by unit, if you must
+
+The monograph's section 8.3 advises against allocating capital, because layers
+of capital cost different amounts, and allocates margin instead. If you must
+say how much capital each unit uses, it describes a method that allocates each
+layer of the asset range by the units' shares of that layer's margin, and sums
+over layers. In prospicio this is `allocation = "lifted"`:
+
+```{r}
+BOOK_Q <- list( # Table 9.8, capital by unit (A, B, C)
+  ccoc = c(4.874, 5.288, 36.273),
+  ph = c(7.074, 6.565, 32.796),
+  wang = c(8.411, 8.691, 29.333),
+  dual = c(8.873, 9.143, 28.419),
+  tvar = c(9.034, 9.247, 28.154)
+)
+cat(sprintf("%-5s %20s %20s %20s\n", "", "A", "B", "C"))
+for (family in FAMILIES) {
+  lifted <- natural_price(insco, distortions[[family]], assets = 100, allocation = "lifted")
+  cells <- sprintf("%7.3f (book %6.3f)", units_only(lifted)$capital, BOOK_Q[[family]])
+  cat(sprintf("%-5s ", family), paste(cells, collapse = " "), "\n", sep = "")
+}
+```
+
+```text
+                         A                    B                    C
+ccoc    2.261 (book  4.874)   1.478 (book  5.288)  42.696 (book 36.273)
+ph      6.481 (book  7.074)   5.597 (book  6.565)  34.356 (book 32.796)
+wang    8.411 (book  8.411)   8.691 (book  8.691)  29.333 (book 29.333)
+dual    8.873 (book  8.873)   9.143 (book  9.143)  28.419 (book 28.419)
+tvar    9.034 (book  9.034)   9.247 (book  9.247)  28.154 (book 28.154)
+```
+
+Wang, dual power and TVaR agree with the monograph to three decimals. **CCoC
+and PH do not.** The monograph prints a CCoC capital of 4.874, 5.288 and
+36.273, and `aggregate` 0.30.1 returns exactly those; prospicio returns 2.261,
+1.478 and 42.696, the same as the linear allocation, and a PH capital that is
+6.481, 5.597 and 34.356 against the printed 7.074, 6.565 and 32.796. Premiums
+and margins are identical in both programs; only the split of capital between
+units differs.
+
+The difference is between versions of `aggregate`, not between prospicio and
+`aggregate`. The monograph's code ran on `aggregate` 0.24.0, and 0.30.1 prints
+the monograph's numbers. prospicio's natural allocation is tested in CI
+against reference values computed with `aggregate` 1.0.1 on this very company,
+at 1e-10, for both allocations and all five distortions, and those reference
+values for CCoC and PH are prospicio's: 2.261, 1.478 and 42.696 for CCoC. So
+the lifted capital for these two families changed between 0.30.1 and 1.0.1.
+The CCoC value is also what the monograph's own argument implies: under a CCoC
+every layer of capital earns the same 15%, so a unit's capital is its margin
+divided by 0.15, and unit A's margin of 0.339 gives 2.261. Use the premiums
+and margins, which agree everywhere, and treat capital by unit under CCoC and
+PH as version dependent; the monograph advises against allocating capital for
+much the same reason.
+
+## 6. The reinsurance decision
+
+Chapter 5 asks what a reinsurance cover does to the price of the book. The
+monograph's example is an aggregate stop loss of 35 excess of 65: the reinsurer
+pays whatever the year's total exceeds 65, up to 35. On these ten years it pays
+in one year only, the 100, which is 35 with probability 0.1, a mean of 3.5.
+Treating the cover's recovery and the net loss as two units of a new portfolio
+prices the cover, and shows what the retained book then needs:
+
+```{r}
+stop_loss <- function(total, attach = 65, limit = 35) pmin(pmax(total - attach, 0), limit)
+
+split <- cbind(Net = totals - stop_loss(totals), Ceded = stop_loss(totals))
+reinsured <- capital_portfolio(split)
+cat("means", reinsured@expected, " (book: net 43.1, ceded 3.5)\n")
+
+BOOK_RE <- list( # Table 9.10, premium and margin of ceded and net, (ceded, net)
+  ccoc = c(7.609, 4.109, 45.957, 2.857),
+  ph = c(6.662, 3.162, 46.903, 3.803),
+  wang = c(6.087, 2.587, 47.478, 4.378),
+  dual = c(5.415, 1.915, 48.151, 5.051),
+  tvar = c(4.803, 1.303, 48.762, 5.662)
+)
+cat(sprintf("%-5s %8s %7s %8s %7s\n", "", "ceded P", "M", "net P", "M"))
+for (family in FAMILIES) {
+  r <- natural_price(reinsured, distortions[[family]], assets = 100)
+  ceded <- r[r$unit == "Ceded", ]
+  net <- r[r$unit == "Net", ]
+  cat(sprintf("%-5s %8.3f %7.3f %8.3f %7.3f   book %s\n", family,
+              ceded$premium, ceded$premium - ceded$loss, net$premium, net$premium - net$loss,
+              paste(sprintf("%.3f", BOOK_RE[[family]]), collapse = " ")))
+}
+```
+
+```text
+means 43.1 3.5  (book: net 43.1, ceded 3.5)
+       ceded P       M    net P       M
+ccoc     7.609   4.109   45.957   2.857   book 7.609 4.109 45.957 2.857
+ph       6.662   3.162   46.903   3.803   book 6.662 3.162 46.903 3.803
+wang     6.087   2.587   47.478   4.378   book 6.087 2.587 47.478 4.378
+dual     5.415   1.915   48.151   5.051   book 5.415 1.915 48.151 5.051
+tvar     4.803   1.303   48.762   5.662   book 4.803 1.303 48.762 5.662
+```
+
+The reinsurer's price depends strongly on the distortion. The cover protects
+only against the one worst year, so the risk loads are in the tail: a CCoC
+prices it at 7.609 (a margin of 4.109, more than the expected loss of 3.5), and
+a dual power at 5.415. Which one is the right yardstick for the reinsurer's
+price, or for the buyer's willingness to pay, is the question of the
+monograph's chapter 6. The method's contribution is that the answer is on one
+page for every yardstick. The two margins always add up to the book's 6.965,
+so a dearer cover (CCoC) leaves the retained book less margin (2.857) than a
+cheaper one (the dual power leaves 5.051).
+
+## 7. A more realistic example
+
+The last section of the monograph's chapter 9 builds a book from frequency and
+severity: three units, Auto, GL and WC, with lognormal severities limited per
+claim and a mixed-Poisson (gamma-mixed) count each, compounded by FFT, then
+tied together by Iman-Conover rank correlation and priced at a 99.5% standard
+and a 15% return. In R a unit is `discretize()` by the local moment method,
+`map_grid()` for the per-claim limit, `mixed_poisson_count()` and
+`compound_distribution(..., method = "fft")`, whose grid keeps the FFT's
+checks in its `report`:
+
+```{r}
+compound_unit <- function(loss, limit, mean, cv, mixing_cv, step, points) {
+  # A unit: expected loss, a per-claim limit, a lognormal, a gamma mixed count.
+  severity <- discretize(lognormal_from_mean_cv(mean, cv), step, points, "local_moment")
+  claim <- map_grid(severity, function(x) pmin(x, limit))$grid
+  claims <- loss / mean(claim)
+  annual <- compound_distribution(mixed_poisson_count(claims, mixing_cv), claim, points,
+                                  method = "fft")
+  list(claims = claims, claim_mean = mean(claim), annual = annual, report = annual@report)
+}
+
+UNITS <- list(
+  Auto = list(5000, 5000, 50, 2.0, 0.2, 0.25, 2^16),
+  GL = list(3000, 2500, 75, 3.0, 0.3, 0.25, 2^16),
+  WC = list(7000, 25000, 5, 10.0, 0.25, 0.25, 2^17)
+)
+annual <- list()
+cat(sprintf("%-5s %8s %11s %9s %7s %10s\n", "", "claims", "claim mean", "agg mean",
+            "agg cv", "tail mass"))
+for (name in names(UNITS)) {
+  unit <- do.call(compound_unit, UNITS[[name]])
+  a <- annual[[name]] <- unit$annual
+  cat(sprintf("%-5s %8.1f %11.3f %9.1f %7.3f %10.1e\n", name, unit$claims, unit$claim_mean,
+              mean(a), sqrt(variance(a)) / mean(a), unit$report$tail_mass))
+}
+```
+
+```text
+        claims  claim mean  agg mean  agg cv  tail mass
+Auto     100.0      49.982    5000.0   0.298    2.3e-06
+GL        41.0      73.156    3000.0   0.502    4.4e-07
+WC      1401.1       4.996    6999.7   0.349    1.6e-04
+```
+
+The monograph prints (Table 9.11) 100.0, 41.008 and 1,401.1 claims, mean
+claims of 49.982, 73.156 and 4.996 (4.945 as achieved on its grid), and
+aggregate CVs of 0.298, 0.502 and 0.349. The numbers agree. Unit WC drives the
+tail, with a thick severity and a high limit.
+
+Iman-Conover pairs the units' draws so that their rank correlations match a
+target without changing any unit's distribution. Draw each unit at evenly
+spaced quantiles, tie them with the monograph's matrix (Table 9.12) by
+`iman_conover()` on a `predictive_distribution()` with one component per
+unit, and build a portfolio from the result with `capital_portfolio()`, which
+reads each simulation as an equally likely scenario (Python's
+`Portfolio.from_predictive`):
+
+```{r}
+TARGET <- rbind(c(1.0, 0.5, 0.4), c(0.5, 1.0, 0.1), c(0.4, 0.1, 1.0))
+
+correlated_portfolio <- function(n_sims, seed) {
+  q <- (seq_len(n_sims) - 0.5) / n_sims
+  draws <- sapply(annual, function(g) quantile(g, q)) # n_sims rows, one column per unit
+  keys <- data.frame(unit = names(annual))
+  joint <- iman_conover(predictive_distribution(draws, keys), TARGET, seed)
+  capital_portfolio(joint)
+}
+
+book <- correlated_portfolio(50000, 4817)
+cat("units", book@units, " means", sprintf("%.1f", book@expected), "\n")
+```
+
+```text
+units Auto GL WC  means 5000.0 3000.0 6999.7
+```
+
+Now calibrate the five distortions to a 15% return at the 99.5% standard
+(Table 9.16) and price each unit (Table 9.17):
+
+```{r}
+BOOK_PARAMS <- c(ccoc = 0.150, ph = 0.654, wang = 0.437, dual = 1.756, tvar = 0.299)
+priced_book <- list()
+cat(sprintf("assets at 99.5%%: %s   (book 28,898)\n", comma(assets_at(book, 0.995))))
+for (family in FAMILIES) {
+  d <- calibrate_portfolio(book, family, p = 0.995, return_on_capital = 0.15)
+  pb <- priced_book[[family]] <- natural_price(book, d, p = 0.995)
+  cells <- paste(sprintf("%8.1f", units_only(pb)$premium), collapse = " ")
+  cat(sprintf("%-5s parameter %.3f (book %.3f)   premium Auto, GL, WC: %s   total %s\n",
+              family, d@parameters, BOOK_PARAMS[[family]], cells,
+              comma(pb$premium[pb$unit == "total"], 1)))
+}
+```
+
+```text
+assets at 99.5%: 28,448   (book 28,898)
+ccoc  parameter 0.150 (book 0.150)   premium Auto, GL, WC:   5351.0   3230.1   8154.6   total 16,735.8
+ph    parameter 0.654 (book 0.654)   premium Auto, GL, WC:   5483.4   3377.8   7874.6   total 16,735.8
+wang  parameter 0.434 (book 0.437)   premium Auto, GL, WC:   5511.0   3405.1   7819.6   total 16,735.8
+dual  parameter 1.740 (book 1.756)   premium Auto, GL, WC:   5529.0   3421.1   7785.6   total 16,735.8
+tvar  parameter 0.291 (book 0.299)   premium Auto, GL, WC:   5536.0   3423.9   7776.0   total 16,735.8
+```
+
+The parameters are within about 0.01 of Table 9.16 (the PH parameter is equal;
+the TVaR level is 0.291 against 0.299), and the total premium of about 16,740
+is close to the monograph's 16,800.3. They are not expected to agree exactly.
+The monograph's sample has 1,000 simulations, so its 99.5% quantile rests on
+five points, while the draws here are 50,000 and evenly spaced. How much a
+sample of 1,000 moves the answer is easy to see by running the same
+calculation on samples of different sizes:
+
+```{r}
+for (run in list(c(1000, 11), c(1000, 12), c(10000, 11), c(50000, 11))) {
+  pf <- correlated_portfolio(run[1], run[2])
+  d <- calibrate_portfolio(pf, "ccoc", p = 0.995, return_on_capital = 0.15)
+  p <- natural_price(pf, d, p = 0.995)
+  tot <- p[p$unit == "total", ]
+  cat(sprintf("%6d sims, seed %d: assets %9s  premium %9s\n", run[1], run[2],
+              comma(tot$assets), comma(tot$premium, 1)))
+}
+```
+
+```text
+  1000 sims, seed 11: assets    27,850  premium  16,657.6
+  1000 sims, seed 12: assets    29,368  premium  16,855.1
+ 10000 sims, seed 11: assets    28,692  premium  16,771.1
+ 50000 sims, seed 11: assets    28,520  premium  16,744.9
+```
+
+The premium moves by a percent or two between two samples of 1,000 and settles
+as the sample grows, so numbers from a small sample are not worth quoting to
+four digits. For more units, more events and a real model, the monograph's
+advice is the same: more simulations, and a capital standard you can defend.
+
+The seeded samples are the same in R and Python: `iman_conover()` runs the
+same Rust code from the same seed, so these four lines and the table above
+equal the Python guide's. One number needs care: the second sample's assets
+are 29,368.5 exactly, and the `comma()` helper of the setup chunk rounds that
+half to even, as Python does. R's `sprintf("%.0f", 29368.5)` prints 29369 on
+Windows and 29368 on Linux.
+
+## 8. What this guide leaves out
+
+- **Chapters 1 and 2** (the charter of a capital model, business operations,
+  reinsurance, asset risk, the economic scenario generator, accounting): the
+  organisation around the model, with no calculation to reproduce.
+- **Chapter 5's** new business pricing, mergers and acquisitions and portfolio
+  optimization, and **chapter 6's** selection of a distortion from a range.
+  The distortions and the natural allocation they need are here; the decisions
+  built on them are the monograph's to explain.
+- **Section 8.4**, Bodoff's layer capital allocation, is available as
+  `bodoff_allocation()`; the monograph gives it as a comparison and no figures
+  to check against.
+- **Capital by unit under CCoC and PH** (section 5): version dependent, see the
+  note there.
+
+Beside the Python package, the R package lacks two functions this guide uses:
+a portfolio's conditional expectations by unit (Python's
+`Portfolio.kappa(unit)`), which section 1 computes from the rows with
+`tapply()`, and a portfolio's assets at a probability (Python's
+`Portfolio.assets(p)`), which sections 2 and 7 read from `natural_price()`'s
+`"total"` row.
+
+Where to go next (these guides are written in Python, and the R functions
+named above do the same work):
+[Risk loads and distortions](risk-loads-and-distortions.md) for which
+distortion to use and how to calibrate it to a quote,
+[Aggregate distributions](aggregate-distributions.md) for the compound
+distributions of section 7, and
+[prospicio for aggregate users](prospicio-for-aggregate-users.md) for the
+package behind the monograph's code.
