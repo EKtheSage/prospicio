@@ -141,4 +141,4 @@
   (`rate_by_frequency`), with ALAE pro rata, on top of the capped loss,
   or in the severity (`Alae`), kept policy by policy so a tagged segment
   can be left out. Clark's workers compensation example reproduces
-  exactly (13,695, 3.42%).
+  exactly (13,695, 3.42%) (#312).
