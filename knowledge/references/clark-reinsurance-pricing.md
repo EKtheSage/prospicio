@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Clark's Basics of Reinsurance Pricing
-description: The CAS study note behind prospicio_pricing::experience; its per-risk experience rating example rounds trend factors to three decimals and trended losses to the dollar, counts days over 365.25, develops each year's layer total, and totals the loss cost as a ratio of sums.
+description: The CAS study note behind prospicio_pricing::experience and the planned casualty exposure rater; its per-risk experience rating example rounds trend factors to three decimals and trended losses to the dollar, counts days over 365.25, develops each year's layer total, and totals the loss cost as a ratio of sums; its casualty exposure section prints one numeric example, for workers compensation by excess loss factors, and its liability formulas without numbers.
 resource: https://www.casact.org/sites/default/files/2021-03/8_Clark.pdf
 tags: [pricing, reinsurance, experience-rating, burning-cost, parity]
 status: stable
@@ -64,3 +64,27 @@ moved by hand.[^clark]
 [^clark]: Clark, Basics of Reinsurance Pricing.
 [^tests]: `validation/tests/pricing.rs`, module `clark_experience`.
 [^dev]: `validation/tests/pricing.rs`, module `claim_development`.
+
+# The casualty exposure section
+
+Section 3A(b) prints the liability exposure factor for a primary policy,
+the same with ALAE included in the treaty's loss (the attachment and
+limit divided by `1 + e` before they are capped at the policy limit), and,
+in 3B(a), the factor for an umbrella policy over an underlying limit. None
+has a numeric example: its truncated Pareto (`B`, `Q`, `P`, `S`, `T`) and
+mixed exponential severities have no printed parameters, and its two
+illustrations (an umbrella 1M xs 1M under a 500K xs 500K treaty, and a 1M
+limit with an ALAE loading of 1.5 leaving a treaty at 1.5M unexposed) are
+symbolic.[^clark]
+
+Its one numeric example is workers compensation: four state and hazard
+group rows with standard premium, ELR and ELFs at 250,000 and 1,000,000,
+for a 750,000 xs 250,000 treaty. Factor `ELF(250K) − ELF(1M)` (0.024,
+0.032, 0.050, 0.065), treaty losses premium × ELR × factor (1,680, 2,240,
+4,250, 5,525), 13,695 in total over 400,000 of premium, a 3.42% loss cost
+(13,695 / 400,000 = 3.4238%). The arithmetic reproduces exactly from the
+printed inputs (checked by hand 2026-10-17; a CI test follows with the
+rater, `docs/design/casualty-exposure.md`).[^clark]
+
+The umbrella's drop-down uses an aggregate excess factor `ϕ` defined only
+in the later section on aggregate distributions.[^clark]

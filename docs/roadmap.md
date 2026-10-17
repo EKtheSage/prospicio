@@ -172,7 +172,10 @@ what it is aiming for by v1.0.
     v0.6 pricing scope.
   - Log-log interpolation of tabulated exposure curves, where it keeps
     the curve concave.
-- **Next:** open.
+- **Next:** casualty exposure rating over a table of policies (attachment,
+  limit, share, premium, ELR), with a sweep over the Pareto alpha and
+  checks against the book's own experience
+  (`docs/design/casualty-exposure.md`, accepted 2026-10-17; PR 1 next).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)
