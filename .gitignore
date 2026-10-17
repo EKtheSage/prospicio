@@ -29,3 +29,7 @@ R/prospicio/src/rust/
 # Quarto renders of examples/*.qmd
 examples/*.html
 examples/*_files/
+
+# Source texts kept locally (copyrighted PDFs and Word files; never commit)
+knowledge/references/*.pdf
+knowledge/references/*.docx
