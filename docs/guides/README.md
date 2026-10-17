@@ -51,6 +51,8 @@ and sends you to the guide that goes deeper.
 | [`severity-and-frequency.md`](severity-and-frequency.md) | Choosing and fitting a severity and a claim count: lognormal, Pareto family, mixtures, censoring and truncation, and count families by dispersion |
 | [`aggregate-distributions.md`](aggregate-distributions.md) | The distribution of a year's total loss: FFT, Panjer, simulation or moments, the grid, and when each is exact, fast or unsafe |
 | [`prospicio-for-aggregate-users.md`](prospicio-for-aggregate-users.md) | The twenty-minute tour of Mildenhall's `aggregate` package run in prospicio: the same books, with both libraries' numbers side by side, a DecL-to-prospicio table and what prospicio does not have |
+| [`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md) | CAS Monograph 2 (Bahnemann), chapters 2, 5 and 6 reproduced: limited expected values, fits to grouped, censored and truncated data, excess severity and layers, the leveraging effect of inflation, increased limit factors with ALAE and risk loads, and straight, franchise and diminishing deductibles, with the monograph's printed numbers beside prospicio's |
+| [`distributions-for-actuaries-counts-aggregates.md`](distributions-for-actuaries-counts-aggregates.md) | CAS Monograph 2 (Bahnemann), chapters 3 and 4 and its aggregate limits reproduced: Poisson, mixed Poisson and negative binomial counts with contagion, aggregate moments and moment-matched approximations against Panjer's recursion, the FFT and simulation, and aggregate limits priced exactly and by the monograph's shifted gamma |
 
 **Reserving**
 
