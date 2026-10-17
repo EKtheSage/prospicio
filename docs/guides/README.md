@@ -56,6 +56,19 @@ and sends you to the guide that goes deeper.
 |---|---|
 | [`reserving-methods.md`](reserving-methods.md) | Which reserving method when: chain ladder, Mack, Bornhuetter-Ferguson, bootstraps, Bayesian models, tails and the one-year view, with the reserve's uncertainty as a distribution |
 
+## R versions
+
+[`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) is the
+R twin of `prospicio-for-aggregate-users.md`, as a Quarto document like the R
+twins in [`examples/`](../../examples/README.md): the same sections, models and
+numbers, with the R package. Each R chunk is followed by the text it prints,
+and `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R
+tests) runs every `.qmd` here and requires each chunk to print exactly that
+text. The `.qmd` files are not pages of the Python site. With the R package
+installed, render one with
+`quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
+all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
+
 Money in the guides is in millions of a synthetic currency, and every example is
 synthetic. The guides write about the library and do not change it; a gap found
 while writing one becomes an issue for the lane that owns the code

@@ -1,0 +1,625 @@
+---
+title: "prospicio for aggregate users: the twenty-minute tour"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+Use this guide if you already work in Stephen Mildenhall's Python package
+[`aggregate`](https://aggregate.readthedocs.io/) and want to know what the same
+work looks like in prospicio from R, or if you are new to both and want the
+collective risk model by running it. It follows the package's own
+"`aggregate` in Twenty Minutes" session (release 1.2.0), step by step, and
+prints prospicio's numbers beside the ones that documentation publishes, so you
+can see where the two agree to the last digit and where they differ by
+convention.
+
+This is the R twin of the Python guide
+[`prospicio-for-aggregate-users.md`](prospicio-for-aggregate-users.md): the
+same sections, the same models and the same numbers. The R package calls the
+same Rust code as the Python one, so the grids, quantiles and prices agree to
+every digit printed.
+
+Money here is in the units of that session (think thousands). Each R chunk is
+followed by the text it prints. `R/prospicio/tests/test-guides.R` runs the
+chunks in order and requires each one to print exactly that text, so a number
+below cannot go stale when the library changes. To render the page, install
+the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`) and
+run `quarto render docs/guides/prospicio-for-aggregate-users.qmd`.
+
+```{r}
+#| label: setup
+library(prospicio)
+
+# Thousands separators, as Python's {:,.0f}.
+comma <- function(x, digits = 0) formatC(x, format = "f", digits = digits, big.mark = ",")
+```
+
+## 1. The idea, and what is different
+
+Both libraries compute the distribution of a year's total loss
+`S = X_1 + ... + X_N` by discretizing the severity onto a grid, applying the
+count's probability generating function with a fast Fourier transform (FFT),
+and reading everything off the resulting probabilities. They differ in how you
+ask:
+
+| | `aggregate` | prospicio (R) |
+|---|---|---|
+| Model written as | a DecL program (a string): `agg Casualty 250 claims 1000 xs 0 sev lognorm 100 cv 1.5 poisson` | R objects: a count, a severity, a grid |
+| Grid | chosen for you (`bs`, `log2`), overridable with `hints{}` | `compound_auto()` sizes it for an unlimited severity; with a limit, a layer or a portfolio you give the step and the number of points |
+| Result | an `Aggregate` object holding DataFrames | a `grid_distribution` (the distribution) whose `report` holds the checks |
+| Reinsurance | clauses in the program (`occurrence net of ...`) | `xol_layer()` and `reinsurance_tower()` applied to the grid with `tower_on_grid()` |
+| Library of named examples | the recipe base (`build.recipes`) | none; the guides and notebooks are the examples |
+
+Two habits carry over unchanged. **Validate the gross distribution before you
+reinsure it**, because the check compares the grid with a closed form that
+disappears once a cover is applied. And **an FFT answer is deterministic**: the
+same inputs give the same digits every run.
+
+The rest of this guide is the tour. Section 12 collects the DecL clauses in one
+table, and section 13 lists what prospicio does not have.
+
+## 2. Exact and discrete: the dice
+
+`aggregate`'s first example is `agg Eg1 dfreq [1:5] dsev [1:3]`, a count of 1 to
+5 and a severity of 1 to 3, all equally likely. In prospicio an empirical count
+is `empirical_count()` (probabilities for 0, 1, 2, ...) and an empirical
+severity is a `grid_distribution()` with step 1. `compound_distribution()`
+compounds them; its default method is Panjer's recursion, so ask for the FFT.
+R indexes from 1, so the probability of a total of `k` is `probs[k + 1]`.
+
+```{r}
+count <- empirical_count(c(0, rep(1 / 5, 5)))
+severity <- grid_distribution(1, c(0, rep(1 / 3, 3)))
+eg1 <- compound_distribution(count, severity, 16, method = "fft")
+cat(sprintf("mean %.4f, sd %.4f\n", mean(eg1), sqrt(variance(eg1))))
+cat(sprintf("pmf(1) %.6f = 1/15, pmf(15) %.8f = 1/1215\n", eg1@probs[2], eg1@probs[16]))
+cat(sprintf("cdf(5) %.6f\n", cdf(eg1, 5)))
+```
+
+```text
+mean 6.0000, sd 3.1623
+pmf(1) 0.066667 = 1/15, pmf(15) 0.00082305 = 1/1215
+cdf(5) 0.465021
+```
+
+The probability of the smallest outcome is one claim of size one,
+`1/5 * 1/3`, and of the largest five claims of size three,
+`1/5 * (1/3)^5`; the grid returns both exactly. For a discrete severity on a
+grid the method is exact, so there is nothing to validate.
+
+## 3. The casualty book
+
+The session's main example is a book of 250 claims with lognormal severity of
+mean 100 and coefficient of variation (CV) 1.5, limited to 1,000 per claim:
+
+```
+agg Casualty 250 claims 1000 xs 0 sev lognorm 100 cv 1.5 poisson
+```
+
+prospicio has no string to parse; the same statement is a few lines.
+`discretize()` puts the severity on a grid, the limit is a mapping on the
+grid (`map_grid()` keeps the mean exactly), the count is a `poisson_count()`,
+and `compound_distribution()` compounds them. The step of 1 and `2^16` points
+are what `aggregate` reports using for this book.
+
+```{r}
+STEP <- 1
+POINTS <- 2^16
+
+# The severity capped at limit, on a grid: `limit xs 0`.
+limited_severity <- function(severity, limit, step = STEP, points = POINTS) {
+  grid <- discretize(severity, step, points, method = "local_moment")
+  map_grid(grid, function(x) min(x, limit))$grid
+}
+
+claim <- limited_severity(lognormal_from_mean_cv(100, 1.5), 1000)
+casualty <- compound_distribution(poisson_count(250), claim, POINTS, method = "fft")
+cat(sprintf("claim mean %.3f\n", mean(claim)))
+cat(sprintf("annual mean %.1f, sd %.1f\n", mean(casualty), sqrt(variance(casualty))))
+p <- c(0.01, 0.5, 0.99, 0.999)
+print(setNames(round(quantile(casualty, p)), p))
+```
+
+```text
+claim mean 98.137
+annual mean 24534.1, sd 2561.7
+ 0.01   0.5  0.99 0.999 
+18954 24449 30862 33170 
+```
+
+For comparison, `aggregate` 1.2.0 prints a mean claim of 98.137, an annual mean
+of 24,534, a standard deviation of 2,561.7, a 1% quantile of 18,954, a median of
+24,449 and a 99% quantile of 30,862, and the numbers above agree to the
+digits shown. The 99.9% quantile that the session's last section calls 33,169
+is compared in section 9.
+
+## 4. A vocabulary of severities
+
+`aggregate` takes any `scipy.stats` family by mean and CV, and mixtures by
+weights. prospicio's continuous families have R constructors
+(`lognormal()`, `gamma_distribution()`, `weibull_distribution()`, `pareto()`,
+`burr_distribution()` and others, with `lognormal_from_mean_cv()` and
+`gamma_from_mean_cv()` by mean and CV), and a mixture of limited severities is
+the weighted sum of their grids. The session's three-component book,
+
+```
+agg Mix 100 claims 2000 xs 0 sev lognorm [50 100 200] cv [1 1.5 2] wts [.5 .3 .2] poisson
+```
+
+is a weighted average of three limited, discretized lognormals:
+
+```{r}
+# A mixture of limited severities, from weights and severities.
+mixed_severity <- function(weights, severities, limit, step = STEP, points = POINTS) {
+  probs <- numeric(points)
+  for (i in seq_along(weights)) {
+    p <- limited_severity(severities[[i]], limit, step, points)@probs # ends at the limit
+    probs[seq_along(p)] <- probs[seq_along(p)] + weights[i] * p
+  }
+  grid_distribution(step, probs)
+}
+
+mix_claim <- mixed_severity(
+  c(0.5, 0.3, 0.2),
+  list(
+    lognormal_from_mean_cv(50, 1.0),
+    lognormal_from_mean_cv(100, 1.5),
+    lognormal_from_mean_cv(200, 2.0)
+  ),
+  2000
+)
+mix <- compound_distribution(poisson_count(100), mix_claim, POINTS, method = "fft")
+cat(sprintf("claim mean %.3f\n", mean(mix_claim)))
+cat(sprintf("annual mean %.1f, sd %.1f\n", mean(mix), sqrt(variance(mix))))
+cat(sprintf("1%%: %.0f, median %.0f, 99%%: %.0f\n",
+            quantile(mix, 0.01), quantile(mix, 0.5), quantile(mix, 0.99)))
+```
+
+```text
+claim mean 92.996
+annual mean 9299.6, sd 1894.5
+1%: 5638, median 9130, 99%: 14423
+```
+
+`aggregate` prints a mean claim of 92.996, an annual mean of 9,299.6, a standard
+deviation of 1,894.5, and 5,638, 9,130 and 14,423 for the 1%, median and 99%.
+
+Tail shape is a modelling choice with a visible price. Two books with the same
+mean and CV, one with a lognormal severity and one with a gamma, differ at the
+99.9% level; the quickest way to see by how much is to run both:
+
+```{r}
+families <- list(
+  lognormal = lognormal_from_mean_cv(100, 2),
+  gamma = gamma_from_mean_cv(100, 2)
+)
+for (name in names(families)) {
+  tail_book <- compound_distribution(
+    poisson_count(50), limited_severity(families[[name]], 20000), POINTS, method = "fft"
+  )
+  cat(sprintf("%-10s mean %.0f  99.9%% %s\n", name, mean(tail_book), comma(quantile(tail_book, 0.999))))
+}
+```
+
+```text
+lognormal  mean 5000  99.9% 13,979
+gamma      mean 5000  99.9% 11,166
+```
+
+The session publishes 13,980 for the lognormal and 11,166 for the gamma, at a
+CV of 2 and 50 claims. The digits here can differ by the cap, but the ordering
+is the point: the lognormal's 99.9% sits well above the gamma's.
+
+## 5. Frequency: Poisson is an opinion
+
+A Poisson count says years differ only by chance. If they also differ for
+reasons shared across claims (weather, inflation, the legal climate) the count
+is over-dispersed. `mixed gamma 0.4` in DecL multiplies the Poisson rate by a
+gamma factor of mean 1 and CV 0.4. In prospicio it is `mixed_poisson_count()`:
+
+```{r}
+book <- limited_severity(lognormal_from_mean_cv(100, 1.5), 1000)
+poisson <- compound_distribution(poisson_count(100), book, POINTS, method = "fft")
+mixed <- compound_distribution(mixed_poisson_count(100, 0.4), book, POINTS, method = "fft")
+agg_cv <- function(g) sqrt(variance(g)) / mean(g)
+cat(sprintf("%-12s %10s %12s\n", "", "Poisson", "mixed gamma"))
+cat(sprintf("%-12s %10.3f %12.3f\n", "agg CV", agg_cv(poisson), agg_cv(mixed)))
+cat(sprintf("%-12s %10s %12s\n", "99.5% VaR",
+            comma(quantile(poisson, 0.995)), comma(quantile(mixed, 0.995))))
+```
+
+```text
+                Poisson  mixed gamma
+agg CV            0.165        0.433
+99.5% VaR        14,456       23,914
+```
+
+`aggregate` prints a CV of 0.165 against 0.433 and a 99.5% of 14,456 against
+23,914. The mean is the same, and the capital is about two-thirds higher. Other
+mixing families, zero-modified and zero-truncated counts and the logarithmic
+are count constructors too (`zero_truncated_count()`, `zero_modified_count()`,
+`logarithmic_count()`, and `mixed_poisson_count()` with
+`mixing = "inverse_gaussian"`); the Python guide
+[Severity and frequency](severity-and-frequency.md) explains when to use which.
+
+## 6. Trust, but verify
+
+`aggregate` recommends a cycle: specify, update, validate, adjust, use
+(Mildenhall's SUVA-use). Its validation compares moments computed exactly from
+the specification with moments estimated from the FFT output and reports "not
+unreasonable". prospicio's grid carries the same audit in its `report`
+property, and the closed-form side is a few lines:
+
+```{r}
+n <- 250
+exact_mean <- n * mean(claim)
+exact_var <- n * (variance(claim) + mean(claim)^2) # Poisson: n * E[X^2]
+report <- casualty@report
+cat(sprintf("mean: exact %.4f, grid %.4f\n", exact_mean, mean(casualty)))
+cat(sprintf("variance: exact %.1f, grid %.1f\n", exact_var, variance(casualty)))
+cat(sprintf("aliasing error below 1e-15: %s, tail mass %.1e\n",
+            report$aliasing_error < 1e-15, report$tail_mass))
+```
+
+```text
+mean: exact 24534.1289, grid 24534.1289
+variance: exact 6562423.0, grid 6562423.0
+aliasing error below 1e-15: TRUE, tail mass 0.0e+00
+```
+
+For a continuous severity the gap is discretization error, controlled by the
+step. The aliasing error says whether the FFT buffer was long enough, and the
+tail mass is the probability that fell off the end of the grid. Read both every
+time, as the Python guide [Aggregate distributions](aggregate-distributions.md)
+explains. Here the aliasing error is rounding noise, below `1e-18`, and its
+digits change with the platform, so the check prints only that it is small.
+
+## 7. Limits, attachments and increased limits factors
+
+Policy terms are part of the language in DecL. Here they are a mapping on the
+grid, and an increased-limits-factor table is a loop over the limit. The
+session's loop, `100 claims lim xs 0 sev lognorm 100 cv 1.5`:
+
+```{r}
+base_grid <- discretize(lognormal_from_mean_cv(100, 1.5), STEP, POINTS, method = "local_moment")
+base <- NULL
+for (limit in c(500, 1000, 2000, 5000)) {
+  capped <- map_grid(base_grid, function(x) min(x, limit))$grid
+  year <- compound_distribution(poisson_count(100), capped, POINTS, method = "fft")
+  if (is.null(base)) base <- mean(year)
+  cat(sprintf("limit %6s   E[S] %9s   ILF %.3f\n", comma(limit), comma(mean(year)), mean(year) / base))
+}
+```
+
+```text
+limit    500   E[S]     9,334   ILF 1.000
+limit  1,000   E[S]     9,814   ILF 1.051
+limit  2,000   E[S]     9,963   ILF 1.067
+limit  5,000   E[S]     9,997   ILF 1.071
+```
+
+`aggregate` prints 9,334, 9,814, 9,963 and 9,997, with factors 1.000, 1.051,
+1.067 and 1.071.
+
+A layer that attaches above zero, `300 xs 200`, has two readings in DecL. The
+default is the severity conditional on exceeding the attachment, with the
+claim count thinned by the probability of exceeding it. A trailing `!` keeps
+every claim, most of them paying nothing. For a Poisson count the two give the
+same annual distribution, because thinning a Poisson count gives a Poisson
+count with a smaller mean. In prospicio you take the second route and keep the
+full count; the check below builds the first route by hand:
+
+```{r}
+full <- discretize(lognormal_from_mean_cv(100, 1.5), STEP, POINTS, method = "local_moment")
+layered <- map_grid(full, function(x) min(max(x - 200, 0), 300))$grid # 300 xs 200
+p0 <- layered@probs[1]
+conditional <- grid_distribution(STEP, c(0, layered@probs[-1] / (1 - p0)))
+unconditional <- compound_distribution(poisson_count(40), layered, POINTS, method = "fft")
+thinned <- compound_distribution(poisson_count(40 * (1 - p0)), conditional, POINTS, method = "fft")
+cat(sprintf("claims reaching the layer: %.3f of 40\n", 40 * (1 - p0)))
+cat(sprintf("mean %.4f vs %.4f\n", mean(unconditional), mean(thinned)))
+cat(sprintf("99%% %.0f vs %.0f\n", quantile(unconditional, 0.99), quantile(thinned, 0.99)))
+```
+
+```text
+claims reaching the layer: 4.732 of 40
+mean 631.2392 vs 631.2392
+99% 1663 vs 1663
+```
+
+With a count that is not closed under thinning (a binomial or a fixed count)
+the two readings differ, and the conditional one needs the thinned count.
+
+## 8. Reinsurance, gross to net
+
+The session's `Book`, ten claims limited to 1,000 with lognormal severity of
+mean 100 and CV 2, is reinsured per occurrence by half of 300 xs 200 and all of
+500 xs 500:
+
+```
+agg Book 10 claims 1000 xs 0 sev lognorm 100 cv 2
+    occurrence net of 50% po 300 xs 200 and 100% po 500 xs 500 poisson
+```
+
+An `xol_layer()` is a limit, an attachment and a placed share; a
+`reinsurance_tower()` holds the layers, and `tower_on_grid()` applies them to
+the grid and returns the ceded loss of each and, when there are no annual
+terms, the net.
+
+```{r}
+book_claim <- limited_severity(lognormal_from_mean_cv(100, 2), 1000, STEP, 2^14)
+programme <- reinsurance_tower(list(
+  xol_layer("half of 300 xs 200", 300, 200, share = 0.5),
+  xol_layer("500 xs 500", 500, 500)
+))
+cover <- tower_on_grid(programme, poisson_count(10), book_claim, 2^14)
+gross <- compound_distribution(poisson_count(10), book_claim, 2^14, method = "fft")
+ceded_mean <- sum(vapply(cover$ceded, mean, numeric(1)))
+cat(sprintf("gross mean %.2f, ceded %.2f, net %.2f\n", mean(gross), ceded_mean, mean(cover$net)))
+cat(sprintf("net sd %.2f, net 99%% %.1f\n", sqrt(variance(cover$net)), quantile(cover$net, 0.99)))
+for (name in names(cover$ceded)) {
+  ceded <- cover$ceded[[name]]
+  cat(sprintf("%-20s mean %7.3f  sd %7.3f\n", name, mean(ceded), sqrt(variance(ceded))))
+}
+```
+
+```text
+gross mean 952.70, ceded 161.52, net 791.18
+net sd 369.93, net 99% 1816.0
+half of 300 xs 200   mean  88.497  sd 100.878
+500 xs 500           mean  73.019  sd 168.066
+```
+
+`aggregate` prints a gross mean of 952.7, a ceded mean of 161.52, and a net mean
+of 791.18 with a standard deviation of 369.93. The means are exact on the grid;
+`cover$on_points` says whether every recovery landed on a grid point, and when
+it is `FALSE` the shapes can smear by up to one step while the means stay exact.
+
+An annual cover is an `aggregate_stop_loss()`, applied to the year's total. The
+session's stop loss attaches at 30,000 on a book averaging 9,814, which never
+pays; an attachment inside the distribution makes the point:
+
+```{r}
+year <- compound_distribution(poisson_count(100), book, POINTS, method = "fft")
+stop <- tower_on_grid(
+  reinsurance_tower(list(aggregate_stop_loss("5,000 xs 10,000", 5000, 10000))),
+  poisson_count(100), book, POINTS
+)
+cat(sprintf("gross mean %.1f, 99%% %.0f\n", mean(year), quantile(year, 0.99)))
+cat(sprintf("stop loss pays %.2f on average\n", mean(stop$ceded[[1]])))
+cat(sprintf("net mean %.1f, net 99%% %.0f\n", mean(stop$net), quantile(stop$net, 0.99)))
+```
+
+```text
+gross mean 9813.7, 99% 13949
+stop loss pays 558.87 on average
+net mean 9254.8, net 99% 10000
+```
+
+Per-layer statistics of every kind (how often a layer is hit, loss on line,
+ceded and net moments by view) and the contract terms are in the Python guides
+[What a reinsurance price is](reinsurance-price.md) and
+[Experience and exposure rating](experience-and-exposure-rating.md); the R
+package has them as `occurrence_layer_statistics()`,
+`aggregate_layer_statistics()` and the `with_*()` contract terms.
+
+## 9. The head to head: FFT against Monte Carlo
+
+The session's strongest argument is a comparison. Simulate the casualty book
+five times at 20,000 years each and read the 99.9% quantile.
+`simulate_events()` draws each year from its own stream of the generator, so
+the same seed gives the same years in R, Python and Rust:
+
+```{r}
+exact <- quantile(casualty, 0.999)
+cat(sprintf("FFT 99.9%%: %s\n", comma(exact)))
+for (seed in c(4817, 2531, 9026, 311, 7742)) {
+  totals <- total(simulate_events(poisson_count(250), claim, 20000, seed))
+  estimate <- quantile(totals, 0.999)
+  cat(sprintf("simulation, seed %d: %s  (%+.2f%%)\n", seed, comma(estimate), 100 * (estimate / exact - 1)))
+}
+```
+
+```text
+FFT 99.9%: 33,170
+simulation, seed 4817: 33,145  (-0.08%)
+simulation, seed 2531: 33,146  (-0.07%)
+simulation, seed 9026: 33,214  (+0.13%)
+simulation, seed 311: 32,909  (-0.79%)
+simulation, seed 7742: 32,882  (-0.87%)
+```
+
+`aggregate` prints 33,169 for the FFT. The unit of difference is the quantile
+convention where the distribution function crosses 0.999 inside a bucket; at a
+step of 1 it is the resolution of the answer. Each simulated estimate rests on
+the twenty largest of 20,000 years, so it moves by a percent or so from run to
+run, and that matters when it sets capital. The FFT value is the same every run,
+and refreshing it after a change to a limit or a treaty costs the same.
+Simulation is still the tool when events need an order, a date or a sum insured,
+or when dependence cannot be put on a grid (see the Python guide
+[Aggregate distributions](aggregate-distributions.md)).
+
+## 10. Portfolios, capital and a first price
+
+A `port` in DecL convolves independent units on one grid. prospicio's
+equivalent is `capital_portfolio()` given a named list of grids of the same
+step, which it convolves by FFT as independent units (Python's
+`Portfolio.from_independent`). The session's book has a property and a
+casualty unit, the casualty count mixed by a gamma of CV 0.4:
+
+```
+port Book
+    agg Property 80 claims 500 xs 0 sev lognorm 50 cv 1.2 poisson
+    agg Casualty 20 claims 2000 xs 0 sev lognorm 250 cv 2.0 mixed gamma 0.4
+```
+
+The R package has no function for a portfolio's assets at a probability
+(Python's `Portfolio.assets(p)`). `natural_price()` with `p` sets the assets
+at the total's lower `p` quantile and reports them in its `"total"` row, so
+this chunk prices the book at once and reads the portfolio's 99.6% VaR from
+that row:
+
+```{r}
+property_unit <- compound_distribution(
+  poisson_count(80), limited_severity(lognormal_from_mean_cv(50, 1.2), 500), POINTS,
+  method = "fft"
+)
+casualty_unit <- compound_distribution(
+  mixed_poisson_count(20, 0.4), limited_severity(lognormal_from_mean_cv(250, 2.0), 2000), POINTS,
+  method = "fft"
+)
+book_port <- capital_portfolio(list(Property = property_unit, Casualty = casualty_unit))
+priced <- natural_price(book_port, distortion("ccoc", 0.10), p = 0.996)
+total_row <- priced[priced$unit == "total", ]
+stand_alone <- quantile(property_unit, 0.996) + quantile(casualty_unit, 0.996)
+cat(sprintf("99.6%% VaR, units alone summed %s\n", comma(stand_alone)))
+cat(sprintf("99.6%% VaR, portfolio         %s\n", comma(total_row$assets)))
+```
+
+```text
+99.6% VaR, units alone summed 19,989
+99.6% VaR, portfolio         18,137
+```
+
+`aggregate` prints 19,989 and 18,137. The gap is the diversification benefit.
+The session then asks for a price that backs capital with the 99.6% VaR and
+targets a 10% return on it (`price_pentagon`). The **pentagon** is loss `L`,
+margin `M`, premium `P = L + M`, capital `Q` and assets `a = P + Q`, with the
+ratios between them. A constant cost of capital of 10% on assets at the 99.6%
+quantile prices the book (`distortion("ccoc", 0.10)` above), and `pentagon()`
+completes the identity from three of its quantities:
+
+```{r}
+pg <- pentagon(loss = total_row$loss, assets = total_row$assets, return_on_capital = 0.10)
+cat(sprintf("L %.1f  M %.2f  P %.1f  Q %.1f  a %s\n",
+            pg[["loss"]], pg[["margin"]], pg[["premium"]], pg[["capital"]], comma(pg[["assets"]])))
+cat(sprintf("loss ratio %.5f, premium to capital %.4f\n", pg[["loss_ratio"]], pg[["premium_to_capital"]]))
+```
+
+```text
+L 8639.7  M 863.39  P 9503.1  Q 8633.9  a 18,137
+loss ratio 0.90915, premium to capital 1.1007
+```
+
+`aggregate` prints `L` 8,639.7, `M` 863.39, `P` 9,503.1, `Q` 8,633.9, assets
+18,137, a loss ratio of 0.90915 and a premium to capital of 1.1007. Note that
+`L` is the expected loss **capped at the assets** (limited liability), a little
+under the uncapped mean:
+
+```{r}
+cat(sprintf("uncapped mean %.1f, capped at assets %.1f\n",
+            mean(property_unit) + mean(casualty_unit), total_row$loss))
+units <- priced[priced$unit != "total", ]
+for (i in seq_len(nrow(units))) {
+  cat(sprintf("%-9s loss %8.1f  premium %8.1f  capital %8.1f\n",
+              units$unit[i], units$loss[i], units$premium[i], units$capital[i]))
+}
+```
+
+```text
+uncapped mean 8646.1, capped at assets 8639.7
+Property  loss   3972.3  premium   3969.3  capital    -30.3
+Casualty  loss   4667.4  premium   5533.8  capital   8664.2
+```
+
+The natural allocation splits premium and capital between the units. Which
+distortion to choose, how to calibrate it to a quote (`calibrate_portfolio()`
+in R), and how to allocate are in the Python guide
+[Risk loads and distortions](risk-loads-and-distortions.md).
+
+## 11. Everything is an object you can read
+
+`aggregate` returns pandas DataFrames and matplotlib figures. prospicio's R
+objects hold plain R vectors and data frames: a grid's probabilities are the
+numeric vector `@probs`, and `natural_price()` returns a `data.frame`, so a
+table or a `ggplot2` chart is one line away:
+
+```{r}
+print(round(casualty@probs[20001:20003], 6)) # losses of 20,000 to 20,002
+cat(sprintf("F(20,000) %.6f\n", cdf(casualty, 20000)))
+```
+
+```text
+[1] 3.2e-05 3.2e-05 3.2e-05
+F(20,000) 0.031989
+```
+
+`aggregate` prints a probability of 0.000032 per unit near 20,000 and
+`F(20,000)` of 0.031989.
+
+## 12. DecL clauses and their prospicio equivalents
+
+| DecL | What it says | prospicio (R) |
+|---|---|---|
+| `250 claims` | expected claim count | the count's mean: `poisson_count(250)` |
+| `500 loss` | expected loss, count derived | `poisson_count(500 / mean(claim))` on the limited severity's mean |
+| `1000 prem at .65 lr` | premium and loss ratio | expected loss `1000 * 0.65`, then as `500 loss` |
+| `1000 xs 0` | per-claim limit | `map_grid(grid, function(x) min(x, 1000))$grid` |
+| `130 xs 20` | a layer, claims thinned | `map_grid(grid, function(x) min(max(x - 20, 0), 130))$grid` with the full count (section 7) |
+| `[10 20 30] claims [100 200 75] xs [0 50 75]` | a limit profile | one limited grid per limit, then `capital_portfolio()` on a list of grids or a weighted `grid_distribution()` |
+| `sev lognorm 100 cv 1.5` | severity by mean and CV | `lognormal_from_mean_cv(100, 1.5)`; `gamma_from_mean_cv()` |
+| `sev lognorm [50 100] cv [1 2] wts [.5 .5]` | a mixture | a weighted average of grids (section 4), or `mixture_distribution()` for a continuous severity |
+| `dsev [1 2 10] [.4 .4 .2]`, `dfreq [1:5]` | discrete outcomes | `grid_distribution(step, probs)`, `discrete_distribution()`, `empirical_count()` |
+| `poisson`, `negbin`, `binomial`, `geometric`, `fixed` | count families | `poisson_count()`, `negative_binomial_count()`, `binomial_count()`, `geometric_count()`, `fixed_count()` |
+| `mixed gamma 0.4` | mixed Poisson | `mixed_poisson_count(mean, 0.4)`; `mixing = "inverse_gaussian"` |
+| `zt`, `zm .5` | zero-truncated and zero-modified counts | `zero_truncated_count(base)`, `zero_modified_count(base, 0.5)` |
+| `occurrence net of 50% po 300 xs 200` | per-claim cover, net | `xol_layer(name, 300, 200, share = 0.5)` in a `reinsurance_tower()`, `tower_on_grid()`, `$net` |
+| `aggregate net of 5000 xs 10000` | annual cover | `aggregate_stop_loss(name, 5000, 10000)` |
+| `occurrence ceded to tower [10:50:10]` | a tower of layers | a `reinsurance_tower()` of `xol_layer()`s |
+| `reinstatements 1 free and 1 at 50%` | reinstatements | `xol_layer(..., reinstatements = 1)`, `reinstatement_rates = c(...)` |
+| `swing`, `slide`, `pc`, `corridor`, `deposit`, `rol`, `rate`, `cede` | contract terms | `with_swing_rating()`, `with_sliding_scale()`, `with_profit_commission()`, `with_loss_corridor()`, `with_deposit_premium()`, `with_rate_on_line()`, `with_premium_rate()`, `with_ceding_commission()` |
+| `approximate sgamma` | moment-matched aggregate | `moment_approximation(frequency, severity, "shifted_gamma")` |
+| `tweedie p mean dispersion` | a Tweedie aggregate | `tweedie()` |
+| `port ... agg ... agg ...` | independent units | `capital_portfolio(list(name = grid, ...))` |
+| `bivariate`, `clash` | two lines, one count | `fft_bivariate()`, `clash_model()` with `clash_aggregate()` |
+| `pnl`, `xpnl` | premium less loss | `pnl_ledger()`, `pnl_book()`, `pnl_program()` |
+| `distortion D ph 0.9` | a distortion | `distortion("proportional_hazard", 0.9)`; `"wang"`, `"ccoc"`, `"tvar"` and others |
+| `port.price(p, ROE)`, `price_pentagon` | capital-loaded price | `natural_price(port, distortion, p = ...)`, `pentagon()` |
+| `hints{bs=1/64; log2=16}` | the grid | the `step` and `points` arguments; `compound_auto(..., log2 = 16)` |
+
+## 13. Speed, and what prospicio does not have
+
+The R package runs the same Rust code as the Python package, so the Python
+guide's timings against `aggregate` (a release build 1.1 to 2.1 times faster
+end to end on this tour's workloads) describe the computation here too. They
+were not measured from R and are not checked by CI.
+
+Checked against the 1.2.0 documentation, prospicio lacks:
+
+- **A DecL front end and recipe base.** There is no string language, `build`
+  or `%%agg` cell magic, and no library of named programs to browse. Models
+  are R code.
+- **Automatic grids for a limited severity or a portfolio.**
+  `compound_auto()` sizes the grid for an unlimited severity; with a limit or
+  a portfolio you pick the step, and read `aliasing_error` and `tail_mass`
+  (section 6). There is no `sharpen`-style audit that re-runs a build to probe
+  the chosen bucket.
+- **Mixing shared across the units of a portfolio.** In `aggregate`, units
+  that share a `mixed` frequency share the mixing variable and are therefore
+  correlated. `capital_portfolio()` on a list of grids treats units as
+  independent; for two lines with one event count use `clash_model()` or
+  `fft_bivariate()`, and for more use simulation with a copula.
+- **Shifted and scaled severities in a distribution.** `10 * lognorm 1 + 20`
+  is a transformation on a grid here (`map_grid()`), which keeps the mean and
+  loses the continuous form.
+- **Exact rational compounds** (`nttagg`), the `cantor` severity, and the
+  exhibit and chart documents.
+
+Beside the Python package, the R package lacks one function this tour uses: a
+portfolio's assets at a probability (Python's `Portfolio.assets(p)`), which
+section 10 reads from `natural_price()`'s `"total"` row instead.
+
+Where to go next (these guides are written in Python, and the R functions
+named above do the same work): [Aggregate distributions](aggregate-distributions.md)
+for sizing grids and the engines' failure modes,
+[What a reinsurance price is](reinsurance-price.md) for the contract terms and
+the technical premium, and
+[Risk loads and distortions](risk-loads-and-distortions.md) for the pentagon
+and the pricing theory behind it.
