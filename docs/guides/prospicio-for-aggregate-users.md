@@ -230,13 +230,13 @@ exact_mean = n * claim.mean()
 exact_var = n * (claim.variance() + claim.mean() ** 2)  # Poisson: n * E[X^2]
 print(f"mean: exact {exact_mean:.4f}, grid {casualty.mean():.4f}")
 print(f"variance: exact {exact_var:.1f}, grid {casualty.variance():.1f}")
-print(f"aliasing error {report.aliasing_error:.1e}, tail mass {report.tail_mass:.1e}")
+print(f"aliasing error below 1e-15: {report.aliasing_error < 1e-15}, tail mass {report.tail_mass:.1e}")
 ```
 
 ```text
 mean: exact 24534.1289, grid 24534.1289
 variance: exact 6562423.0, grid 6562423.0
-aliasing error 8.5e-19, tail mass 0.0e+00
+aliasing error below 1e-15: True, tail mass 0.0e+00
 ```
 
 For a continuous severity the gap is discretization error, controlled by the
