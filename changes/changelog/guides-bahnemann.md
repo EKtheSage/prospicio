@@ -7,4 +7,5 @@
   leveraging effect of inflation, increased limit factors with ALAE and risk
   loads, deductibles) and `distributions-for-actuaries-counts-aggregates.md`
   (Poisson, mixed Poisson and negative binomial counts, contagion, moment
-  approximations against Panjer, the FFT and simulation, aggregate limits).
+  approximations against Panjer, the FFT and simulation, aggregate limits)
+  (#324).
