@@ -60,6 +60,7 @@ and sends you to the guide that goes deeper.
 | Guide | What it answers |
 |---|---|
 | [`reserving-methods.md`](reserving-methods.md) | Which reserving method when: chain ladder, Mack, Bornhuetter-Ferguson, bootstraps, Bayesian models, tails and the one-year view, with the reserve's uncertainty as a distribution |
+| [`reserving-meyers.md`](reserving-meyers.md) | CAS Monograph 8 (Meyers) reproduced: from Mack and the ODP bootstrap to the Bayesian CRC, CSR and CAY models, what each changes, the validation by the outcome's percentile, p-p plots and the KS test, and his printed results on group 353 beside prospicio's with their Monte Carlo error |
 
 ## R versions
 
