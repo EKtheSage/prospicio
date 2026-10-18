@@ -5,4 +5,4 @@
   classical allocations, the natural allocation linear and lifted, margin and
   capital by unit, Bodoff's percentile layer of capital, pricing bounds, the
   Cat/Non-Cat case-study tables and chapter 19's reinsurance test, with the
-  book's printed numbers beside prospicio's, checked in CI.
+  book's printed numbers beside prospicio's, checked in CI (#370).
