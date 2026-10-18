@@ -31,8 +31,11 @@ sources:
   Cat/Non-Cat at 99.9%, cost of capital 0.10.
 * Net units: Tame B net of 12.91 xs 56.17 aggregate, Cat net of 79.64 xs 41.11,
   made exactly with `Grid.map`. A `Tower.on_grid` net carries FFT round-off of
-  about 7e-20 where the probability should be zero, which turns the
-  exponential premium of net B from 50.42 into 509 (issue #367).
+  about 1e-19 where the probability should be zero, which turns the
+  exponential premium of net B from 50.42 into about 510 (issue #367). The
+  round-off's digits differ between builds (7.0e-20 and 509.4 from the Python
+  wheel, 7.7e-20 and 510.3 from the R package on the same machine), so the
+  guides print bounds.
 * The hurricane table (Table 4.3) reproduces on a step of 20 (USD millions)
   with 2^21 points; the book's aggregate VaRs are multiples of 20.
 * Classical principles: the book's ten are `classical_premium` names
@@ -68,8 +71,10 @@ Tables 3.2 to 3.4, Exercises 38, 49 and 63, Tables 4.2, 4.3, 4.4, 4.6 and 4.7
   no exponential moment, so these depend on where the grid stops (Cat's
   exponential premium at loading 0.014 is 35.5 on a grid to 1,024 and 25.2 to
   512). The book's numbers are its grid's.
-* **Rearrangement Algorithm** (Table 4.5): 352.9 to 353.5 by random start
-  against 352.8; a heuristic with an unstated seed.
+* **Rearrangement Algorithm** (Table 4.5): 352.9 to 353.8 from three fixed
+  starts (column j rotated by 7, 13 or 19 times j places, the same in the
+  Python and R guides), 352.9 to 353.5 from random shuffles, against 352.8; a
+  heuristic whose answer depends on a start the book does not give.
 * **Table 4.4 as extracted** sets the 0.8 row's difference one line low.
 
 # Gaps found
