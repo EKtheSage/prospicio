@@ -88,6 +88,10 @@ twins in [`examples/`](../../examples/README.md):
 | [`reserving-friedland.qmd`](reserving-friedland.qmd) | `reserving-friedland.md` |
 | [`reserving-taylor-mcguire.qmd`](reserving-taylor-mcguire.qmd) | `reserving-taylor-mcguire.md` |
 | [`reserving-meyers.qmd`](reserving-meyers.qmd) | `reserving-meyers.md` |
+| [`glm-ratemaking-goldburd.qmd`](glm-ratemaking-goldburd.qmd) | `glm-ratemaking-goldburd.md` |
+| [`glm-ratemaking-goldburd-validation.qmd`](glm-ratemaking-goldburd-validation.qmd) | `glm-ratemaking-goldburd-validation.md` |
+| [`glm-to-comprehensive-pricing-chalk.qmd`](glm-to-comprehensive-pricing-chalk.qmd) | `glm-to-comprehensive-pricing-chalk.md` |
+| [`glm-to-comprehensive-pricing-chalk-2.qmd`](glm-to-comprehensive-pricing-chalk-2.qmd) | `glm-to-comprehensive-pricing-chalk-2.md` |
 
 Each R chunk is followed by the text it prints, and
 `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R tests) runs
