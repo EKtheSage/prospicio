@@ -75,6 +75,14 @@ installed, render one with
 `quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
 all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
 
+[`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd)
+and
+[`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd)
+are the R twins of the two guides that reproduce CAS Monograph 2, Bahnemann's
+*Distributions for Actuaries*: the same examples and the same numbers, with the
+monograph's printed values beside prospicio's, and the R package's gaps for
+those chapters listed at the end of each.
+
 Money in the guides is in millions of a synthetic currency, and every example is
 synthetic. The guides write about the library and do not change it; a gap found
 while writing one becomes an issue for the lane that owns the code
