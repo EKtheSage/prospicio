@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: The aggregate twenty-minute tour in R, what the R package covers
-description: Each call of the Python guide prospicio-for-aggregate-users.md mapped onto the R package's functions, with the R-only quirks met (Panjer as compound_distribution's default, map_grid trimming the grid, 1-based probabilities) and the one gap, a portfolio's assets at a probability; every printed number equal to the Python guide's except the aliasing error's rounding noise.
+description: Each call of the Python guide prospicio-for-aggregate-users.md mapped onto the R package's functions, with the R-only quirks met (Panjer as compound_distribution's default, map_grid trimming the grid, 1-based probabilities) and the one gap, a portfolio's assets at a probability, since closed by portfolio_assets() (#322); every printed number equal to the Python guide's except the aliasing error's rounding noise.
 tags: [aggregate, r, python, api, bindings, guides, gaps]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-17T12:00:00Z }
@@ -32,9 +32,11 @@ sources:
   `Distortion.ccoc(r)` is `distortion("ccoc", r)`; `Pentagon.solve` is
   `pentagon()`, a named vector; `simulate_events(...).totals()` is
   `total(simulate_events(...))`.
-* Gap: the R package has no exported equivalent of Python's
-  `Portfolio.assets(p)`. `natural_price(port, d, p = p)` reports the same
-  assets in its `"total"` row.[^guide]
+* Former gap, closed by #322: `Portfolio.assets(p)` is
+  `portfolio_assets(port, p)` and `Portfolio.kappa(unit)` is
+  `portfolio_kappa(port, unit)` (by name or 1-based index).
+  `natural_price(port, d, p = p)` reports the same assets in its `"total"`
+  row.[^guide]
 * `map_grid()` returns a grid that ends at the largest mapped value, so a
   limited severity's `@probs` is shorter than the points it was discretized
   on; adding grids of different limits needs padding (Python's guide loops

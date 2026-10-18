@@ -812,6 +812,44 @@ portfolio_level <- function(port, assets, p) {
   port@ptr$max()
 }
 
+#' A portfolio's conditional expectations and assets
+#'
+#' `portfolio_kappa()` is a unit's conditional expectation given the total,
+#' `kappa_i(x) = E[X_i | X = x]`, at each of the portfolio's distinct totals
+#' (`port@totals`, ascending); the units' kappas add up to the total. As
+#' Python's `Portfolio.kappa(unit)`.
+#'
+#' `portfolio_assets()` is the assets at the capital standard `p`: the
+#' total's lower `p` quantile, the level [natural_price()] uses when given
+#' `p`. As Python's `Portfolio.assets(p)`.
+#'
+#' @param port A [capital_portfolio].
+#' @param unit The unit, by name or by its 1-based position in `port@units`.
+#' @param p The capital standard, in `[0, 1]`.
+#' @returns `portfolio_kappa()`: a numeric vector, one value per distinct
+#'   total. `portfolio_assets()`: a number.
+#' @export
+#' @examples
+#' insco <- capital_portfolio(cbind(
+#'   A = c(15, 15, 5, 7, 13, 5, 15, 26, 17, 16),
+#'   B = c(7, 13, 20, 33, 20, 27, 16, 19, 8, 20),
+#'   C = c(0, 0, 11, 0, 7, 8, 9, 10, 40, 64)
+#' ))
+#' insco@totals
+#' portfolio_kappa(insco, "A")
+#' portfolio_kappa(insco, 3)
+#' portfolio_assets(insco, 0.8)
+portfolio_kappa <- function(port, unit) {
+  if (length(unit) != 1) stop("give one unit")
+  i <- if (is.character(unit)) match(unit, port@units) else as.double(unit)
+  if (is.na(i)) stop("no unit ", unit)
+  rust_result(port@ptr$kappa(as.double(i)))
+}
+
+#' @rdname portfolio_kappa
+#' @export
+portfolio_assets <- function(port, p) rust_result(port@ptr$assets(as.double(p)))
+
 #' Natural allocation of a portfolio's price
 #'
 #' The premium of the portfolio's loss capped at the assets, `X ∧ a`, under

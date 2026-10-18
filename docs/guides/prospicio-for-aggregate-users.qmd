@@ -460,11 +460,10 @@ port Book
     agg Casualty 20 claims 2000 xs 0 sev lognorm 250 cv 2.0 mixed gamma 0.4
 ```
 
-The R package has no function for a portfolio's assets at a probability
-(Python's `Portfolio.assets(p)`). `natural_price()` with `p` sets the assets
-at the total's lower `p` quantile and reports them in its `"total"` row, so
-this chunk prices the book at once and reads the portfolio's 99.6% VaR from
-that row:
+`portfolio_assets(port, p)` is a portfolio's assets at a probability, the
+total's lower `p` quantile (Python's `Portfolio.assets(p)`), and
+`natural_price()` with `p` prices at that level. This chunk prices the book
+and reads the portfolio's 99.6% VaR with `portfolio_assets()`:
 
 ```{r}
 property_unit <- compound_distribution(
@@ -480,7 +479,7 @@ priced <- natural_price(book_port, distortion("ccoc", 0.10), p = 0.996)
 total_row <- priced[priced$unit == "total", ]
 stand_alone <- quantile(property_unit, 0.996) + quantile(casualty_unit, 0.996)
 cat(sprintf("99.6%% VaR, units alone summed %s\n", comma(stand_alone)))
-cat(sprintf("99.6%% VaR, portfolio         %s\n", comma(total_row$assets)))
+cat(sprintf("99.6%% VaR, portfolio         %s\n", comma(portfolio_assets(book_port, 0.996))))
 ```
 
 ```text
@@ -611,10 +610,6 @@ Checked against the 1.2.0 documentation, prospicio lacks:
   loses the continuous form.
 - **Exact rational compounds** (`nttagg`), the `cantor` severity, and the
   exhibit and chart documents.
-
-Beside the Python package, the R package lacks one function this tour uses: a
-portfolio's assets at a probability (Python's `Portfolio.assets(p)`), which
-section 10 reads from `natural_price()`'s `"total"` row instead.
 
 Where to go next (these guides are written in Python, and the R functions
 named above do the same work): [Aggregate distributions](aggregate-distributions.md)

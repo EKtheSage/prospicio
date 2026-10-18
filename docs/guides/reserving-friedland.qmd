@@ -1,0 +1,764 @@
+---
+title: "Friedland's basic reserving techniques, reproduced"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+Jacqueline Friedland's *Estimating Unpaid Claims Using Basic Techniques*
+(Casualty Actuarial Society, version 3, 2010) is the CAS syllabus text on
+reserving. It applies each technique to the same few data sets, so the results
+of one chapter feed the next: the development factors of chapter 7 become the
+reporting pattern of chapters 9 and 10, and the expected claims of chapter 8 the
+prior of chapter 9. This guide follows that path in prospicio with the book's
+own data, and prints the book's printed figures next to prospicio's.
+
+This is the R twin of the Python guide
+[`reserving-friedland.md`](reserving-friedland.md): the same sections, data and
+numbers. The R package calls the same Rust code as the Python one, so every
+figure below equals the Python guide's.
+
+The text and exhibits are Friedland's; what follows explains them in new words
+and recomputes the numbers. Exhibit numbers are the book's, and they restart in
+every chapter, so "Exhibit II" always comes with its chapter. Money is in
+thousands of dollars, as in the exhibits. For the choice between methods on your
+own data, read [`reserving-methods.md`](reserving-methods.md).
+
+Each R chunk is followed by the text it prints.
+`R/prospicio/tests/test-guides.R` runs the chunks in order and requires each
+one to print exactly that text. To render the page, install the R package
+(`remotes::install_github`, see `R/prospicio/bootstrap.R`) and run
+`quarto render docs/guides/reserving-friedland.qmd`.
+
+## 1. The two data sets
+
+The book's chapters 7 to 10 work through two examples.
+
+- **U.S. Industry Auto**: reported and paid claims of the whole U.S. private
+  passenger auto industry, accident years 1998 to 2007, valued at December 31,
+  2007, with earned premium. Large and stable: every method should agree.
+- **XYZ Insurer, Auto BI**: a small insurer's bodily injury book, accident
+  years 1998 to 2008, valued at December 31, 2008. Its case reserving, its
+  settlement speed and a tort reform all changed, so the methods disagree.
+  Only calendar years 2000 to 2008 exist, so the two oldest rows start at 36
+  and 24 months.
+
+The triangles are typed from chapter 7, Exhibits I and II (sheets 1 and 2),
+and the premiums from chapter 8, Exhibits II and III:
+
+```{r}
+#| label: data
+library(prospicio)
+
+# Thousands separators, as Python's {:,.0f}.
+comma <- function(x, width = 1) {
+  formatC(round(x), format = "f", digits = 0, big.mark = ",", width = width)
+}
+f3 <- function(x) paste(sprintf("%.3f", x), collapse = " ")
+
+US_YEARS <- 1998:2007
+US_REPORTED <- list(
+  c(37017487, 43169009, 45568919, 46784558, 47337318, 47533264, 47634419, 47689655, 47724678, 47742304),
+  c(38954484, 46045718, 48882924, 50219672, 50729292, 50926779, 51069285, 51163540, 51185767),
+  c(41155776, 49371478, 52358476, 53780322, 54303086, 54582950, 54742188, 54837929),
+  c(42394069, 50584112, 53704296, 55150118, 55895583, 56156727, 56299562),
+  c(44755243, 52971643, 56102312, 57703851, 58363564, 58592712),
+  c(45163102, 52497731, 55468551, 57015411, 57565344),
+  c(45417309, 52640322, 55553673, 56976657),
+  c(46360869, 53790061, 56786410),
+  c(46582684, 54641339),
+  c(48853563)
+)
+US_PAID <- list(
+  c(18539254, 33231039, 40062008, 43892039, 45896535, 46765422, 47221322, 47446877, 47555456, 47644187),
+  c(20410193, 36090684, 43259402, 47159241, 49208532, 50162043, 50625757, 50878808, 51000534),
+  c(22120843, 38976014, 46389282, 50562385, 52735280, 53740101, 54284334, 54533225),
+  c(22992259, 40096198, 47767835, 52093916, 54363436, 55378801, 55878421),
+  c(24092782, 41795313, 49903803, 54352884, 56754376, 57807215),
+  c(24084451, 41399612, 49070332, 53584201, 55930654),
+  c(24369770, 41489863, 49236678, 53774672),
+  c(25100697, 42702229, 50644994),
+  c(25608776, 43606497),
+  c(27229969)
+)
+US_PREMIUM <- c(68574209, 68544981, 68907977, 72544955, 79228887,
+                86643542, 91763523, 94115312, 95272279, 95176240)
+
+XYZ_YEARS <- 1998:2008
+XYZ_FIRST_AGE <- c(36, 24, rep(12, 9))  # months at the first observed cell of each row
+XYZ_REPORTED <- list(
+  c(11171, 12380, 13216, 14067, 14688, 16366, 16163, 15835, 15822),
+  c(13255, 16405, 19639, 22473, 23764, 25094, 24795, 25071, 25107),
+  c(15676, 18749, 21900, 27144, 29488, 34458, 36949, 37505, 37246),
+  c(11827, 16004, 21022, 26578, 34205, 37136, 38541, 38798),
+  c(12811, 20370, 26656, 37667, 44414, 48701, 48169),
+  c(9651, 16995, 30354, 40594, 44231, 44373),
+  c(16995, 40180, 58866, 71707, 70288),
+  c(28674, 47432, 70340, 70655),
+  c(27066, 46783, 48804),
+  c(19477, 31732),
+  c(18632)
+)
+XYZ_PAID <- list(
+  c(6309, 8521, 10082, 11620, 13242, 14419, 15311, 15764, 15822),
+  c(4666, 9861, 13971, 18127, 22032, 23511, 24146, 24592, 24817),
+  c(1302, 6513, 12139, 17828, 24030, 28853, 33222, 35902, 36782),
+  c(1539, 5952, 12319, 18609, 24387, 31090, 37070, 38519),
+  c(2318, 7932, 13822, 22095, 31945, 40629, 44437),
+  c(1743, 6240, 12683, 22892, 34505, 39320),
+  c(2221, 9898, 25950, 43439, 52811),
+  c(3043, 12219, 27073, 40026),
+  c(3531, 11778, 22819),
+  c(3529, 11865),
+  c(3409)
+)
+XYZ_PREMIUM <- c(20000, 31500, 45000, 50000, 61183, 69175, 99322, 138151, 107578, 62438, 47797)
+
+# A triangle from rows of cumulative values; exposures are repeated on every
+# cell. With `diagonals = n`, only the latest n calendar diagonals are kept.
+make_triangle <- function(years, columns, exposures = list(),
+                          first_age = rep(12, length(years)), diagonals = NULL) {
+  rows <- columns[[1]]
+  long <- NULL
+  for (i in seq_along(years)) {
+    for (k in seq_along(rows[[i]])) {
+      months <- first_age[i] + 12 * (k - 1)
+      if (!is.null(diagonals) && years[i] + months %/% 12 - 1 <= max(years) - diagonals) next
+      cell <- data.frame(origin = years[i], age = months)
+      for (name in names(columns)) cell[[name]] <- columns[[name]][[i]][k]
+      for (name in names(exposures)) cell[[name]] <- exposures[[name]][i]
+      long <- rbind(long, cell)
+    }
+  }
+  triangle(long, "origin", "age", c(names(columns), names(exposures)))
+}
+
+us <- make_triangle(US_YEARS, list(reported = US_REPORTED, paid = US_PAID),
+                    list(premium = US_PREMIUM))
+xyz <- make_triangle(XYZ_YEARS, list(reported = XYZ_REPORTED, paid = XYZ_PAID),
+                     list(premium = XYZ_PREMIUM), first_age = XYZ_FIRST_AGE)
+latest <- function(tri, column) latest_diagonal(tri)[1, column, ]
+cat("U.S. latest: reported", comma(sum(latest(us, "reported"))), "paid", comma(sum(latest(us, "paid"))),
+    "premium", comma(sum(latest(us, "premium"))), "\n")
+print(xyz@values[1, "reported", 1:3, 1:5])
+```
+
+```text
+U.S. latest: reported 543,481,587 paid 498,050,368 premium 820,771,905
+      development
+origin    12    24    36    48    60
+  1998    NA    NA 11171 12380 13216
+  1999    NA 13255 16405 19639 22473
+  2000 15676 18749 21900 27144 29488
+```
+
+The XYZ rows for 1998 and 1999 begin with unobserved cells (`NA`). prospicio
+keeps them as missing, not zero, so they take no part in any factor.
+
+## 2. The development technique (chapter 7)
+
+### Age-to-age factors and their averages
+
+Friedland's averages of the link ratios run over the **latest** few accident
+years: simple averages of the latest 5 and 3, a medial average of the latest 5
+without the highest and lowest, volume-weighted averages of the latest 5 and 3,
+and a geometric average of the latest 4. `chain_ladder()` averages all years
+(`average = "volume"`, `"simple"` or `"regression"`) and has no option for the
+latest n years or for medial and geometric averages, so the helper computes
+them from `link_ratios()` and the cells:
+
+```{r}
+#| label: averages
+links <- function(tri, column) {
+  lr <- link_ratios(tri)@values[1, column, , , drop = FALSE][1, 1, , ]
+  lapply(seq_len(ncol(lr)), function(k) lr[!is.na(lr[, k]), k])
+}
+
+averages <- function(tri, column) {
+  cells <- tri@values[1, column, , ]
+  volume <- function(k, n) {
+    ok <- which(!is.na(cells[, k + 1]))
+    ok <- tail(ok, n)
+    sum(cells[ok, k + 1]) / sum(cells[ok, k])
+  }
+  medial <- function(x) {
+    x <- sort(tail(x, 5))
+    if (length(x) > 2) mean(x[2:(length(x) - 1)]) else mean(x)
+  }
+  lr <- links(tri, column)
+  ks <- seq_along(lr)
+  list(
+    "simple, latest 5" = sapply(lr, function(x) mean(tail(x, 5))),
+    "simple, latest 3" = sapply(lr, function(x) mean(tail(x, 3))),
+    "medial, latest 5x1" = sapply(lr, medial),
+    "volume, latest 5" = sapply(ks, volume, n = 5),
+    "volume, latest 3" = sapply(ks, volume, n = 3),
+    "geometric, latest 4" = sapply(lr, function(x) exp(mean(log(tail(x, 4)))))
+  )
+}
+
+av <- averages(us, "reported")
+for (name in names(av)) cat(sprintf("%-20s", name), f3(av[[name]]), "\n")
+```
+
+```text
+simple, latest 5     1.168 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
+simple, latest 3     1.164 1.056 1.027 1.012 1.005 1.003 1.002 1.001 1.000
+medial, latest 5x1   1.165 1.057 1.027 1.010 1.004 1.003 1.002 1.001 1.000
+volume, latest 5     1.168 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
+volume, latest 3     1.164 1.056 1.027 1.012 1.005 1.003 1.002 1.001 1.000
+geometric, latest 4  1.164 1.057 1.027 1.011 1.004 1.003 1.002 1.001 1.000
+```
+
+Each row equals the corresponding row of chapter 7, Exhibit I, sheet 1, part 3,
+to the three decimals printed (12-24 at the left); the paid averages on sheet 2
+agree in the same way. The book's medial average of two values is their simple
+average and of one value the value itself, as the helper does.
+
+A volume-weighted average over the latest n years also comes out of prospicio
+itself: keep the latest `n + 1` calendar diagonals and fit the ordinary
+volume-weighted chain ladder. The all-year averages are not what the book uses:
+
+```{r}
+#| label: recent
+recent <- make_triangle(US_YEARS, list(reported = US_REPORTED), diagonals = 4)
+cat("volume, latest 3 ", f3(chain_ladder(recent, "reported")@ldf), "\n")
+cat("volume, all years", f3(chain_ladder(us, "reported")@ldf), "\n")
+cat("simple, all years", f3(chain_ladder(us, "reported", average = "simple")@ldf), "\n")
+```
+
+```text
+volume, latest 3  1.164 1.056 1.027 1.012 1.005 1.003 1.002 1.001 1.000
+volume, all years 1.175 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
+simple, all years 1.175 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
+```
+
+The all-year factors at 12-24 (1.175) are well above the book's selection of
+1.164, because the early accident years developed more in their first year.
+
+### Selected factors, factors to ultimate, and rounding
+
+For U.S. Industry Auto, Friedland selects the latest-3 averages, rounded to
+three decimals, with no tail for reported claims and a tail of 1.002 for paid.
+She rounds the factors to ultimate (CDF) to three decimals again before
+multiplying them into the latest diagonal. Selected factors go in with `ldf`
+(a vector named by age) and `ldf_kind = "ldf"`, a constant tail with `tail`:
+
+```{r}
+#| label: selected
+AGES <- us@development
+SEL_REPORTED <- c(1.164, 1.056, 1.027, 1.012, 1.005, 1.003, 1.002, 1.001, 1.000)
+SEL_PAID <- c(1.702, 1.186, 1.091, 1.044, 1.019, 1.009, 1.005, 1.002, 1.002)
+named <- function(values, ages = AGES) stats::setNames(values, ages[seq_along(values)])
+dev_r <- chain_ladder(us, "reported", ldf = named(SEL_REPORTED), ldf_kind = "ldf")
+dev_p <- chain_ladder(us, "paid", ldf = named(SEL_PAID), ldf_kind = "ldf", tail = 1.002)
+cat("reported CDF", sprintf("%.5f", dev_r@cdf), "\n")
+cat("paid CDF    ", sprintf("%.5f", dev_p@cdf), "\n")
+cat("total ultimate: reported", comma(sum(dev_r@ultimate)), "(book 569,172,456)\n")
+cat("                paid    ", comma(sum(dev_p@ultimate)), "(book 572,041,099)\n")
+```
+
+```text
+reported CDF 1.29163 1.10964 1.05080 1.02317 1.01104 1.00601 1.00300 1.00100 1.00000 1.00000
+paid CDF     2.39003 1.40425 1.18402 1.08526 1.03952 1.02014 1.01104 1.00601 1.00400 1.00200
+total ultimate: reported 569,136,323 (book 569,172,456)
+                paid     572,052,982 (book 572,041,099)
+```
+
+The totals miss the book by 36,133 and 11,883 (thousands): the product of the
+reported factors from 12 months is 1.29163, which the book uses as 1.292. Give
+the book's rounded CDFs as the pattern with `ldf_kind = "cdf"`; a pattern given
+to the oldest age with no `tail` keeps its last value as the tail:
+
+```{r}
+#| label: rounded
+CDF_REPORTED <- c(1.292, 1.110, 1.051, 1.023, 1.011, 1.006, 1.003, 1.001, 1.000, 1.000)
+CDF_PAID <- c(2.390, 1.404, 1.184, 1.085, 1.040, 1.020, 1.011, 1.006, 1.004, 1.002)
+US_CDF <- list(reported = named(CDF_REPORTED), paid = named(CDF_PAID))
+dev_r <- chain_ladder(us, "reported", ldf = US_CDF$reported, ldf_kind = "cdf")
+dev_p <- chain_ladder(us, "paid", ldf = US_CDF$paid, ldf_kind = "cdf")
+cat("paid tail", dev_p@pattern_tail, "\n")
+
+BOOK_DEV <- list(  # chapter 7, Exhibit I, sheet 3, columns (7) and (8)
+  reported = c(47742304, 51185767, 54892767, 56468461, 58944268,
+               58198563, 58287120, 59682517, 60651886, 63118803),
+  paid = c(47739475, 51204536, 54860424, 56493084, 58963359,
+           58167880, 58345519, 59963673, 61223522, 65079626)
+)
+cat(sprintf("%4s %12s %12s %12s %12s\n", "year", "reported", "book", "paid", "book"))
+for (i in seq_along(US_YEARS)) {
+  cat(sprintf("%4d %s %s %s %s\n", US_YEARS[i], comma(dev_r@ultimate[i], 12), comma(BOOK_DEV$reported[i], 12),
+              comma(dev_p@ultimate[i], 12), comma(BOOK_DEV$paid[i], 12)))
+}
+cat(sprintf("%4s %s %s %s %s\n", "all", comma(sum(dev_r@ultimate), 12), comma(569172456, 12),
+            comma(sum(dev_p@ultimate), 12), comma(572041099, 12)))
+```
+
+```text
+paid tail 1.002
+year     reported         book         paid         book
+1998   47,742,304   47,742,304   47,739,475   47,739,475
+1999   51,185,767   51,185,767   51,204,536   51,204,536
+2000   54,892,767   54,892,767   54,860,424   54,860,424
+2001   56,468,461   56,468,461   56,493,084   56,493,084
+2002   58,944,268   58,944,268   58,963,359   58,963,359
+2003   58,198,563   58,198,563   58,167,880   58,167,880
+2004   58,287,120   58,287,120   58,345,519   58,345,519
+2005   59,682,517   59,682,517   59,963,673   59,963,673
+2006   60,651,886   60,651,886   61,223,522   61,223,522
+2007   63,118,803   63,118,803   65,079,626   65,079,626
+ all  569,172,456  569,172,456  572,041,099  572,041,099
+```
+
+Every ultimate now equals sheet 3. IBNR is ultimate less reported and the
+total unpaid ultimate less paid (the book's sheet 4); prospicio's `reserve` is
+ultimate less the column's latest value, so on the paid triangle it is the
+total unpaid:
+
+```{r}
+#| label: unpaid
+unpaid <- function(ultimate, tri = us) {
+  c(sum(ultimate) - sum(latest(tri, "reported")), sum(ultimate) - sum(latest(tri, "paid")))
+}
+show_unpaid <- function(name, ultimate, book, tri = us, width = 11) {
+  u <- unpaid(ultimate, tri)
+  cat(sprintf("%-8s IBNR %s (book %s)  total unpaid %s (book %s)\n", name, comma(u[1], width),
+              comma(book[1], width), comma(u[2], width), comma(book[2], width)))
+}
+show_unpaid("reported", dev_r@ultimate, c(25690869, 71122088))
+show_unpaid("paid", dev_p@ultimate, c(28559512, 73990731))
+cat("paid reserve = total unpaid:", comma(dev_p@total_reserve), "\n")
+```
+
+```text
+reported IBNR  25,690,869 (book  25,690,869)  total unpaid  71,122,088 (book  71,122,088)
+paid     IBNR  28,559,512 (book  28,559,512)  total unpaid  73,990,731 (book  73,990,731)
+paid reserve = total unpaid: 73,990,731
+```
+
+### The tail factor
+
+Friedland's paid tail of 1.002 is a judgment set beside the reported pattern,
+which has reached 1.000 at 120 months. A fitted exponential curve gives a factor
+close to hers:
+
+```{r}
+#| label: tail
+curve <- chain_ladder(us, "paid", tail = tail_curve())
+cat(sprintf("fitted tail %.4f, book's selection 1.002\n", curve@tail))
+```
+
+```text
+fitted tail 1.0011, book's selection 1.002
+```
+
+### XYZ Insurer: unstable factors and a pattern below 1
+
+For XYZ, Friedland selects the volume-weighted average of the latest 2 years at
+every age, with no reported tail and a paid tail of 1.010. The latest 3
+diagonals reproduce her selected factors (chapter 7, Exhibit II, sheets 1 and
+2, part 4):
+
+```{r}
+#| label: xyz-factors
+for (column in c("reported", "paid")) {
+  rows <- if (column == "reported") XYZ_REPORTED else XYZ_PAID
+  last2 <- make_triangle(XYZ_YEARS, stats::setNames(list(rows), column),
+                         first_age = XYZ_FIRST_AGE, diagonals = 3)
+  cat(sprintf("%-8s", column), f3(chain_ladder(last2, column)@ldf), "\n")
+}
+```
+
+```text
+reported 1.687 1.265 1.102 1.020 1.050 1.010 1.011 1.000 0.993 0.999
+paid     3.349 2.079 1.574 1.316 1.203 1.136 1.059 1.022 1.017 1.004
+```
+
+The book prints the same factors. Its reported CDFs at 96 and 108 months are
+0.992, below 1, which `ldf_kind = "cdf"` refuses, so they go in as ratios of
+consecutive CDFs with `ldf_kind = "ldf"`; the paid CDFs go in directly:
+
+```{r}
+#| label: xyz-dev
+XYZ_AGES <- xyz@development
+CDF_XYZ_REPORTED <- c(2.551, 1.512, 1.196, 1.085, 1.064, 1.013, 1.003, 0.992, 0.992, 0.999, 1.000)
+CDF_XYZ_PAID <- c(21.999, 6.569, 3.160, 2.007, 1.525, 1.268, 1.116, 1.054, 1.031, 1.014, 1.010)
+n <- length(XYZ_AGES)
+ratios <- named(CDF_XYZ_REPORTED[-n] / CDF_XYZ_REPORTED[-1], XYZ_AGES)
+xdev_r <- chain_ladder(xyz, "reported", ldf = ratios, ldf_kind = "ldf")
+xdev_p <- chain_ladder(xyz, "paid", ldf = named(CDF_XYZ_PAID, XYZ_AGES), ldf_kind = "cdf")
+
+BOOK_XDEV <- list(  # chapter 7, Exhibit II, sheet 3, columns (7) and (8)
+  reported = c(15822, 25082, 36948, 38487, 48313, 44950, 74787, 76661, 58370, 47979, 47530),
+  paid = c(15980, 25164, 37922, 40600, 49592, 49858, 80537, 80333, 72108, 77941, 74995)
+)
+
+# prospicio's ultimates beside the book's; columns: name -> list(ultimates, book, book total).
+compare <- function(years, columns, width = 8) {
+  cat("year", paste(sprintf("%*s %*s", width, names(columns), width, "book"), collapse = " "), "\n")
+  for (i in seq_along(years)) {
+    cells <- vapply(columns, function(c) paste(comma(c[[1]][i], width), comma(c[[2]][i], width)), "")
+    cat(sprintf("%4d", years[i]), paste(cells, collapse = " "), "\n")
+  }
+  cells <- vapply(columns, function(c) paste(comma(sum(c[[1]]), width), comma(c[[3]], width)), "")
+  cat(" all", paste(cells, collapse = " "), "\n")
+}
+
+compare(XYZ_YEARS, list(reported = list(xdev_r@ultimate, BOOK_XDEV$reported, 514929),
+                        paid = list(xdev_p@ultimate, BOOK_XDEV$paid, 605030)))
+```
+
+```text
+year reported     book     paid     book
+1998   15,822   15,822   15,980   15,980
+1999   25,082   25,082   25,164   25,164
+2000   36,948   36,948   37,922   37,922
+2001   38,488   38,487   40,599   40,600
+2002   48,314   48,313   49,592   49,592
+2003   44,950   44,950   49,858   49,858
+2004   74,786   74,787   80,537   80,537
+2005   76,661   76,661   80,332   80,333
+2006   58,370   58,370   72,108   72,108
+2007   47,979   47,979   77,941   77,941
+2008   47,530   47,530   74,995   74,995
+ all  514,929  514,929  605,028  605,030
+```
+
+The reported total equals the book's 514,929 and the paid total is 2 below
+605,030; single years differ by 1 in both directions. The book's spreadsheet
+holds claims with decimals and prints them in whole thousands: 38,798 times
+0.992 is 38,487.6, but a latest value of 38,797.5 (printed 38,798) gives the
+book's 38,487. Section 3 shows the same effect in a printed column total.
+
+## 3. The expected claims technique (chapter 8)
+
+Ultimate is an expected claim ratio times earned premium. For U.S. Industry
+Auto the book selects 75% for 1998 to 2002 and 65% for 2003 to 2007 (chapter 8,
+Exhibit II, sheet 1). With a ratio by year, put the expected claims in a column
+and fit with `apriori = 1`:
+
+```{r}
+#| label: ec
+US_RATIO <- c(rep(0.75, 5), rep(0.65, 5))
+us <- make_triangle(US_YEARS, list(reported = US_REPORTED, paid = US_PAID),
+                    list(premium = US_PREMIUM, expected = US_RATIO * US_PREMIUM))
+ec <- expected_loss(us, "reported", "expected", apriori = 1)
+u <- unpaid(ec@ultimate)
+cat("expected claims", comma(sum(ec@ultimate)), "(book 569,281,839)\n")
+cat("IBNR ", comma(u[1]), " (book 25,800,252), total unpaid ", comma(u[2]), " (book 71,231,471)\n", sep = "")
+cat("IBNR 2000: ", comma(ec@reserve[3]), " (book -3,156,946)\n", sep = "")
+```
+
+```text
+expected claims 569,281,839 (book 569,281,839)
+IBNR 25,800,252 (book 25,800,252), total unpaid 71,231,471 (book 71,231,471)
+IBNR 2000: -3,156,946 (book -3,156,946)
+```
+
+For XYZ the selected ratios, the result of the book's adjustments for trend,
+rate level and tort reform, are taken as printed in Exhibit III, sheet 1,
+column (11):
+
+```{r}
+#| label: xyz-ec
+XYZ_RATIO <- c(rep(0.783, 6), 0.871, 0.783, 0.658, 0.638, 0.825)
+xyz <- make_triangle(XYZ_YEARS, list(reported = XYZ_REPORTED, paid = XYZ_PAID),
+                     list(premium = XYZ_PREMIUM, expected = XYZ_RATIO * XYZ_PREMIUM),
+                     first_age = XYZ_FIRST_AGE)
+xec <- expected_loss(xyz, "reported", "expected", apriori = 1)
+u <- unpaid(xec@ultimate, xyz)
+cat("expected claims", comma(sum(xec@ultimate)), "(book 561,516)\n")
+cat("IBNR ", comma(u[1]), " (book 111,890), total unpaid ", comma(u[2]), " (book 230,887)\n", sep = "")
+```
+
+```text
+expected claims 561,516 (book 561,516)
+IBNR 111,890 (book 111,890), total unpaid 230,889 (book 230,887)
+```
+
+The total unpaid is 2 above the book's because it subtracts paid claims: the
+book's paid total is 330,629, while its eleven printed paid values add to
+330,627, the clearest evidence that the exhibits print rounded data.
+
+## 4. The Bornhuetter-Ferguson technique (chapter 9)
+
+Claims to date plus expected claims times `1 - 1 / CDF`, with the expected
+claims of chapter 8 and the rounded CDFs of chapter 7 (chapter 9, Exhibit I):
+
+```{r}
+#| label: bf
+BOOK_BF_US <- list(  # chapter 9, Exhibit I, sheet 1, columns (11) and (12)
+  reported = c(47742304, 51185767, 54889558, 56462300, 58947116,
+               58178105, 58317678, 59754938, 60778247, 62835336),
+  paid = c(47746843, 51205350, 54841461, 56470405, 58972346,
+           58096743, 58447423, 60151912, 61425942, 63209774)
+)
+bf <- lapply(c(reported = "reported", paid = "paid"), function(col) {
+  bornhuetter_ferguson(us, col, "expected", apriori = 1, ldf = US_CDF[[col]], ldf_kind = "cdf")
+})
+compare(US_YEARS, list(reported = list(bf$reported@ultimate, BOOK_BF_US$reported, 569091348),
+                       paid = list(bf$paid@ultimate, BOOK_BF_US$paid, 570568198)), width = 11)
+show_unpaid("reported", bf$reported@ultimate, c(25609761, 71040980))
+show_unpaid("paid", bf$paid@ultimate, c(27086611, 72517830))
+```
+
+```text
+year    reported        book        paid        book
+1998  47,742,304  47,742,304  47,746,843  47,746,843
+1999  51,185,767  51,185,767  51,205,350  51,205,350
+2000  54,889,558  54,889,558  54,841,461  54,841,461
+2001  56,462,300  56,462,300  56,470,405  56,470,405
+2002  58,947,116  58,947,116  58,972,346  58,972,346
+2003  58,178,105  58,178,105  58,096,743  58,096,743
+2004  58,317,678  58,317,678  58,447,423  58,447,423
+2005  59,754,938  59,754,938  60,151,912  60,151,912
+2006  60,778,247  60,778,247  61,425,942  61,425,942
+2007  62,835,336  62,835,336  63,209,774  63,209,774
+ all 569,091,348 569,091,348 570,568,198 570,568,198
+reported IBNR  25,609,761 (book  25,609,761)  total unpaid  71,040,980 (book  71,040,980)
+paid     IBNR  27,086,611 (book  27,086,611)  total unpaid  72,517,830 (book  72,517,830)
+```
+
+For XYZ, chapter 9, Exhibit II caps the CDFs **at a minimum of 1.00**; the
+capped pattern is a valid `ldf_kind = "cdf"`:
+
+```{r}
+#| label: xyz-bf
+XYZ_CDF <- list(reported = named(pmax(CDF_XYZ_REPORTED, 1), XYZ_AGES),
+                paid = named(CDF_XYZ_PAID, XYZ_AGES))
+BOOK_BF_XYZ <- list(  # chapter 9, Exhibit II, sheet 1, columns (11) and (12)
+  reported = c(15822, 25107, 37246, 38798, 48312, 45068, 75492, 79129, 60404, 45221, 42607),
+  paid = c(15977, 25158, 37841, 40525, 49417, 50768, 82593, 94301, 71205, 45636, 41049)
+)
+xbf <- lapply(c(reported = "reported", paid = "paid"), function(col) {
+  bornhuetter_ferguson(xyz, col, "expected", apriori = 1, ldf = XYZ_CDF[[col]], ldf_kind = "cdf")
+})
+compare(XYZ_YEARS, list(reported = list(xbf$reported@ultimate, BOOK_BF_XYZ$reported, 513207),
+                        paid = list(xbf$paid@ultimate, BOOK_BF_XYZ$paid, 554471)))
+```
+
+```text
+year reported     book     paid     book
+1998   15,822   15,822   15,977   15,977
+1999   25,107   25,107   25,158   25,158
+2000   37,246   37,246   37,841   37,841
+2001   38,798   38,798   40,525   40,525
+2002   48,312   48,312   49,417   49,417
+2003   45,068   45,068   50,768   50,768
+2004   75,492   75,492   82,593   82,593
+2005   79,129   79,129   94,301   94,301
+2006   60,404   60,404   71,205   71,205
+2007   45,221   45,221   45,636   45,636
+2008   42,607   42,607   41,049   41,049
+ all  513,207  513,207  554,469  554,471
+```
+
+Every year agrees for both. The paid total is 2 below the book's 554,471,
+which is also 2 above the sum of the book's own eleven paid rows.
+
+## 5. The Benktander technique (chapter 9)
+
+Benktander runs Bornhuetter-Ferguson twice, the first BF ultimate serving as
+the expected claims of the second. The book shows it only on synthetic
+scenarios (chapter 9, Exhibits V and VI). Its formula, reported claims plus the
+BF ultimate times the percentage unreported, fed with the printed U.S. BF
+ultimates, checks `benktander(n_iters = 2)`:
+
+```{r}
+#| label: benktander
+gb <- benktander(us, "reported", "expected", apriori = 1, n_iters = 2,
+                 ldf = US_CDF$reported, ldf_kind = "cdf")
+cdf_by_year <- rev(CDF_REPORTED)  # the oldest year has the oldest age
+by_hand <- latest(us, "reported") + (1 - 1 / cdf_by_year) * BOOK_BF_US$reported
+cat(sprintf("%4s %11s %11s %11s %11s\n", "year", "prospicio", "formula", "dev", "BF"))
+for (i in seq_along(US_YEARS)) {
+  cat(sprintf("%4d %s %s %s %s\n", US_YEARS[i], comma(gb@ultimate[i], 11), comma(by_hand[i], 11),
+              comma(BOOK_DEV$reported[i], 11), comma(BOOK_BF_US$reported[i], 11)))
+}
+cat("largest difference under 0.5:", max(abs(gb@ultimate - by_hand)) < 0.5, "\n")
+```
+
+```text
+year   prospicio     formula         dev          BF
+1998  47,742,304  47,742,304  47,742,304  47,742,304
+1999  51,185,767  51,185,767  51,185,767  51,185,767
+2000  54,892,764  54,892,764  54,892,767  54,889,558
+2001  56,468,442  56,468,442  56,468,461  56,462,300
+2002  58,944,285  58,944,285  58,944,268  58,947,116
+2003  58,198,340  58,198,340  58,198,563  58,178,105
+2004  58,287,807  58,287,807  58,287,120  58,317,678
+2005  59,686,031  59,686,031  59,682,517  59,754,938
+2006  60,664,409  60,664,409  60,651,886  60,778,247
+2007  63,054,738  63,054,738  63,118,803  62,835,336
+largest difference under 0.5: TRUE
+```
+
+Each Benktander ultimate lies between the BF and the development ultimates,
+closer to development where the year is mature.
+
+## 6. The Cape Cod technique (chapter 10)
+
+Cape Cod estimates the expected claim ratio from the data: reported claims over
+used-up premium. For U.S. Industry Auto (chapter 10, Exhibit I):
+
+```{r}
+#| label: cc
+cc <- cape_cod(us, "reported", "premium", ldf = US_CDF$reported, ldf_kind = "cdf")
+cat(sprintf("expected claim ratio %.5f (book prints 69.5%%)\n", cc@apriori[1]))
+cat("ultimate", comma(sum(cc@ultimate)), "(book 570,800,677)\n")
+u <- unpaid(cc@ultimate)
+cat("IBNR ", comma(u[1]), " (book 27,319,090), total unpaid ", comma(u[2]), " (book 72,750,309)\n", sep = "")
+flat <- bornhuetter_ferguson(us, "reported", "premium", apriori = 0.695,
+                             ldf = US_CDF$reported, ldf_kind = "cdf")
+cat("BF at exactly 69.5%: ultimate", comma(sum(flat@ultimate)), "\n")
+```
+
+```text
+expected claim ratio 0.69544 (book prints 69.5%)
+ultimate 570,800,677 (book 570,800,677)
+IBNR 27,319,090 (book 27,319,090), total unpaid 72,750,309 (book 72,750,309)
+BF at exactly 69.5%: ultimate 570,783,246
+```
+
+The ratio the book prints as 69.5% is 69.544% in its spreadsheet. For XYZ
+(chapter 10, Exhibit II) the book puts every year on the 2008 basis: on-level
+premium, claims trended at 3.425% a year and adjusted for tort reform. The
+ratio is estimated on the adjusted claims with `cape_cod(trend = 0.03425)`, and
+its expected claims then go into a BF fit on the actual claims:
+
+```{r}
+#| label: xyz-cc
+ON_LEVEL_PREMIUM <- c(19783, 30548, 42784, 46606, 55911, 60204, 80411, 97258, 68850, 49950, 47797)
+TORT <- c(rep(0.670, 8), 0.750, 1.000, 1.000)
+adjusted <- Map(function(row, t) row * t, XYZ_REPORTED, TORT)
+xyz_cc <- make_triangle(XYZ_YEARS, list(adjusted = adjusted, reported = XYZ_REPORTED),
+                        list(on_level = ON_LEVEL_PREMIUM), first_age = XYZ_FIRST_AGE)
+ratio <- cape_cod(xyz_cc, "adjusted", "on_level", trend = 0.03425,
+                  ldf = XYZ_CDF$reported, ldf_kind = "cdf")
+cat(sprintf("adjusted expected claim ratio %.4f (book 70.8%%)\n", ratio@apriori[length(XYZ_YEARS)]))
+cc_expected <- ratio@apriori * ON_LEVEL_PREMIUM / TORT
+xyz_cc <- make_triangle(XYZ_YEARS, list(reported = XYZ_REPORTED), list(cc_expected = cc_expected),
+                        first_age = XYZ_FIRST_AGE)
+xcc <- bornhuetter_ferguson(xyz_cc, "reported", "cc_expected", apriori = 1,
+                            ldf = XYZ_CDF$reported, ldf_kind = "cdf")
+cat("unadjusted ratios", f3(cc_expected / XYZ_PREMIUM), "\n")
+BOOK_CC_XYZ <- c(15822, 25107, 37246, 38798, 48313, 45062, 74754, 77931, 58759, 43307, 39201)
+compare(XYZ_YEARS, list("Cape Cod" = list(xcc@ultimate, BOOK_CC_XYZ, 504300)))
+```
+
+```text
+adjusted expected claim ratio 0.7078 (book 70.8%)
+unadjusted ratios 0.746 0.757 0.767 0.778 0.789 0.777 0.747 0.672 0.565 0.547 0.708
+year Cape Cod     book
+1998   15,822   15,822
+1999   25,107   25,107
+2000   37,246   37,246
+2001   38,798   38,798
+2002   48,313   48,313
+2003   45,063   45,062
+2004   74,754   74,754
+2005   77,931   77,931
+2006   58,759   58,759
+2007   43,307   43,307
+2008   39,201   39,201
+ all  504,300  504,300
+```
+
+The adjusted ratio, the unadjusted ratios by year (the book's column (15)) and
+the total of 504,300 agree; 2003 is 1 above, the rounding of the printed data.
+The tort factor multiplies the claims rather than dividing the premium, since
+the ratio is a ratio of sums.
+
+## 7. Reasonableness checks (chapters 8 and 15)
+
+Chapter 15 summarizes U.S. Industry Auto's unpaid claims by method in billions
+of dollars:
+
+```{r}
+#| label: summary
+book_billions <- list(  # chapter 15, IBNR and total unpaid, $ billions
+  "Development, reported" = c(26, 71), "Development, paid" = c(29, 74),
+  "Expected claims" = c(26, 71), "B-F, reported" = c(26, 71),
+  "B-F, paid" = c(27, 73), "Cape Cod" = c(27, 73)
+)
+fits <- list(dev_r, dev_p, ec, bf$reported, bf$paid, cc)
+cat(sprintf("%-22s %5s %5s %6s %5s\n", "method", "IBNR", "book", "total", "book"))
+for (i in seq_along(fits)) {
+  u <- unpaid(fits[[i]]@ultimate) / 1e6
+  b <- book_billions[[i]]
+  cat(sprintf("%-22s %5.0f %5d %6.0f %5d\n", names(book_billions)[i], u[1], b[1], u[2], b[2]))
+}
+```
+
+```text
+method                  IBNR  book  total  book
+Development, reported     26    26     71    71
+Development, paid         29    29     74    74
+Expected claims           26    26     71    71
+B-F, reported             26    26     71    71
+B-F, paid                 27    27     73    73
+Cape Cod                  27    27     73    73
+```
+
+All twelve figures agree (the book's row for the case outstanding development
+technique is not reproduced). For XYZ, chapter 8, Exhibit III, sheet 1, column
+(10) prints the claim ratio of the average of the two development ultimates;
+beside it, the ratio implied by each method:
+
+```{r}
+#| label: ratios
+BOOK_AVG_RATIO <- c(79.5, 79.8, 83.2, 79.1, 80.0, 68.5, 78.2, 56.8, 60.6, 100.8, 128.2)
+methods <- list("dev rep" = xdev_r, "dev paid" = xdev_p, "EC" = xec,
+                "BF rep" = xbf$reported, "BF paid" = xbf$paid, "CC" = xcc)
+cat("year  avg dev   book", paste(sprintf("%8s", names(methods)), collapse = " "), "\n")
+for (i in seq_along(XYZ_YEARS)) {
+  avg <- (xdev_r@ultimate[i] + xdev_p@ultimate[i]) / 2 / XYZ_PREMIUM[i]
+  each <- vapply(methods, function(f) sprintf("%7.1f%%", 100 * f@ultimate[i] / XYZ_PREMIUM[i]), "")
+  cat(sprintf("%4d %7.1f%% %5.1f%%", XYZ_YEARS[i], 100 * avg, BOOK_AVG_RATIO[i]), paste(each, collapse = " "), "\n")
+}
+```
+
+```text
+year  avg dev   book  dev rep dev paid       EC   BF rep  BF paid       CC
+1998    79.5%  79.5%    79.1%    79.9%    78.3%    79.1%    79.9%    79.1%
+1999    79.8%  79.8%    79.6%    79.9%    78.3%    79.7%    79.9%    79.7%
+2000    83.2%  83.2%    82.1%    84.3%    78.3%    82.8%    84.1%    82.8%
+2001    79.1%  79.1%    77.0%    81.2%    78.3%    77.6%    81.0%    77.6%
+2002    80.0%  80.0%    79.0%    81.1%    78.3%    79.0%    80.8%    79.0%
+2003    68.5%  68.5%    65.0%    72.1%    78.3%    65.2%    73.4%    65.1%
+2004    78.2%  78.2%    75.3%    81.1%    87.1%    76.0%    83.2%    75.3%
+2005    56.8%  56.8%    55.5%    58.1%    78.3%    57.3%    68.3%    56.4%
+2006    60.6%  60.6%    54.3%    67.0%    65.8%    56.1%    66.2%    54.6%
+2007   100.8% 100.8%    76.8%   124.8%    63.8%    72.4%    73.1%    69.4%
+2008   128.2% 128.2%    99.4%   156.9%    82.5%    89.1%    85.9%    82.0%
+```
+
+The average-of-development column equals the book's. The development ratios
+for 2007 and 2008 are out of line with every earlier year, while the expected
+claims, BF and Cape Cod methods keep them near the history; the book's
+conclusion for XYZ rests on Berquist-Sherman adjusted projections, which
+prospicio does not make.
+
+## 8. What prospicio does not cover
+
+As in the Python guide: averages over the latest n years, medial and geometric
+averages as options of `chain_ladder()` (issue #336; the workarounds are
+above), CDFs below 1 as a `"cdf"` pattern (#336), the frequency-severity
+techniques (chapter 11), the case outstanding development technique (chapter
+12), Berquist-Sherman adjustments (chapter 13), the ALAE and ULAE methods
+(chapters 16 and 17) and the trend, rate-level and tort adjustments of the
+expected claims method, which are inputs prepared by hand. Every R function
+this guide needs exists with the same arguments as its Python counterpart.
+
+## See also
+
+- [`reserving-methods.md`](reserving-methods.md): which reserving method to
+  use when, with Mack, the bootstraps, Clark and the Bayesian models.
+- [`reserving-friedland.md`](reserving-friedland.md): the Python version of
+  this guide.

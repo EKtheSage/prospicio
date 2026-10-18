@@ -13,6 +13,9 @@ sources:
   - id: r-libs
     resource: process:local-session, Compartmental PR C bindings (branch claude/bayes-compartmental-lognormal)
     title: R_LIBS with a Git Bash path, 2026-10-14
+  - id: nuts-toolchain
+    resource: process:local-session, R twin of the Meyers Monograph 8 guide (branch guides/reserving-meyers-r)
+    title: NUTS draws of the R and Python builds, 2026-10-17
 ---
 
 # Facts (2026-10-05)
@@ -45,8 +48,17 @@ sources:
 * `cargo xtask r` and `cargo xtask python` (without `--check`) regenerate
   `man/`, `NAMESPACE` and the `.pyi` stub. A full run leaves no tracked-file
   churn.
+* The R package (Rust target `x86_64-pc-windows-gnu`) and the Python
+  extension (MSVC) on the same machine give different NUTS draws at the
+  same seed: the last bit of `exp` and `ln` differs between the two
+  toolchains, as between Windows and Linux. On Meyers' group 353 the CRC
+  paid `logelr` mean is -0.3963 from R and -0.3958 from Python at seed 0.
+  Samplers without NUTS (Mack, the ODP bootstrap, `draws()`) print the same
+  digits. A guide shared by both bindings therefore checks NUTS results
+  against tolerances, not digits.[^nuts-toolchain]
 * A conda-forge R from pixi has no matching toolchain and cannot build the
   package; it can still run ChainLadder parity scripts.
 
 [^setup]: Local R build check
 [^r-libs]: R_LIBS with a Git Bash path
+[^nuts-toolchain]: NUTS draws of the R and Python builds

@@ -137,6 +137,7 @@ reference:
       - capital_portfolio
       - natural_price
       - calibrate_portfolio
+      - portfolio_kappa
       - bodoff_allocation
       - priority_ladder
       - price_stand_alone

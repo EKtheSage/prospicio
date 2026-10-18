@@ -44,6 +44,8 @@ and sends you to the guide that goes deeper.
 | [`risk-loads-and-distortions.md`](risk-loads-and-distortions.md) | Which risk load or distortion to use (constant cost of capital, proportional hazard, Wang, TVaR and others), how to calibrate it to quotes, and how to price a contract in a portfolio |
 | [`capital-modeling-monograph-15.md`](capital-modeling-monograph-15.md) | CAS Monograph 15 (Major and Mildenhall) reproduced: the InsCo example priced by five distortions and allocated to units, the 35 xs 65 reinsurance decision, and the correlated three-unit book, with the monograph's printed numbers beside prospicio's |
 | [`pricing-insurance-risk-case-studies.md`](pricing-insurance-risk-case-studies.md) | The case studies of *Pricing Insurance Risk* (Mildenhall and Major): Discrete, Tame, Cat/Non-Cat gross and net of an aggregate cover, Hurricane/SCS gross and net of an occurrence cover, each priced by five distortions and allocated to units, with `aggregate` 0.30.1's numbers beside prospicio's |
+| [`ratemaking-werner-modlin.md`](ratemaking-werner-modlin.md) | Werner and Modlin's *Basic Ratemaking* (CAS study note), the steps of the overall rate indication reproduced: dates on the book's half-month grid, premium at the current rate level by the parallelogram method, premium and loss trend fits, loss development, expenses and the permissible loss ratio, and limited fluctuation and Bühlmann credibility, with the book's printed numbers beside prospicio's |
+| [`ratemaking-werner-modlin-indications.md`](ratemaking-werner-modlin-indications.md) | Werner and Modlin's three worked indications end to end (Appendix A auto by the loss ratio method, B homeowners by the pure premium method, C medical malpractice with a net trend), chapter 11's increased limits and deductibles, what prospicio does not cover, and every place the book's rounding moves a printed digit |
 
 **Distributions**
 
@@ -60,28 +62,37 @@ and sends you to the guide that goes deeper.
 | Guide | What it answers |
 |---|---|
 | [`reserving-methods.md`](reserving-methods.md) | Which reserving method when: chain ladder, Mack, Bornhuetter-Ferguson, bootstraps, Bayesian models, tails and the one-year view, with the reserve's uncertainty as a distribution |
+| [`reserving-meyers.md`](reserving-meyers.md) | CAS Monograph 8 (Meyers) reproduced: from Mack and the ODP bootstrap to the Bayesian CRC, CSR and CAY models, what each changes, the validation by the outcome's percentile, p-p plots and the KS test, and his printed results on group 353 beside prospicio's with their Monte Carlo error |
+| [`reserving-friedland.md`](reserving-friedland.md) | Friedland's *Estimating Unpaid Claims Using Basic Techniques* (CAS) reproduced on its own data: age-to-age averages and selected factors, the development, expected claims, Bornhuetter-Ferguson, Benktander and Cape Cod techniques on U.S. Industry Auto and XYZ Insurer, and the book's reasonableness checks, with its printed ultimates and IBNR beside prospicio's and the rounding conventions that explain every difference |
+| [`reserving-taylor-mcguire.md`](reserving-taylor-mcguire.md) | CAS Monograph 3 (Taylor and McGuire) reproduced: the chain ladder as an over-dispersed Poisson GLM, its prediction error by the delta method and the parametric bootstrap, residual diagnostics and heat maps, and the reduced models with accident-year and development-year curves and interactions, with the monograph's printed numbers beside prospicio's |
 
 ## R versions
 
-[`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) and
-[`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) are the
-R twins of the guides of the same names, as Quarto documents like the R
-twins in [`examples/`](../../examples/README.md): the same sections, models and
-numbers, with the R package. Each R chunk is followed by the text it prints,
-and `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R
-tests) runs every `.qmd` here and requires each chunk to print exactly that
-text. The `.qmd` files are not pages of the Python site. With the R package
-installed, render one with
-`quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
-all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
+Every guide below has an R twin, a Quarto document next to it with the same name
+and the same sections, models and numbers, written with the R package like the R
+twins in [`examples/`](../../examples/README.md):
 
-[`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd)
-and
-[`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd)
-are the R twins of the two guides that reproduce CAS Monograph 2, Bahnemann's
-*Distributions for Actuaries*: the same examples and the same numbers, with the
-monograph's printed values beside prospicio's, and the R package's gaps for
-those chapters listed at the end of each.
+| R twin | Python guide |
+|---|---|
+| [`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) | `prospicio-for-aggregate-users.md` |
+| [`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) | `capital-modeling-monograph-15.md` |
+| [`pricing-insurance-risk-case-studies.qmd`](pricing-insurance-risk-case-studies.qmd) | `pricing-insurance-risk-case-studies.md` |
+| [`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd) | `distributions-for-actuaries-claim-size.md` |
+| [`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd) | `distributions-for-actuaries-counts-aggregates.md` |
+| [`ratemaking-werner-modlin.qmd`](ratemaking-werner-modlin.qmd) | `ratemaking-werner-modlin.md` |
+| [`ratemaking-werner-modlin-indications.qmd`](ratemaking-werner-modlin-indications.qmd) | `ratemaking-werner-modlin-indications.md` |
+| [`reserving-friedland.qmd`](reserving-friedland.qmd) | `reserving-friedland.md` |
+| [`reserving-taylor-mcguire.qmd`](reserving-taylor-mcguire.qmd) | `reserving-taylor-mcguire.md` |
+| [`reserving-meyers.qmd`](reserving-meyers.qmd) | `reserving-meyers.md` |
+
+Each R chunk is followed by the text it prints, and
+`R/prospicio/tests/test-guides.R` (run by CI's R job with the other R tests) runs
+every `.qmd` here and requires each chunk to print exactly that text. The `.qmd`
+files are not pages of the Python site. With the R package installed, render one
+with `quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
+all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
+Two blocks in `reserving-meyers` (the heavy Bayesian fits) are plain code fences
+with recorded numbers, which neither harness re-runs.
 
 Money in the guides is in millions of a synthetic currency, and every example is
 synthetic. The guides write about the library and do not change it; a gap found

@@ -1,0 +1,1 @@
+* **Update**: [R bindings and docs on the local Windows machine](/environment/local-windows-r.md), from the R twin of the Meyers Monograph 8 guide (branch guides/reserving-meyers-r): the R package's GNU build and the Python extension's MSVC build give different NUTS draws at the same seed on one machine, so shared guides check NUTS results by tolerance.
