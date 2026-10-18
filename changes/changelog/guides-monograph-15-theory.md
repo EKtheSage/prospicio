@@ -9,4 +9,4 @@
   assessment, the 35 xs 65 reinsurance decision, new business and acquisition
   pricing, portfolio optimization by grid search, and the range of unit
   premiums by `premium_bounds`, with the monograph's printed values beside
-  prospicio's.
+  prospicio's (#364).
