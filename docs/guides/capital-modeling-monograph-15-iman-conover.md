@@ -165,7 +165,8 @@ NAMES = ["Auto-GL", "Auto-Property", "GL-Property"]
 
 
 def ranks(a):
-    return np.argsort(np.argsort(a, axis=0), axis=0)
+    """Ranks from 0, ties in order of appearance (as R's rank(ties.method = "first"))."""
+    return np.argsort(np.argsort(a, axis=0, kind="stable"), axis=0, kind="stable")
 
 
 def pairs(m):
@@ -215,8 +216,8 @@ print("Gaussian Spearman (6/pi) asin(r/2):",
 
 ```text
                 Pearson 5%    mean     95%  Spearman 5%    mean     95%
-Auto-GL             -0.286  -0.269  -0.252       -0.299  -0.287  -0.271
-Auto-Property       -0.020   0.000   0.021       -0.013   0.000   0.015
+Auto-GL             -0.286  -0.269  -0.252       -0.298  -0.286  -0.271
+Auto-Property       -0.020   0.000   0.021       -0.012   0.000   0.016
 GL-Property          0.752   0.773   0.791        0.778   0.787   0.795
 Gaussian Spearman (6/pi) asin(r/2): [-0.288, 0.0, 0.786]
 ```
@@ -360,7 +361,7 @@ print("if independent, about", n // 10_000)
 ```
 
 ```text
-normal    GL-Property Spearman 0.787, years in both worst 1%: 35
+normal    GL-Property Spearman 0.787, years in both worst 1%: 34
 t, 2 dof  GL-Property Spearman 0.714, years in both worst 1%: 68
 if independent, about 1
 ```
