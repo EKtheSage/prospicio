@@ -405,8 +405,8 @@ for name, j in [("current", 1), ("proposed", 2), ("actual", 3)]:
     print(f"  {name:9s}", " ".join(f"{(band[j] / band[0]) / (tot[j] / tot[0]):.2f}" for band in dl))
 lr = bands_by(ratio, [yt, current])
 print("loss ratio (actual / current premium):", " ".join(f"{a / c:.2f}" for a, c in lr))
-print(f"Gini on the test set: current {gini(yt, [p / e for p, e in zip(current, et)], et):.3f},"
-      f" proposed {gini(yt, [p / e for p, e in zip(proposed, et)], et):.3f}")
+rate = lambda pred: [round(p / e, 10) for p, e in zip(pred, et)]  # equal ages tie exactly
+print(f"Gini on the test set: current {gini(yt, rate(current), et):.3f}, proposed {gini(yt, rate(proposed), et):.3f}")
 ```
 
 ```text
@@ -428,7 +428,11 @@ ratio of 0.42 and the last at 1.57, with one reversal on 120 test policies.
 The Gini index (section 7.2.4) sorts by predicted rate, plots cumulative share
 of exposure against cumulative share of losses (the Lorenz curve), and is
 twice the area between the curve and the diagonal; `gini` computes it with
-exposure, ties taken together; the test set's values are printed above.
+exposure, ties taken together; the test set's values are printed above. The
+predicted rate depends only on age, so policies of the same age tie, but only
+up to the last bit of floating point, which differs between platforms and
+between the Python and R fits; rounding the rates to 10 decimals makes those
+ties exact everywhere.
 
 For a yes or no outcome, section 7.3 adds the ROC curve. Table 13's confusion
 matrices give the rates the monograph quotes, and footnote 17 states that the
