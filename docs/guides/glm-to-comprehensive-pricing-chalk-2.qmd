@@ -1,0 +1,688 @@
+---
+title: "Beyond the GLM, part 2: correlated features, two stages and black boxes"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+The second part of the guide to CAS Monograph 16, *From GLMs to Comprehensive
+Insurance Pricing: Techniques and Challenges* (Chalk, Deacon, Guillen and
+Martinelli, 2025), and the R twin of the Python guide
+[`glm-to-comprehensive-pricing-chalk-2.md`](glm-to-comprehensive-pricing-chalk-2.md).
+The first part,
+[`glm-to-comprehensive-pricing-chalk.qmd`](glm-to-comprehensive-pricing-chalk.qmd),
+covers chapters 3 to 6 (measuring performance, penalized regression, nonlinear
+effects, high cardinality factors) and explains what can and cannot be
+reproduced, where the data comes from and how the numbers are checked. This
+part covers chapters 7 to 10. The text is the authors'; what follows is an
+explanation in new words with the numbers recomputed, and table and section
+numbers are the monograph's. Every R chunk followed by a text block runs in CI
+(`R/prospicio/tests/test-guides.R`) and prints exactly the Python guide's
+text: the data are the same draws (read from `examples/data/`), the models run
+on the same Rust code, and the boosting model on the same LightGBM with the
+same parameters.
+
+The chunk below rebuilds what part 1 built and this part uses, in one go: the
+simulated portfolio with its known truth (20,000 policies, folds from the
+policy number, folds 7 to 9 for testing), the pseudo-R2 helper and
+cross-validation loop, the baseline GLM and boosting formulas, the age steps
+the lasso keeps, and the make's out-of-fold target encoding. Part 1 explains
+each piece.
+
+```{r}
+library(prospicio)
+
+# The data files, found from the repository root (CI) or from docs/guides (Quarto).
+find_data <- function(name, dir = getwd()) {
+  repeat {
+    path <- file.path(dir, "examples", "data", name)
+    if (file.exists(path)) return(path)
+    parent <- dirname(dir)
+    if (identical(parent, dir)) stop("examples/data/", name, " not found", call. = FALSE)
+    dir <- parent
+  }
+}
+
+pf <- utils::read.csv(find_data("chalk_portfolio.csv"), comment.char = "#")
+toys <- utils::read.csv(find_data("chalk_toys.csv"), comment.char = "#")
+n <- nrow(pf)
+pf$region <- factor(pf$region, levels = c("A", "B", "C", "D", "E", "F"))
+pf$power <- factor(pf$power, levels = c("low", "mid", "high"))
+make_effect <- toys$y[toys$example == "make_effect"]
+region_effect <- c(A = 0, B = 0.15, C = -0.2, D = 0, E = 0, F = 0.3)
+true_lp <- with(pf, log(0.25) + 0.9 * exp(-(age - 18) / 6) + 0.0015 * pmax(age - 60, 0)^1.5 -
+  0.08 * pmin(veh_age, 6) + unname(region_effect[as.character(region)]) + make_effect[make + 1] +
+  0.25 * (power == "high") + 0.6 * (power == "high" & age < 25))
+pf$fold <- (seq_len(n) - 1) %% 10
+train <- pf$fold < 7
+truth <- exp(true_lp) * pf$exposure
+
+pseudo_r2 <- function(y, mu, expo) {
+  null <- expo * sum(y) / sum(expo)
+  1 - family_deviance("poisson", y, mu) / family_deviance("poisson", y, null)
+}
+
+# Python's list of formatted numbers: ['0.100', '0.200'].
+py_list <- function(x, digits) {
+  paste0("[", paste0("'", sprintf(paste0("%.", digits, "f"), x), "'", collapse = ", "), "]")
+}
+
+# Trees see region and power as the codes of their levels in alphabetical order.
+tree_codes <- function(d) {
+  d$region_code <- match(as.character(d$region), c("A", "B", "C", "D", "E", "F")) - 1
+  d$power_code <- match(as.character(d$power), c("high", "low", "mid")) - 1
+  d
+}
+pf <- tree_codes(pf)
+f_base <- claims ~ age + veh_age + region + power + offset(log(exposure))
+f_tree <- claims ~ age + veh_age + region_code + power_code + make + noise + offset(log(exposure))
+gbm_params <- list(num_leaves = 7, min_data_in_leaf = 200, num_threads = 1)
+
+gbm_fit <- function(formula, d, rounds = 150) {
+  booster_fit(formula, d, n_rounds = rounds, learning_rate = 0.05, params = gbm_params, seed = 1)
+}
+
+cells <- aggregate(cbind(claims, exposure) ~ age + fold, pf, sum)
+cells <- cells[order(cells$age * 10 + cells$fold), ]
+knots <- seq(20, 77, by = 3)
+step_names <- paste0("age_stp_", knots)
+for (a in knots) cells[[paste0("age_stp_", a)]] <- as.numeric(cells$age >= a)
+cells_tr <- cells[cells$fold < 7, ]
+f_steps <- reformulate(c(step_names, "offset(log(exposure))"), "claims")
+lams <- elastic_net_fit(f_steps, cells_tr, alpha = 0.99, nlambda = 25, lambda_min_ratio = 1e-3)@lambda
+cvp <- elastic_net_cv(f_steps, cells_tr, alpha = 0.99, lambda = lams, foldid = cells_tr$fold + 1)
+kept <- knots[cvp$fit@coefficients[step_names, which(lams == cvp$lambda_min)] != 0]
+
+expected <- numeric(n)
+for (j in 0:6) {
+  fit_j <- glm_fit(f_base, pf[train & pf$fold != j, ])
+  expected[pf$fold == j] <- predict(fit_j, pf[pf$fold == j, ])
+}
+expected[!train] <- predict(glm_fit(f_base, pf[train, ]), pf[!train, ])
+
+# Sums by make, one per make 0 to 299.
+by_make <- function(rows, v) {
+  out <- numeric(300)
+  s <- rowsum(v[rows], pf$make[rows])
+  out[as.integer(rownames(s)) + 1] <- s
+  out
+}
+
+# Each make's shrunk actual-to-expected ratio from the rows in `source`.
+encode <- function(source, K) {
+  actual <- by_make(source, pf$claims)
+  exp_ <- by_make(source, expected)
+  z <- by_make(source, pf$exposure) / (by_make(source, pf$exposure) + K)
+  1 - z + z * ifelse(exp_ > 0, actual / exp_, 1)
+}
+
+# Per policy: a training row in fold j is encoded from the training folds other than j
+# (and other than the held-out fold); every other row from all training folds but the held-out one.
+make_feature <- function(K, held_out = -1) {
+  te <- encode(train & pf$fold != held_out, K)[pf$make + 1]
+  for (j in setdiff(0:6, held_out)) {
+    in_j <- pf$fold == j
+    te[in_j] <- encode(train & pf$fold != j & pf$fold != held_out, K)[pf$make[in_j] + 1]
+  }
+  log(te)
+}
+
+cat(sprintf("%d policies, %.0f claims; age steps kept by the lasso at [%s]\n",
+            n, sum(pf$claims), paste(kept, collapse = ", ")))
+```
+
+```text
+20000 policies, 3659 claims; age steps kept by the lasso at [20, 23, 26, 29, 32, 62, 65, 77]
+```
+
+## 1. Highly correlated variables (chapter 7)
+
+When two features carry nearly the same information, a GLM can split their joint
+effect between them in many ways that fit almost equally well, so small changes
+in the data swing the coefficients (section 7.2). The portfolio's `exper` is
+driver age less 17 less a small random amount, correlated 0.997 with age, and has
+no effect of its own. Fitting age and experience together on each of the seven
+training sets of the cross-validation shows the swing, and what ridge and the
+lasso do with it (section 7.4):
+
+```{r}
+f_corr <- claims ~ age + exper + offset(log(exposure))
+fits_by <- list(
+  GLM = function(d) coef(glm_fit(f_corr, d)),
+  ridge = function(d) elastic_net_fit(f_corr, d, alpha = 0, lambda = 0.01)@coefficients[, 1],
+  lasso = function(d) elastic_net_fit(f_corr, d, alpha = 1, lambda = 0.001)@coefficients[, 1]
+)
+for (name in names(fits_by)) {
+  coefs <- t(vapply(0:6, function(k) fits_by[[name]](pf[train & pf$fold != k, ])[c("age", "exper")],
+                    double(2)))
+  cat(sprintf("%-5s age %+.4f to %+.4f   exper %+.4f to %+.4f   sum %+.4f\n", name,
+              min(coefs[, 1]), max(coefs[, 1]), min(coefs[, 2]), max(coefs[, 2]), mean(rowSums(coefs))))
+}
+```
+
+```text
+GLM   age -0.0540 to -0.0409   exper +0.0340 to +0.0467   sum -0.0072
+ridge age -0.0061 to -0.0052   exper -0.0016 to -0.0010   sum -0.0070
+lasso age -0.0074 to -0.0066   exper +0.0000 to +0.0000   sum -0.0070
+```
+
+The unpenalized coefficients move a lot from one training set to the next while
+their sum, the effect of a year of age-and-experience together, barely moves.
+Ridge shares the effect between the two and holds both steady; the lasso keeps
+mostly one and drops the other, which is stable here but can flip between
+training sets when the two are closer still (section 7.5.3). Principal
+components (section 7.4.5) are not in prospicio; `stats::prcomp()` on the
+scaled columns gives them, and the components go into a formula like any other
+column.
+
+## 2. Modelling in two stages (chapter 8)
+
+### 2.1 The marketing discount as an offset
+
+Chapter 8's example is the one fully specified data set in the monograph: a
+million simulated private auto policies, one year each, with age group (A to E)
+and no-claims bonus (NCB 0 to 4) strongly related. Table 8.2 prints the number
+of policies in each cell, Table 8.3 the true relativities, and section 8.1 a base
+frequency of 10% for age A and NCB 0. A Poisson GLM can be fitted to the 25
+cells with expected claims as the response, which gives the fit that the
+monograph's simulation estimates with noise:
+
+```{r}
+table_8_2 <- list(A = c(132381, 54519, 12194, 1237, 26), B = c(55624, 82213, 49354, 12283, 952),
+                  C = c(11053, 49903, 77029, 50248, 11291), D = c(920, 12187, 49027, 81946, 55690),
+                  E = c(22, 1178, 12396, 54286, 132041))
+age_rel <- c(A = 1, B = 0.7, C = 0.6, D = 0.5, E = 0.4)
+ncb_rel <- c(1, 0.95, 0.9, 0.85, 0.8)
+marketing <- c(1, 0.65, 0.50, 0.40, 0.20)
+data_8 <- data.frame(age = rep(names(table_8_2), each = 5), ncb = rep(0:4, 5),
+                     policies = unlist(table_8_2, use.names = FALSE))
+data_8$expected_claims <- data_8$policies * 0.10 * age_rel[data_8$age] * ncb_rel[data_8$ncb + 1]
+data_8$mkt <- marketing[data_8$ncb + 1]
+data_8$ncb <- factor(data_8$ncb)
+cat(sprintf("policies %s\n", formatC(sum(data_8$policies), format = "f", digits = 0, big.mark = ",")))
+
+full <- glm_fit(expected_claims ~ age + ncb + offset(log(policies)), data_8)
+cat("age and NCB fitted:", py_list(exp(coef(full)), 3), "\n")
+offset_fit <- glm_fit(expected_claims ~ age + offset(log(policies * mkt)), data_8)
+rel <- unname(exp(coef(offset_fit)))
+cat(sprintf("NCB offset at the marketing scale: intercept %.4f (printed 0.112)\n", rel[1]))
+cat("  age B to E:", py_list(rel[-1], 4), "printed [0.849, 0.925, 0.980, 1.057]\n")
+```
+
+```text
+policies 1,000,000
+age and NCB fitted: ['0.100', '0.700', '0.600', '0.500', '0.400', '0.950', '0.900', '0.850', '0.800']
+NCB offset at the marketing scale: intercept 0.1125 (printed 0.112)
+  age B to E: ['0.8485', '0.9175', '0.9825', '1.0586'] printed [0.849, 0.925, 0.980, 1.057]
+```
+
+With age and NCB both in the model the GLM returns the truth (intercept 0.10,
+then the age and NCB relativities of Table 8.3); the monograph's fit on its noisy
+simulation, Table 8.4, is within about 0.025 of it. Offsetting the marketing
+department's NCB scale and refitting age gives the intercept 0.112 that section
+8.1 prints (0.1125, printed as 0.112) and age relativities of 0.849, 0.918,
+0.983 and 1.059 against the printed 0.849, 0.925, 0.980 and 1.057. The
+differences are the monograph's simulation noise; the reversal (age
+relativities rising with age, because age now carries part of the NCB effect
+the marketing scale removed) is the same.
+
+The risk premiums of the section follow, at a claim size of 10,000:
+
+```{r}
+cat(sprintf("true A/0 %.0f, true E/4 %.0f (printed 1,000 and 320)\n", 0.10 * 1 * 1 * 10000,
+            0.10 * 0.4 * 0.8 * 10000))
+cat(sprintf("GLM E/4 at printed coefficients %.0f (printed 322)\n", 0.10 * 0.39 * 0.826 * 10000))
+cat(sprintf("GLM age with marketing NCB %.0f (printed 78)\n", 0.10 * 0.39 * 0.20 * 10000))
+cat(sprintf("offset model E/4: printed coefficients %.0f (printed 237), recomputed %.0f\n",
+            0.112 * 1.057 * 0.20 * 10000, rel[1] * rel[5] * 0.20 * 10000))
+```
+
+```text
+true A/0 1000, true E/4 320 (printed 1,000 and 320)
+GLM E/4 at printed coefficients 322 (printed 322)
+GLM age with marketing NCB 78 (printed 78)
+offset model E/4: printed coefficients 237 (printed 237), recomputed 238
+```
+
+### 2.2 Offsets and residuals give the same second stage
+
+A second-stage model can start where a first stage stopped in two ways (sections
+8.3 to 8.5): an offset of the log of the first stage's predicted counts, or the
+residual (actual over predicted counts) as the response with the predicted
+counts as weights. Yan and others, and Shi, show the two are identical for a
+Poisson log-link model. On the portfolio, a first-stage GLM without region and a
+second stage that fits region alone:
+
+```{r}
+tr <- pf[train, ]
+tr$mu1 <- predict(glm_fit(claims ~ age + veh_age + power + offset(log(exposure)), tr), tr)
+by_offset <- glm_fit(claims ~ region + offset(log(mu1)), tr)
+by_residual <- glm_fit(I(claims / mu1) ~ region, tr, weights = tr$mu1)
+cat("offset:  ", py_list(exp(coef(by_offset)), 4), "\n")
+cat("residual:", py_list(exp(coef(by_residual)), 4), "\n")
+```
+
+```text
+offset:   ['0.9301', '1.2148', '0.8598', '1.0619', '1.0436', '1.4061']
+residual: ['0.9301', '1.2148', '0.8598', '1.0619', '1.0436', '1.4061']
+```
+
+The fitted second stage is the same to the printed digits. In section 8.4's
+summary by zip code the first rows have residuals 0 / 0.014 = 0 and 1 / 0.739 =
+1.353. Section 8.9.1 adds the caution that the first stage's predictions should
+be cross-fitted (each record predicted by a model that did not see it), as
+`expected` was in part 1's section 4.4: an overfitted first stage leaves the
+second nothing to find (Table 8.12), while cross-fitted predictions leave
+residuals such as 3 / 5 = 0.6 and 7 / 5 = 1.4 (Table 8.13). `gam_fit()` also
+takes tensor product smooths, so a spatial second stage of the kind in Figure
+8.2 is a `gam_fit()` with `tensors = list(c("lon", "lat"))` and the first stage
+as offset.
+
+### 2.3 Combining tables and area groups
+
+Section 8.7 multiplies the seven aircraft tables into one relativity for the
+Cessna 172M, and section 8.9.2 replaces 30,000 zip code relativities by 100
+area groups in equal multiplicative steps between the smallest (0.379) and
+largest (1.851) relativity:
+
+```{r}
+table_8_11 <- c(1.30, 1.15, 1.00, 1.36, 1.69, 1.00, 0.41, 0.97)
+cat(sprintf("Cessna 172M relativity %.2f (printed 1.37)\n", prod(table_8_11)))
+step <- (1.851 / 0.379)^(1 / 99)
+cat(sprintf("range %.3f (printed 4.884), exact step %.5f, printed step 1.0162, 1.0162^99 = %.3f (printed 4.908)\n",
+            1.851 / 0.379, step, 1.0162^99))
+cat("groups 1, 2, 3, 22, 56:", py_list(0.379 * 1.0162^(c(1, 2, 3, 22, 56) - 1), 3),
+    "printed [0.379, 0.385, 0.391, 0.531, 0.917]\n")
+```
+
+```text
+Cessna 172M relativity 1.37 (printed 1.37)
+range 4.884 (printed 4.884), exact step 1.01615, printed step 1.0162, 1.0162^99 = 4.908 (printed 4.908)
+groups 1, 2, 3, 22, 56: ['0.379', '0.385', '0.391', '0.531', '0.917'] printed [0.379, 0.385, 0.391, 0.531, 0.917]
+```
+
+The printed step 1.0162 is the exact 1.01615 rounded up, which is why 99 steps
+of it overshoot the range (4.908 against 4.884); the group relativities of
+Table 8.15 are built from the rounded step.
+
+## 3. Learning from black-box models (chapter 9)
+
+### 3.1 The boosting model's variance
+
+The gradient boosting benchmark is, in the monograph's words, a very complicated
+GLM: thousands of steps and interactions. Its training performance keeps rising
+as trees are added while its validation performance stalls (Figure 9.1). On fold
+0 of the portfolio:
+
+```{r}
+fit_d <- pf[train & pf$fold != 0, ]
+val_d <- pf[pf$fold == 0, ]
+for (rounds in c(50, 150, 600)) {
+  b_fit <- gbm_fit(f_tree, fit_d, rounds)
+  gap_train <- pseudo_r2(fit_d$claims, predict(b_fit, fit_d), fit_d$exposure)
+  gap_val <- pseudo_r2(val_d$claims, predict(b_fit, val_d), val_d$exposure)
+  cat(sprintf("%4d trees: train %.3f, validation %.3f\n", rounds, gap_train, gap_val))
+}
+```
+
+```text
+  50 trees: train 0.044, validation 0.042
+ 150 trees: train 0.067, validation 0.052
+ 600 trees: train 0.109, validation 0.051
+```
+
+### 3.2 Permutation feature importance
+
+Section 9.2 measures a feature's importance by how much worse the model predicts
+held-out data when that feature's column is shuffled, which breaks its link to
+the outcome and leaves everything else in place. It needs only predictions, so
+it works for any model. Tables 9.1 to 9.4: three insureds, frequency age / 100,
+a model that has learned exactly that, and the mean absolute error:
+
+```{r}
+toy_age <- c(20, 30, 40)
+toy_height <- c(1.4, 1.5, 1.6)
+toy_freq <- toy_age / 100
+toy_model <- function(a, h) a / 100
+
+base_mae <- mean(abs(toy_model(toy_age, toy_height) - toy_freq))
+mae_age <- mean(abs(toy_model(c(40, 20, 30), toy_height) - toy_freq))
+mae_height <- mean(abs(toy_model(toy_age, c(1.6, 1.4, 1.5)) - toy_freq))
+gains <- c(age = mae_age - base_mae, height = mae_height - base_mae)
+for (name in names(gains)) {
+  cat(sprintf("%-6s increase in MAE %.3f, importance %.0f\n", name, gains[[name]],
+              100 * gains[[name]] / max(gains)))
+}
+cat("printed: age 0.133 and 100, height 0 and 0\n")
+```
+
+```text
+age    increase in MAE 0.133, importance 100
+height increase in MAE 0.000, importance 0
+printed: age 0.133 and 100, height 0 and 0
+```
+
+On the portfolio, "our GLM" for this chapter is the monograph's end point: the
+age steps the lasso kept, steps for vehicle age, region, power and the make
+encoding (at `K` = 64), with the noise and experience features left out (part
+1, sections 3.2 and 4.4). The boosting model gets the raw features (less
+`exper`, whose near-copy of age would blur every comparison below, the caveat
+of section 9.2 about correlated features) and the same make encoding, as the
+monograph does: it notes that the two models would share one encoding but for
+its boosting library's built-in one. As in section 9.5.1, each importance is
+computed on the held-out fold of each of the seven cross-validation models and
+averaged, as the loss of pseudo-R2 when the feature is shuffled. The loop also
+keeps what the next two sections need: the losses from shuffling pairs and the
+partial dependence on age.
+
+The shuffle of each fold is the Python guide's (numpy's generator seeded with
+the fold number), read from the `shuffle` column of the data file: row `i` of
+fold `k` takes the values of the fold's row `shuffle[i] + 1`.
+
+```{r}
+veh_knots <- c(2, 4, 6, 8, 10)
+features <- c("age", "veh_age", "region", "power", "log_te", "noise")
+ages <- c(18, 21, 25, 40, 60, 75)
+
+# The step columns and the interaction are rebuilt from the frame's own (possibly shuffled) columns.
+glm_frame <- function(f) {
+  for (a in kept) f[[paste0("age_stp_", a)]] <- as.numeric(f$age >= a)
+  for (v in veh_knots) f[[paste0("veh_stp_", v)]] <- as.numeric(f$veh_age >= v)
+  f$young_high <- as.numeric(f$age < 25 & f$power == "high")
+  f
+}
+glm_formula <- function(interaction = FALSE) {
+  reformulate(c(paste0("age_stp_", kept), paste0("veh_stp_", veh_knots), "region", "power", "log_te",
+                if (interaction) "young_high", "offset(log(exposure))"), "claims")
+}
+f_gbm <- claims ~ age + veh_age + region_code + power_code + log_te + noise + offset(log(exposure))
+
+frame <- function(mask, log_te) {
+  f <- pf[mask, c("age", "veh_age", "region", "power", "noise", "exposure", "claims", "shuffle")]
+  f$log_te <- log_te[mask]
+  f
+}
+
+shuffled <- function(f, names) {
+  for (x in names) f[[x]] <- f[[x]][f$shuffle + 1]
+  f
+}
+
+fit_model <- list(
+  GLM = function(f) glm_fit(glm_formula(), glm_frame(f)),
+  GBM = function(f) gbm_fit(f_gbm, tree_codes(f))
+)
+predict_model <- list(
+  GLM = function(m, f) predict(m, glm_frame(f)),
+  GBM = function(m, f) predict(m, tree_codes(f))
+)
+score_full <- list(GLM = numeric(), GBM = numeric())
+loss <- list(GLM = list(), GBM = list())
+pair_loss <- list()
+pd_by_age <- list(GLM = list(), GBM = list())
+glm_with_interaction <- numeric()
+for (k in 0:6) {
+  log_te_k <- make_feature(64, held_out = k)
+  fit_f <- frame(train & pf$fold != k, log_te_k)
+  val_f <- frame(pf$fold == k, log_te_k)
+  for (m in c("GLM", "GBM")) {
+    model <- fit_model[[m]](fit_f)
+    score <- function(f) pseudo_r2(val_f$claims, predict_model[[m]](model, f), f$exposure)
+    full <- score(val_f)
+    score_full[[m]] <- c(score_full[[m]], full)
+    for (x in features) loss[[m]][[x]] <- c(loss[[m]][[x]], full - score(shuffled(val_f, x)))
+    if (m == "GBM") {
+      for (i in seq_along(features)) {
+        for (b in features[-seq_len(i)]) {
+          pair <- paste(features[i], b)
+          pair_loss[[pair]] <- c(pair_loss[[pair]], full - score(shuffled(val_f, c(features[i], b))))
+        }
+      }
+    }
+    pd_by_age[[m]][[k + 1]] <- vapply(ages, function(v) {
+      f <- val_f
+      f$age <- v
+      mean(predict_model[[m]](model, f))
+    }, double(1))
+  }
+  with_i <- glm_fit(glm_formula(TRUE), glm_frame(fit_f))
+  glm_with_interaction <- c(glm_with_interaction,
+                            pseudo_r2(val_f$claims, predict(with_i, glm_frame(val_f)), val_f$exposure))
+}
+
+mean_loss <- lapply(loss, function(l) vapply(l, mean, double(1)))
+cat(sprintf("cv pseudo-R2: GLM %.3f, GBM %.3f\n", mean(score_full$GLM), mean(score_full$GBM)))
+cat(sprintf("%-8s %9s %9s\n", "feature", "GLM loss", "GBM loss"))
+for (x in features[order(-mean_loss$GLM[features])]) {
+  cat(sprintf("%-8s %9.3f %9.3f\n", x, mean_loss$GLM[[x]], mean_loss$GBM[[x]]))
+}
+```
+
+```text
+cv pseudo-R2: GLM 0.055, GBM 0.048
+feature   GLM loss  GBM loss
+log_te       0.037     0.032
+age          0.036     0.035
+power        0.017     0.017
+veh_age      0.010     0.008
+region       0.010     0.004
+noise        0.000    -0.001
+```
+
+The two models agree on which features matter and roughly in which order, and
+the GBM gives the noise feature next to nothing although it was allowed to use
+it. With the monograph's treatment of nonlinear effects and of the make, our
+GLM now scores above this (untuned) boosting model, which the raw-feature
+baseline GLM was far below in part 1's section 1.3.
+
+The GLM's loss for noise is exactly zero because the GLM does not use it;
+the monograph's GLM importances are never exactly zero because its lasso kept
+each feature in at least one fold.
+
+### 3.3 Partial dependence
+
+Section 9.3 isolates a feature's effect in a black box by setting it to one value
+for every record, averaging the predictions, and repeating for another value.
+For a GLM without interactions the ratio of the two averages is exactly the
+ratio of the feature's relativities. The printed `nu_registered` steps give 1.107
+between 1 and 10, Tables 9.7 to 9.9 the same ratio from predictions, and the
+boosting model of Table 9.10 1.104:
+
+```{r}
+nu <- function(v) -0.0001407 * v + 0.02936 * (v >= 2) + 0.07342 * (v >= 7) - 0.15822 * (v >= 16) -
+  0.17117 * (v >= 35)
+cat(sprintf("GLM relativity 10 vs 1 from the steps %.3f (printed 1.107)\n", exp(nu(10) - nu(1))))
+cat(sprintf("Table 9.9 ratio of totals %.3f, Table 9.10 GBM %.3f (printed 1.107, 1.104)\n",
+            0.01225 / 0.01107, 0.005892 / 0.005336))
+```
+
+```text
+GLM relativity 10 vs 1 from the steps 1.107 (printed 1.107)
+Table 9.9 ratio of totals 1.107, Table 9.10 GBM 1.104 (printed 1.107, 1.104)
+```
+
+On the portfolio, the partial dependence of each model on driver age, relative
+to age 40 and averaged over the seven held-out folds, next to the truth for a
+low-power car (the true young-driver effect is larger for high power, which is
+the interaction):
+
+```{r}
+true_age <- exp(0.9 * exp(-(ages - 18) / 6) + 0.0015 * pmax(ages - 60, 0)^1.5)
+pd_mean <- lapply(pd_by_age, function(v) colMeans(do.call(rbind, v)))
+for (i in seq_along(ages)) {
+  cat(sprintf("age %d: GLM %.2f  GBM %.2f  true (low power) %.2f\n", ages[i],
+              pd_mean$GLM[i] / pd_mean$GLM[4], pd_mean$GBM[i] / pd_mean$GBM[4], true_age[i] / true_age[4]))
+}
+```
+
+```text
+age 18: GLM 2.81  GBM 2.39  true (low power) 2.40
+age 21: GLM 2.06  GBM 1.85  true (low power) 1.69
+age 25: GLM 1.54  GBM 1.18  true (low power) 1.29
+age 40: GLM 1.00  GBM 1.00  true (low power) 1.00
+age 60: GLM 1.00  GBM 1.02  true (low power) 0.98
+age 75: GLM 1.18  GBM 1.09  true (low power) 1.07
+```
+
+As section 9.3 cautions, a partial dependence is an average over the portfolio.
+Both models' young-driver figures blend high-power cars, where the effect is
+stronger, with the rest; the GLM's is the higher because, without an
+interaction term, it charges every young driver part of the high-power cars'
+extra load. The next section finds that interaction.
+
+### 3.4 Interactions from permutations
+
+Section 9.4's screen for interactions shuffles two features separately and
+together: with `L_A`, `L_B` and `L_AB` the losses, `L_A + L_B - L_AB` is zero if
+neither feature interacts with anything and positive if they interact with each
+other or with a common third feature. Table 9.11 prints the three losses for
+three pairs with aircraft age; its columns are, from the values, `L_AB`, `L_A`
+and `L_B`:
+
+```{r}
+table_9_11 <- data.frame(name = c("region", "nu_registered", "faa_eng_hp_char"),
+                         l_ab = c(0.291, 0.115, 0.123), l_a = c(0.253, 0.016, 0.002),
+                         l_b = c(0.135, 0.135, 0.135), printed = c("0.096", "0.037", "0.014"))
+for (i in 1:3) {
+  r <- table_9_11[i, ]
+  cat(sprintf("%-15s x aircraft age: %.3f (printed %s)\n", r$name, r$l_a + r$l_b - r$l_ab, r$printed))
+}
+```
+
+```text
+region          x aircraft age: 0.097 (printed 0.096)
+nu_registered   x aircraft age: 0.036 (printed 0.037)
+faa_eng_hp_char x aircraft age: 0.014 (printed 0.014)
+```
+
+The recomputed values differ from the printed ones by 0.001, the rounding of the
+three inputs. The same screen on the boosting model, over every pair of the
+portfolio's features and averaged over the seven folds, and then the GLM's
+cross-validated score with and without one more column for the pair it puts
+first:
+
+```{r}
+strength <- vapply(names(pair_loss), function(pair) {
+  ab <- strsplit(pair, " ")[[1]]
+  mean_loss$GBM[[ab[1]]] + mean_loss$GBM[[ab[2]]] - mean(pair_loss[[pair]])
+}, double(1))
+for (pair in names(sort(strength, decreasing = TRUE))[1:3]) {
+  ab <- strsplit(pair, " ")[[1]]
+  cat(sprintf("%-8s x %-8s %.4f\n", ab[1], ab[2], strength[[pair]]))
+}
+cat(sprintf("GLM cv pseudo-R2 %.3f, with a young-driver high-power term %.3f\n",
+            mean(score_full$GLM), mean(glm_with_interaction)))
+```
+
+```text
+age      x power    0.0044
+age      x log_te   0.0025
+region   x log_te   0.0010
+GLM cv pseudo-R2 0.055, with a young-driver high-power term 0.058
+```
+
+Age and power come first, which is the interaction that was planted, and the
+GLM gains when given it. In the monograph, the leaves of a decision tree fitted
+to the ratio of boosting to GLM predictions played this role and lifted the
+cross-validated pseudo-R2 from 0.151 to 0.156; prospicio has no decision tree,
+but a `booster_fit()` with one tree and a few leaves is one, and the hand-made
+column above is the same idea.
+
+### 3.5 The test data, once
+
+Everything above was decided on the training folds. Section 3.2's rule is that
+the test data is looked at once, at the end. Refitting each model on all seven
+training folds (the make encoding from all of them) and scoring on folds 7 to 9:
+
+```{r}
+log_te_all <- make_feature(64)
+fit_all <- frame(train, log_te_all)
+test_all <- frame(!train, log_te_all)
+final <- list(
+  "baseline GLM" = predict(glm_fit(f_base, pf[train, ]), pf[!train, ]),
+  "our GLM" = predict(glm_fit(glm_formula(), glm_frame(fit_all)), glm_frame(test_all)),
+  "our GLM + interaction" = predict(glm_fit(glm_formula(TRUE), glm_frame(fit_all)), glm_frame(test_all)),
+  "GBM" = predict(gbm_fit(f_gbm, tree_codes(fit_all)), tree_codes(test_all)),
+  "truth" = truth[!train]
+)
+for (name in names(final)) {
+  cat(sprintf("%-22s %.3f\n", name, pseudo_r2(test_all$claims, final[[name]], test_all$exposure)))
+}
+```
+
+```text
+baseline GLM           0.025
+our GLM                0.068
+our GLM + interaction  0.071
+GBM                    0.064
+truth                  0.089
+```
+
+The ranking on the test data is the one cross-validation promised: the truth
+on top, then our GLM with the interaction, our GLM, the boosting model and the
+baseline. The boosting model's last digit can move with the LightGBM version
+and platform; the GLMs' cannot.
+
+## 4. Challenges in ratemaking models (chapter 10)
+
+The last chapter is a list of ways a good cross-validation score can still mislead:
+data whose meaning was misunderstood (the monograph's own aircraft age was the
+years since the registration certificate, not since manufacture), technical
+errors such as factor levels coded differently in training and production (a
+fitted model keeps its factor levels, and `predict()` rebuilds the design with
+them), data that breaks the model's assumptions, coefficients and business mix
+that drift over time, regulation, outliers and data quality. Cross-validation
+fails when the future differs from the folds, so a model in production is
+monitored: `actual_vs_expected()` compares actual and expected claims by period
+with a z-score for each period and a test for a trend in the ratio, the check
+that section 10.4 asks for.
+
+## 5. What prospicio does not cover
+
+Gaps found while writing the Python guide, filed for the Models lane, hold for
+R too, since both packages call the same Rust code:
+
+- Model-agnostic explanations: permutation importance, partial dependence and
+  the pairwise interaction screen are written out by hand above; a helper that
+  takes any fitted model and new data would save the loops (#355).
+- Bounds on elastic net coefficients (glmnet's `lower.limits` and
+  `upper.limits`) for monotone step functions (section 5.7.2), a built-in
+  relaxed lasso (section 4.5), and speed on hinge bases (#356).
+- Step, hinge and MARS bases (section 5.5), and out-of-fold target encoding
+  with a credibility constant (chapter 6; #357).
+- Generalized linear mixed models with a random intercept per level (section
+  6.5; #358).
+
+Everything the Python guides do has an R equivalent: `glm_fit()`,
+`elastic_net_fit()` (a path with `lambda = NULL`, its first `lambda` the
+smallest that zeroes every coefficient), `elastic_net_cv()` with `foldid` for
+the policy-number folds, `gam_fit()` (with `bs = "mpd"` for the monotone
+smooth), `booster_fit()` and `family_deviance()`. The R package has no
+`lambda_max()` or `lambda_path()` of its own, but the default path of
+`elastic_net_fit()` gives both, as used above.
+
+Not in prospicio and not filed, since general tools do them: principal
+components (section 7.4.5), word embeddings (section 6.4.4) and decision trees
+for interaction leaves (section 9.4; a one-tree `booster_fit()` is one). The
+monograph mentions neural networks only through the universal approximation
+theorem (section 8.2); prospicio's `cann_fit()`, a GLM offset plus a network
+correction, is the two-stage idea of chapter 8 with a network in the second
+stage, but the monograph has nothing to reproduce with it. Price optimization
+and demand modelling are outside the monograph.
+
+## 6. The printed numbers of chapters 8 and 9 and prospicio's
+
+| Where | Printed | Recomputed | Note |
+|---|---|---|---|
+| Table 8.6 offset fit | 0.112; 0.849, 0.925, 0.980, 1.057 | 0.1125; 0.849, 0.918, 0.983, 1.059 | the monograph's simulation noise |
+| Section 8.1 premiums | 1,000, 320, 322, 78, 237 | 1,000, 320, 322, 78, 237 | matches (238 from unrounded coefficients) |
+| Section 8.9.2 area groups | 1.0162, 4.908 | 1.01615, 4.908 | step rounded |
+| Tables 9.1 to 9.4 | 0.133, 100 | 0.133, 100 | matches |
+| Section 9.3 partial dependence | 1.107, 1.104 | 1.107, 1.104 | matches |
+| Table 9.11 interactions | 0.096, 0.037, 0.014 | 0.097, 0.036, 0.014 | inputs rounded |
