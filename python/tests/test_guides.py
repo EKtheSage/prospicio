@@ -16,7 +16,10 @@ from pathlib import Path
 import pytest
 
 GUIDES = Path(__file__).resolve().parents[2] / "docs" / "guides"
-GUIDE_FILES = sorted(p for p in GUIDES.glob("*.md") if p.name != "README.md")
+# Pages of prose with no code to run (still checked for em dashes and listing).
+PROSE_PAGES = {"reading-list.md"}
+PAGES = sorted(p for p in GUIDES.glob("*.md") if p.name != "README.md")
+GUIDE_FILES = [p for p in PAGES if p.name not in PROSE_PAGES]
 EM_DASH = "\u2014"
 SECONDS_PER_GUIDE = 20.0
 
@@ -95,9 +98,9 @@ def test_guide_runs_and_prints_what_it_shows(path, monkeypatch):
 
 def test_guides_have_no_em_dash_and_are_listed():
     readme = (GUIDES / "README.md").read_text(encoding="utf-8")
-    for path in [GUIDES / "README.md", *GUIDE_FILES]:
+    for path in [GUIDES / "README.md", *PAGES]:
         assert EM_DASH not in path.read_text(encoding="utf-8"), f"{path.name} has an em dash"
-    for path in GUIDE_FILES:
+    for path in PAGES:
         assert f"({path.name})" in readme, f"{path.name} is not listed in docs/guides/README.md"
 
 
