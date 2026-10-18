@@ -1,0 +1,1 @@
+* **Creation**: [The Monograph 15 chapters 3 to 6 guides in R, what the R package covers](/findings/monograph-15-chapters-3-6-r-api-map.md), from the R twins `docs/guides/capital-modeling-monograph-15-theory.qmd` and `-applications.qmd` (branch guides/monograph-15-theory-r): every printed number equals the Python guides'; `pentagon()` lacks the risk discount (#365).

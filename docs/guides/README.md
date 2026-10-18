@@ -80,6 +80,8 @@ twins in [`examples/`](../../examples/README.md):
 |---|---|
 | [`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) | `prospicio-for-aggregate-users.md` |
 | [`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) | `capital-modeling-monograph-15.md` |
+| [`capital-modeling-monograph-15-theory.qmd`](capital-modeling-monograph-15-theory.qmd) | `capital-modeling-monograph-15-theory.md` |
+| [`capital-modeling-monograph-15-applications.qmd`](capital-modeling-monograph-15-applications.qmd) | `capital-modeling-monograph-15-applications.md` |
 | [`pricing-insurance-risk-case-studies.qmd`](pricing-insurance-risk-case-studies.qmd) | `pricing-insurance-risk-case-studies.md` |
 | [`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd) | `distributions-for-actuaries-claim-size.md` |
 | [`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd) | `distributions-for-actuaries-counts-aggregates.md` |
