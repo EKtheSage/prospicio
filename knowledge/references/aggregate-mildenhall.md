@@ -55,6 +55,9 @@ sources:
   - id: pnl
     resource: ../docs/design/pnl.md
     title: docs/design/pnl.md (the P&L ledger's design note and its reference cases)
+  - id: pirguide
+    resource: ../docs/guides/pricing-insurance-risk-case-studies.md
+    title: docs/guides/pricing-insurance-risk-case-studies.md (the PIR case studies run in prospicio beside aggregate 0.30.1)
 ---
 
 # Which source for what
@@ -500,6 +503,50 @@ sources:
 * `PnL.stats_df` is the engine's, not the ledger's; the ledger's sheet is
   `economic_df`. `pnl_program` returns DecL text.[^pnl]
 
+# The Pricing Insurance Risk case studies in 0.30.1
+
+* `extensions/case_studies.py` prices each case at a 10% return on
+  capital (`roe=0.10`) with assets at `reg_p`: 1 for Discrete, 0.999 for
+  Cat/Non-Cat and Hu/SCS, and 0.9999 in `tame.py` for Tame. The grid is
+  `bs=1, log2=8` (Discrete), `bs=1/64, log2=16` (Tame, CNC) and
+  `bs=1/4, log2=19` (Hu/SCS), with `padding=1, remove_fuzz=True`. The
+  net book is priced with the distortions calibrated on the gross one.
+  The net covers are read off the gross distributions: CNC's
+  `79.64 xs 41.11` is the cat unit's 90% to 99.5% quantiles on the grid
+  (41.109375, 120.75), Hu/SCS's `372.4 xs 40.25` the hurricane
+  severity's 95% to 99.5% quantiles (`isf(0.05)`, `isf(0.005)`).[^pir]
+* The test suite's Hu/SCS programs (`M.PIR.5`, `M.PIR.6`) write the
+  lognormal scale as `exp(-1.9**2 / 2)`; 0.30.1's DecL parser reads
+  `-1.9**2` as `(-1.9)**2`, so SCS events get a mean of 36.97 instead of
+  1 and the 99.9% assets land on the grid's top. `hs.py` builds the
+  program in Python and gets mean 1; write the scale as a number.[^pir]
+* 0.30.1's `Portfolio.price(p, d, allocation='linear')` on a continuous
+  book adds up to slightly less than the premium it calibrated: 115.1488
+  against 115.1511 on gross CNC under the CCoC, 321.3136 against
+  321.3140 on gross Hu/SCS; its lifted allocation reaches the calibrated
+  premium. prospicio's linear units add up to the calibrated premium and
+  match 0.30.1's linear premiums to 0.003 (CNC) and 0.0012
+  (Hu/SCS).[^pirguide]
+* With `aggregate`'s default `normalize=True`, a severity is put on the
+  grid by rounding and renormalized by the mass below the top.
+  prospicio reproduces it exactly from `Grid.rounding(sev, h, 2 n)`,
+  keeping the first `n` cells and dividing by their sum: the 99.9% assets
+  (267.203125, 2583.0), the premiums and the calibrated parameters then
+  agree with 0.30.1 to the calibration's error. With `Grid.rounding`'s
+  own convention (tail mass on the last point) Hu/SCS's assets are
+  2584.75.[^pirguide]
+* The lifted allocation on these books differs from 0.30.1 under the
+  CCoC in the premiums too, not only the capital (gross CNC NonCat
+  75.43 against 74.64), and under PH in the capital only (48.80 against
+  48.54); Wang, dual and TVaR agree to about 0.004.[^pirguide]
+* An aggregate cover whose attachment falls between grid points (CNC's
+  41.11 on a 1/64 grid) leaves the net cat mean 0.0014 apart: 17.7856 in
+  prospicio's `Tower` (mean exact on the grid), 17.7870 in 0.30.1.[^pirguide]
+* prospicio's `Portfolio.calibrate("wang", ...)` took about 9 s on the
+  2^19-point Hu/SCS portfolio (the other families 0.1 to 0.4 s).
+  Calibrating on the total capped at the assets, a one-unit portfolio of
+  about 10,000 points, gives the same parameter in 0.15 s.[^pirguide]
+
 [^pnl]: pnl.md
 [^renewal]: aggregate_renewal.py
 [^clash]: aggregate_clash.py
@@ -512,3 +559,5 @@ sources:
 [^picks]: aggregate_picks.py
 [^bounds]: aggregate_bounds.py
 [^counts]: aggregate_counts.py
+[^pir]: aggregate 0.30.1 extensions
+[^pirguide]: pricing-insurance-risk-case-studies.md
