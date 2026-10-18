@@ -359,32 +359,34 @@ mean 400.0 (eq. 7: 400.0), power 1.3333 (eq. 8: 1.3333), dispersion 203.581 (eq.
 To pick `p` the monograph suggests estimating it, comparing candidates by
 log-likelihood or cross-validation, or taking a customary 1.6 to 1.7. The Rust
 crate has a profile-likelihood search (`prospicio_glm::tweedie`) that the
-bindings do not expose, so the profile is done by hand: for each `p`, fit the
-GLM, then maximize the exact Tweedie log-likelihood over `phi` (each row's
-dispersion is `phi / w`, exposure the weight):
+bindings do not expose, so the profile is done by hand: for each `p`, maximize
+the GLM's exact Tweedie log-likelihood over `phi`. With the dispersion fixed
+(`dispersion=phi`) the coefficients do not change and `log_likelihood` is the
+Dunn and Smyth series density summed over the rows, each with dispersion
+`phi / w` for exposure weight `w`:
 
 ```python
-def tweedie_loglik(y, mu, w, power, phi):
-    return sum(Tweedie(m, phi / wi, power).ln_pdf(a) for a, m, wi in zip(y, mu, w))
+def tweedie_loglik(design, y, power, phi):
+    """Exact Tweedie log-likelihood of the GLM refitted with its dispersion fixed at phi."""
+    return Glm("tweedie", "log", power=power, dispersion=phi).fit(design, y).log_likelihood
 
 
-def best_phi(y, mu, w, power, lo=math.log(1.0), hi=math.log(1e4)):
+def best_phi(design, y, power, lo=math.log(1.0), hi=math.log(1e4)):
     """Golden-section search for the maximum-likelihood dispersion, on the log scale."""
     g = (math.sqrt(5) - 1) / 2
     for _ in range(40):
         a, b = hi - g * (hi - lo), lo + g * (hi - lo)
-        if tweedie_loglik(y, mu, w, power, math.exp(a)) > tweedie_loglik(y, mu, w, power, math.exp(b)):
+        if tweedie_loglik(design, y, power, math.exp(a)) > tweedie_loglik(design, y, power, math.exp(b)):
             hi = b
         else:
             lo = a
     phi = math.exp((lo + hi) / 2)
-    return phi, tweedie_loglik(y, mu, w, power, phi)
+    return phi, tweedie_loglik(design, y, power, phi)
 
 
 pp = coding("age").design(data, weights=data["exposure"])
 for power in [1.2, 1.3, 1.4, 1.5, 1.6, 1.7]:
-    fit = Glm("tweedie", "log", power=power).fit(pp, data["pure"])
-    phi, ll = best_phi(data["pure"], fit.fitted, data["exposure"], power)
+    phi, ll = best_phi(pp, data["pure"], power)
     print(f"p {power}: log-likelihood {ll:9.1f} at phi {phi:7.1f}")
 ```
 
