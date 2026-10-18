@@ -110,3 +110,28 @@ def test_the_harness_compares_printed_output(tmp_path):
     )
     with pytest.raises(AssertionError, match=r"python block 2 \(line 14\)"):
         run_guide(guide)
+
+
+def test_chalk_portfolio_files_match_generator(tmp_path):
+    # The R twins of the Monograph 16 guides read numpy's draws from examples/data/: the committed files are
+    # what examples/data/make_chalk_portfolio.py writes, which is the Python guide's own simulation. Floats
+    # are compared to a relative 1e-12, since numpy's normal draws go through libm, whose last digit may
+    # differ between platforms; everything else must be equal.
+    import importlib.util
+
+    data = GUIDES.parents[1] / "examples" / "data"
+    spec = importlib.util.spec_from_file_location("make_chalk_portfolio", data / "make_chalk_portfolio.py")
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+    generator.main(tmp_path)
+    for name in ["chalk_portfolio.csv", "chalk_toys.csv"]:
+        made = (tmp_path / name).read_text(encoding="utf-8").splitlines()
+        committed = (data / name).read_text(encoding="utf-8").splitlines()
+        assert len(made) == len(committed), name
+        for a, b in zip(made, committed):
+            if a == b:
+                continue
+            fa, fb = a.split(","), b.split(",")
+            assert len(fa) == len(fb) and all(
+                x == y or ("." in x and float(x) == pytest.approx(float(y), rel=1e-12)) for x, y in zip(fa, fb)
+            ), (name, a, b)
