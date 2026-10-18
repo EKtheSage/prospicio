@@ -11,7 +11,7 @@ compound_moments(frequency, severity)
 
 moment_approximation(
   frequency,
-  severity,
+  severity = NULL,
   kind = c("shifted_lognormal", "shifted_gamma", "gamma", "lognormal", "normal")
 )
 
@@ -20,7 +20,9 @@ approximation_cdf(approximation, x)
 approximation_quantile(approximation, p)
 }
 \arguments{
-\item{frequency}{A claim count, as for \code{\link[=simulate_events]{simulate_events()}}.}
+\item{frequency}{A claim count, as for \code{\link[=simulate_events]{simulate_events()}}; for
+\code{moment_approximation()} also a \code{compound_moments()} result, given
+without a severity.}
 
 \item{severity}{A severity with a closed-form third moment.}
 
@@ -45,6 +47,8 @@ severity's first three moments. \code{moment_approximation()} fits a
 distribution to them, as the Python package \code{aggregate}'s \code{approximate}:
 \code{"normal"}, \code{"gamma"} or \code{"lognormal"} (mean and cv), \code{"shifted_gamma"} or
 \code{"shifted_lognormal"} (mean, cv and skewness, which must be positive).
+It takes a count and a severity, or a \code{compound_moments()} result alone
+(\code{moment_approximation(m, "gamma")}).
 \code{approximation_cdf()} and \code{approximation_quantile()} evaluate a fit.
 }
 \examples{
@@ -54,4 +58,5 @@ fit <- moment_approximation(poisson_count(10), gamma_distribution(1 / 0.49, 50 *
                             "shifted_gamma")
 fit$parameters
 approximation_quantile(fit, c(0.5, 0.99))
+moment_approximation(m, "gamma")$parameters
 }

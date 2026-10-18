@@ -4,14 +4,17 @@
 \alias{pareto_severity}
 \alias{survival}
 \alias{layer_variance}
-\title{Survival function and layer variance}
+\alias{layer_second_moment}
+\title{Survival function and layer moments}
 \usage{
 survival(dist, q, ...)
 
 layer_variance(dist, limit, attachment, ...)
+
+layer_second_moment(dist, limit, attachment, ...)
 }
 \arguments{
-\item{dist}{A Pareto-family severity.}
+\item{dist}{A severity, one of those above.}
 
 \item{q}{Numeric vector.}
 
@@ -23,13 +26,16 @@ layer_variance(dist, limit, attachment, ...)
 }
 \value{
 A numeric vector (\code{survival}) or a single number
-(\code{layer_variance}).
+(\code{layer_variance}, \code{layer_second_moment}).
 }
 \description{
 \code{survival(dist, q)} is \code{P(X > q)}, accurate far into the tail;
 \code{layer_variance(dist, limit, attachment)} is the variance of the loss to
-the layer \code{limit} xs \code{attachment} (\code{Inf} for an unlimited layer).
-Defined for the Pareto-family severities (\link{pareto}, \link{piecewise_pareto},
+the layer \code{limit} xs \code{attachment} (\code{Inf} for an unlimited layer), and
+\code{layer_second_moment(dist, limit, attachment)} its second moment
+\code{E[Y^2]}, in closed form where the family has one, so
+\code{layer_variance = layer_second_moment - layer^2}.
+Defined for \link{lognormal}, the Pareto-family severities (\link{pareto}, \link{piecewise_pareto},
 \link{log_affine_pareto}, \link{generalized_pareto}) and for \link{gamma_distribution},
 \link{tweedie}, \link{weibull_distribution}, \link{loglogistic_distribution},
 \link{inverse_gamma_distribution}, \link{inverse_gaussian_distribution},
@@ -41,4 +47,8 @@ Defined for the Pareto-family severities (\link{pareto}, \link{piecewise_pareto}
 p <- pareto(500, 2)
 survival(p, c(1000, 2000))
 layer_variance(p, 4000, 1000)
+layer_second_moment(p, 4000, 1000)
+d <- lognormal(7, 0.5)
+survival(d, 3000)
+layer_second_moment(d, 4000, 1000)
 }

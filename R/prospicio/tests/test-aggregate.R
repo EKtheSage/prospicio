@@ -276,6 +276,13 @@ m <- compound_moments(poisson_count(10), g)
 stopifnot(abs(m[["mean"]] / 500 - 1) < 1e-12, abs(m[["skew"]] / 0.5129464825493272 - 1) < 1e-12)
 fit <- moment_approximation(poisson_count(10), g, "shifted_gamma")
 stopifnot(abs(fit$parameters[["shift"]] / -252.52525252525868 - 1) < 1e-10)
+# The same fit from the compound_moments() result, by position or by name.
+stopifnot(identical(moment_approximation(m, "shifted_gamma"), fit),
+          identical(moment_approximation(m, kind = "shifted_gamma"), fit),
+          identical(moment_approximation(m)$kind, "shifted_lognormal"))
+stopifnot(inherits(try(moment_approximation(m, g), silent = TRUE), "try-error"),
+          inherits(try(moment_approximation(poisson_count(10)), silent = TRUE), "try-error"),
+          inherits(try(moment_approximation(c(1, 2, 3)), silent = TRUE), "try-error"))
 q <- approximation_quantile(fit, c(0.5, 0.99))
 stopifnot(all(abs(approximation_cdf(fit, q) - c(0.5, 0.99)) < 1e-10))
 stopifnot(inherits(try(compound_moments(poisson_count(2), pareto(100, 2.5)), silent = TRUE),

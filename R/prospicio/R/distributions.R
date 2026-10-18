@@ -34,8 +34,9 @@ distribution <- S7::new_class("distribution", package = "prospicio", abstract = 
 #' parameterized as in [stats::dlnorm()]. Parameters are read-only
 #' properties: `d@meanlog`, `d@sdlog`.
 #'
-#' Supports [mean()], [variance()], [stats::quantile()], [cdf()], [draws()]
-#' and [print()].
+#' Supports [mean()], [variance()], [std_dev()], [stats::quantile()],
+#' [cdf()], [survival()], [draws()], [lev()], [stop_loss()], [layer()],
+#' [layer_variance()], [layer_second_moment()] and [print()].
 #'
 #' @param meanlog Mean of `log(X)`; finite.
 #' @param sdlog Standard deviation of `log(X)`; finite and positive.
@@ -101,6 +102,21 @@ cdf <- S7::new_generic("cdf", "dist", function(dist, q, ...) S7::S7_dispatch())
 #' @examples
 #' variance(lognormal_from_mean_cv(1000, 0.5))
 variance <- S7::new_generic("variance", "dist", function(dist, ...) S7::S7_dispatch())
+
+#' Standard deviation of a distribution
+#'
+#' `sqrt(variance(dist))`, for any object with a [variance()] method. Named
+#' after Rust's `std_dev` (Python's `std()`), so it does not mask
+#' [stats::sd()].
+#'
+#' @inheritParams cdf
+#' @returns A single number.
+#' @export
+#' @examples
+#' std_dev(lognormal_from_mean_cv(1000, 0.5))
+std_dev <- S7::new_generic("std_dev", "dist", function(dist, ...) S7::S7_dispatch())
+
+S7::method(std_dev, S7::class_any) <- function(dist, ...) sqrt(variance(dist))
 
 #' Reproducible random draws
 #'

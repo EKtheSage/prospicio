@@ -436,6 +436,12 @@ Lognormal$stop_loss <- function(retention) .Call(wrap__Lognormal__stop_loss, sel
 
 Lognormal$layer <- function(limit, attachment) .Call(wrap__Lognormal__layer, self, limit, attachment)
 
+Lognormal$survival <- function(x) .Call(wrap__Lognormal__survival, self, x)
+
+Lognormal$layer_variance <- function(limit, attachment) .Call(wrap__Lognormal__layer_variance, self, limit, attachment)
+
+Lognormal$layer_second_moment <- function(limit, attachment) .Call(wrap__Lognormal__layer_second_moment, self, limit, attachment)
+
 Lognormal$sample <- function(n, seed, stream) .Call(wrap__Lognormal__sample, self, n, seed, stream)
 
 #' @export
@@ -870,6 +876,8 @@ Pareto$layer <- function(limit, attachment) .Call(wrap__Pareto__layer, self, lim
 
 Pareto$layer_variance <- function(limit, attachment) .Call(wrap__Pareto__layer_variance, self, limit, attachment)
 
+Pareto$layer_second_moment <- function(limit, attachment) .Call(wrap__Pareto__layer_second_moment, self, limit, attachment)
+
 Pareto$sample <- function(n, seed, stream) .Call(wrap__Pareto__sample, self, n, seed, stream)
 
 #' @export
@@ -909,6 +917,8 @@ PiecewisePareto$stop_loss <- function(retention) .Call(wrap__PiecewisePareto__st
 PiecewisePareto$layer <- function(limit, attachment) .Call(wrap__PiecewisePareto__layer, self, limit, attachment)
 
 PiecewisePareto$layer_variance <- function(limit, attachment) .Call(wrap__PiecewisePareto__layer_variance, self, limit, attachment)
+
+PiecewisePareto$layer_second_moment <- function(limit, attachment) .Call(wrap__PiecewisePareto__layer_second_moment, self, limit, attachment)
 
 PiecewisePareto$sample <- function(n, seed, stream) .Call(wrap__PiecewisePareto__sample, self, n, seed, stream)
 
@@ -952,6 +962,8 @@ LogAffinePareto$layer <- function(limit, attachment) .Call(wrap__LogAffinePareto
 
 LogAffinePareto$layer_variance <- function(limit, attachment) .Call(wrap__LogAffinePareto__layer_variance, self, limit, attachment)
 
+LogAffinePareto$layer_second_moment <- function(limit, attachment) .Call(wrap__LogAffinePareto__layer_second_moment, self, limit, attachment)
+
 LogAffinePareto$sample <- function(n, seed, stream) .Call(wrap__LogAffinePareto__sample, self, n, seed, stream)
 
 #' @export
@@ -992,6 +1004,8 @@ GeneralizedPareto$layer <- function(limit, attachment) .Call(wrap__GeneralizedPa
 
 GeneralizedPareto$layer_variance <- function(limit, attachment) .Call(wrap__GeneralizedPareto__layer_variance, self, limit, attachment)
 
+GeneralizedPareto$layer_second_moment <- function(limit, attachment) .Call(wrap__GeneralizedPareto__layer_second_moment, self, limit, attachment)
+
 GeneralizedPareto$sample <- function(n, seed, stream) .Call(wrap__GeneralizedPareto__sample, self, n, seed, stream)
 
 #' @export
@@ -1031,6 +1045,8 @@ GammaDist$stop_loss <- function(retention) .Call(wrap__GammaDist__stop_loss, sel
 GammaDist$layer <- function(limit, attachment) .Call(wrap__GammaDist__layer, self, limit, attachment)
 
 GammaDist$layer_variance <- function(limit, attachment) .Call(wrap__GammaDist__layer_variance, self, limit, attachment)
+
+GammaDist$layer_second_moment <- function(limit, attachment) .Call(wrap__GammaDist__layer_second_moment, self, limit, attachment)
 
 GammaDist$sample <- function(n, seed, stream) .Call(wrap__GammaDist__sample, self, n, seed, stream)
 
@@ -1074,6 +1090,8 @@ TweedieDist$layer <- function(limit, attachment) .Call(wrap__TweedieDist__layer,
 
 TweedieDist$layer_variance <- function(limit, attachment) .Call(wrap__TweedieDist__layer_variance, self, limit, attachment)
 
+TweedieDist$layer_second_moment <- function(limit, attachment) .Call(wrap__TweedieDist__layer_second_moment, self, limit, attachment)
+
 TweedieDist$sample <- function(n, seed, stream) .Call(wrap__TweedieDist__sample, self, n, seed, stream)
 
 #' @export
@@ -1112,6 +1130,8 @@ CustomDist$layer <- function(limit, attachment) .Call(wrap__CustomDist__layer, s
 
 CustomDist$layer_variance <- function(limit, attachment) .Call(wrap__CustomDist__layer_variance, self, limit, attachment)
 
+CustomDist$layer_second_moment <- function(limit, attachment) .Call(wrap__CustomDist__layer_second_moment, self, limit, attachment)
+
 CustomDist$sample <- function(n, seed, stream) .Call(wrap__CustomDist__sample, self, n, seed, stream)
 
 #' @export
@@ -1145,6 +1165,8 @@ WeibullDist$stop_loss <- function(retention) .Call(wrap__WeibullDist__stop_loss,
 WeibullDist$layer <- function(limit, attachment) .Call(wrap__WeibullDist__layer, self, limit, attachment)
 
 WeibullDist$layer_variance <- function(limit, attachment) .Call(wrap__WeibullDist__layer_variance, self, limit, attachment)
+
+WeibullDist$layer_second_moment <- function(limit, attachment) .Call(wrap__WeibullDist__layer_second_moment, self, limit, attachment)
 
 WeibullDist$sample <- function(n, seed, stream) .Call(wrap__WeibullDist__sample, self, n, seed, stream)
 
@@ -1180,6 +1202,8 @@ LoglogisticDist$layer <- function(limit, attachment) .Call(wrap__LoglogisticDist
 
 LoglogisticDist$layer_variance <- function(limit, attachment) .Call(wrap__LoglogisticDist__layer_variance, self, limit, attachment)
 
+LoglogisticDist$layer_second_moment <- function(limit, attachment) .Call(wrap__LoglogisticDist__layer_second_moment, self, limit, attachment)
+
 LoglogisticDist$sample <- function(n, seed, stream) .Call(wrap__LoglogisticDist__sample, self, n, seed, stream)
 
 #' @export
@@ -1214,6 +1238,8 @@ InverseGammaDist$layer <- function(limit, attachment) .Call(wrap__InverseGammaDi
 
 InverseGammaDist$layer_variance <- function(limit, attachment) .Call(wrap__InverseGammaDist__layer_variance, self, limit, attachment)
 
+InverseGammaDist$layer_second_moment <- function(limit, attachment) .Call(wrap__InverseGammaDist__layer_second_moment, self, limit, attachment)
+
 InverseGammaDist$sample <- function(n, seed, stream) .Call(wrap__InverseGammaDist__sample, self, n, seed, stream)
 
 #' @export
@@ -1247,6 +1273,8 @@ InverseGaussianDist$stop_loss <- function(retention) .Call(wrap__InverseGaussian
 InverseGaussianDist$layer <- function(limit, attachment) .Call(wrap__InverseGaussianDist__layer, self, limit, attachment)
 
 InverseGaussianDist$layer_variance <- function(limit, attachment) .Call(wrap__InverseGaussianDist__layer_variance, self, limit, attachment)
+
+InverseGaussianDist$layer_second_moment <- function(limit, attachment) .Call(wrap__InverseGaussianDist__layer_second_moment, self, limit, attachment)
 
 InverseGaussianDist$sample <- function(n, seed, stream) .Call(wrap__InverseGaussianDist__sample, self, n, seed, stream)
 
@@ -1284,6 +1312,8 @@ BurrDist$layer <- function(limit, attachment) .Call(wrap__BurrDist__layer, self,
 
 BurrDist$layer_variance <- function(limit, attachment) .Call(wrap__BurrDist__layer_variance, self, limit, attachment)
 
+BurrDist$layer_second_moment <- function(limit, attachment) .Call(wrap__BurrDist__layer_second_moment, self, limit, attachment)
+
 BurrDist$sample <- function(n, seed, stream) .Call(wrap__BurrDist__sample, self, n, seed, stream)
 
 #' @export
@@ -1319,6 +1349,8 @@ BetaDist$stop_loss <- function(retention) .Call(wrap__BetaDist__stop_loss, self,
 BetaDist$layer <- function(limit, attachment) .Call(wrap__BetaDist__layer, self, limit, attachment)
 
 BetaDist$layer_variance <- function(limit, attachment) .Call(wrap__BetaDist__layer_variance, self, limit, attachment)
+
+BetaDist$layer_second_moment <- function(limit, attachment) .Call(wrap__BetaDist__layer_second_moment, self, limit, attachment)
 
 BetaDist$sample <- function(n, seed, stream) .Call(wrap__BetaDist__sample, self, n, seed, stream)
 
@@ -1358,6 +1390,8 @@ TruncatedDist$layer <- function(limit, attachment) .Call(wrap__TruncatedDist__la
 
 TruncatedDist$layer_variance <- function(limit, attachment) .Call(wrap__TruncatedDist__layer_variance, self, limit, attachment)
 
+TruncatedDist$layer_second_moment <- function(limit, attachment) .Call(wrap__TruncatedDist__layer_second_moment, self, limit, attachment)
+
 TruncatedDist$sample <- function(n, seed, stream) .Call(wrap__TruncatedDist__sample, self, n, seed, stream)
 
 #' @export
@@ -1393,6 +1427,8 @@ PolicyLimitsDist$stop_loss <- function(retention) .Call(wrap__PolicyLimitsDist__
 PolicyLimitsDist$layer <- function(limit, attachment) .Call(wrap__PolicyLimitsDist__layer, self, limit, attachment)
 
 PolicyLimitsDist$layer_variance <- function(limit, attachment) .Call(wrap__PolicyLimitsDist__layer_variance, self, limit, attachment)
+
+PolicyLimitsDist$layer_second_moment <- function(limit, attachment) .Call(wrap__PolicyLimitsDist__layer_second_moment, self, limit, attachment)
 
 PolicyLimitsDist$sample <- function(n, seed, stream) .Call(wrap__PolicyLimitsDist__sample, self, n, seed, stream)
 
@@ -1437,6 +1473,8 @@ MixtureDist$stop_loss <- function(retention) .Call(wrap__MixtureDist__stop_loss,
 MixtureDist$layer <- function(limit, attachment) .Call(wrap__MixtureDist__layer, self, limit, attachment)
 
 MixtureDist$layer_variance <- function(limit, attachment) .Call(wrap__MixtureDist__layer_variance, self, limit, attachment)
+
+MixtureDist$layer_second_moment <- function(limit, attachment) .Call(wrap__MixtureDist__layer_second_moment, self, limit, attachment)
 
 MixtureDist$sample <- function(n, seed, stream) .Call(wrap__MixtureDist__sample, self, n, seed, stream)
 

@@ -89,17 +89,16 @@ ten years as they are.
 Pricing works on the distinct totals, not on the years. Four of the years (the
 second, fifth, sixth and seventh) all total 40, so the portfolio keeps one
 scenario at 40 with probability 0.4 and each unit's average loss given that
-total, which the monograph calls its conditional expectation, `kappa`. The
-portfolio holds these, but the R package does not export them (Python has
-`Portfolio.kappa(unit)`), so the chunk computes them from the rows with base R,
-which on a portfolio built from scenarios is the same calculation:
+total, which the monograph calls its conditional expectation, `kappa`.
+`portfolio_kappa(port, unit)` returns a unit's, one value per distinct total
+(Python's `Portfolio.kappa(unit)`):
 
 ```{r}
 cat("totals ", insco@totals, "\n")
 cat("probs  ", round(insco@probs, 1), "\n")
 for (unit in c("A", "B", "C")) {
-  kappa <- tapply(ROWS[, unit], totals, mean) # E[X_unit | X = total]
-  cat(sprintf("kappa %s", unit), sprintf("%.2f", kappa), "\n")
+  k <- portfolio_kappa(insco, unit) # E[X_unit | X = total]
+  cat(sprintf("kappa %s", unit), sprintf("%.2f", k), "\n")
 }
 ```
 
@@ -120,21 +119,16 @@ portfolio's price by them can never create or lose money.
 A price needs a capital standard: how many assets stand behind the book. The
 monograph's chapter 3 introduces value at risk (VaR, a quantile) and tail value
 at risk (TVaR, the average above it). The `aggregate` package, and prospicio,
-read a standard of "p" as assets equal to the p quantile of the total. The R
-package has no function for a portfolio's assets at `p` (Python's
-`Portfolio.assets(p)`); `natural_price(port, d, p = p)` reports them in its
-`"total"` row, whatever the distortion `d`:
+read a standard of "p" as assets equal to the p quantile of the total:
+`portfolio_assets(port, p)` (Python's `Portfolio.assets(p)`), the level
+`natural_price(port, d, p = p)` prices at, whatever the distortion `d`:
 
 ```{r}
 total <- sampled(totals)
-assets_at <- function(port, p) {
-  priced <- natural_price(port, distortion("ccoc", 0.15), p = p)
-  priced$assets[priced$unit == "total"]
-}
 cat(sprintf("%5s %6s %8s  assets at p\n", "p", "VaR", "TVaR"))
 for (p in c(0.8, 0.85, 0.9, 1.0)) {
   cat(sprintf("%5.2f %6.0f %8.3f  %.0f\n", p, quantile(total, p), TVaR(total, p),
-              assets_at(insco, p)))
+              portfolio_assets(insco, p)))
 }
 ```
 
@@ -457,7 +451,7 @@ Now calibrate the five distortions to a 15% return at the 99.5% standard
 ```{r}
 BOOK_PARAMS <- c(ccoc = 0.150, ph = 0.654, wang = 0.437, dual = 1.756, tvar = 0.299)
 priced_book <- list()
-cat(sprintf("assets at 99.5%%: %s   (book 28,898)\n", comma(assets_at(book, 0.995))))
+cat(sprintf("assets at 99.5%%: %s   (book 28,898)\n", comma(portfolio_assets(book, 0.995))))
 for (family in FAMILIES) {
   d <- calibrate_portfolio(book, family, p = 0.995, return_on_capital = 0.15)
   pb <- priced_book[[family]] <- natural_price(book, d, p = 0.995)
@@ -529,13 +523,6 @@ Windows and 29368 on Linux.
   to check against.
 - **Capital by unit under CCoC and PH** (section 5): version dependent, see the
   note there.
-
-Beside the Python package, the R package lacks two functions this guide uses:
-a portfolio's conditional expectations by unit (Python's
-`Portfolio.kappa(unit)`), which section 1 computes from the rows with
-`tapply()`, and a portfolio's assets at a probability (Python's
-`Portfolio.assets(p)`), which sections 2 and 7 read from `natural_price()`'s
-`"total"` row.
 
 Where to go next (these guides are written in Python, and the R functions
 named above do the same work):
