@@ -455,7 +455,9 @@ three steps: ['0.00799', '0.00402', '0.00227', '0.00122'] printed [0.00783, 0.00
 printed / recomputed: ['0.980', '0.981', '0.978', '0.979']
 ```
 
-The single step matches. The three-step frequencies do not: every printed value
+The single step matches to the relativity (0.2302) and to within one unit of
+the last printed digit of the frequency (0.00508 against 0.00509: the printed
+coefficient is rounded to four decimals). The three-step frequencies do not: every printed value
 is about 2% below the one the printed coefficients give, by nearly the same
 factor in all four bands. A common factor points at the intercept rather than the
 slopes: an intercept near -4.85 instead of -4.8292 would give the printed
@@ -811,7 +813,7 @@ of ridge in section 6.8.2), neither a Poisson GLMM.
 | Section 3.7.4 rebasing | 1.0031 | 1.0031 | matches |
 | Section 4.1 variance | 0.09, 0.30 | 0.09, 0.30 | matches |
 | Section 4.7.2 ridge in cm | 0.019, 1.9 | 0.019998, 1.9998 | printed digits truncated |
-| Section 5.2 one step | 0.00509, 0.2302 | 0.00509, 0.2302 | matches |
+| Section 5.2 one step | 0.00509, 0.2302 | 0.00508, 0.2302 | within the rounding of the printed coefficient |
 | Section 5.2 three steps | 0.00783 to 0.00119 | 0.00799 to 0.00122 | all about 2% higher; points at the printed intercept |
 | Table 5.7 cumulative | 2.06 | 2.067 | Table 5.8 prints 2.07 |
 | Section 6.6 K | 648, 0.61 | 648, 0.61 | matches |
