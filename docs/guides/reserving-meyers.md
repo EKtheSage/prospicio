@@ -634,22 +634,27 @@ with warnings.catch_warnings(record=True) as caught:
     quick = Meyers("crc", seed=0).one_year(tri, "paid", "premium", refit="reweight_only", n_sims=1000)
 cdr = np.array(quick.cdr.draw_matrix()).sum(axis=1)
 lifetime = np.array(quick.fit.reserves.draw_matrix()).sum(axis=1)
-ratio = cdr.std() / lifetime.std()
+iqr = lambda x: np.subtract(*np.percentile(x, [75, 25]))
+ratio = iqr(cdr) / iqr(lifetime)
 print(f"warnings {len(caught)}, one-year simulations {len(cdr):,}")
 print(f"share flagged (Pareto k above 0.7) above 95%: {quick.flagged_share > 0.95}")
-print(f"CDR sd / lifetime reserve sd between 0.6 and 0.95: {0.6 < ratio < 0.95}")
+print(f"CDR IQR / lifetime reserve IQR between 0.6 and 0.95: {0.6 < ratio < 0.95}")
 ```
 
 ```text
 warnings 0, one-year simulations 1,000
 share flagged (Pareto k above 0.7) above 95%: True
-CDR sd / lifetime reserve sd between 0.6 and 0.95: True
+CDR IQR / lifetime reserve IQR between 0.6 and 0.95: True
 ```
 
 On Windows at seed 0 this gives 99% flagged and a CDR sd of 1,970 against a
 lifetime sd of 2,538, a ratio of 0.78 (1,000 one-year simulations keep the
 block quick; the default is 2,000). The finding measures the ratio at 0.77
-with a seed-to-seed sd of 0.08.
+with a seed-to-seed sd of 0.08. The check compares interquartile ranges
+(0.77 here) rather than sds because, with nearly every simulation flagged,
+a few reweighted simulations can carry most of the weight and inflate the
+CDR's sd: over seeds 0 to 9 the sd ratio ran from 0.71 to 1.13 (above 1 at
+two seeds), while the IQR ratio stayed between 0.73 and 0.84.
 
 The full view, with its moment matching and refits, recorded from a real run
 on a release build (Windows, 16 threads, 62 s). **This block is not re-run by
