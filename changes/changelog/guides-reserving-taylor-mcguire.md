@@ -7,4 +7,4 @@
   in total (Table 5-4 exactly), the parametric bootstrap (Tables 5-5, 7-2, 7-4,
   7-6 within noise), residual heat maps, the reduced models with interactions
   (Tables 7-1, 7-3, 7-5) and AIC, BIC and GCV (Table 7-7), with the gaps filed
-  as #333 and #334.
+  as #333 and #334 (#335).
