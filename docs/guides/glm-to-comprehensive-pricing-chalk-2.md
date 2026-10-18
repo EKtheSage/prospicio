@@ -651,15 +651,15 @@ Gaps found while writing this guide, filed for the Models lane:
 
 - Model-agnostic explanations: permutation importance, partial dependence and
   the pairwise interaction screen are written out by hand above; a helper that
-  takes any fitted model and a design would save the loops.
+  takes any fitted model and a design would save the loops (#355).
 - Bounds on elastic net coefficients (glmnet's `lower.limits` and
   `upper.limits`) for monotone step functions (section 5.7.2), a built-in
   relaxed lasso (section 4.5), and speed on hinge bases: twenty hinges took over
-  40 seconds against a quarter of a second for twenty steps.
+  40 seconds against a quarter of a second for twenty steps (#356).
 - Step, hinge and MARS bases as `Terms` (section 5.5), and out-of-fold target
-  encoding with a credibility constant (chapter 6).
+  encoding with a credibility constant (chapter 6; #357).
 - Generalized linear mixed models with a random intercept per level (section
-  6.5).
+  6.5; #358).
 
 Not in prospicio and not filed, since general tools do them: principal
 components (section 7.4.5), word embeddings (section 6.4.4) and decision trees
