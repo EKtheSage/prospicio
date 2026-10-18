@@ -1,0 +1,658 @@
+---
+title: "Capital adequacy and the natural allocation: CAS Monograph 15, chapters 3 and 4"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+CAS Monograph 15, *Introduction to Capital Modeling and Portfolio Management*
+(John Major and Stephen Mildenhall, 2026), builds its theory on one small
+company, InsCo, and prints every step as a table. This guide follows its
+chapters 3 (capital adequacy) and 4 (pricing and allocation) in order,
+recomputes each table with prospicio and prints the monograph's value beside
+prospicio's. Its companion,
+[Applications and the choice of a distortion](capital-modeling-monograph-15-applications.qmd),
+does the same for chapters 5 and 6, and
+[Capital modeling and portfolio pricing](capital-modeling-monograph-15.qmd)
+reproduces chapter 9, the monograph's code.
+
+This is the R twin of the Python guide
+[`capital-modeling-monograph-15-theory.md`](capital-modeling-monograph-15-theory.md):
+the same sections, the same examples and the same numbers, from the same Rust
+code.
+
+The reasoning is the authors'; what follows explains it in new words and
+recomputes the numbers. For the theory behind spectral risk measures and the
+natural allocation at full length, read Mildenhall and Major's *Pricing
+Insurance Risk*; the
+[case studies guide](pricing-insurance-risk-case-studies.qmd) runs its
+examples. Table numbers below are the monograph's, and money is in its units.
+
+Each R chunk is followed by the text it prints.
+`R/prospicio/tests/test-guides.R` runs the chunks in order and requires each
+one to print exactly that text.
+
+## 1. InsCo and the four adjustments
+
+InsCo writes three units, A, B and C, and its capital model is ten equally
+likely years. Each row below is a year (the monograph's Table 2.1 order) and
+each cell the unit's loss in it. The plan premiums by unit are 13.9, 18.7 and
+19.6:
+
+```{r}
+library(prospicio)
+
+UNITS <- c("A", "B", "C")
+ROWS <- rbind(
+  c(5, 20, 11), c(7, 33, 0), c(15, 13, 0), c(15, 7, 0), c(13, 20, 7),
+  c(5, 27, 8), c(15, 16, 9), c(26, 19, 10), c(17, 8, 40), c(16, 20, 64)
+)
+colnames(ROWS) <- UNITS
+PLAN <- c(13.9, 18.7, 19.6)
+insco <- capital_portfolio(ROWS)
+totals <- rowSums(ROWS)
+total <- sampled(totals)
+kappa <- sapply(UNITS, function(u) portfolio_kappa(insco, u)) # one row per total
+
+cat(sprintf("%5s %4s  %5s %5s %5s\n", "x", "p", "A", "B", "C"))
+for (j in seq_along(insco@totals)) {
+  cat(sprintf("%5.0f %4.1f  %5.1f %5.1f %5.1f\n", insco@totals[j], insco@probs[j],
+              kappa[j, 1], kappa[j, 2], kappa[j, 3]))
+}
+cat(sprintf("%10s  %5.1f %5.1f %5.1f\n", "E[X]", insco@expected[1], insco@expected[2],
+            insco@expected[3]))
+```
+
+```text
+    x    p      A     B     C
+   22  0.1   15.0   7.0   0.0
+   28  0.1   15.0  13.0   0.0
+   36  0.1    5.0  20.0  11.0
+   40  0.4   10.0  24.0   6.0
+   55  0.1   26.0  19.0  10.0
+   65  0.1   17.0   8.0  40.0
+  100  0.1   16.0  20.0  64.0
+      E[X]   13.4  18.3  14.9
+```
+
+This is Table 4.2 without its zero row. Section 4.3 of the monograph asks for
+four changes to raw simulation output before any pricing: sort the years by
+total, start from a total of zero, cap losses at the assets, and make the
+totals distinct. A `capital_portfolio()` makes all of them when it is built.
+It sorts; it does not need the zero row, which only makes the layer sums
+start at zero and carries no probability; there is nothing to cap because the
+assets of 100 cover the worst year; and the four years that total 40 become
+one scenario of probability 0.4 in which each unit's loss is its average over
+those years, the conditional expectation `kappa`. With unequal losses at an
+equal total, the order of those years would otherwise be arbitrary, and the
+allocation would depend on it.
+
+The expected loss can be computed two ways on these seven totals (the
+monograph's algorithm 3.4.1): as the probability-weighted sum of the
+outcomes, or as the sum of the layers between consecutive totals, each
+weighted by its probability of being reached, the survival function.
+
+```{r}
+xs <- c(0, insco@totals) # pad with a zero outcome
+ps <- c(0, insco@probs)
+survival <- 1 - cumsum(ps)
+by_outcome <- sum(xs * ps)
+by_layer <- sum(survival[-length(xs)] * diff(xs))
+cat(sprintf("E[X] by outcomes %.1f, by layers %.1f\n", by_outcome, by_layer))
+```
+
+```text
+E[X] by outcomes 46.6, by layers 46.6
+```
+
+## 2. Capital adequacy: what a loss level means
+
+Section 3.1 reads InsCo's balance sheet as a ladder of thresholds. With the
+plan premium of 52.2 and 100 of assets, made of 27.8 of equity and 20 of debt
+on which 0.6 of coupon is due, a year's loss crosses one threshold after
+another (Table 3.1):
+
+```{r}
+LEVELS <- data.frame( # event, loss at which it happens, the book's probability
+  event = c("zero profit", "shareholders wiped out", "coupon not paid", "bonds not redeemed"),
+  level = c(52.2, 52.2 + 27.8, 52.2 + 27.8 + 0.6, 100),
+  book = c(0.30, 0.10, 0.10, 0.10)
+)
+for (i in seq_len(nrow(LEVELS))) {
+  prob <- mean(totals >= LEVELS$level[i])
+  cat(sprintf("%-24s %6.1f  probability %.0f%% (book %.0f%%)\n", LEVELS$event[i],
+              LEVELS$level[i], 100 * prob, 100 * LEVELS$book[i]))
+}
+cat(sprintf("TVaR at 99%%: %.1f (book 100.0)\n", TVaR(total, 0.99)))
+```
+
+```text
+zero profit                52.2  probability 30% (book 30%)
+shareholders wiped out     80.0  probability 10% (book 10%)
+coupon not paid            80.6  probability 10% (book 10%)
+bonds not redeemed        100.0  probability 10% (book 10%)
+TVaR at 99%: 100.0 (book 100.0)
+```
+
+Each threshold is a candidate VaR standard; regulators and rating agencies
+pick their own. All of them past 90% land on the worst year here, which is
+why the monograph can describe InsCo's 100 of assets as a TVaR 99% standard
+or as full collateral: there is no default in this example.
+
+## 3. VaR and TVaR
+
+VaR at level p is the smallest loss not exceeded with probability p; TVaR is
+the average of the worst 1 - p of outcomes, with a fraction of the boundary
+outcome when 1 - p of the years is not a whole number. The monograph's
+algorithms 3.4.2 and 3.4.3 do this on n equally likely outcomes by sorting
+and counting. Written out, they agree with `quantile()` and `TVaR()` on a
+`sampled()` distribution:
+
+```{r}
+var_sorted <- function(xs, p) {
+  # Algorithm 3.4.2: the floor(n p)-th smallest outcome, counting from 0.
+  xs <- sort(xs)
+  xs[min(floor(length(xs) * p), length(xs) - 1) + 1]
+}
+
+tvar_sorted <- function(xs, p) {
+  # Algorithm 3.4.3: the average of the largest n (1 - p) outcomes.
+  xs <- sort(xs)
+  n <- length(xs)
+  k <- floor(n * p)
+  if (k + 1 >= n) return(xs[n])
+  whole <- sum(xs[(k + 2):n])
+  part <- xs[k + 1] * ((k + 1) - n * p)
+  (whole + part) / (n * (1 - p))
+}
+
+cat(sprintf("%5s %6s %8s %8s %8s\n", "p", "VaR", "sampled", "TVaR", "sampled"))
+for (p in c(0, 0.25, 0.5, 0.7, 0.75, 0.85, 0.9, 0.95)) {
+  cat(sprintf("%5.2f %6.1f %8.1f %8.3f %8.3f\n", p, var_sorted(totals, p), quantile(total, p),
+              tvar_sorted(totals, p), TVaR(total, p)))
+}
+```
+
+```text
+    p    VaR  sampled     TVaR  sampled
+ 0.00   22.0     22.0   46.600   46.600
+ 0.25   36.0     36.0   53.067   53.067
+ 0.50   40.0     40.0   60.000   60.000
+ 0.70   55.0     40.0   73.333   73.333
+ 0.75   55.0     55.0   77.000   77.000
+ 0.85   65.0     65.0   88.333   88.333
+ 0.90  100.0     65.0  100.000  100.000
+ 0.95  100.0    100.0  100.000  100.000
+```
+
+The two agree except at p = 0.7 and 0.9, where `n p` is a whole number and
+falls exactly on a jump of the distribution: the total is at most 40 in
+exactly 70% of the years. The monograph's text defines VaR as the smallest
+p quantile, which is 40 at 0.7 and 65 at 0.9, and that is what `quantile()`
+returns; its algorithm, read literally, takes the next outcome up. Only at
+such levels do the two readings differ, and TVaR is the same under both.
+
+TVaR at 0 is the mean and TVaR at 1 the largest outcome. The monograph's
+reason to prefer TVaR is subadditivity: the TVaR of a sum never exceeds the
+sum of the TVaRs, while VaR can. Its two examples, a discrete one with
+outcome probabilities 0.9, 0.05 and 0.05 (here as twenty equally likely
+years) and two independent standard exponentials at p = 0.7:
+
+```{r}
+unit1 <- c(rep(0, 18), 0, 10)
+unit2 <- c(rep(0, 18), 10, 0)
+both <- unit1 + unit2
+for (case in list(list("unit 1", unit1), list("unit 2", unit2), list("sum", both))) {
+  s <- sampled(case[[2]])
+  cat(sprintf("%-6s VaR(0.9) %4.1f, by algorithm 3.4.2 %4.1f, at 0.91 %4.1f   TVaR(0.9) %4.1f\n",
+              case[[1]], quantile(s, 0.9), var_sorted(case[[2]], 0.9), quantile(s, 0.91),
+              TVaR(s, 0.9)))
+}
+one <- quantile(gamma_distribution(1, 1), 0.7)
+two <- quantile(gamma_distribution(2, 1), 0.7)
+cat(sprintf("exponential VaR(0.7) %.3f (book 1.204), twice %.3f (book 2.408), of the sum %.3f (book 2.439)\n",
+            one, 2 * one, two))
+```
+
+```text
+unit 1 VaR(0.9)  0.0, by algorithm 3.4.2  0.0, at 0.91  0.0   TVaR(0.9)  5.0
+unit 2 VaR(0.9)  0.0, by algorithm 3.4.2  0.0, at 0.91  0.0   TVaR(0.9)  5.0
+sum    VaR(0.9)  0.0, by algorithm 3.4.2 10.0, at 0.91 10.0   TVaR(0.9) 10.0
+exponential VaR(0.7) 1.204 (book 1.204), twice 2.408 (book 2.408), of the sum 2.439 (book 2.439)
+```
+
+In both cases the VaR of the sum is larger than the sum of the VaRs. The
+discrete example sits on a jump again: 90% of the years have a total of
+zero, so the smallest 90% quantile of the sum is 0, and the failure the
+monograph describes (0 for each unit, 10 in total) is the algorithm's reading
+at 0.9 and everyone's at any level just above it. TVaR adds up exactly in the
+first case and stays below in the second. Which one to use is a matter of
+taste on which the two authors disagree; what matters for the rest of the
+monograph is that the capital standard fixes the assets.
+
+## 4. Risk analysis: marginal assets
+
+Section 3.3 asks how each unit drives the assets. For a TVaR standard the
+derivative of the assets with respect to a unit's volume, the coTVaR, is the
+unit's average loss in the tail that defines the TVaR. At 99% that tail is the
+worst year, so the coTVaRs are the unit losses in it, 16, 20 and 64, the
+conditional expectations at the largest total. Subtracting the plan premium
+gives the capital each unit uses on plan (Table 3.2):
+
+```{r}
+co_tvar <- kappa[nrow(kappa), ]
+BOOK_CAPITAL <- c(2.1, 1.3, 44.4)
+for (i in 1:3) {
+  cat(sprintf("%s: coTVaR %5.1f  plan premium %5.1f  capital %5.1f (book %.1f)\n", UNITS[i],
+              co_tvar[i], PLAN[i], co_tvar[i] - PLAN[i], BOOK_CAPITAL[i]))
+}
+cat(sprintf("total capital on plan %.1f (book 47.8)\n", 100 - sum(PLAN)))
+cat("VaR(0.85) by unit:", sprintf("%.1f", kappa[6, ]), " (book 17, 8, 40)\n")
+```
+
+```text
+A: coTVaR  16.0  plan premium  13.9  capital   2.1 (book 2.1)
+B: coTVaR  20.0  plan premium  18.7  capital   1.3 (book 1.3)
+C: coTVaR  64.0  plan premium  19.6  capital  44.4 (book 44.4)
+total capital on plan 47.8 (book 47.8)
+VaR(0.85) by unit: 17.0 8.0 40.0  (book 17, 8, 40)
+```
+
+The last line is Table 3.3: the marginal split of the 85% VaR of 65 is the
+year that produced it. The monograph's point is that this is fragile. Unit B
+loses 8 in that year but 19 and 20 in the years either side, so a VaR
+standard allocated this way rests on one simulated year and moves with the
+next run. Its remedies are the conditional expectations of section 1, which
+average over years with the same total, or a range VaR, an average between two
+levels. The other road out of the marginal analysis, risk-adjusted
+probabilities, is where chapter 4 starts.
+
+## 5. Pricing the whole
+
+Chapter 4 prices from the top down. Investors want 15% on their capital, the
+assets are 100 and the expected loss 46.6, which fixes the premium. The
+monograph's pentagon of loss, margin, premium, capital and assets (Table 4.1)
+is `pentagon()` in prospicio, solved from any three of its quantities. It
+returns the five amounts and three ratios; the risk discount, which Python's
+`Pentagon.discount` returns and `pentagon()` does not yet (#365), is the margin
+over the unfunded liability `a - L`:
+
+```{r}
+whole <- pentagon(loss = 46.6, assets = 100, return_on_capital = 0.15)
+d <- 0.15 / 1.15
+discount <- whole[["margin"]] / (whole[["assets"]] - whole[["loss"]])
+cat(sprintf("premium %.3f (book 53.565)  margin %.3f  capital %.3f\n", whole[["premium"]],
+            whole[["margin"]], whole[["capital"]]))
+cat(sprintf("risk discount d = %.5f (book 0.13043); v L + d a = %.3f\n", discount,
+            (1 - d) * 46.6 + d * 100))
+cat(sprintf("loss ratio %.3f, premium to capital %.3f\n", whole[["loss_ratio"]],
+            whole[["premium_to_capital"]]))
+cat(sprintf("plan premium 52.2 against the required: EVA %.3f (book -1.4)\n",
+            52.2 - whole[["premium"]]))
+```
+
+```text
+premium 53.565 (book 53.565)  margin 6.965  capital 46.435
+risk discount d = 0.13043 (book 0.13043); v L + d a = 53.565
+loss ratio 0.870, premium to capital 1.154
+plan premium 52.2 against the required: EVA -1.365 (book -1.4)
+```
+
+The premium is a weighted average of the expected loss and the assets, with
+the risk discount `d = r / (1 + r)` as the weight on the assets. The plan is
+1.365 short of what investors need; the companion guide asks which units
+cause the shortfall.
+
+## 6. Pricing layers in total
+
+Section 4.4 splits the 100 of assets into layers between consecutive totals:
+0 to 22, 22 to 28, and so on to 65 to 100. A layer pays out in full whenever
+the total exceeds its bottom, so it is a bet with one parameter, the
+exceedance probability `S`. If each layer's rate on line is `g(S)` for a
+distortion `g`, the premium is the sum of `g(S)` times the layer width, the
+distorted analogue of the layer sum for the expected loss in section 1. For
+the constant cost of capital (CCoC) at 15%, `g(s) = d + (1 - d) s` for any
+`s > 0` (Table 4.4):
+
+```{r}
+ccoc <- distortion("ccoc", 0.15)
+widths <- diff(xs)
+s_layer <- survival[seq_along(widths)]
+g_layer <- distortion_g(ccoc, s_layer)
+cat(sprintf("%5s %6s %5s %6s %6s %8s\n", "from", "width", "S", "g(S)", "loss", "premium"))
+for (j in seq_along(widths)) {
+  cat(sprintf("%5.0f %6.0f %5.1f %6.3f %6.3f %8.3f\n", xs[j], widths[j], s_layer[j], g_layer[j],
+              s_layer[j] * widths[j], g_layer[j] * widths[j]))
+}
+cat(sprintf("%12s total %13.3f %8.3f   (book 46.6, 53.565)\n", "", sum(s_layer * widths),
+            sum(g_layer * widths)))
+```
+
+```text
+ from  width     S   g(S)   loss  premium
+    0     22   1.0  1.000 22.000   22.000
+   22      6   0.9  0.913  5.400    5.478
+   28      8   0.8  0.826  6.400    6.609
+   36      4   0.7  0.739  2.800    2.957
+   40     15   0.3  0.391  4.500    5.870
+   55     10   0.2  0.304  2.000    3.043
+   65     35   0.1  0.217  3.500    7.609
+             total        46.600   53.565   (book 46.6, 53.565)
+```
+
+Every layer earns the same 15% on its capital under the CCoC, which is why
+this layer sum reproduces the pentagon's premium. The top layer, 35 wide and
+reached one year in ten, carries 7.609 of premium for 3.5 of expected loss.
+
+The same sum can be rearranged by outcome: differencing the distorted
+survival gives risk-adjusted probabilities `q`, and the premium is the
+`q`-weighted average of the totals. Their ratio to the true probabilities,
+`Z = q / p`, is the monograph's likelihood ratio (Table 4.10):
+
+```{r}
+distorted_probs <- function(g, probs) {
+  # Algorithm 4.10.1, steps 4 to 6: decumulate, distort, difference.
+  s <- 1 - cumsum(probs)
+  gs <- c(1, ifelse(s > 1e-12, distortion_g(g, pmax(s, 0)), 0)) # nothing exceeds the largest total
+  -diff(gs)
+}
+
+q <- distorted_probs(ccoc, insco@probs)
+cat("q", sprintf("%.3f", q), "\n")
+cat("Z", sprintf("%.3f", q / insco@probs), "\n")
+cat(sprintf("sum of q x = %.3f  (book 53.565)\n", sum(q * insco@totals)))
+```
+
+```text
+q 0.087 0.087 0.087 0.348 0.087 0.087 0.217
+Z 0.870 0.870 0.870 0.870 0.870 0.870 2.174
+sum of q x = 53.565  (book 53.565)
+```
+
+The CCoC scales every year down by `1 - d = 0.870` and gives the worst year
+alone the remaining weight: 0.1 of true probability becomes 0.217.
+
+## 7. Pricing units via layers
+
+Section 4.5 takes the step from the whole to the units: price each unit by
+the same risk-adjusted probabilities, `P_i = sum of q_j kappa_i(x_j)`. Because
+the conditional expectations add up to the total, the unit premiums add up to
+the portfolio's premium. Written out, this is the monograph's algorithm
+4.10.2, and it is what `natural_price()` computes:
+
+```{r}
+natural_allocation <- function(rows, g) {
+  # Algorithm 4.10.2: group by total, average units, distort, sum-product.
+  x <- rowSums(rows)
+  xs <- sort(unique(x))
+  probs <- as.numeric(table(factor(x, levels = xs))) / nrow(rows)
+  kappa <- t(sapply(xs, function(v) colMeans(rows[x == v, , drop = FALSE])))
+  colSums(distorted_probs(g, probs) * kappa)
+}
+
+units_only <- function(priced) priced[priced$unit != "total", ]
+by_hand <- natural_allocation(ROWS, ccoc)
+priced <- natural_price(insco, ccoc, assets = 100)
+cat("by hand     ", sprintf("%.3f", by_hand), "\n")
+cat("portfolio   ", sprintf("%.3f", units_only(priced)$premium), "\n")
+```
+
+```text
+by hand      13.739 18.522 21.304
+portfolio    13.739 18.522 21.304
+```
+
+Two properties make this allocation the natural one. It is the derivative of
+the portfolio premium with respect to each unit's volume whenever the totals
+are distinct (Delbaen's result, which is why the four adjustments insist on
+distinct totals), and it can be read as the expected loss plus a covariance,
+`P_i = E[X_i] + cov(X_i, Z)`: a unit pays a margin in proportion to how its
+losses line up with the years the distortion weights up.
+
+```{r}
+zs <- q / insco@probs
+for (i in 1:3) {
+  mean_i <- sum(insco@probs * kappa[, i])
+  cov_i <- sum(insco@probs * kappa[, i] * zs) - mean_i
+  cat(sprintf("%s: E[X] %5.2f + cov(X, Z) %6.3f = %6.3f\n", UNITS[i], mean_i, cov_i,
+              mean_i + cov_i))
+}
+```
+
+```text
+A: E[X] 13.40 + cov(X, Z)  0.339 = 13.739
+B: E[X] 18.30 + cov(X, Z)  0.222 = 18.522
+C: E[X] 14.90 + cov(X, Z)  6.404 = 21.304
+```
+
+## 8. Five representative distortions
+
+Section 4.6 introduces the five families the monograph uses throughout: CCoC,
+proportional hazard (PH), Wang, dual power and TVaR, each with one parameter,
+calibrated so that the whole book earns 15% at assets of 100 (Table 4.5):
+
+```{r}
+FAMILIES <- c("ccoc", "ph", "wang", "dual", "tvar")
+BOOK_PARAMETER <- c(ccoc = 0.1500, ph = 0.7205, wang = 0.3427, dual = 1.5951, tvar = 0.2713)
+distortions <- lapply(stats::setNames(FAMILIES, FAMILIES), function(f) {
+  calibrate_portfolio(insco, f, assets = 100, return_on_capital = 0.15)
+})
+for (f in FAMILIES) {
+  value <- distortions[[f]]@parameters
+  premium <- natural_price(insco, distortions[[f]], assets = 100)
+  cat(sprintf("%-5s %-7s %.4f (book %.4f)  premium %.3f\n", f, names(value), value,
+              BOOK_PARAMETER[[f]], premium$premium[premium$unit == "total"]))
+}
+```
+
+```text
+ccoc  r       0.1500 (book 0.1500)  premium 53.565
+ph    rho     0.7205 (book 0.7205)  premium 53.565
+wang  lambda  0.3427 (book 0.3427)  premium 53.565
+dual  beta    1.5952 (book 1.5951)  premium 53.565
+tvar  p       0.2713 (book 0.2713)  premium 53.565
+```
+
+All five charge the same 53.565 for the book; they differ in where the
+probability weight goes. Tables 4.6 to 4.8 show the distorted survival, the
+distorted probabilities and the likelihood ratios by year. The last two,
+recomputed, for the median year (total 40) and the worst (total 100):
+
+```{r}
+BOOK_Z <- list( # Table 4.8, likelihood ratio Z at the totals 40 and 100
+  ccoc = c(0.8696, 2.1739), ph = c(0.8834, 1.9033), wang = c(0.9479, 1.7391),
+  dual = c(1.0490, 1.5470), tvar = c(1.3723, 1.3723)
+)
+qs <- lapply(distortions, distorted_probs, probs = insco@probs)
+cat(sprintf("%-5s %7s %7s %16s %16s\n", "", "q(40)", "q(100)", "Z(40)", "Z(100)"))
+for (f in FAMILIES) {
+  qf <- qs[[f]]
+  cat(sprintf("%-5s %7.4f %7.4f %7.4f (%.4f) %7.4f (%.4f)\n", f, qf[4], qf[7], qf[4] / 0.4,
+              BOOK_Z[[f]][1], qf[7] / 0.1, BOOK_Z[[f]][2]))
+}
+```
+
+```text
+        q(40)  q(100)            Z(40)           Z(100)
+ccoc   0.3478  0.2174  0.8696 (0.8696)  2.1739 (2.1739)
+ph     0.3534  0.1903  0.8834 (0.8834)  1.9034 (1.9033)
+wang   0.3791  0.1739  0.9479 (0.9479)  1.7391 (1.7391)
+dual   0.4196  0.1547  1.0490 (1.0490)  1.5470 (1.5470)
+tvar   0.5489  0.1372  1.3723 (1.3723)  1.3723 (1.3723)
+```
+
+The orderings are opposite: the CCoC puts the most weight on the worst year
+and the least on the median one, TVaR the reverse, and the other three sit
+between in the order listed. That is the monograph's ranking from tail-centric
+to body-centric, and it decides who pays in chapter 6. The other entries of
+Tables 4.6 to 4.8 agree to the four decimals printed as well, except two: the
+PH ratio for the worst year, 1.9034 here and 1.9033 in the book, and the TVaR
+ratio for the year totalling 36, 0.3940 here and 0.3941 in the book. Like the
+dual power parameter above (1.5952 here, 1.5951 in Table 4.5), these last
+digits are where each program's calibration stopped, not a different method.
+prospicio solves for the premium of 53.565217 to about 1e-8 (its TVaR level,
+0.27128713, is the exact solution); a parameter a few millionths away, which
+prints the same to four decimals, leaves the premium at 53.565 to the three
+decimals printed and reproduces the book's digits:
+
+```{r}
+p_tvar <- distortions$tvar@parameters[["p"]]
+rho <- distortions$ph@parameters[["rho"]]
+cases <- list(
+  list("tvar", distortion("tvar", p_tvar), 0.7), list("tvar", distortion("tvar", 0.271283), 0.7),
+  list("ph", distortion("proportional_hazard", rho), 0.1),
+  list("ph", distortion("proportional_hazard", 0.7205), 0.1)
+)
+for (case in cases) {
+  g <- case[[2]]
+  ratio <- if (case[[1]] == "tvar") (1 - distortion_g(g, 0.7)) / 0.1 else distortion_g(g, 0.1) / 0.1
+  premium <- natural_price(insco, g, assets = 100)
+  cat(sprintf("%-4s %.8f: ratio %.5f  premium %.4f\n", case[[1]], g@parameters, ratio,
+              premium$premium[premium$unit == "total"]))
+}
+```
+
+```text
+tvar 0.27128713: ratio 0.39402  premium 53.5652
+tvar 0.27128300: ratio 0.39408  premium 53.5651
+ph   0.72047928: ratio 1.90336  premium 53.5652
+ph   0.72050000: ratio 1.90327  premium 53.5646
+```
+
+With the Wang distortion, the middle of the five, the allocation to units is
+Table 4.9:
+
+```{r}
+wang <- natural_price(insco, distortions$wang, assets = 100)
+wang_units <- units_only(wang)
+wang_total <- wang[wang$unit == "total", ]
+BOOK_WANG <- rbind(c(14.109, 0.709, 0.102), c(18.637, 0.337, 0.048), c(20.818, 5.918, 0.850))
+for (i in 1:3) {
+  share <- wang_units$margin[i] / wang_total$margin
+  cat(sprintf("%s: premium %.3f (%.3f)  margin %.3f (%.3f)  share %.3f (%.3f)\n", UNITS[i],
+              wang_units$premium[i], BOOK_WANG[i, 1], wang_units$margin[i], BOOK_WANG[i, 2],
+              share, BOOK_WANG[i, 3]))
+}
+cat(sprintf("total premium %.3f, margin %.3f  (book 53.565, 6.965)\n", wang_total$premium,
+            wang_total$margin))
+```
+
+```text
+A: premium 14.109 (14.109)  margin 0.709 (0.709)  share 0.102 (0.102)
+B: premium 18.637 (18.637)  margin 0.337 (0.337)  share 0.048 (0.048)
+C: premium 20.819 (20.818)  margin 5.919 (5.918)  share 0.850 (0.850)
+total premium 53.565, margin 6.965  (book 53.565, 6.965)
+```
+
+Unit C's premium is 20.81858, so it rounds to 20.819; Table 4.9 prints 20.818
+and Tables 5.1 and 5.2 print 20.819, the same number rounded two ways.
+
+## 9. The industry standard approach
+
+Section 4.7 explains how a constant cost of capital across units, the
+practice of the 1990s, turns out to be the CCoC distortion in the layer
+view: if every unit's margin is 15% of its capital and capital is allocated
+by marginal TVaR, the book's premium is the expected loss plus `d` times
+the excess of the maximum over it, which is a CCoC layer sum. The allocation
+it gives (Table 4.11):
+
+```{r}
+BOOK_ISA <- rbind(c(16, 2.261, 13.739, 0.339, 0.049), c(20, 1.478, 18.522, 0.222, 0.032),
+                  c(64, 42.696, 21.304, 6.404, 0.919))
+isa <- units_only(priced)
+isa_margin <- priced$margin[priced$unit == "total"]
+cat(sprintf("%-2s %4s %7s %7s %6s %6s %6s\n", "", "a", "Q", "P", "M", "share", "ROC"))
+for (i in 1:3) {
+  u <- isa[i, ]
+  cat(sprintf("%-2s %4.0f %7.3f %7.3f %6.3f %6.3f %6.3f   book (%s)\n", UNITS[i], u$assets,
+              u$capital, u$premium, u$margin, u$margin / isa_margin, u$return_on_capital,
+              paste(BOOK_ISA[i, ], collapse = ", ")))
+}
+```
+
+```text
+      a       Q       P      M  share    ROC
+A    16   2.261  13.739  0.339  0.049  0.150   book (16, 2.261, 13.739, 0.339, 0.049)
+B    20   1.478  18.522  0.222  0.032  0.150   book (20, 1.478, 18.522, 0.222, 0.032)
+C    64  42.696  21.304  6.404  0.919  0.150   book (64, 42.696, 21.304, 6.404, 0.919)
+```
+
+Unit C takes 91.9% of the margin, against 85.0% under Wang: a thick-tailed
+unit gets nearly all the capital and margin under the industry standard, and
+the thin-tailed units almost none. The monograph's objections are that
+capital does not cost the same in every layer (bond spreads fall with
+seniority), that the CCoC weights only the worst outcome, and that it gives no
+credit for diversification: for independent risks the CCoC price is additive,
+because both the mean and the maximum are. A check on two independent coin
+flips, one paying 10 and one 6:
+
+```{r}
+flip1 <- c(0, 0, 10, 10)
+flip2 <- c(0, 6, 0, 6)
+for (name in c("ccoc", "wang")) {
+  g <- if (name == "ccoc") ccoc else distortions$wang
+  alone <- risk_measure(sampled(flip1), g) + risk_measure(sampled(flip2), g)
+  cat(sprintf("%s: priced apart %.3f, pooled %.3f\n", name, alone,
+              risk_measure(sampled(flip1 + flip2), g)))
+}
+```
+
+```text
+ccoc: priced apart 9.043, pooled 9.043
+wang: priced apart 10.146, pooled 9.829
+```
+
+## 10. Pricing events
+
+Section 4.8 warns against reading the risk-adjusted probabilities `q` as the
+prices of the years themselves; the prices of events are not unique, for
+reasons the monograph leaves to *Pricing Insurance Risk*. What does hold is
+that `q` prices consistently anything that moves with the total: a layer of
+the total gets the same price from `q` as from the distortion applied to it
+alone, and any unit's allocation is at most its stand-alone price. For the
+Wang distortion:
+
+```{r}
+gw <- distortions$wang
+qw <- qs$wang
+layer <- pmin(pmax(insco@totals - 55, 0), 10) # the 55 to 65 layer
+alone <- risk_measure(sampled(pmin(pmax(totals - 55, 0), 10)), gw)
+cat(sprintf("layer 55 to 65: by q %.3f, alone %.3f\n", sum(qw * layer), alone))
+for (i in 1:3) {
+  cat(sprintf("%s: allocated %.3f, stand-alone %.3f\n", UNITS[i], wang_units$premium[i],
+              risk_measure(sampled(ROWS[, i]), gw)))
+}
+```
+
+```text
+layer 55 to 65: by q 3.089, alone 3.089
+A: allocated 14.109, stand-alone 15.357
+B: allocated 18.637, stand-alone 20.792
+C: allocated 20.819, stand-alone 21.104
+```
+
+The stand-alone prices add up to more than the book's 53.565; the gap is the
+diversification that pooling the units buys; the natural allocation
+shares it out and depends on the whole book, so a unit's price changes when
+the rest of the book does. That is the subject of chapter 5.
+
+## 11. What this guide leaves out
+
+- **Chapter 4's discounting**: the monograph's examples ignore the time value
+  of money; for payment patterns see `payment_pattern()`.
+- **Capital by unit** (section 8.3): see section 5 of
+  [the chapter 9 guide](capital-modeling-monograph-15.qmd), where the lifted
+  capital under CCoC and PH depends on the `aggregate` version. Chapters 3 and
+  4 print no lifted capital, so nothing here depends on it.
+- **The figures** (the pentagon, the Lee diagrams, the distortion plots): the
+  numbers behind them are the tables above.
+
+Next: [chapters 5 and 6](capital-modeling-monograph-15-applications.qmd), and
+for which distortion to use and how to calibrate it to quotes, the Python
+guide [Risk loads and distortions](risk-loads-and-distortions.md).
