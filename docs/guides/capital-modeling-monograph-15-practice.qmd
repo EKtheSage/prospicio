@@ -1,0 +1,353 @@
+---
+title: "Building and judging a capital model: CAS Monograph 15, chapters 1, 2 and 7"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+Chapters 1, 2 and 7 of CAS Monograph 15 (John Major and Stephen Mildenhall,
+*Introduction to Capital Modeling and Portfolio Management*, 2026) are about
+the system around the mathematics: what a capital model is for, how it is
+organised, what its business operations module must produce, and how to
+judge a model or a platform. They are mostly prose and checklists; read the
+monograph for them. This guide keeps to the parts with numbers, the InsCo
+example's simulation table, balance sheets and pro forma statements, and maps
+the monograph's structure and checklists onto prospicio, so you can see which
+piece of a capital model each object plays. The explanations are in new
+words, and table numbers are the monograph's.
+
+This is the R twin of the Python guide
+[`capital-modeling-monograph-15-practice.md`](capital-modeling-monograph-15-practice.md):
+the same sections and the same numbers. Each R chunk is followed by the text
+it prints, checked by `R/prospicio/tests/test-guides.R`. Companion guides:
+[chapters 3 and 4](capital-modeling-monograph-15-theory.qmd),
+[chapters 5 and 6](capital-modeling-monograph-15-applications.qmd),
+[chapter 8](capital-modeling-monograph-15-iman-conover.qmd) and
+[chapter 9](capital-modeling-monograph-15.qmd).
+
+## 1. The parts of a capital model
+
+The monograph's system (sections 1.4.4 and 1.5) has three modules. Business
+Operations simulates the firm's results; Capital Adequacy turns them into
+the assets needed for a risk tolerance; Pricing and Allocation splits those
+assets into premium and capital and allocates the margin to units. Inside
+Business Operations, units produce gross losses, an optional economic
+scenario generator drives assets and inflation, reinsurance turns gross into
+net, and accounting turns results into pro forma statements. In prospicio's
+R package:
+
+| Monograph | prospicio |
+|---|---|
+| Units: losses by unit, frequency and severity | severity families, counts, `compound_distribution()`, event sets, reserving models (`mack_bootstrap()`, `odp_bootstrap()`, `bayes_odp()`) |
+| Correlation between units | `iman_conover()`, `reorder_groups()` (block Iman-Conover), copulas with `copula_simulate()` ([chapter 8 guide](capital-modeling-monograph-15-iman-conover.qmd)) |
+| A sample of joint outcomes (the "probabilistic database") | `predictive_distribution()`: one row per simulated year, one column per unit |
+| Reinsurance, gross to net | towers and treaties, or a ceded unit with negative losses (section 4) |
+| Economic scenario generator | not provided; bring the scenarios in as columns of a `predictive_distribution()` |
+| Accounting and pro formas | the P&L ledger for premium, loss and expense legs; balance sheets are left to the user (section 5) |
+| Capital Adequacy | `quantile()`, `TVaR()`, `portfolio_assets()`, `epd_ratio()`, `priority_ladder()` |
+| Pricing and Allocation | distortions, `calibrate_portfolio()`, `natural_price()` (the natural allocation), `bodoff_allocation()` |
+
+The monograph separates structural parameters, changed rarely (volatility,
+correlation), from business parameters, changed every planning run (premium,
+loss ratio). In code the line is the same: build the units' shapes once, and
+let volumes and the target return be arguments.
+
+## 2. InsCo: the simulation table and the funding equation
+
+InsCo (sections 1.6 and 2.2) writes three units for one period and has ten
+equally likely outcomes. Table 2.1 lists them sorted by total, with each
+unit's expected loss, CV and plan premium:
+
+```{r}
+library(prospicio)
+
+ROWS <- rbind(
+  c(15, 7, 0), c(15, 13, 0), c(5, 20, 11), c(7, 33, 0), c(13, 20, 7),
+  c(5, 27, 8), c(15, 16, 9), c(26, 19, 10), c(17, 8, 40), c(16, 20, 64)
+)
+colnames(ROWS) <- c("A", "B", "C")
+PLAN <- c(13.9, 18.7, 19.6)
+insco <- capital_portfolio(ROWS)
+totals <- rowSums(ROWS)
+columns <- c(lapply(1:3, function(j) ROWS[, j]), list(totals))
+probs <- rep(0.1, 10)
+
+cat(sprintf("%-10s %7s %7s %7s %7s\n", "", "A", "B", "C", "Total"))
+dists <- lapply(columns, function(col) discrete_distribution(col, probs))
+row <- function(label, values, fmt) cat(sprintf("%-10s", label), sprintf(fmt, values), "\n")
+row("EX", sapply(dists, mean), "%7.1f")
+row("CV", sapply(dists, function(d) std_dev(d) / mean(d)), "%7.3f")
+row("skewness", sapply(dists, discrete_skewness), "%7.3f")
+row("plan", c(PLAN, sum(PLAN)), "%7.1f")
+```
+
+```text
+                 A       B       C   Total
+EX            13.4    18.3    14.9    46.6 
+CV           0.453   0.412   1.324   0.455 
+skewness     0.281   0.269   1.603   1.420 
+plan          13.9    18.7    19.6    52.2 
+```
+
+The means and CVs are Table 2.1's (13.4, 18.3, 14.9 and 46.6; 0.453, 0.412,
+1.324 and 0.455); the skewness, which the table does not print, shows how
+much of unit C's risk sits in one or two years. The monograph uses the
+population standard deviation (dividing by 10, not 9), as
+`discrete_distribution()` does.
+
+Section 1.6's funding equation says the assets are premium plus capital,
+`a = P + Q`. With InsCo's assets of 100 and the plan premium of 52.2, capital
+is 47.8, and the plan's expected margin is the premium less the expected
+loss:
+
+```{r}
+assets <- 100
+plan <- sum(PLAN)
+loss <- insco@expected
+capital <- assets - plan
+margin <- plan - sum(loss)
+cat(sprintf("premium %.1f  capital %.1f  expected loss %.1f  margin %.1f\n", plan, capital,
+            sum(loss), margin))
+cat(sprintf("loss ratio %.1f%%  premium to capital %.2f  expected return %.1f%%\n",
+            100 * sum(loss) / plan, plan / capital, 100 * margin / capital))
+```
+
+```text
+premium 52.2  capital 47.8  expected loss 46.6  margin 5.6
+loss ratio 89.3%  premium to capital 1.09  expected return 11.7%
+```
+
+The expected margin of 5.6 is the one section 2.2 states. The required
+premium at a 15% return is higher, 53.565 (see the
+[chapter 9 guide](capital-modeling-monograph-15.qmd)): at plan, InsCo's
+investors expect 11.7%, not 15%.
+
+## 3. Margins, leverage and returns by unit
+
+Section 1.4.2 (Table 1.1) contrasts attritional business, written at a high
+loss ratio and high leverage, with catastrophe business, written at a low
+loss ratio and low leverage, and notes that capital behind attritional
+business loses money about half the time, capital behind catastrophe
+business rarely. InsCo's unit A is the steady one and unit C the
+catastrophe-like one. With the Wang distortion of chapter 4 and the capital
+allocation of section 8.3:
+
+```{r}
+wang <- calibrate_portfolio(insco, "wang", assets = 100, return_on_capital = 0.15)
+priced <- natural_price(insco, wang, assets = 100, allocation = "lifted")
+priced <- priced[priced$unit != "total", ]
+cat(sprintf("%-2s %8s %11s %6s %7s %18s\n", "", "premium", "loss ratio", "P:Q", "return",
+            "P(loss > premium)"))
+for (i in 1:3) {
+  u <- priced[i, ]
+  p_loss <- mean(columns[[i]] > u$premium)
+  cat(sprintf("%-2s %8.3f %10.1f%% %6.2f %6.1f%% %18.1f\n", u$unit, u$premium, 100 * u$loss_ratio,
+              u$premium_to_capital, 100 * u$return_on_capital, p_loss))
+}
+```
+
+```text
+    premium  loss ratio    P:Q  return  P(loss > premium)
+A    14.109       95.0%   1.68    8.4%                0.6
+B    18.637       98.2%   2.14    3.9%                0.6
+C    20.819       71.6%   0.71   20.2%                0.2
+```
+
+The loss ratio and leverage columns follow Table 1.1: unit A is written at a
+95% loss ratio with premium 1.7 times its capital, unit C at 72% with premium
+0.7 times its capital, and A's premium is exceeded by its loss in six years
+of ten, C's in two. The return column does not: on InsCo the volatile unit
+earns the most, 20.2%. Table 1.1 describes market economics for very
+different business, while InsCo's ten years are too few to separate the
+units' layers cleanly; part of C's margin is earned in the bottom layer of
+the assets, which holds no capital at all (section 9 of the
+[chapter 8 guide](capital-modeling-monograph-15-iman-conover.qmd)).
+
+Section 1.4.3 also lists the flavours of a premium (filed, required, plan,
+indicated, priced, quoted, sold, market) and of a margin, where actual, the
+margin after the fact, is the only one that is not expected. For InsCo the
+actual margin at the plan premium is a distribution:
+
+```{r}
+actual <- discrete_distribution(plan - totals, probs)
+cat(sprintf("actual margin: mean %.1f, worst %.1f, P(margin < 0) %.1f\n", mean(actual),
+            min(plan - totals), cdf(actual, -1e-9)))
+```
+
+```text
+actual margin: mean 5.6, worst -47.8, P(margin < 0) 0.3
+```
+
+The expected margin of 5.6 hides a loss in three years of ten.
+
+## 4. Reinsurance as a negative unit
+
+Section 2.3 gives two ways to model ceded reinsurance: as a unit of its own
+with negative losses beside the gross units, or downstream of the units,
+applied to their results. Both give the same net result. With InsCo's 35 xs
+65 aggregate stop loss (section 2.3; priced in chapter 5):
+
+```{r}
+stop_loss <- function(total, attach = 65, limit = 35) pmin(pmax(total - attach, 0), limit)
+
+with_ceded <- predictive_distribution(
+  cbind(ROWS, Ceded = -stop_loss(totals)),
+  data.frame(unit = c("A", "B", "C", "Ceded"))
+)
+net <- sampled(totals - stop_loss(totals))
+cat(sprintf("negative unit: mean %.1f  VaR 90%% %.0f  largest %.0f\n", mean(with_ceded),
+            VaR(with_ceded, 0.9), quantile(with_ceded, 1)))
+cat(sprintf("downstream:    mean %.1f  VaR 90%% %.0f  largest %.0f\n", mean(net), VaR(net, 0.9),
+            quantile(net, 1)))
+```
+
+```text
+negative unit: mean 43.1  VaR 90% 65  largest 65
+downstream:    mean 43.1  VaR 90% 65  largest 65
+```
+
+The monograph recommends the downstream form when a cover protects several
+units at once, as a corporate catastrophe cover does, since the cover then
+applies to their sum. A `capital_portfolio()`, which prices units by their
+share of the total, needs non-negative units, so for pricing the cover
+becomes a unit of recoveries beside the net book, as in the
+[applications guide](capital-modeling-monograph-15-applications.qmd).
+
+## 5. Capital structure and pro forma statements
+
+Sections 2.5 to 2.7 give InsCo a capital structure and turn each outcome into
+financial statements. The assets of 100 in cash are funded by the unearned
+premium of 52.2, a bond of 20 with a 3% coupon, and shareholder equity of 27.8
+(Table 2.2). There are no expenses or investment income. At the end of the
+period, losses are paid first, then the bond and its coupon, and equity takes
+what is left. For outcome 4 (a total loss of 40), Tables 2.3 and 2.4 show an
+income of 11.6 to shareholders and ending equity of 39.4. Every outcome gives
+such a pair of statements:
+
+```{r}
+CASH <- 100
+UPR <- sum(PLAN)
+BOND <- 20
+COUPON <- 0.03
+EQUITY <- CASH - UPR - BOND
+cat(sprintf("opening balance sheet: cash %.1f = premium reserve %.1f + bond %.1f + equity %.1f\n",
+            CASH, UPR, BOND, EQUITY))
+after_claims <- pmax(CASH - totals, 0)
+bond_paid <- pmin(after_claims, BOND * (1 + COUPON))
+equity_end <- after_claims - bond_paid
+income <- UPR - totals - BOND * COUPON
+cat(sprintf("%5s %6s %7s %11s %11s %10s\n", "event", "loss", "coupon", "net income", "end equity",
+            "bond paid"))
+cat(sprintf("%5d %6.1f %7.1f %11.1f %11.1f %10.1f\n", 1:10, totals, BOND * COUPON, income,
+            equity_end, bond_paid), sep = "")
+```
+
+```text
+opening balance sheet: cash 100.0 = premium reserve 52.2 + bond 20.0 + equity 27.8
+event   loss  coupon  net income  end equity  bond paid
+    1   22.0     0.6        29.6        57.4       20.6
+    2   28.0     0.6        23.6        51.4       20.6
+    3   36.0     0.6        15.6        43.4       20.6
+    4   40.0     0.6        11.6        39.4       20.6
+    5   40.0     0.6        11.6        39.4       20.6
+    6   40.0     0.6        11.6        39.4       20.6
+    7   40.0     0.6        11.6        39.4       20.6
+    8   55.0     0.6        -3.4        24.4       20.6
+    9   65.0     0.6       -13.4        14.4       20.6
+   10  100.0     0.6       -48.4         0.0        0.0
+```
+
+Outcome 4's net income of 11.6 and ending equity of 39.4 are Tables 2.3 and
+2.4. In outcome 10 the loss of 100 takes all the assets: policyholders are
+paid in full, the income statement shows a loss of 48.4, and the
+shareholders' 27.8 is not enough to absorb it, so the bondholders lose their
+20.6 of principal and coupon as well. Read across the ten statements, the
+model answers the questions a capital model must answer for each claimant:
+
+```{r}
+bond <- discrete_distribution(bond_paid, probs)
+equity <- discrete_distribution(equity_end, probs)
+cat(sprintf("bond:   expected payment %.2f of %.1f promised, P(default) %.1f\n", mean(bond),
+            BOND * (1 + COUPON), cdf(bond, BOND * (1 + COUPON) - 1e-9)))
+cat(sprintf("equity: expected ending value %.2f on %.1f invested, P(wiped out) %.1f, expected return %.1f%%\n",
+            mean(equity), EQUITY, cdf(equity, 1e-9), 100 * (mean(equity) / EQUITY - 1)))
+```
+
+```text
+bond:   expected payment 18.54 of 20.6 promised, P(default) 0.1
+equity: expected ending value 34.86 on 27.8 invested, P(wiped out) 0.1, expected return 25.4%
+```
+
+The bond promises 3%, but with a one-in-ten chance of losing everything it
+is expected to pay 18.54 on 20, a return of -7.3%: at this coupon the
+bondholders are underpaid for their risk, and the shareholders, who stand
+last, expect 25.4%. The monograph's main text works with total capital
+`Q = 47.8` and leaves the split between debt and equity to reporting; the
+[chapter 3 and 4 guide](capital-modeling-monograph-15-theory.qmd) shows how
+the same layering of claimants defines the critical loss levels.
+
+## 6. Evaluating a model
+
+Chapter 7 asks three questions of your own model: does it do what the
+charter specified, does it calculate correctly, and is it realistic. The
+last is validation, in four steps: best estimates that reconcile to plan,
+variability that matches experience, back testing, and repeating it. The
+third, back testing, needs the probability integral transform (PIT): for
+each past year, the model's probability of a result no worse than what
+happened. Over many years the PIT values should look uniform; values bunched
+at the ends mean bias or too little spread, bunched in the middle too much
+spread. With InsCo as the model and six past totals (hypothetical, for
+illustration). The R package has no `pit_from_draws()` or `pit_histogram()`
+(the Python guide's functions), so the two lines are written out: the PIT is
+the share of draws below the value plus half the share equal to it.
+
+```{r}
+history <- c(38, 61, 45, 52, 70, 33)
+pits <- sapply(history, function(y) mean(totals < y) + 0.5 * mean(totals == y))
+cat("PIT values  ", sprintf("%.2f", pits), "\n")
+cat("in quintiles", tabulate(pmin(floor(pits * 5), 4) + 1, 5), "\n")
+```
+
+```text
+PIT values   0.30 0.80 0.70 0.70 0.90 0.20 
+in quintiles 0 2 0 2 2 
+```
+
+With six values only a gross failure would show, as the monograph warns; the
+point is to keep the record and repeat it every year. For fitted models
+prospicio has the same checks built in: `ppc_check()` and `loo_pit()`, and,
+in the Rust crate, a diagonal backtest of the reserving models against each
+origin's next diagonal.
+
+Section 7.3's checklist for a modeling platform, answered for prospicio:
+
+| Item | prospicio |
+|---|---|
+| Accounting bases | none built in; the P&L ledger gives signed premium, loss and expense legs, and the balance sheet is the user's (section 5) |
+| Loss payout patterns | payment patterns, discounting and the price over the payout; reserving models for run-off |
+| Assets | not modelled; an ESG's output can be joined as columns |
+| Dependency | Iman-Conover (and by blocks), Gaussian, t, Archimedean, nested Archimedean and vine copulas, common shocks through event sets |
+| Required capital | VaR, TVaR, EPD and assets at a standard (`portfolio_assets()`) |
+| Required margins and their allocation | distortions, calibration, the natural allocation, the range of unit premiums, Bodoff |
+| Parameter uncertainty | Bayesian models and predictive distributions, blending of models |
+| Input and output | Python, R and an Excel add-in; distributions and towers save as JSON |
+| Scripting and automation | everything is a library call, so runs over many assumptions are loops |
+| Version control | plain code and JSON, so any version control works |
+| Track record | none in regulatory internal models; results are checked against published references, as in these guides |
+
+## 7. What this guide leaves out
+
+- **The charter and organisation** (sections 1.1 to 1.3): who uses the
+  model, for which decisions, and with what staff. Nothing to compute.
+- **Asset risk and the economic scenario generator** (section 2.4): not part
+  of prospicio, and InsCo has none.
+- **Third-party models** (section 7.2): regulatory and rating agency
+  formulas, outside the library.
+- **In R only**: `pit_from_draws()` and `pit_histogram()` have no R
+  functions yet (section 6 writes them out); filed as #382.
