@@ -18,6 +18,15 @@ tp <- pareto(500, 2, truncation = 8000)
 near(tp@truncation, 8000)
 near(quantile(tp, 1), 8000)
 near(layer_variance(tp, 1e4, 0), variance(tp), 1e-10)
+# Layer second moments: mpmath parity (validation/reference/layer_moments_mpmath.csv)
+# and the variance identity on the other families.
+near(layer_second_moment(pareto(1000, 2), 4000, 1000), 1618875.8248682007, 1e-11)
+near(layer_second_moment(pareto(1000, 2), 1e6, 2e5), 1916852.2717894433, 1e-11)
+mx2 <- mixture_distribution(c(0.9, 0.1), list(lognormal_from_mean_cv(1e4, 1), pareto(1e5, 2)))
+for (sev in list(gamma_distribution(2, 3000), weibull_distribution(0.8, 5000), mx2)) {
+  near(layer_variance(sev, 2e4, 5e3), layer_second_moment(sev, 2e4, 5e3) - layer(sev, 2e4, 5e3)^2, 1e-9)
+  if (is.finite(variance(sev))) near(std_dev(sev), sqrt(variance(sev)), 1e-15)
+}
 stopifnot(inherits(try(pareto(1, 0), silent = TRUE), "try-error"))
 
 # Fits.

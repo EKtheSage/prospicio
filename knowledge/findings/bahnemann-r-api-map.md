@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: The Bahnemann guides in R, what the R package covers
-description: Each call of the two Python guides that reproduce CAS Monograph 2 (Bahnemann) mapped onto the R package, with the R-only gaps met (no survival or layer variance on lognormal(), no layer_second_moment(), no std(), moment approximations only from a count and a severity) and the quirks (total() twice for a simulated sample); every printed number equal to the Python guides'.
+description: Each call of the two Python guides that reproduce CAS Monograph 2 (Bahnemann) mapped onto the R package, with the R-only gaps met (no survival or layer variance on lognormal(), no layer_second_moment(), no std(), moment approximations only from a count and a severity; all closed since by #327) and the quirks (total() twice for a simulated sample); every printed number equal to the Python guides'.
 tags: [severity, frequency, aggregate, r, python, api, bindings, guides, gaps]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-17T14:00:00-07:00 }
@@ -47,6 +47,12 @@ sources:
   `layer_second_moment()` in R at all (E[X^2; l] is
   `layer_variance + layer^2`); there is no `std()`; `moment_approximation()`
   takes a count and a severity, not the result of `compound_moments()`.
+  All closed since by #327: `survival()`, `layer_variance()` and the new
+  `layer_second_moment()` on `lognormal()`, `layer_second_moment()` on every
+  family that has `layer_variance()`, `std_dev()` (Python's `std()`; named so
+  as not to mask `stats::sd`), and `moment_approximation(compound_moments(...),
+  kind)`; Python's `Lognormal.layer_second_moment` too. The guides keep their
+  workarounds, which print the same numbers.
 * Quirks: `compound_distribution()` defaults to Panjer's recursion; `total()`
   of `simulate_events()` is a predictive distribution and a second `total()`
   gives the `sampled` with a `cdf()`; R's `optim(method = "Nelder-Mead")` with

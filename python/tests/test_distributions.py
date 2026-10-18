@@ -51,6 +51,14 @@ def test_lognormal_severity_methods():
     for limit in (100.0, 1500.0, 1e5):
         assert d.lev(limit) + d.stop_loss(limit) == pytest.approx(d.mean(), rel=1e-12)
     assert d.layer(1000.0, 500.0) == pytest.approx(d.lev(1500.0) - d.lev(500.0), rel=1e-12)
+    # validation/reference/layer_moments_mpmath.csv (mpmath quadrature at 30 digits).
+    assert d.layer_second_moment(4000.0, 1000.0) == pytest.approx(440441.74596208578, rel=1e-10)
+    assert d.layer_second_moment(math.inf, 3000.0) == pytest.approx(21219.202048965620, rel=1e-10)
+    # E[min(X, u)^2] in closed form.
+    u = 2000.0
+    z = (math.log(u) - 7.0) / 0.5
+    want = math.exp(14.0 + 0.5) * stats.norm.cdf(z - 1.0) + u * u * stats.norm.sf(z)
+    assert d.layer_second_moment(u, 0.0) == pytest.approx(want, rel=1e-12)
 
 
 def test_claim_counts_match_scipy():

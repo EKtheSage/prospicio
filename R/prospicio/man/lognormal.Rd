@@ -22,8 +22,9 @@ parameterized as in \code{\link[stats:dlnorm]{stats::dlnorm()}}. Parameters are 
 properties: \code{d@meanlog}, \code{d@sdlog}.
 }
 \details{
-Supports \code{\link[=mean]{mean()}}, \code{\link[=variance]{variance()}}, \code{\link[stats:quantile]{stats::quantile()}}, \code{\link[=cdf]{cdf()}}, \code{\link[=draws]{draws()}}
-and \code{\link[=print]{print()}}.
+Supports \code{\link[=mean]{mean()}}, \code{\link[=variance]{variance()}}, \code{\link[=std_dev]{std_dev()}}, \code{\link[stats:quantile]{stats::quantile()}},
+\code{\link[=cdf]{cdf()}}, \code{\link[=survival]{survival()}}, \code{\link[=draws]{draws()}}, \code{\link[=lev]{lev()}}, \code{\link[=stop_loss]{stop_loss()}}, \code{\link[=layer]{layer()}},
+\code{\link[=layer_variance]{layer_variance()}}, \code{\link[=layer_second_moment]{layer_second_moment()}} and \code{\link[=print]{print()}}.
 }
 \examples{
 d <- lognormal(7, 0.5)

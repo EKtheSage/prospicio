@@ -428,9 +428,13 @@ layer_loss_picks <- function(severity, attachments, picks, claims = 1) {
 #' distribution to them, as the Python package `aggregate`'s `approximate`:
 #' `"normal"`, `"gamma"` or `"lognormal"` (mean and cv), `"shifted_gamma"` or
 #' `"shifted_lognormal"` (mean, cv and skewness, which must be positive).
+#' It takes a count and a severity, or a `compound_moments()` result alone
+#' (`moment_approximation(m, "gamma")`).
 #' `approximation_cdf()` and `approximation_quantile()` evaluate a fit.
 #'
-#' @param frequency A claim count, as for [simulate_events()].
+#' @param frequency A claim count, as for [simulate_events()]; for
+#'   `moment_approximation()` also a `compound_moments()` result, given
+#'   without a severity.
 #' @param severity A severity with a closed-form third moment.
 #' @param kind The family.
 #' @param approximation A fit from `moment_approximation()`.
@@ -448,6 +452,7 @@ layer_loss_picks <- function(severity, attachments, picks, claims = 1) {
 #'                             "shifted_gamma")
 #' fit$parameters
 #' approximation_quantile(fit, c(0.5, 0.99))
+#' moment_approximation(m, "gamma")$parameters
 compound_moments <- function(frequency, severity) {
   m <- rust_result(compound_moments_rust(frequency@ptr, severity@ptr))
   stats::setNames(m, c("mean", "variance", "third_cumulant", "cv", "skew"))
@@ -455,11 +460,26 @@ compound_moments <- function(frequency, severity) {
 
 #' @rdname compound_moments
 #' @export
-moment_approximation <- function(frequency, severity,
+moment_approximation <- function(frequency, severity = NULL,
                                  kind = c("shifted_lognormal", "shifted_gamma", "gamma",
                                           "lognormal", "normal")) {
-  kind <- match.arg(kind)
-  m <- compound_moments(frequency, severity)[c("mean", "variance", "third_cumulant")]
+  needed <- c("mean", "variance", "third_cumulant")
+  if (is.numeric(frequency)) {
+    # A compound_moments() result; the kind may come second, positionally.
+    if (is.character(severity) && missing(kind)) {
+      kind <- severity
+      severity <- NULL
+    }
+    if (!is.null(severity)) stop("give a compound_moments() result without a severity")
+    if (!all(needed %in% names(frequency))) {
+      stop("expected a claim count or a compound_moments() result")
+    }
+    m <- frequency[needed]
+  } else {
+    if (is.null(severity)) stop("give a severity with the claim count")
+    m <- compound_moments(frequency, severity)[needed]
+  }
+  kind <- match.arg(kind, eval(formals(sys.function())$kind))
   params <- rust_result(approximation_parameters_rust(unname(m), kind))
   list(kind = kind, parameters = unlist(params), moments = m)
 }
