@@ -26,6 +26,8 @@ maturin develop
 pytest tests/test_guides.py
 ```
 
+Looking for the guide that follows a particular text (a CAS monograph, a book)? See [`reading-list.md`](reading-list.md), which maps each source to its guides, its knowledge file and the open issues.
+
 Start here: [`choosing-a-method.md`](choosing-a-method.md). It maps each
 situation (a rate indication, a per-risk or casualty layer, a catastrophe cover,
 a quota share, a stop loss, a reserve, capital) to the method and the calls,
