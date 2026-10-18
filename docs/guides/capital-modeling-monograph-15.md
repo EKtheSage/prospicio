@@ -443,16 +443,16 @@ advice is the same: more simulations, and a capital standard you can defend.
 
 ## 8. What this guide leaves out
 
-- **Chapters 1 and 2** (the charter of a capital model, business operations,
-  reinsurance, asset risk, the economic scenario generator, accounting): the
-  organisation around the model, with no calculation to reproduce.
+- **Chapters 1, 2 and 7** (the charter of a capital model, business
+  operations, reinsurance, capital structure, pro formas, evaluating models):
+  see [chapters 1, 2 and 7](capital-modeling-monograph-15-practice.md).
 - **Chapters 3 to 6** (capital adequacy, pricing and allocation, the
   applications and the choice of a distortion): reproduced table by table in
   [chapters 3 and 4](capital-modeling-monograph-15-theory.md) and
   [chapters 5 and 6](capital-modeling-monograph-15-applications.md).
-- **Section 8.4**, Bodoff's layer capital allocation, is available as
-  `Portfolio.bodoff`; the monograph gives it as a comparison and no figures to
-  check against.
+- **Chapter 8** (uncertainty, Iman-Conover, capital by layer and Bodoff's
+  allocation, Table 8.12 reproduced by `Portfolio.bodoff`): see
+  [chapter 8](capital-modeling-monograph-15-iman-conover.md).
 - **Capital by unit under CCoC and PH** (section 5): version dependent, see the
   note there.
 
