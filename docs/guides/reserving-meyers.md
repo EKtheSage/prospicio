@@ -156,9 +156,10 @@ deviation of 16 around a mean of 39,197, the standard error by 12 around
 1,393 and the percentile by 0.57 points around 73.78. Seed 0 falls low on
 all three (about two of those sds), and the 20-seed means are within 4, 4
 and 0.13 of the book, so prospicio's bootstrap and Meyers' printed run agree
-within their error. The two programs are not identical (R ChainLadder draws the
-process from a gamma distribution by default, prospicio from the ODP), which
-the comparison cannot distinguish here.
+within their error. Both programs add process error from a gamma with the
+ODP's mean and variance (R's `process.distr = "gamma"`, prospicio's default
+`process="gamma"`), so they run the same method on different random
+numbers.
 
 ## 3. The validation method: percentiles, p-p plots and the KS test
 
