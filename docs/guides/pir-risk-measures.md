@@ -237,15 +237,15 @@ columns = [[Lognormal.from_mean_cv(10.0, cv).quantile(0.99 + 0.01 * i / STRATA) 
 top = np.array(columns).T
 
 
-def rearrange(x, seed, eps=1e-6):
-    """Puccetti and Rueschendorf's rearrangement: each column counter-monotonic to the rest."""
-    rng = np.random.default_rng(seed)
-    x = np.column_stack([rng.permutation(c) for c in x.T])
+def rearrange(x, shift, eps=1e-6):
+    """Puccetti and Rueschendorf's rearrangement: each column counter-monotonic to the rest,
+    from a start with column j rotated by shift * j places."""
+    x = np.column_stack([np.roll(c, shift * j) for j, c in enumerate(x.T)])
     best = -np.inf
     while True:
         for j in range(x.shape[1]):
             rest = x.sum(axis=1) - x[:, j]
-            x[np.argsort(rest), j] = np.sort(x[:, j])[::-1]
+            x[np.argsort(rest, kind="stable"), j] = np.sort(x[:, j])[::-1]
         low = x.sum(axis=1).min()
         if low - best < eps:
             return low
@@ -253,18 +253,21 @@ def rearrange(x, seed, eps=1e-6):
 
 
 print(f"99% VaRs {top[0].round(1)}, comonotonic sum {top[0].sum():.1f}  (book 242.5)")
-print("worst VaR by RA, three random starts:", [round(float(rearrange(top, s)), 1) for s in range(3)], " (book 352.8)")
+print("worst VaR by RA, three starts:", [round(float(rearrange(top, s)), 1) for s in (7, 13, 19)], " (book 352.8)")
 ```
 
 ```text
 99% VaRs [ 49.   85.6 107.9], comonotonic sum 242.5  (book 242.5)
-worst VaR by RA, three random starts: [352.9, 353.2, 353.5]  (book 352.8)
+worst VaR by RA, three starts: [353.8, 353.6, 352.9]  (book 352.8)
 ```
 
 The VaRs of the three lognormals and their comonotonic sum, 242.5, are the
-book's. The worst-case VaR found is 352.9 to 353.5 depending on the random start,
+book's. The worst-case VaR found is 352.9 to 353.8 depending on the start,
 against the book's 352.8: the algorithm is a heuristic, its answer depends on
-the start, and the book does not give its seed. Either way the conclusion is the
+the starting arrangement, and the book does not give its start. The starts here
+are fixed rotations (column j shifted down by 7, 13 or 19 times j places) rather
+than random shuffles, so that the R version of this guide prints the same
+numbers. None reaches the book's 352.8 exactly, though the best is within 0.1. Either way the conclusion is the
 book's: the worst arrangement raises the 99% VaR of the sum by 45% over
 perfect positive dependence, so comonotonic VaR is not a worst case.
 
