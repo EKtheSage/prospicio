@@ -446,10 +446,10 @@ advice is the same: more simulations, and a capital standard you can defend.
 - **Chapters 1 and 2** (the charter of a capital model, business operations,
   reinsurance, asset risk, the economic scenario generator, accounting): the
   organisation around the model, with no calculation to reproduce.
-- **Chapter 5's** new business pricing, mergers and acquisitions and portfolio
-  optimization, and **chapter 6's** selection of a distortion from a range.
-  The distortions and the natural allocation they need are here; the decisions
-  built on them are the monograph's to explain.
+- **Chapters 3 to 6** (capital adequacy, pricing and allocation, the
+  applications and the choice of a distortion): reproduced table by table in
+  [chapters 3 and 4](capital-modeling-monograph-15-theory.md) and
+  [chapters 5 and 6](capital-modeling-monograph-15-applications.md).
 - **Section 8.4**, Bodoff's layer capital allocation, is available as
   `Portfolio.bodoff`; the monograph gives it as a comparison and no figures to
   check against.
