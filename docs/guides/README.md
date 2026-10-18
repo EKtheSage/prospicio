@@ -60,8 +60,9 @@ and sends you to the guide that goes deeper.
 
 ## R versions
 
-[`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) is the
-R twin of `prospicio-for-aggregate-users.md`, as a Quarto document like the R
+[`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) and
+[`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) are the
+R twins of the guides of the same names, as Quarto documents like the R
 twins in [`examples/`](../../examples/README.md): the same sections, models and
 numbers, with the R package. Each R chunk is followed by the text it prints,
 and `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R
