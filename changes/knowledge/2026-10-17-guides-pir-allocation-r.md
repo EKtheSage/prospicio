@@ -1,0 +1,1 @@
+* **Creation**: [The Pricing Insurance Risk allocation guides in R](/findings/pir-allocation-r-api-map.md), from the R twins of pir-price-allocation.md and pir-price-allocation-practice.md (branch guides/pir-allocation-r): every printed number equal to Python's; VaR() has no grid_distribution method, quantile() does the job (#373).
