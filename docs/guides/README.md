@@ -43,6 +43,7 @@ and sends you to the guide that goes deeper.
 | [`experience-and-exposure-rating.md`](experience-and-exposure-rating.md) | Rating a layer from the cedant's own losses (preparing them as-if for currency, development, trend and an index clause, then the burning cost, as-if history under past programs, a fitted Pareto), from its exposure (curves, increased limit factors, risk profiles), and how to blend the two |
 | [`risk-loads-and-distortions.md`](risk-loads-and-distortions.md) | Which risk load or distortion to use (constant cost of capital, proportional hazard, Wang, TVaR and others), how to calibrate it to quotes, and how to price a contract in a portfolio |
 | [`capital-modeling-monograph-15.md`](capital-modeling-monograph-15.md) | CAS Monograph 15 (Major and Mildenhall) reproduced: the InsCo example priced by five distortions and allocated to units, the 35 xs 65 reinsurance decision, and the correlated three-unit book, with the monograph's printed numbers beside prospicio's |
+| [`pricing-insurance-risk-case-studies.md`](pricing-insurance-risk-case-studies.md) | The case studies of *Pricing Insurance Risk* (Mildenhall and Major): Discrete, Tame, Cat/Non-Cat gross and net of an aggregate cover, Hurricane/SCS gross and net of an occurrence cover, each priced by five distortions and allocated to units, with `aggregate` 0.30.1's numbers beside prospicio's |
 
 **Distributions**
 
@@ -51,6 +52,8 @@ and sends you to the guide that goes deeper.
 | [`severity-and-frequency.md`](severity-and-frequency.md) | Choosing and fitting a severity and a claim count: lognormal, Pareto family, mixtures, censoring and truncation, and count families by dispersion |
 | [`aggregate-distributions.md`](aggregate-distributions.md) | The distribution of a year's total loss: FFT, Panjer, simulation or moments, the grid, and when each is exact, fast or unsafe |
 | [`prospicio-for-aggregate-users.md`](prospicio-for-aggregate-users.md) | The twenty-minute tour of Mildenhall's `aggregate` package run in prospicio: the same books, with both libraries' numbers side by side, a DecL-to-prospicio table and what prospicio does not have |
+| [`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md) | CAS Monograph 2 (Bahnemann), chapters 2, 5 and 6 reproduced: limited expected values, fits to grouped, censored and truncated data, excess severity and layers, the leveraging effect of inflation, increased limit factors with ALAE and risk loads, and straight, franchise and diminishing deductibles, with the monograph's printed numbers beside prospicio's |
+| [`distributions-for-actuaries-counts-aggregates.md`](distributions-for-actuaries-counts-aggregates.md) | CAS Monograph 2 (Bahnemann), chapters 3 and 4 and its aggregate limits reproduced: Poisson, mixed Poisson and negative binomial counts with contagion, aggregate moments and moment-matched approximations against Panjer's recursion, the FFT and simulation, and aggregate limits priced exactly and by the monograph's shifted gamma |
 
 **Reserving**
 
@@ -60,8 +63,9 @@ and sends you to the guide that goes deeper.
 
 ## R versions
 
-[`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) is the
-R twin of `prospicio-for-aggregate-users.md`, as a Quarto document like the R
+[`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) and
+[`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) are the
+R twins of the guides of the same names, as Quarto documents like the R
 twins in [`examples/`](../../examples/README.md): the same sections, models and
 numbers, with the R package. Each R chunk is followed by the text it prints,
 and `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R
