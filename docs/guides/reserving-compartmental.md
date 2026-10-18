@@ -443,24 +443,27 @@ outcome 187,420 inside the 90% interval: True
 ```
 
 ```python no-run
-print(fit1.to_frame().round({"mean": 0, "std_dev": 0, "ultimate_loss_ratio": 3}).to_string(index=False))
+print("origin  premium  latest paid  reserve mean      sd  ultimate loss ratio")
+for row in fit1.to_frame().itertuples():
+    print(f"{row.origin:6s} {row.premium:>8,.0f} {row.latest_paid:>12,.0f} {row.mean:>13,.0f} "
+          f"{row.std_dev:>7,.0f} {row.ultimate_loss_ratio:>20.3f}")
 print(f"total: mean {total1.mean():,.0f}, sd {total1.std():,.0f}, 5% {np.quantile(total1, 0.05):,.0f}, "
       f"95% {np.quantile(total1, 0.95):,.0f}; outcome {outcome:,.0f} at percentile "
       f"{100 * np.mean(total1 <= outcome):.1f}")
 ```
 
 ```text
-origin  premium  latest_paid    mean  std_dev  ultimate_loss_ratio
-  1988 104437.0      51812.0   322.0    948.0                0.509
-  1989  88883.0      45871.0  1056.0    953.0                0.538
-  1990  85956.0      52879.0  2471.0    984.0                0.656
-  1991  99339.0      65039.0  6776.0   1113.0                0.736
-  1992 104897.0      56406.0  8756.0   1172.0                0.633
-  1993 119427.0      46722.0 13272.0   1208.0                0.512
-  1994 110784.0      38488.0 20927.0   1420.0                0.546
-  1995  77731.0      31604.0 36486.0   2228.0                0.893
-  1996  63646.0      13194.0 51755.0   4388.0                1.041
-  1997  48052.0          0.0 31636.0   6109.0                0.665
+origin  premium  latest paid  reserve mean      sd  ultimate loss ratio
+1988    104,437       51,812           322     948                0.509
+1989     88,883       45,871         1,056     953                0.538
+1990     85,956       52,879         2,471     984                0.656
+1991     99,339       65,039         6,776   1,113                0.736
+1992    104,897       56,406         8,756   1,172                0.633
+1993    119,427       46,722        13,272   1,208                0.512
+1994    110,784       38,488        20,927   1,420                0.546
+1995     77,731       31,604        36,486   2,228                0.893
+1996     63,646       13,194        51,755   4,388                1.041
+1997     48,052            0        31,636   6,109                0.665
 total: mean 173,457, sd 10,260, 5% 156,936, 95% 189,868; outcome 187,420 at percentile 91.9
 ```
 
