@@ -54,6 +54,7 @@ from pathlib import Path
 
 import numpy as np
 
+from prospicio.distributions import Lognormal
 from prospicio.reserving import Mack, Meyers, OdpBootstrap, Triangle
 
 DATA = Path("../../validation/data/clrd_comauto_353.csv")
@@ -199,18 +200,18 @@ def ks_d(percentiles):
 for n in (50, 200):
     print(f"n = {n:3d}: critical value 136 / sqrt(n) = {136 / math.sqrt(n):.1f}")
 
-rng = np.random.default_rng(353)
-z = rng.standard_normal(200)
+# 200 standard normal draws: the logs of a standard log-normal sample.
+z = np.log(Lognormal(0.0, 1.0).sample(200, seed=353))
 normal_cdf = np.vectorize(lambda x: 50 * (1 + math.erf(x / math.sqrt(2))))
-print(f"right model:          D = {ks_d(normal_cdf(z)):4.1f}")
+print(f"right model:            D = {ks_d(normal_cdf(z)):4.1f}")
 print(f"too light in the tails: D = {ks_d(normal_cdf(1.5 * z)):4.1f}")
 ```
 
 ```text
 n =  50: critical value 136 / sqrt(n) = 19.2
 n = 200: critical value 136 / sqrt(n) = 9.6
-right model:          D =  4.5
-too light in the tails: D = 14.1
+right model:            D =  5.6
+too light in the tails: D = 15.0
 ```
 
 The 19.2 for 50 triangles and 9.6 for 200 are the critical values printed
