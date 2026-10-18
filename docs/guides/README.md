@@ -44,6 +44,8 @@ and sends you to the guide that goes deeper.
 | [`risk-loads-and-distortions.md`](risk-loads-and-distortions.md) | Which risk load or distortion to use (constant cost of capital, proportional hazard, Wang, TVaR and others), how to calibrate it to quotes, and how to price a contract in a portfolio |
 | [`capital-modeling-monograph-15.md`](capital-modeling-monograph-15.md) | CAS Monograph 15 (Major and Mildenhall) reproduced: the InsCo example priced by five distortions and allocated to units, the 35 xs 65 reinsurance decision, and the correlated three-unit book, with the monograph's printed numbers beside prospicio's |
 | [`pricing-insurance-risk-case-studies.md`](pricing-insurance-risk-case-studies.md) | The case studies of *Pricing Insurance Risk* (Mildenhall and Major): Discrete, Tame, Cat/Non-Cat gross and net of an aggregate cover, Hurricane/SCS gross and net of an occurrence cover, each priced by five distortions and allocated to units, with `aggregate` 0.30.1's numbers beside prospicio's |
+| [`ratemaking-werner-modlin.md`](ratemaking-werner-modlin.md) | Werner and Modlin's *Basic Ratemaking* (CAS study note), the steps of the overall rate indication reproduced: dates on the book's half-month grid, premium at the current rate level by the parallelogram method, premium and loss trend fits, loss development, expenses and the permissible loss ratio, and limited fluctuation and Bühlmann credibility, with the book's printed numbers beside prospicio's |
+| [`ratemaking-werner-modlin-indications.md`](ratemaking-werner-modlin-indications.md) | Werner and Modlin's three worked indications end to end (Appendix A auto by the loss ratio method, B homeowners by the pure premium method, C medical malpractice with a net trend), chapter 11's increased limits and deductibles, what prospicio does not cover, and every place the book's rounding moves a printed digit |
 
 **Distributions**
 
@@ -61,6 +63,7 @@ and sends you to the guide that goes deeper.
 |---|---|
 | [`reserving-methods.md`](reserving-methods.md) | Which reserving method when: chain ladder, Mack, Bornhuetter-Ferguson, bootstraps, Bayesian models, tails and the one-year view, with the reserve's uncertainty as a distribution |
 | [`reserving-meyers.md`](reserving-meyers.md) | CAS Monograph 8 (Meyers) reproduced: from Mack and the ODP bootstrap to the Bayesian CRC, CSR and CAY models, what each changes, the validation by the outcome's percentile, p-p plots and the KS test, and his printed results on group 353 beside prospicio's with their Monte Carlo error |
+| [`reserving-taylor-mcguire.md`](reserving-taylor-mcguire.md) | CAS Monograph 3 (Taylor and McGuire) reproduced: the chain ladder as an over-dispersed Poisson GLM, its prediction error by the delta method and the parametric bootstrap, residual diagnostics and heat maps, and the reduced models with accident-year and development-year curves and interactions, with the monograph's printed numbers beside prospicio's |
 
 ## R versions
 
@@ -75,6 +78,14 @@ text. The `.qmd` files are not pages of the Python site. With the R package
 installed, render one with
 `quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
 all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
+
+[`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd)
+and
+[`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd)
+are the R twins of the two guides that reproduce CAS Monograph 2, Bahnemann's
+*Distributions for Actuaries*: the same examples and the same numbers, with the
+monograph's printed values beside prospicio's, and the R package's gaps for
+those chapters listed at the end of each.
 
 Money in the guides is in millions of a synthetic currency, and every example is
 synthetic. The guides write about the library and do not change it; a gap found
