@@ -89,6 +89,8 @@ twins in [`examples/`](../../examples/README.md):
 | [`capital-modeling-monograph-15-theory.qmd`](capital-modeling-monograph-15-theory.qmd) | `capital-modeling-monograph-15-theory.md` |
 | [`capital-modeling-monograph-15-applications.qmd`](capital-modeling-monograph-15-applications.qmd) | `capital-modeling-monograph-15-applications.md` |
 | [`pricing-insurance-risk-case-studies.qmd`](pricing-insurance-risk-case-studies.qmd) | `pricing-insurance-risk-case-studies.md` |
+| [`pir-price-allocation.qmd`](pir-price-allocation.qmd) | `pir-price-allocation.md` |
+| [`pir-price-allocation-practice.qmd`](pir-price-allocation-practice.qmd) | `pir-price-allocation-practice.md` |
 | [`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd) | `distributions-for-actuaries-claim-size.md` |
 | [`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd) | `distributions-for-actuaries-counts-aggregates.md` |
 | [`ratemaking-werner-modlin.qmd`](ratemaking-werner-modlin.qmd) | `ratemaking-werner-modlin.md` |
