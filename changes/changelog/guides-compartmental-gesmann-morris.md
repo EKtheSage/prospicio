@@ -6,4 +6,4 @@
   with the paper's printed posteriors beside prospicio's (model 1 checked in
   CI, model 2 recorded), the fitted development and test diagonal, the
   reserve against the outcome, why their elpd_loo values do not compare,
-  and the one-year view of both models.
+  and the one-year view of both models (#381).
