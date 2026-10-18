@@ -68,25 +68,31 @@ and sends you to the guide that goes deeper.
 
 ## R versions
 
-[`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd),
-[`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) and
-[`reserving-meyers.qmd`](reserving-meyers.qmd) are the R twins of the guides of the same names, as Quarto documents like the R
-twins in [`examples/`](../../examples/README.md): the same sections, models and
-numbers, with the R package. Each R chunk is followed by the text it prints,
-and `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R
-tests) runs every `.qmd` here and requires each chunk to print exactly that
-text. The `.qmd` files are not pages of the Python site. With the R package
-installed, render one with
-`quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
-all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
+Every guide below has an R twin, a Quarto document next to it with the same name
+and the same sections, models and numbers, written with the R package like the R
+twins in [`examples/`](../../examples/README.md):
 
-[`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd)
-and
-[`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd)
-are the R twins of the two guides that reproduce CAS Monograph 2, Bahnemann's
-*Distributions for Actuaries*: the same examples and the same numbers, with the
-monograph's printed values beside prospicio's, and the R package's gaps for
-those chapters listed at the end of each.
+| R twin | Python guide |
+|---|---|
+| [`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) | `prospicio-for-aggregate-users.md` |
+| [`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) | `capital-modeling-monograph-15.md` |
+| [`pricing-insurance-risk-case-studies.qmd`](pricing-insurance-risk-case-studies.qmd) | `pricing-insurance-risk-case-studies.md` |
+| [`distributions-for-actuaries-claim-size.qmd`](distributions-for-actuaries-claim-size.qmd) | `distributions-for-actuaries-claim-size.md` |
+| [`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd) | `distributions-for-actuaries-counts-aggregates.md` |
+| [`ratemaking-werner-modlin.qmd`](ratemaking-werner-modlin.qmd) | `ratemaking-werner-modlin.md` |
+| [`ratemaking-werner-modlin-indications.qmd`](ratemaking-werner-modlin-indications.qmd) | `ratemaking-werner-modlin-indications.md` |
+| [`reserving-friedland.qmd`](reserving-friedland.qmd) | `reserving-friedland.md` |
+| [`reserving-taylor-mcguire.qmd`](reserving-taylor-mcguire.qmd) | `reserving-taylor-mcguire.md` |
+| [`reserving-meyers.qmd`](reserving-meyers.qmd) | `reserving-meyers.md` |
+
+Each R chunk is followed by the text it prints, and
+`R/prospicio/tests/test-guides.R` (run by CI's R job with the other R tests) runs
+every `.qmd` here and requires each chunk to print exactly that text. The `.qmd`
+files are not pages of the Python site. With the R package installed, render one
+with `quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
+all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
+Two blocks in `reserving-meyers` (the heavy Bayesian fits) are plain code fences
+with recorded numbers, which neither harness re-runs.
 
 Money in the guides is in millions of a synthetic currency, and every example is
 synthetic. The guides write about the library and do not change it; a gap found
