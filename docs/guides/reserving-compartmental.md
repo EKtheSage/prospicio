@@ -202,13 +202,13 @@ model 1: 1988 loss ratios under the priors alone (5%, 50%, 95%) and actual
 
 The check finds a conflict before any fitting. Under the preset, payment is
 fast (`k_p` near 1 a year), so the priors put about a quarter of premium in
-paid after 12 months and empty outstanding within a few years. Company 337 pays
-far more slowly: 9% paid at 12 months, and 31% of premium still outstanding
-at 36 months where the priors expect about 5%. The data will move the rates many prior sds away, and they do (section
-4: `k_er` about 1.76 and `k_p` about 0.43 against medians 3 and 1). The paper
-keeps the preset; a user fitting their own book should widen or recentre the
-rate priors after a check like this one, with `GM1.replace(k_p=(0.5, 0.3))`
-for instance.
+paid after 12 months and empty outstanding within a few years. Company 337
+pays far more slowly: 9% paid at 12 months, and 31% of premium still
+outstanding at 36 months where the priors expect about 5%. The data will move
+the rates many prior sds away, and they do (section 4: `k_er` about 1.76 and
+`k_p` about 0.43 against medians 3 and 1). The paper keeps the preset; a user
+fitting their own book should widen or recentre the rate priors after a check
+like this one, with `GM1.replace(k_p=(0.5, 0.3))` for instance.
 
 ## 4. Model 1: one likelihood for paid and outstanding amounts
 
@@ -245,8 +245,8 @@ def check_posterior(fit, printed):
     s = fit.summary().set_index("parameter")
     ok = 0
     for name, (mean, sd) in printed.items():
-        ok += check(f"{name} mean", mean, s.loc[name, "mean"], 0.15 * sd + 0.005)
-        ok += check(f"{name} sd", sd, s.loc[name, "sd"], 0.10 * sd + 0.005)
+        ok += check(f"{name} mean", mean, s.loc[name, "mean"], 0.15 * sd + 0.005, ".4f")
+        ok += check(f"{name} sd", sd, s.loc[name, "sd"], 0.10 * sd + 0.005, ".4f")
     return ok
 
 
@@ -263,24 +263,24 @@ print("rows agreeing", check_posterior(fit1, M1FIT), "of", 2 * len(M1FIT))
 
 ```text
 warnings 0 | rate swaps 0
-b_ker mean               paper    -5.400  tolerance   0.127  agrees: True
-b_ker sd                 paper     0.810  tolerance   0.086  agrees: True
-b_kp mean                paper    -8.490  tolerance   0.059  agrees: True
-b_kp sd                  paper     0.360  tolerance   0.041  agrees: True
-b_RLR mean               paper     1.440  tolerance   0.044  agrees: True
-b_RLR sd                 paper     0.260  tolerance   0.031  agrees: True
-b_RRF mean               paper    -1.360  tolerance   0.068  agrees: True
-b_RRF sd                 paper     0.420  tolerance   0.047  agrees: True
-tau_RLR mean             paper     0.640  tolerance   0.028  agrees: True
-tau_RLR sd               paper     0.150  tolerance   0.020  agrees: True
-tau_RRF mean             paper     0.740  tolerance   0.038  agrees: True
-tau_RRF sd               paper     0.220  tolerance   0.027  agrees: True
-rho mean                 paper     0.540  tolerance   0.044  agrees: True
-rho sd                   paper     0.260  tolerance   0.031  agrees: True
-log_sigma_os mean        paper     8.250  tolerance   0.029  agrees: True
-log_sigma_os sd          paper     0.160  tolerance   0.021  agrees: True
-log_sigma_pd mean        paper     6.660  tolerance   0.035  agrees: True
-log_sigma_pd sd          paper     0.200  tolerance   0.025  agrees: True
+b_ker mean               paper   -5.4000  tolerance  0.1265  agrees: True
+b_ker sd                 paper    0.8100  tolerance  0.0860  agrees: True
+b_kp mean                paper   -8.4900  tolerance  0.0590  agrees: True
+b_kp sd                  paper    0.3600  tolerance  0.0410  agrees: True
+b_RLR mean               paper    1.4400  tolerance  0.0440  agrees: True
+b_RLR sd                 paper    0.2600  tolerance  0.0310  agrees: True
+b_RRF mean               paper   -1.3600  tolerance  0.0680  agrees: True
+b_RRF sd                 paper    0.4200  tolerance  0.0470  agrees: True
+tau_RLR mean             paper    0.6400  tolerance  0.0275  agrees: True
+tau_RLR sd               paper    0.1500  tolerance  0.0200  agrees: True
+tau_RRF mean             paper    0.7400  tolerance  0.0380  agrees: True
+tau_RRF sd               paper    0.2200  tolerance  0.0270  agrees: True
+rho mean                 paper    0.5400  tolerance  0.0440  agrees: True
+rho sd                   paper    0.2600  tolerance  0.0310  agrees: True
+log_sigma_os mean        paper    8.2500  tolerance  0.0290  agrees: True
+log_sigma_os sd          paper    0.1600  tolerance  0.0210  agrees: True
+log_sigma_pd mean        paper    6.6600  tolerance  0.0350  agrees: True
+log_sigma_pd sd          paper    0.2000  tolerance  0.0250  agrees: True
 rows agreeing 18 of 18
 ```
 
@@ -294,10 +294,10 @@ for 100,000 draws gives the same values to within 0.04 sds of the paper
 (`knowledge/references/gesmann-morris-2020.md`).
 
 On the natural scale this is `k_er` about 1.76 and `k_p` about 0.43 a year:
-claims are reported about seven months after the start on average
-(`1 / k_er` years) and paid about 2.3 years after that (`1 / k_p`). The population `RLR` is about 0.94 and
-`RRF` about 0.70, so the case reserves (with bulk) are redundant by about 30%
-and the population ultimate loss ratio is about 0.65:
+claims are reported about seven months after the start on average (`1 / k_er`
+years) and paid about 2.3 years after that (`1 / k_p`). The population `RLR`
+is about 0.94 and `RRF` about 0.70, so the case reserves (with bulk) are
+redundant by about 30% and the population ultimate loss ratio is about 0.65:
 
 ```python no-run
 s1 = fit1.summary().set_index("parameter")
@@ -404,12 +404,12 @@ actual inside the 90% interval: 17 of 20 cells
 ```
 
 Seventeen of the twenty cells fall inside their 90% intervals. Two of the
-three misses are the youngest accident year: 1997's first paid (9,372) and outstanding
-(40,799) are well above anything the model expected from its premium, a
-first sign of what section 7 finds in the reserve. The outstanding intervals
-of the old years reach below zero: the normal likelihood with a constant
-`sigma` (about 3,900) knows nothing of a cell's size, another reason for
-model 2's log-normal.
+three misses are the youngest accident year: 1997's first paid (9,372) and
+outstanding (40,799) are well above anything the model expected from its
+premium, a first sign of what section 7 finds in the reserve. The outstanding
+intervals of the old years reach below zero: the normal likelihood with a
+constant `sigma` (about 3,900) knows nothing of a cell's size, another reason
+for model 2's log-normal.
 
 ## 6. The reserve distribution
 
@@ -713,12 +713,12 @@ warnings 1
 total CDR mean 55, sd 7,982; lifetime reserve sd 10,260; ratio 0.78
 ```
 
-About four in five simulations are flagged; matching rescues about 95% of
-them and the rest are refitted with NUTS (most of the run time). The warning
-is about the refits: the count above missed an MCMC diagnostic threshold, so
-read `view1.refit_warnings` before relying on the far tail of the CDR. About 78% of the lifetime reserve's sd emerges in the
-first year, in line with the 200-seed study (0.80, sd 0.03). The CDR's mean
-is about zero, as it should be.
+About four in five simulations are flagged; matching rescues about 95% of them
+and the rest are refitted with NUTS (most of the run time). The warning is
+about the refits: the count above missed an MCMC diagnostic threshold, so read
+`view1.refit_warnings` before relying on the far tail of the CDR. About 78% of
+the lifetime reserve's sd emerges in the first year, in line with the 200-seed
+study (0.80, sd 0.03). The CDR's mean is about zero, as it should be.
 
 For model 2 matching rescues none of the flagged simulations (its posterior
 has 95 sampled values, several effect sds near zero, far from the
