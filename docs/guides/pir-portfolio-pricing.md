@@ -264,7 +264,8 @@ Two principles misbehave on Tame's net B as soon as the net grid comes from an
 FFT. The exponential and Esscher premiums weight an outcome x by exp(t x), and
 on a grid that reaches 1,024 the factor exp(0.08 x) is about 1e35 at the top,
 so the 1e-19 round-off a `Tower` grid carries there becomes a premium of
-hundreds:
+hundreds (about 510; the round-off's digits, and so this premium's, vary with
+the platform's FFT, which is why the code prints bounds):
 
 ```python
 from prospicio.distributions import Count
@@ -272,14 +273,18 @@ from prospicio.reinsurance import Layer, Tower
 
 b_net_fft = Tower([Layer.stop_loss("B", 12.91, 56.17)]).on_grid(Count.fixed(1), b_unit, POINTS).net
 t_exp = calibrate_classical("exponential", tame_total, tame_target)
+# the round-off's digits depend on the platform's FFT, so print bounds
+fft_premium = classical_premium('exponential', b_net_fft, t_exp)
+noise = max(b_net_fft.probs[150 * 64:])
 print(f"exponential premium of net B: by map {classical_premium('exponential', b_net, t_exp):.3f}, "
-      f"from the FFT {classical_premium('exponential', b_net_fft, t_exp):.1f} (book 50.420)")
-print(f"largest probability above 150: FFT {max(b_net_fft.probs[150 * 64:]):.1e}, map exactly zero")
+      f"from the FFT {'over 100' if fft_premium > 100 else fft_premium} (book 50.420)")
+print(f"largest probability above 150: FFT {'non-zero, below 1e-18' if 0 < noise < 1e-18 else noise}, "
+      "map exactly zero")
 ```
 
 ```text
-exponential premium of net B: by map 50.419, from the FFT 509.4 (book 50.420)
-largest probability above 150: FFT 7.0e-20, map exactly zero
+exponential premium of net B: by map 50.419, from the FFT over 100 (book 50.420)
+largest probability above 150: FFT non-zero, below 1e-18, map exactly zero
 ```
 
 Use the exact net (`Grid.map`) for these two principles, or set the round-off
