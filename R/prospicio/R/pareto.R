@@ -10,12 +10,15 @@ truncation_arg <- function(truncation) {
 # Optional per-loss vectors are passed to Rust as empty vectors when NULL.
 optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 
-#' Survival function and layer variance
+#' Survival function and layer moments
 #'
 #' `survival(dist, q)` is `P(X > q)`, accurate far into the tail;
 #' `layer_variance(dist, limit, attachment)` is the variance of the loss to
-#' the layer `limit` xs `attachment` (`Inf` for an unlimited layer).
-#' Defined for the Pareto-family severities ([pareto], [piecewise_pareto],
+#' the layer `limit` xs `attachment` (`Inf` for an unlimited layer), and
+#' `layer_second_moment(dist, limit, attachment)` its second moment
+#' `E[Y^2]`, in closed form where the family has one, so
+#' `layer_variance = layer_second_moment - layer^2`.
+#' Defined for [lognormal], the Pareto-family severities ([pareto], [piecewise_pareto],
 #' [log_affine_pareto], [generalized_pareto]) and for [gamma_distribution],
 #' [tweedie], [weibull_distribution], [loglogistic_distribution],
 #' [inverse_gamma_distribution], [inverse_gaussian_distribution],
@@ -23,18 +26,22 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' [policy_limits_distribution], [mixture_distribution] and
 #' [custom_distribution].
 #'
-#' @param dist A Pareto-family severity.
+#' @param dist A severity, one of those above.
 #' @param q Numeric vector.
 #' @param limit Layer limit, a single number.
 #' @param attachment Layer attachment, a single number.
 #' @param ... Unused; for methods.
 #' @returns A numeric vector (`survival`) or a single number
-#'   (`layer_variance`).
+#'   (`layer_variance`, `layer_second_moment`).
 #' @name pareto_severity
 #' @examples
 #' p <- pareto(500, 2)
 #' survival(p, c(1000, 2000))
 #' layer_variance(p, 4000, 1000)
+#' layer_second_moment(p, 4000, 1000)
+#' d <- lognormal(7, 0.5)
+#' survival(d, 3000)
+#' layer_second_moment(d, 4000, 1000)
 NULL
 
 #' @rdname pareto_severity
@@ -46,6 +53,11 @@ survival <- S7::new_generic("survival", "dist", function(dist, q, ...) S7::S7_di
 layer_variance <- S7::new_generic("layer_variance", "dist", function(dist, limit, attachment, ...) {
   S7::S7_dispatch()
 })
+
+#' @rdname pareto_severity
+#' @export
+layer_second_moment <- S7::new_generic("layer_second_moment", "dist",
+                                       function(dist, limit, attachment, ...) S7::S7_dispatch())
 
 #' Single-parameter Pareto distribution
 #'
@@ -886,6 +898,19 @@ for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto
   S7::method(layer_variance, cls) <- function(dist, limit, attachment, ...) {
     dist@ptr$layer_variance(as.double(limit), as.double(attachment))
   }
+  S7::method(layer_second_moment, cls) <- function(dist, limit, attachment, ...) {
+    dist@ptr$layer_second_moment(as.double(limit), as.double(attachment))
+  }
+}
+
+# The lognormal's other methods are in distributions.R, which is collated
+# before these generics.
+S7::method(survival, lognormal) <- function(dist, q, ...) dist@ptr$survival(as.double(q))
+S7::method(layer_variance, lognormal) <- function(dist, limit, attachment, ...) {
+  dist@ptr$layer_variance(as.double(limit), as.double(attachment))
+}
+S7::method(layer_second_moment, lognormal) <- function(dist, limit, attachment, ...) {
+  dist@ptr$layer_second_moment(as.double(limit), as.double(attachment))
 }
 
 S7::method(print, pareto) <- function(x, ...) {

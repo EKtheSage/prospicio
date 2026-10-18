@@ -54,6 +54,7 @@ reference:
     contents:
       - cdf
       - variance
+      - std_dev
       - draws
       - severity
       - risk_measures

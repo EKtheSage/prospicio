@@ -12,6 +12,22 @@ close(variance(d), (exp(0.5^2) - 1) * exp(2 * 7 + 0.5^2), 1e-12)
 p <- c(0.01, 0.5, 0.995)
 close(quantile(d, p), qlnorm(p, 7, 0.5), 1e-12)
 close(cdf(d, c(500, 1500)), plnorm(c(500, 1500), 7, 0.5), 1e-12)
+close(survival(d, c(500, 1500, 1e5)), plnorm(c(500, 1500, 1e5), 7, 0.5, lower.tail = FALSE), 1e-12)
+close(std_dev(d), sqrt(variance(d)), 1e-15)
+# Layer second moments against validation/reference/layer_moments_mpmath.csv
+# (mpmath quadrature of 2 (x - a) S(x) at 30 digits).
+close(layer_second_moment(d, 500, 0), 245530.28579209919, 1e-10)
+close(layer_second_moment(d, 4000, 1000), 440441.74596208578, 1e-10)
+close(layer_second_moment(d, 1e6, 2e5), 2.2259783137612088e-17, 1e-10)
+close(layer_second_moment(d, Inf, 3000), 21219.202048965620, 1e-10)
+close(layer_second_moment(lognormal(10, 2), 500, 0), 245447.70222260771, 1e-10)
+# E[min(X, u)^2] in closed form, and the variance identity.
+u <- 2000
+close(layer_second_moment(d, u, 0),
+      exp(2 * 7 + 2 * 0.5^2) * pnorm((log(u) - 7) / 0.5 - 2 * 0.5) + u^2 * plnorm(u, 7, 0.5, lower.tail = FALSE),
+      1e-12)
+close(layer_variance(d, 4000, 1000), layer_second_moment(d, 4000, 1000) - layer(d, 4000, 1000)^2, 1e-12)
+close(layer_variance(d, Inf, 0), variance(d), 1e-12)
 
 # S7 classes: read-only parameter properties, a shared abstract parent.
 stopifnot(S7::S7_inherits(d, lognormal), S7::S7_inherits(d, distribution))

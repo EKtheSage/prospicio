@@ -55,6 +55,10 @@ macro_rules! severity_class {
                 self.inner.layer_variance(limit, attachment)
             }
 
+            fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
+                self.inner.layer_second_moment(limit, attachment)
+            }
+
             fn sample(&self, n: f64, seed: f64, stream: f64) -> Result<Vec<f64>> {
                 let n = whole(n, "n")?;
                 let mut rng = StreamRng::new(whole(seed, "seed")?, whole(stream, "stream")?);

@@ -11333,6 +11333,20 @@ class Lognormal:
         >>> abs(d.layer(1000.0, 0.0) - d.lev(1000.0)) < 1e-9
         True
         """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``, in closed form.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def lev(self, /, limit: float) -> float:
         """
         Limited expected value ``E[min(X, limit)]``.

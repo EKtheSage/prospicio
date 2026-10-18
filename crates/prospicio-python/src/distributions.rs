@@ -208,6 +208,21 @@ impl PyLognormal {
         self.inner.layer(limit, attachment)
     }
 
+    /// Second moment of the loss to the layer ``limit`` xs
+    /// ``attachment``, in closed form.
+    ///
+    /// Parameters
+    /// ----------
+    /// limit : float
+    /// attachment : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
+        self.inner.layer_second_moment(limit, attachment)
+    }
+
     fn __getnewargs__(&self) -> (f64, f64) {
         (self.inner.meanlog(), self.inner.sdlog())
     }

@@ -68,6 +68,18 @@ impl Lognormal {
         self.inner.layer(limit, attachment)
     }
 
+    fn survival(&self, x: &[f64]) -> Vec<f64> {
+        x.iter().map(|&x| self.inner.survival(x)).collect()
+    }
+
+    fn layer_variance(&self, limit: f64, attachment: f64) -> f64 {
+        self.inner.layer_variance(limit, attachment)
+    }
+
+    fn layer_second_moment(&self, limit: f64, attachment: f64) -> f64 {
+        self.inner.layer_second_moment(limit, attachment)
+    }
+
     /// `n` draws from stream `stream` of the generator keyed by `seed`. R has
     /// no 64-bit integers, so ids arrive as doubles holding whole numbers.
     fn sample(&self, n: f64, seed: f64, stream: f64) -> Result<Vec<f64>> {
