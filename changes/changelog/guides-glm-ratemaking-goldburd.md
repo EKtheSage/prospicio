@@ -7,4 +7,4 @@
   `glm-ratemaking-goldburd-validation.md` (continuous variables, interactions,
   residuals, holdout lift, double lift and loss ratio charts, Gini and ROC,
   stability and the elastic net), with the monograph's printed arithmetic
-  beside prospicio's and the workflow run on `validation/data/glm_policies.csv`.
+  beside prospicio's and the workflow run on `validation/data/glm_policies.csv` (#354).
