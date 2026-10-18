@@ -8,4 +8,4 @@
   ratio, limited fluctuation and Buhlmann credibility) and
   `ratemaking-werner-modlin-indications.md` (Appendices A to C end to end,
   chapter 11's increased limits and deductibles, what prospicio does not
-  cover).
+  cover) (#340).
