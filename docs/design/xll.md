@@ -437,6 +437,24 @@ real Excel.
     The Pareto fits match R Pareto 2.4.5 (`pareto_fit_r.csv`, with
     thresholds, censoring, weights and both truncations) at its
     tolerances.
+26. **A GPD tail is chosen, fitted and read in three functions** (user,
+    2026-10-19, the sixth group). `PRO.EVT.THRESHOLDS(data,
+    [thresholds])` is `threshold_diagnostics`: per threshold the count
+    above, the mean excess with its standard error, and the GPD's shape,
+    scale and modified scale `beta - xi u` with standard errors, the
+    numbers behind R `ismev`'s `mrl.plot` and `gpd.fitrange`, so a sheet
+    chart replaces the plots. Thresholds default to the data's 50% to 95%
+    quantiles in steps of 5% (R's type 7). `PRO.EVT.FIT(data, threshold,
+    [probabilities])` fits the GPD to the exceedances over the threshold
+    the user chose (choosing stays the user's, as in the crate), with the
+    observed information's standard errors, and gives the
+    peaks-over-threshold tail's VaR and TVaR (0.99, 0.995, 0.999 if
+    omitted). A probability below the tail gets a message in its cell, not
+    an error for the table. `PRO.EVT.HILL(data, [k])` gives Hill's index
+    with its threshold and the Pareto alpha `1 / xi`. The fitted `xi` and
+    `beta` are `PRO.SEV`'s `"gpd"` for the exceedances. Against `ismev`
+    1.43 on its nine cases every quantity matches at the reference's
+    tolerances.
 
 ## Parity plan
 
@@ -470,8 +488,8 @@ order, one small PR each, those already done struck through:
    ~~aggregate covers on the annual total~~; ~~towers on a grid~~.
 6. Fitting and pricing inputs (user, 2026-10-19, "work on next step 2";
    the order chosen by this lane): ~~severity fits to large losses
-   (body and Pareto families, with thresholds and censoring)~~; EVT
-   threshold diagnostics and the GPD fit; payment patterns and
+   (body and Pareto families, with thresholds and censoring)~~; ~~EVT
+   threshold diagnostics, the GPD fit and Hill's estimator~~; payment patterns and
    discounting; a cover's quote (technical premium with expenses and
    brokerage); distortions calibrated to a target and a layer priced by
    one; contract terms on an aggregate (sliding scale, profit commission,

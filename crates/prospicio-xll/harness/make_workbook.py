@@ -657,6 +657,22 @@ sf["E24"] = ArrayFormula("E24:J35", "=PRO.SEV.FIT(" + data.format(fam='"lognorma
 for col in "ABCEFGHIJKLM":
     sf.column_dimensions[col].width = 14
 
+# Extreme value theory on 1,000 exact Burr quantiles (R ismev's test data).
+ev = wb.create_sheet("EVT")
+ev["A1"] = "1,000 large losses (exact quantiles of a Burr with a = 2, c = 1.5): choose a threshold, fit a GPD above it"; ev["A1"].font = bold
+ev["A3"] = "Losses"; ev["A3"].font = bold
+for i in range(1000):
+    p = (i + 0.5) / 1000
+    ev[f"A{4 + i}"] = ((1 - p) ** (-1 / 2) - 1) ** (1 / 1.5)
+ev["C3"] = "Threshold diagnostics: where the shape and modified scale stop moving, a GPD fits"; ev["C3"].font = bold
+ev["C4"] = ArrayFormula("C4:K14", "=PRO.EVT.THRESHOLDS(A4:A1003)")
+ev["C17"] = "Threshold"; ev["D17"] = 1; ev["D17"].fill = inp
+ev["C18"] = ArrayFormula("C18:E29", "=PRO.EVT.FIT(A4:A1003,D17)")
+ev["G17"] = "Hill estimates"; ev["G17"].font = bold
+ev["G18"] = ArrayFormula("G18:J28", "=PRO.EVT.HILL(A4:A1003)")
+for col in "CDEFGHIJK":
+    ev.column_dimensions[col].width = 14
+
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")
 by["A1"] = "Bayesian ODP chain ladder on RAA, sampled with NUTS (4 chains, 1,000 warm-up and 1,000 kept draws each)"; by["A1"].font = bold

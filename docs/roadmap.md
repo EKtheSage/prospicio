@@ -432,11 +432,12 @@ what it is aiming for by v1.0.
   statistics; the Bayesian ODP chain ladder by MCMC; the occurrence and
   aggregate PML curves; aggregate covers on the annual total; towers
   priced on a grid; severity fits to large losses (body and Pareto
-  families, with reporting thresholds and censoring).
+  families, with reporting thresholds and censoring); EVT threshold
+  diagnostics, the GPD tail and Hill's estimator.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
      form (`xll.md`, parity plan): groups 1 to 5 done; group 6 (fitting
-     and pricing inputs: EVT, payment patterns and discounting, the
+     and pricing inputs: payment patterns and discounting, the
      quote, distortions, contract terms) under way.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
