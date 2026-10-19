@@ -6,9 +6,12 @@
 //! triangle with several models"). Any model takes part through
 //! [`TriangleModel`]; [`GlmCandidate`] wraps an `prospicio-glm` GLM.
 //!
-//! The scores are the mean cell CRPS, the coverage of a central interval,
-//! actual vs expected on the diagonal total, and the CRPS of the diagonal
-//! total from the joint draws. The pointwise held-out log densities feed
+//! The scores ([`METRICS`]) are the mean cell CRPS, the coverage of a central
+//! interval, actual vs expected on the diagonal total, the CRPS of the
+//! diagonal total from the joint draws, the mean held-out log density and
+//! the percentile of the actual total among the simulated totals. Each
+//! split also reports the sampler diagnostics of the fits behind it
+//! ([`Backtest::diagnostics`]); a fit with warnings is still scored. The pointwise held-out log densities feed
 //! [`prospicio_models::stack::stacking_weights`].
 
 use prospicio_core::{Error as CoreError, StreamRng};
@@ -19,6 +22,7 @@ use prospicio_models::metrics::{coverage, crps};
 use prospicio_models::{Design, Fitted, Link, Model, Terms};
 use prospicio_prob::PredictiveDistribution;
 
+use crate::diagnostics::Diagnostics;
 use crate::error::{Error, Result};
 use crate::frame::TriangleFrame;
 
@@ -33,6 +37,10 @@ pub struct CellForecast {
     /// Log predictive density of each test row's observed response, per
     /// unit of the response, if the model gives one.
     pub log_density: Option<Vec<f64>>,
+    /// The sampler diagnostics of the fit behind the forecast: `None` for a
+    /// model with no sampler (the GLM). A fit with warnings is still
+    /// forecast and scored; [`Backtest::warnings`] lists them.
+    pub diagnostics: Option<Diagnostics>,
 }
 
 /// A model of the cells of a triangle that can be refitted and forecast:
@@ -139,6 +147,7 @@ impl TriangleModel for GlmCandidate {
             mean,
             distribution,
             log_density: Some(log_density),
+            diagnostics: None,
         })
     }
 
@@ -208,8 +217,91 @@ fn parameter_averaged_log_density(
         .collect())
 }
 
-/// Metric names of a [`Backtest`], in the order of its metric indices.
-pub const METRICS: [&str; 4] = ["crps", "coverage", "actual_vs_expected", "total_crps"];
+/// A model under a name of the caller's: [`diagonal_backtest`] tells models
+/// apart by [`TriangleModel::name`], so two settings of the same kind of
+/// model (two Bayesian ODP priors, say) are told apart by wrapping each in
+/// a `NamedModel`.
+///
+/// The model is owned and boxed (`Send`; [`TriangleModel`] requires
+/// `Sync`) so that a binding can hold a list of models of different kinds
+/// without a lifetime. [`forecast`](TriangleModel::forecast) and
+/// [`fit_rows`](TriangleModel::fit_rows) are the wrapped model's.
+///
+/// ```
+/// use prospicio_glm::Glm;
+/// use prospicio_models::Terms;
+/// use prospicio_reserving::{GlmCandidate, NamedModel, TriangleModel};
+///
+/// let odp = GlmCandidate {
+///     name: "odp".into(),
+///     terms: Terms::new().intercept().factor("origin").factor("development"),
+///     glm: Glm::over_dispersed_poisson(),
+/// };
+/// let renamed = NamedModel::new("odp, wide", odp);
+/// assert_eq!(renamed.name(), "odp, wide");
+/// ```
+pub struct NamedModel {
+    /// The name in the backtest.
+    pub name: String,
+    /// The wrapped model.
+    pub model: Box<dyn TriangleModel + Send>,
+}
+
+impl NamedModel {
+    /// Wraps `model` under `name`.
+    pub fn new<M: TriangleModel + Send + 'static>(name: impl Into<String>, model: M) -> Self {
+        Self {
+            name: name.into(),
+            model: Box::new(model),
+        }
+    }
+}
+
+impl std::fmt::Debug for NamedModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NamedModel")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
+    }
+}
+
+impl TriangleModel for NamedModel {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn forecast(
+        &self,
+        cells: &TriangleFrame,
+        train: &[usize],
+        test: &[usize],
+        n_sims: usize,
+        seed: u64,
+    ) -> Result<CellForecast> {
+        self.model.forecast(cells, train, test, n_sims, seed)
+    }
+
+    fn fit_rows(&self, cells: &TriangleFrame, train: &[usize]) -> Vec<usize> {
+        self.model.fit_rows(cells, train)
+    }
+}
+
+/// Metric names of a [`Backtest`], in the order of its metric indices:
+/// `crps`, `coverage`, `actual_vs_expected`, `total_crps`, then
+/// `mean_log_density` (the mean over the split's scored rows of the model's
+/// held-out log density, NaN for a model that gives none) and
+/// `total_percentile` (the share of the simulated diagonal totals, the
+/// joint draws summed per simulation, at or below the actual total: the
+/// probability integral transform of the diagonal, uniform over many
+/// triangles for a calibrated model).
+pub const METRICS: [&str; 6] = [
+    "crps",
+    "coverage",
+    "actual_vs_expected",
+    "total_crps",
+    "mean_log_density",
+    "total_percentile",
+];
 
 /// The scores from [`diagonal_backtest`]: every model on every metric and
 /// held-out diagonal, and the pointwise held-out log densities.
@@ -222,6 +314,9 @@ pub struct Backtest {
     excluded: Vec<usize>,
     scored: Vec<Vec<usize>>,
     log_densities: Vec<Option<Vec<f64>>>,
+    /// Model-major, then split.
+    diagnostics: Vec<Option<Diagnostics>>,
+    diagonals: Vec<i64>,
 }
 
 impl Backtest {
@@ -273,6 +368,36 @@ impl Backtest {
     pub fn log_densities(&self) -> &[Option<Vec<f64>>] {
         &self.log_densities
     }
+
+    /// The sampler diagnostics of `model`'s fit in each split, oldest
+    /// split first (`None` for a model with no sampler). A fit with
+    /// warnings is scored like any other.
+    pub fn diagnostics(&self, model: usize) -> &[Option<Diagnostics>] {
+        let k = self.n_splits;
+        &self.diagnostics[model * k..(model + 1) * k]
+    }
+
+    /// Every diagnostics warning as `(model, split, message)`, indices into
+    /// [`models`](Self::models) and the splits, in model then split order.
+    pub fn warnings(&self) -> Vec<(usize, usize, String)> {
+        let k = self.n_splits;
+        self.diagnostics
+            .iter()
+            .enumerate()
+            .flat_map(|(i, d)| {
+                d.iter()
+                    .flat_map(|d| d.warnings.iter())
+                    .map(move |w| (i / k, i % k, w.clone()))
+            })
+            .collect()
+    }
+
+    /// The calendar period index of each split's held-out diagonal
+    /// ([`TriangleFrame::calendar_of`]), oldest split first: a label for
+    /// the split.
+    pub fn diagonals(&self) -> &[i64] {
+        &self.diagonals
+    }
 }
 
 /// Backtests `models` on the latest `n_diagonals` calendar diagonals of
@@ -290,8 +415,15 @@ impl Backtest {
 ///
 /// Scores per model and split ([`METRICS`]): the mean CRPS of the cells,
 /// the share of cells inside the central `interval` of their draws, actual
-/// over expected on the diagonal total `Σy / Σμ`, and the CRPS of the
-/// diagonal total from the draws summed per simulation.
+/// over expected on the diagonal total `Σy / Σμ`, the CRPS of the
+/// diagonal total from the draws summed per simulation, the mean log density
+/// of the scored rows and the share of the simulated totals at or below the
+/// actual one.
+///
+/// Two models with the same [`TriangleModel::name`] are an error, checked
+/// before any fit ([`NamedModel`] renames one). A model that fails to fit is
+/// an error naming it; a fit that merely has diagnostics warnings is scored
+/// and reported in [`Backtest::warnings`].
 ///
 /// ```
 /// use prospicio_glm::Glm;
@@ -337,6 +469,14 @@ pub fn diagonal_backtest(
     if models.is_empty() {
         return Err(data("the backtest needs at least one model".into()));
     }
+    for (i, m) in models.iter().enumerate() {
+        if models[..i].iter().any(|o| o.name() == m.name()) {
+            return Err(data(format!(
+                "two models are named {:?}: name each model once (NamedModel renames one)",
+                m.name()
+            )));
+        }
+    }
     if n_sims == 0 {
         return Err(data("the backtest needs at least one simulation".into()));
     }
@@ -380,6 +520,7 @@ pub fn diagonal_backtest(
     let n_metrics = METRICS.len();
     let mut scores = vec![f64::NAN; models.len() * n_metrics * n_splits];
     let mut log_densities: Vec<Option<Vec<f64>>> = vec![Some(Vec::new()); models.len()];
+    let mut diagnostics: Vec<Option<Diagnostics>> = vec![None; models.len() * n_splits];
     for (k, (s, test)) in splits.iter().zip(&scored).enumerate() {
         let y = cells.response_of(test);
         for (m, model) in models.iter().enumerate() {
@@ -391,6 +532,7 @@ pub fn diagonal_backtest(
             for (metric, value) in split_scores.into_iter().enumerate() {
                 scores[(m * n_metrics + metric) * n_splits + k] = value;
             }
+            diagnostics[m * n_splits + k] = f.diagnostics;
             log_densities[m] = match (log_densities[m].take(), f.log_density) {
                 (Some(mut all), Some(lpd)) => {
                     if lpd.len() != test.len() {
@@ -414,11 +556,16 @@ pub fn diagonal_backtest(
         excluded,
         scored,
         log_densities,
+        diagnostics,
+        diagonals: splits
+            .iter()
+            .map(|s| cells.calendar_of(s.test[0]))
+            .collect(),
     })
 }
 
 /// The [`METRICS`] of one forecast against the outcomes `y`.
-fn score(f: &CellForecast, y: &[f64], interval: f64) -> Result<[f64; 4]> {
+fn score(f: &CellForecast, y: &[f64], interval: f64) -> Result<[f64; 6]> {
     let n = y.len();
     let dist = &f.distribution;
     if f.mean.len() != n || dist.n_components() != n {
@@ -444,11 +591,18 @@ fn score(f: &CellForecast, y: &[f64], interval: f64) -> Result<[f64; 4]> {
         .map(|i| draws[i * n..(i + 1) * n].iter().sum())
         .collect();
     let actual: f64 = y.iter().sum();
+    let mean_log_density = match &f.log_density {
+        Some(l) if l.len() == n => l.iter().sum::<f64>() / n as f64,
+        _ => f64::NAN,
+    };
+    let total_percentile = totals.iter().filter(|&&t| t <= actual).count() as f64 / n_sims as f64;
     Ok([
         cell_crps / n as f64,
         coverage(y, &lo, &hi)?,
         actual / f.mean.iter().sum::<f64>(),
         crps(&totals, actual)?,
+        mean_log_density,
+        total_percentile,
     ])
 }
 
@@ -589,6 +743,7 @@ mod tests {
                 mean: y.iter().map(|v| v + 1.0).collect(),
                 distribution,
                 log_density: Some(test.iter().map(|&r| r as f64).collect()),
+                diagnostics: None,
             })
         }
     }
@@ -626,7 +781,8 @@ mod tests {
     #[test]
     fn log_densities_follow_the_scored_rows() {
         let cells = TriangleFrame::new(&raa(), "values", None).unwrap();
-        let bt = diagonal_backtest(&cells, &[&Fixed, &Fixed], 3, 4, 1, 0.9).unwrap();
+        let twin = NamedModel::new("twin", Fixed);
+        let bt = diagonal_backtest(&cells, &[&Fixed, &twin], 3, 4, 1, 0.9).unwrap();
         let rows: Vec<f64> = bt
             .scored_rows()
             .concat()
@@ -684,5 +840,192 @@ mod tests {
         assert!(diagonal_backtest(&cells, &[&odp], 2, 0, 1, 0.9).is_err());
         assert!(diagonal_backtest(&cells, &[&odp], 2, 10, 1, 1.0).is_err());
         assert!(diagonal_backtest(&cells, &[&odp], 10, 10, 1, 0.9).is_err());
+    }
+
+    fn forecast_of(draws: Vec<f64>, n: usize, log_density: Option<Vec<f64>>) -> CellForecast {
+        let keys = (0..n).map(|j| vec![(j as i64).into()]).collect();
+        CellForecast {
+            mean: vec![1.0; n],
+            distribution: PredictiveDistribution::from_draws(
+                vec!["row".into()],
+                keys,
+                draws,
+                prospicio_prob::Provenance::new("known"),
+            )
+            .unwrap(),
+            log_density,
+            diagnostics: None,
+        }
+    }
+
+    #[test]
+    fn mean_log_density_and_total_percentile_follow_their_definitions() {
+        // Two rows, four simulations: row sums 3, 5, 7, 9 (rows 1+2, 2+3,
+        // 3+4, 4+5). The actual total 7 has 3 of 4 totals at or below it.
+        let draws = vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.0];
+        let y = [3.0, 4.0];
+        let f = forecast_of(draws.clone(), 2, Some(vec![-1.0, -2.5]));
+        let s = score(&f, &y, 0.9).unwrap();
+        assert!((s[4] - (-1.75)).abs() < 1e-15);
+        assert_eq!(s[5], 0.75);
+        // A total below every draw is the 0 percentile, above every one 1.
+        assert_eq!(score(&f, &[0.0, 0.0], 0.9).unwrap()[5], 0.0);
+        assert_eq!(score(&f, &[9.0, 9.0], 0.9).unwrap()[5], 1.0);
+        // A model without densities has no mean log density.
+        let none = forecast_of(draws, 2, None);
+        assert!(score(&none, &y, 0.9).unwrap()[4].is_nan());
+    }
+
+    #[test]
+    fn the_new_metrics_come_after_the_old_four() {
+        assert_eq!(
+            METRICS,
+            [
+                "crps",
+                "coverage",
+                "actual_vs_expected",
+                "total_crps",
+                "mean_log_density",
+                "total_percentile"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_backtest_reports_the_new_metrics_of_a_glm_and_no_diagnostics() {
+        let cells = small(&[
+            &[100.0, 150.0, 165.0, 170.0],
+            &[110.0, 170.0, 180.0],
+            &[120.0, 175.0],
+            &[130.0],
+        ]);
+        let bt = diagonal_backtest(&cells, &[&Fixed], 1, 4, 1, 0.9).unwrap();
+        // Fixed's log density is the row number, the draws' totals are all
+        // the actual total.
+        let rows = &bt.scored_rows()[0];
+        let expected = rows.iter().map(|&r| r as f64).sum::<f64>() / rows.len() as f64;
+        assert!((bt.split_scores(0, 4)[0] - expected).abs() < 1e-12);
+        assert_eq!(bt.split_scores(0, 5), [1.0]);
+        assert_eq!(bt.diagonals(), [cells.calendar_of(rows[0])]);
+
+        let odp = GlmCandidate {
+            name: "odp".into(),
+            terms: Terms::new()
+                .intercept()
+                .factor("origin")
+                .factor("development"),
+            glm: Glm::over_dispersed_poisson(),
+        };
+        let cells = TriangleFrame::new(&raa(), "values", None).unwrap();
+        let bt = diagonal_backtest(&cells, &[&odp], 2, 300, 3, 0.9).unwrap();
+        assert_eq!(bt.diagnostics(0).len(), 2);
+        assert!(bt.diagnostics(0).iter().all(Option::is_none));
+        assert!(bt.warnings().is_empty());
+        let (lpd, k) = (bt.log_densities()[0].as_ref().unwrap(), 0);
+        let first = bt.scored_rows()[k].len();
+        let mean = lpd[..first].iter().sum::<f64>() / first as f64;
+        assert!((bt.split_scores(0, 4)[k] - mean).abs() < 1e-12);
+        let p = bt.split_scores(0, 5);
+        assert!(p.iter().all(|v| (0.0..=1.0).contains(v)));
+        let d = bt.diagonals();
+        assert_eq!(d.len(), 2);
+        assert_eq!(d[1], d[0] + 1);
+    }
+
+    /// `Fixed` with warnings in its diagnostics.
+    struct Warned;
+
+    impl TriangleModel for Warned {
+        fn name(&self) -> &str {
+            "warned"
+        }
+
+        fn forecast(
+            &self,
+            cells: &TriangleFrame,
+            train: &[usize],
+            test: &[usize],
+            n_sims: usize,
+            seed: u64,
+        ) -> Result<CellForecast> {
+            let mut f = Fixed.forecast(cells, train, test, n_sims, seed)?;
+            f.diagnostics = Some(Diagnostics {
+                max_rhat: 1.2,
+                min_ess_bulk: 40.0,
+                min_ess_tail: 50.0,
+                divergences: 3,
+                warnings: vec![format!("{} test rows", test.len()), "second".into()],
+            });
+            Ok(f)
+        }
+    }
+
+    #[test]
+    fn warnings_are_listed_by_model_and_split_and_the_fit_is_scored() {
+        let cells = TriangleFrame::new(&raa(), "values", None).unwrap();
+        let bt = diagonal_backtest(&cells, &[&Fixed, &Warned], 2, 4, 1, 0.9).unwrap();
+        assert!(bt.diagnostics(0).iter().all(Option::is_none));
+        assert_eq!(bt.diagnostics(1).len(), 2);
+        assert_eq!(bt.diagnostics(1)[1].as_ref().unwrap().divergences, 3);
+        let w = bt.warnings();
+        assert_eq!(
+            w,
+            [
+                (1, 0, "7 test rows".to_string()),
+                (1, 0, "second".to_string()),
+                (1, 1, "8 test rows".to_string()),
+                (1, 1, "second".to_string()),
+            ]
+        );
+        // Scored the same as the model without warnings.
+        for metric in 0..METRICS.len() {
+            assert_eq!(bt.split_scores(0, metric), bt.split_scores(1, metric));
+        }
+    }
+
+    #[test]
+    fn duplicate_names_are_an_error_before_any_fit() {
+        struct Panics;
+        impl TriangleModel for Panics {
+            fn name(&self) -> &str {
+                "fixed"
+            }
+            fn forecast(
+                &self,
+                _: &TriangleFrame,
+                _: &[usize],
+                _: &[usize],
+                _: usize,
+                _: u64,
+            ) -> Result<CellForecast> {
+                panic!("fitted before the names were checked");
+            }
+        }
+        let cells = TriangleFrame::new(&raa(), "values", None).unwrap();
+        let e = diagonal_backtest(&cells, &[&Fixed, &Panics], 1, 4, 1, 0.9).unwrap_err();
+        assert!(e.to_string().contains("\"fixed\""), "{e}");
+    }
+
+    #[test]
+    fn a_named_model_renames_and_delegates() {
+        let cells = TriangleFrame::new(&raa(), "values", None).unwrap();
+        let a = NamedModel::new("first", Fixed);
+        let b = NamedModel::new(String::from("second"), Fixed);
+        assert_eq!(a.name(), "first");
+        let bt = diagonal_backtest(&cells, &[&a, &b], 2, 4, 1, 0.9).unwrap();
+        assert_eq!(bt.models(), ["first", "second"]);
+        let plain = diagonal_backtest(&cells, &[&Fixed], 2, 4, 1, 0.9).unwrap();
+        for metric in 0..METRICS.len() {
+            assert_eq!(bt.split_scores(1, metric), plain.split_scores(0, metric));
+        }
+        // Boxed models of different kinds make a list.
+        let list: Vec<NamedModel> = vec![a, NamedModel::new("glm", Warned)];
+        let refs: Vec<&dyn TriangleModel> = list.iter().map(|m| m as &dyn TriangleModel).collect();
+        assert_eq!(
+            diagonal_backtest(&cells, &refs, 1, 4, 1, 0.9)
+                .unwrap()
+                .models(),
+            ["first", "glm"]
+        );
     }
 }

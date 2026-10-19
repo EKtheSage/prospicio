@@ -212,7 +212,14 @@ fn diagonal_backtest_on_raa() {
     assert_eq!(bt.models(), ["odp", "development only"]);
     assert_eq!(
         bt.metrics(),
-        ["crps", "coverage", "actual_vs_expected", "total_crps"]
+        [
+            "crps",
+            "coverage",
+            "actual_vs_expected",
+            "total_crps",
+            "mean_log_density",
+            "total_percentile"
+        ]
     );
     assert_eq!(bt.n_splits(), 2);
     // 1989 and 1990: the newest origin (at 12) and 1981 (at 108, then

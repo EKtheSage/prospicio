@@ -2636,7 +2636,11 @@ diagnostics are not reported"; `knowledge/findings/meyers-segments-backtest.md`)
 4. **Names.** Models are named by `TriangleModel::name` and two models
    with the same name are an error, checked before any fit, so two
    `BayesOdp` settings are told apart. `NamedModel { name, model }`
-   wraps any `TriangleModel` under a name of the caller's.
+   wraps any `TriangleModel` under a name of the caller's. It owns its model,
+   `Box<dyn TriangleModel + Send>` (`NamedModel::new(name, model)`), so that
+   a binding can hold a list of models of different kinds without a
+   lifetime. `Backtest::diagonals()` gives each split's held-out calendar
+   period index, the label of a split in the bindings' tables.
 
 5. **Python.** `prospicio.reserving.diagonal_backtest(triangle, column,
    models, n_diagonals, *, premium=None, n_sims=1000, seed=0,
