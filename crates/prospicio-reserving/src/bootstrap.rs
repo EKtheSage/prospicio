@@ -182,8 +182,8 @@ pub struct OdpBootstrap {
     /// ratio is kept; the first age's cells always have one. The scale is
     /// `sum(r^2) / (n - p)` over the kept residuals with `n` all observed
     /// cells (chainladder-python's rule), which is biased low under
-    /// exclusions: on RAA with `n_periods = 3` it is about a third of the
-    /// plain scale. In the one-year view the bootstrap takes the method's
+    /// exclusions: on RAA with `n_periods = 3` it is about 70% of the plain
+    /// scale (694 against 984). In the one-year view the bootstrap takes the method's
     /// exclusions when it sets none, and must set the method's when it
     /// sets its own.
     pub drop_high: usize,

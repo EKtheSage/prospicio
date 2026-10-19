@@ -2533,8 +2533,9 @@ checks are internal (item 9).
      chainladder-python's rule, and with no exclusions it gives
      today's `phi`.
      - The rule is biased low under exclusions: on RAA with
-       `n_periods = 3`, `phi` is about a third of the plain one (322.4
-       against 983.6). The design note and the docstring say so.
+       `n_periods = 3`, `phi` is about 70% of the plain one (694.0
+       against 983.6; "As built", item 2). The design note and the
+       docstring say so.
      - The residuals keep today's factor `sqrt(N / (N - p))`.
    - **Simulation.**
      - Every observed cell still gets a resampled residual, so the
@@ -2654,7 +2655,7 @@ it:
    breaking in the changelog, as are the three new public fields of
    `OdpBootstrap`.
 2. `phi` under `n_periods = 3` on RAA is 694.0, not the 322.4 that item 4
-   quotes. 322.4 is chainladder-python's `scale_`, which also drops the
+   first quoted. 322.4 is chainladder-python's `scale_`, which also drops the
    first-age residuals of the origins whose link 0 is dropped (its weight
    quirk); prospicio keeps them, as item 4 says. The plain `phi` is 983.6.
 3. The reference means in the ODP check come from chainladder-python's
