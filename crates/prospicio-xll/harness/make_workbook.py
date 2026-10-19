@@ -673,6 +673,26 @@ ev["G18"] = ArrayFormula("G18:J28", "=PRO.EVT.HILL(A4:A1003)")
 for col in "CDEFGHIJK":
     ev.column_dimensions[col].width = 14
 
+# The time value of money: RAA's paid chain ladder as a payment pattern.
+pv = wb.create_sheet("Payout")
+pv["A1"] = "RAA's factors to ultimate (the RAA sheet's CDF row) as a payment pattern, losses occurring evenly over the year"; pv["A1"].font = bold
+pv["A3"] = "Years"; pv["A4"] = "CDF"; pv["A3"].font = pv["A4"].font = bold
+for c in range(10):
+    pv.cell(row=3, column=2 + c, value=c + 1).fill = inp
+    pv.cell(row=4, column=2 + c, value=f"=RAA!{chr(66 + c)}15")
+pv["A6"] = "Discount rate"; pv["B6"] = 0.04; pv["B6"].fill = inp
+pv["A7"] = "Cost of capital"; pv["B7"] = 0.10; pv["B7"].fill = inp
+pv["A8"] = "Expected loss"; pv["B8"] = 1000000; pv["B8"].fill = inp
+pv["A9"] = "Assets (one-year VaR)"; pv["B9"] = 2500000; pv["B9"].fill = inp
+pv["A11"] = "Pattern"; pv["A11"].font = bold
+pv["A12"] = ArrayFormula("A12:E22", '=PRO.PAYOUT.PATTERN(B3:K3,B4:K4,"factors",0.5,B6)')
+pv["G11"] = "Statistics"; pv["G11"].font = bold
+pv["G12"] = ArrayFormula("G12:H14", '=PRO.PAYOUT.STATS(B3:K3,B4:K4,B6,"factors",0.5)')
+pv["G16"] = "Cost-of-capital price over the payout"; pv["G16"].font = bold
+pv["G17"] = ArrayFormula("G17:H25", '=PRO.PAYOUT.PRICE(B8,B9,B7,B3:K3,B4:K4,B6,"factors",0.5)')
+for col in "ABCDEFGH":
+    pv.column_dimensions[col].width = 16
+
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")
 by["A1"] = "Bayesian ODP chain ladder on RAA, sampled with NUTS (4 chains, 1,000 warm-up and 1,000 kept draws each)"; by["A1"].font = bold

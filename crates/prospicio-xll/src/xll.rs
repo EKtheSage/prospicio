@@ -474,4 +474,7 @@ mod exports {
     udf!(pro_evt_thresholds, data, thresholds);
     udf!(pro_evt_fit, data, threshold, probabilities);
     udf!(pro_evt_hill, data, k);
+    udf!(pro_payout_pattern, times, values, kind, shift, rate);
+    udf!(pro_payout_stats, times, values, rate, kind, shift);
+    udf!(pro_payout_price, expected_loss, assets, coc, times, values, rate, kind, shift);
 }
