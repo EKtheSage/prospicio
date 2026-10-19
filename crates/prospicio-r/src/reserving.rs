@@ -3878,6 +3878,7 @@ fn compartmental_settings(
         },
         n_sims,
         seed: whole(seed, "seed")?,
+        dependence: SegmentDependence::Independent,
     })
 }
 

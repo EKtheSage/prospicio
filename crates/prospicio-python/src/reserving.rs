@@ -10544,6 +10544,7 @@ impl PyCompartmental {
                 },
                 n_sims,
                 seed,
+                dependence: SegmentDependence::Independent,
             },
         })
     }
