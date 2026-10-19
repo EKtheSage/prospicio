@@ -2660,10 +2660,19 @@ diagnostics are not reported"; `knowledge/findings/meyers-segments-backtest.md`)
 
 6. **R.** `diagonal_backtest(triangle, column, models, n_diagonals,
    premium = NULL, n_sims = 1000, seed = 0, interval = 0.9)` beside
-   `meyers()` and `bayes_odp()`, with `models` a named list of model
-   settings (`bayes_odp_model()`, `meyers_model()` or whatever the
-   existing settings constructors are, and `glm_candidate(terms, glm)`),
-   and the same tables as data frames.
+   `meyers()` and `bayes_odp()`. R fits its models from flat arguments
+   and has no settings objects, so `models` is a named list of new S7
+   settings objects: `bayes_odp_spec()` and `meyers_spec()` take the
+   settings arguments of `bayes_odp()` and `meyers()` (everything but the
+   data) with the same defaults, and `odp_glm_spec()` is the ODP GLM. R
+   has no builder of `Terms` (its GLMs take formulas), so a custom GLM
+   candidate waits for one; Python has it now. The tables come out as
+   data frames with the same columns as in Python.
+
+   The Python `GlmCandidate` reads the `Terms` and `Glm` inside
+   `prospicio.models.Terms` and `Glm`, whose Rust fields are private to
+   `crates/prospicio-python/src/models.rs` (the Models lane): this PR
+   makes the two `inner` fields `pub(crate)`, a visibility change only.
 
 7. **Checks.** The new metrics against their definitions on a GLM
    candidate (Rust); diagnostics present for `BayesOdp` and `Meyers` and
