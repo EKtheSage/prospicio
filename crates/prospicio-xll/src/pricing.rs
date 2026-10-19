@@ -66,7 +66,7 @@ pub(crate) fn numbers(grid: &Grid, name: &str) -> Result<Vec<f64>> {
 /// A piecewise Pareto's truncation: a point, or a point and its kind
 /// (`"lp"`, the last piece only, R's default, or `"wd"`, the whole
 /// distribution) in two cells.
-fn piecewise_truncation(p3: &Grid) -> Result<(f64, Truncation)> {
+pub(crate) fn piecewise_truncation(p3: &Grid) -> Result<(f64, Truncation)> {
     let cells: Vec<&Value> = p3.cells.iter().filter(|v| !v.is_blank()).collect();
     let point = match cells.first() {
         Some(Value::Number(x)) => *x,
