@@ -332,8 +332,6 @@ fn pattern_weight<'py>(
         .transpose()
 }
 
-/// `, ldf={...}, ldf_kind=..., ldf_weight=...` for a method's repr; empty
-/// without a pattern, and no weight when it is the default.
 /// `, n_periods=..., drop_high=..., drop_low=...` for the exclusions that are
 /// set, then the selected pattern; empty at the defaults.
 fn development_arg_repr(d: &Development) -> String {
@@ -351,6 +349,8 @@ fn development_arg_repr(d: &Development) -> String {
     out
 }
 
+/// `, ldf={...}, ldf_kind=..., ldf_weight=...` for a method's repr; empty
+/// without a pattern, and no weight when it is the default.
 fn pattern_arg_repr(pattern: Option<&SelectedPattern>) -> String {
     let Some(p) = pattern else {
         return String::new();

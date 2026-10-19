@@ -392,15 +392,25 @@ def test_bootstraps_keep_the_implied_tail(tri):
 
 
 @pytest.mark.parametrize(
-    ("ldf", "kind"),
+    ("ldf", "kind", "cdf"),
     [
-        ({12: 0.5, 24: 1.2}, "percent_developed"),
-        ({12: 0.8, 24: 0.5}, "percent_developed"),
-        ({12: 0.9, 24: 1.2}, "cdf"),
-        ({12: 1.2, 24: 1.5}, "cdf"),
+        ({12: 0.5, 24: 1.2}, "percent_developed", [2.0, 1 / 1.2]),
+        ({12: 0.8, 24: 0.5}, "percent_developed", [1.25, 2.0]),
+        ({12: 0.9, 24: 1.2}, "cdf", [0.9, 1.2]),
+        ({12: 1.2, 24: 1.5}, "cdf", [1.2, 1.5]),
     ],
 )
-def test_cumulative_patterns_need_only_be_positive(tri, ldf, kind):
+def test_cumulative_patterns_need_only_be_positive(tri, ldf, kind, cdf):
     """Neither order nor a level below 1 is an error (Friedland's XYZ reported
-    pattern falls below 1)."""
-    ChainLadder(ldf=ldf, ldf_kind=kind).fit(tri, "paid")
+    pattern falls below 1), and the factors are the ratios of the given
+    factors to ultimate, however they run."""
+    base = ChainLadder().fit(tri, "paid")
+    fit = ChainLadder(ldf=ldf, ldf_kind=kind).fit(tri, "paid")
+    # The first link's age-to-age factor is c[0] / c[1]; the later links keep
+    # their estimates.
+    assert fit.ldf[0] == pytest.approx(cdf[0] / cdf[1], rel=1e-12)
+    close(fit.ldf[1:], base.ldf[1:])
+    # The pattern ends before the oldest age, so it implies no tail, and its
+    # level at age 24 is rescaled to the factors in use from there on.
+    assert fit.pattern_tail is None
+    assert fit.pattern_rescale == pytest.approx(cdf[1] / fit.cdf[1], rel=1e-12)

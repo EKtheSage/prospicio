@@ -1937,9 +1937,11 @@ impl ChainLadderFit {
         Ok(f.development.n_links.iter().map(|&n| n as i32).collect())
     }
 
-    /// Whether any segment's fit left out a link ratio.
-    fn excluded(&self) -> bool {
-        self.inner.fits.iter().any(|f| f.development.excluded)
+    /// Whether `n_periods` or the drops left out a link ratio at some age;
+    /// needs a single-segment fit.
+    fn excluded(&self) -> Result<bool> {
+        let f = single(&self.inner, "excluded", "")?;
+        Ok(f.development.excluded)
     }
 
     /// The factors as estimated, before the tail replaced any.

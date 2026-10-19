@@ -12,15 +12,15 @@ mack(
   column = NULL,
   average = "volume",
   sigma_interpolation = "log-linear",
-  n_periods = NULL,
-  drop_high = 0,
-  drop_low = 0,
   tail = 1,
   tail_sigma = NULL,
   tail_std_err = NULL,
   ldf = NULL,
   ldf_kind = NULL,
-  ldf_weight = 1
+  ldf_weight = 1,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 }
 \arguments{
@@ -39,17 +39,6 @@ bootstraps reject it.}
 estimated (an age with a single link ratio) is filled in:
 \code{"log-linear"} (regress \code{log(sigma)} on age and extrapolate, the
 default of R ChainLadder) or \code{"mack"} (Mack 1993).}
-
-\item{n_periods, drop_high, drop_low}{Which link ratios the factor at each
-age averages. \code{n_periods} keeps the latest \code{n_periods} calendar
-diagonals (\code{NULL}, the default, keeps every one; an age with fewer
-links uses all of them). Then the \code{drop_high} highest and \code{drop_low}
-lowest of the kept ratios are left out, except at an age where that
-would leave none. Whole numbers from 0 (\code{n_periods} from 1); the
-defaults exclude nothing. \code{\link[=mack]{mack()}} accepts them; the bootstraps and
-the one-year views reject them, and \code{\link[=claims_development_result]{claims_development_result()}}
-rejects ones that remove a link. The fit's \code{n_links} and \code{excluded}
-report what was used.}
 
 \item{tail}{Development past the oldest age: a number, the factor from
 the oldest age to ultimate (1 means no tail), or a \code{\link[=tail_constant]{tail_constant()}},
@@ -76,6 +65,17 @@ cannot be told apart.}
 estimate) to 1 (the selection, the default): a number for every
 selected factor, or a numeric vector named by age (the age that starts
 the factor's link), the others fully selected.}
+
+\item{n_periods, drop_high, drop_low}{Which link ratios the factor at each
+age averages. \code{n_periods} keeps the latest \code{n_periods} calendar
+diagonals (\code{NULL}, the default, keeps every one; an age with fewer
+links uses all of them). Then the \code{drop_high} highest and \code{drop_low}
+lowest of the kept ratios are left out, except at an age where that
+would leave none. Whole numbers from 0 (\code{n_periods} from 1); the
+defaults exclude nothing. \code{\link[=mack]{mack()}} accepts them; the bootstraps and
+the one-year views reject them, and \code{\link[=claims_development_result]{claims_development_result()}}
+rejects any of them, even one that removes nothing. The fit's \code{n_links} and \code{excluded}
+report what was used.}
 }
 \value{
 A \code{mack_fit} object.

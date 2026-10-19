@@ -16,7 +16,9 @@
   the expected-loss methods; Mack and the bootstraps reject it, since it
   has no variance. **Breaking (Rust):** `Average` has a new variant and
   `Average::alpha` returns `Option<f64>`, `None` for it; `Error` has a new
-  variant, `NotSupported`.
+  variant, `NotSupported`; `Development` and `DevelopmentFit` gain public
+  fields (`n_periods`, `drop_high`, `drop_low`; `n_links`, `excluded`), so
+  struct literals need `..Default::default()` (or the new fields).
 - A selected pattern of factors to ultimate (or percents developed) may
   now go below 1 and need not be monotone, for negative development such
   as Friedland's XYZ Insurer reported pattern (#336).

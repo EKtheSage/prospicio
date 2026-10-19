@@ -120,5 +120,20 @@ fit <- chain_ladder(tri, "paid", ldf = cdf, ldf_kind = "cdf")
 near(fit@ldf, cdf[-5] / cdf[-1], 1e-12)
 pct <- chain_ladder(tri, "paid", ldf = 1 / cdf, ldf_kind = "percent_developed")
 near(pct@ldf, cdf[-5] / cdf[-1], 1e-12)
+# The pattern reaches the oldest age, so its last value is the tail level.
+near(fit@pattern_tail, cdf[5])
+near(pct@pattern_tail, cdf[5])
+near(fit@tail, cdf[5])
+
+# n_links and excluded are per-segment properties: with several segments they
+# raise, as the other single-segment properties do.
+two <- triangle(rbind(transform(raa_long, lob = "a"),
+                      transform(raa_long, lob = "b", value = value * 1.1)),
+                "origin", "development", "value", keys = "lob")
+seg_fit <- chain_ladder(two, n_periods = 3)
+expect_error_like(seg_fit@n_links, "n_links needs a single-segment fit, and this one has 2 segments")
+expect_error_like(seg_fit@excluded, "excluded needs a single-segment fit, and this one has 2 segments")
+stopifnot(segment(seg_fit, lob = "a")@excluded,
+          identical(unname(segment(seg_fit, lob = "b")@n_links), c(3L, 3L, 3L, 3L, 3L, 3L, 3L, 2L, 1L)))
 
 cat("reserving averages: ok\n")

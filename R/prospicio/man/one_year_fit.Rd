@@ -20,9 +20,6 @@ odp_one_year(
   decay = 1,
   average = "volume",
   sigma_interpolation = "log-linear",
-  n_periods = NULL,
-  drop_high = 0,
-  drop_low = 0,
   tail = 1,
   bootstrap_tail = FALSE,
   tail_std_err = NULL,
@@ -34,7 +31,10 @@ odp_one_year(
   ldf = NULL,
   ldf_kind = NULL,
   ldf_weight = 1,
-  bootstrap_ldf = TRUE
+  bootstrap_ldf = TRUE,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 
 mack_one_year(
@@ -49,9 +49,6 @@ mack_one_year(
   decay = 1,
   average = "volume",
   sigma_interpolation = "log-linear",
-  n_periods = NULL,
-  drop_high = 0,
-  drop_low = 0,
   tail = 1,
   bootstrap_tail = FALSE,
   tail_sigma = NULL,
@@ -61,16 +58,19 @@ mack_one_year(
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
   mack_average = "volume",
   mack_sigma_interpolation = "log-linear",
-  mack_n_periods = NULL,
-  mack_drop_high = 0,
-  mack_drop_low = 0,
   centre_residuals = TRUE,
   dependence = c("independent", "synchronized", "rank_correlation"),
   spearman = NULL,
   ldf = NULL,
   ldf_kind = NULL,
   ldf_weight = 1,
-  bootstrap_ldf = TRUE
+  bootstrap_ldf = TRUE,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0,
+  mack_n_periods = NULL,
+  mack_drop_high = 0,
+  mack_drop_low = 0
 )
 }
 \arguments{
@@ -94,10 +94,6 @@ methods; \code{NULL} for the chain ladder.}
 
 \item{average, sigma_interpolation, tail}{The chain ladder or development
 pattern of \code{method}, as in \code{\link[=chain_ladder]{chain_ladder()}}.}
-
-\item{n_periods, drop_high, drop_low}{Which link ratios the factors of
-\code{method} average, as in \code{\link[=chain_ladder]{chain_ladder()}}. The one-year views reject
-exclusions, and \code{"geometric"} as \code{mack_average}.}
 
 \item{bootstrap_tail}{Whether the bootstrap takes \code{method}'s \code{tail} too,
 developing past the oldest age in the coming year (above); \code{FALSE} by
@@ -141,6 +137,10 @@ level to it, and the bootstrap reads the pattern the same way: it
 implies no tail, and with \code{bootstrap_tail = FALSE} the bootstrap has
 none.}
 
+\item{n_periods, drop_high, drop_low}{Which link ratios the factors of
+\code{method} average, as in \code{\link[=chain_ladder]{chain_ladder()}}. The one-year views reject
+exclusions, and \code{"geometric"} as \code{mack_average}.}
+
 \item{tail_sigma}{For \code{mack_one_year()} with \code{bootstrap_tail}, the tail's
 sigma (R's \code{tail.sigma}), or \code{NULL} to extrapolate it, as in
 \code{\link[=mack_bootstrap]{mack_bootstrap()}}; an error without \code{bootstrap_tail}.}
@@ -149,14 +149,14 @@ sigma (R's \code{tail.sigma}), or \code{NULL} to extrapolate it, as in
 \code{mack_one_year()} averages the link ratios and fills in a sigma behind
 a single link ratio, as in \code{\link[=mack]{mack()}}.}
 
-\item{mack_n_periods, mack_drop_high, mack_drop_low}{Which link ratios Mack's
-model in \code{mack_one_year()} averages, as \code{n_periods}, \code{drop_high} and
-\code{drop_low} in \code{\link[=chain_ladder]{chain_ladder()}}; its bootstrap rejects exclusions.}
-
 \item{centre_residuals}{For \code{mack_one_year()}, subtract the residuals'
 mean before resampling them, so that the pseudo factors are unbiased
 and the mean CDR is about zero (the default); \code{FALSE} resamples them
 uncentred, as England, Verrall and Wuthrich's Appendix 1 is written.}
+
+\item{mack_n_periods, mack_drop_high, mack_drop_low}{Which link ratios Mack's
+model in \code{mack_one_year()} averages, as \code{n_periods}, \code{drop_high} and
+\code{drop_low} in \code{\link[=chain_ladder]{chain_ladder()}}; its bootstrap rejects exclusions.}
 }
 \value{
 A \code{one_year_fit} object.

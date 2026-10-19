@@ -249,7 +249,10 @@ impl Development {
             segment.origins.first(),
         ) {
             (Some(n), Some(latest), Some(origin)) => {
-                Some(latest.add_months(-(n as i64 * i64::from(origin.grain().months()))))
+                // A million periods reach before any triangle's first
+                // cell, and keep the product far from overflow.
+                let n = n.min(1_000_000) as i64;
+                Some(latest.add_months(-(n * i64::from(origin.grain().months()))))
             }
             _ => None,
         };
@@ -362,20 +365,30 @@ impl Development {
                 });
             }
         }
-        let drops = self.drop_high + self.drop_low;
-        if drops > 0 && links.len() > drops {
-            let mut order: Vec<usize> = (0..links.len()).collect();
-            order.sort_by(|&a, &b| {
-                let (_, xa, ya) = links[a];
-                let (_, xb, yb) = links[b];
-                (ya / xa).total_cmp(&(yb / xb)).then(xa.total_cmp(&xb))
-            });
-            let mut keep = vec![false; links.len()];
-            for &i in &order[self.drop_low..order.len() - self.drop_high] {
-                keep[i] = true;
+        let drops = self.drop_high.saturating_add(self.drop_low);
+        if drops > 0 {
+            // Only link ratios with a finite value take part in the ranking
+            // (a 0/0 or x/0 has no rank): they are never dropped and do not
+            // count toward the number of links the drops must leave.
+            let mut order: Vec<usize> = (0..links.len())
+                .filter(|&i| (links[i].2 / links[i].1).is_finite())
+                .collect();
+            if order.len() > drops {
+                order.sort_by(|&a, &b| {
+                    let (_, xa, ya) = links[a];
+                    let (_, xb, yb) = links[b];
+                    (ya / xa).total_cmp(&(yb / xb)).then(xa.total_cmp(&xb))
+                });
+                let mut keep = vec![true; links.len()];
+                for &i in &order[..self.drop_low] {
+                    keep[i] = false;
+                }
+                for &i in &order[order.len() - self.drop_high..] {
+                    keep[i] = false;
+                }
+                let mut flags = keep.into_iter();
+                links.retain(|_| flags.next().unwrap_or(false));
             }
-            let mut flags = keep.into_iter();
-            links.retain(|_| flags.next().unwrap_or(false));
         }
         Ok((
             links.into_iter().map(|(_, x, y)| (x, y)).collect(),
@@ -650,6 +663,164 @@ mod tests {
         );
     }
 
+    /// Annual origins from `first_year`, one row of cumulative values per
+    /// origin as `(first age in months, values)` with ages every
+    /// `step` months; `None` rows leave an origin out.
+    fn long_triangle(
+        first_year: i32,
+        step: Lag,
+        rows: &[Option<&[f64]>],
+        quarterly: bool,
+    ) -> Triangle {
+        use crate::triangle::{DevelopmentColumn, Long};
+        use prospicio_core::Grain;
+        let (mut origin, mut ages, mut values) = (Vec::new(), Vec::new(), Vec::new());
+        for (k, row) in rows.iter().enumerate() {
+            for (d, &v) in row.iter().flat_map(|r| r.iter()).enumerate() {
+                origin.push(Month::january(first_year + k as i32));
+                ages.push(step * (d as Lag + 1));
+                values.push(v);
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("values", &values)],
+            origin_grain: Grain::Year,
+            development_grain: if quarterly {
+                Grain::Quarter
+            } else {
+                Grain::Year
+            },
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    /// Cumulative values of an origin, `len` cells.
+    fn growing(origin: usize, len: usize) -> Vec<f64> {
+        (0..len)
+            .map(|d| (10.0 + 3.0 * origin as f64) * ((d + 1) as f64).powf(1.3))
+            .collect()
+    }
+
+    #[test]
+    fn n_periods_is_calendar_time_with_quarterly_development_in_annual_origins() {
+        // Origins 2020 to 2024 with ages every quarter, all valued at
+        // December 2024: 20, 16, 12, 8 and 4 cells, so 19 age-to-age
+        // factors. Months from January 2020: a
+        // link of origin o at age index k starts at 12 o + 3 (k + 1) - 1,
+        // and the latest valuation is 59.
+        let rows: Vec<Vec<f64>> = (0..5).map(|o| growing(o, 4 * (5 - o))).collect();
+        let refs: Vec<Option<&[f64]>> = rows.iter().map(|r| Some(r.as_slice())).collect();
+        let t = long_triangle(2020, 3, &refs, true);
+        let fit = |n| with_exclusions(Some(n), 0, 0).fit(&t, "values").unwrap();
+        // The latest year holds one link ratio per age: fewer link ratios
+        // than origins at every age, where counting origins would keep
+        // up to n. chainladder-python 0.10.1 gives the same counts (the
+        // link ratios with weight w_ above 0), as long as n is below its
+        // number of origins less one; at or past that it keeps every
+        // link, where the calendar rule would still cut the earliest
+        // quarters.
+        assert_eq!(fit(1).n_links, vec![1; 19]);
+        let two = [vec![2; 15], vec![1; 4]].concat();
+        assert_eq!(fit(2).n_links, two);
+        let three = [vec![3; 11], vec![2; 4], vec![1; 4]].concat();
+        assert_eq!(fit(3).n_links, three);
+        // chainladder-python's first factors with n_periods = 1.
+        close(
+            &fit(1).ldf[..4],
+            &[
+                2.4622888266898326,
+                1.6940204031852832,
+                1.4535178100924682,
+                1.336543249988985,
+            ],
+            1e-9,
+        );
+        // Five years reach back to the first quarter: every link ratio.
+        assert_eq!(fit(5), Development::default().fit(&t, "values").unwrap());
+    }
+
+    #[test]
+    fn n_periods_follows_diagonals_on_a_sparse_triangle() {
+        // 2021 has no rows and 2020 stops at December 2022, while the
+        // latest valuation, December 2024, is held by 2022, 2023 and 2024.
+        // Months from January 2020: the links start at 11 (2020, age
+        // index 0), 23 (2020, 1), 35 (2022, 0), 47 (2022, 1) and 47 (2023,
+        // 0); the latest valuation is 59. chainladder-python 0.10.1
+        // cannot fit a triangle that is not a staircase, so these counts
+        // are derived by hand from the rule.
+        let (a, c, d, e) = (growing(0, 3), growing(2, 3), growing(3, 2), growing(4, 1));
+        let t = long_triangle(
+            2020,
+            12,
+            &[Some(&a), None, Some(&c), Some(&d), Some(&e)],
+            false,
+        );
+        let fit = |n| with_exclusions(Some(n), 0, 0).fit(&t, "values").unwrap();
+        // Counting origins instead would keep three link ratios at the
+        // first age with three periods.
+        assert_eq!(fit(1).n_links, vec![1, 1]);
+        close(&fit(1).ldf, &[d[1] / d[0], c[2] / c[1]], 1e-12);
+        assert_eq!(fit(2).n_links, vec![2, 1]);
+        assert_eq!(fit(3).n_links, vec![2, 2]);
+        assert_eq!(fit(4).n_links, vec![3, 2]);
+
+        // With 2022 and 2023 one cell shorter, the latest valuation is 47
+        // and one period reaches back to a start at 35: nothing starts
+        // there at age index 1, so that age has no link ratio left.
+        let (c, d) = (growing(2, 2), growing(3, 1));
+        let t = long_triangle(2020, 12, &[Some(&a), None, Some(&c), Some(&d)], false);
+        let one = with_exclusions(Some(1), 0, 0).fit(&t, "values");
+        assert!(matches!(one, Err(Error::Factor { age: 1, .. })));
+    }
+
+    #[test]
+    fn huge_settings_behave_as_more_than_there_are() {
+        let base = Development::default().fit(&raa(), "values").unwrap();
+        let fit = |n, high, low| with_exclusions(n, high, low).fit(&raa(), "values").unwrap();
+        assert_eq!(fit(Some(usize::MAX), 0, 0), base);
+        // The sum of the drops would overflow; it is more than any age has,
+        // so every link ratio is kept.
+        assert_eq!(fit(None, usize::MAX, 1), base);
+        assert_eq!(fit(None, usize::MAX, usize::MAX), base);
+        assert_eq!(fit(Some(usize::MAX), usize::MAX, 1), base);
+    }
+
+    #[test]
+    fn link_ratios_without_a_finite_value_are_never_dropped_or_ranked() {
+        // At the first age the link ratios are 2 (from 5), 3 (from 4),
+        // 0/0 (from 0) and 1.5 (from 2).
+        let t = annual(
+            2020,
+            &[
+                &[5.0, 10.0, 12.0],
+                &[4.0, 12.0],
+                &[0.0, 0.0],
+                &[2.0, 3.0],
+                &[7.0],
+            ],
+        );
+        let fit = |high, low| with_exclusions(None, high, low).fit(&t, "values").unwrap();
+        let all = fit(0, 0);
+        assert_eq!(all.n_links[0], 4);
+        close(&all.ldf[..1], &[25.0 / 11.0], 1e-12);
+        // The highest finite ratio, 3 (from 4), goes, and the 0/0 stays.
+        let high = fit(1, 0);
+        assert_eq!(high.n_links[0], 3);
+        close(&high.ldf[..1], &[13.0 / 7.0], 1e-12);
+        // The lowest finite ratio, 1.5 (from 2), goes, and the 0/0 stays.
+        let low = fit(0, 1);
+        assert_eq!(low.n_links[0], 3);
+        close(&low.ldf[..1], &[22.0 / 9.0], 1e-12);
+        // Three finite ratios: dropping three leaves none, so none goes
+        // (the 0/0 does not count toward the three).
+        assert_eq!(fit(2, 1).n_links[0], 4);
+        assert_eq!(fit(1, 1).n_links[0], 2);
+    }
+
     #[test]
     fn drops_rank_by_value_with_ties_by_starting_value_and_keep_one() {
         // Link ratios at the first age: 2 (from 5), 2 (from 3), 4 (from 1)
@@ -827,10 +998,14 @@ mod tests {
             fit.claims_development_result(),
             Err(Error::ClaimsDevelopment(_))
         ));
-        // A window past the triangle excludes nothing, so it is accepted.
+        // A window past the triangle removes nothing today but slides with
+        // next year's diagonal, so any setting is rejected.
         let wide = mack(with_exclusions(Some(50), 0, 0))
             .fit(&raa(), "values")
             .unwrap();
-        assert!(wide.claims_development_result().is_ok());
+        assert!(matches!(
+            wide.claims_development_result(),
+            Err(Error::ClaimsDevelopment(_))
+        ));
     }
 }

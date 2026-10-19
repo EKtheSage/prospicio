@@ -15,13 +15,13 @@ cape_cod(
   decay = 1,
   average = "volume",
   sigma_interpolation = "log-linear",
-  n_periods = NULL,
-  drop_high = 0,
-  drop_low = 0,
   tail = 1,
   ldf = NULL,
   ldf_kind = NULL,
-  ldf_weight = 1
+  ldf_weight = 1,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 }
 \arguments{
@@ -42,12 +42,12 @@ apriori, between 0 and 1.}
 \item{average, sigma_interpolation, tail}{The development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}.}
 
-\item{n_periods, drop_high, drop_low}{Which link ratios the factors average,
-as in \code{\link[=chain_ladder]{chain_ladder()}}.}
-
 \item{ldf, ldf_kind, ldf_weight}{A selected development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}: the development pattern's factors at the ages it
 gives, so \code{cdf} and the share developed \code{1 / cdf} follow it.}
+
+\item{n_periods, drop_high, drop_low}{Which link ratios the factors average,
+as in \code{\link[=chain_ladder]{chain_ladder()}}.}
 }
 \value{
 A \code{cape_cod_fit} object.

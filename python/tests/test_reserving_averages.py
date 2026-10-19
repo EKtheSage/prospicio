@@ -135,6 +135,23 @@ def test_excluded_and_n_links(raa):
     assert Mack(n_periods=4).fit(raa, "values").excluded is True
 
 
+def test_n_links_and_excluded_need_a_single_segment(raa):
+    cells = [(o, 12 * d) for o in range(1981, 1991) for d in range(1, 1992 - o)]
+    data = {
+        "lob": ["a"] * len(cells) + ["b"] * len(cells),
+        "origin": [o for o, _ in cells] * 2,
+        "development": [age for _, age in cells] * 2,
+        "paid": [float(v) for v in range(1, len(cells) + 1)] * 2,
+    }
+    tri = Triangle.from_frame(data, "origin", "development", "paid", keys="lob")
+    fit = ChainLadder(n_periods=3).fit(tri, "paid")
+    for name in ("n_links", "excluded"):
+        with pytest.raises(ValueError, match=f"{name} needs a single-segment fit"):
+            getattr(fit, name)
+    assert fit.segment(lob="a").excluded is True
+    assert fit.segment(lob="b").n_links[0] == 3
+
+
 def test_geometric_is_the_geometric_mean_of_the_link_ratios(raa):
     fit = ChainLadder(average="geometric").fit(raa, "values")
     links = raa.link_ratios().to_frame() if hasattr(raa.link_ratios(), "to_frame") else None

@@ -170,7 +170,7 @@ impl MackFit {
                 "the latest values must lie on one calendar diagonal, one new origin per period",
             ));
         }
-        if dev.excluded {
+        if self.exclusions_set {
             return Err(Error::ClaimsDevelopment(
                 "n_periods, drop_high and drop_low are not yet supported, it needs every link ratio",
             ));

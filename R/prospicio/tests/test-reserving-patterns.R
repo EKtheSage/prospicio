@@ -162,10 +162,22 @@ for (kind in c("percent_developed", "cdf")) {
   expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 0.5, "24" = 0),
                                  ldf_kind = kind), "finite and positive")
 }
-stopifnot(is.finite(chain_ladder(tri, "paid", ldf = c("12" = 0.5, "24" = 1.2),
-                                 ldf_kind = "percent_developed")@total_reserve))
-stopifnot(is.finite(chain_ladder(tri, "paid", ldf = c("12" = 1.2, "24" = 1.5),
-                                 ldf_kind = "cdf")@total_reserve))
+# The first link's factor is c[1] / c[2] of the factors to ultimate c, the
+# later links keep their estimates, and the pattern, ending before the
+# oldest age, implies no tail and is rescaled at its last age.
+for (case in list(
+  list(c("12" = 0.5, "24" = 1.2), "percent_developed", c(2, 1 / 1.2)),
+  list(c("12" = 0.8, "24" = 0.5), "percent_developed", c(1.25, 2)),
+  list(c("12" = 0.9, "24" = 1.2), "cdf", c(0.9, 1.2)),
+  list(c("12" = 1.2, "24" = 1.5), "cdf", c(1.2, 1.5))
+)) {
+  sel_fit <- chain_ladder(tri, "paid", ldf = case[[1]], ldf_kind = case[[2]])
+  stopifnot(is.finite(sel_fit@total_reserve))
+  near(sel_fit@ldf[1], case[[3]][1] / case[[3]][2])
+  near(sel_fit@ldf[-1], base@ldf[-1])
+  stopifnot(is.null(sel_fit@pattern_tail))
+  near(sel_fit@pattern_rescale, case[[3]][2] / sel_fit@cdf[2])
+}
 expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 1.5), ldf_kind = "cdf"),
                   "two or more ages")
 expect_error_like(chain_ladder(tri, "paid", ldf = sel, ldf_kind = "ldf", ldf_weight = 1.5),
