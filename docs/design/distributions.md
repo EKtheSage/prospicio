@@ -66,7 +66,7 @@ conversion reports the error it introduces.
   survival for layer means and second moments
   (`validation/scripts/mpmath_layer_moments.py`).
 - `prospicio_prob::severity_fit::fit_severity` (decided 2026-10-14,
-  #194) fits a lognormal, gamma, Weibull or Burr to the `LargeLosses` the
+  #194) fits a lognormal, gamma, Weibull, Burr or Lomax (#328) to the `LargeLosses` the
   Pareto fits take: each loss contributes `w (ln f(y) − ln S(r))`, or
   `ln S(y)` in place of `ln f(y)` when censored. One entry point over a
   `Family` enum returns a `SeverityFit` (the `Dist`, parameters,
@@ -76,7 +76,19 @@ conversion reports the error it introduces.
   parameters from moments of the uncensored losses; the Burr starts from
   the Weibull fit and two heavier tails and keeps the best, since on
   little data it drifts towards a boundary where it mimics a Weibull
-  (`α → ∞`) or a Pareto. `ln S` is exact for the Weibull and Burr, through
+  (`α → ∞`) or a Pareto. The Lomax, Bahnemann's Pareto, is the Burr
+  with `γ = 1` and returns a `Dist::Burr`; it starts from three tails
+  with the scale that puts the median at the losses' own, and on losses
+  with a coefficient of variation at most 1 its maximum runs to the
+  exponential limit (`α, θ → ∞` with `θ/α` fixed). Truncation from
+  above (#328, `LargeLosses::truncated_above`): loss `i` is conditioned
+  on `r_i < X ≤ u_i`, so `ln S(r)` becomes `ln(S(r) − S(u))` and a
+  censored loss's `ln S(y)` becomes `ln(S(y) − S(u))`, both computed as
+  `ln S(a) + ln(1 − S(u)/S(a))`. The Pareto fits refuse such data (their
+  `truncation` argument is the common bound of a truncated Pareto);
+  `goodness_of_fit` conditions both sides on a bound common to every loss
+  and refuses bounds that differ, since the product-limit estimate is
+  then biased (Efron and Petrosian's estimator is not built). `ln S` is exact for the Weibull and Burr, through
   the Mills ratio for the lognormal's upper tail, and `ln Q` of the
   regularized incomplete gamma for the gamma. Tested: untruncated
   closed forms (the lognormal's mean and n-denominator sd of the logs with
@@ -99,6 +111,39 @@ conversion reports the error it introduces.
   survival without truncation, a truncated risk set, and Weibull draws
   reported above 0, 200 or 500 and capped at 4,000 within 0.02 of the
   truth, with the Q-Q column within 10% where the risk set is large.
+- `prospicio_prob::grouped_fit` (#328, third part) fits the same families
+  to grouped losses, `GroupedLosses` of counts in size bands
+  `(b_k, b_{k+1}]`, without individual amounts (Bahnemann, CAS Monograph
+  2, sections 2.4 and 2.5). The losses are conditioned on the range of the
+  bands, `p_k = (S(b_k) − S(b_{k+1})) / (S(b_0) − S(b_n))`, so a first
+  bound above 0 is a deductible's truncation and a finite last bound a
+  truncation from above. `fit_grouped(family, data, method)` maximizes the
+  multinomial log-likelihood `Σ O_k ln p_k` (`GroupedMethod::
+  MaximumLikelihood`) or minimizes Pearson's chi-square
+  (`MinimumChiSquare`), by Nelder–Mead on the family's unconstrained
+  scale from the `fit_severity` fit of losses placed at the bands'
+  midpoints (an open top band censored at its lower bound), and the
+  minimum chi-square from the grouped maximum likelihood fit too. Both
+  estimators reach the grouped data's Fisher information `N Σ ∇p ∇pᵀ / p`
+  asymptotically, so `GroupedFit::covariance` is its inverse for either;
+  the fit reports the chi-square with its degrees of freedom (bands with a
+  positive expected count, less one, less the parameters) and p-value.
+  `fit_lev_distance(family, sizes, empirical, weights, start)` is
+  Bahnemann's minimum distance: it minimizes `Σ w (E[X; x_j] − e_j)²`
+  against empirical limited means, which are exact from grouped data with
+  each band's total and stay exact under a policy limit at or above the
+  last size; without a start it fits losses spread so that the slopes of
+  the empirical limited means are their survival. One entry point per
+  objective over the `Family` enum, as `fit_severity`. Tested against
+  Bahnemann's printed fits: Ex 2.7's chi-square 3.095, Ex 2.11's
+  lognormal on bands above a deductible (6.6916, 2.6965; chi-square 4.691
+  and its expected counts), P2.16's gamma (4.7432, 337.31), P2.43
+  (9.495111, 1.084180), Ex 2.10's minimum limited-mean distance
+  (6.9852, 2.5850; the fitted limited means to the unit) and P2.39
+  (9.778102, 1.444776); Ex 2.8's printed lognormal is not the minimum
+  (its chi-square is 1.020, not the 1.828 printed), which is 0.614 at
+  (7.2857, 0.4570). The grouped maximum likelihood fit has a zero score,
+  and R's `optim` on the same likelihood agrees.
 - `prospicio_prob::PolicyLimits` (decided 2026-10-14, #213) is a severity
   capped by a mix of policy limits, `min(X, L)` with `L = limits[j]` with
   probability `weights[j]` (normalized to 1; infinity for an unlimited
@@ -149,6 +194,27 @@ conversion reports the error it introduces.
   `validation/reference/discrete_aggregate.csv` (544 values, `1e-12`;
   `1e-10` on TVaR and skewness). Python `Discrete`, R
   `discrete_distribution()`.
+- `prospicio_prob::Affine`, a severity scaled and shifted, `Y = scale · X
+  + shift` with `scale > 0` and `shift ≥ 0` (#318; `aggregate`'s
+  `10 * lognorm 1 + 20`). A `Dist` variant held in an `Arc`, like
+  `Truncated`, and saved as JSON with its inner severity. Below the shift
+  `S_Y = 1`; above it `S_Y(y) = S_X((y − shift) / scale)`, so a layer is a
+  length plus `scale` times a layer of `X`, and the layer's second moment
+  is `c² + s² m₂ + 2 (lo − a) s m₁` by the change of variable
+  `y = shift + s t`. Python `Affine`, R `affine_distribution()`.
+- `prospicio_prob::Normal`, on the whole real line (asset and log-return
+  models), and `prospicio_prob::Ogive`, the piecewise linear distribution
+  function of grouped data (#366). The normal is a `Distribution` but not a
+  `Severity`, whose losses are non-negative; it has a closed-form `tvar`
+  (`μ + σ φ(z_p) / (1 − p)`, by the Mills ratio above the median) and a
+  `pdf`. The ogive requires non-negative boundaries, so it is a `Severity`:
+  its survival function is linear on each band, which makes the trapezoid
+  rule exact for `lev` and `stop_loss` and Simpson's rule exact for the
+  layer's second moment; its raw moments are those of uniform bands, and
+  `from_counts` builds one from grouped counts. Neither joins the `Dist`
+  enum: like `Discrete` each is a class of its own in the bindings (Python
+  `Normal`, `Ogive`; R `normal_distribution()`, `ogive()`,
+  `ogive_from_counts()`).
 
 - `prospicio_prob::Counting` (`pmf`, `cdf`, `mean`, `variance`, `panjer_ab`, `pgf`,
   `quantile`, `sample`), with `Poisson` and `NegativeBinomial` (Klugman's

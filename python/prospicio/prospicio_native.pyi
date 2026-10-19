@@ -3,6 +3,240 @@ from datetime import date
 from typing import Any, final
 
 @final
+class Affine:
+    """
+    A severity scaled and shifted, ``scale * X + shift``: ``aggregate``'s
+    ``10 * lognorm 1 + 20``, keeping the severity's exact layer moments.
+    
+    Parameters
+    ----------
+    severity : severity
+        Any severity but ``Sampled``.
+    scale : float, default 1.0
+        Positive.
+    shift : float, default 0.0
+        Non-negative, so that the result is a loss.
+    
+    Raises
+    ------
+    ValueError
+        If ``scale`` is not positive or ``shift`` is negative.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Affine, Lognormal
+    >>> x = Lognormal(0.0, 1.0)
+    >>> y = Affine(x, scale=10.0, shift=20.0)
+    >>> round(y.mean() - (10 * x.mean() + 20), 9), y.cdf(20.0)
+    (0.0, 0.0)
+    """
+    def __new__(cls, /, severity: Any, scale: float = 1.0, shift: float = 0.0) -> Affine: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The scale.
+        """
+    @property
+    def severity(self, /) -> Any:
+        """
+        The severity before scaling and shifting.
+        """
+    @property
+    def shift(self, /) -> float:
+        """
+        The shift.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class AggregateLayerStatistics:
     """
     An aggregate cover's statistics, from ``aggregate_layer_statistics``.
@@ -9976,6 +10210,80 @@ class Group:
         """
 
 @final
+class GroupedFit:
+    """
+    A severity fitted to grouped losses, from ``fit_grouped``: the
+    distribution, its parameters with standard errors and covariance (from
+    the grouped data's Fisher information), the expected count in each band
+    and the chi-square test.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chi_square(self, /) -> float:
+        """
+        Pearson's chi-square at the fit.
+        """
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether the simplex met its tolerance.
+        """
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        The parameters' covariance, one row per parameter in the family's
+        order: the inverse of the grouped data's Fisher information, which
+        both methods attain asymptotically.
+        """
+    @property
+    def degrees_of_freedom(self, /) -> int:
+        """
+        The chi-square test's degrees of freedom: bands with a positive
+        expected count, less one, less the number of parameters.
+        """
+    @property
+    def distribution(self, /) -> Any:
+        """
+        The fitted distribution.
+        """
+    @property
+    def expected(self, /) -> list[float]:
+        """
+        The expected count in each band at the fit.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        The family's name.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The multinomial log-likelihood at the fit.
+        """
+    @property
+    def method(self, /) -> str:
+        """
+        The objective it was fitted by, ``"ml"`` or ``"chi_square"``.
+        """
+    @property
+    def p_value(self, /) -> float:
+        """
+        The chi-square test's p-value; NaN with no degrees of freedom.
+        """
+    @property
+    def parameters(self, /) -> dict[str, float]:
+        """
+        The parameters by name.
+        """
+    @property
+    def standard_errors(self, /) -> dict[str, float]:
+        """
+        Each parameter's standard error, by name; NaN where the information
+        is singular.
+        """
+
+@final
 class HierarchicalCredibilityFit:
     """
     A fitted Bayesian hierarchical credibility model, from
@@ -11778,6 +12086,44 @@ class Leg:
     def label(self, /) -> str:
         """
         The label.
+        """
+
+@final
+class LevDistanceFit:
+    """
+    A severity fitted by the minimum distance between its limited expected
+    values and empirical ones, from ``fit_lev_distance``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether the simplex met its tolerance.
+        """
+    @property
+    def distance(self, /) -> float:
+        """
+        The minimized weighted squared distance.
+        """
+    @property
+    def distribution(self, /) -> Any:
+        """
+        The fitted distribution.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        The family's name.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        The fitted limited expected value at each size.
+        """
+    @property
+    def parameters(self, /) -> dict[str, float]:
+        """
+        The parameters by name.
         """
 
 @final
@@ -15051,6 +15397,148 @@ class NestedArchimedeanCopula:
         """
 
 @final
+class Normal:
+    """
+    The normal distribution, on the whole real line: asset returns, log
+    returns and other outcomes of either sign.
+    
+    Its TVaR is ``mu + sigma * phi(z_p) / (1 - p)`` with ``z_p`` the standard
+    normal quantile (*Pricing Insurance Risk*, section 4.3.3): VaR plus a
+    multiple of ``sigma`` that depends only on ``p``.
+    
+    Parameters
+    ----------
+    mu : float
+        The mean.
+    sigma : float
+        The standard deviation, positive.
+    
+    Raises
+    ------
+    ValueError
+        If ``mu`` is not finite or ``sigma`` not finite and positive.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Normal
+    >>> x = Normal(0.0, 1.0)
+    >>> round(x.quantile(0.99), 6), round(x.tvar(0.99), 6)
+    (2.326348, 2.665214)
+    """
+    def __new__(cls, /, mu: float, sigma: float) -> Normal: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        The mean.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def mu(self, /) -> float:
+        """
+        The mean.
+        """
+    def pdf(self, /, x: float) -> float:
+        """
+        The density.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The quantile at ``p``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def sigma(self, /) -> float:
+        """
+        The standard deviation.
+        """
+    def std_dev(self, /) -> float:
+        """
+        The standard deviation.
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        ``P(X > x)``, precise far in the upper tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p``, ``E[X | X >= VaR(p)]``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1)``.
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        The variance.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class OccurrencePml:
     """
     One point of the occurrence PML curve, from ``occurrence_pml``.
@@ -15488,6 +15976,205 @@ class OdpBootstrapFit:
         Returns
         -------
         pandas.DataFrame
+        """
+
+@final
+class Ogive:
+    """
+    An ogive: the piecewise linear distribution function through tabulated
+    points ``(x, F(x))``, the usual reading of grouped loss data (losses
+    uniform within each band), as in *Pricing Insurance Risk*, Exercise 50.
+    
+    Its limited moments are exact, band by band. Build one from grouped
+    counts with :meth:`Ogive.from_counts`.
+    
+    Parameters
+    ----------
+    x : list of float
+        At least two band boundaries, finite, non-negative and strictly
+        increasing.
+    cdf : list of float
+        ``F`` at each boundary, non-decreasing from 0 to 1.
+    
+    Raises
+    ------
+    ValueError
+        If the table breaks any of these.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Ogive
+    >>> o = Ogive.from_counts([0, 1000, 5000, 10000], [40, 50, 10])
+    >>> o.cdf(3000.0), round(o.quantile(0.95), 6), round(o.tvar(0.95), 6)
+    (0.65, 7500.0, 8750.0)
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, x: Sequence[float], cdf: Sequence[float]) -> Ogive: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        ``P(X <= x)``, linear between the boundaries.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def cdf_values(self, /) -> list[float]:
+        """
+        ``F`` at the boundaries.
+        """
+    @staticmethod
+    def from_counts(bounds: Sequence[float], counts: Sequence[float]) -> Ogive:
+        """
+        The ogive of grouped data: ``counts[k]`` losses (or any weights)
+        between ``bounds[k]`` and ``bounds[k + 1]``, spread uniformly.
+        
+        Parameters
+        ----------
+        bounds : list of float
+            One more than the counts.
+        counts : list of float
+            Non-negative, with a positive total.
+        
+        Returns
+        -------
+        Ogive
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        The mean.
+        
+        Returns
+        -------
+        float
+        """
+    def pdf(self, /, x: float) -> float:
+        """
+        The density, constant on each band and 0 outside.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The lower quantile, the smallest ``x`` with ``F(x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std_dev(self, /) -> float:
+        """
+        The standard deviation.
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        ``P(X > x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p``, the mean of the worst ``1 - p``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1)``.
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        The variance.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def x(self, /) -> list[float]:
+        """
+        The band boundaries.
         """
 
 @final
@@ -22743,6 +23430,82 @@ def fft_bivariate(frequency: Any, severity: JointGrid, points: tuple[int, int]) 
     1.4
     """
 
+def fit_grouped(family: str, bounds: Sequence[float], counts: Sequence[float], method: str = "ml") -> GroupedFit:
+    """
+    Fit of a lognormal, gamma, Weibull, Burr or Lomax severity to grouped
+    losses, a count of losses in each size band, by maximum likelihood on
+    the bands or by minimum chi-square (Bahnemann, *Distributions for
+    Actuaries*, section 2.4). The losses are conditioned on lying within the
+    bands: a first bound above 0 is a deductible's truncation and a finite
+    last bound a truncation from above.
+    
+    Parameters
+    ----------
+    family : {"lognormal", "gamma", "weibull", "burr", "lomax"}
+    bounds : list of float
+        The band bounds, one more than ``counts``, non-negative and strictly
+        increasing; only the last may be ``math.inf``.
+    counts : list of float
+        The count (or any weight) in each band ``(bounds[k], bounds[k + 1]]``.
+    method : {"ml", "chi_square"}
+        Maximum likelihood (the default) or minimum chi-square.
+    
+    Returns
+    -------
+    GroupedFit
+    
+    Raises
+    ------
+    ValueError
+        If the bands or counts are invalid or the method is unknown.
+    
+    Examples
+    --------
+    Bahnemann's P2.16, a gamma by minimum chi-square:
+    
+    >>> import math
+    >>> from prospicio.distributions import fit_grouped
+    >>> bounds = [0, 1000, 1500, 2000, 2500, 3000, math.inf]
+    >>> fit = fit_grouped("gamma", bounds, [42, 61, 47, 26, 14, 10], "chi_square")
+    >>> round(fit.parameters["shape"], 4), round(fit.parameters["scale"], 2)
+    (4.7432, 337.31)
+    """
+
+def fit_lev_distance(family: str, sizes: Sequence[float], empirical: Sequence[float], weights: Sequence[float] |None = None, start: Sequence[float] |None = None) -> LevDistanceFit:
+    """
+    Fit of a lognormal, gamma, Weibull, Burr or Lomax severity by minimizing
+    ``sum(w * (E[X; x] - e) ** 2)``, the weighted squared distance between
+    its limited expected values and the empirical ones ``e`` at the sizes
+    ``x`` (Bahnemann's minimum distance, section 2.5). Empirical limited
+    means are exact from grouped data with each band's total, and stay exact
+    under a policy limit at or above the last size.
+    
+    Parameters
+    ----------
+    family : {"lognormal", "gamma", "weibull", "burr", "lomax"}
+    sizes : list of float
+        Positive, strictly increasing limits.
+    empirical : list of float
+        The empirical limited expected value at each size.
+    weights : list of float, optional
+        Non-negative weights, 1 by default.
+    start : list of float, optional
+        Starting parameters in the family's order; by default, from losses
+        spread to match the empirical limited means.
+    
+    Returns
+    -------
+    LevDistanceFit
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Lognormal, fit_lev_distance
+    >>> x = [500.0, 1000.0, 2000.0, 5000.0, 10000.0]
+    >>> e = [Lognormal(7.0, 1.2).lev(v) for v in x]
+    >>> round(fit_lev_distance("lognormal", x, e).parameters["meanlog"], 5)
+    7.0
+    """
+
 def fit_pml_curve(return_periods: Sequence[float], amounts: Sequence[float], tail_alpha: float = 2.0, truncation: float |None = None) -> TowerModel:
     """
     The model through the points of a PML curve: ``amounts[j]`` is
@@ -22799,15 +23562,19 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     160.0
     """
 
-def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> SeverityFit:
+def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncated_above: Sequence[float] |None = None) -> SeverityFit:
     """
-    Maximum likelihood fit of a lognormal, gamma, Weibull or Burr severity
-    to large losses, each conditioned on exceeding its reporting threshold
-    (left truncation), with losses capped by a policy limit censored.
+    Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
+    severity to large losses, each conditioned on exceeding its reporting
+    threshold (left truncation), with losses capped by a policy limit
+    censored, and optionally truncated from above (each loss conditioned on
+    not exceeding its bound). The Lomax, ``S(x) = (1 + x / scale) **
+    -alpha`` (Bahnemann's Pareto), is fitted as a :class:`Burr` with
+    ``gamma = 1``.
     
     Parameters
     ----------
-    family : {"lognormal", "gamma", "weibull", "burr"}
+    family : {"lognormal", "gamma", "weibull", "burr", "lomax"}
     losses : list of float
     reporting_thresholds : list of float, optional
         Per-loss thresholds below which a loss would not have been
@@ -22815,6 +23582,9 @@ def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Seq
     censored : list of bool, optional
         ``True`` where a policy limit capped the loss.
     weights : list of float, optional
+    truncated_above : list of float, optional
+        Per-loss bounds from above: a loss is conditioned on not exceeding
+        its bound (a study of claims up to 50,000). ``math.inf`` means none.
     
     Returns
     -------
@@ -22865,7 +23635,7 @@ def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |N
     float
     """
 
-def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> dict:
+def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncated_above: Sequence[float] |None = None) -> dict:
     """
     A severity against the product-limit estimate of large losses, each
     conditioned on its reporting threshold: P-P (``survival`` against
@@ -22873,6 +23643,8 @@ def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds
     reporting threshold), Q-Q (``x`` against ``model_quantile``, the
     model's conditional quantile at the middle of each step) and
     ``max_distance``, the largest gap between the two survival functions.
+    With a bound from above common to every loss, both sides are
+    conditioned on it too; bounds that differ are refused.
     
     Parameters
     ----------
@@ -22882,6 +23654,9 @@ def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds
     reporting_thresholds : list of float, optional
     censored : list of bool, optional
     weights : list of float, optional
+    truncated_above : list of float, optional
+        Per-loss bounds from above: a loss is conditioned on not exceeding
+        its bound (a study of claims up to 50,000). ``math.inf`` means none.
     
     Returns
     -------
@@ -22911,6 +23686,36 @@ def group_k_fold(groups: Sequence[str], k: int, seed: int) -> list[tuple[list[in
     Returns
     -------
     list of (list of int, list of int)
+    """
+
+def grouped_goodness_of_fit(severity: Any, bounds: Sequence[float], counts: Sequence[float]) -> dict:
+    """
+    A severity against grouped losses: each band's probability conditional
+    on the range of the bands, the expected counts, Pearson's chi-square and
+    the multinomial log-likelihood.
+    
+    Parameters
+    ----------
+    severity : a distribution
+    bounds : list of float
+    counts : list of float
+    
+    Returns
+    -------
+    dict
+        ``probabilities`` and ``expected`` (lists), ``chi_square`` and
+        ``log_likelihood`` (floats).
+    
+    Examples
+    --------
+    Bahnemann's Ex 2.7:
+    
+    >>> import math
+    >>> from prospicio.distributions import Gamma, grouped_goodness_of_fit
+    >>> bounds = [0, 1000, 1500, 2000, 2500, 3000, math.inf]
+    >>> g = grouped_goodness_of_fit(Gamma(3.907288, 397.931), bounds, [42, 61, 47, 26, 14, 10])
+    >>> round(g["chi_square"], 3)
+    3.095
     """
 
 def haircut(pd: PredictiveDistribution, total: float, measure: str, level: float) -> LevelAllocation:

@@ -10,6 +10,7 @@
 //! With the `arrow` feature, [`PredictiveDistribution`] reads and writes
 //! Arrow IPC files; the format is described in `ipc`.
 
+pub mod affine;
 pub mod beta;
 pub mod burr;
 pub mod capital;
@@ -24,6 +25,7 @@ pub mod distribution;
 pub mod evt;
 pub mod gamma;
 pub mod grid;
+pub mod grouped_fit;
 pub mod inverse_gamma;
 pub mod inverse_gaussian;
 #[cfg(feature = "arrow")]
@@ -33,6 +35,8 @@ pub mod local_pareto;
 pub mod loglogistic;
 pub mod lognormal;
 pub mod mixture;
+pub mod normal;
+pub mod ogive;
 pub mod pareto;
 pub mod piecewise_pareto;
 pub mod policy_limits;
@@ -50,6 +54,7 @@ pub mod tweedie;
 pub mod vine;
 pub mod weibull;
 
+pub use affine::Affine;
 pub use beta::Beta;
 pub use burr::Burr;
 pub use copula::{
@@ -73,6 +78,8 @@ pub use local_pareto::{
 pub use loglogistic::Loglogistic;
 pub use lognormal::Lognormal;
 pub use mixture::Mixture;
+pub use normal::Normal;
+pub use ogive::Ogive;
 pub use pareto::Pareto;
 pub use piecewise_pareto::{PiecewisePareto, Truncation};
 pub use policy_limits::PolicyLimits;

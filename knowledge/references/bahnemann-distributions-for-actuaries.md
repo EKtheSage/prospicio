@@ -88,14 +88,17 @@ sources:
 
 # Gaps in prospicio met
 
-* No minimum chi-square, minimum distance or mean-excess-regression fits;
-  `fit_severity` is maximum likelihood on individual claims with left
-  truncation and censoring, no right truncation and no interval-grouped data,
-  and has no Lomax family.
+* No mean-excess-regression fit. (Closed by #328: minimum chi-square and
+  grouped maximum likelihood in `grouped_fit::fit_grouped`, the minimum
+  limited-mean distance in `fit_lev_distance`, truncation from above in
+  `LargeLosses::truncated_above`, and the Lomax in `fit_severity`; they
+  reproduce Ex 2.7, 2.10, 2.11, P2.16, P2.39 and P2.43 to the printed
+  digits.)
 * No `layer_second_moment` on `Lognormal` itself (use `Truncated(ln)`), no third
   limited moment, no `lev` on `Sampled`.
-* No normal power or Wilson-Hilferty approximation; no stop-loss or limited
-  mean on an `Approximation` (the shifted gamma's is `Gamma.stop_loss` of its
-  unshifted part); no Heckman-Meyers inversion (the FFT replaces it).
+* No stop-loss or limited mean on an `Approximation` (the shifted gamma's is
+  `Gamma.stop_loss` of its unshifted part); no Heckman-Meyers inversion (the
+  FFT replaces it). (The normal power and Wilson-Hilferty approximations
+  came with #329.)
 * No count thinning or contagion accessor, no count fitting beyond
   `NegativeBinomial.from_mean_variance`.

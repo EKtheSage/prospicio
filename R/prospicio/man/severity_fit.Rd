@@ -9,11 +9,12 @@ severity_fit(
   losses,
   reporting_thresholds = NULL,
   censored = NULL,
-  weights = NULL
+  weights = NULL,
+  truncated_above = NULL
 )
 }
 \arguments{
-\item{family}{\code{"lognormal"}, \code{"gamma"}, \code{"weibull"} or \code{"burr"}.}
+\item{family}{\code{"lognormal"}, \code{"gamma"}, \code{"weibull"}, \code{"burr"} or \code{"lomax"}.}
 
 \item{losses}{Numeric vector of losses at or above \code{t} (\code{t[1]}).}
 
@@ -22,6 +23,10 @@ severity_fit(
 \item{censored}{Logical vector, \code{TRUE} where a loss was capped, or \code{NULL}.}
 
 \item{weights}{Per-loss weights, or \code{NULL}.}
+
+\item{truncated_above}{Per-loss bounds from above, or \code{NULL}: a loss is
+conditioned on not exceeding its bound (a study of claims up to 50,000);
+\code{Inf} means none.}
 }
 \value{
 A list: \code{distribution} (the fitted severity), \code{parameters} and
@@ -29,13 +34,15 @@ A list: \code{distribution} (the fitted severity), \code{parameters} and
 \code{aic}, \code{bic} and \code{converged}.
 }
 \description{
-Maximum likelihood fit of a lognormal, gamma, Weibull or Burr severity to
-large losses, each conditioned on exceeding its reporting threshold (left
+Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
+severity to large losses, each conditioned on exceeding its reporting threshold (left
 truncation), with losses capped by a policy limit censored: the same data
 as \code{\link[=pareto_fit]{pareto_fit()}}. The standard errors and covariance come from the
 observed information. A Burr fit on little data can drift towards a
 boundary where it mimics a Weibull or a Pareto; check \code{converged} and the
-standard errors.
+standard errors. The Lomax, \code{S(x) = (1 + x / scale)^(-alpha)} (Bahnemann's
+Pareto), is fitted as a Burr with \code{gamma = 1}. With \code{truncated_above},
+each loss is also conditioned on not exceeding its bound.
 }
 \examples{
 y <- c(120, 300, 450, 800, 1500, 2600, 4000)

@@ -24,7 +24,7 @@ use crate::dist::{Dist, SeverityDist};
 use crate::evt::Gpd;
 use crate::sampled::Empirical;
 use crate::{
-    Beta, Burr, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto, Loglogistic,
+    Affine, Beta, Burr, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto, Loglogistic,
     Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, Truncated, Truncation,
     Tweedie, Weibull,
 };
@@ -166,6 +166,11 @@ fn body(d: &Dist) -> Result<Map<String, Value>> {
             put("upper", num(x.upper()));
             put("inner", Value::Object(body(x.inner().dist())?));
         }
+        Dist::Affine(x) => {
+            put("scale", num(x.scale()));
+            put("shift", num(x.shift()));
+            put("inner", Value::Object(body(x.inner().dist())?));
+        }
         Dist::PolicyLimits(x) => {
             put("limits", nums(x.limits()));
             put("weights", nums(x.weights()));
@@ -259,6 +264,15 @@ fn from_body(m: &Map<String, Value>) -> Result<Dist> {
             let s = SeverityDist::try_from(d)
                 .map_err(|_| Error::Data("a truncated severity cannot be sampled draws".into()))?;
             Truncated::new(s, f("lower")?, f("upper")?)?.into()
+        }
+        "affine" => {
+            let inner = m
+                .get("inner")
+                .ok_or_else(|| Error::Data("inner is missing".into()))?;
+            let d = from_body(object(inner, "inner distribution")?)?;
+            let s = SeverityDist::try_from(d)
+                .map_err(|_| Error::Data("an affine severity cannot be sampled draws".into()))?;
+            Affine::new(s, f("scale")?, f("shift")?)?.into()
         }
         "policy_limits" => {
             let base = m
@@ -400,6 +414,13 @@ mod tests {
                 SeverityDist::try_from(Dist::from(Gamma::new(2.0, 500.0).unwrap())).unwrap(),
                 100.0,
                 f64::INFINITY,
+            )
+            .unwrap()
+            .into(),
+            Affine::new(
+                SeverityDist::try_from(Dist::from(Gamma::new(2.0, 500.0).unwrap())).unwrap(),
+                10.0,
+                20.0,
             )
             .unwrap()
             .into(),

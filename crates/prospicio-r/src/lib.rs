@@ -19,6 +19,7 @@ mod distributions;
 mod models;
 #[cfg(feature = "nn")]
 mod nn;
+mod normal;
 /// Without the `nn` feature the module registers nothing, and the R
 /// functions that call it fail when called.
 #[cfg(not(feature = "nn"))]
@@ -61,6 +62,7 @@ extendr_module! {
     use distributions;
     use models;
     use nn;
+    use normal;
     use pareto;
     use pnl;
     use pricing;

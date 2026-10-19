@@ -726,8 +726,75 @@ for i in range(11):
 ds["I4"] = ArrayFormula("I4:I14", '=PRO.DISTORTION(H4:H14,"ph",E6)')
 ds["J4"] = ArrayFormula("J4:J14", '=PRO.DISTORTION(H4:H14,"wang",E7)')
 ds["K4"] = ArrayFormula("K4:K14", '=PRO.DISTORTION(H4:H14,"tvar",E9)')
-for col in "ABDEFHIJK":
+ds["L3"] = "Bi-TVaR"; ds["M3"] = "Beta"; ds["L3"].font = ds["M3"].font = bold
+ds["O3"] = "Bi-TVaR p0, p1, w"; ds["O3"].font = bold
+for i, v in enumerate([0.2, 0.9, 0.3]):
+    ds.cell(row=4, column=15 + i, value=v).fill = inp
+ds["O6"] = "Beta a, b"; ds["O6"].font = bold
+for i, v in enumerate([0.6, 1.5]):
+    ds.cell(row=7, column=15 + i, value=v).fill = inp
+ds["L4"] = ArrayFormula("L4:L14", '=PRO.DISTORTION(H4:H14,"bitvar",O4:Q4)')
+ds["M4"] = ArrayFormula("M4:M14", '=PRO.DISTORTION(H4:H14,"beta",O7:P7)')
+ds["O9"] = "Weighted TVaR: levels | weights"; ds["O9"].font = bold
+for i, (p, w) in enumerate([(0.1, 0.2), (0.5, 0.5), (0.9, 0.3)]):
+    ds[f"O{10 + i}"] = p; ds[f"P{10 + i}"] = w
+    ds[f"O{10 + i}"].fill = ds[f"P{10 + i}"].fill = inp
+ds["D18"] = "InsCo priced by the weighted TVaR"; ds["D18"].font = bold
+ds["D19"] = ArrayFormula("D19:E22", '=PRO.DISTORTION.PRICE(A4:A10,B4:B10,"wtdtvar",O10:P12)')
+for col in "ABDEFHIJKLMOPQ":
     ds.column_dimensions[col].width = 14
+
+# Copulas: two lines joined by a Clayton copula, and the same draws reordered by Iman-Conover.
+cp = wb.create_sheet("Copulas")
+cp["A1"] = "Two lines (lognormal, mean 50,000, CV 3 and gamma, mean 50,000, CV 1) joined by a Clayton copula; 1,000 simulated years"; cp["A1"].font = bold
+cp["A3"] = "Clayton theta"; cp["B3"] = 2; cp["B3"].fill = inp
+cp["A4"] = "Seed"; cp["B4"] = 1; cp["B4"].fill = inp
+cp["A5"] = "Target rank correlation"; cp["B5"] = 0.5; cp["B5"].fill = inp
+cp["A7"] = "C(u, v) at"; cp["A7"].font = bold
+for i, (u, v) in enumerate([(0.1, 0.1), (0.5, 0.5), (0.9, 0.9), (0.4, 0.6)]):
+    cp[f"A{8 + i}"] = u; cp[f"B{8 + i}"] = v
+    cp[f"A{8 + i}"].fill = cp[f"B{8 + i}"].fill = inp
+cp["C7"] = "Clayton"; cp["D7"] = "Gaussian at 0.5"; cp["C7"].font = cp["D7"].font = bold
+cp["C8"] = ArrayFormula("C8:C11", '=PRO.COPULA.CDF(A8:B11,"clayton",B3)')
+cp["D8"] = ArrayFormula("D8:D11", '=PRO.COPULA.CDF(A8:B11,"gaussian",0.5)')
+cp["F3"] = "U"; cp["G3"] = "V"; cp["H3"] = "Line A"; cp["I3"] = "Line B"; cp["J3"] = "Total"
+cp["L3"] = "A, reordered"; cp["M3"] = "B, reordered"
+for c in ("F3", "G3", "H3", "I3", "J3", "L3", "M3"):
+    cp[c].font = bold
+cp["F4"] = ArrayFormula("F4:G1003", '=PRO.COPULA.SIM("clayton",B3,1000,2,B4)')
+cp["H4"] = ArrayFormula("H4:H1003", '=PRO.SEV.QUANTILE(F4:F1003,"lognormal_cv",50000,3)')
+cp["I4"] = ArrayFormula("I4:I1003", '=PRO.SEV.QUANTILE(G4:G1003,"gamma_cv",50000,1)')
+for r in range(4, 1004):
+    cp[f"J{r}"] = f"=H{r}+I{r}"
+cp["L4"] = ArrayFormula("L4:M1003", "=PRO.IMAN.CONOVER(H4:I1003,B5,B4)")
+cp["A14"] = "Total's 99th percentile"; cp["B14"] = "=PERCENTILE(J4:J1003,0.99)"
+for col in "ABCDFGHIJLM":
+    cp.column_dimensions[col].width = 14
+
+# A three-year term: profit commission deficits and a sliding scale's deficits and credits carried forward.
+tm = wb.create_sheet("Term")
+tm["A1"] = "Three-year terms: one row a path, one column a year; premium 100 a year at 100%"; tm["A1"].font = bold
+tm["A3"] = "Premium"; tm["B3"] = 100; tm["B3"].fill = inp
+tm["A4"] = "Profit share"; tm["B4"] = 0.5; tm["B4"].fill = inp
+tm["A5"] = "Allowance"; tm["B5"] = 0.2; tm["B5"].fill = inp
+tm["A6"] = "Carry years (blank: until used up)"; tm["B6"].fill = inp
+tm["A7"] = "Commissions"; tm["B7"] = 0.4; tm["C7"] = 0.2
+tm["A8"] = "At loss ratios"; tm["B8"] = 0.5; tm["C8"] = 0.7
+for c in ("B7", "C7", "B8", "C8"):
+    tm[c].fill = inp
+tm["A10"] = "Ceded losses"; tm["E10"] = "Profit commission"; tm["I10"] = "Sliding-scale commission"
+for c in ("A10", "E10", "I10"):
+    tm[c].font = bold
+for i, path in enumerate([(120, 70, 30), (90, 40, 30), (60, 60, 60), (30, 110, 50), (85, 50, 95)]):
+    for j, x in enumerate(path):
+        cell = tm.cell(row=11 + i, column=1 + j, value=x)
+        cell.fill = inp
+tm["E11"] = ArrayFormula("E11:G15", "=PRO.PROFIT.COMMISSION.TERM(A11:C15,B3,B4,B5,B6)")
+tm["I11"] = ArrayFormula("I11:K15", '=PRO.SLIDING.SCALE.TERM(A11:C15,B3,B7:C7,B8:C8,"both",B6)')
+tm["A17"] = "Year by year without a carry, for comparison"; tm["A17"].font = bold
+tm["E17"] = ArrayFormula("E17:G21", "=PRO.PROFIT.COMMISSION(A11:C15,B3,B4,B5)")
+tm["I17"] = ArrayFormula("I17:K21", "=PRO.SLIDING.SCALE(A11:C15,B3,B7:C7,B8:C8)")
+tm.column_dimensions["A"].width = 30
 
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")

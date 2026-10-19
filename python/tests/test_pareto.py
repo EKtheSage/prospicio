@@ -184,6 +184,44 @@ def test_issue_194_severity_fits_with_truncation_and_censoring():
         D.fit_severity("pareto", y)
 
 
+def test_issue_328_lomax_fit_solves_its_score_equations():
+    # alpha = n / sum(log1p(y / scale)) and (alpha + 1) sum(y / (scale + y)) = n.
+    y = [50.0, 80.0, 120.0, 200.0, 300.0, 500.0, 900.0, 1500.0, 4000.0, 12000.0]
+    fit = D.fit_severity("lomax", y)
+    a, s = fit.parameters["alpha"], fit.parameters["scale"]
+    assert a * sum(math.log1p(v / s) for v in y) == pytest.approx(len(y), rel=1e-7)
+    assert (a + 1) * sum(v / (s + v) for v in y) == pytest.approx(len(y), rel=1e-7)
+    assert isinstance(fit.distribution, D.Burr)
+    assert fit.distribution.survival(1000.0) == pytest.approx((1 + 1000.0 / s) ** -a, rel=1e-12)
+    assert fit.aic == pytest.approx(4 - 2 * fit.log_likelihood)
+
+
+def test_issue_328_truncation_from_above():
+    # Claims kept only up to 3000: each conditioned on X <= 3000.
+    y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 2900.0, 650.0, 90.0, 2100.0]
+    u = [3000.0] * len(y)
+    fit = D.fit_severity("lognormal", y, truncated_above=u)
+    m, s = fit.parameters["meanlog"], fit.parameters["sdlog"]
+
+    def ll(m, s):
+        phi = 0.5 * (1 + math.erf((math.log(3000.0) - m) / (s * math.sqrt(2))))
+        return sum(-math.log(v * s * math.sqrt(2 * math.pi))
+                   - 0.5 * ((math.log(v) - m) / s) ** 2 for v in y) - len(y) * math.log(phi)
+
+    assert fit.log_likelihood == pytest.approx(ll(m, s), rel=1e-10)
+    for dm, ds in [(1e-3, 0), (-1e-3, 0), (0, 1e-3), (0, -1e-3)]:
+        assert ll(m + dm, s + ds) < fit.log_likelihood
+    # The bound spreads the fit wider than the plain one.
+    assert s > D.fit_severity("lognormal", y).parameters["sdlog"]
+    # A common bound conditions goodness of fit; differing bounds are refused.
+    gof = D.goodness_of_fit(fit.distribution, y, truncated_above=u)
+    assert max(gof["model_quantile"]) <= 3000.0
+    with pytest.raises(ValueError):
+        D.goodness_of_fit(fit.distribution, y, truncated_above=u[:-1] + [math.inf])
+    with pytest.raises(ValueError):
+        D.fit_severity("lognormal", y, truncated_above=[100.0] * len(y))
+
+
 def test_issue_194_product_limit_and_goodness_of_fit():
     # Without truncation or censoring, the weighted empirical survival.
     pl = D.product_limit([100.0, 200.0, 200.0, 400.0], weights=[1.0, 2.0, 1.0, 4.0])
@@ -201,3 +239,43 @@ def test_issue_194_product_limit_and_goodness_of_fit():
     assert len(gof["model_quantile"]) == 6
     # Any severity works, a Pareto fit included.
     assert D.goodness_of_fit(D.Pareto.fit(y, 100.0), y)["max_distance"] > 0.0
+
+
+def test_issue_328_grouped_fits_reproduce_bahnemann():
+    import math
+
+    from prospicio.distributions import (
+        Gamma,
+        fit_grouped,
+        fit_lev_distance,
+        grouped_goodness_of_fit,
+    )
+
+    inf = math.inf
+    bounds = [0, 1000, 1500, 2000, 2500, 3000, inf]
+    counts = [42, 61, 47, 26, 14, 10]
+    # Ex 2.7: the printed gamma's chi-square.
+    g = grouped_goodness_of_fit(Gamma(3.907288, 397.931), bounds, counts)
+    assert abs(g["chi_square"] - 3.095) < 5e-4
+    assert abs(sum(g["expected"]) - 200) < 1e-9
+    # Ex 2.8: the minimum chi-square lognormal (the book's is not the minimum).
+    fit = fit_grouped("lognormal", bounds, counts, "chi_square")
+    assert abs(fit.parameters["meanlog"] - 7.2857) < 5e-5
+    assert abs(fit.parameters["sdlog"] - 0.4570) < 5e-5
+    assert abs(fit.chi_square - 0.614) < 5e-4
+    assert fit.degrees_of_freedom == 3 and 0.89 < fit.p_value < 0.90
+    ml = fit_grouped("lognormal", bounds, counts)
+    assert ml.method == "ml" and ml.chi_square >= fit.chi_square
+    assert all(s > 0 for s in ml.standard_errors.values())
+    # Ex 2.10: the minimum limited-mean distance lognormal, 1,500 claims
+    # under a 300,000 limit.
+    x = [1000, 5000, 10000, 25000, 50000, 100000, 200000, 300000]
+    below = [729, 1096, 1208, 1326, 1391, 1440, 1468, 1500]
+    total = [225138, 1102272, 1918947, 3752091, 6007543, 9234739, 13100561, 22343455]
+    e = [(t + v * (1500 - b)) / 1500 for t, v, b in zip(total, x, below)]
+    lev = fit_lev_distance("lognormal", x, e)
+    assert abs(lev.parameters["meanlog"] - 6.9852) < 5e-5
+    assert abs(lev.parameters["sdlog"] - 2.5850) < 5e-5
+    assert [round(f) for f in lev.fitted] == [648, 2091, 3239, 5410, 7580, 10168, 13069, 14850]
+    with pytest.raises(ValueError):
+        fit_grouped("lognormal", bounds, counts, "mle")

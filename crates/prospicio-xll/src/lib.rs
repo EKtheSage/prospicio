@@ -16,6 +16,7 @@
 
 pub mod aggregate;
 pub mod bayes;
+pub mod copulas;
 pub mod credibility;
 pub mod distortions;
 pub mod evt;
@@ -59,6 +60,22 @@ pub const CATEGORY: &str = "prospicio";
 /// The add-in's name in Excel's Add-ins dialog.
 pub const ADDIN_NAME: &str = "prospicio";
 
+const TERM_LOSSES: Arg = Arg {
+    name: "losses",
+    help: "Ceded losses: one row a term (a simulated path), one column a year in order",
+};
+const CARRY_YEARS: Arg = Arg {
+    name: "carry_years",
+    help: "Later years a carried amount may be used in, then dropped (until used up if omitted)",
+};
+const COPULA_FAMILY: Arg = Arg {
+    name: "family",
+    help: "gaussian, t, clayton, gumbel, frank or joe",
+};
+const COPULA_PARAMETER: Arg = Arg {
+    name: "parameter",
+    help: "gaussian and t: a correlation for every pair, or a square correlation matrix; clayton, gumbel, frank, joe: theta",
+};
 const DATA: Arg = Arg {
     name: "data",
     help: "The losses: a range; blank cells are skipped",
@@ -1359,11 +1376,11 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "distortion",
-                help: "\"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\" or \"exp\" (aggregate's names)",
+                help: "ccoc, ph, wang, dual, tvar, exp, bitvar, beta, wtdtvar, clin, cll, lep or ly (aggregate's names)",
             },
             Arg {
                 name: "parameter",
-                help: "The distortion's parameter: ccoc r, ph rho, wang lambda, dual beta, tvar p, exp k",
+                help: "A number (ccoc r, ph rho, wang lambda, dual beta, tvar p, exp k), or a range: bitvar p0, p1, w; beta a, b; wtdtvar levels | weights; clin, cll, lep, ly r0 and the parameter",
             },
             Arg {
                 name: "step",
@@ -1668,11 +1685,11 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "family",
-                help: "ccoc, ph, wang, dual, tvar, exp, or with r0 clin, cll, lep, ly (aggregate's names)",
+                help: "ccoc, ph, wang, dual, tvar, exp, bitvar, beta, wtdtvar, or with r0 clin, cll, lep, ly (aggregate's names)",
             },
             Arg {
                 name: "parameter",
-                help: "The family's parameter: r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly)",
+                help: "r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly); a range for bitvar (p0, p1, w), beta (a, b) and wtdtvar (levels | weights)",
             },
             Arg {
                 name: "r0",
@@ -1696,11 +1713,11 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "family",
-                help: "ccoc, ph, wang, dual, tvar, exp, or with r0 clin, cll, lep, ly (aggregate's names)",
+                help: "ccoc, ph, wang, dual, tvar, exp, bitvar, beta, wtdtvar, or with r0 clin, cll, lep, ly (aggregate's names)",
             },
             Arg {
                 name: "parameter",
-                help: "The family's parameter: r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly)",
+                help: "r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly); a range for bitvar (p0, p1, w), beta (a, b) and wtdtvar (levels | weights)",
             },
             Arg {
                 name: "r0",
@@ -1736,6 +1753,78 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: distortions::calibrate_families,
+    },
+    Function {
+        symbol: "pro_copula_cdf",
+        name: "PRO.COPULA.CDF",
+        help: "A copula's distribution function C(u) at each point, one point a row (Gaussian in two dimensions, Archimedean in any).",
+        args: &[
+            Arg {
+                name: "points",
+                help: "Points in [0, 1]^d, one a row, one column a dimension",
+            },
+            COPULA_FAMILY,
+            COPULA_PARAMETER,
+            Arg {
+                name: "nu",
+                help: "t only: the degrees of freedom (the t has no closed-form cdf)",
+            },
+        ],
+        run: copulas::cdf,
+    },
+    Function {
+        symbol: "pro_copula_sim",
+        name: "PRO.COPULA.SIM",
+        help: "Uniforms simulated from a copula, one row a simulation and one column a dimension; reproducible by seed. Turn them into losses with PRO.SEV.QUANTILE.",
+        args: &[
+            COPULA_FAMILY,
+            COPULA_PARAMETER,
+            Arg {
+                name: "sims",
+                help: "Simulations (rows), 1 to 1,000,000 (10,000 if omitted)",
+            },
+            Arg {
+                name: "dim",
+                help: "Dimensions (columns): 2 if omitted, or the correlation matrix's size",
+            },
+            Arg {
+                name: "seed",
+                help: "A whole number from 0 (0 if omitted); row i is stream i of the seed",
+            },
+            Arg {
+                name: "nu",
+                help: "t only: the degrees of freedom",
+            },
+        ],
+        run: copulas::sim,
+    },
+    Function {
+        symbol: "pro_iman_conover",
+        name: "PRO.IMAN.CONOVER",
+        help: "Simulated columns reordered to a target rank correlation by Iman and Conover's method, each column keeping its own values.",
+        args: &[
+            Arg {
+                name: "draws",
+                help: "Simulations: one column a variable, one row a simulation",
+            },
+            Arg {
+                name: "correlation",
+                help: "The target correlation: a square matrix, one row and column a variable, or one number for every pair",
+            },
+            Arg {
+                name: "seed",
+                help: "A whole number from 0 (0 if omitted)",
+            },
+            Arg {
+                name: "dof",
+                help: "Student t scores with these degrees of freedom, for more joint extremes (normal scores if omitted)",
+            },
+            Arg {
+                name: "shuffle",
+                help: "TRUE shuffles the result's rows (FALSE if omitted: the first column comes back sorted)",
+            },
+        ],
+        run: copulas::iman_conover,
     },
     Function {
         symbol: "pro_swing",
@@ -1816,6 +1905,54 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: terms::profit_commission,
+    },
+    Function {
+        symbol: "pro_profit_commission_term",
+        name: "PRO.PROFIT.COMMISSION.TERM",
+        help: "A profit commission in each year of a term, deficits carried forward and used oldest first; one row a term, one column a year.",
+        args: &[
+            TERM_LOSSES,
+            Arg {
+                name: "premium",
+                help: "The premium a year at 100%",
+            },
+            Arg {
+                name: "share",
+                help: "Share of the profit returned to the cedant",
+            },
+            Arg {
+                name: "allowance",
+                help: "The reinsurer's expense and margin allowance, a share of premium",
+            },
+            CARRY_YEARS,
+        ],
+        run: terms::profit_commission_term,
+    },
+    Function {
+        symbol: "pro_sliding_scale_term",
+        name: "PRO.SLIDING.SCALE.TERM",
+        help: "A sliding-scale ceding commission in each year of a term, deficits and credits carried forward; one row a term, one column a year.",
+        args: &[
+            TERM_LOSSES,
+            Arg {
+                name: "premium",
+                help: "The premium a year at 100%, for the loss ratio",
+            },
+            Arg {
+                name: "commissions",
+                help: "Commission rates at the anchors: a row or column",
+            },
+            Arg {
+                name: "loss_ratios",
+                help: "The anchors' loss ratios, increasing, one per commission",
+            },
+            Arg {
+                name: "carry",
+                help: "deficit (loss above the last anchor), credit (below the first) or both (if omitted)",
+            },
+            CARRY_YEARS,
+        ],
+        run: terms::sliding_scale_term,
     },
     Function {
         symbol: "pro_layer_terms",

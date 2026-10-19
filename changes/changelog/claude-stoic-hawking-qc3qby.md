@@ -318,3 +318,59 @@
 - `prospicio_aggregate::ApproximationKind` and `Approximation` have the
   variants `NormalPower` and `WilsonHilferty`, so an exhaustive `match` on
   them needs new arms (#329).
+
+### Distributions and probability
+
+- A normal distribution, `prospicio_prob::Normal`, on the whole real line,
+  with its closed-form TVaR `mu + sigma phi(z_p) / (1 - p)` (*Pricing
+  Insurance Risk*, section 4.3.3), and the ogive of grouped data,
+  `prospicio_prob::Ogive` (`new` from tabulated `(x, F)`, `from_counts`
+  from counts per band), a severity whose limited moments, VaR and TVaR
+  are exact band by band (Exercise 50). Python
+  `prospicio.distributions.Normal` and `Ogive`, R `normal_distribution()`,
+  `ogive()` and `ogive_from_counts()` (#366).
+
+### Distributions and probability
+
+- A severity scaled and shifted, `prospicio_prob::Affine` (`scale * X +
+  shift`, `aggregate`'s `10 * lognorm 1 + 20`), whose layer moments, LEV
+  and stop loss stay exact from the inner severity's, saved as JSON with
+  it. Python `prospicio.distributions.Affine`, R `affine_distribution()`
+  (#318).
+
+### Breaking changes
+
+- `prospicio_prob::Dist` has the variant `Affine`, so an exhaustive `match`
+  on it needs a new arm (#318).
+
+### Distributions and probability
+
+- `fit_severity` fits the Lomax, `S(x) = (1 + x / scale)^(-alpha)`
+  (Bahnemann's Pareto, CAS Monograph 2), as a Burr with `gamma = 1`:
+  `Family::Lomax`, Python `fit_severity("lomax", ...)`, R
+  `severity_fit("lomax", ...)` (#328).
+
+### Breaking changes
+
+- `prospicio_prob::severity_fit::Family` has the variant `Lomax`, so an
+  exhaustive `match` on it needs a new arm (#328).
+
+### Distributions and probability
+
+- Losses truncated from above: `LargeLosses::truncated_above(u)` conditions
+  each loss on `r < X <= u` (claims kept only up to a bound), which
+  `fit_severity` uses for every family, a censored loss included;
+  `goodness_of_fit` conditions both sides on a bound common to every loss
+  and refuses bounds that differ. The Pareto fits refuse such data rather
+  than ignore it. Python and R `truncated_above` on `fit_severity` /
+  `severity_fit` and `goodness_of_fit` (#328).
+- Grouped losses: `prospicio_prob::grouped_fit::fit_grouped` fits the
+  lognormal, gamma, Weibull, Burr or Lomax to counts in size bands by
+  maximum likelihood or minimum chi-square, conditioned on the range of the
+  bands (a deductible's truncation, a truncation from above), with
+  standard errors from the grouped Fisher information and the chi-square
+  test; `fit_lev_distance` fits by the minimum distance to empirical
+  limited expected values (Bahnemann, CAS Monograph 2). Python
+  `fit_grouped`, `fit_lev_distance`, `grouped_goodness_of_fit`; R
+  `grouped_fit()`, `lev_distance_fit()`, `grouped_goodness_of_fit()`
+  (#328).

@@ -20,10 +20,12 @@ mod credibility;
 mod discrete;
 mod distributions;
 mod experience;
+mod grouped_fit;
 mod models;
 mod natural;
 #[cfg(feature = "nn")]
 mod nn;
+mod normal;
 mod pareto;
 mod payout;
 mod pnl;
@@ -71,6 +73,10 @@ mod prospicio_native {
         PyPreparedLosses,
     };
     #[pymodule_export]
+    use super::grouped_fit::{
+        PyGroupedFit, PyLevDistanceFit, fit_grouped, fit_lev_distance, grouped_goodness_of_fit,
+    };
+    #[pymodule_export]
     use super::models::{
         PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyElasticNet,
         PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyHierarchicalStacking,
@@ -94,9 +100,11 @@ mod prospicio_native {
         PyTokenAttention,
     };
     #[pymodule_export]
+    use super::normal::{PyNormal, PyOgive};
+    #[pymodule_export]
     use super::pareto::{
-        PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto, PyInverseGamma,
-        PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
+        PyAffine, PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto,
+        PyInverseGamma, PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
         PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PyTruncated, PyTweedie, PyWeibull,
         claim_count, fit_severity, goodness_of_fit, local_pareto_to_piecewise, product_limit,
     };

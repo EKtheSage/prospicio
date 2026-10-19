@@ -25,6 +25,7 @@ Collate:
     'discrete.R'
     'extendr-wrappers.R'
     'nn.R'
+    'normal.R'
     'pnl.R'
     'pricing.R'
     'ratemaking.R'
