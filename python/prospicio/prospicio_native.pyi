@@ -23554,6 +23554,35 @@ def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n
     list of float
     """
 
+def rearrange(columns: Sequence[Sequence[float]], rotate: int |None = None, seed: int |None = None, tolerance: float = 1e-6) -> dict:
+    """
+    The Rearrangement Algorithm (Puccetti and Rueschendorf): orders each
+    column opposite to the sum of the others until the smallest row sum
+    stops rising by ``tolerance``. Its answer depends on the start: as
+    given, column ``j`` rotated down by ``rotate * j`` places, or each column
+    shuffled from ``seed``.
+    
+    Parameters
+    ----------
+    columns : list of list of float
+        Equal lengths.
+    rotate : int, optional
+    seed : int, optional
+    tolerance : float, default 1e-6
+    
+    Returns
+    -------
+    dict
+        ``value`` (the smallest row sum), ``columns`` (the final
+        arrangement) and ``iterations``.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import rearrange
+    >>> rearrange([[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]])["value"]
+    5.0
+    """
+
 def recommend_grid(frequency: Any, severity: Any, log2: int = 16, p: float = ..., p_star: float = ...) -> GridSize:
     """
     A grid for the compound distribution of ``frequency`` claims of
@@ -24166,6 +24195,37 @@ def wiener_hopf(severity: Grid, wait: Any, rho: float |None = None, *, loss_rati
     >>> pk = eventual_ruin(sev, rho=0.2)
     >>> wh.psi_at(50.0) < pk.psi_at(50.0)
     True
+    """
+
+def worst_var(marginals: Sequence[Any], p: float, n: int = 100, rotate: int |None = None, seed: int |None = None, tolerance: float = 1e-6) -> dict:
+    """
+    The worst VaR at ``p`` of a sum of severities with unknown dependence, by
+    the Rearrangement Algorithm on ``n`` quantiles of each from ``p`` up
+    (Embrechts, Puccetti and Rueschendorf's lower matrix; *Pricing Insurance
+    Risk*, Exercise 59). A heuristic: the start (``rotate`` or ``seed``)
+    makes it reproducible.
+    
+    Parameters
+    ----------
+    marginals : list of severity
+    p : float
+    n : int, default 100
+    rotate : int, optional
+    seed : int, optional
+    tolerance : float, default 1e-6
+    
+    Returns
+    -------
+    dict
+        As ``rearrange``; ``value`` is the worst VaR estimate.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Lognormal
+    >>> from prospicio.risk import worst_var
+    >>> m = [Lognormal.from_mean_cv(10.0, cv) for cv in (1.0, 2.0, 3.0)]
+    >>> round(worst_var(m, 0.99, n=40, rotate=19)["value"], 1)
+    352.9
     """
 
 def year_fraction(year: int, month: int, day: int) -> float:

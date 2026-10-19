@@ -144,6 +144,6 @@ mod prospicio_native {
         PyLevelAllocation, PyNestedArchimedeanCopula, PyPairCopula, PyPotTail, PyStudentTCopula,
         PyVineCopula, allocate, calibrate, capital, covar, entropic, equal_risk, esscher,
         esscher_allocation, haircut, hill, iman_conover, marginal_expected_shortfall, mean_excess,
-        shapley, simulate, threshold_diagnostics,
+        rearrange, shapley, simulate, threshold_diagnostics, worst_var,
     };
 }

@@ -286,3 +286,12 @@
   `Hinges`, `Steps`, `Bins`, `Log`, `Ordinal`, `OrthogonalPoly`,
   `NaturalSpline`), so an exhaustive `match`
   on it needs new arms (#350).
+### Distributions and probability
+
+- The worst VaR of a sum with unknown dependence by the Rearrangement
+  Algorithm (Puccetti and Rüschendorf): `rearrangement::rearrange` on any
+  columns and `worst_var` on `n` quantiles of each marginal, from a start
+  given as is, rotated or shuffled by seed, so a result is reproducible
+  (*Pricing Insurance Risk* Exercise 59 as its guide prints it). Python
+  `prospicio.risk.rearrange` and `worst_var`, R `rearrange()` and
+  `worst_var()` (#366).

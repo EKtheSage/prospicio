@@ -381,6 +381,31 @@ fn equal_risk_rust(pd: Robj, total: f64, measure: &str) -> Result<List> {
     Ok(level_list(a))
 }
 
+/// The Rearrangement Algorithm on the columns of a column-major matrix:
+/// `list(value, columns, iterations)`; `rotate` and `seed` NaN for none.
+#[extendr]
+fn rearrange_rust(x: &[f64], ncol: f64, rotate: f64, seed: f64, tolerance: f64) -> Result<List> {
+    use prospicio_prob::rearrangement::{Start, rearrange};
+    let m = ncol as usize;
+    if m == 0 || x.len() % m != 0 {
+        return Err(Error::Other("x must be a matrix with ncol columns".into()));
+    }
+    let n = x.len() / m;
+    let columns: Vec<Vec<f64>> = x.chunks(n).map(<[f64]>::to_vec).collect();
+    let start = match (rotate.is_nan(), seed.is_nan()) {
+        (false, false) => return Err(Error::Other("give rotate or seed, not both".into())),
+        (false, true) => Start::Rotated(rotate as usize),
+        (true, false) => Start::Shuffled(seed as u64),
+        (true, true) => Start::AsGiven,
+    };
+    let r = rearrange(&columns, start, tolerance).map_err(to_r)?;
+    Ok(list!(
+        value = r.value,
+        columns = r.columns.concat(),
+        iterations = r.iterations as f64
+    ))
+}
+
 pub(crate) enum AnyCopula {
     Gaussian(GaussianCopula),
     StudentT(StudentTCopula),
@@ -803,6 +828,7 @@ extendr_module! {
     fn shapley_rust;
     fn haircut_rust;
     fn equal_risk_rust;
+    fn rearrange_rust;
     fn iman_conover_reorder;
     fn gpd_mle;
     fn mean_excess_rust;

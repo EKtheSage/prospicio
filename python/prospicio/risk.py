@@ -27,11 +27,15 @@ from .prospicio_native import (
     marginal_expected_shortfall,
     mean_excess,
     shapley,
+    rearrange,
     simulate,
     threshold_diagnostics,
+    worst_var,
 )
 
 __all__ = [
+    "rearrange",
+    "worst_var",
     "Distortion",
     "calibrate",
     "allocate",

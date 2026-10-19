@@ -220,6 +220,14 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   linear. Equal risk bisects the level (the EPD ratio on a log scale);
   since a VaR of draws moves in steps, the level found is the lowest at
   which the sum reaches the total and the VaRs there are scaled to it.
+- **The Rearrangement Algorithm takes its start as input.** It is a
+  heuristic whose answer depends on the starting arrangement, so
+  `rearrangement::rearrange` takes a `Start` (as given, column `j` rotated
+  by `shift × j`, or shuffled from a seed) and a result is reproducible by
+  it, the same in Rust, Python and R. `worst_var` builds the
+  Embrechts–Puccetti–Rüschendorf lower matrix, `n` quantiles from `p` up
+  without the infinite top one, which converges to the worst VaR from below
+  (#366).
 - **Shapley is exact and capped at 12 components.** It evaluates `ρ` on
   all `2^m` sub-portfolios, each a sort of `n` draws. Beyond 12 components
   that cost grows too fast, and a sampled Shapley value would add noise

@@ -5,6 +5,7 @@ use prospicio_core::StreamRng;
 use prospicio_prob::capital::{Allocation, AllocationMethod, LevelAllocation, LevelMeasure};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
+use prospicio_prob::rearrangement::Start;
 use prospicio_prob::{
     Archimedean, ArchimedeanCopula, Distortion, Empirical, Family, GaussianCopula, Provenance,
     StudentTCopula,
@@ -1189,6 +1190,119 @@ pub(crate) fn equal_risk(
     let pd = &pd.inner;
     let inner = py.detach(|| pd.equal_risk(total, measure)).map_err(to_py)?;
     Ok(PyLevelAllocation { inner })
+}
+
+fn start_of(rotate: Option<usize>, seed: Option<u64>) -> PyResult<Start> {
+    match (rotate, seed) {
+        (Some(_), Some(_)) => Err(PyValueError::new_err("give rotate or seed, not both")),
+        (Some(r), None) => Ok(Start::Rotated(r)),
+        (None, Some(s)) => Ok(Start::Shuffled(s)),
+        (None, None) => Ok(Start::AsGiven),
+    }
+}
+
+fn rearrangement_dict<'py>(
+    py: Python<'py>,
+    r: prospicio_prob::rearrangement::Rearrangement,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("value", r.value)?;
+    out.set_item("columns", r.columns)?;
+    out.set_item("iterations", r.iterations)?;
+    Ok(out)
+}
+
+/// The Rearrangement Algorithm (Puccetti and Rueschendorf): orders each
+/// column opposite to the sum of the others until the smallest row sum
+/// stops rising by ``tolerance``. Its answer depends on the start: as
+/// given, column ``j`` rotated down by ``rotate * j`` places, or each column
+/// shuffled from ``seed``.
+///
+/// Parameters
+/// ----------
+/// columns : list of list of float
+///     Equal lengths.
+/// rotate : int, optional
+/// seed : int, optional
+/// tolerance : float, default 1e-6
+///
+/// Returns
+/// -------
+/// dict
+///     ``value`` (the smallest row sum), ``columns`` (the final
+///     arrangement) and ``iterations``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import rearrange
+/// >>> rearrange([[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]])["value"]
+/// 5.0
+#[pyfunction]
+#[pyo3(signature = (columns, rotate = None, seed = None, tolerance = 1e-6))]
+pub(crate) fn rearrange<'py>(
+    py: Python<'py>,
+    columns: Vec<Vec<f64>>,
+    rotate: Option<usize>,
+    seed: Option<u64>,
+    tolerance: f64,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let start = start_of(rotate, seed)?;
+    let r = py
+        .detach(|| prospicio_prob::rearrangement::rearrange(&columns, start, tolerance))
+        .map_err(to_py)?;
+    rearrangement_dict(py, r)
+}
+
+/// The worst VaR at ``p`` of a sum of severities with unknown dependence, by
+/// the Rearrangement Algorithm on ``n`` quantiles of each from ``p`` up
+/// (Embrechts, Puccetti and Rueschendorf's lower matrix; *Pricing Insurance
+/// Risk*, Exercise 59). A heuristic: the start (``rotate`` or ``seed``)
+/// makes it reproducible.
+///
+/// Parameters
+/// ----------
+/// marginals : list of severity
+/// p : float
+/// n : int, default 100
+/// rotate : int, optional
+/// seed : int, optional
+/// tolerance : float, default 1e-6
+///
+/// Returns
+/// -------
+/// dict
+///     As ``rearrange``; ``value`` is the worst VaR estimate.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Lognormal
+/// >>> from prospicio.risk import worst_var
+/// >>> m = [Lognormal.from_mean_cv(10.0, cv) for cv in (1.0, 2.0, 3.0)]
+/// >>> round(worst_var(m, 0.99, n=40, rotate=19)["value"], 1)
+/// 352.9
+#[pyfunction]
+#[pyo3(signature = (marginals, p, n = 100, rotate = None, seed = None, tolerance = 1e-6))]
+pub(crate) fn worst_var<'py>(
+    py: Python<'py>,
+    marginals: Vec<Bound<'py, PyAny>>,
+    p: f64,
+    n: usize,
+    rotate: Option<usize>,
+    seed: Option<u64>,
+    tolerance: f64,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let start = start_of(rotate, seed)?;
+    let dists = marginals
+        .iter()
+        .map(extract_severity)
+        .collect::<PyResult<Vec<_>>>()?;
+    let refs: Vec<&dyn prospicio_prob::Distribution> = dists
+        .iter()
+        .map(|d| d as &dyn prospicio_prob::Distribution)
+        .collect();
+    let r =
+        prospicio_prob::rearrangement::worst_var(&refs, p, n, start, tolerance).map_err(to_py)?;
+    rearrangement_dict(py, r)
 }
 
 /// One of the copula classes, as a Rust copula.
