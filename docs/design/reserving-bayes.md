@@ -1566,7 +1566,7 @@ in the style of `OdpBootstrap` and `odp_bootstrap()`:
 
 ### 14. Docs and knowledge
 
-Proposed. Each PR updates, in itself: the Reserving row of AGENTS.md, the
+Proposed. Each PR updates, in itself: the Reserving lane's status file (`docs/lanes/reserving.md`), the
 v0.7 row of `docs/roadmap.md` and the `prospicio-bayes` Next list (item 1
 is this work), `docs/architecture.md` if a roadmap row changes, and this
 note's status. `knowledge/` gains: the Stan reference pipeline and the
