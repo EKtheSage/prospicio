@@ -53,7 +53,7 @@ fn treaty(limit: f64, attachment: f64) -> PyResult<XsLayer> {
 /// Examples
 /// --------
 /// >>> from prospicio.pricing import IlfTable
-/// >>> IlfTable([100e3, 1e6, 2e6], [1.0, 1.6, 1.8]).ilf(1.5e6)
+/// >>> round(IlfTable([100e3, 1e6, 2e6], [1.0, 1.6, 1.8]).ilf(1.5e6), 12)
 /// 1.7
 #[pyclass(name = "IlfTable", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyIlfTable {
@@ -543,16 +543,19 @@ impl PyParetoAnchor {
         })
     }
 
+    /// The Pareto's threshold.
     #[getter]
     fn threshold(&self) -> f64 {
         self.inner.threshold
     }
 
+    /// The censored maximum likelihood alpha.
     #[getter]
     fn alpha(&self) -> f64 {
         self.inner.alpha
     }
 
+    /// Its standard error from the observed information, ``alpha / sqrt(n)``.
     #[getter]
     fn standard_error(&self) -> f64 {
         self.inner.standard_error
