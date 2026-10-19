@@ -72,10 +72,11 @@ diagonals (\code{NULL}, the default, keeps every one; an age with fewer
 links uses all of them). Then the \code{drop_high} highest and \code{drop_low}
 lowest of the kept ratios are left out, except at an age where that
 would leave none. Whole numbers from 0 (\code{n_periods} from 1); the
-defaults exclude nothing. \code{\link[=mack]{mack()}} accepts them; the bootstraps and
-the one-year views reject them, and \code{\link[=claims_development_result]{claims_development_result()}}
-rejects any of them, even one that removes nothing. The fit's \code{n_links} and \code{excluded}
-report what was used.}
+defaults exclude nothing. \code{\link[=mack]{mack()}}, the bootstraps and the one-year
+views accept them (the bootstraps and views keep the link ratios that
+the observed triangle keeps), and \code{\link[=claims_development_result]{claims_development_result()}}
+rejects any of them, even one that removes nothing. The fit's
+\code{n_links} and \code{excluded} report what was used.}
 }
 \value{
 A \code{mack_fit} object.

@@ -933,6 +933,8 @@ impl Triangle {
     /// "rank_correlation" with the row-major `spearman` matrix) says.
     /// `tail` is a `ReservingTail`, developed past the oldest age in every
     /// simulation; `tail_std_err` is `NULL` to keep a constant tail fixed.
+    /// `excl` is the link ratio exclusions as `development_args()` in R
+    /// encodes them.
     #[allow(clippy::too_many_arguments)]
     fn odp_bootstrap(
         &self,
@@ -945,12 +947,17 @@ impl Triangle {
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
         ldf: Robj,
+        excl: Robj,
     ) -> Result<OdpBootstrapFit> {
         let dependence = segment_dependence(dependence, spearman)?;
+        let (n_periods, drop_high, drop_low) = exclusions(&excl)?;
         let boot = OdpBootstrap {
             tail: tail_arg(&tail)?,
             tail_std_err: optional(tail_std_err),
             pattern: selected_pattern(&ldf)?,
+            n_periods,
+            drop_high,
+            drop_low,
             ..bootstrap(n_sims, seed, process, dependence)?
         };
         let inner = boot.fit_segments(&self.inner, column).map_err(to_r)?;

@@ -339,8 +339,20 @@ what it is aiming for by v1.0.
     the chain ladder, the expected-loss family and Mack, in the factor and
     in sigma alike, and `Average::Geometric` (factors only). Parity with
     chainladder-python's `Development` and R's `MackChainLadder(weights =
-    W)`; the bootstraps and the one-year views reject them until a second
-    PR. Factors to ultimate below 1 in selected patterns.
+    W)`; the bootstraps and the one-year views rejected them until a
+    second PR. Factors to ultimate below 1 in selected patterns.
+  - The bootstraps and the one-year views under the exclusions
+    (`reserving-v02.md`, decision 14; branch `claude/bootstrap-exclusions`,
+    issue #401, in Rust, Python and R): `OdpBootstrap` gets `n_periods`,
+    `drop_high` and `drop_low` (fitted values back-cast under the
+    exclusions, residuals only after kept links, chainladder-python's
+    scale rule), Mack's bootstrap follows the settings it already took
+    (its standard deviation is Mack's under the same settings), and a
+    one-year view takes the re-reserving method's. The drops stay fixed on
+    the observed triangle; the mean of the claims development result is
+    not zero under the exclusions. Merz and Wüthrich's closed form and the
+    geometric average still reject them. Parity with chainladder-python's
+    `BootstrapODPSample` on the deterministic steps.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
