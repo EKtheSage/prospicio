@@ -859,6 +859,17 @@ portfolio_assets <- function(port, p) rust_result(port@ptr$assets(as.double(p)))
 #' `"lifted"` the distorted share. Capital is allocated layer by layer, in
 #' proportion to each unit's margin in the layer.
 #'
+#' Two conventions follow `aggregate` 1.0.1. A total exactly at the assets
+#' keeps its own weight in the linear allocation, where *Pricing Insurance
+#' Risk* lumps it with the default outcomes (its Example 235: 4.3 against
+#' 4.16 here); assets just below the atom, `a - 1e-9`, give the book's
+#' numbers, and `p` always lands on a total. In the bottom layer of
+#' capital, below the smallest total, the units' margins (which sum to
+#' zero) take capital at `g'(1) / (1 - g'(1))`: `1/r` for CCoC,
+#' `rho / (1 - rho)` for the proportional hazard, 0 for Wang, dual power
+#' and TVaR. Monograph 15's equation 8.5 gives that layer none, so CCoC and
+#' PH capital by unit differ from it; the total and the premiums do not.
+#'
 #' @param port A [capital_portfolio].
 #' @param distortion A [distortion].
 #' @param assets The asset level; or give `p`. The largest total by default.
@@ -1048,11 +1059,12 @@ S7::method(tvar_threshold, capital_portfolio) <- function(x, p, ...) {
 #' Loss `L`, margin `M`, premium `P`, capital `Q` and assets `a`, with
 #' `P = L + M` and `a = P + Q`, from exactly three known amounts or ratios
 #' (`loss_ratio = L / P`, `premium_to_capital = P / Q`,
-#' `return_on_capital = M / Q`).
+#' `return_on_capital = M / Q`), and the risk discount `d = M / (a - L)`,
+#' with which `P = (1 - d) L + d a` (CAS Monograph 15, Table 4.1).
 #'
 #' @param loss,margin,premium,capital,assets,loss_ratio,premium_to_capital,return_on_capital
 #'   Give exactly three.
-#' @returns A named numeric vector of all eight.
+#' @returns A named numeric vector of all eight, and `discount`.
 #' @export
 #' @examples
 #' pentagon(loss = 46.6, assets = 100, return_on_capital = 0.15)
@@ -1062,8 +1074,8 @@ pentagon <- function(loss = NULL, margin = NULL, premium = NULL, capital = NULL,
                 assets = assets, loss_ratio = loss_ratio, premium_to_capital = premium_to_capital,
                 return_on_capital = return_on_capital)
   given <- given[!vapply(given, is.null, logical(1))]
-  r <- rust_result(pricing_pentagon(names(given), as.double(unlist(given))))
-  unlist(r[-1])
+  r <- unlist(rust_result(pricing_pentagon(names(given), as.double(unlist(given))))[-1])
+  c(r, discount = r[["margin"]] / (r[["assets"]] - r[["loss"]]))
 }
 
 #' Pricing bounds

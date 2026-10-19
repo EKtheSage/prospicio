@@ -148,6 +148,12 @@
 
 ### Pricing
 
+- R `pentagon()` returns the risk discount `d = M / (a - L)` too, as
+  Python's `Pentagon.discount` (#365). `Portfolio::price` (Python
+  `Portfolio.price`, R `natural_price()`) documents its two conventions,
+  both `aggregate` 1.0.1's: a total exactly at the assets keeps its own
+  weight in the linear allocation, and the bottom layer of capital takes
+  the units' margins at `g'(1) / (1 - g'(1))` (#368, #379; #398).
 - Casualty exposure rating in `prospicio_pricing::casualty`: a
   `CasualtyProfile` of policies (attachment, limit, share, premium, ELR,
   and a curve each: a severity, an `IlfTable` or an `ElfTable`), rated
