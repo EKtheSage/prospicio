@@ -93,10 +93,15 @@ what it is aiming for by v1.0.
     with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill, and threshold diagnostics: the mean
     excess and the GPD's shape and modified scale at each threshold with
-    standard errors, as R's `ismev`); TVaR of a grid and `tvar_threshold`.
+    standard errors, as R's `ismev`); TVaR of a grid and `tvar_threshold`,
+    and of every parametric severity.
   - `Discrete`, a distribution on finitely many values of either sign,
     for the P&L ledger's rows (`docs/design/pnl.md`).
-- **Next:** open.
+- **Next:** the Guides lane's issues of 2026-10-17 and 18: the
+  rearrangement algorithm, a normal and an ogive (#366), allocations of
+  the margin (#369), Iman–Conover's scores and row order (#378), shifted
+  and scaled severities (#318), fits to grouped and truncated data
+  (#328), normal power approximations (#329).
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
@@ -178,8 +183,11 @@ what it is aiming for by v1.0.
     (`docs/design/casualty-exposure.md`, PR 1; Clark's workers
     compensation example exact), with the sweep over the Pareto alpha, the
     censored anchor, the count test and the burning cost with and without
-    a segment (PR 2).
-- **Next:** casualty exposure PR 3 (Python and R).
+    a segment (PR 2), in Python and R (PR 3).
+- **Next:** the Guides lane's issues of 2026-10-17 and 18 (the lifted
+  allocation's bottom layer and the linear one's atom at the assets, FFT
+  fuzz in `Tower.on_grid`, a severity from a size-of-loss table, a grid
+  audit, shared mixing across units).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)
@@ -370,10 +378,10 @@ what it is aiming for by v1.0.
   early stopping; networks trained elsewhere imported from ONNX for
   inference (`prospicio_nn::onnx`, v0.9); all of it in Python and R,
   behind the bindings' default `nn` feature.
+  Fitted networks save, load and pickle like the GLM (`to_json` /
+  `from_json`, every weight by its path).
 - **Next:**
   1. Tabular MLPs with embeddings, and multi-task claim models.
-  2. Network artifacts (`to_json` / `from_json`), so fitted networks
-     save, load and pickle like the GLM.
 - **v1.0:** networks behind the shared model protocol, in every front
   end.
 
@@ -430,11 +438,12 @@ what it is aiming for by v1.0.
   tabulated) and their calibrations; an exposure-rated risk profile;
   classical credibility; ratemaking (rate level, trend and the
   indication); the burning cost; aggregate distributions and layer
-  statistics; the Bayesian ODP chain ladder by MCMC.
+  statistics; the Bayesian ODP chain ladder by MCMC; the occurrence and
+  aggregate PML curves.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
      form (`xll.md`, parity plan): the plan's four groups are done;
-     next, the occurrence PMLs, aggregate covers and towers on a grid.
+     next, aggregate covers on the annual total, then towers on a grid.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

@@ -421,9 +421,14 @@ S7::method(print, grid_distribution) <- function(x, ...) {
 #' `TVaR(dist, p)` is the mean of the worst `1 - p`, splitting the draw at the
 #' VaR so it is coherent and continuous in `p`. For a
 #' [predictive_distribution] both describe the total over all components.
+#' For a parametric severity or a [grid_distribution], `VaR()` is the lower
+#' quantile, as `quantile()`, and a severity's `TVaR()` is
+#' `VaR(p) + E[(X - VaR(p))+] / (1 - p)`, infinite where the mean is.
 #'
-#' @param dist A [sampled], [predictive_distribution] or [pot_tail].
-#' @param p Probabilities in `[0, 1]`.
+#' @param dist A [sampled], [predictive_distribution], [pot_tail],
+#'   [grid_distribution], or a severity ([lognormal], [pareto] and the
+#'   other parametric families).
+#' @param p Probabilities in `[0, 1]` (`[0, 1)` for a severity's `TVaR()`).
 #' @param ... Unused; for methods.
 #' @returns Numeric vector the length of `p`.
 #' @name risk_measures
@@ -440,6 +445,21 @@ VaR <- S7::new_generic("VaR", "dist", function(dist, p, ...) S7::S7_dispatch())
 #' @rdname risk_measures
 #' @export
 TVaR <- S7::new_generic("TVaR", "dist", function(dist, p, ...) S7::S7_dispatch())
+
+# A severity's TVaR from its quantile and stop loss, VaR(p) + E[(X - VaR(p))+] / (1 - p).
+severity_tvar <- function(ptr, p, call) {
+  p <- as.double(p)
+  if (any(is.na(p) | p < 0 | p >= 1)) stop("p must be in [0, 1) for a severity's TVaR", call. = FALSE)
+  if (is.infinite(ptr$mean())) return(rep(Inf, length(p)))
+  q <- rust_result(ptr$quantile(p), call)
+  q + vapply(q, function(v) ptr$stop_loss(v), 0) / (1 - p)
+}
+
+S7::method(VaR, lognormal) <- function(dist, p, ...) rust_result(dist@ptr$quantile(as.double(p)), s7_call())
+S7::method(TVaR, lognormal) <- function(dist, p, ...) severity_tvar(dist@ptr, p, s7_call())
+S7::method(VaR, grid_distribution) <- function(dist, p, ...) {
+  rust_result(dist@ptr$quantile(as.double(p)), s7_call())
+}
 
 #' Level at which TVaR reaches VaR
 #'

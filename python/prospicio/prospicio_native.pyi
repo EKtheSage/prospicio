@@ -371,6 +371,7 @@ class AttentionCannFit:
     """
     A fitted attention CANN, from ``AttentionCann.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def attention(self, /, design: Design) -> TokenAttention:
         """
@@ -406,6 +407,30 @@ class AttentionCannFit:
         """
         Fitted means on the training rows.
         """
+    @staticmethod
+    def from_json(text: str) -> AttentionCannFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        AttentionCannFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            weights that do not fit the spec.
+        """
+    @property
+    def input_hash(self, /) -> str:
+        """
+        Hash of the training data (design, offset, weights, response).
+        """
     def predict(self, /, design: Design) -> list[float]:
         """
         Expected response for each row of ``design``.
@@ -424,6 +449,16 @@ class AttentionCannFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a JSON artifact (spec, scaling, every weight by its path,
+        fitted values, provenance); ``from_json`` reads it back exactly and
+        pickling uses it too.
+        
+        Returns
+        -------
+        str
         """
     @property
     def tokens(self, /) -> list[str]:
@@ -2344,6 +2379,32 @@ class Beta:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -3038,6 +3099,32 @@ class Burr:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -3118,6 +3205,7 @@ class CannFit:
     """
     A fitted CANN, from ``Cann.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def best_epoch(self, /) -> int |None:
@@ -3139,6 +3227,30 @@ class CannFit:
         """
         Fitted means on the training rows.
         """
+    @staticmethod
+    def from_json(text: str) -> CannFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        CannFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            weights that do not fit the spec.
+        """
+    @property
+    def input_hash(self, /) -> str:
+        """
+        Hash of the training data (design, offset, weights, response).
+        """
     def predict(self, /, design: Design) -> list[float]:
         """
         Expected response for each row of ``design`` (same columns as the
@@ -3159,6 +3271,25 @@ class CannFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a JSON artifact (spec, scaling, every weight by its path,
+        fitted values, provenance); ``from_json`` reads it back exactly and
+        pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Cann, Design
+        >>> d = Design([[0.0, 1.0, 2.0, 3.0]], ["x"])
+        >>> fit = Cann("poisson", hidden=[4], epochs=5).fit(d, [1.0, 2.0, 2.0, 5.0])
+        >>> pickle.loads(pickle.dumps(fit)).predict(d) == fit.predict(d)
+        True
         """
     @property
     def validation_history(self, /) -> list[float]:
@@ -3439,6 +3570,184 @@ class CapeCodFit:
     def ultimate(self, /) -> list[float]:
         """
         Cape Cod ultimate per origin.
+        """
+
+@final
+class CasualtyProfile:
+    """
+    A book of casualty policies, each rated on its own curve
+    (``docs/design/casualty-exposure.md``).
+    
+    Policy ``i`` pays ``share * min((X - attachment)+, limit)`` for a
+    ground-up loss ``X`` per occurrence. A per-policy treaty ``limit`` xs
+    ``attachment`` cedes the part above its retention, and the share of the
+    policy's expected loss it takes is its exposure factor.
+    
+    Parameters
+    ----------
+    curves : list
+        Severities, ``IlfTable`` or ``ElfTable``; each policy names one.
+    limit, premium, elr : list of float
+        One per policy: the policy limit above its attachment (``inf`` for
+        none, as in workers compensation), on-level premium and expected
+        loss ratio.
+    attachment, share : list of float, optional
+        Underlying attachment (0) and share of the layer written (1).
+    curve : list of int, optional
+        Each policy's index into ``curves`` (0).
+    tag : list of str or None, optional
+        A segment or line, for reporting and for leaving a segment out.
+    
+    Examples
+    --------
+    Clark's workers compensation example, 750,000 xs 250,000:
+    
+    >>> from prospicio.pricing import CasualtyProfile, ElfTable
+    >>> book = CasualtyProfile(
+    ...     [ElfTable([250e3, 1e6], [0.030, 0.006])], limit=[float("inf")],
+    ...     premium=[100e3], elr=[0.70])
+    >>> round(book.rate(750e3, 250e3, alae="in_severity").ceded, 6)
+    1680.0
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, curves: Sequence[Any], *, limit: Sequence[float], premium: Sequence[float], elr: Sequence[float], attachment: Sequence[float] |None = None, share: Sequence[float] |None = None, curve: Sequence[int] |None = None, tag: Sequence[str |None] |None = None) -> CasualtyProfile: ...
+    def count_test(self, /, sizes: Sequence[float], *, threshold: float, counts: Sequence[float], excess: Any, exposure_years: float, observed: Sequence[float]) -> Any:
+        """
+        Expected against observed claims at each size, with the Poisson
+        probability of a count at least as extreme in the direction
+        observed.
+        
+        Parameters
+        ----------
+        sizes : list of float
+            Ground-up sizes, at or above ``threshold``.
+        threshold, counts, excess
+            As in ``rate_by_frequency``.
+        exposure_years : float
+            The experience period in the profile's years: each year's
+            on-level premium over the profile's, summed.
+        observed : list of float
+            The trended ground-up losses (``PreparedLosses.trended``), a claim
+            closed at its limit at the limit.
+        
+        Returns
+        -------
+        dict
+            Columns ``size``, ``expected``, ``observed`` and ``p_value``.
+        """
+    def expected_claims(self, /, t: float, threshold: float, counts: Sequence[float], excess: Any) -> float:
+        """
+        The expected number of claims a year recorded at or above the
+        ground-up size ``t``: a policy records an occurrence once it passes
+        its attachment and caps it at ``a + l``, so it adds ``counts[i] *
+        S(max(t, a))`` when ``t <= a + l``, ``S`` the survival of
+        ``excess``.
+        """
+    def exposure_factors(self, /, limit: float, attachment: float, *, alae: str, loading: float |None = None) -> list[float]:
+        """
+        Each policy's exposure factor for the treaty ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit, attachment : float
+        alae : {"pro_rata", "on_top", "in_severity"}
+            ``pro_rata``: ALAE in proportion to loss, the ceded loss times
+            ``1 + loading`` on a loss-only ELR. ``on_top``: the policy limit
+            caps loss only and ALAE is ``loading`` times it; the treaty's
+            retention and limit apply to loss and ALAE (Clark's second
+            formula). ``in_severity``: the curves are of loss and ALAE.
+        loading : float, optional
+            Required with ``pro_rata`` and ``on_top``, refused otherwise.
+        """
+    def occurrences_above(self, /, t: float) -> list[float]:
+        """
+        Each policy's expected ground-up occurrences above ``t`` a year,
+        from its own curve: ``premium * elr / (share * [LEV(a + l) -
+        LEV(a)]) * S(t)``, a table's ``S`` its slope just above ``t``.
+        
+        Returns
+        -------
+        list of float
+        """
+    def rate(self, /, limit: float, attachment: float, *, alae: str, loading: float |None = None) -> CasualtyRating:
+        """
+        The ILF form: each policy's ``premium * elr`` times its exposure
+        factor, with the ALAE loading. Arguments as ``exposure_factors``.
+        
+        Returns
+        -------
+        CasualtyRating
+        """
+    def rate_by_frequency(self, /, limit: float, attachment: float, *, alae: str, threshold: float, counts: Sequence[float], excess: Any, loading: float |None = None) -> CasualtyRating:
+        """
+        The frequency form: each policy's expected number of ground-up
+        occurrences above ``threshold`` (``counts``) times the expected ceded
+        amount given ``X > threshold`` under ``excess``, a severity of the
+        losses above it (a Pareto from it, say). Fails when an exposed
+        policy's cession starts below the threshold.
+        
+        Returns
+        -------
+        CasualtyRating
+        """
+    def sweep(self, /, limit: float, attachment: float, *, alae: str, threshold: float, counts: Sequence[float], alphas: Sequence[float], loading: float |None = None) -> Any:
+        """
+        The frequency form at each alpha of a Pareto from ``threshold``,
+        the counts held fixed. The central alpha and its source are yours to
+        state beside the result; prospicio ships no benchmark.
+        
+        Returns
+        -------
+        dict
+            Columns ``alpha``, ``ceded`` and ``loss_cost``.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Pareto
+        >>> from prospicio.pricing import CasualtyProfile
+        >>> book = CasualtyProfile([Pareto(1e6, 1.5)], limit=[10e6], premium=[1e6], elr=[0.6])
+        >>> s = book.sweep(5e6, 5e6, alae="in_severity", threshold=1e6, counts=[1.0],
+        ...                alphas=[1.0, 2.0])
+        >>> round(s["ceded"][0] / s["ceded"][1], 2)
+        6.93
+        """
+
+@final
+class CasualtyRating:
+    """
+    The treaty's expected loss, kept policy by policy, from
+    ``CasualtyProfile.rate`` or ``rate_by_frequency``.
+    """
+    def __repr__(self, /) -> str: ...
+    def by_tag(self, /) -> Any:
+        """
+        Ceded loss and premium by tag, in first-seen order: columns ``tag``
+        (``None`` for untagged), ``ceded`` and ``premium``.
+        """
+    @property
+    def ceded(self, /) -> float:
+        """
+        The treaty's expected loss, with ALAE.
+        """
+    @property
+    def loss_cost(self, /) -> float:
+        """
+        Expected treaty loss over subject premium.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        Subject premium.
+        """
+    def rows(self, /) -> Any:
+        """
+        One row per policy: columns ``factor`` and ``expected_loss`` (NaN
+        in the frequency form), ``ceded``, ``premium`` and ``tag``.
+        """
+    def without(self, /, tag: str) -> CasualtyRating:
+        """
+        The rating with the policies tagged ``tag`` left out.
         """
 
 @final
@@ -6031,10 +6340,36 @@ class Custom:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     @property
     def upper(self, /) -> float:
         """
         The ``1 - 1e-12`` quantile, where the moment integrals stop.
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
         """
     def variance(self, /) -> float:
         """
@@ -7087,6 +7422,24 @@ class ElasticNetFit:
         Returns
         -------
         str
+        """
+
+@final
+class ElfTable:
+    """
+    An excess loss factor table, ``ELF(x) = E[(X - x)+] / E[X]``, read
+    between its limits as ``IlfTable`` is (``ELF(0) = 1``).
+    
+    Parameters
+    ----------
+    limits : list of float
+    elfs : list of float
+        Decreasing, in ``(0, 1)``.
+    """
+    def __new__(cls, /, limits: Sequence[float], elfs: Sequence[float]) -> ElfTable: ...
+    def elf(self, /, limit: float) -> float:
+        """
+        The factor at ``limit`` (0 at ``inf``).
         """
 
 @final
@@ -8196,6 +8549,32 @@ class Gamma:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -8480,6 +8859,32 @@ class GeneralizedPareto:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -9319,6 +9724,32 @@ class HierarchicalStacking:
         """
 
 @final
+class IlfTable:
+    """
+    An ILF table read as a limited expected value curve: linear between the
+    limits and from the origin to the first, checked concave, refused beyond
+    the last limit.
+    
+    Parameters
+    ----------
+    limits : list of float
+        Positive and increasing.
+    factors : list of float
+        The increased limit factor at each limit.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import IlfTable
+    >>> round(IlfTable([100e3, 1e6, 2e6], [1.0, 1.6, 1.8]).ilf(1.5e6), 12)
+    1.7
+    """
+    def __new__(cls, /, limits: Sequence[float], factors: Sequence[float]) -> IlfTable: ...
+    def ilf(self, /, limit: float) -> float:
+        """
+        The factor at ``limit``.
+        """
+
+@final
 class IndexClause:
     """
     An index (stability) clause: the treaty's retention and limit move with
@@ -9560,6 +9991,32 @@ class InverseGamma:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -9748,6 +10205,32 @@ class InverseGaussian:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -11174,6 +11657,32 @@ class LogAffinePareto:
         """
         Threshold ``t``.
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -11349,6 +11858,32 @@ class Loglogistic:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -11540,6 +12075,32 @@ class Lognormal:
         Parameters
         ----------
         retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -13622,6 +14183,32 @@ class Mixture:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -14884,6 +15471,32 @@ class Pareto:
         """
         Truncation point, or ``None``.
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -14891,6 +15504,64 @@ class Pareto:
         Returns
         -------
         float
+        """
+
+@final
+class ParetoAnchor:
+    """
+    The Pareto above a threshold fitted to trended losses, with claims
+    closed at their policy limit censored: ``alpha = uncensored count /
+    sum ln(y / t)``, its standard error ``alpha / sqrt(n)``, and the number
+    of exceedances it rests on.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import ParetoAnchor
+    >>> a = ParetoAnchor.fit(1e6, [1.5e6, 2.5e6, 4e6, 2e6], censored=[False, False, False, True])
+    >>> (a.exceedances, a.censored)
+    (4, 1)
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def alpha(self, /) -> float:
+        """
+        The censored maximum likelihood alpha.
+        """
+    @property
+    def censored(self, /) -> int:
+        """
+        Of which censored at a policy limit.
+        """
+    @property
+    def exceedances(self, /) -> int:
+        """
+        Losses at or above the threshold.
+        """
+    @staticmethod
+    def fit(threshold: float, losses: Sequence[float], censored: Sequence[bool] |None = None) -> ParetoAnchor:
+        """
+        Fits the Pareto from ``threshold`` to the ``losses`` at or above it.
+        
+        Parameters
+        ----------
+        threshold : float
+        losses : list of float
+        censored : list of bool, optional
+            Where a loss was closed at its policy limit; none by default.
+        """
+    def interval(self, /, z: float) -> tuple[float, float]:
+        """
+        The alpha ``± z`` standard errors, the lower end kept above 0.
+        """
+    @property
+    def standard_error(self, /) -> float:
+        """
+        Its standard error from the observed information, ``alpha / sqrt(n)``.
+        """
+    @property
+    def threshold(self, /) -> float:
+        """
+        The Pareto's threshold.
         """
 
 @final
@@ -15468,6 +16139,32 @@ class PiecewisePareto:
         """
         ``"lp"`` or ``"wd"`` when truncated, else ``None``.
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -15752,6 +16449,32 @@ class PolicyLimits:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -16619,9 +17342,29 @@ class PreparedLosses:
         dict of str to list
         """
     @property
+    def trended(self, /) -> list[float]:
+        """
+        Every loss's trended amount, in the record's order.
+        """
+    @property
     def valuation(self, /) -> float |None:
         """
         The record's valuation date, or ``None``.
+        """
+    def without(self, /, ids: Sequence[str]) -> PreparedLosses:
+        """
+        The record with the losses whose ids are in ``ids`` left out (an
+        excluded segment, say), its completeness unchanged. Run
+        ``burning_cost`` on both, with the segment's premium left out of the
+        years' premiums too.
+        
+        Parameters
+        ----------
+        ids : list of str
+        
+        Returns
+        -------
+        PreparedLosses
         """
 
 @final
@@ -19419,10 +20162,36 @@ class Truncated:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     @property
     def upper(self, /) -> float:
         """
         Upper end of the window (included).
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
         """
     def variance(self, /) -> float:
         """
@@ -19647,6 +20416,32 @@ class Tweedie:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -19935,6 +20730,32 @@ class Weibull:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -21759,6 +22580,19 @@ def pnl_program_stated(stated: float, expense_ratio: float, layers: Sequence[dic
     >>> from prospicio.aggregate import pnl_program_stated
     >>> round(pnl_program_stated(1000.0, 0.25)["premium"], 6)
     1333.333333
+    """
+
+def poisson_tail(expected: float, observed: int) -> float:
+    """
+    The Poisson probability, at mean ``expected``, of a count at least as
+    far from it as ``observed`` on the side observed.
+    
+    Examples
+    --------
+    >>> import math
+    >>> from prospicio.pricing import poisson_tail
+    >>> math.isclose(poisson_tail(3.0, 0), math.exp(-3.0))
+    True
     """
 
 def ppc_check(observed: Sequence[float], replicated: Sequence[Sequence[float]], statistics: Sequence[Any] |None = None, groups: Sequence[int] |None = None) -> list[dict]:

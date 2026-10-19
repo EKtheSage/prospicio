@@ -1,8 +1,10 @@
 """Neural networks: the CANN, the attention CANN and ONNX import (prospicio-nn)."""
 
 import csv
+import json
 import math
 import pathlib
+import pickle
 import random
 
 import pytest
@@ -114,6 +116,28 @@ def test_attention_cann_reads_factor_tokens():
         AttentionCann("gamma", d_model=7, heads=2).fit(d, y)
     with pytest.raises(ValueError):
         AttentionCann("gamma", layers=0, epochs=1).fit(d, y).attention(d)
+
+
+def test_fitted_networks_save_load_and_pickle():
+    x, y = poisson_counts(80, 3)
+    d = Design([x], ["x"], offset=[0.0] * len(x))
+    fit = Cann("poisson", hidden=[4, 3], epochs=4, seed=1).fit(d, y)
+    text = fit.to_json()
+    assert json.loads(text)["format"] == "risk_rs.cann_fit"
+    back = CannFit.from_json(text)
+    assert back.predict(d) == fit.predict(d)
+    assert back.input_hash == fit.input_hash != ""
+    assert pickle.loads(pickle.dumps(fit)).correction(d) == fit.correction(d)
+    with pytest.raises(ValueError):
+        AttentionCannFit.from_json(text)
+    cols = [x, [float(v > 0) for v in x]]
+    d2 = Design(cols, ["x", "side[R]"], offset=[0.0] * len(x))
+    spec = AttentionCann("poisson", d_model=4, heads=2, layers=1, feed_forward=6, epochs=3)
+    att = spec.fit(d2, y)
+    again = pickle.loads(pickle.dumps(att))
+    assert again.predict(d2) == att.predict(d2)
+    assert again.tokens == att.tokens
+    assert again.attention(d2).mean() == att.attention(d2).mean()
 
 
 def reference():

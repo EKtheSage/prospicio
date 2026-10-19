@@ -8,13 +8,16 @@
 //!   (`moments_aggregate.csv`), to the grid's discretization;
 //! * VaR and TVaR against the Panjer recursion on the same grid (a second
 //!   algorithm), and a layer's annual mean and SD against the collective
-//!   model's closed forms.
+//!   model's closed forms;
+//! * the occurrence PML (`PRO.AGG.PML`) against `aggregate` 1.0.1's `oep`
+//!   (`oep_aggregate.csv`), and its aggregate PML against Panjer's VaR.
 
 mod common;
 
 use std::collections::HashMap;
 
 use common::{n, num, reference, t, text};
+use prospicio_aggregate::pml::occurrence_exceedance;
 use prospicio_aggregate::{CollectiveModel, panjer};
 use prospicio_prob::{Distribution, Gamma, Grid as PGrid, PanjerClass, Poisson};
 use prospicio_xll::call;
@@ -209,6 +212,98 @@ fn var_and_tvar_match_panjer_and_layers_their_closed_forms() {
 }
 
 #[test]
+fn occurrence_pml_matches_aggregate() {
+    let mut checked = 0;
+    let mut books: HashMap<String, Grid> = HashMap::new();
+    for row in reference("oep_aggregate.csv").into_iter().skip(1) {
+        let p: f64 = row[3].parse().unwrap();
+        let s = books.entry(row[1].clone()).or_insert_with(|| {
+            let ps: Vec<f64> = reference("oep_aggregate.csv")
+                .into_iter()
+                .filter(|r| r[1] == row[1] && r[2] == "loss")
+                .map(|r| 1.0 / r[3].parse::<f64>().unwrap())
+                .collect();
+            let mut args = book(&fields(&row[1]));
+            args.push(Grid::column(&ps));
+            call("pro_agg_pml", args)
+        });
+        assert_eq!(s.columns, 6, "{}: {:?}", row[0], s.as_scalar());
+        let r = (1..s.rows)
+            .find(|&r| (num(s.get(r, 1)) / p - 1.0).abs() < 1e-12)
+            .unwrap_or_else(|| panic!("{} no row for {p}", row[0]));
+        let col = match row[2].as_str() {
+            "loss" => 2,
+            "severity_survival" => 4,
+            "occurrence_return_period" => 5,
+            other => panic!("{other}"),
+        };
+        let got = num(s.get(r, col));
+        let expected: f64 = row[4].parse().unwrap();
+        let (abs_tol, rel_tol): (f64, f64) = (row[5].parse().unwrap(), row[6].parse().unwrap());
+        assert!(
+            (got - expected).abs() <= abs_tol.max(rel_tol * expected.abs()),
+            "{} {} at {p}: {got} vs {expected}",
+            row[0],
+            row[2]
+        );
+        assert_eq!(num(s.get(r, 0)), 1.0 / p);
+        checked += 1;
+    }
+    assert_eq!(checked, 72);
+}
+
+#[test]
+fn aggregate_pml_is_panjers_var_and_clustering_is_exact() {
+    // A negative binomial with dispersion 2 on 4,096 buckets of 10: the
+    // aggregate PML is Panjer's VaR on the same grid, the occurrence PML
+    // inverts 1 − G_N(F(x)), and the total's PML is at least the largest
+    // occurrence's.
+    let nb = PanjerClass::from_mean_dispersion(3.0, 2.0).unwrap();
+    let PanjerClass::NegativeBinomial(count) = nb else {
+        panic!("{nb:?}")
+    };
+    let s = call(
+        "pro_agg_pml",
+        vec![
+            n(3.0),
+            n(2.0),
+            t("gamma_cv"),
+            n(1000.0),
+            n(1.5),
+            Grid::missing(),
+            Grid::row(&[10.0, 100.0, 0.002]),
+            n(10.0),
+            n(4096.0),
+        ],
+    );
+    assert_eq!((s.rows, s.columns), (4, 6), "{:?}", s.as_scalar());
+    assert_eq!(s.get(0, 2), &Value::from("Occurrence PML"));
+    let sev = Gamma::from_mean_cv(1000.0, 1.5).unwrap();
+    let (grid, _) = PGrid::rounding(&sev, 10.0, 4096).unwrap();
+    let (agg, _) = panjer(&count, &grid, 4096).unwrap();
+    for (r, p) in [(1, 0.1), (2, 0.01), (3, 0.002)] {
+        assert!((num(s.get(r, 1)) - p).abs() < 1e-15);
+        let oep = num(s.get(r, 2));
+        assert!((occurrence_exceedance(&count, &sev, oep) / p - 1.0).abs() < 1e-9);
+        let aep = num(s.get(r, 3));
+        assert!((aep - agg.quantile(1.0 - p).unwrap()).abs() < 1e-9, "{p}");
+        assert!(aep >= oep - 10.0, "{p}: {aep} < {oep}");
+    }
+    // Clustering lowers the OEP at a given mean: the Poisson's PML is
+    // higher.
+    let poisson = call(
+        "pro_agg_pml",
+        vec![n(3.0), Grid::missing(), t("gamma_cv"), n(1000.0), n(1.5)],
+    );
+    assert_eq!(poisson.rows, 10);
+    let at_100 = |g: &Grid| {
+        let r = (1..g.rows).find(|&r| num(g.get(r, 0)) == 100.0).unwrap();
+        num(g.get(r, 2))
+    };
+    assert!(at_100(&poisson) > at_100(&s));
+}
+
+#[test]
 fn errors_come_back_as_text() {
     let base = || {
         vec![
@@ -236,4 +331,11 @@ fn errors_come_back_as_text() {
         Grid::from_rows(vec![vec![Value::Number(0.0); 3]]),
     ]);
     assert!(e(a, "pro_agg_layers").contains("one per limit"));
+    let mut a = base();
+    a.push(n(1.0));
+    assert!(e(a, "pro_agg_pml").contains("above 1"));
+    let mut a = base();
+    a[0] = n(0.01);
+    a.push(n(10.0));
+    assert!(e(a, "pro_agg_pml").contains("any occurrence"));
 }

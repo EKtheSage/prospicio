@@ -149,7 +149,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("sixty-eight functions registered", registered == 68);
+    check("sixty-nine functions registered", registered == 69);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -450,6 +450,23 @@ int main(int argc, char **argv) {
     check("PRO.INDICATED.CHANGE(0.65, 0.25, 0.10, 0.065) is +10%",
           (ic->xltype & 0xFFF) == xltypeNum && fabs(ic->val.num - 0.10) < 1e-12);
     free12(ic);
+
+    /* aggregate's oep: Poisson 2 of a lognormal with mean 100 and CV 2,
+     * the 100-year occurrence PML is 1171.4979 (aggregate 1.0.1). */
+    static wchar_t lncv_s[] = L"\x0c" L"lognormal_cv";
+    XLOPER12 lncv, two, hundred;
+    lncv.xltype = xltypeStr;
+    lncv.val.str = lncv_s;
+    two.xltype = hundred.xltype = xltypeNum;
+    two.val.num = 2;
+    hundred.val.num = 100;
+    XLOPER12 *pml = ((Fn9)GetProcAddress(xll, "pro_agg_pml"))(&two, &missing, &lncv, &hundred, &two, &missing,
+                                                             &hundred, &missing, &missing);
+    check("PRO.AGG.PML 100-year occurrence PML 1171.4979 (aggregate)",
+          (pml->xltype & 0xFFF) == xltypeMulti && pml->val.array.rows == 2 && pml->val.array.columns == 6 &&
+              fabs(pml->val.array.lparray[8].val.num / 1171.497873505582 - 1) < 1e-10 &&
+              pml->val.array.lparray[9].val.num > pml->val.array.lparray[8].val.num);
+    free12(pml);
 
     /* The Bayesian ODP chain ladder by NUTS on RAA, its chains on worker
      * threads: the diagnostics' first row is the largest R-hat. */

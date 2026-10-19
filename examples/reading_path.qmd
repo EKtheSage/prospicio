@@ -1,0 +1,266 @@
+---
+title: "A reading path through the guides"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+---
+
+The [guides](../docs/guides/reading-list.md) explain prospicio one topic at a time, most of them by reproducing a published text. This document is a map to them, in R: it is the R twin of [`reading_path.ipynb`](reading_path.ipynb), with the same data, seeds and models, and every number it prints agrees with the notebook's. It carries one small synthetic book through the stations an actuary passes on the way from claims data to capital, runs a few lines of prospicio at each, and then names the guides to read next and the question each one answers.
+
+The book has two lines, with money in millions of a synthetic currency:
+
+* **Property**: seven years of ground-up claims, drawn from a known claim count and severity so the fits can be checked against the truth. It carries the severity, the claim count, the annual aggregate, a per-risk excess of loss layer and the rate indication.
+* **Casualty**: a seven by seven paid triangle, for the reserve and its uncertainty.
+
+The stations:
+
+1. Severity and claim count
+2. The annual aggregate distribution
+3. A reinsurance layer: exposure and experience rating, then a price
+4. A ratemaking indication
+5. Reserving: chain ladder, Mack, the ODP bootstrap
+6. Risk loads, distortions and capital allocation
+7. Where to go next: Bayesian models and GLMs
+
+Every chunk is seeded and the whole document runs in a few seconds. To run it, install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`), then render it from anywhere in the repository with `quarto render examples/reading_path.qmd`; it reads no data files. The links to the guides go to the Python guides; most have an R twin of the same name, a `.qmd` beside them.
+
+```{r}
+#| label: setup
+library(prospicio)
+
+pct <- function(x, digits = 1) sprintf(paste0("%.", digits, "f%%"), 100 * x)
+```
+
+## The book
+
+The property claims come from a negative binomial count with mean 400 and variance 600 a year and a lognormal severity with mean 0.02 and CV 3. In practice these are unknown; here they are known so each station can say how far its estimate lands from the truth.
+
+```{r}
+#| label: book
+# Money is in millions of a synthetic currency.
+YEARS <- 2018:2024                                                  # seven accident years
+TRUE_COUNT <- negative_binomial_count_from_mean_variance(400, 600)  # property claims a year
+TRUE_SEVERITY <- lognormal_from_mean_cv(0.02, 3)                    # one property claim, ground up
+
+counts <- draws(TRUE_COUNT, length(YEARS), 2718)
+claims <- draws(TRUE_SEVERITY, sum(counts), 6043)
+by_year <- split(claims, rep(YEARS, counts))
+for (k in seq_along(YEARS)) {
+  xs <- by_year[[k]]
+  cat(sprintf("%d: %d claims, total %.2fm, largest %.2fm\n", YEARS[k], counts[k], sum(xs), max(xs)))
+}
+```
+
+## 1. Severity and claim count
+
+A maximum likelihood lognormal fitted to all the claims, and a claim count chosen by its dispersion: `claim_count` returns a Poisson when the variance equals the mean and a negative binomial when it is larger.
+
+```{r}
+#| label: fit
+fit <- severity_fit("lognormal", claims)
+severity <- fit$distribution
+yearly_mean <- mean(counts)
+yearly_var <- var(counts)
+count <- claim_count(yearly_mean, yearly_var / yearly_mean)
+count_family <- if (S7::S7_inherits(count, negative_binomial_count)) "NegativeBinomial" else "Poisson"
+cat(sprintf("severity: fitted mean %.4fm, cv %.2f (truth %.4fm, cv 3.00)\n",
+            mean(severity), sqrt(variance(severity)) / mean(severity), mean(TRUE_SEVERITY)))
+cat(sprintf("claim count: mean %.1f, dispersion %.2f -> %s (truth 400.0, dispersion 1.50)\n",
+            yearly_mean, yearly_var / yearly_mean, count_family))
+```
+
+Seven years are enough for the severity, not for the count: its dispersion rests on seven numbers.
+
+**Read next.**
+
+* [Severity and frequency](../docs/guides/severity-and-frequency.md): which severity family and which count family, and how to fit them, with censoring, truncation, splices and mixtures.
+* [Distributions for actuaries: claim size](../docs/guides/distributions-for-actuaries-claim-size.md): limited expected values, fits to grouped, censored and truncated data, excess layers, the leveraging effect of inflation and increased limit factors (Bahnemann, CAS Monograph 2).
+* [Distributions for actuaries: counts and aggregates](../docs/guides/distributions-for-actuaries-counts-aggregates.md): Poisson, mixed Poisson and negative binomial counts, and what contagion does to a count (Bahnemann, chapters 3 and 4).
+
+## 2. The annual aggregate distribution
+
+The year's total loss combines the count and the severity. The severity goes on a grid of step 0.01, censored at a policy limit of 2, and the FFT gives the annual distribution on that grid. The compound moments and a simulation are two checks.
+
+```{r}
+#| label: aggregate
+STEP <- 0.01
+POINTS <- 2^12
+POLICY_LIMIT <- 2
+severity_grid <- discretize(severity, STEP, round(POLICY_LIMIT / STEP) + 1, "rounding")
+annual <- compound_distribution(count, severity_grid, POINTS, method = "fft")
+moments <- compound_moments(count, severity_grid)
+simulated <- total(total(simulate_events(count, severity_grid, 4000, 9157)))
+cat(sprintf("FFT:        mean %.3f, sd %.3f, 99%% %.2f, 99.5%% %.2f\n",
+            mean(annual), sqrt(variance(annual)), quantile(annual, 0.99), quantile(annual, 0.995)))
+cat(sprintf("moments:    mean %.3f, sd %.3f, skew %.3f\n",
+            moments[["mean"]], sqrt(moments[["variance"]]), moments[["skew"]]))
+cat(sprintf("simulation: mean %.3f, 99%% %.2f (4,000 years)\n", mean(simulated), quantile(simulated, 0.99)))
+```
+
+The three agree on the mean, and the simulation's 99% is within its sampling error of the FFT's.
+
+**Read next.**
+
+* [Aggregate distributions](../docs/guides/aggregate-distributions.md): FFT, Panjer, simulation or moments, how to size the grid, and when each is exact, fast or unsafe.
+* [prospicio for aggregate users](../docs/guides/prospicio-for-aggregate-users.md): the same machinery as Mildenhall's `aggregate` package, side by side, for a reader coming from it.
+
+## 3. A reinsurance layer
+
+A per-risk excess of loss layer of 1.5 xs 0.5 on the property line. Exposure rating prices it from the fitted severity curve (the expected count times the severity's layer average); experience rating from the claims that reached it (the burning cost). Only a handful of claims pierce 0.5, so the experience gets little credibility and the blend sits near the exposure figure.
+
+```{r}
+#| label: layer
+LIMIT <- 1.5
+ATTACHMENT <- 0.5
+tower <- reinsurance_tower(list(xol_layer("1.5 xs 0.5", LIMIT, ATTACHMENT)))
+layer_annual <- tower_on_grid(tower, count, severity_grid, POINTS)$ceded[[1]]
+exposure_loss <- layer(collective_model(count, severity), LIMIT, ATTACHMENT)
+
+in_layer <- pmin(pmax(claims - ATTACHMENT, 0), LIMIT)
+n_layer <- sum(claims > ATTACHMENT)
+experience_loss <- sum(in_layer) / length(YEARS)
+standard <- credibility_standard(0.90, 0.05)[["frequency"]]
+z <- limited_fluctuation_credibility(n_layer, standard)
+selected <- credibility_weighted(experience_loss, z, exposure_loss)
+cat(sprintf("exposure (fitted curve) %.4f, on the grid %.4f\n", exposure_loss, mean(layer_annual)))
+cat(sprintf("experience (burning cost) %.4f from %d claims, credibility %.3f\n", experience_loss, n_layer, z))
+cat(sprintf("selected expected layer loss %.4f\n", selected))
+```
+
+The price backs the layer with capital at its 99% TVaR and asks for a 10% return on that capital. The pentagon (loss, margin, premium, capital, assets) completes itself from three of its quantities:
+
+```{r}
+#| label: pentagon
+pg <- pentagon(loss = selected, assets = TVaR(layer_annual, 0.99), return_on_capital = 0.10)
+cat(sprintf("layer: loss %.4f, margin %.4f, premium %.4f (%s rate on line), capital %.3f\n",
+            pg[["loss"]], pg[["margin"]], pg[["premium"]], pct(pg[["premium"]] / LIMIT, 2), pg[["capital"]]))
+```
+
+**Read next.**
+
+* [What a reinsurance price is](../docs/guides/reinsurance-price.md): the technical premium of an excess of loss layer and a quota share, reinstatements, a contract alone and in a book, and what the model leaves out.
+* [Experience and exposure rating](../docs/guides/experience-and-exposure-rating.md): preparing losses as-if (development, trend, index clauses), the burning cost, exposure curves and risk profiles, and how to blend the two by credibility (after Clark).
+* [Choosing a method](../docs/guides/choosing-a-method.md): which tool for which cover, and where the library stops.
+
+## 4. A ratemaking indication
+
+The loss ratio method on the property line: earned premium brought to the current rate level, losses trended two years at 4% a year to the period the new rates will cover and loaded 8% for LAE. Property claims are short tailed, so the claims are taken as fully developed. The indicated change compares the projected loss and LAE ratio with the permissible one (20% variable expense, 5% profit, 8% fixed expense). With nearly 3,000 claims the experience is fully credible under the classical 1,082-claim standard.
+
+```{r}
+#| label: indication
+earned <- c(12.1, 12.6, 13.0, 13.5, 13.9, 14.4, 14.8)
+on_level <- c(1.12, 1.09, 1.07, 1.05, 1.03, 1.01, 1.00)
+reported <- vapply(by_year, sum, numeric(1))
+experience <- loss_ratio_experience(
+  earned_premium = earned, losses = reported, on_level_factor = on_level,
+  development = 1, loss_trend = 1.04^2, lae_factor = 1.08
+)
+VARIABLE <- 0.20
+PROFIT <- 0.05
+FIXED <- 0.08
+change <- indicated_change(experience$loss_ratio, VARIABLE, PROFIT, fixed_ratio = FIXED)
+z_rate <- limited_fluctuation_credibility(sum(counts), standard)
+cat(sprintf("projected loss and LAE ratio by year %s
+", paste(pct(experience$by_year$loss_ratio), collapse = " ")))
+cat(sprintf("all years %s; permissible %s\n", pct(experience$loss_ratio),
+            pct(permissible_loss_ratio(VARIABLE, PROFIT, fixed_ratio = FIXED))))
+cat(sprintf("indicated change %s%s, credibility %.2f (%s claims)\n", if (change >= 0) "+" else "",
+            pct(change), z_rate, format(sum(counts), big.mark = ",")))
+```
+
+**Read next.**
+
+* [Ratemaking with Werner and Modlin](../docs/guides/ratemaking-werner-modlin.md): each step of the overall indication (premium at the current rate level by the parallelogram method, trend, development, expenses and the permissible loss ratio, credibility and its complements).
+* [Werner and Modlin's indications](../docs/guides/ratemaking-werner-modlin-indications.md): the book's three worked indications end to end, and increased limits and deductibles.
+
+## 5. Reserving
+
+The casualty line's paid triangle. The chain ladder gives the ultimate by accident year; Mack's formula gives the reserve's standard error without a distributional assumption; the ODP bootstrap gives a distribution of the reserve.
+
+```{r}
+#| label: triangle
+paid <- list(  # casualty, cumulative paid by accident year, ages 12, 24, ... months
+  c(2.41, 4.22, 5.27, 5.90, 6.20, 6.32, 6.40),
+  c(2.66, 5.19, 7.16, 8.59, 9.45, 9.92),
+  c(2.52, 4.54, 5.54, 6.04, 6.40),
+  c(2.90, 5.86, 7.91, 9.18),
+  c(3.05, 5.18, 6.73),
+  c(3.21, 6.03),
+  c(3.40)
+)
+tri <- triangle(
+  data.frame(origin = rep(YEARS, lengths(paid)),
+             age = unlist(lapply(paid, function(row) 12 * seq_along(row))),
+             paid = unlist(paid)),
+  origin = "origin", development = "age", columns = "paid"
+)
+cl <- chain_ladder(tri, "paid")
+cat(sprintf("age-to-age %s
+", paste(sprintf("%.3f", cl@ldf), collapse = " ")))
+cat(sprintf("ultimate %s
+", paste(sprintf("%.2f", cl@ultimate), collapse = " ")))
+cat(sprintf("chain ladder reserve %.2fm\n", cl@total_reserve))
+```
+
+```{r}
+#| label: mack
+mk <- mack(tri, "paid")
+boot <- total(odp_bootstrap(tri, "paid", n_sims = 2000, seed = 4471)@reserves)
+cat(sprintf("Mack: reserve %.2fm, standard error %.2fm, cv %.3f\n", mk@total_reserve, mk@total_standard_error, mk@total_cv))
+cat(sprintf("ODP bootstrap: mean %.2fm, sd %.2fm, 99.5%% %.2fm (2,000 simulations)\n",
+            mean(boot), sqrt(variance(boot)), quantile(boot, 0.995)))
+```
+
+Mack and the bootstrap tell a similar story: a reserve of about 15 with a CV near 13%.
+
+**Read next.**
+
+* [Reserving methods](../docs/guides/reserving-methods.md): which method when (chain ladder, Bornhuetter-Ferguson, Cape Cod, Mack, the bootstraps, tails and the one-year view), with the reserve's uncertainty as a distribution.
+* [Reserving with Friedland's techniques](../docs/guides/reserving-friedland.md): development, expected claims, Bornhuetter-Ferguson, Benktander and Cape Cod on the CAS text's own data.
+* [Taylor and McGuire's ODP GLM](../docs/guides/reserving-taylor-mcguire.md): the chain ladder as an over-dispersed Poisson GLM, its prediction error and the bootstrap, and the reduced models (CAS Monograph 3).
+
+## 6. Risk loads, distortions and capital allocation
+
+The two lines go into one book: the property line's annual loss from station 2 and the casualty reserve risk from station 5 (a gamma with Mack's mean and CV), as independent units on the same grid. The book is backed by assets at its 99% VaR, less than the two VaRs added. Each of five distortion families is calibrated to a 10% return on the book's capital, so all five charge the same total margin; the natural allocation then splits that margin between the lines.
+
+```{r}
+#| label: capital
+reserve_risk <- gamma_from_mean_cv(mk@total_reserve, mk@total_cv)
+reserve_grid <- discretize(reserve_risk, STEP, POINTS, "rounding")
+book <- capital_portfolio(list(property = annual, `casualty reserve` = reserve_grid))
+alone <- quantile(annual, 0.99) + quantile(reserve_grid, 0.99)
+cat(sprintf("99%% VaR: units alone %.2fm, together %.2fm\n", alone, portfolio_assets(book, 0.99)))
+FAMILIES <- c("ccoc", "ph", "wang", "dual", "tvar")
+cat(sprintf("%10s %9s %9s %8s\n", "distortion", "property", "reserve", "total"))
+for (family in FAMILIES) {
+  d <- calibrate_portfolio(book, family, p = 0.99, return_on_capital = 0.10)
+  priced <- natural_price(book, d, p = 0.99)
+  cat(sprintf("%10s %9.3f %9.3f %8.3f\n", family, priced$margin[1], priced$margin[2],
+              priced$margin[priced$unit == "total"]))
+}
+```
+
+Here the five distortions split the margin almost the same way, because neither line has a catastrophe tail. They part company when one unit is much more skewed than the other, as the case studies show.
+
+**Read next.**
+
+* [Risk loads and distortions](../docs/guides/risk-loads-and-distortions.md): which risk load or distortion to use, how to calibrate it to quotes, and how to price a contract in a portfolio.
+* [Pricing Insurance Risk: risk measures](../docs/guides/pir-risk-measures.md): VaR, TVaR and EPD, their properties, and a distortion as a spectral risk measure (Mildenhall and Major, Part I).
+* [Pricing Insurance Risk: portfolio pricing](../docs/guides/pir-portfolio-pricing.md): the constant cost of capital price, classical premium principles and the calibrated distortions (Part II).
+* [Pricing Insurance Risk: price allocation](../docs/guides/pir-price-allocation.md) and [allocation in practice](../docs/guides/pir-price-allocation-practice.md): the classical allocations against the natural allocation, and which question each answers (Part III).
+* [Pricing Insurance Risk: the case studies](../docs/guides/pricing-insurance-risk-case-studies.md): books with a catastrophe unit, gross and net, where the distortions disagree by unit.
+* [CAS Monograph 15](../docs/guides/capital-modeling-monograph-15.md) and its chapter guides on [theory](../docs/guides/capital-modeling-monograph-15-theory.md), [applications](../docs/guides/capital-modeling-monograph-15-applications.md), [practice](../docs/guides/capital-modeling-monograph-15-practice.md) and [dependence by Iman-Conover](../docs/guides/capital-modeling-monograph-15-iman-conover.md): capital modeling and portfolio management (Major and Mildenhall), from risk measures to reinsurance decisions and correlated units.
+
+## 7. Where to go next
+
+The stations above use closed forms, grids and quick simulations. Two families of guides go further, with fits that take longer than this notebook should:
+
+* **Bayesian reserving.** [Meyers' models](../docs/guides/reserving-meyers.md) (CAS Monograph 8) go from Mack and the ODP bootstrap to the Bayesian CRC, CSR and CAY models and validate them by the outcome's percentile; [compartmental reserving](../docs/guides/reserving-compartmental.md) (Gesmann and Morris) models paid and outstanding together, with reporting and payment rates.
+* **GLMs for rating.** [GLMs for insurance rating](../docs/guides/glm-ratemaking-goldburd.md) and [their validation](../docs/guides/glm-ratemaking-goldburd-validation.md) (CAS Monograph 5) build a multiplicative rating plan and test it; [From GLMs to comprehensive pricing](../docs/guides/glm-to-comprehensive-pricing-chalk.md) and [its second part](../docs/guides/glm-to-comprehensive-pricing-chalk-2.md) (CAS Monograph 16) add penalized GLMs, GAMs, offsets and lessons from boosting models.
+
+The [reading list](../docs/guides/reading-list.md) maps each source text to its guides; the other notebooks here and their R twins are worked analyses that use these pieces together.

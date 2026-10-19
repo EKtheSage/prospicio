@@ -2643,6 +2643,12 @@ onnx_predictor_rust <- function(net, family_name, inputs, columns, output, scale
 
 CannModel <- new.env(parent = emptyenv())
 
+CannModel$to_json <- function() .Call(wrap__CannModel__to_json, self)
+
+CannModel$from_json <- function(text) .Call(wrap__CannModel__from_json, text)
+
+CannModel$input_hash <- function() .Call(wrap__CannModel__input_hash, self)
+
 CannModel$fitted <- function() .Call(wrap__CannModel__fitted, self)
 
 CannModel$dispersion <- function() .Call(wrap__CannModel__dispersion, self)
@@ -2664,6 +2670,12 @@ CannModel$predict_distribution <- function(x, names, offset, weights, n_sims, se
 `[[.CannModel` <- `$.CannModel`
 
 AttentionCannModel <- new.env(parent = emptyenv())
+
+AttentionCannModel$to_json <- function() .Call(wrap__AttentionCannModel__to_json, self)
+
+AttentionCannModel$from_json <- function(text) .Call(wrap__AttentionCannModel__from_json, text)
+
+AttentionCannModel$input_hash <- function() .Call(wrap__AttentionCannModel__input_hash, self)
 
 AttentionCannModel$tokens <- function() .Call(wrap__AttentionCannModel__tokens, self)
 
@@ -2718,3 +2730,29 @@ OnnxPredictorModel$predict_distribution <- function(x, names, offset, weights, n
 
 #' @export
 `[[.OnnxPredictorModel` <- `$.OnnxPredictorModel`
+
+casualty_book_rust <- function(kinds, severities, limits, values, limit, premium, elr, attachment, share, curve, tag) .Call(wrap__casualty_book_rust, kinds, severities, limits, values, limit, premium, elr, attachment, share, curve, tag)
+
+pareto_anchor_rust <- function(threshold, losses, censored) .Call(wrap__pareto_anchor_rust, threshold, losses, censored)
+
+poisson_tail_rust <- function(expected, observed) .Call(wrap__poisson_tail_rust, expected, observed)
+
+CasualtyBook <- new.env(parent = emptyenv())
+
+CasualtyBook$rate <- function(limit, attachment, alae_name, loading) .Call(wrap__CasualtyBook__rate, self, limit, attachment, alae_name, loading)
+
+CasualtyBook$rate_by_frequency <- function(limit, attachment, alae_name, loading, threshold, counts, excess) .Call(wrap__CasualtyBook__rate_by_frequency, self, limit, attachment, alae_name, loading, threshold, counts, excess)
+
+CasualtyBook$occurrences_above <- function(t) .Call(wrap__CasualtyBook__occurrences_above, self, t)
+
+CasualtyBook$sweep <- function(limit, attachment, alae_name, loading, threshold, counts, alphas) .Call(wrap__CasualtyBook__sweep, self, limit, attachment, alae_name, loading, threshold, counts, alphas)
+
+CasualtyBook$expected_claims <- function(t, threshold, counts, excess) .Call(wrap__CasualtyBook__expected_claims, self, t, threshold, counts, excess)
+
+CasualtyBook$count_test <- function(sizes, threshold, counts, excess, exposure_years, observed) .Call(wrap__CasualtyBook__count_test, self, sizes, threshold, counts, excess, exposure_years, observed)
+
+#' @export
+`$.CasualtyBook` <- function (self, name) { func <- CasualtyBook[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CasualtyBook` <- `$.CasualtyBook`

@@ -482,11 +482,23 @@ for every engine; CBOR and Arrow are not used for them.
   puts the engine's own text model (LightGBM's model string, XGBoost's
   JSON) in a field of the same envelope; a network (`prospicio-nn`) or a
   Bayesian fit (`prospicio-bayes`) uses the envelope with its weights or
-  draws as above. None of them saves yet. The JSON helpers stay in
-  `prospicio_glm::artifact` until a second crate writes an artifact; then
-  the envelope (the format check, the version rule, the non-finite
-  numbers) moves to `prospicio_models::artifact`, the module the life
-  cycle table names.
+  draws as above. A network saves (`risk_rs.cann_fit` and
+  `risk_rs.attention_cann_fit`, version 1): its spec, training columns,
+  feature scaling (and an attention fit's tokens and groups), every
+  weight as `{path, shape, values}` by its path in the network
+  (`hidden.0.weight`, `blocks.0.attention.query.bias`), the
+  early-stopping record, dispersion, fitted values, and a hash of the
+  training data. Loading rebuilds the network from the spec and replaces
+  each weight in turn, refusing any path or shape that does not fit, so
+  a loaded fit predicts bit for bit as the saved one. The weights stay
+  plain JSON numbers: a network small enough for tabular insurance data
+  is a few thousand of them, far below the size at which the Arrow file
+  above would pay. The boosting adapters and Bayesian fits do not save
+  yet. With the network the second crate to write an artifact, the
+  envelope (the format check, the version rule, provenance, the
+  non-finite numbers and the family and link) moved to
+  `prospicio_models::artifact`, the module the life cycle table names;
+  `prospicio_glm::artifact` and `prospicio_nn` both use it.
 - **The coding stays with the bindings**, as above: factor levels and
   formula terms are front-end objects (Python's `Coding`, R's `terms`), so
   the R package stores them beside the artifact in its RDS file and the
@@ -690,8 +702,11 @@ crate's default `onnx` feature.
   Gaussian), the only links it supports, not the family's canonical link.
   R's `model.matrix()` names a factor's indicators `regionB`; the R layer
   renames them `region[B]`, as Python's coding does, so the attention
-  CANN reads one token per factor. A fitted network has no artifact yet
-  (no `to_json`), so it neither pickles nor goes through `save_model()`.
+  CANN reads one token per factor. A fitted network saves as above:
+  Python's `CannFit` and `AttentionCannFit` have `to_json`, `from_json`,
+  `input_hash` and pickle through `from_json`; R's `save_model()` and
+  `load_model()` take a `cann_model` or `attention_cann_model`, with the
+  formula terms and factor levels beside the artifact.
 - **Validation.** `crates/prospicio-nn/tests/onnx.rs` against
   onnxruntime 1.31.0 (`validation/scripts/onnx_models.py`, models built
   with `onnx.helper`, no PyTorch needed): an MLP of two `Gemm`s

@@ -13,8 +13,11 @@
 //! other coding live with the design (`prospicio_models::Coding`), not here.
 
 use prospicio_core::{Error, Result};
-use prospicio_models::{Family, Link};
-use serde_json::{Map, Number, Value, json};
+use prospicio_models::artifact::{
+    self, array, bad, family_from, family_json, field, float, floats, input_hash, link_from,
+    link_json, num, nums, object, parse, strings, uint,
+};
+use serde_json::{Map, Value, json};
 
 use crate::gam::{Basis, Gam, GamFit, PSpline, SmoothKind, Smoothing, TensorBasis, TensorSpline};
 use crate::net::{ElasticNet, ElasticNetFit};
@@ -345,36 +348,12 @@ impl ElasticNetFit {
 }
 
 fn provenance(model: &str, input_hash: &str) -> Value {
-    json!({
-        "model": model,
-        "versions": [["prospicio-glm", env!("CARGO_PKG_VERSION")]],
-        "input_hash": input_hash,
-    })
-}
-
-/// Parses `text` and checks its format and version (at most `newest`).
-fn parse(text: &str, format: &str, newest: u64) -> Result<Value> {
-    let doc: Value = serde_json::from_str(text)
-        .map_err(|e| Error::Data(format!("model artifact is not JSON: {e}")))?;
-    let top = object(&doc, "artifact")?;
-    if top.get("format").and_then(Value::as_str) != Some(format) {
-        return Err(Error::Data(format!("not a {format} artifact")));
-    }
-    let version = uint(top, "format_version")?;
-    if version == 0 || version > newest {
-        return Err(Error::Data(format!(
-            "artifact format version {version}; this build reads 1 to {newest}"
-        )));
-    }
-    Ok(doc)
-}
-
-fn input_hash(top: &Map<String, Value>) -> Result<String> {
-    let provenance = object(field(top, "provenance")?, "provenance")?;
-    Ok(field(provenance, "input_hash")?
-        .as_str()
-        .ok_or_else(|| bad("provenance.input_hash"))?
-        .to_string())
+    artifact::provenance(
+        model,
+        "prospicio-glm",
+        env!("CARGO_PKG_VERSION"),
+        input_hash,
+    )
 }
 
 fn glm_json(spec: &Glm) -> Value {
@@ -479,126 +458,10 @@ fn spline_from(o: &Map<String, Value>) -> Result<PSpline> {
     })
 }
 
-fn strings(o: &Map<String, Value>, key: &str) -> Result<Vec<String>> {
-    array(o, key)?
-        .iter()
-        .map(|v| v.as_str().map(String::from).ok_or_else(|| bad(key)))
-        .collect()
-}
-
-fn array<'a>(o: &'a Map<String, Value>, key: &str) -> Result<&'a Vec<Value>> {
-    field(o, key)?.as_array().ok_or_else(|| bad(key))
-}
-
-fn family_json(f: Family) -> Value {
-    match f {
-        Family::NegativeBinomial { theta } => json!({"name": f.name(), "theta": num(theta)}),
-        Family::Tweedie { power } => json!({"name": f.name(), "power": num(power)}),
-        _ => json!({"name": f.name()}),
-    }
-}
-
-fn family_from(o: &Map<String, Value>) -> Result<Family> {
-    Ok(match field(o, "name")?.as_str() {
-        Some("gaussian") => Family::Gaussian,
-        Some("poisson") => Family::Poisson,
-        Some("gamma") => Family::Gamma,
-        Some("inverse_gaussian") => Family::InverseGaussian,
-        Some("binomial") => Family::Binomial,
-        Some("negative_binomial") => Family::NegativeBinomial {
-            theta: float(field(o, "theta")?, "family.theta")?,
-        },
-        Some("tweedie") => Family::Tweedie {
-            power: float(field(o, "power")?, "family.power")?,
-        },
-        _ => return Err(bad("spec.family.name")),
-    })
-}
-
-fn link_json(l: Link) -> Value {
-    let name = match l {
-        Link::Identity => "identity",
-        Link::Log => "log",
-        Link::Logit => "logit",
-        Link::Probit => "probit",
-        Link::Cloglog => "cloglog",
-        Link::Inverse => "inverse",
-        Link::InverseSquared => "inverse_squared",
-        Link::Power(p) => return json!({"name": "power", "power": num(p)}),
-    };
-    json!({"name": name})
-}
-
-fn link_from(o: &Map<String, Value>) -> Result<Link> {
-    Ok(match field(o, "name")?.as_str() {
-        Some("identity") => Link::Identity,
-        Some("log") => Link::Log,
-        Some("logit") => Link::Logit,
-        Some("probit") => Link::Probit,
-        Some("cloglog") => Link::Cloglog,
-        Some("inverse") => Link::Inverse,
-        Some("inverse_squared") => Link::InverseSquared,
-        Some("power") => Link::Power(float(field(o, "power")?, "link.power")?),
-        _ => return Err(bad("spec.link.name")),
-    })
-}
-
-fn num(x: f64) -> Value {
-    match Number::from_f64(x) {
-        Some(n) => Value::Number(n),
-        None if x.is_nan() => Value::String("NaN".into()),
-        None if x > 0.0 => Value::String("inf".into()),
-        None => Value::String("-inf".into()),
-    }
-}
-
-fn nums(xs: &[f64]) -> Value {
-    Value::Array(xs.iter().map(|&x| num(x)).collect())
-}
-
-fn float(v: &Value, what: &str) -> Result<f64> {
-    match v {
-        Value::Number(n) => n.as_f64().ok_or_else(|| bad(what)),
-        Value::String(s) => match s.as_str() {
-            "NaN" => Ok(f64::NAN),
-            "inf" => Ok(f64::INFINITY),
-            "-inf" => Ok(f64::NEG_INFINITY),
-            _ => Err(bad(what)),
-        },
-        _ => Err(bad(what)),
-    }
-}
-
-fn floats(o: &Map<String, Value>, key: &str) -> Result<Vec<f64>> {
-    field(o, key)?
-        .as_array()
-        .ok_or_else(|| bad(key))?
-        .iter()
-        .map(|v| float(v, key))
-        .collect()
-}
-
-fn uint(o: &Map<String, Value>, key: &str) -> Result<u64> {
-    field(o, key)?.as_u64().ok_or_else(|| bad(key))
-}
-
-fn field<'a>(o: &'a Map<String, Value>, key: &str) -> Result<&'a Value> {
-    o.get(key)
-        .ok_or_else(|| Error::Data(format!("model artifact has no {key:?}")))
-}
-
-fn object<'a>(v: &'a Value, what: &str) -> Result<&'a Map<String, Value>> {
-    v.as_object().ok_or_else(|| bad(what))
-}
-
-fn bad(what: &str) -> Error {
-    Error::Data(format!("model artifact field {what:?} is invalid"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prospicio_models::{Design, Model};
+    use prospicio_models::{Design, Family, Link, Model};
 
     fn design() -> Design {
         Design::new(

@@ -115,6 +115,11 @@
   third cumulant had fallen to the trait's default, which cancels at large
   means: compound skewness at 1,000 claims was 1.2e-7 off; it is now exact
   (#307).
+- TVaR of every parametric severity: `Severity::tvar(p)`, `VaR(p) +
+  E[(X - VaR(p))+] / (1 - p)`, infinite where the mean is (closed-form
+  parity for the lognormal, Pareto and exponential). Python severities gain
+  `var` and `tvar`; R's `VaR()` and `TVaR()` take every parametric severity
+  and `VaR()` a `grid_distribution` (#366 item 2, #373, #375; #397).
 
 ### Models
 
@@ -131,6 +136,15 @@
   `onnx_predictor()` for networks trained elsewhere. The package builds
   Burn through the default `nn` feature and now needs Rust 1.92
   (`SystemRequirements`) (#309).
+- Fitted networks save and load: `CannFit::to_json` / `from_json` and
+  `AttentionCannFit::to_json` / `from_json` write versioned JSON
+  artifacts (`risk_rs.cann_fit`, `risk_rs.attention_cann_fit`) with
+  every weight by its path in the network, and read them back bit for
+  bit; `input_hash` on both. Python `CannFit` and `AttentionCannFit`
+  gain `to_json`, `from_json`, `input_hash` and pickling; R
+  `save_model()` and `load_model()` take `cann_model` and
+  `attention_cann_model`. The shared envelope helpers are now public in
+  `prospicio_models::artifact` (#391).
 
 ### Pricing
 
@@ -151,3 +165,14 @@
   the one-sided Poisson probability, `poisson_tail`), and
   `Prepared::without(ids)` and `Prepared::trended` for the burning cost
   with and without a segment (#390).
+- Casualty exposure rating in Python and R. Python
+  `prospicio.pricing.CasualtyProfile` (`rate`, `rate_by_frequency`,
+  `exposure_factors`, `occurrences_above`, `sweep`, `expected_claims`,
+  `count_test`), `IlfTable`, `ElfTable`, `CasualtyRating` (`rows`,
+  `without`, `by_tag`), `ParetoAnchor.fit`, `poisson_tail`, and
+  `PreparedLosses.trended` and `.without`. R `casualty_profile()`,
+  `ilf_table()`, `elf_table()`, `casualty_rate()`,
+  `casualty_rate_by_frequency()`, `casualty_occurrences()`,
+  `casualty_sweep()`, `casualty_expected_claims()`,
+  `casualty_count_test()`, `pareto_anchor()` and `poisson_tail()`. The
+  ALAE treatment is a required argument (#396).
