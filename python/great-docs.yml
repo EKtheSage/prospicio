@@ -142,8 +142,16 @@ reference:
       - models.OnnxModel
       - models.OnnxPredictor
       - models.deviance
+      - models.f_test
+      - models.likelihood_ratio_test
+      - models.vif
       - models.gini
+      - models.normalized_gini
       - models.lift
+      - models.double_lift
+      - models.loss_ratio_chart
+      - models.roc
+      - models.confusion_matrix
       - models.crps
       - models.log_score
       - models.pit

@@ -701,6 +701,13 @@ impl PyGlmFit {
         self.inner.aic()
     }
 
+    /// BIC, ``-2 loglik + p log(n)``, counting the coefficients as ``aic``
+    /// does (R's ``BIC`` also counts an estimated dispersion).
+    #[getter]
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
     /// Residual degrees of freedom.
     #[getter]
     fn df_resid(&self) -> f64 {
@@ -731,6 +738,125 @@ impl PyGlmFit {
     /// list of float
     fn predict(&self, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
         self.inner.predict(&design.inner).map_err(to_py)
+    }
+
+    /// Residuals, leverages and Cook's distances on ``design`` and ``y``
+    /// (normally the training data), as R's ``residuals.glm``,
+    /// ``hatvalues``, ``rstandard`` and ``cooks.distance``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     Same columns as the training design.
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     Lists of ``fitted``, ``response``, ``pearson``, ``deviance``,
+    ///     ``working`` residuals, ``working_weights``, ``leverage`` (hat
+    ///     values), ``standardized_pearson``, ``standardized_deviance`` and
+    ///     ``cooks_distance``.
+    fn diagnostics<'py>(
+        &self,
+        py: Python<'py>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let d = self.inner.diagnostics(&design.inner, &y).map_err(to_py)?;
+        let out = pyo3::types::PyDict::new(py);
+        out.set_item("fitted", d.fitted)?;
+        out.set_item("response", d.response)?;
+        out.set_item("pearson", d.pearson)?;
+        out.set_item("deviance", d.deviance)?;
+        out.set_item("working", d.working)?;
+        out.set_item("working_weights", d.working_weights)?;
+        out.set_item("leverage", d.leverage)?;
+        out.set_item("standardized_pearson", d.standardized_pearson)?;
+        out.set_item("standardized_deviance", d.standardized_deviance)?;
+        out.set_item("cooks_distance", d.cooks_distance)?;
+        Ok(out)
+    }
+
+    /// Standard error of each row's predicted mean (parameter error only),
+    /// ``|dmu/deta| sqrt(x' Sigma x)``, as R's
+    /// ``predict(type = "response", se.fit = TRUE)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn prediction_se(&self, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        self.inner.prediction_se(&design.inner).map_err(to_py)
+    }
+
+    /// The prediction error of the sum of the predicted means of
+    /// ``design``'s rows (a reserve: an origin's future cells): parameter
+    /// error by the delta method, ``g' Sigma g`` with ``g`` the sum of
+    /// ``dmu/deta x``, and process error ``sum(phi V(mu) / w)`` (Taylor and
+    /// McGuire, CAS Monograph 3, (5-11) to (5-13)).
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``total``, ``parameter_variance``, ``process_variance`` and
+    ///     ``rmsep``.
+    fn sum_prediction_error(&self, design: PyRef<'_, PyDesign>) -> PyResult<HashMap<String, f64>> {
+        let e = self
+            .inner
+            .sum_prediction_error(&design.inner)
+            .map_err(to_py)?;
+        Ok(HashMap::from([
+            ("total".to_string(), e.total),
+            ("parameter_variance".to_string(), e.parameter_variance),
+            ("process_variance".to_string(), e.process_variance),
+            ("rmsep".to_string(), e.rmsep()),
+        ]))
+    }
+
+    /// Generalized cross-validation, ``n sum((y - mu)**2) / (n - p)**2``
+    /// (Taylor and McGuire, section 4.4).
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn gcv(&self, design: PyRef<'_, PyDesign>, y: Vec<f64>) -> PyResult<f64> {
+        self.inner.gcv(&design.inner, &y).map_err(to_py)
+    }
+
+    /// The log-likelihood of ``y`` at the fitted means and a given
+    /// dispersion, to compare models at one held dispersion.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// dispersion : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn log_likelihood_at(
+        &self,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        dispersion: f64,
+    ) -> PyResult<f64> {
+        self.inner
+            .log_likelihood_at(&design.inner, &y, dispersion)
+            .map_err(to_py)
     }
 
     /// Joint predictive distribution across the rows, with parameter and
@@ -1617,6 +1743,114 @@ pub(crate) fn deviance(
     metrics::deviance(f, &y, &mu, weights.as_deref()).map_err(to_py)
 }
 
+/// The F test of a GLM within a larger one that contains it, as R's
+/// ``anova(small, big, test = "F")``: ``F = (D_small - D_big) / (q phi_big)``
+/// on ``F(q, n - p_big)`` (CAS Monograph 5, section 6.2.1). For a family
+/// whose dispersion is estimated.
+///
+/// The models are not checked to be nested: ``small``'s columns must lie in
+/// the span of ``big``'s, on the same rows, family and weights.
+///
+/// Parameters
+/// ----------
+/// small : GlmFit
+/// big : GlmFit
+///
+/// Returns
+/// -------
+/// dict
+///     ``statistic``, ``df`` (``q``), ``df_resid``, ``deviance_drop`` and
+///     ``p_value``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the models differ in rows or ``big`` has no more coefficients.
+#[pyfunction]
+pub(crate) fn f_test<'py>(
+    py: Python<'py>,
+    small: PyRef<'_, PyGlmFit>,
+    big: PyRef<'_, PyGlmFit>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    nested_dict(py, prospicio_glm::nested::f_test(&small.inner, &big.inner))
+}
+
+/// The likelihood ratio test of a GLM within a larger one, as R's
+/// ``anova(small, big, test = "Chisq")``: the scaled deviance drop
+/// ``(D_small - D_big) / phi_big`` on ``chi2(q)``. For a family whose
+/// dispersion is known (Poisson, binomial).
+///
+/// Parameters
+/// ----------
+/// small : GlmFit
+/// big : GlmFit
+///
+/// Returns
+/// -------
+/// dict
+///     As ``f_test``, with ``df_resid`` infinite.
+///
+/// Raises
+/// ------
+/// ValueError
+///     As ``f_test``.
+#[pyfunction]
+pub(crate) fn likelihood_ratio_test<'py>(
+    py: Python<'py>,
+    small: PyRef<'_, PyGlmFit>,
+    big: PyRef<'_, PyGlmFit>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    nested_dict(
+        py,
+        prospicio_glm::nested::likelihood_ratio_test(&small.inner, &big.inner),
+    )
+}
+
+fn nested_dict<'py>(
+    py: Python<'py>,
+    test: prospicio_core::Result<prospicio_glm::nested::NestedTest>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let t = test.map_err(to_py)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("statistic", t.statistic)?;
+    out.set_item("df", t.df)?;
+    out.set_item("df_resid", t.df_resid)?;
+    out.set_item("deviance_drop", t.deviance_drop)?;
+    out.set_item("p_value", t.p_value)?;
+    Ok(out)
+}
+
+/// Variance inflation factors of a design's columns, ``1 / (1 - R2_j)``
+/// with ``R2_j`` that of column ``j`` on the others and an intercept (CAS
+/// Monograph 5, section 2.9). A constant column (the intercept) gets
+/// ``nan``.
+///
+/// Parameters
+/// ----------
+/// design : Design
+///
+/// Returns
+/// -------
+/// list of float
+///     One per column, in the design's order.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the non-constant columns are collinear.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, vif
+/// >>> d = Design([[1.0] * 4, [1.0, 2.0, 3.0, 4.0], [1.0, -1.0, -1.0, 1.0]],
+/// ...            ["(Intercept)", "x", "z"])
+/// >>> [round(v, 12) for v in vif(d)[1:]]
+/// [1.0, 1.0]
+#[pyfunction]
+pub(crate) fn vif(design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+    metrics::vif(&design.inner).map_err(to_py)
+}
+
 /// Gini index of the ordered Lorenz curve.
 ///
 /// Parameters
@@ -1667,6 +1901,195 @@ pub(crate) fn lift(
             ])
         })
         .collect())
+}
+
+/// The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
+/// sorted by ``y / exposure``). For a 0/1 response with unit exposure,
+/// ``AUROC = (1 + normalized Gini) / 2`` (CAS Monograph 5, footnote 17).
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+/// exposure : list of float, optional
+///
+/// Returns
+/// -------
+/// float
+#[pyfunction]
+#[pyo3(signature = (y, pred, exposure = None))]
+pub(crate) fn normalized_gini(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+) -> PyResult<f64> {
+    metrics::normalized_gini(&y, &pred, exposure.as_deref()).map_err(to_py)
+}
+
+/// The double lift chart of two models (CAS Monograph 5, section 7.2.2):
+/// rows sorted by ``pred_a / pred_b``, cut into bands of about equal
+/// exposure, with each band's actual and predicted averages over their
+/// overall averages (each model against its own).
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred_a : list of float
+/// pred_b : list of float
+///     Positive.
+/// exposure : list of float, optional
+/// bands : int, default 10
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``exposure``, ``actual``, ``model_a``, ``model_b`` (band totals),
+///     ``actual_relativity``, ``a_relativity`` and ``b_relativity`` per band.
+#[pyfunction]
+#[pyo3(signature = (y, pred_a, pred_b, exposure = None, bands = 10))]
+pub(crate) fn double_lift(
+    y: Vec<f64>,
+    pred_a: Vec<f64>,
+    pred_b: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+    bands: usize,
+) -> PyResult<Vec<HashMap<String, f64>>> {
+    let table =
+        metrics::double_lift(&y, &pred_a, &pred_b, exposure.as_deref(), bands).map_err(to_py)?;
+    Ok(table
+        .into_iter()
+        .map(|b| {
+            HashMap::from([
+                ("exposure".to_string(), b.exposure),
+                ("actual".to_string(), b.actual),
+                ("model_a".to_string(), b.model_a),
+                ("model_b".to_string(), b.model_b),
+                ("actual_relativity".to_string(), b.actual_relativity),
+                ("a_relativity".to_string(), b.a_relativity),
+                ("b_relativity".to_string(), b.b_relativity),
+            ])
+        })
+        .collect())
+}
+
+/// The loss ratio chart (CAS Monograph 5, section 7.2.3): rows sorted by
+/// predicted loss ratio ``pred / premium`` against the current premium,
+/// cut into bands of about equal exposure, with each band's actual loss
+/// ratio.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+/// premium : list of float
+///     Current premium, positive.
+/// exposure : list of float, optional
+/// bands : int, default 10
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``exposure``, ``premium``, ``expected``, ``actual``, ``loss_ratio``
+///     and ``expected_loss_ratio`` per band.
+#[pyfunction]
+#[pyo3(signature = (y, pred, premium, exposure = None, bands = 10))]
+pub(crate) fn loss_ratio_chart(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    premium: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+    bands: usize,
+) -> PyResult<Vec<HashMap<String, f64>>> {
+    let table = metrics::loss_ratio_chart(&y, &pred, &premium, exposure.as_deref(), bands)
+        .map_err(to_py)?;
+    Ok(table
+        .into_iter()
+        .map(|b| {
+            HashMap::from([
+                ("exposure".to_string(), b.exposure),
+                ("premium".to_string(), b.premium),
+                ("expected".to_string(), b.expected),
+                ("actual".to_string(), b.actual),
+                ("loss_ratio".to_string(), b.loss_ratio()),
+                ("expected_loss_ratio".to_string(), b.expected_loss_ratio()),
+            ])
+        })
+        .collect())
+}
+
+/// The ROC curve of a binary model (CAS Monograph 5, section 7.3.1): the
+/// true and false positive rates with each distinct score as threshold (a
+/// row is positive when its score is at least the threshold), and the area
+/// under the curve, ties counting half.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+///     0 or 1.
+/// score : list of float
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// dict
+///     ``thresholds`` (descending, from ``inf``), ``false_positive_rate``,
+///     ``true_positive_rate`` and ``auc``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import roc
+/// >>> roc([0.0, 0.0, 1.0, 1.0], [0.1, 0.4, 0.35, 0.8])["auc"]
+/// 0.75
+#[pyfunction]
+#[pyo3(signature = (y, score, weights = None))]
+pub(crate) fn roc<'py>(
+    py: Python<'py>,
+    y: Vec<f64>,
+    score: Vec<f64>,
+    weights: Option<Vec<f64>>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let r = metrics::roc(&y, &score, weights.as_deref()).map_err(to_py)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("thresholds", r.thresholds)?;
+    out.set_item("false_positive_rate", r.false_positive_rate)?;
+    out.set_item("true_positive_rate", r.true_positive_rate)?;
+    out.set_item("auc", r.auc)?;
+    Ok(out)
+}
+
+/// The confusion matrix of a binary model at ``threshold`` (a row is
+/// positive when its score is at least the threshold), weighted counts.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+///     0 or 1.
+/// score : list of float
+/// threshold : float
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// dict
+///     ``true_positive``, ``false_positive``, ``true_negative``,
+///     ``false_negative``, ``sensitivity`` and ``specificity``.
+#[pyfunction]
+#[pyo3(signature = (y, score, threshold, weights = None))]
+pub(crate) fn confusion_matrix(
+    y: Vec<f64>,
+    score: Vec<f64>,
+    threshold: f64,
+    weights: Option<Vec<f64>>,
+) -> PyResult<HashMap<String, f64>> {
+    let c = metrics::confusion_matrix(&y, &score, threshold, weights.as_deref()).map_err(to_py)?;
+    Ok(HashMap::from([
+        ("true_positive".to_string(), c.true_positive),
+        ("false_positive".to_string(), c.false_positive),
+        ("true_negative".to_string(), c.true_negative),
+        ("false_negative".to_string(), c.false_negative),
+        ("sensitivity".to_string(), c.sensitivity()),
+        ("specificity".to_string(), c.specificity()),
+    ]))
 }
 
 /// Weighted mean pinball (quantile) loss of predictions of the ``alpha``
@@ -2242,7 +2665,7 @@ pub(crate) fn actual_vs_expected<'py>(
         dispersion,
     )
     .map_err(to_py)?;
-    let row = |r: &prospicio_models::monitor::PeriodSummary<prospicio_prob::KeyValue>| -> PyResult<Bound<'py, PyDict>> {
+    let row = |r: &prospicio_models::monitor::PeriodSummary<prospicio_prob::KeyValue>| -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         let d = PyDict::new(py);
         if let Some(p) = &r.period {
             match p {

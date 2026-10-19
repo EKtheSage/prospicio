@@ -1551,3 +1551,185 @@ fn negative_binomial_theta_matches_mass_glm_nb() {
         assert!(close(*got, want, 1e-7), "{got} vs {want}");
     }
 }
+
+/// R's `anova(small, big, test = "F")` and `test = "Chisq"`, `BIC` and
+/// variance inflation factors (`1 / (1 - R^2)` by `lm`) on the quine
+/// design; `validation/scripts/r_glm_nested.R` prints these values.
+#[test]
+fn nested_glm_tests_match_r_anova() {
+    use prospicio_glm::nested::{f_test, likelihood_ratio_test};
+    use prospicio_models::metrics::vif;
+    let (header, cols) = quine();
+    let n = cols[0].len();
+    let design = |k: usize| {
+        let mut names = vec!["(Intercept)".to_string()];
+        names.extend(header[1..=k].iter().cloned());
+        let mut columns = vec![vec![1.0; n]];
+        columns.extend(cols[1..=k].iter().cloned());
+        Design::new(names, columns).unwrap()
+    };
+    let (small, big) = (design(2), design(6));
+    let close = |a: f64, b: f64, tol: f64| (a - b).abs() <= tol * b.abs().max(1e-300);
+    let log_days: Vec<f64> = cols[0].iter().map(|d| (d + 1.0).ln()).collect();
+    let gaussian = Glm::new(Family::Gaussian, Link::Identity);
+    let (s, b) = (
+        gaussian.fit(&small, &log_days).unwrap(),
+        gaussian.fit(&big, &log_days).unwrap(),
+    );
+    let f = f_test(&s, &b).unwrap();
+    assert!(close(f.statistic, 1.2950554093611, 1e-10), "{f:?}");
+    assert!(close(f.p_value, 0.274969956093846, 1e-9), "{f:?}");
+    assert_eq!((f.df, f.df_resid), (4.0, 139.0));
+    assert!(close(f.deviance_drop, 5.12796060003762, 1e-10));
+    let lr = likelihood_ratio_test(&s, &b).unwrap();
+    assert!(close(lr.p_value, 0.26930041235005, 1e-9), "{lr:?}");
+    let poisson = Glm::new(Family::Poisson, Link::Log);
+    let (sp, bp) = (
+        poisson.fit(&small, &cols[0]).unwrap(),
+        poisson.fit(&big, &cols[0]).unwrap(),
+    );
+    let lr = likelihood_ratio_test(&sp, &bp).unwrap();
+    assert!(close(lr.statistic, 178.384532973985, 1e-9), "{lr:?}");
+    assert!(close(lr.p_value, 1.65752518873386e-37, 1e-6), "{lr:?}");
+    // R's BIC counts no dispersion for the Poisson.
+    assert!(close(bp.bic(), 2320.06887663732, 1e-11), "{}", bp.bic());
+    let v = vif(&big).unwrap();
+    let want = [
+        1.00326550828182,
+        1.08256046985237,
+        2.09706084577139,
+        1.91041499741150,
+        1.85737573451634,
+        1.44140349290722,
+    ];
+    assert!(v[0].is_nan());
+    for (got, want) in v[1..].iter().zip(want) {
+        assert!(close(*got, want, 1e-11), "{v:?}");
+    }
+}
+
+/// The quine data of `validation/data/quine.csv`: its header and columns,
+/// `Days` first.
+fn quine() -> (Vec<String>, Vec<Vec<f64>>) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/quine.csv");
+    let text = std::fs::read_to_string(path).expect("quine.csv");
+    let mut lines = text.lines();
+    let header: Vec<String> = lines
+        .next()
+        .unwrap()
+        .split(',')
+        .map(|h| h.trim_matches('"').to_string())
+        .collect();
+    let mut cols: Vec<Vec<f64>> = vec![Vec::new(); header.len()];
+    for line in lines {
+        for (c, v) in cols.iter_mut().zip(line.split(',')) {
+            c.push(v.parse().unwrap());
+        }
+    }
+    (header, cols)
+}
+
+/// R's `residuals.glm` (response, Pearson, deviance, working), working
+/// weights, `hatvalues`, `rstandard`, `cooks.distance` and
+/// `predict(type = "response", se.fit = TRUE)` on the quine design, rows 1,
+/// 50 and 146; `validation/scripts/r_glm_diagnostics.R` prints these.
+#[test]
+fn glm_diagnostics_match_r() {
+    let (header, cols) = quine();
+    let n = cols[0].len();
+    let mut names = vec!["(Intercept)".to_string()];
+    names.extend(header[1..].iter().cloned());
+    let mut columns = vec![vec![1.0; n]];
+    columns.extend(cols[1..].iter().cloned());
+    let design = Design::new(names, columns).unwrap();
+    let rows = [0, 49, 145];
+    let check_rows = |label: &str, got: &[f64], want: [f64; 3], tol: f64| {
+        for (k, &i) in rows.iter().enumerate() {
+            let (g, w) = (got[i], want[k]);
+            assert!(
+                (g - w).abs() <= tol * w.abs(),
+                "{label} row {i}: {g} against {w}"
+            );
+        }
+    };
+    let check_all = |fit: &GlmFit, y: &[f64], tol: f64, want: [[f64; 3]; 10]| {
+        let d = fit.diagnostics(&design, y).unwrap();
+        let se = fit.prediction_se(&design).unwrap();
+        let labels = [
+            "response",
+            "pearson",
+            "deviance",
+            "working",
+            "weights",
+            "hat",
+            "rstandard",
+            "rstandard_pearson",
+            "cooks",
+            "se",
+        ];
+        let got: [&[f64]; 10] = [
+            &d.response,
+            &d.pearson,
+            &d.deviance,
+            &d.working,
+            &d.working_weights,
+            &d.leverage,
+            &d.standardized_deviance,
+            &d.standardized_pearson,
+            &d.cooks_distance,
+            &se,
+        ];
+        for ((label, got), want) in labels.iter().zip(got).zip(want) {
+            check_rows(label, got, want, tol);
+        }
+        let sum_sq: f64 = d.deviance.iter().map(|r| r * r).sum();
+        assert!((sum_sq - fit.deviance()).abs() < 1e-9 * fit.deviance());
+    };
+    let poisson = Glm::new(Family::Poisson, Link::Log)
+        .fit(&design, &cols[0])
+        .unwrap();
+    check_all(
+        &poisson,
+        &cols[0],
+        1e-8,
+        [
+            [-23.17672035966231, 6.17910643217398, 23.40815851088593],
+            [-4.61904722731264, 1.87842609619715, 6.349332916043],
+            [-6.01850067312018, 1.7322701201506, 5.22406442044183],
+            [-0.920561535758869, 0.571034766532261, 1.722221269990082],
+            [25.1767203602903, 10.8208935677958, 13.5918414895791],
+            [0.1043236171522393, 0.0450395922904775, 0.0355182959781139],
+            [-6.35935035206074, 1.77264973950398, 5.31938625785304],
+            [-4.88064074535815, 1.92221264534186, 6.46518716882067],
+            [0.396357569174138, 0.0248951016628828, 0.2198985132111394],
+            [1.620656205333161, 0.698117923072381, 0.694808641916209],
+        ],
+    );
+    let days1: Vec<f64> = cols[0].iter().map(|d| d + 1.0).collect();
+    let gamma = Glm::new(Family::Gamma, Link::Log)
+        .fit(&design, &days1)
+        .unwrap();
+    check_all(
+        &gamma,
+        &days1,
+        // R's Gamma fit moves by about 1e-8 in its coefficients when
+        // restarted from its own estimates, even at `epsilon = 1e-14`.
+        1e-6,
+        [
+            [-23.97912834927767, 5.32274173824275, 22.28535875532715],
+            [-0.888802930874514, 0.419865370598274, 1.418127108875726],
+            [-1.61718788235856, 0.372299108023747, 1.03453737515037],
+            [-0.888802930874514, 0.419865370598274, 1.418127108875726],
+            [1.0, 1.0, 1.0],
+            [0.0715119069064243, 0.053063888006668, 0.0423797414730783],
+            [-1.953301460484155, 0.445275317405806, 1.230400470039053],
+            [-1.07353021989492, 0.502165280903462, 1.686613072903431],
+            [
+                0.01268038760198572,
+                0.00201870897737342,
+                0.01798447905736641,
+            ],
+            [6.19897847056201, 2.50915740297474, 2.7796278647662],
+        ],
+    );
+}

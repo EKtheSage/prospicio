@@ -329,6 +329,65 @@ stopifnot(length(cross_validate(cv_data, k_fold(8, 2, seed = 1),
 near(gm@aic, -2 * gm@log_likelihood + 2 * gm@edf, 1e-14)
 stopifnot(is.finite(gm@log_likelihood))
 
+
+# Nested tests, BIC and VIF agree with R (#351).
+quine <- MASS::quine
+quine$y <- log(quine$Days + 1)
+qs <- glm_fit(y ~ Eth + Sex, quine, family = "gaussian")
+qb <- glm_fit(y ~ Eth + Sex + Age + Lrn, quine, family = "gaussian")
+rs <- stats::glm(y ~ Eth + Sex, data = quine)
+rb <- stats::glm(y ~ Eth + Sex + Age + Lrn, data = quine)
+ft <- f_test(qs, qb)
+ra <- anova(rs, rb, test = "F")
+near(ft$statistic, ra$F[2], 1e-9)
+near(ft$p_value, ra$`Pr(>F)`[2], 1e-8)
+near(likelihood_ratio_test(qs, qb)$p_value, anova(rs, rb, test = "Chisq")$`Pr(>Chi)`[2], 1e-8)
+qp <- glm_fit(Days ~ Eth + Sex + Age + Lrn, quine, family = "poisson")
+near(qp@bic, BIC(stats::glm(Days ~ Eth + Sex + Age + Lrn, family = poisson, data = quine)), 1e-9)
+v <- vif(y ~ Eth + Sex + Age + Lrn, quine)
+stopifnot(is.na(v[["(Intercept)"]]))
+xs <- as.data.frame(stats::model.matrix(~ Eth + Sex + Age + Lrn, quine))[, -1]
+near(v[["SexM"]], 1 / (1 - summary(stats::lm(SexM ~ ., data = xs))$r.squared), 1e-9)
+
+
+# Charts (#351): AUROC against the Wilcoxon statistic and the normalized Gini.
+set.seed(3)
+yb <- rbinom(200, 1, 0.3)
+sc <- runif(200) + 0.4 * yb
+rc <- roc_curve(yb, sc)
+w <- stats::wilcox.test(sc[yb == 1], sc[yb == 0])$statistic
+near(rc$auc, unname(w) / (sum(yb) * sum(1 - yb)), 1e-12)
+near(rc$auc, 0.5 * (1 + normalized_gini(yb, sc)), 1e-12)
+cm <- confusion_matrix(yb, sc, 0.7)
+stopifnot(cm[["true_positive"]] == sum(yb == 1 & sc >= 0.7))
+dl <- double_lift_table(c(1, 0, 3, 2, 5, 1), c(1, 1, 2, 2, 4, 1), c(2, 1, 2, 1, 3, 2), bands = 2)
+near(sum(dl$exposure * dl$actual_relativity), 6, 1e-12)
+lr <- loss_ratio_table(c(1, 0, 3, 2, 5, 1), c(1, 1, 2, 2, 4, 1), rep(2, 6), bands = 2)
+near(lr$loss_ratio, lr$actual / lr$premium, 1e-15)
+
+
+# Residuals, hat values, Cook's distances and prediction errors agree with
+# R's glm (#334).
+qg <- glm_fit(Days ~ Eth + Sex + Age + Lrn, quine, family = "poisson")
+rg <- stats::glm(Days ~ Eth + Sex + Age + Lrn, family = poisson, data = quine, control = tight)
+for (type in c("deviance", "pearson", "response", "working")) {
+  near(residuals(qg, type = type), unname(residuals(rg, type = type)), 1e-6)
+}
+near(hatvalues(qg), unname(hatvalues(rg)), 1e-6)
+# R 4.3's rstandard() and cooks.distance() for a Poisson glm, by their
+# formulas: newer R releases compute them differently, so compare with
+# the definitions rather than with whichever stats is installed.
+h_r <- unname(hatvalues(rg))
+near(rstandard(qg), unname(residuals(rg, "deviance")) / sqrt(1 - h_r), 1e-6)
+near(cooks.distance(qg), unname(residuals(rg, "pearson"))^2 * h_r / ((1 - h_r)^2 * 7), 1e-6)
+near(prediction_se(qg, quine), unname(predict(rg, type = "response", se.fit = TRUE)$se.fit), 1e-6)
+stopifnot(nrow(glm_diagnostics(qg)) == nrow(quine))
+spe <- sum_prediction_error(qg, quine[1, ])
+near(spe$parameter_variance, prediction_se(qg, quine[1, ])^2, 1e-10)
+n_q <- nrow(quine)
+near(glm_gcv(qg), n_q * sum(residuals(qg, "response")^2) / (n_q - 7)^2, 1e-12)
+near(log_likelihood_at(qg, 1), qg@log_likelihood, 1e-12)
+
 cat("prospicio R models tests passed\n")
 
 # The negative binomial's theta agrees with MASS::glm.nb, and the Tweedie

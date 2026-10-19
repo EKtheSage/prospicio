@@ -233,6 +233,15 @@ fn glm_nb_fit_design(
     ))
 }
 
+impl GlmModel {
+    fn training_data(&self) -> Result<(&Design, &[f64])> {
+        self.training
+            .as_ref()
+            .map(|(d, y)| (d, y.as_slice()))
+            .ok_or_else(|| Error::Other("a loaded model has no training data".into()))
+    }
+}
+
 #[extendr]
 impl GlmModel {
     fn names(&self) -> Vec<String> {
@@ -307,6 +316,10 @@ impl GlmModel {
         self.inner.aic()
     }
 
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
     fn df_resid(&self) -> f64 {
         self.inner.df_resid()
     }
@@ -326,6 +339,60 @@ impl GlmModel {
     fn predict(&self, x: &[f64], names: Vec<String>, offset: &[f64]) -> Result<Vec<f64>> {
         let d = design(x, names, offset, &[])?;
         self.inner.predict(&d).map_err(to_r)
+    }
+
+    /// Residuals, leverages and Cook's distances on the training data.
+    fn diagnostics(&self) -> Result<List> {
+        let (d, y) = self.training_data()?;
+        let g = self.inner.diagnostics(d, y).map_err(to_r)?;
+        Ok(list!(
+            fitted = g.fitted,
+            response = g.response,
+            pearson = g.pearson,
+            deviance = g.deviance,
+            working = g.working,
+            working_weights = g.working_weights,
+            leverage = g.leverage,
+            standardized_pearson = g.standardized_pearson,
+            standardized_deviance = g.standardized_deviance,
+            cooks_distance = g.cooks_distance
+        ))
+    }
+
+    /// Standard error of each new row's predicted mean.
+    fn prediction_se(&self, x: &[f64], names: Vec<String>, offset: &[f64]) -> Result<Vec<f64>> {
+        let d = design(x, names, offset, &[])?;
+        self.inner.prediction_se(&d).map_err(to_r)
+    }
+
+    /// Prediction error of the sum of the new rows' means.
+    fn sum_prediction_error(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        weights: &[f64],
+    ) -> Result<List> {
+        let d = design(x, names, offset, weights)?;
+        let e = self.inner.sum_prediction_error(&d).map_err(to_r)?;
+        Ok(list!(
+            total = e.total,
+            parameter_variance = e.parameter_variance,
+            process_variance = e.process_variance,
+            rmsep = e.rmsep()
+        ))
+    }
+
+    /// GCV on the training data.
+    fn gcv(&self) -> Result<f64> {
+        let (d, y) = self.training_data()?;
+        self.inner.gcv(d, y).map_err(to_r)
+    }
+
+    /// Log-likelihood of the training data at a given dispersion.
+    fn log_likelihood_at(&self, dispersion: f64) -> Result<f64> {
+        let (d, y) = self.training_data()?;
+        self.inner.log_likelihood_at(d, y, dispersion).map_err(to_r)
     }
 
     /// `parameters` is "normal", "mean_preserving" or "fixed".
@@ -781,6 +848,35 @@ fn family_deviance_rust(
     metrics::deviance(f, y, mu, w).map_err(to_r)
 }
 
+/// The F test (`"f"`) or likelihood ratio test (`"lr"`) of `small` within
+/// `big`: `list(statistic, df, df_resid, deviance_drop, p_value)`.
+#[extendr]
+fn glm_nested_test_rust(small: Robj, big: Robj, kind: &str) -> Result<List> {
+    let as_glm = |x: &Robj| {
+        <&GlmModel>::try_from(x).map_err(|_| Error::Other("expected a glm_model".into()))
+    };
+    let (small, big) = (as_glm(&small)?, as_glm(&big)?);
+    let t = match kind {
+        "f" => prospicio_glm::nested::f_test(&small.inner, &big.inner),
+        _ => prospicio_glm::nested::likelihood_ratio_test(&small.inner, &big.inner),
+    }
+    .map_err(to_r)?;
+    Ok(list!(
+        statistic = t.statistic,
+        df = t.df,
+        df_resid = t.df_resid,
+        deviance_drop = t.deviance_drop,
+        p_value = t.p_value
+    ))
+}
+
+/// Variance inflation factors of a column-major design.
+#[extendr]
+fn vif_rust(x: &[f64], names: Vec<String>) -> Result<Vec<f64>> {
+    let d = design(x, names, &[], &[])?;
+    metrics::vif(&d).map_err(to_r)
+}
+
 /// Gini of the ordered Lorenz curve; empty exposure for none.
 #[extendr]
 fn gini_rust(y: &[f64], pred: &[f64], exposure: &[f64]) -> Result<f64> {
@@ -797,6 +893,93 @@ fn lift_rust(y: &[f64], pred: &[f64], exposure: &[f64], bands: f64) -> Result<Li
         exposure = t.iter().map(|b| b.exposure).collect::<Vec<_>>(),
         expected = t.iter().map(|b| b.expected).collect::<Vec<_>>(),
         actual = t.iter().map(|b| b.actual).collect::<Vec<_>>()
+    ))
+}
+
+/// Normalized Gini; empty exposure for none.
+#[extendr]
+fn normalized_gini_rust(y: &[f64], pred: &[f64], exposure: &[f64]) -> Result<f64> {
+    let e = (!exposure.is_empty()).then_some(exposure);
+    metrics::normalized_gini(y, pred, e).map_err(to_r)
+}
+
+/// Double lift bands as a list of columns.
+#[extendr]
+fn double_lift_rust(
+    y: &[f64],
+    pred_a: &[f64],
+    pred_b: &[f64],
+    exposure: &[f64],
+    bands: f64,
+) -> Result<List> {
+    let e = (!exposure.is_empty()).then_some(exposure);
+    let t = metrics::double_lift(y, pred_a, pred_b, e, whole(bands, "bands")? as usize)
+        .map_err(to_r)?;
+    let col = |f: fn(&metrics::DoubleLiftBand) -> f64| t.iter().map(f).collect::<Vec<_>>();
+    Ok(list!(
+        exposure = col(|b| b.exposure),
+        actual = col(|b| b.actual),
+        model_a = col(|b| b.model_a),
+        model_b = col(|b| b.model_b),
+        actual_relativity = col(|b| b.actual_relativity),
+        a_relativity = col(|b| b.a_relativity),
+        b_relativity = col(|b| b.b_relativity)
+    ))
+}
+
+/// Loss ratio bands as a list of columns.
+#[extendr]
+fn loss_ratio_chart_rust(
+    y: &[f64],
+    pred: &[f64],
+    premium: &[f64],
+    exposure: &[f64],
+    bands: f64,
+) -> Result<List> {
+    let e = (!exposure.is_empty()).then_some(exposure);
+    let t = metrics::loss_ratio_chart(y, pred, premium, e, whole(bands, "bands")? as usize)
+        .map_err(to_r)?;
+    let col = |f: fn(&metrics::LossRatioBand) -> f64| t.iter().map(f).collect::<Vec<_>>();
+    Ok(list!(
+        exposure = col(|b| b.exposure),
+        premium = col(|b| b.premium),
+        expected = col(|b| b.expected),
+        actual = col(|b| b.actual),
+        loss_ratio = col(metrics::LossRatioBand::loss_ratio),
+        expected_loss_ratio = col(metrics::LossRatioBand::expected_loss_ratio)
+    ))
+}
+
+/// ROC curve: `list(thresholds, false_positive_rate, true_positive_rate, auc)`.
+#[extendr]
+fn roc_rust(y: &[f64], score: &[f64], weights: &[f64]) -> Result<List> {
+    let w = (!weights.is_empty()).then_some(weights);
+    let r = metrics::roc(y, score, w).map_err(to_r)?;
+    Ok(list!(
+        thresholds = r.thresholds,
+        false_positive_rate = r.false_positive_rate,
+        true_positive_rate = r.true_positive_rate,
+        auc = r.auc
+    ))
+}
+
+/// Confusion matrix at `threshold` as a list of weighted counts.
+#[extendr]
+fn confusion_matrix_rust(
+    y: &[f64],
+    score: &[f64],
+    threshold: f64,
+    weights: &[f64],
+) -> Result<List> {
+    let w = (!weights.is_empty()).then_some(weights);
+    let c = metrics::confusion_matrix(y, score, threshold, w).map_err(to_r)?;
+    Ok(list!(
+        true_positive = c.true_positive,
+        false_positive = c.false_positive,
+        true_negative = c.true_negative,
+        false_negative = c.false_negative,
+        sensitivity = c.sensitivity(),
+        specificity = c.specificity()
     ))
 }
 
@@ -1456,6 +1639,8 @@ extendr_module! {
     fn tweedie_glm_fit_design;
     fn tweedie_profile_design;
     fn glm_nb_fit_design;
+    fn glm_nested_test_rust;
+    fn vif_rust;
     fn elastic_net_fit_design;
     fn elastic_net_cv_design;
     fn gam_fit_design;
@@ -1465,6 +1650,11 @@ extendr_module! {
     fn family_deviance_rust;
     fn gini_rust;
     fn lift_rust;
+    fn normalized_gini_rust;
+    fn double_lift_rust;
+    fn loss_ratio_chart_rust;
+    fn roc_rust;
+    fn confusion_matrix_rust;
     fn crps_rust;
     fn pinball_rust;
     fn log_score_rust;

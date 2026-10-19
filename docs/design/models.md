@@ -333,6 +333,30 @@ models and compares them.
   validated in `docs/design/credibility.md` ("Bayesian hierarchical
   credibility"): parity with `actuar::cm` at given structure parameters,
   and with grid integration of the posterior.
+- **Nested GLM tests and diagnostics** (#351): `prospicio_glm::nested`'s
+  `f_test` and `likelihood_ratio_test` on the deviance drop over the larger
+  model's dispersion, as R's `anova(small, big, test = "F")` and
+  `test = "Chisq"`; `GlmFit::bic` with `aic`'s count of parameters;
+  `metrics::vif`, from the inverse correlation matrix of a design's
+  non-constant columns. R parity on quine
+  (`validation/scripts/r_glm_nested.R`). Nesting is the caller's to
+  ensure: two fits carry no record of each other's columns.
+- **GLM diagnostics and prediction errors** (#334,
+  `prospicio_glm::diagnostics`): residuals of every kind, hat values,
+  standardized residuals and Cook's distances as R's `glm` methods, the
+  standard error of a predicted mean, and the prediction error of a sum of
+  means (parameter error by the delta method, process error from the
+  family), with GCV and a log-likelihood at a held dispersion. A fit keeps
+  no training data, so each method takes the design (and response); the R
+  model keeps its training data and gets R's generics on it.
+- **Validation charts** (#351, CAS Monograph 5, chapter 7):
+  `metrics::double_lift`, `loss_ratio_chart`, `roc`, `confusion_matrix`
+  and `normalized_gini` beside `lift` and `gini`, on plain slices like the
+  other metrics. Bands are cut as `lift`'s, by each row's exposure
+  midpoint, so the three tables band alike. The double lift's
+  relativities divide each model by its own overall average, the
+  monograph's convention, so two models at different overall levels
+  compare on ranking alone.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

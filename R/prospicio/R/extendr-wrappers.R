@@ -10,6 +10,10 @@ actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta,
 
 bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
 
+glm_nested_test_rust <- function(small, big, kind) .Call(wrap__glm_nested_test_rust, small, big, kind)
+
+vif_rust <- function(x, names) .Call(wrap__vif_rust, x, names)
+
 ppc_check_rust <- function(observed, replicated, statistics, groups) .Call(wrap__ppc_check_rust, observed, replicated, statistics, groups)
 
 loo_pit_rust <- function(observed, replicated, log_lik, r_eff, seed) .Call(wrap__loo_pit_rust, observed, replicated, log_lik, r_eff, seed)
@@ -107,6 +111,16 @@ family_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Cal
 gini_rust <- function(y, pred, exposure) .Call(wrap__gini_rust, y, pred, exposure)
 
 lift_rust <- function(y, pred, exposure, bands) .Call(wrap__lift_rust, y, pred, exposure, bands)
+
+normalized_gini_rust <- function(y, pred, exposure) .Call(wrap__normalized_gini_rust, y, pred, exposure)
+
+double_lift_rust <- function(y, pred_a, pred_b, exposure, bands) .Call(wrap__double_lift_rust, y, pred_a, pred_b, exposure, bands)
+
+loss_ratio_chart_rust <- function(y, pred, premium, exposure, bands) .Call(wrap__loss_ratio_chart_rust, y, pred, premium, exposure, bands)
+
+roc_rust <- function(y, score, weights) .Call(wrap__roc_rust, y, score, weights)
+
+confusion_matrix_rust <- function(y, score, threshold, weights) .Call(wrap__confusion_matrix_rust, y, score, threshold, weights)
 
 crps_rust <- function(draws, y) .Call(wrap__crps_rust, draws, y)
 
@@ -776,6 +790,8 @@ GlmModel$log_likelihood <- function() .Call(wrap__GlmModel__log_likelihood, self
 
 GlmModel$aic <- function() .Call(wrap__GlmModel__aic, self)
 
+GlmModel$bic <- function() .Call(wrap__GlmModel__bic, self)
+
 GlmModel$df_resid <- function() .Call(wrap__GlmModel__df_resid, self)
 
 GlmModel$iterations <- function() .Call(wrap__GlmModel__iterations, self)
@@ -785,6 +801,16 @@ GlmModel$fitted <- function() .Call(wrap__GlmModel__fitted, self)
 GlmModel$family <- function() .Call(wrap__GlmModel__family, self)
 
 GlmModel$predict <- function(x, names, offset) .Call(wrap__GlmModel__predict, self, x, names, offset)
+
+GlmModel$diagnostics <- function() .Call(wrap__GlmModel__diagnostics, self)
+
+GlmModel$prediction_se <- function(x, names, offset) .Call(wrap__GlmModel__prediction_se, self, x, names, offset)
+
+GlmModel$sum_prediction_error <- function(x, names, offset, weights) .Call(wrap__GlmModel__sum_prediction_error, self, x, names, offset, weights)
+
+GlmModel$gcv <- function() .Call(wrap__GlmModel__gcv, self)
+
+GlmModel$log_likelihood_at <- function(dispersion) .Call(wrap__GlmModel__log_likelihood_at, self, dispersion)
 
 GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed, parameters) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed, parameters)
 

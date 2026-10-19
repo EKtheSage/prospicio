@@ -10,8 +10,10 @@
 //! smooths, with smoothing chosen by GCV or UBRE.
 
 mod artifact;
+pub mod diagnostics;
 pub mod gam;
 pub mod negbin;
+pub mod nested;
 pub mod net;
 mod robust;
 pub mod tweedie;
@@ -506,6 +508,13 @@ impl GlmFit {
     /// convention, which does not count an estimated dispersion).
     pub fn aic(&self) -> f64 {
         -2.0 * self.log_likelihood + 2.0 * self.coefficients.len() as f64
+    }
+
+    /// `-2 ℓ + p ln n`, the Bayesian information criterion, with the same
+    /// count of parameters as [`aic`](Self::aic) (R's `BIC` also counts an
+    /// estimated dispersion).
+    pub fn bic(&self) -> f64 {
+        -2.0 * self.log_likelihood + self.coefficients.len() as f64 * (self.n_obs as f64).ln()
     }
 
     /// Number of observations.

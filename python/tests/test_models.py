@@ -531,3 +531,89 @@ def test_tweedie_power_is_the_profile_maximum():
     assert profile["power"] == pytest.approx(fit.power, abs=1e-3)
     assert profile["max_log_likelihood"] == pytest.approx(fit.log_likelihood, rel=1e-6)
     assert max(profile["log_likelihood"]) <= fit.log_likelihood + 1e-9
+
+
+def test_nested_tests_bic_and_vif():
+    import csv
+    import pathlib
+
+    from prospicio.models import f_test, likelihood_ratio_test, vif
+
+    path = pathlib.Path(__file__).resolve().parents[2] / "validation" / "data" / "quine.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(f))
+    names = ["EthN", "SexM", "AgeF1", "AgeF2", "AgeF3", "LrnSL"]
+
+    def design(k):
+        cols = [[1.0] * len(rows)] + [[float(r[n]) for r in rows] for n in names[:k]]
+        return Design(cols, ["(Intercept)", *names[:k]])
+
+    y = [math.log(float(r["Days"]) + 1.0) for r in rows]
+    small = Glm("gaussian", "identity").fit(design(2), y)
+    big = Glm("gaussian", "identity").fit(design(6), y)
+    # R: anova(small, big, test = "F") and test = "Chisq".
+    f = f_test(small, big)
+    assert f["statistic"] == pytest.approx(1.2950554093611, rel=1e-10)
+    assert f["p_value"] == pytest.approx(0.274969956093846, rel=1e-9)
+    assert (f["df"], f["df_resid"]) == (4.0, 139.0)
+    lr = likelihood_ratio_test(small, big)
+    assert lr["p_value"] == pytest.approx(0.26930041235005, rel=1e-9)
+    assert lr["df_resid"] == math.inf
+    days = [float(r["Days"]) for r in rows]
+    assert Glm("poisson").fit(design(6), days).bic == pytest.approx(2320.06887663732, rel=1e-11)
+    v = vif(design(6))
+    assert math.isnan(v[0])
+    assert v[3] == pytest.approx(2.09706084577139, rel=1e-11)
+    with pytest.raises(ValueError):
+        f_test(big, small)
+
+
+def test_model_charts():
+    from prospicio.models import confusion_matrix, double_lift, loss_ratio_chart, normalized_gini, roc
+
+    r = roc([0.0, 0.0, 1.0, 1.0], [0.1, 0.4, 0.35, 0.8])
+    assert r["auc"] == 0.75 and r["thresholds"][0] == math.inf
+    y = [float(i % 2) for i in range(40)]
+    score = [((i * 37) % 41) / 41 + 0.3 * y[i] for i in range(40)]
+    ng = normalized_gini(y, score)
+    assert roc(y, score)["auc"] == pytest.approx(0.5 * (1 + ng), rel=1e-12)
+    c = confusion_matrix(y, score, 0.5)
+    assert c["true_positive"] + c["false_negative"] == 20
+    losses = [1.0, 0.0, 3.0, 2.0, 5.0, 1.0]
+    dl = double_lift(losses, [1, 1, 2, 2, 4, 1], [2, 1, 2, 1, 3, 2], bands=2)
+    assert sum(b["exposure"] * b["actual_relativity"] for b in dl) == pytest.approx(6.0)
+    lr = loss_ratio_chart(losses, [1, 1, 2, 2, 4, 1], [2.0] * 6, bands=2)
+    assert lr[1]["loss_ratio"] == pytest.approx(lr[1]["actual"] / lr[1]["premium"])
+
+
+def test_glm_diagnostics_match_r():
+    # R: glm(Days ~ ., poisson, quine), rows 1, 50 and 146; R's working
+    # weights are those of its last iteration, so the tolerance is loose.
+    import csv
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[2] / "validation" / "data" / "quine.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(f))
+    names = ["EthN", "SexM", "AgeF1", "AgeF2", "AgeF3", "LrnSL"]
+    d = Design([[1.0] * len(rows)] + [[float(r[n]) for r in rows] for n in names], ["(Intercept)", *names])
+    y = [float(r["Days"]) for r in rows]
+    fit = Glm("poisson").fit(d, y)
+    g = fit.diagnostics(d, y)
+    want = {
+        "deviance": [-6.01850067312018, 1.73227012015060, 5.22406442044183],
+        "leverage": [0.1043236171522393, 0.0450395922904775, 0.0355182959781139],
+        "cooks_distance": [0.3963575691741380, 0.0248951016628828, 0.2198985132111394],
+    }
+    for key, values in want.items():
+        assert [g[key][i] for i in (0, 49, 145)] == pytest.approx(values, rel=1e-6), key
+    se = fit.prediction_se(d)
+    assert [se[i] for i in (0, 49, 145)] == pytest.approx(
+        [1.620656205333161, 0.698117923072381, 0.694808641916209], rel=1e-6
+    )
+    assert sum(r * r for r in g["deviance"]) == pytest.approx(fit.deviance, rel=1e-10)
+    e = fit.sum_prediction_error(d.select([0]))
+    assert e["rmsep"] ** 2 == pytest.approx(e["parameter_variance"] + e["process_variance"])
+    n, p = len(y), len(fit.coefficients)
+    assert fit.gcv(d, y) == pytest.approx(n * sum(r * r for r in g["response"]) / (n - p) ** 2)
+    assert fit.log_likelihood_at(d, y, 1.0) == pytest.approx(fit.log_likelihood, rel=1e-12)

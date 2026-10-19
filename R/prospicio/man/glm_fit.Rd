@@ -48,7 +48,9 @@ as the fitted means stay positive), \code{"deviance"} or a fixed number.}
 \value{
 A \code{glm_model} with properties \code{coefficients}, \code{std_errors},
 \code{p_values}, \code{covariance}, \code{dispersion}, \code{deviance}, \code{null_deviance},
-\code{log_likelihood}, \code{aic}, \code{df_resid}, \code{iterations} and \code{fitted}. Use
+\code{log_likelihood}, \code{aic}, \code{bic} (counting the coefficients as \code{aic}
+does; \code{\link[stats:BIC]{stats::BIC()}} also counts an estimated dispersion), \code{df_resid},
+\code{iterations} and \code{fitted}. Use
 \code{\link[stats:coef]{stats::coef()}}, \code{\link[stats:predict]{stats::predict()}} and \code{\link[=predict_distribution]{predict_distribution()}}.
 }
 \description{

@@ -201,6 +201,9 @@ reference:
       - glm_fit
       - glm_nb_fit
       - glm_model
+      - glm_diagnostics
+      - f_test
+      - vif
       - robust_vcov
       - bayes_glm_fit
       - bayes_glm_model
@@ -230,6 +233,7 @@ reference:
       - predict_dispersion
       - predict_distribution
       - model_metrics
+      - model_charts
       - resampling
       - tuning
       - compare_models

@@ -8987,6 +8987,12 @@ class GlmFit:
         AIC, ``-2 loglik + 2 p``.
         """
     @property
+    def bic(self, /) -> float:
+        """
+        BIC, ``-2 loglik + p log(n)``, counting the coefficients as ``aic``
+        does (R's ``BIC`` also counts an estimated dispersion).
+        """
+    @property
     def coefficients(self, /) -> list[float]:
         """
         Estimated coefficients.
@@ -9005,6 +9011,26 @@ class GlmFit:
     def df_resid(self, /) -> float:
         """
         Residual degrees of freedom.
+        """
+    def diagnostics(self, /, design: Design, y: Sequence[float]) -> dict:
+        """
+        Residuals, leverages and Cook's distances on ``design`` and ``y``
+        (normally the training data), as R's ``residuals.glm``,
+        ``hatvalues``, ``rstandard`` and ``cooks.distance``.
+        
+        Parameters
+        ----------
+        design : Design
+            Same columns as the training design.
+        y : list of float
+        
+        Returns
+        -------
+        dict
+            Lists of ``fitted``, ``response``, ``pearson``, ``deviance``,
+            ``working`` residuals, ``working_weights``, ``leverage`` (hat
+            values), ``standardized_pearson``, ``standardized_deviance`` and
+            ``cooks_distance``.
         """
     @property
     def dispersion(self, /) -> float:
@@ -9035,6 +9061,20 @@ class GlmFit:
             For malformed JSON, another format, a newer format version or
             inconsistent fields.
         """
+    def gcv(self, /, design: Design, y: Sequence[float]) -> float:
+        """
+        Generalized cross-validation, ``n sum((y - mu)**2) / (n - p)**2``
+        (Taylor and McGuire, section 4.4).
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        
+        Returns
+        -------
+        float
+        """
     @property
     def input_hash(self, /) -> str:
         """
@@ -9049,6 +9089,21 @@ class GlmFit:
     def log_likelihood(self, /) -> float:
         """
         Log-likelihood.
+        """
+    def log_likelihood_at(self, /, design: Design, y: Sequence[float], dispersion: float) -> float:
+        """
+        The log-likelihood of ``y`` at the fitted means and a given
+        dispersion, to compare models at one held dispersion.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        dispersion : float
+        
+        Returns
+        -------
+        float
         """
     @property
     def names(self, /) -> list[str]:
@@ -9100,6 +9155,20 @@ class GlmFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def prediction_se(self, /, design: Design) -> list[float]:
+        """
+        Standard error of each row's predicted mean (parameter error only),
+        ``|dmu/deta| sqrt(x' Sigma x)``, as R's
+        ``predict(type = "response", se.fit = TRUE)``.
+        
+        Parameters
+        ----------
+        design : Design
+        
+        Returns
+        -------
+        list of float
         """
     def robust_covariance(self, /, design: Design, y: Sequence[float], kind: str = "HC0", groups: Sequence[int |str] |None = None) -> list[list[float]]:
         """
@@ -9159,6 +9228,24 @@ class GlmFit:
     def std_errors(self, /) -> list[float]:
         """
         Standard errors.
+        """
+    def sum_prediction_error(self, /, design: Design) -> dict[str, float]:
+        """
+        The prediction error of the sum of the predicted means of
+        ``design``'s rows (a reserve: an origin's future cells): parameter
+        error by the delta method, ``g' Sigma g`` with ``g`` the sum of
+        ``dmu/deta x``, and process error ``sum(phi V(mu) / w)`` (Taylor and
+        McGuire, CAS Monograph 3, (5-11) to (5-13)).
+        
+        Parameters
+        ----------
+        design : Design
+        
+        Returns
+        -------
+        dict
+            ``total``, ``parameter_variance``, ``process_variance`` and
+            ``rmsep``.
         """
     def to_json(self, /) -> str:
         """
@@ -21398,6 +21485,26 @@ def compound_moments(frequency: Any, severity: Any) -> CompoundMoments:
     [('shape', 15.2025), ('scale', 49.5), ('shift', -252.5253)]
     """
 
+def confusion_matrix(y: Sequence[float], score: Sequence[float], threshold: float, weights: Sequence[float] |None = None) -> dict[str, float]:
+    """
+    The confusion matrix of a binary model at ``threshold`` (a row is
+    positive when its score is at least the threshold), weighted counts.
+    
+    Parameters
+    ----------
+    y : list of float
+        0 or 1.
+    score : list of float
+    threshold : float
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict
+        ``true_positive``, ``false_positive``, ``true_negative``,
+        ``false_negative``, ``sensitivity`` and ``specificity``.
+    """
+
 def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: float) -> float:
     """
     CoVaR of a component: the total's VaR at level ``q`` over the
@@ -21569,6 +21676,29 @@ def distortion_envelope(x: Any, premium: float, s: Sequence[float], assets: floa
     -------
     tuple of (list of float, list of float)
         The lower envelope (a concave distortion) and the upper.
+    """
+
+def double_lift(y: Sequence[float], pred_a: Sequence[float], pred_b: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
+    """
+    The double lift chart of two models (CAS Monograph 5, section 7.2.2):
+    rows sorted by ``pred_a / pred_b``, cut into bands of about equal
+    exposure, with each band's actual and predicted averages over their
+    overall averages (each model against its own).
+    
+    Parameters
+    ----------
+    y : list of float
+    pred_a : list of float
+    pred_b : list of float
+        Positive.
+    exposure : list of float, optional
+    bands : int, default 10
+    
+    Returns
+    -------
+    list of dict
+        ``exposure``, ``actual``, ``model_a``, ``model_b`` (band totals),
+        ``actual_relativity``, ``a_relativity`` and ``b_relativity`` per band.
     """
 
 def elpd_loo(log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None) -> Elpd:
@@ -21763,6 +21893,33 @@ def eventual_ruin(severity: Grid, rho: float |None = None, *, loss_ratio: float 
     >>> # Exponential claims: exp(-u / 600) / 1.2 = 0.157; the step costs 1%.
     >>> round(ruin.psi_at(1000.0), 3)
     0.156
+    """
+
+def f_test(small: GlmFit, big: GlmFit) -> dict:
+    """
+    The F test of a GLM within a larger one that contains it, as R's
+    ``anova(small, big, test = "F")``: ``F = (D_small - D_big) / (q phi_big)``
+    on ``F(q, n - p_big)`` (CAS Monograph 5, section 6.2.1). For a family
+    whose dispersion is estimated.
+    
+    The models are not checked to be nested: ``small``'s columns must lie in
+    the span of ``big``'s, on the same rows, family and weights.
+    
+    Parameters
+    ----------
+    small : GlmFit
+    big : GlmFit
+    
+    Returns
+    -------
+    dict
+        ``statistic``, ``df`` (``q``), ``df_resid``, ``deviance_drop`` and
+        ``p_value``.
+    
+    Raises
+    ------
+    ValueError
+        If the models differ in rows or ``big`` has no more coefficients.
     """
 
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
@@ -22301,6 +22458,29 @@ def lift(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |N
         ``exposure``, ``expected`` and ``actual`` per band.
     """
 
+def likelihood_ratio_test(small: GlmFit, big: GlmFit) -> dict:
+    """
+    The likelihood ratio test of a GLM within a larger one, as R's
+    ``anova(small, big, test = "Chisq")``: the scaled deviance drop
+    ``(D_small - D_big) / phi_big`` on ``chi2(q)``. For a family whose
+    dispersion is known (Poisson, binomial).
+    
+    Parameters
+    ----------
+    small : GlmFit
+    big : GlmFit
+    
+    Returns
+    -------
+    dict
+        As ``f_test``, with ``df_resid`` infinite.
+    
+    Raises
+    ------
+    ValueError
+        As ``f_test``.
+    """
+
 def local_pareto_to_piecewise(t: float, alpha: Any, rel_tolerance: float = 1e-4, stop_survival: float = 1e-9, stop_at: float = ...) -> tuple[PiecewisePareto, float, float]:
     """
     Converts the local Pareto distribution with local alpha ``alpha(x)``
@@ -22404,6 +22584,29 @@ def loss_elimination_ratio(severity: Any, deductible: float) -> float:
     Returns
     -------
     float
+    """
+
+def loss_ratio_chart(y: Sequence[float], pred: Sequence[float], premium: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
+    """
+    The loss ratio chart (CAS Monograph 5, section 7.2.3): rows sorted by
+    predicted loss ratio ``pred / premium`` against the current premium,
+    cut into bands of about equal exposure, with each band's actual loss
+    ratio.
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+    premium : list of float
+        Current premium, positive.
+    exposure : list of float, optional
+    bands : int, default 10
+    
+    Returns
+    -------
+    list of dict
+        ``exposure``, ``premium``, ``expected``, ``actual``, ``loss_ratio``
+        and ``expected_loss_ratio`` per band.
     """
 
 def lppd(log_lik: Sequence[Sequence[float]]) -> float:
@@ -22532,6 +22735,23 @@ def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tup
     >>> from prospicio.risk import mean_excess
     >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
     [(2.0, 1.5, 2)]
+    """
+
+def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
+    """
+    The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
+    sorted by ``y / exposure``). For a 0/1 response with unit exposure,
+    ``AUROC = (1 + normalized Gini) / 2`` (CAS Monograph 5, footnote 17).
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+    exposure : list of float, optional
+    
+    Returns
+    -------
+    float
     """
 
 def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequence[tuple[float, float, float]]) -> CessionStatistics:
@@ -23184,6 +23404,33 @@ def recommend_grid(frequency: Any, severity: Any, log2: int = 16, p: float = ...
     (0.0625, 65536, 'moments')
     """
 
+def roc(y: Sequence[float], score: Sequence[float], weights: Sequence[float] |None = None) -> dict:
+    """
+    The ROC curve of a binary model (CAS Monograph 5, section 7.3.1): the
+    true and false positive rates with each distinct score as threshold (a
+    row is positive when its score is at least the threshold), and the area
+    under the curve, ties counting half.
+    
+    Parameters
+    ----------
+    y : list of float
+        0 or 1.
+    score : list of float
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict
+        ``thresholds`` (descending, from ``inf``), ``false_positive_rate``,
+        ``true_positive_rate`` and ``auc``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import roc
+    >>> roc([0.0, 0.0, 1.0, 1.0], [0.1, 0.4, 0.35, 0.8])["auc"]
+    0.75
+    """
+
 def round_bucket(bs: float) -> float:
     """
     Rounds a bucket size up to a "nice" value, as ``aggregate``'s
@@ -23621,6 +23868,36 @@ def tweedie_profile(design: Design, y: Sequence[float], powers: Sequence[float],
         ``powers``, ``log_likelihood`` and ``dispersion`` (one per power),
         the refined ``power``, its ``phi`` and ``max_log_likelihood``, and
         the ``fit`` there (``GlmFit``).
+    """
+
+def vif(design: Design) -> list[float]:
+    """
+    Variance inflation factors of a design's columns, ``1 / (1 - R2_j)``
+    with ``R2_j`` that of column ``j`` on the others and an intercept (CAS
+    Monograph 5, section 2.9). A constant column (the intercept) gets
+    ``nan``.
+    
+    Parameters
+    ----------
+    design : Design
+    
+    Returns
+    -------
+    list of float
+        One per column, in the design's order.
+    
+    Raises
+    ------
+    ValueError
+        If the non-constant columns are collinear.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, vif
+    >>> d = Design([[1.0] * 4, [1.0, 2.0, 3.0, 4.0], [1.0, -1.0, -1.0, 1.0]],
+    ...            ["(Intercept)", "x", "z"])
+    >>> [round(v, 12) for v in vif(d)[1:]]
+    [1.0, 1.0]
     """
 
 def wiener_hopf(severity: Grid, wait: Any, rho: float |None = None, *, loss_ratio: float |None = None, points: int |None = None) -> RenewalRuin:
