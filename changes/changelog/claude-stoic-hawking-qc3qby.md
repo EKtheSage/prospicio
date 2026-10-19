@@ -119,7 +119,7 @@
   E[(X - VaR(p))+] / (1 - p)`, infinite where the mean is (closed-form
   parity for the lognormal, Pareto and exponential). Python severities gain
   `var` and `tvar`; R's `VaR()` and `TVaR()` take every parametric severity
-  and `VaR()` a `grid_distribution` (#366 item 2, #373, #375).
+  and `VaR()` a `grid_distribution` (#366 item 2, #373, #375; #397).
 
 ### Models
 
