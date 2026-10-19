@@ -1169,15 +1169,16 @@ wrap_dist <- function(family, ptr) {
 
 #' Fit a body severity to large losses
 #'
-#' Maximum likelihood fit of a lognormal, gamma, Weibull or Burr severity to
-#' large losses, each conditioned on exceeding its reporting threshold (left
+#' Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
+#' severity to large losses, each conditioned on exceeding its reporting threshold (left
 #' truncation), with losses capped by a policy limit censored: the same data
 #' as [pareto_fit()]. The standard errors and covariance come from the
 #' observed information. A Burr fit on little data can drift towards a
 #' boundary where it mimics a Weibull or a Pareto; check `converged` and the
-#' standard errors.
+#' standard errors. The Lomax, `S(x) = (1 + x / scale)^(-alpha)` (Bahnemann's
+#' Pareto), is fitted as a Burr with `gamma = 1`.
 #'
-#' @param family `"lognormal"`, `"gamma"`, `"weibull"` or `"burr"`.
+#' @param family `"lognormal"`, `"gamma"`, `"weibull"`, `"burr"` or `"lomax"`.
 #' @inheritParams pareto_fit
 #' @returns A list: `distribution` (the fitted severity), `parameters` and
 #'   `standard_errors` (named), `covariance` (a matrix), `log_likelihood`,

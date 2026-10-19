@@ -1,5 +1,5 @@
 //! Maximum likelihood fits of the body families (lognormal, gamma,
-//! Weibull, Burr) to large losses with reporting thresholds and policy
+//! Weibull, Burr, Lomax) to large losses with reporting thresholds and policy
 //! limits: the same [`LargeLosses`] the Pareto fits take
 //! (`docs/design/distributions.md`).
 //!
@@ -29,16 +29,21 @@ pub enum Family {
     Weibull,
     /// `Burr(alpha, gamma, scale)`, `S(x) = (1 + (x/θ)^γ)^(−α)`.
     Burr,
+    /// `Lomax(alpha, scale)`, `S(x) = (1 + x/θ)^(−α)`: the Burr with
+    /// `γ = 1`, Bahnemann's (Monograph 2) Pareto.
+    Lomax,
 }
 
 impl Family {
-    /// The family's name, as in [`Dist::family`].
+    /// The family's name, as in [`Dist::family`] (the Lomax is fitted as
+    /// a Burr with `γ = 1`, so its distribution's family is `"burr"`).
     pub fn name(self) -> &'static str {
         match self {
             Self::Lognormal => "lognormal",
             Self::Gamma => "gamma",
             Self::Weibull => "weibull",
             Self::Burr => "burr",
+            Self::Lomax => "lomax",
         }
     }
 
@@ -49,9 +54,10 @@ impl Family {
             "gamma" => Self::Gamma,
             "weibull" => Self::Weibull,
             "burr" => Self::Burr,
+            "lomax" => Self::Lomax,
             other => {
                 return Err(Error::Data(format!(
-                    "family must be \"lognormal\", \"gamma\", \"weibull\" or \"burr\", not {other:?}"
+                    "family must be \"lognormal\", \"gamma\", \"weibull\", \"burr\" or \"lomax\", not {other:?}"
                 )));
             }
         })
@@ -63,6 +69,7 @@ impl Family {
             Self::Lognormal => &["meanlog", "sdlog"],
             Self::Gamma | Self::Weibull => &["shape", "scale"],
             Self::Burr => &["alpha", "gamma", "scale"],
+            Self::Lomax => &["alpha", "scale"],
         }
     }
 
@@ -97,6 +104,14 @@ impl Family {
                     - (alpha + 1.0) * ln_1pv;
                 (ln_f, -alpha * ln_1pv)
             }
+            Self::Lomax => {
+                let (alpha, theta) = (p[0], p[1]);
+                let ln_1pv = (x / theta).ln_1p();
+                (
+                    alpha.ln() - theta.ln() - (alpha + 1.0) * ln_1pv,
+                    -alpha * ln_1pv,
+                )
+            }
         }
     }
 
@@ -122,6 +137,7 @@ impl Family {
             Self::Gamma => Gamma::new(p[0], p[1])?.into(),
             Self::Weibull => Weibull::new(p[0], p[1])?.into(),
             Self::Burr => Burr::new(p[0], p[1], p[2])?.into(),
+            Self::Lomax => Burr::new(p[0], 1.0, p[1])?.into(),
         })
     }
 }
@@ -287,6 +303,12 @@ pub fn fit_severity(family: Family, data: &LargeLosses) -> Result<SeverityFit> {
                 vec![2.0, 1.0, median],
             ]
         }
+        // The scale that puts the median of the uncensored losses at
+        // their own, for a light, a middling and a heavy tail.
+        Family::Lomax => [1.2, 2.5, 8.0]
+            .iter()
+            .map(|&a| vec![a, lm.exp() / (2f64.powf(1.0 / a) - 1.0)])
+            .collect(),
     };
     let options = NelderMead {
         max_iterations: 40_000,
@@ -553,6 +575,31 @@ mod tests {
     }
 
     #[test]
+    fn untruncated_lomax_solves_its_score_equations() {
+        // Heavier than exponential (CV > 1), so the maximum is interior:
+        // α = n / Σ ln(1 + y/θ) and (α + 1) Σ y/(θ + y) = n.
+        let y = vec![
+            50.0, 80.0, 120.0, 200.0, 300.0, 500.0, 900.0, 1500.0, 4000.0, 12000.0,
+        ];
+        let n = y.len() as f64;
+        let fit = fit_severity(Family::Lomax, &LargeLosses::new(y.clone()).unwrap()).unwrap();
+        let (alpha, theta) = (fit.parameters()[0], fit.parameters()[1]);
+        let l: f64 = y.iter().map(|v| (v / theta).ln_1p()).sum();
+        assert!((alpha * l / n - 1.0).abs() < 1e-7, "{:?}", fit.parameters());
+        let q: f64 = y.iter().map(|v| v / (theta + v)).sum();
+        assert!(((alpha + 1.0) * q / n - 1.0).abs() < 1e-7);
+        assert!(fit.converged() && fit.standard_errors().iter().all(|s| s.is_finite()));
+        // The fitted distribution is the Burr with γ = 1.
+        assert_eq!(fit.dist().family(), "burr");
+        let s = (1.0 + 1000.0 / theta).powf(-alpha);
+        assert!((fit.dist().survival(1000.0) - s).abs() < 1e-14);
+        // One fewer parameter than the Burr, which nests it.
+        let burr = fit_severity(Family::Burr, &LargeLosses::new(y).unwrap()).unwrap();
+        assert!(burr.log_likelihood() >= fit.log_likelihood() - 1e-6);
+        assert_eq!(Family::from_name("lomax").unwrap(), Family::Lomax);
+    }
+
+    #[test]
     fn truncated_and_censored_fits_recover_the_truth() {
         let mut rng = StreamRng::new(11, 0);
         for (family, truth) in [
@@ -560,6 +607,7 @@ mod tests {
             (Family::Gamma, vec![1.5, 800.0]),
             (Family::Weibull, vec![0.8, 1000.0]),
             (Family::Burr, vec![1.5, 2.0, 1500.0]),
+            (Family::Lomax, vec![2.5, 1200.0]),
         ] {
             let d = family.dist(&truth).unwrap();
             let draws = d.sample(&mut rng, 10_000);

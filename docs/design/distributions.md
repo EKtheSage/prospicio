@@ -66,7 +66,7 @@ conversion reports the error it introduces.
   survival for layer means and second moments
   (`validation/scripts/mpmath_layer_moments.py`).
 - `prospicio_prob::severity_fit::fit_severity` (decided 2026-10-14,
-  #194) fits a lognormal, gamma, Weibull or Burr to the `LargeLosses` the
+  #194) fits a lognormal, gamma, Weibull, Burr or Lomax (#328) to the `LargeLosses` the
   Pareto fits take: each loss contributes `w (ln f(y) − ln S(r))`, or
   `ln S(y)` in place of `ln f(y)` when censored. One entry point over a
   `Family` enum returns a `SeverityFit` (the `Dist`, parameters,
@@ -76,7 +76,11 @@ conversion reports the error it introduces.
   parameters from moments of the uncensored losses; the Burr starts from
   the Weibull fit and two heavier tails and keeps the best, since on
   little data it drifts towards a boundary where it mimics a Weibull
-  (`α → ∞`) or a Pareto. `ln S` is exact for the Weibull and Burr, through
+  (`α → ∞`) or a Pareto. The Lomax, Bahnemann's Pareto, is the Burr
+  with `γ = 1` and returns a `Dist::Burr`; it starts from three tails
+  with the scale that puts the median at the losses' own, and on losses
+  with a coefficient of variation at most 1 its maximum runs to the
+  exponential limit (`α, θ → ∞` with `θ/α` fixed). `ln S` is exact for the Weibull and Burr, through
   the Mills ratio for the lognormal's upper tail, and `ln Q` of the
   regularized incomplete gamma for the gamma. Tested: untruncated
   closed forms (the lognormal's mean and n-denominator sd of the logs with
