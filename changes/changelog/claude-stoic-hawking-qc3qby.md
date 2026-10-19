@@ -150,4 +150,4 @@
   `count_test` (expected against observed claims at a few sizes, with
   the one-sided Poisson probability, `poisson_tail`), and
   `Prepared::without(ids)` and `Prepared::trended` for the burning cost
-  with and without a segment.
+  with and without a segment (#390).
