@@ -9324,6 +9324,27 @@ class Grid:
         ValueError
             If ``p`` is outside ``[0, 1]``.
         """
+    def remove_fuzz(self, /, eps: float = ...) -> Grid:
+        """
+        The grid with every probability below ``eps`` set to 0: the
+        round-off an FFT leaves where the true mass is zero, as
+        ``aggregate``'s ``remove_fuzz``. ``Tower.on_grid`` already removes
+        it from its ceded and net grids.
+        
+        Parameters
+        ----------
+        eps : float, default machine epsilon (2.22e-16)
+        
+        Returns
+        -------
+        Grid
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Grid
+        >>> Grid(1.0, [0.5, 0.5 - 1e-20, 1e-20]).remove_fuzz().probs[2]
+        0.0
+        """
     @staticmethod
     def rounding(severity: Any, step: float, points: int) -> tuple[Grid, DiscretizationReport]:
         """

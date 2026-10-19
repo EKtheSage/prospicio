@@ -408,3 +408,11 @@ def test_severity_var_and_tvar():
     assert ex.tvar(0.5) == pytest.approx(ex.quantile(0.5) + 1e4, rel=1e-9)
     with pytest.raises(ValueError):
         ln.tvar(1.0)
+
+
+def test_grid_remove_fuzz():
+    from prospicio.distributions import Grid
+
+    g = Grid(1.0, [0.5, 0.5, 1e-20])
+    assert g.remove_fuzz().probs == [0.5, 0.5, 0.0]
+    assert g.remove_fuzz(1e-30).probs[2] == 1e-20

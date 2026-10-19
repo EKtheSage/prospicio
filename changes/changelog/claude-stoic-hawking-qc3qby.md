@@ -1,5 +1,10 @@
 ### Aggregate and reinsurance
 
+- `Tower::on_grid` sets probabilities below machine epsilon to 0 in its
+  ceded and net grids: the FFT round-off there made the exponential and
+  Esscher premiums of a stop loss's net loss read the top of the grid
+  (509.4 for *Pricing Insurance Risk*'s 50.420). `Grid::remove_fuzz(eps)`,
+  Python `Grid.remove_fuzz()`, R `remove_fuzz()` (#367).
 - `TowerModel::diagnostics` warnings print each position at six
   significant figures (`the piece from 1.28998`, not every digit of the
   float); Python `TowerModel.diagnostics()` and R `tower_diagnostics()`

@@ -272,6 +272,31 @@ impl Grid {
         crate::risk::tvar_threshold(&values, &self.probs, p)
     }
 
+    /// The grid with every probability below `eps` set to 0: the round-off
+    /// an FFT leaves where the true mass is zero, as `aggregate`'s
+    /// `remove_fuzz` with `eps` its machine epsilon, [`f64::EPSILON`]. A
+    /// moment that weights the tail heavily, such as the exponential
+    /// premium `E[e^(a X)]`, can be dominated by such round-off at the top
+    /// of a grid. The total removed is at most `eps` times the number of
+    /// points.
+    ///
+    /// ```
+    /// use prospicio_prob::Grid;
+    ///
+    /// let g = Grid::new(1.0, vec![0.5, 0.5 - 1e-20, 1e-20]).unwrap();
+    /// assert_eq!(g.remove_fuzz(f64::EPSILON).probs()[2], 0.0);
+    /// ```
+    pub fn remove_fuzz(&self, eps: f64) -> Self {
+        Self {
+            step: self.step,
+            probs: self
+                .probs
+                .iter()
+                .map(|&p| if p < eps { 0.0 } else { p })
+                .collect(),
+        }
+    }
+
     /// The distribution of `f(X)` on the same step, and whether it is
     /// exact.
     ///

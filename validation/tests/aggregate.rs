@@ -2262,3 +2262,33 @@ fn pnl_stitched_peel_matches_aggregate() {
         }
     });
 }
+
+/// #367: a fixed single claim of a gamma (mean 50, CV 0.15) on a 1/64 grid
+/// of 2^16 points, net of a 12.91 xs 56.17 stop loss. The net loss cannot
+/// pass 150, and the net grid holds no FFT round-off there, so the
+/// exponential premium at 0.08 is the book's 50.420 (*Pricing Insurance
+/// Risk*, Part II; 509.4 with the round-off left in).
+#[test]
+fn a_stop_loss_net_grid_has_no_fft_fuzz() {
+    use prospicio_aggregate::{Layer, Tower};
+    use prospicio_pricing::classical::Principle;
+    use prospicio_prob::Gamma;
+    use prospicio_prob::count_families::EmpiricalCount;
+
+    let step = 1.0 / 64.0;
+    let points = 1 << 16;
+    let (sev, _) =
+        Grid::local_moment(&Gamma::from_mean_cv(50.0, 0.15).unwrap(), step, points).unwrap();
+    let tower = Tower::new(vec![Layer::stop_loss("B", 12.91, 56.17).unwrap()]).unwrap();
+    let r = tower
+        .on_grid(&EmpiricalCount::fixed(1), &sev, points)
+        .unwrap();
+    let net = r.net.unwrap();
+    let above = (150.0 / step) as usize;
+    assert!(net.probs()[above..].iter().all(|&p| p == 0.0));
+    let values: Vec<f64> = (0..net.probs().len()).map(|k| k as f64 * step).collect();
+    let premium = Principle::Exponential(0.08)
+        .premium(&values, net.probs())
+        .unwrap();
+    assert!((premium - 50.420).abs() < 0.002, "{premium}");
+}
