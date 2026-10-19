@@ -313,6 +313,13 @@ sources:
   32 is 1.4e-6 off the grid's exact moments). In DecL, `occurrence net
   of` puts the aggregate cover on the occurrence net, `occurrence ceded to`
   on the occurrence cession.[^reins]
+* The reference books' severity is limited (`1000 xs 0`, rounded onto
+  `cap + 1` points of step 1) while the annual total runs on `2^14`. A
+  caller that rounds the severity and compounds it on one length (the
+  XLL's `PRO.AGG.COVER`, `step` and `points`) reproduces the book by one
+  more occurrence layer, unlimited above the cap at 100%: the net is then
+  the capped severity's exactly, and the `agg` block's statistics match
+  at the reference's tolerances.[^reins]
 
 # Pricing bounds
 

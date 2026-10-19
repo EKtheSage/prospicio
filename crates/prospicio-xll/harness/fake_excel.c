@@ -44,6 +44,9 @@ typedef struct xloper12 {
 } XLOPER12;
 
 typedef XLOPER12 *(*Fn0)(void);
+typedef XLOPER12 *(*Fn15)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn10)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                           XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn9)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
@@ -149,7 +152,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("sixty-nine functions registered", registered == 69);
+    check("seventy functions registered", registered == 70);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -467,6 +470,25 @@ int main(int argc, char **argv) {
               fabs(pml->val.array.lparray[8].val.num / 1171.497873505582 - 1) < 1e-10 &&
               pml->val.array.lparray[9].val.num > pml->val.array.lparray[8].val.num);
     free12(pml);
+
+    /* A stop loss of 500 xs 400 on the same year, net of 500 xs 100 per
+     * occurrence: a column of nine rows, the cover's mean below the
+     * subject's and its chance of exhausting below that of attaching. */
+    XLOPER12 sl_l, sl_r, occ_l, occ_a;
+    sl_l.xltype = sl_r.xltype = occ_l.xltype = occ_a.xltype = xltypeNum;
+    sl_l.val.num = 500;
+    sl_r.val.num = 400;
+    occ_l.val.num = 500;
+    occ_a.val.num = 100;
+    XLOPER12 *sl = ((Fn15)GetProcAddress(xll, "pro_agg_cover"))(&two, &missing, &lncv, &hundred, &two, &missing,
+                                                                &sl_l, &sl_r, &missing, &occ_l, &occ_a, &missing,
+                                                                &missing, &missing, &missing);
+    check("PRO.AGG.COVER stop loss net of an occurrence layer",
+          (sl->xltype & 0xFFF) == xltypeMulti && sl->val.array.rows == 9 && sl->val.array.columns == 2 &&
+              sl->val.array.lparray[9].val.num < sl->val.array.lparray[3].val.num &&
+              sl->val.array.lparray[7].val.num < sl->val.array.lparray[5].val.num &&
+              sl->val.array.lparray[7].val.num > 0);
+    free12(sl);
 
     /* The Bayesian ODP chain ladder by NUTS on RAA, its chains on worker
      * threads: the diagnostics' first row is the largest R-hat. */

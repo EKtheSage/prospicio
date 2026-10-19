@@ -430,11 +430,11 @@ what it is aiming for by v1.0.
   classical credibility; ratemaking (rate level, trend and the
   indication); the burning cost; aggregate distributions and layer
   statistics; the Bayesian ODP chain ladder by MCMC; the occurrence and
-  aggregate PML curves.
+  aggregate PML curves; aggregate covers on the annual total.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
      form (`xll.md`, parity plan): the plan's four groups are done;
-     next, aggregate covers on the annual total, then towers on a grid.
+     next, towers on a grid.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

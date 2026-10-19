@@ -610,6 +610,10 @@ ag["A42"] = ArrayFormula("A42:F51", "=PRO.AGG.PML(B2,B3,B4,B5,B6)")
 for row in ag.iter_rows(min_row=43, max_row=51, min_col=1, max_col=6):
     for c in row:
         c.number_format = "0.0000" if c.column in (2, 5) else "#,##0.0" if c.column == 6 else "#,##0"
+ag["A54"] = "Stop loss: 150,000 xs 200,000 a year, net of 100,000 xs 50,000 per claim (aggregate's agg block)"; ag["A54"].font = bold
+ag["A55"] = ArrayFormula("A55:B63", "=PRO.AGG.COVER(B2,B3,B4,B5,B6,,150000,200000,,100000,50000)")
+for r in range(56, 64):
+    ag[f"B{r}"].number_format = "0.0000" if r in (57, 58, 61, 62, 63) else "#,##0"
 ag.column_dimensions["A"].width = 18
 ag.column_dimensions["D"].width = 16
 ag.column_dimensions["G"].width = 16
