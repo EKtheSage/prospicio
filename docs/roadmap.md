@@ -98,10 +98,12 @@ what it is aiming for by v1.0.
     and of every parametric severity.
   - `Discrete`, a distribution on finitely many values of either sign,
     for the P&L ledger's rows (`docs/design/pnl.md`).
-- **Next:** the Guides lane's issues of 2026-10-17 and 18: the
-  rearrangement algorithm, a normal and an ogive (#366), allocations of
-  the margin (#369), shifted and scaled severities (#318), fits to grouped and truncated data
-  (#328), normal power approximations (#329).
+  - The Guides lane's issues of 2026-10-17 and 18: the worst VaR by the
+    rearrangement algorithm, a normal and an ogive (#366), the covariance
+    allocation of the margin, Shapley, haircut and equal risk allocations
+    (#369), the normal power and Wilson–Hilferty approximations (#329).
+- **Next:** shifted and scaled severities (#318), fits to grouped and
+  truncated data (#328).
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 

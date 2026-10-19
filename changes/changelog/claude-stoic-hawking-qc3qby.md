@@ -318,3 +318,14 @@
 - `prospicio_aggregate::ApproximationKind` and `Approximation` have the
   variants `NormalPower` and `WilsonHilferty`, so an exhaustive `match` on
   them needs new arms (#329).
+
+### Distributions and probability
+
+- A normal distribution, `prospicio_prob::Normal`, on the whole real line,
+  with its closed-form TVaR `mu + sigma phi(z_p) / (1 - p)` (*Pricing
+  Insurance Risk*, section 4.3.3), and the ogive of grouped data,
+  `prospicio_prob::Ogive` (`new` from tabulated `(x, F)`, `from_counts`
+  from counts per band), a severity whose limited moments, VaR and TVaR
+  are exact band by band (Exercise 50). Python
+  `prospicio.distributions.Normal` and `Ogive`, R `normal_distribution()`,
+  `ogive()` and `ogive_from_counts()` (#366).

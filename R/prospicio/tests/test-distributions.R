@@ -179,3 +179,22 @@ stopifnot(identical(VaR(g, 0.99), quantile(g, 0.99)))
 
 # remove_fuzz() (#367).
 stopifnot(identical(remove_fuzz(grid_distribution(1, c(0.5, 0.5, 1e-20)))@probs, c(0.5, 0.5, 0)))
+
+# The normal (TVaR is VaR plus a multiple of sigma, Pricing Insurance Risk
+# section 4.3.3) and an ogive from grouped counts (Exercise 50).
+nd <- normal_distribution(10, 2)
+pp <- c(0.1, 0.5, 0.99)
+stopifnot(all(abs(quantile(nd, pp) - qnorm(pp, 10, 2)) < 1e-9))
+stopifnot(all(abs(TVaR(nd, pp) - (10 + 2 * dnorm(qnorm(pp)) / (1 - pp))) < 1e-9))
+stopifnot(abs(cdf(nd, 11) - pnorm(11, 10, 2)) < 1e-15)
+stopifnot(abs(log_density(nd, 11) - dnorm(11, 10, 2, log = TRUE)) < 1e-14)
+stopifnot(length(draws(nd, 5, seed = 1)) == 5, nd@sigma == 2)
+stopifnot(inherits(try(normal_distribution(0, 0), silent = TRUE), "try-error"))
+og <- ogive_from_counts(c(0, 1000, 5000, 10000), c(40, 50, 10))
+stopifnot(identical(og@cdf_values, c(0, 0.4, 0.9, 1)))
+stopifnot(abs(mean(og) - (0.4 * 500 + 0.5 * 3000 + 0.1 * 7500)) < 1e-9)
+stopifnot(abs(VaR(og, 0.95) - 7500) < 1e-9, abs(TVaR(og, 0.95) - 8750) < 1e-9)
+stopifnot(abs(lev(og, 2000) - 1337.5) < 1e-9, abs(layer(og, 1000, 1000) - 537.5) < 1e-9)
+stopifnot(abs(variance(ogive(c(0, 10), c(0, 1))) - 100 / 12) < 1e-12)
+stopifnot(inherits(try(ogive(c(0, 1), c(0, 0.9)), silent = TRUE), "try-error"))
+cat("normal and ogive tests passed\n")

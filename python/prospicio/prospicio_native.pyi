@@ -14862,6 +14862,148 @@ class NestedArchimedeanCopula:
         """
 
 @final
+class Normal:
+    """
+    The normal distribution, on the whole real line: asset returns, log
+    returns and other outcomes of either sign.
+    
+    Its TVaR is ``mu + sigma * phi(z_p) / (1 - p)`` with ``z_p`` the standard
+    normal quantile (*Pricing Insurance Risk*, section 4.3.3): VaR plus a
+    multiple of ``sigma`` that depends only on ``p``.
+    
+    Parameters
+    ----------
+    mu : float
+        The mean.
+    sigma : float
+        The standard deviation, positive.
+    
+    Raises
+    ------
+    ValueError
+        If ``mu`` is not finite or ``sigma`` not finite and positive.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Normal
+    >>> x = Normal(0.0, 1.0)
+    >>> round(x.quantile(0.99), 6), round(x.tvar(0.99), 6)
+    (2.326348, 2.665214)
+    """
+    def __new__(cls, /, mu: float, sigma: float) -> Normal: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        The mean.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def mu(self, /) -> float:
+        """
+        The mean.
+        """
+    def pdf(self, /, x: float) -> float:
+        """
+        The density.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The quantile at ``p``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def sigma(self, /) -> float:
+        """
+        The standard deviation.
+        """
+    def std_dev(self, /) -> float:
+        """
+        The standard deviation.
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        ``P(X > x)``, precise far in the upper tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p``, ``E[X | X >= VaR(p)]``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1)``.
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        The variance.
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class OccurrencePml:
     """
     One point of the occurrence PML curve, from ``occurrence_pml``.
@@ -15299,6 +15441,205 @@ class OdpBootstrapFit:
         Returns
         -------
         pandas.DataFrame
+        """
+
+@final
+class Ogive:
+    """
+    An ogive: the piecewise linear distribution function through tabulated
+    points ``(x, F(x))``, the usual reading of grouped loss data (losses
+    uniform within each band), as in *Pricing Insurance Risk*, Exercise 50.
+    
+    Its limited moments are exact, band by band. Build one from grouped
+    counts with :meth:`Ogive.from_counts`.
+    
+    Parameters
+    ----------
+    x : list of float
+        At least two band boundaries, finite, non-negative and strictly
+        increasing.
+    cdf : list of float
+        ``F`` at each boundary, non-decreasing from 0 to 1.
+    
+    Raises
+    ------
+    ValueError
+        If the table breaks any of these.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Ogive
+    >>> o = Ogive.from_counts([0, 1000, 5000, 10000], [40, 50, 10])
+    >>> o.cdf(3000.0), round(o.quantile(0.95), 6), round(o.tvar(0.95), 6)
+    (0.65, 7500.0, 8750.0)
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, x: Sequence[float], cdf: Sequence[float]) -> Ogive: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        ``P(X <= x)``, linear between the boundaries.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def cdf_values(self, /) -> list[float]:
+        """
+        ``F`` at the boundaries.
+        """
+    @staticmethod
+    def from_counts(bounds: Sequence[float], counts: Sequence[float]) -> Ogive:
+        """
+        The ogive of grouped data: ``counts[k]`` losses (or any weights)
+        between ``bounds[k]`` and ``bounds[k + 1]``, spread uniformly.
+        
+        Parameters
+        ----------
+        bounds : list of float
+            One more than the counts.
+        counts : list of float
+            Non-negative, with a positive total.
+        
+        Returns
+        -------
+        Ogive
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        The mean.
+        
+        Returns
+        -------
+        float
+        """
+    def pdf(self, /, x: float) -> float:
+        """
+        The density, constant on each band and 0 outside.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        The lower quantile, the smallest ``x`` with ``F(x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std_dev(self, /) -> float:
+        """
+        The standard deviation.
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        ``P(X > x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p``, the mean of the worst ``1 - p``.
+        
+        Parameters
+        ----------
+        p : float
+            In ``[0, 1)``.
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        The variance.
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def x(self, /) -> list[float]:
+        """
+        The band boundaries.
         """
 
 @final
