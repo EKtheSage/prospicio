@@ -10,7 +10,8 @@ save_model(model, file)
 load_model(file)
 }
 \arguments{
-\item{model}{A \code{glm_model}, \code{gam_model} or \code{elastic_net_model}.}
+\item{model}{A \code{glm_model}, \code{gam_model}, \code{elastic_net_model},
+\code{cann_model} or \code{attention_cann_model}.}
 
 \item{file}{Path of the RDS file.}
 }
@@ -19,12 +20,14 @@ load_model(file)
 the class saved.
 }
 \description{
-\code{save_model()} writes a \code{\link[=glm_fit]{glm_fit()}}, \code{\link[=gam_fit]{gam_fit()}} or \code{\link[=elastic_net_fit]{elastic_net_fit()}}
-model to an RDS file: the Rust fit as a versioned JSON artifact (spec,
-estimates, covariance, fit statistics, fitted values, and provenance
-with the package version and a hash of the training data; for a GAM
-also the spline knots and constraints; for an elastic net one artifact
-per lambda), with the formula terms and factor levels that
+\code{save_model()} writes a \code{\link[=glm_fit]{glm_fit()}}, \code{\link[=gam_fit]{gam_fit()}}, \code{\link[=elastic_net_fit]{elastic_net_fit()}},
+\code{\link[=cann_fit]{cann_fit()}} or \code{\link[=attention_cann_fit]{attention_cann_fit()}} model to an RDS file: the Rust
+fit as a versioned JSON artifact (spec, estimates, covariance, fit
+statistics, fitted values, and provenance with the package version and
+a hash of the training data; for a GAM also the spline knots and
+constraints; for an elastic net one artifact per lambda; for a network
+its feature scaling and every weight), with the formula terms and
+factor levels that
 \code{\link[stats:predict]{stats::predict()}} needs. \code{load_model()} reads it back; the estimates
 round-trip exactly. A loaded model predicts and simulates but has no
 training data, so \code{\link[=robust_vcov]{robust_vcov()}} needs the original fit.

@@ -348,10 +348,13 @@ impl ElasticNetFit {
 }
 
 fn provenance(model: &str, input_hash: &str) -> Value {
-    artifact::provenance(model, "prospicio-glm", env!("CARGO_PKG_VERSION"), input_hash)
+    artifact::provenance(
+        model,
+        "prospicio-glm",
+        env!("CARGO_PKG_VERSION"),
+        input_hash,
+    )
 }
-
-
 
 fn glm_json(spec: &Glm) -> Value {
     json!({
@@ -454,20 +457,6 @@ fn spline_from(o: &Map<String, Value>) -> Result<PSpline> {
         },
     })
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 #[cfg(test)]
 mod tests {
