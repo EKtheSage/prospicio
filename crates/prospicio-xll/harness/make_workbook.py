@@ -744,6 +744,33 @@ ds["D19"] = ArrayFormula("D19:E22", '=PRO.DISTORTION.PRICE(A4:A10,B4:B10,"wtdtva
 for col in "ABDEFHIJKLMOPQ":
     ds.column_dimensions[col].width = 14
 
+# Copulas: two lines joined by a Clayton copula, and the same draws reordered by Iman-Conover.
+cp = wb.create_sheet("Copulas")
+cp["A1"] = "Two lines (lognormal, mean 50,000, CV 3 and gamma, mean 50,000, CV 1) joined by a Clayton copula; 1,000 simulated years"; cp["A1"].font = bold
+cp["A3"] = "Clayton theta"; cp["B3"] = 2; cp["B3"].fill = inp
+cp["A4"] = "Seed"; cp["B4"] = 1; cp["B4"].fill = inp
+cp["A5"] = "Target rank correlation"; cp["B5"] = 0.5; cp["B5"].fill = inp
+cp["A7"] = "C(u, v) at"; cp["A7"].font = bold
+for i, (u, v) in enumerate([(0.1, 0.1), (0.5, 0.5), (0.9, 0.9), (0.4, 0.6)]):
+    cp[f"A{8 + i}"] = u; cp[f"B{8 + i}"] = v
+    cp[f"A{8 + i}"].fill = cp[f"B{8 + i}"].fill = inp
+cp["C7"] = "Clayton"; cp["D7"] = "Gaussian at 0.5"; cp["C7"].font = cp["D7"].font = bold
+cp["C8"] = ArrayFormula("C8:C11", '=PRO.COPULA.CDF(A8:B11,"clayton",B3)')
+cp["D8"] = ArrayFormula("D8:D11", '=PRO.COPULA.CDF(A8:B11,"gaussian",0.5)')
+cp["F3"] = "U"; cp["G3"] = "V"; cp["H3"] = "Line A"; cp["I3"] = "Line B"; cp["J3"] = "Total"
+cp["L3"] = "A, reordered"; cp["M3"] = "B, reordered"
+for c in ("F3", "G3", "H3", "I3", "J3", "L3", "M3"):
+    cp[c].font = bold
+cp["F4"] = ArrayFormula("F4:G1003", '=PRO.COPULA.SIM("clayton",B3,1000,2,B4)')
+cp["H4"] = ArrayFormula("H4:H1003", '=PRO.SEV.QUANTILE(F4:F1003,"lognormal_cv",50000,3)')
+cp["I4"] = ArrayFormula("I4:I1003", '=PRO.SEV.QUANTILE(G4:G1003,"gamma_cv",50000,1)')
+for r in range(4, 1004):
+    cp[f"J{r}"] = f"=H{r}+I{r}"
+cp["L4"] = ArrayFormula("L4:M1003", "=PRO.IMAN.CONOVER(H4:I1003,B5,B4)")
+cp["A14"] = "Total's 99th percentile"; cp["B14"] = "=PERCENTILE(J4:J1003,0.99)"
+for col in "ABCDFGHIJLM":
+    cp.column_dimensions[col].width = 14
+
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")
 by["A1"] = "Bayesian ODP chain ladder on RAA, sampled with NUTS (4 chains, 1,000 warm-up and 1,000 kept draws each)"; by["A1"].font = bold
