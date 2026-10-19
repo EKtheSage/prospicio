@@ -1502,6 +1502,22 @@ impl PyGamFit {
         self.inner.edf()
     }
 
+    /// Log-likelihood at the fitted means and the dispersion, as
+    /// ``GlmFit.log_likelihood`` (the Gaussian's at the maximum-likelihood
+    /// variance). NaN for a fit loaded from an older artifact.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    /// ``-2 log_likelihood + 2 edf``, not counting an estimated dispersion,
+    /// as ``GlmFit.aic`` (mgcv's ``AIC`` adds 1 when the scale is
+    /// estimated).
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
     /// Dispersion.
     #[getter]
     fn dispersion(&self) -> f64 {

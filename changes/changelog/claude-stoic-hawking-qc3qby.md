@@ -1,5 +1,10 @@
 ### Aggregate and reinsurance
 
+- `Tower::on_grid` sets probabilities below machine epsilon to 0 in its
+  ceded and net grids: the FFT round-off there made the exponential and
+  Esscher premiums of a stop loss's net loss read the top of the grid
+  (509.4 for *Pricing Insurance Risk*'s 50.420). `Grid::remove_fuzz(eps)`,
+  Python `Grid.remove_fuzz()`, R `remove_fuzz()` (#367).
 - `TowerModel::diagnostics` warnings print each position at six
   significant figures (`the piece from 1.28998`, not every digit of the
   float); Python `TowerModel.diagnostics()` and R `tower_diagnostics()`
@@ -7,6 +12,15 @@
 
 ### Distributions and probability
 
+- Iman–Conover with other reference scores and shuffled rows:
+  `copula::iman_conover_with` takes `ImanConover { scores, shuffle_rows }`,
+  with `Scores::StudentT(dof)` (more joint extremes than normal scores at
+  the same correlation, Monograph 15 section 8.2.3, `aggregate`'s `dof`)
+  or `Scores::Given`, and `shuffle_rows` to undo the first component's
+  ascending order, now documented on `iman_conover`. Python
+  `iman_conover(..., dof=, scores=, shuffle_rows=)`, R `iman_conover(...,
+  dof, scores, shuffle_rows)`. `prospicio_math::special::student_t_quantile`
+  (#378).
 - Threshold diagnostics for peaks over threshold:
   `prospicio_prob::evt::threshold_diagnostics` gives, at each threshold,
   the mean excess with its standard error and the generalized Pareto
@@ -145,9 +159,20 @@
   `save_model()` and `load_model()` take `cann_model` and
   `attention_cann_model`. The shared envelope helpers are now public in
   `prospicio_models::artifact` (#391).
+- A GAM's log-likelihood and AIC: `GamFit::log_likelihood` and `aic`
+  (`-2 ℓ + 2 edf`, the GLM's conventions), saved in its artifact; Python
+  `GamFit.log_likelihood` and `.aic`, R `gam_model@log_likelihood` and
+  `@aic` (#360). R gains `deviance_score()` for `cross_validate()` (#360),
+  and `pit_from_draws()` and `pit_histogram()` as Python's (#382).
 
 ### Pricing
 
+- R `pentagon()` returns the risk discount `d = M / (a - L)` too, as
+  Python's `Pentagon.discount` (#365). `Portfolio::price` (Python
+  `Portfolio.price`, R `natural_price()`) documents its two conventions,
+  both `aggregate` 1.0.1's: a total exactly at the assets keeps its own
+  weight in the linear allocation, and the bottom layer of capital takes
+  the units' margins at `g'(1) / (1 - g'(1))` (#368, #379; #398).
 - Casualty exposure rating in `prospicio_pricing::casualty`: a
   `CasualtyProfile` of policies (attachment, limit, share, premium, ELR,
   and a curve each: a severity, an `IlfTable` or an `ElfTable`), rated

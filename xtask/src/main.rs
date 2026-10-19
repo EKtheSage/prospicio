@@ -508,16 +508,7 @@ fn docs(check: bool) -> Result {
         copy_dir(&root.join(from), &site.join(to))
             .map_err(|e| format!("copying {from} into the site: {e}"))?;
     }
-    // The user guide's first page, its URL without the ordering prefix.
-    let guide = files(&root.join(USER_GUIDE), "md")?
-        .first()
-        .map(|p| file_stem(p))
-        .map(|s| {
-            s.split_once('-')
-                .map_or(s.clone(), |(_, name)| name.to_owned())
-        })
-        .ok_or("the user guide is empty")?;
-    let index = INDEX.replace("{guide}", &format!("python/user-guide/{guide}.html"));
+    let index = INDEX;
     fs::write(site.join("index.html"), index)
         .map_err(|e| format!("writing the site index: {e}"))?;
     println!("docs: open {}", site.join("index.html").display());
@@ -535,10 +526,8 @@ const INDEX: &str = r#"<!doctype html>
 <h1>prospicio</h1>
 <p>Actuarial modeling on a Rust core. One kernel, documented for each front end.</p>
 <ul>
-  <li><a href="python/index.html">Python</a> (great-docs)</li>
-  <li><a href="{guide}">Guides and worked examples</a> (the Python site's User Guide, with the notebooks' results)</li>
-  <li><a href="r/index.html">R</a> (pkgdown)</li>
-  <li><a href="r/articles/index.html">R guides and worked examples</a> (the guides' and notebooks' R twins, on the R site)</li>
+  <li><a href="python/index.html">Python</a> (great-docs, with the guides and worked examples)</li>
+  <li><a href="r/index.html">R</a> (pkgdown, with the guides and worked examples)</li>
   <li><a href="rust/prospicio_prob/index.html">Rust crates</a> (rustdoc)</li>
 </ul>
 "#;

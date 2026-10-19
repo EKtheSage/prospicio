@@ -19,13 +19,14 @@ pentagon(
 \item{loss, margin, premium, capital, assets, loss_ratio, premium_to_capital, return_on_capital}{Give exactly three.}
 }
 \value{
-A named numeric vector of all eight.
+A named numeric vector of all eight, and \code{discount}.
 }
 \description{
 Loss \code{L}, margin \code{M}, premium \code{P}, capital \code{Q} and assets \code{a}, with
 \code{P = L + M} and \code{a = P + Q}, from exactly three known amounts or ratios
 (\code{loss_ratio = L / P}, \code{premium_to_capital = P / Q},
-\code{return_on_capital = M / Q}).
+\code{return_on_capital = M / Q}), and the risk discount \code{d = M / (a - L)},
+with which \verb{P = (1 - d) L + d a} (CAS Monograph 15, Table 4.1).
 }
 \examples{
 pentagon(loss = 46.6, assets = 100, return_on_capital = 0.15)

@@ -284,3 +284,32 @@ def test_vine_copula():
         VineCopula("d", [0, 1, 2], [[g]])
     pd = simulate(v, [Lognormal.from_mean_cv(1.0, 0.5)] * 3, 2000, 5)
     assert pd.mean() == pytest.approx(3.0, rel=0.05)
+
+
+def test_iman_conover_t_scores_and_shuffled_rows():
+    import random
+
+    from prospicio.distributions import PredictiveDistribution
+    from prospicio.risk import iman_conover
+
+    rng = random.Random(4)
+    n = 5000
+    rows = [[rng.lognormvariate(0, 0.5), rng.lognormvariate(0, 1.0)] for _ in range(n)]
+    pd = PredictiveDistribution(["lob"], [(0,), (1,)], rows)
+    r = [[1.0, 0.3], [0.3, 1.0]]
+
+    def joint(p):
+        a, b = p.marginal((0,)).draws, p.marginal((1,)).draws
+        qa, qb = sorted(a)[n - n // 100], sorted(b)[n - n // 100]
+        return sum(1 for x, y in zip(a, b) if x >= qa and y >= qb)
+
+    normal = iman_conover(pd, r, seed=5)
+    t2 = iman_conover(pd, r, seed=5, dof=2.0)
+    assert joint(t2) > 1.5 * joint(normal)
+    first = normal.marginal((0,)).draws
+    assert first == sorted(first)
+    shuffled = iman_conover(pd, r, seed=5, shuffle_rows=True)
+    assert shuffled.marginal((0,)).draws != sorted(first)
+    assert sorted(shuffled.marginal((0,)).draws) == sorted(first)
+    with pytest.raises(ValueError):
+        iman_conover(pd, r, seed=5, dof=2.0, scores=[0.0] * n)

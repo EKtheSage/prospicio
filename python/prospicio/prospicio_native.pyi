@@ -8227,6 +8227,13 @@ class GamFit:
     """
     def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
+    def aic(self, /) -> float:
+        """
+        ``-2 log_likelihood + 2 edf``, not counting an estimated dispersion,
+        as ``GlmFit.aic`` (mgcv's ``AIC`` adds 1 when the scale is
+        estimated).
+        """
+    @property
     def coefficients(self, /) -> list[float]:
         """
         Coefficients.
@@ -8279,6 +8286,13 @@ class GamFit:
     def lambdas(self, /) -> list[float]:
         """
         Smoothing parameter of each smooth.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        Log-likelihood at the fitted means and the dispersion, as
+        ``GlmFit.log_likelihood`` (the Gaussian's at the maximum-likelihood
+        variance). NaN for a fit loaded from an older artifact.
         """
     @property
     def names(self, /) -> list[str]:
@@ -9419,6 +9433,27 @@ class Grid:
         ------
         ValueError
             If ``p`` is outside ``[0, 1]``.
+        """
+    def remove_fuzz(self, /, eps: float = ...) -> Grid:
+        """
+        The grid with every probability below ``eps`` set to 0: the
+        round-off an FFT leaves where the true mass is zero, as
+        ``aggregate``'s ``remove_fuzz``. ``Tower.on_grid`` already removes
+        it from its ceded and net grids.
+        
+        Parameters
+        ----------
+        eps : float, default machine epsilon (2.22e-16)
+        
+        Returns
+        -------
+        Grid
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Grid
+        >>> Grid(1.0, [0.5, 0.5 - 1e-20, 1e-20]).remove_fuzz().probs[2]
+        0.0
         """
     @staticmethod
     def rounding(severity: Any, step: float, points: int) -> tuple[Grid, DiscretizationReport]:
@@ -16695,6 +16730,20 @@ class Portfolio:
         Returns
         -------
         NaturalPrice
+        
+        Notes
+        -----
+        Two conventions follow ``aggregate`` 1.0.1. A total exactly at the
+        assets keeps its own weight in the linear allocation, where *Pricing
+        Insurance Risk* lumps it with the default outcomes (its Example 235:
+        4.3 against 4.16 here); assets just below the atom, ``a - 1e-9``,
+        give the book's numbers, and ``p`` always lands on a total. In the
+        bottom layer of capital, below the smallest total, the units'
+        margins (which sum to zero) take capital at ``g'(1) / (1 - g'(1))``:
+        ``1/r`` for CCoC, ``rho / (1 - rho)`` for the proportional hazard, 0
+        for Wang, dual power and TVaR. Monograph 15's equation 8.5 gives
+        that layer none, so CCoC and PH capital by unit differ from it; the
+        total and the premiums do not.
         """
     def price_stand_alone(self, /, distortion: Distortion, p: float) -> StandAlone:
         """
@@ -21836,7 +21885,7 @@ def ilf(severity: Any, limit: float, basic_limit: float) -> float:
     1.266666666667
     """
 
-def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[float]], seed: int, *, dof: float |None = None, scores: Sequence[float] |None = None, shuffle_rows: bool = False) -> PredictiveDistribution:
     """
     Reorders each component's draws to a target correlation (Iman-Conover).
     
@@ -21851,6 +21900,18 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     correlation : list of list of float
         One row and column per component.
     seed : int
+    dof : float, optional
+        Student t reference scores with these degrees of freedom, which give
+        more joint extremes than the default normal scores (Monograph 15,
+        section 8.2.3; ``aggregate``'s ``dof``).
+    scores : list of float, optional
+        Reference scores of your own, one per simulation, in any order.
+        Give ``dof`` or ``scores``, not both.
+    shuffle_rows : bool, default False
+        Shuffle the result's rows. Without it the first component comes
+        back sorted ascending, which matters to anything that reads the
+        rows in order or a slice of them; whole-sample statistics do not
+        notice.
     
     Returns
     -------

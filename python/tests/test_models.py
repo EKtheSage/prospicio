@@ -75,6 +75,11 @@ def test_gam_smooths_a_curve():
     assert fit.names[0] == "(Intercept)" and fit.names[1] == "s(x).1"
     fixed = Gam(Glm("gaussian"), ["x"], smoothing=[1e8]).fit(d, y)
     assert abs(fixed.edf - 2.0) < 1e-4
+    # The GAM's AIC counts its edf; at λ → ∞ it is the line's.
+    line = Glm("gaussian").fit(d, y)
+    assert fixed.log_likelihood == pytest.approx(line.log_likelihood, abs=1e-4)
+    assert fit.aic == pytest.approx(-2 * fit.log_likelihood + 2 * fit.edf, rel=1e-14)
+    assert GamFit.from_json(fit.to_json()).log_likelihood == fit.log_likelihood
     assert fit.reml_scale is None
     # REML: a noisy curve, its dispersion estimated with the smoothing.
     noisy = [v + 0.1 * math.sin(97.0 * i) for i, v in enumerate(y)]

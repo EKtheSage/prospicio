@@ -36,6 +36,18 @@ a distortion \code{g}, and its allocation to the units: each unit's loss
 \code{"lifted"} the distorted share. Capital is allocated layer by layer, in
 proportion to each unit's margin in the layer.
 }
+\details{
+Two conventions follow \code{aggregate} 1.0.1. A total exactly at the assets
+keeps its own weight in the linear allocation, where \emph{Pricing Insurance
+Risk} lumps it with the default outcomes (its Example 235: 4.3 against
+4.16 here); assets just below the atom, \code{a - 1e-9}, give the book's
+numbers, and \code{p} always lands on a total. In the bottom layer of
+capital, below the smallest total, the units' margins (which sum to
+zero) take capital at \verb{g'(1) / (1 - g'(1))}: \code{1/r} for CCoC,
+\code{rho / (1 - rho)} for the proportional hazard, 0 for Wang, dual power
+and TVaR. Monograph 15's equation 8.5 gives that layer none, so CCoC and
+PH capital by unit differ from it; the total and the premiums do not.
+}
 \examples{
 insco <- capital_portfolio(cbind(
   A = c(15, 15, 5, 7, 13, 5, 15, 26, 17, 16),

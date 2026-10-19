@@ -12,6 +12,7 @@ reference:
       - lognormal_from_mean_cv
       - grid_distribution
       - discretize
+      - remove_fuzz
       - map_grid
       - discrete_distribution
       - sampled
@@ -344,4 +345,6 @@ articles:
       The notebooks' R twins, run in full each time the site is built.
     contents:
       - articles/one_year_view
+      - articles/reading_path
       - articles/reinsurance_pricing
+      - articles/reading_path

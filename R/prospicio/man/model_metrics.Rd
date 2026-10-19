@@ -10,6 +10,9 @@
 \alias{log_score}
 \alias{pit_values}
 \alias{ks_uniform}
+\alias{pit_from_draws}
+\alias{pit_histogram}
+\alias{deviance_score}
 \title{Model metrics}
 \usage{
 family_deviance(family, y, mu, weights = NULL, theta = NULL, power = NULL)
@@ -44,6 +47,18 @@ pit_values(
 )
 
 ks_uniform(values)
+
+pit_from_draws(draws, y, u = 0.5)
+
+pit_histogram(pit, bins = 10)
+
+deviance_score(
+  family,
+  response,
+  theta = NULL,
+  power = NULL,
+  weight_column = NULL
+)
 }
 \arguments{
 \item{family}{A family name, as in \code{\link[=glm_fit]{glm_fit()}}.}
@@ -67,9 +82,21 @@ ks_uniform(values)
 \item{seed}{Seed of the PIT's randomization.}
 
 \item{values}{Values to compare with the uniform.}
+
+\item{u}{The share of tied draws counted below \code{y}.}
+
+\item{pit}{PIT values in \verb{[0, 1]}.}
+
+\item{bins}{Number of histogram bins.}
+
+\item{response}{The name of the response column.}
+
+\item{weight_column}{The test data's weight column, or \code{NULL}.}
 }
 \value{
-A number; for \code{pit_values()} one value per outcome; for
+A number; for \code{pit_values()} and \code{pit_from_draws()} one value
+per outcome; for \code{pit_histogram()} the count in each bin; for
+\code{deviance_score()} a function \code{score(model, test)}; for
 \code{lift_table()} a data frame with columns \code{exposure}, \code{expected} and
 \code{actual}.
 }
@@ -90,7 +117,13 @@ distribution (the family with mean \code{mu}, \code{dispersion} and weight);
 where the distribution has atoms (counts, a Tweedie's zero) and uniform
 when the model is calibrated; \code{ks_uniform()} the Kolmogorov-Smirnov
 distance of values from the uniform, about \code{1.36 / sqrt(n)} or less 95\%
-of the time under uniformity.
+of the time under uniformity. \code{pit_from_draws()} is the PIT of each \code{y}
+under the empirical distribution of \code{draws}, ties randomized by \code{u}, and
+\code{pit_histogram()} counts PIT values in \code{bins} equal-width bins of
+\verb{[0, 1]}. \code{deviance_score()} is a score for \code{\link[=cross_validate]{cross_validate()}}: the
+family's mean deviance of the test data's \code{response} column,
+\verb{sum(w d) / sum(w)}, with the weights from its \code{weight_column} (all 1
+by default).
 }
 \examples{
 family_deviance("poisson", c(1, 0, 3), c(1, 0.5, 2))
@@ -102,4 +135,6 @@ log_score("poisson", 0, 1)
 set.seed(1)
 y <- rpois(500, 3)
 ks_uniform(pit_values("poisson", y, rep(3, 500)))
+pit_from_draws(c(1, 2, 2, 3), c(2, 5))
+pit_histogram(c(0.05, 0.15, 0.95), bins = 10)
 }

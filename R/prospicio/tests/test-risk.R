@@ -141,7 +141,6 @@ spd <- predictive_distribution(matrix(c(1, 2, 3, 4, 0, 1, 5, 1), ncol = 2),
 stopifnot(covar(spd, list(lob = "a"), 0.75, 0.5) == 5)
 stopifnot(inherits(try(covar(spd, list(lob = "z"), 0.75, 0.5), silent = TRUE), "try-error"))
 
-cat("prospicio R risk tests passed\n")
 
 # Distortion parameters by name (#205).
 stopifnot(identical(distortion("proportional_hazard", 0.7)@parameters, c(rho = 0.7)),
@@ -178,3 +177,23 @@ stopifnot(inherits(try(vine_copula("d", 1:3, list(list(pair_copula("gaussian", 0
   pair_copula("frank", 1)))), silent = TRUE), "try-error"))
 stopifnot(inherits(try(copula_log_density(archimedean_copula("gumbel", 2), c(0.5, 0.5)),
   silent = TRUE), "try-error"))
+
+# Iman-Conover with t scores and shuffled rows (#378).
+set.seed(4)
+ic_pd <- predictive_distribution(cbind(rlnorm(5000, 0, 0.5), rlnorm(5000, 0, 1)),
+                                 data.frame(lob = c("a", "b")))
+ic_r <- matrix(c(1, 0.3, 0.3, 1), 2)
+joint <- function(p) {
+  m <- draw_matrix(p)
+  q <- apply(m, 2, function(v) sort(v)[5000 - 50 + 1])
+  sum(m[, 1] >= q[1] & m[, 2] >= q[2])
+}
+ic_normal <- iman_conover(ic_pd, ic_r, seed = 5)
+stopifnot(joint(iman_conover(ic_pd, ic_r, seed = 5, dof = 2)) > 1.5 * joint(ic_normal))
+stopifnot(!is.unsorted(draw_matrix(ic_normal)[, 1]))
+ic_shuffled <- draw_matrix(iman_conover(ic_pd, ic_r, seed = 5, shuffle_rows = TRUE))[, 1]
+stopifnot(is.unsorted(ic_shuffled), identical(sort(ic_shuffled), draw_matrix(ic_normal)[, 1]))
+stopifnot(inherits(try(iman_conover(ic_pd, ic_r, seed = 5, dof = 2, scores = rep(0, 5000)),
+                       silent = TRUE), "try-error"))
+
+cat("prospicio R risk tests passed\n")

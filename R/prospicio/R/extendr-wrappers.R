@@ -112,6 +112,10 @@ pit_rust <- function(family_name, theta, power, y, mu, dispersion, weights, seed
 
 ks_uniform_rust <- function(values) .Call(wrap__ks_uniform_rust, values)
 
+pit_from_draws_rust <- function(draws, y, u) .Call(wrap__pit_from_draws_rust, draws, y, u)
+
+pit_histogram_rust <- function(pit, bins) .Call(wrap__pit_histogram_rust, pit, bins)
+
 simulate_from_means_rust <- function(family_name, theta, power, means, n_rows, dispersion, weights, n_sims, seed) .Call(wrap__simulate_from_means_rust, family_name, theta, power, means, n_rows, dispersion, weights, n_sims, seed)
 
 k_fold_rust <- function(n, k, seed) .Call(wrap__k_fold_rust, n, k, seed)
@@ -222,7 +226,7 @@ covar_rust <- function(pd, key, p, q) .Call(wrap__covar_rust, pd, key, p, q)
 
 esscher_allocation_rust <- function(pd, h) .Call(wrap__esscher_allocation_rust, pd, h)
 
-iman_conover_reorder <- function(pd, correlation, seed) .Call(wrap__iman_conover_reorder, pd, correlation, seed)
+iman_conover_reorder <- function(pd, correlation, seed, dof, scores, shuffle_rows) .Call(wrap__iman_conover_reorder, pd, correlation, seed, dof, scores, shuffle_rows)
 
 gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
 
@@ -825,6 +829,10 @@ GamModel$coefficients <- function() .Call(wrap__GamModel__coefficients, self)
 GamModel$lambdas <- function() .Call(wrap__GamModel__lambdas, self)
 
 GamModel$edf <- function() .Call(wrap__GamModel__edf, self)
+
+GamModel$log_likelihood <- function() .Call(wrap__GamModel__log_likelihood, self)
+
+GamModel$aic <- function() .Call(wrap__GamModel__aic, self)
 
 GamModel$dispersion <- function() .Call(wrap__GamModel__dispersion, self)
 

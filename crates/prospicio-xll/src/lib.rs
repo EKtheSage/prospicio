@@ -1239,6 +1239,134 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::layers,
     },
     Function {
+        symbol: "pro_agg_cover",
+        name: "PRO.AGG.COVER",
+        help: "Aggregate covers (a stop loss) on the annual total, one column per cover: chances of attaching and exhausting, annual moments.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of claims a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "limits",
+                help: "Each cover's annual limit (or \"unlimited\"): a row",
+            },
+            Arg {
+                name: "retentions",
+                help: "Each cover's annual retention: one, or one per limit",
+            },
+            Arg {
+                name: "shares",
+                help: "Each cover's placed share: one, or one per limit; 1 if omitted",
+            },
+            Arg {
+                name: "occ_limits",
+                help: "Per-occurrence layers inuring to the covers: their limits (a row); none if omitted",
+            },
+            Arg {
+                name: "occ_attachments",
+                help: "The per-occurrence layers' attachments: one, or one per occurrence limit",
+            },
+            Arg {
+                name: "occ_shares",
+                help: "The per-occurrence layers' placed shares: one, or one per occurrence limit; 1 if omitted",
+            },
+            Arg {
+                name: "subject",
+                help: "With occurrence layers, the covers sit on the total \"net\" of them (default) or on their \"ceded\" total",
+            },
+            Arg {
+                name: "step",
+                help: "The grid's step, with points; sized automatically if both are omitted",
+            },
+            Arg {
+                name: "points",
+                help: "The grid's number of points: the severity is rounded onto it, its mass above lumped at the top",
+            },
+        ],
+        run: aggregate::cover,
+    },
+    Function {
+        symbol: "pro_tower_price",
+        name: "PRO.TOWER.PRICE",
+        help: "A reinsurance tower on the annual grid, each view (gross, layers, cover, net) priced by a distortion: loss, SD, premium, margin, loss ratio, rate on line.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of claims a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "limit",
+                help: "The gross per-claim limit (a policy limit) or \"unlimited\"; none if omitted",
+            },
+            Arg {
+                name: "attachment",
+                help: "The gross per-claim deductible; 0 if omitted",
+            },
+            Arg {
+                name: "limits",
+                help: "Each per-occurrence layer's limit (or \"unlimited\"): a row",
+            },
+            Arg {
+                name: "attachments",
+                help: "Each layer's attachment: one, or one per limit",
+            },
+            Arg {
+                name: "shares",
+                help: "Each layer's placed share: one, or one per limit; 1 if omitted",
+            },
+            Arg {
+                name: "agg_deductibles",
+                help: "Each layer's annual aggregate deductible: one, or one per limit; 0 if omitted",
+            },
+            Arg {
+                name: "agg_limits",
+                help: "Each layer's annual aggregate limit (or \"unlimited\"): one, or one per limit; unlimited if omitted",
+            },
+            Arg {
+                name: "cover_limit",
+                help: "A stop loss on the annual total net of the layers: its limit (or \"unlimited\"); none if omitted",
+            },
+            Arg {
+                name: "cover_retention",
+                help: "The stop loss's annual retention",
+            },
+            Arg {
+                name: "distortion",
+                help: "\"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\" or \"exp\" (aggregate's names)",
+            },
+            Arg {
+                name: "parameter",
+                help: "The distortion's parameter: ccoc r, ph rho, wang lambda, dual beta, tvar p, exp k",
+            },
+            Arg {
+                name: "step",
+                help: "The grid's step, with points; sized automatically if both are omitted",
+            },
+            Arg {
+                name: "points",
+                help: "The grid's number of points: the severity is rounded onto it, its mass above lumped at the top",
+            },
+        ],
+        run: aggregate::tower_price,
+    },
+    Function {
         symbol: "pro_agg_pml",
         name: "PRO.AGG.PML",
         help: "Occurrence and aggregate PML curves by return period: the year's largest occurrence and its total.",
@@ -1293,7 +1421,7 @@ pub static FUNCTIONS: &[Function] = &[
             PERCENTILES,
             Arg {
                 name: "prior_sd",
-                help: "SD of the normal priors on the log-scale intercept, origin and development effects (10 if omitted)",
+                help: "SD of the normal priors on the log-scale intercept, origin and development effects (10 if omitted). Keep it wide: a tight one pulls late columns toward the first column's level and raises the reserve",
             },
             PROCESS,
             ORIGINS,

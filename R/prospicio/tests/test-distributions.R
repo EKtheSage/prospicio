@@ -176,3 +176,6 @@ stopifnot(identical(VaR(gamma_distribution(2, 1000), 0.9), quantile(gamma_distri
 stopifnot(inherits(try(TVaR(ln, 1), silent = TRUE), "try-error"))
 g <- discretize(ln, step = 2000, points = 2^12)
 stopifnot(identical(VaR(g, 0.99), quantile(g, 0.99)))
+
+# remove_fuzz() (#367).
+stopifnot(identical(remove_fuzz(grid_distribution(1, c(0.5, 0.5, 1e-20)))@probs, c(0.5, 0.5, 0)))

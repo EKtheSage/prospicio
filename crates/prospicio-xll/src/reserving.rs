@@ -130,7 +130,7 @@ pub(crate) fn triangle_of(
 }
 
 /// The text of an optional argument, lower-cased; `None` when omitted.
-fn text_option(grid: &Grid, name: &str) -> Result<Option<String>> {
+pub(crate) fn text_option(grid: &Grid, name: &str) -> Result<Option<String>> {
     match grid.as_scalar() {
         Some(v) if v.is_blank() => Ok(None),
         Some(Value::Text(s)) => Ok(Some(s.trim().to_ascii_lowercase())),

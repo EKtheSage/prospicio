@@ -410,6 +410,23 @@ S7::method(stop_loss, grid_distribution) <- function(dist, retention, ...) dist@
 S7::method(layer, grid_distribution) <- function(dist, limit, attachment, ...) {
   dist@ptr$layer(as.double(limit), as.double(attachment))
 }
+#' Remove FFT round-off from a grid
+#'
+#' The grid with every probability below `eps` set to 0: the round-off an
+#' FFT leaves where the true mass is zero, as `aggregate`'s `remove_fuzz`.
+#' [tower_on_grid()]'s ceded and net grids already have it removed.
+#'
+#' @param grid A [grid_distribution].
+#' @param eps The threshold, machine epsilon by default.
+#' @returns A `grid_distribution`.
+#' @export
+#' @examples
+#' remove_fuzz(grid_distribution(1, c(0.5, 0.5 - 1e-20, 1e-20)))@probs
+remove_fuzz <- function(grid, eps = .Machine$double.eps) {
+  p <- grid@probs
+  grid_distribution(grid@step, ifelse(p < eps, 0, p))
+}
+
 S7::method(print, grid_distribution) <- function(x, ...) {
   cat(sprintf("<grid_distribution> step = %s, %d points\n", format(x@step, digits = 15), length(x@probs)))
   invisible(x)

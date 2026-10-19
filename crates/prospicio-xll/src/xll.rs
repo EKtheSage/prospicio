@@ -466,6 +466,8 @@ mod exports {
     udf!(pro_burningcost, accident, amounts, limits, attachments, years, premiums, development, trend, trend_to, threshold, agg_deductible, agg_limit);
     udf!(pro_agg_stats, count_mean, dispersion, family, p1, p2, p3, limit, attachment, probabilities, step, points);
     udf!(pro_agg_layers, count_mean, dispersion, family, p1, p2, p3, limits, attachments, shares, step, points);
+    udf!(pro_agg_cover, count_mean, dispersion, family, p1, p2, p3, limits, retentions, shares, occ_limits, occ_attachments, occ_shares, subject, step, points);
+    udf!(pro_tower_price, count_mean, dispersion, family, p1, p2, p3, limit, attachment, limits, attachments, shares, agg_deductibles, agg_limits, cover_limit, cover_retention, distortion, parameter, step, points);
     udf!(pro_agg_pml, count_mean, dispersion, family, p1, p2, p3, return_periods, step, points);
     udf!(pro_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
 }
