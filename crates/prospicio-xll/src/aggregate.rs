@@ -1,8 +1,10 @@
 //! Aggregate (compound) distributions (`docs/design/xll.md`): the annual
 //! total of a claim count and a severity, ground up or to a
 //! per-occurrence layer, its moments, VaR and TVaR on an FFT grid, and the
-//! statistics of per-occurrence layers, and the occurrence and aggregate
-//! PML curves, over `prospicio_aggregate`.
+//! statistics of per-occurrence layers and of aggregate covers (a stop
+//! loss) on the annual total, a tower's views priced by a distortion,
+//! and the occurrence and aggregate PML curves, over
+//! `prospicio_aggregate`.
 //!
 //! The count is in the Panjer class by its mean and dispersion
 //! `Var N / E N` (1 Poisson, above 1 negative binomial, below 1 binomial);
@@ -14,12 +16,15 @@
 
 use prospicio_aggregate::pml::occurrence_pml;
 use prospicio_aggregate::{
-    CompoundMoments, LayerStatistics, Sizing, compound_moments, fft, fft_auto,
-    occurrence_layer_statistics, round_bucket,
+    AggregateLayerStatistics, CompoundMoments, Layer, LayerStatistics, Sizing, Tower, ViewPrice,
+    aggregate_layer_statistics, compound_moments, fft, fft_auto, occurrence_layer_statistics,
+    round_bucket,
 };
-use prospicio_prob::{Counting, Distribution, Grid, PanjerClass, SeverityDist};
+use prospicio_prob::distortion::Family;
+use prospicio_prob::{Counting, Distortion, Distribution, Grid, PanjerClass, SeverityDist};
 
 use crate::pricing::{Result, amount, numbers, scalar, severity};
+use crate::reserving::text_option;
 use crate::sheet::{Grid as Range, Value};
 
 /// The claim count with `mean` and `dispersion` (1 if omitted), as the
@@ -97,12 +102,15 @@ struct Total {
     tail_mass: f64,
 }
 
-fn total(
+/// The severity on the grid (to the per-occurrence layer when given) and
+/// the number of points the annual total needs: sized automatically, or
+/// rounded onto `points` buckets of `step`.
+fn severity_grid(
     n: &dyn Counting,
     sev: &SeverityDist,
     layer: Option<(f64, f64)>,
     control: Option<(f64, usize)>,
-) -> Result<Total> {
+) -> Result<(Grid, usize)> {
     let e = |e: prospicio_core::Error| e.to_string();
     let image = |g: &Grid| -> Result<Grid> {
         match layer {
@@ -110,38 +118,47 @@ fn total(
             Some((l, a)) => g.map(|x| (x - a).clamp(0.0, l)).map(|(g, _)| g).map_err(e),
         }
     };
-    let (layer_sev, points) = if let Some((step, points)) = control {
-        (
+    if let Some((step, points)) = control {
+        return Ok((
             image(&Grid::rounding(sev, step, points).map_err(e)?.0)?,
             points,
-        )
-    } else {
-        match layer {
-            Some((l, a)) if l.is_finite() => {
-                // The severity to the layer's top on about 4,096 buckets,
-                // then as many points as the total's mean plus 12 SDs needs.
-                let mut step = round_bucket((a + l) / 4096.0).map_err(e)?;
-                loop {
-                    let top = ((a + l) / step).ceil() as usize + 1;
-                    let g = image(&Grid::rounding(sev, step, top + 1).map_err(e)?.0)?;
-                    let m = compound_moments(n, &g).map_err(e)?;
-                    let extent = m.mean + 12.0 * m.variance.sqrt() + l;
-                    let points = ((extent / step).ceil() as usize + 1)
-                        .next_power_of_two()
-                        .max(1 << 10);
-                    if points <= MAX_POINTS {
-                        break (g, points);
-                    }
-                    step = round_bucket(2.0 * step).map_err(e)?;
+        ));
+    }
+    match layer {
+        Some((l, a)) if l.is_finite() => {
+            // The severity to the layer's top on about 4,096 buckets, then
+            // as many points as the total's mean plus 12 SDs needs.
+            let mut step = round_bucket((a + l) / 4096.0).map_err(e)?;
+            loop {
+                let top = ((a + l) / step).ceil() as usize + 1;
+                let g = image(&Grid::rounding(sev, step, top + 1).map_err(e)?.0)?;
+                let m = compound_moments(n, &g).map_err(e)?;
+                let extent = m.mean + 12.0 * m.variance.sqrt() + l;
+                let points = ((extent / step).ceil() as usize + 1)
+                    .next_power_of_two()
+                    .max(1 << 10);
+                if points <= MAX_POINTS {
+                    return Ok((g, points));
                 }
-            }
-            _ => {
-                let (_, _, size) = fft_auto(n, sev, &Sizing::default()).map_err(e)?;
-                let (g, _) = Grid::rounding(sev, size.step, size.points).map_err(e)?;
-                (image(&g)?, size.points)
+                step = round_bucket(2.0 * step).map_err(e)?;
             }
         }
-    };
+        _ => {
+            let (_, _, size) = fft_auto(n, sev, &Sizing::default()).map_err(e)?;
+            let (g, _) = Grid::rounding(sev, size.step, size.points).map_err(e)?;
+            Ok((image(&g)?, size.points))
+        }
+    }
+}
+
+fn total(
+    n: &dyn Counting,
+    sev: &SeverityDist,
+    layer: Option<(f64, f64)>,
+    control: Option<(f64, usize)>,
+) -> Result<Total> {
+    let e = |e: prospicio_core::Error| e.to_string();
+    let (layer_sev, points) = severity_grid(n, sev, layer, control)?;
     // Ground up, the exact moments when they are finite: the grid's lose
     // what its top lumps of a heavy tail. A layer's are exact on the grid.
     let on_grid = compound_moments(n, &layer_sev).map_err(e)?;
@@ -236,23 +253,8 @@ pub fn layers(args: &[Range]) -> Result<Range> {
     let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
     let limits: Vec<f64> = cells(&args[6], "limits", true)?;
     let k = limits.len();
-    let each = |g: &Range, name: &str, default: Option<f64>| -> Result<Vec<f64>> {
-        if g.is_blank() {
-            return default
-                .map(|d| vec![d; k])
-                .ok_or(format!("{name} is required"));
-        }
-        let v = cells(g, name, false)?;
-        match v.len() {
-            1 => Ok(vec![v[0]; k]),
-            len if len == k => Ok(v),
-            len => Err(format!(
-                "{name} must be one value, or one per limit ({k}), got {len}"
-            )),
-        }
-    };
-    let attachments = each(&args[7], "attachments", None)?;
-    let shares = each(&args[8], "shares", Some(1.0))?;
+    let attachments = per_limit(&args[7], "attachments", k, None)?;
+    let shares = per_limit(&args[8], "shares", k, Some(1.0))?;
     let e = |e: prospicio_core::Error| e.to_string();
     let grid = match grid_control(&args[9], &args[10])? {
         Some((step, points)) => Grid::rounding(&sev, step, points).map_err(e)?.0,
@@ -285,22 +287,8 @@ pub fn layers(args: &[Range]) -> Result<Range> {
         r.extend(stats.iter().map(|s| Value::number(f(s))));
         r
     };
-    let mut header = vec![Value::from("Layer")];
-    header.extend((0..k).map(|j| {
-        let l = if limits[j].is_finite() {
-            format!("{}", limits[j])
-        } else {
-            "unlimited".into()
-        };
-        let share = if shares[j] == 1.0 {
-            String::new()
-        } else {
-            format!("{}% of ", 100.0 * shares[j])
-        };
-        Value::Text(format!("{share}{l} xs {}", attachments[j]))
-    }));
     Ok(Range::from_rows(vec![
-        header,
+        header(&limits, &attachments, &shares),
         label("Pr attach", &|s| s.pr_attach),
         label("Pr detach", &|s| s.pr_detach),
         label("Pr loss", &|s| s.pr_loss),
@@ -316,6 +304,302 @@ pub fn layers(args: &[Range]) -> Result<Range> {
         label("Annual skewness", &|s| s.aggregate.skew()),
         label("Loss on line", &|s| s.loss_on_line),
     ]))
+}
+
+/// The header row of a table with a column per layer: `"Layer"`, then
+/// each layer's [`layer_name`].
+fn header(limits: &[f64], attachments: &[f64], shares: &[f64]) -> Vec<Value> {
+    let mut header = vec![Value::from("Layer")];
+    header.extend(
+        limits
+            .iter()
+            .zip(attachments)
+            .zip(shares)
+            .map(|((&l, &a), &c)| Value::Text(layer_name(l, a, c))),
+    );
+    header
+}
+
+/// `"[share% of ]limit xs attachment"`.
+fn layer_name(limit: f64, attachment: f64, share: f64) -> String {
+    let l = if limit.is_finite() {
+        format!("{limit}")
+    } else {
+        "unlimited".into()
+    };
+    let share = if share == 1.0 {
+        String::new()
+    } else {
+        format!("{}% of ", 100.0 * share)
+    };
+    format!("{share}{l} xs {attachment}")
+}
+
+/// One value per layer from `g`: one value repeated, or one per limit;
+/// `default` when blank, or an error naming `name` as required.
+fn per_limit(g: &Range, name: &str, k: usize, default: Option<f64>) -> Result<Vec<f64>> {
+    if g.is_blank() {
+        return default
+            .map(|d| vec![d; k])
+            .ok_or(format!("{name} is required"));
+    }
+    let v = cells(g, name, false)?;
+    match v.len() {
+        1 => Ok(vec![v[0]; k]),
+        len if len == k => Ok(v),
+        len => Err(format!(
+            "{name} must be one value, or one per limit ({k}), got {len}"
+        )),
+    }
+}
+
+/// Statistics of aggregate covers on the annual total, one column per
+/// cover, as `aggregate`'s `reins_stats_df` for its `agg` layers: the
+/// subject total's mean, the chances the year reaches and exhausts the
+/// cover, the annual ceded loss's mean, SD, CV and skewness, and the loss
+/// on line: `PRO.AGG.COVER(count_mean, [dispersion], family, p1, p2,
+/// [p3], limits, retentions, [shares], [occ_limits], [occ_attachments],
+/// [occ_shares], [subject], [step], [points])`. A stop loss is `limits`
+/// xs `retentions` of the ground-up total; with per-occurrence layers the
+/// covers sit on the total `net` of them (the default, `aggregate`'s
+/// `occurrence net of ... aggregate ceded to`) or on their `ceded` total
+/// (an annual deductible and limit on an excess of loss treaty). Every
+/// statistic is the grid's, sized as for `PRO.AGG.STATS` ground up.
+pub fn cover(args: &[Range]) -> Result<Range> {
+    let n = count(&args[0], &args[1])?;
+    let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
+    let limits = cells(&args[6], "limits", true)?;
+    let k = limits.len();
+    let retentions = per_limit(&args[7], "retentions", k, None)?;
+    let shares = per_limit(&args[8], "shares", k, Some(1.0))?;
+    let occ = if args[9].is_blank() && args[10].is_blank() {
+        Vec::new()
+    } else {
+        let limits = cells(&args[9], "occ_limits", true)?;
+        let m = limits.len();
+        let attachments = per_limit(&args[10], "occ_attachments", m, None)?;
+        let shares = per_limit(&args[11], "occ_shares", m, Some(1.0))?;
+        (0..m)
+            .map(|j| {
+                Layer::xol(format!("occurrence {}", j + 1), limits[j], attachments[j])
+                    .and_then(|l| l.share(shares[j]))
+                    .map_err(|e| e.to_string())
+            })
+            .collect::<Result<Vec<_>>>()?
+    };
+    let ceded = match text_option(&args[12], "subject")?.as_deref() {
+        None | Some("net") => false,
+        Some("ceded") => true,
+        Some(other) => {
+            return Err(format!(
+                "subject must be \"net\" (default) or \"ceded\", got {other:?}"
+            ));
+        }
+    };
+    if ceded && occ.is_empty() {
+        return Err("subject \"ceded\" needs occurrence layers (occ_limits)".into());
+    }
+    let e = |e: prospicio_core::Error| e.to_string();
+    let subject = if occ.is_empty() {
+        total(&*n, &sev, None, grid_control(&args[13], &args[14])?)?.grid
+    } else {
+        let (grid, points) = severity_grid(&*n, &sev, None, grid_control(&args[13], &args[14])?)?;
+        let grids = Tower::new(occ)
+            .map_err(e)?
+            .on_grid(&*n, &grid, points)
+            .map_err(e)?;
+        if ceded {
+            grids.stage_ceded[0]
+                .clone()
+                .ok_or("the occurrence layers' total cession is not on one grid")?
+        } else {
+            grids
+                .net
+                .ok_or("the net of the occurrence layers is not on one grid")?
+        }
+    };
+    let stats = (0..k)
+        .map(|j| {
+            aggregate_layer_statistics(&subject, shares[j], limits[j], retentions[j]).map_err(e)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let label = |name: &str, f: &dyn Fn(&AggregateLayerStatistics) -> f64| {
+        let mut r = vec![Value::from(name)];
+        r.extend(stats.iter().map(|s| Value::number(f(s))));
+        r
+    };
+    let mean = subject.mean();
+    Ok(Range::from_rows(vec![
+        header(&limits, &retentions, &shares),
+        label("Subject mean", &|_| mean),
+        label("Pr attach", &|s| s.pr_attach),
+        label("Pr detach", &|s| s.pr_detach),
+        label("Annual mean", &|s| s.aggregate.mean),
+        label("Annual SD", &|s| s.aggregate.variance.sqrt()),
+        label("Annual CV", &|s| s.aggregate.cv()),
+        label("Annual skewness", &|s| s.aggregate.skew()),
+        label("Loss on line", &|s| s.loss_on_line),
+    ]))
+}
+
+/// A distortion by `aggregate`'s short name (or its long one) and its
+/// parameter.
+fn distortion(name: &Range, parameter: &Range) -> Result<Distortion> {
+    let family = match text_option(name, "distortion")?.as_deref() {
+        Some("ccoc") => Family::Ccoc,
+        Some("ph" | "proportional_hazard") => Family::ProportionalHazard,
+        Some("wang") => Family::Wang,
+        Some("dual" | "dual_power") => Family::DualPower,
+        Some("tvar") => Family::Tvar,
+        Some("exp" | "exponential") => Family::Exponential,
+        None => return Err("distortion is required".into()),
+        Some(other) => {
+            return Err(format!(
+                "distortion must be \"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\" or \"exp\", got {other:?}"
+            ));
+        }
+    };
+    family
+        .with(scalar(parameter, "parameter")?)
+        .map_err(|e| e.to_string())
+}
+
+/// A tower on the annual grid, each view priced on its own by a
+/// distortion, as `aggregate`'s `reins_price_df`: one row each for the
+/// gross, every per-occurrence layer, the layers' total when there are
+/// several, the aggregate cover and the net, with the expected loss, SD,
+/// CV, the premium `ρ_g(X)`, margin, loss ratio and, for a layer or the
+/// cover, the rate on line (premium over share times limit):
+/// `PRO.TOWER.PRICE(count_mean, [dispersion], family, p1, p2, [p3],
+/// [limit], [attachment], limits, attachments, [shares],
+/// [agg_deductibles], [agg_limits], [cover_limit], [cover_retention],
+/// distortion, parameter, [step], [points])`. `limit` and `attachment`
+/// are the gross per-claim terms (a policy limit, `PRO.AGG.STATS`'s);
+/// the layers' annual deductibles and limits apply to each layer's annual
+/// recoveries; the cover is a stop loss on the annual total net of the
+/// layers. Every view is exact on the grid when the boundaries fall on
+/// its points; otherwise means stay exact and shapes are smeared by up to
+/// a step.
+pub fn tower_price(args: &[Range]) -> Result<Range> {
+    let n = count(&args[0], &args[1])?;
+    let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
+    let gross = layer(&args[6], &args[7])?;
+    let limits = cells(&args[8], "limits", true)?;
+    let k = limits.len();
+    let attachments = per_limit(&args[9], "attachments", k, None)?;
+    let shares = per_limit(&args[10], "shares", k, Some(1.0))?;
+    let deductibles = per_limit(&args[11], "agg_deductibles", k, Some(0.0))?;
+    let agg_limits = if args[12].is_blank() {
+        vec![f64::INFINITY; k]
+    } else {
+        let v = cells(&args[12], "agg_limits", true)?;
+        match v.len() {
+            1 => vec![v[0]; k],
+            len if len == k => v,
+            len => {
+                return Err(format!(
+                    "agg_limits must be one value, or one per limit ({k}), got {len}"
+                ));
+            }
+        }
+    };
+    let cover = layer(&args[13], &args[14])?;
+    if !args[13].is_blank() && args[14].is_blank() {
+        return Err("give the cover's retention with its limit".into());
+    }
+    let g = distortion(&args[15], &args[16])?;
+    let e = |e: prospicio_core::Error| e.to_string();
+    let occurrence = (0..k)
+        .map(|j| {
+            let mut l = Layer::xol(format!("layer {}", j + 1), limits[j], attachments[j])?
+                .share(shares[j])?;
+            if deductibles[j] > 0.0 {
+                l = l.aggregate_deductible(deductibles[j])?;
+            }
+            if agg_limits[j].is_finite() {
+                l = l.aggregate_limit(agg_limits[j])?;
+            }
+            Ok(l)
+        })
+        .collect::<prospicio_core::Result<Vec<_>>>()
+        .map_err(e)?;
+    let tower = match cover {
+        None => Tower::new(occurrence),
+        Some((l, r)) => Tower::inuring(vec![
+            occurrence,
+            vec![Layer::stop_loss("cover", l, r).map_err(e)?],
+        ]),
+    }
+    .map_err(e)?;
+    let (grid, points) = severity_grid(&*n, &sev, gross, grid_control(&args[17], &args[18])?)?;
+    let grids = tower.on_grid(&*n, &grid, points).map_err(e)?;
+    let price = grids.price(&g);
+    let mut rows = vec![
+        [
+            "View",
+            "Loss",
+            "SD",
+            "CV",
+            "Premium",
+            "Margin",
+            "Loss ratio",
+            "Rate on line",
+        ]
+        .map(Value::from)
+        .to_vec(),
+    ];
+    view(&mut rows, "Gross", &grids.gross, &price.gross, None);
+    for j in 0..k {
+        let line = shares[j] * limits[j].min(agg_limits[j]);
+        let name = layer_name(limits[j], attachments[j], shares[j]);
+        view(
+            &mut rows,
+            &name,
+            &grids.ceded[j],
+            &price.ceded[j],
+            Some(line),
+        );
+    }
+    let not_one = "not one compound: a layer has annual terms";
+    if k > 1 {
+        match (&grids.stage_ceded[0], &price.stages[0]) {
+            (Some(grid), Some(p)) => view(&mut rows, "Occurrence total", grid, p, None),
+            _ => rows.push(note("Occurrence total", not_one)),
+        }
+    }
+    if let Some((l, r)) = cover {
+        let name = format!("Aggregate cover {}", layer_name(l, r, 1.0));
+        view(&mut rows, &name, &grids.ceded[k], &price.ceded[k], Some(l));
+    }
+    match (&grids.net, &price.net) {
+        (Some(grid), Some(p)) => view(&mut rows, "Net", grid, p, None),
+        _ => rows.push(note("Net", not_one)),
+    }
+    Ok(Range::from_rows(rows))
+}
+
+/// One view's row of `PRO.TOWER.PRICE`; `line` is the limit its rate on
+/// line is over, if any.
+fn view(rows: &mut Vec<Vec<Value>>, label: &str, grid: &Grid, p: &ViewPrice, line: Option<f64>) {
+    let sd = grid.variance().sqrt();
+    rows.push(vec![
+        Value::from(label),
+        Value::number(p.loss),
+        Value::number(sd),
+        Value::number(sd / p.loss),
+        Value::number(p.premium),
+        Value::number(p.margin),
+        Value::number(p.loss_ratio),
+        line.filter(|l| l.is_finite())
+            .map_or(Value::Empty, |l| Value::number(p.premium / l)),
+    ]);
+}
+
+/// A row with a label and a note in place of its numbers.
+fn note(label: &str, text: &str) -> Vec<Value> {
+    let mut r = vec![Value::from(label), Value::from(text)];
+    r.extend(std::iter::repeat_n(Value::Empty, 6));
+    r
 }
 
 /// The occurrence and aggregate PML curves, one row per return period:

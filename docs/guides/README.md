@@ -31,6 +31,8 @@ pytest tests/test_guides.py
 
 Looking for the guide that follows a particular text (a CAS monograph, a book)? See [`reading-list.md`](reading-list.md), which maps each source to its guides, its knowledge file and the open issues.
 
+Want to run something before you read? [`examples/reading_path.ipynb`](../../examples/reading_path.ipynb) carries one small book through seven stations (severity and counts, the aggregate distribution, layer pricing, the indication, reserving, risk loads and allocation, and the Bayesian and GLM guides) and names the guides to read at each. Its R twin is [`examples/reading_path.qmd`](../../examples/reading_path.qmd).
+
 Start here: [`choosing-a-method.md`](choosing-a-method.md). It maps each
 situation (a rate indication, a per-risk or casualty layer, a catastrophe cover,
 a quota share, a stop loss, a reserve, capital) to the method and the calls,
@@ -126,8 +128,8 @@ pointing to its page on the Python site and links to a sibling `.qmd` to its
 article. The site does not run a guide's chunks; it shows each with the text
 block that the harness checks. The articles index lists the guides by name in
 reading order, and takes in a new guide whose name starts like an existing
-family's (`reserving-`, `pir-`, ...); a guide with a new prefix needs a line
-there, or the site build fails. With the R package installed, render one
+family's (`reserving-`, `pir-`, ...); a guide with a new prefix is shown
+under "More articles" until it is given a line there. With the R package installed, render one
 with `quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
 all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
 Two blocks in `reserving-meyers` (the heavy Bayesian fits) are plain code fences

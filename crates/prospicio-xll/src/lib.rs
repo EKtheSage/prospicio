@@ -17,8 +17,10 @@
 pub mod aggregate;
 pub mod bayes;
 pub mod credibility;
+pub mod evt;
 pub mod experience;
 pub mod exposure;
+pub mod fitting;
 pub mod pricing;
 pub mod ratemaking;
 pub mod reserving;
@@ -53,6 +55,10 @@ pub const CATEGORY: &str = "prospicio";
 /// The add-in's name in Excel's Add-ins dialog.
 pub const ADDIN_NAME: &str = "prospicio";
 
+const DATA: Arg = Arg {
+    name: "data",
+    help: "The losses: a range; blank cells are skipped",
+};
 const TRIANGLE: Arg = Arg {
     name: "triangle",
     help: "Cumulative values: one row per origin (oldest first), one column per age; blank where unobserved",
@@ -1239,6 +1245,134 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::layers,
     },
     Function {
+        symbol: "pro_agg_cover",
+        name: "PRO.AGG.COVER",
+        help: "Aggregate covers (a stop loss) on the annual total, one column per cover: chances of attaching and exhausting, annual moments.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of claims a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "limits",
+                help: "Each cover's annual limit (or \"unlimited\"): a row",
+            },
+            Arg {
+                name: "retentions",
+                help: "Each cover's annual retention: one, or one per limit",
+            },
+            Arg {
+                name: "shares",
+                help: "Each cover's placed share: one, or one per limit; 1 if omitted",
+            },
+            Arg {
+                name: "occ_limits",
+                help: "Per-occurrence layers inuring to the covers: their limits (a row); none if omitted",
+            },
+            Arg {
+                name: "occ_attachments",
+                help: "The per-occurrence layers' attachments: one, or one per occurrence limit",
+            },
+            Arg {
+                name: "occ_shares",
+                help: "The per-occurrence layers' placed shares: one, or one per occurrence limit; 1 if omitted",
+            },
+            Arg {
+                name: "subject",
+                help: "With occurrence layers, the covers sit on the total \"net\" of them (default) or on their \"ceded\" total",
+            },
+            Arg {
+                name: "step",
+                help: "The grid's step, with points; sized automatically if both are omitted",
+            },
+            Arg {
+                name: "points",
+                help: "The grid's number of points: the severity is rounded onto it, its mass above lumped at the top",
+            },
+        ],
+        run: aggregate::cover,
+    },
+    Function {
+        symbol: "pro_tower_price",
+        name: "PRO.TOWER.PRICE",
+        help: "A reinsurance tower on the annual grid, each view (gross, layers, cover, net) priced by a distortion: loss, SD, premium, margin, loss ratio, rate on line.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of claims a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "limit",
+                help: "The gross per-claim limit (a policy limit) or \"unlimited\"; none if omitted",
+            },
+            Arg {
+                name: "attachment",
+                help: "The gross per-claim deductible; 0 if omitted",
+            },
+            Arg {
+                name: "limits",
+                help: "Each per-occurrence layer's limit (or \"unlimited\"): a row",
+            },
+            Arg {
+                name: "attachments",
+                help: "Each layer's attachment: one, or one per limit",
+            },
+            Arg {
+                name: "shares",
+                help: "Each layer's placed share: one, or one per limit; 1 if omitted",
+            },
+            Arg {
+                name: "agg_deductibles",
+                help: "Each layer's annual aggregate deductible: one, or one per limit; 0 if omitted",
+            },
+            Arg {
+                name: "agg_limits",
+                help: "Each layer's annual aggregate limit (or \"unlimited\"): one, or one per limit; unlimited if omitted",
+            },
+            Arg {
+                name: "cover_limit",
+                help: "A stop loss on the annual total net of the layers: its limit (or \"unlimited\"); none if omitted",
+            },
+            Arg {
+                name: "cover_retention",
+                help: "The stop loss's annual retention",
+            },
+            Arg {
+                name: "distortion",
+                help: "\"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\" or \"exp\" (aggregate's names)",
+            },
+            Arg {
+                name: "parameter",
+                help: "The distortion's parameter: ccoc r, ph rho, wang lambda, dual beta, tvar p, exp k",
+            },
+            Arg {
+                name: "step",
+                help: "The grid's step, with points; sized automatically if both are omitted",
+            },
+            Arg {
+                name: "points",
+                help: "The grid's number of points: the severity is rounded onto it, its mass above lumped at the top",
+            },
+        ],
+        run: aggregate::tower_price,
+    },
+    Function {
         symbol: "pro_agg_pml",
         name: "PRO.AGG.PML",
         help: "Occurrence and aggregate PML curves by return period: the year's largest occurrence and its total.",
@@ -1293,12 +1427,95 @@ pub static FUNCTIONS: &[Function] = &[
             PERCENTILES,
             Arg {
                 name: "prior_sd",
-                help: "SD of the normal priors on the log-scale intercept, origin and development effects (10 if omitted)",
+                help: "SD of the normal priors on the log-scale intercept, origin and development effects (10 if omitted). Keep it wide: a tight one pulls late columns toward the first column's level and raises the reserve",
             },
             PROCESS,
             ORIGINS,
         ],
         run: bayes::bayes_odp,
+    },
+    Function {
+        symbol: "pro_sev_fit",
+        name: "PRO.SEV.FIT",
+        help: "Maximum likelihood severity fit to large losses with reporting thresholds and censoring: parameters, fit against the data, or the body families compared.",
+        args: &[
+            Arg {
+                name: "losses",
+                help: "The losses: a range; blank cells are skipped",
+            },
+            Arg {
+                name: "family",
+                help: "lognormal, gamma, weibull, burr, pareto, piecewise_pareto or gen_pareto (blank for \"compare\")",
+            },
+            Arg {
+                name: "output",
+                help: "\"params\" (default: parameters in PRO.SEV's order, SEs, AIC), \"gof\" (survival and Q-Q at each loss) or \"compare\"",
+            },
+            Arg {
+                name: "t",
+                help: "Pareto families: the threshold (a row of thresholds for piecewise_pareto)",
+            },
+            Arg {
+                name: "truncation",
+                help: "Pareto and piecewise_pareto: a truncation point, then optionally \"lp\" or \"wd\"",
+            },
+            Arg {
+                name: "thresholds",
+                help: "Reporting thresholds: one value or one per loss (0 if omitted)",
+            },
+            Arg {
+                name: "censored",
+                help: "TRUE where a policy limit capped the loss: one value or one per loss (FALSE if omitted)",
+            },
+            Arg {
+                name: "weights",
+                help: "Weights: one value or one per loss (1 if omitted)",
+            },
+        ],
+        run: fitting::severity_fit,
+    },
+    Function {
+        symbol: "pro_evt_thresholds",
+        name: "PRO.EVT.THRESHOLDS",
+        help: "Threshold choice for a GPD tail: at each threshold the mean excess and the fitted shape and modified scale, with SEs (R ismev).",
+        args: &[
+            DATA,
+            Arg {
+                name: "thresholds",
+                help: "Thresholds: a row or column (the data's 50%, 55%, ..., 95% quantiles if omitted)",
+            },
+        ],
+        run: evt::thresholds,
+    },
+    Function {
+        symbol: "pro_evt_fit",
+        name: "PRO.EVT.FIT",
+        help: "Peaks over threshold: the GPD fitted to the exceedances with SEs, and the tail's VaR and TVaR.",
+        args: &[
+            DATA,
+            Arg {
+                name: "threshold",
+                help: "The threshold u; the GPD fits the values above it, minus u",
+            },
+            Arg {
+                name: "probabilities",
+                help: "Probabilities for VaR and TVaR (0.99, 0.995, 0.999 if omitted)",
+            },
+        ],
+        run: evt::fit,
+    },
+    Function {
+        symbol: "pro_evt_hill",
+        name: "PRO.EVT.HILL",
+        help: "Hill's estimate of the tail index from the k largest values, with its threshold and Pareto alpha.",
+        args: &[
+            DATA,
+            Arg {
+                name: "k",
+                help: "Numbers of largest values: a row or column (ten from 5% to 50% of the data if omitted)",
+            },
+        ],
+        run: evt::hill_estimates,
     },
 ];
 

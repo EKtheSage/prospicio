@@ -82,9 +82,9 @@ means: B net 49.084 (book 49.08), Cat net 17.786 (book 17.79)
 The covers' attachments and limits are read off the gross units' quantiles: B's
 80% and 99% quantiles are 56.17 and 69.08, Cat's 90% and 99.5% are 41.11 and
 120.75. Making the net unit with `Grid.map` keeps it exact on the grid. A
-`Tower` with `on_grid` gives the same distribution by FFT, with round-off of
-about 1e-19 where the probability should be zero; section 3 shows when that
-matters (issue #367).
+`Tower` with `on_grid` gives the same distribution by FFT; it sets the FFT's
+round-off (about 1e-19 where the probability should be zero) to zero, and
+section 3 shows why that matters (issue #367).
 
 ## 2. The portfolio CCoC price
 
@@ -260,12 +260,13 @@ is neither: its delta changes sign between gross and net (0.054 and -0.029 in
 the book). A principle's view of diversification is built into its formula, not
 learned from the data.
 
-Two principles misbehave on Tame's net B as soon as the net grid comes from an
-FFT. The exponential and Esscher premiums weight an outcome x by exp(t x), and
-on a grid that reaches 1,024 the factor exp(0.08 x) is about 1e35 at the top,
-so the 1e-19 round-off a `Tower` grid carries there becomes a premium of
-hundreds (about 510; the round-off's digits, and so this premium's, vary with
-the platform's FFT, which is why the code prints bounds):
+Two principles are sensitive to how Tame's net B grid is made. The exponential
+and Esscher premiums weight an outcome x by exp(t x), and on a grid that
+reaches 1,024 the factor exp(0.08 x) is about 1e35 at the top, so the 1e-19
+round-off an FFT leaves there would become a premium of hundreds (about 510
+before issue #367). `Tower.on_grid` now sets probabilities below machine
+epsilon to zero, as `aggregate`'s `remove_fuzz`, so its net grid prices as the
+exact one does:
 
 ```python
 from prospicio.distributions import Count
@@ -273,22 +274,21 @@ from prospicio.reinsurance import Layer, Tower
 
 b_net_fft = Tower([Layer.stop_loss("B", 12.91, 56.17)]).on_grid(Count.fixed(1), b_unit, POINTS).net
 t_exp = calibrate_classical("exponential", tame_total, tame_target)
-# the round-off's digits depend on the platform's FFT, so print bounds
 fft_premium = classical_premium('exponential', b_net_fft, t_exp)
 noise = max(b_net_fft.probs[150 * 64:])
 print(f"exponential premium of net B: by map {classical_premium('exponential', b_net, t_exp):.3f}, "
-      f"from the FFT {'over 100' if fft_premium > 100 else fft_premium} (book 50.420)")
-print(f"largest probability above 150: FFT {'non-zero, below 1e-18' if 0 < noise < 1e-18 else noise}, "
+      f"from the FFT {fft_premium:.3f} (book 50.420)")
+print(f"largest probability above 150: FFT {'exactly zero' if noise == 0 else noise}, "
       "map exactly zero")
 ```
 
 ```text
-exponential premium of net B: by map 50.419, from the FFT over 100 (book 50.420)
-largest probability above 150: FFT non-zero, below 1e-18, map exactly zero
+exponential premium of net B: by map 50.419, from the FFT 50.419 (book 50.420)
+largest probability above 150: FFT exactly zero, map exactly zero
 ```
 
-Use the exact net (`Grid.map`) for these two principles, or set the round-off
-to zero before pricing.
+A grid from elsewhere (an FFT of your own, say) can be cleaned the same way with
+`Grid.remove_fuzz()` before pricing with these two principles.
 
 Cat/Non-Cat is where the principles spread out (Tables 9.5 and 9.6). The columns
 are Cat net, Cat gross, Non-Cat, total net and total gross:

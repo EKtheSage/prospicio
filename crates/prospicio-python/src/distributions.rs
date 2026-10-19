@@ -1094,6 +1094,31 @@ impl PyGrid {
         self.inner.tvar_threshold(p).map_err(to_py)
     }
 
+    /// The grid with every probability below ``eps`` set to 0: the
+    /// round-off an FFT leaves where the true mass is zero, as
+    /// ``aggregate``'s ``remove_fuzz``. ``Tower.on_grid`` already removes
+    /// it from its ceded and net grids.
+    ///
+    /// Parameters
+    /// ----------
+    /// eps : float, default machine epsilon (2.22e-16)
+    ///
+    /// Returns
+    /// -------
+    /// Grid
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Grid
+    /// >>> Grid(1.0, [0.5, 0.5 - 1e-20, 1e-20]).remove_fuzz().probs[2]
+    /// 0.0
+    #[pyo3(signature = (eps = f64::EPSILON))]
+    fn remove_fuzz(&self, eps: f64) -> Self {
+        Self {
+            inner: self.inner.remove_fuzz(eps),
+        }
+    }
+
     /// Limited expected value ``E[min(X, limit)]``, exact on the grid.
     ///
     /// Parameters

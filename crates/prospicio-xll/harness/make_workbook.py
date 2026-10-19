@@ -610,11 +610,68 @@ ag["A42"] = ArrayFormula("A42:F51", "=PRO.AGG.PML(B2,B3,B4,B5,B6)")
 for row in ag.iter_rows(min_row=43, max_row=51, min_col=1, max_col=6):
     for c in row:
         c.number_format = "0.0000" if c.column in (2, 5) else "#,##0.0" if c.column == 6 else "#,##0"
+ag["A54"] = "Stop loss: 150,000 xs 200,000 a year, net of 100,000 xs 50,000 per claim (aggregate's agg block)"; ag["A54"].font = bold
+ag["A55"] = ArrayFormula("A55:B63", "=PRO.AGG.COVER(B2,B3,B4,B5,B6,,150000,200000,,100000,50000)")
+for r in range(56, 64):
+    ag[f"B{r}"].number_format = "0.0000" if r in (57, 58, 61, 62, 63) else "#,##0"
+ag["A66"] = "Tower priced on the grid by a proportional hazard of 0.7: two layers and a stop loss on the net"; ag["A66"].font = bold
+ag["A67"] = "Limits"; ag["A68"] = "Attachments"
+for c, (l, a) in enumerate([(100000, 50000), (300000, 150000)]):
+    ag.cell(row=67, column=2 + c, value=l).fill = inp
+    ag.cell(row=68, column=2 + c, value=a).fill = inp
+ag["A70"] = ArrayFormula("A70:H75", '=PRO.TOWER.PRICE(B2,B3,B4,B5,B6,,,,B67:C67,B68:C68,,,,200000,400000,"ph",0.7)')
+for row in ag.iter_rows(min_row=71, max_row=75, min_col=2, max_col=8):
+    for c in row:
+        c.number_format = "0.0000" if c.column in (4, 7, 8) else "#,##0"
 ag.column_dimensions["A"].width = 18
 ag.column_dimensions["D"].width = 16
 ag.column_dimensions["G"].width = 16
 for col in "BCEH":
     ag.column_dimensions[col].width = 14
+
+# Severity fits to large losses: R Pareto's example losses, some reported
+# only above 1,000 and three capped by a policy limit.
+sf = wb.create_sheet("Severity fit")
+sf["A1"] = "Large losses fitted by maximum likelihood, each conditioned on its reporting threshold; TRUE where a policy limit capped it"; sf["A1"].font = bold
+sf["A3"] = "Loss"; sf["B3"] = "Reported above"; sf["C3"] = "Capped"
+for c in ("A3", "B3", "C3"):
+    sf[c].font = bold
+losses = [1100, 1300, 1750, 2000, 2600, 3500, 4100, 5200, 7000, 9000, 12000, 18000, 25000, 40000]
+reported = [1000, 1200, 1000, 1500, 1000, 1000, 3000, 1000, 1000, 5000, 1000, 1000, 1000, 1000]
+capped = [False] * 5 + [True] + [False] * 4 + [True, False, False, True]
+for i, (y, r, c) in enumerate(zip(losses, reported, capped)):
+    for col, v in zip("ABC", (y, r, c)):
+        sf[f"{col}{4 + i}"] = v
+        sf[f"{col}{4 + i}"].fill = inp
+data = "A4:A17,{fam},{out},{t},,B4:B17,C4:C17"
+sf["E3"] = "Lognormal"; sf["E3"].font = bold
+sf["E4"] = ArrayFormula("E4:G13", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out="", t="") + ")")
+sf["I3"] = "Pareto above 1,000"; sf["I3"].font = bold
+sf["I4"] = ArrayFormula("I4:K13", "=PRO.SEV.FIT(" + data.format(fam='"pareto"', out="", t="1000") + ")")
+sf["E14"] = "The lognormal's 1M xs 1M from the fit's cells"
+sf["I14"] = ArrayFormula("I14", "=PRO.LAYER(1000000,1000000,\"lognormal\",F5,F6)")
+sf["E16"] = "Body families compared"; sf["E16"].font = bold
+sf["E17"] = ArrayFormula("E17:N21", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="") + ")")
+sf["E23"] = "Lognormal against the product-limit estimate (P-P and Q-Q)"; sf["E23"].font = bold
+sf["E24"] = ArrayFormula("E24:J35", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out='"gof"', t="") + ")")
+for col in "ABCEFGHIJKLM":
+    sf.column_dimensions[col].width = 14
+
+# Extreme value theory on 1,000 exact Burr quantiles (R ismev's test data).
+ev = wb.create_sheet("EVT")
+ev["A1"] = "1,000 large losses (exact quantiles of a Burr with a = 2, c = 1.5): choose a threshold, fit a GPD above it"; ev["A1"].font = bold
+ev["A3"] = "Losses"; ev["A3"].font = bold
+for i in range(1000):
+    p = (i + 0.5) / 1000
+    ev[f"A{4 + i}"] = ((1 - p) ** (-1 / 2) - 1) ** (1 / 1.5)
+ev["C3"] = "Threshold diagnostics: where the shape and modified scale stop moving, a GPD fits"; ev["C3"].font = bold
+ev["C4"] = ArrayFormula("C4:K14", "=PRO.EVT.THRESHOLDS(A4:A1003)")
+ev["C17"] = "Threshold"; ev["D17"] = 1; ev["D17"].fill = inp
+ev["C18"] = ArrayFormula("C18:E29", "=PRO.EVT.FIT(A4:A1003,D17)")
+ev["G17"] = "Hill estimates"; ev["G17"].font = bold
+ev["G18"] = ArrayFormula("G18:J28", "=PRO.EVT.HILL(A4:A1003)")
+for col in "CDEFGHIJK":
+    ev.column_dimensions[col].width = 14
 
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")

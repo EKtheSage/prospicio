@@ -548,6 +548,15 @@ copula_simulate <- function(copula, marginals, n_sims, seed, keys = NULL) {
 #' @param correlation A correlation matrix with one row and column per
 #'   component.
 #' @param seed Seed for shuffling the scores, a whole number.
+#' @param dof Student t reference scores with these degrees of freedom,
+#'   which give more joint extremes than the default normal scores (CAS
+#'   Monograph 15, section 8.2.3; `aggregate`'s `dof`).
+#' @param scores Reference scores of your own, one per simulation, in any
+#'   order. Give `dof` or `scores`, not both.
+#' @param shuffle_rows Shuffle the result's rows. Without it the first
+#'   component comes back sorted ascending, which matters to anything that
+#'   reads the rows in order or a slice of them; whole-sample statistics do
+#'   not notice.
 #' @returns A [predictive_distribution] with the same keys and marginals.
 #' @export
 #' @examples
@@ -557,10 +566,13 @@ copula_simulate <- function(copula, marginals, n_sims, seed, keys = NULL) {
 #' )
 #' joined <- iman_conover(pd, matrix(c(1, 0.7, 0.7, 1), 2), seed = 3)
 #' cor(draw_matrix(joined), method = "spearman")
-iman_conover <- function(x, correlation, seed) {
+iman_conover <- function(x, correlation, seed, dof = NULL, scores = NULL, shuffle_rows = FALSE) {
   correlation <- as.matrix(correlation)
   predictive_distribution(ptr = rust_result(
-    iman_conover_reorder(x@ptr, as.double(correlation), as.double(seed))
+    iman_conover_reorder(x@ptr, as.double(correlation), as.double(seed),
+                         if (is.null(dof)) NaN else as.double(dof),
+                         if (is.null(scores)) double() else as.double(scores),
+                         isTRUE(shuffle_rows))
   ))
 }
 

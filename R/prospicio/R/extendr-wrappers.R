@@ -226,7 +226,7 @@ covar_rust <- function(pd, key, p, q) .Call(wrap__covar_rust, pd, key, p, q)
 
 esscher_allocation_rust <- function(pd, h) .Call(wrap__esscher_allocation_rust, pd, h)
 
-iman_conover_reorder <- function(pd, correlation, seed) .Call(wrap__iman_conover_reorder, pd, correlation, seed)
+iman_conover_reorder <- function(pd, correlation, seed, dof, scores, shuffle_rows) .Call(wrap__iman_conover_reorder, pd, correlation, seed, dof, scores, shuffle_rows)
 
 gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
 

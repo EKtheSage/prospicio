@@ -1751,6 +1751,18 @@ pub(crate) fn simulate(
 /// correlation : list of list of float
 ///     One row and column per component.
 /// seed : int
+/// dof : float, optional
+///     Student t reference scores with these degrees of freedom, which give
+///     more joint extremes than the default normal scores (Monograph 15,
+///     section 8.2.3; ``aggregate``'s ``dof``).
+/// scores : list of float, optional
+///     Reference scores of your own, one per simulation, in any order.
+///     Give ``dof`` or ``scores``, not both.
+/// shuffle_rows : bool, default False
+///     Shuffle the result's rows. Without it the first component comes
+///     back sorted ascending, which matters to anything that reads the
+///     rows in order or a slice of them; whole-sample statistics do not
+///     notice.
 ///
 /// Returns
 /// -------
@@ -1766,16 +1778,34 @@ pub(crate) fn simulate(
 /// >>> sorted(joined.marginal((1,)).draws) == sorted(pd.marginal((1,)).draws)
 /// True
 #[pyfunction]
+#[pyo3(signature = (pd, correlation, seed, *, dof = None, scores = None, shuffle_rows = false))]
 pub(crate) fn iman_conover(
     py: Python<'_>,
     pd: PyRef<'_, PyPredictiveDistribution>,
     correlation: Vec<Vec<f64>>,
     seed: u64,
+    dof: Option<f64>,
+    scores: Option<Vec<f64>>,
+    shuffle_rows: bool,
 ) -> PyResult<PyPredictiveDistribution> {
     let (r, _) = flatten_square(correlation)?;
+    let scores = match (dof, scores) {
+        (None, None) => copula::Scores::Normal,
+        (Some(nu), None) => copula::Scores::StudentT(nu),
+        (None, Some(s)) => copula::Scores::Given(s),
+        (Some(_), Some(_)) => {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "give dof or scores, not both",
+            ));
+        }
+    };
+    let options = copula::ImanConover {
+        scores,
+        shuffle_rows,
+    };
     let pd = &pd.inner;
     let inner = py
-        .detach(|| copula::iman_conover(pd, &r, seed))
+        .detach(|| copula::iman_conover_with(pd, &r, seed, &options))
         .map_err(to_py)?;
     Ok(PyPredictiveDistribution { inner })
 }

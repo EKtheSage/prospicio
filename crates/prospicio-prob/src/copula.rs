@@ -8,7 +8,7 @@
 use prospicio_core::{Error, Result, StreamRng};
 use prospicio_math::linalg::{cholesky, lower_mul, lower_solve};
 use prospicio_math::special::{
-    bivariate_norm_cdf, ln_gamma, norm_cdf, norm_quantile, student_t_cdf,
+    bivariate_norm_cdf, ln_gamma, norm_cdf, norm_quantile, student_t_cdf, student_t_quantile,
 };
 
 use crate::distribution::Distribution;
@@ -623,6 +623,17 @@ pub(crate) fn target_ranks(
     correlation: &[f64],
     seed: u64,
 ) -> Result<Vec<Vec<usize>>> {
+    target_ranks_with(n, m, correlation, seed, &Scores::Normal)
+}
+
+/// [`target_ranks`] on the reference scores `scores`.
+pub(crate) fn target_ranks_with(
+    n: usize,
+    m: usize,
+    correlation: &[f64],
+    seed: u64,
+    scores: &Scores,
+) -> Result<Vec<Vec<usize>>> {
     let target = correlation_factor(correlation, m)?;
     if n < m + 1 {
         return Err(invalid(
@@ -632,10 +643,8 @@ pub(crate) fn target_ranks(
         ));
     }
 
-    // Shuffled normal scores, column-major.
-    let scores: Vec<f64> = (1..=n)
-        .map(|i| norm_quantile(i as f64 / (n + 1) as f64))
-        .collect();
+    // Shuffled reference scores, column-major.
+    let scores = scores.values(n)?;
     let mut cols: Vec<Vec<f64>> = (0..m)
         .map(|j| {
             let mut c = scores.clone();
@@ -675,6 +684,73 @@ pub(crate) fn target_ranks(
         .collect())
 }
 
+/// The reference scores of [`iman_conover_with`]: the values whose
+/// shuffled columns are rotated to the target correlation, so their joint
+/// tails set the tails of the result.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Scores {
+    /// Normal scores `Φ⁻¹(i / (n + 1))`, as [`iman_conover`] uses.
+    Normal,
+    /// Student t scores with these degrees of freedom: more joint
+    /// extremes than normal scores at the same correlation (CAS Monograph
+    /// 15, section 8.2.3; `aggregate`'s `iman_conover(..., dof=...)`).
+    StudentT(f64),
+    /// Scores of the caller's own, one per simulation, in any order.
+    Given(Vec<f64>),
+}
+
+impl Scores {
+    fn values(&self, n: usize) -> Result<Vec<f64>> {
+        let at = |i: usize| i as f64 / (n + 1) as f64;
+        Ok(match self {
+            Scores::Normal => (1..=n).map(|i| norm_quantile(at(i))).collect(),
+            Scores::StudentT(nu) => {
+                if !(nu.is_finite() && *nu > 0.0) {
+                    return Err(invalid("dof", *nu, "must be finite and positive"));
+                }
+                (1..=n).map(|i| student_t_quantile(at(i), *nu)).collect()
+            }
+            Scores::Given(v) => {
+                if v.len() != n {
+                    return Err(invalid(
+                        "scores",
+                        v.len() as f64,
+                        "need one score per simulation",
+                    ));
+                }
+                if let Some(&bad) = v.iter().find(|x| !x.is_finite()) {
+                    return Err(invalid("scores", bad, "must be finite"));
+                }
+                let mut s = v.clone();
+                s.sort_by(f64::total_cmp);
+                s
+            }
+        })
+    }
+}
+
+/// Options for [`iman_conover_with`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImanConover {
+    pub scores: Scores,
+    /// Shuffle the result's rows, by stream `m` of the seed (the column
+    /// shuffles use streams 1 to `m − 1`). Without it the first
+    /// component comes back sorted ascending, which matters to anything
+    /// that reads the rows in order or takes a slice of them (CAS
+    /// Monograph 15, section 8.2.5, item 6).
+    pub shuffle_rows: bool,
+}
+
+impl Default for ImanConover {
+    /// Normal scores, rows not shuffled: [`iman_conover`].
+    fn default() -> Self {
+        Self {
+            scores: Scores::Normal,
+            shuffle_rows: false,
+        }
+    }
+}
+
 /// Reorders each component's draws so the components have (close to) the
 /// target correlation of normal scores, by Iman and Conover (1982). Every component
 /// keeps exactly its own draws; only their pairing across simulations
@@ -691,6 +767,11 @@ pub(crate) fn target_ranks(
 ///
 /// Use it to join results simulated separately, for example a reserve and
 /// a premium-risk distribution, without resimulating either.
+///
+/// The first component comes back sorted ascending, row by row, because
+/// its column of scores is not shuffled. Whole-sample statistics do not
+/// notice; anything that reads the rows in order, or a slice of them,
+/// does. [`iman_conover_with`] shuffles the rows and takes other scores.
 ///
 /// ```
 /// use prospicio_prob::copula::iman_conover;
@@ -715,9 +796,44 @@ pub fn iman_conover(
     correlation: &[f64],
     seed: u64,
 ) -> Result<PredictiveDistribution> {
+    iman_conover_with(pd, correlation, seed, &ImanConover::default())
+}
+
+/// [`iman_conover`] with other reference scores, or with the result's rows
+/// shuffled ([`ImanConover`]).
+///
+/// ```
+/// use prospicio_prob::copula::{iman_conover_with, ImanConover, Scores};
+/// use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+///
+/// let n = 1000;
+/// let draws: Vec<f64> = (0..n).flat_map(|i| [i as f64, ((i * 7919) % n) as f64]).collect();
+/// let pd = PredictiveDistribution::from_draws(
+///     vec!["lob".into()],
+///     vec![vec![KeyValue::Int(0)], vec![KeyValue::Int(1)]],
+///     draws,
+///     Provenance::new("example"),
+/// )
+/// .unwrap();
+/// let options = ImanConover { scores: Scores::StudentT(2.0), shuffle_rows: true };
+/// let joined = iman_conover_with(&pd, &[1.0, 0.7, 0.7, 1.0], 3, &options).unwrap();
+/// // The rows are shuffled: the first component no longer comes back sorted.
+/// let first: Vec<f64> = (0..n).map(|i| joined.row(i).unwrap()[0]).collect();
+/// assert!(first.windows(2).any(|w| w[1] < w[0]));
+/// ```
+pub fn iman_conover_with(
+    pd: &PredictiveDistribution,
+    correlation: &[f64],
+    seed: u64,
+    options: &ImanConover,
+) -> Result<PredictiveDistribution> {
     let m = pd.n_components();
     let n = pd.n_sims();
-    let ranks = target_ranks(n, m, correlation, seed)?;
+    let ranks = target_ranks_with(n, m, correlation, seed, &options.scores)?;
+    let mut rows: Vec<usize> = (0..n).collect();
+    if options.shuffle_rows {
+        shuffle(&mut rows, &mut StreamRng::new(seed, m as u64));
+    }
 
     // Each component takes its sorted draws in the target ranks.
     let mut draws = vec![0.0; n * m];
@@ -725,14 +841,20 @@ pub fn iman_conover(
         let mut sorted: Vec<f64> = (0..n).map(|i| pd.row(i).expect("in range")[j]).collect();
         sorted.sort_by(f64::total_cmp);
         for (i, &r) in rank.iter().enumerate() {
-            draws[i * m + j] = sorted[r];
+            draws[rows[i] * m + j] = sorted[r];
         }
     }
-    let provenance = pd
+    let mut provenance = pd
         .provenance()
         .clone()
         .param("iman_conover_correlation", format!("{correlation:?}"))
         .param("iman_conover_seed", seed);
+    if options != &ImanConover::default() {
+        provenance = provenance.param(
+            "iman_conover_options",
+            format!("{:?}", (&options.scores, options.shuffle_rows)),
+        );
+    }
     PredictiveDistribution::from_draws(
         pd.dims().to_vec(),
         pd.components().to_vec(),
@@ -841,7 +963,7 @@ fn sibuya(rng: &mut StreamRng, alpha: f64) -> f64 {
 }
 
 /// Fisher–Yates shuffle with uniform indices from `rng`.
-fn shuffle(x: &mut [f64], rng: &mut StreamRng) {
+fn shuffle<T>(x: &mut [T], rng: &mut StreamRng) {
     for i in (1..x.len()).rev() {
         let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
         x.swap(i, j);
@@ -1243,6 +1365,87 @@ mod tests {
         );
         // Bad inputs.
         assert!(iman_conover(&pd, &[1.0, 0.5, 0.5, 1.0], 7).is_err());
+    }
+
+    /// t scores give more joint extremes than normal scores at the same
+    /// correlation; given normal scores reproduce `iman_conover`; shuffled
+    /// rows are the same rows in another order.
+    #[test]
+    fn iman_conover_scores_and_row_shuffle() {
+        use crate::{KeyValue, Lognormal};
+        let a = Lognormal::from_mean_cv(100.0, 0.3).unwrap();
+        let b = Lognormal::from_mean_cv(50.0, 1.5).unwrap();
+        let independent = GaussianCopula::new(&[1.0, 0.0, 0.0, 1.0], 2).unwrap();
+        let keys: Vec<ComponentKey> = (0..2).map(|j| vec![KeyValue::Int(j)]).collect();
+        let n = 10_000;
+        let pd = simulate(
+            &independent,
+            &[&a, &b],
+            vec!["lob".into()],
+            keys,
+            n,
+            1,
+            Provenance::new("t"),
+        )
+        .unwrap();
+        let r = [1.0, 0.3, 0.3, 1.0];
+        let joint_tail = |pd: &PredictiveDistribution| -> usize {
+            let col = |j: usize| -> Vec<f64> { (0..n).map(|i| pd.row(i).unwrap()[j]).collect() };
+            let q = |c: &[f64]| {
+                let mut s = c.to_vec();
+                s.sort_by(f64::total_cmp);
+                s[n - n / 100]
+            };
+            let (x, y) = (col(0), col(1));
+            let (qx, qy) = (q(&x), q(&y));
+            x.iter()
+                .zip(&y)
+                .filter(|(u, v)| **u >= qx && **v >= qy)
+                .count()
+        };
+        let normal = iman_conover(&pd, &r, 5).unwrap();
+        let options = |scores| ImanConover {
+            scores,
+            shuffle_rows: false,
+        };
+        let t2 = iman_conover_with(&pd, &r, 5, &options(Scores::StudentT(2.0))).unwrap();
+        assert!(
+            joint_tail(&t2) as f64 > 1.5 * joint_tail(&normal) as f64,
+            "{} vs {}",
+            joint_tail(&t2),
+            joint_tail(&normal)
+        );
+        let given: Vec<f64> = (1..=n)
+            .rev()
+            .map(|i| norm_quantile(i as f64 / (n + 1) as f64))
+            .collect();
+        let same = iman_conover_with(&pd, &r, 5, &options(Scores::Given(given))).unwrap();
+        assert_eq!(same.draw_matrix(), normal.draw_matrix());
+        let shuffled = iman_conover_with(
+            &pd,
+            &r,
+            5,
+            &ImanConover {
+                scores: Scores::Normal,
+                shuffle_rows: true,
+            },
+        )
+        .unwrap();
+        let rows = |pd: &PredictiveDistribution| {
+            let mut v: Vec<Vec<f64>> = (0..n).map(|i| pd.row(i).unwrap().to_vec()).collect();
+            v.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+            v
+        };
+        assert_eq!(rows(&shuffled), rows(&normal));
+        let first: Vec<f64> = (0..n).map(|i| normal.row(i).unwrap()[0]).collect();
+        assert!(
+            first.windows(2).all(|w| w[0] <= w[1]),
+            "the documented order"
+        );
+        let first: Vec<f64> = (0..n).map(|i| shuffled.row(i).unwrap()[0]).collect();
+        assert!(first.windows(2).any(|w| w[1] < w[0]));
+        assert!(iman_conover_with(&pd, &r, 5, &options(Scores::StudentT(0.0))).is_err());
+        assert!(iman_conover_with(&pd, &r, 5, &options(Scores::Given(vec![1.0; 3]))).is_err());
     }
 
     fn frank_tau(theta: f64) -> f64 {

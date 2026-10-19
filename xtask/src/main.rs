@@ -284,12 +284,95 @@ fn r(check: bool) -> Result {
             cmd.env("RSTUDIO_PANDOC", pandoc);
         }
     }
-    run(&mut cmd)?;
+    let built = with_loose_articles(&root, &mut cmd);
+    built?;
     check_r_examples()?;
     if check {
         unchanged(R_GENERATED)?;
     }
     Ok(())
+}
+
+/// Runs the pkgdown build. pkgdown aborts on an article that `_pkgdown.yml`
+/// does not list, so a staged article that no group takes in is added to a
+/// last group, "More articles", in `_pkgdown.yml` for this build only (the
+/// file is restored afterwards, whether or not the build succeeds). A new
+/// guide can then never break the site; list it in its group to place it.
+fn with_loose_articles(root: &Path, cmd: &mut Command) -> Result {
+    let loose = uncovered_articles()?;
+    if loose.is_empty() {
+        return run(cmd);
+    }
+    println!(
+        "r: not listed in _pkgdown.yml, shown under \"More articles\": {}",
+        loose.join(", ")
+    );
+    let path = root.join("R/prospicio/_pkgdown.yml");
+    let original = read(&path)?;
+    let mut text = original.clone();
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(concat!(
+        "  - title: More articles\n",
+        "    navbar: More articles\n",
+        "    desc: Articles not yet placed in a group of _pkgdown.yml.\n",
+        "    contents:\n",
+    ));
+    for name in &loose {
+        text.push_str(&format!("      - articles/{name}\n"));
+    }
+    write(&path, &text)?;
+    let built = run(cmd);
+    write(&path, &original)?;
+    built
+}
+
+/// The staged articles that no group of `_pkgdown.yml` lists, by name or by a
+/// `starts_with("articles/<prefix>")` line.
+fn uncovered_articles() -> Result<Vec<String>> {
+    let yml = read(&root().join("R/prospicio/_pkgdown.yml"))?;
+    let mut names = Vec::new();
+    for entry in
+        fs::read_dir(root().join(R_ARTICLES)).map_err(|e| format!("reading articles: {e}"))?
+    {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().is_some_and(|e| e == "Rmd") {
+            names.push(file_stem(&path));
+        }
+    }
+    names.sort();
+    Ok(uncovered(&yml, &names))
+}
+
+fn uncovered(yml: &str, names: &[String]) -> Vec<String> {
+    let mut listed = Vec::new();
+    let mut prefixes = Vec::new();
+    for line in yml.lines() {
+        let line = line.trim();
+        if line.starts_with('#') {
+            continue;
+        }
+        let Some(item) = line.strip_prefix("- ") else {
+            continue;
+        };
+        let item = item.trim().trim_matches(|c| c == '"' || c == '\'');
+        if let Some(rest) = item.strip_prefix("starts_with(") {
+            let prefix = rest
+                .trim_end_matches(')')
+                .trim_matches(|c| c == '"' || c == '\'');
+            if let Some(p) = prefix.strip_prefix("articles/") {
+                prefixes.push(p.to_owned());
+            }
+        } else if let Some(name) = item.strip_prefix("articles/") {
+            listed.push(name.to_owned());
+        }
+    }
+    names
+        .iter()
+        .filter(|n| !listed.contains(n) && !prefixes.iter().any(|p| n.starts_with(p.as_str())))
+        .cloned()
+        .collect()
 }
 
 /// Where the R site's articles are staged: pkgdown renders each `.Rmd` in
@@ -508,16 +591,7 @@ fn docs(check: bool) -> Result {
         copy_dir(&root.join(from), &site.join(to))
             .map_err(|e| format!("copying {from} into the site: {e}"))?;
     }
-    // The user guide's first page, its URL without the ordering prefix.
-    let guide = files(&root.join(USER_GUIDE), "md")?
-        .first()
-        .map(|p| file_stem(p))
-        .map(|s| {
-            s.split_once('-')
-                .map_or(s.clone(), |(_, name)| name.to_owned())
-        })
-        .ok_or("the user guide is empty")?;
-    let index = INDEX.replace("{guide}", &format!("python/user-guide/{guide}.html"));
+    let index = INDEX;
     fs::write(site.join("index.html"), index)
         .map_err(|e| format!("writing the site index: {e}"))?;
     println!("docs: open {}", site.join("index.html").display());
@@ -535,10 +609,8 @@ const INDEX: &str = r#"<!doctype html>
 <h1>prospicio</h1>
 <p>Actuarial modeling on a Rust core. One kernel, documented for each front end.</p>
 <ul>
-  <li><a href="python/index.html">Python</a> (great-docs)</li>
-  <li><a href="{guide}">Guides and worked examples</a> (the Python site's User Guide, with the notebooks' results)</li>
-  <li><a href="r/index.html">R</a> (pkgdown)</li>
-  <li><a href="r/articles/index.html">R guides and worked examples</a> (the guides' and notebooks' R twins, on the R site)</li>
+  <li><a href="python/index.html">Python</a> (great-docs, with the guides and worked examples)</li>
+  <li><a href="r/index.html">R</a> (pkgdown, with the guides and worked examples)</li>
   <li><a href="rust/prospicio_prob/index.html">Rust crates</a> (rustdoc)</li>
 </ul>
 "#;
@@ -711,4 +783,24 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::uncovered;
+
+    #[test]
+    fn a_staged_article_no_group_lists_is_uncovered() {
+        let yml = "articles:
+  - title: A
+    contents:
+      - articles/one
+      - starts_with(\"articles/pir-\")
+    # - articles/commented
+";
+        let names: Vec<String> = ["one", "pir-x", "two", "commented"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(uncovered(yml, &names), vec!["two", "commented"]);
+    }
 }

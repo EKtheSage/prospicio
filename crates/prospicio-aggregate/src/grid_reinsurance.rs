@@ -127,6 +127,12 @@ impl Tower {
     /// multiples of the step, the result is the exact distribution of the
     /// discretized problem, which Monte Carlo only samples.
     ///
+    /// Probabilities below machine epsilon are FFT round-off and are set
+    /// to 0 in the ceded and net grids ([`Grid::remove_fuzz`], as
+    /// `aggregate`'s `remove_fuzz`); a premium that weights the tail
+    /// heavily, such as the exponential principle, would otherwise read the
+    /// round-off at the top of the grid.
+    ///
     /// Grids are marginal: each holds one quantity's distribution, not the
     /// joint distribution across layers (use [`Tower::apply`] on simulated
     /// events for that). Net is a single compound total, and so returned,
@@ -231,7 +237,7 @@ impl Tower {
                 profit.push(expectation(&layer_ceded, |c| {
                     layer.profit_commission_for(c)
                 }));
-                ceded.push(layer_ceded);
+                ceded.push(layer_ceded.remove_fuzz(f64::EPSILON));
                 ceded_reports.push(report);
             }
             let layers = &self.layers[start..end];
@@ -247,7 +253,11 @@ impl Tower {
                     layers.iter().map(|l| l.share * l.recovery(seen)).sum()
                 })?;
                 on_points &= exact;
-                Some(fft(frequency, &recoveries, points)?.0)
+                Some(
+                    fft(frequency, &recoveries, points)?
+                        .0
+                        .remove_fuzz(f64::EPSILON),
+                )
             });
         }
 
@@ -255,7 +265,11 @@ impl Tower {
             let all = self.layers.len();
             let (net_severity, exact) = severity.map(|x| seen(x, all))?;
             on_points &= exact;
-            Some(fft(frequency, &net_severity, points)?.0)
+            Some(
+                fft(frequency, &net_severity, points)?
+                    .0
+                    .remove_fuzz(f64::EPSILON),
+            )
         } else if last_end - last_start == 1 && is_aggregate_cover(&self.layers[last_start]) {
             let cover = &self.layers[last_start];
             let (before, exact) = severity.map(|x| seen(x, last_start))?;
@@ -263,7 +277,7 @@ impl Tower {
             let (total, _) = fft(frequency, &before, points)?;
             let (net, exact) = total.map(|s| s - cover.share * cover.after_terms(s))?;
             on_points &= exact;
-            Some(net)
+            Some(net.remove_fuzz(f64::EPSILON))
         } else {
             None
         };

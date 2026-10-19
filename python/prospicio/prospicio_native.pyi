@@ -9513,6 +9513,27 @@ class Grid:
         ValueError
             If ``p`` is outside ``[0, 1]``.
         """
+    def remove_fuzz(self, /, eps: float = ...) -> Grid:
+        """
+        The grid with every probability below ``eps`` set to 0: the
+        round-off an FFT leaves where the true mass is zero, as
+        ``aggregate``'s ``remove_fuzz``. ``Tower.on_grid`` already removes
+        it from its ceded and net grids.
+        
+        Parameters
+        ----------
+        eps : float, default machine epsilon (2.22e-16)
+        
+        Returns
+        -------
+        Grid
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Grid
+        >>> Grid(1.0, [0.5, 0.5 - 1e-20, 1e-20]).remove_fuzz().probs[2]
+        0.0
+        """
     @staticmethod
     def rounding(severity: Any, step: float, points: int) -> tuple[Grid, DiscretizationReport]:
         """
@@ -21981,7 +22002,7 @@ def ilf(severity: Any, limit: float, basic_limit: float) -> float:
     1.266666666667
     """
 
-def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[float]], seed: int, *, dof: float |None = None, scores: Sequence[float] |None = None, shuffle_rows: bool = False) -> PredictiveDistribution:
     """
     Reorders each component's draws to a target correlation (Iman-Conover).
     
@@ -21996,6 +22017,18 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     correlation : list of list of float
         One row and column per component.
     seed : int
+    dof : float, optional
+        Student t reference scores with these degrees of freedom, which give
+        more joint extremes than the default normal scores (Monograph 15,
+        section 8.2.3; ``aggregate``'s ``dof``).
+    scores : list of float, optional
+        Reference scores of your own, one per simulation, in any order.
+        Give ``dof`` or ``scores``, not both.
+    shuffle_rows : bool, default False
+        Shuffle the result's rows. Without it the first component comes
+        back sorted ascending, which matters to anything that reads the
+        rows in order or a slice of them; whole-sample statistics do not
+        notice.
     
     Returns
     -------

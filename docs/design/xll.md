@@ -80,6 +80,8 @@ category of Insert Function:
 | `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost from large losses: each accident year's trended layer losses, developed, over its premium |
 | `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], [probabilities], [step], [points])` | The annual aggregate loss, ground up or to a per-occurrence layer: mean, SD, CV, skewness, VaR, TVaR and the grid |
 | `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits, attachments, [shares], [step], [points])` | Per-occurrence layer statistics, one column per layer (`aggregate`'s `reins_stats_df`) |
+| `PRO.AGG.COVER(count_mean, [dispersion], family, p1, p2, [p3], limits, retentions, [shares], [occ_limits], [occ_attachments], [occ_shares], [subject], [step], [points])` | Aggregate covers (a stop loss) on the annual total, ground up or net of per-occurrence layers, or on their ceded total: chances of attaching and exhausting, ceded mean, SD, CV, skewness, loss on line (`aggregate`'s `agg` block) |
+| `PRO.TOWER.PRICE(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], limits, attachments, [shares], [agg_deductibles], [agg_limits], [cover_limit], [cover_retention], distortion, parameter, [step], [points])` | A tower on the annual grid, each view priced on its own by a distortion (`aggregate`'s `reins_price_df`): gross, each layer, the layers' total, a stop loss on the net and the net, with loss, SD, CV, premium, margin, loss ratio and rate on line |
 | `PRO.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3], [return_periods], [step], [points])` | The occurrence and aggregate PML curves by return period: the year's largest occurrence (`aggregate`'s `oep`, any count) beside the annual total's VaR |
 | `PRO.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | The Bayesian ODP chain ladder sampled with NUTS: the reserve exhibit, the parameters' posterior with R-hat and ESS, or the sampler's diagnostics |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
@@ -340,7 +342,14 @@ real Excel.
     decision 4 still holds for the results; a sheet showing all three
     views samples once. A default fit on RAA takes about 0.25 s in a
     release build, a kept one 30 µs. Draws are capped at 20,000 per chain
-    and chains at 8. Other Bayesian models (`BayesBf`, Meyers', the
+    and chains at 8. `prior_sd` is one SD for the intercept, origin and
+    development effects, all centred on 0; a development effect of 0 is
+    the first column's level, so a tight `prior_sd` lifts the late,
+    thinly observed columns toward it and the reserve with them (on RAA
+    the last effect's posterior mean is -5.1 at 10, -2.4 at 3 and -0.9
+    at 1, the total mean reserve 54,600, 59,100 and 74,000). The help and
+    the README say to keep it wide (user, 2026-10-19;
+    `knowledge/findings/bayes-odp-tight-prior.md`). Other Bayesian models (`BayesBf`, Meyers', the
     compartmental models) follow the same pattern when wanted.
 22. **PML curves by return period, occurrence beside aggregate** (user,
     2026-10-16, the parity plan's next items). `PRO.AGG.PML` takes the
@@ -357,6 +366,95 @@ real Excel.
     side by side because that is the comparison a cat or per-risk
     exhibit makes; a layer's occurrence PML is the curve clipped to the
     layer, so it takes no layer arguments.
+23. **An aggregate cover sits on a chosen annual total** (user,
+    2026-10-19, the parity plan's next item). `PRO.AGG.COVER` takes the
+    count and severity as `PRO.AGG.STATS` does (decision 20), then the
+    covers as `PRO.AGG.LAYERS` takes layers: annual `limits` (a row,
+    `"unlimited"` allowed), `retentions` and `shares`, each one value or
+    one per limit, one column per cover. Optional per-occurrence layers
+    (`occ_limits`, `occ_attachments`, `occ_shares`) inure to the covers:
+    by default the covers see the annual total net of them, as
+    `aggregate`'s `occurrence net of ... aggregate ceded to ...` does, and
+    with `subject` `"ceded"` they see the layers' ceded total
+    (`occurrence ceded to`), an annual deductible and limit on an excess
+    of loss treaty. The rows are
+    `aggregate`'s `reins_stats_df` for its `agg` block (Pr attach, Pr
+    detach, the ceded mean, SD, CV and skewness, loss on line) under the
+    subject total's mean. The subject is on the grid `PRO.AGG.STATS`
+    sizes ground up (the net or ceded total is lighter, so the gross
+    grid covers it); `step` and `points` set it, the severity rounded onto
+    as many points as the total. A cover's retention in loss-ratio terms
+    is a sheet product (premium times ratio) rather than an argument.
+    Against `aggregate` 1.0.1, books R and T (the policy limit `1000 xs
+    0` given as one more occurrence layer, unlimited above 1,000, so the
+    net is the capped severity's) match at the reference's tolerances.
+24. **A tower is priced view by view on the grid** (user, 2026-10-19,
+    the parity plan's last item). `PRO.TOWER.PRICE` wraps
+    `Tower::on_grid` and `TowerGrids::price`: the count and severity as
+    in decision 20, with the gross per-claim `limit` and `attachment` of
+    `PRO.AGG.STATS` (a policy limit, `aggregate`'s `1000 xs 0`); one
+    stage of per-occurrence layers (`limits`, `attachments`, `shares`,
+    each layer's annual `agg_deductibles` and `agg_limits`); and an
+    optional stop loss on the annual total net of them (`cover_limit`,
+    `cover_retention`) as a second stage. One row per view (gross, each
+    layer, the layers' total when there are several, the cover, net),
+    each priced on its own by the distortion, as `reins_price_df` does:
+    loss, SD, CV, premium, margin, loss ratio, and for a layer or the
+    cover the rate on line (premium over share times the smaller of the
+    occurrence and annual limit). The distortion is one of the five
+    standard families or the exponential by `aggregate`'s short name and
+    a single parameter; the two-parameter families (`clin`, `cll`, `lep`,
+    `ly`, bi-TVaR) are left out until asked. Where the layers' total or
+    the net is not one compound (a layer with annual terms) the row says
+    so in place of numbers. A layer whose boundaries miss the grid's
+    points keeps an exact mean and a shape smeared by up to a step;
+    `step` and `points` put them on points. On `aggregate`'s books C, R,
+    S and T under PH 0.7 every view's loss and premium matches
+    `reins_price_df` at the reference's tolerances. Capital allocation
+    and the natural allocation stay out (they want a portfolio object).
+25. **A severity is fitted from a column of losses** (user, 2026-10-19,
+    the parity plan's sixth group). `PRO.SEV.FIT(losses, family,
+    [output], [t], [truncation], [thresholds], [censored], [weights])`
+    fits a body family (lognormal, gamma, Weibull, Burr) by
+    `fit_severity`, each loss conditioned on exceeding its reporting
+    threshold and a censored loss (TRUE where a policy limit capped it)
+    known only to exceed its value, or a Pareto family (the Pareto, the
+    piecewise Pareto from a row of thresholds, Riegel's generalized
+    Pareto) by the R package Pareto's estimators. The per-loss columns
+    are one value or a range of the losses' shape, and a row whose loss is
+    blank is skipped, so a long selected column works. `"params"` lists the
+    parameters in the order `p1`, `p2`, `p3` take them, with standard
+    errors from the observed information, then the log-likelihood, AIC and
+    BIC (body families), the largest distance to the product-limit
+    estimate, convergence and a note; the estimates feed `PRO.SEV.CDF`,
+    `PRO.LAYER` and the rest. `"gof"` is the product-limit estimate beside
+    the fit's survival and quantile at each loss (P-P and Q-Q), and
+    `"compare"` the four body families side by side. The note flags a fit
+    with no standard errors (a boundary of the family), and names a Burr
+    at its Pareto limit (`alpha → 0`, `gamma → ∞`), which on Pareto-like
+    large losses has the highest likelihood of the four and must not be
+    picked on likelihood alone (`knowledge/findings/burr-fit-pareto-limit.md`).
+    The Pareto fits match R Pareto 2.4.5 (`pareto_fit_r.csv`, with
+    thresholds, censoring, weights and both truncations) at its
+    tolerances.
+26. **A GPD tail is chosen, fitted and read in three functions** (user,
+    2026-10-19, the sixth group). `PRO.EVT.THRESHOLDS(data,
+    [thresholds])` is `threshold_diagnostics`: per threshold the count
+    above, the mean excess with its standard error, and the GPD's shape,
+    scale and modified scale `beta - xi u` with standard errors, the
+    numbers behind R `ismev`'s `mrl.plot` and `gpd.fitrange`, so a sheet
+    chart replaces the plots. Thresholds default to the data's 50% to 95%
+    quantiles in steps of 5% (R's type 7). `PRO.EVT.FIT(data, threshold,
+    [probabilities])` fits the GPD to the exceedances over the threshold
+    the user chose (choosing stays the user's, as in the crate), with the
+    observed information's standard errors, and gives the
+    peaks-over-threshold tail's VaR and TVaR (0.99, 0.995, 0.999 if
+    omitted). A probability below the tail gets a message in its cell, not
+    an error for the table. `PRO.EVT.HILL(data, [k])` gives Hill's index
+    with its threshold and the Pareto alpha `1 / xi`. The fitted `xi` and
+    `beta` are `PRO.SEV`'s `"gpd"` for the exceedances. Against `ismev`
+    1.43 on its nine cases every quantity matches at the reference's
+    tolerances.
 
 ## Parity plan
 
@@ -387,7 +485,15 @@ order, one small PR each, those already done struck through:
 4. ~~Aggregate: a compound distribution of a count and a severity, its
    moments, VaR, TVaR and layer statistics~~.
 5. Aggregate, continued (user, 2026-10-16): ~~the occurrence PMLs~~;
-   aggregate covers on the annual total; towers on a grid.
+   ~~aggregate covers on the annual total~~; ~~towers on a grid~~.
+6. Fitting and pricing inputs (user, 2026-10-19, "work on next step 2";
+   the order chosen by this lane): ~~severity fits to large losses
+   (body and Pareto families, with thresholds and censoring)~~; ~~EVT
+   threshold diagnostics, the GPD fit and Hill's estimator~~; payment patterns and
+   discounting; a cover's quote (technical premium with expenses and
+   brokerage); distortions calibrated to a target and a layer priced by
+   one; contract terms on an aggregate (sliding scale, profit commission,
+   reinstatement premiums).
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -397,8 +503,16 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan above: aggregate covers on the
-  annual total, then towers on a grid.
+- **Next functions:** the parity plan's sixth group, in its order;
+  the user may reorder it.
+- **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
+  an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
+  Its pattern is not normalised, so the a-priori level is absorbed by the
+  pattern and only the premium's shape across origins and the CV move
+  the reserve (`knowledge/findings/bayes-bf-apriori-scale.md`). Either
+  wrap `BayesBf` as it is, with `apriori` documented as nearly inert,
+  or wait for a Bayesian BF with a normalised pattern in the Reserving
+  lane (asked in #410).
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and

@@ -72,6 +72,10 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Quantile (VaR) at each probability |
 | `PRO.SEV.STATS(family, p1, p2, [p3])` | Family, mean, SD, CV |
 | `PRO.LER(deductible, family, p1, p2, [p3])` | Loss elimination ratio of a deductible |
+| `PRO.EVT.THRESHOLDS(data, [thresholds])` | Mean excess and the GPD's shape and modified scale at each threshold, with SEs |
+| `PRO.EVT.FIT(data, threshold, [probabilities])` | GPD fitted above a threshold, with SEs, and the tail's VaR and TVaR |
+| `PRO.EVT.HILL(data, [k])` | Hill's tail index from the k largest values, and its Pareto alpha |
+| `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights])` | Maximum likelihood fit to large losses: parameters with SEs, fit against the data, or the body families compared |
 | `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Pareto extrapolation from one layer to others |
 | `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])` | Alpha between two layers |
 | `PRO.PARETO.ALPHA.FREQLAYER(threshold, frequency, limit, attachment, loss, [truncation])` | Alpha between a frequency and a layer |
@@ -107,6 +111,8 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost by accident year |
 | `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], [probabilities], [step], [points])` | Annual aggregate loss: moments, VaR, TVaR |
 | `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits, attachments, [shares], [step], [points])` | Per-occurrence layer statistics |
+| `PRO.AGG.COVER(count_mean, [dispersion], family, p1, p2, [p3], limits, retentions, [shares], [occ_limits], [occ_attachments], [occ_shares], [subject], [step], [points])` | Aggregate covers (a stop loss) on the annual total, net of occurrence layers or on their ceded total |
+| `PRO.TOWER.PRICE(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], limits, attachments, [shares], [agg_deductibles], [agg_limits], [cover_limit], [cover_retention], distortion, parameter, [step], [points])` | A tower's views priced by a distortion on the annual grid |
 | `PRO.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3], [return_periods], [step], [points])` | Occurrence and aggregate PML curves by return period |
 | `PRO.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | Bayesian ODP chain ladder by MCMC (NUTS): reserves, posterior, diagnostics |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | Exposure-rated risk profile by band, with a total |
@@ -160,8 +166,35 @@ Ctrl+Alt+F9 to recalculate.
   `"diagnostics"`; check the diagnostics first (largest R-hat under
   1.01, no divergences, warnings `none`). `draws` per chain (1000) after
   as many warm-up draws, `chains` (4), `prior_sd` (10) on the log scale.
+  Keep `prior_sd` wide: the priors are centred on 0, which for a
+  development effect is the first column's level, and the late columns
+  rest on one or two cells, so a tight prior pulls them up toward it. On
+  RAA the total mean reserve is about 54,600 at 10, 59,100 at 3 and
+  74,000 at 1 (the chain ladder's is 52,135).
   The last eight fits are kept, so the three views of one fit sample
   once.
+- `PRO.SEV.FIT`: `family` is `lognormal`, `gamma`, `weibull`, `burr`
+  (fitted by maximum likelihood, each loss conditioned on exceeding its
+  reporting threshold) or `pareto`, `piecewise_pareto`, `gen_pareto`
+  (the R package Pareto's estimators, from the threshold `t`; a row of
+  thresholds for the piecewise Pareto). `censored` is TRUE where a policy
+  limit capped the loss. `output` `"params"` (default) lists the
+  parameters in the order `p1`, `p2`, `p3` take them, so the estimates
+  feed `PRO.SEV.CDF` and `PRO.LAYER`, then the log-likelihood, AIC, BIC
+  (body families), the largest distance to the product-limit estimate
+  whether the fit converged and a note (a Burr at its Pareto limit, a
+  fit with no standard errors); `"gof"` gives the product-limit and the
+  fit's survival and quantile at each loss (P-P and Q-Q); `"compare"`
+  fits the four body families side by side (leave `family` blank). Read
+  the upper Q-Q pairs before trusting a body family in the tail.
+- EVT: choose the threshold with `PRO.EVT.THRESHOLDS` (the lowest one
+  above which the shape `xi` and the modified scale `beta - xi u` stay
+  within their SEs and the mean excess is a straight line), then fit
+  there with `PRO.EVT.FIT`; `xi` and `beta` are `PRO.SEV`'s `"gpd"` for
+  the exceedances. A VaR or TVaR below the tail (`p` under `1 -
+  P(exceed)`) says so in its cell, and the TVaR is infinite for `xi` of
+  1 or more. The GPD takes `xi` (shape) where Pareto users read the
+  alpha `1 / xi`.
 - Aggregates: `count_mean` claims a year with `dispersion` Var N / E N
   (1, Poisson, if omitted; a mixing CV c is `1 + c^2 * count_mean`); the
   grid is sized automatically unless `step` and `points` are given.

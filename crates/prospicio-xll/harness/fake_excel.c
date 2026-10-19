@@ -44,6 +44,13 @@ typedef struct xloper12 {
 } XLOPER12;
 
 typedef XLOPER12 *(*Fn0)(void);
+typedef XLOPER12 *(*Fn19)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *);
+typedef XLOPER12 *(*Fn15)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn10)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                           XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn9)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
@@ -149,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("sixty-nine functions registered", registered == 69);
+    check("seventy-five functions registered", registered == 75);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -468,6 +475,45 @@ int main(int argc, char **argv) {
               pml->val.array.lparray[9].val.num > pml->val.array.lparray[8].val.num);
     free12(pml);
 
+    /* A stop loss of 500 xs 400 on the same year, net of 500 xs 100 per
+     * occurrence: a column of nine rows, the cover's mean below the
+     * subject's and its chance of exhausting below that of attaching. */
+    XLOPER12 sl_l, sl_r, occ_l, occ_a;
+    sl_l.xltype = sl_r.xltype = occ_l.xltype = occ_a.xltype = xltypeNum;
+    sl_l.val.num = 500;
+    sl_r.val.num = 400;
+    occ_l.val.num = 500;
+    occ_a.val.num = 100;
+    XLOPER12 *sl = ((Fn15)GetProcAddress(xll, "pro_agg_cover"))(&two, &missing, &lncv, &hundred, &two, &missing,
+                                                                &sl_l, &sl_r, &missing, &occ_l, &occ_a, &missing,
+                                                                &missing, &missing, &missing);
+    check("PRO.AGG.COVER stop loss net of an occurrence layer",
+          (sl->xltype & 0xFFF) == xltypeMulti && sl->val.array.rows == 9 && sl->val.array.columns == 2 &&
+              sl->val.array.lparray[9].val.num < sl->val.array.lparray[3].val.num &&
+              sl->val.array.lparray[7].val.num < sl->val.array.lparray[5].val.num &&
+              sl->val.array.lparray[7].val.num > 0);
+    free12(sl);
+
+    /* aggregate's book C priced by PH 0.7 on its grid (step 1, 2^14
+     * points, the severity limited to 1,000): the gross premium is
+     * 297.44319 and 500 xs 100's 139.35875 (aggregate 1.0.1). */
+    static wchar_t ph_s[] = L"\x02" L"ph";
+    XLOPER12 ph, rho, cap, n14;
+    ph.xltype = xltypeStr;
+    ph.val.str = ph_s;
+    rho.xltype = cap.xltype = n14.xltype = xltypeNum;
+    rho.val.num = 0.7;
+    cap.val.num = 1000;
+    n14.val.num = 16384;
+    XLOPER12 *tp = ((Fn19)GetProcAddress(xll, "pro_tower_price"))(
+        &two, &missing, &lncv, &hundred, &two, &missing, &cap, &missing, &occ_l, &occ_a, &missing, &missing,
+        &missing, &missing, &missing, &ph, &rho, &one, &n14);
+    check("PRO.TOWER.PRICE book C under PH 0.7 (aggregate)",
+          (tp->xltype & 0xFFF) == xltypeMulti && tp->val.array.rows == 4 && tp->val.array.columns == 8 &&
+              fabs(tp->val.array.lparray[12].val.num / 297.44318995353353 - 1) < 2e-8 &&
+              fabs(tp->val.array.lparray[20].val.num / 139.35875318947413 - 1) < 2e-8);
+    free12(tp);
+
     /* The Bayesian ODP chain ladder by NUTS on RAA, its chains on worker
      * threads: the diagnostics' first row is the largest R-hat. */
     static wchar_t diag_s[] = L"\x0b" L"diagnostics";
@@ -482,6 +528,47 @@ int main(int argc, char **argv) {
     printf("PRO.BAYES.ODP(RAA, \"diagnostics\"): max R-hat %.4f\n", rhat);
     check("PRO.BAYES.ODP samples RAA with R-hat under 1.01", bd_ok && rhat < 1.01);
     free12(bd);
+
+    /* A lognormal fitted to a column of losses: meanlog is the mean of the
+     * logs, in the params table's second row. */
+    XLOPER12 sf_cells[4], sf_col, sf_fam;
+    double sf_y[4] = {100, 200, 400, 800};
+    for (int i = 0; i < 4; i++) {
+        sf_cells[i].xltype = xltypeNum;
+        sf_cells[i].val.num = sf_y[i];
+    }
+    sf_col.xltype = xltypeMulti;
+    sf_col.val.array.rows = 4;
+    sf_col.val.array.columns = 1;
+    sf_col.val.array.lparray = sf_cells;
+    static wchar_t ln_s[] = L"\x09" L"lognormal";
+    sf_fam.xltype = xltypeStr;
+    sf_fam.val.str = ln_s;
+    XLOPER12 *sf = ((Fn8)GetProcAddress(xll, "pro_sev_fit"))(&sf_col, &sf_fam, &missing, &missing, &missing,
+                                                              &missing, &missing, &missing);
+    check("PRO.SEV.FIT lognormal: meanlog is the mean of the logs",
+          (sf->xltype & 0xFFF) == xltypeMulti && sf->val.array.columns == 3 &&
+              fabs(sf->val.array.lparray[4].val.num - log(100 * pow(2, 1.5))) < 1e-6);
+    free12(sf);
+
+    /* Hill's estimate from the 3 largest of 1, 2, 4, 8, 16: the mean log
+     * of 16/2, 8/2, 4/2 is 2 ln 2. */
+    XLOPER12 hk;
+    double hy[5] = {1, 2, 4, 8, 16};
+    XLOPER12 h_cells[5];
+    for (int i = 0; i < 5; i++) {
+        h_cells[i].xltype = xltypeNum;
+        h_cells[i].val.num = hy[i];
+    }
+    sf_col.val.array.rows = 5;
+    sf_col.val.array.lparray = h_cells;
+    hk.xltype = xltypeNum;
+    hk.val.num = 3;
+    XLOPER12 *hl = ((Fn2)GetProcAddress(xll, "pro_evt_hill"))(&sf_col, &hk);
+    check("PRO.EVT.HILL from the 3 largest of 1, 2, 4, 8, 16 is 2 ln 2",
+          (hl->xltype & 0xFFF) == xltypeMulti && hl->val.array.rows == 2 &&
+              fabs(hl->val.array.lparray[6].val.num - 2 * log(2.0)) < 1e-12);
+    free12(hl);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;
