@@ -97,13 +97,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      # On a push to main: only look the cache up, and build only if it is
-      # missing (its post step then saves it).
+      # On a push to main, build only if the restore was not an exact match
+      # (the post step then saves the cache).
       - if: steps.changes.outputs.run == 'true'
         id: cache
         uses: Swatinem/rust-cache@v2
-        with:
-          lookup-only: ${{ github.event_name == 'push' }}
       - name: Plan
         id: plan
         run: |
@@ -153,13 +151,11 @@ jobs:
         with:
           components: clippy
           targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-gnu' || '' }}
-      # On a push to main: only look the cache up, and build only if it is
-      # missing (its post step then saves it).
+      # On a push to main, build only if the restore was not an exact match
+      # (the post step then saves the cache).
       - if: steps.changes.outputs.run == 'true'
         id: cache
         uses: Swatinem/rust-cache@v2
-        with:
-          lookup-only: ${{ github.event_name == 'push' }}
       - name: Plan
         id: plan
         run: |
@@ -308,7 +304,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: release
-          lookup-only: ${{ github.event_name == 'push' }}
       - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
         run: cargo test --release -p prospicio-validation --test fremtpl2 --no-run
       - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
@@ -367,7 +362,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: release
-          lookup-only: ${{ github.event_name == 'push' }}
       - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
         name: Build the Bayesian tests in release
         run: |

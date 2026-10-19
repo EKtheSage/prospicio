@@ -51,11 +51,13 @@ new branch started cold ("No cache found" in `bayes`).[^runs]
 Swatinem/rust-cache keys a cache by job id, runner OS, the `key` and
 `shared-key` inputs, the toolchain and a hash of every `Cargo.toml` and
 `Cargo.lock`. It saves only when the restore was not an exact match, and
-with `lookup-only` it checks for the key without downloading; on a miss
-its post step still saves what the job built.[^rust-cache] So since
-2026-10-19 a push to `main` looks each job's cache up and builds only on a
-miss (a new `Cargo.lock` or toolchain), and the Pages build shares the
-docs job's cache through `shared-key: docs-site`.[^ci]
+its `cache-hit` output is true only on an exact match.[^rust-cache] Its
+`lookup-only` input downloads nothing even on a partial match, so it is
+not used: since 2026-10-19 a push to `main` restores each job's cache,
+skips the build on an exact hit, and on a partial match (a new
+`Cargo.lock` or toolchain) builds incrementally on what it restored, which
+the post step then saves; the Pages build shares the docs job's cache
+through `shared-key: docs-site`.[^ci]
 
 # The debug tests
 
@@ -71,9 +73,10 @@ The time was in a few simulation-heavy tests of the workspace's own crates
 bootstrap tail reconciliations 22 s and 14 s at `opt-level = 0`), so
 optimizing only the dependencies would not have been enough. At
 `opt-level = 1` rebuilding the workspace's crates took 54 s, about what CI
-spent compiling before; a cold build of everything took 487 s. Rust's
-floating point is the same at every optimization level (no fast-math), so
-the tests' exact values do not move. nextest saved about 13 s more and
+spent compiling before; a cold build of everything took 487 s. Rust does
+not reorder or contract floating-point operations at any optimization
+level (no fast-math), so results stay IEEE-identical, and the suite passed
+unchanged. nextest saved about 13 s more and
 was left out.
 
 # The Bayesian smoke run

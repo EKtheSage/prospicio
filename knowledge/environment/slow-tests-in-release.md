@@ -103,7 +103,9 @@ times local seen on CI for these files, that is about 10 minutes of
 parity tests on a pull request and about 16 in the weekly run. The
 compartmental one-year views take the same gate (#303): a pull request
 runs compartmental model 1 alone among the conformance suite's arms and
-`reserving_compartmental_one_year` without its 40 `RefitAll` refits. With
+`reserving_compartmental_one_year` without its 40 `RefitAll` refits
+(until 2026-10-19, when the conformance suite's smoke run dropped both
+CRC and model 1: [where CI's time went](/environment/ci-runtime.md)). With
 both PRs' gates, measured locally on 2026-10-16 (release, 16 threads,
 with an R build and R tests running beside it, so somewhat slow): the
 whole validation suite 9 min 44 s smoke against 20 min 37 s full, the
