@@ -93,10 +93,15 @@ what it is aiming for by v1.0.
     with their distribution functions, Iman–Conover, capital allocation (Euler, covariance, Shapley and
     others), EVT (GPD, POT, Hill, and threshold diagnostics: the mean
     excess and the GPD's shape and modified scale at each threshold with
-    standard errors, as R's `ismev`); TVaR of a grid and `tvar_threshold`.
+    standard errors, as R's `ismev`); TVaR of a grid and `tvar_threshold`,
+    and of every parametric severity.
   - `Discrete`, a distribution on finitely many values of either sign,
     for the P&L ledger's rows (`docs/design/pnl.md`).
-- **Next:** open.
+- **Next:** the Guides lane's issues of 2026-10-17 and 18: the
+  rearrangement algorithm, a normal and an ogive (#366), allocations of
+  the margin (#369), Iman–Conover's scores and row order (#378), shifted
+  and scaled severities (#318), fits to grouped and truncated data
+  (#328), normal power approximations (#329).
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 

@@ -891,6 +891,8 @@ for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto
     rust_result(dist@ptr$sample(as.double(n), as.double(seed), as.double(stream)), s7_call())
   }
   S7::method(lev, cls) <- function(dist, limit, ...) dist@ptr$lev(as.double(limit))
+  S7::method(VaR, cls) <- function(dist, p, ...) rust_result(dist@ptr$quantile(as.double(p)), s7_call())
+  S7::method(TVaR, cls) <- function(dist, p, ...) severity_tvar(dist@ptr, p, s7_call())
   S7::method(stop_loss, cls) <- function(dist, retention, ...) dist@ptr$stop_loss(as.double(retention))
   S7::method(layer, cls) <- function(dist, limit, attachment, ...) {
     dist@ptr$layer(as.double(limit), as.double(attachment))

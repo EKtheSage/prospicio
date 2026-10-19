@@ -91,6 +91,34 @@ macro_rules! severity_class {
                 self.inner.quantile(p).map_err(to_py)
             }
 
+            /// Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+            ///
+            /// Parameters
+            /// ----------
+            /// p : float
+            ///
+            /// Returns
+            /// -------
+            /// float
+            fn var(&self, p: f64) -> PyResult<f64> {
+                self.inner.quantile(p).map_err(to_py)
+            }
+
+            /// Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+            /// ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+            /// mean is.
+            ///
+            /// Parameters
+            /// ----------
+            /// p : float
+            ///
+            /// Returns
+            /// -------
+            /// float
+            fn tvar(&self, p: f64) -> PyResult<f64> {
+                self.inner.tvar(p).map_err(to_py)
+            }
+
             /// ``n`` draws from stream ``stream`` of the generator keyed by
             /// ``seed``.
             ///
