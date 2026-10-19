@@ -72,6 +72,9 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Quantile (VaR) at each probability |
 | `PRO.SEV.STATS(family, p1, p2, [p3])` | Family, mean, SD, CV |
 | `PRO.LER(deductible, family, p1, p2, [p3])` | Loss elimination ratio of a deductible |
+| `PRO.EVT.THRESHOLDS(data, [thresholds])` | Mean excess and the GPD's shape and modified scale at each threshold, with SEs |
+| `PRO.EVT.FIT(data, threshold, [probabilities])` | GPD fitted above a threshold, with SEs, and the tail's VaR and TVaR |
+| `PRO.EVT.HILL(data, [k])` | Hill's tail index from the k largest values, and its Pareto alpha |
 | `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights])` | Maximum likelihood fit to large losses: parameters with SEs, fit against the data, or the body families compared |
 | `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Pareto extrapolation from one layer to others |
 | `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])` | Alpha between two layers |
@@ -184,6 +187,14 @@ Ctrl+Alt+F9 to recalculate.
   fit's survival and quantile at each loss (P-P and Q-Q); `"compare"`
   fits the four body families side by side (leave `family` blank). Read
   the upper Q-Q pairs before trusting a body family in the tail.
+- EVT: choose the threshold with `PRO.EVT.THRESHOLDS` (the lowest one
+  above which the shape `xi` and the modified scale `beta - xi u` stay
+  within their SEs and the mean excess is a straight line), then fit
+  there with `PRO.EVT.FIT`; `xi` and `beta` are `PRO.SEV`'s `"gpd"` for
+  the exceedances. A VaR or TVaR below the tail (`p` under `1 -
+  P(exceed)`) says so in its cell, and the TVaR is infinite for `xi` of
+  1 or more. The GPD takes `xi` (shape) where Pareto users read the
+  alpha `1 / xi`.
 - Aggregates: `count_mean` claims a year with `dispersion` Var N / E N
   (1, Poisson, if omitted; a mixing CV c is `1 + c^2 * count_mean`); the
   grid is sized automatically unless `step` and `points` are given.

@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("seventy-two functions registered", registered == 72);
+    check("seventy-five functions registered", registered == 75);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -550,6 +550,25 @@ int main(int argc, char **argv) {
           (sf->xltype & 0xFFF) == xltypeMulti && sf->val.array.columns == 3 &&
               fabs(sf->val.array.lparray[4].val.num - log(100 * pow(2, 1.5))) < 1e-6);
     free12(sf);
+
+    /* Hill's estimate from the 3 largest of 1, 2, 4, 8, 16: the mean log
+     * of 16/2, 8/2, 4/2 is 2 ln 2. */
+    XLOPER12 hk;
+    double hy[5] = {1, 2, 4, 8, 16};
+    XLOPER12 h_cells[5];
+    for (int i = 0; i < 5; i++) {
+        h_cells[i].xltype = xltypeNum;
+        h_cells[i].val.num = hy[i];
+    }
+    sf_col.val.array.rows = 5;
+    sf_col.val.array.lparray = h_cells;
+    hk.xltype = xltypeNum;
+    hk.val.num = 3;
+    XLOPER12 *hl = ((Fn2)GetProcAddress(xll, "pro_evt_hill"))(&sf_col, &hk);
+    check("PRO.EVT.HILL from the 3 largest of 1, 2, 4, 8, 16 is 2 ln 2",
+          (hl->xltype & 0xFFF) == xltypeMulti && hl->val.array.rows == 2 &&
+              fabs(hl->val.array.lparray[6].val.num - 2 * log(2.0)) < 1e-12);
+    free12(hl);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

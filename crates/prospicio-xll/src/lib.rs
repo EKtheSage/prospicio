@@ -17,6 +17,7 @@
 pub mod aggregate;
 pub mod bayes;
 pub mod credibility;
+pub mod evt;
 pub mod experience;
 pub mod exposure;
 pub mod fitting;
@@ -54,6 +55,10 @@ pub const CATEGORY: &str = "prospicio";
 /// The add-in's name in Excel's Add-ins dialog.
 pub const ADDIN_NAME: &str = "prospicio";
 
+const DATA: Arg = Arg {
+    name: "data",
+    help: "The losses: a range; blank cells are skipped",
+};
 const TRIANGLE: Arg = Arg {
     name: "triangle",
     help: "Cumulative values: one row per origin (oldest first), one column per age; blank where unobserved",
@@ -1468,6 +1473,49 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: fitting::severity_fit,
+    },
+    Function {
+        symbol: "pro_evt_thresholds",
+        name: "PRO.EVT.THRESHOLDS",
+        help: "Threshold choice for a GPD tail: at each threshold the mean excess and the fitted shape and modified scale, with SEs (R ismev).",
+        args: &[
+            DATA,
+            Arg {
+                name: "thresholds",
+                help: "Thresholds: a row or column (the data's 50%, 55%, ..., 95% quantiles if omitted)",
+            },
+        ],
+        run: evt::thresholds,
+    },
+    Function {
+        symbol: "pro_evt_fit",
+        name: "PRO.EVT.FIT",
+        help: "Peaks over threshold: the GPD fitted to the exceedances with SEs, and the tail's VaR and TVaR.",
+        args: &[
+            DATA,
+            Arg {
+                name: "threshold",
+                help: "The threshold u; the GPD fits the values above it, minus u",
+            },
+            Arg {
+                name: "probabilities",
+                help: "Probabilities for VaR and TVaR (0.99, 0.995, 0.999 if omitted)",
+            },
+        ],
+        run: evt::fit,
+    },
+    Function {
+        symbol: "pro_evt_hill",
+        name: "PRO.EVT.HILL",
+        help: "Hill's estimate of the tail index from the k largest values, with its threshold and Pareto alpha.",
+        args: &[
+            DATA,
+            Arg {
+                name: "k",
+                help: "Numbers of largest values: a row or column (ten from 5% to 50% of the data if omitted)",
+            },
+        ],
+        run: evt::hill_estimates,
     },
 ];
 
