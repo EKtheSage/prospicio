@@ -390,4 +390,4 @@
   origin, development or calendar period; Taylor and McGuire's Figure 6-22
   heat map (CAS Monograph 3) reproduces exactly. Python
   `OdpGlmFit.residuals()` and `residual_summary(by)`, R `fit@residuals`
-  and `residual_summary(fit, by)` (#333).
+  and `residual_summary(fit, by)` (#333, #438).
