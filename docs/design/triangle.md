@@ -303,6 +303,24 @@ rows of a `TriangleFrame`.
   to relative 1e-9 (`validation/scripts/reserving_glm_r.R`). RAA has no R
   reference: its negative increment (1982 at 84 months, -103) makes R
   refuse it.
+- `prediction_error()` gives the reserves' analytic prediction error by the
+  delta method (#333): for a set of future cells, the process variance
+  `φ Σ μ` and the parameter variance `gᵀ Σ g` with `g = Σ μ x`
+  (`GlmFit::sum_prediction_error`), by origin and in total. The total is
+  not the root sum of the origins' squares: the origins share
+  coefficients. On Taylor and McGuire's NJ Manufacturers triangle (CAS
+  Monograph 3, Table 5-4) every forecast and RMSEP reproduces to the unit,
+  the total 373,346 with RMSEP 14,076 (process 6,539, parameter 12,465),
+  and 10,275 for the years combined as if independent
+  (`validation/tests/reserving.rs`).
+- Bindings (#333, first PR): Python `OdpGlm().fit(triangle, column)`
+  returning `OdpGlmFit` (its `glm`, `future_design`, `prediction_error()`,
+  `predict_distribution(n_sims, seed, parameters)`), and R
+  `odp_glm(triangle)` returning an `odp_glm_fit` with
+  `prediction_error` and a `predict_distribution()` method. Single segment
+  only, like `OdpGlm`. Still to come in #333: residual diagnostics by
+  development, origin and calendar period; custom designs (reduced models,
+  calendar terms); gamma and Tweedie families.
 
 ## Calendar-diagonal backtest
 

@@ -7,9 +7,13 @@
 //! [`TriangleFrame`] and predicts the future rows. With these factors the
 //! fitted future cells summed by origin are the volume-weighted Chain
 //! Ladder reserves (Renshaw and Verrall, 1998), and Pearson's dispersion is
-//! the ODP bootstrap's scale. See `docs/design/triangle.md`, "ODP GLM".
+//! the ODP bootstrap's scale. [`OdpGlmFit::prediction_error`] gives the
+//! reserves' analytic prediction error by the delta method (Taylor and
+//! McGuire, CAS Monograph 3, Table 5-4). See `docs/design/triangle.md`,
+//! "ODP GLM".
 
 use prospicio_core::{Lag, Period};
+pub use prospicio_glm::diagnostics::SumPredictionError;
 use prospicio_glm::{Glm, GlmFit, ParameterDraws};
 use prospicio_models::{Coding, Design, Fitted, Model, Terms};
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution};
@@ -86,6 +90,21 @@ pub struct OdpGlmFit {
     pub reserves: Vec<f64>,
     /// Design of the future cells, for prediction.
     future_design: Design,
+}
+
+/// The analytic prediction error of an ODP GLM's reserves: for each origin
+/// and in total, the reserve, its process variance `φ Σ μ` and its
+/// parameter variance `g' Σ g` by the delta method, `g = Σ μ x` over the
+/// future cells (Taylor and McGuire, CAS Monograph 3, (5-11) to (5-13)).
+#[derive(Debug, Clone, PartialEq)]
+pub struct OdpPredictionError {
+    /// One per origin, aligned with [`OdpGlmFit::origins`]; zero for a
+    /// fully developed origin.
+    pub by_origin: Vec<SumPredictionError>,
+    /// The total reserve. Its variance exceeds the sum of the origins'
+    /// because their parameter errors are correlated: every origin shares
+    /// the development factors.
+    pub total: SumPredictionError,
 }
 
 impl OdpGlm {
@@ -199,6 +218,54 @@ impl OdpGlmFit {
     /// [`future`](Self::future): what [`glm`](Self::glm) predicts from.
     pub fn future_design(&self) -> &Design {
         &self.future_design
+    }
+
+    /// The reserves' prediction error by origin and in total: the process
+    /// variance `φ Σ μ` of the future cells and the parameter variance
+    /// `g' Σ g` by the delta method, with `Σ` the coefficients' covariance
+    /// and `g = Σ μ x` over the cells (Taylor and McGuire, CAS Monograph 3,
+    /// (5-11) to (5-13), Table 5-4). The root mean square error of
+    /// prediction is [`SumPredictionError::rmsep`].
+    ///
+    /// ```
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, OdpGlm, Triangle};
+    ///
+    /// let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
+    ///     values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let fit = OdpGlm::default().fit(&tri, "paid")?;
+    /// let error = fit.prediction_error()?;
+    /// assert_eq!(error.by_origin[0].rmsep(), 0.0);
+    /// assert!((error.total.total - fit.total_reserve()).abs() < 1e-8);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn prediction_error(&self) -> Result<OdpPredictionError> {
+        let mut rows = vec![Vec::new(); self.origins.len()];
+        for (i, (origin, _)) in self.future.iter().enumerate() {
+            let o = self
+                .origins
+                .iter()
+                .position(|p| p == origin)
+                .expect("every future cell's origin is an origin of the fit");
+            rows[o].push(i);
+        }
+        let by_origin = rows
+            .iter()
+            .map(|r| {
+                self.glm
+                    .sum_prediction_error(&self.future_design.select(r))
+                    .map_err(Error::from)
+            })
+            .collect::<Result<_>>()?;
+        let total = self.glm.sum_prediction_error(&self.future_design)?;
+        Ok(OdpPredictionError { by_origin, total })
     }
 
     /// Mean of each future cell under normal parameter draws
@@ -440,5 +507,27 @@ mod tests {
         assert_eq!(fit.reserves, [0.0, 0.0]);
         let msg = fit.predict_distribution(100, 1).unwrap_err().to_string();
         assert!(msg.contains("fully developed"), "{msg}");
+        let error = fit.prediction_error().unwrap();
+        assert_eq!(error.total.rmsep(), 0.0);
+        assert!(error.by_origin.iter().all(|e| e.total == 0.0));
+    }
+
+    #[test]
+    fn prediction_error_sums_over_origins() {
+        let fit = OdpGlm::default().fit(&small(), "values").unwrap();
+        let error = fit.prediction_error().unwrap();
+        assert_eq!(error.by_origin.len(), 4);
+        assert_eq!(error.by_origin[0].rmsep(), 0.0);
+        for (e, r) in error.by_origin.iter().zip(&fit.reserves) {
+            assert!((e.total - r).abs() < 1e-9);
+        }
+        // Process variances add; parameter variances do not, because the
+        // origins share the development factors.
+        let process: f64 = error.by_origin.iter().map(|e| e.process_variance).sum();
+        let parameter: f64 = error.by_origin.iter().map(|e| e.parameter_variance).sum();
+        assert!((error.total.process_variance - process).abs() < 1e-9 * process);
+        assert!(error.total.parameter_variance > parameter);
+        let phi = fit.glm.dispersion();
+        assert!((error.total.process_variance - phi * fit.total_reserve()).abs() < 1e-6);
     }
 }
