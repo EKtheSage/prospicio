@@ -64,8 +64,9 @@ fn average(name: &str) -> PyResult<Average> {
         "volume" => Ok(Average::Volume),
         "simple" => Ok(Average::Simple),
         "regression" => Ok(Average::Regression),
+        "geometric" => Ok(Average::Geometric),
         _ => Err(PyValueError::new_err(format!(
-            "average must be \"volume\", \"simple\" or \"regression\", got {name:?}"
+            "average must be \"volume\", \"simple\", \"regression\" or \"geometric\", got {name:?}"
         ))),
     }
 }
@@ -75,6 +76,7 @@ fn average_name(a: Average) -> &'static str {
         Average::Volume => "volume",
         Average::Simple => "simple",
         Average::Regression => "regression",
+        Average::Geometric => "geometric",
     }
 }
 
@@ -173,11 +175,17 @@ fn development(
     average_: &str,
     sigma_interpolation_: &str,
     pattern: Option<SelectedPattern>,
+    n_periods: Option<usize>,
+    drop_high: usize,
+    drop_low: usize,
 ) -> PyResult<Development> {
     Ok(Development {
         average: average(average_)?,
         sigma_interpolation: sigma_interpolation(sigma_interpolation_)?,
         pattern,
+        n_periods,
+        drop_high,
+        drop_low,
     })
 }
 
@@ -328,6 +336,23 @@ fn pattern_weight<'py>(
             PatternWeight::ByAge(by_age) => Ok(age_dict(py, by_age)?.into_any()),
         })
         .transpose()
+}
+
+/// `, n_periods=..., drop_high=..., drop_low=...` for the exclusions that are
+/// set, then the selected pattern; empty at the defaults.
+fn development_arg_repr(d: &Development) -> String {
+    let mut out = String::new();
+    if let Some(n) = d.n_periods {
+        out.push_str(&format!(", n_periods={n}"));
+    }
+    if d.drop_high != 0 {
+        out.push_str(&format!(", drop_high={}", d.drop_high));
+    }
+    if d.drop_low != 0 {
+        out.push_str(&format!(", drop_low={}", d.drop_low));
+    }
+    out.push_str(&pattern_arg_repr(d.pattern.as_ref()));
+    out
 }
 
 /// `, ldf={...}, ldf_kind=..., ldf_weight=...` for a method's repr; empty
@@ -1794,12 +1819,24 @@ fn tail_arg_repr(tail: &Tail) -> String {
 ///
 /// Parameters
 /// ----------
-/// average : {"volume", "simple", "regression"}, default "volume"
+/// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged into one factor per age: volume
 ///     weighted, their mean, or least squares through the origin (Mack's
-///     ``alpha`` of 1, 0 and 2).
+///     ``alpha`` of 1, 0 and 2), or their geometric mean. A geometric
+///     average estimates the factors only: ``Mack`` and the bootstraps
+///     reject it, since it has no variance model.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
 ///     How a variance parameter with a single link ratio is filled in.
+/// n_periods : int, optional
+///     Average only the link ratios that start in the latest ``n_periods``
+///     calendar diagonals of the triangle; an age with fewer uses all of
+///     them. All of them by default.
+/// drop_high : int, default 0
+///     Leave out this many of the highest link ratios at each age, among
+///     those ``n_periods`` keeps. Skipped at an age where it would leave
+///     none.
+/// drop_low : int, default 0
+///     As ``drop_high``, for the lowest link ratios.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     Development past the oldest age: a number is a constant factor from
 ///     the oldest age to ultimate. No tail (a factor of 1) by default.
@@ -1828,8 +1865,8 @@ fn tail_arg_repr(tail: &Tail) -> String {
 /// ldf_kind : {"ldf", "cdf", "percent_developed"}, optional
 ///     How ``ldf`` is expressed; required with it, since age-to-age factors
 ///     and factors to ultimate cannot be told apart. Factors to ultimate
-///     must be at least 1 and not increase with age; percents developed in
-///     (0, 1] and not decrease with age.
+///     and percents developed need only be finite and positive, in any
+///     order.
 /// ldf_weight : float or dict, optional
 ///     The credibility ``w`` on each selected factor, from 0 to 1: the
 ///     factor used is ``w * selected + (1 - w) * estimated``. A number
@@ -1888,7 +1925,11 @@ impl PyChainLadder {
         ldf = None,
         ldf_kind = None,
         ldf_weight = None,
+        n_periods = None,
+        drop_high = 0,
+        drop_low = 0,
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         average: &str,
         sigma_interpolation: &str,
@@ -1896,11 +1937,21 @@ impl PyChainLadder {
         ldf: Option<&Bound<'_, PyAny>>,
         ldf_kind: Option<&str>,
         ldf_weight: Option<&Bound<'_, PyAny>>,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
     ) -> PyResult<Self> {
         let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
         Ok(Self {
             inner: ChainLadder {
-                development: development(average, sigma_interpolation, pattern)?,
+                development: development(
+                    average,
+                    sigma_interpolation,
+                    pattern,
+                    n_periods,
+                    drop_high,
+                    drop_low,
+                )?,
                 tail: tail_arg(tail)?,
             },
         })
@@ -1916,6 +1967,24 @@ impl PyChainLadder {
     #[getter]
     fn sigma_interpolation(&self) -> &'static str {
         sigma_interpolation_name(self.inner.development.sigma_interpolation)
+    }
+
+    /// Number of latest diagonals averaged; ``None`` uses every link ratio.
+    #[getter]
+    fn n_periods(&self) -> Option<usize> {
+        self.inner.development.n_periods
+    }
+
+    /// Highest link ratios left out at each age.
+    #[getter]
+    fn drop_high(&self) -> usize {
+        self.inner.development.drop_high
+    }
+
+    /// Lowest link ratios left out at each age.
+    #[getter]
+    fn drop_low(&self) -> usize {
+        self.inner.development.drop_low
     }
 
     /// The tail: a constant factor as a number, otherwise its estimator.
@@ -1981,7 +2050,7 @@ impl PyChainLadder {
             self.average(),
             self.sigma_interpolation(),
             tail_arg_repr(&self.inner.tail),
-            pattern_arg_repr(self.inner.development.pattern.as_ref())
+            development_arg_repr(&self.inner.development)
         )
     }
 }
@@ -2190,6 +2259,21 @@ impl PyChainLadderFit {
     fn std_err(&self) -> PyResult<Vec<f64>> {
         let f = single(&self.inner, "std_err", "development_frame()")?;
         Ok(f.development.blended_std_err())
+    }
+
+    /// Number of link ratios behind each estimated factor, after
+    /// ``n_periods`` and the drops; factor ``k`` links age ``k`` to ``k + 1``.
+    #[getter]
+    fn n_links(&self) -> PyResult<Vec<usize>> {
+        let f = single(&self.inner, "n_links", "development_frame()")?;
+        Ok(f.development.n_links.clone())
+    }
+
+    /// Whether ``n_periods`` or the drops left out a link ratio at some age.
+    #[getter]
+    fn excluded(&self) -> PyResult<bool> {
+        let f = single(&self.inner, "excluded", "development_frame()")?;
+        Ok(f.development.excluded)
     }
 
     /// Age-to-age factors as estimated from the triangle, before a selected
@@ -2415,8 +2499,11 @@ impl PyChainLadderFit {
 ///
 /// Parameters
 /// ----------
-/// average : {"volume", "simple", "regression"}, default "volume"
+/// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+/// n_periods, drop_high, drop_low : optional
+///     As ``ChainLadder``. Mack's standard errors follow the link ratios
+///     that are kept (R's ``MackChainLadder(weights = ...)``).
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
 /// tail_sigma : float, optional
@@ -2467,6 +2554,9 @@ impl PyMack {
         ldf = None,
         ldf_kind = None,
         ldf_weight = None,
+        n_periods = None,
+        drop_high = 0,
+        drop_low = 0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -2478,11 +2568,21 @@ impl PyMack {
         ldf: Option<&Bound<'_, PyAny>>,
         ldf_kind: Option<&str>,
         ldf_weight: Option<&Bound<'_, PyAny>>,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
     ) -> PyResult<Self> {
         let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
         Ok(Self {
             inner: Mack {
-                development: development(average, sigma_interpolation, pattern)?,
+                development: development(
+                    average,
+                    sigma_interpolation,
+                    pattern,
+                    n_periods,
+                    drop_high,
+                    drop_low,
+                )?,
                 tail: tail_arg(tail)?,
                 tail_sigma,
                 tail_std_err,
@@ -2500,6 +2600,24 @@ impl PyMack {
     #[getter]
     fn sigma_interpolation(&self) -> &'static str {
         sigma_interpolation_name(self.inner.development.sigma_interpolation)
+    }
+
+    /// Number of latest diagonals averaged; ``None`` uses every link ratio.
+    #[getter]
+    fn n_periods(&self) -> Option<usize> {
+        self.inner.development.n_periods
+    }
+
+    /// Highest link ratios left out at each age.
+    #[getter]
+    fn drop_high(&self) -> usize {
+        self.inner.development.drop_high
+    }
+
+    /// Lowest link ratios left out at each age.
+    #[getter]
+    fn drop_low(&self) -> usize {
+        self.inner.development.drop_low
     }
 
     /// The tail: a constant factor as a number, otherwise its estimator.
@@ -2581,7 +2699,7 @@ impl PyMack {
             tail_arg_repr(&self.inner.tail),
             given("tail_sigma", self.inner.tail_sigma),
             given("tail_std_err", self.inner.tail_std_err),
-            pattern_arg_repr(self.inner.development.pattern.as_ref()),
+            development_arg_repr(&self.inner.development),
         )
     }
 }
@@ -2774,6 +2892,26 @@ impl PyMackFit {
             .one("std_err", "development_frame()")?
             .development
             .blended_std_err())
+    }
+
+    /// Number of link ratios behind each estimated factor, as
+    /// ``ChainLadderFit.n_links``.
+    #[getter]
+    fn n_links(&self) -> PyResult<Vec<usize>> {
+        Ok(self
+            .one("n_links", "development_frame()")?
+            .development
+            .n_links
+            .clone())
+    }
+
+    /// Whether ``n_periods`` or the drops left out a link ratio at some age.
+    #[getter]
+    fn excluded(&self) -> PyResult<bool> {
+        Ok(self
+            .one("excluded", "development_frame()")?
+            .development
+            .excluded)
     }
 
     /// Latest observed cumulative value per origin.
@@ -3057,6 +3195,7 @@ impl PyClaimsDevelopmentResult {
 
 /// The chain ladder an expected-loss method estimates its development
 /// pattern with.
+#[allow(clippy::too_many_arguments)]
 fn pattern(
     average: &str,
     sigma_interpolation: &str,
@@ -3064,10 +3203,20 @@ fn pattern(
     ldf: Option<&Bound<'_, PyAny>>,
     ldf_kind: Option<&str>,
     ldf_weight: Option<&Bound<'_, PyAny>>,
+    n_periods: Option<usize>,
+    drop_high: usize,
+    drop_low: usize,
 ) -> PyResult<ChainLadder> {
     let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
     Ok(ChainLadder {
-        development: development(average, sigma_interpolation, pattern)?,
+        development: development(
+            average,
+            sigma_interpolation,
+            pattern,
+            n_periods,
+            drop_high,
+            drop_low,
+        )?,
         tail: tail_arg(tail)?,
     })
 }
@@ -3079,7 +3228,7 @@ fn pattern_repr(cl: &ChainLadder) -> String {
         average_name(cl.development.average),
         sigma_interpolation_name(cl.development.sigma_interpolation),
         tail_arg_repr(&cl.tail),
-        pattern_arg_repr(cl.development.pattern.as_ref())
+        development_arg_repr(&cl.development)
     )
 }
 
@@ -3094,9 +3243,12 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 /// ----------
 /// apriori : float, default 1.0
 ///     Expected loss ratio: the ultimate per unit of exposure; positive.
-/// average : {"volume", "simple", "regression"}, default "volume"
+/// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+/// n_periods, drop_high, drop_low : optional
+///     As ``ChainLadder``: average only the latest diagonals and leave out
+///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
 /// ldf, ldf_kind, ldf_weight : optional
@@ -3122,7 +3274,8 @@ pub(crate) struct PyExpectedLoss {
 #[pymethods]
 impl PyExpectedLoss {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None))]
+    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         apriori: f64,
         average: &str,
@@ -3131,6 +3284,9 @@ impl PyExpectedLoss {
         ldf: Option<&Bound<'_, PyAny>>,
         ldf_kind: Option<&str>,
         ldf_weight: Option<&Bound<'_, PyAny>>,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: ExpectedLoss {
@@ -3142,6 +3298,9 @@ impl PyExpectedLoss {
                     ldf,
                     ldf_kind,
                     ldf_weight,
+                    n_periods,
+                    drop_high,
+                    drop_low,
                 )?,
             },
         })
@@ -3163,6 +3322,24 @@ impl PyExpectedLoss {
     #[getter]
     fn sigma_interpolation(&self) -> &'static str {
         sigma_interpolation_name(self.inner.chain_ladder.development.sigma_interpolation)
+    }
+
+    /// Number of latest diagonals averaged; ``None`` uses every link ratio.
+    #[getter]
+    fn n_periods(&self) -> Option<usize> {
+        self.inner.chain_ladder.development.n_periods
+    }
+
+    /// Highest link ratios left out at each age.
+    #[getter]
+    fn drop_high(&self) -> usize {
+        self.inner.chain_ladder.development.drop_high
+    }
+
+    /// Lowest link ratios left out at each age.
+    #[getter]
+    fn drop_low(&self) -> usize {
+        self.inner.chain_ladder.development.drop_low
     }
 
     /// The tail: a constant factor as a number, otherwise its estimator.
@@ -3248,9 +3425,12 @@ impl PyExpectedLoss {
 /// apriori : float, default 1.0
 ///     Expected loss ratio: the expected ultimate per unit of exposure;
 ///     positive.
-/// average : {"volume", "simple", "regression"}, default "volume"
+/// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+/// n_periods, drop_high, drop_low : optional
+///     As ``ChainLadder``: average only the latest diagonals and leave out
+///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
 /// ldf, ldf_kind, ldf_weight : optional
@@ -3276,7 +3456,8 @@ pub(crate) struct PyBornhuetterFerguson {
 #[pymethods]
 impl PyBornhuetterFerguson {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None))]
+    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         apriori: f64,
         average: &str,
@@ -3285,6 +3466,9 @@ impl PyBornhuetterFerguson {
         ldf: Option<&Bound<'_, PyAny>>,
         ldf_kind: Option<&str>,
         ldf_weight: Option<&Bound<'_, PyAny>>,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: BornhuetterFerguson {
@@ -3296,6 +3480,9 @@ impl PyBornhuetterFerguson {
                     ldf,
                     ldf_kind,
                     ldf_weight,
+                    n_periods,
+                    drop_high,
+                    drop_low,
                 )?,
             },
         })
@@ -3317,6 +3504,24 @@ impl PyBornhuetterFerguson {
     #[getter]
     fn sigma_interpolation(&self) -> &'static str {
         sigma_interpolation_name(self.inner.chain_ladder.development.sigma_interpolation)
+    }
+
+    /// Number of latest diagonals averaged; ``None`` uses every link ratio.
+    #[getter]
+    fn n_periods(&self) -> Option<usize> {
+        self.inner.chain_ladder.development.n_periods
+    }
+
+    /// Highest link ratios left out at each age.
+    #[getter]
+    fn drop_high(&self) -> usize {
+        self.inner.chain_ladder.development.drop_high
+    }
+
+    /// Lowest link ratios left out at each age.
+    #[getter]
+    fn drop_low(&self) -> usize {
+        self.inner.chain_ladder.development.drop_low
     }
 
     /// The tail: a constant factor as a number, otherwise its estimator.
@@ -3402,9 +3607,12 @@ impl PyBornhuetterFerguson {
 ///     Expected loss ratio of the starting ultimate; positive.
 /// n_iters : int, default 1
 ///     Number of Bornhuetter–Ferguson steps.
-/// average : {"volume", "simple", "regression"}, default "volume"
+/// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+/// n_periods, drop_high, drop_low : optional
+///     As ``ChainLadder``: average only the latest diagonals and leave out
+///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
 /// ldf, ldf_kind, ldf_weight : optional
@@ -3430,7 +3638,7 @@ pub(crate) struct PyBenktander {
 #[pymethods]
 impl PyBenktander {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None))]
+    #[pyo3(signature = (apriori = 1.0, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         apriori: f64,
@@ -3441,6 +3649,9 @@ impl PyBenktander {
         ldf: Option<&Bound<'_, PyAny>>,
         ldf_kind: Option<&str>,
         ldf_weight: Option<&Bound<'_, PyAny>>,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: Benktander {
@@ -3453,6 +3664,9 @@ impl PyBenktander {
                     ldf,
                     ldf_kind,
                     ldf_weight,
+                    n_periods,
+                    drop_high,
+                    drop_low,
                 )?,
             },
         })
@@ -3480,6 +3694,24 @@ impl PyBenktander {
     #[getter]
     fn sigma_interpolation(&self) -> &'static str {
         sigma_interpolation_name(self.inner.chain_ladder.development.sigma_interpolation)
+    }
+
+    /// Number of latest diagonals averaged; ``None`` uses every link ratio.
+    #[getter]
+    fn n_periods(&self) -> Option<usize> {
+        self.inner.chain_ladder.development.n_periods
+    }
+
+    /// Highest link ratios left out at each age.
+    #[getter]
+    fn drop_high(&self) -> usize {
+        self.inner.chain_ladder.development.drop_high
+    }
+
+    /// Lowest link ratios left out at each age.
+    #[getter]
+    fn drop_low(&self) -> usize {
+        self.inner.chain_ladder.development.drop_low
     }
 
     /// The tail: a constant factor as a number, otherwise its estimator.
@@ -3571,9 +3803,12 @@ impl PyBenktander {
 /// decay : float, default 1.0
 ///     Weight of an origin ``n`` periods away, ``decay ** n``; from 0 to 1.
 ///     With 1 every origin shares one loss ratio.
-/// average : {"volume", "simple", "regression"}, default "volume"
+/// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How link ratios are averaged, as in ``ChainLadder``.
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+/// n_periods, drop_high, drop_low : optional
+///     As ``ChainLadder``: average only the latest diagonals and leave out
+///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
 /// ldf, ldf_kind, ldf_weight : optional
@@ -3599,7 +3834,7 @@ pub(crate) struct PyCapeCod {
 #[pymethods]
 impl PyCapeCod {
     #[new]
-    #[pyo3(signature = (trend = 0.0, decay = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None))]
+    #[pyo3(signature = (trend = 0.0, decay = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         trend: f64,
@@ -3610,6 +3845,9 @@ impl PyCapeCod {
         ldf: Option<&Bound<'_, PyAny>>,
         ldf_kind: Option<&str>,
         ldf_weight: Option<&Bound<'_, PyAny>>,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: CapeCod {
@@ -3622,6 +3860,9 @@ impl PyCapeCod {
                     ldf,
                     ldf_kind,
                     ldf_weight,
+                    n_periods,
+                    drop_high,
+                    drop_low,
                 )?,
             },
         })
@@ -3649,6 +3890,24 @@ impl PyCapeCod {
     #[getter]
     fn sigma_interpolation(&self) -> &'static str {
         sigma_interpolation_name(self.inner.chain_ladder.development.sigma_interpolation)
+    }
+
+    /// Number of latest diagonals averaged; ``None`` uses every link ratio.
+    #[getter]
+    fn n_periods(&self) -> Option<usize> {
+        self.inner.chain_ladder.development.n_periods
+    }
+
+    /// Highest link ratios left out at each age.
+    #[getter]
+    fn drop_high(&self) -> usize {
+        self.inner.chain_ladder.development.drop_high
+    }
+
+    /// Lowest link ratios left out at each age.
+    #[getter]
+    fn drop_low(&self) -> usize {
+        self.inner.chain_ladder.development.drop_low
     }
 
     /// The tail: a constant factor as a number, otherwise its estimator.
@@ -5273,10 +5532,13 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 ///     variance; the mean plus a resampled residual times the standard
 ///     deviation, which carries the residuals' mean and variance; or none
 ///     for parameter error only.
-/// average : {"volume", "simple", "regression"}, default "volume"
+/// average : {"volume", "simple", "regression", "geometric"}, default "volume"
 ///     How Mack's model averages the link ratios (its ``alpha``).
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
 ///     How a sigma behind a single link ratio is filled in.
+/// n_periods, drop_high, drop_low : optional
+///     As ``ChainLadder``. The bootstraps do not support them yet: a
+///     ``ValueError`` names the setting.
 /// centre_residuals : bool, default True
 ///     Subtract the residuals' mean before resampling them, so that the
 ///     pseudo factors are unbiased, the mean CDR is about zero and the
@@ -5408,6 +5670,9 @@ impl PyMackBootstrap {
         ldf = None,
         ldf_kind = None,
         ldf_weight = None,
+        n_periods = None,
+        drop_high = 0,
+        drop_low = 0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -5425,6 +5690,9 @@ impl PyMackBootstrap {
         ldf: Option<&Bound<'_, PyAny>>,
         ldf_kind: Option<&str>,
         ldf_weight: Option<&Bound<'_, PyAny>>,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -5438,6 +5706,9 @@ impl PyMackBootstrap {
                     average,
                     sigma_interpolation,
                     selected_pattern(ldf, ldf_kind, ldf_weight)?,
+                    n_periods,
+                    drop_high,
+                    drop_low,
                 )?,
                 centre_residuals,
                 tail: tail_arg(tail)?,
@@ -5478,6 +5749,24 @@ impl PyMackBootstrap {
     #[getter]
     fn sigma_interpolation(&self) -> &'static str {
         sigma_interpolation_name(self.inner.development.sigma_interpolation)
+    }
+
+    /// Number of latest diagonals averaged; ``None`` uses every link ratio.
+    #[getter]
+    fn n_periods(&self) -> Option<usize> {
+        self.inner.development.n_periods
+    }
+
+    /// Highest link ratios left out at each age.
+    #[getter]
+    fn drop_high(&self) -> usize {
+        self.inner.development.drop_high
+    }
+
+    /// Lowest link ratios left out at each age.
+    #[getter]
+    fn drop_low(&self) -> usize {
+        self.inner.development.drop_low
     }
 
     /// Whether the residuals are centred before they are resampled.
@@ -5688,7 +5977,7 @@ impl PyMackBootstrap {
             given("tail_sigma", self.inner.tail_sigma),
             given("tail_std_err", self.inner.tail_std_err),
             dependence_repr(&self.inner.dependence),
-            pattern_arg_repr(self.inner.development.pattern.as_ref()),
+            development_arg_repr(&self.inner.development),
         )
     }
 }

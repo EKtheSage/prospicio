@@ -474,4 +474,15 @@ mod exports {
     udf!(pro_evt_thresholds, data, thresholds);
     udf!(pro_evt_fit, data, threshold, probabilities);
     udf!(pro_evt_hill, data, k);
+    udf!(pro_payout_pattern, times, values, kind, shift, rate);
+    udf!(pro_payout_stats, times, values, rate, kind, shift);
+    udf!(pro_payout_price, expected_loss, assets, coc, times, values, rate, kind, shift);
+    udf!(pro_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, quoted);
+    udf!(pro_distortion, s, family, parameter, r0);
+    udf!(pro_distortion_price, values, probs, family, parameter, r0);
+    udf!(pro_distortion_calibrate, values, probs, premium, families, r0);
+    udf!(pro_swing, loss, basic, lcm, minimum, maximum, share);
+    udf!(pro_sliding_scale, loss, premium, commissions, loss_ratios);
+    udf!(pro_profit_commission, loss, premium, share, allowance);
+    udf!(pro_layer_terms, count_mean, dispersion, family, p1, p2, p3, layer_limit, layer_attachment, premium, reinstatements, commissions, loss_ratios, profit_share, profit_allowance, share, policy_limit, step, points);
 }

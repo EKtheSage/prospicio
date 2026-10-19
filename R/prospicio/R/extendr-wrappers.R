@@ -10,6 +10,10 @@ actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta,
 
 bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
 
+glm_nested_test_rust <- function(small, big, kind) .Call(wrap__glm_nested_test_rust, small, big, kind)
+
+vif_rust <- function(x, names) .Call(wrap__vif_rust, x, names)
+
 ppc_check_rust <- function(observed, replicated, statistics, groups) .Call(wrap__ppc_check_rust, observed, replicated, statistics, groups)
 
 loo_pit_rust <- function(observed, replicated, log_lik, r_eff, seed) .Call(wrap__loo_pit_rust, observed, replicated, log_lik, r_eff, seed)
@@ -35,6 +39,8 @@ size_premium_rust <- function(expected_loss, loss_ratio) .Call(wrap__size_premiu
 round_premium_rust <- function(premium) .Call(wrap__round_premium_rust, premium)
 
 tvar_weighted_rust <- function(values, probs, p) .Call(wrap__tvar_weighted_rust, values, probs, p)
+
+layer_third_moment_rust <- function(severity, limit, attachment) .Call(wrap__layer_third_moment_rust, severity, limit, attachment)
 
 tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rust, values, probs, p)
 
@@ -90,6 +96,12 @@ pseudo_bma_weights_rust <- function(lpd, k, n_draws, seed) .Call(wrap__pseudo_bm
 
 glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power) .Call(wrap__glm_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power)
 
+tweedie_glm_fit_design <- function(x, names, y, offset, weights, link_name, min_power, max_power) .Call(wrap__tweedie_glm_fit_design, x, names, y, offset, weights, link_name, min_power, max_power)
+
+tweedie_profile_design <- function(x, names, y, offset, weights, link_name, powers) .Call(wrap__tweedie_profile_design, x, names, y, offset, weights, link_name, powers)
+
+glm_nb_fit_design <- function(x, names, y, offset, weights, link_name) .Call(wrap__glm_nb_fit_design, x, names, y, offset, weights, link_name)
+
 elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power) .Call(wrap__elastic_net_fit_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power)
 
 elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid)
@@ -101,6 +113,16 @@ family_deviance_rust <- function(family_name, theta, power, y, mu, weights) .Cal
 gini_rust <- function(y, pred, exposure) .Call(wrap__gini_rust, y, pred, exposure)
 
 lift_rust <- function(y, pred, exposure, bands) .Call(wrap__lift_rust, y, pred, exposure, bands)
+
+normalized_gini_rust <- function(y, pred, exposure) .Call(wrap__normalized_gini_rust, y, pred, exposure)
+
+double_lift_rust <- function(y, pred_a, pred_b, exposure, bands) .Call(wrap__double_lift_rust, y, pred_a, pred_b, exposure, bands)
+
+loss_ratio_chart_rust <- function(y, pred, premium, exposure, bands) .Call(wrap__loss_ratio_chart_rust, y, pred, premium, exposure, bands)
+
+roc_rust <- function(y, score, weights) .Call(wrap__roc_rust, y, score, weights)
+
+confusion_matrix_rust <- function(y, score, threshold, weights) .Call(wrap__confusion_matrix_rust, y, score, threshold, weights)
 
 crps_rust <- function(draws, y) .Call(wrap__crps_rust, draws, y)
 
@@ -119,6 +141,8 @@ pit_histogram_rust <- function(pit, bins) .Call(wrap__pit_histogram_rust, pit, b
 simulate_from_means_rust <- function(family_name, theta, power, means, n_rows, dispersion, weights, n_sims, seed) .Call(wrap__simulate_from_means_rust, family_name, theta, power, means, n_rows, dispersion, weights, n_sims, seed)
 
 k_fold_rust <- function(n, k, seed) .Call(wrap__k_fold_rust, n, k, seed)
+
+target_encode_rust <- function(values, y, expected, exposure, trains, tests, k) .Call(wrap__target_encode_rust, values, y, expected, exposure, trains, tests, k)
 
 group_k_fold_rust <- function(groups, k, seed) .Call(wrap__group_k_fold_rust, groups, k, seed)
 
@@ -227,6 +251,14 @@ covar_rust <- function(pd, key, p, q) .Call(wrap__covar_rust, pd, key, p, q)
 esscher_allocation_rust <- function(pd, h) .Call(wrap__esscher_allocation_rust, pd, h)
 
 iman_conover_reorder <- function(pd, correlation, seed, dof, scores, shuffle_rows) .Call(wrap__iman_conover_reorder, pd, correlation, seed, dof, scores, shuffle_rows)
+
+shapley_rust <- function(pd, cost) .Call(wrap__shapley_rust, pd, cost)
+
+haircut_rust <- function(pd, total, measure, level) .Call(wrap__haircut_rust, pd, total, measure, level)
+
+equal_risk_rust <- function(pd, total, measure) .Call(wrap__equal_risk_rust, pd, total, measure)
+
+rearrange_rust <- function(x, ncol, rotate, seed, tolerance) .Call(wrap__rearrange_rust, x, ncol, rotate, seed, tolerance)
 
 gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
 
@@ -764,6 +796,8 @@ GlmModel$log_likelihood <- function() .Call(wrap__GlmModel__log_likelihood, self
 
 GlmModel$aic <- function() .Call(wrap__GlmModel__aic, self)
 
+GlmModel$bic <- function() .Call(wrap__GlmModel__bic, self)
+
 GlmModel$df_resid <- function() .Call(wrap__GlmModel__df_resid, self)
 
 GlmModel$iterations <- function() .Call(wrap__GlmModel__iterations, self)
@@ -773,6 +807,16 @@ GlmModel$fitted <- function() .Call(wrap__GlmModel__fitted, self)
 GlmModel$family <- function() .Call(wrap__GlmModel__family, self)
 
 GlmModel$predict <- function(x, names, offset) .Call(wrap__GlmModel__predict, self, x, names, offset)
+
+GlmModel$diagnostics <- function() .Call(wrap__GlmModel__diagnostics, self)
+
+GlmModel$prediction_se <- function(x, names, offset) .Call(wrap__GlmModel__prediction_se, self, x, names, offset)
+
+GlmModel$sum_prediction_error <- function(x, names, offset, weights) .Call(wrap__GlmModel__sum_prediction_error, self, x, names, offset, weights)
+
+GlmModel$gcv <- function() .Call(wrap__GlmModel__gcv, self)
+
+GlmModel$log_likelihood_at <- function(dispersion) .Call(wrap__GlmModel__log_likelihood_at, self, dispersion)
 
 GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed, parameters) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed, parameters)
 
@@ -1780,17 +1824,17 @@ Triangle$summary <- function() .Call(wrap__Triangle__summary, self)
 
 Triangle$to_text <- function(max_rows, max_cols) .Call(wrap__Triangle__to_text, self, max_rows, max_cols)
 
-Triangle$chain_ladder <- function(column, average, sigma_interpolation, tail, ldf) .Call(wrap__Triangle__chain_ladder, self, column, average, sigma_interpolation, tail, ldf)
+Triangle$chain_ladder <- function(column, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__chain_ladder, self, column, average, sigma_interpolation, excl, tail, ldf)
 
-Triangle$mack <- function(column, average, sigma_interpolation, tail, tail_sigma, tail_std_err, ldf) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation, tail, tail_sigma, tail_std_err, ldf)
+Triangle$mack <- function(column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf) .Call(wrap__Triangle__mack, self, column, average, sigma_interpolation, excl, tail, tail_sigma, tail_std_err, ldf)
 
-Triangle$expected_loss <- function(column, exposure, apriori, average, sigma_interpolation, tail, ldf) .Call(wrap__Triangle__expected_loss, self, column, exposure, apriori, average, sigma_interpolation, tail, ldf)
+Triangle$expected_loss <- function(column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__expected_loss, self, column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf)
 
-Triangle$bornhuetter_ferguson <- function(column, exposure, apriori, average, sigma_interpolation, tail, ldf) .Call(wrap__Triangle__bornhuetter_ferguson, self, column, exposure, apriori, average, sigma_interpolation, tail, ldf)
+Triangle$bornhuetter_ferguson <- function(column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__bornhuetter_ferguson, self, column, exposure, apriori, average, sigma_interpolation, excl, tail, ldf)
 
-Triangle$benktander <- function(column, exposure, apriori, n_iters, average, sigma_interpolation, tail, ldf) .Call(wrap__Triangle__benktander, self, column, exposure, apriori, n_iters, average, sigma_interpolation, tail, ldf)
+Triangle$benktander <- function(column, exposure, apriori, n_iters, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__benktander, self, column, exposure, apriori, n_iters, average, sigma_interpolation, excl, tail, ldf)
 
-Triangle$cape_cod <- function(column, exposure, trend, decay, average, sigma_interpolation, tail, ldf) .Call(wrap__Triangle__cape_cod, self, column, exposure, trend, decay, average, sigma_interpolation, tail, ldf)
+Triangle$cape_cod <- function(column, exposure, trend, decay, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__cape_cod, self, column, exposure, trend, decay, average, sigma_interpolation, excl, tail, ldf)
 
 Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf)
 
@@ -1822,11 +1866,11 @@ Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, pro
 
 Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims)
 
-Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
+Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
 
-Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf)
+Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf)
 
-Triangle$mack_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_sigma, tail_std_err, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals, dependence, spearman, ldf, bootstrap_ldf) .Call(wrap__Triangle__mack_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, tail, bootstrap_tail, tail_sigma, tail_std_err, n_sims, seed, process, mack_average, mack_sigma_interpolation, centre_residuals, dependence, spearman, ldf, bootstrap_ldf)
+Triangle$mack_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_sigma, tail_std_err, n_sims, seed, process, mack_average, mack_sigma_interpolation, mack_excl, centre_residuals, dependence, spearman, ldf, bootstrap_ldf) .Call(wrap__Triangle__mack_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_sigma, tail_std_err, n_sims, seed, process, mack_average, mack_sigma_interpolation, mack_excl, centre_residuals, dependence, spearman, ldf, bootstrap_ldf)
 
 Triangle$clark_ldf <- function(column, curve, max_age) .Call(wrap__Triangle__clark_ldf, self, column, curve, max_age)
 
@@ -1890,6 +1934,10 @@ ChainLadderFit$pattern_rescale <- function() .Call(wrap__ChainLadderFit__pattern
 ChainLadderFit$pattern_tail <- function() .Call(wrap__ChainLadderFit__pattern_tail, self)
 
 ChainLadderFit$alpha <- function() .Call(wrap__ChainLadderFit__alpha, self)
+
+ChainLadderFit$n_links <- function() .Call(wrap__ChainLadderFit__n_links, self)
+
+ChainLadderFit$excluded <- function() .Call(wrap__ChainLadderFit__excluded, self)
 
 ChainLadderFit$estimated_ldf <- function() .Call(wrap__ChainLadderFit__estimated_ldf, self)
 

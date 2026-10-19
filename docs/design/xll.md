@@ -455,6 +455,74 @@ real Excel.
     `beta` are `PRO.SEV`'s `"gpd"` for the exceedances. Against `ismev`
     1.43 on its nine cases every quantity matches at the reference's
     tolerances.
+27. **A payment pattern is a row of times and a row of values** (user,
+    2026-10-19, the sixth group), over `prospicio_pricing::payout`
+    (`time-value.md`). `kind` reads the values as shares paid at each
+    time (summing to 1), the share paid to date or factors to ultimate,
+    so a paid `PRO.CL.CDF` row feeds the pattern directly; a tail goes in
+    as one more time, never placed silently (`time-value.md` decision 2).
+    `PRO.PAYOUT.PATTERN` shows the pattern with the share outstanding and
+    the discount at each time, `PRO.PAYOUT.STATS` its discount factor,
+    duration and discounted capital years, and `PRO.PAYOUT.PRICE` the
+    cost-of-capital price over the payout from the expected loss, the
+    one-year assets and the cost of capital: `P = E d + coc (a - P) A`.
+    The one-period price comes back for one payment within the year at a
+    zero rate. A distortion price over the payout is its premium times the
+    discount factor (`time-value.md` decision 6), a sheet product, so it
+    has no function of its own.
+28. **A quote starts from a risk premium on the sheet** (user,
+    2026-10-19, the sixth group). `PRO.QUOTE` wraps
+    `prospicio_pricing::quote`: the technical premium
+    `(R + fixed) / (1 - expenses - brokerage)` of a risk premium `R`
+    (a `PRO.TOWER.PRICE` premium, or any risk-loaded price), its build-up
+    (expenses, brokerage, the premium net of brokerage, the margin), the
+    capital and its return when `assets` is given, and the market's
+    ratios (loss ratio, multiple, and rate on line and payback when
+    `limit` is given). The function takes the price's parts rather than
+    pricing a distribution itself, so the quote applies to any price the
+    sheet holds. Each value of `quoted` adds a column with the same
+    cover at that premium (`Quote::at`): what the quote leaves after the
+    loads is the reinsurer's risk premium. A quote that leaves no capital
+    is an error. The guide `reinsurance-price.md`'s middle layer (risk
+    premium 1.24, expected loss 0.586, limit 5, 3% expenses, 10%
+    brokerage) comes back at its printed 1.425, 28.5%, payback 3.5,
+    multiple 2.43 and loss ratio 41.1%.
+29. **A distortion is a family name and a parameter; outcomes are a
+    range** (user, 2026-10-19, the sixth group), over
+    `prospicio_prob::distortion`. `PRO.DISTORTION(s, family, parameter,
+    [r0])` gives `g(s)` over a range of `s`, `PRO.DISTORTION.PRICE` the
+    risk measure of outcomes with probabilities, or of equally likely
+    draws when `probs` is omitted, so a column of simulations prices
+    directly, and `PRO.DISTORTION.CALIBRATE` each family's parameter
+    that gives a target premium (the five standard families of
+    Mildenhall and Major unless named). Families take `aggregate`'s
+    short names, as `PRO.TOWER.PRICE` does (decision 24), and here also
+    the four capped families with their intercept `r0`; the bi-TVaR,
+    beta and weighted TVaR, which take more than one parameter, are left
+    out until asked. A family that cannot reach the premium gets a
+    message in its row. Assets enter by capping the outcomes on the
+    sheet, as `calibrate` documents, rather than as an argument. Against
+    `aggregate` 1.0.1, `g(s)` of nine families and the InsCo prices and
+    calibrations match at the reference's tolerances.
+30. **Contract terms are evaluated at a loss and in expectation** (user,
+    2026-10-19, the sixth group's last item), over
+    `prospicio_aggregate::Layer`. `PRO.SWING` (a swing-rated or retro
+    premium), `PRO.SLIDING.SCALE` (a ceding commission from anchors given
+    as two ranges, rates and their increasing loss ratios) and
+    `PRO.PROFIT.COMMISSION` take a range of losses and give the term at
+    each, as `aggregate`'s `contract_terms` does, so a sheet can tabulate
+    or chart a term against the loss. `PRO.LAYER.TERMS` gives a layer's
+    terms in expectation over its annual loss on the grid
+    (`Tower::on_grid`): the expected ceded loss, premium, reinstatement
+    premium, ceding and profit commissions, the premium net of them, the
+    margin and the loss ratio. Amounts are at 100% and losses at the placed
+    share, as in `aggregate`; paid reinstatements set the annual limit and
+    cannot be combined with a sliding scale or a profit commission, which
+    the crate refuses. Multi-year terms with carried deficits
+    (`Tower::apply_term`) need simulated years and are left out until
+    asked. Against `aggregate` 1.0.1 the 475 values of
+    `contract_terms_aggregate.csv` and the expected reinstatement premiums
+    of books RI2 and RI10 match at the reference's tolerances.
 
 ## Parity plan
 
@@ -489,11 +557,11 @@ order, one small PR each, those already done struck through:
 6. Fitting and pricing inputs (user, 2026-10-19, "work on next step 2";
    the order chosen by this lane): ~~severity fits to large losses
    (body and Pareto families, with thresholds and censoring)~~; ~~EVT
-   threshold diagnostics, the GPD fit and Hill's estimator~~; payment patterns and
-   discounting; a cover's quote (technical premium with expenses and
-   brokerage); distortions calibrated to a target and a layer priced by
-   one; contract terms on an aggregate (sliding scale, profit commission,
-   reinstatement premiums).
+   threshold diagnostics, the GPD fit and Hill's estimator~~; ~~payment
+   patterns and discounting~~; ~~a cover's quote (technical premium with
+   expenses and brokerage)~~; ~~distortions calibrated to a target and
+   a layer priced by one~~; ~~contract terms on an aggregate (sliding
+   scale, profit commission, reinstatement premiums)~~.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -503,8 +571,9 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's sixth group, in its order;
-  the user may reorder it.
+- **Next functions:** the parity plan's six groups are done; further
+  functions as the user asks (multi-year terms, the two-parameter
+  distortions and copulas are the nearest left out).
 - **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
   an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
   Its pattern is not normalised, so the a-priori level is absorbed by the

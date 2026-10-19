@@ -64,15 +64,18 @@ fn grain(name: &str, arg: &str) -> Result<Grain> {
 fn development(
     average: &str,
     sigma_interpolation: &str,
+    excl: &Robj,
     pattern: Option<SelectedPattern>,
 ) -> Result<Development> {
     let average = match average {
         "volume" => Average::Volume,
         "simple" => Average::Simple,
         "regression" => Average::Regression,
+        "geometric" => Average::Geometric,
         _ => {
             return Err(Error::Other(format!(
-                "average must be \"volume\", \"simple\" or \"regression\", got \"{average}\""
+                "average must be \"volume\", \"simple\", \"regression\" or \"geometric\", \
+                 got \"{average}\""
             )));
         }
     };
@@ -85,11 +88,41 @@ fn development(
             )));
         }
     };
+    let (n_periods, drop_high, drop_low) = exclusions(excl)?;
     Ok(Development {
         average,
         sigma_interpolation,
         pattern,
+        n_periods,
+        drop_high,
+        drop_low,
     })
+}
+
+/// The link ratio exclusions as `development_args()` in R encodes them: a
+/// list of `n_periods` (`NULL` or a whole number), `drop_high` and
+/// `drop_low` (whole numbers from 0). Whether the combination is allowed
+/// for a method is the library's to say.
+fn exclusions(excl: &Robj) -> Result<(Option<usize>, usize, usize)> {
+    let count = |value: &Robj, name: &str| -> Result<usize> {
+        let x = value
+            .as_real()
+            .ok_or_else(|| Error::Other(format!("{name} must be a single number")))?;
+        usize::try_from(whole(x, name)?)
+            .map_err(|_| Error::Other(format!("{name} must be a whole number from 0")))
+    };
+    let list = List::try_from(excl)
+        .map_err(|_| Error::Other("the link ratio exclusions must be a list".into()))?;
+    let (mut n_periods, mut drop_high, mut drop_low) = (None, 0, 0);
+    for (name, value) in list.iter() {
+        match name {
+            "n_periods" if !value.is_null() => n_periods = Some(count(&value, name)?),
+            "drop_high" => drop_high = count(&value, name)?,
+            "drop_low" => drop_low = count(&value, name)?,
+            _ => {}
+        }
+    }
+    Ok((n_periods, drop_high, drop_low))
 }
 
 /// A selected pattern as `ldf_pattern()` in R encodes it: `NULL`, or a
@@ -155,11 +188,12 @@ fn selected_pattern(pattern: &Robj) -> Result<Option<SelectedPattern>> {
 fn pattern(
     average: &str,
     sigma_interpolation: &str,
+    excl: &Robj,
     tail: Robj,
     ldf: &Robj,
 ) -> Result<ChainLadder> {
     Ok(ChainLadder {
-        development: development(average, sigma_interpolation, selected_pattern(ldf)?)?,
+        development: development(average, sigma_interpolation, excl, selected_pattern(ldf)?)?,
         tail: tail_arg(&tail)?,
     })
 }
@@ -269,6 +303,7 @@ fn mack_bootstrap(
     process: &str,
     average: &str,
     sigma_interpolation: &str,
+    excl: &Robj,
     centre_residuals: bool,
     dependence: SegmentDependence,
     pattern: Option<SelectedPattern>,
@@ -294,7 +329,7 @@ fn mack_bootstrap(
         n_sims,
         seed: whole(seed, "seed")?,
         process,
-        development: development(average, sigma_interpolation, pattern)?,
+        development: development(average, sigma_interpolation, excl, pattern)?,
         centre_residuals,
         dependence,
         ..Default::default()
@@ -765,10 +800,11 @@ impl Triangle {
         column: &str,
         average: &str,
         sigma_interpolation: &str,
+        excl: Robj,
         tail: Robj,
         ldf: Robj,
     ) -> Result<ChainLadderFit> {
-        let inner = pattern(average, sigma_interpolation, tail, &ldf)?
+        let inner = pattern(average, sigma_interpolation, &excl, tail, &ldf)?
             .fit_segments(&self.inner, column)
             .map_err(to_r)?;
         Ok(ChainLadderFit { inner })
@@ -782,13 +818,14 @@ impl Triangle {
         column: &str,
         average: &str,
         sigma_interpolation: &str,
+        excl: Robj,
         tail: Robj,
         tail_sigma: Nullable<f64>,
         tail_std_err: Nullable<f64>,
         ldf: Robj,
     ) -> Result<MackFit> {
         let inner = Mack {
-            development: development(average, sigma_interpolation, selected_pattern(&ldf)?)?,
+            development: development(average, sigma_interpolation, &excl, selected_pattern(&ldf)?)?,
             tail: tail_arg(&tail)?,
             tail_sigma: optional(tail_sigma),
             tail_std_err: optional(tail_std_err),
@@ -809,12 +846,13 @@ impl Triangle {
         apriori: f64,
         average: &str,
         sigma_interpolation: &str,
+        excl: Robj,
         tail: Robj,
         ldf: Robj,
     ) -> Result<ExpectedLossFit> {
         let inner = ExpectedLoss {
             apriori,
-            chain_ladder: pattern(average, sigma_interpolation, tail, &ldf)?,
+            chain_ladder: pattern(average, sigma_interpolation, &excl, tail, &ldf)?,
         }
         .fit_segments(&self.inner, column, exposure)
         .map_err(to_r)?;
@@ -829,12 +867,13 @@ impl Triangle {
         apriori: f64,
         average: &str,
         sigma_interpolation: &str,
+        excl: Robj,
         tail: Robj,
         ldf: Robj,
     ) -> Result<ExpectedLossFit> {
         let inner = BornhuetterFerguson {
             apriori,
-            chain_ladder: pattern(average, sigma_interpolation, tail, &ldf)?,
+            chain_ladder: pattern(average, sigma_interpolation, &excl, tail, &ldf)?,
         }
         .fit_segments(&self.inner, column, exposure)
         .map_err(to_r)?;
@@ -850,6 +889,7 @@ impl Triangle {
         n_iters: f64,
         average: &str,
         sigma_interpolation: &str,
+        excl: Robj,
         tail: Robj,
         ldf: Robj,
     ) -> Result<ExpectedLossFit> {
@@ -858,7 +898,7 @@ impl Triangle {
         let inner = Benktander {
             apriori,
             n_iters,
-            chain_ladder: pattern(average, sigma_interpolation, tail, &ldf)?,
+            chain_ladder: pattern(average, sigma_interpolation, &excl, tail, &ldf)?,
         }
         .fit_segments(&self.inner, column, exposure)
         .map_err(to_r)?;
@@ -874,13 +914,14 @@ impl Triangle {
         decay: f64,
         average: &str,
         sigma_interpolation: &str,
+        excl: Robj,
         tail: Robj,
         ldf: Robj,
     ) -> Result<CapeCodFit> {
         let inner = CapeCod {
             trend,
             decay,
-            chain_ladder: pattern(average, sigma_interpolation, tail, &ldf)?,
+            chain_ladder: pattern(average, sigma_interpolation, &excl, tail, &ldf)?,
         }
         .fit_segments(&self.inner, column, exposure)
         .map_err(to_r)?;
@@ -1555,6 +1596,7 @@ impl Triangle {
         process: &str,
         average: &str,
         sigma_interpolation: &str,
+        excl: Robj,
         centre_residuals: bool,
         tail: Robj,
         tail_sigma: Nullable<f64>,
@@ -1573,6 +1615,7 @@ impl Triangle {
                 process,
                 average,
                 sigma_interpolation,
+                &excl,
                 centre_residuals,
                 segment_dependence(dependence, spearman)?,
                 selected_pattern(&ldf)?,
@@ -1604,6 +1647,7 @@ impl Triangle {
         decay: f64,
         average: &str,
         sigma_interpolation: &str,
+        excl: Robj,
         tail: Robj,
         bootstrap_tail: bool,
         tail_std_err: Nullable<f64>,
@@ -1627,7 +1671,7 @@ impl Triangle {
             n_iters,
             trend,
             decay,
-            pattern(average, sigma_interpolation, tail, &ldf)?,
+            pattern(average, sigma_interpolation, &excl, tail, &ldf)?,
         )?;
         let dependence = segment_dependence(dependence, spearman)?;
         let inner = OdpBootstrap {
@@ -1663,6 +1707,7 @@ impl Triangle {
         decay: f64,
         average: &str,
         sigma_interpolation: &str,
+        excl: Robj,
         tail: Robj,
         bootstrap_tail: bool,
         tail_sigma: Nullable<f64>,
@@ -1672,6 +1717,7 @@ impl Triangle {
         process: &str,
         mack_average: &str,
         mack_sigma_interpolation: &str,
+        mack_excl: Robj,
         centre_residuals: bool,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
@@ -1690,7 +1736,7 @@ impl Triangle {
             n_iters,
             trend,
             decay,
-            pattern(average, sigma_interpolation, tail, &ldf)?,
+            pattern(average, sigma_interpolation, &excl, tail, &ldf)?,
         )?;
         let inner = MackBootstrap {
             tail: boot_tail,
@@ -1703,6 +1749,7 @@ impl Triangle {
                 process,
                 mack_average,
                 mack_sigma_interpolation,
+                &mack_excl,
                 centre_residuals,
                 segment_dependence(dependence, spearman)?,
                 None,
@@ -2042,6 +2089,20 @@ impl ChainLadderFit {
 
     fn alpha(&self) -> f64 {
         self.inner.fits[0].development.alpha
+    }
+
+    /// The link ratios each factor averaged, after `n_periods`,
+    /// `drop_high` and `drop_low`.
+    fn n_links(&self) -> Result<Vec<i32>> {
+        let f = single(&self.inner, "n_links", "")?;
+        Ok(f.development.n_links.iter().map(|&n| n as i32).collect())
+    }
+
+    /// Whether `n_periods` or the drops left out a link ratio at some age;
+    /// needs a single-segment fit.
+    fn excluded(&self) -> Result<bool> {
+        let f = single(&self.inner, "excluded", "")?;
+        Ok(f.development.excluded)
     }
 
     /// The factors as estimated, before the tail replaced any.

@@ -17,14 +17,18 @@
 pub mod aggregate;
 pub mod bayes;
 pub mod credibility;
+pub mod distortions;
 pub mod evt;
 pub mod experience;
 pub mod exposure;
 pub mod fitting;
+pub mod payout;
 pub mod pricing;
+pub mod quote;
 pub mod ratemaking;
 pub mod reserving;
 pub mod sheet;
+pub mod terms;
 pub mod triangles;
 #[cfg(windows)]
 mod xll;
@@ -1516,6 +1520,370 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: evt::hill_estimates,
+    },
+    Function {
+        symbol: "pro_payout_pattern",
+        name: "PRO.PAYOUT.PATTERN",
+        help: "A payment pattern by time: share paid, paid to date, outstanding and the discount at a rate.",
+        args: &[
+            Arg {
+                name: "times",
+                help: "Payment times in years from inception: a row or column",
+            },
+            Arg {
+                name: "values",
+                help: "One per time: shares paid then, the share paid to date, or factors to ultimate (see kind)",
+            },
+            Arg {
+                name: "kind",
+                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.CL.CDF, the last 1)",
+            },
+            Arg {
+                name: "shift",
+                help: "Years to move the pattern later (0 if omitted; 0.5 for losses occurring evenly over a year)",
+            },
+            Arg {
+                name: "rate",
+                help: "Annual effective discount rate (0 if omitted)",
+            },
+        ],
+        run: payout::pattern_table,
+    },
+    Function {
+        symbol: "pro_payout_stats",
+        name: "PRO.PAYOUT.STATS",
+        help: "A payment pattern's discount factor, duration and discounted capital years at a rate.",
+        args: &[
+            Arg {
+                name: "times",
+                help: "Payment times in years from inception: a row or column",
+            },
+            Arg {
+                name: "values",
+                help: "One per time: shares paid then, the share paid to date, or factors to ultimate (see kind)",
+            },
+            Arg {
+                name: "rate",
+                help: "Annual effective discount rate, such as 0.04",
+            },
+            Arg {
+                name: "kind",
+                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.CL.CDF, the last 1)",
+            },
+            Arg {
+                name: "shift",
+                help: "Years to move the pattern later (0 if omitted; 0.5 for losses occurring evenly over a year)",
+            },
+        ],
+        run: payout::stats,
+    },
+    Function {
+        symbol: "pro_payout_price",
+        name: "PRO.PAYOUT.PRICE",
+        help: "A cost-of-capital price over the payout: P = E d + coc (assets - P) A, capital held while losses are outstanding.",
+        args: &[
+            Arg {
+                name: "expected_loss",
+                help: "Expected loss E[X], undiscounted",
+            },
+            Arg {
+                name: "assets",
+                help: "Assets backing the loss: the one-year risk measure, such as a VaR from PRO.AGG.STATS",
+            },
+            Arg {
+                name: "coc",
+                help: "Cost of capital, a spread over the discount rate, such as 0.1",
+            },
+            Arg {
+                name: "times",
+                help: "Payment times in years from inception: a row or column",
+            },
+            Arg {
+                name: "values",
+                help: "One per time: shares paid then, the share paid to date, or factors to ultimate (see kind)",
+            },
+            Arg {
+                name: "rate",
+                help: "Annual effective discount rate, such as 0.04",
+            },
+            Arg {
+                name: "kind",
+                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.CL.CDF, the last 1)",
+            },
+            Arg {
+                name: "shift",
+                help: "Years to move the pattern later (0 if omitted; 0.5 for losses occurring evenly over a year)",
+            },
+        ],
+        run: payout::price,
+    },
+    Function {
+        symbol: "pro_quote",
+        name: "PRO.QUOTE",
+        help: "A cover's technical premium (R + f) / (1 - e - b) with its build-up and market ratios, and the cover at each quoted premium.",
+        args: &[
+            Arg {
+                name: "expected_loss",
+                help: "Expected loss E[X]",
+            },
+            Arg {
+                name: "risk_premium",
+                help: "The risk-loaded premium R, such as PRO.TOWER.PRICE's premium",
+            },
+            Arg {
+                name: "assets",
+                help: "Assets backing the loss, for capital and its return (blank leaves them out)",
+            },
+            Arg {
+                name: "expenses",
+                help: "Internal expenses as a share of the premium (0 if omitted)",
+            },
+            Arg {
+                name: "brokerage",
+                help: "Brokerage as a share of the premium (0 if omitted)",
+            },
+            Arg {
+                name: "fixed",
+                help: "A fixed expense per contract, an amount (0 if omitted)",
+            },
+            Arg {
+                name: "limit",
+                help: "The limit at the placed share, for the rate on line and payback",
+            },
+            Arg {
+                name: "quoted",
+                help: "Quoted premiums: a value or a row, one column each",
+            },
+        ],
+        run: quote::quote,
+    },
+    Function {
+        symbol: "pro_distortion",
+        name: "PRO.DISTORTION",
+        help: "A distortion's g(s) at each exceedance probability s.",
+        args: &[
+            Arg {
+                name: "s",
+                help: "Exceedance probabilities in [0, 1]: a number or a range",
+            },
+            Arg {
+                name: "family",
+                help: "ccoc, ph, wang, dual, tvar, exp, or with r0 clin, cll, lep, ly (aggregate's names)",
+            },
+            Arg {
+                name: "parameter",
+                help: "The family's parameter: r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly)",
+            },
+            Arg {
+                name: "r0",
+                help: "clin, cll, lep and ly only: the intercept r0",
+            },
+        ],
+        run: distortions::g,
+    },
+    Function {
+        symbol: "pro_distortion_price",
+        name: "PRO.DISTORTION.PRICE",
+        help: "A distortion's risk measure of a discrete or simulated distribution, with its mean and margin.",
+        args: &[
+            Arg {
+                name: "values",
+                help: "Outcomes: a range, any order (simulated draws when probs is omitted)",
+            },
+            Arg {
+                name: "probs",
+                help: "One probability per value, summing to 1 (equally likely if omitted)",
+            },
+            Arg {
+                name: "family",
+                help: "ccoc, ph, wang, dual, tvar, exp, or with r0 clin, cll, lep, ly (aggregate's names)",
+            },
+            Arg {
+                name: "parameter",
+                help: "The family's parameter: r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly)",
+            },
+            Arg {
+                name: "r0",
+                help: "clin, cll, lep and ly only: the intercept r0",
+            },
+        ],
+        run: distortions::price,
+    },
+    Function {
+        symbol: "pro_distortion_calibrate",
+        name: "PRO.DISTORTION.CALIBRATE",
+        help: "Each family's parameter that prices the outcomes at a target premium (CCoC, PH, Wang, dual, TVaR by default).",
+        args: &[
+            Arg {
+                name: "values",
+                help: "Outcomes: a range, any order (simulated draws when probs is omitted)",
+            },
+            Arg {
+                name: "probs",
+                help: "One probability per value, summing to 1 (equally likely if omitted)",
+            },
+            Arg {
+                name: "premium",
+                help: "The target premium, between the mean and the largest outcome (cap the outcomes at the assets first)",
+            },
+            Arg {
+                name: "families",
+                help: "Family names: a row or column (ccoc, ph, wang, dual, tvar if omitted)",
+            },
+            Arg {
+                name: "r0",
+                help: "clin, cll, lep and ly only: the intercept r0",
+            },
+        ],
+        run: distortions::calibrate_families,
+    },
+    Function {
+        symbol: "pro_swing",
+        name: "PRO.SWING",
+        help: "A swing-rated or retro premium at each loss: clip(basic + lcm x loss, minimum, maximum) (aggregate's contract_terms).",
+        args: &[
+            Arg {
+                name: "loss",
+                help: "Losses: a number or a range (a swing layer's ceded loss at its share)",
+            },
+            Arg {
+                name: "basic",
+                help: "Basic premium at 100%",
+            },
+            Arg {
+                name: "lcm",
+                help: "Loss conversion factor, such as 100/80 (times the tax multiplier for a retro plan)",
+            },
+            Arg {
+                name: "minimum",
+                help: "Minimum premium at 100% (basic if omitted)",
+            },
+            Arg {
+                name: "maximum",
+                help: "Maximum premium at 100% (no cap if omitted)",
+            },
+            Arg {
+                name: "share",
+                help: "Placed share of a swing-rated layer (1 if omitted)",
+            },
+        ],
+        run: terms::swing,
+    },
+    Function {
+        symbol: "pro_sliding_scale",
+        name: "PRO.SLIDING.SCALE",
+        help: "A sliding-scale ceding commission at each ceded loss: the rate at loss / premium, linear between anchors, times the premium.",
+        args: &[
+            Arg {
+                name: "loss",
+                help: "Ceded losses: a number or a range",
+            },
+            Arg {
+                name: "premium",
+                help: "The premium at 100%, for the loss ratio",
+            },
+            Arg {
+                name: "commissions",
+                help: "Commission rates at the anchors: a row or column",
+            },
+            Arg {
+                name: "loss_ratios",
+                help: "The anchors' loss ratios, increasing: one per commission",
+            },
+        ],
+        run: terms::sliding_scale,
+    },
+    Function {
+        symbol: "pro_profit_commission",
+        name: "PRO.PROFIT.COMMISSION",
+        help: "A profit commission at each ceded loss: share x max(premium x (1 - allowance) - loss, 0).",
+        args: &[
+            Arg {
+                name: "loss",
+                help: "Ceded losses: a number or a range",
+            },
+            Arg {
+                name: "premium",
+                help: "The premium at 100%, for the loss ratio",
+            },
+            Arg {
+                name: "share",
+                help: "Share of the profit returned to the cedant",
+            },
+            Arg {
+                name: "allowance",
+                help: "The reinsurer's expense and margin allowance, a share of premium",
+            },
+        ],
+        run: terms::profit_commission,
+    },
+    Function {
+        symbol: "pro_layer_terms",
+        name: "PRO.LAYER.TERMS",
+        help: "A layer's contract terms in expectation over its annual loss: premium, reinstatement premium, ceding and profit commissions, margin.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of claims a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "layer_limit",
+                help: "The layer's per-occurrence limit",
+            },
+            Arg {
+                name: "layer_attachment",
+                help: "The layer's attachment",
+            },
+            Arg {
+                name: "premium",
+                help: "Deposit premium at 100%",
+            },
+            Arg {
+                name: "reinstatements",
+                help: "Paid reinstatements: a row of rates, each a share of the deposit (pro rata as to amount)",
+            },
+            Arg {
+                name: "commissions",
+                help: "A flat ceding commission rate, or a range of rates with loss_ratios for a sliding scale",
+            },
+            Arg {
+                name: "loss_ratios",
+                help: "A sliding scale's anchor loss ratios, one per commission",
+            },
+            Arg {
+                name: "profit_share",
+                help: "Profit commission: the share of profit returned",
+            },
+            Arg {
+                name: "profit_allowance",
+                help: "Profit commission: the reinsurer's allowance, a share of premium",
+            },
+            Arg {
+                name: "share",
+                help: "Placed share (1 if omitted)",
+            },
+            Arg {
+                name: "policy_limit",
+                help: "A per-claim limit on the gross loss (none if omitted)",
+            },
+            Arg {
+                name: "step",
+                help: "Grid step; give with points, or omit both to size the grid automatically",
+            },
+            Arg {
+                name: "points",
+                help: "Grid points; give with step",
+            },
+        ],
+        run: aggregate::layer_terms,
     },
 ];
 

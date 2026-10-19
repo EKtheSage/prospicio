@@ -52,6 +52,31 @@ pub fn digamma(x: f64) -> f64 {
     acc + x.ln() - 0.5 / x + series
 }
 
+/// Trigamma function `ψ'(x)`, the derivative of [`digamma`], for `x > 0`:
+/// the recurrence `ψ'(x) = ψ'(x + 1) + 1/x²` up to 20, then the
+/// asymptotic series, whose first omitted term is below `1e-15` there.
+///
+/// ```
+/// use prospicio_math::special::trigamma;
+///
+/// // ψ'(1) = π²/6.
+/// assert!((trigamma(1.0) - std::f64::consts::PI.powi(2) / 6.0).abs() < 1e-14);
+/// ```
+pub fn trigamma(x: f64) -> f64 {
+    if x.is_nan() || x <= 0.0 {
+        return f64::NAN;
+    }
+    let mut x = x;
+    let mut acc = 0.0;
+    while x < 20.0 {
+        acc += 1.0 / (x * x);
+        x += 1.0;
+    }
+    let f = 1.0 / (x * x);
+    let series = f / x * (1.0 / 6.0 + f * (-1.0 / 30.0 + f * (1.0 / 42.0 + f * (-1.0 / 30.0))));
+    acc + 1.0 / x + 0.5 * f + series
+}
+
 /// Standard normal quantile (inverse of [`norm_cdf`]).
 ///
 /// Returns `-inf` at 0, `+inf` at 1 and NaN outside `[0, 1]`. Starts from
@@ -839,6 +864,17 @@ mod tests {
         assert!((student_t_quantile(p, 1.0) / (PI * (p - 0.5)).tan() - 1.0).abs() < 1e-10);
         assert!(student_t_quantile(1.5, 2.0).is_nan());
         assert_eq!(student_t_quantile(0.0, 2.0), f64::NEG_INFINITY);
+    }
+
+    #[test]
+    fn trigamma_matches_known_values() {
+        // ψ'(1/2) = π²/2, ψ'(2) = π²/6 − 1, and ψ' is the slope of ψ.
+        assert!((trigamma(0.5) - PI * PI / 2.0).abs() < 1e-13);
+        assert!((trigamma(2.0) - (PI * PI / 6.0 - 1.0)).abs() < 1e-14);
+        let (x, h) = (3.7, 1e-5);
+        let slope = (digamma(x + h) - digamma(x - h)) / (2.0 * h);
+        assert!((trigamma(x) - slope).abs() < 1e-8);
+        assert!(trigamma(0.0).is_nan());
     }
 
     #[test]

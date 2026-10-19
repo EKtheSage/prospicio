@@ -1087,3 +1087,161 @@ fn severity_tvar_matches_closed_forms() {
     assert!(ln.tvar(1.0).is_err());
     assert!(ln.tvar(-0.1).is_err());
 }
+
+/// Mildenhall and Major, *Pricing Insurance Risk* (2022), Exercise 217: the
+/// Simple Discrete Example's premium of 80 allocated by Kalkbrener's
+/// covariance method, each unit's mean plus a share of the margin by
+/// covariance with the total; book 5.216 and 74.784.
+#[test]
+fn covariance_margin_matches_pricing_insurance_risk_exercise_217() {
+    use prospicio_prob::capital::AllocationMethod;
+    use prospicio_prob::{Distortion, Empirical, KeyValue, PredictiveDistribution, Provenance};
+
+    // X1 is 0, 8, 10 and X2 is 0, 1, 90 with weights 2, 1, 1 out of 4,
+    // independent: 16 equally likely rows.
+    let units = [(0.0, 2), (8.0, 1), (10.0, 1)];
+    let others = [(0.0, 2), (1.0, 1), (90.0, 1)];
+    let mut draws = Vec::new();
+    for &(a, n) in &units {
+        for &(b, k) in &others {
+            for _ in 0..n * k {
+                draws.extend([a, b]);
+            }
+        }
+    }
+    let pd = PredictiveDistribution::from_draws(
+        vec!["unit".into()],
+        vec![vec![KeyValue::from("X1")], vec![KeyValue::from("X2")]],
+        draws,
+        Provenance::new("PIR Exercise 217"),
+    )
+    .unwrap();
+    // A TVaR level at which the total's measure is the premium of 80.
+    let (mut lo, mut hi) = (0.0, 0.75);
+    for _ in 0..100 {
+        let p = 0.5 * (lo + hi);
+        if pd.total().distortion(&Distortion::tvar(p).unwrap()) > 80.0 {
+            hi = p;
+        } else {
+            lo = p;
+        }
+    }
+    let d = Distortion::tvar(0.5 * (lo + hi)).unwrap();
+    let a = pd.capital(&d, AllocationMethod::CovarianceMargin).unwrap();
+    assert!((a.total - 80.0).abs() < 1e-9);
+    assert!((a.allocated[0] - 5.216).abs() < 5e-4, "{:?}", a.allocated);
+    assert!((a.allocated[1] - 74.784).abs() < 5e-4, "{:?}", a.allocated);
+    // The scaled covariance allocation spreads the mean too: 1.086.
+    let c = pd.capital(&d, AllocationMethod::Covariance).unwrap();
+    assert!((c.allocated[0] - 1.086).abs() < 5e-4, "{:?}", c.allocated);
+}
+
+/// *Pricing Insurance Risk*, Exercises 205 and 206: the Simple Discrete
+/// Example's premium of 80 allocated by stand-alone TVaR, as a haircut at
+/// 75% (book 8 and 72) and at the one equal risk level (book 9.56 and
+/// 70.44 at 0.6796).
+#[test]
+fn haircut_and_equal_risk_match_pricing_insurance_risk_exercises_205_206() {
+    use prospicio_prob::capital::LevelMeasure;
+    use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+
+    let units = [(0.0, 2), (8.0, 1), (10.0, 1)];
+    let others = [(0.0, 2), (1.0, 1), (90.0, 1)];
+    let mut draws = Vec::new();
+    for &(a, n) in &units {
+        for &(b, k) in &others {
+            for _ in 0..n * k {
+                draws.extend([a, b]);
+            }
+        }
+    }
+    let pd = PredictiveDistribution::from_draws(
+        vec!["unit".into()],
+        vec![vec![KeyValue::from("X1")], vec![KeyValue::from("X2")]],
+        draws,
+        Provenance::new("PIR Exercises 205 and 206"),
+    )
+    .unwrap();
+    let h = pd.haircut(80.0, LevelMeasure::Tvar, 0.75).unwrap();
+    assert_eq!(h.standalone, [10.0, 90.0]);
+    assert!((h.allocated[0] - 8.0).abs() < 1e-12 && (h.allocated[1] - 72.0).abs() < 1e-12);
+    let e = pd.equal_risk(80.0, LevelMeasure::Tvar).unwrap();
+    assert!((e.level - 0.6796).abs() < 5e-5, "{}", e.level);
+    assert!((e.allocated[0] - 9.56).abs() < 5e-3, "{:?}", e.allocated);
+    assert!((e.allocated[1] - 70.44).abs() < 5e-3, "{:?}", e.allocated);
+}
+
+/// *Pricing Insurance Risk*, Exercise 59: the worst 99% VaR of three
+/// lognormals with mean 10 and CVs 1, 2 and 3, from 40 quantiles of each.
+/// The book gives 352.8 from an unstated random start; the guide's rotated
+/// starts (column `j` moved down `7 j`, `13 j` and `19 j` places, numpy's
+/// `roll`) give 353.8, 353.6 and 352.9, which `Start::Rotated` reproduces.
+#[test]
+fn worst_var_matches_the_pricing_insurance_risk_guide() {
+    use prospicio_prob::rearrangement::{Start, worst_var};
+    let marginals: Vec<Lognormal> = [1.0, 2.0, 3.0]
+        .iter()
+        .map(|&cv| Lognormal::from_mean_cv(10.0, cv).unwrap())
+        .collect();
+    let refs: Vec<&dyn Distribution> = marginals.iter().map(|m| m as &dyn Distribution).collect();
+    let comonotonic: f64 = marginals.iter().map(|m| m.quantile(0.99).unwrap()).sum();
+    assert!((comonotonic - 242.5).abs() < 0.05);
+    for (shift, want) in [(7, 353.8), (13, 353.6), (19, 352.9)] {
+        let r = worst_var(&refs, 0.99, 40, Start::Rotated(shift), 1e-6).unwrap();
+        assert!((r.value - want).abs() < 0.05, "shift {shift}: {}", r.value);
+    }
+}
+
+/// The third layer moment by quadrature against closed forms: the
+/// lognormal's limited third moment `e^{3μ + 9σ²/2} Φ((ln u − μ − 3σ²)/σ) +
+/// u³ S(u)`, the single-parameter Pareto's `x₀³ + 3 x₀^α (u^{3−α} −
+/// x₀^{3−α}) / (3 − α)`, and the unlimited layer above an attachment from
+/// `E[(X − a)³] + 3 ∫_0^a (a − x)² F(x) dx` for a gamma.
+#[test]
+fn layer_third_moments_match_closed_forms() {
+    use prospicio_math::special::norm_cdf;
+    use prospicio_prob::{Gamma, Pareto};
+    let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-9;
+    let (mu, sigma): (f64, f64) = (1.0, 0.8);
+    let ln = Lognormal::new(mu, sigma).unwrap();
+    for u in [0.5f64, 3.0, 20.0, 200.0] {
+        let want = (3.0 * mu + 4.5 * sigma * sigma).exp()
+            * norm_cdf((u.ln() - mu - 3.0 * sigma * sigma) / sigma)
+            + u * u * u * ln.survival(u);
+        assert!(
+            close(ln.layer_third_moment(u, 0.0), want),
+            "lognormal at {u}"
+        );
+    }
+    assert!(close(
+        ln.layer_third_moment(f64::INFINITY, 0.0),
+        ln.third_moment().unwrap()
+    ));
+    let (x0, alpha): (f64, f64) = (100.0, 4.5);
+    let pa = Pareto::new(x0, alpha).unwrap();
+    for u in [150.0f64, 1000.0, 1e5] {
+        let want = x0.powi(3)
+            + 3.0 * x0.powf(alpha) * (u.powf(3.0 - alpha) - x0.powf(3.0 - alpha)) / (3.0 - alpha);
+        assert!(close(pa.layer_third_moment(u, 0.0), want), "pareto at {u}");
+    }
+    let g = Gamma::new(2.0, 50.0).unwrap();
+    let a: f64 = 120.0;
+    let (m1, m2, m3) = (
+        g.mean(),
+        g.variance() + g.mean().powi(2),
+        g.third_moment().unwrap(),
+    );
+    let below = 3.0
+        * prospicio_math::integrate::gauss_legendre(
+            |x| Ok::<_, ()>((a - x) * (a - x) * g.cdf(x)),
+            0.0,
+            a,
+        )
+        .unwrap();
+    let want = m3 - 3.0 * a * m2 + 3.0 * a * a * m1 - a.powi(3) + below;
+    assert!(close(g.layer_third_moment(f64::INFINITY, a), want));
+    // A layer splits at any point: 3 ∫ (x − a)² S over two pieces.
+    let whole = g.layer_third_moment(300.0, 50.0);
+    let lower = g.layer_third_moment(100.0, 50.0);
+    assert!(whole > lower && lower > 0.0);
+}

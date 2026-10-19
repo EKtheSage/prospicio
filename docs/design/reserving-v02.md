@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -2227,3 +2227,204 @@ Decided by the user on 2026-10-15, after review of the built PR:
    before the first and after the last given age stay estimated.
 4. **The ODP bootstrap keeps the origins' level error** with every factor
    selected (item 8): documented in the Rust, Python and R docs.
+
+### 13. Averages over the latest periods, excluding high and low, and geometric
+
+Status: **Built** (2026-10-18), branch `claude/development-averages`,
+issues #336 and #339, in Rust, Python and R; the bootstraps and the
+one-year views following the exclusions are a second PR. What changed
+from the proposal is under "As built" at the end of this decision.
+
+Reserving practice selects age-to-age factors from averages over the
+**latest n** accident years, from medial averages (the latest n without
+the highest and lowest link ratios) and from geometric averages (Friedland,
+*Estimating Unpaid Claims Using Basic Techniques*, chapter 7, Exhibits I
+and II; Werner and Modlin, *Basic Ratemaking*, Appendix A). `Development`
+averages every origin. The guides work around it today: a triangle cut to
+its latest `n + 1` diagonals for the volume-weighted latest n, and averages
+computed from `Triangle.link_ratios()` and passed in as a selected
+pattern for the rest (`docs/guides/reserving-friedland.md`,
+`docs/guides/ratemaking-werner-modlin.md`).
+
+The reference is chainladder-python 0.10.1's `Development(n_periods,
+drop_high, drop_low, preserve)` (read 2026-10-18). R ChainLadder's
+`MackChainLadder(weights = W)` takes the same exclusions as a 0/1 matrix,
+which is the reference for Mack's standard errors under them. Neither has
+a geometric average.
+
+1. **Settings.** `Development` gets three fields, each with a default
+   that keeps the current fit:
+
+   ```rust
+   pub struct Development {
+       pub average: Average,
+       pub sigma_interpolation: SigmaInterpolation,
+       pub pattern: Option<SelectedPattern>,
+       /// Average only the link ratios that end in the latest `n` origin
+       /// periods of calendar time; `None` uses every one.
+       pub n_periods: Option<usize>,
+       /// Leave out the `drop_high` highest and `drop_low` lowest of the
+       /// link ratios kept by `n_periods`, at each age.
+       pub drop_high: usize,
+       pub drop_low: usize,
+   }
+   ```
+
+   Its hand-written `Debug` leaves the new fields out at their defaults,
+   as it does `pattern`, so that the settings recorded in a bootstrap's
+   provenance stay as they were.
+
+2. **`n_periods` counts calendar time, not origins.** A link ratio from
+   age `k` to `k + 1` of an origin is kept when the valuation of its
+   starting cell is at least the segment's latest valuation less `n`
+   origin periods, in months. That is chainladder-python's rule (its
+   `val_offset`): with the origin and development grains equal it keeps
+   the link ratios ending on the latest `n` diagonals, and on a complete
+   triangle those are the latest `n` origins at each age. On a sparse
+   triangle, or one with a development grain finer than its origin grain,
+   the two differ and the diagonals are the reference's choice. An age
+   with fewer than `n` link ratios uses all of them ("latest 5" with
+   three years is the three, as in Friedland). `n_periods = Some(0)` is an
+   error; `Some(n)` at or past the number of diagonals is every link.
+
+3. **`drop_high` and `drop_low` rank within the kept link ratios.** At
+   each age the link ratios kept by item 2 are ranked by value, ties
+   broken by the starting cell's value (chainladder-python's `lexsort`),
+   and the top `drop_high` and bottom `drop_low` are left out. When that
+   would leave no link ratio, the age keeps every link ratio item 2 kept,
+   as chainladder-python with its default `preserve = 1`: Friedland's
+   medial average of two values is their simple average, of one value the
+   value itself. `preserve` is not a setting; a fixed 1 is what both books
+   do. The fit reports what was used (item 5), so a skipped drop is
+   visible rather than a warning.
+
+4. **The exclusions apply to the factor and to sigma alike.** Every
+   average (volume, simple, regression) is the same weighted regression
+   as now, on the kept link ratios only: its sigma is estimated from them
+   with `kept - 1` degrees of freedom, and its volume `sum(C[k]^alpha)`
+   runs over them, as chainladder-python's weights `w_` and R's
+   `weights`. An age left with a single link ratio has its sigma filled
+   in as now (`sigma_interpolation`). `n_periods = Some(1)` leaves every
+   sigma unestimable, so `ChainLadder` and the expected-loss methods fit
+   and `Mack` gives the existing error that a sigma can neither be
+   estimated nor interpolated.
+
+5. **The fit says what it used.** `DevelopmentFit` gets `n_links:
+   Vec<usize>`, the number of link ratios behind each factor. Python and
+   R expose it as `n_links`. Selected factors (decision 12) apply after
+   the average, as now.
+
+6. **Geometric.** `Average::Geometric` is `exp(mean(ln r))` over the kept
+   link ratios. It is not a weighted regression and Mack's model has no
+   variance for it, so its sigma and standard errors are NaN, its
+   `DevelopmentFit::alpha` is NaN, and `Average::alpha` returns
+   `Option<f64>` (`None` for it). That is a breaking change of a public
+   enum and of `alpha`'s signature, marked as such in the changelog.
+   `ChainLadder` and the four expected-loss methods take it. `Mack`, both
+   bootstraps and the one-year views reject it before fitting, with an
+   error that names the average. A link ratio of 0 or below is an error
+   for it, as a zero value is for the simple average.
+
+7. **Which methods take the exclusions in this PR.** `ChainLadder`, the
+   four expected-loss methods and `Mack` (lifetime). Merz and Wüthrich's
+   closed form (`Mack::one_year`, `claims_development_result`), the ODP
+   and Mack bootstraps and their one-year views reject `n_periods`,
+   `drop_high` and `drop_low` before fitting: the closed form's volumes
+   and the bootstraps' residuals and re-reserving assume every link ratio,
+   and making them follow the exclusions (chainladder-python's
+   `BootstrapODPSample` takes `n_periods` and the drops) is a second PR
+   with its own checks. `ClarkLdf`, `ClarkCapeCod`, the ODP GLM and the
+   Bayesian models do not use `Development`'s averages and are
+   unchanged.
+
+8. **Factors to ultimate below 1** (issue #336, item 3). A selected
+   pattern with `PatternKind::AgeToUltimate` today requires every value to
+   be at least 1 and not to increase with age, and `PercentDeveloped`
+   every value in `(0, 1]` and not to decrease. Friedland's XYZ Insurer
+   reported pattern (0.992 at 96 and 108 months, then 0.999 and 1.000) is
+   real negative development and fails both. Those checks cannot tell an
+   age-to-age pattern passed as cumulative from a cumulative one anyway
+   (both decrease toward 1 in the usual case), so they are relaxed to
+   finite and positive for both kinds, in any order. The age-to-age
+   factors the conversion gives may then be below 1, which
+   `PatternKind::AgeToAge` already allows. A cumulative pattern's last
+   value is still its tail level (decision 12, revision 1), and a level
+   below 1 is a tail below 1, allowed wherever a `TailConstant` below 1
+   is.
+
+**Checks.**
+
+* chainladder-python 0.10.1 on RAA and GenIns: `ldf_`, `sigma_` and
+  `std_err_` under `n_periods = 3`, under `drop_high = drop_low = 1`,
+  under both, for each of volume, simple and regression; `n_periods = 1`
+  (factors only); and the weights `w_` against `n_links`. Stored as a
+  reference CSV with the script that wrote it.
+* R ChainLadder's `MackChainLadder(RAA, weights = W)` with the 0/1 matrix
+  of `n_periods = 3` and of the drops: Mack's standard errors by origin
+  and in total.
+* The books' printed numbers: Friedland's U.S. Industry Auto averages
+  (simple, medial, volume over the latest 5 and 3, geometric over the
+  latest 4, to the three decimals printed) and XYZ Insurer's volume over
+  the latest 2 and its reported CDFs below 1 as `ldf_kind = "cdf"`;
+  Werner and Modlin's Appendix A straight average excluding high and low
+  (1.0665, 1.0279, 1.0208, 0.9799 on the book's rounded link ratios).
+* Errors: `n_periods = Some(0)`; the geometric average in Mack and the
+  bootstraps; the exclusions in the bootstraps and the closed-form
+  one-year view; a link ratio of 0 under the geometric average.
+* The default `Development` gives bit-identical fits and the same
+  provenance `Debug` text as before.
+
+**Bindings.** Python: `n_periods=None`, `drop_high=0`, `drop_low=0` and
+`average="geometric"` on `ChainLadder`, `Mack`, `ExpectedLoss`,
+`BornhuetterFerguson`, `Benktander` and `CapeCod`, and on the bootstraps
+(where a value other than the default raises, naming the follow-up); the
+fit's `n_links`. R: the same arguments on `chain_ladder()`, `mack()` and
+the expected-loss functions. The guides' workarounds can then go; that
+is the Guides lane's change, filed as an issue for it.
+
+**As built** (2026-10-18). What changed from the proposal while building
+it:
+
+1. `DevelopmentFit` also has `excluded: bool`, true when the exclusions
+   removed a link ratio at some age; `n_links` alone cannot tell an
+   exclusion from a hole in the triangle. It is exposed in Python and R
+   beside `n_links`, and both raise on a fit with several segments, as
+   `n_links` does.
+2. Rejections go through a new `Error::NotSupported { setting, method,
+   reason }`, which names the setting and the method. Merz and
+   Wüthrich's closed form keeps `Error::ClaimsDevelopment` and rejects any
+   exclusion setting, even one that removes nothing at the valuation,
+   since the window slides with the coming diagonal.
+   `OdpBootstrap` has no `Development`, so only its one-year view, through
+   the re-reserving method, can reject anything.
+3. Under the geometric average `volume` is NaN as well as `alpha`, `sigma`
+   and `std_err`.
+4. An age that `n_periods` leaves with no link ratio (a sparse triangle
+   whose only pairs at that age are old) is `Error::Factor`, "no link
+   ratio is left after n_periods".
+5. Link ratios that are not finite (a zero starting value) are never
+   dropped and do not count toward the ranks, so the result does not
+   depend on how a platform orders NaN. A huge `n_periods` or drop count
+   saturates instead of overflowing: `n_periods` past the number of
+   diagonals keeps every link ratio, a drop count past the number of
+   link ratios keeps them all.
+6. The references: chainladder-python's `w_` counts the starting cell on
+   the latest diagonal under `n_periods`, so `n_links` is compared with
+   the link ratios that have a weight above 0 and a finite value; its
+   standard error at an interpolated sigma divides by the first origin's
+   earlier value, not by the volume, so standard errors are compared only
+   where sigma is estimated (prospicio divides by the volume, as Mack's
+   formulas and R do). R falls back to Mack's sigma rule in a few
+   settings; those are left out of the R reference and listed in its
+   script.
+   chainladder-python also returns every link ratio once `n_periods` is
+   at least the number of origins less 1, which on a triangle with a
+   development grain finer than its origin grain still has older link
+   ratios to cut; prospicio keeps to the calendar rule there, and its
+   test of that case (annual origins, quarterly ages) stays below the
+   threshold, where the two agree.
+7. Bindings: in Python the new arguments come after `ldf_weight`, and in
+   R after the last existing argument, so positional calls keep working.
+   R's `mack_one_year()` takes `mack_n_periods`, `mack_drop_high` and
+   `mack_drop_low` beside `mack_average`. Python's `OdpBootstrap` takes
+   none of them (it has no average).

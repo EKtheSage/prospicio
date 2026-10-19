@@ -326,6 +326,15 @@ what it is aiming for by v1.0.
     rescaled to the tail. Parity with chainladder-python's
     `DevelopmentConstant` and with R's `MackChainLadder` on the
     triangle's own factors.
+  - Averages over the latest periods, excluding high and low, and
+    geometric (`reserving-v02.md`, decision 13; branch
+    `claude/development-averages`, issues #336 and #339, in Rust, Python
+    and R): `n_periods`, `drop_high` and `drop_low` on `Development` for
+    the chain ladder, the expected-loss family and Mack, in the factor and
+    in sigma alike, and `Average::Geometric` (factors only). Parity with
+    chainladder-python's `Development` and R's `MackChainLadder(weights =
+    W)`; the bootstraps and the one-year views reject them until a second
+    PR. Factors to ultimate below 1 in selected patterns.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
@@ -433,12 +442,14 @@ what it is aiming for by v1.0.
   aggregate PML curves; aggregate covers on the annual total; towers
   priced on a grid; severity fits to large losses (body and Pareto
   families, with reporting thresholds and censoring); EVT threshold
-  diagnostics, the GPD tail and Hill's estimator.
+  diagnostics, the GPD tail and Hill's estimator; payment patterns,
+  discounting and a cost-of-capital price over the payout; a cover's
+  quote; distortions, their prices and calibration; contract terms at a
+  loss and in expectation.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): groups 1 to 5 done; group 6 (fitting
-     and pricing inputs: payment patterns and discounting, the
-     quote, distortions, contract terms) under way.
+     form (`xll.md`, parity plan): all six groups done; further
+     functions as the user asks.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

@@ -1036,10 +1036,36 @@ impl Segment {
 
     /// `(from, to)` values of every origin observed at both `dev` and
     /// `dev + 1`.
+    #[cfg(test)]
     pub(crate) fn link_pairs(&self, dev: usize) -> Vec<(f64, f64)> {
         (0..self.n_origins)
             .filter_map(|o| Some((self.get(o, dev)?, self.get(o, dev + 1)?)))
             .collect()
+    }
+
+    /// `(origin, from, to)` of every origin observed at both `dev` and
+    /// `dev + 1`, in origin order.
+    pub(crate) fn link_pairs_indexed(&self, dev: usize) -> Vec<(usize, f64, f64)> {
+        (0..self.n_origins)
+            .filter_map(|o| Some((o, self.get(o, dev)?, self.get(o, dev + 1)?)))
+            .collect()
+    }
+
+    /// Valuation month of the cell at `origin`, `dev`.
+    pub(crate) fn valuation_of(&self, origin: usize, dev: usize) -> Month {
+        self.origins[origin]
+            .start()
+            .add_months(self.ages[dev] as i64 - 1)
+    }
+
+    /// The latest valuation month of any observed cell.
+    pub(crate) fn latest_valuation(&self) -> Option<Month> {
+        (0..self.n_origins)
+            .filter_map(|o| {
+                let d = (0..self.n_dev).rev().find(|&d| self.get(o, d).is_some())?;
+                Some(self.valuation_of(o, d))
+            })
+            .max()
     }
 }
 

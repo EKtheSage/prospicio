@@ -197,3 +197,36 @@ stopifnot(inherits(try(iman_conover(ic_pd, ic_r, seed = 5, dof = 2, scores = rep
                        silent = TRUE), "try-error"))
 
 cat("prospicio R risk tests passed\n")
+# The covariance allocation of the margin keeps each unit's mean, and the
+# Shapley value of any cost agrees with the distortion's Shapley.
+rows <- expand.grid(a = c(0, 0, 8, 10), b = c(0, 0, 1, 90))
+sd_pd <- predictive_distribution(as.matrix(rows), data.frame(unit = c("X1", "X2")))
+tv <- distortion("tvar", 0.75)
+cv <- capital_allocation(sd_pd, tv, "covariance")
+cm <- capital_allocation(sd_pd, tv, "covariance_margin")
+stopifnot(abs(sum(cm$by_component$allocated) - cm$total) < 1e-9)
+stopifnot(all(abs(cm$by_component$allocated -
+  (c(4.5, 22.75) + (cv$total - 27.25) * cv$by_component$allocated / cv$total)) < 1e-9))
+sh <- shapley_allocation(sd_pd, function(x) risk_measure(sampled(x), tv))
+stopifnot(all(abs(sh$by_component$allocated -
+  capital_allocation(sd_pd, tv, "shapley")$by_component$allocated) < 1e-9))
+sdp <- shapley_allocation(sd_pd, function(x) mean(x) + 0.5 * sqrt(mean((x - mean(x))^2)))
+stopifnot(abs(sdp$by_component$allocated[1] -
+  0.5 * (sdp$by_component$standalone[1] + sdp$total - sdp$by_component$standalone[2])) < 1e-9)
+stopifnot(inherits(try(shapley_allocation(sd_pd, function(x) stop("boom")), silent = TRUE), "try-error"))
+
+# Haircut and equal risk by stand-alone TVaR: Pricing Insurance Risk,
+# Exercises 205 and 206.
+hc <- haircut_allocation(sd_pd, 80, "tvar", 0.75)
+stopifnot(all(abs(hc$by_component$allocated - c(8, 72)) < 1e-12))
+er <- equal_risk_allocation(sd_pd, 80, "tvar")
+stopifnot(abs(er$level - 0.6796) < 5e-5, all(abs(er$by_component$allocated - c(9.56, 70.44)) < 5e-3))
+stopifnot(abs(sum(equal_risk_allocation(sd_pd, 80, "epd")$by_component$allocated) - 80) < 1e-9)
+# Worst VaR by the Rearrangement Algorithm: Pricing Insurance Risk,
+# Exercise 59, from the guide's rotated starts.
+ra_m <- lapply(c(1, 2, 3), function(cv) lognormal_from_mean_cv(10, cv))
+for (k in list(c(7, 353.8), c(13, 353.6), c(19, 352.9))) {
+  stopifnot(abs(worst_var(ra_m, 0.99, n = 40, rotate = k[1])$value - k[2]) < 0.05)
+}
+stopifnot(rearrange(cbind(1:4, 1:4))$value == 5)
+

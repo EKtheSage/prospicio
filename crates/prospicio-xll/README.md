@@ -75,6 +75,17 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.EVT.THRESHOLDS(data, [thresholds])` | Mean excess and the GPD's shape and modified scale at each threshold, with SEs |
 | `PRO.EVT.FIT(data, threshold, [probabilities])` | GPD fitted above a threshold, with SEs, and the tail's VaR and TVaR |
 | `PRO.EVT.HILL(data, [k])` | Hill's tail index from the k largest values, and its Pareto alpha |
+| `PRO.PAYOUT.PATTERN(times, values, [kind], [shift], [rate])` | A payment pattern by time: share paid, paid to date, outstanding, discount |
+| `PRO.PAYOUT.STATS(times, values, rate, [kind], [shift])` | Discount factor, duration and discounted capital years |
+| `PRO.PAYOUT.PRICE(expected_loss, assets, coc, times, values, rate, [kind], [shift])` | A cost-of-capital price restated over the payout |
+| `PRO.QUOTE(expected_loss, risk_premium, [assets], [expenses], [brokerage], [fixed], [limit], [quoted])` | Technical premium with its build-up and ratios, and the cover at quoted premiums |
+| `PRO.DISTORTION(s, family, parameter, [r0])` | A distortion's g(s) |
+| `PRO.DISTORTION.PRICE(values, [probs], family, parameter, [r0])` | A distortion's price of outcomes or draws, with mean, margin, loss ratio |
+| `PRO.DISTORTION.CALIBRATE(values, [probs], premium, [families], [r0])` | Each family's parameter that gives a target premium |
+| `PRO.SWING(loss, basic, lcm, [minimum], [maximum], [share])` | Swing-rated or retro premium at each loss |
+| `PRO.SLIDING.SCALE(loss, premium, commissions, loss_ratios)` | Sliding-scale ceding commission at each ceded loss |
+| `PRO.PROFIT.COMMISSION(loss, premium, share, allowance)` | Profit commission at each ceded loss |
+| `PRO.LAYER.TERMS(count_mean, [dispersion], family, p1, p2, [p3], layer_limit, layer_attachment, premium, [reinstatements], [commissions], [loss_ratios], [profit_share], [profit_allowance], [share], [policy_limit], [step], [points])` | A layer's premium, reinstatement premium and commissions in expectation |
 | `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights])` | Maximum likelihood fit to large losses: parameters with SEs, fit against the data, or the body families compared |
 | `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Pareto extrapolation from one layer to others |
 | `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])` | Alpha between two layers |
@@ -195,6 +206,37 @@ Ctrl+Alt+F9 to recalculate.
   P(exceed)`) says so in its cell, and the TVaR is infinite for `xi` of
   1 or more. The GPD takes `xi` (shape) where Pareto users read the
   alpha `1 / xi`.
+- Payout: `times` are years from inception; `values` are shares paid
+  at each time (`kind` `"shares"`, summing to 1), the share paid to date
+  (`"paid"`, the last 1) or factors to ultimate (`"factors"`, such as a
+  paid `PRO.CL.CDF` row, the last 1: add a tail as one more time).
+  `shift` moves the pattern later (0.5 for losses occurring evenly over
+  a year when the ages run from the accident date). Rates are annual
+  effective. In `PRO.PAYOUT.PRICE` the cost of capital is a spread over
+  the discount rate and capital runs off with the outstanding share; a
+  distortion price over the payout is its premium times the discount
+  factor.
+- `PRO.QUOTE`: expenses and brokerage are shares of the premium itself,
+  so they gross up, `(R + fixed) / (1 - expenses - brokerage)`; the risk
+  premium `R` is a risk-loaded price such as `PRO.TOWER.PRICE`'s. Each
+  quoted premium gets a column: what it leaves after the loads is the
+  reinsurer's risk premium, and the margin and return on capital follow
+  (capital needs `assets`; the rate on line and payback need `limit`).
+- Distortions take `aggregate`'s names: `ccoc` (r), `ph` (rho), `wang`
+  (lambda), `dual` (beta), `tvar` (p), `exp` (k), and with an intercept
+  `r0` the capped `clin` (slope), `cll` (b), `lep` and `ly` (r). Outcomes
+  may be in any order; without `probs` they are equally likely draws, so
+  a column of `PRO.ODP.SIMS` prices directly. To price a loss backed by
+  assets `a`, cap the outcomes at `a` first (`=MIN(range, a)`): the
+  premium then lies between the capped mean and `a`, the range
+  `PRO.DISTORTION.CALIBRATE` solves in.
+- Contract terms: amounts are at 100% and losses ceded at the placed
+  share, as in `aggregate`. A sliding scale is two ranges, commission
+  rates and their loss ratios (increasing), linear between and flat
+  beyond. In `PRO.LAYER.TERMS` the deposit `premium` is at 100%; paid
+  `reinstatements` (a row of rates) also set the annual limit to the
+  limit times one more than their number, and cannot be combined with a
+  sliding scale or a profit commission (the crate refuses it).
 - Aggregates: `count_mean` claims a year with `dispersion` Var N / E N
   (1, Poisson, if omitted; a mixing CV c is `1 + c^2 * count_mean`); the
   grid is sized automatically unless `step` and `points` are given.

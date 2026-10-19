@@ -439,6 +439,8 @@ fn approximation(moments: &[f64], kind: &str) -> Result<prospicio_aggregate::App
         "lognormal" => K::Lognormal,
         "shifted_gamma" => K::ShiftedGamma,
         "shifted_lognormal" => K::ShiftedLognormal,
+        "normal_power" => K::NormalPower,
+        "wilson_hilferty" => K::WilsonHilferty,
         other => return Err(Error::Other(format!("unknown approximation {other}"))),
     };
     let [mean, variance, third_cumulant] = moments else {
@@ -473,6 +475,9 @@ fn approximation_parameters_rust(moments: &[f64], kind: &str) -> Result<List> {
             sdlog,
             shift,
         } => list!(meanlog = meanlog, sdlog = sdlog, shift = shift),
+        A::NormalPower { mean, sd, skew } | A::WilsonHilferty { mean, sd, skew } => {
+            list!(mean = mean, sd = sd, skew = skew)
+        }
     })
 }
 

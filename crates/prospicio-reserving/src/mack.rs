@@ -87,6 +87,10 @@ pub struct MackFit {
     pub total_parameter_risk: f64,
     /// Mack standard error of the total reserve.
     pub total_standard_error: f64,
+    /// Whether the `Development` the model was fitted with sets `n_periods`,
+    /// `drop_high` or `drop_low` (even one that removes nothing today),
+    /// which the closed-form one-year view rejects.
+    pub(crate) exclusions_set: bool,
 }
 
 impl Mack {
@@ -107,6 +111,7 @@ impl Mack {
     }
 
     pub(crate) fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<MackFit> {
+        self.development.reject_geometric("Mack's model")?;
         if segment.n_dev < 3 {
             return Err(Error::TooFewAges {
                 needed: 3,
@@ -205,6 +210,7 @@ impl Mack {
             total_process_risk: total_process_var.sqrt(),
             total_parameter_risk: total_parameter_var.sqrt(),
             total_standard_error: (total_process_var + total_parameter_var).sqrt(),
+            exclusions_set: self.development.has_exclusions(),
             chain_ladder,
         })
     }

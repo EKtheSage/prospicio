@@ -23,7 +23,10 @@ mack_bootstrap(
   spearman = NULL,
   ldf = NULL,
   ldf_kind = NULL,
-  ldf_weight = 1
+  ldf_weight = 1,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 }
 \arguments{
@@ -82,6 +85,10 @@ which keeps the origins' level error). With no \code{tail}, a cumulative
 pattern to the oldest age implies a constant tail (\code{pattern_tail} of
 \code{\link[=chain_ladder]{chain_ladder()}}), the same in every simulation unless \code{tail_std_err}
 is given.}
+
+\item{n_periods, drop_high, drop_low}{Which link ratios the factors average,
+as in \code{\link[=chain_ladder]{chain_ladder()}}. \code{\link[=mack_bootstrap]{mack_bootstrap()}} rejects exclusions, and
+\code{"geometric"} as the average.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.

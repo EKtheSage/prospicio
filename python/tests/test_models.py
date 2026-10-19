@@ -492,3 +492,185 @@ def test_glm_mean_preserving_parameter_draws():
     assert sum(normal.total().draws) > sum(centred.total().draws)
     with pytest.raises(ValueError):
         fit.predict_distribution(d, 10, 1, parameters="other")
+
+
+def _quine():
+    import csv
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[2] / "validation" / "data" / "quine.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(f))
+    names = ["EthN", "SexM", "AgeF1", "AgeF2", "AgeF3", "LrnSL"]
+    columns = [[1.0] * len(rows)] + [[float(r[n]) for r in rows] for n in names]
+    return Design(columns, ["(Intercept)", *names]), [float(r["Days"]) for r in rows]
+
+
+def test_negative_binomial_theta_matches_mass_glm_nb():
+    # MASS 7.3-60: glm.nb(Days ~ Eth + Sex + Age + Lrn, quine).
+    from prospicio.models import NegativeBinomialGlm
+
+    design, y = _quine()
+    fit = NegativeBinomialGlm().fit(design, y)
+    assert fit.theta == pytest.approx(1.27489264581101, rel=1e-6)
+    assert fit.se_theta == pytest.approx(0.161035178973597, rel=1e-5)
+    assert fit.log_likelihood == pytest.approx(-546.575509144992, rel=1e-9)
+    assert fit.aic == pytest.approx(2 * 546.575509144992 + 2 * 8, rel=1e-9)
+    assert fit.glm.coefficients[0] == pytest.approx(2.89458001692052, rel=1e-6)
+    assert len(fit.predict(design)) == len(y)
+
+
+def test_tweedie_power_is_the_profile_maximum():
+    from prospicio.models import TweedieGlm, tweedie_profile
+
+    design, y = _quine()
+    fit = TweedieGlm().fit(design, y)
+    lo, hi = fit.interval
+    assert lo < fit.power < hi
+    profile = tweedie_profile(design, y, [1.1, 1.3, 1.5, 1.7, 1.9])
+    assert profile["power"] == pytest.approx(fit.power, abs=1e-3)
+    assert profile["max_log_likelihood"] == pytest.approx(fit.log_likelihood, rel=1e-6)
+    assert max(profile["log_likelihood"]) <= fit.log_likelihood + 1e-9
+
+
+def test_nested_tests_bic_and_vif():
+    import csv
+    import pathlib
+
+    from prospicio.models import f_test, likelihood_ratio_test, vif
+
+    path = pathlib.Path(__file__).resolve().parents[2] / "validation" / "data" / "quine.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(f))
+    names = ["EthN", "SexM", "AgeF1", "AgeF2", "AgeF3", "LrnSL"]
+
+    def design(k):
+        cols = [[1.0] * len(rows)] + [[float(r[n]) for r in rows] for n in names[:k]]
+        return Design(cols, ["(Intercept)", *names[:k]])
+
+    y = [math.log(float(r["Days"]) + 1.0) for r in rows]
+    small = Glm("gaussian", "identity").fit(design(2), y)
+    big = Glm("gaussian", "identity").fit(design(6), y)
+    # R: anova(small, big, test = "F") and test = "Chisq".
+    f = f_test(small, big)
+    assert f["statistic"] == pytest.approx(1.2950554093611, rel=1e-10)
+    assert f["p_value"] == pytest.approx(0.274969956093846, rel=1e-9)
+    assert (f["df"], f["df_resid"]) == (4.0, 139.0)
+    lr = likelihood_ratio_test(small, big)
+    assert lr["p_value"] == pytest.approx(0.26930041235005, rel=1e-9)
+    assert lr["df_resid"] == math.inf
+    days = [float(r["Days"]) for r in rows]
+    assert Glm("poisson").fit(design(6), days).bic == pytest.approx(2320.06887663732, rel=1e-11)
+    v = vif(design(6))
+    assert math.isnan(v[0])
+    assert v[3] == pytest.approx(2.09706084577139, rel=1e-11)
+    with pytest.raises(ValueError):
+        f_test(big, small)
+
+
+def test_model_charts():
+    from prospicio.models import confusion_matrix, double_lift, loss_ratio_chart, normalized_gini, roc
+
+    r = roc([0.0, 0.0, 1.0, 1.0], [0.1, 0.4, 0.35, 0.8])
+    assert r["auc"] == 0.75 and r["thresholds"][0] == math.inf
+    y = [float(i % 2) for i in range(40)]
+    score = [((i * 37) % 41) / 41 + 0.3 * y[i] for i in range(40)]
+    ng = normalized_gini(y, score)
+    assert roc(y, score)["auc"] == pytest.approx(0.5 * (1 + ng), rel=1e-12)
+    c = confusion_matrix(y, score, 0.5)
+    assert c["true_positive"] + c["false_negative"] == 20
+    losses = [1.0, 0.0, 3.0, 2.0, 5.0, 1.0]
+    dl = double_lift(losses, [1, 1, 2, 2, 4, 1], [2, 1, 2, 1, 3, 2], bands=2)
+    assert sum(b["exposure"] * b["actual_relativity"] for b in dl) == pytest.approx(6.0)
+    lr = loss_ratio_chart(losses, [1, 1, 2, 2, 4, 1], [2.0] * 6, bands=2)
+    assert lr[1]["loss_ratio"] == pytest.approx(lr[1]["actual"] / lr[1]["premium"])
+
+
+def test_glm_diagnostics_match_r():
+    # R: glm(Days ~ ., poisson, quine), rows 1, 50 and 146; R's working
+    # weights are those of its last iteration, so the tolerance is loose.
+    import csv
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[2] / "validation" / "data" / "quine.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(f))
+    names = ["EthN", "SexM", "AgeF1", "AgeF2", "AgeF3", "LrnSL"]
+    d = Design([[1.0] * len(rows)] + [[float(r[n]) for r in rows] for n in names], ["(Intercept)", *names])
+    y = [float(r["Days"]) for r in rows]
+    fit = Glm("poisson").fit(d, y)
+    g = fit.diagnostics(d, y)
+    want = {
+        "deviance": [-6.01850067312018, 1.73227012015060, 5.22406442044183],
+        "leverage": [0.1043236171522393, 0.0450395922904775, 0.0355182959781139],
+        "cooks_distance": [0.3963575691741380, 0.0248951016628828, 0.2198985132111394],
+    }
+    for key, values in want.items():
+        assert [g[key][i] for i in (0, 49, 145)] == pytest.approx(values, rel=1e-6), key
+    se = fit.prediction_se(d)
+    assert [se[i] for i in (0, 49, 145)] == pytest.approx(
+        [1.620656205333161, 0.698117923072381, 0.694808641916209], rel=1e-6
+    )
+    assert sum(r * r for r in g["deviance"]) == pytest.approx(fit.deviance, rel=1e-10)
+    e = fit.sum_prediction_error(d.select([0]))
+    assert e["rmsep"] ** 2 == pytest.approx(e["parameter_variance"] + e["process_variance"])
+    n, p = len(y), len(fit.coefficients)
+    assert fit.gcv(d, y) == pytest.approx(n * sum(r * r for r in g["response"]) / (n - p) ** 2)
+    assert fit.log_likelihood_at(d, y, 1.0) == pytest.approx(fit.log_likelihood, rel=1e-12)
+def test_terms_build_rating_variables():
+    data = {"age": [20.0, 30.0, 45.0, 60.0], "region": ["N", "S", "W", "S"], "size": ["small", "large", "medium", "small"]}
+    coding = (
+        Terms()
+        .intercept()
+        .interaction("region", "age")
+        .poly("age", 2)
+        .hinges("age", [25.0])
+        .steps("age", [30.0])
+        .bins("age", [30.0, 50.0])
+        .log("age", 40.0)
+        .ordinal("size", ["small", "medium", "large"])
+        .fit(data)
+    )
+    assert coding.names == [
+        "(Intercept)", "region[S]:age", "region[W]:age", "age", "age^2", "hinge(age,25)",
+        "step(age,30)", "age[(30,50]]", "age[(50,Inf)]", "log(age/40)", "size[>=medium]", "size[>=large]",
+    ]
+    d = coding.design({"age": [70.0], "region": ["W"], "size": ["medium"]})
+    row = [d.column(i)[0] for i in range(len(coding.names))]
+    assert row[:9] == [1.0, 0.0, 70.0, 70.0, 4900.0, 45.0, 1.0, 0.0, 1.0]
+    assert row[9] == pytest.approx(math.log(70 / 40))
+    assert row[10:] == [1.0, 0.0]
+    with pytest.raises(ValueError):
+        Terms().hinges("age", [50.0, 25.0]).fit(data)
+
+
+def test_orthogonal_polys_and_natural_splines():
+    # R: poly(x, 3) and lm(y ~ ns(x, knots = c(10, 25))).
+    x = [1.0, 2.0, 4.0, 7.0, 11.0, 16.0, 22.0, 29.0, 37.0, 46.0]
+    y = [math.sin(v / 7) * 10 + v / 3 for v in x]
+    poly = Terms().orthogonal_poly("x", 3).fit({"x": x})
+    assert poly.design({"x": [50.0]}).column(2)[0] == pytest.approx(1.26850684550873050, rel=1e-12)
+    spline = Terms().intercept().natural_spline("x", [10.0, 25.0]).fit({"x": x})
+    assert spline.names == ["(Intercept)", "spline(x)1", "spline(x)2", "spline(x)3"]
+    fit = Glm("gaussian", "identity").fit(spline.design({"x": x}), y)
+    new = fit.predict(spline.design({"x": [0.0, 20.0, 50.0]}))
+    assert new == pytest.approx([-0.72122511127239264, 7.71926159866044337, 22.49421993091769423], rel=1e-9)
+
+
+def test_target_encode_out_of_fold():
+    from prospicio.models import target_encode
+
+    values = [f"l{i % 7}" for i in range(60)]
+    y = [float((i * 13) % 5) for i in range(60)]
+    splits = k_fold(60, 5, 3)
+    rows, enc = target_encode(values, y, [2.0] * 60, splits, 4.0)
+    y2 = list(y)
+    y2[10] += 100.0
+    rows2, _ = target_encode(values, y2, [2.0] * 60, splits, 4.0)
+    assert rows2[10] == rows[10]
+    a = sum(y[i] for i in range(60) if i % 7 == 0)
+    n = sum(1 for i in range(60) if i % 7 == 0)
+    z = n / (n + 4.0)
+    assert enc.encode(["l0", "unseen"]) == pytest.approx([z * a / (2.0 * n) + 1 - z, 1.0])
+    with pytest.raises(ValueError):
+        target_encode(values, y, [2.0] * 60, splits[1:], 4.0)

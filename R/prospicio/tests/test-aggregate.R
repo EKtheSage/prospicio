@@ -287,6 +287,17 @@ q <- approximation_quantile(fit, c(0.5, 0.99))
 stopifnot(all(abs(approximation_cdf(fit, q) - c(0.5, 0.99)) < 1e-10))
 stopifnot(inherits(try(compound_moments(poisson_count(2), pareto(100, 2.5)), silent = TRUE),
                    "try-error"))
+# The normal power and Wilson-Hilferty approximations (#329), and the third
+# moment of a layer.
+z99 <- qnorm(0.99)
+sd_s <- m[["mean"]] * m[["cv"]]
+np_fit <- moment_approximation(m, "normal_power")
+stopifnot(abs(approximation_quantile(np_fit, 0.99) /
+  (m[["mean"]] + sd_s * (z99 + m[["skew"]] * (z99^2 - 1) / 6)) - 1) < 1e-12)
+wh_fit <- moment_approximation(m, "wilson_hilferty")
+stopifnot(abs(approximation_cdf(wh_fit, approximation_quantile(wh_fit, 0.9)) - 0.9) < 1e-12)
+lt <- layer_third_moment(gamma_distribution(1, 2), c(3, Inf), 0)
+stopifnot(abs(lt[1] / (48 * (1 - exp(-1.5) * (1 + 1.5 + 1.5^2 / 2))) - 1) < 1e-10, abs(lt[2] / 48 - 1) < 1e-10)
 
 # Layer statistics and prices by view against aggregate 1.0.1 on
 # "agg C 2 claims 1000 xs 0 sev lognorm 100 cv 2 occurrence net of 500 xs 100 poisson".

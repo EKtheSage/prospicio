@@ -7,6 +7,7 @@
 
 use prospicio_core::{Error, Result, StreamRng};
 
+use crate::design::Design;
 use crate::family::Family;
 
 /// `Σ w d(y, μ)`, the family's deviance.
@@ -376,6 +377,426 @@ pub fn ks_uniform(values: &[f64]) -> Result<f64> {
         .fold(0.0, f64::max))
 }
 
+/// The normalized Gini: [`gini`] divided by the Gini of a perfect
+/// ranking, the rows sorted by their actual rate `y / exposure`. 1 for a
+/// model that ranks every row as its outcome does. For a 0/1 response with
+/// unit exposure, `AUROC = (1 + normalized Gini) / 2` (CAS Monograph 5,
+/// section 7.3.1, footnote 17).
+///
+/// ```
+/// use prospicio_models::metrics::normalized_gini;
+///
+/// let y = [0.0, 1.0, 0.0, 3.0];
+/// assert!((normalized_gini(&y, &y, None).unwrap() - 1.0).abs() < 1e-15);
+/// ```
+///
+/// Fails as [`gini`], or when the actual rates are all equal.
+pub fn normalized_gini(y: &[f64], pred: &[f64], exposure: Option<&[f64]>) -> Result<f64> {
+    let g = gini(y, pred, exposure)?;
+    let rate: Vec<f64> = match exposure {
+        Some(e) => y.iter().zip(e).map(|(y, e)| y / e).collect(),
+        None => y.to_vec(),
+    };
+    let best = gini(y, &rate, exposure)?;
+    if best == 0.0 {
+        return Err(Error::InvalidParameter {
+            name: "y",
+            value: best,
+            reason: "the actual rates must not all be equal",
+        });
+    }
+    Ok(g / best)
+}
+
+/// One band of a [`double_lift`] chart.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DoubleLiftBand {
+    /// Total exposure in the band.
+    pub exposure: f64,
+    /// Total actual loss.
+    pub actual: f64,
+    /// Total loss predicted by the first model.
+    pub model_a: f64,
+    /// Total loss predicted by the second model.
+    pub model_b: f64,
+    /// The band's actual loss per exposure over the overall average.
+    pub actual_relativity: f64,
+    /// The first model's average in the band over its overall average.
+    pub a_relativity: f64,
+    /// The second model's average in the band over its overall average.
+    pub b_relativity: f64,
+}
+
+/// The double lift chart of two models (CAS Monograph 5, section 7.2.2):
+/// rows sorted by the ratio of their predictions `pred_a / pred_b`, cut
+/// into `bands` groups of about equal exposure, each with the actual and
+/// both models' totals and their averages relative to the overall averages
+/// (each model against its own, so a difference in overall level does not
+/// show). The model whose relativities follow the actual's better is the
+/// better one where the two disagree.
+///
+/// Fails when the lengths differ, `bands` is 0, a prediction of the second
+/// model is not positive, or a total is 0.
+pub fn double_lift(
+    y: &[f64],
+    pred_a: &[f64],
+    pred_b: &[f64],
+    exposure: Option<&[f64]>,
+    bands: usize,
+) -> Result<Vec<DoubleLiftBand>> {
+    same_length(y.len(), pred_a.len(), "pred_a")?;
+    same_length(y.len(), pred_b.len(), "pred_b")?;
+    if let Some(&bad) = pred_b.iter().find(|&&p| p.is_nan() || p <= 0.0) {
+        return Err(Error::InvalidParameter {
+            name: "pred_b",
+            value: bad,
+            reason: "must be positive",
+        });
+    }
+    let ratio: Vec<f64> = pred_a.iter().zip(pred_b).map(|(a, b)| a / b).collect();
+    let groups = banded(&ratio, exposure, y.len(), bands)?;
+    let e = |i: usize| exposure.map_or(1.0, |e| e[i]);
+    let total = |v: &dyn Fn(usize) -> f64| (0..y.len()).map(v).sum::<f64>();
+    let total_e = total(&e);
+    let (avg_y, avg_a, avg_b) = (
+        total(&|i| y[i]) / total_e,
+        total(&|i| pred_a[i]) / total_e,
+        total(&|i| pred_b[i]) / total_e,
+    );
+    if avg_y == 0.0 || avg_a == 0.0 {
+        return Err(Error::InvalidParameter {
+            name: "y",
+            value: avg_y,
+            reason: "the actual and predicted totals must not be 0",
+        });
+    }
+    Ok(groups
+        .iter()
+        .map(|rows| {
+            let sum = |v: &dyn Fn(usize) -> f64| rows.iter().map(|&i| v(i)).sum::<f64>();
+            let (ex, actual, a, b) = (
+                sum(&e),
+                sum(&|i| y[i]),
+                sum(&|i| pred_a[i]),
+                sum(&|i| pred_b[i]),
+            );
+            DoubleLiftBand {
+                exposure: ex,
+                actual,
+                model_a: a,
+                model_b: b,
+                actual_relativity: actual / ex / avg_y,
+                a_relativity: a / ex / avg_a,
+                b_relativity: b / ex / avg_b,
+            }
+        })
+        .collect())
+}
+
+/// One band of a [`loss_ratio_chart`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct LossRatioBand {
+    /// Total exposure in the band.
+    pub exposure: f64,
+    /// Total current premium.
+    pub premium: f64,
+    /// Total predicted loss.
+    pub expected: f64,
+    /// Total actual loss.
+    pub actual: f64,
+}
+
+impl LossRatioBand {
+    /// `actual / premium`, the band's actual loss ratio.
+    pub fn loss_ratio(&self) -> f64 {
+        self.actual / self.premium
+    }
+
+    /// `expected / premium`, the band's predicted loss ratio.
+    pub fn expected_loss_ratio(&self) -> f64 {
+        self.expected / self.premium
+    }
+}
+
+/// The loss ratio chart (CAS Monograph 5, section 7.2.3): rows sorted by
+/// their predicted loss ratio `pred / premium` against the current
+/// premium, cut into `bands` groups of about equal exposure, each with its
+/// actual loss ratio. A model that finds what the current rates miss shows
+/// actual loss ratios rising across the bands.
+///
+/// Fails when the lengths differ, `bands` is 0 or a premium is not
+/// positive.
+pub fn loss_ratio_chart(
+    y: &[f64],
+    pred: &[f64],
+    premium: &[f64],
+    exposure: Option<&[f64]>,
+    bands: usize,
+) -> Result<Vec<LossRatioBand>> {
+    same_length(y.len(), pred.len(), "pred")?;
+    same_length(y.len(), premium.len(), "premium")?;
+    if let Some(&bad) = premium.iter().find(|&&p| p.is_nan() || p <= 0.0) {
+        return Err(Error::InvalidParameter {
+            name: "premium",
+            value: bad,
+            reason: "must be positive",
+        });
+    }
+    let ratio: Vec<f64> = pred.iter().zip(premium).map(|(p, q)| p / q).collect();
+    let groups = banded(&ratio, exposure, y.len(), bands)?;
+    let e = |i: usize| exposure.map_or(1.0, |e| e[i]);
+    Ok(groups
+        .iter()
+        .map(|rows| LossRatioBand {
+            exposure: rows.iter().map(|&i| e(i)).sum(),
+            premium: rows.iter().map(|&i| premium[i]).sum(),
+            expected: rows.iter().map(|&i| pred[i]).sum(),
+            actual: rows.iter().map(|&i| y[i]).sum(),
+        })
+        .collect())
+}
+
+/// Row indices sorted by `key` and cut into `bands` groups of about equal
+/// exposure, each row by its exposure midpoint, as [`lift`].
+fn banded(
+    key: &[f64],
+    exposure: Option<&[f64]>,
+    n: usize,
+    bands: usize,
+) -> Result<Vec<Vec<usize>>> {
+    if let Some(e) = exposure {
+        same_length(n, e.len(), "exposure")?;
+    }
+    if bands == 0 {
+        return Err(Error::InvalidParameter {
+            name: "bands",
+            value: 0.0,
+            reason: "must be positive",
+        });
+    }
+    let e = |i: usize| exposure.map_or(1.0, |e| e[i]);
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| key[a].total_cmp(&key[b]));
+    let total: f64 = (0..n).map(e).sum();
+    let mut out = vec![Vec::new(); bands];
+    let mut cum = 0.0;
+    for &i in &order {
+        let mid = (cum + 0.5 * e(i)) / total;
+        cum += e(i);
+        out[((mid * bands as f64) as usize).min(bands - 1)].push(i);
+    }
+    Ok(out)
+}
+
+/// A receiver operating characteristic curve, from [`roc`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct Roc {
+    /// The thresholds, descending: a row is predicted positive when its
+    /// score is at least the threshold. The first is `+∞` (nothing
+    /// positive).
+    pub thresholds: Vec<f64>,
+    /// False positive rate at each threshold.
+    pub false_positive_rate: Vec<f64>,
+    /// True positive rate (sensitivity) at each threshold.
+    pub true_positive_rate: Vec<f64>,
+    /// The area under the curve, by the trapezoid rule (ties in the score
+    /// count half).
+    pub auc: f64,
+}
+
+/// The ROC curve of a binary model (CAS Monograph 5, section 7.3.1): the
+/// true and false positive rates at every distinct score as threshold, and
+/// the area under the curve. `y` holds 0 and 1; `weights` default to 1.
+///
+/// ```
+/// use prospicio_models::metrics::roc;
+///
+/// let r = roc(&[0.0, 0.0, 1.0, 1.0], &[0.1, 0.4, 0.35, 0.8], None).unwrap();
+/// assert!((r.auc - 0.75).abs() < 1e-15);
+/// ```
+///
+/// Fails when the lengths differ, a response is not 0 or 1, or either
+/// class has no weight.
+pub fn roc(y: &[f64], score: &[f64], weights: Option<&[f64]>) -> Result<Roc> {
+    same_length(y.len(), score.len(), "score")?;
+    if let Some(w) = weights {
+        same_length(y.len(), w.len(), "weights")?;
+    }
+    if let Some(&bad) = y.iter().find(|&&v| v != 0.0 && v != 1.0) {
+        return Err(Error::InvalidParameter {
+            name: "y",
+            value: bad,
+            reason: "must be 0 or 1",
+        });
+    }
+    let w = |i: usize| weights.map_or(1.0, |w| w[i]);
+    let positives: f64 = (0..y.len()).filter(|&i| y[i] == 1.0).map(w).sum();
+    let negatives: f64 = (0..y.len()).filter(|&i| y[i] == 0.0).map(w).sum();
+    if positives <= 0.0 || negatives <= 0.0 {
+        return Err(Error::InvalidParameter {
+            name: "y",
+            value: positives,
+            reason: "needs weight in both classes",
+        });
+    }
+    let mut order: Vec<usize> = (0..y.len()).collect();
+    order.sort_by(|&a, &b| score[b].total_cmp(&score[a]));
+    let (mut thresholds, mut fpr, mut tpr) = (vec![f64::INFINITY], vec![0.0], vec![0.0]);
+    let (mut tp, mut fp, mut auc) = (0.0, 0.0, 0.0);
+    let mut i = 0;
+    while i < order.len() {
+        let s = score[order[i]];
+        let (x0, y0) = (fp / negatives, tp / positives);
+        while i < order.len() && score[order[i]] == s {
+            let k = order[i];
+            if y[k] == 1.0 {
+                tp += w(k);
+            } else {
+                fp += w(k);
+            }
+            i += 1;
+        }
+        let (x1, y1) = (fp / negatives, tp / positives);
+        auc += 0.5 * (x1 - x0) * (y0 + y1);
+        thresholds.push(s);
+        fpr.push(x1);
+        tpr.push(y1);
+    }
+    Ok(Roc {
+        thresholds,
+        false_positive_rate: fpr,
+        true_positive_rate: tpr,
+        auc,
+    })
+}
+
+/// Weighted counts of a binary model's predictions at a threshold, from
+/// [`confusion_matrix`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Confusion {
+    pub true_positive: f64,
+    pub false_positive: f64,
+    pub true_negative: f64,
+    pub false_negative: f64,
+}
+
+impl Confusion {
+    /// `TP / (TP + FN)`.
+    pub fn sensitivity(&self) -> f64 {
+        self.true_positive / (self.true_positive + self.false_negative)
+    }
+
+    /// `TN / (TN + FP)`.
+    pub fn specificity(&self) -> f64 {
+        self.true_negative / (self.true_negative + self.false_positive)
+    }
+}
+
+/// The confusion matrix of a binary model at `threshold`: a row is
+/// predicted positive when its score is at least the threshold. `y` holds
+/// 0 and 1; `weights` default to 1.
+///
+/// Fails when the lengths differ or a response is not 0 or 1.
+pub fn confusion_matrix(
+    y: &[f64],
+    score: &[f64],
+    threshold: f64,
+    weights: Option<&[f64]>,
+) -> Result<Confusion> {
+    same_length(y.len(), score.len(), "score")?;
+    if let Some(w) = weights {
+        same_length(y.len(), w.len(), "weights")?;
+    }
+    let mut c = Confusion {
+        true_positive: 0.0,
+        false_positive: 0.0,
+        true_negative: 0.0,
+        false_negative: 0.0,
+    };
+    for (i, (&y, &s)) in y.iter().zip(score).enumerate() {
+        let w = weights.map_or(1.0, |w| w[i]);
+        let cell = match (y, s >= threshold) {
+            (1.0, true) => &mut c.true_positive,
+            (0.0, true) => &mut c.false_positive,
+            (0.0, false) => &mut c.true_negative,
+            (1.0, false) => &mut c.false_negative,
+            _ => {
+                return Err(Error::InvalidParameter {
+                    name: "y",
+                    value: y,
+                    reason: "must be 0 or 1",
+                });
+            }
+        };
+        *cell += w;
+    }
+    Ok(c)
+}
+
+/// Variance inflation factors of a design's columns: `1 / (1 − R²_j)`, with
+/// `R²_j` that of column `j` regressed on the others and an intercept
+/// (CAS Monograph 5, section 2.9; R `car::vif` for single-column terms).
+/// Computed as the diagonal of the inverse of the columns' correlation
+/// matrix. A constant column (the intercept) gets `NaN`.
+///
+/// ```
+/// use prospicio_models::Design;
+/// use prospicio_models::metrics::vif;
+///
+/// let x = vec![1.0, 2.0, 3.0, 4.0];
+/// let z = vec![1.0, -1.0, -1.0, 1.0]; // uncorrelated with x
+/// let d = Design::new(
+///     vec!["(Intercept)".into(), "x".into(), "z".into()],
+///     vec![vec![1.0; 4], x, z],
+/// )
+/// .unwrap();
+/// let v = vif(&d).unwrap();
+/// assert!(v[0].is_nan());
+/// assert!((v[1] - 1.0).abs() < 1e-12 && (v[2] - 1.0).abs() < 1e-12);
+/// ```
+///
+/// Fails when the non-constant columns are collinear.
+pub fn vif(design: &Design) -> Result<Vec<f64>> {
+    let n = design.n_rows() as f64;
+    let centred: Vec<Option<Vec<f64>>> = (0..design.n_cols())
+        .map(|j| {
+            let x = design.column(j);
+            let mean = x.iter().sum::<f64>() / n;
+            let c: Vec<f64> = x.iter().map(|v| v - mean).collect();
+            let ss: f64 = c.iter().map(|v| v * v).sum();
+            (ss > 0.0).then(|| c.iter().map(|v| v / ss.sqrt()).collect())
+        })
+        .collect();
+    let kept: Vec<&Vec<f64>> = centred.iter().flatten().collect();
+    let k = kept.len();
+    let mut corr = vec![0.0; k * k];
+    for a in 0..k {
+        for b in 0..=a {
+            let r: f64 = kept[a].iter().zip(kept[b]).map(|(x, y)| x * y).sum();
+            corr[a * k + b] = r;
+            corr[b * k + a] = r;
+        }
+    }
+    let l = prospicio_math::linalg::cholesky(&corr, k).ok_or(Error::InvalidParameter {
+        name: "design",
+        value: k as f64,
+        reason: "has collinear columns",
+    })?;
+    let inverse = prospicio_math::linalg::cholesky_inverse(&l, k);
+    let mut next = 0;
+    Ok(centred
+        .iter()
+        .map(|c| match c {
+            Some(_) => {
+                let v = inverse[next * k + next];
+                next += 1;
+                v
+            }
+            None => f64::NAN,
+        })
+        .collect())
+}
+
 fn same_length(n: usize, m: usize, name: &'static str) -> Result<()> {
     if n == m {
         Ok(())
@@ -512,5 +933,90 @@ mod tests {
             2.0 / 3.0
         );
         assert!(rmse(&y, &[1.0]).is_err());
+    }
+
+    #[test]
+    fn auc_is_the_mann_whitney_probability_and_tracks_the_gini() {
+        let n = 200;
+        let score: Vec<f64> = (0..n).map(|i| ((i * 37) % 101) as f64 / 101.0).collect();
+        let y: Vec<f64> = (0..n)
+            .map(|i| {
+                if score[i] + ((i * 17) % 13) as f64 / 26.0 > 0.8 {
+                    1.0
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let r = roc(&y, &score, None).unwrap();
+        // P(score of a positive > score of a negative), ties counting half.
+        let (mut wins, mut pairs) = (0.0, 0.0);
+        for i in 0..n {
+            for j in 0..n {
+                if y[i] == 1.0 && y[j] == 0.0 {
+                    pairs += 1.0;
+                    wins += if score[i] > score[j] {
+                        1.0
+                    } else if score[i] == score[j] {
+                        0.5
+                    } else {
+                        0.0
+                    };
+                }
+            }
+        }
+        assert!((r.auc - wins / pairs).abs() < 1e-12);
+        let ng = normalized_gini(&y, &score, None).unwrap();
+        assert!((r.auc - 0.5 * (1.0 + ng)).abs() < 1e-12, "{} {}", r.auc, ng);
+        assert_eq!(r.thresholds[0], f64::INFINITY);
+        assert_eq!(*r.true_positive_rate.last().unwrap(), 1.0);
+        let c = confusion_matrix(&y, &score, 0.5, None).unwrap();
+        let total = c.true_positive + c.false_positive + c.true_negative + c.false_negative;
+        assert_eq!(total, n as f64);
+        assert!(roc(&[0.0, 2.0], &[0.1, 0.2], None).is_err());
+    }
+
+    #[test]
+    fn double_lift_and_loss_ratio_bands_add_up() {
+        let n = 100;
+        let e: Vec<f64> = (0..n).map(|i| 0.5 + (i % 3) as f64 * 0.25).collect();
+        let a: Vec<f64> = (0..n)
+            .map(|i| e[i] * (1.0 + (i % 7) as f64 / 10.0))
+            .collect();
+        let b: Vec<f64> = (0..n)
+            .map(|i| e[i] * (1.2 + (i % 5) as f64 / 10.0))
+            .collect();
+        let y: Vec<f64> = (0..n)
+            .map(|i| a[i] * (0.8 + (i % 4) as f64 / 10.0))
+            .collect();
+        let bands = double_lift(&y, &a, &b, Some(&e), 5).unwrap();
+        assert_eq!(bands.len(), 5);
+        let total_e: f64 = e.iter().sum();
+        // Exposure-weighted relativities average to 1.
+        for rel in [
+            bands
+                .iter()
+                .map(|b| b.exposure * b.actual_relativity)
+                .sum::<f64>(),
+            bands
+                .iter()
+                .map(|b| b.exposure * b.a_relativity)
+                .sum::<f64>(),
+            bands
+                .iter()
+                .map(|b| b.exposure * b.b_relativity)
+                .sum::<f64>(),
+        ] {
+            assert!((rel / total_e - 1.0).abs() < 1e-12);
+        }
+        // Sorted by a / b: the first model's relativity to the second's rises.
+        let r: Vec<f64> = bands.iter().map(|b| b.model_a / b.model_b).collect();
+        assert!(r.windows(2).all(|w| w[0] <= w[1]));
+        let lr = loss_ratio_chart(&y, &a, &b, Some(&e), 4).unwrap();
+        let actual: f64 = lr.iter().map(|b| b.actual).sum();
+        assert!((actual - y.iter().sum::<f64>()).abs() < 1e-9);
+        let er: Vec<f64> = lr.iter().map(LossRatioBand::expected_loss_ratio).collect();
+        assert!(er.windows(2).all(|w| w[0] <= w[1]));
+        assert!(loss_ratio_chart(&y, &a, &vec![0.0; n], None, 4).is_err());
     }
 }

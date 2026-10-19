@@ -1490,3 +1490,363 @@ fn loo_pit_matches_loo() {
         _ => None,
     });
 }
+
+/// The negative binomial GLM with `θ` estimated, against R's
+/// `MASS::glm.nb(Days ~ Eth + Sex + Age + Lrn, data = quine)` (MASS
+/// 7.3-60; `validation/scripts/r_glm_nb.R` writes the data and prints
+/// these values).
+#[test]
+fn negative_binomial_theta_matches_mass_glm_nb() {
+    use prospicio_glm::negbin::NegativeBinomialGlm;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/quine.csv");
+    let text = std::fs::read_to_string(path).expect("quine.csv");
+    let mut lines = text.lines();
+    let header: Vec<String> = lines
+        .next()
+        .unwrap()
+        .split(',')
+        .map(|h| h.trim_matches('"').to_string())
+        .collect();
+    let mut cols: Vec<Vec<f64>> = vec![Vec::new(); header.len()];
+    for line in lines {
+        for (c, v) in cols.iter_mut().zip(line.split(',')) {
+            c.push(v.parse().unwrap());
+        }
+    }
+    let n = cols[0].len();
+    let mut names = vec!["(Intercept)".to_string()];
+    names.extend(header[1..].iter().cloned());
+    let mut columns = vec![vec![1.0; n]];
+    columns.extend(cols[1..].iter().cloned());
+    let d = Design::new(names, columns).unwrap();
+    let fit = NegativeBinomialGlm::new(Link::Log)
+        .fit(&d, &cols[0])
+        .unwrap();
+    let close = |a: f64, b: f64, tol: f64| (a - b).abs() <= tol * b.abs().max(1.0);
+    assert!(
+        close(fit.theta(), 1.27489264581101, 1e-7),
+        "{}",
+        fit.theta()
+    );
+    assert!(
+        close(fit.se_theta(), 0.161035178973597, 1e-6),
+        "{}",
+        fit.se_theta()
+    );
+    assert!(
+        close(fit.log_likelihood(), -546.575509144992, 1e-9),
+        "{}",
+        fit.log_likelihood()
+    );
+    let want = [
+        2.89458001692052,
+        -0.569371703399029,
+        0.0823202641037287,
+        -0.448428148590178,
+        0.0880801397149139,
+        0.356900947762783,
+        0.292109142827854,
+    ];
+    for (got, want) in fit.glm().coefficients().iter().zip(want) {
+        assert!(close(*got, want, 1e-7), "{got} vs {want}");
+    }
+}
+
+/// R's `anova(small, big, test = "F")` and `test = "Chisq"`, `BIC` and
+/// variance inflation factors (`1 / (1 - R^2)` by `lm`) on the quine
+/// design; `validation/scripts/r_glm_nested.R` prints these values.
+#[test]
+fn nested_glm_tests_match_r_anova() {
+    use prospicio_glm::nested::{f_test, likelihood_ratio_test};
+    use prospicio_models::metrics::vif;
+    let (header, cols) = quine();
+    let n = cols[0].len();
+    let design = |k: usize| {
+        let mut names = vec!["(Intercept)".to_string()];
+        names.extend(header[1..=k].iter().cloned());
+        let mut columns = vec![vec![1.0; n]];
+        columns.extend(cols[1..=k].iter().cloned());
+        Design::new(names, columns).unwrap()
+    };
+    let (small, big) = (design(2), design(6));
+    let close = |a: f64, b: f64, tol: f64| (a - b).abs() <= tol * b.abs().max(1e-300);
+    let log_days: Vec<f64> = cols[0].iter().map(|d| (d + 1.0).ln()).collect();
+    let gaussian = Glm::new(Family::Gaussian, Link::Identity);
+    let (s, b) = (
+        gaussian.fit(&small, &log_days).unwrap(),
+        gaussian.fit(&big, &log_days).unwrap(),
+    );
+    let f = f_test(&s, &b).unwrap();
+    assert!(close(f.statistic, 1.2950554093611, 1e-10), "{f:?}");
+    assert!(close(f.p_value, 0.274969956093846, 1e-9), "{f:?}");
+    assert_eq!((f.df, f.df_resid), (4.0, 139.0));
+    assert!(close(f.deviance_drop, 5.12796060003762, 1e-10));
+    let lr = likelihood_ratio_test(&s, &b).unwrap();
+    assert!(close(lr.p_value, 0.26930041235005, 1e-9), "{lr:?}");
+    let poisson = Glm::new(Family::Poisson, Link::Log);
+    let (sp, bp) = (
+        poisson.fit(&small, &cols[0]).unwrap(),
+        poisson.fit(&big, &cols[0]).unwrap(),
+    );
+    let lr = likelihood_ratio_test(&sp, &bp).unwrap();
+    assert!(close(lr.statistic, 178.384532973985, 1e-9), "{lr:?}");
+    assert!(close(lr.p_value, 1.65752518873386e-37, 1e-6), "{lr:?}");
+    // R's BIC counts no dispersion for the Poisson.
+    assert!(close(bp.bic(), 2320.06887663732, 1e-11), "{}", bp.bic());
+    let v = vif(&big).unwrap();
+    let want = [
+        1.00326550828182,
+        1.08256046985237,
+        2.09706084577139,
+        1.91041499741150,
+        1.85737573451634,
+        1.44140349290722,
+    ];
+    assert!(v[0].is_nan());
+    for (got, want) in v[1..].iter().zip(want) {
+        assert!(close(*got, want, 1e-11), "{v:?}");
+    }
+}
+
+/// The quine data of `validation/data/quine.csv`: its header and columns,
+/// `Days` first.
+fn quine() -> (Vec<String>, Vec<Vec<f64>>) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/quine.csv");
+    let text = std::fs::read_to_string(path).expect("quine.csv");
+    let mut lines = text.lines();
+    let header: Vec<String> = lines
+        .next()
+        .unwrap()
+        .split(',')
+        .map(|h| h.trim_matches('"').to_string())
+        .collect();
+    let mut cols: Vec<Vec<f64>> = vec![Vec::new(); header.len()];
+    for line in lines {
+        for (c, v) in cols.iter_mut().zip(line.split(',')) {
+            c.push(v.parse().unwrap());
+        }
+    }
+    (header, cols)
+}
+
+/// R's `residuals.glm` (response, Pearson, deviance, working), working
+/// weights, `hatvalues`, `rstandard`, `cooks.distance` and
+/// `predict(type = "response", se.fit = TRUE)` on the quine design, rows 1,
+/// 50 and 146; `validation/scripts/r_glm_diagnostics.R` prints these.
+#[test]
+fn glm_diagnostics_match_r() {
+    let (header, cols) = quine();
+    let n = cols[0].len();
+    let mut names = vec!["(Intercept)".to_string()];
+    names.extend(header[1..].iter().cloned());
+    let mut columns = vec![vec![1.0; n]];
+    columns.extend(cols[1..].iter().cloned());
+    let design = Design::new(names, columns).unwrap();
+    let rows = [0, 49, 145];
+    let check_rows = |label: &str, got: &[f64], want: [f64; 3], tol: f64| {
+        for (k, &i) in rows.iter().enumerate() {
+            let (g, w) = (got[i], want[k]);
+            assert!(
+                (g - w).abs() <= tol * w.abs(),
+                "{label} row {i}: {g} against {w}"
+            );
+        }
+    };
+    let check_all = |fit: &GlmFit, y: &[f64], tol: f64, want: [[f64; 3]; 10]| {
+        let d = fit.diagnostics(&design, y).unwrap();
+        let se = fit.prediction_se(&design).unwrap();
+        let labels = [
+            "response",
+            "pearson",
+            "deviance",
+            "working",
+            "weights",
+            "hat",
+            "rstandard",
+            "rstandard_pearson",
+            "cooks",
+            "se",
+        ];
+        let got: [&[f64]; 10] = [
+            &d.response,
+            &d.pearson,
+            &d.deviance,
+            &d.working,
+            &d.working_weights,
+            &d.leverage,
+            &d.standardized_deviance,
+            &d.standardized_pearson,
+            &d.cooks_distance,
+            &se,
+        ];
+        for ((label, got), want) in labels.iter().zip(got).zip(want) {
+            check_rows(label, got, want, tol);
+        }
+        let sum_sq: f64 = d.deviance.iter().map(|r| r * r).sum();
+        assert!((sum_sq - fit.deviance()).abs() < 1e-9 * fit.deviance());
+    };
+    let poisson = Glm::new(Family::Poisson, Link::Log)
+        .fit(&design, &cols[0])
+        .unwrap();
+    check_all(
+        &poisson,
+        &cols[0],
+        1e-8,
+        [
+            [-23.17672035966231, 6.17910643217398, 23.40815851088593],
+            [-4.61904722731264, 1.87842609619715, 6.349332916043],
+            [-6.01850067312018, 1.7322701201506, 5.22406442044183],
+            [-0.920561535758869, 0.571034766532261, 1.722221269990082],
+            [25.1767203602903, 10.8208935677958, 13.5918414895791],
+            [0.1043236171522393, 0.0450395922904775, 0.0355182959781139],
+            [-6.35935035206074, 1.77264973950398, 5.31938625785304],
+            [-4.88064074535815, 1.92221264534186, 6.46518716882067],
+            [0.396357569174138, 0.0248951016628828, 0.2198985132111394],
+            [1.620656205333161, 0.698117923072381, 0.694808641916209],
+        ],
+    );
+    let days1: Vec<f64> = cols[0].iter().map(|d| d + 1.0).collect();
+    let gamma = Glm::new(Family::Gamma, Link::Log)
+        .fit(&design, &days1)
+        .unwrap();
+    check_all(
+        &gamma,
+        &days1,
+        // R's Gamma fit moves by about 1e-8 in its coefficients when
+        // restarted from its own estimates, even at `epsilon = 1e-14`.
+        1e-6,
+        [
+            [-23.97912834927767, 5.32274173824275, 22.28535875532715],
+            [-0.888802930874514, 0.419865370598274, 1.418127108875726],
+            [-1.61718788235856, 0.372299108023747, 1.03453737515037],
+            [-0.888802930874514, 0.419865370598274, 1.418127108875726],
+            [1.0, 1.0, 1.0],
+            [0.0715119069064243, 0.053063888006668, 0.0423797414730783],
+            [-1.953301460484155, 0.445275317405806, 1.230400470039053],
+            [-1.07353021989492, 0.502165280903462, 1.686613072903431],
+            [
+                0.01268038760198572,
+                0.00201870897737342,
+                0.01798447905736641,
+            ],
+            [6.19897847056201, 2.50915740297474, 2.7796278647662],
+        ],
+    );
+}
+
+/// R's `poly(x, 3)` columns and their `predict` on new values, and the
+/// fitted values and predictions of `lm(y ~ ns(x, knots = c(10, 25)))`,
+/// which a natural spline in another basis must reproduce;
+/// `validation/scripts/r_terms_spline.R` prints these.
+#[test]
+// R's printed digits, kept as printed.
+#[allow(clippy::excessive_precision)]
+fn orthogonal_polys_and_natural_splines_match_r() {
+    use prospicio_models::Fitted;
+    let x = vec![1.0, 2.0, 4.0, 7.0, 11.0, 16.0, 22.0, 29.0, 37.0, 46.0];
+    let y: Vec<f64> = x
+        .iter()
+        .map(|v: &f64| (v / 7.0).sin() * 10.0 + v / 3.0)
+        .collect();
+    let train = Frame::new(vec![("x".into(), Column::Numeric(x.clone()))]).unwrap();
+    let new = Frame::new(vec![("x".into(), Column::Numeric(vec![0.0, 20.0, 50.0]))]).unwrap();
+    let close = |a: f64, b: f64, tol: f64| (a - b).abs() <= tol * b.abs().max(1.0);
+    let poly = Terms::new().orthogonal_poly("x", 3).fit(&train).unwrap();
+    assert_eq!(poly.names(), ["poly(x)1", "poly(x)2", "poly(x)3"]);
+    let want_train = [
+        [
+            -0.352221734672833409,
+            -0.330874962874479872,
+            -0.288181419277772799,
+            -0.224141103882712189,
+            -0.138754016689298015,
+            -0.032020157697530312,
+            0.096060473092590914,
+            0.245487875681065726,
+            0.416262050067894018,
+            0.608382996253075903,
+        ],
+        [
+            0.35122943174541682,
+            0.280273990988766653,
+            0.148710777919145137,
+            -0.022764870576091854,
+            -0.203109949165910131,
+            -0.350933784075597166,
+            -0.414498033086762585,
+            -0.331716685537337852,
+            -0.030156062321576135,
+            0.572965184109947123,
+        ],
+        [
+            -0.3465733261516025232,
+            -0.1995422180872851448,
+            0.0393833325172275941,
+            0.2732597379272244109,
+            0.3899959748244423707,
+            0.3023428142476387026,
+            0.0012117948466838812,
+            -0.3776760605498226675,
+            -0.4738117850534137032,
+            0.391409735478907117,
+        ],
+    ];
+    let want_new = [
+        [
+            -0.373568506471186945,
+            0.053366929495883855,
+            0.693770083446490049,
+        ],
+        [
+            0.42563409531662572,
+            -0.40710684134127828,
+            0.93069886459138995,
+        ],
+        [
+            -0.51316818879627024,
+            0.11467618565785501,
+            1.2685068455087305,
+        ],
+    ];
+    let (dt, dn) = (poly.design(&train).unwrap(), poly.design(&new).unwrap());
+    for j in 0..3 {
+        for (g, w) in dt.column(j).iter().zip(want_train[j]) {
+            assert!(close(*g, w, 1e-12), "poly {j}: {g} against {w}");
+        }
+        for (g, w) in dn.column(j).iter().zip(want_new[j]) {
+            assert!(close(*g, w, 1e-12), "poly new {j}: {g} against {w}");
+        }
+    }
+    let spline = Terms::new()
+        .intercept()
+        .natural_spline("x", &[10.0, 25.0])
+        .fit(&train)
+        .unwrap();
+    assert_eq!(spline.names().len(), 4);
+    let fit = Glm::new(Family::Gaussian, Link::Identity)
+        .fit(&spline.design(&train).unwrap(), &y)
+        .unwrap();
+    let fitted = [
+        1.241601572941901,
+        3.1981637211770977,
+        6.9609391541493313,
+        11.6654219067441307,
+        14.617484841300687,
+        12.1661124528715039,
+        5.4444506082478128,
+        1.5608468083302753,
+        6.0187503707099408,
+        17.083713098715517,
+    ];
+    for (g, w) in fit.fitted().iter().zip(fitted) {
+        assert!(close(*g, w, 1e-9), "ns fitted {g} against {w}");
+    }
+    let predicted = fit.predict(&spline.design(&new).unwrap()).unwrap();
+    for (g, w) in predicted.iter().zip([
+        -0.72122511127239264,
+        7.71926159866044337,
+        22.49421993091769423,
+    ]) {
+        assert!(close(*g, w, 1e-9), "ns predicted {g} against {w}");
+    }
+}

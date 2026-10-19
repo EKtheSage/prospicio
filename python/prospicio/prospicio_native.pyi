@@ -163,7 +163,8 @@ class Approximation:
     def kind(self, /) -> str:
         """
         The family: ``"normal"``, ``"gamma"``, ``"lognormal"``,
-        ``"shifted_gamma"`` or ``"shifted_lognormal"``.
+        ``"shifted_gamma"``, ``"shifted_lognormal"``, ``"normal_power"`` or
+        ``"wilson_hilferty"``.
         """
     def mean(self, /) -> float:
         """
@@ -178,7 +179,8 @@ class Approximation:
         """
         The parameters by name: ``mean`` and ``sd``; ``shape`` and
         ``scale``; ``meanlog`` and ``sdlog``; with ``shift`` for the
-        shifted families.
+        shifted families; ``mean``, ``sd`` and ``skew`` for the normal power
+        and Wilson-Hilferty.
         """
     def quantile(self, /, p: float) -> float:
         """
@@ -2224,9 +2226,12 @@ class Benktander:
         Expected loss ratio of the starting ultimate; positive.
     n_iters : int, default 1
         Number of Bornhuetter–Ferguson steps.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``: average only the latest diagonals and leave out
+        the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     ldf, ldf_kind, ldf_weight : optional
@@ -2245,7 +2250,7 @@ class Benktander:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 288.89]
     """
-    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> Benktander: ...
+    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> Benktander: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -2256,6 +2261,16 @@ class Benktander:
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
         """
@@ -2301,6 +2316,11 @@ class Benktander:
     def n_iters(self, /) -> int:
         """
         Number of Bornhuetter–Ferguson steps.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -2380,6 +2400,22 @@ class Beta:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -2841,9 +2877,12 @@ class BornhuetterFerguson:
     apriori : float, default 1.0
         Expected loss ratio: the expected ultimate per unit of exposure;
         positive.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``: average only the latest diagonals and leave out
+        the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     ldf, ldf_kind, ldf_weight : optional
@@ -2862,7 +2901,7 @@ class BornhuetterFerguson:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 266.67]
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> BornhuetterFerguson: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> BornhuetterFerguson: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -2873,6 +2912,16 @@ class BornhuetterFerguson:
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
         """
@@ -2913,6 +2962,11 @@ class BornhuetterFerguson:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -3082,6 +3136,22 @@ class Burr:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -3415,9 +3485,12 @@ class CapeCod:
     decay : float, default 1.0
         Weight of an origin ``n`` periods away, ``decay ** n``; from 0 to 1.
         With 1 every origin shares one loss ratio.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``: average only the latest diagonals and leave out
+        the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     ldf, ldf_kind, ldf_weight : optional
@@ -3436,7 +3509,7 @@ class CapeCod:
     >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
     ([0.6774, 0.6774], [150.0, 290.32])
     """
-    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> CapeCod: ...
+    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> CapeCod: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -3447,6 +3520,16 @@ class CapeCod:
     def decay(self, /) -> float:
         """
         Weight of an origin one period away.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str) -> CapeCodFit:
         """
@@ -3488,6 +3571,11 @@ class CapeCod:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -3870,12 +3958,24 @@ class ChainLadder:
     
     Parameters
     ----------
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged into one factor per age: volume
         weighted, their mean, or least squares through the origin (Mack's
-        ``alpha`` of 1, 0 and 2).
+        ``alpha`` of 1, 0 and 2), or their geometric mean. A geometric
+        average estimates the factors only: ``Mack`` and the bootstraps
+        reject it, since it has no variance model.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
         How a variance parameter with a single link ratio is filled in.
+    n_periods : int, optional
+        Average only the link ratios that start in the latest ``n_periods``
+        calendar diagonals of the triangle; an age with fewer uses all of
+        them. All of them by default.
+    drop_high : int, default 0
+        Leave out this many of the highest link ratios at each age, among
+        those ``n_periods`` keeps. Skipped at an age where it would leave
+        none.
+    drop_low : int, default 0
+        As ``drop_high``, for the lowest link ratios.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         Development past the oldest age: a number is a constant factor from
         the oldest age to ultimate. No tail (a factor of 1) by default.
@@ -3904,8 +4004,8 @@ class ChainLadder:
     ldf_kind : {"ldf", "cdf", "percent_developed"}, optional
         How ``ldf`` is expressed; required with it, since age-to-age factors
         and factors to ultimate cannot be told apart. Factors to ultimate
-        must be at least 1 and not increase with age; percents developed in
-        (0, 1] and not decrease with age.
+        and percents developed need only be finite and positive, in any
+        order.
     ldf_weight : float or dict, optional
         The credibility ``w`` on each selected factor, from 0 to 1: the
         factor used is ``w * selected + (1 - w) * estimated``. A number
@@ -3950,12 +4050,22 @@ class ChainLadder:
     >>> round(fit.pattern_tail, 4), round(fit.ultimate[2], 2)
     (1.0526, 240.0)
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> ChainLadder: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> ChainLadder: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str) -> ChainLadderFit:
         """
@@ -3996,6 +4106,11 @@ class ChainLadder:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -4079,6 +4194,11 @@ class ChainLadderFit:
         Standard error of each estimated factor.
         """
     @property
+    def excluded(self, /) -> bool:
+        """
+        Whether ``n_periods`` or the drops left out a link ratio at some age.
+        """
+    @property
     def index(self, /) -> list[Any]:
         """
         Label of each segment, as ``Triangle.index``.
@@ -4106,6 +4226,12 @@ class ChainLadderFit:
         """
         The weight on each link's selected factor; 0 where none is
         selected.
+        """
+    @property
+    def n_links(self, /) -> list[int]:
+        """
+        Number of link ratios behind each estimated factor, after
+        ``n_periods`` and the drops; factor ``k`` links age ``k`` to ``k + 1``.
         """
     @property
     def origins(self, /) -> list[str]:
@@ -5788,8 +5914,10 @@ class CompoundMoments:
     def approximate(self, /, kind: str) -> Approximation:
         """
         The moment-matched approximation: ``"normal"``, ``"gamma"``,
-        ``"lognormal"`` (mean and cv), ``"shifted_gamma"`` or
-        ``"shifted_lognormal"`` (mean, cv and skewness).
+        ``"lognormal"`` (mean and cv), ``"shifted_gamma"``,
+        ``"shifted_lognormal"``, ``"normal_power"`` or ``"wilson_hilferty"``
+        (mean, cv and skewness; the last two defined by their quantiles,
+        Bahnemann's section 4.4).
         
         Parameters
         ----------
@@ -5803,7 +5931,7 @@ class CompoundMoments:
         ------
         ValueError
             For an unknown kind, a non-positive mean (gamma, lognormal) or a
-            non-positive skewness (the shifted fits).
+            non-positive skewness (the three-moment fits).
         """
     @property
     def cv(self, /) -> float:
@@ -6267,6 +6395,22 @@ class Custom:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -7921,9 +8065,12 @@ class ExpectedLoss:
     ----------
     apriori : float, default 1.0
         Expected loss ratio: the ultimate per unit of exposure; positive.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``: average only the latest diagonals and leave out
+        the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     ldf, ldf_kind, ldf_weight : optional
@@ -7942,7 +8089,7 @@ class ExpectedLoss:
     >>> fit.ultimate, fit.reserve
     ([125.0, 200.0], [-25.0, 0.0])
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> ExpectedLoss: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> ExpectedLoss: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -7953,6 +8100,16 @@ class ExpectedLoss:
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
         """
@@ -7995,6 +8152,11 @@ class ExpectedLoss:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -8465,6 +8627,22 @@ class Gamma:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -8781,6 +8959,22 @@ class GeneralizedPareto:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -9066,6 +9260,12 @@ class GlmFit:
         AIC, ``-2 loglik + 2 p``.
         """
     @property
+    def bic(self, /) -> float:
+        """
+        BIC, ``-2 loglik + p log(n)``, counting the coefficients as ``aic``
+        does (R's ``BIC`` also counts an estimated dispersion).
+        """
+    @property
     def coefficients(self, /) -> list[float]:
         """
         Estimated coefficients.
@@ -9084,6 +9284,26 @@ class GlmFit:
     def df_resid(self, /) -> float:
         """
         Residual degrees of freedom.
+        """
+    def diagnostics(self, /, design: Design, y: Sequence[float]) -> dict:
+        """
+        Residuals, leverages and Cook's distances on ``design`` and ``y``
+        (normally the training data), as R's ``residuals.glm``,
+        ``hatvalues``, ``rstandard`` and ``cooks.distance``.
+        
+        Parameters
+        ----------
+        design : Design
+            Same columns as the training design.
+        y : list of float
+        
+        Returns
+        -------
+        dict
+            Lists of ``fitted``, ``response``, ``pearson``, ``deviance``,
+            ``working`` residuals, ``working_weights``, ``leverage`` (hat
+            values), ``standardized_pearson``, ``standardized_deviance`` and
+            ``cooks_distance``.
         """
     @property
     def dispersion(self, /) -> float:
@@ -9114,6 +9334,20 @@ class GlmFit:
             For malformed JSON, another format, a newer format version or
             inconsistent fields.
         """
+    def gcv(self, /, design: Design, y: Sequence[float]) -> float:
+        """
+        Generalized cross-validation, ``n sum((y - mu)**2) / (n - p)**2``
+        (Taylor and McGuire, section 4.4).
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        
+        Returns
+        -------
+        float
+        """
     @property
     def input_hash(self, /) -> str:
         """
@@ -9128,6 +9362,21 @@ class GlmFit:
     def log_likelihood(self, /) -> float:
         """
         Log-likelihood.
+        """
+    def log_likelihood_at(self, /, design: Design, y: Sequence[float], dispersion: float) -> float:
+        """
+        The log-likelihood of ``y`` at the fitted means and a given
+        dispersion, to compare models at one held dispersion.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        dispersion : float
+        
+        Returns
+        -------
+        float
         """
     @property
     def names(self, /) -> list[str]:
@@ -9179,6 +9428,20 @@ class GlmFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def prediction_se(self, /, design: Design) -> list[float]:
+        """
+        Standard error of each row's predicted mean (parameter error only),
+        ``|dmu/deta| sqrt(x' Sigma x)``, as R's
+        ``predict(type = "response", se.fit = TRUE)``.
+        
+        Parameters
+        ----------
+        design : Design
+        
+        Returns
+        -------
+        list of float
         """
     def robust_covariance(self, /, design: Design, y: Sequence[float], kind: str = "HC0", groups: Sequence[int |str] |None = None) -> list[list[float]]:
         """
@@ -9238,6 +9501,24 @@ class GlmFit:
     def std_errors(self, /) -> list[float]:
         """
         Standard errors.
+        """
+    def sum_prediction_error(self, /, design: Design) -> dict[str, float]:
+        """
+        The prediction error of the sum of the predicted means of
+        ``design``'s rows (a reserve: an origin's future cells): parameter
+        error by the delta method, ``g' Sigma g`` with ``g`` the sum of
+        ``dmu/deta x``, and process error ``sum(phi V(mu) / w)`` (Taylor and
+        McGuire, CAS Monograph 3, (5-11) to (5-13)).
+        
+        Parameters
+        ----------
+        design : Design
+        
+        Returns
+        -------
+        dict
+            ``total``, ``parameter_variance``, ``process_variance`` and
+            ``rmsep``.
         """
     def to_json(self, /) -> str:
         """
@@ -9997,6 +10278,22 @@ class InverseGamma:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -10211,6 +10508,22 @@ class InverseGaussian:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -11468,6 +11781,40 @@ class Leg:
         """
 
 @final
+class LevelAllocation:
+    """
+    An allocation of an exogenous total by stand-alone measures at one
+    level, from ``haircut`` or ``equal_risk``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def allocated(self, /) -> list[float]:
+        """
+        The allocation per component, summing to ``total``.
+        """
+    @property
+    def level(self, /) -> float:
+        """
+        The level of the stand-alone measures: a probability for VaR and
+        TVaR, an EPD ratio for EPD.
+        """
+    @property
+    def measure(self, /) -> str:
+        """
+        The stand-alone measure: ``"var"``, ``"tvar"`` or ``"epd"``.
+        """
+    @property
+    def standalone(self, /) -> list[float]:
+        """
+        Each component's stand-alone measure at ``level``.
+        """
+    @property
+    def total(self, /) -> float:
+        """
+        The amount allocated.
+        """
+
+@final
 class LimitedFluctuation:
     """
     Limited fluctuation (classical) credibility: the expected number of
@@ -11646,6 +11993,22 @@ class LogAffinePareto:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -11859,6 +12222,22 @@ class Loglogistic:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -12096,6 +12475,22 @@ class Lognormal:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``, in closed form.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -12375,8 +12770,11 @@ class Mack:
     
     Parameters
     ----------
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``. Mack's standard errors follow the link ratios
+        that are kept (R's ``MackChainLadder(weights = ...)``).
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     tail_sigma : float, optional
@@ -12411,12 +12809,22 @@ class Mack:
     >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
     True
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> Mack: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> Mack: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str) -> MackFit:
         """
@@ -12456,6 +12864,11 @@ class Mack:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -12517,10 +12930,13 @@ class MackBootstrap:
         variance; the mean plus a resampled residual times the standard
         deviation, which carries the residuals' mean and variance; or none
         for parameter error only.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How Mack's model averages the link ratios (its ``alpha``).
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
         How a sigma behind a single link ratio is filled in.
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``. The bootstraps do not support them yet: a
+        ``ValueError`` names the setting.
     centre_residuals : bool, default True
         Subtract the residuals' mean before resampling them, so that the
         pseudo factors are unbiased, the mean CDR is about zero and the
@@ -12606,7 +13022,7 @@ class MackBootstrap:
     >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> MackBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> MackBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -12623,6 +13039,16 @@ class MackBootstrap:
         """
         How the segments depend on each other: ``"independent"``,
         ``"synchronized"`` or ``"rank_correlation"``.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str) -> MackBootstrapFit:
         """
@@ -12695,6 +13121,11 @@ class MackBootstrap:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def n_sims(self, /) -> int:
@@ -12976,6 +13407,11 @@ class MackFit:
         ``ChainLadderFit.estimated_std_err``.
         """
     @property
+    def excluded(self, /) -> bool:
+        """
+        Whether ``n_periods`` or the drops left out a link ratio at some age.
+        """
+    @property
     def index(self, /) -> list[Any]:
         """
         Label of each segment, as ``Triangle.index``.
@@ -13000,6 +13436,12 @@ class MackFit:
         """
         The weight on each link's selected factor, as
         ``ChainLadderFit.ldf_weight``.
+        """
+    @property
+    def n_links(self, /) -> list[int]:
+        """
+        Number of link ratios behind each estimated factor, as
+        ``ChainLadderFit.n_links``.
         """
     @property
     def origins(self, /) -> list[str]:
@@ -14119,6 +14561,22 @@ class Mixture:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -14457,6 +14915,72 @@ class NegativeBinomial:
         Returns
         -------
         float
+        """
+
+@final
+class NegativeBinomialFit:
+    """
+    A negative binomial GLM with ``theta`` estimated, from
+    ``NegativeBinomialGlm.fit``.
+    """
+    @property
+    def aic(self, /) -> float:
+        """
+        ``-2 log_likelihood + 2 (p + 1)``, counting ``theta``, as R's ``AIC``.
+        """
+    @property
+    def glm(self, /) -> GlmFit:
+        """
+        The GLM at the estimated ``theta``.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximized log-likelihood.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row of ``design``.
+        """
+    @property
+    def se_theta(self, /) -> float:
+        """
+        ``MASS``'s standard error of ``theta``.
+        """
+    @property
+    def theta(self, /) -> float:
+        """
+        The maximum-likelihood ``theta``.
+        """
+
+@final
+class NegativeBinomialGlm:
+    """
+    A negative binomial GLM with its ``theta`` estimated with the
+    coefficients by maximum likelihood, as R's ``MASS::glm.nb``: IRLS and
+    Newton's method on ``theta`` alternate until both settle.
+    
+    Parameters
+    ----------
+    link : str, default "log"
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, NegativeBinomialGlm
+    >>> x = [float(i % 3) for i in range(60)]
+    >>> y = [float((i * 7) % 11) for i in range(60)]
+    >>> fit = NegativeBinomialGlm().fit(Design([[1.0] * 60, x], ["(Intercept)", "x"]), y)
+    >>> fit.theta > 0 and fit.se_theta > 0
+    True
+    """
+    def __new__(cls, /, link: str |None = None) -> NegativeBinomialGlm: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> NegativeBinomialFit:
+        """
+        Fits ``theta`` and the coefficients.
+        
+        Returns
+        -------
+        NegativeBinomialFit
         """
 
 @final
@@ -15430,6 +15954,22 @@ class Pareto:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -16093,6 +16633,22 @@ class PiecewisePareto:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -16403,6 +16959,22 @@ class PolicyLimits:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -18867,9 +19439,46 @@ class TailLogLinear:
     def __repr__(self, /) -> str: ...
 
 @final
+class TargetEncoding:
+    """
+    The encoding of each level of a factor learned from all the training
+    rows, from ``target_encode``.
+    """
+    def __repr__(self, /) -> str: ...
+    def encode(self, /, values: Sequence[str]) -> list[float]:
+        """
+        The encoding of each value of new data; a level not seen in
+        training gets 1.
+        
+        Parameters
+        ----------
+        values : list of str
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def k(self, /) -> float:
+        """
+        The credibility constant ``K``.
+        """
+    @property
+    def levels(self, /) -> list[str]:
+        """
+        The levels seen in training, sorted.
+        """
+    @property
+    def ratios(self, /) -> list[float]:
+        """
+        Each level's credibility-weighted actual-to-expected ratio.
+        """
+
+@final
 class Terms:
     """
-    The terms of a model: an intercept, numeric columns and factors.
+    The terms of a model: an intercept, numeric columns, factors,
+    interactions, polynomials, hinges, steps, bins, logs and ordinals.
     
     Build them up, then ``fit`` them to training data to learn the factor
     levels; the result builds the same design matrix on any data.
@@ -18883,6 +19492,24 @@ class Terms:
     ['(Intercept)', 'age', 'region[S]', 'region[W]']
     """
     def __new__(cls, /) -> Terms: ...
+    def bins(self, /, name: str, cuts: Sequence[float], reference: int |None = None) -> Terms:
+        """
+        Adds a numeric column cut into bins ``(-inf, c1], (c1, c2], ...,
+        (ck, inf)`` and coded as a factor, named as R's ``cut``
+        (``x[(30,45]]``).
+        
+        Parameters
+        ----------
+        name : str
+        cuts : list of float
+            Strictly increasing.
+        reference : int, optional
+            Index of the reference bin; the lowest by default.
+        
+        Returns
+        -------
+        Terms
+        """
     def factor(self, /, name: str, reference: str |None = None) -> Terms:
         """
         Adds a factor in treatment coding.
@@ -18915,9 +19542,75 @@ class Terms:
         ValueError
             If a column is missing or has the wrong kind.
         """
+    def hinges(self, /, name: str, knots: Sequence[float]) -> Terms:
+        """
+        Adds hinge functions ``max(0, x - k)`` at each knot, named
+        ``hinge(x,k)``.
+        
+        Parameters
+        ----------
+        name : str
+        knots : list of float
+            Strictly increasing.
+        
+        Returns
+        -------
+        Terms
+        """
+    def interaction(self, /, a: str, b: str) -> Terms:
+        """
+        Adds the interaction of two columns: the product of their coded
+        columns, each numeric as is or a factor in treatment coding (first
+        level as reference), named ``a:b``, ``a[x]:b`` or ``a[x]:b[y]``, as
+        R's ``a:b`` beside main effects (CAS Monograph 5, section 5.6).
+        
+        Parameters
+        ----------
+        a : str
+        b : str
+        
+        Returns
+        -------
+        Terms
+        """
     def intercept(self, /) -> Terms:
         """
         Adds an intercept.
+        
+        Returns
+        -------
+        Terms
+        """
+    def log(self, /, name: str, base: float) -> Terms:
+        """
+        Adds ``log(x / base)``, named ``log(x/base)``: a log transform
+        centred at a base value (CAS Monograph 5, section 5.6.2).
+        
+        Parameters
+        ----------
+        name : str
+        base : float
+            Positive.
+        
+        Returns
+        -------
+        Terms
+        """
+    def natural_spline(self, /, name: str, knots: Sequence[float], boundary: tuple[float, float] |None = None) -> Terms:
+        """
+        Adds a natural cubic spline with interior ``knots``, linear beyond
+        the boundary knots (the training range unless given):
+        ``len(knots) + 1`` columns named ``spline(x)1``, .... The basis is
+        the restricted cubic one, which spans the same functions as R's
+        ``splines::ns(x, knots)``: fitted values agree, coefficients differ.
+        
+        Parameters
+        ----------
+        name : str
+        knots : list of float
+            Interior knots, strictly increasing.
+        boundary : tuple of float, optional
+            The boundary knots; the training minimum and maximum by default.
         
         Returns
         -------
@@ -18930,6 +19623,72 @@ class Terms:
         Parameters
         ----------
         name : str
+        
+        Returns
+        -------
+        Terms
+        """
+    def ordinal(self, /, name: str, levels: Sequence[str]) -> Terms:
+        """
+        Adds an ordered factor in cumulative coding: for each level after
+        the first, ``1[level >= it]``, named ``x[>=level]``, so each
+        coefficient is the step from the level below.
+        
+        Parameters
+        ----------
+        name : str
+        levels : list of str
+            The levels in order, lowest first.
+        
+        Returns
+        -------
+        Terms
+        
+        Examples
+        --------
+        >>> from prospicio.models import Terms
+        >>> data = {"size": ["small", "large", "medium"]}
+        >>> Terms().ordinal("size", ["small", "medium", "large"]).fit(data).names
+        ['size[>=medium]', 'size[>=large]']
+        """
+    def orthogonal_poly(self, /, name: str, degree: int) -> Terms:
+        """
+        Adds orthogonal polynomials of degree 1 to ``degree`` on the
+        training values, as R's ``poly(x, degree)``, named ``poly(x)1``,
+        ...; the recurrence learned at ``fit`` rebuilds them on new data.
+        
+        Parameters
+        ----------
+        name : str
+        degree : int
+        
+        Returns
+        -------
+        Terms
+        """
+    def poly(self, /, name: str, degree: int) -> Terms:
+        """
+        Adds raw powers ``x, x**2, ..., x**degree`` of a numeric column,
+        named ``x``, ``x^2``, ....
+        
+        Parameters
+        ----------
+        name : str
+        degree : int
+        
+        Returns
+        -------
+        Terms
+        """
+    def steps(self, /, name: str, knots: Sequence[float]) -> Terms:
+        """
+        Adds steps ``1[x >= k]`` at each knot, named ``step(x,k)``.
+        
+        Parameters
+        ----------
+        name : str
+        knots : list of float
+            Strictly increasing.
         
         Returns
         -------
@@ -20130,6 +20889,22 @@ class Truncated:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -20382,6 +21157,22 @@ class Tweedie:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -20535,6 +21326,88 @@ class Tweedie:
         Returns
         -------
         float
+        """
+
+@final
+class TweedieFit:
+    """
+    A Tweedie GLM with its power estimated, from ``TweedieGlm.fit``.
+    """
+    @property
+    def at_boundary(self, /) -> bool:
+        """
+        Whether the power is at a search bound.
+        """
+    @property
+    def dispersion(self, /) -> float:
+        """
+        The maximum-likelihood dispersion at that power.
+        """
+    @property
+    def glm(self, /) -> GlmFit:
+        """
+        The GLM at the estimated power, its dispersion fixed at the estimate.
+        """
+    @property
+    def interval(self, /) -> tuple[float, float]:
+        """
+        The 95% profile-likelihood interval for the power.
+        """
+    @property
+    def interval_open(self, /) -> tuple[bool, bool]:
+        """
+        Whether each end of ``interval`` is a search bound rather than a
+        crossing.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximized log-likelihood.
+        """
+    @property
+    def power(self, /) -> float:
+        """
+        The maximum-likelihood power.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row of ``design``.
+        """
+
+@final
+class TweedieGlm:
+    """
+    A Tweedie GLM whose power is estimated with its coefficients and
+    dispersion by maximum likelihood: the profile log-likelihood over the
+    power, maximized by Brent's method, with a 95% profile-likelihood
+    interval (R's ``tweedie.profile``'s method).
+    
+    Parameters
+    ----------
+    link : str, default "log"
+    min_power, max_power : float, default 1.01 and 1.99
+        The search bounds, inside ``(1, 2)``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, TweedieGlm
+    >>> from prospicio.distributions import Tweedie
+    >>> import math
+    >>> x = [float(i % 4) for i in range(400)]
+    >>> y = [Tweedie(math.exp(0.5 + 0.3 * v), 2.0, 1.5).quantile((i * 0.618034) % 1 * 0.98 + 0.01)
+    ...      for i, v in enumerate(x)]
+    >>> fit = TweedieGlm().fit(Design([[1.0] * 400, x], ["(Intercept)", "x"]), y)
+    >>> abs(fit.power - 1.5) < 0.1
+    True
+    """
+    def __new__(cls, /, link: str |None = None, min_power: float = 1.01, max_power: float = 1.99) -> TweedieGlm: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> TweedieFit:
+        """
+        Fits the power, the dispersion and the coefficients.
+        
+        Returns
+        -------
+        TweedieFit
         """
 
 @final
@@ -20698,6 +21571,22 @@ class Weibull:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -21113,7 +22002,11 @@ def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "e
     
     - ``"euler"``: co-measure (for TVaR, the CoTVaRs); consistent with
       marginal changes to the portfolio.
-    - ``"covariance"``: ``rho(S) Cov(X_j, S) / Var(S)``.
+    - ``"covariance"``: ``rho(S) Cov(X_j, S) / Var(S)``, which spreads the
+      expected loss by covariance too.
+    - ``"covariance_margin"``: ``E[X_j] + (rho(S) - E[S]) Cov(X_j, S) /
+      Var(S)``, each unit's mean plus a share of the margin by covariance
+      (Kalkbrener's allocation; *Pricing Insurance Risk*, Exercise 217).
     - ``"proportional"``: stand-alone measures scaled to ``rho(S)``.
     - ``"marginal"``: ``rho(S) - rho(S - X_j)`` (Merton-Perold); does not
       add up to ``rho(S)``.
@@ -21134,7 +22027,8 @@ def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "e
     Raises
     ------
     ValueError
-        For an unknown method, a constant total (``"covariance"``),
+        For an unknown method, a constant total (``"covariance"``,
+        ``"covariance_margin"``),
         stand-alone measures summing to 0 (``"proportional"``) or more than
         12 components (``"shapley"``).
     
@@ -21241,6 +22135,26 @@ def compound_moments(frequency: Any, severity: Any) -> CompoundMoments:
     >>> fit = m.approximate("shifted_gamma")
     >>> [(k, round(v, 4)) for k, v in fit.parameters]
     [('shape', 15.2025), ('scale', 49.5), ('shift', -252.5253)]
+    """
+
+def confusion_matrix(y: Sequence[float], score: Sequence[float], threshold: float, weights: Sequence[float] |None = None) -> dict[str, float]:
+    """
+    The confusion matrix of a binary model at ``threshold`` (a row is
+    positive when its score is at least the threshold), weighted counts.
+    
+    Parameters
+    ----------
+    y : list of float
+        0 or 1.
+    score : list of float
+    threshold : float
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict
+        ``true_positive``, ``false_positive``, ``true_negative``,
+        ``false_negative``, ``sensitivity`` and ``specificity``.
     """
 
 def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: float) -> float:
@@ -21501,6 +22415,29 @@ def distortion_envelope(x: Any, premium: float, s: Sequence[float], assets: floa
         The lower envelope (a concave distortion) and the upper.
     """
 
+def double_lift(y: Sequence[float], pred_a: Sequence[float], pred_b: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
+    """
+    The double lift chart of two models (CAS Monograph 5, section 7.2.2):
+    rows sorted by ``pred_a / pred_b``, cut into bands of about equal
+    exposure, with each band's actual and predicted averages over their
+    overall averages (each model against its own).
+    
+    Parameters
+    ----------
+    y : list of float
+    pred_a : list of float
+    pred_b : list of float
+        Positive.
+    exposure : list of float, optional
+    bands : int, default 10
+    
+    Returns
+    -------
+    list of dict
+        ``exposure``, ``actual``, ``model_a``, ``model_b`` (band totals),
+        ``actual_relativity``, ``a_relativity`` and ``b_relativity`` per band.
+    """
+
 def elpd_loo(log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None) -> Elpd:
     """
     Leave-one-out cross-validation by Pareto-smoothed importance sampling
@@ -21562,6 +22499,44 @@ def entropic(dist: Any, theta: float) -> float:
     >>> from prospicio.risk import entropic
     >>> round(entropic([0.0, 1.0], math.log(2.0)), 12) == round(math.log2(1.5), 12)
     True
+    """
+
+def equal_risk(pd: PredictiveDistribution, total: float, measure: str) -> LevelAllocation:
+    """
+    The equal risk allocation of an exogenous ``total``: the one level at
+    which the components' stand-alone ``measure``s add up to ``total``,
+    each getting its own (*Pricing Insurance Risk*, section 12.2.4). For VaR
+    and TVaR this prices the components as if comonotonic; for EPD each
+    has the same EPD ratio.
+    
+    A VaR of draws moves in steps: where no level adds up exactly, the level
+    is the lowest that reaches ``total`` and its VaRs are scaled to it.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+    total : float
+    measure : str
+        ``"var"``, ``"tvar"`` or ``"epd"``.
+    
+    Returns
+    -------
+    LevelAllocation
+        With the ``level`` found.
+    
+    Raises
+    ------
+    ValueError
+        When no level makes the stand-alone measures add up to ``total``.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import PredictiveDistribution
+    >>> from prospicio.risk import equal_risk
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> round(equal_risk(pd, 9.0, "tvar").level, 9)
+    0.5
     """
 
 def esscher(dist: Any, h: float) -> float:
@@ -21655,6 +22630,33 @@ def eventual_ruin(severity: Grid, rho: float |None = None, *, loss_ratio: float 
     >>> # Exponential claims: exp(-u / 600) / 1.2 = 0.157; the step costs 1%.
     >>> round(ruin.psi_at(1000.0), 3)
     0.156
+    """
+
+def f_test(small: GlmFit, big: GlmFit) -> dict:
+    """
+    The F test of a GLM within a larger one that contains it, as R's
+    ``anova(small, big, test = "F")``: ``F = (D_small - D_big) / (q phi_big)``
+    on ``F(q, n - p_big)`` (CAS Monograph 5, section 6.2.1). For a family
+    whose dispersion is estimated.
+    
+    The models are not checked to be nested: ``small``'s columns must lie in
+    the span of ``big``'s, on the same rows, family and weights.
+    
+    Parameters
+    ----------
+    small : GlmFit
+    big : GlmFit
+    
+    Returns
+    -------
+    dict
+        ``statistic``, ``df`` (``q``), ``df_resid``, ``deviance_drop`` and
+        ``p_value``.
+    
+    Raises
+    ------
+    ValueError
+        If the models differ in rows or ``big`` has no more coefficients.
     """
 
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
@@ -21911,6 +22913,43 @@ def group_k_fold(groups: Sequence[str], k: int, seed: int) -> list[tuple[list[in
     list of (list of int, list of int)
     """
 
+def haircut(pd: PredictiveDistribution, total: float, measure: str, level: float) -> LevelAllocation:
+    """
+    The haircut allocation of an exogenous ``total`` (a premium, a capital
+    amount): each component's stand-alone ``measure`` at ``level``, scaled
+    to add up to ``total`` (*Pricing Insurance Risk*, section 12.2.3).
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+        Components that add up to the portfolio.
+    total : float
+    measure : str
+        ``"var"``, ``"tvar"`` (``level`` a probability) or ``"epd"``
+        (``level`` the EPD ratio ``r``: the assets at which
+        ``E[(X - a)+] = r E[X]``).
+    level : float
+    
+    Returns
+    -------
+    LevelAllocation
+    
+    Raises
+    ------
+    ValueError
+        For a level out of range, a mean that is not positive (EPD) or
+        stand-alone measures summing to 0.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import PredictiveDistribution
+    >>> from prospicio.risk import haircut
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> haircut(pd, 18.0, "tvar", 0.5).allocated
+    [7.0, 11.0]
+    """
+
 def hierarchical_credibility(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]], levels: Sequence[Sequence[int]] |None = None, collective_mean: tuple[float, float] |None = None, within_prior: tuple[str, float] |None = None, between_priors: Sequence[tuple[str, float]] |None = None, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalCredibilityFit:
     """
     Bayesian hierarchical credibility, sampled with NUTS: Bühlmann–Straub's
@@ -22156,6 +23195,29 @@ def lift(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |N
         ``exposure``, ``expected`` and ``actual`` per band.
     """
 
+def likelihood_ratio_test(small: GlmFit, big: GlmFit) -> dict:
+    """
+    The likelihood ratio test of a GLM within a larger one, as R's
+    ``anova(small, big, test = "Chisq")``: the scaled deviance drop
+    ``(D_small - D_big) / phi_big`` on ``chi2(q)``. For a family whose
+    dispersion is known (Poisson, binomial).
+    
+    Parameters
+    ----------
+    small : GlmFit
+    big : GlmFit
+    
+    Returns
+    -------
+    dict
+        As ``f_test``, with ``df_resid`` infinite.
+    
+    Raises
+    ------
+    ValueError
+        As ``f_test``.
+    """
+
 def local_pareto_to_piecewise(t: float, alpha: Any, rel_tolerance: float = 1e-4, stop_survival: float = 1e-9, stop_at: float = ...) -> tuple[PiecewisePareto, float, float]:
     """
     Converts the local Pareto distribution with local alpha ``alpha(x)``
@@ -22259,6 +23321,29 @@ def loss_elimination_ratio(severity: Any, deductible: float) -> float:
     Returns
     -------
     float
+    """
+
+def loss_ratio_chart(y: Sequence[float], pred: Sequence[float], premium: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
+    """
+    The loss ratio chart (CAS Monograph 5, section 7.2.3): rows sorted by
+    predicted loss ratio ``pred / premium`` against the current premium,
+    cut into bands of about equal exposure, with each band's actual loss
+    ratio.
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+    premium : list of float
+        Current premium, positive.
+    exposure : list of float, optional
+    bands : int, default 10
+    
+    Returns
+    -------
+    list of dict
+        ``exposure``, ``premium``, ``expected``, ``actual``, ``loss_ratio``
+        and ``expected_loss_ratio`` per band.
     """
 
 def lppd(log_lik: Sequence[Sequence[float]]) -> float:
@@ -22387,6 +23472,23 @@ def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tup
     >>> from prospicio.risk import mean_excess
     >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
     [(2.0, 1.5, 2)]
+    """
+
+def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
+    """
+    The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
+    sorted by ``y / exposure``). For a 0/1 response with unit exposure,
+    ``AUROC = (1 + normalized Gini) / 2`` (CAS Monograph 5, footnote 17).
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+    exposure : list of float, optional
+    
+    Returns
+    -------
+    float
     """
 
 def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequence[tuple[float, float, float]]) -> CessionStatistics:
@@ -23002,6 +24104,35 @@ def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n
     list of float
     """
 
+def rearrange(columns: Sequence[Sequence[float]], rotate: int |None = None, seed: int |None = None, tolerance: float = 1e-6) -> dict:
+    """
+    The Rearrangement Algorithm (Puccetti and Rueschendorf): orders each
+    column opposite to the sum of the others until the smallest row sum
+    stops rising by ``tolerance``. Its answer depends on the start: as
+    given, column ``j`` rotated down by ``rotate * j`` places, or each column
+    shuffled from ``seed``.
+    
+    Parameters
+    ----------
+    columns : list of list of float
+        Equal lengths.
+    rotate : int, optional
+    seed : int, optional
+    tolerance : float, default 1e-6
+    
+    Returns
+    -------
+    dict
+        ``value`` (the smallest row sum), ``columns`` (the final
+        arrangement) and ``iterations``.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import rearrange
+    >>> rearrange([[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]])["value"]
+    5.0
+    """
+
 def recommend_grid(frequency: Any, severity: Any, log2: int = 16, p: float = ..., p_star: float = ...) -> GridSize:
     """
     A grid for the compound distribution of ``frequency`` claims of
@@ -23037,6 +24168,33 @@ def recommend_grid(frequency: Any, severity: Any, log2: int = 16, p: float = ...
     >>> g = recommend_grid(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
     >>> g.step, g.points, g.method
     (0.0625, 65536, 'moments')
+    """
+
+def roc(y: Sequence[float], score: Sequence[float], weights: Sequence[float] |None = None) -> dict:
+    """
+    The ROC curve of a binary model (CAS Monograph 5, section 7.3.1): the
+    true and false positive rates with each distinct score as threshold (a
+    row is positive when its score is at least the threshold), and the area
+    under the curve, ties counting half.
+    
+    Parameters
+    ----------
+    y : list of float
+        0 or 1.
+    score : list of float
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict
+        ``thresholds`` (descending, from ``inf``), ``false_positive_rate``,
+        ``true_positive_rate`` and ``auc``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import roc
+    >>> roc([0.0, 0.0, 1.0, 1.0], [0.1, 0.4, 0.35, 0.8])["auc"]
+    0.75
     """
 
 def round_bucket(bs: float) -> float:
@@ -23108,6 +24266,47 @@ def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> li
     >>> g = severity_exposure_curve(Pareto(1e5, 1.5), 1e7, [0.0, 0.5, 1.0])
     >>> g[0], round(g[2], 12), g[1] > 0.5
     (0.0, 1.0, True)
+    """
+
+def shapley(pd: PredictiveDistribution, cost: Any) -> Allocation:
+    """
+    The Shapley value of the game whose cost is ``cost`` of each
+    sub-portfolio, for any cost function, not only a distortion: a
+    standard deviation premium, a variance, an expected utility.
+    
+    ``cost`` is called with a list of the sub-portfolio's total in each
+    simulation, in simulation order, once for each of the ``2**m - 1``
+    non-empty sub-portfolios (the empty one costs 0), and returns a float.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+        Components that add up to the portfolio; at most 12.
+    cost : callable
+        ``cost(draws: list[float]) -> float``.
+    
+    Returns
+    -------
+    Allocation
+        ``total`` is ``cost`` of the whole portfolio, ``standalone`` that of
+        each component, ``allocated`` the Shapley values, summing to
+        ``total``; ``method`` is ``"shapley"``.
+    
+    Raises
+    ------
+    ValueError
+        For more than 12 components or a cost that is not finite.
+    
+    Examples
+    --------
+    >>> import statistics
+    >>> from prospicio.distributions import PredictiveDistribution
+    >>> from prospicio.risk import shapley
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> a = shapley(pd, lambda x: statistics.fmean(x) + statistics.pstdev(x))
+    >>> round(sum(a.allocated) - a.total, 12)
+    0.0
     """
 
 def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
@@ -23296,6 +24495,48 @@ def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     [0.5, 0.5]
     """
 
+def target_encode(values: Sequence[str], y: Sequence[float], expected: Sequence[float], splits: Sequence[tuple[Sequence[int], Sequence[int]]], k: float, exposure: Sequence[float] |None = None) -> tuple[list[float], TargetEncoding]:
+    """
+    Out-of-fold target encoding of a high-cardinality factor with
+    credibility (CAS Monograph 16, chapter 6): each level's
+    actual-to-expected ratio shrunk to 1 by ``z = n / (n + k)``, ``n`` its
+    exposure, ``z * A / E + (1 - z)``. Each training row is encoded from the
+    other folds only, so its own response never enters its encoding; the
+    returned ``TargetEncoding``, from all rows, encodes new data. Its log
+    enters a GLM as a numeric column.
+    
+    Parameters
+    ----------
+    values : list of str
+        The factor's level per row.
+    y : list of float
+        Actual responses.
+    expected : list of float
+        Expected responses: the overall mean times exposure, or a first
+        model's predictions.
+    splits : list of (list of int, list of int)
+        From ``k_fold`` or ``group_k_fold``; every row in exactly one test
+        set.
+    k : float
+        The credibility constant ``K``.
+    exposure : list of float, optional
+        Credibility weights; 1 per row by default.
+    
+    Returns
+    -------
+    tuple of (list of float, TargetEncoding)
+        The out-of-fold encoding of each training row, and the encoding for
+        new data.
+    
+    Examples
+    --------
+    >>> from prospicio.models import target_encode
+    >>> splits = [([1, 3], [0, 2]), ([0, 2], [1, 3])]
+    >>> rows, enc = target_encode(["a", "a", "b", "b"], [2.0, 2.0, 0.0, 1.0], [1.0] * 4, splits, 1.0)
+    >>> rows[0]
+    1.5
+    """
+
 def threshold_diagnostics(draws: Sequence[float], thresholds: Sequence[float]) -> dict:
     """
     Threshold diagnostics for peaks over threshold: at each threshold the
@@ -23424,6 +24665,49 @@ def trended_present_rates(prior_indicated: float, prior_implemented: float, tren
     228.82
     """
 
+def tweedie_profile(design: Design, y: Sequence[float], powers: Sequence[float], link: str |None = None) -> Any:
+    """
+    The profile log-likelihood of a Tweedie GLM's power over ``powers``
+    (increasing, in ``(1, 2)``), the best refined between its neighbours.
+    
+    Returns
+    -------
+    dict
+        ``powers``, ``log_likelihood`` and ``dispersion`` (one per power),
+        the refined ``power``, its ``phi`` and ``max_log_likelihood``, and
+        the ``fit`` there (``GlmFit``).
+    """
+
+def vif(design: Design) -> list[float]:
+    """
+    Variance inflation factors of a design's columns, ``1 / (1 - R2_j)``
+    with ``R2_j`` that of column ``j`` on the others and an intercept (CAS
+    Monograph 5, section 2.9). A constant column (the intercept) gets
+    ``nan``.
+    
+    Parameters
+    ----------
+    design : Design
+    
+    Returns
+    -------
+    list of float
+        One per column, in the design's order.
+    
+    Raises
+    ------
+    ValueError
+        If the non-constant columns are collinear.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, vif
+    >>> d = Design([[1.0] * 4, [1.0, 2.0, 3.0, 4.0], [1.0, -1.0, -1.0, 1.0]],
+    ...            ["(Intercept)", "x", "z"])
+    >>> [round(v, 12) for v in vif(d)[1:]]
+    [1.0, 1.0]
+    """
+
 def wiener_hopf(severity: Grid, wait: Any, rho: float |None = None, *, loss_ratio: float |None = None, points: int |None = None) -> RenewalRuin:
     """
     The probability of eventual ruin when the waits between claims follow
@@ -23461,6 +24745,37 @@ def wiener_hopf(severity: Grid, wait: Any, rho: float |None = None, *, loss_rati
     >>> pk = eventual_ruin(sev, rho=0.2)
     >>> wh.psi_at(50.0) < pk.psi_at(50.0)
     True
+    """
+
+def worst_var(marginals: Sequence[Any], p: float, n: int = 100, rotate: int |None = None, seed: int |None = None, tolerance: float = 1e-6) -> dict:
+    """
+    The worst VaR at ``p`` of a sum of severities with unknown dependence, by
+    the Rearrangement Algorithm on ``n`` quantiles of each from ``p`` up
+    (Embrechts, Puccetti and Rueschendorf's lower matrix; *Pricing Insurance
+    Risk*, Exercise 59). A heuristic: the start (``rotate`` or ``seed``)
+    makes it reproducible.
+    
+    Parameters
+    ----------
+    marginals : list of severity
+    p : float
+    n : int, default 100
+    rotate : int, optional
+    seed : int, optional
+    tolerance : float, default 1e-6
+    
+    Returns
+    -------
+    dict
+        As ``rearrange``; ``value`` is the worst VaR estimate.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Lognormal
+    >>> from prospicio.risk import worst_var
+    >>> m = [Lognormal.from_mean_cv(10.0, cv) for cv in (1.0, 2.0, 3.0)]
+    >>> round(worst_var(m, 0.99, n=40, rotate=19)["value"], 1)
+    352.9
     """
 
 def year_fraction(year: int, month: int, day: int) -> float:

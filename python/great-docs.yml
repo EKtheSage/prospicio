@@ -122,6 +122,11 @@ reference:
       - models.Design
       - models.Glm
       - models.GlmFit
+      - models.TweedieGlm
+      - models.TweedieFit
+      - models.tweedie_profile
+      - models.NegativeBinomialGlm
+      - models.NegativeBinomialFit
       - models.BayesGlm
       - models.BayesGlmFit
       - models.ElasticNet
@@ -137,14 +142,24 @@ reference:
       - models.OnnxModel
       - models.OnnxPredictor
       - models.deviance
+      - models.f_test
+      - models.likelihood_ratio_test
+      - models.vif
       - models.gini
+      - models.normalized_gini
       - models.lift
+      - models.double_lift
+      - models.loss_ratio_chart
+      - models.roc
+      - models.confusion_matrix
       - models.crps
       - models.log_score
       - models.pit
       - models.pit_from_draws
       - models.pit_histogram
       - models.ks_uniform
+      - models.target_encode
+      - models.TargetEncoding
       - models.k_fold
       - models.group_k_fold
       - models.time_ordered
@@ -288,12 +303,18 @@ reference:
       - risk.calibrate
       - risk.allocate
       - risk.capital
+      - risk.shapley
+      - risk.haircut
+      - risk.equal_risk
+      - risk.rearrange
+      - risk.worst_var
       - risk.entropic
       - risk.esscher
       - risk.marginal_expected_shortfall
       - risk.covar
       - risk.esscher_allocation
       - risk.Allocation
+      - risk.LevelAllocation
   - title: Dependence
     desc: Copulas, and reordering existing draws to a target correlation.
     contents:

@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("seventy-five functions registered", registered == 75);
+    check("eighty-six functions registered", registered == 86);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -569,6 +569,58 @@ int main(int argc, char **argv) {
           (hl->xltype & 0xFFF) == xltypeMulti && hl->val.array.rows == 2 &&
               fabs(hl->val.array.lparray[6].val.num - 2 * log(2.0)) < 1e-12);
     free12(hl);
+
+    /* One payment after a year at 10%: the discount factor is 1 / 1.1. */
+    XLOPER12 py_t, py_r;
+    py_t.xltype = py_r.xltype = xltypeNum;
+    py_t.val.num = 1;
+    py_r.val.num = 0.1;
+    XLOPER12 *ps = ((Fn5)GetProcAddress(xll, "pro_payout_stats"))(&py_t, &py_t, &py_r, &missing, &missing);
+    check("PRO.PAYOUT.STATS one payment after a year at 10% is 1 / 1.1",
+          (ps->xltype & 0xFFF) == xltypeMulti && ps->val.array.rows == 3 &&
+              fabs(ps->val.array.lparray[1].val.num - 1 / 1.1) < 1e-15);
+    free12(ps);
+
+    /* A risk premium of 87 with 3% expenses and 10% brokerage grosses up
+     * to a technical premium of 100. */
+    XLOPER12 q_e, q_r, q_x, q_b;
+    q_e.xltype = q_r.xltype = q_x.xltype = q_b.xltype = xltypeNum;
+    q_e.val.num = 50;
+    q_r.val.num = 87;
+    q_x.val.num = 0.03;
+    q_b.val.num = 0.10;
+    XLOPER12 *qt = ((Fn8)GetProcAddress(xll, "pro_quote"))(&q_e, &q_r, &missing, &q_x, &q_b, &missing, &missing,
+                                                           &missing);
+    check("PRO.QUOTE grosses a risk premium of 87 up to 100",
+          (qt->xltype & 0xFFF) == xltypeMulti && qt->val.array.columns == 2 &&
+              fabs(qt->val.array.lparray[3].val.num - 100) < 1e-12);
+    free12(qt);
+
+    /* The proportional hazard with rho 0.5 at s = 0.25: g = 0.25^0.5. */
+    static wchar_t phd_s[] = L"\x02" L"ph";
+    XLOPER12 d_s, d_f, d_p;
+    d_s.xltype = d_p.xltype = xltypeNum;
+    d_s.val.num = 0.25;
+    d_p.val.num = 0.5;
+    d_f.xltype = xltypeStr;
+    d_f.val.str = phd_s;
+    XLOPER12 *dg = ((Fn4)GetProcAddress(xll, "pro_distortion"))(&d_s, &d_f, &d_p, &missing);
+    check("PRO.DISTORTION(0.25, \"ph\", 0.5) is 0.5",
+          (dg->xltype & 0xFFF) == xltypeNum && fabs(dg->val.num - 0.5) < 1e-15);
+    free12(dg);
+
+    /* A profit commission of 25% after a 10% allowance on a premium of
+     * 100 at a loss of 50: 0.25 x (90 - 50) = 10. */
+    XLOPER12 pc_x, pc_p, pc_s, pc_a;
+    pc_x.xltype = pc_p.xltype = pc_s.xltype = pc_a.xltype = xltypeNum;
+    pc_x.val.num = 50;
+    pc_p.val.num = 100;
+    pc_s.val.num = 0.25;
+    pc_a.val.num = 0.1;
+    XLOPER12 *pcm = ((Fn4)GetProcAddress(xll, "pro_profit_commission"))(&pc_x, &pc_p, &pc_s, &pc_a);
+    check("PRO.PROFIT.COMMISSION(50, 100, 0.25, 0.1) is 10",
+          (pcm->xltype & 0xFFF) == xltypeNum && fabs(pcm->val.num - 10) < 1e-12);
+    free12(pcm);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

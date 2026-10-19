@@ -170,6 +170,11 @@ impl MackFit {
                 "the latest values must lie on one calendar diagonal, one new origin per period",
             ));
         }
+        if self.exclusions_set {
+            return Err(Error::ClaimsDevelopment(
+                "n_periods, drop_high and drop_low are not yet supported, it needs every link ratio",
+            ));
+        }
 
         // Per factor k: sigma_k^2 / f_k^2, the volume S_k behind f_k, and
         // the share of the next estimate of f_k that comes from the latest

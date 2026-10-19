@@ -22,6 +22,7 @@
 pub mod artifact;
 pub mod compare;
 pub mod design;
+pub mod encode;
 pub mod family;
 pub mod link;
 pub mod metrics;

@@ -598,6 +598,15 @@ error for a shifted fit without positive skewness, and for a gamma or
 lognormal fit without a positive mean. `Aggregate.approximate` fits the
 moments estimated from its grid; prospicio fits the exact ones.
 
+Two more, not in `aggregate` but in Bahnemann (CAS Monograph 2, section
+4.4), are defined by their quantiles: the normal power
+`x_p = m + σ (z + skew (z² − 1)/6)`, whose distribution function inverts
+the quadratic on its increasing branch, and Wilson–Hilferty
+`x_p = m + σ (2/skew) ((1 + skew z/6 − skew²/36)³ − 1)`, the cube-root
+normal approximation of the shifted gamma with the same moments (within
+0.3% of its quantiles to the 99.9th at skewness 0.5). Both need a positive
+skewness (#329).
+
 ### Layer statistics and prices by view
 
 `aggregate`'s `reins_stats_df` and `reins_price_df`, built from the pieces

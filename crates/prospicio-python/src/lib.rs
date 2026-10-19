@@ -74,10 +74,13 @@ mod prospicio_native {
     use super::models::{
         PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyElasticNet,
         PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyHierarchicalStacking,
-        PyStackingFit, PyTerms, actual_vs_expected, crps, deviance, elpd_loo, elpd_waic, gini,
-        group_k_fold, k_fold, ks_uniform, lift, log_score, loo_pit, lppd, mcmc_diagnostics,
-        pinball_loss, pit, pit_from_draws, pit_histogram, ppc_check, pseudo_bma_weights,
-        simulate_from_means, stacking_weights, time_ordered,
+        PyNegativeBinomialFit, PyNegativeBinomialGlm, PyStackingFit, PyTargetEncoding, PyTerms,
+        PyTweedieFit, PyTweedieGlm, actual_vs_expected, confusion_matrix, crps, deviance,
+        double_lift, elpd_loo, elpd_waic, f_test, gini, group_k_fold, k_fold, ks_uniform, lift,
+        likelihood_ratio_test, log_score, loo_pit, loss_ratio_chart, lppd, mcmc_diagnostics,
+        normalized_gini, pinball_loss, pit, pit_from_draws, pit_histogram, ppc_check,
+        pseudo_bma_weights, roc, simulate_from_means, stacking_weights, target_encode,
+        time_ordered, tweedie_profile, vif,
     };
     #[pymodule_export]
     use super::natural::{
@@ -138,8 +141,9 @@ mod prospicio_native {
     #[pymodule_export]
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
-        PyNestedArchimedeanCopula, PyPairCopula, PyPotTail, PyStudentTCopula, PyVineCopula,
-        allocate, calibrate, capital, covar, entropic, esscher, esscher_allocation, hill,
-        iman_conover, marginal_expected_shortfall, mean_excess, simulate, threshold_diagnostics,
+        PyLevelAllocation, PyNestedArchimedeanCopula, PyPairCopula, PyPotTail, PyStudentTCopula,
+        PyVineCopula, allocate, calibrate, capital, covar, entropic, equal_risk, esscher,
+        esscher_allocation, haircut, hill, iman_conover, marginal_expected_shortfall, mean_excess,
+        rearrange, shapley, simulate, threshold_diagnostics, worst_var,
     };
 }

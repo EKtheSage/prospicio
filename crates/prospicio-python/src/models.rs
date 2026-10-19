@@ -117,7 +117,8 @@ fn with_offset_weights(
     Ok(d)
 }
 
-/// The terms of a model: an intercept, numeric columns and factors.
+/// The terms of a model: an intercept, numeric columns, factors,
+/// interactions, polynomials, hinges, steps, bins, logs and ordinals.
 ///
 /// Build them up, then ``fit`` them to training data to learn the factor
 /// levels; the result builds the same design matrix on any data.
@@ -187,6 +188,197 @@ impl PyTerms {
             None => self.inner.clone().factor(name),
         };
         Self { inner }
+    }
+
+    /// Adds the interaction of two columns: the product of their coded
+    /// columns, each numeric as is or a factor in treatment coding (first
+    /// level as reference), named ``a:b``, ``a[x]:b`` or ``a[x]:b[y]``, as
+    /// R's ``a:b`` beside main effects (CAS Monograph 5, section 5.6).
+    ///
+    /// Parameters
+    /// ----------
+    /// a : str
+    /// b : str
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn interaction(&self, a: &str, b: &str) -> Self {
+        Self {
+            inner: self.inner.clone().interaction(a, b),
+        }
+    }
+
+    /// Adds raw powers ``x, x**2, ..., x**degree`` of a numeric column,
+    /// named ``x``, ``x^2``, ....
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// degree : int
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn poly(&self, name: &str, degree: usize) -> Self {
+        Self {
+            inner: self.inner.clone().poly(name, degree),
+        }
+    }
+
+    /// Adds hinge functions ``max(0, x - k)`` at each knot, named
+    /// ``hinge(x,k)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// knots : list of float
+    ///     Strictly increasing.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn hinges(&self, name: &str, knots: Vec<f64>) -> Self {
+        Self {
+            inner: self.inner.clone().hinges(name, &knots),
+        }
+    }
+
+    /// Adds steps ``1[x >= k]`` at each knot, named ``step(x,k)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// knots : list of float
+    ///     Strictly increasing.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn steps(&self, name: &str, knots: Vec<f64>) -> Self {
+        Self {
+            inner: self.inner.clone().steps(name, &knots),
+        }
+    }
+
+    /// Adds a numeric column cut into bins ``(-inf, c1], (c1, c2], ...,
+    /// (ck, inf)`` and coded as a factor, named as R's ``cut``
+    /// (``x[(30,45]]``).
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// cuts : list of float
+    ///     Strictly increasing.
+    /// reference : int, optional
+    ///     Index of the reference bin; the lowest by default.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    #[pyo3(signature = (name, cuts, reference = None))]
+    fn bins(&self, name: &str, cuts: Vec<f64>, reference: Option<usize>) -> Self {
+        Self {
+            inner: self.inner.clone().term(prospicio_models::Term::Bins {
+                name: name.into(),
+                cuts,
+                reference,
+            }),
+        }
+    }
+
+    /// Adds ``log(x / base)``, named ``log(x/base)``: a log transform
+    /// centred at a base value (CAS Monograph 5, section 5.6.2).
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// base : float
+    ///     Positive.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn log(&self, name: &str, base: f64) -> Self {
+        Self {
+            inner: self.inner.clone().log(name, base),
+        }
+    }
+
+    /// Adds orthogonal polynomials of degree 1 to ``degree`` on the
+    /// training values, as R's ``poly(x, degree)``, named ``poly(x)1``,
+    /// ...; the recurrence learned at ``fit`` rebuilds them on new data.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// degree : int
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn orthogonal_poly(&self, name: &str, degree: usize) -> Self {
+        Self {
+            inner: self.inner.clone().orthogonal_poly(name, degree),
+        }
+    }
+
+    /// Adds a natural cubic spline with interior ``knots``, linear beyond
+    /// the boundary knots (the training range unless given):
+    /// ``len(knots) + 1`` columns named ``spline(x)1``, .... The basis is
+    /// the restricted cubic one, which spans the same functions as R's
+    /// ``splines::ns(x, knots)``: fitted values agree, coefficients differ.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// knots : list of float
+    ///     Interior knots, strictly increasing.
+    /// boundary : tuple of float, optional
+    ///     The boundary knots; the training minimum and maximum by default.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    #[pyo3(signature = (name, knots, boundary = None))]
+    fn natural_spline(&self, name: &str, knots: Vec<f64>, boundary: Option<(f64, f64)>) -> Self {
+        Self {
+            inner: self
+                .inner
+                .clone()
+                .term(prospicio_models::Term::NaturalSpline {
+                    name: name.into(),
+                    knots,
+                    boundary,
+                }),
+        }
+    }
+
+    /// Adds an ordered factor in cumulative coding: for each level after
+    /// the first, ``1[level >= it]``, named ``x[>=level]``, so each
+    /// coefficient is the step from the level below.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// levels : list of str
+    ///     The levels in order, lowest first.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.models import Terms
+    /// >>> data = {"size": ["small", "large", "medium"]}
+    /// >>> Terms().ordinal("size", ["small", "medium", "large"]).fit(data).names
+    /// ['size[>=medium]', 'size[>=large]']
+    fn ordinal(&self, name: &str, levels: Vec<String>) -> Self {
+        let levels: Vec<&str> = levels.iter().map(String::as_str).collect();
+        Self {
+            inner: self.inner.clone().ordinal(name, &levels),
+        }
     }
 
     /// Learns factor levels from training data.
@@ -701,6 +893,13 @@ impl PyGlmFit {
         self.inner.aic()
     }
 
+    /// BIC, ``-2 loglik + p log(n)``, counting the coefficients as ``aic``
+    /// does (R's ``BIC`` also counts an estimated dispersion).
+    #[getter]
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
     /// Residual degrees of freedom.
     #[getter]
     fn df_resid(&self) -> f64 {
@@ -731,6 +930,125 @@ impl PyGlmFit {
     /// list of float
     fn predict(&self, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
         self.inner.predict(&design.inner).map_err(to_py)
+    }
+
+    /// Residuals, leverages and Cook's distances on ``design`` and ``y``
+    /// (normally the training data), as R's ``residuals.glm``,
+    /// ``hatvalues``, ``rstandard`` and ``cooks.distance``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     Same columns as the training design.
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     Lists of ``fitted``, ``response``, ``pearson``, ``deviance``,
+    ///     ``working`` residuals, ``working_weights``, ``leverage`` (hat
+    ///     values), ``standardized_pearson``, ``standardized_deviance`` and
+    ///     ``cooks_distance``.
+    fn diagnostics<'py>(
+        &self,
+        py: Python<'py>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let d = self.inner.diagnostics(&design.inner, &y).map_err(to_py)?;
+        let out = pyo3::types::PyDict::new(py);
+        out.set_item("fitted", d.fitted)?;
+        out.set_item("response", d.response)?;
+        out.set_item("pearson", d.pearson)?;
+        out.set_item("deviance", d.deviance)?;
+        out.set_item("working", d.working)?;
+        out.set_item("working_weights", d.working_weights)?;
+        out.set_item("leverage", d.leverage)?;
+        out.set_item("standardized_pearson", d.standardized_pearson)?;
+        out.set_item("standardized_deviance", d.standardized_deviance)?;
+        out.set_item("cooks_distance", d.cooks_distance)?;
+        Ok(out)
+    }
+
+    /// Standard error of each row's predicted mean (parameter error only),
+    /// ``|dmu/deta| sqrt(x' Sigma x)``, as R's
+    /// ``predict(type = "response", se.fit = TRUE)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn prediction_se(&self, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        self.inner.prediction_se(&design.inner).map_err(to_py)
+    }
+
+    /// The prediction error of the sum of the predicted means of
+    /// ``design``'s rows (a reserve: an origin's future cells): parameter
+    /// error by the delta method, ``g' Sigma g`` with ``g`` the sum of
+    /// ``dmu/deta x``, and process error ``sum(phi V(mu) / w)`` (Taylor and
+    /// McGuire, CAS Monograph 3, (5-11) to (5-13)).
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``total``, ``parameter_variance``, ``process_variance`` and
+    ///     ``rmsep``.
+    fn sum_prediction_error(&self, design: PyRef<'_, PyDesign>) -> PyResult<HashMap<String, f64>> {
+        let e = self
+            .inner
+            .sum_prediction_error(&design.inner)
+            .map_err(to_py)?;
+        Ok(HashMap::from([
+            ("total".to_string(), e.total),
+            ("parameter_variance".to_string(), e.parameter_variance),
+            ("process_variance".to_string(), e.process_variance),
+            ("rmsep".to_string(), e.rmsep()),
+        ]))
+    }
+
+    /// Generalized cross-validation, ``n sum((y - mu)**2) / (n - p)**2``
+    /// (Taylor and McGuire, section 4.4).
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn gcv(&self, design: PyRef<'_, PyDesign>, y: Vec<f64>) -> PyResult<f64> {
+        self.inner.gcv(&design.inner, &y).map_err(to_py)
+    }
+
+    /// The log-likelihood of ``y`` at the fitted means and a given
+    /// dispersion, to compare models at one held dispersion.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// dispersion : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn log_likelihood_at(
+        &self,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        dispersion: f64,
+    ) -> PyResult<f64> {
+        self.inner
+            .log_likelihood_at(&design.inner, &y, dispersion)
+            .map_err(to_py)
     }
 
     /// Joint predictive distribution across the rows, with parameter and
@@ -1617,6 +1935,114 @@ pub(crate) fn deviance(
     metrics::deviance(f, &y, &mu, weights.as_deref()).map_err(to_py)
 }
 
+/// The F test of a GLM within a larger one that contains it, as R's
+/// ``anova(small, big, test = "F")``: ``F = (D_small - D_big) / (q phi_big)``
+/// on ``F(q, n - p_big)`` (CAS Monograph 5, section 6.2.1). For a family
+/// whose dispersion is estimated.
+///
+/// The models are not checked to be nested: ``small``'s columns must lie in
+/// the span of ``big``'s, on the same rows, family and weights.
+///
+/// Parameters
+/// ----------
+/// small : GlmFit
+/// big : GlmFit
+///
+/// Returns
+/// -------
+/// dict
+///     ``statistic``, ``df`` (``q``), ``df_resid``, ``deviance_drop`` and
+///     ``p_value``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the models differ in rows or ``big`` has no more coefficients.
+#[pyfunction]
+pub(crate) fn f_test<'py>(
+    py: Python<'py>,
+    small: PyRef<'_, PyGlmFit>,
+    big: PyRef<'_, PyGlmFit>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    nested_dict(py, prospicio_glm::nested::f_test(&small.inner, &big.inner))
+}
+
+/// The likelihood ratio test of a GLM within a larger one, as R's
+/// ``anova(small, big, test = "Chisq")``: the scaled deviance drop
+/// ``(D_small - D_big) / phi_big`` on ``chi2(q)``. For a family whose
+/// dispersion is known (Poisson, binomial).
+///
+/// Parameters
+/// ----------
+/// small : GlmFit
+/// big : GlmFit
+///
+/// Returns
+/// -------
+/// dict
+///     As ``f_test``, with ``df_resid`` infinite.
+///
+/// Raises
+/// ------
+/// ValueError
+///     As ``f_test``.
+#[pyfunction]
+pub(crate) fn likelihood_ratio_test<'py>(
+    py: Python<'py>,
+    small: PyRef<'_, PyGlmFit>,
+    big: PyRef<'_, PyGlmFit>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    nested_dict(
+        py,
+        prospicio_glm::nested::likelihood_ratio_test(&small.inner, &big.inner),
+    )
+}
+
+fn nested_dict<'py>(
+    py: Python<'py>,
+    test: prospicio_core::Result<prospicio_glm::nested::NestedTest>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let t = test.map_err(to_py)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("statistic", t.statistic)?;
+    out.set_item("df", t.df)?;
+    out.set_item("df_resid", t.df_resid)?;
+    out.set_item("deviance_drop", t.deviance_drop)?;
+    out.set_item("p_value", t.p_value)?;
+    Ok(out)
+}
+
+/// Variance inflation factors of a design's columns, ``1 / (1 - R2_j)``
+/// with ``R2_j`` that of column ``j`` on the others and an intercept (CAS
+/// Monograph 5, section 2.9). A constant column (the intercept) gets
+/// ``nan``.
+///
+/// Parameters
+/// ----------
+/// design : Design
+///
+/// Returns
+/// -------
+/// list of float
+///     One per column, in the design's order.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the non-constant columns are collinear.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, vif
+/// >>> d = Design([[1.0] * 4, [1.0, 2.0, 3.0, 4.0], [1.0, -1.0, -1.0, 1.0]],
+/// ...            ["(Intercept)", "x", "z"])
+/// >>> [round(v, 12) for v in vif(d)[1:]]
+/// [1.0, 1.0]
+#[pyfunction]
+pub(crate) fn vif(design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+    metrics::vif(&design.inner).map_err(to_py)
+}
+
 /// Gini index of the ordered Lorenz curve.
 ///
 /// Parameters
@@ -1667,6 +2093,195 @@ pub(crate) fn lift(
             ])
         })
         .collect())
+}
+
+/// The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
+/// sorted by ``y / exposure``). For a 0/1 response with unit exposure,
+/// ``AUROC = (1 + normalized Gini) / 2`` (CAS Monograph 5, footnote 17).
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+/// exposure : list of float, optional
+///
+/// Returns
+/// -------
+/// float
+#[pyfunction]
+#[pyo3(signature = (y, pred, exposure = None))]
+pub(crate) fn normalized_gini(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+) -> PyResult<f64> {
+    metrics::normalized_gini(&y, &pred, exposure.as_deref()).map_err(to_py)
+}
+
+/// The double lift chart of two models (CAS Monograph 5, section 7.2.2):
+/// rows sorted by ``pred_a / pred_b``, cut into bands of about equal
+/// exposure, with each band's actual and predicted averages over their
+/// overall averages (each model against its own).
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred_a : list of float
+/// pred_b : list of float
+///     Positive.
+/// exposure : list of float, optional
+/// bands : int, default 10
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``exposure``, ``actual``, ``model_a``, ``model_b`` (band totals),
+///     ``actual_relativity``, ``a_relativity`` and ``b_relativity`` per band.
+#[pyfunction]
+#[pyo3(signature = (y, pred_a, pred_b, exposure = None, bands = 10))]
+pub(crate) fn double_lift(
+    y: Vec<f64>,
+    pred_a: Vec<f64>,
+    pred_b: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+    bands: usize,
+) -> PyResult<Vec<HashMap<String, f64>>> {
+    let table =
+        metrics::double_lift(&y, &pred_a, &pred_b, exposure.as_deref(), bands).map_err(to_py)?;
+    Ok(table
+        .into_iter()
+        .map(|b| {
+            HashMap::from([
+                ("exposure".to_string(), b.exposure),
+                ("actual".to_string(), b.actual),
+                ("model_a".to_string(), b.model_a),
+                ("model_b".to_string(), b.model_b),
+                ("actual_relativity".to_string(), b.actual_relativity),
+                ("a_relativity".to_string(), b.a_relativity),
+                ("b_relativity".to_string(), b.b_relativity),
+            ])
+        })
+        .collect())
+}
+
+/// The loss ratio chart (CAS Monograph 5, section 7.2.3): rows sorted by
+/// predicted loss ratio ``pred / premium`` against the current premium,
+/// cut into bands of about equal exposure, with each band's actual loss
+/// ratio.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+/// premium : list of float
+///     Current premium, positive.
+/// exposure : list of float, optional
+/// bands : int, default 10
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``exposure``, ``premium``, ``expected``, ``actual``, ``loss_ratio``
+///     and ``expected_loss_ratio`` per band.
+#[pyfunction]
+#[pyo3(signature = (y, pred, premium, exposure = None, bands = 10))]
+pub(crate) fn loss_ratio_chart(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    premium: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+    bands: usize,
+) -> PyResult<Vec<HashMap<String, f64>>> {
+    let table = metrics::loss_ratio_chart(&y, &pred, &premium, exposure.as_deref(), bands)
+        .map_err(to_py)?;
+    Ok(table
+        .into_iter()
+        .map(|b| {
+            HashMap::from([
+                ("exposure".to_string(), b.exposure),
+                ("premium".to_string(), b.premium),
+                ("expected".to_string(), b.expected),
+                ("actual".to_string(), b.actual),
+                ("loss_ratio".to_string(), b.loss_ratio()),
+                ("expected_loss_ratio".to_string(), b.expected_loss_ratio()),
+            ])
+        })
+        .collect())
+}
+
+/// The ROC curve of a binary model (CAS Monograph 5, section 7.3.1): the
+/// true and false positive rates with each distinct score as threshold (a
+/// row is positive when its score is at least the threshold), and the area
+/// under the curve, ties counting half.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+///     0 or 1.
+/// score : list of float
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// dict
+///     ``thresholds`` (descending, from ``inf``), ``false_positive_rate``,
+///     ``true_positive_rate`` and ``auc``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import roc
+/// >>> roc([0.0, 0.0, 1.0, 1.0], [0.1, 0.4, 0.35, 0.8])["auc"]
+/// 0.75
+#[pyfunction]
+#[pyo3(signature = (y, score, weights = None))]
+pub(crate) fn roc<'py>(
+    py: Python<'py>,
+    y: Vec<f64>,
+    score: Vec<f64>,
+    weights: Option<Vec<f64>>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let r = metrics::roc(&y, &score, weights.as_deref()).map_err(to_py)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("thresholds", r.thresholds)?;
+    out.set_item("false_positive_rate", r.false_positive_rate)?;
+    out.set_item("true_positive_rate", r.true_positive_rate)?;
+    out.set_item("auc", r.auc)?;
+    Ok(out)
+}
+
+/// The confusion matrix of a binary model at ``threshold`` (a row is
+/// positive when its score is at least the threshold), weighted counts.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+///     0 or 1.
+/// score : list of float
+/// threshold : float
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// dict
+///     ``true_positive``, ``false_positive``, ``true_negative``,
+///     ``false_negative``, ``sensitivity`` and ``specificity``.
+#[pyfunction]
+#[pyo3(signature = (y, score, threshold, weights = None))]
+pub(crate) fn confusion_matrix(
+    y: Vec<f64>,
+    score: Vec<f64>,
+    threshold: f64,
+    weights: Option<Vec<f64>>,
+) -> PyResult<HashMap<String, f64>> {
+    let c = metrics::confusion_matrix(&y, &score, threshold, weights.as_deref()).map_err(to_py)?;
+    Ok(HashMap::from([
+        ("true_positive".to_string(), c.true_positive),
+        ("false_positive".to_string(), c.false_positive),
+        ("true_negative".to_string(), c.true_negative),
+        ("false_negative".to_string(), c.false_negative),
+        ("sensitivity".to_string(), c.sensitivity()),
+        ("specificity".to_string(), c.specificity()),
+    ]))
 }
 
 /// Weighted mean pinball (quantile) loss of predictions of the ``alpha``
@@ -1839,6 +2454,120 @@ pub(crate) fn pit_histogram(pit: Vec<f64>, bins: usize) -> PyResult<Vec<usize>> 
 #[pyfunction]
 pub(crate) fn ks_uniform(values: Vec<f64>) -> PyResult<f64> {
     metrics::ks_uniform(&values).map_err(to_py)
+}
+
+/// The encoding of each level of a factor learned from all the training
+/// rows, from ``target_encode``.
+#[pyclass(name = "TargetEncoding", module = "prospicio.models", frozen)]
+pub(crate) struct PyTargetEncoding {
+    inner: prospicio_models::encode::TargetEncoding,
+}
+
+#[pymethods]
+impl PyTargetEncoding {
+    /// The levels seen in training, sorted.
+    #[getter]
+    fn levels(&self) -> Vec<String> {
+        self.inner.levels.clone()
+    }
+
+    /// Each level's credibility-weighted actual-to-expected ratio.
+    #[getter]
+    fn ratios(&self) -> Vec<f64> {
+        self.inner.ratios.clone()
+    }
+
+    /// The credibility constant ``K``.
+    #[getter]
+    fn k(&self) -> f64 {
+        self.inner.k
+    }
+
+    /// The encoding of each value of new data; a level not seen in
+    /// training gets 1.
+    ///
+    /// Parameters
+    /// ----------
+    /// values : list of str
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn encode(&self, values: Vec<String>) -> Vec<f64> {
+        self.inner.encode(&values)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TargetEncoding(levels={}, k={})",
+            self.inner.levels.len(),
+            self.inner.k
+        )
+    }
+}
+
+/// Out-of-fold target encoding of a high-cardinality factor with
+/// credibility (CAS Monograph 16, chapter 6): each level's
+/// actual-to-expected ratio shrunk to 1 by ``z = n / (n + k)``, ``n`` its
+/// exposure, ``z * A / E + (1 - z)``. Each training row is encoded from the
+/// other folds only, so its own response never enters its encoding; the
+/// returned ``TargetEncoding``, from all rows, encodes new data. Its log
+/// enters a GLM as a numeric column.
+///
+/// Parameters
+/// ----------
+/// values : list of str
+///     The factor's level per row.
+/// y : list of float
+///     Actual responses.
+/// expected : list of float
+///     Expected responses: the overall mean times exposure, or a first
+///     model's predictions.
+/// splits : list of (list of int, list of int)
+///     From ``k_fold`` or ``group_k_fold``; every row in exactly one test
+///     set.
+/// k : float
+///     The credibility constant ``K``.
+/// exposure : list of float, optional
+///     Credibility weights; 1 per row by default.
+///
+/// Returns
+/// -------
+/// tuple of (list of float, TargetEncoding)
+///     The out-of-fold encoding of each training row, and the encoding for
+///     new data.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import target_encode
+/// >>> splits = [([1, 3], [0, 2]), ([0, 2], [1, 3])]
+/// >>> rows, enc = target_encode(["a", "a", "b", "b"], [2.0, 2.0, 0.0, 1.0], [1.0] * 4, splits, 1.0)
+/// >>> rows[0]
+/// 1.5
+#[pyfunction]
+#[pyo3(signature = (values, y, expected, splits, k, exposure = None))]
+pub(crate) fn target_encode(
+    values: Vec<String>,
+    y: Vec<f64>,
+    expected: Vec<f64>,
+    splits: Vec<(Vec<usize>, Vec<usize>)>,
+    k: f64,
+    exposure: Option<Vec<f64>>,
+) -> PyResult<(Vec<f64>, PyTargetEncoding)> {
+    let splits: Vec<Split> = splits
+        .into_iter()
+        .map(|(train, test)| Split { train, test })
+        .collect();
+    let (rows, inner) = prospicio_models::encode::target_encode(
+        &values,
+        &y,
+        &expected,
+        exposure.as_deref(),
+        &splits,
+        k,
+    )
+    .map_err(to_py)?;
+    Ok((rows, PyTargetEncoding { inner }))
 }
 
 fn splits(s: Vec<Split>) -> Vec<(Vec<usize>, Vec<usize>)> {
@@ -2242,7 +2971,7 @@ pub(crate) fn actual_vs_expected<'py>(
         dispersion,
     )
     .map_err(to_py)?;
-    let row = |r: &prospicio_models::monitor::PeriodSummary<prospicio_prob::KeyValue>| -> PyResult<Bound<'py, PyDict>> {
+    let row = |r: &prospicio_models::monitor::PeriodSummary<prospicio_prob::KeyValue>| -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         let d = PyDict::new(py);
         if let Some(p) = &r.period {
             match p {
@@ -3076,4 +3805,253 @@ pub(crate) fn simulate_from_means(
         })
         .map_err(to_py)?;
     Ok(PyPredictiveDistribution { inner })
+}
+
+fn link_or_log(name: Option<&str>) -> PyResult<Link> {
+    link(Some(name.unwrap_or("log")), Family::Poisson, None)
+}
+
+/// A Tweedie GLM whose power is estimated with its coefficients and
+/// dispersion by maximum likelihood: the profile log-likelihood over the
+/// power, maximized by Brent's method, with a 95% profile-likelihood
+/// interval (R's ``tweedie.profile``'s method).
+///
+/// Parameters
+/// ----------
+/// link : str, default "log"
+/// min_power, max_power : float, default 1.01 and 1.99
+///     The search bounds, inside ``(1, 2)``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, TweedieGlm
+/// >>> from prospicio.distributions import Tweedie
+/// >>> import math
+/// >>> x = [float(i % 4) for i in range(400)]
+/// >>> y = [Tweedie(math.exp(0.5 + 0.3 * v), 2.0, 1.5).quantile((i * 0.618034) % 1 * 0.98 + 0.01)
+/// ...      for i, v in enumerate(x)]
+/// >>> fit = TweedieGlm().fit(Design([[1.0] * 400, x], ["(Intercept)", "x"]), y)
+/// >>> abs(fit.power - 1.5) < 0.1
+/// True
+#[pyclass(name = "TweedieGlm", module = "prospicio.models", frozen)]
+pub(crate) struct PyTweedieGlm {
+    inner: prospicio_glm::tweedie::TweedieGlm,
+}
+
+#[pymethods]
+impl PyTweedieGlm {
+    #[new]
+    #[pyo3(signature = (link = None, min_power = 1.01, max_power = 1.99))]
+    fn new(link: Option<&str>, min_power: f64, max_power: f64) -> PyResult<Self> {
+        let mut inner = prospicio_glm::tweedie::TweedieGlm::new(link_or_log(link)?);
+        inner.min_power = min_power;
+        inner.max_power = max_power;
+        Ok(Self { inner })
+    }
+
+    /// Fits the power, the dispersion and the coefficients.
+    ///
+    /// Returns
+    /// -------
+    /// TweedieFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyTweedieFit> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &y)).map_err(to_py)?;
+        Ok(PyTweedieFit { inner })
+    }
+}
+
+/// A Tweedie GLM with its power estimated, from ``TweedieGlm.fit``.
+#[pyclass(name = "TweedieFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyTweedieFit {
+    inner: prospicio_glm::tweedie::TweedieFit,
+}
+
+#[pymethods]
+impl PyTweedieFit {
+    /// The maximum-likelihood power.
+    #[getter]
+    fn power(&self) -> f64 {
+        self.inner.power()
+    }
+
+    /// The maximum-likelihood dispersion at that power.
+    #[getter]
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    /// The maximized log-likelihood.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    /// The 95% profile-likelihood interval for the power.
+    #[getter]
+    fn interval(&self) -> (f64, f64) {
+        self.inner.interval()
+    }
+
+    /// Whether each end of ``interval`` is a search bound rather than a
+    /// crossing.
+    #[getter]
+    fn interval_open(&self) -> (bool, bool) {
+        self.inner.interval_open()
+    }
+
+    /// Whether the power is at a search bound.
+    #[getter]
+    fn at_boundary(&self) -> bool {
+        self.inner.at_boundary()
+    }
+
+    /// The GLM at the estimated power, its dispersion fixed at the estimate.
+    #[getter]
+    fn glm(&self) -> PyGlmFit {
+        PyGlmFit {
+            inner: self.inner.glm().clone(),
+        }
+    }
+
+    /// Expected response for each row of ``design``.
+    fn predict(&self, py: Python<'_>, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict(d)).map_err(to_py)
+    }
+}
+
+/// The profile log-likelihood of a Tweedie GLM's power over ``powers``
+/// (increasing, in ``(1, 2)``), the best refined between its neighbours.
+///
+/// Returns
+/// -------
+/// dict
+///     ``powers``, ``log_likelihood`` and ``dispersion`` (one per power),
+///     the refined ``power``, its ``phi`` and ``max_log_likelihood``, and
+///     the ``fit`` there (``GlmFit``).
+#[pyfunction]
+#[pyo3(signature = (design, y, powers, link = None))]
+pub(crate) fn tweedie_profile(
+    py: Python<'_>,
+    design: PyRef<'_, PyDesign>,
+    y: Vec<f64>,
+    powers: Vec<f64>,
+    link: Option<&str>,
+) -> PyResult<Py<PyAny>> {
+    let l = link_or_log(link)?;
+    let d = &design.inner;
+    let p = py
+        .detach(|| prospicio_glm::tweedie::tweedie_profile(l, d, &y, &powers))
+        .map_err(to_py)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("powers", p.powers)?;
+    out.set_item("log_likelihood", p.log_likelihood)?;
+    out.set_item("dispersion", p.dispersion)?;
+    out.set_item("power", p.power)?;
+    out.set_item("phi", p.phi)?;
+    out.set_item("max_log_likelihood", p.max_log_likelihood)?;
+    out.set_item("fit", Py::new(py, PyGlmFit { inner: p.fit })?)?;
+    Ok(out.into_any().unbind())
+}
+
+/// A negative binomial GLM with its ``theta`` estimated with the
+/// coefficients by maximum likelihood, as R's ``MASS::glm.nb``: IRLS and
+/// Newton's method on ``theta`` alternate until both settle.
+///
+/// Parameters
+/// ----------
+/// link : str, default "log"
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, NegativeBinomialGlm
+/// >>> x = [float(i % 3) for i in range(60)]
+/// >>> y = [float((i * 7) % 11) for i in range(60)]
+/// >>> fit = NegativeBinomialGlm().fit(Design([[1.0] * 60, x], ["(Intercept)", "x"]), y)
+/// >>> fit.theta > 0 and fit.se_theta > 0
+/// True
+#[pyclass(name = "NegativeBinomialGlm", module = "prospicio.models", frozen)]
+pub(crate) struct PyNegativeBinomialGlm {
+    inner: prospicio_glm::negbin::NegativeBinomialGlm,
+}
+
+#[pymethods]
+impl PyNegativeBinomialGlm {
+    #[new]
+    #[pyo3(signature = (link = None))]
+    fn new(link: Option<&str>) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::negbin::NegativeBinomialGlm::new(link_or_log(link)?),
+        })
+    }
+
+    /// Fits ``theta`` and the coefficients.
+    ///
+    /// Returns
+    /// -------
+    /// NegativeBinomialFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyNegativeBinomialFit> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &y)).map_err(to_py)?;
+        Ok(PyNegativeBinomialFit { inner })
+    }
+}
+
+/// A negative binomial GLM with ``theta`` estimated, from
+/// ``NegativeBinomialGlm.fit``.
+#[pyclass(name = "NegativeBinomialFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyNegativeBinomialFit {
+    inner: prospicio_glm::negbin::NegativeBinomialFit,
+}
+
+#[pymethods]
+impl PyNegativeBinomialFit {
+    /// The maximum-likelihood ``theta``.
+    #[getter]
+    fn theta(&self) -> f64 {
+        self.inner.theta()
+    }
+
+    /// ``MASS``'s standard error of ``theta``.
+    #[getter]
+    fn se_theta(&self) -> f64 {
+        self.inner.se_theta()
+    }
+
+    /// The maximized log-likelihood.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    /// ``-2 log_likelihood + 2 (p + 1)``, counting ``theta``, as R's ``AIC``.
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    /// The GLM at the estimated ``theta``.
+    #[getter]
+    fn glm(&self) -> PyGlmFit {
+        PyGlmFit {
+            inner: self.inner.glm().clone(),
+        }
+    }
+
+    /// Expected response for each row of ``design``.
+    fn predict(&self, py: Python<'_>, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict(d)).map_err(to_py)
+    }
 }

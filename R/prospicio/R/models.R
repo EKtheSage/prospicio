@@ -68,6 +68,15 @@ dispersion_args <- function(dispersion) {
 #' terms work as in [stats::glm()]. Results match statsmodels' GLM
 #' (`validation/scripts/statsmodels_glm.py`).
 #'
+#' The rating variables of Python's `Terms` are formula terms here:
+#' interactions `a:b`, raw powers `poly(x, 3, raw = TRUE)`, hinges
+#' `I(pmax(0, x - 30))`, steps `I(x >= 30)`, bins `cut(x, c(-Inf, 30, 50,
+#' Inf))`, a centred log `log(x / 40)` and natural splines
+#' `splines::ns(x, knots = ...)`. For an ordered factor in cumulative coding
+#' (each coefficient the step from the level below), use one step column
+#' per level, `I(as.integer(f) >= 2)` and so on, on a factor with its levels
+#' in order.
+#'
 #' @param formula A model formula; `offset(...)` terms are honoured.
 #' @param data A data frame.
 #' @param family `"gaussian"`, `"poisson"`, `"gamma"`, `"inverse_gaussian"`,
@@ -87,7 +96,9 @@ dispersion_args <- function(dispersion) {
 #' @param link_power Exponent of the power link.
 #' @returns A `glm_model` with properties `coefficients`, `std_errors`,
 #'   `p_values`, `covariance`, `dispersion`, `deviance`, `null_deviance`,
-#'   `log_likelihood`, `aic`, `df_resid`, `iterations` and `fitted`. Use
+#'   `log_likelihood`, `aic`, `bic` (counting the coefficients as `aic`
+#'   does; [stats::BIC()] also counts an estimated dispersion), `df_resid`,
+#'   `iterations` and `fitted`. Use
 #'   [stats::coef()], [stats::predict()] and [predict_distribution()].
 #' @export
 #' @examples
@@ -107,6 +118,118 @@ glm_fit <- function(formula, data, family = "poisson", link = NULL, offset = NUL
     if (is.null(link_power)) NaN else as.double(link_power)
   ))
   glm_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels)
+}
+
+#' GLMs with a family parameter estimated
+#'
+#' `glm_nb_fit()` fits a negative binomial GLM with its `theta` estimated
+#' with the coefficients by maximum likelihood, as `MASS::glm.nb()`: IRLS
+#' and Newton's method on `theta` alternate until both settle. `se_theta` is
+#' `MASS`'s standard error and `aic` counts `theta`.
+#'
+#' `tweedie_glm_fit()` fits a Tweedie GLM with its power estimated with the
+#' coefficients and dispersion: the profile log-likelihood over the power
+#' (the exact Tweedie density, maximized over the dispersion at each power)
+#' is maximized by Brent's method, with a 95% profile-likelihood interval
+#' (`lower`, `upper`; an end flagged open is a search bound).
+#' `tweedie_profile()` evaluates that profile on a grid of powers, as R's
+#' `tweedie::tweedie.profile`, and refines the best.
+#'
+#' @inheritParams glm_fit
+#' @param link The link, `"log"` by default.
+#' @param min_power,max_power The power's search bounds, inside (1, 2).
+#' @param powers Powers to profile, increasing, inside (1, 2).
+#' @returns A list with `model`, a [glm_model] at the estimate (its
+#'   standard errors conditional on it), and, for `glm_nb_fit()`, `theta`,
+#'   `se_theta`, `log_likelihood` and `aic`; for `tweedie_glm_fit()`,
+#'   `power`, `phi`, `log_likelihood`, `lower`, `upper`, `lower_open`,
+#'   `upper_open` and `at_boundary`; for `tweedie_profile()`, `profile` (a
+#'   data frame of `power`, `log_likelihood` and `dispersion`), `power`,
+#'   `phi` and `max_log_likelihood`.
+#' @export
+#' @examples
+#' d <- data.frame(x = rep(0:2, 20), y = (0:59 * 7) %% 11)
+#' nb <- glm_nb_fit(y ~ x, d)
+#' nb$theta
+glm_nb_fit <- function(formula, data, link = "log", offset = NULL, weights = NULL) {
+  des <- model_design(formula, data, offset, weights)
+  r <- rust_result(glm_nb_fit_design(as.double(des$x), colnames(des$x), des$y, des$offset,
+                                     des$weights, link))
+  r$model <- glm_model(ptr = r$model, terms = des$terms, xlevels = des$xlevels)
+  r
+}
+
+#' @rdname glm_nb_fit
+#' @export
+tweedie_glm_fit <- function(formula, data, link = "log", offset = NULL, weights = NULL,
+                            min_power = 1.01, max_power = 1.99) {
+  des <- model_design(formula, data, offset, weights)
+  r <- rust_result(tweedie_glm_fit_design(as.double(des$x), colnames(des$x), des$y, des$offset,
+                                          des$weights, link, as.double(min_power),
+                                          as.double(max_power)))
+  r$model <- glm_model(ptr = r$model, terms = des$terms, xlevels = des$xlevels)
+  r
+}
+
+#' @rdname glm_nb_fit
+#' @export
+tweedie_profile <- function(formula, data, powers, link = "log", offset = NULL, weights = NULL) {
+  des <- model_design(formula, data, offset, weights)
+  r <- rust_result(tweedie_profile_design(as.double(des$x), colnames(des$x), des$y, des$offset,
+                                          des$weights, link, as.double(powers)))
+  list(profile = data.frame(power = r$powers, log_likelihood = r$log_likelihood,
+                            dispersion = r$dispersion),
+       power = r$power, phi = r$phi, max_log_likelihood = r$max_log_likelihood,
+       model = glm_model(ptr = r$model, terms = des$terms, xlevels = des$xlevels))
+}
+
+#' Tests of nested GLMs
+#'
+#' `f_test()` is the F test of `small` within `big`,
+#' `F = (D_small - D_big) / (q phi_big)` on `F(q, n - p_big)`, for a family
+#' whose dispersion is estimated; `likelihood_ratio_test()` the scaled
+#' deviance drop `(D_small - D_big) / phi_big` on `chi2(q)`, for one whose
+#' dispersion is known (Poisson, binomial). They agree with
+#' `anova(small, big, test = "F")` and `test = "Chisq"` (CAS Monograph 5,
+#' section 6.2.1). The models are not checked to be nested: `small`'s
+#' columns must lie in the span of `big`'s, on the same rows, family and
+#' weights.
+#'
+#' @param small,big [glm_fit()] models, `small` with fewer coefficients.
+#' @returns A list with `statistic`, `df` (`q`), `df_resid` (`Inf` for the
+#'   likelihood ratio test), `deviance_drop` and `p_value`.
+#' @export
+#' @examples
+#' d <- data.frame(y = c(1, 3, 2, 5, 4, 6, 8, 7), x = 1:8, z = c(0, 1, 0, 1, 1, 0, 1, 0))
+#' f_test(glm_fit(y ~ x, d, "gaussian"), glm_fit(y ~ x + z, d, "gaussian"))$p_value
+f_test <- function(small, big) {
+  rust_result(glm_nested_test_rust(small@ptr, big@ptr, "f"))
+}
+
+#' @rdname f_test
+#' @export
+likelihood_ratio_test <- function(small, big) {
+  rust_result(glm_nested_test_rust(small@ptr, big@ptr, "lr"))
+}
+
+#' Variance inflation factors
+#'
+#' `1 / (1 - R2_j)` for each column of the design of `formula`, with `R2_j`
+#' that of column `j` regressed on the others and an intercept (CAS
+#' Monograph 5, section 2.9; `car::vif` for single-column terms). The
+#' intercept gets `NA`.
+#'
+#' @inheritParams glm_fit
+#' @returns A named numeric vector, one per design column.
+#' @export
+#' @examples
+#' d <- data.frame(y = 1:6, x = c(1, 2, 3, 4, 5, 7), z = c(2, 1, 4, 3, 6, 5))
+#' vif(y ~ x + z, d)
+vif <- function(formula, data) {
+  des <- model_design(formula, data, NULL, NULL)
+  v <- rust_result(vif_rust(as.double(des$x), colnames(des$x)))
+  v[is.nan(v)] <- NA_real_
+  stats::setNames(v, colnames(des$x))
 }
 
 #' Fitted GLM (class)
@@ -141,6 +264,7 @@ glm_model <- S7::new_class(
     null_deviance = S7::new_property(S7::class_double, getter = function(self) self@ptr$null_deviance()),
     log_likelihood = S7::new_property(S7::class_double, getter = function(self) self@ptr$log_likelihood()),
     aic = S7::new_property(S7::class_double, getter = function(self) self@ptr$aic()),
+    bic = S7::new_property(S7::class_double, getter = function(self) self@ptr$bic()),
     df_resid = S7::new_property(S7::class_double, getter = function(self) self@ptr$df_resid()),
     iterations = S7::new_property(S7::class_double, getter = function(self) self@ptr$iterations()),
     fitted = S7::new_property(S7::class_double, getter = function(self) self@ptr$fitted())
@@ -683,6 +807,87 @@ for (cls in list(glm_model, gam_model, bayes_glm_model)) {
   }
 }
 
+S7::method(residuals, glm_model) <- function(object, type = c("deviance", "pearson", "response", "working"), ...) {
+  type <- match.arg(type)
+  rust_result(object@ptr$diagnostics(), s7_call())[[type]]
+}
+S7::method(hatvalues, glm_model) <- function(model, ...) {
+  rust_result(model@ptr$diagnostics(), s7_call())$leverage
+}
+S7::method(rstandard, glm_model) <- function(model, type = c("deviance", "pearson"), ...) {
+  type <- match.arg(type)
+  rust_result(model@ptr$diagnostics(), s7_call())[[paste0("standardized_", type)]]
+}
+S7::method(cooks.distance, glm_model) <- function(model, ...) {
+  rust_result(model@ptr$diagnostics(), s7_call())$cooks_distance
+}
+
+#' Diagnostics and prediction errors of a fitted GLM
+#'
+#' A [glm_model] fitted in this session keeps its training data, so
+#' [stats::residuals()] (`type` `"deviance"`, `"pearson"`, `"response"` or
+#' `"working"`), [stats::hatvalues()], [stats::rstandard()] (`type`
+#' `"deviance"` or `"pearson"`) and [stats::cooks.distance()] work on it as
+#' on R's `glm`. `glm_diagnostics()` returns them all, with the working
+#' weights, as a data frame. `prediction_se()` is the standard error of each
+#' row's predicted mean (parameter error only, as
+#' `predict(type = "response", se.fit = TRUE)`); `sum_prediction_error()` the
+#' prediction error of the sum of the rows' means (a reserve: an origin's
+#' future cells), the parameter error by the delta method and the process
+#' error from the family (Taylor and McGuire, CAS Monograph 3, (5-11) to
+#' (5-13)). `glm_gcv()` is generalized cross-validation,
+#' `n sum((y - mu)^2) / (n - p)^2`, and `log_likelihood_at()` the training
+#' log-likelihood at a given dispersion. A model read with [load_model()]
+#' has no training data: only `prediction_se()` and `sum_prediction_error()`
+#' work on it.
+#'
+#' @param model A [glm_model].
+#' @param newdata A data frame with the model's terms.
+#' @param offset Optional offset added to any `offset()` terms.
+#' @param weights Optional prior weights (for the process variance).
+#' @param dispersion The dispersion at which to evaluate.
+#' @returns `glm_diagnostics()` a data frame with one row per training row;
+#'   `prediction_se()` one value per row of `newdata`;
+#'   `sum_prediction_error()` a list with `total`, `parameter_variance`,
+#'   `process_variance` and `rmsep`; `glm_gcv()` and `log_likelihood_at()` a
+#'   number.
+#' @export
+#' @examples
+#' d <- data.frame(claims = c(1, 2, 4, 2, 1, 3, 0, 5), region = c("N", "N", "S", "S", "W", "W", "N", "S"))
+#' m <- glm_fit(claims ~ region, d, family = "poisson")
+#' head(glm_diagnostics(m))
+#' sum_prediction_error(m, data.frame(region = c("N", "S")))$rmsep
+glm_diagnostics <- function(model) {
+  as.data.frame(rust_result(model@ptr$diagnostics()))
+}
+
+#' @rdname glm_diagnostics
+#' @export
+prediction_se <- function(model, newdata, offset = NULL) {
+  nd <- new_design(model, newdata, offset)
+  rust_result(model@ptr$prediction_se(as.double(nd$x), colnames(nd$x), nd$offset))
+}
+
+#' @rdname glm_diagnostics
+#' @export
+sum_prediction_error <- function(model, newdata, offset = NULL, weights = NULL) {
+  nd <- new_design(model, newdata, offset)
+  rust_result(model@ptr$sum_prediction_error(as.double(nd$x), colnames(nd$x), nd$offset,
+                                             if (is.null(weights)) double() else as.double(weights)))
+}
+
+#' @rdname glm_diagnostics
+#' @export
+glm_gcv <- function(model) {
+  rust_result(model@ptr$gcv())
+}
+
+#' @rdname glm_diagnostics
+#' @export
+log_likelihood_at <- function(model, dispersion) {
+  rust_result(model@ptr$log_likelihood_at(as.double(dispersion)))
+}
+
 #' Joint predictive distribution of a fitted model
 #'
 #' Draws the response for every row of `newdata` jointly: each simulation
@@ -851,6 +1056,79 @@ lift_table <- function(y, pred, exposure = NULL, bands = 10) {
                                       as.double(bands))))
 }
 
+#' Charts for comparing and validating models
+#'
+#' The charts of CAS Monograph 5, chapter 7. `double_lift_table()` sorts rows
+#' by the ratio of two models' predictions `pred_a / pred_b`, cuts them into
+#' `bands` of about equal exposure and gives each band's actual and predicted
+#' averages over their overall averages (each model against its own): where
+#' the models disagree, the better one follows the actual. `loss_ratio_table()`
+#' sorts by the predicted loss ratio `pred / premium` against current premium
+#' and gives each band's actual loss ratio. `roc_curve()` is the ROC curve of a
+#' binary model with its area (ties counting half); `confusion_matrix()` the
+#' weighted counts at a threshold (a row is positive when its score is at
+#' least the threshold). `normalized_gini()` is [gini_index()] over the Gini
+#' of a perfect ranking; for a 0/1 response with unit exposure
+#' `AUROC = (1 + normalized Gini) / 2`.
+#'
+#' @param y Actual losses, or 0 and 1 for `roc_curve()` and
+#'   `confusion_matrix()`.
+#' @param pred,pred_a,pred_b Predicted losses (`pred_b` positive).
+#' @param premium Current premium, positive.
+#' @param score A binary model's scores.
+#' @param threshold The score at and above which a row is positive.
+#' @param exposure,weights Optional exposure or weights per row.
+#' @param bands Number of bands.
+#' @returns `double_lift_table()` and `loss_ratio_table()` a data frame, one
+#'   row per band; `roc_curve()` a list with `curve` (a data frame of
+#'   `threshold`, `false_positive_rate`, `true_positive_rate`) and `auc`;
+#'   `confusion_matrix()` a named vector; `normalized_gini()` a number.
+#' @name model_charts
+#' @examples
+#' roc_curve(c(0, 0, 1, 1), c(0.1, 0.4, 0.35, 0.8))$auc
+#' y <- c(1, 0, 3, 2, 5, 1)
+#' double_lift_table(y, c(1, 1, 2, 2, 4, 1), c(2, 1, 2, 1, 3, 2), bands = 2)
+#' loss_ratio_table(y, c(1, 1, 2, 2, 4, 1), rep(2, 6), bands = 2)
+NULL
+
+#' @rdname model_charts
+#' @export
+normalized_gini <- function(y, pred, exposure = NULL) {
+  rust_result(normalized_gini_rust(as.double(y), as.double(pred), opt_double(exposure)))
+}
+
+#' @rdname model_charts
+#' @export
+double_lift_table <- function(y, pred_a, pred_b, exposure = NULL, bands = 10) {
+  as.data.frame(rust_result(double_lift_rust(as.double(y), as.double(pred_a), as.double(pred_b),
+                                             opt_double(exposure), as.double(bands))))
+}
+
+#' @rdname model_charts
+#' @export
+loss_ratio_table <- function(y, pred, premium, exposure = NULL, bands = 10) {
+  as.data.frame(rust_result(loss_ratio_chart_rust(as.double(y), as.double(pred), as.double(premium),
+                                                  opt_double(exposure), as.double(bands))))
+}
+
+#' @rdname model_charts
+#' @export
+roc_curve <- function(y, score, weights = NULL) {
+  r <- rust_result(roc_rust(as.double(y), as.double(score), opt_double(weights)))
+  list(curve = data.frame(threshold = r$thresholds, false_positive_rate = r$false_positive_rate,
+                          true_positive_rate = r$true_positive_rate),
+       auc = r$auc)
+}
+
+#' @rdname model_charts
+#' @export
+confusion_matrix <- function(y, score, threshold, weights = NULL) {
+  unlist(rust_result(confusion_matrix_rust(as.double(y), as.double(score), as.double(threshold),
+                                           opt_double(weights))))
+}
+
+opt_double <- function(x) if (is.null(x)) double() else as.double(x)
+
 #' @rdname model_metrics
 #' @export
 crps_draws <- function(draws, y) rust_result(crps_rust(as.double(draws), as.double(y)))
@@ -929,6 +1207,55 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
 #' length(k_fold(10, 5, seed = 1))
 #' time_ordered(c(0, 1, 2, 1, 2, 2), 1)
 NULL
+
+#' Out-of-fold target encoding with credibility
+#'
+#' Encodes a high-cardinality factor by each level's actual-to-expected
+#' ratio, shrunk to 1 by the credibility `z = n / (n + k)` with `n` the
+#' level's exposure: `z A / E + (1 - z)` (CAS Monograph 16, chapter 6). Each
+#' training row is encoded from the other folds only, so its own response
+#' never enters its encoding; `encode_target()` applies the encoding from all
+#' the rows to new data (a level not seen in training gets 1). Its log
+#' enters a GLM as a numeric column.
+#'
+#' @param values The factor's level per row.
+#' @param y Actual responses.
+#' @param expected Expected responses: the overall mean times exposure, or a
+#'   first model's predictions.
+#' @param splits Splits from [k_fold()] or [group_k_fold()], every row in
+#'   exactly one test set.
+#' @param k The credibility constant.
+#' @param exposure Optional credibility weights, 1 per row by default.
+#' @param encoding A `target_encoding` list from `target_encode()`.
+#' @param newvalues Levels of new data.
+#' @returns `target_encode()` a list with `rows` (the out-of-fold encoding of
+#'   each training row) and `encoding` (a data frame of `level` and `ratio`,
+#'   with `k`); `encode_target()` one value per new value.
+#' @export
+#' @examples
+#' splits <- list(list(train = c(2, 4), test = c(1, 3)), list(train = c(1, 3), test = c(2, 4)))
+#' te <- target_encode(c("a", "a", "b", "b"), c(2, 2, 0, 1), rep(1, 4), splits, k = 1)
+#' te$rows
+#' encode_target(te$encoding, c("a", "z"))
+target_encode <- function(values, y, expected, splits, k, exposure = NULL) {
+  r <- rust_result(target_encode_rust(
+    as.character(values), as.double(y), as.double(expected),
+    if (is.null(exposure)) double() else as.double(exposure),
+    lapply(splits, function(s) as.double(s$train)), lapply(splits, function(s) as.double(s$test)),
+    as.double(k)
+  ))
+  encoding <- data.frame(level = r$levels, ratio = r$ratios)
+  attr(encoding, "k") <- k
+  list(rows = r$rows, encoding = encoding)
+}
+
+#' @rdname target_encode
+#' @export
+encode_target <- function(encoding, newvalues) {
+  out <- encoding$ratio[match(as.character(newvalues), encoding$level)]
+  out[is.na(out)] <- 1
+  out
+}
 
 #' @rdname resampling
 #' @export

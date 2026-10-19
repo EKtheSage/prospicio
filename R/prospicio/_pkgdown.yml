@@ -30,6 +30,7 @@ reference:
       - custom_distribution
       - dist_to_json
       - log_density
+      - layer_third_moment
   - title: Large-loss severities
     contents:
       - pareto
@@ -192,12 +193,19 @@ reference:
       - risk_measure
       - allocate
       - capital_allocation
+      - shapley_allocation
+      - haircut_allocation
+      - rearrange
       - exponential_utility
       - systemic_risk
   - title: Models
     contents:
       - glm_fit
+      - glm_nb_fit
       - glm_model
+      - glm_diagnostics
+      - f_test
+      - vif
       - robust_vcov
       - bayes_glm_fit
       - bayes_glm_model
@@ -227,7 +235,9 @@ reference:
       - predict_dispersion
       - predict_distribution
       - model_metrics
+      - model_charts
       - resampling
+      - target_encode
       - tuning
       - compare_models
       - actual_vs_expected

@@ -3,7 +3,8 @@
 //! `S = X_1 + … + X_N` from the count's and the severity's first three
 //! moments, and the normal, gamma, lognormal, shifted gamma and shifted
 //! lognormal with the same moments, as the Python package `aggregate`'s
-//! `approximate`.
+//! `approximate`, and the normal power and Wilson–Hilferty approximations
+//! (Bahnemann, CAS Monograph 2, section 4.4).
 
 use prospicio_core::{Error, Result};
 use prospicio_math::special::{norm_cdf, norm_quantile};
@@ -111,6 +112,14 @@ impl CompoundMoments {
                     shift: m - shape * scale,
                 }
             }
+            ApproximationKind::NormalPower => {
+                positive_skew()?;
+                Approximation::NormalPower { mean: m, sd, skew }
+            }
+            ApproximationKind::WilsonHilferty => {
+                positive_skew()?;
+                Approximation::WilsonHilferty { mean: m, sd, skew }
+            }
             ApproximationKind::ShiftedLognormal => {
                 positive_skew()?;
                 // η = sqrt(exp(σ²) − 1) solves η³ + 3η = skew.
@@ -175,6 +184,13 @@ pub enum ApproximationKind {
     Lognormal,
     ShiftedGamma,
     ShiftedLognormal,
+    /// The normal power: `x_p = μ + σ (z + γ (z² − 1) / 6)`; needs a
+    /// positive skewness.
+    NormalPower,
+    /// Wilson–Hilferty: `x_p = μ + σ (2/γ) ((1 + γ z / 6 − γ² / 36)³ − 1)`,
+    /// the cube-root normal approximation of a shifted gamma with the same
+    /// moments; needs a positive skewness.
+    WilsonHilferty,
 }
 
 /// A distribution fitted to compound moments. Shifted families are their
@@ -204,12 +220,27 @@ pub enum Approximation {
         sdlog: f64,
         shift: f64,
     },
+    /// Defined by its quantiles; 0 below `μ − σ (3/(2γ) + γ/6)`, where the
+    /// quadratic in `z` turns.
+    NormalPower {
+        mean: f64,
+        sd: f64,
+        skew: f64,
+    },
+    /// Defined by its quantiles; 0 below `μ − 2σ/γ`.
+    WilsonHilferty {
+        mean: f64,
+        sd: f64,
+        skew: f64,
+    },
 }
 
 impl Approximation {
     fn base(&self) -> Result<(Option<Box<dyn Distribution>>, f64)> {
         Ok(match *self {
-            Self::Normal { .. } => (None, 0.0),
+            Self::Normal { .. } | Self::NormalPower { .. } | Self::WilsonHilferty { .. } => {
+                (None, 0.0)
+            }
             Self::Gamma { shape, scale } => (Some(Box::new(Gamma::new(shape, scale)?)), 0.0),
             Self::Lognormal { meanlog, sdlog } => {
                 (Some(Box::new(Lognormal::new(meanlog, sdlog)?)), 0.0)
@@ -229,8 +260,28 @@ impl Approximation {
 
     /// `P(S ≤ x)`.
     pub fn cdf(&self, x: f64) -> Result<f64> {
-        if let Self::Normal { mean, sd } = *self {
-            return Ok(norm_cdf((x - mean) / sd));
+        match *self {
+            Self::Normal { mean, sd } => return Ok(norm_cdf((x - mean) / sd)),
+            Self::NormalPower { mean, sd, skew } => {
+                // Inverts y = z + γ (z² − 1) / 6 on the branch z ≥ −3/γ.
+                let y = (x - mean) / sd;
+                let d = 9.0 / (skew * skew) + 1.0 + 6.0 * y / skew;
+                return Ok(if d <= 0.0 {
+                    0.0
+                } else {
+                    norm_cdf(-3.0 / skew + d.sqrt())
+                });
+            }
+            Self::WilsonHilferty { mean, sd, skew } => {
+                let y = (x - mean) / sd;
+                let c = 0.5 * skew * y + 1.0;
+                return Ok(if c <= 0.0 {
+                    0.0
+                } else {
+                    norm_cdf(6.0 / skew * (c.cbrt() - 1.0 + skew * skew / 36.0))
+                });
+            }
+            _ => {}
         }
         let (d, shift) = self.base()?;
         Ok(d.expect("non-normal").cdf(x - shift))
@@ -241,17 +292,34 @@ impl Approximation {
         if !(0.0..=1.0).contains(&p) {
             return Err(Error::InvalidProbability(p));
         }
-        if let Self::Normal { mean, sd } = *self {
-            return Ok(mean + sd * norm_quantile(p));
+        match *self {
+            Self::Normal { mean, sd } => return Ok(mean + sd * norm_quantile(p)),
+            Self::NormalPower { mean, sd, skew } => {
+                let z = norm_quantile(p);
+                // Below the turning point z = −3/γ the quadratic falls again;
+                // the distribution's lower end is its value there.
+                let z = z.max(-3.0 / skew);
+                return Ok(mean + sd * (z + skew * (z * z - 1.0) / 6.0));
+            }
+            Self::WilsonHilferty { mean, sd, skew } => {
+                let z = norm_quantile(p);
+                let c = (1.0 + skew * z / 6.0 - skew * skew / 36.0).max(0.0);
+                return Ok(mean + sd * 2.0 / skew * (c * c * c - 1.0));
+            }
+            _ => {}
         }
         let (d, shift) = self.base()?;
         Ok(shift + d.expect("non-normal").quantile(p)?)
     }
 
-    /// The mean, which is the compound mean it was fitted to.
+    /// The mean, which is the compound mean it was fitted to (for the normal
+    /// power and Wilson–Hilferty, defined by their quantiles, the mean they
+    /// were fitted to, which their own mean matches only approximately).
     pub fn mean(&self) -> f64 {
         match *self {
-            Self::Normal { mean, .. } => mean,
+            Self::Normal { mean, .. }
+            | Self::NormalPower { mean, .. }
+            | Self::WilsonHilferty { mean, .. } => mean,
             Self::Gamma { shape, scale } => shape * scale,
             Self::Lognormal { meanlog, sdlog } => (meanlog + 0.5 * sdlog * sdlog).exp(),
             Self::ShiftedGamma {
@@ -290,6 +358,8 @@ mod tests {
             ApproximationKind::Lognormal,
             ApproximationKind::ShiftedGamma,
             ApproximationKind::ShiftedLognormal,
+            ApproximationKind::NormalPower,
+            ApproximationKind::WilsonHilferty,
         ] {
             let a = m.approximate(kind).unwrap();
             assert!((a.mean() / m.mean - 1.0).abs() < 1e-12, "{kind:?}");
@@ -355,6 +425,36 @@ mod tests {
                 .approximate(ApproximationKind::Gamma)
                 .unwrap()
                 .quantile(1.5)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn wilson_hilferty_tracks_the_shifted_gamma_and_normal_power_its_formula() {
+        let m = book();
+        let sg = m.approximate(ApproximationKind::ShiftedGamma).unwrap();
+        let wh = m.approximate(ApproximationKind::WilsonHilferty).unwrap();
+        let np = m.approximate(ApproximationKind::NormalPower).unwrap();
+        for p in [0.5, 0.9, 0.99, 0.999] {
+            let (a, b) = (sg.quantile(p).unwrap(), wh.quantile(p).unwrap());
+            // Wilson–Hilferty is the cube-root normal approximation of the
+            // gamma, good to a fraction of a percent at moderate skewness.
+            assert!((b / a - 1.0).abs() < 3e-3, "{p}: {a} {b}");
+            let z = norm_quantile(p);
+            let sd = m.variance.sqrt();
+            let want = m.mean + sd * (z + m.skew() * (z * z - 1.0) / 6.0);
+            assert!((np.quantile(p).unwrap() - want).abs() < 1e-9);
+            assert!((np.cdf(want).unwrap() - p).abs() < 1e-12);
+            assert!((wh.cdf(b).unwrap() - p).abs() < 1e-12);
+        }
+        let symmetric = CompoundMoments {
+            mean: 10.0,
+            variance: 4.0,
+            third_cumulant: 0.0,
+        };
+        assert!(
+            symmetric
+                .approximate(ApproximationKind::WilsonHilferty)
                 .is_err()
         );
     }

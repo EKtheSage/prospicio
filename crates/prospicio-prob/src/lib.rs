@@ -39,6 +39,7 @@ pub mod policy_limits;
 pub mod portfolio;
 pub mod predictive;
 pub mod provenance;
+pub mod rearrangement;
 pub mod risk;
 pub mod sampled;
 pub mod serial;

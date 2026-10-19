@@ -623,6 +623,10 @@ ag["A70"] = ArrayFormula("A70:H75", '=PRO.TOWER.PRICE(B2,B3,B4,B5,B6,,,,B67:C67,
 for row in ag.iter_rows(min_row=71, max_row=75, min_col=2, max_col=8):
     for c in row:
         c.number_format = "0.0000" if c.column in (4, 7, 8) else "#,##0"
+ag["J66"] = "Contract terms on 100,000 xs 50,000 in expectation: deposit 60,000, one reinstatement at 100%"; ag["J66"].font = bold
+ag["J67"] = ArrayFormula("J67:K74", "=PRO.LAYER.TERMS(B2,B3,B4,B5,B6,,100000,50000,60000,1)")
+ag["M66"] = "With a sliding scale (35% at 50% down to 25% at 70%) and a 20% profit commission after 30%"; ag["M66"].font = bold
+ag["M67"] = ArrayFormula("M67:N74", "=PRO.LAYER.TERMS(B2,B3,B4,B5,B6,,100000,50000,60000,,{0.35,0.25},{0.5,0.7},0.2,0.3)")
 ag.column_dimensions["A"].width = 18
 ag.column_dimensions["D"].width = 16
 ag.column_dimensions["G"].width = 16
@@ -672,6 +676,58 @@ ev["G17"] = "Hill estimates"; ev["G17"].font = bold
 ev["G18"] = ArrayFormula("G18:J28", "=PRO.EVT.HILL(A4:A1003)")
 for col in "CDEFGHIJK":
     ev.column_dimensions[col].width = 14
+
+# The time value of money: RAA's paid chain ladder as a payment pattern.
+pv = wb.create_sheet("Payout")
+pv["A1"] = "RAA's factors to ultimate (the RAA sheet's CDF row) as a payment pattern, losses occurring evenly over the year"; pv["A1"].font = bold
+pv["A3"] = "Years"; pv["A4"] = "CDF"; pv["A3"].font = pv["A4"].font = bold
+for c in range(10):
+    pv.cell(row=3, column=2 + c, value=c + 1).fill = inp
+    pv.cell(row=4, column=2 + c, value=f"=RAA!{chr(66 + c)}15")
+pv["A6"] = "Discount rate"; pv["B6"] = 0.04; pv["B6"].fill = inp
+pv["A7"] = "Cost of capital"; pv["B7"] = 0.10; pv["B7"].fill = inp
+pv["A8"] = "Expected loss"; pv["B8"] = 1000000; pv["B8"].fill = inp
+pv["A9"] = "Assets (one-year VaR)"; pv["B9"] = 2500000; pv["B9"].fill = inp
+pv["A11"] = "Pattern"; pv["A11"].font = bold
+pv["A12"] = ArrayFormula("A12:E22", '=PRO.PAYOUT.PATTERN(B3:K3,B4:K4,"factors",0.5,B6)')
+pv["G11"] = "Statistics"; pv["G11"].font = bold
+pv["G12"] = ArrayFormula("G12:H14", '=PRO.PAYOUT.STATS(B3:K3,B4:K4,B6,"factors",0.5)')
+pv["G16"] = "Cost-of-capital price over the payout"; pv["G16"].font = bold
+pv["G17"] = ArrayFormula("G17:H25", '=PRO.PAYOUT.PRICE(B8,B9,B7,B3:K3,B4:K4,B6,"factors",0.5)')
+for col in "ABCDEFGH":
+    pv.column_dimensions[col].width = 16
+pv["A27"] = "A cover's quote: the guide's middle layer, risk premium 1.24 on an expected loss of 0.586, limit 5"; pv["A27"].font = bold
+pv["A28"] = "Expected loss"; pv["B28"] = 0.586; pv["B28"].fill = inp
+pv["A29"] = "Risk premium"; pv["B29"] = 1.24; pv["B29"].fill = inp
+pv["A30"] = "Assets"; pv["B30"] = 7.778; pv["B30"].fill = inp
+pv["A31"] = "Expenses"; pv["B31"] = 0.03; pv["B31"].fill = inp
+pv["A32"] = "Brokerage"; pv["B32"] = 0.10; pv["B32"].fill = inp
+pv["A33"] = "Limit"; pv["B33"] = 5; pv["B33"].fill = inp
+pv["A34"] = "Quoted"; pv["B34"] = 1.30; pv["C34"] = 1.60; pv["B34"].fill = pv["C34"].fill = inp
+pv["E27"] = ArrayFormula("E27:H40", "=PRO.QUOTE(B28,B29,B30,B31,B32,,B33,B34:C34)")
+
+# Distortions: Mildenhall and Major's InsCo, priced and calibrated.
+ds = wb.create_sheet("Distortions")
+ds["A1"] = "InsCo (Pricing Insurance Risk): seven totals, assets 100; every standard distortion at the 15% CCoC premium"; ds["A1"].font = bold
+ds["A3"] = "Total"; ds["B3"] = "Probability"; ds["A3"].font = ds["B3"].font = bold
+for i, (x, p) in enumerate(zip([22, 28, 36, 40, 55, 65, 100], [0.1, 0.1, 0.1, 0.4, 0.1, 0.1, 0.1])):
+    ds[f"A{4 + i}"] = x; ds[f"B{4 + i}"] = p
+    ds[f"A{4 + i}"].fill = ds[f"B{4 + i}"].fill = inp
+ds["A12"] = "Target premium"; ds["B12"] = "=(46.6+0.15*100)/1.15"
+ds["D3"] = "Calibrated to the target"; ds["D3"].font = bold
+ds["D4"] = ArrayFormula("D4:F9", "=PRO.DISTORTION.CALIBRATE(A4:A10,B4:B10,B12)")
+ds["D12"] = "The PH at its calibrated rho, priced back"; ds["D12"].font = bold
+ds["D13"] = ArrayFormula("D13:E16", '=PRO.DISTORTION.PRICE(A4:A10,B4:B10,"ph",E6)')
+ds["H3"] = "s"; ds["I3"] = "PH"; ds["J3"] = "Wang"; ds["K3"] = "TVaR"
+for c in ("H3", "I3", "J3", "K3"):
+    ds[c].font = bold
+for i in range(11):
+    ds[f"H{4 + i}"] = i / 10
+ds["I4"] = ArrayFormula("I4:I14", '=PRO.DISTORTION(H4:H14,"ph",E6)')
+ds["J4"] = ArrayFormula("J4:J14", '=PRO.DISTORTION(H4:H14,"wang",E7)')
+ds["K4"] = ArrayFormula("K4:K14", '=PRO.DISTORTION(H4:H14,"tvar",E9)')
+for col in "ABDEFHIJK":
+    ds.column_dimensions[col].width = 14
 
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")

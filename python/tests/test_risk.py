@@ -313,3 +313,75 @@ def test_iman_conover_t_scores_and_shuffled_rows():
     assert sorted(shuffled.marginal((0,)).draws) == sorted(first)
     with pytest.raises(ValueError):
         iman_conover(pd, r, seed=5, dof=2.0, scores=[0.0] * n)
+def _simple_discrete():
+    # Pricing Insurance Risk's Simple Discrete Example: 16 equally likely rows.
+    x1 = {0: 2, 8: 1, 10: 1}
+    x2 = {0: 2, 1: 1, 90: 1}
+    rows = [[float(a), float(b)] for a, n in x1.items() for b, m in x2.items() for _ in range(n * m)]
+    return PredictiveDistribution(["unit"], [("X1",), ("X2",)], rows)
+
+
+def test_covariance_margin_keeps_the_mean():
+    from prospicio.risk import Distortion, capital
+
+    pd = _simple_discrete()
+    d = Distortion.tvar(0.75)
+    cov = capital(pd, d, "covariance")
+    margin = capital(pd, d, "covariance_margin")
+    assert margin.method == "covariance_margin"
+    assert sum(margin.allocated) == pytest.approx(margin.total)
+    for mean, c, m in zip((4.5, 22.75), cov.allocated, margin.allocated):
+        assert m == pytest.approx(mean + (cov.total - 27.25) * c / cov.total)
+
+
+def test_shapley_of_any_cost():
+    import statistics
+
+    from prospicio.risk import Distortion, capital, shapley
+
+    pd = _simple_discrete()
+    d = Distortion.tvar(0.75)
+    want = capital(pd, d, "shapley")
+    got = shapley(pd, lambda x: d.measure(Sampled(x)))
+    assert got.allocated == pytest.approx(want.allocated)
+    a = shapley(pd, lambda x: statistics.fmean(x) + 0.5 * statistics.pstdev(x))
+    # Two units: phi_1 = (v(X1) + v(S) - v(X2)) / 2.
+    assert a.allocated[0] == pytest.approx(0.5 * (a.standalone[0] + a.total - a.standalone[1]))
+    with pytest.raises(ZeroDivisionError):
+        shapley(pd, lambda x: 1 / 0)
+    with pytest.raises(ValueError):
+        shapley(pd, lambda x: float("nan"))
+
+
+def test_haircut_and_equal_risk_match_pricing_insurance_risk():
+    # Exercises 205 and 206: the premium of 80 by stand-alone TVaR.
+    from prospicio.risk import equal_risk, haircut
+
+    pd = _simple_discrete()
+    h = haircut(pd, 80.0, "tvar", 0.75)
+    assert h.measure == "tvar" and h.standalone == [10.0, 90.0]
+    assert h.allocated == pytest.approx([8.0, 72.0])
+    e = equal_risk(pd, 80.0, "tvar")
+    assert e.level == pytest.approx(0.6796, abs=5e-5)
+    assert e.allocated == pytest.approx([9.56, 70.44], abs=5e-3)
+    for measure in ("var", "epd"):
+        a = equal_risk(pd, 80.0, measure)
+        assert sum(a.allocated) == pytest.approx(80.0)
+    with pytest.raises(ValueError):
+        equal_risk(pd, 1e6, "tvar")
+    with pytest.raises(ValueError):
+        haircut(pd, 80.0, "es", 0.5)
+
+
+def test_worst_var_by_rearrangement():
+    # Pricing Insurance Risk, Exercise 59, from the guide's rotated starts.
+    from prospicio.risk import rearrange, worst_var
+
+    m = [Lognormal.from_mean_cv(10.0, cv) for cv in (1.0, 2.0, 3.0)]
+    for rotate, want in [(7, 353.8), (13, 353.6), (19, 352.9)]:
+        assert worst_var(m, 0.99, n=40, rotate=rotate)["value"] == pytest.approx(want, abs=0.05)
+    a = worst_var(m, 0.99, n=40, seed=1)
+    assert a == worst_var(m, 0.99, n=40, seed=1)
+    assert rearrange([[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]])["value"] == 5.0
+    with pytest.raises(ValueError):
+        rearrange([[1.0]], rotate=1, seed=1)

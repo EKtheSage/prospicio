@@ -201,3 +201,120 @@
   `casualty_sweep()`, `casualty_expected_claims()`,
   `casualty_count_test()`, `pareto_anchor()` and `poisson_tail()`. The
   ALAE treatment is a required argument (#396).
+
+### Models
+
+- The negative binomial GLM with its `theta` estimated:
+  `prospicio_glm::negbin::NegativeBinomialGlm` alternates the GLM's IRLS
+  with Newton's method on `theta` as `MASS::glm.nb` does, with `MASS`'s
+  standard error of `theta`, the log-likelihood and an AIC that counts
+  `theta` (parity on `quine`). Python `NegativeBinomialGlm` and the
+  Tweedie GLM with its power estimated (`TweedieGlm`, `tweedie_profile`);
+  R `glm_nb_fit()`, `tweedie_glm_fit()` and `tweedie_profile()` (#352).
+### Distributions and probability
+
+- The covariance allocation of the margin:
+  `AllocationMethod::CovarianceMargin` gives each unit its expected loss
+  plus a share of `ρ(S) − E[S]` by covariance with the total (Kalkbrener's
+  allocation; *Pricing Insurance Risk* Exercise 217 exact), beside
+  `Covariance`, which spreads the whole measure by covariance. Python
+  `capital(..., "covariance_margin")`, R
+  `capital_allocation(..., "covariance_margin")`.
+- The Shapley value of any cost, not only a distortion:
+  `PredictiveDistribution::shapley_with(cost)` with a closure of the
+  sub-portfolio's draws (a standard deviation premium, an expected
+  utility). Python `prospicio.risk.shapley(pd, cost)` with a callable, R
+  `shapley_allocation(x, cost)` with a function (#369).
+- The haircut and equal risk allocations of an exogenous total (a
+  premium, a capital amount) by stand-alone VaR, TVaR or EPD at one level:
+  `PredictiveDistribution::haircut(total, measure, level)` scales the
+  stand-alone measures at a given level, `equal_risk(total, measure)`
+  finds the level at which they add up (*Pricing Insurance Risk*
+  Exercises 205 and 206 exact). Python `prospicio.risk.haircut` and
+  `equal_risk` (a `LevelAllocation`), R `haircut_allocation()` and
+  `equal_risk_allocation()` (#369).
+- Nested GLM tests: `prospicio_glm::nested::f_test(small, big)` and
+  `likelihood_ratio_test(small, big)`, R `anova(small, big, test = "F")`
+  and `test = "Chisq"` (parity on quine); `GlmFit::bic`, counting the
+  coefficients as `aic` does; `metrics::vif`, variance inflation factors of
+  a design's columns. Python `f_test`, `likelihood_ratio_test`, `vif` and
+  `GlmFit.bic`; R `f_test()`, `likelihood_ratio_test()`, `vif()` and
+  `glm_model@bic` (#351).
+- Charts for comparing and validating models (CAS Monograph 5, chapter 7):
+  `metrics::double_lift` (bands by the ratio of two models' predictions,
+  relativities to each overall average), `loss_ratio_chart` (bands by
+  predicted loss ratio against current premium), `roc` with the area
+  under the curve, `confusion_matrix` and `normalized_gini`. Python
+  `double_lift`, `loss_ratio_chart`, `roc`, `confusion_matrix`,
+  `normalized_gini`; R `double_lift_table()`, `loss_ratio_table()`,
+  `roc_curve()`, `confusion_matrix()`, `normalized_gini()` (#351).
+- GLM diagnostics and prediction errors: `GlmFit::diagnostics` (response,
+  Pearson, deviance and working residuals, working weights, hat values,
+  standardized residuals, Cook's distances; R `glm` parity),
+  `prediction_se` (as `predict(type = "response", se.fit = TRUE)`),
+  `sum_prediction_error` (the RMSEP of a reserve by the delta method plus
+  process variance), `gcv` and `log_likelihood_at` a held dispersion.
+  Python methods of the same names on `GlmFit`; R `residuals()`,
+  `hatvalues()`, `rstandard()` and `cooks.distance()` on a `glm_model`,
+  and `glm_diagnostics()`, `prediction_se()`, `sum_prediction_error()`,
+  `glm_gcv()`, `log_likelihood_at()` (#334).
+- Rating-variable terms (CAS Monographs 5 and 16): `Terms::interaction`
+  (numeric and factor in any combination, named as R's `a:b`), `poly` (raw
+  powers), `hinges` (`max(0, x - k)`), `steps` (`1[x >= k]`), `bins` (a
+  numeric column cut into right-closed bins and coded as a factor, labels
+  as R's `cut`), `log` (`ln(x / base)`) and `ordinal` (an ordered factor in
+  cumulative coding). A `Coding` rebuilds them on new data. Python
+  `Terms.interaction`, `.poly`, `.hinges`, `.steps`, `.bins`, `.log`,
+  `.ordinal`; in R they are formula terms (#350, #357).
+- Terms that learn from the training data: `Terms::orthogonal_poly`, R's
+  `poly(x, degree)` recurrence (parity, on new data too), and
+  `natural_spline`, a natural cubic spline in the restricted cubic basis,
+  which spans R's `splines::ns`: fitted values and predictions agree with
+  `lm(y ~ ns(x, knots))`, coefficients differ. Python
+  `Terms.orthogonal_poly` and `.natural_spline` (#350).
+- Out-of-fold target encoding of a high-cardinality factor with
+  credibility (CAS Monograph 16, chapter 6):
+  `prospicio_models::encode::target_encode` gives each training row its
+  level's actual-to-expected ratio from the other folds, shrunk to 1 by
+  `z = n / (n + K)`, and a `TargetEncoding` from all rows for new data.
+  Python `target_encode` and `TargetEncoding`; R `target_encode()` and
+  `encode_target()` (#357).
+
+### Breaking changes
+
+- `prospicio_models::Term` has new variants (`Interaction`, `Poly`,
+  `Hinges`, `Steps`, `Bins`, `Log`, `Ordinal`, `OrthogonalPoly`,
+  `NaturalSpline`), so an exhaustive `match`
+  on it needs new arms (#350).
+### Distributions and probability
+
+- The worst VaR of a sum with unknown dependence by the Rearrangement
+  Algorithm (Puccetti and Rüschendorf): `rearrangement::rearrange` on any
+  columns and `worst_var` on `n` quantiles of each marginal, from a start
+  given as is, rotated or shuffled by seed, so a result is reproducible
+  (*Pricing Insurance Risk* Exercise 59 as its guide prints it). Python
+  `prospicio.risk.rearrange` and `worst_var`, R `rearrange()` and
+  `worst_var()` (#366).
+
+### Aggregate and reinsurance
+
+- The normal power and Wilson–Hilferty approximations of a compound sum
+  (Bahnemann, CAS Monograph 2, section 4.4), defined by their quantiles:
+  `ApproximationKind::NormalPower` and `WilsonHilferty`; Python
+  `CompoundMoments.approximate("normal_power")` and
+  `"wilson_hilferty"`, R `moment_approximation(m, "normal_power")` and
+  `"wilson_hilferty"` (#329).
+
+### Distributions and probability
+
+- The third moment of a layer of any severity,
+  `Severity::layer_third_moment(limit, attachment)`, by adaptive
+  quadrature of the survival function (the limited third moment at
+  attachment 0, the unlimited layer at an infinite limit); Python
+  `layer_third_moment` on every severity, R `layer_third_moment()` (#329).
+
+### Breaking changes
+
+- `prospicio_aggregate::ApproximationKind` and `Approximation` have the
+  variants `NormalPower` and `WilsonHilferty`, so an exhaustive `match` on
+  them needs new arms (#329).

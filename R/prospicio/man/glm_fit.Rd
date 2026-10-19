@@ -48,7 +48,9 @@ as the fitted means stay positive), \code{"deviance"} or a fixed number.}
 \value{
 A \code{glm_model} with properties \code{coefficients}, \code{std_errors},
 \code{p_values}, \code{covariance}, \code{dispersion}, \code{deviance}, \code{null_deviance},
-\code{log_likelihood}, \code{aic}, \code{df_resid}, \code{iterations} and \code{fitted}. Use
+\code{log_likelihood}, \code{aic}, \code{bic} (counting the coefficients as \code{aic}
+does; \code{\link[stats:BIC]{stats::BIC()}} also counts an estimated dispersion), \code{df_resid},
+\code{iterations} and \code{fitted}. Use
 \code{\link[stats:coef]{stats::coef()}}, \code{\link[stats:predict]{stats::predict()}} and \code{\link[=predict_distribution]{predict_distribution()}}.
 }
 \description{
@@ -56,6 +58,15 @@ Fits by IRLS on the Rust core. The design matrix is R's own
 \code{model.matrix()}, so formulas, factors (treatment coding) and \code{offset()}
 terms work as in \code{\link[stats:glm]{stats::glm()}}. Results match statsmodels' GLM
 (\code{validation/scripts/statsmodels_glm.py}).
+}
+\details{
+The rating variables of Python's \code{Terms} are formula terms here:
+interactions \code{a:b}, raw powers \code{poly(x, 3, raw = TRUE)}, hinges
+\code{I(pmax(0, x - 30))}, steps \code{I(x >= 30)}, bins \code{cut(x, c(-Inf, 30, 50, Inf))}, a centred log \code{log(x / 40)} and natural splines
+\code{splines::ns(x, knots = ...)}. For an ordered factor in cumulative coding
+(each coefficient the step from the level below), use one step column
+per level, \code{I(as.integer(f) >= 2)} and so on, on a factor with its levels
+in order.
 }
 \examples{
 d <- data.frame(claims = c(1, 2, 4, 2, 1, 3), region = c("N", "N", "S", "S", "W", "W"),
