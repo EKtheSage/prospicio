@@ -4,7 +4,14 @@
 \alias{iman_conover}
 \title{Reorder draws to a target correlation (Iman-Conover)}
 \usage{
-iman_conover(x, correlation, seed)
+iman_conover(
+  x,
+  correlation,
+  seed,
+  dof = NULL,
+  scores = NULL,
+  shuffle_rows = FALSE
+)
 }
 \arguments{
 \item{x}{A \link{predictive_distribution}.}
@@ -13,6 +20,18 @@ iman_conover(x, correlation, seed)
 component.}
 
 \item{seed}{Seed for shuffling the scores, a whole number.}
+
+\item{dof}{Student t reference scores with these degrees of freedom,
+which give more joint extremes than the default normal scores (CAS
+Monograph 15, section 8.2.3; \code{aggregate}'s \code{dof}).}
+
+\item{scores}{Reference scores of your own, one per simulation, in any
+order. Give \code{dof} or \code{scores}, not both.}
+
+\item{shuffle_rows}{Shuffle the result's rows. Without it the first
+component comes back sorted ascending, which matters to anything that
+reads the rows in order or a slice of them; whole-sample statistics do
+not notice.}
 }
 \value{
 A \link{predictive_distribution} with the same keys and marginals.
