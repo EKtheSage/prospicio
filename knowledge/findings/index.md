@@ -1,5 +1,6 @@
 # Findings
 
+* [Grouped losses are fitted conditional on the range of the bands](grouped-severity-fits.md) - Band probabilities over S(b_0) - S(b_n) cover a deductible and a truncation from above; maximum likelihood and minimum chi-square share the grouped Fisher information; empirical limited means are exact from band totals; Bahnemann's Ex 2.8 is not at its minimum.
 * [The product-limit estimate survives a common bound from above, not per-loss ones](product-limit-truncated-above.md) - With one bound U Kaplan-Meier estimates P(X > x | tau < X <= U) and goodness_of_fit compares through (S(x) - S(U)) / (S(tau) - S(U)); per-loss bounds bias it (Efron-Petrosian not built), so they are refused.
 * [A Lomax fit runs to the exponential when the losses' CV is at most 1](lomax-mle-boundary.md) - The score equations alpha = n / sum ln(1 + y/theta) and (alpha + 1) sum y/(theta + y) = n have no finite root when the losses' CV is at most 1; the fit runs to the exponential limit.
 * [A scaled and shifted severity keeps exact layer moments](affine-severity-layers.md) - S_Y = 1 below the shift b and S_X((y - b)/s) above it, so a layer of s X + b is a length plus s times a layer of X, and its second moment c^2 + s^2 m2 + 2 (lo - a) s m1.

@@ -10021,6 +10021,80 @@ class Group:
         """
 
 @final
+class GroupedFit:
+    """
+    A severity fitted to grouped losses, from ``fit_grouped``: the
+    distribution, its parameters with standard errors and covariance (from
+    the grouped data's Fisher information), the expected count in each band
+    and the chi-square test.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chi_square(self, /) -> float:
+        """
+        Pearson's chi-square at the fit.
+        """
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether the simplex met its tolerance.
+        """
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        The parameters' covariance, one row per parameter in the family's
+        order: the inverse of the grouped data's Fisher information, which
+        both methods attain asymptotically.
+        """
+    @property
+    def degrees_of_freedom(self, /) -> int:
+        """
+        The chi-square test's degrees of freedom: bands with a positive
+        expected count, less one, less the number of parameters.
+        """
+    @property
+    def distribution(self, /) -> Any:
+        """
+        The fitted distribution.
+        """
+    @property
+    def expected(self, /) -> list[float]:
+        """
+        The expected count in each band at the fit.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        The family's name.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The multinomial log-likelihood at the fit.
+        """
+    @property
+    def method(self, /) -> str:
+        """
+        The objective it was fitted by, ``"ml"`` or ``"chi_square"``.
+        """
+    @property
+    def p_value(self, /) -> float:
+        """
+        The chi-square test's p-value; NaN with no degrees of freedom.
+        """
+    @property
+    def parameters(self, /) -> dict[str, float]:
+        """
+        The parameters by name.
+        """
+    @property
+    def standard_errors(self, /) -> dict[str, float]:
+        """
+        Each parameter's standard error, by name; NaN where the information
+        is singular.
+        """
+
+@final
 class HierarchicalCredibilityFit:
     """
     A fitted Bayesian hierarchical credibility model, from
@@ -11823,6 +11897,44 @@ class Leg:
     def label(self, /) -> str:
         """
         The label.
+        """
+
+@final
+class LevDistanceFit:
+    """
+    A severity fitted by the minimum distance between its limited expected
+    values and empirical ones, from ``fit_lev_distance``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def converged(self, /) -> bool:
+        """
+        Whether the simplex met its tolerance.
+        """
+    @property
+    def distance(self, /) -> float:
+        """
+        The minimized weighted squared distance.
+        """
+    @property
+    def distribution(self, /) -> Any:
+        """
+        The fitted distribution.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        The family's name.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        The fitted limited expected value at each size.
+        """
+    @property
+    def parameters(self, /) -> dict[str, float]:
+        """
+        The parameters by name.
         """
 
 @final
@@ -23044,6 +23156,82 @@ def fft_bivariate(frequency: Any, severity: JointGrid, points: tuple[int, int]) 
     1.4
     """
 
+def fit_grouped(family: str, bounds: Sequence[float], counts: Sequence[float], method: str = "ml") -> GroupedFit:
+    """
+    Fit of a lognormal, gamma, Weibull, Burr or Lomax severity to grouped
+    losses, a count of losses in each size band, by maximum likelihood on
+    the bands or by minimum chi-square (Bahnemann, *Distributions for
+    Actuaries*, section 2.4). The losses are conditioned on lying within the
+    bands: a first bound above 0 is a deductible's truncation and a finite
+    last bound a truncation from above.
+    
+    Parameters
+    ----------
+    family : {"lognormal", "gamma", "weibull", "burr", "lomax"}
+    bounds : list of float
+        The band bounds, one more than ``counts``, non-negative and strictly
+        increasing; only the last may be ``math.inf``.
+    counts : list of float
+        The count (or any weight) in each band ``(bounds[k], bounds[k + 1]]``.
+    method : {"ml", "chi_square"}
+        Maximum likelihood (the default) or minimum chi-square.
+    
+    Returns
+    -------
+    GroupedFit
+    
+    Raises
+    ------
+    ValueError
+        If the bands or counts are invalid or the method is unknown.
+    
+    Examples
+    --------
+    Bahnemann's P2.16, a gamma by minimum chi-square:
+    
+    >>> import math
+    >>> from prospicio.distributions import fit_grouped
+    >>> bounds = [0, 1000, 1500, 2000, 2500, 3000, math.inf]
+    >>> fit = fit_grouped("gamma", bounds, [42, 61, 47, 26, 14, 10], "chi_square")
+    >>> round(fit.parameters["shape"], 4), round(fit.parameters["scale"], 2)
+    (4.7432, 337.31)
+    """
+
+def fit_lev_distance(family: str, sizes: Sequence[float], empirical: Sequence[float], weights: Sequence[float] |None = None, start: Sequence[float] |None = None) -> LevDistanceFit:
+    """
+    Fit of a lognormal, gamma, Weibull, Burr or Lomax severity by minimizing
+    ``sum(w * (E[X; x] - e) ** 2)``, the weighted squared distance between
+    its limited expected values and the empirical ones ``e`` at the sizes
+    ``x`` (Bahnemann's minimum distance, section 2.5). Empirical limited
+    means are exact from grouped data with each band's total, and stay exact
+    under a policy limit at or above the last size.
+    
+    Parameters
+    ----------
+    family : {"lognormal", "gamma", "weibull", "burr", "lomax"}
+    sizes : list of float
+        Positive, strictly increasing limits.
+    empirical : list of float
+        The empirical limited expected value at each size.
+    weights : list of float, optional
+        Non-negative weights, 1 by default.
+    start : list of float, optional
+        Starting parameters in the family's order; by default, from losses
+        spread to match the empirical limited means.
+    
+    Returns
+    -------
+    LevDistanceFit
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Lognormal, fit_lev_distance
+    >>> x = [500.0, 1000.0, 2000.0, 5000.0, 10000.0]
+    >>> e = [Lognormal(7.0, 1.2).lev(v) for v in x]
+    >>> round(fit_lev_distance("lognormal", x, e).parameters["meanlog"], 5)
+    7.0
+    """
+
 def fit_pml_curve(return_periods: Sequence[float], amounts: Sequence[float], tail_alpha: float = 2.0, truncation: float |None = None) -> TowerModel:
     """
     The model through the points of a PML curve: ``amounts[j]`` is
@@ -23224,6 +23412,36 @@ def group_k_fold(groups: Sequence[str], k: int, seed: int) -> list[tuple[list[in
     Returns
     -------
     list of (list of int, list of int)
+    """
+
+def grouped_goodness_of_fit(severity: Any, bounds: Sequence[float], counts: Sequence[float]) -> dict:
+    """
+    A severity against grouped losses: each band's probability conditional
+    on the range of the bands, the expected counts, Pearson's chi-square and
+    the multinomial log-likelihood.
+    
+    Parameters
+    ----------
+    severity : a distribution
+    bounds : list of float
+    counts : list of float
+    
+    Returns
+    -------
+    dict
+        ``probabilities`` and ``expected`` (lists), ``chi_square`` and
+        ``log_likelihood`` (floats).
+    
+    Examples
+    --------
+    Bahnemann's Ex 2.7:
+    
+    >>> import math
+    >>> from prospicio.distributions import Gamma, grouped_goodness_of_fit
+    >>> bounds = [0, 1000, 1500, 2000, 2500, 3000, math.inf]
+    >>> g = grouped_goodness_of_fit(Gamma(3.907288, 397.931), bounds, [42, 61, 47, 26, 14, 10])
+    >>> round(g["chi_square"], 3)
+    3.095
     """
 
 def haircut(pd: PredictiveDistribution, total: float, measure: str, level: float) -> LevelAllocation:

@@ -103,9 +103,11 @@ what it is aiming for by v1.0.
     allocation of the margin, Shapley, haircut and equal risk allocations
     (#369), the normal power and Wilson–Hilferty approximations (#329),
     shifted and scaled severities (#318).
-- **Next:** fits to grouped and truncated data (#328): the Lomax family
-  in `fit_severity` and truncation from above are done; grouped data with
-  minimum chi-square and minimum-distance fits remain.
+  - Fits to grouped and truncated data (#328): the Lomax family in
+    `fit_severity`, truncation from above, and grouped losses by maximum
+    likelihood or minimum chi-square with the minimum limited-mean
+    distance (`grouped_fit`; Bahnemann's printed fits).
+- **Next:** the Guides lane's remaining issues for the Probability lane.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 

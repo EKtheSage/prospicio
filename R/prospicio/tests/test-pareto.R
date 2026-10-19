@@ -151,6 +151,35 @@ for (d in list(ig, iv, b, bt, tr, sp)) {
 }
 stopifnot(inherits(try(truncated_distribution(pareto(100, 2), 0, 50), silent = TRUE), "try-error"))
 
+# #328: grouped losses by maximum likelihood and minimum chi-square, and the
+# minimum limited-mean distance (Bahnemann, Distributions for Actuaries).
+local({
+  bounds <- c(0, 1000, 1500, 2000, 2500, 3000, Inf)
+  counts <- c(42, 61, 47, 26, 14, 10)
+  g <- grouped_goodness_of_fit(gamma_distribution(3.907288, 397.931), bounds, counts)
+  stopifnot(abs(g$chi_square - 3.095) < 5e-4)
+  # Ex 2.8: the minimum chi-square lognormal.
+  cs <- grouped_fit("lognormal", bounds, counts, "chi_square")
+  stopifnot(abs(cs$parameters[["meanlog"]] - 7.2857) < 5e-5,
+            abs(cs$parameters[["sdlog"]] - 0.4570) < 5e-5,
+            abs(cs$chi_square - 0.614) < 5e-4, cs$degrees_of_freedom == 3)
+  # Grouped maximum likelihood against optim on the multinomial likelihood.
+  ml <- grouped_fit("lognormal", bounds, counts)
+  nll <- function(p) -sum(counts * log(diff(plnorm(bounds, p[1], abs(p[2])))))
+  o <- optim(c(7, 0.5), nll, control = list(reltol = 1e-14))
+  stopifnot(max(abs(ml$parameters - o$par)) < 1e-4,
+            abs(ml$log_likelihood + o$value) < 1e-8)
+  # Ex 2.10: the minimum limited-mean distance lognormal.
+  x <- c(1000, 5000, 10000, 25000, 50000, 100000, 200000, 300000)
+  below <- c(729, 1096, 1208, 1326, 1391, 1440, 1468, 1500)
+  total <- c(225138, 1102272, 1918947, 3752091, 6007543, 9234739, 13100561, 22343455)
+  e <- (total + x * (1500 - below)) / 1500
+  lv <- lev_distance_fit("lognormal", x, e)
+  stopifnot(abs(lv$parameters[["meanlog"]] - 6.9852) < 5e-5,
+            abs(lv$parameters[["sdlog"]] - 2.5850) < 5e-5,
+            identical(round(lv$fitted), c(648, 2091, 3239, 5410, 7580, 10168, 13069, 14850)))
+})
+
 cat("prospicio R pareto tests passed\n")
 
 # Issue #213: a severity under a mix of policy limits, and fit standard errors.

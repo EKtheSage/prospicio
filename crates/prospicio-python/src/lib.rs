@@ -20,6 +20,7 @@ mod credibility;
 mod discrete;
 mod distributions;
 mod experience;
+mod grouped_fit;
 mod models;
 mod natural;
 #[cfg(feature = "nn")]
@@ -70,6 +71,10 @@ mod prospicio_native {
     use super::experience::{
         PyAsIf, PyBurningCost, PyDevelopmentPattern, PyIndexClause, PyLargeLossExperience,
         PyPreparedLosses,
+    };
+    #[pymodule_export]
+    use super::grouped_fit::{
+        PyGroupedFit, PyLevDistanceFit, fit_grouped, fit_lev_distance, grouped_goodness_of_fit,
     };
     #[pymodule_export]
     use super::models::{
