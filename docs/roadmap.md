@@ -318,6 +318,15 @@ what it is aiming for by v1.0.
     rescaled to the tail. Parity with chainladder-python's
     `DevelopmentConstant` and with R's `MackChainLadder` on the
     triangle's own factors.
+  - Averages over the latest periods, excluding high and low, and
+    geometric (`reserving-v02.md`, decision 13; branch
+    `claude/development-averages`, issues #336 and #339, in Rust, Python
+    and R): `n_periods`, `drop_high` and `drop_low` on `Development` for
+    the chain ladder, the expected-loss family and Mack, in the factor and
+    in sigma alike, and `Average::Geometric` (factors only). Parity with
+    chainladder-python's `Development` and R's `MackChainLadder(weights =
+    W)`; the bootstraps and the one-year views reject them until a second
+    PR. Factors to ultimate below 1 in selected patterns.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

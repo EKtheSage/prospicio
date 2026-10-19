@@ -43,6 +43,10 @@ relative 1e-9.[^test] Read and checked on 2026-10-18.[^design]
   ending on the latest `n` diagonals, the same as the latest `n` origins at
   each age; on a sparse or mixed-grain triangle the two differ.
   `n_periods` at or past the number of diagonals uses every link ratio.
+  chainladder-python takes that shortcut once `n_periods` is at least the
+  number of origins less 1, even on a triangle with a development grain
+  finer than its origin grain, where older link ratios remain to cut;
+  prospicio keeps to the calendar rule there.
 * **`w_` counts one cell too many.** Under `n_periods`, the weights `w_`
   include the starting cell on the latest diagonal, which has no link
   ratio. The regression ignores it, so the number of link ratios actually
