@@ -195,6 +195,48 @@ pub fn student_t_cdf(t: f64, nu: f64) -> f64 {
     if t > 0.0 { 1.0 - tail } else { tail }
 }
 
+/// Quantile of Student's t with `nu > 0` degrees of freedom: the inverse
+/// of [`student_t_cdf`], by the Illinois method on a bracket doubled out
+/// from the origin. NaN for `p` outside `[0, 1]`; `-inf` and `inf` at the
+/// ends.
+///
+/// ```
+/// use prospicio_math::special::student_t_quantile;
+///
+/// // With two degrees of freedom, (2p - 1) / sqrt(2 p (1 - p)).
+/// let p = 0.9;
+/// let want = (2.0 * p - 1.0) / (2.0 * p * (1.0 - p)).sqrt();
+/// assert!((student_t_quantile(p, 2.0) - want).abs() < 1e-12);
+/// ```
+pub fn student_t_quantile(p: f64, nu: f64) -> f64 {
+    if !(0.0..=1.0).contains(&p) || nu.is_nan() || nu <= 0.0 {
+        return f64::NAN;
+    }
+    if p == 0.0 {
+        return f64::NEG_INFINITY;
+    }
+    if p == 1.0 {
+        return f64::INFINITY;
+    }
+    if p == 0.5 {
+        return 0.0;
+    }
+    // Solve in the upper half and reflect: the quantile is odd about 1/2.
+    let (q, sign) = if p > 0.5 { (p, 1.0) } else { (1.0 - p, -1.0) };
+    let f = |x: f64| student_t_cdf(x, nu) - q;
+    let mut hi = 1.0;
+    while f(hi) < 0.0 && hi < 1e300 {
+        hi *= 2.0;
+    }
+    let lo = hi / 2.0;
+    let (lo, f_lo) = if hi == 1.0 {
+        (0.0, f(0.0))
+    } else {
+        (lo, f(lo))
+    };
+    sign * crate::roots::illinois(lo, hi, f_lo, f(hi), f)
+}
+
 /// Regularized incomplete gamma functions `(P(a, x), Q(a, x))`, the lower
 /// and upper parts, for shape `a > 0` and `x >= 0`: `P(a, x)` is the
 /// distribution function of a unit-scale gamma with shape `a` at `x`, and
@@ -779,6 +821,24 @@ mod tests {
         assert!(beta_inc(1.0, 1.0, 1.5).is_nan());
         assert_eq!(beta_inc(2.0, 3.0, 0.0), 0.0);
         assert_eq!(beta_inc(2.0, 3.0, 1.0), 1.0);
+    }
+
+    #[test]
+    fn student_t_quantile_inverts_the_cdf() {
+        for &nu in &[1.0, 2.0, 3.5, 30.0] {
+            for &p in &[1e-6, 0.01, 0.3, 0.5, 0.77, 0.999_999] {
+                let x = student_t_quantile(p, nu);
+                assert!(
+                    (student_t_cdf(x, nu) - p).abs() < 1e-12 * p.max(1e-3),
+                    "{nu} {p}"
+                );
+            }
+        }
+        // Cauchy: tan(pi (p - 1/2)).
+        let p: f64 = 0.01;
+        assert!((student_t_quantile(p, 1.0) / (PI * (p - 0.5)).tan() - 1.0).abs() < 1e-10);
+        assert!(student_t_quantile(1.5, 2.0).is_nan());
+        assert_eq!(student_t_quantile(0.0, 2.0), f64::NEG_INFINITY);
     }
 
     #[test]

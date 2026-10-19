@@ -12,6 +12,15 @@
 
 ### Distributions and probability
 
+- Iman–Conover with other reference scores and shuffled rows:
+  `copula::iman_conover_with` takes `ImanConover { scores, shuffle_rows }`,
+  with `Scores::StudentT(dof)` (more joint extremes than normal scores at
+  the same correlation, Monograph 15 section 8.2.3, `aggregate`'s `dof`)
+  or `Scores::Given`, and `shuffle_rows` to undo the first component's
+  ascending order, now documented on `iman_conover`. Python
+  `iman_conover(..., dof=, scores=, shuffle_rows=)`, R `iman_conover(...,
+  dof, scores, shuffle_rows)`. `prospicio_math::special::student_t_quantile`
+  (#378).
 - Threshold diagnostics for peaks over threshold:
   `prospicio_prob::evt::threshold_diagnostics` gives, at each threshold,
   the mean excess with its standard error and the generalized Pareto
