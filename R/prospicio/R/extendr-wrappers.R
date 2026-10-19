@@ -256,6 +256,8 @@ haircut_rust <- function(pd, total, measure, level) .Call(wrap__haircut_rust, pd
 
 equal_risk_rust <- function(pd, total, measure) .Call(wrap__equal_risk_rust, pd, total, measure)
 
+rearrange_rust <- function(x, ncol, rotate, seed, tolerance) .Call(wrap__rearrange_rust, x, ncol, rotate, seed, tolerance)
+
 gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)
 
 mean_excess_rust <- function(draws, thresholds) .Call(wrap__mean_excess_rust, draws, thresholds)

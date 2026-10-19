@@ -371,3 +371,17 @@ def test_haircut_and_equal_risk_match_pricing_insurance_risk():
         equal_risk(pd, 1e6, "tvar")
     with pytest.raises(ValueError):
         haircut(pd, 80.0, "es", 0.5)
+
+
+def test_worst_var_by_rearrangement():
+    # Pricing Insurance Risk, Exercise 59, from the guide's rotated starts.
+    from prospicio.risk import rearrange, worst_var
+
+    m = [Lognormal.from_mean_cv(10.0, cv) for cv in (1.0, 2.0, 3.0)]
+    for rotate, want in [(7, 353.8), (13, 353.6), (19, 352.9)]:
+        assert worst_var(m, 0.99, n=40, rotate=rotate)["value"] == pytest.approx(want, abs=0.05)
+    a = worst_var(m, 0.99, n=40, seed=1)
+    assert a == worst_var(m, 0.99, n=40, seed=1)
+    assert rearrange([[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]])["value"] == 5.0
+    with pytest.raises(ValueError):
+        rearrange([[1.0]], rotate=1, seed=1)

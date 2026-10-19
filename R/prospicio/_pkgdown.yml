@@ -194,6 +194,7 @@ reference:
       - capital_allocation
       - shapley_allocation
       - haircut_allocation
+      - rearrange
       - exponential_utility
       - systemic_risk
   - title: Models

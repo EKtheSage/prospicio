@@ -758,6 +758,47 @@ allocation_result <- function(x, r) {
   )
 }
 
+#' The Rearrangement Algorithm and the worst VaR of a sum
+#'
+#' `rearrange()` is Puccetti and Rueschendorf's algorithm: it orders each
+#' column of `x` opposite to the sum of the others until the smallest row sum
+#' stops rising by `tolerance`. `worst_var()` applies it to `n` quantiles of
+#' each marginal from `p` up (Embrechts, Puccetti and Rueschendorf's lower
+#' matrix) to estimate the worst VaR at `p` of their sum under unknown
+#' dependence (*Pricing Insurance Risk*, Exercise 59). It is a heuristic
+#' whose answer depends on the start: as given, column `j` rotated down by
+#' `rotate * j` places, or each column shuffled from `seed`.
+#'
+#' @param x A numeric matrix, one column per variable.
+#' @param marginals A list of severities.
+#' @param p The VaR level.
+#' @param n Quantiles per marginal.
+#' @param rotate,seed The start; at most one.
+#' @param tolerance The rise in the smallest row sum below which it stops.
+#' @returns A list with `value` (the smallest row sum, the worst VaR
+#'   estimate), `columns` (the final arrangement as a matrix) and
+#'   `iterations`.
+#' @export
+#' @examples
+#' rearrange(cbind(1:4, 1:4))$value
+#' m <- lapply(c(1, 2, 3), function(cv) lognormal_from_mean_cv(10, cv))
+#' worst_var(m, 0.99, n = 40, rotate = 19)$value
+rearrange <- function(x, rotate = NULL, seed = NULL, tolerance = 1e-6) {
+  x <- as.matrix(x)
+  r <- rust_result(rearrange_rust(as.double(x), as.double(ncol(x)),
+                                  if (is.null(rotate)) NaN else as.double(rotate),
+                                  if (is.null(seed)) NaN else as.double(seed), as.double(tolerance)))
+  list(value = r$value, columns = matrix(r$columns, ncol = ncol(x)), iterations = r$iterations)
+}
+
+#' @rdname rearrange
+#' @export
+worst_var <- function(marginals, p, n = 100, rotate = NULL, seed = NULL, tolerance = 1e-6) {
+  probs <- p + (1 - p) * (seq_len(n) - 1) / n
+  x <- vapply(marginals, function(m) quantile(m, probs), numeric(n))
+  rearrange(x, rotate = rotate, seed = seed, tolerance = tolerance)
+}
+
 #' Tail diagnostics
 #'
 #' `mean_excess()` is the empirical mean-excess function

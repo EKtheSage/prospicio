@@ -306,6 +306,8 @@ reference:
       - risk.shapley
       - risk.haircut
       - risk.equal_risk
+      - risk.rearrange
+      - risk.worst_var
       - risk.entropic
       - risk.esscher
       - risk.marginal_expected_shortfall

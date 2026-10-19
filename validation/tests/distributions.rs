@@ -1170,3 +1170,24 @@ fn haircut_and_equal_risk_match_pricing_insurance_risk_exercises_205_206() {
     assert!((e.allocated[0] - 9.56).abs() < 5e-3, "{:?}", e.allocated);
     assert!((e.allocated[1] - 70.44).abs() < 5e-3, "{:?}", e.allocated);
 }
+
+/// *Pricing Insurance Risk*, Exercise 59: the worst 99% VaR of three
+/// lognormals with mean 10 and CVs 1, 2 and 3, from 40 quantiles of each.
+/// The book gives 352.8 from an unstated random start; the guide's rotated
+/// starts (column `j` moved down `7 j`, `13 j` and `19 j` places, numpy's
+/// `roll`) give 353.8, 353.6 and 352.9, which `Start::Rotated` reproduces.
+#[test]
+fn worst_var_matches_the_pricing_insurance_risk_guide() {
+    use prospicio_prob::rearrangement::{Start, worst_var};
+    let marginals: Vec<Lognormal> = [1.0, 2.0, 3.0]
+        .iter()
+        .map(|&cv| Lognormal::from_mean_cv(10.0, cv).unwrap())
+        .collect();
+    let refs: Vec<&dyn Distribution> = marginals.iter().map(|m| m as &dyn Distribution).collect();
+    let comonotonic: f64 = marginals.iter().map(|m| m.quantile(0.99).unwrap()).sum();
+    assert!((comonotonic - 242.5).abs() < 0.05);
+    for (shift, want) in [(7, 353.8), (13, 353.6), (19, 352.9)] {
+        let r = worst_var(&refs, 0.99, 40, Start::Rotated(shift), 1e-6).unwrap();
+        assert!((r.value - want).abs() < 0.05, "shift {shift}: {}", r.value);
+    }
+}
