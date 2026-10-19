@@ -854,7 +854,7 @@ pub mod bayes {
   observed cell, are `Error::Bayes` naming the origin or column; an origin
   with no observed cell is accepted and drawn from the population
   (decision 2); bad prior settings are `InvalidSetting`.
-* **Segments and the backtest** wait for PR E (decision 8).
+* **Segments and the backtest** are PR E (decision 8).
 
 **Built (PR B, Rust core).** The shape above, with these names and
 additions: `Outstanding::{Column, FromIncurred}`;
@@ -1068,15 +1068,70 @@ measures the fit.
 
 ### 8. Segments and the backtest (PR E)
 
-Proposed. `Compartmental::fit_segments(triangle, paid, outstanding,
-premium)` with `SegmentDependence` (independent or rank-correlated;
-`Synchronized` is `Error::Bayes`) and per-segment seeds, as `BayesOdp`'s
-decision 11, and `TriangleModel for Compartmental` in the diagonal
-backtest. Both follow the Meyers segments branch
-(`claude/bayes-meyers-segments`, not merged), which solves the same
-problem for a model that needs premium and a second column; PR E starts
-after it merges. Python and R get `fit_segments` in PR E; the backtest
-stays Rust-only, as for `BayesOdp`.
+Accepted (the user, 2026-10-19). Built in three stages on
+`claude/bayes-compartmental-segments`: `fit_segments` (Rust), the
+diagonal backtest (Rust), then Python and R `fit_segments`. The template
+is the Meyers segments and backtest work (`reserving-bayes.md` decisions
+8, 11 and 13), which solves the same problem for a model that needs a
+premium column and a second response.
+
+* **`fit_segments`.** `Compartmental` gains `dependence:
+  SegmentDependence` (default `Independent` in `new` and `model_2`; `fit`
+  ignores it), and `Compartmental::fit_segments(triangle, paid,
+  outstanding: Outstanding, premium) -> CompartmentalFits`, with `fit`'s
+  arguments, each segment read as `fit` reads a single-segment triangle
+  (its own premium column and outstanding cells). `CompartmentalFits`
+  holds `segments: SegmentFits<CompartmentalSegment>` and the joint
+  `reserves`, `paid` and `outstanding` as `PredictiveDistribution`s whose
+  dimensions are the key names, then `origin` (reserves) or `origin` and
+  `age` (the cells), with `to_long`, `totals`, `paid_table`,
+  `outstanding_table` and `segment(keys)`. A `CompartmentalSegment` is
+  the segment's `CompartmentalFit` (posterior, diagnostics, rate swaps,
+  `summary()`, `loo()`), whose three predictive distributions are the
+  segment's part of the joint ones, after any reordering. The tables
+  are built from the segments' own `to_long`, `totals` and cell tables
+  with the key columns prefixed, since `SegmentFits::to_long` needs a
+  chain-ladder projection that this model does not have.
+* **Seeds** as for `Meyers`: segment `k` takes `Stream::SegmentChains(k)`
+  (tag `2 + 2k`, with its pilot run) and `Stream::SegmentPredictive(k)`
+  (tag `3 + 2k`), so no two segments share a random number and `fit`'s
+  draws are unchanged bit for bit. A one-segment `fit_segments` is `fit`
+  with segment 0's streams.
+* **Dependence.** `Independent` leaves the draws as simulated.
+  `RankCorrelation` reorders each segment's reserves together with its
+  future paid and future outstanding cells: one row per simulation holds
+  every segment's reserves, paid cells and outstanding cells, Iman–Conover
+  ranks a segment by its total reserve alone, and the whole row of
+  that segment moves, so each simulation's reserve stays the paid at the
+  last age less the latest paid exactly (a unit test). `Synchronized` is
+  `Error::Bayes` (a posterior has no residuals to share) and a bad matrix
+  is `InvalidSetting`, both before any sampling. A failure in a segment
+  names it (`Error::InSegment`). Provenance as `MeyersFits`: the settings,
+  `segments`, `dependence`, `posterior_draws`, each segment's total
+  premium, and `output`.
+* **Backtest input.** The shared `TriangleFrame` and `TriangleModel` do not
+  change. A wrapper candidate, `CompartmentalCandidate`, holds the
+  `Compartmental` settings, the triangle and the names of the paid,
+  outstanding (or incurred) and premium columns, and implements
+  `TriangleModel`: it reads outstanding at the training rows' origin and
+  age from its triangle and premium per origin, the held-out diagonal
+  never. The paid increments are scored in the standard
+  `diagonal_backtest` table, comparable with the ODP GLM, `BayesOdp` and
+  `Meyers`.
+* **Outstanding table.** A function in the reserving crate reuses the
+  backtest's split and scoring code and scores the held-out outstanding
+  diagonal as a second table: the same metrics (mean cell CRPS, central
+  interval coverage, A/E on the diagonal total, CRPS of the total, log
+  density where closed form) over the outstanding cells of the held-out
+  diagonals. The held-out outstanding is always withheld from training.
+* **Scope.** Model 1 is what pull-request CI runs; model 2 runs only
+  under `full_bayes()` (`RISK_RS_FULL_BAYES`). `one_year_segments` is a
+  later PR. Python and R get `fit_segments` with `dependence` and
+  `spearman` settings; the backtest stays Rust-only, as for `BayesOdp`.
+* **Checks.** `Compartmental` still implements `YearModel` and passes the
+  one-year conformance suite; the unit tests that sample with NUTS are
+  gated by `slow-tests`, and the parity and backtest validation lives in
+  `validation/tests/reserving_compartmental*` (`slow-bayes`).
 
 ### 9. Bindings
 
