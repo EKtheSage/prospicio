@@ -344,4 +344,5 @@ articles:
       The notebooks' R twins, run in full each time the site is built.
     contents:
       - articles/one_year_view
+      - articles/reading_path
       - articles/reinsurance_pricing
