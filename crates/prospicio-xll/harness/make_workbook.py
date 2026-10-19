@@ -771,6 +771,31 @@ cp["A14"] = "Total's 99th percentile"; cp["B14"] = "=PERCENTILE(J4:J1003,0.99)"
 for col in "ABCDFGHIJLM":
     cp.column_dimensions[col].width = 14
 
+# A three-year term: profit commission deficits and a sliding scale's deficits and credits carried forward.
+tm = wb.create_sheet("Term")
+tm["A1"] = "Three-year terms: one row a path, one column a year; premium 100 a year at 100%"; tm["A1"].font = bold
+tm["A3"] = "Premium"; tm["B3"] = 100; tm["B3"].fill = inp
+tm["A4"] = "Profit share"; tm["B4"] = 0.5; tm["B4"].fill = inp
+tm["A5"] = "Allowance"; tm["B5"] = 0.2; tm["B5"].fill = inp
+tm["A6"] = "Carry years (blank: until used up)"; tm["B6"].fill = inp
+tm["A7"] = "Commissions"; tm["B7"] = 0.4; tm["C7"] = 0.2
+tm["A8"] = "At loss ratios"; tm["B8"] = 0.5; tm["C8"] = 0.7
+for c in ("B7", "C7", "B8", "C8"):
+    tm[c].fill = inp
+tm["A10"] = "Ceded losses"; tm["E10"] = "Profit commission"; tm["I10"] = "Sliding-scale commission"
+for c in ("A10", "E10", "I10"):
+    tm[c].font = bold
+for i, path in enumerate([(120, 70, 30), (90, 40, 30), (60, 60, 60), (30, 110, 50), (85, 50, 95)]):
+    for j, x in enumerate(path):
+        cell = tm.cell(row=11 + i, column=1 + j, value=x)
+        cell.fill = inp
+tm["E11"] = ArrayFormula("E11:G15", "=PRO.PROFIT.COMMISSION.TERM(A11:C15,B3,B4,B5,B6)")
+tm["I11"] = ArrayFormula("I11:K15", '=PRO.SLIDING.SCALE.TERM(A11:C15,B3,B7:C7,B8:C8,"both",B6)')
+tm["A17"] = "Year by year without a carry, for comparison"; tm["A17"].font = bold
+tm["E17"] = ArrayFormula("E17:G21", "=PRO.PROFIT.COMMISSION(A11:C15,B3,B4,B5)")
+tm["I17"] = ArrayFormula("I17:K21", "=PRO.SLIDING.SCALE(A11:C15,B3,B7:C7,B8:C8)")
+tm.column_dimensions["A"].width = 30
+
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")
 by["A1"] = "Bayesian ODP chain ladder on RAA, sampled with NUTS (4 chains, 1,000 warm-up and 1,000 kept draws each)"; by["A1"].font = bold

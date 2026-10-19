@@ -60,6 +60,14 @@ pub const CATEGORY: &str = "prospicio";
 /// The add-in's name in Excel's Add-ins dialog.
 pub const ADDIN_NAME: &str = "prospicio";
 
+const TERM_LOSSES: Arg = Arg {
+    name: "losses",
+    help: "Ceded losses: one row a term (a simulated path), one column a year in order",
+};
+const CARRY_YEARS: Arg = Arg {
+    name: "carry_years",
+    help: "Later years a carried amount may be used in, then dropped (until used up if omitted)",
+};
 const COPULA_FAMILY: Arg = Arg {
     name: "family",
     help: "gaussian, t, clayton, gumbel, frank or joe",
@@ -1897,6 +1905,54 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: terms::profit_commission,
+    },
+    Function {
+        symbol: "pro_profit_commission_term",
+        name: "PRO.PROFIT.COMMISSION.TERM",
+        help: "A profit commission in each year of a term, deficits carried forward and used oldest first; one row a term, one column a year.",
+        args: &[
+            TERM_LOSSES,
+            Arg {
+                name: "premium",
+                help: "The premium a year at 100%",
+            },
+            Arg {
+                name: "share",
+                help: "Share of the profit returned to the cedant",
+            },
+            Arg {
+                name: "allowance",
+                help: "The reinsurer's expense and margin allowance, a share of premium",
+            },
+            CARRY_YEARS,
+        ],
+        run: terms::profit_commission_term,
+    },
+    Function {
+        symbol: "pro_sliding_scale_term",
+        name: "PRO.SLIDING.SCALE.TERM",
+        help: "A sliding-scale ceding commission in each year of a term, deficits and credits carried forward; one row a term, one column a year.",
+        args: &[
+            TERM_LOSSES,
+            Arg {
+                name: "premium",
+                help: "The premium a year at 100%, for the loss ratio",
+            },
+            Arg {
+                name: "commissions",
+                help: "Commission rates at the anchors: a row or column",
+            },
+            Arg {
+                name: "loss_ratios",
+                help: "The anchors' loss ratios, increasing, one per commission",
+            },
+            Arg {
+                name: "carry",
+                help: "deficit (loss above the last anchor), credit (below the first) or both (if omitted)",
+            },
+            CARRY_YEARS,
+        ],
+        run: terms::sliding_scale_term,
     },
     Function {
         symbol: "pro_layer_terms",

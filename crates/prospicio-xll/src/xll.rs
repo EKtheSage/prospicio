@@ -485,6 +485,8 @@ mod exports {
     udf!(pro_copula_sim, family, parameter, sims, dim, seed, nu);
     udf!(pro_iman_conover, draws, correlation, seed, dof, shuffle);
     udf!(pro_swing, loss, basic, lcm, minimum, maximum, share);
+    udf!(pro_profit_commission_term, losses, premium, share, allowance, carry_years);
+    udf!(pro_sliding_scale_term, losses, premium, commissions, loss_ratios, carry, carry_years);
     udf!(pro_sliding_scale, loss, premium, commissions, loss_ratios);
     udf!(pro_profit_commission, loss, premium, share, allowance);
     udf!(pro_layer_terms, count_mean, dispersion, family, p1, p2, p3, layer_limit, layer_attachment, premium, reinstatements, commissions, loss_ratios, profit_share, profit_allowance, share, policy_limit, step, points);

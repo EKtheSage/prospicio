@@ -450,12 +450,12 @@ what it is aiming for by v1.0.
   discounting and a cost-of-capital price over the payout; a cover's
   quote; distortions, their prices and calibration, with several
   parameters too (bi-TVaR, beta, weighted TVaR); contract terms at a
-  loss and in expectation; copulas (cdfs, simulated uniforms and
+  loss, in expectation and over a term of several years with deficits
+  and credits carried forward; copulas (cdfs, simulated uniforms and
   Iman–Conover).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): six groups done; the seventh, the
-     nearest left out: multi-year contract terms; further
+     form (`xll.md`, parity plan): all seven groups done; further
      functions as the user asks.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
