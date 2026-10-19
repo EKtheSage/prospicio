@@ -2948,6 +2948,10 @@ OdpGlmFit$future <- function() .Call(wrap__OdpGlmFit__future, self)
 
 OdpGlmFit$prediction_error <- function() .Call(wrap__OdpGlmFit__prediction_error, self)
 
+OdpGlmFit$residuals <- function() .Call(wrap__OdpGlmFit__residuals, self)
+
+OdpGlmFit$residual_summary <- function(by) .Call(wrap__OdpGlmFit__residual_summary, self, by)
+
 OdpGlmFit$predict_distribution <- function(n_sims, seed, parameters) .Call(wrap__OdpGlmFit__predict_distribution, self, n_sims, seed, parameters)
 
 #' @export

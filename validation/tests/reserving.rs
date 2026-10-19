@@ -472,7 +472,7 @@ fn taylor_mcguire() -> Triangle {
             paid.push(cumulative);
         }
     }
-    let tri = Triangle::from_long(&Long {
+    Triangle::from_long(&Long {
         keys: &[],
         origin: &origin,
         development: DevelopmentColumn::Age(&age),
@@ -481,8 +481,7 @@ fn taylor_mcguire() -> Triangle {
         development_grain: Grain::Year,
         cumulative: true,
     })
-    .unwrap();
-    tri
+    .unwrap()
 }
 
 #[test]

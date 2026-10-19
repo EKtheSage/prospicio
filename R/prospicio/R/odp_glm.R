@@ -26,6 +26,18 @@ NULL
 #' `NA` for a zero reserve). [predict_distribution()] draws the future cells
 #' jointly (no `newdata`).
 #'
+#' `residuals` is a data frame with a row per observed cell, origin-major:
+#' `origin`, `development` (age in months), `calendar` (the calendar
+#' period's label), `calendar_index` (0 for the earliest valuation),
+#' `actual`, `fitted`, `actual_to_fitted` (the cell of the actual-to-fitted
+#' heat map), `pearson`, `deviance`, `leverage` (the hat value),
+#' `standardized_deviance` (as [stats::rstandard()]) and
+#' `standardized_pearson`. A cell with leverage 1, the only observation of
+#' its origin or age, is fitted exactly and has no standardized residual
+#' (`NA`). [residual_summary()] groups the standardized deviance residuals
+#' by origin, development or calendar period (Taylor and McGuire, Chapter
+#' 6).
+#'
 #' @param triangle A single-segment [triangle] of cumulative values.
 #' @param column The column to fit, by default the triangle's only one.
 #' @param tolerance Convergence tolerance of the IRLS fit.
@@ -70,6 +82,13 @@ odp_glm_fit <- S7::new_class(
     future = S7::new_property(S7::class_data.frame, getter = function(self) {
       as.data.frame(self@ptr$future())
     }),
+    residuals = S7::new_property(S7::class_data.frame, getter = function(self) {
+      r <- as.data.frame(rust_result(self@ptr$residuals(), call = NULL))
+      for (col in c("standardized_deviance", "standardized_pearson")) {
+        r[[col]][is.nan(r[[col]])] <- NA
+      }
+      r
+    }),
     prediction_error = S7::new_property(S7::class_data.frame, getter = function(self) {
       e <- as.data.frame(rust_result(self@ptr$prediction_error(), call = NULL))
       e$cv[is.nan(e$cv)] <- NA
@@ -87,6 +106,36 @@ odp_glm <- function(triangle, column = NULL, tolerance = 1e-10, max_iterations =
                                       single_number(tolerance, "tolerance"),
                                       single_number(max_iterations, "max_iterations")))
   odp_glm_fit(ptr = ptr)
+}
+
+#' Residuals of an ODP GLM by group
+#'
+#' The standardized deviance residuals of an [odp_glm_fit] grouped by
+#' origin, development age or calendar period: a row per group with the
+#' count of cells with a defined residual, their mean and their standard
+#' deviation (divisor `n - 1`, `NA` below two cells). A trend in the means
+#' over calendar periods points to a calendar effect the model lacks; a
+#' spread that falls with age, to a variance that is not `phi * mu`
+#' (Taylor and McGuire, CAS Monograph 3, Chapter 6).
+#'
+#' @param fit An [odp_glm_fit].
+#' @param by `"development"`, `"origin"` or `"calendar"`.
+#' @returns A data frame with columns `label`, `n`, `mean` and `sd`.
+#' @export
+#' @examples
+#' long <- data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022),
+#'                    age = c(12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 110, 170, 120))
+#' fit <- odp_glm(triangle(long, "year", "age", "paid"))
+#' fit@residuals
+#' residual_summary(fit, "calendar")
+residual_summary <- function(fit, by = c("development", "origin", "calendar")) {
+  if (!S7::S7_inherits(fit, odp_glm_fit)) stop("fit must be an odp_glm_fit", call. = FALSE)
+  by <- match.arg(by)
+  out <- as.data.frame(rust_result(fit@ptr$residual_summary(by)))
+  out$mean[is.nan(out$mean)] <- NA
+  out$sd[is.nan(out$sd)] <- NA
+  out
 }
 
 S7::method(predict_distribution, odp_glm_fit) <- function(object, newdata, n_sims, seed,
