@@ -3,7 +3,7 @@
 //! triangle, with the reserves' analytic prediction error.
 
 use prospicio_glm::ParameterDraws;
-use prospicio_reserving::{OdpGlm, OdpGlmFit, SumPredictionError};
+use prospicio_reserving::{OdpGlm, OdpGlmFit, ResidualGroup, SumPredictionError};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -224,6 +224,94 @@ impl PyOdpGlmFit {
                 }
             }),
         )?;
+        Ok(out)
+    }
+
+    /// The residuals of every observed cell (Taylor and McGuire, CAS
+    /// Monograph 3, Chapter 6). A cell with leverage 1, the only
+    /// observation of its origin or age, is fitted exactly and has no
+    /// standardized residual (``nan``).
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     One list per column, a row per observed cell, origin-major:
+    ///     ``origin``, ``development`` (age in months), ``calendar`` (the
+    ///     calendar period's label), ``calendar_index`` (0 for the earliest
+    ///     valuation), ``actual``, ``fitted``, ``actual_to_fitted`` (the
+    ///     heat map's cell), ``pearson``, ``deviance``, ``leverage`` (the
+    ///     hat value), ``standardized_deviance`` (R's ``rstandard``) and
+    ///     ``standardized_pearson``.
+    fn residuals<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let r = py.detach(|| self.inner.residuals()).map_err(err)?;
+        let out = PyDict::new(py);
+        out.set_item(
+            "origin",
+            r.origin.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        )?;
+        out.set_item("development", r.development)?;
+        out.set_item(
+            "calendar",
+            r.calendar.iter().map(|c| c.1.clone()).collect::<Vec<_>>(),
+        )?;
+        out.set_item(
+            "calendar_index",
+            r.calendar.iter().map(|c| c.0).collect::<Vec<_>>(),
+        )?;
+        out.set_item("actual", r.actual)?;
+        out.set_item("fitted", r.fitted)?;
+        out.set_item("actual_to_fitted", r.actual_to_fitted)?;
+        out.set_item("pearson", r.pearson)?;
+        out.set_item("deviance", r.deviance)?;
+        out.set_item("leverage", r.leverage)?;
+        out.set_item("standardized_deviance", r.standardized_deviance)?;
+        out.set_item("standardized_pearson", r.standardized_pearson)?;
+        Ok(out)
+    }
+
+    /// The standardized deviance residuals grouped by origin, development
+    /// age or calendar period: a trend in the calendar means points to a
+    /// calendar effect the model lacks, a spread that falls with age to a
+    /// variance that is not ``phi * mu``.
+    ///
+    /// Parameters
+    /// ----------
+    /// by : {"development", "origin", "calendar"}, default "development"
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``label``, ``n`` (cells with a defined residual), ``mean`` and
+    ///     ``sd`` (divisor ``n - 1``; ``nan`` below 2 cells), as lists.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     ``by`` is unknown.
+    #[pyo3(signature = (by = "development"))]
+    fn residual_summary<'py>(&self, py: Python<'py>, by: &str) -> PyResult<Bound<'py, PyDict>> {
+        let group = match by {
+            "development" => ResidualGroup::Development,
+            "origin" => ResidualGroup::Origin,
+            "calendar" => ResidualGroup::Calendar,
+            _ => {
+                return Err(PyValueError::new_err(
+                    "by must be \"development\", \"origin\" or \"calendar\"",
+                ));
+            }
+        };
+        let rows = py
+            .detach(|| self.inner.residuals())
+            .map_err(err)?
+            .summary(group);
+        let out = PyDict::new(py);
+        out.set_item(
+            "label",
+            rows.iter().map(|g| g.label.clone()).collect::<Vec<_>>(),
+        )?;
+        out.set_item("n", rows.iter().map(|g| g.n).collect::<Vec<_>>())?;
+        out.set_item("mean", rows.iter().map(|g| g.mean).collect::<Vec<_>>())?;
+        out.set_item("sd", rows.iter().map(|g| g.sd).collect::<Vec<_>>())?;
         Ok(out)
     }
 

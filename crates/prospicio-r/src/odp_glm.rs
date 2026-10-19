@@ -5,7 +5,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_glm::ParameterDraws;
-use prospicio_reserving::{OdpGlm, OdpGlmFit as OdpGlmFitInner, SumPredictionError};
+use prospicio_reserving::{OdpGlm, OdpGlmFit as OdpGlmFitInner, ResidualGroup, SumPredictionError};
 
 use crate::distributions::PredictiveDistribution;
 use crate::reserving::Triangle;
@@ -94,6 +94,47 @@ impl OdpGlmFit {
                 e.rmsep() / e.total
             })
         ))
+    }
+
+    fn residuals(&self) -> Result<List> {
+        let r = self.inner.residuals().map_err(to_r)?;
+        let origin: Vec<String> = r.origin.iter().map(ToString::to_string).collect();
+        let development: Vec<f64> = r.development.iter().map(|&a| f64::from(a)).collect();
+        let calendar: Vec<String> = r.calendar.iter().map(|c| c.1.clone()).collect();
+        let calendar_index: Vec<f64> = r.calendar.iter().map(|c| c.0 as f64).collect();
+        Ok(list!(
+            origin = origin,
+            development = development,
+            calendar = calendar,
+            calendar_index = calendar_index,
+            actual = r.actual,
+            fitted = r.fitted,
+            actual_to_fitted = r.actual_to_fitted,
+            pearson = r.pearson,
+            deviance = r.deviance,
+            leverage = r.leverage,
+            standardized_deviance = r.standardized_deviance,
+            standardized_pearson = r.standardized_pearson
+        ))
+    }
+
+    fn residual_summary(&self, by: &str) -> Result<List> {
+        let group = match by {
+            "development" => ResidualGroup::Development,
+            "origin" => ResidualGroup::Origin,
+            "calendar" => ResidualGroup::Calendar,
+            _ => {
+                return Err(Error::Other(
+                    "by must be \"development\", \"origin\" or \"calendar\"".into(),
+                ));
+            }
+        };
+        let rows = self.inner.residuals().map_err(to_r)?.summary(group);
+        let label: Vec<String> = rows.iter().map(|g| g.label.clone()).collect();
+        let n: Vec<f64> = rows.iter().map(|g| g.n as f64).collect();
+        let mean: Vec<f64> = rows.iter().map(|g| g.mean).collect();
+        let sd: Vec<f64> = rows.iter().map(|g| g.sd).collect();
+        Ok(list!(label = label, n = n, mean = mean, sd = sd))
     }
 
     fn predict_distribution(
