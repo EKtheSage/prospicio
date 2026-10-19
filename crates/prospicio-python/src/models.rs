@@ -690,7 +690,7 @@ impl PyGlmFit {
 /// A fitted GLM, from ``Glm.fit``.
 #[pyclass(name = "GlmFit", module = "prospicio.models", frozen)]
 pub(crate) struct PyGlmFit {
-    inner: GlmFit,
+    pub(crate) inner: GlmFit,
 }
 
 #[pymethods]

@@ -15979,6 +15979,227 @@ class OdpBootstrapFit:
         """
 
 @final
+class OdpGlm:
+    """
+    The over-dispersed Poisson (ODP) reserving model as a quasi-Poisson GLM:
+    ``ln E[X] = c + a[origin] + b[development]`` on the incremental values,
+    ``Var X = phi E[X]``. Its future cells summed by origin are the
+    volume-weighted chain-ladder reserves.
+    
+    Parameters
+    ----------
+    tolerance : float, default 1e-10
+        IRLS convergence tolerance.
+    max_iterations : int, default 100
+        Maximum IRLS iterations.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import OdpGlm, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2020, 2021, 2021, 2022],
+    ...     [12, 24, 36, 12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 165.0, 110.0, 170.0, 120.0]},
+    ... )
+    >>> fit = OdpGlm().fit(tri, "paid")
+    >>> round(fit.total_reserve, 4)
+    98.1429
+    """
+    def __new__(cls, /, tolerance: float = 1e-10, max_iterations: int = 100) -> OdpGlm: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle, column: str) -> OdpGlmFit:
+        """
+        Fits the GLM to the incremental values of one measure column of a
+        single-segment triangle and predicts the cells below the latest
+        diagonal.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        OdpGlmFit
+        
+        Raises
+        ------
+        ValueError
+            If the triangle has several segments, an origin or age has no
+            observed increment, a past cell has no increment, or the GLM does
+            not converge.
+        """
+    @property
+    def max_iterations(self, /) -> int:
+        """
+        Maximum IRLS iterations.
+        """
+    @property
+    def tolerance(self, /) -> float:
+        """
+        IRLS convergence tolerance.
+        """
+
+@final
+class OdpGlmFit:
+    """
+    A fitted ODP GLM, from ``OdpGlm.fit``: the GLM, the future cells' means,
+    the reserves and their prediction error.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def dispersion(self, /) -> float:
+        """
+        Pearson's dispersion ``phi``.
+        """
+    @property
+    def future(self, /) -> list[tuple[str, int]]:
+        """
+        The future cells, as ``(origin, age in months)``, origin-major.
+        """
+    @property
+    def future_design(self, /) -> Design:
+        """
+        Design of the future cells, rows aligned with ``future``: what
+        ``glm`` predicts from.
+        """
+    @property
+    def future_means(self, /) -> list[float]:
+        """
+        Fitted mean of each future cell, aligned with ``future``.
+        """
+    @property
+    def glm(self, /) -> GlmFit:
+        """
+        The quasi-Poisson GLM on the observed increments: coefficients,
+        standard errors, covariance and Pearson's dispersion. Its columns are
+        ``(Intercept)``, ``origin[<period>]`` and ``development[<age>]``,
+        with the first origin and the first age as references.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin periods of the triangle.
+        """
+    def predict_distribution(self, /, n_sims: int, seed: int, parameters: str = "mean_preserving") -> PredictiveDistribution:
+        """
+        Joint draws of the future cells' increments, with dimensions
+        ``["origin", "development"]``. Each simulation draws the coefficients
+        from their normal approximation, then each cell as
+        ``phi * Poisson(mu / phi)``. ``aggregate(["origin"])`` gives the
+        reserves by origin.
+        
+        Parameters
+        ----------
+        n_sims : int
+        seed : int
+        parameters : {"mean_preserving", "normal", "fixed"}, default "mean_preserving"
+            ``"mean_preserving"`` shifts each cell's linear predictor by
+            ``-v / 2`` so the draws average the fitted means (the chain
+            ladder's); ``"normal"`` leaves it (means ``predictive_means()``);
+            ``"fixed"`` keeps the fitted coefficients (process error only).
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If ``n_sims`` is 0, the triangle is fully developed, or
+            ``parameters`` is unknown.
+        """
+    def prediction_error(self, /) -> dict:
+        """
+        The reserves' prediction error by origin and in total (Taylor and
+        McGuire, CAS Monograph 3, (5-11) to (5-13), Table 5-4): the process
+        error ``phi * sum(mu)`` of the future cells, the parameter error
+        ``g' Sigma g`` by the delta method with ``g = sum(mu * x)``, and the
+        root mean square error of prediction. The total's exceeds the
+        origins' combined as if independent, because every origin shares
+        the development factors.
+        
+        Returns
+        -------
+        dict
+            ``origin`` (the labels, then ``"Total"``), ``reserve``,
+            ``process_se``, ``parameter_se``, ``rmsep`` and ``cv``
+            (``rmsep / reserve``, ``nan`` for a zero reserve), as lists.
+            ``pandas.DataFrame(fit.prediction_error())`` lays it out as
+            Table 5-4.
+        """
+    def predictive_means(self, /) -> list[float]:
+        """
+        Mean of each future cell under normal parameter draws,
+        ``exp(eta + v / 2)``: the fitted mean times the lognormal bias of
+        parameter uncertainty on the log scale.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def reserves(self, /) -> list[float]:
+        """
+        Reserve of each origin, aligned with ``origins``: its future cells'
+        fitted means summed, 0 for a fully developed origin.
+        """
+    def residual_summary(self, /, by: str = "development") -> dict:
+        """
+        The standardized deviance residuals grouped by origin, development
+        age or calendar period: a trend in the calendar means points to a
+        calendar effect the model lacks, a spread that falls with age to a
+        variance that is not ``phi * mu``.
+        
+        Parameters
+        ----------
+        by : {"development", "origin", "calendar"}, default "development"
+        
+        Returns
+        -------
+        dict
+            ``label``, ``n`` (cells with a defined residual), ``mean`` and
+            ``sd`` (divisor ``n - 1``; ``nan`` below 2 cells), as lists.
+        
+        Raises
+        ------
+        ValueError
+            ``by`` is unknown.
+        """
+    def residuals(self, /) -> dict:
+        """
+        The residuals of every observed cell (Taylor and McGuire, CAS
+        Monograph 3, Chapter 6). A cell with leverage 1, the only
+        observation of its origin or age, is fitted exactly and has no
+        standardized residual (``nan``).
+        
+        Returns
+        -------
+        dict
+            One list per column, a row per observed cell, origin-major:
+            ``origin``, ``development`` (age in months), ``calendar`` (the
+            calendar period's label), ``calendar_index`` (0 for the earliest
+            valuation), ``actual``, ``fitted``, ``actual_to_fitted`` (the
+            heat map's cell), ``pearson``, ``deviance``, ``leverage`` (the
+            hat value), ``standardized_deviance`` (R's ``rstandard``) and
+            ``standardized_pearson``.
+        """
+    def total_prediction_error(self, /) -> dict:
+        """
+        The total reserve's prediction error: ``reserve``, ``process_se``,
+        ``parameter_se`` and ``rmsep``.
+        
+        Returns
+        -------
+        dict
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Sum of the reserves.
+        """
+
+@final
 class Ogive:
     """
     An ogive: the piecewise linear distribution function through tabulated

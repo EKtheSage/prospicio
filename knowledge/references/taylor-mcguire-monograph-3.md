@@ -6,7 +6,7 @@ resource: https://www.casact.org/monograph/cas-monograph-no-3
 tags: [reserving, glm, odp, chain-ladder, prediction-error, bootstrap, guides, reference, parity]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-17T22:00:00-07:00 }
-verified: { by: process:ci, at: 2026-10-17T22:00:00-07:00 }
+verified: { by: process:ci, at: 2026-10-19T12:00:00-07:00 }
 sources:
   - id: monograph
     resource: https://www.casact.org/monograph/cas-monograph-no-3
@@ -17,6 +17,9 @@ sources:
   - id: test
     resource: ../python/tests/test_guides.py
     title: The harness that runs the guide and checks every printed number in CI
+  - id: parity
+    resource: ../validation/tests/reserving.rs
+    title: The CI test that checks Table 5-4 against OdpGlmFit::prediction_error
 ---
 
 # What it is
@@ -65,9 +68,16 @@ sources:
 
 # Gaps in prospicio found here
 
-* Reserving (#333): `OdpGlm` is not in the bindings; no analytic MSEP; no
-  custom design (reduced models, calendar terms, interactions); no residual
-  diagnostics; ODP only.
+* Reserving (#333): closed in part. `OdpGlmFit::prediction_error` (Rust),
+  Python `OdpGlm` and R `odp_glm()` give Table 5-4 directly, checked in CI
+  by `validation/tests/reserving.rs`, `python/tests/test_odp_glm.py` and
+  `R/prospicio/tests/test-reserving-odp-glm.R`. The residual diagnostics
+  of Chapter 6 (`OdpGlmFit::residuals`, Python `residuals()` and
+  `residual_summary()`, R `fit@residuals` and `residual_summary()`)
+  reproduce Figure 6-22's heat map and the spread by development and mean
+  by calendar year, checked in the same three tests. Still missing: custom
+  designs (reduced models, calendar terms, interactions), families other
+  than the ODP.
 * Models (#334): `GlmFit` lacks residuals, leverages, prediction standard
   errors for sums of rows, and GCV.
 * Mack on this triangle gives a total standard error of 10,939 against the

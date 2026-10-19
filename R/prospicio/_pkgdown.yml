@@ -276,6 +276,8 @@ reference:
       - grain
       - chain_ladder_fit
       - mack_fit
+      - odp_glm_fit
+      - residual_summary
       - claims_development_result
       - tail_constant
       - tail_curve

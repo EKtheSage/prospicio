@@ -4,10 +4,6 @@
 
 <!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
 
-## Now
-
-- (none)
-
 ## Next
 
 - the issues filed by the Guides lane on 2026-10-17 and 18 (#365, #368, #379, #330, #331, #338, #317, #316)

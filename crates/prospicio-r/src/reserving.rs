@@ -437,7 +437,7 @@ fn key_columns(keys: Vec<(String, Vec<String>)>) -> List {
 /// A loss triangle: index × column × origin × development.
 #[extendr]
 pub(crate) struct Triangle {
-    inner: TriangleInner,
+    pub(crate) inner: TriangleInner,
 }
 
 impl From<TriangleInner> for Triangle {

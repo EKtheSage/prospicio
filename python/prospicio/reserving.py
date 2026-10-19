@@ -1,6 +1,7 @@
 """Reserving: the loss triangle, the chain ladder with tail factors, Mack's
 model with its one-year view, the expected-loss methods, Clark's growth
-curves, and the ODP bootstrap with its simulated one-year view of the chain
+curves, the ODP model as a GLM with its analytic prediction error, and the
+ODP bootstrap with its simulated one-year view of the chain
 ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
 one-year views under Mack's process, and the Bayesian ODP chain ladder, the Bayesian
 Bornhuetter-Ferguson, Meyers' CRC, CSR and CAY models and Gesmann and Morris'
@@ -43,6 +44,8 @@ from .prospicio_native import (
     MeyersFits,
     OdpBootstrap,
     OdpBootstrapFit,
+    OdpGlm,
+    OdpGlmFit,
     OneYearFit,
     TailBondy,
     TailConstant,
@@ -68,6 +71,8 @@ __all__ = [
     "ClarkLdf",
     "ClarkCapeCod",
     "ClarkFit",
+    "OdpGlm",
+    "OdpGlmFit",
     "OdpBootstrap",
     "OdpBootstrapFit",
     "MackBootstrap",
