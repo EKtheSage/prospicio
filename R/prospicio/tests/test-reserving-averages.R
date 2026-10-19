@@ -93,11 +93,39 @@ stopifnot(chain_ladder(raa, average = "geometric", n_periods = 3)@excluded)
 
 # Rejected combinations surface the library's errors.
 expect_error_like(mack(raa, average = "geometric"), "geometric")
-expect_error_like(mack_bootstrap(raa, n_sims = 10, n_periods = 3), "n_periods")
 expect_error_like(mack_bootstrap(raa, n_sims = 10, average = "geometric"), "geometric")
-expect_error_like(odp_one_year(raa, n_sims = 10, drop_high = 1), "drop_high")
-expect_error_like(mack_one_year(raa, n_sims = 10, mack_n_periods = 3), "n_periods")
 expect_error_like(chain_ladder(raa, n_periods = 0), "n_periods")
+expect_error_like(odp_bootstrap(raa, n_sims = 10, n_periods = 0), "n_periods")
+expect_error_like(odp_one_year(raa, n_sims = 10, average = "geometric"), "geometric")
+
+# The bootstraps and the one-year views follow the exclusions
+# (decision 14): settings that leave out no link ratio change nothing, seed
+# for seed; real ones change the draws; the scale is biased low.
+for (boot in list(odp_bootstrap, mack_bootstrap)) {
+  plain <- boot(raa, n_sims = 200, seed = 7)
+  stopifnot(identical(mean(boot(raa, n_sims = 200, seed = 7, n_periods = 50)@reserves),
+                      mean(plain@reserves)))
+  stopifnot(mean(boot(raa, n_sims = 200, seed = 7, n_periods = 3)@reserves) !=
+              mean(plain@reserves))
+  stopifnot(mean(boot(raa, n_sims = 200, seed = 7, drop_high = 1, drop_low = 1)@reserves) !=
+              mean(plain@reserves))
+}
+near(odp_bootstrap(raa, n_sims = 10, seed = 1)@scale, 983.6, 1e-4)
+near(odp_bootstrap(raa, n_sims = 10, seed = 1, n_periods = 3)@scale, 694.0, 1e-3)
+
+# One-year views take the method's exclusions; Mack's bootstrap may name
+# them too, but they must be the method's.
+for (view in list(odp_one_year, mack_one_year)) {
+  inherited <- view(raa, n_sims = 200, seed = 3, n_periods = 3)
+  plain <- view(raa, n_sims = 200, seed = 3)
+  stopifnot(mean(inherited@cdr) != mean(plain@cdr))
+}
+named <- mack_one_year(raa, n_sims = 200, seed = 3, n_periods = 3, mack_n_periods = 3)
+stopifnot(identical(mean(named@cdr), mean(mack_one_year(raa, n_sims = 200, seed = 3,
+                                                        n_periods = 3)@cdr)))
+expect_error_like(mack_one_year(raa, n_sims = 10, mack_n_periods = 3), "exclusions")
+expect_error_like(mack_one_year(raa, n_sims = 10, n_periods = 4, mack_n_periods = 3), "exclusions")
+expect_error_like(claims_development_result(mack(raa, n_periods = 3)), "MackBootstrap")
 
 # Argument types are checked in R.
 expect_error_like(chain_ladder(raa, n_periods = 2.5), "n_periods must be NULL or a single whole")

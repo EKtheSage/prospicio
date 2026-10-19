@@ -88,6 +88,10 @@ pub enum Error {
     },
     /// The bootstrap cannot run on this input or with these settings.
     Bootstrap(&'static str),
+    /// A bootstrap's own link ratio exclusions (`n_periods`, `drop_high`
+    /// and `drop_low`) differ from the re-reserving method's in its one-year
+    /// view; each is written out.
+    ExclusionsMismatch { bootstrap: String, method: String },
     /// The ODP GLM cannot be fitted to this triangle.
     OdpGlm(String),
     /// A Bayesian reserving model cannot be fitted to this triangle or
@@ -193,6 +197,10 @@ impl fmt::Display for Error {
                 reason,
             } => write!(f, "{setting} is not supported by {method}: {reason}"),
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
+            Self::ExclusionsMismatch { bootstrap, method } => write!(
+                f,
+                "bootstrap: the bootstrap's exclusions ({bootstrap}) must be the re-reserving method's ({method}), or none"
+            ),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
             Self::Bayes(why) => write!(f, "Bayesian reserving: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
