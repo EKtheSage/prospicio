@@ -17,6 +17,7 @@
 pub mod aggregate;
 pub mod bayes;
 pub mod credibility;
+pub mod distortions;
 pub mod evt;
 pub mod experience;
 pub mod exposure;
@@ -1654,6 +1655,86 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: quote::quote,
+    },
+    Function {
+        symbol: "pro_distortion",
+        name: "PRO.DISTORTION",
+        help: "A distortion's g(s) at each exceedance probability s.",
+        args: &[
+            Arg {
+                name: "s",
+                help: "Exceedance probabilities in [0, 1]: a number or a range",
+            },
+            Arg {
+                name: "family",
+                help: "ccoc, ph, wang, dual, tvar, exp, or with r0 clin, cll, lep, ly (aggregate's names)",
+            },
+            Arg {
+                name: "parameter",
+                help: "The family's parameter: r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly)",
+            },
+            Arg {
+                name: "r0",
+                help: "clin, cll, lep and ly only: the intercept r0",
+            },
+        ],
+        run: distortions::g,
+    },
+    Function {
+        symbol: "pro_distortion_price",
+        name: "PRO.DISTORTION.PRICE",
+        help: "A distortion's risk measure of a discrete or simulated distribution, with its mean and margin.",
+        args: &[
+            Arg {
+                name: "values",
+                help: "Outcomes: a range, any order (simulated draws when probs is omitted)",
+            },
+            Arg {
+                name: "probs",
+                help: "One probability per value, summing to 1 (equally likely if omitted)",
+            },
+            Arg {
+                name: "family",
+                help: "ccoc, ph, wang, dual, tvar, exp, or with r0 clin, cll, lep, ly (aggregate's names)",
+            },
+            Arg {
+                name: "parameter",
+                help: "The family's parameter: r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly)",
+            },
+            Arg {
+                name: "r0",
+                help: "clin, cll, lep and ly only: the intercept r0",
+            },
+        ],
+        run: distortions::price,
+    },
+    Function {
+        symbol: "pro_distortion_calibrate",
+        name: "PRO.DISTORTION.CALIBRATE",
+        help: "Each family's parameter that prices the outcomes at a target premium (CCoC, PH, Wang, dual, TVaR by default).",
+        args: &[
+            Arg {
+                name: "values",
+                help: "Outcomes: a range, any order (simulated draws when probs is omitted)",
+            },
+            Arg {
+                name: "probs",
+                help: "One probability per value, summing to 1 (equally likely if omitted)",
+            },
+            Arg {
+                name: "premium",
+                help: "The target premium, between the mean and the largest outcome (cap the outcomes at the assets first)",
+            },
+            Arg {
+                name: "families",
+                help: "Family names: a row or column (ccoc, ph, wang, dual, tvar if omitted)",
+            },
+            Arg {
+                name: "r0",
+                help: "clin, cll, lep and ly only: the intercept r0",
+            },
+        ],
+        run: distortions::calibrate_families,
     },
 ];
 

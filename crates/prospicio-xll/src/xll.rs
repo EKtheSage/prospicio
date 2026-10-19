@@ -478,4 +478,7 @@ mod exports {
     udf!(pro_payout_stats, times, values, rate, kind, shift);
     udf!(pro_payout_price, expected_loss, assets, coc, times, values, rate, kind, shift);
     udf!(pro_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, quoted);
+    udf!(pro_distortion, s, family, parameter, r0);
+    udf!(pro_distortion_price, values, probs, family, parameter, r0);
+    udf!(pro_distortion_calibrate, values, probs, premium, families, r0);
 }
