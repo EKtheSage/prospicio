@@ -11,6 +11,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 
 mod aggregate;
+mod casualty;
 mod counts;
 mod credibility;
 mod discrete;
@@ -53,6 +54,7 @@ pub(crate) fn whole(x: f64, name: &str) -> Result<u64> {
 extendr_module! {
     mod prospicio;
     use aggregate;
+    use casualty;
     use counts;
     use credibility;
     use discrete;

@@ -160,3 +160,14 @@
   the one-sided Poisson probability, `poisson_tail`), and
   `Prepared::without(ids)` and `Prepared::trended` for the burning cost
   with and without a segment (#390).
+- Casualty exposure rating in Python and R. Python
+  `prospicio.pricing.CasualtyProfile` (`rate`, `rate_by_frequency`,
+  `exposure_factors`, `occurrences_above`, `sweep`, `expected_claims`,
+  `count_test`), `IlfTable`, `ElfTable`, `CasualtyRating` (`rows`,
+  `without`, `by_tag`), `ParetoAnchor.fit`, `poisson_tail`, and
+  `PreparedLosses.trended` and `.without`. R `casualty_profile()`,
+  `ilf_table()`, `elf_table()`, `casualty_rate()`,
+  `casualty_rate_by_frequency()`, `casualty_occurrences()`,
+  `casualty_sweep()`, `casualty_expected_claims()`,
+  `casualty_count_test()`, `pareto_anchor()` and `poisson_tail()`. The
+  ALAE treatment is a required argument (#396).

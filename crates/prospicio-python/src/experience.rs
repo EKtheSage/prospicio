@@ -207,6 +207,31 @@ pub(crate) struct PyPreparedLosses {
 
 #[pymethods]
 impl PyPreparedLosses {
+    /// Every loss's trended amount, in the record's order.
+    #[getter]
+    fn trended(&self) -> Vec<f64> {
+        self.inner.trended()
+    }
+
+    /// The record with the losses whose ids are in ``ids`` left out (an
+    /// excluded segment, say), its completeness unchanged. Run
+    /// ``burning_cost`` on both, with the segment's premium left out of the
+    /// years' premiums too.
+    ///
+    /// Parameters
+    /// ----------
+    /// ids : list of str
+    ///
+    /// Returns
+    /// -------
+    /// PreparedLosses
+    fn without(&self, ids: Vec<String>) -> Self {
+        let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+        Self {
+            inner: self.inner.without(&ids),
+        }
+    }
+
     /// The trended size above which every year's record is complete: the
     /// threshold times the largest trend factor.
     #[getter]

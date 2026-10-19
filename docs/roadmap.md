@@ -178,8 +178,11 @@ what it is aiming for by v1.0.
     (`docs/design/casualty-exposure.md`, PR 1; Clark's workers
     compensation example exact), with the sweep over the Pareto alpha, the
     censored anchor, the count test and the burning cost with and without
-    a segment (PR 2).
-- **Next:** casualty exposure PR 3 (Python and R).
+    a segment (PR 2), in Python and R (PR 3).
+- **Next:** the Guides lane's issues of 2026-10-17 and 18 (the lifted
+  allocation's bottom layer and the linear one's atom at the assets, FFT
+  fuzz in `Tower.on_grid`, a severity from a size-of-loss table, a grid
+  audit, shared mixing across units).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)
