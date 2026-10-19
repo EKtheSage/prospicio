@@ -375,26 +375,6 @@ fn uncovered(yml: &str, names: &[String]) -> Vec<String> {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::uncovered;
-
-    #[test]
-    fn a_staged_article_no_group_lists_is_uncovered() {
-        let yml = "articles:
-  - title: A
-    contents:
-      - articles/one
-      - starts_with(\"articles/pir-\")
-    # - articles/commented
-";
-        let names: Vec<String> = ["one", "pir-x", "two", "commented"]
-            .map(String::from)
-            .to_vec();
-        assert_eq!(uncovered(yml, &names), vec!["two", "commented"]);
-    }
-}
-
 /// Where the R site's articles are staged: pkgdown renders each `.Rmd` in
 /// `vignettes/articles` as `articles/<name>.html`. Gitignored and kept out of
 /// the package tarball (.Rbuildignore); `_pkgdown.yml` groups the pages.
@@ -814,4 +794,24 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::uncovered;
+
+    #[test]
+    fn a_staged_article_no_group_lists_is_uncovered() {
+        let yml = "articles:
+  - title: A
+    contents:
+      - articles/one
+      - starts_with(\"articles/pir-\")
+    # - articles/commented
+";
+        let names: Vec<String> = ["one", "pir-x", "two", "commented"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(uncovered(yml, &names), vec!["two", "commented"]);
+    }
 }
