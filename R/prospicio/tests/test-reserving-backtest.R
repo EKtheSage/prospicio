@@ -32,11 +32,11 @@ stopifnot(
   identical(bt@models, "odp"),
   identical(bt@metrics, metrics),
   bt@n_splits == 2L,
-  identical(bt@diagonals, c(8L, 9L)),
+  identical(bt@diagonals, c("1989", "1990")),
   identical(names(bt@scores), c("model", "diagonal", "metric", "value")),
   nrow(bt@scores) == 2 * length(metrics),
   identical(bt@scores$metric, rep(metrics, 2)),
-  identical(bt@scores$diagonal, rep(c(8L, 9L), each = length(metrics))),
+  identical(bt@scores$diagonal, rep(c("1989", "1990"), each = length(metrics))),
   identical(names(bt@mean), c("model", metrics)),
   nrow(bt@mean) == 1,
   length(bt@excluded) == 2, all(bt@excluded >= 0),
@@ -53,6 +53,27 @@ stopifnot(
   identical(names(bt@warnings), c("model", "diagonal", "message")),
   nrow(bt@warnings) == 0
 )
+# The ODP GLM's scores are the Rust numbers (validation/tests/reserving.rs,
+# diagonal_backtest_odp_scores_are_pinned), as the Python tests have them:
+# n_sims 500, seed 3, interval 0.9; c(1989, 1990, mean) per metric.
+pinned <- list(
+  crps = c(1373.447669154837, 1121.1766328225226, 1247.3121509886798),
+  coverage = c(0.8571428571428571, 0.75, 0.8035714285714286),
+  actual_vs_expected = c(1.1999148354486822, 0.6734699434756398, 0.936692389462161),
+  total_crps = c(2357.940676273035, 4366.701349320293, 3362.321012796664),
+  mean_log_density = c(-8.960644355528585, -8.720382749971636, -8.84051355275011),
+  total_percentile = c(0.75, 0.13, 0.44)
+)
+pin <- diagonal_backtest(raa, "value", list(odp_glm_spec()), n_diagonals = 2, n_sims = 500,
+                         seed = 3)
+stopifnot(identical(names(pinned), metrics), identical(pin@diagonals, c("1989", "1990")))
+close <- function(a, b) abs(a - b) <= 1e-12 * max(1, abs(b))
+for (m in metrics) {
+  got <- pin@scores$value[pin@scores$metric == m]
+  stopifnot(close(got[1], pinned[[m]][1]), close(got[2], pinned[[m]][2]),
+            close(pin@mean[[m]], pinned[[m]][3]))
+}
+
 # The mean table is the mean of the scores over the diagonals.
 for (m in metrics) {
   near <- mean(bt@scores$value[bt@scores$metric == m])
@@ -125,6 +146,8 @@ print(meyers_spec(model = "csr"))
 print(odp_glm_spec())
 
 # Errors.
+expect_error_like(diagonal_backtest(raa, "value", list(meyers_spec()), n_diagonals = 1),
+                  "Meyers needs premium, one value per origin")
 expect_error_like(diagonal_backtest(raa, "value", list(), n_diagonals = 1), "non-empty list")
 expect_error_like(diagonal_backtest(raa, "value", list(1), n_diagonals = 1), "every entry of models")
 expect_error_like(diagonal_backtest(raa, "value", list(a = odp_glm_spec(), "x"), n_diagonals = 1),

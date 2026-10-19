@@ -50,13 +50,13 @@ in (0, 1).}
 \value{
 A \code{backtest} object with properties:
 \code{models} (the names), \code{metrics}, \code{n_splits}, \code{diagonals} (the calendar
-period index of each held-out diagonal, 0 for the triangle's first
-diagonal), \code{scores} (a data.frame in long form: \code{model}, \code{diagonal},
+period held out in each split, as a label such as \code{"2021"}, as the
+\code{calendar} column of the cells labels it, oldest first), \code{scores} (a data.frame in long form: \code{model}, \code{diagonal},
 \code{metric}, \code{value}), \code{mean} (a data.frame: \code{model} and one column per
 metric, the mean over the diagonals), \code{excluded} (held-out cells left
 out of each split), \code{scored_rows} (per split, the scored cells as
 positions in the row-major grid of origins by development ages, from
-1), \code{log_densities} (a list by model of the held-out log densities of
+1; Python's \code{scored_rows} count from 0), \code{log_densities} (a list by model of the held-out log densities of
 every scored cell, the splits in order and each model's values for
 the same cells, \code{NULL} where the model gives none), \code{diagnostics} (a
 data.frame: \code{model}, \code{diagonal}, \code{max_rhat}, \code{min_ess_bulk},

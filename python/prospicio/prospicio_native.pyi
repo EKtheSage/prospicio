@@ -518,9 +518,11 @@ class Backtest:
         """
         The sampler diagnostics of each fit, one row per model and
         diagonal: ``model``, ``diagonal``, ``max_rhat``, ``min_ess_bulk``,
-        ``min_ess_tail``, ``divergences`` and ``n_warnings``. A model with
-        no sampler (the GLM) has no rows. A fit with warnings is scored
-        like any other.
+        ``min_ess_tail``, ``divergences`` and ``n_warnings``; a row for
+        every model and diagonal, models in order. A model with no sampler
+        (the GLM) has NaN in the three float columns and ``None`` in the
+        two count columns (NaN in a DataFrame). A fit with warnings is
+        scored like any other.
         
         Returns
         -------
@@ -580,7 +582,8 @@ class Backtest:
     def scored_rows(self, /) -> list[list[int]]:
         """
         Per diagonal, the rows of the cell table that were scored (origin
-        by development, row-major, from 0), in the order of
+        by development, row-major, counted from 0; R's ``scored_rows``
+        count from 1), in the order of
         ``log_densities``.
         """
     def scores(self, /) -> Any:

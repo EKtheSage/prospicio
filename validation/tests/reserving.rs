@@ -263,6 +263,57 @@ fn diagonal_backtest_on_raa() {
     assert_eq!(again, bt);
 }
 
+/// The ODP GLM's backtest on RAA, pinned for the Python and R bindings,
+/// which assert the same numbers (`test_reserving_backtest.py`,
+/// `test-reserving-backtest.R`): a metric or split permutation fails them.
+#[test]
+fn diagonal_backtest_odp_scores_are_pinned() {
+    let cells = TriangleFrame::new(&triangle("raa"), "values", None).unwrap();
+    let odp = odp_candidate();
+    let bt = diagonal_backtest(&cells, &[&odp], 2, 500, 3, 0.9).unwrap();
+    // (metric, 1989, 1990, mean over the two diagonals).
+    let pinned: [(&str, f64, f64, f64); 6] = [
+        (
+            "crps",
+            1373.447669154837,
+            1121.1766328225226,
+            1247.3121509886798,
+        ),
+        ("coverage", 0.8571428571428571, 0.75, 0.8035714285714286),
+        (
+            "actual_vs_expected",
+            1.1999148354486822,
+            0.6734699434756398,
+            0.936692389462161,
+        ),
+        (
+            "total_crps",
+            2357.940676273035,
+            4366.701349320293,
+            3362.321012796664,
+        ),
+        (
+            "mean_log_density",
+            -8.960644355528585,
+            -8.720382749971636,
+            -8.84051355275011,
+        ),
+        ("total_percentile", 0.75, 0.13, 0.44),
+    ];
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-12 * b.abs().max(1.0);
+    for (k, (metric, first, second, mean)) in pinned.into_iter().enumerate() {
+        assert_eq!(bt.metrics()[k], metric);
+        let split = bt.split_scores(0, k);
+        assert!(close(split[0], first), "{metric} 1989: {split:?}");
+        assert!(close(split[1], second), "{metric} 1990: {split:?}");
+        assert!(
+            close(bt.mean(0, k), mean),
+            "{metric} mean: {}",
+            bt.mean(0, k)
+        );
+    }
+}
+
 #[test]
 fn diagonal_backtest_prefers_the_odp_model_on_abc() {
     let cells = TriangleFrame::new(&triangle("abc"), "values", None).unwrap();

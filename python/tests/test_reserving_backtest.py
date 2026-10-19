@@ -144,10 +144,16 @@ def test_glm_scores_are_in_range_and_consistent(odp_bt, raa):
     first = lpd["odp"][:n_first]
     assert by["1989", "mean_log_density"] == pytest.approx(sum(first) / n_first, rel=1e-12)
 
-    # A GLM has no sampler: no diagnostics and no warnings.
+    # A GLM has no sampler: no warnings, and a diagnostics row for every
+    # split with NaN floats and no counts.
     assert bt.warnings == []
     d = bt.diagnostics()
-    assert len(col(d, "model")) == 0
+    assert col(d, "model") == ["odp", "odp"]
+    assert col(d, "diagonal") == ["1989", "1990"]
+    for name in ("max_rhat", "min_ess_bulk", "min_ess_tail"):
+        assert all(math.isnan(v) for v in col(d, name)), name
+    for name in ("divergences", "n_warnings"):
+        assert all(v is None or math.isnan(v) for v in col(d, name)), name
     assert list(d.columns if hasattr(d, "columns") else d) == [
         "model",
         "diagonal",
@@ -157,6 +163,31 @@ def test_glm_scores_are_in_range_and_consistent(odp_bt, raa):
         "divergences",
         "n_warnings",
     ]
+
+
+# The ODP GLM on RAA (n_diagonals 2, n_sims 500, seed 3, interval 0.9), as
+# the Rust test diagonal_backtest_odp_scores_are_pinned and the R tests
+# have it: (metric, 1989, 1990, mean).
+PINNED = [
+    ("crps", 1373.447669154837, 1121.1766328225226, 1247.3121509886798),
+    ("coverage", 0.8571428571428571, 0.75, 0.8035714285714286),
+    ("actual_vs_expected", 1.1999148354486822, 0.6734699434756398, 0.936692389462161),
+    ("total_crps", 2357.940676273035, 4366.701349320293, 3362.321012796664),
+    ("mean_log_density", -8.960644355528585, -8.720382749971636, -8.84051355275011),
+    ("total_percentile", 0.75, 0.13, 0.44),
+]
+
+
+def test_glm_scores_match_the_rust_numbers(odp_bt):
+    assert odp_bt.diagonals == ["1989", "1990"]
+    scores = odp_bt.scores()
+    by = {(d, m): v for d, m, v in zip(col(scores, "diagonal"), col(scores, "metric"), col(scores, "value"))}
+    mean = odp_bt.mean()
+    assert list(mean["model"]) == ["odp"]
+    for metric, first, second, avg in PINNED:
+        assert by["1989", metric] == pytest.approx(first, rel=1e-12), metric
+        assert by["1990", metric] == pytest.approx(second, rel=1e-12), metric
+        assert col(mean, metric)[0] == pytest.approx(avg, rel=1e-12), metric
 
 
 def test_scores_replay_by_seed(raa, odp_bt):

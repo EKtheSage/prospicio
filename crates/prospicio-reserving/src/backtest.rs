@@ -809,7 +809,7 @@ mod tests {
             &[125.0, 180.0],
             &[130.0],
         ]);
-        let odp = GlmCandidate {
+        let poisson = || GlmCandidate {
             name: "odp".into(),
             terms: Terms::new()
                 .intercept()
@@ -817,9 +817,16 @@ mod tests {
                 .factor("development"),
             glm: Glm::new(prospicio_models::Family::Poisson, Link::Log),
         };
+        let odp = poisson();
         let bt = diagonal_backtest(&cells, &[&odp], 1, 100, 7, 0.9).unwrap();
         assert_eq!(bt.excluded(), [3]);
         assert_eq!(bt.scored_rows()[0].len(), 2);
+        // A renamed model delegates fit_rows: the same exclusions and rows.
+        let wrapped = NamedModel::new("wrapped", poisson());
+        let renamed = diagonal_backtest(&cells, &[&wrapped], 1, 100, 7, 0.9).unwrap();
+        assert_eq!(renamed.models(), ["wrapped"]);
+        assert_eq!(renamed.excluded(), bt.excluded());
+        assert_eq!(renamed.scored_rows(), bt.scored_rows());
         // A model that fits every row still scores only the shared rows.
         let both = diagonal_backtest(&cells, &[&odp, &Fixed], 1, 100, 7, 0.9).unwrap();
         assert_eq!(both.scored_rows(), bt.scored_rows());

@@ -37,7 +37,7 @@ use prospicio_reserving::{
 };
 
 use prospicio_glm::Glm;
-use prospicio_models::Terms;
+use prospicio_models::{Column, Terms};
 use prospicio_reserving::{
     GlmCandidate, NamedModel, TriangleFrame, TriangleModel, diagonal_backtest,
 };
@@ -1317,6 +1317,21 @@ impl Triangle {
         )
         .map_err(to_r)?;
         let (nm, ns) = (bt.models().len(), bt.n_splits());
+        // The calendar period of each split, as the frame labels it (the
+        // index when the frame has no calendar labels).
+        let labels = match cells.frame().column("calendar") {
+            Some(Column::Categorical(c)) => Some(c),
+            _ => None,
+        };
+        let diagonals: Vec<String> = bt
+            .scored_rows()
+            .iter()
+            .zip(bt.diagonals())
+            .map(|(rows, &index)| match (labels, rows.first()) {
+                (Some(c), Some(&r)) => c[r].clone(),
+                _ => index.to_string(),
+            })
+            .collect();
         let mut scores = Vec::with_capacity(nm * bt.metrics().len() * ns);
         for m in 0..nm {
             for k in 0..bt.metrics().len() {
@@ -1350,7 +1365,7 @@ impl Triangle {
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>(),
             n_splits = ns as f64,
-            diagonals = bt.diagonals().iter().map(|&d| d as f64).collect::<Vec<_>>(),
+            diagonals = diagonals,
             scores = scores,
             excluded = bt.excluded().iter().map(|&e| e as f64).collect::<Vec<_>>(),
             scored_rows = List::from_values(

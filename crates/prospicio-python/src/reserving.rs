@@ -11571,7 +11571,8 @@ impl PyBacktest {
     }
 
     /// Per diagonal, the rows of the cell table that were scored (origin
-    /// by development, row-major, from 0), in the order of
+    /// by development, row-major, counted from 0; R's ``scored_rows``
+    /// count from 1), in the order of
     /// ``log_densities``.
     #[getter]
     fn scored_rows(&self) -> Vec<Vec<usize>> {
@@ -11593,9 +11594,11 @@ impl PyBacktest {
 
     /// The sampler diagnostics of each fit, one row per model and
     /// diagonal: ``model``, ``diagonal``, ``max_rhat``, ``min_ess_bulk``,
-    /// ``min_ess_tail``, ``divergences`` and ``n_warnings``. A model with
-    /// no sampler (the GLM) has no rows. A fit with warnings is scored
-    /// like any other.
+    /// ``min_ess_tail``, ``divergences`` and ``n_warnings``; a row for
+    /// every model and diagonal, models in order. A model with no sampler
+    /// (the GLM) has NaN in the three float columns and ``None`` in the
+    /// two count columns (NaN in a DataFrame). A fit with warnings is
+    /// scored like any other.
     ///
     /// Returns
     /// -------
@@ -11607,14 +11610,13 @@ impl PyBacktest {
         let (mut divergences, mut n_warnings) = (Vec::new(), Vec::new());
         for (m, name) in bt.models().iter().enumerate() {
             for (k, d) in bt.diagnostics(m).iter().enumerate() {
-                let Some(d) = d else { continue };
                 model.push(name.clone());
                 diagonal.push(self.diagonals[k].clone());
-                rhat.push(d.max_rhat);
-                bulk.push(d.min_ess_bulk);
-                tail.push(d.min_ess_tail);
-                divergences.push(d.divergences);
-                n_warnings.push(d.warnings.len());
+                rhat.push(d.as_ref().map_or(f64::NAN, |d| d.max_rhat));
+                bulk.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_bulk));
+                tail.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_tail));
+                divergences.push(d.as_ref().map(|d| d.divergences));
+                n_warnings.push(d.as_ref().map(|d| d.warnings.len()));
             }
         }
         let out = PyDict::new(py);

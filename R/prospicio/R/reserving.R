@@ -5181,13 +5181,13 @@ backtest_spec_wire <- function(spec, name) {
 #' @param raw The Rust result; used internally.
 #' @returns A `backtest` object with properties:
 #'   `models` (the names), `metrics`, `n_splits`, `diagonals` (the calendar
-#'   period index of each held-out diagonal, 0 for the triangle's first
-#'   diagonal), `scores` (a data.frame in long form: `model`, `diagonal`,
+#'   period held out in each split, as a label such as `"2021"`, as the
+#'   `calendar` column of the cells labels it, oldest first), `scores` (a data.frame in long form: `model`, `diagonal`,
 #'   `metric`, `value`), `mean` (a data.frame: `model` and one column per
 #'   metric, the mean over the diagonals), `excluded` (held-out cells left
 #'   out of each split), `scored_rows` (per split, the scored cells as
 #'   positions in the row-major grid of origins by development ages, from
-#'   1), `log_densities` (a list by model of the held-out log densities of
+#'   1; Python's `scored_rows` count from 0), `log_densities` (a list by model of the held-out log densities of
 #'   every scored cell, the splits in order and each model's values for
 #'   the same cells, `NULL` where the model gives none), `diagnostics` (a
 #'   data.frame: `model`, `diagonal`, `max_rhat`, `min_ess_bulk`,
@@ -5211,7 +5211,7 @@ backtest <- S7::new_class(
   package = "prospicio",
   properties = list(
     models = S7::class_character, metrics = S7::class_character, n_splits = S7::class_integer,
-    diagonals = S7::class_integer, scores = S7::class_data.frame, mean = S7::class_data.frame,
+    diagonals = S7::class_character, scores = S7::class_data.frame, mean = S7::class_data.frame,
     excluded = S7::class_integer, scored_rows = S7::class_list, log_densities = S7::class_list,
     diagnostics = S7::class_data.frame, warnings = S7::class_data.frame
   ),
@@ -5221,7 +5221,7 @@ backtest <- S7::new_class(
     nm <- length(models)
     nk <- length(metrics)
     ns <- as.integer(raw$n_splits)
-    diagonals <- as.integer(raw$diagonals)
+    diagonals <- as.character(raw$diagonals)
     # Rust lays the scores out model, then metric, then split.
     values <- array(raw$scores, dim = c(ns, nk, nm))
     rows <- expand.grid(metric = seq_len(nk), split = seq_len(ns), model = seq_len(nm))
@@ -5298,6 +5298,9 @@ diagonal_backtest <- function(triangle, column, models, n_diagonals, premium = N
   } else if (!is.null(premium) && (!is.numeric(premium) || !is.null(dim(premium)))) {
     stop("premium must be NULL, a numeric vector with one value per origin, or a column name",
          call. = FALSE)
+  }
+  if (is.null(premium) && any(vapply(models, S7::S7_inherits, NA, meyers_spec))) {
+    stop("Meyers needs premium, one value per origin", call. = FALSE)
   }
   specs <- unname(Map(backtest_spec_wire, models, given))
   raw <- rust_result(triangle@ptr$diagonal_backtest(
