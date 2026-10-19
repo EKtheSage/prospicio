@@ -17,6 +17,6 @@
   rejects them. The geometric average stays rejected. In Python
   (`OdpBootstrap(n_periods, drop_high, drop_low)`) and R (`odp_bootstrap()`;
   `odp_one_year()`, `mack_bootstrap()` and `mack_one_year()` no longer
-  raise) (#401). **Breaking (Rust):** `OdpBootstrap` has three new public
+  raise) (#401, #434). **Breaking (Rust):** `OdpBootstrap` has three new public
   fields, so struct literals need `..Default::default()`; `Error` has a new
   variant, `ExclusionsMismatch`.
