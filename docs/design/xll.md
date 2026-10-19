@@ -342,7 +342,14 @@ real Excel.
     decision 4 still holds for the results; a sheet showing all three
     views samples once. A default fit on RAA takes about 0.25 s in a
     release build, a kept one 30 µs. Draws are capped at 20,000 per chain
-    and chains at 8. Other Bayesian models (`BayesBf`, Meyers', the
+    and chains at 8. `prior_sd` is one SD for the intercept, origin and
+    development effects, all centred on 0; a development effect of 0 is
+    the first column's level, so a tight `prior_sd` lifts the late,
+    thinly observed columns toward it and the reserve with them (on RAA
+    the last effect's posterior mean is -5.1 at 10, -2.4 at 3 and -0.9
+    at 1, the total mean reserve 54,600, 59,100 and 74,000). The help and
+    the README say to keep it wide (user, 2026-10-19;
+    `knowledge/findings/bayes-odp-tight-prior.md`). Other Bayesian models (`BayesBf`, Meyers', the
     compartmental models) follow the same pattern when wanted.
 22. **PML curves by return period, occurrence beside aggregate** (user,
     2026-10-16, the parity plan's next items). `PRO.AGG.PML` takes the
@@ -447,6 +454,14 @@ an XLL function (decision 4: no state) does not hold.
 
 - **Next functions:** the parity plan is done; further functions as the
   user asks.
+- **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
+  an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
+  Its pattern is not normalised, so the a-priori level is absorbed by the
+  pattern and only the premium's shape across origins and the CV move
+  the reserve (`knowledge/findings/bayes-bf-apriori-scale.md`). Either
+  wrap `BayesBf` as it is, with `apriori` documented as nearly inert,
+  or wait for a Bayesian BF with a normalised pattern in the Reserving
+  lane.
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and

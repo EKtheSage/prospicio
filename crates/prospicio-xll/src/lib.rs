@@ -1421,7 +1421,7 @@ pub static FUNCTIONS: &[Function] = &[
             PERCENTILES,
             Arg {
                 name: "prior_sd",
-                help: "SD of the normal priors on the log-scale intercept, origin and development effects (10 if omitted)",
+                help: "SD of the normal priors on the log-scale intercept, origin and development effects (10 if omitted). Keep it wide: a tight one pulls late columns toward the first column's level and raises the reserve",
             },
             PROCESS,
             ORIGINS,
