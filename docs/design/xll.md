@@ -504,6 +504,25 @@ real Excel.
     sheet, as `calibrate` documents, rather than as an argument. Against
     `aggregate` 1.0.1, `g(s)` of nine families and the InsCo prices and
     calibrations match at the reference's tolerances.
+30. **Contract terms are evaluated at a loss and in expectation** (user,
+    2026-10-19, the sixth group's last item), over
+    `prospicio_aggregate::Layer`. `PRO.SWING` (a swing-rated or retro
+    premium), `PRO.SLIDING.SCALE` (a ceding commission from anchors given
+    as two ranges, rates and their increasing loss ratios) and
+    `PRO.PROFIT.COMMISSION` take a range of losses and give the term at
+    each, as `aggregate`'s `contract_terms` does, so a sheet can tabulate
+    or chart a term against the loss. `PRO.LAYER.TERMS` gives a layer's
+    terms in expectation over its annual loss on the grid
+    (`Tower::on_grid`): the expected ceded loss, premium, reinstatement
+    premium, ceding and profit commissions, the premium net of them, the
+    margin and the loss ratio. Amounts are at 100% and losses at the placed
+    share, as in `aggregate`; paid reinstatements set the annual limit and
+    cannot be combined with a sliding scale or a profit commission, which
+    the crate refuses. Multi-year terms with carried deficits
+    (`Tower::apply_term`) need simulated years and are left out until
+    asked. Against `aggregate` 1.0.1 the 475 values of
+    `contract_terms_aggregate.csv` and the expected reinstatement premiums
+    of books RI2 and RI10 match at the reference's tolerances.
 
 ## Parity plan
 
@@ -541,8 +560,8 @@ order, one small PR each, those already done struck through:
    threshold diagnostics, the GPD fit and Hill's estimator~~; ~~payment
    patterns and discounting~~; ~~a cover's quote (technical premium with
    expenses and brokerage)~~; ~~distortions calibrated to a target and
-   a layer priced by one~~; contract terms on an aggregate (sliding scale,
-   profit commission, reinstatement premiums).
+   a layer priced by one~~; ~~contract terms on an aggregate (sliding
+   scale, profit commission, reinstatement premiums)~~.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -552,8 +571,9 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's sixth group, in its order;
-  the user may reorder it.
+- **Next functions:** the parity plan's six groups are done; further
+  functions as the user asks (multi-year terms, the two-parameter
+  distortions and copulas are the nearest left out).
 - **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
   an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
   Its pattern is not normalised, so the a-priori level is absorbed by the

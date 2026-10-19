@@ -481,4 +481,8 @@ mod exports {
     udf!(pro_distortion, s, family, parameter, r0);
     udf!(pro_distortion_price, values, probs, family, parameter, r0);
     udf!(pro_distortion_calibrate, values, probs, premium, families, r0);
+    udf!(pro_swing, loss, basic, lcm, minimum, maximum, share);
+    udf!(pro_sliding_scale, loss, premium, commissions, loss_ratios);
+    udf!(pro_profit_commission, loss, premium, share, allowance);
+    udf!(pro_layer_terms, count_mean, dispersion, family, p1, p2, p3, layer_limit, layer_attachment, premium, reinstatements, commissions, loss_ratios, profit_share, profit_allowance, share, policy_limit, step, points);
 }

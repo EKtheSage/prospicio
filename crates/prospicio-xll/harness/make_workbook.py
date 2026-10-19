@@ -623,6 +623,10 @@ ag["A70"] = ArrayFormula("A70:H75", '=PRO.TOWER.PRICE(B2,B3,B4,B5,B6,,,,B67:C67,
 for row in ag.iter_rows(min_row=71, max_row=75, min_col=2, max_col=8):
     for c in row:
         c.number_format = "0.0000" if c.column in (4, 7, 8) else "#,##0"
+ag["J66"] = "Contract terms on 100,000 xs 50,000 in expectation: deposit 60,000, one reinstatement at 100%"; ag["J66"].font = bold
+ag["J67"] = ArrayFormula("J67:K74", "=PRO.LAYER.TERMS(B2,B3,B4,B5,B6,,100000,50000,60000,1)")
+ag["M66"] = "With a sliding scale (35% at 50% down to 25% at 70%) and a 20% profit commission after 30%"; ag["M66"].font = bold
+ag["M67"] = ArrayFormula("M67:N74", "=PRO.LAYER.TERMS(B2,B3,B4,B5,B6,,100000,50000,60000,,{0.35,0.25},{0.5,0.7},0.2,0.3)")
 ag.column_dimensions["A"].width = 18
 ag.column_dimensions["D"].width = 16
 ag.column_dimensions["G"].width = 16
