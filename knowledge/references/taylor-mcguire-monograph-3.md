@@ -71,9 +71,13 @@ sources:
 * Reserving (#333): closed in part. `OdpGlmFit::prediction_error` (Rust),
   Python `OdpGlm` and R `odp_glm()` give Table 5-4 directly, checked in CI
   by `validation/tests/reserving.rs`, `python/tests/test_odp_glm.py` and
-  `R/prospicio/tests/test-reserving-odp-glm.R`. Still missing: custom
-  designs (reduced models, calendar terms, interactions), residual
-  diagnostics, families other than the ODP.
+  `R/prospicio/tests/test-reserving-odp-glm.R`. The residual diagnostics
+  of Chapter 6 (`OdpGlmFit::residuals`, Python `residuals()` and
+  `residual_summary()`, R `fit@residuals` and `residual_summary()`)
+  reproduce Figure 6-22's heat map and the spread by development and mean
+  by calendar year, checked in the same three tests. Still missing: custom
+  designs (reduced models, calendar terms, interactions), families other
+  than the ODP.
 * Models (#334): `GlmFit` lacks residuals, leverages, prediction standard
   errors for sums of rows, and GCV.
 * Mack on this triangle gives a total standard error of 10,939 against the

@@ -71,3 +71,33 @@ err <- tryCatch(predict_distribution(fit, n_sims = 10, seed = 1, parameters = "b
                 error = conditionMessage)
 check(grepl("should be one of", err), "an unknown parameters is rejected")
 check(any(grepl("odp_glm_fit", capture.output(print(fit)))), "print")
+
+# Residual diagnostics: Taylor and McGuire, Chapter 6.
+r <- fit@residuals
+check(nrow(r) == 55 && r$origin[1] == "1988" && r$development[1] == 12, "a row per observed cell")
+check(r$calendar[1] == "1988" && r$calendar_index[55] == 9, "calendar periods")
+check(identical(which(is.na(r$standardized_deviance)), c(10L, 55L)),
+      "cells fitted exactly have no standardized residual")
+within(sum(r$leverage), 19, 1e-6, "leverages add up to the parameters")
+heat_map <- c(98, 100, 100, 104, 113, 87, 96, 92, 100, 100,
+              99, 99, 106, 103, 95, 95, 99, 102, 100,
+              96, 108, 107, 91, 90, 102, 92, 104,
+              97, 103, 96, 97, 103, 111, 111,
+              95, 107, 100, 100, 97, 100,
+              98, 105, 93, 101, 104,
+              109, 91, 95, 104,
+              106, 90, 105,
+              103, 97,
+              100)
+check(identical(round(100 * r$actual_to_fitted), heat_map), "Figure 6-22")
+by_age <- residual_summary(fit)
+spread <- by_age$sd[1:8] * sqrt((by_age$n[1:8] - 1) / by_age$n[1:8])
+within(spread, c(1.34, 1.59, 0.88, 0.62, 0.83, 0.77, 0.65, 0.40), 0.005,
+       "spread by development year")
+check(by_age$label[1] == "12" && by_age$n[10] == 0 && is.na(by_age$mean[10]), "by age")
+within(residual_summary(fit, "calendar")$mean,
+       c(-0.38, -0.13, -0.40, 0.56, 0.42, -0.43, 0.23, -0.27, -0.26, 0.32), 0.005,
+       "mean by calendar year")
+check(residual_summary(fit, "origin")$label[1] == "1988", "by origin")
+err <- tryCatch(residual_summary(fit, "diagonal"), error = conditionMessage)
+check(grepl("should be one of", err), "an unknown grouping is rejected")

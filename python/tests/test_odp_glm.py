@@ -90,3 +90,42 @@ def test_errors():
     tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 24], {"paid": [1.0, 2.0, 3.0]})
     with pytest.raises(ValueError, match="ODP GLM"):
         OdpGlm().fit(tri, "paid")
+
+
+HEAT_MAP = [  # Figure 6-22, actual over fitted in percent
+    [98, 100, 100, 104, 113, 87, 96, 92, 100, 100],
+    [99, 99, 106, 103, 95, 95, 99, 102, 100],
+    [96, 108, 107, 91, 90, 102, 92, 104],
+    [97, 103, 96, 97, 103, 111, 111],
+    [95, 107, 100, 100, 97, 100],
+    [98, 105, 93, 101, 104],
+    [109, 91, 95, 104],
+    [106, 90, 105],
+    [103, 97],
+    [100],
+]
+
+
+def test_residuals_match_chapter_6():
+    fit = OdpGlm().fit(triangle(), "paid")
+    r = fit.residuals()
+    assert len(r["actual"]) == 55
+    assert r["origin"][0] == "1988" and r["development"][0] == 12
+    assert r["calendar"][0] == "1988" and r["calendar_index"][54] == 9
+    assert [i for i, x in enumerate(r["standardized_deviance"]) if math.isnan(x)] == [9, 54]
+    assert sum(r["leverage"]) == pytest.approx(19)
+    assert [round(100 * x) for x in r["actual_to_fitted"]] == [v for row in HEAT_MAP for v in row]
+
+    # The guide's spread (divisor n) by development year 1 to 8 and mean by
+    # calendar year, to two decimals.
+    by_age = fit.residual_summary()
+    spread = [s * math.sqrt((n - 1) / n) for s, n in zip(by_age["sd"][:8], by_age["n"][:8])]
+    assert spread == pytest.approx([1.34, 1.59, 0.88, 0.62, 0.83, 0.77, 0.65, 0.40], abs=0.005)
+    assert by_age["label"][0] == "12" and by_age["n"][-1] == 0
+    by_calendar = fit.residual_summary("calendar")
+    assert by_calendar["mean"] == pytest.approx(
+        [-0.38, -0.13, -0.40, 0.56, 0.42, -0.43, 0.23, -0.27, -0.26, 0.32], abs=0.005
+    )
+    assert fit.residual_summary(by="origin")["label"][0] == "1988"
+    with pytest.raises(ValueError, match="by must be"):
+        fit.residual_summary("diagonal")

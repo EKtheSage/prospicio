@@ -45,6 +45,18 @@ normally) and \code{prediction_error} (a data frame with a row per origin and
 a \code{Total} row: \code{reserve}, \code{process_se}, \code{parameter_se}, \code{rmsep} and \code{cv},
 \code{NA} for a zero reserve). \code{\link[=predict_distribution]{predict_distribution()}} draws the future cells
 jointly (no \code{newdata}).
+
+\code{residuals} is a data frame with a row per observed cell, origin-major:
+\code{origin}, \code{development} (age in months), \code{calendar} (the calendar
+period's label), \code{calendar_index} (0 for the earliest valuation),
+\code{actual}, \code{fitted}, \code{actual_to_fitted} (the cell of the actual-to-fitted
+heat map), \code{pearson}, \code{deviance}, \code{leverage} (the hat value),
+\code{standardized_deviance} (as \code{\link[stats:rstandard]{stats::rstandard()}}) and
+\code{standardized_pearson}. A cell with leverage 1, the only observation of
+its origin or age, is fitted exactly and has no standardized residual
+(\code{NA}). \code{\link[=residual_summary]{residual_summary()}} groups the standardized deviance residuals
+by origin, development or calendar period (Taylor and McGuire, Chapter
+6).
 }
 \examples{
 long <- data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022),

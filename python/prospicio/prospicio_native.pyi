@@ -15955,6 +15955,46 @@ class OdpGlmFit:
         Reserve of each origin, aligned with ``origins``: its future cells'
         fitted means summed, 0 for a fully developed origin.
         """
+    def residual_summary(self, /, by: str = "development") -> dict:
+        """
+        The standardized deviance residuals grouped by origin, development
+        age or calendar period: a trend in the calendar means points to a
+        calendar effect the model lacks, a spread that falls with age to a
+        variance that is not ``phi * mu``.
+        
+        Parameters
+        ----------
+        by : {"development", "origin", "calendar"}, default "development"
+        
+        Returns
+        -------
+        dict
+            ``label``, ``n`` (cells with a defined residual), ``mean`` and
+            ``sd`` (divisor ``n - 1``; ``nan`` below 2 cells), as lists.
+        
+        Raises
+        ------
+        ValueError
+            ``by`` is unknown.
+        """
+    def residuals(self, /) -> dict:
+        """
+        The residuals of every observed cell (Taylor and McGuire, CAS
+        Monograph 3, Chapter 6). A cell with leverage 1, the only
+        observation of its origin or age, is fitted exactly and has no
+        standardized residual (``nan``).
+        
+        Returns
+        -------
+        dict
+            One list per column, a row per observed cell, origin-major:
+            ``origin``, ``development`` (age in months), ``calendar`` (the
+            calendar period's label), ``calendar_index`` (0 for the earliest
+            valuation), ``actual``, ``fitted``, ``actual_to_fitted`` (the
+            heat map's cell), ``pearson``, ``deviance``, ``leverage`` (the
+            hat value), ``standardized_deviance`` (R's ``rstandard``) and
+            ``standardized_pearson``.
+        """
     def total_prediction_error(self, /) -> dict:
         """
         The total reserve's prediction error: ``reserve``, ``process_se``,

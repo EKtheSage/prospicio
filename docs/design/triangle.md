@@ -318,9 +318,21 @@ rows of a `TriangleFrame`.
   `predict_distribution(n_sims, seed, parameters)`), and R
   `odp_glm(triangle)` returning an `odp_glm_fit` with
   `prediction_error` and a `predict_distribution()` method. Single segment
-  only, like `OdpGlm`. Still to come in #333: residual diagnostics by
-  development, origin and calendar period; custom designs (reduced models,
-  calendar terms); gamma and Tweedie families.
+  only, like `OdpGlm`.
+- `residuals()` gives each observed cell's actual, fitted, actual-to-fitted
+  ratio, Pearson and deviance residuals, leverage and standardized
+  residuals (#333, second PR), with its origin, age and calendar period. A
+  cell with leverage 1 (the only observation of its origin or age) is
+  fitted exactly and its standardized residual is NaN (`NA` in R).
+  `OdpResiduals::summary` groups the standardized deviance residuals by
+  origin, development or calendar period (count, mean, sd with divisor
+  `n - 1`). On the NJ Manufacturers triangle every percentage of Taylor
+  and McGuire's Figure 6-22 heat map reproduces, and the spread by
+  development year and the mean by calendar year match their Chapter 6
+  figures to two decimals (`validation/tests/reserving.rs`). Python
+  `OdpGlmFit.residuals()` and `residual_summary(by)`, R `fit@residuals`
+  and `residual_summary(fit, by)`. Still to come in #333: custom designs
+  (reduced models, calendar terms); gamma and Tweedie families.
 
 ## Calendar-diagonal backtest
 
