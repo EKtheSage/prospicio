@@ -214,19 +214,6 @@ impl Development {
         Ok(())
     }
 
-    /// Errors if a link ratio exclusion is set, for a method that assumes
-    /// every link ratio.
-    pub(crate) fn reject_exclusions(&self, method: &'static str) -> Result<()> {
-        if self.has_exclusions() {
-            return Err(Error::NotSupported {
-                setting: "n_periods, drop_high and drop_low",
-                method,
-                reason: "not yet supported, the method assumes every link ratio",
-            });
-        }
-        Ok(())
-    }
-
     /// The oldest starting valuation `n_periods` keeps, `None` without it.
     /// An error if `n_periods` is zero.
     fn cutoff(&self, segment: &Segment) -> Result<Option<Month>> {
@@ -999,35 +986,40 @@ mod tests {
                 .is_ok()
         );
         assert!(boot(Development::default()).fit(&raa(), "values").is_ok());
-        // Its one-year view still rejects them.
-        let cl_method = OneYearMethod::ChainLadder(cl(Development::default()));
-        assert!(not_supported(boot(trimmed.clone()).one_year(
-            &raa(),
-            "values",
-            &cl_method
-        )));
+        // Its one-year view takes them, from the method or its own.
+        let cl_method = OneYearMethod::ChainLadder(cl(trimmed.clone()));
+        assert!(
+            boot(trimmed.clone())
+                .one_year(&raa(), "values", &cl_method)
+                .is_ok()
+        );
+        assert!(
+            boot(Development::default())
+                .one_year(&raa(), "values", &cl_method)
+                .is_ok()
+        );
 
-        // The one-year views, through the re-reserving method.
+        // The one-year views, through the re-reserving method: the
+        // geometric average is rejected, the exclusions are taken.
         let odp = OdpBootstrap {
             n_sims: 10,
             ..Default::default()
         };
-        for development in [geometric.clone(), trimmed.clone()] {
-            let method = OneYearMethod::ChainLadder(cl(development));
-            assert!(not_supported(odp.one_year(&raa(), "values", &method)));
-            assert!(not_supported(boot(Development::default()).one_year(
-                &raa(),
-                "values",
-                &method
-            )));
-        }
+        let method = OneYearMethod::ChainLadder(cl(geometric.clone()));
+        assert!(not_supported(odp.one_year(&raa(), "values", &method)));
+        assert!(not_supported(boot(Development::default()).one_year(
+            &raa(),
+            "values",
+            &method
+        )));
+        assert!(odp.one_year(&raa(), "values", &cl_method).is_ok());
 
-        // Merz and Wüthrich's closed form.
+        // Merz and Wüthrich's closed form keeps its rejection and points
+        // to the bootstrap's one-year view.
         let fit = mack(trimmed).fit(&raa(), "values").unwrap();
-        assert!(matches!(
-            fit.claims_development_result(),
-            Err(Error::ClaimsDevelopment(_))
-        ));
+        let err = fit.claims_development_result().unwrap_err();
+        assert!(matches!(err, Error::ClaimsDevelopment(_)));
+        assert!(err.to_string().contains("MackBootstrap::one_year"), "{err}");
         // A window past the triangle removes nothing today but slides with
         // next year's diagonal, so any setting is rejected.
         let wide = mack(with_exclusions(Some(50), 0, 0))

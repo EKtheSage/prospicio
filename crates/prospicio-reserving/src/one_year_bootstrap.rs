@@ -53,6 +53,23 @@
 //! A new origin period written in the coming year is not simulated, as in
 //! Merz–Wüthrich.
 //!
+//! The link ratio exclusions (`n_periods`, `drop_high` and `drop_low`,
+//! decision 14) follow the method: a bootstrap that sets none simulates the
+//! year with the re-reserving method's, and one that sets its own must set
+//! the method's ([`Error::ExclusionsMismatch`]). The simulation keeps the
+//! link ratios that the observed triangle keeps, as the lifetime views do;
+//! the re-reserving fits the method again on the triangle with the coming
+//! diagonal. Under the exclusions the mean of the claims development result
+//! is therefore not zero, because the refit is not the opening fit on one
+//! more cell: with `n_periods` the window moves by one diagonal, so a known
+//! link ratio leaves the average (an age's factor is revised, to first
+//! order, by `C_old (f - F_old) / S'`, with `C_old` and `F_old` the leaving
+//! cell and its link ratio and `S'` the closing volume), and with the drops
+//! the ranking is redone with the new link ratio, which moves the mean by
+//! an amount with no closed form. Both are what next year's actuary does,
+//! so they are reported, not removed. The geometric average is rejected:
+//! neither bootstrap has a variance for it.
+//!
 //! Without a tail of its own ([`OdpBootstrap::tail`]), the bootstrap stops
 //! at the last age, and the development beyond it moves only through the
 //! refitted method's tail. With one (decision 11), the bootstrap's tail is
@@ -85,9 +102,8 @@ use prospicio_core::{Lag, Month, StreamRng};
 use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::bootstrap::{
-    Exclusions, OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, TailDraw,
-    component_sums, hash_segment, origin_keys, pick_segment, pool_at, prepare_selected,
-    push_moments, segment_sums,
+    OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, TailDraw, component_sums,
+    hash_segment, origin_keys, pick_segment, pool_at, prepare_selected, push_moments, segment_sums,
 };
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::dependence::{Resample, SegmentDependence, Shared, SharedPool, synchronize};
@@ -168,7 +184,7 @@ impl OneYearMethod {
     }
 
     /// The method's chain ladder.
-    fn chain_ladder(&self) -> &ChainLadder {
+    pub(crate) fn chain_ladder(&self) -> &ChainLadder {
         match self {
             Self::ChainLadder(cl) => cl,
             Self::ExpectedLoss(m, _) => &m.chain_ladder,
@@ -514,6 +530,10 @@ pub(crate) struct OdpDraw {
     tail: Option<TailDraw>,
     /// The bootstrap's selected pattern; `None` without one.
     blend: Option<Blend>,
+    /// The link ratios the pseudo factors average, as the observed
+    /// triangle's exclusions keep them ([`Exclusions::kept`]); `None`
+    /// keeps every observed one.
+    kept: Option<Vec<bool>>,
 }
 
 impl SharedPool for OdpDraw {
@@ -550,7 +570,7 @@ impl NextYear for OdpBootstrapSegment {
             process: draw.process,
             tail: None,
             blend: None,
-            kept: None,
+            kept: draw.kept.as_deref(),
         };
         let (pseudo, factors) = sim.resample(rng, picks);
         let factors = match &draw.blend {
@@ -824,7 +844,6 @@ impl Sims {
     fn check(&self, method: &OneYearMethod) -> Result<()> {
         let development = &method.chain_ladder().development;
         development.reject_geometric("the one-year bootstrap")?;
-        development.reject_exclusions("the one-year bootstrap")?;
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
@@ -1095,13 +1114,11 @@ impl OdpBootstrap {
     /// whether it reads that pattern without its level
     /// ([`inherits_level_free`]).
     fn for_method(&self, method: &OneYearMethod) -> Result<(Self, bool)> {
-        if self.n_periods.is_some() || self.drop_high != 0 || self.drop_low != 0 {
-            return Err(Error::NotSupported {
-                setting: "n_periods, drop_high and drop_low",
-                method: "the ODP bootstrap's one-year view",
-                reason: "not yet supported, the view takes the method's exclusions",
-            });
-        }
+        // The year's simulation takes the method's exclusions unless the
+        // bootstrap sets them, and then they must be the method's.
+        let exclusions = self
+            .exclusions()
+            .for_method(&method.chain_ladder().development)?;
         let pattern = self
             .one_year_pattern
             .resolve(self.pattern.as_ref(), method.pattern())?;
@@ -1109,6 +1126,9 @@ impl OdpBootstrap {
         Ok((
             Self {
                 pattern,
+                n_periods: exclusions.n_periods,
+                drop_high: exclusions.drop_high,
+                drop_low: exclusions.drop_low,
                 ..self.clone()
             },
             level_free,
@@ -1145,13 +1165,19 @@ impl OdpBootstrap {
     /// residuals it resamples, the tail each simulation draws and the
     /// pattern it blends with.
     fn model(&self, segment: &Segment) -> Result<(OdpBootstrapSegment, OdpDraw)> {
+        let exclusions = self.exclusions();
         let (fit, pool) = prepare_selected(
             segment,
             &segment.ages,
             self.tail,
             self.pattern.as_ref(),
-            Exclusions::default(),
+            exclusions,
         )?;
+        let kept = if exclusions.is_none() {
+            None
+        } else {
+            Some(exclusions.kept(segment)?)
+        };
         let tail = self.tail_draw(&fit.chain_ladder)?;
         let blend = Blend::of(&fit.chain_ladder.development);
         Ok((
@@ -1161,6 +1187,7 @@ impl OdpBootstrap {
                 process: self.process,
                 tail,
                 blend,
+                kept,
             },
         ))
     }
@@ -2377,5 +2404,250 @@ mod tests {
             .one_year(&split, "paid", &with_tail(1.05.into()))
             .unwrap();
         assert!(column(&fit.cdr, 0).iter().any(|&x| x != 0.0));
+    }
+
+    /// The chain ladder with these link ratio exclusions, as a one-year
+    /// method.
+    fn excluding(n_periods: Option<usize>, drop_high: usize, drop_low: usize) -> OneYearMethod {
+        OneYearMethod::ChainLadder(ChainLadder {
+            development: Development {
+                n_periods,
+                drop_high,
+                drop_low,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    }
+
+    /// The ODP bootstrap with these exclusions of its own.
+    fn odp_excluding(
+        n_sims: usize,
+        seed: u64,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
+    ) -> OdpBootstrap {
+        OdpBootstrap {
+            n_periods,
+            drop_high,
+            drop_low,
+            ..boot(n_sims, seed)
+        }
+    }
+
+    /// Mean and standard deviation of `x` and the standard error of each,
+    /// the deviation's from the sample kurtosis.
+    fn moments(x: &[f64]) -> (f64, f64, f64, f64) {
+        let n = x.len() as f64;
+        let m = x.iter().sum::<f64>() / n;
+        let m2 = x.iter().map(|v| (v - m).powi(2)).sum::<f64>() / n;
+        let m4 = x.iter().map(|v| (v - m).powi(4)).sum::<f64>() / n;
+        let sd = m2.sqrt();
+        (
+            m,
+            sd,
+            sd / n.sqrt(),
+            sd * ((m4 / (m2 * m2) - 1.0) / (4.0 * n)).sqrt(),
+        )
+    }
+
+    fn bits(x: &[f64]) -> Vec<u64> {
+        x.iter().map(|v| v.to_bits()).collect()
+    }
+
+    /// RAA in two segments, the second twice the first.
+    fn raa_segments() -> Triangle {
+        let (mut origin, mut ages, mut paid, mut lob) = (vec![], vec![], vec![], vec![]);
+        for (name, scale) in [("Auto", 1.0), ("Home", 2.0)] {
+            for (k, row) in RAA.iter().enumerate() {
+                for (d, &v) in row.iter().enumerate() {
+                    origin.push(Month::january(1981 + k as i32));
+                    ages.push(12 * (d as u32 + 1));
+                    paid.push(v * scale);
+                    lob.push(name);
+                }
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[("lob", &lob)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn exclusions_that_drop_nothing_leave_the_one_year_draws_alone() {
+        // RAA has ten diagonals, so a window of fifty keeps every link ratio
+        // in the opening fit and in the closing one, and so do drops of
+        // nothing: the same draws, bit for bit, whether the bootstrap sets
+        // the exclusions or takes the method's.
+        let by_default = boot(300, 41)
+            .one_year(&raa(), "values", &chain_ladder())
+            .unwrap();
+        let want = bits(by_default.cdr.draw_matrix());
+        for (n, h, l) in [(Some(50), 0, 0), (None, 0, 0)] {
+            let method = excluding(n, h, l);
+            for own in [boot(300, 41), odp_excluding(300, 41, n, h, l)] {
+                let fit = own.one_year(&raa(), "values", &method).unwrap();
+                assert_eq!(bits(fit.cdr.draw_matrix()), want, "{n:?} {own:?}");
+                assert_eq!(fit.opening_ultimate, by_default.opening_ultimate);
+            }
+        }
+        // With segments too.
+        let tri = raa_segments();
+        let by_default = boot(200, 42)
+            .one_year_segments(&tri, "paid", &chain_ladder())
+            .unwrap();
+        let fit = odp_excluding(200, 42, Some(50), 0, 0)
+            .one_year_segments(&tri, "paid", &excluding(Some(50), 0, 0))
+            .unwrap();
+        assert_eq!(
+            bits(fit.cdr.draw_matrix()),
+            bits(by_default.cdr.draw_matrix())
+        );
+    }
+
+    #[test]
+    fn the_one_year_view_inherits_the_methods_exclusions() {
+        // A bootstrap that sets none simulates, and re-reserves, with the
+        // method's; setting the method's gives the same draws; and the
+        // exclusions change the draws.
+        let method = excluding(Some(3), 1, 0);
+        let inherited = boot(300, 43).one_year(&raa(), "values", &method).unwrap();
+        let own = odp_excluding(300, 43, Some(3), 1, 0)
+            .one_year(&raa(), "values", &method)
+            .unwrap();
+        assert_eq!(
+            bits(inherited.cdr.draw_matrix()),
+            bits(own.cdr.draw_matrix())
+        );
+        let plain = boot(300, 43)
+            .one_year(&raa(), "values", &chain_ladder())
+            .unwrap();
+        assert_ne!(
+            bits(inherited.cdr.draw_matrix()),
+            bits(plain.cdr.draw_matrix())
+        );
+        // The fit it simulates from is the exclusions' (the provenance
+        // says so, and the scale is the one the lifetime view has).
+        let lifetime = odp_excluding(10, 43, Some(3), 1, 0)
+            .fit(&raa(), "values")
+            .unwrap();
+        assert_eq!(inherited.bootstrap.scale, lifetime.scale);
+        let text = format!("{:?}", inherited.cdr.provenance());
+        assert!(text.contains("n_periods") && text.contains("drop_high"));
+    }
+
+    #[test]
+    fn one_cell_left_is_the_lifetime_run_off_under_the_exclusions() {
+        // 1982's last link rests on 1981's alone, kept by every setting, so
+        // its one-year CDR is the opening reserve less its one last
+        // increment, drawn as the lifetime bootstrap draws 1982's reserve:
+        // the standard deviations agree within Monte Carlo error.
+        let n = 20_000;
+        for (p, h, l) in [(Some(3), 0, 0), (None, 1, 1), (Some(5), 1, 0)] {
+            let b = odp_excluding(n, 51, p, h, l);
+            let one = b.one_year(&raa(), "values", &excluding(p, h, l)).unwrap();
+            let lifetime = OdpBootstrap { seed: 52, ..b }
+                .fit(&raa(), "values")
+                .unwrap();
+            let (_, a, _, ea) = moments(&column(&one.cdr, 1));
+            let (_, c, _, ec) = moments(&column(&lifetime.reserves, 1));
+            let tol = 5.0 * (ea * ea + ec * ec).sqrt();
+            assert!(
+                (a - c).abs() < tol,
+                "{p:?} {h} {l}: one-year {a}, lifetime {c}, 5 SE {tol}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_drops_are_pinned_by_seed() {
+        // Regression: the claims development result of RAA under the chain
+        // ladder with each age's highest and lowest link ratio dropped,
+        // the ranking redone on the closing triangle.
+        let method = excluding(None, 1, 1);
+        let fit = boot(500, 61).one_year(&raa(), "values", &method).unwrap();
+        let totals: Vec<f64> = fit
+            .cdr
+            .draw_matrix()
+            .chunks(10)
+            .map(|row| row.iter().sum())
+            .collect();
+        let (mean, sd, ..) = moments(&totals);
+        for (got, want) in [(mean, 630.612251), (sd, 12683.828275)] {
+            assert!(
+                (got / want - 1.0).abs() < 1e-6,
+                "mean {mean} and sd {sd} of the total, pinned at 630.612251 and 12683.828275"
+            );
+        }
+    }
+
+    #[test]
+    fn exclusion_errors_in_the_one_year_view() {
+        // The bootstrap's own exclusions must be the method's.
+        for (own, method) in [
+            (odp_excluding(10, 1, Some(3), 0, 0), chain_ladder()),
+            (
+                odp_excluding(10, 1, Some(3), 0, 0),
+                excluding(Some(4), 0, 0),
+            ),
+            (odp_excluding(10, 1, None, 1, 0), excluding(None, 0, 1)),
+            (odp_excluding(10, 1, None, 0, 1), excluding(Some(3), 0, 1)),
+        ] {
+            let err = own.one_year(&raa(), "values", &method).unwrap_err();
+            assert!(matches!(err, Error::ExclusionsMismatch { .. }), "{err:?}");
+            assert!(
+                matches!(
+                    own.one_year_segments(&raa_segments(), "paid", &method),
+                    Err(Error::ExclusionsMismatch { .. })
+                ),
+                "{own:?}"
+            );
+        }
+        let err = odp_excluding(10, 1, Some(3), 0, 0)
+            .one_year(&raa(), "values", &excluding(Some(4), 1, 0))
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "bootstrap: the bootstrap's exclusions (n_periods = Some(3), drop_high = 0, \
+             drop_low = 0) must be the re-reserving method's (n_periods = Some(4), \
+             drop_high = 1, drop_low = 0), or none"
+        );
+        // The geometric average is rejected, whatever the bootstrap sets.
+        for (own, n_periods) in [
+            (boot(10, 1), None),
+            (odp_excluding(10, 1, Some(3), 0, 0), Some(3)),
+        ] {
+            let geometric = OneYearMethod::ChainLadder(ChainLadder {
+                development: Development {
+                    average: Average::Geometric,
+                    n_periods,
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            assert!(matches!(
+                own.one_year(&raa(), "values", &geometric),
+                Err(Error::NotSupported { .. })
+            ));
+        }
+        // A window of nothing is an error, from the method or the bootstrap.
+        for own in [boot(10, 1), odp_excluding(10, 1, Some(0), 0, 0)] {
+            let err = own
+                .one_year(&raa(), "values", &excluding(Some(0), 0, 0))
+                .unwrap_err();
+            assert!(matches!(err, Error::InvalidSetting { .. }), "{err:?}");
+        }
+        assert!(matches!(
+            odp_excluding(10, 1, Some(0), 0, 0).fit(&raa(), "values"),
+            Err(Error::InvalidSetting { .. })
+        ));
     }
 }

@@ -184,7 +184,8 @@ pub struct OdpBootstrap {
     /// cells (chainladder-python's rule), which is biased low under
     /// exclusions: on RAA with `n_periods = 3` it is about a third of the
     /// plain scale. In the one-year view the bootstrap takes the method's
-    /// exclusions; setting them here is not yet supported.
+    /// exclusions when it sets none, and must set the method's when it
+    /// sets its own.
     pub drop_high: usize,
     /// Leave out the `drop_low` lowest link ratios; see
     /// [`drop_high`](Self::drop_high).
@@ -648,7 +649,7 @@ impl OdpBootstrap {
 /// The link ratio exclusions of a bootstrap: [`Development`]'s
 /// `n_periods`, `drop_high` and `drop_low` for the volume-weighted chain
 /// ladder it is centred on.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Exclusions {
     pub(crate) n_periods: Option<usize>,
     pub(crate) drop_high: usize,
@@ -656,6 +657,42 @@ pub(crate) struct Exclusions {
 }
 
 impl Exclusions {
+    /// The exclusions `development` sets.
+    pub(crate) fn of(development: &Development) -> Self {
+        Self {
+            n_periods: development.n_periods,
+            drop_high: development.drop_high,
+            drop_low: development.drop_low,
+        }
+    }
+
+    /// Whether none is set.
+    pub(crate) fn is_none(self) -> bool {
+        self == Self::default()
+    }
+
+    /// The exclusions a bootstrap simulates the one-year view of a method
+    /// with: the method's when it sets none. A bootstrap that sets its own
+    /// must set the method's, since the re-reserving that closes
+    /// each simulation would otherwise move the mean of the claims
+    /// development result for a reason the user did not choose.
+    pub(crate) fn for_method(self, method: &Development) -> Result<Self> {
+        let theirs = Self::of(method);
+        if self.is_none() || self == theirs {
+            return Ok(theirs);
+        }
+        let write = |e: Self| {
+            format!(
+                "n_periods = {:?}, drop_high = {}, drop_low = {}",
+                e.n_periods, e.drop_high, e.drop_low
+            )
+        };
+        Err(Error::ExclusionsMismatch {
+            bootstrap: write(self),
+            method: write(theirs),
+        })
+    }
+
     /// The volume-weighted [`Development`] with these exclusions and
     /// `pattern`.
     fn development(self, pattern: Option<&SelectedPattern>) -> Development {
@@ -1548,13 +1585,13 @@ mod tests {
             matches!(zero, Err(Error::InvalidSetting { .. })),
             "{zero:?}"
         );
-        // The one-year view does not yet take the bootstrap's own.
+        // The one-year view takes the method's exclusions, or the same ones.
         let one_year = excluding(Some(3), 0, 0).one_year(
             &raa(),
             "values",
             &crate::OneYearMethod::ChainLadder(ChainLadder::default()),
         );
-        assert!(matches!(one_year, Err(Error::NotSupported { .. })));
+        assert!(matches!(one_year, Err(Error::ExclusionsMismatch { .. })));
     }
 
     #[test]
