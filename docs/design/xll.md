@@ -80,6 +80,7 @@ category of Insert Function:
 | `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost from large losses: each accident year's trended layer losses, developed, over its premium |
 | `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], [probabilities], [step], [points])` | The annual aggregate loss, ground up or to a per-occurrence layer: mean, SD, CV, skewness, VaR, TVaR and the grid |
 | `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits, attachments, [shares], [step], [points])` | Per-occurrence layer statistics, one column per layer (`aggregate`'s `reins_stats_df`) |
+| `PRO.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3], [return_periods], [step], [points])` | The occurrence and aggregate PML curves by return period: the year's largest occurrence (`aggregate`'s `oep`, any count) beside the annual total's VaR |
 | `PRO.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | The Bayesian ODP chain ladder sampled with NUTS: the reserve exhibit, the parameters' posterior with R-hat and ESS, or the sampler's diagnostics |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
 
@@ -341,6 +342,21 @@ real Excel.
     release build, a kept one 30 µs. Draws are capped at 20,000 per chain
     and chains at 8. Other Bayesian models (`BayesBf`, Meyers', the
     compartmental models) follow the same pattern when wanted.
+22. **PML curves by return period, occurrence beside aggregate** (user,
+    2026-10-16, the parity plan's next items). `PRO.AGG.PML` takes the
+    count and severity as `PRO.AGG.STATS` does (decision 20) and return
+    periods (2 to 1,000 years if omitted; a value below 1 is read as the
+    annual probability, as `aggregate`'s `oep` takes it). Each row gives
+    the return period, the probability `p`, the occurrence PML (the loss
+    with `1 − G_N(F(x)) = p`, exact for any Panjer count through its pgf,
+    `prospicio_aggregate::pml`), the aggregate PML (the ground-up total's
+    VaR at `1 − p` on the FFT grid, sized as in decision 20 or by `step`
+    and `points`), the severity's exceedance at the occurrence PML and
+    the occurrence return period `1 / (E N · S(x))`. A probability at or
+    above `P(N ≥ 1)` is an error naming that ceiling. The two curves sit
+    side by side because that is the comparison a cat or per-risk
+    exhibit makes; a layer's occurrence PML is the curve clipped to the
+    layer, so it takes no layer arguments.
 
 ## Parity plan
 
@@ -370,6 +386,8 @@ order, one small PR each, those already done struck through:
    the indicated rate)~~; ~~burning cost~~.
 4. ~~Aggregate: a compound distribution of a count and a severity, its
    moments, VaR, TVaR and layer statistics~~.
+5. Aggregate, continued (user, 2026-10-16): ~~the occurrence PMLs~~;
+   aggregate covers on the annual total; towers on a grid.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -379,7 +397,8 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan above: pricing, then aggregates.
+- **Next functions:** the parity plan above: aggregate covers on the
+  annual total, then towers on a grid.
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and

@@ -1,7 +1,8 @@
 //! Aggregate (compound) distributions (`docs/design/xll.md`): the annual
 //! total of a claim count and a severity, ground up or to a
 //! per-occurrence layer, its moments, VaR and TVaR on an FFT grid, and the
-//! statistics of per-occurrence layers, over `prospicio_aggregate`.
+//! statistics of per-occurrence layers, and the occurrence and aggregate
+//! PML curves, over `prospicio_aggregate`.
 //!
 //! The count is in the Panjer class by its mean and dispersion
 //! `Var N / E N` (1 Poisson, above 1 negative binomial, below 1 binomial);
@@ -11,6 +12,7 @@
 //! the last lumped there, `aggregate`'s cap) and the total is on `points`
 //! too.
 
+use prospicio_aggregate::pml::occurrence_pml;
 use prospicio_aggregate::{
     CompoundMoments, LayerStatistics, Sizing, compound_moments, fft, fft_auto,
     occurrence_layer_statistics, round_bucket,
@@ -314,6 +316,67 @@ pub fn layers(args: &[Range]) -> Result<Range> {
         label("Annual skewness", &|s| s.aggregate.skew()),
         label("Loss on line", &|s| s.loss_on_line),
     ]))
+}
+
+/// The occurrence and aggregate PML curves, one row per return period:
+/// the annual probability `p`, the occurrence PML (the loss the year's
+/// largest occurrence exceeds with probability `p`, exact for any count:
+/// `1 − G_N(F(x)) = p`), the aggregate PML (the annual total's VaR at
+/// `1 − p`, on the FFT grid), the severity's exceedance at the occurrence
+/// PML and the average years between occurrences above it:
+/// `PRO.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3],
+/// [return_periods], [step], [points])`. A return period below 1 is read
+/// as the probability itself.
+pub fn pml(args: &[Range]) -> Result<Range> {
+    let n = count(&args[0], &args[1])?;
+    let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
+    let periods = if args[6].is_blank() {
+        vec![2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0]
+    } else {
+        cells(&args[6], "return_periods", false)?
+    };
+    let ps = periods
+        .iter()
+        .map(|&t| match t {
+            t if t > 1.0 && t.is_finite() => Ok(1.0 / t),
+            t if t > 0.0 && t < 1.0 => Ok(t),
+            t => Err(format!(
+                "return periods must be above 1 (or probabilities in (0, 1)), got {t}"
+            )),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let e = |e: prospicio_core::Error| e.to_string();
+    let none = 1.0 - n.pgf(0.0);
+    let t = total(&*n, &sev, None, grid_control(&args[7], &args[8])?)?;
+    let mut rows = vec![
+        [
+            "Return period",
+            "Probability",
+            "Occurrence PML",
+            "Aggregate PML",
+            "Severity survival",
+            "Occurrence return period",
+        ]
+        .map(Value::from)
+        .to_vec(),
+    ];
+    for p in ps {
+        if p >= none {
+            return Err(format!(
+                "the chance of a year with any occurrence is {none}; probability {p} is past it"
+            ));
+        }
+        let o = occurrence_pml(&*n, &sev, p).map_err(e)?;
+        rows.push(vec![
+            Value::number(o.annual_return_period),
+            Value::number(p),
+            Value::number(o.loss),
+            Value::number(t.grid.quantile(1.0 - p).map_err(e)?),
+            Value::number(o.severity_survival),
+            Value::number(o.occurrence_return_period),
+        ]);
+    }
+    Ok(Range::from_rows(rows))
 }
 
 /// Every cell of a range as a number, `"unlimited"` allowed when asked.
