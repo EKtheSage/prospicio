@@ -329,6 +329,26 @@ stopifnot(length(cross_validate(cv_data, k_fold(8, 2, seed = 1),
 near(gm@aic, -2 * gm@log_likelihood + 2 * gm@edf, 1e-14)
 stopifnot(is.finite(gm@log_likelihood))
 
+
+# Nested tests, BIC and VIF agree with R (#351).
+quine <- MASS::quine
+quine$y <- log(quine$Days + 1)
+qs <- glm_fit(y ~ Eth + Sex, quine, family = "gaussian")
+qb <- glm_fit(y ~ Eth + Sex + Age + Lrn, quine, family = "gaussian")
+rs <- stats::glm(y ~ Eth + Sex, data = quine)
+rb <- stats::glm(y ~ Eth + Sex + Age + Lrn, data = quine)
+ft <- f_test(qs, qb)
+ra <- anova(rs, rb, test = "F")
+near(ft$statistic, ra$F[2], 1e-9)
+near(ft$p_value, ra$`Pr(>F)`[2], 1e-8)
+near(likelihood_ratio_test(qs, qb)$p_value, anova(rs, rb, test = "Chisq")$`Pr(>Chi)`[2], 1e-8)
+qp <- glm_fit(Days ~ Eth + Sex + Age + Lrn, quine, family = "poisson")
+near(qp@bic, BIC(stats::glm(Days ~ Eth + Sex + Age + Lrn, family = poisson, data = quine)), 1e-9)
+v <- vif(y ~ Eth + Sex + Age + Lrn, quine)
+stopifnot(is.na(v[["(Intercept)"]]))
+xs <- as.data.frame(stats::model.matrix(~ Eth + Sex + Age + Lrn, quine))[, -1]
+near(v[["SexM"]], 1 / (1 - summary(stats::lm(SexM ~ ., data = xs))$r.squared), 1e-9)
+
 cat("prospicio R models tests passed\n")
 
 # The negative binomial's theta agrees with MASS::glm.nb, and the Tweedie

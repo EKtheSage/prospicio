@@ -201,6 +201,8 @@ reference:
       - glm_fit
       - glm_nb_fit
       - glm_model
+      - f_test
+      - vif
       - robust_vcov
       - bayes_glm_fit
       - bayes_glm_model

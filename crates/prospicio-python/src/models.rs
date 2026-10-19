@@ -701,6 +701,13 @@ impl PyGlmFit {
         self.inner.aic()
     }
 
+    /// BIC, ``-2 loglik + p log(n)``, counting the coefficients as ``aic``
+    /// does (R's ``BIC`` also counts an estimated dispersion).
+    #[getter]
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
     /// Residual degrees of freedom.
     #[getter]
     fn df_resid(&self) -> f64 {
@@ -1617,6 +1624,114 @@ pub(crate) fn deviance(
     metrics::deviance(f, &y, &mu, weights.as_deref()).map_err(to_py)
 }
 
+/// The F test of a GLM within a larger one that contains it, as R's
+/// ``anova(small, big, test = "F")``: ``F = (D_small - D_big) / (q phi_big)``
+/// on ``F(q, n - p_big)`` (CAS Monograph 5, section 6.2.1). For a family
+/// whose dispersion is estimated.
+///
+/// The models are not checked to be nested: ``small``'s columns must lie in
+/// the span of ``big``'s, on the same rows, family and weights.
+///
+/// Parameters
+/// ----------
+/// small : GlmFit
+/// big : GlmFit
+///
+/// Returns
+/// -------
+/// dict
+///     ``statistic``, ``df`` (``q``), ``df_resid``, ``deviance_drop`` and
+///     ``p_value``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the models differ in rows or ``big`` has no more coefficients.
+#[pyfunction]
+pub(crate) fn f_test<'py>(
+    py: Python<'py>,
+    small: PyRef<'_, PyGlmFit>,
+    big: PyRef<'_, PyGlmFit>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    nested_dict(py, prospicio_glm::nested::f_test(&small.inner, &big.inner))
+}
+
+/// The likelihood ratio test of a GLM within a larger one, as R's
+/// ``anova(small, big, test = "Chisq")``: the scaled deviance drop
+/// ``(D_small - D_big) / phi_big`` on ``chi2(q)``. For a family whose
+/// dispersion is known (Poisson, binomial).
+///
+/// Parameters
+/// ----------
+/// small : GlmFit
+/// big : GlmFit
+///
+/// Returns
+/// -------
+/// dict
+///     As ``f_test``, with ``df_resid`` infinite.
+///
+/// Raises
+/// ------
+/// ValueError
+///     As ``f_test``.
+#[pyfunction]
+pub(crate) fn likelihood_ratio_test<'py>(
+    py: Python<'py>,
+    small: PyRef<'_, PyGlmFit>,
+    big: PyRef<'_, PyGlmFit>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    nested_dict(
+        py,
+        prospicio_glm::nested::likelihood_ratio_test(&small.inner, &big.inner),
+    )
+}
+
+fn nested_dict<'py>(
+    py: Python<'py>,
+    test: prospicio_core::Result<prospicio_glm::nested::NestedTest>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let t = test.map_err(to_py)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("statistic", t.statistic)?;
+    out.set_item("df", t.df)?;
+    out.set_item("df_resid", t.df_resid)?;
+    out.set_item("deviance_drop", t.deviance_drop)?;
+    out.set_item("p_value", t.p_value)?;
+    Ok(out)
+}
+
+/// Variance inflation factors of a design's columns, ``1 / (1 - R2_j)``
+/// with ``R2_j`` that of column ``j`` on the others and an intercept (CAS
+/// Monograph 5, section 2.9). A constant column (the intercept) gets
+/// ``nan``.
+///
+/// Parameters
+/// ----------
+/// design : Design
+///
+/// Returns
+/// -------
+/// list of float
+///     One per column, in the design's order.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the non-constant columns are collinear.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, vif
+/// >>> d = Design([[1.0] * 4, [1.0, 2.0, 3.0, 4.0], [1.0, -1.0, -1.0, 1.0]],
+/// ...            ["(Intercept)", "x", "z"])
+/// >>> [round(v, 12) for v in vif(d)[1:]]
+/// [1.0, 1.0]
+#[pyfunction]
+pub(crate) fn vif(design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+    metrics::vif(&design.inner).map_err(to_py)
+}
+
 /// Gini index of the ordered Lorenz curve.
 ///
 /// Parameters
@@ -2242,7 +2357,7 @@ pub(crate) fn actual_vs_expected<'py>(
         dispersion,
     )
     .map_err(to_py)?;
-    let row = |r: &prospicio_models::monitor::PeriodSummary<prospicio_prob::KeyValue>| -> PyResult<Bound<'py, PyDict>> {
+    let row = |r: &prospicio_models::monitor::PeriodSummary<prospicio_prob::KeyValue>| -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         let d = PyDict::new(py);
         if let Some(p) = &r.period {
             match p {

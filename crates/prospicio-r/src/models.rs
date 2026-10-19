@@ -307,6 +307,10 @@ impl GlmModel {
         self.inner.aic()
     }
 
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
     fn df_resid(&self) -> f64 {
         self.inner.df_resid()
     }
@@ -779,6 +783,35 @@ fn family_deviance_rust(
     let f = family(family_name, theta, power)?;
     let w = (!weights.is_empty()).then_some(weights);
     metrics::deviance(f, y, mu, w).map_err(to_r)
+}
+
+/// The F test (`"f"`) or likelihood ratio test (`"lr"`) of `small` within
+/// `big`: `list(statistic, df, df_resid, deviance_drop, p_value)`.
+#[extendr]
+fn glm_nested_test_rust(small: Robj, big: Robj, kind: &str) -> Result<List> {
+    let as_glm = |x: &Robj| {
+        <&GlmModel>::try_from(x).map_err(|_| Error::Other("expected a glm_model".into()))
+    };
+    let (small, big) = (as_glm(&small)?, as_glm(&big)?);
+    let t = match kind {
+        "f" => prospicio_glm::nested::f_test(&small.inner, &big.inner),
+        _ => prospicio_glm::nested::likelihood_ratio_test(&small.inner, &big.inner),
+    }
+    .map_err(to_r)?;
+    Ok(list!(
+        statistic = t.statistic,
+        df = t.df,
+        df_resid = t.df_resid,
+        deviance_drop = t.deviance_drop,
+        p_value = t.p_value
+    ))
+}
+
+/// Variance inflation factors of a column-major design.
+#[extendr]
+fn vif_rust(x: &[f64], names: Vec<String>) -> Result<Vec<f64>> {
+    let d = design(x, names, &[], &[])?;
+    metrics::vif(&d).map_err(to_r)
 }
 
 /// Gini of the ordered Lorenz curve; empty exposure for none.
@@ -1456,6 +1489,8 @@ extendr_module! {
     fn tweedie_glm_fit_design;
     fn tweedie_profile_design;
     fn glm_nb_fit_design;
+    fn glm_nested_test_rust;
+    fn vif_rust;
     fn elastic_net_fit_design;
     fn elastic_net_cv_design;
     fn gam_fit_design;

@@ -87,7 +87,9 @@ dispersion_args <- function(dispersion) {
 #' @param link_power Exponent of the power link.
 #' @returns A `glm_model` with properties `coefficients`, `std_errors`,
 #'   `p_values`, `covariance`, `dispersion`, `deviance`, `null_deviance`,
-#'   `log_likelihood`, `aic`, `df_resid`, `iterations` and `fitted`. Use
+#'   `log_likelihood`, `aic`, `bic` (counting the coefficients as `aic`
+#'   does; [stats::BIC()] also counts an estimated dispersion), `df_resid`,
+#'   `iterations` and `fitted`. Use
 #'   [stats::coef()], [stats::predict()] and [predict_distribution()].
 #' @export
 #' @examples
@@ -170,6 +172,53 @@ tweedie_profile <- function(formula, data, powers, link = "log", offset = NULL, 
                             dispersion = r$dispersion),
        power = r$power, phi = r$phi, max_log_likelihood = r$max_log_likelihood,
        model = glm_model(ptr = r$model, terms = des$terms, xlevels = des$xlevels))
+#' Tests of nested GLMs
+#'
+#' `f_test()` is the F test of `small` within `big`,
+#' `F = (D_small - D_big) / (q phi_big)` on `F(q, n - p_big)`, for a family
+#' whose dispersion is estimated; `likelihood_ratio_test()` the scaled
+#' deviance drop `(D_small - D_big) / phi_big` on `chi2(q)`, for one whose
+#' dispersion is known (Poisson, binomial). They agree with
+#' `anova(small, big, test = "F")` and `test = "Chisq"` (CAS Monograph 5,
+#' section 6.2.1). The models are not checked to be nested: `small`'s
+#' columns must lie in the span of `big`'s, on the same rows, family and
+#' weights.
+#'
+#' @param small,big [glm_fit()] models, `small` with fewer coefficients.
+#' @returns A list with `statistic`, `df` (`q`), `df_resid` (`Inf` for the
+#'   likelihood ratio test), `deviance_drop` and `p_value`.
+#' @export
+#' @examples
+#' d <- data.frame(y = c(1, 3, 2, 5, 4, 6, 8, 7), x = 1:8, z = c(0, 1, 0, 1, 1, 0, 1, 0))
+#' f_test(glm_fit(y ~ x, d, "gaussian"), glm_fit(y ~ x + z, d, "gaussian"))$p_value
+f_test <- function(small, big) {
+  rust_result(glm_nested_test_rust(small@ptr, big@ptr, "f"))
+}
+
+#' @rdname f_test
+#' @export
+likelihood_ratio_test <- function(small, big) {
+  rust_result(glm_nested_test_rust(small@ptr, big@ptr, "lr"))
+}
+
+#' Variance inflation factors
+#'
+#' `1 / (1 - R2_j)` for each column of the design of `formula`, with `R2_j`
+#' that of column `j` regressed on the others and an intercept (CAS
+#' Monograph 5, section 2.9; `car::vif` for single-column terms). The
+#' intercept gets `NA`.
+#'
+#' @inheritParams glm_fit
+#' @returns A named numeric vector, one per design column.
+#' @export
+#' @examples
+#' d <- data.frame(y = 1:6, x = c(1, 2, 3, 4, 5, 7), z = c(2, 1, 4, 3, 6, 5))
+#' vif(y ~ x + z, d)
+vif <- function(formula, data) {
+  des <- model_design(formula, data, NULL, NULL)
+  v <- rust_result(vif_rust(as.double(des$x), colnames(des$x)))
+  v[is.nan(v)] <- NA_real_
+  stats::setNames(v, colnames(des$x))
 }
 
 #' Fitted GLM (class)
@@ -204,6 +253,7 @@ glm_model <- S7::new_class(
     null_deviance = S7::new_property(S7::class_double, getter = function(self) self@ptr$null_deviance()),
     log_likelihood = S7::new_property(S7::class_double, getter = function(self) self@ptr$log_likelihood()),
     aic = S7::new_property(S7::class_double, getter = function(self) self@ptr$aic()),
+    bic = S7::new_property(S7::class_double, getter = function(self) self@ptr$bic()),
     df_resid = S7::new_property(S7::class_double, getter = function(self) self@ptr$df_resid()),
     iterations = S7::new_property(S7::class_double, getter = function(self) self@ptr$iterations()),
     fitted = S7::new_property(S7::class_double, getter = function(self) self@ptr$fitted())

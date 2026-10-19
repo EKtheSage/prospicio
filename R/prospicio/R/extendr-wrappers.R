@@ -10,6 +10,10 @@ actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta,
 
 bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
 
+glm_nested_test_rust <- function(small, big, kind) .Call(wrap__glm_nested_test_rust, small, big, kind)
+
+vif_rust <- function(x, names) .Call(wrap__vif_rust, x, names)
+
 ppc_check_rust <- function(observed, replicated, statistics, groups) .Call(wrap__ppc_check_rust, observed, replicated, statistics, groups)
 
 loo_pit_rust <- function(observed, replicated, log_lik, r_eff, seed) .Call(wrap__loo_pit_rust, observed, replicated, log_lik, r_eff, seed)
@@ -775,6 +779,8 @@ GlmModel$null_deviance <- function() .Call(wrap__GlmModel__null_deviance, self)
 GlmModel$log_likelihood <- function() .Call(wrap__GlmModel__log_likelihood, self)
 
 GlmModel$aic <- function() .Call(wrap__GlmModel__aic, self)
+
+GlmModel$bic <- function() .Call(wrap__GlmModel__bic, self)
 
 GlmModel$df_resid <- function() .Call(wrap__GlmModel__df_resid, self)
 

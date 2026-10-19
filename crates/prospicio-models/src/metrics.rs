@@ -7,6 +7,7 @@
 
 use prospicio_core::{Error, Result, StreamRng};
 
+use crate::design::Design;
 use crate::family::Family;
 
 /// `Σ w d(y, μ)`, the family's deviance.
@@ -374,6 +375,70 @@ pub fn ks_uniform(values: &[f64]) -> Result<f64> {
         .enumerate()
         .map(|(i, &x)| (x - i as f64 / n).max((i as f64 + 1.0) / n - x))
         .fold(0.0, f64::max))
+}
+
+/// Variance inflation factors of a design's columns: `1 / (1 − R²_j)`, with
+/// `R²_j` that of column `j` regressed on the others and an intercept
+/// (CAS Monograph 5, section 2.9; R `car::vif` for single-column terms).
+/// Computed as the diagonal of the inverse of the columns' correlation
+/// matrix. A constant column (the intercept) gets `NaN`.
+///
+/// ```
+/// use prospicio_models::Design;
+/// use prospicio_models::metrics::vif;
+///
+/// let x = vec![1.0, 2.0, 3.0, 4.0];
+/// let z = vec![1.0, -1.0, -1.0, 1.0]; // uncorrelated with x
+/// let d = Design::new(
+///     vec!["(Intercept)".into(), "x".into(), "z".into()],
+///     vec![vec![1.0; 4], x, z],
+/// )
+/// .unwrap();
+/// let v = vif(&d).unwrap();
+/// assert!(v[0].is_nan());
+/// assert!((v[1] - 1.0).abs() < 1e-12 && (v[2] - 1.0).abs() < 1e-12);
+/// ```
+///
+/// Fails when the non-constant columns are collinear.
+pub fn vif(design: &Design) -> Result<Vec<f64>> {
+    let n = design.n_rows() as f64;
+    let centred: Vec<Option<Vec<f64>>> = (0..design.n_cols())
+        .map(|j| {
+            let x = design.column(j);
+            let mean = x.iter().sum::<f64>() / n;
+            let c: Vec<f64> = x.iter().map(|v| v - mean).collect();
+            let ss: f64 = c.iter().map(|v| v * v).sum();
+            (ss > 0.0).then(|| c.iter().map(|v| v / ss.sqrt()).collect())
+        })
+        .collect();
+    let kept: Vec<&Vec<f64>> = centred.iter().flatten().collect();
+    let k = kept.len();
+    let mut corr = vec![0.0; k * k];
+    for a in 0..k {
+        for b in 0..=a {
+            let r: f64 = kept[a].iter().zip(kept[b]).map(|(x, y)| x * y).sum();
+            corr[a * k + b] = r;
+            corr[b * k + a] = r;
+        }
+    }
+    let l = prospicio_math::linalg::cholesky(&corr, k).ok_or(Error::InvalidParameter {
+        name: "design",
+        value: k as f64,
+        reason: "has collinear columns",
+    })?;
+    let inverse = prospicio_math::linalg::cholesky_inverse(&l, k);
+    let mut next = 0;
+    Ok(centred
+        .iter()
+        .map(|c| match c {
+            Some(_) => {
+                let v = inverse[next * k + next];
+                next += 1;
+                v
+            }
+            None => f64::NAN,
+        })
+        .collect())
 }
 
 fn same_length(n: usize, m: usize, name: &'static str) -> Result<()> {

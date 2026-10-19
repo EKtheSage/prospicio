@@ -233,3 +233,10 @@
   Exercises 205 and 206 exact). Python `prospicio.risk.haircut` and
   `equal_risk` (a `LevelAllocation`), R `haircut_allocation()` and
   `equal_risk_allocation()` (#369).
+- Nested GLM tests: `prospicio_glm::nested::f_test(small, big)` and
+  `likelihood_ratio_test(small, big)`, R `anova(small, big, test = "F")`
+  and `test = "Chisq"` (parity on quine); `GlmFit::bic`, counting the
+  coefficients as `aic` does; `metrics::vif`, variance inflation factors of
+  a design's columns. Python `f_test`, `likelihood_ratio_test`, `vif` and
+  `GlmFit.bic`; R `f_test()`, `likelihood_ratio_test()`, `vif()` and
+  `glm_model@bic` (#351).

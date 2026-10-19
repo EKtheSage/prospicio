@@ -333,6 +333,14 @@ models and compares them.
   validated in `docs/design/credibility.md` ("Bayesian hierarchical
   credibility"): parity with `actuar::cm` at given structure parameters,
   and with grid integration of the posterior.
+- **Nested GLM tests and diagnostics** (#351): `prospicio_glm::nested`'s
+  `f_test` and `likelihood_ratio_test` on the deviance drop over the larger
+  model's dispersion, as R's `anova(small, big, test = "F")` and
+  `test = "Chisq"`; `GlmFit::bic` with `aic`'s count of parameters;
+  `metrics::vif`, from the inverse correlation matrix of a design's
+  non-constant columns. R parity on quine
+  (`validation/scripts/r_glm_nested.R`). Nesting is the caller's to
+  ensure: two fits carry no record of each other's columns.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

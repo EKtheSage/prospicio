@@ -531,3 +531,38 @@ def test_tweedie_power_is_the_profile_maximum():
     assert profile["power"] == pytest.approx(fit.power, abs=1e-3)
     assert profile["max_log_likelihood"] == pytest.approx(fit.log_likelihood, rel=1e-6)
     assert max(profile["log_likelihood"]) <= fit.log_likelihood + 1e-9
+
+
+def test_nested_tests_bic_and_vif():
+    import csv
+    import pathlib
+
+    from prospicio.models import f_test, likelihood_ratio_test, vif
+
+    path = pathlib.Path(__file__).resolve().parents[2] / "validation" / "data" / "quine.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(f))
+    names = ["EthN", "SexM", "AgeF1", "AgeF2", "AgeF3", "LrnSL"]
+
+    def design(k):
+        cols = [[1.0] * len(rows)] + [[float(r[n]) for r in rows] for n in names[:k]]
+        return Design(cols, ["(Intercept)", *names[:k]])
+
+    y = [math.log(float(r["Days"]) + 1.0) for r in rows]
+    small = Glm("gaussian", "identity").fit(design(2), y)
+    big = Glm("gaussian", "identity").fit(design(6), y)
+    # R: anova(small, big, test = "F") and test = "Chisq".
+    f = f_test(small, big)
+    assert f["statistic"] == pytest.approx(1.2950554093611, rel=1e-10)
+    assert f["p_value"] == pytest.approx(0.274969956093846, rel=1e-9)
+    assert (f["df"], f["df_resid"]) == (4.0, 139.0)
+    lr = likelihood_ratio_test(small, big)
+    assert lr["p_value"] == pytest.approx(0.26930041235005, rel=1e-9)
+    assert lr["df_resid"] == math.inf
+    days = [float(r["Days"]) for r in rows]
+    assert Glm("poisson").fit(design(6), days).bic == pytest.approx(2320.06887663732, rel=1e-11)
+    v = vif(design(6))
+    assert math.isnan(v[0])
+    assert v[3] == pytest.approx(2.09706084577139, rel=1e-11)
+    with pytest.raises(ValueError):
+        f_test(big, small)

@@ -142,6 +142,9 @@ reference:
       - models.OnnxModel
       - models.OnnxPredictor
       - models.deviance
+      - models.f_test
+      - models.likelihood_ratio_test
+      - models.vif
       - models.gini
       - models.lift
       - models.crps

@@ -1551,3 +1551,73 @@ fn negative_binomial_theta_matches_mass_glm_nb() {
         assert!(close(*got, want, 1e-7), "{got} vs {want}");
     }
 }
+
+/// R's `anova(small, big, test = "F")` and `test = "Chisq"`, `BIC` and
+/// variance inflation factors (`1 / (1 - R^2)` by `lm`) on the quine
+/// design; `validation/scripts/r_glm_nested.R` prints these values.
+#[test]
+fn nested_glm_tests_match_r_anova() {
+    use prospicio_glm::nested::{f_test, likelihood_ratio_test};
+    use prospicio_models::metrics::vif;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/quine.csv");
+    let text = std::fs::read_to_string(path).expect("quine.csv");
+    let mut lines = text.lines();
+    let header: Vec<String> = lines
+        .next()
+        .unwrap()
+        .split(',')
+        .map(|h| h.trim_matches('"').to_string())
+        .collect();
+    let mut cols: Vec<Vec<f64>> = vec![Vec::new(); header.len()];
+    for line in lines {
+        for (c, v) in cols.iter_mut().zip(line.split(',')) {
+            c.push(v.parse().unwrap());
+        }
+    }
+    let n = cols[0].len();
+    let design = |k: usize| {
+        let mut names = vec!["(Intercept)".to_string()];
+        names.extend(header[1..=k].iter().cloned());
+        let mut columns = vec![vec![1.0; n]];
+        columns.extend(cols[1..=k].iter().cloned());
+        Design::new(names, columns).unwrap()
+    };
+    let (small, big) = (design(2), design(6));
+    let close = |a: f64, b: f64, tol: f64| (a - b).abs() <= tol * b.abs().max(1e-300);
+    let log_days: Vec<f64> = cols[0].iter().map(|d| (d + 1.0).ln()).collect();
+    let gaussian = Glm::new(Family::Gaussian, Link::Identity);
+    let (s, b) = (
+        gaussian.fit(&small, &log_days).unwrap(),
+        gaussian.fit(&big, &log_days).unwrap(),
+    );
+    let f = f_test(&s, &b).unwrap();
+    assert!(close(f.statistic, 1.2950554093611, 1e-10), "{f:?}");
+    assert!(close(f.p_value, 0.274969956093846, 1e-9), "{f:?}");
+    assert_eq!((f.df, f.df_resid), (4.0, 139.0));
+    assert!(close(f.deviance_drop, 5.12796060003762, 1e-10));
+    let lr = likelihood_ratio_test(&s, &b).unwrap();
+    assert!(close(lr.p_value, 0.26930041235005, 1e-9), "{lr:?}");
+    let poisson = Glm::new(Family::Poisson, Link::Log);
+    let (sp, bp) = (
+        poisson.fit(&small, &cols[0]).unwrap(),
+        poisson.fit(&big, &cols[0]).unwrap(),
+    );
+    let lr = likelihood_ratio_test(&sp, &bp).unwrap();
+    assert!(close(lr.statistic, 178.384532973985, 1e-9), "{lr:?}");
+    assert!(close(lr.p_value, 1.65752518873386e-37, 1e-6), "{lr:?}");
+    // R's BIC counts no dispersion for the Poisson.
+    assert!(close(bp.bic(), 2320.06887663732, 1e-11), "{}", bp.bic());
+    let v = vif(&big).unwrap();
+    let want = [
+        1.00326550828182,
+        1.08256046985237,
+        2.09706084577139,
+        1.91041499741150,
+        1.85737573451634,
+        1.44140349290722,
+    ];
+    assert!(v[0].is_nan());
+    for (got, want) in v[1..].iter().zip(want) {
+        assert!(close(*got, want, 1e-11), "{v:?}");
+    }
+}
