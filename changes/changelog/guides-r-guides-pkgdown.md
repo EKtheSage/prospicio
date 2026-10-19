@@ -7,4 +7,4 @@
   the Python guides at the Python site's pages. A guide's chunks are shown
   with the output that `test-guides.R` checks, not re-run; the two examples
   run in full, and the build fails if `reinsurance_pricing.qmd` reports a
-  comparison outside its tolerance. The site index links to them.
+  comparison outside its tolerance. The site index links to them (#388).
