@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("seventy-eight functions registered", registered == 78);
+    check("seventy-nine functions registered", registered == 79);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -580,6 +580,21 @@ int main(int argc, char **argv) {
           (ps->xltype & 0xFFF) == xltypeMulti && ps->val.array.rows == 3 &&
               fabs(ps->val.array.lparray[1].val.num - 1 / 1.1) < 1e-15);
     free12(ps);
+
+    /* A risk premium of 87 with 3% expenses and 10% brokerage grosses up
+     * to a technical premium of 100. */
+    XLOPER12 q_e, q_r, q_x, q_b;
+    q_e.xltype = q_r.xltype = q_x.xltype = q_b.xltype = xltypeNum;
+    q_e.val.num = 50;
+    q_r.val.num = 87;
+    q_x.val.num = 0.03;
+    q_b.val.num = 0.10;
+    XLOPER12 *qt = ((Fn8)GetProcAddress(xll, "pro_quote"))(&q_e, &q_r, &missing, &q_x, &q_b, &missing, &missing,
+                                                           &missing);
+    check("PRO.QUOTE grosses a risk premium of 87 up to 100",
+          (qt->xltype & 0xFFF) == xltypeMulti && qt->val.array.columns == 2 &&
+              fabs(qt->val.array.lparray[3].val.num - 100) < 1e-12);
+    free12(qt);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

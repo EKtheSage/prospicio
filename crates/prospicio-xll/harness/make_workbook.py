@@ -692,6 +692,15 @@ pv["G16"] = "Cost-of-capital price over the payout"; pv["G16"].font = bold
 pv["G17"] = ArrayFormula("G17:H25", '=PRO.PAYOUT.PRICE(B8,B9,B7,B3:K3,B4:K4,B6,"factors",0.5)')
 for col in "ABCDEFGH":
     pv.column_dimensions[col].width = 16
+pv["A27"] = "A cover's quote: the guide's middle layer, risk premium 1.24 on an expected loss of 0.586, limit 5"; pv["A27"].font = bold
+pv["A28"] = "Expected loss"; pv["B28"] = 0.586; pv["B28"].fill = inp
+pv["A29"] = "Risk premium"; pv["B29"] = 1.24; pv["B29"].fill = inp
+pv["A30"] = "Assets"; pv["B30"] = 7.778; pv["B30"].fill = inp
+pv["A31"] = "Expenses"; pv["B31"] = 0.03; pv["B31"].fill = inp
+pv["A32"] = "Brokerage"; pv["B32"] = 0.10; pv["B32"].fill = inp
+pv["A33"] = "Limit"; pv["B33"] = 5; pv["B33"].fill = inp
+pv["A34"] = "Quoted"; pv["B34"] = 1.30; pv["C34"] = 1.60; pv["B34"].fill = pv["C34"].fill = inp
+pv["E27"] = ArrayFormula("E27:H40", "=PRO.QUOTE(B28,B29,B30,B31,B32,,B33,B34:C34)")
 
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")

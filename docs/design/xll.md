@@ -470,6 +470,23 @@ real Excel.
     zero rate. A distortion price over the payout is its premium times the
     discount factor (`time-value.md` decision 6), a sheet product, so it
     has no function of its own.
+28. **A quote starts from a risk premium on the sheet** (user,
+    2026-10-19, the sixth group). `PRO.QUOTE` wraps
+    `prospicio_pricing::quote`: the technical premium
+    `(R + fixed) / (1 - expenses - brokerage)` of a risk premium `R`
+    (a `PRO.TOWER.PRICE` premium, or any risk-loaded price), its build-up
+    (expenses, brokerage, the premium net of brokerage, the margin), the
+    capital and its return when `assets` is given, and the market's
+    ratios (loss ratio, multiple, and rate on line and payback when
+    `limit` is given). The function takes the price's parts rather than
+    pricing a distribution itself, so the quote applies to any price the
+    sheet holds. Each value of `quoted` adds a column with the same
+    cover at that premium (`Quote::at`): what the quote leaves after the
+    loads is the reinsurer's risk premium. A quote that leaves no capital
+    is an error. The guide `reinsurance-price.md`'s middle layer (risk
+    premium 1.24, expected loss 0.586, limit 5, 3% expenses, 10%
+    brokerage) comes back at its printed 1.425, 28.5%, payback 3.5,
+    multiple 2.43 and loss ratio 41.1%.
 
 ## Parity plan
 
@@ -504,11 +521,11 @@ order, one small PR each, those already done struck through:
 6. Fitting and pricing inputs (user, 2026-10-19, "work on next step 2";
    the order chosen by this lane): ~~severity fits to large losses
    (body and Pareto families, with thresholds and censoring)~~; ~~EVT
-   threshold diagnostics, the GPD fit and Hill's estimator~~; payment patterns and
-   discounting; a cover's quote (technical premium with expenses and
-   brokerage); distortions calibrated to a target and a layer priced by
-   one; contract terms on an aggregate (sliding scale, profit commission,
-   reinstatement premiums).
+   threshold diagnostics, the GPD fit and Hill's estimator~~; ~~payment
+   patterns and discounting~~; ~~a cover's quote (technical premium with
+   expenses and brokerage)~~; distortions calibrated to a target and a
+   layer priced by one; contract terms on an aggregate (sliding scale,
+   profit commission, reinstatement premiums).
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
