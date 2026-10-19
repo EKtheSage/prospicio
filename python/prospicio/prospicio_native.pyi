@@ -23100,13 +23100,15 @@ def fit_references(layers: Sequence[tuple[float, float, float]] = ..., frequenci
     160.0
     """
 
-def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> SeverityFit:
+def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncated_above: Sequence[float] |None = None) -> SeverityFit:
     """
     Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
     severity to large losses, each conditioned on exceeding its reporting
     threshold (left truncation), with losses capped by a policy limit
-    censored. The Lomax, ``S(x) = (1 + x / scale) ** -alpha`` (Bahnemann's
-    Pareto), is fitted as a :class:`Burr` with ``gamma = 1``.
+    censored, and optionally truncated from above (each loss conditioned on
+    not exceeding its bound). The Lomax, ``S(x) = (1 + x / scale) **
+    -alpha`` (Bahnemann's Pareto), is fitted as a :class:`Burr` with
+    ``gamma = 1``.
     
     Parameters
     ----------
@@ -23118,6 +23120,9 @@ def fit_severity(family: str, losses: Sequence[float], reporting_thresholds: Seq
     censored : list of bool, optional
         ``True`` where a policy limit capped the loss.
     weights : list of float, optional
+    truncated_above : list of float, optional
+        Per-loss bounds from above: a loss is conditioned on not exceeding
+        its bound (a study of claims up to 50,000). ``math.inf`` means none.
     
     Returns
     -------
@@ -23168,7 +23173,7 @@ def gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |N
     float
     """
 
-def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> dict:
+def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None, truncated_above: Sequence[float] |None = None) -> dict:
     """
     A severity against the product-limit estimate of large losses, each
     conditioned on its reporting threshold: P-P (``survival`` against
@@ -23176,6 +23181,8 @@ def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds
     reporting threshold), Q-Q (``x`` against ``model_quantile``, the
     model's conditional quantile at the middle of each step) and
     ``max_distance``, the largest gap between the two survival functions.
+    With a bound from above common to every loss, both sides are
+    conditioned on it too; bounds that differ are refused.
     
     Parameters
     ----------
@@ -23185,6 +23192,9 @@ def goodness_of_fit(severity: Any, losses: Sequence[float], reporting_thresholds
     reporting_thresholds : list of float, optional
     censored : list of bool, optional
     weights : list of float, optional
+    truncated_above : list of float, optional
+        Per-loss bounds from above: a loss is conditioned on not exceeding
+        its bound (a study of claims up to 50,000). ``math.inf`` means none.
     
     Returns
     -------

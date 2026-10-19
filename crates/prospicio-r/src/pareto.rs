@@ -98,6 +98,15 @@ fn large_losses(
     Ok(data)
 }
 
+/// `data` with per-loss bounds from above, if any are given.
+fn bounded_above(data: LargeLosses, upper: &[f64]) -> Result<LargeLosses> {
+    if upper.is_empty() {
+        Ok(data)
+    } else {
+        data.truncated_above(upper.to_vec()).map_err(to_r)
+    }
+}
+
 fn truncation_kind(kind: &str) -> Result<Truncation> {
     match kind {
         "lp" => Ok(Truncation::LastPiece),
@@ -750,10 +759,11 @@ fn severity_fit_rust(
     reporting: &[f64],
     censored: &[f64],
     weights: &[f64],
+    upper: &[f64],
 ) -> Result<List> {
     use prospicio_prob::severity_fit::{Family, fit_severity};
     let family = Family::from_name(family).map_err(to_r)?;
-    let data = large_losses(losses, reporting, censored, weights)?;
+    let data = bounded_above(large_losses(losses, reporting, censored, weights)?, upper)?;
     let fit = fit_severity(family, &data).map_err(to_r)?;
     let names = family.parameter_names();
     let named = |v: Vec<f64>| -> Result<Robj> {
@@ -803,9 +813,10 @@ fn goodness_of_fit_rust(
     reporting: &[f64],
     censored: &[f64],
     weights: &[f64],
+    upper: &[f64],
 ) -> Result<List> {
     let dist = crate::distributions::dist_from_robj(&severity)?;
-    let data = large_losses(losses, reporting, censored, weights)?;
+    let data = bounded_above(large_losses(losses, reporting, censored, weights)?, upper)?;
     let g = prospicio_prob::severity_fit::goodness_of_fit(&dist, &data).map_err(to_r)?;
     Ok(list!(
         x = g.steps.iter().map(|p| p.x).collect::<Vec<_>>(),

@@ -17,7 +17,8 @@ goodness_of_fit(
   losses,
   reporting_thresholds = NULL,
   censored = NULL,
-  weights = NULL
+  weights = NULL,
+  truncated_above = NULL
 )
 }
 \arguments{
@@ -30,6 +31,10 @@ goodness_of_fit(
 \item{weights}{Per-loss weights, or \code{NULL}.}
 
 \item{severity}{A fitted or any other severity.}
+
+\item{truncated_above}{Per-loss bounds from above, or \code{NULL}: a loss is
+conditioned on not exceeding its bound (a study of claims up to 50,000);
+\code{Inf} means none.}
 }
 \value{
 \code{product_limit()}: a data frame with \code{x}, \code{at_risk}, \code{events},
@@ -49,7 +54,9 @@ reporting threshold, \code{prod(1 - events / at_risk)}.
 (\code{survival} against \code{model_survival}, the model's survival conditional on
 the lowest reporting threshold), Q-Q (\code{x} against \code{model_quantile}, the
 model's conditional quantile at the middle of each step) and
-\code{max_distance}, the largest gap between the two survival functions.
+\code{max_distance}, the largest gap between the two survival functions. With
+a bound from above common to every loss (\code{truncated_above}), both sides
+are conditioned on it too; bounds that differ are refused.
 }
 \examples{
 product_limit(c(100, 200, 300, 400))

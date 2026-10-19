@@ -354,3 +354,13 @@
 
 - `prospicio_prob::severity_fit::Family` has the variant `Lomax`, so an
   exhaustive `match` on it needs a new arm (#328).
+
+### Distributions and probability
+
+- Losses truncated from above: `LargeLosses::truncated_above(u)` conditions
+  each loss on `r < X <= u` (claims kept only up to a bound), which
+  `fit_severity` uses for every family, a censored loss included;
+  `goodness_of_fit` conditions both sides on a bound common to every loss
+  and refuses bounds that differ. The Pareto fits refuse such data rather
+  than ignore it. Python and R `truncated_above` on `fit_severity` /
+  `severity_fit` and `goodness_of_fit` (#328).

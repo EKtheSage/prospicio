@@ -182,6 +182,17 @@ fb <- severity_fit("burr", y, reporting_thresholds = ifelse(y > 100, 100, 0), ce
 stopifnot(inherits(fb$distribution, "prospicio::burr_distribution"), is.finite(fb$log_likelihood))
 stopifnot(inherits(try(severity_fit("pareto", y), silent = TRUE), "try-error"))
 
+# Issue #328: truncation from above, against R's own optimizer.
+ty <- c(120, 300, 450, 800, 1500, 2600, 2900, 650, 90, 2100)
+ft <- severity_fit("lognormal", ty, truncated_above = rep(3000, 10))
+tnll <- function(p) -sum(dlnorm(ty, p[1], p[2], log = TRUE) - plnorm(3000, p[1], p[2], log.p = TRUE))
+tref <- optim(c(6.5, 1), tnll, control = list(reltol = 1e-14, maxit = 1e4))$par
+stopifnot(max(abs(ft$parameters / tref - 1)) < 1e-4)
+stopifnot(abs(ft$log_likelihood + tnll(ft$parameters)) < 1e-8)
+stopifnot(max(goodness_of_fit(ft$distribution, ty, truncated_above = rep(3000, 10))$table$model_quantile) <= 3000)
+stopifnot(inherits(try(goodness_of_fit(ft$distribution, ty, truncated_above = c(rep(3000, 9), Inf)),
+                       silent = TRUE), "try-error"))
+
 # Issue #328: the Lomax (Bahnemann's Pareto), against R's own optimizer.
 hy <- c(50, 80, 120, 200, 300, 500, 900, 1500, 4000, 12000)
 fl <- severity_fit("lomax", hy)
