@@ -11,14 +11,14 @@
   chainladder-python 0.10.1 and R ChainLadder's `MackChainLadder(weights
   = W)`. `DevelopmentFit::n_links` gives the number of link ratios behind
   each factor. The bootstraps and the one-year views reject them for now.
-  In Python and R as `n_periods`, `drop_high` and `drop_low` (#336, #339).
+  In Python and R as `n_periods`, `drop_high` and `drop_low` (#336, #339, #403).
 - A geometric average, `average = "geometric"`, for the chain ladder and
   the expected-loss methods; Mack and the bootstraps reject it, since it
-  has no variance. **Breaking (Rust):** `Average` has a new variant and
+  has no variance. (#403) **Breaking (Rust):** `Average` has a new variant and
   `Average::alpha` returns `Option<f64>`, `None` for it; `Error` has a new
   variant, `NotSupported`; `Development` and `DevelopmentFit` gain public
   fields (`n_periods`, `drop_high`, `drop_low`; `n_links`, `excluded`), so
   struct literals need `..Default::default()` (or the new fields).
 - A selected pattern of factors to ultimate (or percents developed) may
   now go below 1 and need not be monotone, for negative development such
-  as Friedland's XYZ Insurer reported pattern (#336).
+  as Friedland's XYZ Insurer reported pattern (#336, #403).
