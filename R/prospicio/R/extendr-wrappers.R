@@ -572,6 +572,77 @@ DiscreteDist$tail <- function(periods) .Call(wrap__DiscreteDist__tail, self, per
 #' @export
 `[[.DiscreteDist` <- `$.DiscreteDist`
 
+NormalDist <- new.env(parent = emptyenv())
+
+NormalDist$new <- function(mu, sigma) .Call(wrap__NormalDist__new, mu, sigma)
+
+NormalDist$mu <- function() .Call(wrap__NormalDist__mu, self)
+
+NormalDist$sigma <- function() .Call(wrap__NormalDist__sigma, self)
+
+NormalDist$mean <- function() .Call(wrap__NormalDist__mean, self)
+
+NormalDist$variance <- function() .Call(wrap__NormalDist__variance, self)
+
+NormalDist$ln_pdf <- function(x) .Call(wrap__NormalDist__ln_pdf, self, x)
+
+NormalDist$cdf <- function(x) .Call(wrap__NormalDist__cdf, self, x)
+
+NormalDist$survival <- function(x) .Call(wrap__NormalDist__survival, self, x)
+
+NormalDist$quantile <- function(p) .Call(wrap__NormalDist__quantile, self, p)
+
+NormalDist$tvar <- function(p) .Call(wrap__NormalDist__tvar, self, p)
+
+NormalDist$sample <- function(n, seed, stream) .Call(wrap__NormalDist__sample, self, n, seed, stream)
+
+#' @export
+`$.NormalDist` <- function (self, name) { func <- NormalDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.NormalDist` <- `$.NormalDist`
+
+OgiveDist <- new.env(parent = emptyenv())
+
+OgiveDist$new <- function(x, cdf) .Call(wrap__OgiveDist__new, x, cdf)
+
+OgiveDist$from_counts <- function(bounds, counts) .Call(wrap__OgiveDist__from_counts, bounds, counts)
+
+OgiveDist$x <- function() .Call(wrap__OgiveDist__x, self)
+
+OgiveDist$cdf_values <- function() .Call(wrap__OgiveDist__cdf_values, self)
+
+OgiveDist$mean <- function() .Call(wrap__OgiveDist__mean, self)
+
+OgiveDist$variance <- function() .Call(wrap__OgiveDist__variance, self)
+
+OgiveDist$ln_pdf <- function(x) .Call(wrap__OgiveDist__ln_pdf, self, x)
+
+OgiveDist$cdf <- function(x) .Call(wrap__OgiveDist__cdf, self, x)
+
+OgiveDist$survival <- function(x) .Call(wrap__OgiveDist__survival, self, x)
+
+OgiveDist$quantile <- function(p) .Call(wrap__OgiveDist__quantile, self, p)
+
+OgiveDist$lev <- function(limit) .Call(wrap__OgiveDist__lev, self, limit)
+
+OgiveDist$stop_loss <- function(retention) .Call(wrap__OgiveDist__stop_loss, self, retention)
+
+OgiveDist$layer <- function(limit, attachment) .Call(wrap__OgiveDist__layer, self, limit, attachment)
+
+OgiveDist$layer_variance <- function(limit, attachment) .Call(wrap__OgiveDist__layer_variance, self, limit, attachment)
+
+OgiveDist$layer_second_moment <- function(limit, attachment) .Call(wrap__OgiveDist__layer_second_moment, self, limit, attachment)
+
+OgiveDist$sample <- function(n, seed, stream) .Call(wrap__OgiveDist__sample, self, n, seed, stream)
+
+#' @export
+`$.OgiveDist` <- function (self, name) { func <- OgiveDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.OgiveDist` <- `$.OgiveDist`
+
+
 PnlLedger <- new.env(parent = emptyenv())
 
 PnlLedger$new <- function(values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower) .Call(wrap__PnlLedger__new, values, probs, group_labels, group_roles, margin_labels, leg_group, leg_side, leg_label, leg_kind, leg_values, leg_step, name, result_name, span_label, span_lo, span_hi, force_tower)

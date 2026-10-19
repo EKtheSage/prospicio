@@ -24,6 +24,7 @@ mod models;
 mod natural;
 #[cfg(feature = "nn")]
 mod nn;
+mod normal;
 mod pareto;
 mod payout;
 mod pnl;
@@ -93,6 +94,8 @@ mod prospicio_native {
         PyAttentionCann, PyAttentionCannFit, PyCann, PyCannFit, PyOnnxModel, PyOnnxPredictor,
         PyTokenAttention,
     };
+    #[pymodule_export]
+    use super::normal::{PyNormal, PyOgive};
     #[pymodule_export]
     use super::pareto::{
         PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto, PyInverseGamma,

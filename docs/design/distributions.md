@@ -149,6 +149,19 @@ conversion reports the error it introduces.
   `validation/reference/discrete_aggregate.csv` (544 values, `1e-12`;
   `1e-10` on TVaR and skewness). Python `Discrete`, R
   `discrete_distribution()`.
+- `prospicio_prob::Normal`, on the whole real line (asset and log-return
+  models), and `prospicio_prob::Ogive`, the piecewise linear distribution
+  function of grouped data (#366). The normal is a `Distribution` but not a
+  `Severity`, whose losses are non-negative; it has a closed-form `tvar`
+  (`μ + σ φ(z_p) / (1 − p)`, by the Mills ratio above the median) and a
+  `pdf`. The ogive requires non-negative boundaries, so it is a `Severity`:
+  its survival function is linear on each band, which makes the trapezoid
+  rule exact for `lev` and `stop_loss` and Simpson's rule exact for the
+  layer's second moment; its raw moments are those of uniform bands, and
+  `from_counts` builds one from grouped counts. Neither joins the `Dist`
+  enum: like `Discrete` each is a class of its own in the bindings (Python
+  `Normal`, `Ogive`; R `normal_distribution()`, `ogive()`,
+  `ogive_from_counts()`).
 
 - `prospicio_prob::Counting` (`pmf`, `cdf`, `mean`, `variance`, `panjer_ab`, `pgf`,
   `quantile`, `sample`), with `Poisson` and `NegativeBinomial` (Klugman's
