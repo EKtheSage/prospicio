@@ -88,6 +88,8 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.SWING(loss, basic, lcm, [minimum], [maximum], [share])` | Swing-rated or retro premium at each loss |
 | `PRO.SLIDING.SCALE(loss, premium, commissions, loss_ratios)` | Sliding-scale ceding commission at each ceded loss |
 | `PRO.PROFIT.COMMISSION(loss, premium, share, allowance)` | Profit commission at each ceded loss |
+| `PRO.PROFIT.COMMISSION.TERM(losses, premium, share, allowance, [carry_years])` | Profit commission in each year of a term, deficits carried forward |
+| `PRO.SLIDING.SCALE.TERM(losses, premium, commissions, loss_ratios, [carry], [carry_years])` | Sliding-scale commission in each year of a term, deficits and credits carried forward |
 | `PRO.LAYER.TERMS(count_mean, [dispersion], family, p1, p2, [p3], layer_limit, layer_attachment, premium, [reinstatements], [commissions], [loss_ratios], [profit_share], [profit_allowance], [share], [policy_limit], [step], [points])` | A layer's premium, reinstatement premium and commissions in expectation |
 | `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights])` | Maximum likelihood fit to large losses: parameters with SEs, fit against the data, or the body families compared |
 | `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Pareto extrapolation from one layer to others |
@@ -237,6 +239,12 @@ Ctrl+Alt+F9 to recalculate.
   assets `a`, cap the outcomes at `a` first (`=MIN(range, a)`): the
   premium then lies between the capped mean and `a`, the range
   `PRO.DISTORTION.CALIBRATE` solves in.
+- Terms of several years: `losses` holds one term a row (a simulated
+  path, or one history) and one year a column, in order; the result has
+  the same shape. A carried amount is used oldest first and, with
+  `carry_years`, dropped after that many later years. The premium is the
+  same each year. Simulated years come from any sheet source, for
+  example `PRO.ODP.SIMS` or a column of annual losses per year.
 - Copulas: `gaussian` and `t` take one correlation for every pair or a
   square correlation matrix (the t also `nu`), `clayton`, `gumbel`,
   `frank` and `joe` their `theta`. `PRO.COPULA.SIM`'s row `i` is stream

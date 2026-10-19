@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("eighty-nine functions registered", registered == 89);
+    check("ninety-one functions registered", registered == 91);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -608,6 +608,29 @@ int main(int argc, char **argv) {
     check("PRO.DISTORTION(0.25, \"ph\", 0.5) is 0.5",
           (dg->xltype & 0xFFF) == xltypeNum && fabs(dg->val.num - 0.5) < 1e-15);
     free12(dg);
+
+    /* A three-year term at 50% of the profit over a threshold of 80 (premium
+     * 100, allowance 20%): losses 120, 70, 30 carry a deficit of 40, of
+     * which 30 is left after year 2, so year 3 pays 0.5 x (50 - 30) = 10. */
+    XLOPER12 tm_cells[3], tm_row, tm_p, tm_s, tm_a;
+    double tm_y[3] = {120, 70, 30};
+    for (int i = 0; i < 3; i++) {
+        tm_cells[i].xltype = xltypeNum;
+        tm_cells[i].val.num = tm_y[i];
+    }
+    tm_row.xltype = xltypeMulti;
+    tm_row.val.array.rows = 1;
+    tm_row.val.array.columns = 3;
+    tm_row.val.array.lparray = tm_cells;
+    tm_p.xltype = tm_s.xltype = tm_a.xltype = xltypeNum;
+    tm_p.val.num = 100;
+    tm_s.val.num = 0.5;
+    tm_a.val.num = 0.2;
+    XLOPER12 *pct = ((Fn5)GetProcAddress(xll, "pro_profit_commission_term"))(&tm_row, &tm_p, &tm_s, &tm_a, &missing);
+    check("PRO.PROFIT.COMMISSION.TERM carries a deficit into year 3",
+          (pct->xltype & 0xFFF) == xltypeMulti && pct->val.array.columns == 3 &&
+              fabs(pct->val.array.lparray[2].val.num - 10) < 1e-12);
+    free12(pct);
 
     /* The Gaussian copula at (1/2, 1/2) with rho 1/2: 1/4 + asin(1/2) / (2 pi) = 1/3. */
     static wchar_t gau_s[] = L"\x08" L"gaussian";

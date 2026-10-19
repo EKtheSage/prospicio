@@ -559,6 +559,23 @@ real Excel.
     per family in three dimensions) match at the reference's
     tolerances; the simulated uniforms are the crate's, and the
     Iman–Conover result is `iman_conover`'s.
+33. **A term of several years is a row of losses** (user, 2026-10-19,
+    the seventh group's last item), over
+    `prospicio_aggregate::Layer::profit_commissions_over` and
+    `ceding_commissions_over`. `PRO.PROFIT.COMMISSION.TERM(losses,
+    premium, share, allowance, [carry_years])` and
+    `PRO.SLIDING.SCALE.TERM(losses, premium, commissions, loss_ratios,
+    [carry], [carry_years])` read one term from each row of `losses`,
+    its columns the years in order, and give each year's commission in
+    the same shape, deficits (and for the sliding scale credits, both by
+    default) carried forward as `aggregate.md` defines them: used oldest
+    first, dropped after `carry_years` later years, or kept until used
+    up. The years' losses come from the sheet, so the paths may be
+    independent years or share a trend, as `Tower::apply_term` allows,
+    and the add-in keeps no simulation (decision 4). The premium is the
+    same in every year. `aggregate` has no multi-year term, so the
+    checks are the crate's hand-worked cases and, on 400 three-year
+    paths, `Tower::apply_aggregate_term`'s commissions year by year.
 
 ## Parity plan
 
@@ -602,9 +619,9 @@ order, one small PR each, those already done struck through:
    ~~the distortions with several parameters (bi-TVaR, beta, weighted
    TVaR)~~; ~~copulas (a copula's cdf at points, uniforms simulated from
    one, and Iman–Conover's reordering of simulated columns to a rank
-   correlation, all on ranges that hold no state)~~; multi-year contract
-   terms (a profit commission or sliding scale over a term of simulated
-   years, deficits and credits carried forward).
+   correlation, all on ranges that hold no state)~~; ~~multi-year
+   contract terms (a profit commission or sliding scale over a term of
+   simulated years, deficits and credits carried forward)~~.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -614,8 +631,10 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's seventh group: multi-year
-  contract terms; further functions as the user asks.
+- **Next functions:** the parity plan's seven groups are done; further
+  functions as the user asks (nested Archimedean copulas and vines, and
+  the expected multi-year commission on the grid, are the nearest left
+  out).
 - **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
   an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
   Its pattern is not normalised, so the a-priori level is absorbed by the
