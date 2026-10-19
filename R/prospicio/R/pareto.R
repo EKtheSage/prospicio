@@ -1258,3 +1258,83 @@ goodness_of_fit <- function(severity, losses, reporting_thresholds = NULL, censo
     max_distance = r$max_distance
   )
 }
+
+#' Fit a severity to grouped losses
+#'
+#' `grouped_fit()` fits a lognormal, gamma, Weibull, Burr or Lomax severity
+#' to grouped losses, a count of losses in each size band, by maximum
+#' likelihood on the bands (`method = "ml"`) or by minimum chi-square
+#' (`"chi_square"`; Bahnemann, *Distributions for Actuaries*, section 2.4).
+#' The losses are conditioned on lying within the bands: a first bound above
+#' 0 is a deductible's truncation and a finite last bound a truncation from
+#' above. The covariance is the inverse of the grouped data's Fisher
+#' information, which both methods attain asymptotically.
+#'
+#' `grouped_goodness_of_fit()` evaluates any severity on the bands.
+#'
+#' `lev_distance_fit()` fits by minimizing `sum(w * (lev(x) - e)^2)`, the
+#' weighted squared distance between the family's limited expected values
+#' and the empirical ones `e` at the sizes `x` (Bahnemann's minimum
+#' distance, section 2.5). Empirical limited means are exact from grouped
+#' data with each band's total, and stay exact under a policy limit at or
+#' above the last size.
+#'
+#' @param bounds The band bounds, one more than `counts`, non-negative and
+#'   strictly increasing; only the last may be `Inf`.
+#' @param counts The count (or any weight) in each band
+#'   `(bounds[k], bounds[k + 1]]`.
+#' @param method `"ml"` or `"chi_square"`.
+#' @param sizes Positive, strictly increasing limits.
+#' @param empirical The empirical limited expected value at each size.
+#' @param weights Optional non-negative weights, 1 by default.
+#' @param start Optional starting parameters in the family's order.
+#' @inheritParams severity_fit
+#' @inheritParams goodness_of_fit
+#' @returns `grouped_fit()`: a list with `distribution`, named `parameters`
+#'   and `standard_errors`, `covariance`, `chi_square`, `log_likelihood`,
+#'   `expected` (the expected count in each band), `degrees_of_freedom`,
+#'   `p_value` and `converged`. `grouped_goodness_of_fit()`: a list with
+#'   `probabilities`, `expected`, `chi_square` and `log_likelihood`.
+#'   `lev_distance_fit()`: a list with `distribution`, named `parameters`,
+#'   `distance`, `fitted` (the limited means at `sizes`) and `converged`.
+#' @export
+#' @examples
+#' bounds <- c(0, 1000, 1500, 2000, 2500, 3000, Inf)
+#' counts <- c(42, 61, 47, 26, 14, 10)
+#' grouped_fit("gamma", bounds, counts, "chi_square")$parameters
+#' grouped_goodness_of_fit(gamma_distribution(3.907288, 397.931), bounds, counts)$chi_square
+#' x <- c(500, 1000, 2000, 5000, 10000)
+#' lev_distance_fit("lognormal", x, lev(lognormal(7, 1.2), x))$parameters
+grouped_fit <- function(family, bounds, counts, method = "ml") {
+  r <- rust_result(grouped_fit_rust(
+    as.character(family), as.double(bounds), as.double(counts), as.character(method)
+  ))
+  k <- length(r$parameters)
+  list(
+    distribution = wrap_dist(r$family, r$ptr), parameters = r$parameters,
+    standard_errors = r$standard_errors,
+    covariance = matrix(r$covariance, k, k, byrow = TRUE,
+                        dimnames = list(names(r$parameters), names(r$parameters))),
+    chi_square = r$chi_square, log_likelihood = r$log_likelihood, expected = r$expected,
+    degrees_of_freedom = r$degrees_of_freedom, p_value = r$p_value, converged = r$converged
+  )
+}
+
+#' @rdname grouped_fit
+#' @export
+grouped_goodness_of_fit <- function(severity, bounds, counts) {
+  rust_result(grouped_goodness_of_fit_rust(severity@ptr, as.double(bounds), as.double(counts)))
+}
+
+#' @rdname grouped_fit
+#' @export
+lev_distance_fit <- function(family, sizes, empirical, weights = NULL, start = NULL) {
+  r <- rust_result(lev_distance_fit_rust(
+    as.character(family), as.double(sizes), as.double(empirical), optional_arg(weights),
+    optional_arg(start)
+  ))
+  list(
+    distribution = wrap_dist(r$family, r$ptr), parameters = r$parameters,
+    distance = r$distance, fitted = r$fitted, converged = r$converged
+  )
+}

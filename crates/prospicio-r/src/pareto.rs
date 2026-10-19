@@ -786,6 +786,94 @@ fn severity_fit_rust(
     ))
 }
 
+/// A severity fitted to grouped losses by maximum likelihood or minimum
+/// chi-square: `list(family, ptr, parameters, standard_errors, covariance,
+/// chi_square, log_likelihood, expected, degrees_of_freedom, p_value,
+/// converged)`.
+#[extendr]
+fn grouped_fit_rust(family: &str, bounds: &[f64], counts: &[f64], method: &str) -> Result<List> {
+    use prospicio_prob::grouped_fit::{GroupedLosses, GroupedMethod, fit_grouped};
+    use prospicio_prob::severity_fit::Family;
+    let family = Family::from_name(family).map_err(to_r)?;
+    let method = GroupedMethod::from_name(method).map_err(to_r)?;
+    let data = GroupedLosses::new(bounds.to_vec(), counts.to_vec()).map_err(to_r)?;
+    let fit = fit_grouped(family, &data, method).map_err(to_r)?;
+    let names = family.parameter_names();
+    let named = |v: Vec<f64>| -> Result<Robj> {
+        let mut r: Robj = v.into();
+        r.set_names(names.iter().copied())?;
+        Ok(r)
+    };
+    Ok(list!(
+        family = fit.dist().family(),
+        ptr = crate::distributions::dist_to_robj(fit.dist().clone())?,
+        parameters = named(fit.parameters().to_vec())?,
+        standard_errors = named(fit.standard_errors())?,
+        covariance = fit.covariance().to_vec(),
+        chi_square = fit.chi_square(),
+        log_likelihood = fit.log_likelihood(),
+        expected = fit.expected().to_vec(),
+        degrees_of_freedom = fit.degrees_of_freedom() as f64,
+        p_value = fit.p_value(),
+        converged = fit.converged()
+    ))
+}
+
+/// A severity against grouped losses: `list(probabilities, expected,
+/// chi_square, log_likelihood)`.
+#[extendr]
+fn grouped_goodness_of_fit_rust(severity: Robj, bounds: &[f64], counts: &[f64]) -> Result<List> {
+    use prospicio_prob::grouped_fit::GroupedLosses;
+    let dist = crate::distributions::dist_from_robj(&severity)?;
+    let data = GroupedLosses::new(bounds.to_vec(), counts.to_vec()).map_err(to_r)?;
+    let p = data
+        .probabilities(&dist)
+        .ok_or_else(|| Error::Other("the severity gives the bands no probability".into()))?;
+    let n = data.total();
+    Ok(list!(
+        expected = p.iter().map(|&p| n * p).collect::<Vec<_>>(),
+        probabilities = p,
+        chi_square = data.chi_square(&dist),
+        log_likelihood = data.log_likelihood(&dist)
+    ))
+}
+
+/// A severity fitted by the minimum limited-mean distance: `list(family,
+/// ptr, parameters, distance, fitted, converged)`. Empty `weights` or
+/// `start` mean none.
+#[extendr]
+fn lev_distance_fit_rust(
+    family: &str,
+    sizes: &[f64],
+    empirical: &[f64],
+    weights: &[f64],
+    start: &[f64],
+) -> Result<List> {
+    use prospicio_prob::grouped_fit::fit_lev_distance;
+    use prospicio_prob::severity_fit::Family;
+    let family = Family::from_name(family).map_err(to_r)?;
+    let some = |v: &'_ [f64]| (!v.is_empty()).then_some(v.to_vec());
+    let (weights, start) = (some(weights), some(start));
+    let fit = fit_lev_distance(
+        family,
+        sizes,
+        empirical,
+        weights.as_deref(),
+        start.as_deref(),
+    )
+    .map_err(to_r)?;
+    let mut parameters: Robj = fit.parameters().to_vec().into();
+    parameters.set_names(family.parameter_names().iter().copied())?;
+    Ok(list!(
+        family = fit.dist().family(),
+        ptr = crate::distributions::dist_to_robj(fit.dist().clone())?,
+        parameters = parameters,
+        distance = fit.distance(),
+        fitted = fit.fitted().to_vec(),
+        converged = fit.converged()
+    ))
+}
+
 /// The product-limit estimator: `list(x, at_risk, events, survival)`.
 #[extendr]
 fn product_limit_rust(
@@ -959,6 +1047,9 @@ extendr_module! {
     fn severity_fit_rust;
     fn product_limit_rust;
     fn goodness_of_fit_rust;
+    fn grouped_fit_rust;
+    fn grouped_goodness_of_fit_rust;
+    fn lev_distance_fit_rust;
     fn piecewise_pareto_fit_standard_errors_rust;
     impl MixtureDist;
     impl Binomial;

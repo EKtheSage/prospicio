@@ -8,3 +8,6 @@ python/prospicio/prospicio_native.pyi text eol=lf
 # leaves nothing for git to commit. One-time setup per clone: examples/README.md.
 *.ipynb filter=nbstripout
 *.ipynb diff=ipynb
+
+# Lane status files: one bullet per line, so concurrent PRs merge by keeping both sides' lines.
+docs/lanes/*.md merge=union

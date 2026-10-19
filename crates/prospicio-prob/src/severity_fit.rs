@@ -76,7 +76,7 @@ impl Family {
     }
 
     /// `(ln f(x), ln S(x))` at the natural parameters `p`.
-    fn ln_f_s(self, p: &[f64], x: f64) -> (f64, f64) {
+    pub(crate) fn ln_f_s(self, p: &[f64], x: f64) -> (f64, f64) {
         match self {
             Self::Lognormal => {
                 let (mu, sd) = (p[0], p[1]);
@@ -119,21 +119,21 @@ impl Family {
 
     /// The natural parameters from the unconstrained ones: the logarithm
     /// of every positive parameter (the lognormal's `meanlog` as is).
-    fn natural(self, u: &[f64]) -> Vec<f64> {
+    pub(crate) fn natural(self, u: &[f64]) -> Vec<f64> {
         match self {
             Self::Lognormal => vec![u[0], u[1].exp()],
             _ => u.iter().map(|v| v.exp()).collect(),
         }
     }
 
-    fn unconstrained(self, p: &[f64]) -> Vec<f64> {
+    pub(crate) fn unconstrained(self, p: &[f64]) -> Vec<f64> {
         match self {
             Self::Lognormal => vec![p[0], p[1].ln()],
             _ => p.iter().map(|v| v.ln()).collect(),
         }
     }
 
-    fn dist(self, p: &[f64]) -> Result<Dist> {
+    pub(crate) fn dist(self, p: &[f64]) -> Result<Dist> {
         Ok(match self {
             Self::Lognormal => Lognormal::new(p[0], p[1])?.into(),
             Self::Gamma => Gamma::new(p[0], p[1])?.into(),

@@ -1,0 +1,23 @@
+# Probability lane
+
+**Session:** Cloud. **Owns:** `crates/prospicio-prob/`, `crates/prospicio-math/`, `validation/tests/distributions.rs`
+
+<!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
+
+## Now
+
+- (none)
+
+## Next
+
+- the Guides lane's remaining issues for this lane
+
+## Done
+
+- distributions, `Grid`, `Counting`, Pareto family, `PredictiveDistribution` (join, reorder, blend, select), distortions, allocation, copulas (nested Archimedean and C- and D-vines too), EVT, the `Dist` enum and the bindings on it, `Custom` (a user's cdf, the slow path), saving and loading distributions as JSON, the inverse gamma, inverse Gaussian, Burr and scaled beta, truncation and splicing (`aggregate` parity), a severity under a mix of policy limits (`PolicyLimits`) standard errors of the Pareto fits, and fits of the lognormal, gamma, Weibull and Burr to large losses with reporting thresholds and censoring with a product-limit estimator and goodness of fit, third raw moments on `Severity` and `Counting` (mpmath parity), `aggregate`'s named fixed, Bernoulli and geometric counts, TVaR of a grid and `tvar_threshold` (`aggregate` parity), a distortion's family and parameters, copula distribution functions (Archimedean in any dimension, Gaussian in two by the bivariate normal cdf; mpmath parity), `Discrete`, a distribution on finitely many values of either sign for the P&L ledger's rows (`aggregate` parity), threshold diagnostics for EVT (`evt::threshold_diagnostics`: the mean excess and the GPD's shape and modified scale at each threshold with standard errors from the observed information; `ismev` parity), TVaR of every parametric severity (`Severity::tvar`; Python `var` and `tvar`, R `VaR()` and `TVaR()`, #366, #373, #375)
+- Iman–Conover with Student t or given scores and shuffled rows (`iman_conover_with`, #378)
+- the covariance allocation of the margin (`AllocationMethod::CovarianceMargin`, Kalkbrener's, *Pricing Insurance Risk* Exercise 217 exact) the Shapley value of any cost (`PredictiveDistribution::shapley_with`; Python `shapley`, R `shapley_allocation()`), and the haircut and equal risk allocations of an exogenous total by stand-alone VaR, TVaR or EPD (`haircut`, `equal_risk`; R `haircut_allocation()`, `equal_risk_allocation()`; Exercises 205 and 206 exact; #369)
+- the worst VaR of a sum by the Rearrangement Algorithm (`rearrangement::rearrange` and `worst_var`, reproducible by its start; *Pricing Insurance Risk* Exercise 59 as the guide prints it; Python and R; #366)
+- the normal distribution with its closed-form TVaR and the ogive of grouped data, a severity with exact limited moments (`Normal`, `Ogive`; Python and R; #366)
+- a severity scaled and shifted, `aggregate`'s `10 * lognorm 1 + 20`, with exact layer moments (`Affine`, a `Dist` variant saved as JSON; Python `Affine`, R `affine_distribution()`; #318)
+- the Lomax, Bahnemann's Pareto, in `fit_severity` (`Family::Lomax`, a Burr with `γ = 1`; Python and R; #328, first part) and truncation from above (`LargeLosses::truncated_above`, each loss conditioned on `r < X ≤ u`; `goodness_of_fit` on a common bound; Python and R `truncated_above`; #328, second part), and grouped losses by maximum likelihood or minimum chi-square and the minimum limited-mean distance (`grouped_fit::fit_grouped`, `fit_lev_distance`; Python `fit_grouped`, `fit_lev_distance`, `grouped_goodness_of_fit`, R `grouped_fit()`, `lev_distance_fit()`, `grouped_goodness_of_fit()`; Bahnemann's printed fits; #328, third part)

@@ -25,6 +25,7 @@ pub mod distribution;
 pub mod evt;
 pub mod gamma;
 pub mod grid;
+pub mod grouped_fit;
 pub mod inverse_gamma;
 pub mod inverse_gaussian;
 #[cfg(feature = "arrow")]
