@@ -952,6 +952,31 @@ impl Portfolio {
     /// The premium of `X ∧ a` under `g`, and its allocation to units; see
     /// the [module](self). `a` must be positive.
     ///
+    /// Two conventions follow `aggregate` 1.0.1 and differ from the printed
+    /// formulas of the books on small discrete examples:
+    ///
+    /// - **A total exactly at the assets** (linear allocation). An outcome
+    ///   with `X = a` keeps its own weight, `κᵢ(a) Δg`, and `a g(S(a))` is
+    ///   shared over the totals strictly above `a`. *Pricing Insurance
+    ///   Risk*'s linear allocation conditions on `X ∧ a`, so it lumps that
+    ///   outcome with the default ones and they share `g(S(a⁻))`; its
+    ///   Example 235 gives 4.3 where this gives 4.16. Assets just below the
+    ///   atom (`a − 1e-9`) give the book's numbers. `assets(p)` is always a
+    ///   total, so the case arises whenever a capital standard is used on a
+    ///   discrete book.
+    /// - **The bottom layer of capital**, from 0 to the smallest total,
+    ///   where `S = g(S) = 1` and the return `(g − S)/(1 − g)` is
+    ///   undefined. The units' margins there are not zero, though they sum
+    ///   to zero, and they take capital at the limit of the layer above,
+    ///   `g'(1) / (1 − g'(1))`: `1/r` for the constant cost of capital `r`,
+    ///   `ρ/(1 − ρ)` for the proportional hazard, and 0 (no capital) for a
+    ///   distortion with no slope at 1 (Wang, dual power, TVaR).
+    ///   Monograph 15's equation 8.5 gives that layer no capital for every
+    ///   distortion, so its CCoC and PH capital by unit differs (InsCo at
+    ///   15%: 2.261, 1.478, 42.696 here against 5.419, 6.082, 34.934 by
+    ///   equation 8.5); the total capital, and every unit's premium, are the
+    ///   same.
+    ///
     /// ```
     /// use prospicio_pricing::natural::{Allocation, Portfolio};
     /// use prospicio_prob::Distortion;

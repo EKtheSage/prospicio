@@ -169,6 +169,9 @@ stopifnot(inherits(try(portfolio_assets(insco, 1.5), silent = TRUE), "try-error"
 stopifnot(abs(epd_ratio(insco, 65)$total - 3.5 / 46.6) < 1e-15, abs(assets_for_epd(insco, 3.5 / 46.6) - 65) < 1e-9)
 pent <- pentagon(loss = 46.6, assets = 100, return_on_capital = 0.15)
 stopifnot(abs(pent[["premium"]] - 53.565217391304344) < 1e-12)
+d <- pent[["discount"]]
+stopifnot(abs(d - pent[["margin"]] / (100 - 46.6)) < 1e-15,
+          abs((1 - d) * 46.6 + d * 100 - pent[["premium"]]) < 1e-12)
 stopifnot(inherits(try(pentagon(loss = 1, premium = 2), silent = TRUE), "try-error"))
 # Independent units by FFT: PIR's Discrete case.
 g1 <- grid_distribution(1, replace(numeric(11), c(1, 9, 11), c(0.5, 0.25, 0.25)))
