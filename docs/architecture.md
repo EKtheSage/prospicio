@@ -333,6 +333,7 @@ Each front end's docs are generated from the code that defines its API, and buil
 - **Generated files that ship in a package are committed** (the stub, `man/`, `NAMESPACE`) so reviewers see API changes in the diff. `--check` fails when a build changes one; CI runs `cargo xtask docs --check`.
 - **Documentation is tested:** Python requires a docstring on every public object and runs docstring examples; R runs `tools::undoc` and `tools::codoc`, and pkgdown runs every `@examples` block.
 - **Semantics are documented once, in Rust.** Binding docs describe the language API; definitions, formulas and references live in the Rust crate docs, and binding docs link to them instead of restating them.
+- **The guides and examples are pages of each site.** `cargo xtask python` stages `docs/guides/*.md` and the executed notebooks in `examples/` as the great-docs User Guide; `cargo xtask r` stages their R twins (`docs/guides/*.qmd`, `examples/*.qmd`) into `R/prospicio/vignettes/articles` (gitignored) as pkgdown articles, grouped in `_pkgdown.yml`. The sources stay in `docs/guides` and `examples`; the staging rewrites links between them to site pages. A guide's R chunks are shown, not run, with the output that `test-guides.R` checks; an example's run in full, and the build fails if `reinsurance_pricing.qmd` reports a comparison outside its tolerance.
 - **Rendered sites are not committed.** CI uploads them as a build artifact on PRs; `.github/workflows/pages.yml` publishes them to GitHub Pages from `main`.
 
 ## Roadmap and releases
