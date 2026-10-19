@@ -2,6 +2,7 @@
 counts, and the joint predictive distribution every model returns."""
 
 from .prospicio_native import (
+    Affine,
     Beta,
     Binomial,
     Burr,
@@ -52,6 +53,7 @@ __all__ = [
     "Beta",
     "PolicyLimits",
     "Truncated",
+    "Affine",
     "Mixture",
     "Custom",
     "Pareto",

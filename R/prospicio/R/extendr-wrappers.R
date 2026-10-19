@@ -1523,6 +1523,44 @@ TruncatedDist$sample <- function(n, seed, stream) .Call(wrap__TruncatedDist__sam
 #' @export
 `[[.TruncatedDist` <- `$.TruncatedDist`
 
+AffineDist <- new.env(parent = emptyenv())
+
+AffineDist$new <- function(severity, scale, shift) .Call(wrap__AffineDist__new, severity, scale, shift)
+
+AffineDist$scale <- function() .Call(wrap__AffineDist__scale, self)
+
+AffineDist$shift <- function() .Call(wrap__AffineDist__shift, self)
+
+AffineDist$family <- function() .Call(wrap__AffineDist__family, self)
+
+AffineDist$mean <- function() .Call(wrap__AffineDist__mean, self)
+
+AffineDist$variance <- function() .Call(wrap__AffineDist__variance, self)
+
+AffineDist$cdf <- function(x) .Call(wrap__AffineDist__cdf, self, x)
+
+AffineDist$survival <- function(x) .Call(wrap__AffineDist__survival, self, x)
+
+AffineDist$quantile <- function(p) .Call(wrap__AffineDist__quantile, self, p)
+
+AffineDist$lev <- function(limit) .Call(wrap__AffineDist__lev, self, limit)
+
+AffineDist$stop_loss <- function(retention) .Call(wrap__AffineDist__stop_loss, self, retention)
+
+AffineDist$layer <- function(limit, attachment) .Call(wrap__AffineDist__layer, self, limit, attachment)
+
+AffineDist$layer_variance <- function(limit, attachment) .Call(wrap__AffineDist__layer_variance, self, limit, attachment)
+
+AffineDist$layer_second_moment <- function(limit, attachment) .Call(wrap__AffineDist__layer_second_moment, self, limit, attachment)
+
+AffineDist$sample <- function(n, seed, stream) .Call(wrap__AffineDist__sample, self, n, seed, stream)
+
+#' @export
+`$.AffineDist` <- function (self, name) { func <- AffineDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.AffineDist` <- `$.AffineDist`
+
 PolicyLimitsDist <- new.env(parent = emptyenv())
 
 PolicyLimitsDist$new <- function(severity, limits, weights) .Call(wrap__PolicyLimitsDist__new, severity, limits, weights)

@@ -29,6 +29,7 @@ reference:
       - distributions.Burr
       - distributions.Beta
       - distributions.Truncated
+      - distributions.Affine
       - distributions.Mixture
       - distributions.Custom
       - distributions.to_json

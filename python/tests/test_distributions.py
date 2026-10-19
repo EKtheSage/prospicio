@@ -450,3 +450,24 @@ def test_normal_and_ogive():
     assert Ogive([0.0, 10.0], [0.0, 1.0]).variance() == pytest.approx(100.0 / 12.0)
     with pytest.raises(ValueError):
         Ogive([0.0, 1.0], [0.0, 0.9])
+
+
+def test_affine_severity():
+    # aggregate's 10 * lognorm 1 + 20, with exact layer moments (#318).
+    from prospicio.distributions import Affine, Lognormal, from_json, to_json
+
+    x = Lognormal(0.0, 1.0)
+    y = Affine(x, scale=10.0, shift=20.0)
+    assert abs(y.mean() - (10 * x.mean() + 20)) < 1e-9
+    assert abs(y.variance() - 100 * x.variance()) < 1e-6
+    assert y.cdf(20.0) == 0.0 and abs(y.cdf(30.0) - x.cdf(1.0)) < 1e-15
+    assert abs(y.quantile(0.9) - (10 * x.quantile(0.9) + 20)) < 1e-9
+    assert abs(y.layer(30.0, 40.0) - 10 * x.layer(3.0, 2.0)) < 1e-9
+    assert y.lev(15.0) == 15.0
+    assert (y.scale, y.shift) == (10.0, 20.0)
+    z = from_json(to_json(y))
+    assert isinstance(z, Affine) and abs(z.mean() - y.mean()) < 1e-12
+    with pytest.raises(ValueError):
+        Affine(x, scale=0.0)
+    with pytest.raises(ValueError):
+        Affine(x, shift=-1.0)

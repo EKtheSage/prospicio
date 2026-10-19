@@ -14,9 +14,9 @@ use crate::distribution::Distribution;
 use crate::evt::Gpd;
 use crate::severity::Severity;
 use crate::{
-    Beta, Burr, Custom, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto, Loglogistic,
-    Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, Truncated, Tweedie,
-    Weibull,
+    Affine, Beta, Burr, Custom, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto,
+    Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, Truncated,
+    Tweedie, Weibull,
 };
 
 /// Any native univariate distribution.
@@ -58,6 +58,8 @@ pub enum Dist {
     /// A severity conditioned on a window; held in an [`Arc`], like a
     /// mixture, since it holds a distribution itself.
     Truncated(Arc<Truncated>),
+    /// A severity scaled and shifted, in an [`Arc`].
+    Affine(Arc<Affine>),
     /// A severity capped by a mix of policy limits, in an [`Arc`].
     PolicyLimits(Arc<PolicyLimits>),
     Mixture(Arc<Mixture>),
@@ -85,6 +87,7 @@ macro_rules! each {
             Dist::Burr($d) => $call,
             Dist::Beta($d) => $call,
             Dist::Truncated($d) => $call,
+            Dist::Affine($d) => $call,
             Dist::PolicyLimits($d) => $call,
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
@@ -99,7 +102,7 @@ impl Dist {
     /// `"piecewise_pareto"`, `"log_affine_pareto"`, `"generalized_pareto"`,
     /// `"gamma"`, `"tweedie"`, `"weibull"`, `"loglogistic"`,
     /// `"inverse_gamma"`, `"inverse_gaussian"`, `"burr"`, `"beta"`,
-    /// `"truncated"`, `"mixture"`, `"grid"`, `"sampled"` or `"custom"`.
+    /// `"truncated"`, `"affine"`, `"mixture"`, `"grid"`, `"sampled"` or `"custom"`.
     pub fn family(&self) -> &'static str {
         match self {
             Self::Lognormal(_) => "lognormal",
@@ -116,6 +119,7 @@ impl Dist {
             Self::Burr(_) => "burr",
             Self::Beta(_) => "beta",
             Self::Truncated(_) => "truncated",
+            Self::Affine(_) => "affine",
             Self::PolicyLimits(_) => "policy_limits",
             Self::Mixture(_) => "mixture",
             Self::Grid(_) => "grid",
@@ -143,6 +147,7 @@ impl Dist {
             Self::Burr(d) => d,
             Self::Beta(d) => d,
             Self::Truncated(d) => d.as_ref(),
+            Self::Affine(d) => d.as_ref(),
             Self::PolicyLimits(d) => d.as_ref(),
             Self::Mixture(d) => d.as_ref(),
             Self::Grid(d) => d,
@@ -281,6 +286,7 @@ macro_rules! each_severity {
             Dist::Burr($d) => $call,
             Dist::Beta($d) => $call,
             Dist::Truncated($d) => $call,
+            Dist::Affine($d) => $call,
             Dist::PolicyLimits($d) => $call,
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
@@ -381,6 +387,9 @@ mod tests {
             )
             .unwrap()
             .into(),
+            Affine::new(SeverityDist::try_from(Dist::from(ln)).unwrap(), 2.0, 50.0)
+                .unwrap()
+                .into(),
             Tweedie::new(1000.0, 2.0, 1.5).unwrap().into(),
             Gpd::new(0.2, 300.0).unwrap().into(),
             Mixture::new(vec![

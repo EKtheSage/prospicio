@@ -329,3 +329,16 @@
   are exact band by band (Exercise 50). Python
   `prospicio.distributions.Normal` and `Ogive`, R `normal_distribution()`,
   `ogive()` and `ogive_from_counts()` (#366).
+
+### Distributions and probability
+
+- A severity scaled and shifted, `prospicio_prob::Affine` (`scale * X +
+  shift`, `aggregate`'s `10 * lognorm 1 + 20`), whose layer moments, LEV
+  and stop loss stay exact from the inner severity's, saved as JSON with
+  it. Python `prospicio.distributions.Affine`, R `affine_distribution()`
+  (#318).
+
+### Breaking changes
+
+- `prospicio_prob::Dist` has the variant `Affine`, so an exhaustive `match`
+  on it needs a new arm (#318).
