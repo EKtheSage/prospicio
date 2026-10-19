@@ -11,9 +11,11 @@ VaR(dist, p, ...)
 TVaR(dist, p, ...)
 }
 \arguments{
-\item{dist}{A \link{sampled}, \link{predictive_distribution} or \link{pot_tail}.}
+\item{dist}{A \link{sampled}, \link{predictive_distribution}, \link{pot_tail},
+\link{grid_distribution}, or a severity (\link{lognormal}, \link{pareto} and the
+other parametric families).}
 
-\item{p}{Probabilities in \verb{[0, 1]}.}
+\item{p}{Probabilities in \verb{[0, 1]} (\verb{[0, 1)} for a severity's \code{TVaR()}).}
 
 \item{...}{Unused; for methods.}
 }
@@ -25,6 +27,9 @@ Numeric vector the length of \code{p}.
 \code{TVaR(dist, p)} is the mean of the worst \code{1 - p}, splitting the draw at the
 VaR so it is coherent and continuous in \code{p}. For a
 \link{predictive_distribution} both describe the total over all components.
+For a parametric severity or a \link{grid_distribution}, \code{VaR()} is the lower
+quantile, as \code{quantile()}, and a severity's \code{TVaR()} is
+\verb{VaR(p) + E[(X - VaR(p))+] / (1 - p)}, infinite where the mean is.
 }
 \examples{
 s <- sampled(c(1, 2, 3, 4))

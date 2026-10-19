@@ -1060,17 +1060,30 @@ fn severity_tvar_matches_closed_forms() {
     let (mu, sigma) = (10.0, 1.2);
     let ln = Lognormal::new(mu, sigma).unwrap();
     for p in [0.0, 0.5, 0.9, 0.99, 0.999] {
-        let want = (mu + sigma * sigma / 2.0).exp() * norm_cdf(sigma - norm_quantile(p)) / (1.0 - p);
+        let want =
+            (mu + sigma * sigma / 2.0).exp() * norm_cdf(sigma - norm_quantile(p)) / (1.0 - p);
         let got = ln.tvar(p).unwrap();
-        assert!((got / want - 1.0).abs() < 1e-9, "lognormal p={p}: {got} vs {want}");
+        assert!(
+            (got / want - 1.0).abs() < 1e-9,
+            "lognormal p={p}: {got} vs {want}"
+        );
         let pa = Pareto::new(1e5, 2.5).unwrap();
         let want = pa.quantile(p).unwrap() * 2.5 / 1.5;
-        assert!((pa.tvar(p).unwrap() / want - 1.0).abs() < 1e-12, "pareto p={p}");
+        assert!(
+            (pa.tvar(p).unwrap() / want - 1.0).abs() < 1e-12,
+            "pareto p={p}"
+        );
         let ex = Gamma::new(1.0, 1e4).unwrap();
         let want = ex.quantile(p).unwrap() + 1e4;
-        assert!((ex.tvar(p).unwrap() / want - 1.0).abs() < 1e-9, "exponential p={p}");
+        assert!(
+            (ex.tvar(p).unwrap() / want - 1.0).abs() < 1e-9,
+            "exponential p={p}"
+        );
     }
-    assert_eq!(Pareto::new(1e5, 0.9).unwrap().tvar(0.5).unwrap(), f64::INFINITY);
+    assert_eq!(
+        Pareto::new(1e5, 0.9).unwrap().tvar(0.5).unwrap(),
+        f64::INFINITY
+    );
     assert!(ln.tvar(1.0).is_err());
     assert!(ln.tvar(-0.1).is_err());
 }
