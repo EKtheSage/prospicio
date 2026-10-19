@@ -225,3 +225,11 @@
   sub-portfolio's draws (a standard deviation premium, an expected
   utility). Python `prospicio.risk.shapley(pd, cost)` with a callable, R
   `shapley_allocation(x, cost)` with a function (#369).
+- The haircut and equal risk allocations of an exogenous total (a
+  premium, a capital amount) by stand-alone VaR, TVaR or EPD at one level:
+  `PredictiveDistribution::haircut(total, measure, level)` scales the
+  stand-alone measures at a given level, `equal_risk(total, measure)`
+  finds the level at which they add up (*Pricing Insurance Risk*
+  Exercises 205 and 206 exact). Python `prospicio.risk.haircut` and
+  `equal_risk` (a `LevelAllocation`), R `haircut_allocation()` and
+  `equal_risk_allocation()` (#369).

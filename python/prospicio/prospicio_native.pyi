@@ -11389,6 +11389,40 @@ class Leg:
         """
 
 @final
+class LevelAllocation:
+    """
+    An allocation of an exogenous total by stand-alone measures at one
+    level, from ``haircut`` or ``equal_risk``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def allocated(self, /) -> list[float]:
+        """
+        The allocation per component, summing to ``total``.
+        """
+    @property
+    def level(self, /) -> float:
+        """
+        The level of the stand-alone measures: a probability for VaR and
+        TVaR, an EPD ratio for EPD.
+        """
+    @property
+    def measure(self, /) -> str:
+        """
+        The stand-alone measure: ``"var"``, ``"tvar"`` or ``"epd"``.
+        """
+    @property
+    def standalone(self, /) -> list[float]:
+        """
+        Each component's stand-alone measure at ``level``.
+        """
+    @property
+    def total(self, /) -> float:
+        """
+        The amount allocated.
+        """
+
+@final
 class LimitedFluctuation:
     """
     Limited fluctuation (classical) credibility: the expected number of
@@ -21600,6 +21634,44 @@ def entropic(dist: Any, theta: float) -> float:
     True
     """
 
+def equal_risk(pd: PredictiveDistribution, total: float, measure: str) -> LevelAllocation:
+    """
+    The equal risk allocation of an exogenous ``total``: the one level at
+    which the components' stand-alone ``measure``s add up to ``total``,
+    each getting its own (*Pricing Insurance Risk*, section 12.2.4). For VaR
+    and TVaR this prices the components as if comonotonic; for EPD each
+    has the same EPD ratio.
+    
+    A VaR of draws moves in steps: where no level adds up exactly, the level
+    is the lowest that reaches ``total`` and its VaRs are scaled to it.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+    total : float
+    measure : str
+        ``"var"``, ``"tvar"`` or ``"epd"``.
+    
+    Returns
+    -------
+    LevelAllocation
+        With the ``level`` found.
+    
+    Raises
+    ------
+    ValueError
+        When no level makes the stand-alone measures add up to ``total``.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import PredictiveDistribution
+    >>> from prospicio.risk import equal_risk
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> round(equal_risk(pd, 9.0, "tvar").level, 9)
+    0.5
+    """
+
 def esscher(dist: Any, h: float) -> float:
     """
     Esscher premium ``E[X exp(h X)] / E[exp(h X)]``: the mean after tilting
@@ -21945,6 +22017,43 @@ def group_k_fold(groups: Sequence[str], k: int, seed: int) -> list[tuple[list[in
     Returns
     -------
     list of (list of int, list of int)
+    """
+
+def haircut(pd: PredictiveDistribution, total: float, measure: str, level: float) -> LevelAllocation:
+    """
+    The haircut allocation of an exogenous ``total`` (a premium, a capital
+    amount): each component's stand-alone ``measure`` at ``level``, scaled
+    to add up to ``total`` (*Pricing Insurance Risk*, section 12.2.3).
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+        Components that add up to the portfolio.
+    total : float
+    measure : str
+        ``"var"``, ``"tvar"`` (``level`` a probability) or ``"epd"``
+        (``level`` the EPD ratio ``r``: the assets at which
+        ``E[(X - a)+] = r E[X]``).
+    level : float
+    
+    Returns
+    -------
+    LevelAllocation
+    
+    Raises
+    ------
+    ValueError
+        For a level out of range, a mean that is not positive (EPD) or
+        stand-alone measures summing to 0.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import PredictiveDistribution
+    >>> from prospicio.risk import haircut
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> haircut(pd, 18.0, "tvar", 0.5).allocated
+    [7.0, 11.0]
     """
 
 def hierarchical_credibility(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]], levels: Sequence[Sequence[int]] |None = None, collective_mean: tuple[float, float] |None = None, within_prior: tuple[str, float] |None = None, between_priors: Sequence[tuple[str, float]] |None = None, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0) -> HierarchicalCredibilityFit:

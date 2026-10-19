@@ -214,3 +214,11 @@ sdp <- shapley_allocation(sd_pd, function(x) mean(x) + 0.5 * sqrt(mean((x - mean
 stopifnot(abs(sdp$by_component$allocated[1] -
   0.5 * (sdp$by_component$standalone[1] + sdp$total - sdp$by_component$standalone[2])) < 1e-9)
 stopifnot(inherits(try(shapley_allocation(sd_pd, function(x) stop("boom")), silent = TRUE), "try-error"))
+
+# Haircut and equal risk by stand-alone TVaR: Pricing Insurance Risk,
+# Exercises 205 and 206.
+hc <- haircut_allocation(sd_pd, 80, "tvar", 0.75)
+stopifnot(all(abs(hc$by_component$allocated - c(8, 72)) < 1e-12))
+er <- equal_risk_allocation(sd_pd, 80, "tvar")
+stopifnot(abs(er$level - 0.6796) < 5e-5, all(abs(er$by_component$allocated - c(9.56, 70.44)) < 5e-3))
+stopifnot(abs(sum(equal_risk_allocation(sd_pd, 80, "epd")$by_component$allocated) - 80) < 1e-9)

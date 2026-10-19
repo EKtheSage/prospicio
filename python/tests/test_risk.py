@@ -351,3 +351,23 @@ def test_shapley_of_any_cost():
         shapley(pd, lambda x: 1 / 0)
     with pytest.raises(ValueError):
         shapley(pd, lambda x: float("nan"))
+
+
+def test_haircut_and_equal_risk_match_pricing_insurance_risk():
+    # Exercises 205 and 206: the premium of 80 by stand-alone TVaR.
+    from prospicio.risk import equal_risk, haircut
+
+    pd = _simple_discrete()
+    h = haircut(pd, 80.0, "tvar", 0.75)
+    assert h.measure == "tvar" and h.standalone == [10.0, 90.0]
+    assert h.allocated == pytest.approx([8.0, 72.0])
+    e = equal_risk(pd, 80.0, "tvar")
+    assert e.level == pytest.approx(0.6796, abs=5e-5)
+    assert e.allocated == pytest.approx([9.56, 70.44], abs=5e-3)
+    for measure in ("var", "epd"):
+        a = equal_risk(pd, 80.0, measure)
+        assert sum(a.allocated) == pytest.approx(80.0)
+    with pytest.raises(ValueError):
+        equal_risk(pd, 1e6, "tvar")
+    with pytest.raises(ValueError):
+        haircut(pd, 80.0, "es", 0.5)

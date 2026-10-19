@@ -235,6 +235,10 @@ esscher_allocation_rust <- function(pd, h) .Call(wrap__esscher_allocation_rust, 
 iman_conover_reorder <- function(pd, correlation, seed, dof, scores, shuffle_rows) .Call(wrap__iman_conover_reorder, pd, correlation, seed, dof, scores, shuffle_rows)
 shapley_rust <- function(pd, cost) .Call(wrap__shapley_rust, pd, cost)
 
+haircut_rust <- function(pd, total, measure, level) .Call(wrap__haircut_rust, pd, total, measure, level)
+
+equal_risk_rust <- function(pd, total, measure) .Call(wrap__equal_risk_rust, pd, total, measure)
+
 iman_conover_reorder <- function(pd, correlation, seed) .Call(wrap__iman_conover_reorder, pd, correlation, seed)
 
 gpd_mle <- function(exceedances) .Call(wrap__gpd_mle, exceedances)

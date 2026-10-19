@@ -1135,3 +1135,38 @@ fn covariance_margin_matches_pricing_insurance_risk_exercise_217() {
     let c = pd.capital(&d, AllocationMethod::Covariance).unwrap();
     assert!((c.allocated[0] - 1.086).abs() < 5e-4, "{:?}", c.allocated);
 }
+
+/// *Pricing Insurance Risk*, Exercises 205 and 206: the Simple Discrete
+/// Example's premium of 80 allocated by stand-alone TVaR, as a haircut at
+/// 75% (book 8 and 72) and at the one equal risk level (book 9.56 and
+/// 70.44 at 0.6796).
+#[test]
+fn haircut_and_equal_risk_match_pricing_insurance_risk_exercises_205_206() {
+    use prospicio_prob::capital::LevelMeasure;
+    use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+
+    let units = [(0.0, 2), (8.0, 1), (10.0, 1)];
+    let others = [(0.0, 2), (1.0, 1), (90.0, 1)];
+    let mut draws = Vec::new();
+    for &(a, n) in &units {
+        for &(b, k) in &others {
+            for _ in 0..n * k {
+                draws.extend([a, b]);
+            }
+        }
+    }
+    let pd = PredictiveDistribution::from_draws(
+        vec!["unit".into()],
+        vec![vec![KeyValue::from("X1")], vec![KeyValue::from("X2")]],
+        draws,
+        Provenance::new("PIR Exercises 205 and 206"),
+    )
+    .unwrap();
+    let h = pd.haircut(80.0, LevelMeasure::Tvar, 0.75).unwrap();
+    assert_eq!(h.standalone, [10.0, 90.0]);
+    assert!((h.allocated[0] - 8.0).abs() < 1e-12 && (h.allocated[1] - 72.0).abs() < 1e-12);
+    let e = pd.equal_risk(80.0, LevelMeasure::Tvar).unwrap();
+    assert!((e.level - 0.6796).abs() < 5e-5, "{}", e.level);
+    assert!((e.allocated[0] - 9.56).abs() < 5e-3, "{:?}", e.allocated);
+    assert!((e.allocated[1] - 70.44).abs() < 5e-3, "{:?}", e.allocated);
+}

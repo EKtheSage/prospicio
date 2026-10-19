@@ -12,7 +12,7 @@ sources:
     title: AllocationMethod::Covariance and CovarianceMargin
   - id: test
     resource: ../validation/tests/distributions.rs
-    title: covariance_margin_matches_pricing_insurance_risk_exercise_217
+    title: covariance_margin_matches_pricing_insurance_risk_exercise_217 and haircut_and_equal_risk_match_pricing_insurance_risk_exercises_205_206
   - id: book
     resource: https://www.wiley.com/en-us/Pricing+Insurance+Risk%3A+Theory+and+Practice-p-9781119755678
     title: Mildenhall and Major, Pricing Insurance Risk (2022), Exercise 217
@@ -32,6 +32,13 @@ sources:
   80: `Cov(X1, S) = 20.75` against `Var(S)` of about 1,528, so the first
   allocation gives X1 1.086 (a quarter of its mean 4.5) and the second
   5.216, the book's value (Exercise 217).
+* The haircut and equal risk allocations (sections 12.2.3 and 12.2.4)
+  allocate an exogenous total by stand-alone measures at one level. On the
+  same example the premium of 80 by TVaR is 8 and 72 as a haircut at 75%
+  (stand-alone TVaRs 10 and 90) and 9.56 and 70.44 at the equal risk level
+  0.6796; `haircut` and `equal_risk` reproduce both. The EPD level is the
+  ratio of `E[(X - a)+]` to the mean, and since the stop loss of draws is
+  piecewise linear the assets at a ratio are exact.
 * The Shapley value needs only a cost of each sub-portfolio, so
   `shapley_with` takes any closure of the sub-portfolio's draws (the
   book's Exercise 212 uses a standard deviation premium).

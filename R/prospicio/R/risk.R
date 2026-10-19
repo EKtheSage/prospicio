@@ -700,6 +700,52 @@ shapley_allocation <- function(x, cost) {
   allocation_result(x, rust_result(shapley_rust(x@ptr, cost)))
 }
 
+#' Haircut and equal risk allocations
+#'
+#' Allocate an exogenous `total` (a premium, a capital amount) by each
+#' component's stand-alone measure at one level (*Pricing Insurance Risk*,
+#' sections 12.2.3 and 12.2.4). `haircut_allocation()` takes the level and
+#' scales the stand-alone measures to `total`; `equal_risk_allocation()` finds
+#' the one level at which they add up to `total` (for VaR and TVaR, the
+#' components priced as if comonotonic; for EPD, the same EPD ratio for
+#' each). A VaR of draws moves in steps: where no level adds up exactly, the
+#' level is the lowest that reaches `total` and its VaRs are scaled to it.
+#'
+#' @param x A [predictive_distribution].
+#' @param total The amount to allocate.
+#' @param measure `"var"`, `"tvar"` (`level` a probability) or `"epd"`
+#'   (`level` the EPD ratio `r`: the assets at which `E[(X - a)+] = r E[X]`).
+#' @param level The level of the stand-alone measures.
+#' @returns A list with `level`, `total` and `by_component`, the `keys` data
+#'   frame of `x` with columns `standalone` (the measure at `level`) and
+#'   `allocated` (summing to `total`).
+#' @export
+#' @examples
+#' pd <- predictive_distribution(
+#'   matrix(c(1, 4, 2, 3, 2, 1, 5, 6), ncol = 2),
+#'   data.frame(lob = c("motor", "property"))
+#' )
+#' haircut_allocation(pd, 18, "tvar", 0.5)$by_component
+#' equal_risk_allocation(pd, 9, "tvar")$level
+haircut_allocation <- function(x, total, measure = c("tvar", "var", "epd"), level) {
+  measure <- match.arg(measure)
+  level_result(x, rust_result(haircut_rust(x@ptr, as.double(total), measure, as.double(level))))
+}
+
+#' @rdname haircut_allocation
+#' @export
+equal_risk_allocation <- function(x, total, measure = c("tvar", "var", "epd")) {
+  measure <- match.arg(measure)
+  level_result(x, rust_result(equal_risk_rust(x@ptr, as.double(total), measure)))
+}
+
+level_result <- function(x, r) {
+  out <- x@keys
+  out$standalone <- r$standalone
+  out$allocated <- r$allocated
+  list(level = r$level, total = r$total, by_component = out)
+}
+
 allocation_result <- function(x, r) {
   out <- x@keys
   out$standalone <- r$standalone

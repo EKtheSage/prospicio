@@ -193,6 +193,7 @@ reference:
       - allocate
       - capital_allocation
       - shapley_allocation
+      - haircut_allocation
       - exponential_utility
       - systemic_risk
   - title: Models

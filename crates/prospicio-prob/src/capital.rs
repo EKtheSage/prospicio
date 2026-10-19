@@ -11,6 +11,7 @@ use prospicio_core::{Error, Result};
 
 use crate::distortion::Distortion;
 use crate::predictive::PredictiveDistribution;
+use crate::risk::{tvar_sorted, var_sorted};
 use crate::sampled::Empirical;
 
 /// How [`PredictiveDistribution::capital`] splits the portfolio's risk
@@ -267,6 +268,231 @@ impl PredictiveDistribution {
     }
 }
 
+/// The stand-alone measure at a level that
+/// [`PredictiveDistribution::haircut`] and
+/// [`PredictiveDistribution::equal_risk`] use as an auxiliary measure of
+/// each unit alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LevelMeasure {
+    /// Value at risk at probability `p` (the empirical quantile, R
+    /// `type = 1`).
+    Var,
+    /// Tail value at risk at probability `p`.
+    Tvar,
+    /// The assets `a` at which the expected policyholder deficit
+    /// `E[(X − a)⁺]` is `r E[X]`, at the EPD ratio `r > 0`. Needs a
+    /// positive mean.
+    Epd,
+}
+
+/// The result of [`PredictiveDistribution::haircut`] and
+/// [`PredictiveDistribution::equal_risk`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct LevelAllocation {
+    pub measure: LevelMeasure,
+    /// The level of the stand-alone measures: a probability for VaR and
+    /// TVaR, an EPD ratio for EPD.
+    pub level: f64,
+    /// The amount allocated.
+    pub total: f64,
+    /// Each component's stand-alone measure at `level`, in
+    /// [`components`](PredictiveDistribution::components) order.
+    pub standalone: Vec<f64>,
+    /// The allocation, summing to `total`.
+    pub allocated: Vec<f64>,
+}
+
+impl PredictiveDistribution {
+    /// The haircut allocation of an exogenous `total` (a premium, a capital
+    /// amount): each component's stand-alone `measure` at `level`, scaled
+    /// so the allocations add up to `total` (*Pricing Insurance Risk*,
+    /// section 12.2.3).
+    ///
+    /// ```
+    /// use prospicio_prob::capital::LevelMeasure;
+    /// use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["lob".into()],
+    ///     vec![vec![KeyValue::from("motor")], vec![KeyValue::from("property")]],
+    ///     vec![1.0, 2.0, 4.0, 1.0, 2.0, 5.0, 3.0, 6.0],
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// // Stand-alone TVaRs at 50% are 3.5 and 5.5.
+    /// let a = pd.haircut(18.0, LevelMeasure::Tvar, 0.5).unwrap();
+    /// assert_eq!(a.allocated, [7.0, 11.0]);
+    /// ```
+    ///
+    /// Fails for a level out of range (`[0, 1]` for VaR and TVaR, positive
+    /// for EPD), a component with a mean that is not positive (EPD), or
+    /// stand-alone measures that sum to 0.
+    pub fn haircut(
+        &self,
+        total: f64,
+        measure: LevelMeasure,
+        level: f64,
+    ) -> Result<LevelAllocation> {
+        if !total.is_finite() {
+            return Err(invalid("total", total, "must be finite"));
+        }
+        let columns = self.sorted_columns();
+        let standalone = standalone_at(&columns, measure, level)?;
+        let allocated = scaled(&standalone, total)?;
+        Ok(LevelAllocation {
+            measure,
+            level,
+            total,
+            standalone,
+            allocated,
+        })
+    }
+
+    /// The equal risk allocation of an exogenous `total`: the one level at
+    /// which the components' stand-alone `measure`s add up to `total`, each
+    /// component getting its own (*Pricing Insurance Risk*, section 12.2.4).
+    /// For VaR and TVaR this prices the components as if they were
+    /// comonotonic; for EPD every component has the same EPD ratio.
+    ///
+    /// The level is found by bisection. A VaR of draws moves in steps, so
+    /// there may be no level at which the sum is exactly `total`: the
+    /// level is then the lowest at which the sum reaches it, and the
+    /// stand-alone measures there are scaled to `total` (the haircut at
+    /// that level). For TVaR and EPD the sum is continuous and the scaling
+    /// is a rounding correction.
+    ///
+    /// ```
+    /// use prospicio_prob::capital::LevelMeasure;
+    /// use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["lob".into()],
+    ///     vec![vec![KeyValue::from("motor")], vec![KeyValue::from("property")]],
+    ///     vec![1.0, 2.0, 4.0, 1.0, 2.0, 5.0, 3.0, 6.0],
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// // TVaRs at 50% are 3.5 and 5.5, adding up to 9.
+    /// let a = pd.equal_risk(9.0, LevelMeasure::Tvar).unwrap();
+    /// assert!((a.level - 0.5).abs() < 1e-9);
+    /// ```
+    ///
+    /// Fails when `total` is outside the range the stand-alone measures
+    /// can add up to (for VaR and TVaR, between the sum of the means or
+    /// minimums and the sum of the maximums), or as
+    /// [`haircut`](Self::haircut).
+    pub fn equal_risk(&self, total: f64, measure: LevelMeasure) -> Result<LevelAllocation> {
+        if !total.is_finite() {
+            return Err(invalid("total", total, "must be finite"));
+        }
+        let columns = self.sorted_columns();
+        let sum_at = |level: f64| -> Result<f64> {
+            Ok(standalone_at(&columns, measure, level)?.iter().sum())
+        };
+        // The sum rises with the level for VaR and TVaR, and falls with the
+        // EPD ratio, which is searched on a log scale.
+        let (mut lo, mut hi, rising) = match measure {
+            LevelMeasure::Var | LevelMeasure::Tvar => (0.0, 1.0, true),
+            LevelMeasure::Epd => ((1e-30f64).ln(), (1e6f64).ln(), false),
+        };
+        let level_of = |x: f64| if rising { x } else { x.exp() };
+        let (first, last) = (sum_at(level_of(lo))?, sum_at(level_of(hi))?);
+        let (low_sum, high_sum) = if rising { (first, last) } else { (last, first) };
+        if total < low_sum - 1e-12 * low_sum.abs() || total > high_sum + 1e-12 * high_sum.abs() {
+            return Err(invalid(
+                "total",
+                total,
+                "is outside the range the stand-alone measures can add up to",
+            ));
+        }
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            let below = sum_at(level_of(mid))? < total;
+            if below == rising {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        // Rising: the lowest level whose sum reaches the total; falling:
+        // the highest EPD ratio whose assets reach it.
+        let level = level_of(if rising { hi } else { lo });
+        let standalone = standalone_at(&columns, measure, level)?;
+        let allocated = scaled(&standalone, total)?;
+        Ok(LevelAllocation {
+            measure,
+            level,
+            total,
+            standalone,
+            allocated,
+        })
+    }
+
+    /// Each component's draws, sorted ascending.
+    fn sorted_columns(&self) -> Vec<Vec<f64>> {
+        let m = self.n_components();
+        let draws = self.draw_matrix();
+        (0..m)
+            .map(|j| {
+                let mut x: Vec<f64> = draws.iter().skip(j).step_by(m).copied().collect();
+                x.sort_by(f64::total_cmp);
+                x
+            })
+            .collect()
+    }
+}
+
+fn standalone_at(columns: &[Vec<f64>], measure: LevelMeasure, level: f64) -> Result<Vec<f64>> {
+    columns
+        .iter()
+        .map(|x| match measure {
+            LevelMeasure::Var => var_sorted(x, level),
+            LevelMeasure::Tvar => tvar_sorted(x, level),
+            LevelMeasure::Epd => epd_assets(x, level),
+        })
+        .collect()
+}
+
+fn scaled(standalone: &[f64], total: f64) -> Result<Vec<f64>> {
+    let sum: f64 = standalone.iter().sum();
+    if sum == 0.0 || !sum.is_finite() {
+        return Err(invalid(
+            "standalone",
+            sum,
+            "must have a finite, non-zero sum",
+        ));
+    }
+    Ok(standalone.iter().map(|r| total * r / sum).collect())
+}
+
+/// The assets `a` with `E[(X − a)⁺] = ratio E[X]` for sorted draws `x`.
+/// The stop loss is piecewise linear in `a`, so `a` is found exactly.
+fn epd_assets(x: &[f64], ratio: f64) -> Result<f64> {
+    if !(ratio > 0.0 && ratio.is_finite()) {
+        return Err(invalid("level", ratio, "an EPD ratio must be positive"));
+    }
+    let n = x.len() as f64;
+    let mean = x.iter().sum::<f64>() / n;
+    if mean.is_nan() || mean <= 0.0 {
+        return Err(invalid("draws", mean, "EPD needs a positive mean"));
+    }
+    // n E[(X − a)⁺] at a = x[k] is Σ_{i>k} (x[i] − x[k]); walk down from
+    // the top until it reaches the target.
+    let target = ratio * mean * n;
+    let mut above = 0.0; // Σ of the draws above the current point
+    for k in (0..x.len()).rev() {
+        let count = (x.len() - 1 - k) as f64;
+        let at_k = above - count * x[k];
+        if at_k >= target {
+            // Between x[k] and x[k + 1], `count` draws lie above a.
+            return Ok((above - target) / count);
+        }
+        above += x[k];
+    }
+    // Below the smallest draw every draw is above a: n (mean − a).
+    Ok(mean - target / n)
+}
+
 /// `ρ` of equally likely draws, in any order.
 fn measure(d: &Distortion, mut draws: Vec<f64>) -> f64 {
     draws.sort_by(f64::total_cmp);
@@ -514,5 +740,39 @@ mod tests {
             b.allocated[0],
             0.5 * (b.standalone[0] + b.total - b.standalone[1])
         ));
+    }
+
+    #[test]
+    fn epd_assets_solve_the_stop_loss() {
+        let x = [0.0, 1.0, 1.0, 4.0, 10.0];
+        let stop_loss = |a: f64| x.iter().map(|v| (v - a).max(0.0)).sum::<f64>() / 5.0;
+        let mean = 16.0 / 5.0;
+        for ratio in [1e-6, 0.01, 0.2, 0.5, 0.9, 1.0, 1.5] {
+            let a = epd_assets(&x, ratio).unwrap();
+            assert!((stop_loss(a) - ratio * mean).abs() < 1e-12, "{ratio}: {a}");
+        }
+        assert!(epd_assets(&x, 0.0).is_err());
+        assert!(epd_assets(&[-1.0, 0.0], 0.5).is_err());
+    }
+
+    #[test]
+    fn equal_risk_adds_up_at_one_level() {
+        let pd = three_lines();
+        let total = 60.0;
+        for measure in [LevelMeasure::Var, LevelMeasure::Tvar, LevelMeasure::Epd] {
+            let a = pd.equal_risk(total, measure).unwrap();
+            assert!(close(a.allocated.iter().sum(), total), "{measure:?}");
+            let sum: f64 = a.standalone.iter().sum();
+            if measure == LevelMeasure::Var {
+                // A step function: the lowest level that reaches the total.
+                assert!(sum >= total - 1e-9);
+            } else {
+                assert!(close(sum, total), "{measure:?}: {sum}");
+            }
+            let h = pd.haircut(total, measure, a.level).unwrap();
+            assert_eq!(h.standalone, a.standalone);
+        }
+        assert!(pd.equal_risk(1e9, LevelMeasure::Tvar).is_err());
+        assert!(pd.haircut(10.0, LevelMeasure::Tvar, 1.5).is_err());
     }
 }

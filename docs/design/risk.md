@@ -46,7 +46,10 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `Proportional`, `Marginal` (Merton–Perold) or `Shapley`, with the
   diversification benefit overall and per component.
   `PredictiveDistribution::shapley_with(cost)` is the Shapley value of any
-  cost of a sub-portfolio's draws (#369).
+  cost of a sub-portfolio's draws (#369). `haircut(total, measure, level)`
+  and `equal_risk(total, measure)` allocate an exogenous total by
+  stand-alone VaR, TVaR or EPD at one level (`LevelMeasure`,
+  `LevelAllocation`; #369).
 - `prospicio_prob::copula`: the `Copula` trait, `GaussianCopula`,
   `StudentTCopula`, and `copula::simulate` to join marginals into a
   `PredictiveDistribution`. `prospicio_math` gained `linalg::cholesky`,
@@ -207,6 +210,16 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   premium or an expected utility gets the same exact Shapley value; the
   bindings pass a Python callable or an R function. A cost that is not
   finite, or a callback that raises, fails the allocation.
+- **Haircut and equal risk take a level, not a distortion.** They
+  allocate a total given from outside (a premium, a capital amount) by
+  each unit's stand-alone VaR, TVaR or EPD at one level, so they are their
+  own functions with their own result (`LevelAllocation`, which carries the
+  level) rather than `AllocationMethod`s of `ρ(S)`. The EPD level is the
+  ratio `r` of the expected policyholder deficit to the mean, and the
+  assets at `r` are found exactly, the stop loss of draws being piecewise
+  linear. Equal risk bisects the level (the EPD ratio on a log scale);
+  since a VaR of draws moves in steps, the level found is the lowest at
+  which the sum reaches the total and the VaRs there are scaled to it.
 - **Shapley is exact and capped at 12 components.** It evaluates `ρ` on
   all `2^m` sub-portfolios, each a sort of `n` draws. Beyond 12 components
   that cost grows too fast, and a sampled Shapley value would add noise
@@ -446,6 +459,5 @@ Fréchet–Hoeffding bounds and the errors.
 
 1. Done: nested Archimedean and vine copulas; threshold diagnostics for
    EVT (`evt::threshold_diagnostics`); the covariance allocation of the
-   margin and the Shapley value of any cost (#369). The haircut and equal
-   risk allocations of an exogenous total at a VaR, TVaR or EPD level
-   (#369's second item) come next.
+   margin, the Shapley value of any cost, and the haircut and equal risk
+   allocations of an exogenous total at a VaR, TVaR or EPD level (#369).

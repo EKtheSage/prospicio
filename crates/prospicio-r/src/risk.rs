@@ -3,7 +3,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_core::StreamRng;
-use prospicio_prob::capital::AllocationMethod;
+use prospicio_prob::capital::{AllocationMethod, LevelAllocation, LevelMeasure};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
 use prospicio_prob::{
@@ -337,6 +337,48 @@ fn shapley_rust(pd: Robj, cost: Function) -> Result<List> {
         standalone = a.standalone,
         allocated = a.allocated
     ))
+}
+
+fn level_measure(name: &str) -> Result<LevelMeasure> {
+    Ok(match name {
+        "var" => LevelMeasure::Var,
+        "tvar" => LevelMeasure::Tvar,
+        "epd" => LevelMeasure::Epd,
+        other => {
+            return Err(Error::Other(format!(
+                "measure must be var, tvar or epd, got {other}"
+            )));
+        }
+    })
+}
+
+fn level_list(a: LevelAllocation) -> List {
+    list!(
+        level = a.level,
+        total = a.total,
+        standalone = a.standalone,
+        allocated = a.allocated
+    )
+}
+
+/// Haircut allocation of `total` by stand-alone `measure` at `level`.
+#[extendr]
+fn haircut_rust(pd: Robj, total: f64, measure: &str, level: f64) -> Result<List> {
+    let a = as_predictive(&pd)?
+        .inner
+        .haircut(total, level_measure(measure)?, level)
+        .map_err(to_r)?;
+    Ok(level_list(a))
+}
+
+/// Equal risk allocation of `total` by stand-alone `measure`.
+#[extendr]
+fn equal_risk_rust(pd: Robj, total: f64, measure: &str) -> Result<List> {
+    let a = as_predictive(&pd)?
+        .inner
+        .equal_risk(total, level_measure(measure)?)
+        .map_err(to_r)?;
+    Ok(level_list(a))
 }
 
 pub(crate) enum AnyCopula {
@@ -759,6 +801,8 @@ extendr_module! {
     fn covar_rust;
     fn esscher_allocation_rust;
     fn shapley_rust;
+    fn haircut_rust;
+    fn equal_risk_rust;
     fn iman_conover_reorder;
     fn gpd_mle;
     fn mean_excess_rust;
