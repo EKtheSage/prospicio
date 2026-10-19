@@ -76,6 +76,10 @@ name = "reserving_compartmental_gm2"
 required-features = ["slow-bayes"]
 
 [[test]]
+name = "reserving_compartmental_segments"
+required-features = ["slow-bayes"]
+
+[[test]]
 name = "reserving_bayes_one_year"
 required-features = ["slow-bayes"]
 

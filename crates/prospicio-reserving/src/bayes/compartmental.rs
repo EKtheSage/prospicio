@@ -6,7 +6,10 @@
 //! or with per-cell duals and a hand-written chain rule when the priors put
 //! effects on each cell (model 2).
 
+mod backtest;
 mod year;
+
+pub use backtest::CompartmentalCandidate;
 
 use prospicio_bayes::elpd::Loo;
 use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
@@ -1469,6 +1472,20 @@ impl Compartmental {
         Ok(())
     }
 
+    /// The model's name: model 1 and model 2 when the settings and the
+    /// hierarchy are the paper's, else `compartmental`.
+    fn model_name(&self) -> &'static str {
+        let response = self.response();
+        let hierarchy = self.priors.hierarchy();
+        if response == Response::MODEL_1 && hierarchy == Hierarchy::Model1 {
+            "compartmental_gm1"
+        } else if response == Response::MODEL_2 && hierarchy == Hierarchy::Model2 {
+            "compartmental_gm2"
+        } else {
+            "compartmental"
+        }
+    }
+
     fn provenance(
         &self,
         paid: &str,
@@ -1478,17 +1495,7 @@ impl Compartmental {
     ) -> Provenance {
         let s = &self.sampler;
         let pr = &self.priors;
-        let response = self.response();
-        // Model 1 and model 2 by name when the settings and the hierarchy
-        // are the paper's.
-        let model = if response == Response::MODEL_1 && pr.hierarchy() == Hierarchy::Model1 {
-            "compartmental_gm1"
-        } else if response == Response::MODEL_2 && pr.hierarchy() == Hierarchy::Model2 {
-            "compartmental_gm2"
-        } else {
-            "compartmental"
-        };
-        Provenance::new(model)
+        Provenance::new(self.model_name())
             .param("priors", format!("{pr:?}"))
             .param("likelihood", format!("{:?}", self.likelihood))
             .param("scale", format!("{:?}", self.scale))
@@ -3443,7 +3450,7 @@ mod tests {
     /// Company 337 workers' compensation, the papers' training triangle
     /// (validation/data/clrd_wkcomp_337.csv, calendar years up to 1996):
     /// cumulative paid and incurred (with bulk and IBNR), USD thousands.
-    const PAID: [&[f64]; 9] = [
+    pub(super) const PAID: [&[f64]; 9] = [
         &[
             9558., 22778., 33298., 40348., 45146., 48048., 49782., 50623., 51812.,
         ],
@@ -3458,7 +3465,7 @@ mod tests {
         &[12550., 31604.],
         &[13194.],
     ];
-    const INCURRED: [&[f64]; 9] = [
+    pub(super) const INCURRED: [&[f64]; 9] = [
         &[
             62679., 64000., 65607., 65292., 62250., 61185., 59387., 57138., 53473.,
         ],
@@ -3474,14 +3481,14 @@ mod tests {
         &[69720.],
     ];
     /// Direct earned premium, 1988 to 1997.
-    const PREMIUM: [f64; 10] = [
+    pub(super) const PREMIUM: [f64; 10] = [
         104437., 88883., 85956., 99339., 104897., 119427., 110784., 77731., 63646., 48052.,
     ];
 
     /// The training triangle with columns `paid`, `incurred`, `os`
     /// (incurred - paid) and `premium`, and 1997 with its premium only when
     /// `with_1997`.
-    fn triangle(with_1997: bool) -> Triangle {
+    pub(super) fn triangle(with_1997: bool) -> Triangle {
         let (mut origin, mut ages) = (vec![], vec![]);
         let (mut paid, mut inc, mut os, mut prem) = (vec![], vec![], vec![], vec![]);
         for (w, row) in PAID.iter().enumerate() {
@@ -3519,11 +3526,11 @@ mod tests {
         .unwrap()
     }
 
-    fn preset() -> Compartmental {
+    pub(super) fn preset() -> Compartmental {
         Compartmental::new(CompartmentalPriors::gesmann_morris())
     }
 
-    fn quick(seed: u64) -> Compartmental {
+    pub(super) fn quick(seed: u64) -> Compartmental {
         Compartmental {
             sampler: Sampler {
                 chains: 2,
@@ -3538,11 +3545,11 @@ mod tests {
         }
     }
 
-    fn incurred() -> Outstanding<'static> {
+    pub(super) fn incurred() -> Outstanding<'static> {
         Outstanding::FromIncurred("incurred")
     }
 
-    fn model(ordered: bool) -> Model {
+    pub(super) fn model(ordered: bool) -> Model {
         model_with(
             CompartmentalPriors::gesmann_morris(),
             ordered,
@@ -3557,7 +3564,7 @@ mod tests {
     }
 
     /// Gesmann and Morris' model 2 on the training triangle.
-    fn model_2(ordered: bool) -> Model {
+    pub(super) fn model_2(ordered: bool) -> Model {
         model_with(
             CompartmentalPriors::gesmann_morris_2(),
             ordered,
@@ -3620,7 +3627,7 @@ mod tests {
     /// Points around the paper's posterior (model 1's, or model 2's when
     /// the model has effects by cell): `theta` at the printed means with a
     /// deterministic spread.
-    fn points(model: &Model) -> Vec<Vec<f64>> {
+    pub(super) fn points(model: &Model) -> Vec<Vec<f64>> {
         let two = model.cellwise;
         (0..20)
             .map(|k| {

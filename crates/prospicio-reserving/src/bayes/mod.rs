@@ -78,9 +78,10 @@ mod scalar;
 
 pub use bf::{BayesBf, BayesBfFit};
 pub use compartmental::{
-    Compartmental, CompartmentalFit, CompartmentalFits, CompartmentalLikelihood, CompartmentalLoo,
-    CompartmentalPaths, CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted,
-    HalfPrior, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale,
+    Compartmental, CompartmentalCandidate, CompartmentalFit, CompartmentalFits,
+    CompartmentalLikelihood, CompartmentalLoo, CompartmentalPaths, CompartmentalPriors,
+    CompartmentalSegment, CompartmentalStart, Fitted, HalfPrior, Outstanding, PaidResponse,
+    PositivePrior, RateOrder, RealPrior, Scale,
 };
 pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment};
 pub use odp::{BayesOdp, BayesOdpFit, BayesOdpFits, BayesOdpSegment};

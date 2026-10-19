@@ -1133,6 +1133,28 @@ premium column and a second response.
   gated by `slow-tests`, and the parity and backtest validation lives in
   `validation/tests/reserving_compartmental*` (`slow-bayes`).
 
+**Built (PR E, backtest).** `CompartmentalCandidate` (in
+`bayes/compartmental/backtest.rs`) holds `model: Compartmental`, the
+`&Triangle` and the paid, outstanding and premium names, and implements
+`TriangleModel` (name `compartmental_gm1`, `compartmental_gm2` or
+`compartmental`). Its outstanding table is the method
+`outstanding_backtest(cells, n_diagonals, n_sims, seed, interval)`, which
+returns a `Backtest` (one model, `<name>_outstanding`) from the backtest's
+own split (`scored_splits`, shared with `diagonal_backtest`) and scoring
+(`score`) code. Details beyond the decision: the candidate keeps its last
+four fits, so the paid and the outstanding table of one backtest share one
+NUTS run; a row the likelihood rejects (log-normal: the first non-positive
+response of an origin and every later row of it) leaves `fit_rows`, and a
+non-positive outstanding is left out of the fit; the mean of a row is the
+mean of its predictive draws; the log density is closed for a paid row that
+follows its origin's latest training row and for every outstanding cell of
+an origin and age with an observed cell. The rows scored are the held-out
+rows whose origin and age the candidate fits, as for the paid table, so on
+company 337 the two tables score the same cells. Model 2 cannot be
+backtested on the 9-origin training triangle (fewer cells than parameters
+once a diagonal is held out); its arm uses the 55-cell upper triangle to
+1997 and holds out the 1997 diagonal. No deviation from the decision.
+
 ### 9. Bindings
 
 Proposed, in the same PR as each model (`reserving-bayes.md` open
