@@ -75,7 +75,7 @@ impl<B: Backend> Block<B> {
 
 /// Token embeddings, the `[CLS]` token, the blocks and the output head.
 #[derive(Module, Debug)]
-struct TokenNet<B: Backend> {
+pub(crate) struct TokenNet<B: Backend> {
     embed: Vec<Linear<B>>,
     cls: Param<Tensor<B, 2>>,
     blocks: Vec<Block<B>>,
@@ -84,7 +84,7 @@ struct TokenNet<B: Backend> {
 }
 
 impl<B: Backend> TokenNet<B> {
-    fn new(sizes: &[usize], spec: &AttentionCann, device: &B::Device) -> Self {
+    pub(crate) fn new(sizes: &[usize], spec: &AttentionCann, device: &B::Device) -> Self {
         let d = spec.d_model;
         Self {
             embed: sizes
@@ -313,6 +313,7 @@ impl Model for AttentionCann {
             validation_history: trained.history,
             dispersion: 1.0,
             fitted: Vec::new(),
+            input_hash: crate::input_hash("attention_cann_fit", design, y),
         };
         fit.fitted = fit.predict(design)?;
         if !fit.spec.family.unit_dispersion() {
@@ -372,16 +373,17 @@ impl TokenAttention {
 /// A fitted attention CANN.
 #[derive(Debug)]
 pub struct AttentionCannFit {
-    spec: AttentionCann,
-    names: Vec<String>,
-    tokens: Vec<String>,
-    groups: Vec<Vec<usize>>,
-    scaling: Scaling,
-    net: TokenNet<Cpu>,
-    best_epoch: Option<usize>,
-    validation_history: Vec<f64>,
-    dispersion: f64,
-    fitted: Vec<f64>,
+    pub(crate) spec: AttentionCann,
+    pub(crate) names: Vec<String>,
+    pub(crate) tokens: Vec<String>,
+    pub(crate) groups: Vec<Vec<usize>>,
+    pub(crate) scaling: Scaling,
+    pub(crate) net: TokenNet<Cpu>,
+    pub(crate) best_epoch: Option<usize>,
+    pub(crate) validation_history: Vec<f64>,
+    pub(crate) dispersion: f64,
+    pub(crate) fitted: Vec<f64>,
+    pub(crate) input_hash: String,
 }
 
 impl AttentionCannFit {

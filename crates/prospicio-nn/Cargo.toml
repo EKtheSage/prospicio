@@ -18,6 +18,7 @@ categories.workspace = true
 prospicio-core.workspace = true
 prospicio-models.workspace = true
 prospicio-prob.workspace = true
+serde_json.workspace = true
 burn = { version = "0.21", default-features = false, features = ["std", "ndarray", "autodiff"] }
 # Burn's ONNX parser (the front end of burn-import), for loading networks
 # trained elsewhere at run time (`onnx` module). Pure Rust: protobuf's

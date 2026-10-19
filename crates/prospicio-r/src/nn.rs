@@ -82,6 +82,20 @@ fn cann_fit_design(
 
 #[extendr]
 impl CannModel {
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: CannFit::from_json(text).map_err(to_r)?,
+        })
+    }
+
+    fn input_hash(&self) -> String {
+        self.inner.input_hash().to_string()
+    }
+
     fn fitted(&self) -> Vec<f64> {
         self.inner.fitted().to_vec()
     }
@@ -177,6 +191,20 @@ fn attention_cann_fit_design(
 
 #[extendr]
 impl AttentionCannModel {
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    fn from_json(text: &str) -> Result<Self> {
+        Ok(Self {
+            inner: AttentionCannFit::from_json(text).map_err(to_r)?,
+        })
+    }
+
+    fn input_hash(&self) -> String {
+        self.inner.input_hash().to_string()
+    }
+
     fn tokens(&self) -> Vec<String> {
         self.inner.tokens().to_vec()
     }

@@ -192,17 +192,20 @@ robust_vcov <- function(object, type = c("HC0", "HC1"), cluster = NULL) {
 
 #' Save and load a model
 #'
-#' `save_model()` writes a [glm_fit()], [gam_fit()] or [elastic_net_fit()]
-#' model to an RDS file: the Rust fit as a versioned JSON artifact (spec,
-#' estimates, covariance, fit statistics, fitted values, and provenance
-#' with the package version and a hash of the training data; for a GAM
-#' also the spline knots and constraints; for an elastic net one artifact
-#' per lambda), with the formula terms and factor levels that
+#' `save_model()` writes a [glm_fit()], [gam_fit()], [elastic_net_fit()],
+#' [cann_fit()] or [attention_cann_fit()] model to an RDS file: the Rust
+#' fit as a versioned JSON artifact (spec, estimates, covariance, fit
+#' statistics, fitted values, and provenance with the package version and
+#' a hash of the training data; for a GAM also the spline knots and
+#' constraints; for an elastic net one artifact per lambda; for a network
+#' its feature scaling and every weight), with the formula terms and
+#' factor levels that
 #' [stats::predict()] needs. `load_model()` reads it back; the estimates
 #' round-trip exactly. A loaded model predicts and simulates but has no
 #' training data, so [robust_vcov()] needs the original fit.
 #'
-#' @param model A `glm_model`, `gam_model` or `elastic_net_model`.
+#' @param model A `glm_model`, `gam_model`, `elastic_net_model`,
+#'   `cann_model` or `attention_cann_model`.
 #' @param file Path of the RDS file.
 #' @returns `save_model()`: `file`, invisibly. `load_model()`: a model of
 #'   the class saved.
@@ -218,7 +221,9 @@ save_model <- function(model, file) {
   kind <- if (S7::S7_inherits(model, glm_model)) "glm_model"
     else if (S7::S7_inherits(model, gam_model)) "gam_model"
     else if (S7::S7_inherits(model, elastic_net_model)) "elastic_net_model"
-    else stop("model must be a glm_model, gam_model or elastic_net_model")
+    else if (S7::S7_inherits(model, cann_model)) "cann_model"
+    else if (S7::S7_inherits(model, attention_cann_model)) "attention_cann_model"
+    else stop("model must be a glm_model, gam_model, elastic_net_model, cann_model or attention_cann_model")
   saveRDS(list(format = paste0("prospicio.", kind), artifact = model@ptr$to_json(),
                terms = model@terms, xlevels = model@xlevels), file)
   invisible(file)
@@ -236,6 +241,12 @@ load_model <- function(file) {
                                       terms = x$terms, xlevels = x$xlevels),
     prospicio.elastic_net_model = elastic_net_model(
       ptr = rust_result(ElasticNetPath$from_json(x$artifact)),
+      terms = x$terms, xlevels = x$xlevels
+    ),
+    prospicio.cann_model = cann_model(ptr = rust_result(CannModel$from_json(x$artifact)),
+                                        terms = x$terms, xlevels = x$xlevels),
+    prospicio.attention_cann_model = attention_cann_model(
+      ptr = rust_result(AttentionCannModel$from_json(x$artifact)),
       terms = x$terms, xlevels = x$xlevels
     ),
     stop("not a model saved by save_model()")

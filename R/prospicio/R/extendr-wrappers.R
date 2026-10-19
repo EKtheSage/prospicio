@@ -2639,6 +2639,12 @@ onnx_predictor_rust <- function(net, family_name, inputs, columns, output, scale
 
 CannModel <- new.env(parent = emptyenv())
 
+CannModel$to_json <- function() .Call(wrap__CannModel__to_json, self)
+
+CannModel$from_json <- function(text) .Call(wrap__CannModel__from_json, text)
+
+CannModel$input_hash <- function() .Call(wrap__CannModel__input_hash, self)
+
 CannModel$fitted <- function() .Call(wrap__CannModel__fitted, self)
 
 CannModel$dispersion <- function() .Call(wrap__CannModel__dispersion, self)
@@ -2660,6 +2666,12 @@ CannModel$predict_distribution <- function(x, names, offset, weights, n_sims, se
 `[[.CannModel` <- `$.CannModel`
 
 AttentionCannModel <- new.env(parent = emptyenv())
+
+AttentionCannModel$to_json <- function() .Call(wrap__AttentionCannModel__to_json, self)
+
+AttentionCannModel$from_json <- function(text) .Call(wrap__AttentionCannModel__from_json, text)
+
+AttentionCannModel$input_hash <- function() .Call(wrap__AttentionCannModel__input_hash, self)
 
 AttentionCannModel$tokens <- function() .Call(wrap__AttentionCannModel__tokens, self)
 

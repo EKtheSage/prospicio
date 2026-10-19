@@ -131,6 +131,15 @@
   `onnx_predictor()` for networks trained elsewhere. The package builds
   Burn through the default `nn` feature and now needs Rust 1.92
   (`SystemRequirements`) (#309).
+- Fitted networks save and load: `CannFit::to_json` / `from_json` and
+  `AttentionCannFit::to_json` / `from_json` write versioned JSON
+  artifacts (`risk_rs.cann_fit`, `risk_rs.attention_cann_fit`) with
+  every weight by its path in the network, and read them back bit for
+  bit; `input_hash` on both. Python `CannFit` and `AttentionCannFit`
+  gain `to_json`, `from_json`, `input_hash` and pickling; R
+  `save_model()` and `load_model()` take `cann_model` and
+  `attention_cann_model`. The shared envelope helpers are now public in
+  `prospicio_models::artifact` (#391).
 
 ### Pricing
 

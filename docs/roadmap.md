@@ -361,10 +361,10 @@ what it is aiming for by v1.0.
   early stopping; networks trained elsewhere imported from ONNX for
   inference (`prospicio_nn::onnx`, v0.9); all of it in Python and R,
   behind the bindings' default `nn` feature.
+  Fitted networks save, load and pickle like the GLM (`to_json` /
+  `from_json`, every weight by its path).
 - **Next:**
   1. Tabular MLPs with embeddings, and multi-task claim models.
-  2. Network artifacts (`to_json` / `from_json`), so fitted networks
-     save, load and pickle like the GLM.
 - **v1.0:** networks behind the shared model protocol, in every front
   end.
 
