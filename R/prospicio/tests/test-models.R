@@ -374,8 +374,12 @@ for (type in c("deviance", "pearson", "response", "working")) {
   near(residuals(qg, type = type), unname(residuals(rg, type = type)), 1e-6)
 }
 near(hatvalues(qg), unname(hatvalues(rg)), 1e-6)
-near(rstandard(qg), unname(rstandard(rg)), 1e-6)
-near(cooks.distance(qg), unname(cooks.distance(rg)), 1e-6)
+# R 4.3's rstandard() and cooks.distance() for a Poisson glm, by their
+# formulas: newer R releases compute them differently, so compare with
+# the definitions rather than with whichever stats is installed.
+h_r <- unname(hatvalues(rg))
+near(rstandard(qg), unname(residuals(rg, "deviance")) / sqrt(1 - h_r), 1e-6)
+near(cooks.distance(qg), unname(residuals(rg, "pearson"))^2 * h_r / ((1 - h_r)^2 * 7), 1e-6)
 near(prediction_se(qg, quine), unname(predict(rg, type = "response", se.fit = TRUE)$se.fit), 1e-6)
 stopifnot(nrow(glm_diagnostics(qg)) == nrow(quine))
 spe <- sum_prediction_error(qg, quine[1, ])
