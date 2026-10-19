@@ -59,6 +59,15 @@ Fits by IRLS on the Rust core. The design matrix is R's own
 terms work as in \code{\link[stats:glm]{stats::glm()}}. Results match statsmodels' GLM
 (\code{validation/scripts/statsmodels_glm.py}).
 }
+\details{
+The rating variables of Python's \code{Terms} are formula terms here:
+interactions \code{a:b}, raw powers \code{poly(x, 3, raw = TRUE)}, hinges
+\code{I(pmax(0, x - 30))}, steps \code{I(x >= 30)}, bins \code{cut(x, c(-Inf, 30, 50, Inf))}, a centred log \code{log(x / 40)} and natural splines
+\code{splines::ns(x, knots = ...)}. For an ordered factor in cumulative coding
+(each coefficient the step from the level below), use one step column
+per level, \code{I(as.integer(f) >= 2)} and so on, on a factor with its levels
+in order.
+}
 \examples{
 d <- data.frame(claims = c(1, 2, 4, 2, 1, 3), region = c("N", "N", "S", "S", "W", "W"),
                 exposure = c(1, 2, 1, 1, 0.5, 1.5))

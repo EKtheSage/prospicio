@@ -117,7 +117,8 @@ fn with_offset_weights(
     Ok(d)
 }
 
-/// The terms of a model: an intercept, numeric columns and factors.
+/// The terms of a model: an intercept, numeric columns, factors,
+/// interactions, polynomials, hinges, steps, bins, logs and ordinals.
 ///
 /// Build them up, then ``fit`` them to training data to learn the factor
 /// levels; the result builds the same design matrix on any data.
@@ -187,6 +188,148 @@ impl PyTerms {
             None => self.inner.clone().factor(name),
         };
         Self { inner }
+    }
+
+    /// Adds the interaction of two columns: the product of their coded
+    /// columns, each numeric as is or a factor in treatment coding (first
+    /// level as reference), named ``a:b``, ``a[x]:b`` or ``a[x]:b[y]``, as
+    /// R's ``a:b`` beside main effects (CAS Monograph 5, section 5.6).
+    ///
+    /// Parameters
+    /// ----------
+    /// a : str
+    /// b : str
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn interaction(&self, a: &str, b: &str) -> Self {
+        Self {
+            inner: self.inner.clone().interaction(a, b),
+        }
+    }
+
+    /// Adds raw powers ``x, x**2, ..., x**degree`` of a numeric column,
+    /// named ``x``, ``x^2``, ....
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// degree : int
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn poly(&self, name: &str, degree: usize) -> Self {
+        Self {
+            inner: self.inner.clone().poly(name, degree),
+        }
+    }
+
+    /// Adds hinge functions ``max(0, x - k)`` at each knot, named
+    /// ``hinge(x,k)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// knots : list of float
+    ///     Strictly increasing.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn hinges(&self, name: &str, knots: Vec<f64>) -> Self {
+        Self {
+            inner: self.inner.clone().hinges(name, &knots),
+        }
+    }
+
+    /// Adds steps ``1[x >= k]`` at each knot, named ``step(x,k)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// knots : list of float
+    ///     Strictly increasing.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn steps(&self, name: &str, knots: Vec<f64>) -> Self {
+        Self {
+            inner: self.inner.clone().steps(name, &knots),
+        }
+    }
+
+    /// Adds a numeric column cut into bins ``(-inf, c1], (c1, c2], ...,
+    /// (ck, inf)`` and coded as a factor, named as R's ``cut``
+    /// (``x[(30,45]]``).
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// cuts : list of float
+    ///     Strictly increasing.
+    /// reference : int, optional
+    ///     Index of the reference bin; the lowest by default.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    #[pyo3(signature = (name, cuts, reference = None))]
+    fn bins(&self, name: &str, cuts: Vec<f64>, reference: Option<usize>) -> Self {
+        Self {
+            inner: self.inner.clone().term(prospicio_models::Term::Bins {
+                name: name.into(),
+                cuts,
+                reference,
+            }),
+        }
+    }
+
+    /// Adds ``log(x / base)``, named ``log(x/base)``: a log transform
+    /// centred at a base value (CAS Monograph 5, section 5.6.2).
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// base : float
+    ///     Positive.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn log(&self, name: &str, base: f64) -> Self {
+        Self {
+            inner: self.inner.clone().log(name, base),
+        }
+    }
+
+    /// Adds an ordered factor in cumulative coding: for each level after
+    /// the first, ``1[level >= it]``, named ``x[>=level]``, so each
+    /// coefficient is the step from the level below.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// levels : list of str
+    ///     The levels in order, lowest first.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.models import Terms
+    /// >>> data = {"size": ["small", "large", "medium"]}
+    /// >>> Terms().ordinal("size", ["small", "medium", "large"]).fit(data).names
+    /// ['size[>=medium]', 'size[>=large]']
+    fn ordinal(&self, name: &str, levels: Vec<String>) -> Self {
+        let levels: Vec<&str> = levels.iter().map(String::as_str).collect();
+        Self {
+            inner: self.inner.clone().ordinal(name, &levels),
+        }
     }
 
     /// Learns factor levels from training data.

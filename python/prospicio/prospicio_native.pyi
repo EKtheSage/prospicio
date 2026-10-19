@@ -19024,7 +19024,8 @@ class TailLogLinear:
 @final
 class Terms:
     """
-    The terms of a model: an intercept, numeric columns and factors.
+    The terms of a model: an intercept, numeric columns, factors,
+    interactions, polynomials, hinges, steps, bins, logs and ordinals.
     
     Build them up, then ``fit`` them to training data to learn the factor
     levels; the result builds the same design matrix on any data.
@@ -19038,6 +19039,24 @@ class Terms:
     ['(Intercept)', 'age', 'region[S]', 'region[W]']
     """
     def __new__(cls, /) -> Terms: ...
+    def bins(self, /, name: str, cuts: Sequence[float], reference: int |None = None) -> Terms:
+        """
+        Adds a numeric column cut into bins ``(-inf, c1], (c1, c2], ...,
+        (ck, inf)`` and coded as a factor, named as R's ``cut``
+        (``x[(30,45]]``).
+        
+        Parameters
+        ----------
+        name : str
+        cuts : list of float
+            Strictly increasing.
+        reference : int, optional
+            Index of the reference bin; the lowest by default.
+        
+        Returns
+        -------
+        Terms
+        """
     def factor(self, /, name: str, reference: str |None = None) -> Terms:
         """
         Adds a factor in treatment coding.
@@ -19070,9 +19089,55 @@ class Terms:
         ValueError
             If a column is missing or has the wrong kind.
         """
+    def hinges(self, /, name: str, knots: Sequence[float]) -> Terms:
+        """
+        Adds hinge functions ``max(0, x - k)`` at each knot, named
+        ``hinge(x,k)``.
+        
+        Parameters
+        ----------
+        name : str
+        knots : list of float
+            Strictly increasing.
+        
+        Returns
+        -------
+        Terms
+        """
+    def interaction(self, /, a: str, b: str) -> Terms:
+        """
+        Adds the interaction of two columns: the product of their coded
+        columns, each numeric as is or a factor in treatment coding (first
+        level as reference), named ``a:b``, ``a[x]:b`` or ``a[x]:b[y]``, as
+        R's ``a:b`` beside main effects (CAS Monograph 5, section 5.6).
+        
+        Parameters
+        ----------
+        a : str
+        b : str
+        
+        Returns
+        -------
+        Terms
+        """
     def intercept(self, /) -> Terms:
         """
         Adds an intercept.
+        
+        Returns
+        -------
+        Terms
+        """
+    def log(self, /, name: str, base: float) -> Terms:
+        """
+        Adds ``log(x / base)``, named ``log(x/base)``: a log transform
+        centred at a base value (CAS Monograph 5, section 5.6.2).
+        
+        Parameters
+        ----------
+        name : str
+        base : float
+            Positive.
         
         Returns
         -------
@@ -19085,6 +19150,57 @@ class Terms:
         Parameters
         ----------
         name : str
+        
+        Returns
+        -------
+        Terms
+        """
+    def ordinal(self, /, name: str, levels: Sequence[str]) -> Terms:
+        """
+        Adds an ordered factor in cumulative coding: for each level after
+        the first, ``1[level >= it]``, named ``x[>=level]``, so each
+        coefficient is the step from the level below.
+        
+        Parameters
+        ----------
+        name : str
+        levels : list of str
+            The levels in order, lowest first.
+        
+        Returns
+        -------
+        Terms
+        
+        Examples
+        --------
+        >>> from prospicio.models import Terms
+        >>> data = {"size": ["small", "large", "medium"]}
+        >>> Terms().ordinal("size", ["small", "medium", "large"]).fit(data).names
+        ['size[>=medium]', 'size[>=large]']
+        """
+    def poly(self, /, name: str, degree: int) -> Terms:
+        """
+        Adds raw powers ``x, x**2, ..., x**degree`` of a numeric column,
+        named ``x``, ``x^2``, ....
+        
+        Parameters
+        ----------
+        name : str
+        degree : int
+        
+        Returns
+        -------
+        Terms
+        """
+    def steps(self, /, name: str, knots: Sequence[float]) -> Terms:
+        """
+        Adds steps ``1[x >= k]`` at each knot, named ``step(x,k)``.
+        
+        Parameters
+        ----------
+        name : str
+        knots : list of float
+            Strictly increasing.
         
         Returns
         -------

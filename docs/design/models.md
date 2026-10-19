@@ -357,6 +357,18 @@ models and compares them.
   relativities divide each model by its own overall average, the
   monograph's convention, so two models at different overall levels
   compare on ranking alone.
+- **Rating-variable terms** (#350, #357): `Term::Interaction`, `Poly`,
+  `Hinges`, `Steps`, `Bins`, `Log` and `Ordinal` beside the intercept,
+  numeric columns and factors. Each is a pure function of the frame once
+  its parameters (knots, cuts, levels) are given, so `Coding` stores only
+  those and rebuilds the same columns on new data; terms that learn from
+  the training data (a natural spline's boundary knots, an orthogonal
+  polynomial's recurrence) come next with that state in `Coded`. Bins are
+  right-closed, `(c_{k-1}, c_k]`, open at both ends, so a new value never
+  falls outside a bin. An interaction's columns are the products of its
+  sides' coded columns, the first side varying fastest, as R's `a:b`.
+  Names are stable and unambiguous (`hinge(age,30)`, `age[(30,50]]`,
+  `size[>=large]`) since they label coefficient tables.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

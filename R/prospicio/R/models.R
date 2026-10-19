@@ -68,6 +68,15 @@ dispersion_args <- function(dispersion) {
 #' terms work as in [stats::glm()]. Results match statsmodels' GLM
 #' (`validation/scripts/statsmodels_glm.py`).
 #'
+#' The rating variables of Python's `Terms` are formula terms here:
+#' interactions `a:b`, raw powers `poly(x, 3, raw = TRUE)`, hinges
+#' `I(pmax(0, x - 30))`, steps `I(x >= 30)`, bins `cut(x, c(-Inf, 30, 50,
+#' Inf))`, a centred log `log(x / 40)` and natural splines
+#' `splines::ns(x, knots = ...)`. For an ordered factor in cumulative coding
+#' (each coefficient the step from the level below), use one step column
+#' per level, `I(as.integer(f) >= 2)` and so on, on a factor with its levels
+#' in order.
+#'
 #' @param formula A model formula; `offset(...)` terms are honoured.
 #' @param data A data frame.
 #' @param family `"gaussian"`, `"poisson"`, `"gamma"`, `"inverse_gaussian"`,
