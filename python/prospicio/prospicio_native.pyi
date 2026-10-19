@@ -371,6 +371,7 @@ class AttentionCannFit:
     """
     A fitted attention CANN, from ``AttentionCann.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     def attention(self, /, design: Design) -> TokenAttention:
         """
@@ -406,6 +407,30 @@ class AttentionCannFit:
         """
         Fitted means on the training rows.
         """
+    @staticmethod
+    def from_json(text: str) -> AttentionCannFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        AttentionCannFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            weights that do not fit the spec.
+        """
+    @property
+    def input_hash(self, /) -> str:
+        """
+        Hash of the training data (design, offset, weights, response).
+        """
     def predict(self, /, design: Design) -> list[float]:
         """
         Expected response for each row of ``design``.
@@ -424,6 +449,16 @@ class AttentionCannFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a JSON artifact (spec, scaling, every weight by its path,
+        fitted values, provenance); ``from_json`` reads it back exactly and
+        pickling uses it too.
+        
+        Returns
+        -------
+        str
         """
     @property
     def tokens(self, /) -> list[str]:
@@ -3082,6 +3117,7 @@ class CannFit:
     """
     A fitted CANN, from ``Cann.fit``.
     """
+    def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     def __repr__(self, /) -> str: ...
     @property
     def best_epoch(self, /) -> int |None:
@@ -3103,6 +3139,30 @@ class CannFit:
         """
         Fitted means on the training rows.
         """
+    @staticmethod
+    def from_json(text: str) -> CannFit:
+        """
+        Reads an artifact written by ``to_json``.
+        
+        Parameters
+        ----------
+        text : str
+        
+        Returns
+        -------
+        CannFit
+        
+        Raises
+        ------
+        ValueError
+            For malformed JSON, another format, a newer format version or
+            weights that do not fit the spec.
+        """
+    @property
+    def input_hash(self, /) -> str:
+        """
+        Hash of the training data (design, offset, weights, response).
+        """
     def predict(self, /, design: Design) -> list[float]:
         """
         Expected response for each row of ``design`` (same columns as the
@@ -3123,6 +3183,25 @@ class CannFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def to_json(self, /) -> str:
+        """
+        The fit as a JSON artifact (spec, scaling, every weight by its path,
+        fitted values, provenance); ``from_json`` reads it back exactly and
+        pickling uses it too.
+        
+        Returns
+        -------
+        str
+        
+        Examples
+        --------
+        >>> import pickle
+        >>> from prospicio.models import Cann, Design
+        >>> d = Design([[0.0, 1.0, 2.0, 3.0]], ["x"])
+        >>> fit = Cann("poisson", hidden=[4], epochs=5).fit(d, [1.0, 2.0, 2.0, 5.0])
+        >>> pickle.loads(pickle.dumps(fit)).predict(d) == fit.predict(d)
+        True
         """
     @property
     def validation_history(self, /) -> list[float]:
