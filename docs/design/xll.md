@@ -539,6 +539,26 @@ real Excel.
     `distortion_aggregate.csv` match at its tolerances, and CCoC at `r`
     prices as the bi-TVaR `(0, 1, r / (1 + r))` on a sheet and in every
     view of a tower.
+32. **Copulas are rebuilt from their parameters in each call** (user,
+    2026-10-19, the seventh group), over `prospicio_prob::copula`.
+    `PRO.COPULA.CDF(points, family, parameter, [nu])` gives `C(u)` at
+    each row of `points`; `PRO.COPULA.SIM(family, parameter, [sims],
+    [dim], [seed], [nu])` simulates uniforms, row `i` from stream `i` of
+    the seed as `copula::simulate` draws them, so a sheet agrees with the
+    Python and R packages draw for draw; `PRO.IMAN.CONOVER(draws,
+    correlation, [seed], [dof], [shuffle])` reorders simulated columns
+    to a rank correlation with normal or t scores. The Gaussian and t
+    take one correlation for every pair or a square matrix; the four
+    Archimedean families take `theta`. The marginals are left to the
+    sheet (`PRO.SEV.QUANTILE` on the uniforms) rather than taken as
+    arguments, so any family, a fitted one included, joins without the
+    copula functions knowing it. Nested Archimedean copulas and vines,
+    which are a tree of parameters rather than a range, are left out
+    until asked. Against mpmath at 30 digits the 39 Gaussian and
+    Archimedean cdf values of `copula_mpmath.csv` (one Archimedean point
+    per family in three dimensions) match at the reference's
+    tolerances; the simulated uniforms are the crate's, and the
+    Iman–Conover result is `iman_conover`'s.
 
 ## Parity plan
 
@@ -580,9 +600,9 @@ order, one small PR each, those already done struck through:
    scale, profit commission, reinstatement premiums)~~.
 7. The nearest left out (user, 2026-10-19, "more Excel functions"):
    ~~the distortions with several parameters (bi-TVaR, beta, weighted
-   TVaR)~~; copulas (a copula's cdf at points, uniforms simulated from
+   TVaR)~~; ~~copulas (a copula's cdf at points, uniforms simulated from
    one, and Iman–Conover's reordering of simulated columns to a rank
-   correlation, all on ranges that hold no state); multi-year contract
+   correlation, all on ranges that hold no state)~~; multi-year contract
    terms (a profit commission or sliding scale over a term of simulated
    years, deficits and credits carried forward).
 
@@ -594,8 +614,8 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's seventh group: copulas, then
-  multi-year contract terms; further functions as the user asks.
+- **Next functions:** the parity plan's seventh group: multi-year
+  contract terms; further functions as the user asks.
 - **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
   an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
   Its pattern is not normalised, so the a-priori level is absorbed by the

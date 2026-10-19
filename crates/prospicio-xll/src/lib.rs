@@ -16,6 +16,7 @@
 
 pub mod aggregate;
 pub mod bayes;
+pub mod copulas;
 pub mod credibility;
 pub mod distortions;
 pub mod evt;
@@ -59,6 +60,14 @@ pub const CATEGORY: &str = "prospicio";
 /// The add-in's name in Excel's Add-ins dialog.
 pub const ADDIN_NAME: &str = "prospicio";
 
+const COPULA_FAMILY: Arg = Arg {
+    name: "family",
+    help: "gaussian, t, clayton, gumbel, frank or joe",
+};
+const COPULA_PARAMETER: Arg = Arg {
+    name: "parameter",
+    help: "gaussian and t: a correlation for every pair, or a square correlation matrix; clayton, gumbel, frank, joe: theta",
+};
 const DATA: Arg = Arg {
     name: "data",
     help: "The losses: a range; blank cells are skipped",
@@ -1736,6 +1745,78 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: distortions::calibrate_families,
+    },
+    Function {
+        symbol: "pro_copula_cdf",
+        name: "PRO.COPULA.CDF",
+        help: "A copula's distribution function C(u) at each point, one point a row (Gaussian in two dimensions, Archimedean in any).",
+        args: &[
+            Arg {
+                name: "points",
+                help: "Points in [0, 1]^d, one a row, one column a dimension",
+            },
+            COPULA_FAMILY,
+            COPULA_PARAMETER,
+            Arg {
+                name: "nu",
+                help: "t only: the degrees of freedom (the t has no closed-form cdf)",
+            },
+        ],
+        run: copulas::cdf,
+    },
+    Function {
+        symbol: "pro_copula_sim",
+        name: "PRO.COPULA.SIM",
+        help: "Uniforms simulated from a copula, one row a simulation and one column a dimension; reproducible by seed. Turn them into losses with PRO.SEV.QUANTILE.",
+        args: &[
+            COPULA_FAMILY,
+            COPULA_PARAMETER,
+            Arg {
+                name: "sims",
+                help: "Simulations (rows), 1 to 1,000,000 (10,000 if omitted)",
+            },
+            Arg {
+                name: "dim",
+                help: "Dimensions (columns): 2 if omitted, or the correlation matrix's size",
+            },
+            Arg {
+                name: "seed",
+                help: "A whole number from 0 (0 if omitted); row i is stream i of the seed",
+            },
+            Arg {
+                name: "nu",
+                help: "t only: the degrees of freedom",
+            },
+        ],
+        run: copulas::sim,
+    },
+    Function {
+        symbol: "pro_iman_conover",
+        name: "PRO.IMAN.CONOVER",
+        help: "Simulated columns reordered to a target rank correlation by Iman and Conover's method, each column keeping its own values.",
+        args: &[
+            Arg {
+                name: "draws",
+                help: "Simulations: one column a variable, one row a simulation",
+            },
+            Arg {
+                name: "correlation",
+                help: "The target correlation: a square matrix, one row and column a variable, or one number for every pair",
+            },
+            Arg {
+                name: "seed",
+                help: "A whole number from 0 (0 if omitted)",
+            },
+            Arg {
+                name: "dof",
+                help: "Student t scores with these degrees of freedom, for more joint extremes (normal scores if omitted)",
+            },
+            Arg {
+                name: "shuffle",
+                help: "TRUE shuffles the result's rows (FALSE if omitted: the first column comes back sorted)",
+            },
+        ],
+        run: copulas::iman_conover,
     },
     Function {
         symbol: "pro_swing",

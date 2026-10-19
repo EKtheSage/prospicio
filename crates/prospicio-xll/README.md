@@ -82,6 +82,9 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.DISTORTION(s, family, parameter, [r0])` | A distortion's g(s) |
 | `PRO.DISTORTION.PRICE(values, [probs], family, parameter, [r0])` | A distortion's price of outcomes or draws, with mean, margin, loss ratio |
 | `PRO.DISTORTION.CALIBRATE(values, [probs], premium, [families], [r0])` | Each family's parameter that gives a target premium |
+| `PRO.COPULA.CDF(points, family, parameter, [nu])` | A copula's distribution function at each point (Gaussian in 2-D, Archimedean in any) |
+| `PRO.COPULA.SIM(family, parameter, [sims], [dim], [seed], [nu])` | Uniforms simulated from a copula, one row a simulation |
+| `PRO.IMAN.CONOVER(draws, correlation, [seed], [dof], [shuffle])` | Simulated columns reordered to a rank correlation, each keeping its values |
 | `PRO.SWING(loss, basic, lcm, [minimum], [maximum], [share])` | Swing-rated or retro premium at each loss |
 | `PRO.SLIDING.SCALE(loss, premium, commissions, loss_ratios)` | Sliding-scale ceding commission at each ceded loss |
 | `PRO.PROFIT.COMMISSION(loss, premium, share, allowance)` | Profit commission at each ceded loss |
@@ -234,6 +237,15 @@ Ctrl+Alt+F9 to recalculate.
   assets `a`, cap the outcomes at `a` first (`=MIN(range, a)`): the
   premium then lies between the capped mean and `a`, the range
   `PRO.DISTORTION.CALIBRATE` solves in.
+- Copulas: `gaussian` and `t` take one correlation for every pair or a
+  square correlation matrix (the t also `nu`), `clayton`, `gumbel`,
+  `frank` and `joe` their `theta`. `PRO.COPULA.SIM`'s row `i` is stream
+  `i` of the seed, as the Python and R packages draw it; turn its
+  uniforms into losses with `PRO.SEV.QUANTILE` column by column. The
+  Gaussian's cdf is in two dimensions, the Archimedean ones' in any, and
+  the t has none in closed form. `PRO.IMAN.CONOVER` reorders simulations
+  already on the sheet (`PRO.ODP.SIMS`, a column per line) and leaves
+  each column's values as they are.
 - Contract terms: amounts are at 100% and losses ceded at the placed
   share, as in `aggregate`. A sliding scale is two ranges, commission
   rates and their loss ratios (increasing), linear between and flat
