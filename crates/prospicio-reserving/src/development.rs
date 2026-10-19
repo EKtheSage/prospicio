@@ -182,6 +182,9 @@ impl DevelopmentFit {
     }
 }
 
+/// An origin's index and the `(from, to)` values of one of its link ratios.
+type KeptLink = (usize, f64, f64);
+
 impl Development {
     /// Estimates the development pattern of `column` in a single-segment
     /// triangle, from every origin observed at both ends of each link.
@@ -224,7 +227,9 @@ impl Development {
         Ok(())
     }
 
-    pub(crate) fn fit_segment(&self, segment: &Segment) -> Result<DevelopmentFit> {
+    /// The oldest starting valuation `n_periods` keeps, `None` without it.
+    /// An error if `n_periods` is zero.
+    fn cutoff(&self, segment: &Segment) -> Result<Option<Month>> {
         if self.n_periods == Some(0) {
             return Err(Error::InvalidSetting {
                 name: "n_periods",
@@ -232,6 +237,40 @@ impl Development {
                 expected: "at least 1, or none for every origin",
             });
         }
+        Ok(
+            match (
+                self.n_periods,
+                segment.latest_valuation(),
+                segment.origins.first(),
+            ) {
+                (Some(n), Some(latest), Some(origin)) => {
+                    // A million periods reach before any triangle's first
+                    // cell, and keep the product far from overflow.
+                    let n = n.min(1_000_000) as i64;
+                    Some(latest.add_months(-(n * i64::from(origin.grain().months()))))
+                }
+                _ => None,
+            },
+        )
+    }
+
+    /// The link ratios the fit averages, indexed by `origin * (n_dev - 1) +
+    /// link`: true where the link ratio is observed and kept by
+    /// `n_periods` and the drops, the same ones [`fit_segment`] uses.
+    pub(crate) fn kept_mask(&self, segment: &Segment) -> Result<Vec<bool>> {
+        let cutoff = self.cutoff(segment)?;
+        let n_links = segment.n_dev.saturating_sub(1);
+        let mut mask = vec![false; segment.n_origins * n_links];
+        for age in 0..n_links {
+            for (o, _, _) in self.kept_links(segment, age, cutoff)?.0 {
+                mask[o * n_links + age] = true;
+            }
+        }
+        Ok(mask)
+    }
+
+    pub(crate) fn fit_segment(&self, segment: &Segment) -> Result<DevelopmentFit> {
+        let cutoff = self.cutoff(segment)?;
         let n_links = segment.n_dev.saturating_sub(1);
         // The pattern is checked before the estimate, so that a bad pattern
         // is reported as such.
@@ -241,20 +280,6 @@ impl Development {
                 (r.selected, r.weight)
             }
             None => (vec![None; n_links], vec![0.0; n_links]),
-        };
-        // The oldest starting valuation `n_periods` keeps.
-        let cutoff = match (
-            self.n_periods,
-            segment.latest_valuation(),
-            segment.origins.first(),
-        ) {
-            (Some(n), Some(latest), Some(origin)) => {
-                // A million periods reach before any triangle's first
-                // cell, and keep the product far from overflow.
-                let n = n.min(1_000_000) as i64;
-                Some(latest.add_months(-(n * i64::from(origin.grain().months()))))
-            }
-            _ => None,
         };
         let mut ldf = Vec::with_capacity(n_links);
         let mut sigma = Vec::with_capacity(n_links);
@@ -266,6 +291,7 @@ impl Development {
             excluded |= pairs.len() < observed;
             counts.push(pairs.len());
             let Some(alpha) = self.average.alpha() else {
+                let pairs: Vec<(f64, f64)> = pairs.iter().map(|&(_, x, y)| (x, y)).collect();
                 ldf.push(geometric_mean(&pairs, age)?);
                 sigma.push(None);
                 volume.push(f64::NAN);
@@ -284,7 +310,7 @@ impl Development {
             };
             let mut num = 0.0;
             let mut den = 0.0;
-            for &(x, y) in &pairs {
+            for &(_, x, y) in &pairs {
                 num += weight(x, alpha - 1.0)? * y;
                 den += weight(x, alpha)?;
             }
@@ -298,8 +324,11 @@ impl Development {
             // An origin at zero says nothing about the variance given a
             // positive value, and its weight C^(alpha - 2) is infinite, so it
             // does not enter sigma.
-            let informative: Vec<(f64, f64)> =
-                pairs.iter().copied().filter(|&(x, _)| x != 0.0).collect();
+            let informative: Vec<(f64, f64)> = pairs
+                .iter()
+                .filter(|&&(_, x, _)| x != 0.0)
+                .map(|&(_, x, y)| (x, y))
+                .collect();
             sigma.push(if informative.len() > 1 {
                 let ss: f64 = informative
                     .iter()
@@ -338,7 +367,7 @@ impl Development {
         })
     }
 
-    /// The `(from, to)` values of the link ratios of one age that the
+    /// The `(origin, from, to)` of the link ratios of one age that the
     /// averages use: those starting at or after `cutoff`, less the
     /// `drop_high` highest and `drop_low` lowest by value (ties by the
     /// starting value) unless that would leave none. In origin order.
@@ -347,7 +376,7 @@ impl Development {
         segment: &Segment,
         age: usize,
         cutoff: Option<Month>,
-    ) -> Result<(Vec<(f64, f64)>, usize)> {
+    ) -> Result<(Vec<KeptLink>, usize)> {
         let mut links = segment.link_pairs_indexed(age);
         if links.is_empty() {
             return Err(Error::Factor {
@@ -390,10 +419,7 @@ impl Development {
                 links.retain(|_| flags.next().unwrap_or(false));
             }
         }
-        Ok((
-            links.into_iter().map(|(_, x, y)| (x, y)).collect(),
-            observed,
-        ))
+        Ok((links, observed))
     }
 }
 
@@ -959,23 +985,27 @@ mod tests {
             .to_string();
         assert!(message.contains("geometric average"), "{message}");
 
-        // Mack's bootstrap.
+        // Mack's bootstrap takes the exclusions in its lifetime view.
         let boot = |development: Development| MackBootstrap {
             n_sims: 10,
             development,
             ..Default::default()
         };
         assert!(not_supported(boot(geometric.clone()).fit(&raa(), "values")));
-        let message = boot(trimmed.clone())
-            .fit(&raa(), "values")
-            .unwrap_err()
-            .to_string();
-        assert!(message.contains("n_periods"), "{message}");
-        assert!(message.contains("not yet"), "{message}");
-        assert!(not_supported(
-            boot(with_exclusions(None, 1, 0)).fit(&raa(), "values")
-        ));
+        assert!(boot(trimmed.clone()).fit(&raa(), "values").is_ok());
+        assert!(
+            boot(with_exclusions(None, 1, 0))
+                .fit(&raa(), "values")
+                .is_ok()
+        );
         assert!(boot(Development::default()).fit(&raa(), "values").is_ok());
+        // Its one-year view still rejects them.
+        let cl_method = OneYearMethod::ChainLadder(cl(Development::default()));
+        assert!(not_supported(boot(trimmed.clone()).one_year(
+            &raa(),
+            "values",
+            &cl_method
+        )));
 
         // The one-year views, through the re-reserving method.
         let odp = OdpBootstrap {

@@ -13,7 +13,7 @@
 //!    `r = sqrt(n_k / (n_k - 1)) C_k^(alpha / 2) (F - f_k) / sigma_k` with
 //!    `n_k` the link ratios behind `f_k`, pooled over every factor with two
 //!    or more, into a pseudo link ratio
-//!    `F* = f_k + r* sigma_k / C_k^(alpha / 2)` for every observed link,
+//!    `F* = f_k + r* sigma_k / C_k^(alpha / 2)` for every kept link,
 //!    and re-estimates each factor as their weighted average
 //!    `f*_k = sum(C_k^alpha F*) / sum(C_k^alpha)` (parameter error);
 //! 2. draws every cumulative value of the coming year in development order
@@ -33,6 +33,14 @@
 //! reserve. Its standard deviation is Mack's analytic standard error to
 //! first order, with the parameter error scaled by the variance of the
 //! resampled residuals (`validation/tests/reserving_mack_bootstrap.rs`).
+//! Under [`Development::n_periods`], [`drop_high`](Development::drop_high)
+//! and [`drop_low`](Development::drop_low) (decision 14) the link ratios
+//! the observed fit leaves out are left out here too: they have no
+//! residual (and are not counted in `n_k`), and they enter neither sum of
+//! the pseudo factor. The drops stay where the observed triangle puts
+//! them, so the bootstrap describes the model [`Mack`] computes with 0/1
+//! weights, and its standard deviation is Mack's under the same settings.
+//! The geometric average has no variance and is an error.
 //! The sigmas are the observed triangle's,
 //! those behind a single link ratio interpolated as [`Mack`] does. A link
 //! from a zero value has no variance in Mack's model: it keeps its observed
@@ -257,7 +265,10 @@ pub struct MackBootstrap {
     /// Process error on the next cumulative values.
     pub process: MackProcess,
     /// Mack's factors (their `alpha`) and how unestimable sigmas are filled
-    /// in. With a selected pattern ([`Development::pattern`]) the residuals
+    /// in. The link ratios its `n_periods` and drops leave out have no
+    /// residual and take no part in the pseudo factors, the drops fixed on
+    /// the observed triangle (decision 14); the one-year view still rejects
+    /// them. With a selected pattern ([`Development::pattern`]) the residuals
     /// and sigmas stay the triangle's estimate's, and each simulation uses
     /// `w s + (1 - w) f*` for its pseudo factors `f*`: a fully selected
     /// factor is the same in every simulation, so the pattern lowers the
@@ -343,8 +354,10 @@ pub struct MackBootstrapSegment {
     pub mack: MackFit,
     /// The scaled bias-adjusted residuals of the link ratios, row-major
     /// over origin × development: element `(o, k)` is the link from age `k`
-    /// to `k + 1`. NaN where there is no link, its earlier value is zero,
-    /// or its factor rests on a single link ratio or has a zero sigma.
+    /// to `k + 1`. NaN where there is no link, the link ratio is left out
+    /// by [`Development::n_periods`] or the drops, its earlier value is
+    /// zero, or its factor rests on a single kept link ratio or has a zero
+    /// sigma.
     /// Never centred, whatever
     /// [`MackBootstrap::centre_residuals`] says.
     pub residuals: Vec<f64>,
@@ -478,8 +491,9 @@ impl MackBootstrapFits {
 
 /// What Mack's bootstrap resamples in each simulation.
 pub(crate) struct MackDraw {
-    /// Per factor, the `(C_k, C_k+1)` of every origin observed at both ages.
-    links: Vec<Vec<(f64, f64)>>,
+    /// Per factor, the `(C_k, C_k+1, kept)` of every origin observed at both
+    /// ages, `kept` as [`Development::kept_mask`] says.
+    links: Vec<Vec<(f64, f64, bool)>>,
     pool: Vec<f64>,
     process: MackProcess,
     /// The bootstrap's tail and its sigma; `None` without one.
@@ -529,10 +543,11 @@ fn power(x: f64, e: f64) -> f64 {
 
 impl MackDraw {
     /// The pseudo factors of one simulation (its parameter error): a
-    /// resampled residual for every observed link, turned into a pseudo
-    /// link ratio, and their weighted averages with the observed weights.
-    /// The residual of the `l`-th observed link (factor by factor) is drawn
-    /// from `rng`, or, synchronized, is `pool[picks[l]]`.
+    /// resampled residual for every kept link, turned into a pseudo link
+    /// ratio, and their weighted averages with the observed weights. An
+    /// excluded link draws nothing and enters neither sum, but still counts
+    /// as a link: the residual of the `l`-th observed link (factor by
+    /// factor) is drawn from `rng`, or, synchronized, is `pool[picks[l]]`.
     fn factors(
         &self,
         dev: &DevelopmentFit,
@@ -544,8 +559,11 @@ impl MackDraw {
         let mut link = 0;
         for (k, pairs) in self.links.iter().enumerate() {
             let (mut num, mut den) = (0.0, 0.0);
-            for &(c, c1) in pairs {
+            for &(c, c1, kept) in pairs {
                 link += 1;
+                if !kept {
+                    continue;
+                }
                 if c == 0.0 {
                     num += power(c, alpha - 1.0) * c1;
                     continue;
@@ -900,6 +918,9 @@ impl MackBootstrap {
     /// whether it reads that pattern without its level
     /// ([`inherits_level_free`]).
     fn for_method(&self, method: &OneYearMethod) -> Result<(Self, bool)> {
+        // The one-year view does not take the exclusions yet.
+        self.development
+            .reject_exclusions("the one-year bootstrap")?;
         let mut boot = self.clone();
         boot.development.pattern = self
             .one_year_pattern
@@ -943,7 +964,6 @@ impl MackBootstrap {
     /// and links, and the tail each simulation draws.
     pub(crate) fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
         self.development.reject_geometric("Mack's bootstrap")?;
-        self.development.reject_exclusions("Mack's bootstrap")?;
         for o in 0..segment.n_origins {
             let (last, _) = segment.latest(o)?;
             for d in 0..=last {
@@ -985,21 +1005,29 @@ impl MackBootstrap {
         let mut residuals = vec![f64::NAN; no * nd];
         let mut pool = Vec::new();
         let mut links = Vec::with_capacity(nd - 1);
+        let kept = self.development.kept_mask(segment)?;
         for k in 0..nd - 1 {
-            let pairs: Vec<(usize, f64, f64)> = (0..no)
-                .filter_map(|o| Some((o, segment.get(o, k)?, segment.get(o, k + 1)?)))
+            let pairs: Vec<(usize, f64, f64, bool)> = (0..no)
+                .filter_map(|o| {
+                    Some((
+                        o,
+                        segment.get(o, k)?,
+                        segment.get(o, k + 1)?,
+                        kept[o * (nd - 1) + k],
+                    ))
+                })
                 .collect();
-            let informative = pairs.iter().filter(|p| p.1 != 0.0).count();
+            let informative = pairs.iter().filter(|p| p.3 && p.1 != 0.0).count();
             if informative > 1 && sigma[k] != 0.0 {
                 let n = informative as f64;
-                for &(o, c, c1) in pairs.iter().filter(|p| p.1 != 0.0) {
+                for &(o, c, c1, _) in pairs.iter().filter(|p| p.3 && p.1 != 0.0) {
                     let r =
                         (n / (n - 1.0)).sqrt() * power(c, alpha / 2.0) * (c1 / c - f[k]) / sigma[k];
                     residuals[o * nd + k] = r;
                     pool.push(r);
                 }
             }
-            links.push(pairs.iter().map(|&(_, c, c1)| (c, c1)).collect());
+            links.push(pairs.iter().map(|&(_, c, c1, k)| (c, c1, k)).collect());
         }
         // With every sigma zero nothing is resampled: no parameter or
         // process error.
@@ -2169,5 +2197,104 @@ mod tests {
                 r => panic!("{r:?}"),
             }
         }
+    }
+
+    fn bits(x: &[f64]) -> Vec<u64> {
+        x.iter().map(|v| v.to_bits()).collect()
+    }
+
+    fn excluding(n_periods: Option<usize>, drop_high: usize, drop_low: usize) -> MackBootstrap {
+        MackBootstrap {
+            development: Development {
+                n_periods,
+                drop_high,
+                drop_low,
+                ..Default::default()
+            },
+            ..boot(300, 11, MackProcess::Gamma)
+        }
+    }
+
+    #[test]
+    fn exclusions_that_drop_nothing_leave_the_draws_alone() {
+        // RAA has ten diagonals, so a window of ten or more keeps every link
+        // ratio, and so do drops of nothing: same residuals, same draws.
+        let base = boot(300, 11, MackProcess::Gamma)
+            .fit(&raa(), "values")
+            .unwrap();
+        for b in [
+            excluding(Some(10), 0, 0),
+            excluding(Some(50), 0, 0),
+            excluding(None, 0, 0),
+        ] {
+            let fit = b.fit(&raa(), "values").unwrap();
+            assert_eq!(bits(&fit.residuals), bits(&base.residuals));
+            assert_eq!(
+                bits(fit.reserves.draw_matrix()),
+                bits(base.reserves.draw_matrix())
+            );
+        }
+    }
+
+    #[test]
+    fn residuals_exist_exactly_for_the_kept_links() {
+        let segment = raa().segment("values").unwrap();
+        for (n_periods, high, low) in [
+            (Some(5), 0, 0),
+            (Some(3), 0, 0),
+            (None, 1, 1),
+            (Some(6), 1, 0),
+        ] {
+            let b = excluding(n_periods, high, low);
+            let mask = b.development.kept_mask(&segment).unwrap();
+            let (model, draw) = b.model(&segment).unwrap();
+            let dev = &model.mack.chain_ladder.development;
+            let (no, nd) = (segment.n_origins, segment.n_dev);
+            let mut pool = 0;
+            for k in 0..nd - 1 {
+                let kept = (0..no).filter(|&o| mask[o * (nd - 1) + k]).count();
+                // The mask and the fit agree on what is kept.
+                assert_eq!(kept, dev.n_links[k], "{n_periods:?} {high} {low}, age {k}");
+                let has = kept > 1;
+                pool += if has { kept } else { 0 };
+                for o in 0..no {
+                    let r = model.residuals[o * nd + k];
+                    assert_eq!(
+                        r.is_finite(),
+                        has && mask[o * (nd - 1) + k],
+                        "{n_periods:?} {high} {low}, origin {o} age {k}"
+                    );
+                }
+            }
+            assert_eq!(draw.pool.len(), pool);
+            assert!(pool < 45, "every link is still kept");
+        }
+    }
+
+    #[test]
+    fn excluded_links_do_not_move_the_draw_positions_or_the_pseudo_factors() {
+        // Every observed link keeps its position in the synchronized
+        // stream, excluded or not.
+        let segment = raa().segment("values").unwrap();
+        let all = boot(10, 1, MackProcess::Gamma).model(&segment).unwrap().0;
+        let some = excluding(Some(3), 0, 0).model(&segment).unwrap().0;
+        assert_eq!(all.draw_positions(), some.draw_positions());
+    }
+
+    #[test]
+    fn exclusions_error_cases() {
+        assert!(excluding(Some(0), 0, 0).fit(&raa(), "values").is_err());
+        let geometric = MackBootstrap {
+            development: Development {
+                average: Average::Geometric,
+                n_periods: Some(3),
+                ..Default::default()
+            },
+            ..boot(10, 1, MackProcess::Gamma)
+        };
+        assert!(matches!(
+            geometric.fit(&raa(), "values"),
+            Err(Error::NotSupported { .. })
+        ));
     }
 }
