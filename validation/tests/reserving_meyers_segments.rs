@@ -24,10 +24,11 @@
 //! 10,000 simulations; the backtest's 4,000 draws) but one: on group 353
 //! the backtest's fits take target acceptance 0.99 ([`backtest_meyers`]).
 //!
-//! The backtest does not report its fits' diagnostics, so the sweep refits
-//! group 353's training triangles on the same chains ([`g353_worst_rhat`])
-//! and counts, without checking, a backtest's rows at a seed where a fit
-//! has an R-hat above 1.05. At the default 0.95 that happened at 20 of
+//! The backtest reports each split's diagnostics (`Backtest::diagnostics`,
+//! decision 21 of `reserving-bayes.md`), so the sweep reads the worst R-hat
+//! of Meyers' fits from them ([`worst_rhat`]) and counts, without
+//! checking, a backtest's rows at a seed where a fit has an R-hat above
+//! 1.05. At the default 0.95 that happened at 20 of
 //! seeds 0 to 119 and 200 to 299 (R-hat up to 1.18, up to 978
 //! divergences), and those fits made the rows' largest outliers (up to 9
 //! sds; at seed 204 CRC on incurred, which moved every incurred row while
@@ -419,7 +420,7 @@ fn ranked(seed: u64) -> Vec<Measured> {
 /// 299 a fit had an R-hat above 1.05 at 20 seeds (up to 1.18, with 978
 /// divergences), and those fits gave the rows' largest outliers (up to 9
 /// sds). At 0.99 such a fit is rarer (4 seeds in 300, see
-/// [`g353_worst_rhat`]). CLRD's fits keep the default (R-hat at most
+/// [`worst_rhat`]). CLRD's fits keep the default (R-hat at most
 /// 1.052, no outlying row).
 fn backtest_meyers(name: &str, model: MeyersModel, seed: u64) -> Meyers {
     let mut m = meyers(model, seed);
@@ -432,29 +433,18 @@ fn backtest_meyers(name: &str, model: MeyersModel, seed: u64) -> Meyers {
 /// R-hat above which the sweep treats a fit as failed.
 const FAILED_RHAT: f64 = 1.05;
 
-/// The largest R-hat of Meyers' fits in group 353's backtest `name` at
-/// `seed`. The backtest does not report its fits' diagnostics, so this
-/// refits each split's training triangle (the cells at calendar years up
-/// to 1994, 1995 and 1996) with `Meyers::fit` on the backtest's seed,
-/// which samples the same chains (the adapter's draws equal the fit's).
-fn g353_worst_rhat(name: &str, seed: u64) -> f64 {
-    let column = name.trim_start_matches("g353_");
-    let mut worst: f64 = 0.0;
-    for last in 1994..=1996 {
-        let tri = group_353_until(last);
-        for model in [MeyersModel::Crc, MeyersModel::Csr, MeyersModel::Cay] {
-            let fit = backtest_meyers(name, model, seed)
-                .fit(&tri, column, "premium")
-                .unwrap();
-            worst = worst.max(fit.diagnostics.max_rhat);
-        }
-    }
-    worst
+/// The largest R-hat of Meyers' fits (the last three models) in a
+/// backtest, from the diagnostics it reports for each split.
+fn worst_rhat(bt: &prospicio_reserving::Backtest) -> f64 {
+    let first = bt.models().len() - 3;
+    (first..bt.models().len())
+        .flat_map(|m| bt.diagnostics(m).iter().flatten())
+        .fold(0.0, |worst, d| f64::max(worst, d.max_rhat))
 }
 
 /// The diagonal backtest, latest three diagonals: the ODP GLM, `BayesOdp`
 /// and Meyers' models.
-fn backtest(name: &str, seed: u64) -> Vec<Measured> {
+fn backtest(name: &str, seed: u64) -> (Vec<Measured>, f64) {
     let t = Instant::now();
     let (tri, column) = match name {
         "g353_paid" => (group_353(), "paid"),
@@ -502,7 +492,7 @@ fn backtest(name: &str, seed: u64) -> Vec<Measured> {
         let worst = lpd[m].iter().copied().fold(f64::INFINITY, f64::min);
         out.push(row(format!("{name}_{model}_lpd_min"), worst));
     }
-    out
+    (out, worst_rhat(&bt))
 }
 
 /// The target Spearman matrix of `ranked`.
@@ -524,12 +514,12 @@ fn rank_correlation_reaches_the_target() {
 // test of its own so they run side by side; the sweep checks all four.
 #[test]
 fn backtest_on_group_353_paid() {
-    assert_all(&backtest("g353_paid", 0));
+    assert_all(&backtest("g353_paid", 0).0);
 }
 
 #[test]
 fn backtest_on_wkcomp() {
-    assert_all(&backtest("wkcomp", 0));
+    assert_all(&backtest("wkcomp", 0).0);
 }
 
 #[test]
@@ -561,13 +551,10 @@ fn seed_sweep() {
                     .as_ref()
                     .is_none_or(|o| o.split(',').any(|b| b == name))
                 {
-                    let mut rows = backtest(name, seed);
-                    if name.starts_with("g353") {
-                        let rhat = g353_worst_rhat(name, seed);
-                        if rhat > FAILED_RHAT {
-                            println!("seed {seed}: a fit of {name} failed (R-hat {rhat:.4})");
-                            rows.iter_mut().for_each(|m| m.failed = true);
-                        }
+                    let (mut rows, rhat) = backtest(name, seed);
+                    if name.starts_with("g353") && rhat > FAILED_RHAT {
+                        println!("seed {seed}: a fit of {name} failed (R-hat {rhat:.4})");
+                        rows.iter_mut().for_each(|m| m.failed = true);
                     }
                     all.extend(rows);
                 }

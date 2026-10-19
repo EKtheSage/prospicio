@@ -374,3 +374,20 @@
   `fit_grouped`, `fit_lev_distance`, `grouped_goodness_of_fit`; R
   `grouped_fit()`, `lev_distance_fit()`, `grouped_goodness_of_fit()`
   (#328).
+
+### Reserving
+
+- The ODP GLM's analytic prediction error: `OdpGlmFit::prediction_error`
+  gives each origin's and the total reserve's process and parameter
+  variance by the delta method, matching Taylor and McGuire's Table 5-4
+  (CAS Monograph 3) to the unit. `OdpGlm` and `OdpGlmFit` in Python
+  (`prospicio.reserving`) and R (`odp_glm()`, with a
+  `predict_distribution()` method), single segment (#333, #436).
+- The ODP GLM's residual diagnostics: `OdpGlmFit::residuals` gives each
+  observed cell's actual, fitted, actual-to-fitted ratio, Pearson and
+  deviance residuals, leverage and standardized residuals with its origin,
+  age and calendar period, and `OdpResiduals::summary` groups them by
+  origin, development or calendar period; Taylor and McGuire's Figure 6-22
+  heat map (CAS Monograph 3) reproduces exactly. Python
+  `OdpGlmFit.residuals()` and `residual_summary(by)`, R `fit@residuals`
+  and `residual_summary(fit, by)` (#333, #438).

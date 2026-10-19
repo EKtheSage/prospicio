@@ -708,6 +708,138 @@ class AttentionCannFit:
         """
 
 @final
+class Backtest:
+    """
+    The scores of a ``diagonal_backtest``: every model on every metric and
+    held-out diagonal, the diagnostics of each fit and the pointwise
+    held-out log densities.
+    
+    The metrics (``metrics``), each scored per diagonal over the held-out
+    cells that every model fits:
+    
+    - ``crps``: the mean over the cells of the continuous ranked
+      probability score of the forecast distribution at the cell's value.
+    - ``coverage``: the share of cells inside the central ``interval`` of
+      their forecast draws.
+    - ``actual_vs_expected``: the diagonal total over the forecast mean of
+      the diagonal total.
+    - ``total_crps``: the CRPS of the diagonal total from the draws summed
+      per simulation.
+    - ``mean_log_density``: the mean over the cells of the model's held-out
+      log predictive density (NaN for a model that gives none).
+    - ``total_percentile``: the share of the simulated diagonal totals at
+      or below the actual total, the probability integral transform of the
+      diagonal: uniform over many triangles for a calibrated model.
+    
+    The tables (``scores()``, ``mean()``, ``diagnostics()``) are pandas
+    DataFrames when pandas is installed and dicts of lists otherwise.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import GlmCandidate, Triangle, diagonal_backtest
+    >>> paid = [[100.0, 150.0, 165.0, 170.0], [110.0, 170.0, 180.0],
+    ...         [120.0, 175.0], [130.0]]
+    >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+    ...         for d, v in enumerate(r)]
+    >>> origin, age, values = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values})
+    >>> bt = diagonal_backtest(tri, "paid", [GlmCandidate.odp()], 1, n_sims=200)
+    >>> bt
+    Backtest(models=['odp'], diagonals=['2023'], metrics=6, warnings=0)
+    >>> bt.warnings
+    []
+    """
+    def __repr__(self, /) -> str: ...
+    def diagnostics(self, /) -> Any:
+        """
+        The sampler diagnostics of each fit, one row per model and
+        diagonal: ``model``, ``diagonal``, ``max_rhat``, ``min_ess_bulk``,
+        ``min_ess_tail``, ``divergences`` and ``n_warnings``; a row for
+        every model and diagonal, models in order. A model with no sampler
+        (the GLM) has NaN in the three float columns and ``None`` in the
+        two count columns (NaN in a DataFrame). A fit with warnings is
+        scored like any other.
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+        """
+    @property
+    def diagonals(self, /) -> list[str]:
+        """
+        The calendar period held out in each split (labelled at the
+        triangle's development grain, as the ``calendar`` column of the
+        cells), oldest first.
+        """
+    @property
+    def excluded(self, /) -> list[int]:
+        """
+        Per diagonal, the number of held-out cells left out of the scoring
+        of every model because their origin or development period has no
+        training cell that every model fits on.
+        """
+    @property
+    def log_densities(self, /) -> dict:
+        """
+        Each model's held-out log predictive density of every scored row,
+        diagonals in order, by model name; ``None`` for a model that gives
+        none. Every model's list is for the same rows, so the lists are
+        the input of the stacking functions.
+        """
+    def mean(self, /) -> Any:
+        """
+        The mean of each metric over the diagonals, one row per model:
+        the column ``model`` and one column per metric. A metric that is NaN
+        on a diagonal (``mean_log_density`` of a model with no density) is
+        NaN in the mean.
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+        """
+    @property
+    def metrics(self, /) -> list[str]:
+        """
+        Metric names, in the order of ``scores()``: ``crps``,
+        ``coverage``, ``actual_vs_expected``, ``total_crps``,
+        ``mean_log_density`` and ``total_percentile``.
+        """
+    @property
+    def models(self, /) -> list[str]:
+        """
+        Model names, in the order given.
+        """
+    @property
+    def n_splits(self, /) -> int:
+        """
+        Number of held-out diagonals.
+        """
+    @property
+    def scored_rows(self, /) -> list[list[int]]:
+        """
+        Per diagonal, the rows of the cell table that were scored (origin
+        by development, row-major, counted from 0; R's ``scored_rows``
+        count from 1), in the order of
+        ``log_densities``.
+        """
+    def scores(self, /) -> Any:
+        """
+        Every score as a long table with one row per model, diagonal and
+        metric: columns ``model``, ``diagonal``, ``metric`` and ``value``.
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+        """
+    @property
+    def warnings(self, /) -> list[tuple[str, str, str]]:
+        """
+        Every failed diagnostic threshold as ``(model, diagonal,
+        message)``, in model then diagonal order; empty when every fit
+        passed.
+        """
+
+@final
 class BayesBf:
     """
     The Bayesian Bornhuetter–Ferguson of England, Verrall and Wüthrich
@@ -9293,6 +9425,63 @@ class Glm:
         """
 
 @final
+class GlmCandidate:
+    """
+    A generalized linear model of the cells of a triangle, for
+    ``diagonal_backtest``: the terms and the GLM, on the columns of the
+    backtest's cell table (``origin``, ``development`` and ``calendar``
+    factors; ``origin_index``, ``development_index``, ``calendar_index``,
+    ``age`` and ``exposure`` numbers; ``exposure`` is ``premium`` or 1).
+    The response is the incremental value of the column.
+    
+    Parameters
+    ----------
+    terms : prospicio.models.Terms
+        The model's terms.
+    glm : prospicio.models.Glm
+        The family, link and dispersion.
+    name : str, default "glm"
+        The model's name in a ``diagonal_backtest`` given a list.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Glm, Terms
+    >>> from prospicio.reserving import GlmCandidate
+    >>> GlmCandidate.odp()
+    GlmCandidate(name='odp')
+    >>> GlmCandidate(Terms().intercept().factor("origin"), Glm("poisson", "log"), name="origin only").name
+    'origin only'
+    """
+    def __new__(cls, /, terms: Terms, glm: Glm, name: str = "glm") -> GlmCandidate: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def glm(self, /) -> Glm:
+        """
+        The model's family, link and dispersion.
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The name in the backtest.
+        """
+    @staticmethod
+    def odp() -> GlmCandidate:
+        """
+        The over-dispersed Poisson GLM of the chain ladder: an intercept, an
+        origin factor and a development factor, with the over-dispersed
+        Poisson family. Its name is ``"odp"``.
+        
+        Returns
+        -------
+        GlmCandidate
+        """
+    @property
+    def terms(self, /) -> Terms:
+        """
+        The model's terms.
+        """
+
+@final
 class GlmFit:
     """
     A fitted GLM, from ``Glm.fit``.
@@ -15830,6 +16019,227 @@ class OdpBootstrapFit:
         Returns
         -------
         pandas.DataFrame
+        """
+
+@final
+class OdpGlm:
+    """
+    The over-dispersed Poisson (ODP) reserving model as a quasi-Poisson GLM:
+    ``ln E[X] = c + a[origin] + b[development]`` on the incremental values,
+    ``Var X = phi E[X]``. Its future cells summed by origin are the
+    volume-weighted chain-ladder reserves.
+    
+    Parameters
+    ----------
+    tolerance : float, default 1e-10
+        IRLS convergence tolerance.
+    max_iterations : int, default 100
+        Maximum IRLS iterations.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import OdpGlm, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2020, 2021, 2021, 2022],
+    ...     [12, 24, 36, 12, 24, 12],
+    ...     {"paid": [100.0, 150.0, 165.0, 110.0, 170.0, 120.0]},
+    ... )
+    >>> fit = OdpGlm().fit(tri, "paid")
+    >>> round(fit.total_reserve, 4)
+    98.1429
+    """
+    def __new__(cls, /, tolerance: float = 1e-10, max_iterations: int = 100) -> OdpGlm: ...
+    def __repr__(self, /) -> str: ...
+    def fit(self, /, triangle: Triangle, column: str) -> OdpGlmFit:
+        """
+        Fits the GLM to the incremental values of one measure column of a
+        single-segment triangle and predicts the cells below the latest
+        diagonal.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        OdpGlmFit
+        
+        Raises
+        ------
+        ValueError
+            If the triangle has several segments, an origin or age has no
+            observed increment, a past cell has no increment, or the GLM does
+            not converge.
+        """
+    @property
+    def max_iterations(self, /) -> int:
+        """
+        Maximum IRLS iterations.
+        """
+    @property
+    def tolerance(self, /) -> float:
+        """
+        IRLS convergence tolerance.
+        """
+
+@final
+class OdpGlmFit:
+    """
+    A fitted ODP GLM, from ``OdpGlm.fit``: the GLM, the future cells' means,
+    the reserves and their prediction error.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def dispersion(self, /) -> float:
+        """
+        Pearson's dispersion ``phi``.
+        """
+    @property
+    def future(self, /) -> list[tuple[str, int]]:
+        """
+        The future cells, as ``(origin, age in months)``, origin-major.
+        """
+    @property
+    def future_design(self, /) -> Design:
+        """
+        Design of the future cells, rows aligned with ``future``: what
+        ``glm`` predicts from.
+        """
+    @property
+    def future_means(self, /) -> list[float]:
+        """
+        Fitted mean of each future cell, aligned with ``future``.
+        """
+    @property
+    def glm(self, /) -> GlmFit:
+        """
+        The quasi-Poisson GLM on the observed increments: coefficients,
+        standard errors, covariance and Pearson's dispersion. Its columns are
+        ``(Intercept)``, ``origin[<period>]`` and ``development[<age>]``,
+        with the first origin and the first age as references.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin periods of the triangle.
+        """
+    def predict_distribution(self, /, n_sims: int, seed: int, parameters: str = "mean_preserving") -> PredictiveDistribution:
+        """
+        Joint draws of the future cells' increments, with dimensions
+        ``["origin", "development"]``. Each simulation draws the coefficients
+        from their normal approximation, then each cell as
+        ``phi * Poisson(mu / phi)``. ``aggregate(["origin"])`` gives the
+        reserves by origin.
+        
+        Parameters
+        ----------
+        n_sims : int
+        seed : int
+        parameters : {"mean_preserving", "normal", "fixed"}, default "mean_preserving"
+            ``"mean_preserving"`` shifts each cell's linear predictor by
+            ``-v / 2`` so the draws average the fitted means (the chain
+            ladder's); ``"normal"`` leaves it (means ``predictive_means()``);
+            ``"fixed"`` keeps the fitted coefficients (process error only).
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If ``n_sims`` is 0, the triangle is fully developed, or
+            ``parameters`` is unknown.
+        """
+    def prediction_error(self, /) -> dict:
+        """
+        The reserves' prediction error by origin and in total (Taylor and
+        McGuire, CAS Monograph 3, (5-11) to (5-13), Table 5-4): the process
+        error ``phi * sum(mu)`` of the future cells, the parameter error
+        ``g' Sigma g`` by the delta method with ``g = sum(mu * x)``, and the
+        root mean square error of prediction. The total's exceeds the
+        origins' combined as if independent, because every origin shares
+        the development factors.
+        
+        Returns
+        -------
+        dict
+            ``origin`` (the labels, then ``"Total"``), ``reserve``,
+            ``process_se``, ``parameter_se``, ``rmsep`` and ``cv``
+            (``rmsep / reserve``, ``nan`` for a zero reserve), as lists.
+            ``pandas.DataFrame(fit.prediction_error())`` lays it out as
+            Table 5-4.
+        """
+    def predictive_means(self, /) -> list[float]:
+        """
+        Mean of each future cell under normal parameter draws,
+        ``exp(eta + v / 2)``: the fitted mean times the lognormal bias of
+        parameter uncertainty on the log scale.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def reserves(self, /) -> list[float]:
+        """
+        Reserve of each origin, aligned with ``origins``: its future cells'
+        fitted means summed, 0 for a fully developed origin.
+        """
+    def residual_summary(self, /, by: str = "development") -> dict:
+        """
+        The standardized deviance residuals grouped by origin, development
+        age or calendar period: a trend in the calendar means points to a
+        calendar effect the model lacks, a spread that falls with age to a
+        variance that is not ``phi * mu``.
+        
+        Parameters
+        ----------
+        by : {"development", "origin", "calendar"}, default "development"
+        
+        Returns
+        -------
+        dict
+            ``label``, ``n`` (cells with a defined residual), ``mean`` and
+            ``sd`` (divisor ``n - 1``; ``nan`` below 2 cells), as lists.
+        
+        Raises
+        ------
+        ValueError
+            ``by`` is unknown.
+        """
+    def residuals(self, /) -> dict:
+        """
+        The residuals of every observed cell (Taylor and McGuire, CAS
+        Monograph 3, Chapter 6). A cell with leverage 1, the only
+        observation of its origin or age, is fitted exactly and has no
+        standardized residual (``nan``).
+        
+        Returns
+        -------
+        dict
+            One list per column, a row per observed cell, origin-major:
+            ``origin``, ``development`` (age in months), ``calendar`` (the
+            calendar period's label), ``calendar_index`` (0 for the earliest
+            valuation), ``actual``, ``fitted``, ``actual_to_fitted`` (the
+            heat map's cell), ``pearson``, ``deviance``, ``leverage`` (the
+            hat value), ``standardized_deviance`` (R's ``rstandard``) and
+            ``standardized_pearson``.
+        """
+    def total_prediction_error(self, /) -> dict:
+        """
+        The total reserve's prediction error: ``reserve``, ``process_se``,
+        ``parameter_se`` and ``rmsep``.
+        
+        Returns
+        -------
+        dict
+        """
+    @property
+    def total_reserve(self, /) -> float:
+        """
+        Sum of the reserves.
         """
 
 @final
@@ -22848,6 +23258,91 @@ def deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequ
     Returns
     -------
     float
+    """
+
+def diagonal_backtest(triangle: Triangle, column: str, models: Any, n_diagonals: int, *, premium: Any |None = None, n_sims: int = 1000, seed: int = 0, interval: float = 0.9) -> Backtest:
+    """
+    Backtests models on the latest calendar diagonals of one measure column
+    of a single-segment triangle: for each of the last ``n_diagonals``
+    calendar periods, every model is fitted to the cells valued before it
+    and forecasts the cells valued in it, and the forecasts are scored
+    against what came in.
+    
+    The table of cells has one row per origin and development cell, with
+    the incremental values of ``column`` as the response (a cumulative
+    triangle is differenced). The cells of each held-out diagonal are the
+    test set and the earlier ones the training set, so a model sees only
+    what was known. A held-out cell whose origin or development period has
+    no training cell is left out of the scoring of every model (see
+    ``excluded``).
+    
+    A fit of a sampler (``BayesOdp``, ``Meyers``) whose diagnostics fail a
+    threshold is **still scored**: a study over many triangles wants every
+    split and a list of the doubtful ones, not an abort at the first. The
+    failed thresholds are in ``Backtest.warnings`` and
+    ``Backtest.diagnostics()``; a model that cannot be fitted at all raises
+    ``ValueError``.
+    
+    Meyers' own statistic, the percentile of the outcome in the predictive
+    distribution of the ultimate, comes from a fit on the whole upper
+    triangle, not from a backtest: it is the ``cdf`` of the fit's
+    predictive total at the known outcome,
+    ``fit.ultimates.total().cdf(outcome)`` (``Sampled.cdf``). The
+    backtest's ``total_percentile`` is the same quantity for the held-out
+    diagonal's total, from the fit on the cells before it.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+        Cumulative, with one segment.
+    column : str
+        The measure column to forecast.
+    models : dict or list
+        A dict from name to model, or a list of models named by their
+        kind (``"bayes_odp"``, ``"meyers_crc"``, ``"meyers_csr"``,
+        ``"meyers_cay"``, a ``GlmCandidate``'s ``name``); two models with
+        one name are an error. A model is a ``BayesOdp`` or a ``Meyers``
+        (the settings of its own ``fit``, except that ``n_sims`` and
+        ``seed`` are the backtest's) or a ``GlmCandidate``.
+    n_diagonals : int
+        The number of latest calendar diagonals to hold out, oldest first.
+    premium : array-like, optional
+        The exposure of each origin, one value per origin. ``Meyers``
+        needs it; a ``GlmCandidate`` sees it as the ``exposure`` column.
+    n_sims : int, default 1000
+        Simulations per forecast.
+    seed : int, default 0
+        Seed of every fit and simulation; the same seed replays the scores.
+    interval : float, default 0.9
+        The central interval whose coverage is scored.
+    
+    Returns
+    -------
+    Backtest
+    
+    Raises
+    ------
+    ValueError
+        If ``models`` is empty or names two models alike; if ``Meyers`` is
+        given without ``premium``; if the triangle has several segments or
+        lacks the column; if a diagonal cannot be held out; or if a model
+        cannot be fitted.
+    TypeError
+        If a model is not a ``BayesOdp``, a ``Meyers`` or a
+        ``GlmCandidate``.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import GlmCandidate, Triangle, diagonal_backtest
+    >>> paid = [[100.0, 150.0, 165.0, 170.0], [110.0, 170.0, 180.0],
+    ...         [120.0, 175.0], [130.0]]
+    >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+    ...         for d, v in enumerate(r)]
+    >>> origin, age, values = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values})
+    >>> bt = diagonal_backtest(tri, "paid", [GlmCandidate.odp()], 1, n_sims=200)
+    >>> bt.models, bt.n_splits, bt.metrics[:2]
+    (['odp'], 1, ['crps', 'coverage'])
     """
 
 def distortion_envelope(x: Any, premium: float, s: Sequence[float], assets: float |None = None) -> tuple[list[float], list[float]]:

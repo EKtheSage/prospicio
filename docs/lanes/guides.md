@@ -8,13 +8,9 @@ This lane writes about the library and does not change crates; a gap it finds be
 
 <!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
 
-## Now
-
-- (none)
-
 ## Next
 
-- open, waiting on the user
+- [guides-open] open, waiting on the user
 - keep the guides and notebooks current as the library changes, and update them when #192 lands
 
 ## Done

@@ -1778,6 +1778,33 @@ spearman_arg <- function(spearman) {
   as.double(t(spearman))
 }
 
+# The settings of bayes_odp() and bayes_odp_spec() that are numbers, checked.
+bayes_odp_settings <- function(intercept_sd, origin_sd, development_sd, chains, tune, draws,
+                               target_accept, max_depth) {
+  list(intercept_sd = single_number(intercept_sd, "intercept_sd"),
+       origin_sd = single_number(origin_sd, "origin_sd"),
+       development_sd = single_number(development_sd, "development_sd"),
+       chains = single_number(chains, "chains"), tune = single_number(tune, "tune"),
+       draws = single_number(draws, "draws"),
+       target_accept = single_number(target_accept, "target_accept"),
+       max_depth = single_number(max_depth, "max_depth"))
+}
+
+# The settings of meyers() and meyers_spec() that are numbers, checked.
+meyers_settings <- function(logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd,
+                            rho_shape, chains, tune, draws, target_accept, max_depth) {
+  list(logelr_mean = single_number(logelr_mean, "logelr_mean"),
+       logelr_sd = single_number(logelr_sd, "logelr_sd"),
+       origin_sd = single_number(origin_sd, "origin_sd"),
+       development_sd = single_number(development_sd, "development_sd"),
+       gamma_sd = single_number(gamma_sd, "gamma_sd"),
+       rho_shape = single_number(rho_shape, "rho_shape"),
+       chains = single_number(chains, "chains"), tune = single_number(tune, "tune"),
+       draws = single_number(draws, "draws"),
+       target_accept = single_number(target_accept, "target_accept"),
+       max_depth = single_number(max_depth, "max_depth"))
+}
+
 #' Bayesian over-dispersed Poisson chain ladder
 #'
 #' The Bayesian chain ladder of England and Verrall (2002, 2006): the
@@ -1897,12 +1924,12 @@ bayes_odp <- function(triangle, column = NULL, intercept_sd = 10, origin_sd = 10
                       target_accept = 0.95, max_depth = 10) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
+  k <- bayes_odp_settings(intercept_sd, origin_sd, development_sd, chains, tune, draws,
+                           target_accept, max_depth)
   ptr <- rust_result(triangle@ptr$bayes_odp(
-    column, single_number(intercept_sd, "intercept_sd"), single_number(origin_sd, "origin_sd"),
-    single_number(development_sd, "development_sd"), process, single_number(chains, "chains"),
-    single_number(tune, "tune"), single_number(draws, "draws"), single_number(n_sims, "n_sims"),
-    single_number(seed, "seed"), single_number(target_accept, "target_accept"),
-    single_number(max_depth, "max_depth")))
+    column, k$intercept_sd, k$origin_sd, k$development_sd, process, k$chains, k$tune, k$draws,
+    single_number(n_sims, "n_sims"), single_number(seed, "seed"), k$target_accept,
+    k$max_depth))
   fit <- bayes_odp_fit(ptr = ptr)
   failed <- fit@diagnostics$warnings
   if (length(failed)) {
@@ -2568,14 +2595,12 @@ meyers <- function(triangle, column, premium, model = c("crc", "csr", "cay"),
     }
   }
   model <- match.arg(model)
+  k <- meyers_settings(logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape,
+                      chains, tune, draws, target_accept, max_depth)
   ptr <- rust_result(triangle@ptr$meyers(
-    column, premium, model, single_number(logelr_mean, "logelr_mean"),
-    single_number(logelr_sd, "logelr_sd"), single_number(origin_sd, "origin_sd"),
-    single_number(development_sd, "development_sd"), single_number(gamma_sd, "gamma_sd"),
-    single_number(rho_shape, "rho_shape"), single_number(chains, "chains"),
-    single_number(tune, "tune"), single_number(draws, "draws"),
-    single_number(n_sims, "n_sims"), single_number(seed, "seed"),
-    single_number(target_accept, "target_accept"), single_number(max_depth, "max_depth")))
+    column, premium, model, k$logelr_mean, k$logelr_sd, k$origin_sd, k$development_sd,
+    k$gamma_sd, k$rho_shape, k$chains, k$tune, k$draws, single_number(n_sims, "n_sims"),
+    single_number(seed, "seed"), k$target_accept, k$max_depth))
   fit <- meyers_fit(ptr = ptr)
   failed <- fit@diagnostics$warnings
   if (length(failed)) {
@@ -4999,5 +5024,385 @@ S7::method(print, compartmental_fit) <- function(x, ...) {
   cat(sprintf("total reserve: posterior mean %s, sd %s\n", format(mean(r), digits = 10),
               format(totals_frame(x)$std_dev, digits = 6)))
   print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}
+
+# The model settings of a diagonal backtest ----------------------------------
+
+backtest_model_spec <- S7::new_class("backtest_model_spec", package = "prospicio", abstract = TRUE)
+
+#' Models for the diagonal backtest
+#'
+#' Settings objects that say which models [diagonal_backtest()] fits on
+#' each training triangle. They hold the settings of the model and no data:
+#' the triangle, the column and the premium come from the backtest, and so
+#' do the number of simulations and the seed, so these functions take the
+#' settings of [bayes_odp()] and [meyers()] without `triangle`, `column`,
+#' `premium`, `n_sims` and `seed`, with the same names, defaults and
+#' checks.
+#'
+#' * `odp_glm_spec()` is the over-dispersed Poisson GLM of the incremental
+#'   values with an intercept, an origin factor and a development factor
+#'   (the chain ladder's model), fitted by quasi-likelihood. It has no
+#'   sampler, so the backtest reports no diagnostics for it.
+#' * `bayes_odp_spec()` is the Bayesian chain ladder of [bayes_odp()].
+#' * `meyers_spec()` is Meyers' CRC, CSR or CAY model of [meyers()]; the
+#'   backtest needs its `premium`.
+#'
+#' @param intercept_sd,origin_sd,development_sd Standard deviations of the
+#'   normal priors of [bayes_odp()]: on the intercept, on each origin effect
+#'   and on each development effect. For `meyers_spec()`, `origin_sd` and
+#'   `development_sd` are those of the priors on `alpha[w]` and `beta[d]`.
+#' @param process Process error of [bayes_odp()]: `"gamma"` or `"none"`.
+#' @param model Meyers' model: `"crc"`, `"csr"` or `"cay"`.
+#' @param logelr_mean,logelr_sd Mean and standard deviation of the normal
+#'   prior on the log expected loss ratio.
+#' @param gamma_sd Standard deviation of the normal prior on `gamma`
+#'   (`"csr"` only).
+#' @param rho_shape Both shapes of the beta prior on `(1 - rho) / 2`
+#'   (`"cay"` only).
+#' @param chains,tune,draws NUTS chains, warm-up draws per chain and kept
+#'   draws per chain.
+#' @param target_accept Target mean acceptance rate of the step-size
+#'   adaptation.
+#' @param max_depth Largest NUTS tree depth.
+#' @returns A `bayes_odp_spec`, `meyers_spec` or `odp_glm_spec` object, to
+#'   put in the `models` list of [diagonal_backtest()].
+#' @seealso [diagonal_backtest()], [bayes_odp()], [meyers()].
+#' @export
+#' @examples
+#' bayes_odp_spec(chains = 2, tune = 200, draws = 200)
+#' meyers_spec(model = "csr")
+#' odp_glm_spec()
+odp_glm_spec <- S7::new_class(
+  "odp_glm_spec",
+  package = "prospicio",
+  parent = backtest_model_spec,
+  constructor = function() S7::new_object(S7::S7_object())
+)
+
+#' @rdname odp_glm_spec
+#' @export
+bayes_odp_spec <- S7::new_class(
+  "bayes_odp_spec",
+  package = "prospicio",
+  parent = backtest_model_spec,
+  properties = list(
+    intercept_sd = S7::class_double, origin_sd = S7::class_double,
+    development_sd = S7::class_double, process = S7::class_character,
+    chains = S7::class_double, tune = S7::class_double, draws = S7::class_double,
+    target_accept = S7::class_double, max_depth = S7::class_double
+  ),
+  constructor = function(intercept_sd = 10, origin_sd = 10, development_sd = 10,
+                         process = c("gamma", "none"), chains = 4, tune = 1000, draws = 1000,
+                         target_accept = 0.95, max_depth = 10) {
+    process <- match.arg(process)
+    k <- bayes_odp_settings(intercept_sd, origin_sd, development_sd, chains, tune, draws,
+                            target_accept, max_depth)
+    S7::new_object(S7::S7_object(), intercept_sd = k$intercept_sd, origin_sd = k$origin_sd,
+                   development_sd = k$development_sd, process = process, chains = k$chains,
+                   tune = k$tune, draws = k$draws, target_accept = k$target_accept,
+                   max_depth = k$max_depth)
+  }
+)
+
+#' @rdname odp_glm_spec
+#' @export
+meyers_spec <- S7::new_class(
+  "meyers_spec",
+  package = "prospicio",
+  parent = backtest_model_spec,
+  properties = list(
+    model = S7::class_character, logelr_mean = S7::class_double, logelr_sd = S7::class_double,
+    origin_sd = S7::class_double, development_sd = S7::class_double, gamma_sd = S7::class_double,
+    rho_shape = S7::class_double, chains = S7::class_double, tune = S7::class_double,
+    draws = S7::class_double, target_accept = S7::class_double, max_depth = S7::class_double
+  ),
+  constructor = function(model = c("crc", "csr", "cay"), logelr_mean = -0.4, logelr_sd = 3.162,
+                         origin_sd = 3.162, development_sd = 3.162, gamma_sd = 0.05,
+                         rho_shape = 2, chains = 4, tune = 1000, draws = 2000,
+                         target_accept = 0.95, max_depth = 10) {
+    model <- match.arg(model)
+    k <- meyers_settings(logelr_mean, logelr_sd, origin_sd, development_sd, gamma_sd, rho_shape,
+                         chains, tune, draws, target_accept, max_depth)
+    S7::new_object(S7::S7_object(), model = model, logelr_mean = k$logelr_mean,
+                   logelr_sd = k$logelr_sd, origin_sd = k$origin_sd,
+                   development_sd = k$development_sd, gamma_sd = k$gamma_sd,
+                   rho_shape = k$rho_shape, chains = k$chains, tune = k$tune, draws = k$draws,
+                   target_accept = k$target_accept, max_depth = k$max_depth)
+  }
+)
+
+sampler_line <- function(x) {
+  sprintf("%s chains of %s draws after %s warm-up, target_accept %s, max_depth %s",
+          format(x@chains), format(x@draws), format(x@tune), format(x@target_accept),
+          format(x@max_depth))
+}
+
+S7::method(print, odp_glm_spec) <- function(x, ...) {
+  cat("<odp_glm_spec> over-dispersed Poisson GLM: intercept, origin factor, development factor\n")
+  invisible(x)
+}
+
+S7::method(print, bayes_odp_spec) <- function(x, ...) {
+  cat(sprintf("<bayes_odp_spec> prior sds %s (intercept), %s (origin), %s (development), %s process\n",
+              format(x@intercept_sd), format(x@origin_sd), format(x@development_sd), x@process))
+  cat(sampler_line(x), "\n", sep = "")
+  invisible(x)
+}
+
+S7::method(print, meyers_spec) <- function(x, ...) {
+  cat(sprintf("<meyers_spec> %s, logelr ~ N(%s, %s), origin sd %s, development sd %s",
+              x@model, format(x@logelr_mean), format(x@logelr_sd), format(x@origin_sd),
+              format(x@development_sd)))
+  cat(switch(x@model, csr = sprintf(", gamma sd %s", format(x@gamma_sd)),
+             cay = sprintf(", rho shape %s", format(x@rho_shape)), ""), "\n", sep = "")
+  cat(sampler_line(x), "\n", sep = "")
+  invisible(x)
+}
+
+# The default name of a spec in a backtest, and the list the binding reads.
+backtest_spec_name <- function(spec) {
+  if (S7::S7_inherits(spec, odp_glm_spec)) {
+    "odp"
+  } else if (S7::S7_inherits(spec, bayes_odp_spec)) {
+    "bayes_odp"
+  } else {
+    paste0("meyers_", spec@model)
+  }
+}
+
+backtest_spec_wire <- function(spec, name) {
+  run <- function(x) c(x@chains, x@tune, x@draws, 1, 0, x@target_accept, x@max_depth)
+  if (S7::S7_inherits(spec, odp_glm_spec)) {
+    list(name = name, kind = "odp_glm", model = "", process = "", priors = numeric(),
+         run = numeric())
+  } else if (S7::S7_inherits(spec, bayes_odp_spec)) {
+    list(name = name, kind = "bayes_odp", model = "", process = spec@process,
+         priors = c(spec@intercept_sd, spec@origin_sd, spec@development_sd), run = run(spec))
+  } else {
+    list(name = name, kind = "meyers", model = spec@model, process = "",
+         priors = c(spec@logelr_mean, spec@logelr_sd, spec@origin_sd, spec@development_sd,
+                    spec@gamma_sd, spec@rho_shape),
+         run = run(spec))
+  }
+}
+
+# Diagonal backtest ------------------------------------------------------------
+
+#' Diagonal backtest
+#'
+#' The retrospective validation of Meyers (2015): each model is fitted on a
+#' triangle cut back to an earlier calendar diagonal and forecasts the
+#' incremental values of the diagonal that came in next, and the forecast
+#' is scored against what happened. This is done for the latest
+#' `n_diagonals` calendar diagonals (oldest first), for every model in
+#' `models`, with the same `n_sims` joint draws from `seed` for each model
+#' and split, so the models share their random numbers.
+#'
+#' A held-out cell whose origin or development age has no training cell
+#' that every model fits on cannot be forecast by a model with origin and
+#' development effects (the newest origin and the oldest age on the
+#' diagonal, or an age whose only training cell is a negative increment the
+#' Poisson GLM drops). It is left out for every model: `excluded` counts
+#' them, and `scored_rows` lists the cells that were scored.
+#'
+#' The metrics, per model and held-out diagonal (`scores`, and their means
+#' over the diagonals in `mean`):
+#'
+#' * `crps`: the mean continuous ranked probability score of the cells'
+#'   draws.
+#' * `coverage`: the share of cells inside the central `interval` of their
+#'   draws.
+#' * `actual_vs_expected`: actual over expected on the diagonal's total.
+#' * `total_crps`: the CRPS of the diagonal total, from the draws summed
+#'   per simulation.
+#' * `mean_log_density`: the mean over the scored cells of the model's
+#'   held-out log density (`NA` for a model that gives none).
+#' * `total_percentile`: the share of the simulated diagonal totals at or
+#'   below the actual total, the probability integral transform of the
+#'   diagonal: uniform over many triangles for a calibrated model.
+#'
+#' Meyers' own statistic, the percentile of the outcome's ultimate, is a
+#' different calculation: it comes from a fit on the whole upper triangle,
+#' and is the cdf of that fit's predictive total at the known outcome:
+#' `cdf(total(fit@ultimates), outcome)` for [meyers()] ([cdf()], [total()]),
+#' or `cdf(total(fit@reserves), outcome - latest)` for [bayes_odp()], with
+#' `latest` the total of the triangle's latest diagonal.
+#'
+#' A Bayesian fit whose MCMC diagnostics fail (R-hat above 1.01, bulk or
+#' tail ESS below 100 per chain, a divergent transition) is still scored,
+#' unlike [bayes_odp()], which warns: a study over many triangles wants
+#' every split and a list of the doubtful ones. `diagnostics` has one row
+#' per model and split, and `warnings` lists every message. A model that
+#' fails to fit is an error naming it. No R warning is raised for a failed
+#' diagnostic; read `warnings`.
+#'
+#' Errors: a `models` that is not a non-empty list of [odp_glm_spec()],
+#' [bayes_odp_spec()] and [meyers_spec()] objects; two models with the same
+#' name (checked before any fit); a triangle with several segments or with
+#' fewer than `n_diagonals + 1` calendar diagonals; `premium` missing for
+#' [meyers_spec()], or not positive and finite; an invalid sampler setting.
+#'
+#' @param triangle A cumulative [triangle] with one segment.
+#' @param column Name of the column to forecast.
+#' @param models A list of [odp_glm_spec()], [bayes_odp_spec()] and
+#'   [meyers_spec()] objects. Its names are the models' names in the results;
+#'   an entry without a name is called `"odp"`, `"bayes_odp"` or
+#'   `"meyers_"` and the model's name (`"meyers_crc"`). Two models cannot
+#'   share a name.
+#' @param n_diagonals Number of latest calendar diagonals to hold out, one
+#'   split each.
+#' @param premium Premium of each origin, for [meyers_spec()]: one number
+#'   per origin, or the name of a column of `triangle` whose latest value
+#'   per origin is taken as [meyers()] takes it. `NULL` when no model needs
+#'   it.
+#' @param n_sims Number of joint draws of each forecast.
+#' @param seed Seed of the sampler chains and of the draws, a non-negative
+#'   whole number.
+#' @param interval Width of the central interval of the `coverage` metric,
+#'   in (0, 1).
+#' @param raw The Rust result; used internally.
+#' @returns A `backtest` object with properties:
+#'   `models` (the names), `metrics`, `n_splits`, `diagonals` (the calendar
+#'   period held out in each split, as a label such as `"2021"`, as the
+#'   `calendar` column of the cells labels it, oldest first), `scores` (a data.frame in long form: `model`, `diagonal`,
+#'   `metric`, `value`), `mean` (a data.frame: `model` and one column per
+#'   metric, the mean over the diagonals), `excluded` (held-out cells left
+#'   out of each split), `scored_rows` (per split, the scored cells as
+#'   positions in the row-major grid of origins by development ages, from
+#'   1; Python's `scored_rows` count from 0), `log_densities` (a list by model of the held-out log densities of
+#'   every scored cell, the splits in order and each model's values for
+#'   the same cells, `NULL` where the model gives none), `diagnostics` (a
+#'   data.frame: `model`, `diagonal`, `max_rhat`, `min_ess_bulk`,
+#'   `min_ess_tail`, `divergences` and `n_warnings`; one row for every model
+#'   and split, `NA` for a model with no sampler) and `warnings` (a
+#'   data.frame: `model`, `diagonal`, `message`).
+#' @seealso [odp_glm_spec()], [bayes_odp()], [meyers()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2016:2021, 6:1),
+#'                    age = unlist(lapply(6:1, function(k) 12 * seq_len(k))),
+#'                    paid = c(952, 1529, 2813, 3647, 3724, 3832, 849, 1564, 2202, 2432,
+#'                             2468, 983, 2211, 2830, 3832, 1657, 2685, 3169, 932, 1940, 1162))
+#' tri <- triangle(long, "year", "age", "paid")
+#' bt <- diagonal_backtest(tri, "paid", list(odp = odp_glm_spec()), n_diagonals = 2,
+#'                         n_sims = 500, seed = 1)
+#' bt@mean
+#' bt@diagnostics
+backtest <- S7::new_class(
+  "backtest",
+  package = "prospicio",
+  properties = list(
+    models = S7::class_character, metrics = S7::class_character, n_splits = S7::class_integer,
+    diagonals = S7::class_character, scores = S7::class_data.frame, mean = S7::class_data.frame,
+    excluded = S7::class_integer, scored_rows = S7::class_list, log_densities = S7::class_list,
+    diagnostics = S7::class_data.frame, warnings = S7::class_data.frame
+  ),
+  constructor = function(raw) {
+    models <- raw$models
+    metrics <- raw$metrics
+    nm <- length(models)
+    nk <- length(metrics)
+    ns <- as.integer(raw$n_splits)
+    diagonals <- as.character(raw$diagonals)
+    # Rust lays the scores out model, then metric, then split.
+    values <- array(raw$scores, dim = c(ns, nk, nm))
+    rows <- expand.grid(metric = seq_len(nk), split = seq_len(ns), model = seq_len(nm))
+    scores <- data.frame(model = models[rows$model], diagonal = diagonals[rows$split],
+                         metric = metrics[rows$metric],
+                         value = values[cbind(rows$split, rows$metric, rows$model)],
+                         stringsAsFactors = FALSE)
+    scores$value[is.nan(scores$value)] <- NA_real_
+    means <- data.frame(model = models, stringsAsFactors = FALSE)
+    for (j in seq_len(nk)) {
+      means[[metrics[j]]] <- vapply(seq_len(nm), function(m) {
+        v <- mean(values[, j, m])
+        if (is.nan(v)) NA_real_ else v
+      }, numeric(1))
+    }
+    each <- expand.grid(split = seq_len(ns), model = seq_len(nm))
+    no_nan <- function(x) replace(x, is.nan(x), NA_real_)
+    count <- function(x) as.integer(no_nan(x))
+    diagnostics <- data.frame(model = models[each$model], diagonal = diagonals[each$split],
+                              max_rhat = no_nan(raw$max_rhat),
+                              min_ess_bulk = no_nan(raw$min_ess_bulk),
+                              min_ess_tail = no_nan(raw$min_ess_tail),
+                              divergences = count(raw$divergences),
+                              n_warnings = count(raw$n_warnings), stringsAsFactors = FALSE)
+    warnings <- data.frame(model = models[as.integer(raw$warning_model) + 1L],
+                           diagonal = diagonals[as.integer(raw$warning_split) + 1L],
+                           message = raw$warning_message, stringsAsFactors = FALSE)
+    log_densities <- raw$log_densities
+    names(log_densities) <- models
+    S7::new_object(S7::S7_object(), models = models, metrics = metrics, n_splits = ns,
+                   diagonals = diagonals, scores = scores, mean = means,
+                   excluded = as.integer(raw$excluded),
+                   scored_rows = lapply(raw$scored_rows, function(r) as.integer(r) + 1L),
+                   log_densities = log_densities, diagnostics = diagnostics, warnings = warnings)
+  }
+)
+
+#' @rdname backtest
+#' @export
+diagonal_backtest <- function(triangle, column, models, n_diagonals, premium = NULL,
+                              n_sims = 1000, seed = 0, interval = 0.9) {
+  check_triangle(triangle)
+  if (!is.character(column) || length(column) != 1 || is.na(column)) {
+    stop("column must be the name of a column", call. = FALSE)
+  }
+  if (!is.list(models) || length(models) == 0) {
+    stop("models must be a non-empty list of model specs: odp_glm_spec(), bayes_odp_spec() ",
+         "or meyers_spec()", call. = FALSE)
+  }
+  for (spec in models) {
+    if (!S7::S7_inherits(spec, backtest_model_spec)) {
+      stop("every entry of models must be odp_glm_spec(), bayes_odp_spec() or meyers_spec()",
+           call. = FALSE)
+    }
+  }
+  given <- names(models)
+  if (is.null(given)) given <- rep("", length(models))
+  given <- ifelse(is.na(given) | given == "", vapply(models, backtest_spec_name, ""), given)
+  repeated <- unique(given[duplicated(given)])
+  if (length(repeated)) {
+    stop(sprintf("two models are named %s: name each model once, as in list(a = ..., b = ...)",
+                 paste0('"', repeated, '"', collapse = ", ")), call. = FALSE)
+  }
+  if (is.character(premium)) {
+    if (length(premium) != 1 || is.na(premium) || !premium %in% triangle@columns) {
+      stop("premium must be a number per origin or the name of a column of the triangle",
+           call. = FALSE)
+    }
+    latest <- latest_diagonal(triangle)
+    if (dim(latest)[1] != 1) {
+      stop("the backtest needs a triangle with one segment", call. = FALSE)
+    }
+    premium <- as.numeric(latest[1, premium, ])
+  } else if (!is.null(premium) && (!is.numeric(premium) || !is.null(dim(premium)))) {
+    stop("premium must be NULL, a numeric vector with one value per origin, or a column name",
+         call. = FALSE)
+  }
+  if (is.null(premium) && any(vapply(models, S7::S7_inherits, NA, meyers_spec))) {
+    stop("Meyers needs premium, one value per origin", call. = FALSE)
+  }
+  specs <- unname(Map(backtest_spec_wire, models, given))
+  raw <- rust_result(triangle@ptr$diagonal_backtest(
+    column, if (is.null(premium)) NULL else as.double(premium), specs,
+    single_number(n_diagonals, "n_diagonals"), single_number(n_sims, "n_sims"),
+    single_number(seed, "seed"), single_number(interval, "interval")))
+  backtest(raw)
+}
+
+S7::method(print, backtest) <- function(x, ...) {
+  cat(sprintf("<backtest> %d model%s, %d held-out diagonal%s; mean scores:\n",
+              length(x@models), if (length(x@models) == 1) "" else "s", x@n_splits,
+              if (x@n_splits == 1) "" else "s"))
+  print(x@mean, row.names = FALSE)
+  n <- nrow(x@warnings)
+  if (n) {
+    cat(sprintf("%d diagnostics warning%s (see `warnings`); the splits were scored all the same\n",
+                n, if (n == 1) "" else "s"))
+  }
   invisible(x)
 }

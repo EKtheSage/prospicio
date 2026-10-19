@@ -26,6 +26,7 @@ mod natural;
 #[cfg(feature = "nn")]
 mod nn;
 mod normal;
+mod odp_glm;
 mod pareto;
 mod payout;
 mod pnl;
@@ -102,6 +103,8 @@ mod prospicio_native {
     #[pymodule_export]
     use super::normal::{PyNormal, PyOgive};
     #[pymodule_export]
+    use super::odp_glm::{PyOdpGlm, PyOdpGlmFit};
+    #[pymodule_export]
     use super::pareto::{
         PyAffine, PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto,
         PyInverseGamma, PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
@@ -137,14 +140,14 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::reserving::{
-        PyBayesBf, PyBayesBfFit, PyBayesOdp, PyBayesOdpFit, PyBayesOdpFits, PyBayesOneYearFit,
-        PyBayesOneYearFits, PyBenktander, PyBornhuetterFerguson, PyCapeCod, PyCapeCodFit,
-        PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit,
-        PyClarkLdf, PyCompartmental, PyCompartmentalFit, PyCompartmentalOneYearFit,
-        PyCompartmentalPriors, PyExpectedLoss, PyExpectedLossFit, PyMack, PyMackBootstrap,
-        PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits, PyOdpBootstrap,
-        PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear,
-        PyTriangle,
+        PyBacktest, PyBayesBf, PyBayesBfFit, PyBayesOdp, PyBayesOdpFit, PyBayesOdpFits,
+        PyBayesOneYearFit, PyBayesOneYearFits, PyBenktander, PyBornhuetterFerguson, PyCapeCod,
+        PyCapeCodFit, PyChainLadder, PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod,
+        PyClarkFit, PyClarkLdf, PyCompartmental, PyCompartmentalFit, PyCompartmentalOneYearFit,
+        PyCompartmentalPriors, PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyMack,
+        PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits,
+        PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve,
+        PyTailLogLinear, PyTriangle, diagonal_backtest,
     };
     #[pymodule_export]
     use super::risk::{

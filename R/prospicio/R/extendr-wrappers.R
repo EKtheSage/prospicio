@@ -1615,6 +1615,8 @@ grouped_goodness_of_fit_rust <- function(severity, bounds, counts) .Call(wrap__g
 
 lev_distance_fit_rust <- function(family, sizes, empirical, weights, start) .Call(wrap__lev_distance_fit_rust, family, sizes, empirical, weights, start)
 
+odp_glm_fit_rust <- function(triangle, column, tolerance, max_iterations) .Call(wrap__odp_glm_fit_rust, triangle, column, tolerance, max_iterations)
+
 MixtureDist <- new.env(parent = emptyenv())
 
 MixtureDist$new <- function(weights, components) .Call(wrap__MixtureDist__new, weights, components)
@@ -1968,6 +1970,8 @@ Triangle$meyers_segments <- function(column, premium, model, logelr_mean, logelr
 Triangle$meyers_one_year <- function(column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__meyers_one_year, self, column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims)
 
 Triangle$meyers_one_year_segments <- function(column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman) .Call(wrap__Triangle__meyers_one_year_segments, self, column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman)
+
+Triangle$diagonal_backtest <- function(column, premium, specs, n_diagonals, n_sims, seed, interval) .Call(wrap__Triangle__diagonal_backtest, self, column, premium, specs, n_diagonals, n_sims, seed, interval)
 
 Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
 
@@ -2923,3 +2927,37 @@ CasualtyBook$count_test <- function(sizes, threshold, counts, excess, exposure_y
 
 #' @export
 `[[.CasualtyBook` <- `$.CasualtyBook`
+
+OdpGlmFit <- new.env(parent = emptyenv())
+
+OdpGlmFit$origins <- function() .Call(wrap__OdpGlmFit__origins, self)
+
+OdpGlmFit$reserves <- function() .Call(wrap__OdpGlmFit__reserves, self)
+
+OdpGlmFit$total_reserve <- function() .Call(wrap__OdpGlmFit__total_reserve, self)
+
+OdpGlmFit$dispersion <- function() .Call(wrap__OdpGlmFit__dispersion, self)
+
+OdpGlmFit$coefficient_names <- function() .Call(wrap__OdpGlmFit__coefficient_names, self)
+
+OdpGlmFit$coefficients <- function() .Call(wrap__OdpGlmFit__coefficients, self)
+
+OdpGlmFit$std_errors <- function() .Call(wrap__OdpGlmFit__std_errors, self)
+
+OdpGlmFit$covariance <- function() .Call(wrap__OdpGlmFit__covariance, self)
+
+OdpGlmFit$future <- function() .Call(wrap__OdpGlmFit__future, self)
+
+OdpGlmFit$prediction_error <- function() .Call(wrap__OdpGlmFit__prediction_error, self)
+
+OdpGlmFit$residuals <- function() .Call(wrap__OdpGlmFit__residuals, self)
+
+OdpGlmFit$residual_summary <- function(by) .Call(wrap__OdpGlmFit__residual_summary, self, by)
+
+OdpGlmFit$predict_distribution <- function(n_sims, seed, parameters) .Call(wrap__OdpGlmFit__predict_distribution, self, n_sims, seed, parameters)
+
+#' @export
+`$.OdpGlmFit` <- function (self, name) { func <- OdpGlmFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.OdpGlmFit` <- `$.OdpGlmFit`

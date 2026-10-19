@@ -49,6 +49,7 @@ pub mod chain_ladder;
 pub mod clark;
 pub mod dependence;
 pub mod development;
+pub mod diagnostics;
 pub mod error;
 pub mod expected_loss;
 pub mod frame;
@@ -64,12 +65,10 @@ pub mod triangle;
 pub mod view;
 
 pub use backtest::{
-    Backtest, CellForecast, GlmCandidate, METRICS, TriangleModel, diagonal_backtest,
+    Backtest, CellForecast, GlmCandidate, METRICS, NamedModel, TriangleModel, diagonal_backtest,
 };
 #[cfg(feature = "bayes")]
-pub use bayes::{
-    BayesBf, BayesBfFit, BayesOdp, BayesOdpFit, Diagnostics, Meyers, MeyersFit, MeyersModel,
-};
+pub use bayes::{BayesBf, BayesBfFit, BayesOdp, BayesOdpFit, Meyers, MeyersFit, MeyersModel};
 pub use bootstrap::{
     OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
 };
@@ -77,6 +76,7 @@ pub use chain_ladder::{ChainLadder, ChainLadderFit};
 pub use clark::{ClarkCapeCod, ClarkFit, ClarkLdf, GrowthCurve};
 pub use dependence::SegmentDependence;
 pub use development::{Average, Development, DevelopmentFit, SigmaInterpolation};
+pub use diagnostics::Diagnostics;
 pub use error::{Error, Result};
 pub use expected_loss::{
     Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
@@ -86,7 +86,10 @@ pub use mack::{Mack, MackFit};
 pub use mack_bootstrap::{
     MackBootstrap, MackBootstrapFit, MackBootstrapFits, MackBootstrapSegment, MackProcess,
 };
-pub use odp_glm::{OdpGlm, OdpGlmFit};
+pub use odp_glm::{
+    OdpGlm, OdpGlmFit, OdpPredictionError, OdpResiduals, ResidualGroup, ResidualSummary,
+    SumPredictionError,
+};
 pub use one_year::ClaimsDevelopmentResult;
 pub use one_year_bootstrap::{OneYearFit, OneYearFits, OneYearMethod, OneYearSegment};
 pub use pattern::{OneYearPattern, PatternKind, PatternWeight, SelectedPattern};

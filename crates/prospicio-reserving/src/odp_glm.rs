@@ -7,10 +7,16 @@
 //! [`TriangleFrame`] and predicts the future rows. With these factors the
 //! fitted future cells summed by origin are the volume-weighted Chain
 //! Ladder reserves (Renshaw and Verrall, 1998), and Pearson's dispersion is
-//! the ODP bootstrap's scale. See `docs/design/triangle.md`, "ODP GLM".
+//! the ODP bootstrap's scale. [`OdpGlmFit::prediction_error`] gives the
+//! reserves' analytic prediction error by the delta method (Taylor and
+//! McGuire, CAS Monograph 3, Table 5-4), and [`OdpGlmFit::residuals`] the
+//! fit's residuals by cell, summarized by origin, development or calendar
+//! period (their Chapter 6). See `docs/design/triangle.md`, "ODP GLM".
 
 use prospicio_core::{Lag, Period};
+pub use prospicio_glm::diagnostics::SumPredictionError;
 use prospicio_glm::{Glm, GlmFit, ParameterDraws};
+use prospicio_models::Column;
 use prospicio_models::{Coding, Design, Fitted, Model, Terms};
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution};
 
@@ -84,8 +90,146 @@ pub struct OdpGlmFit {
     /// Reserve of each origin, aligned with `origins`: its future means
     /// summed, 0 for a fully developed origin.
     pub reserves: Vec<f64>,
+    /// The observed cells the GLM was fitted to, as (origin, age in
+    /// months), origin-major.
+    pub observed: Vec<(Period, Lag)>,
+    /// Calendar period of each observed cell, aligned with `observed`:
+    /// its 0-based index from the earliest valuation and its label at the
+    /// development grain.
+    pub observed_calendar: Vec<(i64, String)>,
+    /// Incremental value of each observed cell, aligned with `observed`.
+    pub observed_values: Vec<f64>,
     /// Design of the future cells, for prediction.
     future_design: Design,
+    /// Design of the observed cells.
+    observed_design: Design,
+}
+
+/// The residuals of an ODP GLM, one per observed cell in the order of
+/// [`OdpGlmFit::observed`], from [`OdpGlmFit::residuals`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct OdpResiduals {
+    /// Origin of each cell.
+    pub origin: Vec<Period>,
+    /// Age in months of each cell.
+    pub development: Vec<Lag>,
+    /// Calendar period of each cell: its 0-based index from the earliest
+    /// valuation and its label.
+    pub calendar: Vec<(i64, String)>,
+    /// The incremental value.
+    pub actual: Vec<f64>,
+    /// The fitted mean `μ`.
+    pub fitted: Vec<f64>,
+    /// `actual / fitted`, the cell of the actual-to-fitted heat map.
+    pub actual_to_fitted: Vec<f64>,
+    /// Pearson residual `(y − μ) / √μ`.
+    pub pearson: Vec<f64>,
+    /// Deviance residual `sign(y − μ) √(2 (y ln(y / μ) − (y − μ)))`.
+    pub deviance: Vec<f64>,
+    /// The hat value `h`, the diagonal of the hat matrix.
+    pub leverage: Vec<f64>,
+    /// `deviance / √(φ (1 − h))`, R's `rstandard`; NaN for a cell with
+    /// leverage 1 (the only cell of its origin or age, fitted exactly).
+    pub standardized_deviance: Vec<f64>,
+    /// `pearson / √(φ (1 − h))`; NaN where `standardized_deviance` is.
+    pub standardized_pearson: Vec<f64>,
+}
+
+/// How [`OdpResiduals::summary`] groups the cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResidualGroup {
+    /// By origin period, in the triangle's order.
+    Origin,
+    /// By development age.
+    Development,
+    /// By calendar period, earliest first.
+    Calendar,
+}
+
+/// The standardized deviance residuals of one group of cells, from
+/// [`OdpResiduals::summary`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResidualSummary {
+    /// The origin, age in months, or calendar period.
+    pub label: String,
+    /// Cells in the group with a defined residual (leverage below 1).
+    pub n: usize,
+    /// Their mean; NaN when `n` is 0.
+    pub mean: f64,
+    /// Their sample standard deviation (divisor `n − 1`); NaN when `n` is
+    /// below 2.
+    pub sd: f64,
+}
+
+/// Leverage at or above which a cell is taken as fitted exactly.
+const EXACT_FIT: f64 = 1.0 - 1e-9;
+
+impl OdpResiduals {
+    /// The standardized deviance residuals grouped by origin, development
+    /// age or calendar period: a row per group, with the count, mean and
+    /// standard deviation of its defined residuals. A trend in the means
+    /// over calendar periods points to a calendar effect the model lacks;
+    /// a spread that falls with age, to a variance that is not `φ μ`
+    /// (Taylor and McGuire, CAS Monograph 3, Chapter 6).
+    pub fn summary(&self, group: ResidualGroup) -> Vec<ResidualSummary> {
+        let mut keys: Vec<(i64, String)> = Vec::new();
+        let mut members: Vec<Vec<f64>> = Vec::new();
+        for i in 0..self.origin.len() {
+            let key = match group {
+                ResidualGroup::Origin => (0, self.origin[i].to_string()),
+                ResidualGroup::Development => (
+                    i64::from(self.development[i]),
+                    self.development[i].to_string(),
+                ),
+                ResidualGroup::Calendar => self.calendar[i].clone(),
+            };
+            let at = match keys.iter().position(|k| k.1 == key.1) {
+                Some(at) => at,
+                None => {
+                    keys.push(key);
+                    members.push(Vec::new());
+                    keys.len() - 1
+                }
+            };
+            let r = self.standardized_deviance[i];
+            if !r.is_nan() {
+                members[at].push(r);
+            }
+        }
+        let mut rows: Vec<(i64, ResidualSummary)> = keys
+            .into_iter()
+            .zip(members)
+            .map(|((order, label), r)| {
+                let n = r.len();
+                let mean = r.iter().sum::<f64>() / n as f64;
+                let sd = if n < 2 {
+                    f64::NAN
+                } else {
+                    (r.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64).sqrt()
+                };
+                (order, ResidualSummary { label, n, mean, sd })
+            })
+            .collect();
+        // Origins keep the triangle's order; ages and calendar periods sort
+        // by their number.
+        rows.sort_by_key(|(order, _)| *order);
+        rows.into_iter().map(|(_, row)| row).collect()
+    }
+}
+
+/// The analytic prediction error of an ODP GLM's reserves: for each origin
+/// and in total, the reserve, its process variance `φ Σ μ` and its
+/// parameter variance `g' Σ g` by the delta method, `g = Σ μ x` over the
+/// future cells (Taylor and McGuire, CAS Monograph 3, (5-11) to (5-13)).
+#[derive(Debug, Clone, PartialEq)]
+pub struct OdpPredictionError {
+    /// One per origin, aligned with [`OdpGlmFit::origins`]; zero for a
+    /// fully developed origin.
+    pub by_origin: Vec<SumPredictionError>,
+    /// The total reserve. Its variance exceeds the sum of the origins'
+    /// because their parameter errors are correlated: every origin shares
+    /// the development factors.
+    pub total: SumPredictionError,
 }
 
 impl OdpGlm {
@@ -164,8 +308,8 @@ impl OdpGlm {
             .factor_with_reference("origin", &origins[0].to_string())
             .factor_with_reference("development", &ages[0].to_string())
             .fit(cells.frame())?;
-        let design = coding.design(&cells.select(observed)?)?;
-        let glm = self.glm().fit(&design, &y)?;
+        let observed_design = coding.design(&cells.select(observed)?)?;
+        let glm = self.glm().fit(&observed_design, &y)?;
         let future_design = coding.design(&cells.select(future)?)?;
         let future_means = glm.predict(&future_design)?;
 
@@ -173,10 +317,16 @@ impl OdpGlm {
         for (&r, m) in future.iter().zip(&future_means) {
             reserves[cells.origin_of(r)] += m;
         }
-        let future = future
+        let cell = |r: usize| (origins[cells.origin_of(r)], ages[cells.development_of(r)]);
+        let future = future.iter().map(|&r| cell(r)).collect();
+        let Some(Column::Categorical(calendar)) = cells.frame().column("calendar") else {
+            unreachable!("a triangle frame has a calendar factor")
+        };
+        let observed_calendar = observed
             .iter()
-            .map(|&r| (origins[cells.origin_of(r)], ages[cells.development_of(r)]))
+            .map(|&r| (cells.calendar_of(r), calendar[r].clone()))
             .collect();
+        let observed_cells = observed.iter().map(|&r| cell(r)).collect();
         Ok(OdpGlmFit {
             glm,
             coding,
@@ -184,7 +334,11 @@ impl OdpGlm {
             future,
             future_means,
             reserves,
+            observed: observed_cells,
+            observed_calendar,
+            observed_values: y,
             future_design,
+            observed_design,
         })
     }
 }
@@ -199,6 +353,119 @@ impl OdpGlmFit {
     /// [`future`](Self::future): what [`glm`](Self::glm) predicts from.
     pub fn future_design(&self) -> &Design {
         &self.future_design
+    }
+
+    /// The reserves' prediction error by origin and in total: the process
+    /// variance `φ Σ μ` of the future cells and the parameter variance
+    /// `g' Σ g` by the delta method, with `Σ` the coefficients' covariance
+    /// and `g = Σ μ x` over the cells (Taylor and McGuire, CAS Monograph 3,
+    /// (5-11) to (5-13), Table 5-4). The root mean square error of
+    /// prediction is [`SumPredictionError::rmsep`].
+    ///
+    /// ```
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, OdpGlm, Triangle};
+    ///
+    /// let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
+    ///     values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let fit = OdpGlm::default().fit(&tri, "paid")?;
+    /// let error = fit.prediction_error()?;
+    /// assert_eq!(error.by_origin[0].rmsep(), 0.0);
+    /// assert!((error.total.total - fit.total_reserve()).abs() < 1e-8);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn prediction_error(&self) -> Result<OdpPredictionError> {
+        let mut rows = vec![Vec::new(); self.origins.len()];
+        for (i, (origin, _)) in self.future.iter().enumerate() {
+            let o = self
+                .origins
+                .iter()
+                .position(|p| p == origin)
+                .expect("every future cell's origin is an origin of the fit");
+            rows[o].push(i);
+        }
+        let by_origin = rows
+            .iter()
+            .map(|r| {
+                self.glm
+                    .sum_prediction_error(&self.future_design.select(r))
+                    .map_err(Error::from)
+            })
+            .collect::<Result<_>>()?;
+        let total = self.glm.sum_prediction_error(&self.future_design)?;
+        Ok(OdpPredictionError { by_origin, total })
+    }
+
+    /// The residuals of every observed cell: Pearson, deviance and
+    /// standardized deviance residuals, leverages and the ratio of actual
+    /// to fitted, with [`OdpResiduals::summary`] grouping them by origin,
+    /// development or calendar period (Taylor and McGuire, CAS Monograph 3,
+    /// Chapter 6: Figures 6-19, 6-20 and the heat map of Figure 6-22). A
+    /// cell with leverage 1, the only observation of its origin or age, is
+    /// fitted exactly and has no standardized residual (NaN).
+    ///
+    /// ```
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, OdpGlm, ResidualGroup, Triangle};
+    ///
+    /// let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
+    ///     values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// let residuals = OdpGlm::default().fit(&tri, "paid")?.residuals()?;
+    /// assert_eq!(residuals.actual.len(), 6);
+    /// // 2022's only cell is fitted exactly.
+    /// assert!(residuals.standardized_deviance[5].is_nan());
+    /// let by_age = residuals.summary(ResidualGroup::Development);
+    /// assert_eq!(by_age.iter().map(|g| g.n).collect::<Vec<_>>(), [2, 2, 0]);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn residuals(&self) -> Result<OdpResiduals> {
+        let d = self
+            .glm
+            .diagnostics(&self.observed_design, &self.observed_values)?;
+        let exact = |i: usize, r: f64| {
+            if d.leverage[i] >= EXACT_FIT {
+                f64::NAN
+            } else {
+                r
+            }
+        };
+        let n = self.observed.len();
+        Ok(OdpResiduals {
+            origin: self.observed.iter().map(|c| c.0).collect(),
+            development: self.observed.iter().map(|c| c.1).collect(),
+            calendar: self.observed_calendar.clone(),
+            actual: self.observed_values.clone(),
+            actual_to_fitted: self
+                .observed_values
+                .iter()
+                .zip(&d.fitted)
+                .map(|(y, m)| y / m)
+                .collect(),
+            standardized_deviance: (0..n)
+                .map(|i| exact(i, d.standardized_deviance[i]))
+                .collect(),
+            standardized_pearson: (0..n)
+                .map(|i| exact(i, d.standardized_pearson[i]))
+                .collect(),
+            fitted: d.fitted,
+            pearson: d.pearson,
+            deviance: d.deviance,
+            leverage: d.leverage,
+        })
     }
 
     /// Mean of each future cell under normal parameter draws
@@ -440,5 +707,27 @@ mod tests {
         assert_eq!(fit.reserves, [0.0, 0.0]);
         let msg = fit.predict_distribution(100, 1).unwrap_err().to_string();
         assert!(msg.contains("fully developed"), "{msg}");
+        let error = fit.prediction_error().unwrap();
+        assert_eq!(error.total.rmsep(), 0.0);
+        assert!(error.by_origin.iter().all(|e| e.total == 0.0));
+    }
+
+    #[test]
+    fn prediction_error_sums_over_origins() {
+        let fit = OdpGlm::default().fit(&small(), "values").unwrap();
+        let error = fit.prediction_error().unwrap();
+        assert_eq!(error.by_origin.len(), 4);
+        assert_eq!(error.by_origin[0].rmsep(), 0.0);
+        for (e, r) in error.by_origin.iter().zip(&fit.reserves) {
+            assert!((e.total - r).abs() < 1e-9);
+        }
+        // Process variances add; parameter variances do not, because the
+        // origins share the development factors.
+        let process: f64 = error.by_origin.iter().map(|e| e.process_variance).sum();
+        let parameter: f64 = error.by_origin.iter().map(|e| e.parameter_variance).sum();
+        assert!((error.total.process_variance - process).abs() < 1e-9 * process);
+        assert!(error.total.parameter_variance > parameter);
+        let phi = fit.glm.dispersion();
+        assert!((error.total.process_variance - phi * fit.total_reserve()).abs() < 1e-6);
     }
 }

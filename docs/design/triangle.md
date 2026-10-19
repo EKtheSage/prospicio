@@ -303,6 +303,36 @@ rows of a `TriangleFrame`.
   to relative 1e-9 (`validation/scripts/reserving_glm_r.R`). RAA has no R
   reference: its negative increment (1982 at 84 months, -103) makes R
   refuse it.
+- `prediction_error()` gives the reserves' analytic prediction error by the
+  delta method (#333): for a set of future cells, the process variance
+  `φ Σ μ` and the parameter variance `gᵀ Σ g` with `g = Σ μ x`
+  (`GlmFit::sum_prediction_error`), by origin and in total. The total is
+  not the root sum of the origins' squares: the origins share
+  coefficients. On Taylor and McGuire's NJ Manufacturers triangle (CAS
+  Monograph 3, Table 5-4) every forecast and RMSEP reproduces to the unit,
+  the total 373,346 with RMSEP 14,076 (process 6,539, parameter 12,465),
+  and 10,275 for the years combined as if independent
+  (`validation/tests/reserving.rs`).
+- Bindings (#333, first PR): Python `OdpGlm().fit(triangle, column)`
+  returning `OdpGlmFit` (its `glm`, `future_design`, `prediction_error()`,
+  `predict_distribution(n_sims, seed, parameters)`), and R
+  `odp_glm(triangle)` returning an `odp_glm_fit` with
+  `prediction_error` and a `predict_distribution()` method. Single segment
+  only, like `OdpGlm`.
+- `residuals()` gives each observed cell's actual, fitted, actual-to-fitted
+  ratio, Pearson and deviance residuals, leverage and standardized
+  residuals (#333, second PR), with its origin, age and calendar period. A
+  cell with leverage 1 (the only observation of its origin or age) is
+  fitted exactly and its standardized residual is NaN (`NA` in R).
+  `OdpResiduals::summary` groups the standardized deviance residuals by
+  origin, development or calendar period (count, mean, sd with divisor
+  `n - 1`). On the NJ Manufacturers triangle every percentage of Taylor
+  and McGuire's Figure 6-22 heat map reproduces, and the spread by
+  development year and the mean by calendar year match their Chapter 6
+  figures to two decimals (`validation/tests/reserving.rs`). Python
+  `OdpGlmFit.residuals()` and `residual_summary(by)`, R `fit@residuals`
+  and `residual_summary(fit, by)`. Still to come in #333: custom designs
+  (reduced models, calendar terms); gamma and Tweedie families.
 
 ## Calendar-diagonal backtest
 
@@ -329,8 +359,15 @@ models").
   fixed dispersion) is unseen too.
 - Scores per model and diagonal: mean cell CRPS, coverage of the central
   `interval` of each cell's draws, actual vs expected on the diagonal
-  total (`Σy / Σμ`), and the CRPS of the diagonal total from the joint
-  draws summed per simulation. One seed serves every model and diagonal,
+  total (`Σy / Σμ`), the CRPS of the diagonal total from the joint draws
+  summed per simulation, the mean held-out log density of the scored rows
+  (`mean_log_density`) and the share of the simulated totals at or below
+  the actual total (`total_percentile`). A forecast also carries the
+  sampler diagnostics of its fit (`CellForecast::diagnostics`, `None` for
+  the GLM); `Backtest::diagnostics(model)` and `Backtest::warnings()` give
+  them per split, and a fit with warnings is still scored. Two models
+  with the same name are an error before any fit; `NamedModel` renames
+  one. One seed serves every model and diagonal,
   so the models share their random numbers, and results are deterministic.
 - `GlmCandidate` fits the training cells its GLM accepts
   (`Glm::accepts`): the quasi-Poisson takes negative increments (#114),
