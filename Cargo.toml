@@ -75,9 +75,11 @@ rustfft = "6.4.1"
 # read back bit for bit.
 serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
 
-# Debug builds are for tests, and the tests simulate (bootstraps, NUTS,
-# FFTs): optimized code runs them several times faster, for a slower
-# compile of the workspace's own crates. Debug info stays on.
+# Debug builds are for tests, and the tests simulate (bootstraps, FFTs,
+# GAM fits): optimized, a debug `cargo test` took 66 s against 437 s
+# (4 threads, 2026-10-19), and rebuilding the workspace's own crates
+# about as long as before. Debug info, debug assertions and overflow
+# checks stay on.
 [profile.dev]
 opt-level = 1
 
