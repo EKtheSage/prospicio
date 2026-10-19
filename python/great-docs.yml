@@ -158,6 +158,8 @@ reference:
       - models.pit_from_draws
       - models.pit_histogram
       - models.ks_uniform
+      - models.target_encode
+      - models.TargetEncoding
       - models.k_fold
       - models.group_k_fold
       - models.time_ordered

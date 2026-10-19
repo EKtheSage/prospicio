@@ -375,6 +375,12 @@ models and compares them.
   sides' coded columns, the first side varying fastest, as R's `a:b`.
   Names are stable and unambiguous (`hinge(age,30)`, `age[(30,50]]`,
   `size[>=large]`) since they label coefficient tables.
+- **Target encoding** (#357, `prospicio_models::encode`): not a `Term`,
+  since it learns from the response; it takes the factor, the response,
+  the expected values and the splits, encodes each training row from its
+  split's training rows only, and returns a `TargetEncoding` from all
+  rows for new data. The expected values are the caller's (an overall
+  mean or a first model), so the encoding is what that model misses.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

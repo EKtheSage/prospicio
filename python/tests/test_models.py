@@ -655,3 +655,22 @@ def test_orthogonal_polys_and_natural_splines():
     fit = Glm("gaussian", "identity").fit(spline.design({"x": x}), y)
     new = fit.predict(spline.design({"x": [0.0, 20.0, 50.0]}))
     assert new == pytest.approx([-0.72122511127239264, 7.71926159866044337, 22.49421993091769423], rel=1e-9)
+
+
+def test_target_encode_out_of_fold():
+    from prospicio.models import target_encode
+
+    values = [f"l{i % 7}" for i in range(60)]
+    y = [float((i * 13) % 5) for i in range(60)]
+    splits = k_fold(60, 5, 3)
+    rows, enc = target_encode(values, y, [2.0] * 60, splits, 4.0)
+    y2 = list(y)
+    y2[10] += 100.0
+    rows2, _ = target_encode(values, y2, [2.0] * 60, splits, 4.0)
+    assert rows2[10] == rows[10]
+    a = sum(y[i] for i in range(60) if i % 7 == 0)
+    n = sum(1 for i in range(60) if i % 7 == 0)
+    z = n / (n + 4.0)
+    assert enc.encode(["l0", "unseen"]) == pytest.approx([z * a / (2.0 * n) + 1 - z, 1.0])
+    with pytest.raises(ValueError):
+        target_encode(values, y, [2.0] * 60, splits[1:], 4.0)

@@ -26,6 +26,7 @@ from .prospicio_native import (
     GlmFit,
     NegativeBinomialFit,
     NegativeBinomialGlm,
+    TargetEncoding,
     Terms,
     TweedieFit,
     TweedieGlm,
@@ -57,6 +58,7 @@ from .prospicio_native import (
     ppc_check,
     pseudo_bma_weights,
     simulate_from_means,
+    target_encode,
     stacking_weights,
     time_ordered,
     tweedie_profile,
@@ -87,6 +89,8 @@ else:
 
 __all__ = [
     "Terms",
+    "TargetEncoding",
+    "target_encode",
     "Coding",
     "Design",
     "CvPath",

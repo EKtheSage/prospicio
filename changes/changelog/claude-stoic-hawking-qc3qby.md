@@ -272,6 +272,13 @@
   which spans R's `splines::ns`: fitted values and predictions agree with
   `lm(y ~ ns(x, knots))`, coefficients differ. Python
   `Terms.orthogonal_poly` and `.natural_spline` (#350).
+- Out-of-fold target encoding of a high-cardinality factor with
+  credibility (CAS Monograph 16, chapter 6):
+  `prospicio_models::encode::target_encode` gives each training row its
+  level's actual-to-expected ratio from the other folds, shrunk to 1 by
+  `z = n / (n + K)`, and a `TargetEncoding` from all rows for new data.
+  Python `target_encode` and `TargetEncoding`; R `target_encode()` and
+  `encode_target()` (#357).
 
 ### Breaking changes
 

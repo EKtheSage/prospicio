@@ -19022,6 +19022,42 @@ class TailLogLinear:
     def __repr__(self, /) -> str: ...
 
 @final
+class TargetEncoding:
+    """
+    The encoding of each level of a factor learned from all the training
+    rows, from ``target_encode``.
+    """
+    def __repr__(self, /) -> str: ...
+    def encode(self, /, values: Sequence[str]) -> list[float]:
+        """
+        The encoding of each value of new data; a level not seen in
+        training gets 1.
+        
+        Parameters
+        ----------
+        values : list of str
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def k(self, /) -> float:
+        """
+        The credibility constant ``K``.
+        """
+    @property
+    def levels(self, /) -> list[str]:
+        """
+        The levels seen in training, sorted.
+        """
+    @property
+    def ratios(self, /) -> list[float]:
+        """
+        Each level's credibility-weighted actual-to-expected ratio.
+        """
+
+@final
 class Terms:
     """
     The terms of a model: an intercept, numeric columns, factors,
@@ -23878,6 +23914,48 @@ def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     >>> w = stacking_weights([[-0.1, -0.1, -3.0, -3.0], [-3.0, -3.0, -0.1, -0.1]])
     >>> [round(x, 9) for x in w]
     [0.5, 0.5]
+    """
+
+def target_encode(values: Sequence[str], y: Sequence[float], expected: Sequence[float], splits: Sequence[tuple[Sequence[int], Sequence[int]]], k: float, exposure: Sequence[float] |None = None) -> tuple[list[float], TargetEncoding]:
+    """
+    Out-of-fold target encoding of a high-cardinality factor with
+    credibility (CAS Monograph 16, chapter 6): each level's
+    actual-to-expected ratio shrunk to 1 by ``z = n / (n + k)``, ``n`` its
+    exposure, ``z * A / E + (1 - z)``. Each training row is encoded from the
+    other folds only, so its own response never enters its encoding; the
+    returned ``TargetEncoding``, from all rows, encodes new data. Its log
+    enters a GLM as a numeric column.
+    
+    Parameters
+    ----------
+    values : list of str
+        The factor's level per row.
+    y : list of float
+        Actual responses.
+    expected : list of float
+        Expected responses: the overall mean times exposure, or a first
+        model's predictions.
+    splits : list of (list of int, list of int)
+        From ``k_fold`` or ``group_k_fold``; every row in exactly one test
+        set.
+    k : float
+        The credibility constant ``K``.
+    exposure : list of float, optional
+        Credibility weights; 1 per row by default.
+    
+    Returns
+    -------
+    tuple of (list of float, TargetEncoding)
+        The out-of-fold encoding of each training row, and the encoding for
+        new data.
+    
+    Examples
+    --------
+    >>> from prospicio.models import target_encode
+    >>> splits = [([1, 3], [0, 2]), ([0, 2], [1, 3])]
+    >>> rows, enc = target_encode(["a", "a", "b", "b"], [2.0, 2.0, 0.0, 1.0], [1.0] * 4, splits, 1.0)
+    >>> rows[0]
+    1.5
     """
 
 def threshold_diagnostics(draws: Sequence[float], thresholds: Sequence[float]) -> dict:

@@ -2456,6 +2456,120 @@ pub(crate) fn ks_uniform(values: Vec<f64>) -> PyResult<f64> {
     metrics::ks_uniform(&values).map_err(to_py)
 }
 
+/// The encoding of each level of a factor learned from all the training
+/// rows, from ``target_encode``.
+#[pyclass(name = "TargetEncoding", module = "prospicio.models", frozen)]
+pub(crate) struct PyTargetEncoding {
+    inner: prospicio_models::encode::TargetEncoding,
+}
+
+#[pymethods]
+impl PyTargetEncoding {
+    /// The levels seen in training, sorted.
+    #[getter]
+    fn levels(&self) -> Vec<String> {
+        self.inner.levels.clone()
+    }
+
+    /// Each level's credibility-weighted actual-to-expected ratio.
+    #[getter]
+    fn ratios(&self) -> Vec<f64> {
+        self.inner.ratios.clone()
+    }
+
+    /// The credibility constant ``K``.
+    #[getter]
+    fn k(&self) -> f64 {
+        self.inner.k
+    }
+
+    /// The encoding of each value of new data; a level not seen in
+    /// training gets 1.
+    ///
+    /// Parameters
+    /// ----------
+    /// values : list of str
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn encode(&self, values: Vec<String>) -> Vec<f64> {
+        self.inner.encode(&values)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TargetEncoding(levels={}, k={})",
+            self.inner.levels.len(),
+            self.inner.k
+        )
+    }
+}
+
+/// Out-of-fold target encoding of a high-cardinality factor with
+/// credibility (CAS Monograph 16, chapter 6): each level's
+/// actual-to-expected ratio shrunk to 1 by ``z = n / (n + k)``, ``n`` its
+/// exposure, ``z * A / E + (1 - z)``. Each training row is encoded from the
+/// other folds only, so its own response never enters its encoding; the
+/// returned ``TargetEncoding``, from all rows, encodes new data. Its log
+/// enters a GLM as a numeric column.
+///
+/// Parameters
+/// ----------
+/// values : list of str
+///     The factor's level per row.
+/// y : list of float
+///     Actual responses.
+/// expected : list of float
+///     Expected responses: the overall mean times exposure, or a first
+///     model's predictions.
+/// splits : list of (list of int, list of int)
+///     From ``k_fold`` or ``group_k_fold``; every row in exactly one test
+///     set.
+/// k : float
+///     The credibility constant ``K``.
+/// exposure : list of float, optional
+///     Credibility weights; 1 per row by default.
+///
+/// Returns
+/// -------
+/// tuple of (list of float, TargetEncoding)
+///     The out-of-fold encoding of each training row, and the encoding for
+///     new data.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import target_encode
+/// >>> splits = [([1, 3], [0, 2]), ([0, 2], [1, 3])]
+/// >>> rows, enc = target_encode(["a", "a", "b", "b"], [2.0, 2.0, 0.0, 1.0], [1.0] * 4, splits, 1.0)
+/// >>> rows[0]
+/// 1.5
+#[pyfunction]
+#[pyo3(signature = (values, y, expected, splits, k, exposure = None))]
+pub(crate) fn target_encode(
+    values: Vec<String>,
+    y: Vec<f64>,
+    expected: Vec<f64>,
+    splits: Vec<(Vec<usize>, Vec<usize>)>,
+    k: f64,
+    exposure: Option<Vec<f64>>,
+) -> PyResult<(Vec<f64>, PyTargetEncoding)> {
+    let splits: Vec<Split> = splits
+        .into_iter()
+        .map(|(train, test)| Split { train, test })
+        .collect();
+    let (rows, inner) = prospicio_models::encode::target_encode(
+        &values,
+        &y,
+        &expected,
+        exposure.as_deref(),
+        &splits,
+        k,
+    )
+    .map_err(to_py)?;
+    Ok((rows, PyTargetEncoding { inner }))
+}
+
 fn splits(s: Vec<Split>) -> Vec<(Vec<usize>, Vec<usize>)> {
     s.into_iter().map(|s| (s.train, s.test)).collect()
 }

@@ -140,6 +140,8 @@ simulate_from_means_rust <- function(family_name, theta, power, means, n_rows, d
 
 k_fold_rust <- function(n, k, seed) .Call(wrap__k_fold_rust, n, k, seed)
 
+target_encode_rust <- function(values, y, expected, exposure, trains, tests, k) .Call(wrap__target_encode_rust, values, y, expected, exposure, trains, tests, k)
+
 group_k_fold_rust <- function(groups, k, seed) .Call(wrap__group_k_fold_rust, groups, k, seed)
 
 time_ordered_rust <- function(periods, n_test) .Call(wrap__time_ordered_rust, periods, n_test)
