@@ -2,17 +2,23 @@ name: CI
 
 # Cost: the repo is private, so minutes are billed and Windows counts double.
 # Pull requests run Ubuntu only; Windows runs on the weekly schedule and on
-# demand. A push to main runs only the Rust job, since its PR already passed;
-# the jobs that run a slow suite in a release build (bayes, fremtpl2) run on
-# a PR that touches their inputs and on the weekly and manual runs. Tests
-# that sample with NUTS stay out of the rust job's debug `cargo test`: the
-# Bayesian parity files sit behind prospicio-validation's `slow-bayes`, and
-# prospicio-reserving's NUTS unit tests are ignored without its `slow-tests`.
-# Of the slowest Bayesian checks, Meyers' and the compartmental models'
-# one-year views, a PR runs a smoke version (Meyers' CRC; compartmental
-# model 1 without its refit comparison); the weekly
-# and manual runs set RISK_RS_FULL_BAYES and run them all.
-# The scheduled run also keeps main's caches warm for new PRs.
+# demand. A pull request runs the python and r jobs unless it touches only
+# docs, knowledge, change fragments or lane status (DOCS_ONLY below), and
+# the jobs that run a slow suite in a release build (bayes, fremtpl2) only
+# when it touches their inputs. A push to main runs the Rust job's checks
+# and, in every other job but docs, only builds what that job's cache is
+# missing (the cache's key changes with Cargo.lock and the toolchain), so
+# that pull requests, which can read main's caches but not each other's,
+# start warm; the Pages build (pages.yml) keeps the docs job's cache warm
+# the same way. Tests that sample with NUTS stay out of the rust job's
+# debug tests: the Bayesian parity files sit behind prospicio-validation's
+# `slow-bayes`, and prospicio-reserving's NUTS unit tests are ignored
+# without its `slow-tests`. Of the slowest Bayesian checks, the one-year
+# conformance suite and Meyers' and the compartmental models' one-year
+# views, a PR runs a smoke version (the conformance suite on BayesOdp and
+# BayesBf; Meyers' CRC; compartmental model 1 without its refit
+# comparison); the weekly and manual runs set RISK_RS_FULL_BAYES and run
+# them all.
 on:
   push:
     branches: [main]
@@ -21,10 +27,18 @@ on:
     - cron: "17 6 * * 1"
   workflow_dispatch:
 
-# A new push to a branch cancels that branch's run still in progress.
+# A new push to a pull request's branch cancels that branch's run still in
+# progress. Pushes to main, the weekly run and manual runs each get a group
+# of their own, so a merge never cancels the weekly run.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Paths a pull request can change without running the python and r jobs:
+  # nothing in them is built or read by the bindings' tests (the guides in
+  # docs/guides and the notebooks in examples/ are).
+  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|fold_changes)\.py$)'
 
 jobs:
   rust:
@@ -36,6 +50,9 @@ jobs:
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       - run: cargo fmt --all --check
       # The knowledge bundle conforms to OKF v0.2 (knowledge/index.md).
       - run: python3 -m pip install --quiet pyyaml && python3 validation/scripts/check_okf.py knowledge
@@ -45,40 +62,76 @@ jobs:
       - run: python3 validation/scripts/check_lanes.py
       # Default members: pure-Rust crates and the parity suite. The feature
       # lints the Bayesian parity tests too, and turns on
-      # prospicio-reserving/slow-tests; `cargo test` skips the parity files
-      # and ignores the NUTS unit tests (the bayes job runs both in release).
+      # prospicio-reserving/slow-tests; the tests skip the parity files and
+      # ignore the NUTS unit tests (the bayes job runs both in release).
       - run: cargo clippy --all-targets --features prospicio-validation/slow-bayes -- -D warnings
-      - run: cargo test
+      # nextest runs the test binaries side by side (`cargo test` runs them
+      # one after another); it does not run doctests, so they run after it.
+      - run: cargo nextest run --no-fail-fast
+      - run: cargo test --doc
       # The crates in the WASM scope (docs/architecture.md, "Open
       # decisions") build for the browser.
       - run: cargo check --target wasm32-unknown-unknown -p prospicio-core -p prospicio-math -p prospicio-prob -p prospicio-aggregate -p prospicio-pricing -p prospicio-reserving -p prospicio
 
   python:
-    if: github.event_name != 'push'
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          fetch-depth: 0
+      - name: Check whether the bindings' inputs changed
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$DOCS_ONLY"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Only docs, knowledge, change fragments or lane status changed; skipping the Python tests."
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - uses: astral-sh/setup-uv@v6
-      - run: cargo clippy -p prospicio-python -- -D warnings
-      - run: uv sync
+      # On a push to main: only look the cache up, and build only if it is
+      # missing (its post step then saves it).
+      - if: steps.changes.outputs.run == 'true'
+        id: cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          lookup-only: ${{ github.event_name == 'push' }}
+      - name: Plan
+        id: plan
+        run: |
+          run=${{ steps.changes.outputs.run }}
+          push=${{ github.event_name == 'push' }}
+          hit=${{ steps.cache.outputs.cache-hit == 'true' }}
+          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "test=$([ "$run" = true ] && [ "$push" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.plan.outputs.build == 'true'
+        uses: astral-sh/setup-uv@v6
+      - if: steps.plan.outputs.build == 'true'
+        run: cargo clippy -p prospicio-python -- -D warnings
+      - if: steps.plan.outputs.build == 'true'
+        run: uv sync
         working-directory: python
-      - run: uv run pytest tests
+      - if: steps.plan.outputs.test == 'true'
+        run: uv run pytest tests
         working-directory: python
 
   r:
-    if: github.event_name != 'push'
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     # PowerShell (the Windows default) aliases `R` to Invoke-History.
     defaults:
@@ -86,45 +139,78 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          fetch-depth: 0
+      - name: Check whether the bindings' inputs changed
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qvE "$DOCS_ONLY"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Only docs, knowledge, change fragments or lane status changed; skipping the R tests."
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
           targets: ${{ matrix.os == 'windows-latest' && 'x86_64-pc-windows-gnu' || '' }}
-      - uses: Swatinem/rust-cache@v2
-      - uses: r-lib/actions/setup-r@v2  # installs Rtools on Windows
+      # On a push to main: only look the cache up, and build only if it is
+      # missing (its post step then saves it).
+      - if: steps.changes.outputs.run == 'true'
+        id: cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          lookup-only: ${{ github.event_name == 'push' }}
+      - name: Plan
+        id: plan
+        run: |
+          run=${{ steps.changes.outputs.run }}
+          push=${{ github.event_name == 'push' }}
+          hit=${{ steps.cache.outputs.cache-hit == 'true' }}
+          echo "build=$([ "$run" = true ] && ! { [ "$push" = true ] && [ "$hit" = true ]; } && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "test=$([ "$run" = true ] && [ "$push" = false ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.plan.outputs.build == 'true'
+        uses: r-lib/actions/setup-r@v2  # installs Rtools on Windows
         with:
           # Binary packages: lightgbm and xgboost take minutes to compile.
           use-public-rspm: true
-      - run: cargo clippy -p prospicio-r -- -D warnings
+      - if: steps.plan.outputs.build == 'true'
+        run: cargo clippy -p prospicio-r -- -D warnings
       # lightgbm and xgboost are optional engines for booster_fit(). The
       # boosting tests skip a missing engine and install.packages() only
       # warns on failure, so check that each one loads.
-      - run: >-
+      - if: steps.plan.outputs.build == 'true'
+        run: >-
           Rscript -e "pkgs <- c('S7', 'lightgbm', 'xgboost'); install.packages(pkgs);
           for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
-      - run: R CMD INSTALL R/prospicio
+      - if: steps.plan.outputs.build == 'true'
+        run: R CMD INSTALL R/prospicio
       - name: Run the R tests
-        shell: bash
+        if: steps.plan.outputs.test == 'true'
         run: for f in R/prospicio/tests/*.R; do Rscript "$f" || exit 1; done
       # remotes::install_github(subdir = "R/prospicio") and r-universe build
       # a tarball of R/prospicio alone, which carries its Rust sources only
       # because pkgbuild runs bootstrap.R first. Install from such a tarball,
-      # into a library of its own, and run the tests against it. It compiles
-      # the crates again (a few minutes), so a PR runs it only when the
+      # into a library of its own, and run one test file against it: the
+      # full suite already ran on the checkout's install. It compiles the
+      # crates again (a few minutes), so a PR runs it only when the
       # package's build inputs change; the weekly run always does.
       - name: Check whether the R build inputs changed
         id: rbuild
+        if: steps.plan.outputs.test == 'true'
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git fetch -q --depth=1 origin "${{ github.base_ref }}" && \
-              git diff --name-only FETCH_HEAD HEAD \
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
               | grep -qE '^(R/prospicio/(bootstrap\.R|DESCRIPTION|\.Rbuildignore|src/)|Cargo\.(toml|lock)|crates/[^/]+/Cargo\.toml|\.github/workflows/ci\.yml)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Install as install_github does, and run the R tests on it
+      - name: Install as install_github does, and run a test file on it
         if: steps.rbuild.outputs.run == 'true'
         run: |
           # Forward slashes: R reads the paths inside string literals.
@@ -133,16 +219,16 @@ jobs:
           git archive --format=tar.gz --prefix=prospicio/ -o "$tmp/repo.tar.gz" HEAD
           mkdir "$tmp/rlib"
           Rscript -e "remotes::install_local('$tmp/repo.tar.gz', subdir = 'R/prospicio', lib = '$tmp/rlib', dependencies = FALSE, upgrade = 'never', force = TRUE)"
-          for f in R/prospicio/tests/*.R; do
-            R_LIBS="$tmp/rlib" Rscript \
-              -e "stopifnot(normalizePath(dirname(find.package('prospicio')), '/') == normalizePath('$tmp/rlib', '/'))" \
-              -e "source('$f')" || exit 1
-          done
+          R_LIBS="$tmp/rlib" Rscript \
+            -e "stopifnot(normalizePath(dirname(find.package('prospicio')), '/') == normalizePath('$tmp/rlib', '/'))" \
+            -e "source('R/prospicio/tests/test-distributions.R')"
 
   # Builds both bindings through `cargo xtask docs`, which regenerates their
   # docs, and fails if a committed generated file (the Python stub, R's man/
-  # and NAMESPACE) was stale. The rendered sites are uploaded as an artifact;
-  # publishing them is an open decision (docs/architecture.md).
+  # and NAMESPACE) was stale. The python and r jobs run the test suites, so
+  # this build skips them (`--no-tests`). The rendered sites are uploaded as
+  # an artifact; pages.yml publishes them from main, and its build shares
+  # this job's cache (`shared-key: docs-site`), so it keeps it warm.
   #
   # On a pull request it runs only when the PR touches the bindings, their
   # docs config or xtask; otherwise its steps are skipped and it passes.
@@ -170,6 +256,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - if: steps.changes.outputs.docs == 'true'
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: docs-site
       - if: steps.changes.outputs.docs == 'true'
         uses: astral-sh/setup-uv@v6
       - if: steps.changes.outputs.docs == 'true'
@@ -184,7 +272,7 @@ jobs:
           working-directory: R/prospicio
           extra-packages: any::roxygen2, any::pkgload, any::pkgdown
       - if: steps.changes.outputs.docs == 'true'
-        run: cargo xtask docs --check
+        run: cargo xtask docs --check --no-tests
       - if: steps.changes.outputs.docs == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -196,9 +284,9 @@ jobs:
   # GLM against statsmodels, in a release build (about 30 s; several
   # minutes unoptimized). The data is downloaded from OpenML once and
   # cached. On a pull request it runs only when the GLM code or the
-  # freMTPL2 parity files change; otherwise its steps are skipped.
+  # freMTPL2 parity files change; otherwise its steps are skipped. On a
+  # push to main it only builds the test, if its cache is missing.
   fremtpl2:
-    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -220,19 +308,23 @@ jobs:
       - if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
       - if: steps.changes.outputs.run == 'true'
+        id: cache
         uses: Swatinem/rust-cache@v2
         with:
           key: release
-      - if: steps.changes.outputs.run == 'true'
+          lookup-only: ${{ github.event_name == 'push' }}
+      - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
+        run: cargo test --release -p prospicio-validation --test fremtpl2 --no-run
+      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
         uses: actions/cache@v4
         with:
           path: validation/data/external
           key: fremtpl2-${{ hashFiles('validation/scripts/fetch_fremtpl2.py') }}
-      - if: steps.changes.outputs.run == 'true'
+      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
         name: Fetch freMTPL2freq and freMTPL2sev
         run: |
           test -f validation/data/external/freMTPL2freq_glm.csv             && test -f validation/data/external/freMTPL2sev_glm.csv             || python3 validation/scripts/fetch_fremtpl2.py
-      - if: steps.changes.outputs.run == 'true'
+      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
         run: cargo test --release -p prospicio-validation --test fremtpl2
         env:
           RISK_RS_REQUIRE_FREMTPL2: "1"
@@ -242,16 +334,16 @@ jobs:
   #   require the `slow-bayes` feature, the one place that lists them;
   # - prospicio-reserving's unit tests with its `slow-tests` feature, which
   #   un-ignores the ones that sample with NUTS (about 230 s single-threaded
-  #   in debug and about 5 minutes of the rust job on 2026-10-15; about 4 s
-  #   in release).
-  # The rust job's debug `cargo test` skips or ignores them. On a pull
-  # request this job runs only when their inputs change; otherwise its
-  # steps are skipped and it passes. A pull request runs the smoke version
-  # of the Meyers and compartmental one-year validation; the weekly and
-  # manual runs set RISK_RS_FULL_BAYES and run all of it
-  # (prospicio_validation::full_bayes; the user's decision of 2026-10-16).
+  #   in debug; about 70 s in release on CI's runner).
+  # The rust job's debug tests skip or ignore them. On a pull request this
+  # job runs only when their inputs change; otherwise its steps are skipped
+  # and it passes. A pull request runs the smoke version of the one-year
+  # conformance suite and of the Meyers and compartmental one-year
+  # validation; the weekly and manual runs set RISK_RS_FULL_BAYES and run
+  # all of it (prospicio_validation::full_bayes; the user's decisions of
+  # 2026-10-16 and 2026-10-19). On a push to main it only builds the
+  # tests, if its cache is missing.
   bayes:
-    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -270,21 +362,29 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "No Bayesian inputs changed; skipping the Bayesian parity."
           fi
+          tests=$(python3 -c "import tomllib; t = tomllib.load(open('validation/Cargo.toml', 'rb')); print(' '.join('--test ' + x['name'] for x in t['test'] if 'slow-bayes' in x.get('required-features', [])))")
+          echo "tests=$tests" >> "$GITHUB_OUTPUT"
       - if: steps.changes.outputs.run == 'true'
         uses: dtolnay/rust-toolchain@stable
       - if: steps.changes.outputs.run == 'true'
+        id: cache
         uses: Swatinem/rust-cache@v2
         with:
           key: release
-      - if: steps.changes.outputs.run == 'true'
+          lookup-only: ${{ github.event_name == 'push' }}
+      - if: steps.changes.outputs.run == 'true' && (github.event_name != 'push' || steps.cache.outputs.cache-hit != 'true')
+        name: Build the Bayesian tests in release
+        run: |
+          cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }} --no-run
+          cargo test --release -p prospicio-reserving --features slow-tests --lib --no-run
+      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
         name: Run the Bayesian parity tests in release
         env:
           RISK_RS_FULL_BAYES: ${{ github.event_name != 'pull_request' && '1' || '' }}
         run: |
           echo "RISK_RS_FULL_BAYES=${RISK_RS_FULL_BAYES:-} (empty: the pull request's smoke run)"
-          tests=$(python3 -c "import tomllib; t = tomllib.load(open('validation/Cargo.toml', 'rb')); print(' '.join('--test ' + x['name'] for x in t['test'] if 'slow-bayes' in x.get('required-features', [])))")
-          echo "cargo test --release -p prospicio-validation --features slow-bayes $tests"
-          cargo test --release -p prospicio-validation --features slow-bayes $tests
-      - if: steps.changes.outputs.run == 'true'
+          echo "cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }}"
+          cargo test --release -p prospicio-validation --features slow-bayes ${{ steps.changes.outputs.tests }}
+      - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
         name: Run the NUTS unit tests in release
         run: cargo test --release -p prospicio-reserving --features slow-tests --lib

@@ -74,3 +74,12 @@ rustfft = "6.4.1"
 # float_roundtrip: model artifacts store estimates as JSON numbers and must
 # read back bit for bit.
 serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
+
+# Debug builds are for tests, and the tests simulate (bootstraps, NUTS,
+# FFTs): optimized code runs them several times faster, for a slower
+# compile of the workspace's own crates. Debug info stays on.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

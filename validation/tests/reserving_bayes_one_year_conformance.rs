@@ -46,14 +46,17 @@
 //!    the compartmental models, whose fit needs a future cell: their unit
 //!    half samples such a square directly).
 //!
-//! A pull request runs Meyers' CRC alone of Meyers' three models and
-//! compartmental model 1 alone of the two (the smoke run, with the same
-//! sizes and bounds); CSR, CAY and compartmental model 2 join when
-//! `RISK_RS_FULL_BAYES` is set, as in CI's weekly and manual runs
-//! (`prospicio_validation::full_bayes`, the user's decision of
-//! 2026-10-16). The other models always run. Meyers' and the
-//! compartmental views get their `n_sims` explicitly: by default their
-//! `one_year` runs at most 2,000.
+//! A pull request runs `BayesOdp` and `BayesBf` alone (the smoke run, with
+//! the same sizes and bounds): Meyers' and the compartmental models, whose
+//! refits cost seconds each and took most of the suite's 11 minutes on
+//! CI's runner, join when `RISK_RS_FULL_BAYES` is set, as in CI's weekly
+//! and manual runs (`prospicio_validation::full_bayes`, the user's
+//! decisions of 2026-10-16 and 2026-10-19). Their own one-year files
+//! (`reserving_meyers_one_year.rs`, `reserving_compartmental_one_year.rs`)
+//! still check CRC and model 1 on every pull request, and a change to one
+//! of those models runs this suite with the variable set locally
+//! (AGENTS.md, "Checks"). Meyers' and the compartmental views get their
+//! `n_sims` explicitly: by default their `one_year` runs at most 2,000.
 //!
 //! Every bound is at least the largest model's mean (or mean offset) plus
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
@@ -639,11 +642,11 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
             ),
         ]
     };
-    // A strict run without the full gate (a pull request): CRC alone.
-    let meyers_models = match (compartmental_only, strict && !full_bayes()) {
-        (true, _) => 0,
-        (false, true) => 1,
-        (false, false) => 3,
+    // A strict run without the full gate (a pull request): no Meyers model.
+    let meyers_models = if compartmental_only || (strict && !full_bayes()) {
+        0
+    } else {
+        3
     };
     for (name, model, column) in [
         ("Meyers CRC paid", MeyersModel::Crc, "paid"),
@@ -672,8 +675,8 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     // unit half only (`compartmental::tests`, sampling the closed square
     // directly).
     let training = wkcomp_337();
-    // A strict run without the full gate (a pull request): model 1 alone.
-    let compartmental_models = if strict && !full_bayes() { 1 } else { 2 };
+    // A strict run without the full gate (a pull request): neither model.
+    let compartmental_models = if strict && !full_bayes() { 0 } else { 2 };
     for (name, two, refits) in [
         ("Compartmental 1", false, COMPARTMENTAL_REFITS),
         ("Compartmental 2", true, COMPARTMENTAL_2_REFITS),
