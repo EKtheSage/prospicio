@@ -5023,6 +5023,9 @@ impl PyOdpBootstrap {
                 dependence: segment_dependence(dependence, spearman)?,
                 pattern: selected_pattern(ldf, ldf_kind, ldf_weight)?,
                 one_year_pattern: OneYearPattern::Method,
+                n_periods: None,
+                drop_high: 0,
+                drop_low: 0,
             },
         })
     }

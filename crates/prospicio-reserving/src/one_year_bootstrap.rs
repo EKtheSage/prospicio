@@ -85,8 +85,9 @@ use prospicio_core::{Lag, Month, StreamRng};
 use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::bootstrap::{
-    OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, TailDraw, component_sums,
-    hash_segment, origin_keys, pick_segment, pool_at, prepare_selected, push_moments, segment_sums,
+    Exclusions, OdpBootstrap, OdpBootstrapSegment, ProcessDistribution, Simulation, TailDraw,
+    component_sums, hash_segment, origin_keys, pick_segment, pool_at, prepare_selected,
+    push_moments, segment_sums,
 };
 use crate::chain_ladder::{ChainLadder, ChainLadderFit};
 use crate::dependence::{Resample, SegmentDependence, Shared, SharedPool, synchronize};
@@ -549,6 +550,7 @@ impl NextYear for OdpBootstrapSegment {
             process: draw.process,
             tail: None,
             blend: None,
+            kept: None,
         };
         let (pseudo, factors) = sim.resample(rng, picks);
         let factors = match &draw.blend {
@@ -1093,6 +1095,13 @@ impl OdpBootstrap {
     /// whether it reads that pattern without its level
     /// ([`inherits_level_free`]).
     fn for_method(&self, method: &OneYearMethod) -> Result<(Self, bool)> {
+        if self.n_periods.is_some() || self.drop_high != 0 || self.drop_low != 0 {
+            return Err(Error::NotSupported {
+                setting: "n_periods, drop_high and drop_low",
+                method: "the ODP bootstrap's one-year view",
+                reason: "not yet supported, the view takes the method's exclusions",
+            });
+        }
         let pattern = self
             .one_year_pattern
             .resolve(self.pattern.as_ref(), method.pattern())?;
@@ -1136,8 +1145,13 @@ impl OdpBootstrap {
     /// residuals it resamples, the tail each simulation draws and the
     /// pattern it blends with.
     fn model(&self, segment: &Segment) -> Result<(OdpBootstrapSegment, OdpDraw)> {
-        let (fit, pool) =
-            prepare_selected(segment, &segment.ages, self.tail, self.pattern.as_ref())?;
+        let (fit, pool) = prepare_selected(
+            segment,
+            &segment.ages,
+            self.tail,
+            self.pattern.as_ref(),
+            Exclusions::default(),
+        )?;
         let tail = self.tail_draw(&fit.chain_ladder)?;
         let blend = Blend::of(&fit.chain_ladder.development);
         Ok((
@@ -2297,6 +2311,7 @@ mod tests {
                 process: ProcessDistribution::None,
                 tail: None,
                 blend: None,
+                kept: None,
             };
             let f = model.chain_ladder.tail.factor;
             let lognormal = prospicio_prob::Lognormal::from_mean_cv(f, 0.02 / f).unwrap();
