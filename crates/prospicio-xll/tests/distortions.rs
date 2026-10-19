@@ -2,7 +2,8 @@
 //! reaches them, against `aggregate` 1.0.1
 //! (`validation/reference/distortion_aggregate.csv`, written by
 //! `validation/scripts/aggregate_distortions.py`) at its tolerances:
-//! `g(s)` for every one-parameter family and the four capped ones, and
+//! `g(s)` for every one-parameter family, the four capped ones and the
+//! bi-TVaR, beta and weighted TVaR, and
 //! the price and calibration of Mildenhall and Major's InsCo totals.
 
 mod common;
@@ -26,7 +27,7 @@ fn close(got: f64, row: &[String]) -> bool {
 
 #[test]
 fn g_and_insco_match_aggregate() {
-    let mut checked = 0;
+    let (mut checked, mut several) = (0, 0);
     for row in reference("distortion_aggregate.csv") {
         let (kind, params, family) = (row[0].as_str(), row[1].as_str(), row[2].as_str());
         let value = |k: &str| -> f64 {
@@ -42,7 +43,32 @@ fn g_and_insco_match_aggregate() {
             Err(_) => continue,
         };
         let got = match (kind, family) {
-            ("g", "bitvar" | "beta" | "wtdtvar") => continue,
+            ("g", "bitvar" | "beta" | "wtdtvar") => {
+                let list = |k: &str| -> Vec<f64> {
+                    params
+                        .split(';')
+                        .find_map(|kv| kv.strip_prefix(&format!("{k}=")))
+                        .unwrap()
+                        .split('|')
+                        .map(|x| x.parse().unwrap())
+                        .collect()
+                };
+                let parameter = match family {
+                    "bitvar" => Grid::row(&[value("p0"), value("p1"), value("w")]),
+                    "beta" => Grid::column(&[value("a"), value("b")]),
+                    _ => {
+                        let (ps, wts) = (list("ps"), list("wts"));
+                        Grid::from_rows(
+                            ps.iter()
+                                .zip(&wts)
+                                .map(|(p, w)| vec![Value::Number(*p), Value::Number(*w)])
+                                .collect(),
+                        )
+                    }
+                };
+                several += 1;
+                num(&call("pro_distortion", vec![n(arg), t(family), parameter]).cells[0])
+            }
             ("g", _) => {
                 let (parameter, r0) = match family {
                     "tvar" => (value("p"), None),
@@ -82,7 +108,86 @@ fn g_and_insco_match_aggregate() {
         );
         checked += 1;
     }
-    assert!(checked >= 110, "{checked}");
+    assert!(checked >= 158, "{checked}");
+    assert_eq!(several, 48);
+}
+
+/// The capped families take `r0` beside the parameter or with it in one
+/// range; a weighted TVaR's pairs may run along two rows; CCoC is the
+/// bitvar `(0, 1, r / (1 + r))`, on a sheet and in a tower's price.
+#[test]
+fn several_parameters_in_one_range() {
+    let side = call("pro_distortion", vec![n(0.3), t("lep"), n(0.2), n(0.05)]);
+    let range = call(
+        "pro_distortion",
+        vec![n(0.3), t("lep"), Grid::row(&[0.05, 0.2])],
+    );
+    assert_eq!(side, range);
+    let column = Grid::from_rows(vec![
+        vec![Value::Number(0.1), Value::Number(0.2)],
+        vec![Value::Number(0.5), Value::Number(0.5)],
+        vec![Value::Number(0.9), Value::Number(0.3)],
+    ]);
+    let rows = Grid::from_rows(vec![
+        vec![Value::Number(0.1), Value::Number(0.5), Value::Number(0.9)],
+        vec![Value::Number(0.2), Value::Number(0.5), Value::Number(0.3)],
+    ]);
+    let a = call(
+        "pro_distortion_price",
+        vec![Grid::column(&X), Grid::column(&P), t("wtdtvar"), column],
+    );
+    let b = call(
+        "pro_distortion_price",
+        vec![Grid::column(&X), Grid::column(&P), t("wtdtvar"), rows],
+    );
+    assert_eq!(a, b);
+    let ccoc = call(
+        "pro_distortion_price",
+        vec![Grid::column(&X), Grid::column(&P), t("ccoc"), n(0.15)],
+    );
+    let bitvar = call(
+        "pro_distortion_price",
+        vec![
+            Grid::column(&X),
+            Grid::column(&P),
+            t("bitvar"),
+            Grid::row(&[0.0, 1.0, 0.15 / 1.15]),
+        ],
+    );
+    assert!((num(ccoc.get(1, 1)) - num(bitvar.get(1, 1))).abs() < 1e-12);
+}
+
+#[test]
+fn several_parameters_are_checked() {
+    let e = call(
+        "pro_distortion",
+        vec![n(0.5), t("bitvar"), Grid::row(&[0.2, 0.9])],
+    );
+    assert!(
+        text(&e).contains("bitvar takes 3 parameters"),
+        "{}",
+        text(&e)
+    );
+    let e = call(
+        "pro_distortion",
+        vec![n(0.5), t("bitvar"), Grid::row(&[0.9, 0.2, 0.3])],
+    );
+    assert!(text(&e).contains("p0"), "{}", text(&e));
+    let e = call(
+        "pro_distortion",
+        vec![n(0.5), t("beta"), Grid::row(&[0.6, 1.5]), n(0.1)],
+    );
+    assert!(text(&e).contains("r0 is taken only by"), "{}", text(&e));
+    let e = call(
+        "pro_distortion",
+        vec![n(0.5), t("wtdtvar"), Grid::row(&[0.1, 0.5, 0.9])],
+    );
+    assert!(text(&e).contains("two columns"), "{}", text(&e));
+    let out = call(
+        "pro_distortion_calibrate",
+        vec![Grid::column(&X), Grid::column(&P), n(50.0), t("beta")],
+    );
+    assert!(text(&out).contains("several parameters"), "{}", text(&out));
 }
 
 #[test]

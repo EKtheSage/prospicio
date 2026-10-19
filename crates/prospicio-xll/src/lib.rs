@@ -1359,11 +1359,11 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "distortion",
-                help: "\"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\" or \"exp\" (aggregate's names)",
+                help: "ccoc, ph, wang, dual, tvar, exp, bitvar, beta, wtdtvar, clin, cll, lep or ly (aggregate's names)",
             },
             Arg {
                 name: "parameter",
-                help: "The distortion's parameter: ccoc r, ph rho, wang lambda, dual beta, tvar p, exp k",
+                help: "A number (ccoc r, ph rho, wang lambda, dual beta, tvar p, exp k), or a range: bitvar p0, p1, w; beta a, b; wtdtvar levels | weights; clin, cll, lep, ly r0 and the parameter",
             },
             Arg {
                 name: "step",
@@ -1668,11 +1668,11 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "family",
-                help: "ccoc, ph, wang, dual, tvar, exp, or with r0 clin, cll, lep, ly (aggregate's names)",
+                help: "ccoc, ph, wang, dual, tvar, exp, bitvar, beta, wtdtvar, or with r0 clin, cll, lep, ly (aggregate's names)",
             },
             Arg {
                 name: "parameter",
-                help: "The family's parameter: r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly)",
+                help: "r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly); a range for bitvar (p0, p1, w), beta (a, b) and wtdtvar (levels | weights)",
             },
             Arg {
                 name: "r0",
@@ -1696,11 +1696,11 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "family",
-                help: "ccoc, ph, wang, dual, tvar, exp, or with r0 clin, cll, lep, ly (aggregate's names)",
+                help: "ccoc, ph, wang, dual, tvar, exp, bitvar, beta, wtdtvar, or with r0 clin, cll, lep, ly (aggregate's names)",
             },
             Arg {
                 name: "parameter",
-                help: "The family's parameter: r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly)",
+                help: "r (ccoc), rho (ph), lambda (wang), beta (dual), p (tvar), k (exp), slope (clin), b (cll), r (lep, ly); a range for bitvar (p0, p1, w), beta (a, b) and wtdtvar (levels | weights)",
             },
             Arg {
                 name: "r0",

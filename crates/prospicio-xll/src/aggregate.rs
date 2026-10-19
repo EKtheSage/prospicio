@@ -20,7 +20,6 @@ use prospicio_aggregate::{
     aggregate_layer_statistics, compound_moments, fft, fft_auto, occurrence_layer_statistics,
     round_bucket,
 };
-use prospicio_prob::distortion::Family;
 use prospicio_prob::{Counting, Distortion, Distribution, Grid, PanjerClass, SeverityDist};
 
 use crate::pricing::{Result, amount, numbers, scalar, severity};
@@ -444,24 +443,13 @@ pub fn cover(args: &[Range]) -> Result<Range> {
 
 /// A distortion by `aggregate`'s short name (or its long one) and its
 /// parameter.
+/// A distortion by name, any of `PRO.DISTORTION`'s families; a capped
+/// family takes `r0` and its parameter together in `parameter`.
 fn distortion(name: &Range, parameter: &Range) -> Result<Distortion> {
-    let family = match text_option(name, "distortion")?.as_deref() {
-        Some("ccoc") => Family::Ccoc,
-        Some("ph" | "proportional_hazard") => Family::ProportionalHazard,
-        Some("wang") => Family::Wang,
-        Some("dual" | "dual_power") => Family::DualPower,
-        Some("tvar") => Family::Tvar,
-        Some("exp" | "exponential") => Family::Exponential,
-        None => return Err("distortion is required".into()),
-        Some(other) => {
-            return Err(format!(
-                "distortion must be \"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\" or \"exp\", got {other:?}"
-            ));
-        }
-    };
-    family
-        .with(scalar(parameter, "parameter")?)
-        .map_err(|e| e.to_string())
+    if name.is_blank() {
+        return Err("distortion is required".into());
+    }
+    crate::distortions::parse(name, parameter, &Range::missing())
 }
 
 /// A tower on the annual grid, each view priced on its own by a

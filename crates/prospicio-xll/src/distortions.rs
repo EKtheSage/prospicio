@@ -1,4 +1,4 @@
-//! Distortions on a sheet (`docs/design/xll.md`, decision 29): a
+//! Distortions on a sheet (`docs/design/xll.md`, decisions 29 and 31): a
 //! distortion's `g(s)`, the risk measure it gives a discrete or simulated
 //! distribution, and the member of each family that gives a target premium
 //! (`prospicio_prob::distortion`), as `aggregate`'s `Distortion` and its
@@ -12,8 +12,8 @@ use crate::sheet::{Grid, Value};
 
 type Result<T> = std::result::Result<T, String>;
 
-const NAMES: &str = "\"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\", \"exp\", or with r0 \
-\"clin\", \"cll\", \"lep\" or \"ly\"";
+const NAMES: &str = "\"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\", \"exp\", \"bitvar\", \
+\"beta\", \"wtdtvar\", or with r0 \"clin\", \"cll\", \"lep\" or \"ly\"";
 
 /// A family by `aggregate`'s short name (or its long one); the capped
 /// families take the intercept `r0`.
@@ -44,6 +44,9 @@ fn family(name: &str, r0_arg: &Grid) -> Result<Family> {
         "cll" | "capped_log_linear" => Ok(Family::CappedLogLinear { r0: r0()? }),
         "lep" => Ok(Family::Lep { r0: r0()? }),
         "ly" | "linear_yield" => Ok(Family::LinearYield { r0: r0()? }),
+        "bitvar" | "beta" | "wtdtvar" | "weighted_tvar" => Err(format!(
+            "{name:?} has several parameters and is not calibrated; calibrate a one-parameter family"
+        )),
         other => Err(format!("family must be {NAMES}, got {other:?}")),
     }
 }
@@ -55,16 +58,107 @@ fn text(grid: &Grid, name: &str) -> Result<String> {
     }
 }
 
-fn distortion(name: &Grid, parameter: &Grid, r0: &Grid) -> Result<Distortion> {
-    family(&text(name, "family")?, r0)?
-        .with(scalar(parameter, "parameter")?)
-        .map_err(|e| e.to_string())
+/// The cells of `parameter` as numbers, row by row, exactly `want` of
+/// them.
+fn several(parameter: &Grid, family: &str, want: usize, names: &str) -> Result<Vec<f64>> {
+    let x = numbers(parameter, "parameter")?;
+    if x.len() == want {
+        Ok(x)
+    } else {
+        Err(format!(
+            "{family} takes {want} parameters in one range ({names}), got {}",
+            x.len()
+        ))
+    }
+}
+
+/// A weighted TVaR's levels and weights: two columns (levels | weights)
+/// or two rows.
+fn levels_and_weights(parameter: &Grid) -> Result<(Vec<f64>, Vec<f64>)> {
+    let (n, by_rows) = if parameter.columns == 2 {
+        (parameter.rows, true)
+    } else if parameter.rows == 2 {
+        (parameter.columns, false)
+    } else {
+        return Err(
+            "wtdtvar takes its levels and weights as two columns (levels | weights) or two rows"
+                .into(),
+        );
+    };
+    let (mut ps, mut wts) = (Vec::new(), Vec::new());
+    let at = |i, j| {
+        if by_rows {
+            parameter.get(i, j)
+        } else {
+            parameter.get(j, i)
+        }
+    };
+    for i in 0..n {
+        match (at(i, 0), at(i, 1)) {
+            (Value::Number(p), Value::Number(w)) => {
+                ps.push(*p);
+                wts.push(*w);
+            }
+            (a, b) if a.is_blank() && b.is_blank() => {}
+            _ => {
+                return Err(format!(
+                    "wtdtvar needs a level and a weight in each pair; pair {} is not two numbers",
+                    i + 1
+                ));
+            }
+        }
+    }
+    Ok((ps, wts))
+}
+
+/// A distortion by `aggregate`'s name. The one-parameter families take a
+/// number; bitvar takes `p0, p1, w` and beta `a, b` in one range, wtdtvar
+/// its levels and weights as two columns or rows; the capped families
+/// take their parameter with `r0` beside it, or `r0` and the parameter
+/// together in one range.
+pub(crate) fn parse(name: &Grid, parameter: &Grid, r0: &Grid) -> Result<Distortion> {
+    let name = text(name, "family")?;
+    let key = name.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+    let only = |family: &str| {
+        if r0.is_blank() {
+            Ok(())
+        } else {
+            Err(format!(
+                "r0 is taken only by \"clin\", \"cll\", \"lep\" and \"ly\", not {family:?}"
+            ))
+        }
+    };
+    let d = match key.as_str() {
+        "bitvar" => {
+            only(&name)?;
+            let x = several(parameter, "bitvar", 3, "p0, p1, w")?;
+            Distortion::bitvar(x[0], x[1], x[2])
+        }
+        "beta" => {
+            only(&name)?;
+            let x = several(parameter, "beta", 2, "a, b")?;
+            Distortion::beta(x[0], x[1])
+        }
+        "wtdtvar" | "weighted_tvar" => {
+            only(&name)?;
+            let (ps, wts) = levels_and_weights(parameter)?;
+            Distortion::weighted_tvar(ps, wts)
+        }
+        "clin" | "capped_linear" | "cll" | "capped_log_linear" | "lep" | "ly" | "linear_yield"
+            if r0.is_blank() && parameter.as_scalar().is_none() =>
+        {
+            let x = several(parameter, &name, 2, "r0 and the parameter")?;
+            family(&name, &Grid::scalar(Value::Number(x[0])))?.with(x[1])
+        }
+        _ => family(&name, r0)?.with(scalar(parameter, "parameter")?),
+    };
+    d.map_err(|e| e.to_string())
 }
 
 /// `PRO.DISTORTION(s, family, parameter, [r0])`: `g(s)` at each
 /// exceedance probability `s` in `[0, 1]`.
 pub fn g(args: &[Grid]) -> Result<Grid> {
-    let d = distortion(&args[1], &args[2], &args[3])?;
+    let d = parse(&args[1], &args[2], &args[3])?;
     map1(&args[0], "s", false, |s| {
         if (0.0..=1.0).contains(&s) {
             Ok(d.g(s))
@@ -108,7 +202,7 @@ fn outcomes(values: &Grid, probs: &Grid) -> Result<(Vec<f64>, Vec<f64>)> {
 /// the outcomes (draws when `probs` is omitted), with the mean and margin.
 pub fn price(args: &[Grid]) -> Result<Grid> {
     let (x, p) = outcomes(&args[0], &args[1])?;
-    let d = distortion(&args[2], &args[3], &args[4])?;
+    let d = parse(&args[2], &args[3], &args[4])?;
     let mean: f64 = x.iter().zip(&p).map(|(x, p)| x * p).sum();
     let rho = d.apply_discrete(&x, &p);
     let row = |label: &str, v: f64| vec![Value::from(label), Value::number(v)];
