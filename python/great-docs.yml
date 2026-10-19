@@ -122,6 +122,11 @@ reference:
       - models.Design
       - models.Glm
       - models.GlmFit
+      - models.TweedieGlm
+      - models.TweedieFit
+      - models.tweedie_profile
+      - models.NegativeBinomialGlm
+      - models.NegativeBinomialFit
       - models.BayesGlm
       - models.BayesGlmFit
       - models.ElasticNet

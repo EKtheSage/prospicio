@@ -90,6 +90,12 @@ pseudo_bma_weights_rust <- function(lpd, k, n_draws, seed) .Call(wrap__pseudo_bm
 
 glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power) .Call(wrap__glm_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, link_power)
 
+tweedie_glm_fit_design <- function(x, names, y, offset, weights, link_name, min_power, max_power) .Call(wrap__tweedie_glm_fit_design, x, names, y, offset, weights, link_name, min_power, max_power)
+
+tweedie_profile_design <- function(x, names, y, offset, weights, link_name, powers) .Call(wrap__tweedie_profile_design, x, names, y, offset, weights, link_name, powers)
+
+glm_nb_fit_design <- function(x, names, y, offset, weights, link_name) .Call(wrap__glm_nb_fit_design, x, names, y, offset, weights, link_name)
+
 elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power) .Call(wrap__elastic_net_fit_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power)
 
 elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid)

@@ -11,6 +11,7 @@
 
 mod artifact;
 pub mod gam;
+pub mod negbin;
 pub mod net;
 mod robust;
 pub mod tweedie;

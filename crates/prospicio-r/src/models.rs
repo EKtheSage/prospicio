@@ -138,6 +138,101 @@ fn glm_fit_design(
     })
 }
 
+/// A Tweedie GLM with its power estimated: `list(model, power, phi,
+/// log_likelihood, lower, upper, lower_open, upper_open, at_boundary)`.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn tweedie_glm_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    link_name: &str,
+    min_power: f64,
+    max_power: f64,
+) -> Result<List> {
+    let l = link(link_name, Family::Poisson, f64::NAN)?;
+    let mut spec = prospicio_glm::tweedie::TweedieGlm::new(l);
+    spec.min_power = min_power;
+    spec.max_power = max_power;
+    let d = design(x, names, offset, weights)?;
+    let f = spec.fit(&d, y).map_err(to_r)?;
+    let (lower, upper) = f.interval();
+    let (lower_open, upper_open) = f.interval_open();
+    Ok(list!(
+        model = GlmModel {
+            inner: f.glm().clone(),
+            training: Some((d, y.to_vec())),
+        },
+        power = f.power(),
+        phi = f.dispersion(),
+        log_likelihood = f.log_likelihood(),
+        lower = lower,
+        upper = upper,
+        lower_open = lower_open,
+        upper_open = upper_open,
+        at_boundary = f.at_boundary()
+    ))
+}
+
+/// The Tweedie power's profile: `list(powers, log_likelihood, dispersion,
+/// power, phi, max_log_likelihood, model)`.
+#[extendr]
+fn tweedie_profile_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    link_name: &str,
+    powers: &[f64],
+) -> Result<List> {
+    let l = link(link_name, Family::Poisson, f64::NAN)?;
+    let d = design(x, names, offset, weights)?;
+    let p = prospicio_glm::tweedie::tweedie_profile(l, &d, y, powers).map_err(to_r)?;
+    Ok(list!(
+        powers = p.powers,
+        log_likelihood = p.log_likelihood,
+        dispersion = p.dispersion,
+        power = p.power,
+        phi = p.phi,
+        max_log_likelihood = p.max_log_likelihood,
+        model = GlmModel {
+            inner: p.fit,
+            training: Some((d, y.to_vec())),
+        }
+    ))
+}
+
+/// A negative binomial GLM with `theta` estimated: `list(model, theta,
+/// se_theta, log_likelihood, aic)`.
+#[extendr]
+fn glm_nb_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    link_name: &str,
+) -> Result<List> {
+    let l = link(link_name, Family::Poisson, f64::NAN)?;
+    let d = design(x, names, offset, weights)?;
+    let f = prospicio_glm::negbin::NegativeBinomialGlm::new(l)
+        .fit(&d, y)
+        .map_err(to_r)?;
+    Ok(list!(
+        model = GlmModel {
+            inner: f.glm().clone(),
+            training: Some((d, y.to_vec())),
+        },
+        theta = f.theta(),
+        se_theta = f.se_theta(),
+        log_likelihood = f.log_likelihood(),
+        aic = f.aic()
+    ))
+}
+
 #[extendr]
 impl GlmModel {
     fn names(&self) -> Vec<String> {
@@ -1358,6 +1453,9 @@ extendr_module! {
     fn stacking_weights_rust;
     fn pseudo_bma_weights_rust;
     fn glm_fit_design;
+    fn tweedie_glm_fit_design;
+    fn tweedie_profile_design;
+    fn glm_nb_fit_design;
     fn elastic_net_fit_design;
     fn elastic_net_cv_design;
     fn gam_fit_design;

@@ -492,3 +492,42 @@ def test_glm_mean_preserving_parameter_draws():
     assert sum(normal.total().draws) > sum(centred.total().draws)
     with pytest.raises(ValueError):
         fit.predict_distribution(d, 10, 1, parameters="other")
+
+
+def _quine():
+    import csv
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[2] / "validation" / "data" / "quine.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(f))
+    names = ["EthN", "SexM", "AgeF1", "AgeF2", "AgeF3", "LrnSL"]
+    columns = [[1.0] * len(rows)] + [[float(r[n]) for r in rows] for n in names]
+    return Design(columns, ["(Intercept)", *names]), [float(r["Days"]) for r in rows]
+
+
+def test_negative_binomial_theta_matches_mass_glm_nb():
+    # MASS 7.3-60: glm.nb(Days ~ Eth + Sex + Age + Lrn, quine).
+    from prospicio.models import NegativeBinomialGlm
+
+    design, y = _quine()
+    fit = NegativeBinomialGlm().fit(design, y)
+    assert fit.theta == pytest.approx(1.27489264581101, rel=1e-6)
+    assert fit.se_theta == pytest.approx(0.161035178973597, rel=1e-5)
+    assert fit.log_likelihood == pytest.approx(-546.575509144992, rel=1e-9)
+    assert fit.aic == pytest.approx(2 * 546.575509144992 + 2 * 8, rel=1e-9)
+    assert fit.glm.coefficients[0] == pytest.approx(2.89458001692052, rel=1e-6)
+    assert len(fit.predict(design)) == len(y)
+
+
+def test_tweedie_power_is_the_profile_maximum():
+    from prospicio.models import TweedieGlm, tweedie_profile
+
+    design, y = _quine()
+    fit = TweedieGlm().fit(design, y)
+    lo, hi = fit.interval
+    assert lo < fit.power < hi
+    profile = tweedie_profile(design, y, [1.1, 1.3, 1.5, 1.7, 1.9])
+    assert profile["power"] == pytest.approx(fit.power, abs=1e-3)
+    assert profile["max_log_likelihood"] == pytest.approx(fit.log_likelihood, rel=1e-6)
+    assert max(profile["log_likelihood"]) <= fit.log_likelihood + 1e-9

@@ -330,3 +330,19 @@ near(gm@aic, -2 * gm@log_likelihood + 2 * gm@edf, 1e-14)
 stopifnot(is.finite(gm@log_likelihood))
 
 cat("prospicio R models tests passed\n")
+
+# The negative binomial's theta agrees with MASS::glm.nb, and the Tweedie
+# power is the maximum of its profile.
+quine <- MASS::quine
+nb <- glm_nb_fit(Days ~ Eth + Sex + Age + Lrn, quine)
+rnb <- MASS::glm.nb(Days ~ Eth + Sex + Age + Lrn, quine)
+near(nb$theta, rnb$theta, 1e-6)
+near(nb$se_theta, rnb$SE.theta, 1e-5)
+near(nb$log_likelihood, as.numeric(logLik(rnb)), 1e-9)
+near(nb$aic, AIC(rnb), 1e-9)
+near(coef(nb$model), coef(rnb), 1e-6)
+tw <- tweedie_glm_fit(Days ~ Eth + Sex + Age + Lrn, quine)
+stopifnot(tw$lower < tw$power, tw$power < tw$upper)
+pr <- tweedie_profile(Days ~ Eth + Sex + Age + Lrn, quine, powers = c(1.1, 1.3, 1.5, 1.7, 1.9))
+near(pr$power, tw$power, 1e-2)
+near(pr$max_log_likelihood, tw$log_likelihood, 1e-6)
