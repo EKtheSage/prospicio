@@ -170,4 +170,4 @@
   `casualty_rate_by_frequency()`, `casualty_occurrences()`,
   `casualty_sweep()`, `casualty_expected_claims()`,
   `casualty_count_test()`, `pareto_anchor()` and `poisson_tail()`. The
-  ALAE treatment is a required argument.
+  ALAE treatment is a required argument (#396).
