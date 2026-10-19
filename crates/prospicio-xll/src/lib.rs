@@ -1239,6 +1239,38 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::layers,
     },
     Function {
+        symbol: "pro_agg_pml",
+        name: "PRO.AGG.PML",
+        help: "Occurrence and aggregate PML curves by return period: the year's largest occurrence and its total.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of occurrences a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "return_periods",
+                help: "Return periods in years (a row or column; below 1 read as probabilities); 2 to 1000 if omitted",
+            },
+            Arg {
+                name: "step",
+                help: "The aggregate grid's step, with points; sized automatically if both are omitted",
+            },
+            Arg {
+                name: "points",
+                help: "The aggregate grid's number of points: the severity is rounded onto it, its mass above lumped at the top",
+            },
+        ],
+        run: aggregate::pml,
+    },
+    Function {
         symbol: "pro_bayes_odp",
         name: "PRO.BAYES.ODP",
         help: "Bayesian ODP chain ladder sampled by MCMC (NUTS): reserves, parameters' posterior, or diagnostics.",

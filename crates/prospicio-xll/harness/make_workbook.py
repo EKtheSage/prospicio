@@ -605,6 +605,11 @@ ag["A25"] = ArrayFormula("A25:D39", "=PRO.AGG.LAYERS(B2,B3,B4,B5,B6,,B22:D22,B23
 for row in ag.iter_rows(min_row=26, max_row=39, min_col=2, max_col=4):
     for c in row:
         c.number_format = "0.0000"
+ag["A41"] = "Occurrence and aggregate PML curves (aggregate's oep beside the total's VaR)"; ag["A41"].font = bold
+ag["A42"] = ArrayFormula("A42:F51", "=PRO.AGG.PML(B2,B3,B4,B5,B6)")
+for row in ag.iter_rows(min_row=43, max_row=51, min_col=1, max_col=6):
+    for c in row:
+        c.number_format = "0.0000" if c.column in (2, 5) else "#,##0.0" if c.column == 6 else "#,##0"
 ag.column_dimensions["A"].width = 18
 ag.column_dimensions["D"].width = 16
 ag.column_dimensions["G"].width = 16
