@@ -15,8 +15,8 @@
   Bayesian fit with warnings is still scored.
 - **Breaking:** `diagonal_backtest` returns an error naming two models
   with the same name, before any fit (it used to accept them);
-  `NamedModel::new(name, model)` renames one.
-- The diagonal backtest in Python and R (#342). Python:
+  `NamedModel::new(name, model)` renames one. (#420)
+- The diagonal backtest in Python and R (#342, #420). Python:
   `prospicio.reserving.diagonal_backtest(triangle, column, models,
   n_diagonals, premium=...)` with `BayesOdp`, `Meyers` or a new
   `GlmCandidate` (`GlmCandidate.odp()` for the ODP model), returning a
