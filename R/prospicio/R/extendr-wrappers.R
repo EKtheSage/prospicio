@@ -1609,6 +1609,12 @@ product_limit_rust <- function(losses, reporting, censored, weights) .Call(wrap_
 
 goodness_of_fit_rust <- function(severity, losses, reporting, censored, weights, upper) .Call(wrap__goodness_of_fit_rust, severity, losses, reporting, censored, weights, upper)
 
+grouped_fit_rust <- function(family, bounds, counts, method) .Call(wrap__grouped_fit_rust, family, bounds, counts, method)
+
+grouped_goodness_of_fit_rust <- function(severity, bounds, counts) .Call(wrap__grouped_goodness_of_fit_rust, severity, bounds, counts)
+
+lev_distance_fit_rust <- function(family, sizes, empirical, weights, start) .Call(wrap__lev_distance_fit_rust, family, sizes, empirical, weights, start)
+
 MixtureDist <- new.env(parent = emptyenv())
 
 MixtureDist$new <- function(weights, components) .Call(wrap__MixtureDist__new, weights, components)

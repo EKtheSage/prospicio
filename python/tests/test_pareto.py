@@ -239,3 +239,43 @@ def test_issue_194_product_limit_and_goodness_of_fit():
     assert len(gof["model_quantile"]) == 6
     # Any severity works, a Pareto fit included.
     assert D.goodness_of_fit(D.Pareto.fit(y, 100.0), y)["max_distance"] > 0.0
+
+
+def test_issue_328_grouped_fits_reproduce_bahnemann():
+    import math
+
+    from prospicio.distributions import (
+        Gamma,
+        fit_grouped,
+        fit_lev_distance,
+        grouped_goodness_of_fit,
+    )
+
+    inf = math.inf
+    bounds = [0, 1000, 1500, 2000, 2500, 3000, inf]
+    counts = [42, 61, 47, 26, 14, 10]
+    # Ex 2.7: the printed gamma's chi-square.
+    g = grouped_goodness_of_fit(Gamma(3.907288, 397.931), bounds, counts)
+    assert abs(g["chi_square"] - 3.095) < 5e-4
+    assert abs(sum(g["expected"]) - 200) < 1e-9
+    # Ex 2.8: the minimum chi-square lognormal (the book's is not the minimum).
+    fit = fit_grouped("lognormal", bounds, counts, "chi_square")
+    assert abs(fit.parameters["meanlog"] - 7.2857) < 5e-5
+    assert abs(fit.parameters["sdlog"] - 0.4570) < 5e-5
+    assert abs(fit.chi_square - 0.614) < 5e-4
+    assert fit.degrees_of_freedom == 3 and 0.89 < fit.p_value < 0.90
+    ml = fit_grouped("lognormal", bounds, counts)
+    assert ml.method == "ml" and ml.chi_square >= fit.chi_square
+    assert all(s > 0 for s in ml.standard_errors.values())
+    # Ex 2.10: the minimum limited-mean distance lognormal, 1,500 claims
+    # under a 300,000 limit.
+    x = [1000, 5000, 10000, 25000, 50000, 100000, 200000, 300000]
+    below = [729, 1096, 1208, 1326, 1391, 1440, 1468, 1500]
+    total = [225138, 1102272, 1918947, 3752091, 6007543, 9234739, 13100561, 22343455]
+    e = [(t + v * (1500 - b)) / 1500 for t, v, b in zip(total, x, below)]
+    lev = fit_lev_distance("lognormal", x, e)
+    assert abs(lev.parameters["meanlog"] - 6.9852) < 5e-5
+    assert abs(lev.parameters["sdlog"] - 2.5850) < 5e-5
+    assert [round(f) for f in lev.fitted] == [648, 2091, 3239, 5410, 7580, 10168, 13069, 14850]
+    with pytest.raises(ValueError):
+        fit_grouped("lognormal", bounds, counts, "mle")

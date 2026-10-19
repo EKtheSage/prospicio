@@ -111,6 +111,39 @@ conversion reports the error it introduces.
   survival without truncation, a truncated risk set, and Weibull draws
   reported above 0, 200 or 500 and capped at 4,000 within 0.02 of the
   truth, with the Q-Q column within 10% where the risk set is large.
+- `prospicio_prob::grouped_fit` (#328, third part) fits the same families
+  to grouped losses, `GroupedLosses` of counts in size bands
+  `(b_k, b_{k+1}]`, without individual amounts (Bahnemann, CAS Monograph
+  2, sections 2.4 and 2.5). The losses are conditioned on the range of the
+  bands, `p_k = (S(b_k) − S(b_{k+1})) / (S(b_0) − S(b_n))`, so a first
+  bound above 0 is a deductible's truncation and a finite last bound a
+  truncation from above. `fit_grouped(family, data, method)` maximizes the
+  multinomial log-likelihood `Σ O_k ln p_k` (`GroupedMethod::
+  MaximumLikelihood`) or minimizes Pearson's chi-square
+  (`MinimumChiSquare`), by Nelder–Mead on the family's unconstrained
+  scale from the `fit_severity` fit of losses placed at the bands'
+  midpoints (an open top band censored at its lower bound), and the
+  minimum chi-square from the grouped maximum likelihood fit too. Both
+  estimators reach the grouped data's Fisher information `N Σ ∇p ∇pᵀ / p`
+  asymptotically, so `GroupedFit::covariance` is its inverse for either;
+  the fit reports the chi-square with its degrees of freedom (bands with a
+  positive expected count, less one, less the parameters) and p-value.
+  `fit_lev_distance(family, sizes, empirical, weights, start)` is
+  Bahnemann's minimum distance: it minimizes `Σ w (E[X; x_j] − e_j)²`
+  against empirical limited means, which are exact from grouped data with
+  each band's total and stay exact under a policy limit at or above the
+  last size; without a start it fits losses spread so that the slopes of
+  the empirical limited means are their survival. One entry point per
+  objective over the `Family` enum, as `fit_severity`. Tested against
+  Bahnemann's printed fits: Ex 2.7's chi-square 3.095, Ex 2.11's
+  lognormal on bands above a deductible (6.6916, 2.6965; chi-square 4.691
+  and its expected counts), P2.16's gamma (4.7432, 337.31), P2.43
+  (9.495111, 1.084180), Ex 2.10's minimum limited-mean distance
+  (6.9852, 2.5850; the fitted limited means to the unit) and P2.39
+  (9.778102, 1.444776); Ex 2.8's printed lognormal is not the minimum
+  (its chi-square is 1.020, not the 1.828 printed), which is 0.614 at
+  (7.2857, 0.4570). The grouped maximum likelihood fit has a zero score,
+  and R's `optim` on the same likelihood agrees.
 - `prospicio_prob::PolicyLimits` (decided 2026-10-14, #213) is a severity
   capped by a mix of policy limits, `min(X, L)` with `L = limits[j]` with
   probability `weights[j]` (normalized to 1; infinity for an unlimited

@@ -364,3 +364,13 @@
   and refuses bounds that differ. The Pareto fits refuse such data rather
   than ignore it. Python and R `truncated_above` on `fit_severity` /
   `severity_fit` and `goodness_of_fit` (#328).
+- Grouped losses: `prospicio_prob::grouped_fit::fit_grouped` fits the
+  lognormal, gamma, Weibull, Burr or Lomax to counts in size bands by
+  maximum likelihood or minimum chi-square, conditioned on the range of the
+  bands (a deductible's truncation, a truncation from above), with
+  standard errors from the grouped Fisher information and the chi-square
+  test; `fit_lev_distance` fits by the minimum distance to empirical
+  limited expected values (Bahnemann, CAS Monograph 2). Python
+  `fit_grouped`, `fit_lev_distance`, `grouped_goodness_of_fit`; R
+  `grouped_fit()`, `lev_distance_fit()`, `grouped_goodness_of_fit()`
+  (#328).
