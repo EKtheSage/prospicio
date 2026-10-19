@@ -477,4 +477,5 @@ mod exports {
     udf!(pro_payout_pattern, times, values, kind, shift, rate);
     udf!(pro_payout_stats, times, values, rate, kind, shift);
     udf!(pro_payout_price, expected_loss, assets, coc, times, values, rate, kind, shift);
+    udf!(pro_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, quoted);
 }

@@ -23,6 +23,7 @@ pub mod exposure;
 pub mod fitting;
 pub mod payout;
 pub mod pricing;
+pub mod quote;
 pub mod ratemaking;
 pub mod reserving;
 pub mod sheet;
@@ -1613,6 +1614,46 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: payout::price,
+    },
+    Function {
+        symbol: "pro_quote",
+        name: "PRO.QUOTE",
+        help: "A cover's technical premium (R + f) / (1 - e - b) with its build-up and market ratios, and the cover at each quoted premium.",
+        args: &[
+            Arg {
+                name: "expected_loss",
+                help: "Expected loss E[X]",
+            },
+            Arg {
+                name: "risk_premium",
+                help: "The risk-loaded premium R, such as PRO.TOWER.PRICE's premium",
+            },
+            Arg {
+                name: "assets",
+                help: "Assets backing the loss, for capital and its return (blank leaves them out)",
+            },
+            Arg {
+                name: "expenses",
+                help: "Internal expenses as a share of the premium (0 if omitted)",
+            },
+            Arg {
+                name: "brokerage",
+                help: "Brokerage as a share of the premium (0 if omitted)",
+            },
+            Arg {
+                name: "fixed",
+                help: "A fixed expense per contract, an amount (0 if omitted)",
+            },
+            Arg {
+                name: "limit",
+                help: "The limit at the placed share, for the rate on line and payback",
+            },
+            Arg {
+                name: "quoted",
+                help: "Quoted premiums: a value or a row, one column each",
+            },
+        ],
+        run: quote::quote,
     },
 ];
 

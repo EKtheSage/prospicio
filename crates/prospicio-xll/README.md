@@ -78,6 +78,7 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.PAYOUT.PATTERN(times, values, [kind], [shift], [rate])` | A payment pattern by time: share paid, paid to date, outstanding, discount |
 | `PRO.PAYOUT.STATS(times, values, rate, [kind], [shift])` | Discount factor, duration and discounted capital years |
 | `PRO.PAYOUT.PRICE(expected_loss, assets, coc, times, values, rate, [kind], [shift])` | A cost-of-capital price restated over the payout |
+| `PRO.QUOTE(expected_loss, risk_premium, [assets], [expenses], [brokerage], [fixed], [limit], [quoted])` | Technical premium with its build-up and ratios, and the cover at quoted premiums |
 | `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights])` | Maximum likelihood fit to large losses: parameters with SEs, fit against the data, or the body families compared |
 | `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Pareto extrapolation from one layer to others |
 | `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])` | Alpha between two layers |
@@ -208,6 +209,12 @@ Ctrl+Alt+F9 to recalculate.
   the discount rate and capital runs off with the outstanding share; a
   distortion price over the payout is its premium times the discount
   factor.
+- `PRO.QUOTE`: expenses and brokerage are shares of the premium itself,
+  so they gross up, `(R + fixed) / (1 - expenses - brokerage)`; the risk
+  premium `R` is a risk-loaded price such as `PRO.TOWER.PRICE`'s. Each
+  quoted premium gets a column: what it leaves after the loads is the
+  reinsurer's risk premium, and the margin and return on capital follow
+  (capital needs `assets`; the rate on line and payback need `limit`).
 - Aggregates: `count_mean` claims a year with `dispersion` Var N / E N
   (1, Poisson, if omitted; a mixing CV c is `1 + c^2 * count_mean`); the
   grid is sized automatically unless `step` and `points` are given.
