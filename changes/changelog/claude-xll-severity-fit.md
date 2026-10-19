@@ -6,4 +6,5 @@
   and the Pareto, piecewise Pareto and Riegel's generalized Pareto by the
   R package Pareto's estimators; the parameters come out in the order the
   severity functions take them, with standard errors, AIC and BIC, P-P and
-  Q-Q against the product-limit estimate, and the body families compared.
+  Q-Q against the product-limit estimate, and the body families compared
+  (#413).
