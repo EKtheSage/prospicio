@@ -2,7 +2,7 @@
 //! Iman-Conover, over `prospicio_prob`.
 
 use prospicio_core::StreamRng;
-use prospicio_prob::capital::{Allocation, AllocationMethod};
+use prospicio_prob::capital::{Allocation, AllocationMethod, LevelAllocation, LevelMeasure};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
 use prospicio_prob::{
@@ -871,9 +871,10 @@ impl PyAllocation {
     }
 }
 
-const METHODS: [(&str, AllocationMethod); 5] = [
+const METHODS: [(&str, AllocationMethod); 6] = [
     ("euler", AllocationMethod::Euler),
     ("covariance", AllocationMethod::Covariance),
+    ("covariance_margin", AllocationMethod::CovarianceMargin),
     ("proportional", AllocationMethod::Proportional),
     ("marginal", AllocationMethod::Marginal),
     ("shapley", AllocationMethod::Shapley),
@@ -894,7 +895,11 @@ fn method_name(method: AllocationMethod) -> &'static str {
 ///
 /// - ``"euler"``: co-measure (for TVaR, the CoTVaRs); consistent with
 ///   marginal changes to the portfolio.
-/// - ``"covariance"``: ``rho(S) Cov(X_j, S) / Var(S)``.
+/// - ``"covariance"``: ``rho(S) Cov(X_j, S) / Var(S)``, which spreads the
+///   expected loss by covariance too.
+/// - ``"covariance_margin"``: ``E[X_j] + (rho(S) - E[S]) Cov(X_j, S) /
+///   Var(S)``, each unit's mean plus a share of the margin by covariance
+///   (Kalkbrener's allocation; *Pricing Insurance Risk*, Exercise 217).
 /// - ``"proportional"``: stand-alone measures scaled to ``rho(S)``.
 /// - ``"marginal"``: ``rho(S) - rho(S - X_j)`` (Merton-Perold); does not
 ///   add up to ``rho(S)``.
@@ -915,7 +920,8 @@ fn method_name(method: AllocationMethod) -> &'static str {
 /// Raises
 /// ------
 /// ValueError
-///     For an unknown method, a constant total (``"covariance"``),
+///     For an unknown method, a constant total (``"covariance"``,
+///     ``"covariance_margin"``),
 ///     stand-alone measures summing to 0 (``"proportional"``) or more than
 ///     12 components (``"shapley"``).
 ///
@@ -944,12 +950,245 @@ pub(crate) fn capital(
         .map(|(_, m)| *m)
         .ok_or_else(|| {
             PyValueError::new_err(
-                "method must be one of euler, covariance, proportional, marginal, shapley",
+                "method must be one of euler, covariance, covariance_margin, proportional, \
+                 marginal, shapley",
             )
         })?;
     let (pd, d) = (&pd.inner, distortion.inner.clone());
     let inner = py.detach(|| pd.capital(&d, method)).map_err(to_py)?;
     Ok(PyAllocation { inner })
+}
+
+/// The Shapley value of the game whose cost is ``cost`` of each
+/// sub-portfolio, for any cost function, not only a distortion: a
+/// standard deviation premium, a variance, an expected utility.
+///
+/// ``cost`` is called with a list of the sub-portfolio's total in each
+/// simulation, in simulation order, once for each of the ``2**m - 1``
+/// non-empty sub-portfolios (the empty one costs 0), and returns a float.
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+///     Components that add up to the portfolio; at most 12.
+/// cost : callable
+///     ``cost(draws: list[float]) -> float``.
+///
+/// Returns
+/// -------
+/// Allocation
+///     ``total`` is ``cost`` of the whole portfolio, ``standalone`` that of
+///     each component, ``allocated`` the Shapley values, summing to
+///     ``total``; ``method`` is ``"shapley"``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     For more than 12 components or a cost that is not finite.
+///
+/// Examples
+/// --------
+/// >>> import statistics
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.risk import shapley
+/// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+/// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+/// >>> a = shapley(pd, lambda x: statistics.fmean(x) + statistics.pstdev(x))
+/// >>> round(sum(a.allocated) - a.total, 12)
+/// 0.0
+#[pyfunction]
+pub(crate) fn shapley(
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    cost: &Bound<'_, PyAny>,
+) -> PyResult<PyAllocation> {
+    let mut error = None;
+    let result = pd.inner.shapley_with(|x| {
+        if error.is_some() {
+            return 0.0;
+        }
+        match cost.call1((x.to_vec(),)).and_then(|v| v.extract::<f64>()) {
+            Ok(v) => v,
+            Err(e) => {
+                error = Some(e);
+                0.0
+            }
+        }
+    });
+    if let Some(e) = error {
+        return Err(e);
+    }
+    Ok(PyAllocation {
+        inner: result.map_err(to_py)?,
+    })
+}
+
+/// An allocation of an exogenous total by stand-alone measures at one
+/// level, from ``haircut`` or ``equal_risk``.
+#[pyclass(name = "LevelAllocation", module = "prospicio.risk", frozen)]
+pub(crate) struct PyLevelAllocation {
+    inner: LevelAllocation,
+}
+
+#[pymethods]
+impl PyLevelAllocation {
+    /// The stand-alone measure: ``"var"``, ``"tvar"`` or ``"epd"``.
+    #[getter]
+    fn measure(&self) -> &'static str {
+        level_measure_name(self.inner.measure)
+    }
+
+    /// The level of the stand-alone measures: a probability for VaR and
+    /// TVaR, an EPD ratio for EPD.
+    #[getter]
+    fn level(&self) -> f64 {
+        self.inner.level
+    }
+
+    /// The amount allocated.
+    #[getter]
+    fn total(&self) -> f64 {
+        self.inner.total
+    }
+
+    /// Each component's stand-alone measure at ``level``.
+    #[getter]
+    fn standalone(&self) -> Vec<f64> {
+        self.inner.standalone.clone()
+    }
+
+    /// The allocation per component, summing to ``total``.
+    #[getter]
+    fn allocated(&self) -> Vec<f64> {
+        self.inner.allocated.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LevelAllocation(measure={:?}, level={}, total={}, allocated={:?})",
+            self.measure(),
+            self.inner.level,
+            self.inner.total,
+            self.inner.allocated
+        )
+    }
+}
+
+const LEVEL_MEASURES: [(&str, LevelMeasure); 3] = [
+    ("var", LevelMeasure::Var),
+    ("tvar", LevelMeasure::Tvar),
+    ("epd", LevelMeasure::Epd),
+];
+
+fn level_measure_name(measure: LevelMeasure) -> &'static str {
+    LEVEL_MEASURES
+        .iter()
+        .find(|(_, m)| *m == measure)
+        .map(|(name, _)| *name)
+        .expect("every measure has a name")
+}
+
+fn level_measure(name: &str) -> PyResult<LevelMeasure> {
+    LEVEL_MEASURES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, m)| *m)
+        .ok_or_else(|| PyValueError::new_err("measure must be one of var, tvar, epd"))
+}
+
+/// The haircut allocation of an exogenous ``total`` (a premium, a capital
+/// amount): each component's stand-alone ``measure`` at ``level``, scaled
+/// to add up to ``total`` (*Pricing Insurance Risk*, section 12.2.3).
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+///     Components that add up to the portfolio.
+/// total : float
+/// measure : str
+///     ``"var"``, ``"tvar"`` (``level`` a probability) or ``"epd"``
+///     (``level`` the EPD ratio ``r``: the assets at which
+///     ``E[(X - a)+] = r E[X]``).
+/// level : float
+///
+/// Returns
+/// -------
+/// LevelAllocation
+///
+/// Raises
+/// ------
+/// ValueError
+///     For a level out of range, a mean that is not positive (EPD) or
+///     stand-alone measures summing to 0.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.risk import haircut
+/// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+/// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+/// >>> haircut(pd, 18.0, "tvar", 0.5).allocated
+/// [7.0, 11.0]
+#[pyfunction]
+pub(crate) fn haircut(
+    py: Python<'_>,
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    total: f64,
+    measure: &str,
+    level: f64,
+) -> PyResult<PyLevelAllocation> {
+    let measure = level_measure(measure)?;
+    let pd = &pd.inner;
+    let inner = py
+        .detach(|| pd.haircut(total, measure, level))
+        .map_err(to_py)?;
+    Ok(PyLevelAllocation { inner })
+}
+
+/// The equal risk allocation of an exogenous ``total``: the one level at
+/// which the components' stand-alone ``measure``s add up to ``total``,
+/// each getting its own (*Pricing Insurance Risk*, section 12.2.4). For VaR
+/// and TVaR this prices the components as if comonotonic; for EPD each
+/// has the same EPD ratio.
+///
+/// A VaR of draws moves in steps: where no level adds up exactly, the level
+/// is the lowest that reaches ``total`` and its VaRs are scaled to it.
+///
+/// Parameters
+/// ----------
+/// pd : PredictiveDistribution
+/// total : float
+/// measure : str
+///     ``"var"``, ``"tvar"`` or ``"epd"``.
+///
+/// Returns
+/// -------
+/// LevelAllocation
+///     With the ``level`` found.
+///
+/// Raises
+/// ------
+/// ValueError
+///     When no level makes the stand-alone measures add up to ``total``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import PredictiveDistribution
+/// >>> from prospicio.risk import equal_risk
+/// >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+/// ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+/// >>> round(equal_risk(pd, 9.0, "tvar").level, 9)
+/// 0.5
+#[pyfunction]
+pub(crate) fn equal_risk(
+    py: Python<'_>,
+    pd: PyRef<'_, PyPredictiveDistribution>,
+    total: f64,
+    measure: &str,
+) -> PyResult<PyLevelAllocation> {
+    let measure = level_measure(measure)?;
+    let pd = &pd.inner;
+    let inner = py.detach(|| pd.equal_risk(total, measure)).map_err(to_py)?;
+    Ok(PyLevelAllocation { inner })
 }
 
 /// One of the copula classes, as a Rust copula.

@@ -42,9 +42,14 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   of the total's risk measure to the components (CoTVaR for `Tvar`).
 - `PredictiveDistribution::capital(&Distortion, AllocationMethod)` in
   `prospicio_prob::capital`: the total's measure, each component's stand-alone
-  measure and an allocation by `Euler`, `Covariance`, `Proportional`,
-  `Marginal` (Merton–Perold) or `Shapley`, with the diversification
-  benefit overall and per component.
+  measure and an allocation by `Euler`, `Covariance`, `CovarianceMargin`,
+  `Proportional`, `Marginal` (Merton–Perold) or `Shapley`, with the
+  diversification benefit overall and per component.
+  `PredictiveDistribution::shapley_with(cost)` is the Shapley value of any
+  cost of a sub-portfolio's draws (#369). `haircut(total, measure, level)`
+  and `equal_risk(total, measure)` allocate an exogenous total by
+  stand-alone VaR, TVaR or EPD at one level (`LevelMeasure`,
+  `LevelAllocation`; #369).
 - `prospicio_prob::copula`: the `Copula` trait, `GaussianCopula`,
   `StudentTCopula`, and `copula::simulate` to join marginals into a
   `PredictiveDistribution`. `prospicio_math` gained `linalg::cholesky`,
@@ -189,6 +194,32 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   contributions over every joining order. Every method returns the
   stand-alone measures too, so the diversification benefit
   `Σ ρ(X_j) − ρ(S)` and its split come with the allocation.
+- **Two covariance allocations.** `Covariance` scales the variance's
+  Euler allocation to `ρ(S)`, `ρ(S) Cov(X_j, S) / Var(S)`, so the expected
+  loss is spread by covariance too and a unit nearly independent of the
+  total gets less than its mean (1.09 against 4.5 on *Pricing Insurance
+  Risk*'s Simple Discrete Example). `CovarianceMargin` is Kalkbrener's
+  allocation with the standard deviation as auxiliary measure, the one the
+  book uses (Exercise 217): `E[X_j] + (ρ(S) − E[S]) Cov(X_j, S) / Var(S)`,
+  the mean plus a share of the margin. Both are kept: the first is the
+  existing behaviour and the one a variance-based capital model expects;
+  the second is the pricing one. They use the same shares and agree when
+  `E[S] = 0`.
+- **Shapley of any cost.** `shapley_with` takes a closure of the
+  sub-portfolio's draws instead of a distortion, so a standard deviation
+  premium or an expected utility gets the same exact Shapley value; the
+  bindings pass a Python callable or an R function. A cost that is not
+  finite, or a callback that raises, fails the allocation.
+- **Haircut and equal risk take a level, not a distortion.** They
+  allocate a total given from outside (a premium, a capital amount) by
+  each unit's stand-alone VaR, TVaR or EPD at one level, so they are their
+  own functions with their own result (`LevelAllocation`, which carries the
+  level) rather than `AllocationMethod`s of `ρ(S)`. The EPD level is the
+  ratio `r` of the expected policyholder deficit to the mean, and the
+  assets at `r` are found exactly, the stop loss of draws being piecewise
+  linear. Equal risk bisects the level (the EPD ratio on a log scale);
+  since a VaR of draws moves in steps, the level found is the lowest at
+  which the sum reaches the total and the VaRs there are scaled to it.
 - **Shapley is exact and capped at 12 components.** It evaluates `ρ` on
   all `2^m` sub-portfolios, each a sort of `n` draws. Beyond 12 components
   that cost grows too fast, and a sampled Shapley value would add noise
@@ -427,4 +458,6 @@ Fréchet–Hoeffding bounds and the errors.
 ## Next
 
 1. Done: nested Archimedean and vine copulas; threshold diagnostics for
-   EVT (`evt::threshold_diagnostics`).
+   EVT (`evt::threshold_diagnostics`); the covariance allocation of the
+   margin, the Shapley value of any cost, and the haircut and equal risk
+   allocations of an exogenous total at a VaR, TVaR or EPD level (#369).

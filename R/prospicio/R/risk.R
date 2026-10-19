@@ -640,7 +640,8 @@ S7::method(print, pot_tail) <- function(x, ...) {
 #' | `method` | Allocation to component `j` |
 #' |---|---|
 #' | `"euler"` | co-measure, as [allocate()] (CoTVaR for TVaR) |
-#' | `"covariance"` | `rho(S) Cov(X_j, S) / Var(S)` |
+#' | `"covariance"` | `rho(S) Cov(X_j, S) / Var(S)`; spreads the mean by covariance too |
+#' | `"covariance_margin"` | `E[X_j] + (rho(S) - E[S]) Cov(X_j, S) / Var(S)`: the mean plus a share of the margin (Kalkbrener; *Pricing Insurance Risk*, Exercise 217) |
 #' | `"proportional"` | stand-alone measures scaled to `rho(S)` |
 #' | `"marginal"` | `rho(S) - rho(S - X_j)` (Merton-Perold); does not add up |
 #' | `"shapley"` | Shapley value of `v(T) = rho(sum of T)`; at most 12 components |
@@ -650,8 +651,8 @@ S7::method(print, pot_tail) <- function(x, ...) {
 #'
 #' @param x A [predictive_distribution].
 #' @param distortion A [distortion].
-#' @param method One of `"euler"`, `"covariance"`, `"proportional"`,
-#'   `"marginal"`, `"shapley"`.
+#' @param method One of `"euler"`, `"covariance"`, `"covariance_margin"`,
+#'   `"proportional"`, `"marginal"`, `"shapley"`.
 #' @returns A list with `total` (`rho(S)`), `diversification_benefit`
 #'   (`sum(standalone) - total`) and `by_component`, the `keys` data frame of
 #'   `x` with columns `standalone`, `allocated` and `diversification`
@@ -666,9 +667,86 @@ S7::method(print, pot_tail) <- function(x, ...) {
 #' a$by_component
 #' a$diversification_benefit
 capital_allocation <- function(x, distortion,
-                               method = c("euler", "covariance", "proportional", "marginal", "shapley")) {
+                               method = c("euler", "covariance", "covariance_margin", "proportional",
+                                          "marginal", "shapley")) {
   method <- match.arg(method)
-  r <- rust_result(distortion@ptr$capital(x@ptr, method))
+  allocation_result(x, rust_result(distortion@ptr$capital(x@ptr, method)))
+}
+
+#' Shapley allocation of any cost
+#'
+#' The Shapley value of the game whose cost is `cost` of each sub-portfolio,
+#' for any cost function, not only a distortion: a standard deviation
+#' premium, a variance, an expected utility. `cost` is called with the
+#' sub-portfolio's total in each simulation, in simulation order, once for
+#' each of the `2^m - 1` non-empty sub-portfolios (the empty one costs 0).
+#'
+#' @param x A [predictive_distribution] with at most 12 components.
+#' @param cost A function of a numeric vector of draws returning a number.
+#' @returns As [capital_allocation()]: `total` (`cost` of the portfolio),
+#'   `diversification_benefit` and `by_component` with `standalone`,
+#'   `allocated` (the Shapley values, summing to `total`) and
+#'   `diversification`.
+#' @export
+#' @examples
+#' pd <- predictive_distribution(
+#'   matrix(c(1, 4, 2, 3, 2, 1, 5, 6), ncol = 2),
+#'   data.frame(lob = c("motor", "property"))
+#' )
+#' sd_premium <- function(x) mean(x) + sqrt(mean((x - mean(x))^2))
+#' shapley_allocation(pd, sd_premium)$by_component
+shapley_allocation <- function(x, cost) {
+  stopifnot(is.function(cost))
+  allocation_result(x, rust_result(shapley_rust(x@ptr, cost)))
+}
+
+#' Haircut and equal risk allocations
+#'
+#' Allocate an exogenous `total` (a premium, a capital amount) by each
+#' component's stand-alone measure at one level (*Pricing Insurance Risk*,
+#' sections 12.2.3 and 12.2.4). `haircut_allocation()` takes the level and
+#' scales the stand-alone measures to `total`; `equal_risk_allocation()` finds
+#' the one level at which they add up to `total` (for VaR and TVaR, the
+#' components priced as if comonotonic; for EPD, the same EPD ratio for
+#' each). A VaR of draws moves in steps: where no level adds up exactly, the
+#' level is the lowest that reaches `total` and its VaRs are scaled to it.
+#'
+#' @param x A [predictive_distribution].
+#' @param total The amount to allocate.
+#' @param measure `"var"`, `"tvar"` (`level` a probability) or `"epd"`
+#'   (`level` the EPD ratio `r`: the assets at which `E[(X - a)+] = r E[X]`).
+#' @param level The level of the stand-alone measures.
+#' @returns A list with `level`, `total` and `by_component`, the `keys` data
+#'   frame of `x` with columns `standalone` (the measure at `level`) and
+#'   `allocated` (summing to `total`).
+#' @export
+#' @examples
+#' pd <- predictive_distribution(
+#'   matrix(c(1, 4, 2, 3, 2, 1, 5, 6), ncol = 2),
+#'   data.frame(lob = c("motor", "property"))
+#' )
+#' haircut_allocation(pd, 18, "tvar", 0.5)$by_component
+#' equal_risk_allocation(pd, 9, "tvar")$level
+haircut_allocation <- function(x, total, measure = c("tvar", "var", "epd"), level) {
+  measure <- match.arg(measure)
+  level_result(x, rust_result(haircut_rust(x@ptr, as.double(total), measure, as.double(level))))
+}
+
+#' @rdname haircut_allocation
+#' @export
+equal_risk_allocation <- function(x, total, measure = c("tvar", "var", "epd")) {
+  measure <- match.arg(measure)
+  level_result(x, rust_result(equal_risk_rust(x@ptr, as.double(total), measure)))
+}
+
+level_result <- function(x, r) {
+  out <- x@keys
+  out$standalone <- r$standalone
+  out$allocated <- r$allocated
+  list(level = r$level, total = r$total, by_component = out)
+}
+
+allocation_result <- function(x, r) {
   out <- x@keys
   out$standalone <- r$standalone
   out$allocated <- r$allocated
