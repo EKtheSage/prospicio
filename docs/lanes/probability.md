@@ -4,13 +4,9 @@
 
 <!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
 
-## Now
-
-- (none)
-
 ## Next
 
-- the Guides lane's remaining issues for this lane
+- [guides-issues-for-probability] the Guides lane's remaining issues for this lane
 
 ## Done
 

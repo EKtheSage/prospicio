@@ -6,15 +6,11 @@ This lane wraps other lanes' crates and changes none of them
 
 <!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
 
-## Now
-
-- (none)
-
 ## Next
 
-- further functions as the user asks
+- [excel-more-functions] further functions as the user asks
 - `PRO.BAYES.BF` waits on the Reserving lane (#410: `BayesBf`'s a-priori level is nearly inert)
-- a code-signing certificate is the user's to buy
+- [code-signing-certificate] a code-signing certificate is the user's to buy
 
 ## Done
 
