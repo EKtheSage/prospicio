@@ -8987,6 +8987,12 @@ class GlmFit:
         AIC, ``-2 loglik + 2 p``.
         """
     @property
+    def bic(self, /) -> float:
+        """
+        BIC, ``-2 loglik + p log(n)``, counting the coefficients as ``aic``
+        does (R's ``BIC`` also counts an estimated dispersion).
+        """
+    @property
     def coefficients(self, /) -> list[float]:
         """
         Estimated coefficients.
@@ -21889,6 +21895,33 @@ def eventual_ruin(severity: Grid, rho: float |None = None, *, loss_ratio: float 
     0.156
     """
 
+def f_test(small: GlmFit, big: GlmFit) -> dict:
+    """
+    The F test of a GLM within a larger one that contains it, as R's
+    ``anova(small, big, test = "F")``: ``F = (D_small - D_big) / (q phi_big)``
+    on ``F(q, n - p_big)`` (CAS Monograph 5, section 6.2.1). For a family
+    whose dispersion is estimated.
+    
+    The models are not checked to be nested: ``small``'s columns must lie in
+    the span of ``big``'s, on the same rows, family and weights.
+    
+    Parameters
+    ----------
+    small : GlmFit
+    big : GlmFit
+    
+    Returns
+    -------
+    dict
+        ``statistic``, ``df`` (``q``), ``df_resid``, ``deviance_drop`` and
+        ``p_value``.
+    
+    Raises
+    ------
+    ValueError
+        If the models differ in rows or ``big`` has no more coefficients.
+    """
+
 def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
     """
     Aggregate loss ``S = X_1 + ... + X_N`` by fast Fourier transform.
@@ -22423,6 +22456,29 @@ def lift(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |N
     -------
     list of dict
         ``exposure``, ``expected`` and ``actual`` per band.
+    """
+
+def likelihood_ratio_test(small: GlmFit, big: GlmFit) -> dict:
+    """
+    The likelihood ratio test of a GLM within a larger one, as R's
+    ``anova(small, big, test = "Chisq")``: the scaled deviance drop
+    ``(D_small - D_big) / phi_big`` on ``chi2(q)``. For a family whose
+    dispersion is known (Poisson, binomial).
+    
+    Parameters
+    ----------
+    small : GlmFit
+    big : GlmFit
+    
+    Returns
+    -------
+    dict
+        As ``f_test``, with ``df_resid`` infinite.
+    
+    Raises
+    ------
+    ValueError
+        As ``f_test``.
     """
 
 def local_pareto_to_piecewise(t: float, alpha: Any, rel_tolerance: float = 1e-4, stop_survival: float = 1e-9, stop_at: float = ...) -> tuple[PiecewisePareto, float, float]:
@@ -23812,6 +23868,36 @@ def tweedie_profile(design: Design, y: Sequence[float], powers: Sequence[float],
         ``powers``, ``log_likelihood`` and ``dispersion`` (one per power),
         the refined ``power``, its ``phi`` and ``max_log_likelihood``, and
         the ``fit`` there (``GlmFit``).
+    """
+
+def vif(design: Design) -> list[float]:
+    """
+    Variance inflation factors of a design's columns, ``1 / (1 - R2_j)``
+    with ``R2_j`` that of column ``j`` on the others and an intercept (CAS
+    Monograph 5, section 2.9). A constant column (the intercept) gets
+    ``nan``.
+    
+    Parameters
+    ----------
+    design : Design
+    
+    Returns
+    -------
+    list of float
+        One per column, in the design's order.
+    
+    Raises
+    ------
+    ValueError
+        If the non-constant columns are collinear.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, vif
+    >>> d = Design([[1.0] * 4, [1.0, 2.0, 3.0, 4.0], [1.0, -1.0, -1.0, 1.0]],
+    ...            ["(Intercept)", "x", "z"])
+    >>> [round(v, 12) for v in vif(d)[1:]]
+    [1.0, 1.0]
     """
 
 def wiener_hopf(severity: Grid, wait: Any, rho: float |None = None, *, loss_ratio: float |None = None, points: int |None = None) -> RenewalRuin:

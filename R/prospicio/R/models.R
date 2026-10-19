@@ -172,6 +172,8 @@ tweedie_profile <- function(formula, data, powers, link = "log", offset = NULL, 
                             dispersion = r$dispersion),
        power = r$power, phi = r$phi, max_log_likelihood = r$max_log_likelihood,
        model = glm_model(ptr = r$model, terms = des$terms, xlevels = des$xlevels))
+}
+
 #' Tests of nested GLMs
 #'
 #' `f_test()` is the F test of `small` within `big`,
