@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -2591,8 +2591,9 @@ checks are internal (item 9).
      the weights by one column in its `alpha`. At age 1 it ignores them.
      At later ages it agrees with a moving window only because, under a
      calendar window, the link coming in is the link kept next year. It
-     has no term for the mean. (On RAA with `n_periods = 3`, its
-     `CDR(1)S.E.` total is 21,510.79.)
+     has no term for the mean. (A total `CDR(1)S.E.` of 21,510.79 on RAA
+     with `n_periods = 3`, quoted when this decision was written, was not
+     reproduced and is in no test; `knowledge/references/r-chainladder-cdr.md`.)
    - The error message points to the one-year view of Mack's bootstrap.
 
 9. **Checks.**

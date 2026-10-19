@@ -2568,6 +2568,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "platform-specific pins (Windows x86_64); a local refactor guard, run with --ignored"]
     fn the_drops_are_pinned_by_seed() {
         // Regression: the claims development result of RAA under the chain
         // ladder with each age's highest and lowest link ratio dropped,
