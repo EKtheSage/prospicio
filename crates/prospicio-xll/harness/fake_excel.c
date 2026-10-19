@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("seventy-nine functions registered", registered == 79);
+    check("eighty-two functions registered", registered == 82);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -595,6 +595,19 @@ int main(int argc, char **argv) {
           (qt->xltype & 0xFFF) == xltypeMulti && qt->val.array.columns == 2 &&
               fabs(qt->val.array.lparray[3].val.num - 100) < 1e-12);
     free12(qt);
+
+    /* The proportional hazard with rho 0.5 at s = 0.25: g = 0.25^0.5. */
+    static wchar_t phd_s[] = L"\x02" L"ph";
+    XLOPER12 d_s, d_f, d_p;
+    d_s.xltype = d_p.xltype = xltypeNum;
+    d_s.val.num = 0.25;
+    d_p.val.num = 0.5;
+    d_f.xltype = xltypeStr;
+    d_f.val.str = phd_s;
+    XLOPER12 *dg = ((Fn4)GetProcAddress(xll, "pro_distortion"))(&d_s, &d_f, &d_p, &missing);
+    check("PRO.DISTORTION(0.25, \"ph\", 0.5) is 0.5",
+          (dg->xltype & 0xFFF) == xltypeNum && fabs(dg->val.num - 0.5) < 1e-15);
+    free12(dg);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

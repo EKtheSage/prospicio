@@ -487,6 +487,23 @@ real Excel.
     premium 1.24, expected loss 0.586, limit 5, 3% expenses, 10%
     brokerage) comes back at its printed 1.425, 28.5%, payback 3.5,
     multiple 2.43 and loss ratio 41.1%.
+29. **A distortion is a family name and a parameter; outcomes are a
+    range** (user, 2026-10-19, the sixth group), over
+    `prospicio_prob::distortion`. `PRO.DISTORTION(s, family, parameter,
+    [r0])` gives `g(s)` over a range of `s`, `PRO.DISTORTION.PRICE` the
+    risk measure of outcomes with probabilities, or of equally likely
+    draws when `probs` is omitted, so a column of simulations prices
+    directly, and `PRO.DISTORTION.CALIBRATE` each family's parameter
+    that gives a target premium (the five standard families of
+    Mildenhall and Major unless named). Families take `aggregate`'s
+    short names, as `PRO.TOWER.PRICE` does (decision 24), and here also
+    the four capped families with their intercept `r0`; the bi-TVaR,
+    beta and weighted TVaR, which take more than one parameter, are left
+    out until asked. A family that cannot reach the premium gets a
+    message in its row. Assets enter by capping the outcomes on the
+    sheet, as `calibrate` documents, rather than as an argument. Against
+    `aggregate` 1.0.1, `g(s)` of nine families and the InsCo prices and
+    calibrations match at the reference's tolerances.
 
 ## Parity plan
 
@@ -523,8 +540,8 @@ order, one small PR each, those already done struck through:
    (body and Pareto families, with thresholds and censoring)~~; ~~EVT
    threshold diagnostics, the GPD fit and Hill's estimator~~; ~~payment
    patterns and discounting~~; ~~a cover's quote (technical premium with
-   expenses and brokerage)~~; distortions calibrated to a target and a
-   layer priced by one; contract terms on an aggregate (sliding scale,
+   expenses and brokerage)~~; ~~distortions calibrated to a target and
+   a layer priced by one~~; contract terms on an aggregate (sliding scale,
    profit commission, reinstatement premiums).
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;

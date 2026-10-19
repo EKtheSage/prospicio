@@ -444,11 +444,11 @@ what it is aiming for by v1.0.
   families, with reporting thresholds and censoring); EVT threshold
   diagnostics, the GPD tail and Hill's estimator; payment patterns,
   discounting and a cost-of-capital price over the payout; a cover's
-  quote.
+  quote; distortions, their prices and calibration.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
      form (`xll.md`, parity plan): groups 1 to 5 done; group 6 (fitting
-     and pricing inputs: distortions, contract terms) under way.
+     and pricing inputs: contract terms) under way.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

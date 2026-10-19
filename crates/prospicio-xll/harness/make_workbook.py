@@ -702,6 +702,29 @@ pv["A33"] = "Limit"; pv["B33"] = 5; pv["B33"].fill = inp
 pv["A34"] = "Quoted"; pv["B34"] = 1.30; pv["C34"] = 1.60; pv["B34"].fill = pv["C34"].fill = inp
 pv["E27"] = ArrayFormula("E27:H40", "=PRO.QUOTE(B28,B29,B30,B31,B32,,B33,B34:C34)")
 
+# Distortions: Mildenhall and Major's InsCo, priced and calibrated.
+ds = wb.create_sheet("Distortions")
+ds["A1"] = "InsCo (Pricing Insurance Risk): seven totals, assets 100; every standard distortion at the 15% CCoC premium"; ds["A1"].font = bold
+ds["A3"] = "Total"; ds["B3"] = "Probability"; ds["A3"].font = ds["B3"].font = bold
+for i, (x, p) in enumerate(zip([22, 28, 36, 40, 55, 65, 100], [0.1, 0.1, 0.1, 0.4, 0.1, 0.1, 0.1])):
+    ds[f"A{4 + i}"] = x; ds[f"B{4 + i}"] = p
+    ds[f"A{4 + i}"].fill = ds[f"B{4 + i}"].fill = inp
+ds["A12"] = "Target premium"; ds["B12"] = "=(46.6+0.15*100)/1.15"
+ds["D3"] = "Calibrated to the target"; ds["D3"].font = bold
+ds["D4"] = ArrayFormula("D4:F9", "=PRO.DISTORTION.CALIBRATE(A4:A10,B4:B10,B12)")
+ds["D12"] = "The PH at its calibrated rho, priced back"; ds["D12"].font = bold
+ds["D13"] = ArrayFormula("D13:E16", '=PRO.DISTORTION.PRICE(A4:A10,B4:B10,"ph",E6)')
+ds["H3"] = "s"; ds["I3"] = "PH"; ds["J3"] = "Wang"; ds["K3"] = "TVaR"
+for c in ("H3", "I3", "J3", "K3"):
+    ds[c].font = bold
+for i in range(11):
+    ds[f"H{4 + i}"] = i / 10
+ds["I4"] = ArrayFormula("I4:I14", '=PRO.DISTORTION(H4:H14,"ph",E6)')
+ds["J4"] = ArrayFormula("J4:J14", '=PRO.DISTORTION(H4:H14,"wang",E7)')
+ds["K4"] = ArrayFormula("K4:K14", '=PRO.DISTORTION(H4:H14,"tvar",E9)')
+for col in "ABDEFHIJK":
+    ds.column_dimensions[col].width = 14
+
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")
 by["A1"] = "Bayesian ODP chain ladder on RAA, sampled with NUTS (4 chains, 1,000 warm-up and 1,000 kept draws each)"; by["A1"].font = bold
