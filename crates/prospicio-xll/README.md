@@ -224,7 +224,11 @@ Ctrl+Alt+F9 to recalculate.
   (capital needs `assets`; the rate on line and payback need `limit`).
 - Distortions take `aggregate`'s names: `ccoc` (r), `ph` (rho), `wang`
   (lambda), `dual` (beta), `tvar` (p), `exp` (k), and with an intercept
-  `r0` the capped `clin` (slope), `cll` (b), `lep` and `ly` (r). Outcomes
+  `r0` the capped `clin` (slope), `cll` (b), `lep` and `ly` (r). A
+  family with several parameters takes them in one range: `bitvar`
+  (`p0, p1, w`), `beta` (`a, b`), `wtdtvar` (two columns, levels and
+  weights), and a capped family `r0` with its parameter, as
+  `PRO.TOWER.PRICE` needs. These are not calibrated. Outcomes
   may be in any order; without `probs` they are equally likely draws, so
   a column of `PRO.ODP.SIMS` prices directly. To price a loss backed by
   assets `a`, cap the outcomes at `a` first (`=MIN(range, a)`): the

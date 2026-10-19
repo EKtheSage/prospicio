@@ -726,7 +726,22 @@ for i in range(11):
 ds["I4"] = ArrayFormula("I4:I14", '=PRO.DISTORTION(H4:H14,"ph",E6)')
 ds["J4"] = ArrayFormula("J4:J14", '=PRO.DISTORTION(H4:H14,"wang",E7)')
 ds["K4"] = ArrayFormula("K4:K14", '=PRO.DISTORTION(H4:H14,"tvar",E9)')
-for col in "ABDEFHIJK":
+ds["L3"] = "Bi-TVaR"; ds["M3"] = "Beta"; ds["L3"].font = ds["M3"].font = bold
+ds["O3"] = "Bi-TVaR p0, p1, w"; ds["O3"].font = bold
+for i, v in enumerate([0.2, 0.9, 0.3]):
+    ds.cell(row=4, column=15 + i, value=v).fill = inp
+ds["O6"] = "Beta a, b"; ds["O6"].font = bold
+for i, v in enumerate([0.6, 1.5]):
+    ds.cell(row=7, column=15 + i, value=v).fill = inp
+ds["L4"] = ArrayFormula("L4:L14", '=PRO.DISTORTION(H4:H14,"bitvar",O4:Q4)')
+ds["M4"] = ArrayFormula("M4:M14", '=PRO.DISTORTION(H4:H14,"beta",O7:P7)')
+ds["O9"] = "Weighted TVaR: levels | weights"; ds["O9"].font = bold
+for i, (p, w) in enumerate([(0.1, 0.2), (0.5, 0.5), (0.9, 0.3)]):
+    ds[f"O{10 + i}"] = p; ds[f"P{10 + i}"] = w
+    ds[f"O{10 + i}"].fill = ds[f"P{10 + i}"].fill = inp
+ds["D18"] = "InsCo priced by the weighted TVaR"; ds["D18"].font = bold
+ds["D19"] = ArrayFormula("D19:E22", '=PRO.DISTORTION.PRICE(A4:A10,B4:B10,"wtdtvar",O10:P12)')
+for col in "ABDEFHIJKLMOPQ":
     ds.column_dimensions[col].width = 14
 
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
