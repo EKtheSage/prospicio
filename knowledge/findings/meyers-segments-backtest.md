@@ -4,7 +4,7 @@ title: Meyers' models over segments and in the diagonal backtest
 description: Meyers::fit_segments with a derived seed per segment makes twin lines' totals uncorrelated (sd 0.0083 over 60 seeds) and rank correlation reaches its targets within 0.0081; in the diagonal backtest CRC, CSR and CAY forecast group 353's held-out diagonals well above the outcomes (A/E 0.30 to 0.90) and cover every held-out cell, so their log density beats the ODP models' on wkcomp, where those under-cover, and trails it on comauto and group 353.
 tags: [bayes, reserving, meyers, crc, csr, cay, segments, dependence, backtest, clrd]
 status: stable
-generated: { by: claude-code/local-session, at: 2026-10-13T08:00:00-07:00 }
+generated: { by: claude-code/local-session, at: 2026-10-19T09:00:00-07:00 }
 sources:
   - id: test
     resource: ../validation/tests/reserving_meyers_segments.rs
@@ -84,9 +84,11 @@ in a release build (the ignored `seed_sweep` test with
   300 seeds (0 to 119 and 200 to 379: 216, 243, 291 and 317), rarer but
   not gone: at seed 317 CSR on paid's earliest split has R-hat 1.36, bulk
   ESS 9 and 854 divergences, and its total CRPS ratio is 5.4 sds out. The
-  backtest returns no diagnostics, so such a failure is silent; the sweep
-  refits each split's training triangle with `Meyers::fit` on the
-  backtest's seed, which samples the same chains (R-hat 1.3619 both
+  backtest returned no diagnostics then, so such a failure was silent
+  (since 2026-10-19 it reports each split's: `Backtest::diagnostics` and
+  `warnings`, in Rust, Python and R; `reserving-bayes.md` decision 21);
+  the sweep refitted each split's training triangle with `Meyers::fit` on
+  the backtest's seed, which samples the same chains (R-hat 1.3619 both
   ways at seed 317), and counts that backtest's rows instead of checking
   them. CLRD comauto and wkcomp have no such failures at 0.95 (R-hat at
   most 1.052; their common R-hats of 1.02 to 1.03 are slow mixing

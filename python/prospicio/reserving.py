@@ -10,6 +10,7 @@ compartmental model sampled with NUTS
 docs/design/reserving-bayes.md, docs/design/reserving-compartmental.md)."""
 
 from .prospicio_native import (
+    Backtest,
     BayesBf,
     BayesBfFit,
     BayesOdp,
@@ -33,6 +34,7 @@ from .prospicio_native import (
     CompartmentalPriors,
     ExpectedLoss,
     ExpectedLossFit,
+    GlmCandidate,
     Mack,
     MackBootstrap,
     MackBootstrapFit,
@@ -50,6 +52,7 @@ from .prospicio_native import (
     TailCurve,
     TailLogLinear,
     Triangle,
+    diagonal_backtest,
 )
 
 __all__ = [
@@ -93,4 +96,7 @@ __all__ = [
     "TailCurve",
     "TailBondy",
     "TailLogLinear",
+    "Backtest",
+    "GlmCandidate",
+    "diagonal_backtest",
 ]

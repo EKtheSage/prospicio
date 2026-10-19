@@ -1971,6 +1971,8 @@ Triangle$meyers_one_year <- function(column, premium, model, priors, run, k_thre
 
 Triangle$meyers_one_year_segments <- function(column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman) .Call(wrap__Triangle__meyers_one_year_segments, self, column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman)
 
+Triangle$diagonal_backtest <- function(column, premium, specs, n_diagonals, n_sims, seed, interval) .Call(wrap__Triangle__diagonal_backtest, self, column, premium, specs, n_diagonals, n_sims, seed, interval)
+
 Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
 
 Triangle$compartmental_one_year <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__compartmental_one_year, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims)

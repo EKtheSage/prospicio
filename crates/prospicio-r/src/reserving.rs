@@ -36,6 +36,12 @@ use prospicio_reserving::{
     Meyers, MeyersFit as MeyersInner, MeyersModel,
 };
 
+use prospicio_glm::Glm;
+use prospicio_models::{Column, Terms};
+use prospicio_reserving::{
+    GlmCandidate, NamedModel, TriangleFrame, TriangleModel, diagonal_backtest,
+};
+
 use crate::distributions::PredictiveDistribution;
 use crate::whole;
 
@@ -1263,6 +1269,161 @@ impl Triangle {
         Ok(BayesOneYearFits {
             inner: BayesOneYearFitsOf::Meyers(inner),
         })
+    }
+
+    /// The diagonal backtest of `column` over `models`, one `NamedModel`
+    /// per spec: each spec is a `list(name, kind, model, process, priors,
+    /// run)` where `kind` is "odp_glm", "bayes_odp" or "meyers" (`model`
+    /// then names the Meyers model, `priors` the priors of
+    /// `bayes_odp_model` or `meyers_settings`, `run` their run settings;
+    /// the backtest's own `n_sims` and `seed` replace the spec's).
+    /// `premium` is one value per origin (`NULL` for none). Returns the
+    /// flat pieces of the `Backtest`; R builds the tables.
+    #[allow(clippy::too_many_arguments)]
+    fn diagonal_backtest(
+        &self,
+        column: &str,
+        premium: Nullable<Vec<f64>>,
+        specs: List,
+        n_diagonals: f64,
+        n_sims: f64,
+        seed: f64,
+        interval: f64,
+    ) -> Result<List> {
+        let premium: Option<Vec<f64>> = premium.into();
+        let cells = TriangleFrame::new(&self.inner, column, premium.as_deref()).map_err(to_r)?;
+        let mut models = Vec::new();
+        for spec in specs.values() {
+            let spec = List::try_from(spec)
+                .map_err(|_| Error::Other("each model spec must be a list".into()))?;
+            let field = |name: &str| {
+                spec.dollar(name)
+                    .map_err(|_| Error::Other(format!("model spec has no {name}")))
+            };
+            let text = |name: &str| -> Result<String> {
+                String::try_from(field(name)?)
+                    .map_err(|_| Error::Other(format!("model spec {name} must be a string")))
+            };
+            let numbers = |name: &str| -> Result<Vec<f64>> {
+                Vec::<f64>::try_from(field(name)?)
+                    .map_err(|_| Error::Other(format!("model spec {name} must be numeric")))
+            };
+            let name = text("name")?;
+            let independent = SegmentDependence::Independent;
+            let model = match text("kind")?.as_str() {
+                "odp_glm" => NamedModel::new(
+                    name,
+                    GlmCandidate {
+                        name: "odp".into(),
+                        terms: Terms::new()
+                            .intercept()
+                            .factor("origin")
+                            .factor("development"),
+                        glm: Glm::over_dispersed_poisson(),
+                    },
+                ),
+                "bayes_odp" => NamedModel::new(
+                    name,
+                    bayes_odp_model(
+                        &numbers("priors")?,
+                        &text("process")?,
+                        &numbers("run")?,
+                        independent,
+                    )?,
+                ),
+                "meyers" => NamedModel::new(
+                    name,
+                    meyers_settings(
+                        &text("model")?,
+                        fixed::<6>(&numbers("priors")?, "priors")?,
+                        fixed::<7>(&numbers("run")?, "run")?,
+                        independent,
+                    )?,
+                ),
+                other => {
+                    return Err(Error::Other(format!("unknown model kind \"{other}\"")));
+                }
+            };
+            models.push(model);
+        }
+        let refs: Vec<&dyn TriangleModel> =
+            models.iter().map(|m| m as &dyn TriangleModel).collect();
+        let bt = diagonal_backtest(
+            &cells,
+            &refs,
+            whole(n_diagonals, "n_diagonals")? as usize,
+            whole(n_sims, "n_sims")? as usize,
+            whole(seed, "seed")?,
+            interval,
+        )
+        .map_err(to_r)?;
+        let (nm, ns) = (bt.models().len(), bt.n_splits());
+        // The calendar period of each split, as the frame labels it (the
+        // index when the frame has no calendar labels).
+        let labels = match cells.frame().column("calendar") {
+            Some(Column::Categorical(c)) => Some(c),
+            _ => None,
+        };
+        let diagonals: Vec<String> = bt
+            .scored_rows()
+            .iter()
+            .zip(bt.diagonals())
+            .map(|(rows, &index)| match (labels, rows.first()) {
+                (Some(c), Some(&r)) => c[r].clone(),
+                _ => index.to_string(),
+            })
+            .collect();
+        let mut scores = Vec::with_capacity(nm * bt.metrics().len() * ns);
+        for m in 0..nm {
+            for k in 0..bt.metrics().len() {
+                scores.extend_from_slice(bt.split_scores(m, k));
+            }
+        }
+        // One row per model and split, model-major; NaN where the model
+        // has no sampler.
+        let (mut rhat, mut bulk, mut tail, mut div, mut nwarn) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for m in 0..nm {
+            for d in bt.diagnostics(m) {
+                rhat.push(d.as_ref().map_or(f64::NAN, |d| d.max_rhat));
+                bulk.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_bulk));
+                tail.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_tail));
+                div.push(d.as_ref().map_or(f64::NAN, |d| d.divergences as f64));
+                nwarn.push(d.as_ref().map_or(f64::NAN, |d| d.warnings.len() as f64));
+            }
+        }
+        let warnings = bt.warnings();
+        let log_densities: Vec<Robj> = bt
+            .log_densities()
+            .iter()
+            .map(|l| Nullable::from(l.clone()).into())
+            .collect();
+        Ok(list!(
+            models = bt.models().to_vec(),
+            metrics = bt
+                .metrics()
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+            n_splits = ns as f64,
+            diagonals = diagonals,
+            scores = scores,
+            excluded = bt.excluded().iter().map(|&e| e as f64).collect::<Vec<_>>(),
+            scored_rows = List::from_values(
+                bt.scored_rows()
+                    .iter()
+                    .map(|r| r.iter().map(|&x| x as f64).collect::<Vec<_>>())
+            ),
+            log_densities = List::from_values(log_densities),
+            max_rhat = rhat,
+            min_ess_bulk = bulk,
+            min_ess_tail = tail,
+            divergences = div,
+            n_warnings = nwarn,
+            warning_model = warnings.iter().map(|w| w.0 as f64).collect::<Vec<_>>(),
+            warning_split = warnings.iter().map(|w| w.1 as f64).collect::<Vec<_>>(),
+            warning_message = warnings.iter().map(|w| w.2.clone()).collect::<Vec<_>>()
+        ))
     }
 
     /// Gesmann and Morris' compartmental model of a single-segment
