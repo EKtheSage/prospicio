@@ -118,6 +118,40 @@ def test_submission_evaluation(monkeypatch, capsys):
         assert row["technical"] == pytest.approx(true_row["technical"], rel=0.10), row["name"]
 
 
+def test_reading_path(monkeypatch, capsys):
+    monkeypatch.chdir(EXAMPLES)
+    ns = run_notebook(EXAMPLES / "reading_path.ipynb")
+    assert "indicated change" in capsys.readouterr().out
+    # Station 1: the fits land near the model that drew the claims.
+    assert ns["severity"].mean() == pytest.approx(ns["TRUE_SEVERITY"].mean(), rel=0.05)
+    assert ns["yearly_mean"] == pytest.approx(400.0, rel=0.1)
+    # Station 2: the FFT, the compound moments and the simulation agree.
+    assert ns["annual"].mean() == pytest.approx(ns["moments"].mean, rel=1e-6)
+    assert ns["simulated"].mean() == pytest.approx(ns["annual"].mean(), rel=0.01)
+    # Station 3: the grid reproduces the exposure rate; the blend lies between experience and exposure.
+    assert ns["layer_annual"].mean() == pytest.approx(ns["exposure_loss"], rel=0.01)
+    assert 0.0 < ns["z"] < 1.0
+    assert min(ns["experience_loss"], ns["exposure_loss"]) <= ns["selected"] <= max(
+        ns["experience_loss"], ns["exposure_loss"])
+    assert ns["pentagon"].premium > ns["pentagon"].loss
+    # Station 4: the indication is the permissible loss ratio's ratio.
+    assert 1.0 + ns["change"] == pytest.approx(
+        (ns["experience"].loss_ratio + ns["FIXED"]) / (1.0 - 0.20 - 0.05), rel=1e-12)
+    # Station 5: Mack and the bootstrap agree on the reserve and roughly on its spread.
+    assert ns["mack"].total_reserve == pytest.approx(ns["cl"].total_reserve, rel=1e-12)
+    assert ns["boot"].mean() == pytest.approx(ns["mack"].total_reserve, rel=0.03)
+    assert math.sqrt(ns["boot"].variance()) == pytest.approx(ns["mack"].total_standard_error, rel=0.25)
+    # Station 6: diversification, and every distortion's allocation adds up to the same total margin.
+    book = ns["book"]
+    assert book.assets(0.99) < ns["alone"]
+    margins = []
+    for family in ns["FAMILIES"]:
+        priced = book.price(book.calibrate(family, p=0.99, return_on_capital=0.10), p=0.99)
+        assert sum(u.margin for u in priced.allocated) == pytest.approx(priced.total.margin, rel=1e-9)
+        margins.append(priced.total.margin)
+    assert max(margins) == pytest.approx(min(margins), rel=1e-6)
+
+
 def test_submission_files_match_generator(tmp_path):
     # The committed files are what examples/data/make_submission.py writes: the CSV files byte for byte (a
     # checkout under core.autocrlf may turn their LF into CRLF), the answer key to rounding, since its
