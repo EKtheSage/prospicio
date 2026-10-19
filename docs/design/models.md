@@ -357,6 +357,30 @@ models and compares them.
   relativities divide each model by its own overall average, the
   monograph's convention, so two models at different overall levels
   compare on ranking alone.
+- **Rating-variable terms** (#350, #357): `Term::Interaction`, `Poly`,
+  `Hinges`, `Steps`, `Bins`, `Log` and `Ordinal` beside the intercept,
+  numeric columns and factors. Each is a pure function of the frame once
+  its parameters (knots, cuts, levels) are given, so `Coding` stores only
+  those and rebuilds the same columns on new data. Two terms learn from
+  the training data and keep it in `Coded`: `OrthogonalPoly` the
+  recurrence coefficients of R's `poly` (`alpha`, `norm2`), so new values
+  get R's `predict(poly)` columns, and `NaturalSpline` its boundary knots
+  (the training range). The spline uses the restricted cubic basis, not
+  `ns`'s B-spline one: reproducing `ns`'s coefficients would mean copying
+  `splineDesign` and LINPACK's Householder signs, while the restricted
+  cubic basis spans the same functions, so fitted values and predictions
+  agree with `ns` (checked to 1e-9) and only the coefficients differ. Bins are
+  right-closed, `(c_{k-1}, c_k]`, open at both ends, so a new value never
+  falls outside a bin. An interaction's columns are the products of its
+  sides' coded columns, the first side varying fastest, as R's `a:b`.
+  Names are stable and unambiguous (`hinge(age,30)`, `age[(30,50]]`,
+  `size[>=large]`) since they label coefficient tables.
+- **Target encoding** (#357, `prospicio_models::encode`): not a `Term`,
+  since it learns from the response; it takes the factor, the response,
+  the expected values and the splits, encodes each training row from its
+  split's training rows only, and returns a `TargetEncoding` from all
+  rows for new data. The expected values are the caller's (an overall
+  mean or a first model), so the encoding is what that model misses.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

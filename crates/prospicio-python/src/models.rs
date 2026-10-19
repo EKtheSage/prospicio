@@ -117,7 +117,8 @@ fn with_offset_weights(
     Ok(d)
 }
 
-/// The terms of a model: an intercept, numeric columns and factors.
+/// The terms of a model: an intercept, numeric columns, factors,
+/// interactions, polynomials, hinges, steps, bins, logs and ordinals.
 ///
 /// Build them up, then ``fit`` them to training data to learn the factor
 /// levels; the result builds the same design matrix on any data.
@@ -187,6 +188,197 @@ impl PyTerms {
             None => self.inner.clone().factor(name),
         };
         Self { inner }
+    }
+
+    /// Adds the interaction of two columns: the product of their coded
+    /// columns, each numeric as is or a factor in treatment coding (first
+    /// level as reference), named ``a:b``, ``a[x]:b`` or ``a[x]:b[y]``, as
+    /// R's ``a:b`` beside main effects (CAS Monograph 5, section 5.6).
+    ///
+    /// Parameters
+    /// ----------
+    /// a : str
+    /// b : str
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn interaction(&self, a: &str, b: &str) -> Self {
+        Self {
+            inner: self.inner.clone().interaction(a, b),
+        }
+    }
+
+    /// Adds raw powers ``x, x**2, ..., x**degree`` of a numeric column,
+    /// named ``x``, ``x^2``, ....
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// degree : int
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn poly(&self, name: &str, degree: usize) -> Self {
+        Self {
+            inner: self.inner.clone().poly(name, degree),
+        }
+    }
+
+    /// Adds hinge functions ``max(0, x - k)`` at each knot, named
+    /// ``hinge(x,k)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// knots : list of float
+    ///     Strictly increasing.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn hinges(&self, name: &str, knots: Vec<f64>) -> Self {
+        Self {
+            inner: self.inner.clone().hinges(name, &knots),
+        }
+    }
+
+    /// Adds steps ``1[x >= k]`` at each knot, named ``step(x,k)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// knots : list of float
+    ///     Strictly increasing.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn steps(&self, name: &str, knots: Vec<f64>) -> Self {
+        Self {
+            inner: self.inner.clone().steps(name, &knots),
+        }
+    }
+
+    /// Adds a numeric column cut into bins ``(-inf, c1], (c1, c2], ...,
+    /// (ck, inf)`` and coded as a factor, named as R's ``cut``
+    /// (``x[(30,45]]``).
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// cuts : list of float
+    ///     Strictly increasing.
+    /// reference : int, optional
+    ///     Index of the reference bin; the lowest by default.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    #[pyo3(signature = (name, cuts, reference = None))]
+    fn bins(&self, name: &str, cuts: Vec<f64>, reference: Option<usize>) -> Self {
+        Self {
+            inner: self.inner.clone().term(prospicio_models::Term::Bins {
+                name: name.into(),
+                cuts,
+                reference,
+            }),
+        }
+    }
+
+    /// Adds ``log(x / base)``, named ``log(x/base)``: a log transform
+    /// centred at a base value (CAS Monograph 5, section 5.6.2).
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// base : float
+    ///     Positive.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn log(&self, name: &str, base: f64) -> Self {
+        Self {
+            inner: self.inner.clone().log(name, base),
+        }
+    }
+
+    /// Adds orthogonal polynomials of degree 1 to ``degree`` on the
+    /// training values, as R's ``poly(x, degree)``, named ``poly(x)1``,
+    /// ...; the recurrence learned at ``fit`` rebuilds them on new data.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// degree : int
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn orthogonal_poly(&self, name: &str, degree: usize) -> Self {
+        Self {
+            inner: self.inner.clone().orthogonal_poly(name, degree),
+        }
+    }
+
+    /// Adds a natural cubic spline with interior ``knots``, linear beyond
+    /// the boundary knots (the training range unless given):
+    /// ``len(knots) + 1`` columns named ``spline(x)1``, .... The basis is
+    /// the restricted cubic one, which spans the same functions as R's
+    /// ``splines::ns(x, knots)``: fitted values agree, coefficients differ.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// knots : list of float
+    ///     Interior knots, strictly increasing.
+    /// boundary : tuple of float, optional
+    ///     The boundary knots; the training minimum and maximum by default.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    #[pyo3(signature = (name, knots, boundary = None))]
+    fn natural_spline(&self, name: &str, knots: Vec<f64>, boundary: Option<(f64, f64)>) -> Self {
+        Self {
+            inner: self
+                .inner
+                .clone()
+                .term(prospicio_models::Term::NaturalSpline {
+                    name: name.into(),
+                    knots,
+                    boundary,
+                }),
+        }
+    }
+
+    /// Adds an ordered factor in cumulative coding: for each level after
+    /// the first, ``1[level >= it]``, named ``x[>=level]``, so each
+    /// coefficient is the step from the level below.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// levels : list of str
+    ///     The levels in order, lowest first.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.models import Terms
+    /// >>> data = {"size": ["small", "large", "medium"]}
+    /// >>> Terms().ordinal("size", ["small", "medium", "large"]).fit(data).names
+    /// ['size[>=medium]', 'size[>=large]']
+    fn ordinal(&self, name: &str, levels: Vec<String>) -> Self {
+        let levels: Vec<&str> = levels.iter().map(String::as_str).collect();
+        Self {
+            inner: self.inner.clone().ordinal(name, &levels),
+        }
     }
 
     /// Learns factor levels from training data.
@@ -2262,6 +2454,120 @@ pub(crate) fn pit_histogram(pit: Vec<f64>, bins: usize) -> PyResult<Vec<usize>> 
 #[pyfunction]
 pub(crate) fn ks_uniform(values: Vec<f64>) -> PyResult<f64> {
     metrics::ks_uniform(&values).map_err(to_py)
+}
+
+/// The encoding of each level of a factor learned from all the training
+/// rows, from ``target_encode``.
+#[pyclass(name = "TargetEncoding", module = "prospicio.models", frozen)]
+pub(crate) struct PyTargetEncoding {
+    inner: prospicio_models::encode::TargetEncoding,
+}
+
+#[pymethods]
+impl PyTargetEncoding {
+    /// The levels seen in training, sorted.
+    #[getter]
+    fn levels(&self) -> Vec<String> {
+        self.inner.levels.clone()
+    }
+
+    /// Each level's credibility-weighted actual-to-expected ratio.
+    #[getter]
+    fn ratios(&self) -> Vec<f64> {
+        self.inner.ratios.clone()
+    }
+
+    /// The credibility constant ``K``.
+    #[getter]
+    fn k(&self) -> f64 {
+        self.inner.k
+    }
+
+    /// The encoding of each value of new data; a level not seen in
+    /// training gets 1.
+    ///
+    /// Parameters
+    /// ----------
+    /// values : list of str
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn encode(&self, values: Vec<String>) -> Vec<f64> {
+        self.inner.encode(&values)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TargetEncoding(levels={}, k={})",
+            self.inner.levels.len(),
+            self.inner.k
+        )
+    }
+}
+
+/// Out-of-fold target encoding of a high-cardinality factor with
+/// credibility (CAS Monograph 16, chapter 6): each level's
+/// actual-to-expected ratio shrunk to 1 by ``z = n / (n + k)``, ``n`` its
+/// exposure, ``z * A / E + (1 - z)``. Each training row is encoded from the
+/// other folds only, so its own response never enters its encoding; the
+/// returned ``TargetEncoding``, from all rows, encodes new data. Its log
+/// enters a GLM as a numeric column.
+///
+/// Parameters
+/// ----------
+/// values : list of str
+///     The factor's level per row.
+/// y : list of float
+///     Actual responses.
+/// expected : list of float
+///     Expected responses: the overall mean times exposure, or a first
+///     model's predictions.
+/// splits : list of (list of int, list of int)
+///     From ``k_fold`` or ``group_k_fold``; every row in exactly one test
+///     set.
+/// k : float
+///     The credibility constant ``K``.
+/// exposure : list of float, optional
+///     Credibility weights; 1 per row by default.
+///
+/// Returns
+/// -------
+/// tuple of (list of float, TargetEncoding)
+///     The out-of-fold encoding of each training row, and the encoding for
+///     new data.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import target_encode
+/// >>> splits = [([1, 3], [0, 2]), ([0, 2], [1, 3])]
+/// >>> rows, enc = target_encode(["a", "a", "b", "b"], [2.0, 2.0, 0.0, 1.0], [1.0] * 4, splits, 1.0)
+/// >>> rows[0]
+/// 1.5
+#[pyfunction]
+#[pyo3(signature = (values, y, expected, splits, k, exposure = None))]
+pub(crate) fn target_encode(
+    values: Vec<String>,
+    y: Vec<f64>,
+    expected: Vec<f64>,
+    splits: Vec<(Vec<usize>, Vec<usize>)>,
+    k: f64,
+    exposure: Option<Vec<f64>>,
+) -> PyResult<(Vec<f64>, PyTargetEncoding)> {
+    let splits: Vec<Split> = splits
+        .into_iter()
+        .map(|(train, test)| Split { train, test })
+        .collect();
+    let (rows, inner) = prospicio_models::encode::target_encode(
+        &values,
+        &y,
+        &expected,
+        exposure.as_deref(),
+        &splits,
+        k,
+    )
+    .map_err(to_py)?;
+    Ok((rows, PyTargetEncoding { inner }))
 }
 
 fn splits(s: Vec<Split>) -> Vec<(Vec<usize>, Vec<usize>)> {

@@ -387,6 +387,17 @@ near(spe$parameter_variance, prediction_se(qg, quine[1, ])^2, 1e-10)
 n_q <- nrow(quine)
 near(glm_gcv(qg), n_q * sum(residuals(qg, "response")^2) / (n_q - 7)^2, 1e-12)
 near(log_likelihood_at(qg, 1), qg@log_likelihood, 1e-12)
+# Out-of-fold target encoding (#357): a row's own response never enters it.
+vals <- paste0("l", (0:59) %% 7)
+ys <- as.double(((0:59) * 13) %% 5)
+sp <- k_fold(60, 5, seed = 3)
+te <- target_encode(vals, ys, rep(2, 60), sp, k = 4)
+ys2 <- ys
+ys2[11] <- ys2[11] + 100
+stopifnot(target_encode(vals, ys2, rep(2, 60), sp, k = 4)$rows[11] == te$rows[11])
+a0 <- sum(ys[vals == "l0"])
+n0 <- sum(vals == "l0")
+near(encode_target(te$encoding, c("l0", "zz")), c(n0 / (n0 + 4) * a0 / (2 * n0) + 4 / (n0 + 4), 1), 1e-12)
 
 cat("prospicio R models tests passed\n")
 

@@ -258,3 +258,31 @@
   `hatvalues()`, `rstandard()` and `cooks.distance()` on a `glm_model`,
   and `glm_diagnostics()`, `prediction_se()`, `sum_prediction_error()`,
   `glm_gcv()`, `log_likelihood_at()` (#334).
+- Rating-variable terms (CAS Monographs 5 and 16): `Terms::interaction`
+  (numeric and factor in any combination, named as R's `a:b`), `poly` (raw
+  powers), `hinges` (`max(0, x - k)`), `steps` (`1[x >= k]`), `bins` (a
+  numeric column cut into right-closed bins and coded as a factor, labels
+  as R's `cut`), `log` (`ln(x / base)`) and `ordinal` (an ordered factor in
+  cumulative coding). A `Coding` rebuilds them on new data. Python
+  `Terms.interaction`, `.poly`, `.hinges`, `.steps`, `.bins`, `.log`,
+  `.ordinal`; in R they are formula terms (#350, #357).
+- Terms that learn from the training data: `Terms::orthogonal_poly`, R's
+  `poly(x, degree)` recurrence (parity, on new data too), and
+  `natural_spline`, a natural cubic spline in the restricted cubic basis,
+  which spans R's `splines::ns`: fitted values and predictions agree with
+  `lm(y ~ ns(x, knots))`, coefficients differ. Python
+  `Terms.orthogonal_poly` and `.natural_spline` (#350).
+- Out-of-fold target encoding of a high-cardinality factor with
+  credibility (CAS Monograph 16, chapter 6):
+  `prospicio_models::encode::target_encode` gives each training row its
+  level's actual-to-expected ratio from the other folds, shrunk to 1 by
+  `z = n / (n + K)`, and a `TargetEncoding` from all rows for new data.
+  Python `target_encode` and `TargetEncoding`; R `target_encode()` and
+  `encode_target()` (#357).
+
+### Breaking changes
+
+- `prospicio_models::Term` has new variants (`Interaction`, `Poly`,
+  `Hinges`, `Steps`, `Bins`, `Log`, `Ordinal`, `OrthogonalPoly`,
+  `NaturalSpline`), so an exhaustive `match`
+  on it needs new arms (#350).

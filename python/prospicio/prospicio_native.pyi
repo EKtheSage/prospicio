@@ -19022,9 +19022,46 @@ class TailLogLinear:
     def __repr__(self, /) -> str: ...
 
 @final
+class TargetEncoding:
+    """
+    The encoding of each level of a factor learned from all the training
+    rows, from ``target_encode``.
+    """
+    def __repr__(self, /) -> str: ...
+    def encode(self, /, values: Sequence[str]) -> list[float]:
+        """
+        The encoding of each value of new data; a level not seen in
+        training gets 1.
+        
+        Parameters
+        ----------
+        values : list of str
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def k(self, /) -> float:
+        """
+        The credibility constant ``K``.
+        """
+    @property
+    def levels(self, /) -> list[str]:
+        """
+        The levels seen in training, sorted.
+        """
+    @property
+    def ratios(self, /) -> list[float]:
+        """
+        Each level's credibility-weighted actual-to-expected ratio.
+        """
+
+@final
 class Terms:
     """
-    The terms of a model: an intercept, numeric columns and factors.
+    The terms of a model: an intercept, numeric columns, factors,
+    interactions, polynomials, hinges, steps, bins, logs and ordinals.
     
     Build them up, then ``fit`` them to training data to learn the factor
     levels; the result builds the same design matrix on any data.
@@ -19038,6 +19075,24 @@ class Terms:
     ['(Intercept)', 'age', 'region[S]', 'region[W]']
     """
     def __new__(cls, /) -> Terms: ...
+    def bins(self, /, name: str, cuts: Sequence[float], reference: int |None = None) -> Terms:
+        """
+        Adds a numeric column cut into bins ``(-inf, c1], (c1, c2], ...,
+        (ck, inf)`` and coded as a factor, named as R's ``cut``
+        (``x[(30,45]]``).
+        
+        Parameters
+        ----------
+        name : str
+        cuts : list of float
+            Strictly increasing.
+        reference : int, optional
+            Index of the reference bin; the lowest by default.
+        
+        Returns
+        -------
+        Terms
+        """
     def factor(self, /, name: str, reference: str |None = None) -> Terms:
         """
         Adds a factor in treatment coding.
@@ -19070,9 +19125,75 @@ class Terms:
         ValueError
             If a column is missing or has the wrong kind.
         """
+    def hinges(self, /, name: str, knots: Sequence[float]) -> Terms:
+        """
+        Adds hinge functions ``max(0, x - k)`` at each knot, named
+        ``hinge(x,k)``.
+        
+        Parameters
+        ----------
+        name : str
+        knots : list of float
+            Strictly increasing.
+        
+        Returns
+        -------
+        Terms
+        """
+    def interaction(self, /, a: str, b: str) -> Terms:
+        """
+        Adds the interaction of two columns: the product of their coded
+        columns, each numeric as is or a factor in treatment coding (first
+        level as reference), named ``a:b``, ``a[x]:b`` or ``a[x]:b[y]``, as
+        R's ``a:b`` beside main effects (CAS Monograph 5, section 5.6).
+        
+        Parameters
+        ----------
+        a : str
+        b : str
+        
+        Returns
+        -------
+        Terms
+        """
     def intercept(self, /) -> Terms:
         """
         Adds an intercept.
+        
+        Returns
+        -------
+        Terms
+        """
+    def log(self, /, name: str, base: float) -> Terms:
+        """
+        Adds ``log(x / base)``, named ``log(x/base)``: a log transform
+        centred at a base value (CAS Monograph 5, section 5.6.2).
+        
+        Parameters
+        ----------
+        name : str
+        base : float
+            Positive.
+        
+        Returns
+        -------
+        Terms
+        """
+    def natural_spline(self, /, name: str, knots: Sequence[float], boundary: tuple[float, float] |None = None) -> Terms:
+        """
+        Adds a natural cubic spline with interior ``knots``, linear beyond
+        the boundary knots (the training range unless given):
+        ``len(knots) + 1`` columns named ``spline(x)1``, .... The basis is
+        the restricted cubic one, which spans the same functions as R's
+        ``splines::ns(x, knots)``: fitted values agree, coefficients differ.
+        
+        Parameters
+        ----------
+        name : str
+        knots : list of float
+            Interior knots, strictly increasing.
+        boundary : tuple of float, optional
+            The boundary knots; the training minimum and maximum by default.
         
         Returns
         -------
@@ -19085,6 +19206,72 @@ class Terms:
         Parameters
         ----------
         name : str
+        
+        Returns
+        -------
+        Terms
+        """
+    def ordinal(self, /, name: str, levels: Sequence[str]) -> Terms:
+        """
+        Adds an ordered factor in cumulative coding: for each level after
+        the first, ``1[level >= it]``, named ``x[>=level]``, so each
+        coefficient is the step from the level below.
+        
+        Parameters
+        ----------
+        name : str
+        levels : list of str
+            The levels in order, lowest first.
+        
+        Returns
+        -------
+        Terms
+        
+        Examples
+        --------
+        >>> from prospicio.models import Terms
+        >>> data = {"size": ["small", "large", "medium"]}
+        >>> Terms().ordinal("size", ["small", "medium", "large"]).fit(data).names
+        ['size[>=medium]', 'size[>=large]']
+        """
+    def orthogonal_poly(self, /, name: str, degree: int) -> Terms:
+        """
+        Adds orthogonal polynomials of degree 1 to ``degree`` on the
+        training values, as R's ``poly(x, degree)``, named ``poly(x)1``,
+        ...; the recurrence learned at ``fit`` rebuilds them on new data.
+        
+        Parameters
+        ----------
+        name : str
+        degree : int
+        
+        Returns
+        -------
+        Terms
+        """
+    def poly(self, /, name: str, degree: int) -> Terms:
+        """
+        Adds raw powers ``x, x**2, ..., x**degree`` of a numeric column,
+        named ``x``, ``x^2``, ....
+        
+        Parameters
+        ----------
+        name : str
+        degree : int
+        
+        Returns
+        -------
+        Terms
+        """
+    def steps(self, /, name: str, knots: Sequence[float]) -> Terms:
+        """
+        Adds steps ``1[x >= k]`` at each knot, named ``step(x,k)``.
+        
+        Parameters
+        ----------
+        name : str
+        knots : list of float
+            Strictly increasing.
         
         Returns
         -------
@@ -23727,6 +23914,48 @@ def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     >>> w = stacking_weights([[-0.1, -0.1, -3.0, -3.0], [-3.0, -3.0, -0.1, -0.1]])
     >>> [round(x, 9) for x in w]
     [0.5, 0.5]
+    """
+
+def target_encode(values: Sequence[str], y: Sequence[float], expected: Sequence[float], splits: Sequence[tuple[Sequence[int], Sequence[int]]], k: float, exposure: Sequence[float] |None = None) -> tuple[list[float], TargetEncoding]:
+    """
+    Out-of-fold target encoding of a high-cardinality factor with
+    credibility (CAS Monograph 16, chapter 6): each level's
+    actual-to-expected ratio shrunk to 1 by ``z = n / (n + k)``, ``n`` its
+    exposure, ``z * A / E + (1 - z)``. Each training row is encoded from the
+    other folds only, so its own response never enters its encoding; the
+    returned ``TargetEncoding``, from all rows, encodes new data. Its log
+    enters a GLM as a numeric column.
+    
+    Parameters
+    ----------
+    values : list of str
+        The factor's level per row.
+    y : list of float
+        Actual responses.
+    expected : list of float
+        Expected responses: the overall mean times exposure, or a first
+        model's predictions.
+    splits : list of (list of int, list of int)
+        From ``k_fold`` or ``group_k_fold``; every row in exactly one test
+        set.
+    k : float
+        The credibility constant ``K``.
+    exposure : list of float, optional
+        Credibility weights; 1 per row by default.
+    
+    Returns
+    -------
+    tuple of (list of float, TargetEncoding)
+        The out-of-fold encoding of each training row, and the encoding for
+        new data.
+    
+    Examples
+    --------
+    >>> from prospicio.models import target_encode
+    >>> splits = [([1, 3], [0, 2]), ([0, 2], [1, 3])]
+    >>> rows, enc = target_encode(["a", "a", "b", "b"], [2.0, 2.0, 0.0, 1.0], [1.0] * 4, splits, 1.0)
+    >>> rows[0]
+    1.5
     """
 
 def threshold_diagnostics(draws: Sequence[float], thresholds: Sequence[float]) -> dict:

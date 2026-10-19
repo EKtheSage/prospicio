@@ -68,6 +68,15 @@ dispersion_args <- function(dispersion) {
 #' terms work as in [stats::glm()]. Results match statsmodels' GLM
 #' (`validation/scripts/statsmodels_glm.py`).
 #'
+#' The rating variables of Python's `Terms` are formula terms here:
+#' interactions `a:b`, raw powers `poly(x, 3, raw = TRUE)`, hinges
+#' `I(pmax(0, x - 30))`, steps `I(x >= 30)`, bins `cut(x, c(-Inf, 30, 50,
+#' Inf))`, a centred log `log(x / 40)` and natural splines
+#' `splines::ns(x, knots = ...)`. For an ordered factor in cumulative coding
+#' (each coefficient the step from the level below), use one step column
+#' per level, `I(as.integer(f) >= 2)` and so on, on a factor with its levels
+#' in order.
+#'
 #' @param formula A model formula; `offset(...)` terms are honoured.
 #' @param data A data frame.
 #' @param family `"gaussian"`, `"poisson"`, `"gamma"`, `"inverse_gaussian"`,
@@ -1198,6 +1207,55 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
 #' length(k_fold(10, 5, seed = 1))
 #' time_ordered(c(0, 1, 2, 1, 2, 2), 1)
 NULL
+
+#' Out-of-fold target encoding with credibility
+#'
+#' Encodes a high-cardinality factor by each level's actual-to-expected
+#' ratio, shrunk to 1 by the credibility `z = n / (n + k)` with `n` the
+#' level's exposure: `z A / E + (1 - z)` (CAS Monograph 16, chapter 6). Each
+#' training row is encoded from the other folds only, so its own response
+#' never enters its encoding; `encode_target()` applies the encoding from all
+#' the rows to new data (a level not seen in training gets 1). Its log
+#' enters a GLM as a numeric column.
+#'
+#' @param values The factor's level per row.
+#' @param y Actual responses.
+#' @param expected Expected responses: the overall mean times exposure, or a
+#'   first model's predictions.
+#' @param splits Splits from [k_fold()] or [group_k_fold()], every row in
+#'   exactly one test set.
+#' @param k The credibility constant.
+#' @param exposure Optional credibility weights, 1 per row by default.
+#' @param encoding A `target_encoding` list from `target_encode()`.
+#' @param newvalues Levels of new data.
+#' @returns `target_encode()` a list with `rows` (the out-of-fold encoding of
+#'   each training row) and `encoding` (a data frame of `level` and `ratio`,
+#'   with `k`); `encode_target()` one value per new value.
+#' @export
+#' @examples
+#' splits <- list(list(train = c(2, 4), test = c(1, 3)), list(train = c(1, 3), test = c(2, 4)))
+#' te <- target_encode(c("a", "a", "b", "b"), c(2, 2, 0, 1), rep(1, 4), splits, k = 1)
+#' te$rows
+#' encode_target(te$encoding, c("a", "z"))
+target_encode <- function(values, y, expected, splits, k, exposure = NULL) {
+  r <- rust_result(target_encode_rust(
+    as.character(values), as.double(y), as.double(expected),
+    if (is.null(exposure)) double() else as.double(exposure),
+    lapply(splits, function(s) as.double(s$train)), lapply(splits, function(s) as.double(s$test)),
+    as.double(k)
+  ))
+  encoding <- data.frame(level = r$levels, ratio = r$ratios)
+  attr(encoding, "k") <- k
+  list(rows = r$rows, encoding = encoding)
+}
+
+#' @rdname target_encode
+#' @export
+encode_target <- function(encoding, newvalues) {
+  out <- encoding$ratio[match(as.character(newvalues), encoding$level)]
+  out[is.na(out)] <- 1
+  out
+}
 
 #' @rdname resampling
 #' @export

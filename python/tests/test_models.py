@@ -617,3 +617,60 @@ def test_glm_diagnostics_match_r():
     n, p = len(y), len(fit.coefficients)
     assert fit.gcv(d, y) == pytest.approx(n * sum(r * r for r in g["response"]) / (n - p) ** 2)
     assert fit.log_likelihood_at(d, y, 1.0) == pytest.approx(fit.log_likelihood, rel=1e-12)
+def test_terms_build_rating_variables():
+    data = {"age": [20.0, 30.0, 45.0, 60.0], "region": ["N", "S", "W", "S"], "size": ["small", "large", "medium", "small"]}
+    coding = (
+        Terms()
+        .intercept()
+        .interaction("region", "age")
+        .poly("age", 2)
+        .hinges("age", [25.0])
+        .steps("age", [30.0])
+        .bins("age", [30.0, 50.0])
+        .log("age", 40.0)
+        .ordinal("size", ["small", "medium", "large"])
+        .fit(data)
+    )
+    assert coding.names == [
+        "(Intercept)", "region[S]:age", "region[W]:age", "age", "age^2", "hinge(age,25)",
+        "step(age,30)", "age[(30,50]]", "age[(50,Inf)]", "log(age/40)", "size[>=medium]", "size[>=large]",
+    ]
+    d = coding.design({"age": [70.0], "region": ["W"], "size": ["medium"]})
+    row = [d.column(i)[0] for i in range(len(coding.names))]
+    assert row[:9] == [1.0, 0.0, 70.0, 70.0, 4900.0, 45.0, 1.0, 0.0, 1.0]
+    assert row[9] == pytest.approx(math.log(70 / 40))
+    assert row[10:] == [1.0, 0.0]
+    with pytest.raises(ValueError):
+        Terms().hinges("age", [50.0, 25.0]).fit(data)
+
+
+def test_orthogonal_polys_and_natural_splines():
+    # R: poly(x, 3) and lm(y ~ ns(x, knots = c(10, 25))).
+    x = [1.0, 2.0, 4.0, 7.0, 11.0, 16.0, 22.0, 29.0, 37.0, 46.0]
+    y = [math.sin(v / 7) * 10 + v / 3 for v in x]
+    poly = Terms().orthogonal_poly("x", 3).fit({"x": x})
+    assert poly.design({"x": [50.0]}).column(2)[0] == pytest.approx(1.26850684550873050, rel=1e-12)
+    spline = Terms().intercept().natural_spline("x", [10.0, 25.0]).fit({"x": x})
+    assert spline.names == ["(Intercept)", "spline(x)1", "spline(x)2", "spline(x)3"]
+    fit = Glm("gaussian", "identity").fit(spline.design({"x": x}), y)
+    new = fit.predict(spline.design({"x": [0.0, 20.0, 50.0]}))
+    assert new == pytest.approx([-0.72122511127239264, 7.71926159866044337, 22.49421993091769423], rel=1e-9)
+
+
+def test_target_encode_out_of_fold():
+    from prospicio.models import target_encode
+
+    values = [f"l{i % 7}" for i in range(60)]
+    y = [float((i * 13) % 5) for i in range(60)]
+    splits = k_fold(60, 5, 3)
+    rows, enc = target_encode(values, y, [2.0] * 60, splits, 4.0)
+    y2 = list(y)
+    y2[10] += 100.0
+    rows2, _ = target_encode(values, y2, [2.0] * 60, splits, 4.0)
+    assert rows2[10] == rows[10]
+    a = sum(y[i] for i in range(60) if i % 7 == 0)
+    n = sum(1 for i in range(60) if i % 7 == 0)
+    z = n / (n + 4.0)
+    assert enc.encode(["l0", "unseen"]) == pytest.approx([z * a / (2.0 * n) + 1 - z, 1.0])
+    with pytest.raises(ValueError):
+        target_encode(values, y, [2.0] * 60, splits[1:], 4.0)

@@ -1097,6 +1097,39 @@ fn splits_r(splits: Vec<resample::Split>) -> List {
     )
 }
 
+/// Out-of-fold target encoding: `list(rows, levels, ratios)`; `trains` and
+/// `tests` are the splits' 1-based row numbers.
+#[extendr]
+fn target_encode_rust(
+    values: Vec<String>,
+    y: &[f64],
+    expected: &[f64],
+    exposure: &[f64],
+    trains: List,
+    tests: List,
+    k: f64,
+) -> Result<List> {
+    let rows = |x: Robj| -> Result<Vec<usize>> {
+        x.as_real_vector()
+            .ok_or_else(|| Error::Other("split rows must be numeric".into()))
+            .map(|v| v.iter().map(|&i| i as usize - 1).collect())
+    };
+    let splits = trains
+        .values()
+        .zip(tests.values())
+        .map(|(train, test)| {
+            Ok(resample::Split {
+                train: rows(train)?,
+                test: rows(test)?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let e = (!exposure.is_empty()).then_some(exposure);
+    let (rows, enc) = prospicio_models::encode::target_encode(&values, y, expected, e, &splits, k)
+        .map_err(to_r)?;
+    Ok(list!(rows = rows, levels = enc.levels, ratios = enc.ratios))
+}
+
 #[extendr]
 fn k_fold_rust(n: f64, k: f64, seed: f64) -> Result<List> {
     resample::k_fold(
@@ -1664,6 +1697,7 @@ extendr_module! {
     fn pit_histogram_rust;
     fn simulate_from_means_rust;
     fn k_fold_rust;
+    fn target_encode_rust;
     fn group_k_fold_rust;
     fn time_ordered_rust;
     fn mcmc_diagnostics_rust;
