@@ -155,6 +155,7 @@ impl GamFit {
             "covariance": nums(&self.covariance),
             "dispersion": num(self.dispersion),
             "deviance": num(self.deviance),
+            "log_likelihood": num(self.log_likelihood),
             "score": num(self.score),
             "reml_scale": self.reml_scale.map(num),
             "fitted": nums(&self.fitted),
@@ -260,6 +261,11 @@ impl GamFit {
             covariance,
             dispersion: float(field(top, "dispersion")?, "dispersion")?,
             deviance: float(field(top, "deviance")?, "deviance")?,
+            // Absent from artifacts written before it was saved.
+            log_likelihood: match top.get("log_likelihood") {
+                None => f64::NAN,
+                Some(v) => float(v, "log_likelihood")?,
+            },
             score: float(field(top, "score")?, "score")?,
             reml_scale: match top.get("reml_scale") {
                 None | Some(serde_json::Value::Null) => None,

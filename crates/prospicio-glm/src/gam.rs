@@ -727,6 +727,7 @@ pub struct GamFit {
     pub(crate) covariance: Vec<f64>,
     pub(crate) dispersion: f64,
     pub(crate) deviance: f64,
+    pub(crate) log_likelihood: f64,
     pub(crate) score: f64,
     pub(crate) reml_scale: Option<f64>,
     pub(crate) fitted: Vec<f64>,
@@ -1347,6 +1348,17 @@ impl Model for Gam {
         } else {
             None
         };
+        // As the GLM's: the Gaussian's at the maximum-likelihood variance.
+        let ll_dispersion = match glm.family {
+            Family::Gaussian => best.deviance / nf,
+            _ => dispersion,
+        };
+        let log_likelihood = (0..n)
+            .map(|i| {
+                glm.family
+                    .log_likelihood(y[i], best.irls.mu[i], w[i], ll_dispersion)
+            })
+            .sum();
         Ok(GamFit {
             spec: self.clone(),
             score: score(&best, &lambdas),
@@ -1360,6 +1372,7 @@ impl Model for Gam {
             covariance,
             dispersion,
             deviance: best.deviance,
+            log_likelihood,
             fitted: best.irls.mu,
             input_hash: crate::input_hash(design, y),
         })
@@ -1409,6 +1422,21 @@ impl GamFit {
     /// Residual deviance.
     pub fn deviance(&self) -> f64 {
         self.deviance
+    }
+
+    /// Log-likelihood at the fitted means and the dispersion, as
+    /// [`GlmFit::log_likelihood`](crate::GlmFit::log_likelihood) (the
+    /// Gaussian's at the maximum-likelihood variance `deviance / n`). NaN
+    /// for a fit loaded from an artifact written before it was saved.
+    pub fn log_likelihood(&self) -> f64 {
+        self.log_likelihood
+    }
+
+    /// `-2 ℓ + 2 edf`: the effective degrees of freedom as the penalty,
+    /// not counting an estimated dispersion, as [`GlmFit::aic`](crate::GlmFit::aic)
+    /// (mgcv's `AIC` adds 1 when the scale is estimated).
+    pub fn aic(&self) -> f64 {
+        -2.0 * self.log_likelihood + 2.0 * self.edf
     }
 
     /// The minimized GCV, UBRE or REML score (or the score at fixed
@@ -1509,5 +1537,31 @@ mod tests {
             assert!((a - b).abs() < 1e-6, "{a} {b}");
         }
         assert!((fit.edf() - 2.0).abs() < 1e-6);
+        // At λ → ∞ the log-likelihood is the line's, and the AIC counts the
+        // edf, here the line's two coefficients.
+        assert!((fit.log_likelihood() - line.log_likelihood()).abs() < 1e-5);
+        assert!((fit.aic() - line.aic()).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_log_likelihood_is_the_familys_at_the_fit_and_round_trips() {
+        let x: Vec<f64> = (0..80).map(|i| f64::from(i) / 10.0).collect();
+        let y: Vec<f64> = x.iter().map(|v| ((2.0 * v).sin() + 1.5).round()).collect();
+        let d = Design::new(
+            vec!["(Intercept)".into(), "x".into()],
+            vec![vec![1.0; 80], x.clone()],
+        )
+        .unwrap();
+        let glm = Glm::new(Family::Poisson, Link::Log);
+        let fit = Gam::new(glm, vec![PSpline::new("x")]).fit(&d, &y).unwrap();
+        let want: f64 = y
+            .iter()
+            .zip(fit.fitted())
+            .map(|(&k, &m)| k * m.ln() - m - ln_gamma(k + 1.0))
+            .sum();
+        assert!((fit.log_likelihood() - want).abs() < 1e-9);
+        assert!((fit.aic() - (-2.0 * want + 2.0 * fit.edf())).abs() < 1e-9);
+        let back = GamFit::from_json(&fit.to_json()).unwrap();
+        assert_eq!(back.log_likelihood(), fit.log_likelihood());
     }
 }
