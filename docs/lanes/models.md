@@ -6,7 +6,7 @@
 
 ## Next
 
-- #333's residual diagnostics, custom designs and gamma and Tweedie families (in the Reserving lane's files, with the user's go-ahead of 2026-10-19)
+- [odp-glm-diagnostics] #333's residual diagnostics, custom designs and gamma and Tweedie families (in the Reserving lane's files, with the user's go-ahead of 2026-10-19)
 - the issues filed by the Guides lane on 2026-10-18 (#353, #355, #356, #358)
 - [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
