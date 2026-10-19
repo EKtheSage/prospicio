@@ -21,6 +21,7 @@ pub mod evt;
 pub mod experience;
 pub mod exposure;
 pub mod fitting;
+pub mod payout;
 pub mod pricing;
 pub mod ratemaking;
 pub mod reserving;
@@ -1516,6 +1517,102 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: evt::hill_estimates,
+    },
+    Function {
+        symbol: "pro_payout_pattern",
+        name: "PRO.PAYOUT.PATTERN",
+        help: "A payment pattern by time: share paid, paid to date, outstanding and the discount at a rate.",
+        args: &[
+            Arg {
+                name: "times",
+                help: "Payment times in years from inception: a row or column",
+            },
+            Arg {
+                name: "values",
+                help: "One per time: shares paid then, the share paid to date, or factors to ultimate (see kind)",
+            },
+            Arg {
+                name: "kind",
+                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.CL.CDF, the last 1)",
+            },
+            Arg {
+                name: "shift",
+                help: "Years to move the pattern later (0 if omitted; 0.5 for losses occurring evenly over a year)",
+            },
+            Arg {
+                name: "rate",
+                help: "Annual effective discount rate (0 if omitted)",
+            },
+        ],
+        run: payout::pattern_table,
+    },
+    Function {
+        symbol: "pro_payout_stats",
+        name: "PRO.PAYOUT.STATS",
+        help: "A payment pattern's discount factor, duration and discounted capital years at a rate.",
+        args: &[
+            Arg {
+                name: "times",
+                help: "Payment times in years from inception: a row or column",
+            },
+            Arg {
+                name: "values",
+                help: "One per time: shares paid then, the share paid to date, or factors to ultimate (see kind)",
+            },
+            Arg {
+                name: "rate",
+                help: "Annual effective discount rate, such as 0.04",
+            },
+            Arg {
+                name: "kind",
+                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.CL.CDF, the last 1)",
+            },
+            Arg {
+                name: "shift",
+                help: "Years to move the pattern later (0 if omitted; 0.5 for losses occurring evenly over a year)",
+            },
+        ],
+        run: payout::stats,
+    },
+    Function {
+        symbol: "pro_payout_price",
+        name: "PRO.PAYOUT.PRICE",
+        help: "A cost-of-capital price over the payout: P = E d + coc (assets - P) A, capital held while losses are outstanding.",
+        args: &[
+            Arg {
+                name: "expected_loss",
+                help: "Expected loss E[X], undiscounted",
+            },
+            Arg {
+                name: "assets",
+                help: "Assets backing the loss: the one-year risk measure, such as a VaR from PRO.AGG.STATS",
+            },
+            Arg {
+                name: "coc",
+                help: "Cost of capital, a spread over the discount rate, such as 0.1",
+            },
+            Arg {
+                name: "times",
+                help: "Payment times in years from inception: a row or column",
+            },
+            Arg {
+                name: "values",
+                help: "One per time: shares paid then, the share paid to date, or factors to ultimate (see kind)",
+            },
+            Arg {
+                name: "rate",
+                help: "Annual effective discount rate, such as 0.04",
+            },
+            Arg {
+                name: "kind",
+                help: "\"shares\" (default, summing to 1), \"paid\" (share paid to date, the last 1) or \"factors\" (to ultimate, such as PRO.CL.CDF, the last 1)",
+            },
+            Arg {
+                name: "shift",
+                help: "Years to move the pattern later (0 if omitted; 0.5 for losses occurring evenly over a year)",
+            },
+        ],
+        run: payout::price,
     },
 ];
 

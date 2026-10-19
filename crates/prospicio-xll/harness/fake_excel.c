@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("seventy-five functions registered", registered == 75);
+    check("seventy-eight functions registered", registered == 78);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -569,6 +569,17 @@ int main(int argc, char **argv) {
           (hl->xltype & 0xFFF) == xltypeMulti && hl->val.array.rows == 2 &&
               fabs(hl->val.array.lparray[6].val.num - 2 * log(2.0)) < 1e-12);
     free12(hl);
+
+    /* One payment after a year at 10%: the discount factor is 1 / 1.1. */
+    XLOPER12 py_t, py_r;
+    py_t.xltype = py_r.xltype = xltypeNum;
+    py_t.val.num = 1;
+    py_r.val.num = 0.1;
+    XLOPER12 *ps = ((Fn5)GetProcAddress(xll, "pro_payout_stats"))(&py_t, &py_t, &py_r, &missing, &missing);
+    check("PRO.PAYOUT.STATS one payment after a year at 10% is 1 / 1.1",
+          (ps->xltype & 0xFFF) == xltypeMulti && ps->val.array.rows == 3 &&
+              fabs(ps->val.array.lparray[1].val.num - 1 / 1.1) < 1e-15);
+    free12(ps);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

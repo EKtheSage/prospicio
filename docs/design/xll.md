@@ -455,6 +455,21 @@ real Excel.
     `beta` are `PRO.SEV`'s `"gpd"` for the exceedances. Against `ismev`
     1.43 on its nine cases every quantity matches at the reference's
     tolerances.
+27. **A payment pattern is a row of times and a row of values** (user,
+    2026-10-19, the sixth group), over `prospicio_pricing::payout`
+    (`time-value.md`). `kind` reads the values as shares paid at each
+    time (summing to 1), the share paid to date or factors to ultimate,
+    so a paid `PRO.CL.CDF` row feeds the pattern directly; a tail goes in
+    as one more time, never placed silently (`time-value.md` decision 2).
+    `PRO.PAYOUT.PATTERN` shows the pattern with the share outstanding and
+    the discount at each time, `PRO.PAYOUT.STATS` its discount factor,
+    duration and discounted capital years, and `PRO.PAYOUT.PRICE` the
+    cost-of-capital price over the payout from the expected loss, the
+    one-year assets and the cost of capital: `P = E d + coc (a - P) A`.
+    The one-period price comes back for one payment within the year at a
+    zero rate. A distortion price over the payout is its premium times the
+    discount factor (`time-value.md` decision 6), a sheet product, so it
+    has no function of its own.
 
 ## Parity plan
 
