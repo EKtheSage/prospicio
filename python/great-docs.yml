@@ -221,6 +221,15 @@ reference:
       - pricing.BurningCost
       - pricing.IndexClause
       - pricing.AsIf
+  - title: Casualty exposure rating
+    desc: A per-policy casualty treaty rated over a table of policies, each on its own severity, ILF or ELF curve, in the ILF and frequency forms with an explicit ALAE treatment; the sweep over the Pareto alpha, its censored anchor and the count test (Clark's study note).
+    contents:
+      - pricing.CasualtyProfile
+      - pricing.IlfTable
+      - pricing.ElfTable
+      - pricing.CasualtyRating
+      - pricing.ParetoAnchor
+      - pricing.poisson_tail
   - title: Credibility
     desc: Classical credibility, the limited fluctuation standards and the Bühlmann–Straub model, and Bayesian hierarchical credibility sampled with NUTS.
     contents:

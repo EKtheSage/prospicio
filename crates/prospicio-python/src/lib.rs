@@ -14,6 +14,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 mod aggregate;
+mod casualty;
 mod counts;
 mod credibility;
 mod discrete;
@@ -45,6 +46,10 @@ mod prospicio_native {
         PyRenewalRuin, PyRuin, compound_moments, eventual_ruin, fft, fft_auto, fft_bivariate,
         layer_loss_picks, occurrence_exceedance, occurrence_pml, panjer, recommend_grid,
         round_bucket, simulate_events, wiener_hopf,
+    };
+    #[pymodule_export]
+    use super::casualty::{
+        PyCasualtyProfile, PyCasualtyRating, PyElfTable, PyIlfTable, PyParetoAnchor, poisson_tail,
     };
     #[pymodule_export]
     use super::counts::PyCount;

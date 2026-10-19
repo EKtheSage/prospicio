@@ -7,19 +7,26 @@ the current rate level by the parallelogram method (RateHistory) and trend
 (TrendFit, trend_factor) and the overall indication (LossRatioExperience,
 PurePremiumExperience, Provisions), and experience rating from large
 losses (LargeLossExperience, DevelopmentPattern, PreparedLosses, BurningCost,
-IndexClause, AsIf), and the time value of money (PaymentPattern,
+IndexClause, AsIf), casualty exposure rating over a table of policies
+(CasualtyProfile, IlfTable, ElfTable, CasualtyRating, ParetoAnchor,
+poisson_tail), and the time value of money (PaymentPattern,
 price_over_payout, PayoutPrice)."""
 
 from .prospicio_native import (
     AsIf,
     BurningCost,
+    CasualtyProfile,
+    CasualtyRating,
     CollectiveModel,
     DevelopmentPattern,
+    ElfTable,
+    IlfTable,
     IndexClause,
     LargeLossExperience,
     LossRatioExperience,
     Mbbefd,
     NaturalPrice,
+    ParetoAnchor,
     PaymentPattern,
     PayoutPrice,
     Pentagon,
@@ -53,6 +60,7 @@ from .prospicio_native import (
     loss_elimination_ratio,
     match_tower,
     pareto_extrapolation,
+    poisson_tail,
     premium_based_expenses,
     price,
     price_over_payout,
@@ -65,6 +73,12 @@ from .prospicio_native import (
 
 __all__ = [
     "CollectiveModel",
+    "CasualtyProfile",
+    "CasualtyRating",
+    "IlfTable",
+    "ElfTable",
+    "ParetoAnchor",
+    "poisson_tail",
     "ilf",
     "layer_cv",
     "loss_elimination_ratio",

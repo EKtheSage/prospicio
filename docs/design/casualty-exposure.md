@@ -1,7 +1,8 @@
 # Design note: casualty exposure rating
 
-Status: **In progress** (method approved by the user 2026-10-16, open
-questions answered 2026-10-17; PRs 1 and 2 done: `prospicio_pricing::casualty`) ·
+Status: **Done** (method approved by the user 2026-10-16, open
+questions answered 2026-10-17; PRs 1 to 3 done: `prospicio_pricing::casualty`,
+in Rust, Python and R) ·
 Depends on: `prospicio_prob::Pareto` and its censored fit,
 `prospicio_pricing::layer`, `prospicio_pricing::experience` · Lane: Aggregate
 
@@ -233,9 +234,20 @@ Two forms give the treaty's expected loss, and the rater supports both:
   sweep against a Pareto's layer at α = 1 and 2, the count test's tail
   against `prospicio-prob`'s Poisson pmf, the burning cost of 1M xs 1M
   with and without a segment, and the weight `√(1/1082)`.
-- **PR 3:** Python (`prospicio.pricing.CasualtyProfile`) and R
-  (`casualty_profile()`, `casualty_sweep()`), with a guide example handed
-  to the Guides lane.
+- **PR 3 (done):** Python (`prospicio.pricing.CasualtyProfile`,
+  `IlfTable`, `ElfTable`, `CasualtyRating`, `ParetoAnchor`,
+  `poisson_tail`, and `PreparedLosses.trended` and `.without`) and R
+  (`casualty_profile()`, `ilf_table()`, `elf_table()`, `casualty_rate()`,
+  `casualty_rate_by_frequency()`, `casualty_occurrences()`,
+  `casualty_sweep()`, `casualty_expected_claims()`,
+  `casualty_count_test()`, `pareto_anchor()`, `poisson_tail()`). The ALAE
+  treatment is a required argument in both (`alae = "pro_rata"`,
+  `"on_top"` or `"in_severity"`, with `loading` required for the first
+  two and refused for the third). Python returns tables as dicts of
+  columns, R as data frames; in R a segment is left out by subsetting the
+  rows on `tag`, and from the burning cost by subsetting the losses. Both
+  test Clark's workers compensation example exactly. A guide example is
+  handed to the Guides lane as an issue.
 - Excel, if wanted, is the Excel lane's to wrap afterwards.
 
 ## Answered questions

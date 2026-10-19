@@ -149,6 +149,12 @@ reference:
       - development_pattern
       - index_clause
       - as_if_history
+      - casualty_profile
+      - ilf_table
+      - casualty_rate
+      - casualty_occurrences
+      - pareto_anchor
+      - poisson_tail
       - pentagon
       - premium_bounds
       - pricing_bounds

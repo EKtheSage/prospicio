@@ -19,6 +19,7 @@ Collate:
     'aggregate.R'
     'models.R'
     'boosting.R'
+    'casualty.R'
     'credibility.R'
     'pareto.R'
     'discrete.R'
