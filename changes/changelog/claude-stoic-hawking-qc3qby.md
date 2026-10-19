@@ -382,4 +382,4 @@
   variance by the delta method, matching Taylor and McGuire's Table 5-4
   (CAS Monograph 3) to the unit. `OdpGlm` and `OdpGlmFit` in Python
   (`prospicio.reserving`) and R (`odp_glm()`, with a
-  `predict_distribution()` method), single segment (#333).
+  `predict_distribution()` method), single segment (#333, #436).
