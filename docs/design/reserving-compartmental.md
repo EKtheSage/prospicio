@@ -1076,7 +1076,9 @@ backtest. Both follow the Meyers segments branch
 (`claude/bayes-meyers-segments`, not merged), which solves the same
 problem for a model that needs premium and a second column; PR E starts
 after it merges. Python and R get `fit_segments` in PR E; the backtest
-stays Rust-only, as for `BayesOdp`.
+stays Rust-only, as for `BayesOdp` (reversed on 2026-10-19 by
+`reserving-bayes.md` decision 21: the backtest gets Python and R entry
+points, and `Compartmental` joins them through `TriangleModel`).
 
 ### 9. Bindings
 

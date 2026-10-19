@@ -49,6 +49,7 @@ together, as in `reserving-v02.md` decision 7.
 | 9 | `claude/bayes-one-year-generic` | one generic one-year view for every Bayesian model (`YearModel`, decision 17) on the public PSIS, its conformance suite, and `BayesBf::one_year`; moment matching before refitting, opt-in (decision 18); in Rust, Python and R | #273 (PR 8 merged) |
 | 10 | `claude/bayes-one-year-meyers` | moment matching the default one-year fallback; `Meyers::one_year` and `one_year_segments` for CRC, CSR and CAY through `YearModel` (decision 19); in Rust, Python and R | PR 9, #279 |
 | 11 | `claude/bayes-one-year-compartmental` | `Compartmental::one_year` for models 1 and 2 through `YearModel` (decision 20), a refit budget (`max_refits`) for every model's view; in Rust, Python and R | PR 10 |
+| 12 | `claude/backtest-bindings` | the diagonal backtest in Python and R, each fit's diagnostics in the forecast and the backtest, two more metrics (decision 21, #342) | `main` |
 | later | | the paid-incurred `Ipi` | PR 5 |
 
 PRs 2 to 4 touch the same binding files
@@ -2582,6 +2583,99 @@ simulations of decision 19):
   (`the_default_view_of_model_2_reweights`: 2,000 simulations, none
   matched or refitted, the warning, the provenance). The lighter refit
   sampler of option (c) stays open for later.
+
+### 21. The diagonal backtest in Python and R, with each fit's diagnostics (PR 12)
+
+Status: **Proposed** (2026-10-19), branch `claude/backtest-bindings`,
+issue #342, in Rust, Python and R. It reverses "the diagonal backtest has
+no binding, so `TriangleModel for BayesOdp` stays Rust-only" (decisions 11
+and 13) and the same line of `reserving-compartmental.md` decision 8, at
+the user's request of 2026-10-19.
+
+Meyers' validation is retrospective: fit on the upper triangle and score
+the forecast against what came in later. `diagonal_backtest`
+(`backtest.rs`) does that on held-out calendar diagonals for any
+`TriangleModel` (`GlmCandidate`, `BayesOdp`, `Meyers`), but only from
+Rust, and a Bayesian fit that did not converge is scored as if it had: the
+forecast has no place for the sampler's diagnostics (decision 8, "The
+diagnostics are not reported"; `knowledge/findings/meyers-segments-backtest.md`).
+
+1. **Diagnostics travel with the forecast.** The `Diagnostics` struct of
+   `bayes/mod.rs` (max R-hat, min bulk and tail ESS, divergences,
+   warnings) moves to a module outside the `bayes` feature, so that
+   `backtest.rs` (in the WASM scope) can name it, and `bayes::Diagnostics`
+   stays a re-export at its old path. `CellForecast` gets `diagnostics:
+   Option<Diagnostics>`: `None` for a model with no sampler (the GLM),
+   the fit's diagnostics for `BayesOdp` and `Meyers` (for `Meyers` over
+   several segments in one frame, not a case the backtest has: one
+   frame is one segment). Adding a public field to `CellForecast` is a
+   breaking change for anyone who builds one, marked in the changelog.
+
+2. **The backtest reports them and does not stop.** A fit whose
+   diagnostics have warnings is still scored, as `BayesOdp::fit` returns
+   such a fit with its warnings (decision 5): a study over many triangles
+   wants every split and a list of the doubtful ones, not an abort on the
+   first. `Backtest::diagnostics(model)` gives one `Option<Diagnostics>`
+   per split, and `Backtest::warnings()` every warning as `(model, split,
+   message)`. A model that fails to fit is still an error naming the
+   model, as now.
+
+3. **Two more metrics.** `METRICS` gains `mean_log_density`, the mean over
+   the split's scored rows of the model's held-out log density (NaN for a
+   model that gives none), and `total_percentile`, the share of the
+   simulated diagonal totals at or below the actual total: the
+   probability integral transform of the diagonal, whose uniformity over
+   many triangles is the calibration test of the 200-triangle study
+   (#392). Meyers' own statistic is the percentile of the outcome's
+   ultimate, from a fit on the whole upper triangle; in the bindings it is
+   the cdf of a fit's predictive total at the known outcome
+   (`Sampled.cdf`, `cdf()`), which needs no new function and is
+   documented next to the backtest. `METRICS` grows from 4 to 6 names; its
+   order of the first four is unchanged.
+
+4. **Names.** Models are named by `TriangleModel::name` and two models
+   with the same name are an error, checked before any fit, so two
+   `BayesOdp` settings are told apart. `NamedModel { name, model }`
+   wraps any `TriangleModel` under a name of the caller's.
+
+5. **Python.** `prospicio.reserving.diagonal_backtest(triangle, column,
+   models, n_diagonals, *, premium=None, n_sims=1000, seed=0,
+   interval=0.9)`. `models` is a dict from name to model or a list of
+   models (each named by its kind, an error on duplicates). A model is a
+   `BayesOdp` or `Meyers` settings object as for its own `fit`, or a
+   `GlmCandidate(terms, glm)` of `prospicio.models.Terms` and
+   `prospicio.models.Glm` on the frame's columns (`origin`,
+   `development`, `calendar`, `exposure`, as `TriangleFrame` names them);
+   `GlmCandidate.odp()` is the ODP model (intercept, origin and
+   development factors, the over-dispersed Poisson). `premium` is the
+   exposure column of the frame, one value per origin, and `Meyers`
+   needs it. The result, `Backtest`, has `models`, `metrics`,
+   `n_splits`, `diagonals` (the held-out calendar periods), `scores()`
+   (a long table: model, diagonal, metric, value), `mean()` (model by
+   metric), `excluded`, `scored_rows`, `log_densities` (a dict by model,
+   `None` where the model gives none, the input of the stacking
+   functions), `diagnostics()` (a table: model, diagonal, max R-hat, min
+   bulk and tail ESS, divergences, number of warnings) and `warnings`.
+   The sampling runs without the GIL.
+
+6. **R.** `diagonal_backtest(triangle, column, models, n_diagonals,
+   premium = NULL, n_sims = 1000, seed = 0, interval = 0.9)` beside
+   `meyers()` and `bayes_odp()`, with `models` a named list of model
+   settings (`bayes_odp_model()`, `meyers_model()` or whatever the
+   existing settings constructors are, and `glm_candidate(terms, glm)`),
+   and the same tables as data frames.
+
+7. **Checks.** The new metrics against their definitions on a GLM
+   candidate (Rust); diagnostics present for `BayesOdp` and `Meyers` and
+   absent for the GLM; a forced failure (too few draws for the ESS
+   thresholds) reported as warnings and still scored; duplicate names an
+   error; the bindings' tables equal to the Rust `Backtest` on RAA with
+   the ODP GLM (fast) and one Bayesian model at small settings, and the
+   Python and R results equal to each other for the same seed.
+
+`Compartmental` joins the backtest in `reserving-compartmental.md` PR E,
+which then needs no binding work of its own: it is one more model type
+the binding accepts.
 
 ## Open decisions for the user
 
