@@ -3968,6 +3968,7 @@ dependencies = [
  "prospicio-math",
  "prospicio-prob",
  "rayon",
+ "serde_json",
 ]
 
 [[package]]
@@ -3979,6 +3980,7 @@ dependencies = [
  "prospicio-core",
  "prospicio-models",
  "prospicio-prob",
+ "serde_json",
 ]
 
 [[package]]

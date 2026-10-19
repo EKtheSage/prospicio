@@ -12,11 +12,14 @@
 //! - [`metrics`]: deviance, Gini, lift, CRPS, coverage;
 //! - [`resample`]: k-fold, grouped and time-ordered splits,
 //!   cross-validation and grid search;
+//! - [`artifact`]: the envelope of saved models (format, version,
+//!   provenance) and its JSON helpers;
 //! - [`simulate`]: predictive distributions from fitted means, for engines
 //!   that give only a mean per row (the boosting adapters).
 //!
 //! This crate has no heavy dependencies; engines live in their own crates.
 
+pub mod artifact;
 pub mod compare;
 pub mod design;
 pub mod family;

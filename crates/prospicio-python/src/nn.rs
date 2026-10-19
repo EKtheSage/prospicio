@@ -151,6 +151,59 @@ pub(crate) struct PyCannFit {
 
 #[pymethods]
 impl PyCannFit {
+    /// The fit as a JSON artifact (spec, scaling, every weight by its path,
+    /// fitted values, provenance); ``from_json`` reads it back exactly and
+    /// pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    ///
+    /// Examples
+    /// --------
+    /// >>> import pickle
+    /// >>> from prospicio.models import Cann, Design
+    /// >>> d = Design([[0.0, 1.0, 2.0, 3.0]], ["x"])
+    /// >>> fit = Cann("poisson", hidden=[4], epochs=5).fit(d, [1.0, 2.0, 2.0, 5.0])
+    /// >>> pickle.loads(pickle.dumps(fit)).predict(d) == fit.predict(d)
+    /// True
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// CannFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     weights that do not fit the spec.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: CannFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    /// Hash of the training data (design, offset, weights, response).
+    #[getter]
+    fn input_hash(&self) -> &str {
+        self.inner.input_hash()
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.borrow().inner.to_json(),)))
+    }
+
     /// Expected response for each row of ``design`` (same columns as the
     /// training design), ``g^-1(offset + NN(x))``.
     fn predict(&self, py: Python<'_>, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
@@ -342,6 +395,50 @@ pub(crate) struct PyAttentionCannFit {
 
 #[pymethods]
 impl PyAttentionCannFit {
+    /// The fit as a JSON artifact (spec, scaling, every weight by its path,
+    /// fitted values, provenance); ``from_json`` reads it back exactly and
+    /// pickling uses it too.
+    ///
+    /// Returns
+    /// -------
+    /// str
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+
+    /// Reads an artifact written by ``to_json``.
+    ///
+    /// Parameters
+    /// ----------
+    /// text : str
+    ///
+    /// Returns
+    /// -------
+    /// AttentionCannFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For malformed JSON, another format, a newer format version or
+    ///     weights that do not fit the spec.
+    #[staticmethod]
+    fn from_json(text: &str) -> PyResult<Self> {
+        Ok(Self {
+            inner: AttentionCannFit::from_json(text).map_err(to_py)?,
+        })
+    }
+
+    /// Hash of the training data (design, offset, weights, response).
+    #[getter]
+    fn input_hash(&self) -> &str {
+        self.inner.input_hash()
+    }
+
+    fn __reduce__<'py>(slf: &Bound<'py, Self>) -> PyResult<(Bound<'py, PyAny>, (String,))> {
+        let from_json = slf.get_type().getattr("from_json")?;
+        Ok((from_json, (slf.borrow().inner.to_json(),)))
+    }
+
     /// Feature tokens, in column order.
     #[getter]
     fn tokens(&self) -> Vec<String> {

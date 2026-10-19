@@ -26,6 +26,13 @@ stopifnot(m@dispersion == 1, is.na(m@best_epoch), length(m@validation_history) =
 m2 <- cann_fit(y ~ x, d, offset = rep(base, 600), hidden = c(16, 8), epochs = 60,
                learning_rate = 0.01, seed = 3)
 stopifnot(identical(m@fitted, m2@fitted))
+# Saved and loaded, the network predicts exactly as before.
+mf <- tempfile(fileext = ".rds")
+save_model(m, mf)
+m3 <- load_model(mf)
+stopifnot(S7::S7_inherits(m3, cann_model), identical(m3@ptr$input_hash(), m@ptr$input_hash()))
+stopifnot(identical(predict(m3, d[1:5, , drop = FALSE], offset = rep(base, 5)),
+                    predict(m, d[1:5, , drop = FALSE], offset = rep(base, 5))))
 pd <- predict_distribution(m, d, n_sims = 4000, seed = 9, offset = rep(base, 600))
 near(mean(rowSums(draw_matrix(pd))), sum(m@fitted), 0.02)
 
@@ -46,6 +53,11 @@ am <- attention_cann_fit(y ~ age + region, a, family = "gamma", d_model = 8, hea
                          layers = 1, feed_forward = 16, epochs = 8, seed = 2)
 stopifnot(identical(am@tokens, c("age", "region")), am@dispersion > 0)
 stopifnot(length(predict(am, a)) == 300)
+af <- tempfile(fileext = ".rds")
+save_model(am, af)
+am2 <- load_model(af)
+stopifnot(identical(predict(am2, a), predict(am, a)), identical(am2@tokens, am@tokens))
+stopifnot(identical(attention_weights(am2, a[1:3, ]), attention_weights(am, a[1:3, ])))
 w <- attention_weights(am, a)
 stopifnot(identical(dim(w), c(300L, 2L, 2L)), identical(dimnames(w)[[3]], c("age", "region")),
           all(w >= 0), all(apply(w, c(1, 2), sum) <= 1 + 1e-12))

@@ -14,6 +14,7 @@
 //! family's weighted deviance by Adam on mini-batches, on the CPU
 //! (`ndarray` backend, `f64`), and is reproducible from its seed.
 
+mod artifact;
 pub mod attention;
 #[cfg(feature = "onnx")]
 pub mod onnx;
@@ -37,13 +38,13 @@ pub(crate) type Train = Autodiff<Cpu>;
 /// The feed-forward correction: hidden ReLU layers, then a linear output
 /// initialized to zero.
 #[derive(Module, Debug)]
-struct Net<B: Backend> {
+pub(crate) struct Net<B: Backend> {
     hidden: Vec<Linear<B>>,
     out: Linear<B>,
 }
 
 impl<B: Backend> Net<B> {
-    fn new(inputs: usize, hidden: &[usize], device: &B::Device) -> Self {
+    pub(crate) fn new(inputs: usize, hidden: &[usize], device: &B::Device) -> Self {
         let mut layers = Vec::with_capacity(hidden.len());
         let mut width = inputs;
         for &h in hidden {
@@ -356,6 +357,18 @@ impl<B: Backend> ModuleVisitor<B> for Materialize {
     }
 }
 
+/// Hash of a fit's training data: column names and values, offset,
+/// weights and response, as the GLM's.
+pub(crate) fn input_hash(kind: &str, design: &Design, y: &[f64]) -> String {
+    let mut h = prospicio_prob::InputHasher::new();
+    h.str(kind);
+    for (j, name) in design.names().iter().enumerate() {
+        h.str(name).f64s(design.column(j));
+    }
+    h.f64s(design.offset()).f64s(design.weights()).f64s(y);
+    h.finish()
+}
+
 /// Per-column centring and scaling learned on the training design.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Scaling {
@@ -481,6 +494,7 @@ impl Model for Cann {
             validation_history: trained.history,
             dispersion: 1.0,
             fitted: Vec::new(),
+            input_hash: input_hash("cann_fit", design, y),
         };
         fit.fitted = fit.predict(design)?;
         if !fit.spec.family.unit_dispersion() {
@@ -507,6 +521,7 @@ pub struct CannFit {
     validation_history: Vec<f64>,
     dispersion: f64,
     fitted: Vec<f64>,
+    input_hash: String,
 }
 
 impl CannFit {
