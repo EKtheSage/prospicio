@@ -788,8 +788,9 @@ S7::method(print, gam_model) <- function(x, ...) {
 #' under the empirical distribution of `draws`, ties randomized by `u`, and
 #' `pit_histogram()` counts PIT values in `bins` equal-width bins of
 #' `[0, 1]`. `deviance_score()` is a score for [cross_validate()]: the
-#' family's mean deviance on the test rows, `sum(w d) / sum(w)`, with the
-#' weights from the test data's `weight_column` (all 1 by default).
+#' family's mean deviance of the test data's `response` column,
+#' `sum(w d) / sum(w)`, with the weights from its `weight_column` (all 1
+#' by default).
 #'
 #' @param family A family name, as in [glm_fit()].
 #' @param y Outcomes.
@@ -805,6 +806,7 @@ S7::method(print, gam_model) <- function(x, ...) {
 #' @param u The share of tied draws counted below `y`.
 #' @param pit PIT values in `[0, 1]`.
 #' @param bins Number of histogram bins.
+#' @param response The name of the response column.
 #' @param weight_column The test data's weight column, or `NULL`.
 #' @returns A number; for `pit_values()` and `pit_from_draws()` one value
 #'   per outcome; for `pit_histogram()` the count in each bin; for
@@ -897,10 +899,11 @@ pit_histogram <- function(pit, bins = 10) {
 
 #' @rdname model_metrics
 #' @export
-deviance_score <- function(family, theta = NULL, power = NULL, weight_column = NULL) {
+deviance_score <- function(family, response, theta = NULL, power = NULL, weight_column = NULL) {
   force(family)
+  force(response)
   function(model, test) {
-    y <- stats::model.response(stats::model.frame(model@terms, test))
+    y <- test[[response]]
     w <- if (is.null(weight_column)) rep(1, nrow(test)) else test[[weight_column]]
     family_deviance(family, y, stats::predict(model, test), weights = w, theta = theta,
                     power = power) / sum(w)

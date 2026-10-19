@@ -320,7 +320,7 @@ stopifnot(mean(rowSums(draw_matrix(pn))) > mean(rowSums(draw_matrix(pc))))
 stopifnot(identical(pit_from_draws(c(1, 2, 3, 4), c(2.5, 2)), c(0.5, 0.375)))
 stopifnot(identical(pit_histogram(c(0, 0.05, 0.15, 1), bins = 10), c(2, 1, 0, 0, 0, 0, 0, 0, 0, 1)))
 cv_data <- data.frame(y = c(1, 0, 2, 3, 1, 4, 2, 0), x = 1:8)
-sc <- deviance_score("poisson")
+sc <- deviance_score("poisson", response = "y")
 cv_fit <- glm_fit(y ~ x, cv_data[1:6, ], family = "poisson")
 near(sc(cv_fit, cv_data[7:8, ]),
      family_deviance("poisson", c(2, 0), predict(cv_fit, cv_data[7:8, ])) / 2, 1e-14)

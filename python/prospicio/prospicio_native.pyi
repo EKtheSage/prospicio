@@ -8117,6 +8117,13 @@ class GamFit:
     """
     def __reduce__(self, /) -> tuple[Any, tuple[str]]: ...
     @property
+    def aic(self, /) -> float:
+        """
+        ``-2 log_likelihood + 2 edf``, not counting an estimated dispersion,
+        as ``GlmFit.aic`` (mgcv's ``AIC`` adds 1 when the scale is
+        estimated).
+        """
+    @property
     def coefficients(self, /) -> list[float]:
         """
         Coefficients.
@@ -8169,6 +8176,13 @@ class GamFit:
     def lambdas(self, /) -> list[float]:
         """
         Smoothing parameter of each smooth.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        Log-likelihood at the fitted means and the dispersion, as
+        ``GlmFit.log_likelihood`` (the Gaussian's at the maximum-likelihood
+        variance). NaN for a fit loaded from an older artifact.
         """
     @property
     def names(self, /) -> list[str]:
