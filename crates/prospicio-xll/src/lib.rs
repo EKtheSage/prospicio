@@ -1295,6 +1295,78 @@ pub static FUNCTIONS: &[Function] = &[
         run: aggregate::cover,
     },
     Function {
+        symbol: "pro_tower_price",
+        name: "PRO.TOWER.PRICE",
+        help: "A reinsurance tower on the annual grid, each view (gross, layers, cover, net) priced by a distortion: loss, SD, premium, margin, loss ratio, rate on line.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of claims a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "limit",
+                help: "The gross per-claim limit (a policy limit) or \"unlimited\"; none if omitted",
+            },
+            Arg {
+                name: "attachment",
+                help: "The gross per-claim deductible; 0 if omitted",
+            },
+            Arg {
+                name: "limits",
+                help: "Each per-occurrence layer's limit (or \"unlimited\"): a row",
+            },
+            Arg {
+                name: "attachments",
+                help: "Each layer's attachment: one, or one per limit",
+            },
+            Arg {
+                name: "shares",
+                help: "Each layer's placed share: one, or one per limit; 1 if omitted",
+            },
+            Arg {
+                name: "agg_deductibles",
+                help: "Each layer's annual aggregate deductible: one, or one per limit; 0 if omitted",
+            },
+            Arg {
+                name: "agg_limits",
+                help: "Each layer's annual aggregate limit (or \"unlimited\"): one, or one per limit; unlimited if omitted",
+            },
+            Arg {
+                name: "cover_limit",
+                help: "A stop loss on the annual total net of the layers: its limit (or \"unlimited\"); none if omitted",
+            },
+            Arg {
+                name: "cover_retention",
+                help: "The stop loss's annual retention",
+            },
+            Arg {
+                name: "distortion",
+                help: "\"ccoc\", \"ph\", \"wang\", \"dual\", \"tvar\" or \"exp\" (aggregate's names)",
+            },
+            Arg {
+                name: "parameter",
+                help: "The distortion's parameter: ccoc r, ph rho, wang lambda, dual beta, tvar p, exp k",
+            },
+            Arg {
+                name: "step",
+                help: "The grid's step, with points; sized automatically if both are omitted",
+            },
+            Arg {
+                name: "points",
+                help: "The grid's number of points: the severity is rounded onto it, its mass above lumped at the top",
+            },
+        ],
+        run: aggregate::tower_price,
+    },
+    Function {
         symbol: "pro_agg_pml",
         name: "PRO.AGG.PML",
         help: "Occurrence and aggregate PML curves by return period: the year's largest occurrence and its total.",
