@@ -964,6 +964,79 @@ lift_table <- function(y, pred, exposure = NULL, bands = 10) {
                                       as.double(bands))))
 }
 
+#' Charts for comparing and validating models
+#'
+#' The charts of CAS Monograph 5, chapter 7. `double_lift_table()` sorts rows
+#' by the ratio of two models' predictions `pred_a / pred_b`, cuts them into
+#' `bands` of about equal exposure and gives each band's actual and predicted
+#' averages over their overall averages (each model against its own): where
+#' the models disagree, the better one follows the actual. `loss_ratio_table()`
+#' sorts by the predicted loss ratio `pred / premium` against current premium
+#' and gives each band's actual loss ratio. `roc_curve()` is the ROC curve of a
+#' binary model with its area (ties counting half); `confusion_matrix()` the
+#' weighted counts at a threshold (a row is positive when its score is at
+#' least the threshold). `normalized_gini()` is [gini_index()] over the Gini
+#' of a perfect ranking; for a 0/1 response with unit exposure
+#' `AUROC = (1 + normalized Gini) / 2`.
+#'
+#' @param y Actual losses, or 0 and 1 for `roc_curve()` and
+#'   `confusion_matrix()`.
+#' @param pred,pred_a,pred_b Predicted losses (`pred_b` positive).
+#' @param premium Current premium, positive.
+#' @param score A binary model's scores.
+#' @param threshold The score at and above which a row is positive.
+#' @param exposure,weights Optional exposure or weights per row.
+#' @param bands Number of bands.
+#' @returns `double_lift_table()` and `loss_ratio_table()` a data frame, one
+#'   row per band; `roc_curve()` a list with `curve` (a data frame of
+#'   `threshold`, `false_positive_rate`, `true_positive_rate`) and `auc`;
+#'   `confusion_matrix()` a named vector; `normalized_gini()` a number.
+#' @name model_charts
+#' @examples
+#' roc_curve(c(0, 0, 1, 1), c(0.1, 0.4, 0.35, 0.8))$auc
+#' y <- c(1, 0, 3, 2, 5, 1)
+#' double_lift_table(y, c(1, 1, 2, 2, 4, 1), c(2, 1, 2, 1, 3, 2), bands = 2)
+#' loss_ratio_table(y, c(1, 1, 2, 2, 4, 1), rep(2, 6), bands = 2)
+NULL
+
+#' @rdname model_charts
+#' @export
+normalized_gini <- function(y, pred, exposure = NULL) {
+  rust_result(normalized_gini_rust(as.double(y), as.double(pred), opt_double(exposure)))
+}
+
+#' @rdname model_charts
+#' @export
+double_lift_table <- function(y, pred_a, pred_b, exposure = NULL, bands = 10) {
+  as.data.frame(rust_result(double_lift_rust(as.double(y), as.double(pred_a), as.double(pred_b),
+                                             opt_double(exposure), as.double(bands))))
+}
+
+#' @rdname model_charts
+#' @export
+loss_ratio_table <- function(y, pred, premium, exposure = NULL, bands = 10) {
+  as.data.frame(rust_result(loss_ratio_chart_rust(as.double(y), as.double(pred), as.double(premium),
+                                                  opt_double(exposure), as.double(bands))))
+}
+
+#' @rdname model_charts
+#' @export
+roc_curve <- function(y, score, weights = NULL) {
+  r <- rust_result(roc_rust(as.double(y), as.double(score), opt_double(weights)))
+  list(curve = data.frame(threshold = r$thresholds, false_positive_rate = r$false_positive_rate,
+                          true_positive_rate = r$true_positive_rate),
+       auc = r$auc)
+}
+
+#' @rdname model_charts
+#' @export
+confusion_matrix <- function(y, score, threshold, weights = NULL) {
+  unlist(rust_result(confusion_matrix_rust(as.double(y), as.double(score), as.double(threshold),
+                                           opt_double(weights))))
+}
+
+opt_double <- function(x) if (is.null(x)) double() else as.double(x)
+
 #' @rdname model_metrics
 #' @export
 crps_draws <- function(draws, y) rust_result(crps_rust(as.double(draws), as.double(y)))

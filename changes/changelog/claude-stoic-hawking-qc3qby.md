@@ -240,3 +240,11 @@
   a design's columns. Python `f_test`, `likelihood_ratio_test`, `vif` and
   `GlmFit.bic`; R `f_test()`, `likelihood_ratio_test()`, `vif()` and
   `glm_model@bic` (#351).
+- Charts for comparing and validating models (CAS Monograph 5, chapter 7):
+  `metrics::double_lift` (bands by the ratio of two models' predictions,
+  relativities to each overall average), `loss_ratio_chart` (bands by
+  predicted loss ratio against current premium), `roc` with the area
+  under the curve, `confusion_matrix` and `normalized_gini`. Python
+  `double_lift`, `loss_ratio_chart`, `roc`, `confusion_matrix`,
+  `normalized_gini`; R `double_lift_table()`, `loss_ratio_table()`,
+  `roc_curve()`, `confusion_matrix()`, `normalized_gini()` (#351).

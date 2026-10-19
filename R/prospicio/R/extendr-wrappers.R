@@ -112,6 +112,16 @@ gini_rust <- function(y, pred, exposure) .Call(wrap__gini_rust, y, pred, exposur
 
 lift_rust <- function(y, pred, exposure, bands) .Call(wrap__lift_rust, y, pred, exposure, bands)
 
+normalized_gini_rust <- function(y, pred, exposure) .Call(wrap__normalized_gini_rust, y, pred, exposure)
+
+double_lift_rust <- function(y, pred_a, pred_b, exposure, bands) .Call(wrap__double_lift_rust, y, pred_a, pred_b, exposure, bands)
+
+loss_ratio_chart_rust <- function(y, pred, premium, exposure, bands) .Call(wrap__loss_ratio_chart_rust, y, pred, premium, exposure, bands)
+
+roc_rust <- function(y, score, weights) .Call(wrap__roc_rust, y, score, weights)
+
+confusion_matrix_rust <- function(y, score, threshold, weights) .Call(wrap__confusion_matrix_rust, y, score, threshold, weights)
+
 crps_rust <- function(draws, y) .Call(wrap__crps_rust, draws, y)
 
 pinball_rust <- function(y, pred, alpha, weights) .Call(wrap__pinball_rust, y, pred, alpha, weights)

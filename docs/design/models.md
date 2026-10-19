@@ -341,6 +341,14 @@ models and compares them.
   non-constant columns. R parity on quine
   (`validation/scripts/r_glm_nested.R`). Nesting is the caller's to
   ensure: two fits carry no record of each other's columns.
+- **Validation charts** (#351, CAS Monograph 5, chapter 7):
+  `metrics::double_lift`, `loss_ratio_chart`, `roc`, `confusion_matrix`
+  and `normalized_gini` beside `lift` and `gini`, on plain slices like the
+  other metrics. Bands are cut as `lift`'s, by each row's exposure
+  midpoint, so the three tables band alike. The double lift's
+  relativities divide each model by its own overall average, the
+  monograph's convention, so two models at different overall levels
+  compare on ranking alone.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

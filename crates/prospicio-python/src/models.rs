@@ -1784,6 +1784,195 @@ pub(crate) fn lift(
         .collect())
 }
 
+/// The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
+/// sorted by ``y / exposure``). For a 0/1 response with unit exposure,
+/// ``AUROC = (1 + normalized Gini) / 2`` (CAS Monograph 5, footnote 17).
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+/// exposure : list of float, optional
+///
+/// Returns
+/// -------
+/// float
+#[pyfunction]
+#[pyo3(signature = (y, pred, exposure = None))]
+pub(crate) fn normalized_gini(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+) -> PyResult<f64> {
+    metrics::normalized_gini(&y, &pred, exposure.as_deref()).map_err(to_py)
+}
+
+/// The double lift chart of two models (CAS Monograph 5, section 7.2.2):
+/// rows sorted by ``pred_a / pred_b``, cut into bands of about equal
+/// exposure, with each band's actual and predicted averages over their
+/// overall averages (each model against its own).
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred_a : list of float
+/// pred_b : list of float
+///     Positive.
+/// exposure : list of float, optional
+/// bands : int, default 10
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``exposure``, ``actual``, ``model_a``, ``model_b`` (band totals),
+///     ``actual_relativity``, ``a_relativity`` and ``b_relativity`` per band.
+#[pyfunction]
+#[pyo3(signature = (y, pred_a, pred_b, exposure = None, bands = 10))]
+pub(crate) fn double_lift(
+    y: Vec<f64>,
+    pred_a: Vec<f64>,
+    pred_b: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+    bands: usize,
+) -> PyResult<Vec<HashMap<String, f64>>> {
+    let table =
+        metrics::double_lift(&y, &pred_a, &pred_b, exposure.as_deref(), bands).map_err(to_py)?;
+    Ok(table
+        .into_iter()
+        .map(|b| {
+            HashMap::from([
+                ("exposure".to_string(), b.exposure),
+                ("actual".to_string(), b.actual),
+                ("model_a".to_string(), b.model_a),
+                ("model_b".to_string(), b.model_b),
+                ("actual_relativity".to_string(), b.actual_relativity),
+                ("a_relativity".to_string(), b.a_relativity),
+                ("b_relativity".to_string(), b.b_relativity),
+            ])
+        })
+        .collect())
+}
+
+/// The loss ratio chart (CAS Monograph 5, section 7.2.3): rows sorted by
+/// predicted loss ratio ``pred / premium`` against the current premium,
+/// cut into bands of about equal exposure, with each band's actual loss
+/// ratio.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+/// pred : list of float
+/// premium : list of float
+///     Current premium, positive.
+/// exposure : list of float, optional
+/// bands : int, default 10
+///
+/// Returns
+/// -------
+/// list of dict
+///     ``exposure``, ``premium``, ``expected``, ``actual``, ``loss_ratio``
+///     and ``expected_loss_ratio`` per band.
+#[pyfunction]
+#[pyo3(signature = (y, pred, premium, exposure = None, bands = 10))]
+pub(crate) fn loss_ratio_chart(
+    y: Vec<f64>,
+    pred: Vec<f64>,
+    premium: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+    bands: usize,
+) -> PyResult<Vec<HashMap<String, f64>>> {
+    let table = metrics::loss_ratio_chart(&y, &pred, &premium, exposure.as_deref(), bands)
+        .map_err(to_py)?;
+    Ok(table
+        .into_iter()
+        .map(|b| {
+            HashMap::from([
+                ("exposure".to_string(), b.exposure),
+                ("premium".to_string(), b.premium),
+                ("expected".to_string(), b.expected),
+                ("actual".to_string(), b.actual),
+                ("loss_ratio".to_string(), b.loss_ratio()),
+                ("expected_loss_ratio".to_string(), b.expected_loss_ratio()),
+            ])
+        })
+        .collect())
+}
+
+/// The ROC curve of a binary model (CAS Monograph 5, section 7.3.1): the
+/// true and false positive rates with each distinct score as threshold (a
+/// row is positive when its score is at least the threshold), and the area
+/// under the curve, ties counting half.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+///     0 or 1.
+/// score : list of float
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// dict
+///     ``thresholds`` (descending, from ``inf``), ``false_positive_rate``,
+///     ``true_positive_rate`` and ``auc``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import roc
+/// >>> roc([0.0, 0.0, 1.0, 1.0], [0.1, 0.4, 0.35, 0.8])["auc"]
+/// 0.75
+#[pyfunction]
+#[pyo3(signature = (y, score, weights = None))]
+pub(crate) fn roc<'py>(
+    py: Python<'py>,
+    y: Vec<f64>,
+    score: Vec<f64>,
+    weights: Option<Vec<f64>>,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let r = metrics::roc(&y, &score, weights.as_deref()).map_err(to_py)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("thresholds", r.thresholds)?;
+    out.set_item("false_positive_rate", r.false_positive_rate)?;
+    out.set_item("true_positive_rate", r.true_positive_rate)?;
+    out.set_item("auc", r.auc)?;
+    Ok(out)
+}
+
+/// The confusion matrix of a binary model at ``threshold`` (a row is
+/// positive when its score is at least the threshold), weighted counts.
+///
+/// Parameters
+/// ----------
+/// y : list of float
+///     0 or 1.
+/// score : list of float
+/// threshold : float
+/// weights : list of float, optional
+///
+/// Returns
+/// -------
+/// dict
+///     ``true_positive``, ``false_positive``, ``true_negative``,
+///     ``false_negative``, ``sensitivity`` and ``specificity``.
+#[pyfunction]
+#[pyo3(signature = (y, score, threshold, weights = None))]
+pub(crate) fn confusion_matrix(
+    y: Vec<f64>,
+    score: Vec<f64>,
+    threshold: f64,
+    weights: Option<Vec<f64>>,
+) -> PyResult<HashMap<String, f64>> {
+    let c = metrics::confusion_matrix(&y, &score, threshold, weights.as_deref()).map_err(to_py)?;
+    Ok(HashMap::from([
+        ("true_positive".to_string(), c.true_positive),
+        ("false_positive".to_string(), c.false_positive),
+        ("true_negative".to_string(), c.true_negative),
+        ("false_negative".to_string(), c.false_negative),
+        ("sensitivity".to_string(), c.sensitivity()),
+        ("specificity".to_string(), c.specificity()),
+    ]))
+}
+
 /// Weighted mean pinball (quantile) loss of predictions of the ``alpha``
 /// quantile: ``sum(w * rho(y - q)) / sum(w)`` with
 /// ``rho(u) = u * (alpha - (u < 0))``. Lowest in expectation at the true

@@ -349,6 +349,22 @@ stopifnot(is.na(v[["(Intercept)"]]))
 xs <- as.data.frame(stats::model.matrix(~ Eth + Sex + Age + Lrn, quine))[, -1]
 near(v[["SexM"]], 1 / (1 - summary(stats::lm(SexM ~ ., data = xs))$r.squared), 1e-9)
 
+
+# Charts (#351): AUROC against the Wilcoxon statistic and the normalized Gini.
+set.seed(3)
+yb <- rbinom(200, 1, 0.3)
+sc <- runif(200) + 0.4 * yb
+rc <- roc_curve(yb, sc)
+w <- stats::wilcox.test(sc[yb == 1], sc[yb == 0])$statistic
+near(rc$auc, unname(w) / (sum(yb) * sum(1 - yb)), 1e-12)
+near(rc$auc, 0.5 * (1 + normalized_gini(yb, sc)), 1e-12)
+cm <- confusion_matrix(yb, sc, 0.7)
+stopifnot(cm[["true_positive"]] == sum(yb == 1 & sc >= 0.7))
+dl <- double_lift_table(c(1, 0, 3, 2, 5, 1), c(1, 1, 2, 2, 4, 1), c(2, 1, 2, 1, 3, 2), bands = 2)
+near(sum(dl$exposure * dl$actual_relativity), 6, 1e-12)
+lr <- loss_ratio_table(c(1, 0, 3, 2, 5, 1), c(1, 1, 2, 2, 4, 1), rep(2, 6), bands = 2)
+near(lr$loss_ratio, lr$actual / lr$premium, 1e-15)
+
 cat("prospicio R models tests passed\n")
 
 # The negative binomial's theta agrees with MASS::glm.nb, and the Tweedie

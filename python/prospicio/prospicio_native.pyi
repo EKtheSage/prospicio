@@ -21398,6 +21398,26 @@ def compound_moments(frequency: Any, severity: Any) -> CompoundMoments:
     [('shape', 15.2025), ('scale', 49.5), ('shift', -252.5253)]
     """
 
+def confusion_matrix(y: Sequence[float], score: Sequence[float], threshold: float, weights: Sequence[float] |None = None) -> dict[str, float]:
+    """
+    The confusion matrix of a binary model at ``threshold`` (a row is
+    positive when its score is at least the threshold), weighted counts.
+    
+    Parameters
+    ----------
+    y : list of float
+        0 or 1.
+    score : list of float
+    threshold : float
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict
+        ``true_positive``, ``false_positive``, ``true_negative``,
+        ``false_negative``, ``sensitivity`` and ``specificity``.
+    """
+
 def covar(pd: PredictiveDistribution, key: Sequence[int |str], p: float, q: float) -> float:
     """
     CoVaR of a component: the total's VaR at level ``q`` over the
@@ -21569,6 +21589,29 @@ def distortion_envelope(x: Any, premium: float, s: Sequence[float], assets: floa
     -------
     tuple of (list of float, list of float)
         The lower envelope (a concave distortion) and the upper.
+    """
+
+def double_lift(y: Sequence[float], pred_a: Sequence[float], pred_b: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
+    """
+    The double lift chart of two models (CAS Monograph 5, section 7.2.2):
+    rows sorted by ``pred_a / pred_b``, cut into bands of about equal
+    exposure, with each band's actual and predicted averages over their
+    overall averages (each model against its own).
+    
+    Parameters
+    ----------
+    y : list of float
+    pred_a : list of float
+    pred_b : list of float
+        Positive.
+    exposure : list of float, optional
+    bands : int, default 10
+    
+    Returns
+    -------
+    list of dict
+        ``exposure``, ``actual``, ``model_a``, ``model_b`` (band totals),
+        ``actual_relativity``, ``a_relativity`` and ``b_relativity`` per band.
     """
 
 def elpd_loo(log_lik: Sequence[Sequence[float]], r_eff: Sequence[float] |None = None) -> Elpd:
@@ -22406,6 +22449,29 @@ def loss_elimination_ratio(severity: Any, deductible: float) -> float:
     float
     """
 
+def loss_ratio_chart(y: Sequence[float], pred: Sequence[float], premium: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
+    """
+    The loss ratio chart (CAS Monograph 5, section 7.2.3): rows sorted by
+    predicted loss ratio ``pred / premium`` against the current premium,
+    cut into bands of about equal exposure, with each band's actual loss
+    ratio.
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+    premium : list of float
+        Current premium, positive.
+    exposure : list of float, optional
+    bands : int, default 10
+    
+    Returns
+    -------
+    list of dict
+        ``exposure``, ``premium``, ``expected``, ``actual``, ``loss_ratio``
+        and ``expected_loss_ratio`` per band.
+    """
+
 def lppd(log_lik: Sequence[Sequence[float]]) -> float:
     """
     In-sample log pointwise predictive density,
@@ -22532,6 +22598,23 @@ def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tup
     >>> from prospicio.risk import mean_excess
     >>> mean_excess([1.0, 2.0, 3.0, 4.0], [2.0])
     [(2.0, 1.5, 2)]
+    """
+
+def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
+    """
+    The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
+    sorted by ``y / exposure``). For a 0/1 response with unit exposure,
+    ``AUROC = (1 + normalized Gini) / 2`` (CAS Monograph 5, footnote 17).
+    
+    Parameters
+    ----------
+    y : list of float
+    pred : list of float
+    exposure : list of float, optional
+    
+    Returns
+    -------
+    float
     """
 
 def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequence[tuple[float, float, float]]) -> CessionStatistics:
@@ -23182,6 +23265,33 @@ def recommend_grid(frequency: Any, severity: Any, log2: int = 16, p: float = ...
     >>> g = recommend_grid(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
     >>> g.step, g.points, g.method
     (0.0625, 65536, 'moments')
+    """
+
+def roc(y: Sequence[float], score: Sequence[float], weights: Sequence[float] |None = None) -> dict:
+    """
+    The ROC curve of a binary model (CAS Monograph 5, section 7.3.1): the
+    true and false positive rates with each distinct score as threshold (a
+    row is positive when its score is at least the threshold), and the area
+    under the curve, ties counting half.
+    
+    Parameters
+    ----------
+    y : list of float
+        0 or 1.
+    score : list of float
+    weights : list of float, optional
+    
+    Returns
+    -------
+    dict
+        ``thresholds`` (descending, from ``inf``), ``false_positive_rate``,
+        ``true_positive_rate`` and ``auc``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import roc
+    >>> roc([0.0, 0.0, 1.0, 1.0], [0.1, 0.4, 0.35, 0.8])["auc"]
+    0.75
     """
 
 def round_bucket(bs: float) -> float:

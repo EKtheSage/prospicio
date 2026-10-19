@@ -39,3 +39,9 @@ sources:
   matrix of the non-constant columns, which is `1 / (1 - R^2)` of that
   column on the others with an intercept (`car::vif` for single-column
   terms).
+* The area under the ROC curve by the trapezoid rule, ties counting half,
+  is the Mann-Whitney probability that a positive outscores a negative
+  (R `wilcox.test`'s statistic over the number of pairs), and for a 0/1
+  response with unit exposure it is `(1 + normalized Gini) / 2`, the
+  Gini computed with ties grouped (CAS Monograph 5, footnote 17); the
+  unit tests check both identities.

@@ -833,6 +833,93 @@ fn lift_rust(y: &[f64], pred: &[f64], exposure: &[f64], bands: f64) -> Result<Li
     ))
 }
 
+/// Normalized Gini; empty exposure for none.
+#[extendr]
+fn normalized_gini_rust(y: &[f64], pred: &[f64], exposure: &[f64]) -> Result<f64> {
+    let e = (!exposure.is_empty()).then_some(exposure);
+    metrics::normalized_gini(y, pred, e).map_err(to_r)
+}
+
+/// Double lift bands as a list of columns.
+#[extendr]
+fn double_lift_rust(
+    y: &[f64],
+    pred_a: &[f64],
+    pred_b: &[f64],
+    exposure: &[f64],
+    bands: f64,
+) -> Result<List> {
+    let e = (!exposure.is_empty()).then_some(exposure);
+    let t = metrics::double_lift(y, pred_a, pred_b, e, whole(bands, "bands")? as usize)
+        .map_err(to_r)?;
+    let col = |f: fn(&metrics::DoubleLiftBand) -> f64| t.iter().map(f).collect::<Vec<_>>();
+    Ok(list!(
+        exposure = col(|b| b.exposure),
+        actual = col(|b| b.actual),
+        model_a = col(|b| b.model_a),
+        model_b = col(|b| b.model_b),
+        actual_relativity = col(|b| b.actual_relativity),
+        a_relativity = col(|b| b.a_relativity),
+        b_relativity = col(|b| b.b_relativity)
+    ))
+}
+
+/// Loss ratio bands as a list of columns.
+#[extendr]
+fn loss_ratio_chart_rust(
+    y: &[f64],
+    pred: &[f64],
+    premium: &[f64],
+    exposure: &[f64],
+    bands: f64,
+) -> Result<List> {
+    let e = (!exposure.is_empty()).then_some(exposure);
+    let t = metrics::loss_ratio_chart(y, pred, premium, e, whole(bands, "bands")? as usize)
+        .map_err(to_r)?;
+    let col = |f: fn(&metrics::LossRatioBand) -> f64| t.iter().map(f).collect::<Vec<_>>();
+    Ok(list!(
+        exposure = col(|b| b.exposure),
+        premium = col(|b| b.premium),
+        expected = col(|b| b.expected),
+        actual = col(|b| b.actual),
+        loss_ratio = col(metrics::LossRatioBand::loss_ratio),
+        expected_loss_ratio = col(metrics::LossRatioBand::expected_loss_ratio)
+    ))
+}
+
+/// ROC curve: `list(thresholds, false_positive_rate, true_positive_rate, auc)`.
+#[extendr]
+fn roc_rust(y: &[f64], score: &[f64], weights: &[f64]) -> Result<List> {
+    let w = (!weights.is_empty()).then_some(weights);
+    let r = metrics::roc(y, score, w).map_err(to_r)?;
+    Ok(list!(
+        thresholds = r.thresholds,
+        false_positive_rate = r.false_positive_rate,
+        true_positive_rate = r.true_positive_rate,
+        auc = r.auc
+    ))
+}
+
+/// Confusion matrix at `threshold` as a list of weighted counts.
+#[extendr]
+fn confusion_matrix_rust(
+    y: &[f64],
+    score: &[f64],
+    threshold: f64,
+    weights: &[f64],
+) -> Result<List> {
+    let w = (!weights.is_empty()).then_some(weights);
+    let c = metrics::confusion_matrix(y, score, threshold, w).map_err(to_r)?;
+    Ok(list!(
+        true_positive = c.true_positive,
+        false_positive = c.false_positive,
+        true_negative = c.true_negative,
+        false_negative = c.false_negative,
+        sensitivity = c.sensitivity(),
+        specificity = c.specificity()
+    ))
+}
+
 #[extendr]
 fn crps_rust(draws: &[f64], y: f64) -> Result<f64> {
     metrics::crps(draws, y).map_err(to_r)
@@ -1500,6 +1587,11 @@ extendr_module! {
     fn family_deviance_rust;
     fn gini_rust;
     fn lift_rust;
+    fn normalized_gini_rust;
+    fn double_lift_rust;
+    fn loss_ratio_chart_rust;
+    fn roc_rust;
+    fn confusion_matrix_rust;
     fn crps_rust;
     fn pinball_rust;
     fn log_score_rust;
