@@ -37,6 +37,7 @@ fn development(method: &str) -> Development {
         average,
         sigma_interpolation,
         pattern: None,
+        ..Default::default()
     }
 }
 

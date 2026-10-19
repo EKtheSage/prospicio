@@ -31,7 +31,10 @@ odp_one_year(
   ldf = NULL,
   ldf_kind = NULL,
   ldf_weight = 1,
-  bootstrap_ldf = TRUE
+  bootstrap_ldf = TRUE,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 
 mack_one_year(
@@ -61,7 +64,13 @@ mack_one_year(
   ldf = NULL,
   ldf_kind = NULL,
   ldf_weight = 1,
-  bootstrap_ldf = TRUE
+  bootstrap_ldf = TRUE,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0,
+  mack_n_periods = NULL,
+  mack_drop_high = 0,
+  mack_drop_low = 0
 )
 }
 \arguments{
@@ -128,6 +137,10 @@ level to it, and the bootstrap reads the pattern the same way: it
 implies no tail, and with \code{bootstrap_tail = FALSE} the bootstrap has
 none.}
 
+\item{n_periods, drop_high, drop_low}{Which link ratios the factors of
+\code{method} average, as in \code{\link[=chain_ladder]{chain_ladder()}}. The one-year views reject
+exclusions, and \code{"geometric"} as \code{mack_average}.}
+
 \item{tail_sigma}{For \code{mack_one_year()} with \code{bootstrap_tail}, the tail's
 sigma (R's \code{tail.sigma}), or \code{NULL} to extrapolate it, as in
 \code{\link[=mack_bootstrap]{mack_bootstrap()}}; an error without \code{bootstrap_tail}.}
@@ -140,6 +153,10 @@ a single link ratio, as in \code{\link[=mack]{mack()}}.}
 mean before resampling them, so that the pseudo factors are unbiased
 and the mean CDR is about zero (the default); \code{FALSE} resamples them
 uncentred, as England, Verrall and Wuthrich's Appendix 1 is written.}
+
+\item{mack_n_periods, mack_drop_high, mack_drop_low}{Which link ratios Mack's
+model in \code{mack_one_year()} averages, as \code{n_periods}, \code{drop_high} and
+\code{drop_low} in \code{\link[=chain_ladder]{chain_ladder()}}; its bootstrap rejects exclusions.}
 }
 \value{
 A \code{one_year_fit} object.

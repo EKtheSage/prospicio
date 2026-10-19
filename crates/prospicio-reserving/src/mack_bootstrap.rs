@@ -942,6 +942,8 @@ impl MackBootstrap {
     /// Mack's model of one segment with the bootstrap's tail, its residuals
     /// and links, and the tail each simulation draws.
     pub(crate) fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
+        self.development.reject_geometric("Mack's bootstrap")?;
+        self.development.reject_exclusions("Mack's bootstrap")?;
         for o in 0..segment.n_origins {
             let (last, _) = segment.latest(o)?;
             for d in 0..=last {
@@ -1136,7 +1138,7 @@ mod tests {
             let r = &fit.bootstrap.residuals;
             assert_eq!(
                 fit.bootstrap.mack.chain_ladder.development.alpha,
-                avg.alpha()
+                avg.alpha().unwrap()
             );
             for k in 0..9 {
                 let links: Vec<f64> = (0..9 - k).map(|o| r[o * 10 + k]).collect();
@@ -1162,7 +1164,7 @@ mod tests {
         // parameter and process variance for 1982 when v = 1.
         let n_sims = 5_000;
         for avg in [Average::Volume, Average::Simple, Average::Regression] {
-            let alpha = avg.alpha();
+            let alpha = avg.alpha().unwrap();
             let fit = MackBootstrap {
                 development: average(avg),
                 ..boot(n_sims, 5, MackProcess::Gamma)

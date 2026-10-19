@@ -19,7 +19,10 @@ expected_loss(
   tail = 1,
   ldf = NULL,
   ldf_kind = NULL,
-  ldf_weight = 1
+  ldf_weight = 1,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 
 bornhuetter_ferguson(
@@ -32,7 +35,10 @@ bornhuetter_ferguson(
   tail = 1,
   ldf = NULL,
   ldf_kind = NULL,
-  ldf_weight = 1
+  ldf_weight = 1,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 
 benktander(
@@ -46,7 +52,10 @@ benktander(
   tail = 1,
   ldf = NULL,
   ldf_kind = NULL,
-  ldf_weight = 1
+  ldf_weight = 1,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 }
 \arguments{
@@ -68,6 +77,9 @@ exposure; positive.}
 \item{ldf, ldf_kind, ldf_weight}{A selected development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}: the development pattern's factors at the ages it
 gives, so \code{cdf} and the share developed \code{1 / cdf} follow it.}
+
+\item{n_periods, drop_high, drop_low}{Which link ratios the factors average,
+as in \code{\link[=chain_ladder]{chain_ladder()}}.}
 
 \item{n_iters}{Number of Bornhuetter-Ferguson steps; a non-negative whole
 number.}

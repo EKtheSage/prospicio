@@ -2092,9 +2092,12 @@ class Benktander:
         Expected loss ratio of the starting ultimate; positive.
     n_iters : int, default 1
         Number of Bornhuetter–Ferguson steps.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``: average only the latest diagonals and leave out
+        the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     ldf, ldf_kind, ldf_weight : optional
@@ -2113,7 +2116,7 @@ class Benktander:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 288.89]
     """
-    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> Benktander: ...
+    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> Benktander: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -2124,6 +2127,16 @@ class Benktander:
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
         """
@@ -2169,6 +2182,11 @@ class Benktander:
     def n_iters(self, /) -> int:
         """
         Number of Bornhuetter–Ferguson steps.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -2709,9 +2727,12 @@ class BornhuetterFerguson:
     apriori : float, default 1.0
         Expected loss ratio: the expected ultimate per unit of exposure;
         positive.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``: average only the latest diagonals and leave out
+        the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     ldf, ldf_kind, ldf_weight : optional
@@ -2730,7 +2751,7 @@ class BornhuetterFerguson:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 266.67]
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> BornhuetterFerguson: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> BornhuetterFerguson: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -2741,6 +2762,16 @@ class BornhuetterFerguson:
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
         """
@@ -2781,6 +2812,11 @@ class BornhuetterFerguson:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -3283,9 +3319,12 @@ class CapeCod:
     decay : float, default 1.0
         Weight of an origin ``n`` periods away, ``decay ** n``; from 0 to 1.
         With 1 every origin shares one loss ratio.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``: average only the latest diagonals and leave out
+        the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     ldf, ldf_kind, ldf_weight : optional
@@ -3304,7 +3343,7 @@ class CapeCod:
     >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
     ([0.6774, 0.6774], [150.0, 290.32])
     """
-    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> CapeCod: ...
+    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> CapeCod: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -3315,6 +3354,16 @@ class CapeCod:
     def decay(self, /) -> float:
         """
         Weight of an origin one period away.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str) -> CapeCodFit:
         """
@@ -3356,6 +3405,11 @@ class CapeCod:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -3738,12 +3792,24 @@ class ChainLadder:
     
     Parameters
     ----------
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged into one factor per age: volume
         weighted, their mean, or least squares through the origin (Mack's
-        ``alpha`` of 1, 0 and 2).
+        ``alpha`` of 1, 0 and 2), or their geometric mean. A geometric
+        average estimates the factors only: ``Mack`` and the bootstraps
+        reject it, since it has no variance model.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
         How a variance parameter with a single link ratio is filled in.
+    n_periods : int, optional
+        Average only the link ratios that start in the latest ``n_periods``
+        calendar diagonals of the triangle; an age with fewer uses all of
+        them. All of them by default.
+    drop_high : int, default 0
+        Leave out this many of the highest link ratios at each age, among
+        those ``n_periods`` keeps. Skipped at an age where it would leave
+        none.
+    drop_low : int, default 0
+        As ``drop_high``, for the lowest link ratios.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         Development past the oldest age: a number is a constant factor from
         the oldest age to ultimate. No tail (a factor of 1) by default.
@@ -3772,8 +3838,8 @@ class ChainLadder:
     ldf_kind : {"ldf", "cdf", "percent_developed"}, optional
         How ``ldf`` is expressed; required with it, since age-to-age factors
         and factors to ultimate cannot be told apart. Factors to ultimate
-        must be at least 1 and not increase with age; percents developed in
-        (0, 1] and not decrease with age.
+        and percents developed need only be finite and positive, in any
+        order.
     ldf_weight : float or dict, optional
         The credibility ``w`` on each selected factor, from 0 to 1: the
         factor used is ``w * selected + (1 - w) * estimated``. A number
@@ -3818,12 +3884,22 @@ class ChainLadder:
     >>> round(fit.pattern_tail, 4), round(fit.ultimate[2], 2)
     (1.0526, 240.0)
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> ChainLadder: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> ChainLadder: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str) -> ChainLadderFit:
         """
@@ -3864,6 +3940,11 @@ class ChainLadder:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -3947,6 +4028,11 @@ class ChainLadderFit:
         Standard error of each estimated factor.
         """
     @property
+    def excluded(self, /) -> bool:
+        """
+        Whether ``n_periods`` or the drops left out a link ratio at some age.
+        """
+    @property
     def index(self, /) -> list[Any]:
         """
         Label of each segment, as ``Triangle.index``.
@@ -3974,6 +4060,12 @@ class ChainLadderFit:
         """
         The weight on each link's selected factor; 0 where none is
         selected.
+        """
+    @property
+    def n_links(self, /) -> list[int]:
+        """
+        Number of link ratios behind each estimated factor, after
+        ``n_periods`` and the drops; factor ``k`` links age ``k`` to ``k + 1``.
         """
     @property
     def origins(self, /) -> list[str]:
@@ -7789,9 +7881,12 @@ class ExpectedLoss:
     ----------
     apriori : float, default 1.0
         Expected loss ratio: the ultimate per unit of exposure; positive.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How link ratios are averaged, as in ``ChainLadder``.
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``: average only the latest diagonals and leave out
+        the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     ldf, ldf_kind, ldf_weight : optional
@@ -7810,7 +7905,7 @@ class ExpectedLoss:
     >>> fit.ultimate, fit.reserve
     ([125.0, 200.0], [-25.0, 0.0])
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> ExpectedLoss: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> ExpectedLoss: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -7821,6 +7916,16 @@ class ExpectedLoss:
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str) -> ExpectedLossFit:
         """
@@ -7863,6 +7968,11 @@ class ExpectedLoss:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -12186,8 +12296,11 @@ class Mack:
     
     Parameters
     ----------
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``. Mack's standard errors follow the link ratios
+        that are kept (R's ``MackChainLadder(weights = ...)``).
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
     tail_sigma : float, optional
@@ -12222,12 +12335,22 @@ class Mack:
     >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
     True
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> Mack: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> Mack: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
         """
         How link ratios are averaged.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str) -> MackFit:
         """
@@ -12267,6 +12390,11 @@ class Mack:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def sigma_interpolation(self, /) -> str:
@@ -12328,10 +12456,13 @@ class MackBootstrap:
         variance; the mean plus a resampled residual times the standard
         deviation, which carries the residuals' mean and variance; or none
         for parameter error only.
-    average : {"volume", "simple", "regression"}, default "volume"
+    average : {"volume", "simple", "regression", "geometric"}, default "volume"
         How Mack's model averages the link ratios (its ``alpha``).
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
         How a sigma behind a single link ratio is filled in.
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``. The bootstraps do not support them yet: a
+        ``ValueError`` names the setting.
     centre_residuals : bool, default True
         Subtract the residuals' mean before resampling them, so that the
         pseudo factors are unbiased, the mean CDR is about zero and the
@@ -12417,7 +12548,7 @@ class MackBootstrap:
     >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> MackBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> MackBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -12434,6 +12565,16 @@ class MackBootstrap:
         """
         How the segments depend on each other: ``"independent"``,
         ``"synchronized"`` or ``"rank_correlation"``.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        Highest link ratios left out at each age.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        Lowest link ratios left out at each age.
         """
     def fit(self, /, triangle: Triangle, column: str) -> MackBootstrapFit:
         """
@@ -12506,6 +12647,11 @@ class MackBootstrap:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Number of latest diagonals averaged; ``None`` uses every link ratio.
         """
     @property
     def n_sims(self, /) -> int:
@@ -12787,6 +12933,11 @@ class MackFit:
         ``ChainLadderFit.estimated_std_err``.
         """
     @property
+    def excluded(self, /) -> bool:
+        """
+        Whether ``n_periods`` or the drops left out a link ratio at some age.
+        """
+    @property
     def index(self, /) -> list[Any]:
         """
         Label of each segment, as ``Triangle.index``.
@@ -12811,6 +12962,12 @@ class MackFit:
         """
         The weight on each link's selected factor, as
         ``ChainLadderFit.ldf_weight``.
+        """
+    @property
+    def n_links(self, /) -> list[int]:
+        """
+        Number of link ratios behind each estimated factor, as
+        ``ChainLadderFit.n_links``.
         """
     @property
     def origins(self, /) -> list[str]:

@@ -15,7 +15,10 @@ chain_ladder(
   tail = 1,
   ldf = NULL,
   ldf_kind = NULL,
-  ldf_weight = 1
+  ldf_weight = 1,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 }
 \arguments{
@@ -25,7 +28,10 @@ chain_ladder(
 
 \item{column}{Name of the column to fit; by default the only one.}
 
-\item{average}{\code{"volume"}, \code{"simple"} or \code{"regression"}.}
+\item{average}{\code{"volume"}, \code{"simple"}, \code{"regression"} or \code{"geometric"}.
+\code{"geometric"} is the geometric mean of the link ratios: it gives the
+factors only, with no sigma or standard error, so \code{\link[=mack]{mack()}} and the
+bootstraps reject it.}
 
 \item{sigma_interpolation}{How a variance parameter that cannot be
 estimated (an age with a single link ratio) is filled in:
@@ -42,8 +48,8 @@ named by age in months, or a data.frame with columns \code{age} and
 default) estimates every factor.}
 
 \item{ldf_kind}{How \code{ldf} is expressed: \code{"ldf"} (age-to-age factors),
-\code{"cdf"} (factors to ultimate, at least 1 and not increasing with age)
-or \code{"percent_developed"} (in (0, 1] and not decreasing with age).
+\code{"cdf"} (factors to ultimate)
+or \code{"percent_developed"}, each finite and positive and in any order.
 Required with \code{ldf}, since age-to-age factors and factors to ultimate
 cannot be told apart.}
 
@@ -51,6 +57,17 @@ cannot be told apart.}
 estimate) to 1 (the selection, the default): a number for every
 selected factor, or a numeric vector named by age (the age that starts
 the factor's link), the others fully selected.}
+
+\item{n_periods, drop_high, drop_low}{Which link ratios the factor at each
+age averages. \code{n_periods} keeps the latest \code{n_periods} calendar
+diagonals (\code{NULL}, the default, keeps every one; an age with fewer
+links uses all of them). Then the \code{drop_high} highest and \code{drop_low}
+lowest of the kept ratios are left out, except at an age where that
+would leave none. Whole numbers from 0 (\code{n_periods} from 1); the
+defaults exclude nothing. \code{\link[=mack]{mack()}} accepts them; the bootstraps and
+the one-year views reject them, and \code{\link[=claims_development_result]{claims_development_result()}}
+rejects any of them, even one that removes nothing. The fit's \code{n_links} and \code{excluded}
+report what was used.}
 }
 \value{
 A \code{chain_ladder_fit} object.
@@ -118,7 +135,9 @@ unestimable ones interpolated), \code{std_err} (of the factors used, \code{1 - l
 none), \code{ldf_weight} (0 where none is selected) and \code{blended_ldf} (the
 factors before the tail); \code{pattern_rescale} (\code{NULL} for an age-to-age
 pattern or none) and \code{pattern_tail} (the tail a cumulative pattern to
-the oldest age implies with no \code{tail}; \code{NULL} otherwise); per age: \code{cdf} (age to ultimate, including the tail); the
+the oldest age implies with no \code{tail}; \code{NULL} otherwise); \code{n_links} (how many link ratios each factor averaged, after
+the exclusions) and \code{excluded} (whether \code{n_periods}, \code{drop_high} or
+\code{drop_low} left out a link ratio at some age); per age: \code{cdf} (age to ultimate, including the tail); the
 tail: \code{tail} (the factor from the oldest age to ultimate),
 \code{tail_attachment_age} (the age from which \code{ldf} holds the tail's
 factors; the oldest age when it replaced none), \code{tail_ldf} (the factors
@@ -128,8 +147,9 @@ period of the next year and one to ultimate, or a single one for
 variance parameter and standard error, extrapolated log-linearly; 0
 without a tail, a factor of 1; a tail below 1 is read where a tail of
 1.001 would be, as chainladder-python does); and \code{keys}, \code{index} (one
-row per segment, as a triangle's), \code{origins}, \code{development}, \code{alpha},
-\code{total_ultimate} and \code{total_reserve} (summed over segments). The
+row per segment, as a triangle's), \code{origins}, \code{development}, \code{alpha} (\code{NaN}
+for the geometric average), \code{total_ultimate} and
+\code{total_reserve} (summed over segments). The
 per-link, per-age and tail properties need a single-segment fit: with
 several segments use \code{\link[=development_frame]{development_frame()}} (\code{ldf}, \code{cdf}, \code{sigma} and
 \code{std_err}; the oldest age has the tail as its \code{cdf}), \code{\link[=totals_frame]{totals_frame()}}

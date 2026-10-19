@@ -280,10 +280,8 @@ def test_argument_errors(kwargs, error, match):
         ({"ldf": {18: 1.5}, "ldf_kind": "ldf"}, "age 18 months: not a development age"),
         ({"ldf": {60: 1.01}, "ldf_kind": "ldf"}, "past it: use a tail"),
         ({"ldf": {12: 0.0}, "ldf_kind": "ldf"}, "finite and positive"),
-        ({"ldf": {12: 0.5, 24: 1.2}, "ldf_kind": "percent_developed"}, r"in \(0, 1\]"),
-        ({"ldf": {12: 0.8, 24: 0.5}, "ldf_kind": "percent_developed"}, "not decrease"),
-        ({"ldf": {12: 0.9, 24: 1.2}, "ldf_kind": "cdf"}, "at least 1"),
-        ({"ldf": {12: 1.2, 24: 1.5}, "ldf_kind": "cdf"}, "not increase"),
+        ({"ldf": {12: -0.5, 24: 1.2}, "ldf_kind": "percent_developed"}, "finite and positive"),
+        ({"ldf": {12: 0.0, 24: 1.2}, "ldf_kind": "cdf"}, "finite and positive"),
         ({"ldf": {12: 1.5}, "ldf_kind": "cdf"}, "two or more ages"),
         ({"ldf": {12: 1.5}, "ldf_kind": "ldf", "ldf_weight": 1.5}, "between 0 and 1"),
         ({"ldf": {12: 1.5}, "ldf_kind": "ldf", "ldf_weight": {24: 0.5}}, "no selected factor"),
@@ -391,3 +389,28 @@ def test_bootstraps_keep_the_implied_tail(tri):
         n_sims=200, seed=1, process="none", ldf=percent, ldf_kind="percent_developed"
     ).fit(tri, "paid")
     assert life.chain_ladder.tail == pytest.approx(1 / 0.95)
+
+
+@pytest.mark.parametrize(
+    ("ldf", "kind", "cdf"),
+    [
+        ({12: 0.5, 24: 1.2}, "percent_developed", [2.0, 1 / 1.2]),
+        ({12: 0.8, 24: 0.5}, "percent_developed", [1.25, 2.0]),
+        ({12: 0.9, 24: 1.2}, "cdf", [0.9, 1.2]),
+        ({12: 1.2, 24: 1.5}, "cdf", [1.2, 1.5]),
+    ],
+)
+def test_cumulative_patterns_need_only_be_positive(tri, ldf, kind, cdf):
+    """Neither order nor a level below 1 is an error (Friedland's XYZ reported
+    pattern falls below 1), and the factors are the ratios of the given
+    factors to ultimate, however they run."""
+    base = ChainLadder().fit(tri, "paid")
+    fit = ChainLadder(ldf=ldf, ldf_kind=kind).fit(tri, "paid")
+    # The first link's age-to-age factor is c[0] / c[1]; the later links keep
+    # their estimates.
+    assert fit.ldf[0] == pytest.approx(cdf[0] / cdf[1], rel=1e-12)
+    close(fit.ldf[1:], base.ldf[1:])
+    # The pattern ends before the oldest age, so it implies no tail, and its
+    # level at age 24 is rescaled to the factors in use from there on.
+    assert fit.pattern_tail is None
+    assert fit.pattern_rescale == pytest.approx(cdf[1] / fit.cdf[1], rel=1e-12)

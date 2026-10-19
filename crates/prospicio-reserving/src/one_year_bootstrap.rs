@@ -820,6 +820,9 @@ impl Sims {
     /// on its ages ([`same_pattern`]). A method with a pattern and a
     /// bootstrap without one is allowed.
     fn check(&self, method: &OneYearMethod) -> Result<()> {
+        let development = &method.chain_ladder().development;
+        development.reject_geometric("the one-year bootstrap")?;
+        development.reject_exclusions("the one-year bootstrap")?;
         if self.n_sims == 0 {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
