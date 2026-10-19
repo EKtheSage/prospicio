@@ -104,8 +104,8 @@ what it is aiming for by v1.0.
     (#369), the normal power and Wilson–Hilferty approximations (#329),
     shifted and scaled severities (#318).
 - **Next:** fits to grouped and truncated data (#328): the Lomax family
-  in `fit_severity` is done; right truncation, then grouped data with
-  minimum chi-square and minimum-distance fits.
+  in `fit_severity` and truncation from above are done; grouped data with
+  minimum chi-square and minimum-distance fits remain.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 

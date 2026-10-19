@@ -247,6 +247,14 @@ pub(crate) fn large_losses(
     Ok(data)
 }
 
+/// `data` with per-loss bounds from above, if given.
+fn bounded_above(data: LargeLosses, upper: Option<Vec<f64>>) -> PyResult<LargeLosses> {
+    match upper {
+        Some(u) => data.truncated_above(u).map_err(to_py),
+        None => Ok(data),
+    }
+}
+
 fn truncation_kind(kind: &str) -> PyResult<Truncation> {
     match kind {
         "lp" => Ok(Truncation::LastPiece),
@@ -2093,8 +2101,10 @@ impl PySeverityFit {
 /// Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
 /// severity to large losses, each conditioned on exceeding its reporting
 /// threshold (left truncation), with losses capped by a policy limit
-/// censored. The Lomax, ``S(x) = (1 + x / scale) ** -alpha`` (Bahnemann's
-/// Pareto), is fitted as a :class:`Burr` with ``gamma = 1``.
+/// censored, and optionally truncated from above (each loss conditioned on
+/// not exceeding its bound). The Lomax, ``S(x) = (1 + x / scale) **
+/// -alpha`` (Bahnemann's Pareto), is fitted as a :class:`Burr` with
+/// ``gamma = 1``.
 ///
 /// Parameters
 /// ----------
@@ -2106,6 +2116,9 @@ impl PySeverityFit {
 /// censored : list of bool, optional
 ///     ``True`` where a policy limit capped the loss.
 /// weights : list of float, optional
+/// truncated_above : list of float, optional
+///     Per-loss bounds from above: a loss is conditioned on not exceeding
+///     its bound (a study of claims up to 50,000). ``math.inf`` means none.
 ///
 /// Returns
 /// -------
@@ -2120,7 +2133,10 @@ impl PySeverityFit {
 /// >>> round(fit.parameters["meanlog"], 6) == round(sum(map(math.log, y)) / 7, 6)
 /// True
 #[pyfunction]
-#[pyo3(signature = (family, losses, reporting_thresholds = None, censored = None, weights = None))]
+#[pyo3(signature = (
+    family, losses, reporting_thresholds = None, censored = None, weights = None,
+    truncated_above = None
+))]
 pub(crate) fn fit_severity(
     py: Python<'_>,
     family: &str,
@@ -2128,10 +2144,14 @@ pub(crate) fn fit_severity(
     reporting_thresholds: Option<Vec<f64>>,
     censored: Option<Vec<bool>>,
     weights: Option<Vec<f64>>,
+    truncated_above: Option<Vec<f64>>,
 ) -> PyResult<PySeverityFit> {
     use prospicio_prob::severity_fit::{Family, fit_severity};
     let family = Family::from_name(family).map_err(to_py)?;
-    let data = large_losses(losses, reporting_thresholds, censored, weights)?;
+    let data = bounded_above(
+        large_losses(losses, reporting_thresholds, censored, weights)?,
+        truncated_above,
+    )?;
     let inner = py.detach(|| fit_severity(family, &data)).map_err(to_py)?;
     Ok(PySeverityFit { inner })
 }
@@ -2185,6 +2205,8 @@ pub(crate) fn product_limit(
 /// reporting threshold), Q-Q (``x`` against ``model_quantile``, the
 /// model's conditional quantile at the middle of each step) and
 /// ``max_distance``, the largest gap between the two survival functions.
+/// With a bound from above common to every loss, both sides are
+/// conditioned on it too; bounds that differ are refused.
 ///
 /// Parameters
 /// ----------
@@ -2194,6 +2216,9 @@ pub(crate) fn product_limit(
 /// reporting_thresholds : list of float, optional
 /// censored : list of bool, optional
 /// weights : list of float, optional
+/// truncated_above : list of float, optional
+///     Per-loss bounds from above: a loss is conditioned on not exceeding
+///     its bound (a study of claims up to 50,000). ``math.inf`` means none.
 ///
 /// Returns
 /// -------
@@ -2209,7 +2234,10 @@ pub(crate) fn product_limit(
 /// >>> len(gof["x"]), gof["max_distance"] < 0.3
 /// (6, True)
 #[pyfunction]
-#[pyo3(signature = (severity, losses, reporting_thresholds = None, censored = None, weights = None))]
+#[pyo3(signature = (
+    severity, losses, reporting_thresholds = None, censored = None, weights = None,
+    truncated_above = None
+))]
 pub(crate) fn goodness_of_fit<'py>(
     py: Python<'py>,
     severity: &Bound<'py, PyAny>,
@@ -2217,10 +2245,14 @@ pub(crate) fn goodness_of_fit<'py>(
     reporting_thresholds: Option<Vec<f64>>,
     censored: Option<Vec<bool>>,
     weights: Option<Vec<f64>>,
+    truncated_above: Option<Vec<f64>>,
 ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
     use pyo3::types::PyDictMethods;
     let dist = crate::distributions::extract_dist(severity)?;
-    let data = large_losses(losses, reporting_thresholds, censored, weights)?;
+    let data = bounded_above(
+        large_losses(losses, reporting_thresholds, censored, weights)?,
+        truncated_above,
+    )?;
     let g = prospicio_prob::severity_fit::goodness_of_fit(&dist, &data).map_err(to_py)?;
     let d = pyo3::types::PyDict::new(py);
     d.set_item("x", g.steps.iter().map(|s| s.x).collect::<Vec<_>>())?;

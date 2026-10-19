@@ -6,6 +6,13 @@
 //! - **Censoring:** a loss capped by a policy limit is known only to be at
 //!   least its recorded value, and contributes `P(X ≥ y_i | X > r_i)`.
 //!
+//! - **Truncation from above:** loss `i` would only have been kept if it
+//!   was at most `u_i` (a study of claims up to 50,000), so its likelihood
+//!   is conditional on `r_i < X ≤ u_i`. Only
+//!   [`fit_severity`](crate::severity_fit::fit_severity) uses it; the
+//!   Pareto fits here refuse it (their own `truncation` argument is the
+//!   common bound of a truncated Pareto).
+//!
 //! Weights count a loss several times (or a fraction of a time).
 
 use prospicio_core::Result;
@@ -36,6 +43,7 @@ pub struct LargeLosses {
     reporting: Vec<f64>,
     censored: Vec<bool>,
     weights: Vec<f64>,
+    upper: Vec<f64>,
 }
 
 impl LargeLosses {
@@ -56,14 +64,15 @@ impl LargeLosses {
             reporting: vec![0.0; n],
             censored: vec![false; n],
             weights: vec![1.0; n],
+            upper: vec![f64::INFINITY; n],
         })
     }
 
     /// Per-loss reporting thresholds `r_i ≤ y_i` (finite, non-negative).
     pub fn reporting_thresholds(self, reporting: Vec<f64>) -> Result<Self> {
         self.check_len(reporting.len())?;
-        for (&r, &x) in reporting.iter().zip(&self.values) {
-            if !r.is_finite() || r < 0.0 || r > x {
+        for ((&r, &x), &u) in reporting.iter().zip(&self.values).zip(&self.upper) {
+            if !r.is_finite() || r < 0.0 || r > x || r >= u {
                 return Err(invalid(
                     "reporting_thresholds",
                     r,
@@ -78,7 +87,44 @@ impl LargeLosses {
     /// limit at its recorded value.
     pub fn censored(self, censored: Vec<bool>) -> Result<Self> {
         self.check_len(censored.len())?;
+        for ((&c, &u), &y) in censored.iter().zip(&self.upper).zip(&self.values) {
+            if c && u <= y {
+                return Err(invalid(
+                    "censored",
+                    y,
+                    "a censored loss must lie below its bound from above",
+                ));
+            }
+        }
         Ok(Self { censored, ..self })
+    }
+
+    /// Per-loss truncation from above: loss `i` would have been kept only
+    /// at or below `u_i`, so it is conditioned on `r_i < X ≤ u_i`. Each
+    /// bound is at least the loss and above its reporting threshold, and
+    /// `+∞` (the default) means none. A censored loss needs `u_i` above
+    /// its value: "at least `y`" and "at most `u ≤ y`" leave no
+    /// probability.
+    pub fn truncated_above(self, upper: Vec<f64>) -> Result<Self> {
+        self.check_len(upper.len())?;
+        for (i, &u) in upper.iter().enumerate() {
+            let y = self.values[i];
+            if u.is_nan() || u < y || u <= self.reporting[i] {
+                return Err(invalid(
+                    "truncated_above",
+                    u,
+                    "must be at least the loss and above its reporting threshold",
+                ));
+            }
+            if self.censored[i] && u <= y {
+                return Err(invalid(
+                    "truncated_above",
+                    u,
+                    "must be above a censored loss",
+                ));
+            }
+        }
+        Ok(Self { upper, ..self })
     }
 
     /// Per-loss weights (finite, positive).
@@ -116,6 +162,16 @@ impl LargeLosses {
         })
     }
 
+    /// The bound from above of each loss, `+∞` where there is none.
+    pub fn upper_bounds(&self) -> &[f64] {
+        &self.upper
+    }
+
+    /// Whether any loss is truncated from above.
+    pub fn is_truncated_above(&self) -> bool {
+        self.upper.iter().any(|u| u.is_finite())
+    }
+
     fn check_len(&self, n: usize) -> Result<()> {
         if n != self.values.len() {
             return Err(invalid("length", n as f64, "must have one entry per loss"));
@@ -126,6 +182,13 @@ impl LargeLosses {
     /// `(y, r, censored, w)` per loss, with `r` raised to at least `t`;
     /// fails if a loss lies below `t`.
     fn above(&self, t: f64) -> Result<Vec<(f64, f64, bool, f64)>> {
+        if self.is_truncated_above() {
+            return Err(prospicio_core::Error::Data(
+                "the Pareto fits take no per-loss truncation from above: \
+                 use the fit's own `truncation` for a common bound, or fit_severity"
+                    .into(),
+            ));
+        }
         (0..self.len())
             .map(|i| {
                 let y = self.values[i];

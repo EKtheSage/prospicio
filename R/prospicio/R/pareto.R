@@ -1176,9 +1176,13 @@ wrap_dist <- function(family, ptr) {
 #' observed information. A Burr fit on little data can drift towards a
 #' boundary where it mimics a Weibull or a Pareto; check `converged` and the
 #' standard errors. The Lomax, `S(x) = (1 + x / scale)^(-alpha)` (Bahnemann's
-#' Pareto), is fitted as a Burr with `gamma = 1`.
+#' Pareto), is fitted as a Burr with `gamma = 1`. With `truncated_above`,
+#' each loss is also conditioned on not exceeding its bound.
 #'
 #' @param family `"lognormal"`, `"gamma"`, `"weibull"`, `"burr"` or `"lomax"`.
+#' @param truncated_above Per-loss bounds from above, or `NULL`: a loss is
+#'   conditioned on not exceeding its bound (a study of claims up to 50,000);
+#'   `Inf` means none.
 #' @inheritParams pareto_fit
 #' @returns A list: `distribution` (the fitted severity), `parameters` and
 #'   `standard_errors` (named), `covariance` (a matrix), `log_likelihood`,
@@ -1190,10 +1194,10 @@ wrap_dist <- function(family, ptr) {
 #' fit$parameters
 #' severity_fit("weibull", y, reporting_thresholds = rep(100, 7))$aic
 severity_fit <- function(family, losses, reporting_thresholds = NULL, censored = NULL,
-                         weights = NULL) {
+                         weights = NULL, truncated_above = NULL) {
   r <- rust_result(severity_fit_rust(
     as.character(family), as.double(losses), optional_arg(reporting_thresholds),
-    optional_arg(censored), optional_arg(weights)
+    optional_arg(censored), optional_arg(weights), optional_arg(truncated_above)
   ))
   k <- length(r$parameters)
   list(
@@ -1217,9 +1221,12 @@ severity_fit <- function(family, losses, reporting_thresholds = NULL, censored =
 #' (`survival` against `model_survival`, the model's survival conditional on
 #' the lowest reporting threshold), Q-Q (`x` against `model_quantile`, the
 #' model's conditional quantile at the middle of each step) and
-#' `max_distance`, the largest gap between the two survival functions.
+#' `max_distance`, the largest gap between the two survival functions. With
+#' a bound from above common to every loss (`truncated_above`), both sides
+#' are conditioned on it too; bounds that differ are refused.
 #'
 #' @param severity A fitted or any other severity.
+#' @inheritParams severity_fit
 #' @inheritParams pareto_fit
 #' @returns `product_limit()`: a data frame with `x`, `at_risk`, `events`,
 #'   `survival`. `goodness_of_fit()`: a list with a data frame `table` (`x`,
@@ -1240,10 +1247,10 @@ product_limit <- function(losses, reporting_thresholds = NULL, censored = NULL, 
 #' @rdname product_limit
 #' @export
 goodness_of_fit <- function(severity, losses, reporting_thresholds = NULL, censored = NULL,
-                            weights = NULL) {
+                            weights = NULL, truncated_above = NULL) {
   r <- rust_result(goodness_of_fit_rust(
     severity@ptr, as.double(losses), optional_arg(reporting_thresholds),
-    optional_arg(censored), optional_arg(weights)
+    optional_arg(censored), optional_arg(weights), optional_arg(truncated_above)
   ))
   list(
     table = data.frame(x = r$x, at_risk = r$at_risk, survival = r$survival,

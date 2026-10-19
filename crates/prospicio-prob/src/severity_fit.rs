@@ -6,7 +6,9 @@
 //! Loss `i` with weight `w`, reporting threshold `r` and value `y`
 //! contributes `w (ln f(y) − ln S(r))`, or `w (ln S(y) − ln S(r))` when a
 //! policy limit capped it, so each loss is conditioned on having been
-//! reported. The log-likelihood is maximized by Nelder–Mead over the
+//! reported. A loss truncated from above at `u` is conditioned on
+//! `r < X ≤ u` instead: `ln S(r)` becomes `ln(S(r) − S(u))`, and a censored
+//! loss's `ln S(y)` becomes `ln(S(y) − S(u))`. The log-likelihood is maximized by Nelder–Mead over the
 //! logarithms of the positive parameters, and the standard errors come
 //! from a central-difference Hessian in the natural parameters.
 
@@ -151,6 +153,16 @@ fn ln_norm_survival(z: f64) -> f64 {
     }
 }
 
+/// `ln(S(a) − S(u))` from `ln S(a)` and `ln S(u)`, without cancelling
+/// when both are tiny: `ln S(a) + ln(1 − S(u) / S(a))`.
+fn ln_s_between(ln_s_a: f64, ln_s_u: f64) -> f64 {
+    if ln_s_u == f64::NEG_INFINITY {
+        ln_s_a
+    } else {
+        ln_s_a + (-(ln_s_u - ln_s_a).exp()).ln_1p()
+    }
+}
+
 /// `ln(1 + e^t)` without overflow.
 fn ln_1p_exp(t: f64) -> f64 {
     if t > 35.0 {
@@ -226,21 +238,34 @@ impl SeverityFit {
 }
 
 /// The log-likelihood of `data` under `family` at the natural parameters
-/// `p`: `Σ w (ln f(y) − ln S(r))`, with `ln S(y)` for a censored loss.
+/// `p`: `Σ w (ln f(y) − ln S(r))`, with `ln S(y)` for a censored loss, and
+/// `S(·) − S(u)` in place of each `S(·)` for a loss truncated from above
+/// at `u`.
 pub fn log_likelihood(family: Family, p: &[f64], data: &LargeLosses) -> f64 {
     data.rows()
-        .map(|(y, r, censored, w)| {
+        .zip(data.upper_bounds())
+        .map(|((y, r, censored, w), &u)| {
+            let ln_s_u = if u.is_finite() {
+                family.ln_f_s(p, u).1
+            } else {
+                f64::NEG_INFINITY
+            };
             let (ln_f, ln_s) = family.ln_f_s(p, y);
-            let own = if censored { ln_s } else { ln_f };
-            let reach = if r > 0.0 { family.ln_f_s(p, r).1 } else { 0.0 };
-            w * (own - reach)
+            let own = if censored {
+                ln_s_between(ln_s, ln_s_u)
+            } else {
+                ln_f
+            };
+            let ln_s_r = if r > 0.0 { family.ln_f_s(p, r).1 } else { 0.0 };
+            w * (own - ln_s_between(ln_s_r, ln_s_u))
         })
         .sum()
 }
 
 /// Maximum likelihood fit of `family` to `data`: each loss conditioned on
-/// exceeding its reporting threshold, a censored loss known only to be at
-/// least its value.
+/// exceeding its reporting threshold (and on not exceeding its bound from
+/// above, [`LargeLosses::truncated_above`]), a censored loss known only to
+/// be at least its value.
 ///
 /// The simplex starts from moments of the uncensored losses (the Burr from
 /// the Weibull fit and two heavier tails, keeping the best), and the
@@ -414,6 +439,12 @@ pub struct ProductLimitStep {
 /// empirical survival function. A step whose risk set is a single loss
 /// can drop the estimate to 0 early; read the tail with `at_risk`.
 ///
+/// When every loss is truncated from above at one common bound `U`, the
+/// same estimator estimates `P(X > x | τ < X ≤ U)`, which
+/// [`goodness_of_fit`] then compares with the model. Bounds that differ
+/// from loss to loss bias it (their estimator is Efron and Petrosian's,
+/// not built), so [`goodness_of_fit`] refuses them.
+///
 /// ```
 /// use prospicio_prob::LargeLosses;
 /// use prospicio_prob::severity_fit::product_limit;
@@ -459,11 +490,13 @@ pub struct GoodnessOfFit {
     pub steps: Vec<ProductLimitStep>,
     /// The model's survival conditional on the lowest reporting threshold
     /// `τ`, `S(x)/S(τ)`, at each step: the P-P comparison with
-    /// `steps[i].survival`.
+    /// `steps[i].survival`. With a bound `U` from above,
+    /// `(S(x) − S(U)) / (S(τ) − S(U))`.
     pub model_survival: Vec<f64>,
     /// The model's conditional quantile at the middle of each step,
     /// `Q(1 − Ŝ_mid S(τ))` with `Ŝ_mid` halfway between the estimate before
-    /// and after the step: the Q-Q comparison with `steps[i].x`.
+    /// and after the step (`Q(1 − S(U) − Ŝ_mid (S(τ) − S(U)))` with a bound
+    /// from above): the Q-Q comparison with `steps[i].x`.
     pub model_quantile: Vec<f64>,
     /// `max |Ŝ − S/S(τ)|` over the steps, on both sides of each jump: a
     /// Kolmogorov–Smirnov distance (its null distribution is not the
@@ -472,7 +505,8 @@ pub struct GoodnessOfFit {
 }
 
 /// Compares `dist` with the [`product_limit`] estimate of `data`, each loss
-/// conditioned on its reporting threshold: P-P (survival), Q-Q (quantiles
+/// conditioned on its reporting threshold (and on a bound from above
+/// common to every loss, if there is one): P-P (survival), Q-Q (quantiles
 /// at the steps' middles) and the largest distance between the two
 /// survival functions. Works for any severity, a [`fit_severity`] result
 /// or a Pareto fit.
@@ -490,14 +524,28 @@ pub struct GoodnessOfFit {
 ///
 /// # Errors
 ///
-/// When `dist` gives the lowest reporting threshold no probability.
+/// When `dist` gives no probability between the lowest reporting
+/// threshold and the bound from above, or when the losses' bounds from
+/// above differ.
 pub fn goodness_of_fit<D: crate::Distribution + ?Sized>(
     dist: &D,
     data: &LargeLosses,
 ) -> Result<GoodnessOfFit> {
     let tau = data.rows().map(|r| r.1).fold(f64::INFINITY, f64::min);
+    let bounds = data.upper_bounds();
+    let u = bounds[0];
+    if bounds.iter().any(|&b| b != u) {
+        return Err(Error::Data(
+            "goodness_of_fit needs one bound from above for every loss: the \
+             product-limit estimate is biased when they differ"
+                .into(),
+        ));
+    }
+    let s_u = if u.is_finite() { dist.survival(u) } else { 0.0 };
     let s_tau = if tau > 0.0 { dist.survival(tau) } else { 1.0 };
-    if s_tau.is_nan() || s_tau <= 0.0 {
+    // The model's survival conditional on τ < X ≤ U is (S(x) − S(U)) / mass.
+    let mass = s_tau - s_u;
+    if mass.is_nan() || mass <= 0.0 {
         return Err(Error::Data(format!(
             "the distribution gives no probability above the lowest reporting threshold {tau}"
         )));
@@ -507,14 +555,14 @@ pub fn goodness_of_fit<D: crate::Distribution + ?Sized>(
     let mut model_survival = Vec::with_capacity(steps.len());
     let mut model_quantile = Vec::with_capacity(steps.len());
     for st in &steps {
-        let m = dist.survival(st.x) / s_tau;
+        let m = (dist.survival(st.x) - s_u) / mass;
         max_distance = max_distance
             .max((st.survival - m).abs())
             .max((before - m).abs());
         model_survival.push(m);
         let mid = 0.5 * (before + st.survival);
         model_quantile.push(
-            dist.quantile((1.0 - mid * s_tau).clamp(0.0, 1.0))
+            dist.quantile((1.0 - s_u - mid * mass).clamp(0.0, 1.0))
                 .unwrap_or(f64::NAN),
         );
         before = st.survival;
@@ -650,6 +698,131 @@ mod tests {
                 assert!((g * se[i]).abs() < 1e-2, "{family:?} score {i}: {g}");
             }
         }
+    }
+
+    #[test]
+    fn fits_truncated_from_above_recover_the_truth() {
+        let mut rng = StreamRng::new(17, 0);
+        for (family, truth) in [
+            (Family::Lognormal, vec![7.0, 1.2]),
+            (Family::Gamma, vec![1.5, 800.0]),
+            (Family::Weibull, vec![0.8, 1000.0]),
+            (Family::Burr, vec![1.5, 2.0, 1500.0]),
+            (Family::Lomax, vec![2.5, 1200.0]),
+        ] {
+            let d = family.dist(&truth).unwrap();
+            // A third of the losses come from a study of claims up to 3000;
+            // the rest are reported above 300 and capped at 5000.
+            let (mut y, mut r, mut c, mut u) = (vec![], vec![], vec![], vec![]);
+            for (i, x) in d.sample(&mut rng, 12_000).into_iter().enumerate() {
+                let (lo, hi) = if i % 3 == 0 {
+                    (0.0, 3000.0)
+                } else {
+                    (300.0, f64::INFINITY)
+                };
+                if x <= lo || x > hi {
+                    continue;
+                }
+                y.push(x.min(5000.0));
+                r.push(lo);
+                c.push(x > 5000.0);
+                u.push(hi);
+            }
+            let data = LargeLosses::new(y)
+                .unwrap()
+                .reporting_thresholds(r)
+                .unwrap()
+                .censored(c)
+                .unwrap()
+                .truncated_above(u)
+                .unwrap();
+            let fit = fit_severity(family, &data).unwrap();
+            let se = fit.standard_errors();
+            for i in 0..truth.len() {
+                let z = (fit.parameters()[i] - truth[i]) / se[i];
+                assert!(
+                    z.abs() < 4.5,
+                    "{family:?} {i}: {:?} {se:?}",
+                    fit.parameters()
+                );
+            }
+            // The bounded likelihood, by hand at the truth, for the first
+            // loss of the study (truncated, never censored).
+            let (y0, u0) = (data.values()[0], data.upper_bounds()[0]);
+            let one = LargeLosses::new(vec![y0])
+                .unwrap()
+                .truncated_above(vec![u0])
+                .unwrap();
+            let want = family.ln_f_s(&truth, y0).0 - d.cdf(u0).ln();
+            assert!((log_likelihood(family, &truth, &one) - want).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn infinite_bounds_change_nothing() {
+        let y = vec![120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 4000.0];
+        let plain = LargeLosses::new(y.clone()).unwrap();
+        let bounded = plain
+            .clone()
+            .truncated_above(vec![f64::INFINITY; 7])
+            .unwrap();
+        assert!(!bounded.is_truncated_above());
+        for family in [Family::Lognormal, Family::Gamma, Family::Lomax] {
+            let a = fit_severity(family, &plain).unwrap();
+            let b = fit_severity(family, &bounded).unwrap();
+            assert_eq!(a.parameters(), b.parameters());
+            assert_eq!(a.log_likelihood(), b.log_likelihood());
+        }
+    }
+
+    #[test]
+    fn truncation_from_above_is_checked_and_refused_where_unsupported() {
+        let y = vec![100.0, 200.0, 400.0];
+        let data = LargeLosses::new(y.clone()).unwrap();
+        // Below a loss, or at a censored one.
+        assert!(
+            data.clone()
+                .truncated_above(vec![150.0, 150.0, 500.0])
+                .is_err()
+        );
+        assert!(data.clone().truncated_above(vec![f64::NAN; 3]).is_err());
+        let censored = data.clone().censored(vec![false, false, true]).unwrap();
+        assert!(censored.truncated_above(vec![500.0, 500.0, 400.0]).is_err());
+        let bounded = data.truncated_above(vec![500.0, 500.0, 400.0]).unwrap();
+        assert!(bounded.clone().censored(vec![false, false, true]).is_err());
+        assert!(
+            bounded
+                .clone()
+                .reporting_thresholds(vec![0.0, 0.0, 400.0])
+                .is_err()
+        );
+        // The Pareto fits refuse it rather than ignore it.
+        assert!(crate::Pareto::fit(50.0, &bounded, None).is_err());
+        // goodness_of_fit wants one bound for every loss.
+        let d = Lognormal::new(5.5, 1.0).unwrap();
+        assert!(goodness_of_fit(&d, &bounded).is_err());
+    }
+
+    #[test]
+    fn goodness_of_fit_conditions_on_a_common_bound() {
+        let truth = Lognormal::new(7.0, 1.0).unwrap();
+        let y: Vec<f64> = truth
+            .sample(&mut StreamRng::new(3, 0), 20_000)
+            .into_iter()
+            .filter(|&x| x <= 2000.0)
+            .collect();
+        let n = y.len();
+        let data = LargeLosses::new(y)
+            .unwrap()
+            .truncated_above(vec![2000.0; n])
+            .unwrap();
+        let gof = goodness_of_fit(&truth, &data).unwrap();
+        assert!(gof.max_distance < 0.02, "{}", gof.max_distance);
+        // Without the bound the comparison is far off.
+        let plain = LargeLosses::new(data.values().to_vec()).unwrap();
+        assert!(goodness_of_fit(&truth, &plain).unwrap().max_distance > 0.2);
+        // The Q-Q points come back inside the bound.
+        assert!(gof.model_quantile.iter().all(|&q| q <= 2000.0 + 1e-9));
     }
 
     #[test]

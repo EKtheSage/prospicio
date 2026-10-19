@@ -80,7 +80,15 @@ conversion reports the error it introduces.
   with `γ = 1` and returns a `Dist::Burr`; it starts from three tails
   with the scale that puts the median at the losses' own, and on losses
   with a coefficient of variation at most 1 its maximum runs to the
-  exponential limit (`α, θ → ∞` with `θ/α` fixed). `ln S` is exact for the Weibull and Burr, through
+  exponential limit (`α, θ → ∞` with `θ/α` fixed). Truncation from
+  above (#328, `LargeLosses::truncated_above`): loss `i` is conditioned
+  on `r_i < X ≤ u_i`, so `ln S(r)` becomes `ln(S(r) − S(u))` and a
+  censored loss's `ln S(y)` becomes `ln(S(y) − S(u))`, both computed as
+  `ln S(a) + ln(1 − S(u)/S(a))`. The Pareto fits refuse such data (their
+  `truncation` argument is the common bound of a truncated Pareto);
+  `goodness_of_fit` conditions both sides on a bound common to every loss
+  and refuses bounds that differ, since the product-limit estimate is
+  then biased (Efron and Petrosian's estimator is not built). `ln S` is exact for the Weibull and Burr, through
   the Mills ratio for the lognormal's upper tail, and `ln Q` of the
   regularized incomplete gamma for the gamma. Tested: untruncated
   closed forms (the lognormal's mean and n-denominator sd of the logs with

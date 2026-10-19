@@ -9,7 +9,8 @@ severity_fit(
   losses,
   reporting_thresholds = NULL,
   censored = NULL,
-  weights = NULL
+  weights = NULL,
+  truncated_above = NULL
 )
 }
 \arguments{
@@ -22,6 +23,10 @@ severity_fit(
 \item{censored}{Logical vector, \code{TRUE} where a loss was capped, or \code{NULL}.}
 
 \item{weights}{Per-loss weights, or \code{NULL}.}
+
+\item{truncated_above}{Per-loss bounds from above, or \code{NULL}: a loss is
+conditioned on not exceeding its bound (a study of claims up to 50,000);
+\code{Inf} means none.}
 }
 \value{
 A list: \code{distribution} (the fitted severity), \code{parameters} and
@@ -36,7 +41,8 @@ as \code{\link[=pareto_fit]{pareto_fit()}}. The standard errors and covariance c
 observed information. A Burr fit on little data can drift towards a
 boundary where it mimics a Weibull or a Pareto; check \code{converged} and the
 standard errors. The Lomax, \code{S(x) = (1 + x / scale)^(-alpha)} (Bahnemann's
-Pareto), is fitted as a Burr with \code{gamma = 1}.
+Pareto), is fitted as a Burr with \code{gamma = 1}. With \code{truncated_above},
+each loss is also conditioned on not exceeding its bound.
 }
 \examples{
 y <- c(120, 300, 450, 800, 1500, 2600, 4000)

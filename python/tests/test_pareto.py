@@ -196,6 +196,32 @@ def test_issue_328_lomax_fit_solves_its_score_equations():
     assert fit.aic == pytest.approx(4 - 2 * fit.log_likelihood)
 
 
+def test_issue_328_truncation_from_above():
+    # Claims kept only up to 3000: each conditioned on X <= 3000.
+    y = [120.0, 300.0, 450.0, 800.0, 1500.0, 2600.0, 2900.0, 650.0, 90.0, 2100.0]
+    u = [3000.0] * len(y)
+    fit = D.fit_severity("lognormal", y, truncated_above=u)
+    m, s = fit.parameters["meanlog"], fit.parameters["sdlog"]
+
+    def ll(m, s):
+        phi = 0.5 * (1 + math.erf((math.log(3000.0) - m) / (s * math.sqrt(2))))
+        return sum(-math.log(v * s * math.sqrt(2 * math.pi))
+                   - 0.5 * ((math.log(v) - m) / s) ** 2 for v in y) - len(y) * math.log(phi)
+
+    assert fit.log_likelihood == pytest.approx(ll(m, s), rel=1e-10)
+    for dm, ds in [(1e-3, 0), (-1e-3, 0), (0, 1e-3), (0, -1e-3)]:
+        assert ll(m + dm, s + ds) < fit.log_likelihood
+    # The bound spreads the fit wider than the plain one.
+    assert s > D.fit_severity("lognormal", y).parameters["sdlog"]
+    # A common bound conditions goodness of fit; differing bounds are refused.
+    gof = D.goodness_of_fit(fit.distribution, y, truncated_above=u)
+    assert max(gof["model_quantile"]) <= 3000.0
+    with pytest.raises(ValueError):
+        D.goodness_of_fit(fit.distribution, y, truncated_above=u[:-1] + [math.inf])
+    with pytest.raises(ValueError):
+        D.fit_severity("lognormal", y, truncated_above=[100.0] * len(y))
+
+
 def test_issue_194_product_limit_and_goodness_of_fit():
     # Without truncation or censoring, the weighted empirical survival.
     pl = D.product_limit([100.0, 200.0, 200.0, 400.0], weights=[1.0, 2.0, 1.0, 4.0])
