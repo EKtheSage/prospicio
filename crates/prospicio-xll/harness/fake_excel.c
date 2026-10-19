@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("seventy-one functions registered", registered == 71);
+    check("seventy-two functions registered", registered == 72);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -528,6 +528,28 @@ int main(int argc, char **argv) {
     printf("PRO.BAYES.ODP(RAA, \"diagnostics\"): max R-hat %.4f\n", rhat);
     check("PRO.BAYES.ODP samples RAA with R-hat under 1.01", bd_ok && rhat < 1.01);
     free12(bd);
+
+    /* A lognormal fitted to a column of losses: meanlog is the mean of the
+     * logs, in the params table's second row. */
+    XLOPER12 sf_cells[4], sf_col, sf_fam;
+    double sf_y[4] = {100, 200, 400, 800};
+    for (int i = 0; i < 4; i++) {
+        sf_cells[i].xltype = xltypeNum;
+        sf_cells[i].val.num = sf_y[i];
+    }
+    sf_col.xltype = xltypeMulti;
+    sf_col.val.array.rows = 4;
+    sf_col.val.array.columns = 1;
+    sf_col.val.array.lparray = sf_cells;
+    static wchar_t ln_s[] = L"\x09" L"lognormal";
+    sf_fam.xltype = xltypeStr;
+    sf_fam.val.str = ln_s;
+    XLOPER12 *sf = ((Fn8)GetProcAddress(xll, "pro_sev_fit"))(&sf_col, &sf_fam, &missing, &missing, &missing,
+                                                              &missing, &missing, &missing);
+    check("PRO.SEV.FIT lognormal: meanlog is the mean of the logs",
+          (sf->xltype & 0xFFF) == xltypeMulti && sf->val.array.columns == 3 &&
+              fabs(sf->val.array.lparray[4].val.num - log(100 * pow(2, 1.5))) < 1e-6);
+    free12(sf);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;

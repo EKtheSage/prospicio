@@ -19,6 +19,7 @@ pub mod bayes;
 pub mod credibility;
 pub mod experience;
 pub mod exposure;
+pub mod fitting;
 pub mod pricing;
 pub mod ratemaking;
 pub mod reserving;
@@ -1427,6 +1428,46 @@ pub static FUNCTIONS: &[Function] = &[
             ORIGINS,
         ],
         run: bayes::bayes_odp,
+    },
+    Function {
+        symbol: "pro_sev_fit",
+        name: "PRO.SEV.FIT",
+        help: "Maximum likelihood severity fit to large losses with reporting thresholds and censoring: parameters, fit against the data, or the body families compared.",
+        args: &[
+            Arg {
+                name: "losses",
+                help: "The losses: a range; blank cells are skipped",
+            },
+            Arg {
+                name: "family",
+                help: "lognormal, gamma, weibull, burr, pareto, piecewise_pareto or gen_pareto (blank for \"compare\")",
+            },
+            Arg {
+                name: "output",
+                help: "\"params\" (default: parameters in PRO.SEV's order, SEs, AIC), \"gof\" (survival and Q-Q at each loss) or \"compare\"",
+            },
+            Arg {
+                name: "t",
+                help: "Pareto families: the threshold (a row of thresholds for piecewise_pareto)",
+            },
+            Arg {
+                name: "truncation",
+                help: "Pareto and piecewise_pareto: a truncation point, then optionally \"lp\" or \"wd\"",
+            },
+            Arg {
+                name: "thresholds",
+                help: "Reporting thresholds: one value or one per loss (0 if omitted)",
+            },
+            Arg {
+                name: "censored",
+                help: "TRUE where a policy limit capped the loss: one value or one per loss (FALSE if omitted)",
+            },
+            Arg {
+                name: "weights",
+                help: "Weights: one value or one per loss (1 if omitted)",
+            },
+        ],
+        run: fitting::severity_fit,
     },
 ];
 

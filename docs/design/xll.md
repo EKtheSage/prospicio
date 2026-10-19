@@ -412,6 +412,31 @@ real Excel.
     S and T under PH 0.7 every view's loss and premium matches
     `reins_price_df` at the reference's tolerances. Capital allocation
     and the natural allocation stay out (they want a portfolio object).
+25. **A severity is fitted from a column of losses** (user, 2026-10-19,
+    the parity plan's sixth group). `PRO.SEV.FIT(losses, family,
+    [output], [t], [truncation], [thresholds], [censored], [weights])`
+    fits a body family (lognormal, gamma, Weibull, Burr) by
+    `fit_severity`, each loss conditioned on exceeding its reporting
+    threshold and a censored loss (TRUE where a policy limit capped it)
+    known only to exceed its value, or a Pareto family (the Pareto, the
+    piecewise Pareto from a row of thresholds, Riegel's generalized
+    Pareto) by the R package Pareto's estimators. The per-loss columns
+    are one value or a range of the losses' shape, and a row whose loss is
+    blank is skipped, so a long selected column works. `"params"` lists the
+    parameters in the order `p1`, `p2`, `p3` take them, with standard
+    errors from the observed information, then the log-likelihood, AIC and
+    BIC (body families), the largest distance to the product-limit
+    estimate, convergence and a note; the estimates feed `PRO.SEV.CDF`,
+    `PRO.LAYER` and the rest. `"gof"` is the product-limit estimate beside
+    the fit's survival and quantile at each loss (P-P and Q-Q), and
+    `"compare"` the four body families side by side. The note flags a fit
+    with no standard errors (a boundary of the family), and names a Burr
+    at its Pareto limit (`alpha → 0`, `gamma → ∞`), which on Pareto-like
+    large losses has the highest likelihood of the four and must not be
+    picked on likelihood alone (`knowledge/findings/burr-fit-pareto-limit.md`).
+    The Pareto fits match R Pareto 2.4.5 (`pareto_fit_r.csv`, with
+    thresholds, censoring, weights and both truncations) at its
+    tolerances.
 
 ## Parity plan
 
@@ -443,6 +468,14 @@ order, one small PR each, those already done struck through:
    moments, VaR, TVaR and layer statistics~~.
 5. Aggregate, continued (user, 2026-10-16): ~~the occurrence PMLs~~;
    ~~aggregate covers on the annual total~~; ~~towers on a grid~~.
+6. Fitting and pricing inputs (user, 2026-10-19, "work on next step 2";
+   the order chosen by this lane): ~~severity fits to large losses
+   (body and Pareto families, with thresholds and censoring)~~; EVT
+   threshold diagnostics and the GPD fit; payment patterns and
+   discounting; a cover's quote (technical premium with expenses and
+   brokerage); distortions calibrated to a target and a layer priced by
+   one; contract terms on an aggregate (sliding scale, profit commission,
+   reinstatement premiums).
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -452,8 +485,8 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan is done; further functions as the
-  user asks.
+- **Next functions:** the parity plan's sixth group, in its order;
+  the user may reorder it.
 - **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
   an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
   Its pattern is not normalised, so the a-priori level is absorbed by the
@@ -461,7 +494,7 @@ an XLL function (decision 4: no state) does not hold.
   the reserve (`knowledge/findings/bayes-bf-apriori-scale.md`). Either
   wrap `BayesBf` as it is, with `apriori` documented as nearly inert,
   or wait for a Bayesian BF with a normalised pattern in the Reserving
-  lane.
+  lane (asked in #410).
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and

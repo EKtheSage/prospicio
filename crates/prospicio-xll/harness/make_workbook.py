@@ -629,6 +629,34 @@ ag.column_dimensions["G"].width = 16
 for col in "BCEH":
     ag.column_dimensions[col].width = 14
 
+# Severity fits to large losses: R Pareto's example losses, some reported
+# only above 1,000 and three capped by a policy limit.
+sf = wb.create_sheet("Severity fit")
+sf["A1"] = "Large losses fitted by maximum likelihood, each conditioned on its reporting threshold; TRUE where a policy limit capped it"; sf["A1"].font = bold
+sf["A3"] = "Loss"; sf["B3"] = "Reported above"; sf["C3"] = "Capped"
+for c in ("A3", "B3", "C3"):
+    sf[c].font = bold
+losses = [1100, 1300, 1750, 2000, 2600, 3500, 4100, 5200, 7000, 9000, 12000, 18000, 25000, 40000]
+reported = [1000, 1200, 1000, 1500, 1000, 1000, 3000, 1000, 1000, 5000, 1000, 1000, 1000, 1000]
+capped = [False] * 5 + [True] + [False] * 4 + [True, False, False, True]
+for i, (y, r, c) in enumerate(zip(losses, reported, capped)):
+    for col, v in zip("ABC", (y, r, c)):
+        sf[f"{col}{4 + i}"] = v
+        sf[f"{col}{4 + i}"].fill = inp
+data = "A4:A17,{fam},{out},{t},,B4:B17,C4:C17"
+sf["E3"] = "Lognormal"; sf["E3"].font = bold
+sf["E4"] = ArrayFormula("E4:G13", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out="", t="") + ")")
+sf["I3"] = "Pareto above 1,000"; sf["I3"].font = bold
+sf["I4"] = ArrayFormula("I4:K13", "=PRO.SEV.FIT(" + data.format(fam='"pareto"', out="", t="1000") + ")")
+sf["E14"] = "The lognormal's 1M xs 1M from the fit's cells"
+sf["I14"] = ArrayFormula("I14", "=PRO.LAYER(1000000,1000000,\"lognormal\",F5,F6)")
+sf["E16"] = "Body families compared"; sf["E16"].font = bold
+sf["E17"] = ArrayFormula("E17:N21", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="") + ")")
+sf["E23"] = "Lognormal against the product-limit estimate (P-P and Q-Q)"; sf["E23"].font = bold
+sf["E24"] = ArrayFormula("E24:J35", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out='"gof"', t="") + ")")
+for col in "ABCEFGHIJKLM":
+    sf.column_dimensions[col].width = 14
+
 # Bayesian MCMC: the ODP chain ladder sampled with NUTS on RAA (England and Verrall).
 by = wb.create_sheet("Bayesian")
 by["A1"] = "Bayesian ODP chain ladder on RAA, sampled with NUTS (4 chains, 1,000 warm-up and 1,000 kept draws each)"; by["A1"].font = bold
