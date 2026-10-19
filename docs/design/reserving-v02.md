@@ -2333,7 +2333,9 @@ a geometric average.
    and the bootstraps' residuals and re-reserving assume every link ratio,
    and making them follow the exclusions (chainladder-python's
    `BootstrapODPSample` takes `n_periods` and the drops) is a second PR
-   with its own checks. `ClarkLdf`, `ClarkCapeCod`, the ODP GLM and the
+   with its own checks. Decision 14 is that PR: it lifts the rejection for
+   both bootstraps and their one-year views, and keeps it for the closed
+   form. `ClarkLdf`, `ClarkCapeCod`, the ODP GLM and the
    Bayesian models do not use `Development`'s averages and are
    unchanged.
 
@@ -2377,8 +2379,8 @@ a geometric average.
 **Bindings.** Python: `n_periods=None`, `drop_high=0`, `drop_low=0` and
 `average="geometric"` on `ChainLadder`, `Mack`, `ExpectedLoss`,
 `BornhuetterFerguson`, `Benktander` and `CapeCod`, and on the bootstraps
-(where a value other than the default raises, naming the follow-up); the
-fit's `n_links`. R: the same arguments on `chain_ladder()`, `mack()` and
+(where a value other than the default raised, naming the follow-up;
+decision 14 lifts it); the fit's `n_links`. R: the same arguments on `chain_ladder()`, `mack()` and
 the expected-loss functions. The guides' workarounds can then go; that
 is the Guides lane's change, filed as an issue for it.
 
@@ -2431,10 +2433,11 @@ it:
 
 ### 14. The bootstraps and the one-year views under the exclusions
 
-Status: **Accepted** (2026-10-19), issue #401, branch
+Status: **Built** (2026-10-19), issue #401, branch
 `claude/bootstrap-exclusions`. This is decision 13's second PR. The
 user chose the three settings that the issue left open (items 2, 4
-and 6). The other items follow from the evidence below.
+and 6). The other items follow from the evidence below. "As built" at the
+end lists what changed from the proposal while building it.
 
 Decision 13 gave `Development` the settings `n_periods`, `drop_high` and
 `drop_low` for the chain ladder, the expected-loss methods and Mack's
@@ -2641,3 +2644,46 @@ checks are internal (item 9).
       one-year functions stop raising.
     - **Tests.** The binding tests that expected the rejection now check
       the fits.
+
+**As built** (2026-10-19). What changed from the proposal while building
+it:
+
+1. `Error::ExclusionsMismatch { bootstrap, method }` is a new variant of
+   the public `Error` enum. The mismatch error has to write out both
+   settings, and `Error::Bootstrap` holds a static string. It is marked
+   breaking in the changelog, as are the three new public fields of
+   `OdpBootstrap`.
+2. `phi` under `n_periods = 3` on RAA is 694.0, not the 322.4 that item 4
+   quotes. 322.4 is chainladder-python's `scale_`, which also drops the
+   first-age residuals of the origins whose link 0 is dropped (its weight
+   quirk); prospicio keeps them, as item 4 says. The plain `phi` is 983.6.
+3. The reference means in the ODP check come from chainladder-python's
+   samples with its pool replaced by prospicio's (first age kept, no
+   centring, zeros kept, the `sqrt(N / (N - p))` factor), because with its
+   native pool the means differ by up to 16% on RAA. Its refits use the
+   observed exclusions as fixed drop positions. RAA under the window with
+   both drops is heavy tailed (outliers of 1e8 on a median of 9e4), so its
+   medians are compared, not its means.
+4. The first-order revision of item 7 is checked on Mack's bootstrap only
+   (RAA with `n_periods = 3`, GenIns with `n_periods = 5`, within 4
+   standard errors plus 2%). The ODP bootstrap's uncentred residual pool
+   biases its claims development result far from the first-order revision
+   under `n_periods` (RAA 1990: -7,300 simulated against +335 predicted,
+   and -700 without exclusions), so no assertion is made on it.
+5. `Development::reject_exclusions` had no caller left and was removed.
+6. Mack's bootstrap against Mack's standard error under the same settings
+   (item 9) holds on RAA and GenIns under `n_periods = 5` and under one
+   high and one low dropped, every origin and the total within 2 Monte
+   Carlo standard errors at 20,000 simulations
+   (`knowledge/findings/mack-bootstrap-under-exclusions-vs-mack.md`).
+7. Bindings: Python's `OdpBootstrap` takes `n_periods`, `drop_high` and
+   `drop_low` after `ldf_weight`, with getters and the settings in its
+   `repr` when set; R's `odp_bootstrap()` takes them after `ldf_weight`.
+   In R, `odp_one_year()` has no bootstrap settings of its own and takes the
+   method's, and `mack_one_year()`'s `mack_n_periods`, `mack_drop_high` and
+   `mack_drop_low` are the bootstrap's own: they must equal the method's
+   or stay at their defaults. A bootstrap in Python that sets its own
+   different settings gets a `ValueError` naming both.
+8. The geometric average stays rejected in the bootstraps and their
+   one-year views, and the closed form's rejection now points to
+   `MackBootstrap::one_year`.

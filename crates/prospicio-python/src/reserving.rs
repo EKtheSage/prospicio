@@ -335,17 +335,24 @@ fn pattern_weight<'py>(
 /// `, n_periods=..., drop_high=..., drop_low=...` for the exclusions that are
 /// set, then the selected pattern; empty at the defaults.
 fn development_arg_repr(d: &Development) -> String {
+    let mut out = exclusions_arg_repr(d.n_periods, d.drop_high, d.drop_low);
+    out.push_str(&pattern_arg_repr(d.pattern.as_ref()));
+    out
+}
+
+/// The exclusions that are set, as `, n_periods=..., drop_high=...,
+/// drop_low=...`; empty at the defaults.
+fn exclusions_arg_repr(n_periods: Option<usize>, drop_high: usize, drop_low: usize) -> String {
     let mut out = String::new();
-    if let Some(n) = d.n_periods {
+    if let Some(n) = n_periods {
         out.push_str(&format!(", n_periods={n}"));
     }
-    if d.drop_high != 0 {
-        out.push_str(&format!(", drop_high={}", d.drop_high));
+    if drop_high != 0 {
+        out.push_str(&format!(", drop_high={drop_high}"));
     }
-    if d.drop_low != 0 {
-        out.push_str(&format!(", drop_low={}", d.drop_low));
+    if drop_low != 0 {
+        out.push_str(&format!(", drop_low={drop_low}"));
     }
-    out.push_str(&pattern_arg_repr(d.pattern.as_ref()));
     out
 }
 
@@ -3035,9 +3042,11 @@ impl PyMackFit {
     /// ValueError
     ///     If the fit has several segments (use ``segment(...)``), the
     ///     factors are not volume-weighted, the fit has a tail (a factor
-    ///     other than 1, or one that replaces estimated factors), or the
-    ///     latest values do not lie on one calendar diagonal with one new
-    ///     origin per period.
+    ///     other than 1, or one that replaces estimated factors), the fit
+    ///     excludes link ratios (``n_periods``, ``drop_high`` or
+    ///     ``drop_low``; use ``MackBootstrap.one_year``, which follows
+    ///     them), or the latest values do not lie on one calendar diagonal
+    ///     with one new origin per period.
     fn claims_development_result(&self) -> PyResult<PyClaimsDevelopmentResult> {
         let fit = single(&self.inner, "claims_development_result", "")?;
         let inner = fit.claims_development_result().map_err(err)?;
@@ -4952,13 +4961,30 @@ impl PyClarkFit {
 ///     ``one_year``, a bootstrap without a pattern takes ``method``'s
 ///     (``bootstrap_ldf``); one with a pattern needs ``method`` to select the
 ///     same factors, and the tail its pattern implies to be ``method``'s.
+/// n_periods, drop_high, drop_low : optional
+///     As ``ChainLadder``, for the volume-weighted chain ladder the
+///     bootstrap fits (it has no average setting). The fitted values are
+///     back-cast with the factors under the exclusions; an incremental cell
+///     has a residual only if the link ratio it closes is kept (the first
+///     age's cells always do), and the pseudo factors average the kept
+///     links only. The drops are fixed on the observed triangle: the
+///     simulated triangles are not ranked again. The scale is the sum of
+///     the kept squared residuals over ``N - p`` (chainladder-python's
+///     rule), which is biased low under exclusions: on RAA with
+///     ``n_periods=3`` it is about 70% of the plain scale (694 against
+///     984), and the standard deviations are correspondingly narrow. In
+///     ``one_year``, a bootstrap that sets none of them takes ``method``'s;
+///     one that sets its own must set the same as ``method``, else a
+///     ``ValueError`` names both. The mean of the claims development
+///     result is then not zero: the window moves and the drops are ranked
+///     again on the closing triangle, as the next year's reserving does.
 ///
 /// Raises
 /// ------
 /// ValueError
 ///     If ``n_sims`` is zero, ``process`` or ``dependence`` is unknown, or
 ///     ``spearman`` is missing for ``"rank_correlation"``, given for another
-///     dependence or not square.
+///     dependence or not square; if ``n_periods`` is zero.
 /// TypeError
 ///     If ``tail`` is not a number or a tail estimator.
 /// OverflowError
@@ -4996,6 +5022,9 @@ impl PyOdpBootstrap {
         ldf = None,
         ldf_kind = None,
         ldf_weight = None,
+        n_periods = None,
+        drop_high = 0,
+        drop_low = 0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -5009,6 +5038,9 @@ impl PyOdpBootstrap {
         ldf: Option<&Bound<'_, PyAny>>,
         ldf_kind: Option<&str>,
         ldf_weight: Option<&Bound<'_, PyAny>>,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -5023,9 +5055,9 @@ impl PyOdpBootstrap {
                 dependence: segment_dependence(dependence, spearman)?,
                 pattern: selected_pattern(ldf, ldf_kind, ldf_weight)?,
                 one_year_pattern: OneYearPattern::Method,
-                n_periods: None,
-                drop_high: 0,
-                drop_low: 0,
+                n_periods,
+                drop_high,
+                drop_low,
             },
         })
     }
@@ -5094,6 +5126,25 @@ impl PyOdpBootstrap {
     #[getter]
     fn spearman(&self) -> Option<Vec<Vec<f64>>> {
         dependence_spearman(&self.inner.dependence)
+    }
+
+    /// Link ratios that start before the latest ``n_periods`` calendar
+    /// diagonals are left out; ``None`` keeps all.
+    #[getter]
+    fn n_periods(&self) -> Option<usize> {
+        self.inner.n_periods
+    }
+
+    /// How many of the highest link ratios at each age are left out.
+    #[getter]
+    fn drop_high(&self) -> usize {
+        self.inner.drop_high
+    }
+
+    /// How many of the lowest link ratios at each age are left out.
+    #[getter]
+    fn drop_low(&self) -> usize {
+        self.inner.drop_low
     }
 
     /// Bootstraps one measure column in every segment of a cumulative
@@ -5258,12 +5309,17 @@ impl PyOdpBootstrap {
             .tail_std_err
             .map_or(String::new(), |v| format!(", tail_std_err={v:?}"));
         format!(
-            "OdpBootstrap(n_sims={}, seed={}, process={:?}, tail={}{std_err}{}{})",
+            "OdpBootstrap(n_sims={}, seed={}, process={:?}, tail={}{std_err}{}{}{})",
             self.inner.n_sims,
             self.inner.seed,
             self.process(),
             tail_arg_repr(&self.inner.tail),
             dependence_repr(&self.inner.dependence),
+            exclusions_arg_repr(
+                self.inner.n_periods,
+                self.inner.drop_high,
+                self.inner.drop_low,
+            ),
             pattern_arg_repr(self.inner.pattern.as_ref()),
         )
     }
@@ -5534,8 +5590,16 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
 ///     How a sigma behind a single link ratio is filled in.
 /// n_periods, drop_high, drop_low : optional
-///     As ``ChainLadder``. The bootstraps do not support them yet: a
-///     ``ValueError`` names the setting.
+///     As ``ChainLadder``. The bootstrap keeps the link ratios that are
+///     kept at the observed triangle (the drops are not ranked again in
+///     each simulation): only they have residuals and enter the pseudo
+///     factors, so Mack's standard error under the same settings is its
+///     standard deviation's reference. In ``one_year``, a bootstrap that
+///     sets none of them takes ``method``'s; one that sets its own must set
+///     the same as ``method``, else a ``ValueError`` names both. The mean
+///     of the claims development result is then not zero: the window moves
+///     and the drops are ranked again on the closing triangle, as the next
+///     year's reserving does.
 /// centre_residuals : bool, default True
 ///     Subtract the residuals' mean before resampling them, so that the
 ///     pseudo factors are unbiased, the mean CDR is about zero and the

@@ -1044,10 +1044,11 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   links uses all of them). Then the `drop_high` highest and `drop_low`
 #'   lowest of the kept ratios are left out, except at an age where that
 #'   would leave none. Whole numbers from 0 (`n_periods` from 1); the
-#'   defaults exclude nothing. [mack()] accepts them; the bootstraps and
-#'   the one-year views reject them, and [claims_development_result()]
-#'   rejects any of them, even one that removes nothing. The fit's `n_links` and `excluded`
-#'   report what was used.
+#'   defaults exclude nothing. [mack()], the bootstraps and the one-year
+#'   views accept them (the bootstraps and views keep the link ratios that
+#'   the observed triangle keeps), and [claims_development_result()]
+#'   rejects any of them, even one that removes nothing. The fit's
+#'   `n_links` and `excluded` report what was used.
 #' @param ptr A `ChainLadderFit` pointer; used internally.
 #' @returns A `chain_ladder_fit` object.
 #' @seealso [mack()] for standard errors, [segment()] for one segment.
@@ -1679,6 +1680,18 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #'   `tail`, a cumulative pattern to the oldest age implies a constant tail
 #'   (`pattern_tail` of [chain_ladder()]), the same in every simulation
 #'   unless `tail_std_err` is given.
+#' @param n_periods,drop_high,drop_low Which link ratios the volume-weighted
+#'   chain ladder behind [odp_bootstrap()] averages, as in [chain_ladder()]
+#'   (the bootstrap has no `average`). The fitted values are back-cast with
+#'   the factors under the exclusions; an incremental cell has a residual
+#'   only if the link ratio it closes is kept (the first age's cells always
+#'   do), and the pseudo factors average the kept links only. The drops
+#'   are fixed on the observed triangle: the simulated triangles are not
+#'   ranked again. The scale is the sum of the kept squared residuals over
+#'   `N - p` (chainladder-python's rule), which is biased low under
+#'   exclusions: on RAA with `n_periods = 3` it is about 70% of the plain
+#'   scale (694 against 984), and the standard deviations are
+#'   correspondingly narrow. See [odp_one_year()] for the one-year view.
 #' @param ptr An `OdpBootstrapFit` pointer; used internally.
 #' @returns An `odp_bootstrap_fit` object.
 #' @seealso [chain_ladder()], [mack()]; [odp_one_year()] for the one-year
@@ -1737,16 +1750,18 @@ origin_matrix <- function(fit, flat) {
 odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                           process = c("gamma", "none"), tail = 1, tail_std_err = NULL,
                           dependence = c("independent", "synchronized", "rank_correlation"),
-                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1) {
+                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
+                          n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
+  excl <- development_args("volume", "log-linear", n_periods, drop_high, drop_low)$excl
   ptr <- rust_result(triangle@ptr$odp_bootstrap(column, single_number(n_sims, "n_sims"),
                                                 single_number(seed, "seed"), process,
                                                 tail_ptr(tail),
                                                 optional_number(tail_std_err, "tail_std_err"),
                                                 dependence, spearman_arg(spearman),
-                                                ldf_pattern(ldf, ldf_kind, ldf_weight)))
+                                                ldf_pattern(ldf, ldf_kind, ldf_weight), excl))
   odp_bootstrap_fit(ptr = ptr)
 }
 
@@ -3219,8 +3234,11 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
 #'   [chain_ladder()]), the same in every simulation unless `tail_std_err`
 #'   is given.
 #' @param n_periods,drop_high,drop_low Which link ratios the factors average,
-#'   as in [chain_ladder()]. [mack_bootstrap()] rejects exclusions, and
-#'   `"geometric"` as the average.
+#'   as in [chain_ladder()]. Only the link ratios that the observed
+#'   triangle keeps have residuals and enter the pseudo factors (the drops
+#'   are not ranked again in each simulation), so [mack()]'s standard error
+#'   under the same settings is the reference for the standard deviation.
+#'   `"geometric"` as the average is rejected.
 #' @param ptr A `MackBootstrapFit` pointer; used internally.
 #' @returns A `mack_bootstrap_fit` object.
 #' @seealso [mack()] for the analytic standard errors, [mack_one_year()]
@@ -3439,11 +3457,17 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #'   implies no tail, and with `bootstrap_tail = FALSE` the bootstrap has
 #'   none.
 #' @param n_periods,drop_high,drop_low Which link ratios the factors of
-#'   `method` average, as in [chain_ladder()]. The one-year views reject
-#'   exclusions, and `"geometric"` as `mack_average`.
+#'   `method` average, as in [chain_ladder()]. The bootstrap simulates the
+#'   coming year with the same link ratios the observed triangle keeps, and
+#'   `method` is fitted again on the triangle with the coming diagonal, so
+#'   the window moves by one diagonal and the drops are ranked again, as
+#'   next year's reserving does. The mean of the CDR is therefore not zero
+#'   under exclusions. `"geometric"` as `mack_average` is rejected.
 #' @param mack_n_periods,mack_drop_high,mack_drop_low Which link ratios Mack's
 #'   model in `mack_one_year()` averages, as `n_periods`, `drop_high` and
-#'   `drop_low` in [chain_ladder()]; its bootstrap rejects exclusions.
+#'   `drop_low` in [chain_ladder()]. They must be the same as `method`'s
+#'   (`n_periods`, `drop_high`, `drop_low`) or left at their defaults, which
+#'   take `method`'s; any other combination is an error naming both.
 #' @param bootstrap_tail Whether the bootstrap takes `method`'s `tail` too,
 #'   developing past the oldest age in the coming year (above); `FALSE` by
 #'   default.

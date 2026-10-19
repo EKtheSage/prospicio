@@ -13,6 +13,9 @@ sources:
   - id: script
     resource: ../validation/scripts/reserving_cdr_r.R
     title: Generator of validation/reference/reserving_cdr_r.csv
+  - id: design14
+    resource: ../docs/design/reserving-v02.md
+    title: Design note, reserving v0.2, decision 14, the bootstraps and the one-year views under the exclusions
   - id: paper
     resource: https://www.casact.org/sites/default/files/database/forum_08fforum_21merz_wuetrich.pdf
     title: Merz and Wuthrich (2008), Modelling the claims development result for solvency purposes, CAS E-Forum Fall 2008
@@ -55,6 +58,27 @@ between two origins carried by the older origin's parameter term.[^script]
   for the one-year total, and its run-off matches Mack, per origin and in
   total. This is a deliberate deviation.[^design]
 
+# With weights
+
+`CDR(MackChainLadder(tri, weights = W))` runs but is not a one-year view
+of the weighted estimator, so it is no reference for exclusions in Merz and
+Wuthrich's closed form (decision 14, item 8):[^design14]
+
+* Its internal `alpha` shifts the weights by one column, so the link that
+  starts at age `k` is weighted from a neighbouring column where the
+  volumes and the sigma use its own.
+* At age 1 it ignores the weights.
+* It has no term for the mean. With `n_periods` the window moves with the
+  coming diagonal, a known link ratio leaves the average, and the mean of
+  the claims development result is not zero; the formula keeps it at zero.
+* On RAA with `n_periods = 3`, as recorded when decision 14 was written,
+  `CDR(1)S.E.` of the total is 21,510.79 against 25,166.30 without
+  weights, and `Mack.S.E` is 23,577.30. Those figures are not in a test
+  and were not reproduced when the knowledge was written: with the weights
+  builder of `validation/scripts/reserving_averages_r.R` for `n_periods = 3`
+  on RAA (also with the latest diagonal's starting cell weighted), R returns
+  infinite standard errors and NaN claims development results.
+
 # The 2008 paper's Table 4
 
 R with `est.sigma = "Mack"` (the paper's sigma rule (4.1)) reproduces the
@@ -68,4 +92,5 @@ paper's totals and youngest origin only.[^paper]
 
 [^script]: Generator of validation/reference/reserving_cdr_r.csv
 [^design]: Design note, reserving v0.2, decision 4
+[^design14]: Design note, reserving v0.2, decision 14, item 8
 [^paper]: Merz and Wuthrich (2008), Modelling the claims development result for solvency purposes, CAS E-Forum Fall 2008

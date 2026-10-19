@@ -12746,8 +12746,16 @@ class MackBootstrap:
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
         How a sigma behind a single link ratio is filled in.
     n_periods, drop_high, drop_low : optional
-        As ``ChainLadder``. The bootstraps do not support them yet: a
-        ``ValueError`` names the setting.
+        As ``ChainLadder``. The bootstrap keeps the link ratios that are
+        kept at the observed triangle (the drops are not ranked again in
+        each simulation): only they have residuals and enter the pseudo
+        factors, so Mack's standard error under the same settings is its
+        standard deviation's reference. In ``one_year``, a bootstrap that
+        sets none of them takes ``method``'s; one that sets its own must set
+        the same as ``method``, else a ``ValueError`` names both. The mean
+        of the claims development result is then not zero: the window moves
+        and the drops are ranked again on the closing triangle, as the next
+        year's reserving does.
     centre_residuals : bool, default True
         Subtract the residuals' mean before resampling them, so that the
         pseudo factors are unbiased, the mean CDR is about zero and the
@@ -13188,9 +13196,11 @@ class MackFit:
         ValueError
             If the fit has several segments (use ``segment(...)``), the
             factors are not volume-weighted, the fit has a tail (a factor
-            other than 1, or one that replaces estimated factors), or the
-            latest values do not lie on one calendar diagonal with one new
-            origin per period.
+            other than 1, or one that replaces estimated factors), the fit
+            excludes link ratios (``n_periods``, ``drop_high`` or
+            ``drop_low``; use ``MackBootstrap.one_year``, which follows
+            them), or the latest values do not lie on one calendar diagonal
+            with one new origin per period.
         """
     @property
     def development(self, /) -> list[int]:
@@ -14978,13 +14988,30 @@ class OdpBootstrap:
         ``one_year``, a bootstrap without a pattern takes ``method``'s
         (``bootstrap_ldf``); one with a pattern needs ``method`` to select the
         same factors, and the tail its pattern implies to be ``method``'s.
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``, for the volume-weighted chain ladder the
+        bootstrap fits (it has no average setting). The fitted values are
+        back-cast with the factors under the exclusions; an incremental cell
+        has a residual only if the link ratio it closes is kept (the first
+        age's cells always do), and the pseudo factors average the kept
+        links only. The drops are fixed on the observed triangle: the
+        simulated triangles are not ranked again. The scale is the sum of
+        the kept squared residuals over ``N - p`` (chainladder-python's
+        rule), which is biased low under exclusions: on RAA with
+        ``n_periods=3`` it is about 70% of the plain scale (694 against
+        984), and the standard deviations are correspondingly narrow. In
+        ``one_year``, a bootstrap that sets none of them takes ``method``'s;
+        one that sets its own must set the same as ``method``, else a
+        ``ValueError`` names both. The mean of the claims development
+        result is then not zero: the window moves and the drops are ranked
+        again on the closing triangle, as the next year's reserving does.
     
     Raises
     ------
     ValueError
         If ``n_sims`` is zero, ``process`` or ``dependence`` is unknown, or
         ``spearman`` is missing for ``"rank_correlation"``, given for another
-        dependence or not square.
+        dependence or not square; if ``n_periods`` is zero.
     TypeError
         If ``tail`` is not a number or a tail estimator.
     OverflowError
@@ -15004,13 +15031,23 @@ class OdpBootstrap:
     >>> fit.reserves.mean() > 0
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> OdpBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> OdpBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def dependence(self, /) -> str:
         """
         How the segments depend on each other: ``"independent"``,
         ``"synchronized"`` or ``"rank_correlation"``.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        How many of the highest link ratios at each age are left out.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        How many of the lowest link ratios at each age are left out.
         """
     def fit(self, /, triangle: Triangle, column: str) -> OdpBootstrapFit:
         """
@@ -15057,6 +15094,12 @@ class OdpBootstrap:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Link ratios that start before the latest ``n_periods`` calendar
+        diagonals are left out; ``None`` keeps all.
         """
     @property
     def n_sims(self, /) -> int:
