@@ -4,10 +4,6 @@
 
 <!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
 
-## Now
-
-- #420 `claude/backtest-bindings`: reserving: the diagonal backtest in Python and R, with each fit's diagnostics (#342)
-
 ## Next
 
 - [compartmental-pr-e] `Compartmental::fit_segments` and the backtest (`reserving-compartmental.md` PR E)
