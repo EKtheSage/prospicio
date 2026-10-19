@@ -478,6 +478,23 @@ S7::method(VaR, grid_distribution) <- function(dist, p, ...) {
   rust_result(dist@ptr$quantile(as.double(p)), s7_call())
 }
 
+#' Third moment of a layer
+#'
+#' `E[min(max(X - attachment, 0), limit)^3]` for any severity, by quadrature
+#' of its survival function (relative accuracy about 1e-10): `limit = Inf`
+#' for the unlimited layer, `attachment = 0` for the limited third moment
+#' `E[min(X, limit)^3]`. Limits and attachments are recycled.
+#'
+#' @param dist A severity.
+#' @param limit,attachment Layer limits and attachments.
+#' @returns A numeric vector.
+#' @export
+#' @examples
+#' layer_third_moment(gamma_distribution(1, 2), c(3, Inf), 0)
+layer_third_moment <- function(dist, limit, attachment = 0) {
+  rust_result(layer_third_moment_rust(dist@ptr, as.double(limit), as.double(attachment)))
+}
+
 #' Level at which TVaR reaches VaR
 #'
 #' The level `t` with `TVaR(t) = VaR(p)`, the lower VaR, as `aggregate`'s

@@ -452,6 +452,10 @@ fn compound_moments_and_approximations_match_aggregate() {
                 sdlog,
                 shift,
             } => (sdlog, shift, meanlog.exp()),
+            // Not among the `aggregate` targets.
+            Approximation::NormalPower { .. } | Approximation::WilsonHilferty { .. } => {
+                return None;
+            }
         };
         match key {
             "shape" => Some(shape),

@@ -1009,3 +1009,33 @@ def test_tower_over_a_term_carries_deficits():
     assert Tower.from_json(Tower([layer]).to_json()).to_json() == Tower([layer]).to_json()
     with pytest.raises(ValueError):
         events.term_years(7)
+
+
+def test_normal_power_and_wilson_hilferty():
+    import statistics
+
+    from prospicio.aggregate import compound_moments
+    from prospicio.distributions import Gamma, Poisson
+
+    m = compound_moments(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
+    z = statistics.NormalDist().inv_cdf(0.99)
+    sd = m.mean * m.cv
+    np_ = m.approximate("normal_power")
+    assert np_.kind == "normal_power"
+    assert dict(np_.parameters)["skew"] == pytest.approx(m.skew)
+    assert np_.quantile(0.99) == pytest.approx(m.mean + sd * (z + m.skew * (z * z - 1) / 6), rel=1e-12)
+    wh = m.approximate("wilson_hilferty")
+    c = 1 + m.skew * z / 6 - m.skew**2 / 36
+    assert wh.quantile(0.99) == pytest.approx(m.mean + sd * 2 / m.skew * (c**3 - 1), rel=1e-12)
+    assert wh.cdf(wh.quantile(0.9)) == pytest.approx(0.9, abs=1e-12)
+
+
+def test_layer_third_moment():
+    from prospicio.distributions import Gamma, Pareto
+
+    x = Gamma(1.0, 2.0)
+    t = 1.5
+    want = 48.0 * (1 - math.exp(-t) * (1 + t + t * t / 2))
+    assert x.layer_third_moment(3.0, 0.0) == pytest.approx(want, rel=1e-10)
+    assert x.layer_third_moment(math.inf, 0.0) == pytest.approx(48.0, rel=1e-10)
+    assert Pareto(100.0, 2.5).layer_third_moment(math.inf, 0.0) == math.inf

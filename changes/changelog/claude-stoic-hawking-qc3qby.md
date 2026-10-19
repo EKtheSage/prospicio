@@ -295,3 +295,26 @@
   (*Pricing Insurance Risk* Exercise 59 as its guide prints it). Python
   `prospicio.risk.rearrange` and `worst_var`, R `rearrange()` and
   `worst_var()` (#366).
+
+### Aggregate and reinsurance
+
+- The normal power and Wilson–Hilferty approximations of a compound sum
+  (Bahnemann, CAS Monograph 2, section 4.4), defined by their quantiles:
+  `ApproximationKind::NormalPower` and `WilsonHilferty`; Python
+  `CompoundMoments.approximate("normal_power")` and
+  `"wilson_hilferty"`, R `moment_approximation(m, "normal_power")` and
+  `"wilson_hilferty"` (#329).
+
+### Distributions and probability
+
+- The third moment of a layer of any severity,
+  `Severity::layer_third_moment(limit, attachment)`, by adaptive
+  quadrature of the survival function (the limited third moment at
+  attachment 0, the unlimited layer at an infinite limit); Python
+  `layer_third_moment` on every severity, R `layer_third_moment()` (#329).
+
+### Breaking changes
+
+- `prospicio_aggregate::ApproximationKind` and `Approximation` have the
+  variants `NormalPower` and `WilsonHilferty`, so an exhaustive `match` on
+  them needs new arms (#329).

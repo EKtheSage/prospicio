@@ -1191,3 +1191,57 @@ fn worst_var_matches_the_pricing_insurance_risk_guide() {
         assert!((r.value - want).abs() < 0.05, "shift {shift}: {}", r.value);
     }
 }
+
+/// The third layer moment by quadrature against closed forms: the
+/// lognormal's limited third moment `e^{3μ + 9σ²/2} Φ((ln u − μ − 3σ²)/σ) +
+/// u³ S(u)`, the single-parameter Pareto's `x₀³ + 3 x₀^α (u^{3−α} −
+/// x₀^{3−α}) / (3 − α)`, and the unlimited layer above an attachment from
+/// `E[(X − a)³] + 3 ∫_0^a (a − x)² F(x) dx` for a gamma.
+#[test]
+fn layer_third_moments_match_closed_forms() {
+    use prospicio_math::special::norm_cdf;
+    use prospicio_prob::{Gamma, Pareto};
+    let close = |a: f64, b: f64| (a / b - 1.0).abs() < 1e-9;
+    let (mu, sigma): (f64, f64) = (1.0, 0.8);
+    let ln = Lognormal::new(mu, sigma).unwrap();
+    for u in [0.5f64, 3.0, 20.0, 200.0] {
+        let want = (3.0 * mu + 4.5 * sigma * sigma).exp()
+            * norm_cdf((u.ln() - mu - 3.0 * sigma * sigma) / sigma)
+            + u * u * u * ln.survival(u);
+        assert!(
+            close(ln.layer_third_moment(u, 0.0), want),
+            "lognormal at {u}"
+        );
+    }
+    assert!(close(
+        ln.layer_third_moment(f64::INFINITY, 0.0),
+        ln.third_moment().unwrap()
+    ));
+    let (x0, alpha): (f64, f64) = (100.0, 4.5);
+    let pa = Pareto::new(x0, alpha).unwrap();
+    for u in [150.0f64, 1000.0, 1e5] {
+        let want = x0.powi(3)
+            + 3.0 * x0.powf(alpha) * (u.powf(3.0 - alpha) - x0.powf(3.0 - alpha)) / (3.0 - alpha);
+        assert!(close(pa.layer_third_moment(u, 0.0), want), "pareto at {u}");
+    }
+    let g = Gamma::new(2.0, 50.0).unwrap();
+    let a: f64 = 120.0;
+    let (m1, m2, m3) = (
+        g.mean(),
+        g.variance() + g.mean().powi(2),
+        g.third_moment().unwrap(),
+    );
+    let below = 3.0
+        * prospicio_math::integrate::gauss_legendre(
+            |x| Ok::<_, ()>((a - x) * (a - x) * g.cdf(x)),
+            0.0,
+            a,
+        )
+        .unwrap();
+    let want = m3 - 3.0 * a * m2 + 3.0 * a * a * m1 - a.powi(3) + below;
+    assert!(close(g.layer_third_moment(f64::INFINITY, a), want));
+    // A layer splits at any point: 3 ∫ (x − a)² S over two pieces.
+    let whole = g.layer_third_moment(300.0, 50.0);
+    let lower = g.layer_third_moment(100.0, 50.0);
+    assert!(whole > lower && lower > 0.0);
+}

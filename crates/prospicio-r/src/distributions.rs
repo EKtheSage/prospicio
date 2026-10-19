@@ -216,6 +216,22 @@ const SEVERITIES: &str = "lognormal, gamma, tweedie, weibull, loglogistic, inver
                           custom, or \
                           a Pareto-family distribution";
 
+/// The third moment of the loss to the layer `limit` xs `attachment` of any
+/// severity, by quadrature.
+#[extendr]
+fn layer_third_moment_rust(severity: Robj, limit: &[f64], attachment: &[f64]) -> Result<Vec<f64>> {
+    let sev = severity_from_robj(&severity)?;
+    let n = limit.len().max(attachment.len());
+    if n > 0 && (limit.is_empty() || attachment.is_empty()) {
+        return Err(Error::Other(
+            "limit and attachment must not be empty".into(),
+        ));
+    }
+    Ok((0..n)
+        .map(|i| sev.layer_third_moment(limit[i % limit.len()], attachment[i % attachment.len()]))
+        .collect())
+}
+
 /// A severity accepted wherever a parametric or discretized loss
 /// distribution can be used: any distribution but a sampled one, which has
 /// no exact layer moments.
@@ -871,6 +887,7 @@ fn tvar_threshold_rust(values: &[f64], probs: &[f64], p: &[f64]) -> Result<Vec<f
 extendr_module! {
     mod distributions;
     fn tvar_weighted_rust;
+    fn layer_third_moment_rust;
     fn tvar_threshold_rust;
     fn join_rust;
     fn reorder_groups_rust;
