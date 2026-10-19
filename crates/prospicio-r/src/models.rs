@@ -619,6 +619,14 @@ impl GamModel {
         self.inner.edf()
     }
 
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
     fn dispersion(&self) -> f64 {
         self.inner.dispersion()
     }
@@ -745,6 +753,20 @@ fn pit_rust(
 #[extendr]
 fn ks_uniform_rust(values: &[f64]) -> Result<f64> {
     metrics::ks_uniform(values).map_err(to_r)
+}
+
+/// The PIT of each of `y` under the empirical distribution of `draws`.
+#[extendr]
+fn pit_from_draws_rust(draws: &[f64], y: &[f64], u: f64) -> Result<Vec<f64>> {
+    y.iter()
+        .map(|&v| metrics::pit_from_draws(draws, v, u).map_err(to_r))
+        .collect()
+}
+
+#[extendr]
+fn pit_histogram_rust(pit: &[f64], bins: f64) -> Result<Vec<f64>> {
+    let counts = metrics::pit_histogram(pit, whole(bins, "bins")? as usize).map_err(to_r)?;
+    Ok(counts.into_iter().map(|c| c as f64).collect())
 }
 
 /// Joint draws from fitted means: `means` is an `n_rows` by `k` matrix,
@@ -1350,6 +1372,8 @@ extendr_module! {
     fn log_score_rust;
     fn pit_rust;
     fn ks_uniform_rust;
+    fn pit_from_draws_rust;
+    fn pit_histogram_rust;
     fn simulate_from_means_rust;
     fn k_fold_rust;
     fn group_k_fold_rust;

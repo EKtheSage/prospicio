@@ -145,6 +145,11 @@
   `save_model()` and `load_model()` take `cann_model` and
   `attention_cann_model`. The shared envelope helpers are now public in
   `prospicio_models::artifact` (#391).
+- A GAM's log-likelihood and AIC: `GamFit::log_likelihood` and `aic`
+  (`-2 ℓ + 2 edf`, the GLM's conventions), saved in its artifact; Python
+  `GamFit.log_likelihood` and `.aic`, R `gam_model@log_likelihood` and
+  `@aic` (#360). R gains `deviance_score()` for `cross_validate()` (#360),
+  and `pit_from_draws()` and `pit_histogram()` as Python's (#382).
 
 ### Pricing
 
