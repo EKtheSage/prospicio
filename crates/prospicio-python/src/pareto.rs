@@ -2090,13 +2090,15 @@ impl PySeverityFit {
     }
 }
 
-/// Maximum likelihood fit of a lognormal, gamma, Weibull or Burr severity
-/// to large losses, each conditioned on exceeding its reporting threshold
-/// (left truncation), with losses capped by a policy limit censored.
+/// Maximum likelihood fit of a lognormal, gamma, Weibull, Burr or Lomax
+/// severity to large losses, each conditioned on exceeding its reporting
+/// threshold (left truncation), with losses capped by a policy limit
+/// censored. The Lomax, ``S(x) = (1 + x / scale) ** -alpha`` (Bahnemann's
+/// Pareto), is fitted as a :class:`Burr` with ``gamma = 1``.
 ///
 /// Parameters
 /// ----------
-/// family : {"lognormal", "gamma", "weibull", "burr"}
+/// family : {"lognormal", "gamma", "weibull", "burr", "lomax"}
 /// losses : list of float
 /// reporting_thresholds : list of float, optional
 ///     Per-loss thresholds below which a loss would not have been

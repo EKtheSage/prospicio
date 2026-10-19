@@ -763,7 +763,8 @@ fn severity_fit_rust(
     };
     let ptr = crate::distributions::dist_to_robj(fit.dist().clone())?;
     Ok(list!(
-        family = family.name(),
+        // The distribution's own family: the Lomax is a Burr.
+        family = fit.dist().family(),
         ptr = ptr,
         parameters = named(fit.parameters().to_vec())?,
         standard_errors = named(fit.standard_errors())?,

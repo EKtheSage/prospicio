@@ -184,6 +184,18 @@ def test_issue_194_severity_fits_with_truncation_and_censoring():
         D.fit_severity("pareto", y)
 
 
+def test_issue_328_lomax_fit_solves_its_score_equations():
+    # alpha = n / sum(log1p(y / scale)) and (alpha + 1) sum(y / (scale + y)) = n.
+    y = [50.0, 80.0, 120.0, 200.0, 300.0, 500.0, 900.0, 1500.0, 4000.0, 12000.0]
+    fit = D.fit_severity("lomax", y)
+    a, s = fit.parameters["alpha"], fit.parameters["scale"]
+    assert a * sum(math.log1p(v / s) for v in y) == pytest.approx(len(y), rel=1e-7)
+    assert (a + 1) * sum(v / (s + v) for v in y) == pytest.approx(len(y), rel=1e-7)
+    assert isinstance(fit.distribution, D.Burr)
+    assert fit.distribution.survival(1000.0) == pytest.approx((1 + 1000.0 / s) ** -a, rel=1e-12)
+    assert fit.aic == pytest.approx(4 - 2 * fit.log_likelihood)
+
+
 def test_issue_194_product_limit_and_goodness_of_fit():
     # Without truncation or censoring, the weighted empirical survival.
     pl = D.product_limit([100.0, 200.0, 200.0, 400.0], weights=[1.0, 2.0, 1.0, 4.0])

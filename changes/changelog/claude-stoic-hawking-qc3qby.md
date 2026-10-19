@@ -342,3 +342,15 @@
 
 - `prospicio_prob::Dist` has the variant `Affine`, so an exhaustive `match`
   on it needs a new arm (#318).
+
+### Distributions and probability
+
+- `fit_severity` fits the Lomax, `S(x) = (1 + x / scale)^(-alpha)`
+  (Bahnemann's Pareto, CAS Monograph 2), as a Burr with `gamma = 1`:
+  `Family::Lomax`, Python `fit_severity("lomax", ...)`, R
+  `severity_fit("lomax", ...)` (#328).
+
+### Breaking changes
+
+- `prospicio_prob::severity_fit::Family` has the variant `Lomax`, so an
+  exhaustive `match` on it needs a new arm (#328).

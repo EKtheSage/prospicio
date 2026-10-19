@@ -182,6 +182,15 @@ fb <- severity_fit("burr", y, reporting_thresholds = ifelse(y > 100, 100, 0), ce
 stopifnot(inherits(fb$distribution, "prospicio::burr_distribution"), is.finite(fb$log_likelihood))
 stopifnot(inherits(try(severity_fit("pareto", y), silent = TRUE), "try-error"))
 
+# Issue #328: the Lomax (Bahnemann's Pareto), against R's own optimizer.
+hy <- c(50, 80, 120, 200, 300, 500, 900, 1500, 4000, 12000)
+fl <- severity_fit("lomax", hy)
+nll <- function(u) -sum(u[1] - u[2] - (exp(u[1]) + 1) * log1p(hy / exp(u[2])))
+ref <- exp(optim(c(0, log(500)), nll, control = list(reltol = 1e-14, maxit = 1e4))$par)
+stopifnot(max(abs(fl$parameters / ref - 1)) < 1e-4, names(fl$parameters) == c("alpha", "scale"))
+stopifnot(inherits(fl$distribution, "prospicio::burr_distribution"))
+stopifnot(abs(fl$log_likelihood + nll(log(fl$parameters))) < 1e-8)
+
 # Issue #194: the product-limit estimator and goodness of fit.
 pl <- product_limit(c(100, 200, 200, 400), weights = c(1, 2, 1, 4))
 stopifnot(isTRUE(all.equal(pl$survival, c(7 / 8, 0.5, 0))))
