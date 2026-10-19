@@ -139,7 +139,7 @@
   gain `to_json`, `from_json`, `input_hash` and pickling; R
   `save_model()` and `load_model()` take `cann_model` and
   `attention_cann_model`. The shared envelope helpers are now public in
-  `prospicio_models::artifact`.
+  `prospicio_models::artifact` (#391).
 
 ### Pricing
 
