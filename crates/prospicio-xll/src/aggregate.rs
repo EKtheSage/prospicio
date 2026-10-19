@@ -677,6 +677,84 @@ fn cells(g: &Range, name: &str, unlimited: bool) -> Result<Vec<f64>> {
     Ok(out)
 }
 
+/// A layer's contract terms in expectation over its annual loss on the
+/// grid: `PRO.LAYER.TERMS(count_mean, [dispersion], family, p1, p2, [p3],
+/// layer_limit, layer_attachment, premium, [reinstatements],
+/// [commissions], [loss_ratios], [profit_share], [profit_allowance],
+/// [share], [policy_limit], [step], [points])`. `premium` is the deposit
+/// at 100%; `reinstatements` a row of rates (each a share of the deposit,
+/// pro rata as to amount), which also sets the annual limit to the limit
+/// times one more than their number; `commissions` one flat rate, or with
+/// `loss_ratios` a sliding scale; a profit commission of `profit_share`
+/// after `profit_allowance`. The rows are the expected ceded loss, the
+/// premium, the reinstatement premium, the ceding and profit commissions,
+/// the premium net of them, the margin over the loss and the loss ratio
+/// on the premium with reinstatements.
+pub fn layer_terms(args: &[Range]) -> Result<Range> {
+    let n = count(&args[0], &args[1])?;
+    let sev = severity(&args[2], &args[3], &args[4], &args[5])?;
+    let (limit, attachment) =
+        layer(&args[6], &args[7])?.ok_or("the layer needs layer_limit and layer_attachment")?;
+    let premium = scalar(&args[8], "premium")?;
+    let share = if args[14].is_blank() {
+        1.0
+    } else {
+        scalar(&args[14], "share")?
+    };
+    let gross = layer(&args[15], &Range::missing())?;
+    let e = |e: prospicio_core::Error| e.to_string();
+    let mut l = Layer::xol("layer", limit, attachment)
+        .and_then(|l| l.share(share))
+        .map_err(e)?;
+    l = if args[9].is_blank() {
+        l.deposit_premium(premium).map_err(e)?
+    } else {
+        let rates = numbers(&args[9], "reinstatements")?;
+        l.paid_reinstatements(share * premium, rates).map_err(e)?
+    };
+    if !args[10].is_blank() {
+        l = if args[11].is_blank() {
+            l.ceding_commission(scalar(&args[10], "commissions")?)
+        } else {
+            l.sliding_scale(crate::terms::anchors(&args[10], &args[11])?)
+        }
+        .map_err(e)?;
+    } else if !args[11].is_blank() {
+        return Err("loss_ratios go with commissions, for a sliding scale".into());
+    }
+    match (args[12].is_blank(), args[13].is_blank()) {
+        (true, true) => {}
+        (false, false) => {
+            l = l
+                .profit_commission(
+                    scalar(&args[12], "profit_share")?,
+                    scalar(&args[13], "profit_allowance")?,
+                )
+                .map_err(e)?;
+        }
+        _ => return Err("give profit_share and profit_allowance together".into()),
+    }
+    let tower = Tower::new(vec![l]).map_err(e)?;
+    let (grid, points) = severity_grid(&*n, &sev, gross, grid_control(&args[16], &args[17])?)?;
+    let grids = tower.on_grid(&*n, &grid, points).map_err(e)?;
+    let loss = grids.ceded[0].mean();
+    let p = grids.expected_premium[0];
+    let rip = grids.expected_reinstatement_premium[0];
+    let cc = grids.expected_ceding_commission[0];
+    let pc = grids.expected_profit_commission[0];
+    let net = p + rip - cc - pc;
+    Ok(Range::from_rows(vec![
+        row("Expected loss", loss),
+        row("Premium", p),
+        row("Reinstatement premium", rip),
+        row("Ceding commission", cc),
+        row("Profit commission", pc),
+        row("Net premium", net),
+        row("Margin", net - loss),
+        row("Loss ratio", loss / (p + rip)),
+    ]))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

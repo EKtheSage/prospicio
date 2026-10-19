@@ -28,6 +28,7 @@ pub mod quote;
 pub mod ratemaking;
 pub mod reserving;
 pub mod sheet;
+pub mod terms;
 pub mod triangles;
 #[cfg(windows)]
 mod xll;
@@ -1735,6 +1736,154 @@ pub static FUNCTIONS: &[Function] = &[
             },
         ],
         run: distortions::calibrate_families,
+    },
+    Function {
+        symbol: "pro_swing",
+        name: "PRO.SWING",
+        help: "A swing-rated or retro premium at each loss: clip(basic + lcm x loss, minimum, maximum) (aggregate's contract_terms).",
+        args: &[
+            Arg {
+                name: "loss",
+                help: "Losses: a number or a range (a swing layer's ceded loss at its share)",
+            },
+            Arg {
+                name: "basic",
+                help: "Basic premium at 100%",
+            },
+            Arg {
+                name: "lcm",
+                help: "Loss conversion factor, such as 100/80 (times the tax multiplier for a retro plan)",
+            },
+            Arg {
+                name: "minimum",
+                help: "Minimum premium at 100% (basic if omitted)",
+            },
+            Arg {
+                name: "maximum",
+                help: "Maximum premium at 100% (no cap if omitted)",
+            },
+            Arg {
+                name: "share",
+                help: "Placed share of a swing-rated layer (1 if omitted)",
+            },
+        ],
+        run: terms::swing,
+    },
+    Function {
+        symbol: "pro_sliding_scale",
+        name: "PRO.SLIDING.SCALE",
+        help: "A sliding-scale ceding commission at each ceded loss: the rate at loss / premium, linear between anchors, times the premium.",
+        args: &[
+            Arg {
+                name: "loss",
+                help: "Ceded losses: a number or a range",
+            },
+            Arg {
+                name: "premium",
+                help: "The premium at 100%, for the loss ratio",
+            },
+            Arg {
+                name: "commissions",
+                help: "Commission rates at the anchors: a row or column",
+            },
+            Arg {
+                name: "loss_ratios",
+                help: "The anchors' loss ratios, increasing: one per commission",
+            },
+        ],
+        run: terms::sliding_scale,
+    },
+    Function {
+        symbol: "pro_profit_commission",
+        name: "PRO.PROFIT.COMMISSION",
+        help: "A profit commission at each ceded loss: share x max(premium x (1 - allowance) - loss, 0).",
+        args: &[
+            Arg {
+                name: "loss",
+                help: "Ceded losses: a number or a range",
+            },
+            Arg {
+                name: "premium",
+                help: "The premium at 100%, for the loss ratio",
+            },
+            Arg {
+                name: "share",
+                help: "Share of the profit returned to the cedant",
+            },
+            Arg {
+                name: "allowance",
+                help: "The reinsurer's expense and margin allowance, a share of premium",
+            },
+        ],
+        run: terms::profit_commission,
+    },
+    Function {
+        symbol: "pro_layer_terms",
+        name: "PRO.LAYER.TERMS",
+        help: "A layer's contract terms in expectation over its annual loss: premium, reinstatement premium, ceding and profit commissions, margin.",
+        args: &[
+            Arg {
+                name: "count_mean",
+                help: "Expected number of claims a year",
+            },
+            Arg {
+                name: "dispersion",
+                help: "Var N / E N: 1 Poisson (default), above 1 negative binomial, below 1 binomial",
+            },
+            FAMILY,
+            P1,
+            P2,
+            P3,
+            Arg {
+                name: "layer_limit",
+                help: "The layer's per-occurrence limit",
+            },
+            Arg {
+                name: "layer_attachment",
+                help: "The layer's attachment",
+            },
+            Arg {
+                name: "premium",
+                help: "Deposit premium at 100%",
+            },
+            Arg {
+                name: "reinstatements",
+                help: "Paid reinstatements: a row of rates, each a share of the deposit (pro rata as to amount)",
+            },
+            Arg {
+                name: "commissions",
+                help: "A flat ceding commission rate, or a range of rates with loss_ratios for a sliding scale",
+            },
+            Arg {
+                name: "loss_ratios",
+                help: "A sliding scale's anchor loss ratios, one per commission",
+            },
+            Arg {
+                name: "profit_share",
+                help: "Profit commission: the share of profit returned",
+            },
+            Arg {
+                name: "profit_allowance",
+                help: "Profit commission: the reinsurer's allowance, a share of premium",
+            },
+            Arg {
+                name: "share",
+                help: "Placed share (1 if omitted)",
+            },
+            Arg {
+                name: "policy_limit",
+                help: "A per-claim limit on the gross loss (none if omitted)",
+            },
+            Arg {
+                name: "step",
+                help: "Grid step; give with points, or omit both to size the grid automatically",
+            },
+            Arg {
+                name: "points",
+                help: "Grid points; give with step",
+            },
+        ],
+        run: aggregate::layer_terms,
     },
 ];
 

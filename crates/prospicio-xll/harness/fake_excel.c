@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("eighty-two functions registered", registered == 82);
+    check("eighty-six functions registered", registered == 86);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -608,6 +608,19 @@ int main(int argc, char **argv) {
     check("PRO.DISTORTION(0.25, \"ph\", 0.5) is 0.5",
           (dg->xltype & 0xFFF) == xltypeNum && fabs(dg->val.num - 0.5) < 1e-15);
     free12(dg);
+
+    /* A profit commission of 25% after a 10% allowance on a premium of
+     * 100 at a loss of 50: 0.25 x (90 - 50) = 10. */
+    XLOPER12 pc_x, pc_p, pc_s, pc_a;
+    pc_x.xltype = pc_p.xltype = pc_s.xltype = pc_a.xltype = xltypeNum;
+    pc_x.val.num = 50;
+    pc_p.val.num = 100;
+    pc_s.val.num = 0.25;
+    pc_a.val.num = 0.1;
+    XLOPER12 *pcm = ((Fn4)GetProcAddress(xll, "pro_profit_commission"))(&pc_x, &pc_p, &pc_s, &pc_a);
+    check("PRO.PROFIT.COMMISSION(50, 100, 0.25, 0.1) is 10",
+          (pcm->xltype & 0xFFF) == xltypeNum && fabs(pcm->val.num - 10) < 1e-12);
+    free12(pcm);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;
