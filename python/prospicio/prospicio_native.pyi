@@ -14428,6 +14428,72 @@ class NegativeBinomial:
         """
 
 @final
+class NegativeBinomialFit:
+    """
+    A negative binomial GLM with ``theta`` estimated, from
+    ``NegativeBinomialGlm.fit``.
+    """
+    @property
+    def aic(self, /) -> float:
+        """
+        ``-2 log_likelihood + 2 (p + 1)``, counting ``theta``, as R's ``AIC``.
+        """
+    @property
+    def glm(self, /) -> GlmFit:
+        """
+        The GLM at the estimated ``theta``.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximized log-likelihood.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row of ``design``.
+        """
+    @property
+    def se_theta(self, /) -> float:
+        """
+        ``MASS``'s standard error of ``theta``.
+        """
+    @property
+    def theta(self, /) -> float:
+        """
+        The maximum-likelihood ``theta``.
+        """
+
+@final
+class NegativeBinomialGlm:
+    """
+    A negative binomial GLM with its ``theta`` estimated with the
+    coefficients by maximum likelihood, as R's ``MASS::glm.nb``: IRLS and
+    Newton's method on ``theta`` alternate until both settle.
+    
+    Parameters
+    ----------
+    link : str, default "log"
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, NegativeBinomialGlm
+    >>> x = [float(i % 3) for i in range(60)]
+    >>> y = [float((i * 7) % 11) for i in range(60)]
+    >>> fit = NegativeBinomialGlm().fit(Design([[1.0] * 60, x], ["(Intercept)", "x"]), y)
+    >>> fit.theta > 0 and fit.se_theta > 0
+    True
+    """
+    def __new__(cls, /, link: str |None = None) -> NegativeBinomialGlm: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> NegativeBinomialFit:
+        """
+        Fits ``theta`` and the coefficients.
+        
+        Returns
+        -------
+        NegativeBinomialFit
+        """
+
+@final
 class NestedArchimedeanCopula:
     """
     A nested (hierarchical) Archimedean copula: groups of dimensions joined
@@ -20506,6 +20572,88 @@ class Tweedie:
         """
 
 @final
+class TweedieFit:
+    """
+    A Tweedie GLM with its power estimated, from ``TweedieGlm.fit``.
+    """
+    @property
+    def at_boundary(self, /) -> bool:
+        """
+        Whether the power is at a search bound.
+        """
+    @property
+    def dispersion(self, /) -> float:
+        """
+        The maximum-likelihood dispersion at that power.
+        """
+    @property
+    def glm(self, /) -> GlmFit:
+        """
+        The GLM at the estimated power, its dispersion fixed at the estimate.
+        """
+    @property
+    def interval(self, /) -> tuple[float, float]:
+        """
+        The 95% profile-likelihood interval for the power.
+        """
+    @property
+    def interval_open(self, /) -> tuple[bool, bool]:
+        """
+        Whether each end of ``interval`` is a search bound rather than a
+        crossing.
+        """
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The maximized log-likelihood.
+        """
+    @property
+    def power(self, /) -> float:
+        """
+        The maximum-likelihood power.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        Expected response for each row of ``design``.
+        """
+
+@final
+class TweedieGlm:
+    """
+    A Tweedie GLM whose power is estimated with its coefficients and
+    dispersion by maximum likelihood: the profile log-likelihood over the
+    power, maximized by Brent's method, with a 95% profile-likelihood
+    interval (R's ``tweedie.profile``'s method).
+    
+    Parameters
+    ----------
+    link : str, default "log"
+    min_power, max_power : float, default 1.01 and 1.99
+        The search bounds, inside ``(1, 2)``.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, TweedieGlm
+    >>> from prospicio.distributions import Tweedie
+    >>> import math
+    >>> x = [float(i % 4) for i in range(400)]
+    >>> y = [Tweedie(math.exp(0.5 + 0.3 * v), 2.0, 1.5).quantile((i * 0.618034) % 1 * 0.98 + 0.01)
+    ...      for i, v in enumerate(x)]
+    >>> fit = TweedieGlm().fit(Design([[1.0] * 400, x], ["(Intercept)", "x"]), y)
+    >>> abs(fit.power - 1.5) < 0.1
+    True
+    """
+    def __new__(cls, /, link: str |None = None, min_power: float = 1.01, max_power: float = 1.99) -> TweedieGlm: ...
+    def fit(self, /, design: Design, y: Sequence[float]) -> TweedieFit:
+        """
+        Fits the power, the dispersion and the coefficients.
+        
+        Returns
+        -------
+        TweedieFit
+        """
+
+@final
 class ViewPrice:
     """
     One view's price under a distortion, from ``TowerGrids.price``: the
@@ -23305,6 +23453,19 @@ def trended_present_rates(prior_indicated: float, prior_implemented: float, tren
     >>> c = trended_present_rates(0.10, 0.06, trend_factor(0.05, 2.0))
     >>> round(200 * (1 + c), 2)
     228.82
+    """
+
+def tweedie_profile(design: Design, y: Sequence[float], powers: Sequence[float], link: str |None = None) -> Any:
+    """
+    The profile log-likelihood of a Tweedie GLM's power over ``powers``
+    (increasing, in ``(1, 2)``), the best refined between its neighbours.
+    
+    Returns
+    -------
+    dict
+        ``powers``, ``log_likelihood`` and ``dispersion`` (one per power),
+        the refined ``power``, its ``phi`` and ``max_log_likelihood``, and
+        the ``fit`` there (``GlmFit``).
     """
 
 def wiener_hopf(severity: Grid, wait: Any, rho: float |None = None, *, loss_ratio: float |None = None, points: int |None = None) -> RenewalRuin:

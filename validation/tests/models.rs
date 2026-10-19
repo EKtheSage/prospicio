@@ -1490,3 +1490,64 @@ fn loo_pit_matches_loo() {
         _ => None,
     });
 }
+
+/// The negative binomial GLM with `θ` estimated, against R's
+/// `MASS::glm.nb(Days ~ Eth + Sex + Age + Lrn, data = quine)` (MASS
+/// 7.3-60; `validation/scripts/r_glm_nb.R` writes the data and prints
+/// these values).
+#[test]
+fn negative_binomial_theta_matches_mass_glm_nb() {
+    use prospicio_glm::negbin::NegativeBinomialGlm;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/quine.csv");
+    let text = std::fs::read_to_string(path).expect("quine.csv");
+    let mut lines = text.lines();
+    let header: Vec<String> = lines
+        .next()
+        .unwrap()
+        .split(',')
+        .map(|h| h.trim_matches('"').to_string())
+        .collect();
+    let mut cols: Vec<Vec<f64>> = vec![Vec::new(); header.len()];
+    for line in lines {
+        for (c, v) in cols.iter_mut().zip(line.split(',')) {
+            c.push(v.parse().unwrap());
+        }
+    }
+    let n = cols[0].len();
+    let mut names = vec!["(Intercept)".to_string()];
+    names.extend(header[1..].iter().cloned());
+    let mut columns = vec![vec![1.0; n]];
+    columns.extend(cols[1..].iter().cloned());
+    let d = Design::new(names, columns).unwrap();
+    let fit = NegativeBinomialGlm::new(Link::Log)
+        .fit(&d, &cols[0])
+        .unwrap();
+    let close = |a: f64, b: f64, tol: f64| (a - b).abs() <= tol * b.abs().max(1.0);
+    assert!(
+        close(fit.theta(), 1.27489264581101, 1e-7),
+        "{}",
+        fit.theta()
+    );
+    assert!(
+        close(fit.se_theta(), 0.161035178973597, 1e-6),
+        "{}",
+        fit.se_theta()
+    );
+    assert!(
+        close(fit.log_likelihood(), -546.575509144992, 1e-9),
+        "{}",
+        fit.log_likelihood()
+    );
+    let want = [
+        2.89458001692052,
+        -0.569371703399029,
+        0.0823202641037287,
+        -0.448428148590178,
+        0.0880801397149139,
+        0.356900947762783,
+        0.292109142827854,
+    ];
+    for (got, want) in fit.glm().coefficients().iter().zip(want) {
+        assert!(close(*got, want, 1e-7), "{got} vs {want}");
+    }
+}

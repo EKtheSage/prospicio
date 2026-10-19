@@ -3077,3 +3077,252 @@ pub(crate) fn simulate_from_means(
         .map_err(to_py)?;
     Ok(PyPredictiveDistribution { inner })
 }
+
+fn link_or_log(name: Option<&str>) -> PyResult<Link> {
+    link(Some(name.unwrap_or("log")), Family::Poisson, None)
+}
+
+/// A Tweedie GLM whose power is estimated with its coefficients and
+/// dispersion by maximum likelihood: the profile log-likelihood over the
+/// power, maximized by Brent's method, with a 95% profile-likelihood
+/// interval (R's ``tweedie.profile``'s method).
+///
+/// Parameters
+/// ----------
+/// link : str, default "log"
+/// min_power, max_power : float, default 1.01 and 1.99
+///     The search bounds, inside ``(1, 2)``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, TweedieGlm
+/// >>> from prospicio.distributions import Tweedie
+/// >>> import math
+/// >>> x = [float(i % 4) for i in range(400)]
+/// >>> y = [Tweedie(math.exp(0.5 + 0.3 * v), 2.0, 1.5).quantile((i * 0.618034) % 1 * 0.98 + 0.01)
+/// ...      for i, v in enumerate(x)]
+/// >>> fit = TweedieGlm().fit(Design([[1.0] * 400, x], ["(Intercept)", "x"]), y)
+/// >>> abs(fit.power - 1.5) < 0.1
+/// True
+#[pyclass(name = "TweedieGlm", module = "prospicio.models", frozen)]
+pub(crate) struct PyTweedieGlm {
+    inner: prospicio_glm::tweedie::TweedieGlm,
+}
+
+#[pymethods]
+impl PyTweedieGlm {
+    #[new]
+    #[pyo3(signature = (link = None, min_power = 1.01, max_power = 1.99))]
+    fn new(link: Option<&str>, min_power: f64, max_power: f64) -> PyResult<Self> {
+        let mut inner = prospicio_glm::tweedie::TweedieGlm::new(link_or_log(link)?);
+        inner.min_power = min_power;
+        inner.max_power = max_power;
+        Ok(Self { inner })
+    }
+
+    /// Fits the power, the dispersion and the coefficients.
+    ///
+    /// Returns
+    /// -------
+    /// TweedieFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyTweedieFit> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &y)).map_err(to_py)?;
+        Ok(PyTweedieFit { inner })
+    }
+}
+
+/// A Tweedie GLM with its power estimated, from ``TweedieGlm.fit``.
+#[pyclass(name = "TweedieFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyTweedieFit {
+    inner: prospicio_glm::tweedie::TweedieFit,
+}
+
+#[pymethods]
+impl PyTweedieFit {
+    /// The maximum-likelihood power.
+    #[getter]
+    fn power(&self) -> f64 {
+        self.inner.power()
+    }
+
+    /// The maximum-likelihood dispersion at that power.
+    #[getter]
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    /// The maximized log-likelihood.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    /// The 95% profile-likelihood interval for the power.
+    #[getter]
+    fn interval(&self) -> (f64, f64) {
+        self.inner.interval()
+    }
+
+    /// Whether each end of ``interval`` is a search bound rather than a
+    /// crossing.
+    #[getter]
+    fn interval_open(&self) -> (bool, bool) {
+        self.inner.interval_open()
+    }
+
+    /// Whether the power is at a search bound.
+    #[getter]
+    fn at_boundary(&self) -> bool {
+        self.inner.at_boundary()
+    }
+
+    /// The GLM at the estimated power, its dispersion fixed at the estimate.
+    #[getter]
+    fn glm(&self) -> PyGlmFit {
+        PyGlmFit {
+            inner: self.inner.glm().clone(),
+        }
+    }
+
+    /// Expected response for each row of ``design``.
+    fn predict(&self, py: Python<'_>, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict(d)).map_err(to_py)
+    }
+}
+
+/// The profile log-likelihood of a Tweedie GLM's power over ``powers``
+/// (increasing, in ``(1, 2)``), the best refined between its neighbours.
+///
+/// Returns
+/// -------
+/// dict
+///     ``powers``, ``log_likelihood`` and ``dispersion`` (one per power),
+///     the refined ``power``, its ``phi`` and ``max_log_likelihood``, and
+///     the ``fit`` there (``GlmFit``).
+#[pyfunction]
+#[pyo3(signature = (design, y, powers, link = None))]
+pub(crate) fn tweedie_profile(
+    py: Python<'_>,
+    design: PyRef<'_, PyDesign>,
+    y: Vec<f64>,
+    powers: Vec<f64>,
+    link: Option<&str>,
+) -> PyResult<Py<PyAny>> {
+    let l = link_or_log(link)?;
+    let d = &design.inner;
+    let p = py
+        .detach(|| prospicio_glm::tweedie::tweedie_profile(l, d, &y, &powers))
+        .map_err(to_py)?;
+    let out = pyo3::types::PyDict::new(py);
+    out.set_item("powers", p.powers)?;
+    out.set_item("log_likelihood", p.log_likelihood)?;
+    out.set_item("dispersion", p.dispersion)?;
+    out.set_item("power", p.power)?;
+    out.set_item("phi", p.phi)?;
+    out.set_item("max_log_likelihood", p.max_log_likelihood)?;
+    out.set_item("fit", Py::new(py, PyGlmFit { inner: p.fit })?)?;
+    Ok(out.into_any().unbind())
+}
+
+/// A negative binomial GLM with its ``theta`` estimated with the
+/// coefficients by maximum likelihood, as R's ``MASS::glm.nb``: IRLS and
+/// Newton's method on ``theta`` alternate until both settle.
+///
+/// Parameters
+/// ----------
+/// link : str, default "log"
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, NegativeBinomialGlm
+/// >>> x = [float(i % 3) for i in range(60)]
+/// >>> y = [float((i * 7) % 11) for i in range(60)]
+/// >>> fit = NegativeBinomialGlm().fit(Design([[1.0] * 60, x], ["(Intercept)", "x"]), y)
+/// >>> fit.theta > 0 and fit.se_theta > 0
+/// True
+#[pyclass(name = "NegativeBinomialGlm", module = "prospicio.models", frozen)]
+pub(crate) struct PyNegativeBinomialGlm {
+    inner: prospicio_glm::negbin::NegativeBinomialGlm,
+}
+
+#[pymethods]
+impl PyNegativeBinomialGlm {
+    #[new]
+    #[pyo3(signature = (link = None))]
+    fn new(link: Option<&str>) -> PyResult<Self> {
+        Ok(Self {
+            inner: prospicio_glm::negbin::NegativeBinomialGlm::new(link_or_log(link)?),
+        })
+    }
+
+    /// Fits ``theta`` and the coefficients.
+    ///
+    /// Returns
+    /// -------
+    /// NegativeBinomialFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyNegativeBinomialFit> {
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &y)).map_err(to_py)?;
+        Ok(PyNegativeBinomialFit { inner })
+    }
+}
+
+/// A negative binomial GLM with ``theta`` estimated, from
+/// ``NegativeBinomialGlm.fit``.
+#[pyclass(name = "NegativeBinomialFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyNegativeBinomialFit {
+    inner: prospicio_glm::negbin::NegativeBinomialFit,
+}
+
+#[pymethods]
+impl PyNegativeBinomialFit {
+    /// The maximum-likelihood ``theta``.
+    #[getter]
+    fn theta(&self) -> f64 {
+        self.inner.theta()
+    }
+
+    /// ``MASS``'s standard error of ``theta``.
+    #[getter]
+    fn se_theta(&self) -> f64 {
+        self.inner.se_theta()
+    }
+
+    /// The maximized log-likelihood.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    /// ``-2 log_likelihood + 2 (p + 1)``, counting ``theta``, as R's ``AIC``.
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    /// The GLM at the estimated ``theta``.
+    #[getter]
+    fn glm(&self) -> PyGlmFit {
+        PyGlmFit {
+            inner: self.inner.glm().clone(),
+        }
+    }
+
+    /// Expected response for each row of ``design``.
+    fn predict(&self, py: Python<'_>, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict(d)).map_err(to_py)
+    }
+}

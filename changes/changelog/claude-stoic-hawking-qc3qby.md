@@ -201,3 +201,13 @@
   `casualty_sweep()`, `casualty_expected_claims()`,
   `casualty_count_test()`, `pareto_anchor()` and `poisson_tail()`. The
   ALAE treatment is a required argument (#396).
+
+### Models
+
+- The negative binomial GLM with its `theta` estimated:
+  `prospicio_glm::negbin::NegativeBinomialGlm` alternates the GLM's IRLS
+  with Newton's method on `theta` as `MASS::glm.nb` does, with `MASS`'s
+  standard error of `theta`, the log-likelihood and an AIC that counts
+  `theta` (parity on `quine`). Python `NegativeBinomialGlm` and the
+  Tweedie GLM with its power estimated (`TweedieGlm`, `tweedie_profile`);
+  R `glm_nb_fit()`, `tweedie_glm_fit()` and `tweedie_profile()` (#352).

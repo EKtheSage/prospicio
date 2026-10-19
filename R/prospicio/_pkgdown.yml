@@ -197,6 +197,7 @@ reference:
   - title: Models
     contents:
       - glm_fit
+      - glm_nb_fit
       - glm_model
       - robust_vcov
       - bayes_glm_fit

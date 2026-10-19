@@ -109,6 +109,69 @@ glm_fit <- function(formula, data, family = "poisson", link = NULL, offset = NUL
   glm_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels)
 }
 
+#' GLMs with a family parameter estimated
+#'
+#' `glm_nb_fit()` fits a negative binomial GLM with its `theta` estimated
+#' with the coefficients by maximum likelihood, as `MASS::glm.nb()`: IRLS
+#' and Newton's method on `theta` alternate until both settle. `se_theta` is
+#' `MASS`'s standard error and `aic` counts `theta`.
+#'
+#' `tweedie_glm_fit()` fits a Tweedie GLM with its power estimated with the
+#' coefficients and dispersion: the profile log-likelihood over the power
+#' (the exact Tweedie density, maximized over the dispersion at each power)
+#' is maximized by Brent's method, with a 95% profile-likelihood interval
+#' (`lower`, `upper`; an end flagged open is a search bound).
+#' `tweedie_profile()` evaluates that profile on a grid of powers, as R's
+#' `tweedie::tweedie.profile`, and refines the best.
+#'
+#' @inheritParams glm_fit
+#' @param link The link, `"log"` by default.
+#' @param min_power,max_power The power's search bounds, inside (1, 2).
+#' @param powers Powers to profile, increasing, inside (1, 2).
+#' @returns A list with `model`, a [glm_model] at the estimate (its
+#'   standard errors conditional on it), and, for `glm_nb_fit()`, `theta`,
+#'   `se_theta`, `log_likelihood` and `aic`; for `tweedie_glm_fit()`,
+#'   `power`, `phi`, `log_likelihood`, `lower`, `upper`, `lower_open`,
+#'   `upper_open` and `at_boundary`; for `tweedie_profile()`, `profile` (a
+#'   data frame of `power`, `log_likelihood` and `dispersion`), `power`,
+#'   `phi` and `max_log_likelihood`.
+#' @export
+#' @examples
+#' d <- data.frame(x = rep(0:2, 20), y = (0:59 * 7) %% 11)
+#' nb <- glm_nb_fit(y ~ x, d)
+#' nb$theta
+glm_nb_fit <- function(formula, data, link = "log", offset = NULL, weights = NULL) {
+  des <- model_design(formula, data, offset, weights)
+  r <- rust_result(glm_nb_fit_design(as.double(des$x), colnames(des$x), des$y, des$offset,
+                                     des$weights, link))
+  r$model <- glm_model(ptr = r$model, terms = des$terms, xlevels = des$xlevels)
+  r
+}
+
+#' @rdname glm_nb_fit
+#' @export
+tweedie_glm_fit <- function(formula, data, link = "log", offset = NULL, weights = NULL,
+                            min_power = 1.01, max_power = 1.99) {
+  des <- model_design(formula, data, offset, weights)
+  r <- rust_result(tweedie_glm_fit_design(as.double(des$x), colnames(des$x), des$y, des$offset,
+                                          des$weights, link, as.double(min_power),
+                                          as.double(max_power)))
+  r$model <- glm_model(ptr = r$model, terms = des$terms, xlevels = des$xlevels)
+  r
+}
+
+#' @rdname glm_nb_fit
+#' @export
+tweedie_profile <- function(formula, data, powers, link = "log", offset = NULL, weights = NULL) {
+  des <- model_design(formula, data, offset, weights)
+  r <- rust_result(tweedie_profile_design(as.double(des$x), colnames(des$x), des$y, des$offset,
+                                          des$weights, link, as.double(powers)))
+  list(profile = data.frame(power = r$powers, log_likelihood = r$log_likelihood,
+                            dispersion = r$dispersion),
+       power = r$power, phi = r$phi, max_log_likelihood = r$max_log_likelihood,
+       model = glm_model(ptr = r$model, terms = des$terms, xlevels = des$xlevels))
+}
+
 #' Fitted GLM (class)
 #'
 #' Returned by [glm_fit()].

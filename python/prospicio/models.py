@@ -24,7 +24,11 @@ from .prospicio_native import (
     GamFit,
     Glm,
     GlmFit,
+    NegativeBinomialFit,
+    NegativeBinomialGlm,
     Terms,
+    TweedieFit,
+    TweedieGlm,
     crps,
     deviance,
     elpd_loo,
@@ -47,6 +51,7 @@ from .prospicio_native import (
     simulate_from_means,
     stacking_weights,
     time_ordered,
+    tweedie_profile,
 )
 
 try:  # The neural networks, behind the native build's default `nn` feature.
@@ -79,6 +84,11 @@ __all__ = [
     "CvPath",
     "Glm",
     "GlmFit",
+    "TweedieGlm",
+    "TweedieFit",
+    "tweedie_profile",
+    "NegativeBinomialGlm",
+    "NegativeBinomialFit",
     "ElasticNet",
     "ElasticNetFit",
     "Gam",
