@@ -289,6 +289,7 @@ fn development_with(
         average: average(average_arg)?,
         sigma_interpolation: sigma(sigma_arg)?,
         pattern: selected(s, kind, weight)?,
+        ..Default::default()
     })
 }
 

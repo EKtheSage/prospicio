@@ -79,6 +79,13 @@ pub enum Error {
         value: f64,
         expected: &'static str,
     },
+    /// A setting is not supported by the method it was given to: `setting`
+    /// names it, `method` the method and `reason` why.
+    NotSupported {
+        setting: &'static str,
+        method: &'static str,
+        reason: &'static str,
+    },
     /// The bootstrap cannot run on this input or with these settings.
     Bootstrap(&'static str),
     /// The ODP GLM cannot be fitted to this triangle.
@@ -180,6 +187,11 @@ impl fmt::Display for Error {
                 value,
                 expected,
             } => write!(f, "{name} = {value} is invalid: expected {expected}"),
+            Self::NotSupported {
+                setting,
+                method,
+                reason,
+            } => write!(f, "{setting} is not supported by {method}: {reason}"),
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
             Self::Bayes(why) => write!(f, "Bayesian reserving: {why}"),

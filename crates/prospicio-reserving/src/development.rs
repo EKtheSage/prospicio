@@ -7,7 +7,7 @@ use std::fmt;
 use crate::error::{Error, Result};
 use crate::pattern::{SelectedPattern, blend};
 use crate::triangle::{Segment, Triangle};
-use prospicio_core::Lag;
+use prospicio_core::{Lag, Month};
 
 /// How individual link ratios are averaged into one factor per age.
 ///
@@ -22,15 +22,22 @@ pub enum Average {
     Simple,
     /// `alpha = 2`: ordinary least squares through the origin.
     Regression,
+    /// The geometric mean of the individual link ratios, `exp(mean(ln r))`.
+    /// It is not a weighted regression and Mack's model has no variance for
+    /// it, so its sigma and standard errors are NaN and the methods built on
+    /// Mack's model reject it.
+    Geometric,
 }
 
 impl Average {
-    /// Mack's `alpha`.
-    pub const fn alpha(self) -> f64 {
+    /// Mack's `alpha`, or `None` for the geometric average, which is not a
+    /// weighted regression.
+    pub const fn alpha(self) -> Option<f64> {
         match self {
-            Self::Volume => 1.0,
-            Self::Simple => 0.0,
-            Self::Regression => 2.0,
+            Self::Volume => Some(1.0),
+            Self::Simple => Some(0.0),
+            Self::Regression => Some(2.0),
+            Self::Geometric => None,
         }
     }
 }
@@ -80,11 +87,25 @@ pub struct Development {
     /// See [`SelectedPattern`]: a selected factor carries no parameter
     /// error, so a pattern lowers the reported uncertainty.
     pub pattern: Option<SelectedPattern>,
+    /// Average only the link ratios that start in the latest `n` origin
+    /// periods of calendar time, that is, whose starting cell is valued no
+    /// more than `n` origin periods before the segment's latest valuation;
+    /// `None` uses every one. An age with fewer link ratios uses all of
+    /// them. `Some(0)` is an error.
+    pub n_periods: Option<usize>,
+    /// Leave out the `drop_high` highest of the link ratios kept by
+    /// `n_periods`, at each age. Link ratios are ranked by value, ties by
+    /// the starting cell's value. At an age where the drops would leave no
+    /// link ratio, none is dropped.
+    pub drop_high: usize,
+    /// Leave out the `drop_low` lowest of the link ratios kept by
+    /// `n_periods`, at each age; see [`drop_high`](Self::drop_high).
+    pub drop_low: usize,
 }
 
-/// As derived, but without `pattern` when there is none, so that the
-/// settings recorded in a bootstrap's provenance are as they were before
-/// patterns.
+/// As derived, but without `pattern` when there is none and without the
+/// link exclusions at their defaults, so that the settings recorded in a
+/// bootstrap's provenance are as they were before them.
 impl fmt::Debug for Development {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut d = f.debug_struct("Development");
@@ -92,6 +113,15 @@ impl fmt::Debug for Development {
             .field("sigma_interpolation", &self.sigma_interpolation);
         if let Some(pattern) = &self.pattern {
             d.field("pattern", pattern);
+        }
+        if let Some(n) = &self.n_periods {
+            d.field("n_periods", n);
+        }
+        if self.drop_high != 0 {
+            d.field("drop_high", &self.drop_high);
+        }
+        if self.drop_low != 0 {
+            d.field("drop_low", &self.drop_low);
         }
         d.finish()
     }
@@ -112,8 +142,14 @@ pub struct DevelopmentFit {
     /// the origins observed at both ages: with volume weighting, the sum of
     /// the earlier values.
     pub volume: Vec<f64>,
-    /// Mack's `alpha` the factors were estimated with.
+    /// Mack's `alpha` the factors were estimated with; NaN for the
+    /// geometric average.
     pub alpha: f64,
+    /// The number of link ratios behind each factor, after `n_periods` and
+    /// the drops.
+    pub n_links: Vec<usize>,
+    /// Whether `n_periods` or the drops left out a link ratio at some age.
+    pub excluded: bool,
     /// The selected pattern's age-to-age factor of each link, after
     /// conversion; `None` where the pattern selects none (or there is no
     /// pattern).
@@ -156,8 +192,46 @@ impl Development {
         Ok(fit)
     }
 
+    /// Whether any link ratio exclusion (`n_periods`, `drop_high`,
+    /// `drop_low`) is set.
+    pub(crate) fn has_exclusions(&self) -> bool {
+        self.n_periods.is_some() || self.drop_high != 0 || self.drop_low != 0
+    }
+
+    /// Errors if the geometric average is set, for a method built on
+    /// Mack's model, which has no variance for it.
+    pub(crate) fn reject_geometric(&self, method: &'static str) -> Result<()> {
+        if self.average == Average::Geometric {
+            return Err(Error::NotSupported {
+                setting: "the geometric average",
+                method,
+                reason: "it is not a regression, so it has no variance",
+            });
+        }
+        Ok(())
+    }
+
+    /// Errors if a link ratio exclusion is set, for a method that assumes
+    /// every link ratio.
+    pub(crate) fn reject_exclusions(&self, method: &'static str) -> Result<()> {
+        if self.has_exclusions() {
+            return Err(Error::NotSupported {
+                setting: "n_periods, drop_high and drop_low",
+                method,
+                reason: "not yet supported, the method assumes every link ratio",
+            });
+        }
+        Ok(())
+    }
+
     pub(crate) fn fit_segment(&self, segment: &Segment) -> Result<DevelopmentFit> {
-        let alpha = self.average.alpha();
+        if self.n_periods == Some(0) {
+            return Err(Error::InvalidSetting {
+                name: "n_periods",
+                value: 0.0,
+                expected: "at least 1, or none for every origin",
+            });
+        }
         let n_links = segment.n_dev.saturating_sub(1);
         // The pattern is checked before the estimate, so that a bad pattern
         // is reported as such.
@@ -168,17 +242,32 @@ impl Development {
             }
             None => (vec![None; n_links], vec![0.0; n_links]),
         };
+        // The oldest starting valuation `n_periods` keeps.
+        let cutoff = match (
+            self.n_periods,
+            segment.latest_valuation(),
+            segment.origins.first(),
+        ) {
+            (Some(n), Some(latest), Some(origin)) => {
+                Some(latest.add_months(-(n as i64 * i64::from(origin.grain().months()))))
+            }
+            _ => None,
+        };
         let mut ldf = Vec::with_capacity(n_links);
         let mut sigma = Vec::with_capacity(n_links);
         let mut volume = Vec::with_capacity(n_links);
+        let mut counts = Vec::with_capacity(n_links);
+        let mut excluded = false;
         for age in 0..n_links {
-            let pairs = segment.link_pairs(age);
-            if pairs.is_empty() {
-                return Err(Error::Factor {
-                    age,
-                    reason: "no origin is observed at both ages",
-                });
-            }
+            let (pairs, observed) = self.kept_links(segment, age, cutoff)?;
+            excluded |= pairs.len() < observed;
+            counts.push(pairs.len());
+            let Some(alpha) = self.average.alpha() else {
+                ldf.push(geometric_mean(&pairs, age)?);
+                sigma.push(None);
+                volume.push(f64::NAN);
+                continue;
+            };
             let weight = |x: f64, power: f64| {
                 let w = x.powf(power);
                 if w.is_finite() {
@@ -220,7 +309,13 @@ impl Development {
             ldf.push(f);
             volume.push(den);
         }
-        let sigma = interpolate_sigma(&sigma, self.sigma_interpolation);
+        // The geometric average has no variance: every sigma is NaN, and
+        // there is nothing to interpolate.
+        let sigma = if self.average.alpha().is_some() {
+            interpolate_sigma(&sigma, self.sigma_interpolation)
+        } else {
+            vec![f64::NAN; n_links]
+        };
         let std_err = sigma
             .iter()
             .zip(&volume)
@@ -232,11 +327,77 @@ impl Development {
             sigma,
             std_err,
             volume,
-            alpha,
+            alpha: self.average.alpha().unwrap_or(f64::NAN),
+            n_links: counts,
+            excluded,
             selected,
             weight,
         })
     }
+
+    /// The `(from, to)` values of the link ratios of one age that the
+    /// averages use: those starting at or after `cutoff`, less the
+    /// `drop_high` highest and `drop_low` lowest by value (ties by the
+    /// starting value) unless that would leave none. In origin order.
+    fn kept_links(
+        &self,
+        segment: &Segment,
+        age: usize,
+        cutoff: Option<Month>,
+    ) -> Result<(Vec<(f64, f64)>, usize)> {
+        let mut links = segment.link_pairs_indexed(age);
+        if links.is_empty() {
+            return Err(Error::Factor {
+                age,
+                reason: "no origin is observed at both ages",
+            });
+        }
+        let observed = links.len();
+        if let Some(cutoff) = cutoff {
+            links.retain(|&(o, _, _)| segment.valuation_of(o, age) >= cutoff);
+            if links.is_empty() {
+                return Err(Error::Factor {
+                    age,
+                    reason: "no link ratio is left after n_periods",
+                });
+            }
+        }
+        let drops = self.drop_high + self.drop_low;
+        if drops > 0 && links.len() > drops {
+            let mut order: Vec<usize> = (0..links.len()).collect();
+            order.sort_by(|&a, &b| {
+                let (_, xa, ya) = links[a];
+                let (_, xb, yb) = links[b];
+                (ya / xa).total_cmp(&(yb / xb)).then(xa.total_cmp(&xb))
+            });
+            let mut keep = vec![false; links.len()];
+            for &i in &order[self.drop_low..order.len() - self.drop_high] {
+                keep[i] = true;
+            }
+            let mut flags = keep.into_iter();
+            links.retain(|_| flags.next().unwrap_or(false));
+        }
+        Ok((
+            links.into_iter().map(|(_, x, y)| (x, y)).collect(),
+            observed,
+        ))
+    }
+}
+
+/// `exp(mean(ln(y / x)))` over the link ratios of one age.
+fn geometric_mean(pairs: &[(f64, f64)], age: usize) -> Result<f64> {
+    let mut sum = 0.0;
+    for &(x, y) in pairs {
+        let ratio = y / x;
+        if !(ratio > 0.0 && ratio.is_finite()) {
+            return Err(Error::Factor {
+                age,
+                reason: "the geometric average needs positive, finite link ratios",
+            });
+        }
+        sum += ratio.ln();
+    }
+    Ok((sum / pairs.len() as f64).exp())
 }
 
 /// Fills the sigmas that could not be estimated. Those that cannot be
@@ -420,5 +581,256 @@ mod tests {
             1e-12,
         );
         assert_eq!(cumulative_factors(&[], 1.05), vec![1.05]);
+    }
+
+    fn with_exclusions(n_periods: Option<usize>, drop_high: usize, drop_low: usize) -> Development {
+        Development {
+            n_periods,
+            drop_high,
+            drop_low,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn default_settings_keep_the_debug_text_and_the_fit() {
+        assert_eq!(
+            format!("{:?}", Development::default()),
+            "Development { average: Volume, sigma_interpolation: LogLinear }"
+        );
+        assert_eq!(
+            format!("{:?}", with_exclusions(Some(3), 1, 0)),
+            "Development { average: Volume, sigma_interpolation: LogLinear, n_periods: 3, drop_high: 1 }"
+        );
+        // A window past the triangle, and no drops, change nothing.
+        let base = Development::default().fit(&raa(), "values").unwrap();
+        let wide = with_exclusions(Some(50), 0, 0)
+            .fit(&raa(), "values")
+            .unwrap();
+        assert_eq!(base, wide);
+        assert_eq!(base.n_links, vec![9, 8, 7, 6, 5, 4, 3, 2, 1]);
+        assert!(!base.excluded);
+    }
+
+    #[test]
+    fn n_periods_keeps_the_link_ratios_of_the_latest_diagonals() {
+        // Link 1: (10, 20), (20, 50), (30, 90) start on diagonals 2020,
+        // 2021 and 2022; link 2: (20, 30), (50, 70); link 3: (30, 36).
+        let t = annual(
+            2020,
+            &[
+                &[10.0, 20.0, 30.0, 36.0],
+                &[20.0, 50.0, 70.0],
+                &[30.0, 90.0],
+                &[40.0],
+            ],
+        );
+        let fit = |n| with_exclusions(Some(n), 0, 0).fit(&t, "values").unwrap();
+        let all = Development::default().fit(&t, "values").unwrap();
+        assert_eq!(all.n_links, vec![3, 2, 1]);
+        let two = fit(2);
+        assert_eq!(two.n_links, vec![2, 2, 1]);
+        close(&two.ldf, &[140.0 / 50.0, 100.0 / 70.0, 36.0 / 30.0], 1e-12);
+        assert!(two.excluded);
+        let one = fit(1);
+        assert_eq!(one.n_links, vec![1, 1, 1]);
+        close(&one.ldf, &[3.0, 1.4, 1.2], 1e-12);
+        // One link ratio leaves no sigma to estimate.
+        assert!(one.sigma.iter().all(|s| s.is_nan()));
+        // A window past the triangle is every link ratio.
+        assert_eq!(fit(3), all);
+        assert!(!fit(3).excluded);
+        assert_eq!(
+            with_exclusions(Some(0), 0, 0).fit(&t, "values"),
+            Err(Error::InvalidSetting {
+                name: "n_periods",
+                value: 0.0,
+                expected: "at least 1, or none for every origin",
+            })
+        );
+    }
+
+    #[test]
+    fn drops_rank_by_value_with_ties_by_starting_value_and_keep_one() {
+        // Link ratios at the first age: 2 (from 5), 2 (from 3), 4 (from 1)
+        // and 1 (from 2).
+        let t = annual(
+            2020,
+            &[
+                &[5.0, 10.0, 12.0, 14.0, 16.0],
+                &[3.0, 6.0, 7.0, 8.0],
+                &[1.0, 4.0, 5.0],
+                &[2.0, 2.0],
+                &[9.0],
+            ],
+        );
+        let simple = |high, low| {
+            Development {
+                average: Average::Simple,
+                drop_high: high,
+                drop_low: low,
+                ..Default::default()
+            }
+            .fit(&t, "values")
+            .unwrap()
+        };
+        close(&simple(0, 0).ldf[..1], &[2.25], 1e-12);
+        close(&simple(1, 0).ldf[..1], &[5.0 / 3.0], 1e-12);
+        close(&simple(0, 1).ldf[..1], &[8.0 / 3.0], 1e-12);
+        close(&simple(1, 1).ldf[..1], &[2.0], 1e-12);
+        // Links with three, two and one ratios: the drops leave one, then
+        // would leave none (all kept), then the single one stays.
+        assert_eq!(simple(1, 1).n_links, vec![2, 1, 2, 1]);
+        let all = simple(2, 2);
+        assert_eq!(all.n_links, vec![4, 3, 2, 1]);
+        assert!(!all.excluded);
+        close(&all.ldf[..1], &[2.25], 1e-12);
+
+        // Ratios 2 (from 5), 2 (from 3), 1 (from 4): the tie at the top is
+        // broken by the starting value, so the 2 from 5 is the highest.
+        let tied = annual(
+            2020,
+            &[
+                &[5.0, 10.0, 12.0, 13.0],
+                &[3.0, 6.0, 7.0],
+                &[4.0, 4.0],
+                &[9.0],
+            ],
+        );
+        let volume = |high, low| {
+            Development {
+                drop_high: high,
+                drop_low: low,
+                ..Default::default()
+            }
+            .fit(&tied, "values")
+            .unwrap()
+            .ldf[0]
+        };
+        close(&[volume(1, 0)], &[10.0 / 7.0], 1e-12);
+        close(&[volume(0, 1)], &[16.0 / 8.0], 1e-12);
+    }
+
+    #[test]
+    fn an_excluded_zero_starting_value_no_longer_stops_the_simple_average() {
+        let t = annual(2020, &[&[0.0, 5.0], &[4.0, 6.0], &[2.0, 4.0], &[1.0]]);
+        let simple = |n_periods| Development {
+            average: Average::Simple,
+            n_periods,
+            ..Default::default()
+        };
+        assert!(simple(None).fit(&t, "values").is_err());
+        let f = simple(Some(2)).fit(&t, "values").unwrap();
+        close(&f.ldf, &[(1.5 + 2.0) / 2.0], 1e-12);
+        assert_eq!(f.n_links, vec![2]);
+    }
+
+    #[test]
+    fn geometric_average_is_the_geometric_mean_without_a_variance() {
+        let t = annual(2020, &[&[1.0, 2.0, 3.0], &[2.0, 8.0], &[5.0]]);
+        let dev = Development {
+            average: Average::Geometric,
+            ..Default::default()
+        };
+        let f = dev.fit(&t, "values").unwrap();
+        close(&f.ldf, &[8.0_f64.sqrt(), 1.5], 1e-12);
+        assert!(f.sigma.iter().all(|s| s.is_nan()));
+        assert!(f.std_err.iter().all(|s| s.is_nan()));
+        assert!(f.alpha.is_nan());
+        assert_eq!(f.n_links, vec![2, 1]);
+        assert_eq!(Average::Geometric.alpha(), None);
+        assert_eq!(Average::Volume.alpha(), Some(1.0));
+        // The latest 1 is the latest link ratio, of the two.
+        let latest = Development {
+            n_periods: Some(1),
+            ..dev.clone()
+        };
+        close(&latest.fit(&t, "values").unwrap().ldf[..1], &[4.0], 1e-12);
+        // A link ratio of zero has no logarithm.
+        let zero = annual(2020, &[&[1.0, 0.0, 3.0], &[2.0, 8.0], &[5.0]]);
+        assert!(matches!(
+            dev.fit(&zero, "values"),
+            Err(Error::Factor { age: 0, .. })
+        ));
+        let from_zero = annual(2020, &[&[0.0, 2.0, 3.0], &[2.0, 8.0], &[5.0]]);
+        assert!(dev.fit(&from_zero, "values").is_err());
+    }
+
+    #[test]
+    fn methods_that_assume_every_link_or_a_variance_reject_the_new_settings() {
+        use crate::{ChainLadder, Mack, MackBootstrap, OdpBootstrap, OneYearMethod};
+        let geometric = Development {
+            average: Average::Geometric,
+            ..Default::default()
+        };
+        let trimmed = with_exclusions(Some(3), 0, 0);
+
+        // Mack's lifetime view takes the exclusions, not the geometric
+        // average; the chain ladder takes both.
+        let mack = |development: Development| Mack {
+            development,
+            ..Default::default()
+        };
+        fn not_supported<T>(r: Result<T>) -> bool {
+            matches!(r, Err(Error::NotSupported { .. }))
+        }
+        assert!(not_supported(mack(geometric.clone()).fit(&raa(), "values")));
+        assert!(mack(trimmed.clone()).fit(&raa(), "values").is_ok());
+        let cl = |development: Development| ChainLadder {
+            development,
+            ..Default::default()
+        };
+        assert!(cl(geometric.clone()).fit(&raa(), "values").is_ok());
+        assert!(cl(trimmed.clone()).fit(&raa(), "values").is_ok());
+        let message = mack(geometric.clone())
+            .fit(&raa(), "values")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("geometric average"), "{message}");
+
+        // Mack's bootstrap.
+        let boot = |development: Development| MackBootstrap {
+            n_sims: 10,
+            development,
+            ..Default::default()
+        };
+        assert!(not_supported(boot(geometric.clone()).fit(&raa(), "values")));
+        let message = boot(trimmed.clone())
+            .fit(&raa(), "values")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("n_periods"), "{message}");
+        assert!(message.contains("not yet"), "{message}");
+        assert!(not_supported(
+            boot(with_exclusions(None, 1, 0)).fit(&raa(), "values")
+        ));
+        assert!(boot(Development::default()).fit(&raa(), "values").is_ok());
+
+        // The one-year views, through the re-reserving method.
+        let odp = OdpBootstrap {
+            n_sims: 10,
+            ..Default::default()
+        };
+        for development in [geometric.clone(), trimmed.clone()] {
+            let method = OneYearMethod::ChainLadder(cl(development));
+            assert!(not_supported(odp.one_year(&raa(), "values", &method)));
+            assert!(not_supported(boot(Development::default()).one_year(
+                &raa(),
+                "values",
+                &method
+            )));
+        }
+
+        // Merz and Wüthrich's closed form.
+        let fit = mack(trimmed).fit(&raa(), "values").unwrap();
+        assert!(matches!(
+            fit.claims_development_result(),
+            Err(Error::ClaimsDevelopment(_))
+        ));
+        // A window past the triangle excludes nothing, so it is accepted.
+        let wide = mack(with_exclusions(Some(50), 0, 0))
+            .fit(&raa(), "values")
+            .unwrap();
+        assert!(wide.claims_development_result().is_ok());
     }
 }

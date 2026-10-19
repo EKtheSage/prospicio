@@ -83,6 +83,7 @@ fn development(
         average,
         sigma_interpolation,
         pattern,
+        ..Default::default()
     })
 }
 

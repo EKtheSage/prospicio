@@ -25,18 +25,21 @@ use crate::error::{Error, Result};
 
 /// How the values of a [`SelectedPattern`] are expressed. The user names
 /// it: age-to-age factors and factors to ultimate are both at least 1 in
-/// the usual case and cannot be told apart.
+/// the usual case and cannot be told apart, so no check on the values
+/// could tell them apart either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatternKind {
     /// `f(a)`: the factor from age `a` to the next development age of the
     /// triangle. Any value that is finite and positive; below 1 is negative
     /// development.
     AgeToAge,
-    /// `CDF(a)`: the factor from age `a` to ultimate; at least 1 and not
-    /// increasing with age.
+    /// `CDF(a)`: the factor from age `a` to ultimate. Any value that is
+    /// finite and positive, in any order: below 1 is negative development
+    /// to ultimate, as in a reported pattern that ends under 1.
     AgeToUltimate,
-    /// `p(a) = 1 / CDF(a)`: the share of the ultimate developed at age `a`;
-    /// in `(0, 1]` and not decreasing with age.
+    /// `p(a) = 1 / CDF(a)`: the share of the ultimate developed at age `a`.
+    /// Any value that is finite and positive, in any order: above 1 is
+    /// negative development to ultimate.
     PercentDeveloped,
 }
 
@@ -250,30 +253,18 @@ impl SelectedPattern {
             PatternKind::AgeToUltimate | PatternKind::PercentDeveloped => {
                 let percent = self.kind == PatternKind::PercentDeveloped;
                 let mut cdf = Vec::with_capacity(values.len());
-                for (i, &(age, v)) in values.iter().enumerate() {
-                    if percent {
-                        if !(v.is_finite() && v > 0.0 && v <= 1.0) {
-                            return err(Some(age), "a percent developed must be in (0, 1]");
-                        }
-                        if i > 0 && v < values[i - 1].1 {
-                            return err(Some(age), "percents developed must not decrease with age");
-                        }
-                        cdf.push(1.0 / v);
-                    } else {
-                        if !(v.is_finite() && v >= 1.0) {
-                            return err(
-                                Some(age),
-                                "a factor to ultimate must be finite and at least 1",
-                            );
-                        }
-                        if i > 0 && v > values[i - 1].1 {
-                            return err(
-                                Some(age),
-                                "factors to ultimate must not increase with age",
-                            );
-                        }
-                        cdf.push(v);
+                for &(age, v) in &values {
+                    if !(v.is_finite() && v > 0.0) {
+                        return err(
+                            Some(age),
+                            if percent {
+                                "a percent developed must be finite and positive"
+                            } else {
+                                "a factor to ultimate must be finite and positive"
+                            },
+                        );
                     }
+                    cdf.push(if percent { 1.0 / v } else { v });
                 }
                 if values.len() < 2 {
                     return err(
@@ -682,11 +673,11 @@ mod tests {
         assert_eq!(reason(&pattern(AgeToAge, &[(12, f64::NAN)])).0, Some(12));
         assert_eq!(reason(&pattern(AgeToAge, &[(48, 1.01)])).0, Some(48));
         assert_eq!(
-            reason(&pattern(AgeToUltimate, &[(12, 0.99), (24, 0.9)])).0,
+            reason(&pattern(AgeToUltimate, &[(12, 0.0), (24, 0.9)])).0,
             Some(12)
         );
         assert_eq!(
-            reason(&pattern(AgeToUltimate, &[(12, 1.5), (24, 1.6)])).0,
+            reason(&pattern(AgeToUltimate, &[(12, 1.5), (24, f64::NAN)])).0,
             Some(24)
         );
         assert_eq!(
@@ -694,11 +685,15 @@ mod tests {
             Some(12)
         );
         assert_eq!(
-            reason(&pattern(PercentDeveloped, &[(12, 0.5), (24, 1.2)])).0,
+            reason(&pattern(PercentDeveloped, &[(12, 0.5), (24, -1.2)])).0,
             Some(24)
         );
         assert_eq!(
-            reason(&pattern(PercentDeveloped, &[(12, 0.6), (24, 0.5)])).0,
+            reason(&pattern(
+                PercentDeveloped,
+                &[(12, 0.6), (24, f64::INFINITY)]
+            ))
+            .0,
             Some(24)
         );
         assert_eq!(reason(&pattern(PercentDeveloped, &[(24, 0.5)])).0, Some(24));

@@ -69,6 +69,7 @@ fn average_name(a: Average) -> &'static str {
         Average::Volume => "volume",
         Average::Simple => "simple",
         Average::Regression => "regression",
+        Average::Geometric => "geometric",
     }
 }
 
@@ -172,6 +173,7 @@ fn development(
         average: average(average_)?,
         sigma_interpolation: sigma_interpolation(sigma_interpolation_)?,
         pattern,
+        ..Default::default()
     })
 }
 
