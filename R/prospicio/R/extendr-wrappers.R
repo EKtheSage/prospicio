@@ -1615,6 +1615,8 @@ grouped_goodness_of_fit_rust <- function(severity, bounds, counts) .Call(wrap__g
 
 lev_distance_fit_rust <- function(family, sizes, empirical, weights, start) .Call(wrap__lev_distance_fit_rust, family, sizes, empirical, weights, start)
 
+odp_glm_fit_rust <- function(triangle, column, tolerance, max_iterations) .Call(wrap__odp_glm_fit_rust, triangle, column, tolerance, max_iterations)
+
 MixtureDist <- new.env(parent = emptyenv())
 
 MixtureDist$new <- function(weights, components) .Call(wrap__MixtureDist__new, weights, components)
@@ -2923,3 +2925,33 @@ CasualtyBook$count_test <- function(sizes, threshold, counts, excess, exposure_y
 
 #' @export
 `[[.CasualtyBook` <- `$.CasualtyBook`
+
+OdpGlmFit <- new.env(parent = emptyenv())
+
+OdpGlmFit$origins <- function() .Call(wrap__OdpGlmFit__origins, self)
+
+OdpGlmFit$reserves <- function() .Call(wrap__OdpGlmFit__reserves, self)
+
+OdpGlmFit$total_reserve <- function() .Call(wrap__OdpGlmFit__total_reserve, self)
+
+OdpGlmFit$dispersion <- function() .Call(wrap__OdpGlmFit__dispersion, self)
+
+OdpGlmFit$coefficient_names <- function() .Call(wrap__OdpGlmFit__coefficient_names, self)
+
+OdpGlmFit$coefficients <- function() .Call(wrap__OdpGlmFit__coefficients, self)
+
+OdpGlmFit$std_errors <- function() .Call(wrap__OdpGlmFit__std_errors, self)
+
+OdpGlmFit$covariance <- function() .Call(wrap__OdpGlmFit__covariance, self)
+
+OdpGlmFit$future <- function() .Call(wrap__OdpGlmFit__future, self)
+
+OdpGlmFit$prediction_error <- function() .Call(wrap__OdpGlmFit__prediction_error, self)
+
+OdpGlmFit$predict_distribution <- function(n_sims, seed, parameters) .Call(wrap__OdpGlmFit__predict_distribution, self, n_sims, seed, parameters)
+
+#' @export
+`$.OdpGlmFit` <- function (self, name) { func <- OdpGlmFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.OdpGlmFit` <- `$.OdpGlmFit`

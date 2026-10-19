@@ -11,7 +11,6 @@
 
 ## Next
 
-- `OdpGlm` in Python and R with its analytic prediction error (#333, passed to the Models lane on 2026-10-19)
 - `Compartmental::fit_segments` and the backtest (`reserving-compartmental.md` PR E)
 - the 200-triangle calibration study (#392)
 

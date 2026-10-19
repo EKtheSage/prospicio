@@ -20,6 +20,7 @@ mod models;
 #[cfg(feature = "nn")]
 mod nn;
 mod normal;
+mod odp_glm;
 /// Without the `nn` feature the module registers nothing, and the R
 /// functions that call it fail when called.
 #[cfg(not(feature = "nn"))]
@@ -63,6 +64,7 @@ extendr_module! {
     use models;
     use nn;
     use normal;
+    use odp_glm;
     use pareto;
     use pnl;
     use pricing;

@@ -634,7 +634,7 @@ impl LongArgs {
 /// [[100.0, 150.0], [110.0, nan]]
 #[pyclass(name = "Triangle", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyTriangle {
-    inner: Triangle,
+    pub(crate) inner: Triangle,
 }
 
 fn wrap(inner: Triangle) -> PyTriangle {
