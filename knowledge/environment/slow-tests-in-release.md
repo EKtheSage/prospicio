@@ -133,8 +133,10 @@ On a pull request that touches `prospicio-reserving`, `-bayes`, `-prob`,
 `Cargo.lock`, `validation/Cargo.toml`, `validation/src/`, `validation/data/`,
 `validation/scripts/stan/`, a validation test, script or reference file
 named for `bayes` or `meyers`, or `ci.yml`; and on every weekly and manual
-run. A push to `main` does not run them, like every job but the rust job:
-the PR already did.
+run. A push to `main` does not run them, the PR already did; since
+2026-10-19 it only builds them when the job's cache is missing, and a pull
+request's conformance suite runs `BayesOdp` and `BayesBf` alone
+([where CI's time went](/environment/ci-runtime.md)).
 
 [^ci]: CI, bayes job
 [^cargo]: prospicio-validation, the slow-bayes feature and its [[test]] entries
