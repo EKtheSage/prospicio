@@ -4,14 +4,9 @@
 
 <!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
 
-## Now
-
-- #434 `claude/bootstrap-exclusions`: reserving: the bootstraps and one-year views follow n_periods and the drops (#401)
-- #420 `claude/backtest-bindings`: reserving: the diagonal backtest in Python and R, with each fit's diagnostics (#342)
-
 ## Next
 
-- `Compartmental::fit_segments` and the backtest (`reserving-compartmental.md` PR E)
+- [compartmental-pr-e] `Compartmental::fit_segments` and the backtest (`reserving-compartmental.md` PR E)
 - the 200-triangle calibration study (#392)
 
 ## Done
