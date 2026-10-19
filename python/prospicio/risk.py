@@ -23,6 +23,7 @@ from .prospicio_native import (
     iman_conover,
     marginal_expected_shortfall,
     mean_excess,
+    shapley,
     simulate,
     threshold_diagnostics,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "calibrate",
     "allocate",
     "capital",
+    "shapley",
     "Allocation",
     "entropic",
     "esscher",

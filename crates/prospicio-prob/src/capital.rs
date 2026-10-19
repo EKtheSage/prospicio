@@ -25,10 +25,20 @@ pub enum AllocationMethod {
     Euler,
     /// `ρ(S) Cov(X_j, S) / Var(S)`: the variance's Euler allocation scaled
     /// to `ρ(S)`. Looks at the whole distribution, not the tail. Sums to
-    /// `ρ(S)`.
+    /// `ρ(S)`. It spreads the expected loss by covariance too, so a unit
+    /// nearly independent of the total can get less than its mean; see
+    /// [`CovarianceMargin`](Self::CovarianceMargin).
     Covariance,
+    /// `E[X_j] + (ρ(S) − E[S]) Cov(X_j, S) / Var(S)`: each unit's expected
+    /// loss plus a share of the margin by covariance (Kalkbrener's
+    /// allocation with the standard deviation as auxiliary measure;
+    /// Mildenhall and Major, *Pricing Insurance Risk*, Exercise 217). Sums
+    /// to `ρ(S)`, and equals [`Covariance`](Self::Covariance) only when
+    /// `E[S] = 0` or every unit's mean is in proportion to its covariance.
+    CovarianceMargin,
     /// `ρ(S) ρ(X_j) / Σ_k ρ(X_k)`, the stand-alone measures scaled to the
-    /// total (the "haircut" allocation). Ignores dependence beyond the
+    /// total (the "haircut" allocation with `ρ` itself as the auxiliary
+    /// measure). Ignores dependence beyond the
     /// total. Sums to `ρ(S)`.
     Proportional,
     /// `ρ(S) − ρ(S − X_j)`, what the portfolio's measure falls by without
@@ -104,7 +114,8 @@ impl PredictiveDistribution {
     /// assert_eq!(a.diversification_benefit(), 1.0);
     /// ```
     ///
-    /// Fails for [`AllocationMethod::Covariance`] when the total does not
+    /// Fails for [`AllocationMethod::Covariance`] and
+    /// [`AllocationMethod::CovarianceMargin`] when the total does not
     /// vary, for [`AllocationMethod::Proportional`] when the stand-alone
     /// measures sum to 0, and for [`AllocationMethod::Shapley`] with more
     /// than [`SHAPLEY_MAX_COMPONENTS`] components.
@@ -116,7 +127,7 @@ impl PredictiveDistribution {
         let standalone: Vec<f64> = (0..m).map(|j| measure(d, column(j))).collect();
         let allocated = match method {
             AllocationMethod::Euler => self.allocate(d),
-            AllocationMethod::Covariance => {
+            AllocationMethod::Covariance | AllocationMethod::CovarianceMargin => {
                 let s = self.total().draws();
                 let n = s.len() as f64;
                 let mean_s = s.iter().sum::<f64>() / n;
@@ -134,7 +145,11 @@ impl PredictiveDistribution {
                             .map(|(a, b)| (a - mean_x) * (b - mean_s))
                             .sum::<f64>()
                             / n;
-                        total * cov / var_s
+                        if method == AllocationMethod::Covariance {
+                            total * cov / var_s
+                        } else {
+                            mean_x + (total - mean_s) * cov / var_s
+                        }
                     })
                     .collect()
             }
@@ -170,11 +185,81 @@ impl PredictiveDistribution {
                         "Shapley allocation takes at most 12 components",
                     ));
                 }
-                shapley(d, draws, m)
+                shapley(|sums| measure(d, sums), draws, m)
             }
         };
         Ok(Allocation {
             method,
+            total,
+            standalone,
+            allocated,
+        })
+    }
+}
+
+impl PredictiveDistribution {
+    /// The Shapley value of the game `v(T) = cost(Σ_{j∈T} X_j)` for any
+    /// `cost` of a sub-portfolio's draws, not only a distortion: a
+    /// standard deviation premium `E + k sd`, a variance, an expected
+    /// utility. `cost` gets the sub-portfolio's total per simulation, in
+    /// simulation order, and is called once for each of the `2^m − 1`
+    /// non-empty sub-portfolios; the empty one costs 0.
+    ///
+    /// The result's `total` is `cost(S)`, `standalone` is `cost(X_j)` and
+    /// `allocated` sums to `cost(S)`; its `method` is
+    /// [`AllocationMethod::Shapley`].
+    ///
+    /// ```
+    /// use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["lob".into()],
+    ///     vec![vec![KeyValue::from("motor")], vec![KeyValue::from("property")]],
+    ///     vec![1.0, 2.0, 4.0, 1.0, 2.0, 5.0, 3.0, 6.0],
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// // The standard deviation premium E + sd.
+    /// let premium = |x: &[f64]| {
+    ///     let n = x.len() as f64;
+    ///     let mean = x.iter().sum::<f64>() / n;
+    ///     mean + (x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt()
+    /// };
+    /// let a = pd.shapley_with(premium).unwrap();
+    /// let sum: f64 = a.allocated.iter().sum();
+    /// assert!((sum - a.total).abs() < 1e-12);
+    /// ```
+    ///
+    /// Fails with more than [`SHAPLEY_MAX_COMPONENTS`] components, or when
+    /// `cost` returns a value that is not finite.
+    pub fn shapley_with(&self, mut cost: impl FnMut(&[f64]) -> f64) -> Result<Allocation> {
+        let m = self.n_components();
+        if m > SHAPLEY_MAX_COMPONENTS {
+            return Err(invalid(
+                "components",
+                m as f64,
+                "Shapley allocation takes at most 12 components",
+            ));
+        }
+        let draws = self.draw_matrix();
+        let mut bad = None;
+        let mut checked = |x: &[f64]| -> f64 {
+            let v = cost(x);
+            if !v.is_finite() {
+                bad.get_or_insert(v);
+            }
+            v
+        };
+        let total = checked(self.total().draws());
+        let standalone: Vec<f64> = (0..m)
+            .map(|j| checked(&draws.iter().skip(j).step_by(m).copied().collect::<Vec<_>>()))
+            .collect();
+        let allocated = shapley(|sums| checked(&sums), draws, m);
+        if let Some(v) = bad {
+            return Err(invalid("cost", v, "must be finite"));
+        }
+        Ok(Allocation {
+            method: AllocationMethod::Shapley,
             total,
             standalone,
             allocated,
@@ -188,9 +273,9 @@ fn measure(d: &Distortion, mut draws: Vec<f64>) -> f64 {
     d.apply_sorted(&draws)
 }
 
-/// Shapley values of `v(T) = ρ(Σ_{j∈T} X_j)` from all `2^m` coalitions;
-/// `draws` is row-major, `m` per simulation.
-fn shapley(d: &Distortion, draws: &[f64], m: usize) -> Vec<f64> {
+/// Shapley values of `v(T) = cost(Σ_{j∈T} X_j)` from all `2^m`
+/// coalitions; `draws` is row-major, `m` per simulation.
+fn shapley(mut cost: impl FnMut(Vec<f64>) -> f64, draws: &[f64], m: usize) -> Vec<f64> {
     let n = draws.len() / m;
     let coalitions = 1usize << m;
     let mut value = vec![0.0; coalitions];
@@ -201,7 +286,7 @@ fn shapley(d: &Distortion, draws: &[f64], m: usize) -> Vec<f64> {
                 (0..m).filter(|j| mask >> j & 1 == 1).map(|j| row[j]).sum()
             })
             .collect();
-        *v = measure(d, sums);
+        *v = cost(sums);
     }
     // weight(|T|) = |T|! (m − |T| − 1)! / m!
     let factorial = |k: usize| (1..=k).map(|i| i as f64).product::<f64>();
@@ -268,6 +353,7 @@ mod tests {
         for method in [
             AllocationMethod::Euler,
             AllocationMethod::Covariance,
+            AllocationMethod::CovarianceMargin,
             AllocationMethod::Proportional,
             AllocationMethod::Shapley,
         ] {
@@ -352,5 +438,81 @@ mod tests {
         .unwrap();
         let d = Distortion::tvar(0.5).unwrap();
         assert!(pd.capital(&d, AllocationMethod::Covariance).is_err());
+    }
+
+    #[test]
+    fn covariance_margin_keeps_the_mean_and_shares_the_margin() {
+        let pd = three_lines();
+        let d = Distortion::tvar(0.99).unwrap();
+        let cov = pd.capital(&d, AllocationMethod::Covariance).unwrap();
+        let margin = pd.capital(&d, AllocationMethod::CovarianceMargin).unwrap();
+        let m = pd.n_components();
+        let n = (pd.draw_matrix().len() / m) as f64;
+        let means: Vec<f64> = (0..m)
+            .map(|j| pd.draw_matrix().iter().skip(j).step_by(m).sum::<f64>() / n)
+            .collect();
+        let mean_s: f64 = means.iter().sum();
+        for ((got, c), mean) in margin.allocated.iter().zip(&cov.allocated).zip(&means) {
+            // Both use the shares Cov(X_j, S) / Var(S) = cov_j / ρ(S).
+            let share = c / cov.total;
+            assert!(close(*got, mean + (cov.total - mean_s) * share));
+        }
+    }
+
+    #[test]
+    fn shapley_with_a_distortion_is_the_shapley_allocation() {
+        let pd = three_lines();
+        let d = Distortion::tvar(0.95).unwrap();
+        let want = pd.capital(&d, AllocationMethod::Shapley).unwrap();
+        let got = pd.shapley_with(|x| measure(&d, x.to_vec())).unwrap();
+        assert_eq!(got.total, want.total);
+        assert_eq!(got.standalone, want.standalone);
+        for (g, w) in got.allocated.iter().zip(&want.allocated) {
+            assert!(close(*g, *w));
+        }
+    }
+
+    #[test]
+    fn shapley_with_an_additive_cost_is_stand_alone() {
+        // The mean is additive, so every unit pays its own.
+        let pd = three_lines();
+        let mean = |x: &[f64]| x.iter().sum::<f64>() / x.len() as f64;
+        let a = pd.shapley_with(mean).unwrap();
+        for (g, s) in a.allocated.iter().zip(&a.standalone) {
+            assert!(close(*g, *s));
+        }
+        // A cost that is not finite is refused.
+        assert!(pd.shapley_with(|_| f64::NAN).is_err());
+    }
+
+    #[test]
+    fn shapley_with_a_standard_deviation_premium_by_hand() {
+        // Two components: φ_1 = (v(X1) + v(S) − v(X2)) / 2.
+        let pd = three_lines();
+        let premium = |x: &[f64]| {
+            let n = x.len() as f64;
+            let mean = x.iter().sum::<f64>() / n;
+            mean + 0.5 * (x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt()
+        };
+        let a = pd.shapley_with(premium).unwrap();
+        assert!(close(a.allocated.iter().sum(), a.total));
+        let m = pd.n_components();
+        let two: Vec<f64> = pd
+            .draw_matrix()
+            .chunks_exact(m)
+            .flat_map(|r| [r[0], r[1] + r[2]])
+            .collect();
+        let pd2 = PredictiveDistribution::from_draws(
+            vec!["line".into()],
+            vec![vec![KeyValue::from("a")], vec![KeyValue::from("bc")]],
+            two,
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let b = pd2.shapley_with(premium).unwrap();
+        assert!(close(
+            b.allocated[0],
+            0.5 * (b.standalone[0] + b.total - b.standalone[1])
+        ));
     }
 }

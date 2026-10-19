@@ -178,7 +178,7 @@ impl RiskDistortion {
         ))
     }
 
-    /// Allocation by `method` ("euler", "covariance", "proportional",
+    /// Allocation by `method` ("euler", "covariance", "covariance_margin", "proportional",
     /// "marginal" or "shapley"): `list(total, standalone, allocated)`.
     fn capital(&self, pd: Robj, method: &str) -> Result<List> {
         let pd = <&PredictiveDistribution>::try_from(&pd)
@@ -186,12 +186,14 @@ impl RiskDistortion {
         let method = match method {
             "euler" => AllocationMethod::Euler,
             "covariance" => AllocationMethod::Covariance,
+            "covariance_margin" => AllocationMethod::CovarianceMargin,
             "proportional" => AllocationMethod::Proportional,
             "marginal" => AllocationMethod::Marginal,
             "shapley" => AllocationMethod::Shapley,
             other => {
                 return Err(Error::Other(format!(
-                    "method must be euler, covariance, proportional, marginal or shapley, got {other}"
+                    "method must be euler, covariance, covariance_margin, proportional, marginal or \
+                     shapley, got {other}"
                 )));
             }
         };
@@ -301,6 +303,40 @@ fn esscher_allocation_rust(pd: Robj, h: f64) -> Result<Vec<f64>> {
         .inner
         .esscher_allocation(h)
         .map_err(to_r)
+}
+
+/// Shapley value of the game whose cost is `cost` (an R function of the
+/// sub-portfolio's draws): `list(total, standalone, allocated)`.
+#[extendr]
+fn shapley_rust(pd: Robj, cost: Function) -> Result<List> {
+    // An R error inside `cost` becomes NaN for the Rust side, which
+    // rejects it; the original error is returned instead.
+    let mut failure = None;
+    let result = as_predictive(&pd)?.inner.shapley_with(|x| {
+        if failure.is_some() {
+            return f64::NAN;
+        }
+        let value = cost.call(pairlist!(x.to_vec())).and_then(|v| {
+            v.as_real()
+                .ok_or(Error::Other("cost must return a number".into()))
+        });
+        match value {
+            Ok(v) => v,
+            Err(e) => {
+                failure.get_or_insert(e);
+                f64::NAN
+            }
+        }
+    });
+    if let Some(e) = failure {
+        return Err(e);
+    }
+    let a = result.map_err(to_r)?;
+    Ok(list!(
+        total = a.total,
+        standalone = a.standalone,
+        allocated = a.allocated
+    ))
 }
 
 pub(crate) enum AnyCopula {
@@ -722,6 +758,7 @@ extendr_module! {
     fn mes_rust;
     fn covar_rust;
     fn esscher_allocation_rust;
+    fn shapley_rust;
     fn iman_conover_reorder;
     fn gpd_mle;
     fn mean_excess_rust;

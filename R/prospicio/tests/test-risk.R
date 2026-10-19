@@ -197,3 +197,20 @@ stopifnot(inherits(try(iman_conover(ic_pd, ic_r, seed = 5, dof = 2, scores = rep
                        silent = TRUE), "try-error"))
 
 cat("prospicio R risk tests passed\n")
+# The covariance allocation of the margin keeps each unit's mean, and the
+# Shapley value of any cost agrees with the distortion's Shapley.
+rows <- expand.grid(a = c(0, 0, 8, 10), b = c(0, 0, 1, 90))
+sd_pd <- predictive_distribution(as.matrix(rows), data.frame(unit = c("X1", "X2")))
+tv <- distortion("tvar", 0.75)
+cv <- capital_allocation(sd_pd, tv, "covariance")
+cm <- capital_allocation(sd_pd, tv, "covariance_margin")
+stopifnot(abs(sum(cm$by_component$allocated) - cm$total) < 1e-9)
+stopifnot(all(abs(cm$by_component$allocated -
+  (c(4.5, 22.75) + (cv$total - 27.25) * cv$by_component$allocated / cv$total)) < 1e-9))
+sh <- shapley_allocation(sd_pd, function(x) risk_measure(sampled(x), tv))
+stopifnot(all(abs(sh$by_component$allocated -
+  capital_allocation(sd_pd, tv, "shapley")$by_component$allocated) < 1e-9))
+sdp <- shapley_allocation(sd_pd, function(x) mean(x) + 0.5 * sqrt(mean((x - mean(x))^2)))
+stopifnot(abs(sdp$by_component$allocated[1] -
+  0.5 * (sdp$by_component$standalone[1] + sdp$total - sdp$by_component$standalone[2])) < 1e-9)
+stopifnot(inherits(try(shapley_allocation(sd_pd, function(x) stop("boom")), silent = TRUE), "try-error"))

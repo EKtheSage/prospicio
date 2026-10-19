@@ -211,3 +211,17 @@
   `theta` (parity on `quine`). Python `NegativeBinomialGlm` and the
   Tweedie GLM with its power estimated (`TweedieGlm`, `tweedie_profile`);
   R `glm_nb_fit()`, `tweedie_glm_fit()` and `tweedie_profile()` (#352).
+### Distributions and probability
+
+- The covariance allocation of the margin:
+  `AllocationMethod::CovarianceMargin` gives each unit its expected loss
+  plus a share of `ρ(S) − E[S]` by covariance with the total (Kalkbrener's
+  allocation; *Pricing Insurance Risk* Exercise 217 exact), beside
+  `Covariance`, which spreads the whole measure by covariance. Python
+  `capital(..., "covariance_margin")`, R
+  `capital_allocation(..., "covariance_margin")`.
+- The Shapley value of any cost, not only a distortion:
+  `PredictiveDistribution::shapley_with(cost)` with a closure of the
+  sub-portfolio's draws (a standard deviation premium, an expected
+  utility). Python `prospicio.risk.shapley(pd, cost)` with a callable, R
+  `shapley_allocation(x, cost)` with a function (#369).

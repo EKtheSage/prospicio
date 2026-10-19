@@ -7,7 +7,8 @@
 capital_allocation(
   x,
   distortion,
-  method = c("euler", "covariance", "proportional", "marginal", "shapley")
+  method = c("euler", "covariance", "covariance_margin", "proportional", "marginal",
+    "shapley")
 )
 }
 \arguments{
@@ -15,8 +16,8 @@ capital_allocation(
 
 \item{distortion}{A \link{distortion}.}
 
-\item{method}{One of \code{"euler"}, \code{"covariance"}, \code{"proportional"},
-\code{"marginal"}, \code{"shapley"}.}
+\item{method}{One of \code{"euler"}, \code{"covariance"}, \code{"covariance_margin"},
+\code{"proportional"}, \code{"marginal"}, \code{"shapley"}.}
 }
 \value{
 A list with \code{total} (\code{rho(S)}), \code{diversification_benefit}
@@ -32,7 +33,8 @@ to its components, and reports each component's stand-alone measure.
 \tabular{ll}{
    \code{method} \tab Allocation to component \code{j} \cr
    \code{"euler"} \tab co-measure, as \code{\link[=allocate]{allocate()}} (CoTVaR for TVaR) \cr
-   \code{"covariance"} \tab \verb{rho(S) Cov(X_j, S) / Var(S)} \cr
+   \code{"covariance"} \tab \verb{rho(S) Cov(X_j, S) / Var(S)}; spreads the mean by covariance too \cr
+   \code{"covariance_margin"} \tab \verb{E[X_j] + (rho(S) - E[S]) Cov(X_j, S) / Var(S)}: the mean plus a share of the margin (Kalkbrener; \emph{Pricing Insurance Risk}, Exercise 217) \cr
    \code{"proportional"} \tab stand-alone measures scaled to \code{rho(S)} \cr
    \code{"marginal"} \tab \code{rho(S) - rho(S - X_j)} (Merton-Perold); does not add up \cr
    \code{"shapley"} \tab Shapley value of \verb{v(T) = rho(sum of T)}; at most 12 components \cr

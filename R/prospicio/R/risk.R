@@ -640,7 +640,8 @@ S7::method(print, pot_tail) <- function(x, ...) {
 #' | `method` | Allocation to component `j` |
 #' |---|---|
 #' | `"euler"` | co-measure, as [allocate()] (CoTVaR for TVaR) |
-#' | `"covariance"` | `rho(S) Cov(X_j, S) / Var(S)` |
+#' | `"covariance"` | `rho(S) Cov(X_j, S) / Var(S)`; spreads the mean by covariance too |
+#' | `"covariance_margin"` | `E[X_j] + (rho(S) - E[S]) Cov(X_j, S) / Var(S)`: the mean plus a share of the margin (Kalkbrener; *Pricing Insurance Risk*, Exercise 217) |
 #' | `"proportional"` | stand-alone measures scaled to `rho(S)` |
 #' | `"marginal"` | `rho(S) - rho(S - X_j)` (Merton-Perold); does not add up |
 #' | `"shapley"` | Shapley value of `v(T) = rho(sum of T)`; at most 12 components |
@@ -650,8 +651,8 @@ S7::method(print, pot_tail) <- function(x, ...) {
 #'
 #' @param x A [predictive_distribution].
 #' @param distortion A [distortion].
-#' @param method One of `"euler"`, `"covariance"`, `"proportional"`,
-#'   `"marginal"`, `"shapley"`.
+#' @param method One of `"euler"`, `"covariance"`, `"covariance_margin"`,
+#'   `"proportional"`, `"marginal"`, `"shapley"`.
 #' @returns A list with `total` (`rho(S)`), `diversification_benefit`
 #'   (`sum(standalone) - total`) and `by_component`, the `keys` data frame of
 #'   `x` with columns `standalone`, `allocated` and `diversification`
@@ -666,9 +667,40 @@ S7::method(print, pot_tail) <- function(x, ...) {
 #' a$by_component
 #' a$diversification_benefit
 capital_allocation <- function(x, distortion,
-                               method = c("euler", "covariance", "proportional", "marginal", "shapley")) {
+                               method = c("euler", "covariance", "covariance_margin", "proportional",
+                                          "marginal", "shapley")) {
   method <- match.arg(method)
-  r <- rust_result(distortion@ptr$capital(x@ptr, method))
+  allocation_result(x, rust_result(distortion@ptr$capital(x@ptr, method)))
+}
+
+#' Shapley allocation of any cost
+#'
+#' The Shapley value of the game whose cost is `cost` of each sub-portfolio,
+#' for any cost function, not only a distortion: a standard deviation
+#' premium, a variance, an expected utility. `cost` is called with the
+#' sub-portfolio's total in each simulation, in simulation order, once for
+#' each of the `2^m - 1` non-empty sub-portfolios (the empty one costs 0).
+#'
+#' @param x A [predictive_distribution] with at most 12 components.
+#' @param cost A function of a numeric vector of draws returning a number.
+#' @returns As [capital_allocation()]: `total` (`cost` of the portfolio),
+#'   `diversification_benefit` and `by_component` with `standalone`,
+#'   `allocated` (the Shapley values, summing to `total`) and
+#'   `diversification`.
+#' @export
+#' @examples
+#' pd <- predictive_distribution(
+#'   matrix(c(1, 4, 2, 3, 2, 1, 5, 6), ncol = 2),
+#'   data.frame(lob = c("motor", "property"))
+#' )
+#' sd_premium <- function(x) mean(x) + sqrt(mean((x - mean(x))^2))
+#' shapley_allocation(pd, sd_premium)$by_component
+shapley_allocation <- function(x, cost) {
+  stopifnot(is.function(cost))
+  allocation_result(x, rust_result(shapley_rust(x@ptr, cost)))
+}
+
+allocation_result <- function(x, r) {
   out <- x@keys
   out$standalone <- r$standalone
   out$allocated <- r$allocated

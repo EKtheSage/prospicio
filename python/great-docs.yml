@@ -293,6 +293,7 @@ reference:
       - risk.calibrate
       - risk.allocate
       - risk.capital
+      - risk.shapley
       - risk.entropic
       - risk.esscher
       - risk.marginal_expected_shortfall

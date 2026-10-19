@@ -21229,7 +21229,11 @@ def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "e
     
     - ``"euler"``: co-measure (for TVaR, the CoTVaRs); consistent with
       marginal changes to the portfolio.
-    - ``"covariance"``: ``rho(S) Cov(X_j, S) / Var(S)``.
+    - ``"covariance"``: ``rho(S) Cov(X_j, S) / Var(S)``, which spreads the
+      expected loss by covariance too.
+    - ``"covariance_margin"``: ``E[X_j] + (rho(S) - E[S]) Cov(X_j, S) /
+      Var(S)``, each unit's mean plus a share of the margin by covariance
+      (Kalkbrener's allocation; *Pricing Insurance Risk*, Exercise 217).
     - ``"proportional"``: stand-alone measures scaled to ``rho(S)``.
     - ``"marginal"``: ``rho(S) - rho(S - X_j)`` (Merton-Perold); does not
       add up to ``rho(S)``.
@@ -21250,7 +21254,8 @@ def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "e
     Raises
     ------
     ValueError
-        For an unknown method, a constant total (``"covariance"``),
+        For an unknown method, a constant total (``"covariance"``,
+        ``"covariance_margin"``),
         stand-alone measures summing to 0 (``"proportional"``) or more than
         12 components (``"shapley"``).
     
@@ -23139,6 +23144,47 @@ def severity_exposure_curve(severity: Any, mpl: float, x: Sequence[float]) -> li
     >>> g = severity_exposure_curve(Pareto(1e5, 1.5), 1e7, [0.0, 0.5, 1.0])
     >>> g[0], round(g[2], 12), g[1] > 0.5
     (0.0, 1.0, True)
+    """
+
+def shapley(pd: PredictiveDistribution, cost: Any) -> Allocation:
+    """
+    The Shapley value of the game whose cost is ``cost`` of each
+    sub-portfolio, for any cost function, not only a distortion: a
+    standard deviation premium, a variance, an expected utility.
+    
+    ``cost`` is called with a list of the sub-portfolio's total in each
+    simulation, in simulation order, once for each of the ``2**m - 1``
+    non-empty sub-portfolios (the empty one costs 0), and returns a float.
+    
+    Parameters
+    ----------
+    pd : PredictiveDistribution
+        Components that add up to the portfolio; at most 12.
+    cost : callable
+        ``cost(draws: list[float]) -> float``.
+    
+    Returns
+    -------
+    Allocation
+        ``total`` is ``cost`` of the whole portfolio, ``standalone`` that of
+        each component, ``allocated`` the Shapley values, summing to
+        ``total``; ``method`` is ``"shapley"``.
+    
+    Raises
+    ------
+    ValueError
+        For more than 12 components or a cost that is not finite.
+    
+    Examples
+    --------
+    >>> import statistics
+    >>> from prospicio.distributions import PredictiveDistribution
+    >>> from prospicio.risk import shapley
+    >>> pd = PredictiveDistribution(["lob"], [("motor",), ("property",)],
+    ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
+    >>> a = shapley(pd, lambda x: statistics.fmean(x) + statistics.pstdev(x))
+    >>> round(sum(a.allocated) - a.total, 12)
+    0.0
     """
 
 def simulate(copula: Any, marginals: Sequence[Any], n_sims: int, seed: int, keys: Sequence[Sequence[int |str]] |None = None, dims: Sequence[str] |None = None) -> PredictiveDistribution:
