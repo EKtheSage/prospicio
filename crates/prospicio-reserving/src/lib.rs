@@ -86,7 +86,10 @@ pub use mack::{Mack, MackFit};
 pub use mack_bootstrap::{
     MackBootstrap, MackBootstrapFit, MackBootstrapFits, MackBootstrapSegment, MackProcess,
 };
-pub use odp_glm::{OdpGlm, OdpGlmFit, OdpPredictionError, SumPredictionError};
+pub use odp_glm::{
+    OdpGlm, OdpGlmFit, OdpPredictionError, OdpResiduals, ResidualGroup, ResidualSummary,
+    SumPredictionError,
+};
 pub use one_year::ClaimsDevelopmentResult;
 pub use one_year_bootstrap::{OneYearFit, OneYearFits, OneYearMethod, OneYearSegment};
 pub use pattern::{OneYearPattern, PatternKind, PatternWeight, SelectedPattern};

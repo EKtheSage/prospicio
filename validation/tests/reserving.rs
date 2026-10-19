@@ -19,8 +19,8 @@ use prospicio_prob::Distribution;
 use prospicio_reserving::{
     Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, GlmCandidate, Grain,
     Label, Long, Mack, MackFit, Month, OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpGlm,
-    OdpGlmFit, Period, ProcessDistribution, SigmaInterpolation, Triangle, TriangleFrame,
-    TriangleModel, diagonal_backtest,
+    OdpGlmFit, Period, ProcessDistribution, ResidualGroup, SigmaInterpolation, Triangle,
+    TriangleFrame, TriangleModel, diagonal_backtest,
 };
 use prospicio_validation::{Case, check, reference, triangle};
 
@@ -460,8 +460,8 @@ const TAYLOR_MCGUIRE: [&[f64]; 10] = [
     &[43962.],
 ];
 
-#[test]
-fn odp_glm_prediction_error_matches_taylor_mcguire_table_5_4() {
+/// Taylor and McGuire's triangle, cumulated.
+fn taylor_mcguire() -> Triangle {
     let (mut origin, mut age, mut paid) = (Vec::new(), Vec::new(), Vec::new());
     for (k, row) in TAYLOR_MCGUIRE.iter().enumerate() {
         let mut cumulative = 0.0;
@@ -482,6 +482,12 @@ fn odp_glm_prediction_error_matches_taylor_mcguire_table_5_4() {
         cumulative: true,
     })
     .unwrap();
+    tri
+}
+
+#[test]
+fn odp_glm_prediction_error_matches_taylor_mcguire_table_5_4() {
+    let tri = taylor_mcguire();
     let fit = OdpGlm::default().fit(&tri, "paid").unwrap();
     let error = fit.prediction_error().unwrap();
     // Table 5-4: forecast and RMSEP by accident year 1989 to 1997, then
@@ -514,6 +520,80 @@ fn odp_glm_prediction_error_matches_taylor_mcguire_table_5_4() {
     assert!((error.total.parameter_variance.sqrt() - 12_465.0).abs() <= 0.5);
     let independent: f64 = error.by_origin.iter().map(|e| e.rmsep().powi(2)).sum();
     assert!((independent.sqrt() - 10_275.0).abs() <= 0.5);
+}
+
+#[test]
+fn odp_glm_residuals_match_taylor_mcguire_chapter_6() {
+    let fit = OdpGlm::default().fit(&taylor_mcguire(), "paid").unwrap();
+    let r = fit.residuals().unwrap();
+    assert_eq!(r.actual.len(), 55);
+    // The two cells with leverage 1: 1988's last year and 1997's first.
+    let exact: Vec<usize> = (0..55)
+        .filter(|&i| r.standardized_deviance[i].is_nan())
+        .collect();
+    assert_eq!(exact, [9, 54]);
+    for i in 0..55 {
+        let h = r.leverage[i];
+        assert!((0.0..=1.0 + 1e-9).contains(&h));
+    }
+    // The leverages add up to the 19 parameters.
+    assert!((r.leverage.iter().sum::<f64>() - 19.0).abs() < 1e-8);
+
+    // The guide's spread by development year 1 to 8 (np.nanstd, divisor n)
+    // and mean by calendar year 1988 to 1997, to two decimals
+    // (docs/guides/reserving-taylor-mcguire.md, section 5).
+    let by_age = r.summary(ResidualGroup::Development);
+    let spread = [1.34, 1.59, 0.88, 0.62, 0.83, 0.77, 0.65, 0.40];
+    for (g, want) in by_age.iter().zip(spread) {
+        let n = g.n as f64;
+        let population = g.sd * ((n - 1.0) / n).sqrt();
+        assert!(
+            (population - want).abs() <= 0.005,
+            "{}: {population} vs {want}",
+            g.label
+        );
+    }
+    assert_eq!(by_age.len(), 10);
+    assert_eq!(by_age[0].label, "12");
+    assert_eq!((by_age[8].n, by_age[9].n), (2, 0));
+    let by_calendar = r.summary(ResidualGroup::Calendar);
+    let means = [
+        -0.38, -0.13, -0.40, 0.56, 0.42, -0.43, 0.23, -0.27, -0.26, 0.32,
+    ];
+    assert_eq!(by_calendar.len(), 10);
+    for (g, want) in by_calendar.iter().zip(means) {
+        assert!(
+            (g.mean - want).abs() <= 0.005,
+            "{}: {} vs {want}",
+            g.label,
+            g.mean
+        );
+    }
+    assert_eq!(by_calendar[0].label, "1988");
+    let by_origin = r.summary(ResidualGroup::Origin);
+    assert_eq!(by_origin[0].label, "1988");
+    assert_eq!(by_origin.iter().map(|g| g.n).sum::<usize>(), 53);
+
+    // The actual-to-fitted heat map, Figure 6-22, in percent.
+    let heat: [&[i64]; 10] = [
+        &[98, 100, 100, 104, 113, 87, 96, 92, 100, 100],
+        &[99, 99, 106, 103, 95, 95, 99, 102, 100],
+        &[96, 108, 107, 91, 90, 102, 92, 104],
+        &[97, 103, 96, 97, 103, 111, 111],
+        &[95, 107, 100, 100, 97, 100],
+        &[98, 105, 93, 101, 104],
+        &[109, 91, 95, 104],
+        &[106, 90, 105],
+        &[103, 97],
+        &[100],
+    ];
+    let printed: Vec<i64> = heat.iter().flat_map(|row| row.iter().copied()).collect();
+    let ours: Vec<i64> = r
+        .actual_to_fitted
+        .iter()
+        .map(|x| (100.0 * x).round() as i64)
+        .collect();
+    assert_eq!(ours, printed);
 }
 
 /// Rows of a two-key (lob × coverage) long table with paid and incurred:
