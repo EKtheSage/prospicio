@@ -1742,4 +1742,130 @@ mod clark_casualty {
         let nj = rating.without("AL");
         assert!((nj.ceded() - 9_775.0).abs() < 1e-9);
     }
+
+    /// The design note's workflow on a small synthetic record (the
+    /// motivating case's shape: a 5M xs 5M layer no loss has reached): the
+    /// censored anchor against `Pareto::fit` on the same data, the sweep
+    /// against the closed form, the count test's Poisson tail against
+    /// `prospicio-prob`'s pmf, the burning cost with and without a segment,
+    /// and the classical weight.
+    #[test]
+    fn the_anchor_sweep_and_checks() {
+        use prospicio_aggregate::{Layer, Tower};
+        use prospicio_pricing::casualty::ParetoAnchor;
+        use prospicio_pricing::credibility::LimitedFluctuation;
+        use prospicio_pricing::experience::{Experience, LargeLoss, Trend, YearBasis};
+        use prospicio_prob::{Counting, LargeLosses, Pareto, Poisson, Severity};
+
+        // Trended primary claims (ids by segment), two closed at the limit.
+        let claims = [
+            ("gl-1", 2019.5, 1.30e6, false),
+            ("gl-2", 2020.5, 1.05e6, false),
+            ("gl-3", 2020.5, 2.00e6, true),
+            ("wf-1", 2021.5, 2.80e6, false),
+            ("gl-4", 2022.5, 1.60e6, false),
+            ("wf-2", 2022.5, 1.00e6, true),
+            ("gl-5", 2023.5, 0.40e6, false),
+        ];
+        let y: Vec<f64> = claims.iter().map(|c| c.2).collect();
+        let censored: Vec<bool> = claims.iter().map(|c| c.3).collect();
+        let anchor = ParetoAnchor::fit(1e6, &y, &censored).unwrap();
+        let data = LargeLosses::new(y[..6].to_vec())
+            .unwrap()
+            .censored(censored[..6].to_vec())
+            .unwrap();
+        let fit = Pareto::fit(1e6, &data, None).unwrap();
+        assert!((anchor.alpha - fit.alpha()).abs() < 1e-15);
+        let n_uncensored = 4.0;
+        let log_sum: f64 = y[..6].iter().map(|v| (v / 1e6).ln()).sum();
+        assert!((anchor.alpha - n_uncensored / log_sum).abs() < 1e-14);
+        assert_eq!((anchor.exceedances, anchor.censored), (6, 2));
+
+        // A book of two policies, 10M and 6M, rated 5M xs 5M on the anchor.
+        let primary = Pareto::new(1e6, anchor.alpha).unwrap();
+        let book = CasualtyProfile::new(
+            vec![CasualtyCurve::severity(primary)],
+            vec![
+                CasualtyPolicy::new(10e6, 3e6, 0.6).tag("gl"),
+                CasualtyPolicy::new(6e6, 1e6, 0.6).tag("wf"),
+            ],
+        )
+        .unwrap();
+        let counts = book.occurrences_above(1e6).unwrap();
+        let treaty = XsLayer::new(5e6, 5e6).unwrap();
+
+        // The sweep against E[layer] of a Pareto from 1M: at α = 1 and 2,
+        // 1M ln 2 and 1M (1/5 − 1/10) per occurrence of the 10M policy
+        // (the 6M one cedes 1M xs 5M).
+        let sweep = book
+            .sweep(&treaty, Alae::InSeverity, 1e6, &counts, &[1.0, 2.0])
+            .unwrap();
+        let at = |alpha: f64| Pareto::new(1e6, alpha).unwrap();
+        for (point, alpha) in sweep.iter().zip([1.0, 2.0]) {
+            let want =
+                counts[0] * at(alpha).layer(5e6, 5e6) + counts[1] * at(alpha).layer(1e6, 5e6);
+            assert!((point.ceded / want - 1.0).abs() < 1e-12);
+        }
+        assert!((at(1.0).layer(5e6, 5e6) - 1e6 * 2f64.ln()).abs() < 1e-6);
+        assert!((at(2.0).layer(5e6, 5e6) - 1e5).abs() < 1e-6);
+        assert!((sweep[0].ceded / sweep[1].ceded) > 5.0);
+
+        // Five years at the profile's exposure; counts from 1M and 2M.
+        let observed: Vec<f64> = y.clone();
+        let checks = book
+            .count_test(&[1e6, 2e6], 1e6, &counts, &primary, 5.0, &observed)
+            .unwrap();
+        assert_eq!((checks[0].observed, checks[1].observed), (6, 2));
+        for c in &checks {
+            let n = Poisson::new(c.expected).unwrap();
+            let k = c.observed as u64;
+            let want = if c.observed as f64 >= c.expected {
+                1.0 - (0..k).map(|j| n.pmf(j)).sum::<f64>()
+            } else {
+                (0..=k).map(|j| n.pmf(j)).sum::<f64>()
+            };
+            assert!((c.p_value - want).abs() < 1e-12, "{c:?}");
+        }
+
+        // The burning cost of 1M xs 1M with and without the wildfire
+        // segment: its premium leaves the bases too.
+        let record = Experience::new(
+            claims
+                .iter()
+                .map(|c| LargeLoss {
+                    id: c.0.into(),
+                    accident: c.1,
+                    amount: c.2,
+                })
+                .collect(),
+        )
+        .unwrap()
+        .prepare(&Trend::Factors(vec![1.0; 7]))
+        .unwrap();
+        let tower = Tower::new(vec![Layer::xol("1M xs 1M", 1e6, 1e6).unwrap()]).unwrap();
+        let years = |premium: f64| -> Vec<YearBasis> {
+            (2019..=2023)
+                .map(|year| YearBasis {
+                    year,
+                    premium,
+                    development: 1.0,
+                })
+                .collect()
+        };
+        let towers = vec![tower; 5];
+        let all = record.burning_cost(&towers, &years(4e6)).unwrap();
+        let gl = record
+            .without(&["wf-1", "wf-2"])
+            .burning_cost(&towers, &years(3e6))
+            .unwrap();
+        // 0.30 + 0.05 + 1.00 + 1.00 + 0.60 in all; without wf-1's 1.00.
+        assert!((all.loss_cost[0] - 2.95e6 / 20e6).abs() < 1e-12);
+        assert!((gl.loss_cost[0] - 1.95e6 / 15e6).abs() < 1e-12);
+
+        // No loss reached 5M: the classical weight of the one claim above
+        // 2.5M (wf-1) is about 3%, so the exposure estimate is the price.
+        let lf = LimitedFluctuation::new(0.90, 0.05).unwrap();
+        let z = lf.credibility(1.0, lf.frequency_standard());
+        assert!((z - (1.0 / 1082.21f64).sqrt()).abs() < 1e-4);
+    }
 }
