@@ -45,3 +45,11 @@ sources:
   response with unit exposure it is `(1 + normalized Gini) / 2`, the
   Gini computed with ties grouped (CAS Monograph 5, footnote 17); the
   unit tests check both identities.
+* R's `weights(m, "working")`, `hatvalues` and everything built on them use
+  the working weights of the last IRLS iteration, not the converged means,
+  so they differ from a converged fit's in the sixth significant figure
+  unless R is refitted with `glm.control(epsilon = 1e-14)`. Even then R's
+  Gamma fit on quine moves by about 1e-8 in its coefficients when
+  restarted from its own estimates, so the validation compares the Gamma
+  diagnostics to 1e-6 and the Poisson's to 1e-8
+  (`glm_diagnostics_match_r`, `validation/scripts/r_glm_diagnostics.R`).

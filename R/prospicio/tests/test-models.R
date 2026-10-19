@@ -365,6 +365,25 @@ near(sum(dl$exposure * dl$actual_relativity), 6, 1e-12)
 lr <- loss_ratio_table(c(1, 0, 3, 2, 5, 1), c(1, 1, 2, 2, 4, 1), rep(2, 6), bands = 2)
 near(lr$loss_ratio, lr$actual / lr$premium, 1e-15)
 
+
+# Residuals, hat values, Cook's distances and prediction errors agree with
+# R's glm (#334).
+qg <- glm_fit(Days ~ Eth + Sex + Age + Lrn, quine, family = "poisson")
+rg <- stats::glm(Days ~ Eth + Sex + Age + Lrn, family = poisson, data = quine, control = tight)
+for (type in c("deviance", "pearson", "response", "working")) {
+  near(residuals(qg, type = type), unname(residuals(rg, type = type)), 1e-6)
+}
+near(hatvalues(qg), unname(hatvalues(rg)), 1e-6)
+near(rstandard(qg), unname(rstandard(rg)), 1e-6)
+near(cooks.distance(qg), unname(cooks.distance(rg)), 1e-6)
+near(prediction_se(qg, quine), unname(predict(rg, type = "response", se.fit = TRUE)$se.fit), 1e-6)
+stopifnot(nrow(glm_diagnostics(qg)) == nrow(quine))
+spe <- sum_prediction_error(qg, quine[1, ])
+near(spe$parameter_variance, prediction_se(qg, quine[1, ])^2, 1e-10)
+n_q <- nrow(quine)
+near(glm_gcv(qg), n_q * sum(residuals(qg, "response")^2) / (n_q - 7)^2, 1e-12)
+near(log_likelihood_at(qg, 1), qg@log_likelihood, 1e-12)
+
 cat("prospicio R models tests passed\n")
 
 # The negative binomial's theta agrees with MASS::glm.nb, and the Tweedie

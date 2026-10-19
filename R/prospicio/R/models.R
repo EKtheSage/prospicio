@@ -796,6 +796,87 @@ for (cls in list(glm_model, gam_model, bayes_glm_model)) {
   }
 }
 
+S7::method(residuals, glm_model) <- function(object, type = c("deviance", "pearson", "response", "working"), ...) {
+  type <- match.arg(type)
+  rust_result(object@ptr$diagnostics(), s7_call())[[type]]
+}
+S7::method(hatvalues, glm_model) <- function(model, ...) {
+  rust_result(model@ptr$diagnostics(), s7_call())$leverage
+}
+S7::method(rstandard, glm_model) <- function(model, type = c("deviance", "pearson"), ...) {
+  type <- match.arg(type)
+  rust_result(model@ptr$diagnostics(), s7_call())[[paste0("standardized_", type)]]
+}
+S7::method(cooks.distance, glm_model) <- function(model, ...) {
+  rust_result(model@ptr$diagnostics(), s7_call())$cooks_distance
+}
+
+#' Diagnostics and prediction errors of a fitted GLM
+#'
+#' A [glm_model] fitted in this session keeps its training data, so
+#' [stats::residuals()] (`type` `"deviance"`, `"pearson"`, `"response"` or
+#' `"working"`), [stats::hatvalues()], [stats::rstandard()] (`type`
+#' `"deviance"` or `"pearson"`) and [stats::cooks.distance()] work on it as
+#' on R's `glm`. `glm_diagnostics()` returns them all, with the working
+#' weights, as a data frame. `prediction_se()` is the standard error of each
+#' row's predicted mean (parameter error only, as
+#' `predict(type = "response", se.fit = TRUE)`); `sum_prediction_error()` the
+#' prediction error of the sum of the rows' means (a reserve: an origin's
+#' future cells), the parameter error by the delta method and the process
+#' error from the family (Taylor and McGuire, CAS Monograph 3, (5-11) to
+#' (5-13)). `glm_gcv()` is generalized cross-validation,
+#' `n sum((y - mu)^2) / (n - p)^2`, and `log_likelihood_at()` the training
+#' log-likelihood at a given dispersion. A model read with [load_model()]
+#' has no training data: only `prediction_se()` and `sum_prediction_error()`
+#' work on it.
+#'
+#' @param model A [glm_model].
+#' @param newdata A data frame with the model's terms.
+#' @param offset Optional offset added to any `offset()` terms.
+#' @param weights Optional prior weights (for the process variance).
+#' @param dispersion The dispersion at which to evaluate.
+#' @returns `glm_diagnostics()` a data frame with one row per training row;
+#'   `prediction_se()` one value per row of `newdata`;
+#'   `sum_prediction_error()` a list with `total`, `parameter_variance`,
+#'   `process_variance` and `rmsep`; `glm_gcv()` and `log_likelihood_at()` a
+#'   number.
+#' @export
+#' @examples
+#' d <- data.frame(claims = c(1, 2, 4, 2, 1, 3, 0, 5), region = c("N", "N", "S", "S", "W", "W", "N", "S"))
+#' m <- glm_fit(claims ~ region, d, family = "poisson")
+#' head(glm_diagnostics(m))
+#' sum_prediction_error(m, data.frame(region = c("N", "S")))$rmsep
+glm_diagnostics <- function(model) {
+  as.data.frame(rust_result(model@ptr$diagnostics()))
+}
+
+#' @rdname glm_diagnostics
+#' @export
+prediction_se <- function(model, newdata, offset = NULL) {
+  nd <- new_design(model, newdata, offset)
+  rust_result(model@ptr$prediction_se(as.double(nd$x), colnames(nd$x), nd$offset))
+}
+
+#' @rdname glm_diagnostics
+#' @export
+sum_prediction_error <- function(model, newdata, offset = NULL, weights = NULL) {
+  nd <- new_design(model, newdata, offset)
+  rust_result(model@ptr$sum_prediction_error(as.double(nd$x), colnames(nd$x), nd$offset,
+                                             if (is.null(weights)) double() else as.double(weights)))
+}
+
+#' @rdname glm_diagnostics
+#' @export
+glm_gcv <- function(model) {
+  rust_result(model@ptr$gcv())
+}
+
+#' @rdname glm_diagnostics
+#' @export
+log_likelihood_at <- function(model, dispersion) {
+  rust_result(model@ptr$log_likelihood_at(as.double(dispersion)))
+}
+
 #' Joint predictive distribution of a fitted model
 #'
 #' Draws the response for every row of `newdata` jointly: each simulation

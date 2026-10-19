@@ -233,6 +233,15 @@ fn glm_nb_fit_design(
     ))
 }
 
+impl GlmModel {
+    fn training_data(&self) -> Result<(&Design, &[f64])> {
+        self.training
+            .as_ref()
+            .map(|(d, y)| (d, y.as_slice()))
+            .ok_or_else(|| Error::Other("a loaded model has no training data".into()))
+    }
+}
+
 #[extendr]
 impl GlmModel {
     fn names(&self) -> Vec<String> {
@@ -330,6 +339,60 @@ impl GlmModel {
     fn predict(&self, x: &[f64], names: Vec<String>, offset: &[f64]) -> Result<Vec<f64>> {
         let d = design(x, names, offset, &[])?;
         self.inner.predict(&d).map_err(to_r)
+    }
+
+    /// Residuals, leverages and Cook's distances on the training data.
+    fn diagnostics(&self) -> Result<List> {
+        let (d, y) = self.training_data()?;
+        let g = self.inner.diagnostics(d, y).map_err(to_r)?;
+        Ok(list!(
+            fitted = g.fitted,
+            response = g.response,
+            pearson = g.pearson,
+            deviance = g.deviance,
+            working = g.working,
+            working_weights = g.working_weights,
+            leverage = g.leverage,
+            standardized_pearson = g.standardized_pearson,
+            standardized_deviance = g.standardized_deviance,
+            cooks_distance = g.cooks_distance
+        ))
+    }
+
+    /// Standard error of each new row's predicted mean.
+    fn prediction_se(&self, x: &[f64], names: Vec<String>, offset: &[f64]) -> Result<Vec<f64>> {
+        let d = design(x, names, offset, &[])?;
+        self.inner.prediction_se(&d).map_err(to_r)
+    }
+
+    /// Prediction error of the sum of the new rows' means.
+    fn sum_prediction_error(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        weights: &[f64],
+    ) -> Result<List> {
+        let d = design(x, names, offset, weights)?;
+        let e = self.inner.sum_prediction_error(&d).map_err(to_r)?;
+        Ok(list!(
+            total = e.total,
+            parameter_variance = e.parameter_variance,
+            process_variance = e.process_variance,
+            rmsep = e.rmsep()
+        ))
+    }
+
+    /// GCV on the training data.
+    fn gcv(&self) -> Result<f64> {
+        let (d, y) = self.training_data()?;
+        self.inner.gcv(d, y).map_err(to_r)
+    }
+
+    /// Log-likelihood of the training data at a given dispersion.
+    fn log_likelihood_at(&self, dispersion: f64) -> Result<f64> {
+        let (d, y) = self.training_data()?;
+        self.inner.log_likelihood_at(d, y, dispersion).map_err(to_r)
     }
 
     /// `parameters` is "normal", "mean_preserving" or "fixed".

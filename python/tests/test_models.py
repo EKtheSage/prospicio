@@ -584,3 +584,36 @@ def test_model_charts():
     assert sum(b["exposure"] * b["actual_relativity"] for b in dl) == pytest.approx(6.0)
     lr = loss_ratio_chart(losses, [1, 1, 2, 2, 4, 1], [2.0] * 6, bands=2)
     assert lr[1]["loss_ratio"] == pytest.approx(lr[1]["actual"] / lr[1]["premium"])
+
+
+def test_glm_diagnostics_match_r():
+    # R: glm(Days ~ ., poisson, quine), rows 1, 50 and 146; R's working
+    # weights are those of its last iteration, so the tolerance is loose.
+    import csv
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[2] / "validation" / "data" / "quine.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(f))
+    names = ["EthN", "SexM", "AgeF1", "AgeF2", "AgeF3", "LrnSL"]
+    d = Design([[1.0] * len(rows)] + [[float(r[n]) for r in rows] for n in names], ["(Intercept)", *names])
+    y = [float(r["Days"]) for r in rows]
+    fit = Glm("poisson").fit(d, y)
+    g = fit.diagnostics(d, y)
+    want = {
+        "deviance": [-6.01850067312018, 1.73227012015060, 5.22406442044183],
+        "leverage": [0.1043236171522393, 0.0450395922904775, 0.0355182959781139],
+        "cooks_distance": [0.3963575691741380, 0.0248951016628828, 0.2198985132111394],
+    }
+    for key, values in want.items():
+        assert [g[key][i] for i in (0, 49, 145)] == pytest.approx(values, rel=1e-6), key
+    se = fit.prediction_se(d)
+    assert [se[i] for i in (0, 49, 145)] == pytest.approx(
+        [1.620656205333161, 0.698117923072381, 0.694808641916209], rel=1e-6
+    )
+    assert sum(r * r for r in g["deviance"]) == pytest.approx(fit.deviance, rel=1e-10)
+    e = fit.sum_prediction_error(d.select([0]))
+    assert e["rmsep"] ** 2 == pytest.approx(e["parameter_variance"] + e["process_variance"])
+    n, p = len(y), len(fit.coefficients)
+    assert fit.gcv(d, y) == pytest.approx(n * sum(r * r for r in g["response"]) / (n - p) ** 2)
+    assert fit.log_likelihood_at(d, y, 1.0) == pytest.approx(fit.log_likelihood, rel=1e-12)

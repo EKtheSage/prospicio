@@ -740,6 +740,125 @@ impl PyGlmFit {
         self.inner.predict(&design.inner).map_err(to_py)
     }
 
+    /// Residuals, leverages and Cook's distances on ``design`` and ``y``
+    /// (normally the training data), as R's ``residuals.glm``,
+    /// ``hatvalues``, ``rstandard`` and ``cooks.distance``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     Same columns as the training design.
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     Lists of ``fitted``, ``response``, ``pearson``, ``deviance``,
+    ///     ``working`` residuals, ``working_weights``, ``leverage`` (hat
+    ///     values), ``standardized_pearson``, ``standardized_deviance`` and
+    ///     ``cooks_distance``.
+    fn diagnostics<'py>(
+        &self,
+        py: Python<'py>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let d = self.inner.diagnostics(&design.inner, &y).map_err(to_py)?;
+        let out = pyo3::types::PyDict::new(py);
+        out.set_item("fitted", d.fitted)?;
+        out.set_item("response", d.response)?;
+        out.set_item("pearson", d.pearson)?;
+        out.set_item("deviance", d.deviance)?;
+        out.set_item("working", d.working)?;
+        out.set_item("working_weights", d.working_weights)?;
+        out.set_item("leverage", d.leverage)?;
+        out.set_item("standardized_pearson", d.standardized_pearson)?;
+        out.set_item("standardized_deviance", d.standardized_deviance)?;
+        out.set_item("cooks_distance", d.cooks_distance)?;
+        Ok(out)
+    }
+
+    /// Standard error of each row's predicted mean (parameter error only),
+    /// ``|dmu/deta| sqrt(x' Sigma x)``, as R's
+    /// ``predict(type = "response", se.fit = TRUE)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    fn prediction_se(&self, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        self.inner.prediction_se(&design.inner).map_err(to_py)
+    }
+
+    /// The prediction error of the sum of the predicted means of
+    /// ``design``'s rows (a reserve: an origin's future cells): parameter
+    /// error by the delta method, ``g' Sigma g`` with ``g`` the sum of
+    /// ``dmu/deta x``, and process error ``sum(phi V(mu) / w)`` (Taylor and
+    /// McGuire, CAS Monograph 3, (5-11) to (5-13)).
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``total``, ``parameter_variance``, ``process_variance`` and
+    ///     ``rmsep``.
+    fn sum_prediction_error(&self, design: PyRef<'_, PyDesign>) -> PyResult<HashMap<String, f64>> {
+        let e = self
+            .inner
+            .sum_prediction_error(&design.inner)
+            .map_err(to_py)?;
+        Ok(HashMap::from([
+            ("total".to_string(), e.total),
+            ("parameter_variance".to_string(), e.parameter_variance),
+            ("process_variance".to_string(), e.process_variance),
+            ("rmsep".to_string(), e.rmsep()),
+        ]))
+    }
+
+    /// Generalized cross-validation, ``n sum((y - mu)**2) / (n - p)**2``
+    /// (Taylor and McGuire, section 4.4).
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn gcv(&self, design: PyRef<'_, PyDesign>, y: Vec<f64>) -> PyResult<f64> {
+        self.inner.gcv(&design.inner, &y).map_err(to_py)
+    }
+
+    /// The log-likelihood of ``y`` at the fitted means and a given
+    /// dispersion, to compare models at one held dispersion.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// dispersion : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn log_likelihood_at(
+        &self,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        dispersion: f64,
+    ) -> PyResult<f64> {
+        self.inner
+            .log_likelihood_at(&design.inner, &y, dispersion)
+            .map_err(to_py)
+    }
+
     /// Joint predictive distribution across the rows, with parameter and
     /// process uncertainty, keyed ``row = 0, 1, ...``.
     ///

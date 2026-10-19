@@ -248,3 +248,13 @@
   `double_lift`, `loss_ratio_chart`, `roc`, `confusion_matrix`,
   `normalized_gini`; R `double_lift_table()`, `loss_ratio_table()`,
   `roc_curve()`, `confusion_matrix()`, `normalized_gini()` (#351).
+- GLM diagnostics and prediction errors: `GlmFit::diagnostics` (response,
+  Pearson, deviance and working residuals, working weights, hat values,
+  standardized residuals, Cook's distances; R `glm` parity),
+  `prediction_se` (as `predict(type = "response", se.fit = TRUE)`),
+  `sum_prediction_error` (the RMSEP of a reserve by the delta method plus
+  process variance), `gcv` and `log_likelihood_at` a held dispersion.
+  Python methods of the same names on `GlmFit`; R `residuals()`,
+  `hatvalues()`, `rstandard()` and `cooks.distance()` on a `glm_model`,
+  and `glm_diagnostics()`, `prediction_se()`, `sum_prediction_error()`,
+  `glm_gcv()`, `log_likelihood_at()` (#334).

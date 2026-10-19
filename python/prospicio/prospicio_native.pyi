@@ -9006,6 +9006,26 @@ class GlmFit:
         """
         Residual degrees of freedom.
         """
+    def diagnostics(self, /, design: Design, y: Sequence[float]) -> dict:
+        """
+        Residuals, leverages and Cook's distances on ``design`` and ``y``
+        (normally the training data), as R's ``residuals.glm``,
+        ``hatvalues``, ``rstandard`` and ``cooks.distance``.
+        
+        Parameters
+        ----------
+        design : Design
+            Same columns as the training design.
+        y : list of float
+        
+        Returns
+        -------
+        dict
+            Lists of ``fitted``, ``response``, ``pearson``, ``deviance``,
+            ``working`` residuals, ``working_weights``, ``leverage`` (hat
+            values), ``standardized_pearson``, ``standardized_deviance`` and
+            ``cooks_distance``.
+        """
     @property
     def dispersion(self, /) -> float:
         """
@@ -9035,6 +9055,20 @@ class GlmFit:
             For malformed JSON, another format, a newer format version or
             inconsistent fields.
         """
+    def gcv(self, /, design: Design, y: Sequence[float]) -> float:
+        """
+        Generalized cross-validation, ``n sum((y - mu)**2) / (n - p)**2``
+        (Taylor and McGuire, section 4.4).
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        
+        Returns
+        -------
+        float
+        """
     @property
     def input_hash(self, /) -> str:
         """
@@ -9049,6 +9083,21 @@ class GlmFit:
     def log_likelihood(self, /) -> float:
         """
         Log-likelihood.
+        """
+    def log_likelihood_at(self, /, design: Design, y: Sequence[float], dispersion: float) -> float:
+        """
+        The log-likelihood of ``y`` at the fitted means and a given
+        dispersion, to compare models at one held dispersion.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        dispersion : float
+        
+        Returns
+        -------
+        float
         """
     @property
     def names(self, /) -> list[str]:
@@ -9100,6 +9149,20 @@ class GlmFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def prediction_se(self, /, design: Design) -> list[float]:
+        """
+        Standard error of each row's predicted mean (parameter error only),
+        ``|dmu/deta| sqrt(x' Sigma x)``, as R's
+        ``predict(type = "response", se.fit = TRUE)``.
+        
+        Parameters
+        ----------
+        design : Design
+        
+        Returns
+        -------
+        list of float
         """
     def robust_covariance(self, /, design: Design, y: Sequence[float], kind: str = "HC0", groups: Sequence[int |str] |None = None) -> list[list[float]]:
         """
@@ -9159,6 +9222,24 @@ class GlmFit:
     def std_errors(self, /) -> list[float]:
         """
         Standard errors.
+        """
+    def sum_prediction_error(self, /, design: Design) -> dict[str, float]:
+        """
+        The prediction error of the sum of the predicted means of
+        ``design``'s rows (a reserve: an origin's future cells): parameter
+        error by the delta method, ``g' Sigma g`` with ``g`` the sum of
+        ``dmu/deta x``, and process error ``sum(phi V(mu) / w)`` (Taylor and
+        McGuire, CAS Monograph 3, (5-11) to (5-13)).
+        
+        Parameters
+        ----------
+        design : Design
+        
+        Returns
+        -------
+        dict
+            ``total``, ``parameter_variance``, ``process_variance`` and
+            ``rmsep``.
         """
     def to_json(self, /) -> str:
         """

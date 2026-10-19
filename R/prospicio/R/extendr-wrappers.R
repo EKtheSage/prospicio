@@ -802,6 +802,16 @@ GlmModel$family <- function() .Call(wrap__GlmModel__family, self)
 
 GlmModel$predict <- function(x, names, offset) .Call(wrap__GlmModel__predict, self, x, names, offset)
 
+GlmModel$diagnostics <- function() .Call(wrap__GlmModel__diagnostics, self)
+
+GlmModel$prediction_se <- function(x, names, offset) .Call(wrap__GlmModel__prediction_se, self, x, names, offset)
+
+GlmModel$sum_prediction_error <- function(x, names, offset, weights) .Call(wrap__GlmModel__sum_prediction_error, self, x, names, offset, weights)
+
+GlmModel$gcv <- function() .Call(wrap__GlmModel__gcv, self)
+
+GlmModel$log_likelihood_at <- function(dispersion) .Call(wrap__GlmModel__log_likelihood_at, self, dispersion)
+
 GlmModel$predict_distribution <- function(x, names, offset, weights, n_sims, seed, parameters) .Call(wrap__GlmModel__predict_distribution, self, x, names, offset, weights, n_sims, seed, parameters)
 
 #' @export

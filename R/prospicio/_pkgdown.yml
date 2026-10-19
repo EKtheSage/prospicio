@@ -201,6 +201,7 @@ reference:
       - glm_fit
       - glm_nb_fit
       - glm_model
+      - glm_diagnostics
       - f_test
       - vif
       - robust_vcov
