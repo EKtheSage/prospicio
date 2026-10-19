@@ -126,8 +126,8 @@ pointing to its page on the Python site and links to a sibling `.qmd` to its
 article. The site does not run a guide's chunks; it shows each with the text
 block that the harness checks. The articles index lists the guides by name in
 reading order, and takes in a new guide whose name starts like an existing
-family's (`reserving-`, `pir-`, ...); a guide with a new prefix needs a line
-there, or the site build fails. With the R package installed, render one
+family's (`reserving-`, `pir-`, ...); a guide with a new prefix is shown
+under "More articles" until it is given a line there. With the R package installed, render one
 with `quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
 all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
 Two blocks in `reserving-meyers` (the heavy Bayesian fits) are plain code fences

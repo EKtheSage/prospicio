@@ -290,7 +290,8 @@ reference:
 # `cargo xtask r` (gitignored). Grouped as in docs/guides/reading-list.md;
 # the names give the reading order, and the starts_with() lines take in a
 # new guide of an existing family. A guide whose name starts otherwise needs
-# a line here: pkgdown fails on an article missing from this index.
+# a line here; until it has one, `cargo xtask r` shows it under "More articles"
+# (pkgdown itself fails on an article missing from this index).
 articles:
   - title: Pricing and capital
     navbar: Pricing and capital
