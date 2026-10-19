@@ -498,8 +498,8 @@ real Excel.
     Mildenhall and Major unless named). Families take `aggregate`'s
     short names, as `PRO.TOWER.PRICE` does (decision 24), and here also
     the four capped families with their intercept `r0`; the bi-TVaR,
-    beta and weighted TVaR, which take more than one parameter, are left
-    out until asked. A family that cannot reach the premium gets a
+    beta and weighted TVaR, which take more than one parameter, came
+    later (decision 31). A family that cannot reach the premium gets a
     message in its row. Assets enter by capping the outcomes on the
     sheet, as `calibrate` documents, rather than as an argument. Against
     `aggregate` 1.0.1, `g(s)` of nine families and the InsCo prices and
@@ -523,6 +523,59 @@ real Excel.
     asked. Against `aggregate` 1.0.1 the 475 values of
     `contract_terms_aggregate.csv` and the expected reinstatement premiums
     of books RI2 and RI10 match at the reference's tolerances.
+31. **A distortion with several parameters takes them in one range**
+    (user, 2026-10-19, the seventh group). The `parameter` argument of
+    `PRO.DISTORTION`, `PRO.DISTORTION.PRICE` and `PRO.TOWER.PRICE` is a
+    number for a one-parameter family, three cells `p0, p1, w` for the
+    bi-TVaR (`bitvar`), two `a, b` for the beta, and two columns (levels
+    | weights) or two rows for the weighted TVaR (`wtdtvar`), in
+    `aggregate`'s order; no function gains an argument. The capped
+    families keep `r0` beside the parameter and also take the two
+    together in one range, which is how `PRO.TOWER.PRICE`, without an
+    `r0` argument, reaches them. The families with several parameters
+    are not calibrated: a target premium fixes one number, not two or
+    three, and `PRO.DISTORTION.CALIBRATE` says so. Against `aggregate`
+    1.0.1 the 48 `g(s)` values of the bi-TVaR, beta and weighted TVaR in
+    `distortion_aggregate.csv` match at its tolerances, and CCoC at `r`
+    prices as the bi-TVaR `(0, 1, r / (1 + r))` on a sheet and in every
+    view of a tower.
+32. **Copulas are rebuilt from their parameters in each call** (user,
+    2026-10-19, the seventh group), over `prospicio_prob::copula`.
+    `PRO.COPULA.CDF(points, family, parameter, [nu])` gives `C(u)` at
+    each row of `points`; `PRO.COPULA.SIM(family, parameter, [sims],
+    [dim], [seed], [nu])` simulates uniforms, row `i` from stream `i` of
+    the seed as `copula::simulate` draws them, so a sheet agrees with the
+    Python and R packages draw for draw; `PRO.IMAN.CONOVER(draws,
+    correlation, [seed], [dof], [shuffle])` reorders simulated columns
+    to a rank correlation with normal or t scores. The Gaussian and t
+    take one correlation for every pair or a square matrix; the four
+    Archimedean families take `theta`. The marginals are left to the
+    sheet (`PRO.SEV.QUANTILE` on the uniforms) rather than taken as
+    arguments, so any family, a fitted one included, joins without the
+    copula functions knowing it. Nested Archimedean copulas and vines,
+    which are a tree of parameters rather than a range, are left out
+    until asked. Against mpmath at 30 digits the 39 Gaussian and
+    Archimedean cdf values of `copula_mpmath.csv` (one Archimedean point
+    per family in three dimensions) match at the reference's
+    tolerances; the simulated uniforms are the crate's, and the
+    Iman–Conover result is `iman_conover`'s.
+33. **A term of several years is a row of losses** (user, 2026-10-19,
+    the seventh group's last item), over
+    `prospicio_aggregate::Layer::profit_commissions_over` and
+    `ceding_commissions_over`. `PRO.PROFIT.COMMISSION.TERM(losses,
+    premium, share, allowance, [carry_years])` and
+    `PRO.SLIDING.SCALE.TERM(losses, premium, commissions, loss_ratios,
+    [carry], [carry_years])` read one term from each row of `losses`,
+    its columns the years in order, and give each year's commission in
+    the same shape, deficits (and for the sliding scale credits, both by
+    default) carried forward as `aggregate.md` defines them: used oldest
+    first, dropped after `carry_years` later years, or kept until used
+    up. The years' losses come from the sheet, so the paths may be
+    independent years or share a trend, as `Tower::apply_term` allows,
+    and the add-in keeps no simulation (decision 4). The premium is the
+    same in every year. `aggregate` has no multi-year term, so the
+    checks are the crate's hand-worked cases and, on 400 three-year
+    paths, `Tower::apply_aggregate_term`'s commissions year by year.
 
 ## Parity plan
 
@@ -562,18 +615,26 @@ order, one small PR each, those already done struck through:
    expenses and brokerage)~~; ~~distortions calibrated to a target and
    a layer priced by one~~; ~~contract terms on an aggregate (sliding
    scale, profit commission, reinstatement premiums)~~.
+7. The nearest left out (user, 2026-10-19, "more Excel functions"):
+   ~~the distortions with several parameters (bi-TVaR, beta, weighted
+   TVaR)~~; ~~copulas (a copula's cdf at points, uniforms simulated from
+   one, and Iman–Conover's reordering of simulated columns to a rank
+   correlation, all on ranges that hold no state)~~; ~~multi-year
+   contract terms (a profit commission or sliding scale over a term of
+   simulated years, deficits and credits carried forward)~~.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
-copulas and vines, the P&L ledger, catastrophe event
+vine copulas, the P&L ledger, catastrophe event
 sets. These want a table of data and an object kept between calls, which
 an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's six groups are done; further
-  functions as the user asks (multi-year terms, the two-parameter
-  distortions and copulas are the nearest left out).
+- **Next functions:** the parity plan's seven groups are done; further
+  functions as the user asks (nested Archimedean copulas and vines, and
+  the expected multi-year commission on the grid, are the nearest left
+  out).
 - **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
   an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
   Its pattern is not normalised, so the a-priori level is absorbed by the

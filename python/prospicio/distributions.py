@@ -2,6 +2,7 @@
 counts, and the joint predictive distribution every model returns."""
 
 from .prospicio_native import (
+    Affine,
     Beta,
     Binomial,
     Burr,
@@ -19,6 +20,8 @@ from .prospicio_native import (
     Lognormal,
     Mixture,
     NegativeBinomial,
+    Normal,
+    Ogive,
     Pareto,
     PiecewisePareto,
     Poisson,
@@ -50,6 +53,7 @@ __all__ = [
     "Beta",
     "PolicyLimits",
     "Truncated",
+    "Affine",
     "Mixture",
     "Custom",
     "Pareto",
@@ -69,6 +73,8 @@ __all__ = [
     "Grid",
     "DiscretizationReport",
     "Discrete",
+    "Normal",
+    "Ogive",
     "Sampled",
     "PredictiveDistribution",
     "to_json",

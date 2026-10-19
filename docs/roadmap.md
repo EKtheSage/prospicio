@@ -98,10 +98,14 @@ what it is aiming for by v1.0.
     and of every parametric severity.
   - `Discrete`, a distribution on finitely many values of either sign,
     for the P&L ledger's rows (`docs/design/pnl.md`).
-- **Next:** the Guides lane's issues of 2026-10-17 and 18: the
-  rearrangement algorithm, a normal and an ogive (#366), allocations of
-  the margin (#369), shifted and scaled severities (#318), fits to grouped and truncated data
-  (#328), normal power approximations (#329).
+  - The Guides lane's issues of 2026-10-17 and 18: the worst VaR by the
+    rearrangement algorithm, a normal and an ogive (#366), the covariance
+    allocation of the margin, Shapley, haircut and equal risk allocations
+    (#369), the normal power and Wilson–Hilferty approximations (#329),
+    shifted and scaled severities (#318).
+- **Next:** fits to grouped and truncated data (#328): the Lomax family
+  in `fit_severity` and truncation from above are done; grouped data with
+  minimum chi-square and minimum-distance fits remain.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
@@ -456,11 +460,14 @@ what it is aiming for by v1.0.
   families, with reporting thresholds and censoring); EVT threshold
   diagnostics, the GPD tail and Hill's estimator; payment patterns,
   discounting and a cost-of-capital price over the payout; a cover's
-  quote; distortions, their prices and calibration; contract terms at a
-  loss and in expectation.
+  quote; distortions, their prices and calibration, with several
+  parameters too (bi-TVaR, beta, weighted TVaR); contract terms at a
+  loss, in expectation and over a term of several years with deficits
+  and credits carried forward; copulas (cdfs, simulated uniforms and
+  Iman–Conover).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): all six groups done; further
+     form (`xll.md`, parity plan): all seven groups done; further
      functions as the user asks.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).

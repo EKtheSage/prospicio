@@ -416,3 +416,58 @@ def test_grid_remove_fuzz():
     g = Grid(1.0, [0.5, 0.5, 1e-20])
     assert g.remove_fuzz().probs == [0.5, 0.5, 0.0]
     assert g.remove_fuzz(1e-30).probs[2] == 1e-20
+
+
+def test_normal_and_ogive():
+    # Pricing Insurance Risk, section 4.3.3: a normal's TVaR is VaR plus a
+    # multiple of sigma; and an ogive from grouped counts (Exercise 50).
+    import statistics
+
+    from prospicio.distributions import Normal, Ogive
+
+    x = Normal(10.0, 2.0)
+    ref = statistics.NormalDist(10.0, 2.0)
+    for p in (0.1, 0.5, 0.99):
+        assert abs(x.quantile(p) - ref.inv_cdf(p)) < 1e-9
+        z = statistics.NormalDist().inv_cdf(p)
+        want = 10.0 + 2.0 * statistics.NormalDist().pdf(z) / (1.0 - p)
+        assert abs(x.tvar(p) - want) < 1e-9
+    assert abs(x.cdf(11.0) - ref.cdf(11.0)) < 1e-15
+    assert abs(x.pdf(11.0) - ref.pdf(11.0)) < 1e-15
+    assert len(x.sample(5, seed=1)) == 5
+    with pytest.raises(ValueError):
+        Normal(0.0, 0.0)
+    with pytest.raises(ValueError):
+        x.tvar(1.0)
+
+    o = Ogive.from_counts([0, 1000, 5000, 10000], [40, 50, 10])
+    assert o.cdf_values == [0.0, 0.4, 0.9, 1.0]
+    assert abs(o.mean() - (0.4 * 500 + 0.5 * 3000 + 0.1 * 7500)) < 1e-9
+    assert abs(o.quantile(0.95) - 7500.0) < 1e-9
+    assert abs(o.tvar(0.95) - 8750.0) < 1e-9
+    assert abs(o.lev(2000.0) - 1337.5) < 1e-9
+    assert abs(o.layer(1000.0, 1000.0) - 537.5) < 1e-9
+    assert Ogive([0.0, 10.0], [0.0, 1.0]).variance() == pytest.approx(100.0 / 12.0)
+    with pytest.raises(ValueError):
+        Ogive([0.0, 1.0], [0.0, 0.9])
+
+
+def test_affine_severity():
+    # aggregate's 10 * lognorm 1 + 20, with exact layer moments (#318).
+    from prospicio.distributions import Affine, Lognormal, from_json, to_json
+
+    x = Lognormal(0.0, 1.0)
+    y = Affine(x, scale=10.0, shift=20.0)
+    assert abs(y.mean() - (10 * x.mean() + 20)) < 1e-9
+    assert abs(y.variance() - 100 * x.variance()) < 1e-6
+    assert y.cdf(20.0) == 0.0 and abs(y.cdf(30.0) - x.cdf(1.0)) < 1e-15
+    assert abs(y.quantile(0.9) - (10 * x.quantile(0.9) + 20)) < 1e-9
+    assert abs(y.layer(30.0, 40.0) - 10 * x.layer(3.0, 2.0)) < 1e-9
+    assert y.lev(15.0) == 15.0
+    assert (y.scale, y.shift) == (10.0, 20.0)
+    z = from_json(to_json(y))
+    assert isinstance(z, Affine) and abs(z.mean() - y.mean()) < 1e-12
+    with pytest.raises(ValueError):
+        Affine(x, scale=0.0)
+    with pytest.raises(ValueError):
+        Affine(x, shift=-1.0)

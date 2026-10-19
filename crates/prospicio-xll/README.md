@@ -82,9 +82,14 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.DISTORTION(s, family, parameter, [r0])` | A distortion's g(s) |
 | `PRO.DISTORTION.PRICE(values, [probs], family, parameter, [r0])` | A distortion's price of outcomes or draws, with mean, margin, loss ratio |
 | `PRO.DISTORTION.CALIBRATE(values, [probs], premium, [families], [r0])` | Each family's parameter that gives a target premium |
+| `PRO.COPULA.CDF(points, family, parameter, [nu])` | A copula's distribution function at each point (Gaussian in 2-D, Archimedean in any) |
+| `PRO.COPULA.SIM(family, parameter, [sims], [dim], [seed], [nu])` | Uniforms simulated from a copula, one row a simulation |
+| `PRO.IMAN.CONOVER(draws, correlation, [seed], [dof], [shuffle])` | Simulated columns reordered to a rank correlation, each keeping its values |
 | `PRO.SWING(loss, basic, lcm, [minimum], [maximum], [share])` | Swing-rated or retro premium at each loss |
 | `PRO.SLIDING.SCALE(loss, premium, commissions, loss_ratios)` | Sliding-scale ceding commission at each ceded loss |
 | `PRO.PROFIT.COMMISSION(loss, premium, share, allowance)` | Profit commission at each ceded loss |
+| `PRO.PROFIT.COMMISSION.TERM(losses, premium, share, allowance, [carry_years])` | Profit commission in each year of a term, deficits carried forward |
+| `PRO.SLIDING.SCALE.TERM(losses, premium, commissions, loss_ratios, [carry], [carry_years])` | Sliding-scale commission in each year of a term, deficits and credits carried forward |
 | `PRO.LAYER.TERMS(count_mean, [dispersion], family, p1, p2, [p3], layer_limit, layer_attachment, premium, [reinstatements], [commissions], [loss_ratios], [profit_share], [profit_allowance], [share], [policy_limit], [step], [points])` | A layer's premium, reinstatement premium and commissions in expectation |
 | `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights])` | Maximum likelihood fit to large losses: parameters with SEs, fit against the data, or the body families compared |
 | `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Pareto extrapolation from one layer to others |
@@ -224,12 +229,31 @@ Ctrl+Alt+F9 to recalculate.
   (capital needs `assets`; the rate on line and payback need `limit`).
 - Distortions take `aggregate`'s names: `ccoc` (r), `ph` (rho), `wang`
   (lambda), `dual` (beta), `tvar` (p), `exp` (k), and with an intercept
-  `r0` the capped `clin` (slope), `cll` (b), `lep` and `ly` (r). Outcomes
+  `r0` the capped `clin` (slope), `cll` (b), `lep` and `ly` (r). A
+  family with several parameters takes them in one range: `bitvar`
+  (`p0, p1, w`), `beta` (`a, b`), `wtdtvar` (two columns, levels and
+  weights), and a capped family `r0` with its parameter, as
+  `PRO.TOWER.PRICE` needs. These are not calibrated. Outcomes
   may be in any order; without `probs` they are equally likely draws, so
   a column of `PRO.ODP.SIMS` prices directly. To price a loss backed by
   assets `a`, cap the outcomes at `a` first (`=MIN(range, a)`): the
   premium then lies between the capped mean and `a`, the range
   `PRO.DISTORTION.CALIBRATE` solves in.
+- Terms of several years: `losses` holds one term a row (a simulated
+  path, or one history) and one year a column, in order; the result has
+  the same shape. A carried amount is used oldest first and, with
+  `carry_years`, dropped after that many later years. The premium is the
+  same each year. Simulated years come from any sheet source, for
+  example `PRO.ODP.SIMS` or a column of annual losses per year.
+- Copulas: `gaussian` and `t` take one correlation for every pair or a
+  square correlation matrix (the t also `nu`), `clayton`, `gumbel`,
+  `frank` and `joe` their `theta`. `PRO.COPULA.SIM`'s row `i` is stream
+  `i` of the seed, as the Python and R packages draw it; turn its
+  uniforms into losses with `PRO.SEV.QUANTILE` column by column. The
+  Gaussian's cdf is in two dimensions, the Archimedean ones' in any, and
+  the t has none in closed form. `PRO.IMAN.CONOVER` reorders simulations
+  already on the sheet (`PRO.ODP.SIMS`, a column per line) and leaves
+  each column's values as they are.
 - Contract terms: amounts are at 100% and losses ceded at the placed
   share, as in `aggregate`. A sliding scale is two ranges, commission
   rates and their loss ratios (increasing), linear between and flat

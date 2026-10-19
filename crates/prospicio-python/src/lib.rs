@@ -24,6 +24,7 @@ mod models;
 mod natural;
 #[cfg(feature = "nn")]
 mod nn;
+mod normal;
 mod pareto;
 mod payout;
 mod pnl;
@@ -94,9 +95,11 @@ mod prospicio_native {
         PyTokenAttention,
     };
     #[pymodule_export]
+    use super::normal::{PyNormal, PyOgive};
+    #[pymodule_export]
     use super::pareto::{
-        PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto, PyInverseGamma,
-        PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
+        PyAffine, PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto,
+        PyInverseGamma, PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
         PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PyTruncated, PyTweedie, PyWeibull,
         claim_count, fit_severity, goodness_of_fit, local_pareto_to_piecewise, product_limit,
     };

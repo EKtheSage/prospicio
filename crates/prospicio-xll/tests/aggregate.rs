@@ -589,6 +589,20 @@ fn a_tower_with_annual_terms_is_the_librarys_and_ccoc_is_closed_form() {
     );
     assert!((num(s.get(r, 7)) - p / 1000.0).abs() < 1e-9);
     assert!((num(s.get(r, 5)) - (p - ceded.mean())).abs() < 1e-6);
+    // CCoC at r is the bitvar (0, 1, r / (1 + r)): every view prices the
+    // same with the three parameters in one range.
+    let mut bitvar = args.clone();
+    bitvar[15] = t("bitvar");
+    bitvar[16] = Grid::row(&[0.0, 1.0, 0.1 / 1.1]);
+    let b = call("pro_tower_price", bitvar);
+    for row in 0..s.rows {
+        if let (Value::Number(x), Value::Number(y)) = (s.get(row, 4), b.get(row, 4)) {
+            assert!(
+                (x - y).abs() < 1e-6 * x.abs().max(1.0),
+                "row {row}: {x} vs {y}"
+            );
+        }
+    }
     // A layer with annual terms: the total and the net are not one
     // compound, and say so.
     let note = |label: &str| match s.get(row_of(&s, label), 1) {
