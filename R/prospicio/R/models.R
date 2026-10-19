@@ -897,8 +897,9 @@ log_likelihood_at <- function(model, dispersion) {
 #' so its draws hold the coefficients fixed (process uncertainty only) and
 #' take a `lambda` from its path.
 #'
-#' @param object A [glm_model], [elastic_net_model], [gam_model] or
-#'   [bayes_glm_model] (posterior predictive draws).
+#' @param object A [glm_model], [elastic_net_model], [gam_model],
+#'   [bayes_glm_model] (posterior predictive draws) or [odp_glm_fit] (its
+#'   future cells, drawn jointly; no `newdata`).
 #' @param newdata A data frame with the model's terms.
 #' @param n_sims Number of simulations.
 #' @param seed Generator seed.

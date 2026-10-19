@@ -374,3 +374,12 @@
   `fit_grouped`, `fit_lev_distance`, `grouped_goodness_of_fit`; R
   `grouped_fit()`, `lev_distance_fit()`, `grouped_goodness_of_fit()`
   (#328).
+
+### Reserving
+
+- The ODP GLM's analytic prediction error: `OdpGlmFit::prediction_error`
+  gives each origin's and the total reserve's process and parameter
+  variance by the delta method, matching Taylor and McGuire's Table 5-4
+  (CAS Monograph 3) to the unit. `OdpGlm` and `OdpGlmFit` in Python
+  (`prospicio.reserving`) and R (`odp_glm()`, with a
+  `predict_distribution()` method), single segment (#333).

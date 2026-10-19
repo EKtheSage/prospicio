@@ -26,6 +26,7 @@ mod natural;
 #[cfg(feature = "nn")]
 mod nn;
 mod normal;
+mod odp_glm;
 mod pareto;
 mod payout;
 mod pnl;
@@ -101,6 +102,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::normal::{PyNormal, PyOgive};
+    #[pymodule_export]
+    use super::odp_glm::{PyOdpGlm, PyOdpGlmFit};
     #[pymodule_export]
     use super::pareto::{
         PyAffine, PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto,

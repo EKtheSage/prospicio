@@ -439,6 +439,83 @@ fn odp_glm_predictive_distribution_matches_its_mean() {
     }
 }
 
+/// Taylor and McGuire, *Stochastic Loss Reserving Using Generalized Linear
+/// Models* (CAS Monograph 3), Table 1-1: the incremental paid losses of
+/// the NJ Manufacturers workers compensation triangle, accident years 1988
+/// to 1997.
+const TAYLOR_MCGUIRE: [&[f64]; 10] = [
+    &[
+        41821., 34729., 20147., 15965., 11285., 5924., 4775., 3742., 3435., 2958.,
+    ],
+    &[
+        48167., 39495., 24444., 18178., 10840., 7379., 5683., 4758., 3959.,
+    ],
+    &[52058., 47459., 27359., 17916., 11448., 8846., 5869., 5391.],
+    &[57251., 49510., 27036., 20871., 14304., 10552., 7742.],
+    &[59213., 54129., 29566., 22484., 14114., 10000.],
+    &[59475., 52076., 26836., 22332., 14756.],
+    &[65607., 44648., 27062., 22655.],
+    &[56748., 39315., 26748.],
+    &[52212., 40030.],
+    &[43962.],
+];
+
+#[test]
+fn odp_glm_prediction_error_matches_taylor_mcguire_table_5_4() {
+    let (mut origin, mut age, mut paid) = (Vec::new(), Vec::new(), Vec::new());
+    for (k, row) in TAYLOR_MCGUIRE.iter().enumerate() {
+        let mut cumulative = 0.0;
+        for (j, v) in row.iter().enumerate() {
+            cumulative += v;
+            origin.push(Month::january(1988 + k as i32));
+            age.push(12 * (j as u32 + 1));
+            paid.push(cumulative);
+        }
+    }
+    let tri = Triangle::from_long(&Long {
+        keys: &[],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&age),
+        values: &[("paid", &paid)],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap();
+    let fit = OdpGlm::default().fit(&tri, "paid").unwrap();
+    let error = fit.prediction_error().unwrap();
+    // Table 5-4: forecast and RMSEP by accident year 1989 to 1997, then
+    // the total, as printed (to the unit).
+    let table = [
+        (3_398.0, 924.0),
+        (8_155.0, 1_363.0),
+        (14_579.0, 1_775.0),
+        (22_645.0, 2_169.0),
+        (31_865.0, 2_523.0),
+        (45_753.0, 3_036.0),
+        (60_093.0, 3_577.0),
+        (80_983.0, 4_538.0),
+        (105_874.0, 6_786.0),
+    ];
+    assert_eq!(error.by_origin[0].rmsep(), 0.0);
+    for (e, (forecast, rmsep)) in error.by_origin[1..].iter().zip(table) {
+        assert!(
+            (e.total - forecast).abs() <= 0.5,
+            "{} vs {forecast}",
+            e.total
+        );
+        assert!((e.rmsep() - rmsep).abs() <= 0.5, "{} vs {rmsep}", e.rmsep());
+    }
+    assert!((error.total.total - 373_346.0).abs() <= 0.5);
+    assert!((error.total.rmsep() - 14_076.0).abs() <= 0.5);
+    // The split the guide prints, and the monograph's 10,275 for the
+    // total if the accident years were independent.
+    assert!((error.total.process_variance.sqrt() - 6_539.0).abs() <= 0.5);
+    assert!((error.total.parameter_variance.sqrt() - 12_465.0).abs() <= 0.5);
+    let independent: f64 = error.by_origin.iter().map(|e| e.rmsep().powi(2)).sum();
+    assert!((independent.sqrt() - 10_275.0).abs() <= 0.5);
+}
+
 /// Rows of a two-key (lob × coverage) long table with paid and incurred:
 /// Auto from RAA and Home from GenIns (scaled), with origins re-based to
 /// 2011, each coverage a different share of the line. Returns the key
