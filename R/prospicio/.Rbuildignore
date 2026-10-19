@@ -3,4 +3,5 @@
 ^pkgdown$
 ^LICENSE\.md$
 ^bootstrap\.R$
+^vignettes/articles$
 ^src/rust/target$

@@ -279,3 +279,63 @@ reference:
       - meyers_one_year
       - clark_fit
       - fit_frames
+# Articles: the R twins of the guides (docs/guides/*.qmd) and of the
+# notebooks (examples/*.qmd), staged into vignettes/articles by
+# `cargo xtask r` (gitignored). Grouped as in docs/guides/reading-list.md;
+# the names give the reading order, and the starts_with() lines take in a
+# new guide of an existing family. A guide whose name starts otherwise needs
+# a line here: pkgdown fails on an article missing from this index.
+articles:
+  - title: Pricing and capital
+    navbar: Pricing and capital
+    desc: >
+      Guides that follow the pricing and capital texts. The code is shown with the output it prints, which CI checks.
+    contents:
+      - articles/prospicio-for-aggregate-users
+      - articles/pricing-insurance-risk-case-studies
+      - articles/pir-risk-measures
+      - articles/pir-portfolio-pricing
+      - articles/pir-price-allocation
+      - articles/pir-price-allocation-practice
+      - articles/capital-modeling-monograph-15
+      - articles/capital-modeling-monograph-15-theory
+      - articles/capital-modeling-monograph-15-applications
+      - articles/capital-modeling-monograph-15-practice
+      - articles/capital-modeling-monograph-15-iman-conover
+      - articles/ratemaking-werner-modlin
+      - articles/ratemaking-werner-modlin-indications
+      - starts_with("articles/prospicio-")
+      - starts_with("articles/pricing-")
+      - starts_with("articles/pir-")
+      - starts_with("articles/capital-")
+      - starts_with("articles/ratemaking-")
+  - title: Distributions and GLMs
+    navbar: Distributions and GLMs
+    desc: >
+      Guides that follow the texts on claim size and count distributions and on GLM rating.
+    contents:
+      - articles/distributions-for-actuaries-claim-size
+      - articles/distributions-for-actuaries-counts-aggregates
+      - articles/glm-ratemaking-goldburd
+      - articles/glm-ratemaking-goldburd-validation
+      - articles/glm-to-comprehensive-pricing-chalk
+      - articles/glm-to-comprehensive-pricing-chalk-2
+      - starts_with("articles/distributions-")
+      - starts_with("articles/glm-")
+  - title: Reserving
+    navbar: Reserving
+    desc: >
+      Guides that follow the reserving texts.
+    contents:
+      - articles/reserving-friedland
+      - articles/reserving-taylor-mcguire
+      - articles/reserving-meyers
+      - articles/reserving-compartmental
+      - starts_with("articles/reserving-")
+  - title: Worked examples
+    navbar: Worked examples
+    desc: >
+      The notebooks' R twins, run in full each time the site is built.
+    contents:
+      - articles/one_year_view
+      - articles/reinsurance_pricing

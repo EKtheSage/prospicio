@@ -13,6 +13,9 @@ their results show there (the repository keeps the notebooks without outputs).
 `cargo xtask python` builds that User Guide from this folder: every `.md` file
 here but this README becomes a page, its first `#` heading the page's title,
 and a link to a notebook in `examples/` points to the notebook's page.
+The R twins (the `.qmd` files) are pages too, under "Articles" on the R site:
+`cargo xtask r` stages each one as a pkgdown article, grouped as in the
+[reading list](reading-list.md).
 
 Every guide's code is tested. `python/tests/test_guides.py` runs each guide's
 ```` ```python ```` blocks in order in one namespace, and when a block is
@@ -113,7 +116,15 @@ twins in [`examples/`](../../examples/README.md):
 Each R chunk is followed by the text it prints, and
 `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R tests) runs
 every `.qmd` here and requires each chunk to print exactly that text. The `.qmd`
-files are not pages of the Python site. With the R package installed, render one
+files are the R site's articles (`R/prospicio/_pkgdown.yml`, "articles"):
+`cargo xtask r` copies each into `R/prospicio/vignettes/articles` (gitignored)
+as R Markdown before pkgdown builds the site, with links to a Python guide
+pointing to its page on the Python site and links to a sibling `.qmd` to its
+article. The site does not run a guide's chunks; it shows each with the text
+block that the harness checks. The articles index lists the guides by name in
+reading order, and takes in a new guide whose name starts like an existing
+family's (`reserving-`, `pir-`, ...); a guide with a new prefix needs a line
+there, or the site build fails. With the R package installed, render one
 with `quarto render docs/guides/prospicio-for-aggregate-users.qmd`, or check them
 all from the repository root with `Rscript R/prospicio/tests/test-guides.R`.
 Two blocks in `reserving-meyers` (the heavy Bayesian fits) are plain code fences

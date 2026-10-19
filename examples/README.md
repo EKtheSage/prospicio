@@ -34,7 +34,7 @@ quarto render examples/one_year_view.qmd
 quarto render examples/reinsurance_pricing.qmd
 ```
 
-CI does not render the `.qmd` files yet; render them after a change to the R bindings. Rendered `.html` is not committed.
+They are also pages of the docs site, under "Articles", "Worked examples" on the R site: `cargo xtask r` stages them as pkgdown articles and runs them in full, and fails if `reinsurance_pricing.qmd` reports a comparison outside its tolerance. That build runs in CI's `docs` job when a pull request touches the bindings, `R/` or `xtask/`, and in the Pages run after a merge to `main`; a pull request that touches only `examples/` does not render them. Rendered `.html` is not committed.
 
 ## Running a notebook
 

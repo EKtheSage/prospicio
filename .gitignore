@@ -17,6 +17,8 @@ R/prospicio/src/*.so
 # Rendered docs sites (cargo xtask docs); publishing is not set up yet
 python/great-docs/
 R/prospicio/docs/
+# The R twins of the guides and examples, staged as articles by `cargo xtask r`
+R/prospicio/vignettes/articles/
 .quarto/
 
 # Downloaded validation data (validation/scripts/fetch_fremtpl2.py)

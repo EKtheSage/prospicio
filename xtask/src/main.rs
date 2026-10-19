@@ -8,7 +8,8 @@
 //!   the notebooks in examples/, executed (the notebooks are committed without
 //!   outputs, so the site is where their results are published).
 //! - `r`: regenerate `man/` and `NAMESPACE` with roxygen2, install the
-//!   package, run the tests, render the pkgdown site.
+//!   package, run the tests, render the pkgdown site, whose articles are the
+//!   R twins (`.qmd`) of the guides and of the notebooks.
 //! - `rust`: rustdoc for the pure-Rust crates, warnings denied.
 //! - `docs`: all three, collected into one site under `target/docs-site`.
 //! - `xll`: build the 64-bit Excel add-in as `target/xll/prospicio.xll`
@@ -267,6 +268,8 @@ fn r(check: bool) -> Result {
             r#"if (length(unlist(u)) || length(c)) { print(u); print(c); quit(status = 1) }"#,
         ),
     )?;
+    step("r: stage the R guides and examples as articles");
+    stage_r_articles()?;
     step("r: render the docs site (pkgdown)");
     let mut cmd = Command::new("Rscript");
     cmd.args([
@@ -282,8 +285,199 @@ fn r(check: bool) -> Result {
         }
     }
     run(&mut cmd)?;
+    check_r_examples()?;
     if check {
         unchanged(R_GENERATED)?;
+    }
+    Ok(())
+}
+
+/// Where the R site's articles are staged: pkgdown renders each `.Rmd` in
+/// `vignettes/articles` as `articles/<name>.html`. Gitignored and kept out of
+/// the package tarball (.Rbuildignore); `_pkgdown.yml` groups the pages.
+const R_ARTICLES: &str = "R/prospicio/vignettes/articles";
+
+/// Where the repository's files are on GitHub, for the links in a guide to
+/// files that are not pages of the site (the knowledge bundle).
+const GITHUB_BLOB: &str = "https://github.com/EKtheSage/prospicio/blob/main/";
+
+/// Stands for the root of the collected site (target/docs-site) while an
+/// article's links are rewritten.
+const SITE: &str = "<site>/";
+
+/// Stages the R twins as articles of the pkgdown site: each `.qmd` in
+/// docs/guides, then each `.qmd` in examples/, copied as R Markdown. The
+/// `.qmd` files stay the only source.
+///
+/// A guide's chunks are not run: each prints nothing on the page (the guide
+/// sets `output: false`) and is followed by a `text` block holding what it
+/// prints, which R/prospicio/tests/test-guides.R checks. An example is run in
+/// full, as the Python site runs the notebooks, since its results are its
+/// output; its summary is checked after the build (`check_r_examples`).
+///
+/// Links are rewritten for the site: a Python guide or notebook points to its
+/// page on the Python site (`../../python/user-guide/<name>.html` in the
+/// collected site, target/docs-site), a sibling `.qmd` to its article, and a
+/// path out of docs/guides to the file on GitHub.
+fn stage_r_articles() -> Result {
+    let root = root();
+    let stage = root.join(R_ARTICLES);
+    if stage.exists() {
+        fs::remove_dir_all(&stage).map_err(|e| format!("clearing {}: {e}", stage.display()))?;
+    }
+    fs::create_dir_all(&stage).map_err(|e| format!("creating {}: {e}", stage.display()))?;
+    let guides = root.join("docs/guides");
+    let examples = root.join("examples");
+    let python_guides: Vec<String> = files(&guides, "md")?
+        .iter()
+        .map(|p| file_stem(p))
+        .filter(|s| s != "README")
+        .collect();
+    let notebooks: Vec<String> = files(&examples, "ipynb")?
+        .iter()
+        .map(|p| file_stem(p))
+        .collect();
+    let guide_twins = files(&guides, "qmd")?;
+    let example_twins = files(&examples, "qmd")?;
+    let twins: Vec<String> = guide_twins
+        .iter()
+        .chain(&example_twins)
+        .map(|p| file_stem(p))
+        .collect();
+    // Site links are written with a placeholder root, so that the rewrite of
+    // the remaining relative links (to GitHub) leaves them alone.
+    let python_page = |s: &str| format!("]({SITE}python/user-guide/{s}.html");
+    for (sources, run, up) in [
+        (&guide_twins, false, "](../../"),
+        (&example_twins, true, "](../"),
+    ] {
+        for source in sources {
+            let mut text = read(source)?;
+            for s in &python_guides {
+                text = text.replace(&format!("]({s}.md"), &python_page(s));
+                text = text.replace(&format!("](../docs/guides/{s}.md"), &python_page(s));
+            }
+            for s in &notebooks {
+                text = text.replace(&format!("]({s}.ipynb"), &python_page(s));
+                text = text.replace(&format!("](../../examples/{s}.ipynb"), &python_page(s));
+            }
+            for s in &twins {
+                text = text.replace(&format!("]({s}.qmd"), &format!("]({s}.html"));
+                text = text.replace(&format!("](../examples/{s}.qmd"), &format!("]({s}.html"));
+                text = text.replace(&format!("](../../examples/{s}.qmd"), &format!("]({s}.html"));
+            }
+            text = text
+                .replace(up, &format!("]({GITHUB_BLOB}"))
+                .replace(&format!("]({SITE}"), "](../../");
+            let name = file_stem(source);
+            let rel = source
+                .strip_prefix(&root)
+                .unwrap_or(source)
+                .to_string_lossy()
+                .replace('\\', "/");
+            write(
+                &stage.join(format!("{name}.Rmd")),
+                &article(&text, &rel, &name, run),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// An R Markdown article from a `.qmd`: its title, a first chunk that sets
+/// whether the chunks run, a line naming the source, then the body with
+/// inline code that knitr would run (`` `r ...` ``) made literal.
+fn article(qmd: &str, source: &str, name: &str, run: bool) -> String {
+    let (header, body) = qmd
+        .strip_prefix("---")
+        .and_then(|rest| rest.split_once("\n---"))
+        .map_or(("", qmd), |(h, b)| {
+            (h, b.split_once('\n').map_or("", |x| x.1))
+        });
+    let title = header
+        .lines()
+        .find_map(|l| l.strip_prefix("title:"))
+        .map_or(format!("\"{name}\""), |t| t.trim().to_owned());
+    let (options, note) = if run {
+        (
+            "warning = FALSE, message = FALSE",
+            "The code runs each time the site is built, so the output below is current.",
+        )
+    } else {
+        (
+            "eval = FALSE",
+            "The code is not run when the site is built: the block after each chunk is \
+             what the chunk prints, and CI checks every one of them \
+             (`R/prospicio/tests/test-guides.R`).",
+        )
+    };
+    format!(
+        "---\ntitle: {title}\n---\n\n```{{r, include = FALSE}}\nknitr::opts_chunk$set({options})\n```\n\n\
+         *Rendered from [`{source}`]({GITHUB_BLOB}{source}). {note}*\n\n{}",
+        literal_inline_r(body.trim_start())
+    )
+}
+
+/// Outside code fences, turns `` `r ...` `` (R code in prose, such as
+/// `` `r = 0.15` ``) into a double-backtick span that knitr does not run.
+fn literal_inline_r(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut fenced = false;
+    for line in text.lines() {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+        }
+        let mut rest = line;
+        if !fenced {
+            while let Some(start) = rest.find("`r ").or_else(|| rest.find("`r#")) {
+                let Some(len) = rest[start + 1..].find('`') else {
+                    break;
+                };
+                let code = &rest[start + 1..start + 1 + len];
+                out.push_str(&rest[..start]);
+                out.push_str("`` ");
+                out.push_str(code);
+                out.push_str(" ``");
+                rest = &rest[start + 2 + len..];
+            }
+        }
+        out.push_str(rest);
+        out.push('\n');
+    }
+    out
+}
+
+/// Fails unless each executed R example that reports a summary of its
+/// comparisons ("N of M comparisons are inside their tolerance") has N = M.
+/// The same words in the page's code (`%d of %d`) are not counts and are
+/// skipped.
+fn check_r_examples() -> Result {
+    let root = root();
+    let marker = " comparisons are inside their tolerance";
+    for source in files(&root.join("examples"), "qmd")? {
+        let name = file_stem(&source);
+        let page = root.join(format!("R/prospicio/docs/articles/{name}.html"));
+        let html = read(&page)?;
+        for (end, _) in html.match_indices(marker) {
+            let line = html[..end].rsplit('\n').next().unwrap_or("");
+            let words: Vec<&str> = line.split_whitespace().rev().take(3).collect();
+            let number = |w: &str| !w.is_empty() && w.bytes().all(|b| b.is_ascii_digit());
+            if words.len() < 3 || words[1] != "of" || !number(words[0]) || !number(words[2]) {
+                continue;
+            }
+            if words[0] != words[2] {
+                return Err(format!(
+                    "{}: {} of {} comparisons inside their tolerance",
+                    page.display(),
+                    words[2],
+                    words[0]
+                ));
+            }
+            println!(
+                "r: {name}: {} of {} comparisons inside their tolerance",
+                words[2], words[0]
+            );
+        }
     }
     Ok(())
 }
@@ -344,6 +538,7 @@ const INDEX: &str = r#"<!doctype html>
   <li><a href="python/index.html">Python</a> (great-docs)</li>
   <li><a href="{guide}">Guides and worked examples</a> (the Python site's User Guide, with the notebooks' results)</li>
   <li><a href="r/index.html">R</a> (pkgdown)</li>
+  <li><a href="r/articles/index.html">R guides and worked examples</a> (the guides' and notebooks' R twins, on the R site)</li>
   <li><a href="rust/prospicio_prob/index.html">Rust crates</a> (rustdoc)</li>
 </ul>
 "#;
