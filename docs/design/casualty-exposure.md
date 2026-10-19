@@ -1,7 +1,7 @@
 # Design note: casualty exposure rating
 
 Status: **In progress** (method approved by the user 2026-10-16, open
-questions answered 2026-10-17; PR 1 done: `prospicio_pricing::casualty`) ·
+questions answered 2026-10-17; PRs 1 and 2 done: `prospicio_pricing::casualty`) ·
 Depends on: `prospicio_prob::Pareto` and its censored fit,
 `prospicio_pricing::layer`, `prospicio_pricing::experience` · Lane: Aggregate
 
@@ -201,10 +201,38 @@ Two forms give the treaty's expected loss, and the rater supports both:
   - the ILF form and the frequency form agree for an excess policy above
     the threshold;
   - the ILF form against `ilf` and `layer` for one policy.
-- **PR 2:** the sweep, the censored anchor with its standard error, the
+- **PR 2 (done):** the sweep, the censored anchor with its standard error, the
   count test and the burning-cost comparison with and without a segment.
-  Validation: the Poisson tail against `prospicio-prob`, and the anchor
-  against `Pareto::fit` on the same data.
+  - `CasualtyProfile::sweep(&treaty, alae, threshold, counts, alphas)`: the
+    frequency form with `Pareto(threshold, α)` at each alpha, the counts
+    held fixed.
+  - `CasualtyProfile::occurrences_above(t)`: each policy's ground-up
+    occurrences above `t` from its own curve, `premium × ELR / (s ·
+    [LEV(a + l) − LEV(a)]) × S(t)`, a table's `S` its slope (the curve's
+    constant cancels). These are the counts the frequency form and the
+    sweep take: the body of the curves sets the frequency, the Pareto the
+    tail.
+  - `ParetoAnchor::fit(t, losses, censored)`: `Pareto::fit_with_standard_error`
+    on the losses at or above `t`, with the number of exceedances and of
+    censored ones, and `interval(z)` for the sweep's range.
+  - `CasualtyProfile::expected_claims` and `count_test` (check 1): a policy
+    records an occurrence once it passes the attachment and caps it at
+    `a + l`, so it adds `counts · S(max(t, a))` at sizes `t ≤ a + l` and
+    nothing above; the observed count is of the trended losses at or above
+    `t` (`Prepared::trended`), and `poisson_tail` gives the one-sided
+    probability toward the observation. `exposure_years` is the experience
+    period in units of the profile's year.
+  - Check 2 is `Prepared::burning_cost` run twice, on the record and on
+    `Prepared::without(ids)`, with the segment's premium left out of the
+    years' bases by the caller.
+  - Decision 9's classical weight is `credibility::LimitedFluctuation`
+    on the claims in or near the layer, shown in the validation test;
+    no new function.
+  Validation (`validation/tests/pricing.rs`, `clark_casualty`): the
+  anchor against `Pareto::fit` and its closed form on the same data, the
+  sweep against a Pareto's layer at α = 1 and 2, the count test's tail
+  against `prospicio-prob`'s Poisson pmf, the burning cost of 1M xs 1M
+  with and without a segment, and the weight `√(1/1082)`.
 - **PR 3:** Python (`prospicio.pricing.CasualtyProfile`) and R
   (`casualty_profile()`, `casualty_sweep()`), with a guide example handed
   to the Guides lane.

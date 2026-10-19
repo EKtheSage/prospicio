@@ -176,10 +176,10 @@ what it is aiming for by v1.0.
     share, premium, ELR, and a severity, ILF or ELF curve each), in the
     ILF and frequency forms with an explicit ALAE treatment
     (`docs/design/casualty-exposure.md`, PR 1; Clark's workers
-    compensation example exact).
-- **Next:** casualty exposure PR 2 (the sweep over the Pareto alpha with a
-  censored anchor, the count test, the burning cost with and without a
-  segment), then PR 3 (Python and R).
+    compensation example exact), with the sweep over the Pareto alpha, the
+    censored anchor, the count test and the burning cost with and without
+    a segment (PR 2).
+- **Next:** casualty exposure PR 3 (Python and R).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)

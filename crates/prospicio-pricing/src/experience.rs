@@ -649,6 +649,41 @@ impl Prepared {
         self.valuation
     }
 
+    /// Every loss's trended amount, in the record's order.
+    pub fn trended(&self) -> Vec<f64> {
+        self.losses.iter().map(|l| l.trended).collect()
+    }
+
+    /// The record with the losses whose ids are in `ids` left out (an
+    /// excluded segment, say), its completeness and valuation unchanged.
+    /// Leaving a segment out of the burning cost is the caller's visible
+    /// choice: run [`burning_cost`](Self::burning_cost) on both, with the
+    /// segment's premium left out of the years' bases too.
+    ///
+    /// ```
+    /// use prospicio_pricing::experience::{Experience, LargeLoss, Trend};
+    ///
+    /// let losses = vec![
+    ///     LargeLoss { id: "a".into(), accident: 2020.5, amount: 150.0 },
+    ///     LargeLoss { id: "b".into(), accident: 2021.5, amount: 400.0 },
+    /// ];
+    /// let p = Experience::new(losses).unwrap()
+    ///     .prepare(&Trend::Factors(vec![1.0, 1.0])).unwrap();
+    /// assert_eq!(p.without(&["b"]).trended(), vec![150.0]);
+    /// ```
+    pub fn without(&self, ids: &[&str]) -> Self {
+        Self {
+            losses: self
+                .losses
+                .iter()
+                .filter(|l| !ids.contains(&l.id.as_str()))
+                .cloned()
+                .collect(),
+            complete_above: self.complete_above,
+            valuation: self.valuation,
+        }
+    }
+
     /// The trended size above which every year's record is complete: the
     /// reporting threshold times the largest trend factor. Losses trended
     /// below it, as reported, are left out of

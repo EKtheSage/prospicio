@@ -29,11 +29,20 @@
 //!   of occurrences above a threshold `t`, times the expected ceded amount
 //!   given `X > t` under a severity of the excess losses (a Pareto from
 //!   `t`, say). The body of the curve below `t` never enters.
+//!
+//! [`CasualtyProfile::occurrences_above`] reads each policy's counts above
+//! `t` off its own curve, [`ParetoAnchor`] fits the Pareto above `t` to
+//! the trended claims with those closed at a limit censored, and
+//! [`CasualtyProfile::sweep`] runs the frequency form over a range of
+//! alphas. [`CasualtyProfile::count_test`] sets the claims expected at a
+//! few sizes beside those observed. A per-policy rating cannot see one
+//! occurrence hitting several policies (clash), nor an umbrella's
+//! underlying aggregate exhausting; both are the caller's to load.
 
 use std::sync::Arc;
 
 use prospicio_core::{Error, Result};
-use prospicio_prob::Severity;
+use prospicio_prob::{Counting, LargeLosses, Pareto, Poisson, Severity};
 
 use crate::layer::XsLayer;
 
@@ -234,6 +243,23 @@ fn interpolate(x: &[f64], y: &[f64], origin: f64, at: f64, what: &str) -> Result
     Ok(y0 + (y1 - y0) * (at - x0) / (x1 - x0))
 }
 
+/// The slope of the interpolation of [`interpolate`] just above `at`.
+fn slope(x: &[f64], y: &[f64], origin: f64, at: f64, what: &str) -> Result<f64> {
+    let last = *x.last().expect("a table is never empty");
+    if at.is_nan() || at < 0.0 || at >= last {
+        return Err(Error::Data(format!(
+            "{at} is not below the {what}'s last limit {last}, where its slope ends"
+        )));
+    }
+    let k = x.partition_point(|&xi| xi <= at);
+    let (x0, y0) = if k == 0 {
+        (0.0, origin)
+    } else {
+        (x[k - 1], y[k - 1])
+    };
+    Ok((y[k] - y0) / (x[k] - x0))
+}
+
 /// The curve a policy is rated on: anything that gives `LEV` up to a
 /// constant.
 #[derive(Clone)]
@@ -274,6 +300,17 @@ impl CasualtyCurve {
                 t.ilf(x)
             }
             CasualtyCurve::Elf(t) => Ok(1.0 - t.elf(x)?),
+        }
+    }
+
+    /// `P(X > x)` times the same constant: the right derivative of the
+    /// curve's `LEV`. A table's is its slope from `x` to the next limit, so
+    /// it fails at or beyond the last.
+    fn survival(&self, x: f64) -> Result<f64> {
+        match self {
+            CasualtyCurve::Severity(s) => Ok(s.survival(x)),
+            CasualtyCurve::Ilf(t) => slope(&t.limits, &t.factors, 0.0, x, "ILF table"),
+            CasualtyCurve::Elf(t) => Ok(-slope(&t.limits, &t.elfs, 1.0, x, "ELF table")?),
         }
     }
 }
@@ -520,6 +557,279 @@ impl CasualtyProfile {
     }
 }
 
+impl CasualtyProfile {
+    /// Each policy's expected number of ground-up occurrences above `t` a
+    /// year, from its own curve: the policy's expected loss over its
+    /// expected payment per occurrence, `premium × ELR / (s · [LEV(a + l) −
+    /// LEV(a)])`, times `P(X > t)`. These are the `counts` the frequency
+    /// form takes, so that the body of each curve sets the frequency and
+    /// a severity of the excess losses (the [`sweep`](Self::sweep)'s
+    /// Pareto) the tail. A table's `P(X > t)` is its slope just above `t`,
+    /// so `t` must be below its last limit; the curve's constant cancels.
+    pub fn occurrences_above(&self, t: f64) -> Result<Vec<f64>> {
+        if !t.is_finite() || t < 0.0 {
+            return Err(Error::InvalidParameter {
+                name: "t",
+                value: t,
+                reason: "must be finite and non-negative",
+            });
+        }
+        self.policies
+            .iter()
+            .map(|p| {
+                let c = &self.curves[p.curve];
+                let per = p.share * (c.lev(p.attachment + p.limit)? - c.lev(p.attachment)?);
+                if per <= 0.0 {
+                    return Err(Error::Data(format!(
+                        "a policy at {} with limit {} has no expected loss on its curve",
+                        p.attachment, p.limit
+                    )));
+                }
+                Ok(p.premium * p.elr / per * c.survival(t)?)
+            })
+            .collect()
+    }
+
+    /// The frequency form at each alpha of a Pareto from `threshold`:
+    /// the treaty's expected loss when the losses above the threshold are
+    /// `Pareto(threshold, α)`, the counts held fixed (decision 5 of the
+    /// design note). The central alpha and its source are the caller's to
+    /// state beside the result; the library ships no benchmark.
+    ///
+    /// ```
+    /// use prospicio_pricing::casualty::{Alae, CasualtyCurve, CasualtyPolicy, CasualtyProfile};
+    /// use prospicio_pricing::layer::XsLayer;
+    /// use prospicio_prob::Pareto;
+    ///
+    /// // One 10M policy with one occurrence above 1M a year: 5M xs 5M.
+    /// let book = CasualtyProfile::new(
+    ///     vec![CasualtyCurve::severity(Pareto::new(1e6, 1.5).unwrap())],
+    ///     vec![CasualtyPolicy::new(10e6, 1e6, 0.6)],
+    /// ).unwrap();
+    /// let treaty = XsLayer::new(5e6, 5e6).unwrap();
+    /// let s = book.sweep(&treaty, Alae::InSeverity, 1e6, &[1.0], &[1.0, 2.0]).unwrap();
+    /// // E[min((X − 5M)+, 5M)] for X ~ Pareto(1M, α): 1M ln 2 at α = 1.
+    /// assert!((s[0].ceded - 1e6 * 2f64.ln()).abs() < 1e-6);
+    /// assert!(s[0].ceded / s[1].ceded > 6.0); // about 7 apart
+    /// ```
+    pub fn sweep(
+        &self,
+        treaty: &XsLayer,
+        alae: Alae,
+        threshold: f64,
+        counts: &[f64],
+        alphas: &[f64],
+    ) -> Result<Vec<SweepPoint>> {
+        alphas
+            .iter()
+            .map(|&alpha| {
+                let excess = Pareto::new(threshold, alpha)?;
+                let r = self.rate_by_frequency(treaty, alae, threshold, counts, &excess)?;
+                Ok(SweepPoint {
+                    alpha,
+                    ceded: r.ceded(),
+                    loss_cost: r.loss_cost(),
+                })
+            })
+            .collect()
+    }
+
+    /// The expected number of claims a year recorded at or above `t`, a
+    /// ground-up size, under the frequency form (`threshold`, `counts`,
+    /// `excess` as in [`rate_by_frequency`](Self::rate_by_frequency)).
+    ///
+    /// A policy records an occurrence only once it exceeds the attachment,
+    /// and caps it at `a + l`, so it contributes `counts_i · S(max(t, a))`
+    /// when `t ≤ a + l` and nothing above, `S` the survival of `excess`
+    /// (1 at the threshold for a Pareto from it). The experience counted
+    /// against it must be ground-up and capped the same way: the trended
+    /// losses of the anchor, a claim closed at its limit counted at the
+    /// limit.
+    pub fn expected_claims<S: Severity + ?Sized>(
+        &self,
+        t: f64,
+        threshold: f64,
+        counts: &[f64],
+        excess: &S,
+    ) -> Result<f64> {
+        if counts.len() != self.policies.len() {
+            return Err(Error::Data(format!(
+                "{} counts for {} policies",
+                counts.len(),
+                self.policies.len()
+            )));
+        }
+        if !(t.is_finite() && t >= threshold * (1.0 - 1e-12)) {
+            return Err(Error::Data(format!(
+                "a count at {t} needs a size at or above the threshold {threshold}"
+            )));
+        }
+        Ok(self
+            .policies
+            .iter()
+            .zip(counts)
+            .filter(|(p, _)| t <= (p.attachment + p.limit) * (1.0 + 1e-12))
+            .map(|(p, &n)| n * excess.survival(t.max(p.attachment)))
+            .sum())
+    }
+
+    /// Check 1 of the design note: at each threshold in `sizes`, the
+    /// expected number of claims over the experience period set beside the
+    /// number observed, with the Poisson probability of a count at least as
+    /// extreme in the direction observed. `exposure_years` is the
+    /// experience period in units of the profile's year (each year's
+    /// on-level premium over the profile's, summed), and `observed` the
+    /// trended ground-up losses (from
+    /// [`Prepared::trended`](crate::experience::Prepared::trended)).
+    ///
+    /// Where the layer has never been reached, this tests the alpha more
+    /// sharply than a burning cost of zero.
+    pub fn count_test<S: Severity + ?Sized>(
+        &self,
+        sizes: &[f64],
+        threshold: f64,
+        counts: &[f64],
+        excess: &S,
+        exposure_years: f64,
+        observed: &[f64],
+    ) -> Result<Vec<CountCheck>> {
+        if !(exposure_years.is_finite() && exposure_years > 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "exposure_years",
+                value: exposure_years,
+                reason: "must be finite and positive",
+            });
+        }
+        sizes
+            .iter()
+            .map(|&t| {
+                let expected =
+                    exposure_years * self.expected_claims(t, threshold, counts, excess)?;
+                let n = observed.iter().filter(|&&y| y >= t).count();
+                Ok(CountCheck {
+                    size: t,
+                    expected,
+                    observed: n,
+                    p_value: poisson_tail(expected, n)?,
+                })
+            })
+            .collect()
+    }
+}
+
+/// The probability under a Poisson with mean `expected` of a count at
+/// least as far from it as `observed`, on the side observed: `P(N ≥ n)`
+/// when `n ≥ expected`, `P(N ≤ n)` below it.
+///
+/// ```
+/// use prospicio_pricing::casualty::poisson_tail;
+///
+/// // No claim where 3 were expected: e^-3.
+/// assert!((poisson_tail(3.0, 0).unwrap() - (-3f64).exp()).abs() < 1e-15);
+/// ```
+pub fn poisson_tail(expected: f64, observed: usize) -> Result<f64> {
+    let n = Poisson::new(expected)?;
+    let k = observed as u64;
+    Ok(if observed as f64 >= expected {
+        if k == 0 {
+            1.0
+        } else {
+            (1.0 - n.cdf(k - 1)).max(0.0)
+        }
+    } else {
+        n.cdf(k)
+    })
+}
+
+/// One alpha of a [`CasualtyProfile::sweep`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SweepPoint {
+    pub alpha: f64,
+    /// The treaty's expected loss.
+    pub ceded: f64,
+    /// Over the subject premium.
+    pub loss_cost: f64,
+}
+
+/// One size of a [`CasualtyProfile::count_test`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CountCheck {
+    /// The ground-up size counted at or above.
+    pub size: f64,
+    /// Expected claims over the experience period.
+    pub expected: f64,
+    pub observed: usize,
+    /// [`poisson_tail`] of the observed count.
+    pub p_value: f64,
+}
+
+/// The Pareto above a threshold fitted to the trended losses, with claims
+/// closed at their policy limit censored (decision 4 of the design note):
+/// `α = uncensored count / Σ ln(y / t)`, its standard error `α / √n`, and
+/// the number of exceedances it rests on.
+///
+/// ```
+/// use prospicio_pricing::casualty::ParetoAnchor;
+///
+/// let a = ParetoAnchor::fit(1e6, &[1.5e6, 2.5e6, 4e6, 2e6, 0.8e6], &[false, false, false, true, false])
+///     .unwrap();
+/// assert_eq!((a.exceedances, a.censored), (4, 1));
+/// assert!((a.alpha - 3.0 / (1.5f64 * 2.5 * 4.0 * 2.0).ln()).abs() < 1e-14);
+/// assert!((a.standard_error - a.alpha / 3f64.sqrt()).abs() < 1e-14);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParetoAnchor {
+    pub threshold: f64,
+    pub alpha: f64,
+    pub standard_error: f64,
+    /// Losses at or above the threshold.
+    pub exceedances: usize,
+    /// Of which censored at a policy limit.
+    pub censored: usize,
+}
+
+impl ParetoAnchor {
+    /// Fits [`Pareto::fit_with_standard_error`] to the `losses` at or above
+    /// `threshold`, `censored[i]` where loss `i` was closed at its policy
+    /// limit. Losses below the threshold are ignored.
+    pub fn fit(threshold: f64, losses: &[f64], censored: &[bool]) -> Result<Self> {
+        if losses.len() != censored.len() {
+            return Err(Error::Data(format!(
+                "{} censoring flags for {} losses",
+                censored.len(),
+                losses.len()
+            )));
+        }
+        let (values, flags): (Vec<f64>, Vec<bool>) = losses
+            .iter()
+            .zip(censored)
+            .filter(|(y, _)| **y >= threshold)
+            .map(|(&y, &c)| (y, c))
+            .unzip();
+        if !flags.iter().any(|c| !c) {
+            return Err(Error::Data(format!(
+                "no uncensored loss at or above {threshold} to fit an alpha to"
+            )));
+        }
+        let data = LargeLosses::new(values)?.censored(flags.clone())?;
+        let (fit, se) = Pareto::fit_with_standard_error(threshold, &data, None)?;
+        Ok(Self {
+            threshold,
+            alpha: fit.alpha(),
+            standard_error: se,
+            exceedances: flags.len(),
+            censored: flags.iter().filter(|&&c| c).count(),
+        })
+    }
+
+    /// The fitted alpha `± z` standard errors, the lower end kept above 0:
+    /// a range for the [`sweep`](CasualtyProfile::sweep).
+    pub fn interval(&self, z: f64) -> (f64, f64) {
+        let lo = (self.alpha - z * self.standard_error).max(self.alpha * 1e-3);
+        (lo, self.alpha + z * self.standard_error)
+    }
+}
+
 /// One policy's part of a [`CasualtyRating`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolicyCession {
@@ -592,7 +902,7 @@ impl CasualtyRating {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prospicio_prob::{Lognormal, Pareto};
+    use prospicio_prob::{Distribution, Lognormal, Pareto};
 
     fn layer(r: f64, d: f64) -> XsLayer {
         XsLayer::new(r, d).unwrap()
@@ -764,5 +1074,134 @@ mod tests {
         )
         .unwrap();
         assert!(p.rate(&layer(1e5, 1e5), Alae::InSeverity).is_err());
+    }
+
+    /// The body of each curve sets the counts and a Pareto the tail: for a
+    /// ground-up Pareto from the threshold, the frequency form on the
+    /// counts from `occurrences_above` is the ILF form.
+    #[test]
+    fn occurrences_above_join_the_two_forms() {
+        let sev = Pareto::new(1e6, 1.4).unwrap();
+        let p = CasualtyProfile::new(
+            vec![CasualtyCurve::severity(sev)],
+            vec![
+                CasualtyPolicy::new(5e6, 2e6, 0.65)
+                    .attachment(5e6)
+                    .share(0.5),
+                CasualtyPolicy::new(10e6, 1e6, 0.7).attachment(10e6),
+            ],
+        )
+        .unwrap();
+        let counts = p.occurrences_above(1e6).unwrap();
+        // premium × ELR / (s · layer) × S(1M) = premium × ELR / (s · layer).
+        let want = 2e6 * 0.65 / (0.5 * sev.layer(5e6, 5e6));
+        assert!((counts[0] / want - 1.0).abs() < 1e-14);
+        let treaty = layer(2e6, 1e6);
+        let ilf = p.rate(&treaty, Alae::InSeverity).unwrap();
+        let freq = p
+            .rate_by_frequency(&treaty, Alae::InSeverity, 1e6, &counts, &sev)
+            .unwrap();
+        assert!((ilf.ceded() / freq.ceded() - 1.0).abs() < 1e-12);
+        // At α the sweep is the same frequency form.
+        let s = p
+            .sweep(&treaty, Alae::InSeverity, 1e6, &counts, &[1.4])
+            .unwrap();
+        assert!((s[0].ceded / ilf.ceded() - 1.0).abs() < 1e-12);
+        assert!((s[0].loss_cost - s[0].ceded / 3e6).abs() < 1e-15);
+    }
+
+    /// A table's survival is its slope, and its constant cancels.
+    #[test]
+    fn a_tables_occurrences_are_its_slope() {
+        let one = |factors: &[f64]| {
+            let t = IlfTable::new(&[100e3, 1e6, 2e6], factors).unwrap();
+            CasualtyProfile::new(
+                vec![CasualtyCurve::Ilf(t)],
+                vec![CasualtyPolicy::new(1e6, 1000.0, 0.6)],
+            )
+            .unwrap()
+        };
+        // LEV(1M) = 1.6 in table units; the slope above 500K is 0.6/900K.
+        let n = one(&[1.0, 1.6, 1.8]).occurrences_above(500e3).unwrap()[0];
+        assert!((n - 600.0 / 1.6 * 0.6 / 900e3).abs() < 1e-15);
+        let m = one(&[2.0, 3.2, 3.6]).occurrences_above(500e3).unwrap()[0];
+        assert!((m / n - 1.0).abs() < 1e-14);
+        // At a limit, the slope above it; at the last, none.
+        let k = one(&[1.0, 1.6, 1.8]).occurrences_above(1e6).unwrap()[0];
+        assert!((k - 600.0 / 1.6 * 0.2 / 1e6).abs() < 1e-15);
+        assert!(one(&[1.0, 1.6, 1.8]).occurrences_above(2e6).is_err());
+        let e = ElfTable::new(&[250e3, 1e6], &[0.03, 0.006]).unwrap();
+        let w = CasualtyProfile::new(
+            vec![CasualtyCurve::Elf(e)],
+            vec![CasualtyPolicy::new(f64::INFINITY, 100e3, 0.7)],
+        )
+        .unwrap();
+        // ELF slope −0.024 / 750K; the policy's LEV range is 1.
+        let n = w.occurrences_above(500e3).unwrap()[0];
+        assert!((n - 70e3 * 0.024 / 750e3).abs() < 1e-15);
+    }
+
+    #[test]
+    fn expected_claims_respect_attachments_and_limits() {
+        let sev = Lognormal::from_mean_cv(80e3, 4.0).unwrap();
+        let p = CasualtyProfile::new(
+            vec![CasualtyCurve::severity(sev)],
+            vec![
+                CasualtyPolicy::new(1e6, 1.0, 1.0),
+                CasualtyPolicy::new(5e6, 1.0, 1.0).attachment(2e6),
+            ],
+        )
+        .unwrap();
+        let x = Pareto::new(500e3, 1.5).unwrap();
+        let c = [3.0, 2.0];
+        let at = |t| p.expected_claims(t, 500e3, &c, &x).unwrap();
+        // At 800K both record, the excess one only above its 2M attachment.
+        let want = 3.0 * x.survival(800e3) + 2.0 * x.survival(2e6);
+        assert!((at(800e3) - want).abs() < 1e-14);
+        // At its 1M limit the primary policy still records (capped there).
+        assert!((at(1e6) - (3.0 * x.survival(1e6) + 2.0 * x.survival(2e6))).abs() < 1e-14);
+        assert!((at(3e6) - 2.0 * x.survival(3e6)).abs() < 1e-14);
+        assert_eq!(at(8e6), 0.0);
+        assert!(p.expected_claims(400e3, 500e3, &c, &x).is_err());
+        // Over five years, against five losses from 1M up.
+        let checks = p
+            .count_test(&[1e6, 3e6], 500e3, &c, &x, 5.0, &[1.2e6, 3.5e6, 0.9e6])
+            .unwrap();
+        assert_eq!((checks[0].observed, checks[1].observed), (2, 1));
+        let lambda = 5.0 * at(1e6);
+        assert!((checks[0].expected - lambda).abs() < 1e-12);
+        let below: f64 = (0..=2)
+            .map(|k| (-lambda).exp() * lambda.powi(k) / [1.0, 1.0, 2.0][k as usize])
+            .sum();
+        assert!(lambda > 2.0);
+        assert!((checks[0].p_value - below).abs() < 1e-14);
+    }
+
+    #[test]
+    fn the_poisson_tail_is_one_sided_toward_the_observation() {
+        let at_least = 1.0 - (-2f64).exp() * (1.0 + 2.0 + 2.0 + 4.0 / 3.0);
+        assert!((poisson_tail(2.0, 4).unwrap() - at_least).abs() < 1e-15);
+        assert!((poisson_tail(2.0, 0).unwrap() - (-2f64).exp()).abs() < 1e-15);
+        assert_eq!(poisson_tail(0.0, 0).unwrap(), 1.0);
+        assert!(poisson_tail(-1.0, 0).is_err());
+    }
+
+    #[test]
+    fn the_anchor_is_the_censored_fit() {
+        let y = [1.1e6, 1.7e6, 2.4e6, 2.0e6, 3.1e6, 0.6e6];
+        let c = [false, false, false, true, false, true];
+        let a = ParetoAnchor::fit(1e6, &y, &c).unwrap();
+        let data = LargeLosses::new(y[..5].to_vec())
+            .unwrap()
+            .censored(c[..5].to_vec())
+            .unwrap();
+        let (fit, se) = Pareto::fit_with_standard_error(1e6, &data, None).unwrap();
+        assert_eq!(a.alpha, fit.alpha());
+        assert_eq!(a.standard_error, se);
+        assert_eq!((a.exceedances, a.censored), (5, 1));
+        let (lo, hi) = a.interval(1.0);
+        assert!((hi - lo - 2.0 * se).abs() < 1e-12);
+        assert!(ParetoAnchor::fit(1e6, &[2e6], &[true]).is_err());
+        assert!(ParetoAnchor::fit(1e6, &[2e6], &[]).is_err());
     }
 }

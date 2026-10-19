@@ -142,3 +142,12 @@
   or in the severity (`Alae`), kept policy by policy so a tagged segment
   can be left out. Clark's workers compensation example reproduces
   exactly (13,695, 3.42%) (#312).
+- Casualty exposure checks: `CasualtyProfile::occurrences_above(t)` (each
+  policy's counts above a threshold from its own curve), `sweep` (the
+  frequency form at each alpha of a Pareto from the threshold),
+  `ParetoAnchor::fit` (the censored Pareto fit to the trended claims, its
+  standard error and the exceedances it rests on), `expected_claims` and
+  `count_test` (expected against observed claims at a few sizes, with
+  the one-sided Poisson probability, `poisson_tail`), and
+  `Prepared::without(ids)` and `Prepared::trended` for the burning cost
+  with and without a segment (#390).
