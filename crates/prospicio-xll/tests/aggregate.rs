@@ -10,7 +10,11 @@
 //!   algorithm), and a layer's annual mean and SD against the collective
 //!   model's closed forms;
 //! * the occurrence PML (`PRO.AGG.PML`) against `aggregate` 1.0.1's `oep`
-//!   (`oep_aggregate.csv`), and its aggregate PML against Panjer's VaR.
+//!   (`oep_aggregate.csv`), and its aggregate PML against Panjer's VaR;
+//! * aggregate covers (`PRO.AGG.COVER`) on the total net of occurrence
+//!   layers against `reins_stats_df`'s `agg` block (books R and T), a stop
+//!   loss against Panjer's on the same grid, and a cover on the
+//!   occurrence layer's ceded total against `PRO.AGG.LAYERS`.
 
 mod common;
 
@@ -304,6 +308,160 @@ fn aggregate_pml_is_panjers_var_and_clustering_is_exact() {
 }
 
 #[test]
+fn aggregate_covers_match_aggregate() {
+    let mut checked = 0;
+    let mut fits: HashMap<String, Grid> = HashMap::new();
+    for row in reference("reinsurance_aggregate.csv").into_iter().skip(1) {
+        let Some(stat) = row[2].strip_prefix("agglayer:") else {
+            continue;
+        };
+        let f = fields(&row[1]);
+        let ex = fits.entry(row[1].clone()).or_insert_with(|| {
+            // The book's policy limit (`1000 xs 0`, `cap`) as one more
+            // occurrence layer, unlimited and ceded away: the net is then
+            // the capped severity's, as `aggregate` rounds it.
+            let cap = Value::Number(f["cap"].parse().unwrap());
+            let occ: Vec<Vec<Value>> = f["occ"]
+                .split('+')
+                .map(|l| {
+                    l.split(':')
+                        .map(|x| Value::Number(x.parse().unwrap()))
+                        .collect()
+                })
+                .chain([vec![Value::Number(1.0), Value::from("unlimited"), cap]])
+                .collect();
+            let r = |k: usize| Grid::from_rows(vec![occ.iter().map(|l| l[k].clone()).collect()]);
+            let (limit, retention) = f["agg"].split_once(':').unwrap();
+            let mut args = book(&f);
+            args.extend([
+                n(limit.parse().unwrap()),
+                n(retention.parse().unwrap()),
+                Grid::missing(),
+                r(1),
+                r(2),
+                r(0),
+                Grid::missing(),
+                n(1.0),
+                n(f64::from(1 << 14)),
+            ]);
+            call("pro_agg_cover", args)
+        });
+        assert_eq!(
+            (ex.rows, ex.columns),
+            (9, 2),
+            "{}: {:?}",
+            row[0],
+            ex.as_scalar()
+        );
+        let label = match stat {
+            "pr_attach" => "Pr attach",
+            "pr_detach" => "Pr detach",
+            "lol" => "Loss on line",
+            "agg_mean" => "Annual mean",
+            "agg_cv" => "Annual CV",
+            "agg_skew" => "Annual skewness",
+            other => panic!("{other}"),
+        };
+        let got = num(ex.get(row_of(ex, label), 1));
+        let expected: f64 = row[4].parse().unwrap();
+        let (abs_tol, rel_tol): (f64, f64) = (row[5].parse().unwrap(), row[6].parse().unwrap());
+        assert!(
+            (got - expected).abs() <= abs_tol.max(rel_tol * expected.abs()),
+            "{} {stat}: {got} vs {expected}",
+            row[0]
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 12);
+}
+
+#[test]
+fn a_stop_loss_is_panjers_and_a_cover_on_the_ceded_total_its_layer() {
+    // Poisson 3 of a gamma with mean 1,000 and CV 1.5 on 4,096 buckets of
+    // 10: 2,000 xs 5,000 of the year and an unlimited cover above 4,000.
+    let mut args = vec![
+        n(3.0),
+        Grid::missing(),
+        t("gamma_cv"),
+        n(1000.0),
+        n(1.5),
+        Grid::missing(),
+        Grid::from_rows(vec![vec![Value::Number(2000.0), Value::from("unlimited")]]),
+        Grid::row(&[5000.0, 4000.0]),
+        n(0.5),
+    ];
+    args.extend([
+        Grid::missing(),
+        Grid::missing(),
+        Grid::missing(),
+        Grid::missing(),
+    ]);
+    args.extend([n(10.0), n(4096.0)]);
+    let s = call("pro_agg_cover", args);
+    assert_eq!((s.rows, s.columns), (9, 3), "{:?}", s.as_scalar());
+    assert_eq!(s.get(0, 1), &Value::from("50% of 2000 xs 5000"));
+    assert_eq!(s.get(0, 2), &Value::from("50% of unlimited xs 4000"));
+    let sev = Gamma::from_mean_cv(1000.0, 1.5).unwrap();
+    let (grid, _) = PGrid::rounding(&sev, 10.0, 4096).unwrap();
+    let (agg, _) = panjer(&Poisson::new(3.0).unwrap(), &grid, 4096).unwrap();
+    let excess = |r: f64, l: f64| -> f64 {
+        agg.probs()
+            .iter()
+            .enumerate()
+            .map(|(j, p)| p * (agg.x(j) - r).clamp(0.0, l))
+            .sum()
+    };
+    assert!((num(s.get(row_of(&s, "Subject mean"), 1)) - agg.mean()).abs() < 1e-8);
+    let mean = |c: usize| num(s.get(row_of(&s, "Annual mean"), c));
+    assert!((mean(1) - 0.5 * excess(5000.0, 2000.0)).abs() < 1e-8);
+    assert!((mean(2) - 0.5 * excess(4000.0, f64::INFINITY)).abs() < 1e-8);
+    let lol = num(s.get(row_of(&s, "Loss on line"), 1));
+    assert!((lol - mean(1) / 1000.0).abs() < 1e-15);
+    assert_eq!(num(s.get(row_of(&s, "Loss on line"), 2)), 0.0);
+    assert_eq!(num(s.get(row_of(&s, "Pr detach"), 2)), 0.0);
+    let p_attach = 1.0 - agg.cdf(4000.0);
+    assert!((num(s.get(row_of(&s, "Pr attach"), 2)) - p_attach).abs() < 1e-12);
+
+    // Unlimited xs 0 on the ceded total of 2,000 xs 1,000 per claim is
+    // that layer's annual loss, as PRO.AGG.LAYERS has it.
+    let base = || {
+        vec![
+            n(3.0),
+            n(2.0),
+            t("gamma_cv"),
+            n(1000.0),
+            n(1.5),
+            Grid::missing(),
+        ]
+    };
+    let mut a = base();
+    a.extend([
+        t("unlimited"),
+        n(0.0),
+        Grid::missing(),
+        n(2000.0),
+        n(1000.0),
+    ]);
+    a.extend([Grid::missing(), t("ceded"), n(10.0), n(4096.0)]);
+    let c = call("pro_agg_cover", a);
+    assert_eq!(c.columns, 2, "{:?}", c.as_scalar());
+    let mut a = base();
+    a.extend([n(2000.0), n(1000.0), Grid::missing(), n(10.0), n(4096.0)]);
+    let l = call("pro_agg_layers", a);
+    for label in ["Annual mean", "Annual SD", "Annual skewness"] {
+        let (x, y) = (
+            num(c.get(row_of(&c, label), 1)),
+            num(l.get(row_of(&l, label), 1)),
+        );
+        assert!((x / y - 1.0).abs() < 1e-9, "{label}: {x} vs {y}");
+    }
+    assert_eq!(
+        num(c.get(row_of(&c, "Subject mean"), 1)),
+        num(c.get(row_of(&c, "Annual mean"), 1))
+    );
+}
+
+#[test]
 fn errors_come_back_as_text() {
     let base = || {
         vec![
@@ -338,4 +496,20 @@ fn errors_come_back_as_text() {
     a[0] = n(0.01);
     a.push(n(10.0));
     assert!(e(a, "pro_agg_pml").contains("any occurrence"));
+    let mut a = base();
+    a.extend([n(100.0), Grid::missing()]);
+    assert!(e(a, "pro_agg_cover").contains("retentions is required"));
+    let mut a = base();
+    a.extend([n(100.0), n(0.0), Grid::missing()]);
+    a.extend([
+        Grid::missing(),
+        Grid::missing(),
+        Grid::missing(),
+        t("ceded"),
+    ]);
+    assert!(e(a, "pro_agg_cover").contains("needs occurrence layers"));
+    let mut a = base();
+    a.extend([n(100.0), n(0.0), Grid::missing(), n(50.0), n(0.0)]);
+    a.extend([Grid::missing(), t("gross")]);
+    assert!(e(a, "pro_agg_cover").contains("\"net\" (default)"));
 }

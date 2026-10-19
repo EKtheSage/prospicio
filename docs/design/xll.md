@@ -80,6 +80,7 @@ category of Insert Function:
 | `PRO.BURNINGCOST(accident, amounts, limits, attachments, years, premiums, [development], [trend], [trend_to], [threshold], [agg_deductible], [agg_limit])` | Burning cost from large losses: each accident year's trended layer losses, developed, over its premium |
 | `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], [probabilities], [step], [points])` | The annual aggregate loss, ground up or to a per-occurrence layer: mean, SD, CV, skewness, VaR, TVaR and the grid |
 | `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits, attachments, [shares], [step], [points])` | Per-occurrence layer statistics, one column per layer (`aggregate`'s `reins_stats_df`) |
+| `PRO.AGG.COVER(count_mean, [dispersion], family, p1, p2, [p3], limits, retentions, [shares], [occ_limits], [occ_attachments], [occ_shares], [subject], [step], [points])` | Aggregate covers (a stop loss) on the annual total, ground up or net of per-occurrence layers, or on their ceded total: chances of attaching and exhausting, ceded mean, SD, CV, skewness, loss on line (`aggregate`'s `agg` block) |
 | `PRO.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3], [return_periods], [step], [points])` | The occurrence and aggregate PML curves by return period: the year's largest occurrence (`aggregate`'s `oep`, any count) beside the annual total's VaR |
 | `PRO.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | The Bayesian ODP chain ladder sampled with NUTS: the reserve exhibit, the parameters' posterior with R-hat and ESS, or the sampler's diagnostics |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
@@ -357,6 +358,28 @@ real Excel.
     side by side because that is the comparison a cat or per-risk
     exhibit makes; a layer's occurrence PML is the curve clipped to the
     layer, so it takes no layer arguments.
+23. **An aggregate cover sits on a chosen annual total** (user,
+    2026-10-19, the parity plan's next item). `PRO.AGG.COVER` takes the
+    count and severity as `PRO.AGG.STATS` does (decision 20), then the
+    covers as `PRO.AGG.LAYERS` takes layers: annual `limits` (a row,
+    `"unlimited"` allowed), `retentions` and `shares`, each one value or
+    one per limit, one column per cover. Optional per-occurrence layers
+    (`occ_limits`, `occ_attachments`, `occ_shares`) inure to the covers:
+    by default the covers see the annual total net of them, as
+    `aggregate`'s `occurrence net of ... aggregate ceded to ...` does, and
+    with `subject` `"ceded"` they see the layers' ceded total
+    (`occurrence ceded to`), an annual deductible and limit on an excess
+    of loss treaty. The rows are
+    `aggregate`'s `reins_stats_df` for its `agg` block (Pr attach, Pr
+    detach, the ceded mean, SD, CV and skewness, loss on line) under the
+    subject total's mean. The subject is on the grid `PRO.AGG.STATS`
+    sizes ground up (the net or ceded total is lighter, so the gross
+    grid covers it); `step` and `points` set it, the severity rounded onto
+    as many points as the total. A cover's retention in loss-ratio terms
+    is a sheet product (premium times ratio) rather than an argument.
+    Against `aggregate` 1.0.1, books R and T (the policy limit `1000 xs
+    0` given as one more occurrence layer, unlimited above 1,000, so the
+    net is the capped severity's) match at the reference's tolerances.
 
 ## Parity plan
 
@@ -387,7 +410,7 @@ order, one small PR each, those already done struck through:
 4. ~~Aggregate: a compound distribution of a count and a severity, its
    moments, VaR, TVaR and layer statistics~~.
 5. Aggregate, continued (user, 2026-10-16): ~~the occurrence PMLs~~;
-   aggregate covers on the annual total; towers on a grid.
+   ~~aggregate covers on the annual total~~; towers on a grid.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -397,8 +420,7 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan above: aggregate covers on the
-  annual total, then towers on a grid.
+- **Next functions:** the parity plan above: towers on a grid.
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and
