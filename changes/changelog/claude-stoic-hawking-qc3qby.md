@@ -115,6 +115,11 @@
   third cumulant had fallen to the trait's default, which cancels at large
   means: compound skewness at 1,000 claims was 1.2e-7 off; it is now exact
   (#307).
+- TVaR of every parametric severity: `Severity::tvar(p)`, `VaR(p) +
+  E[(X - VaR(p))+] / (1 - p)`, infinite where the mean is (closed-form
+  parity for the lognormal, Pareto and exponential). Python severities gain
+  `var` and `tvar`; R's `VaR()` and `TVaR()` take every parametric severity
+  and `VaR()` a `grid_distribution` (#366 item 2, #373, #375; #397).
 
 ### Models
 

@@ -2361,6 +2361,32 @@ class Beta:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -3032,6 +3058,32 @@ class Burr:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -6196,10 +6248,36 @@ class Custom:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     @property
     def upper(self, /) -> float:
         """
         The ``1 - 1e-12`` quantile, where the moment integrals stop.
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
         """
     def variance(self, /) -> float:
         """
@@ -8361,6 +8439,32 @@ class Gamma:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -8645,6 +8749,32 @@ class GeneralizedPareto:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -9751,6 +9881,32 @@ class InverseGamma:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -9939,6 +10095,32 @@ class InverseGaussian:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -11365,6 +11547,32 @@ class LogAffinePareto:
         """
         Threshold ``t``.
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -11540,6 +11748,32 @@ class Loglogistic:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -11731,6 +11965,32 @@ class Lognormal:
         Parameters
         ----------
         retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -13766,6 +14026,32 @@ class Mixture:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -15028,6 +15314,32 @@ class Pareto:
         """
         Truncation point, or ``None``.
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -15670,6 +15982,32 @@ class PiecewisePareto:
         """
         ``"lp"`` or ``"wd"`` when truncated, else ``None``.
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     def variance(self, /) -> float:
         """
         Variance of the distribution (``inf`` if it does not exist).
@@ -15954,6 +16292,32 @@ class PolicyLimits:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -19641,10 +20005,36 @@ class Truncated:
         -------
         float
         """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
     @property
     def upper(self, /) -> float:
         """
         Upper end of the window (included).
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
         """
     def variance(self, /) -> float:
         """
@@ -19869,6 +20259,32 @@ class Tweedie:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------
@@ -20157,6 +20573,32 @@ class Weibull:
         Parameters
         ----------
         x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
         
         Returns
         -------

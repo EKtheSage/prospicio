@@ -47,6 +47,34 @@ pub trait Severity: Distribution {
     fn third_moment(&self) -> Option<f64> {
         None
     }
+
+    /// Tail value at risk at level `p` in `[0, 1)`, the mean of the worst
+    /// `1 − p` of outcomes: `VaR(p) + E[(X − VaR(p))+] / (1 − p)`, with
+    /// `VaR(p)` the lower quantile. The formula holds with atoms as well,
+    /// splitting an atom at the VaR. Infinite where the mean is.
+    ///
+    /// ```
+    /// use prospicio_prob::{Pareto, Severity};
+    ///
+    /// // A Pareto's TVaR is its VaR times α / (α − 1).
+    /// let p = Pareto::new(100.0, 2.5).unwrap();
+    /// let var = 100.0 * 0.01f64.powf(-1.0 / 2.5);
+    /// assert!((p.tvar(0.99).unwrap() - var * 2.5 / 1.5).abs() < 1e-9);
+    /// ```
+    fn tvar(&self, p: f64) -> prospicio_core::Result<f64> {
+        if !(0.0..1.0).contains(&p) {
+            return Err(prospicio_core::Error::InvalidParameter {
+                name: "p",
+                value: p,
+                reason: "must be in [0, 1)",
+            });
+        }
+        if self.mean().is_infinite() {
+            return Ok(f64::INFINITY);
+        }
+        let var = self.quantile(p)?;
+        Ok(var + self.stop_loss(var) / (1.0 - p))
+    }
 }
 
 impl<T: Severity + ?Sized> Severity for Box<T> {
@@ -72,6 +100,10 @@ impl<T: Severity + ?Sized> Severity for Box<T> {
 
     fn third_moment(&self) -> Option<f64> {
         (**self).third_moment()
+    }
+
+    fn tvar(&self, p: f64) -> prospicio_core::Result<f64> {
+        (**self).tvar(p)
     }
 }
 

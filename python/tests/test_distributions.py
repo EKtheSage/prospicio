@@ -392,3 +392,19 @@ def test_discrete():
         Discrete([1.0], [0.0])
     with pytest.raises(ValueError):
         Discrete([1.0, 2.0], [0.5])
+
+
+def test_severity_var_and_tvar():
+    from prospicio.distributions import Gamma, Lognormal, Pareto
+
+    ln = Lognormal(10.0, 1.2)
+    assert ln.var(0.99) == ln.quantile(0.99)
+    want = math.exp(10 + 1.2**2 / 2) * stats.norm.cdf(1.2 - stats.norm.ppf(0.99)) / 0.01
+    assert ln.tvar(0.99) == pytest.approx(want, rel=1e-9)
+    pa = Pareto(1e5, 2.5)
+    assert pa.tvar(0.9) == pytest.approx(pa.var(0.9) * 2.5 / 1.5, rel=1e-12)
+    assert Pareto(1e5, 0.9).tvar(0.5) == math.inf
+    ex = Gamma(1.0, 1e4)
+    assert ex.tvar(0.5) == pytest.approx(ex.quantile(0.5) + 1e4, rel=1e-9)
+    with pytest.raises(ValueError):
+        ln.tvar(1.0)

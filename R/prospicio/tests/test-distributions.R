@@ -163,3 +163,16 @@ stopifnot(abs(rp$p[1] - 0.001) < 1e-15, rp$var[1] == 1, rp$period[1] == 1000)
 d <- discrete_distribution(c(3.1, 3.0999999999999996, -2, 9), c(1, 1, 2, 0))
 stopifnot(length(d@values) == 2, identical(d@probs, c(0.5, 0.5)), is.na(discrete_skewness(discrete_distribution(-4.5, 1))))
 stopifnot(inherits(try(discrete_distribution(1, 0), silent = TRUE), "try-error"))
+
+# VaR() and TVaR() on parametric severities and VaR() on a grid (#373, #375).
+ln <- lognormal(10, 1.2)
+stopifnot(identical(VaR(ln, c(0.5, 0.99)), quantile(ln, c(0.5, 0.99))))
+want <- exp(10 + 1.2^2 / 2) * pnorm(1.2 - qnorm(0.99)) / 0.01
+stopifnot(abs(TVaR(ln, 0.99) / want - 1) < 1e-9)
+pa <- pareto(1e5, 2.5)
+stopifnot(abs(TVaR(pa, c(0.9, 0.99)) / (quantile(pa, c(0.9, 0.99)) * 2.5 / 1.5) - 1) < 1e-12)
+stopifnot(identical(TVaR(pareto(1e5, 0.9), 0.5), Inf))
+stopifnot(identical(VaR(gamma_distribution(2, 1000), 0.9), quantile(gamma_distribution(2, 1000), 0.9)))
+stopifnot(inherits(try(TVaR(ln, 1), silent = TRUE), "try-error"))
+g <- discretize(ln, step = 2000, points = 2^12)
+stopifnot(identical(VaR(g, 0.99), quantile(g, 0.99)))
