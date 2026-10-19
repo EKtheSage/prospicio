@@ -93,6 +93,8 @@ twins in [`examples/`](../../examples/README.md):
 | [`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) | `capital-modeling-monograph-15.md` |
 | [`capital-modeling-monograph-15-theory.qmd`](capital-modeling-monograph-15-theory.qmd) | `capital-modeling-monograph-15-theory.md` |
 | [`capital-modeling-monograph-15-applications.qmd`](capital-modeling-monograph-15-applications.qmd) | `capital-modeling-monograph-15-applications.md` |
+| [`capital-modeling-monograph-15-practice.qmd`](capital-modeling-monograph-15-practice.qmd) | `capital-modeling-monograph-15-practice.md` |
+| [`capital-modeling-monograph-15-iman-conover.qmd`](capital-modeling-monograph-15-iman-conover.qmd) | `capital-modeling-monograph-15-iman-conover.md` |
 | [`pricing-insurance-risk-case-studies.qmd`](pricing-insurance-risk-case-studies.qmd) | `pricing-insurance-risk-case-studies.md` |
 | [`pir-price-allocation.qmd`](pir-price-allocation.qmd) | `pir-price-allocation.md` |
 | [`pir-price-allocation-practice.qmd`](pir-price-allocation-practice.qmd) | `pir-price-allocation-practice.md` |
@@ -109,6 +111,7 @@ twins in [`examples/`](../../examples/README.md):
 | [`glm-to-comprehensive-pricing-chalk-2.qmd`](glm-to-comprehensive-pricing-chalk-2.qmd) | `glm-to-comprehensive-pricing-chalk-2.md` |
 | [`pir-portfolio-pricing.qmd`](pir-portfolio-pricing.qmd) | `pir-portfolio-pricing.md` |
 | [`pir-risk-measures.qmd`](pir-risk-measures.qmd) | `pir-risk-measures.md` |
+| [`reserving-compartmental.qmd`](reserving-compartmental.qmd) | `reserving-compartmental.md` |
 
 Each R chunk is followed by the text it prints, and
 `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R tests) runs
