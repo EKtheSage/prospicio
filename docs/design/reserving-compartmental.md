@@ -1193,7 +1193,7 @@ PR B's bindings:
 
 ### 10. Docs and knowledge
 
-Proposed. Each PR updates in itself: the Reserving row of AGENTS.md, the
+Proposed. Each PR updates in itself: the Reserving lane's status file (`docs/lanes/reserving.md`), the
 v0.7 row and the Reserving section of `docs/roadmap.md`,
 `docs/architecture.md` if a roadmap row changes, `CHANGELOG.md`, and this
 note's status. `knowledge/` gains: company 337's data and its agreement
