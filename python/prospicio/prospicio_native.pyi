@@ -16538,6 +16538,20 @@ class Portfolio:
         Returns
         -------
         NaturalPrice
+        
+        Notes
+        -----
+        Two conventions follow ``aggregate`` 1.0.1. A total exactly at the
+        assets keeps its own weight in the linear allocation, where *Pricing
+        Insurance Risk* lumps it with the default outcomes (its Example 235:
+        4.3 against 4.16 here); assets just below the atom, ``a - 1e-9``,
+        give the book's numbers, and ``p`` always lands on a total. In the
+        bottom layer of capital, below the smallest total, the units'
+        margins (which sum to zero) take capital at ``g'(1) / (1 - g'(1))``:
+        ``1/r`` for CCoC, ``rho / (1 - rho)`` for the proportional hazard, 0
+        for Wang, dual power and TVaR. Monograph 15's equation 8.5 gives
+        that layer none, so CCoC and PH capital by unit differ from it; the
+        total and the premiums do not.
         """
     def price_stand_alone(self, /, distortion: Distortion, p: float) -> StandAlone:
         """
