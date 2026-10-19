@@ -81,6 +81,7 @@ category of Insert Function:
 | `PRO.AGG.STATS(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], [probabilities], [step], [points])` | The annual aggregate loss, ground up or to a per-occurrence layer: mean, SD, CV, skewness, VaR, TVaR and the grid |
 | `PRO.AGG.LAYERS(count_mean, [dispersion], family, p1, p2, [p3], limits, attachments, [shares], [step], [points])` | Per-occurrence layer statistics, one column per layer (`aggregate`'s `reins_stats_df`) |
 | `PRO.AGG.COVER(count_mean, [dispersion], family, p1, p2, [p3], limits, retentions, [shares], [occ_limits], [occ_attachments], [occ_shares], [subject], [step], [points])` | Aggregate covers (a stop loss) on the annual total, ground up or net of per-occurrence layers, or on their ceded total: chances of attaching and exhausting, ceded mean, SD, CV, skewness, loss on line (`aggregate`'s `agg` block) |
+| `PRO.TOWER.PRICE(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], limits, attachments, [shares], [agg_deductibles], [agg_limits], [cover_limit], [cover_retention], distortion, parameter, [step], [points])` | A tower on the annual grid, each view priced on its own by a distortion (`aggregate`'s `reins_price_df`): gross, each layer, the layers' total, a stop loss on the net and the net, with loss, SD, CV, premium, margin, loss ratio and rate on line |
 | `PRO.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3], [return_periods], [step], [points])` | The occurrence and aggregate PML curves by return period: the year's largest occurrence (`aggregate`'s `oep`, any count) beside the annual total's VaR |
 | `PRO.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | The Bayesian ODP chain ladder sampled with NUTS: the reserve exhibit, the parameters' posterior with R-hat and ESS, or the sampler's diagnostics |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | An exposure-rated risk profile: each band's mean SI, expected claims, surplus cession and per-risk layer loss, with a total |
@@ -380,6 +381,30 @@ real Excel.
     Against `aggregate` 1.0.1, books R and T (the policy limit `1000 xs
     0` given as one more occurrence layer, unlimited above 1,000, so the
     net is the capped severity's) match at the reference's tolerances.
+24. **A tower is priced view by view on the grid** (user, 2026-10-19,
+    the parity plan's last item). `PRO.TOWER.PRICE` wraps
+    `Tower::on_grid` and `TowerGrids::price`: the count and severity as
+    in decision 20, with the gross per-claim `limit` and `attachment` of
+    `PRO.AGG.STATS` (a policy limit, `aggregate`'s `1000 xs 0`); one
+    stage of per-occurrence layers (`limits`, `attachments`, `shares`,
+    each layer's annual `agg_deductibles` and `agg_limits`); and an
+    optional stop loss on the annual total net of them (`cover_limit`,
+    `cover_retention`) as a second stage. One row per view (gross, each
+    layer, the layers' total when there are several, the cover, net),
+    each priced on its own by the distortion, as `reins_price_df` does:
+    loss, SD, CV, premium, margin, loss ratio, and for a layer or the
+    cover the rate on line (premium over share times the smaller of the
+    occurrence and annual limit). The distortion is one of the five
+    standard families or the exponential by `aggregate`'s short name and
+    a single parameter; the two-parameter families (`clin`, `cll`, `lep`,
+    `ly`, bi-TVaR) are left out until asked. Where the layers' total or
+    the net is not one compound (a layer with annual terms) the row says
+    so in place of numbers. A layer whose boundaries miss the grid's
+    points keeps an exact mean and a shape smeared by up to a step;
+    `step` and `points` put them on points. On `aggregate`'s books C, R,
+    S and T under PH 0.7 every view's loss and premium matches
+    `reins_price_df` at the reference's tolerances. Capital allocation
+    and the natural allocation stay out (they want a portfolio object).
 
 ## Parity plan
 
@@ -410,7 +435,7 @@ order, one small PR each, those already done struck through:
 4. ~~Aggregate: a compound distribution of a count and a severity, its
    moments, VaR, TVaR and layer statistics~~.
 5. Aggregate, continued (user, 2026-10-16): ~~the occurrence PMLs~~;
-   ~~aggregate covers on the annual total~~; towers on a grid.
+   ~~aggregate covers on the annual total~~; ~~towers on a grid~~.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -420,7 +445,8 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan above: towers on a grid.
+- **Next functions:** the parity plan is done; further functions as the
+  user asks.
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and

@@ -44,6 +44,10 @@ typedef struct xloper12 {
 } XLOPER12;
 
 typedef XLOPER12 *(*Fn0)(void);
+typedef XLOPER12 *(*Fn19)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                          XLOPER12 *);
 typedef XLOPER12 *(*Fn15)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                           XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                           XLOPER12 *, XLOPER12 *, XLOPER12 *);
@@ -152,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("seventy functions registered", registered == 70);
+    check("seventy-one functions registered", registered == 71);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -489,6 +493,26 @@ int main(int argc, char **argv) {
               sl->val.array.lparray[7].val.num < sl->val.array.lparray[5].val.num &&
               sl->val.array.lparray[7].val.num > 0);
     free12(sl);
+
+    /* aggregate's book C priced by PH 0.7 on its grid (step 1, 2^14
+     * points, the severity limited to 1,000): the gross premium is
+     * 297.44319 and 500 xs 100's 139.35875 (aggregate 1.0.1). */
+    static wchar_t ph_s[] = L"\x02" L"ph";
+    XLOPER12 ph, rho, cap, n14;
+    ph.xltype = xltypeStr;
+    ph.val.str = ph_s;
+    rho.xltype = cap.xltype = n14.xltype = xltypeNum;
+    rho.val.num = 0.7;
+    cap.val.num = 1000;
+    n14.val.num = 16384;
+    XLOPER12 *tp = ((Fn19)GetProcAddress(xll, "pro_tower_price"))(
+        &two, &missing, &lncv, &hundred, &two, &missing, &cap, &missing, &occ_l, &occ_a, &missing, &missing,
+        &missing, &missing, &missing, &ph, &rho, &one, &n14);
+    check("PRO.TOWER.PRICE book C under PH 0.7 (aggregate)",
+          (tp->xltype & 0xFFF) == xltypeMulti && tp->val.array.rows == 4 && tp->val.array.columns == 8 &&
+              fabs(tp->val.array.lparray[12].val.num / 297.44318995353353 - 1) < 2e-8 &&
+              fabs(tp->val.array.lparray[20].val.num / 139.35875318947413 - 1) < 2e-8);
+    free12(tp);
 
     /* The Bayesian ODP chain ladder by NUTS on RAA, its chains on worker
      * threads: the diagnostics' first row is the largest R-hat. */
