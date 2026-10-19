@@ -595,16 +595,31 @@ impl RiskCopula {
     }
 }
 
-/// Iman-Conover reordering of a predictive distribution's components.
+/// Iman-Conover reordering of a predictive distribution's components:
+/// `dof` NaN and `scores` empty for normal scores.
 #[extendr]
 fn iman_conover_reorder(
     pd: Robj,
     correlation: &[f64],
     seed: f64,
+    dof: f64,
+    scores: &[f64],
+    shuffle_rows: bool,
 ) -> Result<PredictiveDistribution> {
     let pd = <&PredictiveDistribution>::try_from(&pd)
         .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
-    let inner = copula::iman_conover(&pd.inner, correlation, whole(seed, "seed")?).map_err(to_r)?;
+    let scores = match (dof.is_nan(), scores.is_empty()) {
+        (true, true) => copula::Scores::Normal,
+        (false, true) => copula::Scores::StudentT(dof),
+        (true, false) => copula::Scores::Given(scores.to_vec()),
+        (false, false) => return Err(Error::Other("give dof or scores, not both".into())),
+    };
+    let options = copula::ImanConover {
+        scores,
+        shuffle_rows,
+    };
+    let inner = copula::iman_conover_with(&pd.inner, correlation, whole(seed, "seed")?, &options)
+        .map_err(to_r)?;
     Ok(PredictiveDistribution { inner })
 }
 
