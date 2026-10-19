@@ -204,7 +204,7 @@ pub fn student_t_cdf(t: f64, nu: f64) -> f64 {
 /// use prospicio_math::special::student_t_quantile;
 ///
 /// // With two degrees of freedom, (2p - 1) / sqrt(2 p (1 - p)).
-/// let p = 0.9;
+/// let p: f64 = 0.9;
 /// let want = (2.0 * p - 1.0) / (2.0 * p * (1.0 - p)).sqrt();
 /// assert!((student_t_quantile(p, 2.0) - want).abs() < 1e-12);
 /// ```
