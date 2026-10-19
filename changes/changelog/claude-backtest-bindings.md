@@ -13,5 +13,15 @@
   `Backtest::diagonals()`: every split's diagnostics, the warnings as
   `(model, split, message)` and each split's held-out calendar period. A
   Bayesian fit with warnings is still scored.
-- `diagonal_backtest` returns an error naming two models with the same
-  name, before any fit, and `NamedModel::new(name, model)` renames one.
+- **Breaking:** `diagonal_backtest` returns an error naming two models
+  with the same name, before any fit (it used to accept them);
+  `NamedModel::new(name, model)` renames one.
+- The diagonal backtest in Python and R (#342). Python:
+  `prospicio.reserving.diagonal_backtest(triangle, column, models,
+  n_diagonals, premium=...)` with `BayesOdp`, `Meyers` or a new
+  `GlmCandidate` (`GlmCandidate.odp()` for the ODP model), returning a
+  `Backtest` with `scores()`, `mean()`, `diagnostics()`, `warnings`,
+  `diagonals` and `log_densities`. R: `diagonal_backtest()` with the new
+  settings objects `odp_glm_spec()`, `bayes_odp_spec()` and
+  `meyers_spec()`, and the same tables as data frames. Both report each
+  split's sampler diagnostics and the two new metrics.
