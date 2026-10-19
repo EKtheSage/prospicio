@@ -41,6 +41,48 @@ pub trait Severity: Distribution {
         self.layer_second_moment(limit, attachment) - m * m
     }
 
+    /// Third moment of the loss to the layer `limit` xs `attachment`,
+    /// `E[min(max(X - attachment, 0), limit)^3] = 3 ∫_a^(a+l) (x - a)² S(x) dx`,
+    /// by adaptive Gauss–Legendre quadrature of the survival function
+    /// (relative accuracy about `1e-10`). `limit = +inf` gives the unlimited
+    /// layer, infinite when the third moment is; `layer_third_moment(u, 0)`
+    /// is the limited third moment `E[min(X, u)^3]`.
+    ///
+    /// ```
+    /// use prospicio_prob::{Gamma, Severity};
+    ///
+    /// // An exponential with mean 2: E[min(X, u)^3] = 6 θ³ P(3, u / θ).
+    /// let x = Gamma::new(1.0, 2.0).unwrap();
+    /// let u: f64 = 3.0;
+    /// let t = u / 2.0;
+    /// let want = 48.0 * (1.0 - (-t).exp() * (1.0 + t + t * t / 2.0));
+    /// assert!((x.layer_third_moment(u, 0.0) / want - 1.0).abs() < 1e-10);
+    /// assert!((x.layer_third_moment(f64::INFINITY, 0.0) / 48.0 - 1.0).abs() < 1e-10);
+    /// ```
+    fn layer_third_moment(&self, limit: f64, attachment: f64) -> f64 {
+        let a = attachment.max(0.0);
+        if limit.is_nan() || limit <= 0.0 {
+            return 0.0;
+        }
+        let integrand = |x: f64| 3.0 * (x - a) * (x - a) * self.survival(x);
+        if limit.is_finite() {
+            return adaptive(&integrand, a, a + limit);
+        }
+        if self.third_moment() == Some(f64::INFINITY) || self.mean().is_infinite() {
+            return f64::INFINITY;
+        }
+        // x = a + s u / (1 − u) maps [0, 1) onto [a, ∞).
+        let s = a + self.mean().abs().max(f64::MIN_POSITIVE);
+        let mapped = |u: f64| {
+            if u >= 1.0 {
+                return 0.0;
+            }
+            let x = a + s * u / (1.0 - u);
+            integrand(x) * s / ((1.0 - u) * (1.0 - u))
+        };
+        adaptive(&mapped, 0.0, 1.0)
+    }
+
     /// The third raw moment `E[X^3]` (not central): `Some(f64::INFINITY)`
     /// when it diverges, `None` when the family has no closed form for it.
     /// Compound moments to third order and the skewness need it.
@@ -102,9 +144,35 @@ impl<T: Severity + ?Sized> Severity for Box<T> {
         (**self).third_moment()
     }
 
+    fn layer_third_moment(&self, limit: f64, attachment: f64) -> f64 {
+        (**self).layer_third_moment(limit, attachment)
+    }
+
     fn tvar(&self, p: f64) -> prospicio_core::Result<f64> {
         (**self).tvar(p)
     }
+}
+
+/// `∫_lo^hi f` by Gauss–Legendre panels halved until two levels agree to
+/// `1e-12` relative (or 40 levels deep).
+fn adaptive(f: &dyn Fn(f64) -> f64, lo: f64, hi: f64) -> f64 {
+    fn go(f: &dyn Fn(f64) -> f64, lo: f64, hi: f64, whole: f64, depth: u32) -> f64 {
+        let mid = 0.5 * (lo + hi);
+        let left = panel(f, lo, mid);
+        let right = panel(f, mid, hi);
+        let both = left + right;
+        if depth >= 40 || (both - whole).abs() <= 1e-12 * both.abs() + f64::MIN_POSITIVE {
+            return both;
+        }
+        go(f, lo, mid, left, depth + 1) + go(f, mid, hi, right, depth + 1)
+    }
+    fn panel(f: &dyn Fn(f64) -> f64, lo: f64, hi: f64) -> f64 {
+        prospicio_math::integrate::gauss_legendre(|x| Ok::<_, ()>(f(x)), lo, hi).unwrap_or(f64::NAN)
+    }
+    if hi <= lo {
+        return 0.0;
+    }
+    go(f, lo, hi, panel(f, lo, hi), 0)
 }
 
 /// Limited moments of a family with closed forms, from which

@@ -993,9 +993,11 @@ fn approximation_kind(kind: &str) -> PyResult<prospicio_aggregate::Approximation
         "lognormal" => K::Lognormal,
         "shifted_gamma" => K::ShiftedGamma,
         "shifted_lognormal" => K::ShiftedLognormal,
+        "normal_power" => K::NormalPower,
+        "wilson_hilferty" => K::WilsonHilferty,
         other => {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "kind must be \"normal\", \"gamma\", \"lognormal\", \"shifted_gamma\" or \"shifted_lognormal\", got {other:?}"
+                "kind must be \"normal\", \"gamma\", \"lognormal\", \"shifted_gamma\", \"shifted_lognormal\", \"normal_power\" or \"wilson_hilferty\", got {other:?}"
             )));
         }
     })
@@ -1034,8 +1036,10 @@ impl PyCompoundMoments {
     }
 
     /// The moment-matched approximation: ``"normal"``, ``"gamma"``,
-    /// ``"lognormal"`` (mean and cv), ``"shifted_gamma"`` or
-    /// ``"shifted_lognormal"`` (mean, cv and skewness).
+    /// ``"lognormal"`` (mean and cv), ``"shifted_gamma"``,
+    /// ``"shifted_lognormal"``, ``"normal_power"`` or ``"wilson_hilferty"``
+    /// (mean, cv and skewness; the last two defined by their quantiles,
+    /// Bahnemann's section 4.4).
     ///
     /// Parameters
     /// ----------
@@ -1049,7 +1053,7 @@ impl PyCompoundMoments {
     /// ------
     /// ValueError
     ///     For an unknown kind, a non-positive mean (gamma, lognormal) or a
-    ///     non-positive skewness (the shifted fits).
+    ///     non-positive skewness (the three-moment fits).
     fn approximate(&self, kind: &str) -> PyResult<PyApproximation> {
         let inner = self
             .inner
@@ -1078,7 +1082,8 @@ pub(crate) struct PyApproximation {
 #[pymethods]
 impl PyApproximation {
     /// The family: ``"normal"``, ``"gamma"``, ``"lognormal"``,
-    /// ``"shifted_gamma"`` or ``"shifted_lognormal"``.
+    /// ``"shifted_gamma"``, ``"shifted_lognormal"``, ``"normal_power"`` or
+    /// ``"wilson_hilferty"``.
     #[getter]
     fn kind(&self) -> &'static str {
         use prospicio_aggregate::Approximation as A;
@@ -1088,12 +1093,15 @@ impl PyApproximation {
             A::Lognormal { .. } => "lognormal",
             A::ShiftedGamma { .. } => "shifted_gamma",
             A::ShiftedLognormal { .. } => "shifted_lognormal",
+            A::NormalPower { .. } => "normal_power",
+            A::WilsonHilferty { .. } => "wilson_hilferty",
         }
     }
 
     /// The parameters by name: ``mean`` and ``sd``; ``shape`` and
     /// ``scale``; ``meanlog`` and ``sdlog``; with ``shift`` for the
-    /// shifted families.
+    /// shifted families; ``mean``, ``sd`` and ``skew`` for the normal power
+    /// and Wilson-Hilferty.
     #[getter]
     fn parameters(&self) -> Vec<(&'static str, f64)> {
         use prospicio_aggregate::Approximation as A;
@@ -1111,6 +1119,9 @@ impl PyApproximation {
                 sdlog,
                 shift,
             } => vec![("meanlog", meanlog), ("sdlog", sdlog), ("shift", shift)],
+            A::NormalPower { mean, sd, skew } | A::WilsonHilferty { mean, sd, skew } => {
+                vec![("mean", mean), ("sd", sd), ("skew", skew)]
+            }
         }
     }
 

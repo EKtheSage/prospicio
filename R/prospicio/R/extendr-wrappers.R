@@ -40,6 +40,8 @@ round_premium_rust <- function(premium) .Call(wrap__round_premium_rust, premium)
 
 tvar_weighted_rust <- function(values, probs, p) .Call(wrap__tvar_weighted_rust, values, probs, p)
 
+layer_third_moment_rust <- function(severity, limit, attachment) .Call(wrap__layer_third_moment_rust, severity, limit, attachment)
+
 tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rust, values, probs, p)
 
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)

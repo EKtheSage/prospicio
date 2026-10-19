@@ -12,7 +12,8 @@ compound_moments(frequency, severity)
 moment_approximation(
   frequency,
   severity = NULL,
-  kind = c("shifted_lognormal", "shifted_gamma", "gamma", "lognormal", "normal")
+  kind = c("shifted_lognormal", "shifted_gamma", "gamma", "lognormal", "normal",
+    "normal_power", "wilson_hilferty")
 )
 
 approximation_cdf(approximation, x)
@@ -37,7 +38,8 @@ without a severity.}
 \value{
 \code{compound_moments()}: a named vector. \code{moment_approximation()}: a
 list with \code{kind}, \code{parameters} (named: \code{mean} and \code{sd}; \code{shape} and
-\code{scale}; \code{meanlog} and \code{sdlog}; plus \code{shift}) and \code{moments}. The others:
+\code{scale}; \code{meanlog} and \code{sdlog}; plus \code{shift}; \code{mean}, \code{sd} and \code{skew}
+for the normal power and Wilson-Hilferty) and \code{moments}. The others:
 numeric vectors.
 }
 \description{
@@ -45,8 +47,10 @@ numeric vectors.
 skewness of \code{S = X_1 + ... + X_N}, from the count's cumulants and the
 severity's first three moments. \code{moment_approximation()} fits a
 distribution to them, as the Python package \code{aggregate}'s \code{approximate}:
-\code{"normal"}, \code{"gamma"} or \code{"lognormal"} (mean and cv), \code{"shifted_gamma"} or
-\code{"shifted_lognormal"} (mean, cv and skewness, which must be positive).
+\code{"normal"}, \code{"gamma"} or \code{"lognormal"} (mean and cv), \code{"shifted_gamma"},
+\code{"shifted_lognormal"}, \code{"normal_power"} or \code{"wilson_hilferty"} (mean, cv
+and skewness, which must be positive; the last two are defined by their
+quantiles, Bahnemann's section 4.4).
 It takes a count and a severity, or a \code{compound_moments()} result alone
 (\code{moment_approximation(m, "gamma")}).
 \code{approximation_cdf()} and \code{approximation_quantile()} evaluate a fit.

@@ -426,8 +426,10 @@ layer_loss_picks <- function(severity, attachments, picks, claims = 1) {
 #' skewness of `S = X_1 + ... + X_N`, from the count's cumulants and the
 #' severity's first three moments. `moment_approximation()` fits a
 #' distribution to them, as the Python package `aggregate`'s `approximate`:
-#' `"normal"`, `"gamma"` or `"lognormal"` (mean and cv), `"shifted_gamma"` or
-#' `"shifted_lognormal"` (mean, cv and skewness, which must be positive).
+#' `"normal"`, `"gamma"` or `"lognormal"` (mean and cv), `"shifted_gamma"`,
+#' `"shifted_lognormal"`, `"normal_power"` or `"wilson_hilferty"` (mean, cv
+#' and skewness, which must be positive; the last two are defined by their
+#' quantiles, Bahnemann's section 4.4).
 #' It takes a count and a severity, or a `compound_moments()` result alone
 #' (`moment_approximation(m, "gamma")`).
 #' `approximation_cdf()` and `approximation_quantile()` evaluate a fit.
@@ -442,7 +444,8 @@ layer_loss_picks <- function(severity, attachments, picks, claims = 1) {
 #' @param p Probabilities.
 #' @returns `compound_moments()`: a named vector. `moment_approximation()`: a
 #'   list with `kind`, `parameters` (named: `mean` and `sd`; `shape` and
-#'   `scale`; `meanlog` and `sdlog`; plus `shift`) and `moments`. The others:
+#'   `scale`; `meanlog` and `sdlog`; plus `shift`; `mean`, `sd` and `skew`
+#'   for the normal power and Wilson-Hilferty) and `moments`. The others:
 #'   numeric vectors.
 #' @export
 #' @examples
@@ -462,7 +465,8 @@ compound_moments <- function(frequency, severity) {
 #' @export
 moment_approximation <- function(frequency, severity = NULL,
                                  kind = c("shifted_lognormal", "shifted_gamma", "gamma",
-                                          "lognormal", "normal")) {
+                                          "lognormal", "normal", "normal_power",
+                                          "wilson_hilferty")) {
   needed <- c("mean", "variance", "third_cumulant")
   if (is.numeric(frequency)) {
     # A compound_moments() result; the kind may come second, positionally.

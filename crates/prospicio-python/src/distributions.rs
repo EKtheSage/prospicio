@@ -251,6 +251,23 @@ impl PyLognormal {
         self.inner.layer_second_moment(limit, attachment)
     }
 
+    /// Third moment of the loss to the layer ``limit`` xs ``attachment``,
+    /// ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+    /// function (relative accuracy about 1e-10); ``limit = inf`` for the
+    /// unlimited layer, ``attachment = 0`` for the limited third moment.
+    ///
+    /// Parameters
+    /// ----------
+    /// limit : float
+    /// attachment : float
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn layer_third_moment(&self, limit: f64, attachment: f64) -> f64 {
+        self.inner.layer_third_moment(limit, attachment)
+    }
+
     fn __getnewargs__(&self) -> (f64, f64) {
         (self.inner.meanlog(), self.inner.sdlog())
     }

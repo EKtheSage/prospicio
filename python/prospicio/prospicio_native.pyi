@@ -163,7 +163,8 @@ class Approximation:
     def kind(self, /) -> str:
         """
         The family: ``"normal"``, ``"gamma"``, ``"lognormal"``,
-        ``"shifted_gamma"`` or ``"shifted_lognormal"``.
+        ``"shifted_gamma"``, ``"shifted_lognormal"``, ``"normal_power"`` or
+        ``"wilson_hilferty"``.
         """
     def mean(self, /) -> float:
         """
@@ -178,7 +179,8 @@ class Approximation:
         """
         The parameters by name: ``mean`` and ``sd``; ``shape`` and
         ``scale``; ``meanlog`` and ``sdlog``; with ``shift`` for the
-        shifted families.
+        shifted families; ``mean``, ``sd`` and ``skew`` for the normal power
+        and Wilson-Hilferty.
         """
     def quantile(self, /, p: float) -> float:
         """
@@ -2276,6 +2278,22 @@ class Beta:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -2986,6 +3004,22 @@ class Burr:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -5748,8 +5782,10 @@ class CompoundMoments:
     def approximate(self, /, kind: str) -> Approximation:
         """
         The moment-matched approximation: ``"normal"``, ``"gamma"``,
-        ``"lognormal"`` (mean and cv), ``"shifted_gamma"`` or
-        ``"shifted_lognormal"`` (mean, cv and skewness).
+        ``"lognormal"`` (mean and cv), ``"shifted_gamma"``,
+        ``"shifted_lognormal"``, ``"normal_power"`` or ``"wilson_hilferty"``
+        (mean, cv and skewness; the last two defined by their quantiles,
+        Bahnemann's section 4.4).
         
         Parameters
         ----------
@@ -5763,7 +5799,7 @@ class CompoundMoments:
         ------
         ValueError
             For an unknown kind, a non-positive mean (gamma, lognormal) or a
-            non-positive skewness (the shifted fits).
+            non-positive skewness (the three-moment fits).
         """
     @property
     def cv(self, /) -> float:
@@ -6227,6 +6263,22 @@ class Custom:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -8443,6 +8495,22 @@ class Gamma:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -8749,6 +8817,22 @@ class GeneralizedPareto:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -10005,6 +10089,22 @@ class InverseGamma:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -10219,6 +10319,22 @@ class InverseGaussian:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -11698,6 +11814,22 @@ class LogAffinePareto:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -11901,6 +12033,22 @@ class Loglogistic:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -12138,6 +12286,22 @@ class Lognormal:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``, in closed form.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -14208,6 +14372,22 @@ class Mixture:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -15585,6 +15765,22 @@ class Pareto:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -16248,6 +16444,22 @@ class PiecewisePareto:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -16558,6 +16770,22 @@ class PolicyLimits:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -20472,6 +20700,22 @@ class Truncated:
         -------
         float
         """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
     def layer_variance(self, /, limit: float, attachment: float) -> float:
         """
         Variance of the loss to the layer ``limit`` xs ``attachment``.
@@ -20714,6 +20958,22 @@ class Tweedie:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------
@@ -21122,6 +21382,22 @@ class Weibull:
         """
         Second moment of the loss to the layer ``limit`` xs
         ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
         
         Parameters
         ----------

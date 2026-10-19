@@ -30,6 +30,7 @@ reference:
       - custom_distribution
       - dist_to_json
       - log_density
+      - layer_third_moment
   - title: Large-loss severities
     contents:
       - pareto
