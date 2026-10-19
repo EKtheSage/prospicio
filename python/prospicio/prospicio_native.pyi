@@ -3,6 +3,240 @@ from datetime import date
 from typing import Any, final
 
 @final
+class Affine:
+    """
+    A severity scaled and shifted, ``scale * X + shift``: ``aggregate``'s
+    ``10 * lognorm 1 + 20``, keeping the severity's exact layer moments.
+    
+    Parameters
+    ----------
+    severity : severity
+        Any severity but ``Sampled``.
+    scale : float, default 1.0
+        Positive.
+    shift : float, default 0.0
+        Non-negative, so that the result is a loss.
+    
+    Raises
+    ------
+    ValueError
+        If ``scale`` is not positive or ``shift`` is negative.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Affine, Lognormal
+    >>> x = Lognormal(0.0, 1.0)
+    >>> y = Affine(x, scale=10.0, shift=20.0)
+    >>> round(y.mean() - (10 * x.mean() + 20), 9), y.cdf(20.0)
+    (0.0, 0.0)
+    """
+    def __new__(cls, /, severity: Any, scale: float = 1.0, shift: float = 0.0) -> Affine: ...
+    def __repr__(self, /) -> str: ...
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def scale(self, /) -> float:
+        """
+        The scale.
+        """
+    @property
+    def severity(self, /) -> Any:
+        """
+        The severity before scaling and shifting.
+        """
+    @property
+    def shift(self, /) -> float:
+        """
+        The shift.
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class AggregateLayerStatistics:
     """
     An aggregate cover's statistics, from ``aggregate_layer_statistics``.

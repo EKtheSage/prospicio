@@ -93,7 +93,7 @@ impl Lognormal {
 /// sampled distribution.
 pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     use crate::pareto::{
-        BetaDist, BurrDist, CustomDist, GammaDist, GeneralizedPareto, InverseGammaDist,
+        AffineDist, BetaDist, BurrDist, CustomDist, GammaDist, GeneralizedPareto, InverseGammaDist,
         InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
         PiecewisePareto, PolicyLimitsDist, TruncatedDist, TweedieDist, WeibullDist,
     };
@@ -142,6 +142,9 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     if let Ok(d) = <&TruncatedDist>::try_from(obj) {
         return Ok(Dist::Truncated(d.inner.clone()));
     }
+    if let Ok(d) = <&AffineDist>::try_from(obj) {
+        return Ok(Dist::Affine(d.inner.clone()));
+    }
     if let Ok(d) = <&PolicyLimitsDist>::try_from(obj) {
         return Ok(Dist::PolicyLimits(d.inner.clone()));
     }
@@ -179,9 +182,9 @@ fn dist_from_json_rust(text: &str) -> Result<List> {
 /// in its class by `Dist::family`.
 pub(crate) fn dist_to_robj(d: Dist) -> Result<Robj> {
     use crate::pareto::{
-        BetaDist, BurrDist, GammaDist, GeneralizedPareto, InverseGammaDist, InverseGaussianDist,
-        LogAffinePareto, LoglogisticDist, MixtureDist, Pareto, PiecewisePareto, PolicyLimitsDist,
-        TruncatedDist, TweedieDist, WeibullDist,
+        AffineDist, BetaDist, BurrDist, GammaDist, GeneralizedPareto, InverseGammaDist,
+        InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
+        PiecewisePareto, PolicyLimitsDist, TruncatedDist, TweedieDist, WeibullDist,
     };
     Ok(match d {
         Dist::Lognormal(inner) => Lognormal { inner }.into(),
@@ -198,6 +201,7 @@ pub(crate) fn dist_to_robj(d: Dist) -> Result<Robj> {
         Dist::Burr(inner) => BurrDist { inner }.into(),
         Dist::Beta(inner) => BetaDist { inner }.into(),
         Dist::Truncated(inner) => TruncatedDist { inner }.into(),
+        Dist::Affine(inner) => AffineDist { inner }.into(),
         Dist::PolicyLimits(inner) => PolicyLimitsDist { inner }.into(),
         Dist::Mixture(inner) => MixtureDist { inner }.into(),
         Dist::Grid(inner) => Grid::wrap(inner).into(),

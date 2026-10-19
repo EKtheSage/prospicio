@@ -27,6 +27,7 @@ reference:
       - burr_distribution
       - beta_distribution
       - truncated_distribution
+      - affine_distribution
       - policy_limits_distribution
       - mixture_distribution
       - custom_distribution

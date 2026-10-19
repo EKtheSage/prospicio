@@ -149,6 +149,14 @@ conversion reports the error it introduces.
   `validation/reference/discrete_aggregate.csv` (544 values, `1e-12`;
   `1e-10` on TVaR and skewness). Python `Discrete`, R
   `discrete_distribution()`.
+- `prospicio_prob::Affine`, a severity scaled and shifted, `Y = scale · X
+  + shift` with `scale > 0` and `shift ≥ 0` (#318; `aggregate`'s
+  `10 * lognorm 1 + 20`). A `Dist` variant held in an `Arc`, like
+  `Truncated`, and saved as JSON with its inner severity. Below the shift
+  `S_Y = 1`; above it `S_Y(y) = S_X((y − shift) / scale)`, so a layer is a
+  length plus `scale` times a layer of `X`, and the layer's second moment
+  is `c² + s² m₂ + 2 (lo − a) s m₁` by the change of variable
+  `y = shift + s t`. Python `Affine`, R `affine_distribution()`.
 - `prospicio_prob::Normal`, on the whole real line (asset and log-return
   models), and `prospicio_prob::Ogive`, the piecewise linear distribution
   function of grouped data (#366). The normal is a `Distribution` but not a

@@ -10,6 +10,7 @@
 //! With the `arrow` feature, [`PredictiveDistribution`] reads and writes
 //! Arrow IPC files; the format is described in `ipc`.
 
+pub mod affine;
 pub mod beta;
 pub mod burr;
 pub mod capital;
@@ -52,6 +53,7 @@ pub mod tweedie;
 pub mod vine;
 pub mod weibull;
 
+pub use affine::Affine;
 pub use beta::Beta;
 pub use burr::Burr;
 pub use copula::{

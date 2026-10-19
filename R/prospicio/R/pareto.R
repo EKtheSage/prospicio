@@ -23,6 +23,7 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' [tweedie], [weibull_distribution], [loglogistic_distribution],
 #' [inverse_gamma_distribution], [inverse_gaussian_distribution],
 #' [burr_distribution], [beta_distribution], [truncated_distribution],
+#' [affine_distribution],
 #' [policy_limits_distribution], [mixture_distribution] and
 #' [custom_distribution].
 #'
@@ -720,6 +721,44 @@ truncated_distribution <- S7::new_class(
   }
 )
 
+#' Scaled and shifted severity
+#'
+#' `affine_distribution()` is the loss `scale * X + shift` for a severity
+#' `X`, as `aggregate`'s `10 * lognorm 1 + 20`: its distribution function is
+#' `F((x - shift) / scale)`, and every layer moment is exact, from the inner
+#' severity's. Properties: `d@scale`, `d@shift`, `d@family` (the inner
+#' severity's).
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param severity Any severity but a [sampled] distribution.
+#' @param scale Positive.
+#' @param shift Non-negative, so that the result is a loss.
+#' @param ptr Internal: an existing object to wrap.
+#' @returns An `affine_distribution`, which inherits from [distribution].
+#' @export
+#' @examples
+#' y <- affine_distribution(lognormal(0, 1), scale = 10, shift = 20)
+#' mean(y)
+#' cdf(y, 20)
+affine_distribution <- S7::new_class(
+  "affine_distribution",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("AffineDist"),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale()),
+    shift = S7::new_property(S7::class_double, getter = function(self) self@ptr$shift()),
+    family = S7::new_property(S7::class_character, getter = function(self) self@ptr$family())
+  ),
+  constructor = function(severity, scale = 1, shift = 0, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(AffineDist$new(severity@ptr, as.double(scale), as.double(shift)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
 #' Severity under a mix of policy limits
 #'
 #' The loss `min(X, L)` where `L` is `limits[j]` with probability
@@ -876,7 +915,8 @@ S7::method(log_density, tweedie) <- function(dist, x, ...) dist@ptr$ln_pdf(as.do
 for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto,
                  gamma_distribution, tweedie, weibull_distribution, loglogistic_distribution,
                  inverse_gamma_distribution, inverse_gaussian_distribution, burr_distribution,
-                 beta_distribution, truncated_distribution, policy_limits_distribution,
+                 beta_distribution, truncated_distribution, affine_distribution,
+                 policy_limits_distribution,
                  mixture_distribution, custom_distribution)) {
   S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
   S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
@@ -983,6 +1023,11 @@ S7::method(print, beta_distribution) <- function(x, ...) {
 S7::method(print, truncated_distribution) <- function(x, ...) {
   cat(sprintf("<truncated_distribution> %s on (%s, %s]\n", x@family,
               format(x@lower, digits = 15), format(x@upper, digits = 15)))
+  invisible(x)
+}
+S7::method(print, affine_distribution) <- function(x, ...) {
+  cat(sprintf("<affine_distribution> %s * %s + %s\n", format(x@scale), x@family,
+              format(x@shift)))
   invisible(x)
 }
 S7::method(print, policy_limits_distribution) <- function(x, ...) {
@@ -1114,6 +1159,7 @@ wrap_dist <- function(family, ptr) {
     loglogistic = loglogistic_distribution, inverse_gamma = inverse_gamma_distribution,
     inverse_gaussian = inverse_gaussian_distribution, burr = burr_distribution,
     beta = beta_distribution, truncated = truncated_distribution,
+    affine = affine_distribution,
     policy_limits = policy_limits_distribution, mixture = mixture_distribution,
     grid = grid_distribution, sampled = sampled,
     stop("unknown family ", family)

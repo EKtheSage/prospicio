@@ -1046,6 +1046,74 @@ severity_class!(PyTruncated {
     }
 });
 
+/// A severity scaled and shifted, ``scale * X + shift``: ``aggregate``'s
+/// ``10 * lognorm 1 + 20``, keeping the severity's exact layer moments.
+///
+/// Parameters
+/// ----------
+/// severity : severity
+///     Any severity but ``Sampled``.
+/// scale : float, default 1.0
+///     Positive.
+/// shift : float, default 0.0
+///     Non-negative, so that the result is a loss.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``scale`` is not positive or ``shift`` is negative.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Affine, Lognormal
+/// >>> x = Lognormal(0.0, 1.0)
+/// >>> y = Affine(x, scale=10.0, shift=20.0)
+/// >>> round(y.mean() - (10 * x.mean() + 20), 9), y.cdf(20.0)
+/// (0.0, 0.0)
+#[pyclass(name = "Affine", module = "prospicio.distributions", frozen)]
+pub(crate) struct PyAffine {
+    pub(crate) inner: std::sync::Arc<prospicio_prob::Affine>,
+}
+
+severity_class!(PyAffine {
+    #[new]
+    #[pyo3(signature = (severity, scale = 1.0, shift = 0.0))]
+    fn new(severity: &Bound<'_, PyAny>, scale: f64, shift: f64) -> PyResult<Self> {
+        let inner = crate::distributions::extract_severity(severity)?;
+        let t = prospicio_prob::Affine::new(inner, scale, shift).map_err(to_py)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(t),
+        })
+    }
+
+    /// The scale.
+    #[getter]
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    /// The shift.
+    #[getter]
+    fn shift(&self) -> f64 {
+        self.inner.shift()
+    }
+
+    /// The severity before scaling and shifting.
+    #[getter]
+    fn severity(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        crate::distributions::dist_to_py(py, self.inner.inner().dist().clone())
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Affine({}, scale={:?}, shift={:?})",
+            self.inner.inner().dist().family(),
+            self.inner.scale(),
+            self.inner.shift()
+        )
+    }
+});
+
 /// A severity capped by a mix of policy limits: the loss ``min(X, L)``
 /// with ``L = limits[j]`` with probability ``weights[j]``, as a cedant's
 /// losses censored at its policies' limits. Every layer moment is exact,

@@ -648,6 +648,34 @@ severity_class!(TruncatedDist {
     }
 });
 
+/// A severity scaled and shifted, `scale * X + shift`.
+#[extendr]
+pub(crate) struct AffineDist {
+    pub(crate) inner: std::sync::Arc<prospicio_prob::Affine>,
+}
+
+severity_class!(AffineDist {
+    fn new(severity: Robj, scale: f64, shift: f64) -> Result<Self> {
+        let inner = crate::distributions::severity_from_robj(&severity)?;
+        let t = prospicio_prob::Affine::new(inner, scale, shift).map_err(to_r)?;
+        Ok(Self {
+            inner: std::sync::Arc::new(t),
+        })
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale()
+    }
+
+    fn shift(&self) -> f64 {
+        self.inner.shift()
+    }
+
+    fn family(&self) -> String {
+        self.inner.inner().dist().family().to_string()
+    }
+});
+
 /// A severity capped by a mix of policy limits.
 #[extendr]
 pub(crate) struct PolicyLimitsDist {
@@ -913,6 +941,7 @@ extendr_module! {
     impl BurrDist;
     impl BetaDist;
     impl TruncatedDist;
+    impl AffineDist;
     impl PolicyLimitsDist;
     fn pareto_fit_standard_error_rust;
     fn severity_fit_rust;

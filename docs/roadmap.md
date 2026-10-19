@@ -101,9 +101,9 @@ what it is aiming for by v1.0.
   - The Guides lane's issues of 2026-10-17 and 18: the worst VaR by the
     rearrangement algorithm, a normal and an ogive (#366), the covariance
     allocation of the margin, Shapley, haircut and equal risk allocations
-    (#369), the normal power and Wilson–Hilferty approximations (#329).
-- **Next:** shifted and scaled severities (#318), fits to grouped and
-  truncated data (#328).
+    (#369), the normal power and Wilson–Hilferty approximations (#329),
+    shifted and scaled severities (#318).
+- **Next:** fits to grouped and truncated data (#328).
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
