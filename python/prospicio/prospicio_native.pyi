@@ -19143,6 +19143,26 @@ class Terms:
         -------
         Terms
         """
+    def natural_spline(self, /, name: str, knots: Sequence[float], boundary: tuple[float, float] |None = None) -> Terms:
+        """
+        Adds a natural cubic spline with interior ``knots``, linear beyond
+        the boundary knots (the training range unless given):
+        ``len(knots) + 1`` columns named ``spline(x)1``, .... The basis is
+        the restricted cubic one, which spans the same functions as R's
+        ``splines::ns(x, knots)``: fitted values agree, coefficients differ.
+        
+        Parameters
+        ----------
+        name : str
+        knots : list of float
+            Interior knots, strictly increasing.
+        boundary : tuple of float, optional
+            The boundary knots; the training minimum and maximum by default.
+        
+        Returns
+        -------
+        Terms
+        """
     def numeric(self, /, name: str) -> Terms:
         """
         Adds a numeric column.
@@ -19177,6 +19197,21 @@ class Terms:
         >>> data = {"size": ["small", "large", "medium"]}
         >>> Terms().ordinal("size", ["small", "medium", "large"]).fit(data).names
         ['size[>=medium]', 'size[>=large]']
+        """
+    def orthogonal_poly(self, /, name: str, degree: int) -> Terms:
+        """
+        Adds orthogonal polynomials of degree 1 to ``degree`` on the
+        training values, as R's ``poly(x, degree)``, named ``poly(x)1``,
+        ...; the recurrence learned at ``fit`` rebuilds them on new data.
+        
+        Parameters
+        ----------
+        name : str
+        degree : int
+        
+        Returns
+        -------
+        Terms
         """
     def poly(self, /, name: str, degree: int) -> Terms:
         """

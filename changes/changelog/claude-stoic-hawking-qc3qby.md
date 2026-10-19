@@ -266,9 +266,16 @@
   cumulative coding). A `Coding` rebuilds them on new data. Python
   `Terms.interaction`, `.poly`, `.hinges`, `.steps`, `.bins`, `.log`,
   `.ordinal`; in R they are formula terms (#350, #357).
+- Terms that learn from the training data: `Terms::orthogonal_poly`, R's
+  `poly(x, degree)` recurrence (parity, on new data too), and
+  `natural_spline`, a natural cubic spline in the restricted cubic basis,
+  which spans R's `splines::ns`: fitted values and predictions agree with
+  `lm(y ~ ns(x, knots))`, coefficients differ. Python
+  `Terms.orthogonal_poly` and `.natural_spline` (#350).
 
 ### Breaking changes
 
 - `prospicio_models::Term` has new variants (`Interaction`, `Poly`,
-  `Hinges`, `Steps`, `Bins`, `Log`, `Ordinal`), so an exhaustive `match`
+  `Hinges`, `Steps`, `Bins`, `Log`, `Ordinal`, `OrthogonalPoly`,
+  `NaturalSpline`), so an exhaustive `match`
   on it needs new arms (#350).

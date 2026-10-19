@@ -305,6 +305,55 @@ impl PyTerms {
         }
     }
 
+    /// Adds orthogonal polynomials of degree 1 to ``degree`` on the
+    /// training values, as R's ``poly(x, degree)``, named ``poly(x)1``,
+    /// ...; the recurrence learned at ``fit`` rebuilds them on new data.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// degree : int
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn orthogonal_poly(&self, name: &str, degree: usize) -> Self {
+        Self {
+            inner: self.inner.clone().orthogonal_poly(name, degree),
+        }
+    }
+
+    /// Adds a natural cubic spline with interior ``knots``, linear beyond
+    /// the boundary knots (the training range unless given):
+    /// ``len(knots) + 1`` columns named ``spline(x)1``, .... The basis is
+    /// the restricted cubic one, which spans the same functions as R's
+    /// ``splines::ns(x, knots)``: fitted values agree, coefficients differ.
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    /// knots : list of float
+    ///     Interior knots, strictly increasing.
+    /// boundary : tuple of float, optional
+    ///     The boundary knots; the training minimum and maximum by default.
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    #[pyo3(signature = (name, knots, boundary = None))]
+    fn natural_spline(&self, name: &str, knots: Vec<f64>, boundary: Option<(f64, f64)>) -> Self {
+        Self {
+            inner: self
+                .inner
+                .clone()
+                .term(prospicio_models::Term::NaturalSpline {
+                    name: name.into(),
+                    knots,
+                    boundary,
+                }),
+        }
+    }
+
     /// Adds an ordered factor in cumulative coding: for each level after
     /// the first, ``1[level >= it]``, named ``x[>=level]``, so each
     /// coefficient is the step from the level below.

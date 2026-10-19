@@ -361,9 +361,15 @@ models and compares them.
   `Hinges`, `Steps`, `Bins`, `Log` and `Ordinal` beside the intercept,
   numeric columns and factors. Each is a pure function of the frame once
   its parameters (knots, cuts, levels) are given, so `Coding` stores only
-  those and rebuilds the same columns on new data; terms that learn from
-  the training data (a natural spline's boundary knots, an orthogonal
-  polynomial's recurrence) come next with that state in `Coded`. Bins are
+  those and rebuilds the same columns on new data. Two terms learn from
+  the training data and keep it in `Coded`: `OrthogonalPoly` the
+  recurrence coefficients of R's `poly` (`alpha`, `norm2`), so new values
+  get R's `predict(poly)` columns, and `NaturalSpline` its boundary knots
+  (the training range). The spline uses the restricted cubic basis, not
+  `ns`'s B-spline one: reproducing `ns`'s coefficients would mean copying
+  `splineDesign` and LINPACK's Householder signs, while the restricted
+  cubic basis spans the same functions, so fitted values and predictions
+  agree with `ns` (checked to 1e-9) and only the coefficients differ. Bins are
   right-closed, `(c_{k-1}, c_k]`, open at both ends, so a new value never
   falls outside a bin. An interaction's columns are the products of its
   sides' coded columns, the first side varying fastest, as R's `a:b`.

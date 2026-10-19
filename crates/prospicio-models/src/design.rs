@@ -120,6 +120,20 @@ pub enum Term {
     /// first in `levels`' order, `1[level ≥ it]`, named `x[>=level]`. Each
     /// coefficient is the step from the level below.
     Ordinal { name: String, levels: Vec<String> },
+    /// Orthogonal polynomials of degree 1 to `degree` on the training
+    /// values, as R's `poly(x, degree)`, named `poly(x)1`, `poly(x)2`, ….
+    /// The recurrence learned in training rebuilds them on new data.
+    OrthogonalPoly { name: String, degree: usize },
+    /// A natural cubic spline with interior `knots`, linear beyond the
+    /// boundary knots (the training range unless given): `knots.len() + 1`
+    /// columns named `spline(x)1`, …. The basis is the restricted cubic
+    /// (truncated power) one, which spans the same functions as R's
+    /// `splines::ns(x, knots)`: fitted values agree, coefficients differ.
+    NaturalSpline {
+        name: String,
+        knots: Vec<f64>,
+        boundary: Option<(f64, f64)>,
+    },
 }
 
 /// The terms of a model, before any data is seen.
@@ -237,6 +251,24 @@ impl Terms {
         })
     }
 
+    /// Adds orthogonal polynomials of a numeric column up to `degree`.
+    pub fn orthogonal_poly(self, name: &str, degree: usize) -> Self {
+        self.term(Term::OrthogonalPoly {
+            name: name.into(),
+            degree,
+        })
+    }
+
+    /// Adds a natural cubic spline with interior `knots`, its boundary
+    /// knots the training range.
+    pub fn natural_spline(self, name: &str, knots: &[f64]) -> Self {
+        self.term(Term::NaturalSpline {
+            name: name.into(),
+            knots: knots.to_vec(),
+            boundary: None,
+        })
+    }
+
     /// Adds any term.
     pub fn term(mut self, term: Term) -> Self {
         self.terms.push(term);
@@ -320,6 +352,40 @@ impl Terms {
                     Coded::Log {
                         name: name.clone(),
                         base: *base,
+                    }
+                }
+                Term::OrthogonalPoly { name, degree } => {
+                    let x = numeric(frame, name)?;
+                    orthogonal_poly(name, x, *degree)?
+                }
+                Term::NaturalSpline {
+                    name,
+                    knots,
+                    boundary,
+                } => {
+                    let x = numeric(frame, name)?;
+                    let (lo, hi) = match boundary {
+                        Some(b) => *b,
+                        None => x
+                            .iter()
+                            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
+                                (lo.min(v), hi.max(v))
+                            }),
+                    };
+                    let mut all = vec![lo];
+                    all.extend(knots);
+                    all.push(hi);
+                    increasing(&all, "knots")?;
+                    if knots.is_empty() {
+                        return Err(invalid(
+                            "knots",
+                            0.0,
+                            "a natural spline needs an interior knot",
+                        ));
+                    }
+                    Coded::NaturalSpline {
+                        name: name.clone(),
+                        knots: all,
                     }
                 }
                 Term::Ordinal { name, levels } => {
@@ -471,6 +537,67 @@ fn indicators(
     Ok(columns)
 }
 
+/// The recurrence of R's `poly(x, degree)` on the training values `x`.
+fn orthogonal_poly(name: &str, x: &[f64], degree: usize) -> Result<Coded> {
+    let distinct: BTreeSet<u64> = x.iter().map(|v| v.to_bits()).collect();
+    if degree == 0 || degree >= distinct.len() {
+        return Err(invalid(
+            "degree",
+            degree as f64,
+            "must be at least 1 and less than the number of distinct values",
+        ));
+    }
+    let n = x.len();
+    let (mut alpha, mut norm2) = (Vec::with_capacity(degree), vec![1.0, n as f64]);
+    let (mut prev, mut cur) = (vec![0.0; n], vec![1.0; n]);
+    for k in 0..degree {
+        let a = x.iter().zip(&cur).map(|(x, p)| x * p * p).sum::<f64>() / norm2[k + 1];
+        let ratio = norm2[k + 1] / norm2[k];
+        let next: Vec<f64> = (0..n)
+            .map(|i| (x[i] - a) * cur[i] - if k == 0 { 0.0 } else { ratio * prev[i] })
+            .collect();
+        alpha.push(a);
+        norm2.push(next.iter().map(|p| p * p).sum());
+        prev = std::mem::replace(&mut cur, next);
+    }
+    Ok(Coded::OrthogonalPoly {
+        name: name.to_string(),
+        alpha,
+        norm2,
+    })
+}
+
+fn poly_columns(x: &[f64], alpha: &[f64], norm2: &[f64]) -> Vec<Vec<f64>> {
+    let n = x.len();
+    let (mut prev, mut cur) = (vec![0.0; n], vec![1.0; n]);
+    let mut out = Vec::with_capacity(alpha.len());
+    for (k, a) in alpha.iter().enumerate() {
+        let ratio = norm2[k + 1] / norm2[k];
+        let next: Vec<f64> = (0..n)
+            .map(|i| (x[i] - a) * cur[i] - if k == 0 { 0.0 } else { ratio * prev[i] })
+            .collect();
+        let scale = norm2[k + 2].sqrt();
+        out.push(next.iter().map(|p| p / scale).collect());
+        prev = std::mem::replace(&mut cur, next);
+    }
+    out
+}
+
+/// The restricted cubic spline basis on knots `t₁ < … < t_K`: `x`, then
+/// `(d_j − d_{K−1}) / (t_K − t₁)²` for `j < K − 1`, with
+/// `d_j(x) = ((x − t_j)³₊ − (x − t_K)³₊) / (t_K − t_j)`; linear beyond the
+/// boundary knots.
+fn spline_columns(x: &[f64], knots: &[f64]) -> Vec<Vec<f64>> {
+    let k = knots.len();
+    let last = knots[k - 1];
+    let scale = (last - knots[0]).powi(2);
+    let cube = |v: f64| v.max(0.0).powi(3);
+    let d = |j: usize, v: f64| (cube(v - knots[j]) - cube(v - last)) / (last - knots[j]);
+    let mut out = vec![x.to_vec()];
+    out.extend((0..k - 2).map(|j| x.iter().map(|&v| (d(j, v) - d(k - 2, v)) / scale).collect()));
+    out
+}
+
 /// A bin's label, as R's `cut`: `(a,b]`, open at both infinite ends.
 fn bin_label(cuts: &[f64], k: usize) -> String {
     let lo = if k == 0 {
@@ -523,6 +650,19 @@ enum Coded {
         name: String,
         levels: Vec<String>,
     },
+    /// R's `poly` recurrence: `p₀ = 1`, `p₁ = x − α₁`,
+    /// `p_{k+1} = (x − α_{k+1}) p_k − (n_{k+1} / n_k) p_{k−1}`, each column
+    /// `p_k / √n_{k+1}`; `norm2` is `[1, n₁, …, n_{degree+1}]`.
+    OrthogonalPoly {
+        name: String,
+        alpha: Vec<f64>,
+        norm2: Vec<f64>,
+    },
+    /// Every knot, boundaries included.
+    NaturalSpline {
+        name: String,
+        knots: Vec<f64>,
+    },
 }
 
 /// Terms with their factor levels learned: builds the same design matrix
@@ -572,6 +712,12 @@ impl Coding {
                 Coded::Log { name, base } => names.push(format!("log({name}/{base})")),
                 Coded::Ordinal { name, levels } => {
                     names.extend(levels[1..].iter().map(|l| format!("{name}[>={l}]")));
+                }
+                Coded::OrthogonalPoly { name, alpha, .. } => {
+                    names.extend((1..=alpha.len()).map(|k| format!("poly({name}){k}")));
+                }
+                Coded::NaturalSpline { name, knots } => {
+                    names.extend((1..knots.len()).map(|k| format!("spline({name}){k}")));
                 }
             }
         }
@@ -668,6 +814,12 @@ impl Coding {
                         )));
                     }
                     columns.push(x.iter().map(|v| (v / base).ln()).collect());
+                }
+                Coded::OrthogonalPoly { alpha, norm2, name } => {
+                    columns.extend(poly_columns(numeric(frame, name)?, alpha, norm2));
+                }
+                Coded::NaturalSpline { name, knots } => {
+                    columns.extend(spline_columns(numeric(frame, name)?, knots));
                 }
                 Coded::Ordinal { name, levels } => {
                     let values = categorical(frame, name)?;

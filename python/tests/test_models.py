@@ -642,3 +642,16 @@ def test_terms_build_rating_variables():
     assert row[10:] == [1.0, 0.0]
     with pytest.raises(ValueError):
         Terms().hinges("age", [50.0, 25.0]).fit(data)
+
+
+def test_orthogonal_polys_and_natural_splines():
+    # R: poly(x, 3) and lm(y ~ ns(x, knots = c(10, 25))).
+    x = [1.0, 2.0, 4.0, 7.0, 11.0, 16.0, 22.0, 29.0, 37.0, 46.0]
+    y = [math.sin(v / 7) * 10 + v / 3 for v in x]
+    poly = Terms().orthogonal_poly("x", 3).fit({"x": x})
+    assert poly.design({"x": [50.0]}).column(2)[0] == pytest.approx(1.26850684550873050, rel=1e-12)
+    spline = Terms().intercept().natural_spline("x", [10.0, 25.0]).fit({"x": x})
+    assert spline.names == ["(Intercept)", "spline(x)1", "spline(x)2", "spline(x)3"]
+    fit = Glm("gaussian", "identity").fit(spline.design({"x": x}), y)
+    new = fit.predict(spline.design({"x": [0.0, 20.0, 50.0]}))
+    assert new == pytest.approx([-0.72122511127239264, 7.71926159866044337, 22.49421993091769423], rel=1e-9)

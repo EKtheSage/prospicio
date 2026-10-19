@@ -1733,3 +1733,120 @@ fn glm_diagnostics_match_r() {
         ],
     );
 }
+
+/// R's `poly(x, 3)` columns and their `predict` on new values, and the
+/// fitted values and predictions of `lm(y ~ ns(x, knots = c(10, 25)))`,
+/// which a natural spline in another basis must reproduce;
+/// `validation/scripts/r_terms_spline.R` prints these.
+#[test]
+// R's printed digits, kept as printed.
+#[allow(clippy::excessive_precision)]
+fn orthogonal_polys_and_natural_splines_match_r() {
+    use prospicio_models::Fitted;
+    let x = vec![1.0, 2.0, 4.0, 7.0, 11.0, 16.0, 22.0, 29.0, 37.0, 46.0];
+    let y: Vec<f64> = x
+        .iter()
+        .map(|v: &f64| (v / 7.0).sin() * 10.0 + v / 3.0)
+        .collect();
+    let train = Frame::new(vec![("x".into(), Column::Numeric(x.clone()))]).unwrap();
+    let new = Frame::new(vec![("x".into(), Column::Numeric(vec![0.0, 20.0, 50.0]))]).unwrap();
+    let close = |a: f64, b: f64, tol: f64| (a - b).abs() <= tol * b.abs().max(1.0);
+    let poly = Terms::new().orthogonal_poly("x", 3).fit(&train).unwrap();
+    assert_eq!(poly.names(), ["poly(x)1", "poly(x)2", "poly(x)3"]);
+    let want_train = [
+        [
+            -0.352221734672833409,
+            -0.330874962874479872,
+            -0.288181419277772799,
+            -0.224141103882712189,
+            -0.138754016689298015,
+            -0.032020157697530312,
+            0.096060473092590914,
+            0.245487875681065726,
+            0.416262050067894018,
+            0.608382996253075903,
+        ],
+        [
+            0.35122943174541682,
+            0.280273990988766653,
+            0.148710777919145137,
+            -0.022764870576091854,
+            -0.203109949165910131,
+            -0.350933784075597166,
+            -0.414498033086762585,
+            -0.331716685537337852,
+            -0.030156062321576135,
+            0.572965184109947123,
+        ],
+        [
+            -0.3465733261516025232,
+            -0.1995422180872851448,
+            0.0393833325172275941,
+            0.2732597379272244109,
+            0.3899959748244423707,
+            0.3023428142476387026,
+            0.0012117948466838812,
+            -0.3776760605498226675,
+            -0.4738117850534137032,
+            0.391409735478907117,
+        ],
+    ];
+    let want_new = [
+        [
+            -0.373568506471186945,
+            0.053366929495883855,
+            0.693770083446490049,
+        ],
+        [
+            0.42563409531662572,
+            -0.40710684134127828,
+            0.93069886459138995,
+        ],
+        [
+            -0.51316818879627024,
+            0.11467618565785501,
+            1.2685068455087305,
+        ],
+    ];
+    let (dt, dn) = (poly.design(&train).unwrap(), poly.design(&new).unwrap());
+    for j in 0..3 {
+        for (g, w) in dt.column(j).iter().zip(want_train[j]) {
+            assert!(close(*g, w, 1e-12), "poly {j}: {g} against {w}");
+        }
+        for (g, w) in dn.column(j).iter().zip(want_new[j]) {
+            assert!(close(*g, w, 1e-12), "poly new {j}: {g} against {w}");
+        }
+    }
+    let spline = Terms::new()
+        .intercept()
+        .natural_spline("x", &[10.0, 25.0])
+        .fit(&train)
+        .unwrap();
+    assert_eq!(spline.names().len(), 4);
+    let fit = Glm::new(Family::Gaussian, Link::Identity)
+        .fit(&spline.design(&train).unwrap(), &y)
+        .unwrap();
+    let fitted = [
+        1.241601572941901,
+        3.1981637211770977,
+        6.9609391541493313,
+        11.6654219067441307,
+        14.617484841300687,
+        12.1661124528715039,
+        5.4444506082478128,
+        1.5608468083302753,
+        6.0187503707099408,
+        17.083713098715517,
+    ];
+    for (g, w) in fit.fitted().iter().zip(fitted) {
+        assert!(close(*g, w, 1e-9), "ns fitted {g} against {w}");
+    }
+    let predicted = fit.predict(&spline.design(&new).unwrap()).unwrap();
+    for (g, w) in predicted.iter().zip([
+        -0.72122511127239264,
+        7.71926159866044337,
+        22.49421993091769423,
+    ]) {
+        assert!(close(*g, w, 1e-9), "ns predicted {g} against {w}");
+    }
+}
