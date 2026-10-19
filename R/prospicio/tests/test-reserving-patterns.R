@@ -157,12 +157,15 @@ expect_error_like(chain_ladder(tri, "paid", ldf = c("18" = 1.6), ldf_kind = "ldf
                   "not a development age")
 expect_error_like(chain_ladder(tri, "paid", ldf = c("60" = 1.01), ldf_kind = "ldf"),
                   "use a tail")
-expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 0.5, "24" = 1.2),
-                               ldf_kind = "percent_developed"), "in (0, 1]")
-expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 0.8, "24" = 0.5),
-                               ldf_kind = "percent_developed"), "not decrease")
-expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 1.2, "24" = 1.5), ldf_kind = "cdf"),
-                  "not increase")
+# Any finite positive values are accepted, in any order (decision 13).
+for (kind in c("percent_developed", "cdf")) {
+  expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 0.5, "24" = 0),
+                                 ldf_kind = kind), "finite and positive")
+}
+stopifnot(is.finite(chain_ladder(tri, "paid", ldf = c("12" = 0.5, "24" = 1.2),
+                                 ldf_kind = "percent_developed")@total_reserve))
+stopifnot(is.finite(chain_ladder(tri, "paid", ldf = c("12" = 1.2, "24" = 1.5),
+                                 ldf_kind = "cdf")@total_reserve))
 expect_error_like(chain_ladder(tri, "paid", ldf = c("12" = 1.5), ldf_kind = "cdf"),
                   "two or more ages")
 expect_error_like(chain_ladder(tri, "paid", ldf = sel, ldf_kind = "ldf", ldf_weight = 1.5),

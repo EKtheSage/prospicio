@@ -15,6 +15,9 @@ mack_bootstrap(
   process = c("gamma", "lognormal", "residuals", "normal", "none"),
   average = "volume",
   sigma_interpolation = "log-linear",
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0,
   centre_residuals = TRUE,
   tail = 1,
   tail_sigma = NULL,
@@ -46,6 +49,10 @@ times the standard deviation); or \code{"none"} for parameter error only.}
 
 \item{average, sigma_interpolation}{How Mack's model averages the link
 ratios and fills in a sigma behind a single link ratio, as in \code{\link[=mack]{mack()}}.}
+
+\item{n_periods, drop_high, drop_low}{Which link ratios the factors average,
+as in \code{\link[=chain_ladder]{chain_ladder()}}. \code{\link[=mack_bootstrap]{mack_bootstrap()}} rejects exclusions, and
+\code{"geometric"} as the average.}
 
 \item{centre_residuals}{Subtract the residuals' mean before resampling
 them, so that the pseudo factors are unbiased and the mean reserve is

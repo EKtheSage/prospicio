@@ -581,6 +581,10 @@ chain_ladder_properties <- function(cl) {
       if (is.nan(v)) NULL else v
     }),
     alpha = S7::new_property(S7::class_double, getter = function(self) cl(self)$alpha()),
+    n_links = S7::new_property(S7::class_integer, getter = function(self) {
+      stats::setNames(rust_result(cl(self)$n_links(), call = NULL), links(self))
+    }),
+    excluded = S7::new_property(S7::class_logical, getter = function(self) cl(self)$excluded()),
     tail = S7::new_property(S7::class_double, getter = function(self) {
       rust_result(cl(self)$tail(), call = NULL)
     }),
@@ -604,9 +608,25 @@ chain_ladder_properties <- function(cl) {
   )
 }
 
-development_args <- function(average, sigma_interpolation) {
-  list(average = match.arg(average, c("volume", "simple", "regression")),
-       sigma = match.arg(sigma_interpolation, c("log-linear", "mack")))
+# A count of link ratios to keep or drop: NULL (when allowed) or a single
+# whole number from 0. Whether the combination is allowed for a method is
+# the library's to say.
+exclusion_count <- function(x, arg, null_ok = FALSE) {
+  if (null_ok && is.null(x)) return(NULL)
+  if (!is.numeric(x) || length(x) != 1 || !is.finite(x) || x < 0 || x != round(x)) {
+    stop(sprintf("%s must be %sa single whole number from 0", arg,
+                 if (null_ok) "NULL or " else ""), call. = FALSE)
+  }
+  as.double(x)
+}
+
+development_args <- function(average, sigma_interpolation, n_periods = NULL, drop_high = 0,
+                             drop_low = 0, args = c("n_periods", "drop_high", "drop_low")) {
+  list(average = match.arg(average, c("volume", "simple", "regression", "geometric")),
+       sigma = match.arg(sigma_interpolation, c("log-linear", "mack")),
+       excl = list(n_periods = exclusion_count(n_periods, args[1], null_ok = TRUE),
+                   drop_high = exclusion_count(drop_high, args[2]),
+                   drop_low = exclusion_count(drop_low, args[3])))
 }
 
 # A selected pattern as the binding takes it: NULL without `ldf`, or a list
@@ -968,7 +988,8 @@ S7::method(print, tail_log_linear) <- tail_print
 #' none), `ldf_weight` (0 where none is selected) and `blended_ldf` (the
 #' factors before the tail); `pattern_rescale` (`NULL` for an age-to-age
 #' pattern or none) and `pattern_tail` (the tail a cumulative pattern to
-#' the oldest age implies with no `tail`; `NULL` otherwise); per age: `cdf` (age to ultimate, including the tail); the
+#' the oldest age implies with no `tail`; `NULL` otherwise); `n_links` (how many link ratios each factor averaged, after
+#' the exclusions); per age: `cdf` (age to ultimate, including the tail); the
 #' tail: `tail` (the factor from the oldest age to ultimate),
 #' `tail_attachment_age` (the age from which `ldf` holds the tail's
 #' factors; the oldest age when it replaced none), `tail_ldf` (the factors
@@ -978,8 +999,10 @@ S7::method(print, tail_log_linear) <- tail_print
 #' variance parameter and standard error, extrapolated log-linearly; 0
 #' without a tail, a factor of 1; a tail below 1 is read where a tail of
 #' 1.001 would be, as chainladder-python does); and `keys`, `index` (one
-#' row per segment, as a triangle's), `origins`, `development`, `alpha`,
-#' `total_ultimate` and `total_reserve` (summed over segments). The
+#' row per segment, as a triangle's), `origins`, `development`, `alpha` (`NaN`
+#' for the geometric average), `excluded` (whether any link ratio was left
+#' out by `n_periods`, `drop_high` or `drop_low`), `total_ultimate` and
+#' `total_reserve` (summed over segments). The
 #' per-link, per-age and tail properties need a single-segment fit: with
 #' several segments use [development_frame()] (`ldf`, `cdf`, `sigma` and
 #' `std_err`; the oldest age has the tail as its `cdf`), [totals_frame()]
@@ -989,7 +1012,20 @@ S7::method(print, tail_log_linear) <- tail_print
 #'
 #' @param triangle A [triangle], with any number of segments.
 #' @param column Name of the column to fit; by default the only one.
-#' @param average `"volume"`, `"simple"` or `"regression"`.
+#' @param average `"volume"`, `"simple"`, `"regression"` or `"geometric"`.
+#'   `"geometric"` is the geometric mean of the link ratios: it gives the
+#'   factors only, with no sigma or standard error, so [mack()] and the
+#'   bootstraps reject it.
+#' @param n_periods,drop_high,drop_low Which link ratios the factor at each
+#'   age averages. `n_periods` keeps the latest `n_periods` calendar
+#'   diagonals (`NULL`, the default, keeps every one; an age with fewer
+#'   links uses all of them). Then the `drop_high` highest and `drop_low`
+#'   lowest of the kept ratios are left out, except at an age where that
+#'   would leave none. Whole numbers from 0 (`n_periods` from 1); the
+#'   defaults exclude nothing. [mack()] accepts them; the bootstraps and
+#'   the one-year views reject them, and [claims_development_result()]
+#'   rejects ones that remove a link. The fit's `n_links` and `excluded`
+#'   report what was used.
 #' @param sigma_interpolation How a variance parameter that cannot be
 #'   estimated (an age with a single link ratio) is filled in:
 #'   `"log-linear"` (regress `log(sigma)` on age and extrapolate, the
@@ -1002,8 +1038,8 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   `value`; each age a development age of the triangle. `NULL` (the
 #'   default) estimates every factor.
 #' @param ldf_kind How `ldf` is expressed: `"ldf"` (age-to-age factors),
-#'   `"cdf"` (factors to ultimate, at least 1 and not increasing with age)
-#'   or `"percent_developed"` (in (0, 1] and not decreasing with age).
+#'   `"cdf"` (factors to ultimate)
+#'   or `"percent_developed"`, each finite and positive and in any order.
 #'   Required with `ldf`, since age-to-age factors and factors to ultimate
 #'   cannot be told apart.
 #' @param ldf_weight The weight `w` on each selected factor, from 0 (the
@@ -1054,11 +1090,12 @@ chain_ladder_fit <- S7::new_class(
 #' @rdname chain_ladder_fit
 #' @export
 chain_ladder <- function(triangle, column = NULL, average = "volume",
-                         sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                         sigma_interpolation = "log-linear",
+                         n_periods = NULL, drop_high = 0, drop_low = 0, tail = 1, ldf = NULL,
                          ldf_kind = NULL, ldf_weight = 1) {
   column <- fit_column(triangle, column)
-  args <- development_args(average, sigma_interpolation)
-  ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, tail_ptr(tail),
+  args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
+  ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, args$excl, tail_ptr(tail),
                                                ldf_pattern(ldf, ldf_kind, ldf_weight)))
   chain_ladder_fit(ptr = ptr)
 }
@@ -1161,12 +1198,13 @@ mack_fit <- S7::new_class(
 #' @rdname mack_fit
 #' @export
 mack <- function(triangle, column = NULL, average = "volume", sigma_interpolation = "log-linear",
+                 n_periods = NULL, drop_high = 0, drop_low = 0,
                  tail = 1, tail_sigma = NULL, tail_std_err = NULL, ldf = NULL, ldf_kind = NULL,
                  ldf_weight = 1) {
   column <- fit_column(triangle, column)
-  args <- development_args(average, sigma_interpolation)
+  args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$mack(
-    column, args$average, args$sigma, tail_ptr(tail),
+    column, args$average, args$sigma, args$excl, tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
     ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
@@ -1282,6 +1320,8 @@ expected_loss_properties <- function(el, cl) {
 #'   gives, so `cdf` and the share developed `1 / cdf` follow it.
 #' @param average,sigma_interpolation,tail The development pattern, as in
 #'   [chain_ladder()].
+#' @param n_periods,drop_high,drop_low Which link ratios the factors average,
+#'   as in [chain_ladder()].
 #' @param ptr An `ExpectedLossFit` pointer; used internally.
 #' @returns An `expected_loss_fit` object.
 #' @seealso [cape_cod()] to estimate the apriori from the triangle,
@@ -1315,12 +1355,13 @@ expected_loss_fit <- S7::new_class(
 #' @rdname expected_loss_fit
 #' @export
 expected_loss <- function(triangle, column, exposure, apriori = 1, average = "volume",
-                          sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                          sigma_interpolation = "log-linear",
+                          n_periods = NULL, drop_high = 0, drop_low = 0, tail = 1, ldf = NULL,
                           ldf_kind = NULL, ldf_weight = 1) {
   cols <- exposure_columns(triangle, column, exposure)
-  args <- development_args(average, sigma_interpolation)
+  args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$expected_loss(
-    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma,
+    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma, args$excl,
     tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   expected_loss_fit(ptr = ptr)
@@ -1329,12 +1370,13 @@ expected_loss <- function(triangle, column, exposure, apriori = 1, average = "vo
 #' @rdname expected_loss_fit
 #' @export
 bornhuetter_ferguson <- function(triangle, column, exposure, apriori = 1, average = "volume",
-                                 sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                                 sigma_interpolation = "log-linear",
+                                 n_periods = NULL, drop_high = 0, drop_low = 0, tail = 1, ldf = NULL,
                                  ldf_kind = NULL, ldf_weight = 1) {
   cols <- exposure_columns(triangle, column, exposure)
-  args <- development_args(average, sigma_interpolation)
+  args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$bornhuetter_ferguson(
-    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma,
+    cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma, args$excl,
     tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   expected_loss_fit(ptr = ptr)
@@ -1343,13 +1385,14 @@ bornhuetter_ferguson <- function(triangle, column, exposure, apriori = 1, averag
 #' @rdname expected_loss_fit
 #' @export
 benktander <- function(triangle, column, exposure, apriori = 1, n_iters = 1, average = "volume",
-                       sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                       sigma_interpolation = "log-linear",
+                       n_periods = NULL, drop_high = 0, drop_low = 0, tail = 1, ldf = NULL,
                        ldf_kind = NULL, ldf_weight = 1) {
   cols <- exposure_columns(triangle, column, exposure)
-  args <- development_args(average, sigma_interpolation)
+  args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$benktander(
     cols[1], cols[2], single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
-    args$average, args$sigma, tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
+    args$average, args$sigma, args$excl, tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   expected_loss_fit(ptr = ptr)
 }
@@ -1425,13 +1468,14 @@ cape_cod_fit <- S7::new_class(
 #' @rdname cape_cod_fit
 #' @export
 cape_cod <- function(triangle, column, exposure, trend = 0, decay = 1, average = "volume",
-                     sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
+                     sigma_interpolation = "log-linear",
+                     n_periods = NULL, drop_high = 0, drop_low = 0, tail = 1, ldf = NULL,
                      ldf_kind = NULL, ldf_weight = 1) {
   cols <- exposure_columns(triangle, column, exposure)
-  args <- development_args(average, sigma_interpolation)
+  args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$cape_cod(
     cols[1], cols[2], single_number(trend, "trend"), single_number(decay, "decay"),
-    args$average, args$sigma, tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
+    args$average, args$sigma, args$excl, tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
   cape_cod_fit(ptr = ptr)
 }
@@ -3142,6 +3186,9 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
 #'   times the standard deviation); or `"none"` for parameter error only.
 #' @param average,sigma_interpolation How Mack's model averages the link
 #'   ratios and fills in a sigma behind a single link ratio, as in [mack()].
+#' @param n_periods,drop_high,drop_low Which link ratios the factors average,
+#'   as in [chain_ladder()]. [mack_bootstrap()] rejects exclusions, and
+#'   `"geometric"` as the average.
 #' @param centre_residuals Subtract the residuals' mean before resampling
 #'   them, so that the pseudo factors are unbiased and the mean reserve is
 #'   the chain ladder's (without a tail or with a constant one); `FALSE`
@@ -3219,6 +3266,7 @@ mack_bootstrap_fit <- S7::new_class(
 mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                            process = c("gamma", "lognormal", "residuals", "normal", "none"),
                            average = "volume", sigma_interpolation = "log-linear",
+                           n_periods = NULL, drop_high = 0, drop_low = 0,
                            centre_residuals = TRUE, tail = 1, tail_sigma = NULL,
                            tail_std_err = NULL,
                            dependence = c("independent", "synchronized", "rank_correlation"),
@@ -3226,10 +3274,10 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
   column <- fit_column(triangle, column)
   process <- match.arg(process)
   dependence <- match.arg(dependence)
-  model <- development_args(average, sigma_interpolation)
+  model <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$mack_bootstrap(
     column, single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
-    model$average, model$sigma, isTRUE(centre_residuals), tail_ptr(tail),
+    model$average, model$sigma, model$excl, isTRUE(centre_residuals), tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
     dependence, spearman_arg(spearman), ldf_pattern(ldf, ldf_kind, ldf_weight)
   ))
@@ -3359,6 +3407,9 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' @param mack_average,mack_sigma_interpolation How Mack's model in
 #'   `mack_one_year()` averages the link ratios and fills in a sigma behind
 #'   a single link ratio, as in [mack()].
+#' @param mack_n_periods,mack_drop_high,mack_drop_low Which link ratios Mack's
+#'   model in `mack_one_year()` averages, as `n_periods`, `drop_high` and
+#'   `drop_low` in [chain_ladder()]; its bootstrap rejects exclusions.
 #' @param centre_residuals For `mack_one_year()`, subtract the residuals'
 #'   mean before resampling them, so that the pseudo factors are unbiased
 #'   and the mean CDR is about zero (the default); `FALSE` resamples them
@@ -3375,6 +3426,9 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' @param trend,decay As in [cape_cod()].
 #' @param average,sigma_interpolation,tail The chain ladder or development
 #'   pattern of `method`, as in [chain_ladder()].
+#' @param n_periods,drop_high,drop_low Which link ratios the factors of
+#'   `method` average, as in [chain_ladder()]. The one-year views reject
+#'   exclusions, and `"geometric"` as `mack_average`.
 #' @param ldf,ldf_kind,ldf_weight A selected development pattern of
 #'   `method`, as in [chain_ladder()].
 #' @param bootstrap_ldf Whether the bootstrap takes `method`'s selected
@@ -3478,7 +3532,8 @@ odp_one_year <- function(triangle, column = NULL,
                          method = c("chain_ladder", "expected_loss", "bornhuetter_ferguson",
                                     "benktander", "cape_cod"),
                          exposure = NULL, apriori = 1, n_iters = 1, trend = 0, decay = 1,
-                         average = "volume", sigma_interpolation = "log-linear", tail = 1,
+                         average = "volume", sigma_interpolation = "log-linear",
+                         n_periods = NULL, drop_high = 0, drop_low = 0, tail = 1,
                          bootstrap_tail = FALSE, tail_std_err = NULL,
                          n_sims = 10000, seed = 0, process = c("gamma", "none"),
                          dependence = c("independent", "synchronized", "rank_correlation"),
@@ -3492,10 +3547,10 @@ odp_one_year <- function(triangle, column = NULL,
                                               n_iters = !missing(n_iters),
                                               trend = !missing(trend), decay = !missing(decay)))
   check_bootstrap_tail_settings(bootstrap_tail, list(tail_std_err = tail_std_err))
-  args <- development_args(average, sigma_interpolation)
+  args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$odp_one_year(
     column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
-    single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
+    single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma, args$excl,
     tail_ptr(tail), isTRUE(bootstrap_tail),
     optional_number(tail_std_err, "tail_std_err"), single_number(n_sims, "n_sims"),
     single_number(seed, "seed"), process, dependence, spearman_arg(spearman),
@@ -3510,11 +3565,13 @@ mack_one_year <- function(triangle, column = NULL,
                           method = c("chain_ladder", "expected_loss", "bornhuetter_ferguson",
                                      "benktander", "cape_cod"),
                           exposure = NULL, apriori = 1, n_iters = 1, trend = 0, decay = 1,
-                          average = "volume", sigma_interpolation = "log-linear", tail = 1,
+                          average = "volume", sigma_interpolation = "log-linear",
+                          n_periods = NULL, drop_high = 0, drop_low = 0, tail = 1,
                           bootstrap_tail = FALSE, tail_sigma = NULL, tail_std_err = NULL,
                           n_sims = 10000, seed = 0,
                           process = c("gamma", "lognormal", "residuals", "normal", "none"),
                           mack_average = "volume", mack_sigma_interpolation = "log-linear",
+                          mack_n_periods = NULL, mack_drop_high = 0, mack_drop_low = 0,
                           centre_residuals = TRUE,
                           dependence = c("independent", "synchronized", "rank_correlation"),
                           spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
@@ -3528,15 +3585,17 @@ mack_one_year <- function(triangle, column = NULL,
                                               trend = !missing(trend), decay = !missing(decay)))
   check_bootstrap_tail_settings(bootstrap_tail,
                                 list(tail_sigma = tail_sigma, tail_std_err = tail_std_err))
-  args <- development_args(average, sigma_interpolation)
-  model <- development_args(mack_average, mack_sigma_interpolation)
+  args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
+  model <- development_args(mack_average, mack_sigma_interpolation, mack_n_periods, mack_drop_high,
+                            mack_drop_low,
+                            c("mack_n_periods", "mack_drop_high", "mack_drop_low"))
   ptr <- rust_result(triangle@ptr$mack_one_year(
     column, method, exposure, single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
-    single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma,
+    single_number(trend, "trend"), single_number(decay, "decay"), args$average, args$sigma, args$excl,
     tail_ptr(tail), isTRUE(bootstrap_tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
     single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
-    model$average, model$sigma, isTRUE(centre_residuals), dependence, spearman_arg(spearman),
+    model$average, model$sigma, model$excl, isTRUE(centre_residuals), dependence, spearman_arg(spearman),
     ldf_pattern(ldf, ldf_kind, ldf_weight), isTRUE(bootstrap_ldf)
   ))
   one_year_fit(ptr = ptr)

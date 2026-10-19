@@ -12,6 +12,9 @@ mack(
   column = NULL,
   average = "volume",
   sigma_interpolation = "log-linear",
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0,
   tail = 1,
   tail_sigma = NULL,
   tail_std_err = NULL,
@@ -27,12 +30,26 @@ mack(
 
 \item{column}{Name of the column to fit; by default the only one.}
 
-\item{average}{\code{"volume"}, \code{"simple"} or \code{"regression"}.}
+\item{average}{\code{"volume"}, \code{"simple"}, \code{"regression"} or \code{"geometric"}.
+\code{"geometric"} is the geometric mean of the link ratios: it gives the
+factors only, with no sigma or standard error, so \code{\link[=mack]{mack()}} and the
+bootstraps reject it.}
 
 \item{sigma_interpolation}{How a variance parameter that cannot be
 estimated (an age with a single link ratio) is filled in:
 \code{"log-linear"} (regress \code{log(sigma)} on age and extrapolate, the
 default of R ChainLadder) or \code{"mack"} (Mack 1993).}
+
+\item{n_periods, drop_high, drop_low}{Which link ratios the factor at each
+age averages. \code{n_periods} keeps the latest \code{n_periods} calendar
+diagonals (\code{NULL}, the default, keeps every one; an age with fewer
+links uses all of them). Then the \code{drop_high} highest and \code{drop_low}
+lowest of the kept ratios are left out, except at an age where that
+would leave none. Whole numbers from 0 (\code{n_periods} from 1); the
+defaults exclude nothing. \code{\link[=mack]{mack()}} accepts them; the bootstraps and
+the one-year views reject them, and \code{\link[=claims_development_result]{claims_development_result()}}
+rejects ones that remove a link. The fit's \code{n_links} and \code{excluded}
+report what was used.}
 
 \item{tail}{Development past the oldest age: a number, the factor from
 the oldest age to ultimate (1 means no tail), or a \code{\link[=tail_constant]{tail_constant()}},
@@ -50,8 +67,8 @@ named by age in months, or a data.frame with columns \code{age} and
 default) estimates every factor.}
 
 \item{ldf_kind}{How \code{ldf} is expressed: \code{"ldf"} (age-to-age factors),
-\code{"cdf"} (factors to ultimate, at least 1 and not increasing with age)
-or \code{"percent_developed"} (in (0, 1] and not decreasing with age).
+\code{"cdf"} (factors to ultimate)
+or \code{"percent_developed"}, each finite and positive and in any order.
 Required with \code{ldf}, since age-to-age factors and factors to ultimate
 cannot be told apart.}
 
