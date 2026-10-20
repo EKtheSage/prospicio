@@ -44,7 +44,10 @@ pinned.
   Meyers has no counterpart for.
 * **D against Meyers'** (percentage points; `*` fails at 5%, the bound
   `136 / sqrt(n)` is 19.2 for n = 50 and 9.6 for n = 200, larger when
-  triangles were skipped):
+  triangles were skipped; n in brackets when below 50 or 200, Meyers'
+  own n is 50 and 200 throughout). The `BayesOdp` row rests on the 87
+  triangles it can score (below) and compares only with the ODP
+  bootstrap on the same 87, not with the other rows:
 
   | | CA | PA | WC | OL | All |
   |---|---|---|---|---|---|
@@ -56,31 +59,70 @@ pinned.
   | CSR paid, Meyers | 5.9 | 18.5 | 12 | 10.4 | 3.1 |
   | CAY incurred, here | 12.2 | 10.1 | 15.0 | 10.6 | 7.0 |
   | CAY incurred, Meyers | 8.3 | 15.9 | 12.5 | 20.8* | 10.8* |
-  | BayesOdp paid, here | 53.8* (14) | 57.8* (19) | 36.5* (40) | 27.2 (14) | 38.5* (87) |
+  | BayesOdp paid, its own 87 only | 53.8* (14) | 57.8* (19) | 36.5* (40) | 27.2 (14) | 38.5* (87) |
 
   Sixteen of Meyers' 20 cells have his verdict. The four that do not:
   CRC incurred other liability (10.4 here, 20.7* his), CAY incurred other
   liability (10.6, 20.8*) and all 200 (7.0, 10.8*), all more calibrated
   here than his, and CSR paid personal auto (25.7* here, 18.5 his). The
-  shape agrees with his conclusions: paid CRC fails in every line, as the
-  paid Mack and ODP bootstrap do; incurred CRC passes except in total;
-  CSR on paid passes in every line but personal auto; CAY on incurred
-  passes in every line and in total. Whether the four differences are the
-  models' or the panel's is not tested: the panel misses 26 of Table A.2's
-  printed codes (6 in personal auto, 9 in other liability), the
-  differences sit in exactly those two lines for three of the four, and a
-  swapped triangle moves a line's D by up to 2 points.
+  shape agrees with his conclusions: paid CRC fails in every line, while
+  paid Mack and the ODP bootstrap pass in other liability (D 10.3 and 8.7
+  in the panel's finding, his 8.5 and 6.8), so paid CRC's overestimate is
+  a problem of its own, as his Section 7 says; incurred CRC passes except
+  in total; CSR on paid passes in every line but personal auto; CAY on
+  incurred passes in every line and in total. What causes the four
+  differences is not tested. Three sources are open: the panel (it misses
+  26 of Table A.2's printed codes, 6 in personal auto and 9 in other
+  liability, the differences sit in exactly those two lines for three of
+  the four, and a swapped triangle moves a line's D by up to 2 points),
+  the differences from Meyers' code (next bullets), and NUTS noise (the
+  bullet on diagnostics).
+* **Near the bound.** Four cells are within 2 points of their bound:
+  CRC paid commercial auto (20.7 against 19.6) and other liability (21.6
+  against 20.3), CRC incurred workers' compensation (17.3 against 19.2)
+  and all 200 (10.3 against 9.6). All four have Meyers' verdict, but
+  another platform's draws or the code differences below could flip any
+  of them, so they should not be pinned as exact verdicts.
+* **Differences from Meyers' code** (`knowledge/references/meyers-monograph-8.md`),
+  each a like-for-like caveat on every comparison above:
+  * *Floor.* His code raises every cell below 1 to 1 (`pmax(loss, 1)`)
+    before the log; `Meyers` errors on a non-positive cell and the study
+    skips the triangle, and cells between 0 and 1 are used as they are.
+    The 7 skipped paid triangles (other liability 5, commercial auto 2)
+    are where his floor acts, so paid D in those lines is on 45 and 48
+    triangles against his 50: other liability paid (CRC 21.6* against
+    his 25.3*, CSR 12.8 against 10.4) is not computed on his set. The
+    floor cannot explain the incurred mismatches, which skip nothing.
+  * *Ceiling.* His prediction takes `ceiling()` of each simulated
+    ultimate, about +0.5 per origin and +4.5 on the total; the library
+    does not. Against group 353's total sd of about 1,400 this is
+    nothing, but the panel has a few tiny triangles, all in other
+    liability: per arm 1 to 3 with a total sd below 45 (group 16373's is
+    5.4 under CRC incurred, so +4.5 is 0.8 sd there). The ceiling can
+    move those triangles' percentiles, and through them other
+    liability's D, which holds two of the four mismatches. By how much is
+    not tested: the study keeps no draws.
+  * *Sampler.* His runs use target acceptance 0.9999, maximum tree depth
+    50, 2,500 warm-up and 2,500 kept draws per chain, and thinning until
+    R-hat is below 1.05; the study uses 0.95 (0.99 on a refit), the
+    library's depth of 10, and 1,000 warm-up and 2,000 kept draws. These
+    change how well the posterior is sampled, not the posterior, so they
+    matter through the fits that still fail diagnostics (below).
 * **Skipped triangles.** `Meyers` errors when a cell is not positive (the
   log-normal model, as Meyers' code floors at 1 and the library does not):
   7 triangles for CRC paid and CSR paid (other liability 5, commercial
   auto 2), none for incurred. `BayesOdp` errors when a development age's
   observed increments sum to zero or less: 113 of 200 triangles (commercial
   auto 36, personal auto 31, other liability 36, workers' compensation 10),
-  mostly the late ages (84 to 120 months). So its D rests on 87
-  triangles, and the common set of all arms is 85, whose D values are in
-  `ks.csv` (set `common`) and are dominated by `BayesOdp`'s selection. A run
-  that floors the cells (the second run of the note's decision 5) is not
-  built.
+  mostly the late ages (84 to 120 months), that is small or
+  fast-settling triangles, so the 87 are not a random sample of Meyers'
+  200. Its D rests on those 87, and the common set of all arms is 85,
+  whose D values are in `ks.csv` (set `common`); that set is almost
+  entirely `BayesOdp`'s selection, so its rows are not a comparison of
+  the arms. A run that floors the cells (the second run of the note's
+  decision 5) is not built: decision 5 calls for it only when skips are
+  many, the Meyers arms skip 7 of 200, and a floor on cells does nothing
+  for `BayesOdp`'s skips, which come from column sums.
 * **`BayesOdp` against the ODP bootstrap.** On the 87 triangles both score,
   the ODP bootstrap's percentile differs from `BayesOdp`'s by 0.5 points at
   the median (mean difference -0.9), and the ODP bootstrap's D on that set
@@ -92,10 +134,19 @@ pinned.
   CAY incurred 40 of 200, `BayesOdp` 1 of 87. After the refit at 0.99 still
   failing (mostly 1 to 12 divergences among 8,000 draws): 9, 10, 10, 7 and
   0. The refit moves a percentile by 0.4 to 0.6 points at the median and
-  at most 2.7. Leaving the still-failing fits out moves the D of an arm by
-  at most 1.7 on all 200 (CRC paid, 26.4 to 28.1 on 193) and none changes a
-  verdict in total; by line, other liability paid under CRC goes from 21.6*
-  to 26.9* and under CSR from 12.8 to 10.6. Worst kept fits: max R-hat
+  at most 2.7. The still-failing fits are scored in the table above (the
+  refit rule does not depend on the outcome, so they add noise, not
+  selection). D with them left out (n in brackets where it drops):
+
+  | | CA | PA | WC | OL | All |
+  |---|---|---|---|---|---|
+  | CRC paid | 21.0* (47) | 44.2* (49) | 32.8* | 26.9* (38) | 28.1* (184) |
+  | CRC incurred | 9.5 (47) | 11.8 | 17.3 | 10.0 (43) | 10.8* (190) |
+  | CSR paid | 5.5 (46) | 24.8* (49) | 10.9 | 10.6 (38) | 5.1 (183) |
+  | CAY incurred | 11.2 (49) | 10.1 | 15.0 | 10.6 (44) | 7.0 (193) |
+
+  No verdict changes; the largest moves are other liability paid under
+  CRC (21.6* to 26.9*) and under CSR (12.8 to 10.6). Worst kept fits: max R-hat
   1.0082 (CRC paid), 1.0062, 1.0118 (CAY) and 1.0074 (`BayesOdp`); CSR
   paid has one pathological fit, commercial auto group 32875 (R-hat
   1.168, bulk ESS 17, 444 divergences), whose percentile is kept; the
@@ -111,12 +162,17 @@ pinned.
 * **Wiring.** The test `the_bayesian_arms_reproduce_meyers_on_group_353`
   runs the study's code path on Meyers' own triangle: CRC paid 51.42
   (Meyers 51.88), CRC incurred 75.04 (74.75), CSR paid 86.85 (86.26), CAY
-  incurred 73.69 (73.24), `BayesOdp` paid 69.75 (the ODP bootstrap's 74).
-  It runs with `--features slow-bayes` in release and is ignored without
-  it.
+  incurred 73.69 (73.24), `BayesOdp` paid 69.75 against the ODP
+  bootstrap's 74.06 in the same test (asserted within 6 points). The gap
+  is in the means: `BayesOdp`'s predictive mean is 39,376 against the
+  bootstrap's 39,197 (sd 1,399 and 1,381), so the outcome 40,000 is 0.45
+  sd above it against 0.58. The file's `[[test]]` entry requires
+  `slow-bayes`, so CI's `bayes` job runs this test (about 2 s in release)
+  and the file's unit tests, and never the study.
 
 # Not yet shown
 
 Compartmental (PR 4), pinning the D values (after the user's review of the
-run), and a run on the printed codes only, which would separate panel from
-model for the four mismatching cells.
+run), a run on the printed codes only, which would separate panel from
+model for the four mismatching cells, and a run with Meyers' floor and
+ceiling, which would separate his code's data handling from the model.

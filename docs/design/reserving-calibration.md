@@ -315,7 +315,7 @@ same commands):
 
 ```
 uv run --no-project --with "cas-schedule-p[screens]==2026.6.13" python -I validation/scripts/calibration_panel.py
-cargo test --release -p prospicio-validation --test reserving_calibration_meyers -- --ignored --nocapture
+cargo test --release -p prospicio-validation --features slow-bayes --test reserving_calibration_meyers -- --ignored --nocapture
 ```
 
 Selection is by environment variables read by the test itself, with
@@ -557,26 +557,41 @@ monograph, checked against `08-Meyers.pdf`); his D values are in
   `bayes_odp`, `crc` (both bases), `csr` and `cay`; the default is all of
   them (decision 6 said "the arms built so far"). A progress line goes to
   stderr every 40th of the fits.
-* **CI.** The file has no `[[test]]` entry and the study stays `#[ignore]`d.
-  CI's `bayes` job runs only the tests of `[[test]]` entries that require
+* **CI.** The file gets the `[[test]]` entry decision 6 planned, with
+  `required-features = ["slow-bayes"]`, and the study stays `#[ignore]`d.
+  CI's `bayes` job runs the tests of `[[test]]` entries that require
   `slow-bayes` and passes no `--include-ignored` (`ci.yml`, "bayes" job), so
-  it does not touch this file; the plain `cargo test` runs the file's unit
-  tests, among them a cut-down NUTS check on a synthetic square (0.3 s) and
-  the logic of the refit. The wiring test on group 353,
-  `the_bayesian_arms_reproduce_meyers_on_group_353`, fits all five arms at
-  the study's settings and is ignored unless `--features slow-bayes` is on
-  (CRC, CSR and CAY within 5 points of Meyers' printed outcome percentiles
-  51.88, 74.75, 86.26 and 73.24, `BayesOdp` near Mack's mean and the ODP
-  bootstrap's percentile); it runs by hand with
-  `cargo test --release -p prospicio-validation --features slow-bayes
-  --test reserving_calibration_meyers`.
+  it runs the file's unit tests and never the study. Among them are a
+  cut-down NUTS check on a synthetic square (0.3 s; it checks that
+  `BayesOdp`'s reserves are shifted to ultimates) and the wiring test on
+  group 353, `the_bayesian_arms_reproduce_meyers_on_group_353`, which fits
+  all five arms through the study's `ArmBasis::run` at the study's
+  settings in about 2 s: CRC, CSR and CAY within 5 points of Meyers'
+  printed outcome percentiles 51.88, 74.75, 86.26 and 73.24, `BayesOdp`
+  within 1% of the ODP bootstrap's mean and 6 points of its percentile,
+  both run in the same test at 10,000 simulations (69.75 against 74.06 on
+  Windows). The costs: every run of the file, the study's too, now needs
+  `--features slow-bayes` (the command above); a plain `cargo test` no
+  longer builds the file, so its unit tests run only in the `bayes` job,
+  in release; and a PR that touches only
+  `validation/scripts/calibration_panel.py` does not match that job's
+  path filter, so it runs none of them.
 * **Result.** The full study took 230 s on 16 threads (1,600 fits). The
   results, the skipped counts, the diagnostics and the timings per arm are in
   `knowledge/findings/meyers-calibration-bayesian-arms.md` (draft). In
   short: 16 of Meyers' 20 cells have his verdict; `BayesOdp` on paid skips
   113 of 200 triangles (a development age whose observed increments sum to
-  zero or less), and the common set of all arms is 85 triangles, so the
-  common-set table is mostly a `BayesOdp` selection effect; a run that
-  floors the cells (decision 5's second run) is not built.
+  zero or less, so mostly small or fast-settling triangles), so its D
+  compares only with the ODP bootstrap on the same 87; the common set of
+  all arms is 85 triangles, almost entirely that selection, so its rows
+  are not a comparison of the arms. A run that floors the cells
+  (decision 5's second run) is not built: the Meyers arms skip only 7 of
+  200, and a floor on cells does not touch `BayesOdp`'s column sums. The
+  finding lists the differences from Meyers' code that bear on every
+  comparison (his `pmax(loss, 1)` floor, the `ceiling()` on each
+  simulated ultimate, which matters only for the few tiny other
+  liability triangles, and his sampler settings), the D values with the
+  fits that still fail diagnostics left out (no verdict changes), and the
+  four cells within 2 points of the bound.
 * **Not done here**: pinning the D values (after the user reviews the
   run), Compartmental (PR 4), a run on the printed codes only.

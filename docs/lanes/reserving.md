@@ -7,8 +7,6 @@
 ## Next
 
 - [calibration-study] the 200-triangle calibration study (#392; `reserving-calibration.md`, accepted 2026-10-20): Meyers' ultimate percentile test on 200 Schedule P triangles from the `cas-schedule-p` package at run time, run by hand as an ignored test; staged; PR 2 (branch `claude/calibration-harness`) built the panel script, the harness and the Mack and ODP bootstrap arms (the panel agrees with Table A.2 on 149 of 175 printed codes, Mack's D within 3.7 points per line of Meyers'; `knowledge/findings/meyers-calibration-panel.md`); PR 3 (branch `claude/calibration-bayes`) added `BayesOdp` on paid and Meyers' CRC, CSR and CAY (16 of Meyers' 20 cells have his pass or fail, `BayesOdp` scores 87 of 200 triangles, the full study takes 230 s; `knowledge/findings/meyers-calibration-bayesian-arms.md`); left: the user's review of those runs and pinning the D values, PR 4 Compartmental model 1 (model 2 optional)
-- [calibration-study] the 200-triangle calibration study (#392; `reserving-calibration.md`, accepted 2026-10-20): Meyers' ultimate percentile test on 200 Schedule P triangles from the `cas-schedule-p` package at run time, run by hand as an ignored test; staged: PR 2 the panel script and harness with Mack and the ODP bootstrap, PR 3 `BayesOdp` and Meyers' CRC, CSR and CAY, PR 4 Compartmental model 1 (model 2 optional)
-- the 200-triangle calibration study (#392)
 
 ## Done
 
