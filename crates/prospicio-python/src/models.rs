@@ -2751,6 +2751,31 @@ pub(crate) fn k_fold(n: usize, k: usize, seed: u64) -> PyResult<Vec<(Vec<usize>,
     resample::k_fold(n, k, seed).map(splits).map_err(to_py)
 }
 
+/// ``0..n`` shuffled with ``seed`` on stream ``stream``: the permutation
+/// that ``permutation_importance`` and ``interaction_screen`` apply, the same
+/// in Python and R.
+///
+/// Parameters
+/// ----------
+/// n : int
+/// seed : int
+/// stream : int, default 0
+///
+/// Returns
+/// -------
+/// list of int
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import permutation
+/// >>> sorted(permutation(4, 1))
+/// [0, 1, 2, 3]
+#[pyfunction]
+#[pyo3(signature = (n, seed, stream = 0))]
+pub(crate) fn permutation(n: usize, seed: u64, stream: u64) -> Vec<usize> {
+    resample::permutation(n, seed, stream)
+}
+
 /// Grouped ``k``-fold splits: each group's rows stay in one fold.
 ///
 /// Parameters

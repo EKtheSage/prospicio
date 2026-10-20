@@ -470,6 +470,19 @@
   R `elastic_net_fit(lower_limits, upper_limits, relax = TRUE)`, `coef()`
   and `predict()` with `gamma`, and `elastic_net_cv(relax = TRUE, gamma)`
   (#356).
+- Model-agnostic explanations that need only `predict()`: permutation
+  importance (single columns or groups shuffled together, with a score's
+  increase per feature and its percent of the largest), the pairwise
+  interaction screen `L_A + L_B - L_AB`, and partial dependence, on one
+  fitted model or averaged over folds like `cross_validate`. Python
+  `prospicio.models.permutation_importance`, `interaction_screen` and
+  `partial_dependence` on a dict of raw columns and a design builder, with
+  `PermutationImportance`, `InteractionScreen` and `PartialDependence`
+  (`combine` for folds whose designs differ); R `permutation_importance()`,
+  `interaction_screen()` and `partial_dependence()` on a data frame. Both
+  shuffle with the new `permutation(n, seed, stream)`
+  (`prospicio_models::resample::permutation`), so they give the same values
+  on the same rows (#355).
 
 ### Breaking changes
 

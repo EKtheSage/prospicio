@@ -171,6 +171,7 @@ reference:
       - models.k_fold
       - models.group_k_fold
       - models.time_ordered
+      - models.permutation
       - models.mcmc_diagnostics
       - models.elpd_loo
       - models.ppc_check
@@ -191,6 +192,12 @@ reference:
       - models.SearchResult
       - models.compare
       - models.Comparison
+      - models.permutation_importance
+      - models.PermutationImportance
+      - models.interaction_screen
+      - models.InteractionScreen
+      - models.partial_dependence
+      - models.PartialDependence
       - models.actual_vs_expected
       - models.simulate_from_means
   - title: Gradient boosting

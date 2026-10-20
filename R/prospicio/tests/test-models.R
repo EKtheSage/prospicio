@@ -565,4 +565,62 @@ for (case in c("poisson_relaxed", "gaussian_relaxed")) {
   stopifnot(cv$fit@relaxed)
 }
 
+# Model-agnostic explanations (#355): the portfolio of Python's
+# test_models.py, the same rows, shuffles and pinned values.
+i <- 0:299
+ex <- data.frame(age = 18 + (37 * i) %% 60,
+                 power = factor(c("low", "mid", "high")[(i %/% 7) %% 3 + 1], c("low", "mid", "high")),
+                 noise = ((13 * i) %% 17) / 17, exposure = 0.5 + ((11 * i) %% 10) / 20)
+young <- ex$age < 25
+high <- ex$power == "high"
+ex$y <- floor(ex$exposure * exp(0.5 + 0.8 * young + 0.3 * high + 0.5 * (young & high)) *
+                (1 + 0.6 * sin(1.7 * i)) + 0.5)
+additive <- y ~ I(as.numeric(age < 25)) + power + offset(log(exposure))
+planted <- y ~ I(as.numeric(age < 25)) + power + I(as.numeric(age < 25) * as.numeric(power == "high")) +
+  offset(log(exposure))
+dev <- deviance_score("poisson", "y")
+fit <- glm_fit(additive, ex, family = "poisson")
+imp <- permutation_importance(fit, ex, dev, list("age", "power", "noise", c("age", "power")),
+                              n_repeats = 2, seed = 5)
+stopifnot(identical(imp$feature, c("age", "power", "noise", "age+power")), imp$importance[3] == 0,
+          max(imp$relative) == 100, is.na(imp$std_error[1]))
+near(imp$importance[c(1, 2, 4)], c(0.48670981297841526, 0.13778344497063177, 0.6330018332232121),
+     1e-9)
+# Over folds: fold i shuffles on stream i, so fold 0 is a single fit's run.
+splits <- k_fold(nrow(ex), 4, seed = 2)
+cv_imp <- permutation_importance(function(train) glm_fit(additive, train, family = "poisson"), ex, dev,
+                                 c("age", "power"), splits = splits, seed = 1)
+stopifnot(nrow(attr(cv_imp, "by_split")) == 4)
+near(cv_imp$importance[1], 0.4464341484022761, 1e-9)
+fold0 <- glm_fit(additive, ex[splits[[1]]$train, ], family = "poisson")
+one <- permutation_importance(fold0, ex[splits[[1]]$test, ], dev, c("age", "power"), seed = 1)
+near(attr(one, "by_split")[1, ], attr(cv_imp, "by_split")[1, ], 1e-12)
+# Partial dependence of an additive log-link GLM: its relativities.
+pd <- partial_dependence(fit, ex, "power", c("low", "mid", "high"))
+near(pd$mean[2:3] / pd$mean[1], exp(unname(coef(fit)[3:4])), 1e-12)
+pd_cv <- partial_dependence(function(train) glm_fit(additive, train, family = "poisson"), ex, "age",
+                            c(20, 40), splits = k_fold(nrow(ex), 3, seed = 1))
+stopifnot(nrow(attr(pd_cv, "by_split")) == 3, pd_cv$mean[1] > pd_cv$mean[2])
+# The interaction screen: the planted pair above the additive model's.
+screen <- function(f) {
+  interaction_screen(glm_fit(f, ex, family = "poisson"), ex, dev, c("age", "power", "noise"),
+                     n_repeats = 20, seed = 0)
+}
+with_term <- screen(planted)
+stopifnot(identical(with_term$a, c("age", "age", "power")), identical(with_term$b, c("power", "noise", "noise")),
+          with_term$strength[1] > 0, screen(additive)$strength[1] < 0, all(with_term$strength[2:3] == 0))
+near(with_term$strength[1], 0.020418701731271027, 1e-9)
+near(with_term$loss_a + with_term$loss_b - with_term$loss_ab, with_term$strength, 1e-12)
+# CAS Monograph 16, Tables 9.1 to 9.4: seed 3 shuffles three rows as the
+# monograph does, and age's importance is 0.133, 100 on its scale.
+stopifnot(identical(permutation(3, 3), c(3, 1, 2)))
+toy <- structure(list(), class = "toy_age_model")
+predict.toy_age_model <- function(object, newdata, ...) newdata$age / 100
+registerS3method("predict", "toy_age_model", predict.toy_age_model)
+toy_data <- data.frame(age = c(20, 30, 40), height = c(1.4, 1.5, 1.6), y = c(0.2, 0.3, 0.4))
+mae <- function(m, test) mean(abs(test$y - stats::predict(m, test)))
+toy_imp <- permutation_importance(toy, toy_data, mae, c("age", "height"), seed = 3)
+stopifnot(round(toy_imp$importance[1], 3) == 0.133, toy_imp$importance[2] == 0,
+          identical(toy_imp$relative, c(100, 0)))
+
 cat("prospicio R models tests passed\n")

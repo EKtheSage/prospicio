@@ -1236,6 +1236,7 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
 #' `group_k_fold()` keeps each group's rows in one fold; `time_ordered()`
 #' tests on each of the last `n_test` periods after training on the earlier
 #' ones (with calendar diagonals as periods, the triangle backtest).
+#' `permutation()` shuffles `1:n` with `seed` on stream `stream`.
 #'
 #' @param n Number of rows.
 #' @param k Number of folds.
@@ -1243,7 +1244,10 @@ deviance_score <- function(family, response, theta = NULL, power = NULL, weight_
 #' @param groups Group label per row.
 #' @param periods Period per row (whole numbers).
 #' @param n_test Number of final periods to test on.
-#' @returns A list of splits, each `list(train, test)` of row numbers.
+#' @param stream For `permutation()`, the stream of `seed` to draw from.
+#' @returns A list of splits, each `list(train, test)` of row numbers;
+#'   `permutation()`, the row numbers `1:n` shuffled, the shuffle the
+#'   [explanations] apply (the same as Python's `permutation`, plus one).
 #' @name resampling
 #' @examples
 #' length(k_fold(10, 5, seed = 1))
@@ -1313,6 +1317,12 @@ group_k_fold <- function(groups, k, seed) {
 #' @export
 time_ordered <- function(periods, n_test) {
   rust_result(time_ordered_rust(as.double(periods), as.double(n_test)))
+}
+
+#' @rdname resampling
+#' @export
+permutation <- function(n, seed, stream = 0) {
+  rust_result(permutation_rust(as.double(n), as.double(seed), as.double(stream)))
 }
 
 #' Cross-validation and hyperparameter search
@@ -1438,6 +1448,198 @@ compare_models <- function(models, data, splits, scores) {
   rownames(rows) <- NULL
   attr(rows, "split_scores") <- s
   rows
+}
+
+#' Model-agnostic explanations: permutation importance, interactions and
+#' partial dependence
+#'
+#' Three tools that need only `predict()`, so they explain any model (CAS
+#' Monograph 16, chapter 9). `permutation_importance()` measures how much a
+#' score worsens when a feature's column is shuffled, which breaks its link
+#' to the response and leaves every other column in place; several columns
+#' named together are shuffled with one permutation (a group).
+#' `interaction_screen()` shuffles two features separately and together: with
+#' `L_A`, `L_B` and `L_AB` the losses, `L_A + L_B - L_AB` is about zero if
+#' neither interacts with anything and positive if they interact with each
+#' other or with a common third feature. A deviance is not additive on the
+#' link scale, so the pairs of an additive log-link model need not be zero:
+#' compare pairs with one another, on a flexible model such as a boosting
+#' model. `partial_dependence()` sets a feature to each value on every row
+#' and averages the predictions; for a log-link model without interactions
+#' their ratios are exactly the feature's relativities.
+#'
+#' Shuffles come from [permutation()]: repeat `r` of split `i` (both from 0)
+#' uses `permutation(n, seed, i * n_repeats + r)`, so Python's
+#' `prospicio.models` functions of the same names give the same values on the
+#' same rows.
+#'
+#' @param model A fitted model; with `splits`, a `fit(train)` function, as for
+#'   [cross_validate()], fitted on each split's training rows and explained on
+#'   its test rows.
+#' @param data A data frame: the rows to explain (all the data with `splits`).
+#' @param score `score(model, test)`: a loss (lower is better), such as
+#'   [deviance_score()]; a gain such as a pseudo-R2 goes in as its negative.
+#' @param features Column names, or a list whose elements are names shuffled
+#'   together (labelled by the list's names, or the names joined by `+`).
+#'   Never the response, exposure or weights.
+#' @param pairs For `interaction_screen()`, a list of two-label vectors;
+#'   every pair of `features` by default.
+#' @param splits Optional splits from [k_fold()], [group_k_fold()] or
+#'   [time_ordered()]; the results average over them.
+#' @param n_repeats Shuffles per split, averaged.
+#' @param seed Seed of the shuffles.
+#' @param feature For `partial_dependence()`, one column of `data`.
+#' @param values The values to set it to.
+#' @returns `permutation_importance()`: a data frame with `feature`,
+#'   `importance` (the mean increase in the score over the splits),
+#'   `std_error` (over the splits, `NA` for one) and `relative` (percent of
+#'   the largest), with attributes `by_split` (a splits by features matrix)
+#'   and `base` (the unshuffled score per split). `interaction_screen()`: a
+#'   data frame with `a`, `b`, `strength`, `std_error` and the mean losses
+#'   `loss_a`, `loss_b`, `loss_ab`, with attribute `by_split`.
+#'   `partial_dependence()`: a data frame with `value` and `mean` (the mean
+#'   prediction), with attribute `by_split`.
+#' @name explanations
+#' @examples
+#' d <- data.frame(x = 1:40 / 10, noise = ((7 * 1:40) %% 11) / 11)
+#' d$y <- 1 + 2 * d$x + sin(1:40)
+#' fit <- glm_fit(y ~ x, d, family = "gaussian")
+#' permutation_importance(fit, d, deviance_score("gaussian", "y"), c("x", "noise"))
+#' partial_dependence(fit, d, "x", c(1, 2))
+NULL
+
+explain_groups <- function(features, data) {
+  groups <- as.list(features)
+  if (!length(groups)) stop("features must not be empty")
+  labels <- names(groups)
+  if (is.null(labels)) labels <- rep("", length(groups))
+  for (j in seq_along(groups)) {
+    names_j <- as.character(groups[[j]])
+    missing <- setdiff(names_j, names(data))
+    if (length(missing)) stop("no column ", missing[1], " in the data")
+    if (labels[j] == "") labels[j] <- paste(names_j, collapse = "+")
+    groups[[j]] <- names_j
+  }
+  if (anyDuplicated(labels)) stop("feature labels must be distinct")
+  names(groups) <- labels
+  groups
+}
+
+# The score on `test` and, for each group of columns, the mean increase over
+# the repeats; every group of a repeat is shuffled with the same permutation.
+explain_losses <- function(model, test, score, groups, n_repeats, seed, split) {
+  if (n_repeats < 1) stop("n_repeats must be at least 1")
+  n <- nrow(test)
+  base <- as.double(score(model, test))
+  total <- double(length(groups))
+  for (r in seq_len(n_repeats) - 1) {
+    perm <- permutation(n, seed, split * n_repeats + r)
+    for (g in seq_along(groups)) {
+      shuffled <- test
+      shuffled[groups[[g]]] <- test[perm, groups[[g]], drop = FALSE]
+      total[g] <- total[g] + as.double(score(model, shuffled)) - base
+    }
+  }
+  list(base = base, loss = total / n_repeats)
+}
+
+explain_splits <- function(model, data, splits, one) {
+  if (is.null(splits)) return(list(one(model, data, 0)))
+  if (!length(splits)) stop("splits must not be empty")
+  if (!is.function(model)) stop("with splits, model must be a fit(train) function")
+  lapply(seq_along(splits), function(i) {
+    s <- splits[[i]]
+    one(model(data[s$train, , drop = FALSE]), data[s$test, , drop = FALSE], i - 1)
+  })
+}
+
+explain_se <- function(v) if (length(v) < 2) NA_real_ else stats::sd(v) / sqrt(length(v))
+
+#' @rdname explanations
+#' @export
+permutation_importance <- function(model, data, score, features, splits = NULL, n_repeats = 1,
+                                   seed = 0) {
+  groups <- explain_groups(features, data)
+  out <- explain_splits(model, data, splits, function(m, test, i) {
+    explain_losses(m, test, score, groups, n_repeats, seed, i)
+  })
+  by_split <- do.call(rbind, lapply(out, function(o) o$loss))
+  colnames(by_split) <- names(groups)
+  importance <- colMeans(by_split)
+  top <- max(importance)
+  res <- data.frame(
+    feature = names(groups), importance = unname(importance),
+    std_error = unname(apply(by_split, 2, explain_se)),
+    relative = if (top > 0) unname(100 * importance / top) else NA_real_
+  )
+  attr(res, "by_split") <- by_split
+  attr(res, "base") <- vapply(out, function(o) o$base, double(1))
+  res
+}
+
+#' @rdname explanations
+#' @export
+interaction_screen <- function(model, data, score, features, pairs = NULL, splits = NULL,
+                               n_repeats = 1, seed = 0) {
+  groups <- explain_groups(features, data)
+  labels <- names(groups)
+  if (is.null(pairs)) {
+    if (length(labels) < 2) stop("interaction_screen needs at least two features")
+    pairs <- list()
+    for (j in seq_len(length(labels) - 1)) {
+      for (k in (j + 1):length(labels)) pairs[[length(pairs) + 1]] <- labels[c(j, k)]
+    }
+  }
+  pairs <- lapply(pairs, as.character)
+  for (p in pairs) {
+    if (length(p) != 2 || p[1] == p[2] || !all(p %in% labels)) {
+      stop("(", paste(p, collapse = ", "), ") is not a pair of two different feature labels")
+    }
+  }
+  if (!length(pairs)) stop("interaction_screen needs at least one pair")
+  shuffles <- c(groups, lapply(pairs, function(p) c(groups[[p[1]]], groups[[p[2]]])))
+  out <- explain_splits(model, data, splits, function(m, test, i) {
+    explain_losses(m, test, score, shuffles, n_repeats, seed, i)$loss
+  })
+  k <- length(labels)
+  single <- do.call(rbind, lapply(out, function(o) o[seq_len(k)]))
+  joint <- do.call(rbind, lapply(out, function(o) o[-seq_len(k)]))
+  colnames(single) <- labels
+  a <- vapply(pairs, `[`, "", 1)
+  b <- vapply(pairs, `[`, "", 2)
+  by_split <- single[, a, drop = FALSE] + single[, b, drop = FALSE] - joint
+  colnames(by_split) <- paste(a, b, sep = ":")
+  res <- data.frame(
+    a = a, b = b, strength = unname(colMeans(by_split)),
+    std_error = unname(apply(by_split, 2, explain_se)),
+    loss_a = unname(colMeans(single)[a]), loss_b = unname(colMeans(single)[b]),
+    loss_ab = unname(colMeans(joint))
+  )
+  attr(res, "by_split") <- by_split
+  res
+}
+
+#' @rdname explanations
+#' @export
+partial_dependence <- function(model, data, feature, values, splits = NULL) {
+  if (length(feature) != 1 || !feature %in% names(data)) stop("no column ", feature, " in the data")
+  if (!length(values)) stop("values must not be empty")
+  out <- explain_splits(model, data, splits, function(m, test, i) {
+    col <- test[[feature]]
+    vapply(seq_along(values), function(v) {
+      set <- test
+      set[[feature]] <- if (is.factor(col)) {
+        factor(rep(as.character(values[[v]]), nrow(test)), levels = levels(col))
+      } else {
+        rep(values[[v]], nrow(test))
+      }
+      mean(stats::predict(m, set))
+    }, double(1))
+  })
+  by_split <- do.call(rbind, out)
+  res <- data.frame(value = values, mean = colMeans(by_split))
+  attr(res, "by_split") <- by_split
+  res
 }
 
 #' Cross-validate an elastic net

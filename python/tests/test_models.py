@@ -918,3 +918,178 @@ def test_bounded_and_relaxed_elastic_nets_match_glmnet():
             else:
                 got = getattr(cv, q.replace("lambda", "lam"))
                 assert got == pytest.approx(float(r["expected"]), rel=1e-12)
+
+
+# Model-agnostic explanations (#355) on a portfolio with a planted
+# young-driver high-power interaction. R's test-models.R builds the same
+# rows and checks the same pinned values.
+def explain_portfolio():
+    n = 300
+    age = [18.0 + (37 * i) % 60 for i in range(n)]
+    power = [["low", "mid", "high"][(i // 7) % 3] for i in range(n)]
+    noise = [((13 * i) % 17) / 17 for i in range(n)]
+    exposure = [0.5 + ((11 * i) % 10) / 20 for i in range(n)]
+    y = []
+    for i in range(n):
+        young, high = age[i] < 25, power[i] == "high"
+        mu = exposure[i] * math.exp(0.5 + 0.8 * young + 0.3 * high + 0.5 * (young and high))
+        y.append(float(math.floor(mu * (1 + 0.6 * math.sin(1.7 * i)) + 0.5)))
+    return {"age": age, "power": power, "noise": noise, "exposure": exposure}, y
+
+
+def explain_design(f, interaction=False):
+    young = [float(a < 25) for a in f["age"]]
+    high = [float(p == "high") for p in f["power"]]
+    cols = [[1.0] * len(young), young, [float(p == "mid") for p in f["power"]], high]
+    names = ["(Intercept)", "young", "power[mid]", "power[high]"]
+    if interaction:
+        cols, names = cols + [[u * v for u, v in zip(young, high)]], names + ["young:high"]
+    return Design(cols, names, offset=[math.log(e) for e in f["exposure"]])
+
+
+def test_permutation_importance_is_the_hand_loop():
+    from prospicio.models import permutation, permutation_importance
+
+    frame, y = explain_portfolio()
+    fit = Glm("poisson").fit(explain_design(frame), y)
+    score = deviance_score("poisson")
+    imp = permutation_importance(
+        fit, frame, y, explain_design, score, ["age", "power", "noise", ["age", "power"]],
+        n_repeats=2, seed=5,
+    )
+    assert imp.features == ["age", "power", "noise", "age+power"]
+
+    def scored(f):
+        d = explain_design(f)
+        return score(y, fit.predict(d), d)
+
+    base = scored(frame)
+    for j, names in enumerate([["age"], ["power"], ["noise"], ["age", "power"]]):
+        hand = 0.0
+        for r in range(2):
+            perm = permutation(len(y), 5, r)
+            shuffled = {k: ([v[i] for i in perm] if k in names else v) for k, v in frame.items()}
+            hand += (scored(shuffled) - base) / 2
+        assert abs(imp.importance[j] - hand) < 1e-14
+    # The GLM does not use noise, so shuffling it changes nothing.
+    assert imp.importance[2] == 0.0
+    assert imp.base == [base] and math.isnan(imp.std_error[0])
+    assert imp.table()[0]["feature"] == "age+power"
+    assert max(imp.relative) == 100.0
+    # Pinned, and the same in R.
+    assert abs(imp.importance[0] - 0.48670981297841526) < 1e-10
+    assert abs(imp.importance[1] - 0.13778344497063177) < 1e-10
+
+
+def test_explanations_average_over_folds():
+    from prospicio.models import PermutationImportance, permutation_importance
+
+    frame, y = explain_portfolio()
+    splits = k_fold(len(y), 4, 2)
+    score = deviance_score("poisson")
+    imp = permutation_importance(
+        Glm("poisson"), frame, y, explain_design, score, ["age", "power"], splits=splits, seed=1
+    )
+    assert len(imp.by_split) == 4 and len(imp.base) == 4
+    # Fold 0 by hand: its fitted model explained on its test rows. Fold i of
+    # a cross-validated run shuffles on stream i, a single fit on stream 0.
+    train, test = splits[0]
+    sub = lambda rows: {k: [v[j] for j in rows] for k, v in frame.items()}
+    fit = Glm("poisson").fit(explain_design(sub(train)), [y[j] for j in train])
+    one = permutation_importance(
+        fit, sub(test), [y[j] for j in test], explain_design, score, ["age", "power"], seed=1
+    )
+    assert one.by_split[0] == imp.by_split[0] and one.base[0] == imp.base[0]
+    both = PermutationImportance.combine([imp, imp])
+    assert len(both.by_split) == 8 and both.importance == imp.importance
+    assert abs(imp.importance[0] - 0.4464341484022761) < 1e-10
+
+
+def test_partial_dependence_of_an_additive_glm_is_its_relativities():
+    from prospicio.models import partial_dependence
+
+    frame, y = explain_portfolio()
+    fit = Glm("poisson").fit(explain_design(frame), y)
+    pd = partial_dependence(fit, frame, explain_design, "power", ["low", "mid", "high"])
+    rel = pd.relative("low")
+    assert abs(rel[1] - math.exp(fit.coefficients[2])) < 1e-12
+    assert abs(rel[2] - math.exp(fit.coefficients[3])) < 1e-12
+    on_folds = partial_dependence(
+        Glm("poisson"), frame, explain_design, "age", [20.0, 40.0], y=y, splits=k_fold(len(y), 3, 1)
+    )
+    assert len(on_folds.by_split) == 3 and on_folds.mean[0] > on_folds.mean[1]
+    with pytest.raises(ValueError):
+        partial_dependence(Glm("poisson"), frame, explain_design, "age", [20.0], splits=[([0], [1])])
+
+
+def test_explanations_keep_numpy_columns():
+    np = pytest.importorskip("numpy")
+    from prospicio.models import partial_dependence, permutation_importance
+
+    frame, y = explain_portfolio()
+    arrays = {k: np.asarray(v) for k, v in frame.items()}
+
+    def build(f):  # NumPy comparisons, as a design builder on arrays writes them
+        assert isinstance(f["age"], np.ndarray)
+        return explain_design({k: v.tolist() for k, v in f.items()})
+
+    fit = Glm("poisson").fit(explain_design(frame), y)
+    score = deviance_score("poisson")
+    a = permutation_importance(fit, arrays, y, build, score, ["age", "noise"], seed=3)
+    b = permutation_importance(fit, frame, y, explain_design, score, ["age", "noise"], seed=3)
+    assert a.importance == b.importance
+    pd = partial_dependence(fit, arrays, build, "age", [20.0, 40.0])
+    assert pd.mean == partial_dependence(fit, frame, explain_design, "age", [20.0, 40.0]).mean
+
+
+def test_interaction_screen_finds_the_planted_pair():
+    from prospicio.models import interaction_screen
+
+    frame, y = explain_portfolio()
+    score = deviance_score("poisson")
+    features = ["age", "power", "noise"]
+    screens = {}
+    for planted in [False, True]:
+        build = lambda f, planted=planted: explain_design(f, interaction=planted)
+        fit = Glm("poisson").fit(build(frame), y)
+        screens[planted] = interaction_screen(
+            fit, frame, y, build, score, features, n_repeats=20, seed=0
+        )
+    s = screens[True]
+    assert s.pairs == [("age", "power"), ("age", "noise"), ("power", "noise")]
+    # The deviance is not additive on the log scale, so even the additive
+    # GLM's pair is not zero; the planted term lifts it above it.
+    assert s.strength[0] > 0 > screens[False].strength[0]
+    # Noise is unused: shuffling it with another feature is shuffling that one.
+    assert s.strength[1] == 0.0 and s.strength[2] == 0.0
+    row = next(r for r in s.table() if (r["a"], r["b"]) == ("age", "power"))
+    assert abs(row["loss_a"] + row["loss_b"] - row["loss_ab"] - row["strength"]) < 1e-14
+    assert abs(s.strength[0] - 0.020418701731271027) < 1e-10
+    build = lambda f: explain_design(f, interaction=True)
+    fit = Glm("poisson").fit(build(frame), y)
+    only = interaction_screen(fit, frame, y, build, score, features, pairs=[("power", "age")],
+                              n_repeats=20, seed=0)
+    assert only.pairs == [("power", "age")] and abs(only.strength[0] - s.strength[0]) < 1e-14
+    with pytest.raises(ValueError):
+        interaction_screen(fit, frame, y, build, score, ["age"], pairs=[("age", "age")])
+
+
+def test_permutation_importance_of_the_monographs_toy_table():
+    # CAS Monograph 16, Tables 9.1 to 9.4: frequency is age / 100 and the
+    # model has learned exactly that; seed 3 shuffles three rows as the
+    # monograph does (ages 40, 20, 30).
+    from prospicio.models import permutation, permutation_importance
+
+    assert permutation(3, 3) == [2, 0, 1]
+
+    class Toy:
+        def predict(self, design):
+            return [a / 100 for a in design.column(0)]
+
+    frame = {"age": [20.0, 30.0, 40.0], "height": [1.4, 1.5, 1.6]}
+    y = [0.2, 0.3, 0.4]
+    build = lambda f: Design([list(f["age"]), list(f["height"])], ["age", "height"])
+    mae = lambda yy, p, d: sum(abs(a - b) for a, b in zip(yy, p)) / len(yy)
+    imp = permutation_importance(Toy(), frame, y, build, mae, ["age", "height"], seed=3)
+    assert round(imp.importance[0], 3) == 0.133 and imp.importance[1] == 0.0
+    assert imp.relative == [100.0, 0.0]
