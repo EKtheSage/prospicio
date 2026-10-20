@@ -140,6 +140,15 @@ const CACHED_FITS: usize = 4;
 /// settings, build a new candidate, so a cached fit is never reused under
 /// settings other than the ones it was made with.
 ///
+/// # Owned, and cloned with its fits
+///
+/// A candidate owns its data (the triangle behind an [`Arc`], the column
+/// names as strings), so it can be boxed in a [`NamedModel`](crate::NamedModel)
+/// next to the other models. A clone has the same settings and **shares the
+/// cache of fits**: hand a clone to a backtest, keep the original, and
+/// [`outstanding_backtest`](Self::outstanding_backtest) on the original reuses
+/// the fits the backtest made.
+///
 /// ```compile_fail,E0616
 /// use prospicio_reserving::bayes::{
 ///     Compartmental, CompartmentalCandidate, CompartmentalPriors, Outstanding,
@@ -178,32 +187,55 @@ const CACHED_FITS: usize = 4;
 /// candidate.paid = "incurred";
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
-#[derive(Debug)]
-pub struct CompartmentalCandidate<'a> {
+#[derive(Debug, Clone)]
+pub struct CompartmentalCandidate {
     model: Compartmental,
-    triangle: &'a Triangle,
-    paid: &'a str,
-    outstanding: Outstanding<'a>,
-    premium: &'a str,
-    fits: Mutex<Vec<Arc<TrainFit>>>,
+    triangle: Arc<Triangle>,
+    paid: String,
+    outstanding: OwnedOutstanding,
+    premium: String,
+    fits: Arc<Mutex<Vec<Arc<TrainFit>>>>,
 }
 
-impl<'a> CompartmentalCandidate<'a> {
-    /// A candidate for `model` on `triangle`.
+/// [`Outstanding`] with an owned column name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OwnedOutstanding {
+    Column(String),
+    FromIncurred(String),
+}
+
+impl OwnedOutstanding {
+    fn of(outstanding: Outstanding<'_>) -> Self {
+        match outstanding {
+            Outstanding::Column(c) => Self::Column(c.to_string()),
+            Outstanding::FromIncurred(c) => Self::FromIncurred(c.to_string()),
+        }
+    }
+
+    fn as_outstanding(&self) -> Outstanding<'_> {
+        match self {
+            Self::Column(c) => Outstanding::Column(c),
+            Self::FromIncurred(c) => Outstanding::FromIncurred(c),
+        }
+    }
+}
+
+impl CompartmentalCandidate {
+    /// A candidate for `model` on `triangle` (copied into the candidate).
     pub fn new(
         model: Compartmental,
-        triangle: &'a Triangle,
-        paid: &'a str,
-        outstanding: Outstanding<'a>,
-        premium: &'a str,
+        triangle: &Triangle,
+        paid: &str,
+        outstanding: Outstanding<'_>,
+        premium: &str,
     ) -> Self {
         Self {
             model,
-            triangle,
-            paid,
-            outstanding,
-            premium,
-            fits: Mutex::new(Vec::new()),
+            triangle: Arc::new(triangle.clone()),
+            paid: paid.to_string(),
+            outstanding: OwnedOutstanding::of(outstanding),
+            premium: premium.to_string(),
+            fits: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -213,23 +245,23 @@ impl<'a> CompartmentalCandidate<'a> {
     }
 
     /// The triangle the frame was built on.
-    pub fn triangle(&self) -> &'a Triangle {
-        self.triangle
+    pub fn triangle(&self) -> &Triangle {
+        &self.triangle
     }
 
     /// The cumulative paid column (the frame's column).
-    pub fn paid(&self) -> &'a str {
-        self.paid
+    pub fn paid(&self) -> &str {
+        &self.paid
     }
 
     /// The outstanding column, or the incurred column it comes from.
-    pub fn outstanding(&self) -> Outstanding<'a> {
-        self.outstanding
+    pub fn outstanding(&self) -> Outstanding<'_> {
+        self.outstanding.as_outstanding()
     }
 
     /// The premium column.
-    pub fn premium(&self) -> &'a str {
-        self.premium
+    pub fn premium(&self) -> &str {
+        &self.premium
     }
 }
 
@@ -248,7 +280,7 @@ struct TrainFit {
     full_outstanding: Outstandings,
 }
 
-impl CompartmentalCandidate<'_> {
+impl CompartmentalCandidate {
     /// The training rows the likelihood accepts, each with its origin's
     /// cumulative paid there, in row order within origins.
     fn kept(&self, cells: &TriangleFrame, train: &[usize]) -> Result<Vec<(usize, f64)>> {
@@ -320,7 +352,12 @@ impl CompartmentalCandidate<'_> {
     /// cell.
     fn prepare(&self, cells: &TriangleFrame, train: &[usize]) -> Result<(Data, Outstandings)> {
         let kept = self.kept(cells, train)?;
-        let mut data = Data::new(self.triangle, self.paid, self.outstanding, self.premium)?;
+        let mut data = Data::new(
+            &self.triangle,
+            &self.paid,
+            self.outstanding(),
+            &self.premium,
+        )?;
         let full_outstanding: Outstandings = data
             .outstanding
             .iter()
@@ -475,9 +512,9 @@ impl CompartmentalCandidate<'_> {
             derive_seed(seed, Stream::Predictive),
             self.model
                 .provenance(
-                    self.paid,
-                    self.outstanding,
-                    self.premium,
+                    &self.paid,
+                    self.outstanding(),
+                    &self.premium,
                     InputHasher::new(),
                 )
                 .param("output", "test increments"),
@@ -546,9 +583,9 @@ impl CompartmentalCandidate<'_> {
             derive_seed(seed, Stream::Predictive),
             self.model
                 .provenance(
-                    self.paid,
-                    self.outstanding,
-                    self.premium,
+                    &self.paid,
+                    self.outstanding(),
+                    &self.premium,
                     InputHasher::new(),
                 )
                 .param("output", "test outstanding"),
@@ -695,7 +732,7 @@ impl TrainFit {
     }
 }
 
-impl TriangleModel for CompartmentalCandidate<'_> {
+impl TriangleModel for CompartmentalCandidate {
     fn name(&self) -> &str {
         self.model.model_name()
     }
@@ -835,7 +872,7 @@ mod tests {
     use prospicio_core::{Grain, Lag, Period};
     use prospicio_prob::Distribution;
 
-    fn candidate(model: Compartmental, tri: &Triangle) -> CompartmentalCandidate<'_> {
+    fn candidate(model: Compartmental, tri: &Triangle) -> CompartmentalCandidate {
         CompartmentalCandidate::new(model, tri, "paid", incurred(), "premium")
     }
 
@@ -1010,10 +1047,49 @@ mod tests {
         let a = candidate(quick(1), &tri);
         assert_eq!(a.paid(), "paid");
         assert_eq!(a.premium(), "premium");
-        assert!(std::ptr::eq(a.triangle(), &tri));
+        assert_eq!(a.triangle(), &tri);
+        assert_eq!(a.outstanding(), incurred());
         let b = candidate(quick(1), &tri);
         assert_eq!(a.fits.lock().unwrap().len(), 0);
         assert_eq!(b.fits.lock().unwrap().len(), 0);
+    }
+
+    /// A clone has its own settings' copy but the same cache of fits.
+    #[test]
+    fn a_clone_shares_the_cache() {
+        let tri = triangle(false);
+        let a = candidate(quick(1), &tri);
+        let b = a.clone();
+        assert!(Arc::ptr_eq(&a.fits, &b.fits));
+        assert!(Arc::ptr_eq(&a.triangle, &b.triangle));
+        assert_eq!(b.outstanding(), a.outstanding());
+        // A new candidate does not.
+        assert!(!Arc::ptr_eq(&a.fits, &candidate(quick(1), &tri).fits));
+    }
+
+    /// A clone boxed in a `NamedModel` (as a binding holds it) backtests
+    /// the paid increments, and the original's outstanding backtest then
+    /// reuses its NUTS run: one fit serves both tables.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_named_clone_and_its_original_share_one_fit() {
+        let tri = triangle(false);
+        let cells = TriangleFrame::new(&tri, "paid", None).unwrap();
+        let c = candidate(quick(5), &tri);
+        let named = crate::NamedModel::new("mine", c.clone());
+        let paid = diagonal_backtest(&cells, &[&named], 1, 500, 5, 0.9).unwrap();
+        assert_eq!(paid.models(), ["mine"]);
+        assert_eq!(c.fits.lock().unwrap().len(), 1);
+        let first = Arc::clone(&c.fits.lock().unwrap()[0]);
+        let os = c.outstanding_backtest(&cells, 1, 500, 5, 0.9).unwrap();
+        // The same fit object, not a second run of the sampler.
+        assert_eq!(c.fits.lock().unwrap().len(), 1);
+        assert!(Arc::ptr_eq(&first, &c.fits.lock().unwrap()[0]));
+        assert_eq!(os.diagnostics(0), paid.diagnostics(0));
+        assert_eq!(os.scored_rows(), paid.scored_rows());
     }
 
     /// The fit never sees the held-out diagonal: its paid is rebuilt from
