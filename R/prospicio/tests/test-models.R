@@ -463,4 +463,48 @@ stopifnot(inherits(try(glmm_fit(ticks ~ year, gt), silent = TRUE), "try-error"),
           inherits(try(glmm_fit(ticks ~ year + (height | location), gt), silent = TRUE),
                    "try-error"))
 
+# Double GLMs against dglm 1.8.6 corrected (validation/scripts/r_dglm.R);
+# where dglm is right (the Poisson without an offset), against dglm live.
+dref <- utils::read.csv(file.path(root, "reference", "dglm_r.csv"), comment.char = "#")
+dwant <- function(case, method, quantity, arg = "") {
+  r <- dref[dref$case == case & dref$method == method & dref$quantity == quantity &
+              dref$arg == arg, ]
+  stopifnot(nrow(r) == 1)
+  r$expected
+}
+dnear <- function(a, b, tol) stopifnot(all(abs(a - b) <= tol * pmax(abs(b), 1e-300)))
+dg <- dglm_fit(severity ~ x + urban, ~ x + urban, sim, family = "gamma", link = "log")
+stopifnot(dg@method == "reml")
+for (nm in names(dg@coefficients)) {
+  dnear(dg@coefficients[[nm]], dwant("gamma", "reml", "coef", nm), 1e-8)
+  dnear(dg@std_errors[[nm]], dwant("gamma", "reml", "se", nm), 1e-8)
+}
+for (nm in names(dg@dispersion_coefficients)) {
+  dnear(dg@dispersion_coefficients[[nm]], dwant("gamma", "reml", "dcoef", nm), 1e-8)
+  dnear(dg@dispersion_std_errors[[nm]], dwant("gamma", "reml", "dse", nm), 1e-8)
+}
+dnear(dg@m2loglik, dwant("gamma", "reml", "m2loglik"), 1e-10)
+dnear(dg@reml_criterion, dwant("gamma", "reml", "reml_criterion"), 1e-10)
+dnear(predict(dg, sim), dg@fitted, 1e-12)
+dnear(predict(dg, sim, type = "dispersion"), dg@dispersion_fitted, 1e-12)
+dp <- dglm_fit(count ~ x + urban, ~ urban, sim, family = "poisson", method = "ml",
+               offset = log(sim$exposure))
+for (nm in names(dp@coefficients)) {
+  dnear(dp@coefficients[[nm]], dwant("poisson_offset", "ml", "coef", nm), 1e-8)
+}
+dd <- dglm_fit(severity ~ x + urban, ~ urban, sim, family = "gamma", link = "log",
+               method = "ml", doffset = log(sim$exposure))
+for (nm in names(dd@dispersion_coefficients)) {
+  dnear(dd@dispersion_coefficients[[nm]], dwant("gamma_doffset", "ml", "dcoef", nm), 1e-8)
+}
+if (requireNamespace("dglm", quietly = TRUE)) {
+  live <- dglm::dglm(count ~ x + urban, ~ urban, family = stats::poisson, data = sim,
+                     method = "ml", control = dglm::dglm.control(epsilon = 1e-14, maxit = 1000))
+  ours <- dglm_fit(count ~ x + urban, ~ urban, sim, family = "poisson", method = "ml")
+  dnear(ours@coefficients, stats::coef(live), 1e-6)
+  dnear(ours@m2loglik, live$m2loglik, 1e-10)
+}
+stopifnot(inherits(try(dglm_fit(severity ~ x, ~ 1, sim, method = "pql"), silent = TRUE),
+                   "try-error"))
+
 cat("prospicio R models tests passed\n")

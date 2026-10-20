@@ -83,6 +83,9 @@ models and compares them.
   random intercepts on one, crossed or nested factors, by Laplace or
   adaptive Gauss–Hermite quadrature (see "Mixed models"); Python `Glmm`,
   R `glmm_fit()`.
+- `prospicio_glm::dglm::DoubleGlm`: double GLMs, a GLM for the mean and
+  one for the log dispersion on their own designs, by REML or ML (see
+  "Double GLMs"); Python `DoubleGlm`, R `dglm_fit()`.
 - Parity: `validation/reference/glm_statsmodels.csv`
   (`validation/scripts/statsmodels_glm.py`): 10 GLMs on a synthetic
   600-policy portfolio (Poisson with exposure offset, quasi-Poisson, gamma
@@ -733,6 +736,52 @@ is lme4's `a:b`, so `(1 | a/b)` is `a` and `Grouping::nested(a, b)`.
   a factor whose columns are missing. A slope term `(x | g)` is an error.
 - **Later.** Random slopes (still being discussed with the user) and a
   NUTS fit as an add-on.
+
+## Double GLMs
+
+`prospicio_glm::dglm::DoubleGlm` (#353, the user's decision of
+2026-10-19: match R `dglm` with REML, the Tweedie through statmod; MARS
+parked) fits `g(μ) = Xβ + o` with variance `φ V(μ) / w` and
+`log φ = Zγ + q`, for the Gaussian, Poisson, gamma and Tweedie with
+`1 < p < 2`, by Smyth's alternating scoring as `dglm`: a step for `γ` on
+the unit deviances as gamma responses (the digamma form for the gamma
+family), then one for `β` at those dispersions, until no coefficient
+moves by more than `1e-11` relative.
+
+- **REML by default.** The user asked for `dglm` "with its default REML
+  fit", but `dglm`'s default is ML: REML stays the default until the user
+  decides; `DoubleGlm::ml()` gives ML. REML corrects each deviance's mean by
+  its leverage in the mean model (Smyth and Verbyla).
+- **dglm corrected.** `dglm` 1.8.6 weights its mean step by `w V(μ) / φ`
+  and evaluates `μ'(η)` without the offset, which is scoring only for a
+  canonical link without an offset
+  (`knowledge/findings/dglm-mean-step-weights.md`). `DoubleGlm` uses the
+  scoring weights `w μ'(η + o)² / (V(μ) φ)`, and the dispersion's offset
+  in its step: it agrees with `dglm` on the
+  Gaussian and the Poisson without an offset, with `glm()` at a constant
+  dispersion, and with the maximum of the same likelihood found directly.
+- **Output.** `β` with `(Xᵀ W X)⁻¹`, `γ` with `2 (Zᵀ W_d Z)⁻¹` (as
+  `summary.dglm`), the fitted means and dispersions, `dglm`'s `m2loglik`
+  (with its constants), the REML criterion (`m2loglik + log det(Xᵀ W X)`,
+  which `dglm` 1.8.6 means to report but adds 0 for), and AIC; `predict`
+  and `predict_dispersion` on new designs.
+- **Parity.** `validation/scripts/r_dglm.R` on the simulated book of
+  `glmm_simulated.csv` (mean `~ x + urban`; Gaussian severities, Poisson
+  counts with and without the log exposure offset, gamma severities with
+  the log link, Tweedie pure premiums with `p = 1.5`, Gaussian
+  severities weighted by exposure, gamma severities with the log exposure
+  as the dispersion's offset; ML and REML): 180 cases at 1e-8 relative and
+  1e-10 for the likelihoods. `dglm`'s dispersion step drops the
+  dispersion's offset as its mean step drops the mean's, so that case is
+  checked against `nlminb`.
+- **Not a `Model`**, as the GLMM: it takes two designs.
+- **Bindings.** Python `DoubleGlm(family, link, power, method,
+  link_power).fit(mean, dispersion, y)` on two `Design`s. R
+  `dglm_fit(formula, dformula = ~ 1, data, family, link, power, method,
+  offset, weights, doffset)`, `dglm()`'s order of arguments, returning a
+  `dglm_model`; `predict(m, newdata, type = "dispersion")` gives the
+  dispersion of new rows. The R tests also check against `dglm` live where
+  it is right, when it is installed.
 
 ## Attention
 

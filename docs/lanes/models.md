@@ -6,7 +6,7 @@
 
 ## Next
 
-- the issues filed by the Guides lane on 2026-10-18 (#353, #355, #356)
+- the issues filed by the Guides lane on 2026-10-18 (#355, #356)
 - [glmm-later] a NUTS fit of the GLMMs and random slopes, when the user decides them (#358)
 - [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
@@ -31,3 +31,5 @@
 - [odp-glm-designs] with the same go-ahead: the ODP GLM's gamma and Tweedie errors (`OdpGlm::family`: the Poisson, gamma or Tweedie with `1 < p < 2`, log link, Pearson's dispersion; R `glm(Gamma(link = "log"))` and statmod `tweedie(1.5)` parity on GenIns and ABC; Taylor and McGuire's section 6.5 gamma as the guide's section 9; Python `OdpGlm(family=, power=)`, R `odp_glm(family =, power =)`; #333, fourth PR, which closes it)
 - random-intercept GLMMs (`prospicio_glm::glmm`: `Glmm` for the Poisson, gamma and Tweedie with the log link, one, nested or crossed grouping factors, the Laplace approximation or adaptive Gauss-Hermite quadrature for one factor, each level's mode with its conditional and prediction variances, the variance components, 0 for an unseen level; glmmTMB and lme4 `glmer` parity on Salamanders, grouseticks and a simulated book, 1,237 cases; in Rust, #358, first PR)
 - [glmm-bindings] the GLMMs in Python and R (Python `Glmm` and `GlmmFit` with grouping factors as a dict of labels; R `glmm_fit()` with lme4's `(1 | g)`, `(1 | a/b)` and crossed terms, a `glmm_model` with `random_effects` by factor and `predict()` at the population mean for an unseen level or a missing column; checked against the stored glmmTMB and lme4 reference; #358, second PR)
+- double GLMs (`prospicio_glm::dglm::DoubleGlm`: a GLM for the mean and a gamma GLM with the log link for the dispersion, each on its own design, for the Gaussian, Poisson, gamma and Tweedie, by REML (the default) or ML; dglm 1.8.6 parity where dglm is right, and its corrected loop where its mean step's weights and offset are wrong (any non-canonical link or offset), checked against `glm()` and a direct maximum; #353)
+- [dglm-bindings] the double GLMs in Python and R (Python `DoubleGlm` and `DoubleGlmFit` on two `Design`s; R `dglm_fit(formula, dformula, data)` as `dglm()`, a `dglm_model` with `predict(type = "dispersion")`; REML by default; MARS parked by the user)

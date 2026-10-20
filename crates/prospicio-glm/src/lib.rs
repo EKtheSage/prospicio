@@ -10,6 +10,7 @@
 //! smooths, with smoothing chosen by GCV or UBRE.
 
 mod artifact;
+pub mod dglm;
 pub mod diagnostics;
 pub mod gam;
 pub mod glmm;

@@ -4291,3 +4291,201 @@ impl PyGlmmFit {
         py.detach(|| fit.predict(d, &groups)).map_err(to_py)
     }
 }
+
+/// A double GLM: a GLM for the mean and a gamma GLM with the log link for
+/// the dispersion, each on its own design, as R's ``dglm`` with its mean
+/// step's weights corrected.
+///
+/// Parameters
+/// ----------
+/// family : str
+///     ``"gaussian"``, ``"poisson"``, ``"gamma"`` or ``"tweedie"``.
+/// link : str, optional
+///     The mean's link; the family's canonical link by default.
+/// power : float, optional
+///     The Tweedie's power, in (1, 2).
+/// method : str
+///     ``"reml"`` (the default) or ``"ml"`` (``dglm``'s default).
+/// link_power : float, optional
+///     The power link's exponent.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, DoubleGlm
+/// >>> urban = [0.0] * 4 + [1.0] * 4
+/// >>> d = Design([[1.0] * 8, urban], ["(Intercept)", "urban"])
+/// >>> y = [9.0, 11.0, 10.0, 10.5, 4.0, 18.0, 6.0, 15.0]
+/// >>> fit = DoubleGlm("gamma", link="log").fit(d, d, y)
+/// >>> fit.dispersion_coefficients[1] > 0
+/// True
+#[pyclass(name = "DoubleGlm", module = "prospicio.models", frozen)]
+pub(crate) struct PyDoubleGlm {
+    inner: prospicio_glm::dglm::DoubleGlm,
+}
+
+#[pymethods]
+impl PyDoubleGlm {
+    #[new]
+    #[pyo3(signature = (family, link = None, power = None, method = "reml", link_power = None))]
+    fn new(
+        family: &str,
+        link: Option<&str>,
+        power: Option<f64>,
+        method: &str,
+        link_power: Option<f64>,
+    ) -> PyResult<Self> {
+        let f = self::family(family, None, power)?;
+        let mut inner = prospicio_glm::dglm::DoubleGlm::new(f, self::link(link, f, link_power)?);
+        match method {
+            "reml" => {}
+            "ml" => inner = inner.ml(),
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "method must be reml or ml, got {other:?}"
+                )));
+            }
+        }
+        Ok(Self { inner })
+    }
+
+    /// Fits the mean on ``mean`` (its offset and prior weights apply) and
+    /// the log dispersion on ``dispersion`` (its offset applies).
+    ///
+    /// Returns
+    /// -------
+    /// DoubleGlmFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        mean: PyRef<'_, PyDesign>,
+        dispersion: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+    ) -> PyResult<PyDoubleGlmFit> {
+        let (spec, x, z) = (&self.inner, &mean.inner, &dispersion.inner);
+        let inner = py.detach(|| spec.fit(x, z, &y)).map_err(to_py)?;
+        Ok(PyDoubleGlmFit { inner })
+    }
+}
+
+/// A fitted double GLM, from ``DoubleGlm.fit``.
+#[pyclass(name = "DoubleGlmFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyDoubleGlmFit {
+    inner: prospicio_glm::dglm::DoubleGlmFit,
+}
+
+#[pymethods]
+impl PyDoubleGlmFit {
+    /// The mean design's column names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// The mean's coefficients.
+    #[getter]
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    #[getter]
+    fn standard_errors(&self) -> Vec<f64> {
+        self.inner.standard_errors()
+    }
+
+    /// The mean's coefficients' covariance, a list of rows.
+    #[getter]
+    fn covariance(&self) -> Vec<Vec<f64>> {
+        let p = self.inner.coefficients().len();
+        self.inner
+            .covariance()
+            .chunks(p)
+            .map(<[f64]>::to_vec)
+            .collect()
+    }
+
+    /// The dispersion design's column names.
+    #[getter]
+    fn dispersion_names(&self) -> Vec<String> {
+        self.inner.dispersion_names().to_vec()
+    }
+
+    /// The log dispersion's coefficients.
+    #[getter]
+    fn dispersion_coefficients(&self) -> Vec<f64> {
+        self.inner.dispersion_coefficients().to_vec()
+    }
+
+    #[getter]
+    fn dispersion_standard_errors(&self) -> Vec<f64> {
+        self.inner.dispersion_standard_errors()
+    }
+
+    /// The dispersion's coefficients' covariance, a list of rows.
+    #[getter]
+    fn dispersion_covariance(&self) -> Vec<Vec<f64>> {
+        let q = self.inner.dispersion_coefficients().len();
+        self.inner
+            .dispersion_covariance()
+            .chunks(q)
+            .map(<[f64]>::to_vec)
+            .collect()
+    }
+
+    /// The fitted mean of each row.
+    #[getter]
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted().to_vec()
+    }
+
+    /// The fitted dispersion of each row.
+    #[getter]
+    fn dispersion_fitted(&self) -> Vec<f64> {
+        self.inner.dispersion_fitted().to_vec()
+    }
+
+    /// ``dglm``'s ``m2loglik``.
+    #[getter]
+    fn minus_two_log_likelihood(&self) -> f64 {
+        self.inner.minus_two_log_likelihood()
+    }
+
+    /// ``m2loglik + log det(X' W X)``, the criterion REML minimizes.
+    #[getter]
+    fn reml_criterion(&self) -> f64 {
+        self.inner.reml_criterion()
+    }
+
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    #[getter]
+    fn method(&self) -> &'static str {
+        match self.inner.method() {
+            prospicio_glm::dglm::DispersionMethod::Ml => "ml",
+            prospicio_glm::dglm::DispersionMethod::Reml => "reml",
+        }
+    }
+
+    #[getter]
+    fn iterations(&self) -> usize {
+        self.inner.iterations()
+    }
+
+    /// The mean of each row of a new mean design.
+    fn predict(&self, py: Python<'_>, design: PyRef<'_, PyDesign>) -> PyResult<Vec<f64>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict(d)).map_err(to_py)
+    }
+
+    /// The dispersion of each row of a new dispersion design.
+    fn predict_dispersion(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+    ) -> PyResult<Vec<f64>> {
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict_dispersion(d)).map_err(to_py)
+    }
+}

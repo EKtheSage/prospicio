@@ -6,6 +6,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_bayes::ppc::{self, Statistic, StatisticCheck};
+use prospicio_glm::dglm::{DispersionMethod, DoubleGlm, DoubleGlmFit};
 use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
 use prospicio_glm::glmm::{Glmm, GlmmFit, Grouping};
 use prospicio_glm::net::{ElasticNet, ElasticNetFit};
@@ -252,6 +253,129 @@ fn groupings(names: Vec<String>, labels: Vec<String>) -> Result<Vec<Grouping>> {
         .enumerate()
         .map(|(j, name)| Grouping::new(name, labels[j * n..(j + 1) * n].to_vec()))
         .collect())
+}
+
+/// A double GLM: the mean on `x`, the log dispersion on `z`
+/// (`docs/design/models.md`, "Double GLMs"); `method` "reml" or "ml".
+#[allow(clippy::too_many_arguments)]
+#[extendr]
+fn dglm_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    z: &[f64],
+    dispersion_names: Vec<String>,
+    dispersion_offset: &[f64],
+    family_name: &str,
+    link_name: &str,
+    power: f64,
+    link_power: f64,
+    method: &str,
+) -> Result<DglmModel> {
+    let f = family(family_name, f64::NAN, power)?;
+    let mut spec = DoubleGlm::new(f, link(link_name, f, link_power)?);
+    match method {
+        "reml" => {}
+        "ml" => spec = spec.ml(),
+        other => {
+            return Err(Error::Other(format!(
+                "method must be reml or ml, got {other}"
+            )));
+        }
+    }
+    let xd = design(x, names, offset, weights)?;
+    let zd = design(z, dispersion_names, dispersion_offset, &[])?;
+    let inner = spec.fit(&xd, &zd, y).map_err(to_r)?;
+    Ok(DglmModel { inner })
+}
+
+/// A fitted double GLM.
+#[extendr]
+pub(crate) struct DglmModel {
+    inner: DoubleGlmFit,
+}
+
+#[extendr]
+impl DglmModel {
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    fn std_errors(&self) -> Vec<f64> {
+        self.inner.standard_errors()
+    }
+
+    fn covariance(&self) -> Vec<f64> {
+        self.inner.covariance().to_vec()
+    }
+
+    fn dispersion_names(&self) -> Vec<String> {
+        self.inner.dispersion_names().to_vec()
+    }
+
+    fn dispersion_coefficients(&self) -> Vec<f64> {
+        self.inner.dispersion_coefficients().to_vec()
+    }
+
+    fn dispersion_std_errors(&self) -> Vec<f64> {
+        self.inner.dispersion_standard_errors()
+    }
+
+    fn dispersion_covariance(&self) -> Vec<f64> {
+        self.inner.dispersion_covariance().to_vec()
+    }
+
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted().to_vec()
+    }
+
+    fn dispersion_fitted(&self) -> Vec<f64> {
+        self.inner.dispersion_fitted().to_vec()
+    }
+
+    fn m2loglik(&self) -> f64 {
+        self.inner.minus_two_log_likelihood()
+    }
+
+    fn reml_criterion(&self) -> f64 {
+        self.inner.reml_criterion()
+    }
+
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    fn method(&self) -> &'static str {
+        match self.inner.method() {
+            DispersionMethod::Ml => "ml",
+            DispersionMethod::Reml => "reml",
+        }
+    }
+
+    fn iterations(&self) -> f64 {
+        self.inner.iterations() as f64
+    }
+
+    fn predict(&self, x: &[f64], names: Vec<String>, offset: &[f64]) -> Result<Vec<f64>> {
+        let d = design(x, names, offset, &[])?;
+        self.inner.predict(&d).map_err(to_r)
+    }
+
+    fn predict_dispersion(
+        &self,
+        z: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+    ) -> Result<Vec<f64>> {
+        let d = design(z, names, offset, &[])?;
+        self.inner.predict_dispersion(&d).map_err(to_r)
+    }
 }
 
 /// A GLM with random intercepts (`docs/design/models.md`, "Mixed
@@ -1872,4 +1996,6 @@ extendr_module! {
     fn elpd_waic_rust;
     fn glmm_fit_design;
     impl GlmmModel;
+    fn dglm_fit_design;
+    impl DglmModel;
 }
