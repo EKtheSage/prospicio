@@ -26,8 +26,10 @@
 //!   (`RISK_RS_FULL_BAYES`, read at run time): twin segments and the same
 //!   backtest on the full square's latest diagonal (the 1997 diagonal held
 //!   out leaves the papers' 90 cells for 87 parameters; two held out leave
-//!   fewer cells than parameters), checked for sanity (finite scores, the tables agreeing on
-//!   their rows) and reported.
+//!   fewer cells than parameters). Its twins' Spearman row is checked
+//!   against `4.5/sqrt(n_sims)` (a bound that needs no sweep) and their
+//!   mean ratio is reported; the backtest is checked for sanity (finite
+//!   scores, the tables agreeing on their rows) and reported.
 //!
 //! Every checked row's target is its mean over seeds 0 to `n - 1` of the
 //! sweep and its tolerance at least 6 times its seed-to-seed sd there (and
@@ -260,6 +262,10 @@ const TWINS_SPEARMAN: f64 = 0.045;
 const TOLERANCES: &[(&str, f64, f64)] = &[
     ("twins_spearman", 0.0, TWINS_SPEARMAN),
     ("twins_mean_ratio", 0.0, 0.00611),
+    // Model 2's twins: the Spearman bound is theoretical and holds for any
+    // model; its mean ratio has no sweep (model 2 runs only under
+    // `full_bayes()`), so it is reported, not checked.
+    ("gm2_twins_spearman", 0.0, TWINS_SPEARMAN),
     ("spearman_01", 0.0, 0.01),
     ("spearman_02", 0.0, 0.0153),
     ("spearman_12", 0.0, 0.0179),

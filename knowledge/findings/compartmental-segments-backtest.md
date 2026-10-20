@@ -98,7 +98,9 @@ at least six times its seed-to-seed sd, confirmed at seeds 100 to
   `RISK_RS_FULL_BAYES`: the 9-origin training triangle has fewer cells
   than its 87 parameters once a diagonal is held out, so the arm uses the
   55-cell upper triangle to 1997 and holds out the 1997 diagonal. Its
-  scores are reported and checked only for sanity.[^test]
+  twins' rank correlation is checked against the same `4.5/sqrt(n_sims)`
+  bound as model 1's (it needs no sweep) and their mean ratio is reported;
+  its backtest scores are reported and checked only for sanity.[^test]
 * **Cost.** A backtest of three splits with three models takes about 10 s
   in release (the paid and outstanding tables share the fits), the twin
   check 15 s and the rank-correlation check 23 s; the Rust validation file

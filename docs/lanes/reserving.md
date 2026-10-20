@@ -7,6 +7,8 @@
 ## Next
 
 - the 200-triangle calibration study (#392)
+- [compartmental-backtest-bindings] `Compartmental` in the Python and R diagonal backtest (`reserving-compartmental.md` decision 8, "Not done"): a `NamedModel` entry needs a candidate that owns its triangle
+- [compartmental-one-year-segments] `Compartmental::one_year_segments`, the one-year view over segments (`reserving-compartmental.md` decision 8, "Not done"), in Rust, Python and R
 
 ## Done
 
