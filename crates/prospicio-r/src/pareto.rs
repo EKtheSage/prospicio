@@ -685,6 +685,36 @@ severity_class!(AffineDist {
     }
 });
 
+/// A severity read from a size-of-loss table: each band's claims at the
+/// band's average.
+#[extendr]
+pub(crate) struct SizeOfLossDist {
+    pub(crate) inner: prospicio_prob::SizeOfLoss,
+}
+
+severity_class!(SizeOfLossDist {
+    fn new(bounds: &[f64], counts: &[f64], losses: &[f64]) -> Result<Self> {
+        let inner = prospicio_prob::SizeOfLoss::new(bounds, counts, losses).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
+    fn bounds(&self) -> Vec<f64> {
+        self.inner.bounds().to_vec()
+    }
+
+    fn counts(&self) -> Vec<f64> {
+        self.inner.counts().to_vec()
+    }
+
+    fn losses(&self) -> Vec<f64> {
+        self.inner.losses().to_vec()
+    }
+
+    fn claims(&self) -> f64 {
+        self.inner.claims()
+    }
+});
+
 /// A severity capped by a mix of policy limits.
 #[extendr]
 pub(crate) struct PolicyLimitsDist {
@@ -1042,6 +1072,7 @@ extendr_module! {
     impl BetaDist;
     impl TruncatedDist;
     impl AffineDist;
+    impl SizeOfLossDist;
     impl PolicyLimitsDist;
     fn pareto_fit_standard_error_rust;
     fn severity_fit_rust;

@@ -21103,6 +21103,254 @@ class SeverityFit:
         """
 
 @final
+class SizeOfLoss:
+    """
+    A severity read from a size-of-loss table: claim counts and loss totals
+    by size band, as Werner and Modlin's *Basic Ratemaking* chapter 11
+    prices increased limits and deductibles. Each band's claims sit at the
+    band's average, so the limited expected value is exact at every band
+    edge, ``(losses below b + b * claims above b) / claims``, and ``ilf``,
+    ``loss_elimination_ratio`` and every layer function take it. The mean is
+    the table's; the variance sees only the band averages.
+    
+    Parameters
+    ----------
+    bounds : list of float
+        ``len(counts) + 1`` band bounds, from 0 or above, strictly
+        increasing; the last may be ``inf``.
+    counts : list of float
+        Claims in each band.
+    losses : list of float
+        Their loss total. Each band's average must lie within its bounds (a
+        claim capped at a policy limit belongs to the band below the limit).
+    
+    Raises
+    ------
+    ValueError
+        If the lengths differ, the bounds do not increase, or a band's
+        average lies outside its bounds.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import SizeOfLoss
+    >>> from prospicio.pricing import ilf
+    >>> t = SizeOfLoss([0, 100e3, 250e3, 500e3, 1e6], [2324, 1923, 680, 73],
+    ...                [117_629_223, 307_599_929, 222_793_514, 43_047_470])
+    >>> round(t.lev(100e3)), round(ilf(t, 250e3, 100e3), 2)
+    (77046, 1.59)
+    """
+    def __new__(cls, /, bounds: Sequence[float], counts: Sequence[float], losses: Sequence[float]) -> SizeOfLoss: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def bounds(self, /) -> list[float]:
+        """
+        The band bounds.
+        """
+    def cdf(self, /, x: float) -> float:
+        """
+        Distribution function ``P(X <= x)``.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def claims(self, /) -> float:
+        """
+        The number of claims.
+        """
+    @property
+    def counts(self, /) -> list[float]:
+        """
+        The claim counts by band.
+        """
+    def layer(self, /, limit: float, attachment: float) -> float:
+        """
+        Expected loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+            ``inf`` for an unlimited layer.
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_second_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Second moment of the loss to the layer ``limit`` xs
+        ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_third_moment(self, /, limit: float, attachment: float) -> float:
+        """
+        Third moment of the loss to the layer ``limit`` xs ``attachment``,
+        ``E[min(max(X - a, 0), l)^3]``, by quadrature of the survival
+        function (relative accuracy about 1e-10); ``limit = inf`` for the
+        unlimited layer, ``attachment = 0`` for the limited third moment.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def layer_variance(self, /, limit: float, attachment: float) -> float:
+        """
+        Variance of the loss to the layer ``limit`` xs ``attachment``.
+        
+        Parameters
+        ----------
+        limit : float
+        attachment : float
+        
+        Returns
+        -------
+        float
+        """
+    def lev(self, /, limit: float) -> float:
+        """
+        Limited expected value ``E[min(X, limit)]``.
+        
+        Parameters
+        ----------
+        limit : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def losses(self, /) -> list[float]:
+        """
+        The loss totals by band.
+        """
+    def mean(self, /) -> float:
+        """
+        Mean of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+    def quantile(self, /, p: float) -> float:
+        """
+        Quantile: the smallest ``x`` with ``P(X <= x) >= p``.
+        
+        Parameters
+        ----------
+        p : float
+            Probability in ``[0, 1]``.
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If ``p`` is outside ``[0, 1]``.
+        """
+    def sample(self, /, n: int, seed: int, stream: int = 0) -> list[float]:
+        """
+        ``n`` draws from stream ``stream`` of the generator keyed by
+        ``seed``.
+        
+        Parameters
+        ----------
+        n : int
+        seed : int
+        stream : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
+    def std(self, /) -> float:
+        """
+        Standard deviation of the distribution.
+        
+        Returns
+        -------
+        float
+        """
+    def stop_loss(self, /, retention: float) -> float:
+        """
+        Expected excess over a retention, ``E[max(X - retention, 0)]``.
+        
+        Parameters
+        ----------
+        retention : float
+        
+        Returns
+        -------
+        float
+        """
+    def survival(self, /, x: float) -> float:
+        """
+        Survival function ``P(X > x)``, accurate far into the tail.
+        
+        Parameters
+        ----------
+        x : float
+        
+        Returns
+        -------
+        float
+        """
+    def tvar(self, /, p: float) -> float:
+        """
+        Tail value at risk at ``p`` in ``[0, 1)``, the mean of the worst
+        ``1 - p``: ``VaR(p) + E[(X - VaR(p))+] / (1 - p)``; ``inf`` where the
+        mean is.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def var(self, /, p: float) -> float:
+        """
+        Value at risk, the lower quantile at ``p``: the same as ``quantile``.
+        
+        Parameters
+        ----------
+        p : float
+        
+        Returns
+        -------
+        float
+        """
+    def variance(self, /) -> float:
+        """
+        Variance of the distribution (``inf`` if it does not exist).
+        
+        Returns
+        -------
+        float
+        """
+
+@final
 class StackingFit:
     """
     Posterior stacking weights, from ``BayesStacking.fit`` or
@@ -24186,6 +24434,41 @@ def capital(pd: PredictiveDistribution, distortion: Distortion, method: str = "e
     (8.0, [3.5, 5.5], [2.5, 5.5])
     >>> a.diversification_benefit()
     1.0
+    """
+
+def censored_las(tables: Sequence[SizeOfLoss]) -> list[dict]:
+    """
+    The limited average severity at each policy limit from claims censored
+    at their policies' limits, layer by layer (Werner and Modlin, *Basic
+    Ratemaking*, Table 11.6): each layer between consecutive limits uses only
+    the policies whose limit is at least its top.
+    
+    Parameters
+    ----------
+    tables : list of SizeOfLoss
+        One table per policy limit, with the claims capped at the limit, so
+        each table's last bound is its limit. Each layer's bounds must be
+        band edges of the tables it uses.
+    
+    Returns
+    -------
+    list of dict
+        One per limit, ascending: ``bottom``, ``top``, ``claims`` (of the
+        policies used), ``severity`` (their average loss in the layer) and
+        ``las`` (the layers up to ``top`` added).
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import SizeOfLoss
+    >>> from prospicio.pricing import censored_las
+    >>> tables = [
+    ...     SizeOfLoss([0, 100e3], [2019], [156_657_898]),
+    ...     SizeOfLoss([0, 100e3, 250e3], [690, 773], [34_903_214, 142_767_479]),
+    ...     SizeOfLoss([0, 100e3, 250e3, 500e3], [712, 574, 232],
+    ...                [35_768_111, 90_009_422, 81_092_725]),
+    ... ]
+    >>> [round(layer["severity"]) for layer in censored_las(tables)]
+    [77046, 44575, 15213]
     """
 
 def claim_count(mean: float, dispersion: float) -> Any:

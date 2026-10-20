@@ -471,3 +471,33 @@ def test_affine_severity():
         Affine(x, scale=0.0)
     with pytest.raises(ValueError):
         Affine(x, shift=-1.0)
+
+
+def test_size_of_loss_table():
+    # Werner and Modlin, Basic Ratemaking, chapter 11 (#338).
+    from prospicio.distributions import SizeOfLoss, from_json, to_json
+    from prospicio.pricing import censored_las, ilf, loss_elimination_ratio
+
+    t = SizeOfLoss([0, 100e3, 250e3, 500e3, 1e6], [2324, 1923, 680, 73],
+                   [117_629_223, 307_599_929, 222_793_514, 43_047_470])
+    assert round(t.lev(100e3)) == 77_046 and round(t.lev(250e3)) == 122_696
+    assert round(ilf(t, 250e3, 100e3), 2) == 1.59
+    assert t.claims == 5000 and abs(t.mean() - 691_070_136 / 5000) < 1e-8
+    z = from_json(to_json(t))
+    assert isinstance(z, SizeOfLoss) and z.losses == t.losses
+
+    layers = censored_las([
+        SizeOfLoss([0, 100e3], [2019], [156_657_898]),
+        SizeOfLoss([0, 100e3, 250e3], [690, 773], [34_903_214, 142_767_479]),
+        SizeOfLoss([0, 100e3, 250e3, 500e3], [712, 574, 232],
+                   [35_768_111, 90_009_422, 81_092_725]),
+    ])
+    assert [round(l["severity"]) for l in layers] == [77_046, 44_575, 15_213]
+    assert [l["claims"] for l in layers] == [5000, 2981, 1518]
+    assert abs(layers[2]["las"] - 136_833.0) < 0.05
+
+    h = SizeOfLoss([0, 100, 250, 500, 1000, math.inf], [3200, 1225, 1187, 1845, 2543],
+                   [240_365, 207_588, 463_954, 1_551_938, 11_140_545])
+    assert round(loss_elimination_ratio(h, 250), 3) == 0.135
+    with pytest.raises(ValueError):
+        SizeOfLoss([0, 10, 20], [1, 1], [11, 15])

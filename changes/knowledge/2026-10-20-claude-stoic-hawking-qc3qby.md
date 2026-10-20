@@ -12,3 +12,5 @@
 * **Update**: [Mildenhall and Major, Pricing Insurance Risk, Part III](/references/pir-price-allocation.md), from #368 item 4 (branch claude/stoic-hawking-qc3qby): premium_bounds takes 0.05 s on the Cat/Non-Cat grid, with Cat between 28.69 and 35.95 and Non-Cat between 79.20 and 86.46 at the CCoC premium 115.15.
 
 * **Update**: [Mildenhall and Major, Pricing Insurance Risk, Part III](/references/pir-price-allocation.md), from #368 items 2 and 3 (branch claude/stoic-hawking-qc3qby): the natural allocation set's ranges come from sorting each tie of capped totals by the unit's payment (Example 259 and Exercise 260 exact), and PLC under a distortion matches Table 15.24 under the CCoC; the book's PH and Wang PLC tables are not checked against print.
+
+* **Update**: [Werner and Modlin's Basic Ratemaking, reproduced in the ratemaking guides](/references/werner-modlin-guides.md), from #338 (branch claude/stoic-hawking-qc3qby): chapter 11's size-of-loss figures now come from SizeOfLoss and censored_las, checked in validation/tests/pricing.rs; only the 250 edge of Table 11.8 matters to its LER, so the other band bounds there are an assumption.

@@ -538,3 +538,17 @@
   each layer's cost and capital are shared in Bodoff's proportions, and the
   premiums add up to the price of `X ∧ a`; Bodoff's Thought Experiment 1
   under the CCoC gives the book's 24.8729 and 5.8635 (#368).
+- `layer::censored_las` (Python `prospicio.pricing.censored_las`, R
+  `censored_las()`) estimates the limited average severity at each policy
+  limit from claims censored at their limits, layer by layer, one
+  `SizeOfLoss` table per limit: Werner and Modlin's Table 11.6 layers
+  77,046, 44,575 and 15,213 (#338).
+
+### Distributions and probability
+
+- `SizeOfLoss` (Python `prospicio.distributions.SizeOfLoss`, R
+  `size_of_loss()`), a severity from claim counts and loss totals by size
+  band, with each band's claims at its average so the limited expected
+  value is exact at the band edges. `ilf`, `loss_elimination_ratio` and the
+  layer functions take it, and it saves as JSON: Werner and Modlin's
+  LAS(100K) 77,046, ILF 1.59 and LER 0.135 (#338).

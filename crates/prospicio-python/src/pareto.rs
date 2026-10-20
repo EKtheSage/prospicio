@@ -1122,6 +1122,84 @@ severity_class!(PyAffine {
     }
 });
 
+/// A severity read from a size-of-loss table: claim counts and loss totals
+/// by size band, as Werner and Modlin's *Basic Ratemaking* chapter 11
+/// prices increased limits and deductibles. Each band's claims sit at the
+/// band's average, so the limited expected value is exact at every band
+/// edge, ``(losses below b + b * claims above b) / claims``, and ``ilf``,
+/// ``loss_elimination_ratio`` and every layer function take it. The mean is
+/// the table's; the variance sees only the band averages.
+///
+/// Parameters
+/// ----------
+/// bounds : list of float
+///     ``len(counts) + 1`` band bounds, from 0 or above, strictly
+///     increasing; the last may be ``inf``.
+/// counts : list of float
+///     Claims in each band.
+/// losses : list of float
+///     Their loss total. Each band's average must lie within its bounds (a
+///     claim capped at a policy limit belongs to the band below the limit).
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the lengths differ, the bounds do not increase, or a band's
+///     average lies outside its bounds.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import SizeOfLoss
+/// >>> from prospicio.pricing import ilf
+/// >>> t = SizeOfLoss([0, 100e3, 250e3, 500e3, 1e6], [2324, 1923, 680, 73],
+/// ...                [117_629_223, 307_599_929, 222_793_514, 43_047_470])
+/// >>> round(t.lev(100e3)), round(ilf(t, 250e3, 100e3), 2)
+/// (77046, 1.59)
+#[pyclass(name = "SizeOfLoss", module = "prospicio.distributions", frozen)]
+pub(crate) struct PySizeOfLoss {
+    pub(crate) inner: prospicio_prob::SizeOfLoss,
+}
+
+severity_class!(PySizeOfLoss {
+    #[new]
+    fn new(bounds: Vec<f64>, counts: Vec<f64>, losses: Vec<f64>) -> PyResult<Self> {
+        let inner = prospicio_prob::SizeOfLoss::new(&bounds, &counts, &losses).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The band bounds.
+    #[getter]
+    fn bounds(&self) -> Vec<f64> {
+        self.inner.bounds().to_vec()
+    }
+
+    /// The claim counts by band.
+    #[getter]
+    fn counts(&self) -> Vec<f64> {
+        self.inner.counts().to_vec()
+    }
+
+    /// The loss totals by band.
+    #[getter]
+    fn losses(&self) -> Vec<f64> {
+        self.inner.losses().to_vec()
+    }
+
+    /// The number of claims.
+    #[getter]
+    fn claims(&self) -> f64 {
+        self.inner.claims()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "SizeOfLoss({} bands, {} claims)",
+            self.inner.counts().len(),
+            self.inner.claims()
+        )
+    }
+});
+
 /// A severity capped by a mix of policy limits: the loss ``min(X, L)``
 /// with ``L = limits[j]`` with probability ``weights[j]``, as a cedant's
 /// losses censored at its policies' limits. Every layer moment is exact,

@@ -15,8 +15,8 @@ use crate::evt::Gpd;
 use crate::severity::Severity;
 use crate::{
     Affine, Beta, Burr, Custom, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto,
-    Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, Truncated,
-    Tweedie, Weibull,
+    Loglogistic, Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, SizeOfLoss,
+    Truncated, Tweedie, Weibull,
 };
 
 /// Any native univariate distribution.
@@ -64,6 +64,8 @@ pub enum Dist {
     PolicyLimits(Arc<PolicyLimits>),
     Mixture(Arc<Mixture>),
     Grid(Grid),
+    /// Claim counts and loss totals by size band.
+    SizeOfLoss(SizeOfLoss),
     Sampled(Sampled),
     /// A user-defined severity (a Python or R callback): the slow path.
     Custom(Custom),
@@ -91,6 +93,7 @@ macro_rules! each {
             Dist::PolicyLimits($d) => $call,
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
+            Dist::SizeOfLoss($d) => $call,
             Dist::Sampled($d) => $call,
             Dist::Custom($d) => $call,
         }
@@ -102,7 +105,8 @@ impl Dist {
     /// `"piecewise_pareto"`, `"log_affine_pareto"`, `"generalized_pareto"`,
     /// `"gamma"`, `"tweedie"`, `"weibull"`, `"loglogistic"`,
     /// `"inverse_gamma"`, `"inverse_gaussian"`, `"burr"`, `"beta"`,
-    /// `"truncated"`, `"affine"`, `"mixture"`, `"grid"`, `"sampled"` or `"custom"`.
+    /// `"truncated"`, `"affine"`, `"mixture"`, `"grid"`, `"size_of_loss"`, `"sampled"` or
+    /// `"custom"`.
     pub fn family(&self) -> &'static str {
         match self {
             Self::Lognormal(_) => "lognormal",
@@ -123,6 +127,7 @@ impl Dist {
             Self::PolicyLimits(_) => "policy_limits",
             Self::Mixture(_) => "mixture",
             Self::Grid(_) => "grid",
+            Self::SizeOfLoss(_) => "size_of_loss",
             Self::Sampled(_) => "sampled",
             Self::Custom(_) => "custom",
         }
@@ -151,6 +156,7 @@ impl Dist {
             Self::PolicyLimits(d) => d.as_ref(),
             Self::Mixture(d) => d.as_ref(),
             Self::Grid(d) => d,
+            Self::SizeOfLoss(d) => d,
             Self::Custom(d) => d,
             Self::Sampled(_) => return None,
         })
@@ -214,6 +220,7 @@ from_family!(
     Burr(Burr),
     Beta(Beta),
     Grid(Grid),
+    SizeOfLoss(SizeOfLoss),
     Sampled(Sampled),
     Custom(Custom),
 );
@@ -290,6 +297,7 @@ macro_rules! each_severity {
             Dist::PolicyLimits($d) => $call,
             Dist::Mixture($d) => $call,
             Dist::Grid($d) => $call,
+            Dist::SizeOfLoss($d) => $call,
             Dist::Custom($d) => $call,
             Dist::Sampled(_) => unreachable!("SeverityDist never holds Sampled"),
         }
@@ -388,6 +396,9 @@ mod tests {
             .unwrap()
             .into(),
             Affine::new(SeverityDist::try_from(Dist::from(ln)).unwrap(), 2.0, 50.0)
+                .unwrap()
+                .into(),
+            SizeOfLoss::new(&[0.0, 500.0, 2000.0], &[3.0, 1.0], &[600.0, 1200.0])
                 .unwrap()
                 .into(),
             Tweedie::new(1000.0, 2.0, 1.5).unwrap().into(),

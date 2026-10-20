@@ -30,6 +30,7 @@ reference:
       - distributions.Beta
       - distributions.Truncated
       - distributions.Affine
+      - distributions.SizeOfLoss
       - distributions.Mixture
       - distributions.Custom
       - distributions.to_json
@@ -211,6 +212,7 @@ reference:
       - pricing.CollectiveModel
       - pricing.ilf
       - pricing.loss_elimination_ratio
+      - pricing.censored_las
       - pricing.pareto_extrapolation
       - pricing.alpha_between_layers
       - pricing.alpha_between_frequency_and_layer

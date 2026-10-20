@@ -25,8 +25,8 @@ use crate::evt::Gpd;
 use crate::sampled::Empirical;
 use crate::{
     Affine, Beta, Burr, Gamma, Grid, InverseGamma, InverseGaussian, LogAffinePareto, Loglogistic,
-    Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, Truncated, Truncation,
-    Tweedie, Weibull,
+    Lognormal, Mixture, Pareto, PiecewisePareto, PolicyLimits, Sampled, SizeOfLoss, Truncated,
+    Truncation, Tweedie, Weibull,
 };
 
 /// Value of the `format` field.
@@ -195,6 +195,11 @@ fn body(d: &Dist) -> Result<Map<String, Value>> {
             put("step", num(x.step()));
             put("probs", nums(x.probs()));
         }
+        Dist::SizeOfLoss(x) => {
+            put("bounds", nums(x.bounds()));
+            put("counts", nums(x.counts()));
+            put("losses", nums(x.losses()));
+        }
         Dist::Sampled(x) => {
             put("draws", nums(x.draws()));
         }
@@ -307,6 +312,12 @@ fn from_body(m: &Map<String, Value>) -> Result<Dist> {
             Dist::Mixture(Arc::new(Mixture::from_dists(parts)?))
         }
         "grid" => Grid::new(f("step")?, floats(m, "probs")?)?.into(),
+        "size_of_loss" => SizeOfLoss::new(
+            &floats(m, "bounds")?,
+            &floats(m, "counts")?,
+            &floats(m, "losses")?,
+        )?
+        .into(),
         "sampled" => Sampled::new(floats(m, "draws")?)?.into(),
         other => {
             return Err(Error::Data(format!("unknown family {other:?}")));
@@ -421,6 +432,13 @@ mod tests {
                 SeverityDist::try_from(Dist::from(Gamma::new(2.0, 500.0).unwrap())).unwrap(),
                 10.0,
                 20.0,
+            )
+            .unwrap()
+            .into(),
+            SizeOfLoss::new(
+                &[0.0, 100.0, 250.0, f64::INFINITY],
+                &[3.0, 2.0, 1.0],
+                &[120.0, 340.0, 900.0],
             )
             .unwrap()
             .into(),

@@ -108,8 +108,9 @@ mod prospicio_native {
     use super::pareto::{
         PyAffine, PyBeta, PyBinomial, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto,
         PyInverseGamma, PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
-        PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PyTruncated, PyTweedie, PyWeibull,
-        claim_count, fit_severity, goodness_of_fit, local_pareto_to_piecewise, product_limit,
+        PyPiecewisePareto, PyPolicyLimits, PySeverityFit, PySizeOfLoss, PyTruncated, PyTweedie,
+        PyWeibull, claim_count, fit_severity, goodness_of_fit, local_pareto_to_piecewise,
+        product_limit,
     };
     #[pymodule_export]
     use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
@@ -122,9 +123,9 @@ mod prospicio_native {
     use super::pricing::{
         PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyRiskProfile,
         PyTabulatedCurve, PyTowerModel, alpha_between_frequencies,
-        alpha_between_frequency_and_layer, alpha_between_layers, fit_pml_curve, fit_references,
-        ilf, layer_cv, loss_elimination_ratio, match_tower, pareto_extrapolation, price,
-        price_portfolio, severity_exposure_curve,
+        alpha_between_frequency_and_layer, alpha_between_layers, censored_las, fit_pml_curve,
+        fit_references, ilf, layer_cv, loss_elimination_ratio, match_tower, pareto_extrapolation,
+        price, price_portfolio, severity_exposure_curve,
     };
     #[pymodule_export]
     use super::ratemaking::{

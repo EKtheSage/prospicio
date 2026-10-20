@@ -107,6 +107,7 @@ what it is aiming for by v1.0.
     `fit_severity`, truncation from above, and grouped losses by maximum
     likelihood or minimum chi-square with the minimum limited-mean
     distance (`grouped_fit`; Bahnemann's printed fits).
+  - A severity from a size-of-loss table (`SizeOfLoss`, #338).
 - **Next:** the Guides lane's remaining issues for the Probability lane.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
@@ -199,9 +200,10 @@ what it is aiming for by v1.0.
     pricing bounds on a large book from convex hulls (#368).
   - The natural allocation set's range by unit and Bodoff's percentile
     layers priced by any distortion (#368).
+  - Increased limits and deductibles from size-of-loss tables, with the
+    censored layer-by-layer LAS over several policy limits (#338).
 - **Next:** the Guides lane's remaining issues of 2026-10-17 and 18 (a
-  severity from a size-of-loss table, a grid audit, shared mixing across
-  units).
+  grid audit, shared mixing across units).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)

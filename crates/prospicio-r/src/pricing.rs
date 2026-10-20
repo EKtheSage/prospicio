@@ -262,6 +262,32 @@ fn pricing_swiss_re_c_for_layer_share(
     )
 }
 
+/// The layer-by-layer limited average severity of claims censored at
+/// their policies' limits, one size-of-loss table per limit: the columns
+/// `bottom`, `top`, `claims`, `severity` and `las`.
+#[extendr]
+fn pricing_censored_las(tables: List) -> Result<List> {
+    let tables = tables
+        .values()
+        .map(|t| {
+            <&crate::pareto::SizeOfLossDist>::try_from(&t)
+                .map(|d| d.inner.clone())
+                .map_err(|_| Error::Other("every table must be a size_of_loss".into()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let layers = prospicio_pricing::layer::censored_las(&tables).map_err(to_r)?;
+    let col = |f: fn(&prospicio_pricing::layer::CensoredLayer) -> f64| {
+        layers.iter().map(f).collect::<Vec<f64>>()
+    };
+    Ok(list!(
+        bottom = col(|l| l.bottom),
+        top = col(|l| l.top),
+        claims = col(|l| l.claims),
+        severity = col(|l| l.severity),
+        las = col(|l| l.las)
+    ))
+}
+
 /// Loss elimination ratios `LEV(d) / E[X]`.
 #[extendr]
 fn pricing_loss_elimination_ratio(severity: Robj, deductible: &[f64]) -> Result<Vec<f64>> {
@@ -1565,6 +1591,7 @@ extendr_module! {
     fn pricing_swiss_re_c_for_mean_rate;
     fn pricing_swiss_re_c_for_layer_share;
     fn pricing_loss_elimination_ratio;
+    fn pricing_censored_las;
     fn pricing_pareto_extrapolation;
     fn pricing_alpha_between_layers;
     fn pricing_alpha_between_frequency_and_layer;
