@@ -240,11 +240,11 @@ fn compare_fits_every_body_family() {
         "pro_sev_fit",
         vec![column(&LOSSES), missing(), t("compare")],
     );
-    assert_eq!((out.rows, out.columns), (5, 10));
-    let names: Vec<&Value> = (1..5).map(|r| out.get(r, 0)).collect();
+    assert_eq!((out.rows, out.columns), (6, 10));
+    let names: Vec<&Value> = (1..6).map(|r| out.get(r, 0)).collect();
     assert_eq!(
         names,
-        ["lognormal", "gamma", "weibull", "burr"]
+        ["lognormal", "gamma", "weibull", "burr", "lomax"]
             .map(Value::from)
             .iter()
             .collect::<Vec<_>>()

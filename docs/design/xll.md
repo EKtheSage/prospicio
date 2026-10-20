@@ -618,6 +618,25 @@ real Excel.
     `glm(..., family = quasipoisson)` coefficients, standard errors,
     dispersion and reserves on GenIns and ABC, and Taylor and McGuire's
     printed Table 5-4 and Chapter 6 residual summaries and heat map.
+36. **The newer severity fits extend `PRO.SEV.FIT` and add two functions**
+    (the eighth group, over `prospicio_prob`'s #328 work). The Lomax
+    (Bahnemann's Pareto, a Burr with `gamma = 1`) is a body family of
+    `PRO.SEV.FIT` and of every severity function (`"lomax"`, alpha and
+    scale), and `"compare"` fits five body families. A last argument
+    `upper` truncates the body families from above (`truncated_above`);
+    the Pareto families ignore it in the crate, so the add-in refuses it
+    for them. Grouped losses and the minimum limited-mean distance take
+    other data than a column of losses, so they are functions of their own:
+    `PRO.SEV.FIT.GROUPED(bounds, counts, family, [method], [output])` by
+    `fit_grouped` (maximum likelihood or minimum chi-square, conditional
+    on the bands' range; parameters with standard errors, the
+    chi-square, its degrees of freedom and p-value, or each band's
+    expected count) and `PRO.SEV.FIT.LEV(sizes, lev, family, [weights],
+    [output])` by `fit_lev_distance`. Excel holds no infinity, so a last
+    bound left blank or `"inf"` opens the top band, and the open band's
+    upper bound is blank in the table. The checks are Bahnemann's Ex 2.8,
+    2.10 and P2.16 as the crate reproduces them, the Lomax and the
+    truncated likelihood against `fit_severity` and the closed form.
 
 ## Parity plan
 
@@ -667,9 +686,9 @@ order, one small PR each, those already done struck through:
 8. What the other lanes have built since (user, 2026-10-20, "move
    forward"; the order chosen by this lane): ~~link-ratio exclusions and
    the geometric average in `average`~~; ~~the ODP GLM with its analytic
-   prediction error and residual diagnostics~~; the newer severity fits
-   (the Lomax, truncation from above, grouped losses and minimum-distance
-   fits) in `PRO.SEV.FIT`.
+   prediction error and residual diagnostics~~; ~~the newer severity
+   fits (the Lomax, truncation from above, grouped losses and
+   minimum-distance fits)~~.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -679,8 +698,8 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's eighth group: the newer
-  severity fits; further functions as the user asks (nested
+- **Next functions:** the parity plan's eight groups are done; further
+  functions as the user asks (nested
   Archimedean copulas and vines, and the expected multi-year commission
   on the grid, are the nearest left out).
 - **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times

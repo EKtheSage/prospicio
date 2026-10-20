@@ -193,11 +193,15 @@ const ATTACHMENT: Arg = Arg {
 };
 const FAMILY: Arg = Arg {
     name: "family",
-    help: "pareto, lognormal, lognormal_cv, gamma, gamma_cv, weibull, loglogistic, inverse_gamma, inverse_gaussian, burr, gpd, piecewise_pareto or gen_pareto (see the README for p1, p2, p3)",
+    help: "pareto, lognormal, lognormal_cv, gamma, gamma_cv, weibull, loglogistic, inverse_gamma, inverse_gaussian, burr, lomax, gpd, piecewise_pareto or gen_pareto (see the README for p1, p2, p3)",
+};
+const BODY_FAMILY: Arg = Arg {
+    name: "family",
+    help: "lognormal, gamma, weibull, burr or lomax",
 };
 const P1: Arg = Arg {
     name: "p1",
-    help: "First parameter: Pareto t, lognormal meanlog, the mean (_cv families, inverse Gaussian), shape, Burr alpha, GPD xi, piecewise thresholds (a range) or gen_pareto t",
+    help: "First parameter: Pareto t, lognormal meanlog, the mean (_cv families, inverse Gaussian), shape, Burr or Lomax alpha, GPD xi, piecewise thresholds (a range) or gen_pareto t",
 };
 const P2: Arg = Arg {
     name: "p2",
@@ -1507,7 +1511,7 @@ pub static FUNCTIONS: &[Function] = &[
             },
             Arg {
                 name: "family",
-                help: "lognormal, gamma, weibull, burr, pareto, piecewise_pareto or gen_pareto (blank for \"compare\")",
+                help: "lognormal, gamma, weibull, burr, lomax, pareto, piecewise_pareto or gen_pareto (blank for \"compare\")",
             },
             Arg {
                 name: "output",
@@ -1533,8 +1537,62 @@ pub static FUNCTIONS: &[Function] = &[
                 name: "weights",
                 help: "Weights: one value or one per loss (1 if omitted)",
             },
+            Arg {
+                name: "upper",
+                help: "Body families: truncation from above, the most a loss could be and still be kept; one value or one per loss (none if omitted)",
+            },
         ],
         run: fitting::severity_fit,
+    },
+    Function {
+        symbol: "pro_sev_fit_grouped",
+        name: "PRO.SEV.FIT.GROUPED",
+        help: "A body family fitted to counts of losses in size bands, by maximum likelihood or minimum chi-square: parameters, SEs, chi-square and p-value, or each band's expected count.",
+        args: &[
+            Arg {
+                name: "bounds",
+                help: "Band bounds, one more than counts: a row or column; a last cell blank or \"inf\" opens the top band",
+            },
+            Arg {
+                name: "counts",
+                help: "The number of losses in each band (b_k, b_k+1]",
+            },
+            BODY_FAMILY,
+            Arg {
+                name: "method",
+                help: "\"ml\" (default, maximum likelihood) or \"chi_square\" (minimum chi-square)",
+            },
+            Arg {
+                name: "output",
+                help: "\"params\" (default) or \"table\" (observed and expected count per band)",
+            },
+        ],
+        run: fitting::grouped,
+    },
+    Function {
+        symbol: "pro_sev_fit_lev",
+        name: "PRO.SEV.FIT.LEV",
+        help: "A body family fitted by the minimum distance between its limited expected values and empirical ones (Bahnemann): parameters and distance, or each size's fitted limited mean.",
+        args: &[
+            Arg {
+                name: "sizes",
+                help: "The sizes x at which the limited means are known: a row or column, increasing",
+            },
+            Arg {
+                name: "lev",
+                help: "The empirical limited expected value E[X; x] at each size",
+            },
+            BODY_FAMILY,
+            Arg {
+                name: "weights",
+                help: "A weight per size for the squared distances (1 if omitted)",
+            },
+            Arg {
+                name: "output",
+                help: "\"params\" (default) or \"table\" (empirical and fitted limited mean per size)",
+            },
+        ],
+        run: fitting::lev_distance,
     },
     Function {
         symbol: "pro_evt_thresholds",

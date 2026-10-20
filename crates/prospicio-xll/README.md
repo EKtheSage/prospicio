@@ -94,7 +94,9 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.PROFIT.COMMISSION.TERM(losses, premium, share, allowance, [carry_years])` | Profit commission in each year of a term, deficits carried forward |
 | `PRO.SLIDING.SCALE.TERM(losses, premium, commissions, loss_ratios, [carry], [carry_years])` | Sliding-scale commission in each year of a term, deficits and credits carried forward |
 | `PRO.LAYER.TERMS(count_mean, [dispersion], family, p1, p2, [p3], layer_limit, layer_attachment, premium, [reinstatements], [commissions], [loss_ratios], [profit_share], [profit_allowance], [share], [policy_limit], [step], [points])` | A layer's premium, reinstatement premium and commissions in expectation |
-| `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights])` | Maximum likelihood fit to large losses: parameters with SEs, fit against the data, or the body families compared |
+| `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds], [censored], [weights], [upper])` | Maximum likelihood fit to large losses: parameters with SEs, fit against the data, or the body families compared |
+| `PRO.SEV.FIT.GROUPED(bounds, counts, family, [method], [output])` | A body family fitted to counts in size bands (maximum likelihood or minimum chi-square): parameters, SEs, chi-square test, or expected counts |
+| `PRO.SEV.FIT.LEV(sizes, lev, family, [weights], [output])` | A body family fitted by the minimum distance to empirical limited expected values |
 | `PRO.PARETO.EXTRAPOLATE(from_limit, from_attachment, to_limit, to_attachment, alpha, [truncation])` | Pareto extrapolation from one layer to others |
 | `PRO.PARETO.ALPHA(limit1, attachment1, loss1, limit2, attachment2, loss2, [truncation])` | Alpha between two layers |
 | `PRO.PARETO.ALPHA.FREQLAYER(threshold, frequency, limit, attachment, loss, [truncation])` | Alpha between a frequency and a layer |
@@ -166,7 +168,8 @@ Ctrl+Alt+F9 to recalculate.
   CV), `"gamma"` (shape, scale), `"gamma_cv"` (mean, CV), `"weibull"`
   (shape, scale), `"loglogistic"` (shape, scale), `"inverse_gamma"`
   (shape, scale), `"inverse_gaussian"` (mean, shape), `"burr"` (alpha,
-  gamma, scale), `"gpd"` (xi, beta), `"piecewise_pareto"` (a range of
+  gamma, scale), `"lomax"` (alpha, scale: `S(x) = (1 + x/scale)^(-alpha)`,
+  Bahnemann's Pareto), `"gpd"` (xi, beta), `"piecewise_pareto"` (a range of
   thresholds, a range of alphas, optionally a truncation point alone or
   with `"lp"`, the last piece only and the default, or `"wd"`, the whole
   distribution, in a second cell), `"gen_pareto"` (Riegel's: t,
@@ -198,8 +201,8 @@ Ctrl+Alt+F9 to recalculate.
   74,000 at 1 (the chain ladder's is 52,135).
   The last eight fits are kept, so the three views of one fit sample
   once.
-- `PRO.SEV.FIT`: `family` is `lognormal`, `gamma`, `weibull`, `burr`
-  (fitted by maximum likelihood, each loss conditioned on exceeding its
+- `PRO.SEV.FIT`: `family` is `lognormal`, `gamma`, `weibull`, `burr`,
+  `lomax` (fitted by maximum likelihood, each loss conditioned on exceeding its
   reporting threshold) or `pareto`, `piecewise_pareto`, `gen_pareto`
   (the R package Pareto's estimators, from the threshold `t`; a row of
   thresholds for the piecewise Pareto). `censored` is TRUE where a policy
@@ -210,8 +213,17 @@ Ctrl+Alt+F9 to recalculate.
   whether the fit converged and a note (a Burr at its Pareto limit, a
   fit with no standard errors); `"gof"` gives the product-limit and the
   fit's survival and quantile at each loss (P-P and Q-Q); `"compare"`
-  fits the four body families side by side (leave `family` blank). Read
-  the upper Q-Q pairs before trusting a body family in the tail.
+  fits the five body families side by side (leave `family` blank). Read
+  the upper Q-Q pairs before trusting a body family in the tail. `upper`
+  truncates the body families from above: a loss is conditioned on lying
+  at or below it (losses kept only up to a cap), one value or one per
+  loss.
+- `PRO.SEV.FIT.GROUPED`: `bounds` has one more cell than `counts`; a
+  first bound above 0 is a deductible and a finite last bound a
+  truncation from above, and a last bound left blank (or `"inf"`) opens
+  the top band. `PRO.SEV.FIT.LEV` reads empirical limited means, exact
+  from band counts and totals even under a policy limit at or above the
+  last size: `(total below x + x * count above x) / count`.
 - EVT: choose the threshold with `PRO.EVT.THRESHOLDS` (the lowest one
   above which the shape `xi` and the modified scale `beta - xi u` stay
   within their SEs and the mean excess is a straight line), then fit
