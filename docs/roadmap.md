@@ -335,6 +335,14 @@ what it is aiming for by v1.0.
     (`Compartmental.candidate`) and R (`compartmental_candidate()`). On
     company 337 model 1 forecasts the outstanding well and the paid
     increments badly. Model 2's arms run only under `RISK_RS_FULL_BAYES`.
+  - The one-year view of the compartmental models over segments
+    (`reserving-compartmental.md` decision 8; `Compartmental::one_year_segments`,
+    in Rust, Python (`Compartmental.one_year_segments`) and R
+    (`compartmental_one_year_segments()`)): each segment's view on its
+    own seed, the segments' results independent or rank-correlated by
+    Iman-Conover with whole simulations reordered, the refit budget
+    `max_refits` per segment, and model 2's default reweighting only
+    with the same warning that it is approximate.
   - Selected development patterns (`reserving-v02.md`, decision 12;
     branch `claude/selected-patterns`, in Rust, Python and R):
     `SelectedPattern` on `Development` as age-to-age factors, factors

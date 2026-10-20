@@ -12,6 +12,7 @@ warnings and the errors.
 """
 
 import csv
+import math
 import warnings
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from prospicio.reserving import (
 
 VALIDATION = Path(__file__).resolve().parents[2] / "validation"
 GM = CompartmentalPriors.gesmann_morris()
+GM2 = CompartmentalPriors.gesmann_morris_2()
 
 N_SIMS = 300
 SHORT = dict(chains=2, tune=100, draws=100, n_sims=N_SIMS)
@@ -209,6 +211,50 @@ def test_replay_by_seed_and_the_budget(two):
     assert refit0.segment(lob="a").refitted == []
     assert len(refit0.segment(lob="a").unrefitted) == 20
 
+
+def test_the_default_refit_mode(two):
+    # Model 1's default moment matches the flagged simulations of each
+    # segment before it refits them (none here, with max_refits=0).
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        default = Compartmental(GM, seed=5, **SHORT).one_year_segments(
+            two, "paid", "premium", incurred="incurred", max_refits=0, n_sims=30,
+        )
+    assert default.approximate is None
+    matched = 0
+    for name in ["a", "b"]:
+        one = default.segment(lob=name)
+        assert one.refitted == []
+        flagged = [i for i, k in enumerate(one.pareto_k) if math.isnan(k) or k > 0.7]
+        assert sorted(one.moment_matched + one.unrefitted) == flagged
+        matched += len(one.moment_matched)
+    assert matched > 0
+
+
+def test_model_2_default_is_approximate_and_warns(two):
+    # The user's decision of 2026-10-16: model 2's default view reweights
+    # only, with a warning that it is approximate (short chains may miss a
+    # diagnostic threshold too).
+    short = Compartmental.model_2(GM2, chains=2, tune=200, draws=200, target_accept=0.9,
+                                  seed=5)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        views = short.one_year_segments(two, "paid", "premium", incurred="incurred", n_sims=50)
+    assert "approximate" in views.approximate
+    assert any(issubclass(w.category, UserWarning) and "approximate" in str(w.message)
+               for w in record)
+    for name in ["a", "b"]:
+        one = views.segment(lob=name)
+        assert len(one.pareto_k) == 50
+        assert one.refitted == [] and one.moment_matched == [] and one.unrefitted == []
+    # An explicit mode carries no warning.
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        chosen = short.one_year_segments(two, "paid", "premium", incurred="incurred",
+                                         n_sims=50, refit="reweight_only")
+    assert chosen.approximate is None
+    assert not any("approximate" in str(w.message) for w in record)
+    assert chosen.cdr.draw_matrix() == views.cdr.draw_matrix()
 
 def test_errors(two):
     with warnings.catch_warnings():

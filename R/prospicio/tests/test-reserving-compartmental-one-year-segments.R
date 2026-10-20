@@ -52,6 +52,7 @@ lines <- function(names) {
 }
 two <- lines(c("a", "b"))
 gm <- gesmann_morris_priors()
+gm2 <- gesmann_morris_2_priors()
 n_sims <- 300
 
 view <- function(tri, ...) {
@@ -137,6 +138,49 @@ budget <- with_warnings(compartmental_one_year_segments(
 stopifnot(any(grepl("max_refits", budget$warnings, fixed = TRUE)),
           identical(segment(budget$value, lob = "a")@refitted, integer()),
           length(segment(budget$value, lob = "a")@unrefitted) == 20)
+
+# Model 1's default moment matches each segment's flagged simulations
+# before it refits them (none here, with max_refits = 0).
+default <- suppressWarnings(compartmental_one_year_segments(
+  two, "paid", "premium", gm, incurred = "incurred", chains = 2, tune = 100, draws = 100,
+  n_sims = 30, seed = 5, max_refits = 0))
+stopifnot(is.null(default@approximate))
+matched <- 0
+for (name in c("a", "b")) {
+  s <- segment(default, lob = name)
+  flagged <- which(is.na(s@pareto_k) | s@pareto_k > 0.7)
+  stopifnot(identical(s@refitted, integer()),
+            identical(sort(c(s@moment_matched, s@unrefitted)), flagged))
+  matched <- matched + length(s@moment_matched)
+}
+stopifnot(matched > 0)
+
+# The user's decision of 2026-10-16: model 2's default view reweights only,
+# with a warning that it is approximate (short chains may miss a diagnostic
+# threshold too).
+model_2_segments <- function(...) {
+  with_warnings(compartmental_one_year_segments(
+    two, "paid", "premium", gm2, incurred = "incurred", likelihood = "lognormal",
+    scale = "loss_ratio", paid_response = "incremental", chains = 2, tune = 200, draws = 200,
+    target_accept = 0.9, seed = 5, one_year_sims = 50, ...))
+}
+m2 <- model_2_segments()
+stopifnot(
+  grepl("approximate", m2$value@approximate, fixed = TRUE),
+  any(grepl("approximate", m2$warnings, fixed = TRUE))
+)
+for (name in c("a", "b")) {
+  s <- segment(m2$value, lob = name)
+  stopifnot(length(s@pareto_k) == 50, identical(s@refitted, integer()),
+            identical(s@moment_matched, integer()), identical(s@unrefitted, integer()))
+}
+# An explicit mode carries no warning.
+chosen <- model_2_segments(refit = "reweight_only")
+stopifnot(
+  is.null(chosen$value@approximate),
+  !any(grepl("approximate", chosen$warnings, fixed = TRUE)),
+  identical(draw_matrix(chosen$value@cdr), draw_matrix(m2$value@cdr))
+)
 
 # Errors, before any sampling.
 expect_error_like(compartmental_one_year_segments(two, "paid", "premium", gm,
