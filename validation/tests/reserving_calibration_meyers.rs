@@ -15,19 +15,19 @@
 //! incurred and the ODP bootstrap on paid (PR 2); `BayesOdp` on paid and
 //! Meyers' CRC (paid and incurred), CSR (paid) and CAY (incurred) at his
 //! priors and the library's NUTS defaults (PR 3). The study is
-//! `#[ignore]`d and run by hand; nothing in CI runs it (the file has no
-//! `[[test]]` entry, so CI's `bayes` job does not pick it up, and that job
-//! does not pass `--include-ignored` either). The unit tests below it are
-//! not ignored: they check the pure pieces on small inline cases and run
-//! with `cargo test`; the ones that fit with NUTS are ignored unless the
-//! `slow-bayes` feature is on.
+//! `#[ignore]`d and run by hand; nothing in CI runs it. The file's
+//! `[[test]]` entry requires `slow-bayes`, so a plain `cargo test` does not
+//! build it and CI's `bayes` job runs it without `--include-ignored`: the
+//! unit tests below the study (the pure pieces on small inline cases, a
+//! cut-down NUTS check and the wiring check on group 353) run there, in
+//! release, and the study does not.
 //!
 //! Run (from the repository root; the panel is built from the pip package
 //! `cas-schedule-p` at run time and is not stored in the repo):
 //!
 //! ```text
 //! uv run --no-project --with "cas-schedule-p[screens]==2026.6.13" python -I validation/scripts/calibration_panel.py
-//! cargo test --release -p prospicio-validation --test reserving_calibration_meyers -- --ignored --nocapture
+//! cargo test --release -p prospicio-validation --features slow-bayes --test reserving_calibration_meyers -- --ignored --nocapture
 //! ```
 //!
 //! The script writes `target/calibration/panel.csv` (set
@@ -50,8 +50,9 @@
 //! panel's shape, group 353 commercial auto's square against
 //! `validation/data/clrd_comauto_353.csv`, and Mack's D near Meyers'
 //! published values. Each other arm's D is recorded, not asserted. The
-//! unit test `the_arms_reproduce_meyers_on_group_353` checks the arms'
-//! wiring on that square in every `cargo test`.
+//! unit tests `the_arms_reproduce_meyers_on_group_353` and
+//! `the_bayesian_arms_reproduce_meyers_on_group_353` check the arms'
+//! wiring on that square in CI's `bayes` job.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -1844,6 +1845,9 @@ mod tests {
         let s = score_bayes_odp(t, &odp).unwrap();
         assert!(s.percentile >= 0.0 && s.percentile <= 100.0, "{s:?}");
         assert!(s.diag.is_some() && s.mean > 0.0 && s.sd > 0.0);
+        // The reserves are shifted by what is paid: the mean is an
+        // ultimate, near the data's age-10 total, not a reserve.
+        assert!(s.mean > 0.5 * t.outcome(Basis::Paid), "{s:?}");
         close(
             score_bayes_odp(t, &odp).unwrap().percentile,
             s.percentile,
@@ -1875,16 +1879,13 @@ mod tests {
     /// path (seeds, refit rule): CRC, CSR and CAY give his printed outcome
     /// percentiles (Tables 5.2, 5.3, 7.2 and 8.2; the guide's tolerance of
     /// 5 points, `knowledge/references/meyers-monograph-8-reproduced.md`),
-    /// and `BayesOdp` agrees with Mack's mean and the ODP bootstrap's
-    /// percentile (74 at 10,000 simulations). Ignored unless `slow-bayes`
-    /// is on: NUTS fits take minutes in debug. Run with
+    /// and `BayesOdp` agrees with the ODP bootstrap run in the same test at
+    /// the study's 10,000 simulations. The file builds only with
+    /// `slow-bayes` (its `[[test]]` entry), so CI's `bayes` job runs this in
+    /// release, about 2 s. Run with
     /// `cargo test --release -p prospicio-validation --features slow-bayes
     /// --test reserving_calibration_meyers`.
     #[test]
-    #[cfg_attr(
-        not(feature = "slow-bayes"),
-        ignore = "NUTS fits: run in release with --features slow-bayes"
-    )]
     fn the_bayesian_arms_reproduce_meyers_on_group_353() {
         let t = group_353();
         for (arm, basis, printed) in [
@@ -1910,8 +1911,26 @@ mod tests {
         }
         .run(&t)
         .unwrap();
-        eprintln!("bayes_odp paid: {:.2} {:?}", odp.percentile, odp.diag);
-        close(odp.mean, 39_177.0, 0.03 * 39_177.0);
-        close(odp.percentile, 74.0, 10.0);
+        let boot = ArmBasis {
+            arm: "odp",
+            basis: Basis::Paid,
+        }
+        .run(&t)
+        .unwrap();
+        eprintln!(
+            "bayes_odp paid: {:.2} mean {:.0} sd {:.0} {:?}; odp bootstrap: {:.2} mean {:.0} sd {:.0}",
+            odp.percentile, odp.mean, odp.sd, odp.diag, boot.percentile, boot.mean, boot.sd
+        );
+        close(odp.outcome, boot.outcome, 0.0);
+        close(odp.mean, boot.mean, 0.01 * boot.mean);
+        // On this platform 69.75 against 74.06: BayesOdp's predictive mean
+        // is 39,376 against the bootstrap's 39,197 (sd 1,399 and 1,381), so
+        // the outcome 40,000 sits 0.45 sd above its mean against 0.58, about
+        // 4.5 points at a normal. The tolerance leaves 1.7 points for the
+        // other platforms' NUTS draws and the bootstrap's Monte Carlo error
+        // (each about a point); a dropped shift or a wrong basis moves the
+        // percentile by tens of points.
+        const BAYES_ODP_VS_BOOTSTRAP: f64 = 6.0;
+        close(odp.percentile, boot.percentile, BAYES_ODP_VS_BOOTSTRAP);
     }
 }
