@@ -473,7 +473,9 @@ mod exports {
     udf!(pro_tower_price, count_mean, dispersion, family, p1, p2, p3, limit, attachment, limits, attachments, shares, agg_deductibles, agg_limits, cover_limit, cover_retention, distortion, parameter, step, points);
     udf!(pro_agg_pml, count_mean, dispersion, family, p1, p2, p3, return_periods, step, points);
     udf!(pro_bayes_odp, triangle, output, draws, chains, seed, sims, percentiles, prior_sd, process, origins);
-    udf!(pro_sev_fit, losses, family, output, t, truncation, thresholds, censored, weights);
+    udf!(pro_sev_fit, losses, family, output, t, truncation, thresholds, censored, weights, upper);
+    udf!(pro_sev_fit_grouped, bounds, counts, family, method, output);
+    udf!(pro_sev_fit_lev, sizes, lev, family, weights, output);
     udf!(pro_evt_thresholds, data, thresholds);
     udf!(pro_evt_fit, data, threshold, probabilities);
     udf!(pro_evt_hill, data, k);

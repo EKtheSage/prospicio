@@ -7,35 +7,40 @@
 //! feed `PRO.SEV.CDF`, `PRO.LAYER` and the others directly.
 
 use prospicio_prob::evt::Gpd;
+use prospicio_prob::grouped_fit::{GroupedLosses, GroupedMethod, fit_grouped, fit_lev_distance};
 use prospicio_prob::severity_fit::{Family, SeverityFit, fit_severity, goodness_of_fit};
 use prospicio_prob::{Dist, LargeLosses, Pareto, PiecewisePareto, Truncation};
 
 use crate::pricing::{numbers, piecewise_truncation, scalar};
+use crate::reserving::text_option;
 use crate::sheet::{Grid, Value, position};
 
 type Result<T> = std::result::Result<T, String>;
 
 const FAMILIES: &str = "family must be \"lognormal\", \"gamma\", \"weibull\", \"burr\", \
-\"pareto\", \"piecewise_pareto\" or \"gen_pareto\"";
+\"lomax\", \"pareto\", \"piecewise_pareto\" or \"gen_pareto\"";
 
 const OUTPUTS: &str = "output must be \"params\", \"gof\" or \"compare\"";
 
 /// The body families `"compare"` fits, in its rows' order.
-const BODY: [Family; 4] = [
+const BODY: [Family; 5] = [
     Family::Lognormal,
     Family::Gamma,
     Family::Weibull,
     Family::Burr,
+    Family::Lomax,
 ];
 
-/// The losses and, per loss, the reporting threshold, censoring flag and
-/// weight. A row whose loss cell is blank is skipped; the other columns
-/// are one value for every loss or a range of the losses' shape.
+/// The losses and, per loss, the reporting threshold, censoring flag,
+/// weight and bound from above. A row whose loss cell is blank is skipped;
+/// the other columns are one value for every loss or a range of the
+/// losses' shape.
 fn large_losses(
     losses: &Grid,
     thresholds: &Grid,
     censored: &Grid,
     weights: &Grid,
+    upper: &Grid,
 ) -> Result<LargeLosses> {
     let shaped = |g: &Grid, name: &str| -> Result<()> {
         if g.cells.len() == 1 || (g.rows == losses.rows && g.columns == losses.columns) {
@@ -51,6 +56,7 @@ fn large_losses(
         (thresholds, "thresholds"),
         (censored, "censored"),
         (weights, "weights"),
+        (upper, "upper"),
     ] {
         shaped(g, name)?;
     }
@@ -61,7 +67,7 @@ fn large_losses(
             g.cells[i].clone()
         }
     };
-    let (mut y, mut r, mut c, mut w) = (vec![], vec![], vec![], vec![]);
+    let (mut y, mut r, mut c, mut w, mut u) = (vec![], vec![], vec![], vec![], vec![]);
     for i in 0..losses.cells.len() {
         let at = position(i / losses.columns, i % losses.columns);
         match &losses.cells[i] {
@@ -89,6 +95,11 @@ fn large_losses(
             v if v.is_blank() => 1.0,
             other => return Err(format!("weights {at} must be a number, got {other:?}")),
         });
+        u.push(match cell(upper, i) {
+            Value::Number(x) => x,
+            v if v.is_blank() => f64::INFINITY,
+            other => return Err(format!("upper {at} must be a number, got {other:?}")),
+        });
     }
     if y.is_empty() {
         return Err("losses is required".into());
@@ -101,6 +112,8 @@ fn large_losses(
         .censored(c)
         .map_err(e)?
         .weights(w)
+        .map_err(e)?
+        .truncated_above(u)
         .map_err(e)
 }
 
@@ -140,6 +153,11 @@ fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<
             parameters,
             body: Some(f),
         });
+    }
+    if data.is_truncated_above() {
+        return Err(format!(
+            "upper is taken only by the body families, not {family:?}"
+        ));
     }
     let nan = f64::NAN;
     match family {
@@ -212,10 +230,12 @@ fn fit(family: &str, data: &LargeLosses, t: &Grid, truncation: &Grid) -> Result<
 }
 
 /// `PRO.SEV.FIT(losses, family, [output], [t], [truncation], [thresholds],
-/// [censored], [weights])`: a maximum likelihood fit to large losses.
+/// [censored], [weights], [upper])`: a maximum likelihood fit to large
+/// losses, each conditioned on lying above its threshold and at or below
+/// its bound from above.
 /// `output` is `"params"` (default: each parameter with its standard
 /// error, then the fit's statistics), `"gof"` (the fit against the
-/// product-limit estimate at each loss) or `"compare"` (the four body
+/// product-limit estimate at each loss) or `"compare"` (the five body
 /// families side by side).
 pub fn severity_fit(args: &[Grid]) -> Result<Grid> {
     let output = match args[2].as_scalar() {
@@ -223,7 +243,7 @@ pub fn severity_fit(args: &[Grid]) -> Result<Grid> {
         Some(Value::Text(s)) => s.trim().to_ascii_lowercase(),
         _ => return Err(OUTPUTS.into()),
     };
-    let data = large_losses(&args[0], &args[5], &args[6], &args[7])?;
+    let data = large_losses(&args[0], &args[5], &args[6], &args[7], &args[8])?;
     if output == "compare" {
         if !args[1].is_blank() || !args[3].is_blank() || !args[4].is_blank() {
             return Err(
@@ -372,4 +392,180 @@ fn compare(data: &LargeLosses) -> Grid {
         rows.push(row);
     }
     Grid::from_rows(rows)
+}
+
+/// A body family by name, for the grouped and limited-mean fits.
+fn body_family(grid: &Grid) -> Result<Family> {
+    const BODY_FAMILIES: &str =
+        "family must be \"lognormal\", \"gamma\", \"weibull\", \"burr\" or \"lomax\"";
+    match grid.as_scalar() {
+        Some(Value::Text(s)) => {
+            Family::from_name(&s.trim().to_ascii_lowercase().replace([' ', '-'], "_"))
+                .map_err(|_| BODY_FAMILIES.into())
+        }
+        _ => Err(BODY_FAMILIES.into()),
+    }
+}
+
+/// The numbers of a row or column, every cell a number.
+fn vector(grid: &Grid, name: &str) -> Result<Vec<f64>> {
+    if grid.rows != 1 && grid.columns != 1 {
+        return Err(format!("{name} must be a row or a column"));
+    }
+    grid.cells
+        .iter()
+        .enumerate()
+        .map(|(k, v)| match v {
+            Value::Number(x) => Ok(*x),
+            _ => Err(format!("{name} must be all numbers; cell {} is not", k + 1)),
+        })
+        .collect()
+}
+
+/// `PRO.SEV.FIT.GROUPED(bounds, counts, family, [method], [output])`: a
+/// body family fitted to counts of losses in size bands `(b_k, b_k+1]`,
+/// conditional on the bands' range (a first bound above 0 is a deductible,
+/// a finite last one a truncation from above), by maximum likelihood
+/// (`"ml"`, default) or minimum chi-square (`"chi_square"`). `output`
+/// `"params"` (default) gives each parameter with its standard error and
+/// the fit's statistics; `"table"` each band's observed and expected count.
+pub fn grouped(args: &[Grid]) -> Result<Grid> {
+    let bounds = band_bounds(&args[0])?;
+    let counts = vector(&args[1], "counts")?;
+    let data = GroupedLosses::new(bounds, counts).map_err(|e| e.to_string())?;
+    let family = body_family(&args[2])?;
+    let method = match text_option(&args[3], "method")?.as_deref() {
+        None | Some("ml") => GroupedMethod::MaximumLikelihood,
+        Some("chi_square" | "chi-square" | "chisq") => GroupedMethod::MinimumChiSquare,
+        Some(other) => {
+            return Err(format!(
+                "method must be \"ml\" or \"chi_square\", got {other:?}"
+            ));
+        }
+    };
+    let fit = fit_grouped(family, &data, method).map_err(|e| e.to_string())?;
+    match text_option(&args[4], "output")?.as_deref() {
+        None | Some("params" | "parameters") => {
+            let row = |label: &str, x: Value| vec![Value::from(label), x, Value::Empty];
+            let mut rows = vec![["Parameter", "Estimate", "SE"].map(Value::from).to_vec()];
+            for ((name, &p), se) in family
+                .parameter_names()
+                .iter()
+                .zip(fit.parameters())
+                .zip(fit.standard_errors())
+            {
+                rows.push(vec![
+                    Value::from(*name),
+                    Value::number(p),
+                    Value::number(se),
+                ]);
+            }
+            rows.push(row("Losses", Value::number(data.total())));
+            rows.push(row("Log-likelihood", Value::number(fit.log_likelihood())));
+            rows.push(row("Chi-square", Value::number(fit.chi_square())));
+            rows.push(row(
+                "Degrees of freedom",
+                Value::Number(fit.degrees_of_freedom() as f64),
+            ));
+            rows.push(row("p-value", Value::number(fit.p_value())));
+            rows.push(row("Converged", Value::Bool(fit.converged())));
+            Ok(Grid::from_rows(rows))
+        }
+        Some("table") => {
+            let b = data.bounds();
+            let mut rows = vec![
+                ["From", "To", "Observed", "Expected"]
+                    .map(Value::from)
+                    .to_vec(),
+            ];
+            for (k, (&o, &e)) in data.counts().iter().zip(fit.expected()).enumerate() {
+                rows.push(vec![
+                    Value::number(b[k]),
+                    // An open top band's upper bound is blank.
+                    Value::number(b[k + 1]),
+                    Value::number(o),
+                    Value::number(e),
+                ]);
+            }
+            Ok(Grid::from_rows(rows))
+        }
+        Some(other) => Err(format!(
+            "output must be \"params\" or \"table\", got {other:?}"
+        )),
+    }
+}
+
+/// The band bounds of a row or column. Excel has no infinity, so a last
+/// cell left blank or holding "inf" opens the top band.
+fn band_bounds(grid: &Grid) -> Result<Vec<f64>> {
+    if grid.rows != 1 && grid.columns != 1 {
+        return Err("bounds must be a row or a column".into());
+    }
+    let n = grid.cells.len();
+    grid.cells
+        .iter()
+        .enumerate()
+        .map(|(k, v)| match v {
+            Value::Number(x) => Ok(*x),
+            Value::Text(s)
+                if k + 1 == n && matches!(s.trim().to_ascii_lowercase().as_str(), "inf" | "infinity") =>
+            {
+                Ok(f64::INFINITY)
+            }
+            v if k + 1 == n && v.is_blank() => Ok(f64::INFINITY),
+            _ => Err(format!(
+                "bounds must be all numbers, the last blank or \"inf\" for an open top band; cell {} is not",
+                k + 1
+            )),
+        })
+        .collect()
+}
+
+/// `PRO.SEV.FIT.LEV(sizes, lev, family, [weights], [output])`: a body
+/// family fitted by the minimum weighted squared distance between its
+/// limited expected values `E[X; x]` and the empirical ones at each size
+/// (Bahnemann's minimum distance). `output` `"params"` (default) gives the
+/// parameters, the distance and convergence; `"table"` each size's
+/// empirical and fitted limited mean.
+pub fn lev_distance(args: &[Grid]) -> Result<Grid> {
+    let sizes = vector(&args[0], "sizes")?;
+    let empirical = vector(&args[1], "lev")?;
+    let family = body_family(&args[2])?;
+    let weights = if args[3].is_blank() {
+        None
+    } else {
+        Some(vector(&args[3], "weights")?)
+    };
+    if let Some(w) = &weights
+        && w.len() != sizes.len()
+    {
+        return Err(format!(
+            "weights must have {} values, one per size, got {}",
+            sizes.len(),
+            w.len()
+        ));
+    }
+    let fit = fit_lev_distance(family, &sizes, &empirical, weights.as_deref(), None)
+        .map_err(|e| e.to_string())?;
+    match text_option(&args[4], "output")?.as_deref() {
+        None | Some("params" | "parameters") => {
+            let mut rows = vec![["Parameter", "Estimate"].map(Value::from).to_vec()];
+            for (name, &p) in family.parameter_names().iter().zip(fit.parameters()) {
+                rows.push(vec![Value::from(*name), Value::number(p)]);
+            }
+            rows.push(vec![Value::from("Distance"), Value::number(fit.distance())]);
+            rows.push(vec![Value::from("Converged"), Value::Bool(fit.converged())]);
+            Ok(Grid::from_rows(rows))
+        }
+        Some("table") => {
+            let mut rows = vec![["Size", "Empirical", "Fitted"].map(Value::from).to_vec()];
+            for ((&x, &e), &f) in sizes.iter().zip(&empirical).zip(fit.fitted()) {
+                rows.push(vec![Value::number(x), Value::number(e), Value::number(f)]);
+            }
+            Ok(Grid::from_rows(rows))
+        }
+        Some(other) => Err(format!(
+            "output must be \"params\" or \"table\", got {other:?}"
+        )),
+    }
 }

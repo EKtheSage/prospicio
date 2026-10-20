@@ -37,7 +37,7 @@ pub(crate) fn scalar(grid: &Grid, name: &str) -> Result<f64> {
 pub const FAMILIES: &str = "pareto (t, alpha, [truncation]), lognormal (meanlog, sdlog), \
 lognormal_cv (mean, cv), gamma (shape, scale), gamma_cv (mean, cv), weibull (shape, scale), \
 loglogistic (shape, scale), inverse_gamma (shape, scale), inverse_gaussian (mean, shape), \
-burr (alpha, gamma, scale), gpd (xi, beta), piecewise_pareto (thresholds, alphas, \
+burr (alpha, gamma, scale), lomax (alpha, scale), gpd (xi, beta), piecewise_pareto (thresholds, alphas, \
 [truncation, [\"lp\" or \"wd\"]]), gen_pareto (t, alpha_ini, alpha_tail)";
 
 /// The numbers of a range, in reading order, skipping blank cells.
@@ -164,6 +164,11 @@ pub(crate) fn severity(family: &Grid, p1: &Grid, p2: &Grid, p3: &Grid) -> Result
         "inverse_gaussian" => no_p3(
             two()
                 .and_then(|(m, l)| InverseGaussian::new(m, l).map_err(e))?
+                .into(),
+        )?,
+        "lomax" => no_p3(
+            two()
+                .and_then(|(alpha, scale)| Burr::new(alpha, 1.0, scale).map_err(e))?
                 .into(),
         )?,
         "burr" => {

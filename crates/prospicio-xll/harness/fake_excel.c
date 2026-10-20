@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("ninety-four functions registered", registered == 94);
+    check("ninety-six functions registered", registered == 96);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -552,12 +552,40 @@ int main(int argc, char **argv) {
     static wchar_t ln_s[] = L"\x09" L"lognormal";
     sf_fam.xltype = xltypeStr;
     sf_fam.val.str = ln_s;
-    XLOPER12 *sf = ((Fn8)GetProcAddress(xll, "pro_sev_fit"))(&sf_col, &sf_fam, &missing, &missing, &missing,
-                                                              &missing, &missing, &missing);
+    XLOPER12 *sf = ((Fn9)GetProcAddress(xll, "pro_sev_fit"))(&sf_col, &sf_fam, &missing, &missing, &missing,
+                                                              &missing, &missing, &missing, &missing);
     check("PRO.SEV.FIT lognormal: meanlog is the mean of the logs",
           (sf->xltype & 0xFFF) == xltypeMulti && sf->val.array.columns == 3 &&
               fabs(sf->val.array.lparray[4].val.num - log(100 * pow(2, 1.5))) < 1e-6);
     free12(sf);
+
+    /* Bahnemann's P2.16: a gamma by minimum chi-square on six bands, the
+     * top one open (a blank last bound): shape 4.7432. */
+    XLOPER12 gb_cells[7], gc_cells[6], gbnd, gcnt, g_fam, g_meth;
+    double gb_x[6] = {0, 1000, 1500, 2000, 2500, 3000}, gc_x[6] = {42, 61, 47, 26, 14, 10};
+    for (int i = 0; i < 6; i++) {
+        gb_cells[i].xltype = xltypeNum;
+        gb_cells[i].val.num = gb_x[i];
+        gc_cells[i].xltype = xltypeNum;
+        gc_cells[i].val.num = gc_x[i];
+    }
+    gb_cells[6].xltype = xltypeNil;
+    gbnd.xltype = gcnt.xltype = xltypeMulti;
+    gbnd.val.array.rows = gcnt.val.array.rows = 1;
+    gbnd.val.array.columns = 7;
+    gcnt.val.array.columns = 6;
+    gbnd.val.array.lparray = gb_cells;
+    gcnt.val.array.lparray = gc_cells;
+    static wchar_t gfam_s[] = L"\x05" L"gamma";
+    static wchar_t chisq_s[] = L"\x0a" L"chi_square";
+    g_fam.xltype = g_meth.xltype = xltypeStr;
+    g_fam.val.str = gfam_s;
+    g_meth.val.str = chisq_s;
+    XLOPER12 *gf = ((Fn5)GetProcAddress(xll, "pro_sev_fit_grouped"))(&gbnd, &gcnt, &g_fam, &g_meth, &missing);
+    check("PRO.SEV.FIT.GROUPED gamma by minimum chi-square: shape 4.7432 (Bahnemann P2.16)",
+          (gf->xltype & 0xFFF) == xltypeMulti && gf->val.array.columns == 3 &&
+              fabs(gf->val.array.lparray[4].val.num - 4.7432) < 5e-5);
+    free12(gf);
 
     /* Hill's estimate from the 3 largest of 1, 2, 4, 8, 16: the mean log
      * of 16/2, 8/2, 4/2 is 2 ln 2. */

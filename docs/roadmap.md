@@ -468,11 +468,13 @@ what it is aiming for by v1.0.
   and credits carried forward; copulas (cdfs, simulated uniforms and
   Iman–Conover); link-ratio exclusions (the latest periods, high and low
   dropped) and the geometric average; the ODP GLM (the analytic
-  prediction error, coefficients and residual diagnostics).
+  prediction error, coefficients and residual diagnostics); the Lomax,
+  truncation from above, grouped losses and minimum-distance fits.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): seven groups done; the eighth, what
-     the other lanes have built since: the newer severity fits; further functions as the user asks.
+     form (`xll.md`, parity plan): all eight groups done (the eighth,
+     what the other lanes had built since); further functions as the
+     user asks.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

@@ -675,10 +675,35 @@ sf["I4"] = ArrayFormula("I4:K13", "=PRO.SEV.FIT(" + data.format(fam='"pareto"', 
 sf["E14"] = "The lognormal's 1M xs 1M from the fit's cells"
 sf["I14"] = ArrayFormula("I14", "=PRO.LAYER(1000000,1000000,\"lognormal\",F5,F6)")
 sf["E16"] = "Body families compared"; sf["E16"].font = bold
-sf["E17"] = ArrayFormula("E17:N21", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="") + ")")
+sf["E17"] = ArrayFormula("E17:N22", "=PRO.SEV.FIT(" + data.format(fam="", out='"compare"', t="") + ")")
 sf["E23"] = "Lognormal against the product-limit estimate (P-P and Q-Q)"; sf["E23"].font = bold
 sf["E24"] = ArrayFormula("E24:J35", "=PRO.SEV.FIT(" + data.format(fam='"lognormal"', out='"gof"', t="") + ")")
-for col in "ABCEFGHIJKLM":
+sf["P3"] = "Grouped losses (Bahnemann's six bands; the last bound blank: open)"; sf["P3"].font = bold
+sf["P4"] = "From"; sf["Q4"] = "Count"
+for c in ("P4", "Q4"):
+    sf[c].font = bold
+for i, (b, c) in enumerate(zip([0, 1000, 1500, 2000, 2500, 3000, None], [42, 61, 47, 26, 14, 10, None])):
+    sf[f"P{5 + i}"] = b; sf[f"P{5 + i}"].fill = inp
+    if c is not None:
+        sf[f"Q{5 + i}"] = c; sf[f"Q{5 + i}"].fill = inp
+sf["S3"] = "Gamma by minimum chi-square (Bahnemann P2.16: 4.7432, 337.31)"; sf["S3"].font = bold
+sf["S4"] = ArrayFormula("S4:U12", '=PRO.SEV.FIT.GROUPED(P5:P11,Q5:Q10,"gamma","chi_square")')
+sf["S14"] = "Observed and expected per band"; sf["S14"].font = bold
+sf["S15"] = ArrayFormula("S15:V21", '=PRO.SEV.FIT.GROUPED(P5:P11,Q5:Q10,"gamma","chi_square","table")')
+sf["P24"] = "Limited means (Bahnemann Ex 2.10: 1,500 claims under a 300,000 limit)"; sf["P24"].font = bold
+sf["P25"] = "Size"; sf["Q25"] = "E[X; x]"
+for c in ("P25", "Q25"):
+    sf[c].font = bold
+x = [1000, 5000, 10000, 25000, 50000, 100000, 200000, 300000]
+below = [729, 1096, 1208, 1326, 1391, 1440, 1468, 1500]
+total = [225138, 1102272, 1918947, 3752091, 6007543, 9234739, 13100561, 22343455]
+for i, (v, b, t) in enumerate(zip(x, below, total)):
+    sf[f"P{26 + i}"] = v; sf[f"P{26 + i}"].fill = inp
+    sf[f"Q{26 + i}"] = f"=({t}+P{26 + i}*(1500-{b}))/1500"
+sf["S24"] = "Lognormal by minimum distance (6.9852, 2.5850)"; sf["S24"].font = bold
+sf["S25"] = ArrayFormula("S25:T28", '=PRO.SEV.FIT.LEV(P26:P33,Q26:Q33,"lognormal")')
+sf["S30"] = ArrayFormula("S30:U38", '=PRO.SEV.FIT.LEV(P26:P33,Q26:Q33,"lognormal",,"table")')
+for col in "ABCEFGHIJKLMPQSTUV":
     sf.column_dimensions[col].width = 14
 
 # Extreme value theory on 1,000 exact Burr quantiles (R ismev's test data).

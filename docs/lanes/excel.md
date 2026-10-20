@@ -8,7 +8,6 @@ This lane wraps other lanes' crates and changes none of them
 
 ## Next
 
-- [excel-severity-fits-2] the newer severity fits in `PRO.SEV.FIT`: the Lomax, truncation from above, grouped losses and minimum-distance fits
 - [excel-more-functions] further functions as the user asks
 - `PRO.BAYES.BF` waits on the Reserving lane (#410: `BayesBf`'s a-priori level is nearly inert)
 - [code-signing-certificate] a code-signing certificate is the user's to buy
@@ -55,3 +54,4 @@ This lane wraps other lanes' crates and changes none of them
 - The parity plan's seven groups are done
 - [excel-exclusions] link-ratio exclusions and the geometric average in the `average` argument (a row `kind, n_periods, drop_high, drop_low` in the sixteen chain-ladder, Mack, expected-loss and Mack bootstrap functions; a last `average` on `PRO.ODP`, `.SIMS`, `.CDR`; chainladder-python and R ChainLadder parity; decision 34)
 - [excel-odp-glm] the ODP GLM on a sheet: `PRO.ODP.GLM` (Taylor and McGuire's Table 5-4: reserves, process and parameter SE, RMSEP), `PRO.ODP.GLM.PARAMS` (coefficients, SEs, dispersion), `PRO.ODP.GLM.RESIDUALS` (by cell, or grouped by origin, development or calendar period); R `glm` parity on GenIns and ABC (decision 35)
+- [excel-severity-fits-2] the newer severity fits: the Lomax in `PRO.SEV.FIT` and the severity functions, truncation from above (`upper`), `PRO.SEV.FIT.GROUPED` (maximum likelihood or minimum chi-square on size bands) and `PRO.SEV.FIT.LEV` (minimum limited-mean distance); Bahnemann parity (decision 36)
