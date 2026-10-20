@@ -197,9 +197,11 @@ what it is aiming for by v1.0.
     margin computed without cancellation near `S = 1` (#330), and
     calibration that merges the totals capped at the assets (#331), and
     pricing bounds on a large book from convex hulls (#368).
-- **Next:** the Guides lane's remaining issues of 2026-10-17 and 18 (the
-  allocation set, PLC under a distortion, a severity from a size-of-loss
-  table, a grid audit, shared mixing across units).
+  - The natural allocation set's range by unit and Bodoff's percentile
+    layers priced by any distortion (#368).
+- **Next:** the Guides lane's remaining issues of 2026-10-17 and 18 (a
+  severity from a size-of-loss table, a grid audit, shared mixing across
+  units).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)

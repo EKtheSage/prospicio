@@ -1843,6 +1843,10 @@ NaturalPortfolio$calibrate <- function(family, assets, target, value, r0) .Call(
 
 NaturalPortfolio$bodoff <- function(assets) .Call(wrap__NaturalPortfolio__bodoff, self, assets)
 
+NaturalPortfolio$bodoff_price <- function(distortion, assets) .Call(wrap__NaturalPortfolio__bodoff_price, self, distortion, assets)
+
+NaturalPortfolio$allocation_set <- function(distortion, assets) .Call(wrap__NaturalPortfolio__allocation_set, self, distortion, assets)
+
 NaturalPortfolio$price_stand_alone <- function(distortion, p) .Call(wrap__NaturalPortfolio__price_stand_alone, self, distortion, p)
 
 NaturalPortfolio$comonotonic_kappa <- function() .Call(wrap__NaturalPortfolio__comonotonic_kappa, self)

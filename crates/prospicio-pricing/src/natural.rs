@@ -1222,6 +1222,77 @@ impl Portfolio {
         out
     }
 
+    /// Bodoff's percentile layer of capital priced by a distortion: each
+    /// layer of assets `[x, x + dx)` below `a` is shared among the units in
+    /// Bodoff's proportions `αᵢ(x) = E[Xᵢ / X | X > x]`, and its cost
+    /// `g(S(x)) dx` and capital `(1 - g(S(x))) dx` in the same proportions,
+    /// so that every layer earns its own return `(g - S) / (1 - g)` (*Pricing
+    /// Insurance Risk*, section 15.3). Unit `i` has loss `∫ αᵢ S dx` (its
+    /// equal-priority recovery), premium `∫ αᵢ g(S) dx` and assets
+    /// [`Portfolio::bodoff`]; the premiums add up to the price of `X ∧ a`.
+    /// Under the CCoC the premium is the loss plus `d = r / (1 + r)` of the
+    /// unit's shared liability, assets less loss.
+    ///
+    /// ```
+    /// use prospicio_pricing::natural::Portfolio;
+    /// use prospicio_prob::Distortion;
+    ///
+    /// // Bodoff's Thought Experiment 1 at a 10% return (the book's Table 15.24).
+    /// let rows = [vec![0.0, 0.0], vec![99.0, 0.0], vec![0.0, 100.0], vec![99.0, 100.0]];
+    /// let units = vec!["Hu".to_string(), "EQ".to_string()];
+    /// let port = Portfolio::from_rows(units, &rows, Some(&[0.76, 0.19, 0.04, 0.01])).unwrap();
+    /// let plc = port.bodoff_price(&Distortion::ccoc(0.1).unwrap(), 100.0);
+    /// assert!((plc.allocated[0].premium - 24.8729).abs() < 5e-5);
+    /// assert!((plc.allocated[1].premium - 5.8635).abs() < 5e-5);
+    /// ```
+    pub fn bodoff_price(&self, g: &Distortion, a: f64) -> NaturalPrice {
+        let m = self.units.len();
+        let n = self.x.len();
+        let tail = self.suffix_shares(&self.p);
+        let (mut loss, mut premium, mut assets) = (vec![0.0; m], vec![0.0; m], vec![0.0; m]);
+        let mut lower = 0.0;
+        for layer in 0..=n {
+            let upper = if layer < n {
+                self.x[layer]
+            } else {
+                f64::INFINITY
+            };
+            let dx = upper.min(a) - lower;
+            if dx > 0.0 {
+                let s = if layer == 0 { 1.0 } else { self.s[layer - 1] };
+                if s > 0.0 {
+                    let gs = g.g(s);
+                    for i in 0..m {
+                        let share = dx * tail[layer * m + i] / s;
+                        assets[i] += share;
+                        premium[i] += share * gs;
+                        loss[i] += share * s;
+                    }
+                }
+            }
+            if upper >= a {
+                break;
+            }
+            lower = upper;
+        }
+        let pentagon = |loss: f64, premium: f64, assets: f64| Pentagon {
+            loss,
+            margin: premium - loss,
+            premium,
+            capital: assets - premium,
+            assets,
+        };
+        let allocated: Vec<Pentagon> = (0..m)
+            .map(|i| pentagon(loss[i], premium[i], assets[i]))
+            .collect();
+        let sum = |v: &[f64]| v.iter().sum::<f64>();
+        NaturalPrice {
+            units: self.units.clone(),
+            allocated,
+            total: pentagon(sum(&loss), sum(&premium), sum(&assets)),
+        }
+    }
+
     /// The total's and each unit's premium under `TVaR_p` with assets `a`
     /// and the linear allocation, as [`Portfolio::price`] gives them, from
     /// the prefix sums `head` (`Σ κᵢ p`), `tail` (shares above) and `head_x`
@@ -1364,6 +1435,95 @@ impl Portfolio {
             }
         }
         Ok(best)
+    }
+
+    /// The natural allocation set's range for each unit: the smallest and
+    /// largest premium of the unit under `g` with assets `a` over every
+    /// order of the outcomes whose capped totals `X ∧ a` tie (*Pricing
+    /// Insurance Risk*, section 15.1.3). The distortion sees only the
+    /// capped total, so tied outcomes may take its weight in any order;
+    /// each order is a natural allocation of the same total premium, and
+    /// the linear and lifted allocations lie in the range. Since `g` is
+    /// concave, a unit's premium is largest when, in every tie, the
+    /// outcomes that pay it most take the highest ranks (by the
+    /// rearrangement inequality), and smallest in the reverse order.
+    ///
+    /// Needs the scenarios, so only for a portfolio built from rows.
+    ///
+    /// ```
+    /// use prospicio_pricing::natural::Portfolio;
+    /// use prospicio_prob::Distortion;
+    ///
+    /// // The book's Example 259: the adjusted Simple Discrete Example, where
+    /// // the total 10 is 9 + 1 or 10 + 0, under the PH at 0.5.
+    /// let (x1, x2, w) = ([0.0, 9.0, 10.0], [0.0, 1.0, 90.0], [0.5, 0.25, 0.25]);
+    /// let rows: Vec<Vec<f64>> = x1.iter().flat_map(|&a| x2.map(|b| vec![a, b])).collect();
+    /// let probs: Vec<f64> = w.iter().flat_map(|&p| w.map(|q| p * q)).collect();
+    /// let port = Portfolio::from_rows(vec!["X1".into(), "X2".into()], &rows, Some(&probs)).unwrap();
+    /// let set = port.allocation_set(&Distortion::proportional_hazard(0.5).unwrap(), 100.0).unwrap();
+    /// assert!((set[0].lower - 6.2009).abs() < 5e-5 && (set[0].upper - 6.2085).abs() < 5e-5);
+    /// ```
+    pub fn allocation_set(&self, g: &Distortion, a: f64) -> Result<Vec<AllocationRange>> {
+        let Joint::Rows { losses, w } = &self.joint else {
+            return Err(Error::Data(
+                "the natural allocation set needs the scenarios: build the portfolio from rows"
+                    .into(),
+            ));
+        };
+        let m = self.units.len();
+        // Each scenario's capped total and what each unit is paid in it.
+        let mut scen: Vec<(f64, usize)> = (0..w.len())
+            .map(|r| (losses[r * m..(r + 1) * m].iter().sum::<f64>().min(a), r))
+            .collect();
+        scen.sort_by(|u, v| v.0.total_cmp(&u.0));
+        let paid = |r: usize, i: usize| {
+            let row = &losses[r * m..(r + 1) * m];
+            let total: f64 = row.iter().sum();
+            if total > a {
+                row[i] * a / total
+            } else {
+                row[i]
+            }
+        };
+        let mut out = vec![
+            AllocationRange {
+                lower: 0.0,
+                upper: 0.0
+            };
+            m
+        ];
+        let mut start = 0;
+        let mut above = 0.0;
+        while start < scen.len() {
+            let mut end = start + 1;
+            while end < scen.len() && scen[end].0 == scen[start].0 {
+                end += 1;
+            }
+            let tie = &scen[start..end];
+            for (i, range) in out.iter_mut().enumerate() {
+                for upper in [true, false] {
+                    let mut order: Vec<usize> = tie.iter().map(|&(_, r)| r).collect();
+                    order.sort_by(|&u, &v| {
+                        let by = paid(v, i).total_cmp(&paid(u, i));
+                        if upper { by } else { by.reverse() }
+                    });
+                    let (mut s, mut value) = (above, 0.0);
+                    for r in order {
+                        let next = s + w[r];
+                        value += paid(r, i) * (g.g(next) - g.g(s));
+                        s = next;
+                    }
+                    if upper {
+                        range.upper += value;
+                    } else {
+                        range.lower += value;
+                    }
+                }
+            }
+            above += tie.iter().map(|&(_, r)| w[r]).sum::<f64>();
+            start = end;
+        }
+        Ok(out)
     }
 
     /// The member of `family` that prices `X ∧ a` at the target.
@@ -1555,6 +1715,16 @@ pub struct PremiumBound {
     pub lower_distortion: Distortion,
     /// A BiTVaR that gives the largest.
     pub upper_distortion: Distortion,
+}
+
+/// The range of a unit's premium over the natural allocation set, from
+/// [`Portfolio::allocation_set`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AllocationRange {
+    /// The smallest premium.
+    pub lower: f64,
+    /// The largest premium.
+    pub upper: f64,
 }
 
 /// What a calibrated distortion must reproduce.

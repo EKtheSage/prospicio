@@ -306,6 +306,34 @@ def test_natural_allocation_conventions():
         insco.price(ccoc, assets=100, atom="other")
 
 
+def test_allocation_set_and_bodoff_price():
+    from prospicio.distributions import Grid
+    from prospicio.pricing import Portfolio
+    from prospicio.risk import Distortion
+
+    # Pricing Insurance Risk, Exercise 260: TVaR at 65% on the adjusted
+    # Simple Discrete Example; the linear allocation lies in the set.
+    rows = [[a, b] for a in (0.0, 9.0, 10.0) for b in (0.0, 1.0, 90.0)]
+    probs = [p * q for p in (0.5, 0.25, 0.25) for q in (0.5, 0.25, 0.25)]
+    port = Portfolio(["X1", "X2"], rows, probs)
+    tvar = Distortion.tvar(0.65)
+    s = port.allocation_set(tvar, assets=100)
+    assert [u["unit"] for u in s] == ["X1", "X2"]
+    assert (s[0]["lower"], s[0]["upper"]) == pytest.approx((6.1429, 6.25), abs=5e-5)
+    assert (s[1]["lower"], s[1]["upper"]) == pytest.approx((64.4643, 64.5714), abs=5e-5)
+    linear = port.price(tvar, assets=100).allocated[0].premium
+    assert s[0]["lower"] < linear < s[0]["upper"]
+    grids = Portfolio.from_independent(["a", "b"], [Grid(1.0, [0.5, 0.5])] * 2)
+    with pytest.raises(ValueError):
+        grids.allocation_set(tvar)
+    # Bodoff's Thought Experiment 1, priced by the CCoC (Table 15.24).
+    bodoff = Portfolio(["Hu", "EQ"], [[0, 0], [99, 0], [0, 100], [99, 100]], [0.76, 0.19, 0.04, 0.01])
+    plc = bodoff.bodoff_price(Distortion.ccoc(0.1), assets=100)
+    assert [u.premium for u in plc.allocated] == pytest.approx([24.8729, 5.8635], abs=5e-5)
+    assert [u.assets for u in plc.allocated] == pytest.approx(bodoff.bodoff(assets=100), abs=1e-12)
+    assert plc.total.assets == pytest.approx(100, abs=1e-10)
+
+
 def test_natural_from_independent_and_predictive():
     from prospicio.distributions import Grid, PredictiveDistribution
     from prospicio.pricing import Portfolio

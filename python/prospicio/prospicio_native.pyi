@@ -19189,6 +19189,38 @@ class Portfolio:
     """
     def __new__(cls, /, units: Sequence[str], rows: Sequence[Sequence[float]], probs: Sequence[float] |None = None) -> Portfolio: ...
     def __repr__(self, /) -> str: ...
+    def allocation_set(self, /, distortion: Distortion, assets: float |None = None, p: float |None = None) -> list[dict]:
+        """
+        The range of each unit's premium over the natural allocation set:
+        every order of the outcomes whose totals, capped at the assets, tie.
+        The linear and lifted allocations lie in it. Needs a portfolio built
+        from rows.
+        
+        Parameters
+        ----------
+        distortion : Distortion
+        assets : float, optional
+        p : float, optional
+        
+        Returns
+        -------
+        list of dict
+            One per unit: ``unit``, ``lower``, ``upper``.
+        
+        Examples
+        --------
+        *Pricing Insurance Risk*'s Example 259, where the total 10 is 9 + 1 or
+        10 + 0:
+        
+        >>> from prospicio.pricing import Portfolio
+        >>> from prospicio.risk import Distortion
+        >>> rows = [[a, b] for a in (0, 9, 10) for b in (0, 1, 90)]
+        >>> probs = [p * q for p in (0.5, 0.25, 0.25) for q in (0.5, 0.25, 0.25)]
+        >>> port = Portfolio(["X1", "X2"], rows, probs)
+        >>> x1 = port.allocation_set(Distortion.proportional_hazard(0.5), assets=100)[0]
+        >>> round(x1["lower"], 4), round(x1["upper"], 4)
+        (6.2009, 6.2085)
+        """
     def assets(self, /, p: float) -> float:
         """
         Assets at the capital standard ``p``: the lower ``p`` quantile of
@@ -19227,6 +19259,37 @@ class Portfolio:
         Returns
         -------
         list of float
+        """
+    def bodoff_price(self, /, distortion: Distortion, assets: float |None = None, p: float |None = None) -> NaturalPrice:
+        """
+        Bodoff's percentile layer of capital priced by a distortion: each
+        layer of assets, its cost ``g(S)`` and its capital ``1 - g(S)`` are
+        shared in Bodoff's proportions, so every layer earns its own return.
+        The assets are ``bodoff``'s, the losses the equal-priority
+        recoveries, and the premiums add up to the price of the capped total.
+        
+        Parameters
+        ----------
+        distortion : Distortion
+        assets : float, optional
+        p : float, optional
+        
+        Returns
+        -------
+        NaturalPrice
+        
+        Examples
+        --------
+        Bodoff's Thought Experiment 1 at a 10% return (*Pricing Insurance
+        Risk*, Table 15.24):
+        
+        >>> from prospicio.pricing import Portfolio
+        >>> from prospicio.risk import Distortion
+        >>> port = Portfolio(["Hu", "EQ"], [[0, 0], [99, 0], [0, 100], [99, 100]],
+        ...                  [0.76, 0.19, 0.04, 0.01])
+        >>> plc = port.bodoff_price(Distortion.ccoc(0.1), assets=100)
+        >>> [round(u.premium, 4) for u in plc.allocated]
+        [24.8729, 5.8635]
         """
     def calibrate(self, /, family: str, assets: float |None = None, p: float |None = None, *, premium: float |None = None, return_on_capital: float |None = None, loss_ratio: float |None = None, r0: float = 0.0) -> Distortion:
         """

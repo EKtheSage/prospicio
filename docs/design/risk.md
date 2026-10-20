@@ -136,10 +136,14 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   return or loss ratio. `Pentagon` holds `L, M, P, Q, a` and
   `Pentagon::solve` fills it from any three determining amounts or ratios.
   `premium_bounds(premium, a)` gives each unit's range over every
-  distortion with that total price. Python `prospicio.pricing.Portfolio`,
-  `NaturalPrice`, `Pentagon`; R `capital_portfolio()`, `natural_price()`,
-  `calibrate_portfolio()`, `bodoff_allocation()`, `epd_ratio()`,
-  `assets_for_epd()`, `pentagon()`, `premium_bounds()`.
+  distortion with that total price. `allocation_set(g, a)` gives each
+  unit's range over the natural allocation set (every order of the
+  outcomes whose capped totals tie; rows only), and `bodoff_price(g, a)`
+  prices Bodoff's percentile layers by `g`. Python
+  `prospicio.pricing.Portfolio`, `NaturalPrice`, `Pentagon`; R
+  `capital_portfolio()`, `natural_price()`, `calibrate_portfolio()`,
+  `bodoff_allocation()`, `epd_ratio()`, `assets_for_epd()`, `pentagon()`,
+  `premium_bounds()`, `allocation_set()`, `bodoff_price()`.
 - `prospicio_pricing::classical`: the classical premium principles that
   *Pricing Insurance Risk* compares against (expected value, variance,
   standard deviation, semi-variance, exponential, Esscher, Dutch, Fischer,
@@ -332,6 +336,22 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   below it, as on `aggregate`'s unit grid. `aggregate` 1.2.0 gives the
   same values as 1.0.1 on every row of `natural_aggregate.csv`, so these
   stay the defaults (#379).
+- **The natural allocation set and PLC under a distortion** (#368). A
+  distortion sees only `X ∧ a`, so the outcomes whose capped totals tie may
+  take its weight in any order, and each order is a natural allocation of
+  the same total. Because `g` is concave, a unit's premium is largest when
+  in every tie the outcomes that pay it most rank highest (the
+  rearrangement inequality) and smallest in the reverse order, so
+  `allocation_set` sorts each tie twice and needs no search; it needs the
+  scenarios, so a portfolio built from grids is an error (*Pricing
+  Insurance Risk*'s Example 259 and Exercise 260 exact). `bodoff_price`
+  shares each layer `[x, x + dx)`, its cost `g(S(x)) dx` and its capital,
+  in Bodoff's proportions `E[Xᵢ / X | X > x]`, so every layer earns its
+  own return; the premiums add up to the price of `X ∧ a`, and under the
+  CCoC each is the loss plus `r / (1 + r)` of the unit's shared liability
+  (Table 15.24 exact). The book's PH and Wang PLC values (Tables 15.32 and
+  15.33) are not checked against print: only their totals and the CCoC
+  case are.
 - **The book's two conventions are settings** (`PriceSettings`, #379 and
   #368). `AtomAtAssets::Lumped` puts an outcome whose total is exactly the
   assets with the defaults in the linear allocation, as *Pricing Insurance

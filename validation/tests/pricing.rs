@@ -2038,3 +2038,102 @@ fn ccoc_capital_is_the_margin_over_the_return_near_s_of_one() {
         r = f64::from_bits(r.to_bits() - 1);
     }
 }
+
+#[test]
+fn natural_allocation_set_matches_the_book() {
+    use prospicio_pricing::natural::{Allocation, AtomAtAssets, Portfolio, PriceSettings};
+    use prospicio_prob::Distortion;
+
+    let units = || vec!["X1".to_string(), "X2".to_string()];
+    let near = |got: f64, want: f64| assert!((got - want).abs() < 5e-5, "{got} vs {want}");
+    // Pricing Insurance Risk, Example 259 (PH at 0.5) and Exercise 260
+    // (TVaR at 65%) on the adjusted Simple Discrete Example, assets 100.
+    let (x1, x2, w) = ([0.0, 9.0, 10.0], [0.0, 1.0, 90.0], [0.5, 0.25, 0.25]);
+    let rows: Vec<Vec<f64>> = x1.iter().flat_map(|&a| x2.map(|b| vec![a, b])).collect();
+    let probs: Vec<f64> = w.iter().flat_map(|&p| w.map(|q| p * q)).collect();
+    let adjusted = Portfolio::from_rows(units(), &rows, Some(&probs)).unwrap();
+    let ph = Distortion::proportional_hazard(0.5).unwrap();
+    let set = adjusted.allocation_set(&ph, 100.0).unwrap();
+    near(set[0].lower, 6.2009);
+    near(set[0].upper, 6.2085);
+    let tvar = Distortion::tvar(0.65).unwrap();
+    let set = adjusted.allocation_set(&tvar, 100.0).unwrap();
+    near(set[0].lower, 6.1429);
+    near(set[0].upper, 6.2500);
+    near(set[1].lower, 64.4643);
+    near(set[1].upper, 64.5714);
+    // With assets below the largest total every default ties at a: Example
+    // 235's linear (either convention at the atom) and lifted allocations
+    // lie in the set, and with two units one's lowest is the other's
+    // highest.
+    let x1 = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 12.0, 10.0];
+    let x2 = [1.0, 2.0, 3.0, 4.0, 5.0, 9.0, 8.0, 12.0, 13.0, 20.0];
+    let rows: Vec<Vec<f64>> = x1.iter().zip(&x2).map(|(a, b)| vec![*a, *b]).collect();
+    let e235 = Portfolio::from_rows(units(), &rows, None).unwrap();
+    let tvar = Distortion::tvar(0.8).unwrap();
+    let set = e235.allocation_set(&tvar, 10.0).unwrap();
+    let lumped = PriceSettings {
+        atom: AtomAtAssets::Lumped,
+        ..PriceSettings::default()
+    };
+    let members = [
+        e235.price(&tvar, 10.0, Allocation::Linear).unwrap(),
+        e235.price(&tvar, 10.0, Allocation::Lifted).unwrap(),
+        e235.price_with(&tvar, 10.0, lumped).unwrap(),
+    ];
+    for p in &members {
+        for (u, r) in p.allocated.iter().zip(&set) {
+            assert!(r.lower - 1e-12 <= u.premium && u.premium <= r.upper + 1e-12);
+        }
+        let total = p.total.premium;
+        assert!((set[0].lower + set[1].upper - total).abs() < 1e-12);
+    }
+    assert!(set[0].upper - set[0].lower > 0.1);
+    // A portfolio from grids has no scenarios to order.
+    let g = prospicio_prob::Grid::new(1.0, vec![0.5, 0.5]).unwrap();
+    let grids = Portfolio::from_independent(units(), &[g.clone(), g]).unwrap();
+    assert!(grids.allocation_set(&tvar, 1.0).is_err());
+}
+
+#[test]
+fn bodoff_priced_by_a_distortion() {
+    use prospicio_pricing::natural::{Allocation, Portfolio};
+    use prospicio_prob::Distortion;
+
+    // Bodoff's Thought Experiment 1 (Pricing Insurance Risk, section 15.3):
+    // under the CCoC at 10% the PLC premium is the loss plus 1/11 of the
+    // shared liability, the book's 24.8729 and 5.8635 (Table 15.24).
+    let rows = [
+        vec![0.0, 0.0],
+        vec![99.0, 0.0],
+        vec![0.0, 100.0],
+        vec![99.0, 100.0],
+    ];
+    let units = vec!["Hu".to_string(), "EQ".to_string()];
+    let port = Portfolio::from_rows(units, &rows, Some(&[0.76, 0.19, 0.04, 0.01])).unwrap();
+    let ccoc = Distortion::ccoc(0.1).unwrap();
+    let plc = port.bodoff_price(&ccoc, 100.0);
+    let shares = port.bodoff(100.0);
+    let (_, recovery) = port.limited_expected(100.0);
+    for (k, want) in [24.8729, 5.8635].into_iter().enumerate() {
+        let u = &plc.allocated[k];
+        assert!((u.premium - want).abs() < 5e-5, "{} vs {want}", u.premium);
+        assert!((u.assets - shares[k]).abs() < 1e-12);
+        assert!((u.loss - recovery[k]).abs() < 1e-12);
+        assert!((u.premium - (u.loss + (u.assets - u.loss) / 11.0)).abs() < 1e-12);
+    }
+    // Under any distortion the premiums add up to the price of X ∧ a and
+    // the assets to a.
+    for g in [
+        ccoc,
+        Distortion::proportional_hazard(0.82156).unwrap(),
+        Distortion::wang(0.209615).unwrap(),
+    ] {
+        let plc = port.bodoff_price(&g, 100.0);
+        let natural = port.price(&g, 100.0, Allocation::Lifted).unwrap();
+        assert!((plc.total.premium - natural.total.premium).abs() < 1e-10);
+        assert!((plc.total.assets - 100.0).abs() < 1e-10);
+        let sum: f64 = plc.allocated.iter().map(|u| u.premium).sum();
+        assert!((sum - plc.total.premium).abs() < 1e-12);
+    }
+}

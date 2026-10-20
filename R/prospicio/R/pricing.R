@@ -960,6 +960,50 @@ bodoff_allocation <- function(port, assets = NULL, p = NULL) {
   stats::setNames(port@ptr$bodoff(portfolio_level(port, assets, p)), port@units)
 }
 
+#' Bodoff's layers priced by a distortion
+#'
+#' Bodoff's percentile layer of capital with each layer priced: every layer
+#' of assets, its cost `g(S)` and its capital `1 - g(S)` are shared among the
+#' units in Bodoff's proportions `E[X_i / X | X > x]`, so every layer earns
+#' its own return `(g - S) / (1 - g)` (*Pricing Insurance Risk*, section
+#' 15.3). The assets are [bodoff_allocation()]'s, the losses the
+#' equal-priority recoveries, and the premiums add up to the price of the
+#' capped total. Under the CCoC the premium is the loss plus `d = r / (1 + r)`
+#' of the shared liability.
+#'
+#' @inheritParams natural_price
+#' @returns A data frame as [natural_price()]'s.
+#' @export
+#' @examples
+#' bodoff <- capital_portfolio(rbind(c(Hu = 0, EQ = 0), c(99, 0), c(0, 100), c(99, 100)),
+#'                             probs = c(0.76, 0.19, 0.04, 0.01))
+#' bodoff_price(bodoff, distortion("ccoc", 0.1), assets = 100)
+bodoff_price <- function(port, distortion, assets = NULL, p = NULL) {
+  a <- portfolio_level(port, assets, p)
+  as.data.frame(rust_result(port@ptr$bodoff_price(distortion@ptr, a)))
+}
+
+#' The natural allocation set
+#'
+#' The range of each unit's premium over every order of the outcomes whose
+#' totals, capped at the assets, tie (*Pricing Insurance Risk*, section
+#' 15.1.3). Each order is a natural allocation of the same total premium;
+#' the linear and lifted allocations of [natural_price()] lie in the range.
+#' Needs a portfolio built from scenarios.
+#'
+#' @inheritParams natural_price
+#' @returns A data frame with `unit`, `lower` and `upper`.
+#' @export
+#' @examples
+#' rows <- as.matrix(expand.grid(X2 = c(0, 1, 90), X1 = c(0, 9, 10))[, c("X1", "X2")])
+#' probs <- as.vector(outer(c(0.5, 0.25, 0.25), c(0.5, 0.25, 0.25)))
+#' adjusted <- capital_portfolio(rows, probs = probs)
+#' allocation_set(adjusted, distortion("proportional_hazard", 0.5), assets = 100)
+allocation_set <- function(port, distortion, assets = NULL, p = NULL) {
+  r <- rust_result(port@ptr$allocation_set(distortion@ptr, portfolio_level(port, assets, p)))
+  data.frame(unit = port@units, lower = r$lower, upper = r$upper)
+}
+
 #' @rdname bodoff_allocation
 #' @export
 epd_ratio <- function(port, assets) {

@@ -527,3 +527,14 @@
   a convex hull, with the same bounds as the search over every pair. On
   *Pricing Insurance Risk*'s Cat/Non-Cat grid (71,795 totals) it takes
   0.05 s; it did not finish in two minutes (#368).
+- `Portfolio::allocation_set` (Python `Portfolio.allocation_set`, R
+  `allocation_set()`) gives each unit's smallest and largest premium over
+  the natural allocation set, every order of the outcomes whose totals
+  capped at the assets tie; *Pricing Insurance Risk*'s Example 259 (6.2009
+  to 6.2085) and Exercise 260 exact. A portfolio built from rows only
+  (#368).
+- `Portfolio::bodoff_price` (Python `Portfolio.bodoff_price`, R
+  `bodoff_price()`) prices Bodoff's percentile layers by any distortion:
+  each layer's cost and capital are shared in Bodoff's proportions, and the
+  premiums add up to the price of `X ∧ a`; Bodoff's Thought Experiment 1
+  under the CCoC gives the book's 24.8729 and 5.8635 (#368).

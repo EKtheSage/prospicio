@@ -163,6 +163,18 @@ e235 <- capital_portfolio(cbind(X1 = c(1, 2, 3, 4, 5, 6, 7, 8, 12, 10),
                                 X2 = c(1, 2, 3, 4, 5, 9, 8, 12, 13, 20)))
 near(natural_price(e235, distortion("tvar", 0.8), assets = 10, atom = "lumped")$premium[1:2], c(4.3, 5.7))
 near(natural_price(e235, distortion("tvar", 0.8), assets = 10)$premium[1], 4.16)
+# The natural allocation set (Exercise 260) and Bodoff's layers priced by the
+# CCoC (Table 15.24), as in Python.
+rows <- as.matrix(expand.grid(X2 = c(0, 1, 90), X1 = c(0, 9, 10))[, c("X1", "X2")])
+adjusted <- capital_portfolio(rows, probs = as.vector(outer(c(0.5, 0.25, 0.25), c(0.5, 0.25, 0.25))))
+aset <- allocation_set(adjusted, distortion("tvar", 0.65), assets = 100)
+stopifnot(identical(aset$unit, c("X1", "X2")),
+          max(abs(c(aset$lower, aset$upper) - c(6.1429, 64.4643, 6.25, 64.5714))) < 5e-5)
+bodoff <- capital_portfolio(rbind(c(Hu = 0, EQ = 0), c(99, 0), c(0, 100), c(99, 100)),
+                            probs = c(0.76, 0.19, 0.04, 0.01))
+plc <- bodoff_price(bodoff, distortion("ccoc", 0.1), assets = 100)
+stopifnot(max(abs(plc$premium[1:2] - c(24.8729, 5.8635))) < 5e-5,
+          max(abs(plc$assets[1:2] - bodoff_allocation(bodoff, assets = 100))) < 1e-12)
 ccoc <- calibrate_portfolio(insco, "ccoc", return_on_capital = 0.15)
 none <- natural_price(insco, ccoc, assets = 100, allocation = "lifted", bottom_layer = "none")
 stopifnot(max(abs(none$capital[1:3] - c(5.419, 6.082, 34.934))) < 5e-4)
