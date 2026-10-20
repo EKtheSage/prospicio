@@ -489,3 +489,16 @@
 - Rust: `ElasticNet` gains the public fields `lower_limits` and
   `upper_limits`; code that builds it in full adds them (`None`) or uses
   `ElasticNet::new` (#356).
+
+### Pricing
+
+- The book's conventions for the natural allocation as settings:
+  `Portfolio::price_with(g, a, PriceSettings { allocation, bottom_layer,
+  atom })`. `AtomAtAssets::Lumped` puts an outcome whose total is exactly
+  the assets with the defaults in the linear allocation, as *Pricing
+  Insurance Risk* does (Example 235's 4.3 and 5.7, #368);
+  `BottomLayer::Zero` gives the layer the loss always reaches no capital,
+  Monograph 15's equation 8.5 (#379). The defaults stay `aggregate`'s,
+  which 1.2.0 leaves unchanged from 1.0.1. Python `Portfolio.price(...,
+  bottom_layer="none", atom="lumped")`, R `natural_price(..., bottom_layer
+  = "none", atom = "lumped")`.

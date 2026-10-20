@@ -108,6 +108,9 @@ sources:
     aggregate's unit grid the jump lands in the layer below the total.
   * A sample-built portfolio's tied totals take the unweighted mean of
     the tied rows (`np.mean`), not the probability-weighted one.
+  * `aggregate` 1.2.0 (installed from PyPI on 2026-10-20) reproduces all
+    1,581 values of `validation/reference/natural_aggregate.csv` written by
+    1.0.1: its natural allocation, bottom layer included, did not change.
   * `S` at the largest total must be exactly 0: aggregate gets 0 from
     `max(1 - cumsum(p), 0)`; a residue of `1e-16` there would add the
     CCoC mass times the maximum to the price.

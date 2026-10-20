@@ -9,7 +9,9 @@ natural_price(
   distortion,
   assets = NULL,
   p = NULL,
-  allocation = c("linear", "lifted")
+  allocation = c("linear", "lifted"),
+  bottom_layer = c("limit", "none"),
+  atom = c("separate", "lumped")
 )
 }
 \arguments{
@@ -22,6 +24,13 @@ natural_price(
 \item{p}{The capital standard: assets at the total's lower \code{p} quantile.}
 
 \item{allocation}{\code{"linear"} or \code{"lifted"}.}
+
+\item{bottom_layer}{Capital in the layer below the smallest total:
+\code{"limit"} (its limit from above) or \code{"none"} (equation 8.5 as printed).}
+
+\item{atom}{For the linear allocation, a total exactly at the assets
+keeps its own weight (\code{"separate"}) or is lumped with the default
+outcomes (\code{"lumped"}, the book's).}
 }
 \value{
 A data frame, one row per unit and a \code{"total"} row, with
@@ -37,16 +46,17 @@ a distortion \code{g}, and its allocation to the units: each unit's loss
 proportion to each unit's margin in the layer.
 }
 \details{
-Two conventions follow \code{aggregate} 1.0.1. A total exactly at the assets
-keeps its own weight in the linear allocation, where \emph{Pricing Insurance
-Risk} lumps it with the default outcomes (its Example 235: 4.3 against
-4.16 here); assets just below the atom, \code{a - 1e-9}, give the book's
+The defaults follow \code{aggregate} (1.0.1 and 1.2.0 alike). A total
+exactly at the assets keeps its own weight in the linear allocation,
+where \emph{Pricing Insurance Risk} lumps it with the default outcomes (its
+Example 235: 4.3 against 4.16 here); \code{atom = "lumped"} gives the book's
 numbers, and \code{p} always lands on a total. In the bottom layer of
 capital, below the smallest total, the units' margins (which sum to
 zero) take capital at \verb{g'(1) / (1 - g'(1))}: \code{1/r} for CCoC,
 \code{rho / (1 - rho)} for the proportional hazard, 0 for Wang, dual power
-and TVaR. Monograph 15's equation 8.5 gives that layer none, so CCoC and
-PH capital by unit differ from it; the total and the premiums do not.
+and TVaR. Monograph 15's equation 8.5 gives that layer none
+(\code{bottom_layer = "none"}), so CCoC and PH capital by unit differ from
+it; the total and the premiums do not.
 }
 \examples{
 insco <- capital_portfolio(cbind(

@@ -15,7 +15,8 @@ use prospicio_pricing::exposure::{
 };
 use prospicio_pricing::layer::XsLayer;
 use prospicio_pricing::natural::{
-    Allocation, Pentagon, Portfolio as NaturalInner, Quantity, Target,
+    Allocation, AtomAtAssets, BottomLayer, Pentagon, Portfolio as NaturalInner, PriceSettings,
+    Quantity, Target,
 };
 use prospicio_pricing::payout::{self, PaymentPattern};
 use prospicio_pricing::quote::{Loads, Quote};
@@ -819,12 +820,38 @@ impl NaturalPortfolio {
         self.inner.max()
     }
 
-    fn price(&self, distortion: Robj, assets: f64, allocation: &str) -> Result<List> {
+    /// `bottom_layer` is "limit" or "none", `atom` "separate" or "lumped".
+    fn price(
+        &self,
+        distortion: Robj,
+        assets: f64,
+        allocation: &str,
+        bottom_layer: &str,
+        atom: &str,
+    ) -> Result<List> {
         let g = distortion_arg(&distortion, "distortion")?;
-        let p = self
-            .inner
-            .price(&g, assets, natural_allocation(allocation)?)
-            .map_err(to_r)?;
+        let settings = PriceSettings {
+            allocation: natural_allocation(allocation)?,
+            bottom_layer: match bottom_layer {
+                "limit" => BottomLayer::Limit,
+                "none" => BottomLayer::Zero,
+                other => {
+                    return Err(Error::Other(format!(
+                        "bottom_layer must be limit or none, not {other:?}"
+                    )));
+                }
+            },
+            atom: match atom {
+                "separate" => AtomAtAssets::Separate,
+                "lumped" => AtomAtAssets::Lumped,
+                other => {
+                    return Err(Error::Other(format!(
+                        "atom must be separate or lumped, not {other:?}"
+                    )));
+                }
+            },
+        };
+        let p = self.inner.price_with(&g, assets, settings).map_err(to_r)?;
         let rows: Vec<&Pentagon> = p.allocated.iter().chain([&p.total]).collect();
         let mut units = p.units.clone();
         units.push("total".into());

@@ -3,7 +3,8 @@
 //! total, over `prospicio_pricing::natural`.
 
 use prospicio_pricing::natural::{
-    Allocation, NaturalPrice, Pentagon, Portfolio, Quantity, Rule, StandAlone, Target,
+    Allocation, AtomAtAssets, BottomLayer, NaturalPrice, Pentagon, Portfolio, PriceSettings,
+    Quantity, Rule, StandAlone, Target,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -339,6 +340,32 @@ fn allocation(name: &str) -> PyResult<Allocation> {
     }
 }
 
+fn price_settings(allocation: &str, bottom_layer: &str, atom: &str) -> PyResult<PriceSettings> {
+    let bottom_layer = match bottom_layer {
+        "limit" => BottomLayer::Limit,
+        "none" => BottomLayer::Zero,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "bottom_layer must be \"limit\" or \"none\", not {other:?}"
+            )));
+        }
+    };
+    let atom = match atom {
+        "separate" => AtomAtAssets::Separate,
+        "lumped" => AtomAtAssets::Lumped,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "atom must be \"separate\" or \"lumped\", not {other:?}"
+            )));
+        }
+    };
+    Ok(PriceSettings {
+        allocation: self::allocation(allocation)?,
+        bottom_layer,
+        atom,
+    })
+}
+
 impl PyPortfolio {
     fn level(&self, assets: Option<f64>, p: Option<f64>) -> PyResult<f64> {
         match (assets, p) {
@@ -547,6 +574,14 @@ impl PyPortfolio {
     /// allocation : {"linear", "lifted"}, default "linear"
     ///     The unit share of the assets above the asset level: expected
     ///     (linear) or distorted (lifted).
+    /// bottom_layer : {"limit", "none"}, default "limit"
+    ///     Capital in the layer below the smallest total, where the return
+    ///     is undefined: at its limit from above, or none (Monograph 15's
+    ///     equation 8.5 as printed).
+    /// atom : {"separate", "lumped"}, default "separate"
+    ///     For the linear allocation, a total exactly at the assets keeps
+    ///     its own weight, or is lumped with the default outcomes (*Pricing
+    ///     Insurance Risk*'s linear allocation).
     ///
     /// Returns
     /// -------
@@ -554,31 +589,46 @@ impl PyPortfolio {
     ///
     /// Notes
     /// -----
-    /// Two conventions follow ``aggregate`` 1.0.1. A total exactly at the
-    /// assets keeps its own weight in the linear allocation, where *Pricing
-    /// Insurance Risk* lumps it with the default outcomes (its Example 235:
-    /// 4.3 against 4.16 here); assets just below the atom, ``a - 1e-9``,
-    /// give the book's numbers, and ``p`` always lands on a total. In the
-    /// bottom layer of capital, below the smallest total, the units'
-    /// margins (which sum to zero) take capital at ``g'(1) / (1 - g'(1))``:
-    /// ``1/r`` for CCoC, ``rho / (1 - rho)`` for the proportional hazard, 0
-    /// for Wang, dual power and TVaR. Monograph 15's equation 8.5 gives
-    /// that layer none, so CCoC and PH capital by unit differ from it; the
-    /// total and the premiums do not.
-    #[pyo3(signature = (distortion, assets=None, p=None, allocation="linear"))]
+    /// The defaults follow ``aggregate`` (1.0.1 and 1.2.0 alike). A total
+    /// exactly at the assets keeps its own weight in the linear allocation,
+    /// where *Pricing Insurance Risk* lumps it with the default outcomes
+    /// (its Example 235: 4.3 against 4.16 here); ``atom="lumped"`` gives
+    /// the book's numbers, and ``p`` always lands on a total. In the bottom
+    /// layer of capital, below the smallest total, the units' margins
+    /// (which sum to zero) take capital at ``g'(1) / (1 - g'(1))``: ``1/r``
+    /// for CCoC, ``rho / (1 - rho)`` for the proportional hazard, 0 for
+    /// Wang, dual power and TVaR. Monograph 15's equation 8.5 gives that
+    /// layer none (``bottom_layer="none"``), so CCoC and PH capital by unit
+    /// differ from it; the total and the premiums do not.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import Portfolio
+    /// >>> from prospicio.risk import Distortion
+    /// >>> x1 = [1, 2, 3, 4, 5, 6, 7, 8, 12, 10]
+    /// >>> x2 = [1, 2, 3, 4, 5, 9, 8, 12, 13, 20]
+    /// >>> port = Portfolio(["X1", "X2"], [[float(a), float(b)] for a, b in zip(x1, x2)])
+    /// >>> book = port.price(Distortion.tvar(0.8), assets=10, atom="lumped")
+    /// >>> [round(u.premium, 6) for u in book.allocated]
+    /// [4.3, 5.7]
+    #[pyo3(signature = (distortion, assets=None, p=None, allocation="linear", *,
+                        bottom_layer="limit", atom="separate"))]
+    #[allow(clippy::too_many_arguments)]
     fn price(
         &self,
         distortion: PyRef<'_, PyDistortion>,
         assets: Option<f64>,
         p: Option<f64>,
         allocation: &str,
+        bottom_layer: &str,
+        atom: &str,
     ) -> PyResult<PyNaturalPrice> {
         let a = self.level(assets, p)?;
-        let method = self::allocation(allocation)?;
+        let settings = price_settings(allocation, bottom_layer, atom)?;
         Ok(PyNaturalPrice {
             inner: self
                 .inner
-                .price(&distortion.inner, a, method)
+                .price_with(&distortion.inner, a, settings)
                 .map_err(to_py)?,
         })
     }

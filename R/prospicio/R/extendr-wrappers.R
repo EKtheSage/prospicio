@@ -1837,7 +1837,7 @@ NaturalPortfolio$assets <- function(p) .Call(wrap__NaturalPortfolio__assets, sel
 
 NaturalPortfolio$max <- function() .Call(wrap__NaturalPortfolio__max, self)
 
-NaturalPortfolio$price <- function(distortion, assets, allocation) .Call(wrap__NaturalPortfolio__price, self, distortion, assets, allocation)
+NaturalPortfolio$price <- function(distortion, assets, allocation, bottom_layer, atom) .Call(wrap__NaturalPortfolio__price, self, distortion, assets, allocation, bottom_layer, atom)
 
 NaturalPortfolio$calibrate <- function(family, assets, target, value, r0) .Call(wrap__NaturalPortfolio__calibrate, self, family, assets, target, value, r0)
 
