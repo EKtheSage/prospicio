@@ -416,8 +416,10 @@ what it is aiming for by v1.0.
   factors; Laplace, or adaptive quadrature for one factor; glmmTMB and
   lme4 parity; Rust, Python and R, #358). Double GLMs (a dispersion
   model on its own design, REML or ML; `dglm` parity, corrected where its
-  mean step is wrong; Rust, Python and R, #353).
-- **Next:** #355 and #356.
+  mean step is wrong; Rust, Python and R, #353). Elastic-net
+  coefficient bounds, the relaxed lasso and its cross-validation, and an
+  active-set solve for collinear bases (glmnet parity; Rust, #356).
+- **Next:** #356 in Python and R, then #355.
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.
 
 ### `prospicio-nn` (Models lane, opt-in)

@@ -582,6 +582,33 @@ fn net_case(
             d,
             numeric(data, "severity"),
         ),
+        // r_glmnet_relax.R: bounds and relaxed fits, all lasso.
+        "poisson_relaxed" | "poisson_nonneg" | "poisson_nonneg_relaxed" => {
+            let mut spec = net(Family::Poisson, Link::Log, 1.0);
+            if case.contains("nonneg") {
+                spec = spec.lower_limits(vec![0.0; 6]);
+            }
+            (
+                spec,
+                d.with_offset(log_exposure).unwrap(),
+                numeric(data, "claims"),
+            )
+        }
+        "gaussian_relaxed" => (
+            net(Family::Gaussian, Link::Identity, 1.0),
+            d,
+            numeric(data, "gauss"),
+        ),
+        "gaussian_bounded" => {
+            let (inf, ninf) = (f64::INFINITY, f64::NEG_INFINITY);
+            (
+                net(Family::Gaussian, Link::Identity, 1.0)
+                    .lower_limits(vec![ninf, ninf, ninf, ninf, -2.0, ninf])
+                    .upper_limits(vec![inf, inf, 0.1, inf, inf, 5.0]),
+                d,
+                numeric(data, "gauss"),
+            )
+        }
         other => panic!("unknown case {other}"),
     }
 }
@@ -674,6 +701,80 @@ fn elastic_net_cross_validation_matches_cv_glmnet() {
             "se" => Some(cv.se[at(c.number("arg")?)?]),
             "lambda_min" => Some(cv.lambda_min()),
             "lambda_1se" => Some(cv.lambda_1se()),
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn bounded_and_relaxed_elastic_nets_match_glmnet() {
+    let data = policies();
+    let cases = reference("elastic_net_relax_glmnet.csv");
+    check(&cases, |c| {
+        let (spec, d, y) = net_case(c.get("case"), &data);
+        match c.get("quantity") {
+            "lambda_max" => spec.lambda_max(&d, &y).ok(),
+            "coef" => {
+                let mut fit = spec.with_lambda(c.number("arg")?).fit(&d, &y).ok()?;
+                if !c.get("gamma").is_empty() {
+                    fit = fit.relax(&d, &y, c.number("gamma")?).ok()?;
+                }
+                let j = fit.names().iter().position(|n| n == c.get("term"))?;
+                Some(fit.coefficients()[j])
+            }
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn relaxed_cross_validation_matches_cv_glmnet() {
+    use prospicio_models::resample::Split;
+    let data = policies();
+    let cases = reference("elastic_net_relax_cv_glmnet.csv");
+    let n = numeric(&data, "age").len();
+    let splits: Vec<Split> = (0..5)
+        .map(|f| Split {
+            train: (0..n).filter(|i| i % 5 != f).collect(),
+            test: (0..n).filter(|i| i % 5 == f).collect(),
+        })
+        .collect();
+    // As the script records them: glmnet's γ = 0 is 1e-5.
+    let gammas = [1e-5, 0.25, 0.5, 0.75, 1.0];
+    let mut runs: Vec<(String, prospicio_glm::net::RelaxedCv)> = Vec::new();
+    check(&cases, |c| {
+        let name = c.get("case");
+        if !runs.iter().any(|(k, _)| k == name) {
+            let lambdas: Vec<f64> = cases
+                .iter()
+                .filter(|r| r.get("case") == name && r.get("quantity") == "mean")
+                .filter(|r| r.get("gamma") == "1")
+                .map(|r| r.number("arg").unwrap())
+                .collect();
+            let (spec, d, y) = net_case(name, &data);
+            let cv = spec
+                .cross_validate_relaxed(&d, &y, &lambdas, &gammas, &splits)
+                .ok()?;
+            runs.push((name.to_string(), cv));
+        }
+        let cv = &runs.iter().find(|(k, _)| k == name)?.1;
+        let at = || -> Option<&prospicio_glm::net::CvPath> {
+            let gamma = c.number("gamma")?;
+            let g = cv.gammas.iter().position(|&x| x == gamma)?;
+            Some(&cv.paths[g])
+        };
+        let k = |path: &prospicio_glm::net::CvPath| {
+            path.lambdas
+                .iter()
+                .position(|&x| Some(x) == c.number("arg"))
+        };
+        match c.get("quantity") {
+            "mean" => at().and_then(|p| Some(p.mean[k(p)?])),
+            "se" => at().and_then(|p| Some(p.se[k(p)?])),
+            "lambda_min" => Some(cv.lambda_min()),
+            "gamma_min" => Some(cv.gamma_min()),
+            "lambda_1se" => Some(cv.lambda_1se()),
+            "gamma_1se" => Some(cv.gamma_1se()),
             _ => None,
         }
     });

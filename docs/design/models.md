@@ -635,6 +635,38 @@ log link, at four λ each. Two notes:
   `thresh = 1e-7` stops with coefficients off in the third digit, and
   even `1e-14` leaves them 5e-6 off. The references use `1e-20`.
 
+Bounds, relaxed fits and collinear bases (#356):
+
+- `lower_limits` and `upper_limits` bound each coefficient on the
+  design's scale, as glmnet's `lower.limits` and `upper.limits` (each
+  lower bound at most 0, each upper at least 0; the intercept is never
+  bounded). The coordinate update is clamped to the bound, standardized
+  with the column. Every bound 0 makes a cumulative step basis
+  `1[x >= k]` monotone (CAS Monograph 16, section 5.7.2).
+- `ElasticNetFit::relax(design, y, γ)` is glmnet's relaxed fit: the
+  columns the fit keeps are refitted at `λ = 0` within the same bounds,
+  and the coefficients are `γ β + (1 - γ) β₀`. glmnet's `blend.relaxed`
+  raises `γ` to at least `1e-5`; ours does not, so `γ = 0` is exactly the
+  refit, and the parity references record glmnet's effective `γ`.
+  `cross_validate_relaxed` scores every `(λ, γ)` on the same folds and
+  chooses as glmnet's `getOptcv.relaxed`: the lowest mean, and for one
+  standard error the largest `λ`, then the largest `γ`, within one
+  standard error of it. Relaxed fits and bounds make an elastic-net
+  artifact format version 2.
+- On a hinge basis `max(0, x - k)` at neighbouring knots coordinate
+  descent finds the active set (zero, at a bound, or free with a sign) in
+  a few sweeps and then creeps. Once two sweeps agree on it, the problem
+  restricted to it is solved by Cholesky and kept if it meets the whole
+  problem's optimality conditions; otherwise the sweeps go on, and that
+  pattern is not tried again. On #356's 441 cells, a 25-λ path with
+  7-fold cross-validation on 20 hinges went from 43 s to 0.8 s (10
+  hinges 24 s to 0.4 s, 20 steps 0.7 s to 0.12 s) on data like it.
+- Parity (`validation/scripts/r_glmnet_relax.R`, glmnet 5.1): Poisson with
+  every coefficient non-negative, Gaussian with bounds that bind, relaxed
+  Poisson and Gaussian, and relaxed under bounds, at four λ (relaxed at
+  two `γ`), 197 values; the relaxed cross-validation's means, standard
+  errors and chosen `(λ, γ)` over 20 λ and five `γ`, 408 values.
+
 ## Tweedie power
 
 A Tweedie GLM's power `p` is a hyperparameter: IRLS gives the
