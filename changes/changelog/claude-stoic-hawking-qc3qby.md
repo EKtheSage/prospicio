@@ -552,3 +552,14 @@
   value is exact at the band edges. `ilf`, `loss_elimination_ratio` and the
   layer functions take it, and it saves as JSON: Werner and Modlin's
   LAS(100K) 77,046, ILF 1.59 and LER 0.135 (#338).
+
+### Aggregate and reinsurance
+
+- `audit_grid` and `audit_portfolio_grid` (Python
+  `prospicio.aggregate.audit_grid`, R `audit_grid()`) audit an FFT grid as
+  `aggregate` 1.2.0's `sharpen` does: each cell scored by six moment
+  errors against the exact moments, the step doubled and halved around the
+  center, the best cell that loses no mass taken, preferring fewer points.
+  `GridAudit` keeps every cell and the reason for the choice. With
+  `recommend_portfolio_grid`, a grid for several units. `aggregate`'s
+  scores and choices on its books, to six digits (#317).

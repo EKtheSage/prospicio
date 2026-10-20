@@ -122,6 +122,25 @@ agg <- compound_auto(poisson_count(10), gamma_distribution(1 / 0.49, 50 * 0.49))
 stopifnot(agg@report$aliasing_error < 1e-12, agg@report$sizing$points == 65536)
 stopifnot(abs(mean(agg) / 500 - 1) < 1e-6)
 
+# The grid audit against aggregate 1.2.0's sharpen: from bs 1, log2 13 the
+# capped lognormal moves to bs 4; from 0.5, 2^10 the gamma book grows to 11.
+capped <- policy_limits_distribution(lognormal_from_mean_cv(100, 1.5), 1000, 1)
+a <- audit_grid(poisson_count(100), capped, step = 1, log2 = 13)
+stopifnot(a$step == 4, a$log2 == 13, !a$grew, a$probed, a$cells$selected[a$selected])
+stopifnot(abs(a$score / 0.035326 - 1) < 1e-4, a$cells$note[1] == "center")
+stopifnot(abs(a$cells$aggregate_cv[a$selected] / 0.020144 - 1) < 1e-4)
+gb <- audit_grid(poisson_count(50), gamma_distribution(4, 2.5), step = 0.5, log2 = 10)
+stopifnot(gb$step == 1, gb$log2 == 11, gb$grew, abs(gb$score / 0.722254 - 1) < 1e-5)
+one <- audit_portfolio_grid(list(list(poisson_count(50), gamma_distribution(4, 2.5))),
+                            step = 0.5, log2 = 10)
+stopifnot(isTRUE(all.equal(one$cells$score, gb$cells$score)))
+units <- list(list(poisson_count(10), gamma_distribution(2, 50)),
+              list(poisson_count(2), gamma_distribution(0.5, 1000)))
+stopifnot(recommend_portfolio_grid(units, log2 = 12)$points <= 2^12)
+stopifnot(audit_portfolio_grid(units, log2 = 12)$score < 0.5)
+stopifnot(inherits(try(audit_grid(poisson_count(5), capped, step = -1, log2 = 10),
+                       silent = TRUE), "try-error"))
+
 cat("prospicio R aggregate tests passed\n")
 
 # Surplus treaty on events that carry sums insured.

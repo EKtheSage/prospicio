@@ -80,6 +80,7 @@ reference:
     contents:
       - compound_distribution
       - recommend_grid
+      - audit_grid
       - simulate_events
       - event_set_from_long
       - event_loss_table

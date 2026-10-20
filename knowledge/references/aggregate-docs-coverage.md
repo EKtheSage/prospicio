@@ -57,9 +57,14 @@ convention at a bucket boundary.
 2. **A grid audit.** aggregate's `sharpen` re-runs a build over probe bucket
    sizes and scores them, and the tail report grades the tail. prospicio reports
    `aliasing_error`, `tail_mass` and `mean_error` and sizes by `recommend_grid`
-   for an unlimited severity; no probe of a chosen step.
+   for an unlimited severity; no probe of a chosen step. Closed by #317:
+   `audit_grid` and `audit_portfolio_grid` probe and score as `sharpen` does,
+   to its digits on its books (the tail report is not ported).
 3. **Automatic grids for a limited severity or a portfolio.** `fft_auto` sizes
    for the severity it is given; with a limit the user picks the step.
+   Closed by #317: `recommend_grid` sizes a limited severity by its own
+   quantiles, `recommend_portfolio_grid` sizes several units, and the audit
+   moves a step that is too fine or too coarse.
 4. **Shifted and scaled severities.** `10 * lognorm 1 + 20` has no wrapper;
    `Grid.map` does it on a grid, losing the continuous form.
 5. **A DecL front end, the recipe base, `%%agg`.** A design decision, not a
