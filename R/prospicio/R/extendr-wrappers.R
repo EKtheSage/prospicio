@@ -102,9 +102,9 @@ tweedie_profile_design <- function(x, names, y, offset, weights, link_name, powe
 
 glm_nb_fit_design <- function(x, names, y, offset, weights, link_name) .Call(wrap__glm_nb_fit_design, x, names, y, offset, weights, link_name)
 
-elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power) .Call(wrap__elastic_net_fit_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power)
+elastic_net_fit_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, relax, theta, power, link_power) .Call(wrap__elastic_net_fit_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, relax, theta, power, link_power)
 
-elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, theta, power, link_power, foldid)
+elastic_net_cv_design <- function(x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, gammas, theta, power, link_power, foldid) .Call(wrap__elastic_net_cv_design, x, names, y, offset, weights, family_name, link_name, alpha, lambdas, nlambda, min_ratio, standardize, penalty_factor, lower_limits, upper_limits, gammas, theta, power, link_power, foldid)
 
 gam_fit_design <- function(x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis) .Call(wrap__gam_fit_design, x, names, y, offset, weights, family_name, link_name, dispersion_kind, dispersion_value, theta, power, smooths, n_basis, bs, periods, smoothing, lambdas, tensors, tensor_basis)
 
@@ -909,6 +909,10 @@ ElasticNetPath$to_json <- function() .Call(wrap__ElasticNetPath__to_json, self)
 
 ElasticNetPath$from_json <- function(texts) .Call(wrap__ElasticNetPath__from_json, texts)
 
+ElasticNetPath$is_relaxed <- function() .Call(wrap__ElasticNetPath__is_relaxed, self)
+
+ElasticNetPath$relaxed_coefficients <- function(gamma) .Call(wrap__ElasticNetPath__relaxed_coefficients, self, gamma)
+
 ElasticNetPath$lambda <- function() .Call(wrap__ElasticNetPath__lambda, self)
 
 ElasticNetPath$coefficients <- function() .Call(wrap__ElasticNetPath__coefficients, self)
@@ -925,7 +929,7 @@ ElasticNetPath$alpha <- function() .Call(wrap__ElasticNetPath__alpha, self)
 
 ElasticNetPath$family <- function() .Call(wrap__ElasticNetPath__family, self)
 
-ElasticNetPath$predict <- function(index, x, names, offset) .Call(wrap__ElasticNetPath__predict, self, index, x, names, offset)
+ElasticNetPath$predict <- function(index, x, names, offset, gamma) .Call(wrap__ElasticNetPath__predict, self, index, x, names, offset, gamma)
 
 ElasticNetPath$predict_distribution <- function(index, x, names, offset, weights, n_sims, seed) .Call(wrap__ElasticNetPath__predict_distribution, self, index, x, names, offset, weights, n_sims, seed)
 

@@ -464,6 +464,12 @@
   columns, such as hinges at neighbouring knots, converge about fifty
   times faster. An artifact with bounds or a relaxed fit is format
   version 2; one without stays version 1 (#356).
+- The elastic net's bounds and relaxed lasso in Python and R: Python
+  `ElasticNet(lower_limits=, upper_limits=)`, `ElasticNetFit.relax` and
+  `.gamma`, and `ElasticNet.cross_validate_relaxed` with its `RelaxedCv`;
+  R `elastic_net_fit(lower_limits, upper_limits, relax = TRUE)`, `coef()`
+  and `predict()` with `gamma`, and `elastic_net_cv(relax = TRUE, gamma)`
+  (#356).
 
 ### Breaking changes
 

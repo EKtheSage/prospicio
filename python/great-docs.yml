@@ -139,6 +139,7 @@ reference:
       - models.ElasticNet
       - models.ElasticNetFit
       - models.CvPath
+      - models.RelaxedCv
       - models.Gam
       - models.GamFit
       - models.Cann

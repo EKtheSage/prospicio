@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use prospicio_bayes::ppc::{self, LooPit, Statistic, StatisticCheck};
 use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing, TensorSpline};
-use prospicio_glm::net::{CvPath, ElasticNet, ElasticNetFit};
+use prospicio_glm::net::{CvPath, ElasticNet, ElasticNetFit, RelaxedCv};
 use prospicio_glm::{Dispersion, Glm, GlmFit, Robust};
 use prospicio_models::resample::{self, Split};
 use prospicio_models::{
@@ -1151,7 +1151,7 @@ pub(crate) struct PyElasticNet {
 #[pymethods]
 impl PyElasticNet {
     #[new]
-    #[pyo3(signature = (family, link = None, alpha = 1.0, lam = 0.0, standardize = true, penalty_factor = None, theta = None, power = None, link_power = None))]
+    #[pyo3(signature = (family, link = None, alpha = 1.0, lam = 0.0, standardize = true, penalty_factor = None, theta = None, power = None, link_power = None, lower_limits = None, upper_limits = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         family: &str,
@@ -1163,12 +1163,30 @@ impl PyElasticNet {
         theta: Option<f64>,
         power: Option<f64>,
         link_power: Option<f64>,
+        lower_limits: Option<Vec<f64>>,
+        upper_limits: Option<Vec<f64>>,
     ) -> PyResult<Self> {
         let f = self::family(family, theta, power)?;
         let l = self::link(link, f, link_power)?;
         let mut inner = ElasticNet::new(f, l, alpha, lam).standardize(standardize);
         inner.penalty_factor = penalty_factor;
+        inner.lower_limits = lower_limits;
+        inner.upper_limits = upper_limits;
         Ok(Self { inner })
+    }
+
+    /// Lower bounds on the coefficients, one per design column, or
+    /// ``None``.
+    #[getter]
+    fn lower_limits(&self) -> Option<Vec<f64>> {
+        self.inner.lower_limits.clone()
+    }
+
+    /// Upper bounds on the coefficients, one per design column, or
+    /// ``None``.
+    #[getter]
+    fn upper_limits(&self) -> Option<Vec<f64>> {
+        self.inner.upper_limits.clone()
     }
 
     /// Mixing parameter.
@@ -1333,6 +1351,48 @@ impl PyElasticNet {
         Ok(PyCvPath { inner })
     }
 
+    /// Cross-validates relaxed fits, like glmnet's ``cv.glmnet(relax =
+    /// TRUE)``: on each split, every fit along the path is relaxed at
+    /// each of ``gammas`` (``ElasticNetFit.relax``) and scored on the
+    /// test rows. The lowest mean deviance over every ``(lam, gamma)``
+    /// is ``lam_min``, ``gamma_min``; the largest ``lam``, then
+    /// ``gamma``, within one standard error of it is ``lam_1se``,
+    /// ``gamma_1se``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// lams : list of float
+    ///     Penalty strengths, largest first (from ``lambda_path``).
+    /// gammas : list of float
+    ///     Relaxations in ``[0, 1]``; 1 is the penalized fit.
+    /// splits : list of (list of int, list of int)
+    ///     ``(train, test)`` rows, as ``k_fold`` returns.
+    ///
+    /// Returns
+    /// -------
+    /// RelaxedCv
+    fn cross_validate_relaxed(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        lams: Vec<f64>,
+        gammas: Vec<f64>,
+        splits: Vec<(Vec<usize>, Vec<usize>)>,
+    ) -> PyResult<PyRelaxedCv> {
+        let splits: Vec<Split> = splits
+            .into_iter()
+            .map(|(train, test)| Split { train, test })
+            .collect();
+        let (net, d) = (&self.inner, &design.inner);
+        let inner = py
+            .detach(|| net.cross_validate_relaxed(d, &y, &lams, &gammas, &splits))
+            .map_err(to_py)?;
+        Ok(PyRelaxedCv { inner })
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "ElasticNet(family={:?}, link={:?}, alpha={:?}, lam={:?})",
@@ -1395,6 +1455,65 @@ impl PyCvPath {
             self.inner.lambdas.len(),
             self.inner.lambda_min(),
             self.inner.lambda_1se()
+        )
+    }
+}
+
+/// Cross-validated relaxed fits, from ``ElasticNet.cross_validate_relaxed``.
+#[pyclass(name = "RelaxedCv", module = "prospicio.models", frozen)]
+pub(crate) struct PyRelaxedCv {
+    inner: RelaxedCv,
+}
+
+#[pymethods]
+impl PyRelaxedCv {
+    /// The relaxations, in the order given.
+    #[getter]
+    fn gammas(&self) -> Vec<f64> {
+        self.inner.gammas.clone()
+    }
+
+    /// The scores along the path at each ``gamma``, in the same order.
+    #[getter]
+    fn paths(&self) -> Vec<PyCvPath> {
+        self.inner
+            .paths
+            .iter()
+            .map(|p| PyCvPath { inner: p.clone() })
+            .collect()
+    }
+
+    /// ``lam`` of the lowest mean deviance.
+    #[getter]
+    fn lam_min(&self) -> f64 {
+        self.inner.lambda_min()
+    }
+
+    /// ``gamma`` of the lowest mean deviance.
+    #[getter]
+    fn gamma_min(&self) -> f64 {
+        self.inner.gamma_min()
+    }
+
+    /// ``lam`` of the one-standard-error choice.
+    #[getter]
+    fn lam_1se(&self) -> f64 {
+        self.inner.lambda_1se()
+    }
+
+    /// ``gamma`` of the one-standard-error choice.
+    #[getter]
+    fn gamma_1se(&self) -> f64 {
+        self.inner.gamma_1se()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "RelaxedCv(lam_min={}, gamma_min={}, lam_1se={}, gamma_1se={})",
+            self.inner.lambda_min(),
+            self.inner.gamma_min(),
+            self.inner.lambda_1se(),
+            self.inner.gamma_1se()
         )
     }
 }
@@ -1468,6 +1587,47 @@ impl PyElasticNetFit {
     #[getter]
     fn lam(&self) -> f64 {
         self.inner.lambda()
+    }
+
+    /// The relaxation: 1 for the penalized fit, below 1 for one from
+    /// ``relax``.
+    #[getter]
+    fn gamma(&self) -> f64 {
+        self.inner.gamma()
+    }
+
+    /// glmnet's relaxed fit (``relax = TRUE``): the columns this fit
+    /// keeps are refitted without the penalty, within the same bounds,
+    /// and the coefficients are ``gamma * penalized + (1 - gamma) *
+    /// refitted``. ``gamma = 0`` is the unpenalized fit on the lasso's
+    /// columns. Pass the training data again.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    /// y : list of float
+    /// gamma : float
+    ///     In ``[0, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// ElasticNetFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the data are not the training data, the fit is already
+    ///     relaxed, or ``gamma`` is outside ``[0, 1]``.
+    fn relax(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        gamma: f64,
+    ) -> PyResult<Self> {
+        let (fit, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| fit.relax(d, &y, gamma)).map_err(to_py)?;
+        Ok(Self { inner })
     }
 
     /// Residual deviance.

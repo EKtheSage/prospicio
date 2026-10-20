@@ -666,6 +666,14 @@ Bounds, relaxed fits and collinear bases (#356):
   Poisson and Gaussian, and relaxed under bounds, at four λ (relaxed at
   two `γ`), 197 values; the relaxed cross-validation's means, standard
   errors and chosen `(λ, γ)` over 20 λ and five `γ`, 408 values.
+- Bindings: Python `ElasticNet(..., lower_limits=, upper_limits=)`,
+  `ElasticNetFit.relax(design, y, gamma)` and `.gamma`,
+  `ElasticNet.cross_validate_relaxed(...)` returning a `RelaxedCv`; R
+  `elastic_net_fit(..., lower_limits, upper_limits, relax = TRUE)` (bounds
+  as one value, one per column or named for some), `coef()` and
+  `predict()` with `gamma`, and `elastic_net_cv(..., relax = TRUE, gamma)`
+  with `mean` and `se` as `lambda × gamma` matrices. A relaxed R path keeps
+  each fit's refit, saved by `save_model()` as artifacts with `gamma = 0`.
 
 ## Tweedie power
 

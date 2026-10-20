@@ -507,4 +507,62 @@ if (requireNamespace("dglm", quietly = TRUE)) {
 stopifnot(inherits(try(dglm_fit(severity ~ x, ~ 1, sim, method = "pql"), silent = TRUE),
                    "try-error"))
 
+# Elastic-net bounds and relaxed fits against glmnet 5.1
+# (validation/scripts/r_glmnet_relax.R; its gamma = 0 is gamma = 1e-5).
+pol <- utils::read.csv(file.path(root, "data", "glm_policies.csv"))
+pol$age2 <- pol$age^2 / 100
+nref <- utils::read.csv(file.path(root, "reference", "elastic_net_relax_glmnet.csv"))
+ncv <- utils::read.csv(file.path(root, "reference", "elastic_net_relax_cv_glmnet.csv"))
+pf <- claims ~ age + age2 + region + offset(log(exposure))
+gf <- gauss ~ age + age2 + region
+net_case <- function(case, lambda = NULL, relax = FALSE) {
+  switch(case,
+    poisson_nonneg = elastic_net_fit(pf, pol, lambda = lambda, lower_limits = 0),
+    poisson_nonneg_relaxed = elastic_net_fit(pf, pol, lambda = lambda, lower_limits = 0,
+                                             relax = TRUE),
+    poisson_relaxed = elastic_net_fit(pf, pol, lambda = lambda, relax = TRUE),
+    gaussian_relaxed = elastic_net_fit(gf, pol, family = "gaussian", lambda = lambda, relax = TRUE),
+    gaussian_bounded = elastic_net_fit(gf, pol, family = "gaussian", lambda = lambda,
+                                       lower_limits = c(regionC = -2),
+                                       upper_limits = c(age2 = 0.1, regionD = 5)))
+}
+terms_order <- c("(Intercept)", "age", "age2", "region[B]", "region[C]", "region[D]")
+for (case in unique(nref$case)) {
+  rows <- nref[nref$case == case & nref$quantity == "coef", ]
+  lams <- unique(rows$arg)
+  fit <- net_case(case, lams)
+  for (g in unique(ifelse(is.na(rows$gamma), 1, rows$gamma))) {
+    b <- coef(fit, gamma = g)
+    sub <- rows[(if (g == 1) is.na(rows$gamma) else rows$gamma == g), ]
+    got <- b[cbind(match(sub$term, terms_order), match(sub$arg, lams))]
+    stopifnot(all(abs(got - sub$expected) <= 1e-9 + 1e-7 * abs(sub$expected)))
+  }
+}
+relaxed <- net_case("poisson_relaxed", nref$arg[nref$case == "poisson_relaxed"][2])
+mm <- stats::model.matrix(~ age + age2 + region, pol)[1:3, ]
+stopifnot(relaxed@relaxed)
+near(predict(relaxed, pol[1:3, ], gamma = 0.4),
+     exp(drop(mm %*% coef(relaxed, lambda = relaxed@lambda, gamma = 0.4)) +
+         log(pol$exposure[1:3])), 1e-12)
+f <- tempfile(fileext = ".rds")
+save_model(relaxed, f)
+back <- load_model(f)
+stopifnot(back@relaxed, identical(coef(back, gamma = 0.3), coef(relaxed, gamma = 0.3)))
+foldid <- (seq_len(nrow(pol)) - 1) %% 5 + 1
+for (case in c("poisson_relaxed", "gaussian_relaxed")) {
+  rows <- ncv[ncv$case == case, ]
+  lams <- rows$arg[rows$quantity == "mean" & rows$gamma == 1]
+  gammas <- sort(unique(rows$gamma[!is.na(rows$gamma)]))
+  cv <- elastic_net_cv(if (case == "poisson_relaxed") pf else gf, pol,
+                       family = if (case == "poisson_relaxed") "poisson" else "gaussian",
+                       lambda = lams, foldid = foldid, relax = TRUE, gamma = gammas)
+  m <- rows[rows$quantity == "mean", ]
+  got <- cv$mean[cbind(match(m$arg, lams), match(m$gamma, gammas))]
+  stopifnot(all(abs(got - m$expected) <= 1e-12 + 1e-7 * abs(m$expected)))
+  for (q in c("lambda_min", "gamma_min", "lambda_1se", "gamma_1se")) {
+    near(cv[[q]], rows$expected[rows$quantity == q], 1e-12)
+  }
+  stopifnot(cv$fit@relaxed)
+}
+
 cat("prospicio R models tests passed\n")

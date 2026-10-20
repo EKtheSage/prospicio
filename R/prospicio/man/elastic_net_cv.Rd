@@ -22,7 +22,11 @@ elastic_net_cv(
   foldid = NULL,
   theta = NULL,
   power = NULL,
-  link_power = NULL
+  link_power = NULL,
+  lower_limits = NULL,
+  upper_limits = NULL,
+  relax = FALSE,
+  gamma = c(0, 0.25, 0.5, 0.75, 1)
 )
 }
 \arguments{
@@ -67,11 +71,31 @@ leaves a column unpenalized.}
 \item{power}{Tweedie power in \verb{(1, 2)}.}
 
 \item{link_power}{Exponent of the power link.}
+
+\item{lower_limits, upper_limits}{Optional bounds on the coefficients, on
+the design's scale, as glmnet's \code{lower.limits} and \code{upper.limits}: one
+value for every column, one per design column, or a named vector for
+some (the rest unbounded). Lower bounds are at most 0, upper at least
+0; the intercept is never bounded. \code{lower_limits = 0} makes every
+coefficient non-negative, which keeps a cumulative step basis monotone.}
+
+\item{relax}{Also refit each \code{lambda}'s non-zero columns without the
+penalty (glmnet's \code{relax = TRUE}), within the same bounds; then
+\code{\link[stats:coef]{stats::coef()}} and \code{\link[stats:predict]{stats::predict()}} take \code{gamma}, the blend
+\code{gamma * penalized + (1 - gamma) * refitted}.}
+
+\item{gamma}{With \code{relax = TRUE}, the relaxations to score, as
+\code{cv.glmnet(relax = TRUE)}'s \code{gamma}.}
 }
 \value{
 A list with \code{lambda}, \code{mean}, \code{se}, \code{lambda_min} (lowest mean)
 and \code{lambda_1se} (the largest \code{lambda} within one standard error of
 it), and \code{fit}, the \link{elastic_net_model} on all rows over \code{lambda}.
+With \code{relax = TRUE}, \code{mean} and \code{se} are matrices (a row per \code{lambda},
+a column per \code{gamma}), and \code{gamma_min} and \code{gamma_1se} go with
+\code{lambda_min} and \code{lambda_1se}: the lowest mean over every pair, and
+the largest \code{lambda}, then \code{gamma}, within one standard error of it,
+as \code{cv.glmnet()} chooses. \code{fit} is then relaxed.
 }
 \description{
 glmnet's \code{cv.glmnet()} on the Rust core: on each fold, fits the whole
