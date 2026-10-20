@@ -7,10 +7,14 @@
 //! frequency and a layer, or between two frequencies. All of them serve
 //! primary pricing (ILF tables, deductible credits, large-loss loads) and
 //! reinsurance pricing alike. See `docs/design/pareto.md`.
+//!
+//! [`censored_las`] is the layer-by-layer limited average severity of
+//! claims censored at several policy limits, from one size-of-loss table
+//! per limit (Werner and Modlin, *Basic Ratemaking*, Table 11.6).
 
 use prospicio_core::{Error, Result};
 use prospicio_math::roots::bisect;
-use prospicio_prob::{Distribution, Pareto, Severity};
+use prospicio_prob::{Distribution, Pareto, Severity, SizeOfLoss};
 
 /// The layer `limit` xs `attachment` (per loss), for the Pareto helpers.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -370,6 +374,102 @@ pub fn loss_elimination_ratio<S: Severity + ?Sized>(severity: &S, deductible: f6
         });
     }
     Ok(severity.lev(deductible) / severity.mean())
+}
+
+/// One layer of [`censored_las`]: from `bottom` to `top`, estimated from
+/// the policies whose limit is at least `top`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CensoredLayer {
+    /// The bottom of the layer (the next lower policy limit, or 0).
+    pub bottom: f64,
+    /// The top of the layer, a policy limit.
+    pub top: f64,
+    /// The claims of the policies with a limit at least `top`.
+    pub claims: f64,
+    /// Their average loss in the layer, `E[min(X, top) − min(X, bottom)]`.
+    pub severity: f64,
+    /// The limited average severity at `top`, the layers' severities up to
+    /// this one added.
+    pub las: f64,
+}
+
+/// The limited average severity at each policy limit from claims censored
+/// at their policies' limits, layer by layer (Werner and Modlin, *Basic
+/// Ratemaking*, section 11.3 and Table 11.6).
+///
+/// `tables` holds one size-of-loss table per policy limit, with the claims
+/// capped at the limit (in the top band), so each table's last bound is its
+/// limit. Between consecutive limits `l₋ < l`, the layer's average
+/// severity uses only the policies with a limit at least `l`, whose claims
+/// are uncensored up to `l`; `LAS(l)` adds the layers up to `l`. A claim
+/// on a lower limit says nothing about the layers above it, so this is
+/// below the LAS of all claims pooled when the losses are censored.
+///
+/// Each layer's bounds must be band edges of the tables it uses (or below
+/// their first band), where a table's limited average severity is exact.
+///
+/// ```
+/// use prospicio_prob::SizeOfLoss;
+/// use prospicio_pricing::layer::censored_las;
+///
+/// // Werner and Modlin, Table 11.6: policies with limits of 100K, 250K and 500K.
+/// let tables = [
+///     SizeOfLoss::new(&[0.0, 100e3], &[2_019.0], &[156_657_898.0]).unwrap(),
+///     SizeOfLoss::new(&[0.0, 100e3, 250e3], &[690.0, 773.0], &[34_903_214.0, 142_767_479.0])
+///         .unwrap(),
+///     SizeOfLoss::new(
+///         &[0.0, 100e3, 250e3, 500e3],
+///         &[712.0, 574.0, 232.0],
+///         &[35_768_111.0, 90_009_422.0, 81_092_725.0],
+///     )
+///     .unwrap(),
+/// ];
+/// let layers = censored_las(&tables).unwrap();
+/// assert!((layers[0].las - 77_045.8446).abs() < 1e-3);
+/// assert!((layers[1].severity - 44_574.6).abs() < 0.1);
+/// assert!((layers[2].las - 136_833.0).abs() < 0.1);
+/// ```
+pub fn censored_las(tables: &[SizeOfLoss]) -> Result<Vec<CensoredLayer>> {
+    if tables.is_empty() {
+        return Err(Error::Data("censored_las needs at least one table".into()));
+    }
+    let limit = |t: &SizeOfLoss| *t.bounds().last().expect("a table has bounds");
+    if let Some(t) = tables.iter().find(|t| !limit(t).is_finite()) {
+        return Err(Error::Data(format!(
+            "each table's last bound is its policy limit and must be finite, not {}",
+            limit(t)
+        )));
+    }
+    let mut tops: Vec<f64> = tables.iter().map(limit).collect();
+    tops.sort_by(f64::total_cmp);
+    tops.dedup();
+    let exact = |t: &SizeOfLoss, x: f64| x <= t.bounds()[0] || t.bounds().contains(&x);
+    let (mut bottom, mut las) = (0.0, 0.0);
+    let mut layers = Vec::with_capacity(tops.len());
+    for top in tops {
+        let (mut claims, mut total) = (0.0, 0.0);
+        for t in tables.iter().filter(|t| limit(t) >= top) {
+            if let Some(&x) = [bottom, top].iter().find(|&&x| !exact(t, x)) {
+                return Err(Error::Data(format!(
+                    "{x} is a layer bound but falls inside a band of the table with limit {}",
+                    limit(t)
+                )));
+            }
+            claims += t.claims();
+            total += t.claims() * (t.lev(top) - t.lev(bottom));
+        }
+        let severity = total / claims;
+        las += severity;
+        layers.push(CensoredLayer {
+            bottom,
+            top,
+            claims,
+            severity,
+            las,
+        });
+        bottom = top;
+    }
+    Ok(layers)
 }
 
 fn invalid(name: &'static str, value: f64, reason: &'static str) -> Error {

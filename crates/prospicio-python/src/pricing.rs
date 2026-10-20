@@ -308,6 +308,58 @@ pub(crate) fn layer_cv(severity: &Bound<'_, PyAny>, limit: f64, attachment: f64)
     prospicio_pricing::layer::layer_cv(&sev, limit, attachment).map_err(to_py)
 }
 
+/// The limited average severity at each policy limit from claims censored
+/// at their policies' limits, layer by layer (Werner and Modlin, *Basic
+/// Ratemaking*, Table 11.6): each layer between consecutive limits uses only
+/// the policies whose limit is at least its top.
+///
+/// Parameters
+/// ----------
+/// tables : list of SizeOfLoss
+///     One table per policy limit, with the claims capped at the limit, so
+///     each table's last bound is its limit. Each layer's bounds must be
+///     band edges of the tables it uses.
+///
+/// Returns
+/// -------
+/// list of dict
+///     One per limit, ascending: ``bottom``, ``top``, ``claims`` (of the
+///     policies used), ``severity`` (their average loss in the layer) and
+///     ``las`` (the layers up to ``top`` added).
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import SizeOfLoss
+/// >>> from prospicio.pricing import censored_las
+/// >>> tables = [
+/// ...     SizeOfLoss([0, 100e3], [2019], [156_657_898]),
+/// ...     SizeOfLoss([0, 100e3, 250e3], [690, 773], [34_903_214, 142_767_479]),
+/// ...     SizeOfLoss([0, 100e3, 250e3, 500e3], [712, 574, 232],
+/// ...                [35_768_111, 90_009_422, 81_092_725]),
+/// ... ]
+/// >>> [round(layer["severity"]) for layer in censored_las(tables)]
+/// [77046, 44575, 15213]
+#[pyfunction]
+pub(crate) fn censored_las<'py>(
+    py: Python<'py>,
+    tables: Vec<PyRef<'py, crate::pareto::PySizeOfLoss>>,
+) -> PyResult<Vec<Bound<'py, PyDict>>> {
+    let tables: Vec<_> = tables.iter().map(|t| t.inner.clone()).collect();
+    prospicio_pricing::layer::censored_las(&tables)
+        .map_err(to_py)?
+        .into_iter()
+        .map(|l| {
+            let d = PyDict::new(py);
+            d.set_item("bottom", l.bottom)?;
+            d.set_item("top", l.top)?;
+            d.set_item("claims", l.claims)?;
+            d.set_item("severity", l.severity)?;
+            d.set_item("las", l.las)?;
+            Ok(d)
+        })
+        .collect()
+}
+
 /// Loss elimination ratio of a deductible, ``LEV(deductible) / E[X]``.
 ///
 /// Parameters

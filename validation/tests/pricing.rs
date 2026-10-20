@@ -2137,3 +2137,72 @@ fn bodoff_priced_by_a_distortion() {
         assert!((sum - plc.total.premium).abs() < 1e-12);
     }
 }
+
+/// Werner and Modlin, *Basic Ratemaking*, chapter 11: increased limits and a
+/// deductible from size-of-loss tables (#338). The book prints LAS(100K)
+/// 77,046, LAS(250K) 122,696 and the ILF 1.59 (Table 11.3); the censored
+/// layers 77,046, 44,575 and 15,213, which it adds as rounded to 121,621 and
+/// 136,834 (Table 11.6); and the loss elimination ratio 0.135 of a 250
+/// deductible (Table 11.8).
+#[test]
+fn size_of_loss_tables_give_werner_and_modlin_chapter_11() {
+    use prospicio_pricing::layer::{censored_las, ilf, loss_elimination_ratio};
+    use prospicio_prob::{Severity, SizeOfLoss};
+
+    let t = SizeOfLoss::new(
+        &[0.0, 100e3, 250e3, 500e3, 1e6],
+        &[2_324.0, 1_923.0, 680.0, 73.0],
+        &[117_629_223.0, 307_599_929.0, 222_793_514.0, 43_047_470.0],
+    )
+    .unwrap();
+    assert_eq!(t.lev(100e3).round(), 77_046.0);
+    assert_eq!(t.lev(250e3).round(), 122_696.0);
+    assert_eq!(
+        (ilf(&t, 250e3, 100e3).unwrap() * 100.0).round() / 100.0,
+        1.59
+    );
+
+    let tables = [
+        SizeOfLoss::new(&[0.0, 100e3], &[2_019.0], &[156_657_898.0]).unwrap(),
+        SizeOfLoss::new(
+            &[0.0, 100e3, 250e3],
+            &[690.0, 773.0],
+            &[34_903_214.0, 142_767_479.0],
+        )
+        .unwrap(),
+        SizeOfLoss::new(
+            &[0.0, 100e3, 250e3, 500e3],
+            &[712.0, 574.0, 232.0],
+            &[35_768_111.0, 90_009_422.0, 81_092_725.0],
+        )
+        .unwrap(),
+    ];
+    let layers = censored_las(&tables).unwrap();
+    let rounded: Vec<f64> = layers.iter().map(|l| l.severity.round()).collect();
+    assert_eq!(rounded, [77_046.0, 44_575.0, 15_213.0]);
+    assert_eq!(rounded[0] + rounded[1], 121_621.0);
+    assert_eq!(rounded.iter().sum::<f64>(), 136_834.0);
+    // Unrounded, the LAS is half a dollar and a dollar lower.
+    assert!((layers[1].las - 121_620.5).abs() < 0.05);
+    assert!((layers[2].las - 136_833.0).abs() < 0.05);
+    assert_eq!(
+        layers.iter().map(|l| l.claims).collect::<Vec<_>>(),
+        [5_000.0, 2_981.0, 1_518.0]
+    );
+    // Censoring lowers LAS(250K) below the pooled table's 122,696.
+    assert!(layers[1].las < t.lev(250e3));
+    // A layer bound inside a band is an error.
+    let straddle = SizeOfLoss::new(&[0.0, 50e3, 250e3], &[690.0, 773.0], &[20e6, 157e6]).unwrap();
+    assert!(censored_las(&[tables[0].clone(), straddle]).is_err());
+
+    // Table 11.8: only the 250 edge matters to the LER; the other bounds
+    // just hold each band's average.
+    let h = SizeOfLoss::new(
+        &[0.0, 100.0, 250.0, 500.0, 1_000.0, f64::INFINITY],
+        &[3_200.0, 1_225.0, 1_187.0, 1_845.0, 2_543.0],
+        &[240_365.0, 207_588.0, 463_954.0, 1_551_938.0, 11_140_545.0],
+    )
+    .unwrap();
+    let ler = loss_elimination_ratio(&h, 250.0).unwrap();
+    assert_eq!((ler * 1000.0).round() / 1000.0, 0.135);
+}

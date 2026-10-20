@@ -287,7 +287,7 @@ pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
     use crate::pareto::{
         PyAffine, PyBeta, PyBurr, PyCustom, PyGamma, PyGeneralizedPareto, PyInverseGamma,
         PyInverseGaussian, PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto,
-        PyPiecewisePareto, PyPolicyLimits, PyTruncated, PyTweedie, PyWeibull,
+        PyPiecewisePareto, PyPolicyLimits, PySizeOfLoss, PyTruncated, PyTweedie, PyWeibull,
     };
     if let Ok(d) = obj.extract::<PyRef<'_, PyLognormal>>() {
         return Ok(d.inner.into());
@@ -340,6 +340,9 @@ pub(crate) fn extract_dist(obj: &Bound<'_, PyAny>) -> PyResult<Dist> {
     if let Ok(d) = obj.extract::<PyRef<'_, PyPolicyLimits>>() {
         return Ok(Dist::PolicyLimits(d.inner.clone()));
     }
+    if let Ok(d) = obj.extract::<PyRef<'_, PySizeOfLoss>>() {
+        return Ok(Dist::SizeOfLoss(d.inner.clone()));
+    }
     if let Ok(d) = obj.extract::<PyRef<'_, PyMixture>>() {
         return Ok(d.inner.clone().into());
     }
@@ -360,7 +363,7 @@ pub(crate) fn dist_to_py(py: Python<'_>, d: Dist) -> PyResult<Py<PyAny>> {
     use crate::pareto::{
         PyAffine, PyBeta, PyBurr, PyGamma, PyGeneralizedPareto, PyInverseGamma, PyInverseGaussian,
         PyLogAffinePareto, PyLoglogistic, PyMixture, PyPareto, PyPiecewisePareto, PyPolicyLimits,
-        PyTruncated, PyTweedie, PyWeibull,
+        PySizeOfLoss, PyTruncated, PyTweedie, PyWeibull,
     };
     Ok(match d {
         Dist::Lognormal(inner) => Py::new(py, PyLognormal { inner })?.into_any(),
@@ -381,6 +384,7 @@ pub(crate) fn dist_to_py(py: Python<'_>, d: Dist) -> PyResult<Py<PyAny>> {
         Dist::PolicyLimits(inner) => Py::new(py, PyPolicyLimits { inner })?.into_any(),
         Dist::Mixture(inner) => Py::new(py, PyMixture { inner })?.into_any(),
         Dist::Grid(inner) => Py::new(py, PyGrid { inner })?.into_any(),
+        Dist::SizeOfLoss(inner) => Py::new(py, PySizeOfLoss { inner })?.into_any(),
         Dist::Sampled(inner) => Py::new(py, PySampled { inner })?.into_any(),
         Dist::Custom(_) => {
             return Err(PyTypeError::new_err(
@@ -445,7 +449,7 @@ pub(crate) fn from_json(py: Python<'_>, text: &str) -> PyResult<Py<PyAny>> {
 /// The classes accepted as a severity, for error messages.
 const SEVERITIES: &str = "Lognormal, Gamma, Tweedie, Weibull, Loglogistic, InverseGamma, \
                           InverseGaussian, Burr, Beta, Truncated, Affine, PolicyLimits, Mixture, Grid, \
-                          Pareto, \
+                          SizeOfLoss, Pareto, \
                           PiecewisePareto, LogAffinePareto, GeneralizedPareto or Custom";
 
 fn type_name(obj: &Bound<'_, PyAny>) -> String {

@@ -40,7 +40,7 @@ Defined for \link{lognormal}, the Pareto-family severities (\link{pareto}, \link
 \link{tweedie}, \link{weibull_distribution}, \link{loglogistic_distribution},
 \link{inverse_gamma_distribution}, \link{inverse_gaussian_distribution},
 \link{burr_distribution}, \link{beta_distribution}, \link{truncated_distribution},
-\link{affine_distribution},
+\link{affine_distribution}, \link{size_of_loss},
 \link{policy_limits_distribution}, \link{mixture_distribution} and
 \link{custom_distribution}.
 }

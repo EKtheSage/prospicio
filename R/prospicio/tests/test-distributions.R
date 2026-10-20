@@ -209,3 +209,22 @@ stopifnot(ay@scale == 10, ay@shift == 20, ay@family == "lognormal")
 stopifnot(abs(mean(dist_from_json(dist_to_json(ay))) - mean(ay)) < 1e-12)
 stopifnot(inherits(try(affine_distribution(ax, scale = 0), silent = TRUE), "try-error"))
 cat("affine tests passed\n")
+
+# A size-of-loss table, Werner and Modlin chapter 11 (#338).
+sl <- size_of_loss(c(0, 100e3, 250e3, 500e3, 1e6), c(2324, 1923, 680, 73),
+                   c(117629223, 307599929, 222793514, 43047470))
+stopifnot(round(lev(sl, 100e3)) == 77046, round(lev(sl, 250e3)) == 122696)
+stopifnot(round(ilf(sl, 250e3, 100e3), 2) == 1.59, sl@claims == 5000)
+stopifnot(abs(mean(dist_from_json(dist_to_json(sl))) - mean(sl)) < 1e-9)
+cl <- censored_las(list(
+  size_of_loss(c(0, 100e3), 2019, 156657898),
+  size_of_loss(c(0, 100e3, 250e3), c(690, 773), c(34903214, 142767479)),
+  size_of_loss(c(0, 100e3, 250e3, 500e3), c(712, 574, 232), c(35768111, 90009422, 81092725))
+))
+stopifnot(all(round(cl$severity) == c(77046, 44575, 15213)), all(cl$claims == c(5000, 2981, 1518)))
+stopifnot(abs(cl$las[3] - 136833) < 0.05)
+hl <- size_of_loss(c(0, 100, 250, 500, 1000, Inf), c(3200, 1225, 1187, 1845, 2543),
+                   c(240365, 207588, 463954, 1551938, 11140545))
+stopifnot(round(loss_elimination_ratio(hl, 250), 3) == 0.135)
+stopifnot(inherits(try(size_of_loss(c(0, 10, 20), c(1, 1), c(11, 15)), silent = TRUE), "try-error"))
+cat("size of loss tests passed\n")

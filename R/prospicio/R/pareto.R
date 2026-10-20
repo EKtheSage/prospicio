@@ -23,7 +23,7 @@ optional_arg <- function(x) if (is.null(x)) double() else as.double(x)
 #' [tweedie], [weibull_distribution], [loglogistic_distribution],
 #' [inverse_gamma_distribution], [inverse_gaussian_distribution],
 #' [burr_distribution], [beta_distribution], [truncated_distribution],
-#' [affine_distribution],
+#' [affine_distribution], [size_of_loss],
 #' [policy_limits_distribution], [mixture_distribution] and
 #' [custom_distribution].
 #'
@@ -759,6 +759,55 @@ affine_distribution <- S7::new_class(
   }
 )
 
+#' Severity from a size-of-loss table
+#'
+#' `size_of_loss()` reads a severity from claim counts and loss totals by
+#' size band, as Werner and Modlin's *Basic Ratemaking* chapter 11 prices
+#' increased limits and deductibles. Each band's claims sit at the band's
+#' average, so the limited expected value is exact at every band edge,
+#' `(losses below b + b * claims above b) / claims`, and [ilf()],
+#' [loss_elimination_ratio()] and every layer function take it. The mean is
+#' the table's; the variance sees only the band averages. Properties:
+#' `d@bounds`, `d@counts`, `d@losses`, `d@claims`. [censored_las()] combines
+#' tables censored at several policy limits.
+#'
+#' Supports the same operations as [pareto].
+#'
+#' @param bounds `length(counts) + 1` band bounds, from 0 or above, strictly
+#'   increasing; the last may be `Inf`.
+#' @param counts Claims in each band.
+#' @param losses Their loss totals. Each band's average must lie within its
+#'   bounds (a claim capped at a policy limit belongs to the band below the
+#'   limit).
+#' @param ptr Internal: an existing object to wrap.
+#' @returns A `size_of_loss`, which inherits from [distribution].
+#' @export
+#' @examples
+#' t <- size_of_loss(c(0, 100e3, 250e3, 500e3, 1e6), c(2324, 1923, 680, 73),
+#'                   c(117629223, 307599929, 222793514, 43047470))
+#' lev(t, 100e3)
+#' ilf(t, 250e3, 100e3)
+size_of_loss <- S7::new_class(
+  "size_of_loss",
+  parent = distribution,
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("SizeOfLossDist"),
+    bounds = S7::new_property(S7::class_double, getter = function(self) self@ptr$bounds()),
+    counts = S7::new_property(S7::class_double, getter = function(self) self@ptr$counts()),
+    losses = S7::new_property(S7::class_double, getter = function(self) self@ptr$losses()),
+    claims = S7::new_property(S7::class_double, getter = function(self) self@ptr$claims())
+  ),
+  constructor = function(bounds, counts, losses, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(SizeOfLossDist$new(as.double(bounds), as.double(counts),
+                                            as.double(losses)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+
 #' Severity under a mix of policy limits
 #'
 #' The loss `min(X, L)` where `L` is `limits[j]` with probability
@@ -916,7 +965,7 @@ for (cls in list(pareto, piecewise_pareto, log_affine_pareto, generalized_pareto
                  gamma_distribution, tweedie, weibull_distribution, loglogistic_distribution,
                  inverse_gamma_distribution, inverse_gaussian_distribution, burr_distribution,
                  beta_distribution, truncated_distribution, affine_distribution,
-                 policy_limits_distribution,
+                 size_of_loss, policy_limits_distribution,
                  mixture_distribution, custom_distribution)) {
   S7::method(mean, cls) <- function(x, ...) x@ptr$mean()
   S7::method(variance, cls) <- function(dist, ...) dist@ptr$variance()
@@ -1028,6 +1077,11 @@ S7::method(print, truncated_distribution) <- function(x, ...) {
 S7::method(print, affine_distribution) <- function(x, ...) {
   cat(sprintf("<affine_distribution> %s * %s + %s\n", format(x@scale), x@family,
               format(x@shift)))
+  invisible(x)
+}
+S7::method(print, size_of_loss) <- function(x, ...) {
+  cat(sprintf("<size_of_loss> %d bands, %s claims, mean %s\n", length(x@counts),
+              format(x@claims), format(mean(x), digits = 8)))
   invisible(x)
 }
 S7::method(print, policy_limits_distribution) <- function(x, ...) {
@@ -1159,7 +1213,7 @@ wrap_dist <- function(family, ptr) {
     loglogistic = loglogistic_distribution, inverse_gamma = inverse_gamma_distribution,
     inverse_gaussian = inverse_gaussian_distribution, burr = burr_distribution,
     beta = beta_distribution, truncated = truncated_distribution,
-    affine = affine_distribution,
+    affine = affine_distribution, size_of_loss = size_of_loss,
     policy_limits = policy_limits_distribution, mixture = mixture_distribution,
     grid = grid_distribution, sampled = sampled,
     stop("unknown family ", family)

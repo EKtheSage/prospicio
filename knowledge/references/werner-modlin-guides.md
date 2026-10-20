@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Werner and Modlin's Basic Ratemaking, reproduced in the ratemaking guides
-description: What the two Werner and Modlin guides found beyond the parity suite; chapter 6's development example and Appendix A's development exhibit reproduce with prospicio.reserving once link ratios and factors are rounded as printed, Table 12.1's 99% standards use z = 2.575, the Bühlmann example runs through credibility_premiums, and chapter 11's size-of-loss figures are arithmetic prospicio has no function for.
+description: What the two Werner and Modlin guides found beyond the parity suite; chapter 6's development example and Appendix A's development exhibit reproduce with prospicio.reserving once link ratios and factors are rounded as printed, Table 12.1's 99% standards use z = 2.575, the Bühlmann example runs through credibility_premiums, and chapter 11's size-of-loss figures come from SizeOfLoss and censored_las.
 resource: https://www.casact.org/sites/default/files/2021-03/5_Werner_Modlin.pdf
 tags: [pricing, ratemaking, credibility, development, ilf, deductibles, guides, parity]
 status: stable
@@ -59,11 +59,16 @@ what the guides found on top of the parity suite.
   the function needs two groups, so a second arbitrary group is added. The
   book leaves the estimation of K out of scope; `buhlmann_straub` estimates
   it.[^guide1]
-* **Chapter 11's size-of-loss tables** give counts and loss totals per band,
-  and prospicio's `ilf` and `loss_elimination_ratio` need a severity, which a
-  `Sampled` or `Discrete` is not. The figures (ILF 1.59, censored LAS 77,046,
-  121,621 and 136,834, LER 0.135) are arithmetic; the censored LAS adds
-  layers rounded to the dollar (121,620.5 unrounded).[^guide2]
+* **Chapter 11's size-of-loss tables** give counts and loss totals per band.
+  Since #338 `SizeOfLoss` reads a severity from one (each band's claims at
+  its average, so the LEV is exact at the band edges) and `ilf` and
+  `loss_elimination_ratio` take it: ILF 1.59, LAS(100K) 77,046 and
+  LAS(250K) 122,696 (Table 11.3), LER 0.135 (Table 11.8). `censored_las`
+  gives Table 11.6's layers 77,046, 44,575 and 15,213 from one table per
+  policy limit; the book adds them rounded to the dollar, 121,621 and
+  136,834, against 121,620.5 and 136,833.0 unrounded. Table 11.8's LER
+  depends only on its 250 edge, so `validation/tests/pricing.rs` assumes
+  the other bounds (100, 500, 1,000) without changing the result.[^guide2]
 * **Appendix C's -5% profit provision** is an underwriting provision offset
   by investment income in a long-tailed occurrence line; Appendix C's data is
   on occurrence policies.[^wm]

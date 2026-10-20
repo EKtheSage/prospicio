@@ -299,6 +299,37 @@ loss_elimination_ratio <- function(severity, deductible) {
   rust_result(pricing_loss_elimination_ratio(severity@ptr, as.double(deductible)))
 }
 
+#' Limited average severity from censored size-of-loss tables
+#'
+#' `censored_las()` estimates the limited average severity at each policy
+#' limit from claims censored at their policies' limits, layer by layer
+#' (Werner and Modlin, *Basic Ratemaking*, Table 11.6): each layer between
+#' consecutive limits uses only the policies whose limit is at least its
+#' top, and the LAS at a limit adds the layers below it.
+#'
+#' @param tables A list of [size_of_loss] tables, one per policy limit, with
+#'   the claims capped at the limit, so each table's last bound is its
+#'   limit. Each layer's bounds must be band edges of the tables it uses.
+#' @returns A data frame with one row per limit: `bottom`, `top`, `claims`
+#'   (of the policies used), `severity` (their average loss in the layer)
+#'   and `las`.
+#' @export
+#' @examples
+#' tables <- list(
+#'   size_of_loss(c(0, 100e3), 2019, 156657898),
+#'   size_of_loss(c(0, 100e3, 250e3), c(690, 773), c(34903214, 142767479)),
+#'   size_of_loss(c(0, 100e3, 250e3, 500e3), c(712, 574, 232),
+#'                c(35768111, 90009422, 81092725))
+#' )
+#' censored_las(tables)
+censored_las <- function(tables) {
+  ptrs <- lapply(tables, function(t) {
+    if (!S7::S7_inherits(t, size_of_loss)) stop("every table must be a size_of_loss")
+    t@ptr
+  })
+  as.data.frame(rust_result(pricing_censored_las(ptrs)))
+}
+
 #' @rdname layer_rating
 #' @export
 pareto_extrapolation <- function(from, to, alpha, truncation = NULL) {

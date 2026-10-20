@@ -415,7 +415,9 @@ reinsurance-specific.
 | `exposure` | Exposure curves for property per-risk rating: MBBEFD (Bernegger 1997) with the Swiss Re curves, tabulated curves, the curve of any severity capped at an MPL, layer shares, destruction-rate sampling. | Primary and reinsurance (property per-risk) |
 | `risk_load` | Risk-loaded prices from simulated losses: a pricing distortion or a constant cost of capital on distortion-measured assets, for one cover or allocated across a portfolio's components. | Primary and reinsurance (technical price of a simulated cover or programme) |
 
-Done in `layer`: `ilf`, `loss_elimination_ratio`, `XsLayer`,
+Done in `layer`: `ilf`, `loss_elimination_ratio`, `censored_las` (the
+layer-by-layer limited average severity of claims censored at several
+policy limits, one `SizeOfLoss` table per limit; #338), `XsLayer`,
 `pareto_extrapolation`, and `alpha_between_layers`,
 `alpha_between_frequency_and_layer` and `alpha_between_frequencies` (all
 with optional truncation). The solvers bisect on `(0, 100]`, where each

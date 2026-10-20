@@ -214,6 +214,8 @@ pricing_swiss_re_c_for_layer_share <- function(limit, attachment, mpl, share) .C
 
 pricing_loss_elimination_ratio <- function(severity, deductible) .Call(wrap__pricing_loss_elimination_ratio, severity, deductible)
 
+pricing_censored_las <- function(tables) .Call(wrap__pricing_censored_las, tables)
+
 pricing_pareto_extrapolation <- function(from, to, alpha, truncation_at) .Call(wrap__pricing_pareto_extrapolation, from, to, alpha, truncation_at)
 
 pricing_alpha_between_layers <- function(a, b, truncation_at) .Call(wrap__pricing_alpha_between_layers, a, b, truncation_at)
@@ -1654,6 +1656,46 @@ AffineDist$sample <- function(n, seed, stream) .Call(wrap__AffineDist__sample, s
 
 #' @export
 `[[.AffineDist` <- `$.AffineDist`
+
+SizeOfLossDist <- new.env(parent = emptyenv())
+
+SizeOfLossDist$new <- function(bounds, counts, losses) .Call(wrap__SizeOfLossDist__new, bounds, counts, losses)
+
+SizeOfLossDist$bounds <- function() .Call(wrap__SizeOfLossDist__bounds, self)
+
+SizeOfLossDist$counts <- function() .Call(wrap__SizeOfLossDist__counts, self)
+
+SizeOfLossDist$losses <- function() .Call(wrap__SizeOfLossDist__losses, self)
+
+SizeOfLossDist$claims <- function() .Call(wrap__SizeOfLossDist__claims, self)
+
+SizeOfLossDist$mean <- function() .Call(wrap__SizeOfLossDist__mean, self)
+
+SizeOfLossDist$variance <- function() .Call(wrap__SizeOfLossDist__variance, self)
+
+SizeOfLossDist$cdf <- function(x) .Call(wrap__SizeOfLossDist__cdf, self, x)
+
+SizeOfLossDist$survival <- function(x) .Call(wrap__SizeOfLossDist__survival, self, x)
+
+SizeOfLossDist$quantile <- function(p) .Call(wrap__SizeOfLossDist__quantile, self, p)
+
+SizeOfLossDist$lev <- function(limit) .Call(wrap__SizeOfLossDist__lev, self, limit)
+
+SizeOfLossDist$stop_loss <- function(retention) .Call(wrap__SizeOfLossDist__stop_loss, self, retention)
+
+SizeOfLossDist$layer <- function(limit, attachment) .Call(wrap__SizeOfLossDist__layer, self, limit, attachment)
+
+SizeOfLossDist$layer_variance <- function(limit, attachment) .Call(wrap__SizeOfLossDist__layer_variance, self, limit, attachment)
+
+SizeOfLossDist$layer_second_moment <- function(limit, attachment) .Call(wrap__SizeOfLossDist__layer_second_moment, self, limit, attachment)
+
+SizeOfLossDist$sample <- function(n, seed, stream) .Call(wrap__SizeOfLossDist__sample, self, n, seed, stream)
+
+#' @export
+`$.SizeOfLossDist` <- function (self, name) { func <- SizeOfLossDist[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.SizeOfLossDist` <- `$.SizeOfLossDist`
 
 PolicyLimitsDist <- new.env(parent = emptyenv())
 

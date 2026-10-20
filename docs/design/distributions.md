@@ -202,6 +202,16 @@ conversion reports the error it introduces.
   length plus `scale` times a layer of `X`, and the layer's second moment
   is `c² + s² m₂ + 2 (lo − a) s m₁` by the change of variable
   `y = shift + s t`. Python `Affine`, R `affine_distribution()`.
+- `prospicio_prob::SizeOfLoss`, a severity from a size-of-loss table:
+  claim counts and loss totals by band (#338; Werner and Modlin's *Basic
+  Ratemaking* chapter 11). A table does not say how claims spread within a
+  band, so each band's claims sit at its average: the limited expected
+  value is then exact at every band edge, `(losses below b + b · claims
+  above b) / claims`, which is where the book reads it, and the mean is the
+  table's. An ogive would put the band's mean at its midpoint and miss the
+  loss totals. The variance sees only the band averages. A `Dist` variant
+  saved as JSON with its bounds, counts and losses; the top bound may be
+  infinite. Python `SizeOfLoss`, R `size_of_loss()`.
 - `prospicio_prob::Normal`, on the whole real line (asset and log-return
   models), and `prospicio_prob::Ogive`, the piecewise linear distribution
   function of grouped data (#366). The normal is a `Distribution` but not a

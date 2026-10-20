@@ -95,7 +95,7 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     use crate::pareto::{
         AffineDist, BetaDist, BurrDist, CustomDist, GammaDist, GeneralizedPareto, InverseGammaDist,
         InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
-        PiecewisePareto, PolicyLimitsDist, TruncatedDist, TweedieDist, WeibullDist,
+        PiecewisePareto, PolicyLimitsDist, SizeOfLossDist, TruncatedDist, TweedieDist, WeibullDist,
     };
     if let Ok(d) = <&Lognormal>::try_from(obj) {
         return Ok(d.inner.into());
@@ -148,6 +148,9 @@ pub(crate) fn dist_from_robj(obj: &Robj) -> Result<Dist> {
     if let Ok(d) = <&PolicyLimitsDist>::try_from(obj) {
         return Ok(Dist::PolicyLimits(d.inner.clone()));
     }
+    if let Ok(d) = <&SizeOfLossDist>::try_from(obj) {
+        return Ok(Dist::SizeOfLoss(d.inner.clone()));
+    }
     if let Ok(d) = <&MixtureDist>::try_from(obj) {
         return Ok(d.inner.clone().into());
     }
@@ -184,7 +187,7 @@ pub(crate) fn dist_to_robj(d: Dist) -> Result<Robj> {
     use crate::pareto::{
         AffineDist, BetaDist, BurrDist, GammaDist, GeneralizedPareto, InverseGammaDist,
         InverseGaussianDist, LogAffinePareto, LoglogisticDist, MixtureDist, Pareto,
-        PiecewisePareto, PolicyLimitsDist, TruncatedDist, TweedieDist, WeibullDist,
+        PiecewisePareto, PolicyLimitsDist, SizeOfLossDist, TruncatedDist, TweedieDist, WeibullDist,
     };
     Ok(match d {
         Dist::Lognormal(inner) => Lognormal { inner }.into(),
@@ -204,6 +207,7 @@ pub(crate) fn dist_to_robj(d: Dist) -> Result<Robj> {
         Dist::Affine(inner) => AffineDist { inner }.into(),
         Dist::PolicyLimits(inner) => PolicyLimitsDist { inner }.into(),
         Dist::Mixture(inner) => MixtureDist { inner }.into(),
+        Dist::SizeOfLoss(inner) => SizeOfLossDist { inner }.into(),
         Dist::Grid(inner) => Grid::wrap(inner).into(),
         Dist::Sampled(inner) => Sampled { inner }.into(),
         Dist::Custom(_) => {

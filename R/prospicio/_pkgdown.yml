@@ -28,6 +28,7 @@ reference:
       - beta_distribution
       - truncated_distribution
       - affine_distribution
+      - size_of_loss
       - policy_limits_distribution
       - mixture_distribution
       - custom_distribution
@@ -139,6 +140,7 @@ reference:
       - excess_frequency
       - layer_rating
       - layer_cv
+      - censored_las
       - risk_loaded_price
       - capital_portfolio
       - natural_price
