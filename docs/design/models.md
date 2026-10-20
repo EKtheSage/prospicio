@@ -81,7 +81,8 @@ models and compares them.
   triangle's origin and development factors (tested).
 - `prospicio_glm::glmm::Glmm`: Poisson, gamma and Tweedie GLMs with
   random intercepts on one, crossed or nested factors, by Laplace or
-  adaptive Gauss–Hermite quadrature (see "Mixed models").
+  adaptive Gauss–Hermite quadrature (see "Mixed models"); Python `Glmm`,
+  R `glmm_fit()`.
 - Parity: `validation/reference/glm_statsmodels.csv`
   (`validation/scripts/statsmodels_glm.py`): 10 GLMs on a synthetic
   600-policy portfolio (Poisson with exposure offset, quasi-Poisson, gamma
@@ -723,8 +724,15 @@ is lme4's `a:b`, so `(1 | a/b)` is `a` and `Grouping::nested(a, b)`.
 - **Not a `Model`.** `Glmm` does not implement `prospicio_models::Model`,
   whose `fit` takes a design and a response: a GLMM also needs the
   grouping factors, and its `predict` their labels.
-- **Later.** Random slopes (still being discussed with the user), a NUTS
-  fit as an add-on, and the Python and R bindings.
+- **Bindings.** Python `Glmm(family, power, nodes).fit(design, groups,
+  y)`, with `groups` a dict of each factor's name and every row's labels
+  (a nested factor's labels joined, `f"{a}:{b}"`). R
+  `glmm_fit(formula, data, family, power, nodes)` reads lme4's
+  `(1 | g)` terms from the formula, `(1 | a/b)` as `(1 | a) + (1 | a:b)`;
+  its `predict()` takes the labels from `newdata`'s columns and leaves out
+  a factor whose columns are missing. A slope term `(x | g)` is an error.
+- **Later.** Random slopes (still being discussed with the user) and a
+  NUTS fit as an add-on.
 
 ## Attention
 

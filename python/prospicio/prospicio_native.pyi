@@ -10444,6 +10444,142 @@ class GlmFit:
         """
 
 @final
+class Glmm:
+    """
+    A GLM with random intercepts, ``log μ = Xβ + offset + Σ u``, each
+    factor's intercepts ``N(0, σ²)``: the Poisson, gamma or Tweedie (fixed
+    power in (1, 2)) with the log link, fitted by maximum marginal
+    likelihood as glmmTMB and ``lme4::glmer``.
+    
+    Parameters
+    ----------
+    family : str, default "poisson"
+        ``"poisson"``, ``"gamma"`` or ``"tweedie"`` (needs ``power``).
+    power : float, optional
+        The Tweedie power.
+    nodes : int, optional
+        Adaptive Gauss–Hermite quadrature with this many nodes
+        (``glmer(nAGQ = nodes)``), for a single grouping factor; the
+        Laplace approximation when left out.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, Glmm
+    >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+    >>> site = [f"s{i % 4}" for i in range(40)]
+    >>> fit = Glmm().fit(Design([[1.0] * 40], ["(Intercept)"]), {"site": site}, y)
+    >>> fit.converged and fit.sd[0] > 0
+    True
+    """
+    def __new__(cls, /, family: str = "poisson", power: float |None = None, nodes: int |None = None) -> Glmm: ...
+    def fit(self, /, design: Design, groups: dict, y: Sequence[float]) -> GlmmFit:
+        """
+        Fits the model.
+        
+        Parameters
+        ----------
+        design : Design
+            The fixed effects, with any offset and prior weights.
+        groups : dict of str to sequence
+            Each grouping factor's name and every row's label. Factors are
+            crossed; a factor nested in another takes the joined labels, as
+            lme4's ``a:b`` (``f"{a}:{b}"``).
+        y : sequence of float
+        
+        Returns
+        -------
+        GlmmFit
+        """
+
+@final
+class GlmmFit:
+    """
+    A GLM with random intercepts, from ``Glmm.fit``.
+    """
+    @property
+    def aic(self, /) -> float: ...
+    @property
+    def bic(self, /) -> float: ...
+    @property
+    def coefficients(self, /) -> list[float]:
+        """
+        The fixed effects ``β``.
+        """
+    @property
+    def converged(self, /) -> bool: ...
+    @property
+    def covariance(self, /) -> list[float]:
+        """
+        ``β``'s covariance, row-major, from the marginal likelihood's
+        Hessian (glmmTMB's ``vcov``).
+        """
+    @property
+    def dispersion(self, /) -> float:
+        """
+        The dispersion ``φ``: the response's variance is ``φ μ^p / w``; 1
+        for the Poisson.
+        """
+    @property
+    def dispersion_standard_error(self, /) -> float:
+        """
+        ``φ``'s standard error, ``φ`` times that of ``log φ``; 0 for the
+        Poisson.
+        """
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        Each row's mean with its random intercepts.
+        """
+    @property
+    def group_names(self, /) -> list[str]:
+        """
+        The grouping factors' names, in the order fitted.
+        """
+    @property
+    def iterations(self, /) -> int: ...
+    @property
+    def log_likelihood(self, /) -> float:
+        """
+        The marginal log-likelihood, by the approximation fitted.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        The fixed effects' names.
+        """
+    def predict(self, /, design: Design, groups: dict |None = None) -> list[float]:
+        """
+        Expected response for each row of ``design``, adding each row's
+        random intercepts by label; a level the fit has not seen, or a
+        factor left out of ``groups``, adds 0 (the population mean).
+        """
+    @property
+    def random_effects(self, /) -> dict:
+        """
+        Each factor's random intercepts: a dict of name to a dict of
+        ``levels`` (sorted), ``values`` (the conditional modes),
+        ``conditional_variance`` (lme4's ``condVar``) and
+        ``prediction_variance`` (with the estimates' uncertainty, glmmTMB's
+        ``condVar``).
+        """
+    @property
+    def sd(self, /) -> list[float]:
+        """
+        Each factor's standard deviation ``σ``.
+        """
+    @property
+    def sd_standard_errors(self, /) -> list[float]:
+        """
+        Each ``σ``'s standard error, ``σ`` times that of ``log σ``; NaN
+        for a ``σ`` at 0.
+        """
+    @property
+    def standard_errors(self, /) -> list[float]:
+        """
+        ``β``'s standard errors.
+        """
+
+@final
 class Gpd:
     """
     The generalized Pareto distribution, as SciPy's

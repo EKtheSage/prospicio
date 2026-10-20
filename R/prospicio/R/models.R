@@ -1745,3 +1745,164 @@ elpd_waic <- function(log_lik) {
   log_lik <- as.matrix(log_lik)
   elpd_result(rust_result(elpd_waic_rust(as.double(t(log_lik)), as.double(ncol(log_lik)))))
 }
+
+# The random intercepts `(1 | g)` of a formula, in lme4's syntax: the
+# formula without them and each grouping factor as an expression (`g`,
+# `a:b`; `a/b` is `a` and `a:b`).
+glmm_bars <- function(formula) {
+  bars <- list()
+  strip <- function(e) {
+    if (is.call(e) && identical(e[[1]], as.name("(")) && is.call(e[[2]]) &&
+        identical(e[[2]][[1]], as.name("|"))) {
+      if (!isTRUE(all.equal(e[[2]][[2]], 1))) {
+        stop("a GLMM takes random intercepts only, (1 | g)", call. = FALSE)
+      }
+      bars[[length(bars) + 1]] <<- e[[2]][[3]]
+      return(NULL)
+    }
+    if (is.call(e) && identical(e[[1]], as.name("+"))) {
+      parts <- Filter(Negate(is.null), lapply(as.list(e)[-1], strip))
+      if (!length(parts)) return(NULL)
+      return(Reduce(function(a, b) call("+", a, b), parts))
+    }
+    e
+  }
+  rhs <- strip(formula[[3]])
+  fixed <- formula
+  fixed[[3]] <- if (is.null(rhs)) 1 else rhs
+  nest <- function(g) {
+    if (!(is.call(g) && identical(g[[1]], as.name("/")))) return(list(g))
+    outer <- nest(g[[2]])
+    c(outer, list(call(":", outer[[length(outer)]], g[[3]])))
+  }
+  groups <- unlist(lapply(bars, nest))
+  if (!length(groups)) stop("a GLMM needs at least one random intercept, (1 | g)", call. = FALSE)
+  list(fixed = fixed, groups = groups)
+}
+
+# Each grouping factor's name and its labels on `data`, those whose
+# columns `data` has (all of them, when `required`).
+glmm_labels <- function(groups, data, required = TRUE) {
+  names <- character()
+  labels <- character()
+  for (g in groups) {
+    vars <- all.vars(g)
+    if (!all(vars %in% names(data))) {
+      if (required) stop("no column ", toString(setdiff(vars, names(data))), " for ", deparse(g),
+                         call. = FALSE)
+      next
+    }
+    names <- c(names, deparse(g))
+    labels <- c(labels, do.call(paste, c(lapply(vars, function(v) as.character(data[[v]])),
+                                          sep = ":")))
+  }
+  list(names = names, labels = labels)
+}
+
+#' Generalized linear mixed models with random intercepts
+#'
+#' `glmm_fit()` fits a GLM with random intercepts,
+#' `log(mu) = X beta + offset + sum(u)`, each grouping factor's intercepts
+#' `N(0, sigma^2)`, for the Poisson, gamma or Tweedie (fixed power in
+#' (1, 2)) with the log link, by maximum marginal likelihood as glmmTMB
+#' and `lme4::glmer()`: the Laplace approximation by default, or adaptive
+#' Gauss-Hermite quadrature with `nodes` nodes for a single factor
+#' (`glmer(nAGQ = nodes)`). The dispersion is estimated by maximum
+#' likelihood, as glmmTMB does. Random intercepts are written as in lme4:
+#' `(1 | g)`, crossed factors `(1 | a) + (1 | b)`, nested ones `(1 | a/b)`
+#' (that is, `(1 | a) + (1 | a:b)`). The results match glmmTMB and `glmer`
+#' (`validation/scripts/r_glmm.R`; `docs/design/models.md`, "Mixed
+#' models").
+#'
+#' @param formula A formula with the fixed effects and one or more
+#'   `(1 | g)` terms.
+#' @param data A data frame.
+#' @param family `"poisson"`, `"gamma"` or `"tweedie"`.
+#' @param power The Tweedie power, in (1, 2).
+#' @param nodes Quadrature nodes for a single grouping factor; `NULL` for
+#'   the Laplace approximation.
+#' @param offset,weights Optional offset (added to any `offset()` term)
+#'   and prior weights.
+#' @returns A `glmm_model` with `coefficients`, `std_errors`, `covariance`
+#'   (of the coefficients), `sd` and `sd_std_errors` (each factor's
+#'   standard deviation; the error is NaN for one at 0), `dispersion` and
+#'   `dispersion_std_error` (`phi`: the variance is `phi mu^p / w`; 1 for
+#'   the Poisson), `log_likelihood`, `aic`, `bic`, `fitted`, `iterations`,
+#'   `converged`, and `random_effects`: a list by factor of data frames
+#'   with each `level`, its conditional mode `value`, its
+#'   `conditional_variance` (lme4's `condVar`) and its
+#'   `prediction_variance` (with the estimates' uncertainty, glmmTMB's
+#'   `condVar`). `predict()` adds each row's intercepts by label; a level
+#'   the fit has not seen, or a factor whose columns `newdata` lacks, adds
+#'   0, the population mean.
+#' @export
+#' @examples
+#' d <- data.frame(y = (0:39 * 7) %% 5 + 0:39 %% 4, site = paste0("s", 0:39 %% 4))
+#' m <- glmm_fit(y ~ 1 + (1 | site), d)
+#' m@sd
+#' predict(m, data.frame(site = c("s0", "new")))
+glmm_fit <- function(formula, data, family = "poisson", power = NULL, nodes = NULL,
+                     offset = NULL, weights = NULL) {
+  bars <- glmm_bars(formula)
+  des <- model_design(bars$fixed, data, offset, weights)
+  g <- glmm_labels(bars$groups, data)
+  ptr <- rust_result(glmm_fit_design(as.double(des$x), colnames(des$x), des$y, des$offset,
+                                     des$weights, family,
+                                     if (is.null(power)) NaN else as.double(power),
+                                     g$names, g$labels,
+                                     if (is.null(nodes)) 0 else as.double(nodes)))
+  glmm_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels, groups = bars$groups)
+}
+
+#' @rdname glmm_fit
+#' @export
+glmm_model <- S7::new_class(
+  "glmm_model",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("GlmmModel"),
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    groups = S7::class_list,
+    coefficients = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$coefficients(), self@ptr$names())
+    }),
+    std_errors = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$std_errors(), self@ptr$names())
+    }),
+    covariance = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$names()
+      matrix(self@ptr$covariance(), length(nm), dimnames = list(nm, nm))
+    }),
+    sd = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$sd(), self@ptr$group_names())
+    }),
+    sd_std_errors = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$sd_std_errors(), self@ptr$group_names())
+    }),
+    dispersion = S7::new_property(S7::class_double, getter = function(self) self@ptr$dispersion()),
+    dispersion_std_error = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$dispersion_std_error()
+    }),
+    log_likelihood = S7::new_property(S7::class_double, getter = function(self) self@ptr$log_likelihood()),
+    aic = S7::new_property(S7::class_double, getter = function(self) self@ptr$aic()),
+    bic = S7::new_property(S7::class_double, getter = function(self) self@ptr$bic()),
+    fitted = S7::new_property(S7::class_double, getter = function(self) self@ptr$fitted()),
+    iterations = S7::new_property(S7::class_double, getter = function(self) self@ptr$iterations()),
+    converged = S7::new_property(S7::class_logical, getter = function(self) self@ptr$converged()),
+    random_effects = S7::new_property(S7::class_list, getter = function(self) {
+      lapply(self@ptr$random_effects(), as.data.frame)
+    })
+  ),
+  constructor = function(ptr, terms, xlevels, groups) {
+    S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels, groups = groups)
+  }
+)
+
+S7::method(coef, glmm_model) <- function(object, ...) object@coefficients
+S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...) {
+  nd <- new_design(object, newdata, offset)
+  g <- glmm_labels(object@groups, newdata, required = FALSE)
+  rust_result(object@ptr$predict(as.double(nd$x), colnames(nd$x), nd$offset, g$names, g$labels),
+              s7_call())
+}

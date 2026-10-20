@@ -7,7 +7,7 @@
 ## Next
 
 - the issues filed by the Guides lane on 2026-10-18 (#353, #355, #356)
-- [glmm-bindings] the GLMMs' Python and R bindings, then a NUTS fit and random slopes when the user decides them (#358)
+- [glmm-later] a NUTS fit of the GLMMs and random slopes, when the user decides them (#358)
 - [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
 
@@ -30,3 +30,4 @@
 - with the same go-ahead: the ODP GLM on a custom design (`OdpGlm::fit_design` on a design over the triangle's cells; Taylor and McGuire's models 7-2, 7-10 and 7-14, Tables 7-1, 7-3 and 7-5 to the printed digits; Python `OdpGlm.cells` and `fit(..., design=)`, R `odp_glm_cells()` and `odp_glm(formula = ~ ...)`; #333, third PR, #443)
 - [odp-glm-designs] with the same go-ahead: the ODP GLM's gamma and Tweedie errors (`OdpGlm::family`: the Poisson, gamma or Tweedie with `1 < p < 2`, log link, Pearson's dispersion; R `glm(Gamma(link = "log"))` and statmod `tweedie(1.5)` parity on GenIns and ABC; Taylor and McGuire's section 6.5 gamma as the guide's section 9; Python `OdpGlm(family=, power=)`, R `odp_glm(family =, power =)`; #333, fourth PR, which closes it)
 - random-intercept GLMMs (`prospicio_glm::glmm`: `Glmm` for the Poisson, gamma and Tweedie with the log link, one, nested or crossed grouping factors, the Laplace approximation or adaptive Gauss-Hermite quadrature for one factor, each level's mode with its conditional and prediction variances, the variance components, 0 for an unseen level; glmmTMB and lme4 `glmer` parity on Salamanders, grouseticks and a simulated book, 1,237 cases; in Rust, #358, first PR)
+- [glmm-bindings] the GLMMs in Python and R (Python `Glmm` and `GlmmFit` with grouping factors as a dict of labels; R `glmm_fit()` with lme4's `(1 | g)`, `(1 | a/b)` and crossed terms, a `glmm_model` with `random_effects` by factor and `predict()` at the population mean for an unseen level or a missing column; checked against the stored glmmTMB and lme4 reference; #358, second PR)

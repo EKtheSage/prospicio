@@ -4055,3 +4055,239 @@ impl PyNegativeBinomialFit {
         py.detach(|| fit.predict(d)).map_err(to_py)
     }
 }
+
+/// Grouping factors from a dict of name to each row's labels (any values,
+/// read with ``str``), in the dict's order.
+fn groupings(
+    groups: &Bound<'_, pyo3::types::PyDict>,
+) -> PyResult<Vec<prospicio_glm::glmm::Grouping>> {
+    groups
+        .iter()
+        .map(|(name, labels)| {
+            let name: String = name.extract()?;
+            let labels = labels
+                .try_iter()?
+                .map(|v| Ok(v?.str()?.to_string()))
+                .collect::<PyResult<Vec<String>>>()?;
+            Ok(prospicio_glm::glmm::Grouping::new(&name, labels))
+        })
+        .collect()
+}
+
+/// A GLM with random intercepts, ``log μ = Xβ + offset + Σ u``, each
+/// factor's intercepts ``N(0, σ²)``: the Poisson, gamma or Tweedie (fixed
+/// power in (1, 2)) with the log link, fitted by maximum marginal
+/// likelihood as glmmTMB and ``lme4::glmer``.
+///
+/// Parameters
+/// ----------
+/// family : str, default "poisson"
+///     ``"poisson"``, ``"gamma"`` or ``"tweedie"`` (needs ``power``).
+/// power : float, optional
+///     The Tweedie power.
+/// nodes : int, optional
+///     Adaptive Gauss–Hermite quadrature with this many nodes
+///     (``glmer(nAGQ = nodes)``), for a single grouping factor; the
+///     Laplace approximation when left out.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Design, Glmm
+/// >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+/// >>> site = [f"s{i % 4}" for i in range(40)]
+/// >>> fit = Glmm().fit(Design([[1.0] * 40], ["(Intercept)"]), {"site": site}, y)
+/// >>> fit.converged and fit.sd[0] > 0
+/// True
+#[pyclass(name = "Glmm", module = "prospicio.models", frozen)]
+pub(crate) struct PyGlmm {
+    inner: prospicio_glm::glmm::Glmm,
+}
+
+#[pymethods]
+impl PyGlmm {
+    #[new]
+    #[pyo3(signature = (family = "poisson", power = None, nodes = None))]
+    fn new(family: &str, power: Option<f64>, nodes: Option<usize>) -> PyResult<Self> {
+        let f = match family {
+            "poisson" => Family::Poisson,
+            "gamma" => Family::Gamma,
+            "tweedie" => Family::Tweedie {
+                power: power.ok_or_else(|| PyValueError::new_err("tweedie needs power"))?,
+            },
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "a GLMM's family must be poisson, gamma or tweedie, got {other:?}"
+                )));
+            }
+        };
+        let mut inner = prospicio_glm::glmm::Glmm::new(f);
+        if let Some(n) = nodes {
+            inner = inner.quadrature(n);
+        }
+        Ok(Self { inner })
+    }
+
+    /// Fits the model.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     The fixed effects, with any offset and prior weights.
+    /// groups : dict of str to sequence
+    ///     Each grouping factor's name and every row's label. Factors are
+    ///     crossed; a factor nested in another takes the joined labels, as
+    ///     lme4's ``a:b`` (``f"{a}:{b}"``).
+    /// y : sequence of float
+    ///
+    /// Returns
+    /// -------
+    /// GlmmFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        groups: &Bound<'_, pyo3::types::PyDict>,
+        y: Vec<f64>,
+    ) -> PyResult<PyGlmmFit> {
+        let groups = groupings(groups)?;
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &groups, &y)).map_err(to_py)?;
+        Ok(PyGlmmFit { inner })
+    }
+}
+
+/// A GLM with random intercepts, from ``Glmm.fit``.
+#[pyclass(name = "GlmmFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyGlmmFit {
+    inner: prospicio_glm::glmm::GlmmFit,
+}
+
+#[pymethods]
+impl PyGlmmFit {
+    /// The fixed effects' names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// The fixed effects ``β``.
+    #[getter]
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    /// ``β``'s standard errors.
+    #[getter]
+    fn standard_errors(&self) -> Vec<f64> {
+        self.inner.standard_errors()
+    }
+
+    /// ``β``'s covariance, row-major, from the marginal likelihood's
+    /// Hessian (glmmTMB's ``vcov``).
+    #[getter]
+    fn covariance(&self) -> Vec<f64> {
+        self.inner.covariance().to_vec()
+    }
+
+    /// The grouping factors' names, in the order fitted.
+    #[getter]
+    fn group_names(&self) -> Vec<String> {
+        self.inner.group_names().to_vec()
+    }
+
+    /// Each factor's standard deviation ``σ``.
+    #[getter]
+    fn sd(&self) -> Vec<f64> {
+        self.inner.sd().to_vec()
+    }
+
+    /// Each ``σ``'s standard error, ``σ`` times that of ``log σ``; NaN
+    /// for a ``σ`` at 0.
+    #[getter]
+    fn sd_standard_errors(&self) -> Vec<f64> {
+        self.inner.sd_standard_errors().to_vec()
+    }
+
+    /// The dispersion ``φ``: the response's variance is ``φ μ^p / w``; 1
+    /// for the Poisson.
+    #[getter]
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    /// ``φ``'s standard error, ``φ`` times that of ``log φ``; 0 for the
+    /// Poisson.
+    #[getter]
+    fn dispersion_standard_error(&self) -> f64 {
+        self.inner.dispersion_standard_error()
+    }
+
+    /// The marginal log-likelihood, by the approximation fitted.
+    #[getter]
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    #[getter]
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    #[getter]
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
+    /// Each row's mean with its random intercepts.
+    #[getter]
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted().to_vec()
+    }
+
+    #[getter]
+    fn iterations(&self) -> usize {
+        self.inner.iterations()
+    }
+
+    #[getter]
+    fn converged(&self) -> bool {
+        self.inner.converged()
+    }
+
+    /// Each factor's random intercepts: a dict of name to a dict of
+    /// ``levels`` (sorted), ``values`` (the conditional modes),
+    /// ``conditional_variance`` (lme4's ``condVar``) and
+    /// ``prediction_variance`` (with the estimates' uncertainty, glmmTMB's
+    /// ``condVar``).
+    #[getter]
+    fn random_effects<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let out = pyo3::types::PyDict::new(py);
+        for r in self.inner.random_effects() {
+            let d = pyo3::types::PyDict::new(py);
+            d.set_item("levels", &r.levels)?;
+            d.set_item("values", &r.values)?;
+            d.set_item("conditional_variance", &r.conditional_variance)?;
+            d.set_item("prediction_variance", &r.prediction_variance)?;
+            out.set_item(&r.name, d)?;
+        }
+        Ok(out)
+    }
+
+    /// Expected response for each row of ``design``, adding each row's
+    /// random intercepts by label; a level the fit has not seen, or a
+    /// factor left out of ``groups``, adds 0 (the population mean).
+    #[pyo3(signature = (design, groups = None))]
+    fn predict(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        groups: Option<&Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Vec<f64>> {
+        let groups = match groups {
+            Some(g) => groupings(g)?,
+            None => Vec::new(),
+        };
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict(d, &groups)).map_err(to_py)
+    }
+}

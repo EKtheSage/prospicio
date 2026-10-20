@@ -437,3 +437,7 @@
   level's mode with its conditional and prediction variances; `predict`
   gives a level the fit has not seen the population mean. At parity with
   glmmTMB and lme4's `glmer` (#358).
+- The GLMMs in Python and R: `prospicio.models.Glmm` and `GlmmFit`, with
+  grouping factors as a dict of labels, and R `glmm_fit()` with lme4's
+  `(1 | g)` and `(1 | a/b)` terms in the formula, returning a
+  `glmm_model` with `random_effects` and `predict()` (#358).

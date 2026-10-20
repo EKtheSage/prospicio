@@ -414,8 +414,8 @@ what it is aiming for by v1.0.
   GCV/UBRE, as scam). This completes the GAM scope of v0.6. GLMMs with
   random intercepts (Poisson, gamma, Tweedie; one, nested or crossed
   factors; Laplace, or adaptive quadrature for one factor; glmmTMB and
-  lme4 parity; Rust, #358).
-- **Next:** the GLMMs' Python and R bindings, then double GLMs (#353).
+  lme4 parity; Rust, Python and R, #358).
+- **Next:** double GLMs (#353).
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.
 
 ### `prospicio-nn` (Models lane, opt-in)
