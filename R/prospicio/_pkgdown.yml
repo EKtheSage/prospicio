@@ -145,6 +145,8 @@ reference:
       - calibrate_portfolio
       - portfolio_kappa
       - bodoff_allocation
+      - bodoff_price
+      - allocation_set
       - priority_ladder
       - price_stand_alone
       - technical_quote
