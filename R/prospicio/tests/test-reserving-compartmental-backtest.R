@@ -98,7 +98,9 @@ stopifnot(os@mean$crps > 1881.9 / 2, os@mean$crps < 1881.9 * 2,
           os@mean$total_crps > 3617.3 / 2, os@mean$total_crps < 3617.3 * 2)
 
 # One fit serves both tables: the same diagnostics, and the outstanding
-# table is only forecasts, a small fraction of the sampling.
+# table is only forecasts, a small fraction of the sampling. The timing is
+# the proof that the fits are shared: equal diagnostics would also follow
+# from a refit on the same seed.
 d_paid <- paid@diagnostics[paid@diagnostics$model == "compartmental_gm1", ]
 stopifnot(
   all(is.na(paid@diagnostics$min_ess_bulk[paid@diagnostics$model == "odp"])),
@@ -107,6 +109,31 @@ stopifnot(
   identical(os@diagnostics$max_rhat, d_paid$max_rhat),
   t_os < 0.5 * t_paid
 )
+
+# outstanding = reads the case reserves from a column; here the column is
+# incurred less paid, so both tables equal those of incurred = on the same
+# seed, cell for cell.
+long_os <- long
+long_os$outstanding <- long_os$incurred - long_os$paid
+tri_os <- triangle(long_os, "origin", "development",
+                   c("paid", "incurred", "premium", "outstanding"))
+both <- lapply(c("outstanding", "incurred"), function(how) {
+  args <- list(tri_os, "paid", "premium", gm, chains = 2, tune = 300, draws = 300)
+  args[[how]] <- how
+  c_how <- do.call(compartmental_candidate, args)
+  list(
+    paid = suppressWarnings(diagonal_backtest(tri_os, "paid", list(c_how), 1, n_sims = 200,
+                                              seed = seed)),
+    os = compartmental_outstanding_backtest(c_how, 1, n_sims = 200, seed = seed)
+  )
+})
+for (table in c("paid", "os")) {
+  got <- both[[1]][[table]]
+  want <- both[[2]][[table]]
+  stopifnot(all(is.finite(got@scores$value)), identical(got@scores$value, want@scores$value),
+            identical(got@scored_rows, want@scored_rows))
+}
+stopifnot(length(both[[1]]$os@scored_rows[[1]]) == 7)
 
 # A named candidate, and replay by seed.
 a <- suppressWarnings(diagonal_backtest(tri, "paid", list(gm1 = small()), 1, n_sims = 200,

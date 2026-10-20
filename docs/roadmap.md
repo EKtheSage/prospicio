@@ -332,9 +332,9 @@ what it is aiming for by v1.0.
     a second table scoring the held-out outstanding diagonals, in Rust
     and (`claude/compartmental-backtest-bindings`: the candidate owns its
     data and a clone shares its fits) in Python
-    (`Compartmental.candidate`) and R (`compartmental_candidate()`). On company 337 model 1 forecasts the outstanding well
-    and the paid increments badly. Model 2's arms run only under
-    `RISK_RS_FULL_BAYES`.
+    (`Compartmental.candidate`) and R (`compartmental_candidate()`). On
+    company 337 model 1 forecasts the outstanding well and the paid
+    increments badly. Model 2's arms run only under `RISK_RS_FULL_BAYES`.
   - Selected development patterns (`reserving-v02.md`, decision 12;
     branch `claude/selected-patterns`, in Rust, Python and R):
     `SelectedPattern` on `Development` as age-to-age factors, factors

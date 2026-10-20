@@ -1150,9 +1150,10 @@ premium column and a second response.
 `outstanding_backtest(cells, n_diagonals, n_sims, seed, interval)`, which
 returns a `Backtest` (one model, `<name>_outstanding`) from the backtest's
 own split (`scored_splits`, shared with `diagonal_backtest`) and scoring
-(`score`) code. Details beyond the decision: the candidate keeps its last
-four fits, so the paid and the outstanding table of one backtest share one
-NUTS run; a row the likelihood rejects (log-normal: the first non-positive
+(`score`) code. Details beyond the decision: the candidate keeps the fit
+of every split (keyed by its training rows and seed), so the paid and the
+outstanding table of one backtest share one NUTS run per split however
+many diagonals it holds; a row the likelihood rejects (log-normal: the first non-positive
 response of an origin and every later row of it) leaves `fit_rows`, and a
 non-positive outstanding is left out of the fit; the mean of a row is the
 mean of its predictive draws; the log density is closed for a paid row that
@@ -1219,14 +1220,18 @@ there, with this design:
   columns, now copied), and `triangle()`, `paid()`, `outstanding()` and
   `premium()` stay read-only accessors, so the settings are still fixed
   after construction.
-* **A clone shares the fits.** The cache of the last four fits is behind an
+* **A clone shares the fits.** The cache of fits is behind an
   `Arc<Mutex<..>>`, and `CompartmentalCandidate` is `Clone`: a clone has
   the same settings and the same cache. A binding keeps its object, boxes
   a clone in a `NamedModel`, and the object's `outstanding_backtest`
   reuses the fits the backtest sampled (the reverse order too). A unit
   test boxes a clone in a `NamedModel`, runs the paid backtest and then
   the original's outstanding backtest, and checks that the cache holds one
-  fit, the same `Arc`, after both. This was chosen over an
+  fit, the same `Arc`, after both. The cache keeps every fit until the
+  candidate and its clones are dropped: a bound of four, evicting the
+  oldest, refitted every split of a five-diagonal backtest, since both
+  tables walk the splits oldest first; a test with five diagonals checks
+  that the outstanding table reuses all five fits. This was chosen over an
   `Arc<CompartmentalCandidate>` implementing `TriangleModel` because a
   clone is a plain value a binding can hold in a frozen Python object or
   an R pointer.

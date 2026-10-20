@@ -27,12 +27,8 @@ use crate::error::{Error, Result};
 use crate::frame::TriangleFrame;
 use crate::triangle::Triangle;
 
-/// How many fitted splits a candidate keeps, so that the paid table and the
-/// outstanding table of the same backtest share their fits.
 /// The triangle's outstanding by data cell `(origin index, age index)`.
 type Outstandings = BTreeMap<(usize, usize), f64>;
-
-const CACHED_FITS: usize = 4;
 
 /// A [`Compartmental`] for the diagonal backtest: the model's settings with
 /// the triangle that holds the paid, outstanding (or incurred) and premium
@@ -134,8 +130,10 @@ const CACHED_FITS: usize = 4;
 ///
 /// # Settings are fixed
 ///
-/// A candidate keeps the fits of its last few splits, shared between the
-/// paid and the outstanding backtests of the same split. Its model, triangle
+/// A candidate keeps the fit of every split it is asked for (keyed by the
+/// training rows and the seed), shared between the paid and the outstanding
+/// backtests of the same split however many diagonals they hold; the fits
+/// are freed with the candidate and its clones. Its model, triangle
 /// and columns are therefore private and read through accessors: to try other
 /// settings, build a new candidate, so a cached fit is never reused under
 /// settings other than the ones it was made with.
@@ -443,11 +441,10 @@ impl CompartmentalCandidate {
             diagnostics,
             full_outstanding,
         });
-        let mut fits = self.fits.lock().unwrap_or_else(|e| e.into_inner());
-        if fits.len() >= CACHED_FITS {
-            fits.remove(0);
-        }
-        fits.push(Arc::clone(&fit));
+        self.fits
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Arc::clone(&fit));
         Ok(fit)
     }
 
@@ -621,7 +618,7 @@ impl CompartmentalCandidate {
     /// of its fit ([`Backtest::diagnostics`]). The splits, `n_sims`, `seed` and `interval` are
     /// [`diagonal_backtest`](crate::diagonal_backtest)'s, so the fits of a
     /// backtest of this candidate on the same arguments are shared with this
-    /// one (the candidate keeps its last four).
+    /// one (the candidate keeps the fit of every split).
     ///
     /// The cells scored are the held-out diagonal's rows that the candidate
     /// fits an origin and age of (as [`diagonal_backtest`](crate::diagonal_backtest)
@@ -1090,6 +1087,30 @@ mod tests {
         assert!(Arc::ptr_eq(&first, &c.fits.lock().unwrap()[0]));
         assert_eq!(os.diagnostics(0), paid.diagnostics(0));
         assert_eq!(os.scored_rows(), paid.scored_rows());
+    }
+
+    /// Both tables walk the splits oldest first, so the cache must hold
+    /// every split of a backtest for the outstanding table to reuse them
+    /// all: with five diagonals no split is sampled twice.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn five_diagonals_share_every_fit() {
+        let tri = triangle(false);
+        let cells = TriangleFrame::new(&tri, "paid", None).unwrap();
+        let c = candidate(quick(5), &tri);
+        let paid = diagonal_backtest(&cells, &[&c.clone()], 5, 200, 5, 0.9).unwrap();
+        let first: Vec<Arc<TrainFit>> = c.fits.lock().unwrap().clone();
+        assert_eq!(first.len(), 5);
+        let os = c.outstanding_backtest(&cells, 5, 200, 5, 0.9).unwrap();
+        let after = c.fits.lock().unwrap().clone();
+        assert_eq!(after.len(), 5);
+        for (a, b) in first.iter().zip(&after) {
+            assert!(Arc::ptr_eq(a, b));
+        }
+        assert_eq!(os.diagnostics(0), paid.diagnostics(0));
     }
 
     /// The fit never sees the held-out diagonal: its paid is rebuilt from

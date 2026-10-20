@@ -39,9 +39,10 @@ N_DIAGONALS = 3
 SEED = 3
 
 
-def training_triangle():
+def training_triangle(with_outstanding=False):
     """Company 337 at calendar years up to 1996, and 1997 with its premium
-    only (the backtest's frame, as the Rust validation builds it)."""
+    only (the backtest's frame, as the Rust validation builds it), with an
+    ``outstanding`` column of incurred less paid when asked."""
     path = VALIDATION / "data" / "clrd_wkcomp_337.csv"
     with open(path, newline="") as f:
         rows = list(csv.DictReader(line for line in f if not line.startswith("#")))
@@ -54,9 +55,10 @@ def training_triangle():
     paid = [float(r["paid"]) for r in rows] + [nan]
     incurred = [float(r["incurred"]) for r in rows] + [nan]
     premium = [float(r["premium"]) for r in rows] + [premium_1997]
-    return Triangle.from_long(
-        origin, age, {"paid": paid, "incurred": incurred, "premium": premium}
-    )
+    columns = {"paid": paid, "incurred": incurred, "premium": premium}
+    if with_outstanding:
+        columns["outstanding"] = [i - p for i, p in zip(incurred, paid)]
+    return Triangle.from_long(origin, age, columns)
 
 
 def small_model(**kw):
@@ -160,7 +162,9 @@ def test_the_outstanding_table_scores_the_same_cells(tables):
 
 
 def test_the_two_tables_share_their_fits(tables):
-    # The outstanding table adds forecasts, not NUTS runs: it is a small
+    # This timing is the proof that the fits are shared: equal diagnostics
+    # (checked above) would also follow from a refit on the same seed. The
+    # outstanding table adds forecasts, not NUTS runs: it is a small
     # fraction of the time of the paid table, which sampled once per split.
     _, _, _, t_paid, t_os = tables
     assert t_os < 0.5 * t_paid, (t_os, t_paid)
@@ -194,6 +198,32 @@ def test_the_scores_agree_with_the_rust_validation(tables):
     assert 3617.3 / 2 < total_crps < 3617.3 * 2
 
 
+def test_an_outstanding_column_scores_as_incurred_less_paid():
+    # outstanding= reads the case reserves from a column; here the column is
+    # incurred less paid, so both tables equal those of incurred= on the
+    # same seed, cell for cell.
+    tri = training_triangle(with_outstanding=True)
+    by_column = small_model().candidate(tri, "paid", "premium", outstanding="outstanding")
+    by_incurred = candidate(tri)
+    assert by_column.outstanding_from == "column"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        tables = [
+            (
+                diagonal_backtest(tri, "paid", [c], 1, n_sims=200, seed=SEED),
+                c.outstanding_backtest(1, n_sims=200, seed=SEED),
+            )
+            for c in (by_column, by_incurred)
+        ]
+    (paid_c, os_c), (paid_i, os_i) = tables
+    for got, want in ((paid_c, paid_i), (os_c, os_i)):
+        values = col(got.scores(), "value")
+        assert all(math.isfinite(v) for v in values)
+        assert values == col(want.scores(), "value")
+        assert got.scored_rows == want.scored_rows
+    assert len(os_c.scored_rows[0]) == 7
+
+
 def test_a_named_candidate_and_replay_by_seed(tri):
     first = candidate(tri)
     with warnings.catch_warnings():
@@ -224,7 +254,7 @@ def test_errors(tri):
     with pytest.raises(ValueError, match="another triangle or paid column"):
         diagonal_backtest(other, "paid", [cand], 1, n_sims=100)
     # more diagonals than the triangle holds
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="earlier period"):
         cand.outstanding_backtest(50, n_sims=100)
     with pytest.raises(TypeError, match="CompartmentalCandidate"):
         diagonal_backtest(tri, "paid", [small_model()], 1, n_sims=100)
