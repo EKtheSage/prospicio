@@ -379,7 +379,8 @@ what it is aiming for by v1.0.
   `Compartmental` has its one-year view too (PR 11, with the user's
   defaults of 2026-10-16), and `Compartmental::fit_segments` with the
   backtest in Rust, Python and R is `reserving-compartmental.md` PR E
-  (done; `one_year_segments` is open).
+  (done), and `Compartmental::one_year_segments` gives the one-year view
+  over segments (decision 8; Rust, Python and R).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.

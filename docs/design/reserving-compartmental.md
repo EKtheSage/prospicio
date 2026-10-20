@@ -8,7 +8,8 @@ built (decisions 1, 2, 4, 5, 6, 7 and 9, each with its "Built (PR C)"
 paragraph: the Rust core and its Python and R bindings); PR F (the
 one-year view, decision 11) built, with the defaults the user decided on
 2026-10-16; PR E (segments and the backtest, decision 8) built, with the
-user's decisions of 2026-10-19; PR D not yet · Lane:
+user's decisions of 2026-10-19, and its one-year view over segments
+(`Compartmental::one_year_segments`, decision 8) built after it; PR D not yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -1127,8 +1128,8 @@ premium column and a second response.
   density where closed form) over the outstanding cells of the held-out
   diagonals. The held-out outstanding is always withheld from training.
 * **Scope.** Model 1 is what pull-request CI runs; model 2 runs only
-  under `full_bayes()` (`RISK_RS_FULL_BAYES`). `one_year_segments` is a
-  later PR. Python and R get `fit_segments` with `dependence` and
+  under `full_bayes()` (`RISK_RS_FULL_BAYES`). `one_year_segments` came in
+  a later PR (below). Python and R get `fit_segments` with `dependence` and
   `spearman` settings; the backtest stays Rust-only, as for `BayesOdp`
   at the time (since reversed for `BayesOdp` and `Meyers` by
   `reserving-bayes.md` decision 21, which gives the backtest Python and
@@ -1201,7 +1202,8 @@ from the decision.
   in this PR: the candidate borrowed its triangle and the bindings'
   `NamedModel` owns its model, and the user's decision of 2026-10-19 for
   this PR kept the backtest Rust-only; the entry points are built in the
-  follow-up below. `one_year_segments` is a later PR. Model 2's segment
+  follow-up below. `one_year_segments` came in a later PR ("Built (one-year
+  view over segments)"). Model 2's segment
   and backtest arms run only under `RISK_RS_FULL_BAYES`.
 * **Result.** On company 337 the backtest forecasts the held-out
   outstanding diagonals well and the paid increments badly, and cannot
@@ -1266,6 +1268,108 @@ there, with this design:
   `R/prospicio/tests/test-reserving-compartmental-backtest.R`, about 10 s
   each). Model 2 is left to the Rust validation: its sampler is too slow
   for a binding test.
+
+**Built (one-year view over segments).** Branch
+`claude/compartmental-one-year-segments`, the follow-up the sections above
+left (`reserving-bayes.md` decisions 16 to 20, "Segments"). As decided
+there for `BayesOdp` and `Meyers`, with these particulars:
+
+* **`Compartmental::one_year_segments(triangle, paid, outstanding,
+  premium, settings)`** returns a `CompartmentalOneYearFits`: `segments:
+  SegmentFits<BayesOneYearSegment<CompartmentalSegment>>` (each segment's
+  `CompartmentalFit` with its opening ultimate and reserve, Pareto `k̂`,
+  `moment_matched`, `refitted`, `unrefitted` and `refit_warnings`, the same
+  `BayesOneYearSegment` the other models use), the joint `cdr` (dimensions
+  the key names and `origin`, components over each segment's premium
+  origins in turn), and `approximate`. It is not a `BayesOneYearFits`,
+  whose tables and `ReserveFit` need a chain-ladder projection that this
+  model does not have (the reason `one_year` returns a
+  `BayesOneYearFit<CompartmentalFit>` with tables of its own); `to_long`,
+  `totals` and `segment(keys)` are built from the segments' premium,
+  latest paid, opening reserve and the joint `cdr`, stacked under the key
+  columns as `CompartmentalFits`' are.
+* **One engine call a segment, on `fit_segments`' seeds.** `one_year` and
+  `one_year_segments` share one function (`year_streams`: a fit on the
+  chains stream it is given, then the opening draws, the simulations and
+  the refits on the view seed that the predictive stream derives), so a
+  segment's view is by construction `one_year` of its own triangle on
+  `Stream::SegmentChains(k)` and `Stream::SegmentPredictive(k)`, and a
+  one-segment triangle's is segment 0's (unit tests; `one_year` itself is
+  bit for bit what it was). The posteriors are `fit_segments`' (a unit
+  test).
+* **Defaults per segment.** The refit default, the 2,000-simulation cap and
+  the approximate warning are `one_year`'s: the model's refit mode when the
+  settings leave it `None` (model 1 moment-matches, model 2 reweights
+  only), `approximate` set once for the view since the model is the same
+  in every segment, and `max_refits` a budget of each segment, so `k`
+  segments refit at most `k` times the budget (`reserving-bayes.md`,
+  "A refit budget").
+* **Dependence.** As `Meyers::one_year_segments`: `Independent` as drawn;
+  `RankCorrelation` by Iman-Conover on the segments' total claims
+  development results (`SegmentDependence::reorder_ranges`, seeded by the
+  model's seed, the rows of each segment's results moved whole), so the
+  segments' results reach the Spearman matrix and each keeps its
+  simulations as a set; `Synchronized` is `Error::Bayes` and a bad matrix
+  `InvalidSetting`, both before any sampling. A segment's Pareto `k̂`,
+  refit lists and fit are not reordered (they describe the simulations as
+  drawn); only the joint `cdr` is, as for `Meyers`.
+* **Python** (`prospicio.reserving`): `Compartmental.one_year_segments(
+  triangle, paid, premium, *, outstanding=None, incurred=None,
+  k_threshold=0.7, refit=None, max_refits=None, n_sims=None)`, returning a
+  new `CompartmentalOneYearFits` (`keys`, `index`, `origins`, `premium`,
+  `latest_paid`, `opening_ultimate`, `opening_reserve`, `cdr`,
+  `approximate`, `k_threshold`, `diagnostics_frame()`, `to_frame()`,
+  `totals_frame()`, `segment(**keys)`, and for a single-segment view
+  `pareto_k`, `refitted`, `moment_matched`, `unrefitted`,
+  `refit_warnings`, `flagged_share`, `diagnostics`, `parameter_names`,
+  `draws`, `chains`, `summary()` and `loo()`). The dependence is the
+  model's (`Compartmental(..., dependence=, spearman=)`). Warnings: the
+  failed diagnostics of each segment's fit (with its label), failed refits,
+  simulations left unrefitted and the approximate default, each raised
+  once. Not `BayesOneYearFits`: that class needs a chain ladder, as above.
+* **R**: `compartmental_one_year_segments(triangle, paid, premium, priors,
+  outstanding = NULL, incurred = NULL, <compartmental_one_year()'s
+  settings>, dependence = c("independent", "rank_correlation",
+  "synchronized"), spearman = NULL)` returning a
+  `compartmental_one_year_fits` with the properties of the Python class,
+  `as.data.frame()`, `totals_frame()`, `summary()`, `print()` and
+  `segment()`. Model 2 is `compartmental_one_year_segments()` with
+  `likelihood = "lognormal"`, `scale = "loss_ratio"` and `paid_response =
+  "incremental"` (there is no `compartmental_model_2_one_year_segments()`
+  wrapper: its sampler defaults are `compartmental_model_2_one_year()`'s,
+  which the caller passes). The extendr wrappers in
+  `R/prospicio/R/extendr-wrappers.R` were written by hand (rextendr is not
+  installed here) in the form the generator writes.
+* **Tests.** Rust unit tests (`compartmental.rs`): errors before any
+  sampling (ungated), and, gated by `slow-tests`, each segment's view equal
+  to `year_streams` of its own triangle on its own streams, twins
+  uncorrelated, a one-segment view equal to segment 0's streams and not
+  `one_year`'s, a `max_refits` budget of each segment, the tables, and a
+  Spearman 0.7 reached with each segment's results kept as a set.
+  Validation (`reserving_compartmental_one_year.rs`): model 1 over two
+  copies of company 337 in the pull request's smoke run (each segment's
+  total result has mean zero and the sd of `one_year` on the triangle
+  alone within a band, the copies are rank-uncorrelated, `segment` is its
+  part of the joint result) and, under `RISK_RS_FULL_BAYES`, the default
+  refit mode with a budget and model 2's default view over segments
+  (reweighted, warned, at most 2,000 simulations). Python
+  (`python/tests/test_reserving_compartmental_one_year_segments.py`) and R
+  (`R/prospicio/tests/test-reserving-compartmental-one-year-segments.R`)
+  run model 1 at 2 chains of 100 warm-up and 100 kept draws, 300
+  simulations and reweighting only (about 30 s for the Python test, 25 s
+  for the R one).
+* **Result.** On company 337 under two names (model 1, seed 0, 500
+  simulations, reweighting only) the two segments' total results have sd
+  8,021 and 8,748 against 7,872 for `one_year` of the triangle alone (the
+  band is 0.75 to 1.33 of it), and the copies' rank correlation is within
+  `4.5/sqrt(n)` of 0. The smoke run in release is 22 s for the view (34 s
+  with the single-triangle comparison); the full run, which adds the
+  default refit mode over the segments under a budget and model 2's
+  default view, is 225 s. One local run, not pinned by CI.
+* **Not done.** The 200-triangle calibration study and a guide section;
+  `docs/guides/reserving-compartmental.qmd` still says that fitting
+  several segments is not built, which has been out of date since PR E
+  (the Guides lane's file).
 
 ### 9. Bindings
 
