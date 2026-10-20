@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("ninety-one functions registered", registered == 91);
+    check("ninety-four functions registered", registered == 94);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -369,6 +369,14 @@ int main(int argc, char **argv) {
           fabs(ck->val.array.lparray[11 * 7 + 3].val.num - 111006.625765179) < 1.2);
     free12(ck);
 
+    /* The ODP GLM on RAA: the chain ladder's total reserve, 52135.23. */
+    typedef XLOPER12 *(*Fn2)(XLOPER12 *, XLOPER12 *);
+    XLOPER12 *og = ((Fn2)GetProcAddress(xll, "pro_odp_glm"))(&tri, &missing);
+    check("PRO.ODP.GLM total reserve is the chain ladder's 52135.23",
+          (og->xltype & 0xFFF) == xltypeMulti && og->val.array.rows == 12 && og->val.array.columns == 8 &&
+              fabs(og->val.array.lparray[11 * 8 + 3].val.num - 52135.2283) < 0.01);
+    free12(og);
+
     /* Triangle helpers: incremental and back is the triangle again. */
     typedef XLOPER12 *(*Fn1)(XLOPER12 *);
     XLOPER12 *inc = ((Fn1)GetProcAddress(xll, "pro_tri_incremental"))(&tri);
@@ -429,7 +437,6 @@ int main(int argc, char **argv) {
     free12(g1);
 
     /* Square root rule: a quarter of the standard gives half credibility. */
-    typedef XLOPER12 *(*Fn2)(XLOPER12 *, XLOPER12 *);
     XLOPER12 quarter, full;
     quarter.xltype = full.xltype = xltypeNum;
     quarter.val.num = 250;

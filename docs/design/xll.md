@@ -595,6 +595,29 @@ real Excel.
     and GenIns match, and against R ChainLadder's `MackChainLadder(weights
     = W)` the standard errors of `reserving_averages_r.csv`, an infinite
     one as a blank cell.
+35. **The ODP GLM is three functions on a triangle** (the eighth
+    group), over `OdpGlm::fit`: `PRO.ODP.GLM(triangle, [origins])` is the
+    exhibit of Taylor and McGuire's Table 5-4 (latest, ultimate, the
+    reserve, which is the chain ladder's, the process and parameter
+    standard errors, RMSEP and CV per origin and in total);
+    `PRO.ODP.GLM.PARAMS` the coefficients with their standard errors and
+    Pearson's dispersion; `PRO.ODP.GLM.RESIDUALS(triangle, [by],
+    [origins])` a row per observed increment (actual, fitted, actual to
+    fitted, Pearson and deviance residuals, leverage, standardized
+    residuals) or, with `by` "origin", "development" or "calendar", the
+    count, mean and standard deviation of each group's standardized
+    deviance residuals. The model is fixed by the triangle (an origin and
+    a development factor), so unlike a general GLM, left out below, it
+    wants no design table and no fit kept between calls. Coefficients
+    are rows of term and level, the intercept first and then the origins
+    and development periods from the second (each first is the
+    reference), not the crate's coding names, whose levels are in string
+    order and whose origins are the add-in's internal years. Development
+    and calendar periods are numbered from 1; a cell fitted exactly
+    (leverage 1) has blank standardized residuals. The checks: R's
+    `glm(..., family = quasipoisson)` coefficients, standard errors,
+    dispersion and reserves on GenIns and ABC, and Taylor and McGuire's
+    printed Table 5-4 and Chapter 6 residual summaries and heat map.
 
 ## Parity plan
 
@@ -643,8 +666,8 @@ order, one small PR each, those already done struck through:
    simulated years, deficits and credits carried forward)~~.
 8. What the other lanes have built since (user, 2026-10-20, "move
    forward"; the order chosen by this lane): ~~link-ratio exclusions and
-   the geometric average in `average`~~; the ODP GLM with its analytic
-   prediction error and residual diagnostics; the newer severity fits
+   the geometric average in `average`~~; ~~the ODP GLM with its analytic
+   prediction error and residual diagnostics~~; the newer severity fits
    (the Lomax, truncation from above, grouped losses and minimum-distance
    fits) in `PRO.SEV.FIT`.
 
@@ -656,8 +679,8 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's eighth group: the ODP GLM, then
-  the newer severity fits; further functions as the user asks (nested
+- **Next functions:** the parity plan's eighth group: the newer
+  severity fits; further functions as the user asks (nested
   Archimedean copulas and vines, and the expected multi-year commission
   on the grid, are the nearest left out).
 - **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times

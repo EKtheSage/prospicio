@@ -23,6 +23,7 @@ pub mod evt;
 pub mod experience;
 pub mod exposure;
 pub mod fitting;
+pub mod odp_glm;
 pub mod payout;
 pub mod pricing;
 pub mod quote;
@@ -115,6 +116,10 @@ const TAIL: Arg = Arg {
 const ORIGINS: Arg = Arg {
     name: "origins",
     help: "Origin labels, one per triangle row; omitted for 1, 2, ...",
+};
+const RESIDUALS_BY: Arg = Arg {
+    name: "by",
+    help: "cell (default: a row per observed increment), or origin, development or calendar for the count, mean and SD of each group's standardized deviance residuals",
 };
 
 const SIMS: Arg = Arg {
@@ -531,6 +536,27 @@ pub static FUNCTIONS: &[Function] = &[
         help: "Clark's fitted parameters: curve, omega, theta, the ELR (Cape Cod), the scale and the observations.",
         args: &[TRIANGLE, CLARK_EXPOSURE, CURVE, MAX_AGE],
         run: reserving::clark_params,
+    },
+    Function {
+        symbol: "pro_odp_glm",
+        name: "PRO.ODP.GLM",
+        help: "ODP GLM exhibit: latest, ultimate, reserve, process and parameter SE, RMSEP and CV per origin, with a total (Taylor and McGuire's Table 5-4).",
+        args: &[TRIANGLE, ORIGINS],
+        run: odp_glm::summary,
+    },
+    Function {
+        symbol: "pro_odp_glm_params",
+        name: "PRO.ODP.GLM.PARAMS",
+        help: "The ODP GLM's coefficients: term, level, estimate and SE (intercept, origins and development periods from the second), then Pearson's dispersion.",
+        args: &[TRIANGLE, ORIGINS],
+        run: odp_glm::params,
+    },
+    Function {
+        symbol: "pro_odp_glm_residuals",
+        name: "PRO.ODP.GLM.RESIDUALS",
+        help: "The ODP GLM's residuals: a row per observed increment (actual, fitted, Pearson, deviance, leverage, standardized), or grouped by origin, development or calendar period.",
+        args: &[TRIANGLE, RESIDUALS_BY, ORIGINS],
+        run: odp_glm::residuals,
     },
     Function {
         symbol: "pro_tri_incremental",

@@ -60,6 +60,9 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's simulated one-year CDR |
 | `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's LDF method (or Cape Cod with exposure): reserve and SEs |
 | `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Clark's fitted parameters |
+| `PRO.ODP.GLM(triangle, [origins])` | The ODP model as a quasi-Poisson GLM: reserve, process and parameter SE, RMSEP and CV per origin, with a total |
+| `PRO.ODP.GLM.PARAMS(triangle, [origins])` | Its coefficients and SEs (term, level), then Pearson's dispersion |
+| `PRO.ODP.GLM.RESIDUALS(triangle, [by], [origins])` | Its residuals by cell, or grouped by `"origin"`, `"development"` or `"calendar"` |
 | `PRO.TRI.INCREMENTAL(triangle)`, `PRO.TRI.CUMULATIVE(triangle)` | Incremental from cumulative, and back |
 | `PRO.TRI.LINKRATIOS(triangle)` | Age-to-age link ratios |
 | `PRO.TRI.LATEST(triangle)` | The latest diagonal |
