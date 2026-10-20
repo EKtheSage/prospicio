@@ -91,7 +91,7 @@ pub fn summary(args: &[Grid]) -> Result<Grid> {
 pub fn params(args: &[Grid]) -> Result<Grid> {
     let fit = fit(&args[0])?;
     let labels = origin_labels(&args[1], fit.origins.len())?;
-    let names = fit.coding.names();
+    let names = fit.glm.names();
     let (estimates, errors) = (fit.glm.coefficients(), fit.glm.std_errors());
     // Each coefficient's term, level and sort key.
     let mut coefficients: Vec<(usize, f64, Value, Value, usize)> = names
