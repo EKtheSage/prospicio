@@ -1977,6 +1977,8 @@ Triangle$diagonal_backtest <- function(column, premium, specs, n_diagonals, n_si
 
 Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
 
+Triangle$compartmental_candidate <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental_candidate, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
+
 Triangle$compartmental_segments <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, dependence, spearman) .Call(wrap__Triangle__compartmental_segments, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, dependence, spearman)
 
 Triangle$compartmental_one_year <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__compartmental_one_year, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims)
@@ -2561,6 +2563,22 @@ CompartmentalFit$segment <- function(keys, values) .Call(wrap__CompartmentalFit_
 
 #' @export
 `[[.CompartmentalFit` <- `$.CompartmentalFit`
+
+CompartmentalBacktestModel <- new.env(parent = emptyenv())
+
+CompartmentalBacktestModel$name <- function() .Call(wrap__CompartmentalBacktestModel__name, self)
+
+CompartmentalBacktestModel$paid <- function() .Call(wrap__CompartmentalBacktestModel__paid, self)
+
+CompartmentalBacktestModel$premium <- function() .Call(wrap__CompartmentalBacktestModel__premium, self)
+
+CompartmentalBacktestModel$outstanding_backtest <- function(n_diagonals, n_sims, seed, interval) .Call(wrap__CompartmentalBacktestModel__outstanding_backtest, self, n_diagonals, n_sims, seed, interval)
+
+#' @export
+`$.CompartmentalBacktestModel` <- function (self, name) { func <- CompartmentalBacktestModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CompartmentalBacktestModel` <- `$.CompartmentalBacktestModel`
 
 CompartmentalOneYearFit <- new.env(parent = emptyenv())
 

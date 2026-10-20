@@ -295,6 +295,8 @@ reference:
       - meyers_fits
       - backtest
       - odp_glm_spec
+      - compartmental_backtest_model
+      - compartmental_outstanding_backtest
       - compartmental_fit
       - compartmental_fits
       - compartmental_one_year_fit

@@ -26,10 +26,11 @@ use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
     BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment, BayesOneYear,
     BayesOneYearFit as BayesOneYearInner, BayesOneYearFits as BayesOneYearFitsInner, Compartmental,
-    CompartmentalFit as CompartmentalInner, CompartmentalFits as CompartmentalFitsInner,
-    CompartmentalLikelihood, CompartmentalPriors, CompartmentalStart, Fitted, HalfPrior,
-    MeyersFits as MeyersFitsInner, MeyersSegment, OneYearRefit, Outstanding, PaidResponse,
-    PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
+    CompartmentalCandidate, CompartmentalFit as CompartmentalInner,
+    CompartmentalFits as CompartmentalFitsInner, CompartmentalLikelihood, CompartmentalPriors,
+    CompartmentalStart, Fitted, HalfPrior, MeyersFits as MeyersFitsInner, MeyersSegment,
+    OneYearRefit, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior,
+    Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     BayesBf, BayesBfFit as BayesBfInner, BayesOdp, BayesOdpFit as BayesOdpInner, Diagnostics,
@@ -39,7 +40,7 @@ use prospicio_reserving::{
 use prospicio_glm::Glm;
 use prospicio_models::{Column, Terms};
 use prospicio_reserving::{
-    GlmCandidate, NamedModel, TriangleFrame, TriangleModel, diagonal_backtest,
+    Backtest, GlmCandidate, NamedModel, TriangleFrame, TriangleModel, diagonal_backtest,
 };
 
 use crate::distributions::PredictiveDistribution;
@@ -1347,6 +1348,22 @@ impl Triangle {
                         independent,
                     )?,
                 ),
+                "compartmental" => {
+                    let ptr = field("ptr")?;
+                    let handle = <&CompartmentalBacktestModel>::try_from(&ptr)
+                        .map_err(|_| Error::Other("model spec ptr must be a candidate".into()))?;
+                    let c = &handle.inner;
+                    if c.paid() != column || c.triangle() != &self.inner {
+                        return Err(Error::Other(format!(
+                            "{} was built on another triangle or paid column than the \
+                             backtest's: build it with compartmental_candidate() on this \
+                             triangle and column \"{column}\"",
+                            c.name()
+                        )));
+                    }
+                    // A clone shares the candidate's fits with the handle.
+                    NamedModel::new(name, c.clone())
+                }
                 other => {
                     return Err(Error::Other(format!("unknown model kind \"{other}\"")));
                 }
@@ -1364,73 +1381,7 @@ impl Triangle {
             interval,
         )
         .map_err(to_r)?;
-        let (nm, ns) = (bt.models().len(), bt.n_splits());
-        // The calendar period of each split, as the frame labels it (the
-        // index when the frame has no calendar labels).
-        let labels = match cells.frame().column("calendar") {
-            Some(Column::Categorical(c)) => Some(c),
-            _ => None,
-        };
-        let diagonals: Vec<String> = bt
-            .scored_rows()
-            .iter()
-            .zip(bt.diagonals())
-            .map(|(rows, &index)| match (labels, rows.first()) {
-                (Some(c), Some(&r)) => c[r].clone(),
-                _ => index.to_string(),
-            })
-            .collect();
-        let mut scores = Vec::with_capacity(nm * bt.metrics().len() * ns);
-        for m in 0..nm {
-            for k in 0..bt.metrics().len() {
-                scores.extend_from_slice(bt.split_scores(m, k));
-            }
-        }
-        // One row per model and split, model-major; NaN where the model
-        // has no sampler.
-        let (mut rhat, mut bulk, mut tail, mut div, mut nwarn) =
-            (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
-        for m in 0..nm {
-            for d in bt.diagnostics(m) {
-                rhat.push(d.as_ref().map_or(f64::NAN, |d| d.max_rhat));
-                bulk.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_bulk));
-                tail.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_tail));
-                div.push(d.as_ref().map_or(f64::NAN, |d| d.divergences as f64));
-                nwarn.push(d.as_ref().map_or(f64::NAN, |d| d.warnings.len() as f64));
-            }
-        }
-        let warnings = bt.warnings();
-        let log_densities: Vec<Robj> = bt
-            .log_densities()
-            .iter()
-            .map(|l| Nullable::from(l.clone()).into())
-            .collect();
-        Ok(list!(
-            models = bt.models().to_vec(),
-            metrics = bt
-                .metrics()
-                .iter()
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>(),
-            n_splits = ns as f64,
-            diagonals = diagonals,
-            scores = scores,
-            excluded = bt.excluded().iter().map(|&e| e as f64).collect::<Vec<_>>(),
-            scored_rows = List::from_values(
-                bt.scored_rows()
-                    .iter()
-                    .map(|r| r.iter().map(|&x| x as f64).collect::<Vec<_>>())
-            ),
-            log_densities = List::from_values(log_densities),
-            max_rhat = rhat,
-            min_ess_bulk = bulk,
-            min_ess_tail = tail,
-            divergences = div,
-            n_warnings = nwarn,
-            warning_model = warnings.iter().map(|w| w.0 as f64).collect::<Vec<_>>(),
-            warning_split = warnings.iter().map(|w| w.1 as f64).collect::<Vec<_>>(),
-            warning_message = warnings.iter().map(|w| w.2.clone()).collect::<Vec<_>>()
-        ))
+        backtest_list(&cells, &bt)
     }
 
     /// Gesmann and Morris' compartmental model of a single-segment
@@ -1464,6 +1415,34 @@ impl Triangle {
         let os = compartmental_outstanding(outstanding, outstanding_from)?;
         let inner = model.fit(&self.inner, paid, os, premium).map_err(to_r)?;
         Ok(CompartmentalFit { inner })
+    }
+
+    /// A `Compartmental` as a candidate of the diagonal backtest on this
+    /// triangle: `compartmental`'s arguments, the outstanding backtest of
+    /// the handle sharing the fits of the backtests it is put in.
+    #[allow(clippy::too_many_arguments)]
+    fn compartmental_candidate(
+        &self,
+        paid: &str,
+        outstanding: &str,
+        outstanding_from: &str,
+        premium: &str,
+        priors: Vec<f64>,
+        families: Vec<String>,
+        settings: Vec<String>,
+        run: Vec<f64>,
+    ) -> Result<CompartmentalBacktestModel> {
+        let model = compartmental_settings(
+            &priors,
+            &families,
+            &settings,
+            &run,
+            SegmentDependence::Independent,
+        )?;
+        let os = compartmental_outstanding(outstanding, outstanding_from)?;
+        Ok(CompartmentalBacktestModel {
+            inner: CompartmentalCandidate::new(model, &self.inner, paid, os, premium),
+        })
     }
 
     /// `compartmental` for every segment of the triangle, each with its own
@@ -4096,6 +4075,77 @@ fn compartmental_settings(
     })
 }
 
+/// The flat pieces of a `Backtest` that R builds its tables from.
+fn backtest_list(cells: &TriangleFrame, bt: &Backtest) -> Result<List> {
+    let (nm, ns) = (bt.models().len(), bt.n_splits());
+    // The calendar period of each split, as the frame labels it (the
+    // index when the frame has no calendar labels).
+    let labels = match cells.frame().column("calendar") {
+        Some(Column::Categorical(c)) => Some(c),
+        _ => None,
+    };
+    let diagonals: Vec<String> = bt
+        .scored_rows()
+        .iter()
+        .zip(bt.diagonals())
+        .map(|(rows, &index)| match (labels, rows.first()) {
+            (Some(c), Some(&r)) => c[r].clone(),
+            _ => index.to_string(),
+        })
+        .collect();
+    let mut scores = Vec::with_capacity(nm * bt.metrics().len() * ns);
+    for m in 0..nm {
+        for k in 0..bt.metrics().len() {
+            scores.extend_from_slice(bt.split_scores(m, k));
+        }
+    }
+    // One row per model and split, model-major; NaN where the model
+    // has no sampler.
+    let (mut rhat, mut bulk, mut tail, mut div, mut nwarn) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for m in 0..nm {
+        for d in bt.diagnostics(m) {
+            rhat.push(d.as_ref().map_or(f64::NAN, |d| d.max_rhat));
+            bulk.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_bulk));
+            tail.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_tail));
+            div.push(d.as_ref().map_or(f64::NAN, |d| d.divergences as f64));
+            nwarn.push(d.as_ref().map_or(f64::NAN, |d| d.warnings.len() as f64));
+        }
+    }
+    let warnings = bt.warnings();
+    let log_densities: Vec<Robj> = bt
+        .log_densities()
+        .iter()
+        .map(|l| Nullable::from(l.clone()).into())
+        .collect();
+    Ok(list!(
+        models = bt.models().to_vec(),
+        metrics = bt
+            .metrics()
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>(),
+        n_splits = ns as f64,
+        diagonals = diagonals,
+        scores = scores,
+        excluded = bt.excluded().iter().map(|&e| e as f64).collect::<Vec<_>>(),
+        scored_rows = List::from_values(
+            bt.scored_rows()
+                .iter()
+                .map(|r| r.iter().map(|&x| x as f64).collect::<Vec<_>>())
+        ),
+        log_densities = List::from_values(log_densities),
+        max_rhat = rhat,
+        min_ess_bulk = bulk,
+        min_ess_tail = tail,
+        divergences = div,
+        n_warnings = nwarn,
+        warning_model = warnings.iter().map(|w| w.0 as f64).collect::<Vec<_>>(),
+        warning_split = warnings.iter().map(|w| w.1 as f64).collect::<Vec<_>>(),
+        warning_message = warnings.iter().map(|w| w.2.clone()).collect::<Vec<_>>()
+    ))
+}
+
 /// Where a compartmental fit's outstanding comes from: the `outstanding`
 /// column itself ("column") or incurred less paid ("incurred").
 fn compartmental_outstanding<'a>(
@@ -4108,6 +4158,54 @@ fn compartmental_outstanding<'a>(
         _ => Err(Error::Other(format!(
             "outstanding_from must be \"column\" or \"incurred\", got \"{outstanding_from}\""
         ))),
+    }
+}
+
+/// A compartmental model as a candidate of the diagonal backtest: its
+/// settings with the triangle and columns it reads. Put in the `models` of
+/// `diagonal_backtest` (the backtest takes a clone that shares the fits the
+/// handle keeps), its `outstanding_backtest` scores the held-out
+/// outstanding on those fits.
+#[extendr]
+pub(crate) struct CompartmentalBacktestModel {
+    inner: CompartmentalCandidate,
+}
+
+#[extendr]
+impl CompartmentalBacktestModel {
+    fn name(&self) -> String {
+        self.inner.name().to_string()
+    }
+
+    fn paid(&self) -> String {
+        self.inner.paid().to_string()
+    }
+
+    fn premium(&self) -> String {
+        self.inner.premium().to_string()
+    }
+
+    /// The flat pieces of the outstanding `Backtest` (as
+    /// `Triangle$diagonal_backtest` returns the paid one).
+    fn outstanding_backtest(
+        &self,
+        n_diagonals: f64,
+        n_sims: f64,
+        seed: f64,
+        interval: f64,
+    ) -> Result<List> {
+        let c = &self.inner;
+        let cells = TriangleFrame::new(c.triangle(), c.paid(), None).map_err(to_r)?;
+        let bt = c
+            .outstanding_backtest(
+                &cells,
+                whole(n_diagonals, "n_diagonals")? as usize,
+                whole(n_sims, "n_sims")? as usize,
+                whole(seed, "seed")?,
+                interval,
+            )
+            .map_err(to_r)?;
+        backtest_list(&cells, &bt)
     }
 }
 
@@ -4540,6 +4638,7 @@ extendr_module! {
     impl MeyersFit;
     impl MeyersFits;
     impl CompartmentalFit;
+    impl CompartmentalBacktestModel;
     impl CompartmentalFits;
     impl CompartmentalOneYearFit;
     impl BayesBfFit;

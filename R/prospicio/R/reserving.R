@@ -4659,6 +4659,25 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
                           chains = 4, tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
                           target_accept = 0.99, max_depth = 10) {
   call <- sys.call()
+  inputs <- compartmental_inputs(triangle, paid, premium, priors, outstanding, incurred, call)
+  settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
+                match.arg(fitted), match.arg(rate_order), match.arg(start))
+  ptr <- rust_result(triangle@ptr$compartmental(
+    paid, inputs$os, inputs$from, premium, inputs$p$values, inputs$p$families,
+    settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth)),
+    call = call)
+  fit <- compartmental_fit(ptr = ptr)
+  failed <- fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("compartmental: the MCMC diagnostics failed; check them before relying on the fit: ",
+            paste(failed, collapse = "; "), call. = FALSE)
+  }
+  fit
+}
+
+# The checked inputs shared by compartmental() and compartmental_candidate():
+# the priors' wire form, the outstanding or incurred column, and which it is.
+compartmental_inputs <- function(triangle, paid, premium, priors, outstanding, incurred, call) {
   check_triangle(triangle)
   for (arg in c("paid", "premium")) {
     value <- get(arg)
@@ -4681,19 +4700,7 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
     stop(sprintf("%s must be the name of a column",
                  if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
   }
-  settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                match.arg(fitted), match.arg(rate_order), match.arg(start))
-  ptr <- rust_result(triangle@ptr$compartmental(
-    paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
-    settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth)),
-    call = call)
-  fit <- compartmental_fit(ptr = ptr)
-  failed <- fit@diagnostics$warnings
-  if (length(failed)) {
-    warning("compartmental: the MCMC diagnostics failed; check them before relying on the fit: ",
-            paste(failed, collapse = "; "), call. = FALSE)
-  }
-  fit
+  list(p = p, os = os, from = if (is.null(incurred)) "column" else "incurred")
 }
 
 #' @rdname compartmental_fit
@@ -5367,12 +5374,166 @@ S7::method(print, meyers_spec) <- function(x, ...) {
   invisible(x)
 }
 
+
+#' Gesmann and Morris' compartmental model in the diagonal backtest
+#'
+#' [compartmental()]'s model as a model of [diagonal_backtest()]. Unlike the
+#' other model specs it holds the data it reads, the triangle and its
+#' `paid`, outstanding (or incurred) and `premium` columns, since its
+#' outstanding and premium are not in the backtest's table of paid
+#' increments. Put it in the `models` of [diagonal_backtest()], on the same
+#' `triangle` with `paid` as the `column`, to score the paid increments of
+#' the held-out diagonals beside the other models, and call
+#' [compartmental_outstanding_backtest()] for a second table, the
+#' held-out outstanding of the same diagonals. Both tables use **the same
+#' fits**: the candidate keeps the fit of each split (one run of the
+#' sampler), whichever table is asked for first.
+#'
+#' The settings are [compartmental()]'s, except that the backtest's `n_sims`
+#' and `seed` replace the candidate's, and the sampler runs once per split
+#' (the whole `chains` by `draws` posterior), so size it for the number of
+#' diagonals. The held-out diagonal's outstanding and paid never reach the
+#' fit. The candidate's name in the results is `"compartmental_gm1"` for
+#' model 1, `"compartmental_gm2"` for model 2 (the log-normal likelihood,
+#' loss ratios and incremental paid of [compartmental_model_2()]) and
+#' `"compartmental"` for other settings.
+#'
+#' @inheritParams compartmental_fit
+#' @param name The candidate's name in the backtest.
+#' @param ptr A `CompartmentalBacktestModel` pointer; used internally.
+#' @returns A `compartmental_backtest_model` object for the `models` of
+#'   [diagonal_backtest()] and [compartmental_outstanding_backtest()], with
+#'   properties `name`, `paid` and `premium`.
+#' @seealso [diagonal_backtest()], [compartmental()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(1988:1992, 5:1),
+#'                    age = unlist(lapply(5:1, function(k) 12 * seq_len(k))),
+#'                    paid = c(9.6, 22.8, 33.3, 40.3, 45.1, 7.9, 19.5, 29.6, 36.8,
+#'                             8.7, 24.3, 35.4, 13.3, 33.0, 11.4),
+#'                    incurred = c(62.7, 64.0, 65.6, 65.3, 62.3, 62.1, 56.7, 56.6, 56.8,
+#'                                 64.0, 61.5, 63.2, 73.9, 75.1, 77.1),
+#'                    premium = rep(c(104.4, 88.9, 86.0, 99.3, 104.9), 5:1))
+#' tri <- triangle(long, "year", "age", c("paid", "incurred", "premium"))
+#' cand <- compartmental_candidate(tri, "paid", "premium", gesmann_morris_priors(),
+#'                                 incurred = "incurred", chains = 2, tune = 150,
+#'                                 draws = 150, target_accept = 0.9)
+#' cand
+#' \donttest{
+#' paid <- diagonal_backtest(tri, "paid", list(cand), n_diagonals = 1, n_sims = 200)
+#' paid@mean
+#' compartmental_outstanding_backtest(cand, n_diagonals = 1, n_sims = 200)@mean
+#' }
+compartmental_backtest_model <- S7::new_class(
+  "compartmental_backtest_model",
+  package = "prospicio",
+  parent = backtest_model_spec,
+  properties = list(
+    ptr = S7::new_S3_class("CompartmentalBacktestModel"),
+    name = S7::new_property(S7::class_character, getter = function(self) self@ptr$name()),
+    paid = S7::new_property(S7::class_character, getter = function(self) self@ptr$paid()),
+    premium = S7::new_property(S7::class_character, getter = function(self) self@ptr$premium())
+  ),
+  constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
+)
+
+#' @rdname compartmental_backtest_model
+#' @export
+compartmental_candidate <- function(triangle, paid, premium, priors, outstanding = NULL,
+                                    incurred = NULL, likelihood = c("normal", "lognormal"),
+                                    scale = c("amount", "loss_ratio"),
+                                    paid_response = c("cumulative", "incremental"),
+                                    rate_order = c("free", "ordered"),
+                                    start = c("data", "prior_centre"), chains = 4, tune = 1000,
+                                    draws = 2000, target_accept = 0.99, max_depth = 10) {
+  call <- sys.call()
+  inputs <- compartmental_inputs(triangle, paid, premium, priors, outstanding, incurred, call)
+  settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
+                "paid_and_outstanding", match.arg(rate_order), match.arg(start))
+  ptr <- rust_result(triangle@ptr$compartmental_candidate(
+    paid, inputs$os, inputs$from, premium, inputs$p$values, inputs$p$families, settings,
+    compartmental_run(chains, tune, draws, 1, 0, target_accept, max_depth)), call = call)
+  compartmental_backtest_model(ptr = ptr)
+}
+
+#' @rdname compartmental_backtest_model
+#' @export
+compartmental_model_2_candidate <- function(triangle, paid, premium, priors, outstanding = NULL,
+                                            incurred = NULL, rate_order = c("free", "ordered"),
+                                            start = c("data", "prior_centre"), chains = 4,
+                                            tune = 2000, draws = 8000, target_accept = 0.999,
+                                            max_depth = 10) {
+  if (missing(priors)) {
+    stop(paste0("priors are required: use gesmann_morris_2_priors() for the paper's model 2, ",
+                "or compartmental_priors(), and check them with compartmental_prior_predictive()"),
+         call. = FALSE)
+  }
+  compartmental_candidate(triangle, paid, premium, priors, outstanding = outstanding,
+                          incurred = incurred, likelihood = "lognormal", scale = "loss_ratio",
+                          paid_response = "incremental", rate_order = match.arg(rate_order),
+                          start = match.arg(start), chains = chains, tune = tune, draws = draws,
+                          target_accept = target_accept, max_depth = max_depth)
+}
+
+#' Held-out outstanding of a compartmental candidate
+#'
+#' The second table of [compartmental_candidate()] in the diagonal backtest:
+#' for each of the latest `n_diagonals` calendar diagonals, the model is
+#' fitted to the cells valued before it (the outstanding of the held-out
+#' diagonal is always withheld) and forecasts the outstanding of the
+#' diagonal's cells, scored by the metrics of [diagonal_backtest()]. The
+#' splits, `n_sims`, `seed` and `interval` are [diagonal_backtest()]'s, so a
+#' backtest with the same arguments and this candidate in its `models` has
+#' fitted the model already and the fits are reused. The one model of the
+#' table is named after the candidate with `_outstanding`. A held-out cell
+#' without an outstanding in the triangle, or without a fitted origin or
+#' development age, is counted in `excluded`.
+#'
+#' @param candidate A [compartmental_candidate()].
+#' @inheritParams diagonal_backtest
+#' @returns A [backtest] object.
+#' @seealso [compartmental_candidate()], [diagonal_backtest()].
+#' @export
+#' @examples
+#' \donttest{
+#' long <- data.frame(year = rep(1988:1992, 5:1),
+#'                    age = unlist(lapply(5:1, function(k) 12 * seq_len(k))),
+#'                    paid = c(9.6, 22.8, 33.3, 40.3, 45.1, 7.9, 19.5, 29.6, 36.8,
+#'                             8.7, 24.3, 35.4, 13.3, 33.0, 11.4),
+#'                    incurred = c(62.7, 64.0, 65.6, 65.3, 62.3, 62.1, 56.7, 56.6, 56.8,
+#'                                 64.0, 61.5, 63.2, 73.9, 75.1, 77.1),
+#'                    premium = rep(c(104.4, 88.9, 86.0, 99.3, 104.9), 5:1))
+#' tri <- triangle(long, "year", "age", c("paid", "incurred", "premium"))
+#' cand <- compartmental_candidate(tri, "paid", "premium", gesmann_morris_priors(),
+#'                                 incurred = "incurred", chains = 2, tune = 150,
+#'                                 draws = 150, target_accept = 0.9)
+#' compartmental_outstanding_backtest(cand, n_diagonals = 1, n_sims = 200)@mean
+#' }
+compartmental_outstanding_backtest <- function(candidate, n_diagonals, n_sims = 1000, seed = 0,
+                                               interval = 0.9) {
+  if (!S7::S7_inherits(candidate, compartmental_backtest_model)) {
+    stop("candidate must be a compartmental_candidate()", call. = FALSE)
+  }
+  backtest(rust_result(candidate@ptr$outstanding_backtest(
+    single_number(n_diagonals, "n_diagonals"), single_number(n_sims, "n_sims"),
+    single_number(seed, "seed"), single_number(interval, "interval"))))
+}
+
+S7::method(print, compartmental_backtest_model) <- function(x, ...) {
+  cat(sprintf("<compartmental_candidate> %s, paid column \"%s\", premium column \"%s\"
+",
+              x@name, x@paid, x@premium))
+  invisible(x)
+}
+
 # The default name of a spec in a backtest, and the list the binding reads.
 backtest_spec_name <- function(spec) {
   if (S7::S7_inherits(spec, odp_glm_spec)) {
     "odp"
   } else if (S7::S7_inherits(spec, bayes_odp_spec)) {
     "bayes_odp"
+  } else if (S7::S7_inherits(spec, compartmental_backtest_model)) {
+    spec@name
   } else {
     paste0("meyers_", spec@model)
   }
@@ -5386,6 +5547,9 @@ backtest_spec_wire <- function(spec, name) {
   } else if (S7::S7_inherits(spec, bayes_odp_spec)) {
     list(name = name, kind = "bayes_odp", model = "", process = spec@process,
          priors = c(spec@intercept_sd, spec@origin_sd, spec@development_sd), run = run(spec))
+  } else if (S7::S7_inherits(spec, compartmental_backtest_model)) {
+    list(name = name, kind = "compartmental", model = "", process = "", priors = numeric(),
+         run = numeric(), ptr = spec@ptr)
   } else {
     list(name = name, kind = "meyers", model = spec@model, process = "",
          priors = c(spec@logelr_mean, spec@logelr_sd, spec@origin_sd, spec@development_sd,
@@ -5444,19 +5608,26 @@ backtest_spec_wire <- function(spec, name) {
 #' fails to fit is an error naming it. No R warning is raised for a failed
 #' diagnostic; read `warnings`.
 #'
+#' A [compartmental_candidate()] is scored on the paid increments here, and
+#' on the held-out outstanding by [compartmental_outstanding_backtest()],
+#' which reuses the fits of this backtest.
+#'
 #' Errors: a `models` that is not a non-empty list of [odp_glm_spec()],
-#' [bayes_odp_spec()] and [meyers_spec()] objects; two models with the same
-#' name (checked before any fit); a triangle with several segments or with
-#' fewer than `n_diagonals + 1` calendar diagonals; `premium` missing for
+#' [bayes_odp_spec()], [meyers_spec()] and [compartmental_candidate()]
+#' objects; two models with the same name (checked before any fit); a
+#' [compartmental_candidate()] built on another triangle or paid column than
+#' `triangle` and `column`; a triangle with several segments or with fewer
+#' than `n_diagonals + 1` calendar diagonals; `premium` missing for
 #' [meyers_spec()], or not positive and finite; an invalid sampler setting.
 #'
 #' @param triangle A cumulative [triangle] with one segment.
 #' @param column Name of the column to forecast.
-#' @param models A list of [odp_glm_spec()], [bayes_odp_spec()] and
-#'   [meyers_spec()] objects. Its names are the models' names in the results;
-#'   an entry without a name is called `"odp"`, `"bayes_odp"` or
-#'   `"meyers_"` and the model's name (`"meyers_crc"`). Two models cannot
-#'   share a name.
+#' @param models A list of [odp_glm_spec()], [bayes_odp_spec()],
+#'   [meyers_spec()] and [compartmental_candidate()] objects. Its names are
+#'   the models' names in the results; an entry without a name is called
+#'   `"odp"`, `"bayes_odp"`, `"meyers_"` and the model's name
+#'   (`"meyers_crc"`) or the candidate's name (`"compartmental_gm1"`). Two
+#'   models cannot share a name.
 #' @param n_diagonals Number of latest calendar diagonals to hold out, one
 #'   split each.
 #' @param premium Premium of each origin, for [meyers_spec()]: one number
@@ -5558,13 +5729,13 @@ diagonal_backtest <- function(triangle, column, models, n_diagonals, premium = N
     stop("column must be the name of a column", call. = FALSE)
   }
   if (!is.list(models) || length(models) == 0) {
-    stop("models must be a non-empty list of model specs: odp_glm_spec(), bayes_odp_spec() ",
-         "or meyers_spec()", call. = FALSE)
+    stop("models must be a non-empty list of model specs: odp_glm_spec(), bayes_odp_spec(), ",
+         "meyers_spec() or compartmental_candidate()", call. = FALSE)
   }
   for (spec in models) {
     if (!S7::S7_inherits(spec, backtest_model_spec)) {
-      stop("every entry of models must be odp_glm_spec(), bayes_odp_spec() or meyers_spec()",
-           call. = FALSE)
+      stop("every entry of models must be odp_glm_spec(), bayes_odp_spec(), meyers_spec() or ",
+           "compartmental_candidate()", call. = FALSE)
     }
   }
   given <- names(models)
