@@ -1559,6 +1559,18 @@ fn k_fold_rust(n: f64, k: f64, seed: f64) -> Result<List> {
 }
 
 #[extendr]
+fn permutation_rust(n: f64, seed: f64, stream: f64) -> Result<Vec<f64>> {
+    Ok(resample::permutation(
+        whole(n, "n")? as usize,
+        whole(seed, "seed")?,
+        whole(stream, "stream")?,
+    )
+    .into_iter()
+    .map(|i| i as f64 + 1.0)
+    .collect())
+}
+
+#[extendr]
 fn group_k_fold_rust(groups: Vec<String>, k: f64, seed: f64) -> Result<List> {
     resample::group_k_fold(&groups, whole(k, "k")? as usize, whole(seed, "seed")?)
         .map(splits_r)
@@ -2114,6 +2126,7 @@ extendr_module! {
     fn pit_histogram_rust;
     fn simulate_from_means_rust;
     fn k_fold_rust;
+    fn permutation_rust;
     fn target_encode_rust;
     fn group_k_fold_rust;
     fn time_ordered_rust;

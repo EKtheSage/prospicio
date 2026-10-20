@@ -25896,6 +25896,29 @@ def pareto_extrapolation(from_: tuple[float, float], to: tuple[float, float], al
     0.5
     """
 
+def permutation(n: int, seed: int, stream: int = 0) -> list[int]:
+    """
+    ``0..n`` shuffled with ``seed`` on stream ``stream``: the permutation
+    that ``permutation_importance`` and ``interaction_screen`` apply, the same
+    in Python and R.
+    
+    Parameters
+    ----------
+    n : int
+    seed : int
+    stream : int, default 0
+    
+    Returns
+    -------
+    list of int
+    
+    Examples
+    --------
+    >>> from prospicio.models import permutation
+    >>> sorted(permutation(4, 1))
+    [0, 1, 2, 3]
+    """
+
 def pinball_loss(y: Sequence[float], pred: Sequence[float], alpha: float, weights: Sequence[float] |None = None) -> float:
     """
     Weighted mean pinball (quantile) loss of predictions of the ``alpha``

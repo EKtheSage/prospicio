@@ -5,6 +5,7 @@
 \alias{k_fold}
 \alias{group_k_fold}
 \alias{time_ordered}
+\alias{permutation}
 \title{Resampling splits}
 \usage{
 k_fold(n, k, seed)
@@ -12,6 +13,8 @@ k_fold(n, k, seed)
 group_k_fold(groups, k, seed)
 
 time_ordered(periods, n_test)
+
+permutation(n, seed, stream = 0)
 }
 \arguments{
 \item{n}{Number of rows.}
@@ -25,15 +28,20 @@ time_ordered(periods, n_test)
 \item{periods}{Period per row (whole numbers).}
 
 \item{n_test}{Number of final periods to test on.}
+
+\item{stream}{For \code{permutation()}, the stream of \code{seed} to draw from.}
 }
 \value{
-A list of splits, each \code{list(train, test)} of row numbers.
+A list of splits, each \code{list(train, test)} of row numbers;
+\code{permutation()}, the row numbers \code{1:n} shuffled, the shuffle the
+\link{explanations} apply (the same as Python's \code{permutation}, plus one).
 }
 \description{
 \code{k_fold()} shuffles \code{n} rows with \code{seed} and cuts them into \code{k} folds;
 \code{group_k_fold()} keeps each group's rows in one fold; \code{time_ordered()}
 tests on each of the last \code{n_test} periods after training on the earlier
 ones (with calendar diagonals as periods, the triangle backtest).
+\code{permutation()} shuffles \code{1:n} with \code{seed} on stream \code{stream}.
 }
 \examples{
 length(k_fold(10, 5, seed = 1))

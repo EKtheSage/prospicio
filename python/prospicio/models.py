@@ -56,6 +56,7 @@ from .prospicio_native import (
     loo_pit,
     lppd,
     mcmc_diagnostics,
+    permutation,
     pinball_loss,
     pit,
     pit_from_draws,
@@ -153,6 +154,13 @@ __all__ = [
     "SearchResult",
     "compare",
     "Comparison",
+    "permutation",
+    "permutation_importance",
+    "PermutationImportance",
+    "interaction_screen",
+    "InteractionScreen",
+    "partial_dependence",
+    "PartialDependence",
     "stacking_weights",
     "pseudo_bma_weights",
     "actual_vs_expected",
@@ -501,3 +509,482 @@ def compare(models, design, y, splits, scores, n_jobs=None):
         (m, k): [s[(m, k)] for s in per_split] for m in models for k in scores
     }
     return Comparison(list(models), list(scores), split_scores)
+
+
+# Model-agnostic explanations (CAS Monograph 16, chapter 9). They need only
+# ``predict``, so they work for any model; a frame is a dict of columns
+# (lists or NumPy arrays) and ``build(frame)`` turns one into a Design.
+
+
+def _take(column, rows):
+    try:
+        return column[rows]  # NumPy fancy indexing keeps the array type
+    except TypeError:
+        return [column[i] for i in rows]
+
+
+def _constant(column, value):
+    n = len(column)
+    if type(column).__module__ == "numpy":
+        import numpy
+
+        return numpy.full(n, value)
+    return [value] * n
+
+
+def _frame_rows(frame):
+    lengths = {len(v) for v in frame.values()}
+    if len(lengths) != 1:
+        raise ValueError(f"the frame's columns have different lengths: {sorted(lengths)}")
+    return lengths.pop()
+
+
+def _groups(features, frame):
+    """Normalizes ``features`` to ``[(label, names)]``: a name, a list of
+    names shuffled together (labelled by joining them with ``+``), or a dict
+    from label to names."""
+    items = features.items() if isinstance(features, dict) else (
+        (f if isinstance(f, str) else "+".join(f), f) for f in features
+    )
+    out = []
+    for label, names in items:
+        names = (names,) if isinstance(names, str) else tuple(names)
+        for name in names:
+            if name not in frame:
+                raise ValueError(f"no column {name!r} in the frame")
+        out.append((label, names))
+    if not out:
+        raise ValueError("features must not be empty")
+    if len({label for label, _ in out}) != len(out):
+        raise ValueError("feature labels must be distinct")
+    return out
+
+
+def _shuffled(frame, names, perm):
+    return {k: (_take(v, perm) if k in names else v) for k, v in frame.items()}
+
+
+def _per_split(model, frame, y, build, splits, one, n_jobs):
+    """Runs ``one(fitted, test_frame, y_test, split_index)`` on each split's
+    test rows after fitting ``model`` on its training rows."""
+    if not splits:
+        raise ValueError("splits must not be empty")
+    if len(y) != _frame_rows(frame):
+        raise ValueError(f"{len(y)} responses for {_frame_rows(frame)} frame rows")
+
+    def run(item):
+        i, (train, test) = item
+        train_frame = {k: _take(v, train) for k, v in frame.items()}
+        fitted = model.fit(build(train_frame), [y[j] for j in train])
+        test_frame = {k: _take(v, test) for k, v in frame.items()}
+        return one(fitted, test_frame, [y[j] for j in test], i)
+
+    with ThreadPoolExecutor(max_workers=n_jobs or max(1, len(splits))) as pool:
+        return list(pool.map(run, enumerate(splits)))
+
+
+def _losses(fitted, frame, y, build, score, groups, n_repeats, seed, split):
+    """The score on ``frame`` and, for each group of names, the mean increase
+    over ``n_repeats`` shuffles; repeat ``r`` of split ``i`` shuffles with
+    ``permutation(n, seed, i * n_repeats + r)``, the same for every group."""
+    if n_repeats < 1:
+        raise ValueError("n_repeats must be at least 1")
+    n = _frame_rows(frame)
+    if len(y) != n:
+        raise ValueError(f"{len(y)} responses for {n} frame rows")
+
+    def scored(f):
+        design = build(f)
+        return score(y, fitted.predict(design), design)
+
+    base = scored(frame)
+    total = [0.0] * len(groups)
+    for r in range(n_repeats):
+        perm = permutation(n, seed, split * n_repeats + r)
+        for g, names in enumerate(groups):
+            total[g] += scored(_shuffled(frame, names, perm)) - base
+    return base, [t / n_repeats for t in total]
+
+
+@dataclass
+class PermutationImportance:
+    """The result of ``permutation_importance``.
+
+    Attributes
+    ----------
+    features : list of str
+        The labels of the features or groups shuffled.
+    by_split : list of list of float
+        ``by_split[i][j]``: on split ``i``, the increase in the score (a loss)
+        when feature ``j`` is shuffled, averaged over the repeats.
+    base : list of float
+        The score on each split with nothing shuffled.
+    """
+
+    features: list
+    by_split: list
+    base: list
+
+    @property
+    def importance(self):
+        """The mean increase over the splits, per feature."""
+        return [_mean_se([s[j] for s in self.by_split])[0] for j in range(len(self.features))]
+
+    @property
+    def std_error(self):
+        """The splits' standard deviation over the square root of their
+        number, per feature (NaN for one split)."""
+        return [_mean_se([s[j] for s in self.by_split])[1] for j in range(len(self.features))]
+
+    @property
+    def relative(self):
+        """Importance as a percent of the largest, the monograph's scale."""
+        imp = self.importance
+        top = max(imp)
+        return [100.0 * v / top if top > 0 else math.nan for v in imp]
+
+    @staticmethod
+    def combine(results):
+        """One result from several over the same features, such as one per
+        fold computed with a design built differently in each fold."""
+        results = list(results)
+        if not results or any(r.features != results[0].features for r in results):
+            raise ValueError("results must be non-empty and over the same features")
+        return PermutationImportance(
+            results[0].features,
+            [s for r in results for s in r.by_split],
+            [b for r in results for b in r.base],
+        )
+
+    def table(self):
+        """One row per feature, most important first: ``feature``,
+        ``importance``, ``std_error`` and ``relative``, as a list of dicts."""
+        rows = [
+            {"feature": f, "importance": i, "std_error": s, "relative": r}
+            for f, i, s, r in zip(self.features, self.importance, self.std_error, self.relative)
+        ]
+        return sorted(rows, key=lambda row: -row["importance"])
+
+
+def permutation_importance(
+    model, frame, y, build, score, features, splits=None, n_repeats=1, seed=0, n_jobs=None
+):
+    """Permutation feature importance: how much a score worsens when a
+    feature's column is shuffled, which breaks its link to the response and
+    leaves every other column in place (CAS Monograph 16, section 9.2).
+
+    It needs only predictions, so it works for any model. A list of names
+    shuffles them together with one permutation (a group, such as the
+    columns of one encoding). Shuffles come from ``permutation``, so Python
+    and R give the same values on the same data.
+
+    Parameters
+    ----------
+    model : object
+        A fitted model with ``predict(design)``; with ``splits``, a model
+        with ``fit(design, y)`` (as for ``cross_validate``), fitted on each
+        split's training rows and explained on its test rows.
+    frame : dict
+        Column name to a list or NumPy array of raw values, all one length:
+        the rows to explain (the whole data with ``splits``).
+    y : list of float
+    build : callable
+        ``build(frame) -> Design``, the design from raw columns (with any
+        offset and weights). Shuffling a raw column moves every design
+        column built from it.
+    score : callable
+        ``score(y, predicted, design) -> float``, a loss (lower is better),
+        such as ``deviance_score("poisson")``; a gain such as a pseudo-R2
+        goes in as its negative.
+    features : list or dict
+        Names of columns, lists of names shuffled together, or a dict from
+        a label to names. Never the response, exposure or weights.
+    splits : list of (list of int, list of int), optional
+        ``(train, test)`` rows, as ``k_fold`` returns.
+    n_repeats : int, default 1
+        Shuffles per split, averaged.
+    seed : int, default 0
+        Repeat ``r`` of split ``i`` shuffles with
+        ``permutation(n, seed, i * n_repeats + r)``.
+    n_jobs : int, optional
+        Threads with ``splits``; one per split by default.
+
+    Returns
+    -------
+    PermutationImportance
+
+    Examples
+    --------
+    >>> from prospicio.models import Design, Glm, deviance_score, permutation_importance
+    >>> x = [i / 10 for i in range(40)]
+    >>> frame = {"x": x, "noise": [((7 * i) % 11) / 11 for i in range(40)]}
+    >>> y = [1.0 + 2.0 * v + (0.3 if i % 3 else -0.6) for i, v in enumerate(x)]
+    >>> build = lambda f: Design([[1.0] * len(f["x"]), list(f["x"])], ["(Intercept)", "x"])
+    >>> fit = Glm("gaussian").fit(build(frame), y)
+    >>> imp = permutation_importance(fit, frame, y, build, deviance_score("gaussian"), ["x", "noise"])
+    >>> imp.importance[0] > 1.0, imp.importance[1]
+    (True, 0.0)
+    """
+    groups = _groups(features, frame)
+    names = [g for _, g in groups]
+    labels = [label for label, _ in groups]
+
+    if splits is None:
+        base, loss = _losses(model, frame, y, build, score, names, n_repeats, seed, 0)
+        return PermutationImportance(labels, [loss], [base])
+
+    def one(fitted, test_frame, y_test, i):
+        return _losses(fitted, test_frame, y_test, build, score, names, n_repeats, seed, i)
+
+    out = _per_split(model, frame, y, build, splits, one, n_jobs)
+    return PermutationImportance(labels, [loss for _, loss in out], [base for base, _ in out])
+
+
+@dataclass
+class InteractionScreen:
+    """The result of ``interaction_screen``.
+
+    Attributes
+    ----------
+    features : list of str
+    pairs : list of (str, str)
+    single : list of list of float
+        ``single[i][j]``: on split ``i``, the loss from shuffling feature
+        ``j`` alone, ``L_A``.
+    joint : list of list of float
+        ``joint[i][k]``: on split ``i``, the loss from shuffling pair ``k``'s
+        two features together, ``L_AB``.
+    """
+
+    features: list
+    pairs: list
+    single: list
+    joint: list
+
+    def _strengths(self, i):
+        index = {f: j for j, f in enumerate(self.features)}
+        return [
+            self.single[i][index[a]] + self.single[i][index[b]] - self.joint[i][k]
+            for k, (a, b) in enumerate(self.pairs)
+        ]
+
+    @property
+    def by_split(self):
+        """``L_A + L_B - L_AB`` per split and pair."""
+        return [self._strengths(i) for i in range(len(self.single))]
+
+    @property
+    def strength(self):
+        """``L_A + L_B - L_AB`` averaged over the splits, per pair: about 0
+        when neither feature interacts with anything, positive when they
+        interact with each other or with a common third feature."""
+        by = self.by_split
+        return [_mean_se([s[k] for s in by])[0] for k in range(len(self.pairs))]
+
+    @property
+    def std_error(self):
+        """The splits' standard error of each pair's strength."""
+        by = self.by_split
+        return [_mean_se([s[k] for s in by])[1] for k in range(len(self.pairs))]
+
+    @staticmethod
+    def combine(results):
+        """One result from several over the same features and pairs."""
+        results = list(results)
+        if not results or any(
+            (r.features, r.pairs) != (results[0].features, results[0].pairs) for r in results
+        ):
+            raise ValueError("results must be non-empty and over the same features and pairs")
+        return InteractionScreen(
+            results[0].features,
+            results[0].pairs,
+            [s for r in results for s in r.single],
+            [s for r in results for s in r.joint],
+        )
+
+    def table(self):
+        """One row per pair, strongest first: ``a``, ``b``, ``strength``,
+        ``std_error``, and the mean losses ``loss_a``, ``loss_b`` and
+        ``loss_ab``, as a list of dicts."""
+        index = {f: j for j, f in enumerate(self.features)}
+        mean = lambda rows, j: _mean_se([r[j] for r in rows])[0]
+        rows = [
+            {
+                "a": a,
+                "b": b,
+                "strength": s,
+                "std_error": e,
+                "loss_a": mean(self.single, index[a]),
+                "loss_b": mean(self.single, index[b]),
+                "loss_ab": mean(self.joint, k),
+            }
+            for k, ((a, b), s, e) in enumerate(zip(self.pairs, self.strength, self.std_error))
+        ]
+        return sorted(rows, key=lambda row: -row["strength"])
+
+
+def interaction_screen(
+    model, frame, y, build, score, features, pairs=None, splits=None, n_repeats=1, seed=0,
+    n_jobs=None,
+):
+    """The pairwise interaction screen by permutations (CAS Monograph 16,
+    section 9.4): with ``L_A``, ``L_B`` and ``L_AB`` the losses from
+    shuffling feature ``A``, feature ``B`` and both together with the same
+    permutation, ``L_A + L_B - L_AB`` is about zero if neither interacts with
+    anything and positive if they interact with each other or with a common
+    third feature. Run it on a flexible model (a boosting model) to find the
+    pairs a GLM might need.
+
+    Parameters
+    ----------
+    model, frame, y, build, score, splits, n_repeats, seed, n_jobs
+        As for ``permutation_importance``.
+    features : list or dict
+        As for ``permutation_importance``: names, groups, or labels to names.
+    pairs : list of (str, str), optional
+        Pairs of feature labels to screen; every pair by default.
+
+    Returns
+    -------
+    InteractionScreen
+
+    Examples
+    --------
+    >>> from prospicio.models import Design, Glm, deviance_score, interaction_screen
+    >>> a = [float(i % 5) for i in range(40)]
+    >>> b = [float(i % 3) for i in range(40)]
+    >>> y = [1.0 + u + v + 2.0 * u * v + (0.1 if i % 2 else -0.1) for i, (u, v) in enumerate(zip(a, b))]
+    >>> build = lambda f: Design([[1.0] * len(f["a"]), list(f["a"]), list(f["b"]),
+    ...                           [u * v for u, v in zip(f["a"], f["b"])]], ["(Intercept)", "a", "b", "ab"])
+    >>> fit = Glm("gaussian").fit(build({"a": a, "b": b}), y)
+    >>> s = interaction_screen(fit, {"a": a, "b": b}, y, build, deviance_score("gaussian"), ["a", "b"])
+    >>> s.pairs, s.strength[0] > 0
+    ([('a', 'b')], True)
+    """
+    groups = _groups(features, frame)
+    labels = [label for label, _ in groups]
+    by_label = dict(groups)
+    if pairs is None:
+        pairs = [(labels[i], labels[j]) for i in range(len(labels)) for j in range(i + 1, len(labels))]
+    pairs = [tuple(p) for p in pairs]
+    for p in pairs:
+        if len(p) != 2 or p[0] == p[1] or any(f not in by_label for f in p):
+            raise ValueError(f"{p!r} is not a pair of two different feature labels")
+    if not pairs:
+        raise ValueError("interaction_screen needs at least two features")
+    shuffles = [by_label[f] for f in labels] + [by_label[a] + by_label[b] for a, b in pairs]
+
+    def run(fitted, test_frame, y_test, i):
+        _, loss = _losses(fitted, test_frame, y_test, build, score, shuffles, n_repeats, seed, i)
+        return loss[: len(labels)], loss[len(labels) :]
+
+    if splits is None:
+        out = [run(model, frame, y, 0)]
+    else:
+        out = _per_split(model, frame, y, build, splits, run, n_jobs)
+    return InteractionScreen(labels, pairs, [s for s, _ in out], [j for _, j in out])
+
+
+@dataclass
+class PartialDependence:
+    """The result of ``partial_dependence``.
+
+    Attributes
+    ----------
+    feature : str
+    values : list
+    by_split : list of list of float
+        ``by_split[i][v]``: on split ``i``, the mean prediction with the
+        feature set to ``values[v]`` on every row.
+    """
+
+    feature: str
+    values: list
+    by_split: list
+
+    @property
+    def mean(self):
+        """The mean prediction at each value, averaged over the splits."""
+        return [_mean_se([s[v] for s in self.by_split])[0] for v in range(len(self.values))]
+
+    def relative(self, value):
+        """The mean predictions divided by the one at ``value``: for a
+        log-link model without interactions, exactly the feature's
+        relativities."""
+        m = self.mean
+        return [v / m[self.values.index(value)] for v in m]
+
+    @staticmethod
+    def combine(results):
+        """One result from several over the same feature and values."""
+        results = list(results)
+        if not results or any(
+            (r.feature, r.values) != (results[0].feature, results[0].values) for r in results
+        ):
+            raise ValueError("results must be non-empty and over the same feature and values")
+        return PartialDependence(
+            results[0].feature, results[0].values, [s for r in results for s in r.by_split]
+        )
+
+
+def partial_dependence(model, frame, build, feature, values, y=None, splits=None, n_jobs=None):
+    """Partial dependence: the mean prediction with ``feature`` set to each
+    value on every row and every other column as it is (CAS Monograph 16,
+    section 9.3). An average over the portfolio, so an effect that differs
+    by another feature (an interaction) is blended across it.
+
+    Parameters
+    ----------
+    model : object
+        A fitted model with ``predict(design)``; with ``splits``, a model
+        with ``fit(design, y)``, explained on each split's test rows.
+    frame : dict
+        As for ``permutation_importance``.
+    build : callable
+        ``build(frame) -> Design``.
+    feature : str
+        One column of ``frame``.
+    values : list
+        The values to set it to.
+    y : list of float, optional
+        The response, needed only with ``splits`` to fit.
+    splits : list of (list of int, list of int), optional
+    n_jobs : int, optional
+
+    Returns
+    -------
+    PartialDependence
+
+    Examples
+    --------
+    >>> import math
+    >>> from prospicio.models import Design, Glm, partial_dependence
+    >>> x = [float(i % 4) for i in range(40)]
+    >>> z = [float(i % 3) for i in range(40)]
+    >>> y = [math.exp(0.2 * u + 0.1 * v) * (1.1 if i % 2 else 0.9) for i, (u, v) in enumerate(zip(x, z))]
+    >>> build = lambda f: Design([[1.0] * len(f["x"]), list(f["x"]), list(f["z"])], ["(Intercept)", "x", "z"])
+    >>> fit = Glm("poisson").fit(build({"x": x, "z": z}), y)
+    >>> pd = partial_dependence(fit, {"x": x, "z": z}, build, "x", [0.0, 1.0])
+    >>> round(pd.relative(0.0)[1] / math.exp(fit.coefficients[1]), 12)
+    1.0
+    """
+    if feature not in frame:
+        raise ValueError(f"no column {feature!r} in the frame")
+    values = list(values)
+    if not values:
+        raise ValueError("values must not be empty")
+
+    def run(fitted, f, *_):
+        out = []
+        for v in values:
+            pred = fitted.predict(build(dict(f, **{feature: _constant(f[feature], v)})))
+            out.append(sum(pred) / len(pred))
+        return out
+
+    if splits is None:
+        by_split = [run(model, frame)]
+    else:
+        if y is None:
+            raise ValueError("partial_dependence needs y to fit on the splits")
+        by_split = _per_split(model, frame, y, build, splits, run, n_jobs)
+    return PartialDependence(feature, values, by_split)

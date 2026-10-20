@@ -925,6 +925,43 @@ crate's default `onnx` feature.
   within `1e-5` relative. Also the predictor's column binding, the log
   scale with an offset, predictive means, and refused inputs.
 
+## Model-agnostic explanations
+
+CAS Monograph 16's chapter 9 learns from a boosting benchmark with three
+tools that need only predictions (#355). They live in the bindings, in
+Python and R, next to `cross_validate`, since what they shuffle is a raw
+column, before the design is built from it.
+
+- **Permutation importance**: the increase in a score (a loss, as for
+  `cross_validate`; a pseudo-R2 goes in as its negative) when a feature's
+  column is shuffled. A list of columns is shuffled with one permutation,
+  a group such as an encoding's inputs. `relative` is the monograph's
+  scale, a percent of the largest.
+- **Interaction screen**: `L_A + L_B - L_AB` from shuffling two features
+  separately and together with the same permutation. A deviance is not
+  additive on the log scale, so an additive log-link model's pairs are
+  not zero (negative on the test portfolio): the screen ranks pairs of one
+  model against one another, it has no threshold at zero.
+- **Partial dependence**: the mean prediction with a feature set to each
+  value on every row. For a log-link model without interactions the ratios
+  are exactly the relativities, which the tests check.
+
+Each takes a fitted model and the rows to explain, or with `splits` a
+model to fit on each split's training rows and explain on its test rows,
+averaged over the splits like `cross_validate`. Python takes a dict of
+columns (lists or NumPy arrays, kept as they are so that a builder written
+with NumPy comparisons works) and `build(frame) -> Design`; a fold whose
+design depends on the fold (an out-of-fold encoding) is explained alone and
+the results joined with `combine`. R takes a data frame and the model's
+`predict()`, so it needs no builder.
+
+Repeat `r` of split `i` shuffles with
+`prospicio_models::resample::permutation(n, seed, i * n_repeats + r)`,
+the Fisher–Yates shuffle that `k_fold` uses, bound in both languages, so
+Python and R give the same importances on the same rows (pinned in both
+test suites). Seed 3 on three rows is the monograph's shuffle of Tables
+9.1 to 9.4, whose importance 0.133 (100 on its scale) the tests reproduce.
+
 ## Decisions
 
 - **Burn for neural networks** (replaces PyTorch-only, `architecture.md`).

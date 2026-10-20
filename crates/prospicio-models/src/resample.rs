@@ -307,15 +307,31 @@ fn check_k(n: usize, k: usize) -> Result<()> {
     Ok(())
 }
 
-/// `0..n` shuffled by Fisher–Yates on stream 0 of `seed`.
-fn shuffled(n: usize, seed: u64) -> Vec<usize> {
+/// `0..n` shuffled by Fisher–Yates on stream `stream` of `seed`: the
+/// permutation that the model-agnostic explanations in the bindings apply to
+/// a column, so they shuffle alike in Python and R.
+///
+/// ```
+/// use prospicio_models::resample::permutation;
+///
+/// let mut p = permutation(6, 1, 0);
+/// assert_eq!(p, permutation(6, 1, 0));
+/// p.sort_unstable();
+/// assert_eq!(p, (0..6).collect::<Vec<_>>());
+/// ```
+pub fn permutation(n: usize, seed: u64, stream: u64) -> Vec<usize> {
     let mut order: Vec<usize> = (0..n).collect();
-    let mut rng = StreamRng::new(seed, 0);
+    let mut rng = StreamRng::new(seed, stream);
     for i in (1..n).rev() {
         let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
         order.swap(i, j);
     }
     order
+}
+
+/// `0..n` shuffled on stream 0 of `seed`.
+fn shuffled(n: usize, seed: u64) -> Vec<usize> {
+    permutation(n, seed, 0)
 }
 
 /// `order` cut into `k` contiguous folds, the first `n mod k` one longer.
@@ -378,6 +394,18 @@ mod tests {
         assert_eq!(s, k_fold(23, 4, 9).unwrap());
         assert_ne!(s, k_fold(23, 4, 10).unwrap());
         assert!(k_fold(3, 4, 1).is_err());
+    }
+
+    #[test]
+    fn permutations_replay_and_differ_by_stream() {
+        let p = permutation(50, 4, 2);
+        assert_eq!(p, permutation(50, 4, 2));
+        assert_ne!(p, permutation(50, 4, 3));
+        assert_eq!(permutation(50, 4, 0), shuffled(50, 4));
+        let mut sorted = p.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..50).collect::<Vec<_>>());
+        assert!(permutation(0, 1, 0).is_empty());
     }
 
     #[test]

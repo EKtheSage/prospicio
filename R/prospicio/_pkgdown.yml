@@ -243,6 +243,7 @@ reference:
       - model_metrics
       - model_charts
       - resampling
+      - explanations
       - target_encode
       - tuning
       - compare_models

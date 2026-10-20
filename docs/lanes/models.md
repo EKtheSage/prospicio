@@ -6,7 +6,6 @@
 
 ## Next
 
-- the issues filed by the Guides lane on 2026-10-18 (#355)
 - [glmm-later] a NUTS fit of the GLMMs and random slopes, when the user decides them (#358)
 - [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
@@ -35,3 +34,4 @@
 - [dglm-bindings] the double GLMs in Python and R (Python `DoubleGlm` and `DoubleGlmFit` on two `Design`s; R `dglm_fit(formula, dformula, data)` as `dglm()`, a `dglm_model` with `predict(type = "dispersion")`; REML by default; MARS parked by the user)
 - elastic-net coefficient bounds, the relaxed lasso and its cross-validation, and an active-set solve for collinear bases (`ElasticNet::lower_limits`, `upper_limits`, `ElasticNetFit::relax`, `ElasticNet::cross_validate_relaxed`; glmnet 5.1 parity, 605 values; a 20-hinge cross-validated path 43 s to 0.8 s; artifact version 2; Rust, part of #356)
 - [net-bindings] the elastic net's bounds and relaxed fits in Python (`ElasticNet(lower_limits=, upper_limits=)`, `ElasticNetFit.relax`, `ElasticNet.cross_validate_relaxed`, `RelaxedCv`) and R (`elastic_net_fit(lower_limits, upper_limits, relax)`, `coef()` and `predict()` with `gamma`, `elastic_net_cv(relax = TRUE, gamma)`), glmnet parity in both (#356)
+- model-agnostic explanations in Python and R (`permutation_importance`, `interaction_screen`, `partial_dependence`, on one fit or over folds; groups shuffled together; the shuffles from `resample::permutation`, so both languages give the same values; the monograph's Tables 9.1 to 9.4 reproduced; #355)
