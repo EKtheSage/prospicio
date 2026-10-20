@@ -21,6 +21,8 @@ use prospicio_models::resample::{Split, map_splits};
 use prospicio_models::{Design, Family, Fitted, Link, Model};
 use prospicio_prob::{PredictiveDistribution, Provenance};
 
+use prospicio_math::linalg::{cholesky, cholesky_solve};
+
 use crate::{Dispersion, Glm, dev, simulate_responses};
 
 /// An elastic-net GLM specification.
@@ -65,6 +67,12 @@ pub struct ElasticNet {
     /// One factor per design column (the intercept's is ignored), rescaled
     /// to sum to the number of penalized columns as glmnet does.
     pub penalty_factor: Option<Vec<f64>>,
+    /// Lower bounds on the coefficients, one per design column on its own
+    /// scale (the intercept's is ignored), each at most 0: glmnet's
+    /// `lower.limits`. `None` for none.
+    pub lower_limits: Option<Vec<f64>>,
+    /// Upper bounds, each at least 0: glmnet's `upper.limits`.
+    pub upper_limits: Option<Vec<f64>>,
     /// Convergence: relative change in the objective, and coefficient
     /// changes below `1e-3 √tolerance` relative, as [`Glm`].
     pub tolerance: f64,
@@ -82,6 +90,8 @@ impl ElasticNet {
             lambda,
             standardize: true,
             penalty_factor: None,
+            lower_limits: None,
+            upper_limits: None,
             tolerance: 1e-12,
             max_iterations: 100,
         }
@@ -104,6 +114,22 @@ impl ElasticNet {
     /// The same spec with per-column penalty factors.
     pub fn penalty_factor(mut self, factors: Vec<f64>) -> Self {
         self.penalty_factor = Some(factors);
+        self
+    }
+
+    /// The same spec with lower bounds on the coefficients (one per design
+    /// column, each at most 0; `f64::NEG_INFINITY` for none), as glmnet's
+    /// `lower.limits`: with every bound 0 the coefficients are
+    /// non-negative, which makes a cumulative step basis monotone.
+    pub fn lower_limits(mut self, limits: Vec<f64>) -> Self {
+        self.lower_limits = Some(limits);
+        self
+    }
+
+    /// The same spec with upper bounds (each at least 0; `f64::INFINITY`
+    /// for none), as glmnet's `upper.limits`.
+    pub fn upper_limits(mut self, limits: Vec<f64>) -> Self {
+        self.upper_limits = Some(limits);
         self
     }
 
@@ -254,6 +280,42 @@ impl ElasticNet {
         if let Some(i) = intercept {
             pf[i] = 0.0;
         }
+        let limits = |given: &Option<Vec<f64>>, default: f64, name: &'static str| {
+            let v = match given {
+                None => return Ok(vec![default; p]),
+                Some(v) if v.len() == p => v,
+                Some(v) => {
+                    return Err(Error::Data(format!(
+                        "{} {name} for {p} design columns",
+                        v.len()
+                    )));
+                }
+            };
+            let wrong_side = |x: f64| if default < 0.0 { x > 0.0 } else { x < 0.0 };
+            if let Some(&bad) = v.iter().find(|&&x| x.is_nan() || wrong_side(x)) {
+                return Err(Error::InvalidParameter {
+                    name,
+                    value: bad,
+                    reason: if default < 0.0 {
+                        "lower limits must be at most 0"
+                    } else {
+                        "upper limits must be at least 0"
+                    },
+                });
+            }
+            // On the standardized scale; the intercept is never bounded.
+            Ok((0..p)
+                .map(|j| {
+                    if Some(j) == intercept {
+                        default
+                    } else {
+                        v[j] * scales[j]
+                    }
+                })
+                .collect::<Vec<f64>>())
+        };
+        let lower = limits(&self.lower_limits, f64::NEG_INFINITY, "lower_limits")?;
+        let upper = limits(&self.upper_limits, f64::INFINITY, "upper_limits")?;
         let free: Vec<usize> = (0..p)
             .filter(|&j| Some(j) != intercept && !constant[j])
             .collect();
@@ -272,6 +334,8 @@ impl ElasticNet {
             columns,
             constant,
             pf,
+            lower,
+            upper,
         })
     }
 
@@ -459,6 +523,7 @@ impl ElasticNet {
             iterations: sol.iterations,
             fitted: sol.mu.clone(),
             input_hash: crate::input_hash(design, y),
+            gamma: 1.0,
         }
     }
 }
@@ -530,6 +595,145 @@ impl ElasticNet {
         })?;
         let (fold_scores, fold_weights): (Vec<Vec<f64>>, Vec<f64>) = folds.into_iter().unzip();
         Ok(CvPath::new(lambdas.to_vec(), fold_scores, &fold_weights))
+    }
+}
+
+impl ElasticNet {
+    /// Cross-validates relaxed fits, as glmnet's `cv.glmnet(relax =
+    /// TRUE)`: on each split, the path of `lambdas` is fitted to the
+    /// training rows, each fit relaxed ([`ElasticNetFit::relax`]) at every
+    /// `γ` in `gammas`, and each scored as in
+    /// [`cross_validate`](Self::cross_validate). The pair chosen is
+    /// glmnet's: the lowest mean deviance over every `λ` and `γ`, and for
+    /// one standard error, the largest `λ` (then the largest `γ`) within
+    /// one standard error of it.
+    pub fn cross_validate_relaxed(
+        &self,
+        design: &Design,
+        y: &[f64],
+        lambdas: &[f64],
+        gammas: &[f64],
+        splits: &[Split],
+    ) -> Result<RelaxedCv> {
+        if lambdas.is_empty() || gammas.is_empty() || splits.len() < 2 {
+            return Err(Error::Data(
+                "cross-validation needs at least one lambda, one gamma and two splits".into(),
+            ));
+        }
+        if let Some(&bad) = gammas.iter().find(|g| !(0.0..=1.0).contains(*g)) {
+            return Err(Error::InvalidParameter {
+                name: "gamma",
+                value: bad,
+                reason: "must be between 0 and 1",
+            });
+        }
+        if y.len() != design.n_rows() {
+            return Err(Error::Data(format!(
+                "{} responses for {} design rows",
+                y.len(),
+                design.n_rows()
+            )));
+        }
+        let folds = map_splits(splits, |s| {
+            let train = design.select(&s.train);
+            let y_train: Vec<f64> = s.train.iter().map(|&i| y[i]).collect();
+            let test = design.select(&s.test);
+            let y_test: Vec<f64> = s.test.iter().map(|&i| y[i]).collect();
+            let total: f64 = test.weights().iter().sum();
+            // scores[γ][λ]
+            let mut scores = vec![Vec::with_capacity(lambdas.len()); gammas.len()];
+            for fit in self.path(&train, &y_train, lambdas)? {
+                let refit = fit.refit(&train, &y_train)?;
+                for (g, &gamma) in gammas.iter().enumerate() {
+                    let mu = fit.blend(&train, &y_train, &refit, gamma)?.predict(&test)?;
+                    scores[g].push(dev(self.family, &y_test, &mu, test.weights()) / total);
+                }
+            }
+            Ok((scores, total))
+        })?;
+        let weights: Vec<f64> = folds.iter().map(|f| f.1).collect();
+        let paths: Vec<CvPath> = (0..gammas.len())
+            .map(|g| {
+                let fold_scores = folds.iter().map(|f| f.0[g].clone()).collect();
+                CvPath::new(lambdas.to_vec(), fold_scores, &weights)
+            })
+            .collect();
+        // glmnet's getOptcv.relaxed: among the pairs at or below a bar,
+        // the largest λ, then the largest γ.
+        let pairs: Vec<(usize, usize)> = (0..gammas.len())
+            .flat_map(|g| (0..lambdas.len()).map(move |k| (g, k)))
+            .collect();
+        let pick = |bar: f64| {
+            pairs
+                .iter()
+                .copied()
+                .filter(|&(g, k)| paths[g].mean[k] <= bar)
+                .max_by(|&(ga, ka), &(gb, kb)| {
+                    lambdas[ka]
+                        .total_cmp(&lambdas[kb])
+                        .then(gammas[ga].total_cmp(&gammas[gb]))
+                })
+                .expect("the lowest mean is at or below its own bar")
+        };
+        // The first pair with the lowest mean sets the one-SE bar, as R's
+        // match().
+        let first = pairs
+            .iter()
+            .copied()
+            .reduce(|a, b| {
+                if paths[b.0].mean[b.1] < paths[a.0].mean[a.1] {
+                    b
+                } else {
+                    a
+                }
+            })
+            .expect("at least one pair");
+        let low = paths[first.0].mean[first.1];
+        let best = pick(low);
+        let one_se = pick(low + paths[first.0].se[first.1]);
+        Ok(RelaxedCv {
+            gammas: gammas.to_vec(),
+            paths,
+            best,
+            one_se,
+        })
+    }
+}
+
+/// Cross-validated relaxed fits, from
+/// [`ElasticNet::cross_validate_relaxed`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelaxedCv {
+    /// The `γ` values, in the order given.
+    pub gammas: Vec<f64>,
+    /// The scores along the path at each `γ`, in the same order.
+    pub paths: Vec<CvPath>,
+    /// `(γ index, λ index)` of the lowest mean.
+    pub best: (usize, usize),
+    /// `(γ index, λ index)` of the largest `λ`, then `γ`, within one
+    /// standard error of the lowest.
+    pub one_se: (usize, usize),
+}
+
+impl RelaxedCv {
+    /// `λ` of the lowest cross-validated deviance.
+    pub fn lambda_min(&self) -> f64 {
+        self.paths[self.best.0].lambdas[self.best.1]
+    }
+
+    /// `γ` of the lowest cross-validated deviance.
+    pub fn gamma_min(&self) -> f64 {
+        self.gammas[self.best.0]
+    }
+
+    /// `λ` of the one-standard-error choice.
+    pub fn lambda_1se(&self) -> f64 {
+        self.paths[self.one_se.0].lambdas[self.one_se.1]
+    }
+
+    /// `γ` of the one-standard-error choice.
+    pub fn gamma_1se(&self) -> f64 {
+        self.gammas[self.one_se.0]
     }
 }
 
@@ -628,7 +832,16 @@ fn check_lambda(lambda: f64) -> Result<()> {
 
 /// Weighted least squares with the elastic-net penalty, by cyclic
 /// coordinate descent from `(b0, b)`: minimizes
-/// `½ Σ vᵢ (zᵢ - b0 - Σ x̃ᵢⱼ bⱼ)² + λ Σ pfⱼ ((1-α)/2 bⱼ² + α |bⱼ|)`.
+/// `½ Σ vᵢ (zᵢ - b0 - Σ x̃ᵢⱼ bⱼ)² + λ Σ pfⱼ ((1-α)/2 bⱼ² + α |bⱼ|)` with
+/// each `bⱼ` within its bounds.
+///
+/// Coordinate descent finds the active set (which coefficients are zero,
+/// at a bound, or free with a sign) in a few sweeps, but on nearly
+/// collinear columns (a hinge basis `max(0, x - k)` at neighbouring
+/// knots) it then creeps to the solution. So once two sweeps agree on the
+/// active set, the problem restricted to it, a linear system, is solved
+/// directly, and the result is kept if it satisfies the optimality
+/// conditions of the whole problem; otherwise the sweeps go on.
 fn coordinate_descent(
     prep: &Prepared,
     v: &[f64],
@@ -662,6 +875,16 @@ fn coordinate_descent(
         .collect();
     let v_sum: f64 = v.iter().sum();
     let scale: f64 = (0..n).map(|i| v[i] * z[i] * z[i]).sum::<f64>().max(1e-300);
+    let problem = Restricted {
+        prep,
+        v,
+        z,
+        lambda,
+        alpha,
+        curvature: &curvature,
+        scale,
+    };
+    let (mut last, mut tried): (Option<Vec<Status>>, Option<Vec<Status>>) = (None, None);
     for _ in 0..100_000 {
         let mut biggest: f64 = 0.0;
         if prep.intercept.is_some() {
@@ -685,6 +908,7 @@ fn coordinate_descent(
                 let pen = lambda * prep.pf[j];
                 soft(u, pen * alpha) / (curvature[j] + pen * (1.0 - alpha))
             };
+            let new = new.clamp(prep.lower[j], prep.upper[j]);
             let delta = new - b[j];
             if delta != 0.0 {
                 for i in 0..n {
@@ -697,8 +921,172 @@ fn coordinate_descent(
         if biggest <= 1e-30 * scale {
             break;
         }
+        let pattern: Vec<Status> = fixed.iter().map(|&j| problem.status(j, b[j])).collect();
+        if last.as_ref() == Some(&pattern) && tried.as_ref() != Some(&pattern) {
+            if let Some((c0, c)) = problem.solve(&fixed, &pattern, &b) {
+                return (c0, c);
+            }
+            tried = Some(pattern.clone());
+        }
+        last = Some(pattern);
     }
     (b0, b)
+}
+
+/// Where a coefficient sits relative to its penalty's kink and bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Status {
+    Zero,
+    AtLower,
+    AtUpper,
+    Free(i8),
+}
+
+/// The penalized least-squares problem of one coordinate-descent call.
+struct Restricted<'a> {
+    prep: &'a Prepared,
+    v: &'a [f64],
+    z: &'a [f64],
+    lambda: f64,
+    alpha: f64,
+    curvature: &'a [f64],
+    scale: f64,
+}
+
+impl Restricted<'_> {
+    /// `λ pfⱼ`, 0 for an unpenalized column even at `λ = ∞`.
+    fn pen(&self, j: usize) -> f64 {
+        if self.prep.pf[j] == 0.0 {
+            0.0
+        } else {
+            self.lambda * self.prep.pf[j]
+        }
+    }
+
+    fn status(&self, j: usize, b: f64) -> Status {
+        let (lo, hi) = (self.prep.lower[j], self.prep.upper[j]);
+        if b == lo {
+            Status::AtLower
+        } else if b == hi {
+            Status::AtUpper
+        } else if b == 0.0 && self.pen(j) > 0.0 {
+            Status::Zero
+        } else {
+            Status::Free(if b < 0.0 { -1 } else { 1 })
+        }
+    }
+
+    /// The minimum with each coefficient's status held: the free ones
+    /// (and the intercept) solve the normal equations with the lasso term
+    /// a constant `λ pf α sign`, the others stay where they are. `None` if
+    /// a free coefficient changes sign or leaves its bounds, or another
+    /// coefficient's optimality condition fails.
+    fn solve(&self, fixed: &[usize], pattern: &[Status], b: &[f64]) -> Option<(f64, Vec<f64>)> {
+        let (prep, v, n) = (self.prep, self.v, self.v.len());
+        let alpha = self.alpha;
+        let free: Vec<usize> = fixed
+            .iter()
+            .zip(pattern)
+            .filter(|(_, s)| matches!(s, Status::Free(_)))
+            .map(|(&j, _)| j)
+            .collect();
+        // The response less the coefficients held at a bound.
+        let mut r0 = self.z.to_vec();
+        for (&j, s) in fixed.iter().zip(pattern) {
+            if matches!(s, Status::AtLower | Status::AtUpper) && b[j] != 0.0 {
+                for (r, x) in r0.iter_mut().zip(&prep.columns[j]) {
+                    *r -= b[j] * x;
+                }
+            }
+        }
+        let ones = vec![1.0; n];
+        let mut cols: Vec<&[f64]> = Vec::new();
+        if prep.intercept.is_some() {
+            cols.push(&ones);
+        }
+        cols.extend(free.iter().map(|&j| prep.columns[j].as_slice()));
+        let off = usize::from(prep.intercept.is_some());
+        let m = cols.len();
+        let mut a = vec![0.0; m * m];
+        let mut rhs = vec![0.0; m];
+        for k in 0..m {
+            rhs[k] = (0..n).map(|i| v[i] * cols[k][i] * r0[i]).sum();
+            for l in 0..=k {
+                let x: f64 = (0..n).map(|i| v[i] * cols[k][i] * cols[l][i]).sum();
+                a[k * m + l] = x;
+                a[l * m + k] = x;
+            }
+        }
+        for (k, &j) in free.iter().enumerate() {
+            let pen = self.pen(j);
+            let sign = match pattern[fixed.iter().position(|&f| f == j)?] {
+                Status::Free(s) => f64::from(s),
+                _ => unreachable!("a free column"),
+            };
+            a[(k + off) * m + k + off] += pen * (1.0 - alpha);
+            if pen > 0.0 {
+                rhs[k + off] -= pen * alpha * sign;
+            }
+        }
+        let c = if m == 0 {
+            Vec::new()
+        } else {
+            cholesky_solve(&cholesky(&a, m)?, &rhs)
+        };
+        let mut out = b.to_vec();
+        for (k, &j) in free.iter().enumerate() {
+            let x = c[k + off];
+            let flipped = self.pen(j) > 0.0
+                && match pattern[fixed.iter().position(|&f| f == j)?] {
+                    Status::Free(s) => x == 0.0 || (x < 0.0) != (s < 0),
+                    _ => false,
+                };
+            if flipped || !(x > prep.lower[j] && x < prep.upper[j]) {
+                return None;
+            }
+            out[j] = x;
+        }
+        for (&j, s) in fixed.iter().zip(pattern) {
+            if *s == Status::Zero {
+                out[j] = 0.0;
+            }
+        }
+        let c0 = if off == 1 { c[0] } else { 0.0 };
+        // The optimality conditions of the coefficients not solved for.
+        let r: Vec<f64> = (0..n)
+            .map(|i| {
+                r0[i]
+                    - c0
+                    - free
+                        .iter()
+                        .enumerate()
+                        .map(|(k, &j)| c[k + off] * prep.columns[j][i])
+                        .sum::<f64>()
+            })
+            .collect();
+        for (&j, s) in fixed.iter().zip(pattern) {
+            let pen = self.pen(j);
+            if matches!(s, Status::Free(_)) || pen.is_infinite() {
+                continue;
+            }
+            let u: f64 = (0..n).map(|i| v[i] * prep.columns[j][i] * r[i]).sum();
+            let tol = 1e-12 * (self.curvature[j] * self.scale).sqrt() + 1e-12 * pen * alpha;
+            let ridge = pen * (1.0 - alpha) * out[j];
+            // The objective's slope in the coefficient from above and below.
+            let up = -u + ridge + pen * alpha * if out[j] < 0.0 { -1.0 } else { 1.0 };
+            let down = -u + ridge + pen * alpha * if out[j] > 0.0 { 1.0 } else { -1.0 };
+            let ok = match s {
+                Status::Zero => up >= -tol && down <= tol,
+                Status::AtLower => up >= -tol,
+                Status::AtUpper => down <= tol,
+                Status::Free(_) => true,
+            };
+            if !ok {
+                return None;
+            }
+        }
+        Some((c0, out))
+    }
 }
 
 fn soft(u: f64, t: f64) -> f64 {
@@ -723,6 +1111,9 @@ struct Prepared {
     /// Columns with no spread: their coefficient stays 0.
     constant: Vec<bool>,
     pf: Vec<f64>,
+    /// Bounds on the standardized coefficients.
+    lower: Vec<f64>,
+    upper: Vec<f64>,
 }
 
 impl Prepared {
@@ -795,6 +1186,8 @@ pub struct ElasticNetFit {
     pub(crate) iterations: usize,
     pub(crate) fitted: Vec<f64>,
     pub(crate) input_hash: String,
+    /// 1 for the penalized fit; below 1 a relaxed one.
+    pub(crate) gamma: f64,
 }
 
 impl ElasticNetFit {
@@ -858,6 +1251,144 @@ impl ElasticNetFit {
     /// Fitted means on the training rows.
     pub fn fitted(&self) -> &[f64] {
         &self.fitted
+    }
+
+    /// The relaxation `γ`: 1 for the penalized fit, below 1 for one from
+    /// [`relax`](Self::relax).
+    pub fn gamma(&self) -> f64 {
+        self.gamma
+    }
+
+    /// glmnet's relaxed fit (`relax = TRUE`): the columns this fit keeps
+    /// (its non-zero coefficients and the intercept) are refitted
+    /// without the penalty, within the same bounds, and the coefficients
+    /// are `γ β + (1 - γ) β₀`, the penalized `β` blended with the
+    /// refitted `β₀`. `γ = 0` is the unpenalized fit on the lasso's
+    /// columns, which removes the lasso's shrinkage of the columns it
+    /// keeps; `γ = 1` is this fit. Pass the training data again (checked
+    /// by its hash). The relaxed fit's deviance, dispersion and fitted
+    /// values are those of the blended coefficients; its null deviance
+    /// and `λ` are this fit's.
+    ///
+    /// ```
+    /// use prospicio_glm::net::ElasticNet;
+    /// use prospicio_models::{Design, Family, Link, Model};
+    ///
+    /// let x1: Vec<f64> = (0..8).map(f64::from).collect();
+    /// let x2 = vec![1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0, 0.0];
+    /// let d = Design::new(
+    ///     vec!["(Intercept)".into(), "x1".into(), "x2".into()],
+    ///     vec![vec![1.0; 8], x1, x2],
+    /// )
+    /// .unwrap();
+    /// let y = [1.0, 3.1, 4.9, 7.2, 9.0, 10.8, 13.1, 15.0];
+    /// let lasso = ElasticNet::new(Family::Gaussian, Link::Identity, 1.0, 0.5);
+    /// let fit = lasso.fit(&d, &y).unwrap();
+    /// let relaxed = fit.relax(&d, &y, 0.0).unwrap();
+    /// // The lasso shrinks x1's slope; relaxed, it is least squares on x1.
+    /// assert!(relaxed.coefficients()[1] > fit.coefficients()[1]);
+    /// assert!(relaxed.deviance() < fit.deviance());
+    /// ```
+    pub fn relax(&self, design: &Design, y: &[f64], gamma: f64) -> Result<ElasticNetFit> {
+        let refit = self.refit(design, y)?;
+        self.blend(design, y, &refit, gamma)
+    }
+
+    /// The unpenalized refit on the kept columns, as coefficients over
+    /// every column, and its IRLS iterations.
+    fn refit(&self, design: &Design, y: &[f64]) -> Result<(Vec<f64>, usize)> {
+        self.check_design(design)?;
+        if self.gamma != 1.0 {
+            return Err(Error::Data("this fit is already relaxed".into()));
+        }
+        if y.len() != design.n_rows() || crate::input_hash(design, y) != self.input_hash {
+            return Err(Error::Data(
+                "a relaxed fit needs the data the elastic net was fitted to".into(),
+            ));
+        }
+        let p = design.n_cols();
+        let intercept = (0..p).find(|&j| design.column(j).iter().all(|&v| v == 1.0));
+        let keep: Vec<usize> = (0..p)
+            .filter(|&j| Some(j) == intercept || self.coefficients[j] != 0.0)
+            .collect();
+        let pick = |v: &[f64]| keep.iter().map(|&j| v[j]).collect::<Vec<f64>>();
+        let sub = Design::new(
+            keep.iter().map(|&j| design.names()[j].clone()).collect(),
+            keep.iter().map(|&j| design.column(j).to_vec()).collect(),
+        )?
+        .with_offset(design.offset().to_vec())?
+        .with_weights(design.weights().to_vec())?;
+        let spec = ElasticNet {
+            lambda: 0.0,
+            penalty_factor: None,
+            lower_limits: self.spec.lower_limits.as_deref().map(pick),
+            upper_limits: self.spec.upper_limits.as_deref().map(pick),
+            ..self.spec.clone()
+        };
+        let fit = spec.fit(&sub, y)?;
+        let mut coefficients = vec![0.0; p];
+        for (k, &j) in keep.iter().enumerate() {
+            coefficients[j] = fit.coefficients[k];
+        }
+        Ok((coefficients, fit.iterations))
+    }
+
+    /// The fit with coefficients `γ β + (1 - γ) β₀`.
+    fn blend(
+        &self,
+        design: &Design,
+        y: &[f64],
+        (refit, iterations): &(Vec<f64>, usize),
+        gamma: f64,
+    ) -> Result<ElasticNetFit> {
+        if !(0.0..=1.0).contains(&gamma) {
+            return Err(Error::InvalidParameter {
+                name: "gamma",
+                value: gamma,
+                reason: "must be between 0 and 1",
+            });
+        }
+        let (family, link) = (self.spec.family, self.spec.link);
+        let coefficients: Vec<f64> = self
+            .coefficients
+            .iter()
+            .zip(refit)
+            .map(|(b, r)| gamma * b + (1.0 - gamma) * r)
+            .collect();
+        let fitted: Vec<f64> = design
+            .linear_predictor(&coefficients)
+            .into_iter()
+            .map(|e| link.inverse(e))
+            .collect();
+        let p = design.n_cols();
+        let intercept = (0..p).find(|&j| design.column(j).iter().all(|&v| v == 1.0));
+        let df = (0..p)
+            .filter(|&j| Some(j) != intercept && coefficients[j] != 0.0)
+            .count();
+        let n = design.n_rows();
+        let w = design.weights();
+        let dispersion = if family.unit_dispersion() {
+            1.0
+        } else {
+            let used = df + usize::from(intercept.is_some());
+            (0..n)
+                .map(|i| w[i] * (y[i] - fitted[i]).powi(2) / family.variance(fitted[i]))
+                .sum::<f64>()
+                / n.saturating_sub(used).max(1) as f64
+        };
+        Ok(ElasticNetFit {
+            spec: self.spec.clone(),
+            names: self.names.clone(),
+            deviance: dev(family, y, &fitted, w),
+            null_deviance: self.null_deviance,
+            df,
+            dispersion,
+            iterations: *iterations,
+            fitted,
+            coefficients,
+            input_hash: self.input_hash.clone(),
+            gamma,
+        })
     }
 
     fn check_design(&self, design: &Design) -> Result<()> {
@@ -974,6 +1505,59 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A Poisson lasso on 15 hinges `max(0, age - k)` at neighbouring
+    /// knots, non-negative: the collinear basis on which plain coordinate
+    /// descent creeps. Each fit along the path meets the optimality
+    /// conditions with its bounds: a zero coefficient's gradient points
+    /// out of the feasible side by at most `λ`, a free one balances it.
+    #[test]
+    fn hinges_under_bounds_meet_the_optimality_conditions() {
+        let ages: Vec<f64> = (0..300u32).map(|i| 18.0 + f64::from(i % 60)).collect();
+        let y: Vec<f64> = (0..300u32)
+            .map(|i| {
+                let a = ages[i as usize];
+                let rate = 1.0 + 2.0 * (-(a - 18.0) / 10.0).exp() + 0.01 * (a - 50.0).max(0.0);
+                (rate * (1.0 + 0.3 * (f64::from(i) * 2.7).sin())).round()
+            })
+            .collect();
+        let mut names = vec!["(Intercept)".to_string()];
+        let mut cols = vec![vec![1.0; ages.len()]];
+        for j in 0..15u32 {
+            let knot = 20.0 + 3.0 * f64::from(j);
+            names.push(format!("h{j}"));
+            cols.push(ages.iter().map(|a| (a - knot).max(0.0)).collect());
+        }
+        let d = Design::new(names, cols).unwrap();
+        let mut lower = vec![0.0; 16];
+        lower[1] = f64::NEG_INFINITY;
+        let spec = ElasticNet::new(Family::Poisson, Link::Log, 1.0, 0.0).lower_limits(lower);
+        let lambdas = spec.lambda_path(&d, &y, 20, 1e-4).unwrap();
+        let prep = spec.prepare(&d, &y).unwrap();
+        let mut binding = false;
+        for fit in spec.path(&d, &y, &lambdas).unwrap() {
+            let lambda = fit.lambda();
+            let eta = d.linear_predictor(fit.coefficients());
+            let grad = prep.gradient(&spec, &d, &y, &eta);
+            for (j, (&b, &g)) in fit.coefficients().iter().zip(&grad).enumerate().skip(1) {
+                // On the standardized scale, where the penalty is λ pfⱼ.
+                let pen = lambda * prep.pf[j];
+                let tol = 1e-6 * lambda;
+                if b == 0.0 && j > 1 {
+                    // At the bound 0: only an increase is allowed.
+                    assert!(g >= -pen - tol, "h{} at {lambda}: {g}", j - 1);
+                    binding |= g > pen + tol;
+                } else if b == 0.0 {
+                    assert!(g.abs() <= pen + tol);
+                } else {
+                    assert!((g + pen * b.signum()).abs() < tol, "h{} at {lambda}", j - 1);
+                }
+                assert!(j == 1 || b >= 0.0);
+            }
+        }
+        // Some bound holds a coefficient the lasso alone would make negative.
+        assert!(binding);
     }
 
     /// Warm-started paths give the cold-start fits.

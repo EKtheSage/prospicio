@@ -50,6 +50,26 @@ penalty_factors <- function(penalty_factor, x) {
   as.double(pf)
 }
 
+# Coefficient bounds, one per design column: a single value for every
+# column, an unnamed vector with one per column, or a named vector for some
+# (the rest unbounded). The intercept's is ignored.
+coef_limits <- function(limits, x, default, what) {
+  if (is.null(limits)) return(double())
+  if (is.null(names(limits)) && length(limits) == 1) return(rep(as.double(limits), ncol(x)))
+  out <- stats::setNames(rep(default, ncol(x)), colnames(x))
+  if (is.null(names(limits))) {
+    if (length(limits) != ncol(x)) {
+      stop(sprintf("%s needs 1 or %d values, one per design column", what, ncol(x)))
+    }
+    out[] <- limits
+  } else {
+    unknown <- setdiff(names(limits), names(out))
+    if (length(unknown)) stop("unknown design columns in ", what, ": ", toString(unknown))
+    out[names(limits)] <- limits
+  }
+  as.double(out)
+}
+
 family_args <- function(theta, power) {
   list(theta = if (is.null(theta)) NaN else as.double(theta),
        power = if (is.null(power)) NaN else as.double(power))
@@ -399,12 +419,22 @@ load_model <- function(file) {
 #' @param penalty_factor Optional penalty factors: a vector with one per
 #'   design column, or a named vector for some columns (the rest get 1); 0
 #'   leaves a column unpenalized.
+#' @param lower_limits,upper_limits Optional bounds on the coefficients, on
+#'   the design's scale, as glmnet's `lower.limits` and `upper.limits`: one
+#'   value for every column, one per design column, or a named vector for
+#'   some (the rest unbounded). Lower bounds are at most 0, upper at least
+#'   0; the intercept is never bounded. `lower_limits = 0` makes every
+#'   coefficient non-negative, which keeps a cumulative step basis monotone.
+#' @param relax Also refit each `lambda`'s non-zero columns without the
+#'   penalty (glmnet's `relax = TRUE`), within the same bounds; then
+#'   [stats::coef()] and [stats::predict()] take `gamma`, the blend
+#'   `gamma * penalized + (1 - gamma) * refitted`.
 #' @returns An `elastic_net_model` with properties `lambda`, `coefficients`
 #'   (a matrix, one column per `lambda`), `deviance`, `deviance_ratio`,
-#'   `df` (non-zero coefficients), `null_deviance` and `alpha`. Use
-#'   [stats::coef()], [stats::predict()] and [predict_distribution()], each
-#'   with a `lambda` from the path. Tune `lambda` and `alpha` with
-#'   [k_fold()] and [family_deviance()].
+#'   `df` (non-zero coefficients), `null_deviance`, `alpha` and `relaxed`.
+#'   Use [stats::coef()], [stats::predict()] and [predict_distribution()],
+#'   each with a `lambda` from the path. Tune `lambda` and `alpha` with
+#'   [k_fold()] and [family_deviance()], or with [elastic_net_cv()].
 #' @export
 #' @examples
 #' set.seed(1)
@@ -413,10 +443,14 @@ load_model <- function(file) {
 #' m <- elastic_net_fit(y ~ x1 + x2, d, family = "gaussian", alpha = 1)
 #' m@df[c(1, 20, 100)]
 #' coef(m, lambda = m@lambda[20])
+#' # Non-negative slopes, and the relaxed lasso.
+#' r <- elastic_net_fit(y ~ x1 + x2, d, family = "gaussian", lower_limits = 0, relax = TRUE)
+#' coef(r, lambda = r@lambda[20], gamma = 0)
 elastic_net_fit <- function(formula, data, family = "poisson", link = NULL, alpha = 1,
                             lambda = NULL, nlambda = 100, lambda_min_ratio = 1e-4,
                             standardize = TRUE, penalty_factor = NULL, offset = NULL,
-                            weights = NULL, theta = NULL, power = NULL, link_power = NULL) {
+                            weights = NULL, theta = NULL, power = NULL, link_power = NULL,
+                            lower_limits = NULL, upper_limits = NULL, relax = FALSE) {
   des <- model_design(formula, data, offset, weights)
   fa <- family_args(theta, power)
   pf <- penalty_factors(penalty_factor, des$x)
@@ -424,8 +458,10 @@ elastic_net_fit <- function(formula, data, family = "poisson", link = NULL, alph
     as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
     if (is.null(link)) "" else link, as.double(alpha),
     if (is.null(lambda)) double() else as.double(lambda), as.double(nlambda),
-    as.double(lambda_min_ratio), isTRUE(standardize), pf, fa$theta, fa$power,
-    if (is.null(link_power)) NaN else as.double(link_power)
+    as.double(lambda_min_ratio), isTRUE(standardize), pf,
+    coef_limits(lower_limits, des$x, -Inf, "lower_limits"),
+    coef_limits(upper_limits, des$x, Inf, "upper_limits"), isTRUE(relax),
+    fa$theta, fa$power, if (is.null(link_power)) NaN else as.double(link_power)
   ))
   elastic_net_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels)
 }
@@ -454,7 +490,8 @@ elastic_net_model <- S7::new_class(
     deviance_ratio = S7::new_property(S7::class_double, getter = function(self) self@ptr$deviance_ratio()),
     df = S7::new_property(S7::class_double, getter = function(self) self@ptr$df()),
     null_deviance = S7::new_property(S7::class_double, getter = function(self) self@ptr$null_deviance()),
-    alpha = S7::new_property(S7::class_double, getter = function(self) self@ptr$alpha())
+    alpha = S7::new_property(S7::class_double, getter = function(self) self@ptr$alpha()),
+    relaxed = S7::new_property(S7::class_logical, getter = function(self) self@ptr$is_relaxed())
   ),
   constructor = function(ptr, terms, xlevels) {
     S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels)
@@ -473,15 +510,19 @@ lambda_index <- function(object, lambda) {
   k
 }
 
-S7::method(coef, elastic_net_model) <- function(object, lambda = NULL, ...) {
-  if (is.null(lambda)) return(object@coefficients)
-  stats::setNames(object@coefficients[, lambda_index(object, lambda)], object@ptr$names())
+S7::method(coef, elastic_net_model) <- function(object, lambda = NULL, gamma = 1, ...) {
+  b <- object@coefficients
+  if (gamma != 1) b[] <- rust_result(object@ptr$relaxed_coefficients(as.double(gamma)))
+  if (is.null(lambda)) return(b)
+  stats::setNames(b[, lambda_index(object, lambda)], object@ptr$names())
 }
 
-S7::method(predict, elastic_net_model) <- function(object, newdata, lambda = NULL, offset = NULL, ...) {
+S7::method(predict, elastic_net_model) <- function(object, newdata, lambda = NULL, offset = NULL,
+                                                    gamma = 1, ...) {
   nd <- new_design(object, newdata, offset)
   one <- function(k) {
-    rust_result(object@ptr$predict(as.double(k), as.double(nd$x), colnames(nd$x), nd$offset))
+    rust_result(object@ptr$predict(as.double(k), as.double(nd$x), colnames(nd$x), nd$offset,
+                                   as.double(gamma)))
   }
   if (is.null(lambda) && length(object@lambda) > 1) {
     return(vapply(seq_along(object@lambda), one, double(nrow(nd$x))))
@@ -491,9 +532,9 @@ S7::method(predict, elastic_net_model) <- function(object, newdata, lambda = NUL
 
 S7::method(print, elastic_net_model) <- function(x, ...) {
   lam <- x@lambda
-  cat(sprintf("<elastic_net_model> %s, alpha = %s, %d lambdas from %s to %s\n",
+  cat(sprintf("<elastic_net_model> %s, alpha = %s, %d lambdas from %s to %s%s\n",
               x@ptr$family(), format(x@alpha), length(lam), format(max(lam), digits = 6),
-              format(min(lam), digits = 6)))
+              format(min(lam), digits = 6), if (x@relaxed) ", relaxed" else ""))
   invisible(x)
 }
 
@@ -1411,9 +1452,16 @@ compare_models <- function(models, data, splits, scores) {
 #' @param folds Number of folds, used when `foldid` is `NULL`.
 #' @param seed Seed of the fold assignment.
 #' @param foldid Optional fold number per row.
+#' @param gamma With `relax = TRUE`, the relaxations to score, as
+#'   `cv.glmnet(relax = TRUE)`'s `gamma`.
 #' @returns A list with `lambda`, `mean`, `se`, `lambda_min` (lowest mean)
 #'   and `lambda_1se` (the largest `lambda` within one standard error of
 #'   it), and `fit`, the [elastic_net_model] on all rows over `lambda`.
+#'   With `relax = TRUE`, `mean` and `se` are matrices (a row per `lambda`,
+#'   a column per `gamma`), and `gamma_min` and `gamma_1se` go with
+#'   `lambda_min` and `lambda_1se`: the lowest mean over every pair, and
+#'   the largest `lambda`, then `gamma`, within one standard error of it,
+#'   as `cv.glmnet()` chooses. `fit` is then relaxed.
 #' @export
 #' @examples
 #' set.seed(1)
@@ -1425,7 +1473,9 @@ elastic_net_cv <- function(formula, data, family = "poisson", link = NULL, alpha
                            lambda = NULL, nlambda = 100, lambda_min_ratio = 1e-4,
                            standardize = TRUE, penalty_factor = NULL, offset = NULL,
                            weights = NULL, folds = 10, seed = 1, foldid = NULL,
-                           theta = NULL, power = NULL, link_power = NULL) {
+                           theta = NULL, power = NULL, link_power = NULL,
+                           lower_limits = NULL, upper_limits = NULL, relax = FALSE,
+                           gamma = c(0, 0.25, 0.5, 0.75, 1)) {
   des <- model_design(formula, data, offset, weights)
   if (is.null(foldid)) {
     foldid <- integer(nrow(des$x))
@@ -1437,13 +1487,23 @@ elastic_net_cv <- function(formula, data, family = "poisson", link = NULL, alpha
     as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
     if (is.null(link)) "" else link, as.double(alpha),
     if (is.null(lambda)) double() else as.double(lambda), as.double(nlambda),
-    as.double(lambda_min_ratio), isTRUE(standardize), pf, fa$theta, fa$power,
-    if (is.null(link_power)) NaN else as.double(link_power), as.double(foldid)
+    as.double(lambda_min_ratio), isTRUE(standardize), pf,
+    coef_limits(lower_limits, des$x, -Inf, "lower_limits"),
+    coef_limits(upper_limits, des$x, Inf, "upper_limits"),
+    if (isTRUE(relax)) as.double(gamma) else double(),
+    fa$theta, fa$power, if (is.null(link_power)) NaN else as.double(link_power),
+    as.double(foldid)
   ))
+  if (isTRUE(relax)) {
+    cv$mean <- matrix(cv$mean, length(cv$lambda))
+    cv$se <- matrix(cv$se, length(cv$lambda))
+  }
   cv$fit <- elastic_net_fit(formula, data, family = family, link = link, alpha = alpha,
                             lambda = cv$lambda, standardize = standardize,
                             penalty_factor = penalty_factor, offset = offset, weights = weights,
-                            theta = theta, power = power, link_power = link_power)
+                            theta = theta, power = power, link_power = link_power,
+                            lower_limits = lower_limits, upper_limits = upper_limits,
+                            relax = relax)
   cv
 }
 

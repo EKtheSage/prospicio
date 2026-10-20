@@ -826,3 +826,95 @@ def test_glmm_rejects_what_it_does_not_fit():
         Glmm().fit(design, {}, [1.0, 2.0, 3.0, 4.0])
     with pytest.raises(ValueError, match="labels for"):
         Glmm().fit(design, {"g": ["a", "b"]}, [1.0, 2.0, 3.0, 4.0])
+
+
+def test_bounded_and_relaxed_elastic_nets_match_glmnet():
+    # validation/scripts/r_glmnet_relax.R: glmnet 5.1 on the policy data,
+    # lasso; its gamma = 0 is gamma = 1e-5, as the files record.
+    import csv
+    import math
+    import pathlib
+
+    from prospicio.models import Design, ElasticNet
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "validation"
+    with open(root / "data" / "glm_policies.csv") as f:
+        rows = list(csv.DictReader(f))
+    with open(root / "reference" / "elastic_net_relax_glmnet.csv") as f:
+        ref = list(csv.DictReader(f))
+    with open(root / "reference" / "elastic_net_relax_cv_glmnet.csv") as f:
+        cv_ref = list(csv.DictReader(f))
+    n = len(rows)
+    age = [float(r["age"]) for r in rows]
+    names = ["(Intercept)", "age", "age2", "region[B]", "region[C]", "region[D]"]
+    columns = [[1.0] * n, age, [a * a / 100 for a in age]] + [
+        [float(r["region"] == level) for r in rows] for level in "BCD"
+    ]
+    offset = [math.log(float(r["exposure"])) for r in rows]
+    poisson = Design(columns, names, offset=offset)
+    gaussian = Design(columns, names)
+    claims = [float(r["claims"]) for r in rows]
+    gauss = [float(r["gauss"]) for r in rows]
+    inf = math.inf
+    cases = {
+        "poisson_nonneg": (ElasticNet("poisson", lower_limits=[0.0] * 6), poisson, claims),
+        "gaussian_bounded": (
+            ElasticNet(
+                "gaussian",
+                lower_limits=[-inf, -inf, -inf, -inf, -2.0, -inf],
+                upper_limits=[inf, inf, 0.1, inf, inf, 5.0],
+            ),
+            gaussian,
+            gauss,
+        ),
+        "poisson_nonneg_relaxed": (
+            ElasticNet("poisson", lower_limits=[0.0] * 6),
+            poisson,
+            claims,
+        ),
+        "gaussian_relaxed": (ElasticNet("gaussian"), gaussian, gauss),
+        "poisson_relaxed": (ElasticNet("poisson"), poisson, claims),
+    }
+    checked = 0
+    for r in ref:
+        if r["quantity"] != "coef":
+            continue
+        net, d, y = cases[r["case"]]
+        fit = net.with_lam(float(r["arg"])).fit(d, y)
+        if r["gamma"]:
+            fit = fit.relax(d, y, float(r["gamma"]))
+            assert fit.gamma == float(r["gamma"])
+        got = fit.coefficients[fit.names.index(r["term"])]
+        assert got == pytest.approx(float(r["expected"]), rel=1e-7, abs=1e-9)
+        checked += 1
+    assert checked == 192
+    bounded = cases["gaussian_bounded"][0]
+    assert bounded.upper_limits[2] == 0.1
+    # A relaxed fit round-trips as a version 2 artifact.
+    relaxed = ElasticNet("poisson", lam=0.01).fit(poisson, claims).relax(poisson, claims, 0.5)
+    text = relaxed.to_json()
+    assert '"format_version":2' in text
+    assert ElasticNetFit.from_json(text).coefficients == relaxed.coefficients
+    with pytest.raises(ValueError):
+        relaxed.relax(poisson, claims, 0.0)
+
+    splits = [
+        ([i for i in range(n) if i % 5 != f], [i for i in range(n) if i % 5 == f])
+        for f in range(5)
+    ]
+    for case in ["poisson_relaxed", "gaussian_relaxed"]:
+        net, d, y = cases[case]
+        mine = [r for r in cv_ref if r["case"] == case]
+        lams = [float(r["arg"]) for r in mine if r["quantity"] == "mean" and r["gamma"] == "1"]
+        gammas = sorted({float(r["gamma"]) for r in mine if r["gamma"]})
+        cv = net.cross_validate_relaxed(d, y, lams, gammas, splits)
+        assert cv.gammas == gammas and len(cv.paths) == 5
+        for r in mine:
+            q = r["quantity"]
+            if q in ("mean", "se"):
+                path = cv.paths[gammas.index(float(r["gamma"]))]
+                got = getattr(path, q)[lams.index(float(r["arg"]))]
+                assert got == pytest.approx(float(r["expected"]), rel=1e-6, abs=1e-12)
+            else:
+                got = getattr(cv, q.replace("lambda", "lam"))
+                assert got == pytest.approx(float(r["expected"]), rel=1e-12)

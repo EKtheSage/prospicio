@@ -9,7 +9,7 @@ use prospicio_bayes::ppc::{self, Statistic, StatisticCheck};
 use prospicio_glm::dglm::{DispersionMethod, DoubleGlm, DoubleGlmFit};
 use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
 use prospicio_glm::glmm::{Glmm, GlmmFit, Grouping};
-use prospicio_glm::net::{ElasticNet, ElasticNetFit};
+use prospicio_glm::net::{CvPath, ElasticNet, ElasticNetFit};
 use prospicio_glm::{Dispersion, Glm, GlmFit, Robust};
 use prospicio_models::resample;
 use prospicio_models::{Design, Family, Fitted, Link, Model, metrics};
@@ -722,10 +722,37 @@ impl GlmModel {
     }
 }
 
-/// An elastic-net regularization path: one fit per penalty strength.
+/// An elastic-net regularization path: one fit per penalty strength, and
+/// for a relaxed path each fit's unpenalized refit (its relaxation at
+/// gamma 0).
 #[extendr]
 pub(crate) struct ElasticNetPath {
     fits: Vec<ElasticNetFit>,
+    relaxed: Vec<ElasticNetFit>,
+}
+
+/// The spec shared by the elastic-net fit and its cross-validation.
+#[allow(clippy::too_many_arguments)]
+fn net_spec(
+    family_name: &str,
+    link_name: &str,
+    alpha: f64,
+    standardize: bool,
+    penalty_factor: &[f64],
+    lower_limits: &[f64],
+    upper_limits: &[f64],
+    theta: f64,
+    power: f64,
+    link_power: f64,
+) -> Result<ElasticNet> {
+    let f = family(family_name, theta, power)?;
+    let l = link(link_name, f, link_power)?;
+    let mut net = ElasticNet::new(f, l, alpha, 0.0).standardize(standardize);
+    let given = |v: &[f64]| (!v.is_empty()).then(|| v.to_vec());
+    net.penalty_factor = given(penalty_factor);
+    net.lower_limits = given(lower_limits);
+    net.upper_limits = given(upper_limits);
+    Ok(net)
 }
 
 /// Fits an elastic net at each of `lambdas`, or, when it is empty, along
@@ -746,16 +773,25 @@ fn elastic_net_fit_design(
     min_ratio: f64,
     standardize: bool,
     penalty_factor: &[f64],
+    lower_limits: &[f64],
+    upper_limits: &[f64],
+    relax: bool,
     theta: f64,
     power: f64,
     link_power: f64,
 ) -> Result<ElasticNetPath> {
-    let f = family(family_name, theta, power)?;
-    let l = link(link_name, f, link_power)?;
-    let mut net = ElasticNet::new(f, l, alpha, 0.0).standardize(standardize);
-    if !penalty_factor.is_empty() {
-        net.penalty_factor = Some(penalty_factor.to_vec());
-    }
+    let net = net_spec(
+        family_name,
+        link_name,
+        alpha,
+        standardize,
+        penalty_factor,
+        lower_limits,
+        upper_limits,
+        theta,
+        power,
+        link_power,
+    )?;
     let d = design(x, names, offset, weights)?;
     let lambdas = if lambdas.is_empty() {
         let n = whole(nlambda, "nlambda")? as usize;
@@ -764,7 +800,14 @@ fn elastic_net_fit_design(
         lambdas.to_vec()
     };
     let fits = net.path(&d, y, &lambdas).map_err(to_r)?;
-    Ok(ElasticNetPath { fits })
+    let relaxed = if relax {
+        fits.iter()
+            .map(|f| f.relax(&d, y, 0.0).map_err(to_r))
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        Vec::new()
+    };
+    Ok(ElasticNetPath { fits, relaxed })
 }
 
 /// Cross-validates an elastic net on folds given as one fold id per row
@@ -785,17 +828,26 @@ fn elastic_net_cv_design(
     min_ratio: f64,
     standardize: bool,
     penalty_factor: &[f64],
+    lower_limits: &[f64],
+    upper_limits: &[f64],
+    gammas: &[f64],
     theta: f64,
     power: f64,
     link_power: f64,
     foldid: &[f64],
 ) -> Result<List> {
-    let f = family(family_name, theta, power)?;
-    let l = link(link_name, f, link_power)?;
-    let mut net = ElasticNet::new(f, l, alpha, 0.0).standardize(standardize);
-    if !penalty_factor.is_empty() {
-        net.penalty_factor = Some(penalty_factor.to_vec());
-    }
+    let net = net_spec(
+        family_name,
+        link_name,
+        alpha,
+        standardize,
+        penalty_factor,
+        lower_limits,
+        upper_limits,
+        theta,
+        power,
+        link_power,
+    )?;
     let d = design(x, names, offset, weights)?;
     let lambdas = if lambdas.is_empty() {
         let n = whole(nlambda, "nlambda")? as usize;
@@ -824,6 +876,25 @@ fn elastic_net_cv_design(
             test: (0..ids.len()).filter(|&i| ids[i] == k).collect(),
         })
         .collect();
+    if !gammas.is_empty() {
+        let cv = net
+            .cross_validate_relaxed(&d, y, &lambdas, gammas, &splits)
+            .map_err(to_r)?;
+        // Column-major lambda x gamma.
+        let flat = |pick: fn(&CvPath) -> &Vec<f64>| -> Vec<f64> {
+            cv.paths.iter().flat_map(|p| pick(p).clone()).collect()
+        };
+        return Ok(list!(
+            lambda = lambdas,
+            gamma = cv.gammas.clone(),
+            mean = flat(|p| &p.mean),
+            se = flat(|p| &p.se),
+            lambda_min = cv.lambda_min(),
+            gamma_min = cv.gamma_min(),
+            lambda_1se = cv.lambda_1se(),
+            gamma_1se = cv.gamma_1se()
+        ));
+    }
     let cv = net.cross_validate(&d, y, &lambdas, &splits).map_err(to_r)?;
     Ok(list!(
         lambda = cv.lambdas.clone(),
@@ -841,6 +912,27 @@ impl ElasticNetPath {
             .get(k.wrapping_sub(1))
             .ok_or_else(|| Error::Other(format!("index must be 1 to {}, got {k}", self.fits.len())))
     }
+
+    /// The coefficients of fit `k` (0-based) relaxed at `gamma`.
+    fn blended(&self, k: usize, gamma: f64) -> Result<Vec<f64>> {
+        if gamma == 1.0 {
+            return Ok(self.fits[k].coefficients().to_vec());
+        }
+        if !(0.0..=1.0).contains(&gamma) {
+            return Err(Error::Other(format!(
+                "gamma must be in [0, 1], got {gamma}"
+            )));
+        }
+        let refit = self.relaxed.get(k).ok_or_else(|| {
+            Error::Other("this path is not relaxed: refit with relax = TRUE".into())
+        })?;
+        Ok(self.fits[k]
+            .coefficients()
+            .iter()
+            .zip(refit.coefficients())
+            .map(|(b, r)| gamma * b + (1.0 - gamma) * r)
+            .collect())
+    }
 }
 
 #[extendr]
@@ -849,22 +941,41 @@ impl ElasticNetPath {
         self.fits[0].names().to_vec()
     }
 
-    /// One JSON artifact per lambda.
+    /// One JSON artifact per lambda, then, for a relaxed path, one per
+    /// refit (a fit with gamma 0).
     fn to_json(&self) -> Vec<String> {
-        self.fits.iter().map(ElasticNetFit::to_json).collect()
+        self.fits
+            .iter()
+            .chain(&self.relaxed)
+            .map(ElasticNetFit::to_json)
+            .collect()
     }
 
     fn from_json(texts: Vec<String>) -> Result<Self> {
-        if texts.is_empty() {
-            return Err(Error::Other(
-                "an elastic-net path needs at least one fit".into(),
-            ));
-        }
-        let fits = texts
+        let all = texts
             .iter()
             .map(|t| ElasticNetFit::from_json(t).map_err(to_r))
             .collect::<Result<Vec<_>>>()?;
-        Ok(Self { fits })
+        let (fits, relaxed): (Vec<_>, Vec<_>) = all.into_iter().partition(|f| f.gamma() == 1.0);
+        if fits.is_empty() || !(relaxed.is_empty() || relaxed.len() == fits.len()) {
+            return Err(Error::Other(
+                "an elastic-net path needs at least one fit, and a refit for each or none".into(),
+            ));
+        }
+        Ok(Self { fits, relaxed })
+    }
+
+    fn is_relaxed(&self) -> bool {
+        !self.relaxed.is_empty()
+    }
+
+    /// Column-major `p × k` at `gamma`.
+    fn relaxed_coefficients(&self, gamma: f64) -> Result<Vec<f64>> {
+        let mut out = Vec::new();
+        for k in 0..self.fits.len() {
+            out.extend(self.blended(k, gamma)?);
+        }
+        Ok(out)
     }
 
     fn lambda(&self) -> Vec<f64> {
@@ -912,9 +1023,24 @@ impl ElasticNetPath {
         x: &[f64],
         names: Vec<String>,
         offset: &[f64],
+        gamma: f64,
     ) -> Result<Vec<f64>> {
         let d = design(x, names, offset, &[])?;
-        self.at(index)?.predict(&d).map_err(to_r)
+        let fit = self.at(index)?;
+        if gamma == 1.0 {
+            return fit.predict(&d).map_err(to_r);
+        }
+        if d.names() != fit.names() {
+            return Err(Error::Other(
+                "the new design's columns differ from the fit's".into(),
+            ));
+        }
+        let beta = self.blended(whole(index, "index")? as usize - 1, gamma)?;
+        let link = fit.spec().link;
+        Ok(d.linear_predictor(&beta)
+            .into_iter()
+            .map(|e| link.inverse(e))
+            .collect())
     }
 
     #[allow(clippy::too_many_arguments)]

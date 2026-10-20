@@ -454,3 +454,25 @@
   `dglm_fit(formula, dformula, data, ...)`, `dglm()`'s order of arguments,
   returning a `dglm_model` whose `predict()` gives means or, with
   `type = "dispersion"`, dispersions (#353).
+- Elastic-net coefficient bounds: `ElasticNet::lower_limits` and
+  `upper_limits` bound each coefficient on the design's scale, as glmnet's
+  `lower.limits` and `upper.limits` (every bound 0 makes a step basis
+  monotone). The relaxed lasso: `ElasticNetFit::relax(design, y, gamma)`
+  refits the kept columns without the penalty and blends, and
+  `ElasticNet::cross_validate_relaxed` chooses `(lambda, gamma)` as
+  `cv.glmnet(relax = TRUE)` (glmnet parity). Paths on nearly collinear
+  columns, such as hinges at neighbouring knots, converge about fifty
+  times faster. An artifact with bounds or a relaxed fit is format
+  version 2; one without stays version 1 (#356).
+- The elastic net's bounds and relaxed lasso in Python and R: Python
+  `ElasticNet(lower_limits=, upper_limits=)`, `ElasticNetFit.relax` and
+  `.gamma`, and `ElasticNet.cross_validate_relaxed` with its `RelaxedCv`;
+  R `elastic_net_fit(lower_limits, upper_limits, relax = TRUE)`, `coef()`
+  and `predict()` with `gamma`, and `elastic_net_cv(relax = TRUE, gamma)`
+  (#356).
+
+### Breaking changes
+
+- Rust: `ElasticNet` gains the public fields `lower_limits` and
+  `upper_limits`; code that builds it in full adds them (`None`) or uses
+  `ElasticNet::new` (#356).

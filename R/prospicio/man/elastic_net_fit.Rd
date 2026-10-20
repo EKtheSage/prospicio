@@ -19,7 +19,10 @@ elastic_net_fit(
   weights = NULL,
   theta = NULL,
   power = NULL,
-  link_power = NULL
+  link_power = NULL,
+  lower_limits = NULL,
+  upper_limits = NULL,
+  relax = FALSE
 )
 }
 \arguments{
@@ -58,14 +61,26 @@ leaves a column unpenalized.}
 \item{power}{Tweedie power in \verb{(1, 2)}.}
 
 \item{link_power}{Exponent of the power link.}
+
+\item{lower_limits, upper_limits}{Optional bounds on the coefficients, on
+the design's scale, as glmnet's \code{lower.limits} and \code{upper.limits}: one
+value for every column, one per design column, or a named vector for
+some (the rest unbounded). Lower bounds are at most 0, upper at least
+0; the intercept is never bounded. \code{lower_limits = 0} makes every
+coefficient non-negative, which keeps a cumulative step basis monotone.}
+
+\item{relax}{Also refit each \code{lambda}'s non-zero columns without the
+penalty (glmnet's \code{relax = TRUE}), within the same bounds; then
+\code{\link[stats:coef]{stats::coef()}} and \code{\link[stats:predict]{stats::predict()}} take \code{gamma}, the blend
+\code{gamma * penalized + (1 - gamma) * refitted}.}
 }
 \value{
 An \code{elastic_net_model} with properties \code{lambda}, \code{coefficients}
 (a matrix, one column per \code{lambda}), \code{deviance}, \code{deviance_ratio},
-\code{df} (non-zero coefficients), \code{null_deviance} and \code{alpha}. Use
-\code{\link[stats:coef]{stats::coef()}}, \code{\link[stats:predict]{stats::predict()}} and \code{\link[=predict_distribution]{predict_distribution()}}, each
-with a \code{lambda} from the path. Tune \code{lambda} and \code{alpha} with
-\code{\link[=k_fold]{k_fold()}} and \code{\link[=family_deviance]{family_deviance()}}.
+\code{df} (non-zero coefficients), \code{null_deviance}, \code{alpha} and \code{relaxed}.
+Use \code{\link[stats:coef]{stats::coef()}}, \code{\link[stats:predict]{stats::predict()}} and \code{\link[=predict_distribution]{predict_distribution()}},
+each with a \code{lambda} from the path. Tune \code{lambda} and \code{alpha} with
+\code{\link[=k_fold]{k_fold()}} and \code{\link[=family_deviance]{family_deviance()}}, or with \code{\link[=elastic_net_cv]{elastic_net_cv()}}.
 }
 \description{
 The lasso (\code{alpha = 1}), ridge (\code{alpha = 0}) and everything between, for
@@ -85,4 +100,7 @@ d$y <- 1 + 2 * d$x1 + rnorm(50)
 m <- elastic_net_fit(y ~ x1 + x2, d, family = "gaussian", alpha = 1)
 m@df[c(1, 20, 100)]
 coef(m, lambda = m@lambda[20])
+# Non-negative slopes, and the relaxed lasso.
+r <- elastic_net_fit(y ~ x1 + x2, d, family = "gaussian", lower_limits = 0, relax = TRUE)
+coef(r, lambda = r@lambda[20], gamma = 0)
 }

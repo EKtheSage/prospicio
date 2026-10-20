@@ -8399,7 +8399,7 @@ class ElasticNet:
     >>> net.with_lam(1.01 * top).fit(d, y).coefficients[1:]
     [0.0, 0.0]
     """
-    def __new__(cls, /, family: str, link: str |None = None, alpha: float = 1.0, lam: float = 0.0, standardize: bool = True, penalty_factor: Sequence[float] |None = None, theta: float |None = None, power: float |None = None, link_power: float |None = None) -> ElasticNet: ...
+    def __new__(cls, /, family: str, link: str |None = None, alpha: float = 1.0, lam: float = 0.0, standardize: bool = True, penalty_factor: Sequence[float] |None = None, theta: float |None = None, power: float |None = None, link_power: float |None = None, lower_limits: Sequence[float] |None = None, upper_limits: Sequence[float] |None = None) -> ElasticNet: ...
     def __repr__(self, /) -> str: ...
     @property
     def alpha(self, /) -> float:
@@ -8424,6 +8424,31 @@ class ElasticNet:
         Returns
         -------
         CvPath
+        """
+    def cross_validate_relaxed(self, /, design: Design, y: Sequence[float], lams: Sequence[float], gammas: Sequence[float], splits: Sequence[tuple[Sequence[int], Sequence[int]]]) -> RelaxedCv:
+        """
+        Cross-validates relaxed fits, like glmnet's ``cv.glmnet(relax =
+        TRUE)``: on each split, every fit along the path is relaxed at
+        each of ``gammas`` (``ElasticNetFit.relax``) and scored on the
+        test rows. The lowest mean deviance over every ``(lam, gamma)``
+        is ``lam_min``, ``gamma_min``; the largest ``lam``, then
+        ``gamma``, within one standard error of it is ``lam_1se``,
+        ``gamma_1se``.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        lams : list of float
+            Penalty strengths, largest first (from ``lambda_path``).
+        gammas : list of float
+            Relaxations in ``[0, 1]``; 1 is the penalized fit.
+        splits : list of (list of int, list of int)
+            ``(train, test)`` rows, as ``k_fold`` returns.
+        
+        Returns
+        -------
+        RelaxedCv
         """
     def fit(self, /, design: Design, y: Sequence[float]) -> ElasticNetFit:
         """
@@ -8478,6 +8503,12 @@ class ElasticNet:
         -------
         list of float
         """
+    @property
+    def lower_limits(self, /) -> list[float] |None:
+        """
+        Lower bounds on the coefficients, one per design column, or
+        ``None``.
+        """
     def path(self, /, design: Design, y: Sequence[float], lams: Sequence[float]) -> list[ElasticNetFit]:
         """
         Fits at each of ``lams`` in turn, each from the previous solution.
@@ -8491,6 +8522,12 @@ class ElasticNet:
         Returns
         -------
         list of ElasticNetFit
+        """
+    @property
+    def upper_limits(self, /) -> list[float] |None:
+        """
+        Upper bounds on the coefficients, one per design column, or
+        ``None``.
         """
     def with_lam(self, /, lam: float) -> ElasticNet:
         """
@@ -8563,6 +8600,12 @@ class ElasticNetFit:
             inconsistent fields.
         """
     @property
+    def gamma(self, /) -> float:
+        """
+        The relaxation: 1 for the penalized fit, below 1 for one from
+        ``relax``.
+        """
+    @property
     def input_hash(self, /) -> str:
         """
         Hash of the training data (design, offset, weights, response).
@@ -8611,6 +8654,31 @@ class ElasticNetFit:
         Returns
         -------
         PredictiveDistribution
+        """
+    def relax(self, /, design: Design, y: Sequence[float], gamma: float) -> ElasticNetFit:
+        """
+        glmnet's relaxed fit (``relax = TRUE``): the columns this fit
+        keeps are refitted without the penalty, within the same bounds,
+        and the coefficients are ``gamma * penalized + (1 - gamma) *
+        refitted``. ``gamma = 0`` is the unpenalized fit on the lasso's
+        columns. Pass the training data again.
+        
+        Parameters
+        ----------
+        design : Design
+        y : list of float
+        gamma : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        ElasticNetFit
+        
+        Raises
+        ------
+        ValueError
+            If the data are not the training data, the fit is already
+            relaxed, or ``gamma`` is outside ``[0, 1]``.
         """
     def to_json(self, /) -> str:
         """
@@ -20478,6 +20546,43 @@ class RateLevel:
     def written_changes(self, /) -> list[int]:
         """
         The number of written-policy changes in effect for each cell.
+        """
+
+@final
+class RelaxedCv:
+    """
+    Cross-validated relaxed fits, from ``ElasticNet.cross_validate_relaxed``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def gamma_1se(self, /) -> float:
+        """
+        ``gamma`` of the one-standard-error choice.
+        """
+    @property
+    def gamma_min(self, /) -> float:
+        """
+        ``gamma`` of the lowest mean deviance.
+        """
+    @property
+    def gammas(self, /) -> list[float]:
+        """
+        The relaxations, in the order given.
+        """
+    @property
+    def lam_1se(self, /) -> float:
+        """
+        ``lam`` of the one-standard-error choice.
+        """
+    @property
+    def lam_min(self, /) -> float:
+        """
+        ``lam`` of the lowest mean deviance.
+        """
+    @property
+    def paths(self, /) -> list[CvPath]:
+        """
+        The scores along the path at each ``gamma``, in the same order.
         """
 
 @final

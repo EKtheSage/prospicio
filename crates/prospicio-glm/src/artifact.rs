@@ -36,6 +36,10 @@ const FORMAT_VERSION: u64 = 1;
 /// (`smooth.kind`), which a version 1 reader would misread as ordinary
 /// ones.
 const GAM_FORMAT_VERSION: u64 = 2;
+/// The elastic-net format: version 2 adds coefficient bounds
+/// (`spec.lower_limits`, `spec.upper_limits`) and relaxed fits (`gamma`),
+/// which a version 1 reader would drop.
+const NET_FORMAT_VERSION: u64 = 2;
 
 impl GlmFit {
     /// The fit as a JSON artifact; [`from_json`](Self::from_json) reads it
@@ -283,9 +287,10 @@ impl ElasticNetFit {
     /// [`from_json`](Self::from_json) reads it back exactly.
     pub fn to_json(&self) -> String {
         let spec = &self.spec;
-        let doc = json!({
+        let newer = spec.lower_limits.is_some() || spec.upper_limits.is_some() || self.gamma != 1.0;
+        let mut doc = json!({
             "format": NET_FORMAT,
-            "format_version": FORMAT_VERSION,
+            "format_version": if newer { NET_FORMAT_VERSION } else { 1 },
             "provenance": provenance("elastic_net", &self.input_hash),
             "spec": {
                 "family": family_json(spec.family),
@@ -306,14 +311,29 @@ impl ElasticNetFit {
             "iterations": self.iterations,
             "fitted": nums(&self.fitted),
         });
+        // Written only when set, so an artifact without them is as in
+        // version 1.
+        if let Some(v) = &spec.lower_limits {
+            doc["spec"]["lower_limits"] = nums(v);
+        }
+        if let Some(v) = &spec.upper_limits {
+            doc["spec"]["upper_limits"] = nums(v);
+        }
+        if self.gamma != 1.0 {
+            doc["gamma"] = num(self.gamma);
+        }
         serde_json::to_string(&doc).expect("a JSON value serializes")
     }
 
     /// Reads an artifact written by [`to_json`](Self::to_json).
     pub fn from_json(text: &str) -> Result<Self> {
-        let doc = parse(text, NET_FORMAT, FORMAT_VERSION)?;
+        let doc = parse(text, NET_FORMAT, NET_FORMAT_VERSION)?;
         let top = object(&doc, "artifact")?;
         let spec = object(field(top, "spec")?, "spec")?;
+        let limits = |key: &str| match spec.get(key) {
+            None => Ok(None),
+            Some(_) => floats(spec, key).map(Some),
+        };
         let family = family_from(object(field(spec, "family")?, "family")?)?;
         family.validate()?;
         let penalty_factor = match field(spec, "penalty_factor")? {
@@ -337,6 +357,8 @@ impl ElasticNetFit {
                     .as_bool()
                     .ok_or_else(|| bad("standardize"))?,
                 penalty_factor,
+                lower_limits: limits("lower_limits")?,
+                upper_limits: limits("upper_limits")?,
                 tolerance: float(field(spec, "tolerance")?, "tolerance")?,
                 max_iterations: uint(spec, "max_iterations")? as usize,
             },
@@ -349,6 +371,10 @@ impl ElasticNetFit {
             iterations: uint(top, "iterations")? as usize,
             fitted: floats(top, "fitted")?,
             input_hash: input_hash(top)?,
+            gamma: match top.get("gamma") {
+                None => 1.0,
+                Some(v) => float(v, "gamma")?,
+            },
         })
     }
 }
@@ -583,6 +609,19 @@ mod tests {
         let back = ElasticNetFit::from_json(&net.to_json()).unwrap();
         assert_eq!(back, net);
         assert!(back.input_hash().starts_with("blake3:"));
+        assert!(net.to_json().contains("\"format_version\":1"));
+        // Bounds and a relaxed fit make it version 2.
+        let bounded = spec
+            .lower_limits(vec![f64::NEG_INFINITY, 0.0, -1.0])
+            .upper_limits(vec![f64::INFINITY, f64::INFINITY, 0.5])
+            .fit(&d, &y)
+            .unwrap();
+        let relaxed = bounded.relax(&d, &y, 0.25).unwrap();
+        for fit in [&bounded, &relaxed] {
+            let text = fit.to_json();
+            assert!(text.contains("\"format_version\":2"));
+            assert_eq!(&ElasticNetFit::from_json(&text).unwrap(), fit);
+        }
         assert!(ElasticNetFit::from_json(&gam.to_json()).is_err());
         assert!(GamFit::from_json(&net.to_json()).is_err());
     }
