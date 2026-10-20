@@ -407,13 +407,13 @@ mod exports {
     udf!(pro_cl_reserve, triangle, average, tail, selected, kind, weight);
     udf!(pro_cl_factors, triangle, average, tail, selected, kind, weight, sigma);
     udf!(pro_mack, triangle, average, tail, origins, selected, kind, weight, sigma);
-    udf!(pro_odp, triangle, sims, seed, percentiles, tail, process, origins);
-    udf!(pro_odp_sims, triangle, sims, seed, tail, process, origins);
+    udf!(pro_odp, triangle, sims, seed, percentiles, tail, process, origins, average);
+    udf!(pro_odp_sims, triangle, sims, seed, tail, process, origins, average);
     udf!(pro_mack_boot, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
     udf!(pro_mack_boot_sims, triangle, sims, seed, average, tail, process, origins, sigma);
     udf!(pro_mack_cdr, triangle, average, tail, origins, selected, kind, weight, sigma);
     udf!(pro_mack_cdr_years, triangle, average, tail, origins, selected, kind, weight, sigma);
-    udf!(pro_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins);
+    udf!(pro_odp_cdr, triangle, sims, seed, percentiles, tail, process, origins, average);
     udf!(pro_mack_boot_cdr, triangle, sims, seed, percentiles, average, tail, process, origins, sigma);
     udf!(pro_el, triangle, exposure, apriori, average, tail, origins);
     udf!(pro_bf, triangle, exposure, apriori, average, tail, origins);

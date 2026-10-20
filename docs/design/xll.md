@@ -576,6 +576,25 @@ real Excel.
     same in every year. `aggregate` has no multi-year term, so the
     checks are the crate's hand-worked cases and, on 400 three-year
     paths, `Tower::apply_aggregate_term`'s commissions year by year.
+34. **Link-ratio exclusions go in the `average` argument** (user,
+    2026-10-20, "move forward"; the eighth group), over
+    `Development::n_periods`, `drop_high` and `drop_low` and the geometric
+    average (`reserving-v02.md` decision 13). `average` is still a kind,
+    `"volume"`, `"simple"`, `"regression"` or now `"geometric"`, or a row
+    `kind, n_periods, drop_high, drop_low`: `{"volume",5,1,1}` is the
+    five-year volume average excluding the high and low link ratio. The
+    sixteen chain-ladder, Mack, expected-loss and Mack bootstrap functions
+    that take `average` get the exclusions without a new argument, and a
+    formula written before keeps its meaning. The ODP bootstrap
+    functions (`PRO.ODP`, `.SIMS`, `.CDR`), which had no `average`, take
+    the same row as a last argument, its kind the volume average; the
+    one-year view re-reserves each year on the same link ratios. The
+    geometric average has no Mack variance, so Mack's functions refuse
+    it with the crate's message. Against chainladder-python 0.10.1 the
+    570 factors and ultimates of `reserving_averages_python.csv` on RAA
+    and GenIns match, and against R ChainLadder's `MackChainLadder(weights
+    = W)` the standard errors of `reserving_averages_r.csv`, an infinite
+    one as a blank cell.
 
 ## Parity plan
 
@@ -622,6 +641,12 @@ order, one small PR each, those already done struck through:
    correlation, all on ranges that hold no state)~~; ~~multi-year
    contract terms (a profit commission or sliding scale over a term of
    simulated years, deficits and credits carried forward)~~.
+8. What the other lanes have built since (user, 2026-10-20, "move
+   forward"; the order chosen by this lane): ~~link-ratio exclusions and
+   the geometric average in `average`~~; the ODP GLM with its analytic
+   prediction error and residual diagnostics; the newer severity fits
+   (the Lomax, truncation from above, grouped losses and minimum-distance
+   fits) in `PRO.SEV.FIT`.
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -631,10 +656,10 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's seven groups are done; further
-  functions as the user asks (nested Archimedean copulas and vines, and
-  the expected multi-year commission on the grid, are the nearest left
-  out).
+- **Next functions:** the parity plan's eighth group: the ODP GLM, then
+  the newer severity fits; further functions as the user asks (nested
+  Archimedean copulas and vines, and the expected multi-year commission
+  on the grid, are the nearest left out).
 - **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
   an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
   Its pattern is not normalised, so the a-priori level is absorbed by the

@@ -50,13 +50,13 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.CL.ULTIMATE(...)`, `PRO.CL.RESERVE(...)` | One value per origin |
 | `PRO.CL.FACTORS(triangle, [average], [tail], [selected], [kind], [weight], [sigma])` | LDF, CDF, sigma and standard error per link, and the tail |
 | `PRO.MACK(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Mack exhibit: process, parameter and total SE and CV, with a total |
-| `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap exhibit: CL reserve, mean, SD, CV and percentiles, with a total |
-| `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])` | The bootstrap's draws: a row per simulation, a column per origin and the total (at most 100000 rows) |
+| `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins], [average])` | ODP bootstrap exhibit: CL reserve, mean, SD, CV and percentiles, with a total |
+| `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins], [average])` | The bootstrap's draws: a row per simulation, a column per origin and the total (at most 100000 rows) |
 | `PRO.MACK.BOOT(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap exhibit, laid out as `PRO.ODP` |
 | `PRO.MACK.BOOT.SIMS(triangle, [sims], [seed], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's draws, laid out as `PRO.ODP.SIMS` |
 | `PRO.MACK.CDR(triangle, [average], [tail], [origins], [selected], [kind], [weight], [sigma])` | Merz-Wuthrich one-year view: CDR(1) SE and run-off SE |
 | `PRO.MACK.CDR.YEARS(...)`, same arguments | CDR SE by future calendar year |
-| `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])` | ODP bootstrap's simulated one-year CDR (negative is adverse) |
+| `PRO.ODP.CDR(triangle, [sims], [seed], [percentiles], [tail], [process], [origins], [average])` | ODP bootstrap's simulated one-year CDR (negative is adverse) |
 | `PRO.MACK.BOOT.CDR(triangle, [sims], [seed], [percentiles], [average], [tail], [process], [origins], [sigma])` | Mack bootstrap's simulated one-year CDR |
 | `PRO.CLARK(triangle, [exposure], [curve], [max_age], [origins])` | Clark's LDF method (or Cape Cod with exposure): reserve and SEs |
 | `PRO.CLARK.PARAMS(triangle, [exposure], [curve], [max_age])` | Clark's fitted parameters |
@@ -135,7 +135,13 @@ Ctrl+Alt+F9 to recalculate.
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
   one column per age; blank or `#N/A` where unobserved.
-- `average`: `"volume"` (default), `"simple"` or `"regression"`.
+- `average`: `"volume"` (default), `"simple"`, `"regression"` or
+  `"geometric"` (the chain ladder only: Mack's model has no variance for
+  it), or a row `kind, n_periods, drop_high, drop_low`, any cell blank:
+  `{"volume",5,1,1}` averages the link ratios of the latest 5 calendar
+  periods with the highest and lowest at each age left out. The ODP
+  bootstrap functions take the same row as their last argument, with the
+  kind `"volume"` or blank.
 - `tail`: omitted for none, a factor such as `1.05`, or `"exponential"`,
   `"inverse_power"` or `"bondy"`.
 - `origins`: labels for the exhibit's first column; omitted for 1, 2, ...

@@ -102,7 +102,11 @@ const SIGMA: Arg = Arg {
 };
 const AVERAGE: Arg = Arg {
     name: "average",
-    help: "\"volume\" (default), \"simple\" or \"regression\"",
+    help: "volume (default), simple, regression or geometric; or a row: kind, n_periods (latest calendar periods), drop_high, drop_low (link ratios left out at each age)",
+};
+const ODP_AVERAGE: Arg = Arg {
+    name: "average",
+    help: "Link ratios kept: a row \"volume\", n_periods (latest calendar periods), drop_high, drop_low; all of them if omitted",
 };
 const TAIL: Arg = Arg {
     name: "tail",
@@ -347,7 +351,16 @@ pub static FUNCTIONS: &[Function] = &[
         symbol: "pro_odp",
         name: "PRO.ODP",
         help: "ODP bootstrap exhibit: CL reserve, simulated mean, SD, CV and percentiles per origin, with a total.",
-        args: &[TRIANGLE, SIMS, SEED, PERCENTILES, TAIL, PROCESS, ORIGINS],
+        args: &[
+            TRIANGLE,
+            SIMS,
+            SEED,
+            PERCENTILES,
+            TAIL,
+            PROCESS,
+            ORIGINS,
+            ODP_AVERAGE,
+        ],
         run: reserving::odp_summary,
     },
     Function {
@@ -364,6 +377,7 @@ pub static FUNCTIONS: &[Function] = &[
             TAIL,
             PROCESS,
             ORIGINS,
+            ODP_AVERAGE,
         ],
         run: reserving::odp_sims,
     },
@@ -430,6 +444,7 @@ pub static FUNCTIONS: &[Function] = &[
             TAIL,
             PROCESS,
             ORIGINS,
+            ODP_AVERAGE,
         ],
         run: reserving::odp_cdr,
     },

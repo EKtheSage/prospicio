@@ -52,6 +52,8 @@ ws["A15"] = "CDF"; ws["A15"].font = bold
 ws["B15"] = ArrayFormula("B15:K15", f"=PRO.CL.CDF({T})")
 ws["A16"] = "LDF, simple avg, tail 1.05"; ws["A16"].font = note
 ws["B16"] = ArrayFormula("B16:K16", f'=PRO.CL.LDF({T},"simple",1.05)')
+ws["A17"] = "LDF, latest 5, ex high/low"; ws["A17"].font = note
+ws["B17"] = ArrayFormula("B17:K17", f'=PRO.CL.LDF({T},{{"volume",5,1,1}})')
 
 ws["M3"] = ArrayFormula("M3:Q14", f"=PRO.CL({T},,,A4:A13)")
 ws["M16"] = "=PRO.CL.ULTIMATE / RESERVE as plain columns:"; ws["M16"].font = note

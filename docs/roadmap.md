@@ -466,11 +466,13 @@ what it is aiming for by v1.0.
   parameters too (bi-TVaR, beta, weighted TVaR); contract terms at a
   loss, in expectation and over a term of several years with deficits
   and credits carried forward; copulas (cdfs, simulated uniforms and
-  Iman–Conover).
+  Iman–Conover); link-ratio exclusions (the latest periods, high and low
+  dropped) and the geometric average.
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): all seven groups done; further
-     functions as the user asks.
+     form (`xll.md`, parity plan): seven groups done; the eighth, what
+     the other lanes have built since: the ODP GLM, then the newer
+     severity fits; further functions as the user asks.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 
