@@ -7,7 +7,6 @@
 ## Next
 
 - [calibration-study] the 200-triangle calibration study (#392; `reserving-calibration.md`, accepted 2026-10-20): Meyers' ultimate percentile test on 200 Schedule P triangles from the `cas-schedule-p` package at run time, run by hand as an ignored test; staged: PR 2 the panel script and harness with Mack and the ODP bootstrap, PR 3 `BayesOdp` and Meyers' CRC, CSR and CAY, PR 4 Compartmental model 1 (model 2 optional)
-- [compartmental-one-year-segments] `Compartmental::one_year_segments`, the one-year view over segments (`reserving-compartmental.md` decision 8, "Not done"), in Rust, Python and R
 - the 200-triangle calibration study (#392)
 
 ## Done
