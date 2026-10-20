@@ -1615,7 +1615,7 @@ grouped_goodness_of_fit_rust <- function(severity, bounds, counts) .Call(wrap__g
 
 lev_distance_fit_rust <- function(family, sizes, empirical, weights, start) .Call(wrap__lev_distance_fit_rust, family, sizes, empirical, weights, start)
 
-odp_glm_fit_rust <- function(triangle, column, x, names, offset, tolerance, max_iterations) .Call(wrap__odp_glm_fit_rust, triangle, column, x, names, offset, tolerance, max_iterations)
+odp_glm_fit_rust <- function(triangle, column, x, names, offset, tolerance, max_iterations, family, power) .Call(wrap__odp_glm_fit_rust, triangle, column, x, names, offset, tolerance, max_iterations, family, power)
 
 odp_glm_cells_rust <- function(triangle, column) .Call(wrap__odp_glm_cells_rust, triangle, column)
 

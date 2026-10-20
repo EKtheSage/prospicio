@@ -177,3 +177,51 @@ def test_custom_design_from_terms_and_errors():
     future = [float(f) for f in cells["future"]]
     with pytest.raises(ValueError, match="zero on every observed cell"):
         OdpGlm().fit(tri, "paid", design=Design([[1.0] * 100, future], ["a0", "next"]))
+
+
+GAMMA_RESERVES = [3423, 8134, 15086, 22667, 31820, 45434, 60216, 80829, 105857]
+
+
+def test_gamma_and_tweedie_families():
+    tri = triangle()
+    gamma = OdpGlm(family="gamma")
+    assert (gamma.family, gamma.power) == ("gamma", None)
+    fit = gamma.fit(tri, "paid")
+    # The guide's section 9, which builds the same gamma fit by hand.
+    assert fit.glm.dispersion == pytest.approx(0.0047, abs=5e-5)
+    assert [round(r) for r in fit.reserves[1:]] == GAMMA_RESERVES
+    assert round(fit.total_reserve) == 373466
+    # The gamma's process error is phi * sum(mu**2).
+    total = fit.prediction_error()["process_se"][-1]
+    mu = np.array(fit.future_means)
+    assert total == pytest.approx(math.sqrt(fit.glm.dispersion * (mu**2).sum()), rel=1e-9)
+
+    tweedie = OdpGlm(family="tweedie", power=1.5)
+    assert (tweedie.family, tweedie.power) == ("tweedie", 1.5)
+    # Its process error is phi * sum(mu**1.5); its reserve need not lie
+    # between the ODP's and the gamma's (here it is below both).
+    fit = tweedie.fit(tri, "paid")
+    total = fit.prediction_error()["process_se"][-1]
+    mu = np.array(fit.future_means)
+    assert total == pytest.approx(math.sqrt(fit.glm.dispersion * (mu**1.5).sum()), rel=1e-9)
+    assert fit.total_reserve < OdpGlm().fit(tri, "paid").total_reserve
+
+
+def test_family_errors():
+    with pytest.raises(ValueError, match="poisson, gamma or tweedie"):
+        OdpGlm(family="gaussian")
+    with pytest.raises(ValueError, match="tweedie needs power"):
+        OdpGlm(family="tweedie")
+    with pytest.raises(ValueError, match="must be in"):
+        OdpGlm(family="tweedie", power=2.5)
+    with pytest.raises(ValueError, match="leave it out"):
+        OdpGlm(family="gamma", power=1.5)
+    # 2020's increment at 24 months is 0.
+    flat = Triangle.from_long(
+        [2020, 2020, 2020, 2021, 2021, 2021, 2022, 2022, 2023],
+        [12, 24, 36, 12, 24, 36, 12, 24, 12],
+        {"paid": [100.0, 100.0, 120.0, 110.0, 170.0, 180.0, 120.0, 175.0, 130.0]},
+    )
+    with pytest.raises(ValueError, match="increment 0"):
+        OdpGlm(family="gamma").fit(flat, "paid")
+    assert OdpGlm(family="tweedie", power=1.5).fit(flat, "paid").total_reserve > 0
