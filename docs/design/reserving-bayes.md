@@ -2382,7 +2382,11 @@ and CAY too. The gate is an environment variable, not a feature, so one
 build compiles and clippy lints every arm; only what runs depends on it.
 The compartmental one-year validation takes the same gate (decision 20:
 model 1 without its refit comparison on a pull request, model 2 only in
-the full run).
+the full run). Since the user's decision of 2026-10-19 a pull request's
+conformance suite runs `BayesOdp` and `BayesBf` alone: Meyers' CRC and
+compartmental model 1, whose refits took most of its 11 minutes on CI,
+join only in the full run, and their own one-year files still check them
+on every pull request (`knowledge/environment/ci-runtime.md`).
 Measured locally (release, 16 threads, 2026-10-16):
 `reserving_meyers_one_year` takes 28 s in the smoke run and 114 s in the
 full one, the conformance suite 54 s and 102 s, and the Bayesian parity
@@ -2579,7 +2583,8 @@ simulations of decision 19):
   10,000-simulation rate) and model 1's about a fifth of its 1,957 s.
   Python takes `n_sims=None` and R `one_year_sims = NULL`.
 * *CI.* With `RISK_RS_FULL_BAYES` unset (a pull request) the
-  conformance suite runs model 1 alone of the compartmental arms, and
+  conformance suite ran model 1 alone of the compartmental arms (none
+  since 2026-10-19, decision 19's note above), and
   `reserving_compartmental_one_year.rs` checks model 1's `mean_z`,
   `rescued` and `life_ratio` at the same sizes and bounds but skips its
   `RefitAll` comparison (40 refits, 199 s of the test's 368 s locally),

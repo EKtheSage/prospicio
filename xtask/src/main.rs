@@ -18,7 +18,9 @@
 //!
 //! `--check` fails if a build changed a generated file that is committed
 //! (the Python stub, R's `man/` and `NAMESPACE`): someone changed a doc
-//! comment without rebuilding.
+//! comment without rebuilding. `--no-tests` skips the bindings' test suites
+//! (CI's `python` and `r` jobs run them; the docs build need not run them
+//! again).
 
 use std::env;
 use std::ffi::OsStr;
@@ -28,7 +30,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 const USAGE: &str = "\
-usage: cargo xtask <task> [--check]
+usage: cargo xtask <task> [--check] [--no-tests]
 
 tasks:
   python   build the Python extension and stubs, test, render its docs
@@ -39,7 +41,8 @@ tasks:
   xll      build the 64-bit Excel add-in as target/xll/prospicio.xll and
            smoke-test it in a fake Excel when MinGW (and Wine) are found
 
-  --check  fail if the build changed a committed generated file
+  --check     fail if the build changed a committed generated file
+  --no-tests  skip the Python and R test suites
 ";
 
 /// Generated files that are committed, per binding: the build must leave
@@ -51,17 +54,20 @@ type Result<T = ()> = std::result::Result<T, String>;
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
-    let check = args.iter().any(|a| a == "--check");
+    let opts = Options {
+        check: args.iter().any(|a| a == "--check"),
+        tests: !args.iter().any(|a| a == "--no-tests"),
+    };
     let tasks: Vec<&str> = args
         .iter()
         .map(String::as_str)
-        .filter(|a| *a != "--check")
+        .filter(|a| *a != "--check" && *a != "--no-tests")
         .collect();
     let result = match tasks.as_slice() {
-        ["python"] => python(check),
-        ["r"] => r(check),
+        ["python"] => python(opts),
+        ["r"] => r(opts),
         ["rust"] => rust(),
-        ["docs"] => docs(check),
+        ["docs"] => docs(opts),
         ["xll"] => xll(),
         [] | ["help"] | ["-h"] | ["--help"] => {
             print!("{USAGE}");
@@ -78,6 +84,15 @@ fn main() -> ExitCode {
     }
 }
 
+/// The flags shared by the binding tasks.
+#[derive(Clone, Copy)]
+struct Options {
+    /// `--check`: fail if a committed generated file changed.
+    check: bool,
+    /// Run the test suites (off with `--no-tests`).
+    tests: bool,
+}
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -85,7 +100,7 @@ fn root() -> PathBuf {
         .to_path_buf()
 }
 
-fn python(check: bool) -> Result {
+fn python(opts: Options) -> Result {
     let dir = root().join("python");
     // great-docs needs Python 3.11+, although the package supports 3.9+.
     // uv keeps an existing environment that satisfies this.
@@ -106,8 +121,10 @@ fn python(check: bool) -> Result {
         "--release",
         "--generate-stubs",
     ]))?;
-    step("python: test");
-    run(uv().args(["run", "pytest", "tests"]))?;
+    if opts.tests {
+        step("python: test");
+        run(uv().args(["run", "pytest", "tests"]))?;
+    }
     step("python: stage the user guide (the guides, and the notebooks executed)");
     stage_user_guide(&uv)?;
     step("python: render the docs site");
@@ -117,7 +134,7 @@ fn python(check: bool) -> Result {
         .args(["run", "great-docs", "build"])
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1"))?;
-    if check {
+    if opts.check {
         unchanged(PYTHON_GENERATED)?;
     }
     Ok(())
@@ -236,7 +253,7 @@ fn write(path: &Path, text: &str) -> Result {
     fs::write(path, text).map_err(|e| format!("writing {}: {e}", path.display()))
 }
 
-fn r(check: bool) -> Result {
+fn r(opts: Options) -> Result {
     let root = root();
     let pkg = "R/prospicio";
     // roxygen2 loads the source with pkgload, which tolerates a stale
@@ -248,16 +265,18 @@ fn r(check: bool) -> Result {
     run(Command::new("R")
         .args(["CMD", "INSTALL", pkg])
         .current_dir(&root))?;
-    step("r: test");
-    let tests = root.join("R/prospicio/tests");
-    let mut files: Vec<PathBuf> = std::fs::read_dir(&tests)
-        .map_err(|e| format!("cannot read {}: {e}", tests.display()))?
-        .filter_map(|entry| entry.ok().map(|e| e.path()))
-        .filter(|path| path.extension().is_some_and(|ext| ext == "R"))
-        .collect();
-    files.sort();
-    for file in files {
-        run(Command::new("Rscript").arg(&file).current_dir(&root))?;
+    if opts.tests {
+        step("r: test");
+        let tests = root.join("R/prospicio/tests");
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&tests)
+            .map_err(|e| format!("cannot read {}: {e}", tests.display()))?
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| path.extension().is_some_and(|ext| ext == "R"))
+            .collect();
+        files.sort();
+        for file in files {
+            run(Command::new("Rscript").arg(&file).current_dir(&root))?;
+        }
     }
     step("r: check that every export is documented and usage matches code");
     rscript(
@@ -287,7 +306,7 @@ fn r(check: bool) -> Result {
     let built = with_loose_articles(&root, &mut cmd);
     built?;
     check_r_examples()?;
-    if check {
+    if opts.check {
         unchanged(R_GENERATED)?;
     }
     Ok(())
@@ -573,10 +592,10 @@ fn rust() -> Result {
         .current_dir(root()))
 }
 
-fn docs(check: bool) -> Result {
+fn docs(opts: Options) -> Result {
     rust()?;
-    python(check)?;
-    r(check)?;
+    python(opts)?;
+    r(opts)?;
     let root = root();
     let site = root.join("target/docs-site");
     step("docs: collect into target/docs-site");

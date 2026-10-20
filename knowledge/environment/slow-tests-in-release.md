@@ -103,7 +103,9 @@ times local seen on CI for these files, that is about 10 minutes of
 parity tests on a pull request and about 16 in the weekly run. The
 compartmental one-year views take the same gate (#303): a pull request
 runs compartmental model 1 alone among the conformance suite's arms and
-`reserving_compartmental_one_year` without its 40 `RefitAll` refits. With
+`reserving_compartmental_one_year` without its 40 `RefitAll` refits
+(until 2026-10-19, when the conformance suite's smoke run dropped both
+CRC and model 1: [where CI's time went](/environment/ci-runtime.md)). With
 both PRs' gates, measured locally on 2026-10-16 (release, 16 threads,
 with an R build and R tests running beside it, so somewhat slow): the
 whole validation suite 9 min 44 s smoke against 20 min 37 s full, the
@@ -133,8 +135,10 @@ On a pull request that touches `prospicio-reserving`, `-bayes`, `-prob`,
 `Cargo.lock`, `validation/Cargo.toml`, `validation/src/`, `validation/data/`,
 `validation/scripts/stan/`, a validation test, script or reference file
 named for `bayes` or `meyers`, or `ci.yml`; and on every weekly and manual
-run. A push to `main` does not run them, like every job but the rust job:
-the PR already did.
+run. A push to `main` does not run them, the PR already did; since
+2026-10-19 it only builds them when the job's cache is missing, and a pull
+request's conformance suite runs `BayesOdp` and `BayesBf` alone
+([where CI's time went](/environment/ci-runtime.md)).
 
 [^ci]: CI, bayes job
 [^cargo]: prospicio-validation, the slow-bayes feature and its [[test]] entries
