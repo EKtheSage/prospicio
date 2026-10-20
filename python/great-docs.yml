@@ -130,6 +130,8 @@ reference:
       - models.tweedie_profile
       - models.NegativeBinomialGlm
       - models.NegativeBinomialFit
+      - models.Glmm
+      - models.GlmmFit
       - models.BayesGlm
       - models.BayesGlmFit
       - models.ElasticNet

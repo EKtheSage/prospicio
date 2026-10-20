@@ -12,6 +12,7 @@
 mod artifact;
 pub mod diagnostics;
 pub mod gam;
+pub mod glmm;
 pub mod negbin;
 pub mod nested;
 pub mod net;

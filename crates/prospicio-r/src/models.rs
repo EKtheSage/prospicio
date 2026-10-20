@@ -7,6 +7,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_bayes::ppc::{self, Statistic, StatisticCheck};
 use prospicio_glm::gam::{Gam, GamFit, PSpline, Smoothing};
+use prospicio_glm::glmm::{Glmm, GlmmFit, Grouping};
 use prospicio_glm::net::{ElasticNet, ElasticNetFit};
 use prospicio_glm::{Dispersion, Glm, GlmFit, Robust};
 use prospicio_models::resample;
@@ -231,6 +232,172 @@ fn glm_nb_fit_design(
         log_likelihood = f.log_likelihood(),
         aic = f.aic()
     ))
+}
+
+/// Grouping factors from their names and every row's labels, the factors
+/// one after another (`k` blocks of `n` labels).
+fn groupings(names: Vec<String>, labels: Vec<String>) -> Result<Vec<Grouping>> {
+    let k = names.len();
+    if k == 0 {
+        return Ok(Vec::new());
+    }
+    if labels.len() % k != 0 {
+        return Err(Error::Other(
+            "the grouping labels do not match the factors".into(),
+        ));
+    }
+    let n = labels.len() / k;
+    Ok(names
+        .iter()
+        .enumerate()
+        .map(|(j, name)| Grouping::new(name, labels[j * n..(j + 1) * n].to_vec()))
+        .collect())
+}
+
+/// A GLM with random intercepts (`docs/design/models.md`, "Mixed
+/// models"); `nodes` 0 for the Laplace approximation.
+#[allow(clippy::too_many_arguments)]
+#[extendr]
+fn glmm_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    family_name: &str,
+    power: f64,
+    group_names: Vec<String>,
+    group_labels: Vec<String>,
+    nodes: f64,
+) -> Result<GlmmModel> {
+    let f = match family_name {
+        "poisson" => Family::Poisson,
+        "gamma" => Family::Gamma,
+        "tweedie" => Family::Tweedie { power },
+        other => {
+            return Err(Error::Other(format!(
+                "a GLMM's family must be poisson, gamma or tweedie, got {other}"
+            )));
+        }
+    };
+    let d = design(x, names, offset, weights)?;
+    let groups = groupings(group_names, group_labels)?;
+    let mut spec = Glmm::new(f);
+    let nodes = whole(nodes, "nodes")?;
+    if nodes > 0 {
+        spec = spec.quadrature(nodes as usize);
+    }
+    let inner = spec.fit(&d, &groups, y).map_err(to_r)?;
+    Ok(GlmmModel { inner })
+}
+
+/// A fitted GLM with random intercepts.
+#[extendr]
+pub(crate) struct GlmmModel {
+    inner: GlmmFit,
+}
+
+#[extendr]
+impl GlmmModel {
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    fn std_errors(&self) -> Vec<f64> {
+        self.inner.standard_errors()
+    }
+
+    fn covariance(&self) -> Vec<f64> {
+        self.inner.covariance().to_vec()
+    }
+
+    fn group_names(&self) -> Vec<String> {
+        self.inner.group_names().to_vec()
+    }
+
+    fn sd(&self) -> Vec<f64> {
+        self.inner.sd().to_vec()
+    }
+
+    fn sd_std_errors(&self) -> Vec<f64> {
+        self.inner.sd_standard_errors().to_vec()
+    }
+
+    fn dispersion(&self) -> f64 {
+        self.inner.dispersion()
+    }
+
+    fn dispersion_std_error(&self) -> f64 {
+        self.inner.dispersion_standard_error()
+    }
+
+    fn log_likelihood(&self) -> f64 {
+        self.inner.log_likelihood()
+    }
+
+    fn aic(&self) -> f64 {
+        self.inner.aic()
+    }
+
+    fn bic(&self) -> f64 {
+        self.inner.bic()
+    }
+
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted().to_vec()
+    }
+
+    fn iterations(&self) -> f64 {
+        self.inner.iterations() as f64
+    }
+
+    fn converged(&self) -> bool {
+        self.inner.converged()
+    }
+
+    /// Each factor's levels, modes and variances, as a list by factor.
+    fn random_effects(&self) -> List {
+        let items: Vec<Robj> = self
+            .inner
+            .random_effects()
+            .iter()
+            .map(|r| {
+                list!(
+                    level = r.levels.clone(),
+                    value = r.values.clone(),
+                    conditional_variance = r.conditional_variance.clone(),
+                    prediction_variance = r.prediction_variance.clone()
+                )
+                .into()
+            })
+            .collect();
+        let mut out = List::from_values(items);
+        let names: Vec<&str> = self
+            .inner
+            .group_names()
+            .iter()
+            .map(String::as_str)
+            .collect();
+        let _ = out.set_names(names);
+        out
+    }
+
+    fn predict(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        group_names: Vec<String>,
+        group_labels: Vec<String>,
+    ) -> Result<Vec<f64>> {
+        let d = design(x, names, offset, &[])?;
+        let groups = groupings(group_names, group_labels)?;
+        self.inner.predict(&d, &groups).map_err(to_r)
+    }
 }
 
 impl GlmModel {
@@ -1703,4 +1870,6 @@ extendr_module! {
     fn mcmc_diagnostics_rust;
     fn elpd_loo_rust;
     fn elpd_waic_rust;
+    fn glmm_fit_design;
+    impl GlmmModel;
 }
