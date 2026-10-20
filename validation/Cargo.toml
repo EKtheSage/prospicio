@@ -105,4 +105,8 @@ required-features = ["slow-bayes"]
 
 # The 200-triangle calibration study (docs/design/reserving-calibration.md):
 # its unit tests run in a plain `cargo test`; the study itself is #[ignore]d
-# and run by hand (see the file's header), so it needs no feature or CI entry.
+# and run by hand (see the file's header), so it needs no CI entry. Its
+# Bayesian arms need no feature to compile (the validation crate always
+# builds prospicio-reserving with `bayes`), and its one slow test, the wiring
+# check on group 353, is ignored unless `slow-bayes` is on; a [[test]] entry
+# would make CI's `bayes` job run the file, which PR 3 deliberately avoids.

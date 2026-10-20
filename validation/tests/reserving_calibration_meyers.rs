@@ -11,11 +11,16 @@
 //! each line, are tested for uniformity (Meyers' D and the two-sided
 //! Kolmogorov-Smirnov statistic against the `136 / sqrt(n)` bound).
 //!
-//! This file holds the harness (PR 2 of the note): Mack on paid and
-//! incurred and the ODP bootstrap on paid. The study is `#[ignore]`d and
-//! run by hand; nothing in CI runs it. The unit tests below it are not
-//! ignored: they check the pure pieces on small inline cases and run with
-//! `cargo test`.
+//! This file holds the harness (PRs 2 and 3 of the note): Mack on paid and
+//! incurred and the ODP bootstrap on paid (PR 2); `BayesOdp` on paid and
+//! Meyers' CRC (paid and incurred), CSR (paid) and CAY (incurred) at his
+//! priors and the library's NUTS defaults (PR 3). The study is
+//! `#[ignore]`d and run by hand; nothing in CI runs it (the file has no
+//! `[[test]]` entry, so CI's `bayes` job does not pick it up, and that job
+//! does not pass `--include-ignored` either). The unit tests below it are
+//! not ignored: they check the pure pieces on small inline cases and run
+//! with `cargo test`; the ones that fit with NUTS are ignored unless the
+//! `slow-bayes` feature is on.
 //!
 //! Run (from the repository root; the panel is built from the pip package
 //! `cas-schedule-p` at run time and is not stored in the repo):
@@ -31,7 +36,9 @@
 //! environment variables read by the study itself:
 //!
 //! * `RISK_RS_CALIBRATION_LINES`: for example `ca,pa` (default all four);
-//! * `RISK_RS_CALIBRATION_ARMS`: for example `mack,odp` (the default);
+//! * `RISK_RS_CALIBRATION_ARMS`: for example `mack,odp,crc` (default all:
+//!   `mack,odp,bayes_odp,crc,csr,cay`; `crc` runs paid and incurred, `csr`
+//!   paid, `cay` incurred, `bayes_odp` paid);
 //! * `RISK_RS_CALIBRATION_LIMIT`: the first n triangles of each line, for a
 //!   timing probe (for example 2).
 //!
@@ -49,11 +56,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use prospicio_prob::{Distribution, Lognormal};
+use prospicio_prob::{Distribution, Lognormal, PredictiveDistribution};
+use prospicio_reserving::bayes::MeyersModel;
 use prospicio_reserving::{
-    DevelopmentColumn, Grain, Lag, Long, Mack, Month, OdpBootstrap, Triangle,
+    BayesOdp, DevelopmentColumn, Diagnostics, Grain, Lag, Long, Mack, Meyers, Month, OdpBootstrap,
+    Triangle,
 };
 use rayon::prelude::*;
 
@@ -62,6 +72,16 @@ const ODP_SIMS: usize = 10_000;
 
 /// The command that builds the panel, quoted in every failure message.
 const PANEL_COMMAND: &str = "uv run --no-project --with \"cas-schedule-p[screens]==2026.6.13\" python -I validation/scripts/calibration_panel.py";
+
+/// Target acceptance of a NUTS arm's first fit: the library's default for
+/// `BayesOdp` and `Meyers` (0.95, above the sampler's 0.8 for the reasons
+/// in their docs).
+const FIRST_ACCEPT: f64 = 0.95;
+/// Target acceptance of the refit of a fit whose diagnostics fail (the note,
+/// decision 5; the remedy of the Meyers backtest sweep).
+const REFIT_ACCEPT: f64 = 0.99;
+/// R-hat above which a NUTS fit is refitted.
+const RHAT_LIMIT: f64 = 1.05;
 
 const ORIGINS: usize = 10;
 const FIRST_ORIGIN: i32 = 1988;
@@ -397,12 +417,18 @@ fn seed_for(line: Line, group: &str, arm: &str, basis: Basis) -> u64 {
 
 /// Meyers' D by line (ca, pa, wc, ol) and over all 200, read from the figure
 /// text of the monograph: Mack incurred (Figure 3.2, p.10), Mack paid
-/// (Figure 4.2, p.15), ODP bootstrap paid (Figure 4.1, p.14).
+/// (Figure 4.2, p.15), ODP bootstrap paid (Figure 4.1, p.14), CRC paid
+/// (Figure 5.1, p.19) and incurred (Figure 5.2, p.20), CSR paid (Figure 7.4,
+/// p.35), CAY incurred (Figure 8.5, p.42). `BayesOdp` has no counterpart.
 fn meyers_published(arm: &str, basis: Basis, line: Option<Line>) -> Option<f64> {
     let row: [f64; 5] = match (arm, basis) {
         ("mack", Basis::Incurred) => [16.4, 16.6, 27.0, 14.2, 15.4],
         ("mack", Basis::Paid) => [24.6, 44.6, 30.4, 8.5, 23.1],
         ("odp", Basis::Paid) => [23.1, 44.9, 28.4, 6.8, 24.1],
+        ("crc", Basis::Paid) => [22.8, 41.7, 30.5, 25.3, 25.5],
+        ("crc", Basis::Incurred) => [10.2, 16.7, 14.4, 20.7, 11.9],
+        ("csr", Basis::Paid) => [5.9, 18.5, 12.0, 10.4, 3.1],
+        ("cay", Basis::Incurred) => [8.3, 15.9, 12.5, 20.8, 10.8],
         _ => return None,
     };
     Some(match line {
@@ -440,6 +466,69 @@ struct Scored {
     outcome: f64,
     /// Each origin's percentile; NaN for the oldest, already at age 10.
     per_origin: [f64; ORIGINS],
+    /// The NUTS diagnostics of the fit that gave this result (none for
+    /// Mack and the ODP bootstrap).
+    diag: Option<DiagSummary>,
+    /// When the first fit failed its diagnostics and this result is the
+    /// refit at a higher target acceptance: the first fit's percentile and
+    /// diagnostics.
+    first: Option<(f64, DiagSummary)>,
+}
+
+/// What the study keeps of a fit's [`Diagnostics`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DiagSummary {
+    max_rhat: f64,
+    min_ess_bulk: f64,
+    min_ess_tail: f64,
+    divergences: usize,
+}
+
+impl DiagSummary {
+    fn new(d: &Diagnostics) -> Self {
+        Self {
+            max_rhat: d.max_rhat,
+            min_ess_bulk: d.min_ess_bulk,
+            min_ess_tail: d.min_ess_tail,
+            divergences: d.divergences,
+        }
+    }
+
+    /// R-hat above the limit, or NaN.
+    fn rhat_fails(&self) -> bool {
+        self.max_rhat.is_nan() || self.max_rhat > RHAT_LIMIT
+    }
+
+    /// The note's rule (decision 5): R-hat above 1.05 (or NaN), or any
+    /// divergence.
+    fn needs_refit(&self) -> bool {
+        self.rhat_fails() || self.divergences > 0
+    }
+
+    fn text(&self) -> String {
+        format!(
+            "rhat={:.4};ess_bulk={:.0};ess_tail={:.0};div={}",
+            self.max_rhat, self.min_ess_bulk, self.min_ess_tail, self.divergences
+        )
+    }
+}
+
+/// Fits with `fit(target_accept)` and, when the first fit fails its
+/// diagnostics, once more at [`REFIT_ACCEPT`]; the refit is the result and
+/// carries the first fit's percentile and diagnostics. A refit that errors
+/// leaves the first fit as the result.
+fn with_refit(fit: impl Fn(f64) -> Result<Scored, String>) -> Result<Scored, String> {
+    let first = fit(FIRST_ACCEPT)?;
+    let Some(diag) = first.diag.filter(DiagSummary::needs_refit) else {
+        return Ok(first);
+    };
+    Ok(match fit(REFIT_ACCEPT) {
+        Ok(mut second) => {
+            second.first = Some((first.percentile, diag));
+            second
+        }
+        Err(_) => first,
+    })
 }
 
 /// Mack on `basis`: a log-normal matched to the total ultimate and its
@@ -470,51 +559,119 @@ fn score_mack(t: &PanelTriangle, basis: Basis) -> Result<Scored, String> {
         sd,
         outcome,
         per_origin,
+        diag: None,
+        first: None,
+    })
+}
+
+/// The percentile and moments of the outcome under predictive draws of
+/// `dist` (one component per origin) that are the quantity less `shift`
+/// (an origin's latest value for reserves, zero for ultimates): the share
+/// of simulated totals at or below the outcome less the total shift
+/// (`Sampled::cdf`, Meyers' statistic).
+fn score_draws(
+    t: &PanelTriangle,
+    basis: Basis,
+    dist: &PredictiveDistribution,
+    shift: &[f64],
+) -> Result<Scored, String> {
+    let (n_comp, n_sims) = (dist.n_components(), dist.n_sims());
+    if n_comp != ORIGINS || shift.len() != ORIGINS {
+        return Err(format!("{n_comp} components, expected {ORIGINS}"));
+    }
+    let shift_sum: f64 = shift.iter().sum();
+    let outcome = t.outcome(basis);
+    let total = dist.total();
+    let by_origin = t.outcome_by_origin(basis);
+    let draws = dist.draw_matrix();
+    let mut per_origin = [f64::NAN; ORIGINS];
+    for o in 1..ORIGINS {
+        let x = by_origin[o] - shift[o];
+        let below = (0..n_sims).filter(|&s| draws[s * n_comp + o] <= x).count();
+        per_origin[o] = 100.0 * below as f64 / n_sims as f64;
+    }
+    Ok(Scored {
+        percentile: 100.0 * total.cdf(outcome - shift_sum),
+        mean: shift_sum + total.mean(),
+        sd: total.variance().sqrt(),
+        outcome,
+        per_origin,
+        diag: None,
+        first: None,
     })
 }
 
 /// The ODP bootstrap on paid: the share of simulated totals at or below the
 /// outcome less what is already paid.
 fn score_odp(t: &PanelTriangle, seed: u64, n_sims: usize) -> Result<Scored, String> {
-    let basis = Basis::Paid;
     let fit = OdpBootstrap {
         n_sims,
         seed,
         ..Default::default()
     }
-    .fit(&t.training(), basis.name())
+    .fit(&t.training(), Basis::Paid.name())
     .map_err(|e| e.to_string())?;
-    let latest = &fit.chain_ladder.latest;
-    if latest.len() != ORIGINS {
+    if fit.chain_ladder.latest.len() != ORIGINS {
         return Err(format!(
             "{} origins fitted, expected {ORIGINS}",
-            latest.len()
+            fit.chain_ladder.latest.len()
         ));
     }
-    let latest_sum: f64 = latest.iter().sum();
-    let outcome = t.outcome(basis);
-    let total = fit.reserves.total();
-    let by_origin = t.outcome_by_origin(basis);
-    let (n_comp, n_sims_got) = (fit.reserves.n_components(), fit.reserves.n_sims());
-    if n_comp != ORIGINS {
-        return Err(format!("{n_comp} components, expected {ORIGINS}"));
+    score_draws(t, Basis::Paid, &fit.reserves, &fit.chain_ladder.latest)
+}
+
+/// `BayesOdp` at its defaults (priors, four chains of 1,000 warm-up and
+/// 1,000 kept draws, 10,000 simulations) with this seed and target
+/// acceptance.
+fn bayes_odp_for(seed: u64, target_accept: f64) -> BayesOdp {
+    let mut model = BayesOdp {
+        seed,
+        ..BayesOdp::default()
+    };
+    model.sampler.target_accept = target_accept;
+    model
+}
+
+/// `BayesOdp` on paid, scored like the ODP bootstrap: the outcome less what
+/// is paid among the simulated reserves.
+fn score_bayes_odp(t: &PanelTriangle, model: &BayesOdp) -> Result<Scored, String> {
+    let fit = model
+        .fit(&t.training(), Basis::Paid.name())
+        .map_err(|e| e.to_string())?;
+    if fit.chain_ladder.latest.len() != ORIGINS {
+        return Err(format!(
+            "{} origins fitted, expected {ORIGINS}",
+            fit.chain_ladder.latest.len()
+        ));
     }
-    let draws = fit.reserves.draw_matrix();
-    let mut per_origin = [f64::NAN; ORIGINS];
-    for o in 1..ORIGINS {
-        let x = by_origin[o] - latest[o];
-        let below = (0..n_sims_got)
-            .filter(|&s| draws[s * n_comp + o] <= x)
-            .count();
-        per_origin[o] = 100.0 * below as f64 / n_sims_got as f64;
-    }
-    Ok(Scored {
-        percentile: 100.0 * total.cdf(outcome - latest_sum),
-        mean: latest_sum + total.mean(),
-        sd: total.variance().sqrt(),
-        outcome,
-        per_origin,
-    })
+    let mut scored = score_draws(t, Basis::Paid, &fit.reserves, &fit.chain_ladder.latest)?;
+    scored.diag = Some(DiagSummary::new(&fit.diagnostics));
+    Ok(scored)
+}
+
+/// Meyers' model with his priors (the library's `Meyers` defaults: his
+/// `N(-0.4, 3.162^2)` and `N(0, 3.162^2)` priors, `gamma` and `rho` as in
+/// his Stan code; four chains of 1,000 warm-up and 2,000 kept draws;
+/// 10,000 simulations) with this seed and target acceptance.
+fn meyers_for(model: MeyersModel, seed: u64, target_accept: f64) -> Meyers {
+    let mut m = Meyers {
+        model,
+        seed,
+        ..Meyers::default()
+    };
+    m.sampler.target_accept = target_accept;
+    m
+}
+
+/// A Meyers model on `basis`, with the premium from the panel: the
+/// percentile of the outcome among the simulated ultimates (no shift).
+fn score_meyers(t: &PanelTriangle, basis: Basis, model: &Meyers) -> Result<Scored, String> {
+    let fit = model
+        .fit(&t.training(), basis.name(), "premium")
+        .map_err(|e| e.to_string())?;
+    let mut scored = score_draws(t, basis, &fit.ultimates, &[0.0; ORIGINS])?;
+    scored.diag = Some(DiagSummary::new(&fit.diagnostics));
+    Ok(scored)
 }
 
 /// An arm and basis the study runs.
@@ -537,32 +694,45 @@ impl ArmBasis {
         match self.arm {
             "mack" => score_mack(t, self.basis),
             "odp" => score_odp(t, self.seed(t), ODP_SIMS),
+            "bayes_odp" => with_refit(|ta| score_bayes_odp(t, &bayes_odp_for(self.seed(t), ta))),
+            "crc" | "csr" | "cay" => {
+                let kind = match self.arm {
+                    "crc" => MeyersModel::Crc,
+                    "csr" => MeyersModel::Csr,
+                    _ => MeyersModel::Cay,
+                };
+                with_refit(|ta| score_meyers(t, self.basis, &meyers_for(kind, self.seed(t), ta)))
+            }
             other => Err(format!("unknown arm {other}")),
         }
     }
 }
 
-/// The arms named by `RISK_RS_CALIBRATION_ARMS` (default `mack,odp`).
+/// Every arm the study has: the default of `RISK_RS_CALIBRATION_ARMS`.
+const ALL_ARMS: &str = "mack,odp,bayes_odp,crc,csr,cay";
+
+/// The arms named by `RISK_RS_CALIBRATION_ARMS` (default [`ALL_ARMS`]). An
+/// arm runs on Meyers' bases: Mack and CRC on paid and incurred, the ODP
+/// bootstrap, `BayesOdp` and CSR on paid, CAY on incurred.
 fn selected_arms(spec: Option<&str>) -> Vec<ArmBasis> {
-    let spec = spec.unwrap_or("mack,odp");
+    let spec = spec.unwrap_or(ALL_ARMS);
     let mut out = Vec::new();
     for name in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-        match name {
-            "mack" => {
-                out.push(ArmBasis {
-                    arm: "mack",
-                    basis: Basis::Paid,
-                });
-                out.push(ArmBasis {
-                    arm: "mack",
-                    basis: Basis::Incurred,
-                });
-            }
-            "odp" => out.push(ArmBasis {
-                arm: "odp",
-                basis: Basis::Paid,
-            }),
-            other => panic!("RISK_RS_CALIBRATION_ARMS: unknown arm {other:?} (known: mack, odp)"),
+        let bases: &[Basis] = match name {
+            "mack" | "crc" => &[Basis::Paid, Basis::Incurred],
+            "odp" | "bayes_odp" | "csr" => &[Basis::Paid],
+            "cay" => &[Basis::Incurred],
+            other => panic!(
+                "RISK_RS_CALIBRATION_ARMS: unknown arm {other:?} (known: {})",
+                ALL_ARMS.replace(',', ", ")
+            ),
+        };
+        let arm = ALL_ARMS
+            .split(',')
+            .find(|a| *a == name)
+            .expect("a known arm");
+        for &basis in bases {
+            out.push(ArmBasis { arm, basis });
         }
     }
     assert!(!out.is_empty(), "RISK_RS_CALIBRATION_ARMS names no arm");
@@ -621,12 +791,23 @@ fn run_arms<'a>(triangles: &'a [PanelTriangle], arms: &[ArmBasis]) -> Vec<Record
         .iter()
         .flat_map(|t| arms.iter().map(move |&a| (t, a)))
         .collect();
+    let started = Instant::now();
+    let done = AtomicUsize::new(0);
+    let step = (jobs.len() / 40).max(1);
     jobs.par_iter()
         .map(|&(triangle, arm)| {
             let start = Instant::now();
             let result =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| arm.run(triangle)))
                     .unwrap_or_else(|_| Err("the fit panicked".to_string()));
+            let n = done.fetch_add(1, Ordering::Relaxed) + 1;
+            if n % step == 0 || n == jobs.len() {
+                eprintln!(
+                    "progress: {n} of {} fits, {:.0} s",
+                    jobs.len(),
+                    started.elapsed().as_secs_f64()
+                );
+            }
             Record {
                 triangle,
                 arm,
@@ -662,7 +843,7 @@ fn percentiles_csv(records: &[Record<'_>]) -> String {
         };
         let _ = write!(
             out,
-            "{},{},{},{},{},{},{:.1},,,{}",
+            "{},{},{},{},{},{},{:.1},{},{},{}",
             scored.map_or(String::new(), |s| num(s.percentile)),
             scored.map_or(String::new(), |s| num(s.mean)),
             scored.map_or(String::new(), |s| num(s.sd)),
@@ -670,6 +851,15 @@ fn percentiles_csv(records: &[Record<'_>]) -> String {
             r.seed,
             platform(),
             r.wall_ms,
+            scored
+                .and_then(|s| s.diag)
+                .map_or(String::new(), |d| d.text()),
+            scored
+                .and_then(|s| s.first)
+                .map_or(String::new(), |(p, d)| format!(
+                    "first_fit_percentile={p:.4};{}",
+                    d.text()
+                )),
             csv_field(&error)
         );
         for o in 0..ORIGINS {
@@ -778,6 +968,67 @@ fn panel_meta(dir: &Path) -> Vec<(String, String)> {
         .filter_map(|l| l.split_once(','))
         .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
         .collect()
+}
+
+/// One line on an arm's NUTS diagnostics, or none for an arm without them:
+/// the fits that failed their first diagnostics (R-hat above 1.05 or a
+/// divergence) and were refitted at target acceptance 0.99, those still
+/// failing, and the worst and total values of the kept fits.
+fn diagnostics_line(records: &[Record<'_>], arm: ArmBasis) -> Option<String> {
+    let ds: Vec<(DiagSummary, Option<DiagSummary>)> = records
+        .iter()
+        .filter(|r| r.arm == arm)
+        .filter_map(|r| r.result.as_ref().ok())
+        .filter_map(|s| s.diag.map(|d| (d, s.first.map(|f| f.1))))
+        .collect();
+    if ds.is_empty() {
+        return None;
+    }
+    let first_failed = ds
+        .iter()
+        .filter(|(d, first)| first.unwrap_or(*d).needs_refit())
+        .count();
+    let first_rhat = ds
+        .iter()
+        .filter(|(d, first)| {
+            let f = first.unwrap_or(*d);
+            f.rhat_fails()
+        })
+        .count();
+    let first_div = ds
+        .iter()
+        .filter(|(d, first)| first.unwrap_or(*d).divergences > 0)
+        .count();
+    let refitted = ds.iter().filter(|(_, f)| f.is_some()).count();
+    let still = ds.iter().filter(|(d, _)| d.needs_refit()).count();
+    let max_rhat = ds.iter().map(|(d, _)| d.max_rhat).fold(0.0, f64::max);
+    let total_div: usize = ds.iter().map(|(d, _)| d.divergences).sum();
+    let min_bulk = ds
+        .iter()
+        .map(|(d, _)| d.min_ess_bulk)
+        .fold(f64::INFINITY, f64::min);
+    let min_tail = ds
+        .iter()
+        .map(|(d, _)| d.min_ess_tail)
+        .fold(f64::INFINITY, f64::min);
+    Some(format!(
+        "{}: {} NUTS fits; first fit failed {first_failed} (R-hat above {RHAT_LIMIT} in {first_rhat}, a divergence in {first_div}), {refitted} refitted at {REFIT_ACCEPT}, {still} still failing; kept fits: max R-hat {max_rhat:.4}, {total_div} divergences, min ESS bulk {min_bulk:.0} tail {min_tail:.0}",
+        arm.label(),
+        ds.len()
+    ))
+}
+
+/// An arm's distinct error texts with their counts, most frequent first.
+fn error_tally(records: &[Record<'_>], arm: ArmBasis) -> Vec<(String, usize)> {
+    let mut tally: BTreeMap<String, usize> = BTreeMap::new();
+    for r in records.iter().filter(|r| r.arm == arm) {
+        if let Err(e) = &r.result {
+            *tally.entry(e.chars().take(120).collect()).or_default() += 1;
+        }
+    }
+    let mut out: Vec<_> = tally.into_iter().collect();
+    out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    out
 }
 
 fn ks_csv(groups: &[Group], check: &BTreeMap<String, [usize; 4]>) -> String {
@@ -990,6 +1241,12 @@ fn calibration_study() {
             times.iter().sum::<f64>() / times.len().max(1) as f64,
             times.iter().copied().fold(0.0, f64::max)
         );
+        for (text, n) in error_tally(&records, *a) {
+            println!("    {n} x {text}");
+        }
+        if let Some(line) = diagnostics_line(&records, *a) {
+            println!("    {line}");
+        }
     }
     println!(
         "total {:.1} s; outputs in {}",
@@ -1294,6 +1551,8 @@ mod tests {
                 sd: 0.0,
                 outcome: 0.0,
                 per_origin: [f64::NAN; ORIGINS],
+                diag: None,
+                first: None,
             })
         };
         let records = vec![
@@ -1332,12 +1591,327 @@ mod tests {
 
     #[test]
     fn the_selection_variables_parse() {
-        assert_eq!(selected_arms(None).len(), 3);
+        // Mack (2), ODP, BayesOdp, CRC (2), CSR, CAY.
+        assert_eq!(selected_arms(None).len(), 8);
         assert_eq!(selected_arms(Some("odp")).len(), 1);
+        let bases = |spec: &str| -> Vec<Basis> {
+            selected_arms(Some(spec)).iter().map(|a| a.basis).collect()
+        };
+        assert_eq!(bases("crc"), vec![Basis::Paid, Basis::Incurred]);
+        assert_eq!(bases("csr"), vec![Basis::Paid]);
+        assert_eq!(bases("cay"), vec![Basis::Incurred]);
+        assert_eq!(bases("bayes_odp"), vec![Basis::Paid]);
+        assert_eq!(selected_arms(Some("cay"))[0].label(), "cay_incurred");
         assert_eq!(selected_lines(Some("ca, wc")), vec![Line::Ca, Line::Wc]);
         assert_eq!(selected_lines(None).len(), 4);
         assert_eq!(meyers_published("mack", Basis::Paid, None), Some(23.1));
         assert_eq!(meyers_published("odp", Basis::Incurred, None), None);
+        // Meyers' Figures 5.1, 5.2, 7.4 and 8.5; none for BayesOdp or the
+        // bases he did not run.
+        assert_eq!(
+            meyers_published("crc", Basis::Paid, Some(Line::Ol)),
+            Some(25.3)
+        );
+        assert_eq!(meyers_published("crc", Basis::Incurred, None), Some(11.9));
+        assert_eq!(
+            meyers_published("csr", Basis::Paid, Some(Line::Ca)),
+            Some(5.9)
+        );
+        assert_eq!(
+            meyers_published("cay", Basis::Incurred, Some(Line::Pa)),
+            Some(15.9)
+        );
+        assert_eq!(meyers_published("csr", Basis::Incurred, None), None);
+        assert_eq!(meyers_published("bayes_odp", Basis::Paid, None), None);
         assert_eq!(csv_field("a,b"), "\"a,b\"");
+    }
+
+    fn scored_with(percentile: f64, diag: DiagSummary) -> Scored {
+        Scored {
+            percentile,
+            mean: 1.0,
+            sd: 1.0,
+            outcome: 1.0,
+            per_origin: [f64::NAN; ORIGINS],
+            diag: Some(diag),
+            first: None,
+        }
+    }
+
+    fn clean() -> DiagSummary {
+        DiagSummary {
+            max_rhat: 1.002,
+            min_ess_bulk: 900.0,
+            min_ess_tail: 800.0,
+            divergences: 0,
+        }
+    }
+
+    #[test]
+    fn a_refit_is_for_rhat_above_1_05_nan_or_a_divergence() {
+        assert!(!clean().needs_refit());
+        assert!(
+            !DiagSummary {
+                max_rhat: 1.05,
+                ..clean()
+            }
+            .needs_refit()
+        );
+        assert!(
+            DiagSummary {
+                max_rhat: 1.0501,
+                ..clean()
+            }
+            .needs_refit()
+        );
+        assert!(
+            DiagSummary {
+                max_rhat: f64::NAN,
+                ..clean()
+            }
+            .needs_refit()
+        );
+        assert!(
+            DiagSummary {
+                divergences: 1,
+                ..clean()
+            }
+            .needs_refit()
+        );
+    }
+
+    #[test]
+    fn with_refit_refits_once_at_the_higher_target_and_keeps_both_results() {
+        use std::cell::RefCell;
+        let calls = RefCell::new(Vec::new());
+        // Clean at once: one fit, no first-fit record.
+        let r = with_refit(|ta| {
+            calls.borrow_mut().push(ta);
+            Ok(scored_with(40.0, clean()))
+        })
+        .unwrap();
+        assert_eq!(*calls.borrow(), vec![FIRST_ACCEPT]);
+        assert!(r.first.is_none());
+        // A divergence at 0.95, clean at 0.99: the refit is the result and
+        // carries the first fit's percentile and diagnostics.
+        calls.borrow_mut().clear();
+        let bad = DiagSummary {
+            divergences: 3,
+            ..clean()
+        };
+        let r = with_refit(|ta| {
+            calls.borrow_mut().push(ta);
+            Ok(if ta == FIRST_ACCEPT {
+                scored_with(40.0, bad)
+            } else {
+                scored_with(55.0, clean())
+            })
+        })
+        .unwrap();
+        assert_eq!(*calls.borrow(), vec![FIRST_ACCEPT, REFIT_ACCEPT]);
+        close(r.percentile, 55.0, 0.0);
+        assert_eq!(r.diag, Some(clean()));
+        assert_eq!(r.first, Some((40.0, bad)));
+        // A refit that errors leaves the first fit.
+        let r = with_refit(|ta| {
+            if ta == FIRST_ACCEPT {
+                Ok(scored_with(40.0, bad))
+            } else {
+                Err("no".into())
+            }
+        })
+        .unwrap();
+        close(r.percentile, 40.0, 0.0);
+        assert!(r.first.is_none() && r.diag == Some(bad));
+        // An error of the first fit is the error.
+        assert_eq!(
+            with_refit(|_| Err("first".to_string())).unwrap_err(),
+            "first"
+        );
+        // Mack and the ODP bootstrap have no diagnostics and never refit.
+        let n = RefCell::new(0);
+        let _ = with_refit(|_| {
+            *n.borrow_mut() += 1;
+            Ok(Scored {
+                diag: None,
+                ..scored_with(1.0, clean())
+            })
+        });
+        assert_eq!(*n.borrow(), 1);
+    }
+
+    #[test]
+    fn the_diagnostics_reach_the_csv_and_the_log_line() {
+        let panel = parse_panel(&synthetic_csv("ca", "1")).unwrap();
+        let t = &panel[0];
+        let arm = ArmBasis {
+            arm: "crc",
+            basis: Basis::Paid,
+        };
+        let bad = DiagSummary {
+            max_rhat: 1.2,
+            divergences: 2,
+            ..clean()
+        };
+        let refit = Scored {
+            first: Some((33.0, bad)),
+            ..scored_with(44.0, clean())
+        };
+        let records = vec![
+            Record {
+                triangle: t,
+                arm,
+                seed: 1,
+                wall_ms: 5.0,
+                result: Ok(refit),
+            },
+            Record {
+                triangle: t,
+                arm,
+                seed: 2,
+                wall_ms: 5.0,
+                result: Err("bad".into()),
+            },
+        ];
+        let csv = percentiles_csv(&records);
+        let row = csv.lines().nth(1).unwrap();
+        assert!(
+            row.contains("rhat=1.0020;ess_bulk=900;ess_tail=800;div=0"),
+            "{row}"
+        );
+        assert!(
+            row.contains("first_fit_percentile=33.0000;rhat=1.2000"),
+            "{row}"
+        );
+        // Every row has the header's number of fields.
+        let width = csv.lines().next().unwrap().split(',').count();
+        for l in csv.lines() {
+            assert_eq!(l.split(',').count(), width, "{l}");
+        }
+        let line = diagnostics_line(&records, arm).unwrap();
+        assert!(line.contains("1 NUTS fits; first fit failed 1"), "{line}");
+        assert!(
+            line.contains("1 refitted") && line.contains("0 still failing"),
+            "{line}"
+        );
+        assert_eq!(error_tally(&records, arm), vec![("bad".to_string(), 1)]);
+        let mack = ArmBasis {
+            arm: "mack",
+            basis: Basis::Paid,
+        };
+        assert!(diagnostics_line(&records, mack).is_none());
+    }
+
+    /// The NUTS arms with the sampler cut down, on a synthetic square.
+    #[test]
+    fn the_bayesian_arms_score_a_synthetic_triangle() {
+        // Increments with a wiggle, so that every incremental value is
+        // positive (BayesOdp's log-linear mean needs positive column sums).
+        let mut csv = String::from(PANEL_HEADER);
+        csv.push('\n');
+        let pattern = [
+            0.30, 0.25, 0.17, 0.12, 0.07, 0.04, 0.025, 0.015, 0.007, 0.003,
+        ];
+        for o in 0..ORIGINS {
+            let mut cum = 0.0;
+            for (d, &p) in pattern.iter().enumerate() {
+                cum += 1000.0
+                    * (1.0 + 0.1 * o as f64)
+                    * p
+                    * (1.0 + 0.2 * ((o * 7 + d * 3) as f64).sin());
+                let case = cum * 1.1;
+                let _ = writeln!(
+                    csv,
+                    "pa,1,{},{},{cum},{},{case},{},{}",
+                    FIRST_ORIGIN as usize + o,
+                    12 * (d + 1),
+                    case + 5.0,
+                    1500.0 + o as f64,
+                    2000.0
+                );
+            }
+        }
+        let panel = parse_panel(&csv).unwrap();
+        let t = &panel[0];
+        let cheap = |s: &mut prospicio_bayes::nuts::Sampler| {
+            s.chains = 2;
+            s.tune = 150;
+            s.draws = 150;
+        };
+        let mut odp = bayes_odp_for(1, FIRST_ACCEPT);
+        cheap(&mut odp.sampler);
+        odp.n_sims = 500;
+        let s = score_bayes_odp(t, &odp).unwrap();
+        assert!(s.percentile >= 0.0 && s.percentile <= 100.0, "{s:?}");
+        assert!(s.diag.is_some() && s.mean > 0.0 && s.sd > 0.0);
+        close(
+            score_bayes_odp(t, &odp).unwrap().percentile,
+            s.percentile,
+            0.0,
+        );
+        for (kind, basis) in [
+            (MeyersModel::Crc, Basis::Paid),
+            (MeyersModel::Csr, Basis::Paid),
+            (MeyersModel::Cay, Basis::Incurred),
+        ] {
+            let mut m = meyers_for(kind, 1, FIRST_ACCEPT);
+            cheap(&mut m.sampler);
+            m.n_sims = 500;
+            let s = score_meyers(t, basis, &m).unwrap();
+            assert!(
+                s.percentile >= 0.0 && s.percentile <= 100.0,
+                "{kind:?} {s:?}"
+            );
+            assert!(s.diag.is_some() && s.sd > 0.0);
+            assert!(s.per_origin[0].is_nan() && s.per_origin[9].is_finite());
+            close(s.outcome, t.outcome(basis), 1e-9);
+            // The ultimates are not shifted: the mean is near the data's
+            // age-10 total, not near the reserve.
+            assert!(s.mean > 0.5 * t.outcome(basis), "{kind:?} {s:?}");
+        }
+    }
+
+    /// The Bayesian arms on Meyers' own triangle, with the study's code
+    /// path (seeds, refit rule): CRC, CSR and CAY give his printed outcome
+    /// percentiles (Tables 5.2, 5.3, 7.2 and 8.2; the guide's tolerance of
+    /// 5 points, `knowledge/references/meyers-monograph-8-reproduced.md`),
+    /// and `BayesOdp` agrees with Mack's mean and the ODP bootstrap's
+    /// percentile (74 at 10,000 simulations). Ignored unless `slow-bayes`
+    /// is on: NUTS fits take minutes in debug. Run with
+    /// `cargo test --release -p prospicio-validation --features slow-bayes
+    /// --test reserving_calibration_meyers`.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-bayes"),
+        ignore = "NUTS fits: run in release with --features slow-bayes"
+    )]
+    fn the_bayesian_arms_reproduce_meyers_on_group_353() {
+        let t = group_353();
+        for (arm, basis, printed) in [
+            ("crc", Basis::Paid, 51.88),
+            ("crc", Basis::Incurred, 74.75),
+            ("csr", Basis::Paid, 86.26),
+            ("cay", Basis::Incurred, 73.24),
+        ] {
+            let s = ArmBasis { arm, basis }.run(&t).unwrap();
+            eprintln!(
+                "{arm} {}: {:.2} (Meyers {printed}) {:?}",
+                basis.name(),
+                s.percentile,
+                s.diag
+            );
+            close(s.percentile, printed, 5.0);
+            close(s.outcome, t.outcome(basis), 0.0);
+            assert!(s.per_origin[9].is_finite() && s.per_origin[0].is_nan());
+        }
+        let odp = ArmBasis {
+            arm: "bayes_odp",
+            basis: Basis::Paid,
+        }
+        .run(&t)
+        .unwrap();
+        eprintln!("bayes_odp paid: {:.2} {:?}", odp.percentile, odp.diag);
+        close(odp.mean, 39_177.0, 0.03 * 39_177.0);
+        close(odp.percentile, 74.0, 10.0);
     }
 }
