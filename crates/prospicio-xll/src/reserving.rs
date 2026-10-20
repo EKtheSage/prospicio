@@ -22,7 +22,7 @@ use prospicio_reserving::{
 use crate::sheet::{CellError, Grid, Value, position};
 
 /// The measure name inside the triangle; never shown on the sheet.
-const COLUMN: &str = "values";
+pub(crate) const COLUMN: &str = "values";
 
 /// Its position among the triangle's measures: the first.
 pub(crate) const COLUMN_POSITION: usize = 0;
