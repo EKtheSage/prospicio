@@ -265,9 +265,9 @@ def test_errors(raa):
     odp = GlmCandidate.odp()
     with pytest.raises(ValueError, match="two models are named 'odp'.*dict"):
         diagonal_backtest(raa, "values", [odp, GlmCandidate.odp()], 1)
-    with pytest.raises(TypeError, match="BayesOdp, a Meyers or a GlmCandidate, got str"):
+    with pytest.raises(TypeError, match="BayesOdp, a Meyers, a GlmCandidate or a CompartmentalCandidate, got str"):
         diagonal_backtest(raa, "values", ["odp"], 1)
-    with pytest.raises(TypeError, match="BayesOdp, a Meyers or a GlmCandidate, got int"):
+    with pytest.raises(TypeError, match="BayesOdp, a Meyers, a GlmCandidate or a CompartmentalCandidate, got int"):
         diagonal_backtest(raa, "values", {"x": 1}, 1)
     with pytest.raises(TypeError, match="dict of name to model or a list"):
         diagonal_backtest(raa, "values", 5, 1)
