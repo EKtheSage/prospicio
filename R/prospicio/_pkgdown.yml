@@ -295,6 +295,7 @@ reference:
       - backtest
       - odp_glm_spec
       - compartmental_fit
+      - compartmental_fits
       - compartmental_one_year_fit
       - compartmental_priors
       - compartmental_prior_predictive

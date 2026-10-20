@@ -7,7 +7,8 @@ built (decision 4); PR B built (decisions 2, 5, 6, 7 and 9, each with its
 built (decisions 1, 2, 4, 5, 6, 7 and 9, each with its "Built (PR C)"
 paragraph: the Rust core and its Python and R bindings); PR F (the
 one-year view, decision 11) built, with the defaults the user decided on
-2026-10-16; PRs D and E not yet · Lane:
+2026-10-16; PR E (segments and the backtest, decision 8) built, with the
+user's decisions of 2026-10-19; PR D not yet · Lane:
 Reserving, with the Models lane for `prospicio-bayes` · Depends on:
 `reserving-bayes.md` (decisions 2, 5, 10, 11, 13 and 15, and open decision
 9, which asked for this note), `models.md` (`prospicio-bayes`, NUTS,
@@ -61,7 +62,7 @@ in `reserving-v02.md` decision 7 and `reserving-bayes.md` open decision 10.
 | B | `claude/bayes-compartmental` | `Compartmental` with one OS compartment and Gesmann and Morris' model 1 likelihood (decisions 1 to 3, 5 to 7); company 337's data; the Stan reference; Python and R bindings | PR A |
 | C | `claude/bayes-compartmental-lognormal` | model 2's likelihood (log-normal on outstanding and incremental paid loss ratios) and its development-year random effects (decision 2) | PR B |
 | D | `claude/bayes-compartmental-two-os` | the two-OS model (fast and slow settlement), the generic RK4 solver as its oracle (decision 3) | PR B |
-| E | `claude/bayes-compartmental-segments` | `Compartmental::fit_segments` with `SegmentDependence`, and `TriangleModel` for the diagonal backtest (decision 8) | PR B, and the Meyers segments branch merged |
+| E | `claude/bayes-compartmental-segments` | `Compartmental::fit_segments` with `SegmentDependence`, and `CompartmentalCandidate` for the diagonal backtest with a held-out outstanding table (decision 8); Python and R `fit_segments`. **Built** | PR B, and the Meyers segments branch merged |
 | F | `claude/bayes-one-year-compartmental` | the one-year view of models 1 and 2 through `YearModel` (decision 11; `reserving-bayes.md` decision 20), a refit budget for every model's view; Python and R bindings | the Meyers one-year PR (#280) |
 | later | | multistage exposure on the RK4 solver; market cycles; AR(1) residuals (open decision 8) | PR D |
 
@@ -1068,9 +1069,10 @@ measures the fit.
 
 ### 8. Segments and the backtest (PR E)
 
-Accepted (the user, 2026-10-19). Built in three stages on
+Status: **Built** (the user's decisions of 2026-10-19), in three stages on
 `claude/bayes-compartmental-segments`: `fit_segments` (Rust), the
-diagonal backtest (Rust), then Python and R `fit_segments`. The template
+diagonal backtest (Rust), then Python and R `fit_segments`. See "As
+built" at the end of this decision. The template
 is the Meyers segments and backtest work (`reserving-bayes.md` decisions
 8, 11 and 13), which solves the same problem for a model that needs a
 premium column and a second response.
@@ -1128,9 +1130,12 @@ premium column and a second response.
   under `full_bayes()` (`RISK_RS_FULL_BAYES`). `one_year_segments` is a
   later PR. Python and R get `fit_segments` with `dependence` and
   `spearman` settings; the backtest stays Rust-only, as for `BayesOdp`
-  (reversed on 2026-10-19 by `reserving-bayes.md` decision 21: the
-  backtest has Python and R entry points, and `Compartmental` joins them
-  through its candidate, to be wired in the bindings stage).
+  at the time (since reversed for `BayesOdp` and `Meyers` by
+  `reserving-bayes.md` decision 21, which gives the backtest Python and
+  R entry points). The user's decision of 2026-10-19 for this PR keeps
+  `CompartmentalCandidate` out of them: it borrows its triangle, while
+  the bindings' `NamedModel` owns its model, so wiring it in is a
+  follow-up (see "As built").
 * **Checks.** `Compartmental` still implements `YearModel` and passes the
   one-year conformance suite; the unit tests that sample with NUTS are
   gated by `slow-tests`, and the parity and backtest validation lives in
@@ -1160,6 +1165,47 @@ once a diagonal is held out); its arm uses the 55-cell upper triangle to
 decision 21 both tables carry its six metrics, each split's diagonal and
 the fit's sampler diagnostics (`CellForecast::diagnostics`). No deviation
 from the decision.
+
+**Built (PR E, bindings).** As decided, with these outcomes:
+
+* **Python** (`prospicio.reserving`): `Compartmental(...,
+  dependence="independent", spearman=None)` as the new last arguments
+  (and on `Compartmental.model_2`), with the getters `dependence` and
+  `spearman`, and `fit_segments(triangle, paid, premium, *,
+  outstanding=None, incurred=None)`, which returns a
+  `CompartmentalFits`: `keys`, `index`, `origins`, `premium`,
+  `latest_paid`, the joint `reserves`, `paid` and `outstanding`
+  (`PredictiveDistribution`s whose first dimensions are the keys),
+  `rate_swaps` (one count a segment), `diagnostics_frame()`,
+  `to_frame()`, `totals_frame()`, `paid_frame()`,
+  `outstanding_frame()` and `segment(**keys)`; the posterior of one
+  segment (`diagnostics`, `parameter_names`, `draws`, `chains`,
+  `summary()`, `loo()`) needs a single-segment fit, as for
+  `MeyersFits`. Failed diagnostics and rate swaps raise one
+  `UserWarning` with each message prefixed by its segment's label.
+  `python/tests/test_reserving_compartmental_segments.py` fits two
+  copies of company 337 at the default chains.
+* **R**: `compartmental_segments(triangle, paid, premium, priors,
+  outstanding = NULL, incurred = NULL, <compartmental()'s settings>,
+  dependence = c("independent", "rank_correlation", "synchronized"),
+  spearman = NULL)`, returning a `compartmental_fits` with
+  `as.data.frame()`, `totals_frame()`, `summary()`, `print()`,
+  `bayes_loo()`, `segment()` and the properties of the Python class
+  (`paid_table` and `outstanding_table` included). Model 2 is
+  `compartmental_segments()` with `compartmental_model_2()`'s
+  likelihood, scale and paid response. `R/prospicio/tests/
+  test-reserving-compartmental-segments.R` mirrors the Python test.
+* **Not done.** The backtest has no `Compartmental` entry in Python or R:
+  the candidate borrows its triangle and the bindings' `NamedModel` owns
+  its model (`reserving-bayes.md` decision 21 gives the backtest those
+  entry points for `BayesOdp` and `Meyers`), and the user's decision of
+  2026-10-19 for this PR keeps the backtest Rust-only. `one_year_segments`
+  is a later PR. Model 2's segment and backtest arms run only under
+  `RISK_RS_FULL_BAYES`.
+* **Result.** On company 337 the backtest forecasts the held-out
+  outstanding diagonals well and the paid increments badly, and cannot
+  separate a 1996 case reserve strength shift from faster settlement:
+  `knowledge/findings/compartmental-segments-backtest.md`.
 
 ### 9. Bindings
 
@@ -1380,7 +1426,11 @@ open decision 15; what is particular to this model:
   absorbed into `k_er`; cohorts are assumed homogeneous, so large-claim
   books fit poorly; short histories are not credible. A change in case
   reserve strength (company 337 in 1996 and 1997) makes incurred data
-  misleading. The docs say so and the backtest of PR E measures it.
+  misleading. The docs say so and the backtest of PR E measures it: it
+  forecasts company 337's held-out outstanding to within 8% at each of
+  three splits and its paid increments poorly, and does not isolate
+  the shift (
+  `knowledge/findings/compartmental-segments-backtest.md`).
 * **Dual cost.** If PR A's measurement fails its target, PR B's gradient
   is written by hand (decision 4), which adds a finite-difference test
   but no risk to the result.

@@ -3867,12 +3867,12 @@ check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
                   mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, meyers_fit,
                   meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, clark_fit,
-                  compartmental_fit, compartmental_one_year_fit)
+                  compartmental_fit, compartmental_fits, compartmental_one_year_fit)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
          "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, ",
          "meyers_fit, meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, ",
-         "clark_fit, compartmental_fit or compartmental_one_year_fit",
+         "clark_fit, compartmental_fit, compartmental_fits or compartmental_one_year_fit",
          call. = FALSE)
   }
 }
@@ -3883,7 +3883,7 @@ check_fit <- function(fit) {
 #' [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
 #' [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
 #' [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit] or
-#' [compartmental_fit] with the triangle's key columns by name. `as.data.frame(fit)` has one row per
+#' [compartmental_fit], [compartmental_fits] with the triangle's key columns by name. `as.data.frame(fit)` has one row per
 #' segment and origin: `origin`, `latest`, `ultimate` and `reserve` (the
 #' method's own), plus for Mack `process_risk`, `parameter_risk` and
 #' `standard_error`, for the expected-loss methods `exposure` and `apriori`
@@ -3927,7 +3927,7 @@ check_fit <- function(fit) {
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
 #'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
 #'   [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit],
-#'   [compartmental_fit] or [compartmental_one_year_fit] (a [clark_fit] or
+#'   [compartmental_fit], [compartmental_fits] or [compartmental_one_year_fit] (a [clark_fit] or
 #'   a compartmental fit not for `development_frame()`).
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
@@ -3957,7 +3957,7 @@ development_frame <- function(fit) {
     stop("a clark_fit has no development table; use development_frame(fit@chain_ladder)",
          call. = FALSE)
   }
-  if (S7::S7_inherits(fit, compartmental_fit)) {
+  if (S7::S7_inherits(fit, compartmental_fit) || S7::S7_inherits(fit, compartmental_fits)) {
     stop("a compartmental_fit has no development table; see its paid_table and outstanding_table",
          call. = FALSE)
   }
@@ -4715,6 +4715,187 @@ compartmental_model_2 <- function(triangle, paid, premium, priors, outstanding =
                 target_accept = target_accept, max_depth = max_depth)
 }
 
+#' Gesmann and Morris' compartmental model over segments
+#'
+#' [compartmental()] fitted to every segment of a triangle, each segment
+#' with its own posterior (the same model and settings, sampled
+#' independently) and its premium from its own `premium` column as
+#' [compartmental()] reads it, into joint posterior predictive
+#' distributions of the reserves and of the future paid and outstanding
+#' cells, the segments depending on each other as `dependence` says.
+#' Segment `k` (in index order) takes seeds derived from `seed` and `k` for
+#' its chains and its simulations, so independent segments share no random
+#' numbers, and a segment's draws differ from [compartmental()] of that
+#' segment alone. Under `dependence = "rank_correlation"` each segment's
+#' reserves, future paid cells and future outstanding cells are reordered
+#' together (one Iman-Conover reorder, ranked on the segments' total
+#' reserves), so every simulation's reserve is still its paid at the
+#' square's last age less the latest paid. Failed MCMC diagnostics and rate
+#' swaps raise one [warning()] listing every segment's messages, each
+#' prefixed with its segment's label.
+#'
+#' Properties of the fit: `origins`, `premium` and `latest_paid` (each
+#' segment's origins in turn), `reserves`, `paid` and `outstanding`
+#' ([predictive_distribution]s with the triangle's keys first among their
+#' dimensions, so `aggregate(fit@reserves, keep = "lob")` keeps the
+#' dependence between segments), `rate_swaps` (one count per segment) and
+#' `diagnostics` (a data.frame with one row per segment: the key columns,
+#' `max_rhat`, `min_ess_bulk`, `min_ess_tail`, `divergences` and
+#' `warnings`, the segment's messages joined by `"; "`). `summary`, `draws`,
+#' [bayes_loo()] and `paid_table` and `outstanding_table` (one row per
+#' segment and future cell) are those of [compartmental_fit] and need a
+#' single-segment fit for the first three: with several segments use
+#' [segment()]. `as.data.frame()`, [totals_frame()] and [segment()] work as
+#' for [compartmental()]. The one-year view of several segments is not yet
+#' built.
+#'
+#' Errors: as [compartmental()] for any segment (the message names the
+#' segment); `dependence = "synchronized"`, before any sampling, since a
+#' posterior has no residuals to share; or a `spearman` matrix that does not
+#' fit the segments.
+#'
+#' @inheritParams compartmental_fit
+#' @param triangle A cumulative [triangle] with any number of segments.
+#' @param dependence How the segments depend on each other:
+#'   `"independent"`, each segment's own posterior and simulations; or
+#'   `"rank_correlation"`, the segments' simulations reordered as whole rows
+#'   to the Spearman matrix `spearman`. `"synchronized"` is accepted as
+#'   [odp_bootstrap()] takes it, and is an error here.
+#' @param spearman With `dependence = "rank_correlation"` only: Spearman's
+#'   rho between the segments' total reserves, as [odp_bootstrap()]'s.
+#' @param ptr A `CompartmentalFits` pointer; used internally.
+#' @returns A `compartmental_fits` object.
+#' @seealso [compartmental()], [meyers_segments()].
+#' @export
+#' @examples
+#' one <- data.frame(year = rep(1988:1992, 5:1),
+#'                   age = unlist(lapply(5:1, function(k) 12 * seq_len(k))),
+#'                   paid = c(9.6, 22.8, 33.3, 40.3, 45.1, 7.9, 19.5, 29.6, 36.8,
+#'                            8.7, 24.3, 35.4, 13.3, 33.0, 11.4),
+#'                   incurred = c(62.7, 64.0, 65.6, 65.3, 62.3, 62.1, 56.7, 56.6, 56.8,
+#'                                64.0, 61.5, 63.2, 73.9, 75.1, 77.1),
+#'                   premium = rep(c(104.4, 88.9, 86.0, 99.3, 104.9), 5:1))
+#' two <- one
+#' two[c("paid", "incurred", "premium")] <- 2 * two[c("paid", "incurred", "premium")]
+#' long <- rbind(cbind(lob = "auto", one), cbind(lob = "home", two))
+#' tri <- triangle(long, "year", "age", c("paid", "incurred", "premium"), keys = "lob")
+#' # Short chains may miss a diagnostic threshold.
+#' fits <- suppressWarnings(compartmental_segments(tri, "paid", "premium",
+#'                                                 gesmann_morris_priors(),
+#'                                                 incurred = "incurred", chains = 2,
+#'                                                 tune = 150, draws = 150,
+#'                                                 target_accept = 0.9, n_sims = 500))
+#' fits@reserves@keys
+#' fits@diagnostics
+#' segment(fits, lob = "home")@premium
+compartmental_fits <- S7::new_class(
+  "compartmental_fits",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("CompartmentalFits"),
+    origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
+    premium = S7::new_property(S7::class_double, getter = function(self) self@ptr$premium()),
+    latest_paid = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$latest_paid()
+    }),
+    reserves = predictive_distribution,
+    paid = predictive_distribution,
+    outstanding = predictive_distribution,
+    rate_swaps = S7::new_property(S7::class_integer, getter = function(self) {
+      as.integer(self@ptr$rate_swaps())
+    }),
+    diagnostics = S7::new_property(S7::class_data.frame, getter = function(self) {
+      d <- self@ptr$diagnostics_table()
+      out <- fit_table_frame(d$table)
+      out$divergences <- as.integer(out$divergences)
+      out$warnings <- d$warnings
+      out
+    }),
+    summary = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+    }),
+    draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- rust_result(self@ptr$parameter_names(), call = NULL)
+      matrix(rust_result(self@ptr$draws(), call = NULL), ncol = length(nm), byrow = TRUE,
+             dimnames = list(NULL, nm))
+    }),
+    paid_table = S7::new_property(S7::class_any, getter = function(self) {
+      fit_table_frame(rust_result(self@ptr$paid_table(), call = NULL))
+    }),
+    outstanding_table = S7::new_property(S7::class_any, getter = function(self) {
+      fit_table_frame(rust_result(self@ptr$outstanding_table(), call = NULL))
+    })
+  ),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   reserves = predictive_distribution(ptr = ptr$reserves()),
+                   paid = predictive_distribution(ptr = ptr$paid()),
+                   outstanding = predictive_distribution(ptr = ptr$outstanding()))
+  }
+)
+
+#' @rdname compartmental_fits
+#' @export
+compartmental_segments <- function(triangle, paid, premium, priors, outstanding = NULL,
+                                   incurred = NULL, likelihood = c("normal", "lognormal"),
+                                   scale = c("amount", "loss_ratio"),
+                                   paid_response = c("cumulative", "incremental"),
+                                   fitted = c("paid_and_outstanding", "paid_and_incurred",
+                                              "paid_only", "incurred_only"),
+                                   rate_order = c("free", "ordered"),
+                                   start = c("data", "prior_centre"), chains = 4, tune = 1000,
+                                   draws = 2000, n_sims = 10000, seed = 0, target_accept = 0.99,
+                                   max_depth = 10,
+                                   dependence = c("independent", "rank_correlation",
+                                                  "synchronized"),
+                                   spearman = NULL) {
+  call <- sys.call()
+  check_triangle(triangle)
+  for (arg in c("paid", "premium")) {
+    value <- get(arg)
+    if (!is.character(value) || length(value) != 1 || is.na(value)) {
+      stop(sprintf("%s must be the name of a column", arg), call. = FALSE)
+    }
+  }
+  if (missing(priors)) {
+    stop(paste0("priors are required: use gesmann_morris_priors() for the paper's case study, ",
+                "or compartmental_priors(), and check them with compartmental_prior_predictive()"),
+         call. = FALSE)
+  }
+  p <- compartmental_prior_values(priors, call)
+  if (is.null(outstanding) == is.null(incurred)) {
+    stop(paste0("give exactly one of outstanding (a column of outstanding amounts) and ",
+                "incurred (a column of incurred amounts)"), call. = FALSE)
+  }
+  os <- if (is.null(incurred)) outstanding else incurred
+  if (!is.character(os) || length(os) != 1 || is.na(os)) {
+    stop(sprintf("%s must be the name of a column",
+                 if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
+  }
+  settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
+                match.arg(fitted), match.arg(rate_order), match.arg(start))
+  dependence <- match.arg(dependence)
+  ptr <- rust_result(triangle@ptr$compartmental_segments(
+    paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
+    settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth),
+    dependence, spearman_arg(spearman)), call = call)
+  fit <- compartmental_fits(ptr = ptr)
+  d <- fit@diagnostics
+  failed <- d$warnings != ""
+  if (any(failed)) {
+    keys <- setdiff(names(d), c("max_rhat", "min_ess_bulk", "min_ess_tail", "divergences",
+                                "warnings"))
+    label <- if (length(keys)) {
+      paste0(do.call(paste, c(unname(as.list(d[failed, keys, drop = FALSE])), sep = " / ")), ": ")
+    } else {
+      ""
+    }
+    warning("compartmental_segments: the MCMC diagnostics failed; check them before relying on ",
+            "the fit: ", paste0(label, d$warnings[failed], collapse = "; "), call. = FALSE)
+  }
+  fit
+}
+
 #' Prior predictive check of the compartmental model
 #'
 #' Paths of the mean outstanding and cumulative paid of each origin of the
@@ -5009,6 +5190,31 @@ S7::method(print, compartmental_one_year_fit) <- function(x, ...) {
               length(x@pareto_k), format(x@flagged_share, digits = 3),
               length(x@moment_matched), length(x@refitted), length(x@unrefitted)))
   print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}
+S7::method(as.data.frame, compartmental_fits) <- function(x, ...) {
+  fit_table_frame(x@ptr$long_table())
+}
+S7::method(summary, compartmental_fits) <- function(object, ...) object@summary
+S7::method(print, compartmental_fits) <- function(x, ...) {
+  r <- x@reserves
+  d <- x@diagnostics
+  cat(sprintf("<compartmental_fits> %d simulations%s
+", as.integer(r@n_sims),
+              segments_note(x@ptr)))
+  cat(sprintf("diagnostics: max R-hat %s, min bulk ESS %s, min tail ESS %s, %d divergences%s
+",
+              format(max(d$max_rhat), digits = 4), format(min(d$min_ess_bulk), digits = 4),
+              format(min(d$min_ess_tail), digits = 4), as.integer(sum(d$divergences)),
+              if (any(d$warnings != "")) {
+                sprintf(", warnings in %d segments", sum(d$warnings != ""))
+              } else {
+                ""
+              }))
+  cat(sprintf("total reserve: posterior mean %s, sd %s
+", format(mean(r), digits = 10),
+              format(sqrt(variance(r)), digits = 10)))
+  print(totals_frame(x), row.names = FALSE)
   invisible(x)
 }
 S7::method(summary, compartmental_fit) <- function(object, ...) object@summary

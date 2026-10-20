@@ -1975,6 +1975,8 @@ Triangle$diagonal_backtest <- function(column, premium, specs, n_diagonals, n_si
 
 Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
 
+Triangle$compartmental_segments <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, dependence, spearman) .Call(wrap__Triangle__compartmental_segments, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, dependence, spearman)
+
 Triangle$compartmental_one_year <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__compartmental_one_year, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims)
 
 Triangle$compartmental_prior_predictive <- function(premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental_prior_predictive, self, premium, priors, families, settings, run)
@@ -2461,6 +2463,52 @@ MeyersFits$segment <- function(keys, values) .Call(wrap__MeyersFits__segment, se
 
 #' @export
 `[[.MeyersFits` <- `$.MeyersFits`
+
+CompartmentalFits <- new.env(parent = emptyenv())
+
+CompartmentalFits$n_segments <- function() .Call(wrap__CompartmentalFits__n_segments, self)
+
+CompartmentalFits$origins <- function() .Call(wrap__CompartmentalFits__origins, self)
+
+CompartmentalFits$premium <- function() .Call(wrap__CompartmentalFits__premium, self)
+
+CompartmentalFits$latest_paid <- function() .Call(wrap__CompartmentalFits__latest_paid, self)
+
+CompartmentalFits$reserves <- function() .Call(wrap__CompartmentalFits__reserves, self)
+
+CompartmentalFits$paid <- function() .Call(wrap__CompartmentalFits__paid, self)
+
+CompartmentalFits$outstanding <- function() .Call(wrap__CompartmentalFits__outstanding, self)
+
+CompartmentalFits$rate_swaps <- function() .Call(wrap__CompartmentalFits__rate_swaps, self)
+
+CompartmentalFits$diagnostics_table <- function() .Call(wrap__CompartmentalFits__diagnostics_table, self)
+
+CompartmentalFits$parameter_names <- function() .Call(wrap__CompartmentalFits__parameter_names, self)
+
+CompartmentalFits$draws <- function() .Call(wrap__CompartmentalFits__draws, self)
+
+CompartmentalFits$chains <- function() .Call(wrap__CompartmentalFits__chains, self)
+
+CompartmentalFits$summary <- function() .Call(wrap__CompartmentalFits__summary, self)
+
+CompartmentalFits$loo <- function() .Call(wrap__CompartmentalFits__loo, self)
+
+CompartmentalFits$long_table <- function() .Call(wrap__CompartmentalFits__long_table, self)
+
+CompartmentalFits$totals_table <- function() .Call(wrap__CompartmentalFits__totals_table, self)
+
+CompartmentalFits$paid_table <- function() .Call(wrap__CompartmentalFits__paid_table, self)
+
+CompartmentalFits$outstanding_table <- function() .Call(wrap__CompartmentalFits__outstanding_table, self)
+
+CompartmentalFits$segment <- function(keys, values) .Call(wrap__CompartmentalFits__segment, self, keys, values)
+
+#' @export
+`$.CompartmentalFits` <- function (self, name) { func <- CompartmentalFits[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CompartmentalFits` <- `$.CompartmentalFits`
 
 CompartmentalFit <- new.env(parent = emptyenv())
 
