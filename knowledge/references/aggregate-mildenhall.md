@@ -556,6 +556,10 @@ sources:
   2^19-point Hu/SCS portfolio (the other families 0.1 to 0.4 s).
   Calibrating on the total capped at the assets, a one-unit portfolio of
   about 10,000 points, gives the same parameter in 0.15 s.[^pirguide]
+  Since #331 `calibrate` merges equal values first, and the capped values
+  at the assets are most of the 525,955 totals: Wang takes 0.25 s on the
+  full portfolio (release build, 2026-10-20), the other families 0.02 to
+  0.03 s, with the capped portfolio's parameters to about 1e-15.
 
 [^pnl]: pnl.md
 [^renewal]: aggregate_renewal.py

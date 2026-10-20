@@ -1999,3 +1999,42 @@ fn natural_allocation_has_the_books_conventions() {
         }
     }
 }
+
+#[test]
+fn ccoc_capital_is_the_margin_over_the_return_near_s_of_one() {
+    use prospicio_pricing::natural::{Allocation, Portfolio};
+    use prospicio_prob::Distortion;
+
+    // Under the CCoC every layer's capital per unit of margin is 1 / r, so
+    // each unit's capital is its margin over r. Totals with tiny
+    // probabilities put S just below 1, where (1 - g) / (g - S) computed
+    // from g cancelled and a last-bit change of r moved the capital by
+    // unit in its fourth significant digit (#330).
+    let rows = [
+        vec![0.0, 0.0],
+        vec![1.0, 0.0],
+        vec![0.0, 2.0],
+        vec![3.0, 2.0],
+        vec![1.0, 9.0],
+        vec![12.0, 1.0],
+    ];
+    let probs = [3e-16, 4e-16, 7e-16, 0.6 - 1.4e-15, 0.3, 0.1];
+    let units = vec!["A".to_string(), "B".to_string()];
+    let port = Portfolio::from_rows(units, &rows, Some(&probs)).unwrap();
+    let mut r = 0.1_f64;
+    for _ in 0..3 {
+        let g = Distortion::ccoc(r).unwrap();
+        for method in [Allocation::Linear, Allocation::Lifted] {
+            let p = port.price(&g, 13.0, method).unwrap();
+            for u in &p.allocated {
+                let want = (u.premium - u.loss) / r;
+                assert!(
+                    (u.capital - want).abs() < 1e-12 * want.abs().max(1.0),
+                    "r = {r:e}, {method:?}: {} vs {want}",
+                    u.capital
+                );
+            }
+        }
+        r = f64::from_bits(r.to_bits() - 1);
+    }
+}

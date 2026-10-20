@@ -322,7 +322,12 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   `mᵢ` its premium less its expected loss at that asset level, times the
   layer's capital per unit of margin, `(1 - g) / (g - S)`. In layers the
   loss always reaches (`S = g = 1`) that ratio is the limit
-  `g'(1) / (1 - g'(1))` (`Distortion::slope_at_one`). Under the linear
+  `g'(1) / (1 - g'(1))` (`Distortion::slope_at_one`). The ratio is
+  computed as `G / ((1 - S) - G)` with `G = 1 - g(S)` from `1 - S`
+  (`Distortion::complement`): from `g(S)` both differences cancel near
+  `S = 1`, and the capital by unit moved with the last bit of the
+  distortion's parameter (#330); under the CCoC the ratio is exactly
+  `1 / r`, so each unit's capital is its margin over `r`. Under the linear
   allocation `mᵢ` jumps at each total, and the jump belongs to the layer
   below it, as on `aggregate`'s unit grid. `aggregate` 1.2.0 gives the
   same values as 1.0.1 on every row of `natural_aggregate.csv`, so these
