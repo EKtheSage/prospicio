@@ -6,7 +6,7 @@
 
 ## Next
 
-- [guides-issues-for-aggregate] the rest of the issues filed by the Guides lane on 2026-10-17 and 18: #368's other items, #338, #317 and #316
+- [guides-issues-for-aggregate] the rest of the issues filed by the Guides lane on 2026-10-17 and 18: #368's items 2 and 3 (the allocation set, PLC under a distortion), #338, #317 and #316
 
 ## Done
 
@@ -20,3 +20,4 @@
 - the natural allocation under the books' conventions (`PriceSettings`: `AtomAtAssets::Lumped`, *Pricing Insurance Risk*'s Example 235 exact, and `BottomLayer::Zero`, Monograph 15's equation 8.5; `aggregate` 1.2.0 unchanged from 1.0.1, so its conventions stay the defaults; Python `price(..., bottom_layer=, atom=)`, R `natural_price(..., bottom_layer, atom)`; #379, #368 item 1)
 - the capital per unit of margin without cancellation near S = 1 (`Distortion::complement`, `1 - g` from `1 - S`; the CCoC's capital by unit is its margin over r, and the Cat/Non-Cat lifted capital no longer moves with the last bit of the parameter; #330)
 - calibration on a large portfolio (`distortion::calibrate` merges equal values, so the totals capped at the assets are one atom: Wang on the 2^19-point Hurricane/SCS portfolio in 0.25 s, not about 9 s; #331)
+- pricing bounds on a large book (`Portfolio::premium_bounds` from prefix sums and convex hulls, matching the every-pair search: 0.05 s on the Cat/Non-Cat grid's 71,795 totals, which did not finish in two minutes; #368 item 4)

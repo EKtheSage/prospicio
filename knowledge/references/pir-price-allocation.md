@@ -74,5 +74,11 @@ sources:
 - **The net view of a cover** (Example 302) needs the weights of the net
   order: a `Portfolio` whose units are the net pieces plus the cover scaled by
   1e-6 keeps that order, and its allocation divided by 1e-6 is the book's.
-- **Speed.** `Portfolio.premium_bounds` on the Cat/Non-Cat grid (about 70,000
-  totals) did not finish in two minutes; on four totals it is instant.
+- **Speed.** `Portfolio.premium_bounds` on the Cat/Non-Cat grid (71,795
+  totals) did not finish in two minutes when it priced the book at every knot
+  and tried every pair of knots. Since #368 it takes 0.05 s (release build,
+  2026-10-20): each knot's TVaR prices come from prefix sums, and the best
+  pair is the upper or lower convex hull of the points (TVaR, unit premium)
+  at the premium. At the gross CCoC premium 115.15 Cat ranges from 28.69 to
+  35.95 and Non-Cat from 79.20 to 86.46. The rewrite matches the every-pair
+  search to 1e-9 in `natural.rs`'s unit tests.

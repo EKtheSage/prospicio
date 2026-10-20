@@ -357,7 +357,12 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   BiTVaRs, and a unit's premium is linear in the distortion. On a discrete
   total, `TVaR_p` and each unit's share are linear in `p` between the
   cumulative probabilities of `X ∧ a`, so it is enough to pair those
-  knots (and `p*`, where `TVaR_p* = P`) across `p*`: no grid. As in
+  knots (and `p*`, where `TVaR_p* = P`) across `p*`: no grid. Each
+  knot's prices come from prefix sums (O(m) a knot), and the best pair
+  for a unit is the edge of the upper or lower convex hull of the points
+  `(TVaR_k, unit premium_k)` that spans `P`, since a BiTVaR's unit premium
+  is the chord between its two knots at `P`: O(K log K) a unit instead of
+  K pricings and K² pairs (#368; 0.05 s on Cat/Non-Cat's 71,795 totals). As in
   `aggregate`, levels inside the atom at `a` are not knots; under the
   linear allocation, which uses `P(X > a)`, they would split units
   differently though they price the total the same. The price range of

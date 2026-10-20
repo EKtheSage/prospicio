@@ -1222,6 +1222,43 @@ impl Portfolio {
         out
     }
 
+    /// The total's and each unit's premium under `TVaR_p` with assets `a`
+    /// and the linear allocation, as [`Portfolio::price`] gives them, from
+    /// the prefix sums `head` (`Σ κᵢ p`), `tail` (shares above) and `head_x`
+    /// (`Σ x p`); `c` totals lie at or below `a`, and `s_a = P(X > a)`.
+    #[allow(clippy::too_many_arguments)]
+    fn tvar_linear(
+        &self,
+        p: f64,
+        a: f64,
+        c: usize,
+        s_a: f64,
+        head: &[f64],
+        tail: &[f64],
+        head_x: &[f64],
+    ) -> (f64, Vec<f64>) {
+        let m = self.units.len();
+        let tvar = Distortion::Tvar(p);
+        let g = |s: f64| tvar.g(s);
+        // g(S_k) = 1 before the first total j with g(S_j) < 1, so Δg is 0
+        // there; at j it is 1 - g(S_j), and above j it is p_k / (1 - p).
+        let j = self.s.partition_point(|&s| g(s) >= 1.0);
+        let gs_a = if c == 0 { 1.0 } else { g(s_a) };
+        let tail_weight = if s_a > 0.0 { a * gs_a / s_a } else { 0.0 };
+        let mut by_unit: Vec<f64> = (0..m).map(|i| tail_weight * tail[c * m + i]).collect();
+        let mut total = a * gs_a;
+        if j < c {
+            let first = 1.0 - g(self.s[j]);
+            let rest = 1.0 / (1.0 - p);
+            for (i, u) in by_unit.iter_mut().enumerate() {
+                *u += self.kappa[j * m + i] * first
+                    + (head[c * m + i] - head[(j + 1) * m + i]) * rest;
+            }
+            total += self.x[j] * first + (head_x[c] - head_x[j + 1]) * rest;
+        }
+        (total, by_unit)
+    }
+
     /// The range of each unit's premium over every distortion that prices
     /// `X ∧ a` at `premium`, under the linear allocation: Mildenhall and
     /// Major's pricing bounds (*Pricing Insurance Risk*, chapter 11).
@@ -1263,19 +1300,22 @@ impl Portfolio {
         knots.sort_by(f64::total_cmp);
         knots.dedup();
         let m = self.units.len();
-        // Each unit's premium, and the total's, under TVaR at each knot.
+        // Each unit's premium, and the total's, under TVaR at each knot,
+        // from prefix sums: O(m) a knot, not a pricing of the whole book.
+        let c = self.count_at_or_below(a);
+        let head = self.prefix_kappa(&self.p);
+        let tail = self.suffix_shares(&self.p);
+        let mut head_x = vec![0.0; self.x.len() + 1];
+        for k in 0..self.x.len() {
+            head_x[k + 1] = head_x[k] + self.x[k] * self.p[k];
+        }
+        let s_a = if c == 0 { 1.0 } else { self.s[c - 1] };
         let mut t = Vec::with_capacity(knots.len());
         let mut units = Vec::with_capacity(knots.len());
         for &p in &knots {
-            t.push(tvar(p)?);
-            let price = self.price(&Distortion::tvar(p)?, a, Allocation::Linear)?;
-            units.push(
-                price
-                    .allocated
-                    .iter()
-                    .map(|u| u.premium)
-                    .collect::<Vec<f64>>(),
-            );
+            let (total, by_unit) = self.tvar_linear(p, a, c, s_a, &head, &tail, &head_x);
+            t.push(total);
+            units.push(by_unit);
         }
         let mut best: Vec<PremiumBound> = (0..m)
             .map(|_| PremiumBound {
@@ -1286,37 +1326,40 @@ impl Portfolio {
             })
             .collect();
         let tol = 1e-12 * premium.abs().max(1.0);
-        for i in 0..knots.len() {
-            if t[i] > premium + tol {
-                continue;
-            }
-            for j in i..knots.len() {
-                if t[j] < premium - tol {
-                    continue;
-                }
-                let w = if t[j] - t[i] > tol {
-                    (premium - t[i]) / (t[j] - t[i])
-                } else {
-                    0.0
-                };
-                if !(0.0..=1.0).contains(&w) {
-                    continue;
-                }
-                for (u, b) in best.iter_mut().enumerate() {
-                    let v = (1.0 - w) * units[i][u] + w * units[j][u];
-                    let g = || Distortion::BiTvar {
-                        p0: knots[i],
-                        p1: knots[j],
-                        w,
+        // A unit's premium under the BiTVaR on knots i and j that prices the
+        // total at `premium` is the chord from (t_i, u_i) to (t_j, u_j) at
+        // `premium`. Its extremes over every pair lie on the upper and lower
+        // convex hulls of those points; a knot whose TVaR is the premium
+        // (to `tol`) is a candidate on its own.
+        let bitvar = |i: usize, j: usize, w: f64| Distortion::BiTvar {
+            p0: knots[i],
+            p1: knots[j],
+            w,
+        };
+        for (u, b) in best.iter_mut().enumerate() {
+            let v: Vec<f64> = units.iter().map(|row| row[u]).collect();
+            let mut candidates: Vec<(f64, Distortion)> = (0..knots.len())
+                .filter(|&k| (t[k] - premium).abs() <= tol)
+                .map(|k| (v[k], bitvar(k, k, 0.0)))
+                .collect();
+            for upper in [true, false] {
+                if let Some((i, j)) = hull_edge(&t, &v, premium, upper) {
+                    let w = if t[j] - t[i] > tol {
+                        (premium - t[i]) / (t[j] - t[i])
+                    } else {
+                        0.0
                     };
-                    if v < b.lower {
-                        b.lower = v;
-                        b.lower_distortion = g();
-                    }
-                    if v > b.upper {
-                        b.upper = v;
-                        b.upper_distortion = g();
-                    }
+                    candidates.push(((1.0 - w) * v[i] + w * v[j], bitvar(i, j, w)));
+                }
+            }
+            for (value, g) in candidates {
+                if value < b.lower {
+                    b.lower = value;
+                    b.lower_distortion = g.clone();
+                }
+                if value > b.upper {
+                    b.upper = value;
+                    b.upper_distortion = g;
                 }
             }
         }
@@ -1334,6 +1377,40 @@ impl Portfolio {
         let capped: Vec<f64> = self.x.iter().map(|x| x.min(a)).collect();
         calibrate(family, &capped, &self.p, premium)
     }
+}
+
+/// The edge of the upper (or lower) convex hull of the points `(t_k, v_k)`
+/// that spans `x`, as the indices of its ends with `t_i < t_j`; `None` when
+/// `x` lies outside the points' range or every point has the same `t`.
+fn hull_edge(t: &[f64], v: &[f64], x: f64, upper: bool) -> Option<(usize, usize)> {
+    let sign = if upper { 1.0 } else { -1.0 };
+    let mut order: Vec<usize> = (0..t.len()).collect();
+    // By t, and among equal t the extreme one last, so it is the one kept.
+    order.sort_by(|&i, &j| {
+        t[i].total_cmp(&t[j])
+            .then((sign * v[i]).total_cmp(&(sign * v[j])))
+    });
+    let mut hull: Vec<usize> = Vec::new();
+    for &k in &order {
+        if let Some(&last) = hull.last()
+            && t[last] == t[k]
+        {
+            hull.pop();
+        }
+        while hull.len() >= 2 {
+            let (o, q) = (hull[hull.len() - 2], hull[hull.len() - 1]);
+            let cross = (t[q] - t[o]) * (v[k] - v[o]) - (v[q] - v[o]) * (t[k] - t[o]);
+            if sign * cross >= 0.0 {
+                hull.pop();
+            } else {
+                break;
+            }
+        }
+        hull.push(k);
+    }
+    hull.windows(2)
+        .find(|e| t[e[0]] <= x && x <= t[e[1]])
+        .map(|e| (e[0], e[1]))
 }
 
 /// `E[X ∧ t]` of a grid at any `t`: exact, since it is linear in `t`
@@ -1682,6 +1759,99 @@ mod tests {
         for u in &b {
             for d in [&u.lower_distortion, &u.upper_distortion] {
                 assert!((d.apply_discrete(&capped, port.probs()) - 47.0).abs() < 1e-9);
+            }
+        }
+    }
+
+    /// The bounds by pricing the book at every knot and trying every pair,
+    /// as `premium_bounds` did before its prefix sums and hulls.
+    fn bounds_by_every_pair(port: &Portfolio, premium: f64, a: f64) -> Vec<(f64, f64)> {
+        let capped: Vec<f64> = port.x.iter().map(|x| x.min(a)).collect();
+        let tvar = |p: f64| {
+            Distortion::tvar(p)
+                .unwrap()
+                .apply_discrete(&capped, &port.p)
+        };
+        let p_star = prospicio_math::roots::bisect(0.0, 1.0, |p| tvar(p) < premium);
+        let mut knots = vec![0.0, p_star];
+        let mut cum = 0.0;
+        for (&x, &pk) in port.x.iter().zip(&port.p) {
+            cum += pk;
+            if x < a && cum < 1.0 {
+                knots.push(cum);
+            }
+        }
+        knots.sort_by(f64::total_cmp);
+        knots.dedup();
+        let t: Vec<f64> = knots.iter().map(|&p| tvar(p)).collect();
+        let units: Vec<Vec<f64>> = knots
+            .iter()
+            .map(|&p| {
+                let price = port
+                    .price(&Distortion::tvar(p).unwrap(), a, Allocation::Linear)
+                    .unwrap();
+                price.allocated.iter().map(|u| u.premium).collect()
+            })
+            .collect();
+        let tol = 1e-12 * premium.abs().max(1.0);
+        let mut out = vec![(f64::INFINITY, f64::NEG_INFINITY); port.units.len()];
+        for i in 0..knots.len() {
+            for j in i..knots.len() {
+                if t[i] > premium + tol || t[j] < premium - tol {
+                    continue;
+                }
+                let w = if t[j] - t[i] > tol {
+                    (premium - t[i]) / (t[j] - t[i])
+                } else {
+                    0.0
+                };
+                if !(0.0..=1.0).contains(&w) {
+                    continue;
+                }
+                for (u, o) in out.iter_mut().enumerate() {
+                    let v = (1.0 - w) * units[i][u] + w * units[j][u];
+                    *o = (o.0.min(v), o.1.max(v));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn premium_bounds_match_every_pair() {
+        // A book with ties and an atom at the assets, by a fixed LCG.
+        let mut state = 12345_u64;
+        let mut next = |k: u64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((state >> 33) % k) as f64
+        };
+        let rows: Vec<Vec<f64>> = (0..80)
+            .map(|_| vec![next(20), next(7) * next(5), next(3) * 10.0])
+            .collect();
+        let units = vec!["A".into(), "B".into(), "C".into()];
+        let book = Portfolio::from_rows(units, &rows, None).unwrap();
+        for port in [insco(), book] {
+            let x = port.totals().to_vec();
+            for a in [x[x.len() / 2], x[x.len() * 3 / 4], x[x.len() - 1]] {
+                let (loss, _) = port.limited_expected(a);
+                for f in [0.1, 0.4, 0.8] {
+                    let premium = loss + f * (a - loss);
+                    let got = port.premium_bounds(premium, a).unwrap();
+                    let want = bounds_by_every_pair(&port, premium, a);
+                    let capped: Vec<f64> = x.iter().map(|v| v.min(a)).collect();
+                    for (g, (lo, hi)) in got.iter().zip(want) {
+                        let near = |u: f64, v: f64| (u - v).abs() < 1e-9 * v.abs().max(1.0);
+                        assert!(
+                            near(g.lower, lo) && near(g.upper, hi),
+                            "{g:?} vs {lo}, {hi}"
+                        );
+                        for d in [&g.lower_distortion, &g.upper_distortion] {
+                            assert!(near(d.apply_discrete(&capped, port.probs()), premium));
+                        }
+                    }
+                }
             }
         }
     }
