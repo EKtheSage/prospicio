@@ -2,7 +2,7 @@
 //! distributions and simulated events).
 
 use prospicio_aggregate::{CompoundMethod, CompoundReport, EventLossTable, EventSet};
-use prospicio_prob::{Counting, Grid};
+use prospicio_prob::{Counting, Grid, Severity, SeverityDist};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 
@@ -424,6 +424,347 @@ pub(crate) fn fft_auto(
         PyCompoundReport { inner: report },
         PyGridSize { inner: size },
     ))
+}
+
+fn extract_units(units: &Bound<'_, PyAny>) -> PyResult<Vec<(AnyCount, SeverityDist)>> {
+    let mut out = Vec::new();
+    for unit in units.try_iter()? {
+        let (n, x): (Bound<'_, PyAny>, Bound<'_, PyAny>) = unit?.extract()?;
+        out.push((
+            AnyCount::extract(&n)?,
+            crate::distributions::extract_severity(&x)?,
+        ));
+    }
+    Ok(out)
+}
+
+fn unit_refs(units: &[(AnyCount, SeverityDist)]) -> Vec<(&dyn Counting, &dyn Severity)> {
+    units
+        .iter()
+        .map(|(n, x)| (n.as_counting() as &dyn Counting, x as &dyn Severity))
+        .collect()
+}
+
+/// A grid for the sum of independent compound units, as ``aggregate``
+/// sizes a ``Portfolio``: ``recommend_grid``'s steps on the total, the
+/// single big jump taken on whichever unit needs the most room.
+///
+/// Parameters
+/// ----------
+/// units : list of (frequency, severity) pairs
+/// log2 : int, default 16
+/// p : float, default 1 - 1e-5
+/// p_star : float, default 1 - 1e-12
+///
+/// Returns
+/// -------
+/// GridSize
+///
+/// Raises
+/// ------
+/// ValueError
+///     As ``recommend_grid``, or with no units.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import recommend_portfolio_grid
+/// >>> from prospicio.distributions import Gamma, Poisson
+/// >>> g = recommend_portfolio_grid([(Poisson(10.0), Gamma(2.0, 50.0)),
+/// ...                               (Poisson(2.0), Gamma(0.5, 1000.0))])
+/// >>> g.points <= 2**16
+/// True
+#[pyfunction]
+#[pyo3(signature = (units, log2 = 16, p = 1.0 - 1e-5, p_star = 1.0 - 1e-12))]
+pub(crate) fn recommend_portfolio_grid(
+    units: &Bound<'_, PyAny>,
+    log2: u32,
+    p: f64,
+    p_star: f64,
+) -> PyResult<PyGridSize> {
+    let units = extract_units(units)?;
+    let inner =
+        prospicio_aggregate::recommend_portfolio_grid(&unit_refs(&units), &sizing(log2, p, p_star))
+            .map_err(to_py)?;
+    Ok(PyGridSize { inner })
+}
+
+/// The cells an audit built and the one it chose, from ``audit_grid`` or
+/// ``audit_portfolio_grid``.
+#[pyclass(name = "GridAudit", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyGridAudit {
+    inner: prospicio_aggregate::GridAudit,
+}
+
+fn cell_dict<'py>(
+    py: Python<'py>,
+    c: &prospicio_aggregate::GridCell,
+) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+    let d = pyo3::types::PyDict::new(py);
+    d.set_item("d_step", c.d_step)?;
+    d.set_item("d_log2", c.d_log2)?;
+    d.set_item("step", c.step)?;
+    d.set_item("log2", c.log2)?;
+    d.set_item("score", c.score)?;
+    let t = &c.terms;
+    for (k, v) in [
+        ("severity_mean", t.severity_mean),
+        ("severity_cv", t.severity_cv),
+        ("severity_skew", t.severity_skew),
+        ("aggregate_mean", t.aggregate_mean),
+        ("aggregate_cv", t.aggregate_cv),
+        ("aggregate_skew", t.aggregate_skew),
+    ] {
+        d.set_item(k, v)?;
+    }
+    d.set_item("tail_mass", c.tail_mass)?;
+    d.set_item("aliasing_error", c.aliasing_error)?;
+    d.set_item("defective", c.defective)?;
+    d.set_item("selected", c.selected)?;
+    d.set_item("note", &c.note)?;
+    Ok(d)
+}
+
+#[pymethods]
+impl PyGridAudit {
+    /// Every cell built, the center first, as dicts: ``d_step`` and
+    /// ``d_log2`` (the moves from the center, in doublings), ``step``,
+    /// ``log2``, ``score``, the six terms (``severity_mean`` to
+    /// ``aggregate_skew``, ``None`` when skipped), ``tail_mass`` (the mass
+    /// beyond the grid), ``aliasing_error``, ``defective`` (mass lost, so
+    /// never chosen while a sound cell exists), ``selected`` and ``note``.
+    #[getter]
+    fn cells<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+        self.inner.cells.iter().map(|c| cell_dict(py, c)).collect()
+    }
+
+    /// The index of the chosen cell in ``cells``.
+    #[getter]
+    fn selected(&self) -> usize {
+        self.inner.selected
+    }
+
+    /// The chosen cell.
+    #[getter]
+    fn best<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        cell_dict(py, self.inner.best())
+    }
+
+    /// The chosen step.
+    #[getter]
+    fn step(&self) -> f64 {
+        self.inner.best().step
+    }
+
+    /// The chosen ``log2``.
+    #[getter]
+    fn log2(&self) -> u32 {
+        self.inner.best().log2
+    }
+
+    /// False when the center met the target and nothing else was built.
+    #[getter]
+    fn probed(&self) -> bool {
+        self.inner.probed
+    }
+
+    /// Whether the chosen cell has twice the center's points.
+    #[getter]
+    fn grew(&self) -> bool {
+        self.inner.grew
+    }
+
+    /// Why that cell was chosen.
+    #[getter]
+    fn reason(&self) -> &str {
+        &self.inner.reason
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.cells.len()
+    }
+
+    fn __repr__(&self) -> String {
+        let b = self.inner.best();
+        format!(
+            "GridAudit(step={:?}, log2={}, score={:e}, cells={}, grew={})",
+            b.step,
+            b.log2,
+            b.score,
+            self.inner.cells.len(),
+            if self.inner.grew { "True" } else { "False" }
+        )
+    }
+}
+
+fn audit_settings(
+    eps: f64,
+    power: f64,
+    good_enough: f64,
+    max_doublings: u32,
+    log2_cap: u32,
+    log2_floor: u32,
+) -> prospicio_aggregate::AuditSettings {
+    prospicio_aggregate::AuditSettings {
+        eps,
+        power,
+        good_enough,
+        max_doublings,
+        log2_cap,
+        log2_floor,
+    }
+}
+
+/// Audits an FFT grid as ``aggregate`` 1.2.0's ``sharpen`` does: builds
+/// the compound distribution at the center and, unless it meets the
+/// target, at doubled and halved steps on the same and half the points,
+/// scores each cell by six moment errors against the exact moments, and
+/// chooses the best sound cell, preferring fewer points. Twice the points
+/// is tried only when nothing smaller meets the target.
+///
+/// A score of 1 is ``aggregate``'s validation boundary: a relative error
+/// of ``eps`` in a mean, ``10 eps`` in a cv, ``100 eps`` in a skewness.
+///
+/// Parameters
+/// ----------
+/// frequency : a claim count
+/// severity : a severity
+///     Any distribution but ``Sampled``.
+/// step : float, optional
+///     The center's step; by default ``recommend_grid``'s at ``log2``.
+/// log2 : int, optional
+///     The center's ``2**log2`` points; by default 16, or
+///     ``recommend_grid``'s when ``step`` is not given either.
+/// eps : float, default 1e-4
+/// power : float, default 2
+///     The power mean of the terms.
+/// good_enough : float, default 0.5
+///     The target score.
+/// max_doublings : int, default 4
+///     Steps doubled or halved at most this many times each way.
+/// log2_cap : int, default 20
+///     ``log2`` never grows past it.
+/// log2_floor : int, default 8
+///     The half-size row is tried only above it.
+///
+/// Returns
+/// -------
+/// GridAudit
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``step`` is not positive and finite or ``log2`` is not in
+///     ``1..=30``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import audit_grid
+/// >>> from prospicio.distributions import Gamma, Poisson
+/// >>> a = audit_grid(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5), step=0.5, log2=10)
+/// >>> a.step, a.log2, a.grew
+/// (1.0, 11, True)
+#[pyfunction]
+#[pyo3(signature = (frequency, severity, step = None, log2 = None, *, eps = 1e-4, power = 2.0,
+                    good_enough = 0.5, max_doublings = 4, log2_cap = 20, log2_floor = 8))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn audit_grid(
+    py: Python<'_>,
+    frequency: &Bound<'_, PyAny>,
+    severity: &Bound<'_, PyAny>,
+    step: Option<f64>,
+    log2: Option<u32>,
+    eps: f64,
+    power: f64,
+    good_enough: f64,
+    max_doublings: u32,
+    log2_cap: u32,
+    log2_floor: u32,
+) -> PyResult<PyGridAudit> {
+    let n = AnyCount::extract(frequency)?;
+    let sev = crate::distributions::extract_severity(severity)?;
+    let s = audit_settings(eps, power, good_enough, max_doublings, log2_cap, log2_floor);
+    let inner = py
+        .detach(|| {
+            let (step, log2) = match step {
+                Some(h) => (h, log2.unwrap_or(16)),
+                None => {
+                    let g = prospicio_aggregate::recommend_grid(
+                        n.as_counting(),
+                        &sev,
+                        &sizing(log2.unwrap_or(16), 1.0 - 1e-5, 1.0 - 1e-12),
+                    )?;
+                    (g.step, g.points.trailing_zeros())
+                }
+            };
+            prospicio_aggregate::audit_grid(n.as_counting(), &sev, step, log2, &s)
+        })
+        .map_err(to_py)?;
+    Ok(PyGridAudit { inner })
+}
+
+/// ``audit_grid`` for the sum of independent units on one grid. The
+/// severity terms score the claim-weighted mixture of the units'
+/// severities, the aggregate terms the total.
+///
+/// Parameters
+/// ----------
+/// units : list of (frequency, severity) pairs
+/// step, log2, eps, power, good_enough, max_doublings, log2_cap, log2_floor
+///     As ``audit_grid``; the default center is
+///     ``recommend_portfolio_grid``'s.
+///
+/// Returns
+/// -------
+/// GridAudit
+///
+/// Raises
+/// ------
+/// ValueError
+///     As ``audit_grid``, or with no units.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import audit_portfolio_grid
+/// >>> from prospicio.distributions import Gamma, Poisson
+/// >>> a = audit_portfolio_grid([(Poisson(10.0), Gamma(2.0, 50.0)),
+/// ...                           (Poisson(2.0), Gamma(0.5, 1000.0))], log2=12)
+/// >>> a.best["score"] < 0.5
+/// True
+#[pyfunction]
+#[pyo3(signature = (units, step = None, log2 = None, *, eps = 1e-4, power = 2.0,
+                    good_enough = 0.5, max_doublings = 4, log2_cap = 20, log2_floor = 8))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn audit_portfolio_grid(
+    py: Python<'_>,
+    units: &Bound<'_, PyAny>,
+    step: Option<f64>,
+    log2: Option<u32>,
+    eps: f64,
+    power: f64,
+    good_enough: f64,
+    max_doublings: u32,
+    log2_cap: u32,
+    log2_floor: u32,
+) -> PyResult<PyGridAudit> {
+    let units = extract_units(units)?;
+    let s = audit_settings(eps, power, good_enough, max_doublings, log2_cap, log2_floor);
+    let inner = py
+        .detach(|| {
+            let refs = unit_refs(&units);
+            let (step, log2) = match step {
+                Some(h) => (h, log2.unwrap_or(16)),
+                None => {
+                    let g = prospicio_aggregate::recommend_portfolio_grid(
+                        &refs,
+                        &sizing(log2.unwrap_or(16), 1.0 - 1e-5, 1.0 - 1e-12),
+                    )?;
+                    (g.step, g.points.trailing_zeros())
+                }
+            };
+            prospicio_aggregate::audit_portfolio_grid(&refs, step, log2, &s)
+        })
+        .map_err(to_py)?;
+    Ok(PyGridAudit { inner })
 }
 
 /// Simulated years of individual losses, for applying per-loss terms such

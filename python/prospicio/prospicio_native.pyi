@@ -11126,6 +11126,60 @@ class Grid:
         """
 
 @final
+class GridAudit:
+    """
+    The cells an audit built and the one it chose, from ``audit_grid`` or
+    ``audit_portfolio_grid``.
+    """
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def best(self, /) -> dict:
+        """
+        The chosen cell.
+        """
+    @property
+    def cells(self, /) -> list[dict]:
+        """
+        Every cell built, the center first, as dicts: ``d_step`` and
+        ``d_log2`` (the moves from the center, in doublings), ``step``,
+        ``log2``, ``score``, the six terms (``severity_mean`` to
+        ``aggregate_skew``, ``None`` when skipped), ``tail_mass`` (the mass
+        beyond the grid), ``aliasing_error``, ``defective`` (mass lost, so
+        never chosen while a sound cell exists), ``selected`` and ``note``.
+        """
+    @property
+    def grew(self, /) -> bool:
+        """
+        Whether the chosen cell has twice the center's points.
+        """
+    @property
+    def log2(self, /) -> int:
+        """
+        The chosen ``log2``.
+        """
+    @property
+    def probed(self, /) -> bool:
+        """
+        False when the center met the target and nothing else was built.
+        """
+    @property
+    def reason(self, /) -> str:
+        """
+        Why that cell was chosen.
+        """
+    @property
+    def selected(self, /) -> int:
+        """
+        The index of the chosen cell in ``cells``.
+        """
+    @property
+    def step(self, /) -> float:
+        """
+        The chosen step.
+        """
+
+@final
 class GridSize:
     """
     A recommended FFT grid, from ``recommend_grid`` or ``fft_auto``.
@@ -24296,6 +24350,91 @@ def alpha_between_layers(a: tuple[float, float, float], b: tuple[float, float, f
     float
     """
 
+def audit_grid(frequency: Any, severity: Any, step: float |None = None, log2: int |None = None, *, eps: float = 1e-4, power: float = 2.0, good_enough: float = 0.5, max_doublings: int = 4, log2_cap: int = 20, log2_floor: int = 8) -> GridAudit:
+    """
+    Audits an FFT grid as ``aggregate`` 1.2.0's ``sharpen`` does: builds
+    the compound distribution at the center and, unless it meets the
+    target, at doubled and halved steps on the same and half the points,
+    scores each cell by six moment errors against the exact moments, and
+    chooses the best sound cell, preferring fewer points. Twice the points
+    is tried only when nothing smaller meets the target.
+    
+    A score of 1 is ``aggregate``'s validation boundary: a relative error
+    of ``eps`` in a mean, ``10 eps`` in a cv, ``100 eps`` in a skewness.
+    
+    Parameters
+    ----------
+    frequency : a claim count
+    severity : a severity
+        Any distribution but ``Sampled``.
+    step : float, optional
+        The center's step; by default ``recommend_grid``'s at ``log2``.
+    log2 : int, optional
+        The center's ``2**log2`` points; by default 16, or
+        ``recommend_grid``'s when ``step`` is not given either.
+    eps : float, default 1e-4
+    power : float, default 2
+        The power mean of the terms.
+    good_enough : float, default 0.5
+        The target score.
+    max_doublings : int, default 4
+        Steps doubled or halved at most this many times each way.
+    log2_cap : int, default 20
+        ``log2`` never grows past it.
+    log2_floor : int, default 8
+        The half-size row is tried only above it.
+    
+    Returns
+    -------
+    GridAudit
+    
+    Raises
+    ------
+    ValueError
+        If ``step`` is not positive and finite or ``log2`` is not in
+        ``1..=30``.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import audit_grid
+    >>> from prospicio.distributions import Gamma, Poisson
+    >>> a = audit_grid(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5), step=0.5, log2=10)
+    >>> a.step, a.log2, a.grew
+    (1.0, 11, True)
+    """
+
+def audit_portfolio_grid(units: Any, step: float |None = None, log2: int |None = None, *, eps: float = 1e-4, power: float = 2.0, good_enough: float = 0.5, max_doublings: int = 4, log2_cap: int = 20, log2_floor: int = 8) -> GridAudit:
+    """
+    ``audit_grid`` for the sum of independent units on one grid. The
+    severity terms score the claim-weighted mixture of the units'
+    severities, the aggregate terms the total.
+    
+    Parameters
+    ----------
+    units : list of (frequency, severity) pairs
+    step, log2, eps, power, good_enough, max_doublings, log2_cap, log2_floor
+        As ``audit_grid``; the default center is
+        ``recommend_portfolio_grid``'s.
+    
+    Returns
+    -------
+    GridAudit
+    
+    Raises
+    ------
+    ValueError
+        As ``audit_grid``, or with no units.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import audit_portfolio_grid
+    >>> from prospicio.distributions import Gamma, Poisson
+    >>> a = audit_portfolio_grid([(Poisson(10.0), Gamma(2.0, 50.0)),
+    ...                           (Poisson(2.0), Gamma(0.5, 1000.0))], log2=12)
+    >>> a.best["score"] < 0.5
+    True
+    """
+
 def buhlmann_straub(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]] |None = None, estimator: str = "unbiased", tol: float = 1.4901161193847656e-8, max_iter: int = 100) -> BuhlmannStraubFit:
     """
     The Bühlmann–Straub credibility model, as R's ``actuar::cm(~group)``:
@@ -26741,6 +26880,38 @@ def recommend_grid(frequency: Any, severity: Any, log2: int = 16, p: float = ...
     >>> g = recommend_grid(Poisson(10.0), Gamma.from_mean_cv(50.0, 0.7))
     >>> g.step, g.points, g.method
     (0.0625, 65536, 'moments')
+    """
+
+def recommend_portfolio_grid(units: Any, log2: int = 16, p: float = ..., p_star: float = ...) -> GridSize:
+    """
+    A grid for the sum of independent compound units, as ``aggregate``
+    sizes a ``Portfolio``: ``recommend_grid``'s steps on the total, the
+    single big jump taken on whichever unit needs the most room.
+    
+    Parameters
+    ----------
+    units : list of (frequency, severity) pairs
+    log2 : int, default 16
+    p : float, default 1 - 1e-5
+    p_star : float, default 1 - 1e-12
+    
+    Returns
+    -------
+    GridSize
+    
+    Raises
+    ------
+    ValueError
+        As ``recommend_grid``, or with no units.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import recommend_portfolio_grid
+    >>> from prospicio.distributions import Gamma, Poisson
+    >>> g = recommend_portfolio_grid([(Poisson(10.0), Gamma(2.0, 50.0)),
+    ...                               (Poisson(2.0), Gamma(0.5, 1000.0))])
+    >>> g.points <= 2**16
+    True
     """
 
 def roc(y: Sequence[float], score: Sequence[float], weights: Sequence[float] |None = None) -> dict:

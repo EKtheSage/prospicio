@@ -6,7 +6,7 @@ use extendr_api::{Error, Result};
 use prospicio_aggregate::{
     CompoundMethod, CompoundReport, EventLossTable, EventSet as EventSetInner,
 };
-use prospicio_prob::Counting;
+use prospicio_prob::{Counting, Severity, SeverityDist};
 
 use crate::distributions::{
     Grid, NegativeBinomial, Poisson, PredictiveDistribution, severity_from_robj,
@@ -163,6 +163,170 @@ fn recommend_grid_rust(
     let g = prospicio_aggregate::recommend_grid(n.as_counting(), &sev, &sizing(log2, p, p_star)?)
         .map_err(to_r)?;
     Ok(grid_size_list(&g))
+}
+
+fn units_from_lists(
+    frequencies: &List,
+    severities: &List,
+) -> Result<Vec<(AnyCount, SeverityDist)>> {
+    if frequencies.len() != severities.len() {
+        return Err(Error::Other(format!(
+            "{} frequencies but {} severities",
+            frequencies.len(),
+            severities.len()
+        )));
+    }
+    frequencies
+        .values()
+        .zip(severities.values())
+        .map(|(n, x)| Ok((AnyCount::from_robj(&n)?, severity_from_robj(&x)?)))
+        .collect()
+}
+
+fn unit_refs(units: &[(AnyCount, SeverityDist)]) -> Vec<(&dyn Counting, &dyn Severity)> {
+    units
+        .iter()
+        .map(|(n, x)| (n.as_counting() as &dyn Counting, x as &dyn Severity))
+        .collect()
+}
+
+/// The recommended FFT grid for a sum of independent units as a list.
+#[extendr]
+fn recommend_portfolio_grid_rust(
+    frequencies: List,
+    severities: List,
+    log2: f64,
+    p: f64,
+    p_star: f64,
+) -> Result<List> {
+    let units = units_from_lists(&frequencies, &severities)?;
+    let g = prospicio_aggregate::recommend_portfolio_grid(
+        &unit_refs(&units),
+        &sizing(log2, p, p_star)?,
+    )
+    .map_err(to_r)?;
+    Ok(grid_size_list(&g))
+}
+
+/// `settings` is `eps, power, good_enough, max_doublings, log2_cap, log2_floor`.
+fn audit_settings(settings: &[f64]) -> Result<prospicio_aggregate::AuditSettings> {
+    let [eps, power, good_enough, doublings, cap, floor] = settings else {
+        return Err(Error::Other("the audit takes six settings".into()));
+    };
+    Ok(prospicio_aggregate::AuditSettings {
+        eps: *eps,
+        power: *power,
+        good_enough: *good_enough,
+        max_doublings: whole(*doublings, "max_doublings")? as u32,
+        log2_cap: whole(*cap, "log2_cap")? as u32,
+        log2_floor: whole(*floor, "log2_floor")? as u32,
+    })
+}
+
+/// The center: `step` and `log2` when given (NaN when not), else the
+/// recommended grid at `log2` (16 when not given).
+fn audit_center(
+    step: f64,
+    log2: f64,
+    recommend: impl FnOnce(
+        &prospicio_aggregate::Sizing,
+    ) -> prospicio_core::Result<prospicio_aggregate::GridSize>,
+) -> Result<(f64, u32)> {
+    let log2 = if log2.is_nan() {
+        16
+    } else {
+        whole(log2, "log2")? as u32
+    };
+    if !step.is_nan() {
+        return Ok((step, log2));
+    }
+    let s = prospicio_aggregate::Sizing {
+        log2,
+        ..prospicio_aggregate::Sizing::default()
+    };
+    let g = recommend(&s).map_err(to_r)?;
+    Ok((g.step, g.points.trailing_zeros()))
+}
+
+/// The audit as a list: the cells as columns, the chosen cell's 1-based
+/// index, and the verdict.
+fn grid_audit_list(a: &prospicio_aggregate::GridAudit) -> List {
+    let col = |f: &dyn Fn(&prospicio_aggregate::GridCell) -> f64| -> Vec<f64> {
+        a.cells.iter().map(f).collect()
+    };
+    let term = |f: &dyn Fn(&prospicio_aggregate::ScoreTerms) -> Option<f64>| -> Vec<f64> {
+        a.cells
+            .iter()
+            .map(|c| f(&c.terms).unwrap_or(f64::NAN))
+            .collect()
+    };
+    let cells = list!(
+        d_step = col(&|c| f64::from(c.d_step)),
+        d_log2 = col(&|c| f64::from(c.d_log2)),
+        step = col(&|c| c.step),
+        log2 = col(&|c| f64::from(c.log2)),
+        score = col(&|c| c.score),
+        severity_mean = term(&|t| t.severity_mean),
+        severity_cv = term(&|t| t.severity_cv),
+        severity_skew = term(&|t| t.severity_skew),
+        aggregate_mean = term(&|t| t.aggregate_mean),
+        aggregate_cv = term(&|t| t.aggregate_cv),
+        aggregate_skew = term(&|t| t.aggregate_skew),
+        tail_mass = col(&|c| c.tail_mass),
+        aliasing_error = col(&|c| c.aliasing_error),
+        defective = a.cells.iter().map(|c| c.defective).collect::<Vec<_>>(),
+        selected = a.cells.iter().map(|c| c.selected).collect::<Vec<_>>(),
+        note = a.cells.iter().map(|c| c.note.as_str()).collect::<Vec<_>>()
+    );
+    let b = a.best();
+    list!(
+        cells = cells,
+        selected = (a.selected + 1) as f64,
+        step = b.step,
+        log2 = f64::from(b.log2),
+        score = b.score,
+        probed = a.probed,
+        grew = a.grew,
+        reason = a.reason.as_str()
+    )
+}
+
+/// `aggregate`'s `sharpen` audit of one compound distribution's grid.
+#[extendr]
+fn audit_grid_rust(
+    frequency: Robj,
+    severity: Robj,
+    step: f64,
+    log2: f64,
+    settings: &[f64],
+) -> Result<List> {
+    let n = AnyCount::from_robj(&frequency)?;
+    let sev = severity_from_robj(&severity)?;
+    let s = audit_settings(settings)?;
+    let (step, log2) = audit_center(step, log2, |z| {
+        prospicio_aggregate::recommend_grid(n.as_counting(), &sev, z)
+    })?;
+    let a = prospicio_aggregate::audit_grid(n.as_counting(), &sev, step, log2, &s).map_err(to_r)?;
+    Ok(grid_audit_list(&a))
+}
+
+/// The same audit for a sum of independent units.
+#[extendr]
+fn audit_portfolio_grid_rust(
+    frequencies: List,
+    severities: List,
+    step: f64,
+    log2: f64,
+    settings: &[f64],
+) -> Result<List> {
+    let units = units_from_lists(&frequencies, &severities)?;
+    let refs = unit_refs(&units);
+    let s = audit_settings(settings)?;
+    let (step, log2) = audit_center(step, log2, |z| {
+        prospicio_aggregate::recommend_portfolio_grid(&refs, z)
+    })?;
+    let a = prospicio_aggregate::audit_portfolio_grid(&refs, step, log2, &s).map_err(to_r)?;
+    Ok(grid_audit_list(&a))
 }
 
 /// The compound distribution by FFT on the recommended grid; its report
@@ -811,6 +975,9 @@ extendr_module! {
     fn compound;
     fn compound_auto_rust;
     fn recommend_grid_rust;
+    fn recommend_portfolio_grid_rust;
+    fn audit_grid_rust;
+    fn audit_portfolio_grid_rust;
     fn round_bucket_rust;
     fn occurrence_exceedance_rust;
     fn occurrence_pml_rust;

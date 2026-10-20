@@ -402,6 +402,46 @@ def test_grid_sizing():
         recommend_grid(Poisson(1.0), Pareto(1.0, 0.8))
 
 
+def test_grid_audit():
+    from prospicio.aggregate import (
+        audit_grid,
+        audit_portfolio_grid,
+        recommend_grid,
+        recommend_portfolio_grid,
+    )
+    from prospicio.distributions import Gamma, Lognormal, PolicyLimits, Poisson
+
+    # aggregate 1.2.0's sharpen on "100 claims 1000 xs 0 sev lognorm 100 cv 1.5
+    # poisson" from bs 1, log2 13: it moves to bs 4.
+    capped = PolicyLimits(Lognormal.from_mean_cv(100.0, 1.5), [1000.0], [1.0])
+    a = audit_grid(Poisson(100.0), capped, step=1.0, log2=13)
+    assert (a.step, a.log2, a.grew, a.probed) == (4.0, 13, False, True)
+    assert a.best["score"] == pytest.approx(0.035326, rel=1e-4)
+    assert a.best["aggregate_cv"] == pytest.approx(0.020144, rel=1e-4)
+    assert a.cells[0]["note"] == "center" and a.cells[0]["defective"]
+    assert len(a) == len(a.cells) and a.cells[a.selected]["selected"]
+    # From aggregate's 0.5, 2^10 on the gamma book log2 grows to 11.
+    g = audit_grid(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5), step=0.5, log2=10)
+    assert (g.step, g.log2, g.grew) == (1.0, 11, True)
+    assert g.best["score"] == pytest.approx(0.722254, rel=1e-5)
+    # Without a center, recommend_grid's grid is audited.
+    auto = audit_grid(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5), log2=12)
+    first = recommend_grid(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5), log2=12)
+    assert (auto.cells[0]["step"], 2 ** auto.cells[0]["log2"]) == (first.step, first.points)
+    # A one-unit portfolio audits as the unit.
+    units = [(Poisson(50.0), Gamma.from_mean_cv(10.0, 0.5))]
+    book = audit_portfolio_grid(units, step=0.5, log2=10)
+    assert [c["score"] for c in book.cells] == pytest.approx([c["score"] for c in g.cells])
+    two = [(Poisson(10.0), Gamma(2.0, 50.0)), (Poisson(2.0), Gamma(0.5, 1000.0))]
+    size = recommend_portfolio_grid(two, log2=12)
+    assert size.points <= 2**12
+    assert audit_portfolio_grid(two, log2=12).best["score"] < 0.5
+    with pytest.raises(ValueError):
+        audit_grid(Poisson(5.0), capped, step=-1.0, log2=10)
+    with pytest.raises(ValueError):
+        recommend_portfolio_grid([])
+
+
 def test_occurrence_pml():
     from prospicio.aggregate import occurrence_exceedance, occurrence_pml, simulate_events
     from prospicio.distributions import Lognormal, NegativeBinomial, Poisson

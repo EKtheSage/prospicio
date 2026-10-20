@@ -6,7 +6,7 @@
 
 ## Next
 
-- [guides-issues-for-aggregate] the rest of the issues filed by the Guides lane on 2026-10-17 and 18: #317 and #316
+- [guides-issues-for-aggregate] the rest of the issues filed by the Guides lane on 2026-10-17 and 18: #316
 
 ## Done
 
@@ -23,3 +23,4 @@
 - pricing bounds on a large book (`Portfolio::premium_bounds` from prefix sums and convex hulls, matching the every-pair search: 0.05 s on the Cat/Non-Cat grid's 71,795 totals, which did not finish in two minutes; #368 item 4)
 - the natural allocation set and Bodoff's layers priced by a distortion (`Portfolio::allocation_set`, each unit's range over the orders of tied capped totals, *Pricing Insurance Risk*'s Example 259 and Exercise 260 exact; `Portfolio::bodoff_price`, PLC under any distortion, Table 15.24 exact under the CCoC; Python `allocation_set`, `bodoff_price`, R `allocation_set()`, `bodoff_price()`; #368 items 2 and 3)
 - a severity from a size-of-loss table and the censored LAS (`prospicio_prob::SizeOfLoss`, each band's claims at its average so the LEV is exact at the band edges, with `ilf` and `loss_elimination_ratio`; `layer::censored_las`, layer by layer over several policy limits; Werner and Modlin's ILF 1.59, LAS 77,046, 44,575 and 15,213 by layer and LER 0.135 exact; Python `SizeOfLoss`, `censored_las`, R `size_of_loss()`, `censored_las()`; #338)
+- the grid audit (`audit_grid` and `audit_portfolio_grid`, `aggregate` 1.2.0's `sharpen`: six moment errors scored by a power mean, the step doubled and halved on the center's size and half of it, the best sound cell taken with fewer points preferred, twice the points only when nothing smaller meets the target; `recommend_portfolio_grid` for several units; scores and selection to `aggregate`'s digits; Python and R; #317)

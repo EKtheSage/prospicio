@@ -80,6 +80,95 @@ compound_auto <- function(frequency, severity, log2 = 16, p = 1 - 1e-5, p_star =
 #' @export
 round_bucket <- function(bs) rust_result(round_bucket_rust(as.double(bs)))
 
+#' Grids for several units, and the grid audit
+#'
+#' `recommend_portfolio_grid()` sizes one grid for the sum of independent
+#' compound units, as `aggregate` sizes a `Portfolio`: [recommend_grid()]'s
+#' steps on the total, the single big jump taken on whichever unit needs the
+#' most room.
+#'
+#' `audit_grid()` audits a grid as `aggregate` 1.2.0's `sharpen` does. It
+#' builds the compound distribution at the center and, unless that meets the
+#' target, at doubled and halved steps on the same and half the points, until
+#' the score stops improving. Each cell is scored by six moment errors (the
+#' severity's and the aggregate's mean, cv and skewness against their exact
+#' values, divided by `eps`, `10 eps` and `100 eps`) combined by a power mean,
+#' so a score of 1 is `aggregate`'s validation boundary. The best sound cell
+#' (one that loses no mass off the grid) is chosen, preferring fewer points;
+#' twice the points is tried only when nothing smaller meets the target.
+#' `audit_portfolio_grid()` does the same for a sum of units: the severity
+#' terms score the claim-weighted mixture of the units' severities, the
+#' aggregate terms the total.
+#'
+#' @param units A list of units, each `list(frequency, severity)`.
+#' @param frequency A claim count.
+#' @param severity Any severity but a [sampled] distribution.
+#' @param step The center's step; by default [recommend_grid()]'s (or
+#'   `recommend_portfolio_grid()`'s) at `log2`.
+#' @param log2 The center's `2^log2` points (16 by default); with no `step`,
+#'   the most points the recommended grid may use.
+#' @param p,p_star As [recommend_grid()].
+#' @param eps The validation tolerance.
+#' @param power The power mean of the terms.
+#' @param good_enough The target score.
+#' @param max_doublings Steps doubled or halved at most this many times each way.
+#' @param log2_cap `log2` never grows past it.
+#' @param log2_floor The half-size row is tried only above it.
+#' @returns `recommend_portfolio_grid()`: a list as [recommend_grid()]'s.
+#'   `audit_grid()` and `audit_portfolio_grid()`: a list with `cells` (a
+#'   data frame, the center first: `d_step` and `d_log2`, the moves from the
+#'   center in doublings, `step`, `log2`, `score`, the six terms
+#'   `severity_mean` to `aggregate_skew` (`NaN` when skipped), `tail_mass`,
+#'   `aliasing_error`, `defective`, `selected`, `note`), `selected` (the
+#'   chosen row), `step`, `log2` and `score` of the chosen cell, `probed`
+#'   (`FALSE` when the center met the target), `grew` and `reason`.
+#' @export
+#' @examples
+#' a <- audit_grid(poisson_count(50), gamma_distribution(4, 2.5), step = 0.5, log2 = 10)
+#' c(a$step, a$log2)
+#' a$reason
+#' units <- list(list(poisson_count(10), gamma_distribution(2, 50)),
+#'               list(poisson_count(2), gamma_distribution(0.5, 1000)))
+#' recommend_portfolio_grid(units, log2 = 12)$points
+#' audit_portfolio_grid(units, log2 = 12)$score
+audit_grid <- function(frequency, severity, step = NULL, log2 = NULL, eps = 1e-4, power = 2,
+                       good_enough = 0.5, max_doublings = 4, log2_cap = 20, log2_floor = 8) {
+  settings <- as.double(c(eps, power, good_enough, max_doublings, log2_cap, log2_floor))
+  audit_result(rust_result(audit_grid_rust(frequency@ptr, severity@ptr, null_nan(step),
+                                           null_nan(log2), settings)))
+}
+
+#' @rdname audit_grid
+#' @export
+audit_portfolio_grid <- function(units, step = NULL, log2 = NULL, eps = 1e-4, power = 2,
+                                 good_enough = 0.5, max_doublings = 4, log2_cap = 20,
+                                 log2_floor = 8) {
+  settings <- as.double(c(eps, power, good_enough, max_doublings, log2_cap, log2_floor))
+  audit_result(rust_result(audit_portfolio_grid_rust(unit_ptrs(units, 1L), unit_ptrs(units, 2L),
+                                                     null_nan(step), null_nan(log2), settings)))
+}
+
+#' @rdname audit_grid
+#' @export
+recommend_portfolio_grid <- function(units, log2 = 16, p = 1 - 1e-5, p_star = 1 - 1e-12) {
+  rust_result(recommend_portfolio_grid_rust(unit_ptrs(units, 1L), unit_ptrs(units, 2L),
+                                            as.double(log2), as.double(p), as.double(p_star)))
+}
+
+null_nan <- function(x) if (is.null(x)) NaN else as.double(x)
+
+unit_ptrs <- function(units, k) {
+  lapply(units, function(u) {
+    if (length(u) != 2) stop("each unit is list(frequency, severity)", call. = FALSE)
+    u[[k]]@ptr
+  })
+}
+
+audit_result <- function(r) {
+  r$cells <- as.data.frame(r$cells, stringsAsFactors = FALSE)
+  r
+}
+
 #' Simulated years of losses
 #'
 #' Simulates `n_sims` years: a claim count from `frequency`, then that many

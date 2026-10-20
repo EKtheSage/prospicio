@@ -68,8 +68,12 @@ reference:
       - aggregate.fft
       - aggregate.fft_auto
       - aggregate.recommend_grid
+      - aggregate.recommend_portfolio_grid
       - aggregate.round_bucket
       - aggregate.GridSize
+      - aggregate.audit_grid
+      - aggregate.audit_portfolio_grid
+      - aggregate.GridAudit
       - aggregate.CompoundReport
       - aggregate.simulate_events
       - aggregate.EventSet

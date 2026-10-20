@@ -56,6 +56,12 @@ compound_auto_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap_
 
 recommend_grid_rust <- function(frequency, severity, log2, p, p_star) .Call(wrap__recommend_grid_rust, frequency, severity, log2, p, p_star)
 
+recommend_portfolio_grid_rust <- function(frequencies, severities, log2, p, p_star) .Call(wrap__recommend_portfolio_grid_rust, frequencies, severities, log2, p, p_star)
+
+audit_grid_rust <- function(frequency, severity, step, log2, settings) .Call(wrap__audit_grid_rust, frequency, severity, step, log2, settings)
+
+audit_portfolio_grid_rust <- function(frequencies, severities, step, log2, settings) .Call(wrap__audit_portfolio_grid_rust, frequencies, severities, step, log2, settings)
+
 round_bucket_rust <- function(bs) .Call(wrap__round_bucket_rust, bs)
 
 compound_moments_rust <- function(frequency, severity) .Call(wrap__compound_moments_rust, frequency, severity)

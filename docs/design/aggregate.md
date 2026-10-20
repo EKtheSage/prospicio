@@ -558,6 +558,50 @@ bucket. Signed and offset windows (a grid not starting at 0) are not
 carried; the P&L ledger needs none (`pnl.md`: its rows are signed
 functions of a non-negative source, on an irregular support).
 
+`recommend_portfolio_grid` sizes one grid for a sum of independent units,
+as `aggregate` sizes a `Portfolio`: the moment extent at the total's mean
+and variance, and the single big jump on whichever unit needs the most
+room (one large claim on that unit, the rest of the book at its mean).
+
+### Grid audit
+
+`recommend_grid` chooses a grid before any FFT runs; `audit_grid`
+(#317) checks it afterwards, as `aggregate` 1.2.0's `sharpen` does.
+Each cell discretizes the severity by rounding, runs `fft`, and scores
+six moment errors, the severity's and the aggregate's mean, cv and
+skewness against their exact values, each divided by its tolerance
+(`eps`, `10 eps`, `100 eps`, `eps = 1e-4`) and combined by a power mean
+(`p = 2`). A score of 1 is `aggregate`'s validation boundary. The
+exact moments need the severity's third moment: its closed form, or the
+quadrature of `E[X³]`, finite for any limited severity.
+
+1. A center at or below `good_enough` (0.5) that holds all its mass is
+   kept and nothing else is built.
+2. Otherwise the step is doubled until the score stops improving, then
+   halved likewise, at most four times each way, on the center's
+   `log2` and on one less (above `2^8` points).
+3. The choice is the best score among the cells that lose no mass off
+   the grid (mass beyond `1e-12`), scores within a factor 1.25 counting as
+   tied, ties going to fewer points, then to a smaller move. Only when
+   that misses the target is `log2 + 1` searched (up to `2^20`), and taken
+   if a sound cell there reaches it; failing that, the best cell anywhere,
+   from which a second audit goes on.
+
+`GridAudit` keeps every cell built (its moves, score, six terms, mass off
+the grid, aliasing) with a note on why each walk stopped and the reason
+for the choice. `audit_portfolio_grid` does the same for a sum of units:
+each unit's compound transform on the grid, multiplied; the severity terms
+score the claim-weighted mixture of the units' severities, the aggregate
+terms the total. The bindings audit `recommend_grid`'s grid when no step
+is given.
+
+Departures from `aggregate`: the audit returns its verdict and leaves the
+caller to rebuild on the chosen grid (prospicio's grids are values, not an
+object updated in place); a discrete severity's pinned bucket is not
+special-cased; the cells that lose mass are scored on prospicio's
+rounding, which lumps a severity's mass beyond the top on the last point,
+so their scores differ from `aggregate`'s.
+
 ### Occurrence PML
 
 The year's largest occurrence is at most `x` with probability
@@ -974,6 +1018,15 @@ exact mean at `1e-3` and `aggregate`'s quantiles at 0.5 to 0.9999 within
 two of its buckets, with aliasing below `1e-12`, the one-claim tail
 estimate below `1e-5`, and a step never coarser than `aggregate`'s
 (the same on two books, one to three rungs finer on three).
+
+The grid audit is checked against `aggregate` 1.2.0's `sharpen`
+(`validation/scripts/aggregate_sharpen.py`) on two books: a lognormal
+capped at 1,000 from a step of 1 on `2^13` points, where both move to a
+step of 4 with a score of 0.035326 and the same six terms, and a gamma
+from 0.5 on `2^10`, where nothing sound reaches the target and both grow
+to a step of 1 on `2^11` (0.722254). Every sound cell's score agrees to
+the six printed digits, and so does the mass off the grid of a cell
+`aggregate` disqualifies.
 
 The occurrence PML is checked against `aggregate` 1.0.1's `oep`
 (`validation/scripts/aggregate_oep.py`) on three Poisson books (lognormal,

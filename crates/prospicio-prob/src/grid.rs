@@ -167,7 +167,7 @@ impl Grid {
     /// Discretizes `source` by rounding each loss to the nearest point:
     /// `f_0 = F(h/2)`, `f_j = F((j + 1/2)h) - F((j - 1/2)h)`, and the last
     /// point takes everything above `(n - 3/2)h`.
-    pub fn rounding<D: Distribution>(
+    pub fn rounding<D: Distribution + ?Sized>(
         source: &D,
         step: f64,
         points: usize,
@@ -182,7 +182,7 @@ impl Grid {
     /// Discretizes `source` by moving each cell's mass to its left end:
     /// `f_j = F((j + 1)h) - F(jh)`, with the last point taking everything
     /// above `(n - 1)h`. The result is a stochastic lower bound of `source`.
-    pub fn lower<D: Distribution>(
+    pub fn lower<D: Distribution + ?Sized>(
         source: &D,
         step: f64,
         points: usize,
@@ -192,7 +192,7 @@ impl Grid {
         Self::finish(source, step, cells(&edges), Discretization::Lower)
     }
 
-    fn finish<D: Distribution>(
+    fn finish<D: Distribution + ?Sized>(
         source: &D,
         step: f64,
         probs: Vec<f64>,

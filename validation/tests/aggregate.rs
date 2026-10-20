@@ -269,6 +269,68 @@ fn grid_sizing_matches_aggregate() {
     });
 }
 
+/// The grid audit against `aggregate` 1.2.0's `sharpen` (#317), its
+/// `sharpen_df` printed by `validation/scripts/aggregate_sharpen.py`. Cells
+/// that hold all the mass score to aggregate's digits and the same cell is
+/// selected; cells that lose mass off the grid score differently (they are
+/// never selected while a sound one exists), so they are not compared.
+#[test]
+fn grid_audit_matches_aggregate_sharpen() {
+    use prospicio_aggregate::{AuditSettings, GridAudit, audit_grid};
+    use prospicio_prob::{Dist, Gamma, Lognormal, PolicyLimits, SeverityDist};
+
+    fn score(a: &GridAudit, step: f64, log2: u32) -> f64 {
+        a.cells
+            .iter()
+            .find(|c| c.step == step && c.log2 == log2)
+            .unwrap_or_else(|| panic!("no cell at {step}, {log2}"))
+            .score
+    }
+    let s = AuditSettings::default();
+
+    // agg 100 claims 1000 xs 0 sev lognorm 100 cv 1.5 poisson, from (1, 13).
+    let ln =
+        SeverityDist::try_from(Dist::from(Lognormal::from_mean_cv(100.0, 1.5).unwrap())).unwrap();
+    let capped = PolicyLimits::new(ln, vec![1000.0], vec![1.0]).unwrap();
+    let a = audit_grid(&Poisson::new(100.0).unwrap(), &capped, 1.0, 13, &s).unwrap();
+    let best = a.best();
+    assert_eq!((best.step, best.log2, a.grew), (4.0, 13, false));
+    for (got, want) in [
+        (best.score, 0.035326),
+        (score(&a, 8.0, 13), 0.286536),
+        (score(&a, 16.0, 12), 1.527278),
+        (best.terms.severity_mean.unwrap(), 0.054406),
+        (best.terms.severity_cv.unwrap(), 0.031818),
+        (best.terms.severity_skew.unwrap(), 0.011288),
+        (best.terms.aggregate_mean.unwrap(), 0.054406),
+        (best.terms.aggregate_cv.unwrap(), 0.020144),
+        (best.terms.aggregate_skew.unwrap(), 0.004694),
+    ] {
+        assert!((got / want - 1.0).abs() < 1e-4, "{got} vs {want}");
+    }
+
+    // agg 50 claims sev gamma 10 cv 0.5 poisson, from (0.5, 10): nothing
+    // sound meets the target, so log2 grows and the best sound cell is taken.
+    let g = SeverityDist::try_from(Dist::from(Gamma::from_mean_cv(10.0, 0.5).unwrap())).unwrap();
+    let a = audit_grid(&Poisson::new(50.0).unwrap(), &g, 0.5, 10, &s).unwrap();
+    let best = a.best();
+    assert_eq!((best.step, best.log2, a.grew), (1.0, 11, true));
+    for (got, want) in [
+        (best.score, 0.722254),
+        (score(&a, 2.0, 10), 2.859159),
+        (score(&a, 4.0, 9), 10.641641),
+    ] {
+        assert!((got / want - 1.0).abs() < 1e-5, "{got} vs {want}");
+    }
+    // The cell aggregate disqualifies for a deficit of 6.9e-9.
+    let lost = a
+        .cells
+        .iter()
+        .find(|c| c.step == 0.5 && c.log2 == 11)
+        .unwrap();
+    assert!(lost.defective && (lost.tail_mass / 6.883136e-9 - 1.0).abs() < 1e-3);
+}
+
 /// Swing and retro premiums, sliding-scale and profit commissions against
 /// `aggregate` 1.0.1's `contract_terms` at losses through every kink
 /// (`validation/scripts/aggregate_contract_terms.py`).

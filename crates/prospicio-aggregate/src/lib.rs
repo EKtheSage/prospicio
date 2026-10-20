@@ -49,4 +49,7 @@ pub use reinsurance::{
 };
 pub use renewal::{RenewalCount, Wait, WaitGrid, renewal_count};
 pub use ruin::{RenewalRuin, Ruin, SeverityPart, pollaczeck_khinchine, wiener_hopf};
-pub use sizing::{GridSize, Sizing, SizingMethod, fft_auto, recommend_grid, round_bucket};
+pub use sizing::{
+    AuditSettings, GridAudit, GridCell, GridSize, ScoreTerms, Sizing, SizingMethod, audit_grid,
+    audit_portfolio_grid, fft_auto, recommend_grid, recommend_portfolio_grid, round_bucket,
+};

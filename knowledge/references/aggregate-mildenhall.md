@@ -151,6 +151,27 @@ sources:
   20.9m), and it refuses an infinite-variance book without an explicit
   `bs` (`InfiniteVarianceError`). `est_m` is the grid's mean, not the
   exact one (49,970.5 for a book whose mean is 50,000).
+* **`sharpen` (1.2.0) audits a grid after the FFT.** Each cell scores six
+  terms `|emp/exact - 1| / (k eps)` with `k` = 1, 10, 100 for the mean,
+  cv and skewness of the severity and of the aggregate (`eps = 1e-4`),
+  combined by a power mean with `p = 2`; a term with an exact value at or
+  below `1e-12` in magnitude, or not finite, is skipped. From the center it
+  doubles `bs` until the score stops improving, then halves, at most four
+  times each way, on rows `d_log2 = 0` and `-1`; it takes the best score
+  among cells with no `pmf_deficit` (`1 - sum(p)` above `1e-12`), scores
+  within 1.25 of the best counting as tied and ties going to the smaller
+  `log2`, then the smaller move, and searches `d_log2 = +1` only when that
+  misses `good_enough = 0.5`. Its `sharpen_df` is indexed by
+  `(d_bs, d_log2)`. On `100 claims 1000 xs 0 sev lognorm 100 cv 1.5
+  poisson` from `bs = 1`, `log2 = 13` it moves to `bs = 4` (score 0.0353);
+  on `50 claims sev gamma 10 cv 0.5 poisson` from 0.5 and 10 it grows to
+  `bs = 1`, `log2 = 11` (score 0.722, nothing sound reaching the target).
+  prospicio's `audit_grid` scores the cells that hold all their mass to
+  aggregate's six digits and selects the same cell; the cells that lose
+  mass agree on that mass (2.5e-4 at `bs = 2` above) but not on their
+  scores, which depend on where each puts what falls off the grid; they
+  are never chosen while a sound cell exists, and the walk through them
+  can differ by a cell (`validation/scripts/aggregate_sharpen.py`).
 * **`normalize=True` thins the tail.** By default `aggregate` rescales the
   severity cut at the grid top instead of keeping that mass: on a Poisson
   20 Lomax (alpha 2.5, scale 100) book at bucket 1 the 0.9999 quantile is
