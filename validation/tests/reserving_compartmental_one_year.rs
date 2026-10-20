@@ -374,6 +374,220 @@ fn the_default_view_of_model_2_reweights() {
     }
 }
 
+/// The papers' training triangle once under each of `names`, as the
+/// segments of a `lob` key.
+fn lines(names: &[&str]) -> Triangle {
+    let all = rows();
+    let mut rows: Vec<_> = all
+        .iter()
+        .copied()
+        .filter(|r| r.0 + (r.1 / 12) as i32 - 1 <= 1996)
+        .collect();
+    let premium_1997 = all.iter().find(|r| r.0 == 1997).unwrap().4;
+    rows.push((1997, 12, f64::NAN, f64::NAN, premium_1997));
+    let (mut lob, mut origin, mut ages) = (vec![], vec![], vec![]);
+    let (mut paid, mut incurred, mut premium) = (vec![], vec![], vec![]);
+    for name in names {
+        for r in &rows {
+            lob.push(*name);
+            origin.push(Month::january(r.0));
+            ages.push(r.1);
+            paid.push(r.2);
+            incurred.push(r.3);
+            premium.push(r.4);
+        }
+    }
+    let key = [("lob", &lob[..])];
+    Triangle::from_long(&Long {
+        keys: &key,
+        origin: &origin,
+        development: DevelopmentColumn::Age(&ages),
+        values: &[
+            ("paid", &paid),
+            ("incurred", &incurred),
+            ("premium", &premium),
+        ],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap()
+}
+
+/// The sum of the columns `range` of each row of `d`.
+fn range_totals(d: &PredictiveDistribution, range: std::ops::Range<usize>) -> Vec<f64> {
+    let c = d.n_components();
+    d.draw_matrix()
+        .chunks(c)
+        .map(|r| r[range.clone()].iter().sum())
+        .collect()
+}
+
+/// The sd of the total claims development result of `one_year` on the
+/// training triangle alone, to compare with a segment's part of
+/// `one_year_segments`.
+fn single_sd(model: &Compartmental, settings: &BayesOneYear) -> f64 {
+    let view = model
+        .one_year(
+            training(),
+            "paid",
+            Outstanding::FromIncurred("incurred"),
+            "premium",
+            settings,
+        )
+        .unwrap();
+    sd(&totals(&view.cdr))
+}
+
+/// Spearman's rho of two samples.
+fn spearman(x: &[f64], y: &[f64]) -> f64 {
+    let ranks = |v: &[f64]| -> Vec<f64> {
+        let mut idx: Vec<usize> = (0..v.len()).collect();
+        idx.sort_by(|&a, &b| v[a].total_cmp(&v[b]));
+        let mut r = vec![0.0; v.len()];
+        for (k, &i) in idx.iter().enumerate() {
+            r[i] = k as f64;
+        }
+        r
+    };
+    let (rx, ry) = (ranks(x), ranks(y));
+    let (mx, my) = (mean(&rx), mean(&ry));
+    let sxy: f64 = rx.iter().zip(&ry).map(|(a, b)| (a - mx) * (b - my)).sum();
+    let sxx: f64 = rx.iter().map(|a| (a - mx).powi(2)).sum();
+    let syy: f64 = ry.iter().map(|b| (b - my).powi(2)).sum();
+    sxy / (sxx * syy).sqrt()
+}
+
+/// `Compartmental::one_year_segments` on two copies of company 337 (model 1,
+/// reweighting only, the pull request's smoke run: two fits and `SIMS`
+/// simulations a segment): each segment's total claims development result
+/// has mean zero within Monte Carlo error and the sd of `one_year` on the
+/// triangle alone within a band (other streams, so another posterior sample
+/// and another set of years), the copies are rank-uncorrelated (shared
+/// random numbers would make them almost perfectly correlated), and
+/// `segment` returns its part of the joint result. Under
+/// `RISK_RS_FULL_BAYES` the default refit mode (moment matching, then
+/// refits) runs over the segments too, `max_refits` a budget of each.
+#[test]
+fn the_one_year_view_over_segments_matches_the_views_of_its_segments() {
+    let model = Compartmental {
+        n_sims: SIMS,
+        seed: 0,
+        ..preset(false)
+    };
+    let only = BayesOneYear {
+        refit: Some(OneYearRefit::ReweightOnly),
+        n_sims: Some(SIMS),
+        ..BayesOneYear::default()
+    };
+    let t = Instant::now();
+    let views = model
+        .one_year_segments(
+            &lines(&["a", "b"]),
+            "paid",
+            Outstanding::FromIncurred("incurred"),
+            "premium",
+            &only,
+        )
+        .unwrap();
+    println!(
+        "one_year_segments, 2 segments, {SIMS} simulations: {:.1} s",
+        t.elapsed().as_secs_f64()
+    );
+    assert_eq!(views.cdr.n_components(), 20);
+    assert_eq!(views.approximate, None);
+    let alone = single_sd(&model, &only);
+    let parts: Vec<Vec<f64>> = (0..2)
+        .map(|k| range_totals(&views.cdr, 10 * k..10 * (k + 1)))
+        .collect();
+    for (k, part) in parts.iter().enumerate() {
+        let z = mean(part) / (sd(part) / (SIMS as f64).sqrt());
+        assert!(z.abs() < 5.0, "segment {k}: mean z {z}");
+        let ratio = sd(part) / alone;
+        println!("segment {k}: sd {} against one_year's {alone}", sd(part));
+        assert!(
+            (0.75..1.33).contains(&ratio),
+            "segment {k}: sd ratio {ratio}"
+        );
+        assert_eq!(views.segments.fits[k].pareto_k.len(), SIMS);
+    }
+    let rho = spearman(&parts[0], &parts[1]);
+    assert!(
+        rho.abs() < 4.5 / (SIMS as f64).sqrt(),
+        "rank correlation {rho}"
+    );
+    // A segment is its part of the joint result.
+    let b = views.segment(&[("lob", "b")]).unwrap();
+    assert_eq!(totals(&b.cdr), parts[1]);
+    assert_eq!(
+        bits(&b.segments.fits[0].pareto_k),
+        bits(&views.segments.fits[1].pareto_k)
+    );
+    assert_eq!(views.totals().n_rows(), 2);
+
+    if full_bayes() {
+        let default = BayesOneYear {
+            n_sims: Some(100),
+            max_refits: Some(2),
+            ..BayesOneYear::default()
+        };
+        let views = model
+            .one_year_segments(
+                &lines(&["a", "b"]),
+                "paid",
+                Outstanding::FromIncurred("incurred"),
+                "premium",
+                &default,
+            )
+            .unwrap();
+        for (k, s) in views.segments.fits.iter().enumerate() {
+            assert!(s.refitted.len() <= 2, "segment {k} refits");
+            let dealt = s.moment_matched.len() + s.refitted.len() + s.unrefitted.len();
+            let flagged = s
+                .pareto_k
+                .iter()
+                .filter(|&&p| p.is_nan() || p > 0.7)
+                .count();
+            assert_eq!(dealt, flagged, "segment {k}: every flagged simulation");
+        }
+    }
+}
+
+/// Model 2's default view over segments: the model's defaults per segment
+/// (every flagged simulation reweighted, at most 2,000 simulations) and the
+/// warning that the views are approximate. Full run only
+/// (`RISK_RS_FULL_BAYES`): two model-2 fits.
+#[test]
+fn the_default_view_of_model_2_over_segments_reweights() {
+    if !full_bayes() {
+        eprintln!("skipped: model 2's default view runs when RISK_RS_FULL_BAYES is set");
+        return;
+    }
+    let views = preset(true)
+        .one_year_segments(
+            &lines(&["a", "b"]),
+            "paid",
+            Outstanding::FromIncurred("incurred"),
+            "premium",
+            &BayesOneYear::default(),
+        )
+        .unwrap();
+    assert_eq!(views.cdr.n_sims(), Compartmental::ONE_YEAR_SIMS);
+    let warning = views.approximate.as_deref().expect("the default warns");
+    assert!(warning.contains("approximate"), "{warning}");
+    for s in &views.segments.fits {
+        assert!(s.flagged_share() > 0.9, "flagged {}", s.flagged_share());
+        assert!(s.moment_matched.is_empty() && s.refitted.is_empty() && s.unrefitted.is_empty());
+    }
+    let parameters = &views.cdr.provenance().parameters;
+    for (key, value) in [("refit", "ReweightOnly"), ("segments", "2")] {
+        assert!(
+            parameters.contains(&(key.into(), value.into())),
+            "{key} in {parameters:?}"
+        );
+    }
+}
+
 fn summary(name: &str, row: &str, v: &[f64]) {
     let max = v.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let min = v.iter().copied().fold(f64::INFINITY, f64::min);

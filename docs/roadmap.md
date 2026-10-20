@@ -199,8 +199,9 @@ what it is aiming for by v1.0.
 ### `prospicio-reserving` (Reserving lane, local session)
 
 - **Now:**
-  - `Triangle`, Chain Ladder, Mack, ODP bootstrap and ODP GLM, segment
-    fits, the diagonal backtest.
+  - `Triangle`, Chain Ladder, Mack, ODP bootstrap and ODP GLM (its
+    analytic prediction error, residuals, custom designs and gamma or
+    Tweedie errors, #333), segment fits, the diagonal backtest.
   - v0.2 methods: expected loss, BF, Benktander, Cape Cod, tails, Clark,
     Merz–Wüthrich.
   - The simulated one-year view, re-reserving on the ODP or Mack bootstrap
@@ -335,6 +336,14 @@ what it is aiming for by v1.0.
     (`Compartmental.candidate`) and R (`compartmental_candidate()`). On
     company 337 model 1 forecasts the outstanding well and the paid
     increments badly. Model 2's arms run only under `RISK_RS_FULL_BAYES`.
+  - The one-year view of the compartmental models over segments
+    (`reserving-compartmental.md` decision 8; `Compartmental::one_year_segments`,
+    in Rust, Python (`Compartmental.one_year_segments`) and R
+    (`compartmental_one_year_segments()`)): each segment's view on its
+    own seed, the segments' results independent or rank-correlated by
+    Iman-Conover with whole simulations reordered, the refit budget
+    `max_refits` per segment, and model 2's default reweighting only
+    with the same warning that it is approximate.
   - Selected development patterns (`reserving-v02.md`, decision 12;
     branch `claude/selected-patterns`, in Rust, Python and R):
     `SelectedPattern` on `Development` as age-to-age factors, factors
@@ -379,7 +388,8 @@ what it is aiming for by v1.0.
   `Compartmental` has its one-year view too (PR 11, with the user's
   defaults of 2026-10-16), and `Compartmental::fit_segments` with the
   backtest in Rust, Python and R is `reserving-compartmental.md` PR E
-  (done; `one_year_segments` is open).
+  (done), and `Compartmental::one_year_segments` gives the one-year view
+  over segments (decision 8; Rust, Python and R).
   Claim-level reserving (v0.8) is parked; see the milestones.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
