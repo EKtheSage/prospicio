@@ -883,6 +883,27 @@ impl NaturalPortfolio {
         self.inner.bodoff(assets)
     }
 
+    /// Bodoff's layers priced by a distortion: a pentagon table with rows
+    /// for the units and "total".
+    fn bodoff_price(&self, distortion: Robj, assets: f64) -> Result<List> {
+        let g = distortion_arg(&distortion, "distortion")?;
+        let p = self.inner.bodoff_price(&g, assets);
+        let rows: Vec<&Pentagon> = p.allocated.iter().chain([&p.total]).collect();
+        let mut units = p.units.clone();
+        units.push("total".into());
+        Ok(pentagon_list(&rows, units))
+    }
+
+    /// `list(lower, upper)`, one entry per unit in each.
+    fn allocation_set(&self, distortion: Robj, assets: f64) -> Result<List> {
+        let g = distortion_arg(&distortion, "distortion")?;
+        let set = self.inner.allocation_set(&g, assets).map_err(to_r)?;
+        Ok(list!(
+            lower = set.iter().map(|r| r.lower).collect::<Vec<f64>>(),
+            upper = set.iter().map(|r| r.upper).collect::<Vec<f64>>()
+        ))
+    }
+
     /// Each unit alone at its own VaR, the book together, and their sum:
     /// a pentagon table with rows for the units, "total" and "sum".
     fn price_stand_alone(&self, distortion: Robj, p: f64) -> Result<List> {

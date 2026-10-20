@@ -695,6 +695,101 @@ impl PyPortfolio {
         Ok(self.inner.bodoff(self.level(assets, p)?))
     }
 
+    /// Bodoff's percentile layer of capital priced by a distortion: each
+    /// layer of assets, its cost ``g(S)`` and its capital ``1 - g(S)`` are
+    /// shared in Bodoff's proportions, so every layer earns its own return.
+    /// The assets are ``bodoff``'s, the losses the equal-priority
+    /// recoveries, and the premiums add up to the price of the capped total.
+    ///
+    /// Parameters
+    /// ----------
+    /// distortion : Distortion
+    /// assets : float, optional
+    /// p : float, optional
+    ///
+    /// Returns
+    /// -------
+    /// NaturalPrice
+    ///
+    /// Examples
+    /// --------
+    /// Bodoff's Thought Experiment 1 at a 10% return (*Pricing Insurance
+    /// Risk*, Table 15.24):
+    ///
+    /// >>> from prospicio.pricing import Portfolio
+    /// >>> from prospicio.risk import Distortion
+    /// >>> port = Portfolio(["Hu", "EQ"], [[0, 0], [99, 0], [0, 100], [99, 100]],
+    /// ...                  [0.76, 0.19, 0.04, 0.01])
+    /// >>> plc = port.bodoff_price(Distortion.ccoc(0.1), assets=100)
+    /// >>> [round(u.premium, 4) for u in plc.allocated]
+    /// [24.8729, 5.8635]
+    #[pyo3(signature = (distortion, assets=None, p=None))]
+    fn bodoff_price(
+        &self,
+        distortion: PyRef<'_, PyDistortion>,
+        assets: Option<f64>,
+        p: Option<f64>,
+    ) -> PyResult<PyNaturalPrice> {
+        let a = self.level(assets, p)?;
+        Ok(PyNaturalPrice {
+            inner: self.inner.bodoff_price(&distortion.inner, a),
+        })
+    }
+
+    /// The range of each unit's premium over the natural allocation set:
+    /// every order of the outcomes whose totals, capped at the assets, tie.
+    /// The linear and lifted allocations lie in it. Needs a portfolio built
+    /// from rows.
+    ///
+    /// Parameters
+    /// ----------
+    /// distortion : Distortion
+    /// assets : float, optional
+    /// p : float, optional
+    ///
+    /// Returns
+    /// -------
+    /// list of dict
+    ///     One per unit: ``unit``, ``lower``, ``upper``.
+    ///
+    /// Examples
+    /// --------
+    /// *Pricing Insurance Risk*'s Example 259, where the total 10 is 9 + 1 or
+    /// 10 + 0:
+    ///
+    /// >>> from prospicio.pricing import Portfolio
+    /// >>> from prospicio.risk import Distortion
+    /// >>> rows = [[a, b] for a in (0, 9, 10) for b in (0, 1, 90)]
+    /// >>> probs = [p * q for p in (0.5, 0.25, 0.25) for q in (0.5, 0.25, 0.25)]
+    /// >>> port = Portfolio(["X1", "X2"], rows, probs)
+    /// >>> x1 = port.allocation_set(Distortion.proportional_hazard(0.5), assets=100)[0]
+    /// >>> round(x1["lower"], 4), round(x1["upper"], 4)
+    /// (6.2009, 6.2085)
+    #[pyo3(signature = (distortion, assets=None, p=None))]
+    fn allocation_set<'py>(
+        &self,
+        py: Python<'py>,
+        distortion: PyRef<'_, PyDistortion>,
+        assets: Option<f64>,
+        p: Option<f64>,
+    ) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+        let a = self.level(assets, p)?;
+        let set = self
+            .inner
+            .allocation_set(&distortion.inner, a)
+            .map_err(to_py)?;
+        set.into_iter()
+            .zip(self.inner.units())
+            .map(|(r, unit)| {
+                let d = pyo3::types::PyDict::new(py);
+                d.set_item("unit", unit)?;
+                d.set_item("lower", r.lower)?;
+                d.set_item("upper", r.upper)?;
+                Ok(d)
+            })
+            .collect()
+    }
+
     /// The expected policyholder deficit ratio with these assets: in
     /// total, and by unit under equal priority.
     ///

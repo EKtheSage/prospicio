@@ -1,7 +1,7 @@
 ---
 type: Reference
 title: Mildenhall and Major, Pricing Insurance Risk, Part III (price allocation), reproduced in prospicio
-description: What the guides pir-price-allocation.md and pir-price-allocation-practice.md found recomputing chapters 12 to 15 and 19 of Pricing Insurance Risk; the book's linear allocation at an atom at the asset level (prospicio matches it at a - 1e-9), the two covariance allocations, Example 302's net view, and the CCoC row of Table 15.36, which is not a natural allocation.
+description: What the guides pir-price-allocation.md and pir-price-allocation-practice.md found recomputing chapters 12 to 15 and 19 of Pricing Insurance Risk; the book's linear allocation at an atom at the asset level (prospicio matches it at a - 1e-9), the two covariance allocations, Example 302's net view, the CCoC row of Table 15.36, which is not a natural allocation, the natural allocation set by sorting ties, and PLC under a distortion.
 resource: https://www.wiley.com/en-us/Pricing+Insurance+Risk%3A+Theory+and+Practice-p-9781119755678
 tags: [pricing, capital-allocation, natural-allocation, distortions, bodoff, guides, reference, parity]
 status: stable
@@ -82,3 +82,18 @@ sources:
   at the premium. At the gross CCoC premium 115.15 Cat ranges from 28.69 to
   35.95 and Non-Cat from 79.20 to 86.46. The rewrite matches the every-pair
   search to 1e-9 in `natural.rs`'s unit tests.
+- **The natural allocation set** (section 15.1.3) needs no search: a
+  distortion sees only `X ∧ a`, and since `g` is concave a unit's premium is
+  largest when, in every tie of capped totals, the outcomes that pay the
+  unit most take the highest ranks, smallest in the reverse order (the
+  rearrangement inequality). `Portfolio.allocation_set` gives Example 259's
+  6.2009 to 6.2085 and Exercise 260's 6.1429 to 6.25 and 64.4643 to 64.5714
+  exactly (`validation/tests/pricing.rs`); the linear and lifted
+  allocations of Example 235 lie inside, and with its two units one's
+  lower bound and the other's upper bound add to the total.
+- **PLC under a distortion** (section 15.3): `Portfolio.bodoff_price` shares
+  each layer's cost `g(S) dx` and capital in Bodoff's proportions
+  `E[X_i / X | X > x]`. Under the CCoC at 10% Thought Experiment 1 gives
+  Table 15.24's 24.8729 and 5.8635; the PH and Wang totals equal the lifted
+  totals. The by-unit PH and Wang values of Tables 15.32 and 15.33 were not
+  compared with print (no copy of the tables at hand).

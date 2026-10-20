@@ -6,7 +6,7 @@
 
 ## Next
 
-- [guides-issues-for-aggregate] the rest of the issues filed by the Guides lane on 2026-10-17 and 18: #368's items 2 and 3 (the allocation set, PLC under a distortion), #338, #317 and #316
+- [guides-issues-for-aggregate] the rest of the issues filed by the Guides lane on 2026-10-17 and 18: #338, #317 and #316
 
 ## Done
 
@@ -21,3 +21,4 @@
 - the capital per unit of margin without cancellation near S = 1 (`Distortion::complement`, `1 - g` from `1 - S`; the CCoC's capital by unit is its margin over r, and the Cat/Non-Cat lifted capital no longer moves with the last bit of the parameter; #330)
 - calibration on a large portfolio (`distortion::calibrate` merges equal values, so the totals capped at the assets are one atom: Wang on the 2^19-point Hurricane/SCS portfolio in 0.25 s, not about 9 s; #331)
 - pricing bounds on a large book (`Portfolio::premium_bounds` from prefix sums and convex hulls, matching the every-pair search: 0.05 s on the Cat/Non-Cat grid's 71,795 totals, which did not finish in two minutes; #368 item 4)
+- the natural allocation set and Bodoff's layers priced by a distortion (`Portfolio::allocation_set`, each unit's range over the orders of tied capped totals, *Pricing Insurance Risk*'s Example 259 and Exercise 260 exact; `Portfolio::bodoff_price`, PLC under any distortion, Table 15.24 exact under the CCoC; Python `allocation_set`, `bodoff_price`, R `allocation_set()`, `bodoff_price()`; #368 items 2 and 3)
