@@ -2699,9 +2699,12 @@ diagnostics are not reported"; `knowledge/findings/meyers-segments-backtest.md`)
 
 `Compartmental` joins the Rust backtest in `reserving-compartmental.md`
 PR E through `CompartmentalCandidate` (its decision 8, "As built"). The
-candidate borrows its triangle and the bindings' `NamedModel` owns its
-model, so the Python and R entry points for `Compartmental` are a
-follow-up.
+candidate borrowed its triangle while the bindings' `NamedModel` owns its
+model, so it now owns its data and a clone shares its fits; the Python
+(`Compartmental.candidate`) and R (`compartmental_candidate()`) entry
+points, and the second table of the held-out outstanding, were built on
+`claude/compartmental-backtest-bindings` (`reserving-compartmental.md`
+decision 8, "Built (PR E, backtest bindings)").
 
 **As built** (2026-10-19). What changed from the proposal while building
 it:

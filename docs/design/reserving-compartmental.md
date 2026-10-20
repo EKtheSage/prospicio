@@ -1132,10 +1132,11 @@ premium column and a second response.
   `spearman` settings; the backtest stays Rust-only, as for `BayesOdp`
   at the time (since reversed for `BayesOdp` and `Meyers` by
   `reserving-bayes.md` decision 21, which gives the backtest Python and
-  R entry points). The user's decision of 2026-10-19 for this PR keeps
-  `CompartmentalCandidate` out of them: it borrows its triangle, while
-  the bindings' `NamedModel` owns its model, so wiring it in is a
-  follow-up (see "As built").
+  R entry points). The user's decision of 2026-10-19 for this PR kept
+  `CompartmentalCandidate` out of them: it borrowed its triangle, while
+  the bindings' `NamedModel` owns its model, so wiring it in was a
+  follow-up, built on `claude/compartmental-backtest-bindings` (see "As
+  built").
 * **Checks.** `Compartmental` still implements `YearModel` and passes the
   one-year conformance suite; the unit tests that sample with NUTS are
   gated by `slow-tests`, and the parity and backtest validation lives in
@@ -1195,17 +1196,71 @@ from the decision.
   `compartmental_segments()` with `compartmental_model_2()`'s
   likelihood, scale and paid response. `R/prospicio/tests/
   test-reserving-compartmental-segments.R` mirrors the Python test.
-* **Not done.** The backtest has no `Compartmental` entry in Python or R:
-  the candidate borrows its triangle and the bindings' `NamedModel` owns
-  its model (`reserving-bayes.md` decision 21 gives the backtest those
-  entry points for `BayesOdp` and `Meyers`), and the user's decision of
-  2026-10-19 for this PR keeps the backtest Rust-only. `one_year_segments`
-  is a later PR. Model 2's segment and backtest arms run only under
-  `RISK_RS_FULL_BAYES`.
+* **Not done.** The backtest had no `Compartmental` entry in Python or R
+  in this PR: the candidate borrowed its triangle and the bindings'
+  `NamedModel` owns its model, and the user's decision of 2026-10-19 for
+  this PR kept the backtest Rust-only; the entry points are built in the
+  follow-up below. `one_year_segments` is a later PR. Model 2's segment
+  and backtest arms run only under `RISK_RS_FULL_BAYES`.
 * **Result.** On company 337 the backtest forecasts the held-out
   outstanding diagonals well and the paid increments badly, and cannot
   separate a 1996 case reserve strength shift from faster settlement:
   `knowledge/findings/compartmental-segments-backtest.md`.
+
+**Built (PR E, backtest bindings).** Branch
+`claude/compartmental-backtest-bindings`, the follow-up the user's
+decision of 2026-10-19 left (`reserving-bayes.md` decision 21). As decided
+there, with this design:
+
+* **The candidate owns its data.** `CompartmentalCandidate` no longer has a
+  lifetime: the triangle is copied once into an `Arc<Triangle>`, the
+  column names are strings and the outstanding source is an owned form of
+  `Outstanding`. `new` keeps its arguments (a borrowed triangle and
+  columns, now copied), and `triangle()`, `paid()`, `outstanding()` and
+  `premium()` stay read-only accessors, so the settings are still fixed
+  after construction.
+* **A clone shares the fits.** The cache of the last four fits is behind an
+  `Arc<Mutex<..>>`, and `CompartmentalCandidate` is `Clone`: a clone has
+  the same settings and the same cache. A binding keeps its object, boxes
+  a clone in a `NamedModel`, and the object's `outstanding_backtest`
+  reuses the fits the backtest sampled (the reverse order too). A unit
+  test boxes a clone in a `NamedModel`, runs the paid backtest and then
+  the original's outstanding backtest, and checks that the cache holds one
+  fit, the same `Arc`, after both. This was chosen over an
+  `Arc<CompartmentalCandidate>` implementing `TriangleModel` because a
+  clone is a plain value a binding can hold in a frozen Python object or
+  an R pointer.
+* **Python**: `Compartmental.candidate(triangle, paid, premium, *,
+  outstanding=None, incurred=None)` returns a `CompartmentalCandidate`
+  (`name`, `paid`, `premium`, `outstanding`, `outstanding_from`), which
+  `diagonal_backtest`'s `models` takes in a list or a dict next to
+  `GlmCandidate`, `BayesOdp` and `Meyers`, and
+  `CompartmentalCandidate.outstanding_backtest(n_diagonals, *, n_sims=1000,
+  seed=0, interval=0.9)` returns the second table as a `Backtest` named
+  `{name}_outstanding`.
+* **R**: `compartmental_candidate(triangle, paid, premium, priors,
+  outstanding = NULL, incurred = NULL, <compartmental()'s settings>)` and
+  `compartmental_model_2_candidate()` return a
+  `compartmental_backtest_model` for the `models` list of
+  `diagonal_backtest()`, and `compartmental_outstanding_backtest(candidate,
+  n_diagonals, n_sims, seed, interval)` returns the second table. Unlike
+  the other model specs the candidate holds its triangle (the backtest's
+  table of paid increments carries neither the outstanding nor the
+  premium), through an external pointer to the Rust candidate, which is how
+  the two tables find the same fits.
+* **The triangle is checked.** A candidate reads its own triangle, so a
+  backtest whose `triangle` or `column` differs from the candidate's is an
+  error in both bindings (otherwise the cells of the frame and the fit
+  would disagree without a message).
+* **Tests.** Company 337 model 1 at 2 chains of 300 warm-up and 300 kept
+  draws, 400 simulations and seed 3, three diagonals: 5, 6 and 7 scored
+  cells, finite metrics, the two tables' diagnostics equal (one fit) and
+  the outstanding table in under half the paid table's time, the paid A/E
+  within a quarter of the Rust validation's targets and the ODP GLM's equal
+  to them (`python/tests/test_reserving_compartmental_backtest.py`,
+  `R/prospicio/tests/test-reserving-compartmental-backtest.R`, about 10 s
+  each). Model 2 is left to the Rust validation: its sampler is too slow
+  for a binding test.
 
 ### 9. Bindings
 

@@ -21,6 +21,9 @@ sources:
   - id: pytest
     resource: ../python/tests/test_reserving_compartmental_segments.py
     title: The Python binding tests (R's are R/prospicio/tests/test-reserving-compartmental-segments.R)
+  - id: pybacktest
+    resource: ../python/tests/test_reserving_compartmental_backtest.py
+    title: The Python backtest binding tests (R's are R/prospicio/tests/test-reserving-compartmental-backtest.R)
 ---
 
 # Finding
@@ -106,9 +109,20 @@ at least six times its seed-to-seed sd, confirmed at seeds 100 to
   check 15 s and the rank-correlation check 23 s; the Rust validation file
   takes 48 s. The Python binding tests take about 45 s and the R ones 77
   s.[^pytest]
+* **From Python and R.** The same backtest through the bindings
+  (`Compartmental.candidate` with `diagonal_backtest` and
+  `outstanding_backtest` in Python; `compartmental_candidate()` with
+  `diagonal_backtest()` and `compartmental_outstanding_backtest()` in R) on
+  a small sampler (2 chains of 300 warm-up and 300 kept draws, 400
+  simulations, seed 3) gives the same cells (5, 6 and 7 scored, 2 left out a
+  split), the paid A/E 1.33, 1.08 and 1.16 against the sweep's 1.34, 1.07
+  and 1.15, and the outstanding table's mean cell CRPS 1,859 and total CRPS
+  3,576 against 1,882 and 3,617; the outstanding table takes a thousandth
+  of the paid table's time because it reuses the fits.[^pybacktest]
 
 [^test]: [validation/tests/reserving_compartmental_segments.rs](../validation/tests/reserving_compartmental_segments.rs), release build, seed 0 (the rows at `--nocapture`).
 [^model]: [Compartmental::fit_segments](../crates/prospicio-reserving/src/bayes/compartmental.rs) and its unit tests.
 [^candidate]: [CompartmentalCandidate](../crates/prospicio-reserving/src/bayes/compartmental/backtest.rs).
 [^design]: [Design note, compartmental reserving](../docs/design/reserving-compartmental.md), decision 8 and Risks.
 [^pytest]: [python/tests/test_reserving_compartmental_segments.py](../python/tests/test_reserving_compartmental_segments.py); R's `test-reserving-compartmental-segments.R` runs the same checks.
+[^pybacktest]: [python/tests/test_reserving_compartmental_backtest.py](../python/tests/test_reserving_compartmental_backtest.py), whose bounds are loose (a quarter of the target, a factor of two on the CRPS); R's `test-reserving-compartmental-backtest.R` runs the same checks.
