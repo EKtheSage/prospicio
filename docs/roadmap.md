@@ -195,9 +195,10 @@ what it is aiming for by v1.0.
     Risk*) and no capital in the bottom layer (Monograph 15's equation
     8.5), `PriceSettings` (#379, #368), and the capital per unit of
     margin computed without cancellation near `S = 1` (#330), and
-    calibration that merges the totals capped at the assets (#331).
+    calibration that merges the totals capped at the assets (#331), and
+    pricing bounds on a large book from convex hulls (#368).
 - **Next:** the Guides lane's remaining issues of 2026-10-17 and 18 (the
-  allocation set and faster pricing bounds, a severity from a size-of-loss
+  allocation set, PLC under a distortion, a severity from a size-of-loss
   table, a grid audit, shared mixing across units).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 

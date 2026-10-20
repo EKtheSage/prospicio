@@ -518,3 +518,12 @@
   portfolio's totals capped at the assets count once: calibrating Wang on
   *Pricing Insurance Risk*'s 2^19-point Hurricane/SCS portfolio takes
   0.25 s, not about 9 s (#331).
+
+### Pricing
+
+- `Portfolio::premium_bounds` (Python `Portfolio.premium_bounds`, R
+  `premium_bounds()`) runs in about the time of one pricing: each knot's
+  TVaR prices come from prefix sums and the best BiTVaR for each unit from
+  a convex hull, with the same bounds as the search over every pair. On
+  *Pricing Insurance Risk*'s Cat/Non-Cat grid (71,795 totals) it takes
+  0.05 s; it did not finish in two minutes (#368).
