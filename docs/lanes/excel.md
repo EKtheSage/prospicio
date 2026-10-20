@@ -8,7 +8,6 @@ This lane wraps other lanes' crates and changes none of them
 
 ## Next
 
-- [excel-odp-glm] the ODP GLM on a sheet: reserves with the analytic prediction error, coefficients and residual diagnostics (`xll.md`, parity plan group 8)
 - [excel-severity-fits-2] the newer severity fits in `PRO.SEV.FIT`: the Lomax, truncation from above, grouped losses and minimum-distance fits
 - [excel-more-functions] further functions as the user asks
 - `PRO.BAYES.BF` waits on the Reserving lane (#410: `BayesBf`'s a-priori level is nearly inert)
@@ -55,3 +54,4 @@ This lane wraps other lanes' crates and changes none of them
 - multi-year contract terms (`PRO.PROFIT.COMMISSION.TERM`, `PRO.SLIDING.SCALE.TERM`: one term a row of losses, deficits and credits carried forward oldest first, for a number of years or until used up; checked against `Tower::apply_aggregate_term`; decision 33)
 - The parity plan's seven groups are done
 - [excel-exclusions] link-ratio exclusions and the geometric average in the `average` argument (a row `kind, n_periods, drop_high, drop_low` in the sixteen chain-ladder, Mack, expected-loss and Mack bootstrap functions; a last `average` on `PRO.ODP`, `.SIMS`, `.CDR`; chainladder-python and R ChainLadder parity; decision 34)
+- [excel-odp-glm] the ODP GLM on a sheet: `PRO.ODP.GLM` (Taylor and McGuire's Table 5-4: reserves, process and parameter SE, RMSEP), `PRO.ODP.GLM.PARAMS` (coefficients, SEs, dispersion), `PRO.ODP.GLM.RESIDUALS` (by cell, or grouped by origin, development or calendar period); R `glm` parity on GenIns and ABC (decision 35)

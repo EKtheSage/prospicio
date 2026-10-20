@@ -379,6 +379,24 @@ for row in oy.iter_rows(min_row=6, max_row=38, min_col=2, max_col=17):
     for c in row:
         c.number_format = "#,##0"
 
+# The ODP GLM on the RAA sheet's triangle (Taylor and McGuire, CAS Monograph 3).
+og = wb.create_sheet("ODP GLM")
+og["A1"] = "prospicio XLL test: the ODP model as a quasi-Poisson GLM on RAA"; og["A1"].font = Font(bold=True, size=13)
+og["A2"] = "The reserves are the chain ladder's; RMSEP is the analytic prediction error (delta method)."
+og["A2"].font = note
+og["A4"] = "Prediction error"; og["A4"].font = bold
+og["A5"] = ArrayFormula("A5:H16", f"=PRO.ODP.GLM({TRI},{ORI})")
+og["A19"] = "Coefficients and dispersion"; og["A19"].font = bold
+og["A20"] = ArrayFormula("A20:D40", f"=PRO.ODP.GLM.PARAMS({TRI},{ORI})")
+og["F19"] = "Standardized deviance residuals by development period"; og["F19"].font = bold
+og["F20"] = ArrayFormula("F20:I30", f'=PRO.ODP.GLM.RESIDUALS({TRI},"development",{ORI})')
+og["F33"] = "Check: total reserve against the chain ladder"; og["F33"].font = bold
+og["F34"] = "=D16"; og["G34"] = 52135.2283; og["H34"] = "=ABS(F34-G34)<0.001"
+og["K4"] = "Residuals by cell"; og["K4"].font = bold
+og["K5"] = ArrayFormula("K5:U60", f"=PRO.ODP.GLM.RESIDUALS({TRI},,{ORI})")
+for col in "ABCDEFGHIJKLMNOPQRSTU":
+    og.column_dimensions[col].width = 12
+
 # Triangle helpers on the RAA sheet's triangle.
 th = wb.create_sheet("Triangle helpers")
 th["A1"] = "prospicio XLL test: triangle helpers on RAA"; th["A1"].font = Font(bold=True, size=13)
