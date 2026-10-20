@@ -207,9 +207,15 @@ So the panel is checked two ways:
    nothing, so on the rebuilt panel Mack incurred must reproduce Meyers'
    D (16.4, 16.6, 27, 14.2 by line; 15.4 on all 200; Figure 3.2, p.10) and
    Mack paid his (24.6, 44.6, 30.4, 8.5; 23.1; Figure 4.2, p.15), within a
-   tolerance set in PR 2 (8 points per line and 4 on all 200, that is
-   four differing triangles in a line and eight in 200; a D moves by at most 100/n per changed
-   triangle, 2 points per line). This is the only full check of CA. The
+   tolerance set in PR 2: 8 points per line and 4 on all 200. The
+   tolerance is **empirical**, not a bound derived from the panel. A
+   swapped triangle can move a line's D by up to 100/50 = 2 points (0.5 on
+   all 200), and PR 2's panel is known to miss 26 of the 175 printed codes
+   (9 CA, 6 PA, 2 WC, 9 OL), with 25 more CA codes that cannot be checked,
+   so the known differences alone could move a line's D by more than 8.
+   The first run was within 3.7 points per line and 1.5 on all 200; that
+   the swapped triangles move D this little is observed, and why is an
+   inference (see "As built"). This is the only full check of CA. The
    ODP bootstrap (Figure 4.1, p.14) is a seed-dependent second check.
 
 If the codes or Mack's D disagree, the study still runs on the rebuilt
@@ -334,7 +340,11 @@ Per run, under `target/calibration/` (gitignored), nothing in the repo:
   mean, sd, outcome, seed, platform, wall time, diagnostics, refit flag,
   error;
 * `pp.csv`: per line (and `all`) and arm, the sorted percentiles beside
-  `100 i / n`, the table a p-p plot is drawn from;
+  `e_i = 100 i / (n + 1)`, the expected percentile on Meyers' horizontal
+  axis (p.8), and `f_i = 100 i / n`, the points his D and the
+  `136 / sqrt(n)` band are measured from (his footnote 6 calls plotting
+  against `e_i` an approximation of that): the table a p-p plot is drawn
+  from;
 * `ks.csv`: per line and arm, n, the number skipped (decision 5),
   Meyers' D, the two-sided D, the bound, pass or fail, and Meyers'
   published D where one exists;
@@ -387,8 +397,10 @@ hold his per-triangle percentiles, is not downloaded (the user decided).
 
 ## Risks
 
-* **The panel differs from Meyers'**, mainly in CA, so a D differs for
-  reasons that are not the model's. Mitigated by decision 3's Mack check.
+* **The panel differs from Meyers'** in every line (PR 2: 26 of the 175
+  printed codes missing, and 25 CA codes uncheckable), so a D differs for
+  reasons that are not the model's. Mitigated, not removed, by decision
+  3's Mack check, whose tolerance is empirical.
 * **Real triangles break fits**: zero or negative paid cells (Meyers
   errors, his code floors), negative increments (the ODP bootstrap,
   `knowledge/findings/odp-negative-increments.md`), non-convergence on
@@ -440,26 +452,67 @@ request).
 PR 2 (`claude/calibration-harness`) holds the panel script
 `validation/scripts/calibration_panel.py`, the harness and its unit tests
 `validation/tests/reserving_calibration_meyers.rs` (the `#[ignore]`d
-`calibration_study`, plus twelve cheap tests that run in a plain `cargo
+`calibration_study`, plus fourteen cheap tests that run in a plain `cargo
 test`), the Mack (paid and incurred) and ODP bootstrap (paid, 10,000
 simulations) arms, and `percentiles.csv`, `pp.csv` and `ks.csv` under
 `target/calibration/`. The script also writes `panel_check.csv`, the diff
-against Table A.2 (`both`, `chosen_only`, `printed_only` per code), which
-the study folds into `ks.csv` as the column `panel_vs_table_a2`
-(`both/chosen_only/printed_only`). Differences from the plan above:
+against Table A.2, one row per code with `status` (`both`, `chosen_only`,
+`printed_only`, or `unchecked` for a CA code chosen but not printed),
+`rank` (the code's place by increasing CV1 among the triangles that pass
+the screen, empty if it fails) and `screen_pass` (how many pass in that
+line); the study folds the counts into `ks.csv` as the column
+`panel_vs_table_a2` (`both/chosen_only/printed_only/unchecked`; on all 200
+it is `149/17/26/34`). It writes `panel_meta.csv` too: the Python,
+cas-schedule-p, duckdb and pandas versions and the sha256 of `panel.csv`,
+which the study prints in its header. The first run's panel has sha256
+`075b392525b26c505c251ea1d94f1641b4c6ab4216ee085655e5ec678fff59d2`
+(cas-schedule-p 2026.6.13, duckdb 1.5.6, pandas 3.0.6, Python 3.14.4);
+the PR that pins the D values compares a rebuild with it. Differences
+from the plan above:
 
 * **The command needs the extra**: `cas-schedule-p[screens]==2026.6.13`
   (duckdb and pandas). The package requires Python 3.11 or newer, so no
   `--python` flag.
 * **Panel**: the rebuilt screen has 50 triangles in each line and agrees
-  with Table A.2 on 149 of its 175 printed codes. The script exits with
-  status 2 and prints the difference, and writes the panel anyway; the
-  study reads it and says so in `ks.csv`. The details are in
+  with Table A.2 on 149 of its 175 printed codes. The details are in
   `knowledge/findings/meyers-calibration-panel.md`.
+* **The script's exit status** departs from decision 2, which makes only a
+  mismatch in PA, WC or OL an error: the script exits with status 2 on any
+  printed code it did not choose, CA included (a CA code chosen but not
+  printed is not an error). It writes the panel either way. On the
+  current package every run exits 2, so the two commands of decision 6
+  are run one after the other, not chained with `&&`.
+* **No `[[test]]` entry**: decision 6 planned one in
+  `validation/Cargo.toml`. The file needs no feature, so Cargo discovers
+  it; `validation/Cargo.toml` has only a comment that says so. PR 3, whose
+  arms need `slow-bayes`, decides whether an entry is needed then.
+* **Group 353** is asserted, as decision 7 plans: the study requires group
+  353 commercial auto in the panel (no fallback to the other lines' group
+  353, different insurers) and its square equal to
+  `validation/data/clrd_comauto_353.csv` cell by cell. A unit test that
+  runs in every `cargo test`, `the_arms_reproduce_meyers_on_group_353`,
+  scores that square with the arms: Mack gives 72.0 (paid) and 86.1
+  (incurred), Meyers' 72.02 and 86.03, and the ODP bootstrap's mean is
+  within 1% of Mack's with its percentile near 74 (74.06 at 10,000
+  simulations). So the arms' wiring, not only the study, is checked in CI.
 * **Mack's acceptance test** asserts Mack's D within 8 points per line and
   4 on all 200 of Meyers' (decision 3), after the outputs are written, and
   only on the whole panel; with `RISK_RS_CALIBRATION_LINES` or `_LIMIT` set
-  it is skipped. The first run was inside the tolerance everywhere.
+  it is skipped. The tolerance was picked before the run and is empirical
+  (decision 3): the run was within 3.7 points per line and 1.5 on all 200,
+  although 26 printed triangles are known to be swapped. Why they move D so
+  little is not tested: a swapped triangle moves D only if its percentile
+  differs from the one it replaces near where the maximum is taken. A later
+  package version or panel could fail the assertion for a reason that is
+  the panel's, not a bug's; the assertion message says so.
+* **The ODP bootstrap's D** is 1.9 to 3.9 points above Meyers' per line and
+  2.2 on all 200. That is within what the swapped triangles alone can
+  produce (2 points of a line's D each, up to 13 points on all 200 for 26),
+  so it is no evidence of a difference in the model. A run on the printed
+  codes only (PA, WC and OL, where Table A.2 is complete) would separate
+  the two; it is not built.
+* **`pp.csv`** holds both `e_i = 100 i / (n + 1)`, Meyers' plotting axis,
+  and `f_i = 100 i / n`, the centre of the band as in his D (decision 7).
 * **Failures**: a fit that errors or panics is a row with the error text
   (`percentiles.csv`, column `error`) and counts as skipped in `ks.csv`; the
   KS tables are written for each arm's own set and for the common set.

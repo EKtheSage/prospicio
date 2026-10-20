@@ -48,10 +48,14 @@ sources:
   `validation/scripts/calibration_panel.py` as `target/calibration/panel.csv`
   (20,000 rows, columns `line, group_code, origin, development, paid,
   incurred, case_incurred, premium, premium_direct`) with the diff
-  `panel_check.csv`. It agrees with Table A.2 on 149 of the 175 printed codes
-  (16 of 25 CA, 44 of 50 PA, 48 of 50 WC, 41 of 50 OL), and Mack's D on it is
-  within 3.7 points per line and 1.5 on all 200 of Meyers'; see
-  [the finding](/findings/meyers-calibration-panel.md). The package needs the
+  `panel_check.csv` (each code's status and its rank in the screen) and
+  `panel_meta.csv` (the package versions and the panel's sha256; the first
+  run's is `075b392525b26c505c251ea1d94f1641b4c6ab4216ee085655e5ec678fff59d2`,
+  cas-schedule-p 2026.6.13, duckdb 1.5.6, pandas 3.0.6). It agrees with
+  Table A.2 on 149 of the 175 printed codes (16 of 25 CA, 44 of 50 PA, 48 of
+  50 WC, 41 of 50 OL), so at least 26 of its triangles are not Meyers', and
+  Mack's D on it is within 3.7 points per line and 1.5 on all 200 of
+  Meyers'; see [the finding](/findings/meyers-calibration-panel.md). The package needs the
   `screens` extra (`cas-schedule-p[screens]==2026.6.13`) and Python 3.11 or
   newer.
 * Status stays draft: no CI job builds the panel, so nothing here is
