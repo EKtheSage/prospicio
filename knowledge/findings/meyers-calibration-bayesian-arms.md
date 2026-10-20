@@ -15,6 +15,9 @@ sources:
   - id: note
     resource: ../docs/design/reserving-calibration.md
     title: Design note, decisions 1, 4, 5, 7 and 8, and "As built"
+  - id: meyers-code
+    resource: /references/meyers-monograph-8.md
+    title: Meyers' CRC.R, CSR.R and CAY.R, their floor, ceiling and sampler settings
   - id: monograph
     resource: https://www.casact.org/sites/default/files/2021-02/08-Meyers.pdf
     title: Meyers (2019), CAS Monograph 8, Figures 5.1, 5.2, 7.4 and 8.5
@@ -68,7 +71,7 @@ pinned.
   shape agrees with his conclusions: paid CRC fails in every line, while
   paid Mack and the ODP bootstrap pass in other liability (D 10.3 and 8.7
   in the panel's finding, his 8.5 and 6.8), so paid CRC's overestimate is
-  a problem of its own, as his Section 7 says; incurred CRC passes except
+  a problem of its own, as Meyers also treats it; incurred CRC passes except
   in total; CSR on paid passes in every line but personal auto; CAY on
   incurred passes in every line and in total. What causes the four
   differences is not tested. Three sources are open: the panel (it misses
