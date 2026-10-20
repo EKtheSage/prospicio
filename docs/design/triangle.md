@@ -354,8 +354,33 @@ rows of a `TriangleFrame`.
   column)` (a dict of the frame's columns with `observed` and `future`)
   and `OdpGlm().fit(triangle, column, design=Design(...))`; R
   `odp_glm_cells()` and `odp_glm(triangle, formula = ~ ...)`, the formula
-  run through `model.matrix()` on the cells. Still to come in #333: gamma
-  and Tweedie families.
+  run through `model.matrix()` on the cells.
+- `OdpGlm::family` swaps the error (#333, fourth PR): `Family::Poisson`
+  (the default, the ODP), `Family::Gamma` (`Var X_od = φ μ²`, every cell's
+  relative error weighed alike, Taylor and McGuire section 6.5) or
+  `Family::Tweedie { power }` with `1 < p < 2` (`φ μ^p`), each with the log
+  link and Pearson's `φ`, on the cross-classified design or any
+  `fit_design`. A field on `OdpGlm` rather than a free `Glm`, because the
+  link must stay the log for the mean-preserving draws and the reserves'
+  delta method, and because another family (Gaussian, binomial) is not a
+  reserving error: it fails at fit time. The reserves are no longer the
+  Chain Ladder's, nor monotone in the power (on the NJ Manufacturers
+  triangle the ODP's total is 373,346, the gamma's 373,466 and the
+  Tweedie's at `p = 1.5` 373,129). The gamma needs every observed increment
+  positive and the Tweedie every one at least 0; another fails naming its
+  cell. The prediction error's process variance, the residuals and the
+  draws follow the family (`φ Σ V(μ)`, `(y − μ) / √V(μ)` and its unit
+  deviance, gamma or Tweedie process draws). Parity
+  (`validation/tests/reserving.rs`): on GenIns and ABC the coefficients,
+  standard errors, `φ` and reserves match R's `glm(family = Gamma(link =
+  "log"))` and statmod's `tweedie(var.power = 1.5, link.power = 0)` to
+  relative 1e-9, both converged to 1e-14 (R's deviance test stops IRLS on
+  the non-canonical log link about 1e-8 short of the coefficients, so the
+  reference script refits from them until they settle); on the NJ
+  Manufacturers triangle the gamma fit is the guide's section 9. Python
+  `OdpGlm(family="gamma")` and `OdpGlm(family="tweedie", power=1.5)`, R
+  `odp_glm(triangle, family = "gamma")` and `family = "tweedie", power =
+  1.5`.
 
 ## Calendar-diagonal backtest
 

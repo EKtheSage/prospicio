@@ -199,8 +199,9 @@ what it is aiming for by v1.0.
 ### `prospicio-reserving` (Reserving lane, local session)
 
 - **Now:**
-  - `Triangle`, Chain Ladder, Mack, ODP bootstrap and ODP GLM, segment
-    fits, the diagonal backtest.
+  - `Triangle`, Chain Ladder, Mack, ODP bootstrap and ODP GLM (its
+    analytic prediction error, residuals, custom designs and gamma or
+    Tweedie errors, #333), segment fits, the diagonal backtest.
   - v0.2 methods: expected loss, BF, Benktander, Cape Cod, tails, Clark,
     Merz–Wüthrich.
   - The simulated one-year view, re-reserving on the ODP or Mack bootstrap

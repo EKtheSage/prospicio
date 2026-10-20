@@ -12,7 +12,9 @@ odp_glm(
   column = NULL,
   formula = NULL,
   tolerance = 1e-10,
-  max_iterations = 100
+  max_iterations = 100,
+  family = "poisson",
+  power = NULL
 )
 }
 \arguments{
@@ -26,6 +28,10 @@ development factor), or a one-sided formula on the cells.}
 \item{tolerance}{Convergence tolerance of the IRLS fit.}
 
 \item{max_iterations}{Most IRLS iterations.}
+
+\item{family}{The error: \code{"poisson"} (the ODP), \code{"gamma"} or \code{"tweedie"}.}
+
+\item{power}{The Tweedie power, in (1, 2); only for \code{family = "tweedie"}.}
 }
 \value{
 An \code{odp_glm_fit} object.
@@ -39,6 +45,14 @@ chi-squared over the residual degrees of freedom. The triangle must
 have a single segment.
 }
 \details{
+\code{family = "gamma"} swaps the error for a gamma, variance \code{phi * mu^2},
+and \code{family = "tweedie"} for a Tweedie, variance \code{phi * mu^power} with
+\verb{1 < power < 2} (Taylor and McGuire, section 6.5), each with the log link
+and Pearson's dispersion as \code{\link[stats:glm]{stats::glm()}} with \code{Gamma(link = "log")} or
+statmod's \code{tweedie(var.power = power, link.power = 0)}. Their reserves are
+no longer the chain ladder's. The gamma needs every observed increment
+positive, the Tweedie every one at least 0.
+
 \code{formula} fits another design on the triangle's cells instead, the
 columns of \code{\link[=odp_glm_cells]{odp_glm_cells()}} (\code{origin}, \code{development} and \code{calendar} as
 labels, \code{origin_index}, \code{development_index} and \code{calendar_index} from 0,
@@ -51,8 +65,9 @@ the future cells; a factor level that only future cells take (of
 every observed cell.
 
 \code{prediction_error} gives the reserves' analytic prediction error by the
-delta method, by origin and in total: the process variance \code{phi * sum(mu)}
-and the parameter variance \verb{g' Sigma g} with \code{g = sum(mu * x)} over each
+delta method, by origin and in total: the process variance
+\code{phi * sum(V(mu))} (\code{V(mu) = mu} for the ODP, \code{mu^2} for the gamma,
+\code{mu^power} for the Tweedie) and the parameter variance \verb{g' Sigma g} with \code{g = sum(mu * x)} over each
 origin's future cells. It reproduces Taylor and McGuire's (CAS Monograph
 3) Table 5-4 (\code{validation/tests/reserving.rs}).
 
@@ -92,4 +107,7 @@ mean(total(pd))
 line <- odp_glm(triangle(long, "year", "age", "paid"),
                 formula = ~ origin_index + factor(development))
 line@coefficients
+
+# A gamma error: every cell's relative error weighs alike.
+odp_glm(triangle(long, "year", "age", "paid"), family = "gamma")@total_reserve
 }

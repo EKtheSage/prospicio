@@ -10,6 +10,14 @@ NULL
 #' chi-squared over the residual degrees of freedom. The triangle must
 #' have a single segment.
 #'
+#' `family = "gamma"` swaps the error for a gamma, variance `phi * mu^2`,
+#' and `family = "tweedie"` for a Tweedie, variance `phi * mu^power` with
+#' `1 < power < 2` (Taylor and McGuire, section 6.5), each with the log link
+#' and Pearson's dispersion as [stats::glm()] with `Gamma(link = "log")` or
+#' statmod's `tweedie(var.power = power, link.power = 0)`. Their reserves are
+#' no longer the chain ladder's. The gamma needs every observed increment
+#' positive, the Tweedie every one at least 0.
+#'
 #' `formula` fits another design on the triangle's cells instead, the
 #' columns of [odp_glm_cells()] (`origin`, `development` and `calendar` as
 #' labels, `origin_index`, `development_index` and `calendar_index` from 0,
@@ -22,8 +30,9 @@ NULL
 #' every observed cell.
 #'
 #' `prediction_error` gives the reserves' analytic prediction error by the
-#' delta method, by origin and in total: the process variance `phi * sum(mu)`
-#' and the parameter variance `g' Sigma g` with `g = sum(mu * x)` over each
+#' delta method, by origin and in total: the process variance
+#' `phi * sum(V(mu))` (`V(mu) = mu` for the ODP, `mu^2` for the gamma,
+#' `mu^power` for the Tweedie) and the parameter variance `g' Sigma g` with `g = sum(mu * x)` over each
 #' origin's future cells. It reproduces Taylor and McGuire's (CAS Monograph
 #' 3) Table 5-4 (`validation/tests/reserving.rs`).
 #'
@@ -55,6 +64,8 @@ NULL
 #'   development factor), or a one-sided formula on the cells.
 #' @param tolerance Convergence tolerance of the IRLS fit.
 #' @param max_iterations Most IRLS iterations.
+#' @param family The error: `"poisson"` (the ODP), `"gamma"` or `"tweedie"`.
+#' @param power The Tweedie power, in (1, 2); only for `family = "tweedie"`.
 #' @returns An `odp_glm_fit` object.
 #' @export
 #' @examples
@@ -71,6 +82,9 @@ NULL
 #' line <- odp_glm(triangle(long, "year", "age", "paid"),
 #'                 formula = ~ origin_index + factor(development))
 #' line@coefficients
+#'
+#' # A gamma error: every cell's relative error weighs alike.
+#' odp_glm(triangle(long, "year", "age", "paid"), family = "gamma")@total_reserve
 odp_glm_fit <- S7::new_class(
   "odp_glm_fit",
   package = "prospicio",
@@ -119,8 +133,18 @@ odp_glm_fit <- S7::new_class(
 #' @rdname odp_glm_fit
 #' @export
 odp_glm <- function(triangle, column = NULL, formula = NULL, tolerance = 1e-10,
-                    max_iterations = 100) {
+                    max_iterations = 100, family = "poisson", power = NULL) {
   column <- fit_column(triangle, column)
+  if (!is.character(family) || length(family) != 1) {
+    stop("family must be \"poisson\", \"gamma\" or \"tweedie\"", call. = FALSE)
+  }
+  if (identical(family, "tweedie")) {
+    if (is.null(power)) stop("family = \"tweedie\" needs power", call. = FALSE)
+    power <- single_number(power, "power")
+  } else {
+    if (!is.null(power)) stop("power is only for family = \"tweedie\"", call. = FALSE)
+    power <- NaN
+  }
   x <- double(0)
   names <- character(0)
   offset <- double(0)
@@ -139,7 +163,8 @@ odp_glm <- function(triangle, column = NULL, formula = NULL, tolerance = 1e-10,
   }
   ptr <- rust_result(odp_glm_fit_rust(triangle@ptr, column, x, names, offset,
                                       single_number(tolerance, "tolerance"),
-                                      single_number(max_iterations, "max_iterations")))
+                                      single_number(max_iterations, "max_iterations"),
+                                      family, power))
   odp_glm_fit(ptr = ptr)
 }
 

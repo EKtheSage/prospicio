@@ -16696,6 +16696,9 @@ class OdpGlm:
     volume-weighted chain-ladder reserves. ``fit`` takes another design on
     the triangle's cells too (``OdpGlm.cells``): fewer parameters, calendar
     trends, interactions (Taylor and McGuire, CAS Monograph 3, Chapter 7).
+    ``family`` swaps the error for a gamma, ``Var X = phi E[X]**2``, or a
+    Tweedie, ``phi E[X]**power`` (section 6.5), whose reserves are no longer
+    the chain ladder's.
     
     Parameters
     ----------
@@ -16703,6 +16706,10 @@ class OdpGlm:
         IRLS convergence tolerance.
     max_iterations : int, default 100
         Maximum IRLS iterations.
+    family : {"poisson", "gamma", "tweedie"}, default "poisson"
+        The error distribution, with the log link and Pearson's dispersion.
+    power : float, optional
+        The Tweedie power, in (1, 2); needed for, and only for, ``"tweedie"``.
     
     Examples
     --------
@@ -16715,8 +16722,10 @@ class OdpGlm:
     >>> fit = OdpGlm().fit(tri, "paid")
     >>> round(fit.total_reserve, 4)
     98.1429
+    >>> round(OdpGlm(family="gamma").fit(tri, "paid").total_reserve, 4)
+    98.2931
     """
-    def __new__(cls, /, tolerance: float = 1e-10, max_iterations: int = 100) -> OdpGlm: ...
+    def __new__(cls, /, tolerance: float = 1e-10, max_iterations: int = 100, family: str = "poisson", power: float |None = None) -> OdpGlm: ...
     def __repr__(self, /) -> str: ...
     @staticmethod
     def cells(triangle: Triangle, column: str) -> dict:
@@ -16745,6 +16754,11 @@ class OdpGlm:
         ------
         ValueError
             If the triangle has several segments or no such column.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        The error distribution: ``"poisson"``, ``"gamma"`` or ``"tweedie"``.
         """
     def fit(self, /, triangle: Triangle, column: str, design: Design |None = None) -> OdpGlmFit:
         """
@@ -16776,7 +16790,9 @@ class OdpGlm:
             increment, or the GLM does not converge (a collinear design among
             them); without ``design``, if an origin or age has no observed
             increment; with it, if it does not have a row per cell or a
-            column is zero on every observed cell.
+            column is zero on every observed cell; under the gamma, if an
+            observed increment is not positive, and under the Tweedie, if one
+            is negative.
         
         Examples
         --------
@@ -16805,6 +16821,11 @@ class OdpGlm:
     def max_iterations(self, /) -> int:
         """
         Maximum IRLS iterations.
+        """
+    @property
+    def power(self, /) -> float |None:
+        """
+        The Tweedie power, or ``None`` for the other families.
         """
     @property
     def tolerance(self, /) -> float:
@@ -16843,8 +16864,9 @@ class OdpGlmFit:
     @property
     def glm(self, /) -> GlmFit:
         """
-        The quasi-Poisson GLM on the observed increments: coefficients,
-        standard errors, covariance and Pearson's dispersion. Without a
+        The GLM on the observed increments (quasi-Poisson unless
+        ``OdpGlm.family`` says otherwise): coefficients, standard errors,
+        covariance and Pearson's dispersion. Without a
         ``design``, its columns are ``(Intercept)``, ``origin[<period>]`` and
         ``development[<age>]``, with the first origin and the first age as
         references; with one, the design's.
@@ -16858,8 +16880,9 @@ class OdpGlmFit:
         """
         Joint draws of the future cells' increments, with dimensions
         ``["origin", "development"]``. Each simulation draws the coefficients
-        from their normal approximation, then each cell as
-        ``phi * Poisson(mu / phi)``. ``aggregate(["origin"])`` gives the
+        from their normal approximation, then each cell from the family:
+        ``phi * Poisson(mu / phi)`` for the ODP, a gamma or a Tweedie with mean
+        ``mu`` and the dispersion. ``aggregate(["origin"])`` gives the
         reserves by origin.
         
         Parameters
@@ -16886,9 +16909,10 @@ class OdpGlmFit:
         """
         The reserves' prediction error by origin and in total (Taylor and
         McGuire, CAS Monograph 3, (5-11) to (5-13), Table 5-4): the process
-        error ``phi * sum(mu)`` of the future cells, the parameter error
-        ``g' Sigma g`` by the delta method with ``g = sum(mu * x)``, and the
-        root mean square error of prediction. The total's exceeds the
+        error ``phi * sum(V(mu))`` of the future cells (``V(mu) = mu`` for the
+        ODP, ``mu**2`` for the gamma, ``mu**power`` for the Tweedie), the
+        parameter error ``g' Sigma g`` by the delta method with
+        ``g = sum(mu * x)``, and the root mean square error of prediction. The total's exceeds the
         origins' combined as if independent, because every origin shares
         the development factors.
         
@@ -16922,7 +16946,7 @@ class OdpGlmFit:
         The standardized deviance residuals grouped by origin, development
         age or calendar period: a trend in the calendar means points to a
         calendar effect the model lacks, a spread that falls with age to a
-        variance that is not ``phi * mu``.
+        variance that is not the family's (``phi * mu`` for the ODP).
         
         Parameters
         ----------

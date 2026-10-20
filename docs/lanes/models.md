@@ -6,7 +6,6 @@
 
 ## Next
 
-- [odp-glm-designs] #333's gamma and Tweedie families (in the Reserving lane's files, with the user's go-ahead of 2026-10-19)
 - the issues filed by the Guides lane on 2026-10-18 (#353, #355, #356, #358)
 - [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
@@ -28,3 +27,4 @@
 - with the user's go-ahead to work in the Reserving lane's files (2026-10-19): the ODP GLM's analytic prediction error (`OdpGlmFit::prediction_error`, Taylor and McGuire's Table 5-4 to the unit) and `OdpGlm` in Python and R (`odp_glm()`; #333, first PR, #436)
 - with the same go-ahead: the ODP GLM's residual diagnostics (`OdpGlmFit::residuals` and `OdpResiduals::summary` by origin, development or calendar period, Taylor and McGuire's Figure 6-22 heat map exact; Python `residuals()`, `residual_summary()`, R `fit@residuals`, `residual_summary()`; #333, second PR, #438)
 - with the same go-ahead: the ODP GLM on a custom design (`OdpGlm::fit_design` on a design over the triangle's cells; Taylor and McGuire's models 7-2, 7-10 and 7-14, Tables 7-1, 7-3 and 7-5 to the printed digits; Python `OdpGlm.cells` and `fit(..., design=)`, R `odp_glm_cells()` and `odp_glm(formula = ~ ...)`; #333, third PR, #443)
+- [odp-glm-designs] with the same go-ahead: the ODP GLM's gamma and Tweedie errors (`OdpGlm::family`: the Poisson, gamma or Tweedie with `1 < p < 2`, log link, Pearson's dispersion; R `glm(Gamma(link = "log"))` and statmod `tweedie(1.5)` parity on GenIns and ABC; Taylor and McGuire's section 6.5 gamma as the guide's section 9; Python `OdpGlm(family=, power=)`, R `odp_glm(family =, power =)`; #333, fourth PR, which closes it)

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use prospicio_glm::Glm;
 use prospicio_models::stack::stacking_weights;
-use prospicio_models::{Column, Design, Terms};
+use prospicio_models::{Column, Design, Family, Terms};
 use prospicio_prob::Distribution;
 use prospicio_reserving::{
     Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, GlmCandidate, Grain,
@@ -394,14 +394,30 @@ fn rel_diff(a: f64, b: f64) -> f64 {
 
 #[test]
 fn odp_glm_matches_r_glm() {
-    let mut fits: HashMap<String, OdpGlmFit> = HashMap::new();
+    // The quasi-Poisson, and the gamma and Tweedie (p = 1.5) errors on the
+    // same cross-classified design.
+    let mut fits: HashMap<(String, String), OdpGlmFit> = HashMap::new();
     check(&reference("reserving_glm_r.csv"), |case| {
         let dataset = case.get("dataset");
-        assert_eq!(case.get("method"), "odp_glm");
-        let fit = fits.entry(dataset.to_string()).or_insert_with(|| {
-            OdpGlm::default()
-                .fit(&triangle(dataset), "values")
-                .unwrap_or_else(|e| panic!("{dataset}: {e}"))
+        let method = case.get("method");
+        let family = match method {
+            "odp_glm" => Family::Poisson,
+            "odp_glm_gamma" => Family::Gamma,
+            "odp_glm_tweedie" => Family::Tweedie { power: 1.5 },
+            other => panic!("unknown method {other}"),
+        };
+        let key = (dataset.to_string(), method.to_string());
+        let fit = fits.entry(key).or_insert_with(|| {
+            // Converged as far as R's: on the gamma's and Tweedie's
+            // non-canonical log link IRLS converges linearly, and the default
+            // tolerance stops a small coefficient about 1e-9 short.
+            OdpGlm {
+                family,
+                tolerance: 1e-14,
+                ..OdpGlm::default()
+            }
+            .fit(&triangle(dataset), "values")
+            .unwrap_or_else(|e| panic!("{dataset} {method}: {e}"))
         });
         let arg = case.get("arg");
         let coefficient = || fit.glm.names().iter().position(|n| n == arg);
@@ -577,6 +593,31 @@ fn odp_glm_prediction_error_matches_taylor_mcguire_table_5_4() {
     assert!((error.total.parameter_variance.sqrt() - 12_465.0).abs() <= 0.5);
     let independent: f64 = error.by_origin.iter().map(|e| e.rmsep().powi(2)).sum();
     assert!((independent.sqrt() - 10_275.0).abs() <= 0.5);
+}
+
+/// The gamma cross-classified model Taylor and McGuire suggest in section
+/// 6.5 (a variance proportional to the mean squared). The monograph prints
+/// no gamma results for this triangle; these are the numbers of the guide
+/// `docs/guides/reserving-taylor-mcguire.md`, section 9, which fits it by
+/// hand with `Glm("gamma", "log")`, and R's `glm(family = Gamma(link =
+/// "log"))` agrees with them.
+#[test]
+fn odp_glm_gamma_matches_the_taylor_mcguire_guide() {
+    let fit = OdpGlm {
+        family: Family::Gamma,
+        ..OdpGlm::default()
+    }
+    .fit(&taylor_mcguire(), "paid")
+    .unwrap();
+    assert!((fit.glm.dispersion() - 0.0047).abs() < 5e-5);
+    let printed = [
+        3_423.0, 8_134.0, 15_086.0, 22_667.0, 31_820.0, 45_434.0, 60_216.0, 80_829.0, 105_857.0,
+    ];
+    assert_eq!(fit.reserves[0], 0.0);
+    for (r, p) in fit.reserves[1..].iter().zip(printed) {
+        assert!((r - p).abs() <= 0.5, "{r} vs {p}");
+    }
+    assert!((fit.total_reserve() - 373_466.0).abs() <= 0.5);
 }
 
 #[test]

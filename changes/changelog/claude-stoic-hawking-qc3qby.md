@@ -406,3 +406,22 @@
 
 - Rust: `OdpGlmFit::coding` is an `Option<Coding>`, `None` for a fit of
   `OdpGlm::fit_design`; `glm.names()` names the columns of either (#333).
+
+### Reserving
+
+- The ODP GLM with a gamma or Tweedie error: `OdpGlm::family` is
+  `Family::Poisson` (the default, the ODP), `Family::Gamma` (variance
+  `phi mu^2`, Taylor and McGuire's section 6.5) or `Family::Tweedie {
+  power }` with `1 < p < 2`, each with the log link and Pearson's
+  dispersion, on the cross-classified model or a custom design. The
+  prediction error, residuals and draws follow the family. R
+  `glm(family = Gamma(link = "log"))` and statmod's `tweedie(var.power =
+  1.5, link.power = 0)` parity on GenIns and ABC. Python
+  `OdpGlm(family="gamma")`, `OdpGlm(family="tweedie", power=1.5)`; R
+  `odp_glm(triangle, family = "gamma")`, `family = "tweedie", power = 1.5`
+  (#333, #445).
+
+### Breaking changes
+
+- Rust: `OdpGlm` gains a public `family` field; code that builds it in
+  full adds `family: Family::Poisson` or uses `..OdpGlm::default()` (#333, #445).
