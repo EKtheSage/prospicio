@@ -55,7 +55,7 @@ decided, 2026-10-20).
 |---|---|---|---|
 | 1 | `claude/calibration-study` | this note; the lane, roadmap and knowledge entries | `main` |
 | 2 | `claude/calibration-harness` | the panel script `validation/scripts/calibration_panel.py` (decision 2), the Rust panel loader, the percentile and KS code (decision 5), the harness (decision 6) with Mack (paid and incurred) and the ODP bootstrap (paid), the `#[ignore]`d study, its outputs (decision 7); the panel accepted only if Mack reproduces Meyers' D (decision 3); a timing probe (the models built by then; see "As built") | PR 1 |
-| 3 | `claude/calibration-bayes` | `BayesOdp` on paid, and Meyers' CRC, CSR and CAY on his bases; the comparison table with Meyers' D (decision 8) | PR 2 |
+| 3 | `claude/calibration-bayes` | `BayesOdp` on paid, and Meyers' CRC, CSR and CAY on his bases; the comparison table with Meyers' D (decision 8); built, see "As built (PR 3)" | PR 2 |
 | 4 | `claude/calibration-compartmental` | Compartmental model 1 (paid), and model 2 as an optional, slower arm (decision 6) | PR 3 |
 
 After a run the user reviews, the D values are pinned within a tolerance
@@ -443,9 +443,11 @@ if you disagree:
    compartmental models use the WC company 337 presets on every line, so
    their D on CA, PA and OL partly tests the preset (decision 1).
 
-Open: `BayesOdp`'s basis (paid only is planned, beside the ODP
-bootstrap; paid and incurred is cheap and can be added in PR 3 on
-request).
+Open: `BayesOdp`'s basis. PR 3 built paid only, beside the ODP
+bootstrap; incurred is cheap (the arm is one more `ArmBasis`) and can be
+added on request, but `BayesOdp` skips 113 of 200 triangles on paid (see
+"As built (PR 3)"), and incurred, which has fewer non-positive increments,
+may skip fewer.
 
 ## As built (PR 2, 2026-10-20)
 
@@ -526,3 +528,55 @@ from the plan above:
   triangles of each line for it.
 * **Not done here**: pinning the arms' D values (after the user reviews the
   run), the Bayesian arms, Compartmental.
+
+## As built (PR 3, 2026-10-20)
+
+PR 3 (`claude/calibration-bayes`, stacked on PR 2) adds the arms
+`bayes_odp` (paid), `crc` (paid and incurred), `csr` (paid) and `cay`
+(incurred) to `validation/tests/reserving_calibration_meyers.rs`. The bases
+are the note's table and Meyers' figures (5.1, 5.2, 7.4, 8.5 of the
+monograph, checked against `08-Meyers.pdf`); his D values are in
+`meyers_published`. Differences from the plan above:
+
+* **Settings.** `BayesOdp::default()` and `Meyers::default()` with the
+  seed and target acceptance replaced: Meyers' priors, four chains with
+  1,000 warm-up and 2,000 kept draws (`BayesOdp` 1,000 kept draws), target
+  acceptance 0.95, 10,000 simulations. Premium is the panel's `premium`
+  column (`earned_prem_net`). A percentile is `Sampled::cdf` of the total
+  of the simulated ultimates (Meyers) or of the reserves shifted by what is
+  paid (`BayesOdp`, as the ODP bootstrap), through one function,
+  `score_draws`, that also gives the per-origin percentiles.
+* **Refit.** Decision 5's rule is built as `with_refit`: R-hat above 1.05
+  or any divergence refits once at target acceptance 0.99, and the refit is
+  the result. `percentiles.csv` holds the kept fit's diagnostics in
+  `diagnostics` and the first fit's percentile and diagnostics in `refit`;
+  the test log prints, per arm, how many first fits failed, how many were
+  refitted and how many still fail, with the worst R-hat and ESS, and the
+  distinct error texts with their counts.
+* **Selection.** `RISK_RS_CALIBRATION_ARMS` names `mack`, `odp`,
+  `bayes_odp`, `crc` (both bases), `csr` and `cay`; the default is all of
+  them (decision 6 said "the arms built so far"). A progress line goes to
+  stderr every 40th of the fits.
+* **CI.** The file has no `[[test]]` entry and the study stays `#[ignore]`d.
+  CI's `bayes` job runs only the tests of `[[test]]` entries that require
+  `slow-bayes` and passes no `--include-ignored` (`ci.yml`, "bayes" job), so
+  it does not touch this file; the plain `cargo test` runs the file's unit
+  tests, among them a cut-down NUTS check on a synthetic square (0.3 s) and
+  the logic of the refit. The wiring test on group 353,
+  `the_bayesian_arms_reproduce_meyers_on_group_353`, fits all five arms at
+  the study's settings and is ignored unless `--features slow-bayes` is on
+  (CRC, CSR and CAY within 5 points of Meyers' printed outcome percentiles
+  51.88, 74.75, 86.26 and 73.24, `BayesOdp` near Mack's mean and the ODP
+  bootstrap's percentile); it runs by hand with
+  `cargo test --release -p prospicio-validation --features slow-bayes
+  --test reserving_calibration_meyers`.
+* **Result.** The full study took 230 s on 16 threads (1,600 fits). The
+  results, the skipped counts, the diagnostics and the timings per arm are in
+  `knowledge/findings/meyers-calibration-bayesian-arms.md` (draft). In
+  short: 16 of Meyers' 20 cells have his verdict; `BayesOdp` on paid skips
+  113 of 200 triangles (a development age whose observed increments sum to
+  zero or less), and the common set of all arms is 85 triangles, so the
+  common-set table is mostly a `BayesOdp` selection effect; a run that
+  floors the cells (decision 5's second run) is not built.
+* **Not done here**: pinning the D values (after the user reviews the
+  run), Compartmental (PR 4), a run on the printed codes only.
