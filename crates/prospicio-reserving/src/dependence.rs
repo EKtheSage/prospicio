@@ -166,6 +166,30 @@ impl SegmentDependence {
             Self::Independent | Self::Synchronized => Ok(draws),
         }
     }
+
+    /// The simulations of several segments, `rows` (one row of `width`
+    /// values per simulation, segment `s` holding the columns `ranges[s]`),
+    /// reordered to the rank correlation if that is the choice, and as they
+    /// are otherwise. Iman–Conover ranks segment `s` by the sum of its
+    /// columns `ranked[s]` alone (its total reserve), and all of the
+    /// segment's columns in `ranges[s]` then move with it, so a segment's
+    /// values stay consistent row by row. `seed` is the fit's.
+    #[cfg(feature = "bayes")]
+    pub(crate) fn reorder_rows(
+        &self,
+        rows: Vec<f64>,
+        width: usize,
+        ranges: &[Range<usize>],
+        ranked: &[Range<usize>],
+        seed: u64,
+    ) -> Result<Vec<f64>> {
+        match self {
+            Self::RankCorrelation { spearman } => {
+                rank_correlate_rows(&rows, width, ranges, ranked, spearman, seed)
+            }
+            Self::Independent | Self::Synchronized => Ok(rows),
+        }
+    }
 }
 
 /// The residuals a bootstrap model of one segment resamples, laid out to
@@ -323,15 +347,7 @@ fn rank_correlate(
     let n_sims = draws.n_sims();
     let mut rng = StreamRng::new(seed, n_sims as u64);
     let reordered = grouped.reorder_groups("segment", &normal, rng.next_u64())?;
-    // Iman–Conover leaves the first segment's rows sorted by its total, so
-    // row `i` would rank the simulations rather than stand for one: put the
-    // paired rows in a random order (Fisher–Yates), which keeps the joint
-    // law.
-    let mut order: Vec<usize> = (0..n_sims).collect();
-    for i in (1..n_sims).rev() {
-        let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
-        order.swap(i, j);
-    }
+    let order = shuffled_order(n_sims, &mut rng);
     let n = draws.n_components();
     let paired = reordered.draw_matrix();
     let rows = order
@@ -348,6 +364,87 @@ fn rank_correlate(
         rows,
         provenance,
     )?)
+}
+
+/// Iman–Conover leaves the first segment's rows sorted by its total, so row
+/// `i` would rank the simulations rather than stand for one: the paired rows
+/// are put in a random order (Fisher–Yates, from `rng`), which keeps the
+/// joint law.
+fn shuffled_order(n_sims: usize, rng: &mut StreamRng) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..n_sims).collect();
+    for i in (1..n_sims).rev() {
+        let j = ((rng.next_open01() * (i + 1) as f64) as usize).min(i);
+        order.swap(i, j);
+    }
+    order
+}
+
+/// `rows` (`width` values per simulation, segment `s` in the columns
+/// `ranges[s]`) with the segments' simulations reordered as whole rows of
+/// their own columns, so that the sums of `ranked[s]` (the segment totals)
+/// have about the Spearman correlation `spearman`, then the rows shuffled
+/// as in [`rank_correlate`] (stream `n_sims` of `seed`).
+#[cfg(feature = "bayes")]
+fn rank_correlate_rows(
+    rows: &[f64],
+    width: usize,
+    ranges: &[Range<usize>],
+    ranked: &[Range<usize>],
+    spearman: &[f64],
+    seed: u64,
+) -> Result<Vec<f64>> {
+    let s = ranges.len();
+    let normal = normal_scores(spearman, s)?;
+    let n_sims = rows.len() / width;
+    let totals: Vec<f64> = rows
+        .chunks_exact(width)
+        .flat_map(|row| {
+            ranked
+                .iter()
+                .map(move |r| row[r.clone()].iter().sum::<f64>())
+        })
+        .collect();
+    let grouped = PredictiveDistribution::from_draws(
+        vec!["segment".into(), "component".into()],
+        (0..s)
+            .map(|g| vec![KeyValue::Int(g as i64), KeyValue::Int(0)])
+            .collect(),
+        totals.clone(),
+        prospicio_prob::Provenance::new("rank_correlation_rows"),
+    )?;
+    let mut rng = StreamRng::new(seed, n_sims as u64);
+    let reordered = grouped.reorder_groups("segment", &normal, rng.next_u64())?;
+    let moved = reordered.draw_matrix();
+    // Iman–Conover returns each segment's totals in a new order. The k-th
+    // smallest total of the output is the k-th smallest of the input, so
+    // matching them by rank (ties by position) finds the input row each
+    // output row came from.
+    let by_total = |values: &dyn Fn(usize) -> f64| {
+        let mut order: Vec<usize> = (0..n_sims).collect();
+        order.sort_by(|&a, &b| values(a).total_cmp(&values(b)).then(a.cmp(&b)));
+        order
+    };
+    let source: Vec<Vec<usize>> = (0..s)
+        .map(|g| {
+            let from = by_total(&|i| totals[i * s + g]);
+            let to = by_total(&|i| moved[i * s + g]);
+            let mut source = vec![0; n_sims];
+            for (&out, &input) in to.iter().zip(&from) {
+                source[out] = input;
+            }
+            source
+        })
+        .collect();
+    let order = shuffled_order(n_sims, &mut rng);
+    let mut out = vec![0.0; rows.len()];
+    for (i, &r) in order.iter().enumerate() {
+        for (g, range) in ranges.iter().enumerate() {
+            let from = source[g][r] * width;
+            out[i * width + range.start..i * width + range.end]
+                .copy_from_slice(&rows[from + range.start..from + range.end]);
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -668,6 +765,70 @@ mod tests {
             // Reproducible: the reordering's seed comes from the bootstrap's.
             assert_eq!(draws(&run(rank.clone())), draws(&ranked));
         }
+    }
+
+    /// Rows of two segments with three columns each, the first the one
+    /// ranked and the others functions of it: reordering moves the whole
+    /// row, so the functions still hold, and the rows are a permutation.
+    #[cfg(feature = "bayes")]
+    #[test]
+    fn whole_rows_move_with_the_ranked_columns() {
+        let n_sims = 400;
+        let mut rng = StreamRng::new(9, 0);
+        let mut rows = Vec::new();
+        for _ in 0..n_sims {
+            for scale in [1.0, 10.0] {
+                let x = scale * rng.next_open01();
+                rows.extend([x, 2.0 * x + 1.0, -x]);
+            }
+        }
+        let ranges = [0..3, 3..6];
+        let ranked = [0..1, 3..4];
+        let rank = SegmentDependence::RankCorrelation {
+            spearman: vec![1.0, 0.7, 0.7, 1.0],
+        };
+        let out = rank
+            .reorder_rows(rows.clone(), 6, &ranges, &ranked, 5)
+            .unwrap();
+        assert_eq!(out.len(), rows.len());
+        for row in out.chunks_exact(6) {
+            for s in [0, 3] {
+                assert_eq!(row[s + 1], 2.0 * row[s] + 1.0);
+                assert_eq!(row[s + 2], -row[s]);
+            }
+        }
+        for s in [0, 3] {
+            let column = |v: &[f64]| {
+                let mut c: Vec<f64> = v.chunks_exact(6).map(|r| r[s]).collect();
+                c.sort_by(f64::total_cmp);
+                c
+            };
+            assert_eq!(column(&rows), column(&out));
+        }
+        let x: Vec<f64> = out.chunks_exact(6).map(|r| r[0]).collect();
+        let y: Vec<f64> = out.chunks_exact(6).map(|r| r[3]).collect();
+        let rho = {
+            let ranks = |v: &[f64]| {
+                let mut idx: Vec<usize> = (0..v.len()).collect();
+                idx.sort_by(|&a, &b| v[a].total_cmp(&v[b]));
+                let mut r = vec![0.0; v.len()];
+                for (k, &i) in idx.iter().enumerate() {
+                    r[i] = k as f64;
+                }
+                r
+            };
+            let (rx, ry) = (ranks(&x), ranks(&y));
+            let m = (n_sims as f64 - 1.0) / 2.0;
+            let sxy: f64 = rx.iter().zip(&ry).map(|(a, b)| (a - m) * (b - m)).sum();
+            let sxx: f64 = rx.iter().map(|a| (a - m).powi(2)).sum();
+            sxy / sxx
+        };
+        assert!((rho - 0.7).abs() < 0.06, "{rho}");
+        // Independent leaves the rows alone.
+        let same = SegmentDependence::Independent
+            .reorder_rows(rows.clone(), 6, &ranges, &ranked, 5)
+            .unwrap();
+        assert_eq!(same, rows);
     }
 
     #[test]

@@ -26,10 +26,10 @@ use pyo3::types::{
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
     BayesBf, BayesBfFit, BayesOdpFits, BayesOdpSegment, BayesOneYear, BayesOneYearFit,
-    BayesOneYearFits, BayesOneYearSegment, Compartmental, CompartmentalFit,
-    CompartmentalLikelihood, CompartmentalPriors, CompartmentalStart, Fitted, HalfPrior,
-    MeyersFits, MeyersSegment, OneYearRefit, Outstanding, PaidResponse, PositivePrior, RateOrder,
-    RealPrior, Scale as CompartmentalScale,
+    BayesOneYearFits, BayesOneYearSegment, Compartmental, CompartmentalFit, CompartmentalFits,
+    CompartmentalLikelihood, CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted,
+    HalfPrior, MeyersFits, MeyersSegment, OneYearRefit, Outstanding, PaidResponse, PositivePrior,
+    RateOrder, RealPrior, Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     Backtest, BayesOdp, BayesOdpFit, Diagnostics, GlmCandidate, Meyers, MeyersFit, MeyersModel,
@@ -10577,6 +10577,8 @@ impl PyCompartmental {
         seed = 0,
         target_accept = 0.99,
         max_depth = 10,
+        dependence = "independent",
+        spearman = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -10594,6 +10596,8 @@ impl PyCompartmental {
         seed: u64,
         target_accept: f64,
         max_depth: u64,
+        dependence: &str,
+        spearman: Option<Vec<Vec<f64>>>,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -10617,6 +10621,7 @@ impl PyCompartmental {
                 },
                 n_sims,
                 seed,
+                dependence: segment_dependence(dependence, spearman)?,
             },
         })
     }
@@ -10655,6 +10660,8 @@ impl PyCompartmental {
         seed = 0,
         target_accept = 0.999,
         max_depth = 10,
+        dependence = "independent",
+        spearman = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn model_2(
@@ -10668,6 +10675,8 @@ impl PyCompartmental {
         seed: u64,
         target_accept: f64,
         max_depth: u64,
+        dependence: &str,
+        spearman: Option<Vec<Vec<f64>>>,
     ) -> PyResult<Self> {
         Self::new(
             priors,
@@ -10684,6 +10693,8 @@ impl PyCompartmental {
             seed,
             target_accept,
             max_depth,
+            dependence,
+            spearman,
         )
     }
 
@@ -10773,6 +10784,21 @@ impl PyCompartmental {
         self.inner.sampler.max_depth
     }
 
+    /// How ``fit_segments`` joins the segments: ``"independent"`` or
+    /// ``"rank_correlation"`` (``"synchronized"`` is refused by
+    /// ``fit_segments``). ``fit`` ignores it.
+    #[getter]
+    fn dependence(&self) -> &'static str {
+        dependence_name(&self.inner.dependence)
+    }
+
+    /// The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+    /// otherwise.
+    #[getter]
+    fn spearman(&self) -> Option<Vec<Vec<f64>>> {
+        dependence_spearman(&self.inner.dependence)
+    }
+
     /// Samples the posterior of paid and outstanding of a single-segment
     /// cumulative triangle, with each origin's premium from another column
     /// (its latest value), and simulates the future cells of the square and
@@ -10826,6 +10852,90 @@ impl PyCompartmental {
             .map_err(err)?;
         warn_diagnostics(py, "Compartmental", &inner.diagnostics.warnings)?;
         Ok(PyCompartmentalFit { inner })
+    }
+
+    /// Samples the posterior of paid and outstanding in every segment of a
+    /// cumulative triangle, each segment with its own posterior (the same
+    /// model and settings, sampled independently) and its premium from its
+    /// own ``premium`` column as ``fit`` reads it, into joint distributions
+    /// of the reserves and of the future paid and outstanding cells, the
+    /// segments depending on each other as ``dependence`` says. Under
+    /// ``"rank_correlation"`` each segment's reserves, future paid cells and
+    /// future outstanding cells are reordered together, ranked on the
+    /// reserves, so every output of a segment stays consistent. Segment
+    /// ``k`` (in index order) takes seeds derived from ``seed`` and ``k``
+    /// for its chains and its simulations, so independent segments share no
+    /// random numbers, and a segment's draws differ from ``fit`` of that
+    /// segment alone. Raises one ``UserWarning`` listing the failed
+    /// diagnostics and any rate swap of every segment, each message
+    /// prefixed with its segment's label.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     Cumulative, with any number of segments.
+    /// paid : str
+    ///     Cumulative paid amounts.
+    /// premium : str
+    ///     The premium of each origin.
+    /// outstanding : str, optional
+    ///     A column of outstanding amounts.
+    /// incurred : str, optional
+    ///     A column of incurred amounts.
+    ///
+    /// Returns
+    /// -------
+    /// CompartmentalFits
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``fit`` for any segment (the message names the segment); if
+    ///     ``dependence`` is ``"synchronized"`` (before any sampling); or if
+    ///     ``spearman`` does not fit the segments.
+    ///
+    /// Examples
+    /// --------
+    /// >>> import warnings
+    /// >>> from prospicio.reserving import Compartmental, CompartmentalPriors, Triangle
+    /// >>> paid = [[952, 1529, 2813, 3647, 3724], [849, 1564, 2202, 2432],
+    /// ...         [983, 2211, 2830], [1657, 2685], [932]]
+    /// >>> case = [[1500, 1400, 900, 400, 100], [1300, 1200, 800, 300],
+    /// ...         [1400, 1100, 700], [1200, 900], [1100]]
+    /// >>> premium = [5812, 4908, 5454, 5165, 5214]
+    /// >>> rows = [(lob, 1988 + w, 12 * (d + 1), k * v, k * case[w][d], k * premium[w])
+    /// ...         for lob, k in [("Auto", 1.0), ("Home", 2.0)]
+    /// ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+    /// >>> lob, origin, age, values, os, prem = map(list, zip(*rows))
+    /// >>> tri = Triangle.from_long(
+    /// ...     origin, age,
+    /// ...     {"paid": values, "case": os, "premium": prem}, keys={"lob": lob})
+    /// >>> model = Compartmental(
+    /// ...     CompartmentalPriors.gesmann_morris(), tune=100, draws=100, n_sims=200,
+    /// ...     chains=2)
+    /// >>> with warnings.catch_warnings():
+    /// ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+    /// ...     fits = model.fit_segments(tri, "paid", "premium", outstanding="case")
+    /// >>> fits.index, fits.reserves.dims
+    /// (['Auto', 'Home'], ['lob', 'origin'])
+    #[pyo3(signature = (triangle, paid, premium, *, outstanding = None, incurred = None))]
+    fn fit_segments(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        paid: &str,
+        premium: &str,
+        outstanding: Option<&str>,
+        incurred: Option<&str>,
+    ) -> PyResult<PyCompartmentalFits> {
+        let os = compartmental_outstanding(outstanding, incurred)?;
+        let (model, tri) = (&self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| model.fit_segments(tri, paid, os, premium))
+            .map_err(err)?;
+        let warnings = segment_warnings(&inner.segments, |s| &s.fit.diagnostics);
+        warn_diagnostics(py, "Compartmental", &warnings)?;
+        Ok(PyCompartmentalFits { inner })
     }
 
     /// The one-year view: the claims development result over the coming
@@ -11450,6 +11560,274 @@ impl PyCompartmentalFit {
             self.inner.reserves.n_sims(),
             self.inner.rate_swaps,
             self.inner.diagnostics.warnings.len(),
+        )
+    }
+}
+
+/// ``Compartmental.fit_segments``: each segment's own posterior and the
+/// joint posterior predictive distributions of the reserves and of the
+/// future paid and outstanding cells.
+///
+/// ``reserves``, ``paid`` and ``outstanding`` have the triangle's keys as
+/// their first dimensions, so ``reserves.aggregate(["lob"])`` keeps the
+/// dependence between segments. Per-origin lists (``origins``,
+/// ``premium``, ``latest_paid``) run over the origins of each segment in
+/// turn, like the rows of ``to_frame()`` and the components of
+/// ``reserves``. The posterior of one segment (``diagnostics``,
+/// ``parameter_names``, ``draws``, ``chains``, ``summary()``, ``loo()``)
+/// needs a single-segment fit: for several segments use ``segment(...)`` or
+/// ``diagnostics_frame()``.
+#[pyclass(name = "CompartmentalFits", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyCompartmentalFits {
+    inner: CompartmentalFits,
+}
+
+impl PyCompartmentalFits {
+    fn one(&self, field: &str, instead: &str) -> PyResult<&CompartmentalSegment> {
+        single(&self.inner.segments, field, instead)
+    }
+}
+
+#[pymethods]
+impl PyCompartmentalFits {
+    /// Names of the triangle's key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.segments.key_names.clone()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        segment_labels(py, &self.inner.segments)
+    }
+
+    /// Origin period of each per-origin value and component, those of each
+    /// segment's premium column.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        self.inner
+            .segments
+            .fits
+            .iter()
+            .flat_map(|s| s.fit.origins.iter().map(ToString::to_string))
+            .collect()
+    }
+
+    /// The premium of each segment's origins, in the order of ``origins``.
+    #[getter]
+    fn premium(&self) -> Vec<f64> {
+        self.inner
+            .segments
+            .fits
+            .iter()
+            .flat_map(|s| s.fit.premium.iter().copied())
+            .collect()
+    }
+
+    /// Each origin's latest observed paid, in the order of ``origins``.
+    #[getter]
+    fn latest_paid(&self) -> Vec<f64> {
+        self.inner
+            .segments
+            .fits
+            .iter()
+            .flat_map(|s| s.fit.latest_paid.iter().copied())
+            .collect()
+    }
+
+    /// Joint posterior predictive distribution of the reserve by segment
+    /// and origin: the triangle's keys and ``"origin"`` are its dimensions,
+    /// one component per segment and origin, one row per simulation.
+    #[getter]
+    fn reserves(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    /// Posterior predictive cumulative paid of each future cell of every
+    /// segment: dimensions the keys, ``"origin"`` and ``"age"`` (months),
+    /// from the same simulations as ``reserves``.
+    #[getter]
+    fn paid(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.paid.clone(),
+        }
+    }
+
+    /// Posterior predictive outstanding of each future cell of every
+    /// segment, laid out as ``paid``.
+    #[getter]
+    fn outstanding(&self) -> PyPredictiveDistribution {
+        PyPredictiveDistribution {
+            inner: self.inner.outstanding.clone(),
+        }
+    }
+
+    /// The number of posterior draws with ``k_er <= k_p`` in each segment,
+    /// in index order.
+    #[getter]
+    fn rate_swaps(&self) -> Vec<usize> {
+        self.inner
+            .segments
+            .fits
+            .iter()
+            .map(|s| s.fit.rate_swaps)
+            .collect()
+    }
+
+    /// MCMC diagnostics of a single-segment fit, as
+    /// ``CompartmentalFit.diagnostics``.
+    #[getter]
+    fn diagnostics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        diagnostics_dict(
+            py,
+            &self
+                .one("diagnostics", "diagnostics_frame()")?
+                .fit
+                .diagnostics,
+        )
+    }
+
+    /// Parameter names of a single-segment fit, as
+    /// ``CompartmentalFit.parameter_names``.
+    #[getter]
+    fn parameter_names(&self) -> PyResult<Vec<String>> {
+        Ok(self
+            .one("parameter_names", "")?
+            .fit
+            .posterior
+            .names()
+            .to_vec())
+    }
+
+    /// Posterior draws of a single-segment fit, as
+    /// ``CompartmentalFit.draws``.
+    #[getter]
+    fn draws(&self) -> PyResult<Vec<Vec<f64>>> {
+        let posterior = &self.one("draws", "")?.fit.posterior;
+        let p = posterior.dim().max(1);
+        Ok(posterior.values().chunks(p).map(<[f64]>::to_vec).collect())
+    }
+
+    /// Number of chains of a single-segment fit.
+    #[getter]
+    fn chains(&self) -> PyResult<usize> {
+        Ok(self.one("chains", "")?.fit.posterior.chains())
+    }
+
+    /// Posterior summary of a single-segment fit, as
+    /// ``CompartmentalFit.summary``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn summary<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let one = &self.one("summary()", "")?.fit;
+        let s = py.detach(|| one.summary()).map_err(err)?;
+        summary_frame(py, &s)
+    }
+
+    /// PSIS-LOO of a single-segment fit's observed cells, as
+    /// ``CompartmentalFit.loo``.
+    ///
+    /// Returns
+    /// -------
+    /// Elpd
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the fit has several segments.
+    fn loo(&self, py: Python<'_>) -> PyResult<PyElpd> {
+        let one = &self.one("loo()", "")?.fit;
+        let l = py.detach(|| one.loo()).map_err(err)?;
+        Ok(PyElpd::from_loo(l.loo))
+    }
+
+    /// One row per segment: the key columns, then ``max_rhat``,
+    /// ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and
+    /// ``warnings`` (the segment's messages joined by ``"; "``, empty when
+    /// every threshold holds). Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn diagnostics_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        segment_diagnostics_frame(py, &self.inner.segments, |s| &s.fit.diagnostics)
+    }
+
+    /// One row per segment and origin: the key columns, ``origin``,
+    /// ``premium``, ``latest_paid``, the ``mean`` and ``std_dev`` of the
+    /// posterior predictive reserve, and the posterior mean
+    /// ``ultimate_loss_ratio``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.to_long())
+    }
+
+    /// One row per segment: the key columns, the total ``premium`` and
+    /// ``latest_paid``, and the ``mean`` and ``std_dev`` of the segment's
+    /// posterior predictive total reserve. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn totals_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.totals())
+    }
+
+    /// One row per segment and future paid cell, as
+    /// ``CompartmentalFit.paid_frame``. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn paid_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.paid_table().map_err(err)?)
+    }
+
+    /// The same for the future outstanding cells. Needs pandas.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame
+    fn outstanding_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        table_frame(py, self.inner.outstanding_table().map_err(err)?)
+    }
+
+    /// The fit of one segment, chosen by key values as
+    /// ``ChainLadderFit.segment``, with its part of the joint
+    /// distributions (same dimensions).
+    ///
+    /// Returns
+    /// -------
+    /// CompartmentalFits
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let keys = segment_keys(keys)?;
+        let keys: Vec<(&str, &str)> = keys.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        Ok(Self {
+            inner: self.inner.segment(&keys).map_err(err)?,
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        let segments = &self.inner.segments;
+        let warnings: usize = segments
+            .fits
+            .iter()
+            .map(|s| s.fit.diagnostics.warnings.len())
+            .sum();
+        format!(
+            "CompartmentalFits({}origins={}, n_sims={}, warnings={warnings})",
+            segments_prefix(segments),
+            self.origins().len(),
+            self.inner.reserves.n_sims(),
         )
     }
 }

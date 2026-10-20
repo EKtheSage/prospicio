@@ -14,7 +14,8 @@
 //! changing settlement rate model (CSR) and the correlated accident year
 //! model (CAY), with his priors. Its `ultimates` and `reserves` are a
 //! [`PredictiveDistribution`] by origin too. [`BayesOdp`] and [`Meyers`]
-//! both fit over segments and take part in the diagonal backtest.
+//! both fit over segments and take part in the diagonal backtest, and
+//! [`Compartmental`] fits over segments too.
 //!
 //! [`Compartmental`] is Gesmann and Morris' (2020) hierarchical
 //! compartmental model with one outstanding compartment
@@ -42,7 +43,8 @@
 //! stream `c` of its seed and simulation `i` stream `i` of its seed, so no
 //! simulation shares a stream with a chain, and a fit replays exactly for
 //! a seed whatever the number of threads. In
-//! [`BayesOdp::fit_segments`] and [`Meyers::fit_segments`], segment `k`
+//! [`BayesOdp::fit_segments`], [`Meyers::fit_segments`] and
+//! [`Compartmental::fit_segments`], segment `k`
 //! (in index order) takes tags `2 + 2k` (its chains) and `3 + 2k` (its
 //! simulations) instead, so every segment samples and simulates from its
 //! own streams and independent segments are independent (decision 11).
@@ -77,8 +79,9 @@ mod scalar;
 pub use crate::diagnostics::Diagnostics;
 pub use bf::{BayesBf, BayesBfFit};
 pub use compartmental::{
-    Compartmental, CompartmentalFit, CompartmentalLikelihood, CompartmentalLoo, CompartmentalPaths,
-    CompartmentalPriors, CompartmentalStart, Fitted, HalfPrior, Outstanding, PaidResponse,
+    Compartmental, CompartmentalCandidate, CompartmentalFit, CompartmentalFits,
+    CompartmentalLikelihood, CompartmentalLoo, CompartmentalPaths, CompartmentalPriors,
+    CompartmentalSegment, CompartmentalStart, Fitted, HalfPrior, Outstanding, PaidResponse,
     PositivePrior, RateOrder, RealPrior, Scale,
 };
 pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment};

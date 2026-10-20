@@ -19,6 +19,7 @@ use prospicio_glm::{Glm, GlmFit, ParameterDraws};
 use prospicio_math::linalg::{cholesky, lower_mul};
 use prospicio_math::special::norm_quantile;
 use prospicio_models::metrics::{coverage, crps};
+use prospicio_models::resample::Split;
 use prospicio_models::{Design, Fitted, Link, Model, Terms};
 use prospicio_prob::PredictiveDistribution;
 
@@ -307,16 +308,16 @@ pub const METRICS: [&str; 6] = [
 /// held-out diagonal, and the pointwise held-out log densities.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Backtest {
-    models: Vec<String>,
-    n_splits: usize,
+    pub(crate) models: Vec<String>,
+    pub(crate) n_splits: usize,
     /// Model-major, then metric, then split.
-    scores: Vec<f64>,
-    excluded: Vec<usize>,
-    scored: Vec<Vec<usize>>,
-    log_densities: Vec<Option<Vec<f64>>>,
+    pub(crate) scores: Vec<f64>,
+    pub(crate) excluded: Vec<usize>,
+    pub(crate) scored: Vec<Vec<usize>>,
+    pub(crate) log_densities: Vec<Option<Vec<f64>>>,
     /// Model-major, then split.
-    diagnostics: Vec<Option<Diagnostics>>,
-    diagonals: Vec<i64>,
+    pub(crate) diagnostics: Vec<Option<Diagnostics>>,
+    pub(crate) diagonals: Vec<i64>,
 }
 
 impl Backtest {
@@ -469,53 +470,14 @@ pub fn diagonal_backtest(
     if models.is_empty() {
         return Err(data("the backtest needs at least one model".into()));
     }
-    for (i, m) in models.iter().enumerate() {
-        if models[..i].iter().any(|o| o.name() == m.name()) {
-            return Err(data(format!(
-                "two models are named {:?}: name each model once (NamedModel renames one)",
-                m.name()
-            )));
-        }
-    }
-    if n_sims == 0 {
-        return Err(data("the backtest needs at least one simulation".into()));
-    }
-    if !(interval > 0.0 && interval < 1.0) {
-        return Err(Error::Core(CoreError::InvalidParameter {
-            name: "interval",
-            value: interval,
-            reason: "must be in (0, 1)",
-        }));
-    }
-    let splits = cells.diagonal_splits(n_diagonals)?;
+    check_unique_names(models)?;
+    check_settings(n_sims, interval)?;
+    let ScoredSplits {
+        splits,
+        excluded,
+        scored,
+    } = scored_splits(cells, models, n_diagonals)?;
     let n_splits = splits.len();
-    let mut excluded = Vec::with_capacity(n_splits);
-    let mut scored = Vec::with_capacity(n_splits);
-    for s in &splits {
-        let fit_rows: Vec<Vec<usize>> =
-            models.iter().map(|m| m.fit_rows(cells, &s.train)).collect();
-        let seen = |rows: &[usize], r: usize| {
-            rows.iter()
-                .any(|&t| cells.origin_of(t) == cells.origin_of(r))
-                && rows
-                    .iter()
-                    .any(|&t| cells.development_of(t) == cells.development_of(r))
-        };
-        let keep: Vec<usize> = s
-            .test
-            .iter()
-            .copied()
-            .filter(|&r| fit_rows.iter().all(|rows| seen(rows, r)))
-            .collect();
-        if keep.is_empty() {
-            return Err(data(format!(
-                "no held-out row of diagonal {} has a training origin and development",
-                cells.calendar_of(s.test[0])
-            )));
-        }
-        excluded.push(s.test.len() - keep.len());
-        scored.push(keep);
-    }
 
     let n_metrics = METRICS.len();
     let mut scores = vec![f64::NAN; models.len() * n_metrics * n_splits];
@@ -564,8 +526,92 @@ pub fn diagonal_backtest(
     })
 }
 
+/// Rejects two models of a backtest with the same name.
+pub(crate) fn check_unique_names(models: &[&dyn TriangleModel]) -> Result<()> {
+    for (i, m) in models.iter().enumerate() {
+        if models[..i].iter().any(|o| o.name() == m.name()) {
+            return Err(data(format!(
+                "two models are named {:?}: name each model once (NamedModel renames one)",
+                m.name()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The `n_sims` and `interval` settings of a backtest.
+pub(crate) fn check_settings(n_sims: usize, interval: f64) -> Result<()> {
+    if n_sims == 0 {
+        return Err(data("the backtest needs at least one simulation".into()));
+    }
+    if !(interval > 0.0 && interval < 1.0) {
+        return Err(Error::Core(CoreError::InvalidParameter {
+            name: "interval",
+            value: interval,
+            reason: "must be in (0, 1)",
+        }));
+    }
+    Ok(())
+}
+
+/// The splits of a backtest with the rows each one scores.
+pub(crate) struct ScoredSplits {
+    pub(crate) splits: Vec<Split>,
+    /// Held-out rows left out of each split.
+    pub(crate) excluded: Vec<usize>,
+    /// The rows each split scores.
+    pub(crate) scored: Vec<Vec<usize>>,
+}
+
+/// The latest `n_diagonals` diagonal splits of `cells`, with the rows of
+/// each held-out diagonal that every model of `models` can forecast (the
+/// origin and development of each have a row among every model's
+/// [`fit_rows`](TriangleModel::fit_rows)) and the count of the rows left
+/// out. [`diagonal_backtest`] scores the kept rows; the outstanding
+/// backtest of a compartmental model takes its splits and rows the same way.
+pub(crate) fn scored_splits(
+    cells: &TriangleFrame,
+    models: &[&dyn TriangleModel],
+    n_diagonals: usize,
+) -> Result<ScoredSplits> {
+    let splits = cells.diagonal_splits(n_diagonals)?;
+    let mut excluded = Vec::with_capacity(splits.len());
+    let mut scored = Vec::with_capacity(splits.len());
+    for s in &splits {
+        let fit_rows: Vec<Vec<usize>> =
+            models.iter().map(|m| m.fit_rows(cells, &s.train)).collect();
+        let seen = |rows: &[usize], r: usize| {
+            rows.iter()
+                .any(|&t| cells.origin_of(t) == cells.origin_of(r))
+                && rows
+                    .iter()
+                    .any(|&t| cells.development_of(t) == cells.development_of(r))
+        };
+        let keep: Vec<usize> = s
+            .test
+            .iter()
+            .copied()
+            .filter(|&r| fit_rows.iter().all(|rows| seen(rows, r)))
+            .collect();
+        if keep.is_empty() {
+            return Err(data(format!(
+                "no held-out row of diagonal {} has a training origin and development",
+                cells.calendar_of(s.test[0])
+            )));
+        }
+        excluded.push(s.test.len() - keep.len());
+        scored.push(keep);
+    }
+
+    Ok(ScoredSplits {
+        splits,
+        excluded,
+        scored,
+    })
+}
+
 /// The [`METRICS`] of one forecast against the outcomes `y`.
-fn score(f: &CellForecast, y: &[f64], interval: f64) -> Result<[f64; 6]> {
+pub(crate) fn score(f: &CellForecast, y: &[f64], interval: f64) -> Result<[f64; 6]> {
     let n = y.len();
     let dist = &f.distribution;
     if f.mean.len() != n || dist.n_components() != n {

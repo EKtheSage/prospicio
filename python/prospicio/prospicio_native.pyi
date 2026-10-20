@@ -5412,12 +5412,19 @@ class Compartmental:
     >>> fit.reserves.dims, fit.parameter_names[0]
     (['origin'], 'k_er')
     """
-    def __new__(cls, /, priors: CompartmentalPriors, *, likelihood: str = "normal", scale: str = "amount", paid_response: str = "cumulative", fitted: str = "paid_and_outstanding", rate_order: str = "free", start: str = "data", chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.99, max_depth: int = 10) -> Compartmental: ...
+    def __new__(cls, /, priors: CompartmentalPriors, *, likelihood: str = "normal", scale: str = "amount", paid_response: str = "cumulative", fitted: str = "paid_and_outstanding", rate_order: str = "free", start: str = "data", chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.99, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> Compartmental: ...
     def __repr__(self, /) -> str: ...
     @property
     def chains(self, /) -> int:
         """
         Number of NUTS chains.
+        """
+    @property
+    def dependence(self, /) -> str:
+        """
+        How ``fit_segments`` joins the segments: ``"independent"`` or
+        ``"rank_correlation"`` (``"synchronized"`` is refused by
+        ``fit_segments``). ``fit`` ignores it.
         """
     @property
     def draws(self, /) -> int:
@@ -5463,6 +5470,73 @@ class Compartmental:
             a prior or sampler setting is invalid; or if there are no more
             observed cells than parameters.
         """
+    def fit_segments(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None) -> CompartmentalFits:
+        """
+        Samples the posterior of paid and outstanding in every segment of a
+        cumulative triangle, each segment with its own posterior (the same
+        model and settings, sampled independently) and its premium from its
+        own ``premium`` column as ``fit`` reads it, into joint distributions
+        of the reserves and of the future paid and outstanding cells, the
+        segments depending on each other as ``dependence`` says. Under
+        ``"rank_correlation"`` each segment's reserves, future paid cells and
+        future outstanding cells are reordered together, ranked on the
+        reserves, so every output of a segment stays consistent. Segment
+        ``k`` (in index order) takes seeds derived from ``seed`` and ``k``
+        for its chains and its simulations, so independent segments share no
+        random numbers, and a segment's draws differ from ``fit`` of that
+        segment alone. Raises one ``UserWarning`` listing the failed
+        diagnostics and any rate swap of every segment, each message
+        prefixed with its segment's label.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments.
+        paid : str
+            Cumulative paid amounts.
+        premium : str
+            The premium of each origin.
+        outstanding : str, optional
+            A column of outstanding amounts.
+        incurred : str, optional
+            A column of incurred amounts.
+        
+        Returns
+        -------
+        CompartmentalFits
+        
+        Raises
+        ------
+        ValueError
+            As ``fit`` for any segment (the message names the segment); if
+            ``dependence`` is ``"synchronized"`` (before any sampling); or if
+            ``spearman`` does not fit the segments.
+        
+        Examples
+        --------
+        >>> import warnings
+        >>> from prospicio.reserving import Compartmental, CompartmentalPriors, Triangle
+        >>> paid = [[952, 1529, 2813, 3647, 3724], [849, 1564, 2202, 2432],
+        ...         [983, 2211, 2830], [1657, 2685], [932]]
+        >>> case = [[1500, 1400, 900, 400, 100], [1300, 1200, 800, 300],
+        ...         [1400, 1100, 700], [1200, 900], [1100]]
+        >>> premium = [5812, 4908, 5454, 5165, 5214]
+        >>> rows = [(lob, 1988 + w, 12 * (d + 1), k * v, k * case[w][d], k * premium[w])
+        ...         for lob, k in [("Auto", 1.0), ("Home", 2.0)]
+        ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+        >>> lob, origin, age, values, os, prem = map(list, zip(*rows))
+        >>> tri = Triangle.from_long(
+        ...     origin, age,
+        ...     {"paid": values, "case": os, "premium": prem}, keys={"lob": lob})
+        >>> model = Compartmental(
+        ...     CompartmentalPriors.gesmann_morris(), tune=100, draws=100, n_sims=200,
+        ...     chains=2)
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+        ...     fits = model.fit_segments(tri, "paid", "premium", outstanding="case")
+        >>> fits.index, fits.reserves.dims
+        (['Auto', 'Home'], ['lob', 'origin'])
+        """
     @property
     def fitted(self, /) -> str:
         """
@@ -5479,7 +5553,7 @@ class Compartmental:
         Largest NUTS tree depth.
         """
     @staticmethod
-    def model_2(priors: CompartmentalPriors, *, rate_order: str = "free", start: str = "data", chains: int = 4, tune: int = 2000, draws: int = 8000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.999, max_depth: int = 10) -> Compartmental:
+    def model_2(priors: CompartmentalPriors, *, rate_order: str = "free", start: str = "data", chains: int = 4, tune: int = 2000, draws: int = 8000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.999, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> Compartmental:
         """
         Gesmann and Morris' model 2 with ``priors`` (the paper's are
         ``CompartmentalPriors.gesmann_morris_2()``): the log-normal
@@ -5657,6 +5731,12 @@ class Compartmental:
     def seed(self, /) -> int:
         """
         Seed of the chains and of the simulations.
+        """
+    @property
+    def spearman(self, /) -> list[list[float]] |None:
+        """
+        The Spearman matrix of ``dependence="rank_correlation"``; ``None``
+        otherwise.
         """
     @property
     def start(self, /) -> str:
@@ -5848,6 +5928,182 @@ class CompartmentalFit:
         """
         Each origin's posterior mean ultimate loss ratio ``RLR_i RRF_i``,
         without process error past the square.
+        """
+
+@final
+class CompartmentalFits:
+    """
+    ``Compartmental.fit_segments``: each segment's own posterior and the
+    joint posterior predictive distributions of the reserves and of the
+    future paid and outstanding cells.
+    
+    ``reserves``, ``paid`` and ``outstanding`` have the triangle's keys as
+    their first dimensions, so ``reserves.aggregate(["lob"])`` keeps the
+    dependence between segments. Per-origin lists (``origins``,
+    ``premium``, ``latest_paid``) run over the origins of each segment in
+    turn, like the rows of ``to_frame()`` and the components of
+    ``reserves``. The posterior of one segment (``diagnostics``,
+    ``parameter_names``, ``draws``, ``chains``, ``summary()``, ``loo()``)
+    needs a single-segment fit: for several segments use ``segment(...)`` or
+    ``diagnostics_frame()``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains of a single-segment fit.
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics of a single-segment fit, as
+        ``CompartmentalFit.diagnostics``.
+        """
+    def diagnostics_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, then ``max_rhat``,
+        ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and
+        ``warnings`` (the segment's messages joined by ``"; "``, empty when
+        every threshold holds). Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws of a single-segment fit, as
+        ``CompartmentalFit.draws``.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest_paid(self, /) -> list[float]:
+        """
+        Each origin's latest observed paid, in the order of ``origins``.
+        """
+    def loo(self, /) -> Elpd:
+        """
+        PSIS-LOO of a single-segment fit's observed cells, as
+        ``CompartmentalFit.loo``.
+        
+        Returns
+        -------
+        Elpd
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and component, those of each
+        segment's premium column.
+        """
+    @property
+    def outstanding(self, /) -> PredictiveDistribution:
+        """
+        Posterior predictive outstanding of each future cell of every
+        segment, laid out as ``paid``.
+        """
+    def outstanding_frame(self, /) -> Any:
+        """
+        The same for the future outstanding cells. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def paid(self, /) -> PredictiveDistribution:
+        """
+        Posterior predictive cumulative paid of each future cell of every
+        segment: dimensions the keys, ``"origin"`` and ``"age"`` (months),
+        from the same simulations as ``reserves``.
+        """
+    def paid_frame(self, /) -> Any:
+        """
+        One row per segment and future paid cell, as
+        ``CompartmentalFit.paid_frame``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names of a single-segment fit, as
+        ``CompartmentalFit.parameter_names``.
+        """
+    @property
+    def premium(self, /) -> list[float]:
+        """
+        The premium of each segment's origins, in the order of ``origins``.
+        """
+    @property
+    def rate_swaps(self, /) -> list[int]:
+        """
+        The number of posterior draws with ``k_er <= k_p`` in each segment,
+        in index order.
+        """
+    @property
+    def reserves(self, /) -> PredictiveDistribution:
+        """
+        Joint posterior predictive distribution of the reserve by segment
+        and origin: the triangle's keys and ``"origin"`` are its dimensions,
+        one component per segment and origin, one row per simulation.
+        """
+    def segment(self, /, **keys) -> CompartmentalFits:
+        """
+        The fit of one segment, chosen by key values as
+        ``ChainLadderFit.segment``, with its part of the joint
+        distributions (same dimensions).
+        
+        Returns
+        -------
+        CompartmentalFits
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary of a single-segment fit, as
+        ``CompartmentalFit.summary``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``premium``, ``latest_paid``, the ``mean`` and ``std_dev`` of the
+        posterior predictive reserve, and the posterior mean
+        ``ultimate_loss_ratio``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the total ``premium`` and
+        ``latest_paid``, and the ``mean`` and ``std_dev`` of the segment's
+        posterior predictive total reserve. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
         """
 
 @final

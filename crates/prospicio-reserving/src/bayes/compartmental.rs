@@ -6,7 +6,10 @@
 //! or with per-cell duals and a hand-written chain rule when the priors put
 //! effects on each cell (model 2).
 
+mod backtest;
 mod year;
+
+pub use backtest::CompartmentalCandidate;
 
 use prospicio_bayes::elpd::Loo;
 use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
@@ -22,8 +25,9 @@ use super::one_year::{self, BayesOneYear, BayesOneYearFit, OneYearRefit};
 use super::scalar::{Scalar, exprel_neg};
 use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
 use crate::bootstrap::{component_sums, push_moments};
+use crate::dependence::SegmentDependence;
 use crate::error::{Error, Result};
-use crate::segments::FitTable;
+use crate::segments::{FitTable, SegmentFits, fit_each};
 use crate::triangle::{Segment, Triangle};
 
 /// The warning of a one-year view that reweights only by its model's
@@ -654,6 +658,11 @@ pub struct Compartmental {
     /// Seed of the chains (and the pilot run) and of the simulations, each
     /// through its own derived seed (module docs, "Seeds").
     pub seed: u64,
+    /// How segments depend on each other in a fit of several segments
+    /// ([`fit_segments`](Self::fit_segments), decision 8; `Synchronized` is
+    /// an error there); [`fit`](Self::fit) has one segment and does not use
+    /// it.
+    pub dependence: SegmentDependence,
 }
 
 impl Compartmental {
@@ -670,7 +679,7 @@ impl Compartmental {
     /// cumulative paid, paid and outstanding), free rate order, the
     /// data-based start, four chains of 1,000 warm-up and 2,000 kept draws
     /// with target acceptance 0.99 (the paper's `adapt_delta`) and tree depth
-    /// at most 10, 10,000 simulations, seed 0.
+    /// at most 10, 10,000 simulations, seed 0, independent segments.
     pub fn new(priors: CompartmentalPriors) -> Self {
         Self {
             priors,
@@ -687,6 +696,7 @@ impl Compartmental {
             },
             n_sims: 10_000,
             seed: 0,
+            dependence: SegmentDependence::Independent,
         }
     }
 
@@ -728,6 +738,28 @@ impl Compartmental {
         outstanding: Outstanding<'_>,
         premium: &str,
     ) -> Result<CompartmentalFit> {
+        self.fit_streams(
+            triangle,
+            paid,
+            outstanding,
+            premium,
+            Stream::Chains,
+            Stream::Predictive,
+        )
+    }
+
+    /// [`fit`](Self::fit) of a single-segment triangle, its chains (and
+    /// pilot run) and its simulations taking the seeds that `chains` and
+    /// `predictive` derive (module docs, "Seeds").
+    fn fit_streams(
+        &self,
+        triangle: &Triangle,
+        paid: &str,
+        outstanding: Outstanding<'_>,
+        premium: &str,
+        chains: Stream,
+        predictive: Stream,
+    ) -> Result<CompartmentalFit> {
         self.validate()?;
         let data = Data::new(triangle, paid, outstanding, premium)?;
         let model = Model::new(
@@ -744,7 +776,7 @@ impl Compartmental {
             )));
         }
         let (posterior, sampled, mut diagnostics) =
-            self.sample(&model, derive_seed(self.seed, Stream::Chains))?;
+            self.sample(&model, derive_seed(self.seed, chains))?;
         let rate_swaps = {
             let (j_er, j_p) = (0, 1);
             posterior
@@ -781,7 +813,7 @@ impl Compartmental {
                 .map(|j| vec![KeyValue::Int(j as i64)])
                 .collect(),
             self.n_sims,
-            derive_seed(self.seed, Stream::Predictive),
+            derive_seed(self.seed, predictive),
             provenance.clone(),
             |nat, rng, row| model.simulate(nat, &future, rng, row),
         )?;
@@ -859,6 +891,150 @@ impl Compartmental {
             sampled,
             data,
         })
+    }
+
+    /// Fits paid and outstanding in every segment of a cumulative triangle,
+    /// each segment with its own premium column and posterior (the same
+    /// model and settings, sampled on their own), into joint distributions
+    /// of the reserves and the future paid and outstanding cells, the
+    /// segments depending on each other as [`dependence`](Self::dependence)
+    /// says (decision 8), as in
+    /// [`Meyers::fit_segments`](super::Meyers::fit_segments):
+    ///
+    /// * [`Independent`](SegmentDependence::Independent): each segment's
+    ///   simulations as drawn. Segment `k` (in index order) takes its own
+    ///   derived seeds for its chains (and its pilot run) and its
+    ///   simulations (module docs, "Seeds"), so the segments share no
+    ///   random numbers; a segment's draws therefore differ from fitting it
+    ///   alone with [`fit`](Self::fit), which a one-segment triangle's
+    ///   segment 0 streams reproduce.
+    /// * [`RankCorrelation`](SegmentDependence::RankCorrelation): the
+    ///   segments' simulations reordered as whole rows by Iman–Conover on the
+    ///   segment totals of the reserves; each segment's reserves, future
+    ///   paid cells and future outstanding cells move together, so every
+    ///   simulation's reserve is still its paid at the last age less the
+    ///   latest paid.
+    /// * [`Synchronized`](SegmentDependence::Synchronized) is an
+    ///   [`Error::Bayes`]: it draws the residuals of the same positions in
+    ///   every segment, and a posterior has no residuals to share.
+    ///
+    /// A bad rank-correlation matrix fails before any sampling, and a
+    /// failure names its segment. Each segment is read as
+    /// [`fit`](Self::fit) reads a single-segment triangle.
+    pub fn fit_segments(
+        &self,
+        triangle: &Triangle,
+        paid: &str,
+        outstanding: Outstanding<'_>,
+        premium: &str,
+    ) -> Result<CompartmentalFits> {
+        self.validate()?;
+        if self.dependence == SegmentDependence::Synchronized {
+            return Err(Error::Bayes(
+                "Synchronized dependence draws the residuals of the same positions in every \
+                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
+                    .into(),
+            ));
+        }
+        self.dependence.validate(triangle.index().len())?;
+        let mut k = 0;
+        let mut fitted = fit_each(triangle, paid, |_| {
+            let label = &triangle.index()[k];
+            let values: Vec<[&str; 1]> = label.parts().iter().map(|p| [p.as_str()]).collect();
+            let conditions: Vec<(&str, &[&str])> = triangle
+                .key_names()
+                .iter()
+                .zip(&values)
+                .map(|(name, value)| (name.as_str(), value.as_slice()))
+                .collect();
+            let fit = triangle.select(&conditions).and_then(|one| {
+                self.fit_streams(
+                    &one,
+                    paid,
+                    outstanding,
+                    premium,
+                    Stream::SegmentChains(k),
+                    Stream::SegmentPredictive(k),
+                )
+            });
+            k += 1;
+            fit.map(|fit| CompartmentalSegment { fit })
+        })?;
+
+        // One row per simulation: every segment's reserves, then its future
+        // paid cells, then its future outstanding cells. Iman–Conover ranks
+        // a segment by its reserves alone and moves the whole of its row.
+        let (mut ranges, mut ranked, mut width) = (Vec::new(), Vec::new(), 0);
+        for s in &fitted.fits {
+            let f = &s.fit;
+            let m = f.reserves.n_components();
+            let len = m + f.paid.n_components() + f.outstanding.n_components();
+            ranges.push(width..width + len);
+            ranked.push(width..width + m);
+            width += len;
+        }
+        let mut rows = Vec::with_capacity(self.n_sims * width);
+        for i in 0..self.n_sims {
+            for s in &fitted.fits {
+                for part in [&s.fit.reserves, &s.fit.paid, &s.fit.outstanding] {
+                    let n = part.n_components();
+                    rows.extend_from_slice(&part.draw_matrix()[i * n..(i + 1) * n]);
+                }
+            }
+        }
+        let rows = self
+            .dependence
+            .reorder_rows(rows, width, &ranges, &ranked, self.seed)?;
+        for (s, range) in fitted.fits.iter_mut().zip(&ranges) {
+            let f = &mut s.fit;
+            let mut start = range.start;
+            let mut rebuilt = Vec::with_capacity(3);
+            for part in [&f.reserves, &f.paid, &f.outstanding] {
+                let n = part.n_components();
+                let draws = rows
+                    .chunks_exact(width)
+                    .flat_map(|row| row[start..start + n].iter().copied())
+                    .collect();
+                rebuilt.push(PredictiveDistribution::from_draws(
+                    part.dims().to_vec(),
+                    part.components().to_vec(),
+                    draws,
+                    part.provenance().clone(),
+                )?);
+                start += n;
+            }
+            let mut rebuilt = rebuilt.into_iter();
+            f.reserves = rebuilt.next().expect("three parts");
+            f.paid = rebuilt.next().expect("three parts");
+            f.outstanding = rebuilt.next().expect("three parts");
+        }
+
+        let mut hasher = InputHasher::new();
+        hasher.str(paid);
+        hasher.str(outstanding_name(outstanding));
+        hasher.str(premium);
+        for (label, s) in fitted.iter() {
+            hasher.str(&label.to_string());
+            hasher.f64s(&s.fit.premium);
+            for c in s.fit.data.paid.iter().chain(&s.fit.data.outstanding) {
+                hasher.f64s(&[c.0 as f64, c.1 as f64, c.2]);
+            }
+        }
+        let premiums: Vec<f64> = fitted
+            .fits
+            .iter()
+            .map(|s| s.fit.premium.iter().sum())
+            .collect();
+        let provenance = self
+            .provenance(paid, outstanding, premium, hasher)
+            .param("premium_total", format!("{premiums:?}"))
+            .param("segments", fitted.len())
+            .param("dependence", format!("{:?}", self.dependence))
+            .param(
+                "posterior_draws",
+                fitted.fits.first().map_or(0, |s| s.fit.posterior.n_draws()),
+            );
+        CompartmentalFits::assemble(fitted, provenance)
     }
 
     /// The one-year view (`docs/design/reserving-bayes.md`, decisions 16
@@ -1296,6 +1472,20 @@ impl Compartmental {
         Ok(())
     }
 
+    /// The model's name: model 1 and model 2 when the settings and the
+    /// hierarchy are the paper's, else `compartmental`.
+    fn model_name(&self) -> &'static str {
+        let response = self.response();
+        let hierarchy = self.priors.hierarchy();
+        if response == Response::MODEL_1 && hierarchy == Hierarchy::Model1 {
+            "compartmental_gm1"
+        } else if response == Response::MODEL_2 && hierarchy == Hierarchy::Model2 {
+            "compartmental_gm2"
+        } else {
+            "compartmental"
+        }
+    }
+
     fn provenance(
         &self,
         paid: &str,
@@ -1305,17 +1495,7 @@ impl Compartmental {
     ) -> Provenance {
         let s = &self.sampler;
         let pr = &self.priors;
-        let response = self.response();
-        // Model 1 and model 2 by name when the settings and the hierarchy
-        // are the paper's.
-        let model = if response == Response::MODEL_1 && pr.hierarchy() == Hierarchy::Model1 {
-            "compartmental_gm1"
-        } else if response == Response::MODEL_2 && pr.hierarchy() == Hierarchy::Model2 {
-            "compartmental_gm2"
-        } else {
-            "compartmental"
-        };
-        Provenance::new(model)
+        Provenance::new(self.model_name())
             .param("priors", format!("{pr:?}"))
             .param("likelihood", format!("{:?}", self.likelihood))
             .param("scale", format!("{:?}", self.scale))
@@ -1419,6 +1599,147 @@ pub struct CompartmentalFit {
     sampled: PosteriorDraws,
     /// The observed cells, for the one-year view.
     data: Data,
+}
+
+/// One segment of [`Compartmental::fit_segments`]: its [`CompartmentalFit`],
+/// whose `reserves`, `paid` and `outstanding` are the segment's part of the
+/// joint distributions of [`CompartmentalFits`], after any reordering for
+/// the rank correlation between segments.
+#[derive(Debug, Clone)]
+pub struct CompartmentalSegment {
+    /// The segment's fit: posterior, diagnostics, rate swaps, `summary()`,
+    /// `loo()`, `to_long()` and the rest.
+    pub fit: CompartmentalFit,
+}
+
+/// The fits of every segment of a triangle ([`Compartmental::fit_segments`]),
+/// with joint distributions across segments.
+#[derive(Debug, Clone)]
+pub struct CompartmentalFits {
+    /// Each segment's fit.
+    pub segments: SegmentFits<CompartmentalSegment>,
+    /// Joint posterior predictive distribution of the reserve by segment
+    /// and origin: the key names and `origin` are its dimensions, and its
+    /// components run over the origins of each segment in turn, like the
+    /// rows of [`to_long`](Self::to_long).
+    pub reserves: PredictiveDistribution,
+    /// The future cumulative paid of every segment, dimensions the key names,
+    /// `origin` and `age` (months), from the same simulations as
+    /// [`reserves`](Self::reserves).
+    pub paid: PredictiveDistribution,
+    /// The future outstanding of every segment, the same layout.
+    pub outstanding: PredictiveDistribution,
+}
+
+impl CompartmentalFits {
+    /// The joint distributions of `segments`' own parts, simulation by
+    /// simulation, with `provenance` (and their `output`).
+    fn assemble(
+        segments: SegmentFits<CompartmentalSegment>,
+        provenance: Provenance,
+    ) -> Result<Self> {
+        let joint = |part: fn(&CompartmentalFit) -> &PredictiveDistribution,
+                     output: &str|
+         -> Result<PredictiveDistribution> {
+            let first = part(&segments.fits[0].fit);
+            let mut dims = segments.key_names.clone();
+            dims.extend(first.dims().iter().cloned());
+            let mut components = Vec::new();
+            for (label, s) in segments.iter() {
+                for key in part(&s.fit).components() {
+                    let mut k: Vec<KeyValue> =
+                        label.parts().iter().map(|p| p.as_str().into()).collect();
+                    k.extend(key.iter().cloned());
+                    components.push(k);
+                }
+            }
+            let n_sims = first.n_sims();
+            let mut draws = Vec::with_capacity(n_sims * components.len());
+            for i in 0..n_sims {
+                for s in &segments.fits {
+                    let p = part(&s.fit);
+                    let n = p.n_components();
+                    draws.extend_from_slice(&p.draw_matrix()[i * n..(i + 1) * n]);
+                }
+            }
+            let mut p = provenance.clone();
+            p.parameters.retain(|(k, _)| k != "output");
+            Ok(PredictiveDistribution::from_draws(
+                dims,
+                components,
+                draws,
+                p.param("output", output),
+            )?)
+        };
+        Ok(Self {
+            reserves: joint(|f| &f.reserves, "reserves")?,
+            paid: joint(|f| &f.paid, "paid")?,
+            outstanding: joint(|f| &f.outstanding, "outstanding")?,
+            segments,
+        })
+    }
+
+    /// The segments' tables, stacked in index order under the key columns.
+    fn stack(&self, tables: Vec<FitTable>) -> FitTable {
+        let rows: Vec<usize> = tables
+            .iter()
+            .map(|t| t.origin.as_ref().map_or(1, Vec::len))
+            .collect();
+        let mut stacked = FitTable {
+            keys: self.segments.key_columns(|s| rows[s]),
+            origin: tables[0].origin.as_ref().map(|_| Vec::new()),
+            age: tables[0].age.as_ref().map(|_| Vec::new()),
+            values: tables[0]
+                .values
+                .iter()
+                .map(|(name, _)| (name.clone(), Vec::new()))
+                .collect(),
+        };
+        for t in tables {
+            if let (Some(all), Some(o)) = (&mut stacked.origin, t.origin) {
+                all.extend(o);
+            }
+            if let (Some(all), Some(a)) = (&mut stacked.age, t.age) {
+                all.extend(a);
+            }
+            for ((_, all), (_, v)) in stacked.values.iter_mut().zip(t.values) {
+                all.extend(v);
+            }
+        }
+        stacked
+    }
+
+    /// One row per segment × origin: the columns of
+    /// [`CompartmentalFit::to_long`] (`premium`, `latest_paid`, the `mean`
+    /// and `std_dev` of the reserve, `ultimate_loss_ratio`).
+    pub fn to_long(&self) -> FitTable {
+        self.stack(self.segments.fits.iter().map(|s| s.fit.to_long()).collect())
+    }
+
+    /// One row per segment: the columns of [`CompartmentalFit::totals`].
+    pub fn totals(&self) -> FitTable {
+        self.stack(self.segments.fits.iter().map(|s| s.fit.totals()).collect())
+    }
+
+    /// One row per segment × future cell of [`paid`](Self::paid), as
+    /// [`CompartmentalFit::paid_table`].
+    pub fn paid_table(&self) -> Result<FitTable> {
+        let tables = self.segments.fits.iter().map(|s| s.fit.paid_table());
+        Ok(self.stack(tables.collect::<Result<_>>()?))
+    }
+
+    /// The same for [`outstanding`](Self::outstanding).
+    pub fn outstanding_table(&self) -> Result<FitTable> {
+        let tables = self.segments.fits.iter().map(|s| s.fit.outstanding_table());
+        Ok(self.stack(tables.collect::<Result<_>>()?))
+    }
+
+    /// The one segment chosen as in [`SegmentFits::position`], with its part
+    /// of the joint distributions (same dimensions).
+    pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
+        let segments = self.segments.segment(keys)?;
+        Self::assemble(segments, self.reserves.provenance().clone())
+    }
 }
 
 /// The one-year view of a compartmental model
@@ -3129,7 +3450,7 @@ mod tests {
     /// Company 337 workers' compensation, the papers' training triangle
     /// (validation/data/clrd_wkcomp_337.csv, calendar years up to 1996):
     /// cumulative paid and incurred (with bulk and IBNR), USD thousands.
-    const PAID: [&[f64]; 9] = [
+    pub(super) const PAID: [&[f64]; 9] = [
         &[
             9558., 22778., 33298., 40348., 45146., 48048., 49782., 50623., 51812.,
         ],
@@ -3144,7 +3465,7 @@ mod tests {
         &[12550., 31604.],
         &[13194.],
     ];
-    const INCURRED: [&[f64]; 9] = [
+    pub(super) const INCURRED: [&[f64]; 9] = [
         &[
             62679., 64000., 65607., 65292., 62250., 61185., 59387., 57138., 53473.,
         ],
@@ -3160,14 +3481,14 @@ mod tests {
         &[69720.],
     ];
     /// Direct earned premium, 1988 to 1997.
-    const PREMIUM: [f64; 10] = [
+    pub(super) const PREMIUM: [f64; 10] = [
         104437., 88883., 85956., 99339., 104897., 119427., 110784., 77731., 63646., 48052.,
     ];
 
     /// The training triangle with columns `paid`, `incurred`, `os`
     /// (incurred - paid) and `premium`, and 1997 with its premium only when
     /// `with_1997`.
-    fn triangle(with_1997: bool) -> Triangle {
+    pub(super) fn triangle(with_1997: bool) -> Triangle {
         let (mut origin, mut ages) = (vec![], vec![]);
         let (mut paid, mut inc, mut os, mut prem) = (vec![], vec![], vec![], vec![]);
         for (w, row) in PAID.iter().enumerate() {
@@ -3205,11 +3526,11 @@ mod tests {
         .unwrap()
     }
 
-    fn preset() -> Compartmental {
+    pub(super) fn preset() -> Compartmental {
         Compartmental::new(CompartmentalPriors::gesmann_morris())
     }
 
-    fn quick(seed: u64) -> Compartmental {
+    pub(super) fn quick(seed: u64) -> Compartmental {
         Compartmental {
             sampler: Sampler {
                 chains: 2,
@@ -3224,11 +3545,11 @@ mod tests {
         }
     }
 
-    fn incurred() -> Outstanding<'static> {
+    pub(super) fn incurred() -> Outstanding<'static> {
         Outstanding::FromIncurred("incurred")
     }
 
-    fn model(ordered: bool) -> Model {
+    pub(super) fn model(ordered: bool) -> Model {
         model_with(
             CompartmentalPriors::gesmann_morris(),
             ordered,
@@ -3243,7 +3564,7 @@ mod tests {
     }
 
     /// Gesmann and Morris' model 2 on the training triangle.
-    fn model_2(ordered: bool) -> Model {
+    pub(super) fn model_2(ordered: bool) -> Model {
         model_with(
             CompartmentalPriors::gesmann_morris_2(),
             ordered,
@@ -3306,7 +3627,7 @@ mod tests {
     /// Points around the paper's posterior (model 1's, or model 2's when
     /// the model has effects by cell): `theta` at the printed means with a
     /// deterministic spread.
-    fn points(model: &Model) -> Vec<Vec<f64>> {
+    pub(super) fn points(model: &Model) -> Vec<Vec<f64>> {
         let two = model.cellwise;
         (0..20)
             .map(|k| {
@@ -4565,5 +4886,303 @@ mod tests {
                 .parameters
                 .contains(&("max_refits".into(), "0".into()))
         );
+    }
+
+    /// The first five origins of the training triangle, ages 1 to 5 up to
+    /// the diagonal, once for each of `names` (a key `lob` when `keyed`).
+    fn lines(names: &[&str], keyed: bool) -> Triangle {
+        let (mut lob, mut origin, mut ages) = (vec![], vec![], vec![]);
+        let (mut paid, mut inc, mut prem) = (vec![], vec![], vec![]);
+        for name in names {
+            for w in 0..5 {
+                for d in 0..5 - w {
+                    lob.push(*name);
+                    origin.push(Month::january(1988 + w as i32));
+                    ages.push(12 * (d as Lag + 1));
+                    paid.push(PAID[w][d]);
+                    inc.push(INCURRED[w][d]);
+                    prem.push(PREMIUM[w]);
+                }
+            }
+        }
+        let key = [("lob", &lob[..])];
+        Triangle::from_long(&Long {
+            keys: if keyed { &key } else { &[] },
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("incurred", &inc), ("premium", &prem)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    fn segments_of(m: &Compartmental, tri: &Triangle) -> CompartmentalFits {
+        m.fit_segments(tri, "paid", incurred(), "premium").unwrap()
+    }
+
+    /// Each line's total of `pd` (dimensions `lob`, `origin`), simulation by
+    /// simulation.
+    fn line_totals(pd: &PredictiveDistribution) -> Vec<Vec<f64>> {
+        let by = pd.aggregate(&["lob"]).unwrap();
+        let n = by.n_components();
+        (0..n)
+            .map(|j| by.draw_matrix().chunks(n).map(|r| r[j]).collect())
+            .collect()
+    }
+
+    fn spearman(x: &[f64], y: &[f64]) -> f64 {
+        let ranks = |v: &[f64]| {
+            let mut idx: Vec<usize> = (0..v.len()).collect();
+            idx.sort_by(|&a, &b| v[a].total_cmp(&v[b]));
+            let mut r = vec![0.0; v.len()];
+            for (k, &i) in idx.iter().enumerate() {
+                r[i] = k as f64;
+            }
+            r
+        };
+        let (rx, ry) = (ranks(x), ranks(y));
+        let m = (x.len() as f64 - 1.0) / 2.0;
+        let sxy: f64 = rx.iter().zip(&ry).map(|(a, b)| (a - m) * (b - m)).sum();
+        let sxx: f64 = rx.iter().map(|a| (a - m).powi(2)).sum();
+        sxy / sxx
+    }
+
+    /// `Synchronized` and a bad matrix fail before any sampling (the test
+    /// would take minutes if either sampled), `Synchronized` as
+    /// `Error::Bayes` and a bad matrix as `InvalidSetting`.
+    #[test]
+    fn synchronized_and_a_bad_matrix_fail_before_sampling() {
+        let tri = lines(&["A", "B"], true);
+        let run = |dependence| {
+            Compartmental {
+                dependence,
+                ..quick(1)
+            }
+            .fit_segments(&tri, "paid", incurred(), "premium")
+            .unwrap_err()
+        };
+        assert!(matches!(
+            run(SegmentDependence::Synchronized),
+            Error::Bayes(m) if m.contains("Synchronized")
+        ));
+        for spearman in [
+            vec![1.0, 0.5],
+            vec![1.0, 0.5, 0.4, 1.0],
+            vec![2.0, 0.5, 0.5, 1.0],
+            vec![1.0, 1.1, 1.1, 1.0],
+        ] {
+            assert!(
+                matches!(
+                    run(SegmentDependence::RankCorrelation { spearman }),
+                    Error::InvalidSetting {
+                        name: "spearman",
+                        ..
+                    }
+                ),
+                "bad matrix"
+            );
+        }
+    }
+
+    /// Each segment samples and simulates from its own streams, `fit` does
+    /// not change, and a segment is `fit` on its own triangle with that
+    /// segment's streams.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn each_segment_has_its_own_seeds_and_fit_is_unchanged() {
+        let tri = lines(&["A", "B"], true);
+        let m = quick(1);
+        let fits = segments_of(&m, &tri);
+        assert_eq!(fits.segments.len(), 2);
+        let [a, b] = [0, 1].map(|k| &fits.segments.fits[k].fit);
+        // "B" is "A" under another name: with the same streams the posteriors
+        // would agree draw by draw; with their own they do not.
+        assert_ne!(a.posterior, b.posterior);
+        let only = |lob: &str| tri.select(&[("lob", &[lob][..])]).unwrap();
+        for (k, lob) in [(0, "A"), (1, "B")] {
+            let alone = m
+                .fit_streams(
+                    &only(lob),
+                    "paid",
+                    incurred(),
+                    "premium",
+                    Stream::SegmentChains(k),
+                    Stream::SegmentPredictive(k),
+                )
+                .unwrap();
+            let seg = &fits.segments.fits[k].fit;
+            assert_eq!(alone.posterior, seg.posterior);
+            assert_eq!(alone.reserves.draw_matrix(), seg.reserves.draw_matrix());
+            assert_eq!(alone.paid.draw_matrix(), seg.paid.draw_matrix());
+            assert_eq!(
+                alone.outstanding.draw_matrix(),
+                seg.outstanding.draw_matrix()
+            );
+        }
+        // `fit` is the base streams' fit.
+        let base = m.fit(&only("A"), "paid", incurred(), "premium").unwrap();
+        let again = m
+            .fit_streams(
+                &only("A"),
+                "paid",
+                incurred(),
+                "premium",
+                Stream::Chains,
+                Stream::Predictive,
+            )
+            .unwrap();
+        assert_eq!(base.posterior, again.posterior);
+        assert_eq!(base.reserves.draw_matrix(), again.reserves.draw_matrix());
+        assert_ne!(base.posterior, a.posterior);
+        // The joint results.
+        assert_eq!(fits.reserves.dims(), ["lob", "origin"]);
+        assert_eq!(fits.reserves.n_components(), 10);
+        assert_eq!(fits.paid.dims(), ["lob", "origin", "age"]);
+        assert_eq!(fits.paid.n_components(), 2 * a.paid.n_components());
+        assert_eq!(
+            fits.outstanding.n_components(),
+            2 * a.outstanding.n_components()
+        );
+        let long = fits.to_long();
+        assert_eq!(long.keys[0].1.len(), 10);
+        assert_eq!(long.n_rows(), 10);
+        assert_eq!(fits.totals().n_rows(), 2);
+        assert_eq!(
+            fits.paid_table().unwrap().n_rows(),
+            fits.paid.n_components()
+        );
+        assert_eq!(fits.outstanding_table().unwrap().keys[0].1[0], "A");
+        let one = fits.segment(&[("lob", "B")]).unwrap();
+        assert_eq!(one.reserves.n_components(), 5);
+        assert_eq!(one.reserves.dims(), ["lob", "origin"]);
+        let param = |pd: &PredictiveDistribution, key: &str| {
+            pd.provenance()
+                .parameters
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(param(&fits.reserves, "segments").as_deref(), Some("2"));
+        assert_eq!(param(&fits.paid, "output").as_deref(), Some("paid"));
+        assert_eq!(
+            param(&fits.reserves, "dependence").as_deref(),
+            Some("Independent")
+        );
+    }
+
+    /// A triangle without keys is one segment, fitted with segment 0's
+    /// streams.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_one_segment_fit_is_fit_with_segment_zero_streams() {
+        let tri = lines(&["A"], false);
+        let m = quick(2);
+        let fits = segments_of(&m, &tri);
+        assert_eq!(fits.segments.len(), 1);
+        let alone = m
+            .fit_streams(
+                &tri,
+                "paid",
+                incurred(),
+                "premium",
+                Stream::SegmentChains(0),
+                Stream::SegmentPredictive(0),
+            )
+            .unwrap();
+        let seg = &fits.segments.fits[0].fit;
+        assert_eq!(alone.posterior, seg.posterior);
+        assert_eq!(alone.reserves.draw_matrix(), seg.reserves.draw_matrix());
+        assert_eq!(fits.reserves.draw_matrix(), seg.reserves.draw_matrix());
+        assert_eq!(fits.paid.draw_matrix(), seg.paid.draw_matrix());
+        assert_ne!(
+            m.fit(&tri, "paid", incurred(), "premium")
+                .unwrap()
+                .posterior,
+            seg.posterior
+        );
+    }
+
+    /// The rank correlation reorders whole rows: each segment keeps its
+    /// simulations (as a set), its reserves stay its paid at the last age
+    /// less the latest paid in every simulation, and the totals reach the
+    /// target.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_joint_reorder_keeps_each_segments_rows_consistent() {
+        let tri = lines(&["A", "B"], true);
+        let m = quick(3);
+        let independent = segments_of(&m, &tri);
+        let ranked = segments_of(
+            &Compartmental {
+                dependence: SegmentDependence::RankCorrelation {
+                    spearman: vec![1.0, 0.8, 0.8, 1.0],
+                },
+                ..m.clone()
+            },
+            &tri,
+        );
+        let sorted = |mut v: Vec<f64>| {
+            v.sort_by(f64::total_cmp);
+            v
+        };
+        let (ti, tr) = (
+            line_totals(&independent.reserves),
+            line_totals(&ranked.reserves),
+        );
+        for s in 0..2 {
+            assert_eq!(sorted(ti[s].clone()), sorted(tr[s].clone()));
+        }
+        // The first segment's rows are shuffled, not left sorted.
+        assert!(tr[0].windows(2).any(|w| w[0] > w[1]));
+        let r = spearman(&ti[0], &ti[1]);
+        assert!(r.abs() < 0.2, "independent lines: {r}");
+        let r = spearman(&tr[0], &tr[1]);
+        assert!((r - 0.8).abs() < 0.05, "ranked lines: {r}");
+        // Every segment's own parts agree, simulation by simulation.
+        for (s, seg) in ranked.segments.fits.iter().enumerate() {
+            let f = &seg.fit;
+            let n_sims = f.reserves.n_sims();
+            let n = f.reserves.n_components();
+            let paid_n = f.paid.n_components();
+            for (i, origin) in f.origins.iter().enumerate() {
+                let Some(last) = f
+                    .paid
+                    .components()
+                    .iter()
+                    .position(|k| k[0] == KeyValue::from(*origin) && k[1] == KeyValue::Int(60))
+                else {
+                    continue;
+                };
+                for sim in 0..n_sims {
+                    let reserve = f.reserves.draw_matrix()[sim * n + i];
+                    let at_last = f.paid.draw_matrix()[sim * paid_n + last];
+                    assert!(
+                        (at_last - f.latest_paid[i] - reserve).abs()
+                            < 1e-6 * at_last.abs().max(1.0),
+                        "segment {s} origin {origin} simulation {sim}"
+                    );
+                }
+            }
+            // The joint distributions hold the segment's parts.
+            let joint_n = ranked.reserves.n_components();
+            for sim in 0..n_sims {
+                assert_eq!(
+                    &ranked.reserves.draw_matrix()
+                        [sim * joint_n + s * n..sim * joint_n + (s + 1) * n],
+                    &f.reserves.draw_matrix()[sim * n..(sim + 1) * n]
+                );
+            }
+        }
     }
 }

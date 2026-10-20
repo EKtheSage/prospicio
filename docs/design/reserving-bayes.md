@@ -2459,8 +2459,9 @@ centred the same way.
 **API.** `Compartmental::one_year(triangle, paid, outstanding, premium,
 settings)` returns `BayesOneYearFit<CompartmentalFit>` (its tables by the
 premium column's origins, with `premium` and `latest_paid`, as
-`CompartmentalFit`'s); no `one_year_segments`, as `Compartmental` has no
-`fit_segments` yet (PR E of `reserving-compartmental.md`). Python
+`CompartmentalFit`'s); no `one_year_segments` yet:
+`Compartmental::fit_segments` came in PR E of `reserving-compartmental.md`
+(its decision 8, "As built"), and `one_year_segments` is a later PR. Python
 `Compartmental.one_year(triangle, paid, premium, *, outstanding=None,
 incurred=None, k_threshold=0.7, refit=None, max_refits=None,
 n_sims=None)` returns a new `CompartmentalOneYearFit`; R
@@ -2696,9 +2697,11 @@ diagnostics are not reported"; `knowledge/findings/meyers-segments-backtest.md`)
    the ODP GLM (fast) and one Bayesian model at small settings, and the
    Python and R results equal to each other for the same seed.
 
-`Compartmental` joins the backtest in `reserving-compartmental.md` PR E,
-which then needs no binding work of its own: it is one more model type
-the binding accepts.
+`Compartmental` joins the Rust backtest in `reserving-compartmental.md`
+PR E through `CompartmentalCandidate` (its decision 8, "As built"). The
+candidate borrows its triangle and the bindings' `NamedModel` owns its
+model, so the Python and R entry points for `Compartmental` are a
+follow-up.
 
 **As built** (2026-10-19). What changed from the proposal while building
 it:
