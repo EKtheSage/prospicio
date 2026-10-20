@@ -25,11 +25,12 @@ diagonal_backtest(
 
 \item{column}{Name of the column to forecast.}
 
-\item{models}{A list of \code{\link[=odp_glm_spec]{odp_glm_spec()}}, \code{\link[=bayes_odp_spec]{bayes_odp_spec()}} and
-\code{\link[=meyers_spec]{meyers_spec()}} objects. Its names are the models' names in the results;
-an entry without a name is called \code{"odp"}, \code{"bayes_odp"} or
-\code{"meyers_"} and the model's name (\code{"meyers_crc"}). Two models cannot
-share a name.}
+\item{models}{A list of \code{\link[=odp_glm_spec]{odp_glm_spec()}}, \code{\link[=bayes_odp_spec]{bayes_odp_spec()}},
+\code{\link[=meyers_spec]{meyers_spec()}} and \code{\link[=compartmental_candidate]{compartmental_candidate()}} objects. Its names are
+the models' names in the results; an entry without a name is called
+\code{"odp"}, \code{"bayes_odp"}, \code{"meyers_"} and the model's name
+(\code{"meyers_crc"}) or the candidate's name (\code{"compartmental_gm1"}). Two
+models cannot share a name.}
 
 \item{n_diagonals}{Number of latest calendar diagonals to hold out, one
 split each.}
@@ -113,10 +114,16 @@ per model and split, and \code{warnings} lists every message. A model that
 fails to fit is an error naming it. No R warning is raised for a failed
 diagnostic; read \code{warnings}.
 
+A \code{\link[=compartmental_candidate]{compartmental_candidate()}} is scored on the paid increments here, and
+on the held-out outstanding by \code{\link[=compartmental_outstanding_backtest]{compartmental_outstanding_backtest()}},
+which reuses the fits of this backtest.
+
 Errors: a \code{models} that is not a non-empty list of \code{\link[=odp_glm_spec]{odp_glm_spec()}},
-\code{\link[=bayes_odp_spec]{bayes_odp_spec()}} and \code{\link[=meyers_spec]{meyers_spec()}} objects; two models with the same
-name (checked before any fit); a triangle with several segments or with
-fewer than \code{n_diagonals + 1} calendar diagonals; \code{premium} missing for
+\code{\link[=bayes_odp_spec]{bayes_odp_spec()}}, \code{\link[=meyers_spec]{meyers_spec()}} and \code{\link[=compartmental_candidate]{compartmental_candidate()}}
+objects; two models with the same name (checked before any fit); a
+\code{\link[=compartmental_candidate]{compartmental_candidate()}} built on another triangle or paid column than
+\code{triangle} and \code{column}; a triangle with several segments or with fewer
+than \code{n_diagonals + 1} calendar diagonals; \code{premium} missing for
 \code{\link[=meyers_spec]{meyers_spec()}}, or not positive and finite; an invalid sampler setting.
 }
 \examples{

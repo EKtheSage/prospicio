@@ -26,10 +26,10 @@ use pyo3::types::{
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
     BayesBf, BayesBfFit, BayesOdpFits, BayesOdpSegment, BayesOneYear, BayesOneYearFit,
-    BayesOneYearFits, BayesOneYearSegment, Compartmental, CompartmentalFit, CompartmentalFits,
-    CompartmentalLikelihood, CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted,
-    HalfPrior, MeyersFits, MeyersSegment, OneYearRefit, Outstanding, PaidResponse, PositivePrior,
-    RateOrder, RealPrior, Scale as CompartmentalScale,
+    BayesOneYearFits, BayesOneYearSegment, Compartmental, CompartmentalCandidate, CompartmentalFit,
+    CompartmentalFits, CompartmentalLikelihood, CompartmentalPriors, CompartmentalSegment,
+    CompartmentalStart, Fitted, HalfPrior, MeyersFits, MeyersSegment, OneYearRefit, Outstanding,
+    PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     Backtest, BayesOdp, BayesOdpFit, Diagnostics, GlmCandidate, Meyers, MeyersFit, MeyersModel,
@@ -11132,6 +11132,62 @@ impl PyCompartmental {
         Ok(out)
     }
 
+    /// This model as a candidate of ``diagonal_backtest``, with the
+    /// columns it reads: the cumulative ``paid`` column (the backtest's
+    /// ``column``), the outstanding (from ``outstanding`` or from
+    /// ``incurred``, as ``fit``) and each origin's ``premium``. The
+    /// backtest fits the model to the cells valued before each held-out
+    /// diagonal and forecasts the paid increments of the diagonal; the
+    /// candidate's ``outstanding_backtest`` scores the held-out outstanding
+    /// of the same diagonals on the **same fits**. The settings are
+    /// ``fit``'s, except that the backtest's ``n_sims`` and ``seed``
+    /// replace ``n_sims`` and ``seed``, and the sampler runs once per
+    /// split (the whole ``chains`` x ``draws`` posterior of ``fit``, so
+    /// size them for the number of diagonals).
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     The cumulative triangle with one segment. It must be the one
+    ///     given to ``diagonal_backtest``, with ``paid`` as its ``column``.
+    /// paid : str
+    ///     Cumulative paid amounts.
+    /// premium : str
+    ///     The premium of each origin.
+    /// outstanding : str, optional
+    ///     A column of outstanding amounts.
+    /// incurred : str, optional
+    ///     A column of incurred amounts.
+    ///
+    /// Returns
+    /// -------
+    /// CompartmentalCandidate
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If not exactly one of ``outstanding`` and ``incurred`` is given.
+    #[pyo3(signature = (triangle, paid, premium, *, outstanding = None, incurred = None))]
+    fn candidate(
+        &self,
+        triangle: PyRef<'_, PyTriangle>,
+        paid: &str,
+        premium: &str,
+        outstanding: Option<&str>,
+        incurred: Option<&str>,
+    ) -> PyResult<PyCompartmentalCandidate> {
+        let os = compartmental_outstanding(outstanding, incurred)?;
+        Ok(PyCompartmentalCandidate {
+            inner: CompartmentalCandidate::new(
+                self.inner.clone(),
+                &triangle.inner,
+                paid,
+                os,
+                premium,
+            ),
+        })
+    }
+
     fn __repr__(&self) -> String {
         let (m, s) = (&self.inner, &self.inner.sampler);
         format!(
@@ -11148,6 +11204,149 @@ impl PyCompartmental {
             s.draws,
             m.n_sims,
             m.seed,
+        )
+    }
+}
+
+/// A ``Compartmental`` for ``diagonal_backtest``, from
+/// ``Compartmental.candidate``: the model's settings with the triangle and
+/// the paid, outstanding (or incurred) and premium columns it reads.
+///
+/// Put it in the ``models`` of ``diagonal_backtest`` (a list, or a dict
+/// that names it) to score the paid increments of the held-out diagonals
+/// beside the other models, and call ``outstanding_backtest`` for the
+/// second table, the held-out outstanding of the same diagonals. Both
+/// tables use the same fits (one run of the sampler per split, kept by the
+/// candidate), whichever is asked for first.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import Compartmental, CompartmentalPriors, Triangle
+/// >>> paid = [[952, 1529, 2813, 3647, 3724], [849, 1564, 2202, 2432],
+/// ...         [983, 2211, 2830], [1657, 2685], [932]]
+/// >>> incurred = [[1500, 1400, 900, 400, 100], [1300, 1200, 800, 300],
+/// ...             [1400, 1100, 700], [1200, 900], [1100]]
+/// >>> premium = [5812, 4908, 5454, 5165, 5214]
+/// >>> rows = [(1988 + w, 12 * (d + 1), v, incurred[w][d] + v, premium[w])
+/// ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+/// >>> origin, age, values, inc, prem = map(list, zip(*rows))
+/// >>> tri = Triangle.from_long(
+/// ...     origin, age, {"paid": values, "incurred": inc, "premium": prem})
+/// >>> model = Compartmental(CompartmentalPriors.gesmann_morris())
+/// >>> cand = model.candidate(tri, "paid", "premium", incurred="incurred")
+/// >>> cand.name, cand.paid, cand.premium, cand.outstanding_from
+/// ('compartmental_gm1', 'paid', 'premium', 'incurred')
+#[pyclass(
+    name = "CompartmentalCandidate",
+    module = "prospicio.reserving",
+    frozen
+)]
+pub(crate) struct PyCompartmentalCandidate {
+    inner: CompartmentalCandidate,
+}
+
+#[pymethods]
+impl PyCompartmentalCandidate {
+    /// The model's name in a backtest: ``"compartmental_gm1"`` for model 1,
+    /// ``"compartmental_gm2"`` for model 2, ``"compartmental"`` otherwise.
+    #[getter]
+    fn name(&self) -> String {
+        self.inner.name().to_string()
+    }
+
+    /// The cumulative paid column, the backtest's ``column``.
+    #[getter]
+    fn paid(&self) -> String {
+        self.inner.paid().to_string()
+    }
+
+    /// The premium column.
+    #[getter]
+    fn premium(&self) -> String {
+        self.inner.premium().to_string()
+    }
+
+    /// The column the outstanding comes from.
+    #[getter]
+    fn outstanding(&self) -> String {
+        match self.inner.outstanding() {
+            Outstanding::Column(c) | Outstanding::FromIncurred(c) => c.to_string(),
+        }
+    }
+
+    /// ``"column"`` when ``outstanding`` is a column of outstanding
+    /// amounts, ``"incurred"`` when it is a column of incurred amounts less
+    /// paid.
+    #[getter]
+    fn outstanding_from(&self) -> &'static str {
+        match self.inner.outstanding() {
+            Outstanding::Column(_) => "column",
+            Outstanding::FromIncurred(_) => "incurred",
+        }
+    }
+
+    /// Scores the held-out **outstanding** of the latest ``n_diagonals``
+    /// calendar diagonals, a second table beside ``diagonal_backtest``'s
+    /// paid one: for each, the model is fitted to the cells valued before
+    /// it (the outstanding of the held-out diagonal is always withheld) and
+    /// forecasts the outstanding of the diagonal's cells, scored by the
+    /// backtest's metrics. The splits, ``n_sims``, ``seed`` and
+    /// ``interval`` are ``diagonal_backtest``'s, so a backtest with the
+    /// same arguments and this candidate (or a copy of it in its
+    /// ``models``) has fitted the model already and the fits are reused.
+    /// The one model of the table is named after the candidate with
+    /// ``_outstanding``. A held-out cell without an outstanding in the
+    /// triangle, or without a fitted origin or development period, is
+    /// counted in ``excluded``.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_diagonals : int
+    ///     The number of latest calendar diagonals to hold out.
+    /// n_sims : int, default 1000
+    ///     Simulations per forecast.
+    /// seed : int, default 0
+    ///     Seed of every fit and simulation.
+    /// interval : float, default 0.9
+    ///     The central interval whose coverage is scored.
+    ///
+    /// Returns
+    /// -------
+    /// Backtest
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a diagonal cannot be held out, the model cannot be fitted or
+    ///     a setting is invalid.
+    #[pyo3(signature = (n_diagonals, *, n_sims = 1000, seed = 0, interval = 0.9))]
+    fn outstanding_backtest(
+        &self,
+        py: Python<'_>,
+        n_diagonals: usize,
+        n_sims: usize,
+        seed: u64,
+        interval: f64,
+    ) -> PyResult<PyBacktest> {
+        let candidate = &self.inner;
+        let (inner, diagonals) = py
+            .detach(|| {
+                let cells = TriangleFrame::new(candidate.triangle(), candidate.paid(), None)?;
+                let bt =
+                    candidate.outstanding_backtest(&cells, n_diagonals, n_sims, seed, interval)?;
+                let diagonals = diagonal_labels(&cells, &bt);
+                Ok((bt, diagonals))
+            })
+            .map_err(err)?;
+        Ok(PyBacktest { inner, diagonals })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "CompartmentalCandidate(name={}, paid={}, premium={})",
+            quoted(self.inner.name()),
+            quoted(self.inner.paid()),
+            quoted(self.inner.premium())
         )
     }
 }
@@ -11945,6 +12144,7 @@ enum Candidate {
     Odp(BayesOdp),
     Meyers(Meyers),
     Glm(GlmCandidate),
+    Compartmental(Box<CompartmentalCandidate>),
 }
 
 impl Candidate {
@@ -11955,13 +12155,18 @@ impl Candidate {
             Ok(Self::Meyers(m.inner.clone()))
         } else if let Ok(m) = obj.extract::<PyRef<'_, PyGlmCandidate>>() {
             Ok(Self::Glm(m.inner.clone()))
+        } else if let Ok(m) = obj.extract::<PyRef<'_, PyCompartmentalCandidate>>() {
+            // A clone shares the fits the object keeps, so its
+            // outstanding_backtest reuses what the backtest sampled.
+            Ok(Self::Compartmental(Box::new(m.inner.clone())))
         } else {
             let kind = obj
                 .get_type()
                 .name()
                 .map_or_else(|_| "?".into(), |n| n.to_string());
             Err(PyTypeError::new_err(format!(
-                "a backtest model must be a BayesOdp, a Meyers or a GlmCandidate, got {kind}"
+                "a backtest model must be a BayesOdp, a Meyers, a GlmCandidate or a \
+                 CompartmentalCandidate, got {kind}"
             )))
         }
     }
@@ -11971,6 +12176,7 @@ impl Candidate {
             Self::Odp(m) => m.name().to_string(),
             Self::Meyers(m) => m.name().to_string(),
             Self::Glm(m) => m.name.clone(),
+            Self::Compartmental(m) => m.name().to_string(),
         }
     }
 
@@ -11979,6 +12185,7 @@ impl Candidate {
             Self::Odp(m) => NamedModel::new(name, m),
             Self::Meyers(m) => NamedModel::new(name, m),
             Self::Glm(m) => NamedModel::new(name, m),
+            Self::Compartmental(m) => NamedModel::new(name, *m),
         }
     }
 }
@@ -11986,9 +12193,12 @@ impl Candidate {
 /// The models of a backtest as named models: a dict's keys are the names,
 /// a list's are the models' own names (``"bayes_odp"``, ``"meyers_crc"``,
 /// ``"meyers_csr"``, ``"meyers_cay"``, a ``GlmCandidate``'s ``name``).
-fn named_models(models: &Bound<'_, PyAny>) -> PyResult<(Vec<NamedModel>, bool)> {
+fn named_models(
+    models: &Bound<'_, PyAny>,
+) -> PyResult<(Vec<NamedModel>, bool, Vec<CompartmentalCandidate>)> {
     let mut named = Vec::new();
     let mut has_meyers = false;
+    let mut compartmental = Vec::new();
     if let Ok(dict) = models.cast::<PyDict>() {
         for (key, value) in dict.iter() {
             let name: String = key
@@ -11996,6 +12206,9 @@ fn named_models(models: &Bound<'_, PyAny>) -> PyResult<(Vec<NamedModel>, bool)> 
                 .map_err(|_| PyTypeError::new_err("the keys of models must be model names"))?;
             let c = Candidate::from_py(&value)?;
             has_meyers |= matches!(c, Candidate::Meyers(_));
+            if let Candidate::Compartmental(m) = &c {
+                compartmental.push((**m).clone());
+            }
             named.push(c.into_named(name));
         }
     } else {
@@ -12005,6 +12218,9 @@ fn named_models(models: &Bound<'_, PyAny>) -> PyResult<(Vec<NamedModel>, bool)> 
         for item in iter {
             let c = Candidate::from_py(&item?)?;
             has_meyers |= matches!(c, Candidate::Meyers(_));
+            if let Candidate::Compartmental(m) = &c {
+                compartmental.push((**m).clone());
+            }
             let name = c.default_name();
             if named.iter().any(|m: &NamedModel| m.name == name) {
                 return Err(PyValueError::new_err(format!(
@@ -12018,7 +12234,23 @@ fn named_models(models: &Bound<'_, PyAny>) -> PyResult<(Vec<NamedModel>, bool)> 
     if named.is_empty() {
         return Err(PyValueError::new_err("models must hold at least one model"));
     }
-    Ok((named, has_meyers))
+    Ok((named, has_meyers, compartmental))
+}
+
+/// The calendar period of each split of `bt`, as the frame labels it.
+fn diagonal_labels(cells: &TriangleFrame, bt: &Backtest) -> Vec<String> {
+    let labels = match cells.frame().column("calendar") {
+        Some(Column::Categorical(c)) => Some(c),
+        _ => None,
+    };
+    bt.scored_rows()
+        .iter()
+        .zip(bt.diagonals())
+        .map(|(rows, &index)| match (labels, rows.first()) {
+            (Some(c), Some(&r)) => c[r].clone(),
+            _ => index.to_string(),
+        })
+        .collect()
 }
 
 /// A table as a pandas DataFrame, or as a dict of lists without pandas.
@@ -12070,10 +12302,14 @@ fn backtest_table<'py>(
 /// models : dict or list
 ///     A dict from name to model, or a list of models named by their
 ///     kind (``"bayes_odp"``, ``"meyers_crc"``, ``"meyers_csr"``,
-///     ``"meyers_cay"``, a ``GlmCandidate``'s ``name``); two models with
-///     one name are an error. A model is a ``BayesOdp`` or a ``Meyers``
-///     (the settings of its own ``fit``, except that ``n_sims`` and
-///     ``seed`` are the backtest's) or a ``GlmCandidate``.
+///     ``"meyers_cay"``, ``"compartmental_gm1"``, ``"compartmental_gm2"``,
+///     a ``GlmCandidate``'s ``name``); two models with one name are an
+///     error. A model is a ``BayesOdp`` or a ``Meyers`` (the settings of
+///     its own ``fit``, except that ``n_sims`` and ``seed`` are the
+///     backtest's), a ``GlmCandidate`` or a ``CompartmentalCandidate``
+///     (``Compartmental.candidate``, on this ``triangle`` and ``column``;
+///     its ``outstanding_backtest`` scores the held-out outstanding on the
+///     same fits).
 /// n_diagonals : int
 ///     The number of latest calendar diagonals to hold out, oldest first.
 /// premium : array-like, optional
@@ -12094,12 +12330,14 @@ fn backtest_table<'py>(
 /// ------
 /// ValueError
 ///     If ``models`` is empty or names two models alike; if ``Meyers`` is
-///     given without ``premium``; if the triangle has several segments or
+///     given without ``premium``; if a ``CompartmentalCandidate`` was built
+///     on another triangle or paid column than ``triangle`` and ``column``;
+///     if the triangle has several segments or
 ///     lacks the column; if a diagonal cannot be held out; or if a model
 ///     cannot be fitted.
 /// TypeError
-///     If a model is not a ``BayesOdp``, a ``Meyers`` or a
-///     ``GlmCandidate``.
+///     If a model is not a ``BayesOdp``, a ``Meyers``, a
+///     ``GlmCandidate`` or a ``CompartmentalCandidate``.
 ///
 /// Examples
 /// --------
@@ -12137,7 +12375,7 @@ pub(crate) fn diagonal_backtest(
     seed: u64,
     interval: f64,
 ) -> PyResult<PyBacktest> {
-    let (named, has_meyers) = named_models(models)?;
+    let (named, has_meyers, compartmental) = named_models(models)?;
     let premium = premium.map(|p| floats(p, "premium")).transpose()?;
     if has_meyers && premium.is_none() {
         return Err(PyValueError::new_err(
@@ -12145,26 +12383,24 @@ pub(crate) fn diagonal_backtest(
         ));
     }
     let tri = &triangle.inner;
+    // A candidate reads its own triangle: it must be the backtest's.
+    for c in &compartmental {
+        if c.paid() != column || c.triangle() != tri {
+            return Err(PyValueError::new_err(format!(
+                "{} was built on another triangle or paid column than the backtest's: build \
+                 it with Compartmental.candidate on this triangle and column {}",
+                c.name(),
+                quoted(column)
+            )));
+        }
+    }
     let (inner, diagonals) = py
         .detach(|| {
             let cells = TriangleFrame::new(tri, column, premium.as_deref())?;
             let refs: Vec<&dyn TriangleModel> =
                 named.iter().map(|m| m as &dyn TriangleModel).collect();
             let bt = run_backtest(&cells, &refs, n_diagonals, n_sims, seed, interval)?;
-            // The calendar period of each split, as the frame labels it.
-            let labels = match cells.frame().column("calendar") {
-                Some(Column::Categorical(c)) => Some(c),
-                _ => None,
-            };
-            let diagonals = bt
-                .scored_rows()
-                .iter()
-                .zip(bt.diagonals())
-                .map(|(rows, &index)| match (labels, rows.first()) {
-                    (Some(c), Some(&r)) => c[r].clone(),
-                    _ => index.to_string(),
-                })
-                .collect::<Vec<_>>();
+            let diagonals = diagonal_labels(&cells, &bt);
             Ok((bt, diagonals))
         })
         .map_err(err)?;

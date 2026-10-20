@@ -5414,6 +5414,44 @@ class Compartmental:
     """
     def __new__(cls, /, priors: CompartmentalPriors, *, likelihood: str = "normal", scale: str = "amount", paid_response: str = "cumulative", fitted: str = "paid_and_outstanding", rate_order: str = "free", start: str = "data", chains: int = 4, tune: int = 1000, draws: int = 2000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.99, max_depth: int = 10, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None) -> Compartmental: ...
     def __repr__(self, /) -> str: ...
+    def candidate(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None) -> CompartmentalCandidate:
+        """
+        This model as a candidate of ``diagonal_backtest``, with the
+        columns it reads: the cumulative ``paid`` column (the backtest's
+        ``column``), the outstanding (from ``outstanding`` or from
+        ``incurred``, as ``fit``) and each origin's ``premium``. The
+        backtest fits the model to the cells valued before each held-out
+        diagonal and forecasts the paid increments of the diagonal; the
+        candidate's ``outstanding_backtest`` scores the held-out outstanding
+        of the same diagonals on the **same fits**. The settings are
+        ``fit``'s, except that the backtest's ``n_sims`` and ``seed``
+        replace ``n_sims`` and ``seed``, and the sampler runs once per
+        split (the whole ``chains`` x ``draws`` posterior of ``fit``, so
+        size them for the number of diagonals).
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            The cumulative triangle with one segment. It must be the one
+            given to ``diagonal_backtest``, with ``paid`` as its ``column``.
+        paid : str
+            Cumulative paid amounts.
+        premium : str
+            The premium of each origin.
+        outstanding : str, optional
+            A column of outstanding amounts.
+        incurred : str, optional
+            A column of incurred amounts.
+        
+        Returns
+        -------
+        CompartmentalCandidate
+        
+        Raises
+        ------
+        ValueError
+            If not exactly one of ``outstanding`` and ``incurred`` is given.
+        """
     @property
     def chains(self, /) -> int:
         """
@@ -5752,6 +5790,105 @@ class Compartmental:
     def tune(self, /) -> int:
         """
         Warm-up draws per chain.
+        """
+
+@final
+class CompartmentalCandidate:
+    """
+    A ``Compartmental`` for ``diagonal_backtest``, from
+    ``Compartmental.candidate``: the model's settings with the triangle and
+    the paid, outstanding (or incurred) and premium columns it reads.
+    
+    Put it in the ``models`` of ``diagonal_backtest`` (a list, or a dict
+    that names it) to score the paid increments of the held-out diagonals
+    beside the other models, and call ``outstanding_backtest`` for the
+    second table, the held-out outstanding of the same diagonals. Both
+    tables use the same fits (one run of the sampler per split, kept by the
+    candidate), whichever is asked for first.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import Compartmental, CompartmentalPriors, Triangle
+    >>> paid = [[952, 1529, 2813, 3647, 3724], [849, 1564, 2202, 2432],
+    ...         [983, 2211, 2830], [1657, 2685], [932]]
+    >>> incurred = [[1500, 1400, 900, 400, 100], [1300, 1200, 800, 300],
+    ...             [1400, 1100, 700], [1200, 900], [1100]]
+    >>> premium = [5812, 4908, 5454, 5165, 5214]
+    >>> rows = [(1988 + w, 12 * (d + 1), v, incurred[w][d] + v, premium[w])
+    ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+    >>> origin, age, values, inc, prem = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(
+    ...     origin, age, {"paid": values, "incurred": inc, "premium": prem})
+    >>> model = Compartmental(CompartmentalPriors.gesmann_morris())
+    >>> cand = model.candidate(tri, "paid", "premium", incurred="incurred")
+    >>> cand.name, cand.paid, cand.premium, cand.outstanding_from
+    ('compartmental_gm1', 'paid', 'premium', 'incurred')
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def name(self, /) -> str:
+        """
+        The model's name in a backtest: ``"compartmental_gm1"`` for model 1,
+        ``"compartmental_gm2"`` for model 2, ``"compartmental"`` otherwise.
+        """
+    @property
+    def outstanding(self, /) -> str:
+        """
+        The column the outstanding comes from.
+        """
+    def outstanding_backtest(self, /, n_diagonals: int, *, n_sims: int = 1000, seed: int = 0, interval: float = 0.9) -> Backtest:
+        """
+        Scores the held-out **outstanding** of the latest ``n_diagonals``
+        calendar diagonals, a second table beside ``diagonal_backtest``'s
+        paid one: for each, the model is fitted to the cells valued before
+        it (the outstanding of the held-out diagonal is always withheld) and
+        forecasts the outstanding of the diagonal's cells, scored by the
+        backtest's metrics. The splits, ``n_sims``, ``seed`` and
+        ``interval`` are ``diagonal_backtest``'s, so a backtest with the
+        same arguments and this candidate (or a copy of it in its
+        ``models``) has fitted the model already and the fits are reused.
+        The one model of the table is named after the candidate with
+        ``_outstanding``. A held-out cell without an outstanding in the
+        triangle, or without a fitted origin or development period, is
+        counted in ``excluded``.
+        
+        Parameters
+        ----------
+        n_diagonals : int
+            The number of latest calendar diagonals to hold out.
+        n_sims : int, default 1000
+            Simulations per forecast.
+        seed : int, default 0
+            Seed of every fit and simulation.
+        interval : float, default 0.9
+            The central interval whose coverage is scored.
+        
+        Returns
+        -------
+        Backtest
+        
+        Raises
+        ------
+        ValueError
+            If a diagonal cannot be held out, the model cannot be fitted or
+            a setting is invalid.
+        """
+    @property
+    def outstanding_from(self, /) -> str:
+        """
+        ``"column"`` when ``outstanding`` is a column of outstanding
+        amounts, ``"incurred"`` when it is a column of incurred amounts less
+        paid.
+        """
+    @property
+    def paid(self, /) -> str:
+        """
+        The cumulative paid column, the backtest's ``column``.
+        """
+    @property
+    def premium(self, /) -> str:
+        """
+        The premium column.
         """
 
 @final
@@ -23620,10 +23757,14 @@ def diagonal_backtest(triangle: Triangle, column: str, models: Any, n_diagonals:
     models : dict or list
         A dict from name to model, or a list of models named by their
         kind (``"bayes_odp"``, ``"meyers_crc"``, ``"meyers_csr"``,
-        ``"meyers_cay"``, a ``GlmCandidate``'s ``name``); two models with
-        one name are an error. A model is a ``BayesOdp`` or a ``Meyers``
-        (the settings of its own ``fit``, except that ``n_sims`` and
-        ``seed`` are the backtest's) or a ``GlmCandidate``.
+        ``"meyers_cay"``, ``"compartmental_gm1"``, ``"compartmental_gm2"``,
+        a ``GlmCandidate``'s ``name``); two models with one name are an
+        error. A model is a ``BayesOdp`` or a ``Meyers`` (the settings of
+        its own ``fit``, except that ``n_sims`` and ``seed`` are the
+        backtest's), a ``GlmCandidate`` or a ``CompartmentalCandidate``
+        (``Compartmental.candidate``, on this ``triangle`` and ``column``;
+        its ``outstanding_backtest`` scores the held-out outstanding on the
+        same fits).
     n_diagonals : int
         The number of latest calendar diagonals to hold out, oldest first.
     premium : array-like, optional
@@ -23644,12 +23785,14 @@ def diagonal_backtest(triangle: Triangle, column: str, models: Any, n_diagonals:
     ------
     ValueError
         If ``models`` is empty or names two models alike; if ``Meyers`` is
-        given without ``premium``; if the triangle has several segments or
+        given without ``premium``; if a ``CompartmentalCandidate`` was built
+        on another triangle or paid column than ``triangle`` and ``column``;
+        if the triangle has several segments or
         lacks the column; if a diagonal cannot be held out; or if a model
         cannot be fitted.
     TypeError
-        If a model is not a ``BayesOdp``, a ``Meyers`` or a
-        ``GlmCandidate``.
+        If a model is not a ``BayesOdp``, a ``Meyers``, a
+        ``GlmCandidate`` or a ``CompartmentalCandidate``.
     
     Examples
     --------
