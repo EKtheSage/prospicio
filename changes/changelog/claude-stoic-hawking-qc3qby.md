@@ -449,3 +449,8 @@
   `m2loglik`, the REML criterion and AIC. At parity with R `dglm` where it
   is right; where its mean step is not (a non-canonical link such as the
   gamma's or Tweedie's log, or an offset), with its loop corrected (#353).
+- The double GLMs in Python and R: `prospicio.models.DoubleGlm` and
+  `DoubleGlmFit`, fitted on a mean and a dispersion `Design`, and R
+  `dglm_fit(formula, dformula, data, ...)`, `dglm()`'s order of arguments,
+  returning a `dglm_model` whose `predict()` gives means or, with
+  `type = "dispersion"`, dispersions (#353).

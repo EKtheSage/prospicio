@@ -154,6 +154,8 @@ elpd_loo_rust <- function(log_lik, n, r_eff) .Call(wrap__elpd_loo_rust, log_lik,
 
 elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
 
+dglm_fit_design <- function(x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method) .Call(wrap__dglm_fit_design, x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method)
+
 glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, nodes) .Call(wrap__glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, nodes)
 
 local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
@@ -1012,6 +1014,48 @@ GlmmModel$predict <- function(x, names, offset, group_names, group_labels) .Call
 
 #' @export
 `[[.GlmmModel` <- `$.GlmmModel`
+
+DglmModel <- new.env(parent = emptyenv())
+
+DglmModel$names <- function() .Call(wrap__DglmModel__names, self)
+
+DglmModel$coefficients <- function() .Call(wrap__DglmModel__coefficients, self)
+
+DglmModel$std_errors <- function() .Call(wrap__DglmModel__std_errors, self)
+
+DglmModel$covariance <- function() .Call(wrap__DglmModel__covariance, self)
+
+DglmModel$dispersion_names <- function() .Call(wrap__DglmModel__dispersion_names, self)
+
+DglmModel$dispersion_coefficients <- function() .Call(wrap__DglmModel__dispersion_coefficients, self)
+
+DglmModel$dispersion_std_errors <- function() .Call(wrap__DglmModel__dispersion_std_errors, self)
+
+DglmModel$dispersion_covariance <- function() .Call(wrap__DglmModel__dispersion_covariance, self)
+
+DglmModel$fitted <- function() .Call(wrap__DglmModel__fitted, self)
+
+DglmModel$dispersion_fitted <- function() .Call(wrap__DglmModel__dispersion_fitted, self)
+
+DglmModel$m2loglik <- function() .Call(wrap__DglmModel__m2loglik, self)
+
+DglmModel$reml_criterion <- function() .Call(wrap__DglmModel__reml_criterion, self)
+
+DglmModel$aic <- function() .Call(wrap__DglmModel__aic, self)
+
+DglmModel$method <- function() .Call(wrap__DglmModel__method, self)
+
+DglmModel$iterations <- function() .Call(wrap__DglmModel__iterations, self)
+
+DglmModel$predict <- function(x, names, offset) .Call(wrap__DglmModel__predict, self, x, names, offset)
+
+DglmModel$predict_dispersion <- function(z, names, offset) .Call(wrap__DglmModel__predict_dispersion, self, z, names, offset)
+
+#' @export
+`$.DglmModel` <- function (self, name) { func <- DglmModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.DglmModel` <- `$.DglmModel`
 
 Pareto <- new.env(parent = emptyenv())
 

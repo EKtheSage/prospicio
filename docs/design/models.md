@@ -85,7 +85,7 @@ models and compares them.
   R `glmm_fit()`.
 - `prospicio_glm::dglm::DoubleGlm`: double GLMs, a GLM for the mean and
   one for the log dispersion on their own designs, by REML or ML (see
-  "Double GLMs").
+  "Double GLMs"); Python `DoubleGlm`, R `dglm_fit()`.
 - Parity: `validation/reference/glm_statsmodels.csv`
   (`validation/scripts/statsmodels_glm.py`): 10 GLMs on a synthetic
   600-policy portfolio (Poisson with exposure offset, quasi-Poisson, gamma
@@ -775,6 +775,13 @@ moves by more than `1e-11` relative.
   dispersion's offset as its mean step drops the mean's, so that case is
   checked against `nlminb`.
 - **Not a `Model`**, as the GLMM: it takes two designs.
+- **Bindings.** Python `DoubleGlm(family, link, power, method,
+  link_power).fit(mean, dispersion, y)` on two `Design`s. R
+  `dglm_fit(formula, dformula = ~ 1, data, family, link, power, method,
+  offset, weights, doffset)`, `dglm()`'s order of arguments, returning a
+  `dglm_model`; `predict(m, newdata, type = "dispersion")` gives the
+  dispersion of new rows. The R tests also check against `dglm` live where
+  it is right, when it is installed.
 
 ## Attention
 

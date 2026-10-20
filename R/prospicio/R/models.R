@@ -1906,3 +1906,126 @@ S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...)
   rust_result(object@ptr$predict(as.double(nd$x), colnames(nd$x), nd$offset, g$names, g$labels),
               s7_call())
 }
+
+#' Double GLMs: a model for the dispersion as well as the mean
+#'
+#' `dglm_fit()` fits a GLM for the mean, `g(mu) = X beta + offset`, with
+#' variance `phi V(mu) / w`, and a gamma GLM with the log link for the
+#' dispersion, `log(phi) = Z gamma + doffset`, each on its own formula, as
+#' `dglm::dglm()` (Smyth's alternating scoring). The dispersion is
+#' estimated by REML by default; `method = "ml"` is `dglm()`'s default.
+#' `dglm` 1.8.6 weights its mean step by `w V(mu) / phi` and leaves the
+#' offset out of `mu.eta`, which is right only for a canonical link without
+#' an offset; this fit uses the scoring weights, so it agrees with `dglm()`
+#' there and with `glm()` at a constant dispersion everywhere
+#' (`validation/scripts/r_dglm.R`; `docs/design/models.md`, "Double GLMs").
+#'
+#' @param formula The mean's formula, with the response.
+#' @param dformula The dispersion's one-sided formula, `~ 1` by default.
+#' @param data A data frame.
+#' @param family `"gaussian"`, `"poisson"`, `"gamma"` or `"tweedie"`.
+#' @param link The mean's link; the family's canonical link by default.
+#' @param power The Tweedie power, in (1, 2).
+#' @param method `"reml"` or `"ml"`.
+#' @param offset,weights Optional offset of the mean (added to any
+#'   `offset()` term) and prior weights.
+#' @param doffset Optional offset of the log dispersion (added to any
+#'   `offset()` term of `dformula`).
+#' @param link_power The power link's exponent.
+#' @returns A `dglm_model` with `coefficients`, `std_errors` and
+#'   `covariance` (the mean's, `summary(fit, dispersion = 1)` in `dglm`),
+#'   `dispersion_coefficients`, `dispersion_std_errors` and
+#'   `dispersion_covariance` (on the log scale, `dglm`'s
+#'   `summary(fit$dispersion.fit, dispersion = 2)`), `fitted`,
+#'   `dispersion_fitted`, `m2loglik` (`dglm`'s, with its constants),
+#'   `reml_criterion` (`m2loglik + log det(X' W X)`), `aic`, `method` and
+#'   `iterations`. `predict(m, newdata, type = "dispersion")` gives the
+#'   dispersion of new rows, `type = "response"` (the default) their mean.
+#' @export
+#' @examples
+#' d <- data.frame(y = c(9, 11, 10, 10.5, 4, 18, 6, 15), urban = rep(c("no", "yes"), each = 4))
+#' m <- dglm_fit(y ~ urban, ~ urban, d, family = "gamma", link = "log")
+#' m@dispersion_coefficients
+#' predict(m, data.frame(urban = "yes"), type = "dispersion")
+dglm_fit <- function(formula, dformula = ~1, data, family = "gaussian", link = NULL, power = NULL,
+                     method = "reml", offset = NULL, weights = NULL, doffset = NULL,
+                     link_power = NULL) {
+  des <- model_design(formula, data, offset, weights)
+  ddes <- model_design(dformula, data, doffset, NULL)
+  ptr <- rust_result(dglm_fit_design(
+    as.double(des$x), colnames(des$x), des$y, des$offset, des$weights,
+    as.double(ddes$x), colnames(ddes$x), ddes$offset, family,
+    if (is.null(link)) "" else link, if (is.null(power)) NaN else as.double(power),
+    if (is.null(link_power)) NaN else as.double(link_power), method
+  ))
+  dglm_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels, dterms = ddes$terms,
+             dxlevels = ddes$xlevels)
+}
+
+#' @rdname dglm_fit
+#' @export
+dglm_model <- S7::new_class(
+  "dglm_model",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("DglmModel"),
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    dterms = S7::class_any,
+    dxlevels = S7::class_any,
+    coefficients = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$coefficients(), self@ptr$names())
+    }),
+    std_errors = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$std_errors(), self@ptr$names())
+    }),
+    covariance = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$names()
+      matrix(self@ptr$covariance(), length(nm), dimnames = list(nm, nm))
+    }),
+    dispersion_coefficients = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$dispersion_coefficients(), self@ptr$dispersion_names())
+    }),
+    dispersion_std_errors = S7::new_property(S7::class_double, getter = function(self) {
+      stats::setNames(self@ptr$dispersion_std_errors(), self@ptr$dispersion_names())
+    }),
+    dispersion_covariance = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$dispersion_names()
+      matrix(self@ptr$dispersion_covariance(), length(nm), dimnames = list(nm, nm))
+    }),
+    fitted = S7::new_property(S7::class_double, getter = function(self) self@ptr$fitted()),
+    dispersion_fitted = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$dispersion_fitted()
+    }),
+    m2loglik = S7::new_property(S7::class_double, getter = function(self) self@ptr$m2loglik()),
+    reml_criterion = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$reml_criterion()
+    }),
+    aic = S7::new_property(S7::class_double, getter = function(self) self@ptr$aic()),
+    method = S7::new_property(S7::class_character, getter = function(self) self@ptr$method()),
+    iterations = S7::new_property(S7::class_double, getter = function(self) self@ptr$iterations())
+  ),
+  constructor = function(ptr, terms, xlevels, dterms, dxlevels) {
+    S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels, dterms = dterms,
+                   dxlevels = dxlevels)
+  }
+)
+
+S7::method(coef, dglm_model) <- function(object, ...) object@coefficients
+S7::method(predict, dglm_model) <- function(object, newdata, type = c("response", "dispersion"),
+                                            offset = NULL, ...) {
+  type <- match.arg(type)
+  if (type == "response") {
+    nd <- new_design(object, newdata, offset)
+    return(rust_result(object@ptr$predict(as.double(nd$x), colnames(nd$x), nd$offset),
+                       s7_call()))
+  }
+  mf <- stats::model.frame(object@dterms, newdata, xlev = object@dxlevels,
+                           na.action = stats::na.fail)
+  z <- stats::model.matrix(object@dterms, mf)
+  off <- stats::model.offset(mf)
+  if (!is.null(offset)) off <- if (is.null(off)) offset else off + offset
+  rust_result(object@ptr$predict_dispersion(as.double(z), colnames(z),
+                                            if (is.null(off)) double() else as.double(off)),
+              s7_call())
+}
