@@ -131,18 +131,60 @@ const CACHED_FITS: usize = 4;
 /// assert_eq!(candidate.fit_rows(&cells, cells.observed()), cells.observed());
 /// # Ok::<(), prospicio_reserving::Error>(())
 /// ```
+///
+/// # Settings are fixed
+///
+/// A candidate keeps the fits of its last few splits, shared between the
+/// paid and the outstanding backtests of the same split. Its model, triangle
+/// and columns are therefore private and read through accessors: to try other
+/// settings, build a new candidate, so a cached fit is never reused under
+/// settings other than the ones it was made with.
+///
+/// ```compile_fail,E0616
+/// use prospicio_reserving::bayes::{
+///     Compartmental, CompartmentalCandidate, CompartmentalPriors, Outstanding,
+/// };
+/// use prospicio_reserving::{
+///     DevelopmentColumn, Grain, Long, Month, Triangle, TriangleFrame, TriangleModel,
+/// };
+///
+/// let (mut origin, mut age, mut paid, mut incurred, mut premium) =
+///     (vec![], vec![], vec![], vec![], vec![]);
+/// for (w, p) in [100.0, 110.0, 120.0].into_iter().enumerate() {
+///     for d in 0..(3 - w) {
+///         origin.push(Month::january(2020 + w as i32));
+///         age.push(12 * (d as u32 + 1));
+///         paid.push(p * [0.4, 0.7, 0.8][d]);
+///         incurred.push(p * 0.9);
+///         premium.push(p * 1.5);
+///     }
+/// }
+/// let tri = Triangle::from_long(&Long {
+///     keys: &[],
+///     origin: &origin,
+///     development: DevelopmentColumn::Age(&age),
+///     values: &[("paid", &paid), ("incurred", &incurred), ("premium", &premium)],
+///     origin_grain: Grain::Year,
+///     development_grain: Grain::Year,
+///     cumulative: true,
+/// })?;
+/// let mut candidate = CompartmentalCandidate::new(
+///     Compartmental::new(CompartmentalPriors::gesmann_morris()),
+///     &tri,
+///     "paid",
+///     Outstanding::FromIncurred("incurred"),
+///     "premium",
+/// );
+/// candidate.paid = "incurred";
+/// # Ok::<(), prospicio_reserving::Error>(())
+/// ```
 #[derive(Debug)]
 pub struct CompartmentalCandidate<'a> {
-    /// The model and its settings.
-    pub model: Compartmental,
-    /// The triangle, with the columns below; the one the frame was built on.
-    pub triangle: &'a Triangle,
-    /// The cumulative paid column (the frame's column).
-    pub paid: &'a str,
-    /// The outstanding column, or the incurred column it comes from.
-    pub outstanding: Outstanding<'a>,
-    /// The premium column.
-    pub premium: &'a str,
+    model: Compartmental,
+    triangle: &'a Triangle,
+    paid: &'a str,
+    outstanding: Outstanding<'a>,
+    premium: &'a str,
     fits: Mutex<Vec<Arc<TrainFit>>>,
 }
 
@@ -163,6 +205,31 @@ impl<'a> CompartmentalCandidate<'a> {
             premium,
             fits: Mutex::new(Vec::new()),
         }
+    }
+
+    /// The model and its settings.
+    pub fn model(&self) -> &Compartmental {
+        &self.model
+    }
+
+    /// The triangle the frame was built on.
+    pub fn triangle(&self) -> &'a Triangle {
+        self.triangle
+    }
+
+    /// The cumulative paid column (the frame's column).
+    pub fn paid(&self) -> &'a str {
+        self.paid
+    }
+
+    /// The outstanding column, or the incurred column it comes from.
+    pub fn outstanding(&self) -> Outstanding<'a> {
+        self.outstanding
+    }
+
+    /// The premium column.
+    pub fn premium(&self) -> &'a str {
+        self.premium
     }
 }
 
@@ -932,6 +999,21 @@ mod tests {
         assert_eq!(data.paid.len(), kept.len());
         assert_eq!(data.latest_paid[0], Some((8, PAID[0][8])));
         assert_eq!(data.outstanding.len(), 45);
+    }
+
+    /// The settings are read through accessors and fixed at construction, so
+    /// the cache (keyed on seed and rows) cannot return a fit made under
+    /// other settings: a second candidate has its own, empty cache.
+    #[test]
+    fn a_new_candidate_starts_with_no_cached_fit() {
+        let tri = triangle(false);
+        let a = candidate(quick(1), &tri);
+        assert_eq!(a.paid(), "paid");
+        assert_eq!(a.premium(), "premium");
+        assert!(std::ptr::eq(a.triangle(), &tri));
+        let b = candidate(quick(1), &tri);
+        assert_eq!(a.fits.lock().unwrap().len(), 0);
+        assert_eq!(b.fits.lock().unwrap().len(), 0);
     }
 
     /// The fit never sees the held-out diagonal: its paid is rebuilt from

@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: The compartmental model over segments and in the diagonal backtest, paid and outstanding
-description: Compartmental::fit_segments on a derived seed per segment makes twin segments independent and rank correlation reaches its targets with each segment's reserves, paid cells and outstanding cells reordered as one row; in the diagonal backtest on company 337 model 1 forecasts the held-out outstanding diagonals well (A/E 1.08, 1.02 and 0.98, every 90% interval holds its cell) but the paid increments badly (A/E 1.35, 1.07 and 1.16, mean cell CRPS 3.5 and total CRPS 1.8 times the ODP GLM's), so the outstanding total stays within 8% of its forecast at every split and the backtest cannot tell a case reserve strength shift from faster settlement.
+description: Compartmental::fit_segments on a derived seed per segment makes twin segments independent and rank correlation reaches its targets with each segment's reserves, paid cells and outstanding cells reordered as one row; in the diagonal backtest on company 337 model 1 forecasts the held-out outstanding diagonals well (A/E 1.08, 1.02 and 0.98, every 90% interval holds its cell) but the paid increments badly (A/E 1.34, 1.07 and 1.15, mean cell CRPS 3.5 and total CRPS 1.8 times the ODP GLM's), so the outstanding total stays within 8% of its forecast at every split and the backtest cannot tell a case reserve strength shift from faster settlement.
 tags: [bayes, reserving, compartmental, gesmann-morris, segments, dependence, backtest, outstanding, clrd]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-19T18:00:00-07:00 }
@@ -61,7 +61,7 @@ at least six times its seed-to-seed sd, confirmed at seeds 100 to
   |---|---|---|---|---|---|
   | ODP GLM | 0.89, 0.92, 1.02 | 1 | 1 | 0 | 0.87 |
   | `BayesOdp` | 0.89, 0.92, 1.02 | 1.01 | 1.02 | 0.003 | 0.87 |
-  | Compartmental 1 | 1.35, 1.07, 1.16 | 3.5 | 1.8 | -1.15 | 0.89 |
+  | Compartmental 1 | 1.34, 1.07, 1.15 | 3.5 | 1.8 | -1.15 | 0.89 |
 
   The compartmental forecast of the paid increments is worse than the
   chain ladder's family on every metric except coverage, which it buys
@@ -84,8 +84,8 @@ at least six times its seed-to-seed sd, confirmed at seeds 100 to
   can look at 1996 only: the 1997 diagonal is the papers' test set and not
   in the 45-cell triangle. At the last split (1996 held out, the model
   fitted to cells up to 1995) the outstanding comes in 2.4% below the
-  forecast (A/E 0.976) while the paid increments come in 16% above it
-  (1.16); at the first two splits the outstanding is 8% and 2% above its
+  forecast (A/E 0.976) while the paid increments come in 15% above it
+  (1.15); at the first two splits the outstanding is 8% and 2% above its
   forecast. So the outstanding total moves by less than 10% against its
   forecast at every split and no shift stands out in 1996. That is weak
   evidence either way: the paid and outstanding A/Es are on different
