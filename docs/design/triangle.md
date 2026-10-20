@@ -331,8 +331,31 @@ rows of a `TriangleFrame`.
   development year and the mean by calendar year match their Chapter 6
   figures to two decimals (`validation/tests/reserving.rs`). Python
   `OdpGlmFit.residuals()` and `residual_summary(by)`, R `fit@residuals`
-  and `residual_summary(fit, by)`. Still to come in #333: custom designs
-  (reduced models, calendar terms); gamma and Tweedie families.
+  and `residual_summary(fit, by)`.
+- `fit_design(triangle, column, design)` fits another design (#333, third
+  PR): a `Design` with one row per row of the triangle's `TriangleFrame`, in
+  its order (every origin × development cell, origin-major, a cell after a
+  hole included), its offset and weights used too. A precomputed design,
+  not a new kind of term, because the R bindings build designs with R's
+  own `model.matrix()`, and a design on the cells covers what `Terms`
+  cannot say (a single age's indicator, indicators multiplied together):
+  Rust users code one with `Terms` on `cells.frame()` or build the columns
+  from the frame's indices. The hole check stays; the check that every
+  origin and age has an observed increment is the cross-classified
+  model's, so a design instead fails on a column that is zero on every
+  observed cell, and on collinearity in the GLM. `OdpGlmFit::coding` is
+  `None` for such a fit (breaking: it was a `Coding`); `glm.names()`
+  names the columns. On the NJ Manufacturers triangle Taylor and McGuire's
+  models 7-2, 7-10 and 7-14 reproduce Tables 7-1, 7-3 and 7-5 to the
+  printed digits with `φ` 102.6, 107.3 and 53.9, model 7-10's heat map is
+  Figure 7-5, and their delta-method forecasts and RMSEPs are the guide's
+  (372,532 and 13,030; 373,006 and 13,215; 370,493 and 11,021;
+  `validation/tests/reserving.rs`). Python `OdpGlm.cells(triangle,
+  column)` (a dict of the frame's columns with `observed` and `future`)
+  and `OdpGlm().fit(triangle, column, design=Design(...))`; R
+  `odp_glm_cells()` and `odp_glm(triangle, formula = ~ ...)`, the formula
+  run through `model.matrix()` on the cells. Still to come in #333: gamma
+  and Tweedie families.
 
 ## Calendar-diagonal backtest
 

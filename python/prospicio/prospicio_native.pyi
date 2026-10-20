@@ -16283,7 +16283,9 @@ class OdpGlm:
     The over-dispersed Poisson (ODP) reserving model as a quasi-Poisson GLM:
     ``ln E[X] = c + a[origin] + b[development]`` on the incremental values,
     ``Var X = phi E[X]``. Its future cells summed by origin are the
-    volume-weighted chain-ladder reserves.
+    volume-weighted chain-ladder reserves. ``fit`` takes another design on
+    the triangle's cells too (``OdpGlm.cells``): fewer parameters, calendar
+    trends, interactions (Taylor and McGuire, CAS Monograph 3, Chapter 7).
     
     Parameters
     ----------
@@ -16306,7 +16308,35 @@ class OdpGlm:
     """
     def __new__(cls, /, tolerance: float = 1e-10, max_iterations: int = 100) -> OdpGlm: ...
     def __repr__(self, /) -> str: ...
-    def fit(self, /, triangle: Triangle, column: str) -> OdpGlmFit:
+    @staticmethod
+    def cells(triangle: Triangle, column: str) -> dict:
+        """
+        The cells of a single-segment triangle, one per origin and
+        development age, origin-major: the rows a ``design`` for ``fit``
+        has, in that order.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        
+        Returns
+        -------
+        dict
+            Lists of equal length: ``origin``, ``development`` (the age in
+            months) and ``calendar`` as labels; ``origin_index``,
+            ``development_index`` and ``calendar_index`` (0-based, the last
+            from the earliest valuation), ``age`` in months and
+            ``exposure`` (1) as numbers; ``observed`` and ``future``, whether
+            the cell is fitted or predicted (a cell after a hole is
+            neither).
+        
+        Raises
+        ------
+        ValueError
+            If the triangle has several segments or no such column.
+        """
+    def fit(self, /, triangle: Triangle, column: str, design: Design |None = None) -> OdpGlmFit:
         """
         Fits the GLM to the incremental values of one measure column of a
         single-segment triangle and predicts the cells below the latest
@@ -16316,6 +16346,14 @@ class OdpGlm:
         ----------
         triangle : Triangle
         column : str
+        design : prospicio.models.Design, optional
+            The model's columns, one row per cell of ``OdpGlm.cells(triangle,
+            column)`` in its order, intercept included if wanted; its offset
+            and weights are used too. By default the cross-classified model,
+            an intercept and origin and development factors. A
+            ``prospicio.models.Terms`` coding of the cells gives one
+            (``terms.fit(cells).design(cells)``), or build the columns from
+            the cells' indices.
         
         Returns
         -------
@@ -16324,9 +16362,34 @@ class OdpGlm:
         Raises
         ------
         ValueError
-            If the triangle has several segments, an origin or age has no
-            observed increment, a past cell has no increment, or the GLM does
-            not converge.
+            If the triangle has several segments, a past cell has no
+            increment, or the GLM does not converge (a collinear design among
+            them); without ``design``, if an origin or age has no observed
+            increment; with it, if it does not have a row per cell or a
+            column is zero on every observed cell.
+        
+        Examples
+        --------
+        The origins' effect as a straight line in their index instead of a
+        level each:
+        
+        >>> from prospicio.models import Design
+        >>> from prospicio.reserving import OdpGlm, Triangle
+        >>> tri = Triangle.from_long(
+        ...     [2020, 2020, 2020, 2021, 2021, 2022],
+        ...     [12, 24, 36, 12, 24, 12],
+        ...     {"paid": [100.0, 150.0, 165.0, 110.0, 170.0, 120.0]},
+        ... )
+        >>> cells = OdpGlm.cells(tri, "paid")
+        >>> j = cells["development_index"]
+        >>> design = Design(
+        ...     [[1.0] * len(j), cells["origin_index"], [float(x == 1) for x in j],
+        ...      [float(x == 2) for x in j]],
+        ...     ["a0", "slope", "b2", "b3"],
+        ... )
+        >>> fit = OdpGlm().fit(tri, "paid", design=design)
+        >>> fit.glm.names
+        ['a0', 'slope', 'b2', 'b3']
         """
     @property
     def max_iterations(self, /) -> int:
@@ -16371,9 +16434,10 @@ class OdpGlmFit:
     def glm(self, /) -> GlmFit:
         """
         The quasi-Poisson GLM on the observed increments: coefficients,
-        standard errors, covariance and Pearson's dispersion. Its columns are
-        ``(Intercept)``, ``origin[<period>]`` and ``development[<age>]``,
-        with the first origin and the first age as references.
+        standard errors, covariance and Pearson's dispersion. Without a
+        ``design``, its columns are ``(Intercept)``, ``origin[<period>]`` and
+        ``development[<age>]``, with the first origin and the first age as
+        references; with one, the design's.
         """
     @property
     def origins(self, /) -> list[str]:

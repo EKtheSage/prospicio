@@ -129,3 +129,51 @@ def test_residuals_match_chapter_6():
     assert fit.residual_summary(by="origin")["label"][0] == "1988"
     with pytest.raises(ValueError, match="by must be"):
         fit.residual_summary("diagonal")
+
+
+def test_custom_design_matches_chapter_7():
+    # Model 7-10: the accident-year effect a quadratic in k, the development
+    # effects a line in j with a kink at 7.5 and a term for year 2 (Table
+    # 7-3, to the guide's four decimals).
+    from prospicio.models import Design
+
+    tri = triangle()
+    cells = OdpGlm.cells(tri, "paid")
+    assert len(cells["origin"]) == 100 and sum(cells["observed"]) == 55
+    assert sum(cells["future"]) == 45 and cells["origin"][0] == "1988"
+    k = [x + 1 for x in cells["origin_index"]]
+    j = [x + 1 for x in cells["development_index"]]
+    columns = [
+        [1.0] * len(k), k, [x * x for x in k], [x - 1 for x in j],
+        [max(0.0, x - 7.5) for x in j], [float(x == 2) for x in j],
+    ]
+    names = ["a0", "a1", "a2", "b1", "b2", "c"]
+    fit = OdpGlm().fit(tri, "paid", design=Design(columns, names))
+    assert fit.glm.names == names
+    assert fit.glm.coefficients == pytest.approx(
+        [10.4687, 0.2001, -0.0179, -0.3577, 0.2356, 0.1545], abs=5e-5
+    )
+    assert fit.dispersion == pytest.approx(107.3, abs=0.05)
+    total = fit.total_prediction_error()
+    assert total["reserve"] == pytest.approx(373006, abs=0.5)
+    assert total["rmsep"] == pytest.approx(13215, abs=0.5)
+    assert len(fit.residuals()["actual"]) == 55
+
+
+def test_custom_design_from_terms_and_errors():
+    from prospicio.models import Design, Terms
+
+    tri = triangle()
+    cells = OdpGlm.cells(tri, "paid")
+    terms = (
+        Terms().intercept().factor("origin", reference="1988")
+        .factor("development", reference="12")
+    )
+    by_hand = OdpGlm().fit(tri, "paid", design=terms.fit(cells).design(cells))
+    fit = OdpGlm().fit(tri, "paid")
+    assert by_hand.reserves == pytest.approx(fit.reserves, rel=1e-12, abs=1e-9)
+    with pytest.raises(ValueError, match="99 rows"):
+        OdpGlm().fit(tri, "paid", design=Design([[1.0] * 99], ["a0"]))
+    future = [float(f) for f in cells["future"]]
+    with pytest.raises(ValueError, match="zero on every observed cell"):
+        OdpGlm().fit(tri, "paid", design=Design([[1.0] * 100, future], ["a0", "next"]))

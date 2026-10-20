@@ -6,7 +6,7 @@
 
 ## Next
 
-- [odp-glm-designs] #333's custom designs and gamma and Tweedie families (in the Reserving lane's files, with the user's go-ahead of 2026-10-19)
+- [odp-glm-designs] #333's gamma and Tweedie families (in the Reserving lane's files, with the user's go-ahead of 2026-10-19)
 - the issues filed by the Guides lane on 2026-10-18 (#353, #355, #356, #358)
 - [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
@@ -27,3 +27,4 @@
 - rating-variable terms (`Terms::interaction`, `poly`, `hinges`, `steps`, `bins`, `log`, `ordinal`, `orthogonal_poly` as R's `poly`, `natural_spline` spanning R's `ns`; Python `Terms`; R through its formula; #350) and out-of-fold target encoding with credibility (`encode::target_encode`; Python `target_encode`, R `target_encode()`; #357)
 - with the user's go-ahead to work in the Reserving lane's files (2026-10-19): the ODP GLM's analytic prediction error (`OdpGlmFit::prediction_error`, Taylor and McGuire's Table 5-4 to the unit) and `OdpGlm` in Python and R (`odp_glm()`; #333, first PR, #436)
 - with the same go-ahead: the ODP GLM's residual diagnostics (`OdpGlmFit::residuals` and `OdpResiduals::summary` by origin, development or calendar period, Taylor and McGuire's Figure 6-22 heat map exact; Python `residuals()`, `residual_summary()`, R `fit@residuals`, `residual_summary()`; #333, second PR, #438)
+- with the same go-ahead: the ODP GLM on a custom design (`OdpGlm::fit_design` on a design over the triangle's cells; Taylor and McGuire's models 7-2, 7-10 and 7-14, Tables 7-1, 7-3 and 7-5 to the printed digits; Python `OdpGlm.cells` and `fit(..., design=)`, R `odp_glm_cells()` and `odp_glm(formula = ~ ...)`; #333, third PR, #443)

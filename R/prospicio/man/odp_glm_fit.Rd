@@ -7,12 +7,21 @@
 \usage{
 odp_glm_fit(ptr)
 
-odp_glm(triangle, column = NULL, tolerance = 1e-10, max_iterations = 100)
+odp_glm(
+  triangle,
+  column = NULL,
+  formula = NULL,
+  tolerance = 1e-10,
+  max_iterations = 100
+)
 }
 \arguments{
 \item{triangle}{A single-segment \link{triangle} of cumulative values.}
 
 \item{column}{The column to fit, by default the triangle's only one.}
+
+\item{formula}{\code{NULL} for the cross-classified model (an origin and a
+development factor), or a one-sided formula on the cells.}
 
 \item{tolerance}{Convergence tolerance of the IRLS fit.}
 
@@ -30,6 +39,17 @@ chi-squared over the residual degrees of freedom. The triangle must
 have a single segment.
 }
 \details{
+\code{formula} fits another design on the triangle's cells instead, the
+columns of \code{\link[=odp_glm_cells]{odp_glm_cells()}} (\code{origin}, \code{development} and \code{calendar} as
+labels, \code{origin_index}, \code{development_index} and \code{calendar_index} from 0,
+\code{age}): fewer parameters, calendar trends, interactions (Taylor and
+McGuire, CAS Monograph 3, Chapter 7). It is a one-sided formula run
+through \code{\link[stats:model.matrix]{stats::model.matrix()}}, so it has an intercept unless it says
+\code{- 1}, and \code{offset()} terms are honoured. A numeric term extrapolates to
+the future cells; a factor level that only future cells take (of
+\code{calendar}, say) cannot be estimated, nor can a column that is zero on
+every observed cell.
+
 \code{prediction_error} gives the reserves' analytic prediction error by the
 delta method, by origin and in total: the process variance \code{phi * sum(mu)}
 and the parameter variance \verb{g' Sigma g} with \code{g = sum(mu * x)} over each
@@ -67,4 +87,9 @@ fit@total_reserve
 fit@prediction_error
 pd <- predict_distribution(fit, n_sims = 1000, seed = 1)
 mean(total(pd))
+
+# The origins' effect a straight line in their index, an effect per age.
+line <- odp_glm(triangle(long, "year", "age", "paid"),
+                formula = ~ origin_index + factor(development))
+line@coefficients
 }

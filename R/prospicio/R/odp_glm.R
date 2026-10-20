@@ -10,6 +10,17 @@ NULL
 #' chi-squared over the residual degrees of freedom. The triangle must
 #' have a single segment.
 #'
+#' `formula` fits another design on the triangle's cells instead, the
+#' columns of [odp_glm_cells()] (`origin`, `development` and `calendar` as
+#' labels, `origin_index`, `development_index` and `calendar_index` from 0,
+#' `age`): fewer parameters, calendar trends, interactions (Taylor and
+#' McGuire, CAS Monograph 3, Chapter 7). It is a one-sided formula run
+#' through [stats::model.matrix()], so it has an intercept unless it says
+#' `- 1`, and `offset()` terms are honoured. A numeric term extrapolates to
+#' the future cells; a factor level that only future cells take (of
+#' `calendar`, say) cannot be estimated, nor can a column that is zero on
+#' every observed cell.
+#'
 #' `prediction_error` gives the reserves' analytic prediction error by the
 #' delta method, by origin and in total: the process variance `phi * sum(mu)`
 #' and the parameter variance `g' Sigma g` with `g = sum(mu * x)` over each
@@ -40,6 +51,8 @@ NULL
 #'
 #' @param triangle A single-segment [triangle] of cumulative values.
 #' @param column The column to fit, by default the triangle's only one.
+#' @param formula `NULL` for the cross-classified model (an origin and a
+#'   development factor), or a one-sided formula on the cells.
 #' @param tolerance Convergence tolerance of the IRLS fit.
 #' @param max_iterations Most IRLS iterations.
 #' @returns An `odp_glm_fit` object.
@@ -53,6 +66,11 @@ NULL
 #' fit@prediction_error
 #' pd <- predict_distribution(fit, n_sims = 1000, seed = 1)
 #' mean(total(pd))
+#'
+#' # The origins' effect a straight line in their index, an effect per age.
+#' line <- odp_glm(triangle(long, "year", "age", "paid"),
+#'                 formula = ~ origin_index + factor(development))
+#' line@coefficients
 odp_glm_fit <- S7::new_class(
   "odp_glm_fit",
   package = "prospicio",
@@ -100,12 +118,53 @@ odp_glm_fit <- S7::new_class(
 
 #' @rdname odp_glm_fit
 #' @export
-odp_glm <- function(triangle, column = NULL, tolerance = 1e-10, max_iterations = 100) {
+odp_glm <- function(triangle, column = NULL, formula = NULL, tolerance = 1e-10,
+                    max_iterations = 100) {
   column <- fit_column(triangle, column)
-  ptr <- rust_result(odp_glm_fit_rust(triangle@ptr, column,
+  x <- double(0)
+  names <- character(0)
+  offset <- double(0)
+  if (!is.null(formula)) {
+    if (!inherits(formula, "formula") || length(formula) != 2) {
+      stop("formula must be a one-sided formula such as ~ origin_index + factor(development)",
+           call. = FALSE)
+    }
+    cells <- odp_glm_cells(triangle, column)
+    mf <- stats::model.frame(formula, cells, na.action = stats::na.pass)
+    mm <- stats::model.matrix(formula, mf)
+    x <- as.double(mm)
+    names <- colnames(mm)
+    offset <- stats::model.offset(mf)
+    offset <- if (is.null(offset)) double(nrow(cells)) else as.double(offset)
+  }
+  ptr <- rust_result(odp_glm_fit_rust(triangle@ptr, column, x, names, offset,
                                       single_number(tolerance, "tolerance"),
                                       single_number(max_iterations, "max_iterations")))
   odp_glm_fit(ptr = ptr)
+}
+
+#' The cells of a triangle, for an ODP GLM's design
+#'
+#' A row per origin and development age of a single-segment triangle,
+#' origin-major: the rows an [odp_glm()] `formula` is evaluated on.
+#'
+#' @inheritParams odp_glm
+#' @returns A data frame with `origin`, `development` (the age in months)
+#'   and `calendar` as labels; `origin_index`, `development_index` and
+#'   `calendar_index` (from 0, the last from the earliest valuation), `age`
+#'   in months and `exposure` (1) as numbers; and `observed` and `future`,
+#'   whether the cell is fitted or predicted (a cell after a hole is
+#'   neither).
+#' @export
+#' @examples
+#' long <- data.frame(year = c(2020, 2020, 2020, 2021, 2021, 2022),
+#'                    age = c(12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 110, 170, 120))
+#' odp_glm_cells(triangle(long, "year", "age", "paid"))
+odp_glm_cells <- function(triangle, column = NULL) {
+  column <- fit_column(triangle, column)
+  as.data.frame(rust_result(odp_glm_cells_rust(triangle@ptr, column)),
+                stringsAsFactors = FALSE)
 }
 
 #' Residuals of an ODP GLM by group
