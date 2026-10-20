@@ -502,3 +502,19 @@
   which 1.2.0 leaves unchanged from 1.0.1. Python `Portfolio.price(...,
   bottom_layer="none", atom="lumped")`, R `natural_price(..., bottom_layer
   = "none", atom = "lumped")`.
+- The natural allocation's capital by unit no longer moves with the last
+  bit of the distortion's parameter: each layer's capital per unit of
+  margin, `(1 - g) / (g - S)`, is computed from `1 - S`, where it cancelled
+  near `S = 1`. Under the CCoC each unit's capital is now its margin over
+  `r` to rounding; on *Pricing Insurance Risk*'s gross Cat/Non-Cat case the
+  lifted Cat capital is 197.62767 at `r = 0.1` and at the calibrated `r`
+  (197.62748 or 197.62785 before, #330).
+
+### Distributions and probability
+
+- `Distortion::complement(s)`, `1 - g(s)` computed from `1 - s` so that it
+  keeps its relative accuracy as `s` approaches 1 (#330).
+- `distortion::calibrate` merges equal values before it solves, so a
+  portfolio's totals capped at the assets count once: calibrating Wang on
+  *Pricing Insurance Risk*'s 2^19-point Hurricane/SCS portfolio takes
+  0.25 s, not about 9 s (#331).

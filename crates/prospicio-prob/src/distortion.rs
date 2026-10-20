@@ -366,6 +366,62 @@ impl Distortion {
         }
     }
 
+    /// `1 - g(s)`, computed from `1 - s` where the family allows, so that it
+    /// keeps its relative accuracy as `s` approaches 1, where `1 - g(s)`
+    /// cancels. The capital per unit of margin of a layer, `(1 - g) / (g -
+    /// S)`, is a ratio of two such small differences.
+    ///
+    /// ```
+    /// use prospicio_prob::Distortion;
+    ///
+    /// let d = Distortion::ccoc(0.1).unwrap();
+    /// let s = 1.0 - 1e-15;
+    /// // 1 - g(s) = (1 - s) / (1 + r), which 1.0 - d.g(s) loses.
+    /// let want = (1.0 - s) / 1.1;
+    /// assert!((d.complement(s) / want - 1.0).abs() < 1e-15);
+    /// ```
+    pub fn complement(&self, s: f64) -> f64 {
+        if s <= 0.0 {
+            return 1.0;
+        }
+        if s >= 1.0 {
+            return 0.0;
+        }
+        let t = 1.0 - s;
+        match self {
+            Self::Wang(lambda) => norm_cdf(norm_quantile(t) - lambda),
+            Self::ProportionalHazard(rho) => -((-t).ln_1p() * rho).exp_m1(),
+            Self::DualPower(beta) => t.powf(*beta),
+            Self::Exponential(k) => (-k * s).exp() * (-k * t).exp_m1() / (-k).exp_m1(),
+            Self::Ccoc(r) => t / (1.0 + r),
+            Self::CappedLinear { r0, slope } => ((1.0 - r0 - slope) + slope * t).max(0.0),
+            Self::CappedLogLinear { r0, b } => (-(r0 + b * (-t).ln_1p()).exp_m1()).max(0.0),
+            Self::Lep { r0, r } => {
+                let d = r0 / (1.0 + r0);
+                let delta = r / (1.0 + r);
+                ((1.0 - d) * t - (delta - d) * (s * t).sqrt()).max(0.0)
+            }
+            Self::LinearYield { r0, r } => t / (1.0 + r0 + r * s),
+            Self::Beta { a, b } => beta_inc(*b, *a, t),
+            Self::Mixture(parts) => parts
+                .iter()
+                .map(|(w, d)| w * d.complement(s))
+                .sum::<f64>()
+                .max(0.0),
+            Self::Minimum(parts) => parts.iter().map(|d| d.complement(s)).fold(0.0, f64::max),
+            Self::Convex(knots) => {
+                let j = knots.partition_point(|k| k.0 < s);
+                let (lo, hi) = (knots[j - 1], knots[j]);
+                if hi.0 == s {
+                    1.0 - hi.1
+                } else {
+                    (1.0 - hi.1) + (hi.1 - lo.1) * (hi.0 - s) / (hi.0 - lo.0)
+                }
+            }
+            Self::Tvar(_) | Self::BiTvar { .. } | Self::WeightedTvar { .. } => 1.0 - self.g(s),
+        }
+    }
+
     /// The family, as its constructor is named: `"tvar"`, `"wang"`,
     /// `"proportional_hazard"`, `"dual_power"`, `"exponential"`, `"ccoc"`,
     /// `"bitvar"`, `"weighted_tvar"`, `"capped_linear"`,
@@ -743,6 +799,11 @@ pub fn calibrate(
     if !values.windows(2).all(|w| w[0] <= w[1]) {
         return Err(Error::Data("calibration values must be ascending".into()));
     }
+    // Equal values are one atom: the price is the same, and capped values
+    // at the assets, most of a fine grid's points, cost one evaluation of g
+    // each in every bisection step otherwise (#331).
+    let (values, probs) = &merge_ties(values, probs);
+    let (values, probs) = (values.as_slice(), probs.as_slice());
     let mean: f64 = values.iter().zip(probs).map(|(x, p)| x * p).sum();
     let top = values
         .iter()
@@ -801,6 +862,21 @@ pub fn calibrate(
         )));
     }
     Ok(d)
+}
+
+/// Runs of equal values merged into one value with their total probability.
+fn merge_ties(values: &[f64], probs: &[f64]) -> (Vec<f64>, Vec<f64>) {
+    let (mut xs, mut ps): (Vec<f64>, Vec<f64>) = (Vec::new(), Vec::new());
+    for (&x, &p) in values.iter().zip(probs) {
+        match xs.last() {
+            Some(&last) if last == x => *ps.last_mut().unwrap() += p,
+            _ => {
+                xs.push(x);
+                ps.push(p);
+            }
+        }
+    }
+    (xs, ps)
 }
 
 fn tvar_g(p: f64, s: f64) -> f64 {
@@ -976,6 +1052,27 @@ mod tests {
     }
 
     #[test]
+    fn the_complement_is_one_minus_g_and_keeps_its_accuracy_near_one() {
+        for d in all() {
+            for k in 0..=100 {
+                let s = k as f64 / 100.0;
+                let (got, want) = (d.complement(s), 1.0 - d.g(s));
+                assert!((got - want).abs() < 1e-13, "{d:?} at {s}: {got} vs {want}");
+            }
+            // Where the slope at 1 is finite and positive, (1 - g(1 - h)) / h
+            // tends to it; at h = 1e-13 the naive difference has lost half
+            // its digits. (The mixture's Wang part approaches its zero slope
+            // too slowly to check here.)
+            let slope = d.slope_at_one();
+            if slope > 0.0 && slope < 1.0 && d.family() != "mixture" {
+                let h = 1e-13;
+                let q = d.complement(1.0 - h) / (1.0 - (1.0 - h));
+                assert!((q - slope).abs() < 1e-6 * slope, "{d:?}: {q} vs {slope}");
+            }
+        }
+    }
+
+    #[test]
     fn convex_hull_drops_interior_points_and_keeps_a_jump() {
         let d = Distortion::convex(&[(0.0, 0.02), (0.01, 0.05), (0.1, 0.25), (0.05, 0.1)]).unwrap();
         // (0.05, 0.1) lies below the chord from (0.01, 0.05) to (0.1, 0.25).
@@ -993,6 +1090,32 @@ mod tests {
         assert!((d.g(0.005) - 0.035).abs() < 1e-15);
         assert!(Distortion::convex(&[(0.5, 0.4)]).is_err()); // below the diagonal
         assert!(Distortion::convex(&[(1.5, 0.4)]).is_err());
+    }
+
+    #[test]
+    fn calibration_merges_tied_values() {
+        // The values capped at 10, as a portfolio capped at its assets: the
+        // top value split into many equal ones calibrates as the one atom.
+        let n = 1000;
+        let mut xs: Vec<f64> = VALUES.iter().map(|x| x.min(10.0)).collect();
+        let mut ps = PROBS.to_vec();
+        let top = ps.pop().unwrap();
+        xs.pop();
+        let (merged_x, mut merged_p) = (xs.clone(), ps.clone());
+        let last = merged_p.len() - 1;
+        merged_p[last] += top;
+        xs.extend(std::iter::repeat_n(10.0, n));
+        ps.extend(std::iter::repeat_n(top / n as f64, n));
+        assert_eq!(merge_ties(&xs, &ps).0, merged_x);
+        for family in [Family::Wang, Family::ProportionalHazard, Family::DualPower] {
+            let a = calibrate(family, &xs, &ps, 4.0).unwrap();
+            let b = calibrate(family, &merged_x, &merged_p, 4.0).unwrap();
+            let (pa, pb) = (a.parameters()[0].1, b.parameters()[0].1);
+            assert!(
+                (pa - pb).abs() < 1e-12 * pb.abs(),
+                "{family:?}: {pa} vs {pb}"
+            );
+        }
     }
 
     #[test]

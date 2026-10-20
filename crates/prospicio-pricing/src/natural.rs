@@ -1144,17 +1144,18 @@ impl Portfolio {
             };
             let top = upper.min(a);
             if top > lower {
-                let (s, gsl) = if layer == 0 {
-                    (1.0, 1.0)
-                } else {
-                    (self.s[layer - 1], gs[layer - 1])
-                };
-                let ratio = if gsl == 1.0 {
-                    if s == 1.0 { fill } else { 0.0 }
-                } else if gsl == s {
+                // (1 - g) / (g - S) as (1 - g) / ((1 - S) - (1 - g)), with
+                // 1 - g from 1 - S: near S = 1 the plain quotient is a ratio
+                // of two cancelled differences, and a last-bit change of the
+                // distortion's parameter moved the capital by unit (#330).
+                let s = if layer == 0 { 1.0 } else { self.s[layer - 1] };
+                let (t, gc) = (1.0 - s, g.complement(s));
+                let ratio = if t == 0.0 {
+                    fill
+                } else if gc == 0.0 || gc >= t {
                     0.0
                 } else {
-                    (1.0 - gsl) / (gsl - s)
+                    gc / (t - gc)
                 };
                 let c_top = if top == a {
                     c_paid
