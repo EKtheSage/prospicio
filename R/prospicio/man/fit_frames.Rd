@@ -18,7 +18,8 @@ segment(fit, ...)
 \link{cape_cod_fit}, \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit},
 \link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{meyers_fit}, \link{meyers_fits},
 \link{one_year_fit}, \link{bayes_one_year_fit}, \link{bayes_one_year_fits}, \link{clark_fit},
-\link{compartmental_fit}, \link{compartmental_fits} or \link{compartmental_one_year_fit} (a \link{clark_fit} or
+\link{compartmental_fit}, \link{compartmental_fits}, \link{compartmental_one_year_fit} or
+\link{compartmental_one_year_fits} (a \link{clark_fit} or
 a compartmental fit not for \code{development_frame()}).}
 
 \item{...}{Key conditions as \code{key = value}, one value each.}
@@ -31,7 +32,8 @@ Tables of a \link{chain_ladder_fit}, \link{mack_fit}, \link{expected_loss_fit},
 \link{cape_cod_fit}, \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit},
 \link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{meyers_fit}, \link{meyers_fits},
 \link{one_year_fit}, \link{bayes_one_year_fit}, \link{bayes_one_year_fits}, \link{clark_fit} or
-\link{compartmental_fit}, \link{compartmental_fits} with the triangle's key columns by name. \code{as.data.frame(fit)} has one row per
+\link{compartmental_fit}, \link{compartmental_fits}, \link{compartmental_one_year_fit} or
+\link{compartmental_one_year_fits} with the triangle's key columns by name. \code{as.data.frame(fit)} has one row per
 segment and origin: \code{origin}, \code{latest}, \code{ultimate} and \code{reserve} (the
 method's own), plus for Mack \code{process_risk}, \code{parameter_risk} and
 \code{standard_error}, for the expected-loss methods \code{exposure} and \code{apriori}

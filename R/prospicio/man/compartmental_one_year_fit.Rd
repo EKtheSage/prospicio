@@ -4,6 +4,8 @@
 \alias{compartmental_one_year_fit}
 \alias{compartmental_one_year}
 \alias{compartmental_model_2_one_year}
+\alias{compartmental_one_year_fits}
+\alias{compartmental_one_year_segments}
 \title{One-year view of the compartmental model}
 \usage{
 compartmental_one_year_fit(ptr)
@@ -54,9 +56,39 @@ compartmental_model_2_one_year(
   max_refits = NULL,
   one_year_sims = NULL
 )
+
+compartmental_one_year_fits(ptr)
+
+compartmental_one_year_segments(
+  triangle,
+  paid,
+  premium,
+  priors,
+  outstanding = NULL,
+  incurred = NULL,
+  likelihood = c("normal", "lognormal"),
+  scale = c("amount", "loss_ratio"),
+  paid_response = c("cumulative", "incremental"),
+  rate_order = c("free", "ordered"),
+  start = c("data", "prior_centre"),
+  chains = 4,
+  tune = 1000,
+  draws = 2000,
+  n_sims = 10000,
+  seed = 0,
+  target_accept = 0.99,
+  max_depth = 10,
+  dependence = c("independent", "rank_correlation", "synchronized"),
+  spearman = NULL,
+  k_threshold = 0.7,
+  refit = NULL,
+  max_refits = NULL,
+  one_year_sims = NULL
+)
 }
 \arguments{
-\item{ptr}{A \code{CompartmentalOneYearFit} pointer; used internally.}
+\item{ptr}{A \code{CompartmentalOneYearFit} or \code{CompartmentalOneYearFits} pointer;
+used internally.}
 
 \item{triangle}{A cumulative \link{triangle} with one segment.}
 
@@ -120,9 +152,21 @@ k segments refit at most k times this many.}
 \item{one_year_sims}{The number of one-year simulations, or \code{NULL} (the
 default) for \code{n_sims} capped at 2,000. The lifetime reserves keep
 \code{n_sims}. A smaller count gives the first simulations of a larger one.}
+
+\item{dependence}{How the segments depend on each other:
+\code{"independent"}, each segment's own view; or \code{"rank_correlation"}, the
+segments' claims development results reordered as whole rows to the
+Spearman matrix \code{spearman} (an Iman-Conover reorder on the segments'
+total results). \code{"synchronized"} is accepted as \code{\link[=odp_bootstrap]{odp_bootstrap()}} takes
+it, and is an error here.}
+
+\item{spearman}{With \code{dependence = "rank_correlation"} only: Spearman's
+rho between the segments' total claims development results, as
+\code{\link[=odp_bootstrap]{odp_bootstrap()}}'s.}
 }
 \value{
-A \code{compartmental_one_year_fit} object.
+A \code{compartmental_one_year_fit} object, or for
+\code{compartmental_one_year_segments()} a \code{compartmental_one_year_fits}.
 }
 \description{
 The claims development result over the coming year of Gesmann and
@@ -177,10 +221,32 @@ dimension \code{origin} (a negative value is an adverse development);
 development result; \code{\link[=totals_frame]{totals_frame()}} their totals and the
 \code{flagged_share}.
 
-Errors: as \code{\link[=compartmental]{compartmental()}}; a \code{k_threshold} that is \code{NaN}.
+\code{compartmental_one_year_segments()} is the view of every segment of a
+triangle, each segment as \code{compartmental_one_year()} views it (its own
+premium column and outstanding cells, the same defaults, \code{max_refits} a
+budget of each segment) on the seeds of \code{\link[=compartmental_segments]{compartmental_segments()}}: a
+segment's simulations differ from \code{compartmental_one_year()} of that
+segment alone. The segments' claims development results are joined by
+row as \code{dependence} says, \code{"independent"} as drawn or \code{"rank_correlation"}
+by Iman-Conover on their totals. A \code{compartmental_one_year_fits} has
+\code{origins}, \code{premium}, \code{latest_paid}, \code{opening_ultimate} and
+\code{opening_reserve} (each segment's origins in turn), \code{cdr} (a
+\link{predictive_distribution} with the triangle's keys first among its
+dimensions), \code{approximate}, \code{k_threshold}, \code{diagnostics} (a data.frame
+with one row per segment, as \link{compartmental_fits}'s), and for a
+single-segment fit \code{pareto_k}, \code{refitted}, \code{moment_matched},
+\code{unrefitted}, \code{refit_warnings}, \code{flagged_share}, \code{summary} and \code{draws};
+with several segments use \code{\link[=segment]{segment()}} or \code{\link[=totals_frame]{totals_frame()}}, which has the
+flagged shares. Failed diagnostics, refits and an approximate default
+each raise one \code{\link[=warning]{warning()}}, the first two naming the segments.
+
+Errors: as \code{\link[=compartmental]{compartmental()}}; a \code{k_threshold} that is \code{NaN};
+\code{dependence = "synchronized"}, or a \code{spearman} matrix that does not fit
+the segments, before any sampling.
 
 This is Python's \code{Compartmental.one_year()}, which returns a
-\code{CompartmentalOneYearFit}.
+\code{CompartmentalOneYearFit}, and \code{Compartmental.one_year_segments()}, which
+returns a \code{CompartmentalOneYearFits}.
 }
 \examples{
 long <- data.frame(year = rep(1988:1992, 5:1),

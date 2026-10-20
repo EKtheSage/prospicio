@@ -25,12 +25,13 @@ use prospicio_reserving::{
 use prospicio_bayes::nuts::{ParamSummary, Sampler as BayesSampler};
 use prospicio_reserving::bayes::{
     BayesOdpFits as BayesOdpFitsInner, BayesOdpSegment, BayesOneYear,
-    BayesOneYearFit as BayesOneYearInner, BayesOneYearFits as BayesOneYearFitsInner, Compartmental,
-    CompartmentalCandidate, CompartmentalFit as CompartmentalInner,
-    CompartmentalFits as CompartmentalFitsInner, CompartmentalLikelihood, CompartmentalPriors,
-    CompartmentalStart, Fitted, HalfPrior, MeyersFits as MeyersFitsInner, MeyersSegment,
-    OneYearRefit, Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior,
-    Scale as CompartmentalScale,
+    BayesOneYearFit as BayesOneYearInner, BayesOneYearFits as BayesOneYearFitsInner,
+    BayesOneYearSegment, Compartmental, CompartmentalCandidate,
+    CompartmentalFit as CompartmentalInner, CompartmentalFits as CompartmentalFitsInner,
+    CompartmentalLikelihood, CompartmentalOneYearFits as CompartmentalOneYearFitsInner,
+    CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted, HalfPrior,
+    MeyersFits as MeyersFitsInner, MeyersSegment, OneYearRefit, Outstanding, PaidResponse,
+    PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     BayesBf, BayesBfFit as BayesBfInner, BayesOdp, BayesOdpFit as BayesOdpInner, Diagnostics,
@@ -1512,6 +1513,43 @@ impl Triangle {
             .one_year(&self.inner, paid, os, premium, &view)
             .map_err(to_r)?;
         Ok(CompartmentalOneYearFit { inner })
+    }
+
+    /// The one-year view of `compartmental_segments` on every segment of a
+    /// triangle, with the arguments of `compartmental_one_year` and the
+    /// segments depending on each other as `dependence` ("independent",
+    /// "rank_correlation" with the row-major `spearman` matrix, or
+    /// "synchronized", an error) says.
+    #[allow(clippy::too_many_arguments)]
+    fn compartmental_one_year_segments(
+        &self,
+        paid: &str,
+        outstanding: &str,
+        outstanding_from: &str,
+        premium: &str,
+        priors: Vec<f64>,
+        families: Vec<String>,
+        settings: Vec<String>,
+        run: Vec<f64>,
+        k_threshold: f64,
+        refit: Nullable<String>,
+        max_refits: Nullable<f64>,
+        one_year_sims: Nullable<f64>,
+        dependence: &str,
+        spearman: Nullable<Vec<f64>>,
+    ) -> Result<CompartmentalOneYearFits> {
+        let dependence = segment_dependence(dependence, spearman)?;
+        let model = compartmental_settings(&priors, &families, &settings, &run, dependence)?;
+        let os = compartmental_outstanding(outstanding, outstanding_from)?;
+        let refit = match &refit {
+            Nullable::NotNull(r) => Some(r.as_str()),
+            Nullable::Null => None,
+        };
+        let view = one_year_settings(k_threshold, refit, max_refits, one_year_sims)?;
+        let inner = model
+            .one_year_segments(&self.inner, paid, os, premium, &view)
+            .map_err(to_r)?;
+        Ok(CompartmentalOneYearFits { inner })
     }
 
     /// Paths of the mean outstanding and cumulative paid drawn from the
@@ -4326,6 +4364,200 @@ impl CompartmentalOneYearFit {
     }
 }
 
+/// The one-year view of a compartmental model on every segment of a
+/// triangle: each segment's posterior, opening reserve and Pareto k, and
+/// the joint claims development result. The posterior of one segment needs
+/// a single-segment fit.
+#[extendr]
+pub(crate) struct CompartmentalOneYearFits {
+    inner: CompartmentalOneYearFitsInner,
+}
+
+impl CompartmentalOneYearFits {
+    fn one(
+        &self,
+        field: &str,
+        instead: &str,
+    ) -> Result<&BayesOneYearSegment<CompartmentalSegment>> {
+        single(&self.inner.segments, field, instead)
+    }
+}
+
+#[extendr]
+impl CompartmentalOneYearFits {
+    fn n_segments(&self) -> i32 {
+        self.inner.segments.len() as i32
+    }
+
+    /// Origins of each segment's premium column, in turn.
+    fn origins(&self) -> Vec<String> {
+        self.inner
+            .segments
+            .fits
+            .iter()
+            .flat_map(|s| s.fit.fit.origins.iter().map(ToString::to_string))
+            .collect()
+    }
+
+    fn premium(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.fit.fit.premium.clone())
+    }
+
+    fn latest_paid(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.fit.fit.latest_paid.clone())
+    }
+
+    fn opening_ultimate(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.opening_ultimate.clone())
+    }
+
+    fn opening_reserve(&self) -> Vec<f64> {
+        by_origin(&self.inner.segments, |s| s.opening_reserve.clone())
+    }
+
+    fn cdr(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.cdr.clone(),
+        }
+    }
+
+    /// Why the views are approximate (one string), or none: set when
+    /// `refit` was left to a model with development effects, whose default
+    /// reweights the flagged simulations only.
+    fn approximate(&self) -> Vec<String> {
+        self.inner.approximate.iter().cloned().collect()
+    }
+
+    fn pareto_k(&self) -> Result<Vec<f64>> {
+        Ok(self.one("pareto_k", "")?.pareto_k.clone())
+    }
+
+    /// The simulations of a single-segment fit refitted with NUTS, 1-based.
+    fn refitted(&self) -> Result<Vec<f64>> {
+        Ok(self
+            .one("refitted", "")?
+            .refitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect())
+    }
+
+    /// The simulations of a single-segment fit that moment matching
+    /// rescued, 1-based.
+    fn moment_matched(&self) -> Result<Vec<f64>> {
+        Ok(self
+            .one("moment_matched", "")?
+            .moment_matched
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect())
+    }
+
+    fn unrefitted(&self) -> Result<Vec<f64>> {
+        Ok(self
+            .one("unrefitted", "")?
+            .unrefitted
+            .iter()
+            .map(|&i| (i + 1) as f64)
+            .collect())
+    }
+
+    fn refit_warnings(&self) -> Result<f64> {
+        Ok(self.one("refit_warnings", "")?.refit_warnings as f64)
+    }
+
+    /// Each segment's number of refits and of refits with a diagnostic
+    /// warning, for the warning of the one-year views over segments.
+    fn refit_counts(&self) -> List {
+        let fits = &self.inner.segments.fits;
+        list!(
+            refits = fits
+                .iter()
+                .map(|s| s.refitted.len() as f64)
+                .collect::<Vec<_>>(),
+            warned = fits
+                .iter()
+                .map(|s| s.refit_warnings as f64)
+                .collect::<Vec<_>>(),
+            unrefitted = fits
+                .iter()
+                .map(|s| s.unrefitted.len() as f64)
+                .collect::<Vec<_>>()
+        )
+    }
+
+    fn k_threshold(&self) -> f64 {
+        self.inner.segments.fits[0].k_threshold
+    }
+
+    fn flagged_share(&self) -> Result<f64> {
+        Ok(self.one("flagged_share", "totals_frame()")?.flagged_share())
+    }
+
+    /// One row per segment: `list(table, warnings)`, as
+    /// `segment_diagnostics`.
+    fn diagnostics_table(&self) -> List {
+        segment_diagnostics(&self.inner.segments, self.inner.totals(), |s| {
+            &s.fit.fit.diagnostics
+        })
+    }
+
+    fn parameter_names(&self) -> Result<Vec<String>> {
+        Ok(self
+            .one("parameter_names", "")?
+            .fit
+            .fit
+            .posterior
+            .names()
+            .to_vec())
+    }
+
+    /// Posterior draws of a single-segment fit, row-major `n_draws x
+    /// n_parameters`, chain by chain.
+    fn draws(&self) -> Result<Vec<f64>> {
+        Ok(self.one("draws", "")?.fit.fit.posterior.values().to_vec())
+    }
+
+    fn chains(&self) -> Result<f64> {
+        Ok(self.one("chains", "")?.fit.fit.posterior.chains() as f64)
+    }
+
+    fn summary(&self) -> Result<List> {
+        let s = self.one("summary", "")?.fit.fit.summary().map_err(to_r)?;
+        Ok(summary_list(&s))
+    }
+
+    /// PSIS-LOO of a single-segment fit's observed cells, as
+    /// `CompartmentalFit$loo()`.
+    fn loo(&self) -> Result<List> {
+        let l = self.one("bayes_loo()", "")?.fit.fit.loo().map_err(to_r)?;
+        let e = &l.loo.estimate;
+        Ok(list!(
+            estimates = vec![e.elpd, e.se, e.p, e.ic],
+            pointwise = e.pointwise.clone(),
+            pareto_k = l.loo.pareto_k,
+            k_threshold = l.loo.k_threshold,
+            n_outstanding = l.n_outstanding as f64,
+            elpd_outstanding = l.elpd_outstanding,
+            elpd_paid = l.elpd_paid
+        ))
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        Ok(Self {
+            inner: self.inner.segment(&choice(&keys, &values)?).map_err(to_r)?,
+        })
+    }
+}
+
 /// A fitted Gesmann and Morris compartmental model of every segment of a
 /// triangle: each segment's posterior and the joint reserves and future
 /// paid and outstanding cells. The posterior of one segment needs a
@@ -4641,6 +4873,7 @@ extendr_module! {
     impl CompartmentalBacktestModel;
     impl CompartmentalFits;
     impl CompartmentalOneYearFit;
+    impl CompartmentalOneYearFits;
     impl BayesBfFit;
     impl MackBootstrapFit;
     impl OneYearFit;
