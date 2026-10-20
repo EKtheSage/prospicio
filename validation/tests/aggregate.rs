@@ -331,6 +331,73 @@ fn grid_audit_matches_aggregate_sharpen() {
     assert!(lost.defective && (lost.tail_mass / 6.883136e-9 - 1.0).abs() < 1e-3);
 }
 
+/// A mixing variable shared across severity components, against `aggregate`
+/// 1.2.0 (#316, `validation/scripts/aggregate_common_shock.py`): its
+/// `agg [10 20] claims sev [gamma lognorm] ... mixed gamma 0.3` applies one
+/// mixed count to the claim-weighted mixture of the severities, which is
+/// `fft` of a `MixedPoisson` on a `Mixture`. Mixed one component at a time
+/// (aggregate's `independent` column) the total is the convolution of the
+/// two compounds and its cv is lower.
+#[test]
+fn shared_mixing_matches_aggregate() {
+    use prospicio_prob::count_families::{MixedPoisson, Mixing};
+    use prospicio_prob::{Distribution, Gamma, Lognormal, Mixture, Severity};
+
+    let (h, points) = (0.5, 1 << 14);
+    let (g, ln) = (
+        Gamma::from_mean_cv(10.0, 0.5).unwrap(),
+        Lognormal::from_mean_cv(20.0, 1.0).unwrap(),
+    );
+    let parts: Vec<(f64, Box<dyn Severity + Send + Sync>)> =
+        vec![(1.0 / 3.0, Box::new(g)), (2.0 / 3.0, Box::new(ln))];
+    let (sev, _) = Grid::rounding(&Mixture::new(parts).unwrap(), h, points).unwrap();
+    let mixed = |lambda: f64| MixedPoisson::new(lambda, Mixing::Gamma { cv: 0.3 }, 0.0).unwrap();
+    let (shared, _) = fft(&mixed(30.0), &sev, points).unwrap();
+    let shape = |a: &Grid| {
+        let (m, v) = (a.mean(), a.variance());
+        let k3: f64 = a
+            .probs()
+            .iter()
+            .enumerate()
+            .map(|(j, p)| (j as f64 * a.step() - m).powi(3) * p)
+            .sum();
+        (m, v.sqrt() / m, k3 / v.powf(1.5))
+    };
+    let (m, cv, skew) = shape(&shared);
+    for (got, want) in [(m, 499.999996292), (cv, 0.398751177), (skew, 0.713236388)] {
+        assert!((got / want - 1.0).abs() < 1e-7, "{got} vs {want}");
+    }
+    for (p, want) in [(0.5, 476.5), (0.9, 766.0), (0.99, 1064.5), (0.999, 1322.0)] {
+        assert_eq!(shared.quantile(p).unwrap(), want, "{p}");
+    }
+    // Each component mixed on its own: aggregate's independent cv.
+    let (a, _) = fft(
+        &mixed(10.0),
+        &Grid::rounding(&g, h, points).unwrap().0,
+        points,
+    )
+    .unwrap();
+    let (b, _) = fft(
+        &mixed(20.0),
+        &Grid::rounding(&ln, h, points).unwrap().0,
+        points,
+    )
+    .unwrap();
+    let sum: Vec<f64> = (0..points)
+        .map(|k| (0..=k).map(|j| a.probs()[j] * b.probs()[k - j]).sum())
+        .collect();
+    let apart = Grid::new(h, sum).unwrap();
+    // aggregate's component and independent cvs are exact; the grid's
+    // agree to its discretization.
+    for (got, want) in [
+        (shape(&a).1, 0.463681),
+        (shape(&b).1, 0.435890),
+        (shape(&apart).1, 0.360832),
+    ] {
+        assert!((got / want - 1.0).abs() < 1e-4, "{got} vs {want}");
+    }
+}
+
 /// Swing and retro premiums, sliding-scale and profit commissions against
 /// `aggregate` 1.0.1's `contract_terms` at losses through every kink
 /// (`validation/scripts/aggregate_contract_terms.py`).

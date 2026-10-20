@@ -151,6 +151,16 @@ sources:
   20.9m), and it refuses an infinite-variance book without an explicit
   `bs` (`InfiniteVarianceError`). `est_m` is the grid's mean, not the
   exact one (49,970.5 for a book whose mean is 50,000).
+* **Where 1.2.0 shares a mixing variable.** Across the severity components
+  of one `Aggregate`: `update_work` mixes the components' severities by
+  expected count under one frequency, so `stats_df`'s `mixed` column is
+  the shared total and `independent` each component mixed alone (on `agg
+  [10 20] claims sev [gamma lognorm] [10 20] cv [0.5 1] mixed gamma 0.3`
+  the cv is 0.398748 against 0.360832). Across the two units of a
+  `bivariate`, by its shared outer frequency. Never across a `Portfolio`'s
+  units: `Portfolio.update` multiplies the units' `ftagg_density`, and its
+  stats use `remix=False`. Mixing families: `gamma`, `delaporte`, `ig`,
+  `sig`, `beta`, `sichel` (`_frequency.py`).
 * **`sharpen` (1.2.0) audits a grid after the FFT.** Each cell scores six
   terms `|emp/exact - 1| / (k eps)` with `k` = 1, 10, 100 for the mean,
   cv and skewness of the severity and of the aggregate (`eps = 1e-4`),
