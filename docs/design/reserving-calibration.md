@@ -54,7 +54,7 @@ decided, 2026-10-20).
 | PR | Branch | Holds | Base |
 |---|---|---|---|
 | 1 | `claude/calibration-study` | this note; the lane, roadmap and knowledge entries | `main` |
-| 2 | `claude/calibration-harness` | the panel script `validation/scripts/calibration_panel.py` (decision 2), the Rust panel loader, the percentile and KS code (decision 5), the harness (decision 6) with Mack (paid and incurred) and the ODP bootstrap (paid), the `#[ignore]`d study, its outputs (decision 7); the panel accepted only if Mack reproduces Meyers' D (decision 3); a timing probe of every model on 8 triangles | PR 1 |
+| 2 | `claude/calibration-harness` | the panel script `validation/scripts/calibration_panel.py` (decision 2), the Rust panel loader, the percentile and KS code (decision 5), the harness (decision 6) with Mack (paid and incurred) and the ODP bootstrap (paid), the `#[ignore]`d study, its outputs (decision 7); the panel accepted only if Mack reproduces Meyers' D (decision 3); a timing probe (the models built by then; see "As built") | PR 1 |
 | 3 | `claude/calibration-bayes` | `BayesOdp` on paid, and Meyers' CRC, CSR and CAY on his bases; the comparison table with Meyers' D (decision 8) | PR 2 |
 | 4 | `claude/calibration-compartmental` | Compartmental model 1 (paid), and model 2 as an optional, slower arm (decision 6) | PR 3 |
 
@@ -147,11 +147,12 @@ The data path:
 1. **The script** `validation/scripts/calibration_panel.py`, run as
 
    ```
-   uv run --no-project --with cas-schedule-p==2026.6.13 python -I validation/scripts/calibration_panel.py
+   uv run --no-project --with "cas-schedule-p[screens]==2026.6.13" python -I validation/scripts/calibration_panel.py
    ```
 
-   (`--python 3.14` is added if the package needs it; PR 2 confirms the
-   package's Python floor and the signature of `select_companies`). It
+   (PR 2 confirmed the package: Python 3.11 or newer, and the `screens`
+   extra, which brings duckdb and pandas, is needed for
+   `select_companies(mart_path=None, line=None, per_line=50)`.) It
    applies the screen, asserts group 353's square against
    `validation/data/clrd_comauto_353.csv` cell by cell, diffs the chosen
    codes against Table A.2's 175 printed codes (transcribed into the
@@ -206,7 +207,8 @@ So the panel is checked two ways:
    nothing, so on the rebuilt panel Mack incurred must reproduce Meyers'
    D (16.4, 16.6, 27, 14.2 by line; 15.4 on all 200; Figure 3.2, p.10) and
    Mack paid his (24.6, 44.6, 30.4, 8.5; 23.1; Figure 4.2, p.15), within a
-   tolerance set in PR 2 (a D moves by at most 100/n per changed
+   tolerance set in PR 2 (8 points per line and 4 on all 200, that is
+   four differing triangles in a line and eight in 200; a D moves by at most 100/n per changed
    triangle, 2 points per line). This is the only full check of CA. The
    ODP bootstrap (Figure 4.1, p.14) is a seed-dependent second check.
 
@@ -306,7 +308,7 @@ Run by hand (the file's header and the loader's failure message carry the
 same commands):
 
 ```
-uv run --no-project --with cas-schedule-p==2026.6.13 python -I validation/scripts/calibration_panel.py
+uv run --no-project --with "cas-schedule-p[screens]==2026.6.13" python -I validation/scripts/calibration_panel.py
 cargo test --release -p prospicio-validation --test reserving_calibration_meyers -- --ignored --nocapture
 ```
 
@@ -432,3 +434,42 @@ if you disagree:
 Open: `BayesOdp`'s basis (paid only is planned, beside the ODP
 bootstrap; paid and incurred is cheap and can be added in PR 3 on
 request).
+
+## As built (PR 2, 2026-10-20)
+
+PR 2 (`claude/calibration-harness`) holds the panel script
+`validation/scripts/calibration_panel.py`, the harness and its unit tests
+`validation/tests/reserving_calibration_meyers.rs` (the `#[ignore]`d
+`calibration_study`, plus twelve cheap tests that run in a plain `cargo
+test`), the Mack (paid and incurred) and ODP bootstrap (paid, 10,000
+simulations) arms, and `percentiles.csv`, `pp.csv` and `ks.csv` under
+`target/calibration/`. The script also writes `panel_check.csv`, the diff
+against Table A.2 (`both`, `chosen_only`, `printed_only` per code), which
+the study folds into `ks.csv` as the column `panel_vs_table_a2`
+(`both/chosen_only/printed_only`). Differences from the plan above:
+
+* **The command needs the extra**: `cas-schedule-p[screens]==2026.6.13`
+  (duckdb and pandas). The package requires Python 3.11 or newer, so no
+  `--python` flag.
+* **Panel**: the rebuilt screen has 50 triangles in each line and agrees
+  with Table A.2 on 149 of its 175 printed codes. The script exits with
+  status 2 and prints the difference, and writes the panel anyway; the
+  study reads it and says so in `ks.csv`. The details are in
+  `knowledge/findings/meyers-calibration-panel.md`.
+* **Mack's acceptance test** asserts Mack's D within 8 points per line and
+  4 on all 200 of Meyers' (decision 3), after the outputs are written, and
+  only on the whole panel; with `RISK_RS_CALIBRATION_LINES` or `_LIMIT` set
+  it is skipped. The first run was inside the tolerance everywhere.
+* **Failures**: a fit that errors or panics is a row with the error text
+  (`percentiles.csv`, column `error`) and counts as skipped in `ks.csv`; the
+  KS tables are written for each arm's own set and for the common set.
+  `diagnostics` and `refit` are empty columns until the NUTS arms (PR 3).
+* **Seeds**: FNV-1a of `line|group|arm|basis`, pinned in a unit test.
+* **Timing probe**: the whole study (Mack on two bases and the ODP bootstrap,
+  600 fits) takes 1.6 s in release on this machine (Windows, parallel over
+  the triangles; the ODP's mean fit is 0.13 s under that parallelism and its
+  slowest 0.8 s). The probe of the Bayesian models belongs to PR 3 and PR 4,
+  whose arms are not built yet; `RISK_RS_CALIBRATION_LIMIT=2` runs the first two
+  triangles of each line for it.
+* **Not done here**: pinning the arms' D values (after the user reviews the
+  run), the Bayesian arms, Compartmental.
