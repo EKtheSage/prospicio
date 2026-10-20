@@ -974,6 +974,25 @@ transform, so `(A, B)` is `iFFT2(P_N(FFT2 S))`, and each marginal is the
   (massive) path, and sizing the axes automatically from a total budget
   (points are given per axis).
 
+### A shared mixing variable
+
+`aggregate` 1.2.0 shares a mixing variable `Θ` in two places only (#316,
+read from its source). First, the severity components of one
+`Aggregate` (`agg [10 20] claims sev [gamma lognorm] ... mixed gamma 0.3`)
+share it: `update_work` builds one severity, the components weighted by
+their expected counts, under one mixed count. In prospicio that is `fft`
+of a `MixedPoisson` on a `Mixture`. Second, the two units of a
+`bivariate` share its outer frequency, mixed or not (`BivariateCatPair`,
+the library's common shock). In prospicio that is `fft_bivariate`, or
+`Clash::aggregate`, with a mixed count. A `Portfolio`'s units share
+nothing: its total is the product of the units' transforms, each unit
+keeping its own mixing. Sharing is always full. The mixing families are
+gamma, Delaporte, inverse Gaussian and shifted inverse Gaussian, which
+`Mixing` has, and beta and Sichel, which it does not yet. Since nothing
+in `aggregate` shares `Θ` across the units of a portfolio, prospicio
+builds no quadrature over a shared `Θ` (the user's decision of
+2026-10-19: no extension beyond `aggregate`).
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force
@@ -1018,6 +1037,14 @@ exact mean at `1e-3` and `aggregate`'s quantiles at 0.5 to 0.9999 within
 two of its buckets, with aliasing below `1e-12`, the one-claim tail
 estimate below `1e-5`, and a step never coarser than `aggregate`'s
 (the same on two books, one to three rungs finer on three).
+
+The shared mixing variable is checked against `aggregate` 1.2.0
+(`validation/scripts/aggregate_common_shock.py`): its two-component
+`Aggregate` under one gamma mixing with cv 0.3, at a step of 0.5 on `2^14`
+points, has the mean, cv and skewness of `fft(MixedPoisson, Mixture)` to
+`1e-7` and the same 0.5 to 0.999 quantiles; each component mixed on its
+own gives `aggregate`'s `independent` cv, 0.360832, to its
+discretization.
 
 The grid audit is checked against `aggregate` 1.2.0's `sharpen`
 (`validation/scripts/aggregate_sharpen.py`) on two books: a lognormal

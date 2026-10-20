@@ -53,7 +53,13 @@ convention at a bucket boundary.
 1. **Mixing shared across the units of a portfolio.** In aggregate, units that
    share a `mixed` frequency share its mixing variable and are correlated.
    prospicio's `Portfolio.from_independent` is independent; `Clash` covers two
-   lines with one event count, nothing covers more.
+   lines with one event count, nothing covers more. Read from 1.2.0's source
+   (#316), this is not so: a `Portfolio`'s units share nothing (its total is
+   the product of the units' transforms). The mixing variable is shared only
+   by one `Aggregate`'s severity components, which is prospicio's `fft` of a
+   `MixedPoisson` on a `Mixture`, and by a `bivariate`'s two units, which is
+   `fft_bivariate` with a mixed count; both match. Left open: the beta and
+   Sichel mixings.
 2. **A grid audit.** aggregate's `sharpen` re-runs a build over probe bucket
    sizes and scores them, and the tail report grades the tail. prospicio reports
    `aliasing_error`, `tail_mass` and `mean_error` and sizes by `recommend_grid`
