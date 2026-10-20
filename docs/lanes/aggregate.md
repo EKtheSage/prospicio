@@ -6,7 +6,7 @@
 
 ## Next
 
-- the issues filed by the Guides lane on 2026-10-17 and 18 (#365, #368, #379, #330, #331, #338, #317, #316)
+- [guides-issues-for-aggregate] the rest of the issues filed by the Guides lane on 2026-10-17 and 18: #368's other items, #330, #331, #338, #317 and #316
 
 ## Done
 
@@ -17,3 +17,4 @@
 - casualty exposure rating, PRs 1 and 2 (`prospicio_pricing::casualty`, `docs/design/casualty-exposure.md`: a `CasualtyProfile` of policies with attachment, limit, share, premium, ELR and a severity, ILF or ELF curve each, the ILF and frequency forms, ALAE pro rata, on top or in the severity; Clark's workers compensation example exact; counts read off each policy's curve, the sweep over the Pareto alpha, the censored anchor with its standard error, the count test with Poisson tails, the burning cost with and without a segment; PR 3 in Python and R, Clark's example exact in both)
 - FFT round-off removed from `Tower::on_grid`'s ceded and net grids (`Grid::remove_fuzz`, #367)
 - the normal power and Wilson–Hilferty approximations (`ApproximationKind::NormalPower`, `WilsonHilferty`) and the third moment of any severity's layer (`Severity::layer_third_moment`), in Python and R (#329)
+- the natural allocation under the books' conventions (`PriceSettings`: `AtomAtAssets::Lumped`, *Pricing Insurance Risk*'s Example 235 exact, and `BottomLayer::Zero`, Monograph 15's equation 8.5; `aggregate` 1.2.0 unchanged from 1.0.1, so its conventions stay the defaults; Python `price(..., bottom_layer=, atom=)`, R `natural_price(..., bottom_layer, atom)`; #379, #368 item 1)

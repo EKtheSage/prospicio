@@ -59,6 +59,43 @@ pub enum Allocation {
     Lifted,
 }
 
+/// Capital in the bottom layer of the assets, from 0 to the smallest total,
+/// where `S = g(S) = 1` and the layer's return is undefined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BottomLayer {
+    /// The units' margins there take capital at the limit of the layer
+    /// above, `g'(1) / (1 − g'(1))`, as `aggregate` 1.0.1 and 1.2.0 do.
+    #[default]
+    Limit,
+    /// No capital, Monograph 15's equation 8.5 as printed.
+    Zero,
+}
+
+/// How the linear allocation treats a total exactly at the assets, when it
+/// has positive probability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AtomAtAssets {
+    /// The outcome keeps its own weight, `κᵢ(a) Δg`, and `a g(S(a))` is
+    /// shared over the totals strictly above `a`, as `aggregate` does.
+    #[default]
+    Separate,
+    /// The outcome is lumped with the default outcomes, which share
+    /// `a g(S(a⁻))` by their expected shares: *Pricing Insurance Risk*'s
+    /// linear allocation, which conditions on `X ∧ a`.
+    Lumped,
+}
+
+/// The settings of [`Portfolio::price_with`]; the default is
+/// [`Portfolio::price`] with the linear allocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PriceSettings {
+    pub allocation: Allocation,
+    pub bottom_layer: BottomLayer,
+    /// Used by the linear allocation only: the lifted one weights the
+    /// outcome at the assets the same either way.
+    pub atom: AtomAtAssets,
+}
+
 /// Loss, margin, premium, capital and assets of a cover or a unit, with
 /// `P = L + M` and `a = P + Q`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -952,8 +989,9 @@ impl Portfolio {
     /// The premium of `X ∧ a` under `g`, and its allocation to units; see
     /// the [module](self). `a` must be positive.
     ///
-    /// Two conventions follow `aggregate` 1.0.1 and differ from the printed
-    /// formulas of the books on small discrete examples:
+    /// Two conventions follow `aggregate` (1.0.1 and 1.2.0 alike) and differ
+    /// from the printed formulas of the books on small discrete examples;
+    /// [`price_with`](Self::price_with) gives the books' versions:
     ///
     /// - **A total exactly at the assets** (linear allocation). An outcome
     ///   with `X = a` keeps its own weight, `κᵢ(a) Δg`, and `a g(S(a))` is
@@ -961,9 +999,10 @@ impl Portfolio {
     ///   Risk*'s linear allocation conditions on `X ∧ a`, so it lumps that
     ///   outcome with the default ones and they share `g(S(a⁻))`; its
     ///   Example 235 gives 4.3 where this gives 4.16. Assets just below the
-    ///   atom (`a − 1e-9`) give the book's numbers. `assets(p)` is always a
-    ///   total, so the case arises whenever a capital standard is used on a
-    ///   discrete book.
+    ///   atom (`a − 1e-9`) give nearly the book's numbers, and
+    ///   [`AtomAtAssets::Lumped`] gives them exactly. `assets(p)` is always
+    ///   a total, so the case arises whenever a capital standard is used on
+    ///   a discrete book.
     /// - **The bottom layer of capital**, from 0 to the smallest total,
     ///   where `S = g(S) = 1` and the return `(g − S)/(1 − g)` is
     ///   undefined. The units' margins there are not zero, though they sum
@@ -974,8 +1013,8 @@ impl Portfolio {
     ///   Monograph 15's equation 8.5 gives that layer no capital for every
     ///   distortion, so its CCoC and PH capital by unit differs (InsCo at
     ///   15%: 2.261, 1.478, 42.696 here against 5.419, 6.082, 34.934 by
-    ///   equation 8.5); the total capital, and every unit's premium, are the
-    ///   same.
+    ///   equation 8.5, which [`BottomLayer::Zero`] gives); the total
+    ///   capital, and every unit's premium, are the same.
     ///
     /// ```
     /// use prospicio_pricing::natural::{Allocation, Portfolio};
@@ -995,6 +1034,40 @@ impl Portfolio {
     /// assert!((price.allocated[2].premium - 21.304347826086957).abs() < 1e-12);
     /// ```
     pub fn price(&self, g: &Distortion, a: f64, method: Allocation) -> Result<NaturalPrice> {
+        self.price_with(
+            g,
+            a,
+            PriceSettings {
+                allocation: method,
+                ..PriceSettings::default()
+            },
+        )
+    }
+
+    /// [`price`](Self::price) with the books' conventions available: the
+    /// bottom layer's capital and, for the linear allocation, the outcome
+    /// at the assets lumped with the defaults.
+    ///
+    /// ```
+    /// use prospicio_pricing::natural::{AtomAtAssets, Portfolio, PriceSettings};
+    /// use prospicio_prob::Distortion;
+    ///
+    /// // Pricing Insurance Risk, Example 235: TVaR at 80% with assets 10.
+    /// let x1 = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 12.0, 10.0];
+    /// let x2 = [1.0, 2.0, 3.0, 4.0, 5.0, 9.0, 8.0, 12.0, 13.0, 20.0];
+    /// let rows: Vec<Vec<f64>> = x1.iter().zip(&x2).map(|(a, b)| vec![*a, *b]).collect();
+    /// let port = Portfolio::from_rows(vec!["X1".into(), "X2".into()], &rows, None).unwrap();
+    /// let book = PriceSettings { atom: AtomAtAssets::Lumped, ..PriceSettings::default() };
+    /// let price = port.price_with(&Distortion::tvar(0.8).unwrap(), 10.0, book).unwrap();
+    /// assert!((price.allocated[0].premium - 4.3).abs() < 1e-12);
+    /// ```
+    pub fn price_with(
+        &self,
+        g: &Distortion,
+        a: f64,
+        settings: PriceSettings,
+    ) -> Result<NaturalPrice> {
+        let method = settings.allocation;
         if !(a.is_finite() && a > 0.0) {
             return Err(Error::InvalidParameter {
                 name: "assets",
@@ -1005,6 +1078,13 @@ impl Portfolio {
         let n = self.x.len();
         let m = self.units.len();
         let c = self.count_at_or_below(a);
+        // The number of totals the linear allocation pays in full at the
+        // assets: one fewer when the outcome at `a` is lumped with defaults.
+        let lumped = method == Allocation::Linear
+            && settings.atom == AtomAtAssets::Lumped
+            && c > 0
+            && self.x[c - 1] == a;
+        let c_paid = if lumped { c - 1 } else { c };
         let gs: Vec<f64> = self.s.iter().map(|&s| g.g(s)).collect();
         let gp: Vec<f64> = (0..n)
             .map(|k| {
@@ -1037,7 +1117,7 @@ impl Portfolio {
             head_g[c * m + i] + y * tail
         };
         let unit_loss = |y: f64, c: usize, i: usize| head_p[c * m + i] + y * tail_p[c * m + i];
-        let unit_p: Vec<f64> = (0..m).map(|i| unit_premium(a, c, i)).collect();
+        let unit_p: Vec<f64> = (0..m).map(|i| unit_premium(a, c_paid, i)).collect();
         let (loss, unit_l) = self.limited_expected(a);
         // Capital by layer: [0, x_0) with S = 1, then [x_k, x_{k+1}), up to
         // a. Each unit's margin over the layer, m(top) - m(bottom), takes
@@ -1045,7 +1125,9 @@ impl Portfolio {
         // margin's jump at a total falls in the layer below it.
         let fill = {
             let slope = g.slope_at_one();
-            if slope >= 1.0 {
+            if settings.bottom_layer == BottomLayer::Zero {
+                0.0
+            } else if slope >= 1.0 {
                 f64::INFINITY
             } else {
                 slope / (1.0 - slope)
@@ -1074,7 +1156,11 @@ impl Portfolio {
                 } else {
                     (1.0 - gsl) / (gsl - s)
                 };
-                let c_top = self.count_at_or_below(top);
+                let c_top = if top == a {
+                    c_paid
+                } else {
+                    self.count_at_or_below(top)
+                };
                 for (i, q) in unit_q.iter_mut().enumerate() {
                     let dm = margin(top, c_top, i) - margin(lower, layer, i);
                     if dm != 0.0 {

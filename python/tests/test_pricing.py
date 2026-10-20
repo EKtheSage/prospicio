@@ -278,6 +278,34 @@ def test_natural_allocation_on_insco():
         port.price(ph, allocation="other")
 
 
+def test_natural_allocation_conventions():
+    from prospicio.pricing import Portfolio
+    from prospicio.risk import Distortion
+
+    # Pricing Insurance Risk, Example 235: the outcome at the assets lumped
+    # with the defaults gives the book's 4.3 and 5.7; aggregate's own
+    # weight gives 4.16.
+    x1 = [1, 2, 3, 4, 5, 6, 7, 8, 12, 10]
+    x2 = [1, 2, 3, 4, 5, 9, 8, 12, 13, 20]
+    port = Portfolio(["X1", "X2"], [list(r) for r in zip(x1, x2)])
+    tvar = Distortion.tvar(0.8)
+    lumped = port.price(tvar, assets=10, atom="lumped")
+    assert [u.premium for u in lumped.allocated] == pytest.approx([4.3, 5.7], abs=1e-12)
+    assert port.price(tvar, assets=10).allocated[0].premium == pytest.approx(4.16, abs=1e-12)
+    # Monograph 15's InsCo: equation 8.5 as printed gives the bottom layer
+    # no capital; the premiums do not move.
+    insco = Portfolio(["A", "B", "C"], INSCO_ROWS)
+    ccoc = insco.calibrate("ccoc", assets=100, return_on_capital=0.15)
+    zero = insco.price(ccoc, assets=100, allocation="lifted", bottom_layer="none")
+    assert [u.capital for u in zero.allocated] == pytest.approx([5.419, 6.082, 34.934], abs=5e-4)
+    limit = insco.price(ccoc, assets=100, allocation="lifted")
+    assert [u.premium for u in zero.allocated] == pytest.approx([u.premium for u in limit.allocated], abs=1e-12)
+    with pytest.raises(ValueError):
+        insco.price(ccoc, assets=100, bottom_layer="other")
+    with pytest.raises(ValueError):
+        insco.price(ccoc, assets=100, atom="other")
+
+
 def test_natural_from_independent_and_predictive():
     from prospicio.distributions import Grid, PredictiveDistribution
     from prospicio.pricing import Portfolio

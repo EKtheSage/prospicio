@@ -156,6 +156,17 @@ lifted <- natural_price(insco, ph, p = 0.85, allocation = "lifted")
 stopifnot(max(abs(lifted$capital[1:3] - c(1.947189207380, -0.070344428313, 16.219694433834))) < 1e-6)
 stopifnot(abs(sum(lifted$premium[1:3]) - lifted$premium[4]) < 1e-10)
 stopifnot(abs(sum(bodoff_allocation(insco, assets = 100)) - 100) < 1e-10)
+# The book's conventions: Pricing Insurance Risk's Example 235 with the outcome
+# at the assets lumped with the defaults, and InsCo with no capital in the
+# bottom layer (Monograph 15's equation 8.5 as printed).
+e235 <- capital_portfolio(cbind(X1 = c(1, 2, 3, 4, 5, 6, 7, 8, 12, 10),
+                                X2 = c(1, 2, 3, 4, 5, 9, 8, 12, 13, 20)))
+near(natural_price(e235, distortion("tvar", 0.8), assets = 10, atom = "lumped")$premium[1:2], c(4.3, 5.7))
+near(natural_price(e235, distortion("tvar", 0.8), assets = 10)$premium[1], 4.16)
+ccoc <- calibrate_portfolio(insco, "ccoc", return_on_capital = 0.15)
+none <- natural_price(insco, ccoc, assets = 100, allocation = "lifted", bottom_layer = "none")
+stopifnot(max(abs(none$capital[1:3] - c(5.419, 6.082, 34.934))) < 5e-4)
+near(none$premium, natural_price(insco, ccoc, assets = 100, allocation = "lifted")$premium)
 # Kappa and assets at p, against Python's Portfolio.kappa(unit) and assets(p).
 near(sapply(c(0.8, 0.85, 0.9, 1), function(p) portfolio_assets(insco, p)), c(55, 65, 65, 100))
 near(portfolio_kappa(insco, "A"), c(15, 15, 5, 10, 26, 17, 16))

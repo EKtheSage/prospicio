@@ -1869,3 +1869,133 @@ mod clark_casualty {
         assert!((z - (1.0 / 1082.21f64).sqrt()).abs() < 1e-4);
     }
 }
+
+#[test]
+fn natural_allocation_has_the_books_conventions() {
+    use prospicio_pricing::natural::{
+        Allocation, AtomAtAssets, BottomLayer, Portfolio, PriceSettings, Target,
+    };
+    use prospicio_prob::Distortion;
+    use prospicio_prob::distortion::Family;
+    let units = |n: usize| (1..=n).map(|i| format!("X{i}")).collect::<Vec<_>>();
+    let near = |got: f64, want: f64, tol: f64| {
+        assert!((got - want).abs() <= tol, "got {got}, want {want}");
+    };
+    let lumped = PriceSettings {
+        atom: AtomAtAssets::Lumped,
+        ..PriceSettings::default()
+    };
+    // Pricing Insurance Risk, Example 235: TVaR at 80%, assets 10, one
+    // outcome totals exactly 10. Lumped gives the book's 4.3 and 5.7.
+    let x1 = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 12.0, 10.0];
+    let x2 = [1.0, 2.0, 3.0, 4.0, 5.0, 9.0, 8.0, 12.0, 13.0, 20.0];
+    let rows: Vec<Vec<f64>> = x1.iter().zip(&x2).map(|(a, b)| vec![*a, *b]).collect();
+    let e235 = Portfolio::from_rows(units(2), &rows, None).unwrap();
+    let tvar = Distortion::tvar(0.8).unwrap();
+    let p = e235.price_with(&tvar, 10.0, lumped).unwrap();
+    near(p.allocated[0].premium, 4.3, 1e-12);
+    near(p.allocated[1].premium, 5.7, 1e-12);
+    let own = e235.price(&tvar, 10.0, Allocation::Linear).unwrap();
+    near(own.allocated[0].premium, 4.16, 1e-12);
+    // The lifted allocation weights the outcome at the assets the same way
+    // under either setting.
+    let lifted = PriceSettings {
+        allocation: Allocation::Lifted,
+        atom: AtomAtAssets::Lumped,
+        ..PriceSettings::default()
+    };
+    assert_eq!(
+        e235.price_with(&tvar, 10.0, lifted).unwrap(),
+        e235.price(&tvar, 10.0, Allocation::Lifted).unwrap()
+    );
+    // Table 15.20 at assets 20 (two independent units, PH at 0.87) and
+    // Bodoff's Thought Experiment 1 at 100 (CCoC at 10%, Table 15.30):
+    // lumped at a equals the price at a - 1e-9 the guides use.
+    let two_rows: Vec<Vec<f64>> = [0.0, 10.0, 20.0]
+        .iter()
+        .flat_map(|&a| [0.0, 10.0, 40.0].map(|b| vec![a, b]))
+        .collect();
+    let two_probs: Vec<f64> = [0.5, 0.25, 0.25]
+        .iter()
+        .flat_map(|&p| [0.5, 0.25, 0.25].map(|q| p * q))
+        .collect();
+    let two = Portfolio::from_rows(units(2), &two_rows, Some(&two_probs)).unwrap();
+    let ph87 = Distortion::proportional_hazard(0.87).unwrap();
+    let book = two.price_with(&ph87, 20.0, lumped).unwrap();
+    near(book.allocated[0].premium, 6.2183, 5e-5);
+    near(book.allocated[1].premium, 7.0390, 5e-5);
+    let below = two.price(&ph87, 20.0 - 1e-9, Allocation::Linear).unwrap();
+    for (a, b) in book.allocated.iter().zip(&below.allocated) {
+        near(a.premium, b.premium, 1e-7);
+        near(a.capital, b.capital, 1e-7);
+    }
+    let bodoff = Portfolio::from_rows(
+        units(2),
+        &[
+            vec![0.0, 0.0],
+            vec![99.0, 0.0],
+            vec![0.0, 100.0],
+            vec![99.0, 100.0],
+        ],
+        Some(&[0.76, 0.19, 0.04, 0.01]),
+    )
+    .unwrap();
+    let ccoc = Distortion::ccoc(0.1).unwrap();
+    let te1 = bodoff.price_with(&ccoc, 100.0, lumped).unwrap();
+    for (u, (premium, capital)) in te1
+        .allocated
+        .iter()
+        .zip([(18.4568, -8.5070), (12.2796, 77.7707)])
+    {
+        near(u.premium, premium, 5e-5);
+        near(u.capital, capital, 5e-5);
+    }
+    // Monograph 15's InsCo at a 15% return with assets 100: equation 8.5
+    // gives the bottom layer no capital. CCoC and PH capital by unit move
+    // to the by-hand values; Wang, dual and TVaR, whose slope at 1 is
+    // infinite, do not; the premiums and the total do not either.
+    let insco_rows: Vec<Vec<f64>> = [
+        [15.0, 7.0, 0.0],
+        [15.0, 13.0, 0.0],
+        [5.0, 20.0, 11.0],
+        [7.0, 33.0, 0.0],
+        [13.0, 20.0, 7.0],
+        [5.0, 27.0, 8.0],
+        [15.0, 16.0, 9.0],
+        [26.0, 19.0, 10.0],
+        [17.0, 8.0, 40.0],
+        [16.0, 20.0, 64.0],
+    ]
+    .iter()
+    .map(|r| r.to_vec())
+    .collect();
+    let insco = Portfolio::from_rows(units(3), &insco_rows, None).unwrap();
+    let zero = PriceSettings {
+        allocation: Allocation::Lifted,
+        bottom_layer: BottomLayer::Zero,
+        ..PriceSettings::default()
+    };
+    let target = Target::ReturnOnCapital(0.15);
+    let by_hand = [
+        (Family::Ccoc, Some([5.419, 6.082, 34.934])),
+        (Family::ProportionalHazard, Some([7.765, 7.694, 30.975])),
+        (Family::Wang, None),
+        (Family::DualPower, None),
+        (Family::Tvar, None),
+    ];
+    for (family, want) in by_hand {
+        let g = insco.calibrate(family, 100.0, target).unwrap();
+        let limit = insco.price(&g, 100.0, Allocation::Lifted).unwrap();
+        let none = insco.price_with(&g, 100.0, zero).unwrap();
+        near(none.total.capital, 46.435, 5e-4);
+        let sum: f64 = none.allocated.iter().map(|u| u.capital).sum();
+        near(sum, none.total.capital, 1e-9);
+        for (k, (a, b)) in none.allocated.iter().zip(&limit.allocated).enumerate() {
+            near(a.premium, b.premium, 1e-12);
+            match want {
+                Some(w) => near(a.capital, w[k], 5e-4),
+                None => near(a.capital, b.capital, 1e-12),
+            }
+        }
+    }
+}

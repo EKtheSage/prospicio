@@ -859,22 +859,28 @@ portfolio_assets <- function(port, p) rust_result(port@ptr$assets(as.double(p)))
 #' `"lifted"` the distorted share. Capital is allocated layer by layer, in
 #' proportion to each unit's margin in the layer.
 #'
-#' Two conventions follow `aggregate` 1.0.1. A total exactly at the assets
-#' keeps its own weight in the linear allocation, where *Pricing Insurance
-#' Risk* lumps it with the default outcomes (its Example 235: 4.3 against
-#' 4.16 here); assets just below the atom, `a - 1e-9`, give the book's
+#' The defaults follow `aggregate` (1.0.1 and 1.2.0 alike). A total
+#' exactly at the assets keeps its own weight in the linear allocation,
+#' where *Pricing Insurance Risk* lumps it with the default outcomes (its
+#' Example 235: 4.3 against 4.16 here); `atom = "lumped"` gives the book's
 #' numbers, and `p` always lands on a total. In the bottom layer of
 #' capital, below the smallest total, the units' margins (which sum to
 #' zero) take capital at `g'(1) / (1 - g'(1))`: `1/r` for CCoC,
 #' `rho / (1 - rho)` for the proportional hazard, 0 for Wang, dual power
-#' and TVaR. Monograph 15's equation 8.5 gives that layer none, so CCoC and
-#' PH capital by unit differ from it; the total and the premiums do not.
+#' and TVaR. Monograph 15's equation 8.5 gives that layer none
+#' (`bottom_layer = "none"`), so CCoC and PH capital by unit differ from
+#' it; the total and the premiums do not.
 #'
 #' @param port A [capital_portfolio].
 #' @param distortion A [distortion].
 #' @param assets The asset level; or give `p`. The largest total by default.
 #' @param p The capital standard: assets at the total's lower `p` quantile.
 #' @param allocation `"linear"` or `"lifted"`.
+#' @param bottom_layer Capital in the layer below the smallest total:
+#'   `"limit"` (its limit from above) or `"none"` (equation 8.5 as printed).
+#' @param atom For the linear allocation, a total exactly at the assets
+#'   keeps its own weight (`"separate"`) or is lumped with the default
+#'   outcomes (`"lumped"`, the book's).
 #' @returns A data frame, one row per unit and a `"total"` row, with
 #'   `loss`, `margin`, `premium`, `capital`, `assets`, `loss_ratio`,
 #'   `premium_to_capital` and `return_on_capital`.
@@ -888,10 +894,13 @@ portfolio_assets <- function(port, p) rust_result(port@ptr$assets(as.double(p)))
 #' ph <- calibrate_portfolio(insco, "proportional_hazard", return_on_capital = 0.15)
 #' natural_price(insco, ph, p = 0.85, allocation = "lifted")
 natural_price <- function(port, distortion, assets = NULL, p = NULL,
-                          allocation = c("linear", "lifted")) {
+                          allocation = c("linear", "lifted"), bottom_layer = c("limit", "none"),
+                          atom = c("separate", "lumped")) {
   allocation <- match.arg(allocation)
+  bottom_layer <- match.arg(bottom_layer)
+  atom <- match.arg(atom)
   a <- portfolio_level(port, assets, p)
-  as.data.frame(rust_result(port@ptr$price(distortion@ptr, a, allocation)))
+  as.data.frame(rust_result(port@ptr$price(distortion@ptr, a, allocation, bottom_layer, atom)))
 }
 
 #' Calibrate a distortion to a portfolio

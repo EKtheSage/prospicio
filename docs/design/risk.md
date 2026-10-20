@@ -324,7 +324,24 @@ already has: sampled draws, grids, and the joint `PredictiveDistribution`.
   loss always reaches (`S = g = 1`) that ratio is the limit
   `g'(1) / (1 - g'(1))` (`Distortion::slope_at_one`). Under the linear
   allocation `mᵢ` jumps at each total, and the jump belongs to the layer
-  below it, as on `aggregate`'s unit grid.
+  below it, as on `aggregate`'s unit grid. `aggregate` 1.2.0 gives the
+  same values as 1.0.1 on every row of `natural_aggregate.csv`, so these
+  stay the defaults (#379).
+- **The book's two conventions are settings** (`PriceSettings`, #379 and
+  #368). `AtomAtAssets::Lumped` puts an outcome whose total is exactly the
+  assets with the defaults in the linear allocation, as *Pricing Insurance
+  Risk* conditions on `X ∧ a` (Example 235's 4.3 and 5.7, Table 15.20,
+  Bodoff's Thought Experiment 1); the default `Separate` pays it in full,
+  as `aggregate` does. `BottomLayer::Zero` gives the layer the loss always
+  reaches no capital, Monograph 15's equation 8.5 as printed; the default
+  `Limit` converts its margins at `g'(1) / (1 - g'(1))`. The margins of
+  that layer add to zero, so neither setting moves the premiums or the
+  total capital, only the capital by unit, and only for a distortion with
+  a finite slope at 1 (CCoC, PH). The monograph's Tables 8.11 and 9.8, from
+  an earlier `aggregate`, follow neither and are not reproduced (the
+  user's decision on #379). Python `price(..., bottom_layer="none",
+  atom="lumped")`, R `natural_price(..., bottom_layer = "none", atom =
+  "lumped")`.
 - **The portfolio works on the distinct totals, not a grid.** Layers run
   between consecutive totals, so any asset level works and no bucket is
   chosen. `S` is summed from the top and is exactly 0 at the largest

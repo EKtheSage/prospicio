@@ -74,7 +74,11 @@ sources:
   6.082, 34.934 by equation 8.5, 2.261, 1.478, 42.696 in prospicio, and 4.874,
   5.288, 36.273 in the monograph's Table 8.11 (an earlier `aggregate`); PH
   7.765, 7.694, 30.975, 6.481, 5.597, 34.356 and 7.074, 6.565, 32.796. All
-  add to 46.435. Filed as #379.[^chapter8]
+  add to 46.435. Filed as #379.[^chapter8] `aggregate` 1.2.0 gives the same
+  values as 1.0.1, so the limit stays the default, and `bottom_layer="none"`
+  (`BottomLayer::Zero`) gives equation 8.5's split, checked in
+  `validation/tests/pricing.rs` for the CCoC and PH; Tables 8.11 and 9.8 are
+  not reproduced.
 
 [^chapter8]: capital-modeling-monograph-15-iman-conover.md, sections 2, 3, 8, 9 and 10
 [^practice]: capital-modeling-monograph-15-practice.md, sections 2 and 5

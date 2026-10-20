@@ -190,9 +190,13 @@ what it is aiming for by v1.0.
     compensation example exact), with the sweep over the Pareto alpha, the
     censored anchor, the count test and the burning cost with and without
     a segment (PR 2), in Python and R (PR 3).
-- **Next:** the Guides lane's issues of 2026-10-17 and 18 (the lifted
-  allocation's bottom layer and the linear one's atom at the assets, FFT
-  fuzz in `Tower.on_grid`, a severity from a size-of-loss table, a grid
+  - The natural allocation under the books' conventions as settings: the
+    outcome at the assets lumped with the defaults (*Pricing Insurance
+    Risk*) and no capital in the bottom layer (Monograph 15's equation
+    8.5), `PriceSettings` (#379, #368).
+- **Next:** the Guides lane's remaining issues of 2026-10-17 and 18 (the
+  CCoC's capital split, a degenerate calibration, the allocation set and
+  faster pricing bounds, a severity from a size-of-loss table, a grid
   audit, shared mixing across units).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 

@@ -53,8 +53,10 @@ sources:
   in full. Both are members of the natural allocation set; they differ only
   when `a` is a total with positive probability (always so for `assets(p)` on
   a small discrete book). `price(..., assets=a - 1e-9, allocation="linear")`
-  gives the book's numbers (Example 235, Table 15.20, Tables 15.30 and 15.34).
-  The lifted allocation agrees at `a` itself.
+  gives the book's numbers (Example 235, Table 15.20, Tables 15.30 and 15.34),
+  and so does `price(..., atom="lumped")` at `a` itself (`AtomAtAssets::Lumped`,
+  checked in `validation/tests/pricing.rs`, #368). The lifted allocation
+  agrees at `a` under either setting.
 - **Two covariance allocations.** prospicio's `capital(..., "covariance")` is
   `rho(S) Cov(X_j, S) / Var(S)`; the book's (Kalkbrener, Exercise 217, and the
   var/cov premium of Table 15.31) is `E[X_j] + (rho(S) - E[S]) Cov / Var`.
