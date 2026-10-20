@@ -374,7 +374,7 @@ what it is aiming for by v1.0.
   and an in-house dual type, checked against every hand-written gradient;
   internal), PR B (`Compartmental`, Gesmann and Morris' model 1, in
   Rust, Python and R) and PR C (model 2, in Rust, Python and R) are
-  done (the 200-triangle calibration study can now use `TriangleModel
+  done (the 200-triangle calibration study, `reserving-calibration.md`, can now use `TriangleModel
   for Meyers`);
   `Compartmental` has its one-year view too (PR 11, with the user's
   defaults of 2026-10-16), and `Compartmental::fit_segments` with the
