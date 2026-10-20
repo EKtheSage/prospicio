@@ -21,10 +21,10 @@ use prospicio_prob::{
 
 use super::dual::{CHUNK, Dual, gradient};
 use super::laplace::{Posterior, Whitened, mode};
-use super::one_year::{self, BayesOneYear, BayesOneYearFit, OneYearRefit};
+use super::one_year::{self, BayesOneYear, BayesOneYearFit, BayesOneYearSegment, OneYearRefit};
 use super::scalar::{Scalar, exprel_neg};
 use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
-use crate::bootstrap::{component_sums, push_moments};
+use crate::bootstrap::{component_sums, origin_keys, push_moments};
 use crate::dependence::SegmentDependence;
 use crate::error::{Error, Result};
 use crate::segments::{FitTable, SegmentFits, fit_each};
@@ -1144,17 +1144,16 @@ impl Compartmental {
         settings.validate()?;
         let (settings, n_sims, approximate) = self.one_year_defaults(settings);
         let settings = &settings;
-        let fit = self.fit(triangle, paid, outstanding, premium)?;
-        let view_seed = one_year_seed(derive_seed(self.seed, Stream::Predictive));
-        let year = year::CompartmentalYear::new(self, &fit.data)?;
-        // The added `z` of each draw: stream `d` of a seed that the
-        // simulations' streams (`0..n_sims` of `view_seed`) do not reach.
-        let opening = year.opening_draws(
-            &fit.model,
-            &fit.sampled,
-            StreamRng::new(view_seed, u64::MAX).next_u64(),
+        let (fit, draws) = self.year_streams(
+            triangle,
+            paid,
+            outstanding,
+            premium,
+            settings,
+            n_sims,
+            Stream::Chains,
+            Stream::Predictive,
         )?;
-        let draws = one_year::simulate(&year, &opening, settings, n_sims, view_seed)?;
         let mut provenance = fit.reserves.provenance().clone();
         provenance.parameters.retain(|(k, _)| k != "output");
         provenance.model = format!("{}_one_year", provenance.model);
@@ -1181,6 +1180,164 @@ impl Compartmental {
             unrefitted: draws.unrefitted,
             refit_warnings: draws.refit_warnings,
             k_threshold: settings.k_threshold,
+            approximate,
+        })
+    }
+
+    /// [`fit_streams`](Self::fit_streams) of a single-segment triangle and
+    /// its one-year simulations (`settings` with the model's defaults
+    /// applied, `n_sims` of them), the chains and the simulations taking the
+    /// seeds that `chains` and `predictive` derive. The view's seed is the
+    /// simulations' derived seed.
+    #[allow(clippy::too_many_arguments)]
+    fn year_streams(
+        &self,
+        triangle: &Triangle,
+        paid: &str,
+        outstanding: Outstanding<'_>,
+        premium: &str,
+        settings: &BayesOneYear,
+        n_sims: usize,
+        chains: Stream,
+        predictive: Stream,
+    ) -> Result<(CompartmentalFit, one_year::YearDraws)> {
+        let fit = self.fit_streams(triangle, paid, outstanding, premium, chains, predictive)?;
+        let view_seed = one_year_seed(derive_seed(self.seed, predictive));
+        let year = year::CompartmentalYear::new(self, &fit.data)?;
+        // The added `z` of each draw: stream `d` of a seed that the
+        // simulations' streams (`0..n_sims` of `view_seed`) do not reach.
+        let opening = year.opening_draws(
+            &fit.model,
+            &fit.sampled,
+            StreamRng::new(view_seed, u64::MAX).next_u64(),
+        )?;
+        let draws = one_year::simulate(&year, &opening, settings, n_sims, view_seed)?;
+        Ok((fit, draws))
+    }
+
+    /// The one-year view of every segment of a triangle, each segment as
+    /// [`one_year`](Self::one_year) views a single-segment triangle (its own
+    /// premium column and outstanding cells, the refit mode default and the
+    /// [`approximate`](CompartmentalOneYearFits::approximate) warning of
+    /// decision 20), on the seeds of [`fit_segments`](Self::fit_segments):
+    /// segment `k` (in index order) takes `Stream::SegmentChains(k)` for its
+    /// chains and `Stream::SegmentPredictive(k)` for its simulations, so a
+    /// one-segment triangle's view is `one_year` on segment 0's streams. The
+    /// segments' claims development results are joined by row, as
+    /// [`dependence`](Self::dependence) says: `Independent` as drawn,
+    /// `RankCorrelation` by Iman-Conover on the segments' total claims
+    /// development results (as `BayesOdp` and `Meyers` do);
+    /// `Synchronized` is an [`Error::Bayes`] and a bad matrix an
+    /// [`Error::InvalidSetting`], both before any sampling. The refit budget
+    /// [`max_refits`](BayesOneYear::max_refits) applies to each segment. A
+    /// failure names its segment.
+    pub fn one_year_segments(
+        &self,
+        triangle: &Triangle,
+        paid: &str,
+        outstanding: Outstanding<'_>,
+        premium: &str,
+        settings: &BayesOneYear,
+    ) -> Result<CompartmentalOneYearFits> {
+        self.validate()?;
+        settings.validate()?;
+        if self.dependence == SegmentDependence::Synchronized {
+            return Err(Error::Bayes(
+                "Synchronized dependence draws the residuals of the same positions in every \
+                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
+                    .into(),
+            ));
+        }
+        self.dependence.validate(triangle.index().len())?;
+        let (settings, n_sims, approximate) = self.one_year_defaults(settings);
+        let settings = &settings;
+        let mut k = 0;
+        let fitted = fit_each(triangle, paid, |_| {
+            let label = &triangle.index()[k];
+            let values: Vec<[&str; 1]> = label.parts().iter().map(|p| [p.as_str()]).collect();
+            let conditions: Vec<(&str, &[&str])> = triangle
+                .key_names()
+                .iter()
+                .zip(&values)
+                .map(|(name, value)| (name.as_str(), value.as_slice()))
+                .collect();
+            let view = triangle.select(&conditions).and_then(|one| {
+                self.year_streams(
+                    &one,
+                    paid,
+                    outstanding,
+                    premium,
+                    settings,
+                    n_sims,
+                    Stream::SegmentChains(k),
+                    Stream::SegmentPredictive(k),
+                )
+            });
+            k += 1;
+            view
+        })?;
+
+        let mut hasher = InputHasher::new();
+        hasher.str(paid);
+        hasher.str(outstanding_name(outstanding));
+        hasher.str(premium);
+        let mut dims = fitted.key_names.clone();
+        dims.push("origin".into());
+        let mut components = Vec::new();
+        let mut ranges = Vec::new();
+        for (label, (fit, _)) in fitted.iter() {
+            hasher.str(&label.to_string());
+            hasher.f64s(&fit.premium);
+            for c in fit.data.paid.iter().chain(&fit.data.outstanding) {
+                hasher.f64s(&[c.0 as f64, c.1 as f64, c.2]);
+            }
+            let start = components.len();
+            components.extend(origin_keys(label, &fit.origins));
+            ranges.push(start..components.len());
+        }
+        let mut draws = Vec::with_capacity(n_sims * components.len());
+        for i in 0..n_sims {
+            for (_, year) in &fitted.fits {
+                let m = year.opening.len();
+                draws.extend_from_slice(&year.cdr[i * m..(i + 1) * m]);
+            }
+        }
+        let premiums: Vec<f64> = fitted
+            .fits
+            .iter()
+            .map(|(fit, _)| fit.premium.iter().sum())
+            .collect();
+        let mut provenance = self
+            .provenance(paid, outstanding, premium, hasher)
+            .param("premium_total", format!("{premiums:?}"))
+            .param("segments", fitted.len())
+            .param("dependence", format!("{:?}", self.dependence));
+        provenance.model = format!("{}_one_year", provenance.model);
+        let provenance = one_year::provenance(provenance, settings, n_sims);
+        let cdr = PredictiveDistribution::from_draws(dims, components, draws, provenance)?;
+        let cdr = self.dependence.reorder_ranges(cdr, &ranges, self.seed)?;
+        let segments = fitted.map(|(fit, year)| {
+            let opening_ultimate = fit
+                .latest_paid
+                .iter()
+                .zip(&year.opening)
+                .map(|(l, r)| l + r)
+                .collect();
+            BayesOneYearSegment {
+                fit: CompartmentalSegment { fit: fit.clone() },
+                opening_ultimate,
+                opening_reserve: year.opening.clone(),
+                pareto_k: year.pareto_k.clone(),
+                refitted: year.refitted.clone(),
+                moment_matched: year.moment_matched.clone(),
+                unrefitted: year.unrefitted.clone(),
+                refit_warnings: year.refit_warnings,
+                k_threshold: settings.k_threshold,
+            }
+        });
+        Ok(CompartmentalOneYearFits {
+            segments,
+            cdr,
             approximate,
         })
     }
@@ -1681,32 +1838,7 @@ impl CompartmentalFits {
 
     /// The segments' tables, stacked in index order under the key columns.
     fn stack(&self, tables: Vec<FitTable>) -> FitTable {
-        let rows: Vec<usize> = tables
-            .iter()
-            .map(|t| t.origin.as_ref().map_or(1, Vec::len))
-            .collect();
-        let mut stacked = FitTable {
-            keys: self.segments.key_columns(|s| rows[s]),
-            origin: tables[0].origin.as_ref().map(|_| Vec::new()),
-            age: tables[0].age.as_ref().map(|_| Vec::new()),
-            values: tables[0]
-                .values
-                .iter()
-                .map(|(name, _)| (name.clone(), Vec::new()))
-                .collect(),
-        };
-        for t in tables {
-            if let (Some(all), Some(o)) = (&mut stacked.origin, t.origin) {
-                all.extend(o);
-            }
-            if let (Some(all), Some(a)) = (&mut stacked.age, t.age) {
-                all.extend(a);
-            }
-            for ((_, all), (_, v)) in stacked.values.iter_mut().zip(t.values) {
-                all.extend(v);
-            }
-        }
-        stacked
+        stack_segments(&self.segments, tables)
     }
 
     /// One row per segment × origin: the columns of
@@ -1739,6 +1871,156 @@ impl CompartmentalFits {
     pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
         let segments = self.segments.segment(keys)?;
         Self::assemble(segments, self.reserves.provenance().clone())
+    }
+}
+
+/// The segments' tables, stacked in index order under the key columns.
+fn stack_segments<T>(segments: &SegmentFits<T>, tables: Vec<FitTable>) -> FitTable {
+    let rows: Vec<usize> = tables
+        .iter()
+        .map(|t| t.origin.as_ref().map_or(1, Vec::len))
+        .collect();
+    let mut stacked = FitTable {
+        keys: segments.key_columns(|s| rows[s]),
+        origin: tables[0].origin.as_ref().map(|_| Vec::new()),
+        age: tables[0].age.as_ref().map(|_| Vec::new()),
+        values: tables[0]
+            .values
+            .iter()
+            .map(|(name, _)| (name.clone(), Vec::new()))
+            .collect(),
+    };
+    for t in tables {
+        if let (Some(all), Some(o)) = (&mut stacked.origin, t.origin) {
+            all.extend(o);
+        }
+        if let (Some(all), Some(a)) = (&mut stacked.age, t.age) {
+            all.extend(a);
+        }
+        for ((_, all), (_, v)) in stacked.values.iter_mut().zip(t.values) {
+            all.extend(v);
+        }
+    }
+    stacked
+}
+
+/// The one-year view of a compartmental model in every segment of a
+/// triangle ([`Compartmental::one_year_segments`]), with the layout of
+/// [`CompartmentalFits`]: segments in index order, the joint claims
+/// development result across them. Each segment holds the view
+/// [`Compartmental::one_year`] gives it, as a [`BayesOneYearSegment`] of its
+/// [`CompartmentalSegment`].
+#[derive(Debug, Clone)]
+pub struct CompartmentalOneYearFits {
+    /// Each segment's posterior, opening reserve and Pareto `k̂`.
+    pub segments: SegmentFits<BayesOneYearSegment<CompartmentalSegment>>,
+    /// Joint distribution of the claims development result by segment and
+    /// origin: the key names and `origin` are its dimensions, and its
+    /// components run over the origins of each segment in turn.
+    pub cdr: PredictiveDistribution,
+    /// Why the views are approximate, or `None`, as
+    /// [`BayesOneYearFit::approximate`]: the same for every segment, as the
+    /// model is the same.
+    pub approximate: Option<String>,
+}
+
+impl CompartmentalOneYearFits {
+    /// The components of [`cdr`](Self::cdr) that belong to segment `s`.
+    fn range(&self, s: usize) -> std::ops::Range<usize> {
+        let n = |t: &BayesOneYearSegment<CompartmentalSegment>| t.fit.fit.origins.len();
+        let start: usize = self.segments.fits[..s].iter().map(n).sum();
+        start..start + n(&self.segments.fits[s])
+    }
+
+    /// One row per segment × origin: `premium`, `latest_paid`,
+    /// `opening_ultimate`, `opening_reserve`, and the `cdr_mean` and
+    /// `cdr_std_dev` of the claims development result.
+    pub fn to_long(&self) -> FitTable {
+        let sums = component_sums(&self.cdr);
+        let tables = self
+            .segments
+            .fits
+            .iter()
+            .enumerate()
+            .map(|(s, seg)| {
+                let fit = &seg.fit.fit;
+                let mut table = FitTable {
+                    keys: Vec::new(),
+                    origin: Some(fit.origins.clone()),
+                    age: None,
+                    values: vec![
+                        ("premium".into(), fit.premium.clone()),
+                        ("latest_paid".into(), fit.latest_paid.clone()),
+                        ("opening_ultimate".into(), seg.opening_ultimate.clone()),
+                        ("opening_reserve".into(), seg.opening_reserve.clone()),
+                    ],
+                };
+                push_moments(&mut table, "cdr_", &sums[self.range(s)]);
+                table
+            })
+            .collect();
+        stack_segments(&self.segments, tables)
+    }
+
+    /// One row per segment: the totals of [`to_long`](Self::to_long)'s
+    /// columns, the segment's `flagged_share`, and the `cdr_mean` and
+    /// `cdr_std_dev` of its total claims development result.
+    pub fn totals(&self) -> FitTable {
+        let tables = self
+            .segments
+            .fits
+            .iter()
+            .enumerate()
+            .map(|(s, seg)| {
+                let fit = &seg.fit.fit;
+                let sum = |v: &[f64]| vec![v.iter().sum::<f64>()];
+                let total = crate::bootstrap::sums(&self.cdr, self.range(s));
+                FitTable {
+                    keys: Vec::new(),
+                    origin: None,
+                    age: None,
+                    values: vec![
+                        ("premium".into(), sum(&fit.premium)),
+                        ("latest_paid".into(), sum(&fit.latest_paid)),
+                        ("opening_ultimate".into(), sum(&seg.opening_ultimate)),
+                        ("opening_reserve".into(), sum(&seg.opening_reserve)),
+                        ("flagged_share".into(), vec![seg.flagged_share()]),
+                        ("cdr_mean".into(), vec![total.mean()]),
+                        ("cdr_std_dev".into(), vec![total.std_dev()]),
+                    ],
+                }
+            })
+            .collect();
+        stack_segments(&self.segments, tables)
+    }
+
+    /// The one segment chosen as in [`SegmentFits::position`], with its
+    /// part of the joint claims development result (same dimensions).
+    pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
+        let s = self.segments.position(keys)?;
+        let range = self.range(s);
+        let n = self.cdr.n_components();
+        let part = self
+            .cdr
+            .draw_matrix()
+            .chunks_exact(n)
+            .flat_map(|row| row[range.clone()].iter().copied())
+            .collect();
+        let cdr = PredictiveDistribution::from_draws(
+            self.cdr.dims().to_vec(),
+            self.cdr.components()[range].to_vec(),
+            part,
+            self.cdr.provenance().clone(),
+        )?;
+        Ok(Self {
+            segments: SegmentFits {
+                key_names: self.segments.key_names.clone(),
+                labels: vec![self.segments.labels[s].clone()],
+                fits: vec![self.segments.fits[s].clone()],
+            },
+            cdr,
+            approximate: self.approximate.clone(),
+        })
     }
 }
 
@@ -5183,6 +5465,280 @@ mod tests {
                     &f.reserves.draw_matrix()[sim * n..(sim + 1) * n]
                 );
             }
+        }
+    }
+
+    fn reweight_only(n_sims: Option<usize>) -> BayesOneYear {
+        BayesOneYear {
+            refit: Some(OneYearRefit::ReweightOnly),
+            n_sims,
+            ..BayesOneYear::default()
+        }
+    }
+
+    /// `Synchronized`, a bad matrix and a NaN threshold fail before any
+    /// sampling (the test would take minutes if any sampled).
+    #[test]
+    fn the_one_year_view_over_segments_fails_before_sampling() {
+        let tri = lines(&["A", "B"], true);
+        let run = |dependence, settings: &BayesOneYear| {
+            Compartmental {
+                dependence,
+                ..quick(1)
+            }
+            .one_year_segments(&tri, "paid", incurred(), "premium", settings)
+            .unwrap_err()
+        };
+        let default = BayesOneYear::default();
+        assert!(matches!(
+            run(SegmentDependence::Synchronized, &default),
+            Error::Bayes(m) if m.contains("Synchronized")
+        ));
+        for spearman in [
+            vec![1.0, 0.5],
+            vec![1.0, 0.5, 0.4, 1.0],
+            vec![1.0, 1.1, 1.1, 1.0],
+        ] {
+            assert!(matches!(
+                run(SegmentDependence::RankCorrelation { spearman }, &default),
+                Error::InvalidSetting {
+                    name: "spearman",
+                    ..
+                }
+            ));
+        }
+        let nan = BayesOneYear {
+            k_threshold: f64::NAN,
+            ..default
+        };
+        assert!(matches!(
+            run(SegmentDependence::Independent, &nan),
+            Error::InvalidSetting {
+                name: "k_threshold",
+                ..
+            }
+        ));
+    }
+
+    /// Each segment's view is `one_year` of its own triangle on its own
+    /// streams, the segments share no random number, a one-segment triangle
+    /// is segment 0's view (and not `one_year`'s), `n_sims` and the tables
+    /// are laid out as for `fit_segments`, and the independent lines are
+    /// uncorrelated.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_over_segments_runs_each_segment_on_its_own_streams() {
+        let tri = lines(&["A", "B"], true);
+        let m = quick(4);
+        let only = reweight_only(None);
+        let views = m
+            .one_year_segments(&tri, "paid", incurred(), "premium", &only)
+            .unwrap();
+        assert_eq!(views.cdr.dims(), ["lob", "origin"]);
+        assert_eq!(views.cdr.n_components(), 10);
+        assert_eq!(views.cdr.n_sims(), 500);
+        assert_eq!(views.approximate, None);
+        let lifetime = segments_of(&m, &tri);
+        let (settings, n_sims, _) = m.one_year_defaults(&only);
+        for (k, lob) in [(0, "A"), (1, "B")] {
+            let seg = &views.segments.fits[k];
+            // The posterior is the lifetime fit's, draw for draw.
+            assert_eq!(
+                seg.fit.fit.posterior,
+                lifetime.segments.fits[k].fit.posterior
+            );
+            let one = tri.select(&[("lob", &[lob][..])]).unwrap();
+            let (fit, year) = m
+                .year_streams(
+                    &one,
+                    "paid",
+                    incurred(),
+                    "premium",
+                    &settings,
+                    n_sims,
+                    Stream::SegmentChains(k),
+                    Stream::SegmentPredictive(k),
+                )
+                .unwrap();
+            assert_eq!(fit.posterior, seg.fit.fit.posterior);
+            assert_eq!(year.pareto_k, seg.pareto_k);
+            assert_eq!(year.opening, seg.opening_reserve);
+            let range = views.range(k);
+            let cdr: Vec<f64> = views
+                .cdr
+                .draw_matrix()
+                .chunks(10)
+                .flat_map(|r| r[range.clone()].iter().copied())
+                .collect();
+            assert_eq!(year.cdr, cdr);
+        }
+        // "B" is "A" under another name: its own streams, its own view.
+        let (a, b) = (&views.segments.fits[0], &views.segments.fits[1]);
+        assert_ne!(a.pareto_k, b.pareto_k);
+        assert_ne!(a.opening_reserve, b.opening_reserve);
+        // 1988 is at the square's last age: no cell in the year.
+        assert!(
+            views
+                .cdr
+                .draw_matrix()
+                .chunks(10)
+                .all(|r| r[0] == 0.0 && r[5] == 0.0)
+        );
+        let totals = line_totals(&views.cdr);
+        let r = spearman(&totals[0], &totals[1]);
+        assert!(r.abs() < 4.5 / 500f64.sqrt(), "independent lines: {r}");
+        // The tables.
+        let long = views.to_long();
+        assert_eq!(long.n_rows(), 10);
+        assert_eq!(long.keys[0].1[0], "A");
+        assert!(long.column("opening_reserve").is_some() && long.column("cdr_std_dev").is_some());
+        let totals = views.totals();
+        assert_eq!(totals.n_rows(), 2);
+        let share = totals.column("flagged_share").unwrap();
+        assert_eq!(share[1], b.flagged_share());
+        let cdr_mean = totals.column("cdr_mean").unwrap();
+        let line_b: Vec<f64> = line_totals(&views.cdr)[1].clone();
+        let mean_b = line_b.iter().sum::<f64>() / line_b.len() as f64;
+        assert!((cdr_mean[1] - mean_b).abs() < 1e-9 * (1.0 + mean_b.abs()));
+        let one = views.segment(&[("lob", "B")]).unwrap();
+        assert_eq!(one.cdr.n_components(), 5);
+        assert_eq!(one.segments.fits[0].pareto_k, b.pareto_k);
+        assert_eq!(
+            one.cdr.draw_matrix().chunks(5).next().unwrap(),
+            &views.cdr.draw_matrix()[5..10]
+        );
+        let param = |name: &str| {
+            views
+                .cdr
+                .provenance()
+                .parameters
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+        };
+        assert_eq!(param("segments").as_deref(), Some("2"));
+        assert_eq!(param("dependence").as_deref(), Some("Independent"));
+        assert_eq!(param("one_year_sims").as_deref(), Some("500"));
+        assert_eq!(
+            views.cdr.provenance().model,
+            format!("{}_one_year", lifetime.reserves.provenance().model)
+        );
+        // `max_refits` is a budget of each segment: none left, nothing refitted.
+        let none = m
+            .one_year_segments(
+                &tri,
+                "paid",
+                incurred(),
+                "premium",
+                &BayesOneYear {
+                    refit: Some(OneYearRefit::RefitAll),
+                    max_refits: Some(0),
+                    n_sims: Some(40),
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap();
+        for seg in &none.segments.fits {
+            assert!(seg.refitted.is_empty());
+            assert_eq!(seg.unrefitted.len(), 40);
+        }
+    }
+
+    /// A triangle without keys is one segment, viewed with segment 0's
+    /// streams: `one_year_segments` agrees with the view of `year_streams`
+    /// and, being on other streams, not with `one_year`.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_one_segment_view_is_the_view_with_segment_zero_streams() {
+        let tri = lines(&["A"], false);
+        let m = quick(5);
+        let only = reweight_only(Some(300));
+        let views = m
+            .one_year_segments(&tri, "paid", incurred(), "premium", &only)
+            .unwrap();
+        assert_eq!(views.segments.len(), 1);
+        let (settings, n_sims, _) = m.one_year_defaults(&only);
+        let (fit, year) = m
+            .year_streams(
+                &tri,
+                "paid",
+                incurred(),
+                "premium",
+                &settings,
+                n_sims,
+                Stream::SegmentChains(0),
+                Stream::SegmentPredictive(0),
+            )
+            .unwrap();
+        let seg = &views.segments.fits[0];
+        assert_eq!(fit.posterior, seg.fit.fit.posterior);
+        assert_eq!(year.cdr, views.cdr.draw_matrix());
+        assert_eq!(year.pareto_k, seg.pareto_k);
+        assert_eq!(views.cdr.dims(), ["origin"]);
+        let base = m
+            .one_year(&tri, "paid", incurred(), "premium", &only)
+            .unwrap();
+        assert_ne!(base.fit.posterior, seg.fit.fit.posterior);
+        assert_ne!(base.pareto_k, seg.pareto_k);
+        // `one_year` itself is still the base streams' view.
+        let (fit, year) = m
+            .year_streams(
+                &tri,
+                "paid",
+                incurred(),
+                "premium",
+                &settings,
+                n_sims,
+                Stream::Chains,
+                Stream::Predictive,
+            )
+            .unwrap();
+        assert_eq!(fit.posterior, base.fit.posterior);
+        assert_eq!(year.cdr, base.cdr.draw_matrix());
+    }
+
+    /// The rank correlation reorders the segments' whole rows of claims
+    /// development results: each keeps its simulations as a set and the
+    /// totals reach the target.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_over_segments_reaches_the_rank_correlation() {
+        let tri = lines(&["A", "B"], true);
+        let m = quick(6);
+        let only = reweight_only(None);
+        let independent = m
+            .one_year_segments(&tri, "paid", incurred(), "premium", &only)
+            .unwrap();
+        let ranked = Compartmental {
+            dependence: SegmentDependence::RankCorrelation {
+                spearman: vec![1.0, 0.7, 0.7, 1.0],
+            },
+            ..m
+        }
+        .one_year_segments(&tri, "paid", incurred(), "premium", &only)
+        .unwrap();
+        let (ti, tr) = (line_totals(&independent.cdr), line_totals(&ranked.cdr));
+        let sorted = |mut v: Vec<f64>| {
+            v.sort_by(f64::total_cmp);
+            v
+        };
+        for s in 0..2 {
+            assert_eq!(sorted(ti[s].clone()), sorted(tr[s].clone()));
+        }
+        let r = spearman(&tr[0], &tr[1]);
+        assert!((r - 0.7).abs() < 0.05, "ranked lines: {r}");
+        // The segments' own fits and Pareto k are untouched by the reorder.
+        for (a, b) in independent.segments.fits.iter().zip(&ranked.segments.fits) {
+            assert_eq!(a.pareto_k, b.pareto_k);
         }
     }
 }

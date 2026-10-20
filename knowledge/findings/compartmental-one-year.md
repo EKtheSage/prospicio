@@ -85,3 +85,16 @@ there. A pull request checks all but the gap, whose 40 `RefitAll`
 refits took 199 s of the test's 368 s locally (release, 16 threads,
 2026-10-16); the weekly and manual runs (`RISK_RS_FULL_BAYES`) check
 the gap too and model 2's default view end to end.
+
+Over segments (`Compartmental::one_year_segments`, branch
+claude/compartmental-one-year-segments) each segment's view is the single
+triangle's view on the segment's own seeds. One local run (release,
+Windows, seed 0, model 1 at its default sampler, reweighting only, 500
+simulations) of company 337 under two names gave total claims development
+result sds of 8,021 and 8,748 against 7,872 for `one_year` of the
+triangle alone (ratios 1.02 and 1.11, from other posterior samples and
+other years), and rank-uncorrelated copies. The view took 22 s for the two
+segments in the pull request's smoke run (34 s with the single-triangle
+comparison) and 225 s in the full run, which also moment-matches 100
+simulations a segment under a budget of 2 refits and views model 2's
+default over two segments (reweighted, warned as approximate).[^test]

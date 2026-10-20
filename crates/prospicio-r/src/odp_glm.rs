@@ -172,8 +172,10 @@ impl OdpGlmFit {
 /// Fits the ODP GLM of `odp_glm()` to `column` of a single-segment triangle:
 /// the cross-classified model, or the design `x` (column-major, one row per
 /// cell of `odp_glm_cells()`, named `names`, with `offset`) when `names` is
-/// not empty.
+/// not empty, with the error `family` ("poisson", "gamma" or "tweedie", whose
+/// `power` is NaN otherwise).
 #[extendr]
+#[allow(clippy::too_many_arguments)]
 fn odp_glm_fit_rust(
     triangle: Robj,
     column: &str,
@@ -182,10 +184,18 @@ fn odp_glm_fit_rust(
     offset: &[f64],
     tolerance: f64,
     max_iterations: f64,
+    family: &str,
+    power: f64,
 ) -> Result<OdpGlmFit> {
     let triangle = <&Triangle>::try_from(&triangle)
         .map_err(|_| Error::Other("triangle must be a triangle".into()))?;
+    if !matches!(family, "poisson" | "gamma" | "tweedie") {
+        return Err(Error::Other(format!(
+            "family must be \"poisson\", \"gamma\" or \"tweedie\", not \"{family}\""
+        )));
+    }
     let model = OdpGlm {
+        family: crate::models::family(family, f64::NAN, power)?,
         tolerance,
         max_iterations: whole(max_iterations, "max_iterations")? as usize,
     };

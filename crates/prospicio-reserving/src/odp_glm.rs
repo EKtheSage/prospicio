@@ -7,7 +7,10 @@
 //! [`TriangleFrame`] and predicts the future rows. With these factors the
 //! fitted future cells summed by origin are the volume-weighted Chain
 //! Ladder reserves (Renshaw and Verrall, 1998), and Pearson's dispersion is
-//! the ODP bootstrap's scale. [`OdpGlmFit::prediction_error`] gives the
+//! the ODP bootstrap's scale. [`OdpGlm::family`] swaps the error for a
+//! gamma, `Var X_od = φ E[X_od]²`, or a Tweedie, `φ E[X_od]^p` with
+//! `1 < p < 2`, on the same cells (Taylor and McGuire, section 6.5); their
+//! reserves are no longer the Chain Ladder's. [`OdpGlmFit::prediction_error`] gives the
 //! reserves' analytic prediction error by the delta method (Taylor and
 //! McGuire, CAS Monograph 3, Table 5-4), and [`OdpGlmFit::residuals`] the
 //! fit's residuals by cell, summarized by origin, development or calendar
@@ -17,9 +20,9 @@
 
 use prospicio_core::{Lag, Period};
 pub use prospicio_glm::diagnostics::SumPredictionError;
-use prospicio_glm::{Glm, GlmFit, ParameterDraws};
+use prospicio_glm::{Dispersion, Glm, GlmFit, ParameterDraws};
 use prospicio_models::Column;
-use prospicio_models::{Coding, Design, Fitted, Model, Terms};
+use prospicio_models::{Coding, Design, Family, Fitted, Link, Model, Terms};
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution};
 
 use crate::error::{Error, Result};
@@ -27,9 +30,10 @@ use crate::frame::TriangleFrame;
 use crate::triangle::Triangle;
 
 /// The ODP model as a quasi-Poisson GLM with origin and development
-/// factors.
+/// factors, or the same model with a gamma or Tweedie error.
 ///
 /// ```
+/// use prospicio_models::Family;
 /// use prospicio_reserving::{ChainLadder, DevelopmentColumn, Grain, Long, Month, OdpGlm, Triangle};
 ///
 /// let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
@@ -50,10 +54,19 @@ use crate::triangle::Triangle;
 /// // Draws over the future cells, summed to reserves by origin.
 /// let by_origin = odp.predict_distribution(1_000, 42)?.aggregate(&["origin"])?;
 /// assert_eq!(by_origin.n_components(), 2);
+///
+/// // A gamma error: every cell's relative error weighs alike.
+/// let gamma = OdpGlm { family: Family::Gamma, ..OdpGlm::default() }.fit(&tri, "paid")?;
+/// assert!((gamma.total_reserve() - odp.total_reserve()).abs() > 1e-3);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OdpGlm {
+    /// The error distribution: [`Family::Poisson`] (the ODP, the default),
+    /// [`Family::Gamma`] or [`Family::Tweedie`] with `1 < p < 2`. The link
+    /// is the log and the dispersion Pearson's for each. Any other family
+    /// is an error at fit time.
+    pub family: Family,
     /// IRLS convergence tolerance (see [`Glm::tolerance`]).
     pub tolerance: f64,
     /// Maximum IRLS iterations.
@@ -61,11 +74,12 @@ pub struct OdpGlm {
 }
 
 impl Default for OdpGlm {
-    /// [`Glm::over_dispersed_poisson`]'s tolerance (`1e-10`) and iteration
-    /// limit (100).
+    /// The Poisson family with [`Glm::over_dispersed_poisson`]'s tolerance
+    /// (`1e-10`) and iteration limit (100).
     fn default() -> Self {
         let glm = Glm::over_dispersed_poisson();
         Self {
+            family: Family::Poisson,
             tolerance: glm.tolerance,
             max_iterations: glm.max_iterations,
         }
@@ -75,8 +89,9 @@ impl Default for OdpGlm {
 /// A fitted ODP GLM: the GLM, and its predictions for the future cells.
 #[derive(Debug, Clone)]
 pub struct OdpGlmFit {
-    /// The quasi-Poisson GLM on the observed increments: coefficients,
-    /// standard errors and Pearson's dispersion.
+    /// The GLM on the observed increments (quasi-Poisson unless
+    /// [`OdpGlm::family`] says otherwise): coefficients, standard errors
+    /// and Pearson's dispersion.
     pub glm: GlmFit,
     /// The design coding of [`OdpGlm::fit`]: `(Intercept)`,
     /// `origin[<period>]` and `development[<age>]` columns. The references
@@ -126,9 +141,12 @@ pub struct OdpResiduals {
     pub fitted: Vec<f64>,
     /// `actual / fitted`, the cell of the actual-to-fitted heat map.
     pub actual_to_fitted: Vec<f64>,
-    /// Pearson residual `(y − μ) / √μ`.
+    /// Pearson residual `(y − μ) / √V(μ)`, with the family's variance
+    /// function `V` (`μ` for the ODP, `μ²` for the gamma, `μ^p` for the
+    /// Tweedie).
     pub pearson: Vec<f64>,
-    /// Deviance residual `sign(y − μ) √(2 (y ln(y / μ) − (y − μ)))`.
+    /// Deviance residual `sign(y − μ) √d(y, μ)`, with the family's unit
+    /// deviance `d` (`2 (y ln(y / μ) − (y − μ))` for the ODP).
     pub deviance: Vec<f64>,
     /// The hat value `h`, the diagonal of the hat matrix.
     pub leverage: Vec<f64>,
@@ -222,7 +240,8 @@ impl OdpResiduals {
 }
 
 /// The analytic prediction error of an ODP GLM's reserves: for each origin
-/// and in total, the reserve, its process variance `φ Σ μ` and its
+/// and in total, the reserve, its process variance `φ Σ V(μ)` (`φ Σ μ` for
+/// the ODP) and its
 /// parameter variance `g' Σ g` by the delta method, `g = Σ μ x` over the
 /// future cells (Taylor and McGuire, CAS Monograph 3, (5-11) to (5-13)).
 #[derive(Debug, Clone, PartialEq)]
@@ -237,12 +256,30 @@ pub struct OdpPredictionError {
 }
 
 impl OdpGlm {
-    /// The GLM this model fits.
+    /// The GLM this model fits: the family with the log link and Pearson's
+    /// dispersion.
     pub fn glm(&self) -> Glm {
-        let mut glm = Glm::over_dispersed_poisson();
+        let mut glm = Glm::new(self.family, Link::Log).dispersion(Dispersion::Pearson);
         glm.tolerance = self.tolerance;
         glm.max_iterations = self.max_iterations;
         glm
+    }
+
+    /// Fails on a family other than the Poisson, gamma or Tweedie with
+    /// `1 < p < 2`.
+    fn check_family(&self) -> Result<()> {
+        match self.family {
+            Family::Poisson | Family::Gamma => Ok(()),
+            Family::Tweedie { power } if power > 1.0 && power < 2.0 => Ok(()),
+            Family::Tweedie { power } => Err(Error::OdpGlm(format!(
+                "the Tweedie power is {power}; it must be in (1, 2)"
+            ))),
+            other => Err(Error::OdpGlm(format!(
+                "the {} family is not a reserving error; use the Poisson (ODP), gamma or \
+                 Tweedie",
+                other.name()
+            ))),
+        }
     }
 
     /// Fits the GLM to the incremental values of `column` in a
@@ -254,9 +291,14 @@ impl OdpGlm {
     /// cell has no increment (a hole: a missing value, or a value after
     /// one), or if the GLM does not converge (for example when a level's
     /// only observed increments are negative, so no positive mean fits).
-    /// Negative increments are otherwise fitted: the quasi-likelihood needs
-    /// only `V(μ) = μ` and `μ > 0` (`prospicio_glm::Glm::over_dispersed_poisson`).
+    /// Under the Poisson, negative increments are otherwise fitted: the
+    /// quasi-likelihood needs only `V(μ) = μ` and `μ > 0`
+    /// (`prospicio_glm::Glm::over_dispersed_poisson`). The gamma needs
+    /// every observed increment positive and the Tweedie every one at
+    /// least 0; another increment is an error naming its cell. Fails on a
+    /// family other than these three.
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<OdpGlmFit> {
+        self.check_family()?;
         let cells = TriangleFrame::new(triangle, column, None)?;
         check_holes(&cells)?;
         let origins = cells.origins();
@@ -314,7 +356,8 @@ impl OdpGlm {
     ///
     /// Fails if `design` does not have a row per cell, if a column is zero
     /// on every observed cell (its coefficient cannot be estimated), on a
-    /// hole as [`fit`](Self::fit) does, or if the GLM does not converge (a
+    /// hole, an increment outside the family's range or another family as
+    /// [`fit`](Self::fit) does, or if the GLM does not converge (a
     /// collinear design among them).
     ///
     /// ```
@@ -350,6 +393,7 @@ impl OdpGlm {
         column: &str,
         design: &Design,
     ) -> Result<OdpGlmFit> {
+        self.check_family()?;
         let cells = TriangleFrame::new(triangle, column, None)?;
         if design.n_rows() != cells.n_rows() {
             return Err(Error::OdpGlm(format!(
@@ -387,7 +431,20 @@ impl OdpGlm {
         let observed = cells.observed();
         let future = cells.future();
         let y = cells.response_of(observed);
-        let glm = self.glm().fit(&observed_design, &y)?;
+        let model = self.glm();
+        if let Some(i) = y.iter().position(|&v| !model.accepts(v)) {
+            let r = observed[i];
+            return Err(Error::OdpGlm(format!(
+                "origin {} at {} months has increment {}, which the {} family cannot fit \
+                 (the gamma needs every increment positive, the Tweedie every one at \
+                 least 0)",
+                origins[cells.origin_of(r)],
+                ages[cells.development_of(r)],
+                y[i],
+                self.family.name()
+            )));
+        }
+        let glm = model.fit(&observed_design, &y)?;
         let future_means = glm.predict(&future_design)?;
 
         let mut reserves = vec![0.0; origins.len()];
@@ -451,7 +508,9 @@ impl OdpGlmFit {
     }
 
     /// The reserves' prediction error by origin and in total: the process
-    /// variance `φ Σ μ` of the future cells and the parameter variance
+    /// variance `φ Σ V(μ)` of the future cells (`φ Σ μ` for the ODP,
+    /// `φ Σ μ²` for the gamma, `φ Σ μ^p` for the Tweedie) and the parameter
+    /// variance
     /// `g' Σ g` by the delta method, with `Σ` the coefficients' covariance
     /// and `g = Σ μ x` over the cells (Taylor and McGuire, CAS Monograph 3,
     /// (5-11) to (5-13), Table 5-4). The root mean square error of
@@ -593,11 +652,12 @@ impl OdpGlmFit {
     ///
     /// Simulation `i` (stream `i` of `seed`) draws the coefficients from
     /// their normal approximation (parameter uncertainty, shared by every
-    /// cell) and then each cell as `φ · Poisson(μ / φ)` (process
-    /// uncertainty). The parameter draws are mean-preserving
+    /// cell) and then each cell from the family with mean `μ` and the
+    /// dispersion (process uncertainty): `φ · Poisson(μ / φ)` for the ODP,
+    /// a gamma with shape `1 / φ` or a Tweedie. The parameter draws are mean-preserving
     /// ([`ParameterDraws::MeanPreserving`]): each cell's linear predictor is
     /// shifted by `-v / 2`, so its draws average its fitted mean and the
-    /// total averages the Chain Ladder reserve. `aggregate(&["origin"])`
+    /// total averages the fitted reserve (the Chain Ladder's for the ODP). `aggregate(&["origin"])`
     /// gives the reserves by origin with a future cell.
     ///
     /// Fails if `n_sims` is 0 or the triangle has no future cells.
@@ -824,5 +884,102 @@ mod tests {
         assert!(error.total.parameter_variance > parameter);
         let phi = fit.glm.dispersion();
         assert!((error.total.process_variance - phi * fit.total_reserve()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn gamma_and_tweedie_fit_the_same_cells() {
+        let tri = small();
+        let odp = OdpGlm::default().fit(&tri, "values").unwrap();
+        let gamma = OdpGlm {
+            family: Family::Gamma,
+            ..OdpGlm::default()
+        }
+        .fit(&tri, "values")
+        .unwrap();
+        assert_eq!(gamma.glm.names(), odp.glm.names());
+        assert_eq!(gamma.future, odp.future);
+        assert!((gamma.total_reserve() - odp.total_reserve()).abs() > 1e-6);
+        // The gamma's process variance is φ Σ μ².
+        let error = gamma.prediction_error().unwrap();
+        let phi = gamma.glm.dispersion();
+        let mu2: f64 = gamma.future_means.iter().map(|m| m * m).sum();
+        assert!((error.total.process_variance - phi * mu2).abs() < 1e-9 * phi * mu2);
+        // Near p = 1 the Tweedie's reserves are the ODP's, near p = 2 the
+        // gamma's.
+        let tweedie = |power| {
+            OdpGlm {
+                family: Family::Tweedie { power },
+                ..OdpGlm::default()
+            }
+            .fit(&tri, "values")
+            .unwrap()
+            .total_reserve()
+        };
+        let (near_1, near_2) = (tweedie(1.000_001), tweedie(1.999_999));
+        assert!((near_1 - odp.total_reserve()).abs() < 1e-4 * odp.total_reserve());
+        assert!((near_2 - gamma.total_reserve()).abs() < 1e-4 * gamma.total_reserve());
+        // Draws from the gamma centre on its reserve.
+        let draws = gamma.predict_distribution(4_000, 3).unwrap();
+        let mean = draws.total().mean();
+        assert!((mean - gamma.total_reserve()).abs() < 0.02 * gamma.total_reserve());
+    }
+
+    #[test]
+    fn family_and_increments_are_checked() {
+        let with = |family| OdpGlm {
+            family,
+            ..OdpGlm::default()
+        };
+        let tri = small();
+        let msg = with(Family::Gaussian)
+            .fit(&tri, "values")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("gaussian family is not a reserving error"),
+            "{msg}"
+        );
+        let msg = with(Family::Tweedie { power: 2.5 })
+            .fit(&tri, "values")
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("must be in (1, 2)"), "{msg}");
+        let cells = TriangleFrame::new(&tri, "values", None).unwrap();
+        let design = Terms::new()
+            .intercept()
+            .fit(cells.frame())
+            .unwrap()
+            .design(cells.frame())
+            .unwrap();
+        let msg = with(Family::InverseGaussian)
+            .fit_design(&tri, "values", &design)
+            .unwrap_err()
+            .to_string();
+        assert!(msg.contains("inverse_gaussian"), "{msg}");
+
+        // A zero increment: the Tweedie fits it, the gamma cannot.
+        let flat = annual(
+            2020,
+            &[
+                &[100.0, 150.0, 150.0, 170.0],
+                &[110.0, 170.0, 180.0],
+                &[120.0, 175.0],
+                &[130.0],
+            ],
+        );
+        let msg = with(Family::Gamma)
+            .fit(&flat, "values")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            msg.contains("origin 2020 at 36 months has increment 0"),
+            "{msg}"
+        );
+        assert!(
+            with(Family::Tweedie { power: 1.5 })
+                .fit(&flat, "values")
+                .is_ok()
+        );
+        assert!(OdpGlm::default().fit(&flat, "values").is_ok());
     }
 }

@@ -128,3 +128,37 @@ err <- tryCatch(odp_glm(tri, formula = ~ factor(calendar)), error = conditionMes
 check(is.character(err), "a calendar factor cannot be estimated")
 err <- tryCatch(odp_glm(tri, formula = paid ~ k), error = conditionMessage)
 check(grepl("one-sided", err), "a two-sided formula is rejected")
+
+# The gamma and Tweedie errors on the cross-classified design, against
+# stats::glm (and statmod's tweedie when it is installed).
+cells <- long[order(long$year, long$age), ]
+cells$inc <- ave(cells$paid, cells$year, FUN = function(v) c(v[1], diff(v)))
+r_reserves <- function(family) {
+  r <- glm(inc ~ factor(year) + factor(age), family = family, data = cells,
+           control = glm.control(epsilon = 1e-14, maxit = 100))
+  grid <- expand.grid(year = 1988:1997, age = 12 * 1:10)
+  future <- grid[grid$year + grid$age / 12 > 1998, ]
+  list(fit = r, total = sum(predict(r, newdata = future, type = "response")))
+}
+gamma <- odp_glm(tri, family = "gamma")
+r_gamma <- r_reserves(Gamma(link = "log"))
+within(gamma@total_reserve, r_gamma$total, 1e-4, "gamma total against stats::glm")
+r_names <- sub("^factor\\(age\\)(.*)$", "development[\\1]",
+                sub("^factor\\(year\\)(.*)$", "origin[\\1]", names(coef(r_gamma$fit))))
+within(unname(gamma@coefficients[r_names]), unname(coef(r_gamma$fit)), 1e-7,
+       "gamma coefficients")
+within(gamma@dispersion, summary(r_gamma$fit)$dispersion, 1e-9, "gamma dispersion")
+within(round(gamma@total_reserve), 373466, 0, "the guide's gamma total")
+tweedie <- odp_glm(tri, family = "tweedie", power = 1.5)
+if (requireNamespace("statmod", quietly = TRUE)) {
+  r_tweedie <- r_reserves(statmod::tweedie(var.power = 1.5, link.power = 0))
+  within(tweedie@total_reserve, r_tweedie$total, 1e-4, "Tweedie total against statmod")
+}
+err <- tryCatch(odp_glm(tri, family = "tweedie"), error = conditionMessage)
+check(grepl("needs power", err), "a Tweedie needs its power")
+err <- tryCatch(odp_glm(tri, family = "gamma", power = 1.5), error = conditionMessage)
+check(grepl("only for", err), "power is the Tweedie's")
+err <- tryCatch(odp_glm(tri, family = "gaussian"), error = conditionMessage)
+check(grepl("poisson", err), "another family is rejected")
+err <- tryCatch(odp_glm(tri, family = "tweedie", power = 2.5), error = conditionMessage)
+check(grepl("\\(1, 2\\)", err), "a Tweedie power outside (1, 2)")

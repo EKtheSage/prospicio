@@ -6,7 +6,7 @@ resource: https://www.casact.org/monograph/cas-monograph-no-3
 tags: [reserving, glm, odp, chain-ladder, prediction-error, bootstrap, guides, reference, parity]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-17T22:00:00-07:00 }
-verified: { by: process:ci, at: 2026-10-19T12:00:00-07:00 }
+verified: { by: process:ci, at: 2026-10-20T12:00:00-07:00 }
 sources:
   - id: monograph
     resource: https://www.casact.org/monograph/cas-monograph-no-3
@@ -84,7 +84,13 @@ sources:
   run on a custom design (`OdpGlm::fit_design`, Python `fit(...,
   design=)`, R `odp_glm(formula = ~ ...)`): models 7-2, 7-10 and 7-14
   reproduce Tables 7-1, 7-3 and 7-5 and Figure 7-5, checked in the same
-  tests. Still missing: families other than the ODP.
+  tests. The gamma and Tweedie errors of section 6.5 are `OdpGlm::family`
+  (Python `OdpGlm(family=)`, R `odp_glm(family =)`), the gamma fit equal to
+  the guide's section 9 (phi 0.0047, total 373,466), checked in the same
+  three tests. #333 has no gap left.
+* The gamma and Tweedie (p = 1.5) totals on this triangle are 373,466 and
+  373,129 against the ODP's 373,346: the Tweedie's is below both, so the
+  reserve is not monotone in the variance power.
 * Models (#334): `GlmFit` lacks residuals, leverages, prediction standard
   errors for sums of rows, and GCV.
 * Mack on this triangle gives a total standard error of 10,939 against the

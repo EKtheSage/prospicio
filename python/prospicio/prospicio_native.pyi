@@ -5714,6 +5714,78 @@ class Compartmental:
         >>> view.cdr.variance() < view.fit.reserves.variance()
         True
         """
+    def one_year_segments(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None, k_threshold: float = 0.7, refit: str |None = None, max_refits: int |None = None, n_sims: int |None = None) -> CompartmentalOneYearFits:
+        """
+        The one-year view of every segment of a triangle: each segment's
+        view as ``one_year`` gives it, on the segment's own seeds as in
+        ``fit_segments`` (a segment's simulations differ from
+        ``one_year`` of the segment alone), and one joint claims development
+        result across segments, which depend on each other as ``dependence``
+        says: ``"independent"`` as drawn, ``"rank_correlation"`` by
+        Iman-Conover on the segments' total claims development results.
+        Everything else is as ``one_year``: the refit default of the model
+        (moment matching for model 1, reweighting only with a warning for
+        model 2), at most 2,000 simulations by default, and ``max_refits``
+        as a budget of each segment, so ``k`` segments refit at most ``k``
+        times this many. Raises one ``UserWarning`` listing the failed
+        diagnostics of each segment's fit (with the segment's label), another
+        if any refit failed its diagnostics, another if ``max_refits`` left
+        simulations unrefitted, and another if the default view is
+        approximate.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            Cumulative, with any number of segments.
+        paid : str
+        premium : str
+        outstanding : str, optional
+        incurred : str, optional
+            As in ``fit_segments``.
+        k_threshold : float, default 0.7
+        refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, optional
+        max_refits : int, optional
+        n_sims : int, optional
+            As in ``one_year``.
+        
+        Returns
+        -------
+        CompartmentalOneYearFits
+        
+        Raises
+        ------
+        ValueError
+            As ``one_year`` and ``fit_segments``, including
+            ``dependence="synchronized"``.
+        
+        Examples
+        --------
+        >>> import warnings
+        >>> from prospicio.reserving import Compartmental, CompartmentalPriors, Triangle
+        >>> paid = [[952, 1529, 2813, 3647, 3724], [849, 1564, 2202, 2432],
+        ...         [983, 2211, 2830], [1657, 2685], [932]]
+        >>> case = [[1500, 1400, 900, 400, 100], [1300, 1200, 800, 300],
+        ...         [1400, 1100, 700], [1200, 900], [1100]]
+        >>> premium = [5812, 4908, 5454, 5165, 5214]
+        >>> rows = [(lob, 1988 + w, 12 * (d + 1), k * v, k * case[w][d], k * premium[w])
+        ...         for lob, k in [("Auto", 1.0), ("Home", 2.0)]
+        ...         for w, row in enumerate(paid) for d, v in enumerate(row)]
+        >>> lob, origin, age, values, os, prem = map(list, zip(*rows))
+        >>> tri = Triangle.from_long(
+        ...     origin, age,
+        ...     {"paid": values, "case": os, "premium": prem}, keys={"lob": lob})
+        >>> model = Compartmental(
+        ...     CompartmentalPriors.gesmann_morris(), tune=100, draws=100, n_sims=200,
+        ...     chains=2)
+        >>> with warnings.catch_warnings():
+        ...     warnings.simplefilter("ignore")  # short chains may miss a threshold
+        ...     views = model.one_year_segments(
+        ...         tri, "paid", "premium", outstanding="case", refit="reweight_only")
+        >>> views.index, views.cdr.dims
+        (['Auto', 'Home'], ['lob', 'origin'])
+        >>> views.segment(lob="Home").premium[:2]
+        [11624.0, 9816.0]
+        """
     @property
     def paid_response(self, /) -> str:
         """
@@ -6357,6 +6429,207 @@ class CompartmentalOneYearFit:
         """
         The simulations due for a refit beyond ``max_refits``, reweighted
         instead, in order (0-based).
+        """
+
+@final
+class CompartmentalOneYearFits:
+    """
+    The one-year view of a ``Compartmental`` in every segment of a
+    triangle, from ``Compartmental.one_year_segments``: each segment's
+    posterior, opening reserve and Pareto ``k``, and the joint claims
+    development result across segments.
+    
+    ``cdr`` is one joint distribution of the claims development result with
+    the triangle's keys and ``"origin"`` as dimensions, so
+    ``cdr.aggregate(["lob"])`` keeps the dependence between segments.
+    Per-origin lists (``origins``, ``premium``, ``latest_paid``,
+    ``opening_ultimate``, ``opening_reserve``) run over the origins of each
+    segment in turn, like the rows of ``to_frame()`` and the components of
+    ``cdr``. ``diagnostics``, ``parameter_names``, ``draws``, ``chains``,
+    ``summary()``, ``loo()``, ``pareto_k``, ``moment_matched``, ``refitted``,
+    ``unrefitted``, ``refit_warnings`` and ``flagged_share`` are one
+    segment's and need a single-segment fit: for several segments use
+    ``segment(...)``, ``totals_frame()`` (which has the flagged shares) or
+    ``diagnostics_frame()``. ``approximate`` says why the views are
+    approximate when their model's default reweighted the flagged
+    simulations only.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def approximate(self, /) -> str |None:
+        """
+        Why the views are approximate, or ``None``: set when ``refit`` was
+        left to a model with development effects (model 2), whose default
+        reweights the flagged simulations only.
+        """
+    @property
+    def cdr(self, /) -> PredictiveDistribution:
+        """
+        Joint distribution of the claims development result by segment and
+        origin: the triangle's keys and ``"origin"`` are its dimensions, one
+        component per segment and origin, one row per simulation.
+        """
+    @property
+    def chains(self, /) -> int:
+        """
+        Number of chains of a single-segment fit.
+        """
+    @property
+    def diagnostics(self, /) -> dict:
+        """
+        MCMC diagnostics of a single-segment fit's posterior, as
+        ``CompartmentalFit.diagnostics``.
+        """
+    def diagnostics_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, then ``max_rhat``,
+        ``min_ess_bulk``, ``min_ess_tail``, ``divergences`` and
+        ``warnings`` (the segment's messages joined by ``"; "``, empty when
+        every threshold holds). Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def draws(self, /) -> list[list[float]]:
+        """
+        Posterior draws of a single-segment fit, one list per draw.
+        """
+    @property
+    def flagged_share(self, /) -> float:
+        """
+        The share of a single-segment fit's simulations whose ``k`` is
+        above ``k_threshold`` (or NaN).
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def k_threshold(self, /) -> float:
+        """
+        The Pareto ``k`` above which a simulation is flagged.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the triangle's key columns; empty without keys.
+        """
+    @property
+    def latest_paid(self, /) -> list[float]:
+        """
+        Each origin's latest observed paid, in the order of ``origins``.
+        """
+    def loo(self, /) -> Elpd:
+        """
+        PSIS-LOO of a single-segment fit's observed cells, as
+        ``CompartmentalFit.loo``.
+        
+        Returns
+        -------
+        Elpd
+        
+        Raises
+        ------
+        ValueError
+            If the fit has several segments.
+        """
+    @property
+    def moment_matched(self, /) -> list[int]:
+        """
+        The simulations of a single-segment fit that moment matching
+        rescued (0-based).
+        """
+    @property
+    def opening_reserve(self, /) -> list[float]:
+        """
+        Each origin's posterior mean reserve on the observed triangle.
+        """
+    @property
+    def opening_ultimate(self, /) -> list[float]:
+        """
+        The latest paid plus the opening reserve, per origin.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each per-origin value and component, those of each
+        segment's premium column.
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        Parameter names of a single-segment fit.
+        """
+    @property
+    def pareto_k(self, /) -> list[float]:
+        """
+        Each simulation's Pareto ``k`` in a single-segment fit.
+        """
+    @property
+    def premium(self, /) -> list[float]:
+        """
+        The premium of each segment's origins, in the order of ``origins``.
+        """
+    @property
+    def refit_warnings(self, /) -> int:
+        """
+        How many of a single-segment fit's refits had a diagnostic warning.
+        """
+    @property
+    def refitted(self, /) -> list[int]:
+        """
+        The simulations of a single-segment fit refitted with NUTS
+        (0-based).
+        """
+    def segment(self, /, **keys) -> CompartmentalOneYearFits:
+        """
+        The one-year view of one segment, chosen by key values as
+        ``ChainLadderFit.segment``, with its part of the joint claims
+        development result (same dimensions).
+        
+        Returns
+        -------
+        CompartmentalOneYearFits
+        """
+    def summary(self, /) -> Any:
+        """
+        Posterior summary of a single-segment fit, as
+        ``CompartmentalFit.summary``. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def to_frame(self, /) -> Any:
+        """
+        One row per segment and origin: the key columns, ``origin``,
+        ``premium``, ``latest_paid``, ``opening_ultimate``,
+        ``opening_reserve``, and the ``cdr_mean`` and ``cdr_std_dev`` of the
+        claims development result. Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    def totals_frame(self, /) -> Any:
+        """
+        One row per segment: the key columns, the totals of ``to_frame()``'s
+        columns, the ``flagged_share``, and the ``cdr_mean`` and
+        ``cdr_std_dev`` of the segment's total claims development result.
+        Needs pandas.
+        
+        Returns
+        -------
+        pandas.DataFrame
+        """
+    @property
+    def unrefitted(self, /) -> list[int]:
+        """
+        The simulations of a single-segment fit due for a refit beyond
+        ``max_refits``, reweighted instead (0-based).
         """
 
 @final
@@ -16423,6 +16696,9 @@ class OdpGlm:
     volume-weighted chain-ladder reserves. ``fit`` takes another design on
     the triangle's cells too (``OdpGlm.cells``): fewer parameters, calendar
     trends, interactions (Taylor and McGuire, CAS Monograph 3, Chapter 7).
+    ``family`` swaps the error for a gamma, ``Var X = phi E[X]**2``, or a
+    Tweedie, ``phi E[X]**power`` (section 6.5), whose reserves are no longer
+    the chain ladder's.
     
     Parameters
     ----------
@@ -16430,6 +16706,10 @@ class OdpGlm:
         IRLS convergence tolerance.
     max_iterations : int, default 100
         Maximum IRLS iterations.
+    family : {"poisson", "gamma", "tweedie"}, default "poisson"
+        The error distribution, with the log link and Pearson's dispersion.
+    power : float, optional
+        The Tweedie power, in (1, 2); needed for, and only for, ``"tweedie"``.
     
     Examples
     --------
@@ -16442,8 +16722,10 @@ class OdpGlm:
     >>> fit = OdpGlm().fit(tri, "paid")
     >>> round(fit.total_reserve, 4)
     98.1429
+    >>> round(OdpGlm(family="gamma").fit(tri, "paid").total_reserve, 4)
+    98.2931
     """
-    def __new__(cls, /, tolerance: float = 1e-10, max_iterations: int = 100) -> OdpGlm: ...
+    def __new__(cls, /, tolerance: float = 1e-10, max_iterations: int = 100, family: str = "poisson", power: float |None = None) -> OdpGlm: ...
     def __repr__(self, /) -> str: ...
     @staticmethod
     def cells(triangle: Triangle, column: str) -> dict:
@@ -16472,6 +16754,11 @@ class OdpGlm:
         ------
         ValueError
             If the triangle has several segments or no such column.
+        """
+    @property
+    def family(self, /) -> str:
+        """
+        The error distribution: ``"poisson"``, ``"gamma"`` or ``"tweedie"``.
         """
     def fit(self, /, triangle: Triangle, column: str, design: Design |None = None) -> OdpGlmFit:
         """
@@ -16503,7 +16790,9 @@ class OdpGlm:
             increment, or the GLM does not converge (a collinear design among
             them); without ``design``, if an origin or age has no observed
             increment; with it, if it does not have a row per cell or a
-            column is zero on every observed cell.
+            column is zero on every observed cell; under the gamma, if an
+            observed increment is not positive, and under the Tweedie, if one
+            is negative.
         
         Examples
         --------
@@ -16532,6 +16821,11 @@ class OdpGlm:
     def max_iterations(self, /) -> int:
         """
         Maximum IRLS iterations.
+        """
+    @property
+    def power(self, /) -> float |None:
+        """
+        The Tweedie power, or ``None`` for the other families.
         """
     @property
     def tolerance(self, /) -> float:
@@ -16570,8 +16864,9 @@ class OdpGlmFit:
     @property
     def glm(self, /) -> GlmFit:
         """
-        The quasi-Poisson GLM on the observed increments: coefficients,
-        standard errors, covariance and Pearson's dispersion. Without a
+        The GLM on the observed increments (quasi-Poisson unless
+        ``OdpGlm.family`` says otherwise): coefficients, standard errors,
+        covariance and Pearson's dispersion. Without a
         ``design``, its columns are ``(Intercept)``, ``origin[<period>]`` and
         ``development[<age>]``, with the first origin and the first age as
         references; with one, the design's.
@@ -16585,8 +16880,9 @@ class OdpGlmFit:
         """
         Joint draws of the future cells' increments, with dimensions
         ``["origin", "development"]``. Each simulation draws the coefficients
-        from their normal approximation, then each cell as
-        ``phi * Poisson(mu / phi)``. ``aggregate(["origin"])`` gives the
+        from their normal approximation, then each cell from the family:
+        ``phi * Poisson(mu / phi)`` for the ODP, a gamma or a Tweedie with mean
+        ``mu`` and the dispersion. ``aggregate(["origin"])`` gives the
         reserves by origin.
         
         Parameters
@@ -16613,9 +16909,10 @@ class OdpGlmFit:
         """
         The reserves' prediction error by origin and in total (Taylor and
         McGuire, CAS Monograph 3, (5-11) to (5-13), Table 5-4): the process
-        error ``phi * sum(mu)`` of the future cells, the parameter error
-        ``g' Sigma g`` by the delta method with ``g = sum(mu * x)``, and the
-        root mean square error of prediction. The total's exceeds the
+        error ``phi * sum(V(mu))`` of the future cells (``V(mu) = mu`` for the
+        ODP, ``mu**2`` for the gamma, ``mu**power`` for the Tweedie), the
+        parameter error ``g' Sigma g`` by the delta method with
+        ``g = sum(mu * x)``, and the root mean square error of prediction. The total's exceeds the
         origins' combined as if independent, because every origin shares
         the development factors.
         
@@ -16649,7 +16946,7 @@ class OdpGlmFit:
         The standardized deviance residuals grouped by origin, development
         age or calendar period: a trend in the calendar means points to a
         calendar effect the model lacks, a spread that falls with age to a
-        variance that is not ``phi * mu``.
+        variance that is not the family's (``phi * mu`` for the ODP).
         
         Parameters
         ----------

@@ -1615,7 +1615,7 @@ grouped_goodness_of_fit_rust <- function(severity, bounds, counts) .Call(wrap__g
 
 lev_distance_fit_rust <- function(family, sizes, empirical, weights, start) .Call(wrap__lev_distance_fit_rust, family, sizes, empirical, weights, start)
 
-odp_glm_fit_rust <- function(triangle, column, x, names, offset, tolerance, max_iterations) .Call(wrap__odp_glm_fit_rust, triangle, column, x, names, offset, tolerance, max_iterations)
+odp_glm_fit_rust <- function(triangle, column, x, names, offset, tolerance, max_iterations, family, power) .Call(wrap__odp_glm_fit_rust, triangle, column, x, names, offset, tolerance, max_iterations, family, power)
 
 odp_glm_cells_rust <- function(triangle, column) .Call(wrap__odp_glm_cells_rust, triangle, column)
 
@@ -1982,6 +1982,8 @@ Triangle$compartmental_candidate <- function(paid, outstanding, outstanding_from
 Triangle$compartmental_segments <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, dependence, spearman) .Call(wrap__Triangle__compartmental_segments, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, dependence, spearman)
 
 Triangle$compartmental_one_year <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__compartmental_one_year, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims)
+
+Triangle$compartmental_one_year_segments <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman) .Call(wrap__Triangle__compartmental_one_year_segments, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman)
 
 Triangle$compartmental_prior_predictive <- function(premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental_prior_predictive, self, premium, priors, families, settings, run)
 
@@ -2621,6 +2623,64 @@ CompartmentalOneYearFit$segment <- function(keys, values) .Call(wrap__Compartmen
 
 #' @export
 `[[.CompartmentalOneYearFit` <- `$.CompartmentalOneYearFit`
+
+CompartmentalOneYearFits <- new.env(parent = emptyenv())
+
+CompartmentalOneYearFits$n_segments <- function() .Call(wrap__CompartmentalOneYearFits__n_segments, self)
+
+CompartmentalOneYearFits$origins <- function() .Call(wrap__CompartmentalOneYearFits__origins, self)
+
+CompartmentalOneYearFits$premium <- function() .Call(wrap__CompartmentalOneYearFits__premium, self)
+
+CompartmentalOneYearFits$latest_paid <- function() .Call(wrap__CompartmentalOneYearFits__latest_paid, self)
+
+CompartmentalOneYearFits$opening_ultimate <- function() .Call(wrap__CompartmentalOneYearFits__opening_ultimate, self)
+
+CompartmentalOneYearFits$opening_reserve <- function() .Call(wrap__CompartmentalOneYearFits__opening_reserve, self)
+
+CompartmentalOneYearFits$cdr <- function() .Call(wrap__CompartmentalOneYearFits__cdr, self)
+
+CompartmentalOneYearFits$approximate <- function() .Call(wrap__CompartmentalOneYearFits__approximate, self)
+
+CompartmentalOneYearFits$pareto_k <- function() .Call(wrap__CompartmentalOneYearFits__pareto_k, self)
+
+CompartmentalOneYearFits$refitted <- function() .Call(wrap__CompartmentalOneYearFits__refitted, self)
+
+CompartmentalOneYearFits$moment_matched <- function() .Call(wrap__CompartmentalOneYearFits__moment_matched, self)
+
+CompartmentalOneYearFits$unrefitted <- function() .Call(wrap__CompartmentalOneYearFits__unrefitted, self)
+
+CompartmentalOneYearFits$refit_warnings <- function() .Call(wrap__CompartmentalOneYearFits__refit_warnings, self)
+
+CompartmentalOneYearFits$refit_counts <- function() .Call(wrap__CompartmentalOneYearFits__refit_counts, self)
+
+CompartmentalOneYearFits$k_threshold <- function() .Call(wrap__CompartmentalOneYearFits__k_threshold, self)
+
+CompartmentalOneYearFits$flagged_share <- function() .Call(wrap__CompartmentalOneYearFits__flagged_share, self)
+
+CompartmentalOneYearFits$diagnostics_table <- function() .Call(wrap__CompartmentalOneYearFits__diagnostics_table, self)
+
+CompartmentalOneYearFits$parameter_names <- function() .Call(wrap__CompartmentalOneYearFits__parameter_names, self)
+
+CompartmentalOneYearFits$draws <- function() .Call(wrap__CompartmentalOneYearFits__draws, self)
+
+CompartmentalOneYearFits$chains <- function() .Call(wrap__CompartmentalOneYearFits__chains, self)
+
+CompartmentalOneYearFits$summary <- function() .Call(wrap__CompartmentalOneYearFits__summary, self)
+
+CompartmentalOneYearFits$loo <- function() .Call(wrap__CompartmentalOneYearFits__loo, self)
+
+CompartmentalOneYearFits$long_table <- function() .Call(wrap__CompartmentalOneYearFits__long_table, self)
+
+CompartmentalOneYearFits$totals_table <- function() .Call(wrap__CompartmentalOneYearFits__totals_table, self)
+
+CompartmentalOneYearFits$segment <- function(keys, values) .Call(wrap__CompartmentalOneYearFits__segment, self, keys, values)
+
+#' @export
+`$.CompartmentalOneYearFits` <- function (self, name) { func <- CompartmentalOneYearFits[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.CompartmentalOneYearFits` <- `$.CompartmentalOneYearFits`
 
 BayesBfFit <- new.env(parent = emptyenv())
 
