@@ -1127,7 +1127,10 @@ premium column and a second response.
 * **Scope.** Model 1 is what pull-request CI runs; model 2 runs only
   under `full_bayes()` (`RISK_RS_FULL_BAYES`). `one_year_segments` is a
   later PR. Python and R get `fit_segments` with `dependence` and
-  `spearman` settings; the backtest stays Rust-only, as for `BayesOdp`.
+  `spearman` settings; the backtest stays Rust-only, as for `BayesOdp`
+  (reversed on 2026-10-19 by `reserving-bayes.md` decision 21: the
+  backtest has Python and R entry points, and `Compartmental` joins them
+  through its candidate, to be wired in the bindings stage).
 * **Checks.** `Compartmental` still implements `YearModel` and passes the
   one-year conformance suite; the unit tests that sample with NUTS are
   gated by `slow-tests`, and the parity and backtest validation lives in
@@ -1153,7 +1156,10 @@ rows whose origin and age the candidate fits, as for the paid table, so on
 company 337 the two tables score the same cells. Model 2 cannot be
 backtested on the 9-origin training triangle (fewer cells than parameters
 once a diagonal is held out); its arm uses the 55-cell upper triangle to
-1997 and holds out the 1997 diagonal. No deviation from the decision.
+1997 and holds out the 1997 diagonal. Since `reserving-bayes.md`
+decision 21 both tables carry its six metrics, each split's diagonal and
+the fit's sampler diagnostics (`CellForecast::diagnostics`). No deviation
+from the decision.
 
 ### 9. Bindings
 

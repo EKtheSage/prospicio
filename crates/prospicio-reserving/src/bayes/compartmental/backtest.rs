@@ -22,6 +22,7 @@ use crate::backtest::{
 use crate::bayes::laplace::Posterior;
 use crate::bayes::odp::log_mean_exp;
 use crate::bayes::{Stream, derive_seed};
+use crate::diagnostics::Diagnostics;
 use crate::error::{Error, Result};
 use crate::frame::TriangleFrame;
 use crate::triangle::Triangle;
@@ -67,9 +68,11 @@ const CACHED_FITS: usize = 4;
 ///   the difference of consecutive values on it (the first from the latest
 ///   training paid), so an origin's increments sum to its last simulated
 ///   paid less its latest, which is how the fit's reserves are made. The
-///   fit's diagnostics are not reported. A held-out triangle is smaller
-///   than the whole: check a backtest's fits with [`Compartmental::fit`]
-///   on the same training cells before relying on its scores.
+///   fit's diagnostics come back in [`CellForecast::diagnostics`] and
+///   [`Backtest::diagnostics`], and a fit with warnings is still scored.
+///   A held-out triangle is smaller than the whole: check a backtest's
+///   fits with [`Compartmental::fit`] on the same training cells before
+///   relying on its scores.
 /// * **Mean** is the mean of the predictive draws of the row (a Monte
 ///   Carlo mean over [`n_sims`](Compartmental::n_sims) draws, which for the
 ///   log-normal likelihood includes the factor `exp(sigma^2 / 2)` over the
@@ -172,6 +175,8 @@ struct TrainFit {
     data: Data,
     model: Model,
     posterior: PosteriorDraws,
+    /// The sampler diagnostics of the fit.
+    diagnostics: Diagnostics,
     /// The triangle's outstanding at every cell it has one, held out or not.
     full_outstanding: Outstandings,
 }
@@ -322,7 +327,7 @@ impl CompartmentalCandidate<'_> {
                 model.dim()
             )));
         }
-        let (posterior, _, _) = self
+        let (posterior, _, diagnostics) = self
             .model
             .sample(&model, derive_seed(seed, Stream::Chains))?;
         let fit = Arc::new(TrainFit {
@@ -331,6 +336,7 @@ impl CompartmentalCandidate<'_> {
             data,
             model,
             posterior,
+            diagnostics,
             full_outstanding,
         });
         let mut fits = self.fits.lock().unwrap_or_else(|e| e.into_inner());
@@ -431,6 +437,7 @@ impl CompartmentalCandidate<'_> {
             mean,
             distribution,
             log_density,
+            diagnostics: Some(fit.diagnostics.clone()),
         })
     }
 
@@ -492,6 +499,7 @@ impl CompartmentalCandidate<'_> {
             mean,
             distribution,
             log_density,
+            diagnostics: Some(fit.diagnostics.clone()),
         })
     }
 
@@ -503,8 +511,10 @@ impl CompartmentalCandidate<'_> {
     /// withheld) and forecasts the outstanding of the diagonal's cells,
     /// scored by the backtest's metrics ([`METRICS`]): the mean CRPS of the
     /// cells, the coverage of the central `interval`, actual over expected
-    /// on the diagonal total and the CRPS of the total from the joint
-    /// draws. The splits, `n_sims`, `seed` and `interval` are
+    /// on the diagonal total, the CRPS of the total from the joint draws,
+    /// the mean held-out log density and the percentile of the actual
+    /// total among the simulated ones. Each split reports the diagnostics
+    /// of its fit ([`Backtest::diagnostics`]). The splits, `n_sims`, `seed` and `interval` are
     /// [`diagonal_backtest`](crate::diagonal_backtest)'s, so the fits of a
     /// backtest of this candidate on the same arguments are shared with this
     /// one (the candidate keeps its last four).
@@ -536,6 +546,7 @@ impl CompartmentalCandidate<'_> {
         let n_metrics = METRICS.len();
         let mut scores = vec![f64::NAN; n_metrics * n_splits];
         let mut log_densities = Some(Vec::new());
+        let mut diagnostics = Vec::with_capacity(n_splits);
         for (k, (split, rows)) in splits.iter().zip(scored.iter_mut()).enumerate() {
             let fit = self.train_fit(cells, &split.train, seed)?;
             let before = rows.len();
@@ -559,6 +570,7 @@ impl CompartmentalCandidate<'_> {
             for (metric, value) in score(&f, &actual, interval)?.into_iter().enumerate() {
                 scores[metric * n_splits + k] = value;
             }
+            diagnostics.push(f.diagnostics);
             log_densities = match (log_densities.take(), f.log_density) {
                 (Some(mut all), Some(lpd)) => {
                     all.extend(lpd);
@@ -574,6 +586,11 @@ impl CompartmentalCandidate<'_> {
             excluded,
             scored,
             log_densities: vec![log_densities],
+            diagnostics,
+            diagonals: splits
+                .iter()
+                .map(|s| cells.calendar_of(s.test[0]))
+                .collect(),
         })
     }
 }
@@ -1011,7 +1028,13 @@ mod tests {
         assert_eq!(os.excluded(), bt.excluded());
         // One NUTS run served both tables.
         assert_eq!(c.fits.lock().unwrap().len(), 1);
+        assert_eq!(os.diagonals(), bt.diagonals());
+        assert_eq!(os.diagnostics(0), bt.diagnostics(0));
         for t in [&bt, &os] {
+            let d = t.diagnostics(0)[0]
+                .as_ref()
+                .expect("a compartmental fit reports diagnostics");
+            assert!(d.min_ess_bulk > 0.0);
             for metric in 0..METRICS.len() {
                 assert!(t.mean(0, metric).is_finite(), "{metric}");
             }

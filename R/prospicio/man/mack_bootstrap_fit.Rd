@@ -87,8 +87,11 @@ pattern to the oldest age implies a constant tail (\code{pattern_tail} of
 is given.}
 
 \item{n_periods, drop_high, drop_low}{Which link ratios the factors average,
-as in \code{\link[=chain_ladder]{chain_ladder()}}. \code{\link[=mack_bootstrap]{mack_bootstrap()}} rejects exclusions, and
-\code{"geometric"} as the average.}
+as in \code{\link[=chain_ladder]{chain_ladder()}}. Only the link ratios that the observed
+triangle keeps have residuals and enter the pseudo factors (the drops
+are not ranked again in each simulation), so \code{\link[=mack]{mack()}}'s standard error
+under the same settings is the reference for the standard deviation.
+\code{"geometric"} as the average is rejected.}
 }
 \value{
 A \code{mack_bootstrap_fit} object.

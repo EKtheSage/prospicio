@@ -132,7 +132,7 @@ fn with_offset_weights(
 /// ['(Intercept)', 'age', 'region[S]', 'region[W]']
 #[pyclass(name = "Terms", module = "prospicio.models", frozen)]
 pub(crate) struct PyTerms {
-    inner: Terms,
+    pub(crate) inner: Terms,
 }
 
 #[pymethods]
@@ -575,7 +575,7 @@ impl PyDesign {
 /// True
 #[pyclass(name = "Glm", module = "prospicio.models", frozen)]
 pub(crate) struct PyGlm {
-    inner: Glm,
+    pub(crate) inner: Glm,
 }
 
 fn dispersion(arg: Option<&Bound<'_, PyAny>>, default: Dispersion) -> PyResult<Dispersion> {

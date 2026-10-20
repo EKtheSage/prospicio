@@ -11,6 +11,13 @@
 //!    pseudo triangle `m + r* sqrt(|m|)`, re-estimate the factors, project
 //!    the expected future incrementals and add process error to each.
 //!
+//! With link ratio exclusions ([`OdpBootstrap::n_periods`],
+//! [`drop_high`](OdpBootstrap::drop_high) and
+//! [`drop_low`](OdpBootstrap::drop_low), decision 14) the chain ladder, the
+//! fitted values and the pseudo factors follow the link ratios the volume
+//! average keeps, and only the cells those link ratios end in have a
+//! residual.
+//!
 //! Every simulation draws from its own [`StreamRng`] stream
 //! (`PredictiveDistribution::simulate`), so results do not depend on the
 //! number of threads.
@@ -158,6 +165,31 @@ pub struct OdpBootstrap {
     /// pseudo factors with the re-reserving method's pattern (the default)
     /// or simulates from the triangle's own estimated factors.
     pub one_year_pattern: OneYearPattern,
+    /// Fit the volume-weighted chain ladder on the link ratios that end in
+    /// the latest `n` origin periods of calendar time, as
+    /// [`Development::n_periods`](crate::Development::n_periods) does, and
+    /// the same ones in each simulation; `None` uses every link ratio.
+    /// `Some(0)` is an error. See [`drop_high`](Self::drop_high) for what
+    /// the exclusions change.
+    pub n_periods: Option<usize>,
+    /// Leave out the `drop_high` highest of the link ratios kept by
+    /// [`n_periods`](Self::n_periods) at each age, ranked on the observed
+    /// triangle (decision 14: the simulations keep the same link ratios and
+    /// do not rank their pseudo link ratios again). With
+    /// [`drop_low`](Self::drop_low) and `n_periods`, the fitted values are
+    /// back-cast with the factors under the exclusions, and the incremental
+    /// cell that follows a link ratio has a residual only when the link
+    /// ratio is kept; the first age's cells always have one. The scale is
+    /// `sum(r^2) / (n - p)` over the kept residuals with `n` all observed
+    /// cells (chainladder-python's rule), which is biased low under
+    /// exclusions: on RAA with `n_periods = 3` it is about 70% of the plain
+    /// scale (694 against 984). In the one-year view the bootstrap takes the method's
+    /// exclusions when it sets none, and must set the method's when it
+    /// sets its own.
+    pub drop_high: usize,
+    /// Leave out the `drop_low` lowest link ratios; see
+    /// [`drop_high`](Self::drop_high).
+    pub drop_low: usize,
 }
 
 impl Default for OdpBootstrap {
@@ -171,6 +203,9 @@ impl Default for OdpBootstrap {
             dependence: SegmentDependence::Independent,
             pattern: None,
             one_year_pattern: OneYearPattern::Method,
+            n_periods: None,
+            drop_high: 0,
+            drop_low: 0,
         }
     }
 }
@@ -427,7 +462,10 @@ impl OdpBootstrap {
         }
         let segment = triangle.segment(column)?;
         let ages = &segment.ages;
-        let (fit, pool) = prepare_selected(&segment, ages, self.tail, self.pattern.as_ref())?;
+        let exclusions = self.exclusions();
+        let (fit, pool) =
+            prepare_selected(&segment, ages, self.tail, self.pattern.as_ref(), exclusions)?;
+        let kept = exclusions.kept(&segment)?;
         let tail = self.tail_draw(&fit.chain_ladder)?;
         let blend = Blend::of(&fit.chain_ladder.development);
 
@@ -443,6 +481,7 @@ impl OdpBootstrap {
             process: self.process,
             tail: tail.as_ref(),
             blend: blend.as_ref(),
+            kept: Some(&kept),
         };
         let reserves = simulate_lifetime(
             vec!["origin".into()],
@@ -477,10 +516,13 @@ impl OdpBootstrap {
             return Err(Error::Bootstrap("n_sims must be positive"));
         }
         let mut prepared = fit_each(triangle, column, |s| {
-            let (fit, pool) = prepare_selected(s, &s.ages, self.tail, self.pattern.as_ref())?;
+            let exclusions = self.exclusions();
+            let (fit, pool) =
+                prepare_selected(s, &s.ages, self.tail, self.pattern.as_ref(), exclusions)?;
+            let kept = exclusions.kept(s)?;
             let tail = self.tail_draw(&fit.chain_ladder)?;
             let blend = Blend::of(&fit.chain_ladder.development);
-            Ok((fit, pool, (tail, blend), s.clone()))
+            Ok((fit, pool, (tail, blend, kept), s.clone()))
         })?;
         let shared = match self.dependence {
             SegmentDependence::Synchronized => {
@@ -501,7 +543,7 @@ impl OdpBootstrap {
         dims.push("origin".into());
         let mut components = Vec::new();
         let mut sims = Vec::with_capacity(prepared.len());
-        for (label, (fit, pool, (tail, blend), segment)) in prepared.iter() {
+        for (label, (fit, pool, (tail, blend, kept), segment)) in prepared.iter() {
             hasher.str(&label.to_string());
             hash_segment(&mut hasher, segment, &fit.chain_ladder, &segment.ages);
             components.extend(origin_keys(label, &segment.origins));
@@ -514,6 +556,7 @@ impl OdpBootstrap {
                 process: self.process,
                 tail: tail.as_ref(),
                 blend: blend.as_ref(),
+                kept: Some(kept),
             };
             sims.push((sim, keyed.then(|| label.to_string())));
         }
@@ -551,6 +594,32 @@ impl OdpBootstrap {
         }
     }
 
+    /// The link ratio exclusions of the lifetime view.
+    pub(crate) fn exclusions(&self) -> Exclusions {
+        Exclusions {
+            n_periods: self.n_periods,
+            drop_high: self.drop_high,
+            drop_low: self.drop_low,
+        }
+    }
+
+    /// `provenance` with the exclusions that are set; without any, as it
+    /// was before them.
+    fn with_exclusions(&self, provenance: Provenance) -> Provenance {
+        let provenance = match self.n_periods {
+            None => provenance,
+            Some(n) => provenance.param("n_periods", n),
+        };
+        let provenance = match self.drop_high {
+            0 => provenance,
+            n => provenance.param("drop_high", n),
+        };
+        match self.drop_low {
+            0 => provenance,
+            n => provenance.param("drop_low", n),
+        }
+    }
+
     /// The tail each simulation draws, `None` without one; see
     /// [`tail`](Self::tail).
     pub(crate) fn tail_draw(&self, cl: &ChainLadderFit) -> Result<Option<TailDraw>> {
@@ -570,10 +639,76 @@ impl OdpBootstrap {
                 .param("tail", format!("{:?}", self.tail))
                 .param("tail_std_err", format!("{:?}", self.tail_std_err))
         };
-        self.with_pattern(provenance)
+        self.with_exclusions(self.with_pattern(provenance))
             .param("column", column)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
             .input_hash(hasher.finish())
+    }
+}
+
+/// The link ratio exclusions of a bootstrap: [`Development`]'s
+/// `n_periods`, `drop_high` and `drop_low` for the volume-weighted chain
+/// ladder it is centred on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct Exclusions {
+    pub(crate) n_periods: Option<usize>,
+    pub(crate) drop_high: usize,
+    pub(crate) drop_low: usize,
+}
+
+impl Exclusions {
+    /// The exclusions `development` sets.
+    pub(crate) fn of(development: &Development) -> Self {
+        Self {
+            n_periods: development.n_periods,
+            drop_high: development.drop_high,
+            drop_low: development.drop_low,
+        }
+    }
+
+    /// Whether none is set.
+    pub(crate) fn is_none(self) -> bool {
+        self == Self::default()
+    }
+
+    /// The exclusions a bootstrap simulates the one-year view of a method
+    /// with: the method's when it sets none. A bootstrap that sets its own
+    /// must set the method's, since the re-reserving that closes
+    /// each simulation would otherwise move the mean of the claims
+    /// development result for a reason the user did not choose.
+    pub(crate) fn for_method(self, method: &Development) -> Result<Self> {
+        let theirs = Self::of(method);
+        if self.is_none() || self == theirs {
+            return Ok(theirs);
+        }
+        let write = |e: Self| {
+            format!(
+                "n_periods = {:?}, drop_high = {}, drop_low = {}",
+                e.n_periods, e.drop_high, e.drop_low
+            )
+        };
+        Err(Error::ExclusionsMismatch {
+            bootstrap: write(self),
+            method: write(theirs),
+        })
+    }
+
+    /// The volume-weighted [`Development`] with these exclusions and
+    /// `pattern`.
+    fn development(self, pattern: Option<&SelectedPattern>) -> Development {
+        Development {
+            pattern: pattern.cloned(),
+            n_periods: self.n_periods,
+            drop_high: self.drop_high,
+            drop_low: self.drop_low,
+            ..Default::default()
+        }
+    }
+
+    /// The link ratios the chain ladder keeps, indexed by `origin * (n_dev
+    /// - 1) + link` ([`Development::kept_mask`]).
+    pub(crate) fn kept(self, segment: &Segment) -> Result<Vec<bool>> {
+        self.development(None).kept_mask(segment)
     }
 }
 
@@ -749,26 +884,26 @@ pub(crate) fn prepare(
     ages: &[Lag],
     tail: Tail,
 ) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
-    prepare_selected(segment, ages, tail, None)
+    prepare_selected(segment, ages, tail, None, Exclusions::default())
 }
 
 /// [`prepare`] with a selected pattern, which the chain ladder projects
-/// with; the fitted values and residuals stay the estimate's.
+/// with; the fitted values and residuals stay the estimate's. With
+/// `exclusions` (decision 14), the chain ladder and the fitted values use
+/// the link ratios they keep, only the cells those link ratios end in (and
+/// the first age's) have a residual, and the scale divides the kept
+/// residuals' squares by the degrees of freedom of every observed cell.
 pub(crate) fn prepare_selected(
     segment: &Segment,
     ages: &[Lag],
     tail: Tail,
     pattern: Option<&SelectedPattern>,
+    exclusions: Exclusions,
 ) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
     let (no, nd) = (segment.n_origins, segment.n_dev);
-    let chain_ladder = ChainLadder {
-        tail,
-        development: Development {
-            pattern: pattern.cloned(),
-            ..Default::default()
-        },
-    }
-    .fit_segment(segment, ages)?;
+    let development = exclusions.development(pattern);
+    let kept = development.kept_mask(segment)?;
+    let chain_ladder = ChainLadder { tail, development }.fit_segment(segment, ages)?;
     let ldf = &chain_ladder.development.ldf;
     let latest = &chain_ladder.latest_position;
     for (o, &last) in latest.iter().enumerate() {
@@ -810,8 +945,11 @@ pub(crate) fn prepare_selected(
     let unscaled: Vec<f64> = fitted
         .iter()
         .zip(&observed)
-        .map(|(&m, &x)| {
-            if m.is_nan() || m == 0.0 {
+        .enumerate()
+        .map(|(i, (&m, &x))| {
+            // The cell after a link ratio is that link ratio's numerator.
+            let has_link = i % nd == 0 || kept[(i / nd) * (nd - 1) + i % nd - 1];
+            if m.is_nan() || m == 0.0 || !has_link {
                 f64::NAN
             } else {
                 (x - m) / m.abs().sqrt()
@@ -856,6 +994,9 @@ pub(crate) struct Simulation<'a> {
     /// The lifetime view's selected pattern; `None` without one, and in
     /// the one-year view, which blends itself.
     pub(crate) blend: Option<&'a Blend>,
+    /// The link ratios the pseudo factors average, as
+    /// [`Exclusions::kept`] lays them out; `None` keeps every observed one.
+    pub(crate) kept: Option<&'a [bool]>,
 }
 
 impl Simulation<'_> {
@@ -935,7 +1076,8 @@ impl Simulation<'_> {
         let factors: Vec<f64> = (0..nd.saturating_sub(1))
             .map(|k| {
                 let (mut num, mut den) = (0.0, 0.0);
-                for o in (0..no).filter(|&o| self.latest[o] > k) {
+                let kept = |o: usize| self.kept.is_none_or(|m| m[o * (nd - 1) + k]);
+                for o in (0..no).filter(|&o| self.latest[o] > k && kept(o)) {
                     num += pseudo[o * nd + k + 1];
                     den += pseudo[o * nd + k];
                 }
@@ -1090,6 +1232,7 @@ mod tests {
             dependence: SegmentDependence::Independent,
             pattern: None,
             one_year_pattern: OneYearPattern::Method,
+            ..Default::default()
         }
     }
 
@@ -1107,6 +1250,7 @@ mod tests {
             process: ProcessDistribution::None,
             tail: None,
             blend: None,
+            kept: None,
         };
         let mut rng = StreamRng::new(seed, i);
         let (pseudo, factors) = sim.resample(&mut rng, None);
@@ -1289,6 +1433,165 @@ mod tests {
             "{sd} vs {want} (SE {error})"
         );
         assert!((mu - p * (t - 1.0)).abs() < 5.0 * sd / (n_sims as f64).sqrt());
+    }
+
+    fn excluding(n_periods: Option<usize>, drop_high: usize, drop_low: usize) -> OdpBootstrap {
+        OdpBootstrap {
+            n_sims: 300,
+            seed: 7,
+            n_periods,
+            drop_high,
+            drop_low,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn exclusions_that_remove_nothing_draw_as_before() {
+        // A window past the diagonals and drops of 0 keep every link ratio:
+        // the same draws seed for seed.
+        let plain = boot(ProcessDistribution::Gamma, 300);
+        for (n, h, l) in [(Some(10), 0, 0), (Some(1_000), 0, 0), (None, 0, 0)] {
+            let fit = excluding(n, h, l).fit(&raa(), "values").unwrap();
+            assert_eq!(plain.reserves.draw_matrix(), fit.reserves.draw_matrix());
+            assert!(
+                plain
+                    .residuals
+                    .iter()
+                    .zip(&fit.residuals)
+                    .all(|(a, b)| a.to_bits() == b.to_bits())
+            );
+            assert_eq!(plain.scale, fit.scale);
+        }
+        // Provenance names a setting only when it is set.
+        let text = |b: &OdpBootstrap| {
+            format!(
+                "{:?}",
+                b.fit(&raa(), "values").unwrap().reserves.provenance()
+            )
+        };
+        let default = text(&excluding(None, 0, 0));
+        assert!(!default.contains("n_periods") && !default.contains("drop_"));
+        assert!(text(&excluding(Some(3), 0, 0)).contains("n_periods"));
+        let dropped = text(&excluding(None, 1, 0));
+        assert!(dropped.contains("drop_high") && !dropped.contains("drop_low"));
+        assert!(text(&excluding(None, 0, 2)).contains("drop_low"));
+    }
+
+    #[test]
+    fn residuals_follow_the_kept_link_ratios() {
+        // The cell after a link ratio has a residual when the link ratio is
+        // kept; the first age's cells always have one; the pool is those.
+        let segment = raa().segment("values").unwrap();
+        let (no, nd) = (10, 10);
+        for (n, h, l) in [(Some(3), 0, 0), (None, 1, 1), (Some(3), 1, 1)] {
+            let b = excluding(n, h, l);
+            let fit = b.fit(&raa(), "values").unwrap();
+            let kept = b.exclusions().kept(&segment).unwrap();
+            assert!(kept.iter().any(|&k| !k), "{n:?} {h} {l} drops nothing");
+            for o in 0..no {
+                for d in 0..nd {
+                    let r = fit.residuals[o * nd + d];
+                    let expect = d + o < nd && (d == 0 || kept[o * (nd - 1) + d - 1]);
+                    assert_eq!(!r.is_nan(), expect, "{n:?} {h} {l} cell ({o}, {d})");
+                }
+            }
+            let n_kept = kept.iter().filter(|&&k| k).count();
+            assert_eq!(
+                fit.residuals.iter().filter(|r| !r.is_nan()).count(),
+                no + n_kept
+            );
+            // The fitted values reproduce each origin's latest value and
+            // develop by the factors under the exclusions, the chain
+            // ladder's under the same settings.
+            let ldf = ChainLadder {
+                development: Development {
+                    n_periods: n,
+                    drop_high: h,
+                    drop_low: l,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .fit(&raa(), "values")
+            .unwrap()
+            .development
+            .ldf;
+            assert_eq!(fit.chain_ladder.development.ldf, ldf);
+            for o in 0..no - 1 {
+                let row = &fit.fitted[o * nd..o * nd + nd - o];
+                let latest: f64 = row.iter().sum();
+                assert!((latest - fit.chain_ladder.latest[o]).abs() < 1e-6);
+                let before: f64 = row[..row.len() - 1].iter().sum();
+                assert!((latest / before - ldf[nd - o - 2]).abs() < 1e-9);
+            }
+            // phi: the kept squares over (N - p), with every observed cell.
+            let adjust = (55.0_f64 / (55.0 - 19.0)).sqrt();
+            let ss: f64 = fit
+                .residuals
+                .iter()
+                .filter(|r| !r.is_nan())
+                .map(|r| (r / adjust).powi(2))
+                .sum();
+            assert!((fit.scale - ss / 36.0).abs() < 1e-9 * fit.scale);
+        }
+    }
+
+    #[test]
+    fn pseudo_factors_average_the_kept_links_only() {
+        let segment = raa().segment("values").unwrap();
+        let exclusions = Exclusions {
+            n_periods: Some(3),
+            drop_high: 1,
+            drop_low: 0,
+        };
+        let (fit, pool) =
+            prepare_selected(&segment, &segment.ages, Tail::default(), None, exclusions).unwrap();
+        let kept = exclusions.kept(&segment).unwrap();
+        let sim = Simulation {
+            segment: &segment,
+            latest: &fit.chain_ladder.latest_position,
+            fitted: &fit.fitted,
+            pool: &pool,
+            scale: fit.scale,
+            process: ProcessDistribution::None,
+            tail: None,
+            blend: None,
+            kept: Some(&kept),
+        };
+        let (pseudo, factors) = sim.resample(&mut StreamRng::new(5, 3), None);
+        let nd = 10;
+        for k in 0..nd - 1 {
+            let (mut num, mut den) = (0.0, 0.0);
+            for o in 0..nd - 1 - k {
+                if kept[o * (nd - 1) + k] {
+                    num += pseudo[o * nd + k + 1];
+                    den += pseudo[o * nd + k];
+                }
+            }
+            assert_eq!(factors[k], num / den, "age {k}");
+        }
+        // The same stream without the mask averages every link.
+        let every = Simulation { kept: None, ..sim };
+        let (same, all) = every.resample(&mut StreamRng::new(5, 3), None);
+        assert_eq!(same, pseudo);
+        assert_ne!(all, factors);
+    }
+
+    #[test]
+    fn exclusion_settings_are_checked() {
+        let zero = excluding(Some(0), 0, 0).fit(&raa(), "values");
+        assert!(
+            matches!(zero, Err(Error::InvalidSetting { .. })),
+            "{zero:?}"
+        );
+        // The one-year view takes the method's exclusions, or the same ones.
+        let one_year = excluding(Some(3), 0, 0).one_year(
+            &raa(),
+            "values",
+            &crate::OneYearMethod::ChainLadder(ChainLadder::default()),
+        );
+        assert!(matches!(one_year, Err(Error::ExclusionsMismatch { .. })));
     }
 
     #[test]

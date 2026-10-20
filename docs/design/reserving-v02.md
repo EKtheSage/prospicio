@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -2232,7 +2232,7 @@ Decided by the user on 2026-10-15, after review of the built PR:
 
 Status: **Built** (2026-10-18), branch `claude/development-averages`,
 issues #336 and #339, in Rust, Python and R; the bootstraps and the
-one-year views following the exclusions are a second PR. What changed
+one-year views following the exclusions are a second PR (decision 14). What changed
 from the proposal is under "As built" at the end of this decision.
 
 Reserving practice selects age-to-age factors from averages over the
@@ -2333,7 +2333,9 @@ a geometric average.
    and the bootstraps' residuals and re-reserving assume every link ratio,
    and making them follow the exclusions (chainladder-python's
    `BootstrapODPSample` takes `n_periods` and the drops) is a second PR
-   with its own checks. `ClarkLdf`, `ClarkCapeCod`, the ODP GLM and the
+   with its own checks. Decision 14 is that PR: it lifts the rejection for
+   both bootstraps and their one-year views, and keeps it for the closed
+   form. `ClarkLdf`, `ClarkCapeCod`, the ODP GLM and the
    Bayesian models do not use `Development`'s averages and are
    unchanged.
 
@@ -2377,8 +2379,8 @@ a geometric average.
 **Bindings.** Python: `n_periods=None`, `drop_high=0`, `drop_low=0` and
 `average="geometric"` on `ChainLadder`, `Mack`, `ExpectedLoss`,
 `BornhuetterFerguson`, `Benktander` and `CapeCod`, and on the bootstraps
-(where a value other than the default raises, naming the follow-up); the
-fit's `n_links`. R: the same arguments on `chain_ladder()`, `mack()` and
+(where a value other than the default raised, naming the follow-up;
+decision 14 lifts it); the fit's `n_links`. R: the same arguments on `chain_ladder()`, `mack()` and
 the expected-loss functions. The guides' workarounds can then go; that
 is the Guides lane's change, filed as an issue for it.
 
@@ -2428,3 +2430,262 @@ it:
    R's `mack_one_year()` takes `mack_n_periods`, `mack_drop_high` and
    `mack_drop_low` beside `mack_average`. Python's `OdpBootstrap` takes
    none of them (it has no average).
+
+### 14. The bootstraps and the one-year views under the exclusions
+
+Status: **Built** (2026-10-19), issue #401, branch
+`claude/bootstrap-exclusions`. This is decision 13's second PR. The
+user chose the three settings that the issue left open (items 2, 4
+and 6). The other items follow from the evidence below. "As built" at the
+end lists what changed from the proposal while building it.
+
+Decision 13 gave `Development` the settings `n_periods`, `drop_high` and
+`drop_low` for the chain ladder, the expected-loss methods and Mack's
+lifetime view. These methods still reject the three settings:
+
+- Mack's bootstrap.
+- The ODP bootstrap, which has no such settings.
+- The one-year views of both bootstraps.
+- Merz and Wüthrich's closed form.
+
+This decision lets both bootstraps and their one-year views follow the
+settings. The closed form keeps its rejection, for the reason in item 8.
+
+The reference is chainladder-python 0.10.1's
+`BootstrapODPSample(n_periods, drop_high, drop_low)` (read 2026-10-19
+from the 0.10.1 wheel, `adjustments/bootstrap.py`). It has no Mack
+bootstrap and no one-year view. R ChainLadder's `BootChainLadder` takes
+no weights. So outside the ODP bootstrap's deterministic steps, the
+checks are internal (item 9).
+
+1. **One mask of kept link ratios.** `Development` gets a crate-internal
+   `kept_mask(&self, segment) -> Result<Vec<bool>>`, indexed by
+   `origin * (n_dev - 1) + link`. It is true where the fit uses the link
+   ratio. The fit uses the same code: the `n_periods` cutoff becomes a
+   method, and `kept_links` keeps the origin index of each pair. This
+   way the mask and the factors cannot disagree. `DevelopmentFit` gets
+   no new public field, because a public field would break the struct
+   literals of external users. With no exclusions, every observed link
+   ratio is kept.
+
+2. **The drops stay fixed on the observed triangle** (the user's
+   decision). A simulated triangle keeps the link ratios that the
+   observed triangle keeps. The bootstrap does not rank the pseudo link
+   ratios again. Under this rule, Mack's bootstrap describes the model
+   that Mack's lifetime view already computes with 0/1 weights (R's
+   `MackChainLadder(weights = W)`, decision 13). Its standard deviation
+   can therefore be checked against Mack's standard error under the
+   same settings.
+
+   Ranking the pseudo link ratios again in each simulation would
+   bootstrap the dropping rule as well. That would capture the
+   selection effect, but no result exists to check it against. It can
+   come later as an option. `n_periods` keeps the same positions under
+   either rule.
+
+3. **Mack's bootstrap.** Its own `development` decides which link
+   ratios are kept:
+
+   - **Residuals.** Only kept link ratios have a residual. The
+     small-sample factor is `sqrt(n / (n - 1))`, where `n` is the number
+     of informative kept link ratios at the age. This is the same count
+     that the fit's `sigma` uses (`kept - 1` degrees of freedom).
+     Excluded positions have a NaN residual and are not in the pool.
+     The pool is centred over the kept residuals, as before.
+   - **Pseudo factors.** The pseudo factors are re-averaged over the
+     kept links only. An excluded link draws no residual and adds
+     nothing to the numerator or the denominator, including a link that
+     starts at zero.
+   - **Draw positions.** `draw_positions` still lists every observed
+     link. With synchronized segments, a position that any segment
+     excludes therefore drops out of the shared pool (`synchronize`
+     keeps only positions where every segment has a residual). Segments
+     with different exclusions still have the same shape.
+   - **Unchanged parts.** The process, the tail step and the run-off use
+     `f`, `sigma` and the pseudo factors. These already follow the mask,
+     so these parts do not change.
+   - **Rejections.** The geometric average stays rejected: Mack's model
+     has no variance for it.
+
+4. **The ODP bootstrap gets `n_periods`, `drop_high` and `drop_low`.**
+   They are new fields with decision 13's defaults, and they apply to
+   the volume-weighted chain ladder only. The ODP bootstrap has no
+   average setting. They change four steps:
+
+   - **Fitted values.** The fitted values are back-cast from each
+     origin's latest value with the factors under the exclusions. This
+     is the same as chainladder-python's `full_expectation_` of a
+     `Chainladder` on `Development(n_periods, drop_high, drop_low)`.
+   - **Which cells have a residual.** An incremental cell `(o, k + 1)`
+     has a residual when the link ratio `(o, k)` is kept, because its
+     increment is the numerator of that link. The first age's cells
+     always have one.
+     - chainladder-python gives the first age's cell the weight of link
+       0, so dropping link `(o, 0)` drops two residuals. We do not copy
+       that quirk. The parity check (item 9) compares the other cells
+       and lists this one.
+     - Cells without a residual are NaN and are not in the pool. Zero
+       residuals and the corner cells stay in the pool, uncentred, as
+       R's `BootChainLadder` does now.
+   - **Scale** (the user's decision). The scale is
+     `phi = sum of the kept r^2 / (N - p)`, where `N` is the number of
+     observed cells and `p = n_origins + n_ages - 1`. This is
+     chainladder-python's rule, and with no exclusions it gives
+     today's `phi`.
+     - The rule is biased low under exclusions: on RAA with
+       `n_periods = 3`, `phi` is about 70% of the plain one (694.0
+       against 983.6; "As built", item 2). The design note and the
+       docstring say so.
+     - The residuals keep today's factor `sqrt(N / (N - p))`.
+   - **Simulation.**
+     - Every observed cell still gets a resampled residual, so the
+       random stream does not change and a later kept link has its
+       starting value.
+     - The pseudo factors are the volume-weighted average over the kept
+       links only, with R's rule of 1 for an empty denominator.
+     - The process is unchanged.
+
+   `prepare` keeps its Bayesian callers (`BayesOdp` and `BayesBf`) on
+   the defaults. Their results stay bit-identical.
+
+5. **The geometric average** stays rejected in both bootstraps and in
+   their one-year views. Neither bootstrap has a variance for it.
+   Re-reserving with it on a volume-weighted simulation would put a mean
+   in the claims development result that no setting asked for.
+
+6. **One-year views: the bootstrap inherits the method's exclusions**
+   (the user's decision, the rule of `OneYearPattern::Method`).
+   - When the bootstrap sets no exclusions, it takes the re-reserving
+     method's `n_periods`, `drop_high` and `drop_low` for the coming
+     year's simulation.
+   - When the bootstrap sets its own exclusions and they differ from
+     the method's, the view is an error that names both, as a
+     pattern mismatch is.
+   - This removes the rejection in `Sims::check`.
+   - Re-reserving fits the method again on the triangle with the coming
+     diagonal added. The `n_periods` window therefore moves by one
+     diagonal, and the drops are ranked again with the new link ratio,
+     as the actuary will do next year.
+
+7. **The claims development result has a known mean under the
+   exclusions.**
+   - **`n_periods`.** When the window moves, a known link ratio leaves
+     the average. At age `k` the expected revision of the factor is, to
+     first order, `C_old * (f_k - F_old) / S'_k`, where `S'_k` is the
+     closing volume. So the mean of the claims development result is
+     not zero.
+   - **Drops.** Ranking again also moves the mean, by an amount that has
+     no closed form.
+   - Both are what next year's re-reserving does, so they are reported
+     and not removed. The docstrings say that the mean of the
+     claims development result is not zero under the exclusions.
+
+8. **Merz and Wüthrich's closed form keeps its rejection.**
+   - **With fixed 0/1 weights** (this year's kept set, the new diagonal
+     kept), the formulas go through with the kept volumes. But that is
+     not the estimator next year:
+     - the window moves, so a link ratio leaves the average and the
+       mean is not zero (item 7);
+     - the drops make the estimator nonlinear in the new diagonal.
+   - **R's `CDR` with `weights`** cannot serve as a reference. It moves
+     the weights by one column in its `alpha`. At age 1 it ignores them.
+     At later ages it agrees with a moving window only because, under a
+     calendar window, the link coming in is the link kept next year. It
+     has no term for the mean. (A total `CDR(1)S.E.` of 21,510.79 on RAA
+     with `n_periods = 3`, quoted when this decision was written, was not
+     reproduced and is in no test; `knowledge/references/r-chainladder-cdr.md`.)
+   - The error message points to the one-year view of Mack's bootstrap.
+
+9. **Checks.**
+   - **Invariance.** Exclusions that leave out no link ratio give
+     bit-identical draws, seed for seed, in both bootstraps and in both
+     one-year views. Examples are `n_periods` at or past the number of
+     diagonals, or drops of 0. Provenance is byte-identical at the
+     defaults, and a new setting appears in it only when it is set.
+   - **Mack's bootstrap, lifetime.** Under `n_periods = 5` and under
+     `drop_high = drop_low = 1` on RAA and GenIns, check two things:
+     - the mean is the chain ladder's under the same settings;
+     - the standard deviation by origin and in total is Mack's standard
+       error under the same settings, within the tolerance of
+       `knowledge/findings/mack-bootstrap-lifetime-vs-mack.md`. Mack's
+       standard error is itself at parity with R's `MackChainLadder(weights = W)`.
+   - **Construction.** The residuals are NaN exactly where the mask
+     excludes a link ratio. The pool's size is the sum of the
+     informative kept link ratios.
+   - **The ODP bootstrap against chainladder-python 0.10.1** on RAA and
+     GenIns, under `n_periods = 3`, under `drop_high = drop_low = 1`,
+     and under both. A script writes a reference CSV with:
+     - the fitted incremental values;
+     - which cells have a residual (except the first age's quirk);
+     - the unscaled residuals;
+     - `phi`.
+     These are all compared exactly. The simulated mean of the reserves
+     is compared within Monte Carlo error, with chainladder-python's
+     samples refitted by the same `Development`. The standard deviation
+     is not compared, because the conventions differ (centring, dropped
+     zeros, hat matrix).
+   - **One-year views.**
+     - The invariance above.
+     - An origin with one cell left has the same one-year result as its
+       lifetime result, under the exclusions.
+     - Under `n_periods`, the mean of the chain ladder's claims
+       development result by origin matches item 7's first-order
+       revision within Monte Carlo error.
+     - Under the drops, a pinned seed regression.
+   - **Errors.** The geometric average in both bootstraps; a bootstrap
+     whose own exclusions differ from the method's; the closed form
+     under any exclusion; `n_periods = Some(0)` on `OdpBootstrap`.
+
+10. **Bindings.**
+    - **Python.** `OdpBootstrap(n_periods=None, drop_high=0,
+      drop_low=0)`, placed after the existing arguments. `MackBootstrap`
+      already takes the three settings and now uses them. The one-year
+      views take the method's settings.
+    - **R.** `odp_bootstrap()` gets `n_periods`, `drop_high` and
+      `drop_low` after its last argument. `mack_bootstrap()` and the
+      one-year functions stop raising.
+    - **Tests.** The binding tests that expected the rejection now check
+      the fits.
+
+**As built** (2026-10-19). What changed from the proposal while building
+it:
+
+1. `Error::ExclusionsMismatch { bootstrap, method }` is a new variant of
+   the public `Error` enum. The mismatch error has to write out both
+   settings, and `Error::Bootstrap` holds a static string. It is marked
+   breaking in the changelog, as are the three new public fields of
+   `OdpBootstrap`.
+2. `phi` under `n_periods = 3` on RAA is 694.0, not the 322.4 that item 4
+   first quoted. 322.4 is chainladder-python's `scale_`, which also drops the
+   first-age residuals of the origins whose link 0 is dropped (its weight
+   quirk); prospicio keeps them, as item 4 says. The plain `phi` is 983.6.
+3. The reference means in the ODP check come from chainladder-python's
+   samples with its pool replaced by prospicio's (first age kept, no
+   centring, zeros kept, the `sqrt(N / (N - p))` factor), because with its
+   native pool the means differ by up to 16% on RAA. Its refits use the
+   observed exclusions as fixed drop positions. RAA under the window with
+   both drops is heavy tailed (outliers of 1e8 on a median of 9e4), so its
+   medians are compared, not its means.
+4. The first-order revision of item 7 is checked on Mack's bootstrap only
+   (RAA with `n_periods = 3`, GenIns with `n_periods = 5`, within 4
+   standard errors plus 2%). The ODP bootstrap's uncentred residual pool
+   biases its claims development result far from the first-order revision
+   under `n_periods` (RAA 1990: -7,300 simulated against +335 predicted,
+   and -700 without exclusions), so no assertion is made on it.
+5. `Development::reject_exclusions` had no caller left and was removed.
+6. Mack's bootstrap against Mack's standard error under the same settings
+   (item 9) holds on RAA and GenIns under `n_periods = 5` and under one
+   high and one low dropped, every origin and the total within 2 Monte
+   Carlo standard errors at 20,000 simulations
+   (`knowledge/findings/mack-bootstrap-under-exclusions-vs-mack.md`).
+7. Bindings: Python's `OdpBootstrap` takes `n_periods`, `drop_high` and
+   `drop_low` after `ldf_weight`, with getters and the settings in its
+   `repr` when set; R's `odp_bootstrap()` takes them after `ldf_weight`.
+   In R, `odp_one_year()` has no bootstrap settings of its own and takes the
+   method's, and `mack_one_year()`'s `mack_n_periods`, `mack_drop_high` and
+   `mack_drop_low` are the bootstrap's own: they must equal the method's
+   or stay at their defaults. A bootstrap in Python that sets its own
+   different settings gets a `ValueError` naming both.
+8. The geometric average stays rejected in the bootstraps and their
+   one-year views, and the closed form's rejection now points to
+   `MackBootstrap::one_year`.

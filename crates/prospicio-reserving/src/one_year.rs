@@ -109,6 +109,15 @@ impl MackFit {
     /// whose latest values lie on one calendar diagonal, one new origin per
     /// period. Anything else is an error ([`Error::ClaimsDevelopment`]).
     ///
+    /// The exclusions `n_periods`, `drop_high` and `drop_low` are an error
+    /// too, even when they remove nothing today. Next year's estimate
+    /// is not linear in the new diagonal under them: the window moves, so a
+    /// known link ratio leaves the average and the mean of the claims
+    /// development result is not zero, and the drops are ranked again with
+    /// the new link ratio. [`MackBootstrap::one_year`](crate::MackBootstrap::one_year)
+    /// re-reserves under them
+    /// (`docs/design/reserving-v02.md`, decision 14, item 8).
+    ///
     /// An origin with an interior hole, a missing value before its latest,
     /// is accepted: each factor's volume is that of the pairs behind it, so
     /// the hole stays out now and next year and the run-off adds up to
@@ -172,7 +181,7 @@ impl MackFit {
         }
         if self.exclusions_set {
             return Err(Error::ClaimsDevelopment(
-                "n_periods, drop_high and drop_low are not yet supported, it needs every link ratio",
+                "n_periods, drop_high and drop_low are not supported, the closed form needs every link ratio; use the one-year view of Mack's bootstrap (MackBootstrap::one_year)",
             ));
         }
 

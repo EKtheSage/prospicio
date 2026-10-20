@@ -4,16 +4,12 @@
 
 <!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
 
-## Now
-
-- (none)
-
 ## Next
 
-- #333's custom designs and gamma and Tweedie families (in the Reserving lane's files, with the user's go-ahead of 2026-10-19)
+- [odp-glm-designs] #333's custom designs and gamma and Tweedie families (in the Reserving lane's files, with the user's go-ahead of 2026-10-19)
 - the issues filed by the Guides lane on 2026-10-18 (#353, #355, #356, #358)
-- survival models when claim-level reserving resumes (`docs/design/models.md`)
-- The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
+- [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
+- [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
 
 ## Done
 

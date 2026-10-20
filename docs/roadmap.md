@@ -37,7 +37,7 @@ when from experience, and which pricing method fits which scenario.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust, Python and R, with each fit's sampler diagnostics), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R), ONNX import (`prospicio_nn::onnx`, Rust). Still to do: WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -339,8 +339,20 @@ what it is aiming for by v1.0.
     the chain ladder, the expected-loss family and Mack, in the factor and
     in sigma alike, and `Average::Geometric` (factors only). Parity with
     chainladder-python's `Development` and R's `MackChainLadder(weights =
-    W)`; the bootstraps and the one-year views reject them until a second
-    PR. Factors to ultimate below 1 in selected patterns.
+    W)`; the bootstraps and the one-year views rejected them until a
+    second PR. Factors to ultimate below 1 in selected patterns.
+  - The bootstraps and the one-year views under the exclusions
+    (`reserving-v02.md`, decision 14; branch `claude/bootstrap-exclusions`,
+    issue #401, in Rust, Python and R): `OdpBootstrap` gets `n_periods`,
+    `drop_high` and `drop_low` (fitted values back-cast under the
+    exclusions, residuals only after kept links, chainladder-python's
+    scale rule), Mack's bootstrap follows the settings it already took
+    (its standard deviation is Mack's under the same settings), and a
+    one-year view takes the re-reserving method's. The drops stay fixed on
+    the observed triangle; the mean of the claims development result is
+    not zero under the exclusions. Merz and Wüthrich's closed form and the
+    geometric average still reject them. Parity with chainladder-python's
+    `BootstrapODPSample` on the deterministic steps.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

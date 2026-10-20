@@ -13,7 +13,7 @@
 //!    `r = sqrt(n_k / (n_k - 1)) C_k^(alpha / 2) (F - f_k) / sigma_k` with
 //!    `n_k` the link ratios behind `f_k`, pooled over every factor with two
 //!    or more, into a pseudo link ratio
-//!    `F* = f_k + r* sigma_k / C_k^(alpha / 2)` for every observed link,
+//!    `F* = f_k + r* sigma_k / C_k^(alpha / 2)` for every kept link,
 //!    and re-estimates each factor as their weighted average
 //!    `f*_k = sum(C_k^alpha F*) / sum(C_k^alpha)` (parameter error);
 //! 2. draws every cumulative value of the coming year in development order
@@ -33,6 +33,14 @@
 //! reserve. Its standard deviation is Mack's analytic standard error to
 //! first order, with the parameter error scaled by the variance of the
 //! resampled residuals (`validation/tests/reserving_mack_bootstrap.rs`).
+//! Under [`Development::n_periods`], [`drop_high`](Development::drop_high)
+//! and [`drop_low`](Development::drop_low) (decision 14) the link ratios
+//! the observed fit leaves out are left out here too: they have no
+//! residual (and are not counted in `n_k`), and they enter neither sum of
+//! the pseudo factor. The drops stay where the observed triangle puts
+//! them, so the bootstrap describes the model [`Mack`] computes with 0/1
+//! weights, and its standard deviation is Mack's under the same settings.
+//! The geometric average has no variance and is an error.
 //! The sigmas are the observed triangle's,
 //! those behind a single link ratio interpolated as [`Mack`] does. A link
 //! from a zero value has no variance in Mack's model: it keeps its observed
@@ -96,8 +104,8 @@ use prospicio_prob::{
 };
 
 use crate::bootstrap::{
-    TailDraw, component_sums, hash_segment, in_segment, origin_keys, pick_segment, pool_at,
-    push_moments, segment_sums, simulate_lifetime,
+    Exclusions, TailDraw, component_sums, hash_segment, in_segment, origin_keys, pick_segment,
+    pool_at, push_moments, segment_sums, simulate_lifetime,
 };
 use crate::chain_ladder::ChainLadderFit;
 use crate::dependence::{Resample, SegmentDependence, SharedPool, synchronize};
@@ -257,7 +265,11 @@ pub struct MackBootstrap {
     /// Process error on the next cumulative values.
     pub process: MackProcess,
     /// Mack's factors (their `alpha`) and how unestimable sigmas are filled
-    /// in. With a selected pattern ([`Development::pattern`]) the residuals
+    /// in. The link ratios its `n_periods` and drops leave out have no
+    /// residual and take no part in the pseudo factors, the drops fixed on
+    /// the observed triangle (decision 14). The one-year view takes the
+    /// re-reserving method's when this sets none, and must set the method's
+    /// when it sets its own. With a selected pattern ([`Development::pattern`]) the residuals
     /// and sigmas stay the triangle's estimate's, and each simulation uses
     /// `w s + (1 - w) f*` for its pseudo factors `f*`: a fully selected
     /// factor is the same in every simulation, so the pattern lowers the
@@ -343,8 +355,10 @@ pub struct MackBootstrapSegment {
     pub mack: MackFit,
     /// The scaled bias-adjusted residuals of the link ratios, row-major
     /// over origin × development: element `(o, k)` is the link from age `k`
-    /// to `k + 1`. NaN where there is no link, its earlier value is zero,
-    /// or its factor rests on a single link ratio or has a zero sigma.
+    /// to `k + 1`. NaN where there is no link, the link ratio is left out
+    /// by [`Development::n_periods`] or the drops, its earlier value is
+    /// zero, or its factor rests on a single kept link ratio or has a zero
+    /// sigma.
     /// Never centred, whatever
     /// [`MackBootstrap::centre_residuals`] says.
     pub residuals: Vec<f64>,
@@ -478,8 +492,9 @@ impl MackBootstrapFits {
 
 /// What Mack's bootstrap resamples in each simulation.
 pub(crate) struct MackDraw {
-    /// Per factor, the `(C_k, C_k+1)` of every origin observed at both ages.
-    links: Vec<Vec<(f64, f64)>>,
+    /// Per factor, the `(C_k, C_k+1, kept)` of every origin observed at both
+    /// ages, `kept` as [`Development::kept_mask`] says.
+    links: Vec<Vec<(f64, f64, bool)>>,
     pool: Vec<f64>,
     process: MackProcess,
     /// The bootstrap's tail and its sigma; `None` without one.
@@ -529,10 +544,11 @@ fn power(x: f64, e: f64) -> f64 {
 
 impl MackDraw {
     /// The pseudo factors of one simulation (its parameter error): a
-    /// resampled residual for every observed link, turned into a pseudo
-    /// link ratio, and their weighted averages with the observed weights.
-    /// The residual of the `l`-th observed link (factor by factor) is drawn
-    /// from `rng`, or, synchronized, is `pool[picks[l]]`.
+    /// resampled residual for every kept link, turned into a pseudo link
+    /// ratio, and their weighted averages with the observed weights. An
+    /// excluded link draws nothing and enters neither sum, but still counts
+    /// as a link: the residual of the `l`-th observed link (factor by
+    /// factor) is drawn from `rng`, or, synchronized, is `pool[picks[l]]`.
     fn factors(
         &self,
         dev: &DevelopmentFit,
@@ -544,8 +560,11 @@ impl MackDraw {
         let mut link = 0;
         for (k, pairs) in self.links.iter().enumerate() {
             let (mut num, mut den) = (0.0, 0.0);
-            for &(c, c1) in pairs {
+            for &(c, c1, kept) in pairs {
                 link += 1;
+                if !kept {
+                    continue;
+                }
                 if c == 0.0 {
                     num += power(c, alpha - 1.0) * c1;
                     continue;
@@ -900,7 +919,14 @@ impl MackBootstrap {
     /// whether it reads that pattern without its level
     /// ([`inherits_level_free`]).
     fn for_method(&self, method: &OneYearMethod) -> Result<(Self, bool)> {
+        // The year's simulation takes the method's exclusions unless the
+        // bootstrap sets them, and then they must be the method's.
+        let exclusions =
+            Exclusions::of(&self.development).for_method(&method.chain_ladder().development)?;
         let mut boot = self.clone();
+        boot.development.n_periods = exclusions.n_periods;
+        boot.development.drop_high = exclusions.drop_high;
+        boot.development.drop_low = exclusions.drop_low;
         boot.development.pattern = self
             .one_year_pattern
             .resolve(self.development.pattern.as_ref(), method.pattern())?;
@@ -943,7 +969,6 @@ impl MackBootstrap {
     /// and links, and the tail each simulation draws.
     pub(crate) fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
         self.development.reject_geometric("Mack's bootstrap")?;
-        self.development.reject_exclusions("Mack's bootstrap")?;
         for o in 0..segment.n_origins {
             let (last, _) = segment.latest(o)?;
             for d in 0..=last {
@@ -985,21 +1010,29 @@ impl MackBootstrap {
         let mut residuals = vec![f64::NAN; no * nd];
         let mut pool = Vec::new();
         let mut links = Vec::with_capacity(nd - 1);
+        let kept = self.development.kept_mask(segment)?;
         for k in 0..nd - 1 {
-            let pairs: Vec<(usize, f64, f64)> = (0..no)
-                .filter_map(|o| Some((o, segment.get(o, k)?, segment.get(o, k + 1)?)))
+            let pairs: Vec<(usize, f64, f64, bool)> = (0..no)
+                .filter_map(|o| {
+                    Some((
+                        o,
+                        segment.get(o, k)?,
+                        segment.get(o, k + 1)?,
+                        kept[o * (nd - 1) + k],
+                    ))
+                })
                 .collect();
-            let informative = pairs.iter().filter(|p| p.1 != 0.0).count();
+            let informative = pairs.iter().filter(|p| p.3 && p.1 != 0.0).count();
             if informative > 1 && sigma[k] != 0.0 {
                 let n = informative as f64;
-                for &(o, c, c1) in pairs.iter().filter(|p| p.1 != 0.0) {
+                for &(o, c, c1, _) in pairs.iter().filter(|p| p.3 && p.1 != 0.0) {
                     let r =
                         (n / (n - 1.0)).sqrt() * power(c, alpha / 2.0) * (c1 / c - f[k]) / sigma[k];
                     residuals[o * nd + k] = r;
                     pool.push(r);
                 }
             }
-            links.push(pairs.iter().map(|&(_, c, c1)| (c, c1)).collect());
+            links.push(pairs.iter().map(|&(_, c, c1, k)| (c, c1, k)).collect());
         }
         // With every sigma zero nothing is resampled: no parameter or
         // process error.
@@ -1056,7 +1089,7 @@ mod tests {
     use crate::development::Average;
     use crate::expected_loss::BornhuetterFerguson;
     use crate::tail::Tail;
-    use crate::triangle::tests::{RAA, annual, genins, raa};
+    use crate::triangle::tests::{GENINS, RAA, annual, genins, raa};
     use crate::triangle::{DevelopmentColumn, Long};
     use crate::{Grain, Month, OdpBootstrap};
     use prospicio_prob::PredictiveDistribution;
@@ -2168,6 +2201,423 @@ mod tests {
                 },
                 r => panic!("{r:?}"),
             }
+        }
+    }
+
+    fn bits(x: &[f64]) -> Vec<u64> {
+        x.iter().map(|v| v.to_bits()).collect()
+    }
+
+    fn excluding(n_periods: Option<usize>, drop_high: usize, drop_low: usize) -> MackBootstrap {
+        MackBootstrap {
+            development: Development {
+                n_periods,
+                drop_high,
+                drop_low,
+                ..Default::default()
+            },
+            ..boot(300, 11, MackProcess::Gamma)
+        }
+    }
+
+    #[test]
+    fn exclusions_that_drop_nothing_leave_the_draws_alone() {
+        // RAA has ten diagonals, so a window of ten or more keeps every link
+        // ratio, and so do drops of nothing: same residuals, same draws.
+        let base = boot(300, 11, MackProcess::Gamma)
+            .fit(&raa(), "values")
+            .unwrap();
+        for b in [
+            excluding(Some(10), 0, 0),
+            excluding(Some(50), 0, 0),
+            excluding(None, 0, 0),
+        ] {
+            let fit = b.fit(&raa(), "values").unwrap();
+            assert_eq!(bits(&fit.residuals), bits(&base.residuals));
+            assert_eq!(
+                bits(fit.reserves.draw_matrix()),
+                bits(base.reserves.draw_matrix())
+            );
+        }
+    }
+
+    #[test]
+    fn residuals_exist_exactly_for_the_kept_links() {
+        let segment = raa().segment("values").unwrap();
+        for (n_periods, high, low) in [
+            (Some(5), 0, 0),
+            (Some(3), 0, 0),
+            (None, 1, 1),
+            (Some(6), 1, 0),
+        ] {
+            let b = excluding(n_periods, high, low);
+            let mask = b.development.kept_mask(&segment).unwrap();
+            let (model, draw) = b.model(&segment).unwrap();
+            let dev = &model.mack.chain_ladder.development;
+            let (no, nd) = (segment.n_origins, segment.n_dev);
+            let mut pool = 0;
+            for k in 0..nd - 1 {
+                let kept = (0..no).filter(|&o| mask[o * (nd - 1) + k]).count();
+                // The mask and the fit agree on what is kept.
+                assert_eq!(kept, dev.n_links[k], "{n_periods:?} {high} {low}, age {k}");
+                let has = kept > 1;
+                pool += if has { kept } else { 0 };
+                for o in 0..no {
+                    let r = model.residuals[o * nd + k];
+                    assert_eq!(
+                        r.is_finite(),
+                        has && mask[o * (nd - 1) + k],
+                        "{n_periods:?} {high} {low}, origin {o} age {k}"
+                    );
+                }
+            }
+            assert_eq!(draw.pool.len(), pool);
+            assert!(pool < 45, "every link is still kept");
+        }
+    }
+
+    #[test]
+    fn excluded_links_do_not_move_the_draw_positions_or_the_pseudo_factors() {
+        // Every observed link keeps its position in the synchronized
+        // stream, excluded or not.
+        let segment = raa().segment("values").unwrap();
+        let all = boot(10, 1, MackProcess::Gamma).model(&segment).unwrap().0;
+        let some = excluding(Some(3), 0, 0).model(&segment).unwrap().0;
+        assert_eq!(all.draw_positions(), some.draw_positions());
+    }
+
+    #[test]
+    fn exclusions_error_cases() {
+        assert!(excluding(Some(0), 0, 0).fit(&raa(), "values").is_err());
+        let geometric = MackBootstrap {
+            development: Development {
+                average: Average::Geometric,
+                n_periods: Some(3),
+                ..Default::default()
+            },
+            ..boot(10, 1, MackProcess::Gamma)
+        };
+        assert!(matches!(
+            geometric.fit(&raa(), "values"),
+            Err(Error::NotSupported { .. })
+        ));
+    }
+
+    /// The chain ladder with these link ratio exclusions, as a one-year
+    /// method.
+    fn method_excluding(
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
+    ) -> OneYearMethod {
+        OneYearMethod::ChainLadder(ChainLadder {
+            development: Development {
+                n_periods,
+                drop_high,
+                drop_low,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+    }
+
+    /// RAA in two segments, the second twice the first.
+    fn raa_segments() -> Triangle {
+        let (mut origin, mut ages, mut paid, mut lob) = (vec![], vec![], vec![], vec![]);
+        for (name, scale) in [("Auto", 1.0), ("Home", 2.0)] {
+            for (k, row) in RAA.iter().enumerate() {
+                for (d, &v) in row.iter().enumerate() {
+                    origin.push(Month::january(1981 + k as i32));
+                    ages.push(12 * (d as u32 + 1));
+                    paid.push(v * scale);
+                    lob.push(name);
+                }
+            }
+        }
+        Triangle::from_long(&Long {
+            keys: &[("lob", &lob)],
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn exclusions_that_drop_nothing_leave_the_one_year_draws_alone() {
+        // RAA has ten diagonals, so a window of fifty keeps every link ratio
+        // in the opening fit and in the closing one, and so do drops of
+        // nothing: the same draws, bit for bit, whether the bootstrap sets
+        // the exclusions or takes the method's.
+        let by_default = boot(300, 41, MackProcess::Gamma)
+            .one_year(&raa(), "values", &chain_ladder())
+            .unwrap();
+        let want = bits(by_default.cdr.draw_matrix());
+        for (n, h, l) in [(Some(50), 0, 0), (None, 0, 0)] {
+            let method = method_excluding(n, h, l);
+            let own = MackBootstrap {
+                seed: 41,
+                ..excluding(n, h, l)
+            };
+            for b in [boot(300, 41, MackProcess::Gamma), own] {
+                let fit = b.one_year(&raa(), "values", &method).unwrap();
+                assert_eq!(bits(fit.cdr.draw_matrix()), want, "{n:?}");
+                assert_eq!(fit.opening_ultimate, by_default.opening_ultimate);
+            }
+        }
+        // With segments too.
+        let tri = raa_segments();
+        let by_default = boot(200, 42, MackProcess::Gamma)
+            .one_year_segments(&tri, "paid", &chain_ladder())
+            .unwrap();
+        let fit = MackBootstrap {
+            seed: 42,
+            n_sims: 200,
+            ..excluding(Some(50), 0, 0)
+        }
+        .one_year_segments(&tri, "paid", &method_excluding(Some(50), 0, 0))
+        .unwrap();
+        assert_eq!(
+            bits(fit.cdr.draw_matrix()),
+            bits(by_default.cdr.draw_matrix())
+        );
+    }
+
+    #[test]
+    fn the_one_year_view_inherits_the_methods_exclusions() {
+        // A bootstrap that sets none simulates, and re-reserves, with the
+        // method's; setting the method's gives the same draws; and the
+        // exclusions change the draws.
+        let method = method_excluding(Some(3), 1, 0);
+        let inherited = boot(300, 43, MackProcess::Gamma)
+            .one_year(&raa(), "values", &method)
+            .unwrap();
+        let own = MackBootstrap {
+            seed: 43,
+            ..excluding(Some(3), 1, 0)
+        }
+        .one_year(&raa(), "values", &method)
+        .unwrap();
+        assert_eq!(
+            bits(inherited.cdr.draw_matrix()),
+            bits(own.cdr.draw_matrix())
+        );
+        let plain = boot(300, 43, MackProcess::Gamma)
+            .one_year(&raa(), "values", &chain_ladder())
+            .unwrap();
+        assert_ne!(
+            bits(inherited.cdr.draw_matrix()),
+            bits(plain.cdr.draw_matrix())
+        );
+    }
+
+    #[test]
+    fn one_cell_left_draws_as_the_one_year_view_under_the_exclusions() {
+        // 1982's last link rests on 1981's alone, kept by every setting, so
+        // its lifetime reserve plus its one-year CDR is its opening reserve
+        // in every simulation, as without exclusions.
+        for (p, h, l) in [(Some(3), 0, 0), (None, 1, 1), (Some(5), 1, 0)] {
+            let b = MackBootstrap {
+                seed: 13,
+                n_sims: 500,
+                ..excluding(p, h, l)
+            };
+            let lifetime = b.fit(&raa(), "values").unwrap();
+            let one_year = b
+                .one_year(&raa(), "values", &method_excluding(p, h, l))
+                .unwrap();
+            let opening = one_year.opening_reserve[1];
+            let reserve = column(&lifetime.reserves, 1);
+            let cdr = column(&one_year.cdr, 1);
+            assert!(reserve.iter().any(|&r| r != reserve[0]));
+            for (r, c) in reserve.iter().zip(&cdr) {
+                assert!(
+                    (r + c - opening).abs() < 1e-9 * opening,
+                    "{p:?} {h} {l}: {r} + {c} vs {opening}"
+                );
+            }
+        }
+    }
+
+    /// The mean claims development result of each origin of a complete
+    /// annual `triangle` under the volume-weighted chain ladder with
+    /// `n_periods` set to `n`, to first order in the revision of the
+    /// factors (`docs/design/reserving-v02.md`, decision 14, item 7).
+    ///
+    /// The year adds a diagonal, so at age `k` the link ratio that ends on
+    /// the oldest diagonal of the window leaves the average and the one of
+    /// the origin now at age `k` enters. With `S` the opening volume, `S'`
+    /// the closing one, `C_old` and `F_old` the leaving cell and link ratio
+    /// and `E[F_new] = f` the entering link ratio, the closing factor is
+    /// `(S f - C_old F_old + C_new F_new) / S'`, whose mean is
+    /// `f + C_old (f - F_old) / S'`. An origin at age `a` has the mean
+    /// ultimate `C f_a prod (f_k + revision_k)` over the ages after `a`,
+    /// against the opening `C prod f_k`.
+    fn window_revision(triangle: &[&[f64]], n: usize) -> Vec<f64> {
+        let nd = triangle.len();
+        let last = nd - 1;
+        let c = |i: usize, k: usize| triangle[i][k];
+        // The link from age k of origin i ends on diagonal i + k + 1, kept
+        // when it is among the latest n.
+        let kept = |i: usize, k: usize| i + k + 1 + n > last;
+        let mut f = vec![1.0; last];
+        let mut revision = vec![0.0; last];
+        for k in 0..last {
+            let origins: Vec<usize> = (0..last - k).filter(|&i| kept(i, k)).collect();
+            let volume: f64 = origins.iter().map(|&i| c(i, k)).sum();
+            f[k] = origins.iter().map(|&i| c(i, k + 1)).sum::<f64>() / volume;
+            // The link that leaves ends on the diagonal `last - n + 1`.
+            if let Some(old) = (last + 1)
+                .checked_sub(n + k + 1)
+                .filter(|&i| i < last - k && kept(i, k))
+            {
+                let closing = volume - c(old, k) + c(last - k, k);
+                revision[k] = c(old, k) * (f[k] - c(old, k + 1) / c(old, k)) / closing;
+            }
+        }
+        (0..nd)
+            .map(|o| {
+                let age = last - o;
+                if age == last {
+                    return 0.0;
+                }
+                let opening: f64 = f[age..].iter().product();
+                let closing: f64 =
+                    f[age] * (age + 1..last).map(|k| f[k] + revision[k]).product::<f64>();
+                c(o, age) * (opening - closing)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_window_moves_the_mean_of_the_claims_development_result() {
+        // Under n_periods the re-reserving drops the oldest link ratio of
+        // each age from its average, so the CDR's mean is not zero. It is
+        // the first-order revision, up to its second-order terms: on RAA
+        // with n_periods = 3 and a million simulations the largest
+        // departure from it is 0.9% of an origin's mean (1,087 simulated,
+        // 1,077 predicted, 5 standard errors of 5 for 1986), so the check
+        // allows 2% of the prediction on top of 4 standard errors. The
+        // centred Mack bootstrap has no mean bias of its own; the ODP's
+        // uncentred pool does, which moves its means well away from this.
+        let n = 20_000;
+        for (name, tri, rows, n_periods) in
+            [("RAA", raa(), &RAA, 3), ("GenIns", genins(), &GENINS, 5)]
+        {
+            let fit = boot(n, 1, MackProcess::Gamma)
+                .one_year(&tri, "values", &method_excluding(Some(n_periods), 0, 0))
+                .unwrap();
+            let want = window_revision(rows, n_periods);
+            let mut moved = 0;
+            for (o, w) in want.iter().enumerate() {
+                let x = column(&fit.cdr, o);
+                let mean = x.iter().sum::<f64>() / n as f64;
+                let se = sd_and_error(&x).0 / (n as f64).sqrt();
+                eprintln!("{name} {o}: want {w:.1} got {mean:.1} se {se:.1}");
+                assert!(
+                    (mean - w).abs() <= 4.0 * se + 0.02 * w.abs(),
+                    "{name} origin {o}: mean {mean}, first order {w}, standard error {se}"
+                );
+                moved += usize::from(w.abs() > 8.0 * se);
+            }
+            // The check can tell: the window moves some origins' means by
+            // many standard errors.
+            assert!(moved >= 2, "{name}: {moved} origins move");
+        }
+    }
+
+    #[test]
+    #[ignore = "platform-specific pins (Windows x86_64); a local refactor guard, run with --ignored"]
+    fn the_drops_are_pinned_by_seed() {
+        // Regression: the claims development result of RAA under the chain
+        // ladder with each age's highest and lowest link ratio dropped, the
+        // ranking redone on the closing triangle.
+        let fit = boot(500, 61, MackProcess::Gamma)
+            .one_year(&raa(), "values", &method_excluding(None, 1, 1))
+            .unwrap();
+        let totals: Vec<f64> = fit
+            .cdr
+            .draw_matrix()
+            .chunks(10)
+            .map(|row| row.iter().sum())
+            .collect();
+        let (mean, sd) = (totals.iter().sum::<f64>() / 500.0, sd_and_error(&totals).0);
+        for (got, want) in [(mean, -866.912641), (sd, 16762.313333)] {
+            assert!(
+                (got / want - 1.0).abs() < 1e-6,
+                "mean {mean} and sd {sd} of the total, pinned at -866.912641 and 16762.313333"
+            );
+        }
+    }
+
+    #[test]
+    fn exclusion_errors_in_the_one_year_view() {
+        // The bootstrap's own exclusions must be the method's.
+        for (own, method) in [
+            (excluding(Some(3), 0, 0), chain_ladder()),
+            (excluding(Some(3), 0, 0), method_excluding(Some(4), 0, 0)),
+            (excluding(None, 1, 0), method_excluding(None, 0, 1)),
+            (excluding(None, 0, 1), method_excluding(Some(3), 0, 1)),
+        ] {
+            let err = own.one_year(&raa(), "values", &method).unwrap_err();
+            assert!(matches!(err, Error::ExclusionsMismatch { .. }), "{err:?}");
+            assert!(
+                matches!(
+                    own.one_year_segments(&raa_segments(), "paid", &method),
+                    Err(Error::ExclusionsMismatch { .. })
+                ),
+                "{own:?}"
+            );
+        }
+        let err = excluding(None, 1, 0)
+            .one_year(&raa(), "values", &method_excluding(Some(4), 0, 1))
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "bootstrap: the bootstrap's exclusions (n_periods = None, drop_high = 1, \
+             drop_low = 0) must be the re-reserving method's (n_periods = Some(4), \
+             drop_high = 0, drop_low = 1), or none"
+        );
+        // The geometric average is rejected, in the method or the bootstrap.
+        let geometric = |n_periods| Development {
+            average: Average::Geometric,
+            n_periods,
+            ..Default::default()
+        };
+        let method = |n_periods| {
+            OneYearMethod::ChainLadder(ChainLadder {
+                development: geometric(n_periods),
+                ..Default::default()
+            })
+        };
+        let own = MackBootstrap {
+            development: geometric(Some(3)),
+            ..boot(10, 1, MackProcess::Gamma)
+        };
+        for (b, m) in [
+            (boot(10, 1, MackProcess::Gamma), method(None)),
+            (excluding(Some(3), 0, 0), method(Some(3))),
+            (own.clone(), method(Some(3))),
+            (own, chain_ladder()),
+        ] {
+            let err = b.one_year(&raa(), "values", &m).unwrap_err();
+            assert!(
+                matches!(
+                    err,
+                    Error::NotSupported { .. } | Error::ExclusionsMismatch { .. }
+                ),
+                "{err:?}"
+            );
+        }
+        // A window of nothing is an error, from the method or the bootstrap.
+        for own in [boot(10, 1, MackProcess::Gamma), excluding(Some(0), 0, 0)] {
+            let err = own
+                .one_year(&raa(), "values", &method_excluding(Some(0), 0, 0))
+                .unwrap_err();
+            assert!(matches!(err, Error::InvalidSetting { .. }), "{err:?}");
         }
     }
 }

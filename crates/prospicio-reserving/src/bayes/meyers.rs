@@ -1369,8 +1369,9 @@ impl Rebuilt {
 /// * **Seeds.** The chains (and the pilot run) and the simulations take
 ///   seeds derived from the backtest's `seed` as [`Meyers::fit`] does from
 ///   [`Meyers::seed`]; the backtest's `n_sims` replaces [`Meyers::n_sims`].
-///   The fit's diagnostics are not reported, so a fit that fails is
-///   silent. A held-out triangle is smaller than the whole: on Meyers'
+///   The fit's diagnostics come back in [`CellForecast::diagnostics`] and
+///   [`crate::Backtest::diagnostics`], and a fit with warnings is still scored.
+///   A held-out triangle is smaller than the whole: on Meyers'
 ///   group 353 the default target acceptance 0.95 failed (R-hat above
 ///   1.05) in 21 of 3,960 backtest fits on its 28- to 45-cell training
 ///   triangles, and 0.99 in 4 of 5,400; raise [`Meyers::sampler`]'s
@@ -1411,7 +1412,7 @@ impl TriangleModel for Meyers {
             &origins,
             cells.ages(),
         )?;
-        let (posterior, _, _) = self.sample(&model, derive_seed(seed, Stream::Chains))?;
+        let (posterior, _, diagnostics) = self.sample(&model, derive_seed(seed, Stream::Chains))?;
         let at = cell_index(&model.cells, no, rebuilt.n_dev);
         let ages = rebuilt.path_ages();
 
@@ -1467,6 +1468,7 @@ impl TriangleModel for Meyers {
             mean,
             distribution,
             log_density,
+            diagnostics: Some(diagnostics),
         })
     }
 }
@@ -3287,6 +3289,38 @@ pub(crate) mod tests {
         not(feature = "slow-tests"),
         ignore = "samples with NUTS; needs --features slow-tests"
     )]
+    fn a_backtest_reports_diagnostics_and_still_scores_a_short_run() {
+        // One chain of 50 kept draws cannot reach 100 effective draws per
+        // chain, so every split warns.
+        let short = Meyers {
+            sampler: Sampler {
+                chains: 1,
+                tune: 50,
+                draws: 50,
+                ..Meyers::default().sampler
+            },
+            ..Meyers::default()
+        };
+        let bt = crate::diagonal_backtest(&frame(), &[&short], 2, 200, 5, 0.9).unwrap();
+        assert_eq!(bt.models(), ["meyers_crc"]);
+        assert_eq!(bt.diagnostics(0).len(), 2);
+        for d in bt.diagnostics(0) {
+            let d = d.as_ref().expect("a Bayesian model reports diagnostics");
+            assert!(!d.warnings.is_empty(), "{d:?}");
+        }
+        let warnings = bt.warnings();
+        assert!(warnings.iter().any(|(m, s, _)| (*m, *s) == (0, 0)));
+        assert!(warnings.iter().any(|(m, s, _)| (*m, *s) == (0, 1)));
+        // Scored all the same.
+        assert!(bt.split_scores(0, 0).iter().all(|v| v.is_finite()));
+        assert!(bt.split_scores(0, 3).iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
     fn the_backtest_model_is_the_fit_on_the_train_rows() {
         // The latest diagonal held out: the train rows are the triangle of
         // the first nine origins without it (row 10 w + d is origin w at
@@ -3357,8 +3391,14 @@ pub(crate) mod tests {
                 );
             }
             assert_eq!(f.distribution.n_components(), 8);
+            let d = f
+                .diagnostics
+                .as_ref()
+                .expect("a Bayesian model reports diagnostics");
+            assert!(d.max_rhat.is_finite() && d.max_rhat < 1.1, "{d:?}");
             assert_eq!(f.distribution.n_sims(), 2_000);
             let again = model.forecast(&cells, &train, &held, 2_000, 12).unwrap();
+            assert_eq!(again.diagnostics.as_ref(), Some(d));
             assert_eq!(
                 again.distribution.draw_matrix(),
                 f.distribution.draw_matrix()

@@ -708,6 +708,138 @@ class AttentionCannFit:
         """
 
 @final
+class Backtest:
+    """
+    The scores of a ``diagonal_backtest``: every model on every metric and
+    held-out diagonal, the diagnostics of each fit and the pointwise
+    held-out log densities.
+    
+    The metrics (``metrics``), each scored per diagonal over the held-out
+    cells that every model fits:
+    
+    - ``crps``: the mean over the cells of the continuous ranked
+      probability score of the forecast distribution at the cell's value.
+    - ``coverage``: the share of cells inside the central ``interval`` of
+      their forecast draws.
+    - ``actual_vs_expected``: the diagonal total over the forecast mean of
+      the diagonal total.
+    - ``total_crps``: the CRPS of the diagonal total from the draws summed
+      per simulation.
+    - ``mean_log_density``: the mean over the cells of the model's held-out
+      log predictive density (NaN for a model that gives none).
+    - ``total_percentile``: the share of the simulated diagonal totals at
+      or below the actual total, the probability integral transform of the
+      diagonal: uniform over many triangles for a calibrated model.
+    
+    The tables (``scores()``, ``mean()``, ``diagnostics()``) are pandas
+    DataFrames when pandas is installed and dicts of lists otherwise.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import GlmCandidate, Triangle, diagonal_backtest
+    >>> paid = [[100.0, 150.0, 165.0, 170.0], [110.0, 170.0, 180.0],
+    ...         [120.0, 175.0], [130.0]]
+    >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+    ...         for d, v in enumerate(r)]
+    >>> origin, age, values = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values})
+    >>> bt = diagonal_backtest(tri, "paid", [GlmCandidate.odp()], 1, n_sims=200)
+    >>> bt
+    Backtest(models=['odp'], diagonals=['2023'], metrics=6, warnings=0)
+    >>> bt.warnings
+    []
+    """
+    def __repr__(self, /) -> str: ...
+    def diagnostics(self, /) -> Any:
+        """
+        The sampler diagnostics of each fit, one row per model and
+        diagonal: ``model``, ``diagonal``, ``max_rhat``, ``min_ess_bulk``,
+        ``min_ess_tail``, ``divergences`` and ``n_warnings``; a row for
+        every model and diagonal, models in order. A model with no sampler
+        (the GLM) has NaN in the three float columns and ``None`` in the
+        two count columns (NaN in a DataFrame). A fit with warnings is
+        scored like any other.
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+        """
+    @property
+    def diagonals(self, /) -> list[str]:
+        """
+        The calendar period held out in each split (labelled at the
+        triangle's development grain, as the ``calendar`` column of the
+        cells), oldest first.
+        """
+    @property
+    def excluded(self, /) -> list[int]:
+        """
+        Per diagonal, the number of held-out cells left out of the scoring
+        of every model because their origin or development period has no
+        training cell that every model fits on.
+        """
+    @property
+    def log_densities(self, /) -> dict:
+        """
+        Each model's held-out log predictive density of every scored row,
+        diagonals in order, by model name; ``None`` for a model that gives
+        none. Every model's list is for the same rows, so the lists are
+        the input of the stacking functions.
+        """
+    def mean(self, /) -> Any:
+        """
+        The mean of each metric over the diagonals, one row per model:
+        the column ``model`` and one column per metric. A metric that is NaN
+        on a diagonal (``mean_log_density`` of a model with no density) is
+        NaN in the mean.
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+        """
+    @property
+    def metrics(self, /) -> list[str]:
+        """
+        Metric names, in the order of ``scores()``: ``crps``,
+        ``coverage``, ``actual_vs_expected``, ``total_crps``,
+        ``mean_log_density`` and ``total_percentile``.
+        """
+    @property
+    def models(self, /) -> list[str]:
+        """
+        Model names, in the order given.
+        """
+    @property
+    def n_splits(self, /) -> int:
+        """
+        Number of held-out diagonals.
+        """
+    @property
+    def scored_rows(self, /) -> list[list[int]]:
+        """
+        Per diagonal, the rows of the cell table that were scored (origin
+        by development, row-major, counted from 0; R's ``scored_rows``
+        count from 1), in the order of
+        ``log_densities``.
+        """
+    def scores(self, /) -> Any:
+        """
+        Every score as a long table with one row per model, diagonal and
+        metric: columns ``model``, ``diagonal``, ``metric`` and ``value``.
+        
+        Returns
+        -------
+        pandas.DataFrame or dict
+        """
+    @property
+    def warnings(self, /) -> list[tuple[str, str, str]]:
+        """
+        Every failed diagnostic threshold as ``(model, diagonal,
+        message)``, in model then diagonal order; empty when every fit
+        passed.
+        """
+
+@final
 class BayesBf:
     """
     The Bayesian Bornhuetter–Ferguson of England, Verrall and Wüthrich
@@ -9293,6 +9425,63 @@ class Glm:
         """
 
 @final
+class GlmCandidate:
+    """
+    A generalized linear model of the cells of a triangle, for
+    ``diagonal_backtest``: the terms and the GLM, on the columns of the
+    backtest's cell table (``origin``, ``development`` and ``calendar``
+    factors; ``origin_index``, ``development_index``, ``calendar_index``,
+    ``age`` and ``exposure`` numbers; ``exposure`` is ``premium`` or 1).
+    The response is the incremental value of the column.
+    
+    Parameters
+    ----------
+    terms : prospicio.models.Terms
+        The model's terms.
+    glm : prospicio.models.Glm
+        The family, link and dispersion.
+    name : str, default "glm"
+        The model's name in a ``diagonal_backtest`` given a list.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Glm, Terms
+    >>> from prospicio.reserving import GlmCandidate
+    >>> GlmCandidate.odp()
+    GlmCandidate(name='odp')
+    >>> GlmCandidate(Terms().intercept().factor("origin"), Glm("poisson", "log"), name="origin only").name
+    'origin only'
+    """
+    def __new__(cls, /, terms: Terms, glm: Glm, name: str = "glm") -> GlmCandidate: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def glm(self, /) -> Glm:
+        """
+        The model's family, link and dispersion.
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The name in the backtest.
+        """
+    @staticmethod
+    def odp() -> GlmCandidate:
+        """
+        The over-dispersed Poisson GLM of the chain ladder: an intercept, an
+        origin factor and a development factor, with the over-dispersed
+        Poisson family. Its name is ``"odp"``.
+        
+        Returns
+        -------
+        GlmCandidate
+        """
+    @property
+    def terms(self, /) -> Terms:
+        """
+        The model's terms.
+        """
+
+@final
 class GlmFit:
     """
     A fitted GLM, from ``Glm.fit``.
@@ -13092,8 +13281,16 @@ class MackBootstrap:
     sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
         How a sigma behind a single link ratio is filled in.
     n_periods, drop_high, drop_low : optional
-        As ``ChainLadder``. The bootstraps do not support them yet: a
-        ``ValueError`` names the setting.
+        As ``ChainLadder``. The bootstrap keeps the link ratios that are
+        kept at the observed triangle (the drops are not ranked again in
+        each simulation): only they have residuals and enter the pseudo
+        factors, so Mack's standard error under the same settings is its
+        standard deviation's reference. In ``one_year``, a bootstrap that
+        sets none of them takes ``method``'s; one that sets its own must set
+        the same as ``method``, else a ``ValueError`` names both. The mean
+        of the claims development result is then not zero: the window moves
+        and the drops are ranked again on the closing triangle, as the next
+        year's reserving does.
     centre_residuals : bool, default True
         Subtract the residuals' mean before resampling them, so that the
         pseudo factors are unbiased, the mean CDR is about zero and the
@@ -13534,9 +13731,11 @@ class MackFit:
         ValueError
             If the fit has several segments (use ``segment(...)``), the
             factors are not volume-weighted, the fit has a tail (a factor
-            other than 1, or one that replaces estimated factors), or the
-            latest values do not lie on one calendar diagonal with one new
-            origin per period.
+            other than 1, or one that replaces estimated factors), the fit
+            excludes link ratios (``n_periods``, ``drop_high`` or
+            ``drop_low``; use ``MackBootstrap.one_year``, which follows
+            them), or the latest values do not lie on one calendar diagonal
+            with one new origin per period.
         """
     @property
     def development(self, /) -> list[int]:
@@ -15466,13 +15665,30 @@ class OdpBootstrap:
         ``one_year``, a bootstrap without a pattern takes ``method``'s
         (``bootstrap_ldf``); one with a pattern needs ``method`` to select the
         same factors, and the tail its pattern implies to be ``method``'s.
+    n_periods, drop_high, drop_low : optional
+        As ``ChainLadder``, for the volume-weighted chain ladder the
+        bootstrap fits (it has no average setting). The fitted values are
+        back-cast with the factors under the exclusions; an incremental cell
+        has a residual only if the link ratio it closes is kept (the first
+        age's cells always do), and the pseudo factors average the kept
+        links only. The drops are fixed on the observed triangle: the
+        simulated triangles are not ranked again. The scale is the sum of
+        the kept squared residuals over ``N - p`` (chainladder-python's
+        rule), which is biased low under exclusions: on RAA with
+        ``n_periods=3`` it is about 70% of the plain scale (694 against
+        984), and the standard deviations are correspondingly narrow. In
+        ``one_year``, a bootstrap that sets none of them takes ``method``'s;
+        one that sets its own must set the same as ``method``, else a
+        ``ValueError`` names both. The mean of the claims development
+        result is then not zero: the window moves and the drops are ranked
+        again on the closing triangle, as the next year's reserving does.
     
     Raises
     ------
     ValueError
         If ``n_sims`` is zero, ``process`` or ``dependence`` is unknown, or
         ``spearman`` is missing for ``"rank_correlation"``, given for another
-        dependence or not square.
+        dependence or not square; if ``n_periods`` is zero.
     TypeError
         If ``tail`` is not a number or a tail estimator.
     OverflowError
@@ -15492,13 +15708,23 @@ class OdpBootstrap:
     >>> fit.reserves.mean() > 0
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None) -> OdpBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> OdpBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def dependence(self, /) -> str:
         """
         How the segments depend on each other: ``"independent"``,
         ``"synchronized"`` or ``"rank_correlation"``.
+        """
+    @property
+    def drop_high(self, /) -> int:
+        """
+        How many of the highest link ratios at each age are left out.
+        """
+    @property
+    def drop_low(self, /) -> int:
+        """
+        How many of the lowest link ratios at each age are left out.
         """
     def fit(self, /, triangle: Triangle, column: str) -> OdpBootstrapFit:
         """
@@ -15545,6 +15771,12 @@ class OdpBootstrap:
         """
         The weight on the selected factors: a number, a dict by age, or
         ``None`` without a pattern.
+        """
+    @property
+    def n_periods(self, /) -> int |None:
+        """
+        Link ratios that start before the latest ``n_periods`` calendar
+        diagonals are left out; ``None`` keeps all.
         """
     @property
     def n_sims(self, /) -> int:
@@ -23026,6 +23258,91 @@ def deviance(family: str, y: Sequence[float], mu: Sequence[float], weights: Sequ
     Returns
     -------
     float
+    """
+
+def diagonal_backtest(triangle: Triangle, column: str, models: Any, n_diagonals: int, *, premium: Any |None = None, n_sims: int = 1000, seed: int = 0, interval: float = 0.9) -> Backtest:
+    """
+    Backtests models on the latest calendar diagonals of one measure column
+    of a single-segment triangle: for each of the last ``n_diagonals``
+    calendar periods, every model is fitted to the cells valued before it
+    and forecasts the cells valued in it, and the forecasts are scored
+    against what came in.
+    
+    The table of cells has one row per origin and development cell, with
+    the incremental values of ``column`` as the response (a cumulative
+    triangle is differenced). The cells of each held-out diagonal are the
+    test set and the earlier ones the training set, so a model sees only
+    what was known. A held-out cell whose origin or development period has
+    no training cell is left out of the scoring of every model (see
+    ``excluded``).
+    
+    A fit of a sampler (``BayesOdp``, ``Meyers``) whose diagnostics fail a
+    threshold is **still scored**: a study over many triangles wants every
+    split and a list of the doubtful ones, not an abort at the first. The
+    failed thresholds are in ``Backtest.warnings`` and
+    ``Backtest.diagnostics()``; a model that cannot be fitted at all raises
+    ``ValueError``.
+    
+    Meyers' own statistic, the percentile of the outcome in the predictive
+    distribution of the ultimate, comes from a fit on the whole upper
+    triangle, not from a backtest: it is the ``cdf`` of the fit's
+    predictive total at the known outcome,
+    ``fit.ultimates.total().cdf(outcome)`` (``Sampled.cdf``). The
+    backtest's ``total_percentile`` is the same quantity for the held-out
+    diagonal's total, from the fit on the cells before it.
+    
+    Parameters
+    ----------
+    triangle : Triangle
+        Cumulative, with one segment.
+    column : str
+        The measure column to forecast.
+    models : dict or list
+        A dict from name to model, or a list of models named by their
+        kind (``"bayes_odp"``, ``"meyers_crc"``, ``"meyers_csr"``,
+        ``"meyers_cay"``, a ``GlmCandidate``'s ``name``); two models with
+        one name are an error. A model is a ``BayesOdp`` or a ``Meyers``
+        (the settings of its own ``fit``, except that ``n_sims`` and
+        ``seed`` are the backtest's) or a ``GlmCandidate``.
+    n_diagonals : int
+        The number of latest calendar diagonals to hold out, oldest first.
+    premium : array-like, optional
+        The exposure of each origin, one value per origin. ``Meyers``
+        needs it; a ``GlmCandidate`` sees it as the ``exposure`` column.
+    n_sims : int, default 1000
+        Simulations per forecast.
+    seed : int, default 0
+        Seed of every fit and simulation; the same seed replays the scores.
+    interval : float, default 0.9
+        The central interval whose coverage is scored.
+    
+    Returns
+    -------
+    Backtest
+    
+    Raises
+    ------
+    ValueError
+        If ``models`` is empty or names two models alike; if ``Meyers`` is
+        given without ``premium``; if the triangle has several segments or
+        lacks the column; if a diagonal cannot be held out; or if a model
+        cannot be fitted.
+    TypeError
+        If a model is not a ``BayesOdp``, a ``Meyers`` or a
+        ``GlmCandidate``.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import GlmCandidate, Triangle, diagonal_backtest
+    >>> paid = [[100.0, 150.0, 165.0, 170.0], [110.0, 170.0, 180.0],
+    ...         [120.0, 175.0], [130.0]]
+    >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+    ...         for d, v in enumerate(r)]
+    >>> origin, age, values = map(list, zip(*rows))
+    >>> tri = Triangle.from_long(origin, age, {"paid": values})
+    >>> bt = diagonal_backtest(tri, "paid", [GlmCandidate.odp()], 1, n_sims=200)
+    >>> bt.models, bt.n_splits, bt.metrics[:2]
+    (['odp'], 1, ['crps', 'coverage'])
     """
 
 def distortion_envelope(x: Any, premium: float, s: Sequence[float], assets: float |None = None) -> tuple[list[float], list[float]]:

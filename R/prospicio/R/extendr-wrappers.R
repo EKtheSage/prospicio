@@ -1953,7 +1953,7 @@ Triangle$benktander <- function(column, exposure, apriori, n_iters, average, sig
 
 Triangle$cape_cod <- function(column, exposure, trend, decay, average, sigma_interpolation, excl, tail, ldf) .Call(wrap__Triangle__cape_cod, self, column, exposure, trend, decay, average, sigma_interpolation, excl, tail, ldf)
 
-Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf)
+Triangle$odp_bootstrap <- function(column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf, excl) .Call(wrap__Triangle__odp_bootstrap, self, column, n_sims, seed, process, tail, tail_std_err, dependence, spearman, ldf, excl)
 
 Triangle$bayes_odp <- function(column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_odp, self, column, intercept_sd, origin_sd, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
 
@@ -1970,6 +1970,8 @@ Triangle$meyers_segments <- function(column, premium, model, logelr_mean, logelr
 Triangle$meyers_one_year <- function(column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__meyers_one_year, self, column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims)
 
 Triangle$meyers_one_year_segments <- function(column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman) .Call(wrap__Triangle__meyers_one_year_segments, self, column, premium, model, priors, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman)
+
+Triangle$diagonal_backtest <- function(column, premium, specs, n_diagonals, n_sims, seed, interval) .Call(wrap__Triangle__diagonal_backtest, self, column, premium, specs, n_diagonals, n_sims, seed, interval)
 
 Triangle$compartmental <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run)
 

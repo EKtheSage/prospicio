@@ -138,8 +138,12 @@ implies no tail, and with \code{bootstrap_tail = FALSE} the bootstrap has
 none.}
 
 \item{n_periods, drop_high, drop_low}{Which link ratios the factors of
-\code{method} average, as in \code{\link[=chain_ladder]{chain_ladder()}}. The one-year views reject
-exclusions, and \code{"geometric"} as \code{mack_average}.}
+\code{method} average, as in \code{\link[=chain_ladder]{chain_ladder()}}. The bootstrap simulates the
+coming year with the same link ratios the observed triangle keeps, and
+\code{method} is fitted again on the triangle with the coming diagonal, so
+the window moves by one diagonal and the drops are ranked again, as
+next year's reserving does. The mean of the CDR is therefore not zero
+under exclusions. \code{"geometric"} as \code{mack_average} is rejected.}
 
 \item{tail_sigma}{For \code{mack_one_year()} with \code{bootstrap_tail}, the tail's
 sigma (R's \code{tail.sigma}), or \code{NULL} to extrapolate it, as in
@@ -156,7 +160,9 @@ uncentred, as England, Verrall and Wuthrich's Appendix 1 is written.}
 
 \item{mack_n_periods, mack_drop_high, mack_drop_low}{Which link ratios Mack's
 model in \code{mack_one_year()} averages, as \code{n_periods}, \code{drop_high} and
-\code{drop_low} in \code{\link[=chain_ladder]{chain_ladder()}}; its bootstrap rejects exclusions.}
+\code{drop_low} in \code{\link[=chain_ladder]{chain_ladder()}}. They must be the same as \code{method}'s
+(\code{n_periods}, \code{drop_high}, \code{drop_low}) or left at their defaults, which
+take \code{method}'s; any other combination is an error naming both.}
 }
 \value{
 A \code{one_year_fit} object.

@@ -19,7 +19,10 @@ odp_bootstrap(
   spearman = NULL,
   ldf = NULL,
   ldf_kind = NULL,
-  ldf_weight = 1
+  ldf_weight = 1,
+  n_periods = NULL,
+  drop_high = 0,
+  drop_low = 0
 )
 }
 \arguments{
@@ -95,6 +98,19 @@ error. A supplied pattern lowers the reported uncertainty. With no
 \code{tail}, a cumulative pattern to the oldest age implies a constant tail
 (\code{pattern_tail} of \code{\link[=chain_ladder]{chain_ladder()}}), the same in every simulation
 unless \code{tail_std_err} is given.}
+
+\item{n_periods, drop_high, drop_low}{Which link ratios the volume-weighted
+chain ladder behind \code{\link[=odp_bootstrap]{odp_bootstrap()}} averages, as in \code{\link[=chain_ladder]{chain_ladder()}}
+(the bootstrap has no \code{average}). The fitted values are back-cast with
+the factors under the exclusions; an incremental cell has a residual
+only if the link ratio it closes is kept (the first age's cells always
+do), and the pseudo factors average the kept links only. The drops
+are fixed on the observed triangle: the simulated triangles are not
+ranked again. The scale is the sum of the kept squared residuals over
+\code{N - p} (chainladder-python's rule), which is biased low under
+exclusions: on RAA with \code{n_periods = 3} it is about 70\% of the plain
+scale (694 against 984), and the standard deviations are
+correspondingly narrow. See \code{\link[=odp_one_year]{odp_one_year()}} for the one-year view.}
 }
 \value{
 An \code{odp_bootstrap_fit} object.

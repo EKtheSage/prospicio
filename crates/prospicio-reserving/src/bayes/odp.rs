@@ -882,7 +882,8 @@ pub(crate) struct Prepared {
 /// * The chains and the simulations take seeds derived from the
 ///   backtest's `seed` as [`BayesOdp::fit`] does from [`BayesOdp::seed`];
 ///   the backtest's `n_sims` replaces [`BayesOdp::n_sims`]. The fit's
-///   diagnostics are not reported.
+///   diagnostics come back in [`CellForecast::diagnostics`] and
+///   [`crate::Backtest::diagnostics`]; a fit with warnings is still scored.
 /// * `mean` is each test cell's posterior mean `E[exp(eta)]`, the
 ///   distribution adds [`BayesOdp::process`] to a posterior draw, and the
 ///   log density is the log of the mean, over every posterior draw, of
@@ -971,7 +972,8 @@ impl TriangleModel for BayesOdp {
             )));
         }
         let model = self.model(no, nd, train_cells, phi, true, origin, age)?;
-        let (posterior, _) = self.sample(&model, mle, derive_seed(seed, Stream::Chains))?;
+        let (posterior, diagnostics) =
+            self.sample(&model, mle, derive_seed(seed, Stream::Chains))?;
 
         let n_draws = posterior.n_draws();
         let mean: Vec<f64> = test_cells
@@ -1017,6 +1019,7 @@ impl TriangleModel for BayesOdp {
             mean,
             distribution,
             log_density: Some(log_density),
+            diagnostics: Some(diagnostics),
         })
     }
 }
@@ -1950,6 +1953,14 @@ mod tests {
             f.distribution.draw_matrix()
         );
         assert_eq!(again.log_density.unwrap(), lpd);
+        // The diagnostics of the sampled posterior come with the forecast,
+        // as deterministic as the draws.
+        let d = f
+            .diagnostics
+            .as_ref()
+            .expect("a Bayesian model reports diagnostics");
+        assert!(d.max_rhat.is_finite() && d.max_rhat < 1.1, "{d:?}");
+        assert_eq!(again.diagnostics.as_ref(), Some(d));
 
         // Without its only cell, the newest origin (row 90) has no train
         // row.
@@ -1959,6 +1970,40 @@ mod tests {
             matches!(&e, Error::Bayes(m) if m.contains("without a train row")),
             "{e}"
         );
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_backtest_reports_diagnostics_and_still_scores_a_short_run() {
+        let cells = TriangleFrame::new(&raa(), "values", None).unwrap();
+        // One chain of 50 kept draws cannot reach 100 effective draws per
+        // chain, so every split warns.
+        let short = BayesOdp {
+            sampler: Sampler {
+                chains: 1,
+                tune: 50,
+                draws: 50,
+                ..Sampler::default()
+            },
+            ..BayesOdp::default()
+        };
+        let bt = crate::diagonal_backtest(&cells, &[&short], 2, 200, 5, 0.9).unwrap();
+        let diagnostics = bt.diagnostics(0);
+        assert_eq!(diagnostics.len(), 2);
+        for d in diagnostics {
+            let d = d.as_ref().expect("a Bayesian model reports diagnostics");
+            assert!(!d.warnings.is_empty(), "{d:?}");
+        }
+        let warnings = bt.warnings();
+        assert!(warnings.iter().any(|(m, s, _)| (*m, *s) == (0, 0)));
+        assert!(warnings.iter().any(|(m, s, _)| (*m, *s) == (0, 1)));
+        // Scored all the same.
+        for metric in 0..crate::METRICS.len() {
+            assert!(bt.split_scores(0, metric).iter().all(|v| v.is_finite()));
+        }
     }
 
     fn columns(draws: &PredictiveDistribution) -> Vec<Vec<f64>> {

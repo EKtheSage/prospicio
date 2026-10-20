@@ -31,10 +31,16 @@ use prospicio_reserving::bayes::{
     MeyersFits, MeyersSegment, OneYearRefit, Outstanding, PaidResponse, PositivePrior, RateOrder,
     RealPrior, Scale as CompartmentalScale,
 };
-use prospicio_reserving::{BayesOdp, BayesOdpFit, Diagnostics, Meyers, MeyersFit, MeyersModel};
+use prospicio_reserving::{
+    Backtest, BayesOdp, BayesOdpFit, Diagnostics, GlmCandidate, Meyers, MeyersFit, MeyersModel,
+    NamedModel, TriangleFrame, TriangleModel, diagonal_backtest as run_backtest,
+};
+
+use prospicio_glm::Glm;
+use prospicio_models::{Column, Terms};
 
 use crate::distributions::PyPredictiveDistribution;
-use crate::models::PyElpd;
+use crate::models::{PyElpd, PyGlm, PyTerms};
 use crate::to_py;
 
 fn err(e: prospicio_reserving::Error) -> PyErr {
@@ -335,17 +341,24 @@ fn pattern_weight<'py>(
 /// `, n_periods=..., drop_high=..., drop_low=...` for the exclusions that are
 /// set, then the selected pattern; empty at the defaults.
 fn development_arg_repr(d: &Development) -> String {
+    let mut out = exclusions_arg_repr(d.n_periods, d.drop_high, d.drop_low);
+    out.push_str(&pattern_arg_repr(d.pattern.as_ref()));
+    out
+}
+
+/// The exclusions that are set, as `, n_periods=..., drop_high=...,
+/// drop_low=...`; empty at the defaults.
+fn exclusions_arg_repr(n_periods: Option<usize>, drop_high: usize, drop_low: usize) -> String {
     let mut out = String::new();
-    if let Some(n) = d.n_periods {
+    if let Some(n) = n_periods {
         out.push_str(&format!(", n_periods={n}"));
     }
-    if d.drop_high != 0 {
-        out.push_str(&format!(", drop_high={}", d.drop_high));
+    if drop_high != 0 {
+        out.push_str(&format!(", drop_high={drop_high}"));
     }
-    if d.drop_low != 0 {
-        out.push_str(&format!(", drop_low={}", d.drop_low));
+    if drop_low != 0 {
+        out.push_str(&format!(", drop_low={drop_low}"));
     }
-    out.push_str(&pattern_arg_repr(d.pattern.as_ref()));
     out
 }
 
@@ -3035,9 +3048,11 @@ impl PyMackFit {
     /// ValueError
     ///     If the fit has several segments (use ``segment(...)``), the
     ///     factors are not volume-weighted, the fit has a tail (a factor
-    ///     other than 1, or one that replaces estimated factors), or the
-    ///     latest values do not lie on one calendar diagonal with one new
-    ///     origin per period.
+    ///     other than 1, or one that replaces estimated factors), the fit
+    ///     excludes link ratios (``n_periods``, ``drop_high`` or
+    ///     ``drop_low``; use ``MackBootstrap.one_year``, which follows
+    ///     them), or the latest values do not lie on one calendar diagonal
+    ///     with one new origin per period.
     fn claims_development_result(&self) -> PyResult<PyClaimsDevelopmentResult> {
         let fit = single(&self.inner, "claims_development_result", "")?;
         let inner = fit.claims_development_result().map_err(err)?;
@@ -4952,13 +4967,30 @@ impl PyClarkFit {
 ///     ``one_year``, a bootstrap without a pattern takes ``method``'s
 ///     (``bootstrap_ldf``); one with a pattern needs ``method`` to select the
 ///     same factors, and the tail its pattern implies to be ``method``'s.
+/// n_periods, drop_high, drop_low : optional
+///     As ``ChainLadder``, for the volume-weighted chain ladder the
+///     bootstrap fits (it has no average setting). The fitted values are
+///     back-cast with the factors under the exclusions; an incremental cell
+///     has a residual only if the link ratio it closes is kept (the first
+///     age's cells always do), and the pseudo factors average the kept
+///     links only. The drops are fixed on the observed triangle: the
+///     simulated triangles are not ranked again. The scale is the sum of
+///     the kept squared residuals over ``N - p`` (chainladder-python's
+///     rule), which is biased low under exclusions: on RAA with
+///     ``n_periods=3`` it is about 70% of the plain scale (694 against
+///     984), and the standard deviations are correspondingly narrow. In
+///     ``one_year``, a bootstrap that sets none of them takes ``method``'s;
+///     one that sets its own must set the same as ``method``, else a
+///     ``ValueError`` names both. The mean of the claims development
+///     result is then not zero: the window moves and the drops are ranked
+///     again on the closing triangle, as the next year's reserving does.
 ///
 /// Raises
 /// ------
 /// ValueError
 ///     If ``n_sims`` is zero, ``process`` or ``dependence`` is unknown, or
 ///     ``spearman`` is missing for ``"rank_correlation"``, given for another
-///     dependence or not square.
+///     dependence or not square; if ``n_periods`` is zero.
 /// TypeError
 ///     If ``tail`` is not a number or a tail estimator.
 /// OverflowError
@@ -4996,6 +5028,9 @@ impl PyOdpBootstrap {
         ldf = None,
         ldf_kind = None,
         ldf_weight = None,
+        n_periods = None,
+        drop_high = 0,
+        drop_low = 0,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -5009,6 +5044,9 @@ impl PyOdpBootstrap {
         ldf: Option<&Bound<'_, PyAny>>,
         ldf_kind: Option<&str>,
         ldf_weight: Option<&Bound<'_, PyAny>>,
+        n_periods: Option<usize>,
+        drop_high: usize,
+        drop_low: usize,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -5023,6 +5061,9 @@ impl PyOdpBootstrap {
                 dependence: segment_dependence(dependence, spearman)?,
                 pattern: selected_pattern(ldf, ldf_kind, ldf_weight)?,
                 one_year_pattern: OneYearPattern::Method,
+                n_periods,
+                drop_high,
+                drop_low,
             },
         })
     }
@@ -5091,6 +5132,25 @@ impl PyOdpBootstrap {
     #[getter]
     fn spearman(&self) -> Option<Vec<Vec<f64>>> {
         dependence_spearman(&self.inner.dependence)
+    }
+
+    /// Link ratios that start before the latest ``n_periods`` calendar
+    /// diagonals are left out; ``None`` keeps all.
+    #[getter]
+    fn n_periods(&self) -> Option<usize> {
+        self.inner.n_periods
+    }
+
+    /// How many of the highest link ratios at each age are left out.
+    #[getter]
+    fn drop_high(&self) -> usize {
+        self.inner.drop_high
+    }
+
+    /// How many of the lowest link ratios at each age are left out.
+    #[getter]
+    fn drop_low(&self) -> usize {
+        self.inner.drop_low
     }
 
     /// Bootstraps one measure column in every segment of a cumulative
@@ -5255,12 +5315,17 @@ impl PyOdpBootstrap {
             .tail_std_err
             .map_or(String::new(), |v| format!(", tail_std_err={v:?}"));
         format!(
-            "OdpBootstrap(n_sims={}, seed={}, process={:?}, tail={}{std_err}{}{})",
+            "OdpBootstrap(n_sims={}, seed={}, process={:?}, tail={}{std_err}{}{}{})",
             self.inner.n_sims,
             self.inner.seed,
             self.process(),
             tail_arg_repr(&self.inner.tail),
             dependence_repr(&self.inner.dependence),
+            exclusions_arg_repr(
+                self.inner.n_periods,
+                self.inner.drop_high,
+                self.inner.drop_low,
+            ),
             pattern_arg_repr(self.inner.pattern.as_ref()),
         )
     }
@@ -5531,8 +5596,16 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 /// sigma_interpolation : {"log-linear", "mack"}, default "log-linear"
 ///     How a sigma behind a single link ratio is filled in.
 /// n_periods, drop_high, drop_low : optional
-///     As ``ChainLadder``. The bootstraps do not support them yet: a
-///     ``ValueError`` names the setting.
+///     As ``ChainLadder``. The bootstrap keeps the link ratios that are
+///     kept at the observed triangle (the drops are not ranked again in
+///     each simulation): only they have residuals and enter the pseudo
+///     factors, so Mack's standard error under the same settings is its
+///     standard deviation's reference. In ``one_year``, a bootstrap that
+///     sets none of them takes ``method``'s; one that sets its own must set
+///     the same as ``method``, else a ``ValueError`` names both. The mean
+///     of the claims development result is then not zero: the window moves
+///     and the drops are ranked again on the closing triangle, as the next
+///     year's reserving does.
 /// centre_residuals : bool, default True
 ///     Subtract the residuals' mean before resampling them, so that the
 ///     pseudo factors are unbiased, the mean CDR is about zero and the
@@ -11378,6 +11451,567 @@ impl PyCompartmentalFit {
             self.inner.reserves.n_sims(),
             self.inner.rate_swaps,
             self.inner.diagnostics.warnings.len(),
+        )
+    }
+}
+
+/// A generalized linear model of the cells of a triangle, for
+/// ``diagonal_backtest``: the terms and the GLM, on the columns of the
+/// backtest's cell table (``origin``, ``development`` and ``calendar``
+/// factors; ``origin_index``, ``development_index``, ``calendar_index``,
+/// ``age`` and ``exposure`` numbers; ``exposure`` is ``premium`` or 1).
+/// The response is the incremental value of the column.
+///
+/// Parameters
+/// ----------
+/// terms : prospicio.models.Terms
+///     The model's terms.
+/// glm : prospicio.models.Glm
+///     The family, link and dispersion.
+/// name : str, default "glm"
+///     The model's name in a ``diagonal_backtest`` given a list.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import Glm, Terms
+/// >>> from prospicio.reserving import GlmCandidate
+/// >>> GlmCandidate.odp()
+/// GlmCandidate(name='odp')
+/// >>> GlmCandidate(Terms().intercept().factor("origin"), Glm("poisson", "log"), name="origin only").name
+/// 'origin only'
+#[pyclass(name = "GlmCandidate", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyGlmCandidate {
+    inner: GlmCandidate,
+}
+
+#[pymethods]
+impl PyGlmCandidate {
+    #[new]
+    #[pyo3(signature = (terms, glm, name = "glm"))]
+    fn new(terms: PyRef<'_, PyTerms>, glm: PyRef<'_, PyGlm>, name: &str) -> Self {
+        Self {
+            inner: GlmCandidate {
+                name: name.to_string(),
+                terms: terms.inner.clone(),
+                glm: glm.inner,
+            },
+        }
+    }
+
+    /// The over-dispersed Poisson GLM of the chain ladder: an intercept, an
+    /// origin factor and a development factor, with the over-dispersed
+    /// Poisson family. Its name is ``"odp"``.
+    ///
+    /// Returns
+    /// -------
+    /// GlmCandidate
+    #[staticmethod]
+    fn odp() -> Self {
+        Self {
+            inner: GlmCandidate {
+                name: "odp".into(),
+                terms: Terms::new()
+                    .intercept()
+                    .factor("origin")
+                    .factor("development"),
+                glm: Glm::over_dispersed_poisson(),
+            },
+        }
+    }
+
+    /// The name in the backtest.
+    #[getter]
+    fn name(&self) -> String {
+        self.inner.name.clone()
+    }
+
+    /// The model's terms.
+    #[getter]
+    fn terms(&self) -> PyTerms {
+        PyTerms {
+            inner: self.inner.terms.clone(),
+        }
+    }
+
+    /// The model's family, link and dispersion.
+    #[getter]
+    fn glm(&self) -> PyGlm {
+        PyGlm {
+            inner: self.inner.glm,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("GlmCandidate(name={})", quoted(&self.inner.name))
+    }
+}
+
+/// `text` as a Python string literal in single quotes, for a `repr`.
+fn quoted(text: &str) -> String {
+    format!("'{}'", text.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+/// `items` as a Python list of strings, for a `repr`.
+fn quoted_list(items: &[String]) -> String {
+    format!(
+        "[{}]",
+        items
+            .iter()
+            .map(|i| quoted(i))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+/// A model of a ``diagonal_backtest``, read from a Python object.
+enum Candidate {
+    Odp(BayesOdp),
+    Meyers(Meyers),
+    Glm(GlmCandidate),
+}
+
+impl Candidate {
+    fn from_py(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if let Ok(m) = obj.extract::<PyRef<'_, PyBayesOdp>>() {
+            Ok(Self::Odp(m.inner.clone()))
+        } else if let Ok(m) = obj.extract::<PyRef<'_, PyMeyers>>() {
+            Ok(Self::Meyers(m.inner.clone()))
+        } else if let Ok(m) = obj.extract::<PyRef<'_, PyGlmCandidate>>() {
+            Ok(Self::Glm(m.inner.clone()))
+        } else {
+            let kind = obj
+                .get_type()
+                .name()
+                .map_or_else(|_| "?".into(), |n| n.to_string());
+            Err(PyTypeError::new_err(format!(
+                "a backtest model must be a BayesOdp, a Meyers or a GlmCandidate, got {kind}"
+            )))
+        }
+    }
+
+    fn default_name(&self) -> String {
+        match self {
+            Self::Odp(m) => m.name().to_string(),
+            Self::Meyers(m) => m.name().to_string(),
+            Self::Glm(m) => m.name.clone(),
+        }
+    }
+
+    fn into_named(self, name: String) -> NamedModel {
+        match self {
+            Self::Odp(m) => NamedModel::new(name, m),
+            Self::Meyers(m) => NamedModel::new(name, m),
+            Self::Glm(m) => NamedModel::new(name, m),
+        }
+    }
+}
+
+/// The models of a backtest as named models: a dict's keys are the names,
+/// a list's are the models' own names (``"bayes_odp"``, ``"meyers_crc"``,
+/// ``"meyers_csr"``, ``"meyers_cay"``, a ``GlmCandidate``'s ``name``).
+fn named_models(models: &Bound<'_, PyAny>) -> PyResult<(Vec<NamedModel>, bool)> {
+    let mut named = Vec::new();
+    let mut has_meyers = false;
+    if let Ok(dict) = models.cast::<PyDict>() {
+        for (key, value) in dict.iter() {
+            let name: String = key
+                .extract()
+                .map_err(|_| PyTypeError::new_err("the keys of models must be model names"))?;
+            let c = Candidate::from_py(&value)?;
+            has_meyers |= matches!(c, Candidate::Meyers(_));
+            named.push(c.into_named(name));
+        }
+    } else {
+        let iter = models.try_iter().map_err(|_| {
+            PyTypeError::new_err("models must be a dict of name to model or a list of models")
+        })?;
+        for item in iter {
+            let c = Candidate::from_py(&item?)?;
+            has_meyers |= matches!(c, Candidate::Meyers(_));
+            let name = c.default_name();
+            if named.iter().any(|m: &NamedModel| m.name == name) {
+                return Err(PyValueError::new_err(format!(
+                    "two models are named {}: pass a dict {{name: model}} to name each one",
+                    quoted(&name)
+                )));
+            }
+            named.push(c.into_named(name));
+        }
+    }
+    if named.is_empty() {
+        return Err(PyValueError::new_err("models must hold at least one model"));
+    }
+    Ok((named, has_meyers))
+}
+
+/// A table as a pandas DataFrame, or as a dict of lists without pandas.
+fn backtest_table<'py>(
+    py: Python<'py>,
+    columns: Bound<'py, PyDict>,
+) -> PyResult<Bound<'py, PyAny>> {
+    match py.import("pandas") {
+        Ok(pandas) => pandas.call_method1("DataFrame", (&columns,)),
+        Err(_) => Ok(columns.into_any()),
+    }
+}
+
+/// Backtests models on the latest calendar diagonals of one measure column
+/// of a single-segment triangle: for each of the last ``n_diagonals``
+/// calendar periods, every model is fitted to the cells valued before it
+/// and forecasts the cells valued in it, and the forecasts are scored
+/// against what came in.
+///
+/// The table of cells has one row per origin and development cell, with
+/// the incremental values of ``column`` as the response (a cumulative
+/// triangle is differenced). The cells of each held-out diagonal are the
+/// test set and the earlier ones the training set, so a model sees only
+/// what was known. A held-out cell whose origin or development period has
+/// no training cell is left out of the scoring of every model (see
+/// ``excluded``).
+///
+/// A fit of a sampler (``BayesOdp``, ``Meyers``) whose diagnostics fail a
+/// threshold is **still scored**: a study over many triangles wants every
+/// split and a list of the doubtful ones, not an abort at the first. The
+/// failed thresholds are in ``Backtest.warnings`` and
+/// ``Backtest.diagnostics()``; a model that cannot be fitted at all raises
+/// ``ValueError``.
+///
+/// Meyers' own statistic, the percentile of the outcome in the predictive
+/// distribution of the ultimate, comes from a fit on the whole upper
+/// triangle, not from a backtest: it is the ``cdf`` of the fit's
+/// predictive total at the known outcome,
+/// ``fit.ultimates.total().cdf(outcome)`` (``Sampled.cdf``). The
+/// backtest's ``total_percentile`` is the same quantity for the held-out
+/// diagonal's total, from the fit on the cells before it.
+///
+/// Parameters
+/// ----------
+/// triangle : Triangle
+///     Cumulative, with one segment.
+/// column : str
+///     The measure column to forecast.
+/// models : dict or list
+///     A dict from name to model, or a list of models named by their
+///     kind (``"bayes_odp"``, ``"meyers_crc"``, ``"meyers_csr"``,
+///     ``"meyers_cay"``, a ``GlmCandidate``'s ``name``); two models with
+///     one name are an error. A model is a ``BayesOdp`` or a ``Meyers``
+///     (the settings of its own ``fit``, except that ``n_sims`` and
+///     ``seed`` are the backtest's) or a ``GlmCandidate``.
+/// n_diagonals : int
+///     The number of latest calendar diagonals to hold out, oldest first.
+/// premium : array-like, optional
+///     The exposure of each origin, one value per origin. ``Meyers``
+///     needs it; a ``GlmCandidate`` sees it as the ``exposure`` column.
+/// n_sims : int, default 1000
+///     Simulations per forecast.
+/// seed : int, default 0
+///     Seed of every fit and simulation; the same seed replays the scores.
+/// interval : float, default 0.9
+///     The central interval whose coverage is scored.
+///
+/// Returns
+/// -------
+/// Backtest
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``models`` is empty or names two models alike; if ``Meyers`` is
+///     given without ``premium``; if the triangle has several segments or
+///     lacks the column; if a diagonal cannot be held out; or if a model
+///     cannot be fitted.
+/// TypeError
+///     If a model is not a ``BayesOdp``, a ``Meyers`` or a
+///     ``GlmCandidate``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import GlmCandidate, Triangle, diagonal_backtest
+/// >>> paid = [[100.0, 150.0, 165.0, 170.0], [110.0, 170.0, 180.0],
+/// ...         [120.0, 175.0], [130.0]]
+/// >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+/// ...         for d, v in enumerate(r)]
+/// >>> origin, age, values = map(list, zip(*rows))
+/// >>> tri = Triangle.from_long(origin, age, {"paid": values})
+/// >>> bt = diagonal_backtest(tri, "paid", [GlmCandidate.odp()], 1, n_sims=200)
+/// >>> bt.models, bt.n_splits, bt.metrics[:2]
+/// (['odp'], 1, ['crps', 'coverage'])
+#[pyfunction]
+#[pyo3(signature = (
+    triangle,
+    column,
+    models,
+    n_diagonals,
+    *,
+    premium = None,
+    n_sims = 1000,
+    seed = 0,
+    interval = 0.9,
+))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn diagonal_backtest(
+    py: Python<'_>,
+    triangle: PyRef<'_, PyTriangle>,
+    column: &str,
+    models: &Bound<'_, PyAny>,
+    n_diagonals: usize,
+    premium: Option<&Bound<'_, PyAny>>,
+    n_sims: usize,
+    seed: u64,
+    interval: f64,
+) -> PyResult<PyBacktest> {
+    let (named, has_meyers) = named_models(models)?;
+    let premium = premium.map(|p| floats(p, "premium")).transpose()?;
+    if has_meyers && premium.is_none() {
+        return Err(PyValueError::new_err(
+            "Meyers needs premium, one value per origin",
+        ));
+    }
+    let tri = &triangle.inner;
+    let (inner, diagonals) = py
+        .detach(|| {
+            let cells = TriangleFrame::new(tri, column, premium.as_deref())?;
+            let refs: Vec<&dyn TriangleModel> =
+                named.iter().map(|m| m as &dyn TriangleModel).collect();
+            let bt = run_backtest(&cells, &refs, n_diagonals, n_sims, seed, interval)?;
+            // The calendar period of each split, as the frame labels it.
+            let labels = match cells.frame().column("calendar") {
+                Some(Column::Categorical(c)) => Some(c),
+                _ => None,
+            };
+            let diagonals = bt
+                .scored_rows()
+                .iter()
+                .zip(bt.diagonals())
+                .map(|(rows, &index)| match (labels, rows.first()) {
+                    (Some(c), Some(&r)) => c[r].clone(),
+                    _ => index.to_string(),
+                })
+                .collect::<Vec<_>>();
+            Ok((bt, diagonals))
+        })
+        .map_err(err)?;
+    Ok(PyBacktest { inner, diagonals })
+}
+
+/// The scores of a ``diagonal_backtest``: every model on every metric and
+/// held-out diagonal, the diagnostics of each fit and the pointwise
+/// held-out log densities.
+///
+/// The metrics (``metrics``), each scored per diagonal over the held-out
+/// cells that every model fits:
+///
+/// - ``crps``: the mean over the cells of the continuous ranked
+///   probability score of the forecast distribution at the cell's value.
+/// - ``coverage``: the share of cells inside the central ``interval`` of
+///   their forecast draws.
+/// - ``actual_vs_expected``: the diagonal total over the forecast mean of
+///   the diagonal total.
+/// - ``total_crps``: the CRPS of the diagonal total from the draws summed
+///   per simulation.
+/// - ``mean_log_density``: the mean over the cells of the model's held-out
+///   log predictive density (NaN for a model that gives none).
+/// - ``total_percentile``: the share of the simulated diagonal totals at
+///   or below the actual total, the probability integral transform of the
+///   diagonal: uniform over many triangles for a calibrated model.
+///
+/// The tables (``scores()``, ``mean()``, ``diagnostics()``) are pandas
+/// DataFrames when pandas is installed and dicts of lists otherwise.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import GlmCandidate, Triangle, diagonal_backtest
+/// >>> paid = [[100.0, 150.0, 165.0, 170.0], [110.0, 170.0, 180.0],
+/// ...         [120.0, 175.0], [130.0]]
+/// >>> rows = [(2020 + w, 12 * (d + 1), v) for w, r in enumerate(paid)
+/// ...         for d, v in enumerate(r)]
+/// >>> origin, age, values = map(list, zip(*rows))
+/// >>> tri = Triangle.from_long(origin, age, {"paid": values})
+/// >>> bt = diagonal_backtest(tri, "paid", [GlmCandidate.odp()], 1, n_sims=200)
+/// >>> bt
+/// Backtest(models=['odp'], diagonals=['2023'], metrics=6, warnings=0)
+/// >>> bt.warnings
+/// []
+#[pyclass(name = "Backtest", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyBacktest {
+    inner: Backtest,
+    diagonals: Vec<String>,
+}
+
+#[pymethods]
+impl PyBacktest {
+    /// Model names, in the order given.
+    #[getter]
+    fn models(&self) -> Vec<String> {
+        self.inner.models().to_vec()
+    }
+
+    /// Metric names, in the order of ``scores()``: ``crps``,
+    /// ``coverage``, ``actual_vs_expected``, ``total_crps``,
+    /// ``mean_log_density`` and ``total_percentile``.
+    #[getter]
+    fn metrics(&self) -> Vec<String> {
+        self.inner
+            .metrics()
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    /// Number of held-out diagonals.
+    #[getter]
+    fn n_splits(&self) -> usize {
+        self.inner.n_splits()
+    }
+
+    /// The calendar period held out in each split (labelled at the
+    /// triangle's development grain, as the ``calendar`` column of the
+    /// cells), oldest first.
+    #[getter]
+    fn diagonals(&self) -> Vec<String> {
+        self.diagonals.clone()
+    }
+
+    /// Every score as a long table with one row per model, diagonal and
+    /// metric: columns ``model``, ``diagonal``, ``metric`` and ``value``.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame or dict
+    fn scores<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let bt = &self.inner;
+        let (mut model, mut diagonal, mut metric, mut value) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        for (m, name) in bt.models().iter().enumerate() {
+            for (k, label) in self.diagonals.iter().enumerate() {
+                for (j, metric_name) in bt.metrics().iter().enumerate() {
+                    model.push(name.clone());
+                    diagonal.push(label.clone());
+                    metric.push((*metric_name).to_string());
+                    value.push(bt.split_scores(m, j)[k]);
+                }
+            }
+        }
+        let out = PyDict::new(py);
+        out.set_item("model", model)?;
+        out.set_item("diagonal", diagonal)?;
+        out.set_item("metric", metric)?;
+        out.set_item("value", value)?;
+        backtest_table(py, out)
+    }
+
+    /// The mean of each metric over the diagonals, one row per model:
+    /// the column ``model`` and one column per metric. A metric that is NaN
+    /// on a diagonal (``mean_log_density`` of a model with no density) is
+    /// NaN in the mean.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame or dict
+    fn mean<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let bt = &self.inner;
+        let out = PyDict::new(py);
+        out.set_item("model", bt.models().to_vec())?;
+        for (j, metric) in bt.metrics().iter().enumerate() {
+            let means: Vec<f64> = (0..bt.models().len()).map(|m| bt.mean(m, j)).collect();
+            out.set_item(*metric, means)?;
+        }
+        backtest_table(py, out)
+    }
+
+    /// Per diagonal, the number of held-out cells left out of the scoring
+    /// of every model because their origin or development period has no
+    /// training cell that every model fits on.
+    #[getter]
+    fn excluded(&self) -> Vec<usize> {
+        self.inner.excluded().to_vec()
+    }
+
+    /// Per diagonal, the rows of the cell table that were scored (origin
+    /// by development, row-major, counted from 0; R's ``scored_rows``
+    /// count from 1), in the order of
+    /// ``log_densities``.
+    #[getter]
+    fn scored_rows(&self) -> Vec<Vec<usize>> {
+        self.inner.scored_rows().to_vec()
+    }
+
+    /// Each model's held-out log predictive density of every scored row,
+    /// diagonals in order, by model name; ``None`` for a model that gives
+    /// none. Every model's list is for the same rows, so the lists are
+    /// the input of the stacking functions.
+    #[getter]
+    fn log_densities<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let out = PyDict::new(py);
+        for (name, lpd) in self.inner.models().iter().zip(self.inner.log_densities()) {
+            out.set_item(name, lpd.clone())?;
+        }
+        Ok(out)
+    }
+
+    /// The sampler diagnostics of each fit, one row per model and
+    /// diagonal: ``model``, ``diagonal``, ``max_rhat``, ``min_ess_bulk``,
+    /// ``min_ess_tail``, ``divergences`` and ``n_warnings``; a row for
+    /// every model and diagonal, models in order. A model with no sampler
+    /// (the GLM) has NaN in the three float columns and ``None`` in the
+    /// two count columns (NaN in a DataFrame). A fit with warnings is
+    /// scored like any other.
+    ///
+    /// Returns
+    /// -------
+    /// pandas.DataFrame or dict
+    fn diagnostics<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let bt = &self.inner;
+        let (mut model, mut diagonal) = (Vec::new(), Vec::new());
+        let (mut rhat, mut bulk, mut tail) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut divergences, mut n_warnings) = (Vec::new(), Vec::new());
+        for (m, name) in bt.models().iter().enumerate() {
+            for (k, d) in bt.diagnostics(m).iter().enumerate() {
+                model.push(name.clone());
+                diagonal.push(self.diagonals[k].clone());
+                rhat.push(d.as_ref().map_or(f64::NAN, |d| d.max_rhat));
+                bulk.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_bulk));
+                tail.push(d.as_ref().map_or(f64::NAN, |d| d.min_ess_tail));
+                divergences.push(d.as_ref().map(|d| d.divergences));
+                n_warnings.push(d.as_ref().map(|d| d.warnings.len()));
+            }
+        }
+        let out = PyDict::new(py);
+        out.set_item("model", model)?;
+        out.set_item("diagonal", diagonal)?;
+        out.set_item("max_rhat", rhat)?;
+        out.set_item("min_ess_bulk", bulk)?;
+        out.set_item("min_ess_tail", tail)?;
+        out.set_item("divergences", divergences)?;
+        out.set_item("n_warnings", n_warnings)?;
+        backtest_table(py, out)
+    }
+
+    /// Every failed diagnostic threshold as ``(model, diagonal,
+    /// message)``, in model then diagonal order; empty when every fit
+    /// passed.
+    #[getter]
+    fn warnings(&self) -> Vec<(String, String, String)> {
+        self.inner
+            .warnings()
+            .into_iter()
+            .map(|(m, k, message)| {
+                (
+                    self.inner.models()[m].clone(),
+                    self.diagonals[k].clone(),
+                    message,
+                )
+            })
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Backtest(models={}, diagonals={}, metrics={}, warnings={})",
+            quoted_list(self.inner.models()),
+            quoted_list(&self.diagonals),
+            self.inner.metrics().len(),
+            self.inner.warnings().len(),
         )
     }
 }

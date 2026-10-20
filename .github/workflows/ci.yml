@@ -41,6 +41,8 @@ jobs:
       - run: python3 -m pip install --quiet pyyaml && python3 validation/scripts/check_okf.py knowledge
       # Change fragments (changes/README.md) are valid and fold cleanly.
       - run: python3 validation/scripts/fold_changes.py --self-test && python3 validation/scripts/fold_changes.py --check
+      # Lane status files (docs/lanes/*.md) have ids and no resurrected bullets.
+      - run: python3 validation/scripts/check_lanes.py
       # Default members: pure-Rust crates and the parity suite. The feature
       # lints the Bayesian parity tests too, and turns on
       # prospicio-reserving/slow-tests; `cargo test` skips the parity files

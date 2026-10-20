@@ -359,8 +359,15 @@ models").
   fixed dispersion) is unseen too.
 - Scores per model and diagonal: mean cell CRPS, coverage of the central
   `interval` of each cell's draws, actual vs expected on the diagonal
-  total (`Σy / Σμ`), and the CRPS of the diagonal total from the joint
-  draws summed per simulation. One seed serves every model and diagonal,
+  total (`Σy / Σμ`), the CRPS of the diagonal total from the joint draws
+  summed per simulation, the mean held-out log density of the scored rows
+  (`mean_log_density`) and the share of the simulated totals at or below
+  the actual total (`total_percentile`). A forecast also carries the
+  sampler diagnostics of its fit (`CellForecast::diagnostics`, `None` for
+  the GLM); `Backtest::diagnostics(model)` and `Backtest::warnings()` give
+  them per split, and a fit with warnings is still scored. Two models
+  with the same name are an error before any fit; `NamedModel` renames
+  one. One seed serves every model and diagonal,
   so the models share their random numbers, and results are deterministic.
 - `GlmCandidate` fits the training cells its GLM accepts
   (`Glm::accepts`): the quasi-Poisson takes negative increments (#114),
