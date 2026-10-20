@@ -79,6 +79,11 @@ fn coefficient_row(params: &Grid, name: &str) -> usize {
 fn matches_r_glm() {
     let mut checked = 0;
     for row in reference("reserving_glm_r.csv") {
+        // `PRO.ODP.GLM` fits the ODP; the gamma and Tweedie rows are the
+        // crate's (`validation/tests/reserving.rs`).
+        if row[1] != "odp_glm" {
+            continue;
+        }
         let (data, quantity, arg) = (row[0].as_str(), row[2].as_str(), row[3].as_str());
         let (tri, labels) = sheet_triangle(data);
         let first_year = if data == "genins" { 2001 } else { 1977 };
