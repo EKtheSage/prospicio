@@ -79,6 +79,9 @@ models and compares them.
   approximation and each row's response from the family.
   `Glm::over_dispersed_poisson()` reproduces the Chain Ladder on a
   triangle's origin and development factors (tested).
+- `prospicio_glm::glmm::Glmm`: Poisson, gamma and Tweedie GLMs with
+  random intercepts on one, crossed or nested factors, by Laplace or
+  adaptive Gauss–Hermite quadrature (see "Mixed models").
 - Parity: `validation/reference/glm_statsmodels.csv`
   (`validation/scripts/statsmodels_glm.py`): 10 GLMs on a synthetic
   600-policy portfolio (Poisson with exposure offset, quasi-Poisson, gamma
@@ -662,6 +665,66 @@ variation near 0.001, which claims and pure premiums never have. The
 inversion's oscillatory integrals and series acceleration are not worth
 that. If such regimes ever matter, compute the series' large log-gamma
 differences more precisely instead.
+
+## Mixed models
+
+`prospicio_glm::glmm::Glmm` fits a GLM with random intercepts (#358, the
+user's decisions of 2026-10-19, which also cover item 1 of the double-GLM
+issue): `log μ = Xβ + offset + Σₖ u_{k, level}` with each factor's
+intercepts `N(0, σₖ²)`, for the Poisson, gamma and Tweedie (fixed power in
+`(1, 2)`) with the log link. Grouping factors are a `Grouping` each (a name
+and every row's label); several are crossed, and `Grouping::nested(a, b)`
+is lme4's `a:b`, so `(1 | a/b)` is `a` and `Grouping::nested(a, b)`.
+
+- **Fitting.** The marginal likelihood of `(β, log σ, log φ)` with the
+  intercepts integrated out, by the Laplace approximation by default (as
+  `glmer` and glmmTMB), or by adaptive Gauss–Hermite quadrature when there
+  is a single factor (`glmer(nAGQ = n)`). The inner mode `û` is found by
+  Newton's method to machine precision; `H = Zᵀ W Z + diag(1/σ²)` uses
+  the observed weights, as glmmTMB's automatic differentiation does (for
+  the canonical Poisson they are the expected weights `glmer` uses). The
+  outer maximization is BFGS on central-difference gradients, polished by
+  Newton steps on a finite-difference Hessian; that Hessian's inverse is
+  the covariance of `(β, log σ, log φ)`, as glmmTMB's `sdreport`. `H` is
+  dense when factors are crossed or nested, so the cost is `O(q³)` per
+  evaluation in the `q` levels; one factor keeps it diagonal. A sparse
+  Cholesky would lift that limit if books with thousands of crossed levels
+  need it.
+- **Dispersion.** `φ` is estimated by maximum likelihood inside the
+  marginal likelihood (glmmTMB's choice), not by Pearson's statistic as
+  `Glm` does. The Tweedie power is fixed; the reference fixes glmmTMB's
+  `psi` with `map`.
+- **Results.** Each level's conditional mode `û` with its conditional
+  variance `(H⁻¹)ⱼⱼ` (lme4's `condVar`) and its prediction variance, which
+  adds the estimates' uncertainty `Jⱼ Σ Jⱼᵀ`, `J = ∂û/∂(β, log σ, log φ)`
+  (Kass and Steffey; glmmTMB's `condVar`); each `σₖ` and `φ` with
+  standard errors by the delta method from those of `log σₖ` and
+  `log φ`; the log-likelihood, AIC and BIC. `predict` adds
+  each row's intercepts by label, and a level the fit has not seen (or a
+  factor left out) contributes 0, the population mean.
+- **Parity.** `validation/scripts/r_glmm.R`: glmmTMB on its Salamanders
+  (one factor), lme4's grouseticks (location and brood nested in it) and a
+  seeded simulated book (territory crossed with class; Poisson on
+  exposure, gamma severities, Tweedie pure premiums with and without the
+  second factor), and `glmer` on the two Poisson sets, Laplace and nine
+  quadrature nodes on Salamanders: 1,237 cases, coefficients to 2e-5,
+  standard errors to 2e-4 against glmmTMB and 2e-3 against `glmer` (whose
+  `vcov` comes from its own finite-difference Hessian), modes to 1e-4,
+  log-likelihoods to 1e-8. The
+  references' quirks (glmmTMB stopping short and polished in the script,
+  its gamma dispersion parameter, `glmer`'s quadrature log-likelihood)
+  are in `knowledge/references/glmmtmb-lme4.md`.
+- **Boundary.** A factor with no effect drives `σ` to 0 and `log σ` off
+  to −∞ with a gradient that never quite vanishes; the search stops after
+  three steps that lower the objective by no more than round-off and
+  counts as converged. A `σ` below 1e-4 is at the boundary: the other
+  parameters' covariance is taken with it held at 0 (β's standard errors
+  are then the GLM's), and its own standard error is NaN.
+- **Not a `Model`.** `Glmm` does not implement `prospicio_models::Model`,
+  whose `fit` takes a design and a response: a GLMM also needs the
+  grouping factors, and its `predict` their labels.
+- **Later.** Random slopes (still being discussed with the user), a NUTS
+  fit as an add-on, and the Python and R bindings.
 
 ## Attention
 

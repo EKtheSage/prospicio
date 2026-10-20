@@ -425,3 +425,15 @@
 
 - Rust: `OdpGlm` gains a public `family` field; code that builds it in
   full adds `family: Family::Poisson` or uses `..OdpGlm::default()` (#333, #445).
+### Models
+
+- Generalized linear mixed models with random intercepts:
+  `prospicio_glm::glmm::Glmm` fits the Poisson, gamma and Tweedie (fixed
+  power) with the log link and one, nested (`Grouping::nested`) or crossed
+  grouping factors, by the Laplace approximation or, for one factor, by
+  adaptive Gauss-Hermite quadrature (`Glmm::quadrature`). `GlmmFit` gives
+  the fixed effects with their covariance, each factor's standard
+  deviation, the dispersion, the log-likelihood, AIC and BIC, and each
+  level's mode with its conditional and prediction variances; `predict`
+  gives a level the fit has not seen the population mean. At parity with
+  glmmTMB and lme4's `glmer` (#358).
