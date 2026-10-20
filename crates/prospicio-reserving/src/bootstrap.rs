@@ -367,7 +367,7 @@ pub(crate) fn components_of<T: ReserveFit>(
 }
 
 /// Per simulation, the sum of the components of `draws` in `range`.
-fn sums(draws: &PredictiveDistribution, range: std::ops::Range<usize>) -> Sampled {
+pub(crate) fn sums(draws: &PredictiveDistribution, range: std::ops::Range<usize>) -> Sampled {
     let n = draws.n_components();
     let sums = draws
         .draw_matrix()

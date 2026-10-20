@@ -123,8 +123,8 @@ dependence between segments), \code{rate_swaps} (one count per segment) and
 segment and future cell) are those of \link{compartmental_fit} and need a
 single-segment fit for the first three: with several segments use
 \code{\link[=segment]{segment()}}. \code{as.data.frame()}, \code{\link[=totals_frame]{totals_frame()}} and \code{\link[=segment]{segment()}} work as
-for \code{\link[=compartmental]{compartmental()}}. The one-year view of several segments is not yet
-built.
+for \code{\link[=compartmental]{compartmental()}}. The one-year view of several segments is
+\code{\link[=compartmental_one_year_segments]{compartmental_one_year_segments()}}.
 
 Errors: as \code{\link[=compartmental]{compartmental()}} for any segment (the message names the
 segment); \code{dependence = "synchronized"}, before any sampling, since a
