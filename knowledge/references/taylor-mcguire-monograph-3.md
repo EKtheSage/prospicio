@@ -64,7 +64,12 @@ sources:
   the printed values (a relative 2e-6 of the log-likelihood: phi or convergence
   in SAS), with the differences between models equal within rounding.
 * Model 7-10's c is 0.1544995, printed 0.155 (a seventh-decimal difference
-  in SAS's estimate flips the rounding).
+  in SAS's estimate flips the rounding). Table 7-5 prints model 7-14's a0 as
+  10.4900, but the fit gives 10.49038: the printed value has three decimals
+  and a zero added, every other coefficient matches to four.
+* The Chapter 7 designs use 1-based k and j: `1[j = 3] k` is not in the span
+  of `1[j = 3] (k - 1)` without `1[j = 3]` itself, so the 0-based indices of
+  a triangle's cells give a different model 7-14; shift them by one.
 
 # Gaps in prospicio found here
 
@@ -75,9 +80,11 @@ sources:
   of Chapter 6 (`OdpGlmFit::residuals`, Python `residuals()` and
   `residual_summary()`, R `fit@residuals` and `residual_summary()`)
   reproduce Figure 6-22's heat map and the spread by development and mean
-  by calendar year, checked in the same three tests. Still missing: custom
-  designs (reduced models, calendar terms, interactions), families other
-  than the ODP.
+  by calendar year, checked in the same three tests. The Chapter 7 models
+  run on a custom design (`OdpGlm::fit_design`, Python `fit(...,
+  design=)`, R `odp_glm(formula = ~ ...)`): models 7-2, 7-10 and 7-14
+  reproduce Tables 7-1, 7-3 and 7-5 and Figure 7-5, checked in the same
+  tests. Still missing: families other than the ODP.
 * Models (#334): `GlmFit` lacks residuals, leverages, prediction standard
   errors for sums of rows, and GCV.
 * Mack on this triangle gives a total standard error of 10,939 against the

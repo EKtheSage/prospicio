@@ -101,3 +101,30 @@ within(residual_summary(fit, "calendar")$mean,
 check(residual_summary(fit, "origin")$label[1] == "1988", "by origin")
 err <- tryCatch(residual_summary(fit, "diagonal"), error = conditionMessage)
 check(grepl("should be one of", err), "an unknown grouping is rejected")
+
+# A custom design: Taylor and McGuire's model 7-14 as a formula on the cells
+# (Table 7-5; a0 printed to three decimals).
+cells <- odp_glm_cells(tri)
+check(nrow(cells) == 100 && sum(cells$observed) == 55 && sum(cells$future) == 45, "the cells")
+check(identical(names(cells)[1:3], c("origin", "development", "calendar")), "cell columns")
+model_7_14 <- ~ I(origin_index + 1) + I((origin_index + 1)^2) + development_index + I(pmax(0, development_index - 6.5)) +
+  I(development_index == 1) + I(development_index == 3) +
+  I(development_index == 0 & origin_index <= 5) + I(development_index == 1 & origin_index <= 5) +
+  I((development_index == 2) * (origin_index + 1))
+fit_7_14 <- odp_glm(tri, formula = model_7_14)
+within(unname(fit_7_14@coefficients[1]), 10.490, 5e-4, "a0")
+within(unname(fit_7_14@coefficients[-1]),
+       c(0.2066, -0.0183, -0.3685, 0.2720, 0.0375, 0.0528, -0.0671, 0.1273, -0.0113), 5e-5,
+       "Table 7-5")
+within(fit_7_14@dispersion, 53.9, 0.05, "phi of model 7-14")
+total_7_14 <- fit_7_14@prediction_error[11, ]
+within(total_7_14$reserve, 370493, 0.5, "model 7-14 forecast")
+within(total_7_14$rmsep, 11021, 0.5, "model 7-14 RMSEP")
+check(nrow(fit_7_14@residuals) == 55, "residuals of a custom design")
+# The cross-classified model as a formula reproduces the default fit.
+by_formula <- odp_glm(tri, formula = ~ origin + factor(development))
+within(unname(by_formula@reserves), unname(fit@reserves), 1e-6, "the default design by formula")
+err <- tryCatch(odp_glm(tri, formula = ~ factor(calendar)), error = conditionMessage)
+check(is.character(err), "a calendar factor cannot be estimated")
+err <- tryCatch(odp_glm(tri, formula = paid ~ k), error = conditionMessage)
+check(grepl("one-sided", err), "a two-sided formula is rejected")

@@ -11,7 +11,9 @@
 //! reserves' analytic prediction error by the delta method (Taylor and
 //! McGuire, CAS Monograph 3, Table 5-4), and [`OdpGlmFit::residuals`] the
 //! fit's residuals by cell, summarized by origin, development or calendar
-//! period (their Chapter 6). See `docs/design/triangle.md`, "ODP GLM".
+//! period (their Chapter 6). [`OdpGlm::fit_design`] fits another design on
+//! the triangle's cells: fewer parameters, calendar trends, interactions
+//! (their Chapter 7). See `docs/design/triangle.md`, "ODP GLM".
 
 use prospicio_core::{Lag, Period};
 pub use prospicio_glm::diagnostics::SumPredictionError;
@@ -76,11 +78,13 @@ pub struct OdpGlmFit {
     /// The quasi-Poisson GLM on the observed increments: coefficients,
     /// standard errors and Pearson's dispersion.
     pub glm: GlmFit,
-    /// The design coding: `(Intercept)`, `origin[<period>]` and
-    /// `development[<age>]` columns. The references are the first origin
-    /// and the first age; the other levels are in string order (so
-    /// `development[108]` comes before `development[24]`).
-    pub coding: Coding,
+    /// The design coding of [`OdpGlm::fit`]: `(Intercept)`,
+    /// `origin[<period>]` and `development[<age>]` columns. The references
+    /// are the first origin and the first age; the other levels are in
+    /// string order (so `development[108]` comes before `development[24]`).
+    /// `None` for a fit of [`OdpGlm::fit_design`], whose column names are
+    /// [`GlmFit::names`].
+    pub coding: Option<Coding>,
     /// Origin periods of the triangle.
     pub origins: Vec<Period>,
     /// The future cells, as (origin, age in months), origin-major.
@@ -254,34 +258,13 @@ impl OdpGlm {
     /// only `V(μ) = μ` and `μ > 0` (`prospicio_glm::Glm::over_dispersed_poisson`).
     pub fn fit(&self, triangle: &Triangle, column: &str) -> Result<OdpGlmFit> {
         let cells = TriangleFrame::new(triangle, column, None)?;
-        let origins = cells.origins().to_vec();
-        let ages = cells.ages().to_vec();
-        let observed = cells.observed();
-        let label = |row: usize| {
-            format!(
-                "origin {} at {} months",
-                origins[cells.origin_of(row)],
-                ages[cells.development_of(row)]
-            )
-        };
-
-        // Every past cell needs an increment.
-        let future = cells.future();
-        let mut has_role = vec![false; cells.n_rows()];
-        for &r in observed.iter().chain(future) {
-            has_role[r] = true;
-        }
-        if let Some(hole) = has_role.iter().position(|known| !known) {
-            return Err(Error::OdpGlm(format!(
-                "{} is a past cell with no increment (missing, or after a missing value); \
-                 the GLM needs every past increment",
-                label(hole)
-            )));
-        }
+        check_holes(&cells)?;
+        let origins = cells.origins();
+        let ages = cells.ages();
         // Every factor level needs an observed increment.
         let mut origin_seen = vec![false; origins.len()];
         let mut age_seen = vec![false; ages.len()];
-        for &r in observed {
+        for &r in cells.observed() {
             origin_seen[cells.origin_of(r)] = true;
             age_seen[cells.development_of(r)] = true;
         }
@@ -299,7 +282,6 @@ impl OdpGlm {
                 ages[d]
             )));
         }
-        let y = cells.response_of(observed);
 
         // Levels are learned on every cell so the future rows code with the
         // same columns as the observed ones.
@@ -308,9 +290,104 @@ impl OdpGlm {
             .factor_with_reference("origin", &origins[0].to_string())
             .factor_with_reference("development", &ages[0].to_string())
             .fit(cells.frame())?;
-        let observed_design = coding.design(&cells.select(observed)?)?;
+        let observed_design = coding.design(&cells.select(cells.observed())?)?;
+        let future_design = coding.design(&cells.select(cells.future())?)?;
+        self.finish(&cells, Some(coding), observed_design, future_design)
+    }
+
+    /// Fits the GLM with another design: `design` has one row per row of
+    /// [`TriangleFrame::new(triangle, column, None)`](TriangleFrame::new),
+    /// in its order (every origin × development cell, origin-major), and
+    /// its columns are the model's, intercept included if wanted. Its
+    /// offset and weights, if set, are used too. The fit, reserves,
+    /// prediction error, residuals and draws are as for [`fit`](Self::fit).
+    ///
+    /// This is how the parameters are cut down or the model widened (Taylor
+    /// and McGuire, CAS Monograph 3, Chapter 7): an origin effect as a
+    /// polynomial in `origin_index`, development effects as a line with a
+    /// kink (a hinge on `development_index`), a trend in `calendar_index`,
+    /// a shift for some origins at some ages. A `Terms` coding on the
+    /// frame's columns gives such a design (`coding.design(cells.frame())`),
+    /// or the columns can be built from the frame's indices directly. A
+    /// numeric term extrapolates to future cells; a factor level that only
+    /// future cells take (a `calendar` factor, for one) cannot be estimated.
+    ///
+    /// Fails if `design` does not have a row per cell, if a column is zero
+    /// on every observed cell (its coefficient cannot be estimated), on a
+    /// hole as [`fit`](Self::fit) does, or if the GLM does not converge (a
+    /// collinear design among them).
+    ///
+    /// ```
+    /// use prospicio_models::Terms;
+    /// use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, OdpGlm, Triangle, TriangleFrame};
+    ///
+    /// let origin = [2020, 2020, 2020, 2021, 2021, 2022].map(Month::january);
+    /// let tri = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 36, 12, 24, 12]),
+    ///     values: &[("paid", &[100.0, 150.0, 165.0, 110.0, 170.0, 120.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })?;
+    /// // One level for every origin, development factors as usual.
+    /// let cells = TriangleFrame::new(&tri, "paid", None)?;
+    /// let design = Terms::new()
+    ///     .intercept()
+    ///     .factor_with_reference("development", "12")
+    ///     .fit(cells.frame())?
+    ///     .design(cells.frame())?;
+    /// let fit = OdpGlm::default().fit_design(&tri, "paid", &design)?;
+    /// assert_eq!(fit.glm.names(), ["(Intercept)", "development[24]", "development[36]"]);
+    /// assert!(fit.coding.is_none());
+    /// assert_eq!(fit.reserves.len(), 3);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn fit_design(
+        &self,
+        triangle: &Triangle,
+        column: &str,
+        design: &Design,
+    ) -> Result<OdpGlmFit> {
+        let cells = TriangleFrame::new(triangle, column, None)?;
+        if design.n_rows() != cells.n_rows() {
+            return Err(Error::OdpGlm(format!(
+                "the design has {} rows; it needs one per cell of the triangle, {} \
+                 (the rows of its TriangleFrame, in order)",
+                design.n_rows(),
+                cells.n_rows()
+            )));
+        }
+        check_holes(&cells)?;
+        let observed_design = design.select(cells.observed());
+        if let Some(j) = (0..observed_design.n_cols())
+            .find(|&j| observed_design.column(j).iter().all(|&x| x == 0.0))
+        {
+            return Err(Error::OdpGlm(format!(
+                "column {} is zero on every observed cell, so its coefficient cannot be \
+                 estimated",
+                design.names()[j]
+            )));
+        }
+        let future_design = design.select(cells.future());
+        self.finish(&cells, None, observed_design, future_design)
+    }
+
+    /// Fits the GLM on the observed rows and predicts the future ones.
+    fn finish(
+        &self,
+        cells: &TriangleFrame,
+        coding: Option<Coding>,
+        observed_design: Design,
+        future_design: Design,
+    ) -> Result<OdpGlmFit> {
+        let origins = cells.origins().to_vec();
+        let ages = cells.ages();
+        let observed = cells.observed();
+        let future = cells.future();
+        let y = cells.response_of(observed);
         let glm = self.glm().fit(&observed_design, &y)?;
-        let future_design = coding.design(&cells.select(future)?)?;
         let future_means = glm.predict(&future_design)?;
 
         let mut reserves = vec![0.0; origins.len()];
@@ -340,6 +417,24 @@ impl OdpGlm {
             future_design,
             observed_design,
         })
+    }
+}
+
+/// Fails on a past cell with no increment (a missing value, or a value
+/// after one): the GLM needs every past increment.
+fn check_holes(cells: &TriangleFrame) -> Result<()> {
+    let mut has_role = vec![false; cells.n_rows()];
+    for &r in cells.observed().iter().chain(cells.future()) {
+        has_role[r] = true;
+    }
+    match has_role.iter().position(|known| !known) {
+        Some(hole) => Err(Error::OdpGlm(format!(
+            "origin {} at {} months is a past cell with no increment (missing, or after a \
+             missing value); the GLM needs every past increment",
+            cells.origins()[cells.origin_of(hole)],
+            cells.ages()[cells.development_of(hole)]
+        ))),
+        None => Ok(()),
     }
 }
 

@@ -391,3 +391,18 @@
   heat map (CAS Monograph 3) reproduces exactly. Python
   `OdpGlmFit.residuals()` and `residual_summary(by)`, R `fit@residuals`
   and `residual_summary(fit, by)` (#333, #438).
+- The ODP GLM on a custom design: `OdpGlm::fit_design(triangle, column,
+  design)` fits any design over the triangle's cells (one row per row of its
+  `TriangleFrame`): an origin effect as a polynomial, development effects as
+  a line with a kink, calendar trends, interactions. Taylor and McGuire's
+  models 7-2, 7-10 and 7-14 (CAS Monograph 3, Tables 7-1, 7-3 and 7-5)
+  reproduce to the printed digits, with their reserves, prediction errors,
+  residuals and draws as for the cross-classified model. Python
+  `OdpGlm.cells(triangle, column)` and `OdpGlm().fit(triangle, column,
+  design=...)`; R `odp_glm_cells()` and `odp_glm(triangle, formula = ~ ...)`
+  (#333).
+
+### Breaking changes
+
+- Rust: `OdpGlmFit::coding` is an `Option<Coding>`, `None` for a fit of
+  `OdpGlm::fit_design`; `glm.names()` names the columns of either (#333).

@@ -13,8 +13,8 @@
 use std::collections::HashMap;
 
 use prospicio_glm::Glm;
-use prospicio_models::Terms;
 use prospicio_models::stack::stacking_weights;
+use prospicio_models::{Column, Design, Terms};
 use prospicio_prob::Distribution;
 use prospicio_reserving::{
     Average, ChainLadder, ChainLadderFit, Development, DevelopmentColumn, GlmCandidate, Grain,
@@ -651,6 +651,203 @@ fn odp_glm_residuals_match_taylor_mcguire_chapter_6() {
         .map(|x| (100.0 * x).round() as i64)
         .collect();
     assert_eq!(ours, printed);
+}
+
+/// A column of a custom design: a name and its value at `(k, j)`.
+type DesignColumn = (&'static str, Box<dyn Fn(f64, f64) -> f64>);
+
+/// Taylor and McGuire's Chapter 7 models as custom designs on the NJ
+/// triangle, `k` and `j` the 1-based accident and development years.
+fn taylor_mcguire_design(columns: &[DesignColumn]) -> Design {
+    let cells = TriangleFrame::new(&taylor_mcguire(), "paid", None).unwrap();
+    let index = |name: &str| match cells.frame().column(name) {
+        Some(Column::Numeric(v)) => v.clone(),
+        _ => unreachable!("a triangle frame has numeric indices"),
+    };
+    let (k, j) = (index("origin_index"), index("development_index"));
+    Design::new(
+        columns
+            .iter()
+            .map(|(name, _)| (*name).to_string())
+            .collect(),
+        columns
+            .iter()
+            .map(|(_, f)| k.iter().zip(&j).map(|(k, j)| f(k + 1.0, j + 1.0)).collect())
+            .collect(),
+    )
+    .unwrap()
+}
+
+fn column(name: &'static str, f: impl Fn(f64, f64) -> f64 + 'static) -> DesignColumn {
+    (name, Box::new(f))
+}
+
+/// `1[j = at]`, development year `at`'s own effect.
+fn year(name: &'static str, at: f64) -> DesignColumn {
+    column(name, move |_, j| f64::from(u8::from(j == at)))
+}
+
+fn close(ours: &[f64], printed: &[f64], tolerance: f64) {
+    assert_eq!(ours.len(), printed.len());
+    for (a, b) in ours.iter().zip(printed) {
+        assert!((a - b).abs() <= tolerance, "{ours:?} vs {printed:?}");
+    }
+}
+
+#[test]
+fn odp_glm_designs_match_taylor_mcguire_chapter_7() {
+    let tri = taylor_mcguire();
+    let odp = OdpGlm::default();
+
+    // Model 7-2: the accident-year effect a quadratic in k, all ten
+    // development effects free (Table 7-1).
+    let names = [
+        "ln b1", "ln b2", "ln b3", "ln b4", "ln b5", "ln b6", "ln b7", "ln b8", "ln b9", "ln b10",
+    ];
+    let mut quad = vec![column("a1", |k, _| k), column("a2", |k, _| k * k)];
+    for (b, name) in names.into_iter().enumerate() {
+        quad.push(year(name, b as f64 + 1.0));
+    }
+    let fit = odp
+        .fit_design(&tri, "paid", &taylor_mcguire_design(&quad))
+        .unwrap();
+    let c = fit.glm.coefficients();
+    close(&c[..2], &[0.2001, -0.0179], 5e-5);
+    close(&c[2..3], &[10.471], 5e-4);
+    let contrasts: Vec<f64> = c[3..].iter().map(|x| x - c[2]).collect();
+    let table_7_1 = [
+        -0.206, -0.750, -1.015, -1.452, -1.830, -2.142, -2.353, -2.514, -2.661,
+    ];
+    close(&contrasts, &table_7_1, 5e-4);
+    assert!((fit.glm.dispersion() - 102.6).abs() < 0.05);
+    let error = fit.prediction_error().unwrap().total;
+    assert!((error.total - 372_532.0).abs() <= 0.5, "{}", error.total);
+    assert!((error.rmsep() - 13_030.0).abs() <= 0.5, "{}", error.rmsep());
+
+    // Model 7-10: development effects a line in j with a kink at 7.5 and a
+    // term for development year 2 (Table 7-3; the guide's four decimals,
+    // since c is 0.1544995 where the table rounds to 0.155).
+    let smooth = || {
+        vec![
+            column("a0", |_, _| 1.0),
+            column("a1", |k, _| k),
+            column("a2", |k, _| k * k),
+            column("b1", |_, j| j - 1.0),
+            column("b2", |_, j| (j - 7.5).max(0.0)),
+        ]
+    };
+    let mut smooth_7_10 = smooth();
+    smooth_7_10.push(year("c", 2.0));
+    let fit = odp
+        .fit_design(&tri, "paid", &taylor_mcguire_design(&smooth_7_10))
+        .unwrap();
+    close(
+        fit.glm.coefficients(),
+        &[10.4687, 0.2001, -0.0179, -0.3577, 0.2356, 0.1545],
+        5e-5,
+    );
+    close(
+        fit.glm.coefficients(),
+        &[10.469, 0.200, -0.018, -0.358, 0.236, 0.155],
+        1e-3,
+    );
+    assert!((fit.glm.dispersion() - 107.3).abs() < 0.05);
+    let error = fit.prediction_error().unwrap().total;
+    assert!((error.total - 373_006.0).abs() <= 0.5, "{}", error.total);
+    assert!((error.rmsep() - 13_215.0).abs() <= 0.5, "{}", error.rmsep());
+    // The actual-to-fitted heat map of model 7-10, Figure 7-5, in percent.
+    let heat: [&[i64]; 10] = [
+        &[99, 101, 98, 111, 112, 84, 97, 96, 100, 97],
+        &[99, 99, 102, 109, 93, 90, 99, 106, 99],
+        &[95, 107, 102, 96, 88, 97, 92, 107],
+        &[97, 103, 94, 104, 102, 107, 113],
+        &[97, 108, 99, 108, 97, 98],
+        &[97, 104, 89, 106, 101],
+        &[110, 92, 93, 112],
+        &[102, 87, 99],
+        &[105, 98],
+        &[101],
+    ];
+    let printed: Vec<i64> = heat.iter().flat_map(|row| row.iter().copied()).collect();
+    let r = fit.residuals().unwrap();
+    let ours: Vec<i64> = r
+        .actual_to_fitted
+        .iter()
+        .map(|x| (100.0 * x).round() as i64)
+        .collect();
+    assert_eq!(ours, printed);
+
+    // Model 7-14: 7-10 with a term for development year 4 and the
+    // interactions the heat map points to (Table 7-5, the monograph's
+    // order).
+    let mut interact = smooth();
+    interact.push(year("c1", 2.0));
+    interact.push(year("c2", 4.0));
+    interact.push(column("d1", |k, j| {
+        f64::from(u8::from(j == 1.0 && k <= 6.0))
+    }));
+    interact.push(column("d2", |k, j| {
+        f64::from(u8::from(j == 2.0 && k <= 6.0))
+    }));
+    interact.push(column("d3", |k, j| f64::from(u8::from(j == 3.0)) * k));
+    let fit = odp
+        .fit_design(&tri, "paid", &taylor_mcguire_design(&interact))
+        .unwrap();
+    // Table 7-5 prints a0 to three decimals with a trailing zero.
+    let c = fit.glm.coefficients();
+    close(&c[..1], &[10.490], 5e-4);
+    let table_7_5 = [
+        0.2066, -0.0183, -0.3685, 0.2720, 0.0375, 0.0528, -0.0671, 0.1273, -0.0113,
+    ];
+    close(&c[1..], &table_7_5, 5e-5);
+    assert!((fit.glm.dispersion() - 53.9).abs() < 0.05);
+    let error = fit.prediction_error().unwrap().total;
+    assert!((error.total - 370_493.0).abs() <= 0.5, "{}", error.total);
+    assert!((error.rmsep() - 11_021.0).abs() <= 0.5, "{}", error.rmsep());
+    // Every parameter is estimated, so the leverages add up to ten.
+    let r = fit.residuals().unwrap();
+    assert!((r.leverage.iter().sum::<f64>() - 10.0).abs() < 1e-8);
+    assert!(fit.coding.is_none());
+}
+
+#[test]
+fn odp_glm_design_is_checked() {
+    let tri = taylor_mcguire();
+    let odp = OdpGlm::default();
+    // A design with a row too few.
+    let short = Design::new(vec!["a0".into()], vec![vec![1.0; 99]]).unwrap();
+    let e = odp
+        .fit_design(&tri, "paid", &short)
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("99 rows") && e.contains("100"), "{e}");
+    // A column only the future cells take: a calendar year after 1997.
+    let future_only = [
+        column("a0", |_, _| 1.0),
+        column("next", |k, j| f64::from(u8::from(k + j > 11.0))),
+    ];
+    let e = odp
+        .fit_design(&tri, "paid", &taylor_mcguire_design(&future_only))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        e.contains("column next is zero on every observed cell"),
+        "{e}"
+    );
+    // The cross-classified design built by hand reproduces fit.
+    let cells = TriangleFrame::new(&tri, "paid", None).unwrap();
+    let design = Terms::new()
+        .intercept()
+        .factor_with_reference("origin", "1988")
+        .factor_with_reference("development", "12")
+        .fit(cells.frame())
+        .unwrap()
+        .design(cells.frame())
+        .unwrap();
+    let by_hand = odp.fit_design(&tri, "paid", &design).unwrap();
+    let fit = odp.fit(&tri, "paid").unwrap();
+    assert_eq!(by_hand.glm.coefficients(), fit.glm.coefficients());
+    assert_eq!(by_hand.reserves, fit.reserves);
 }
 
 /// Rows of a two-key (lob × coverage) long table with paid and incurred:
