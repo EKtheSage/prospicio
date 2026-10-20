@@ -1,0 +1,182 @@
+# R version 4.3.3 (2024-02-29), dglm 1.8.6, statmod 1.5.2
+case,method,quantity,arg,expected,abs_tol,rel_tol,source
+gaussian,ml,coef,(Intercept),577.685505335619,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,se,(Intercept),29.5014485128512,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,coef,x,254.679363351912,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,se,x,39.9528571550157,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,coef,urbanyes,217.059256511687,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,se,urbanyes,45.5523825433161,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,dcoef,(Intercept),12.4485826357612,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,dse,(Intercept),0.0811151762050771,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,dcoef,x,0.781359546695066,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,dse,x,0.0981106079996936,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,dcoef,urbanyes,0.585890423055554,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,dse,urbanyes,0.115661018147059,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,m2loglik,,9325.99722723692,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+gaussian,ml,reml_criterion,,9304.81543157557,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,coef,(Intercept),-1.21627880634742,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,se,(Intercept),0.100853754442342,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,coef,x,0.448034259698896,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,se,x,0.115530167912009,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,coef,urbanyes,0.353812777403776,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,se,urbanyes,0.135424364363961,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,dcoef,(Intercept),-0.0854051486152108,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,dse,(Intercept),0.0811107105653813,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,dcoef,urbanyes,0.133746123400474,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,dse,urbanyes,0.115480319211447,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,m2loglik,,941.920672475522,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+poisson,ml,reml_criterion,,955.635097057971,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,coef,(Intercept),577.662503738564,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,se,(Intercept),29.5883715695668,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,coef,x,254.831273067252,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,se,x,40.0608110121971,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,coef,urbanyes,217.244947855977,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,se,urbanyes,45.6895807807655,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,dcoef,(Intercept),12.4548718508201,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,dse,(Intercept),0.0815608937063668,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,dcoef,x,0.777833241815243,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,dse,x,0.0987273727877055,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,dcoef,urbanyes,0.583787193635121,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,dse,urbanyes,0.116241504385551,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,m2loglik,,9326.00730605073,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+gaussian,reml,reml_criterion,,9304.80755346828,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,coef,(Intercept),-1.21628064718146,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,se,(Intercept),0.101097960884161,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,coef,x,0.448046558569978,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,se,x,0.115799834844744,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,coef,urbanyes,0.353813674766802,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,se,urbanyes,0.135742097575074,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,dcoef,(Intercept),-0.0805646556403089,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,dse,(Intercept),0.0815030160615235,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,dcoef,urbanyes,0.133412115948579,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,dse,urbanyes,0.116060998871335,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,m2loglik,,941.92722927649,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+poisson,reml,reml_criterion,,955.627643982389,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,coef,(Intercept),588.576658964154,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,se,(Intercept),29.70653154947,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,coef,x,225.948628693722,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,se,x,39.72492262633,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,coef,urbanyes,194.152755323912,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,se,urbanyes,44.8046317204563,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,dcoef,(Intercept),11.9096689602765,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,dse,(Intercept),0.0811151762050771,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,dcoef,x,0.815229563823856,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,dse,x,0.0981106079996936,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,dcoef,urbanyes,0.588740230850225,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,dse,urbanyes,0.115661018147059,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,m2loglik,,9370.36049460302,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,ml,reml_criterion,,9349.23966649761,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,coef,(Intercept),588.535310676799,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,se,(Intercept),29.7530040769498,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,coef,x,225.947475767344,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,se,x,39.7913314813302,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,coef,urbanyes,194.261948136481,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,se,urbanyes,44.8951622354651,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,dcoef,(Intercept),11.9128842173503,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,dse,(Intercept),0.0815568903216791,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,dcoef,x,0.813796621309702,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,dse,x,0.0987282117823742,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,dcoef,urbanyes,0.589342941295576,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,dse,urbanyes,0.116240958530367,0,1e-08,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,m2loglik,,9370.36453674997,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+gaussian_weighted,reml,reml_criterion,,9349.2324618276,0,1e-10,dglm 1.8.6 corrected (equal to dglm)
+poisson_offset,ml,coef,(Intercept),-0.664567844850601,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,se,(Intercept),0.0994688124001604,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,coef,x,0.442779840824164,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,se,x,0.11070901245244,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,coef,urbanyes,0.290760492866859,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,se,urbanyes,0.130448412074077,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,dcoef,(Intercept),-0.113020868778629,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,dse,(Intercept),0.0811107105653813,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,dcoef,urbanyes,0.0266947193937629,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,dse,urbanyes,0.115480319211447,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,ml,m2loglik,,893.664024791484,0,1e-10,dglm 1.8.6 corrected
+poisson_offset,ml,reml_criterion,,907.625985098664,0,1e-10,dglm 1.8.6 corrected
+poisson_offset,reml,coef,(Intercept),-0.664574339296715,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,se,(Intercept),0.0996705070237851,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,coef,x,0.442822025078947,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,se,x,0.110902070809175,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,coef,urbanyes,0.290763789634536,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,se,urbanyes,0.130683951943822,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,dcoef,(Intercept),-0.108958166649262,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,dse,(Intercept),0.0814974441960855,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,dcoef,urbanyes,0.0256456891666718,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,dse,urbanyes,0.116060952485245,0,1e-08,dglm 1.8.6 corrected
+poisson_offset,reml,m2loglik,,893.667872915109,0,1e-10,dglm 1.8.6 corrected
+poisson_offset,reml,reml_criterion,,907.619272213775,0,1e-10,dglm 1.8.6 corrected
+gamma,ml,coef,(Intercept),6.30940014828509,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,se,(Intercept),0.0456779042180792,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,coef,x,0.428368809361947,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,se,x,0.0541118462582571,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,coef,urbanyes,0.377687573123071,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,se,urbanyes,0.063798148297243,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,dcoef,(Intercept),-0.455358407713895,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,dse,(Intercept),0.074117910215988,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,dcoef,x,-0.0204113150110634,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,dse,x,0.0899067044558564,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,dcoef,urbanyes,-0.0850313270318421,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,dse,urbanyes,0.106002953420163,0,1e-08,dglm 1.8.6 corrected
+gamma,ml,m2loglik,,8896.24093466872,0,1e-10,dglm 1.8.6 corrected
+gamma,ml,reml_criterion,,8914.47591983365,0,1e-10,dglm 1.8.6 corrected
+gamma,reml,coef,(Intercept),6.30940301040337,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,se,(Intercept),0.0457749292748279,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,coef,x,0.428366387150495,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,se,x,0.0542270808903702,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,coef,urbanyes,0.377681840220296,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,se,urbanyes,0.0639337948594489,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,dcoef,(Intercept),-0.451114687317432,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,dse,(Intercept),0.0744017737211068,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,dcoef,x,-0.0202763971072603,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,dse,x,0.0903616295546,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,dcoef,urbanyes,-0.0850128762717971,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,dse,urbanyes,0.106419353402873,0,1e-08,dglm 1.8.6 corrected
+gamma,reml,m2loglik,,8896.24737258431,0,1e-10,dglm 1.8.6 corrected
+gamma,reml,reml_criterion,,8914.46960658575,0,1e-10,dglm 1.8.6 corrected
+tweedie,ml,coef,(Intercept),6.00757147677822,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,se,(Intercept),0.116200480498714,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,coef,x,0.522791926004327,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,se,x,0.135139425500414,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,coef,urbanyes,0.034837294651518,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,se,urbanyes,0.159450274957117,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,dcoef,(Intercept),4.41616177051531,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,dse,(Intercept),0.0811107105653813,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,dcoef,urbanyes,-0.138764580772659,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,dse,urbanyes,0.115480319211447,0,1e-08,dglm 1.8.6 corrected
+tweedie,ml,m2loglik,,5206.1949062726,0,1e-10,dglm 1.8.6 corrected
+tweedie,ml,reml_criterion,,5218.93857244856,0,1e-10,dglm 1.8.6 corrected
+tweedie,reml,coef,(Intercept),6.00757106651104,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,se,(Intercept),0.116474030961238,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,coef,x,0.522796226100026,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,se,x,0.135463052243118,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,coef,urbanyes,0.034837688233681,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,se,urbanyes,0.159831540363445,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,dcoef,(Intercept),4.42086349566857,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,dse,(Intercept),0.0815081149855339,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,dcoef,urbanyes,-0.138606196569945,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,dse,urbanyes,0.116060846347402,0,1e-08,dglm 1.8.6 corrected
+tweedie,reml,m2loglik,,5206.20175135846,0,1e-10,dglm 1.8.6 corrected
+tweedie,reml,reml_criterion,,5218.93107189948,0,1e-10,dglm 1.8.6 corrected
+gamma_doffset,ml,coef,(Intercept),6.28816771370799,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,se,(Intercept),0.044985818909334,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,coef,x,0.469145300597206,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,se,x,0.0539620287049145,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,coef,urbanyes,0.403182844110644,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,se,urbanyes,0.0636199927036908,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,dcoef,(Intercept),0.27800918039985,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,dse,(Intercept),0.0732809257795981,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,dcoef,urbanyes,-0.118013810406113,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,dse,urbanyes,0.10453047517178,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,ml,m2loglik,,8981.07328494022,0,1e-10,dglm 1.8.6 corrected
+gamma_doffset,ml,reml_criterion,,8999.3219580007,0,1e-10,dglm 1.8.6 corrected
+gamma_doffset,reml,coef,(Intercept),6.28816758900782,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,se,(Intercept),0.0450292597873806,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,coef,x,0.469134518137058,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,se,x,0.0540022617534534,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,coef,urbanyes,0.403182087178417,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,se,urbanyes,0.0636671470440757,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,dcoef,(Intercept),0.279939814688323,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,dse,(Intercept),0.0735681007169559,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,dcoef,urbanyes,-0.118912990381056,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,dse,urbanyes,0.104948229522236,0,1e-08,dglm 1.8.6 corrected
+gamma_doffset,reml,m2loglik,,8981.07417002716,0,1e-10,dglm 1.8.6 corrected
+gamma_doffset,reml,reml_criterion,,8999.3183903932,0,1e-10,dglm 1.8.6 corrected

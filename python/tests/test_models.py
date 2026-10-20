@@ -747,6 +747,73 @@ def test_glmm_matches_glmmtmb_and_glmer():
     assert agq.sd[0] == pytest.approx(ref[("poisson_agq9", "sd", "site")], rel=2e-5)
 
 
+def test_double_glm_matches_corrected_dglm():
+    # validation/scripts/r_dglm.R: dglm 1.8.6 with its mean step corrected,
+    # on the simulated book; the gamma with the log link by REML and the
+    # Poisson with an exposure offset by ML.
+    import csv
+    import math
+    import pathlib
+
+    from prospicio.models import Design, DoubleGlm
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "validation"
+    with open(root / "data" / "glmm_simulated.csv") as f:
+        rows = list(csv.DictReader(f))
+    with open(root / "reference" / "dglm_r.csv") as f:
+        ref = {
+            (r["case"], r["method"], r["quantity"], r["arg"]): float(r["expected"])
+            for r in csv.DictReader(line for line in f if not line.startswith("#"))
+        }
+    n = len(rows)
+    x = [float(r["x"]) for r in rows]
+    urban = [float(r["urban"] == "yes") for r in rows]
+    names = ["(Intercept)", "x", "urbanyes"]
+    mean = Design([[1.0] * n, x, urban], names)
+    by_urban = Design([[1.0] * n, urban], ["(Intercept)", "urbanyes"])
+    offset = [math.log(float(r["exposure"])) for r in rows]
+    cases = [
+        ("gamma", "reml", DoubleGlm("gamma", link="log"), mean, mean, "severity"),
+        (
+            "poisson_offset",
+            "ml",
+            DoubleGlm("poisson", method="ml"),
+            Design([[1.0] * n, x, urban], names, offset=offset),
+            by_urban,
+            "count",
+        ),
+    ]
+    for case, method, spec, x_design, z_design, column in cases:
+        fit = spec.fit(x_design, z_design, [float(r[column]) for r in rows])
+        assert fit.method == method
+        for name, b, se in zip(fit.names, fit.coefficients, fit.standard_errors):
+            assert b == pytest.approx(ref[(case, method, "coef", name)], rel=1e-8)
+            assert se == pytest.approx(ref[(case, method, "se", name)], rel=1e-8)
+        for name, g, se in zip(
+            fit.dispersion_names, fit.dispersion_coefficients, fit.dispersion_standard_errors
+        ):
+            assert g == pytest.approx(ref[(case, method, "dcoef", name)], rel=1e-8)
+            assert se == pytest.approx(ref[(case, method, "dse", name)], rel=1e-8)
+        assert fit.minus_two_log_likelihood == pytest.approx(
+            ref[(case, method, "m2loglik", "")], rel=1e-10
+        )
+        assert fit.reml_criterion == pytest.approx(
+            ref[(case, method, "reml_criterion", "")], rel=1e-10
+        )
+        assert fit.predict(x_design) == pytest.approx(fit.fitted, rel=1e-12)
+        assert fit.predict_dispersion(z_design) == pytest.approx(fit.dispersion_fitted, rel=1e-12)
+
+
+def test_double_glm_rejects_what_it_does_not_fit():
+    from prospicio.models import Design, DoubleGlm
+
+    with pytest.raises(ValueError, match="reml or ml"):
+        DoubleGlm("gamma", method="pql")
+    d = Design([[1.0] * 4], ["(Intercept)"])
+    with pytest.raises(ValueError, match="double GLM takes"):
+        DoubleGlm("binomial").fit(d, d, [0.0, 1.0, 1.0, 0.0])
+
+
 def test_glmm_rejects_what_it_does_not_fit():
     from prospicio.models import Design, Glmm
 

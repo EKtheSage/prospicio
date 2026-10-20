@@ -79,10 +79,10 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::models::{
-        PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyElasticNet,
-        PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit,
-        PyHierarchicalStacking, PyNegativeBinomialFit, PyNegativeBinomialGlm, PyStackingFit,
-        PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected,
+        PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyDoubleGlm,
+        PyDoubleGlmFit, PyElasticNet, PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit,
+        PyGlmm, PyGlmmFit, PyHierarchicalStacking, PyNegativeBinomialFit, PyNegativeBinomialGlm,
+        PyStackingFit, PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected,
         confusion_matrix, crps, deviance, double_lift, elpd_loo, elpd_waic, f_test, gini,
         group_k_fold, k_fold, ks_uniform, lift, likelihood_ratio_test, log_score, loo_pit,
         loss_ratio_chart, lppd, mcmc_diagnostics, normalized_gini, pinball_loss, pit,

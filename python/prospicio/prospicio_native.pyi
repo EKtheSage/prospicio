@@ -8244,6 +8244,121 @@ class Distortion:
         """
 
 @final
+class DoubleGlm:
+    """
+    A double GLM: a GLM for the mean and a gamma GLM with the log link for
+    the dispersion, each on its own design, as R's ``dglm`` with its mean
+    step's weights corrected.
+    
+    Parameters
+    ----------
+    family : str
+        ``"gaussian"``, ``"poisson"``, ``"gamma"`` or ``"tweedie"``.
+    link : str, optional
+        The mean's link; the family's canonical link by default.
+    power : float, optional
+        The Tweedie's power, in (1, 2).
+    method : str
+        ``"reml"`` (the default) or ``"ml"`` (``dglm``'s default).
+    link_power : float, optional
+        The power link's exponent.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Design, DoubleGlm
+    >>> urban = [0.0] * 4 + [1.0] * 4
+    >>> d = Design([[1.0] * 8, urban], ["(Intercept)", "urban"])
+    >>> y = [9.0, 11.0, 10.0, 10.5, 4.0, 18.0, 6.0, 15.0]
+    >>> fit = DoubleGlm("gamma", link="log").fit(d, d, y)
+    >>> fit.dispersion_coefficients[1] > 0
+    True
+    """
+    def __new__(cls, /, family: str, link: str |None = None, power: float |None = None, method: str = "reml", link_power: float |None = None) -> DoubleGlm: ...
+    def fit(self, /, mean: Design, dispersion: Design, y: Sequence[float]) -> DoubleGlmFit:
+        """
+        Fits the mean on ``mean`` (its offset and prior weights apply) and
+        the log dispersion on ``dispersion`` (its offset applies).
+        
+        Returns
+        -------
+        DoubleGlmFit
+        """
+
+@final
+class DoubleGlmFit:
+    """
+    A fitted double GLM, from ``DoubleGlm.fit``.
+    """
+    @property
+    def aic(self, /) -> float: ...
+    @property
+    def coefficients(self, /) -> list[float]:
+        """
+        The mean's coefficients.
+        """
+    @property
+    def covariance(self, /) -> list[list[float]]:
+        """
+        The mean's coefficients' covariance, a list of rows.
+        """
+    @property
+    def dispersion_coefficients(self, /) -> list[float]:
+        """
+        The log dispersion's coefficients.
+        """
+    @property
+    def dispersion_covariance(self, /) -> list[list[float]]:
+        """
+        The dispersion's coefficients' covariance, a list of rows.
+        """
+    @property
+    def dispersion_fitted(self, /) -> list[float]:
+        """
+        The fitted dispersion of each row.
+        """
+    @property
+    def dispersion_names(self, /) -> list[str]:
+        """
+        The dispersion design's column names.
+        """
+    @property
+    def dispersion_standard_errors(self, /) -> list[float]: ...
+    @property
+    def fitted(self, /) -> list[float]:
+        """
+        The fitted mean of each row.
+        """
+    @property
+    def iterations(self, /) -> int: ...
+    @property
+    def method(self, /) -> str: ...
+    @property
+    def minus_two_log_likelihood(self, /) -> float:
+        """
+        ``dglm``'s ``m2loglik``.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        The mean design's column names.
+        """
+    def predict(self, /, design: Design) -> list[float]:
+        """
+        The mean of each row of a new mean design.
+        """
+    def predict_dispersion(self, /, design: Design) -> list[float]:
+        """
+        The dispersion of each row of a new dispersion design.
+        """
+    @property
+    def reml_criterion(self, /) -> float:
+        """
+        ``m2loglik + log det(X' W X)``, the criterion REML minimizes.
+        """
+    @property
+    def standard_errors(self, /) -> list[float]: ...
+
+@final
 class ElasticNet:
     """
     An elastic-net GLM: the lasso (``alpha=1``), ridge (``alpha=0``) and
