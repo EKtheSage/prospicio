@@ -419,9 +419,9 @@
   1.5, link.power = 0)` parity on GenIns and ABC. Python
   `OdpGlm(family="gamma")`, `OdpGlm(family="tweedie", power=1.5)`; R
   `odp_glm(triangle, family = "gamma")`, `family = "tweedie", power = 1.5`
-  (#333).
+  (#333, #445).
 
 ### Breaking changes
 
 - Rust: `OdpGlm` gains a public `family` field; code that builds it in
-  full adds `family: Family::Poisson` or uses `..OdpGlm::default()` (#333).
+  full adds `family: Family::Poisson` or uses `..OdpGlm::default()` (#333, #445).
