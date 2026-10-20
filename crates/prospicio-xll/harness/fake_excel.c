@@ -277,7 +277,8 @@ int main(int argc, char **argv) {
     seed.xltype = xltypeNum;
     seed.val.num = 1;
     DWORD t0 = GetTickCount();
-    XLOPER12 *o = ((Fn7)GetProcAddress(xll, "pro_odp"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing);
+    XLOPER12 *o = ((Fn8)GetProcAddress(xll, "pro_odp"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing,
+                                                       &missing);
     DWORD ms = GetTickCount() - t0;
     print_result("PRO.ODP(RAA, 20000, 1)", o);
     printf("  (%lu ms)\n", ms);
@@ -292,7 +293,7 @@ int main(int argc, char **argv) {
      * XLL and freed by xlAutoFree12. */
     sims.val.num = 100000;
     t0 = GetTickCount();
-    XLOPER12 *d = ((Fn6)GetProcAddress(xll, "pro_odp_sims"))(&tri, &sims, &seed, &missing, &missing, &missing);
+    XLOPER12 *d = ((Fn7)GetProcAddress(xll, "pro_odp_sims"))(&tri, &sims, &seed, &missing, &missing, &missing, &missing);
     ms = GetTickCount() - t0;
     printf("PRO.ODP.SIMS(RAA, 100000, 1): %d x %d (%lu ms)\n", d->val.array.rows, d->val.array.columns, ms);
     check("draws are 100001 x 11", (d->xltype & 0xFFF) == xltypeMulti && d->val.array.rows == 100001 &&
@@ -354,8 +355,8 @@ int main(int argc, char **argv) {
           fabs(cd->val.array.lparray[11 * 4 + 2].val.num - 25166.3025264382) < 1e-6);
     free12(cd);
     sims.val.num = 2000;
-    XLOPER12 *oc = ((Fn7)GetProcAddress(xll, "pro_odp_cdr"))(&tri, &sims, &seed, &missing, &missing, &missing,
-                                                             &missing);
+    XLOPER12 *oc = ((Fn8)GetProcAddress(xll, "pro_odp_cdr"))(&tri, &sims, &seed, &missing, &missing, &missing,
+                                                             &missing, &missing);
     check("ODP one-year table is 12 x 8", (oc->xltype & 0xFFF) == xltypeMulti && oc->val.array.rows == 12 &&
                                               oc->val.array.columns == 8);
     free12(oc);
