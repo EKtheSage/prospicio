@@ -24,8 +24,16 @@ panel is not stored in the repo. The script writes, under
   `premium` is earned_prem_net and `premium_direct` earned_prem_direct.
   USD thousands.
 * `panel_check.csv`: the diff of the chosen codes against Table A.2's 175
-  printed codes, one row per code: `line, group_code, status`, where status
-  is `both` (chosen and printed), `chosen_only` or `printed_only`.
+  printed codes, one row per code: `line, group_code, status, rank,
+  screen_pass`, where status is `both` (chosen and printed), `chosen_only`,
+  `printed_only` or `unchecked` (commercial auto codes chosen but not
+  printed: Table A.2 prints 25 of that line's 50, so they cannot be
+  checked); `rank` is the code's place by increasing CV1 among the
+  triangles that pass the screen (empty if it fails the screen) and
+  `screen_pass` the number that pass it in that line.
+* `panel_meta.csv`: `key, value` rows with the Python, cas-schedule-p,
+  duckdb and pandas versions and the sha256 of `panel.csv`, so a later
+  rebuild can be compared with a reviewed one.
 
 Checks before writing: group 353 commercial auto's square equals
 `validation/data/clrd_comauto_353.csv` cell by cell, and every triangle is a
@@ -39,7 +47,10 @@ cannot be checked). The file is written either way.
 
 import argparse
 import csv
+import hashlib
+import platform
 import sys
+from importlib.metadata import version
 from pathlib import Path
 
 import duckdb
@@ -146,9 +157,13 @@ def main():
         both = sorted(set(chosen) & set(printed))
         chosen_only = sorted(set(chosen) - set(printed))
         printed_only = sorted(set(printed) - set(chosen))
-        check += [(key, c, "both") for c in both]
-        check += [(key, c, "chosen_only") for c in chosen_only]
-        check += [(key, c, "printed_only") for c in printed_only]
+        def rank(c):
+            return passing.index(c) + 1 if c in passing else ""
+
+        unchecked = "unchecked" if key == "ca" else "chosen_only"
+        check += [(key, c, "both", rank(c), n_pass) for c in both]
+        check += [(key, c, unchecked, rank(c), n_pass) for c in chosen_only]
+        check += [(key, c, "printed_only", rank(c), n_pass) for c in printed_only]
         print(
             f"{key}: screen passes {n_pass}, chosen {len(chosen)}, printed {len(printed)}; "
             f"in both {len(both)}, chosen only {len(chosen_only)}, "
@@ -183,9 +198,22 @@ def main():
         w.writerows(panel)
     with open(out.with_name("panel_check.csv"), "w", newline="") as fh:
         w = csv.writer(fh, lineterminator="\n")
-        w.writerow(["line", "group_code", "status"])
+        w.writerow(["line", "group_code", "status", "rank", "screen_pass"])
         w.writerows(check)
-    print(f"wrote {out} ({len(panel)} rows, {len(panel) // 100} triangles)")
+    digest = hashlib.sha256(out.read_bytes()).hexdigest()
+    meta = [
+        ("python", platform.python_version()),
+        ("cas-schedule-p", version("cas-schedule-p")),
+        ("duckdb", version("duckdb")),
+        ("pandas", version("pandas")),
+        ("panel_sha256", digest),
+    ]
+    with open(out.with_name("panel_meta.csv"), "w", newline="") as fh:
+        w = csv.writer(fh, lineterminator="\n")
+        w.writerow(["key", "value"])
+        w.writerows(meta)
+    print(f"wrote {out} ({len(panel)} rows, {len(panel) // 100} triangles), sha256 {digest}")
+    print("versions: " + ", ".join(f"{k} {v}" for k, v in meta[:-1]))
     if differs:
         print("the rebuilt panel differs from Table A.2 (see above)", file=sys.stderr)
         sys.exit(2)

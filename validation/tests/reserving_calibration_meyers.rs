@@ -35,9 +35,16 @@
 //! * `RISK_RS_CALIBRATION_LIMIT`: the first n triangles of each line, for a
 //!   timing probe (for example 2).
 //!
+//! The script also writes `panel_check.csv` (the diff against Table A.2,
+//! with each code's rank in the screen) and `panel_meta.csv` (the package
+//! versions and the panel's sha256), which the study prints.
+//!
 //! First runs assert only the harness and the panel (decision 7): the
-//! panel's shape and Mack's D near Meyers' published values. Each other
-//! arm's D is recorded, not asserted.
+//! panel's shape, group 353 commercial auto's square against
+//! `validation/data/clrd_comauto_353.csv`, and Mack's D near Meyers'
+//! published values. Each other arm's D is recorded, not asserted. The
+//! unit test `the_arms_reproduce_meyers_on_group_353` checks the arms'
+//! wiring on that square in every `cargo test`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -275,6 +282,31 @@ fn load_panel_at(path: &Path) -> Result<Vec<PanelTriangle>, String> {
     parse_panel(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
+/// Group 353 commercial auto's full square from the committed
+/// `validation/data/clrd_comauto_353.csv` (Meyers' Tables 2.1 to 2.3; its
+/// `incurred` is already case incurred).
+fn group_353() -> PanelTriangle {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("data/clrd_comauto_353.csv");
+    let text = std::fs::read_to_string(&path).expect("validation/data/clrd_comauto_353.csv");
+    let mut rows = text
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.trim().is_empty());
+    assert_eq!(
+        rows.next().map(str::trim),
+        Some("origin,development,paid,incurred,premium")
+    );
+    let mut csv = String::from(PANEL_HEADER);
+    csv.push('\n');
+    for r in rows {
+        let f: Vec<&str> = r.trim().split(',').collect();
+        assert_eq!(f.len(), 5, "{r}");
+        let _ = writeln!(csv, "ca,353,{},{},{},,{},{},", f[0], f[1], f[2], f[3], f[4]);
+    }
+    let mut panel = parse_panel(&csv).expect("group 353's square");
+    assert_eq!(panel.len(), 1);
+    panel.remove(0)
+}
+
 // ---------------------------------------------------------------------------
 // Percentiles and the uniformity test
 // ---------------------------------------------------------------------------
@@ -327,13 +359,20 @@ fn ks_bound(n: usize) -> f64 {
     136.0 / (n as f64).sqrt()
 }
 
-/// The p-p plot's points: `(100 i / n, p_(i))` for the sorted percentiles.
-fn pp_points(percentiles: &[f64]) -> Vec<(f64, f64)> {
+/// The p-p plot's points for the sorted percentiles: `(e_i, f_i, p_(i))`.
+/// `e_i = 100 i / (n + 1)` is the expected percentile, Meyers' horizontal
+/// axis (p.8); `f_i = 100 i / n` is the point his D and the
+/// `136 / sqrt(n)` band are measured from (his footnote 6: plotting against
+/// `e_i` is an approximation of that).
+fn pp_points(percentiles: &[f64]) -> Vec<(f64, f64, f64)> {
     let n = percentiles.len() as f64;
     sorted(percentiles)
         .into_iter()
         .enumerate()
-        .map(|(i, p)| (100.0 * (i as f64 + 1.0) / n, p))
+        .map(|(i, p)| {
+            let k = i as f64 + 1.0;
+            (100.0 * k / (n + 1.0), 100.0 * k / n, p)
+        })
         .collect()
 }
 
@@ -376,10 +415,13 @@ fn meyers_published(arm: &str, basis: Basis, line: Option<Line>) -> Option<f64> 
 }
 
 /// How far Mack's D may be from Meyers' before the panel is rejected:
-/// 8 points per line and 4 on all 200. A triangle that differs moves a
-/// line's D by at most 100/50 = 2 points and the total's by 0.5, so these
-/// allow four differing triangles in a line and eight in 200 (the note,
-/// decision 3).
+/// 8 points per line and 4 on all 200 (the note, decision 3). The
+/// tolerance is empirical, not a bound. The rebuilt panel is known to miss
+/// 26 of Table A.2's 175 printed codes (9 CA, 6 PA, 2 WC, 9 OL;
+/// `panel_check.csv`), and 25 CA codes cannot be checked at all; a
+/// triangle swapped can move a line's D by up to 100/50 = 2 points, so the
+/// known differences alone could move it by more than 8. The first run was
+/// within 3.7 points per line and 1.5 on all 200.
 fn mack_tolerance(line: Option<Line>) -> f64 {
     if line.is_some() { 8.0 } else { 4.0 }
 }
@@ -694,31 +736,51 @@ fn groups(records: &[Record<'_>], arms: &[ArmBasis], lines: &[Line]) -> Vec<Grou
 }
 
 /// The diff of the panel against Table A.2 written by the script:
-/// `line -> (both, chosen_only, printed_only)` counts, and `all`.
-fn panel_check(dir: &Path) -> BTreeMap<String, (usize, usize, usize)> {
-    let mut out: BTreeMap<String, (usize, usize, usize)> = BTreeMap::new();
+/// `line -> [both, chosen_only, printed_only, unchecked]` counts, and
+/// `all`. `unchecked` are the commercial auto codes chosen but not printed:
+/// Table A.2 prints only 25 of that line's 50, so they cannot be checked.
+fn panel_check(dir: &Path) -> BTreeMap<String, [usize; 4]> {
     let Ok(text) = std::fs::read_to_string(dir.join("panel_check.csv")) else {
-        return out;
+        return BTreeMap::new();
     };
+    panel_check_counts(&text)
+}
+
+fn panel_check_counts(text: &str) -> BTreeMap<String, [usize; 4]> {
+    let mut out: BTreeMap<String, [usize; 4]> = BTreeMap::new();
     for row in text.lines().skip(1) {
         let f: Vec<&str> = row.split(',').collect();
-        if f.len() != 3 {
+        if f.len() < 3 {
             continue;
         }
+        let slot = match f[2].trim() {
+            "both" => 0,
+            "chosen_only" => 1,
+            "printed_only" => 2,
+            "unchecked" => 3,
+            _ => continue,
+        };
         for key in [f[0], "all"] {
-            let e = out.entry(key.to_string()).or_default();
-            match f[2] {
-                "both" => e.0 += 1,
-                "chosen_only" => e.1 += 1,
-                "printed_only" => e.2 += 1,
-                _ => {}
-            }
+            out.entry(key.to_string()).or_default()[slot] += 1;
         }
     }
     out
 }
 
-fn ks_csv(groups: &[Group], check: &BTreeMap<String, (usize, usize, usize)>) -> String {
+/// The script's sidecar `panel_meta.csv` (`key,value` rows: the package
+/// versions and the panel's sha256), printed in the study's header.
+fn panel_meta(dir: &Path) -> Vec<(String, String)> {
+    let Ok(text) = std::fs::read_to_string(dir.join("panel_meta.csv")) else {
+        return Vec::new();
+    };
+    text.lines()
+        .skip(1)
+        .filter_map(|l| l.split_once(','))
+        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        .collect()
+}
+
+fn ks_csv(groups: &[Group], check: &BTreeMap<String, [usize; 4]>) -> String {
     let mut out = String::from(
         "line,arm,basis,set,n,skipped,meyers_d,ks_d,bound,pass_d,pass_ks,meyers_published_d,panel_vs_table_a2\n",
     );
@@ -741,7 +803,7 @@ fn ks_csv(groups: &[Group], check: &BTreeMap<String, (usize, usize, usize)>) -> 
         };
         let a2 = check
             .get(&g.label)
-            .map_or(String::new(), |(b, c, p)| format!("{b}/{c}/{p}"));
+            .map_or(String::new(), |[b, c, p, u]| format!("{b}/{c}/{p}/{u}"));
         let _ = writeln!(
             out,
             "{},{},{},{},{n},{},{},{},{},{pd},{pk},{published},{a2}",
@@ -759,12 +821,12 @@ fn ks_csv(groups: &[Group], check: &BTreeMap<String, (usize, usize, usize)>) -> 
 }
 
 fn pp_csv(groups: &[Group]) -> String {
-    let mut out = String::from("line,arm,basis,set,i,expected,percentile\n");
+    let mut out = String::from("line,arm,basis,set,i,e_i,f_i,percentile\n");
     for g in groups {
-        for (i, (expected, p)) in pp_points(&g.percentiles).into_iter().enumerate() {
+        for (i, (e, f, p)) in pp_points(&g.percentiles).into_iter().enumerate() {
             let _ = writeln!(
                 out,
-                "{},{},{},{},{},{expected},{p}",
+                "{},{},{},{},{},{e},{f},{p}",
                 g.label,
                 g.arm.arm,
                 g.arm.basis.name(),
@@ -852,16 +914,28 @@ fn calibration_study() {
         let n = all.iter().filter(|t| t.line == line).count();
         assert_eq!(n, 50, "{} has {n} triangles, expected 50", line.code());
     }
+    // Group 353 commercial auto (Meyers' illustrative insurer; personal
+    // auto and workers' compensation have a group 353 too, other insurers)
+    // must be in the panel and equal the committed square cell by cell.
     let ca353 = all
         .iter()
         .find(|t| t.line == Line::Ca && t.group == "353")
-        .or_else(|| all.iter().find(|t| t.line == Line::Pa && t.group == "353"));
-    if let Some(t) = ca353 {
-        println!(
-            "group 353 ({}) is in the panel: paid outcome {}",
-            t.line.code(),
-            t.outcome(Basis::Paid)
-        );
+        .expect("group 353 commercial auto is not in the panel");
+    let committed = group_353();
+    for o in 0..ORIGINS {
+        for d in 0..ORIGINS {
+            let (a, b) = (&ca353.cells[o][d], &committed.cells[o][d]);
+            assert!(
+                a.paid == b.paid && a.incurred == b.incurred && a.premium == b.premium,
+                "group 353 commercial auto differs from validation/data/clrd_comauto_353.csv at origin {} age {}: {a:?} vs {b:?}",
+                FIRST_ORIGIN + o as i32,
+                12 * (d + 1)
+            );
+        }
+    }
+    println!("group 353 commercial auto equals validation/data/clrd_comauto_353.csv");
+    for (k, v) in panel_meta(&dir) {
+        println!("panel_meta {k}: {v}");
     }
 
     let lines = selected_lines(std::env::var("RISK_RS_CALIBRATION_LINES").ok().as_deref());
@@ -893,9 +967,9 @@ fn calibration_study() {
     std::fs::write(dir.join("ks.csv"), ks_csv(&gs, &check)).expect("ks.csv");
 
     println!("\n{}", ks_table(&gs));
-    for (key, (both, chosen_only, printed_only)) in &check {
+    for (key, [both, chosen_only, printed_only, unchecked]) in &check {
         println!(
-            "panel vs Table A.2, {key}: {both} in both, {chosen_only} chosen only, {printed_only} printed only"
+            "panel vs Table A.2, {key}: {both} in both, {chosen_only} chosen only, {printed_only} printed only, {unchecked} chosen and not checkable (CA)"
         );
     }
     for a in &arms {
@@ -943,7 +1017,7 @@ fn calibration_study() {
         }
         assert!(
             off.is_empty(),
-            "Mack's D is not near Meyers' on the rebuilt panel (the panel differs from his):\n{}",
+            "Mack's D is not near Meyers' on the rebuilt panel. The tolerance is empirical: the panel is known to differ from Table A.2 on at least 26 printed codes (panel_check.csv), so a miss can come from the panel, not a bug:\n{}",
             off.join("\n")
         );
     }
@@ -1015,11 +1089,18 @@ mod tests {
     #[test]
     fn pp_points_are_sorted_against_the_uniform() {
         let pts = pp_points(&[70.0, 10.0, 40.0, 95.0]);
-        let want = [(25.0, 10.0), (50.0, 40.0), (75.0, 70.0), (100.0, 95.0)];
+        // e_i = 100 i / 5 (Meyers' axis), f_i = 100 i / 4 (his D's points).
+        let want = [
+            (20.0, 25.0, 10.0),
+            (40.0, 50.0, 40.0),
+            (60.0, 75.0, 70.0),
+            (80.0, 100.0, 95.0),
+        ];
         assert_eq!(pts.len(), 4);
         for (got, want) in pts.iter().zip(want) {
             close(got.0, want.0, 1e-12);
             close(got.1, want.1, 1e-12);
+            close(got.2, want.2, 1e-12);
         }
     }
 
@@ -1141,6 +1222,56 @@ mod tests {
             score_odp(t, 1, 2_000).unwrap().percentile,
             s.percentile,
             0.0,
+        );
+    }
+
+    /// The arms on Meyers' own triangle, group 353 commercial auto, with its
+    /// outcomes in the lower triangle: Mack gives his Table 3.1 and 4.1
+    /// percentiles, and the ODP bootstrap's total is the reserve plus what
+    /// is paid (a missing shift, or ultimates scored as reserves, fails).
+    #[test]
+    fn the_arms_reproduce_meyers_on_group_353() {
+        let t = group_353();
+        close(t.outcome(Basis::Paid), 40_000.0, 0.0);
+        close(t.outcome(Basis::Incurred), 40_061.0, 0.0);
+        let paid = score_mack(&t, Basis::Paid).unwrap();
+        let incurred = score_mack(&t, Basis::Incurred).unwrap();
+        close(paid.percentile, 72.02, 0.1);
+        close(incurred.percentile, 86.03, 0.1);
+        close(paid.mean, 39_177.0, 1.0);
+        close(incurred.mean, 38_914.0, 1.0);
+        // 2,000 simulations: the percentile's Monte Carlo sd is about one
+        // point; the study's 10,000 gave 74.06.
+        let seed = seed_for(Line::Ca, "353", "odp", Basis::Paid);
+        let odp = score_odp(&t, seed, 2_000).unwrap();
+        assert!(
+            (odp.mean - paid.mean).abs() < 0.01 * paid.mean,
+            "{} vs {}",
+            odp.mean,
+            paid.mean
+        );
+        assert!(
+            (odp.sd - paid.sd).abs() < 0.2 * paid.sd,
+            "{} vs {}",
+            odp.sd,
+            paid.sd
+        );
+        close(odp.percentile, 74.0, 5.0);
+    }
+
+    #[test]
+    fn panel_check_counts_by_status_and_in_total() {
+        let text = "line,group_code,status,rank,screen_pass\n\
+                    ca,1,both,3,63\nca,2,unchecked,7,63\nca,3,printed_only,55,63\n\
+                    pa,4,chosen_only,12,60\npa,5,both,1,60\n";
+        let c = panel_check_counts(text);
+        assert_eq!(c["ca"], [1, 0, 1, 1]);
+        assert_eq!(c["pa"], [1, 1, 0, 0]);
+        assert_eq!(c["all"], [2, 1, 1, 1]);
+        // The old three-column file still counts.
+        assert_eq!(
+            panel_check_counts("line,group_code,status\nwc,9,both\n")["wc"],
+            [1, 0, 0, 0]
         );
     }
 
