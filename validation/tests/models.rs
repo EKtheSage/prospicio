@@ -2027,3 +2027,124 @@ fn glmm_matches_glmmtmb_and_glmer() {
         }
     });
 }
+
+/// Double GLMs against `dglm` 1.8.6 corrected (its mean step's weights and
+/// offset, `knowledge/findings/dglm-mean-step-weights.md`), by ML and REML:
+/// the mean's and dispersion's coefficients with their standard errors,
+/// `m2loglik` and the REML criterion, with prior weights and with an
+/// offset on the log dispersion too. On the Gaussian and Poisson without
+/// offsets the corrected loop is `dglm`; `validation/scripts/r_dglm.R`
+/// checks that and writes the reference.
+#[test]
+fn double_glms_match_dglm() {
+    use prospicio_glm::dglm::DoubleGlm;
+    use std::collections::BTreeMap;
+    let data = glmm_data("glmm_simulated.csv");
+    let num = |name: &str| -> Vec<f64> {
+        glmm_column(&data, name)
+            .iter()
+            .map(|v| v.parse().unwrap())
+            .collect()
+    };
+    let frame = Frame::new(vec![
+        ("x".into(), Column::Numeric(num("x"))),
+        (
+            "urban".into(),
+            Column::Categorical(glmm_column(&data, "urban").to_vec()),
+        ),
+    ])
+    .unwrap();
+    let design = |terms: Terms| terms.fit(&frame).unwrap().design(&frame).unwrap();
+    let both = || {
+        Terms::new()
+            .intercept()
+            .numeric("x")
+            .factor_with_reference("urban", "no")
+    };
+    let urban = || {
+        Terms::new()
+            .intercept()
+            .factor_with_reference("urban", "no")
+    };
+    let mean = design(both());
+    let cases = reference("dglm_r.csv");
+    let mut fits = BTreeMap::new();
+    let r_name = |name: &str| name.replace(['[', ']'], "");
+    check(&cases, |case| {
+        let key = (case.get("case").to_string(), case.get("method").to_string());
+        let fit = fits.entry(key.clone()).or_insert_with(|| {
+            let (family, link, y, z, x) = match key.0.as_str() {
+                "gaussian" => (
+                    Family::Gaussian,
+                    Link::Identity,
+                    num("severity"),
+                    design(both()),
+                    mean.clone(),
+                ),
+                "poisson" => (
+                    Family::Poisson,
+                    Link::Log,
+                    num("count"),
+                    design(urban()),
+                    mean.clone(),
+                ),
+                "poisson_offset" => (
+                    Family::Poisson,
+                    Link::Log,
+                    num("count"),
+                    design(urban()),
+                    mean.clone()
+                        .with_offset(num("exposure").iter().map(|e| e.ln()).collect())
+                        .unwrap(),
+                ),
+                "gamma" => (
+                    Family::Gamma,
+                    Link::Log,
+                    num("severity"),
+                    design(both()),
+                    mean.clone(),
+                ),
+                "gaussian_weighted" => (
+                    Family::Gaussian,
+                    Link::Identity,
+                    num("severity"),
+                    design(both()),
+                    mean.clone().with_weights(num("exposure")).unwrap(),
+                ),
+                "gamma_doffset" => (
+                    Family::Gamma,
+                    Link::Log,
+                    num("severity"),
+                    design(urban())
+                        .with_offset(num("exposure").iter().map(|e| e.ln()).collect())
+                        .unwrap(),
+                    mean.clone(),
+                ),
+                _ => (
+                    Family::Tweedie { power: 1.5 },
+                    Link::Log,
+                    num("pure"),
+                    design(urban()),
+                    mean.clone(),
+                ),
+            };
+            let mut spec = DoubleGlm::new(family, link);
+            if key.1 == "ml" {
+                spec = spec.ml();
+            }
+            spec.fit(&x, &z, &y)
+                .unwrap_or_else(|e| panic!("{key:?}: {e}"))
+        });
+        let arg = case.get("arg");
+        let at = |names: &[String]| names.iter().position(|n| r_name(n) == arg);
+        match case.get("quantity") {
+            "coef" => at(fit.names()).map(|j| fit.coefficients()[j]),
+            "se" => at(fit.names()).map(|j| fit.standard_errors()[j]),
+            "dcoef" => at(fit.dispersion_names()).map(|j| fit.dispersion_coefficients()[j]),
+            "dse" => at(fit.dispersion_names()).map(|j| fit.dispersion_standard_errors()[j]),
+            "m2loglik" => Some(fit.minus_two_log_likelihood()),
+            "reml_criterion" => Some(fit.reml_criterion()),
+            _ => None,
+        }
+    });
+}
