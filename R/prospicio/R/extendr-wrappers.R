@@ -154,6 +154,8 @@ elpd_loo_rust <- function(log_lik, n, r_eff) .Call(wrap__elpd_loo_rust, log_lik,
 
 elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
 
+glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, nodes) .Call(wrap__glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, nodes)
+
 local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
 
 claim_count_parameters <- function(mean, dispersion) .Call(wrap__claim_count_parameters, mean, dispersion)
@@ -968,6 +970,48 @@ GamModel$predict_distribution <- function(x, names, offset, weights, n_sims, see
 
 #' @export
 `[[.GamModel` <- `$.GamModel`
+
+GlmmModel <- new.env(parent = emptyenv())
+
+GlmmModel$names <- function() .Call(wrap__GlmmModel__names, self)
+
+GlmmModel$coefficients <- function() .Call(wrap__GlmmModel__coefficients, self)
+
+GlmmModel$std_errors <- function() .Call(wrap__GlmmModel__std_errors, self)
+
+GlmmModel$covariance <- function() .Call(wrap__GlmmModel__covariance, self)
+
+GlmmModel$group_names <- function() .Call(wrap__GlmmModel__group_names, self)
+
+GlmmModel$sd <- function() .Call(wrap__GlmmModel__sd, self)
+
+GlmmModel$sd_std_errors <- function() .Call(wrap__GlmmModel__sd_std_errors, self)
+
+GlmmModel$dispersion <- function() .Call(wrap__GlmmModel__dispersion, self)
+
+GlmmModel$dispersion_std_error <- function() .Call(wrap__GlmmModel__dispersion_std_error, self)
+
+GlmmModel$log_likelihood <- function() .Call(wrap__GlmmModel__log_likelihood, self)
+
+GlmmModel$aic <- function() .Call(wrap__GlmmModel__aic, self)
+
+GlmmModel$bic <- function() .Call(wrap__GlmmModel__bic, self)
+
+GlmmModel$fitted <- function() .Call(wrap__GlmmModel__fitted, self)
+
+GlmmModel$iterations <- function() .Call(wrap__GlmmModel__iterations, self)
+
+GlmmModel$converged <- function() .Call(wrap__GlmmModel__converged, self)
+
+GlmmModel$random_effects <- function() .Call(wrap__GlmmModel__random_effects, self)
+
+GlmmModel$predict <- function(x, names, offset, group_names, group_labels) .Call(wrap__GlmmModel__predict, self, x, names, offset, group_names, group_labels)
+
+#' @export
+`$.GlmmModel` <- function (self, name) { func <- GlmmModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.GlmmModel` <- `$.GlmmModel`
 
 Pareto <- new.env(parent = emptyenv())
 

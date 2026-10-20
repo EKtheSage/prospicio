@@ -206,6 +206,7 @@ reference:
     contents:
       - glm_fit
       - glm_nb_fit
+      - glmm_fit
       - glm_model
       - glm_diagnostics
       - f_test

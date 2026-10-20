@@ -674,3 +674,88 @@ def test_target_encode_out_of_fold():
     assert enc.encode(["l0", "unseen"]) == pytest.approx([z * a / (2.0 * n) + 1 - z, 1.0])
     with pytest.raises(ValueError):
         target_encode(values, y, [2.0] * 60, splits[1:], 4.0)
+
+
+def _glmm_reference():
+    import csv
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "validation"
+    with open(root / "data" / "glmm_salamanders.csv") as f:
+        rows = list(csv.DictReader(f))
+    with open(root / "reference" / "glmm_r.csv") as f:
+        ref = {
+            (r["model"], r["quantity"], r["arg"]): float(r["expected"])
+            for r in csv.DictReader(line for line in f if not line.startswith("#"))
+            if r["dataset"] == "salamanders"
+        }
+    # Treatment coding with R's references: spp GP, mined yes.
+    spp = ["PR", "DM", "EC-A", "EC-L", "DES-L", "DF"]
+    names = ["(Intercept)"] + [f"spp{s}" for s in spp] + ["minedno"]
+    columns = [[1.0] * len(rows)]
+    columns += [[float(r["spp"] == s) for r in rows] for s in spp]
+    columns.append([float(r["mined"] == "no") for r in rows])
+    y = [float(r["count"]) for r in rows]
+    return rows, ref, names, columns, y
+
+
+def test_glmm_matches_glmmtmb_and_glmer():
+    # validation/scripts/r_glmm.R: glmmTMB 1.1.15.2 and lme4 2.0.6 on
+    # glmmTMB's Salamanders, count ~ spp + mined + (1 | site).
+    from prospicio.models import Design, Glmm
+
+    rows, ref, names, columns, y = _glmm_reference()
+    design = Design(columns, names)
+    site = [r["site"] for r in rows]
+    fit = Glmm().fit(design, {"site": site}, y)
+    assert fit.converged
+    assert fit.names == names
+    for name, b, se in zip(names, fit.coefficients, fit.standard_errors):
+        assert b == pytest.approx(ref[("poisson", "coef", name)], rel=2e-5, abs=2e-6)
+        assert se == pytest.approx(ref[("poisson", "se", name)], rel=2e-4)
+    sd = ref[("poisson", "sd", "site")]
+    assert fit.sd[0] == pytest.approx(sd, rel=2e-5)
+    assert fit.sd_standard_errors[0] == pytest.approx(
+        sd * ref[("poisson", "se_log_sd", "site")], rel=2e-4
+    )
+    assert fit.dispersion == 1.0
+    assert fit.log_likelihood == pytest.approx(ref[("poisson", "loglik", "")], rel=1e-8)
+    effects = fit.random_effects["site"]
+    j = effects["levels"].index("R-1")
+    assert effects["values"][j] == pytest.approx(
+        ref[("poisson", "ranef", "site|R-1")], rel=1e-4, abs=1e-5
+    )
+    assert effects["prediction_variance"][j] == pytest.approx(
+        ref[("poisson", "prediction_var", "site|R-1")], rel=1e-3
+    )
+    assert effects["conditional_variance"][j] == pytest.approx(
+        ref[("poisson_glmer", "conditional_var", "site|R-1")], rel=1e-3
+    )
+    # A level the fit has not seen, or no groups, predicts the population mean.
+    row = Design([[c[0]] for c in columns], names)
+    population = math.exp(sum(b * c[0] for b, c in zip(fit.coefficients, columns)))
+    assert fit.predict(row, {"site": ["nowhere"]})[0] == pytest.approx(population, rel=1e-12)
+    assert fit.predict(row)[0] == pytest.approx(population, rel=1e-12)
+    u = effects["values"][effects["levels"].index(site[0])]
+    assert fit.predict(row, {"site": [site[0]]})[0] == pytest.approx(
+        population * math.exp(u), rel=1e-12
+    )
+    assert fit.fitted[0] == pytest.approx(population * math.exp(u), rel=1e-9)
+
+    agq = Glmm(nodes=9).fit(design, {"site": site}, y)
+    assert agq.log_likelihood == pytest.approx(ref[("poisson_agq9", "loglik", "")], rel=1e-8)
+    assert agq.sd[0] == pytest.approx(ref[("poisson_agq9", "sd", "site")], rel=2e-5)
+
+
+def test_glmm_rejects_what_it_does_not_fit():
+    from prospicio.models import Design, Glmm
+
+    with pytest.raises(ValueError, match="poisson, gamma or tweedie"):
+        Glmm("binomial")
+    with pytest.raises(ValueError, match="tweedie needs power"):
+        Glmm("tweedie")
+    design = Design([[1.0] * 4], ["(Intercept)"])
+    with pytest.raises(ValueError, match="grouping factor"):
+        Glmm().fit(design, {}, [1.0, 2.0, 3.0, 4.0])
+    with pytest.raises(ValueError, match="labels for"):
+        Glmm().fit(design, {"g": ["a", "b"]}, [1.0, 2.0, 3.0, 4.0])

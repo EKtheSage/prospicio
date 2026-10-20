@@ -1850,3 +1850,180 @@ fn orthogonal_polys_and_natural_splines_match_r() {
         assert!(close(*g, w, 1e-9), "ns predicted {g} against {w}");
     }
 }
+
+/// `validation/data/<name>` as named string columns, quotes stripped.
+fn glmm_data(name: &str) -> Vec<(String, Vec<String>)> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("data")
+        .join(name);
+    let text = std::fs::read_to_string(path).expect(name);
+    let mut lines = text.lines();
+    let unquote = |v: &str| v.trim_matches('"').to_string();
+    let header: Vec<String> = lines.next().unwrap().split(',').map(unquote).collect();
+    let mut cols: Vec<Vec<String>> = vec![Vec::new(); header.len()];
+    for line in lines {
+        for (c, v) in cols.iter_mut().zip(line.split(',')) {
+            c.push(unquote(v));
+        }
+    }
+    header.into_iter().zip(cols).collect()
+}
+
+fn glmm_column<'a>(data: &'a [(String, Vec<String>)], name: &str) -> &'a [String] {
+    &data.iter().find(|(n, _)| n == name).unwrap().1
+}
+
+/// A GLMM case of `validation/reference/glmm_r.csv`: the design (factors
+/// in R's treatment coding, R's reference level), grouping factors,
+/// response and family.
+fn glmm_case(
+    dataset: &str,
+    model: &str,
+) -> (
+    prospicio_glm::glmm::Glmm,
+    Design,
+    Vec<prospicio_glm::glmm::Grouping>,
+    Vec<f64>,
+) {
+    use prospicio_glm::glmm::{Glmm, Grouping};
+    let num = |data: &[(String, Vec<String>)], name: &str| -> Vec<f64> {
+        glmm_column(data, name)
+            .iter()
+            .map(|v| v.parse().unwrap())
+            .collect()
+    };
+    let cat = |data: &[(String, Vec<String>)], name: &str| {
+        Column::Categorical(glmm_column(data, name).to_vec())
+    };
+    let group = |data: &[(String, Vec<String>)], name: &str| {
+        Grouping::new(name, glmm_column(data, name).to_vec())
+    };
+    let (terms, frame, groups, y, offset) = match dataset {
+        "salamanders" => {
+            let data = glmm_data("glmm_salamanders.csv");
+            let frame = Frame::new(vec![
+                ("spp".into(), cat(&data, "spp")),
+                ("mined".into(), cat(&data, "mined")),
+            ])
+            .unwrap();
+            let terms = Terms::new()
+                .intercept()
+                .factor_with_reference("spp", "GP")
+                .factor_with_reference("mined", "yes");
+            let groups = vec![group(&data, "site")];
+            let y = num(&data, "count");
+            (terms, frame, groups, y, None)
+        }
+        "grouseticks" => {
+            let data = glmm_data("glmm_grouseticks.csv");
+            let frame = Frame::new(vec![
+                ("year".into(), cat(&data, "year")),
+                ("height".into(), Column::Numeric(num(&data, "height"))),
+            ])
+            .unwrap();
+            let terms = Terms::new()
+                .intercept()
+                .factor_with_reference("year", "95")
+                .numeric("height");
+            let location = group(&data, "location");
+            let brood = Grouping::nested(&location, &group(&data, "brood")).unwrap();
+            let y = num(&data, "ticks");
+            (terms, frame, vec![location, brood], y, None)
+        }
+        _ => {
+            let data = glmm_data("glmm_simulated.csv");
+            let frame = Frame::new(vec![
+                ("x".into(), Column::Numeric(num(&data, "x"))),
+                ("urban".into(), cat(&data, "urban")),
+            ])
+            .unwrap();
+            let terms = Terms::new()
+                .intercept()
+                .numeric("x")
+                .factor_with_reference("urban", "no");
+            let mut groups = vec![group(&data, "territory")];
+            if model != "tweedie_one" {
+                groups.push(group(&data, "class"));
+            }
+            let (y, offset) = match model {
+                "poisson" => (
+                    num(&data, "count"),
+                    Some(num(&data, "exposure").iter().map(|e| e.ln()).collect()),
+                ),
+                "gamma" => (num(&data, "severity"), None),
+                _ => (num(&data, "pure"), None),
+            };
+            (terms, frame, groups, y, offset)
+        }
+    };
+    let mut design = terms.fit(&frame).unwrap().design(&frame).unwrap();
+    if let Some(o) = offset {
+        design = design.with_offset(o).unwrap();
+    }
+    let family = match model {
+        m if m.starts_with("poisson") => Family::Poisson,
+        "gamma" => Family::Gamma,
+        _ => Family::Tweedie { power: 1.5 },
+    };
+    let mut spec = Glmm::new(family);
+    if model == "poisson_agq9" {
+        spec = spec.quadrature(9);
+    }
+    (spec, design, groups, y)
+}
+
+/// Random-intercept GLMMs against glmmTMB (Laplace; Poisson, gamma and
+/// Tweedie with power 1.5; one, nested and crossed factors) and lme4's
+/// `glmer` (Laplace, and quadrature with 9 nodes): coefficients and their
+/// standard errors, each factor's standard deviation and its log's
+/// standard error, the dispersion, the log-likelihood, and every level's
+/// predicted intercept with its conditional (lme4) or prediction
+/// (glmmTMB) variance. `validation/scripts/r_glmm.R` writes the data and
+/// the reference.
+#[test]
+fn glmm_matches_glmmtmb_and_glmer() {
+    use std::collections::BTreeMap;
+    let cases = reference("glmm_r.csv");
+    let mut fits = BTreeMap::new();
+    // R's coefficient names: `spp[PR]` is `sppPR`.
+    let r_name = |name: &str| name.replace(['[', ']'], "");
+    check(&cases, |case| {
+        // glmer's Laplace fit is the same model as glmmTMB's Poisson.
+        let model = match case.get("model") {
+            "poisson_glmer" => "poisson",
+            m => m,
+        };
+        let key = (case.get("dataset").to_string(), model.to_string());
+        let fit = fits.entry(key.clone()).or_insert_with(|| {
+            let (spec, design, groups, y) = glmm_case(&key.0, &key.1);
+            let fit = spec
+                .fit(&design, &groups, &y)
+                .unwrap_or_else(|e| panic!("{key:?}: {e}"));
+            assert!(fit.converged(), "{key:?} did not converge");
+            fit
+        });
+        let arg = case.get("arg");
+        let coef = || fit.names().iter().position(|n| r_name(n) == arg);
+        let factor = |name: &str| fit.group_names().iter().position(|n| n == name);
+        let level = |kind: &str| -> Option<f64> {
+            let (g, l) = arg.split_once('|')?;
+            let re = fit.random_effects().iter().find(|r| r.name == g)?;
+            let j = re.levels.iter().position(|v| v == l)?;
+            Some(match kind {
+                "ranef" => re.values[j],
+                "conditional_var" => re.conditional_variance[j],
+                _ => re.prediction_variance[j],
+            })
+        };
+        match case.get("quantity") {
+            "coef" => coef().map(|j| fit.coefficients()[j]),
+            "se" => coef().map(|j| fit.standard_errors()[j]),
+            "sd" => factor(arg).map(|k| fit.sd()[k]),
+            "se_log_sd" => factor(arg).map(|k| fit.sd_standard_errors()[k] / fit.sd()[k]),
+            "dispersion" => Some(fit.dispersion()),
+            "se_log_dispersion" => Some(fit.dispersion_standard_error() / fit.dispersion()),
+            "loglik" => Some(fit.log_likelihood()),
+            q => level(q),
+        }
+    });
+}

@@ -399,7 +399,6 @@ a0 <- sum(ys[vals == "l0"])
 n0 <- sum(vals == "l0")
 near(encode_target(te$encoding, c("l0", "zz")), c(n0 / (n0 + 4) * a0 / (2 * n0) + 4 / (n0 + 4), 1), 1e-12)
 
-cat("prospicio R models tests passed\n")
 
 # The negative binomial's theta agrees with MASS::glm.nb, and the Tweedie
 # power is the maximum of its profile.
@@ -416,3 +415,52 @@ stopifnot(tw$lower < tw$power, tw$power < tw$upper)
 pr <- tweedie_profile(Days ~ Eth + Sex + Age + Lrn, quine, powers = c(1.1, 1.3, 1.5, 1.7, 1.9))
 near(pr$power, tw$power, 1e-2)
 near(pr$max_log_likelihood, tw$log_likelihood, 1e-6)
+
+# GLMMs with random intercepts agree with glmmTMB 1.1.15.2
+# (validation/scripts/r_glmm.R, its stored reference): nested factors on
+# lme4's grouseticks and crossed ones on the simulated book.
+root <- if (dir.exists("validation")) "validation" else file.path("..", "..", "..", "validation")
+lines <- readLines(file.path(root, "reference", "glmm_r.csv"))
+ref <- utils::read.csv(text = lines[!startsWith(lines, "#")], stringsAsFactors = FALSE)
+want <- function(dataset, model, quantity, arg = "") {
+  arg_col <- ifelse(is.na(ref$arg), "", ref$arg)
+  ref$expected[ref$dataset == dataset & ref$model == model & ref$quantity == quantity &
+                 arg_col == arg]
+}
+gt <- utils::read.csv(file.path(root, "data", "glmm_grouseticks.csv"),
+                      colClasses = c(year = "character", location = "character",
+                                     brood = "character"))
+g <- glmm_fit(ticks ~ year + height + (1 | location/brood), gt)
+stopifnot(g@converged, identical(names(g@sd), c("location", "location:brood")))
+near(coef(g), sapply(names(coef(g)), function(n) want("grouseticks", "poisson", "coef", n)), 2e-5)
+near(g@sd, c(want("grouseticks", "poisson", "sd", "location"),
+             want("grouseticks", "poisson", "sd", "location:brood")), 2e-5)
+near(g@log_likelihood, want("grouseticks", "poisson", "loglik"), 1e-8)
+re <- g@random_effects$location
+near(re$value[re$level == "32"], want("grouseticks", "poisson", "ranef", "location|32"), 1e-4)
+# The same fit with the nested factor written out.
+g2 <- glmm_fit(ticks ~ year + height + (1 | location) + (1 | location:brood), gt)
+near(g2@log_likelihood, g@log_likelihood, 1e-12)
+# Without the grouping columns, or at an unseen level, predict() gives the
+# population mean; with them, each row's intercepts are added.
+nd <- gt[1:2, c("year", "height")]
+nd$year <- factor(nd$year, levels = c("95", "96", "97"))
+population <- exp(as.vector(stats::model.matrix(~ year + height, nd) %*% coef(g)))
+nd$year <- as.character(nd$year)
+near(predict(g, nd), population, 1e-12)
+near(predict(g, cbind(nd, location = "nowhere", brood = "none")), population, 1e-12)
+near(predict(g, gt[1:2, ]), g@fitted[1:2], 1e-9)
+
+sim <- utils::read.csv(file.path(root, "data", "glmm_simulated.csv"))
+s <- glmm_fit(severity ~ x + urban + (1 | territory) + (1 | class), sim, family = "gamma")
+near(s@dispersion, want("simulated", "gamma", "dispersion"), 2e-5)
+near(s@log_likelihood, want("simulated", "gamma", "loglik"), 1e-8)
+tw <- glmm_fit(pure ~ x + urban + (1 | territory) + (1 | class), sim, family = "tweedie",
+               power = 1.5)
+near(tw@dispersion, want("simulated", "tweedie", "dispersion"), 2e-5)
+near(tw@log_likelihood, want("simulated", "tweedie", "loglik"), 1e-8)
+stopifnot(inherits(try(glmm_fit(ticks ~ year, gt), silent = TRUE), "try-error"),
+          inherits(try(glmm_fit(ticks ~ year + (height | location), gt), silent = TRUE),
+                   "try-error"))
+
+cat("prospicio R models tests passed\n")
