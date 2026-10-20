@@ -138,17 +138,56 @@ pub(crate) fn text_option(grid: &Grid, name: &str) -> Result<Option<String>> {
     }
 }
 
-/// The `average` argument: "volume" (the default), "simple" or
-/// "regression".
-pub fn average(grid: &Grid) -> Result<Average> {
-    match text_option(grid, "average")?.as_deref() {
-        None | Some("volume") => Ok(Average::Volume),
-        Some("simple") => Ok(Average::Simple),
-        Some("regression") => Ok(Average::Regression),
-        Some(other) => Err(format!(
-            "average must be \"volume\", \"simple\" or \"regression\", got {other:?}"
-        )),
+/// The `average` argument: how link ratios are averaged into factors, as
+/// a [`Development`] with its other settings at their defaults. Either a
+/// kind, "volume" (the default), "simple", "regression" or "geometric", or
+/// a row or column `kind, n_periods, drop_high, drop_low` (any of them
+/// blank): average only the link ratios of the latest `n_periods`
+/// calendar periods, then leave out the `drop_high` highest and
+/// `drop_low` lowest at each age (`docs/design/xll.md`, decision 34).
+pub fn average(grid: &Grid) -> Result<Development> {
+    if grid.rows != 1 && grid.columns != 1 || grid.cells.len() > 4 {
+        return Err(
+            "average must be a kind or a row or column of up to four cells: kind, n_periods, drop_high, drop_low"
+                .into(),
+        );
     }
+    let cell = |i: usize| grid.cells.get(i).cloned().unwrap_or(Value::Empty);
+    let kind = match cell(0) {
+        v if v.is_blank() => Average::Volume,
+        Value::Text(s) => match s.trim().to_ascii_lowercase().as_str() {
+            "volume" => Average::Volume,
+            "simple" => Average::Simple,
+            "regression" => Average::Regression,
+            "geometric" => Average::Geometric,
+            other => {
+                return Err(format!(
+                    "average must be \"volume\", \"simple\", \"regression\" or \"geometric\", got {other:?}"
+                ));
+            }
+        },
+        other => {
+            return Err(format!(
+                "average's first cell is its kind (\"volume\", \"simple\", \"regression\" or \"geometric\"), got {other:?}"
+            ));
+        }
+    };
+    let whole = |i: usize, name: &str, min: f64| -> Result<Option<usize>> {
+        match cell(i) {
+            v if v.is_blank() => Ok(None),
+            Value::Number(x) if x.fract() == 0.0 && x >= min && x <= 1e6 => Ok(Some(x as usize)),
+            other => Err(format!(
+                "average's {name} must be a whole number from {min}, got {other:?}"
+            )),
+        }
+    };
+    Ok(Development {
+        average: kind,
+        n_periods: whole(1, "n_periods", 1.0)?,
+        drop_high: whole(2, "drop_high", 0.0)?.unwrap_or(0),
+        drop_low: whole(3, "drop_low", 0.0)?.unwrap_or(0),
+        ..Development::default()
+    })
 }
 
 /// The `tail` argument: omitted for none, a number for a constant factor
@@ -208,13 +247,6 @@ fn link_labels(ages: usize) -> Vec<Value> {
             Value::Text(format!("{}-{to}", 12 * k))
         })
         .collect()
-}
-
-fn development(average: Average) -> Development {
-    Development {
-        average,
-        ..Development::default()
-    }
 }
 
 /// The `sigma` argument: how Mack's last sigma is filled in,
@@ -286,10 +318,9 @@ fn development_with(
 ) -> Result<Development> {
     let [s, kind, weight] = selected_args;
     Ok(Development {
-        average: average(average_arg)?,
         sigma_interpolation: sigma(sigma_arg)?,
         pattern: selected(s, kind, weight)?,
-        ..Default::default()
+        ..average(average_arg)?
     })
 }
 
@@ -597,28 +628,52 @@ fn odp_fit(
     seed_arg: &Grid,
     tail_arg: &Grid,
     process_arg: &Grid,
+    average_arg: &Grid,
     max: usize,
 ) -> Result<OdpBootstrapFit> {
     let tri = triangle(triangle_arg)?;
-    OdpBootstrap {
-        n_sims: count(sims, "sims", 10_000, max)?,
-        seed: seed(seed_arg)?,
-        tail: tail(tail_arg)?,
-        process: process(process_arg)?,
-        ..OdpBootstrap::default()
-    }
+    odp_excluding(
+        OdpBootstrap {
+            n_sims: count(sims, "sims", 10_000, max)?,
+            seed: seed(seed_arg)?,
+            tail: tail(tail_arg)?,
+            process: process(process_arg)?,
+            ..OdpBootstrap::default()
+        },
+        average_arg,
+    )?
     .fit(&tri, COLUMN)
     .map_err(|e| e.to_string())
+}
+
+/// The ODP bootstrap with the link-ratio exclusions of an `average`
+/// argument, whose kind must be the volume average the ODP model is.
+fn odp_excluding(boot: OdpBootstrap, average_arg: &Grid) -> Result<OdpBootstrap> {
+    let dev = average(average_arg)?;
+    if dev.average != Average::Volume {
+        return Err(
+            "the ODP bootstrap is the volume-weighted chain ladder: average's kind must be \"volume\" or blank"
+                .into(),
+        );
+    }
+    Ok(OdpBootstrap {
+        n_periods: dev.n_periods,
+        drop_high: dev.drop_high,
+        drop_low: dev.drop_low,
+        ..boot
+    })
 }
 
 /// The ODP bootstrap exhibit: per origin, the chain-ladder reserve and the
 /// simulated reserve's mean, standard deviation, CV and percentiles, then
 /// the total, whose percentiles are of the simulated total (not the sum of
 /// the origins'):
-/// `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins])`.
+/// `PRO.ODP(triangle, [sims], [seed], [percentiles], [tail], [process], [origins], [average])`.
 pub fn odp_summary(args: &[Grid]) -> Result<Grid> {
     let probabilities = percentiles(&args[3])?;
-    let fit = odp_fit(&args[0], &args[1], &args[2], &args[4], &args[5], MAX_SIMS)?;
+    let fit = odp_fit(
+        &args[0], &args[1], &args[2], &args[4], &args[5], &args[7], MAX_SIMS,
+    )?;
     let labels = origin_labels(&args[6], fit.chain_ladder.origins.len())?;
     bootstrap_exhibit(&fit.reserves, &fit.chain_ladder, labels, &probabilities)
 }
@@ -632,7 +687,7 @@ pub const MAX_SIM_ROWS: usize = 100_000;
 /// column per origin, then the total, under a header row of the origin
 /// labels and "Total". The same `sims`, `seed`, `tail` and `process` give
 /// the draws `PRO.ODP` summarizes:
-/// `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins])`.
+/// `PRO.ODP.SIMS(triangle, [sims], [seed], [tail], [process], [origins], [average])`.
 pub fn odp_sims(args: &[Grid]) -> Result<Grid> {
     let fit = odp_fit(
         &args[0],
@@ -640,6 +695,7 @@ pub fn odp_sims(args: &[Grid]) -> Result<Grid> {
         &args[2],
         &args[3],
         &args[4],
+        &args[6],
         MAX_SIM_ROWS,
     )?;
     let labels = origin_labels(&args[5], fit.chain_ladder.origins.len())?;
@@ -682,7 +738,7 @@ fn mack_bootstrap_fit(
         process: mack_process(process_arg)?,
         development: Development {
             sigma_interpolation: sigma(sigma_arg)?,
-            ..development(average(average_arg)?)
+            ..average(average_arg)?
         },
         tail: tail(tail_arg)?,
         ..MackBootstrap::default()
@@ -803,7 +859,7 @@ fn expected_loss_exhibit(fit: &ExpectedLossFit, labels: Vec<Value>) -> Grid {
 /// The chain ladder an expected-loss method takes its pattern from.
 fn pattern(average_arg: &Grid, tail_arg: &Grid) -> Result<ChainLadder> {
     Ok(ChainLadder {
-        development: development(average(average_arg)?),
+        development: average(average_arg)?,
         tail: tail(tail_arg)?,
     })
 }
@@ -1009,22 +1065,24 @@ pub fn odp_cdr(args: &[Grid]) -> Result<Grid> {
     let tri = triangle(&args[0])?;
     let probabilities = cdr_percentiles(&args[3])?;
     let tail = tail(&args[4])?;
-    let fit = OdpBootstrap {
-        n_sims: count(&args[1], "sims", 10_000, MAX_SIMS)?,
-        seed: seed(&args[2])?,
-        tail,
-        process: process(&args[5])?,
-        ..OdpBootstrap::default()
-    }
-    .one_year(
-        &tri,
-        COLUMN,
-        &OneYearMethod::ChainLadder(ChainLadder {
+    let boot = odp_excluding(
+        OdpBootstrap {
+            n_sims: count(&args[1], "sims", 10_000, MAX_SIMS)?,
+            seed: seed(&args[2])?,
             tail,
-            ..ChainLadder::default()
-        }),
-    )
-    .map_err(|e| e.to_string())?;
+            process: process(&args[5])?,
+            ..OdpBootstrap::default()
+        },
+        &args[7],
+    )?;
+    // Each simulated year is re-reserved on the same link ratios.
+    let method = OneYearMethod::ChainLadder(ChainLadder {
+        tail,
+        development: average(&args[7])?,
+    });
+    let fit = boot
+        .one_year(&tri, COLUMN, &method)
+        .map_err(|e| e.to_string())?;
     let labels = origin_labels(&args[6], fit.opening_reserve.len())?;
     cdr_exhibit(&fit.cdr, &fit.opening_reserve, labels, &probabilities)
 }
@@ -1037,7 +1095,7 @@ pub fn mack_bootstrap_cdr(args: &[Grid]) -> Result<Grid> {
     let probabilities = cdr_percentiles(&args[3])?;
     let dev = Development {
         sigma_interpolation: sigma(&args[8])?,
-        ..development(average(&args[4])?)
+        ..average(&args[4])?
     };
     let tail = tail(&args[5])?;
     let fit = MackBootstrap {
