@@ -1050,6 +1050,9 @@ impl Layer {
     /// The year's ceding commission given its ceded loss: the rate (flat,
     /// or from the sliding scale at the loss ratio `ceded / premium`) times
     /// the year's premium; zero without one.
+    /// A layer with
+    /// [`scales_before_annual_terms`](Self::scales_before_annual_terms)
+    /// reads its scale on another loss, which a tower's result gives.
     pub fn ceding_commission_for(&self, ceded: f64) -> f64 {
         let Some(commission) = &self.commission else {
             return 0.0;

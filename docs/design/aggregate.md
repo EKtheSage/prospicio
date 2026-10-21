@@ -1158,9 +1158,14 @@ pricing model (`knowledge/findings/deal-ratios-and-scale-keys.md`).
    result, so carried amounts count as they were paid.
 7. **JSON.** A tower with brokerage, deductions or either flag is format
    version 3; others keep their version.
-8. **The ledger.** Booking the deductions as legs of the reinsurer's P&L
-   ledger is a later PR (Next: `[deal-ledger]`). The cedant's side
-   correctly ignores them today.
+8. **The ledger and the grids.** The P&L builders book a tower only as
+   covers the book buys (buy groups: the premium paid, the commissions
+   received). Brokerage and the other deductions come out of the premium
+   the reinsurer receives, so the cedant's ledger correctly leaves them
+   out. Booking them as legs of the reinsurer's own ledger is a later PR
+   (Next: `[deal-ledger]`). `TowerGrids` and `AnnualGrids` report the
+   expected commissions but not brokerage or deductions. Those come from
+   simulated years and `deal_ratios`.
 
 ## Validation
 
