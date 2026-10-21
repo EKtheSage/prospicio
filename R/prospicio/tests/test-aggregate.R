@@ -700,10 +700,11 @@ stopifnot(grepl("repeat year 1, slot 5", conditionMessage(e)))
 e <- tryCatch(read_ylt(ylt_path, labels = c("peril", "class"), expected = list(peril = "wind")),
               error = identity)
 stopifnot(grepl("not one of", conditionMessage(e)))
-e <- tryCatch(read_ylt(ylt_path, n_sims = 5), error = identity)
+e <- tryCatch(read_ylt(ylt_path, labels = c("peril", "class"), n_sims = 5), error = identity)
 stopifnot(grepl("whole multiple", conditionMessage(e)))
 rev <- read_ylt(ylt_path, labels = c("peril", "class"), n_sims = 7, expand = "resample", seed = 3)
-rev2 <- event_set_from_ylt(c(1, 1, 2, 1), c(10, 4, 30, 2), slots = c(5, 5, 1, 2), n_sims = 7,
+rev2 <- event_set_from_ylt(c(1, 1, 2, 1), c(10, 4, 30, 2), slots = c(5, 5, 1, 2),
+                           labels = list(class = c("home", "auto", "home", "home")), n_sims = 7,
                            expand = "resample", seed = 3)
 stopifnot(identical(lapply(1:7, function(i) events(rev, i)), lapply(1:7, function(i) events(rev2, i))))
 stopifnot(is.null(rev2@input_hash))

@@ -873,11 +873,11 @@ event_set_from_ylt <- function(years, losses, slots = NULL, labels = NULL, n_yea
                                expected = NULL, source_hash = NULL) {
   l <- label_columns(labels)
   e <- label_columns(expected)
-  na_or <- function(x) if (is.null(x)) NA_real_ else as.double(x)
+  null_or <- function(x) if (is.null(x)) NULL else as.double(x)
   event_set(ptr = rust_result(EventSet$from_ylt(
     as.double(years), as.double(losses),
     if (is.null(slots)) NULL else as.double(slots),
-    l$dims, l$values, na_or(n_years), na_or(n_sims), expand, as.double(seed),
+    l$dims, l$values, null_or(n_years), null_or(n_sims), expand, as.double(seed),
     if (is.null(unique_by)) NULL else as.character(unique_by),
     e$dims, e$values, source_hash
   )))

@@ -28581,6 +28581,7 @@ def year_fraction(year: int, month: int, day: int) -> float:
     >>> year_fraction(2013, 6, 30) - year_fraction(2011, 1, 1)
     2.5
     """
+
 def ylt_hash(data: bytes) -> str:
     """
     A hash of a year loss table's file bytes, ``"blake3:<hex>"``, which

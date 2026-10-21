@@ -453,7 +453,7 @@ impl EventSet {
 
     /// A year loss table's columns, checked and expanded: `years` from 1,
     /// `slots` NULL or one per row, labels as in `from_long`, `n_years` and
-    /// `n_sims` NA for their defaults, `expand` "tile" or "resample",
+    /// `n_sims` NULL for their defaults, `expand` "tile" or "resample",
     /// `unique_by` NULL for every label dimension, the values allowed in
     /// `expected_dims[d]` in `expected_values[[d]]`, `source_hash` NULL or a
     /// string.
@@ -464,8 +464,8 @@ impl EventSet {
         slots: Robj,
         label_dims: Vec<String>,
         label_values: List,
-        n_years: f64,
-        n_sims: f64,
+        n_years: Nullable<f64>,
+        n_sims: Nullable<f64>,
         expand: &str,
         seed: f64,
         unique_by: Robj,
@@ -510,7 +510,7 @@ impl EventSet {
                 .with_labels(labels_from(label_dims, label_values)?)
                 .map_err(to_r)?;
         }
-        if !n_years.is_nan() {
+        if let Nullable::NotNull(n_years) = n_years {
             ylt = ylt
                 .with_n_years(whole(n_years, "n_years")? as usize)
                 .map_err(to_r)?;
@@ -536,10 +536,9 @@ impl EventSet {
             ylt.check_values(&dim, &values.iter().map(String::as_str).collect::<Vec<_>>())
                 .map_err(to_r)?;
         }
-        let n_sims = if n_sims.is_nan() {
-            None
-        } else {
-            Some(whole(n_sims, "n_sims")? as usize)
+        let n_sims = match n_sims {
+            Nullable::NotNull(n) => Some(whole(n, "n_sims")? as usize),
+            Nullable::Null => None,
         };
         Ok(Self {
             inner: ylt.events(n_sims, expansion).map_err(to_r)?,

@@ -1260,12 +1260,12 @@ def test_read_ylt_orders_checks_and_tiles(tmp_path):
     with pytest.raises(ValueError, match="not one of"):
         read_ylt(path, labels=["peril", "class"], expected={"peril": ["wind"]})
     with pytest.raises(ValueError, match="whole multiple"):
-        read_ylt(path, n_sims=5)
+        read_ylt(path, labels=["peril", "class"], n_sims=5)
     with pytest.raises(ValueError, match="no column 'region'"):
         read_ylt(path, labels=["region"])
 
     r = read_ylt(path, labels=["peril", "class"], n_sims=7, expand="resample", seed=3)
-    again = EventSet.from_ylt([1, 1, 2, 1], [10.0, 4.0, 30.0, 2.0], slots=[5, 5, 1, 2], n_sims=7, expand="resample", seed=3)
+    again = EventSet.from_ylt([1, 1, 2, 1], [10.0, 4.0, 30.0, 2.0], slots=[5, 5, 1, 2], labels={"class": ["home", "auto", "home", "home"]}, n_sims=7, expand="resample", seed=3)
     assert [r.events(i) for i in range(7)] == [again.events(i) for i in range(7)]
     assert r.seed == 3
 

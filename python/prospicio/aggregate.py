@@ -186,7 +186,7 @@ def read_ylt(
     >>> import os, tempfile
     >>> from prospicio.aggregate import read_ylt
     >>> path = os.path.join(tempfile.mkdtemp(), "ylt.csv")
-    >>> _ = open(path, "w").write("year,peril,slot,value\n2,wind,9,5\n1,quake,1,1\n2,wind,3,7\n")
+    >>> _ = open(path, "w").write("year,peril,slot,value\\n2,wind,9,5\\n1,quake,1,1\\n2,wind,3,7\\n")
     >>> e = read_ylt(path, labels=["peril"], n_sims=4)
     >>> e.events(1), e.labels(1)
     ([7.0, 5.0], {'peril': ['wind', 'wind']})
