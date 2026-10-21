@@ -1366,7 +1366,8 @@ there for `BayesOdp` and `Meyers`, with these particulars:
   with the single-triangle comparison); the full run, which adds the
   default refit mode over the segments under a budget and model 2's
   default view, is 225 s. One local run, not pinned by CI.
-* **Not done.** The 200-triangle calibration study and a guide section;
+* **Not done.** A guide section (the 200-triangle calibration study is built,
+  `reserving-calibration.md`, "As built (PR 4)");
   `docs/guides/reserving-compartmental.qmd` still says that fitting
   several segments is not built, which has been out of date since PR E
   (the Guides lane's file).

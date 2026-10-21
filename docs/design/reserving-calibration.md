@@ -1,6 +1,6 @@
 # Design note: the 200-triangle calibration study (Meyers' ultimate percentile test)
 
-Status: **Accepted** (2026-10-20; issue #392; the user decided the
+Status: **Accepted**, built through PR 4, D values not yet pinned (2026-10-20; issue #392; the user decided the
 points marked "the user decided"; two points the user did not decide are
 taken as this note's recommendation and marked so) · Lane: Reserving
 (`validation/` only; `crates/prospicio-reserving/` only if a thin helper
@@ -56,7 +56,7 @@ decided, 2026-10-20).
 | 1 | `claude/calibration-study` | this note; the lane, roadmap and knowledge entries | `main` |
 | 2 | `claude/calibration-harness` | the panel script `validation/scripts/calibration_panel.py` (decision 2), the Rust panel loader, the percentile and KS code (decision 5), the harness (decision 6) with Mack (paid and incurred) and the ODP bootstrap (paid), the `#[ignore]`d study, its outputs (decision 7); the panel accepted only if Mack reproduces Meyers' D (decision 3); a timing probe (the models built by then; see "As built") | PR 1 |
 | 3 | `claude/calibration-bayes` | `BayesOdp` on paid, and Meyers' CRC, CSR and CAY on his bases; the comparison table with Meyers' D (decision 8); built, see "As built (PR 3)" | PR 2 |
-| 4 | `claude/calibration-compartmental` | Compartmental model 1 (paid), and model 2 as an optional, slower arm (decision 6) | PR 3 |
+| 4 | `claude/calibration-compartmental` | Compartmental model 1 (paid), and model 2 as an optional, slower arm (decision 6); built, see "As built (PR 4)" | PR 3 |
 
 After a run the user reviews, the D values are pinned within a tolerance
 (decision 7) and the knowledge finding is written; that happens in the
@@ -595,3 +595,58 @@ monograph, checked against `08-Meyers.pdf`); his D values are in
   four cells within 2 points of the bound.
 * **Not done here**: pinning the D values (after the user reviews the
   run), Compartmental (PR 4), a run on the printed codes only.
+
+## As built (PR 4, 2026-10-21)
+
+PR 4 (`claude/calibration-compartmental`, on `main` after PR 3) adds the
+arms `compartmental` (model 1) and `compartmental_2` (model 2), both on
+paid, to `validation/tests/reserving_calibration_meyers.rs`. Differences
+from the plan above:
+
+* **Settings.** `Compartmental::new(CompartmentalPriors::gesmann_morris())`
+  and `Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())` at
+  the library's defaults (model 1: four chains of 1,000 warm-up and 2,000
+  kept draws, target acceptance 0.99; model 2: 2,000 and 8,000, 0.999),
+  10,000 simulations, the panel's premium, outstanding as case incurred
+  less paid (`Outstanding::FromIncurred`), a deterministic seed per
+  triangle and arm. The basis is paid, as the table in section 1 says: the
+  outcome is the age-10 total of cumulative paid. The fit's `reserves` are
+  paid at the square's last age less the latest paid, so the percentile is
+  taken of the outcome less what is paid, as the ODP bootstrap
+  (`CompartmentalFit::latest_paid`); the oldest origin, already at age 10,
+  has a zero reserve.
+* **Refit.** Decision 5's rule, with a different target: the first fit is
+  at the library's own acceptance (0.99, or 0.999 for model 2), so the refit
+  goes a tenth of the remaining way to 1 (0.999, or 0.9999), not to 0.99
+  (`with_refit_at`). `DiagSummary` also carries `rate_swaps`, shown in the
+  `diagnostics` column when above zero; it does not trigger a refit.
+* **Selection.** `RISK_RS_CALIBRATION_ARMS` accepts `compartmental` and
+  `compartmental_2`. The default is `mack,odp,bayes_odp,crc,csr,cay,
+  compartmental`: model 2 runs only when named (decision 6, the note's
+  recommendation, which the user has not overruled).
+* **CI.** Two unit tests run in the `bayes` job: a cut-down NUTS check on a
+  synthetic square (the reserves are shifted to ultimates, the run is
+  reproducible, the library's target acceptances) and a group 353
+  commercial auto check through `ArmBasis::run` (the predictive mean within
+  15% of the ODP bootstrap's, about 1.5 s). Company 337 is not a 10 by 10
+  square, so the paper's parity targets stay in
+  `validation/tests/reserving_compartmental*.rs` and are not reused. The
+  study stays `#[ignore]`d.
+* **Result.** Model 1 scores all 200 triangles and fails Meyers' test at 5%
+  in every line and in total (D 49.3, 36.9, 26.8, 66.3 and 39.3, against
+  bounds of 19.2 and 9.6), with predictive totals whose median coefficient
+  of variation is 1.3% to 3.8% in three lines; it takes 528 s on 16 threads
+  (2.1 s for one fit alone). Model 2 scores 48 of 200 (the log-normal
+  likelihood needs every observed amount positive, and case incurred less
+  paid is at or below zero somewhere in most triangles), 1,329 s on 16
+  threads (59 s for one fit alone), D 20.5 on the 48 against a bound of
+  19.6. Workers' compensation, the preset's line, has model 1's lowest D
+  (26.8) but still fails. The details, the diagnostics and the caveats are
+  in `knowledge/findings/meyers-calibration-compartmental.md` (draft).
+  Meyers publishes no compartmental result, so there is no D to compare
+  with; the comparison is with Mack, the ODP bootstrap, CRC and CSR on
+  paid from the two earlier findings.
+* **Not done here**: pinning the D values of any arm (after the user
+  reviews the runs), a run with priors fitted per line, a floor on the cells
+  so that model 2 scores more triangles, and a run on the printed codes
+  only. With PR 4 the study's arms are all built.

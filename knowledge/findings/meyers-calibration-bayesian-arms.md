@@ -175,7 +175,7 @@ pinned.
 
 # Not yet shown
 
-Compartmental (PR 4), pinning the D values (after the user's review of the
-run), a run on the printed codes only, which would separate panel from
+Compartmental is in `meyers-calibration-compartmental.md` (PR 4).
+Pinning the D values (after the user's review of the run), a run on the printed codes only, which would separate panel from
 model for the four mismatching cells, and a run with Meyers' floor and
 ceiling, which would separate his code's data handling from the model.
