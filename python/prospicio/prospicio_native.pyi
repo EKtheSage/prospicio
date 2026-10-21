@@ -10678,6 +10678,25 @@ class GlmFit:
         -------
         list of float
         """
+    def quantile_residuals(self, /, design: Design, y: Sequence[float], seed: int = 0) -> list[float]:
+        """
+        Randomized quantile residuals on ``design`` and ``y`` (normally the
+        training data) at the fit's dispersion, standard normal when the model is
+        right (Dunn and Smyth, 1996): exact for a continuous family, drawn from
+        ``seed`` where the response has an atom (counts, a Tweedie's zero). R's
+        ``statmod::qresiduals(m, dispersion = summary(m)$dispersion)``.
+        
+        Parameters
+        ----------
+        design : Design
+            Same columns as the training design.
+        y : list of float
+        seed : int, default 0
+        
+        Returns
+        -------
+        list of float
+        """
     def robust_covariance(self, /, design: Design, y: Sequence[float], kind: str = "HC0", groups: Sequence[int |str] |None = None) -> list[list[float]]:
         """
         Sandwich (heteroskedasticity- or cluster-robust) covariance of the
@@ -26984,6 +27003,31 @@ def pseudo_bma_weights(lpd: Sequence[Sequence[float]], bootstrap: bool = True, n
         Bootstrap replicates.
     seed : int, default 0
         Replicate ``b`` uses stream ``b`` of ``seed``.
+    
+    Returns
+    -------
+    list of float
+    """
+
+def quantile_residuals(family: str, y: Sequence[float], mu: Sequence[float], dispersion: float = 1.0, weights: Sequence[float] |None = None, seed: int = 0, theta: float |None = None, power: float |None = None) -> list[float]:
+    """
+    Randomized quantile residuals (Dunn and Smyth, 1996): the normal scores
+    ``Phi^-1`` of :func:`pit` at the same ``seed``, standard normal when the
+    model is right. Exact for a continuous family; drawn between
+    ``Phi^-1(F(y-))`` and ``Phi^-1(F(y))`` for a count and a Tweedie's zero,
+    as R's ``statmod::qresiduals``.
+    
+    Parameters
+    ----------
+    family : str
+    y : list of float
+    mu : list of float
+    dispersion : float, default 1.0
+    weights : list of float, optional
+    seed : int, default 0
+        Seeds the randomization.
+    theta : float, optional
+    power : float, optional
     
     Returns
     -------

@@ -602,3 +602,11 @@
 - `Mixing` has three new variants (`Beta`, `Sichel`, `SichelSkewness`);
   Rust code that matches it exhaustively adds arms for them or uses
   `Mixing::cv`.
+
+### Models
+
+- Randomized quantile residuals (Dunn and Smyth): `GlmFit::quantile_residuals(design, y, seed)` and
+  `metrics::quantile_residuals`, the normal scores of the randomized PIT, exact for the Gaussian,
+  gamma and inverse Gaussian and drawn by seed for the counts and the Tweedie's zero; `statmod::qresiduals`
+  parity on quine. Python `GlmFit.quantile_residuals()` and `models.quantile_residuals()`, R
+  `residuals(m, type = "quantile", seed = 0)` and `quantile_residuals()` (#464).

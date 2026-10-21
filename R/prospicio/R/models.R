@@ -848,8 +848,12 @@ for (cls in list(glm_model, gam_model, bayes_glm_model)) {
   }
 }
 
-S7::method(residuals, glm_model) <- function(object, type = c("deviance", "pearson", "response", "working"), ...) {
+S7::method(residuals, glm_model) <- function(object, type = c("deviance", "pearson", "response", "working", "quantile"),
+                                              seed = 0, ...) {
   type <- match.arg(type)
+  if (type == "quantile") {
+    return(rust_result(object@ptr$quantile_residuals(as.double(seed)), s7_call()))
+  }
   rust_result(object@ptr$diagnostics(), s7_call())[[type]]
 }
 S7::method(hatvalues, glm_model) <- function(model, ...) {
@@ -866,8 +870,8 @@ S7::method(cooks.distance, glm_model) <- function(model, ...) {
 #' Diagnostics and prediction errors of a fitted GLM
 #'
 #' A [glm_model] fitted in this session keeps its training data, so
-#' [stats::residuals()] (`type` `"deviance"`, `"pearson"`, `"response"` or
-#' `"working"`), [stats::hatvalues()], [stats::rstandard()] (`type`
+#' [stats::residuals()] (`type` `"deviance"`, `"pearson"`, `"response"`,
+#' `"working"` or `"quantile"`), [stats::hatvalues()], [stats::rstandard()] (`type`
 #' `"deviance"` or `"pearson"`) and [stats::cooks.distance()] work on it as
 #' on R's `glm`. `glm_diagnostics()` returns them all, with the working
 #' weights, as a data frame. `prediction_se()` is the standard error of each
@@ -1029,7 +1033,11 @@ S7::method(print, gam_model) <- function(x, ...) {
 #' distribution (the family with mean `mu`, `dispersion` and weight);
 #' `pit_values()` the probability integral transform `F(y)`, randomized
 #' where the distribution has atoms (counts, a Tweedie's zero) and uniform
-#' when the model is calibrated; `ks_uniform()` the Kolmogorov-Smirnov
+#' when the model is calibrated; `quantile_residuals()` its normal scores
+#' `qnorm(pit_values(...))`, Dunn and Smyth's randomized quantile residuals,
+#' standard normal under the model (as `statmod::qresiduals`; a fitted
+#' [glm_model]'s are `residuals(m, type = "quantile", seed = 0)`);
+#' `ks_uniform()` the Kolmogorov-Smirnov
 #' distance of values from the uniform, about `1.36 / sqrt(n)` or less 95%
 #' of the time under uniformity. `pit_from_draws()` is the PIT of each `y`
 #' under the empirical distribution of `draws`, ties randomized by `u`, and
@@ -1055,7 +1063,7 @@ S7::method(print, gam_model) <- function(x, ...) {
 #' @param bins Number of histogram bins.
 #' @param response The name of the response column.
 #' @param weight_column The test data's weight column, or `NULL`.
-#' @returns A number; for `pit_values()` and `pit_from_draws()` one value
+#' @returns A number; for `pit_values()`, `quantile_residuals()` and `pit_from_draws()` one value
 #'   per outcome; for `pit_histogram()` the count in each bin; for
 #'   `deviance_score()` a function `score(model, test)`; for
 #'   `lift_table()` a data frame with columns `exposure`, `expected` and
@@ -1199,6 +1207,17 @@ pit_values <- function(family, y, mu, dispersion = 1, weights = NULL, seed = 0, 
   rust_result(pit_rust(family, fa$theta, fa$power, as.double(y), as.double(mu),
                        as.double(dispersion),
                        if (is.null(weights)) double() else as.double(weights), as.double(seed)))
+}
+
+#' @rdname model_metrics
+#' @export
+quantile_residuals <- function(family, y, mu, dispersion = 1, weights = NULL, seed = 0, theta = NULL,
+                               power = NULL) {
+  fa <- family_args(theta, power)
+  rust_result(quantile_residuals_rust(family, fa$theta, fa$power, as.double(y), as.double(mu),
+                                      as.double(dispersion),
+                                      if (is.null(weights)) double() else as.double(weights),
+                                      as.double(seed)))
 }
 
 #' @rdname model_metrics

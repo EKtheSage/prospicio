@@ -38,8 +38,8 @@ number.
 }
 \description{
 A \link{glm_model} fitted in this session keeps its training data, so
-\code{\link[stats:residuals]{stats::residuals()}} (\code{type} \code{"deviance"}, \code{"pearson"}, \code{"response"} or
-\code{"working"}), \code{\link[stats:hatvalues]{stats::hatvalues()}}, \code{\link[stats:rstandard]{stats::rstandard()}} (\code{type}
+\code{\link[stats:residuals]{stats::residuals()}} (\code{type} \code{"deviance"}, \code{"pearson"}, \code{"response"},
+\code{"working"} or \code{"quantile"}), \code{\link[stats:hatvalues]{stats::hatvalues()}}, \code{\link[stats:rstandard]{stats::rstandard()}} (\code{type}
 \code{"deviance"} or \code{"pearson"}) and \code{\link[stats:cooks.distance]{stats::cooks.distance()}} work on it as
 on R's \code{glm}. \code{glm_diagnostics()} returns them all, with the working
 weights, as a data frame. \code{prediction_se()} is the standard error of each

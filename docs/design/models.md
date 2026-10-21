@@ -355,7 +355,13 @@ models and compares them.
   means (parameter error by the delta method, process error from the
   family), with GCV and a log-likelihood at a held dispersion. A fit keeps
   no training data, so each method takes the design (and response); the R
-  model keeps its training data and gets R's generics on it.
+  model keeps its training data and gets R's generics on it. Randomized
+  quantile residuals (#464, Dunn and Smyth 1996) are the normal scores of
+  the randomized PIT that `metrics::pit` already drew (`Family::cdf_bounds`),
+  so they need no family code of their own: exact for a continuous family,
+  drawn by seed where the response has an atom. statmod's `qresiduals`
+  agrees at the fit's dispersion; its default dispersion for the inverse
+  Gaussian, `Σ w (y − μ)² / (μ² y) / df`, is not Pearson's.
 - **Validation charts** (#351, CAS Monograph 5, chapter 7):
   `metrics::double_lift`, `loss_ratio_chart`, `roc`, `confusion_matrix`
   and `normalized_gini` beside `lift` and `gini`, on plain slices like the

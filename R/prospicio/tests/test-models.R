@@ -387,6 +387,22 @@ near(spe$parameter_variance, prediction_se(qg, quine[1, ])^2, 1e-10)
 n_q <- nrow(quine)
 near(glm_gcv(qg), n_q * sum(residuals(qg, "response")^2) / (n_q - 7)^2, 1e-12)
 near(log_likelihood_at(qg, 1), qg@log_likelihood, 1e-12)
+# Randomized quantile residuals (#464): a count's lies between qnorm of
+# F(y - 1) and F(y), reproducibly by seed.
+qr <- residuals(qg, type = "quantile", seed = 3)
+mu_r <- unname(fitted(rg))
+stopifnot(all(qr >= qnorm(ppois(quine$Days - 1, mu_r)) - 1e-6),
+          all(qr <= qnorm(ppois(quine$Days, mu_r)) + 1e-6),
+          identical(qr, residuals(qg, type = "quantile", seed = 3)))
+near(qr, quantile_residuals("poisson", quine$Days, qg@fitted, seed = 3), 1e-12)
+# A gamma's is exact: qnorm of its cdf at the fit's dispersion.
+quine$Days1 <- quine$Days + 1
+qgg <- glm_fit(Days1 ~ Eth + Sex + Age + Lrn, quine, family = "gamma", link = "log")
+rgg <- stats::glm(Days1 ~ Eth + Sex + Age + Lrn, family = Gamma(link = "log"), data = quine,
+                  control = tight)
+phi_g <- summary(rgg)$dispersion
+near(residuals(qgg, type = "quantile"),
+     qnorm(pgamma(quine$Days1, shape = 1 / phi_g, scale = unname(fitted(rgg)) * phi_g)), 1e-5)
 # Out-of-fold target encoding (#357): a row's own response never enters it.
 vals <- paste0("l", (0:59) %% 7)
 ys <- as.double(((0:59) * 13) %% 5)

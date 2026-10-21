@@ -9,6 +9,7 @@
 \alias{pinball_loss}
 \alias{log_score}
 \alias{pit_values}
+\alias{quantile_residuals}
 \alias{ks_uniform}
 \alias{pit_from_draws}
 \alias{pit_histogram}
@@ -36,6 +37,17 @@ log_score(
 )
 
 pit_values(
+  family,
+  y,
+  mu,
+  dispersion = 1,
+  weights = NULL,
+  seed = 0,
+  theta = NULL,
+  power = NULL
+)
+
+quantile_residuals(
   family,
   y,
   mu,
@@ -94,7 +106,7 @@ deviance_score(
 \item{weight_column}{The test data's weight column, or \code{NULL}.}
 }
 \value{
-A number; for \code{pit_values()} and \code{pit_from_draws()} one value
+A number; for \code{pit_values()}, \code{quantile_residuals()} and \code{pit_from_draws()} one value
 per outcome; for \code{pit_histogram()} the count in each bin; for
 \code{deviance_score()} a function \code{score(model, test)}; for
 \code{lift_table()} a data frame with columns \code{exposure}, \code{expected} and
@@ -115,7 +127,11 @@ continuous ranked probability score of draws for an outcome;
 distribution (the family with mean \code{mu}, \code{dispersion} and weight);
 \code{pit_values()} the probability integral transform \code{F(y)}, randomized
 where the distribution has atoms (counts, a Tweedie's zero) and uniform
-when the model is calibrated; \code{ks_uniform()} the Kolmogorov-Smirnov
+when the model is calibrated; \code{quantile_residuals()} its normal scores
+\code{qnorm(pit_values(...))}, Dunn and Smyth's randomized quantile residuals,
+standard normal under the model (as \code{statmod::qresiduals}; a fitted
+\link{glm_model}'s are \code{residuals(m, type = "quantile", seed = 0)});
+\code{ks_uniform()} the Kolmogorov-Smirnov
 distance of values from the uniform, about \code{1.36 / sqrt(n)} or less 95\%
 of the time under uniformity. \code{pit_from_draws()} is the PIT of each \code{y}
 under the empirical distribution of \code{draws}, ties randomized by \code{u}, and

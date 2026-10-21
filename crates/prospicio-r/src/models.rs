@@ -951,6 +951,14 @@ impl GlmModel {
         ))
     }
 
+    /// Randomized quantile residuals on the training data.
+    fn quantile_residuals(&self, seed: f64) -> Result<Vec<f64>> {
+        let (d, y) = self.training_data()?;
+        self.inner
+            .quantile_residuals(d, y, whole(seed, "seed")?)
+            .map_err(to_r)
+    }
+
     /// Standard error of each new row's predicted mean.
     fn prediction_se(&self, x: &[f64], names: Vec<String>, offset: &[f64]) -> Result<Vec<f64>> {
         let d = design(x, names, offset, &[])?;
@@ -1747,6 +1755,23 @@ fn pit_rust(
 }
 
 #[extendr]
+#[allow(clippy::too_many_arguments)]
+fn quantile_residuals_rust(
+    family_name: &str,
+    theta: f64,
+    power: f64,
+    y: &[f64],
+    mu: &[f64],
+    dispersion: f64,
+    weights: &[f64],
+    seed: f64,
+) -> Result<Vec<f64>> {
+    let f = family(family_name, theta, power)?;
+    let w = (!weights.is_empty()).then_some(weights);
+    metrics::quantile_residuals(f, y, mu, dispersion, w, whole(seed, "seed")?).map_err(to_r)
+}
+
+#[extendr]
 fn ks_uniform_rust(values: &[f64]) -> Result<f64> {
     metrics::ks_uniform(values).map_err(to_r)
 }
@@ -2408,6 +2433,7 @@ extendr_module! {
     fn pinball_rust;
     fn log_score_rust;
     fn pit_rust;
+    fn quantile_residuals_rust;
     fn ks_uniform_rust;
     fn pit_from_draws_rust;
     fn pit_histogram_rust;
