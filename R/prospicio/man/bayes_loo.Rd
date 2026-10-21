@@ -8,8 +8,8 @@ bayes_loo(model)
 }
 \arguments{
 \item{model}{A \link{bayes_glm_model}, a \link{bayes_odp_fit} (or a single-segment
-\link{bayes_odp_fits}) or \link{bayes_bf_fit} for the PSIS-LOO of its observed
-increments, a \link{meyers_fit} (or a single-segment \link{meyers_fits}) for
+\link{bayes_odp_fits}), \link{bayes_bf_fit} or \link{bayes_bf_normalised_fit} for the
+PSIS-LOO of its observed increments, a \link{meyers_fit} (or a single-segment \link{meyers_fits}) for
 that of its observed cells on the log scale, or a \link{compartmental_fit}
 for that of its observed outstanding and paid amounts (with
 \code{n_outstanding}, \code{elpd_outstanding} and \code{elpd_paid}).}

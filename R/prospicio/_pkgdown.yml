@@ -299,6 +299,7 @@ reference:
       - mack_bootstrap_fit
       - bayes_odp_fit
       - bayes_bf_fit
+      - bayes_bf_normalised_fit
       - bayes_odp_fits
       - meyers_fit
       - meyers_fits
@@ -314,6 +315,7 @@ reference:
       - one_year_fit
       - bayes_one_year_fit
       - bayes_bf_one_year
+      - bayes_bf_normalised_one_year
       - meyers_one_year
       - clark_fit
       - fit_frames
