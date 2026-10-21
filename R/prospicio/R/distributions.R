@@ -934,7 +934,7 @@ mixed_poisson_count <- function(mean, cv,
     if (is.null(v)) stop(sprintf("mixing \"%s\" needs %s", mixing, name), call. = FALSE)
     as.double(v)
   }
-  param <- NA_real_
+  param <- 0
   if (mixing == "beta") {
     param <- need(max, "max")
   } else if (mixing == "sichel") {
