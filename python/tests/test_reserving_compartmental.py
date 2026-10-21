@@ -524,7 +524,7 @@ def test_one_year_defaults(tri):
 
 
 def test_light_refit(tri):
-    # A warm-started, shorter refit (decision 22): it implies a refit, so
+    # A warm-started, shorter refit (decision 24): it implies a refit, so
     # model 2 refits its flagged simulations and is not approximate.
     short = Compartmental.model_2(GM2, chains=2, tune=200, draws=200, target_accept=0.9)
     with warnings.catch_warnings(record=True) as record:

@@ -798,7 +798,7 @@ fn light_gaps(sims: usize, seed: u64, lights: &[LightRefit]) -> (f64, Vec<LightG
 }
 
 /// Model 2's warm-started, shorter refits (`BayesOneYear::light_refit`,
-/// decision 22) against its full refits, simulation by simulation, on the
+/// decision 24) against its full refits, simulation by simulation, on the
 /// first `LIGHT_SIMS` years of seed `LIGHT_SEED` (ignored; release build,
 /// many minutes).
 #[test]

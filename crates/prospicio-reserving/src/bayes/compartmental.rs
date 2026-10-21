@@ -1373,7 +1373,7 @@ impl Compartmental {
         let mut default_refit = self.one_year_refit();
         // A light refit is a choice to refit: model 2 then refits its
         // flagged simulations (moment matching rescues none of them), with
-        // nothing approximate to warn of (decision 22).
+        // nothing approximate to warn of (decision 24).
         if settings.light_refit.is_some() && default_refit == OneYearRefit::ReweightOnly {
             default_refit = OneYearRefit::RefitFlagged;
         }
@@ -3897,7 +3897,7 @@ mod tests {
             assert_eq!((two.refit, sims, warning), (Some(refit), 300, None));
         }
         // A light refit is a choice to refit: model 2 refits its flagged
-        // simulations, without the approximate warning (decision 22); model
+        // simulations, without the approximate warning (decision 24); model
         // 1 keeps moment matching.
         let light = BayesOneYear {
             light_refit: Some(LightRefit::default()),
@@ -5037,7 +5037,7 @@ mod tests {
         light_refit_conforms(name, &m, &open.0, &mut year, &opening);
     }
 
-    /// The light refit (decision 22) samples the posterior the fit's own
+    /// The light refit (decision 24) samples the posterior the fit's own
     /// sampler does, on the same layout: one year drawn from the opening
     /// posterior, refitted by the fit's sampler (4 chains of 300 and 500,
     /// the reference) and by the default light sampler, has the opening's
@@ -5201,7 +5201,7 @@ mod tests {
         }
     }
 
-    /// A light refit (decision 22) refits every simulation with a shorter,
+    /// A light refit (decision 24) refits every simulation with a shorter,
     /// warm-started sampler: the same years and `k̂` as the fit's own sampler,
     /// the same simulations refitted, closing reserves of the same size,
     /// reproducible, and recorded in the provenance; a bad setting is an

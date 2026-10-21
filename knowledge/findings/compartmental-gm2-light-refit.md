@@ -14,7 +14,7 @@ sources:
     title: CompartmentalYear::refit, the light branch
   - id: design
     resource: ../docs/design/reserving-bayes.md
-    title: Design note, Bayesian reserving (decision 22, open decision 16)
+    title: Design note, Bayesian reserving (decision 24, open decision 17)
 ---
 
 # Finding

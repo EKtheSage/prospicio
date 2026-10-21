@@ -406,7 +406,7 @@ stopifnot(
 expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
                                          refit = "sometimes"), "should be one of")
 
-# A warm-started, shorter refit (decision 22) implies a refit: model 2
+# A warm-started, shorter refit (decision 24) implies a refit: model 2
 # refits its flagged simulations and is not approximate.
 light <- with_warnings(compartmental_model_2_one_year(tri, "paid", "premium", gm2,
                                                       incurred = "incurred", chains = 2,

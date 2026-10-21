@@ -103,4 +103,4 @@ default over two segments (reweighted, warned as approximate).[^test]
 model 2's view within about 0.03 sd of full refits, at about a thirtieth
 of their cost; see [the light refit
 finding](compartmental-gm2-light-refit.md). Model 2 still reweights only by
-default (open decision 16 of the design note).
+default (open decision 17 of the design note).

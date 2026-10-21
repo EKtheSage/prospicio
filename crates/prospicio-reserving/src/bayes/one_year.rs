@@ -128,7 +128,7 @@ pub struct BayesOneYear {
     /// a larger one.
     pub n_sims: Option<usize>,
     /// A shorter NUTS sampler for the refits of `Compartmental` (open
-    /// decision 16, `docs/design/reserving-bayes.md` decision 22): `None`
+    /// decision 17, `docs/design/reserving-bayes.md` decision 24): `None`
     /// (the default) refits with the fit's own sampler, as before; `Some`
     /// warm-starts each refit from the opening posterior and samples it with
     /// these settings. The other models ignore it.
@@ -137,7 +137,7 @@ pub struct BayesOneYear {
 
 /// The sampler of a warm-started refit ([`BayesOneYear::light_refit`]).
 /// The default, 4 chains of 150 warm-up and 250 kept draws, is the one
-/// measured on company 337 (decision 22).
+/// measured on company 337 (decision 24).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LightRefit {
     /// Chains per refit.
@@ -1045,7 +1045,7 @@ pub(crate) fn provenance(
 }
 
 /// [`provenance`] with the light refit's sampler, for a model that uses
-/// [`BayesOneYear::light_refit`] (only `Compartmental`, decision 22): the
+/// [`BayesOneYear::light_refit`] (only `Compartmental`, decision 24): the
 /// other models ignore the setting and do not record it.
 pub(crate) fn provenance_with_light_refit(
     provenance: Provenance,
@@ -1054,7 +1054,7 @@ pub(crate) fn provenance_with_light_refit(
 ) -> Provenance {
     let provenance = self::provenance(provenance, settings, n_sims);
     match settings.light_refit {
-        // Unchanged without a light refit, as before decision 22.
+        // Unchanged without a light refit, as before decision 24.
         None => provenance,
         Some(l) => provenance.param(
             "light_refit",
