@@ -32,11 +32,15 @@
 //! reserving_compartmental_one_year -- --ignored seed_sweep --nocapture`).
 //!
 //! Model 2 is measured (`model_2_comparison`, ignored): moment matching
-//! rescues none of its simulations, and a refit takes about a minute, so
-//! by the user's decision of 2026-10-16 its default view reweights only,
-//! with a warning that it is approximate, and every model's default view
-//! runs at most 2,000 simulations. `the_default_view_of_model_2_reweights`
-//! checks those defaults end to end; it runs only when
+//! rescues none of its simulations, and a full refit takes about a minute,
+//! so its view refits the flagged simulations with the light refit by
+//! default (the user's decision of 2026-10-21, which replaced 2026-10-16's
+//! reweighting only; `no_light_refit` turns it off, with a warning that the
+//! view is approximate), and every model's default view runs at most 2,000
+//! simulations. `the_default_view_of_model_2_refits_lightly` and
+//! `the_view_of_model_2_without_the_light_refit_reweights` check those
+//! defaults end to end (the default at 20 simulations: at 2,000 its light
+//! refits take about half an hour); they run only when
 //! `RISK_RS_FULL_BAYES` is set, as in CI's weekly and manual runs
 //! (`prospicio_validation::full_bayes`). A pull request runs model 1 alone
 //! and without its `RefitAll` comparison (the smoke run: `mean_z`,
@@ -332,14 +336,14 @@ fn the_one_year_view_of_model_1_matches_its_refits() {
     );
 }
 
-/// Model 2's default one-year view (the user's decision of 2026-10-16):
-/// 2,000 simulations from the model's 10,000, every flagged one reweighted
-/// (none moment-matched or refitted), with the warning that the view is
-/// approximate (an explicit refit mode carries none: the unit test
-/// `the_one_year_defaults_follow_the_model`). Full run only
-/// (`RISK_RS_FULL_BAYES`): about a minute and a half in release.
+/// Model 2's default one-year view (the user's decision of 2026-10-21):
+/// every flagged simulation refitted with the light refit, none
+/// moment-matched, and no warning. Run on 20 simulations of the 2,000 it
+/// takes by default (the cap is the unit test
+/// `the_one_year_defaults_follow_the_model`'s): at 2,000 the light refits
+/// take about half an hour. Full run only (`RISK_RS_FULL_BAYES`).
 #[test]
-fn the_default_view_of_model_2_reweights() {
+fn the_default_view_of_model_2_refits_lightly() {
     if !full_bayes() {
         eprintln!("skipped: model 2's default view runs when RISK_RS_FULL_BAYES is set");
         return;
@@ -352,7 +356,60 @@ fn the_default_view_of_model_2_reweights() {
             "paid",
             Outstanding::FromIncurred("incurred"),
             "premium",
-            &BayesOneYear::default(),
+            &BayesOneYear {
+                n_sims: Some(20),
+                ..BayesOneYear::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(default.pareto_k.len(), 20);
+    assert!(
+        default.flagged_share() > 0.9,
+        "flagged {}",
+        default.flagged_share()
+    );
+    assert!(default.moment_matched.is_empty());
+    assert!(
+        default.refitted.len() >= 15,
+        "refitted {}",
+        default.refitted.len()
+    );
+    assert_eq!(default.approximate, None);
+    let parameters = &default.cdr.provenance().parameters;
+    for (key, value) in [
+        ("refit", "RefitFlagged"),
+        ("light_refit", "4x150+250"),
+        ("one_year_sims", "20"),
+    ] {
+        assert!(
+            parameters.contains(&(key.into(), value.into())),
+            "{key} in {parameters:?}"
+        );
+    }
+}
+
+/// Model 2 with the light refit turned off (`no_light_refit`): 2,000
+/// simulations from the model's 10,000, every flagged one reweighted (none
+/// moment-matched or refitted), with the warning that the view is
+/// approximate. Full run only (`RISK_RS_FULL_BAYES`): about a minute and a
+/// half in release.
+#[test]
+fn the_view_of_model_2_without_the_light_refit_reweights() {
+    if !full_bayes() {
+        eprintln!("skipped: model 2's view runs when RISK_RS_FULL_BAYES is set");
+        return;
+    }
+    let model = preset(true);
+    let default = model
+        .one_year(
+            training(),
+            "paid",
+            Outstanding::FromIncurred("incurred"),
+            "premium",
+            &BayesOneYear {
+                no_light_refit: true,
+                ..BayesOneYear::default()
+            },
         )
         .unwrap();
     assert_eq!(default.pareto_k.len(), Compartmental::ONE_YEAR_SIMS);
@@ -363,7 +420,7 @@ fn the_default_view_of_model_2_reweights() {
     );
     assert!(default.moment_matched.is_empty() && default.refitted.is_empty());
     assert!(default.unrefitted.is_empty());
-    let warning = default.approximate.as_deref().expect("the default warns");
+    let warning = default.approximate.as_deref().expect("the opt-out warns");
     assert!(warning.contains("approximate"), "{warning}");
     let parameters = &default.cdr.provenance().parameters;
     for (key, value) in [("refit", "ReweightOnly"), ("one_year_sims", "2000")] {
@@ -372,6 +429,7 @@ fn the_default_view_of_model_2_reweights() {
             "{key} in {parameters:?}"
         );
     }
+    assert!(!parameters.iter().any(|(k, _)| k == "light_refit"));
 }
 
 /// The papers' training triangle once under each of `names`, as the
@@ -553,12 +611,12 @@ fn the_one_year_view_over_segments_matches_the_views_of_its_segments() {
     }
 }
 
-/// Model 2's default view over segments: the model's defaults per segment
-/// (every flagged simulation reweighted, at most 2,000 simulations) and the
-/// warning that the views are approximate. Full run only
-/// (`RISK_RS_FULL_BAYES`): two model-2 fits.
+/// Model 2's view over segments with the light refit turned off: the
+/// model's defaults per segment (every flagged simulation reweighted, at
+/// most 2,000 simulations) and the warning that the views are approximate.
+/// Full run only (`RISK_RS_FULL_BAYES`): two model-2 fits.
 #[test]
-fn the_default_view_of_model_2_over_segments_reweights() {
+fn the_view_of_model_2_over_segments_without_the_light_refit_reweights() {
     if !full_bayes() {
         eprintln!("skipped: model 2's default view runs when RISK_RS_FULL_BAYES is set");
         return;
@@ -569,11 +627,14 @@ fn the_default_view_of_model_2_over_segments_reweights() {
             "paid",
             Outstanding::FromIncurred("incurred"),
             "premium",
-            &BayesOneYear::default(),
+            &BayesOneYear {
+                no_light_refit: true,
+                ..BayesOneYear::default()
+            },
         )
         .unwrap();
     assert_eq!(views.cdr.n_sims(), Compartmental::ONE_YEAR_SIMS);
-    let warning = views.approximate.as_deref().expect("the default warns");
+    let warning = views.approximate.as_deref().expect("the opt-out warns");
     assert!(warning.contains("approximate"), "{warning}");
     for s in &views.segments.fits {
         assert!(s.flagged_share() > 0.9, "flagged {}", s.flagged_share());

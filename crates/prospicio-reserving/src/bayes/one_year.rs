@@ -78,7 +78,7 @@ pub enum OneYearRefit {
 ///
 /// let settings = BayesOneYear::default();
 /// assert_eq!(settings.k_threshold, 0.7);
-/// // The model's own default: moment matching, or reweighting only for
+/// // The model's own default: moment matching, or the light refit for
 /// // `Compartmental` with development effects (model 2).
 /// assert_eq!(settings.refit, None);
 /// let matched = BayesOneYear { refit: Some(OneYearRefit::MomentMatchThenRefit), ..settings };
@@ -86,8 +86,9 @@ pub enum OneYearRefit {
 /// assert_eq!(settings.max_refits, None);
 /// // The model's own default number of one-year simulations.
 /// assert_eq!(settings.n_sims, None);
-/// // The fit's own sampler for refits, not a shorter warm-started one.
+/// // The model's own default sampler for refits (model 2's light refit).
 /// assert_eq!(settings.light_refit, None);
+/// assert!(!settings.no_light_refit);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BayesOneYear {
@@ -128,11 +129,18 @@ pub struct BayesOneYear {
     /// a larger one.
     pub n_sims: Option<usize>,
     /// A shorter NUTS sampler for the refits of `Compartmental` (open
-    /// decision 17, `docs/design/reserving-bayes.md` decision 24): `None`
-    /// (the default) refits with the fit's own sampler, as before; `Some`
+    /// decision 17, `docs/design/reserving-bayes.md` decision 24): `Some`
     /// warm-starts each refit from the opening posterior and samples it with
-    /// these settings. The other models ignore it.
+    /// these settings. `None` (the default) is the model's own default: the
+    /// light refit of [`LightRefit::default`] for model 2 (the user's
+    /// decision of 2026-10-21), the fit's own sampler for model 1 (which
+    /// moment matches and rarely refits). The other models ignore it.
     pub light_refit: Option<LightRefit>,
+    /// Turn off the model's default light refit (`Compartmental` model 2):
+    /// the view then reweights only, with the warning that it is
+    /// approximate, unless `refit` says to refit, which uses the fit's own
+    /// sampler. Ignored when `light_refit` is `Some`. Default `false`.
+    pub no_light_refit: bool,
 }
 
 /// The sampler of a warm-started refit ([`BayesOneYear::light_refit`]).
@@ -166,6 +174,7 @@ impl Default for BayesOneYear {
             max_refits: None,
             n_sims: None,
             light_refit: None,
+            no_light_refit: false,
         }
     }
 }

@@ -2752,7 +2752,9 @@ Laplace or variational proposal) were not tried, as the stop rule of the
 task said. Moment matching is untouched.
 
 **The setting.** `BayesOneYear::light_refit: Option<LightRefit>`, `None`
-by default: the fit's own sampler for every refit, and every existing view
+by default, which is the model's own: the fit's own sampler for every refit
+of every model but model 2, whose default is now the light refit (the
+user's decision of 2026-10-21, below). Every other existing view is
 unchanged bit for bit, provenance included (the provenance gains
 `light_refit` only when it is set). `LightRefit { chains, tune, draws }`
 defaults to 4 chains of 150 warm-up and 250 kept draws. `Compartmental`
@@ -2777,14 +2779,32 @@ not record it, though a malformed value is still an error for every model
   whose totals were within 0.03 sd of the full refits'; the reserve is what
   the view uses of a refit.
 
-With `light_refit` set and `refit` `None`, model 2 refits its flagged
-simulations (`RefitFlagged`; moment matching would only add 0.12 s a
-simulation for nothing) and the view is not approximate, so no warning;
-model 1 keeps moment matching and uses the light sampler for what matching
-cannot rescue. Python: `light_refit=True` or `(chains, tune, draws)` on
-`Compartmental.one_year` and `one_year_segments`; R: `light_refit = TRUE`
-or `c(chains, tune, draws)` on `compartmental_one_year()`,
+**The default, by the user's decision of 2026-10-21 (open decision 17,
+(b)).** With `refit` `None`, model 2 refits its flagged simulations
+(`RefitFlagged`; moment matching would only add 0.12 s a simulation for
+nothing) with `LightRefit::default()`, and the view is not approximate, so
+no warning. This replaces open decision 15's reweight-only default for model
+2. `BayesOneYear::no_light_refit` (Python and R `light_refit=False`) turns
+it off: model 2 then reweights only, with the approximate warning of
+decision 20 (its text now says the light refit was turned off). A refit
+mode the settings choose is used as it is, with the fit's own sampler
+unless `light_refit` is given, so every explicit `refit` of the earlier
+decisions behaves as before. A `light_refit` given with `refit` `None` is a
+choice to refit, as before. Model 1 keeps moment matching and uses the light
+sampler for what matching cannot rescue only when it is given. Nothing else
+changed: the view still runs at most 2,000 simulations by default, so
+model 2's default view takes about 31 minutes at its default count on 16
+threads (a smaller `n_sims` or a `max_refits` budget shortens it), against
+85 s reweighted. `Compartmental::one_year_refit` returns `RefitFlagged` for
+model 2. Python: `light_refit=None` (the model's default), `False` (off),
+`True` or `(chains, tune, draws)` on `Compartmental.one_year` and
+`one_year_segments`; R: `light_refit = NULL`, `FALSE`, `TRUE` or
+`c(chains, tune, draws)` on `compartmental_one_year()`,
 `compartmental_model_2_one_year()` and `compartmental_one_year_segments()`.
+CI's pull requests run no model-2 view at the default count: the weekly and
+manual run's `the_default_view_of_model_2_refits_lightly` uses 20
+simulations and `the_view_of_model_2_without_the_light_refit_reweights`
+runs the 2,000 reweighted.
 
 **Checked on every PR's `bayes` job** (`light_refit_conforms`, run with
 the one-year conformance suite on models 1 and 2 with a small sampler):
@@ -2836,11 +2856,10 @@ that view and about a thirtieth of refitting in full (about 17 hours at
 2,000 simulations). It is as long as model 1's default view at 10,000
 simulations (33 minutes) and about four times model 1's at 2,000.
 
-**Proposal, for the user (open decision 17).** The target is met at a cost
-of about 30 minutes for the default 2,000 simulations, 20 times the
-reweighted view. Nothing here changes a default: model 2 still reweights
-only, with its warning, and the warning's text can point at the setting.
-Open decision 17 below lists the choices.
+**Proposal, for the user (open decision 17), decided.** The target is met
+at a cost of about 30 minutes for the default 2,000 simulations, 20 times
+the reweighted view. The user decided on 2026-10-21 to make it model 2's
+default (open decision 17 below).
 
 **A cheaper sampler setting, measured and not built.** Lowering the refit's
 `target_accept` from model 2's 0.999 to 0.95 (a temporary override; 400
@@ -2998,6 +3017,9 @@ are settled.
     simulations by default (a form of (d)); pull requests run model 1 of
     the compartmental one-year validation only, the weekly and manual runs
     all of it (decision 20, last paragraphs). (c) stays open for later.
+    *Superseded for model 2's default on 2026-10-21 by open decision 17:
+    its view refits the flagged simulations with the light refit, and
+    reweights only (with the warning) when `light_refit` is turned off.*
     The question as raised: Moment matching rescues about 95%
     of model 1's flagged simulations, so its default view takes
     about 33 minutes at 10,000 simulations (369 refits); it rescues none of model 2's, so
@@ -3014,15 +3036,19 @@ are settled.
     2's view. *Recommended: (c), measured, then (b) with what is left*;
     until the user decides, (a) stands.
 17. **Whether model 2's one-year view refits with the light sampler by
-    default.** Raised 2026-10-21 by decision 24 (#394), which builds the
+    default.** Decided 2026-10-21 by the user ("ok" to the recommendation):
+    (b), the light refit of the flagged simulations is model 2's default
+    (`RefitFlagged`, no approximate warning, about 31 minutes at the default
+    2,000 simulations); `light_refit=False` reweights only; (c) and (d) not
+    taken (decision 24). The question as raised: raised 2026-10-21 by
+    decision 24 (#394), which builds the
     `light_refit` setting open decision 15 (c) asked for and measures it
     against full refits of model 2 on company 337: the gap of the totals is
     0.03 sd (0.029 to 0.035 for the default on three seeds; reweighting only
     0.25 to 0.52; the target was 0.05), at about 0.6 to 0.9 s of wall time
     a refit on 16 threads, so 2,000 simulations take about 31 minutes there
-    against 85 s reweighted. Nothing
-    changes until the user decides: model 2 still reweights only, with its
-    warning. (a) Keep that and leave `light_refit` a choice (the docs and
+    against 85 s reweighted. Until the user decided, model 2 still
+    reweighted only, with its warning. (a) Keep that and leave `light_refit` a choice (the docs and
     the warning say so and what it costs). (b) Make the light refit of the
     flagged simulations model 2's default (`light_refit` on by default,
     `RefitFlagged`; no approximate warning; about 31 minutes at 2,000
@@ -3036,4 +3062,5 @@ are settled.
     half an hour is acceptable for a default view, else (c)*; the change is
     one line in `Compartmental::one_year_defaults` and a documented
     change of CI's `the_default_view_of_model_2_reweights`, which would
-    then run the light refits, so about 30 minutes in the weekly run.
+    then run the light refits, so about 30 minutes in the weekly run
+    (built so that the weekly run's default-view test uses 20 simulations).

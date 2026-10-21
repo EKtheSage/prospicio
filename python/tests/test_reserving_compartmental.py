@@ -485,10 +485,12 @@ def test_one_year(tri, fit):
 
 
 def test_one_year_defaults(tri):
-    # The user's decisions of 2026-10-16: at most 2,000 one-year
-    # simulations by default (n_sims sets the count; a smaller count gives
-    # the first simulations of a larger one), and model 2's default view
-    # reweights only, with a warning that it is approximate.
+    # The user's decisions of 2026-10-16 and 2026-10-21: at most 2,000
+    # one-year simulations by default (n_sims sets the count; a smaller
+    # count gives the first simulations of a larger one), and model 2's
+    # default view refits its flagged simulations with the light refit;
+    # light_refit=False reweights only, with a warning that it is
+    # approximate.
     model = Compartmental(GM)
     assert model.n_sims == 10_000
     with warnings.catch_warnings():
@@ -507,7 +509,8 @@ def test_one_year_defaults(tri):
     short = Compartmental.model_2(GM2, chains=2, tune=200, draws=200, target_accept=0.9)
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
-        view = short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=50)
+        view = short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=50,
+                              light_refit=False)
     assert len(view.pareto_k) == 50
     assert view.refitted == [] and view.moment_matched == [] and view.unrefitted == []
     assert "approximate" in view.approximate
@@ -521,11 +524,20 @@ def test_one_year_defaults(tri):
     assert chosen.approximate is None
     assert not any("approximate" in str(w.message) for w in record)
     assert chosen.pareto_k == view.pareto_k
+    # Model 2's default is the light refit: no warning, a few simulations.
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        light = short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=2)
+    assert light.approximate is None
+    assert not any("approximate" in str(w.message) for w in record)
+    assert len(light.refitted) == len(light.pareto_k) - len(light.unrefitted) >= 1
+    params = dict(light.cdr.provenance()["parameters"])
+    assert params["refit"] == "RefitFlagged" and params["light_refit"] == "4x150+250"
 
 
 def test_light_refit(tri):
-    # A warm-started, shorter refit (decision 24): it implies a refit, so
-    # model 2 refits its flagged simulations and is not approximate.
+    # A warm-started, shorter refit (decision 24), model 2's default: it
+    # refits its flagged simulations and is not approximate.
     short = Compartmental.model_2(GM2, chains=2, tune=200, draws=200, target_accept=0.9)
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
@@ -536,7 +548,8 @@ def test_light_refit(tri):
     assert len(view.refitted) == 4
     params = dict(view.cdr.provenance()["parameters"])
     assert params["refit"] == "RefitFlagged" and params["light_refit"] == "2x60+60"
-    # Not given (or False): the fit's own sampler, no such parameter.
+    # An explicit refit mode without a light refit (or False): the fit's
+    # own sampler, no such parameter.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # short chains may miss a threshold
         plain = short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=4,

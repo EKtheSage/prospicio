@@ -102,5 +102,7 @@ default over two segments (reweighted, warned as approximate).[^test]
 **Update 2026-10-21.** A warm-started, shorter refit (`light_refit`) brings
 model 2's view within about 0.03 sd of full refits, at about a thirtieth
 of their cost; see [the light refit
-finding](compartmental-gm2-light-refit.md). Model 2 still reweights only by
-default (open decision 17 of the design note).
+finding](compartmental-gm2-light-refit.md). By the user's decision of
+2026-10-21 (open decision 17 of the design note) model 2's default view
+refits its flagged simulations with the light refit, and reweights only
+(with the approximate warning) when `light_refit` is turned off.

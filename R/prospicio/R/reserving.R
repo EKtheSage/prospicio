@@ -702,14 +702,15 @@ optional_number <- function(x, arg) {
   single_number(x, arg)
 }
 
-# `light_refit` as Rust takes it: NULL for the fit's own sampler, an empty
-# vector for TRUE (4 chains of 150 warm-up and 250 kept draws), or
-# c(chains, tune, draws).
+# `light_refit` as Rust takes it: NULL for the model's default (model 2's
+# light refit), 0 for FALSE (turned off), an empty vector for TRUE (4 chains
+# of 150 warm-up and 250 kept draws), or c(chains, tune, draws).
 light_refit_arg <- function(light_refit) {
-  if (is.null(light_refit) || identical(light_refit, FALSE)) return(NULL)
+  if (is.null(light_refit)) return(NULL)
+  if (identical(light_refit, FALSE)) return(0)
   if (identical(light_refit, TRUE)) return(numeric(0))
   if (!is.numeric(light_refit) || length(light_refit) != 3 || anyNA(light_refit)) {
-    stop("light_refit must be NULL, TRUE or c(chains, tune, draws)", call. = FALSE)
+    stop("light_refit must be NULL, TRUE, FALSE or c(chains, tune, draws)", call. = FALSE)
   }
   as.numeric(light_refit)
 }
@@ -5007,19 +5008,26 @@ S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
 #' model 1 moment matching rescues about nineteen in twenty of them, for
 #' model 2 none, and a refit takes as long as a fit (for model 2 about
 #' 31 s of wall time with 8 running side by side). So by default
-#' (`refit = NULL`, the user's decision of 2026-10-16) model 1
-#' moment-matches its flagged simulations and refits with NUTS only those
-#' whose k stays above the threshold, and a model with development effects
-#' (model 2) reweights them only: that view is approximate, about 0.4 sd of
-#' the total claims development result off a refit per simulation, and
-#' warns so (`approximate`). Set `refit` to refit them, with `max_refits`
-#' as a budget. The view runs `one_year_sims` simulations, by default
-#' `n_sims` capped at 2,000. `compartmental_model_2_one_year()` takes model
+#' (`refit = NULL`, the user's decisions of 2026-10-16 and 2026-10-21)
+#' model 1 moment-matches its flagged simulations and refits with NUTS only
+#' those whose k stays above the threshold, and a model with development
+#' effects (model 2) refits them with the light refit (`light_refit`): a
+#' warm-started NUTS run of 4 chains, 150 warm-up and 250 kept draws,
+#' within about 0.03 sd of the total claims development result of a full
+#' refit, at about 20 times the run time of reweighting only (about 30
+#' minutes for the default 2,000 simulations on company 337).
+#' `light_refit = FALSE` turns it off: model 2 then reweights its flagged
+#' simulations only, which is approximate (about 0.4 sd off a refit per
+#' simulation) and warns so (`approximate`). An explicit `refit` is used as
+#' it is, with the fit's own sampler unless `light_refit` is given, and
+#' `max_refits` a budget. The view runs `one_year_sims` simulations, by
+#' default `n_sims` capped at 2,000. `compartmental_model_2_one_year()` takes model
 #' 2's settings, as [compartmental_model_2()].
 #'
 #' Failed MCMC diagnostics of the fit raise one [warning()] listing them,
 #' refits that failed theirs raise another, simulations left unrefitted by
-#' `max_refits` another, and a default view that is approximate another.
+#' `max_refits` another, and a view that reweights only (model 2 with
+#' `light_refit = FALSE`) and is approximate another.
 #'
 #' Properties of a `compartmental_one_year_fit`: `fit` (the
 #' [compartmental_fit]), `origins` (the premium column's), per origin
@@ -5052,7 +5060,7 @@ S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
 #' single-segment fit `pareto_k`, `refitted`, `moment_matched`,
 #' `unrefitted`, `refit_warnings`, `flagged_share`, `summary` and `draws`;
 #' with several segments use [segment()] or [totals_frame()], which has the
-#' flagged shares. Failed diagnostics, refits and an approximate default
+#' flagged shares. Failed diagnostics, refits and an approximate view
 #' each raise one [warning()], the first two naming the segments.
 #'
 #' Errors: as [compartmental()]; a `k_threshold` that is `NaN`;
@@ -5068,20 +5076,22 @@ S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
 #' @param refit What happens to a flagged simulation, as in
 #'   [bayes_odp_one_year()], or `NULL` (the default) for the model's own:
 #'   `"moment_match_then_refit"` without development effects (model 1),
-#'   `"reweight_only"` with them (model 2), with a warning.
+#'   `"refit_flagged"` with the light refit with them (model 2;
+#'   `light_refit = FALSE` makes it `"reweight_only"`, with a warning).
 #' @param one_year_sims The number of one-year simulations, or `NULL` (the
 #'   default) for `n_sims` capped at 2,000. The lifetime reserves keep
 #'   `n_sims`. A smaller count gives the first simulations of a larger one.
-#' @param light_refit `NULL` (the default) refits with the fit's own sampler.
-#'   `TRUE`, or `c(chains, tune, draws)`, refits with a shorter, warm-started
-#'   NUTS run instead (`TRUE` takes 4 chains of 150 warm-up and 250 kept
-#'   draws): each refit scales its sampler by the opening posterior and
-#'   starts there, with no pilot run. On company 337 it comes within about
-#'   0.03 sd of the total claims development result of a full refit of model
-#'   2. It implies a refit: with `refit = NULL` model 2 then refits its
-#'   flagged simulations (`"refit_flagged"`) and the view is not approximate.
-#'   A refit warns when its closing reserve has R-hat above 1.05, fewer than
-#'   100 effective draws or a divergence.
+#' @param light_refit The sampler of the refits: a shorter, warm-started NUTS
+#'   run instead of the fit's own. `NULL` (the default) is the model's own:
+#'   the light refit for model 2 when `refit` is `NULL`, the fit's own
+#'   sampler otherwise. `TRUE` takes 4 chains of 150 warm-up and 250 kept
+#'   draws, `c(chains, tune, draws)` its own. `FALSE` turns model 2's default
+#'   off: with `refit = NULL` the view reweights only and is approximate,
+#'   with a warning. Each refit scales its sampler by the opening posterior
+#'   and starts there, with no pilot run. On company 337 it comes within
+#'   about 0.03 sd of the total claims development result of a full refit of
+#'   model 2. A refit warns when its closing reserve has R-hat above 1.05,
+#'   fewer than 100 effective draws or a divergence.
 #' @param ptr A `CompartmentalOneYearFit` or `CompartmentalOneYearFits` pointer;
 #'   used internally.
 #' @returns A `compartmental_one_year_fit` object, or for

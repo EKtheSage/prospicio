@@ -62,6 +62,14 @@ With `target_accept` 0.95 in place of 0.999 a refit took 0.35 s and with 0.8
 0.20 s, at the same gap (0.036 at seed 1) but with sporadic divergences (a
 quarter of the refits).[^test]
 
+**Default (user, 2026-10-21).** The user accepted open decision 17 (b): with
+`refit` unset, model 2's view refits its flagged simulations with this light
+refit (`RefitFlagged`, no approximate warning), at about 31 minutes for the
+default 2,000 simulations on 16 threads; `light_refit=False` (Rust
+`no_light_refit`) goes back to reweighting only, with the warning. An explicit
+`refit` keeps the fit's own sampler unless `light_refit` is given. Model 1 is
+unchanged.
+
 **Warnings.** The fit's diagnostics on a light refit's 95 parameters warned
 on every refit (effect sds near 0 mix slowly in a short run); on the total
 closing reserve at R-hat 1.01 and 100 effective draws a chain they warned

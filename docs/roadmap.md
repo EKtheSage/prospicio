@@ -339,9 +339,10 @@ what it is aiming for by v1.0.
     mean brings model 2's totals within about 0.03 sd of full refits on
     company 337 (reweighting only is 0.25 to 0.52 off) at about a thirtieth
     of a full refit's cost, 2,000 simulations in about 31 minutes on 16
-    threads. Off by
-    default: model 2 still reweights only until the user decides open
-    decision 17.
+    threads. By the user's decision of 2026-10-21 (open decision 17) it is
+    model 2's default one-year refit, replacing the reweight-only default of
+    open decision 15; `light_refit=False` reweights only, with the
+    approximate warning.
   - Gesmann and Morris' compartmental model over segments and in the
     diagonal backtest (`reserving-compartmental.md` PR E, decision 8):
     `Compartmental::fit_segments` with independent or rank-correlated

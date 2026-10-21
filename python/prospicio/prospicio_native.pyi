@@ -5767,18 +5767,26 @@ class Compartmental:
         of model 2's; for model 1 moment matching rescues about nineteen in
         twenty of them, for model 2 none, and a refit takes as long as a fit
         (for model 2 about 31 s of wall time with 8 running side by side).
-        So by default (``refit=None``, the user's decision of 2026-10-16)
-        model 1 moment-matches its flagged simulations and refits with NUTS
-        only those whose ``k`` stays above the threshold, and a model with
-        development effects (model 2) reweights them only: that view is
-        approximate, about 0.4 sd of the total claims development result off
-        a refit per simulation, and warns so (``approximate``). Set
-        ``refit`` to refit them, with ``max_refits`` as a budget. The view
-        runs at most 2,000 simulations by default (``n_sims``).
+        So by default (``refit=None``, the user's decisions of 2026-10-16 and
+        2026-10-21) model 1 moment-matches its flagged simulations and refits
+        with NUTS only those whose ``k`` stays above the threshold, and a
+        model with development effects (model 2) refits them with the light
+        refit (``light_refit``): a warm-started NUTS run of 4 chains, 150
+        warm-up and 250 kept draws, within about 0.03 sd of the total claims
+        development result of a full refit, at about 20 times the run time
+        of reweighting only (about 30 minutes for the default 2,000
+        simulations on company 337). ``light_refit=False`` turns it off:
+        model 2 then reweights its flagged simulations only, which is
+        approximate (about 0.4 sd off a refit per simulation) and warns so
+        (``approximate``). An explicit ``refit`` is used as it is, with the
+        fit's own sampler unless ``light_refit`` is given, with
+        ``max_refits`` as a budget. The view runs at most 2,000 simulations
+        by default (``n_sims``).
+        
         Raises one ``UserWarning`` listing the failed diagnostics of the
         fit, another if any refit failed its diagnostics, another if
         ``max_refits`` left simulations unrefitted, and another if the
-        default view is approximate.
+        view is approximate (model 2 with ``light_refit=False``).
         
         Parameters
         ----------
@@ -5796,7 +5804,9 @@ class Compartmental:
             What happens to a flagged simulation, as in ``BayesOdp.one_year``.
             ``None`` (the default) takes the model's own:
             ``"moment_match_then_refit"`` without development effects (model
-            1), ``"reweight_only"`` with them (model 2), with a warning.
+            1), ``"refit_flagged"`` with the light refit with them (model 2;
+            ``light_refit=False`` makes it ``"reweight_only"``, with a
+            warning).
         max_refits : int, optional
             As in ``BayesOdp.one_year``.
         n_sims : int, optional
@@ -5806,18 +5816,19 @@ class Compartmental:
             ``n_sims``; a smaller count gives the first simulations of a
             larger one.
         light_refit : bool or tuple, optional
-            Refit with a shorter, warm-started NUTS run instead of the fit's
-            own sampler (``None`` or ``False``, the default, keeps it).
-            ``True`` takes 4 chains of 150 warm-up and 250 kept draws, a tuple
-            ``(chains, tune, draws)`` its own. Each refit scales its sampler
-            by the opening posterior and starts there, with no pilot run. On
-            company 337 it comes within about 0.03 sd of the total claims
-            development result of a full refit of model 2, at about a
-            thirtieth of the cost. It implies a refit: with ``refit=None``
-            model 2 then refits its flagged simulations
-            (``"refit_flagged"``) and the view is not approximate. A refit
-            warns when its closing reserve has R-hat above 1.05, fewer than
-            100 effective draws or a divergence.
+            The sampler of the refits: a shorter, warm-started NUTS run
+            instead of the fit's own. ``None`` (the default) is the model's
+            own: the light refit for model 2 when ``refit`` is ``None``, the
+            fit's own sampler otherwise. ``True`` takes 4 chains of 150
+            warm-up and 250 kept draws, a tuple ``(chains, tune, draws)`` its
+            own. ``False`` turns model 2's default off: with ``refit=None``
+            the view reweights only and is approximate, with a warning. Each
+            refit scales its sampler by the opening posterior and starts
+            there, with no pilot run. On company 337 it comes within about
+            0.03 sd of the total claims development result of a full refit
+            of model 2, at about a thirtieth of the cost. A refit warns when
+            its closing reserve has R-hat above 1.05, fewer than 100
+            effective draws or a divergence.
         
         Returns
         -------
@@ -5862,14 +5873,13 @@ class Compartmental:
         says: ``"independent"`` as drawn, ``"rank_correlation"`` by
         Iman-Conover on the segments' total claims development results.
         Everything else is as ``one_year``: the refit default of the model
-        (moment matching for model 1, reweighting only with a warning for
-        model 2), at most 2,000 simulations by default, and ``max_refits``
+        (moment matching for model 1, the light refit for model 2, or
+        reweighting only with a warning with ``light_refit=False``), at most 2,000 simulations by default, and ``max_refits``
         as a budget of each segment, so ``k`` segments refit at most ``k``
         times this many. Raises one ``UserWarning`` listing the failed
         diagnostics of each segment's fit (with the segment's label), another
         if any refit failed its diagnostics, another if ``max_refits`` left
-        simulations unrefitted, and another if the default view is
-        approximate.
+        simulations unrefitted, and another if the view is approximate.
         
         Parameters
         ----------
@@ -6470,14 +6480,15 @@ class CompartmentalOneYearFit:
     simulation, ``flagged_share`` the share above ``k_threshold``;
     ``moment_matched``, ``refitted`` and ``unrefitted`` list what happened
     to the flagged simulations; ``approximate`` says why the view is
-    approximate when its model's default reweighted them only.
+    approximate when it reweighted them only by its model's default.
     """
     def __repr__(self, /) -> str: ...
     @property
     def approximate(self, /) -> str |None:
         """
         Why the view is approximate, or ``None``: set when ``refit`` was
-        left to a model with development effects (model 2), whose default
+        left to a model with development effects (model 2) whose default
+        light refit was turned off (``light_refit=False``), so that it
         reweights the flagged simulations only.
         """
     @property
@@ -6590,15 +6601,16 @@ class CompartmentalOneYearFits:
     segment's and need a single-segment fit: for several segments use
     ``segment(...)``, ``totals_frame()`` (which has the flagged shares) or
     ``diagnostics_frame()``. ``approximate`` says why the views are
-    approximate when their model's default reweighted the flagged
-    simulations only.
+    approximate when they reweighted the flagged simulations only by their
+    model's default (``light_refit=False``).
     """
     def __repr__(self, /) -> str: ...
     @property
     def approximate(self, /) -> str |None:
         """
         Why the views are approximate, or ``None``: set when ``refit`` was
-        left to a model with development effects (model 2), whose default
+        left to a model with development effects (model 2) whose default
+        light refit was turned off (``light_refit=False``), so that it
         reweights the flagged simulations only.
         """
     @property

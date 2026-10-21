@@ -1510,7 +1510,7 @@ impl Triangle {
             Nullable::Null => None,
         };
         let mut view = one_year_settings(k_threshold, refit, max_refits, one_year_sims)?;
-        view.light_refit = light_refit_arg(light_refit)?;
+        (view.light_refit, view.no_light_refit) = light_refit_arg(light_refit)?;
         let inner = model
             .one_year(&self.inner, paid, os, premium, &view)
             .map_err(to_r)?;
@@ -1549,7 +1549,7 @@ impl Triangle {
             Nullable::Null => None,
         };
         let mut view = one_year_settings(k_threshold, refit, max_refits, one_year_sims)?;
-        view.light_refit = light_refit_arg(light_refit)?;
+        (view.light_refit, view.no_light_refit) = light_refit_arg(light_refit)?;
         let inner = model
             .one_year_segments(&self.inner, paid, os, premium, &view)
             .map_err(to_r)?;
@@ -3051,23 +3051,30 @@ fn one_year_settings(
         max_refits,
         n_sims,
         light_refit: None,
+        no_light_refit: false,
     })
 }
 
-/// A compartmental one-year view's `light_refit`: `NULL` for the fit's own
-/// sampler, an empty vector for [`LightRefit::default`] (4 chains of 150
-/// warm-up and 250 kept draws), or `c(chains, tune, draws)`.
-fn light_refit_arg(light_refit: Nullable<Vec<f64>>) -> Result<Option<LightRefit>> {
+/// A compartmental one-year view's `light_refit`: `NULL` for the model's
+/// default (model 2's light refit), the vector `0` to turn it off (the R
+/// wrapper sends it for `FALSE`), an empty vector for [`LightRefit::default`]
+/// (4 chains of 150 warm-up and 250 kept draws), or `c(chains, tune,
+/// draws)`. Returns the sampler and whether the default is turned off.
+fn light_refit_arg(light_refit: Nullable<Vec<f64>>) -> Result<(Option<LightRefit>, bool)> {
     match light_refit {
-        Nullable::Null => Ok(None),
-        Nullable::NotNull(v) if v.is_empty() => Ok(Some(LightRefit::default())),
-        Nullable::NotNull(v) if v.len() == 3 => Ok(Some(LightRefit {
-            chains: whole(v[0], "light_refit chains")? as usize,
-            tune: whole(v[1], "light_refit tune")? as usize,
-            draws: whole(v[2], "light_refit draws")? as usize,
-        })),
+        Nullable::Null => Ok((None, false)),
+        Nullable::NotNull(v) if v.is_empty() => Ok((Some(LightRefit::default()), false)),
+        Nullable::NotNull(v) if v.len() == 1 && v[0] == 0.0 => Ok((None, true)),
+        Nullable::NotNull(v) if v.len() == 3 => Ok((
+            Some(LightRefit {
+                chains: whole(v[0], "light_refit chains")? as usize,
+                tune: whole(v[1], "light_refit tune")? as usize,
+                draws: whole(v[2], "light_refit draws")? as usize,
+            }),
+            false,
+        )),
         Nullable::NotNull(_) => Err(Error::Other(
-            "light_refit must be NULL, TRUE or c(chains, tune, draws)".into(),
+            "light_refit must be NULL, TRUE, FALSE or c(chains, tune, draws)".into(),
         )),
     }
 }
@@ -4350,7 +4357,8 @@ impl CompartmentalOneYearFit {
     }
 
     /// Why the view is approximate (one string), or none: set when `refit`
-    /// was left to a model with development effects, whose default
+    /// was left to a model with development effects whose default
+    /// light refit was turned off (`light_refit = FALSE`), so that it
     /// reweights the flagged simulations only.
     fn approximate(&self) -> Vec<String> {
         self.inner.approximate.iter().cloned().collect()
@@ -4445,7 +4453,8 @@ impl CompartmentalOneYearFits {
     }
 
     /// Why the views are approximate (one string), or none: set when
-    /// `refit` was left to a model with development effects, whose default
+    /// `refit` was left to a model with development effects whose default
+    /// light refit was turned off (`light_refit = FALSE`), so that it
     /// reweights the flagged simulations only.
     fn approximate(&self) -> Vec<String> {
         self.inner.approximate.iter().cloned().collect()

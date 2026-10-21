@@ -21,7 +21,9 @@ use prospicio_prob::{
 
 use super::dual::{CHUNK, Dual, gradient};
 use super::laplace::{Posterior, Whitened, mode};
-use super::one_year::{self, BayesOneYear, BayesOneYearFit, BayesOneYearSegment, OneYearRefit};
+use super::one_year::{
+    self, BayesOneYear, BayesOneYearFit, BayesOneYearSegment, LightRefit, OneYearRefit,
+};
 use super::scalar::{Scalar, exprel_neg};
 use super::{Diagnostics, Stream, derive_seed, one_year_seed, pilot_seed};
 use crate::bootstrap::{component_sums, origin_keys, push_moments};
@@ -30,14 +32,10 @@ use crate::error::{Error, Result};
 use crate::segments::{FitTable, SegmentFits, fit_each};
 use crate::triangle::{Segment, Triangle};
 
-/// The warning of a one-year view that reweights only by its model's
-/// default ([`Compartmental::one_year_refit`]).
-const APPROXIMATE: &str = "the one-year view reweights its flagged simulations only, the \
-default with development effects (model 2): moment matching rescues none of them and each \
-refit takes about as long as a fit. The view is approximate, about 0.4 sd of the total \
-claims development result off a refit per simulation on company 337; set light_refit to \
-refit them with a shorter sampler (within about 0.03 sd there, at about 20 times the run \
-time of this view), or refit (with max_refits as a budget) for the fit's own sampler";
+/// The warning of a one-year view that reweights only because the default
+/// light refit of development effects (model 2) was turned off
+/// ([`BayesOneYear::no_light_refit`]).
+const APPROXIMATE: &str = "the one-year view reweights its flagged simulations only, as the light refit of development effects (model 2) was turned off: moment matching rescues none of them. The view is approximate, about 0.4 sd of the total claims development result off a refit per simulation on company 337; leave light_refit at its default to refit them with a shorter sampler (within about 0.03 sd there, at about 20 times the run time of reweighting only), or refit (with max_refits as a budget) for the fit's own sampler";
 
 /// The one-compartment closed form (decision 2) per unit of premium:
 /// `OS(t) / (Π RLR) = k_er g(t)` and
@@ -1057,12 +1055,18 @@ impl Compartmental {
     /// most [`ONE_YEAR_SIMS`](Self::ONE_YEAR_SIMS) simulations, and the
     /// refit mode of [`one_year_refit`](Self::one_year_refit) when the
     /// settings' `refit` is `None`. With development effects (model 2) that
-    /// is reweighting only: moment matching rescues none of its flagged
-    /// simulations on company 337 and a refit takes about as long as a fit,
-    /// so the default view is approximate (about 0.4 sd of the total claims
-    /// development result off a refit per simulation) and says so in
-    /// [`approximate`](BayesOneYearFit::approximate). Set `refit` to refit
-    /// (with [`max_refits`](BayesOneYear::max_refits) as a budget).
+    /// is a refit of the flagged simulations (moment matching rescues none
+    /// of them on company 337) by the light refit, [`LightRefit::default`],
+    /// a warm-started sampler of 4 chains, 150 warm-up and 250 kept draws
+    /// (the user's decision of 2026-10-21, decision 24; within about 0.03 sd
+    /// of the total claims development result of a refit per simulation, at
+    /// about 20 times the run time of reweighting only). Set
+    /// [`light_refit`](BayesOneYear::light_refit) for another sampler,
+    /// [`no_light_refit`](BayesOneYear::no_light_refit) to reweight only
+    /// (approximate, about 0.4 sd off, and
+    /// [`approximate`](BayesOneYearFit::approximate) says so), or `refit` to
+    /// choose the mode (with [`max_refits`](BayesOneYear::max_refits) as a
+    /// budget).
     ///
     /// An origin with no observed cell (the papers' 1997) and, with
     /// development effects (model 2), an age with none take their effects
@@ -1346,9 +1350,12 @@ impl Compartmental {
 
     /// The one-year view's refit mode when its settings' `refit` is `None`
     /// (the user's decision of 2026-10-16, `docs/design/reserving-bayes.md`
-    /// decision 20): [`OneYearRefit::ReweightOnly`] with development effects
-    /// in the priors (model 2), whose flagged simulations moment matching
-    /// does not rescue and whose refits each take about as long as a fit;
+    /// decision 20, changed by the user's decision of 2026-10-21, decision
+    /// 24): [`OneYearRefit::RefitFlagged`] with development effects in the
+    /// priors (model 2), whose flagged simulations moment matching does not
+    /// rescue, refitted by the light refit of [`LightRefit`] unless the
+    /// settings turn it off ([`BayesOneYear::no_light_refit`], then the view
+    /// reweights only and is approximate);
     /// [`OneYearRefit::MomentMatchThenRefit`] without (model 1).
     pub fn one_year_refit(&self) -> OneYearRefit {
         if self
@@ -1357,7 +1364,7 @@ impl Compartmental {
             .iter()
             .any(Option::is_some)
         {
-            OneYearRefit::ReweightOnly
+            OneYearRefit::RefitFlagged
         } else {
             OneYearRefit::MomentMatchThenRefit
         }
@@ -1370,21 +1377,36 @@ impl Compartmental {
     /// [`approximate`](BayesOneYearFit::approximate) warning: set when the
     /// default leaves the flagged simulations reweighted only.
     fn one_year_defaults(&self, settings: &BayesOneYear) -> (BayesOneYear, usize, Option<String>) {
-        let mut default_refit = self.one_year_refit();
-        // A light refit is a choice to refit: model 2 then refits its
-        // flagged simulations (moment matching rescues none of them), with
-        // nothing approximate to warn of (decision 24).
-        if settings.light_refit.is_some() && default_refit == OneYearRefit::ReweightOnly {
-            default_refit = OneYearRefit::RefitFlagged;
-        }
+        let model_2 = self.one_year_refit() == OneYearRefit::RefitFlagged;
+        // Model 2's default (a `None` refit mode) refits its flagged
+        // simulations with the light refit (the user's decision of
+        // 2026-10-21, decision 24), unless the settings turn it off, when
+        // the view reweights only and is approximate. A refit mode the
+        // settings choose is used as it is, with the fit's own sampler
+        // unless a light refit is given; a light refit given with no mode
+        // is a choice to refit.
+        let default_light = (model_2 && !settings.no_light_refit).then(LightRefit::default);
+        let light = settings.light_refit.or(if settings.refit.is_none() {
+            default_light
+        } else {
+            None
+        });
+        let default_refit = match (model_2, light) {
+            (true, Some(_)) => OneYearRefit::RefitFlagged,
+            (true, None) => OneYearRefit::ReweightOnly,
+            (false, _) => OneYearRefit::MomentMatchThenRefit,
+        };
         let approximate = (settings.refit.is_none() && default_refit == OneYearRefit::ReweightOnly)
             .then(|| APPROXIMATE.to_string());
         let n_sims = settings.sims(self.n_sims.min(Self::ONE_YEAR_SIMS));
-        (
-            settings.with_refit_default(default_refit),
-            n_sims,
-            approximate,
-        )
+        let mut resolved = settings.with_refit_default(default_refit);
+        // A view that reweights only refits nothing: no sampler to record.
+        resolved.light_refit = if resolved.mode() == OneYearRefit::ReweightOnly {
+            None
+        } else {
+            light
+        };
+        (resolved, n_sims, approximate)
     }
 
     /// Paths of the mean outstanding and cumulative paid of each origin of
@@ -3866,10 +3888,12 @@ mod tests {
         Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
     }
 
-    /// The one-year defaults of the user's decision of 2026-10-16: model 1
-    /// moment-matches, model 2 (development effects) reweights only with a
-    /// warning, a refit mode the settings choose is kept without one, and
-    /// both run at most 2,000 one-year simulations unless told otherwise.
+    /// The one-year defaults (decision 20 of 2026-10-16, model 2's changed
+    /// by the user's decision of 2026-10-21): model 1 moment-matches, model
+    /// 2 (development effects) refits its flagged simulations with the
+    /// light refit, and reweights only with a warning when that is turned
+    /// off; a refit mode the settings choose is kept without one; both run
+    /// at most 2,000 one-year simulations unless told otherwise.
     #[test]
     fn the_one_year_defaults_follow_the_model() {
         let default = BayesOneYear::default();
@@ -3877,10 +3901,29 @@ mod tests {
         assert_eq!(one.refit, Some(OneYearRefit::MomentMatchThenRefit));
         assert_eq!((sims, warning), (Compartmental::ONE_YEAR_SIMS, None));
         let (two, sims, warning) = preset_2().one_year_defaults(&default);
-        assert_eq!(two.refit, Some(OneYearRefit::ReweightOnly));
-        assert_eq!(sims, 2_000);
-        let warning = warning.expect("model 2's default view warns");
+        assert_eq!(two.refit, Some(OneYearRefit::RefitFlagged));
+        assert_eq!(two.light_refit, Some(LightRefit::default()));
+        assert_eq!((sims, warning), (2_000, None));
+        // Turning the light refit off reweights only, with the warning.
+        let off = BayesOneYear {
+            no_light_refit: true,
+            ..default
+        };
+        let (two, _, warning) = preset_2().one_year_defaults(&off);
+        assert_eq!(
+            (two.refit, two.light_refit),
+            (Some(OneYearRefit::ReweightOnly), None)
+        );
+        let warning = warning.expect("the opt-out view warns");
         assert!(warning.contains("approximate") && warning.contains("0.4 sd"));
+        // Off with a refit chosen refits with the fit's own sampler.
+        let (two, _, warning) = preset_2().one_year_defaults(&BayesOneYear {
+            refit: Some(OneYearRefit::RefitFlagged),
+            ..off
+        });
+        assert_eq!((two.light_refit, warning), (None, None));
+        // Model 1 keeps its own sampler by default.
+        assert_eq!(preset().one_year_defaults(&default).0.light_refit, None);
         // Refits stay a choice: an explicit mode, even the other models'
         // default, is used as it is and is not approximate.
         for refit in [
@@ -3895,6 +3938,7 @@ mod tests {
             };
             let (two, sims, warning) = preset_2().one_year_defaults(&chosen);
             assert_eq!((two.refit, sims, warning), (Some(refit), 300, None));
+            assert_eq!(two.light_refit, None);
         }
         // A light refit is a choice to refit: model 2 refits its flagged
         // simulations, without the approximate warning (decision 24); model
