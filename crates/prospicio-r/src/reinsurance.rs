@@ -113,6 +113,10 @@ impl XolLayer {
         self.inner.needs_sums_insured()
     }
 
+    fn sees_aggregate_part(&self) -> bool {
+        self.inner.sees_aggregate_part()
+    }
+
     fn name(&self) -> String {
         self.inner.name.clone()
     }

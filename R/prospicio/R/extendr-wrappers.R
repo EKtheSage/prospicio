@@ -332,6 +332,14 @@ EventSet$label_combinations <- function() .Call(wrap__EventSet__label_combinatio
 
 EventSet$labels <- function(sim) .Call(wrap__EventSet__labels, self, sim)
 
+EventSet$with_aggregate_part <- function(part) .Call(wrap__EventSet__with_aggregate_part, self, part)
+
+EventSet$has_aggregate_part <- function() .Call(wrap__EventSet__has_aggregate_part, self)
+
+EventSet$aggregate_part <- function(sim) .Call(wrap__EventSet__aggregate_part, self, sim)
+
+EventSet$aggregate_part_labels <- function() .Call(wrap__EventSet__aggregate_part_labels, self)
+
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
 EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
@@ -399,6 +407,8 @@ XolLayer$surplus <- function(name, retention, lines) .Call(wrap__XolLayer__surpl
 XolLayer$ceded_with_sums_insured <- function(losses, sums_insured) .Call(wrap__XolLayer__ceded_with_sums_insured, self, losses, sums_insured)
 
 XolLayer$needs_sums_insured <- function() .Call(wrap__XolLayer__needs_sums_insured, self)
+
+XolLayer$sees_aggregate_part <- function() .Call(wrap__XolLayer__sees_aggregate_part, self)
 
 XolLayer$name <- function() .Call(wrap__XolLayer__name, self)
 

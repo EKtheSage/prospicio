@@ -48,7 +48,9 @@ NULL
 #'   `swing_rating` `c(basic, lcm, minimum, maximum)`; `profit_commission_carry`
 #'   `list(years)` and `sliding_scale_carry` `list(deficit, credit, years)`
 #'   (`NULL` when nothing is carried, `years` `NULL` without limit); each empty when there
-#'   is none).
+#'   is none), and `sees_aggregate_part`, whether the layer cedes from an
+#'   event set's aggregate part ([with_aggregate_part()]: on the loss with
+#'   attachment 0 and no limit, a quota share or a stop loss).
 #' @seealso [quota_share()] and [aggregate_stop_loss()] for the other contract
 #'   types, which are layers too; [with_loss_corridor()] for a corridor;
 #'   [with_rate_on_line()], [with_ceding_commission()] and
@@ -84,6 +86,9 @@ xol_layer <- S7::new_class(
       S7::class_double, getter = function(self) self@ptr$reinstatement_rates()
     ),
     pro_rata_time = S7::new_property(S7::class_logical, getter = function(self) self@ptr$pro_rata_time()),
+    sees_aggregate_part = S7::new_property(
+      S7::class_logical, getter = function(self) self@ptr$sees_aggregate_part()
+    ),
     allocation = S7::new_property(S7::class_character, getter = function(self) self@ptr$allocation()),
     loss_corridor = S7::new_property(S7::class_double, getter = function(self) self@ptr$loss_corridor()),
     ceding_commission = S7::new_property(

@@ -180,6 +180,35 @@ an `EventSet` keeps whatever dependence its events carry (#491).
   between its modules; no matching of values, which ties defeat. The
   index belongs to the group, so reorder on the class total (attritional
   plus large) and permute the large events with that group's index.
+- **An aggregate part beside the events** (#483, second part). Attritional
+  losses are an amount a year with no event and no time; wrapping them as
+  one event lets a per-occurrence layer attach to them (on #483's three
+  years, a 30 xs 25 cedes 0, 40, 35 instead of 0, 25, 30, 36% high on the
+  mean). `EventSet::with_aggregate_part(pd)` keeps them apart: one column
+  per component of `pd`, whose dimensions are label dimensions, so the
+  part can be given by peril or class and joins `label_combinations`
+  (the events get `""` in a dimension only the part has). Who sees it is
+  structural: `Layer::sees_aggregate_part` is true for a layer on the loss
+  with attachment 0 and no limit, a quota share or a stop loss, whatever
+  its annual terms; any layer with a per-occurrence attachment or limit
+  sees the events alone. Gross, net and `totals` include the part;
+  `maxima` and `counts`, which count occurrences, do not. Inuring stages
+  see it net of earlier stages that ceded from it.
+  - *Where it sits in the year.* The part has no time, so it cannot go
+    between dated events; it goes before them. Under the default
+    `LimitAllocation::EventOrder` a binding annual deductible is used up
+    on the attritional first and a binding annual limit stops the last
+    large events. This moves only the split of the annual ceded loss by
+    label and what a later inuring stage sees, never the annual ceded
+    total; `LimitAllocation::ProRata` gives the split that does not depend
+    on order. Which split a reference model uses is not settled by our
+    sources (#483's open question), so this is a convention to revisit
+    against one that states it.
+  - `permute`, `slice`, `term_years` and `apply_term` carry the part with
+    its years; `merge` keeps either set's and adds columns with the same
+    labels; `grouped` keeps it summed over its labels, since it drops the
+    events' labels; `with_labels` after the part is an error, so labels
+    are never rebuilt without it.
 - **Quota share and stop-loss are layers.** A quota share with cession
   `c` is unlimited cover from 0 with `share = c`; a stop-loss `l` xs `r`
   is unlimited cover from 0 with `AAD = r` and `AAL = l`. One formula

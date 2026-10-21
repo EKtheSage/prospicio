@@ -727,3 +727,25 @@ for (r in list(reorder_groups(pd, "class", matrix(c(1, 0.7, 0.7, 1), 2), 3, inde
 stopifnot(S7::S7_inherits(reorder_groups(pd, "class", matrix(c(1, 0.7, 0.7, 1), 2), 3), predictive_distribution))
 stopifnot(inherits(try(permute_events(large, n + 1), silent = TRUE), "try-error"))
 stopifnot(inherits(try(permute_events(large, 0), silent = TRUE), "try-error"))
+
+# #483: an aggregate part, seen by quota shares and stop losses, skipped by per risk layers.
+part <- predictive_distribution(matrix(c(1, 2, 3, 9, 38, 27), 3), data.frame(peril = c("wind", "fire")))
+ap <- with_aggregate_part(with_labels(events_from_years(list(numeric(0), 50, c(5, 60))),
+                                      list(peril = c("wind", "flood", "wind"))), part)
+stopifnot(ap@has_aggregate_part, identical(ap@aggregate_part_labels$peril, c("wind", "fire")))
+stopifnot(identical(ap@label_combinations$peril, c("fire", "flood", "wind")))
+stopifnot(identical(aggregate_part(ap, 2), c(2, 38)))
+xl <- xol_layer("30x25", 30, 25)
+qs <- quota_share("QS", 0.5)
+stopifnot(qs@sees_aggregate_part, !xl@sees_aggregate_part)
+apr <- apply_tower(reinsurance_tower(list(xl, qs)), ap)
+apm <- function(kind, layer, peril) {
+  k <- apr@keys
+  draw_matrix(apr)[, which(k$kind == kind & k$layer == layer & k$peril == peril)]
+}
+stopifnot(all(apm("ceded", "30x25", "wind") == c(0, 25, 30)))
+stopifnot(all(apm("ceded", "30x25", "fire") == 0))
+stopifnot(all(apm("ceded", "QS", "fire") == c(4.5, 19, 13.5)))
+stopifnot(all(draw_matrix(total(ap))[, 1] == c(10, 90, 95)))
+stopifnot(is.null(aggregate_part(events_from_years(list(1)), 1)))
+stopifnot(inherits(try(with_aggregate_part(events_from_years(list(1)), part), silent = TRUE), "try-error"))

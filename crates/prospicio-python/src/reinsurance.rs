@@ -233,6 +233,15 @@ impl PyLayer {
         self.inner.needs_sums_insured()
     }
 
+    /// Whether the layer cedes from an ``EventSet``'s aggregate part: it is
+    /// on the loss with attachment 0 and no limit, as a quota share or a
+    /// stop loss is. A layer with a per-occurrence attachment or limit sees
+    /// the events alone.
+    #[getter]
+    fn sees_aggregate_part(&self) -> bool {
+        self.inner.sees_aggregate_part()
+    }
+
     /// An aggregate stop-loss: ``limit`` xs ``retention`` on the year's total.
     ///
     /// Covers the total of the losses it sees: gross, or net of earlier
