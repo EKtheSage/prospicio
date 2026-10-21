@@ -23,7 +23,7 @@ ask:
 | | `aggregate` | prospicio |
 |---|---|---|
 | Model written as | a DecL program (a string): `agg Casualty 250 claims 1000 xs 0 sev lognorm 100 cv 1.5 poisson` | Python objects: a count, a severity, a grid |
-| Grid | chosen for you (`bs`, `log2`), overridable with `hints{}` | `fft_auto` sizes it for an unlimited severity; with a limit, a layer or a portfolio you give the step and the number of points |
+| Grid | chosen for you (`bs`, `log2`), overridable with `hints{}` | `fft_auto` sizes it for an unlimited severity; with a limit, a layer or a portfolio you give the step and the number of points, and `audit_grid` re-runs the build around it as `sharpen` does |
 | Result | an `Aggregate` object holding DataFrames | a `Grid` (the distribution) and a `CompoundReport` (the checks) |
 | Reinsurance | clauses in the program (`occurrence net of ...`) | `Layer` and `Tower` objects applied to the grid |
 | Library of named examples | the recipe base (`build.recipes`) | none; the guides and notebooks are the examples |
@@ -549,8 +549,11 @@ Checked against the 1.2.0 documentation, prospicio lacks:
   are Python code.
 - **Automatic grids for a limited severity or a portfolio.** `fft_auto` sizes
   the grid for an unlimited severity; with a limit or a portfolio you pick the
-  step, and read `aliasing_error` and `tail_mass` (section 6). There is no
-  `sharpen`-style audit that re-runs a build to probe the chosen bucket.
+  step, and read `aliasing_error` and `tail_mass` (section 6). `audit_grid`
+  (and `audit_portfolio_grid`) plays the part of `sharpen`: it builds the
+  compound at your step and at doubled and halved ones, scores each by moment
+  errors against the exact moments, and returns the best sound cell as a
+  `GridAudit`. It audits a grid you give it; it does not choose one for you.
 - **Mixing shared across the units of a portfolio.** In `aggregate`, units that
   share a `mixed` frequency share the mixing variable and are therefore
   correlated. `Portfolio.from_independent` treats units as independent; for two

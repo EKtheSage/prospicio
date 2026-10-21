@@ -387,33 +387,40 @@ losses below it. For a fitted or assumed severity, `ilf()` and
 `loss_elimination_ratio()` compute both exactly (see
 [`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md)).
 The book's tables, though, give only claim counts and loss totals per size
-band, and prospicio has no severity built from such a table, so the book's
-figures are a few lines of arithmetic. For the record, here they are, in plain
-R:
+band. `size_of_loss()` reads such a table as a severity, with each band's
+claims at the band's average, so its limited expected value is exact at every
+band edge, and `ilf()`, `loss_elimination_ratio()` and the layer functions
+take it like any other severity. `censored_las()` does the censored method of
+Table 11.6, one table per policy limit:
 
 ```{r}
 # Table 11.3: 5,000 uncensored claims, (count, losses) by band up to 100K, 250K, 500K, 1M.
-counts <- c(2324, 1923, 680, 73)
-losses <- c(117629223, 307599929, 222793514, 43047470)
-las_100 <- (losses[1] + 100000 * sum(counts[2:4])) / sum(counts)
-las_250 <- (losses[1] + losses[2] + 250000 * sum(counts[3:4])) / sum(counts)
-cat(sprintf("LAS(100K) %s (book 77,046)  LAS(250K) %s (book 122,696)  ILF %.2f (book 1.59)\n",
-            comma(las_100), comma(las_250), las_250 / las_100))
+table <- size_of_loss(c(0, 100e3, 250e3, 500e3, 1e6), c(2324, 1923, 680, 73),
+                      c(117629223, 307599929, 222793514, 43047470))
+cat(sprintf("LAS(100K) %s (book 77,046)  LAS(250K) %s (book 122,696)  ILF %.2f (book 1.59)
+",
+            comma(lev(table, 100e3)), comma(lev(table, 250e3)), ilf(table, 250e3, 100e3)))
 
 # Table 11.6: the same claims censored at policy limits of 100K, 250K and 500K.
-layer_1 <- (156657898 + 34903214 + 35768111 + 100000 * (773 + 574 + 232)) / 5000
-layer_2 <- ((142767479 - 773 * 100000) + (90009422 - 574 * 100000) + 232 * 150000) / (1463 + 1518)
-layer_3 <- (81092725 - 232 * 250000) / 1518
-l <- half_up(c(layer_1, layer_2, layer_3), 0)  # the book adds rounded layers
-cat(sprintf("censored: layers %s + %s + %s (book 77,046 + 44,575 + 15,213)\n", comma(l[1]), comma(l[2]), comma(l[3])))
-cat(sprintf("  LAS(250K) %s (book 121,621)  LAS(500K) %s (book 136,834)  unrounded %s and %s\n",
-            comma(l[1] + l[2]), comma(sum(l)), comma(layer_1 + layer_2, 1), comma(layer_1 + layer_2 + layer_3, 1)))
+by_limit <- list(
+  size_of_loss(c(0, 100e3), 2019, 156657898),
+  size_of_loss(c(0, 100e3, 250e3), c(690, 773), c(34903214, 142767479)),
+  size_of_loss(c(0, 100e3, 250e3, 500e3), c(712, 574, 232), c(35768111, 90009422, 81092725))
+)
+layers <- censored_las(by_limit)
+l <- half_up(layers$severity, 0)  # the book adds rounded layers
+cat(sprintf("censored: layers %s + %s + %s (book 77,046 + 44,575 + 15,213)
+", comma(l[1]), comma(l[2]), comma(l[3])))
+cat(sprintf("  LAS(250K) %s (book 121,621)  LAS(500K) %s (book 136,834)  unrounded %s and %s
+",
+            comma(l[1] + l[2]), comma(sum(l)), comma(layers$las[2], 1), comma(layers$las[3], 1)))
 
 # Table 11.8: loss elimination ratio of a 250 deductible, ground-up homeowners losses.
-counts <- c(3200, 1225, 1187, 1845, 2543)
-losses <- c(240365, 207588, 463954, 1551938, 11140545)
-eliminated <- losses[1] + losses[2] + 250 * sum(counts[3:5])
-cat(sprintf("LER(250) %.3f (book 0.135)\n", eliminated / sum(losses)))
+# Only the edge at 250 matters; the other edges are chosen to hold each band's average.
+homeowners <- size_of_loss(c(0, 100, 250, 500, 1000, Inf), c(3200, 1225, 1187, 1845, 2543),
+                           c(240365, 207588, 463954, 1551938, 11140545))
+cat(sprintf("LER(250) %.3f (book 0.135)
+", loss_elimination_ratio(homeowners, 250)))
 ```
 
 ```text
@@ -442,10 +449,6 @@ not, and some are filed as issues for the lane that owns the code:
   Appendix A, and averages over the latest n years: compute them and pass
   them to `chain_ladder()` as a selected pattern, as in section 1 here and
   section 4 of the first guide (issue #339).
-- **Size-of-loss tables** (chapter 11): increased limit factors, the censored
-  layer method and loss elimination ratios from grouped counts and losses.
-  prospicio computes them from a severity distribution, not from a table
-  (section 5; issue #338).
 - **Traditional risk classification** (chapter 9: univariate pure premium
   and loss ratio relativities, adjusted for distributional bias; Appendix E),
   **multivariate classification and GLMs** (chapter 10 and Appendix F),
