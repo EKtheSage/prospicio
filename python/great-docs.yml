@@ -342,6 +342,7 @@ reference:
       - risk.covar
       - risk.esscher_allocation
       - risk.statistics
+      - risk.bootstrap_se
       - risk.Allocation
       - risk.LevelAllocation
   - title: Dependence

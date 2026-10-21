@@ -312,6 +312,63 @@ fn statistics_rust(
     Ok(list!(names = st.names, values = st.values))
 }
 
+/// Bootstrap standard errors of the statistics of `k` columns of `n`
+/// simulations (`columns` column-major), one draw per replicate shared by
+/// every column; `fixed` NULL, or the fixed part of each column in the same
+/// layout. `names`, and `values` a list with each column's errors.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn bootstrap_se_rust(
+    columns: &[f64],
+    k: f64,
+    fixed: Nullable<Vec<f64>>,
+    percentiles: &[f64],
+    tvar_levels: &[f64],
+    sd_multiples: &[f64],
+    quantile: &str,
+    tvar: &str,
+    replicates: f64,
+    seed: f64,
+) -> Result<List> {
+    let grid = StatisticsGrid::new(percentiles.to_vec())
+        .and_then(|g| g.tvar_levels(tvar_levels.to_vec()))
+        .and_then(|g| g.sd_multiples(sd_multiples.to_vec()))
+        .map_err(to_r)?
+        .quantile_method(quantile_method(quantile)?)
+        .tvar_method(tvar_method(tvar)?);
+    let k = k as usize;
+    if k == 0 || columns.len() % k != 0 {
+        return Err(Error::Other(
+            "the columns must all have the same length".into(),
+        ));
+    }
+    let n = columns.len() / k;
+    let refs: Vec<&[f64]> = columns.chunks(n.max(1)).collect();
+    if !replicates.is_finite() || replicates < 0.0 || !seed.is_finite() || seed < 0.0 {
+        return Err(Error::Other(
+            "replicates and seed must be non-negative".into(),
+        ));
+    }
+    let st = match fixed {
+        Nullable::Null => grid.bootstrap_se(&refs, replicates as usize, seed as u64),
+        Nullable::NotNull(f) => {
+            if f.len() != columns.len() {
+                return Err(Error::Other(format!(
+                    "hold_fixed has {} values for {} in the columns",
+                    f.len(),
+                    columns.len()
+                )));
+            }
+            let held: Vec<&[f64]> = f.chunks(n.max(1)).collect();
+            grid.bootstrap_se_holding(&refs, &held, replicates as usize, seed as u64)
+        }
+    }
+    .map_err(to_r)?;
+    let names = grid.names();
+    let values: Vec<Vec<f64>> = st.into_iter().map(|s| s.values).collect();
+    Ok(list!(names = names, values = List::from_values(values)))
+}
+
 /// Items (an `n × k` matrix, column-major) read at the driver's mean,
 /// percentiles and TVaRs: `names` and `values`, item by item.
 #[extendr]
@@ -942,6 +999,7 @@ fn hill_rust(draws: &[f64], ks: &[f64]) -> Result<Vec<f64>> {
 extendr_module! {
     mod risk;
     fn statistics_rust;
+    fn bootstrap_se_rust;
     fn co_statistics_rust;
     fn risk_ratios_rust;
     fn entropic_rust;

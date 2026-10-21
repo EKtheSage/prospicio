@@ -806,35 +806,7 @@ impl StatisticsGrid {
         replicates: usize,
         seed: u64,
     ) -> Result<Vec<Statistics>> {
-        let Some(first) = columns.first() else {
-            return Err(Error::Data("no columns to bootstrap".into()));
-        };
-        let n = first.len();
-        if n == 0 {
-            return Err(Error::Data("the columns have no simulations".into()));
-        }
-        for column in columns {
-            if column.len() != n {
-                return Err(Error::Data(format!(
-                    "a column has {} simulations and the first {n}",
-                    column.len()
-                )));
-            }
-            if let Some(&bad) = column.iter().find(|x| !x.is_finite()) {
-                return Err(Error::InvalidParameter {
-                    name: "columns",
-                    value: bad,
-                    reason: "must be finite",
-                });
-            }
-        }
-        if replicates < 2 {
-            return Err(Error::InvalidParameter {
-                name: "replicates",
-                value: replicates as f64,
-                reason: "must be at least 2",
-            });
-        }
+        let n = check_columns(columns, replicates)?;
         let sorted: Vec<SortedColumn> = columns.iter().map(|c| SortedColumn::new(c)).collect();
         let names = self.names();
         // values[column][cell][replicate]
@@ -842,11 +814,7 @@ impl StatisticsGrid {
         let mut counts = vec![0usize; n];
         for b in 0..replicates {
             counts.fill(0);
-            let mut rng = StreamRng::new(seed, b as u64);
-            for _ in 0..n {
-                let s = ((rng.next_open01() * n as f64) as usize).min(n - 1);
-                counts[s] += 1;
-            }
+            draw(seed, b, n, |s| counts[s] += 1);
             for (c, column) in sorted.iter().enumerate() {
                 let cells = self.of_resample(&Resample::new(column, &counts));
                 for (cell, v) in cells.into_iter().enumerate() {
@@ -854,33 +822,166 @@ impl StatisticsGrid {
                 }
             }
         }
-        Ok(values
-            .into_iter()
-            .map(|cells| Statistics {
-                names: names.clone(),
-                values: cells.iter().map(|v| sample_sd(v)).collect(),
-            })
-            .collect())
+        Ok(standard_errors(names, values))
+    }
+
+    /// [`bootstrap_se`](Self::bootstrap_se) holding part of each column
+    /// fixed: `fixed[c]` is the part of `columns[c]` that stays with its
+    /// simulation, a tiled catalogue's loss say, and only the rest is
+    /// resampled. Replicate `b`'s simulation `i` is `fixed[c][i] +
+    /// (columns[c] − fixed[c])[s_i]`, with `s_i` the same draw
+    /// [`bootstrap_se`](Self::bootstrap_se) takes, so the errors are
+    /// conditional on the fixed part. Each replicate is sorted, so this
+    /// costs `O(n log n)` per column and replicate.
+    ///
+    /// Fails as [`bootstrap_se`](Self::bootstrap_se) does, or if `fixed`
+    /// does not have one column of the same length per column.
+    ///
+    /// ```
+    /// use prospicio_prob::statistics::StatisticsGrid;
+    ///
+    /// let cat = vec![0.0, 0.0, 0.0, 100.0];
+    /// let total = vec![1.0, 2.0, 3.0, 104.0];
+    /// let grid = StatisticsGrid::new(vec![50.0]).unwrap();
+    /// // With the catalogue fixed, only 1, 2, 3 and 4 are resampled.
+    /// let held = grid.bootstrap_se_holding(&[&total], &[&cat], 200, 1).unwrap();
+    /// let free = grid.bootstrap_se(&[&total], 200, 1).unwrap();
+    /// assert!(held[0].get("Mean").unwrap() < free[0].get("Mean").unwrap());
+    /// ```
+    pub fn bootstrap_se_holding(
+        &self,
+        columns: &[&[f64]],
+        fixed: &[&[f64]],
+        replicates: usize,
+        seed: u64,
+    ) -> Result<Vec<Statistics>> {
+        let n = check_columns(columns, replicates)?;
+        if fixed.len() != columns.len() {
+            return Err(Error::Data(format!(
+                "{} fixed columns for {} columns",
+                fixed.len(),
+                columns.len()
+            )));
+        }
+        check_columns(fixed, replicates)?;
+        if fixed[0].len() != n {
+            return Err(Error::Data(format!(
+                "the fixed columns have {} simulations and the columns {n}",
+                fixed[0].len()
+            )));
+        }
+        let rest: Vec<Vec<f64>> = columns
+            .iter()
+            .zip(fixed)
+            .map(|(c, f)| c.iter().zip(*f).map(|(x, y)| x - y).collect())
+            .collect();
+        let names = self.names();
+        let mut values = vec![vec![Vec::with_capacity(replicates); names.len()]; columns.len()];
+        let mut sims = Vec::with_capacity(n);
+        for b in 0..replicates {
+            sims.clear();
+            draw(seed, b, n, |s| sims.push(s));
+            for (c, (f, r)) in fixed.iter().zip(&rest).enumerate() {
+                let resampled = f.iter().zip(&sims).map(|(x, &s)| x + r[s]).collect();
+                let cells = self.of(&Sampled::new(resampled)?);
+                for (cell, v) in cells.values.into_iter().enumerate() {
+                    values[c][cell].push(v);
+                }
+            }
+        }
+        Ok(standard_errors(names, values))
     }
 
     /// [`bootstrap_se`](Self::bootstrap_se) of each component of `pd`, in
     /// component order, with each component's key: one draw of simulations
     /// per replicate shared by every component.
+    /// With `fixed`, [`bootstrap_se_holding`](Self::bootstrap_se_holding)
+    /// on the components of `fixed` with the same keys.
+    ///
+    /// Fails as those do, or if `fixed` lacks one of `pd`'s components.
     pub fn bootstrap_se_components(
         &self,
         pd: &PredictiveDistribution,
+        fixed: Option<&PredictiveDistribution>,
         replicates: usize,
         seed: u64,
     ) -> Result<Vec<(ComponentKey, Statistics)>> {
-        let columns: Vec<Vec<f64>> = pd
-            .components()
-            .iter()
-            .map(|key| pd.marginal(key).expect("listed component").into_draws())
-            .collect();
+        let columns_of = |d: &PredictiveDistribution| -> Result<Vec<Vec<f64>>> {
+            pd.components()
+                .iter()
+                .map(|key| {
+                    d.marginal(key).map(Sampled::into_draws).ok_or_else(|| {
+                        Error::Data(format!("the fixed part has no component {key:?}"))
+                    })
+                })
+                .collect()
+        };
+        let columns = columns_of(pd)?;
         let refs: Vec<&[f64]> = columns.iter().map(Vec::as_slice).collect();
-        let se = self.bootstrap_se(&refs, replicates, seed)?;
+        let se = match fixed {
+            None => self.bootstrap_se(&refs, replicates, seed)?,
+            Some(f) => {
+                let held = columns_of(f)?;
+                let held: Vec<&[f64]> = held.iter().map(Vec::as_slice).collect();
+                self.bootstrap_se_holding(&refs, &held, replicates, seed)?
+            }
+        };
         Ok(pd.components().iter().cloned().zip(se).collect())
     }
+}
+
+/// Checks the bootstrap's columns and replicate count; the number of
+/// simulations.
+fn check_columns(columns: &[&[f64]], replicates: usize) -> Result<usize> {
+    let Some(first) = columns.first() else {
+        return Err(Error::Data("no columns to bootstrap".into()));
+    };
+    let n = first.len();
+    if n == 0 {
+        return Err(Error::Data("the columns have no simulations".into()));
+    }
+    for column in columns {
+        if column.len() != n {
+            return Err(Error::Data(format!(
+                "a column has {} simulations and the first {n}",
+                column.len()
+            )));
+        }
+        if let Some(&bad) = column.iter().find(|x| !x.is_finite()) {
+            return Err(Error::InvalidParameter {
+                name: "columns",
+                value: bad,
+                reason: "must be finite",
+            });
+        }
+    }
+    if replicates < 2 {
+        return Err(Error::InvalidParameter {
+            name: "replicates",
+            value: replicates as f64,
+            reason: "must be at least 2",
+        });
+    }
+    Ok(n)
+}
+
+/// Replicate `b`'s draw of `n` simulations with replacement.
+fn draw(seed: u64, b: usize, n: usize, mut each: impl FnMut(usize)) {
+    let mut rng = StreamRng::new(seed, b as u64);
+    for _ in 0..n {
+        each(((rng.next_open01() * n as f64) as usize).min(n - 1));
+    }
+}
+
+/// Each column's statistics' sample standard deviations over the replicates.
+fn standard_errors(names: Vec<String>, values: Vec<Vec<Vec<f64>>>) -> Vec<Statistics> {
+    values
+        .into_iter()
+        .map(|cells| Statistics {
+            names: names.clone(),
+            values: cells.iter().map(|v| sample_sd(v)).collect(),
+        })
+        .collect()
 }
 
 /// The sample standard deviation, dividing by `len − 1`.
@@ -1245,12 +1346,45 @@ mod tests {
         )
         .unwrap();
         let grid = StatisticsGrid::new(vec![90.0]).unwrap();
-        let by = grid.bootstrap_se_components(&pd, 50, 4).unwrap();
+        let by = grid.bootstrap_se_components(&pd, None, 50, 4).unwrap();
         let direct = grid.bootstrap_se(&[&x, &y], 50, 4).unwrap();
         assert_eq!(by[0].1, direct[0]);
         assert_eq!(by[1].1, direct[1]);
         // A shift leaves the SD's error alone.
         let (a, b) = (by[0].1.get("SD").unwrap(), by[1].1.get("SD").unwrap());
         assert!((a - b).abs() <= 1e-9 * a);
+    }
+    #[test]
+    fn holding_a_part_fixed_resamples_only_the_rest() {
+        let rest = book(300);
+        let cat: Vec<f64> = (0..300).map(|i| ((i % 10) * 4) as f64).collect();
+        let total: Vec<f64> = rest.iter().zip(&cat).map(|(r, c)| r + c).collect();
+        let grid = StatisticsGrid::new(vec![50.0, 99.0]).unwrap();
+        // Holding nothing fixed is the plain bootstrap, up to rounding.
+        let zero = vec![0.0; 300];
+        let none = grid
+            .bootstrap_se_holding(&[&total], &[&zero], 40, 2)
+            .unwrap();
+        let plain = grid.bootstrap_se(&[&total], 40, 2).unwrap();
+        for (a, b) in none[0].values.iter().zip(&plain[0].values) {
+            assert!((a - b).abs() <= 1e-9 * b.abs().max(1.0));
+        }
+        // Holding the whole column fixed leaves no error.
+        let all = grid
+            .bootstrap_se_holding(&[&total], &[&total], 40, 2)
+            .unwrap();
+        assert!(all[0].values.iter().all(|v| v.abs() < 1e-12));
+        // A replicate's mean is the catalogue's plus the resampled rest's.
+        let held = grid
+            .bootstrap_se_holding(&[&total], &[&cat], 40, 2)
+            .unwrap();
+        let alone = grid.bootstrap_se(&[&rest], 40, 2).unwrap();
+        let (a, b) = (held[0].get("Mean").unwrap(), alone[0].get("Mean").unwrap());
+        assert!((a - b).abs() <= 1e-9 * b);
+        assert!(grid.bootstrap_se_holding(&[&total], &[], 40, 2).is_err());
+        assert!(
+            grid.bootstrap_se_holding(&[&total], &[&cat[1..]], 40, 2)
+                .is_err()
+        );
     }
 }
