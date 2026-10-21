@@ -12,6 +12,9 @@ sources:
   - id: design
     resource: ../docs/design/reserving-bayes.md
     title: Design note, Bayesian reserving (decision 9, apriori sets the row parameter)
+  - id: normalised
+    resource: ../docs/design/reserving-bayes.md
+    title: Design note, Bayesian reserving (decision 23, the model with the prior on the ultimate)
 ---
 
 # Finding
@@ -46,3 +49,9 @@ sources:
   normalised pattern (Verrall 2004's model, or a prior on `mu_w sum
   gamma_d`), which `BayesBf` is not. The Excel add-in's `PRO.BAYES.BF` is
   held until the user chooses between them (2026-10-19).
+* Resolved 2026-10-21: the user chose a new model and left `BayesBf` at
+  EVW parity. `BayesBfNormalised` has a normalised pattern and the gamma
+  prior on the ultimate, and on the same RAA table its reserve follows
+  `apriori` (cv 0.05: 41,288, 102,733 and 375,560 at apriori 0.3, 0.6 and
+  1.2) where `BayesBf`'s stays at 73,000
+  ([the new model's finding](bayes-bf-normalised.md)).[^normalised]

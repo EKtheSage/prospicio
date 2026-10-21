@@ -68,7 +68,10 @@ pub use backtest::{
     Backtest, CellForecast, GlmCandidate, METRICS, NamedModel, TriangleModel, diagonal_backtest,
 };
 #[cfg(feature = "bayes")]
-pub use bayes::{BayesBf, BayesBfFit, BayesOdp, BayesOdpFit, Meyers, MeyersFit, MeyersModel};
+pub use bayes::{
+    BayesBf, BayesBfFit, BayesBfNormalised, BayesBfNormalisedFit, BayesOdp, BayesOdpFit, Meyers,
+    MeyersFit, MeyersModel,
+};
 pub use bootstrap::{
     OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,
 };

@@ -1,1 +1,0 @@
-* **Correction**: [Meyers' models over segments and in the diagonal backtest](/findings/meyers-segments-backtest.md), from decision 21 of reserving-bayes (branch claude/backtest-bindings): the backtest now reports each split's sampler diagnostics (`Backtest::diagnostics` and `warnings`, in Rust, Python and R), so a failed fit such as seed 317's (R-hat 1.36) is no longer silent.

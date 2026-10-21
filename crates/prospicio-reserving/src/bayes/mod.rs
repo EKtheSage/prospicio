@@ -67,6 +67,7 @@
 #[cfg(test)]
 mod autodiff;
 mod bf;
+mod bf_normalised;
 mod compartmental;
 mod dual;
 mod laplace;
@@ -78,6 +79,7 @@ mod scalar;
 
 pub use crate::diagnostics::Diagnostics;
 pub use bf::{BayesBf, BayesBfFit};
+pub use bf_normalised::{BayesBfNormalised, BayesBfNormalisedFit};
 pub use compartmental::{
     Compartmental, CompartmentalCandidate, CompartmentalFit, CompartmentalFits,
     CompartmentalLikelihood, CompartmentalLoo, CompartmentalOneYearFits, CompartmentalPaths,

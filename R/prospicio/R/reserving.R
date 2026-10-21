@@ -2137,7 +2137,8 @@ bayes_odp_segments <- function(triangle, column = NULL, intercept_sd = 10, origi
 #' segment's label over segments).
 #'
 #' Properties of a `bayes_one_year_fit`: `fit` (the [bayes_odp_fit], the
-#' [bayes_bf_fit] from [bayes_bf_one_year()] or the [meyers_fit] from
+#' [bayes_bf_fit] from [bayes_bf_one_year()], the [bayes_bf_normalised_fit] from
+#' [bayes_bf_normalised_one_year()] or the [meyers_fit] from
 #' [meyers_one_year()], with the posterior and lifetime reserves),
 #' `chain_ladder`, `origins`,
 #' `development`; per origin (named as a [chain_ladder_fit]'s) `latest`,
@@ -2262,6 +2263,7 @@ bayes_one_year_fit <- S7::new_class(
   constructor = function(ptr) {
     fit <- switch(ptr$model(),
       bayes_bf = bayes_bf_fit(ptr = ptr$bf_fit()),
+      bayes_bf_normalised = bayes_bf_normalised_fit(ptr = ptr$bf_normalised_fit()),
       meyers = meyers_fit(ptr = ptr$meyers_fit()),
       bayes_odp_fit(ptr = ptr$fit())
     )
@@ -3178,6 +3180,253 @@ bayes_bf_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
   view
 }
 
+#' Bayesian Bornhuetter-Ferguson with a normalised pattern
+#'
+#' The Bayesian Bornhuetter-Ferguson whose prior sits on the ultimate: the
+#' over-dispersed Poisson model of a cumulative triangle's incremental
+#' values with mean `U[w] * p[d]`, the origin's expected ultimate `U[w]`
+#' times the share `p[d]` of it that falls at age `d`, the shares summing
+#' to 1 (`p[d] = exp(beta[d]) / sum(exp(beta))` with `beta[1] = 0`). The
+#' informative gamma prior is on `U[w]` itself, with mean `apriori` times
+#' the origin's exposure and coefficient of variation `cv`, so `apriori` is
+#' the expected ultimate loss ratio and `cv` says how firmly it is held, as
+#' in the classical [bornhuetter_ferguson()]. The shares have a vague normal
+#' prior on their log ratios to the first age's, and the chain ladder's
+#' Pearson scale `phi` (the `scale` of [odp_bootstrap()]) is plugged in. The
+#' posterior is sampled with NUTS, and each draw projects the future cells
+#' up to the oldest observed age (no tail) with the process error of
+#' `process`, as [bayes_odp()] does.
+#'
+#' [bayes_bf()] (England, Verrall and Wuthrich's Model 3.1) instead leaves
+#' the pattern unnormalised and puts its prior on `mu[w]`, which is not the
+#' ultimate: there the level of `apriori` is cancelled by the pattern and
+#' barely moves the reserve. Use this model when the a-priori loss ratio is
+#' a judgment about the ultimate; use [bayes_bf()] to match England, Verrall
+#' and Wuthrich's published results.
+#'
+#' The prior's strength moves the reserve between two limits. With
+#' `cv = Inf` (a flat prior on `log U[w]`) the model is the Bayesian chain
+#' ladder, and the reserves agree with [bayes_odp()]'s within Monte Carlo
+#' error. As `cv` falls to 0, `U[w]` is fixed at the prior ultimate `m[w]`
+#' and the shares are `S[d] / (M[d] + lambda)` (`S[d]` the observed
+#' increments of column `d`, `M[d]` the prior ultimates of the origins
+#' observed there, `lambda` such that they sum to 1). When the prior
+#' ultimates are the chain ladder's, `lambda` is 0 and the reserve is
+#' exactly the classical [bornhuetter_ferguson()] reserve
+#' `(1 - 1 / cdf) * m[w]`; otherwise the shares move with the ultimates,
+#' where the classical method keeps the chain ladder's pattern.
+#'
+#' Every development column's observed increments must sum to more than
+#' zero, and every origin's to more than `-phi / cv^2`; negative cells are
+#' allowed. One `seed` replays a fit exactly, whatever the number of
+#' threads. Failed MCMC diagnostics (R-hat above 1.01, bulk or tail ESS
+#' below 100 per chain, any divergent transition) do not fail the fit:
+#' `bayes_bf_normalised()` raises one [warning()] listing them, and they stay in the
+#' fit's `diagnostics`.
+#'
+#' Properties of the fit: as [bayes_odp_fit]'s (`chain_ladder`, `origins`,
+#' `development`, `scale`, `reserves`, `diagnostics`, `summary`, `draws`),
+#' with `exposure` and `prior_ultimate` (`apriori * exposure`, the prior
+#' mean of the expected ultimate) per origin, `pattern` (the posterior
+#' mean of each age's share of the ultimate) and `expected_ultimate` (the
+#' posterior mean of each origin's `U[w]`);
+#' the posterior draws are of `alpha[1]`, ..., `alpha[n]` (`log U[w]`)
+#' and `beta[2]`, ..., `beta[m]` (the log ratios of the shares to the first
+#' age's). [bayes_loo()] gives the
+#' PSIS-LOO of the observed increments, comparable with [bayes_odp()]'s on
+#' the same column. `as.data.frame()`, [totals_frame()],
+#' [development_frame()] and [segment()] work as for [bayes_odp()], with the
+#' `exposure` and `prior_ultimate`.
+#'
+#' Errors: as [bayes_odp()]; if an origin has no observed, finite, positive
+#' exposure; if `apriori` is not positive and finite, `cv` is not positive
+#' or `development_sd` is not positive and finite; if a development
+#' column's increments do not sum to more than zero; or if an origin's sum
+#' to `-phi / cv^2` or less.
+#'
+#' @param triangle A cumulative [triangle] with one segment, every origin
+#'   observed from the first age up to its latest.
+#' @param column Name of the loss column to fit.
+#' @param exposure Name of the exposure column; each origin's latest
+#'   observed value is its exposure, as for [bornhuetter_ferguson()].
+#' @param apriori Prior mean of each origin's expected ultimate `U[w]` per
+#'   unit of exposure: the expected ultimate loss ratio.
+#' @param cv Coefficient of variation of the gamma prior on each `U[w]`
+#'   (shape `1 / cv^2`); `Inf` for a flat prior.
+#' @param development_sd Standard deviation of the normal prior on each
+#'   `beta[d]` (the log ratio of the share at age `d` to the first age's),
+#'   centred on 0.
+#' @param process Process error on each simulated future increment:
+#'   `"gamma"` (mean `mu`, variance `phi * mu`) or `"none"` for parameter
+#'   error only.
+#' @param chains,tune,draws NUTS chains, warm-up draws per chain and kept
+#'   draws per chain.
+#' @param n_sims Number of predictive simulations, independent of the number
+#'   of posterior draws; positive.
+#' @param seed Seed of the chains and of the simulations, a non-negative
+#'   whole number.
+#' @param target_accept Target mean acceptance rate of the step-size
+#'   adaptation.
+#' @param max_depth Largest NUTS tree depth.
+#' @param ptr A `BayesBfNormalisedFit` pointer; used internally.
+#' @returns A `bayes_bf_normalised_fit` object.
+#' @seealso [bayes_bf()], [bayes_odp()], [bornhuetter_ferguson()], [bayes_loo()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130),
+#'                    premium = rep(c(200, 220, 240, 260), 4:1))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"))
+#' fit <- bayes_bf_normalised(tri, "paid", "premium", apriori = 0.85, cv = 0.1, n_sims = 2000,
+#'                 seed = 1)
+#' fit@prior_ultimate
+#' fit@pattern
+#' mean(fit@reserves)
+#' quantile(fit@reserves, 0.995)
+bayes_bf_normalised_fit <- S7::new_class(
+  "bayes_bf_normalised_fit",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("BayesBfNormalisedFit"),
+    chain_ladder = chain_ladder_fit,
+    origins = S7::new_property(S7::class_character, getter = function(self) {
+      self@chain_ladder@origins
+    }),
+    development = S7::new_property(S7::class_integer, getter = function(self) {
+      self@chain_ladder@development
+    }),
+    scale = S7::new_property(S7::class_double, getter = function(self) self@ptr$scale()),
+    exposure = S7::new_property(S7::class_double, getter = function(self) self@ptr$exposure()),
+    prior_ultimate = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$prior_ultimate()
+    }),
+    pattern = S7::new_property(S7::class_double, getter = function(self) self@ptr$pattern()),
+    expected_ultimate = S7::new_property(S7::class_double, getter = function(self) {
+      self@ptr$expected_ultimate()
+    }),
+    reserves = predictive_distribution,
+    diagnostics = S7::new_property(S7::class_list, getter = function(self) {
+      self@ptr$diagnostics()
+    }),
+    summary = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(rust_result(self@ptr$summary(), call = NULL))
+    }),
+    draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$parameter_names()
+      matrix(self@ptr$draws(), ncol = length(nm), byrow = TRUE, dimnames = list(NULL, nm))
+    })
+  ),
+  constructor = function(ptr) {
+    S7::new_object(S7::S7_object(), ptr = ptr,
+                   chain_ladder = chain_ladder_fit(ptr = ptr$chain_ladder()),
+                   reserves = predictive_distribution(ptr = ptr$reserves()))
+  }
+)
+
+#' @rdname bayes_bf_normalised_fit
+#' @export
+bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.1, development_sd = 10,
+                     process = c("gamma", "none"), chains = 4, tune = 1000, draws = 1000,
+                     n_sims = 10000, seed = 0, target_accept = 0.95, max_depth = 10) {
+  cols <- exposure_columns(triangle, column, exposure)
+  process <- match.arg(process)
+  ptr <- rust_result(triangle@ptr$bayes_bf_normalised(
+    cols[1], cols[2], single_number(apriori, "apriori"), single_number(cv, "cv"),
+    single_number(development_sd, "development_sd"), process, single_number(chains, "chains"),
+    single_number(tune, "tune"), single_number(draws, "draws"), single_number(n_sims, "n_sims"),
+    single_number(seed, "seed"), single_number(target_accept, "target_accept"),
+    single_number(max_depth, "max_depth")))
+  fit <- bayes_bf_normalised_fit(ptr = ptr)
+  failed <- fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("bayes_bf_normalised: the MCMC diagnostics failed; check them before relying on the fit: ",
+            paste(failed, collapse = "; "), call. = FALSE)
+  }
+  fit
+}
+
+#' One-year view of the Bayesian Bornhuetter-Ferguson
+#'
+#' The claims development result (CDR) over the coming year of
+#' [bayes_bf_normalised()], by Pareto smoothed importance sampling of the posterior
+#' (decisions 16 and 17 of `docs/design/reserving-bayes.md`), exactly as
+#' [bayes_odp_one_year()] with this model's means `exp(alpha[w]) * p[d]`.
+#' `bayes_bf_normalised_one_year()` fits the posterior and the lifetime reserves as
+#' [bayes_bf_normalised()] does with the same settings. Each simulation draws the
+#' year's increments from a posterior draw with `process` error, reweights
+#' every posterior draw by the year's quasi likelihood (the `scale`, the
+#' priors and the prior ultimates unchanged), and takes each origin's CDR as
+#' its posterior mean reserve at the opening less its payment in the year
+#' and its weighted posterior mean reserve after it; a simulation whose
+#' Pareto k is above `k_threshold` is moment-matched and, if that cannot
+#' rescue it, refitted with NUTS, as `refit` says.
+#'
+#' The prior's strength moves the view between two limits. A flat prior
+#' (`cv = Inf`) is the Bayesian chain ladder: on GenIns its CDR's
+#' standard deviation agrees with [bayes_odp_one_year()]'s within Monte
+#' Carlo error. A tighter prior holds each origin's ultimate more firmly,
+#' so less of the year's information goes to the ultimates and the view
+#' narrows (on GenIns with `apriori = 0.5`, the total's standard deviation
+#' at `cv = 0.2` is about 58% of the flat prior's, at `cv = 0.05` about
+#' 32%). There is no view over segments: [bayes_bf_normalised()] fits one
+#' segment.
+#'
+#' Failed MCMC diagnostics of the fit raise one [warning()] listing them,
+#' and refits that failed theirs raise another. The result is a
+#' [bayes_one_year_fit] whose `fit` is the [bayes_bf_normalised_fit]; its
+#' `as.data.frame()` adds each origin's `exposure` and `prior_ultimate`.
+#'
+#' Errors: as [bayes_bf_normalised()]; a `k_threshold` that is `NaN`.
+#'
+#' This is Python's `BayesBfNormalised.one_year()`.
+#'
+#' @inheritParams bayes_bf_normalised_fit
+#' @inheritParams bayes_one_year_fit
+#' @returns A `bayes_one_year_fit` object.
+#' @seealso [bayes_bf_normalised()], [bayes_odp_one_year()].
+#' @export
+#' @examples
+#' long <- data.frame(year = rep(2018:2021, 4:1),
+#'                    age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+#'                    paid = c(100, 150, 165, 170, 110, 170, 180, 120, 175, 130),
+#'                    premium = rep(c(200, 220, 240, 260), 4:1))
+#' tri <- triangle(long, "year", "age", c("paid", "premium"))
+#' view <- bayes_bf_normalised_one_year(tri, "paid", "premium", apriori = 0.85, cv = 0.1,
+#'                           n_sims = 1000, seed = 1, refit = "reweight_only")
+#' view@fit@prior_ultimate
+#' c(one_year = sqrt(variance(view@cdr)), lifetime = sqrt(variance(view@fit@reserves)))
+#' as.data.frame(view)
+bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1, cv = 0.1,
+                              development_sd = 10, process = c("gamma", "none"), chains = 4,
+                              tune = 1000, draws = 1000, n_sims = 10000, seed = 0,
+                              target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
+                              refit = c("moment_match_then_refit", "refit_flagged",
+                                        "reweight_only", "refit_all"),
+                              max_refits = NULL, one_year_sims = NULL) {
+  cols <- exposure_columns(triangle, column, exposure)
+  process <- match.arg(process)
+  refit <- match.arg(refit)
+  priors <- c(single_number(apriori, "apriori"), single_number(cv, "cv"),
+              single_number(development_sd, "development_sd"))
+  run <- c(single_number(chains, "chains"), single_number(tune, "tune"),
+           single_number(draws, "draws"), single_number(n_sims, "n_sims"),
+           single_number(seed, "seed"), single_number(target_accept, "target_accept"),
+           single_number(max_depth, "max_depth"))
+  ptr <- rust_result(triangle@ptr$bayes_bf_normalised_one_year(
+    cols[1], cols[2], priors, process, run, single_number(k_threshold, "k_threshold"), refit,
+    max_refits_arg(max_refits), optional_number(one_year_sims, "one_year_sims")))
+  view <- bayes_one_year_fit(ptr = ptr)
+  failed <- view@fit@diagnostics$warnings
+  if (length(failed)) {
+    warning("bayes_bf_normalised_one_year: the MCMC diagnostics failed; check them before relying on the ",
+            "fit: ", paste(failed, collapse = "; "), call. = FALSE)
+  }
+  warn_refits("bayes_bf_normalised_one_year", "", length(view@refitted), view@refit_warnings,
+              length(view@unrefitted))
+  view
+}
+
 #' Bootstrap of Mack's model
 #'
 #' The lifetime view of reserve risk under Mack's model, bootstrapped as
@@ -3881,13 +4130,15 @@ growth <- function(fit, age) {
 
 check_fit <- function(fit) {
   classes <- list(chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, odp_bootstrap_fit,
-                  mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, meyers_fit,
+                  mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit,
+                  bayes_bf_normalised_fit, meyers_fit,
                   meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, clark_fit,
                   compartmental_fit, compartmental_fits, compartmental_one_year_fit,
                   compartmental_one_year_fits)
   if (!any(vapply(classes, function(cls) S7::S7_inherits(fit, cls), TRUE))) {
     stop("fit must be a chain_ladder_fit, mack_fit, expected_loss_fit, cape_cod_fit, ",
          "odp_bootstrap_fit, mack_bootstrap_fit, bayes_odp_fit, bayes_odp_fits, bayes_bf_fit, ",
+         "bayes_bf_normalised_fit, ",
          "meyers_fit, meyers_fits, one_year_fit, bayes_one_year_fit, bayes_one_year_fits, ",
          "clark_fit, compartmental_fit, compartmental_fits, compartmental_one_year_fit or ",
          "compartmental_one_year_fits",
@@ -3899,8 +4150,8 @@ check_fit <- function(fit) {
 #'
 #' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #' [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
-#' [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
-#' [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit] or
+#' [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit],
+#' [meyers_fit], [meyers_fits], [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit] or
 #' [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit] or
 #' [compartmental_one_year_fits] with the triangle's key columns by name. `as.data.frame(fit)` has one row per
 #' segment and origin: `origin`, `latest`, `ultimate` and `reserve` (the
@@ -3908,8 +4159,9 @@ check_fit <- function(fit) {
 #' `standard_error`, for the expected-loss methods `exposure` and `apriori`
 #' (and Cape Cod's `trended_apriori`), for the bootstraps the `mean` and
 #' `std_dev` of the bootstrapped reserve (for [bayes_odp()],
-#' [bayes_odp_segments()], [bayes_bf()], [meyers()] and [meyers_segments()] of the posterior
-#' predictive reserve; [bayes_bf()] adds the `exposure` and `prior_ultimate`, [meyers()] and
+#' [bayes_odp_segments()], [bayes_bf()], [bayes_bf_normalised()], [meyers()] and
+#' [meyers_segments()] of the posterior predictive reserve; [bayes_bf()] and
+#' [bayes_bf_normalised()] add the `exposure` and `prior_ultimate`, [meyers()] and
 #' [meyers_segments()] add the `premium` and the
 #' `ultimate_mean` and `ultimate_std_dev` of the predictive ultimate), and
 #' for Clark (Cape Cod)
@@ -3922,7 +4174,7 @@ check_fit <- function(fit) {
 #' `totals_frame()` has one row per segment with the same quantities for
 #' the segment's total (for the expected-loss methods the total `exposure`,
 #' for the ODP bootstrap, its one-year view, [bayes_odp()],
-#' [bayes_odp_segments()] and [bayes_bf()] also the `scale`, for
+#' [bayes_odp_segments()], [bayes_bf()] and [bayes_bf_normalised()] also the `scale`, for
 #' [bayes_odp_one_year()] the `scale` and `flagged_share`;
 #' for Clark its `omega`, `theta`, `scale` and, for Cape Cod, `elr`).
 #' `development_frame()` has one row per segment and age: `development`,
@@ -3944,8 +4196,8 @@ check_fit <- function(fit) {
 #'
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
-#'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
-#'   [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit],
+#'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit],
+#'   [meyers_fit], [meyers_fits], [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit],
 #'   [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit] or
 #'   [compartmental_one_year_fits] (a [clark_fit] or
 #'   a compartmental fit not for `development_frame()`).
@@ -4019,6 +4271,8 @@ S7::method(as.data.frame, bayes_odp_fits) <- function(x, ...) fit_table_frame(x@
 S7::method(summary, bayes_odp_fits) <- function(object, ...) object@summary
 S7::method(as.data.frame, bayes_bf_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(summary, bayes_bf_fit) <- function(object, ...) object@summary
+S7::method(as.data.frame, bayes_bf_normalised_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
+S7::method(summary, bayes_bf_normalised_fit) <- function(object, ...) object@summary
 S7::method(as.data.frame, meyers_fit) <- function(x, ...) fit_table_frame(x@ptr$long_table())
 S7::method(summary, meyers_fit) <- function(object, ...) object@summary
 S7::method(as.data.frame, meyers_fits) <- function(x, ...) fit_table_frame(x@ptr$long_table())
@@ -4079,6 +4333,23 @@ S7::method(print, bayes_bf_fit) <- function(x, ...) {
   r <- x@reserves
   d <- x@diagnostics
   cat(sprintf("<bayes_bf_fit> %d draws in %d chains, %d simulations, scale %s\n",
+              nrow(x@draws), as.integer(x@ptr$chains()), as.integer(r@n_sims),
+              format(x@scale, digits = 6)))
+  cat(sprintf("diagnostics: max R-hat %s, min bulk ESS %s, min tail ESS %s, %d divergences%s\n",
+              format(d$max_rhat, digits = 4), format(d$min_ess_bulk, digits = 4),
+              format(d$min_ess_tail, digits = 4), as.integer(d$divergences),
+              if (length(d$warnings)) sprintf(", %d warnings", length(d$warnings)) else ""))
+  cat(sprintf("total prior ultimate %s\n", format(sum(x@prior_ultimate), digits = 10)))
+  cat(sprintf("total reserve: chain ladder %s, posterior mean %s, sd %s
+",
+              format(x@chain_ladder@total_reserve, digits = 10), format(mean(r), digits = 10),
+              format(sqrt(variance(r)), digits = 10)))
+  invisible(x)
+}
+S7::method(print, bayes_bf_normalised_fit) <- function(x, ...) {
+  r <- x@reserves
+  d <- x@diagnostics
+  cat(sprintf("<bayes_bf_normalised_fit> %d draws in %d chains, %d simulations, scale %s\n",
               nrow(x@draws), as.integer(x@ptr$chains()), as.integer(r@n_sims),
               format(x@scale, digits = 6)))
   cat(sprintf("diagnostics: max R-hat %s, min bulk ESS %s, min tail ESS %s, %d divergences%s\n",
