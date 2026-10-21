@@ -700,3 +700,17 @@
   on capital and a fee tiered on the margin. Python `npv`, `irr` (`IrrResult`), `moic`,
   `leverage`, `tiered_fee` in `prospicio.pricing`; R `npv()`, `irr()`, `moic()`, `leverage()`,
   `tiered_fee()` (#480, #494).
+
+### Aggregate and reinsurance
+
+- A vendor's year loss table read, checked and expanded:
+  `prospicio_aggregate::ylt::YearLossTable` takes each row's year (from
+  1), loss, event slot and labels, checks the losses, the years, repeated
+  year and slot within the labels named (`check_unique`) and the expected
+  label values (`check_values`), orders the rows by year and slot, and
+  expands the years to a run's simulations by tiling (a whole multiple) or
+  resampling each simulation from its own stream. The source file's hash
+  (`ylt::hash_bytes`) is the events' `EventSet::input_hash` and every
+  result's provenance input hash. Python `prospicio.aggregate.read_ylt`
+  and R `read_ylt()` read CSV or Parquet (with pyarrow or arrow);
+  `EventSet.from_ylt` and `event_set_from_ylt()` take columns (#484).

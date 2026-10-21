@@ -96,6 +96,8 @@ occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occur
 
 occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_pml_rust, frequency, severity, p)
 
+ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
+
 credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
@@ -318,6 +320,8 @@ EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__Ev
 
 EventSet$from_long <- function(years, losses, n_years, seed, label_dims, label_values) .Call(wrap__EventSet__from_long, years, losses, n_years, seed, label_dims, label_values)
 
+EventSet$from_ylt <- function(years, losses, slots, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash) .Call(wrap__EventSet__from_ylt, years, losses, slots, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash)
+
 EventSet$with_labels <- function(dims, values) .Call(wrap__EventSet__with_labels, self, dims, values)
 
 EventSet$label_dims <- function() .Call(wrap__EventSet__label_dims, self)
@@ -347,6 +351,8 @@ EventSet$sums_insured <- function(sim) .Call(wrap__EventSet__sums_insured, self,
 EventSet$n_sims <- function() .Call(wrap__EventSet__n_sims, self)
 
 EventSet$seed <- function() .Call(wrap__EventSet__seed, self)
+
+EventSet$input_hash <- function() .Call(wrap__EventSet__input_hash, self)
 
 EventSet$events <- function(sim) .Call(wrap__EventSet__events, self, sim)
 

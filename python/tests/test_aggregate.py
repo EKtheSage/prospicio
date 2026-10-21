@@ -1228,3 +1228,57 @@ def test_apply_annual_on_plain_losses():
         Tower([cover]).apply_annual([1.0, -1.0])
     with pytest.raises(ValueError):
         Tower([cover]).apply_annual([])
+
+
+YLT_CSV = (
+    "year,peril,slot,class,value,item\n"
+    "1,wind,5,home,10,a\n"
+    "1,wind,5,auto,4,b\n"
+    "2,quake,1,home,30,c\n"
+    "1,wind,2,home,2,d\n"
+)
+
+
+def test_read_ylt_orders_checks_and_tiles(tmp_path):
+    from prospicio.aggregate import EventSet, read_ylt, ylt_hash
+
+    path = tmp_path / "ylt.csv"
+    path.write_text(YLT_CSV)
+    e = read_ylt(path, labels=["peril", "class"], n_years=3, n_sims=6)
+    assert e.n_sims == 6
+    # Year 1 by slot, the file's order breaking the tie in slot 5.
+    assert e.events(0) == [2.0, 10.0, 4.0]
+    assert e.events(1) == [30.0] and e.events(2) == []
+    assert e.events(3) == e.events(0)
+    assert e.labels(0)["class"] == ["home", "home", "auto"]
+    assert e.input_hash == ylt_hash(path.read_bytes())
+    assert e.totals().provenance()["input_hash"] == e.input_hash
+
+    # One slot hits two classes: unique by peril and class, not by peril.
+    with pytest.raises(ValueError, match="rows 1 and 2"):
+        read_ylt(path, labels=["peril", "class"], unique_by=["peril"])
+    with pytest.raises(ValueError, match="not one of"):
+        read_ylt(path, labels=["peril", "class"], expected={"peril": ["wind"]})
+    with pytest.raises(ValueError, match="whole multiple"):
+        read_ylt(path, n_sims=5)
+    with pytest.raises(ValueError, match="no column 'region'"):
+        read_ylt(path, labels=["region"])
+
+    r = read_ylt(path, labels=["peril", "class"], n_sims=7, expand="resample", seed=3)
+    again = EventSet.from_ylt([1, 1, 2, 1], [10.0, 4.0, 30.0, 2.0], slots=[5, 5, 1, 2], n_sims=7, expand="resample", seed=3)
+    assert [r.events(i) for i in range(7)] == [again.events(i) for i in range(7)]
+    assert r.seed == 3
+
+
+def test_read_ylt_from_parquet(tmp_path):
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    from prospicio.aggregate import read_ylt
+
+    table = pa.table({"year": [1, 1, 2], "slot": [2, 1, 1], "peril": ["wind", "quake", "wind"], "value": [5.0, 1.0, 7.0]})
+    path = tmp_path / "ylt.parquet"
+    pq.write_table(table, path)
+    e = read_ylt(path, labels=["peril"])
+    assert e.events(0) == [1.0, 5.0] and e.events(1) == [7.0]
+    assert e.labels(0) == {"peril": ["quake", "wind"]}

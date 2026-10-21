@@ -680,3 +680,30 @@ stopifnot(identical(as.vector(am[, 2]), c(40, 70, 120)))
 close(as.vector(am[, 4]), c(30, 20, 10), 1e-12)
 close(as.vector(am[, 4]), ceding_commission_for(cover, am[, 2]), 1e-12)
 stopifnot(inherits(try(apply_tower(reinsurance_tower(list(cover)), c(1, -1)), silent = TRUE), "try-error"))
+
+# A year loss table read and tiled (#484): year 1 by slot, the file's order
+# breaking the tie in slot 5, where one event hits two classes.
+ylt_path <- tempfile(fileext = ".csv")
+writeLines(c("year,peril,slot,class,value,item", "1,wind,5,home,10,a", "1,wind,5,auto,4,b",
+             "2,quake,1,home,30,c", "1,wind,2,home,2,d"), ylt_path)
+yev <- read_ylt(ylt_path, labels = c("peril", "class"), n_years = 3, n_sims = 6)
+stopifnot(identical(yev@n_sims, 6), identical(events(yev, 1), c(2, 10, 4)),
+          identical(events(yev, 2), 30), length(events(yev, 3)) == 0,
+          identical(events(yev, 4), events(yev, 1)))
+stopifnot(identical(event_labels(yev, 1)$class, c("home", "home", "auto")))
+stopifnot(startsWith(yev@input_hash, "blake3:"),
+          identical(provenance(total(yev))$input_hash, yev@input_hash))
+e <- tryCatch(read_ylt(ylt_path, labels = c("peril", "class"), unique_by = "peril"), error = identity)
+stopifnot(grepl("rows 1 and 2", conditionMessage(e)))
+e <- tryCatch(read_ylt(ylt_path, unique_by = character()), error = identity)
+stopifnot(grepl("repeat year 1, slot 5", conditionMessage(e)))
+e <- tryCatch(read_ylt(ylt_path, labels = c("peril", "class"), expected = list(peril = "wind")),
+              error = identity)
+stopifnot(grepl("not one of", conditionMessage(e)))
+e <- tryCatch(read_ylt(ylt_path, n_sims = 5), error = identity)
+stopifnot(grepl("whole multiple", conditionMessage(e)))
+rev <- read_ylt(ylt_path, labels = c("peril", "class"), n_sims = 7, expand = "resample", seed = 3)
+rev2 <- event_set_from_ylt(c(1, 1, 2, 1), c(10, 4, 30, 2), slots = c(5, 5, 1, 2), n_sims = 7,
+                           expand = "resample", seed = 3)
+stopifnot(identical(lapply(1:7, function(i) events(rev, i)), lapply(1:7, function(i) events(rev2, i))))
+stopifnot(is.null(rev2@input_hash))

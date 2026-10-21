@@ -49,7 +49,7 @@ mod prospicio_native {
         PyPicks, PyRenewalRuin, PyRuin, audit_grid, audit_portfolio_grid, compound_moments,
         eventual_ruin, fft, fft_auto, fft_bivariate, layer_loss_picks, occurrence_exceedance,
         occurrence_pml, panjer, recommend_grid, recommend_portfolio_grid, round_bucket,
-        simulate_events, wiener_hopf,
+        simulate_events, wiener_hopf, ylt_hash,
     };
     #[pymodule_export]
     use super::casualty::{
