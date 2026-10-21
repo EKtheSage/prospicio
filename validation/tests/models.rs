@@ -2230,8 +2230,8 @@ fn double_glms_match_dglm() {
                 ),
             };
             let mut spec = DoubleGlm::new(family, link);
-            if key.1 == "ml" {
-                spec = spec.ml();
+            if key.1 == "reml" {
+                spec = spec.reml();
             }
             spec.fit(&x, &z, &y)
                 .unwrap_or_else(|e| panic!("{key:?}: {e}"))

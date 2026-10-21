@@ -84,7 +84,7 @@ models and compares them.
   adaptive Gauss–Hermite quadrature (see "Mixed models"); Python `Glmm`,
   R `glmm_fit()`.
 - `prospicio_glm::dglm::DoubleGlm`: double GLMs, a GLM for the mean and
-  one for the log dispersion on their own designs, by REML or ML (see
+  one for the log dispersion on their own designs, by ML or REML (see
   "Double GLMs"); Python `DoubleGlm`, R `dglm_fit()`.
 - Parity: `validation/reference/glm_statsmodels.csv`
   (`validation/scripts/statsmodels_glm.py`): 10 GLMs on a synthetic
@@ -780,7 +780,7 @@ is lme4's `a:b`, so `(1 | a/b)` is `a` and `Grouping::nested(a, b)`.
 ## Double GLMs
 
 `prospicio_glm::dglm::DoubleGlm` (#353, the user's decision of
-2026-10-19: match R `dglm` with REML, the Tweedie through statmod; MARS
+2026-10-19: match R `dglm`, the Tweedie through statmod; MARS
 parked) fits `g(μ) = Xβ + o` with variance `φ V(μ) / w` and
 `log φ = Zγ + q`, for the Gaussian, Poisson, gamma and Tweedie with
 `1 < p < 2`, by Smyth's alternating scoring as `dglm`: a step for `γ` on
@@ -788,10 +788,11 @@ the unit deviances as gamma responses (the digamma form for the gamma
 family), then one for `β` at those dispersions, until no coefficient
 moves by more than `1e-11` relative.
 
-- **REML by default.** The user asked for `dglm` "with its default REML
-  fit", but `dglm`'s default is ML: REML stays the default until the user
-  decides; `DoubleGlm::ml()` gives ML. REML corrects each deviance's mean by
-  its leverage in the mean model (Smyth and Verbyla).
+- **ML by default** (the user's decision of 2026-10-21), as `dglm`'s own
+  default; `DoubleGlm::reml()` (Python `method="reml"`, R
+  `method = "reml"`) gives REML, which corrects each deviance's mean by its
+  leverage in the mean model (Smyth and Verbyla). Until then REML was the
+  default, so a fit that named no method changes.
 - **dglm corrected.** `dglm` 1.8.6 weights its mean step by `w V(μ) / φ`
   and evaluates `μ'(η)` without the offset, which is scoring only for a
   canonical link without an offset

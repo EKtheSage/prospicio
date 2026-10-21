@@ -1,0 +1,1 @@
+* **Update**: [dglm 1.8.6's scoring steps are right only for a canonical link without offsets](/findings/dglm-mean-step-weights.md), from the dglm default decision (branch claude/stoic-hawking-qc3qby): `DoubleGlm` now fits by ML by default, as dglm, by the user's decision of 2026-10-21; REML is `.reml()`.

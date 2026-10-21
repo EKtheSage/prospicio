@@ -256,7 +256,7 @@ fn groupings(names: Vec<String>, labels: Vec<String>) -> Result<Vec<Grouping>> {
 }
 
 /// A double GLM: the mean on `x`, the log dispersion on `z`
-/// (`docs/design/models.md`, "Double GLMs"); `method` "reml" or "ml".
+/// (`docs/design/models.md`, "Double GLMs"); `method` "ml" or "reml".
 #[allow(clippy::too_many_arguments)]
 #[extendr]
 fn dglm_fit_design(
@@ -277,11 +277,11 @@ fn dglm_fit_design(
     let f = family(family_name, f64::NAN, power)?;
     let mut spec = DoubleGlm::new(f, link(link_name, f, link_power)?);
     match method {
-        "reml" => {}
-        "ml" => spec = spec.ml(),
+        "ml" => {}
+        "reml" => spec = spec.reml(),
         other => {
             return Err(Error::Other(format!(
-                "method must be reml or ml, got {other}"
+                "method must be ml or reml, got {other}"
             )));
         }
     }
