@@ -6,7 +6,7 @@
 //! layer: [`ExcessPattern::from_ground_up`] turns the ground-up factors, an
 //! optional claim count column and the ultimate severity into the layer's
 //! age-to-age factors, which then go into any method as a
-//! [`SelectedPattern`](crate::SelectedPattern).
+//! [`SelectedPattern`].
 //!
 //! The model is the scale shift (decision 1): the claims reported at an age
 //! are the ultimate ones divided by a shift `c_j`, `X_j = X_inf / c_j`, with
