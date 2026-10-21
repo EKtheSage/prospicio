@@ -668,3 +668,12 @@
   of perils carried back onto its components. Inside a tower, a cover on the annual total with
   `LimitAllocation::ProRata` on labelled events does the same. Python
   `PredictiveDistribution.scale_to_totals`, R `scale_to_totals()` (#478, #493).
+
+### Pricing
+
+- Return metrics on simulated cash flows (`prospicio_pricing::returns`): the NPV at an annual
+  rate, the IRR searched on a grid with a flag for whether a root was found and the number of
+  roots seen (the one nearest 0 kept), monthly or actual/365 offsets, MOIC, leverage of premium
+  on capital and a fee tiered on the margin. Python `npv`, `irr` (`IrrResult`), `moic`,
+  `leverage`, `tiered_fee` in `prospicio.pricing`; R `npv()`, `irr()`, `moic()`, `leverage()`,
+  `tiered_fee()` (#480, #494).

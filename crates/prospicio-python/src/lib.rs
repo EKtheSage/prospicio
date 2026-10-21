@@ -115,7 +115,10 @@ mod prospicio_native {
         product_limit,
     };
     #[pymodule_export]
-    use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
+    use super::payout::{
+        PyIrrResult, PyPaymentPattern, PyPayoutPrice, irr, leverage, moic, npv, price_over_payout,
+        tiered_fee,
+    };
     #[pymodule_export]
     use super::pnl::{
         PyBook, PyExpense, PyGroup, PyLedger, PyLeg, derive_premium, occurrence_source,
