@@ -48,7 +48,7 @@ use crate::triangle::{Label, Segment, Triangle};
 /// ultimate loss ratio is about 11.5% below `apriori`; `apriori` is the
 /// classical method's loss ratio only when the sum is 1. For a prior on the
 /// ultimate itself, so that `apriori` is the expected ultimate loss ratio,
-/// use [`BayesBfNormalised`](super::BayesBfNormalised) (decision 22). The log
+/// use [`BayesBfNormalised`](super::BayesBfNormalised) (decision 23). The log
 /// posterior is strictly concave; NUTS samples it on a scale whitened at the
 /// mode, as for `BayesOdp`.
 ///

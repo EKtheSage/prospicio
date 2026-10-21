@@ -1,7 +1,7 @@
 //! The Bayesian Bornhuetter–Ferguson with a normalised development pattern:
 //! the over-dispersed Poisson model whose means are an origin's ultimate
 //! times the share of it paid at each age, with the informative gamma prior
-//! on the ultimate itself (`docs/design/reserving-bayes.md`, decision 22).
+//! on the ultimate itself (`docs/design/reserving-bayes.md`, decision 23).
 
 use prospicio_bayes::elpd::Loo;
 use prospicio_bayes::nuts::{ParamSummary, PosteriorDraws, Sampler, sample};
@@ -68,7 +68,7 @@ use crate::triangle::{Label, Segment, Triangle};
 ///   Bornhuetter–Ferguson reserve `(1 - 1 / cdf_w) m_w` exactly; otherwise
 ///   the shares move with the ultimates (the classical method takes the
 ///   chain ladder's pattern whatever the prior), by an amount that the
-///   design note's decision 22 measures.
+///   design note's decision 23 measures.
 ///
 /// Every development column's observed increments must sum to more than
 /// zero, and every origin's to more than `-phi / cv^2`, the bound below
@@ -211,7 +211,7 @@ impl BayesBfNormalised {
 
     /// The one-year view of loss `column` of a single-segment cumulative
     /// triangle with exposure from its `exposure` column (decisions 16, 17
-    /// and 22): the claims development result over the twelve months after
+    /// and 23): the claims development result over the twelve months after
     /// the valuation, by reweighting [`fit`](Self::fit)'s posterior, draw
     /// for draw, with Pareto smoothed importance sampling, as
     /// [`BayesBf::one_year`](super::BayesBf::one_year) does with this

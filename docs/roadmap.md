@@ -252,7 +252,7 @@ what it is aiming for by v1.0.
     row parameters, at parity with the same model in Stan and with
     their printed totals, in Python (`BayesBf`) and R (`bayes_bf()`).
   - The Bayesian Bornhuetter–Ferguson with a normalised pattern,
-    `BayesBfNormalised` (`reserving-bayes.md` PR 13, decision 22, #410):
+    `BayesBfNormalised` (`reserving-bayes.md` PR 13, decision 23, #410):
     the origins' expected ultimates have the gamma prior and the pattern
     is a set of shares summing to 1, so `apriori` is the ultimate loss
     ratio and moves the reserve (`BayesBf`'s barely does). A flat prior

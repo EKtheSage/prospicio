@@ -14,7 +14,7 @@ sources:
     title: Design note, Bayesian reserving (decision 9, apriori sets the row parameter)
   - id: normalised
     resource: ../docs/design/reserving-bayes.md
-    title: Design note, Bayesian reserving (decision 22, the model with the prior on the ultimate)
+    title: Design note, Bayesian reserving (decision 23, the model with the prior on the ultimate)
 ---
 
 # Finding

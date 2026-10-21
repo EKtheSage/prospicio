@@ -14,7 +14,7 @@ sources:
     title: prospicio_reserving::bayes::BayesBfNormalised and its unit tests
   - id: design
     resource: ../docs/design/reserving-bayes.md
-    title: Design note, Bayesian reserving (decision 22)
+    title: Design note, Bayesian reserving (decision 23)
 ---
 
 # Finding
@@ -80,5 +80,5 @@ sources:
   narrows as `cv` falls.[^test]
 
 [^model]: `crates/prospicio-reserving/src/bayes/bf_normalised.rs`
-[^design]: `docs/design/reserving-bayes.md`, decision 22
+[^design]: `docs/design/reserving-bayes.md`, decision 23
 [^test]: `validation/tests/reserving_bayes_bf_normalised.rs`

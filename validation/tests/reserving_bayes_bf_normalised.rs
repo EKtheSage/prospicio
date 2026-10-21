@@ -1,5 +1,5 @@
 //! The Bayesian Bornhuetter–Ferguson with a normalised pattern
-//! (`BayesBfNormalised`, `docs/design/reserving-bayes.md`, decision 22).
+//! (`BayesBfNormalised`, `docs/design/reserving-bayes.md`, decision 23).
 //!
 //! There is no Stan reference file for this model (no CmdStan in the
 //! environments that built it), so its checks are the model's own limits and
@@ -17,7 +17,7 @@
 //!   strong-prior limit (the shares `S_d / (M_d + lambda)` at the prior
 //!   ultimates) and its gap to the classical reserve, which grows with the
 //!   distance of the loss ratio from the chain ladder's, within 2 points of
-//!   decision 22's figures;
+//!   decision 23's figures;
 //! * the a-priori loss ratio is a real prior on the ultimate: on RAA with a
 //!   premium, the total reserve of `BayesBfNormalised` rises with
 //!   `apriori` at every `cv`, and between 0.3 and 1.2 by at least a factor
@@ -217,7 +217,7 @@ fn a_tight_prior_is_the_bornhuetter_ferguson_limit() {
             "apriori {apriori}: {got} vs the closed-form limit {limit}"
         );
         // The gap to the classical reserve has the sign and rough size
-        // reported in decision 22 (-8.6%, -1.1%, +10.2%, +28.4%).
+        // reported in decision 23 (-8.6%, -1.1%, +10.2%, +28.4%).
         let gap = got / classical - 1.0;
         assert!(
             (gap - expected).abs() < 0.02,

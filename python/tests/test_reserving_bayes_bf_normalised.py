@@ -1,5 +1,5 @@
 """BayesBfNormalised, the Bayesian Bornhuetter-Ferguson with a normalised
-pattern (docs/design/reserving-bayes.md, decision 22).
+pattern (docs/design/reserving-bayes.md, decision 23).
 
 The limits, the contrast with BayesBf and the one-year view are checked in
 validation/tests/reserving_bayes_bf_normalised.rs; these tests check the

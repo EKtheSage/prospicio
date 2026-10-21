@@ -1,7 +1,7 @@
 suppressMessages(library(prospicio))
 
 # bayes_bf_normalised(), the Bayesian Bornhuetter-Ferguson with a normalised
-# pattern (docs/design/reserving-bayes.md, decision 22). The limits, the
+# pattern (docs/design/reserving-bayes.md, decision 23). The limits, the
 # contrast with bayes_bf() and the one-year view are checked in
 # validation/tests/reserving_bayes_bf_normalised.rs; these tests check the
 # binding on EVW's triangle with its prior ultimates as the exposure.

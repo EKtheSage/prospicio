@@ -49,7 +49,7 @@ const SWEEP_SIMS: usize = 2_000;
 /// Over seeds 0 to 19: `rescued` at least 0.9964 (GenIns; 1 elsewhere),
 /// `gap_matched` mean + 4 sd 0.101 (RAA), 0.062 (GenIns) and 0.064
 /// (`BayesBf`), seed 0 at 0.049, 0.038 and 0.041. `BayesBfNormalised`
-/// (decision 22), over seeds 0 to 11 at `SIMS` only (no `RefitAll` sweep):
+/// (decision 23), over seeds 0 to 11 at `SIMS` only (no `RefitAll` sweep):
 /// `rescued` 1 at every seed, `gap_matched` mean 0.038, sd 0.004, mean + 4
 /// sd 0.054, seed 0 at 0.043 (`gap_reweighted` 0.15 to 0.25).
 const BOUNDS: &[(&str, f64, f64)] = &[
@@ -256,7 +256,7 @@ fn bf(tri: &Triangle) -> Box<Run<'_, BayesBfFit>> {
     })
 }
 
-/// `BayesBfNormalised` with the same settings as `bf` (decision 22).
+/// `BayesBfNormalised` with the same settings as `bf` (decision 23).
 fn bf_normalised(tri: &Triangle) -> Box<Run<'_, BayesBfNormalisedFit>> {
     Box::new(move |n_sims, seed, refit| {
         BayesBfNormalised {
