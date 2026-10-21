@@ -91,6 +91,7 @@ reference:
       - read_ylt
       - event_loss_table
       - merge_event_sets
+      - permute_events
       - hours_clause
       - occurrence_pml
       - compound_moments

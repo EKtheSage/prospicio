@@ -1282,3 +1282,32 @@ def test_read_ylt_from_parquet(tmp_path):
     e = read_ylt(path, labels=["peril"])
     assert e.events(0) == [1.0, 5.0] and e.events(1) == [7.0]
     assert e.labels(0) == {"peril": ["quake", "wind"]}
+
+
+def test_reorder_index_keeps_a_class_s_events_with_its_totals_on_tied_draws():
+    from prospicio.aggregate import EventSet
+    from prospicio.distributions import PredictiveDistribution
+    from prospicio.risk import GaussianCopula
+
+    n = 600
+    # Many years with the same total (ties): matching values cannot tell them apart.
+    years = [[] if i % 3 == 0 else [float(10 * (i % 4)), float(i % 2)] for i in range(n)]
+    large = EventSet.from_years(years, seed=1)
+    totals = [sum(y) for y in years]
+    pd = PredictiveDistribution(
+        ["class"], [("large",), ("other",)],
+        [[t, float((i * 7919) % 7)] for i, t in enumerate(totals)])
+    for r, index in (
+        pd.reorder_groups("class", [[1, 0.7], [0.7, 1]], 3, return_index=True),
+        pd.reorder_groups_by_copula(
+            "class", GaussianCopula([[1, 0.7], [0.7, 1]]), 3, return_index=True),
+    ):
+        assert set(index) == {"large", "other"}
+        events = large.permute(index["large"])
+        matrix = r.draw_matrix()
+        assert all(sum(events.events(i)) == matrix[i][0] for i in range(n))
+        before = pd.draw_matrix()
+        assert all(matrix[i][1] == before[index["other"][i]][1] for i in range(n))
+    assert isinstance(pd.reorder_groups("class", [[1, 0.7], [0.7, 1]], 3), PredictiveDistribution)
+    with pytest.raises(ValueError):
+        large.permute([n])

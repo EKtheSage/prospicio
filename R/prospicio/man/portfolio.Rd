@@ -10,9 +10,9 @@
 \usage{
 join_predictive(parts, dim, same_simulations = FALSE)
 
-reorder_groups(x, dim, correlation, seed, kind = "pearson")
+reorder_groups(x, dim, correlation, seed, kind = "pearson", index = FALSE)
 
-reorder_groups_by_copula(x, dim, copula, seed)
+reorder_groups_by_copula(x, dim, copula, seed, index = FALSE)
 
 group_spearman(x, dim)
 }
@@ -40,12 +40,20 @@ third holds its value, each pair of distinct groups once.}
 Spearman's rho comes out near \verb{(6 / pi) asin(r / 2)}) or \code{"spearman"}
 (a Spearman target, converted to \verb{2 sin(pi rho / 6)} first).}
 
+\item{index}{\code{TRUE} to return where each simulation came from too.}
+
 \item{copula}{A \link{copula} with one dimension per group, in order of first
 appearance.}
 }
 \value{
 A \link{predictive_distribution}; \code{group_spearman()} a matrix with the
-groups as dimnames.
+groups as dimnames. With \code{index = TRUE}, \code{reorder_groups()} and
+\code{reorder_groups_by_copula()} return a list of \code{result}, the
+distribution, and \code{index}, a named list with one integer vector per
+group: simulation \code{i} of the result holds the group's row of input
+simulation \code{index[[group]][i]}. \code{\link[=permute_events]{permute_events()}} with that vector
+keeps a class's events with its reordered totals, with no matching of
+values (which tied draws defeat).
 }
 \description{
 \code{join_predictive()} puts distributions of different models side by side
@@ -79,4 +87,6 @@ rho <- data.frame(from = "a", to = "b", rho = 0.6)
 group_spearman(reorder_groups(pd, "seg", rho, seed = 5, kind = "spearman"), "seg")
 # Clayton with theta = 2: Spearman's rho near 0.68, more joint low totals.
 group_spearman(reorder_groups_by_copula(pd, "seg", archimedean_copula("clayton", 2), 5), "seg")
+r <- reorder_groups(pd, "seg", rho, seed = 5, index = TRUE)
+all(draw_matrix(r$result)[, 1] == draw_matrix(pd)[r$index$a, 1])
 }

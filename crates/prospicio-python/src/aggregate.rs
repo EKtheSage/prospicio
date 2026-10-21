@@ -1144,6 +1144,39 @@ impl PyEventSet {
         })
     }
 
+    /// The years in another order: year ``i`` of the result is year
+    /// ``index[i]`` of this set, with its losses, sums insured, times and
+    /// labels. Pass the index ``PredictiveDistribution.reorder_groups``
+    /// returns for a class (``return_index=True``) to keep the class's
+    /// events with its reordered totals; any index into the years works,
+    /// so a resample with repeats does too.
+    ///
+    /// Parameters
+    /// ----------
+    /// index : list of int
+    ///     0-based years of this set.
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the index is empty or names a year past the last.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[], [50.0], [5.0, 60.0]])
+    /// >>> [e.permute([2, 0, 1]).events(i) for i in range(3)]
+    /// [[5.0, 60.0], [], [50.0]]
+    fn permute(&self, index: Vec<usize>) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.permute(&index).map_err(to_py)?,
+        })
+    }
+
     /// Each year's losses grouped into occurrences by an hours clause.
     ///
     /// Losses within ``window_hours`` of the first loss of a window are one

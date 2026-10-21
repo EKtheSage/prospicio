@@ -708,3 +708,22 @@ rev2 <- event_set_from_ylt(c(1, 1, 2, 1), c(10, 4, 30, 2), slots = c(5, 5, 1, 2)
                            expand = "resample", seed = 3)
 stopifnot(identical(lapply(1:7, function(i) events(rev, i)), lapply(1:7, function(i) events(rev2, i))))
 stopifnot(is.null(rev2@input_hash))
+
+# #483: a reorder's index keeps a class's events with its totals, ties and all.
+n <- 600
+yrs <- lapply(0:(n - 1), function(i) if (i %% 3 == 0) numeric(0) else c(10 * (i %% 4), i %% 2))
+large <- event_set_from_long(rep(seq_len(n), lengths(yrs)), unlist(yrs), n)
+tot <- vapply(yrs, sum, 0)
+pd <- predictive_distribution(cbind(tot, ((0:(n - 1)) * 7919) %% 7), data.frame(class = c("large", "other")))
+for (r in list(reorder_groups(pd, "class", matrix(c(1, 0.7, 0.7, 1), 2), 3, index = TRUE),
+               reorder_groups_by_copula(pd, "class", gaussian_copula(matrix(c(1, 0.7, 0.7, 1), 2)), 3,
+                                        index = TRUE))) {
+  stopifnot(identical(names(r$index), c("large", "other")))
+  ev <- permute_events(large, r$index$large)
+  m <- draw_matrix(r$result)
+  stopifnot(all(vapply(seq_len(n), function(i) sum(events(ev, i)), 0) == m[, 1]))
+  stopifnot(all(m[, 2] == draw_matrix(pd)[r$index$other, 2]))
+}
+stopifnot(S7::S7_inherits(reorder_groups(pd, "class", matrix(c(1, 0.7, 0.7, 1), 2), 3), predictive_distribution))
+stopifnot(inherits(try(permute_events(large, n + 1), silent = TRUE), "try-error"))
+stopifnot(inherits(try(permute_events(large, 0), silent = TRUE), "try-error"))

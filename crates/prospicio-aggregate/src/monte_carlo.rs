@@ -621,6 +621,84 @@ impl EventSet {
         self
     }
 
+    /// The years in another order: year `i` of the result is year
+    /// `index[i]` of this set, with its losses, sums insured, times and
+    /// labels. Pass the index a reorder returns
+    /// ([`PredictiveDistribution::reorder_groups_indexed`] gives one per
+    /// group) to keep a class's events with its reordered totals; any
+    /// index into the years works, so a resample with repeats does too.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    /// use prospicio_prob::portfolio::CorrelationKind;
+    /// use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// // A class's events and, from them, its totals beside another class.
+    /// let large = EventSet::from_years(vec![vec![], vec![50.0], vec![5.0, 60.0]], 0).unwrap();
+    /// let totals: Vec<f64> = (0..3).map(|i| large.events(i).iter().sum()).collect();
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["class".into()],
+    ///     vec![vec![KeyValue::from("large")], vec![KeyValue::from("other")]],
+    ///     totals.iter().zip([3.0, 1.0, 2.0]).flat_map(|(&a, b)| [a, b]).collect(),
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// let (r, index) = pd
+    ///     .reorder_groups_indexed("class", &[1.0, 0.9, 0.9, 1.0], CorrelationKind::Pearson, 1)
+    ///     .unwrap();
+    /// let events = large.permute(&index[0]).unwrap();
+    /// for i in 0..3 {
+    ///     assert_eq!(events.events(i).iter().sum::<f64>(), r.row(i).unwrap()[0]);
+    /// }
+    /// ```
+    ///
+    /// [`PredictiveDistribution::reorder_groups_indexed`]: prospicio_prob::PredictiveDistribution::reorder_groups_indexed
+    pub fn permute(&self, index: &[usize]) -> Result<Self> {
+        if index.is_empty() {
+            return Err(Error::Data("needs at least one year".into()));
+        }
+        let n = self.n_sims();
+        if let Some(&bad) = index.iter().find(|&&i| i >= n) {
+            return Err(Error::Data(format!(
+                "year {bad} of an index into {n} years"
+            )));
+        }
+        let mut offsets = Vec::with_capacity(index.len() + 1);
+        offsets.push(0);
+        let mut losses = Vec::new();
+        let mut sums = Vec::new();
+        let mut times = Vec::new();
+        let mut of_loss = Vec::new();
+        for &y in index {
+            let range = self.offsets[y]..self.offsets[y + 1];
+            losses.extend_from_slice(&self.losses[range.clone()]);
+            if let Some(s) = &self.sums_insured {
+                sums.extend_from_slice(&s[range.clone()]);
+            }
+            if let Some(t) = &self.times {
+                times.extend_from_slice(&t[range.clone()]);
+            }
+            if let Some(l) = &self.labels {
+                of_loss.extend_from_slice(&l.of_loss[range]);
+            }
+            offsets.push(losses.len());
+        }
+        Ok(Self {
+            offsets,
+            losses,
+            sums_insured: self.sums_insured.as_ref().map(|_| sums),
+            times: self.times.as_ref().map(|_| times),
+            labels: self.labels.as_ref().map(|l| Labels {
+                dims: l.dims.clone(),
+                combinations: l.combinations.clone(),
+                of_loss,
+            }),
+            seed: self.seed,
+            samplers: self.samplers.clone(),
+            input_hash: self.input_hash.clone(),
+        })
+    }
+
     /// Both sets' losses in each year: a catastrophe event set with a
     /// non-catastrophe one, say. The sets need the same number of years.
     /// With times on both, each year's losses are merged in time order
@@ -1251,5 +1329,36 @@ mod tests {
                 .is_err()
         );
         assert!(e.grouped(-1.0).is_err());
+    }
+
+    #[test]
+    fn permute_carries_every_field_of_a_year() {
+        let e = EventSet::from_years(vec![vec![1.0, 2.0], vec![], vec![3.0]], 9)
+            .unwrap()
+            .with_times(vec![0.1, 0.4, 0.8])
+            .unwrap()
+            .with_sums_insured(vec![10.0, 20.0, 30.0])
+            .unwrap()
+            .with_labels(vec![(
+                "peril".into(),
+                vec!["wind".into(), "quake".into(), "wind".into()],
+            )])
+            .unwrap()
+            .with_input_hash(Some("h".into()));
+        let p = e.permute(&[2, 0, 0, 1]).unwrap();
+        assert_eq!(p.n_sims(), 4);
+        assert_eq!(p.events(0), &[3.0]);
+        assert_eq!(p.events(1), &[1.0, 2.0]);
+        assert_eq!(p.events(2), &[1.0, 2.0]);
+        assert!(p.events(3).is_empty());
+        assert_eq!(p.times(0), Some(&[0.8][..]));
+        assert_eq!(p.sums_insured(2), Some(&[10.0, 20.0][..]));
+        let wind = ["wind".to_string()];
+        let quake = ["quake".to_string()];
+        assert_eq!(p.labels(1).unwrap(), vec![&wind[..], &quake[..]]);
+        assert_eq!(p.label_combinations(), e.label_combinations());
+        assert_eq!((p.seed(), p.input_hash()), (9, Some("h")));
+        assert!(e.permute(&[3]).is_err());
+        assert!(e.permute(&[]).is_err());
     }
 }

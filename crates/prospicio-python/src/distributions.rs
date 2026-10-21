@@ -1438,6 +1438,28 @@ pub(crate) struct PyPredictiveDistribution {
     pub(crate) inner: PredictiveDistribution,
 }
 
+impl PyPredictiveDistribution {
+    /// A reorder's result, with its index by group when asked for.
+    fn reordered<'py>(
+        &self,
+        py: Python<'py>,
+        dim: &str,
+        (inner, index): (PredictiveDistribution, Vec<Vec<usize>>),
+        return_index: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let result = Bound::new(py, Self { inner })?.into_any();
+        if !return_index {
+            return Ok(result);
+        }
+        let by_group = PyDict::new(py);
+        let groups = self.inner.groups(dim).map_err(to_py)?;
+        for (g, rows) in groups_to_py(py, &groups)?.into_iter().zip(index) {
+            by_group.set_item(g, rows)?;
+        }
+        Ok((result, by_group).into_pyobject(py)?.into_any())
+    }
+}
+
 #[pymethods]
 impl PyPredictiveDistribution {
     #[new]
@@ -1572,10 +1594,18 @@ impl PyPredictiveDistribution {
     ///     Spearman's rho comes out near ``(6/π) asin(r/2)``) or
     ///     ``"spearman"`` (a Spearman target, converted to ``2 sin(π ρ /
     ///     6)`` first).
+    /// return_index : bool
+    ///     Also return where each simulation came from (see below).
     ///
     /// Returns
     /// -------
-    /// PredictiveDistribution
+    /// PredictiveDistribution, or (PredictiveDistribution, dict)
+    ///     With ``return_index``, also a dict from each group to the list
+    ///     of input simulations its rows came from: simulation ``i`` of the
+    ///     result holds the group's row of input simulation
+    ///     ``index[group][i]``. ``EventSet.permute(index[group])`` keeps a
+    ///     class's events with its reordered totals, with no matching of
+    ///     values (which tied draws defeat).
     ///
     /// Raises
     /// ------
@@ -1593,15 +1623,20 @@ impl PyPredictiveDistribution {
     /// >>> groups, rho = r.group_spearman("seg")
     /// >>> groups, abs(rho[0][1] - 0.6) < 0.02
     /// (['a', 'b'], True)
-    #[pyo3(signature = (dim, correlation, seed, kind = "pearson"))]
-    fn reorder_groups(
+    /// >>> r, index = pd.reorder_groups("seg", [[1, 0.6], [0.6, 1]], 5, return_index=True)
+    /// >>> before, after = pd.draw_matrix(), r.draw_matrix()
+    /// >>> all(after[i][0] == before[index["a"][i]][0] for i in range(n))
+    /// True
+    #[pyo3(signature = (dim, correlation, seed, kind = "pearson", return_index = false))]
+    fn reorder_groups<'py>(
         &self,
-        py: Python<'_>,
+        py: Python<'py>,
         dim: &str,
         correlation: Vec<Vec<f64>>,
         seed: u64,
         kind: &str,
-    ) -> PyResult<Self> {
+        return_index: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
         use prospicio_prob::portfolio::CorrelationKind;
         let kind = match kind {
             "pearson" => CorrelationKind::Pearson,
@@ -1614,10 +1649,10 @@ impl PyPredictiveDistribution {
         };
         let flat: Vec<f64> = correlation.into_iter().flatten().collect();
         let pd = &self.inner;
-        let inner = py
-            .detach(|| pd.reorder_groups_with(dim, &flat, kind, seed))
+        let reordered = py
+            .detach(|| pd.reorder_groups_indexed(dim, &flat, kind, seed))
             .map_err(to_py)?;
-        Ok(Self { inner })
+        self.reordered(py, dim, reordered, return_index)
     }
 
     /// Sets the dependence between the groups of dimension ``dim`` by a
@@ -1636,10 +1671,13 @@ impl PyPredictiveDistribution {
     ///     One dimension per group, in order of first appearance
     ///     (``groups(dim)``).
     /// seed : int
+    /// return_index : bool
+    ///     Also return where each simulation came from, as
+    ///     ``reorder_groups`` does.
     ///
     /// Returns
     /// -------
-    /// PredictiveDistribution
+    /// PredictiveDistribution, or (PredictiveDistribution, dict)
     ///
     /// Raises
     /// ------
@@ -1657,19 +1695,21 @@ impl PyPredictiveDistribution {
     /// >>> r = pd.reorder_groups_by_copula("seg", clayton, 5)
     /// >>> abs(r.group_spearman("seg")[1][0][1] - 0.68) < 0.03
     /// True
-    fn reorder_groups_by_copula(
+    #[pyo3(signature = (dim, copula, seed, return_index = false))]
+    fn reorder_groups_by_copula<'py>(
         &self,
-        py: Python<'_>,
+        py: Python<'py>,
         dim: &str,
         copula: &Bound<'_, PyAny>,
         seed: u64,
-    ) -> PyResult<Self> {
+        return_index: bool,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let copula = crate::risk::AnyCopula::extract(copula)?;
         let pd = &self.inner;
-        let inner = py
-            .detach(|| pd.reorder_groups_by_copula(dim, copula.as_copula(), seed))
+        let reordered = py
+            .detach(|| pd.reorder_groups_by_copula_indexed(dim, copula.as_copula(), seed))
             .map_err(to_py)?;
-        Ok(Self { inner })
+        self.reordered(py, dim, reordered, return_index)
     }
 
     /// The groups of dimension ``dim`` in order of first appearance: the
