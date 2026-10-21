@@ -62,6 +62,21 @@ fails where every earlier value of an age is zero), which favours it. In
 the `pareto` arm the scale shift on the ground-up column understates by
 1.1% (dense), 18.9% (thin) and 28.7% (sparse).
 
+RMSE over the mean true ultimate across k, the capped blend (cap 0.1) on all
+500 simulations, for choosing a default k (open decision 19); the derived
+pattern alone is the limit as k grows:
+
+| Arm, layer | k = 1 | 2 | 5 | 10 | 20 | 50 | 100 | 200 | derived |
+|---|---|---|---|---|---|---|---|---|---|
+| scale, thin | 0.126 | 0.125 | 0.122 | 0.118 | 0.113 | 0.107 | 0.104 | 0.102 | 0.101 |
+| scale, sparse | 0.435 | 0.419 | 0.398 | 0.388 | 0.379 | 0.369 | 0.365 | 0.362 | 0.358 |
+| shape, thin | 0.140 | 0.138 | 0.134 | 0.130 | 0.130 | 0.137 | 0.146 | 0.152 | 0.161 |
+| shape, sparse | 0.372 | 0.363 | 0.352 | 0.347 | 0.345 | 0.347 | 0.348 | 0.349 | 0.351 |
+| pareto, thin | 0.162 | 0.161 | 0.156 | 0.151 | 0.145 | 0.137 | 0.133 | 0.132 | 0.131 |
+| pareto, sparse | 0.711 | 0.685 | 0.653 | 0.628 | 0.609 | 0.594 | 0.582 | 0.577 | 0.569 |
+
+The own chain ladder's on the thin layers is 0.154, 0.448 and 0.220.
+
 * **Where the model holds** (scale, capped, Pareto by `ParetoShape`) the
   thresholds of decision 11 pass: the derived pattern's RMSE, and the
   capped blend's at every k, is below 0.8 times the own chain ladder's on
