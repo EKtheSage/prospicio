@@ -27,6 +27,7 @@ pub mod bivariate;
 pub mod cat;
 pub mod collective;
 pub mod compound;
+pub mod deal;
 pub mod fft;
 pub mod grid_reinsurance;
 pub mod layer_statistics;
@@ -48,6 +49,7 @@ pub use bivariate::{BivariateReport, Clash, JointGrid, fft_bivariate};
 pub use cat::EventLossTable;
 pub use collective::CollectiveModel;
 pub use compound::{CompoundMethod, CompoundReport};
+pub use deal::Deduction;
 pub use fft::fft;
 pub use grid_reinsurance::{AnnualGrids, TowerGrids, TowerPrice, ViewPrice};
 pub use layer_statistics::{

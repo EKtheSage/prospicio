@@ -476,6 +476,30 @@ XolLayer$premium_for <- function(ceded) .Call(wrap__XolLayer__premium_for, self,
 
 XolLayer$ceding_commission_for <- function(ceded) .Call(wrap__XolLayer__ceding_commission_for, self, ceded)
 
+XolLayer$with_brokerage <- function(rate) .Call(wrap__XolLayer__with_brokerage, self, rate)
+
+XolLayer$with_brokerage_scale <- function(rate, loss_ratio) .Call(wrap__XolLayer__with_brokerage_scale, self, rate, loss_ratio)
+
+XolLayer$with_deduction <- function(label, value, basis, inside_nmbf) .Call(wrap__XolLayer__with_deduction, self, label, value, basis, inside_nmbf)
+
+XolLayer$with_scales_before_annual_terms <- function() .Call(wrap__XolLayer__with_scales_before_annual_terms, self)
+
+XolLayer$with_brokerage_within_commission_range <- function() .Call(wrap__XolLayer__with_brokerage_within_commission_range, self)
+
+XolLayer$brokerage <- function() .Call(wrap__XolLayer__brokerage, self)
+
+XolLayer$brokerage_scale <- function() .Call(wrap__XolLayer__brokerage_scale, self)
+
+XolLayer$deductions <- function() .Call(wrap__XolLayer__deductions, self)
+
+XolLayer$scales_before_annual_terms <- function() .Call(wrap__XolLayer__scales_before_annual_terms, self)
+
+XolLayer$brokerage_within_commission_range <- function() .Call(wrap__XolLayer__brokerage_within_commission_range, self)
+
+XolLayer$brokerage_for <- function(ceded) .Call(wrap__XolLayer__brokerage_for, self, ceded)
+
+XolLayer$deduction_for <- function(label, ceded) .Call(wrap__XolLayer__deduction_for, self, label, ceded)
+
 XolLayer$profit_commission_for <- function(ceded) .Call(wrap__XolLayer__profit_commission_for, self, ceded)
 
 XolLayer$reinstatement_premium <- function(losses, times) .Call(wrap__XolLayer__reinstatement_premium, self, losses, times)
@@ -507,6 +531,8 @@ ReinsuranceTower$on_grid <- function(frequency, severity, points) .Call(wrap__Re
 ReinsuranceTower$on_annual_grid <- function(annual) .Call(wrap__ReinsuranceTower__on_annual_grid, self, annual)
 
 ReinsuranceTower$apply_aggregate <- function(losses) .Call(wrap__ReinsuranceTower__apply_aggregate, self, losses)
+
+ReinsuranceTower$deal_ratios <- function(result, layer) .Call(wrap__ReinsuranceTower__deal_ratios, self, result, layer)
 
 ReinsuranceTower$apply_annual <- function(losses) .Call(wrap__ReinsuranceTower__apply_annual, self, losses)
 

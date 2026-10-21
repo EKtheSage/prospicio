@@ -6,7 +6,8 @@
 
 ## Next
 
-- [brokerage-leg] brokerage on a loss-ratio scale as a leg of a layer (#477's last ask), waiting on the user
+- [deal-scale] a deal-level sliding scale read on the loss ratio of several sections together, added to the sections' own (#477; `aggregate.md`, "Deal deductions and ratios")
+- [deal-ledger] a deal's brokerage and deductions as legs of the reinsurer's P&L ledger (#485's typed terms booked on the selling side)
 
 ## Done
 
@@ -34,3 +35,4 @@
 - #491 the independence that Panjer and the FFT assume, stated in the crate docs, `aggregate.md` and the Python and R help of the compound entry points, with the dependent alternatives (`fft_bivariate`, the clash model, a mixed count on a severity mixture, `reorder_groups`)
 - [event-permute] `EventSet::permute`, a set's years in another order, to keep a class's events with its totals reordered by `reorder_groups` (#483, first part; Python `EventSet.permute`, R `permute_events()`)
 - [attritional-part] #483 an aggregate (attritional) part on `EventSet` (`with_aggregate_part`, by peril or class), ceded from only by layers with no per-occurrence terms (`Layer::sees_aggregate_part`: quota shares, stop losses), before the events in the year under annual terms, carried by `permute`, `merge`, `grouped`, `term_years` and inuring stages (#483, second part; Python `EventSet.with_aggregate_part`, `Layer.sees_aggregate_part`, R `with_aggregate_part()`, `aggregate_part()`)
+- [brokerage-leg] #485 brokerage and a deal's deductions on a layer, with the scales keyed before annual terms (#477): `Layer::brokerage` and `brokerage_scale`, `Deduction` on premium, loss or an amount and inside or outside NMBF, `scales_before_annual_terms` and `brokerage_within_commission_range` as options, `Tower::deal_ratios` per simulation (loss ratio before and after terms, each deduction, TD, CR, NMBF, margin; by year over a term), JSON version 3; Python `with_brokerage`, `with_deduction`, `Tower.deal_ratios`, R `with_brokerage()`, `with_deduction()`, `deal_ratios()`

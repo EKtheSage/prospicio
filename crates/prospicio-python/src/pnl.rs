@@ -683,7 +683,7 @@ pub(crate) fn stack<'py>(
     Ok(d)
 }
 
-fn basis_of(name: &str) -> PyResult<ExpenseBasis> {
+pub(crate) fn basis_of(name: &str) -> PyResult<ExpenseBasis> {
     match name {
         "fixed" => Ok(ExpenseBasis::Fixed),
         "premium" => Ok(ExpenseBasis::Premium),

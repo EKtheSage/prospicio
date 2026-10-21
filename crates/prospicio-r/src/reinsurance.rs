@@ -3,7 +3,10 @@
 
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
-use prospicio_aggregate::{Commission, Layer, LimitAllocation, LossSensitivePremium, Tower};
+use prospicio_aggregate::pnl::ExpenseBasis;
+use prospicio_aggregate::{
+    Commission, Deduction, Layer, LimitAllocation, LossSensitivePremium, Tower,
+};
 
 use crate::aggregate::{AnyCount, EventSet, compound_list};
 use crate::distributions::{Grid, PredictiveDistribution};
@@ -317,6 +320,118 @@ impl XolLayer {
             .collect()
     }
 
+    fn with_brokerage(&self, rate: f64) -> Result<Self> {
+        self.map(|l| l.brokerage(rate))
+    }
+
+    fn with_brokerage_scale(&self, rate: &[f64], loss_ratio: &[f64]) -> Result<Self> {
+        if rate.len() != loss_ratio.len() {
+            return Err(Error::Other("give one loss ratio per rate".into()));
+        }
+        let anchors = rate
+            .iter()
+            .copied()
+            .zip(loss_ratio.iter().copied())
+            .collect();
+        self.map(|l| l.brokerage_scale(anchors))
+    }
+
+    fn with_deduction(
+        &self,
+        label: &str,
+        value: f64,
+        basis: &str,
+        inside_nmbf: bool,
+    ) -> Result<Self> {
+        let basis = match basis {
+            "premium" => ExpenseBasis::Premium,
+            "loss" => ExpenseBasis::Loss,
+            "fixed" => ExpenseBasis::Fixed,
+            other => {
+                return Err(Error::Other(format!(
+                    "a deduction's basis is premium, loss or fixed, not {other:?}"
+                )));
+            }
+        };
+        let mut d = Deduction::new(label, basis, value).map_err(to_r)?;
+        if !inside_nmbf {
+            d = d.outside_nmbf();
+        }
+        self.map(|l| l.deduction(d))
+    }
+
+    fn with_scales_before_annual_terms(&self) -> Self {
+        Self {
+            inner: self.inner.clone().scales_before_annual_terms(),
+        }
+    }
+
+    fn with_brokerage_within_commission_range(&self) -> Self {
+        Self {
+            inner: self.inner.clone().brokerage_within_commission_range(),
+        }
+    }
+
+    /// The flat rate, empty when there is none (or it is on a scale).
+    fn brokerage(&self) -> Vec<f64> {
+        match self.inner.brokerage {
+            Some(Commission::Flat(b)) => vec![b],
+            _ => Vec::new(),
+        }
+    }
+
+    /// `c(rate..., loss_ratio...)` in increasing loss ratio, empty when
+    /// there is none.
+    fn brokerage_scale(&self) -> Vec<f64> {
+        match &self.inner.brokerage {
+            Some(Commission::SlidingScale(a)) => {
+                a.iter().map(|p| p.0).chain(a.iter().map(|p| p.1)).collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// `list(label, basis, value, inside_nmbf)`, one entry per deduction.
+    fn deductions(&self) -> List {
+        let d = &self.inner.deductions;
+        list!(
+            label = d.iter().map(|d| d.label.clone()).collect::<Vec<_>>(),
+            basis = d.iter().map(|d| d.basis.name()).collect::<Vec<_>>(),
+            value = d.iter().map(|d| d.value).collect::<Vec<_>>(),
+            inside_nmbf = d.iter().map(|d| d.inside_nmbf).collect::<Vec<_>>()
+        )
+    }
+
+    fn scales_before_annual_terms(&self) -> bool {
+        self.inner.scales_before_annual_terms
+    }
+
+    fn brokerage_within_commission_range(&self) -> bool {
+        self.inner.brokerage_within_commission_range
+    }
+
+    fn brokerage_for(&self, ceded: &[f64]) -> Vec<f64> {
+        ceded.iter().map(|&c| self.inner.brokerage_for(c)).collect()
+    }
+
+    fn deduction_for(&self, label: &str, ceded: &[f64]) -> Result<Vec<f64>> {
+        let d = self
+            .inner
+            .deductions
+            .iter()
+            .find(|d| d.label == label)
+            .ok_or_else(|| {
+                Error::Other(format!(
+                    "layer {:?} has no deduction labelled {label:?}",
+                    self.inner.name
+                ))
+            })?;
+        Ok(ceded
+            .iter()
+            .map(|&c| self.inner.deduction_for(d, c))
+            .collect())
+    }
+
     fn profit_commission_for(&self, ceded: &[f64]) -> Vec<f64> {
         ceded
             .iter()
@@ -464,6 +579,14 @@ impl ReinsuranceTower {
         let pd = <&PredictiveDistribution>::try_from(&losses)
             .map_err(|_| Error::Other("losses must be a predictive_distribution".into()))?;
         let inner = self.inner.apply_aggregate(&pd.inner).map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+
+    /// The deal ratios of `layer` in a result of this tower.
+    fn deal_ratios(&self, result: Robj, layer: &str) -> Result<PredictiveDistribution> {
+        let pd = <&PredictiveDistribution>::try_from(&result)
+            .map_err(|_| Error::Other("result must be a predictive_distribution".into()))?;
+        let inner = self.inner.deal_ratios(&pd.inner, layer).map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }
 

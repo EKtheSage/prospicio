@@ -48,7 +48,11 @@ NULL
 #'   `swing_rating` `c(basic, lcm, minimum, maximum)`; `profit_commission_carry`
 #'   `list(years)` and `sliding_scale_carry` `list(deficit, credit, years)`
 #'   (`NULL` when nothing is carried, `years` `NULL` without limit); each empty when there
-#'   is none), and `sees_aggregate_part`, whether the layer cedes from an
+#'   is none; `brokerage` the flat rate, `brokerage_scale` a data frame of
+#'   `rate` and `loss_ratio`, `deductions` a data frame of `label`, `basis`,
+#'   `value` and `inside_nmbf` (or `NULL`), and the flags
+#'   `scales_before_annual_terms` and `brokerage_within_commission_range`;
+#'   see [with_brokerage()]), and `sees_aggregate_part`, whether the layer cedes from an
 #'   event set's aggregate part ([with_aggregate_part()]: on the loss with
 #'   attachment 0 and no limit, a quota share or a stop loss).
 #' @seealso [quota_share()] and [aggregate_stop_loss()] for the other contract
@@ -118,7 +122,26 @@ xol_layer <- S7::new_class(
       if (!length(p)) return(NULL)
       list(deficit = p[[1]] == 1, credit = p[[2]] == 1,
            years = if (is.nan(p[[3]])) NULL else p[[3]])
-    })
+    }),
+    brokerage = S7::new_property(S7::class_double, getter = function(self) self@ptr$brokerage()),
+    brokerage_scale = S7::new_property(S7::class_any, getter = function(self) {
+      a <- self@ptr$brokerage_scale()
+      if (!length(a)) return(NULL)
+      n <- length(a) / 2
+      data.frame(rate = a[seq_len(n)], loss_ratio = a[n + seq_len(n)])
+    }),
+    deductions = S7::new_property(S7::class_any, getter = function(self) {
+      d <- self@ptr$deductions()
+      if (!length(d$label)) return(NULL)
+      data.frame(label = d$label, basis = d$basis, value = d$value,
+                 inside_nmbf = d$inside_nmbf)
+    }),
+    scales_before_annual_terms = S7::new_property(
+      S7::class_logical, getter = function(self) self@ptr$scales_before_annual_terms()
+    ),
+    brokerage_within_commission_range = S7::new_property(
+      S7::class_logical, getter = function(self) self@ptr$brokerage_within_commission_range()
+    )
   ),
   constructor = function(name, limit, attachment, share = 1, aggregate_deductible = 0,
                          aggregate_limit = Inf, reinstatements = NULL, premium = 0,
@@ -359,6 +382,129 @@ premium_for <- function(layer, ceded) {
 #' @export
 ceding_commission_for <- function(layer, ceded) {
   layer@ptr$ceding_commission_for(as.double(ceded))
+}
+
+#' Brokerage and other deductions from a layer's premium
+#'
+#' The same layer with what a reinsurer deducts from its premium, each its
+#' own component in the tower's results ([apply_tower()]) and its own ratio
+#' in [deal_ratios()]:
+#'
+#' - `with_brokerage()`: a flat `rate` of the year's premium.
+#' - `with_brokerage_scale()`: the rate at the year's loss ratio, linear
+#'   between the anchors `(rate, loss_ratio)` and flat beyond the first and
+#'   last, as a sliding scale; it may rise or fall. Set the premium first;
+#'   it cannot be combined with swing rating or paid reinstatements.
+#' - `with_deduction()`: a TPA fee, tax, reinsurance cost, a fronting fee or
+#'   a manager's fee, as a rate of the year's premium (`basis = "premium"`),
+#'   of its ceded loss (`"loss"`) or an amount (`"fixed"`), under its
+#'   `label`. `inside_nmbf = FALSE` keeps it outside the nominal margin
+#'   before fees, as a manager's fee.
+#' - `with_scales_before_annual_terms()`: both sliding scales (commission
+#'   and brokerage) read the loss ratio before the annual terms, the placed
+#'   share of the year's recoveries before the annual deductible, corridor
+#'   and annual limit, over the premium. A loss-ratio cap stated as
+#'   `aggregate_limit` then caps the ceded loss but not what the scales
+#'   read; the results gain `("loss_before_terms", <layer>)`. The grid
+#'   methods and the P&L ledger refuse such a layer with annual terms and a
+#'   sliding scale.
+#' - `with_brokerage_within_commission_range()`: the brokerage scale reads
+#'   its loss ratio held inside the sliding-scale commission's range.
+#'
+#' `brokerage_for()` and `deduction_for()` give the amounts at given ceded
+#' losses.
+#'
+#' @param layer An [xol_layer].
+#' @param rate Brokerage rate (in `[0, 1]`), or the rates at the anchors.
+#' @param loss_ratio Loss ratios of the anchors, one per rate.
+#' @param label The deduction's name, distinct from the layer's other
+#'   deductions and from the kinds the results and the deal ratios use.
+#' @param value The rate, or the amount for `basis = "fixed"`.
+#' @param basis `"premium"`, `"loss"` or `"fixed"`.
+#' @param inside_nmbf Whether the nominal margin before fees counts it.
+#' @param ceded Numeric vector of ceded losses, at the placed share.
+#' @returns An [xol_layer]; for `brokerage_for()` and `deduction_for()` a
+#'   numeric vector, one amount per ceded loss.
+#' @export
+#' @examples
+#' qs <- with_premium_rate(quota_share("QS", 0.5), 1, 200)
+#' brokerage_for(with_brokerage(qs, 0.025), 70)
+#' brokerage_for(with_brokerage_scale(qs, c(0.03, 0.01), c(0.5, 0.8)), c(40, 65, 95))
+#' taxed <- with_deduction(with_deduction(qs, "tax", 0.03), "tpa", 0.02, basis = "loss")
+#' deduction_for(taxed, "tpa", 70)
+#' taxed@deductions
+with_brokerage <- function(layer, rate) {
+  xol_layer(ptr = rust_result(layer@ptr$with_brokerage(as.double(rate))))
+}
+
+#' @rdname with_brokerage
+#' @export
+with_brokerage_scale <- function(layer, rate, loss_ratio) {
+  xol_layer(ptr = rust_result(layer@ptr$with_brokerage_scale(as.double(rate), as.double(loss_ratio))))
+}
+
+#' @rdname with_brokerage
+#' @export
+with_deduction <- function(layer, label, value, basis = "premium", inside_nmbf = TRUE) {
+  xol_layer(ptr = rust_result(layer@ptr$with_deduction(
+    as.character(label), as.double(value), as.character(basis), isTRUE(inside_nmbf)
+  )))
+}
+
+#' @rdname with_brokerage
+#' @export
+with_scales_before_annual_terms <- function(layer) {
+  xol_layer(ptr = layer@ptr$with_scales_before_annual_terms())
+}
+
+#' @rdname with_brokerage
+#' @export
+with_brokerage_within_commission_range <- function(layer) {
+  xol_layer(ptr = layer@ptr$with_brokerage_within_commission_range())
+}
+
+#' @rdname with_brokerage
+#' @export
+brokerage_for <- function(layer, ceded) {
+  layer@ptr$brokerage_for(as.double(ceded))
+}
+
+#' @rdname with_brokerage
+#' @export
+deduction_for <- function(layer, label, ceded) {
+  rust_result(layer@ptr$deduction_for(as.character(label), as.double(ceded)))
+}
+
+#' Deal ratios of a layer
+#'
+#' Each simulation's ratios of one layer in a result of this tower
+#' ([apply_tower()] or [apply_tower_term()]), every amount over the year's
+#' premium for the placed share (fixed or swing rated; reinstatement
+#' premiums are not in it). With `d` the deductions ([with_brokerage()]):
+#' `total_deductions = CC + PC + BK + sum(d)`, `combined_ratio = loss_ratio
+#' + total_deductions`, `margin = 1 - combined_ratio`, and `nmbf` the
+#' margin plus the deductions kept outside it.
+#'
+#' @param tower A [reinsurance_tower].
+#' @param result A [predictive_distribution] from applying `tower`.
+#' @param layer The layer's name.
+#' @returns A [predictive_distribution] with dimension `ratio` (and `year`
+#'   for a term): `loss_ratio`, `loss_ratio_before_terms` for a layer whose
+#'   scales read it, `ceding_commission`, `profit_commission` and
+#'   `brokerage` where the layer has them, each deduction by its label,
+#'   `total_deductions`, `combined_ratio`, `nmbf` and `margin`.
+#' @export
+#' @examples
+#' cover <- with_premium_rate(aggregate_stop_loss("cover", 120, 0), 1, 100)
+#' cover <- with_sliding_scale(cover, c(0.3, 0.1), c(0.5, 0.9))
+#' cover <- with_brokerage(cover, 0.025)
+#' cover <- with_deduction(cover, "tax", 0.03)
+#' cover <- with_deduction(cover, "manager_fee", 0.05, inside_nmbf = FALSE)
+#' tw <- reinsurance_tower(list(cover))
+#' ratios <- deal_ratios(tw, apply_tower(tw, c(40, 70, 150)), "cover")
+#' draw_matrix(ratios)
+deal_ratios <- function(tower, result, layer) {
+  predictive_distribution(ptr = rust_result(tower@ptr$deal_ratios(result@ptr, as.character(layer))))
 }
 
 #' @rdname premium_for
@@ -625,8 +771,11 @@ tower_ceded <- function(tower, losses) {
 #' loss-ratio cap `c` on subject premium `P` is
 #' `aggregate_stop_loss(name, c * P, 0)` with `with_premium_rate(layer, 1, P)`,
 #' so the ceded loss ratio is the capped one, and a sliding scale keyed on it is [with_sliding_scale()].
-#' Several scales on the same loss-ratio grid add pointwise into one;
-#' [ceding_commission_for()] evaluates a scale at any ceded loss.
+#' To key the scales on the loss ratio before the cap, state the cap as
+#' `aggregate_limit` and use [with_scales_before_annual_terms()]. A deal of
+#' several sections is one layer per section, each scale reading its own
+#' section's loss ratio, and the amounts add; [ceding_commission_for()]
+#' evaluates a scale at any ceded loss.
 #'
 #' @param tower A [reinsurance_tower].
 #' @param events An `event_set` from [simulate_events()], a
@@ -637,8 +786,11 @@ tower_ceded <- function(tower, losses) {
 #'   `("net", "retained")`, then `("reinstatement_premium", <layer name>)` per
 #'   layer with paid reinstatements, `("swing_premium", <layer name>)` per
 #'   swing-rated layer, `("ceding_commission", <layer name>)` per layer with a
-#'   flat or sliding commission and `("profit_commission", <layer name>)` per
-#'   layer with a profit commission. `aggregate(result, keep = "kind")` gives
+#'   flat or sliding commission, `("profit_commission", <layer name>)` per
+#'   layer with a profit commission, `("brokerage", <layer name>)` per layer
+#'   with brokerage, `(<label>, <layer name>)` per deduction and
+#'   `("loss_before_terms", <layer name>)` per layer whose scales read it
+#'   ([with_brokerage()]; [deal_ratios()] turns them into ratios). `aggregate(result, keep = "kind")` gives
 #'   gross, total ceded and net per year; net is a loss, before premiums and
 #'   commissions. Take one kind with [select_components()] before joining it
 #'   to a book: summing over `kind` adds gross, ceded and net together.

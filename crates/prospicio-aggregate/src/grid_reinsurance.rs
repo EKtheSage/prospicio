@@ -168,6 +168,7 @@ impl Tower {
     ) -> Result<TowerGrids> {
         let stages = self.stage_ranges();
         let (last_start, last_end) = *stages.last().expect("a tower has a layer");
+        self.check_scales_on_ceded("a compound distribution of the ceded loss")?;
         if let Some(l) = self.layers.iter().find(|l| l.needs_sums_insured()) {
             return Err(Error::Data(format!(
                 "layer {:?} is a surplus treaty, which works risk by risk; a compound \
@@ -370,6 +371,7 @@ impl Tower {
     /// assert!((r.net.mean() - 39.0).abs() < 1e-12);
     /// ```
     pub fn on_annual_grid(&self, annual: &Grid) -> Result<AnnualGrids> {
+        self.check_scales_on_ceded("a grid of the ceded loss")?;
         if let Some(l) = self.layers.iter().find(|l| l.needs_sums_insured()) {
             return Err(Error::Data(format!(
                 "layer {:?} is a surplus treaty, which works risk by risk; an annual loss \
