@@ -4,7 +4,7 @@ title: Excess-layer loss development, the literature behind reserving-excess.md
 description: Which papers on excess loss development exist, what their abstracts say, and what was and was not read, as checked on 2026-10-21 for the design note of issue 192; none is reproduced in prospicio yet.
 resource: https://www.casact.org/abstract/analysis-excess-loss-development
 tags: [reserving, excess-development, layers, literature]
-status: stable
+status: draft
 generated: { by: claude-code/local-session, at: 2026-10-21T12:00:00Z }
 sources:
   - id: pinto-gogol
@@ -28,7 +28,11 @@ sources:
 
 The papers that `docs/design/reserving-excess.md` (issue 192) builds on.
 Only abstracts and catalogue records were read on 2026-10-21; no formula in
-the design note is quoted from them.
+the design note is quoted from them. The concept stays a draft until the
+note's PR 1 reads the papers in full: the Fall 2013 paper's authors (Bloom
+and Patrik) come from a search result, not its abstract page, and none of
+the papers is yet known to print a worked example of a layer pattern
+derived from a ground-up triangle.
 
 * Pinto and Gogol (1987): Pareto distributions fitted to casualty losses by
   maturity, giving paid and reported development factors by layer, with the
