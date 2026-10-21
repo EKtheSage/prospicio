@@ -1,6 +1,6 @@
 # Design note: excess-layer loss development (excess LDFs, benchmark blending, a layer BF prior)
 
-Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). PR 2 to PR 4 are not built. Lane: Reserving
+Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). PR 2 to PR 4 are not built. Lane: Reserving
 (`crates/prospicio-reserving/`; `prospicio-prob` severities used read-only;
 `prospicio-pricing` exposure curves reached only through the bindings, see
 open decision 2) · Depends on: `reserving-v02.md` (decision 2, the
@@ -485,14 +485,16 @@ The user decided every point below on 2026-10-21, taking each recommendation as 
     thresholds as proposed under "Validation targets".
    *Decided 2026-10-21 (the user): the recommendation.*
 
-Opened in PR 1, for the user (each was chosen as the option closest to the
-note, and is built so):
+Opened in PR 1 (each was chosen as the option closest to the note, and is
+built so); the user decided each on 2026-10-21, accepting the option PR 1
+picked:
 
 12. **The basis argument.** The note rejected a paid basis (decision 9) but
     gave `from_ground_up` no way to say which basis a column is. PR 1 adds
     `Basis { Incurred, Paid }` as an argument, `Paid` an error. (a) As built.
     (b) A flag on the severity model. (c) Infer from the column name, which
     is fragile. *Recommendation: (a).*
+   *Decided 2026-10-21 (the user): the option PR 1 picked, (a) as built.*
 
 13. **A capped ground-up column.** The solve for `c_j` matters only when the
     ground-up column is limited per claim, and the note's API had nowhere to
@@ -500,6 +502,7 @@ note, and is built so):
     gives the closed form, a cap solves `c / LEV(c u) = r / LEV(u)` by
     bisection. (a) As built. (b) A separate model variant. *Recommendation:
     (a).*
+   *Decided 2026-10-21 (the user): the option PR 1 picked, (a) as built.*
 
 14. **The count tail.** With a count column the severity factor is the
     ground-up factor over the count factor. Past the oldest age the count
@@ -508,12 +511,14 @@ note, and is built so):
     counts as well, so a constant tail of 1.05 on both leaves the severity
     alone. *Recommendation: (a);* revisit if a user's counts are still
     developing at the oldest age.
+   *Decided 2026-10-21 (the user): the option PR 1 picked, (a) as built.*
 
 15. **The ground-up average.** The ground-up factors are the
     volume-weighted ones (`Development::default()`), not a parameter of
     `from_ground_up`. (a) As built. (b) Take a `Development`, for exclusions
     and averages. *Recommendation: (b) in PR 2 or PR 3*, when the bindings
     expose it; it is a field addition with a default.
+   *Decided 2026-10-21 (the user): the option PR 1 picked, (a) as built;* the take-a-`Development` option (b) stays a later field addition.
 
 16. **Shape drift's inputs and the simulation.** Pinto and Gogol and Bear
     both need a base development (the count ratio `n_i/n_j`, or the
@@ -522,6 +527,7 @@ note, and is built so):
     the shape moving with maturity, so PR 2's simulation must generate shape
     drift, a capped arm and late claims of other sizes, not only scale
     shifts, and report the derived pattern's RMSE under each.
+    *Decided 2026-10-21 (the user): the option PR 1 picked, a base-development input beside the shapes, with the simulation requirements above as the plan for PR 2.*
 
 ## References
 
