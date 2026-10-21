@@ -41,7 +41,7 @@
   `tvar_with`, `risk::var_linear_sorted` and `tvar_linear_sorted`. Python
   `prospicio.risk.statistics` and `Sampled.var(p, method=)`,
   `.tvar(p, method=)`; R `statistics()` and `VaR(x, p, method = )`,
-  `TVaR(x, p, method = )` on a `sampled` (#474).
+  `TVaR(x, p, method = )` on a `sampled` (#474, #492).
 
 ### Pricing
 
