@@ -904,6 +904,11 @@ pub(crate) fn prepare_selected(
     let development = exclusions.development(pattern);
     let kept = development.kept_mask(segment)?;
     let chain_ladder = ChainLadder { tail, development }.fit_segment(segment, ages)?;
+    if chain_ladder.development.has_missing_factor() {
+        return Err(Error::Bootstrap(
+            "an age whose own factor could not be estimated (a fully selected sparse age) is not supported",
+        ));
+    }
     let ldf = &chain_ladder.development.ldf;
     let latest = &chain_ladder.latest_position;
     for (o, &last) in latest.iter().enumerate() {

@@ -180,6 +180,15 @@ impl DevelopmentFit {
     pub fn has_pattern(&self) -> bool {
         self.selected.iter().any(Option::is_some)
     }
+
+    /// Whether the triangle's own factor is missing at some age: the age is
+    /// fully selected and its factor could not be estimated (the early ages
+    /// of a sparse excess layer). Its `ldf` and `volume` are NaN and its
+    /// `sigma` is interpolated; the blended factor and standard error are
+    /// still defined.
+    pub fn has_missing_factor(&self) -> bool {
+        self.ldf.iter().any(|f| f.is_nan())
+    }
 }
 
 /// An origin's index and the `(from, to)` values of one of its link ratios.
@@ -277,56 +286,21 @@ impl Development {
             let (pairs, observed) = self.kept_links(segment, age, cutoff)?;
             excluded |= pairs.len() < observed;
             counts.push(pairs.len());
-            let Some(alpha) = self.average.alpha() else {
-                let pairs: Vec<(f64, f64)> = pairs.iter().map(|&(_, x, y)| (x, y)).collect();
-                ldf.push(geometric_mean(&pairs, age)?);
-                sigma.push(None);
-                volume.push(f64::NAN);
-                continue;
+            // At an age whose selected factor has weight 1 the triangle's
+            // own factor is never used. Where it cannot be estimated (every
+            // earlier value zero: a sparse excess layer's early ages) it is
+            // left missing (NaN, no sigma, no volume) instead of an error;
+            // where it can, it is estimated as always, so no existing
+            // result changes (`reserving-excess.md`, decision 8).
+            let fully_selected = selected[age].is_some() && weight[age] == 1.0;
+            let (f, s, v) = match self.estimate_age(&pairs, age) {
+                Ok(estimate) => estimate,
+                Err(Error::Factor { .. }) if fully_selected => (f64::NAN, None, f64::NAN),
+                Err(e) => return Err(e),
             };
-            let weight = |x: f64, power: f64| {
-                let w = x.powf(power);
-                if w.is_finite() {
-                    Ok(w)
-                } else {
-                    Err(Error::Factor {
-                        age,
-                        reason: "a zero value gets an infinite weight",
-                    })
-                }
-            };
-            let mut num = 0.0;
-            let mut den = 0.0;
-            for &(_, x, y) in &pairs {
-                num += weight(x, alpha - 1.0)? * y;
-                den += weight(x, alpha)?;
-            }
-            if den == 0.0 {
-                return Err(Error::Factor {
-                    age,
-                    reason: "earlier values sum to zero",
-                });
-            }
-            let f = num / den;
-            // An origin at zero says nothing about the variance given a
-            // positive value, and its weight C^(alpha - 2) is infinite, so it
-            // does not enter sigma.
-            let informative: Vec<(f64, f64)> = pairs
-                .iter()
-                .filter(|&&(_, x, _)| x != 0.0)
-                .map(|&(_, x, y)| (x, y))
-                .collect();
-            sigma.push(if informative.len() > 1 {
-                let ss: f64 = informative
-                    .iter()
-                    .map(|&(x, y)| x.powf(alpha - 2.0) * (y - f * x).powi(2))
-                    .sum();
-                Some((ss / (informative.len() - 1) as f64).sqrt())
-            } else {
-                None
-            });
             ldf.push(f);
-            volume.push(den);
+            sigma.push(s);
+            volume.push(v);
         }
         // The geometric average has no variance: every sigma is NaN, and
         // there is nothing to interpolate.
@@ -352,6 +326,58 @@ impl Development {
             selected,
             weight,
         })
+    }
+
+    /// The triangle's own factor at one age from its kept link ratios, with
+    /// Mack's sigma (`None` unless two origins at a positive value inform
+    /// it) and the regression volume (NaN for the geometric average).
+    fn estimate_age(&self, pairs: &[KeptLink], age: usize) -> Result<(f64, Option<f64>, f64)> {
+        let Some(alpha) = self.average.alpha() else {
+            let pairs: Vec<(f64, f64)> = pairs.iter().map(|&(_, x, y)| (x, y)).collect();
+            return Ok((geometric_mean(&pairs, age)?, None, f64::NAN));
+        };
+        let weight = |x: f64, power: f64| {
+            let w = x.powf(power);
+            if w.is_finite() {
+                Ok(w)
+            } else {
+                Err(Error::Factor {
+                    age,
+                    reason: "a zero value gets an infinite weight",
+                })
+            }
+        };
+        let mut num = 0.0;
+        let mut den = 0.0;
+        for &(_, x, y) in pairs {
+            num += weight(x, alpha - 1.0)? * y;
+            den += weight(x, alpha)?;
+        }
+        if den == 0.0 {
+            return Err(Error::Factor {
+                age,
+                reason: "earlier values sum to zero",
+            });
+        }
+        let f = num / den;
+        // An origin at zero says nothing about the variance given a
+        // positive value, and its weight C^(alpha - 2) is infinite, so it
+        // does not enter sigma.
+        let informative: Vec<(f64, f64)> = pairs
+            .iter()
+            .filter(|&&(_, x, _)| x != 0.0)
+            .map(|&(_, x, y)| (x, y))
+            .collect();
+        let sigma = if informative.len() > 1 {
+            let ss: f64 = informative
+                .iter()
+                .map(|&(x, y)| x.powf(alpha - 2.0) * (y - f * x).powi(2))
+                .sum();
+            Some((ss / (informative.len() - 1) as f64).sqrt())
+        } else {
+            None
+        };
+        Ok((f, sigma, den))
     }
 
     /// The `(origin, from, to)` of the link ratios of one age that the
@@ -1029,5 +1055,96 @@ mod tests {
             wide.claims_development_result(),
             Err(Error::ClaimsDevelopment(_))
         ));
+    }
+
+    /// The early ages of a sparse excess layer: every origin is zero at age
+    /// 12, so the triangle's own first factor cannot be estimated.
+    fn sparse() -> Triangle {
+        annual(
+            2020,
+            &[
+                &[0.0, 100.0, 150.0, 170.0, 175.0],
+                &[0.0, 110.0, 155.0, 172.0],
+                &[0.0, 120.0, 170.0],
+                &[0.0, 105.0],
+                &[0.0],
+            ],
+        )
+    }
+
+    fn selected_first(weight: f64) -> Development {
+        use crate::{PatternKind, PatternWeight};
+        Development {
+            pattern: Some(
+                SelectedPattern::new(PatternKind::AgeToAge, vec![(12, 4.0)])
+                    .with_weight(PatternWeight::All(weight)),
+            ),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_fully_selected_sparse_age_is_missing_not_an_error() {
+        let tri = sparse();
+        // Without the selection, or with a blend, the zero age still errors.
+        for dev in [Development::default(), selected_first(0.5)] {
+            assert!(matches!(
+                dev.fit(&tri, "values"),
+                Err(Error::Factor { age: 0, .. })
+            ));
+        }
+        let fit = selected_first(1.0).fit(&tri, "values").unwrap();
+        assert!(fit.has_missing_factor());
+        assert!(fit.ldf[0].is_nan() && fit.volume[0].is_nan());
+        assert_eq!(fit.blended_ldf()[0], 4.0);
+        assert_eq!(fit.blended_std_err()[0], 0.0);
+        assert_eq!(fit.n_links[0], 4);
+        // Sigma at the sparse age is extrapolated from the estimated ones.
+        assert!(fit.sigma[0].is_finite() && fit.sigma[0] > 0.0);
+        // The other ages are the triangle's own, as without the pattern.
+        let rows: [&[f64]; 4] = [
+            &[100.0, 150.0, 170.0, 175.0],
+            &[110.0, 155.0, 172.0],
+            &[120.0, 170.0],
+            &[105.0],
+        ];
+        let alone = Development::default()
+            .fit(&annual(2020, &rows), "values")
+            .unwrap();
+        assert_eq!(&fit.ldf[1..], &alone.ldf[..]);
+        // The methods run on it, and the chain ladder uses the selection.
+        let cl = crate::ChainLadder {
+            development: selected_first(1.0),
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .unwrap();
+        assert_eq!(cl.ldf()[0], 4.0);
+        let mack = crate::Mack {
+            development: selected_first(1.0),
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .unwrap();
+        assert!(mack.total_standard_error.is_finite() && mack.total_standard_error > 0.0);
+        // The closed form of the one-year view needs every own factor.
+        assert!(matches!(
+            mack.claims_development_result(),
+            Err(Error::ClaimsDevelopment(_))
+        ));
+    }
+
+    #[test]
+    fn a_fully_selected_age_with_an_estimable_factor_keeps_its_estimate() {
+        // The only new branch fires where the old code returned an error:
+        // here the estimate exists and is reported as before.
+        let tri = annual(2020, &[&[100.0, 150.0, 170.0], &[110.0, 155.0], &[120.0]]);
+        let with_pattern = selected_first(1.0).fit(&tri, "values").unwrap();
+        let without = Development::default().fit(&tri, "values").unwrap();
+        let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        assert_eq!(bits(&with_pattern.ldf), bits(&without.ldf));
+        assert_eq!(bits(&with_pattern.sigma), bits(&without.sigma));
+        assert_eq!(bits(&with_pattern.volume), bits(&without.volume));
+        assert!(!with_pattern.has_missing_factor());
     }
 }
