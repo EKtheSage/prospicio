@@ -15181,6 +15181,91 @@ class MackFit:
         """
 
 @final
+class MarsFit:
+    """
+    The knots MARS selected, from ``mars``: each term as
+    ``(name, knot, direction)``, with direction ``"up"`` for
+    ``max(0, x - k)``, ``"down"`` for ``max(0, k - x)`` and ``"linear"``
+    for ``x``.
+    """
+    def __repr__(self, /) -> str: ...
+    def add_terms(self, /, terms: Terms) -> Terms:
+        """
+        ``terms`` with each selected predictor added: ``numeric`` when
+        ``linear`` and ``hinges`` at its ``knots``, spanning the selected
+        terms.
+        
+        Parameters
+        ----------
+        terms : Terms
+        
+        Returns
+        -------
+        Terms
+        """
+    def knots(self, /, name: str) -> list[float]:
+        """
+        The sorted knots of ``name``'s hinges, for ``Terms.hinges``.
+        """
+    def linear(self, /, name: str) -> bool:
+        """
+        Whether ``name`` enters linearly besides its hinges.
+        """
+    @property
+    def coefficients(self, /) -> list[float]:
+        """
+        The intercept and each selected term's coefficient.
+        """
+    @property
+    def forward_terms(self, /) -> list[tuple[str, float, str]]:
+        """
+        The forward pass's terms, before the backward pass.
+        """
+    @property
+    def gcv(self, /) -> float:
+        """
+        The GCV of the selected terms.
+        """
+    @property
+    def grsq(self, /) -> float:
+        """
+        ``1 - gcv / gcv0``.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        The predictors' names.
+        """
+    @property
+    def rsq(self, /) -> float:
+        """
+        ``1 - rss / rss0``.
+        """
+    @property
+    def rss(self, /) -> float:
+        """
+        The (weighted) residual sum of squares, or the GLM's deviance.
+        """
+    @property
+    def steps(self, /) -> list[dict]:
+        """
+        The forward pass step by step: the terms each added, and the RSS
+        (or deviance), R² and GCV after it.
+        """
+    @property
+    def termination(self, /) -> str:
+        """
+        Why the forward pass stopped: ``"no_improvement"``,
+        ``"threshold"``, ``"gcv"``, ``"rsq"`` or ``"max_terms"``.
+        """
+    @property
+    def terms(self, /) -> list[tuple[str, float, str]]:
+        """
+        The selected terms ``(name, knot, direction)``, in the order the
+        forward pass added them, without the intercept.
+        """
+
+@final
 class Mbbefd:
     """
     The MBBEFD exposure curve and destruction-rate distribution (Bernegger,
@@ -26276,6 +26361,49 @@ def marginal_expected_shortfall(pd: PredictiveDistribution, p: float) -> list[fl
     ...                             [[1.0, 2.0], [4.0, 1.0], [2.0, 5.0], [3.0, 6.0]])
     >>> marginal_expected_shortfall(pd, 0.5)
     [2.5, 5.5]
+    """
+
+def mars(x: dict, y: Sequence[float], weights: Sequence[float] |None = None, max_terms: int |None = None, threshold: float = 0.001, penalty: float = 2.0, min_span: int |None = None, end_span: int |None = None, prune: bool = False, family: str |None = None, link: str |None = None) -> MarsFit:
+    """
+    MARS knot selection for hinge terms (Friedman's forward pass, as R's
+    ``earth`` with ``degree = 1``), with an optional backward pass by GCV.
+    
+    Its knots, RSS and GCV match ``earth``'s on the Chalk portfolio,
+    weighted and unweighted. With ``family`` the search runs on that GLM's
+    deviance (working response and weights at each step), which ``earth``
+    has no counterpart for.
+    
+    Parameters
+    ----------
+    x : dict of str to list of float
+        The numeric predictors, in order.
+    y : list of float
+    weights : list of float, optional
+        Case weights (exposure); all equal is the same as none.
+    max_terms : int, optional
+        ``earth``'s ``nk``; by default ``min(200, max(20, 2p)) + 1``.
+    threshold : float
+        Stop when a step adds less than this to R² (``0`` turns it off).
+    penalty : float
+        GCV's cost per knot.
+    min_span, end_span : int, optional
+        Cases between knots and free of knots at each end; ``earth``'s
+        defaults by default.
+    prune : bool
+        Run the backward pass by GCV (``pmethod = "backward"``).
+    family, link : str, optional
+        Search on this GLM's deviance (``"poisson"``, ``"gamma"``, ...).
+    
+    Returns
+    -------
+    MarsFit
+    
+    Examples
+    --------
+    >>> x = [float(i) for i in range(60)]
+    >>> y = [1 + 0.5 * v + 3 * max(0.0, v - 31) for v in x]
+    >>> mars({"x": x}, y).knots("x")
+    [31.0]
     """
 
 def match_tower(attachments: Sequence[float], layer_losses: Sequence[float], frequencies: Sequence[float |None] |None = None, rule: str = "minimize") -> TowerModel:

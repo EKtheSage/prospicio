@@ -14,6 +14,7 @@ pub mod dglm;
 pub mod diagnostics;
 pub mod gam;
 pub mod glmm;
+pub mod mars;
 pub mod negbin;
 pub mod nested;
 pub mod net;

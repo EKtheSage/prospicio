@@ -1873,6 +1873,106 @@ fn target_encode_rust(
     Ok(list!(rows = rows, levels = enc.levels, ratios = enc.ratios))
 }
 
+/// MARS knot selection: the selected and forward terms as parallel
+/// vectors, each predictor's knots and whether it enters linearly, the
+/// fit's statistics and the forward pass's steps. `max_terms`, `min_span`
+/// and `end_span` at 0 and `family` "" take the defaults.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn mars_rust(
+    names: Vec<String>,
+    columns: List,
+    y: &[f64],
+    weights: &[f64],
+    max_terms: f64,
+    threshold: f64,
+    penalty: f64,
+    min_span: f64,
+    end_span: f64,
+    prune: bool,
+    family_name: &str,
+    link_name: &str,
+) -> Result<List> {
+    use prospicio_glm::mars::{Direction, Mars, MarsTerm, Termination};
+    let x = columns
+        .values()
+        .map(|c| {
+            c.as_real_vector()
+                .ok_or_else(|| Error::Other("predictors must be numeric".into()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let count = |v: f64, name: &str| -> Result<Option<usize>> {
+        Ok((v != 0.0)
+            .then(|| whole(v, name))
+            .transpose()?
+            .map(|v| v as usize))
+    };
+    let mut spec = Mars::new()
+        .threshold(threshold)
+        .penalty(penalty)
+        .prune(prune);
+    spec.max_terms = count(max_terms, "max_terms")?;
+    spec.min_span = count(min_span, "min_span")?;
+    spec.end_span = count(end_span, "end_span")?;
+    if !family_name.is_empty() {
+        let f = family(family_name, 0.0, 0.0)?;
+        spec = spec.glm(f, link(link_name, f, 0.0)?);
+    }
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let w = (!weights.is_empty()).then_some(weights);
+    let fit = spec.fit(&refs, &x, y, w).map_err(to_r)?;
+    let table = |terms: &[MarsTerm]| -> List {
+        let variable: Vec<String> = terms.iter().map(|t| names[t.variable].clone()).collect();
+        let knot: Vec<f64> = terms.iter().map(|t| t.knot).collect();
+        let direction: Vec<&str> = terms
+            .iter()
+            .map(|t| match t.direction {
+                Direction::Up => "up",
+                Direction::Down => "down",
+                Direction::Linear => "linear",
+            })
+            .collect();
+        list!(variable = variable, knot = knot, direction = direction)
+    };
+    let knots = names
+        .iter()
+        .map(|n| fit.knots(n).map(Robj::from))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(to_r)?;
+    let linear = names
+        .iter()
+        .map(|n| fit.linear(n))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(to_r)?;
+    let steps = fit.steps();
+    let termination = match fit.termination() {
+        Termination::NoImprovement => "no_improvement",
+        Termination::Threshold => "threshold",
+        Termination::Gcv => "gcv",
+        Termination::Rsq => "rsq",
+        Termination::MaxTerms => "max_terms",
+    };
+    Ok(list!(
+        terms = table(fit.terms()),
+        forward_terms = table(fit.forward_terms()),
+        knots = List::from_values(knots),
+        linear = linear,
+        coefficients = fit.coefficients().to_vec(),
+        rss = fit.rss(),
+        gcv = fit.gcv(),
+        rsq = fit.rsq(),
+        grsq = fit.grsq(),
+        termination = termination,
+        step_rss = steps.iter().map(|s| s.rss).collect::<Vec<_>>(),
+        step_rsq = steps.iter().map(|s| s.rsq).collect::<Vec<_>>(),
+        step_gcv = steps.iter().map(|s| s.gcv).collect::<Vec<_>>(),
+        step_terms = steps
+            .iter()
+            .map(|s| s.terms.len() as f64)
+            .collect::<Vec<_>>()
+    ))
+}
+
 #[extendr]
 fn k_fold_rust(n: f64, k: f64, seed: f64) -> Result<List> {
     resample::k_fold(
@@ -2441,6 +2541,7 @@ extendr_module! {
     fn k_fold_rust;
     fn permutation_rust;
     fn target_encode_rust;
+    fn mars_rust;
     fn group_k_fold_rust;
     fn time_ordered_rust;
     fn mcmc_diagnostics_rust;

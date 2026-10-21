@@ -156,6 +156,8 @@ permutation_rust <- function(n, seed, stream) .Call(wrap__permutation_rust, n, s
 
 target_encode_rust <- function(values, y, expected, exposure, trains, tests, k) .Call(wrap__target_encode_rust, values, y, expected, exposure, trains, tests, k)
 
+mars_rust <- function(names, columns, y, weights, max_terms, threshold, penalty, min_span, end_span, prune, family_name, link_name) .Call(wrap__mars_rust, names, columns, y, weights, max_terms, threshold, penalty, min_span, end_span, prune, family_name, link_name)
+
 group_k_fold_rust <- function(groups, k, seed) .Call(wrap__group_k_fold_rust, groups, k, seed)
 
 time_ordered_rust <- function(periods, n_test) .Call(wrap__time_ordered_rust, periods, n_test)
