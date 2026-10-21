@@ -15,6 +15,18 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
 | FFT | any count with a pgf, severity `Grid` | aggregate `Grid` | the discretized problem, up to aliasing | large grids or claim counts, `O(n log n)` |
 | Monte Carlo | any `Counting`, any severity | `PredictiveDistribution` | nothing (sampling error) | per-event losses, reinsurance terms, dependence |
 
+Panjer and the FFT assume independence throughout: the claim count
+independent of the severities, the severities independent and identically
+distributed, and units combined on a grid (a portfolio's total as the
+product of its units' transforms, `recommend_portfolio_grid`) independent of
+each other. The dependent cases have their own tools: `fft_bivariate` and
+the clash model (`Clash`) for two lines hit by the same events or sharing a
+count ("Two lines and clash"), one mixed count on a severity `Mixture` for
+components sharing a mixing variable ("A shared mixing variable"), and
+`PredictiveDistribution::reorder_groups` or `reorder_groups_by_copula` for a
+rank correlation or a copula between units' simulated totals. Monte Carlo on
+an `EventSet` keeps whatever dependence its events carry (#491).
+
 ## What exists
 
 - `prospicio_aggregate::panjer(&frequency, &severity_grid, points)` and
