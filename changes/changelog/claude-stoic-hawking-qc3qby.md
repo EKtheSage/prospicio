@@ -53,7 +53,7 @@
   `reorder_groups(..., kind="spearman")`, `groups`,
   `correlation_from_pairs`, `group_spearman`; R `reorder_groups(..., kind
   = "spearman")` with a matrix or a three-column data frame, and
-  `group_spearman()` (#481).
+  `group_spearman()` (#481, #493).
 
 ### Pricing
 
@@ -649,17 +649,17 @@
   recovery after the terms over the one before them, instead of using the limit up in event order.
   The annual total is unchanged; the split by event, and so what an inuring stage sees, differs.
   Refused with reinstatements pro rata as to time; written to a tower's JSON only when set. Python
-  `Layer(..., allocation="pro_rata")`, R `xol_layer(..., allocation = "pro_rata")` (#476).
+  `Layer(..., allocation="pro_rata")`, R `xol_layer(..., allocation = "pro_rata")` (#476, #493).
 - Labels on simulated events, a peril or a class, carried through a tower (`EventSet::with_labels`,
   `from_long_labeled`, kept by `merge`): with labels `Tower::apply` gives gross, each layer's ceded
   loss and net by label, with the label dimensions after `kind` and `layer` and the annual premiums
   and commissions labelled `""`; under an annual limit the split follows the layer's allocation.
   Unlabelled results are unchanged. Python `EventSet.with_labels`, `from_long(..., labels=)`,
-  `labels`, R `with_labels()`, `event_labels()`, `event_set_from_long(..., labels =)` (#475).
+  `labels`, R `with_labels()`, `event_labels()`, `event_set_from_long(..., labels =)` (#475, #493).
 - `Tower::apply_annual` applies a tower to plain annual losses, one per simulation, with no
   `EventSet` or `PredictiveDistribution` to build; a contract stated on the loss ratio (a cap and
   a sliding scale on subject premium) is a stop loss with `premium_rate(1, P)` and a sliding
-  scale. Python `Tower.apply_annual`, R `apply_tower()` on a numeric vector (#477).
+  scale. Python `Tower.apply_annual`, R `apply_tower()` on a numeric vector (#477, #493).
 
 ### Distributions and probability
 
@@ -667,4 +667,4 @@
   total (factor 1 when they sum to 0): a loss-ratio cap over several classes or a stop loss on a mix
   of perils carried back onto its components. Inside a tower, a cover on the annual total with
   `LimitAllocation::ProRata` on labelled events does the same. Python
-  `PredictiveDistribution.scale_to_totals`, R `scale_to_totals()` (#478).
+  `PredictiveDistribution.scale_to_totals`, R `scale_to_totals()` (#478, #493).
