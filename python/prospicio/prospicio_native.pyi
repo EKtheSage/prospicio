@@ -7037,6 +7037,16 @@ class Count:
         >>> round(Count.geometric(3.0).pmf(0), 12)
         0.25
         """
+    def gig(self, /) -> dict[str, float] |None:
+        """
+        The generalized inverse Gaussian a Sichel mixing solved, as a dict
+        with ``shape``, ``omega`` and ``eta`` (``aggregate``'s ``lam``,
+        ``mu / beta`` and ``mu``); ``None`` for any other count.
+        
+        Returns
+        -------
+        dict or None
+        """
     @staticmethod
     def logarithmic(p: float) -> Count:
         """
@@ -7061,7 +7071,7 @@ class Count:
         float
         """
     @staticmethod
-    def mixed_poisson(mean: float, cv: float, mixing: str = "gamma", shift: float = 0.0) -> Count:
+    def mixed_poisson(mean: float, cv: float, mixing: str = "gamma", shift: float = 0.0, *, max: float |None = None, shape: float |None = None, skewness: float |None = None, f: float |None = None) -> Count:
         """
         A Poisson count whose mean is ``mean * theta``, with the mixing
         variable ``theta = shift + (1 - shift) G`` of mean 1 and coefficient
@@ -7072,12 +7082,29 @@ class Count:
         mean : float
         cv : float
             Coefficient of variation of ``theta``, fixed part included.
-        mixing : {"gamma", "inverse_gaussian"}, default "gamma"
+        mixing : {"gamma", "inverse_gaussian", "beta", "sichel", "sichel_gamma", "sichel_ig"}, default "gamma"
             The distribution of ``G``. Gamma gives the negative binomial
             (``shift = 0``) or the Delaporte; inverse Gaussian the
-            Poisson-inverse Gaussian or its shifted version.
+            Poisson-inverse Gaussian or its shifted version. The others take
+            no shift, as ``aggregate``'s: ``"beta"``, the Poisson mean
+            ``max`` times a beta variable (``mixed beta cv max``);
+            ``"sichel"``, the generalized inverse Gaussian with the given
+            ``shape`` (``mixed sichel cv shape``; ``-0.5`` is the inverse
+            Gaussian) or, with ``skewness`` instead, the shape that gives that
+            skewness; ``"sichel_gamma"`` and ``"sichel_ig"``, the generalized
+            inverse Gaussian with the skewness of the Delaporte's or the
+            shifted inverse Gaussian's mixing with fixed part ``f``
+            (``mixed sichel.gamma cv f``, ``mixed sichel.ig cv f``).
         shift : float, default 0.0
             The fixed part of ``theta``, in ``[0, 1)``.
+        max : float, optional
+            The beta mixing's largest Poisson mean, above ``mean (1 + cv**2)``.
+        shape : float, optional
+            The Sichel shape.
+        skewness : float, optional
+            The Sichel mixing's skewness, for ``"sichel"`` without a shape.
+        f : float, optional
+            The fixed part matched by ``"sichel_gamma"`` and ``"sichel_ig"``.
         
         Returns
         -------

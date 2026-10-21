@@ -292,6 +292,22 @@ def test_more_claim_counts():
         panjer(pig, sev, 100)
     with pytest.raises(ValueError):
         Count.mixed_poisson(1.0, 0.5, mixing="beta")
+    # The beta and Sichel mixings (validation/scripts/aggregate_mixing.py):
+    # the beta by quadrature, the Sichel against aggregate 1.2.0.
+    beta = Count.mixed_poisson(10.0, 0.3, mixing="beta", max=30.0)
+    assert beta.pmf(0) == pytest.approx(0.0011358609508610308, abs=1e-14)
+    assert beta.gig() is None
+    sichel = Count.mixed_poisson(10.0, 0.4, mixing="sichel", shape=1.5)
+    assert sichel.pmf(0) == pytest.approx(0.0016178402835267376, abs=1e-9)
+    assert sichel.variance() == pytest.approx(10.0 + 100.0 * 0.16)
+    ig = Count.mixed_poisson(10.0, 0.5, mixing="sichel_ig", f=0.3).gig()
+    assert ig["shape"] == pytest.approx(-4.5422134725837395, rel=1e-8)
+    same = Count.mixed_poisson(10.0, 0.5, mixing="sichel", skewness=3 * 0.5 / 0.7).gig()
+    assert same["shape"] == pytest.approx(ig["shape"], rel=1e-12)
+    with pytest.raises(ValueError, match="one of shape or skewness"):
+        Count.mixed_poisson(10.0, 0.5, mixing="sichel")
+    with pytest.raises(ValueError):
+        Count.mixed_poisson(10.0, 0.5, mixing="sichel", shape=-0.5, shift=0.2)
 
 
 def test_added_severities_and_splicing():

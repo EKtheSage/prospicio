@@ -5,7 +5,7 @@ description: The Python aggregate package (1.0.1) as the reference for distortio
 resource: https://github.com/mynl/aggregate
 tags: [pricing, risk-measures, distortions, capital-allocation, aggregate, parity]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-13T07:30:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-21T14:00:00Z }
 sources:
   - id: aggregate
     resource: https://github.com/mynl/aggregate
@@ -161,6 +161,20 @@ sources:
   units: `Portfolio.update` multiplies the units' `ftagg_density`, and its
   stats use `remix=False`. Mixing families: `gamma`, `delaporte`, `ig`,
   `sig`, `beta`, `sichel` (`_frequency.py`).
+* **`aggregate` 1.2.0's beta and Sichel mixings are fragile.** `mixed
+  sichel.gamma 0.4 0.3` (and so a count of mean 10) solves, with no
+  warning, to a generalized inverse Gaussian of mean 1.476 and cv 0.071:
+  the count's mean is 14.76. The three moment equations have the solution
+  shape 0.4306, `omega` 6.1396, `eta` 0.8689. `mixed sichel.ig 0.5 0.3`
+  warns that Broyden "gave large result" and falls back to Newton-Krylov,
+  which is right (shape -4.5422). `mixed sichel cv shape` solves two
+  equations and is right to the solve's `1e-11`. The beta's pgf,
+  `hyp1f1(a, a + b, r (z - 1))` at complex points, puts the probabilities
+  of `mixed beta 0.3 30` off by up to `8e-9` (quadrature of the Poisson
+  against the beta density agrees with prospicio at `1e-14`); on
+  `mixed beta 0.5 20` it is right to `6e-12`. In `aggregate`'s
+  parameterization the generalized inverse Gaussian has
+  `E[Θ^r] = mu^r K_{lam + r}(mu / beta) / K_lam(mu / beta)`.
 * **`sharpen` (1.2.0) audits a grid after the FFT.** Each cell scores six
   terms `|emp/exact - 1| / (k eps)` with `k` = 1, 10, 100 for the mean,
   cv and skewness of the severity and of the aggregate (`eps = 1e-4`),

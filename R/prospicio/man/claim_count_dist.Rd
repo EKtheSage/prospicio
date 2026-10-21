@@ -6,6 +6,7 @@
 \alias{zero_truncated_count}
 \alias{logarithmic_count}
 \alias{mixed_poisson_count}
+\alias{gig_parameters}
 \alias{compound_poisson_count}
 \alias{empirical_count}
 \alias{renewal_count}
@@ -25,9 +26,15 @@ logarithmic_count(p)
 mixed_poisson_count(
   mean,
   cv,
-  mixing = c("gamma", "inverse_gaussian"),
-  shift = 0
+  mixing = c("gamma", "inverse_gaussian", "beta", "sichel", "sichel_gamma", "sichel_ig"),
+  shift = 0,
+  max = NULL,
+  shape = NULL,
+  skewness = NULL,
+  f = NULL
 )
+
+gig_parameters(x)
 
 compound_poisson_count(rate, secondary)
 
@@ -53,7 +60,17 @@ probability, in \verb{[0, 1)}.}
 
 \item{mean, cv, shift}{See above.}
 
-\item{mixing}{\code{"gamma"} or \code{"inverse_gaussian"}.}
+\item{mixing}{\code{"gamma"}, \code{"inverse_gaussian"}, \code{"beta"}, \code{"sichel"},
+\code{"sichel_gamma"} or \code{"sichel_ig"}.}
+
+\item{max}{The beta mixing's largest Poisson mean, above
+\code{mean * (1 + cv^2)}.}
+
+\item{shape, skewness}{The Sichel shape, or the skewness that sets it.}
+
+\item{f}{The fixed part matched by \code{"sichel_gamma"} and \code{"sichel_ig"}.}
+
+\item{x}{A claim count.}
 
 \item{rate}{The Poisson rate of clusters.}
 
@@ -88,7 +105,17 @@ Claim counts beyond the Poisson, negative binomial and binomial, as in
 \verb{theta = shift + (1 - shift) G} has mean 1 and coefficient of variation
 \code{cv}, and \code{G} is gamma (negative binomial, or Delaporte with a shift)
 or inverse Gaussian (Poisson-inverse Gaussian, or its shifted version).
-Variance \verb{mean + mean^2 cv^2}.
+Variance \verb{mean + mean^2 cv^2}. With no shift, as \code{aggregate}'s, \code{G}
+may also be \code{"beta"}, the Poisson mean \code{max} times a beta variable
+(\verb{mixed beta cv max}), \code{"sichel"}, the generalized inverse Gaussian
+with the given \code{shape} (\verb{mixed sichel cv shape}; \code{-0.5} is the
+inverse Gaussian) or, with \code{skewness} instead, the shape that gives
+it, or \code{"sichel_gamma"} and \code{"sichel_ig"}, the generalized inverse
+Gaussian with the skewness of the Delaporte's or the shifted inverse
+Gaussian's mixing with fixed part \code{f} (\verb{mixed sichel.gamma cv f},
+\verb{mixed sichel.ig cv f}). \code{gig_parameters()} gives the generalized
+inverse Gaussian a Sichel mixing solved, \code{c(shape, omega, eta)}
+(\code{aggregate}'s \code{lam}, \code{mu / beta} and \code{mu}), or \code{NULL}.
 \item \code{compound_poisson_count()}: a Poisson(\code{rate}) number of clusters of
 \code{secondary} claims (Poisson secondaries give the Neyman type A).
 \item \code{empirical_count()}: \code{P(N = k) = probs[k + 1]}.
