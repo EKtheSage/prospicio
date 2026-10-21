@@ -563,3 +563,28 @@
   `GridAudit` keeps every cell and the reason for the choice. With
   `recommend_portfolio_grid`, a grid for several units. `aggregate`'s
   scores and choices on its books, to six digits (#317).
+
+### Distributions and probability
+
+- The beta and Sichel mixings of mixed Poisson counts, `aggregate`'s
+  `mixed beta`, `sichel`, `sichel.gamma` and `sichel.ig`:
+  `Mixing::Beta { cv, max }` (the Poisson mean `max` times a beta
+  variable), `Mixing::Sichel { cv, shape }` (a generalized inverse
+  Gaussian of the given shape) and `Mixing::SichelSkewness { cv, skewness }`
+  (the shape solved for a skewness), with `Mixing::sichel_gamma(cv, f)`
+  and `Mixing::sichel_ig(cv, f)`; `MixedPoisson::gig` gives the solved
+  parameters and `Mixing::cv` the coefficient of variation. At parity with
+  `aggregate` 1.2.0 for the Sichel and `sichel.ig`, and with quadrature
+  and SciPy where `aggregate` is wrong (its beta probabilities are off by
+  up to 8e-9, and `sichel.gamma 0.4 0.3` solves to a count of mean 14.76,
+  not 10). `prospicio_math::special::ln_bessel_k`, `ln K_nu(x)` for real
+  order. Python `Count.mixed_poisson(..., mixing="beta", max=)`,
+  `mixing="sichel"` with `shape=` or `skewness=`, `"sichel_gamma"` and
+  `"sichel_ig"` with `f=`, and `Count.gig()`; R `mixed_poisson_count()`
+  with the same arguments and `gig_parameters()`.
+
+### Breaking changes
+
+- `Mixing` has three new variants (`Beta`, `Sichel`, `SichelSkewness`);
+  Rust code that matches it exhaustively adds arms for them or uses
+  `Mixing::cv`.

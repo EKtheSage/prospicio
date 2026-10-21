@@ -987,11 +987,53 @@ the library's common shock). In prospicio that is `fft_bivariate`, or
 `Clash::aggregate`, with a mixed count. A `Portfolio`'s units share
 nothing: its total is the product of the units' transforms, each unit
 keeping its own mixing. Sharing is always full. The mixing families are
-gamma, Delaporte, inverse Gaussian and shifted inverse Gaussian, which
-`Mixing` has, and beta and Sichel, which it does not yet. Since nothing
+gamma, Delaporte, inverse Gaussian, shifted inverse Gaussian, beta and
+Sichel, all in `Mixing` (next section). Since nothing
 in `aggregate` shares `Θ` across the units of a portfolio, prospicio
 builds no quadrature over a shared `Θ` (the user's decision of
 2026-10-19: no extension beyond `aggregate`).
+
+### Beta and Sichel mixings
+
+`Mixing::Beta { cv, max }` is `aggregate`'s `mixed beta cv max`: the
+Poisson mean `λ Θ` is `max` times a `Beta(a, b)` variable with
+`a = (max - λ (1 + cv²)) / (cv² max)` and `b = a (max - λ) / λ`, which
+needs `max > λ (1 + cv²)`. `P(N = k)` is
+`max^k / k! · B(a + k, b) / B(a, b) · 1F1(a + k; a + b + k; -max)`; by
+Kummer's transformation the series has positive terms, summed on a log
+scale, so it holds where `aggregate`'s `hyp1f1` at complex points loses
+digits.
+
+`Mixing::Sichel { cv, shape }` is `mixed sichel cv shape`: `Θ` generalized
+inverse Gaussian, density proportional to
+`x^(λ - 1) exp(-ω (x / η + η / x) / 2)` with shape `λ`, its `ω` solved by
+bisection on a log scale for the coefficient of variation and `η` set by
+the mean 1 (`aggregate`'s `mu = η`, `beta = η / ω`). The variance is finite
+for `λ` in `(-2 - 1 / cv², 1 / cv²)`. `Mixing::SichelSkewness { cv,
+skewness }` solves the shape too, by bisection on that interval, where the
+skewness falls from the inverse gamma's to the gamma's;
+`Mixing::sichel_gamma(cv, f)` and `Mixing::sichel_ig(cv, f)` target the
+Delaporte's `2 cv / (1 - f)` and the shifted inverse Gaussian's
+`3 cv / (1 - f)`, `aggregate`'s `sichel.gamma` and `sichel.ig`.
+`P(N = k) = (λ η)^k / k! · s^(-(k + λ)) K_{k+λ}(ω s) / K_λ(ω)` with
+`s = √(1 + 2 λ η / ω)`, the Bessel ratios by the forward recurrence in the
+order, which is stable for `K`. `ln K_ν(x)` for real order is new in
+`prospicio_math::special::ln_bessel_k`: the trapezoidal rule on
+`∫_0^∞ exp(-x cosh t) cosh(ν t) dt`, geometric in the step, to `2e-15`
+against mpmath. The moments come from differences of `ln K`, since the
+recurrence cancels at small `ω`. Neither mixing has a fixed part, as in
+`aggregate`; the pgf is the probability table summed by Horner's rule.
+
+Parity (`validation/scripts/aggregate_mixing.py`): the Sichel and
+`sichel.ig` probabilities and solved parameters against `aggregate` 1.2.0
+at `1e-9` and `1e-8`, the limit of its Broyden solve. Two cases are
+checked elsewhere because `aggregate` is wrong there: the beta, whose
+probabilities by quadrature agree at `1e-14` while `aggregate`'s are off
+by up to `8e-9`, and `sichel.gamma 0.4 0.3`, where `aggregate`'s solve
+stops, with no warning, at a mixing of mean 1.476 and cv 0.071 (the count's
+mean is 14.76, not 10); SciPy's nested `brentq` solve gives the shape
+0.4306 that meets all three targets, and prospicio agrees with it at
+`1e-12`.
 
 ## Validation
 

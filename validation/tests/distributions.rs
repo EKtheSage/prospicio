@@ -740,6 +740,42 @@ fn counts_match_aggregate() {
     });
 }
 
+/// The beta and Sichel mixed Poisson counts against `aggregate` 1.2.0's
+/// `mixed beta`, `sichel` and `sichel.ig`, and SciPy for `sichel.gamma`,
+/// whose aggregate solve misses its targets, and quadrature for the beta,
+/// whose aggregate pgf is off by up to 1e-8
+/// (`validation/scripts/aggregate_mixing.py`): the probabilities and the
+/// solved generalized inverse Gaussian.
+#[test]
+fn mixing_counts_match_aggregate() {
+    use prospicio_prob::Counting;
+    use prospicio_prob::count_families::{MixedPoisson, Mixing};
+    let cases = reference("mixing_aggregate.csv");
+    check(&cases, |c| {
+        let v = |name: &str| c.param("params", name);
+        let cv = v("cv");
+        let mixing = match c.get("distribution") {
+            "beta" => Mixing::Beta { cv, max: v("max") },
+            "sichel" => Mixing::Sichel {
+                cv,
+                shape: v("shape"),
+            },
+            "sichel_gamma" => Mixing::sichel_gamma(cv, v("f")),
+            "sichel_ig" => Mixing::sichel_ig(cv, v("f")),
+            _ => return None,
+        };
+        let n = MixedPoisson::new(v("lambda"), mixing, 0.0).ok()?;
+        let gig = n.gig();
+        match c.get("quantity") {
+            "pmf" | "pmf_aggregate" => Some(n.pmf(c.number("arg")? as u64)),
+            "shape" => Some(gig?.shape),
+            "omega" => Some(gig?.omega),
+            "eta" => Some(gig?.eta),
+            _ => None,
+        }
+    });
+}
+
 /// Third raw moments against mpmath at 30 digits: `3 ∫ x² S(x) dx` for the
 /// severities, an exact sum for the counts, and the compound Poisson–gamma
 /// for the Tweedie (`validation/scripts/mpmath_third_moments.py`).

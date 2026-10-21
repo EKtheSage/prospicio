@@ -6,7 +6,6 @@
 
 ## Next
 
-- [mixing-families] the beta and Sichel mixings of `aggregate`'s mixed counts, the one gap the shared-mixing reading found, waiting on the user
 
 ## Done
 
@@ -25,3 +24,4 @@
 - a severity from a size-of-loss table and the censored LAS (`prospicio_prob::SizeOfLoss`, each band's claims at its average so the LEV is exact at the band edges, with `ilf` and `loss_elimination_ratio`; `layer::censored_las`, layer by layer over several policy limits; Werner and Modlin's ILF 1.59, LAS 77,046, 44,575 and 15,213 by layer and LER 0.135 exact; Python `SizeOfLoss`, `censored_las`, R `size_of_loss()`, `censored_las()`; #338)
 - the grid audit (`audit_grid` and `audit_portfolio_grid`, `aggregate` 1.2.0's `sharpen`: six moment errors scored by a power mean, the step doubled and halved on the center's size and half of it, the best sound cell taken with fewer points preferred, twice the points only when nothing smaller meets the target; `recommend_portfolio_grid` for several units; scores and selection to `aggregate`'s digits; Python and R; #317)
 - [guides-issues-for-aggregate] a mixing variable shared as `aggregate` 1.2.0 shares it, read from its source: across one aggregate's severity components (`fft` of a `MixedPoisson` on a `Mixture`, its mean, cv, skewness and quantiles to `aggregate`'s) and the two units of a bivariate (`fft_bivariate` with a mixed count), never across a portfolio's units, so no quadrature over a shared Θ (#316)
+- [mixing-families] the beta and Sichel mixings of `aggregate`'s mixed counts (`Mixing::Beta`, `Mixing::Sichel`, `Mixing::SichelSkewness` with `sichel_gamma` and `sichel_ig`; `ln_bessel_k` in `prospicio-math`; `aggregate` 1.2.0 parity for the Sichel and `sichel.ig`, quadrature for the beta and SciPy for `sichel.gamma`, where `aggregate` is wrong; Python and R)

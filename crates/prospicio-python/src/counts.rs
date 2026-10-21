@@ -119,31 +119,95 @@ impl PyCount {
     /// mean : float
     /// cv : float
     ///     Coefficient of variation of ``theta``, fixed part included.
-    /// mixing : {"gamma", "inverse_gaussian"}, default "gamma"
+    /// mixing : {"gamma", "inverse_gaussian", "beta", "sichel", "sichel_gamma", "sichel_ig"}, default "gamma"
     ///     The distribution of ``G``. Gamma gives the negative binomial
     ///     (``shift = 0``) or the Delaporte; inverse Gaussian the
-    ///     Poisson-inverse Gaussian or its shifted version.
+    ///     Poisson-inverse Gaussian or its shifted version. The others take
+    ///     no shift, as ``aggregate``'s: ``"beta"``, the Poisson mean
+    ///     ``max`` times a beta variable (``mixed beta cv max``);
+    ///     ``"sichel"``, the generalized inverse Gaussian with the given
+    ///     ``shape`` (``mixed sichel cv shape``; ``-0.5`` is the inverse
+    ///     Gaussian) or, with ``skewness`` instead, the shape that gives that
+    ///     skewness; ``"sichel_gamma"`` and ``"sichel_ig"``, the generalized
+    ///     inverse Gaussian with the skewness of the Delaporte's or the
+    ///     shifted inverse Gaussian's mixing with fixed part ``f``
+    ///     (``mixed sichel.gamma cv f``, ``mixed sichel.ig cv f``).
     /// shift : float, default 0.0
     ///     The fixed part of ``theta``, in ``[0, 1)``.
+    /// max : float, optional
+    ///     The beta mixing's largest Poisson mean, above ``mean (1 + cv**2)``.
+    /// shape : float, optional
+    ///     The Sichel shape.
+    /// skewness : float, optional
+    ///     The Sichel mixing's skewness, for ``"sichel"`` without a shape.
+    /// f : float, optional
+    ///     The fixed part matched by ``"sichel_gamma"`` and ``"sichel_ig"``.
     ///
     /// Returns
     /// -------
     /// Count
     #[staticmethod]
-    #[pyo3(signature = (mean, cv, mixing="gamma", shift=0.0))]
-    fn mixed_poisson(mean: f64, cv: f64, mixing: &str, shift: f64) -> PyResult<Self> {
+    #[pyo3(signature = (mean, cv, mixing="gamma", shift=0.0, *, max=None, shape=None, skewness=None, f=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn mixed_poisson(
+        mean: f64,
+        cv: f64,
+        mixing: &str,
+        shift: f64,
+        max: Option<f64>,
+        shape: Option<f64>,
+        skewness: Option<f64>,
+        f: Option<f64>,
+    ) -> PyResult<Self> {
+        let need = |v: Option<f64>, name: &str| {
+            v.ok_or_else(|| PyValueError::new_err(format!("mixing {mixing:?} needs {name}")))
+        };
         let mixing = match mixing {
             "gamma" => Mixing::Gamma { cv },
             "inverse_gaussian" | "ig" => Mixing::InverseGaussian { cv },
+            "beta" => Mixing::Beta {
+                cv,
+                max: need(max, "max")?,
+            },
+            "sichel" => match (shape, skewness) {
+                (Some(shape), None) => Mixing::Sichel { cv, shape },
+                (None, Some(skewness)) => Mixing::SichelSkewness { cv, skewness },
+                _ => {
+                    return Err(PyValueError::new_err(
+                        "mixing \"sichel\" needs one of shape or skewness",
+                    ));
+                }
+            },
+            "sichel_gamma" => Mixing::sichel_gamma(cv, need(f, "f")?),
+            "sichel_ig" => Mixing::sichel_ig(cv, need(f, "f")?),
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "mixing must be \"gamma\" or \"inverse_gaussian\", not {other:?}"
+                    "mixing must be \"gamma\", \"inverse_gaussian\", \"beta\", \"sichel\", \
+                     \"sichel_gamma\" or \"sichel_ig\", not {other:?}"
                 )));
             }
         };
         Ok(Self {
             inner: CountDist::MixedPoisson(MixedPoisson::new(mean, mixing, shift).map_err(to_py)?),
         })
+    }
+
+    /// The generalized inverse Gaussian a Sichel mixing solved, as a dict
+    /// with ``shape``, ``omega`` and ``eta`` (``aggregate``'s ``lam``,
+    /// ``mu / beta`` and ``mu``); ``None`` for any other count.
+    ///
+    /// Returns
+    /// -------
+    /// dict or None
+    fn gig(&self) -> Option<std::collections::BTreeMap<&'static str, f64>> {
+        match &self.inner {
+            CountDist::MixedPoisson(m) => m.gig().map(|g| {
+                [("shape", g.shape), ("omega", g.omega), ("eta", g.eta)]
+                    .into_iter()
+                    .collect()
+            }),
+            _ => None,
+        }
     }
 
     /// A Poisson(``rate``) number of clusters, each a ``secondary`` count:

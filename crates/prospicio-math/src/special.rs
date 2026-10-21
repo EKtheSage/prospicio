@@ -1,6 +1,6 @@
 //! Special functions.
 
-use std::f64::consts::{FRAC_1_SQRT_2, PI};
+use std::f64::consts::{FRAC_1_SQRT_2, LN_2, PI};
 
 /// Standard normal density.
 pub fn norm_pdf(x: f64) -> f64 {
@@ -514,6 +514,65 @@ pub fn expint_e1(z: f64) -> f64 {
     }
 }
 
+/// The logarithm of the modified Bessel function of the second kind,
+/// `ln K_ν(x)`, for real order `ν` and `x > 0`, from its integral
+/// `K_ν(x) = ∫_0^∞ exp(-x cosh t) cosh(ν t) dt` by the trapezoidal rule.
+/// The integrand is analytic in a strip about the real axis and decays
+/// doubly exponentially, so the rule converges geometrically in the step,
+/// which is sized to the integrand's peak; the sum is taken on a log
+/// scale, so the value is finite where `K_ν(x)` itself overflows (small
+/// `x`, large `ν`) or underflows (large `x`). `K_{-ν} = K_ν`.
+///
+/// ```
+/// use prospicio_math::special::ln_bessel_k;
+///
+/// // K_{1/2}(x) = √(π / (2x)) e^(-x).
+/// let x = 3.0_f64;
+/// let exact = 0.5 * (std::f64::consts::PI / (2.0 * x)).ln() - x;
+/// assert!((ln_bessel_k(0.5, x) - exact).abs() < 1e-14);
+/// // mpmath: log(besselk(10, 0.2)).
+/// assert!((ln_bessel_k(10.0, 0.2) / 35.13342019549504 - 1.0).abs() < 1e-14);
+/// ```
+pub fn ln_bessel_k(nu: f64, x: f64) -> f64 {
+    if nu.is_nan() || x.is_nan() || x < 0.0 {
+        return f64::NAN;
+    }
+    if x == 0.0 {
+        return f64::INFINITY;
+    }
+    if x == f64::INFINITY {
+        return f64::NEG_INFINITY;
+    }
+    let nu = nu.abs();
+    // The exponent of the integrand relative to e^(-x):
+    // -x (cosh t - 1) + ln cosh(ν t), which peaks at sinh t = ν / x with
+    // curvature √(x² + ν²) there.
+    let exponent = |t: f64| {
+        let y = nu * t;
+        -x * (2.0 * (0.5 * t).sinh().powi(2)) + y + (-2.0 * y).exp().ln_1p() - LN_2
+    };
+    let peak = (nu / x).asinh();
+    let width = (x * x + nu * nu).powf(-0.25);
+    let h = (0.5 * width).min(0.1);
+    let top = exponent(peak);
+    // Terms below e^-40 of the peak's change nothing at double precision.
+    let mut sum = 0.5 * (exponent(0.0) - top).exp();
+    let mut j = 1u32;
+    loop {
+        let t = f64::from(j) * h;
+        let r = (exponent(t) - top).exp();
+        sum += r;
+        if t > peak && r < 1e-18 * sum {
+            break;
+        }
+        j += 1;
+        if j > 10_000_000 {
+            break;
+        }
+    }
+    -x + top + (h * sum).ln()
+}
+
 /// Mills ratio `R(t) = Φ(-t) / φ(t)` for `t >= 0`, the normal tail
 /// relative to the density, finite where both underflow: directly below
 /// `t = 10`, by the continued fraction `1 / (t + 1 / (t + 2 / (t + ⋯)))`
@@ -758,6 +817,33 @@ fn bvn_upper(h: f64, k: f64, r: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ln_bessel_k_matches_mpmath() {
+        // mpmath 1.3, 30 digits: log(besselk(nu, x)).
+        let cases = [
+            (0.0, 1.0, -0.8650643989067881),
+            (0.3, 0.01, 1.930085981618933),
+            (2.5, 3.0, -2.476216931302124),
+            (-1.7, 0.5, 1.4915900467181742),
+            (10.0, 0.2, 35.13342019549504),
+            (0.5, 1000.0, -1003.2280862868463),
+            (4.2, 2500.0, -2503.6827543489107),
+            (30.0, 5.0, 42.860473318170534),
+            (0.1, 1e-6, 2.9467464507698966),
+        ];
+        for (nu, x, want) in cases {
+            let got = ln_bessel_k(nu, x);
+            assert!(
+                (got - want).abs() < 2e-15 * want.abs().max(1.0),
+                "{nu} {x}: {got} {want}"
+            );
+        }
+        // The recurrence K_{ν+1} = K_{ν-1} + (2ν / x) K_ν.
+        let (nu, x) = (1.3, 0.7);
+        let k = |n: f64| ln_bessel_k(n, x).exp();
+        assert!((k(nu + 1.0) / (k(nu - 1.0) + 2.0 * nu / x * k(nu)) - 1.0).abs() < 1e-14);
+    }
 
     #[test]
     fn digamma_matches_the_derivative_of_ln_gamma() {

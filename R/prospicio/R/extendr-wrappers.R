@@ -1829,7 +1829,9 @@ ClaimCount$zero_modified <- function(base, p0) .Call(wrap__ClaimCount__zero_modi
 
 ClaimCount$logarithmic <- function(p) .Call(wrap__ClaimCount__logarithmic, p)
 
-ClaimCount$mixed_poisson <- function(mean, cv, mixing, shift) .Call(wrap__ClaimCount__mixed_poisson, mean, cv, mixing, shift)
+ClaimCount$mixed_poisson <- function(mean, cv, mixing, shift, param) .Call(wrap__ClaimCount__mixed_poisson, mean, cv, mixing, shift, param)
+
+ClaimCount$gig <- function() .Call(wrap__ClaimCount__gig, self)
 
 ClaimCount$compound_poisson <- function(rate, secondary) .Call(wrap__ClaimCount__compound_poisson, rate, secondary)
 

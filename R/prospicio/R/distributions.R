@@ -820,7 +820,17 @@ blend_predictive <- function(models, weights, seed) {
 #'   `theta = shift + (1 - shift) G` has mean 1 and coefficient of variation
 #'   `cv`, and `G` is gamma (negative binomial, or Delaporte with a shift)
 #'   or inverse Gaussian (Poisson-inverse Gaussian, or its shifted version).
-#'   Variance `mean + mean^2 cv^2`.
+#'   Variance `mean + mean^2 cv^2`. With no shift, as `aggregate`'s, `G`
+#'   may also be `"beta"`, the Poisson mean `max` times a beta variable
+#'   (`mixed beta cv max`), `"sichel"`, the generalized inverse Gaussian
+#'   with the given `shape` (`mixed sichel cv shape`; `-0.5` is the
+#'   inverse Gaussian) or, with `skewness` instead, the shape that gives
+#'   it, or `"sichel_gamma"` and `"sichel_ig"`, the generalized inverse
+#'   Gaussian with the skewness of the Delaporte's or the shifted inverse
+#'   Gaussian's mixing with fixed part `f` (`mixed sichel.gamma cv f`,
+#'   `mixed sichel.ig cv f`). `gig_parameters()` gives the generalized
+#'   inverse Gaussian a Sichel mixing solved, `c(shape, omega, eta)`
+#'   (`aggregate`'s `lam`, `mu / beta` and `mu`), or `NULL`.
 #' - `compound_poisson_count()`: a Poisson(`rate`) number of clusters of
 #'   `secondary` claims (Poisson secondaries give the Neyman type A).
 #' - `empirical_count()`: `P(N = k) = probs[k + 1]`.
@@ -846,7 +856,13 @@ blend_predictive <- function(models, weights, seed) {
 #'   probability, in `[0, 1)`.
 #' @param n The fixed number of claims.
 #' @param mean,cv,shift See above.
-#' @param mixing `"gamma"` or `"inverse_gaussian"`.
+#' @param mixing `"gamma"`, `"inverse_gaussian"`, `"beta"`, `"sichel"`,
+#'   `"sichel_gamma"` or `"sichel_ig"`.
+#' @param max The beta mixing's largest Poisson mean, above
+#'   `mean * (1 + cv^2)`.
+#' @param shape,skewness The Sichel shape, or the skewness that sets it.
+#' @param f The fixed part matched by `"sichel_gamma"` and `"sichel_ig"`.
+#' @param x A claim count.
 #' @param rate The Poisson rate of clusters.
 #' @param probs Probabilities of `0, 1, ...`, summing to 1.
 #' @param wait A distribution, or `list(values, probs)`.
@@ -909,11 +925,41 @@ logarithmic_count <- function(p) claim_count_dist(rust_result(ClaimCount$logarit
 
 #' @rdname claim_count_dist
 #' @export
-mixed_poisson_count <- function(mean, cv, mixing = c("gamma", "inverse_gaussian"), shift = 0) {
+mixed_poisson_count <- function(mean, cv,
+                                mixing = c("gamma", "inverse_gaussian", "beta", "sichel",
+                                           "sichel_gamma", "sichel_ig"),
+                                shift = 0, max = NULL, shape = NULL, skewness = NULL, f = NULL) {
   mixing <- match.arg(mixing)
+  need <- function(v, name) {
+    if (is.null(v)) stop(sprintf("mixing \"%s\" needs %s", mixing, name), call. = FALSE)
+    as.double(v)
+  }
+  param <- NA_real_
+  if (mixing == "beta") {
+    param <- need(max, "max")
+  } else if (mixing == "sichel") {
+    if (is.null(shape) == is.null(skewness)) {
+      stop("mixing \"sichel\" needs one of shape or skewness", call. = FALSE)
+    }
+    if (is.null(shape)) {
+      mixing <- "sichel_skewness"
+      param <- as.double(skewness)
+    } else {
+      param <- as.double(shape)
+    }
+  } else if (mixing %in% c("sichel_gamma", "sichel_ig")) {
+    param <- need(f, "f")
+  }
   claim_count_dist(rust_result(ClaimCount$mixed_poisson(
-    as.double(mean), as.double(cv), mixing, as.double(shift)
+    as.double(mean), as.double(cv), mixing, as.double(shift), param
   )))
+}
+
+#' @rdname claim_count_dist
+#' @export
+gig_parameters <- function(x) {
+  g <- x@ptr$gig()
+  if (length(g) == 0) NULL else c(shape = g[[1]], omega = g[[2]], eta = g[[3]])
 }
 
 #' @rdname claim_count_dist
