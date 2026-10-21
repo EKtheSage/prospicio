@@ -1,6 +1,6 @@
 # Design note: excess-layer loss development (excess LDFs, benchmark blending, a layer BF prior)
 
-Status: **Proposed** (2026-10-21; issue #192, which the user chose on 2026-10-21; the points under "Open decisions" wait for the user) · Lane: Reserving
+Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended; the gate that the sources be read in full for a worked example before PR 1 stands) · Lane: Reserving
 (`crates/prospicio-reserving/`; `prospicio-prob` severities used read-only;
 `prospicio-pricing` exposure curves reached only through the bindings, see
 open decision 2) · Depends on: `reserving-v02.md` (decision 2, the
@@ -337,27 +337,37 @@ changelog fragment and a knowledge fragment.
 
 ## Open decisions
 
+The user decided every point below on 2026-10-21, taking each recommendation as written.
+
 1. **Default severity-by-maturity model.** (a) Scale shift in PR 1, shape
    drift in PR 2. (b) Both in PR 1. (c) Scale shift only, shape drift when
    a user asks. *Recommendation: (a).* Scale shift is identified by the
    ground-up triangle alone, so it works for every user; shape drift needs a
    severity at each maturity.
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 2. **Where the exposure-curve route lives.** (a) Bindings only: the user
    computes `layer_share` and passes shares. (b) `prospicio-reserving`
    depends on `prospicio-pricing`. (c) Move the trait to `prospicio-prob`
    (an Aggregate and Probability lane change). *Recommendation: (a).* It
    keeps the reserving crate light and in the WASM scope; (b) can follow if
    users ask.
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 3. **Counts.** (a) An optional count column and the count ratio in the
    formula. (b) Ground-up severity only, counts ignored. *Recommendation:
    (a).* Without counts the factor mixes frequency and severity
    development; with them it separates.
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 4. **Credibility weight in PR 2.** (a) `n / (n + k)`, with `n` the layer
    claim count or the origins with a positive earlier value (section 2),
    capped against a single large ratio. (b) Bühlmann–Straub over origins
    with the layer's volume-weighted variance of the link ratios. (c) The
    user's weights only. *Recommendation: (a), with (c) always available;*
    (b) later if asked, since it uses the ratios' variance that (a) ignores.
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 5. **Trend.** (a) The caller supplies a severity at one price level, already
    trended, for all origins. (b) A per-origin trend, which needs a
    per-origin pattern: a change to every development method, not only this
@@ -365,15 +375,21 @@ changelog fragment and a knowledge fragment.
    decision later if the user wants it,* since leveraged trend between
    accident years is a calendar-year effect that one factor per age cannot
    carry.
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 6. **Layers that change by year.** (a) Reject origins whose layer differs
    from the one given. (b) Group the origins by layer and fit each group as
    its own segment (`fit_segments`, which exists). (c) A per-origin layer,
    which needs the per-origin pattern of decision 5 (b). *Recommendation:
    (a) in PR 1, with (b) documented as the way to handle changing
    retentions;* (c) only with 5 (b).
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 7. **Guides.** Whether PR 3 touches `docs/guides/reserving-methods.md` or
    leaves it to the Guides lane. *Recommendation: leave it to the Guides
    lane, with the issue they already track.*
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 8. **Sparse ages in `Development`.** (a) Skip estimating an age whose
    selected weight is 1 (its own factor `NaN`, its sigma `None`, Mack's
    sigma there from the interpolation rule already used for missing
@@ -382,19 +398,26 @@ changelog fragment and a knowledge fragment.
    forces weight 1 there. (c) Replace the error by a factor of 1 at an
    all-zero age. *Recommendation: (a), with (b) built on it in PR 2;* (c)
    silently invents a factor.
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 9. **Basis.** (a) Incurred only, paid rejected. (b) Paid too, with a
    payment-timing assumption by claim size. *Recommendation: (a);* (b)
    needs claim-level data this plan does not use.
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 10. **The tail of the layer pattern.** (a) From the ground-up `Tail`, one
     more shift solved for it. (b) No tail: the derived pattern ends at the
     oldest age and the user supplies a layer tail. *Recommendation: (a),
     with (b) as no tail.*
+   *Decided 2026-10-21 (the user): the recommendation.*
+
 11. **The credibility constant `k`** and the simulation study's acceptance
     thresholds. (a) `k` a required argument, no default. (b) A default
     chosen from the simulation study. (c) Replace `k` by Bühlmann–Straub's
     variance ratio (decision 4 (b)). *Recommendation: (a) in PR 2, with the
     study reporting the RMSE across `k` so a default can follow;* the
     thresholds as proposed under "Validation targets".
+   *Decided 2026-10-21 (the user): the recommendation.*
 
 ## References
 
