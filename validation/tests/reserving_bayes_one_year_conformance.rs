@@ -2,7 +2,8 @@
 //! (`docs/design/reserving-bayes.md`, decision 17), in a release build:
 //! the checks of the generic engine that need no external reference and
 //! too many NUTS refits for a unit test. [`conform`] runs on every model
-//! with a one-year view (`BayesOdp` on RAA and GenIns, `BayesBf` on GenIns
+//! with a one-year view (`BayesOdp` on RAA and GenIns, `BayesBf` and
+//! `BayesBfNormalised` on GenIns
 //! with premium, Meyers' CRC and CSR on group 353's paid and CAY on
 //! its incurred, decision 19, and the compartmental models 1 and 2 on
 //! company 337, decision 20); a new Bayesian model's one-year view is added to
@@ -46,7 +47,7 @@
 //!    the compartmental models, whose fit needs a future cell: their unit
 //!    half samples such a square directly).
 //!
-//! A pull request runs `BayesOdp` and `BayesBf` alone (the smoke run, with
+//! A pull request runs `BayesOdp`, `BayesBf` and `BayesBfNormalised` alone (the smoke run, with
 //! the same sizes and bounds): Meyers' and the compartmental models, whose
 //! refits cost seconds each and took most of the suite's 11 minutes on
 //! CI's runner, join when `RISK_RS_FULL_BAYES` is set, as in CI's weekly
@@ -62,13 +63,16 @@
 //! 4 seed-to-seed sds over seeds 0 to 19 (largest: mean z 4.40, opening z
 //! 4.75, both GenIns under `BayesOdp`; gaps 0.071, `BayesBf`, and 0.455,
 //! RAA; Meyers' flagged gap 0.606, CSR; the compartmental models' over
-//! seeds 0 to 9 only, for their cost, with their own bounds below), and
-//! every seed passes
+//! seeds 0 to 9 only, for their cost, with their own bounds below;
+//! `BayesBfNormalised` over seeds 0 to 11: mean z up to 1.55, opening z up
+//! to 1.42, gaps 0.076 and 0.234, its unflagged gap bound 0.09 being its
+//! own, `BF_NORMALISED_REFITS`), and every seed passes
 //! (`seed_sweep`, ignored: `SWEEP_SEEDS=20 cargo test --release -p
 //! prospicio-validation --features slow-bayes --test
 //! reserving_bayes_one_year_conformance -- --ignored seed_sweep
 //! --nocapture`; `SWEEP_MEYERS_ONLY=1` runs Meyers' models alone,
-//! `SWEEP_COMPARTMENTAL_ONLY=1` the compartmental models).
+//! `SWEEP_COMPARTMENTAL_ONLY=1` the compartmental models,
+//! `SWEEP_BF_NORMALISED_ONLY=1` `BayesBfNormalised`).
 
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -76,9 +80,9 @@ use std::time::Instant;
 use prospicio_bayes::nuts::Sampler;
 use prospicio_prob::{Distribution, PredictiveDistribution};
 use prospicio_reserving::bayes::{
-    BayesBf, BayesBfFit, BayesOdp, BayesOdpFit, BayesOneYear, BayesOneYearFit, Compartmental,
-    CompartmentalFit, CompartmentalPriors, Meyers, MeyersFit, MeyersModel, OneYearRefit,
-    Outstanding,
+    BayesBf, BayesBfFit, BayesBfNormalised, BayesBfNormalisedFit, BayesOdp, BayesOdpFit,
+    BayesOneYear, BayesOneYearFit, Compartmental, CompartmentalFit, CompartmentalPriors, Meyers,
+    MeyersFit, MeyersModel, OneYearRefit, Outstanding,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
 use prospicio_validation::{full_bayes, triangle, triangle_columns};
@@ -103,6 +107,17 @@ struct Refits {
 const REFITS: Refits = Refits {
     sims: 300,
     gaps: (0.08, 0.5),
+    matches: true,
+    opening: 5.0,
+    replay: 300,
+};
+/// `BayesBfNormalised`: its reweighting's gap where `k̂` is at most 0.7 runs a
+/// little wider than `BayesBf`'s (mean 0.065, sd 0.005, largest 0.076 over
+/// seeds 0 to 11, against 0.056, 0.004 and 0.071), so 0.09 (the mean plus 5
+/// sds); the flagged gap's mean is 0.174, sd 0.033, largest 0.234.
+const BF_NORMALISED_REFITS: Refits = Refits {
+    sims: 300,
+    gaps: (0.09, 0.5),
     matches: true,
     opening: 5.0,
     replay: 300,
@@ -428,6 +443,22 @@ fn bf(tri: &Triangle) -> Box<Run<'_, BayesBfFit>> {
     })
 }
 
+/// `BayesBfNormalised` with GenIns' premium, apriori 0.5 and cv 0.2, the
+/// same settings as `bf`.
+fn bf_normalised(tri: &Triangle) -> Box<Run<'_, BayesBfNormalisedFit>> {
+    Box::new(move |n_sims, seed, refit| {
+        BayesBfNormalised {
+            apriori: 0.5,
+            cv: 0.2,
+            n_sims,
+            seed,
+            ..BayesBfNormalised::default()
+        }
+        .one_year(tri, "paid", "premium", &settings(refit))
+        .unwrap()
+    })
+}
+
 /// Group 353 Commercial Auto (`data/clrd_comauto_353.csv`), the cells at
 /// calendar years up to 1997, columns `paid`, `incurred` and `premium`, as
 /// in `reserving_meyers.rs`.
@@ -594,54 +625,72 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
     );
     let odp_reserves: fn(&BayesOdpFit) -> &PredictiveDistribution = |f| &f.reserves;
     let bf_reserves: fn(&BayesBfFit) -> &PredictiveDistribution = |f| &f.reserves;
+    let bf_normalised_reserves: fn(&BayesBfNormalisedFit) -> &PredictiveDistribution =
+        |f| &f.reserves;
     let meyers_reserves: fn(&MeyersFit) -> &PredictiveDistribution = |f| &f.reserves;
     let group = comauto_353();
     // SWEEP_MEYERS_ONLY and SWEEP_COMPARTMENTAL_ONLY (the sweep): those
     // models alone.
     let meyers_only = !strict && std::env::var("SWEEP_MEYERS_ONLY").is_ok();
     let compartmental_only = !strict && std::env::var("SWEEP_COMPARTMENTAL_ONLY").is_ok();
-    let mut out = if meyers_only || compartmental_only {
-        Vec::new()
-    } else {
-        vec![
-            (
+    // SWEEP_BF_NORMALISED_ONLY (the sweep): BayesBfNormalised alone.
+    let bf_normalised_only = !strict && std::env::var("SWEEP_BF_NORMALISED_ONLY").is_ok();
+    let mut out = Vec::new();
+    if !(meyers_only || compartmental_only || bf_normalised_only) {
+        out.push((
+            "BayesOdp RAA",
+            conform(
                 "BayesOdp RAA",
-                conform(
-                    "BayesOdp RAA",
-                    &*odp(&raa, "values"),
-                    Some(&*odp(&closed, "paid")),
-                    odp_reserves,
-                    REFITS,
-                    seed,
-                    strict,
-                ),
+                &*odp(&raa, "values"),
+                Some(&*odp(&closed, "paid")),
+                odp_reserves,
+                REFITS,
+                seed,
+                strict,
             ),
-            (
+        ));
+        out.push((
+            "BayesOdp GenIns",
+            conform(
                 "BayesOdp GenIns",
-                conform(
-                    "BayesOdp GenIns",
-                    &*odp(&genins, "values"),
-                    Some(&*odp(&closed, "paid")),
-                    odp_reserves,
-                    REFITS,
-                    seed,
-                    strict,
-                ),
+                &*odp(&genins, "values"),
+                Some(&*odp(&closed, "paid")),
+                odp_reserves,
+                REFITS,
+                seed,
+                strict,
             ),
-            (
+        ));
+        out.push((
+            "BayesBf GenIns",
+            conform(
                 "BayesBf GenIns",
-                conform(
-                    "BayesBf GenIns",
-                    &*bf(&premium),
-                    Some(&*bf(&closed)),
-                    bf_reserves,
-                    REFITS,
-                    seed,
-                    strict,
-                ),
+                &*bf(&premium),
+                Some(&*bf(&closed)),
+                bf_reserves,
+                REFITS,
+                seed,
+                strict,
             ),
-        ]
-    };
+        ));
+    }
+    if !(meyers_only || compartmental_only) {
+        out.push((
+            "BayesBfNormalised GenIns",
+            conform(
+                "BayesBfNormalised GenIns",
+                &*bf_normalised(&premium),
+                Some(&*bf_normalised(&closed)),
+                bf_normalised_reserves,
+                BF_NORMALISED_REFITS,
+                seed,
+                strict,
+            ),
+        ));
+    }
+    if bf_normalised_only {
+        return out;
+    }
     // A strict run without the full gate (a pull request): no Meyers model.
     let meyers_models = if compartmental_only || (strict && !full_bayes()) {
         0
