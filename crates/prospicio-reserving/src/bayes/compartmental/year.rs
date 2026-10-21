@@ -587,14 +587,18 @@ impl YearModel for CompartmentalYear<'_> {
                 vec![row.iter().sum()]
             })?;
             let divergent = centred.divergences().iter().sum::<usize>() > 0;
+            // A run too short to diagnose (under 4 draws a chain) has no
+            // summary at all, and that is a warning too.
             let warned = divergent
-                || reserve.summary()?.iter().any(|s| {
-                    s.rhat.is_nan()
-                        || s.rhat > LIGHT_MAX_RHAT
-                        || s.ess_bulk.is_nan()
-                        || s.ess_bulk < LIGHT_MIN_ESS
-                        || s.ess_tail.is_nan()
-                        || s.ess_tail < LIGHT_MIN_ESS
+                || reserve.summary().map_or(true, |summary| {
+                    summary.iter().any(|s| {
+                        s.rhat.is_nan()
+                            || s.rhat > LIGHT_MAX_RHAT
+                            || s.ess_bulk.is_nan()
+                            || s.ess_bulk < LIGHT_MIN_ESS
+                            || s.ess_tail.is_nan()
+                            || s.ess_tail < LIGHT_MIN_ESS
+                    })
                 });
             return Ok((centred, warned));
         }
