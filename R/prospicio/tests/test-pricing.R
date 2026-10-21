@@ -378,3 +378,25 @@ share <- exposure_layer_share(c3, 4, 2, 10)
 stopifnot(abs(attr(swiss_re_for_layer_share(4, 2, 10, share), "c") - 3) < 1e-9)
 # A Pareto with alpha 3: CV 1/sqrt(3).
 stopifnot(abs(layer_cv(pareto(100, 3), Inf, 0) - 1 / sqrt(3)) < 1e-9)
+
+# Return metrics on cash flows (#480): one root at 10%, two at 10% and 20%
+# (the one nearest 0 reported), none.
+flows <- rbind(c(-100, 0, 121), c(-100, 230, -132), c(10, 5, 1))
+r <- irr(flows, c(0, 1, 2))
+stopifnot(nrow(r) == 3, identical(r$found, c(TRUE, TRUE, FALSE)))
+stopifnot(identical(r$sign_changes, c(1L, 2L, 0L)), is.na(r$rate[3]))
+stopifnot(all(abs(r$rate[1:2] - 0.1) < 1e-12), abs(r$npv[1]) < 1e-9)
+stopifnot(abs(irr(flows[2, ], c(0, 1, 2), lower = 0.15)$rate - 0.2) < 1e-12)
+by_month <- irr(c(-100, 0, 0, 103), 0:3, unit = "months")$rate
+by_day <- irr(c(-100, 0, 0, 103), c(0, 31, 59, 90), unit = "days")$rate
+stopifnot(abs(by_month - (1.03^4 - 1)) < 1e-12, abs(by_day - (1.03^(365 / 90) - 1)) < 1e-12)
+stopifnot(abs(npv(c(-50, 60), c(0, 1), 0.05) - (-50 + 60 / 1.05)) < 1e-12)
+stopifnot(abs(npv(flows, c(0, 1, 2), 0.1)[1]) < 1e-12)
+stopifnot(abs(moic(30, 40, 60) - 1.3) < 1e-15, abs(leverage(0.5, 300, 50, 100) - 1) < 1e-15)
+stopifnot(all(abs(moic(c(30, 0), 40, 60) - c(1.3, 1)) < 1e-15))
+stopifnot(all(abs(tiered_fee(c(-5, 10, 20, 50), c(0, 10, 30), c(0.05, 0.1, 0.25)) -
+                  c(0, 0.5, 1.5, 7.5)) < 1e-14))
+stopifnot(inherits(try(irr(flows, c(0, 1)), silent = TRUE), "try-error"))
+stopifnot(inherits(try(npv(1, 0, 0.1, unit = "weeks"), silent = TRUE), "try-error"))
+stopifnot(inherits(try(moic(1, 0, 0), silent = TRUE), "try-error"))
+stopifnot(inherits(try(tiered_fee(1, c(1, 1), c(0.1, 0.2)), silent = TRUE), "try-error"))

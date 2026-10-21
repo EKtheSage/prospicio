@@ -22,6 +22,9 @@
 //!   (increased limit factors, deductibles) and reinsurance pricing:
 //!   Pareto extrapolation between layers and the alphas implied by two
 //!   layers, a frequency and a layer, or two frequencies.
+//! - [`returns`]: return metrics on simulated cash flows: NPV, the IRR
+//!   with a flag for whether a root was found, MOIC, leverage and a fee
+//!   tiered on the margin.
 //! - [`risk_load`]: risk-loaded prices from simulated losses (a distortion
 //!   or a cost of capital on distortion-measured assets), for one cover
 //!   or allocated across a portfolio's components.
@@ -45,5 +48,6 @@ pub mod payout;
 pub mod profile;
 pub mod quote;
 pub mod ratemaking;
+pub mod returns;
 pub mod risk_load;
 pub mod tower;

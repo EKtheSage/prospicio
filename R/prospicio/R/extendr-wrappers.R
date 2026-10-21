@@ -198,6 +198,16 @@ pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_p
 
 pricing_price_over_payout <- function(expected_loss, premium, assets, times, shares, rate, coc) .Call(wrap__pricing_price_over_payout, expected_loss, premium, assets, times, shares, rate, coc)
 
+pricing_npv <- function(flows, times, rate, unit) .Call(wrap__pricing_npv, flows, times, rate, unit)
+
+pricing_irr <- function(flows, times, unit, lower, upper, points, bisections, newton_steps) .Call(wrap__pricing_irr, flows, times, unit, lower, upper, points, bisections, newton_steps)
+
+pricing_moic <- function(released, funded, opening) .Call(wrap__pricing_moic, released, funded, opening)
+
+pricing_leverage <- function(rate, premium, funded, opening) .Call(wrap__pricing_leverage, rate, premium, funded, opening)
+
+pricing_tiered_fee <- function(margins, breakpoints, slopes) .Call(wrap__pricing_tiered_fee, margins, breakpoints, slopes)
+
 pricing_development_pattern <- function(ids, age, amount, ages) .Call(wrap__pricing_development_pattern, ids, age, amount, ages)
 
 pricing_pattern_at <- function(ages, factors, x) .Call(wrap__pricing_pattern_at, ages, factors, x)

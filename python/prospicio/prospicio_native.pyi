@@ -12278,6 +12278,35 @@ class InverseGaussian:
         """
 
 @final
+class IrrResult:
+    """
+    The internal rates of return of simulated cash flows, from ``irr``.
+    """
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def found(self, /) -> list[bool]:
+        """
+        Whether each simulation's search found a root.
+        """
+    @property
+    def npv(self, /) -> list[float]:
+        """
+        The net present value at each rate, NaN where no root was found.
+        """
+    @property
+    def rate(self, /) -> list[float]:
+        """
+        Each simulation's annual rate, NaN where no root was found.
+        """
+    @property
+    def sign_changes(self, /) -> list[int]:
+        """
+        The roots each search saw on its grid: more than one means several
+        rates of return, and ``rate`` is the one nearest 0.
+        """
+
+@final
 class JointGrid:
     """
     A joint distribution of two losses on a grid, ``P(A = i * step_a, B = j
@@ -26335,6 +26364,46 @@ def ks_uniform(values: Sequence[float]) -> float:
     float
     """
 
+def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str = "years", lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
+    """
+    The internal rate of return of each simulation's cash flows, an annual
+    rate discounting by ``(1 + r)^-t``.
+    
+    The flows' value is computed on a grid of ``points`` rates from
+    ``lower`` to ``upper``; of its sign changes (and exact zeros) the one
+    whose bracket's midpoint is nearest 0 is halved ``bisections`` times and
+    refined by ``newton_steps`` Newton steps clipped to the bracket. A
+    simulation with no root in the range (flows of one sign, say) has
+    ``found`` false and NaN; one with several has ``sign_changes`` above 1.
+    The defaults are a reference simulation model's.
+    
+    Parameters
+    ----------
+    flows : list of list of float
+        One simulation's flows a row, one column a time.
+    times : list of float
+        The time of each column, in ``unit`` from the start.
+    unit : str, default "years"
+        ``"years"``, ``"months"`` (a twelfth of a year) or ``"days"``
+        (actual/365).
+    lower, upper : float, optional
+        The range searched, by default -0.95 to 1.
+    points : int, default 400
+    bisections : int, default 8
+    newton_steps : int, default 3
+    
+    Returns
+    -------
+    IrrResult
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import irr
+    >>> r = irr([[-100.0, 230.0, -132.0], [10.0, 5.0, 1.0]], [0.0, 1.0, 2.0])
+    >>> [round(x, 12) for x in r.rate[:1]], r.found, r.sign_changes
+    ([0.1], [True, False], [2, 0])
+    """
+
 def layer_cv(severity: Any, limit: float, attachment: float) -> float:
     """
     Coefficient of variation of the loss to ``limit`` xs ``attachment``
@@ -26396,6 +26465,32 @@ def layer_loss_picks(severity: Grid, attachments: Sequence[float], picks: Sequen
     >>> picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
     >>> [round(10 * t, 6) for t in picked.to_dict()["target"]]
     [480.0, 420.0, 60.0]
+    """
+
+def leverage(rate: float, premium: float, funded: float, opening: float) -> float:
+    """
+    The leverage of written premium on capital,
+    ``rate * premium / (funded + opening)``. The rate is the caller's.
+    
+    Parameters
+    ----------
+    rate : float
+    premium : float
+        Written premium.
+    funded : float
+        Capital funded during the term.
+    opening : float
+        Capital held at the start.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import leverage
+    >>> leverage(0.5, 300.0, 50.0, 100.0)
+    1.0
     """
 
 def lift(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
@@ -26738,6 +26833,30 @@ def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tup
     [(2.0, 1.5, 2)]
     """
 
+def moic(released: float, funded: float, opening: float) -> float:
+    """
+    The multiple on invested capital, ``1 + released / (funded + opening)``.
+    
+    Parameters
+    ----------
+    released : float
+        Equity released over the term.
+    funded : float
+        Capital funded during the term.
+    opening : float
+        Capital held at the start.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import moic
+    >>> moic(30.0, 40.0, 60.0)
+    1.3
+    """
+
 def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
     """
     The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
@@ -26753,6 +26872,34 @@ def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequenc
     Returns
     -------
     float
+    """
+
+def npv(flows: Sequence[Sequence[float]], times: Sequence[float], rate: float, *, unit: str = "years") -> list[float]:
+    """
+    The net present value of each simulation's cash flows at an annual
+    rate, ``sum_k x_k (1 + rate)^-t_k``.
+    
+    Parameters
+    ----------
+    flows : list of list of float
+        One simulation's flows a row, one column a time.
+    times : list of float
+        The time of each column, in ``unit`` from the start.
+    rate : float
+        Annual effective rate, above -1.
+    unit : str, default "years"
+        ``"years"``, ``"months"`` (a twelfth of a year) or ``"days"``
+        (actual/365).
+    
+    Returns
+    -------
+    list of float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import npv
+    >>> [round(v, 12) for v in npv([[-100.0, 121.0]], [0.0, 2.0], 0.1)]
+    [0.0]
     """
 
 def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequence[tuple[float, float, float]]) -> CessionStatistics:
@@ -27966,6 +28113,31 @@ def threshold_diagnostics(draws: Sequence[float], thresholds: Sequence[float]) -
     >>> d = threshold_diagnostics([1.0, 2.0, 3.0, 4.0, 5.0], [2.5])
     >>> d["n_above"], d["mean_excess"]
     ([3], [1.5])
+    """
+
+def tiered_fee(margins: Sequence[float], breakpoints: Sequence[float], slopes: Sequence[float]) -> list[float]:
+    """
+    A fee tiered on the margin: slope ``slopes[i]`` on the part of each
+    margin between ``breakpoints[i]`` and ``breakpoints[i + 1]``, the last
+    tier unbounded, nothing below the first breakpoint.
+    
+    Parameters
+    ----------
+    margins : list of float
+    breakpoints : list of float
+        Strictly increasing; the first is the floor.
+    slopes : list of float
+        One slope a breakpoint, the slope of the tier that starts there.
+    
+    Returns
+    -------
+    list of float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import tiered_fee
+    >>> [round(f, 12) for f in tiered_fee([3.0, 10.0, 25.0], [5.0, 15.0], [0.1, 0.2])]
+    [0.0, 0.5, 3.0]
     """
 
 def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], list[int]]]:

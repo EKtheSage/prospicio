@@ -158,6 +158,7 @@ reference:
       - technical_quote
       - payment_pattern
       - price_over_payout
+      - npv
       - trend_large_losses
       - burning_cost
       - development_pattern

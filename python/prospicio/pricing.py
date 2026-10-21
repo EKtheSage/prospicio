@@ -9,8 +9,9 @@ PurePremiumExperience, Provisions), and experience rating from large
 losses (LargeLossExperience, DevelopmentPattern, PreparedLosses, BurningCost,
 IndexClause, AsIf), casualty exposure rating over a table of policies
 (CasualtyProfile, IlfTable, ElfTable, CasualtyRating, ParetoAnchor,
-poisson_tail), and the time value of money (PaymentPattern,
-price_over_payout, PayoutPrice)."""
+poisson_tail), the time value of money (PaymentPattern,
+price_over_payout, PayoutPrice) and return metrics on simulated cash flows
+(npv, irr, IrrResult, moic, leverage, tiered_fee)."""
 
 from .prospicio_native import (
     AsIf,
@@ -22,6 +23,7 @@ from .prospicio_native import (
     ElfTable,
     IlfTable,
     IndexClause,
+    IrrResult,
     LargeLossExperience,
     LossRatioExperience,
     Mbbefd,
@@ -57,9 +59,13 @@ from .prospicio_native import (
     fit_references,
     censored_las,
     ilf,
+    irr,
     layer_cv,
+    leverage,
     loss_elimination_ratio,
     match_tower,
+    moic,
+    npv,
     pareto_extrapolation,
     poisson_tail,
     premium_based_expenses,
@@ -67,6 +73,7 @@ from .prospicio_native import (
     price_over_payout,
     price_portfolio,
     severity_exposure_curve,
+    tiered_fee,
     trend_factor,
     trended_present_rates,
     year_fraction,
@@ -130,4 +137,10 @@ __all__ = [
     "PaymentPattern",
     "PayoutPrice",
     "price_over_payout",
+    "npv",
+    "irr",
+    "IrrResult",
+    "moic",
+    "leverage",
+    "tiered_fee",
 ]
