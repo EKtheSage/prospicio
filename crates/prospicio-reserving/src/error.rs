@@ -98,6 +98,9 @@ pub enum Error {
     /// with these settings, for example an origin whose observed increments
     /// sum to zero or less, which leaves the log-linear mean undefined.
     Bayes(String),
+    /// An excess-layer pattern cannot be derived from this input
+    /// (`reserving-excess.md`).
+    Excess(String),
     /// Clark's growth-curve model cannot be fitted to this triangle.
     Clark(String),
     /// The claims development result (Merz–Wüthrich) does not apply to
@@ -203,6 +206,7 @@ impl fmt::Display for Error {
             ),
             Self::OdpGlm(why) => write!(f, "ODP GLM: {why}"),
             Self::Bayes(why) => write!(f, "Bayesian reserving: {why}"),
+            Self::Excess(why) => write!(f, "excess layer: {why}"),
             Self::Clark(why) => write!(f, "Clark: {why}"),
             Self::ClaimsDevelopment(why) => write!(f, "claims development result: {why}"),
             Self::OneYear {

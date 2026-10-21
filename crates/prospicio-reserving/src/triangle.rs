@@ -659,6 +659,54 @@ impl Triangle {
         Ok(self.take(&index_pos, &column_pos))
     }
 
+    /// A copy with one more measure column `name`: the cells of column
+    /// `source`, each multiplied by the factor of its origin (`factors`, one
+    /// per origin of the triangle, the same in every index position). The
+    /// mask is the source's, and the values keep the source's basis
+    /// (cumulative or incremental), so a factor per origin scales both alike.
+    pub(crate) fn with_scaled_column(
+        &self,
+        source: &str,
+        name: &str,
+        factors: &[f64],
+    ) -> Result<Self> {
+        let src = self.column_position(source)?;
+        if self.columns.iter().any(|c| c == name) {
+            return Err(Error::DuplicateColumn(name.to_string()));
+        }
+        let [ni, nc, no, nd] = self.shape;
+        if factors.len() != no {
+            return Err(Error::LengthMismatch {
+                column: name.to_string(),
+                expected: no,
+                found: factors.len(),
+            });
+        }
+        let block = no * nd;
+        let mut values = Vec::with_capacity(ni * (nc + 1) * block);
+        let mut mask = Vec::with_capacity(values.capacity());
+        for i in 0..ni {
+            let at = self.offset(i, 0, 0, 0);
+            values.extend_from_slice(&self.values[at..at + nc * block]);
+            mask.extend_from_slice(&self.mask[at..at + nc * block]);
+            let at = self.offset(i, src, 0, 0);
+            for (o, factor) in factors.iter().enumerate() {
+                let row = at + o * nd;
+                values.extend(self.values[row..row + nd].iter().map(|v| v * factor));
+                mask.extend_from_slice(&self.mask[row..row + nd]);
+            }
+        }
+        let mut columns = self.columns.clone();
+        columns.push(name.to_string());
+        Ok(Self {
+            values,
+            mask,
+            shape: [ni, nc + 1, no, nd],
+            columns,
+            ..self.clone()
+        })
+    }
+
     /// Sums the segments that share the values of `keys`, dropping the other
     /// keys. The result has `keys` as its keys, in the order given, and its
     /// segments sorted by them; `&[]` sums everything into one segment
