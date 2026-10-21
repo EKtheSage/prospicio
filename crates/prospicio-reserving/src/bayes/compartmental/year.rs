@@ -32,15 +32,21 @@
 //! [`YearModel::log_posterior`] (conformance check 5 checks it).
 
 use std::cell::Cell;
+use std::sync::OnceLock;
 
-use prospicio_bayes::nuts::PosteriorDraws;
+use prospicio_bayes::nuts::{PosteriorDraws, Sampler, sample};
 use prospicio_core::StreamRng;
 use prospicio_math::special::norm_quantile;
 
 use super::{Compartmental, Data, KER, KP, Model, Obs, lognormal};
-use crate::bayes::laplace::Posterior;
-use crate::bayes::one_year::YearModel;
+use crate::bayes::laplace::{Posterior, Whitened};
+use crate::bayes::one_year::{LightRefit, YearModel};
 use crate::error::Result;
+
+/// The R-hat above which, and the effective draws below which, a light
+/// refit's closing reserve warns.
+const LIGHT_MAX_RHAT: f64 = 1.05;
+const LIGHT_MIN_ESS: f64 = 100.0;
 
 /// What the paid amount of an incremental year cell is measured from.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -90,6 +96,9 @@ pub(super) struct CompartmentalYear<'a> {
     n_paid: usize,
     /// Each origin's last paid cell in the year, by index into `cells`.
     last_paid: Vec<Option<usize>>,
+    /// A warm-started refit's sampler and the opening draws, on the sampled
+    /// scale, that scale it ([`warm_start`](Self::warm_start)).
+    light: Option<(LightRefit, OnceLock<PosteriorDraws>)>,
 }
 
 impl<'a> CompartmentalYear<'a> {
@@ -171,7 +180,24 @@ impl<'a> CompartmentalYear<'a> {
             cells,
             n_paid,
             last_paid,
+            light: None,
         })
+    }
+
+    /// Refit as `light` says, when it is `Some`, from `opening`, the
+    /// opening posterior on the centred scale.
+    pub(super) fn warm_start(
+        &mut self,
+        light: Option<LightRefit>,
+        opening: &PosteriorDraws,
+    ) -> Result<()> {
+        if let Some(l) = light {
+            let sampled = opening.transform(self.full.sampled_names(), |x| self.to_sampled(x))?;
+            let cell = OnceLock::new();
+            let _ = cell.set(sampled);
+            self.light = Some((l, cell));
+        }
+        Ok(())
     }
 
     /// `theta` with the centred effects back on the sampling scale `z`.
@@ -530,6 +556,52 @@ impl YearModel for CompartmentalYear<'_> {
     /// unconstrained scale of the model with every level.
     fn refit(&self, year: &[f64], seed: u64) -> Result<(PosteriorDraws, bool)> {
         let model = self.extended(year)?;
+        if let Some((light, opening)) = &self.light {
+            // Warm start: the opening posterior's mean and covariance scale
+            // the sampler (no pilot run), which starts at that mean and runs
+            // a shorter adaptation and fewer draws.
+            let opening = opening.get().expect("set with the setting");
+            let whitened = Whitened::from_draws(&model, opening)?;
+            let sampler = Sampler {
+                chains: light.chains,
+                tune: light.tune,
+                draws: light.draws,
+                seed,
+                ..self.compartmental.sampler
+            };
+            let draws = sample(&whitened, &vec![0.0; model.dim()], sampler)?;
+            let sampled = draws.transform(model.sampled_names(), |z| whitened.theta(z))?;
+            let centred = sampled.transform(model.sampled_names(), |x| self.to_centred(x))?;
+            // A short run does not mix every one of 95 parameters (the
+            // effect sds near zero), so the warning is about what the view
+            // uses of a refit, its closing reserve: the total reserve's
+            // draws, at looser bounds than the fit's (R-hat 1.05, 100
+            // effective draws: a gap of 10% of the posterior sd in the mean
+            // at worst, against the 1.01 and 400 that warned on half the
+            // refits of company 337 whose closing reserves were within
+            // 0.03 sd of a full refit's) and the divergences.
+            let n = self.data.origins.len();
+            let reserve = centred.transform(vec!["closing_reserve".into()], |x| {
+                let mut row = vec![0.0; n];
+                self.closing(x, year, &mut row);
+                vec![row.iter().sum()]
+            })?;
+            let divergent = centred.divergences().iter().sum::<usize>() > 0;
+            // A run too short to diagnose (under 4 draws a chain) has no
+            // summary at all, and that is a warning too.
+            let warned = divergent
+                || reserve.summary().map_or(true, |summary| {
+                    summary.iter().any(|s| {
+                        s.rhat.is_nan()
+                            || s.rhat > LIGHT_MAX_RHAT
+                            || s.ess_bulk.is_nan()
+                            || s.ess_bulk < LIGHT_MIN_ESS
+                            || s.ess_tail.is_nan()
+                            || s.ess_tail < LIGHT_MIN_ESS
+                    })
+                });
+            return Ok((centred, warned));
+        }
         let (_, sampled, diagnostics) = self.compartmental.sample(&model, seed)?;
         let sampled = sampled.transform(model.sampled_names(), |x| self.to_centred(x))?;
         Ok((sampled, !diagnostics.warnings.is_empty()))

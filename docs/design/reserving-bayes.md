@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -51,6 +51,7 @@ together, as in `reserving-v02.md` decision 7.
 | 11 | `claude/bayes-one-year-compartmental` | `Compartmental::one_year` for models 1 and 2 through `YearModel` (decision 20), a refit budget (`max_refits`) for every model's view; in Rust, Python and R | PR 10 |
 | 12 | `claude/backtest-bindings` | the diagonal backtest in Python and R, each fit's diagnostics in the forecast and the backtest, two more metrics (decision 21, #342) | `main` |
 | 13 | `claude/bayes-bf-normalised` | `BayesBfNormalised`: the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate (decision 23, #410); in Rust, Python and R | `main` |
+| 14 | `claude/gm2-one-year-accuracy` | `BayesOneYear::light_refit`: a warm-started, shorter sampler for the refits of `Compartmental`'s one-year view, model 2's within 0.03 sd of full refits (decision 24, #394); in Rust, Python and R | `main` |
 | later | | the paid-incurred `Ipi` | PR 5 |
 
 PRs 2 to 4 touch the same binding files
@@ -2949,6 +2950,142 @@ the limits above, finite-difference and `Scalar`-oracle gradients, the
 conformance suite and `BayesOdp`. (d) `fit_segments` and the diagonal
 backtest, as for `BayesBf`.
 
+### 24. A light refit for the compartmental one-year view (issue #394)
+
+Built in Rust, Python and R on `claude/gm2-one-year-accuracy`
+(2026-10-21). Issue #394 asked for model 2's one-year view to come within
+about 0.05 sd of the total of a full refit on company 337 at a budget that
+lets it be the default, or for the note to record why not. Decision 20
+and open decision 15 left model 2 reweighting only (0.25 to 0.52 sd off the
+refits' totals on the years below) because moment matching rescues none of
+its flagged simulations and a refit takes as long as a fit. The first of
+the issue's ideas, a shorter refit sampler warm-started from the fit,
+meets the target, so the other two (finding out why matching fails, a
+Laplace or variational proposal) were not tried, as the stop rule of the
+task said. Moment matching is untouched.
+
+**The setting.** `BayesOneYear::light_refit: Option<LightRefit>`, `None`
+by default, which is the model's own: the fit's own sampler for every refit
+of every model but model 2, whose default is now the light refit (the
+user's decision of 2026-10-21, below). Every other existing view is
+unchanged bit for bit, provenance included (the provenance gains
+`light_refit` only when it is set). `LightRefit { chains, tune, draws }`
+defaults to 4 chains of 150 warm-up and 250 kept draws. `Compartmental`
+uses it and records it in the provenance; the other models ignore it and do
+not record it, though a malformed value is still an error for every model
+(the Python and R bindings expose it on `Compartmental` only). A refit with it:
+
+* takes the opening posterior's draws (the fit's, with the fresh effects of
+  1997 and the new ages drawn, which `simulate` already holds) back on the
+  sampled `z` scale, and scales its sampler by their mean and covariance,
+  regularised as Stan regularises its dense metric (`Whitened::from_draws`),
+  where the fit's refit first runs a pilot sampler of `tune` iterations on
+  a Laplace scale and scales by that;
+* starts at that mean, adapts for `tune` iterations and keeps `draws` per
+  chain, with the fit's `target_accept` and `max_depth` and the refit's
+  seed as before;
+* warns (`refit_warnings`) when the total closing reserve of its draws has an
+  R-hat above 1.05 or fewer than 100 effective draws, or any chain
+  diverged. The fit's bounds (1.01, 100 per chain) on the 95 parameters
+  warned on every light refit (the effect sds near 0 mix slowly in a short
+  run) and 1.01 and 100 per chain on the reserve alone warned on 14 of 32,
+  whose totals were within 0.03 sd of the full refits'; the reserve is what
+  the view uses of a refit.
+
+**The default, by the user's decision of 2026-10-21 (open decision 17,
+(b)).** With `refit` `None`, model 2 refits its flagged simulations
+(`RefitFlagged`; moment matching would only add 0.12 s a simulation for
+nothing) with `LightRefit::default()`, and the view is not approximate, so
+no warning. This replaces open decision 15's reweight-only default for model
+2. `BayesOneYear::no_light_refit` (Python and R `light_refit=False`) turns
+it off: model 2 then reweights only, with the approximate warning of
+decision 20 (its text now says the light refit was turned off). A refit
+mode the settings choose is used as it is, with the fit's own sampler
+unless `light_refit` is given, so every explicit `refit` of the earlier
+decisions behaves as before. A `light_refit` given with `refit` `None` is a
+choice to refit, as before. Model 1 keeps moment matching and uses the light
+sampler for what matching cannot rescue only when it is given. Nothing else
+changed: the view still runs at most 2,000 simulations by default, so
+model 2's default view takes about 31 minutes at its default count on 16
+threads (a smaller `n_sims` or a `max_refits` budget shortens it), against
+85 s reweighted. `Compartmental::one_year_refit` returns `RefitFlagged` for
+model 2. Python: `light_refit=None` (the model's default), `False` (off),
+`True` or `(chains, tune, draws)` on `Compartmental.one_year` and
+`one_year_segments`; R: `light_refit = NULL`, `FALSE`, `TRUE` or
+`c(chains, tune, draws)` on `compartmental_one_year()`,
+`compartmental_model_2_one_year()` and `compartmental_one_year_segments()`.
+CI's pull requests run no model-2 view at the default count: the weekly and
+manual run's `the_default_view_of_model_2_refits_lightly` uses 20
+simulations and `the_view_of_model_2_without_the_light_refit_reweights`
+runs the 2,000 reweighted.
+
+**Checked on every PR's `bayes` job** (`light_refit_conforms`, run with
+the one-year conformance suite on models 1 and 2 with a small sampler):
+one year drawn from the opening posterior, refitted by the fit's sampler
+and by the default light one, gives the opening's column names both ways,
+closing reserves whose means agree within 0.3 of their sd and whose sds
+agree within 25%, and light draws whose score under `log_posterior` with
+that year has mean zero. Skipping the map back to the centred scale fails
+it on both models. The accuracy against full refits on company 337 below
+runs only weekly and on demand (`RISK_RS_FULL_BAYES`).
+
+**Results** (company 337 as in decision 20, model 2 at its defaults, the
+first years of the simulations of the seed; `RefitAll` with the full
+sampler is the reference; the gap is the rms over simulations of the
+difference of the totals, in units of the total's sd over 1,000
+reweighted simulations (about 11,000); `model_2_light_refit`, ignored):
+
+| seed, years | reweighting only | 4,150,250 | 4,300,500 | 4,100,150 | 4,50,100 | 2,200,300 |
+|---|---|---|---|---|---|---|
+| 0, 16 | 0.522 | 0.035 | 0.020 | | | |
+| 1, 32 | 0.252 | 0.029 | 0.025 | 0.059 | 0.059 | 0.047 |
+| 2, 24 | 0.297 | 0.033 | 0.038 | | | |
+
+(chains, warm-up, draws). The mean gap is within 0.02 of zero and the
+ratio of the sds of the totals within 1.5% of 1 in every row. Two full
+refits differ by their own Monte Carlo error, so about 0.03 is the floor of
+the comparison: longer light refits (4,300,500; 4,500,1000 at 0.015 on seed
+0) do not get closer, shorter ones (4,100,150 and below) fall to 0.06 to
+0.08. The default, 4,150,250, is the shortest run at the floor. It was
+chosen on seed 1, whose years also report it, so 0.029 is in sample; seeds
+0 and 2 (0.035 and 0.033) were not used to choose it. 2 chains are at the
+bound of the target (0.045 to 0.047). These figures are model 2 on
+company 337 only: model 1 uses the light sampler only for the simulations
+moment matching cannot rescue (about 5% on company 337), and those refits
+were not compared with full refits.
+
+**Cost** (`light_runtime`, ignored; release, 16 threads). Every time here
+is wall time on one 16-thread machine, and a time per refit is the wall
+time of a parallel run over its refits (throughput, not one refit's
+latency), so it scales with the hardware. A refit takes about 0.5 to 0.9 s
+(32 refits of the default: 15 s beyond the fit on seed 1; full refits take
+about 30 s each in the same conditions, about 30 times the 0.9 s of the
+2,000-simulation run); 2,000 simulations, the default
+count, took 1,872 s (31 minutes): fit 61 to 120 s, every simulation flagged
+and refitted, 29 refits warned, mean total claims development result 145
+(sd 11,058). The default view of model 2 (reweighting only) takes about
+85 s, so a light refit of every simulation is about 20 times as long as
+that view and about a thirtieth of refitting in full (about 17 hours at
+2,000 simulations). It is as long as model 1's default view at 10,000
+simulations (33 minutes) and about four times model 1's at 2,000.
+
+**Proposal, for the user (open decision 17), decided.** The target is met
+at a cost of about 30 minutes for the default 2,000 simulations, 20 times
+the reweighted view. The user decided on 2026-10-21 to make it model 2's
+default (open decision 17 below).
+
+**A cheaper sampler setting, measured and not built.** Lowering the refit's
+`target_accept` from model 2's 0.999 to 0.95 (a temporary override; 400
+simulations at the default light sampler for the times, seed 1 and 32
+years for the gap) cut a refit from 0.64 s to 0.35 s of wall time, and to
+0.8 cut it to 0.20 s. The gap to the full refits was 0.036 at both
+settings (0.029 at 0.999) and the total's sd within 0.5% of the full
+refits', but with a few divergences (1 to 25 among 1,000 kept draws, in
+about a quarter of the refits), which the warning above counts: 122 and
+386 of 400 refits warned, against 4. Not built: the light refit uses the
+fit's own `target_accept`, and the saving of 1.8 times is open decision
+17's choice (d).
+
 ## Open decisions for the user
 
 Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a),
@@ -3093,6 +3230,9 @@ are settled.
     simulations by default (a form of (d)); pull requests run model 1 of
     the compartmental one-year validation only, the weekly and manual runs
     all of it (decision 20, last paragraphs). (c) stays open for later.
+    *Superseded for model 2's default on 2026-10-21 by open decision 17:
+    its view refits the flagged simulations with the light refit, and
+    reweights only (with the warning) when `light_refit` is turned off.*
     The question as raised: Moment matching rescues about 95%
     of model 1's flagged simulations, so its default view takes
     about 33 minutes at 10,000 simulations (369 refits); it rescues none of model 2's, so
@@ -3125,3 +3265,32 @@ are settled.
     own strength, so a tight one reproduces `Bf` at every `apriori` (the
     issue's optional ask), as a setting of this model. *Recommended: (a)
     now, (b) when a user wants the classical pattern.*
+17. **Whether model 2's one-year view refits with the light sampler by
+    default.** Decided 2026-10-21 by the user ("ok" to the recommendation):
+    (b), the light refit of the flagged simulations is model 2's default
+    (`RefitFlagged`, no approximate warning, about 31 minutes at the default
+    2,000 simulations); `light_refit=False` reweights only; (c) and (d) not
+    taken (decision 24). The question as raised: raised 2026-10-21 by
+    decision 24 (#394), which builds the
+    `light_refit` setting open decision 15 (c) asked for and measures it
+    against full refits of model 2 on company 337: the gap of the totals is
+    0.03 sd (0.029 to 0.035 for the default on three seeds; reweighting only
+    0.25 to 0.52; the target was 0.05), at about 0.6 to 0.9 s of wall time
+    a refit on 16 threads, so 2,000 simulations take about 31 minutes there
+    against 85 s reweighted. Until the user decided, model 2 still
+    reweighted only, with its warning. (a) Keep that and leave `light_refit` a choice (the docs and
+    the warning say so and what it costs). (b) Make the light refit of the
+    flagged simulations model 2's default (`light_refit` on by default,
+    `RefitFlagged`; no approximate warning; about 31 minutes at 2,000
+    simulations, less with a smaller `n_sims`). (c) As (b) with a smaller
+    default count for model 2, say 500 simulations (about 8 minutes, the
+    sd of the total from 500 simulations known to about 3%), or with a
+    `max_refits` budget, the rest reweighted and listed. (d) As (b) or
+    (c) with `target_accept` 0.95 for the light refits, about 1.8 times
+    faster at the same gap but with a few divergences in a quarter of the
+    refits and a different warning rule; not built. *Recommended: (b) if
+    half an hour is acceptable for a default view, else (c)*; the change is
+    one line in `Compartmental::one_year_defaults` and a documented
+    change of CI's `the_default_view_of_model_2_reweights`, which would
+    then run the light refits, so about 30 minutes in the weekly run
+    (built so that the weekly run's default-view test uses 20 simulations).

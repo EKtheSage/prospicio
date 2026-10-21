@@ -723,15 +723,19 @@ study (0.80, sd 0.03). The CDR's mean is about zero, as it should be.
 For model 2 matching rescues none of the flagged simulations (its posterior
 has 95 sampled values, several effect sds near zero, far from the
 near-normal shape the shifts can follow), and a refit takes as long as a fit,
-so a full refit view would take days. Its default view therefore reweights
-only and warns that it is approximate: on company 337 such a view sits about
-0.4 sds of the total CDR from a refit per simulation. `refit` and
-`max_refits` buy accuracy with time.
+so a full refit view would take days. Its default view therefore refits the
+flagged simulations with a light refit (a shorter, warm-started NUTS run scaled
+by the opening posterior), within about 0.03 sds of the total CDR of full
+refits on company 337, and takes about half an hour at the default 2,000
+simulations. `light_refit=False` reweights only instead and warns that the view
+is approximate: such a view sits about 0.4 sds of the total CDR from a refit
+per simulation. `n_sims`, `refit` and `max_refits` trade accuracy for time. The
+run below reweights only, to stay fast.
 
 ```python no-run
 with warnings.catch_warnings(record=True) as caught:
     warnings.simplefilter("always")
-    view2 = model2.one_year(tri, "paid", "premium", incurred="incurred")
+    view2 = model2.one_year(tri, "paid", "premium", incurred="incurred", light_refit=False)
 cdr2 = np.array(view2.cdr.draw_matrix()).sum(axis=1)
 print(f"model 2: flagged {view2.flagged_share:.0%}, moment-matched {len(view2.moment_matched):,}, "
       f"refitted {len(view2.refitted):,}")
@@ -744,11 +748,12 @@ print(f"total CDR mean {cdr2.mean():,.0f}, sd {cdr2.std():,.0f}; lifetime reserv
 ```text
 model 2: flagged 100%, moment-matched 0, refitted 0
 warnings 1
-approximate: the one-year view reweights its flagged simulations only, the default with
-development effects (model 2): moment matching rescues none of them and each refit takes
-about as long as a fit. The view is approximate, about 0.4 sd of the total claims
-development result off a refit per simulation on company 337; set refit (with max_refits
-as a budget) to refit them
+approximate: the one-year view reweights its flagged simulations only, as the light refit
+of development effects (model 2) was turned off: moment matching rescues none of them. The
+view is approximate, about 0.4 sd of the total claims development result off a refit per
+simulation on company 337; leave light_refit at its default to refit them with a shorter
+sampler (within about 0.03 sd there, at about 20 times the run time of reweighting only),
+or refit (with max_refits as a budget) for the fit's own sampler
 total CDR mean 103, sd 11,379; lifetime reserve sd 13,729; ratio 0.83
 ```
 

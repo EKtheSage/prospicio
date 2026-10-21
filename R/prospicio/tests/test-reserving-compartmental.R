@@ -360,10 +360,11 @@ expect_error_like(development_frame(view), "development table")
 expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, n_sims = 10),
                   "exactly one")
 
-# The user's decisions of 2026-10-16: at most 2,000 one-year simulations
-# by default (one_year_sims sets the count; a smaller count gives the first
-# simulations of a larger one), and model 2's default view reweights only,
-# with a warning that it is approximate.
+# The user's decisions of 2026-10-16 and 2026-10-21: at most 2,000 one-year
+# simulations by default (one_year_sims sets the count; a smaller count
+# gives the first simulations of a larger one), and model 2's default view
+# refits its flagged simulations with the light refit; light_refit = FALSE
+# reweights only, with a warning that it is approximate.
 capped <- suppressWarnings(compartmental_one_year(tri, "paid", "premium", gm,
                                                   incurred = "incurred",
                                                   refit = "reweight_only"))
@@ -383,7 +384,8 @@ two <- with_warnings(compartmental_model_2_one_year(tri, "paid", "premium", gm2,
                                                     incurred = "incurred", chains = 2,
                                                     tune = 200, draws = 200,
                                                     target_accept = 0.9,
-                                                    one_year_sims = 50))
+                                                    one_year_sims = 50,
+                                                    light_refit = FALSE))
 stopifnot(
   length(two$value@pareto_k) == 50,
   identical(two$value@refitted, integer()),
@@ -403,5 +405,40 @@ stopifnot(
   !any(grepl("approximate", chosen$warnings, fixed = TRUE)),
   identical(chosen$value@pareto_k, two$value@pareto_k)
 )
+# Model 2's default is the light refit: no warning, a few simulations.
+default_two <- with_warnings(compartmental_model_2_one_year(
+  tri, "paid", "premium", gm2, incurred = "incurred", chains = 2, tune = 200, draws = 200,
+  target_accept = 0.9, one_year_sims = 2))
+stopifnot(
+  is.null(default_two$value@approximate),
+  !any(grepl("approximate", default_two$warnings, fixed = TRUE)),
+  length(default_two$value@refitted) >= 1
+)
+params2 <- provenance(default_two$value@cdr)$parameters
+stopifnot(identical(params2[["refit"]], "RefitFlagged"),
+          identical(params2[["light_refit"]], "4x150+250"))
 expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
                                          refit = "sometimes"), "should be one of")
+
+# A warm-started, shorter refit (decision 24), model 2's default, with its
+# own sampler here: model 2 refits its flagged simulations and is not
+# approximate.
+light <- with_warnings(compartmental_model_2_one_year(tri, "paid", "premium", gm2,
+                                                      incurred = "incurred", chains = 2,
+                                                      tune = 200, draws = 200,
+                                                      target_accept = 0.9, one_year_sims = 4,
+                                                      light_refit = c(2, 60, 60)))
+stopifnot(
+  is.null(light$value@approximate),
+  !any(grepl("approximate", light$warnings, fixed = TRUE)),
+  length(light$value@refitted) == 4
+)
+params <- provenance(light$value@cdr)$parameters
+stopifnot(identical(params[["refit"]], "RefitFlagged"),
+          identical(params[["light_refit"]], "2x60+60"))
+default_light <- suppressWarnings(compartmental_model_2_one_year(
+  tri, "paid", "premium", gm2, incurred = "incurred", chains = 2, tune = 200, draws = 200,
+  target_accept = 0.9, one_year_sims = 2, light_refit = TRUE))
+stopifnot(identical(provenance(default_light@cdr)$parameters[["light_refit"]], "4x150+250"))
+expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
+                                         light_refit = c(2, 60)), "light_refit")

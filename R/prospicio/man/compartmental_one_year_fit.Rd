@@ -32,7 +32,8 @@ compartmental_one_year(
   k_threshold = 0.7,
   refit = NULL,
   max_refits = NULL,
-  one_year_sims = NULL
+  one_year_sims = NULL,
+  light_refit = NULL
 )
 
 compartmental_model_2_one_year(
@@ -54,7 +55,8 @@ compartmental_model_2_one_year(
   k_threshold = 0.7,
   refit = NULL,
   max_refits = NULL,
-  one_year_sims = NULL
+  one_year_sims = NULL,
+  light_refit = NULL
 )
 
 compartmental_one_year_fits(ptr)
@@ -83,7 +85,8 @@ compartmental_one_year_segments(
   k_threshold = 0.7,
   refit = NULL,
   max_refits = NULL,
-  one_year_sims = NULL
+  one_year_sims = NULL,
+  light_refit = NULL
 )
 }
 \arguments{
@@ -140,7 +143,8 @@ few thousand draws).}
 \item{refit}{What happens to a flagged simulation, as in
 \code{\link[=bayes_odp_one_year]{bayes_odp_one_year()}}, or \code{NULL} (the default) for the model's own:
 \code{"moment_match_then_refit"} without development effects (model 1),
-\code{"reweight_only"} with them (model 2), with a warning.}
+\code{"refit_flagged"} with the light refit with them (model 2;
+\code{light_refit = FALSE} makes it \code{"reweight_only"}, with a warning).}
 
 \item{max_refits}{The most simulations refitted with NUTS: the first
 this many due for a refit, in simulation order; the others are
@@ -152,6 +156,18 @@ k segments refit at most k times this many.}
 \item{one_year_sims}{The number of one-year simulations, or \code{NULL} (the
 default) for \code{n_sims} capped at 2,000. The lifetime reserves keep
 \code{n_sims}. A smaller count gives the first simulations of a larger one.}
+
+\item{light_refit}{The sampler of the refits: a shorter, warm-started NUTS
+run instead of the fit's own. \code{NULL} (the default) is the model's own:
+the light refit for model 2 when \code{refit} is \code{NULL}, the fit's own
+sampler otherwise. \code{TRUE} takes 4 chains of 150 warm-up and 250 kept
+draws, \code{c(chains, tune, draws)} its own. \code{FALSE} turns model 2's default
+off: with \code{refit = NULL} the view reweights only and is approximate,
+with a warning. Each refit scales its sampler by the opening posterior
+and starts there, with no pilot run. On company 337 it comes within
+about 0.03 sd of the total claims development result of a full refit of
+model 2. A refit warns when its closing reserve has R-hat above 1.05,
+fewer than 100 effective draws or a divergence.}
 
 \item{dependence}{How the segments depend on each other:
 \code{"independent"}, each segment's own view; or \code{"rank_correlation"}, the
@@ -192,19 +208,26 @@ five of model 1's simulations are flagged and all of model 2's; for
 model 1 moment matching rescues about nineteen in twenty of them, for
 model 2 none, and a refit takes as long as a fit (for model 2 about
 31 s of wall time with 8 running side by side). So by default
-(\code{refit = NULL}, the user's decision of 2026-10-16) model 1
-moment-matches its flagged simulations and refits with NUTS only those
-whose k stays above the threshold, and a model with development effects
-(model 2) reweights them only: that view is approximate, about 0.4 sd of
-the total claims development result off a refit per simulation, and
-warns so (\code{approximate}). Set \code{refit} to refit them, with \code{max_refits}
-as a budget. The view runs \code{one_year_sims} simulations, by default
-\code{n_sims} capped at 2,000. \code{compartmental_model_2_one_year()} takes model
+(\code{refit = NULL}, the user's decisions of 2026-10-16 and 2026-10-21)
+model 1 moment-matches its flagged simulations and refits with NUTS only
+those whose k stays above the threshold, and a model with development
+effects (model 2) refits them with the light refit (\code{light_refit}): a
+warm-started NUTS run of 4 chains, 150 warm-up and 250 kept draws,
+within about 0.03 sd of the total claims development result of a full
+refit, at about 20 times the run time of reweighting only (about 30
+minutes for the default 2,000 simulations on company 337).
+\code{light_refit = FALSE} turns it off: model 2 then reweights its flagged
+simulations only, which is approximate (about 0.4 sd off a refit per
+simulation) and warns so (\code{approximate}). An explicit \code{refit} is used as
+it is, with the fit's own sampler unless \code{light_refit} is given, and
+\code{max_refits} a budget. The view runs \code{one_year_sims} simulations, by
+default \code{n_sims} capped at 2,000. \code{compartmental_model_2_one_year()} takes model
 2's settings, as \code{\link[=compartmental_model_2]{compartmental_model_2()}}.
 
 Failed MCMC diagnostics of the fit raise one \code{\link[=warning]{warning()}} listing them,
 refits that failed theirs raise another, simulations left unrefitted by
-\code{max_refits} another, and a default view that is approximate another.
+\code{max_refits} another, and a view that reweights only (model 2 with
+\code{light_refit = FALSE}) and is approximate another.
 
 Properties of a \code{compartmental_one_year_fit}: \code{fit} (the
 \link{compartmental_fit}), \code{origins} (the premium column's), per origin
@@ -237,7 +260,7 @@ with one row per segment, as \link{compartmental_fits}'s), and for a
 single-segment fit \code{pareto_k}, \code{refitted}, \code{moment_matched},
 \code{unrefitted}, \code{refit_warnings}, \code{flagged_share}, \code{summary} and \code{draws};
 with several segments use \code{\link[=segment]{segment()}} or \code{\link[=totals_frame]{totals_frame()}}, which has the
-flagged shares. Failed diagnostics, refits and an approximate default
+flagged shares. Failed diagnostics, refits and an approximate view
 each raise one \code{\link[=warning]{warning()}}, the first two naming the segments.
 
 Errors: as \code{\link[=compartmental]{compartmental()}}; a \code{k_threshold} that is \code{NaN};

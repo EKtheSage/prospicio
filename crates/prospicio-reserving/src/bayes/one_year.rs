@@ -78,7 +78,7 @@ pub enum OneYearRefit {
 ///
 /// let settings = BayesOneYear::default();
 /// assert_eq!(settings.k_threshold, 0.7);
-/// // The model's own default: moment matching, or reweighting only for
+/// // The model's own default: moment matching, or the light refit for
 /// // `Compartmental` with development effects (model 2).
 /// assert_eq!(settings.refit, None);
 /// let matched = BayesOneYear { refit: Some(OneYearRefit::MomentMatchThenRefit), ..settings };
@@ -86,6 +86,9 @@ pub enum OneYearRefit {
 /// assert_eq!(settings.max_refits, None);
 /// // The model's own default number of one-year simulations.
 /// assert_eq!(settings.n_sims, None);
+/// // The model's own default sampler for refits (model 2's light refit).
+/// assert_eq!(settings.light_refit, None);
+/// assert!(!settings.no_light_refit);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BayesOneYear {
@@ -125,6 +128,42 @@ pub struct BayesOneYear {
     /// whatever the count, so a smaller count gives the first simulations of
     /// a larger one.
     pub n_sims: Option<usize>,
+    /// A shorter NUTS sampler for the refits of `Compartmental` (open
+    /// decision 17, `docs/design/reserving-bayes.md` decision 24): `Some`
+    /// warm-starts each refit from the opening posterior and samples it with
+    /// these settings. `None` (the default) is the model's own default: the
+    /// light refit of [`LightRefit::default`] for model 2 (the user's
+    /// decision of 2026-10-21), the fit's own sampler for model 1 (which
+    /// moment matches and rarely refits). The other models ignore it.
+    pub light_refit: Option<LightRefit>,
+    /// Turn off the model's default light refit (`Compartmental` model 2):
+    /// the view then reweights only, with the warning that it is
+    /// approximate, unless `refit` says to refit, which uses the fit's own
+    /// sampler. Ignored when `light_refit` is `Some`. Default `false`.
+    pub no_light_refit: bool,
+}
+
+/// The sampler of a warm-started refit ([`BayesOneYear::light_refit`]).
+/// The default, 4 chains of 150 warm-up and 250 kept draws, is the one
+/// measured on company 337 (decision 24).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LightRefit {
+    /// Chains per refit.
+    pub chains: usize,
+    /// Warm-up draws per chain.
+    pub tune: usize,
+    /// Kept draws per chain.
+    pub draws: usize,
+}
+
+impl Default for LightRefit {
+    fn default() -> Self {
+        Self {
+            chains: 4,
+            tune: 150,
+            draws: 250,
+        }
+    }
 }
 
 impl Default for BayesOneYear {
@@ -134,6 +173,8 @@ impl Default for BayesOneYear {
             refit: None,
             max_refits: None,
             n_sims: None,
+            light_refit: None,
+            no_light_refit: false,
         }
     }
 }
@@ -146,6 +187,15 @@ impl BayesOneYear {
                 value: self.k_threshold,
                 expected: "a number, the Pareto k above which a simulation is flagged",
             });
+        }
+        if let Some(l) = self.light_refit {
+            if l.chains == 0 || l.draws < 2 || l.tune == 0 {
+                return Err(Error::InvalidSetting {
+                    name: "light_refit",
+                    value: 0.0,
+                    expected: "at least one chain, one warm-up draw and two kept draws",
+                });
+            }
         }
         if self.n_sims == Some(0) {
             return Err(Error::InvalidSetting {
@@ -1003,9 +1053,51 @@ pub(crate) fn provenance(
     }
 }
 
+/// [`provenance`] with the light refit's sampler, for a model that uses
+/// [`BayesOneYear::light_refit`] (only `Compartmental`, decision 24): the
+/// other models ignore the setting and do not record it.
+pub(crate) fn provenance_with_light_refit(
+    provenance: Provenance,
+    settings: &BayesOneYear,
+    n_sims: usize,
+) -> Provenance {
+    let provenance = self::provenance(provenance, settings, n_sims);
+    match settings.light_refit {
+        // Unchanged without a light refit, as before decision 24.
+        None => provenance,
+        Some(l) => provenance.param(
+            "light_refit",
+            format!("{}x{}+{}", l.chains, l.tune, l.draws),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only a model that uses the light refit records it: the shared
+    /// provenance leaves it out, so a `BayesOdp`, `BayesBf` or `Meyers`
+    /// view given one does not report a sampler it did not use.
+    #[test]
+    fn only_a_model_that_uses_the_light_refit_records_it() {
+        let settings = BayesOneYear {
+            light_refit: Some(LightRefit::default()),
+            ..BayesOneYear::default()
+        };
+        let has = |p: &Provenance| p.parameters.iter().any(|(k, _)| k == "light_refit");
+        assert!(!has(&provenance(Provenance::new("m"), &settings, 10)));
+        let with = provenance_with_light_refit(Provenance::new("m"), &settings, 10);
+        assert!(
+            with.parameters
+                .contains(&("light_refit".into(), "4x150+250".into()))
+        );
+        let none = provenance_with_light_refit(Provenance::new("m"), &BayesOneYear::default(), 10);
+        assert_eq!(
+            none.parameters,
+            provenance(Provenance::new("m"), &BayesOneYear::default(), 10).parameters
+        );
+    }
 
     #[test]
     fn the_threshold_decides_the_refits() {
@@ -1182,6 +1274,17 @@ pub(crate) mod conformance {
     /// standard error taking the draws as independent. A parameter whose
     /// score does not vary gives 0 if its mean is 0 and infinity if not.
     pub(crate) fn score_z<M: YearModel>(model: &M, posterior: &PosteriorDraws) -> Vec<f64> {
+        score_z_at(model, posterior, &[])
+    }
+
+    /// [`score_z`] of the posterior after `year`, `log_posterior(theta,
+    /// year)`: the density a refit's draws should have mean score zero
+    /// under.
+    pub(crate) fn score_z_at<M: YearModel>(
+        model: &M,
+        posterior: &PosteriorDraws,
+        year: &[f64],
+    ) -> Vec<f64> {
         let (s, p) = (posterior.n_draws(), posterior.draw(0).len());
         let mut scores = vec![Vec::with_capacity(s); p];
         let mut theta = vec![0.0; p];
@@ -1191,9 +1294,9 @@ pub(crate) mod conformance {
                 let t = theta[i];
                 let h = 1e-5 * (1.0 + t.abs());
                 theta[i] = t + h;
-                let up = model.log_posterior(&theta, &[]);
+                let up = model.log_posterior(&theta, year);
                 theta[i] = t - h;
-                let down = model.log_posterior(&theta, &[]);
+                let down = model.log_posterior(&theta, year);
                 theta[i] = t;
                 score.push((up - down) / (2.0 * h));
             }

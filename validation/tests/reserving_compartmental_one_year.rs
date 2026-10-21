@@ -32,11 +32,15 @@
 //! reserving_compartmental_one_year -- --ignored seed_sweep --nocapture`).
 //!
 //! Model 2 is measured (`model_2_comparison`, ignored): moment matching
-//! rescues none of its simulations, and a refit takes about a minute, so
-//! by the user's decision of 2026-10-16 its default view reweights only,
-//! with a warning that it is approximate, and every model's default view
-//! runs at most 2,000 simulations. `the_default_view_of_model_2_reweights`
-//! checks those defaults end to end; it runs only when
+//! rescues none of its simulations, and a full refit takes about a minute,
+//! so its view refits the flagged simulations with the light refit by
+//! default (the user's decision of 2026-10-21, which replaced 2026-10-16's
+//! reweighting only; `no_light_refit` turns it off, with a warning that the
+//! view is approximate), and every model's default view runs at most 2,000
+//! simulations. `the_default_view_of_model_2_refits_lightly` and
+//! `the_view_of_model_2_without_the_light_refit_reweights` check those
+//! defaults end to end (the default at 20 simulations: at 2,000 its light
+//! refits take about half an hour); they run only when
 //! `RISK_RS_FULL_BAYES` is set, as in CI's weekly and manual runs
 //! (`prospicio_validation::full_bayes`). A pull request runs model 1 alone
 //! and without its `RefitAll` comparison (the smoke run: `mean_z`,
@@ -50,7 +54,7 @@ use std::time::Instant;
 use prospicio_prob::{Distribution, PredictiveDistribution};
 use prospicio_reserving::bayes::{
     BayesOneYear, BayesOneYearFit, Compartmental, CompartmentalFit, CompartmentalPriors,
-    OneYearRefit, Outstanding,
+    LightRefit, OneYearRefit, Outstanding,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
 use prospicio_validation::full_bayes;
@@ -332,14 +336,14 @@ fn the_one_year_view_of_model_1_matches_its_refits() {
     );
 }
 
-/// Model 2's default one-year view (the user's decision of 2026-10-16):
-/// 2,000 simulations from the model's 10,000, every flagged one reweighted
-/// (none moment-matched or refitted), with the warning that the view is
-/// approximate (an explicit refit mode carries none: the unit test
-/// `the_one_year_defaults_follow_the_model`). Full run only
-/// (`RISK_RS_FULL_BAYES`): about a minute and a half in release.
+/// Model 2's default one-year view (the user's decision of 2026-10-21):
+/// every flagged simulation refitted with the light refit, none
+/// moment-matched, and no warning. Run on 20 simulations of the 2,000 it
+/// takes by default (the cap is the unit test
+/// `the_one_year_defaults_follow_the_model`'s): at 2,000 the light refits
+/// take about half an hour. Full run only (`RISK_RS_FULL_BAYES`).
 #[test]
-fn the_default_view_of_model_2_reweights() {
+fn the_default_view_of_model_2_refits_lightly() {
     if !full_bayes() {
         eprintln!("skipped: model 2's default view runs when RISK_RS_FULL_BAYES is set");
         return;
@@ -352,7 +356,60 @@ fn the_default_view_of_model_2_reweights() {
             "paid",
             Outstanding::FromIncurred("incurred"),
             "premium",
-            &BayesOneYear::default(),
+            &BayesOneYear {
+                n_sims: Some(20),
+                ..BayesOneYear::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(default.pareto_k.len(), 20);
+    assert!(
+        default.flagged_share() > 0.9,
+        "flagged {}",
+        default.flagged_share()
+    );
+    assert!(default.moment_matched.is_empty());
+    assert!(
+        default.refitted.len() >= 15,
+        "refitted {}",
+        default.refitted.len()
+    );
+    assert_eq!(default.approximate, None);
+    let parameters = &default.cdr.provenance().parameters;
+    for (key, value) in [
+        ("refit", "RefitFlagged"),
+        ("light_refit", "4x150+250"),
+        ("one_year_sims", "20"),
+    ] {
+        assert!(
+            parameters.contains(&(key.into(), value.into())),
+            "{key} in {parameters:?}"
+        );
+    }
+}
+
+/// Model 2 with the light refit turned off (`no_light_refit`): 2,000
+/// simulations from the model's 10,000, every flagged one reweighted (none
+/// moment-matched or refitted), with the warning that the view is
+/// approximate. Full run only (`RISK_RS_FULL_BAYES`): about a minute and a
+/// half in release.
+#[test]
+fn the_view_of_model_2_without_the_light_refit_reweights() {
+    if !full_bayes() {
+        eprintln!("skipped: model 2's view runs when RISK_RS_FULL_BAYES is set");
+        return;
+    }
+    let model = preset(true);
+    let default = model
+        .one_year(
+            training(),
+            "paid",
+            Outstanding::FromIncurred("incurred"),
+            "premium",
+            &BayesOneYear {
+                no_light_refit: true,
+                ..BayesOneYear::default()
+            },
         )
         .unwrap();
     assert_eq!(default.pareto_k.len(), Compartmental::ONE_YEAR_SIMS);
@@ -363,7 +420,7 @@ fn the_default_view_of_model_2_reweights() {
     );
     assert!(default.moment_matched.is_empty() && default.refitted.is_empty());
     assert!(default.unrefitted.is_empty());
-    let warning = default.approximate.as_deref().expect("the default warns");
+    let warning = default.approximate.as_deref().expect("the opt-out warns");
     assert!(warning.contains("approximate"), "{warning}");
     let parameters = &default.cdr.provenance().parameters;
     for (key, value) in [("refit", "ReweightOnly"), ("one_year_sims", "2000")] {
@@ -372,6 +429,7 @@ fn the_default_view_of_model_2_reweights() {
             "{key} in {parameters:?}"
         );
     }
+    assert!(!parameters.iter().any(|(k, _)| k == "light_refit"));
 }
 
 /// The papers' training triangle once under each of `names`, as the
@@ -553,12 +611,12 @@ fn the_one_year_view_over_segments_matches_the_views_of_its_segments() {
     }
 }
 
-/// Model 2's default view over segments: the model's defaults per segment
-/// (every flagged simulation reweighted, at most 2,000 simulations) and the
-/// warning that the views are approximate. Full run only
-/// (`RISK_RS_FULL_BAYES`): two model-2 fits.
+/// Model 2's view over segments with the light refit turned off: the
+/// model's defaults per segment (every flagged simulation reweighted, at
+/// most 2,000 simulations) and the warning that the views are approximate.
+/// Full run only (`RISK_RS_FULL_BAYES`): two model-2 fits.
 #[test]
-fn the_default_view_of_model_2_over_segments_reweights() {
+fn the_view_of_model_2_over_segments_without_the_light_refit_reweights() {
     if !full_bayes() {
         eprintln!("skipped: model 2's default view runs when RISK_RS_FULL_BAYES is set");
         return;
@@ -569,11 +627,14 @@ fn the_default_view_of_model_2_over_segments_reweights() {
             "paid",
             Outstanding::FromIncurred("incurred"),
             "premium",
-            &BayesOneYear::default(),
+            &BayesOneYear {
+                no_light_refit: true,
+                ..BayesOneYear::default()
+            },
         )
         .unwrap();
     assert_eq!(views.cdr.n_sims(), Compartmental::ONE_YEAR_SIMS);
-    let warning = views.approximate.as_deref().expect("the default warns");
+    let warning = views.approximate.as_deref().expect("the opt-out warns");
     assert!(warning.contains("approximate"), "{warning}");
     for s in &views.segments.fits {
         assert!(s.flagged_share() > 0.9, "flagged {}", s.flagged_share());
@@ -680,4 +741,204 @@ fn runtime() {
             default.unrefitted.len()
         );
     }
+}
+
+/// The light refit settings to try: `LIGHT="chains,tune,draws;..."`.
+fn light_settings() -> Vec<LightRefit> {
+    let text = std::env::var("LIGHT").unwrap_or_else(|_| "4,150,250;4,300,500".into());
+    text.split(';')
+        .map(|c| {
+            let v: Vec<usize> = c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+            LightRefit {
+                chains: v[0],
+                tune: v[1],
+                draws: v[2],
+            }
+        })
+        .collect()
+}
+
+/// What a light refit's view of model 2 gives against full refits.
+#[derive(Debug, Clone, Copy)]
+struct LightGap {
+    /// The rms gap of the simulations' totals to the full refits', in
+    /// units of the total's sd, and its mean.
+    rms: f64,
+    mean: f64,
+    /// The totals' sd over the full refits' sd.
+    sd_ratio: f64,
+    /// Refits whose closing reserve warned.
+    warned: usize,
+}
+
+/// Model 2's first `sims` years refitted in full (cached by
+/// `LIGHT_CACHE`, a path prefix, when set) and with each of `lights`, all
+/// `RefitAll`: the gaps of each light refit, and reweighting only's rms
+/// gap, in units of the total's sd over 1,000 reweighted simulations.
+fn light_gaps(sims: usize, seed: u64, lights: &[LightRefit]) -> (f64, Vec<LightGap>) {
+    let (only, t_fit) = view(true, 1_000, seed, OneYearRefit::ReweightOnly, None);
+    let s = sd(&totals(&only.cdr));
+    println!("reweight sd of the total {s:.1}; the fit and 1,000 reweightings {t_fit:.1} s");
+    let cache = std::env::var("LIGHT_CACHE")
+        .ok()
+        .map(|p| std::path::PathBuf::from(format!("{p}.{seed}.{sims}.txt")));
+    let cached = cache
+        .as_ref()
+        .and_then(|c| std::fs::read_to_string(c).ok())
+        .map(|text| {
+            text.lines()
+                .map(|l| l.parse().unwrap())
+                .collect::<Vec<f64>>()
+        });
+    let full_totals = cached.unwrap_or_else(|| {
+        let (full, t_full) = view(true, sims, seed, OneYearRefit::RefitAll, None);
+        println!(
+            "full refits {t_full:.1} s incl. the fit, warned {} of {sims}",
+            full.refit_warnings
+        );
+        let t = totals(&full.cdr);
+        if let Some(c) = &cache {
+            let text: Vec<String> = t.iter().map(|v| format!("{v:?}")).collect();
+            std::fs::write(c, text.join("\n")).unwrap();
+        }
+        t
+    });
+    let gap = |x: &[f64]| -> (f64, f64) {
+        let d: Vec<f64> = x
+            .iter()
+            .zip(&full_totals)
+            .map(|(a, b)| (a - b) / s)
+            .collect();
+        (
+            (d.iter().map(|v| v * v).sum::<f64>() / d.len() as f64).sqrt(),
+            mean(&d),
+        )
+    };
+    let reweighted = gap(&totals(&only.cdr)[..sims]).0;
+    let gaps = lights
+        .iter()
+        .map(|&light| {
+            let t = Instant::now();
+            let v = Compartmental {
+                n_sims: sims,
+                seed,
+                ..preset(true)
+            }
+            .one_year(
+                training(),
+                "paid",
+                Outstanding::FromIncurred("incurred"),
+                "premium",
+                &BayesOneYear {
+                    refit: Some(OneYearRefit::RefitAll),
+                    n_sims: Some(sims),
+                    light_refit: Some(light),
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap();
+            let wall = t.elapsed().as_secs_f64();
+            let (rms, mean) = gap(&totals(&v.cdr));
+            let g = LightGap {
+                rms,
+                mean,
+                sd_ratio: sd(&totals(&v.cdr)) / sd(&full_totals),
+                warned: v.refit_warnings,
+            };
+            println!(
+                "{light:?}: wall {wall:.1} s ({:.2} s a refit beyond the fit), rms gap to \
+                 full {rms:.3}, mean {mean:.3}, warned {} of {sims}, sd ratio {:.3}",
+                (wall - t_fit) / sims as f64,
+                g.warned,
+                g.sd_ratio
+            );
+            g
+        })
+        .collect();
+    (reweighted, gaps)
+}
+
+/// Model 2's warm-started, shorter refits (`BayesOneYear::light_refit`,
+/// decision 24) against its full refits, simulation by simulation, on the
+/// first `LIGHT_SIMS` years of seed `LIGHT_SEED` (ignored; release build,
+/// many minutes).
+#[test]
+#[ignore]
+fn model_2_light_refit() {
+    let env = |name: &str, default: u64| -> u64 {
+        std::env::var(name)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(default)
+    };
+    let (reweighted, _) = light_gaps(
+        env("LIGHT_SIMS", 16) as usize,
+        env("LIGHT_SEED", 0),
+        &light_settings(),
+    );
+    println!("reweight only vs full: rms gap {reweighted:.3}");
+}
+
+/// The default light refit of model 2 comes within a small gap of its full
+/// refits on the first 16 years of seed 0 (measured 0.035 on those, mean
+/// 0.006, sd ratio 1.015; seed 0 was not used to choose the default, which
+/// was tuned on seed 1 at 0.029; the full refits' own noise is about 0.03),
+/// where reweighting only is 0.52 off; its sd of the total is the full
+/// refits' within 10%. Runs only with `RISK_RS_FULL_BAYES` (about 10
+/// minutes in release): the full refits are what costs.
+#[test]
+fn the_light_refit_of_model_2_matches_its_full_refits() {
+    if !full_bayes() {
+        eprintln!("skipped: set RISK_RS_FULL_BAYES to run the full refits it compares with");
+        return;
+    }
+    let (reweighted, gaps) = light_gaps(16, 0, &[LightRefit::default()]);
+    let g = gaps[0];
+    assert!(g.rms < 0.08, "{g:?}");
+    assert!(g.mean.abs() < 0.04, "{g:?}");
+    assert!((g.sd_ratio - 1.0).abs() < 0.10, "{g:?}");
+    assert!(g.rms < reweighted / 2.0, "{g:?} against {reweighted}");
+}
+
+/// Model 2's default view with a light refit (ignored; release build): its
+/// wall time and what it did, at 2,000 simulations (the default count) and
+/// the default light sampler, against the default (reweighting only).
+#[test]
+#[ignore]
+fn light_runtime() {
+    let sims: usize = std::env::var("LIGHT_SIMS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2_000);
+    let (_, t_reweight) = view(true, sims, 0, OneYearRefit::ReweightOnly, None);
+    println!("model 2, {sims} simulations reweighted only: {t_reweight:.1} s");
+    let t = Instant::now();
+    let v = Compartmental {
+        n_sims: sims,
+        ..preset(true)
+    }
+    .one_year(
+        training(),
+        "paid",
+        Outstanding::FromIncurred("incurred"),
+        "premium",
+        &BayesOneYear {
+            n_sims: Some(sims),
+            light_refit: Some(light_settings()[0]),
+            ..BayesOneYear::default()
+        },
+    )
+    .unwrap();
+    let totals = totals(&v.cdr);
+    println!(
+        "model 2, {sims} simulations, default light refit: {:.1} s, flagged {:.3}, refitted {}, \
+         warned {}, approximate {:?}, total cdr mean {:.0} sd {:.0}",
+        t.elapsed().as_secs_f64(),
+        v.flagged_share(),
+        v.refitted.len(),
+        v.refit_warnings,
+        v.approximate,
+        mean(&totals),
+        sd(&totals)
+    );
 }
