@@ -617,6 +617,21 @@ def test_glm_diagnostics_match_r():
     n, p = len(y), len(fit.coefficients)
     assert fit.gcv(d, y) == pytest.approx(n * sum(r * r for r in g["response"]) / (n - p) ** 2)
     assert fit.log_likelihood_at(d, y, 1.0) == pytest.approx(fit.log_likelihood, rel=1e-12)
+    # Randomized quantile residuals (#464): a count's are reproducible by
+    # seed; a gamma's are exact, as R's statmod::qresiduals.
+    from prospicio.models import quantile_residuals
+
+    q = fit.quantile_residuals(d, y, seed=3)
+    assert q == fit.quantile_residuals(d, y, seed=3)
+    assert q == pytest.approx(quantile_residuals("poisson", y, fit.predict(d), seed=3), rel=1e-12)
+    y1 = [v + 1.0 for v in y]
+    gamma = Glm("gamma", link="log").fit(d, y1)
+    qg = gamma.quantile_residuals(d, y1)
+    assert [qg[i] for i in (0, 49, 145)] == pytest.approx(
+        [-1.566963914736516, 0.714809090957266, 1.470914293998306], rel=1e-6
+    )
+
+
 def test_terms_build_rating_variables():
     data = {"age": [20.0, 30.0, 45.0, 60.0], "region": ["N", "S", "W", "S"], "size": ["small", "large", "medium", "small"]}
     coding = (

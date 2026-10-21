@@ -1,13 +1,13 @@
 //! Residuals, leverages and prediction errors of a fitted [`GlmFit`], as
-//! R's `residuals.glm`, `hatvalues`, `rstandard`, `cooks.distance` and
-//! `predict(..., se.fit = TRUE)`.
+//! R's `residuals.glm`, `statmod::qresiduals`, `hatvalues`, `rstandard`,
+//! `cooks.distance` and `predict(..., se.fit = TRUE)`.
 //!
 //! The fit keeps its coefficients and covariance but not its training
 //! data, so each method takes the design and, where it needs one, the
 //! response.
 
 use prospicio_core::{Error, Result};
-use prospicio_models::{Design, Fitted};
+use prospicio_models::{Design, Fitted, metrics};
 
 use crate::GlmFit;
 
@@ -110,6 +110,28 @@ impl GlmFit {
                 .push((pearson / (1.0 - h)).powi(2) * h / (phi * p as f64));
         }
         Ok(d)
+    }
+
+    /// Randomized quantile residuals of the fit on `design` and `y` at its
+    /// dispersion, standard normal when the model is right (Dunn and Smyth,
+    /// 1996; [`metrics::quantile_residuals`]): exact for a continuous family,
+    /// drawn from `seed` where the response has an atom (the counts, the
+    /// Tweedie at zero). R's `statmod::qresiduals(m, dispersion =
+    /// summary(m)$dispersion)`; statmod's own default dispersion differs
+    /// for the inverse Gaussian.
+    ///
+    /// Fails as [`diagnostics`](Self::diagnostics).
+    pub fn quantile_residuals(&self, design: &Design, y: &[f64], seed: u64) -> Result<Vec<f64>> {
+        self.check_rows(design, y.len())?;
+        let mu = self.predict(design)?;
+        metrics::quantile_residuals(
+            self.spec.family,
+            y,
+            &mu,
+            self.dispersion,
+            Some(design.weights()),
+            seed,
+        )
     }
 
     /// The standard error of each row's predicted mean, `|dμ/dη| √(x'Σx)`

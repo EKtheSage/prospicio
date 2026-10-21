@@ -6,6 +6,7 @@
 //! same way.
 
 use prospicio_core::{Error, Result, StreamRng};
+use prospicio_math::special::norm_quantile;
 
 use crate::design::Design;
 use crate::family::Family;
@@ -312,6 +313,51 @@ pub fn pit(
                 lo + rng.next_open01() * (hi - lo)
             } else {
                 hi
+            })
+        })
+        .collect()
+}
+
+/// Randomized quantile residuals (Dunn and Smyth, 1996): `Φ⁻¹` of the
+/// randomized [`pit`] at the same `seed`, standard normal when the model is
+/// right. A continuous family's are exact, `Φ⁻¹(F(yᵢ))`; a count's, and the
+/// Tweedie's at zero, are drawn between `Φ⁻¹(F(y⁻))` and `Φ⁻¹(F(y))`, as
+/// R's `statmod::qresiduals`. Above the median the draw is made on the
+/// upper tail ([`Family::upper_tail_bounds`]) with the same uniform, so a
+/// residual far in the upper tail keeps its digits where `F(y)` rounds
+/// to 1 (`statmod`'s are infinite there).
+///
+/// ```
+/// use prospicio_models::{metrics::quantile_residuals, Family};
+///
+/// // A Gaussian's is the standardized residual (y − μ) / √(φ / w).
+/// let r = quantile_residuals(Family::Gaussian, &[3.0], &[1.0], 4.0, None, 0).unwrap();
+/// assert!((r[0] - 1.0).abs() < 1e-12);
+/// ```
+pub fn quantile_residuals(
+    family: Family,
+    y: &[f64],
+    mu: &[f64],
+    dispersion: f64,
+    weights: Option<&[f64]>,
+    seed: u64,
+) -> Result<Vec<f64>> {
+    same_length(y.len(), mu.len(), "mu")?;
+    if let Some(w) = weights {
+        same_length(y.len(), w.len(), "weights")?;
+    }
+    // The same stream as `pit`: a uniform only where the bounds differ.
+    let mut rng = StreamRng::new(seed, 0);
+    (0..y.len())
+        .map(|i| {
+            let w = weights.map_or(1.0, |w| w[i]);
+            let (lo, hi) = family.cdf_bounds(y[i], mu[i], dispersion, w)?;
+            let v = if hi > lo { rng.next_open01() } else { 1.0 };
+            Ok(if lo + hi > 1.0 {
+                let (s_lo, s_hi) = family.upper_tail_bounds(y[i], mu[i], dispersion, w)?;
+                -norm_quantile(s_lo - v * (s_lo - s_hi))
+            } else {
+                norm_quantile(lo + v * (hi - lo))
             })
         })
         .collect()
@@ -811,7 +857,58 @@ fn same_length(n: usize, m: usize, name: &'static str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
+
+    #[test]
+    fn quantile_residuals_are_standard_normal_under_the_model() {
+        // Counts and a Tweedie with many zeros, drawn from the model.
+        let mut rng = StreamRng::new(3, 0);
+        let n = 4000;
+        for family in [
+            Family::Poisson,
+            Family::NegativeBinomial { theta: 2.0 },
+            Family::Tweedie { power: 1.5 },
+        ] {
+            let mu: Vec<f64> = (0..n).map(|i| 0.3 + (i % 7) as f64 * 0.4).collect();
+            let phi = if matches!(family, Family::Tweedie { .. }) {
+                1.3
+            } else {
+                1.0
+            };
+            let y: Vec<f64> = mu
+                .iter()
+                .map(|&m| family.draw(m, phi, 1.0, rng.next_open01()).unwrap())
+                .collect();
+            let r = quantile_residuals(family, &y, &mu, phi, None, 11).unwrap();
+            let mean = r.iter().sum::<f64>() / n as f64;
+            let var = r.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
+            assert!(
+                mean.abs() < 0.05 && (var - 1.0).abs() < 0.07,
+                "{family:?}: {mean} {var}"
+            );
+            // `Φ⁻¹` of the PIT at the same seed, whose uniformity
+            // `pit_is_uniform_under_the_model` checks.
+            let p = pit(family, &y, &mu, phi, None, 11).unwrap();
+            for (r, p) in r.iter().zip(&p) {
+                assert!((prospicio_math::special::norm_cdf(*r) - p).abs() < 1e-12);
+            }
+        }
+    }
+
+    /// Far in a count's upper tail, where `F(y)` rounds to 1, the residual
+    /// is drawn between the normal scores of `P(Y ≥ y)` and `P(Y > y)`.
+    #[test]
+    fn quantile_residuals_keep_their_digits_in_the_upper_tail() {
+        use prospicio_math::special::ln_gamma;
+        // Poisson(2) at 40 and 41: P(Y ≥ k) ≈ pmf(k) / (1 − 2 / (k + 1)).
+        let pmf = |k: f64| (k * 2f64.ln() - 2.0 - ln_gamma(k + 1.0)).exp();
+        let r = quantile_residuals(Family::Poisson, &[40.0], &[2.0], 1.0, None, 5).unwrap()[0];
+        let at = pmf(40.0) + pmf(41.0) / (1.0 - 2.0 / 42.0);
+        let above = pmf(41.0) / (1.0 - 2.0 / 42.0);
+        assert!(r.is_finite() && r > 12.0);
+        assert!(r >= -norm_quantile(at) - 1e-3 && r <= -norm_quantile(above) + 1e-3);
+    }
 
     /// Responses drawn from each family's own predictive distribution give
     /// uniform PITs; a model with the wrong mean does not.

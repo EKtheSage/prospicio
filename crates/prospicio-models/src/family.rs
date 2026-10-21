@@ -325,6 +325,74 @@ impl Family {
         })
     }
 
+    /// `(P(Y ≥ y), P(Y > y))`, the complements of
+    /// [`cdf_bounds`](Self::cdf_bounds) computed from the upper tail, so
+    /// that they keep their digits where `F(y)` rounds to 1: a count's
+    /// tail is summed past `y`, the Gaussian's is `Φ(−z)`, and the other
+    /// continuous families' are `1 − F(y)`.
+    ///
+    /// ```
+    /// use prospicio_models::Family;
+    ///
+    /// // Poisson(2) at 40, far below 1 − F's resolution: R's
+    /// // `ppois(39, 2, lower.tail = FALSE)` and `ppois(40, 2, lower.tail = FALSE)`.
+    /// let (at, above) = Family::Poisson.upper_tail_bounds(40.0, 2.0, 1.0, 1.0).unwrap();
+    /// assert!((at / 1.917158e-37 - 1.0).abs() < 1e-6 && (above / 9.340629e-39 - 1.0).abs() < 1e-6);
+    /// ```
+    pub fn upper_tail_bounds(
+        &self,
+        y: f64,
+        mu: f64,
+        dispersion: f64,
+        weight: f64,
+    ) -> Result<(f64, f64)> {
+        let (w, phi) = (weight, dispersion);
+        // P(N > k), summed until the terms past the mean stop counting.
+        fn above(c: &dyn Counting, k: u64) -> f64 {
+            let mean = c.mean();
+            let mut total = 0.0;
+            let mut j = k + 1;
+            loop {
+                let term = c.pmf(j);
+                total += term;
+                if !term.is_finite() || (j as f64 > mean && term <= total * 1e-17) {
+                    return total.min(1.0);
+                }
+                j += 1;
+            }
+        }
+        fn lattice(c: &dyn Counting, k: f64) -> (f64, f64) {
+            if k < 0.0 {
+                return (1.0, 1.0);
+            }
+            let (lo, hi) = (k.ceil(), k.floor());
+            let at = if lo >= 1.0 {
+                above(c, lo as u64 - 1)
+            } else {
+                1.0
+            };
+            (at, above(c, hi as u64))
+        }
+        Ok(match *self {
+            Self::Gaussian => {
+                let s = norm_cdf(-(y - mu) / (phi / w).sqrt());
+                (s, s)
+            }
+            Self::Poisson => lattice(&Poisson::new(mu * w / phi)?, snap(y * w / phi)),
+            Self::Binomial => {
+                let trials = w.round().max(1.0);
+                lattice(&Binomial::new(trials as u64, mu)?, snap(y * trials))
+            }
+            Self::NegativeBinomial { theta } => {
+                lattice(&NegativeBinomial::new(theta, mu / theta)?, snap(y))
+            }
+            _ => {
+                let (lo, hi) = self.cdf_bounds(y, mu, dispersion, weight)?;
+                (1.0 - lo, 1.0 - hi)
+            }
+        })
+    }
+
     /// The log density (log probability for the counts) of `y` under the
     /// distribution [`draw`](Self::draw) samples: the log score is its
     /// negative. It equals [`log_likelihood`](Self::log_likelihood) for the

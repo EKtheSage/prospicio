@@ -140,6 +140,8 @@ log_score_rust <- function(family_name, theta, power, y, mu, dispersion, weights
 
 pit_rust <- function(family_name, theta, power, y, mu, dispersion, weights, seed) .Call(wrap__pit_rust, family_name, theta, power, y, mu, dispersion, weights, seed)
 
+quantile_residuals_rust <- function(family_name, theta, power, y, mu, dispersion, weights, seed) .Call(wrap__quantile_residuals_rust, family_name, theta, power, y, mu, dispersion, weights, seed)
+
 ks_uniform_rust <- function(values) .Call(wrap__ks_uniform_rust, values)
 
 pit_from_draws_rust <- function(draws, y, u) .Call(wrap__pit_from_draws_rust, draws, y, u)
@@ -896,6 +898,8 @@ GlmModel$family <- function() .Call(wrap__GlmModel__family, self)
 GlmModel$predict <- function(x, names, offset) .Call(wrap__GlmModel__predict, self, x, names, offset)
 
 GlmModel$diagnostics <- function() .Call(wrap__GlmModel__diagnostics, self)
+
+GlmModel$quantile_residuals <- function(seed) .Call(wrap__GlmModel__quantile_residuals, self, seed)
 
 GlmModel$prediction_se <- function(x, names, offset) .Call(wrap__GlmModel__prediction_se, self, x, names, offset)
 

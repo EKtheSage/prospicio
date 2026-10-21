@@ -172,6 +172,7 @@ reference:
       - models.pit
       - models.pit_from_draws
       - models.pit_histogram
+      - models.quantile_residuals
       - models.ks_uniform
       - models.target_encode
       - models.TargetEncoding

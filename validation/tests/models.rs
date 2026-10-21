@@ -1835,6 +1835,134 @@ fn glm_diagnostics_match_r() {
     );
 }
 
+/// `statmod::qresiduals` on the quine design at rows 1, 50 and 146:
+/// exact for the Gaussian, gamma and inverse Gaussian at the fit's
+/// dispersion; for the Poisson, negative binomial and binomial each
+/// residual lies between `Φ⁻¹` of R's `F(y − 1)` and `F(y)`, which
+/// [`Family::cdf_bounds`] reproduces. `validation/scripts/r_quantile_residuals.R`
+/// prints these.
+#[test]
+#[allow(clippy::excessive_precision)]
+fn quantile_residuals_match_statmod() {
+    use prospicio_glm::negbin::NegativeBinomialGlm;
+    use prospicio_math::special::norm_quantile;
+    use prospicio_models::Fitted;
+    let (header, cols) = quine();
+    let n = cols[0].len();
+    let mut names = vec!["(Intercept)".to_string()];
+    names.extend(header[1..].iter().cloned());
+    let mut columns = vec![vec![1.0; n]];
+    columns.extend(cols[1..].iter().cloned());
+    let design = Design::new(names, columns).unwrap();
+    let rows = [0, 49, 145];
+    let days = &cols[0];
+    let days1: Vec<f64> = days.iter().map(|d| d + 1.0).collect();
+    let exact = |label: &str, fit: &GlmFit, y: &[f64], tol: f64, want: [f64; 3]| {
+        let r = fit.quantile_residuals(&design, y, 0).unwrap();
+        for (k, &i) in rows.iter().enumerate() {
+            assert!(
+                (r[i] - want[k]).abs() <= tol * want[k].abs(),
+                "{label} row {i}: {} against {}",
+                r[i],
+                want[k]
+            );
+        }
+    };
+    let gaussian = Glm::new(Family::Gaussian, Link::Identity)
+        .fit(&design, days)
+        .unwrap();
+    exact(
+        "gaussian",
+        &gaussian,
+        days,
+        1e-10,
+        [-1.446580682249694, 0.343055558468774, 1.491071623635795],
+    );
+    let gamma = Glm::new(Family::Gamma, Link::Log)
+        .fit(&design, &days1)
+        .unwrap();
+    // R's Gamma fit moves by about 1e-8 (see `glm_diagnostics_match_r`).
+    exact(
+        "gamma",
+        &gamma,
+        &days1,
+        1e-6,
+        [-1.566963914736516, 0.714809090957266, 1.470914293998306],
+    );
+    let ig = Glm::new(Family::InverseGaussian, Link::Log)
+        .fit(&design, &days1)
+        .unwrap();
+    exact(
+        "inverse_gaussian",
+        &ig,
+        &days1,
+        1e-6,
+        [-2.060559978108341, 0.701759068295283, 1.329377847892404],
+    );
+    let between = |label: &str, fit: &GlmFit, y: &[f64], lo: [f64; 3], hi: [f64; 3]| {
+        let mu = fit.predict(&design).unwrap();
+        let family = fit.spec().family;
+        for seed in 0..5 {
+            let r = fit.quantile_residuals(&design, y, seed).unwrap();
+            for (k, &i) in rows.iter().enumerate() {
+                let (a, b) = family.cdf_bounds(y[i], mu[i], 1.0, 1.0).unwrap();
+                let close = |g: f64, w: f64| (g - w).abs() <= 1e-6 * w + 1e-15;
+                assert!(
+                    close(a, lo[k]) && close(b, hi[k]),
+                    "{label} row {i}: ({a}, {b}) against ({}, {})",
+                    lo[k],
+                    hi[k]
+                );
+                assert!(
+                    r[i] >= norm_quantile(a) && r[i] <= norm_quantile(b),
+                    "{label} row {i}: {} outside its bounds",
+                    r[i]
+                );
+            }
+        }
+    };
+    let poisson = Glm::new(Family::Poisson, Link::Log)
+        .fit(&design, days)
+        .unwrap();
+    between(
+        "poisson",
+        &poisson,
+        days,
+        [
+            3.04652333465263e-10,
+            9.50380480793033e-01,
+            9.99999880126111e-01,
+        ],
+        [
+            3.99321861636926e-09,
+            9.71856325321473e-01,
+            9.99999957696953e-01,
+        ],
+    );
+    let nb = NegativeBinomialGlm::new(Link::Log)
+        .fit(&design, days)
+        .unwrap();
+    assert!((nb.theta() - 1.27489264505361).abs() < 1e-6);
+    between(
+        "negative_binomial",
+        nb.glm(),
+        days,
+        [0.0440368454185128, 0.7580877546600089, 0.9271109255550670],
+        [0.0702505498750187, 0.7797798498357591, 0.9325735742936165],
+    );
+    let long: Vec<f64> = days.iter().map(|&d| f64::from(d > 10.0)).collect();
+    let binomial = Glm::new(Family::Binomial, Link::Logit)
+        .fit(&design, &long)
+        .unwrap();
+    between(
+        "binomial",
+        &binomial,
+        &long,
+        [0.0, 0.542198156548800, 0.558634108257409],
+        [0.224834326828082, 1.0, 1.0],
+    );
+}
+
 /// R's `poly(x, 3)` columns and their `predict` on new values, and the
 /// fitted values and predictions of `lm(y ~ ns(x, knots = c(10, 25)))`,
 /// which a natural spline in another basis must reproduce;

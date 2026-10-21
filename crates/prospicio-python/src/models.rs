@@ -970,6 +970,34 @@ impl PyGlmFit {
         Ok(out)
     }
 
+    /// Randomized quantile residuals on ``design`` and ``y`` (normally the
+    /// training data) at the fit's dispersion, standard normal when the model is
+    /// right (Dunn and Smyth, 1996): exact for a continuous family, drawn from
+    /// ``seed`` where the response has an atom (counts, a Tweedie's zero). R's
+    /// ``statmod::qresiduals(m, dispersion = summary(m)$dispersion)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     Same columns as the training design.
+    /// y : list of float
+    /// seed : int, default 0
+    ///
+    /// Returns
+    /// -------
+    /// list of float
+    #[pyo3(signature = (design, y, seed = 0))]
+    fn quantile_residuals(
+        &self,
+        design: PyRef<'_, PyDesign>,
+        y: Vec<f64>,
+        seed: u64,
+    ) -> PyResult<Vec<f64>> {
+        self.inner
+            .quantile_residuals(&design.inner, &y, seed)
+            .map_err(to_py)
+    }
+
     /// Standard error of each row's predicted mean (parameter error only),
     /// ``|dmu/deta| sqrt(x' Sigma x)``, as R's
     /// ``predict(type = "response", se.fit = TRUE)``.
@@ -2565,6 +2593,44 @@ pub(crate) fn pit(
 ) -> PyResult<Vec<f64>> {
     let f = self::family(family, theta, power)?;
     metrics::pit(f, &y, &mu, dispersion, weights.as_deref(), seed).map_err(to_py)
+}
+
+/// Randomized quantile residuals (Dunn and Smyth, 1996): the normal scores
+/// ``Phi^-1`` of :func:`pit` at the same ``seed``, standard normal when the
+/// model is right. Exact for a continuous family; drawn between
+/// ``Phi^-1(F(y-))`` and ``Phi^-1(F(y))`` for a count and a Tweedie's zero,
+/// as R's ``statmod::qresiduals``.
+///
+/// Parameters
+/// ----------
+/// family : str
+/// y : list of float
+/// mu : list of float
+/// dispersion : float, default 1.0
+/// weights : list of float, optional
+/// seed : int, default 0
+///     Seeds the randomization.
+/// theta : float, optional
+/// power : float, optional
+///
+/// Returns
+/// -------
+/// list of float
+#[pyfunction]
+#[pyo3(signature = (family, y, mu, dispersion = 1.0, weights = None, seed = 0, theta = None, power = None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn quantile_residuals(
+    family: &str,
+    y: Vec<f64>,
+    mu: Vec<f64>,
+    dispersion: f64,
+    weights: Option<Vec<f64>>,
+    seed: u64,
+    theta: Option<f64>,
+    power: Option<f64>,
+) -> PyResult<Vec<f64>> {
+    let f = self::family(family, theta, power)?;
+    metrics::quantile_residuals(f, &y, &mu, dispersion, weights.as_deref(), seed).map_err(to_py)
 }
 
 /// The PIT of ``y`` under the empirical distribution of ``draws``,
