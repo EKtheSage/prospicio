@@ -443,8 +443,8 @@
   `glmm_model` with `random_effects` and `predict()` (#358).
 - Double GLMs: `prospicio_glm::dglm::DoubleGlm` fits a GLM for the mean
   and a gamma GLM with the log link for the dispersion, each on its own
-  design, for the Gaussian, Poisson, gamma and Tweedie, by REML (the
-  default) or ML (`.ml()`). `DoubleGlmFit` gives both sets of coefficients
+  design, for the Gaussian, Poisson, gamma and Tweedie, by ML (the
+  default, as `dglm`) or REML (`.reml()`). `DoubleGlmFit` gives both sets of coefficients
   with their covariances, the fitted means and dispersions, `dglm`'s
   `m2loglik`, the REML criterion and AIC. At parity with R `dglm` where it
   is right; where its mean step is not (a non-canonical link such as the

@@ -8259,7 +8259,7 @@ class DoubleGlm:
     power : float, optional
         The Tweedie's power, in (1, 2).
     method : str
-        ``"reml"`` (the default) or ``"ml"`` (``dglm``'s default).
+        ``"ml"`` (the default, as ``dglm``) or ``"reml"``.
     link_power : float, optional
         The power link's exponent.
     
@@ -8273,7 +8273,7 @@ class DoubleGlm:
     >>> fit.dispersion_coefficients[1] > 0
     True
     """
-    def __new__(cls, /, family: str, link: str |None = None, power: float |None = None, method: str = "reml", link_power: float |None = None) -> DoubleGlm: ...
+    def __new__(cls, /, family: str, link: str |None = None, power: float |None = None, method: str = "ml", link_power: float |None = None) -> DoubleGlm: ...
     def fit(self, /, mean: Design, dispersion: Design, y: Sequence[float]) -> DoubleGlmFit:
         """
         Fits the mean on ``mean`` (its offset and prior weights apply) and

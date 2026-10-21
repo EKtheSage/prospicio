@@ -4490,7 +4490,7 @@ impl PyGlmmFit {
 /// power : float, optional
 ///     The Tweedie's power, in (1, 2).
 /// method : str
-///     ``"reml"`` (the default) or ``"ml"`` (``dglm``'s default).
+///     ``"ml"`` (the default, as ``dglm``) or ``"reml"``.
 /// link_power : float, optional
 ///     The power link's exponent.
 ///
@@ -4511,7 +4511,7 @@ pub(crate) struct PyDoubleGlm {
 #[pymethods]
 impl PyDoubleGlm {
     #[new]
-    #[pyo3(signature = (family, link = None, power = None, method = "reml", link_power = None))]
+    #[pyo3(signature = (family, link = None, power = None, method = "ml", link_power = None))]
     fn new(
         family: &str,
         link: Option<&str>,
@@ -4522,11 +4522,11 @@ impl PyDoubleGlm {
         let f = self::family(family, None, power)?;
         let mut inner = prospicio_glm::dglm::DoubleGlm::new(f, self::link(link, f, link_power)?);
         match method {
-            "reml" => {}
-            "ml" => inner = inner.ml(),
+            "ml" => {}
+            "reml" => inner = inner.reml(),
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "method must be reml or ml, got {other:?}"
+                    "method must be ml or reml, got {other:?}"
                 )));
             }
         }

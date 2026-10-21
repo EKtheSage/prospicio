@@ -12,7 +12,7 @@ dglm_fit(
   family = "gaussian",
   link = NULL,
   power = NULL,
-  method = "reml",
+  method = "ml",
   offset = NULL,
   weights = NULL,
   doffset = NULL,
@@ -34,7 +34,7 @@ dglm_model(ptr, terms, xlevels, dterms, dxlevels)
 
 \item{power}{The Tweedie power, in (1, 2).}
 
-\item{method}{\code{"reml"} or \code{"ml"}.}
+\item{method}{\code{"ml"} (the default) or \code{"reml"}.}
 
 \item{offset, weights}{Optional offset of the mean (added to any
 \code{offset()} term) and prior weights.}
@@ -60,7 +60,8 @@ dispersion of new rows, \code{type = "response"} (the default) their mean.
 variance \verb{phi V(mu) / w}, and a gamma GLM with the log link for the
 dispersion, \verb{log(phi) = Z gamma + doffset}, each on its own formula, as
 \code{dglm::dglm()} (Smyth's alternating scoring). The dispersion is
-estimated by REML by default; \code{method = "ml"} is \code{dglm()}'s default.
+estimated by maximum likelihood by default, as \code{dglm()}, or by REML
+(\code{method = "reml"}).
 \code{dglm} 1.8.6 weights its mean step by \verb{w V(mu) / phi} and leaves the
 offset out of \code{mu.eta}, which is right only for a canonical link without
 an offset; this fit uses the scoring weights, so it agrees with \code{dglm()}

@@ -473,7 +473,8 @@ dwant <- function(case, method, quantity, arg = "") {
   r$expected
 }
 dnear <- function(a, b, tol) stopifnot(all(abs(a - b) <= tol * pmax(abs(b), 1e-300)))
-dg <- dglm_fit(severity ~ x + urban, ~ x + urban, sim, family = "gamma", link = "log")
+dg <- dglm_fit(severity ~ x + urban, ~ x + urban, sim, family = "gamma", link = "log",
+               method = "reml")
 stopifnot(dg@method == "reml")
 for (nm in names(dg@coefficients)) {
   dnear(dg@coefficients[[nm]], dwant("gamma", "reml", "coef", nm), 1e-8)

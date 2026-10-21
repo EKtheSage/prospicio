@@ -2175,7 +2175,8 @@ S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...)
 #' variance `phi V(mu) / w`, and a gamma GLM with the log link for the
 #' dispersion, `log(phi) = Z gamma + doffset`, each on its own formula, as
 #' `dglm::dglm()` (Smyth's alternating scoring). The dispersion is
-#' estimated by REML by default; `method = "ml"` is `dglm()`'s default.
+#' estimated by maximum likelihood by default, as `dglm()`, or by REML
+#' (`method = "reml"`).
 #' `dglm` 1.8.6 weights its mean step by `w V(mu) / phi` and leaves the
 #' offset out of `mu.eta`, which is right only for a canonical link without
 #' an offset; this fit uses the scoring weights, so it agrees with `dglm()`
@@ -2188,7 +2189,7 @@ S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...)
 #' @param family `"gaussian"`, `"poisson"`, `"gamma"` or `"tweedie"`.
 #' @param link The mean's link; the family's canonical link by default.
 #' @param power The Tweedie power, in (1, 2).
-#' @param method `"reml"` or `"ml"`.
+#' @param method `"ml"` (the default) or `"reml"`.
 #' @param offset,weights Optional offset of the mean (added to any
 #'   `offset()` term) and prior weights.
 #' @param doffset Optional offset of the log dispersion (added to any
@@ -2210,7 +2211,7 @@ S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...)
 #' m@dispersion_coefficients
 #' predict(m, data.frame(urban = "yes"), type = "dispersion")
 dglm_fit <- function(formula, dformula = ~1, data, family = "gaussian", link = NULL, power = NULL,
-                     method = "reml", offset = NULL, weights = NULL, doffset = NULL,
+                     method = "ml", offset = NULL, weights = NULL, doffset = NULL,
                      link_power = NULL) {
   des <- model_design(formula, data, offset, weights)
   ddes <- model_design(dformula, data, doffset, NULL)

@@ -773,7 +773,7 @@ def test_double_glm_matches_corrected_dglm():
     by_urban = Design([[1.0] * n, urban], ["(Intercept)", "urbanyes"])
     offset = [math.log(float(r["exposure"])) for r in rows]
     cases = [
-        ("gamma", "reml", DoubleGlm("gamma", link="log"), mean, mean, "severity"),
+        ("gamma", "reml", DoubleGlm("gamma", link="log", method="reml"), mean, mean, "severity"),
         (
             "poisson_offset",
             "ml",
@@ -807,7 +807,7 @@ def test_double_glm_matches_corrected_dglm():
 def test_double_glm_rejects_what_it_does_not_fit():
     from prospicio.models import Design, DoubleGlm
 
-    with pytest.raises(ValueError, match="reml or ml"):
+    with pytest.raises(ValueError, match="ml or reml"):
         DoubleGlm("gamma", method="pql")
     d = Design([[1.0] * 4], ["(Intercept)"])
     with pytest.raises(ValueError, match="double GLM takes"):
