@@ -637,6 +637,18 @@ real Excel.
     upper bound is blank in the table. The checks are Bahnemann's Ex 2.8,
     2.10 and P2.16 as the crate reproduces them, the Lomax and the
     truncated likelihood against `fit_severity` and the closed form.
+37. **Exposure curves tabulate side by side, and the test workbook calls
+    every function** (user, 2026-10-21, after checking 0.0.4 in Excel).
+    `PRO.EXPOSURE.CURVE` and `PRO.EXPOSURE.QUANTILE` took one curve, so a
+    row of c beside a column of x was refused; a curve comparison is the
+    common exhibit, so a row (or column) of parameters now gives one curve
+    each, across the other direction from the x. Both directions the same
+    way is ambiguous and is an error, and a tabulated curve stays one
+    curve (its parameters are ranges by nature). `harness/make_workbook.py`
+    now calls all 96 functions, each with a TRUE/FALSE check beside it;
+    the twelve it left out are on the sheets of their area and a new
+    "Mack draws" sheet, and the two P95 checks on the ODP sheet read the
+    P95 column, not P90.
 
 ## Parity plan
 

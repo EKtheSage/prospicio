@@ -56,7 +56,7 @@ ws["A17"] = "LDF, latest 5, ex high/low"; ws["A17"].font = note
 ws["B17"] = ArrayFormula("B17:K17", f'=PRO.CL.LDF({T},{{"volume",5,1,1}})')
 
 ws["M3"] = ArrayFormula("M3:Q14", f"=PRO.CL({T},,,A4:A13)")
-ws["M16"] = "=PRO.CL.ULTIMATE / RESERVE as plain columns:"; ws["M16"].font = note
+ws["M16"] = "PRO.CL.ULTIMATE and PRO.CL.RESERVE as plain columns:"; ws["M16"].font = note
 ws["M17"] = ArrayFormula("M17:M26", f"=PRO.CL.ULTIMATE({T})")
 ws["N17"] = ArrayFormula("N17:N26", f"=PRO.CL.RESERVE({T})")
 
@@ -213,10 +213,10 @@ for h, col in zip(["Quantity", "prospicio", "R", "Tolerance", "Within"], "KLMNO"
 checks = [
     ("Gamma: mean", "=C19", 53842.2718407722, 589.413),
     ("Gamma: SD", "=D19", 18965.3468418162, 483.93),
-    ("Gamma: P95", "=G19", 87856.1780690262, 1854.44),
+    ("Gamma: P95", "=H19", 87856.1780690262, 1854.44),
     ("None: mean", "=C33", 53928.2509498396, 506.674),
     ("None: SD", "=D33", 17453.9114703321, 513.428),
-    ("None: P95", "=G33", 85236.8809859552, 1701.59),
+    ("None: P95", "=H33", 85236.8809859552, 1701.59),
 ]
 for i, (name, f, r, tol) in enumerate(checks):
     row = 9 + i
@@ -867,6 +867,88 @@ for row in by.iter_rows(min_row=25, max_row=43, min_col=2, max_col=9):
 by.column_dimensions["A"].width = 20
 for col in "BCDEFGHIJKL":
     by.column_dimensions[col].width = 13
+# The twelve functions the sheets above leave out, each beside a check.
+ly["A70"] = "Distribution and survival functions (lognormal mean 50,000, CV 3)"; ly["A70"].font = bold
+for h, col in zip(["x", "CDF", "Survival", "Sum is 1"], "ABCD"):
+    ly[f"{col}71"] = h; ly[f"{col}71"].font = bold
+for k, x in enumerate([10000, 50000, 250000, 1000000]):
+    ly.cell(row=72 + k, column=1, value=x).fill = inp
+ly["B72"] = ArrayFormula("B72:B75", '=PRO.SEV.CDF(A72:A75,"lognormal_cv",$B$6,$B$7)')
+ly["C72"] = ArrayFormula("C72:C75", '=PRO.SEV.SURVIVAL(A72:A75,"lognormal_cv",$B$6,$B$7)')
+for r in range(72, 76):
+    ly[f"D{r}"] = f"=ABS(B{r}+C{r}-1)<1E-12"
+    ly[f"B{r}"].number_format = ly[f"C{r}"].number_format = "0.000000"
+ly["A77"] = "Alpha between a frequency and a layer (R Pareto: 3 losses above 800, expected loss 1,200 to 1000 xs 1000)"
+ly["G77"] = ArrayFormula("G77", "=PRO.PARETO.ALPHA.FREQLAYER(800,3,1000,1000,1200)")
+ly["H77"] = 1.5853501938706767; ly["I77"] = "=ABS(G77-H77)<1E-9"
+
+rm["A70"] = "Pure premium indication (Werner and Modlin, Appendix B)"; rm["A70"].font = bold
+for c, h in enumerate(["Exposure", "Losses", "Development", "Loss trend"]):
+    rm.cell(row=71, column=1 + c, value=h).font = bold
+appendix_b = [(12760, 5161624, 1.0000, 1.1939), (12766, 4820968, 1.0012, 1.1705), (12805, 4112172, 1.0055, 1.1476),
+              (12834, 5052052, 1.0186, 1.1251), (13411, 6559224, 1.0555, 1.1030)]
+for r, row in enumerate(appendix_b):
+    for c, x in enumerate(row):
+        rm.cell(row=72 + r, column=1 + c, value=x).fill = inp
+rm["F71"] = "LAE factor"; rm["F71"].font = bold; rm["F72"] = 1.012; rm["F72"].fill = inp
+rm["A78"] = ArrayFormula("A78:C84", "=PRO.PP.EXPERIENCE(A72:A76,B72:B76,C72:C76,D72:D76,F72)")
+rm["E78"] = "Book: pure premium 469.88"; rm["E79"] = "=ROUND(C84,2)=469.88"
+rm["E81"] = "Credibility 0.795 on 469.88, complement 585.75 (book 493.63)"
+rm["E82"] = ArrayFormula("E82", "=PRO.CRED.WEIGHTED(469.88,0.795,585.75)")
+rm["F82"] = "=ROUND(E82,2)=493.63"
+rm["E84"] = "Indicated rate: fixed 77.83, variable 13.8%, profit 5% (book 850.76)"
+rm["E85"] = ArrayFormula("E85", "=PRO.INDICATED.RATE(493.63+29.11+74.57+15.68,0.138,0.05,77.83)")
+rm["F85"] = "=ROUND(E85,2)=850.76"
+rm["A87"] = "Trended present rates complement (Appendix A: 13.2% indicated, 5% taken, trend 1.005/1.02; book 6.2%)"
+rm["E88"] = ArrayFormula("E88", "=PRO.TRENDED.PRESENT(0.132,0.05,1.005/1.02)")
+rm["F88"] = "=ROUND(E88,3)=0.062"
+rm["E88"].number_format = "0.0%"
+rm["A90"] = "Excel dates as half-month year fractions"; rm["A90"].font = bold
+for k, (d, want) in enumerate([((2013, 6, 30), 2013.5), ((2011, 11, 15), 2011.875), ((2015, 12, 31), 2016.0), ((2010, 7, 1), 2010.5)]):
+    c = rm.cell(row=91 + k, column=1, value=datetime.date(*d)); c.number_format = "yyyy-mm-dd"; c.fill = inp
+    rm.cell(row=91 + k, column=3, value=want)
+    rm.cell(row=91 + k, column=4, value=f"=B{91 + k}=C{91 + k}")
+rm["B91"] = ArrayFormula("B91:B94", "=PRO.YEARFRACTION(A91:A94)")
+
+cr["A37"] = "Credibility-weighted estimate: Z 0.30 on 200 against 300 (Werner and Modlin, ch. 12: 270)"
+cr["F37"] = ArrayFormula("F37", "=PRO.CRED.WEIGHTED(200,0.3,300)")
+cr["G37"] = "=ROUND(F37,2)=270"
+
+ex["A42"] = "Destruction rate quantiles (for simulating losses), one column per c"; ex["A42"].font = bold
+ex["A43"] = "u"
+for k, c in enumerate([1.5, 2, 3, 4, 5]):
+    ex.cell(row=43, column=2 + k, value=c).fill = inp
+for k, u in enumerate([0.5, 0.9, 0.99, 0.999]):
+    ex.cell(row=44 + k, column=1, value=u).fill = inp
+ex["B44"] = ArrayFormula("B44:F47", '=PRO.EXPOSURE.QUANTILE(A44:A47,"swiss_re",B43:F43)')
+ex["A49"] = "The c whose share of 2.5m xs 2.5m on a 10m risk is that of c = 3"
+ex["B49"] = ArrayFormula("B49", '=PRO.EXPOSURE.SHARE(2500000,2500000,10000000,"swiss_re",3)')
+ex["C49"] = ArrayFormula("C49", "=PRO.SWISSRE.C.LAYER(2500000,2500000,10000000,B49)")
+ex["D49"] = "=ABS(C49-3)<1E-8"
+for row in ex.iter_rows(min_row=44, max_row=47, min_col=2, max_col=6):
+    for c in row:
+        c.number_format = "0.0000"
+
+tm["A24"] = "Swing (retro) premium: basic 0, loss conversion 1, between 100 and 300 (aggregate's swing_a)"; tm["A24"].font = bold
+for k, (x, want) in enumerate([(50, 100), (200, 200), (400, 300)]):
+    tm.cell(row=25 + k, column=1, value=x).fill = inp
+    tm.cell(row=25 + k, column=3, value=want)
+    tm.cell(row=25 + k, column=4, value=f"=B{25 + k}=C{25 + k}")
+tm["B25"] = ArrayFormula("B25:B27", "=PRO.SWING(A25:A27,0,1,100,300)")
+
+md = wb.create_sheet("Mack draws")
+md["A1"] = "prospicio XLL test: Mack's bootstrap draws (PRO.MACK.BOOT.SIMS)"; md["A1"].font = Font(bold=True, size=13)
+md["A2"] = "Simulations and seed come from the Mack bootstrap sheet; the average total is that sheet's Mean."
+md["A2"].font = note
+md["N3"] = "Check"; md["N3"].font = bold
+md["N4"] = "Mean total, here"; md["O4"] = "=AVERAGE(K5:K100004)"
+md["N5"] = "Mean total, Mack bootstrap sheet"; md["O5"] = "='Mack bootstrap'!C19"
+md["N6"] = "Match"; md["O6"] = "=ABS(O4-O5)<1E-6*O5"
+md["A4"] = ArrayFormula("A4:K20004", f"=PRO.MACK.BOOT.SIMS({TRI},'Mack bootstrap'!$B$4,'Mack bootstrap'!$B$5,,,,{ORI})")
+md.column_dimensions["N"].width = 30
+for col in "ABCDEFGHIJKO":
+    md.column_dimensions[col].width = 11
+
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
