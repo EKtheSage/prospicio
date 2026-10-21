@@ -702,6 +702,18 @@ optional_number <- function(x, arg) {
   single_number(x, arg)
 }
 
+# `light_refit` as Rust takes it: NULL for the fit's own sampler, an empty
+# vector for TRUE (4 chains of 150 warm-up and 250 kept draws), or
+# c(chains, tune, draws).
+light_refit_arg <- function(light_refit) {
+  if (is.null(light_refit) || identical(light_refit, FALSE)) return(NULL)
+  if (identical(light_refit, TRUE)) return(numeric(0))
+  if (!is.numeric(light_refit) || length(light_refit) != 3 || anyNA(light_refit)) {
+    stop("light_refit must be NULL, TRUE or c(chains, tune, draws)", call. = FALSE)
+  }
+  as.numeric(light_refit)
+}
+
 # A tail property that is an age in months, or NULL when not given.
 tail_age <- function(name) {
   S7::new_property(NULL | S7::class_integer, getter = function(self) self@ptr$params()[[name]])
@@ -5060,6 +5072,16 @@ S7::method(as.data.frame, compartmental_fit) <- function(x, ...) {
 #' @param one_year_sims The number of one-year simulations, or `NULL` (the
 #'   default) for `n_sims` capped at 2,000. The lifetime reserves keep
 #'   `n_sims`. A smaller count gives the first simulations of a larger one.
+#' @param light_refit `NULL` (the default) refits with the fit's own sampler.
+#'   `TRUE`, or `c(chains, tune, draws)`, refits with a shorter, warm-started
+#'   NUTS run instead (`TRUE` takes 4 chains of 150 warm-up and 250 kept
+#'   draws): each refit scales its sampler by the opening posterior and
+#'   starts there, with no pilot run. On company 337 it comes within about
+#'   0.03 sd of the total claims development result of a full refit of model
+#'   2. It implies a refit: with `refit = NULL` model 2 then refits its
+#'   flagged simulations (`"refit_flagged"`) and the view is not approximate.
+#'   A refit warns when its closing reserve has R-hat above 1.05, fewer than
+#'   100 effective draws or a divergence.
 #' @param ptr A `CompartmentalOneYearFit` or `CompartmentalOneYearFits` pointer;
 #'   used internally.
 #' @returns A `compartmental_one_year_fit` object, or for
@@ -5143,7 +5165,8 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
                                    start = c("data", "prior_centre"), chains = 4, tune = 1000,
                                    draws = 2000, n_sims = 10000, seed = 0,
                                    target_accept = 0.99, max_depth = 10, k_threshold = 0.7,
-                                   refit = NULL, max_refits = NULL, one_year_sims = NULL) {
+                                   refit = NULL, max_refits = NULL, one_year_sims = NULL,
+                                   light_refit = NULL) {
   call <- sys.call()
   check_triangle(triangle)
   for (arg in c("paid", "premium")) {
@@ -5177,7 +5200,7 @@ compartmental_one_year <- function(triangle, paid, premium, priors, outstanding 
     paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth),
     single_number(k_threshold, "k_threshold"), refit, max_refits_arg(max_refits),
-    optional_number(one_year_sims, "one_year_sims")),
+    optional_number(one_year_sims, "one_year_sims"), light_refit_arg(light_refit)),
     call = call)
   view <- compartmental_one_year_fit(ptr = ptr)
   failed <- view@fit@diagnostics$warnings
@@ -5201,7 +5224,8 @@ compartmental_model_2_one_year <- function(triangle, paid, premium, priors, outs
                                            tune = 2000, draws = 8000, n_sims = 10000, seed = 0,
                                            target_accept = 0.999, max_depth = 10,
                                            k_threshold = 0.7, refit = NULL,
-                                           max_refits = NULL, one_year_sims = NULL) {
+                                           max_refits = NULL, one_year_sims = NULL,
+                                           light_refit = NULL) {
   if (missing(priors)) {
     stop(paste0("priors are required: use gesmann_morris_2_priors() for the paper's model 2, ",
                 "or compartmental_priors(), and check them with compartmental_prior_predictive()"),
@@ -5214,7 +5238,7 @@ compartmental_model_2_one_year <- function(triangle, paid, premium, priors, outs
                          n_sims = n_sims, seed = seed, target_accept = target_accept,
                          max_depth = max_depth, k_threshold = k_threshold,
                          refit = refit, max_refits = max_refits,
-                         one_year_sims = one_year_sims)
+                         one_year_sims = one_year_sims, light_refit = light_refit)
 }
 
 #' @rdname compartmental_one_year_fit
@@ -5303,7 +5327,8 @@ compartmental_one_year_segments <- function(triangle, paid, premium, priors, out
                                             dependence = c("independent", "rank_correlation",
                                                            "synchronized"),
                                             spearman = NULL, k_threshold = 0.7, refit = NULL,
-                                            max_refits = NULL, one_year_sims = NULL) {
+                                            max_refits = NULL, one_year_sims = NULL,
+                                            light_refit = NULL) {
   call <- sys.call()
   check_triangle(triangle)
   for (arg in c("paid", "premium")) {
@@ -5338,7 +5363,8 @@ compartmental_one_year_segments <- function(triangle, paid, premium, priors, out
     paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth),
     single_number(k_threshold, "k_threshold"), refit, max_refits_arg(max_refits),
-    optional_number(one_year_sims, "one_year_sims"), dependence, spearman_arg(spearman)),
+    optional_number(one_year_sims, "one_year_sims"), light_refit_arg(light_refit), dependence,
+    spearman_arg(spearman)),
     call = call)
   view <- compartmental_one_year_fits(ptr = ptr)
   d <- view@diagnostics

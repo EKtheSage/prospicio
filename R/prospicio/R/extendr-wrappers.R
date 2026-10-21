@@ -2169,9 +2169,9 @@ Triangle$compartmental_candidate <- function(paid, outstanding, outstanding_from
 
 Triangle$compartmental_segments <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, dependence, spearman) .Call(wrap__Triangle__compartmental_segments, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, dependence, spearman)
 
-Triangle$compartmental_one_year <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__compartmental_one_year, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims)
+Triangle$compartmental_one_year <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims, light_refit) .Call(wrap__Triangle__compartmental_one_year, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims, light_refit)
 
-Triangle$compartmental_one_year_segments <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman) .Call(wrap__Triangle__compartmental_one_year_segments, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims, dependence, spearman)
+Triangle$compartmental_one_year_segments <- function(paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims, light_refit, dependence, spearman) .Call(wrap__Triangle__compartmental_one_year_segments, self, paid, outstanding, outstanding_from, premium, priors, families, settings, run, k_threshold, refit, max_refits, one_year_sims, light_refit, dependence, spearman)
 
 Triangle$compartmental_prior_predictive <- function(premium, priors, families, settings, run) .Call(wrap__Triangle__compartmental_prior_predictive, self, premium, priors, families, settings, run)
 

@@ -87,7 +87,7 @@ pub use compartmental::{
 pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment};
 pub use odp::{BayesOdp, BayesOdpFit, BayesOdpFits, BayesOdpSegment};
 pub use one_year::{
-    BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, OneYearRefit,
+    BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, LightRefit, OneYearRefit,
 };
 
 use prospicio_bayes::nuts::ParamSummary;

@@ -32,7 +32,8 @@ compartmental_one_year(
   k_threshold = 0.7,
   refit = NULL,
   max_refits = NULL,
-  one_year_sims = NULL
+  one_year_sims = NULL,
+  light_refit = NULL
 )
 
 compartmental_model_2_one_year(
@@ -54,7 +55,8 @@ compartmental_model_2_one_year(
   k_threshold = 0.7,
   refit = NULL,
   max_refits = NULL,
-  one_year_sims = NULL
+  one_year_sims = NULL,
+  light_refit = NULL
 )
 
 compartmental_one_year_fits(ptr)
@@ -83,7 +85,8 @@ compartmental_one_year_segments(
   k_threshold = 0.7,
   refit = NULL,
   max_refits = NULL,
-  one_year_sims = NULL
+  one_year_sims = NULL,
+  light_refit = NULL
 )
 }
 \arguments{
@@ -152,6 +155,17 @@ k segments refit at most k times this many.}
 \item{one_year_sims}{The number of one-year simulations, or \code{NULL} (the
 default) for \code{n_sims} capped at 2,000. The lifetime reserves keep
 \code{n_sims}. A smaller count gives the first simulations of a larger one.}
+
+\item{light_refit}{\code{NULL} (the default) refits with the fit's own sampler.
+\code{TRUE}, or \code{c(chains, tune, draws)}, refits with a shorter, warm-started
+NUTS run instead (\code{TRUE} takes 4 chains of 150 warm-up and 250 kept
+draws): each refit scales its sampler by the opening posterior and
+starts there, with no pilot run. On company 337 it comes within about
+0.03 sd of the total claims development result of a full refit of model
+2. It implies a refit: with \code{refit = NULL} model 2 then refits its
+flagged simulations (\code{"refit_flagged"}) and the view is not approximate.
+A refit warns when its closing reserve has R-hat above 1.05, fewer than
+100 effective draws or a divergence.}
 
 \item{dependence}{How the segments depend on each other:
 \code{"independent"}, each segment's own view; or \code{"rank_correlation"}, the

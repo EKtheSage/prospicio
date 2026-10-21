@@ -405,3 +405,25 @@ stopifnot(
 )
 expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
                                          refit = "sometimes"), "should be one of")
+
+# A warm-started, shorter refit (decision 22) implies a refit: model 2
+# refits its flagged simulations and is not approximate.
+light <- with_warnings(compartmental_model_2_one_year(tri, "paid", "premium", gm2,
+                                                      incurred = "incurred", chains = 2,
+                                                      tune = 200, draws = 200,
+                                                      target_accept = 0.9, one_year_sims = 4,
+                                                      light_refit = c(2, 60, 60)))
+stopifnot(
+  is.null(light$value@approximate),
+  !any(grepl("approximate", light$warnings, fixed = TRUE)),
+  length(light$value@refitted) == 4
+)
+params <- provenance(light$value@cdr)$parameters
+stopifnot(identical(params[["refit"]], "RefitFlagged"),
+          identical(params[["light_refit"]], "2x60+60"))
+default_light <- suppressWarnings(compartmental_model_2_one_year(
+  tri, "paid", "premium", gm2, incurred = "incurred", chains = 2, tune = 200, draws = 200,
+  target_accept = 0.9, one_year_sims = 2, light_refit = TRUE))
+stopifnot(identical(provenance(default_light@cdr)$parameters[["light_refit"]], "4x150+250"))
+expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
+                                         light_refit = c(2, 60)), "light_refit")

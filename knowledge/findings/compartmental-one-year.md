@@ -98,3 +98,9 @@ segments in the pull request's smoke run (34 s with the single-triangle
 comparison) and 225 s in the full run, which also moment-matches 100
 simulations a segment under a budget of 2 refits and views model 2's
 default over two segments (reweighted, warned as approximate).[^test]
+
+**Update 2026-10-21.** A warm-started, shorter refit (`light_refit`) brings
+model 2's view within about 0.03 sd of full refits, at a thirty-third of
+their cost; see [the light refit
+finding](compartmental-gm2-light-refit.md). Model 2 still reweights only by
+default (open decision 16 of the design note).

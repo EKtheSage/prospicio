@@ -333,6 +333,14 @@ what it is aiming for by v1.0.
     2,000 one-year simulations by default, and CI's pull requests run
     only model 1 of the compartmental one-year validation. A refit
     budget (`max_refits`) bounds any model's view.
+  - A light refit for the compartmental one-year view (`reserving-bayes.md`
+    decision 22, #394; `BayesOneYear::light_refit`, in Rust, Python and R):
+    a shorter NUTS run scaled by the opening posterior and started at its
+    mean brings model 2's totals within about 0.03 sd of full refits on
+    company 337 (reweighting only is 0.25 to 0.52 off) at a thirtieth of a
+    full refit's cost, 2,000 simulations in about 31 minutes. Off by
+    default: model 2 still reweights only until the user decides open
+    decision 16.
   - Gesmann and Morris' compartmental model over segments and in the
     diagonal backtest (`reserving-compartmental.md` PR E, decision 8):
     `Compartmental::fit_segments` with independent or rank-correlated

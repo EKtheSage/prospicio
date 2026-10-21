@@ -50,7 +50,7 @@ use std::time::Instant;
 use prospicio_prob::{Distribution, PredictiveDistribution};
 use prospicio_reserving::bayes::{
     BayesOneYear, BayesOneYearFit, Compartmental, CompartmentalFit, CompartmentalPriors,
-    OneYearRefit, Outstanding,
+    LightRefit, OneYearRefit, Outstanding,
 };
 use prospicio_reserving::{DevelopmentColumn, Grain, Lag, Long, Month, Triangle};
 use prospicio_validation::full_bayes;
@@ -680,4 +680,209 @@ fn runtime() {
             default.unrefitted.len()
         );
     }
+}
+
+/// The light refit settings to try: `LIGHT="chains,tune,draws;..."`.
+fn light_settings() -> Vec<LightRefit> {
+    let text = std::env::var("LIGHT").unwrap_or_else(|_| "4,150,250;4,300,500".into());
+    text.split(';')
+        .map(|c| {
+            let v: Vec<usize> = c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+            LightRefit {
+                chains: v[0],
+                tune: v[1],
+                draws: v[2],
+            }
+        })
+        .collect()
+}
+
+/// What a light refit's view of model 2 gives against full refits.
+#[derive(Debug, Clone, Copy)]
+struct LightGap {
+    /// The rms gap of the simulations' totals to the full refits', in
+    /// units of the total's sd, and its mean.
+    rms: f64,
+    mean: f64,
+    /// The totals' sd over the full refits' sd.
+    sd_ratio: f64,
+    /// Refits whose closing reserve warned.
+    warned: usize,
+}
+
+/// Model 2's first `sims` years refitted in full (cached by
+/// `LIGHT_CACHE`, a path prefix, when set) and with each of `lights`, all
+/// `RefitAll`: the gaps of each light refit, and reweighting only's rms
+/// gap, in units of the total's sd over 1,000 reweighted simulations.
+fn light_gaps(sims: usize, seed: u64, lights: &[LightRefit]) -> (f64, Vec<LightGap>) {
+    let (only, t_fit) = view(true, 1_000, seed, OneYearRefit::ReweightOnly, None);
+    let s = sd(&totals(&only.cdr));
+    println!("reweight sd of the total {s:.1}; the fit and 1,000 reweightings {t_fit:.1} s");
+    let cache = std::env::var("LIGHT_CACHE")
+        .ok()
+        .map(|p| std::path::PathBuf::from(format!("{p}.{seed}.{sims}.txt")));
+    let cached = cache
+        .as_ref()
+        .and_then(|c| std::fs::read_to_string(c).ok())
+        .map(|text| {
+            text.lines()
+                .map(|l| l.parse().unwrap())
+                .collect::<Vec<f64>>()
+        });
+    let full_totals = cached.unwrap_or_else(|| {
+        let (full, t_full) = view(true, sims, seed, OneYearRefit::RefitAll, None);
+        println!(
+            "full refits {t_full:.1} s incl. the fit, warned {} of {sims}",
+            full.refit_warnings
+        );
+        let t = totals(&full.cdr);
+        if let Some(c) = &cache {
+            let text: Vec<String> = t.iter().map(|v| format!("{v:?}")).collect();
+            std::fs::write(
+                c,
+                text.join(
+                    "
+",
+                ),
+            )
+            .unwrap();
+        }
+        t
+    });
+    let gap = |x: &[f64]| -> (f64, f64) {
+        let d: Vec<f64> = x
+            .iter()
+            .zip(&full_totals)
+            .map(|(a, b)| (a - b) / s)
+            .collect();
+        (
+            (d.iter().map(|v| v * v).sum::<f64>() / d.len() as f64).sqrt(),
+            mean(&d),
+        )
+    };
+    let reweighted = gap(&totals(&only.cdr)[..sims]).0;
+    let gaps = lights
+        .iter()
+        .map(|&light| {
+            let t = Instant::now();
+            let v = Compartmental {
+                n_sims: sims,
+                seed,
+                ..preset(true)
+            }
+            .one_year(
+                training(),
+                "paid",
+                Outstanding::FromIncurred("incurred"),
+                "premium",
+                &BayesOneYear {
+                    refit: Some(OneYearRefit::RefitAll),
+                    n_sims: Some(sims),
+                    light_refit: Some(light),
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap();
+            let wall = t.elapsed().as_secs_f64();
+            let (rms, mean) = gap(&totals(&v.cdr));
+            let g = LightGap {
+                rms,
+                mean,
+                sd_ratio: sd(&totals(&v.cdr)) / sd(&full_totals),
+                warned: v.refit_warnings,
+            };
+            println!(
+                "{light:?}: wall {wall:.1} s ({:.2} s a refit beyond the fit), rms gap to                  full {rms:.3}, mean {mean:.3}, warned {} of {sims}, sd ratio {:.3}",
+                (wall - t_fit) / sims as f64,
+                g.warned,
+                g.sd_ratio
+            );
+            g
+        })
+        .collect();
+    (reweighted, gaps)
+}
+
+/// Model 2's warm-started, shorter refits (`BayesOneYear::light_refit`,
+/// decision 22) against its full refits, simulation by simulation, on the
+/// first `LIGHT_SIMS` years of seed `LIGHT_SEED` (ignored; release build,
+/// many minutes).
+#[test]
+#[ignore]
+fn model_2_light_refit() {
+    let env = |name: &str, default: u64| -> u64 {
+        std::env::var(name)
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(default)
+    };
+    let (reweighted, _) = light_gaps(
+        env("LIGHT_SIMS", 16) as usize,
+        env("LIGHT_SEED", 0),
+        &light_settings(),
+    );
+    println!("reweight only vs full: rms gap {reweighted:.3}");
+}
+
+/// The default light refit of model 2 comes within a small gap of its full
+/// refits on the first 16 years of seed 0 (measured 0.020 on those, 0.029
+/// on 32 of seed 1: the full refits' own noise is of that order), where
+/// reweighting only is 0.25 to 0.52 off; its sd of the total is the full
+/// refits' within 10%. Runs only with `RISK_RS_FULL_BAYES` (about 10
+/// minutes in release): the full refits are what costs.
+#[test]
+fn the_light_refit_of_model_2_matches_its_full_refits() {
+    if !full_bayes() {
+        eprintln!("skipped: set RISK_RS_FULL_BAYES to run the full refits it compares with");
+        return;
+    }
+    let (reweighted, gaps) = light_gaps(16, 0, &[LightRefit::default()]);
+    let g = gaps[0];
+    assert!(g.rms < 0.08, "{g:?}");
+    assert!(g.mean.abs() < 0.04, "{g:?}");
+    assert!((g.sd_ratio - 1.0).abs() < 0.10, "{g:?}");
+    assert!(g.rms < reweighted / 2.0, "{g:?} against {reweighted}");
+}
+
+/// Model 2's default view with a light refit (ignored; release build): its
+/// wall time and what it did, at 2,000 simulations (the default count) and
+/// the default light sampler, against the default (reweighting only).
+#[test]
+#[ignore]
+fn light_runtime() {
+    let sims: usize = std::env::var("LIGHT_SIMS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2_000);
+    let (_, t_reweight) = view(true, sims, 0, OneYearRefit::ReweightOnly, None);
+    println!("model 2, {sims} simulations reweighted only: {t_reweight:.1} s");
+    let t = Instant::now();
+    let v = Compartmental {
+        n_sims: sims,
+        ..preset(true)
+    }
+    .one_year(
+        training(),
+        "paid",
+        Outstanding::FromIncurred("incurred"),
+        "premium",
+        &BayesOneYear {
+            n_sims: Some(sims),
+            light_refit: Some(light_settings()[0]),
+            ..BayesOneYear::default()
+        },
+    )
+    .unwrap();
+    let totals = totals(&v.cdr);
+    println!(
+        "model 2, {sims} simulations, default light refit: {:.1} s, flagged {:.3}, refitted {}, \
+         warned {}, approximate {:?}, total cdr mean {:.0} sd {:.0}",
+        t.elapsed().as_secs_f64(),
+        v.flagged_share(),
+        v.refitted.len(),
+        v.refit_warnings,
+        v.approximate,
+        mean(&totals),
+        sd(&totals)
+    );
 }

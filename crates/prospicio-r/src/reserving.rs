@@ -29,7 +29,7 @@ use prospicio_reserving::bayes::{
     BayesOneYearSegment, Compartmental, CompartmentalCandidate,
     CompartmentalFit as CompartmentalInner, CompartmentalFits as CompartmentalFitsInner,
     CompartmentalLikelihood, CompartmentalOneYearFits as CompartmentalOneYearFitsInner,
-    CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted, HalfPrior,
+    CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted, HalfPrior, LightRefit,
     MeyersFits as MeyersFitsInner, MeyersSegment, OneYearRefit, Outstanding, PaidResponse,
     PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
 };
@@ -1495,6 +1495,7 @@ impl Triangle {
         refit: Nullable<String>,
         max_refits: Nullable<f64>,
         one_year_sims: Nullable<f64>,
+        light_refit: Nullable<Vec<f64>>,
     ) -> Result<CompartmentalOneYearFit> {
         let model = compartmental_settings(
             &priors,
@@ -1508,7 +1509,8 @@ impl Triangle {
             Nullable::NotNull(r) => Some(r.as_str()),
             Nullable::Null => None,
         };
-        let view = one_year_settings(k_threshold, refit, max_refits, one_year_sims)?;
+        let mut view = one_year_settings(k_threshold, refit, max_refits, one_year_sims)?;
+        view.light_refit = light_refit_arg(light_refit)?;
         let inner = model
             .one_year(&self.inner, paid, os, premium, &view)
             .map_err(to_r)?;
@@ -1535,6 +1537,7 @@ impl Triangle {
         refit: Nullable<String>,
         max_refits: Nullable<f64>,
         one_year_sims: Nullable<f64>,
+        light_refit: Nullable<Vec<f64>>,
         dependence: &str,
         spearman: Nullable<Vec<f64>>,
     ) -> Result<CompartmentalOneYearFits> {
@@ -1545,7 +1548,8 @@ impl Triangle {
             Nullable::NotNull(r) => Some(r.as_str()),
             Nullable::Null => None,
         };
-        let view = one_year_settings(k_threshold, refit, max_refits, one_year_sims)?;
+        let mut view = one_year_settings(k_threshold, refit, max_refits, one_year_sims)?;
+        view.light_refit = light_refit_arg(light_refit)?;
         let inner = model
             .one_year_segments(&self.inner, paid, os, premium, &view)
             .map_err(to_r)?;
@@ -3046,7 +3050,26 @@ fn one_year_settings(
         refit,
         max_refits,
         n_sims,
+        light_refit: None,
     })
+}
+
+/// A compartmental one-year view's `light_refit`: `NULL` for the fit's own
+/// sampler, an empty vector for [`LightRefit::default`] (4 chains of 150
+/// warm-up and 250 kept draws), or `c(chains, tune, draws)`.
+fn light_refit_arg(light_refit: Nullable<Vec<f64>>) -> Result<Option<LightRefit>> {
+    match light_refit {
+        Nullable::Null => Ok(None),
+        Nullable::NotNull(v) if v.is_empty() => Ok(Some(LightRefit::default())),
+        Nullable::NotNull(v) if v.len() == 3 => Ok(Some(LightRefit {
+            chains: whole(v[0], "light_refit chains")? as usize,
+            tune: whole(v[1], "light_refit tune")? as usize,
+            draws: whole(v[2], "light_refit draws")? as usize,
+        })),
+        Nullable::NotNull(_) => Err(Error::Other(
+            "light_refit must be NULL, TRUE or c(chains, tune, draws)".into(),
+        )),
+    }
 }
 
 /// The one-year view of a Bayesian model on a single-segment triangle

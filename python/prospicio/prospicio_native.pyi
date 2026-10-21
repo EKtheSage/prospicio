@@ -5745,7 +5745,7 @@ class Compartmental:
         """
         Number of predictive simulations.
         """
-    def one_year(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None, k_threshold: float = 0.7, refit: str |None = None, max_refits: int |None = None, n_sims: int |None = None) -> CompartmentalOneYearFit:
+    def one_year(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None, k_threshold: float = 0.7, refit: str |None = None, max_refits: int |None = None, n_sims: int |None = None, light_refit: Any |None = None) -> CompartmentalOneYearFit:
         """
         The one-year view: the claims development result over the coming
         year, by Pareto smoothed importance sampling of the posterior
@@ -5805,6 +5805,19 @@ class Compartmental:
             models is flagged. The lifetime view in ``fit`` keeps
             ``n_sims``; a smaller count gives the first simulations of a
             larger one.
+        light_refit : bool or tuple, optional
+            Refit with a shorter, warm-started NUTS run instead of the fit's
+            own sampler (``None`` or ``False``, the default, keeps it).
+            ``True`` takes 4 chains of 150 warm-up and 250 kept draws, a tuple
+            ``(chains, tune, draws)`` its own. Each refit scales its sampler
+            by the opening posterior and starts there, with no pilot run. On
+            company 337 it comes within about 0.03 sd of the total claims
+            development result of a full refit of model 2, at about a
+            thirtieth of the cost. It implies a refit: with ``refit=None``
+            model 2 then refits its flagged simulations
+            (``"refit_flagged"``) and the view is not approximate. A refit
+            warns when its closing reserve has R-hat above 1.05, fewer than
+            100 effective draws or a divergence.
         
         Returns
         -------
@@ -5839,7 +5852,7 @@ class Compartmental:
         >>> view.cdr.variance() < view.fit.reserves.variance()
         True
         """
-    def one_year_segments(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None, k_threshold: float = 0.7, refit: str |None = None, max_refits: int |None = None, n_sims: int |None = None) -> CompartmentalOneYearFits:
+    def one_year_segments(self, /, triangle: Triangle, paid: str, premium: str, *, outstanding: str |None = None, incurred: str |None = None, k_threshold: float = 0.7, refit: str |None = None, max_refits: int |None = None, n_sims: int |None = None, light_refit: Any |None = None) -> CompartmentalOneYearFits:
         """
         The one-year view of every segment of a triangle: each segment's
         view as ``one_year`` gives it, on the segment's own seeds as in
@@ -5871,6 +5884,7 @@ class Compartmental:
         refit : {"moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"}, optional
         max_refits : int, optional
         n_sims : int, optional
+        light_refit : bool or tuple, optional
             As in ``one_year``.
         
         Returns

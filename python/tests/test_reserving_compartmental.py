@@ -521,3 +521,32 @@ def test_one_year_defaults(tri):
     assert chosen.approximate is None
     assert not any("approximate" in str(w.message) for w in record)
     assert chosen.pareto_k == view.pareto_k
+
+
+def test_light_refit(tri):
+    # A warm-started, shorter refit (decision 22): it implies a refit, so
+    # model 2 refits its flagged simulations and is not approximate.
+    short = Compartmental.model_2(GM2, chains=2, tune=200, draws=200, target_accept=0.9)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        view = short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=4,
+                              light_refit=(2, 60, 60))
+    assert view.approximate is None
+    assert not any("approximate" in str(w.message) for w in record)
+    assert len(view.refitted) == 4
+    params = dict(view.cdr.provenance()["parameters"])
+    assert params["refit"] == "RefitFlagged" and params["light_refit"] == "2x60+60"
+    # Not given (or False): the fit's own sampler, no such parameter.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # short chains may miss a threshold
+        plain = short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=4,
+                               refit="reweight_only", light_refit=False)
+        # True takes the default sampler.
+        default = short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=2,
+                                 light_refit=True)
+    assert "light_refit" not in dict(plain.cdr.provenance()["parameters"])
+    assert dict(default.cdr.provenance()["parameters"])["light_refit"] == "4x150+250"
+    for bad in [(2, 60), "yes", (0, 60, 60), (2, 60, 1)]:
+        with pytest.raises(ValueError, match="light_refit"):
+            short.one_year(tri, "paid", "premium", incurred="incurred", n_sims=2,
+                           light_refit=bad)

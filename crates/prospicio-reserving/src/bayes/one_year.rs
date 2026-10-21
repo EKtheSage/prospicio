@@ -86,6 +86,8 @@ pub enum OneYearRefit {
 /// assert_eq!(settings.max_refits, None);
 /// // The model's own default number of one-year simulations.
 /// assert_eq!(settings.n_sims, None);
+/// // The fit's own sampler for refits, not a shorter warm-started one.
+/// assert_eq!(settings.light_refit, None);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BayesOneYear {
@@ -125,6 +127,35 @@ pub struct BayesOneYear {
     /// whatever the count, so a smaller count gives the first simulations of
     /// a larger one.
     pub n_sims: Option<usize>,
+    /// A shorter NUTS sampler for the refits of `Compartmental` (open
+    /// decision 16, `docs/design/reserving-bayes.md` decision 22): `None`
+    /// (the default) refits with the fit's own sampler, as before; `Some`
+    /// warm-starts each refit from the opening posterior and samples it with
+    /// these settings. The other models ignore it.
+    pub light_refit: Option<LightRefit>,
+}
+
+/// The sampler of a warm-started refit ([`BayesOneYear::light_refit`]).
+/// The default, 4 chains of 150 warm-up and 250 kept draws, is the one
+/// measured on company 337 (decision 22).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LightRefit {
+    /// Chains per refit.
+    pub chains: usize,
+    /// Warm-up draws per chain.
+    pub tune: usize,
+    /// Kept draws per chain.
+    pub draws: usize,
+}
+
+impl Default for LightRefit {
+    fn default() -> Self {
+        Self {
+            chains: 4,
+            tune: 150,
+            draws: 250,
+        }
+    }
 }
 
 impl Default for BayesOneYear {
@@ -134,6 +165,7 @@ impl Default for BayesOneYear {
             refit: None,
             max_refits: None,
             n_sims: None,
+            light_refit: None,
         }
     }
 }
@@ -146,6 +178,15 @@ impl BayesOneYear {
                 value: self.k_threshold,
                 expected: "a number, the Pareto k above which a simulation is flagged",
             });
+        }
+        if let Some(l) = self.light_refit {
+            if l.chains == 0 || l.draws < 2 || l.tune == 0 {
+                return Err(Error::InvalidSetting {
+                    name: "light_refit",
+                    value: 0.0,
+                    expected: "at least one chain, one warm-up draw and two kept draws",
+                });
+            }
         }
         if self.n_sims == Some(0) {
             return Err(Error::InvalidSetting {
@@ -996,10 +1037,18 @@ pub(crate) fn provenance(
         .param("k_threshold", settings.k_threshold)
         .param("refit", format!("{:?}", settings.mode()))
         .param("one_year_sims", n_sims);
-    match settings.max_refits {
+    let provenance = match settings.max_refits {
         // Unchanged without a budget, as before decision 20.
         None => provenance,
         Some(m) => provenance.param("max_refits", m),
+    };
+    match settings.light_refit {
+        // Unchanged without a light refit, as before decision 22.
+        None => provenance,
+        Some(l) => provenance.param(
+            "light_refit",
+            format!("{}x{}+{}", l.chains, l.tune, l.draws),
+        ),
     }
 }
 

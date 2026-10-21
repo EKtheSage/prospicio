@@ -35,8 +35,9 @@ use crate::triangle::{Segment, Triangle};
 const APPROXIMATE: &str = "the one-year view reweights its flagged simulations only, the \
 default with development effects (model 2): moment matching rescues none of them and each \
 refit takes about as long as a fit. The view is approximate, about 0.4 sd of the total \
-claims development result off a refit per simulation on company 337; set refit (with \
-max_refits as a budget) to refit them";
+claims development result off a refit per simulation on company 337; set light_refit to \
+refit them with a shorter sampler (within about 0.03 sd, about 30 minutes for 2,000 \
+simulations), or refit (with max_refits as a budget) for the fit's own sampler";
 
 /// The one-compartment closed form (decision 2) per unit of premium:
 /// `OS(t) / (Π RLR) = k_er g(t)` and
@@ -1203,7 +1204,7 @@ impl Compartmental {
     ) -> Result<(CompartmentalFit, one_year::YearDraws)> {
         let fit = self.fit_streams(triangle, paid, outstanding, premium, chains, predictive)?;
         let view_seed = one_year_seed(derive_seed(self.seed, predictive));
-        let year = year::CompartmentalYear::new(self, &fit.data)?;
+        let mut year = year::CompartmentalYear::new(self, &fit.data)?;
         // The added `z` of each draw: stream `d` of a seed that the
         // simulations' streams (`0..n_sims` of `view_seed`) do not reach.
         let opening = year.opening_draws(
@@ -1211,6 +1212,7 @@ impl Compartmental {
             &fit.sampled,
             StreamRng::new(view_seed, u64::MAX).next_u64(),
         )?;
+        year.warm_start(settings.light_refit, &opening)?;
         let draws = one_year::simulate(&year, &opening, settings, n_sims, view_seed)?;
         Ok((fit, draws))
     }
@@ -1368,7 +1370,13 @@ impl Compartmental {
     /// [`approximate`](BayesOneYearFit::approximate) warning: set when the
     /// default leaves the flagged simulations reweighted only.
     fn one_year_defaults(&self, settings: &BayesOneYear) -> (BayesOneYear, usize, Option<String>) {
-        let default_refit = self.one_year_refit();
+        let mut default_refit = self.one_year_refit();
+        // A light refit is a choice to refit: model 2 then refits its
+        // flagged simulations (moment matching rescues none of them), with
+        // nothing approximate to warn of (decision 22).
+        if settings.light_refit.is_some() && default_refit == OneYearRefit::ReweightOnly {
+            default_refit = OneYearRefit::RefitFlagged;
+        }
         let approximate = (settings.refit.is_none() && default_refit == OneYearRefit::ReweightOnly)
             .then(|| APPROXIMATE.to_string());
         let n_sims = settings.sims(self.n_sims.min(Self::ONE_YEAR_SIMS));
@@ -3724,7 +3732,7 @@ impl Posterior for LeastSquares<'_> {
 mod tests {
     use super::*;
     use crate::bayes::laplace::tests::assert_gradient;
-    use crate::bayes::one_year::OneYearRefit;
+    use crate::bayes::one_year::{LightRefit, OneYearRefit};
     use crate::triangle::Long;
     use crate::{DevelopmentColumn, Month};
     use prospicio_math::special::norm_pdf;
@@ -3888,6 +3896,23 @@ mod tests {
             let (two, sims, warning) = preset_2().one_year_defaults(&chosen);
             assert_eq!((two.refit, sims, warning), (Some(refit), 300, None));
         }
+        // A light refit is a choice to refit: model 2 refits its flagged
+        // simulations, without the approximate warning (decision 22); model
+        // 1 keeps moment matching.
+        let light = BayesOneYear {
+            light_refit: Some(LightRefit::default()),
+            ..default
+        };
+        let (two, _, warning) = preset_2().one_year_defaults(&light);
+        assert_eq!(
+            (two.refit, warning),
+            (Some(OneYearRefit::RefitFlagged), None)
+        );
+        let (one, _, warning) = preset().one_year_defaults(&light);
+        assert_eq!(
+            (one.refit, warning),
+            (Some(OneYearRefit::MomentMatchThenRefit), None)
+        );
         // A model with fewer simulations runs that many; more are capped.
         let small = Compartmental {
             n_sims: 500,
@@ -5095,6 +5120,92 @@ mod tests {
             let totals = view.totals();
             assert!(totals.values.iter().any(|(n, _)| n == "flagged_share"));
             assert!(view.cdr.provenance().model.ends_with("_one_year"));
+        }
+    }
+
+    /// A light refit (decision 22) refits every simulation with a shorter,
+    /// warm-started sampler: the same years and `k̂` as the fit's own sampler,
+    /// the same simulations refitted, closing reserves of the same size,
+    /// reproducible, and recorded in the provenance; a bad setting is an
+    /// error before any sampling.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_light_refit_refits_every_simulation_on_a_warm_start() {
+        let m = Compartmental {
+            n_sims: 6,
+            ..quick(4)
+        };
+        let with = |light_refit: Option<LightRefit>| {
+            m.one_year(
+                &triangle(true),
+                "paid",
+                incurred(),
+                "premium",
+                &BayesOneYear {
+                    refit: Some(OneYearRefit::RefitAll),
+                    light_refit,
+                    ..BayesOneYear::default()
+                },
+            )
+            .unwrap()
+        };
+        let light = LightRefit {
+            chains: 2,
+            tune: 60,
+            draws: 60,
+        };
+        let (full, a, b) = (with(None), with(Some(light)), with(Some(light)));
+        assert_eq!(a.refitted, full.refitted);
+        assert_eq!(a.refitted.len(), 6);
+        assert_eq!(a.pareto_k, full.pareto_k);
+        // Reproducible, and a different sampler than the fit's.
+        assert_eq!(a.cdr.draw_matrix(), b.cdr.draw_matrix());
+        assert_ne!(a.cdr.draw_matrix(), full.cdr.draw_matrix());
+        // Both close the same reserves, to Monte Carlo error: each total
+        // within a generous bound of the full refit's.
+        let sd = full.cdr.std_dev();
+        for (x, y) in a
+            .cdr
+            .draw_matrix()
+            .chunks(10)
+            .zip(full.cdr.draw_matrix().chunks(10))
+        {
+            let (x, y): (f64, f64) = (x.iter().sum(), y.iter().sum());
+            assert!(x.is_finite() && (x - y).abs() < 3.0 * sd, "{x} against {y}");
+        }
+        assert!(
+            a.cdr
+                .provenance()
+                .parameters
+                .contains(&("light_refit".into(), "2x60+60".into()))
+        );
+        assert!(
+            !full
+                .cdr
+                .provenance()
+                .parameters
+                .iter()
+                .any(|(k, _)| k == "light_refit")
+        );
+        for bad in [(0, 60, 60), (2, 0, 60), (2, 60, 1)] {
+            let settings = BayesOneYear {
+                light_refit: Some(LightRefit {
+                    chains: bad.0,
+                    tune: bad.1,
+                    draws: bad.2,
+                }),
+                ..BayesOneYear::default()
+            };
+            assert!(matches!(
+                m.one_year(&triangle(true), "paid", incurred(), "premium", &settings),
+                Err(Error::InvalidSetting {
+                    name: "light_refit",
+                    ..
+                })
+            ));
         }
     }
 
