@@ -1,1 +1,0 @@
-* **Update**: [Building and testing the Excel XLL](/environment/xll-builds.md), from the ODP bootstrap in Excel (branch claude/xll-odp-bootstrap): `PRO.ODP` on RAA with 20,000 simulations takes about 0.2 s in the release XLL under Wine, so the 1,000,000-simulation cap bounds a recalculation at about 10 s.

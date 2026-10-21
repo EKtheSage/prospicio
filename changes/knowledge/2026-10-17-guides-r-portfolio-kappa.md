@@ -1,1 +1,0 @@
-* **Update**: [The aggregate twenty-minute tour in R](/findings/aggregate-tour-r-api-map.md), its one gap closed: the R package exports `portfolio_assets()` and `portfolio_kappa()` (#322, branch guides/r-portfolio-kappa); the R guides for the aggregate tour and CAS Monograph 15 use them, with every printed number unchanged.

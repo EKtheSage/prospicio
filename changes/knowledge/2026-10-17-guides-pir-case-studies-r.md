@@ -1,1 +1,0 @@
-* **Note**: the R twin of the Pricing Insurance Risk case studies guide reproduces the Python guide's numbers. R gaps: no exported equivalent of `Portfolio.assets(p)` (read from the total row of `natural_price()`); `discretize()` accepts a gamma severity though its docs list only lognormal, grid and Pareto.
