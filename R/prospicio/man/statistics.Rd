@@ -38,8 +38,8 @@ statistic.
 The statistics a results table reports, in one call and under stated
 conventions: \code{"Mean"}, \code{"SD"} (population, dividing by \code{n}), \code{"CoV"}
 (\code{SD / Mean}; 0 when both are 0, \code{NaN} when only the mean is), \code{"Min"},
-\code{"Max"} and \code{"Variance"}, then \verb{"Percentile <q>"} for each percentile,
-\verb{"TVaR <q>"} for each TVaR level and \verb{"Mean + <k> SD"}, \verb{"Mean - <k> SD"}
+\code{"Max"} and \code{"Variance"}, then \code{"Percentile <q>"} for each percentile,
+\code{"TVaR <q>"} for each TVaR level and \code{"Mean + <k> SD"}, \code{"Mean - <k> SD"}
 for each multiple, with levels in percent as given, so the names are
 stable keys to join on.
 }
