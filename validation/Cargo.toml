@@ -108,7 +108,7 @@ required-features = ["slow-bayes"]
 # the wiring checks on group 353 (Mack, the ODP bootstrap and the six
 # Bayesian arm and basis pairs of the default run, Compartmental model 1
 # included, at the study's settings) and on synthetic squares (cut-down NUTS
-# runs, Compartmental's too): 22 tests, about 2 s of wall time in release on
+# runs, Compartmental's too) and the pin check: 34 tests, about 2 s of wall time in release on
 # 16 threads, since they run in parallel (Compartmental's group 353 check
 # alone about 1.5 s). The study itself stays #[ignore]d and runs
 # by hand only (the file's header): that job passes no `--include-ignored`.

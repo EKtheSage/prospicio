@@ -1,6 +1,6 @@
 # Design note: the 200-triangle calibration study (Meyers' ultimate percentile test)
 
-Status: **Accepted**, built through PR 4, D values not yet pinned (2026-10-20; issue #392; the user decided the
+Status: **Accepted**, built through PR 5, D values pinned (2026-10-20; opened 2026-10-20; issue #392; the user decided the
 points marked "the user decided"; two points the user did not decide are
 taken as this note's recommendation and marked so) · Lane: Reserving
 (`validation/` only; `crates/prospicio-reserving/` only if a thin helper
@@ -57,11 +57,12 @@ decided, 2026-10-20).
 | 2 | `claude/calibration-harness` | the panel script `validation/scripts/calibration_panel.py` (decision 2), the Rust panel loader, the percentile and KS code (decision 5), the harness (decision 6) with Mack (paid and incurred) and the ODP bootstrap (paid), the `#[ignore]`d study, its outputs (decision 7); the panel accepted only if Mack reproduces Meyers' D (decision 3); a timing probe (the models built by then; see "As built") | PR 1 |
 | 3 | `claude/calibration-bayes` | `BayesOdp` on paid, and Meyers' CRC, CSR and CAY on his bases; the comparison table with Meyers' D (decision 8); built, see "As built (PR 3)" | PR 2 |
 | 4 | `claude/calibration-compartmental` | Compartmental model 1 (paid), and model 2 as an optional, slower arm (decision 6); built, see "As built (PR 4)" | PR 3 |
+| 5 | `claude/calibration-pin` | the seed salt, the measured seed noise, the pinned D of every arm with a tolerance, the pin check and its unit tests (decision 7, after the user's review of the KS scores); built, see "As built (PR 5)" | PR 4 |
 
 After a run the user reviews, the D values are pinned within a tolerance
-(decision 7) and the knowledge finding is written; that happens in the
-PR whose run was reviewed. The PR that finishes the study (PR 4) also
-moves the bullet `[calibration-study]` in `docs/lanes/reserving.md` to
+(decision 7) and the knowledge finding is written; that happened in PR 5,
+after the user's review of the runs of PRs 2 to 4. The PR that finishes
+the study (PR 5) also moves the bullet `[calibration-study]` in `docs/lanes/reserving.md` to
 Done, updates `docs/roadmap.md` (the line that names the study),
 `reserving-bayes.md` (the lines that call the study "next"), and this
 note's status. No changelog fragment: the harness exposes nothing to
@@ -358,11 +359,13 @@ regress):
   near Meyers' (decision 3). The arms' D values are recorded, not
   asserted.
 * **After the user reviews a run**, each arm's D is pinned within a
-  tolerance (set from that run, expected near 3 points per line and 1.5
-  on all 200, to absorb seed and platform noise), so the knowledge
-  finding can be verified. Because the study is manual, "verified" means
-  confirmed by the test when run by hand; the finding's frontmatter says
-  that rather than claim a CI check.
+  tolerance set from measured seed noise (built in PR 5, 2026-10-20; see
+  "As built (PR 5)": tolerances from 0.1 to 3.5 points per line, 0.1 to
+  2.5 on all 200, not the 3 and 1.5 expected before the noise was
+  measured). Because no CI job runs the study, the findings are not marked
+  `verified`: the repository's rule is that a finding is verified only
+  when a test that CI runs confirms it, and a pin asserted by a manual run
+  is a regression check for whoever runs it, not a CI confirmation.
 
 The comparison table and the D values of a reviewed run are transcribed
 by hand into a knowledge finding,
@@ -596,7 +599,7 @@ monograph, checked against `08-Meyers.pdf`); his D values are in
 * **Not done here**: pinning the D values (after the user reviews the
   run), Compartmental (PR 4), a run on the printed codes only.
 
-## As built (PR 4, 2026-10-21)
+## As built (PR 4, 2026-10-20)
 
 PR 4 (`claude/calibration-compartmental`, on `main` after PR 3) adds the
 arms `compartmental` (model 1) and `compartmental_2` (model 2), both on
@@ -653,3 +656,179 @@ from the plan above:
   reviews the runs), a run with priors fitted per line, a floor on the cells
   so that model 2 scores more triangles, and a run on the printed codes
   only. With PR 4 the study's arms are all built.
+
+
+## As built (PR 5, 2026-10-20): Pinning
+
+The user reviewed the runs of PRs 2 to 4 and approved the KS scores on
+2026-10-20 ("ok with the ks scores"), so decision 7's "record, then
+regress" step is built: every arm's D is pinned within a tolerance, and
+the ignored study asserts the pins. The study is still run by hand; no CI
+job runs it.
+
+* **What is pinned.** `PINS` in `validation/tests/reserving_calibration_meyers.rs`
+  holds, for each arm and basis that the study runs, the number of
+  triangles it scored and its Meyers D in each line and on all 200: 50
+  cells. The arms are Mack (paid, incurred), the ODP bootstrap, `BayesOdp`,
+  CRC (paid, incurred), CSR, CAY, Compartmental model 1 and model 2. The
+  values are the 2026-10-20 run on the default seed (below), to two
+  decimals. The pass or fail verdict of a cell (D above `136 / sqrt(n)`)
+  follows from its pinned D and n, so it is pinned with them:
+
+  | Arm, basis | tolerance, line / all | CA | PA | WC | OL | All |
+  |---|---|---|---|---|---|---|
+  | Mack incurred | 0.1 / 0.1 | 17.81 | 14.69 | 24.66* | 16.20 | 16.46* |
+  | Mack paid | 0.1 / 0.1 | 23.19* | 48.31* | 33.36* | 10.33 (n=49) | 24.64* (n=199) |
+  | ODP paid | 1.7 / 0.5 | 25.58* | 48.83* | 31.33* | 8.74 | 26.28* |
+  | `BayesOdp` paid | 2.1 / 0.5 | 53.83* (n=14) | 57.83* (n=19) | 36.53* (n=40) | 27.15 (n=14) | 38.49* (n=87) |
+  | CRC incurred | 3.5 / 1.7 | 8.61 | 11.82 | 17.32~ | 10.45 | 10.29*~ |
+  | CRC paid | 3.5 / 1.7 | 20.74*~ (n=48) | 42.97* | 32.80* | 21.57*~ (n=45) | 26.40* (n=193) |
+  | CSR paid | 3.0 / 2.5 | 5.53 (n=48) | 25.69* | 10.92 | 12.75 (n=45) | 4.62 (n=193) |
+  | CAY incurred | 2.5 / 1.3 | 12.20 | 10.14 | 14.99 | 10.65 | 6.96 |
+  | Compartmental 1 paid | 2.7 / 0.9 | 49.27* | 36.86* | 26.78* | 66.28* | 39.28* |
+  | Compartmental 2 paid | 2.0 / 1.0 | 27.32 (n=6) | 38.24 (n=10) | 29.36* (n=27) | 19.80 (n=5) | 20.52*~ (n=48) |
+
+  `*` fails at 5% (the bound is 19.2 for n = 50 and 9.6 for n = 200,
+  larger for fewer triangles). `~` marks a cell whose pinned D is within
+  its tolerance of the bound: its verdict is not pinned, since another run
+  within the tolerance may land on either side (`near_the_bound`; the
+  study prints the list). Five cells are marked: CRC incurred workers'
+  compensation and all 200, CRC paid commercial auto and other liability,
+  and Compartmental model 2 on all 48.
+  The `BayesOdp` row is on the 87 triangles it can score; its D is not
+  comparable with the other rows' (the Bayesian-arms finding).
+* **The check.** `check_pins` fails a cell when the run scored another
+  number of triangles than the pin (its D is then another set's) or when D
+  is further than the arm's tolerance from the pin. A failure names the
+  cell, D, the distance and, when the D crossed the bound, the flipped
+  verdict. Because a D within the tolerance of a pin that is further than
+  the tolerance from the bound is on the pin's side, the verdict check is
+  the same test; only a `~` cell may sit on either side.
+* **When it runs.** The study asserts the pins only on the default seed
+  (`RISK_RS_CALIBRATION_SEED_SALT` unset) and without
+  `RISK_RS_CALIBRATION_LIMIT`, since either makes another experiment (the
+  study then prints that the pins were not asserted). Right after it loads
+  the panel, before any fit, it hashes the panel file's own bytes
+  (sha256, the digest the script writes to `panel_meta.csv`) and fails with
+  the command that rebuilds the panel unless the hash is the pinned
+  `075b3925...59d2`: a different panel (a new package version, a changed
+  screen, a hand edit) invalidates the pins. `panel_meta.csv` is not
+  trusted for this (a stale one only prints a warning) and may be absent,
+  as for a panel copied elsewhere through `RISK_RS_CALIBRATION_PANEL`. A
+  cell the run observed with no pin fails as well, so an arm, basis or
+  line added later is asserted from its first run, and a unit test checks
+  that every arm and basis the study can run has a pin in each line and on
+  all 200. `RISK_RS_CALIBRATION_ARMS` and `_LINES` narrow
+  what is checked: only the cells of the arms and lines that ran are
+  asserted, and the all-200 cells only when all four lines ran (a run on
+  fewer lines has another all-200 set). Mack's distance-to-Meyers
+  assertion (decision 3) stays as it was.
+* **Measuring the noise.** The seed is `seed_for(line, group, arm, basis)`
+  (FNV-1a). `RISK_RS_CALIBRATION_SEED_SALT` mixes a text into every fit's
+  seed (`salted`: unset or empty keeps the seed, so the default run is the
+  recorded run bit for bit). On 2026-10-20, on Windows with 16 threads, in
+  release:
+  * *The default seed reproduced the recorded run.* All 50 cells agree
+    with the findings' tables to their rounding (0.1), and for the two
+    Compartmental models, whose full-precision `ks.csv` and
+    `percentiles.csv` from PR 4 are still on disk, all 20 `ks.csv` cells
+    and all 400 percentiles are identical. So the study is
+    deterministic on a platform, bit for bit for Compartmental and to the
+    findings' rounding for the other arms (their full-precision outputs were
+    not kept), so a seeded bootstrap and the NUTS arms with their refits do
+    not depend on the parallel scheduling. The full run took 2,217 s (default arms plus
+    model 2).
+  * *Two salted runs* (`noise1` with model 2, `noise2` without it), same
+    panel. The largest difference in D between any two of the three runs,
+    over the arm's bases, in percentage points:
+
+    | Arm | per line | all 200 | pairs |
+    |---|---|---|---|
+    | Mack | 0.00 | 0.00 | 24 and 6 |
+    | ODP bootstrap | 0.84 | 0.21 | 12 and 3 |
+    | `BayesOdp` | 1.01 | 0.19 | 12 and 3 |
+    | CRC (paid, incurred) | 1.73 | 0.81 | 24 and 6 |
+    | CSR | 1.48 | 1.21 | 12 and 3 |
+    | CAY | 1.23 | 0.62 | 12 and 3 |
+    | Compartmental model 1 | 1.32 | 0.45 | 12 and 3 |
+    | Compartmental model 2 (one salt) | 0.33 | 0.06 | 4 and 1 |
+
+    The triangles each arm scores did not change (n identical in every
+    cell) and no cell changed its pass or fail at 5% (95 salted cells). The seed moves a line's D by up to 1.7 points and the all-200 D
+    by up to 1.2, far below the distance of most cells to their bound
+    (the CRC cells marked `~` and Compartmental model 2 on all 48 are the
+    exceptions).
+* **Tolerances.** Per arm, `TOLERANCES` holds twice the largest difference
+  above (a pin and a later run differ by about as much as two seeds do,
+  and the maximum over a dozen cells is the top of that spread), rounded up
+  to 0.1, or a floor if larger: 1.0 per line and 0.5 on all 200 for a NUTS
+  arm; for Mack 0.1, which is arithmetic only (it reproduced to the
+  digit); 0.5 on all 200 for the ODP bootstrap. Compartmental model 2 was
+  salted once, on 6, 10, 27 and 5 triangles per line, and each of its
+  fits is slow (none needed a refit), so it takes 2.0 per line and 1.0 on all.
+  Every salted cell of both runs is inside its tolerance (checked: 95 cells
+  across the two runs). The results are in the table above.
+* **What the tolerances do not cover.** They cover seed noise as measured
+  on this machine, and three seeds give a range, not the tail of the
+  spread. The study has rare pathological fits (CSR on commercial auto
+  group 32875 kept a fit with R-hat 1.168 and 444 divergences; 40 to 42
+  fits per NUTS arm fail their first diagnostics and are refitted), and
+  another seed can land one on another triangle; in a line where an arm
+  scores 5 to 19 triangles (`BayesOdp`, model 2) one percentile moves D by
+  several points, possibly more than twice the observed range. Model 2's
+  2.0 and 1.0 are a floor chosen above one salted difference, not a
+  measured spread. A broken pin is therefore first re-run with a salt
+  (below) before it is read as a change to a model.
+* **Platform.** The pins were recorded on Windows (x86-64, 16 threads).
+  NUTS draws at a fixed seed differ between Windows and Linux (the
+  seed-pinned test in `AGENTS.md`), as do the bootstrap's floating-point
+  sums in the last bits. Whether the tolerances cover that is unverified:
+  the argument is that another platform's draws are, to the study, another
+  seed, but the study has not been run on Linux (nothing runs it in CI),
+  and Mack's tolerance (0.1) covers only floating-point differences. The
+  number of threads does not matter, measured: a run with
+  `RAYON_NUM_THREADS=3` and `RISK_RS_CALIBRATION_LIMIT=4` (the default
+  arms, 144 fits, 155 s) gave every column of `percentiles.csv` but the
+  wall time identical, bit for bit, to the same 144 rows of the pinned
+  16-thread run, diagnostics and refits included. A run on
+  another platform that breaks a pin should first be re-run with a salt
+  to see whether it is noise; if the seed spread is as large as the miss,
+  widen the tolerance, not the pin.
+* **Re-pinning.** After a reviewed change to a model, the panel or the
+  tolerances: run the study as in the header of the test file (default
+  seed, all arms including `compartmental_2`, about 37 minutes on 16
+  threads), copy the "cells as PINS source" block it prints over `PINS`
+  (and the panel hash over `PINNED_PANEL_SHA256` if the panel was
+  rebuilt), re-measure the noise with two `RISK_RS_CALIBRATION_SEED_SALT`
+  runs if the model's sampler changed, update `TOLERANCES` and this
+  section's tables, and record the user's approval. A pin moves only with
+  the user's review: the point of the check is that it fails when a
+  change to a model moves a D.
+* **Tests.** Twelve unit tests, cheap and not ignored, run in CI's `bayes`
+  job: a D at, inside and outside the tolerance (per line and on all 200),
+  another count of scored triangles, a cell that scored nothing (NaN) and
+  an arm with no tolerance (each fails), the flipped verdict named in the
+  message and a pin near the bound, a narrowed run (an arm not run, a line
+  not run and the all-200 cell of a partial run are skipped, a far-off cell
+  of a line that ran fails, an observed cell with no pin fails), the
+  conditions that disable pins (limit, salt), another panel hash, SHA-256
+  against the FIPS 180-4 vectors, the salt (none keeps the seed, one
+  changes it deterministically), the `PINS` and `TOLERANCES` tables being
+  well formed (every pin has a tolerance and a known arm, n and D in
+  range), one pin for every arm, basis and scope the study can run and
+  none other, `pin_tolerance` reading the per-line and all-200 columns,
+  and the printed pins source. A run of the study on Mack alone checked
+  the hash on the real panel (it passes) and on the panel with one byte
+  added (it fails before any fit).
+* **Verification.** The study with the pins, default seed, all ten arm and
+  basis pairs, on the pinned panel: passed, 50 of 50 pinned cells within their
+  tolerance (`test result: ok. 1 passed`), 2,097 s on 16 threads (2,217 s
+  and 2,442 s for the two runs that measured the noise; the order of the
+  fits and the machine's load move the time, not the result).
+* **Not done here** (later work, none of it planned): a run with priors
+  fitted per line for Compartmental, a floor on the cells so that model 2
+  scores more triangles (and `BayesOdp` more of the 200), a run on the
+  printed codes of Table A.2 only (separating the panel from the models),
+  a run with Meyers' floor and ceiling, a run of the study on Linux to
+  test the platform argument, and a CI job for the study (decision 2 kept
+  it manual).

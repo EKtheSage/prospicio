@@ -30,8 +30,8 @@ sha256 `075b3925...59d2` (the one of the Mack and ODP finding), seeds from
 `seed_for`, `RISK_RS_CALIBRATION_ARMS=mack,odp,bayes_odp,crc,csr,cay`. Not
 marked verified: no CI job runs the study, only the wiring test on group
 353 (below). NUTS draws at a fixed seed differ between Windows and Linux,
-so the last digits are this platform's. The D values are recorded, not
-pinned.
+so the last digits are this platform's. The D values are pinned by the
+study since 2026-10-20 (below), and still not verified.
 
 * **Settings.** `Meyers` and `BayesOdp` at their defaults: Meyers' priors
   (`logelr ~ N(-0.4, 3.162^2)`, origin and development effects
@@ -154,6 +154,24 @@ pinned.
   paid has one pathological fit, commercial auto group 32875 (R-hat
   1.168, bulk ESS 17, 444 divergences), whose percentile is kept; the
   other kept fits have bulk ESS of at least 614.
+* **Pinned (PR 5, 2026-10-20).** The user reviewed the KS scores and
+  approved them; the study asserts every D above within a tolerance. A
+  rerun on the default seed reproduced them to their rounding, and two
+  salted runs measured how far the seed alone moves D, in points (largest
+  difference between two of three runs, per line and on all 200): CRC
+  1.73 and 0.81, CSR 1.48 and 1.21, CAY 1.23 and 0.62, `BayesOdp` 1.01 and
+  0.19. The tolerances are twice those (CRC 3.5 and 1.7, CSR 3.0 and 2.5,
+  CAY 2.5 and 1.3, `BayesOdp` 2.1 and 0.5; 1.0 and 0.5 floors). No
+  verdict changed in either salted run. The study does not pin the verdict
+  of CRC paid commercial auto and other liability, CRC incurred workers'
+  compensation and all 200 (a D within the tolerance of its bound): the
+  cells "Near the bound" above named. Not
+  marked verified: no CI job runs the study, and the pins were recorded on
+  Windows. The tolerances cover seed noise on that machine, from three
+  seeds (a range, not the tail: a pathological fit like CSR's on group
+  32875 landing on another triangle can move a cell of 14 to 19 triangles
+  further); the thread count changes no draw (3 threads against 16, bit
+  for bit); another platform is unverified.
 * **Cost.** The full study (1,600 fits: Mack, ODP bootstrap and the five
   Bayesian arm and basis pairs, 200 triangles) takes 230 s wall on 16
   threads. Serial (`RAYON_NUM_THREADS=1`, 3 triangles per line), the mean
@@ -176,6 +194,6 @@ pinned.
 # Not yet shown
 
 Compartmental is in `meyers-calibration-compartmental.md` (PR 4).
-Pinning the D values (after the user's review of the run), a run on the printed codes only, which would separate panel from
+A run on the printed codes only, which would separate panel from
 model for the four mismatching cells, and a run with Meyers' floor and
 ceiling, which would separate his code's data handling from the model.

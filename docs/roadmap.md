@@ -398,8 +398,9 @@ what it is aiming for by v1.0.
   for Meyers`; the study is staged: PR 2, the panel and the harness with
   Mack and the ODP bootstrap, and PR 3, `BayesOdp` on paid and Meyers'
   CRC, CSR and CAY on his bases, and PR 4, Compartmental model 1 on
-  paid and model 2 as an optional arm, are built and run by hand; pinning
-  the D values after the user's review remains);
+  paid and model 2 as an optional arm, are built and run by hand, and PR 5
+  pinned every arm's D within a tolerance measured from seed noise, after the
+  user's review, so the study is done);
   `Compartmental` has its one-year view too (PR 11, with the user's
   defaults of 2026-10-16), and `Compartmental::fit_segments` with the
   backtest in Rust, Python and R is `reserving-compartmental.md` PR E

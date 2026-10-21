@@ -4,7 +4,7 @@ title: On the rebuilt panel, Compartmental model 1 fails Meyers' percentile test
 description: Gesmann and Morris' compartmental model 1, at the paper's preset priors (fitted to workers' compensation company 337) and the library's sampler, scores all 200 triangles of the rebuilt panel on paid and fails Meyers' uniformity test at 5% in every line and in total (D 49.3 commercial auto, 36.9 personal auto, 26.8 workers' compensation, 66.3 other liability, 39.3 on all 200, against bounds of 19.2 and 9.6), with a larger total D (on all 200) than Mack, the ODP bootstrap, CRC and CSR on paid (on 193 to 200). Its predictive total has a median coefficient of variation of 1.3% to 3.8% in three lines, and other liability sits near the top of the predictive distribution. Model 2, whose log-normal likelihood needs every observed amount positive, scores 48 of 200 triangles (27 in workers' compensation) and fails in total (20.5 against 19.6) and in workers' compensation.
 tags: [reserving, compartmental, gesmann-morris, calibration, schedule-p, ks-test, nuts, preset-priors]
 status: draft
-generated: { by: claude-code/local-session, at: 2026-10-21T10:00:00-07:00 }
+generated: { by: claude-code/local-session, at: 2026-10-20T10:00:00-07:00 }
 sources:
   - id: harness
     resource: ../validation/tests/reserving_calibration_meyers.rs
@@ -29,8 +29,8 @@ Run on 2026-10-20 (Windows, 16 threads, release build) on the panel with
 sha256 `075b3925...59d2` (the one of the Mack and ODP finding), seeds from
 `seed_for`. Not marked verified: no CI job runs the study, only two wiring
 tests (below). NUTS draws at a fixed seed differ between Windows and
-Linux, so the last digits are this platform's. The D values are recorded,
-not pinned. Both models ran on all 200 triangles in one run,
+Linux, so the last digits are this platform's. The D values are pinned by
+the study since 2026-10-20 (below), and still not verified. Both models ran on all 200 triangles in one run,
 `RISK_RS_CALIBRATION_ARMS=compartmental,compartmental_2`, with the panel
 copied to `target/calibration-pr4/` (`RISK_RS_CALIBRATION_PANEL`), so its
 `percentiles.csv` (sha256 `62822bcf...fadb7`) and `ks.csv` sit beside it
@@ -133,6 +133,21 @@ of each model on the same seeds gave the same figures.
   a fit, with refits); the 200 model 2 jobs take 1,329 s, of which 48 fit
   (the rest fail at once), the slowest single fit 1,126 s under load. Run
   alone, 48 model 2 fits would take about 48 minutes.
+* **Pinned (PR 5, 2026-10-20).** The user reviewed the KS scores and
+  approved them. A rerun on the default seed (PR 5, with model 2) gave the
+  identical `ks.csv` and all 400 identical percentiles of this run, so the
+  fits are deterministic on this platform. A run with another seed salt
+  moved model 1's D by at most 1.32 points in a line (other liability; 0.45
+  on all 200) between three seeds; model 2 was salted once, by at most 0.33
+  points in a line (0.06 on all 48). The study asserts model 1's D within
+  2.7 points per line and 0.9 on all 200, and model 2's within 2.0 and 1.0
+  (a wider margin, from one salt on 5 to 27 triangles per line and fits
+  that take minutes). Model 2 on all 48 (20.5 against a bound of 19.6) is
+  within its tolerance of the bound, so its verdict is not pinned. Not
+  marked verified: no CI job runs the study, and the pins were recorded on
+  Windows. Model 2's tolerance is a floor above one salted difference, not
+  a measured spread; the thread count changes no draw (model 1 at 3
+  threads against 16, bit for bit); another platform is unverified.
 * **Wiring.** `the_compartmental_arm_scores_a_synthetic_triangle` (cut-down
   sampler: the mean is an ultimate, not a reserve; reproducible by seed;
   the library's target acceptances) and `the_compartmental_arm_scores_group_353`
@@ -143,7 +158,7 @@ of each model on the same seeds gave the same figures.
 
 # Not yet shown
 
-Pinning the D values (after the user's review of the run); whether the
+Whether the
 narrow intervals come from the preset's priors or the model (a run with
 priors fitted to each line, or to the panel); a run with a floor on the
 cells that scores more of model 2's triangles; a run on the printed codes
