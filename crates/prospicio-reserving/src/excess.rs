@@ -1,12 +1,12 @@
 //! Excess-layer loss development from a ground-up triangle
-//! (`docs/design/reserving-excess.md`, PR 1).
+//! (`docs/design/reserving-excess.md`, PRs 1 and 2).
 //!
 //! A layer's own triangle is sparse and unstable. The ground-up triangle is
 //! dense, and a severity model says how much of its development lands in a
 //! layer: [`ExcessPattern::from_ground_up`] turns the ground-up factors, an
 //! optional claim count column and the ultimate severity into the layer's
 //! age-to-age factors, which then go into any method as a
-//! [`SelectedPattern`](crate::SelectedPattern).
+//! [`SelectedPattern`].
 //!
 //! The model is the scale shift (decision 1): the claims reported at an age
 //! are the ultimate ones divided by a shift `c_j`, `X_j = X_inf / c_j`, with
@@ -20,13 +20,20 @@
 //!                / (LEV_inf(c_j b) - LEV_inf(c_j a)).
 //! ```
 //!
+//! Pinto and Gogol's shape drift ([`SeverityByMaturity::ParetoShape`]) lets
+//! the Pareto shape above a threshold fall with maturity instead, from a
+//! base development (the counts above the threshold or a lower layer's
+//! losses). [`ExcessPattern::credibility_weights`] gives the weight on the
+//! derived pattern in a blend with the layer's own factors, `1 - n / (n +
+//! k)`, capped so that one origin's link ratio cannot dominate.
+//!
 //! Basis, trend and layers follow the note's decisions: incurred losses only,
 //! a severity the caller has trended to the origins' price level, and one
 //! layer for every origin.
 
 use prospicio_core::Lag;
 use prospicio_math::roots::bisect_log;
-use prospicio_prob::Severity;
+use prospicio_prob::{Pareto, Severity};
 
 use crate::development::{Development, cumulative_factors};
 use crate::error::{Error, Result};
@@ -97,10 +104,26 @@ pub enum Basis {
     Paid,
 }
 
+/// The development a [`SeverityByMaturity::ParetoShape`] model starts from
+/// (decision 16): what the triangle column of
+/// [`ExcessPattern::from_ground_up`] holds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ShapeBase {
+    /// The number of claims above the threshold: Pinto and Gogol's `n_j /
+    /// n_i`.
+    Counts,
+    /// The losses in this layer, which attaches at or above the threshold:
+    /// Pinto and Gogol's development `d` of the losses excess of the
+    /// threshold (`Layer::unlimited(threshold)`), or Bear's development of a
+    /// lower bounded layer.
+    Losses(Layer),
+}
+
 /// How the severity at each maturity relates to the ultimate severity.
 ///
-/// Only the scale shift is built; the Pareto shape drift of Pinto and Gogol
-/// is PR 2 of the note.
+/// The scale shift (decision 1, the default) is identified by the ground-up
+/// triangle alone; the Pareto shape drift of Pinto and Gogol needs the
+/// shapes by maturity and a base development.
 #[non_exhaustive]
 pub enum SeverityByMaturity {
     /// `X_inf = c_j X_j`, with `c_j` solved from the ground-up triangle.
@@ -115,9 +138,52 @@ pub enum SeverityByMaturity {
         /// `c / LEV(c u) = r_j / LEV(u)` numerically.
         ground_up_cap: Option<f64>,
     },
+    /// Pinto and Gogol's shape drift: the claims above `threshold` follow a
+    /// single-parameter Pareto whose shape moves with maturity, `alpha_j` at
+    /// age `j` and `ultimate_alpha` at ultimate. With the base development
+    /// `D_j` to ultimate (of the counts above the threshold, or of the
+    /// losses in a base layer `B`) and `g_q(L)` the expected loss to layer
+    /// `L` of one claim from `Pareto(threshold, q)` (1 for counts), the
+    /// layer `A` develops to ultimate by
+    ///
+    /// ```text
+    /// CDF_A(j) = D_j [g_alpha_j(B) / g_ultimate(B)] [g_ultimate(A) / g_alpha_j(A)],
+    /// ```
+    ///
+    /// which is `(n_j / n_i) ((q_i - 1) / (q_j - 1)) c^(q_i - q_j)` for the
+    /// layer excess of `c` times the threshold (Pinto and Gogol, PCAS 74,
+    /// p. 246) and Bear's `d c^(q_i - q_j)` for layers with equal
+    /// limit-to-attachment ratios (PCAS 79, p. 137).
+    ParetoShape {
+        /// The lower bound `k` of the Pareto tail; the layer and a base
+        /// layer attach at or above it.
+        threshold: f64,
+        /// `(age, alpha)` at every development age of the column.
+        alphas: Vec<(Lag, f64)>,
+        /// The shape of the fully developed claims.
+        ultimate_alpha: f64,
+        /// What the triangle column holds.
+        base: ShapeBase,
+    },
 }
 
 impl SeverityByMaturity {
+    /// Pinto and Gogol's shape drift above `threshold`, with the shapes by
+    /// age, the ultimate shape and the base development the column holds.
+    pub fn pareto_shape(
+        threshold: f64,
+        alphas: Vec<(Lag, f64)>,
+        ultimate_alpha: f64,
+        base: ShapeBase,
+    ) -> Self {
+        Self::ParetoShape {
+            threshold,
+            alphas,
+            ultimate_alpha,
+            base,
+        }
+    }
+
     /// The scale shift on an unlimited ground-up column.
     pub fn scale_shift(ultimate: Box<dyn Severity>) -> Self {
         Self::ScaleShift {
@@ -145,6 +211,18 @@ impl std::fmt::Debug for SeverityByMaturity {
                 .debug_struct("ScaleShift")
                 .field("mean", &ultimate.mean())
                 .field("ground_up_cap", ground_up_cap)
+                .finish(),
+            Self::ParetoShape {
+                threshold,
+                alphas,
+                ultimate_alpha,
+                base,
+            } => f
+                .debug_struct("ParetoShape")
+                .field("threshold", threshold)
+                .field("alphas", alphas)
+                .field("ultimate_alpha", ultimate_alpha)
+                .field("base", base)
                 .finish(),
         }
     }
@@ -198,12 +276,15 @@ pub struct ExcessPattern {
     /// `layer_cdf[k] = layer_tail * prod(layer_ldf[k..])`.
     pub layer_cdf: Vec<f64>,
     /// The ground-up age-to-age factors the pattern was derived from (the
-    /// ones a chain ladder with the same tail would use), the check.
+    /// ones a chain ladder with the same tail would use), the check. Under
+    /// [`SeverityByMaturity::ParetoShape`] they are the base column's.
     pub ground_up_ldf: Vec<f64>,
-    /// The ground-up factor from the oldest age to ultimate.
+    /// The ground-up factor from the oldest age to ultimate (the base
+    /// column's under [`SeverityByMaturity::ParetoShape`]).
     pub ground_up_tail: f64,
     /// The scale shift `c_j` of each age (the last for the tail), the
-    /// factor by which the severity at the age grows to ultimate.
+    /// factor by which the severity at the age grows to ultimate; empty
+    /// under [`SeverityByMaturity::ParetoShape`], whose shapes are inputs.
     pub shifts: Vec<f64>,
     /// The layer's factor from the oldest age to ultimate, derived from the
     /// ground-up tail; 1 without a tail.
@@ -227,6 +308,13 @@ impl ExcessPattern {
     /// * The ground-up factors are the volume-weighted ones
     ///   (`Development::default()`).
     ///
+    /// Under [`SeverityByMaturity::ParetoShape`] the column is the base
+    /// development the model names ([`ShapeBase`]: the counts above the
+    /// threshold, or the losses in a base layer), `counts` must be `None`,
+    /// and `tail` is the base column's tail; the layer's tail factor then
+    /// also carries the shape's move from the oldest age's alpha to the
+    /// ultimate one, so it is not 1 when they differ, even without a tail.
+    ///
     /// The layer must have positive expected loss in the model at every age.
     pub fn from_ground_up(
         triangle: &Triangle,
@@ -246,17 +334,61 @@ impl ExcessPattern {
             });
         }
         layer.check()?;
-        let SeverityByMaturity::ScaleShift {
-            ultimate,
-            ground_up_cap,
-        } = model;
-        let ultimate: &dyn Severity = ultimate.as_ref();
+        match model {
+            SeverityByMaturity::ScaleShift {
+                ultimate,
+                ground_up_cap,
+            } => Self::scale_shift(
+                triangle,
+                column,
+                counts,
+                tail,
+                layer,
+                ultimate.as_ref(),
+                *ground_up_cap,
+            ),
+            SeverityByMaturity::ParetoShape {
+                threshold,
+                alphas,
+                ultimate_alpha,
+                base,
+            } => {
+                if counts.is_some() {
+                    return Err(Error::Excess(
+                        "a Pareto shape model reads its base development from `column`; pass no \
+                         count column"
+                            .into(),
+                    ));
+                }
+                Self::pareto_shape(
+                    triangle,
+                    column,
+                    tail,
+                    layer,
+                    *threshold,
+                    alphas,
+                    *ultimate_alpha,
+                    *base,
+                )
+            }
+        }
+    }
+
+    fn scale_shift(
+        triangle: &Triangle,
+        column: &str,
+        counts: Option<&str>,
+        tail: &Tail,
+        layer: Layer,
+        ultimate: &dyn Severity,
+        ground_up_cap: Option<f64>,
+    ) -> Result<Self> {
         if let Some(cap) = ground_up_cap
-            && !(cap.is_finite() && *cap > 0.0)
+            && !(cap.is_finite() && cap > 0.0)
         {
             return Err(Error::InvalidSetting {
                 name: "ground_up_cap",
-                value: *cap,
+                value: cap,
                 expected: "finite and positive",
             });
         }
@@ -311,7 +443,7 @@ impl ExcessPattern {
             }
             let c = match ground_up_cap {
                 None => r,
-                Some(cap) => solve_shift(&lev, *cap, r, segment.ages[age])?,
+                Some(cap) => solve_shift(&lev, cap, r, segment.ages[age])?,
             };
             let at_age = layer_at_shift(ultimate, layer, c);
             if !(at_age.is_finite() && at_age > 0.0) {
@@ -335,6 +467,254 @@ impl ExcessPattern {
             ground_up_tail: tail_fit.factor,
             shifts,
         })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn pareto_shape(
+        triangle: &Triangle,
+        column: &str,
+        tail: &Tail,
+        layer: Layer,
+        threshold: f64,
+        alphas: &[(Lag, f64)],
+        ultimate_alpha: f64,
+        base: ShapeBase,
+    ) -> Result<Self> {
+        if !(threshold.is_finite() && threshold > 0.0) {
+            return Err(Error::InvalidSetting {
+                name: "threshold",
+                value: threshold,
+                expected: "finite and positive",
+            });
+        }
+        let check_alpha = |alpha: f64| {
+            if alpha.is_finite() && alpha > 0.0 {
+                Ok(alpha)
+            } else {
+                Err(Error::InvalidSetting {
+                    name: "alpha",
+                    value: alpha,
+                    expected: "finite and positive",
+                })
+            }
+        };
+        check_alpha(ultimate_alpha)?;
+        let below = |l: Layer, what: &str| {
+            if l.attachment < threshold {
+                Err(Error::Excess(format!(
+                    "the {what} attaches at {}, below the Pareto threshold {threshold}",
+                    l.attachment
+                )))
+            } else {
+                Ok(())
+            }
+        };
+        below(layer, "layer")?;
+        let base_layer = match base {
+            ShapeBase::Counts => None,
+            ShapeBase::Losses(b) => {
+                b.check()?;
+                below(b, "base layer")?;
+                Some(b)
+            }
+        };
+
+        let segment = triangle.segment(column)?;
+        let ages = &segment.ages;
+        let mut by_age: Vec<Option<f64>> = vec![None; ages.len()];
+        for &(age, alpha) in alphas {
+            let Some(p) = ages.iter().position(|&a| a == age) else {
+                return Err(Error::Excess(format!(
+                    "an alpha is given at age {age}, which is not a development age of the column"
+                )));
+            };
+            if by_age[p].is_some() {
+                return Err(Error::Excess(format!(
+                    "the alpha at age {age} is given twice"
+                )));
+            }
+            by_age[p] = Some(check_alpha(alpha)?);
+        }
+        let shapes = by_age
+            .iter()
+            .zip(ages)
+            .map(|(alpha, age)| {
+                alpha.ok_or_else(|| {
+                    Error::Excess(format!(
+                        "no alpha at age {age}: the shape drift needs one at every development age"
+                    ))
+                })
+            })
+            .collect::<Result<Vec<f64>>>()?;
+
+        let dev = Development::default().fit(triangle, column)?;
+        let n_links = dev.ldf.len();
+        let tail_fit = tail.fit(&dev)?;
+        let base_ldf = tail_fit.ldf[..n_links].to_vec();
+        let base_cdf = cumulative_factors(&base_ldf, tail_fit.factor);
+
+        // The expected loss to `l` of one claim above the threshold.
+        let per_claim = |alpha: f64, l: Layer| -> Result<f64> {
+            let pareto = Pareto::new(threshold, alpha).map_err(|e| Error::Excess(e.to_string()))?;
+            let v = pareto.layer(l.limit, l.attachment);
+            if v.is_finite() && v > 0.0 {
+                Ok(v)
+            } else {
+                Err(Error::Excess(format!(
+                    "the layer {} xs {} has no finite, positive expected loss at alpha {alpha}: \
+                     an unlimited layer needs every alpha above 1",
+                    l.limit, l.attachment
+                )))
+            }
+        };
+        let base_at = |alpha: f64| base_layer.map_or(Ok(1.0), |b| per_claim(alpha, b));
+        let layer_ultimate = per_claim(ultimate_alpha, layer)?;
+        let base_ultimate = base_at(ultimate_alpha)?;
+        let mut layer_cdf = Vec::with_capacity(n_links + 1);
+        for (age, &alpha) in shapes.iter().enumerate().take(n_links + 1) {
+            let cdf = base_cdf[age]
+                * (base_at(alpha)? / base_ultimate)
+                * (layer_ultimate / per_claim(alpha, layer)?);
+            if !(cdf.is_finite() && cdf > 0.0) {
+                return Err(Error::Excess(format!(
+                    "the base development at age {} is not finite and positive",
+                    ages[age]
+                )));
+            }
+            layer_cdf.push(cdf);
+        }
+        let layer_ldf = (0..n_links)
+            .map(|k| layer_cdf[k] / layer_cdf[k + 1])
+            .collect();
+        Ok(Self {
+            ages: ages.clone(),
+            layer_ldf,
+            layer_tail: layer_cdf[n_links],
+            layer_cdf,
+            ground_up_ldf: base_ldf,
+            ground_up_tail: tail_fit.factor,
+            shifts: Vec::new(),
+        })
+    }
+
+    /// The weight on this derived pattern at each age for a blend with the
+    /// layer triangle's own factors (decision 4 (a)): `w_j = 1 - z_j`, with
+    /// the credibility of the layer's own factor
+    ///
+    /// ```text
+    /// z_j = n_j / (n_j + k),   capped as below,
+    /// ```
+    ///
+    /// for [`selected`](Self::selected), which blends `w_j * derived + (1 -
+    /// w_j) * own`. User weights stay available through
+    /// [`PatternWeight`] directly.
+    ///
+    /// * `n_j` measures the information in the link from age `j`: with a
+    ///   `counts` column (the number of claims in the layer, cumulative or
+    ///   incremental like the losses), the claims in the layer at age `j`
+    ///   summed over the origins observed at both ages; without one, the
+    ///   number of those origins whose layer value at `j` is positive.
+    /// * `k` is the credibility constant, required with no default
+    ///   (decision 11 (a)); finite and positive.
+    /// * **The cap.** `n / (n + k)` ignores how variable the link ratios
+    ///   are, so `z_j` is also capped so that removing any one origin moves
+    ///   the blended factor by at most `max_influence` times the blended
+    ///   factor: `z_j |f_own - f_own(-i)| <= max_influence * f_blend(z_j)`
+    ///   for every origin `i`, where `f_own` is the layer's volume-weighted
+    ///   factor and `f_own(-i)` the same without origin `i` (the derived
+    ///   factor when no other origin has a positive value at `j`). One huge
+    ///   ratio from a small earlier value therefore gets little weight.
+    /// * Where the layer's own factor cannot be estimated (every earlier
+    ///   value zero) `z_j = 0` and the weight is exactly 1, whatever the
+    ///   counts say, so `Development` uses its sparse-age path there
+    ///   (decision 8 (b)): the own factor is reported missing and the
+    ///   derived one is used.
+    ///
+    /// The layer triangle must be a single segment observed at this
+    /// pattern's ages. The own factor here is the volume-weighted one
+    /// (`Development::default()`), as the chain ladder of the blend uses by
+    /// default.
+    pub fn credibility_weights(
+        &self,
+        layer_triangle: &Triangle,
+        column: &str,
+        counts: Option<&str>,
+        k: f64,
+        max_influence: f64,
+    ) -> Result<PatternWeight> {
+        if !(k.is_finite() && k > 0.0) {
+            return Err(Error::InvalidSetting {
+                name: "k",
+                value: k,
+                expected: "finite and positive",
+            });
+        }
+        if !(max_influence.is_finite() && max_influence > 0.0) {
+            return Err(Error::InvalidSetting {
+                name: "max_influence",
+                value: max_influence,
+                expected: "finite and positive",
+            });
+        }
+        let segment = layer_triangle.segment(column)?;
+        if segment.ages != self.ages {
+            return Err(Error::Excess(
+                "the layer triangle must be observed at the derived pattern's development ages"
+                    .into(),
+            ));
+        }
+        let count_segment = match counts {
+            Some(name) => {
+                let s = layer_triangle.segment(name)?;
+                if s.ages != segment.ages || s.origins != segment.origins {
+                    return Err(Error::Excess(
+                        "the layer count column must be observed at the same origins and ages"
+                            .into(),
+                    ));
+                }
+                Some(s)
+            }
+            None => None,
+        };
+
+        let mut weights = Vec::with_capacity(self.layer_ldf.len());
+        for (j, &derived) in self.layer_ldf.iter().enumerate() {
+            // The origins observed at both ages of the link.
+            let pairs: Vec<(usize, f64, f64)> = (0..segment.n_origins)
+                .filter_map(|o| Some((o, segment.get(o, j)?, segment.get(o, j + 1)?)))
+                .collect();
+            let earlier: f64 = pairs.iter().map(|p| p.1).sum();
+            let later: f64 = pairs.iter().map(|p| p.2).sum();
+            let n = match &count_segment {
+                Some(c) => pairs
+                    .iter()
+                    .filter_map(|&(o, _, _)| c.get(o, j))
+                    .sum::<f64>(),
+                None => pairs.iter().filter(|p| p.1 > 0.0).count() as f64,
+            };
+            let z = if earlier <= 0.0 || n <= 0.0 {
+                0.0
+            } else {
+                let own = later / earlier;
+                let mut z = n / (n + k);
+                let gap = own - derived;
+                for &(_, before, after) in &pairs {
+                    let rest = earlier - before;
+                    let without = if rest > 0.0 {
+                        (later - after) / rest
+                    } else {
+                        derived
+                    };
+                    let excess = (own - without).abs() - max_influence * gap;
+                    if excess > 0.0 {
+                        z = z.min(max_influence * derived / excess);
+                    }
+                }
+                z
+            };
+            weights.push((self.ages[j], 1.0 - z));
+        }
+        Ok(PatternWeight::ByAge(weights))
     }
 
     /// The layer's age-to-age factors as a [`SelectedPattern`] with
@@ -770,5 +1150,275 @@ mod tests {
         assert!(layer_exposure(&tri, "premium", &[1.5], "x").is_err());
         assert!(layer_exposure(&tri, "premium", &[0.1], "paid").is_err());
         assert!(layer_exposure(&tri, "nope", &[0.1], "x").is_err());
+    }
+
+    /// A pattern on the ages 12, 24 and 36 with the given layer factors.
+    fn derived(ldf: [f64; 2]) -> ExcessPattern {
+        ExcessPattern {
+            ages: vec![12, 24, 36],
+            layer_ldf: ldf.to_vec(),
+            layer_cdf: vec![ldf[0] * ldf[1], ldf[1], 1.0],
+            ground_up_ldf: vec![1.0, 1.0],
+            ground_up_tail: 1.0,
+            shifts: Vec::new(),
+            layer_tail: 1.0,
+        }
+    }
+
+    /// An annual triangle with a loss and a count column.
+    fn losses_and_counts(rows: &[&[f64]], counts: &[&[f64]]) -> Triangle {
+        let (mut origin, mut ages, mut values, mut n) = (vec![], vec![], vec![], vec![]);
+        for (k, (row, count)) in rows.iter().zip(counts).enumerate() {
+            for (d, (&v, &c)) in row.iter().zip(count.iter()).enumerate() {
+                origin.push(crate::Month::january(2020 + k as i32));
+                ages.push(12 * (d as Lag + 1));
+                values.push(v);
+                n.push(c);
+            }
+        }
+        Triangle::from_long(&crate::Long {
+            keys: &[],
+            origin: &origin,
+            development: crate::DevelopmentColumn::Age(&ages),
+            values: &[("layer", &values), ("count", &n)],
+            origin_grain: crate::Grain::Year,
+            development_grain: crate::Grain::Year,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    fn by_age(w: &PatternWeight) -> Vec<(Lag, f64)> {
+        match w {
+            PatternWeight::ByAge(v) => v.clone(),
+            PatternWeight::All(_) => panic!("a weight per age"),
+        }
+    }
+
+    #[test]
+    fn credibility_weights_are_k_over_n_plus_k() {
+        let p = derived([2.0, 1.2]);
+        let rows: [&[f64]; 4] = [
+            &[10.0, 20.0, 24.0],
+            &[10.0, 20.0, 24.0],
+            &[10.0, 20.0],
+            &[10.0],
+        ];
+        let counts: [&[f64]; 4] = [&[2.0, 2.0, 2.0], &[3.0, 3.0, 3.0], &[5.0, 5.0], &[1.0]];
+        let tri = losses_and_counts(&rows, &counts);
+        // Without counts n is the origins with a positive earlier value: 3
+        // and 2. Every ratio equals the derived one, so the cap is idle.
+        let w = by_age(
+            &p.credibility_weights(&tri, "layer", None, 3.0, 0.1)
+                .unwrap(),
+        );
+        assert_eq!(w[0].0, 12);
+        assert!((w[0].1 - 0.5).abs() < 1e-15 && (w[1].1 - 0.6).abs() < 1e-15);
+        // With counts n is the claims at the earlier age: 10 and 5.
+        let w = by_age(
+            &p.credibility_weights(&tri, "layer", Some("count"), 3.0, 0.1)
+                .unwrap(),
+        );
+        assert!((w[0].1 - 3.0 / 13.0).abs() < 1e-15 && (w[1].1 - 3.0 / 8.0).abs() < 1e-15);
+        // Errors: k, the cap, a triangle on other ages.
+        assert!(
+            p.credibility_weights(&tri, "layer", None, 0.0, 0.1)
+                .is_err()
+        );
+        assert!(
+            p.credibility_weights(&tri, "layer", None, f64::NAN, 0.1)
+                .is_err()
+        );
+        assert!(
+            p.credibility_weights(&tri, "layer", None, 1.0, 0.0)
+                .is_err()
+        );
+        let short = annual(2020, &[&[1.0, 2.0], &[1.0]]);
+        assert!(matches!(
+            p.credibility_weights(&short, "values", None, 1.0, 0.1),
+            Err(Error::Excess(_))
+        ));
+    }
+
+    #[test]
+    fn one_huge_link_ratio_does_not_dominate_the_blend() {
+        let p = derived([2.0, 1.0]);
+        // Three origins develop by 2; the fourth from 0.1 to 50 (500).
+        let tri = annual(
+            2017,
+            &[
+                &[10.0, 20.0, 20.0],
+                &[10.0, 20.0, 20.0],
+                &[10.0, 20.0],
+                &[0.1, 50.0],
+            ],
+        );
+        let own = 110.0 / 30.1;
+        let shift = own - 2.0; // the fourth origin's pull on the own factor
+        // Uncapped (a share of 10, never binding): n = 4, k = 1, z = 0.8,
+        // and the fourth origin moves the blend by about 40%.
+        let w = by_age(
+            &p.credibility_weights(&tri, "values", None, 1.0, 10.0)
+                .unwrap(),
+        );
+        assert!((w[0].1 - 0.2).abs() < 1e-15);
+        // Capped at 10%: the blend moves by exactly 10% of itself.
+        let w = by_age(
+            &p.credibility_weights(&tri, "values", None, 1.0, 0.1)
+                .unwrap(),
+        );
+        let z = 1.0 - w[0].1;
+        let blend = 2.0 + z * shift;
+        assert!((z * shift - 0.1 * blend).abs() < 1e-12, "z {z}");
+        assert!(blend < 2.25);
+        // The chain ladder applies it.
+        let cl = crate::ChainLadder {
+            development: Development {
+                pattern: Some(p.selected(PatternWeight::ByAge(w))),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .unwrap();
+        assert!((cl.ldf()[0] - blend).abs() < 1e-12);
+    }
+
+    #[test]
+    fn an_empty_age_gets_the_whole_weight() {
+        // Every origin is zero at 12 months, though the counts say claims
+        // are in the layer: the own factor is missing, so the weight is 1.
+        let p = derived([3.0, 1.1]);
+        let rows: [&[f64]; 3] = [&[0.0, 5.0, 6.0], &[0.0, 4.0], &[0.0]];
+        let counts: [&[f64]; 3] = [&[1.0, 2.0, 2.0], &[1.0, 1.0], &[0.0]];
+        let tri = losses_and_counts(&rows, &counts);
+        let w = by_age(
+            &p.credibility_weights(&tri, "layer", Some("count"), 1.0, 0.1)
+                .unwrap(),
+        );
+        assert_eq!(w[0].1, 1.0);
+        assert!(w[1].1 < 1.0);
+        let cl = crate::ChainLadder {
+            development: Development {
+                pattern: Some(p.selected(PatternWeight::ByAge(w))),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .fit(&tri, "layer")
+        .unwrap();
+        assert_eq!(cl.ldf()[0], 3.0);
+        assert!(cl.development.has_missing_factor());
+    }
+
+    fn shape(
+        column: &[f64],
+        alphas: &[f64],
+        ultimate: f64,
+        layer: Layer,
+        base: ShapeBase,
+    ) -> Result<ExcessPattern> {
+        let ages: Vec<(Lag, f64)> = alphas
+            .iter()
+            .enumerate()
+            .map(|(d, &a)| (12 * (d as Lag + 1), a))
+            .collect();
+        ExcessPattern::from_ground_up(
+            &one_origin(column),
+            "values",
+            Basis::Incurred,
+            None,
+            &Tail::default(),
+            layer,
+            &SeverityByMaturity::pareto_shape(1000.0, ages, ultimate, base),
+        )
+    }
+
+    #[test]
+    fn pareto_shape_from_counts_above_the_threshold() {
+        // Counts 100 and 150 above 1,000, alphas 2 and 1.5: the layer above
+        // 2,000 develops by (150 / 100) (1 / 0.5) 2^0.5.
+        let up = Layer::unlimited(2000.0).unwrap();
+        let p = shape(&[100.0, 150.0], &[2.0, 1.5], 1.5, up, ShapeBase::Counts).unwrap();
+        assert!((p.layer_ldf[0] - 1.5 * 2.0 * 2f64.sqrt()).abs() < 1e-12);
+        assert_eq!(p.layer_tail, 1.0);
+        assert!(p.shifts.is_empty());
+        assert!((p.ground_up_ldf[0] - 1.5).abs() < 1e-15);
+        // A bounded layer is the ratio of the Pareto layer integrals.
+        let bounded = Layer::new(2000.0, 3000.0).unwrap();
+        let p = shape(
+            &[100.0, 150.0],
+            &[2.0, 1.5],
+            1.5,
+            bounded,
+            ShapeBase::Counts,
+        )
+        .unwrap();
+        let at = |q: f64| Pareto::new(1000.0, q).unwrap().layer(3000.0, 2000.0);
+        assert!((p.layer_ldf[0] - 1.5 * at(1.5) / at(2.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn pareto_shape_tail_is_the_last_shape_move() {
+        // The base is complete at 24 months, the shape still moves from 1.5
+        // to 1.2: the layer above 4,000 (c = 4) has the tail 4^0.3.
+        let base = ShapeBase::Losses(Layer::unlimited(1000.0).unwrap());
+        let high = Layer::unlimited(4000.0).unwrap();
+        let p = shape(&[10.0, 20.0], &[2.0, 1.5], 1.2, high, base).unwrap();
+        assert!((p.layer_tail - 4f64.powf(0.3)).abs() < 1e-12);
+        assert!((p.layer_ldf[0] - 2.0 * 4f64.powf(0.5)).abs() < 1e-12);
+        assert!((p.layer_cdf[0] - p.layer_ldf[0] * p.layer_tail).abs() < 1e-12);
+        // The base layer itself develops as its column.
+        let own = Layer::unlimited(1000.0).unwrap();
+        let p = shape(&[10.0, 20.0], &[2.0, 1.5], 1.5, own, base).unwrap();
+        assert!((p.layer_ldf[0] - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn pareto_shape_input_errors() {
+        let up = Layer::unlimited(2000.0).unwrap();
+        let counts = ShapeBase::Counts;
+        let col = [1.0, 2.0];
+        // Below the threshold, a missing or extra alpha, an unlimited layer
+        // at alpha 1 or below, a bad ultimate alpha.
+        let low = Layer::unlimited(500.0).unwrap();
+        assert!(shape(&col, &[2.0, 1.5], 1.5, low, counts).is_err());
+        let low_base = ShapeBase::Losses(Layer::unlimited(10.0).unwrap());
+        assert!(shape(&col, &[2.0, 1.5], 1.5, up, low_base).is_err());
+        assert!(shape(&col, &[2.0], 1.5, up, counts).is_err());
+        assert!(shape(&col, &[2.0, 1.5, 1.4], 1.5, up, counts).is_err());
+        assert!(shape(&col, &[2.0, 1.0], 1.0, up, counts).is_err());
+        assert!(shape(&col, &[2.0, 1.5], -1.0, up, counts).is_err());
+        // A bounded layer is fine at alpha below 1.
+        let bounded = Layer::new(2000.0, 1000.0).unwrap();
+        assert!(shape(&col, &[2.0, 0.9], 0.9, bounded, counts).is_ok());
+        let tri = one_origin(&col);
+        let fit = |model: &SeverityByMaturity, counts: Option<&str>| {
+            ExcessPattern::from_ground_up(
+                &tri,
+                "values",
+                Basis::Incurred,
+                counts,
+                &Tail::default(),
+                up,
+                model,
+            )
+        };
+        let twice = vec![(12, 2.0), (12, 2.0), (24, 1.5)];
+        let r = fit(
+            &SeverityByMaturity::pareto_shape(1000.0, twice, 1.5, counts),
+            None,
+        );
+        assert!(matches!(r, Err(Error::Excess(_))));
+        let alphas = vec![(12, 2.0), (24, 1.5)];
+        let r = fit(
+            &SeverityByMaturity::pareto_shape(0.0, alphas.clone(), 1.5, counts),
+            None,
+        );
+        assert!(matches!(r, Err(Error::InvalidSetting { .. })));
+        // The base comes from the column: a count column is an error.
+        let ok = SeverityByMaturity::pareto_shape(1000.0, alphas, 1.5, counts);
+        assert!(matches!(fit(&ok, Some("values")), Err(Error::Excess(_))));
+        assert!(format!("{ok:?}").contains("ParetoShape"));
     }
 }
