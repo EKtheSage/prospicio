@@ -419,8 +419,17 @@ impl EventSet {
         Ok(Self { inner })
     }
 
-    /// Years in long form: `years` from 1 to `n_years`, one per loss.
-    fn from_long(years: &[f64], losses: &[f64], n_years: f64, seed: f64) -> Result<Self> {
+    /// Years in long form: `years` from 1 to `n_years`, one per loss;
+    /// labels `label_values[[d]]` in dimension `label_dims[d]`, one per row
+    /// (none when `label_dims` is empty).
+    fn from_long(
+        years: &[f64],
+        losses: &[f64],
+        n_years: f64,
+        seed: f64,
+        label_dims: Vec<String>,
+        label_values: List,
+    ) -> Result<Self> {
         let years = years
             .iter()
             .map(|&y| {
@@ -431,14 +440,59 @@ impl EventSet {
                 Ok(y as usize - 1)
             })
             .collect::<Result<Vec<_>>>()?;
-        let inner = EventSetInner::from_long(
-            &years,
-            losses,
-            whole(n_years, "n_years")? as usize,
-            whole(seed, "seed")?,
-        )
+        let (n_years, seed) = (whole(n_years, "n_years")? as usize, whole(seed, "seed")?);
+        let inner = if label_dims.is_empty() {
+            EventSetInner::from_long(&years, losses, n_years, seed)
+        } else {
+            let labels = labels_from(label_dims, label_values)?;
+            EventSetInner::from_long_labeled(&years, losses, labels, n_years, seed)
+        }
         .map_err(to_r)?;
         Ok(Self { inner })
+    }
+
+    /// Labels `values[[d]]` in dimension `dims[d]`, one per loss.
+    fn with_labels(&self, dims: Vec<String>, values: List) -> Result<Self> {
+        let labels = labels_from(dims, values)?;
+        Ok(Self {
+            inner: self.inner.clone().with_labels(labels).map_err(to_r)?,
+        })
+    }
+
+    fn label_dims(&self) -> Vec<String> {
+        self.inner.label_dims().to_vec()
+    }
+
+    /// The label combinations as columns, one character vector per
+    /// dimension.
+    fn label_combinations(&self) -> List {
+        let combinations = self.inner.label_combinations();
+        List::from_values((0..self.inner.label_dims().len()).map(|d| {
+            Robj::from(
+                combinations
+                    .iter()
+                    .map(|c| c[d].clone())
+                    .collect::<Vec<String>>(),
+            )
+        }))
+    }
+
+    /// Year `sim`'s labels (1-based), one character vector per dimension;
+    /// empty when there are none.
+    fn labels(&self, sim: f64) -> Result<List> {
+        let sim = whole(sim, "sim")? as usize;
+        if sim == 0 || sim > self.inner.n_sims() {
+            return Err(Error::Other(format!(
+                "year {sim} out of range for {} simulated years",
+                self.inner.n_sims()
+            )));
+        }
+        let Some(year) = self.inner.labels(sim - 1) else {
+            return Ok(List::new(0));
+        };
+        Ok(List::from_values((0..self.inner.label_dims().len()).map(
+            |d| Robj::from(year.iter().map(|v| v[d].clone()).collect::<Vec<String>>()),
+        )))
     }
 
     fn merge(&self, other: &EventSet) -> Result<Self> {
@@ -984,4 +1038,24 @@ extendr_module! {
     impl EventSet;
     fn aggregate_elt_values;
     fn aggregate_elt_simulate;
+}
+
+/// Labels from dimension names and a list of character vectors.
+fn labels_from(dims: Vec<String>, values: List) -> Result<Vec<(String, Vec<String>)>> {
+    if dims.len() != values.len() {
+        return Err(Error::Other(format!(
+            "{} label names for {} label vectors",
+            dims.len(),
+            values.len()
+        )));
+    }
+    dims.into_iter()
+        .zip(values.values())
+        .map(|(dim, v)| {
+            let v: Vec<String> = v
+                .as_string_vector()
+                .ok_or_else(|| Error::Other(format!("label {dim:?} must be character")))?;
+            Ok((dim, v))
+        })
+        .collect()
 }

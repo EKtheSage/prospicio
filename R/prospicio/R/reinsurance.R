@@ -32,6 +32,14 @@ NULL
 #'   limit a loss at time `t` (the fraction of the year elapsed) uses up is
 #'   charged at `1 - t`. Needs `reinstatement_rates`, and events with times
 #'   ([with_uniform_times()], or `times` in [events_from_years()]).
+#' @param allocation How the annual terms (aggregate deductible and limit,
+#'   reinstatements) split the year's recovery among its events:
+#'   `"event_order"` uses the aggregate limit up in the order the events
+#'   occur, so a later event gets what is left; `"pro_rata"` scales every
+#'   event's recovery by the same factor, the annual recovery after the terms
+#'   over the one before them. The annual total is the same; the split by
+#'   event, and so what an inuring stage sees, differs. Cannot be combined
+#'   with `pro_rata_time`.
 #' @param ptr Internal: an existing layer to wrap.
 #' @returns An `xol_layer` object with read-only properties for each term
 #'   (`loss_corridor` is `c(lower, upper, retained)`, `ceding_commission` the
@@ -55,6 +63,9 @@ NULL
 #' timed <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5),
 #'                    pro_rata_time = TRUE)
 #' reinstatement_premium(timed, c(22, 12), times = c(0.25, 0.5))
+#' ceded_by_event(xol_layer("10x5", 10, 5, reinstatements = 1), c(15, 20, 10))
+#' ceded_by_event(xol_layer("10x5", 10, 5, reinstatements = 1, allocation = "pro_rata"),
+#'                c(15, 20, 10))
 xol_layer <- S7::new_class(
   "xol_layer",
   package = "prospicio",
@@ -73,6 +84,7 @@ xol_layer <- S7::new_class(
       S7::class_double, getter = function(self) self@ptr$reinstatement_rates()
     ),
     pro_rata_time = S7::new_property(S7::class_logical, getter = function(self) self@ptr$pro_rata_time()),
+    allocation = S7::new_property(S7::class_character, getter = function(self) self@ptr$allocation()),
     loss_corridor = S7::new_property(S7::class_double, getter = function(self) self@ptr$loss_corridor()),
     ceding_commission = S7::new_property(
       S7::class_double, getter = function(self) self@ptr$ceding_commission()
@@ -105,14 +117,15 @@ xol_layer <- S7::new_class(
   ),
   constructor = function(name, limit, attachment, share = 1, aggregate_deductible = 0,
                          aggregate_limit = Inf, reinstatements = NULL, premium = 0,
-                         reinstatement_rates = NULL, pro_rata_time = FALSE, ptr = NULL) {
+                         reinstatement_rates = NULL, pro_rata_time = FALSE,
+                         allocation = "event_order", ptr = NULL) {
     if (is.null(ptr)) {
       reinst <- if (is.null(reinstatements)) -1 else as.double(reinstatements)
       ptr <- rust_result(XolLayer$new(
         as.character(name), as.double(limit), as.double(attachment), as.double(share),
         as.double(aggregate_deductible), as.double(aggregate_limit), reinst,
         as.double(premium), as.double(reinstatement_rates), !is.null(reinstatement_rates),
-        isTRUE(pro_rata_time)
+        isTRUE(pro_rata_time), as.character(allocation)
       ))
     }
     S7::new_object(S7::S7_object(), ptr = ptr)
@@ -599,11 +612,20 @@ tower_ceded <- function(tower, losses) {
 #' risk) each simulation's total is one aggregate loss: an adverse
 #' development cover or loss portfolio transfer on reserves, a stop-loss or
 #' quota share on premium risk. An occurrence layer then sees the total as
-#' one occurrence, so it acts as an aggregate excess of loss.
+#' one occurrence, so it acts as an aggregate excess of loss. A numeric
+#' vector holds plain annual losses, one per simulation, each taken the same
+#' way, with no `event_set` or [predictive_distribution] to build.
+#'
+#' A contract stated on the loss ratio is a layer on money amounts: a
+#' loss-ratio cap `c` on subject premium `P` is
+#' `aggregate_stop_loss(name, c * P, 0)` with `with_premium_rate(layer, 1, P)`,
+#' so the ceded loss ratio is the capped one, and a sliding scale keyed on it is [with_sliding_scale()].
+#' Several scales on the same loss-ratio grid add pointwise into one;
+#' [ceding_commission_for()] evaluates a scale at any ceded loss.
 #'
 #' @param tower A [reinsurance_tower].
-#' @param events An `event_set` from [simulate_events()], or a
-#'   [predictive_distribution].
+#' @param events An `event_set` from [simulate_events()], a
+#'   [predictive_distribution], or a numeric vector of annual losses.
 #' @param ... Unused; for methods.
 #' @returns A [predictive_distribution] with dimensions `kind` and `layer`:
 #'   `("gross", "ground_up")`, `("ceded", <layer name>)` per layer,
@@ -615,17 +637,31 @@ tower_ceded <- function(tower, losses) {
 #'   gross, total ceded and net per year; net is a loss, before premiums and
 #'   commissions. Take one kind with [select_components()] before joining it
 #'   to a book: summing over `kind` adds gross, ceded and net together.
+#'   With labels on the events ([with_labels()]) the label dimensions follow
+#'   `kind` and `layer`: gross, each layer's ceded loss and net come once per
+#'   row of the events' `label_combinations`, each the sum over that
+#'   combination's events (a layer's split by event under its `allocation`),
+#'   and the other components get `""` labels; `aggregate(result, keep =
+#'   c("kind", "layer"))` gives back the unlabelled result.
 #' @export
 #' @examples
 #' ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(3e6, 1.5), 1000, seed = 7)
 #' tw <- reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6)))
 #' res <- apply_tower(tw, ev)
 #' aggregate(res, keep = "kind")@keys
+#' cover <- with_sliding_scale(
+#'   with_premium_rate(aggregate_stop_loss("cover", 120, 0), 1, 100),
+#'   c(0.3, 0.1), c(0.5, 0.9)
+#' )
+#' annual <- apply_tower(reinsurance_tower(list(cover)), c(40, 70, 150))
+#' draw_matrix(annual)
 apply_tower <- S7::new_generic("apply_tower", "tower", function(tower, events, ...) S7::S7_dispatch())
 
 S7::method(apply_tower, reinsurance_tower) <- function(tower, events, ...) {
   ptr <- if (S7::S7_inherits(events, predictive_distribution)) {
     tower@ptr$apply_aggregate(events@ptr)
+  } else if (is.numeric(events)) {
+    tower@ptr$apply_annual(as.double(events))
   } else {
     tower@ptr$apply(events@ptr)
   }

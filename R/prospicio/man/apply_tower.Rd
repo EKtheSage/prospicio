@@ -9,8 +9,8 @@ apply_tower(tower, events, ...)
 \arguments{
 \item{tower}{A \link{reinsurance_tower}.}
 
-\item{events}{An \code{event_set} from \code{\link[=simulate_events]{simulate_events()}}, or a
-\link{predictive_distribution}.}
+\item{events}{An \code{event_set} from \code{\link[=simulate_events]{simulate_events()}}, a
+\link{predictive_distribution}, or a numeric vector of annual losses.}
 
 \item{...}{Unused; for methods.}
 }
@@ -25,6 +25,11 @@ layer with a profit commission. \code{aggregate(result, keep = "kind")} gives
 gross, total ceded and net per year; net is a loss, before premiums and
 commissions. Take one kind with \code{\link[=select_components]{select_components()}} before joining it
 to a book: summing over \code{kind} adds gross, ceded and net together.
+With labels on the events (\code{\link[=with_labels]{with_labels()}}) the label dimensions follow
+\code{kind} and \code{layer}: gross, each layer's ceded loss and net come once per
+row of the events' \code{label_combinations}, each the sum over that
+combination's events (a layer's split by event under its \code{allocation}),
+and the other components get \code{""} labels; \code{aggregate(result, keep = c("kind", "layer"))} gives back the unlabelled result.
 }
 \description{
 With an \code{event_set} each year's individual losses go through the tower.
@@ -32,11 +37,27 @@ With a \link{predictive_distribution} (a reserve bootstrap, modelled premium
 risk) each simulation's total is one aggregate loss: an adverse
 development cover or loss portfolio transfer on reserves, a stop-loss or
 quota share on premium risk. An occurrence layer then sees the total as
-one occurrence, so it acts as an aggregate excess of loss.
+one occurrence, so it acts as an aggregate excess of loss. A numeric
+vector holds plain annual losses, one per simulation, each taken the same
+way, with no \code{event_set} or \link{predictive_distribution} to build.
+}
+\details{
+A contract stated on the loss ratio is a layer on money amounts: a
+loss-ratio cap \code{c} on subject premium \code{P} is
+\code{aggregate_stop_loss(name, c * P, 0)} with \code{with_premium_rate(layer, 1, P)},
+so the ceded loss ratio is the capped one, and a sliding scale keyed on it is \code{\link[=with_sliding_scale]{with_sliding_scale()}}.
+Several scales on the same loss-ratio grid add pointwise into one;
+\code{\link[=ceding_commission_for]{ceding_commission_for()}} evaluates a scale at any ceded loss.
 }
 \examples{
 ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(3e6, 1.5), 1000, seed = 7)
 tw <- reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6)))
 res <- apply_tower(tw, ev)
 aggregate(res, keep = "kind")@keys
+cover <- with_sliding_scale(
+  with_premium_rate(aggregate_stop_loss("cover", 120, 0), 1, 100),
+  c(0.3, 0.1), c(0.5, 0.9)
+)
+annual <- apply_tower(reinsurance_tower(list(cover)), c(40, 70, 150))
+draw_matrix(annual)
 }

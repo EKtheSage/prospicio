@@ -60,6 +60,9 @@ pub struct Layer {
     /// Whether reinstatement premiums are also pro rata as to time: each
     /// event's share is scaled by the part of the year left after it.
     pub pro_rata_time: bool,
+    /// How a binding annual deductible or limit is shared among the
+    /// year's events; see [`Layer::allocation`].
+    pub allocation: LimitAllocation,
     /// A band of the annual layer loss the cedant keeps; see
     /// [`Layer::loss_corridor`].
     pub corridor: Option<Corridor>,
@@ -249,6 +252,25 @@ impl Corridor {
     }
 }
 
+/// How a layer's annual terms (the deductible, a corridor, the annual
+/// limit) are shared among the year's events when they bite. The annual
+/// ceded loss is the same either way; only the split by event differs, and
+/// with it what a later inuring stage sees of each event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LimitAllocation {
+    /// The events in the order given, taken as chronological: the
+    /// deductible absorbs the first recoveries and the annual limit cuts
+    /// the last.
+    #[default]
+    EventOrder,
+    /// Every event of the year scaled by the same factor: event `e` with
+    /// recovery `u_e` (after the per-occurrence terms) cedes
+    /// `share × u_e × A(U) / U`, where `U = Σ u_e` and `A` applies the
+    /// annual terms. With no deductible or corridor the factor is
+    /// `min(1, annual limit / U)`.
+    ProRata,
+}
+
 /// What a layer's per-event recovery is figured on.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Basis {
@@ -300,6 +322,7 @@ impl Layer {
             premium: 0.0,
             reinstatement_rates: Vec::new(),
             pro_rata_time: false,
+            allocation: LimitAllocation::EventOrder,
             corridor: None,
             commission: None,
             profit_commission: None,
@@ -547,6 +570,13 @@ impl Layer {
                 "must be given (paid_reinstatements) before pro rata as to time",
             ));
         }
+        if self.allocation == LimitAllocation::ProRata {
+            return Err(Error::Data(
+                "reinstatements pro rata as to time need the annual limit used in event \
+                 order, not pro rata"
+                    .into(),
+            ));
+        }
         self.pro_rata_time = true;
         Ok(self)
     }
@@ -555,6 +585,35 @@ impl Layer {
     /// rata as to time).
     pub fn needs_times(&self) -> bool {
         self.pro_rata_time
+    }
+
+    /// How a binding annual deductible or limit is shared among the
+    /// year's events ([`LimitAllocation`]): in event order (the default)
+    /// or pro rata. It changes [`ceded_by_event`](Self::ceded_by_event),
+    /// and so the losses a later inuring stage sees, not the annual ceded
+    /// loss. Pro rata cannot be combined with reinstatements pro rata as
+    /// to time, whose premium follows the order in which the limit is
+    /// used.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, LimitAllocation};
+    ///
+    /// // 10 xs 5, one reinstatement: 20 a year. Recoveries 10, 10, 5 = 25.
+    /// let layer = Layer::xol("10x5", 10.0, 5.0).unwrap().reinstatements(1).unwrap();
+    /// assert_eq!(layer.ceded_by_event(&[15.0, 20.0, 10.0]), [10.0, 10.0, 0.0]);
+    /// let pro_rata = layer.allocation(LimitAllocation::ProRata).unwrap();
+    /// assert_eq!(pro_rata.ceded_by_event(&[15.0, 20.0, 10.0]), [8.0, 8.0, 4.0]);
+    /// ```
+    pub fn allocation(mut self, allocation: LimitAllocation) -> Result<Self> {
+        if allocation == LimitAllocation::ProRata && self.pro_rata_time {
+            return Err(Error::Data(
+                "reinstatements pro rata as to time need the annual limit used in event \
+                 order, not pro rata"
+                    .into(),
+            ));
+        }
+        self.allocation = allocation;
+        Ok(self)
     }
 
     /// Sets the premium from a deposit `amount` quoted for 100% of the
@@ -1076,10 +1135,12 @@ impl Layer {
 
     /// Ceded loss per event for one year, in the order given.
     ///
-    /// Annual terms are used up in that order (losses are taken as
-    /// chronological): the deductible absorbs the first recoveries and the
-    /// annual limit stops the last ones. Event `k` cedes the increase in
-    /// annual ceded loss it causes, so the entries sum to
+    /// By default ([`LimitAllocation::EventOrder`]) annual terms are used
+    /// up in that order (losses are taken as chronological): the
+    /// deductible absorbs the first recoveries and the annual limit stops
+    /// the last ones. Event `k` cedes the increase in annual ceded loss it
+    /// causes. Under [`LimitAllocation::ProRata`] every event is scaled by
+    /// the same factor instead. Either way the entries sum to
     /// [`ceded`](Self::ceded) up to rounding.
     ///
     /// ```
@@ -1096,6 +1157,24 @@ impl Layer {
     }
 
     fn ceded_by_event_si(&self, losses: &[f64], si: Option<&[f64]>) -> Vec<f64> {
+        if self.allocation == LimitAllocation::ProRata {
+            let recoveries: Vec<f64> = losses
+                .iter()
+                .enumerate()
+                .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e])))
+                .collect();
+            let total: f64 = recoveries.iter().sum();
+            // No recovery, nothing to share; the factor is 1 by convention.
+            let factor = if total > 0.0 {
+                self.after_terms(total) / total
+            } else {
+                1.0
+            };
+            return recoveries
+                .into_iter()
+                .map(|u| self.share * u * factor)
+                .collect();
+        }
         let mut before = 0.0;
         self.cumulative_layer_loss(losses, si)
             .into_iter()
@@ -1264,6 +1343,18 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
     ) -> Vec<(f64, f64)> {
+        self.year_by_event(losses, si, times, None)
+    }
+
+    /// [`year`](Self::year), and with `by_event` each layer's ceded loss
+    /// by event (one vector per layer, in tower order).
+    fn year_by_event(
+        &self,
+        losses: &[f64],
+        si: Option<&[f64]>,
+        times: Option<&[f64]>,
+        mut by_event: Option<&mut Vec<Vec<f64>>>,
+    ) -> Vec<(f64, f64)> {
         let mut ceded = Vec::with_capacity(self.layers.len());
         let mut seen = losses.to_vec();
         let last_stage = self.stages.last().copied().unwrap_or(0);
@@ -1277,12 +1368,13 @@ impl Tower {
                     layer.share * layer.layer_loss(&seen, si),
                     layer.reinstatement_premium_at(&seen, si, times),
                 ));
-                if stage < last_stage {
-                    for (total, c) in stage_by_event
-                        .iter_mut()
-                        .zip(layer.ceded_by_event_si(&seen, si))
-                    {
+                if stage < last_stage || by_event.is_some() {
+                    let layer_by_event = layer.ceded_by_event_si(&seen, si);
+                    for (total, c) in stage_by_event.iter_mut().zip(&layer_by_event) {
                         *total += c;
+                    }
+                    if let Some(by_event) = by_event.as_deref_mut() {
+                        by_event.push(layer_by_event);
                     }
                 }
             }
@@ -1310,6 +1402,16 @@ impl Tower {
     /// `aggregate(&["kind"])` gives gross, total ceded and net (and the
     /// totals of the others); `net = gross - Σ ceded` in every year, so
     /// net is a loss, before any premium or commission.
+    ///
+    /// With labels on the events ([`EventSet::with_labels`]: a peril or a
+    /// class) the dimensions are `["kind", "layer", <label dimensions>]`:
+    /// gross, each layer's ceded loss and net come once for each
+    /// combination of labels in [`EventSet::label_combinations`], each the
+    /// sum over that combination's events (a layer's split by event, as
+    /// [`Layer::ceded_by_event`] gives it, under the layer's
+    /// [`LimitAllocation`]), and the other components, annual by nature,
+    /// get `""` in every label dimension. `aggregate(&["kind", "layer"])`
+    /// gives back the unlabelled result.
     ///
     /// Take one kind with `select("kind", ...)` before joining it to
     /// another distribution (the ceded part to a book, say): `aggregate(&[])`
@@ -1354,6 +1456,9 @@ impl Tower {
         // The events' seed, stream scheme and samplers (none for years
         // from elsewhere).
         let provenance = events.provenance("reinsurance_tower");
+        if events.has_labels() {
+            return self.apply_labeled(events, provenance);
+        }
         self.apply_years(
             (0..events.n_sims())
                 .map(|i| (events.events(i), events.sums_insured(i), events.times(i))),
@@ -1418,6 +1523,129 @@ impl Tower {
         )
     }
 
+    /// [`apply`](Self::apply) on labelled events: gross, each layer's
+    /// ceded loss and net by label combination, the other components with
+    /// `""` labels.
+    fn apply_labeled(&self, events: &EventSet, base: Provenance) -> Result<PredictiveDistribution> {
+        let labels = events.label_set().expect("the events carry labels");
+        let n_labels = labels.combinations.len();
+        let n_layers = self.layers.len();
+        let columns = Columns::new(self);
+        let unlabeled = columns.keys(self);
+        let blank = vec![KeyValue::from(""); labels.dims.len()];
+        let with = |key: &[KeyValue], combination: &[String]| -> Vec<KeyValue> {
+            key.iter()
+                .cloned()
+                .chain(combination.iter().map(|v| KeyValue::from(v.as_str())))
+                .collect()
+        };
+        // gross, each layer's ceded and net by label, in that order, then
+        // the annual components.
+        let mut components = Vec::new();
+        for key in &unlabeled[..n_layers + 2] {
+            for combination in &labels.combinations {
+                components.push(with(key, combination));
+            }
+        }
+        for key in &unlabeled[n_layers + 2..] {
+            components.push(key.iter().cloned().chain(blank.iter().cloned()).collect());
+        }
+        let n_sims = events.n_sims();
+        let mut draws = Vec::with_capacity(n_sims * components.len());
+        let mut annual = Vec::new();
+        for i in 0..n_sims {
+            let losses = events.events(i);
+            let (si, times) = (events.sums_insured(i), events.times(i));
+            let of = events.label_indices(i).expect("the events carry labels");
+            let mut by_event = Vec::with_capacity(n_layers);
+            let year = self.year_by_event(losses, si, times, Some(&mut by_event));
+            let by_label = |values: &[f64]| -> Vec<f64> {
+                let mut sums = vec![0.0; n_labels];
+                for (&x, &c) in values.iter().zip(of) {
+                    sums[c] += x;
+                }
+                sums
+            };
+            let gross = by_label(losses);
+            let ceded: Vec<Vec<f64>> = by_event.iter().map(|c| by_label(c)).collect();
+            draws.extend(&gross);
+            for c in &ceded {
+                draws.extend(c);
+            }
+            draws.extend((0..n_labels).map(|j| gross[j] - ceded.iter().map(|c| c[j]).sum::<f64>()));
+            // The annual components, as an unlabelled year writes them.
+            annual.clear();
+            let mut carried = vec![Carried::default(); 2 * n_layers];
+            self.push_terms(&columns, &mut annual, &year, 0, &mut carried);
+            draws.extend(&annual);
+        }
+        let mut dims = vec!["kind".to_string(), "layer".to_string()];
+        dims.extend(labels.dims.iter().cloned());
+        PredictiveDistribution::from_draws(dims, components, draws, self.terms_provenance(base))
+    }
+
+    /// Applies the tower to plain annual losses, one per simulation, each
+    /// taken as one aggregate loss as in [`apply_aggregate`](Self::apply_aggregate),
+    /// with no [`EventSet`] or [`PredictiveDistribution`] to build. A
+    /// contract stated on the loss ratio is a layer on money amounts: a
+    /// loss-ratio cap `c` on subject premium `P` is
+    /// `Layer::stop_loss(name, c × P, 0)` with `premium_rate(1, P)` (the
+    /// ceded loss ratio is then the capped one), and a sliding scale keyed
+    /// on it is [`Layer::sliding_scale`]. Several scales on the same
+    /// loss-ratio grid add pointwise into one, since a sum of piecewise
+    /// linear functions on the same anchors is one too.
+    /// [`Commission::rate`] evaluates a scale on any loss ratio.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, Tower};
+    /// use prospicio_prob::{Empirical, KeyValue};
+    ///
+    /// // Losses capped at a 120% loss ratio on a premium of 100, with a
+    /// // commission sliding from 30% at a 50% loss ratio to 10% at 90%.
+    /// let cover = Layer::stop_loss("cover", 120.0, 0.0).unwrap()
+    ///     .premium_rate(1.0, 100.0).unwrap()
+    ///     .sliding_scale(vec![(0.3, 0.5), (0.1, 0.9)]).unwrap();
+    /// let result = Tower::new(vec![cover]).unwrap().apply_annual(&[40.0, 70.0, 150.0]).unwrap();
+    /// let at = |k: &str| {
+    ///     let key: Vec<KeyValue> = vec![k.into(), "cover".into()];
+    ///     Empirical::draws(&result.marginal(&key).unwrap()).to_vec()
+    /// };
+    /// assert_eq!(at("ceded"), [40.0, 70.0, 120.0]);
+    /// let cc = at("ceding_commission");
+    /// assert!((cc[0] - 30.0).abs() < 1e-12 && (cc[1] - 20.0).abs() < 1e-12 && (cc[2] - 10.0).abs() < 1e-12);
+    /// ```
+    pub fn apply_annual(&self, losses: &[f64]) -> Result<PredictiveDistribution> {
+        if losses.is_empty() {
+            return Err(Error::Data("needs at least one annual loss".into()));
+        }
+        if let Some(&bad) = losses.iter().find(|x| !(x.is_finite() && **x >= 0.0)) {
+            return Err(Error::InvalidParameter {
+                name: "losses",
+                value: bad,
+                reason: "must be finite and non-negative",
+            });
+        }
+        if self.needs_sums_insured() {
+            return Err(Error::Data(
+                "a surplus treaty works risk by risk; an annual loss has no sum insured".into(),
+            ));
+        }
+        if self.needs_times() {
+            return Err(Error::Data(
+                "reinstatements pro rata as to time need event times; an annual loss has none"
+                    .into(),
+            ));
+        }
+        let provenance = Provenance::new("reinsurance_tower")
+            .version("prospicio-aggregate", env!("CARGO_PKG_VERSION"))
+            .param("loss", "annual losses");
+        self.apply_years(
+            losses.chunks(1).map(|t| (t, None, None)),
+            losses.len(),
+            provenance,
+        )
+    }
+
     /// Indices of the layers that satisfy `f`.
     fn indices(&self, f: impl Fn(&Layer) -> bool) -> Vec<usize> {
         (0..self.layers.len())
@@ -1468,6 +1696,20 @@ impl Tower {
         let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
         draws.extend(year.iter().map(|(c, _)| c));
         draws.push(gross - ceded_total);
+        self.push_terms(columns, draws, &year, t, carried);
+    }
+
+    /// Appends one year's components after net: reinstatement and swing
+    /// premiums and commissions, from each layer's ceded loss and
+    /// reinstatement premium in `year`.
+    fn push_terms(
+        &self,
+        columns: &Columns,
+        draws: &mut Vec<f64>,
+        year: &[(f64, f64)],
+        t: usize,
+        carried: &mut [Carried],
+    ) {
         draws.extend(
             year.iter()
                 .zip(&columns.paid)
@@ -1510,6 +1752,9 @@ impl Tower {
                 if l.pro_rata_time {
                     terms += ", pro rata as to time";
                 }
+            }
+            if l.allocation == LimitAllocation::ProRata {
+                terms += ", annual terms pro rata across events";
             }
             if l.reinstatement_rates.is_empty() && l.premium > 0.0 {
                 terms += &format!(", premium {}", l.premium);
@@ -2154,6 +2399,200 @@ mod tests {
     }
 
     #[test]
+    fn pro_rata_scales_every_event_by_the_same_factor() {
+        // #476's rule: u = 3, 10, 7 after the occurrence terms, U = 20; the
+        // deductible 4 and annual limit 15 leave 15, so f = 0.75.
+        let layer = Layer::xol("L", 10.0, 5.0)
+            .unwrap()
+            .aggregate_deductible(4.0)
+            .unwrap()
+            .aggregate_limit(15.0)
+            .unwrap()
+            .share(0.5)
+            .unwrap();
+        let losses = [8.0, 20.0, 12.0];
+        let pro_rata = layer.clone().allocation(LimitAllocation::ProRata).unwrap();
+        let split = pro_rata.ceded_by_event(&losses);
+        for (got, want) in split.iter().zip([1.125, 3.75, 2.625]) {
+            assert!((got - want).abs() < 1e-12, "{got} vs {want}");
+        }
+        // The annual total is the same under both rules.
+        let total: f64 = split.iter().sum();
+        assert!((total - layer.ceded(&losses)).abs() < 1e-12);
+        assert_eq!(pro_rata.ceded(&losses), layer.ceded(&losses));
+        // When the annual terms do not bite, the rules agree.
+        let free = Layer::xol("F", 10.0, 5.0).unwrap();
+        let free_pr = free.clone().allocation(LimitAllocation::ProRata).unwrap();
+        assert_eq!(
+            free.ceded_by_event(&losses),
+            free_pr.ceded_by_event(&losses)
+        );
+        // No recovery, nothing ceded.
+        assert_eq!(pro_rata.ceded_by_event(&[1.0, 2.0]), [0.0, 0.0]);
+        assert!(pro_rata.ceded_by_event(&[]).is_empty());
+        // Not with reinstatements pro rata as to time, either way round.
+        let timed = Layer::xol("T", 10.0, 5.0)
+            .unwrap()
+            .paid_reinstatements(1.0, vec![1.0])
+            .unwrap();
+        assert!(
+            timed
+                .clone()
+                .pro_rata_as_to_time()
+                .unwrap()
+                .allocation(LimitAllocation::ProRata)
+                .is_err()
+        );
+        assert!(
+            timed
+                .allocation(LimitAllocation::ProRata)
+                .unwrap()
+                .pro_rata_as_to_time()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn pro_rata_changes_what_a_later_stage_sees() {
+        // Stage 1: 10 xs 5 with one reinstatement (20 a year) on 15, 20, 10.
+        // In event order it cedes 10, 10, 0 and leaves 5, 10, 10; pro rata
+        // 8, 8, 4 and leaves 7, 12, 6. Stage 2, 5 xs 5, recovers 0 + 5 + 5
+        // against 2 + 5 + 1.
+        let first = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .reinstatements(1)
+            .unwrap();
+        let second = Layer::xol("5x5", 5.0, 5.0).unwrap();
+        let losses = [15.0, 20.0, 10.0];
+        let order = Tower::inuring(vec![vec![first.clone()], vec![second.clone()]]).unwrap();
+        let pro_rata = Tower::inuring(vec![
+            vec![first.allocation(LimitAllocation::ProRata).unwrap()],
+            vec![second],
+        ])
+        .unwrap();
+        assert_eq!(order.ceded(&losses), [20.0, 10.0]);
+        assert_eq!(pro_rata.ceded(&losses), [20.0, 8.0]);
+    }
+
+    #[test]
+    fn labels_split_gross_ceded_and_net() {
+        // Two years: wind 15 and quake 20, then quake 10 and wind 4.
+        let events = EventSet::from_years(vec![vec![15.0, 20.0], vec![10.0, 4.0]], 3)
+            .unwrap()
+            .with_labels(vec![(
+                "peril".into(),
+                vec!["wind".into(), "quake".into(), "quake".into(), "wind".into()],
+            )])
+            .unwrap();
+        let layer = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .aggregate_limit(15.0)
+            .unwrap()
+            .ceding_commission(0.1)
+            .unwrap();
+        let tower = Tower::new(vec![layer]).unwrap();
+        let labeled = tower.apply(&events).unwrap();
+        assert_eq!(labeled.dims(), ["kind", "layer", "peril"]);
+        let key =
+            |k: &str, l: &str, p: &str| -> Vec<KeyValue> { vec![k.into(), l.into(), p.into()] };
+        let draws = |k: &str, l: &str, p: &str| {
+            prospicio_prob::Empirical::draws(&labeled.marginal(&key(k, l, p)).unwrap()).to_vec()
+        };
+        // Year 1 recovers 10 (wind) then 5 of quake's 10 under the limit;
+        // year 2 recovers 5 (quake) and nothing on 4.
+        assert_eq!(draws("gross", "ground_up", "wind"), [15.0, 4.0]);
+        assert_eq!(draws("ceded", "10x5", "wind"), [10.0, 0.0]);
+        assert_eq!(draws("ceded", "10x5", "quake"), [5.0, 5.0]);
+        assert_eq!(draws("net", "retained", "quake"), [15.0, 5.0]);
+        assert_eq!(draws("ceding_commission", "10x5", ""), [0.0, 0.0]);
+        // Summed over labels it is the unlabelled result.
+        let plain = tower
+            .apply(&EventSet::from_years(vec![vec![15.0, 20.0], vec![10.0, 4.0]], 3).unwrap())
+            .unwrap();
+        let back = labeled.aggregate(&["kind", "layer"]).unwrap();
+        for k in plain.components() {
+            assert_eq!(
+                prospicio_prob::Empirical::draws(&back.marginal(k).unwrap()),
+                prospicio_prob::Empirical::draws(&plain.marginal(k).unwrap()),
+            );
+        }
+        // Pro rata, quake's share of year 1 is 15 × 10 / 20.
+        let pro = Tower::new(vec![
+            Layer::xol("10x5", 10.0, 5.0)
+                .unwrap()
+                .aggregate_limit(15.0)
+                .unwrap()
+                .allocation(LimitAllocation::ProRata)
+                .unwrap(),
+        ])
+        .unwrap()
+        .apply(&events)
+        .unwrap();
+        let quake = pro.marginal(&key("ceded", "10x5", "quake")).unwrap();
+        assert_eq!(prospicio_prob::Empirical::draws(&quake), [7.5, 5.0]);
+    }
+
+    #[test]
+    fn a_pro_rata_stop_loss_splits_by_each_label_s_share() {
+        // A stop loss of 20 xs 30 on the annual total, pro rata across the
+        // year's events: each label gets its share of the gross loss.
+        let events = EventSet::from_years(vec![vec![30.0, 10.0, 20.0], vec![5.0, 15.0]], 0)
+            .unwrap()
+            .with_labels(vec![(
+                "peril".into(),
+                vec![
+                    "wind".into(),
+                    "quake".into(),
+                    "wind".into(),
+                    "quake".into(),
+                    "wind".into(),
+                ],
+            )])
+            .unwrap();
+        let cover = Layer::stop_loss("sl", 20.0, 30.0)
+            .unwrap()
+            .allocation(LimitAllocation::ProRata)
+            .unwrap();
+        let result = Tower::new(vec![cover]).unwrap().apply(&events).unwrap();
+        let at = |k: &str, l: &str, p: &str| {
+            let key: Vec<KeyValue> = vec![k.into(), l.into(), p.into()];
+            prospicio_prob::Empirical::draws(&result.marginal(&key).unwrap()).to_vec()
+        };
+        // Year 1: gross 60 (wind 50, quake 10), ceded 20, a third of each.
+        let (wind, quake) = (at("ceded", "sl", "wind"), at("ceded", "sl", "quake"));
+        assert!((wind[0] - 50.0 / 3.0).abs() < 1e-12 && (quake[0] - 10.0 / 3.0).abs() < 1e-12);
+        // Year 2: gross 20 is below the retention.
+        assert_eq!((wind[1], quake[1]), (0.0, 0.0));
+        let gross = at("gross", "ground_up", "wind");
+        assert!((wind[0] / gross[0] - 1.0 / 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn labels_split_what_an_inuring_stage_sees() {
+        let events = EventSet::from_years(vec![vec![15.0, 20.0, 10.0]], 0)
+            .unwrap()
+            .with_labels(vec![(
+                "class".into(),
+                vec!["a".into(), "b".into(), "a".into()],
+            )])
+            .unwrap();
+        let first = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .reinstatements(1)
+            .unwrap();
+        let second = Layer::xol("5x5", 5.0, 5.0).unwrap();
+        let tower = Tower::inuring(vec![vec![first], vec![second]]).unwrap();
+        let result = tower.apply(&events).unwrap();
+        let at = |l: &str, c: &str| {
+            let key: Vec<KeyValue> = vec!["ceded".into(), l.into(), c.into()];
+            prospicio_prob::Empirical::draws(&result.marginal(&key).unwrap())[0]
+        };
+        // Nets behind the first stage: 5, 10, 10, so 0 + 5 + 5 for 5x5.
+        assert_eq!((at("10x5", "a"), at("10x5", "b")), (10.0, 10.0));
+        assert_eq!((at("5x5", "a"), at("5x5", "b")), (5.0, 5.0));
+    }
+
+    #[test]
     fn ceded_by_event_uses_annual_terms_in_order() {
         let layer = Layer::xol("L", 10.0, 5.0)
             .unwrap()
@@ -2463,6 +2902,34 @@ mod tests {
         let e = EventSet::from_years(vec![vec![5.0]], 0).unwrap();
         assert!(e.clone().with_sums_insured(vec![4.0]).is_err());
         assert!(e.with_sums_insured(vec![5.0, 6.0]).is_err());
+    }
+
+    #[test]
+    fn apply_annual_matches_apply_aggregate_and_checks_its_input() {
+        let cover = Layer::stop_loss("cover", 120.0, 0.0)
+            .unwrap()
+            .premium_rate(1.0, 100.0)
+            .unwrap()
+            .sliding_scale(vec![(0.3, 0.5), (0.1, 0.9)])
+            .unwrap()
+            .profit_commission(0.2, 0.1)
+            .unwrap();
+        let tower = Tower::new(vec![cover]).unwrap();
+        let losses = [0.0, 40.0, 70.0, 150.0, 95.5];
+        let annual = tower.apply_annual(&losses).unwrap();
+        let pd = PredictiveDistribution::from_draws(
+            vec!["line".into()],
+            vec![vec!["a".into()]],
+            losses.to_vec(),
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let aggregate = tower.apply_aggregate(&pd).unwrap();
+        assert_eq!(annual.components(), aggregate.components());
+        assert_eq!(annual.draw_matrix(), aggregate.draw_matrix());
+        assert!(tower.apply_annual(&[]).is_err());
+        assert!(tower.apply_annual(&[1.0, -1.0]).is_err());
+        assert!(tower.apply_annual(&[f64::NAN]).is_err());
     }
 
     #[test]

@@ -48,7 +48,11 @@ tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rus
 
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
 
-reorder_groups_rust <- function(pd, dim, correlation, seed) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed)
+reorder_groups_rust <- function(pd, dim, correlation, seed, kind) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed, kind)
+
+correlation_from_pairs_rust <- function(pd, dim, first, second, values) .Call(wrap__correlation_from_pairs_rust, pd, dim, first, second, values)
+
+group_spearman_rust <- function(pd, dim) .Call(wrap__group_spearman_rust, pd, dim)
 
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 
@@ -296,7 +300,15 @@ EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__Eve
 
 EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
 
-EventSet$from_long <- function(years, losses, n_years, seed) .Call(wrap__EventSet__from_long, years, losses, n_years, seed)
+EventSet$from_long <- function(years, losses, n_years, seed, label_dims, label_values) .Call(wrap__EventSet__from_long, years, losses, n_years, seed, label_dims, label_values)
+
+EventSet$with_labels <- function(dims, values) .Call(wrap__EventSet__with_labels, self, dims, values)
+
+EventSet$label_dims <- function() .Call(wrap__EventSet__label_dims, self)
+
+EventSet$label_combinations <- function() .Call(wrap__EventSet__label_combinations, self)
+
+EventSet$labels <- function(sim) .Call(wrap__EventSet__labels, self, sim)
 
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
@@ -350,7 +362,7 @@ HierarchicalCredibilityR$predictive <- function(weights, n_sims, seed) .Call(wra
 
 XolLayer <- new.env(parent = emptyenv())
 
-XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time) .Call(wrap__XolLayer__new, name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time)
+XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time, allocation) .Call(wrap__XolLayer__new, name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time, allocation)
 
 XolLayer$quota_share <- function(name, cession) .Call(wrap__XolLayer__quota_share, name, cession)
 
@@ -383,6 +395,8 @@ XolLayer$ceded <- function(losses) .Call(wrap__XolLayer__ceded, self, losses)
 XolLayer$ceded_by_event <- function(losses) .Call(wrap__XolLayer__ceded_by_event, self, losses)
 
 XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
+
+XolLayer$allocation <- function() .Call(wrap__XolLayer__allocation, self)
 
 XolLayer$with_loss_corridor <- function(lower, upper, retained) .Call(wrap__XolLayer__with_loss_corridor, self, lower, upper, retained)
 
@@ -457,6 +471,8 @@ ReinsuranceTower$on_grid <- function(frequency, severity, points) .Call(wrap__Re
 ReinsuranceTower$on_annual_grid <- function(annual) .Call(wrap__ReinsuranceTower__on_annual_grid, self, annual)
 
 ReinsuranceTower$apply_aggregate <- function(losses) .Call(wrap__ReinsuranceTower__apply_aggregate, self, losses)
+
+ReinsuranceTower$apply_annual <- function(losses) .Call(wrap__ReinsuranceTower__apply_annual, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
 
@@ -784,6 +800,8 @@ PredictiveDistribution$marginal <- function(key) .Call(wrap__PredictiveDistribut
 PredictiveDistribution$aggregate <- function(keep) .Call(wrap__PredictiveDistribution__aggregate, self, keep)
 
 PredictiveDistribution$select <- function(dim, keys) .Call(wrap__PredictiveDistribution__select, self, dim, keys)
+
+PredictiveDistribution$scale_to_totals <- function(totals) .Call(wrap__PredictiveDistribution__scale_to_totals, self, totals)
 
 PredictiveDistribution$total <- function() .Call(wrap__PredictiveDistribution__total, self)
 

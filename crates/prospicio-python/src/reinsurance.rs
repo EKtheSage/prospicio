@@ -2,8 +2,8 @@
 //! (layers and towers, applied to simulated losses or on the grid).
 
 use prospicio_aggregate::{
-    AnnualGrids, Commission, EventSet, Layer, LayerStatistics, LossSensitivePremium, Tower,
-    TowerGrids, TowerPrice, ViewPrice,
+    AnnualGrids, Commission, EventSet, Layer, LayerStatistics, LimitAllocation,
+    LossSensitivePremium, Tower, TowerGrids, TowerPrice, ViewPrice,
 };
 use prospicio_prob::PredictiveDistribution;
 use pyo3::prelude::*;
@@ -51,6 +51,15 @@ use crate::to_py;
 ///     ``1 - t``. Needs ``reinstatement_rates``, and events with times
 ///     (``EventSet.with_uniform_times``, or ``times=`` in
 ///     ``EventSet.from_years``).
+/// allocation : {"event_order", "pro_rata"}, default "event_order"
+///     How the annual terms (aggregate deductible and limit, reinstatements)
+///     split the year's recovery among its events. ``"event_order"`` uses
+///     the aggregate limit up in the order the events occur, so a later
+///     event gets what is left. ``"pro_rata"`` scales every event's
+///     recovery by the same factor, the annual recovery after the terms
+///     over the one before them. The annual total is the same; the split by
+///     event, and so what an inuring stage sees, differs. Cannot be
+///     combined with ``pro_rata_time``.
 ///
 /// Raises
 /// ------
@@ -73,6 +82,10 @@ use crate::to_py;
 /// ...               pro_rata_time=True)
 /// >>> round(timed.reinstatement_premium([22.0, 12.0], times=[0.25, 0.5]), 12)
 /// 1.6
+/// >>> Layer("10x5", 10.0, 5.0, reinstatements=1).ceded_by_event([15.0, 20.0, 10.0])
+/// [10.0, 10.0, 0.0]
+/// >>> Layer("10x5", 10.0, 5.0, reinstatements=1, allocation="pro_rata").ceded_by_event([15.0, 20.0, 10.0])
+/// [8.0, 8.0, 4.0]
 #[pyclass(name = "Layer", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyLayer {
     inner: Layer,
@@ -81,7 +94,7 @@ pub(crate) struct PyLayer {
 #[pymethods]
 impl PyLayer {
     #[new]
-    #[pyo3(signature = (name, limit, attachment, share = 1.0, aggregate_deductible = 0.0, aggregate_limit = None, reinstatements = None, premium = 0.0, reinstatement_rates = None, pro_rata_time = false))]
+    #[pyo3(signature = (name, limit, attachment, share = 1.0, aggregate_deductible = 0.0, aggregate_limit = None, reinstatements = None, premium = 0.0, reinstatement_rates = None, pro_rata_time = false, allocation = "event_order"))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         name: String,
@@ -94,6 +107,7 @@ impl PyLayer {
         premium: f64,
         reinstatement_rates: Option<Vec<f64>>,
         pro_rata_time: bool,
+        allocation: &str,
     ) -> PyResult<Self> {
         let mut layer = Layer::xol(name, limit, attachment)
             .and_then(|l| l.share(share))
@@ -119,6 +133,18 @@ impl PyLayer {
         };
         if pro_rata_time {
             layer = layer.pro_rata_as_to_time().map_err(to_py)?;
+        }
+        let allocation = match allocation {
+            "event_order" => LimitAllocation::EventOrder,
+            "pro_rata" => LimitAllocation::ProRata,
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "allocation must be \"event_order\" or \"pro_rata\", not {other:?}"
+                )));
+            }
+        };
+        if allocation != LimitAllocation::EventOrder {
+            layer = layer.allocation(allocation).map_err(to_py)?;
         }
         Ok(Self { inner: layer })
     }
@@ -286,6 +312,16 @@ impl PyLayer {
     #[getter]
     fn pro_rata_time(&self) -> bool {
         self.inner.pro_rata_time
+    }
+
+    /// How the annual terms split the year's recovery among its events:
+    /// ``"event_order"`` or ``"pro_rata"``.
+    #[getter]
+    fn allocation(&self) -> &'static str {
+        match self.inner.allocation {
+            LimitAllocation::EventOrder => "event_order",
+            LimitAllocation::ProRata => "pro_rata",
+        }
     }
 
     /// The same layer with a loss corridor.
@@ -1083,6 +1119,14 @@ impl PyTower {
     /// with ``select("kind", ["ceded"])`` before joining it to a book:
     /// summing over ``kind`` adds gross, ceded and net together.
     ///
+    /// With labels on the events (``EventSet.with_labels``) the label
+    /// dimensions follow ``kind`` and ``layer``: gross, each layer's ceded
+    /// loss and net come once per combination in
+    /// ``events.label_combinations``, each the sum over that combination's
+    /// events (a layer's split by event under its ``allocation``), and the
+    /// other components get ``""`` labels. ``aggregate(["kind", "layer"])``
+    /// gives back the unlabelled result.
+    ///
     /// Parameters
     /// ----------
     /// events : EventSet
@@ -1120,6 +1164,49 @@ impl PyTower {
     ) -> PyResult<PyPredictiveDistribution> {
         let (tower, pd) = (&self.inner, &losses.inner);
         let inner = py.detach(|| tower.apply_aggregate(pd)).map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
+    /// Applies the tower to plain annual losses, one per simulation, each
+    /// taken as one aggregate loss as in ``apply_aggregate``, with no
+    /// ``EventSet`` or ``PredictiveDistribution`` to build. A contract
+    /// stated on the loss ratio is a layer on money amounts: a loss-ratio
+    /// cap ``c`` on subject premium ``P`` is ``Layer.stop_loss(name, c * P,
+    /// 0.0).with_premium_rate(1.0, P)``, so the ceded loss ratio is the
+    /// capped one, and a sliding scale keyed on it is
+    /// ``with_sliding_scale``. Several scales on the same loss-ratio grid
+    /// add pointwise into one; ``Layer.ceding_commission_for`` evaluates a
+    /// scale at any ceded loss. Components as ``apply``.
+    ///
+    /// Parameters
+    /// ----------
+    /// losses : Sequence[float]
+    ///     Each simulation's annual loss, finite and non-negative.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For no losses, a negative or non-finite loss, a surplus treaty or
+    ///     reinstatements pro rata as to time.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> cover = (Layer.stop_loss("cover", 120.0, 0.0)
+    /// ...          .with_premium_rate(1.0, 100.0)
+    /// ...          .with_sliding_scale([(0.3, 0.5), (0.1, 0.9)]))
+    /// >>> res = Tower([cover]).apply_annual([40.0, 70.0, 150.0])
+    /// >>> list(res.marginal(["ceded", "cover"]).draws)
+    /// [40.0, 70.0, 120.0]
+    /// >>> [round(x, 12) for x in res.marginal(["ceding_commission", "cover"]).draws]
+    /// [30.0, 20.0, 10.0]
+    fn apply_annual(&self, py: Python<'_>, losses: Vec<f64>) -> PyResult<PyPredictiveDistribution> {
+        let tower = &self.inner;
+        let inner = py.detach(|| tower.apply_annual(&losses)).map_err(to_py)?;
         Ok(PyPredictiveDistribution { inner })
     }
 

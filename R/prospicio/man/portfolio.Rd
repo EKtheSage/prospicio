@@ -4,11 +4,14 @@
 \alias{portfolio}
 \alias{join_predictive}
 \alias{reorder_groups}
+\alias{group_spearman}
 \title{Join predictive distributions into a portfolio}
 \usage{
 join_predictive(parts, dim, same_simulations = FALSE)
 
-reorder_groups(x, dim, correlation, seed)
+reorder_groups(x, dim, correlation, seed, kind = "pearson")
+
+group_spearman(x, dim)
 }
 \arguments{
 \item{parts}{A named list of \link{predictive_distribution}s with the same
@@ -24,12 +27,19 @@ reserve) and keep their pairing.}
 \item{x}{A \link{predictive_distribution}.}
 
 \item{correlation}{Correlation matrix, one row and column per group in
-order of first appearance.}
+order of first appearance (\code{unique(x@keys[[dim]])}), or a long table:
+a data frame whose first two columns name a pair of groups and whose
+third holds its value, each pair of distinct groups once.}
 
 \item{seed}{Seed, a whole number.}
+
+\item{kind}{\code{"pearson"} (the default: the normal scores' correlation, so
+Spearman's rho comes out near \verb{(6 / pi) asin(r / 2)}) or \code{"spearman"}
+(a Spearman target, converted to \verb{2 sin(pi rho / 6)} first).}
 }
 \value{
-A \link{predictive_distribution}.
+A \link{predictive_distribution}; \code{group_spearman()} a matrix with the
+groups as dimnames.
 }
 \description{
 \code{join_predictive()} puts distributions of different models side by side
@@ -41,11 +51,18 @@ Simulation \code{i} of the result is simulation \code{i} of every part.
 by Iman-Conover on the group totals, moving each group's simulations as
 whole rows: every group keeps its distribution and internal joint
 structure. Use \code{\link[=aggregate]{aggregate()}}, \code{\link[=VaR]{VaR()}}, \code{\link[=TVaR]{TVaR()}} and \code{\link[=capital_allocation]{capital_allocation()}}
-on the result.
+on the result. \code{group_spearman()} is Spearman's rho between the group
+totals (ties at their average rank, as \code{cor(method = "spearman")}), to
+check what \code{reorder_groups()} achieved.
 }
 \examples{
 a <- predictive_distribution(cbind(c(10, 12), c(20, 25)), data.frame(origin = c(2023, 2024)))
 b <- predictive_distribution(matrix(c(50, 40), ncol = 1), data.frame(lob = "motor"))
 p <- join_predictive(list(reserve = a, premium = b), "risk")
 p@keys
+n <- 4000
+pd <- predictive_distribution(cbind(0:(n - 1), ((0:(n - 1)) * 7919) \%\% n),
+                              data.frame(seg = c("a", "b")))
+rho <- data.frame(from = "a", to = "b", rho = 0.6)
+group_spearman(reorder_groups(pd, "seg", rho, seed = 5, kind = "spearman"), "seg")
 }

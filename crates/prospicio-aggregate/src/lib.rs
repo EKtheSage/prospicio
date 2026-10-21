@@ -45,7 +45,8 @@ pub use panjer::panjer;
 pub use picks::{PickedLayer, Picks, layer_loss_picks};
 pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
 pub use reinsurance::{
-    Basis, CarryForward, Commission, Corridor, Layer, LossSensitivePremium, ProfitCommission, Tower,
+    Basis, CarryForward, Commission, Corridor, Layer, LimitAllocation, LossSensitivePremium,
+    ProfitCommission, Tower,
 };
 pub use renewal::{RenewalCount, Wait, WaitGrid, renewal_count};
 pub use ruin::{RenewalRuin, Ruin, SeverityPart, pollaczeck_khinchine, wiener_hopf};

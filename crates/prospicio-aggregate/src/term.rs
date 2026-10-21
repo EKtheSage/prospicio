@@ -28,7 +28,9 @@ impl Tower {
     /// year alone; a profit commission or sliding scale that carries
     /// deficits or credits forward reads what the path's earlier years
     /// left. `select("year", ...)` takes one year, `aggregate(&["kind",
-    /// "layer"])` totals each component over the term.
+    /// "layer"])` totals each component over the term. The years' labels
+    /// ([`EventSet::with_labels`]) are not split out here; `apply` on one
+    /// year splits by them.
     ///
     /// ```
     /// use prospicio_aggregate::{EventSet, Layer, Tower};

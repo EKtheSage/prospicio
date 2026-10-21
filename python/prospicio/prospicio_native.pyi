@@ -9039,7 +9039,7 @@ class EventSet:
             If ``sim`` is not a simulated year.
         """
     @staticmethod
-    def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0) -> EventSet:
+    def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
         """
         Years of losses in long form, as a year loss table lists them: one
         row per loss with its year, an index from 0 to ``n_years - 1``.
@@ -9054,6 +9054,9 @@ class EventSet:
         n_years : int
             The number of simulated years, including those with no loss.
         seed : int, default 0
+        labels : dict of str to list of str, optional
+            Each row's labels, a list per label dimension (``{"peril":
+            [...], "class": [...]}``), as ``with_labels`` takes them.
         
         Returns
         -------
@@ -9065,6 +9068,9 @@ class EventSet:
         >>> e = EventSet.from_long([2, 0, 2], [5.0, 1.0, 7.0], 4)
         >>> e.counts(), e.events(2)
         ([1, 0, 2, 0], [5.0, 7.0])
+        >>> e = EventSet.from_long([2, 0, 2], [5.0, 1.0, 7.0], 4, labels={"peril": ["wind", "quake", "wind"]})
+        >>> e.labels(0)
+        {'peril': ['quake']}
         """
     @staticmethod
     def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0, times: Sequence[Sequence[float]] |None = None) -> EventSet:
@@ -9106,7 +9112,8 @@ class EventSet:
         occurrence, whose loss is their sum and whose time is the window's
         start; the next loss after the window opens the next one. A year is
         8,760 hours. Windows open at each first loss in turn, not where they
-        would recover most. Needs times; sums insured are not carried.
+        would recover most. Needs times; sums insured and labels are not
+        carried (group each peril's set before merging them).
         
         Parameters
         ----------
@@ -9126,6 +9133,11 @@ class EventSet:
         [30.0, 5.0]
         """
     @property
+    def has_labels(self, /) -> bool:
+        """
+        Whether the losses carry labels.
+        """
+    @property
     def has_sums_insured(self, /) -> bool:
         """
         Whether the losses carry sums insured.
@@ -9134,6 +9146,30 @@ class EventSet:
     def has_times(self, /) -> bool:
         """
         Whether the losses carry times.
+        """
+    @property
+    def label_combinations(self, /) -> list[list[str]]:
+        """
+        The distinct combinations of label values, one value per dimension,
+        sorted: the labels of ``Tower.apply``'s components.
+        """
+    @property
+    def label_dims(self, /) -> list[str]:
+        """
+        The label dimensions, empty without labels.
+        """
+    def labels(self, /, sim: int) -> dict |None:
+        """
+        Year ``sim``'s labels, a list per dimension with a value per loss,
+        or ``None``.
+        
+        Parameters
+        ----------
+        sim : int
+        
+        Returns
+        -------
+        dict of str to list of str or None
         """
     def maxima(self, /) -> PredictiveDistribution:
         """
@@ -9153,7 +9189,9 @@ class EventSet:
         The sets need the same number of years. With times on both, each
         year's losses are merged in time order (this set's first on a tie);
         with times on neither, this set's losses come first. Sums insured are
-        kept when both sets carry them.
+        kept when both sets carry them. Labels are kept when either carries
+        them: this set's dimensions, then the other's new ones, with ``""``
+        for a loss without a value in a dimension.
         
         Parameters
         ----------
@@ -9236,6 +9274,33 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+    def with_labels(self, /, labels: dict) -> EventSet:
+        """
+        The same events with labels, a peril or a class say.
+        
+        ``Tower.apply`` then gives gross, each layer's ceded loss and net by
+        label, with the label dimensions after ``kind`` and ``layer``;
+        ``merge`` keeps the labels of either set. Replaces any labels the
+        set had.
+        
+        Parameters
+        ----------
+        labels : dict of str to list of str
+            One list per label dimension, a value per loss, years in order as
+            ``events`` lists them. The names may not be ``"kind"`` or
+            ``"layer"``.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[5.0, 2.0], [9.0]]).with_labels({"peril": ["wind", "flood", "wind"]})
+        >>> e.label_dims, e.label_combinations
+        (['peril'], [['flood'], ['wind']])
         """
     def with_seasonal_times(self, /, weights: Sequence[float]) -> EventSet:
         """
@@ -12482,6 +12547,15 @@ class Layer:
         ``1 - t``. Needs ``reinstatement_rates``, and events with times
         (``EventSet.with_uniform_times``, or ``times=`` in
         ``EventSet.from_years``).
+    allocation : {"event_order", "pro_rata"}, default "event_order"
+        How the annual terms (aggregate deductible and limit, reinstatements)
+        split the year's recovery among its events. ``"event_order"`` uses
+        the aggregate limit up in the order the events occur, so a later
+        event gets what is left. ``"pro_rata"`` scales every event's
+        recovery by the same factor, the annual recovery after the terms
+        over the one before them. The annual total is the same; the split by
+        event, and so what an inuring stage sees, differs. Cannot be
+        combined with ``pro_rata_time``.
     
     Raises
     ------
@@ -12504,8 +12578,12 @@ class Layer:
     ...               pro_rata_time=True)
     >>> round(timed.reinstatement_premium([22.0, 12.0], times=[0.25, 0.5]), 12)
     1.6
+    >>> Layer("10x5", 10.0, 5.0, reinstatements=1).ceded_by_event([15.0, 20.0, 10.0])
+    [10.0, 10.0, 0.0]
+    >>> Layer("10x5", 10.0, 5.0, reinstatements=1, allocation="pro_rata").ceded_by_event([15.0, 20.0, 10.0])
+    [8.0, 8.0, 4.0]
     """
-    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None, premium: float = 0.0, reinstatement_rates: Sequence[float] |None = None, pro_rata_time: bool = False) -> Layer: ...
+    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None, premium: float = 0.0, reinstatement_rates: Sequence[float] |None = None, pro_rata_time: bool = False, allocation: str = "event_order") -> Layer: ...
     def __repr__(self, /) -> str: ...
     @property
     def aggregate_deductible(self, /) -> float:
@@ -12516,6 +12594,12 @@ class Layer:
     def aggregate_limit(self, /) -> float:
         """
         Annual aggregate limit.
+        """
+    @property
+    def allocation(self, /) -> str:
+        """
+        How the annual terms split the year's recovery among its events:
+        ``"event_order"`` or ``"pro_rata"``.
         """
     @property
     def attachment(self, /) -> float:
@@ -20133,6 +20217,36 @@ class PredictiveDistribution:
         -------
         list of tuple
         """
+    def correlation_from_pairs(self, /, dim: str, pairs: Sequence[tuple[int |str, int |str, float]]) -> list[list[float]]:
+        """
+        The correlation matrix between the groups of ``dim`` from a long
+        pairwise table, in the order of ``groups(dim)``. Each pair of
+        distinct groups appears once, in either order (both orders only
+        with the same value); a diagonal entry may be given and must be 1.
+        
+        Parameters
+        ----------
+        dim : str
+        pairs : list of tuple
+            ``(group, group, value)`` rows, values in ``[-1, 1]``.
+        
+        Returns
+        -------
+        list of list of float
+        
+        Raises
+        ------
+        ValueError
+            If a pair is missing, given twice with different values, names
+            an unknown group, or a value is outside ``[-1, 1]``.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(["peril"], [("wind",), ("quake",)], [[0.0, 1.0]] * 3)
+        >>> pd.correlation_from_pairs("peril", [("quake", "wind", 0.2)])
+        [[1.0, 0.2], [0.2, 1.0]]
+        """
     @property
     def dims(self, /) -> list[str]:
         """
@@ -20145,6 +20259,34 @@ class PredictiveDistribution:
         Returns
         -------
         list of list of float
+        """
+    def group_spearman(self, /, dim: str) -> tuple[list[Any], list[list[float]]]:
+        """
+        Spearman's rho between the totals of the groups of ``dim``, ties
+        given their average rank as ``scipy.stats.spearmanr``: what
+        ``reorder_groups`` achieved.
+        
+        Parameters
+        ----------
+        dim : str
+        
+        Returns
+        -------
+        tuple of (list, list of list of float)
+            The groups, as ``groups(dim)``, and the matrix.
+        """
+    def groups(self, /, dim: str) -> list[Any]:
+        """
+        The groups of dimension ``dim`` in order of first appearance: the
+        rows and columns of ``reorder_groups``' matrix.
+        
+        Parameters
+        ----------
+        dim : str
+        
+        Returns
+        -------
+        list of int or str
         """
     @staticmethod
     def join(parts: Sequence[tuple[str, PredictiveDistribution]], dim: str, same_simulations: bool = False) -> PredictiveDistribution:
@@ -20248,7 +20390,7 @@ class PredictiveDistribution:
         ValueError
             If ``p`` is outside ``[0, 1]``.
         """
-    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int, kind: str = "pearson") -> PredictiveDistribution:
         """
         Sets the dependence between the groups of dimension ``dim`` by
         Iman–Conover on the groups' totals, moving each group's simulations
@@ -20260,12 +20402,69 @@ class PredictiveDistribution:
         ----------
         dim : str
         correlation : list of list of float
-            One row and column per group, in order of first appearance.
+            One row and column per group, in order of first appearance
+            (``groups(dim)``); ``correlation_from_pairs`` builds it from a
+            long table.
         seed : int
+        kind : str
+            ``"pearson"`` (the default: the normal scores' correlation, so
+            Spearman's rho comes out near ``(6/π) asin(r/2)``) or
+            ``"spearman"`` (a Spearman target, converted to ``2 sin(π ρ /
+            6)`` first).
         
         Returns
         -------
         PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If the matrix (after conversion) is not a positive definite
+            correlation matrix, or ``kind`` is unknown.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> n = 4000
+        >>> pd = PredictiveDistribution(
+        ...     ["seg"], [("a",), ("b",)], [[i, (i * 7919) % n] for i in range(n)])
+        >>> r = pd.reorder_groups("seg", [[1, 0.6], [0.6, 1]], 5, kind="spearman")
+        >>> groups, rho = r.group_spearman("seg")
+        >>> groups, abs(rho[0][1] - 0.6) < 0.02
+        (['a', 'b'], True)
+        """
+    def scale_to_totals(self, /, totals: Sequence[float]) -> PredictiveDistribution:
+        """
+        Every simulation's components rescaled pro rata to a new total.
+        
+        Component ``k`` in simulation ``s`` becomes ``c[s][k] * totals[s] /
+        sum_k c[s][k]`` (unchanged when the components sum to 0). This
+        carries a total computed from the components, a loss-ratio cap over
+        several classes or a stop loss on a mix of perils, back onto them in
+        proportion to their shares; it is not a capital allocation. The keys
+        and dimensions are kept.
+        
+        Parameters
+        ----------
+        totals : list of float
+            One total per simulation.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            Not one finite total per simulation, or a non-zero total where
+            the components sum to 0.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(["class"], [("motor",), ("home",)], [[6.0, 9.0], [3.0, 1.0]])
+        >>> pd.scale_to_totals([10.0, 4.0]).draw_matrix()
+        [[4.0, 6.0], [3.0, 1.0]]
         """
     def select(self, /, dim: str, keys: Sequence[int |str]) -> PredictiveDistribution:
         """
@@ -22515,6 +22714,14 @@ class Tower:
         with ``select("kind", ["ceded"])`` before joining it to a book:
         summing over ``kind`` adds gross, ceded and net together.
         
+        With labels on the events (``EventSet.with_labels``) the label
+        dimensions follow ``kind`` and ``layer``: gross, each layer's ceded
+        loss and net come once per combination in
+        ``events.label_combinations``, each the sum over that combination's
+        events (a layer's split by event under its ``allocation``), and the
+        other components get ``""`` labels. ``aggregate(["kind", "layer"])``
+        gives back the unlabelled result.
+        
         Parameters
         ----------
         events : EventSet
@@ -22551,6 +22758,46 @@ class Tower:
         Returns
         -------
         PredictiveDistribution
+        """
+    def apply_annual(self, /, losses: Sequence[float]) -> PredictiveDistribution:
+        """
+        Applies the tower to plain annual losses, one per simulation, each
+        taken as one aggregate loss as in ``apply_aggregate``, with no
+        ``EventSet`` or ``PredictiveDistribution`` to build. A contract
+        stated on the loss ratio is a layer on money amounts: a loss-ratio
+        cap ``c`` on subject premium ``P`` is ``Layer.stop_loss(name, c * P,
+        0.0).with_premium_rate(1.0, P)``, so the ceded loss ratio is the
+        capped one, and a sliding scale keyed on it is
+        ``with_sliding_scale``. Several scales on the same loss-ratio grid
+        add pointwise into one; ``Layer.ceding_commission_for`` evaluates a
+        scale at any ceded loss. Components as ``apply``.
+        
+        Parameters
+        ----------
+        losses : Sequence[float]
+            Each simulation's annual loss, finite and non-negative.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            For no losses, a negative or non-finite loss, a surplus treaty or
+            reinstatements pro rata as to time.
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> cover = (Layer.stop_loss("cover", 120.0, 0.0)
+        ...          .with_premium_rate(1.0, 100.0)
+        ...          .with_sliding_scale([(0.3, 0.5), (0.1, 0.9)]))
+        >>> res = Tower([cover]).apply_annual([40.0, 70.0, 150.0])
+        >>> list(res.marginal(["ceded", "cover"]).draws)
+        [40.0, 70.0, 120.0]
+        >>> [round(x, 12) for x in res.marginal(["ceding_commission", "cover"]).draws]
+        [30.0, 20.0, 10.0]
         """
     def apply_term(self, /, years: Sequence[EventSet]) -> PredictiveDistribution:
         """

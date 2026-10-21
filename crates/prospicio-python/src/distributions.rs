@@ -1365,6 +1365,17 @@ pub(crate) fn key_from_py(key: Vec<KeyArg>) -> ComponentKey {
         .collect()
 }
 
+/// Groups and a matrix over them, one row per group.
+type GroupMatrix<'py> = (Vec<Bound<'py, PyAny>>, Vec<Vec<f64>>);
+
+/// Group labels as Python values, as `key_to_py` gives a key's entries.
+fn groups_to_py<'py>(py: Python<'py>, groups: &[KeyValue]) -> PyResult<Vec<Bound<'py, PyAny>>> {
+    groups
+        .iter()
+        .map(|g| key_to_py(py, &vec![g.clone()])?.get_item(0))
+        .collect()
+}
+
 pub(crate) fn key_to_py<'py>(py: Python<'py>, key: &ComponentKey) -> PyResult<Bound<'py, PyAny>> {
     let values: Vec<Bound<'py, PyAny>> = key
         .iter()
@@ -1552,25 +1563,143 @@ impl PyPredictiveDistribution {
     /// ----------
     /// dim : str
     /// correlation : list of list of float
-    ///     One row and column per group, in order of first appearance.
+    ///     One row and column per group, in order of first appearance
+    ///     (``groups(dim)``); ``correlation_from_pairs`` builds it from a
+    ///     long table.
     /// seed : int
+    /// kind : str
+    ///     ``"pearson"`` (the default: the normal scores' correlation, so
+    ///     Spearman's rho comes out near ``(6/π) asin(r/2)``) or
+    ///     ``"spearman"`` (a Spearman target, converted to ``2 sin(π ρ /
+    ///     6)`` first).
     ///
     /// Returns
     /// -------
     /// PredictiveDistribution
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the matrix (after conversion) is not a positive definite
+    ///     correlation matrix, or ``kind`` is unknown.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> n = 4000
+    /// >>> pd = PredictiveDistribution(
+    /// ...     ["seg"], [("a",), ("b",)], [[i, (i * 7919) % n] for i in range(n)])
+    /// >>> r = pd.reorder_groups("seg", [[1, 0.6], [0.6, 1]], 5, kind="spearman")
+    /// >>> groups, rho = r.group_spearman("seg")
+    /// >>> groups, abs(rho[0][1] - 0.6) < 0.02
+    /// (['a', 'b'], True)
+    #[pyo3(signature = (dim, correlation, seed, kind = "pearson"))]
     fn reorder_groups(
         &self,
         py: Python<'_>,
         dim: &str,
         correlation: Vec<Vec<f64>>,
         seed: u64,
+        kind: &str,
     ) -> PyResult<Self> {
+        use prospicio_prob::portfolio::CorrelationKind;
+        let kind = match kind {
+            "pearson" => CorrelationKind::Pearson,
+            "spearman" => CorrelationKind::Spearman,
+            _ => {
+                return Err(PyValueError::new_err(format!(
+                    "kind must be \"pearson\" or \"spearman\", not {kind:?}"
+                )));
+            }
+        };
         let flat: Vec<f64> = correlation.into_iter().flatten().collect();
         let pd = &self.inner;
         let inner = py
-            .detach(|| pd.reorder_groups(dim, &flat, seed))
+            .detach(|| pd.reorder_groups_with(dim, &flat, kind, seed))
             .map_err(to_py)?;
         Ok(Self { inner })
+    }
+
+    /// The groups of dimension ``dim`` in order of first appearance: the
+    /// rows and columns of ``reorder_groups``' matrix.
+    ///
+    /// Parameters
+    /// ----------
+    /// dim : str
+    ///
+    /// Returns
+    /// -------
+    /// list of int or str
+    fn groups<'py>(&self, py: Python<'py>, dim: &str) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        let groups = self.inner.groups(dim).map_err(to_py)?;
+        groups_to_py(py, &groups)
+    }
+
+    /// The correlation matrix between the groups of ``dim`` from a long
+    /// pairwise table, in the order of ``groups(dim)``. Each pair of
+    /// distinct groups appears once, in either order (both orders only
+    /// with the same value); a diagonal entry may be given and must be 1.
+    ///
+    /// Parameters
+    /// ----------
+    /// dim : str
+    /// pairs : list of tuple
+    ///     ``(group, group, value)`` rows, values in ``[-1, 1]``.
+    ///
+    /// Returns
+    /// -------
+    /// list of list of float
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a pair is missing, given twice with different values, names
+    ///     an unknown group, or a value is outside ``[-1, 1]``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> pd = PredictiveDistribution(["peril"], [("wind",), ("quake",)], [[0.0, 1.0]] * 3)
+    /// >>> pd.correlation_from_pairs("peril", [("quake", "wind", 0.2)])
+    /// [[1.0, 0.2], [0.2, 1.0]]
+    fn correlation_from_pairs(
+        &self,
+        dim: &str,
+        pairs: Vec<(KeyArg, KeyArg, f64)>,
+    ) -> PyResult<Vec<Vec<f64>>> {
+        let one = |k: KeyArg| key_from_py(vec![k]).remove(0);
+        let pairs: Vec<(KeyValue, KeyValue, f64)> = pairs
+            .into_iter()
+            .map(|(a, b, v)| (one(a), one(b), v))
+            .collect();
+        let m = self
+            .inner
+            .correlation_from_pairs(dim, &pairs)
+            .map_err(to_py)?;
+        let g = (m.len() as f64).sqrt().round() as usize;
+        Ok(m.chunks(g.max(1)).map(<[f64]>::to_vec).collect())
+    }
+
+    /// Spearman's rho between the totals of the groups of ``dim``, ties
+    /// given their average rank as ``scipy.stats.spearmanr``: what
+    /// ``reorder_groups`` achieved.
+    ///
+    /// Parameters
+    /// ----------
+    /// dim : str
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (list, list of list of float)
+    ///     The groups, as ``groups(dim)``, and the matrix.
+    fn group_spearman<'py>(&self, py: Python<'py>, dim: &str) -> PyResult<GroupMatrix<'py>> {
+        let pd = &self.inner;
+        let (groups, m) = py.detach(|| pd.group_spearman(dim)).map_err(to_py)?;
+        let g = groups.len();
+        Ok((
+            groups_to_py(py, &groups)?,
+            m.chunks(g.max(1)).map(<[f64]>::to_vec).collect(),
+        ))
     }
 
     /// Blends several models' predictive distributions: simulation ``i`` is
@@ -1717,6 +1846,41 @@ impl PyPredictiveDistribution {
     fn select(&self, dim: &str, keys: Vec<KeyArg>) -> PyResult<Self> {
         let keys = key_from_py(keys);
         let inner = self.inner.select(dim, &keys).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Every simulation's components rescaled pro rata to a new total.
+    ///
+    /// Component ``k`` in simulation ``s`` becomes ``c[s][k] * totals[s] /
+    /// sum_k c[s][k]`` (unchanged when the components sum to 0). This
+    /// carries a total computed from the components, a loss-ratio cap over
+    /// several classes or a stop loss on a mix of perils, back onto them in
+    /// proportion to their shares; it is not a capital allocation. The keys
+    /// and dimensions are kept.
+    ///
+    /// Parameters
+    /// ----------
+    /// totals : list of float
+    ///     One total per simulation.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     Not one finite total per simulation, or a non-zero total where
+    ///     the components sum to 0.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> pd = PredictiveDistribution(["class"], [("motor",), ("home",)], [[6.0, 9.0], [3.0, 1.0]])
+    /// >>> pd.scale_to_totals([10.0, 4.0]).draw_matrix()
+    /// [[4.0, 6.0], [3.0, 1.0]]
+    fn scale_to_totals(&self, totals: Vec<f64>) -> PyResult<Self> {
+        let inner = self.inner.scale_to_totals(&totals).map_err(to_py)?;
         Ok(Self { inner })
     }
 

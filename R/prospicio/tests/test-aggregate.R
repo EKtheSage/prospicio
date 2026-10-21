@@ -110,6 +110,18 @@ ro <- reorder_groups(pf, "risk", matrix(c(1, 0.7, 0.7, 1), 2), seed = 5)
 stopifnot(identical(sort(draw_matrix(ro)[, 3]), sort(draw_matrix(prem)[, 1])))
 tot <- draw_matrix(aggregate(ro, keep = "risk"))
 stopifnot(cor(tot[, 1], tot[, 2], method = "spearman") > 0.5)
+# A Spearman target from a long table, checked against R's own Spearman.
+sp_n <- 20000
+sp <- predictive_distribution(sapply(c(1, 7919, 104729), function(m) ((0:(sp_n - 1)) * m) %% sp_n),
+                              data.frame(class = c("A", "B", "C")))
+sp_long <- data.frame(from = c("B", "A", "C"), to = c("A", "C", "B"), rho = c(0.5, 0.3, 0.7))
+sp_r <- reorder_groups(sp, "class", sp_long, seed = 9, kind = "spearman")
+sp_got <- group_spearman(sp_r, "class")
+sp_want <- matrix(c(1, 0.5, 0.3, 0.5, 1, 0.7, 0.3, 0.7, 1), 3, dimnames = list(c("A", "B", "C"), c("A", "B", "C")))
+stopifnot(all(abs(sp_got - sp_want) < 0.01))
+stopifnot(abs(sp_got["B", "C"] - cor(draw_matrix(sp_r), method = "spearman")[2, 3]) < 1e-12)
+stopifnot(group_spearman(reorder_groups(sp, "class", sp_want, seed = 9), "class")["B", "C"] < 0.695)
+stopifnot(inherits(try(reorder_groups(sp, "class", sp_long[1:2, ], seed = 9), silent = TRUE), "try-error"))
 stopifnot(inherits(try(join_predictive(list(res, prem), "risk"), silent = TRUE), "try-error"))
 
 # FFT grid sizing (aggregate 1.0.1: round_bucket rungs; bs 1/16 on this book).
@@ -170,6 +182,17 @@ stopifnot(inherits(try(apply_tower(reinsurance_tower(list(one)), ev), silent = T
 dated <- with_uniform_times(ev)
 rp <- draw_matrix(apply_tower(reinsurance_tower(list(one)), dated))[, 4]
 stopifnot(abs(mean(rp) - 1) < 4 * sd(rp) / sqrt(n), length(event_times(ev, 1)) == 0)
+
+# The annual limit shared pro rata across the year's events.
+order <- xol_layer("10x5", 10, 5, reinstatements = 1)
+pro <- xol_layer("10x5", 10, 5, reinstatements = 1, allocation = "pro_rata")
+stopifnot(order@allocation == "event_order", pro@allocation == "pro_rata")
+close(ceded_by_event(order, c(15, 20, 10)), c(10, 10, 0), 1e-12)
+close(ceded_by_event(pro, c(15, 20, 10)), c(8, 8, 4), 1e-12)
+stopifnot(inherits(try(xol_layer("f", 10, 5, allocation = "by_size"), silent = TRUE), "try-error"))
+stopifnot(inherits(try(xol_layer("f", 10, 10, premium = 2, reinstatement_rates = 1,
+                                 pro_rata_time = TRUE, allocation = "pro_rata"),
+                       silent = TRUE), "try-error"))
 # Losses only in the second half of the year: 2 E[1 - t] = 0.5.
 late <- with_seasonal_times(ev, c(0, 1))
 stopifnot(all(sapply(1:100, function(i) event_times(late, i)) >= 0.5))
@@ -609,3 +632,37 @@ local({
   stopifnot(abs(mean(ceded) - mean(marginal(by_kind, list("ceded")))) < 1e-6 * mean(ceded))
   stopifnot(inherits(try(select_components(res, "kind", "none"), silent = TRUE), "try-error"))
 })
+
+# Results by event label.
+lab <- event_set_from_long(c(1, 1, 2, 2), c(15, 20, 10, 4), 2,
+                           labels = list(peril = c("wind", "quake", "quake", "wind")))
+stopifnot(identical(lab@label_dims, "peril"), identical(event_labels(lab, 2)$peril, c("quake", "wind")))
+stopifnot(identical(lab@label_combinations$peril, c("quake", "wind")))
+res <- apply_tower(reinsurance_tower(list(xol_layer("10x5", 10, 5, aggregate_limit = 15))), lab)
+stopifnot(identical(res@dims, c("kind", "layer", "peril")))
+plain <- apply_tower(reinsurance_tower(list(xol_layer("10x5", 10, 5, aggregate_limit = 15))),
+                     events_from_years(list(c(15, 20), c(10, 4))))
+close(draw_matrix(aggregate(res, keep = "kind")), draw_matrix(aggregate(plain, keep = "kind")), 1e-12)
+stopifnot(is.null(event_labels(events_from_years(list(1)), 1)))
+mixed <- merge_event_sets(lab, events_from_years(list(1, 2)))
+stopifnot(identical(mixed@label_combinations$peril, c("", "quake", "wind")))
+stopifnot(inherits(try(with_labels(lab, list(kind = rep("a", 4))), silent = TRUE), "try-error"))
+
+# A capped total carried back onto its components.
+st_pd <- predictive_distribution(matrix(c(6, 3, 9, 1), ncol = 2), data.frame(class = c("motor", "home")))
+st_m <- draw_matrix(scale_to_totals(st_pd, pmin(rowSums(draw_matrix(st_pd)), 10)))
+stopifnot(all(st_m == matrix(c(4, 3, 6, 1), ncol = 2)))
+stopifnot(inherits(try(scale_to_totals(st_pd, 1), silent = TRUE), "try-error"))
+
+# Plain annual losses through apply_tower (#477): a loss-ratio cap of 120%
+# on a premium of 100 with a commission sliding from 30% at 50% to 10% at 90%.
+cover <- with_sliding_scale(
+  with_premium_rate(aggregate_stop_loss("cover", 120, 0), 1, 100),
+  c(0.3, 0.1), c(0.5, 0.9)
+)
+annual <- apply_tower(reinsurance_tower(list(cover)), c(40, 70, 150))
+am <- draw_matrix(annual)
+stopifnot(identical(as.vector(am[, 2]), c(40, 70, 120)))
+close(as.vector(am[, 4]), c(30, 20, 10), 1e-12)
+close(as.vector(am[, 4]), ceding_commission_for(cover, am[, 2]), 1e-12)
+stopifnot(inherits(try(apply_tower(reinsurance_tower(list(cover)), c(1, -1)), silent = TRUE), "try-error"))

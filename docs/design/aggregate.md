@@ -146,11 +146,31 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `["kind", "layer"]`: `(gross, ground_up)`, `(ceded, <name>)` per layer
   and `(net, retained)`. `aggregate(&["kind"])` gives gross, total ceded and
   net per year, and `net = gross − Σ ceded` holds in every year (tested).
+- **Labels split a tower's result** (#475). An `EventSet` may carry
+  labels, a value per loss in each label dimension (a peril, a class),
+  stored as an index into the sorted distinct combinations. With labels,
+  `Tower::apply` gives dimensions `["kind", "layer", <label dims>]`:
+  gross, each layer's ceded loss (the sum of its split by event, under the
+  layer's `LimitAllocation`) and net once per combination, and the annual
+  components (premiums and commissions) with `""` in every label
+  dimension, so `aggregate(&["kind", "layer"])` gives back the unlabelled
+  result and an unlabelled set's result is unchanged. `merge` keeps either
+  set's labels (this set's dimensions, then the other's new ones, `""` for
+  a missing value); `grouped` drops them, as it drops sums insured, since
+  an occurrence may span labels; a term's years (`apply_term`) ignore them.
 - **Quota share and stop-loss are layers.** A quota share with cession
   `c` is unlimited cover from 0 with `share = c`; a stop-loss `l` xs `r`
   is unlimited cover from 0 with `AAD = r` and `AAL = l`. One formula
   covers all three contract types, and a stop-loss in a later stage covers
   the annual total net of earlier stages.
+- **Plain annual losses** (#477). `Tower::apply_annual` takes one annual
+  loss per simulation, each as one aggregate loss as `apply_aggregate`
+  takes a predictive distribution's totals. A contract stated on the loss
+  ratio is a layer on money amounts: a cap `c` on subject premium `P` is a
+  stop loss of `c × P` xs 0 with `premium_rate(1, P)`, so the ceded loss
+  ratio is the capped one and a sliding scale keyed on it reads it; scales
+  on one grid add pointwise. Brokerage on a loss-ratio scale is not a leg
+  yet (open, the user's decision).
 - **Inuring order is by stage.** `Tower::inuring(stages)` applies stages
   in order; layers within a stage see the same losses, and each later
   stage sees every event net of all earlier stages. `Tower::new(layers)`
@@ -163,6 +183,12 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   annual ceded loss, which does not depend on order; only later stages do.
   Simulated events are in simulation order, which is their time order;
   events may carry times too (below).
+  `Layer::allocation(LimitAllocation::ProRata)` splits the annual terms
+  pro rata instead (#476): with per-event recoveries `u_e` summing to `U`,
+  event `e` cedes `share × u_e × after_terms(U) / U` (factor 1 when
+  `U = 0`). The annual total is the same; the nets a later stage sees are
+  not. It is refused with pro rata as to time, whose charge depends on
+  when the limit is used up.
 - **Reinstatement premiums are pro rata as to amount.** With layer loss
   `L` at 100% after annual terms, `paid_reinstatements(premium, rates)`
   charges `premium × Σ_k rates[k] × min(max(L - k·l, 0), l) / l`, where

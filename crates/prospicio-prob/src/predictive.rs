@@ -467,6 +467,77 @@ impl PredictiveDistribution {
         )
     }
 
+    /// Every simulation's components rescaled pro rata to a new total:
+    /// component `k` in simulation `s` becomes `c[s][k] × totals[s] /
+    /// Σ_k c[s][k]` (factor 1 when the components sum to 0). This carries
+    /// a total computed from the components, a loss-ratio cap over several
+    /// classes or a stop loss on a mix of perils, back onto them, each in
+    /// proportion to its share of the total before; it is not a capital
+    /// allocation ([`allocate`](Self::allocate)). The keys and dimensions
+    /// are kept.
+    ///
+    /// ```
+    /// use prospicio_prob::{PredictiveDistribution, Provenance};
+    ///
+    /// // Two classes in two simulations; their total capped at 10.
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["class".into()],
+    ///     vec![vec!["motor".into()], vec!["home".into()]],
+    ///     vec![6.0, 9.0, 3.0, 1.0],
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// let capped: Vec<f64> = (0..2).map(|s| pd.row(s).unwrap().iter().sum::<f64>().min(10.0)).collect();
+    /// let by_class = pd.scale_to_totals(&capped).unwrap();
+    /// assert_eq!(by_class.row(0).unwrap(), [4.0, 6.0]);
+    /// assert_eq!(by_class.row(1).unwrap(), [3.0, 1.0]);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// `totals` not one finite value per simulation, or a non-zero total
+    /// for a simulation whose components sum to 0.
+    pub fn scale_to_totals(&self, totals: &[f64]) -> Result<Self> {
+        if totals.len() != self.n_sims {
+            return Err(Error::Data(format!(
+                "{} totals for {} simulations",
+                totals.len(),
+                self.n_sims
+            )));
+        }
+        let n = self.n_components();
+        let mut draws = Vec::with_capacity(self.draws.len());
+        for (s, (row, &t)) in self.draws.chunks_exact(n).zip(totals).enumerate() {
+            if !t.is_finite() {
+                return Err(Error::InvalidParameter {
+                    name: "totals",
+                    value: t,
+                    reason: "must be finite",
+                });
+            }
+            let sum: f64 = row.iter().sum();
+            if sum == 0.0 {
+                if t != 0.0 {
+                    return Err(Error::Data(format!(
+                        "simulation {s}'s components sum to 0, so its total {t} has no shares"
+                    )));
+                }
+                draws.extend_from_slice(row);
+            } else {
+                let factor = t / sum;
+                draws.extend(row.iter().map(|c| c * factor));
+            }
+        }
+        Self::from_draws(
+            self.dims.clone(),
+            self.components.clone(),
+            draws,
+            self.provenance
+                .clone()
+                .param("scaled_to_totals", "pro rata"),
+        )
+    }
+
     /// The total over all components, one value per simulation.
     pub fn total(&self) -> &Sampled {
         self.total.get_or_init(|| {
@@ -877,6 +948,23 @@ fn validate_keys(dims: &[String], components: &[ComponentKey]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn scale_to_totals_keeps_the_shares() {
+        let pd = PredictiveDistribution::from_draws(
+            vec!["class".into()],
+            vec![vec!["a".into()], vec!["b".into()]],
+            vec![1.0, 3.0, 0.0, 0.0, 2.0, 2.0],
+            Provenance::new("t"),
+        )
+        .unwrap();
+        let scaled = pd.scale_to_totals(&[2.0, 0.0, 1.0]).unwrap();
+        assert_eq!(scaled.draw_matrix(), [0.5, 1.5, 0.0, 0.0, 0.5, 0.5]);
+        assert_eq!(scaled.components(), pd.components());
+        assert!(pd.scale_to_totals(&[1.0, 1.0, 1.0]).is_err());
+        assert!(pd.scale_to_totals(&[1.0, 0.0]).is_err());
+        assert!(pd.scale_to_totals(&[f64::NAN, 0.0, 1.0]).is_err());
+    }
+
     use super::*;
 
     #[test]

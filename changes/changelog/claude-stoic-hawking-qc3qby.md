@@ -42,6 +42,18 @@
   `prospicio.risk.statistics` and `Sampled.var(p, method=)`,
   `.tvar(p, method=)`; R `statistics()` and `VaR(x, p, method = )`,
   `TVaR(x, p, method = )` on a `sampled` (#474, #492).
+- A Spearman target for `reorder_groups`: `reorder_groups_with(dim,
+  correlation, CorrelationKind::Spearman, seed)` converts the matrix to
+  `2 sin(π ρ / 6)` before Iman-Conover, so the achieved rank correlation
+  of the group totals meets it (the default stays the normal scores'
+  correlation). `correlation_from_pairs` builds the matrix from a long
+  table `(group, group, rho)` with every pair once, `groups` lists the
+  groups in matrix order and `group_spearman` gives the achieved
+  Spearman's rho with ties at their average rank. Python
+  `reorder_groups(..., kind="spearman")`, `groups`,
+  `correlation_from_pairs`, `group_spearman`; R `reorder_groups(..., kind
+  = "spearman")` with a matrix or a three-column data frame, and
+  `group_spearman()` (#481, #493).
 
 ### Pricing
 
@@ -629,3 +641,30 @@
   compares deviances. earth parity on the Chalk portfolio: the knots, RSS and GCV of default,
   weighted, `nk = 15` and pruned runs. Python `models.mars()` and `MarsFit`, R `mars_knots()` and
   `mars_formula()` (#465).
+
+### Aggregate and reinsurance
+
+- A layer's annual terms can split the year's recovery pro rata across its events
+  (`LimitAllocation::ProRata`, `Layer::allocation`): every event's recovery is scaled by the annual
+  recovery after the terms over the one before them, instead of using the limit up in event order.
+  The annual total is unchanged; the split by event, and so what an inuring stage sees, differs.
+  Refused with reinstatements pro rata as to time; written to a tower's JSON only when set. Python
+  `Layer(..., allocation="pro_rata")`, R `xol_layer(..., allocation = "pro_rata")` (#476, #493).
+- Labels on simulated events, a peril or a class, carried through a tower (`EventSet::with_labels`,
+  `from_long_labeled`, kept by `merge`): with labels `Tower::apply` gives gross, each layer's ceded
+  loss and net by label, with the label dimensions after `kind` and `layer` and the annual premiums
+  and commissions labelled `""`; under an annual limit the split follows the layer's allocation.
+  Unlabelled results are unchanged. Python `EventSet.with_labels`, `from_long(..., labels=)`,
+  `labels`, R `with_labels()`, `event_labels()`, `event_set_from_long(..., labels =)` (#475, #493).
+- `Tower::apply_annual` applies a tower to plain annual losses, one per simulation, with no
+  `EventSet` or `PredictiveDistribution` to build; a contract stated on the loss ratio (a cap and
+  a sliding scale on subject premium) is a stop loss with `premium_rate(1, P)` and a sliding
+  scale. Python `Tower.apply_annual`, R `apply_tower()` on a numeric vector (#477, #493).
+
+### Distributions and probability
+
+- `PredictiveDistribution::scale_to_totals` rescales each simulation's components pro rata to a new
+  total (factor 1 when they sum to 0): a loss-ratio cap over several classes or a stop loss on a mix
+  of perils carried back onto its components. Inside a tower, a cover on the annual total with
+  `LimitAllocation::ProRata` on labelled events does the same. Python
+  `PredictiveDistribution.scale_to_totals`, R `scale_to_totals()` (#478, #493).
