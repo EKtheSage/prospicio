@@ -7,7 +7,7 @@
   Bloom and Patrik's worked example exactly; `ExcessPattern::selected` turns it
   into a `SelectedPattern`. `layer_share` and `layer_exposure` give the layer
   share of a severity and a layer exposure column for a BF or Cape Cod prior.
-  A paid basis is an error. Python, R and the credibility blending follow.
+  A paid basis is an error. Python, R and the credibility blending follow (#507).
 - A fully selected age whose own factor cannot be estimated (every earlier value
   zero, as in the early ages of a sparse layer) is no longer an error in
   `Development`: its own factor is missing (NaN) and the selected factor is used.
