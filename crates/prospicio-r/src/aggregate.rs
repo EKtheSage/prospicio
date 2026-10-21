@@ -595,6 +595,26 @@ impl EventSet {
         })
     }
 
+    /// The years in another order: year `i` of the result is year
+    /// `index[i]` (1-based) of this set.
+    fn permute(&self, index: &[f64]) -> Result<Self> {
+        let index = index
+            .iter()
+            .map(|&i| {
+                if i.fract() == 0.0 && i >= 1.0 {
+                    Ok(i as usize - 1)
+                } else {
+                    Err(Error::Other(format!(
+                        "index must hold whole numbers from 1, not {i}"
+                    )))
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self {
+            inner: self.inner.permute(&index).map_err(to_r)?,
+        })
+    }
+
     /// A list of `n_years` event sets, the term's consecutive blocks.
     fn term_years(&self, n_years: f64) -> Result<List> {
         let years = self

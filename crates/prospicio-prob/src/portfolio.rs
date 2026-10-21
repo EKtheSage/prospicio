@@ -223,8 +223,51 @@ impl PredictiveDistribution {
     /// assert!((0..n).all(|i| r.row(i).unwrap()[1] == 2.0 * r.row(i).unwrap()[0]));
     /// ```
     pub fn reorder_groups(&self, dim: &str, correlation: &[f64], seed: u64) -> Result<Self> {
+        Ok(self
+            .reorder_groups_indexed(dim, correlation, CorrelationKind::Pearson, seed)?
+            .0)
+    }
+
+    /// [`reorder_groups_with`](Self::reorder_groups_with), and where each
+    /// simulation came from: `index[g][i]` is the simulation of the input
+    /// whose row group `g` (in the order of [`groups`](Self::groups)) takes
+    /// in simulation `i` of the result. Anything else simulated with the
+    /// group, a class's events say, follows the reorder by the same index
+    /// (`EventSet::permute` in `prospicio-aggregate`), with no matching of
+    /// values, which tied draws would defeat.
+    ///
+    /// ```
+    /// use prospicio_prob::portfolio::CorrelationKind;
+    /// use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// let n = 500;
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["seg".into()],
+    ///     vec![vec![KeyValue::from("a")], vec![KeyValue::from("b")]],
+    ///     // Many ties: matching values could not tell the rows apart.
+    ///     (0..n).flat_map(|i| [(i % 5) as f64, ((i * 7919) % 3) as f64]).collect(),
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// let (r, index) = pd
+    ///     .reorder_groups_indexed("seg", &[1.0, 0.5, 0.5, 1.0], CorrelationKind::Pearson, 5)
+    ///     .unwrap();
+    /// for i in 0..n {
+    ///     for g in 0..2 {
+    ///         assert_eq!(r.row(i).unwrap()[g], pd.row(index[g][i]).unwrap()[g]);
+    ///     }
+    /// }
+    /// ```
+    pub fn reorder_groups_indexed(
+        &self,
+        dim: &str,
+        correlation: &[f64],
+        kind: CorrelationKind,
+        seed: u64,
+    ) -> Result<(Self, Vec<Vec<usize>>)> {
+        let correlation = kind.normal_scores(correlation);
         let (groups, group_of) = self.group_index(dim)?;
-        let ranks = target_ranks(self.n_sims(), groups.len(), correlation, seed)?;
+        let ranks = target_ranks(self.n_sims(), groups.len(), &correlation, seed)?;
         self.reorder_to_ranks(
             &group_of,
             &ranks,
@@ -267,6 +310,18 @@ impl PredictiveDistribution {
         copula: &dyn Copula,
         seed: u64,
     ) -> Result<Self> {
+        Ok(self.reorder_groups_by_copula_indexed(dim, copula, seed)?.0)
+    }
+
+    /// [`reorder_groups_by_copula`](Self::reorder_groups_by_copula), and
+    /// where each simulation came from, as
+    /// [`reorder_groups_indexed`](Self::reorder_groups_indexed) gives it.
+    pub fn reorder_groups_by_copula_indexed(
+        &self,
+        dim: &str,
+        copula: &dyn Copula,
+        seed: u64,
+    ) -> Result<(Self, Vec<Vec<usize>>)> {
         let (groups, group_of) = self.group_index(dim)?;
         let (n, g) = (self.n_sims(), groups.len());
         if copula.dim() != g {
@@ -299,13 +354,14 @@ impl PredictiveDistribution {
     }
 
     /// Simulation `i` of the result takes, for group `g`, the row of rank
-    /// `ranks[g][i]` (0-based, ascending) among the group's totals.
+    /// `ranks[g][i]` (0-based, ascending) among the group's totals; also
+    /// returns that row's index, `index[g][i]`.
     fn reorder_to_ranks(
         &self,
         group_of: &[usize],
         ranks: &[Vec<usize>],
         note: String,
-    ) -> Result<Self> {
+    ) -> Result<(Self, Vec<Vec<usize>>)> {
         let (n, m) = (self.n_sims(), self.n_components());
         let totals = self.group_totals(ranks.len(), group_of);
         // Each group's rows sorted by the group's total.
@@ -317,20 +373,23 @@ impl PredictiveDistribution {
                 idx
             })
             .collect();
+        let index: Vec<Vec<usize>> = (0..ranks.len())
+            .map(|g| (0..n).map(|i| order[g][ranks[g][i]]).collect())
+            .collect();
         let mut draws = vec![0.0; n * m];
         for i in 0..n {
             for (j, &gi) in group_of.iter().enumerate() {
-                let source = order[gi][ranks[gi][i]];
-                draws[i * m + j] = self.row(source).expect("in range")[j];
+                draws[i * m + j] = self.row(index[gi][i]).expect("in range")[j];
             }
         }
         let provenance = self.provenance().clone().param("reorder_groups", note);
-        Self::from_draws(
+        let result = Self::from_draws(
             self.dims().to_vec(),
             self.components().to_vec(),
             draws,
             provenance,
-        )
+        )?;
+        Ok((result, index))
     }
 
     /// [`reorder_groups`](Self::reorder_groups) with a correlation of the
@@ -363,7 +422,7 @@ impl PredictiveDistribution {
         kind: CorrelationKind,
         seed: u64,
     ) -> Result<Self> {
-        self.reorder_groups(dim, &kind.normal_scores(correlation), seed)
+        Ok(self.reorder_groups_indexed(dim, correlation, kind, seed)?.0)
     }
 
     /// The groups of dimension `dim`, in order of first appearance: the

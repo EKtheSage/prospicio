@@ -334,6 +334,8 @@ EventSet$labels <- function(sim) .Call(wrap__EventSet__labels, self, sim)
 
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
+EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
+
 EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
 
 EventSet$grouped <- function(window_hours) .Call(wrap__EventSet__grouped, self, window_hours)

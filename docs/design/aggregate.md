@@ -170,6 +170,16 @@ an `EventSet` keeps whatever dependence its events carry (#491).
   set's labels (this set's dimensions, then the other's new ones, `""` for
   a missing value); `grouped` drops them, as it drops sums insured, since
   an occurrence may span labels; a term's years (`apply_term`) ignore them.
+- **A reorder hands back its permutation** (#483, first part). A class's
+  annual total reordered with others by `reorder_groups` or
+  `reorder_groups_by_copula` must keep its events; the `_indexed` variants
+  return, per group, the input simulation each result simulation came
+  from, and `EventSet::permute(index)` takes the class's years in that
+  order (losses, sums insured, times and labels together). The caller
+  owns the alignment, as a reference model's simulation number does
+  between its modules; no matching of values, which ties defeat. The
+  index belongs to the group, so reorder on the class total (attritional
+  plus large) and permute the large events with that group's index.
 - **Quota share and stop-loss are layers.** A quota share with cession
   `c` is unlimited cover from 0 with `share = c`; a stop-loss `l` xs `r`
   is unlimited cover from 0 with `AAD = r` and `AAL = l`. One formula

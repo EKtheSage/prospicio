@@ -871,6 +871,20 @@ fn join_rust(
     Ok(PredictiveDistribution { inner })
 }
 
+/// A reorder's result and, by group in order of first appearance, the
+/// 1-based input simulation of each result's simulation, concatenated.
+fn reordered((inner, index): (PdInner, Vec<Vec<usize>>)) -> Result<List> {
+    let index: Vec<f64> = index.iter().flatten().map(|&i| (i + 1) as f64).collect();
+    List::from_names_and_values(
+        ["result", "index"],
+        [
+            Robj::from(PredictiveDistribution { inner }),
+            Robj::from(index),
+        ],
+    )
+    .map_err(|e| Error::Other(e.to_string()))
+}
+
 /// Iman-Conover on the totals of the groups of `dim`, moving whole rows.
 #[extendr]
 fn reorder_groups_rust(
@@ -879,7 +893,7 @@ fn reorder_groups_rust(
     correlation: &[f64],
     seed: f64,
     kind: &str,
-) -> Result<PredictiveDistribution> {
+) -> Result<List> {
     use prospicio_prob::portfolio::CorrelationKind;
     let kind = match kind {
         "pearson" => CorrelationKind::Pearson,
@@ -892,31 +906,26 @@ fn reorder_groups_rust(
     };
     let pd = <&PredictiveDistribution>::try_from(&pd)
         .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
-    let inner = pd
-        .inner
-        .reorder_groups_with(dim, correlation, kind, whole(seed, "seed")?)
-        .map_err(to_r)?;
-    Ok(PredictiveDistribution { inner })
+    reordered(
+        pd.inner
+            .reorder_groups_indexed(dim, correlation, kind, whole(seed, "seed")?)
+            .map_err(to_r)?,
+    )
 }
 
 /// The groups of `dim` reordered to the ranks of a copula's draws, moving
 /// whole rows.
 #[extendr]
-fn reorder_groups_by_copula_rust(
-    pd: Robj,
-    dim: &str,
-    copula: Robj,
-    seed: f64,
-) -> Result<PredictiveDistribution> {
+fn reorder_groups_by_copula_rust(pd: Robj, dim: &str, copula: Robj, seed: f64) -> Result<List> {
     let pd = <&PredictiveDistribution>::try_from(&pd)
         .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
     let copula = <&crate::risk::RiskCopula>::try_from(&copula)
         .map_err(|_| Error::Other("copula must be a copula".into()))?;
-    let inner = pd
-        .inner
-        .reorder_groups_by_copula(dim, copula.inner.as_copula(), whole(seed, "seed")?)
-        .map_err(to_r)?;
-    Ok(PredictiveDistribution { inner })
+    reordered(
+        pd.inner
+            .reorder_groups_by_copula_indexed(dim, copula.inner.as_copula(), whole(seed, "seed")?)
+            .map_err(to_r)?,
+    )
 }
 
 /// The groups' correlation matrix (row-major) from a long table of pairs.

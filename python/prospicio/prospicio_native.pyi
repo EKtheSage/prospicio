@@ -9690,6 +9690,36 @@ class EventSet:
         """
         Number of simulated years.
         """
+    def permute(self, /, index: Sequence[int]) -> EventSet:
+        """
+        The years in another order: year ``i`` of the result is year
+        ``index[i]`` of this set, with its losses, sums insured, times and
+        labels. Pass the index ``PredictiveDistribution.reorder_groups``
+        returns for a class (``return_index=True``) to keep the class's
+        events with its reordered totals; any index into the years works,
+        so a resample with repeats does too.
+        
+        Parameters
+        ----------
+        index : list of int
+            0-based years of this set.
+        
+        Returns
+        -------
+        EventSet
+        
+        Raises
+        ------
+        ValueError
+            If the index is empty or names a year past the last.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[], [50.0], [5.0, 60.0]])
+        >>> [e.permute([2, 0, 1]).events(i) for i in range(3)]
+        [[5.0, 60.0], [], [50.0]]
+        """
     @property
     def seed(self, /) -> int:
         """
@@ -20915,7 +20945,7 @@ class PredictiveDistribution:
         ValueError
             If ``p`` is outside ``[0, 1]``.
         """
-    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int, kind: str = "pearson") -> PredictiveDistribution:
+    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int, kind: str = "pearson", return_index: bool = False) -> Any:
         """
         Sets the dependence between the groups of dimension ``dim`` by
         Iman–Conover on the groups' totals, moving each group's simulations
@@ -20936,10 +20966,18 @@ class PredictiveDistribution:
             Spearman's rho comes out near ``(6/π) asin(r/2)``) or
             ``"spearman"`` (a Spearman target, converted to ``2 sin(π ρ /
             6)`` first).
+        return_index : bool
+            Also return where each simulation came from (see below).
         
         Returns
         -------
-        PredictiveDistribution
+        PredictiveDistribution, or (PredictiveDistribution, dict)
+            With ``return_index``, also a dict from each group to the list
+            of input simulations its rows came from: simulation ``i`` of the
+            result holds the group's row of input simulation
+            ``index[group][i]``. ``EventSet.permute(index[group])`` keeps a
+            class's events with its reordered totals, with no matching of
+            values (which tied draws defeat).
         
         Raises
         ------
@@ -20957,8 +20995,12 @@ class PredictiveDistribution:
         >>> groups, rho = r.group_spearman("seg")
         >>> groups, abs(rho[0][1] - 0.6) < 0.02
         (['a', 'b'], True)
+        >>> r, index = pd.reorder_groups("seg", [[1, 0.6], [0.6, 1]], 5, return_index=True)
+        >>> before, after = pd.draw_matrix(), r.draw_matrix()
+        >>> all(after[i][0] == before[index["a"][i]][0] for i in range(n))
+        True
         """
-    def reorder_groups_by_copula(self, /, dim: str, copula: Any, seed: int) -> PredictiveDistribution:
+    def reorder_groups_by_copula(self, /, dim: str, copula: Any, seed: int, return_index: bool = False) -> Any:
         """
         Sets the dependence between the groups of dimension ``dim`` by a
         copula: ``n_sims`` draws of uniforms from ``copula`` (draw ``i`` on
@@ -20976,10 +21018,13 @@ class PredictiveDistribution:
             One dimension per group, in order of first appearance
             (``groups(dim)``).
         seed : int
+        return_index : bool
+            Also return where each simulation came from, as
+            ``reorder_groups`` does.
         
         Returns
         -------
-        PredictiveDistribution
+        PredictiveDistribution, or (PredictiveDistribution, dict)
         
         Raises
         ------

@@ -750,8 +750,15 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' @param kind `"pearson"` (the default: the normal scores' correlation, so
 #'   Spearman's rho comes out near `(6 / pi) asin(r / 2)`) or `"spearman"`
 #'   (a Spearman target, converted to `2 sin(pi rho / 6)` first).
+#' @param index `TRUE` to return where each simulation came from too.
 #' @returns A [predictive_distribution]; `group_spearman()` a matrix with the
-#'   groups as dimnames.
+#'   groups as dimnames. With `index = TRUE`, `reorder_groups()` and
+#'   `reorder_groups_by_copula()` return a list of `result`, the
+#'   distribution, and `index`, a named list with one integer vector per
+#'   group: simulation `i` of the result holds the group's row of input
+#'   simulation `index[[group]][i]`. [permute_events()] with that vector
+#'   keeps a class's events with its reordered totals, with no matching of
+#'   values (which tied draws defeat).
 #' @name portfolio
 #' @examples
 #' a <- predictive_distribution(cbind(c(10, 12), c(20, 25)), data.frame(origin = c(2023, 2024)))
@@ -765,6 +772,8 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' group_spearman(reorder_groups(pd, "seg", rho, seed = 5, kind = "spearman"), "seg")
 #' # Clayton with theta = 2: Spearman's rho near 0.68, more joint low totals.
 #' group_spearman(reorder_groups_by_copula(pd, "seg", archimedean_copula("clayton", 2), 5), "seg")
+#' r <- reorder_groups(pd, "seg", rho, seed = 5, index = TRUE)
+#' all(draw_matrix(r$result)[, 1] == draw_matrix(pd)[r$index$a, 1])
 NULL
 
 #' One part of a predictive distribution
@@ -819,7 +828,7 @@ join_predictive <- function(parts, dim, same_simulations = FALSE) {
 
 #' @rdname portfolio
 #' @export
-reorder_groups <- function(x, dim, correlation, seed, kind = "pearson") {
+reorder_groups <- function(x, dim, correlation, seed, kind = "pearson", index = FALSE) {
   if (is.data.frame(correlation)) {
     if (ncol(correlation) != 3) stop("a long correlation table has three columns", call. = FALSE)
     flat <- rust_result(correlation_from_pairs_rust(
@@ -828,17 +837,27 @@ reorder_groups <- function(x, dim, correlation, seed, kind = "pearson") {
   } else {
     flat <- as.double(t(as.matrix(correlation)))
   }
-  predictive_distribution(ptr = rust_result(
+  reordered(x, dim, rust_result(
     reorder_groups_rust(x@ptr, dim, flat, as.double(seed), as.character(kind))
-  ))
+  ), index)
 }
 
 #' @rdname portfolio
 #' @export
-reorder_groups_by_copula <- function(x, dim, copula, seed) {
-  predictive_distribution(ptr = rust_result(
+reorder_groups_by_copula <- function(x, dim, copula, seed, index = FALSE) {
+  reordered(x, dim, rust_result(
     reorder_groups_by_copula_rust(x@ptr, dim, copula@ptr, as.double(seed))
-  ))
+  ), index)
+}
+
+# A reorder's distribution, and with `index` its source simulations by group.
+reordered <- function(x, dim, out, index) {
+  result <- predictive_distribution(ptr = out$result)
+  if (!isTRUE(index)) return(result)
+  groups <- as.character(unique(x@keys[[dim]]))
+  by_group <- split(as.integer(out$index), rep(seq_along(groups), each = length(out$index) / length(groups)))
+  names(by_group) <- groups
+  list(result = result, index = by_group)
 }
 
 #' @rdname portfolio

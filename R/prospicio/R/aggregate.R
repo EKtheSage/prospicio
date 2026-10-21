@@ -1029,6 +1029,25 @@ merge_event_sets <- function(x, y) {
   event_set(ptr = rust_result(x@ptr$merge(y@ptr)))
 }
 
+#' Event set years in another order
+#'
+#' Year `i` of the result is year `index[i]` of `x`, with its losses, sums
+#' insured, times and labels. Pass a group's `index` from
+#' [reorder_groups()] or [reorder_groups_by_copula()] (`index = TRUE`) to
+#' keep a class's events with its reordered totals; any index into the years
+#' works, so a resample with repeats does too.
+#'
+#' @param x An [event_set].
+#' @param index Years of `x`, 1-based.
+#' @returns An [event_set].
+#' @export
+#' @examples
+#' e <- event_set_from_long(c(2, 3, 3), c(50, 5, 60), 3)
+#' events(permute_events(e, c(3, 1, 2)), 1)
+permute_events <- function(x, index) {
+  event_set(ptr = rust_result(x@ptr$permute(as.double(index))))
+}
+
 #' Hours clause
 #'
 #' Each year's losses grouped into occurrences: losses within `window_hours`
