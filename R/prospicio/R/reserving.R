@@ -1423,6 +1423,9 @@ benktander <- function(triangle, column, exposure, apriori = 1, n_iters = 1, ave
 #' detrended apriori (chainladder-python's `detrended_apriori_`), and the
 #' Bornhuetter-Ferguson fit itself as `expected_loss`; plus per origin
 #' `trended_apriori` (chainladder-python's `apriori_`).
+#' `trended_apriori` is at the valuation date's price level, so a treaty year
+#' that incepts later needs more trend beyond it (one more year for the next
+#' year).
 #' `as.data.frame()` adds a `trended_apriori` column.
 #'
 #' Errors: as [bornhuetter_ferguson()], or a `trend` that is not finite and

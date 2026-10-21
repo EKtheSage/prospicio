@@ -2736,6 +2736,42 @@ it:
    the same helpers as the specs (`bayes_odp_settings`,
    `meyers_settings`), with no change in their behaviour.
 
+### 22. `Synchronized` stays an error for the Bayesian models (issue #393)
+
+Status: **Decided** (2026-10-21, by the user), branch
+`claude/reserving-214-393`. It keeps decisions 5 and 11 and adds the
+reasons and the message.
+
+`SegmentDependence::Synchronized` is an `Error::Bayes` for `BayesOdp`,
+`Meyers` and `Compartmental` in `fit_segments` and `one_year_segments`,
+checked before any sampling. `BayesBf` fits one segment and has no
+dependence setting; if it gets segments, the same rule applies. Of the
+three Bayesian analogues the issue weighed, none is built:
+
+1. **Pairing draw `i` of each segment** carries no dependence. Every
+   segment has its own chains on its own seed, so draw `i` of one is
+   unrelated to draw `i` of another, and pairing them by index gives
+   independence under another name.
+2. **Sharing the predictive step's variates cell by cell** (synchronized
+   process noise) couples the process error only, not the parameter error,
+   which is most of a Bayesian reserve's spread. It would also only line up
+   cells that share an origin and an age, and Meyers' and the compartmental
+   models draw paths, not cells. It looks like a dependence and understates
+   it.
+3. **A joint posterior with shared parameters** (Zhang and Dukic 2013;
+   Meyers 2019, chapter 8) is a different model, as decision 11 says, not
+   a setting. It remains a later model; nothing in this decision rules it
+   out.
+
+The bootstrap's `Synchronized` resamples the residuals of the same
+positions in every segment, and a posterior has no residuals to resample.
+`RankCorrelation` (Iman-Conover on the segments' totals) is the supported
+dependence. The message every model returns, from one function
+(`bayes::synchronized_error`), starts with "Synchronized dependence", says
+a posterior has no residuals to resample and points to `RankCorrelation`
+(or `Independent`); a unit test pins its words. No parity test with the
+bootstrap's `Synchronized` is needed, since nothing is built.
+
 ## Open decisions for the user
 
 Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a),

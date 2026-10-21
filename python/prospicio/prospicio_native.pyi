@@ -4088,8 +4088,10 @@ class CapeCodFit:
     @property
     def trended_apriori(self, /) -> list[float]:
         """
-        Expected loss ratio per origin at the valuation's cost level, before
-        detrending.
+        Expected loss ratio per origin at the valuation date's price level,
+        before detrending. For a treaty year that incepts later, trend it
+        one more year (or the years from the valuation date to the treaty
+        year's average date) beyond this value.
         """
     @property
     def ultimate(self, /) -> list[float]:
@@ -14917,6 +14919,24 @@ class MackFit:
         Age-to-ultimate factors, including the tail.
         """
     @property
+    def cdr(self, /) -> ClaimsDevelopmentResult:
+        """
+        Merz and Wüthrich's one-year view, as a property: the same
+        ``ClaimsDevelopmentResult`` that ``claims_development_result()``
+        returns (that method stays as an alias), named as ``OneYearFit.cdr``
+        names the claims development result. This one holds the analytic
+        standard errors; ``OneYearFit.cdr`` is the simulated distribution.
+        
+        Raises
+        ------
+        ValueError
+            As ``claims_development_result()``.
+        
+        Returns
+        -------
+        ClaimsDevelopmentResult
+        """
+    @property
     def chain_ladder(self, /) -> ChainLadderFit:
         """
         The underlying chain-ladder projection.
@@ -14927,6 +14947,8 @@ class MackFit:
         claims development result of each origin and in total, in the next
         calendar year and in every later one, as R ChainLadder's
         ``CDR(MackChainLadder(x), dev = "all")``.
+        
+        The method form of the ``cdr`` property, kept as its alias.
         
         With a selected pattern (``Mack(ldf=...)``), each factor used varies
         with ``1 - w`` times the estimate's parameter error, so a fully

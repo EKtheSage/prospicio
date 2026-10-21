@@ -570,11 +570,7 @@ impl BayesOdp {
     /// sampling.
     fn check_dependence(&self, triangle: &Triangle) -> Result<()> {
         if self.dependence == SegmentDependence::Synchronized {
-            return Err(Error::Bayes(
-                "Synchronized dependence draws the residuals of the same positions in every \
-                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
-                    .into(),
-            ));
+            return Err(super::synchronized_error());
         }
         self.dependence.validate(triangle.index().len())
     }
