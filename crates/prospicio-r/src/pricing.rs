@@ -20,6 +20,7 @@ use prospicio_pricing::natural::{
 };
 use prospicio_pricing::payout::{self, PaymentPattern};
 use prospicio_pricing::quote::{Loads, Quote};
+use prospicio_pricing::returns::{self, IrrOptions, TieredFee, TimeUnit};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
 
@@ -1364,6 +1365,85 @@ fn pricing_price_over_payout(
     ))
 }
 
+fn time_unit(unit: &str) -> Result<TimeUnit> {
+    match unit {
+        "years" => Ok(TimeUnit::Years),
+        "months" => Ok(TimeUnit::Months),
+        "days" => Ok(TimeUnit::Days),
+        other => Err(Error::Other(format!(
+            "unknown unit {other:?}; use \"years\", \"months\" or \"days\""
+        ))),
+    }
+}
+
+/// The net present value of each row of row-major flows, one column a time.
+#[extendr]
+fn pricing_npv(flows: &[f64], times: &[f64], rate: f64, unit: &str) -> Result<Vec<f64>> {
+    let times = time_unit(unit)?.years(times);
+    returns::npv_rows(flows, &times, rate).map_err(to_r)
+}
+
+/// The internal rate of return of each row of row-major flows.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_irr(
+    flows: &[f64],
+    times: &[f64],
+    unit: &str,
+    lower: f64,
+    upper: f64,
+    points: i32,
+    bisections: i32,
+    newton_steps: i32,
+) -> Result<List> {
+    let count = |name: &str, n: i32| {
+        usize::try_from(n).map_err(|_| Error::Other(format!("{name} must be non-negative")))
+    };
+    let times = time_unit(unit)?.years(times);
+    let options = IrrOptions {
+        lower,
+        upper,
+        points: count("points", points)?,
+        bisections: count("bisections", bisections)?,
+        newton_steps: count("newton_steps", newton_steps)?,
+    };
+    let r = returns::irr_rows(flows, &times, &options).map_err(to_r)?;
+    Ok(list!(
+        rate = r.iter().map(|x| x.rate).collect::<Vec<_>>(),
+        found = r.iter().map(|x| x.found).collect::<Vec<_>>(),
+        npv = r.iter().map(|x| x.npv).collect::<Vec<_>>(),
+        sign_changes = r.iter().map(|x| x.sign_changes as i32).collect::<Vec<_>>()
+    ))
+}
+
+/// The multiple on invested capital, element by element.
+#[extendr]
+fn pricing_moic(released: &[f64], funded: &[f64], opening: &[f64]) -> Result<Vec<f64>> {
+    (0..released.len())
+        .map(|k| returns::moic(released[k], funded[k], opening[k]).map_err(to_r))
+        .collect()
+}
+
+/// The leverage of written premium on capital, element by element.
+#[extendr]
+fn pricing_leverage(
+    rate: f64,
+    premium: &[f64],
+    funded: &[f64],
+    opening: &[f64],
+) -> Result<Vec<f64>> {
+    (0..premium.len())
+        .map(|k| returns::leverage(rate, premium[k], funded[k], opening[k]).map_err(to_r))
+        .collect()
+}
+
+/// A fee tiered on the margin.
+#[extendr]
+fn pricing_tiered_fee(margins: &[f64], breakpoints: &[f64], slopes: &[f64]) -> Result<Vec<f64>> {
+    let fee = TieredFee::new(breakpoints.to_vec(), slopes.to_vec()).map_err(to_r)?;
+    Ok(margins.iter().map(|&m| fee.fee(m)).collect())
+}
+
 /// A development pattern estimated from claim valuations:
 /// `list(ages, factors)`.
 #[extendr]
@@ -1569,6 +1649,11 @@ extendr_module! {
     fn pricing_payment_pattern;
     fn pricing_pattern_values;
     fn pricing_price_over_payout;
+    fn pricing_npv;
+    fn pricing_irr;
+    fn pricing_moic;
+    fn pricing_leverage;
+    fn pricing_tiered_fee;
     fn pricing_pattern_at;
     fn pricing_count_development;
     fn pricing_quote;

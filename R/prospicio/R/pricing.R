@@ -1689,3 +1689,96 @@ price_over_payout <- function(price, pattern, rate = 0, cost_of_capital = NULL) 
     as.double(rate), if (is.null(cost_of_capital)) NaN else as.double(cost_of_capital)
   ))
 }
+
+# One simulation a row of a matrix (or one row for a vector), row-major.
+cash_flow_rows <- function(flows, times) {
+  if (is.null(dim(flows))) flows <- matrix(flows, nrow = 1)
+  if (ncol(flows) != length(times)) {
+    stop(sprintf("flows have %d columns for %d times", ncol(flows), length(times)), call. = FALSE)
+  }
+  as.double(t(flows))
+}
+
+#' Return metrics on simulated cash flows
+#'
+#' `npv()` discounts each simulation's flows at an annual rate,
+#' `sum(x * (1 + rate)^-t)`. `irr()` finds the annual rate at which they are
+#' worth 0: their value on a grid of `points` rates from `lower` to `upper`,
+#' the sign change (or exact zero) whose bracket's midpoint is nearest 0,
+#' `bisections` halvings of that bracket and `newton_steps` Newton steps
+#' clipped to it. A simulation with no root in the range (flows of one
+#' sign, say) has `found` `FALSE` and `NaN`; one with several has
+#' `sign_changes` above 1. The defaults are a reference simulation model's.
+#'
+#' `moic()` is the multiple on invested capital,
+#' `1 + released / (funded + opening)`, and `leverage()` the leverage of
+#' written premium on capital, `rate * premium / (funded + opening)`, the
+#' rate the caller's. `tiered_fee()` charges slope `slopes[i]` on the part of
+#' each margin between `breakpoints[i]` and `breakpoints[i + 1]`, the last
+#' tier unbounded and nothing below the first breakpoint.
+#'
+#' @param flows One simulation's flows a row of a matrix, one column a time,
+#'   or a vector for one simulation.
+#' @param times The time of each column, in `unit` from the start.
+#' @param rate Annual effective rate, above -1; for `leverage()`, the rate
+#'   applied to premium.
+#' @param unit `"years"`, `"months"` (a twelfth of a year) or `"days"`
+#'   (actual/365).
+#' @param lower,upper The range of rates searched.
+#' @param points,bisections,newton_steps The grid's size and the refinement
+#'   steps.
+#' @returns `npv()`, `moic()`, `leverage()` and `tiered_fee()` a numeric
+#'   vector; `irr()` a data frame with `rate`, `found`, `npv` (at the rate)
+#'   and `sign_changes`, one row a simulation.
+#' @export
+#' @examples
+#' flows <- rbind(c(-100, 0, 121), c(-100, 230, -132), c(10, 5, 1))
+#' irr(flows, c(0, 1, 2))
+#' npv(flows, c(0, 1, 2), 0.1)
+#' irr(c(-100, 0, 0, 103), c(0, 31, 59, 90), unit = "days")$rate
+#' moic(30, 40, 60)
+#' leverage(0.5, 300, 50, 100)
+#' tiered_fee(c(3, 10, 25), c(5, 15), c(0.1, 0.2))
+npv <- function(flows, times, rate, unit = "years") {
+  rust_result(pricing_npv(cash_flow_rows(flows, times), as.double(times), as.double(rate),
+                          unit))
+}
+
+#' @rdname npv
+#' @export
+irr <- function(flows, times, unit = "years", lower = -0.95, upper = 1, points = 400L,
+                bisections = 8L, newton_steps = 3L) {
+  r <- rust_result(pricing_irr(cash_flow_rows(flows, times), as.double(times), unit,
+                               as.double(lower), as.double(upper), as.integer(points),
+                               as.integer(bisections), as.integer(newton_steps)))
+  data.frame(rate = r$rate, found = r$found, npv = r$npv, sign_changes = r$sign_changes)
+}
+
+#' @rdname npv
+#' @param released Equity released over the term.
+#' @param funded Capital funded during the term.
+#' @param opening Capital held at the start.
+#' @export
+moic <- function(released, funded, opening) {
+  n <- max(length(released), length(funded), length(opening))
+  rust_result(pricing_moic(rep_len(as.double(released), n), rep_len(as.double(funded), n),
+                           rep_len(as.double(opening), n)))
+}
+
+#' @rdname npv
+#' @param premium Written premium.
+#' @export
+leverage <- function(rate, premium, funded, opening) {
+  n <- max(length(premium), length(funded), length(opening))
+  rust_result(pricing_leverage(as.double(rate), rep_len(as.double(premium), n),
+                               rep_len(as.double(funded), n), rep_len(as.double(opening), n)))
+}
+
+#' @rdname npv
+#' @param margins The margins the fee is charged on.
+#' @param breakpoints Strictly increasing; the first is the floor.
+#' @param slopes One a breakpoint, the slope of the tier that starts there.
+#' @export
+tiered_fee <- function(margins, breakpoints, slopes) {
+  rust_result(pricing_tiered_fee(as.double(margins), as.double(breakpoints), as.double(slopes)))
+}

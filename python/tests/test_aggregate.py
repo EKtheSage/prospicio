@@ -159,6 +159,68 @@ def test_portfolio_join_reorder_and_aggregate_cover():
         PredictiveDistribution.join([("a", reserve), ("a", premium)], "risk")
 
 
+def test_reorder_groups_to_a_spearman_target_from_a_long_table():
+    from prospicio.distributions import PredictiveDistribution
+
+    n = 20000
+    mult = [1, 7919, 104729]
+    pd = PredictiveDistribution(
+        ["class"], [("A",), ("B",), ("C",)],
+        [[float((i * m) % n) for m in mult] for i in range(n)])
+    assert pd.groups("class") == ["A", "B", "C"]
+    long = [("B", "A", 0.5), ("A", "C", 0.3), ("C", "B", 0.7)]
+    rho = pd.correlation_from_pairs("class", long)
+    assert rho == [[1.0, 0.5, 0.3], [0.5, 1.0, 0.7], [0.3, 0.7, 1.0]]
+    s = pd.reorder_groups("class", rho, 9, kind="spearman")
+    groups, got = s.group_spearman("class")
+    assert groups == ["A", "B", "C"]
+    assert all(abs(got[i][j] - rho[i][j]) < 0.01 for i in range(3) for j in range(3))
+    # Read as normal scores, the same matrix falls short by (6/pi) asin(r/2).
+    _, short = pd.reorder_groups("class", rho, 9).group_spearman("class")
+    assert short[1][2] < 0.695
+    with pytest.raises(ValueError):
+        pd.correlation_from_pairs("class", long[:2])
+    with pytest.raises(ValueError):
+        pd.reorder_groups("class", rho, 9, kind="kendall")
+
+
+def test_reorder_groups_by_a_copula_keeps_rows_and_takes_its_ranks():
+    from prospicio.distributions import PredictiveDistribution
+    from prospicio.risk import ArchimedeanCopula, GaussianCopula, StudentTCopula
+
+    n = 3000
+    pd = PredictiveDistribution(
+        ["seg", "item"], [("a", 0), ("a", 1), ("b", 0)],
+        [[float((i * 7919) % n), 3.0 * ((i * 7919) % n), float((i * 104729) % n)]
+         for i in range(n)])
+    gumbel = ArchimedeanCopula("gumbel", 2.0, 2)
+    r = pd.reorder_groups_by_copula("seg", gumbel, 9)
+    assert all(row[1] == 3.0 * row[0] for row in r.draw_matrix())
+    assert sorted(r.marginal(("b", 0)).draws) == sorted(pd.marginal(("b", 0)).draws)
+    # The totals' ranks are the ranks of the copula's draws on the same seed.
+    u = gumbel.sample(n, seed=9)
+    rank = lambda v: sorted(range(n), key=lambda i: v[i])
+    totals = r.aggregate(["seg"]).draw_matrix()
+    assert rank([t[1] for t in totals]) == rank([x[1] for x in u])
+    assert abs(r.group_spearman("seg")[1][0][1] - 0.68) < 0.03
+    # Few degrees of freedom: more joint extremes than normal scores.
+    rank_of = lambda d, g: _ranks([t[g] for t in d.aggregate(["seg"]).draw_matrix()])
+    top = lambda d: sum(
+        1 for x, y in zip(rank_of(d, 0), rank_of(d, 1)) if x > 0.99 * n and y > 0.99 * n)
+    t = pd.reorder_groups_by_copula("seg", StudentTCopula([[1, 0.5], [0.5, 1]], 2.0), 3)
+    normal = pd.reorder_groups_by_copula("seg", GaussianCopula([[1, 0.5], [0.5, 1]]), 3)
+    assert top(t) > top(normal)
+    with pytest.raises(ValueError):
+        pd.reorder_groups_by_copula("seg", ArchimedeanCopula("clayton", 1.0, 3), 1)
+
+
+def _ranks(v):
+    out = [0] * len(v)
+    for r, i in enumerate(sorted(range(len(v)), key=lambda i: v[i])):
+        out[i] = r + 1
+    return out
+
+
 def test_surplus_treaty_on_events_with_sums_insured():
     from prospicio.aggregate import EventSet
     from prospicio.reinsurance import Layer, Tower
@@ -237,6 +299,28 @@ def test_reinstatements_pro_rata_as_to_time():
     for bad in ([], [0.0, 0.0], [1.0, -1.0]):
         with pytest.raises(ValueError):
             events.with_seasonal_times(bad)
+
+
+def test_annual_limit_pro_rata_across_events():
+    # 10x5 with one reinstatement on [15, 20, 10]: recoveries 10, 10, 5 and
+    # an annual limit of 20.
+    order = Layer("10x5", 10.0, 5.0, reinstatements=1)
+    pro = Layer("10x5", 10.0, 5.0, reinstatements=1, allocation="pro_rata")
+    assert order.allocation == "event_order" and pro.allocation == "pro_rata"
+    assert order.ceded_by_event([15.0, 20.0, 10.0]) == pytest.approx([10.0, 10.0, 0.0])
+    assert pro.ceded_by_event([15.0, 20.0, 10.0]) == pytest.approx([8.0, 8.0, 4.0])
+    assert pro.ceded([15.0, 20.0, 10.0]) == pytest.approx(order.ceded([15.0, 20.0, 10.0]))
+    # What an inuring 5x5 sees: 5, 10, 10 in event order, 7, 12, 6 pro rata.
+    second = Layer("5x5", 5.0, 5.0)
+    assert Tower.inuring([[order], [second]]).ceded([15.0, 20.0, 10.0]) == pytest.approx([20.0, 10.0])
+    inuring = Tower.inuring([[pro], [second]])
+    assert inuring.ceded([15.0, 20.0, 10.0]) == pytest.approx([20.0, 8.0])
+    assert Tower.from_json(inuring.to_json()).ceded([15.0, 20.0, 10.0]) == pytest.approx([20.0, 8.0])
+    with pytest.raises(ValueError):
+        Layer("10x5", 10.0, 5.0, allocation="by_size")
+    with pytest.raises(ValueError):
+        Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0], pro_rata_time=True,
+              allocation="pro_rata")
 
 
 def test_loss_corridors():
@@ -1079,3 +1163,122 @@ def test_layer_third_moment():
     assert x.layer_third_moment(3.0, 0.0) == pytest.approx(want, rel=1e-10)
     assert x.layer_third_moment(math.inf, 0.0) == pytest.approx(48.0, rel=1e-10)
     assert Pareto(100.0, 2.5).layer_third_moment(math.inf, 0.0) == math.inf
+
+
+def test_tower_results_by_event_label():
+    from prospicio.aggregate import EventSet
+
+    events = EventSet.from_long(
+        [0, 0, 1, 1], [15.0, 20.0, 10.0, 4.0], 2,
+        labels={"peril": ["wind", "quake", "quake", "wind"]},
+    )
+    assert events.has_labels and events.label_dims == ["peril"]
+    assert events.labels(1) == {"peril": ["quake", "wind"]}
+    tower = Tower([Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)])
+    result = tower.apply(events)
+    assert result.dims == ["kind", "layer", "peril"]
+    assert result.marginal(("ceded", "10x5", "wind")).draws == pytest.approx([10.0, 0.0])
+    assert result.marginal(("ceded", "10x5", "quake")).draws == pytest.approx([5.0, 5.0])
+    assert result.marginal(("net", "retained", "quake")).draws == pytest.approx([15.0, 5.0])
+    plain = tower.apply(EventSet.from_years([[15.0, 20.0], [10.0, 4.0]]))
+    back = result.aggregate(["kind", "layer"])
+    for key in [("gross", "ground_up"), ("ceded", "10x5"), ("net", "retained")]:
+        assert back.marginal(key).draws == pytest.approx(plain.marginal(key).draws)
+    # Merged with an unlabelled set, whose losses get "".
+    other = EventSet.from_years([[1.0], [2.0]])
+    merged = events.merge(other)
+    assert merged.label_combinations == [[""], ["quake"], ["wind"]]
+    with pytest.raises(ValueError):
+        events.with_labels({"kind": ["a"] * 4})
+
+
+def test_scale_to_totals_carries_a_capped_total_back():
+    from prospicio.distributions import PredictiveDistribution
+
+    pd = PredictiveDistribution(
+        ["class"], [("motor",), ("home",)], [[6.0, 9.0], [3.0, 1.0], [0.0, 0.0]]
+    )
+    capped = [min(sum(r), 10.0) for r in pd.draw_matrix()]
+    scaled = pd.scale_to_totals(capped)
+    assert scaled.draw_matrix() == [[4.0, 6.0], [3.0, 1.0], [0.0, 0.0]]
+    assert scaled.components() == pd.components()
+    with pytest.raises(ValueError):
+        pd.scale_to_totals([1.0, 1.0, 1.0])
+
+
+def test_apply_annual_on_plain_losses():
+    from prospicio.distributions import PredictiveDistribution
+
+    # A loss-ratio cap of 120% on a premium of 100, with a commission
+    # sliding from 30% at a 50% loss ratio to 10% at 90% (#477).
+    cover = (Layer.stop_loss("cover", 120.0, 0.0)
+             .with_premium_rate(1.0, 100.0)
+             .with_sliding_scale([(0.3, 0.5), (0.1, 0.9)]))
+    losses = [40.0, 70.0, 150.0]
+    res = Tower([cover]).apply_annual(losses)
+    ceded = res.marginal(["ceded", "cover"]).draws
+    assert ceded == [40.0, 70.0, 120.0]
+    cc = res.marginal(["ceding_commission", "cover"]).draws
+    assert cc == pytest.approx([cover.ceding_commission_for(c) for c in ceded], rel=1e-12)
+    assert cc == pytest.approx([30.0, 20.0, 10.0], rel=1e-12)
+    # The same as apply_aggregate on the losses as draws.
+    agg = Tower([cover]).apply_aggregate(PredictiveDistribution(["line"], [("a",)], [[x] for x in losses]))
+    assert agg.marginal(["ceding_commission", "cover"]).draws == pytest.approx(cc, rel=1e-12)
+    with pytest.raises(ValueError):
+        Tower([cover]).apply_annual([1.0, -1.0])
+    with pytest.raises(ValueError):
+        Tower([cover]).apply_annual([])
+
+
+YLT_CSV = (
+    "year,peril,slot,class,value,item\n"
+    "1,wind,5,home,10,a\n"
+    "1,wind,5,auto,4,b\n"
+    "2,quake,1,home,30,c\n"
+    "1,wind,2,home,2,d\n"
+)
+
+
+def test_read_ylt_orders_checks_and_tiles(tmp_path):
+    from prospicio.aggregate import EventSet, read_ylt, ylt_hash
+
+    path = tmp_path / "ylt.csv"
+    path.write_text(YLT_CSV)
+    e = read_ylt(path, labels=["peril", "class"], n_years=3, n_sims=6)
+    assert e.n_sims == 6
+    # Year 1 by slot, the file's order breaking the tie in slot 5.
+    assert e.events(0) == [2.0, 10.0, 4.0]
+    assert e.events(1) == [30.0] and e.events(2) == []
+    assert e.events(3) == e.events(0)
+    assert e.labels(0)["class"] == ["home", "home", "auto"]
+    assert e.input_hash == ylt_hash(path.read_bytes())
+    assert e.totals().provenance()["input_hash"] == e.input_hash
+
+    # One slot hits two classes: unique by peril and class, not by peril.
+    with pytest.raises(ValueError, match="rows 1 and 2"):
+        read_ylt(path, labels=["peril", "class"], unique_by=["peril"])
+    with pytest.raises(ValueError, match="not one of"):
+        read_ylt(path, labels=["peril", "class"], expected={"peril": ["wind"]})
+    with pytest.raises(ValueError, match="whole multiple"):
+        read_ylt(path, labels=["peril", "class"], n_sims=5)
+    with pytest.raises(ValueError, match="no column 'region'"):
+        read_ylt(path, labels=["region"])
+
+    r = read_ylt(path, labels=["peril", "class"], n_sims=7, expand="resample", seed=3)
+    again = EventSet.from_ylt([1, 1, 2, 1], [10.0, 4.0, 30.0, 2.0], slots=[5, 5, 1, 2], labels={"class": ["home", "auto", "home", "home"]}, n_sims=7, expand="resample", seed=3)
+    assert [r.events(i) for i in range(7)] == [again.events(i) for i in range(7)]
+    assert r.seed == 3
+
+
+def test_read_ylt_from_parquet(tmp_path):
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    from prospicio.aggregate import read_ylt
+
+    table = pa.table({"year": [1, 1, 2], "slot": [2, 1, 1], "peril": ["wind", "quake", "wind"], "value": [5.0, 1.0, 7.0]})
+    path = tmp_path / "ylt.parquet"
+    pq.write_table(table, path)
+    e = read_ylt(path, labels=["peril"])
+    assert e.events(0) == [1.0, 5.0] and e.events(1) == [7.0]
+    assert e.labels(0) == {"peril": ["quake", "wind"]}

@@ -4,7 +4,7 @@
 \alias{event_set_from_long}
 \title{Year loss table in long form}
 \usage{
-event_set_from_long(years, losses, n_years, seed = 0)
+event_set_from_long(years, losses, n_years, seed = 0, labels = NULL)
 }
 \arguments{
 \item{years}{The year of each loss, from 1.}
@@ -15,6 +15,10 @@ event_set_from_long(years, losses, n_years, seed = 0)
 loss.}
 
 \item{seed}{Recorded in results' provenance.}
+
+\item{labels}{\code{NULL}, or each row's labels as \code{\link[=with_labels]{with_labels()}} takes them:
+a named list or data frame with a vector per label dimension, a value
+per row (\code{list(peril = ..., class = ...)}).}
 }
 \value{
 An \link{event_set}.
@@ -27,4 +31,7 @@ no row are empty.
 \examples{
 ev <- event_set_from_long(c(3, 1, 3), c(5, 1, 7), 4)
 event_counts(ev)
+ev <- event_set_from_long(c(3, 1, 3), c(5, 1, 7), 4,
+                          labels = list(peril = c("wind", "quake", "wind")))
+event_labels(ev, 1)
 }

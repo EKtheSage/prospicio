@@ -239,6 +239,147 @@ S7::method(allocate, predictive_distribution) <- function(x, distortion, ...) {
   out
 }
 
+#' A results table's statistics
+#'
+#' The statistics a results table reports, in one call and under stated
+#' conventions: `"Mean"`, `"SD"` (population, dividing by `n`), `"CoV"`
+#' (`SD / Mean`; 0 when both are 0, `NaN` when only the mean is), `"Min"`,
+#' `"Max"` and `"Variance"`, then `"Percentile <q>"` for each percentile,
+#' `"TVaR <q>"` for each TVaR level and `"Mean + <k> SD"`, `"Mean - <k> SD"`
+#' for each multiple, with levels in percent as given, so the names are
+#' stable keys to join on.
+#'
+#' @param x A numeric vector of draws, a [sampled] or a
+#'   [predictive_distribution] (one row per component).
+#' @param percentiles Percentiles, in percent, in `[0, 100]`.
+#' @param tvar_levels TVaR levels in percent.
+#' @param sd_multiples Multiples of the standard deviation.
+#' @param quantile `"inverted_cdf"` (the default, [VaR()]'s, R `type = 1`)
+#'   or `"linear"` (`quantile(type = 7)`, numpy's default).
+#' @param tvar `"exact"` (the default, [TVaR()]'s, mass `1/n` per draw) or
+#'   `"linear"` (the mean of the linear quantile function over `[p, 1]`).
+#' @returns For draws or a [sampled], a named numeric vector. For a
+#'   [predictive_distribution], its `keys` data frame with one column per
+#'   statistic.
+#' @export
+#' @examples
+#' st <- statistics(c(1, 2, 3, 4), 50, tvar_levels = 50,
+#'                  quantile = "linear", tvar = "linear")
+#' st[c("Percentile 50", "TVaR 50")]
+statistics <- function(x, percentiles, tvar_levels = c(99, 99.5, 99.6, 99.8, 99.9, 99.99),
+                       sd_multiples = c(1, 2, 3), quantile = "inverted_cdf", tvar = "exact") {
+  one <- function(draws) {
+    st <- rust_result(statistics_rust(
+      as.double(draws), as.double(percentiles), as.double(tvar_levels),
+      as.double(sd_multiples), as.character(quantile), as.character(tvar)
+    ))
+    stats::setNames(st$values, st$names)
+  }
+  if (!S7::S7_inherits(x, predictive_distribution)) return(one(risk_draws(x)))
+  keys <- x@keys
+  rows <- lapply(seq_len(nrow(keys)), function(i) one(marginal(x, as.list(keys[i, , drop = FALSE]))@draws))
+  cbind(keys, as.data.frame(do.call(rbind, rows), check.names = FALSE))
+}
+
+#' Items read at a driver's percentiles
+#'
+#' Each item read at the driver's mean, percentiles and TVaRs: the item's
+#' value on the simulation the driver's statistic selects, as a results table
+#' reports a commission or a margin "at" each percentile of the loss ratio.
+#' With `o` the driver's stable ascending order (`order(driver)`: ties keep
+#' simulation order) and `h = q (n - 1)` for a level `q` in percent over 100,
+#' `"Mean"` is the item on the first `o[i]` whose driver is at or above the
+#' driver's mean, `"Percentile <q>"` the item on `o[i]` with `i` from `h` by
+#' `rule` (0-based), and `"TVaR <q>"` the item's mean over `o[ceiling(h):]`
+#' whatever the rule.
+#'
+#' @param items A [predictive_distribution] (every component is read), or a
+#'   named list or data frame of numeric vectors of equal length.
+#' @param driver The driver's draws; for a [predictive_distribution] also a
+#'   component's key as a named list (as [marginal()] takes it), or `NULL`
+#'   for its total.
+#' @param percentiles Percentiles, in percent, in `[0, 100]`.
+#' @param tvar_levels TVaR levels in percent.
+#' @param rule `"round_half_even"` (the default: halves to the even index, as
+#'   R's `round()` and Python's do), `"floor"` or `"ceil"`.
+#' @returns A data frame: for a [predictive_distribution] its `keys` with one
+#'   column per statistic, otherwise an `item` column and one column per
+#'   statistic.
+#' @export
+#' @examples
+#' ulr <- c(0.6, 0.9, 0.5, 0.7, 0.8)
+#' co_statistics(list(margin = c(0.3, 0, 0.4, 0.2, 0.1)), ulr, 62.5, tvar_levels = 62.5)
+co_statistics <- function(items, driver, percentiles,
+                          tvar_levels = c(99, 99.5, 99.6, 99.8, 99.9, 99.99),
+                          rule = "round_half_even") {
+  pd <- S7::S7_inherits(items, predictive_distribution)
+  if (pd) {
+    m <- draw_matrix(items)
+    if (is.null(driver)) {
+      driver <- rowSums(m)
+    } else if (is.list(driver)) {
+      driver <- marginal(items, driver)@draws
+    }
+    columns <- lapply(seq_len(ncol(m)), function(j) m[, j])
+  } else {
+    columns <- as.list(items)
+    if (is.null(names(columns)) || any(names(columns) == "")) stop("items must be named", call. = FALSE)
+  }
+  st <- rust_result(co_statistics_rust(
+    as.double(driver), as.double(unlist(columns, use.names = FALSE)),
+    as.double(percentiles), as.double(tvar_levels), as.character(rule)
+  ))
+  values <- matrix(st$values, nrow = length(columns), byrow = TRUE,
+                   dimnames = list(NULL, st$names))
+  values <- as.data.frame(values, check.names = FALSE)
+  if (pd) return(cbind(items@keys, values))
+  cbind(data.frame(item = names(columns)), values)
+}
+
+#' Risk ratios of a result
+#'
+#' Risk ratios of a per-simulation result such as a margin, where large is
+#' good, about a threshold `t` and under named conventions: `"Sharpe"` is
+#' `(mean - t) / sd` with the population SD; `"Sortino"` is `(mean - t)` over
+#' the downside risk `sortino` names; `"Omega"` is the ratio `omega` names;
+#' `"TVaR ratio <q>"` is `(mean - t) / TVaR_q(-x)`, the TVaR of the result
+#' read as a loss (STARR), negative when even the worst outcomes are above
+#' zero. A zero denominator gives `Inf` or `-Inf`, or `NaN` when the
+#' numerator is 0 too.
+#'
+#' @param x A numeric vector of draws, a [sampled] or a
+#'   [predictive_distribution] (one row per component).
+#' @param threshold The threshold `t`.
+#' @param sortino `"downside_deviation"` (the default: `sqrt(mean(pmin(x - t,
+#'   0)^2))` over all simulations) or `"below_threshold_sd"` (the population
+#'   SD of the values below `t` only, as a reference pricing model computes
+#'   it; `NaN` when none is).
+#' @param omega `"partial_moments"` (the default: `mean(pmax(x - t, 0)) /
+#'   mean(pmax(t - x, 0))`) or `"count"` (`sum(x > t) / sum(x < t)`; values
+#'   equal to `t` count in neither).
+#' @param tvar_levels TVaR levels in percent.
+#' @param tvar `"exact"` (the default) or `"linear"`, as for [statistics()].
+#' @returns For draws or a [sampled], a named numeric vector. For a
+#'   [predictive_distribution], its `keys` data frame with one column per
+#'   ratio.
+#' @export
+#' @examples
+#' risk_ratios(c(-2, -1, 1, 2, 5), sortino = "below_threshold_sd", omega = "count")
+risk_ratios <- function(x, threshold = 0, sortino = "downside_deviation", omega = "partial_moments",
+                        tvar_levels = 99, tvar = "exact") {
+  one <- function(draws) {
+    st <- rust_result(risk_ratios_rust(
+      as.double(draws), as.double(threshold), as.character(sortino), as.character(omega),
+      as.double(tvar_levels), as.character(tvar)
+    ))
+    stats::setNames(st$values, st$names)
+  }
+  if (!S7::S7_inherits(x, predictive_distribution)) return(one(risk_draws(x)))
+  keys <- x@keys
+  rows <- lapply(seq_len(nrow(keys)), function(i) one(marginal(x, as.list(keys[i, , drop = FALSE]))@draws))
+  cbind(keys, as.data.frame(do.call(rbind, rows), check.names = FALSE))
+}
+
 #' Exponential-utility risk measures
 #'
 #' `entropic_risk()` is `(1 / theta) log E[exp(theta X)]`, the certainty

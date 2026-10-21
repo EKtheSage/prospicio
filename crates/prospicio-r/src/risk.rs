@@ -6,6 +6,7 @@ use prospicio_core::StreamRng;
 use prospicio_prob::capital::{AllocationMethod, LevelAllocation, LevelMeasure};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
+use prospicio_prob::statistics::{QuantileMethod, StatisticsGrid, TvarMethod};
 use prospicio_prob::{
     Archimedean, ArchimedeanCopula, Distortion, Empirical, Family, GaussianCopula, Provenance,
     StudentTCopula,
@@ -266,6 +267,126 @@ pub(crate) fn discrete_of(x: &Robj) -> Result<(Vec<f64>, Vec<f64>)> {
 fn as_predictive(pd: &Robj) -> Result<&PredictiveDistribution> {
     <&PredictiveDistribution>::try_from(pd)
         .map_err(|_| Error::Other("expected a predictive_distribution".into()))
+}
+
+/// A quantile method by name: "inverted_cdf" or "linear".
+pub(crate) fn quantile_method(name: &str) -> Result<QuantileMethod> {
+    match name {
+        "inverted_cdf" => Ok(QuantileMethod::InvertedCdf),
+        "linear" => Ok(QuantileMethod::Linear),
+        _ => Err(Error::Other(format!(
+            "quantile method must be \"inverted_cdf\" or \"linear\", not {name:?}"
+        ))),
+    }
+}
+
+/// A TVaR method by name: "exact" or "linear".
+pub(crate) fn tvar_method(name: &str) -> Result<TvarMethod> {
+    match name {
+        "exact" => Ok(TvarMethod::Exact),
+        "linear" => Ok(TvarMethod::Linear),
+        _ => Err(Error::Other(format!(
+            "TVaR method must be \"exact\" or \"linear\", not {name:?}"
+        ))),
+    }
+}
+
+/// A statistics table of draws: `names` and `values`, levels in percent.
+#[extendr]
+fn statistics_rust(
+    draws: &[f64],
+    percentiles: &[f64],
+    tvar_levels: &[f64],
+    sd_multiples: &[f64],
+    quantile: &str,
+    tvar: &str,
+) -> Result<List> {
+    let grid = StatisticsGrid::new(percentiles.to_vec())
+        .and_then(|g| g.tvar_levels(tvar_levels.to_vec()))
+        .and_then(|g| g.sd_multiples(sd_multiples.to_vec()))
+        .map_err(to_r)?
+        .quantile_method(quantile_method(quantile)?)
+        .tvar_method(tvar_method(tvar)?);
+    let sampled = prospicio_prob::Sampled::new(draws.to_vec()).map_err(to_r)?;
+    let st = grid.of(&sampled);
+    Ok(list!(names = st.names, values = st.values))
+}
+
+/// Items (an `n × k` matrix, column-major) read at the driver's mean,
+/// percentiles and TVaRs: `names` and `values`, item by item.
+#[extendr]
+fn co_statistics_rust(
+    driver: &[f64],
+    items: &[f64],
+    percentiles: &[f64],
+    tvar_levels: &[f64],
+    rule: &str,
+) -> Result<List> {
+    use prospicio_prob::statistics::IndexRule;
+    let rule = match rule {
+        "round_half_even" => IndexRule::RoundHalfEven,
+        "floor" => IndexRule::Floor,
+        "ceil" => IndexRule::Ceil,
+        _ => {
+            return Err(Error::Other(format!(
+                "rule must be \"round_half_even\", \"floor\" or \"ceil\", not {rule:?}"
+            )));
+        }
+    };
+    let n = driver.len();
+    if n == 0 || items.len() % n != 0 {
+        return Err(Error::Other(
+            "items must have one row per simulation of the driver".into(),
+        ));
+    }
+    let grid = StatisticsGrid::new(percentiles.to_vec())
+        .and_then(|g| g.tvar_levels(tvar_levels.to_vec()))
+        .map_err(to_r)?;
+    let columns: Vec<&[f64]> = items.chunks(n).collect();
+    let stats = grid.co_statistics(driver, &columns, rule).map_err(to_r)?;
+    let values: Vec<f64> = stats.iter().flat_map(|st| st.values.clone()).collect();
+    Ok(list!(names = grid.co_names(), values = values))
+}
+
+/// Risk ratios of draws: `names` and `values`.
+#[extendr]
+fn risk_ratios_rust(
+    draws: &[f64],
+    threshold: f64,
+    sortino: &str,
+    omega: &str,
+    tvar_levels: &[f64],
+    tvar: &str,
+) -> Result<List> {
+    use prospicio_prob::statistics::{Omega, RiskRatios, Sortino};
+    let sortino = match sortino {
+        "downside_deviation" => Sortino::DownsideDeviation,
+        "below_threshold_sd" => Sortino::BelowThresholdSd,
+        _ => {
+            return Err(Error::Other(format!(
+                "sortino must be \"downside_deviation\" or \"below_threshold_sd\", not {sortino:?}"
+            )));
+        }
+    };
+    let omega = match omega {
+        "partial_moments" => Omega::PartialMoments,
+        "count" => Omega::Count,
+        _ => {
+            return Err(Error::Other(format!(
+                "omega must be \"partial_moments\" or \"count\", not {omega:?}"
+            )));
+        }
+    };
+    let ratios = RiskRatios::new()
+        .threshold(threshold)
+        .and_then(|r| r.tvar_levels(tvar_levels.to_vec()))
+        .map_err(to_r)?
+        .sortino(sortino)
+        .omega(omega)
+        .tvar_method(tvar_method(tvar)?);
+    let sampled = prospicio_prob::Sampled::new(draws.to_vec()).map_err(to_r)?;
+    let st = ratios.of(&sampled);
+    Ok(list!(names = st.names, values = st.values))
 }
 
 /// Entropic risk measure of draws at risk aversion `theta`.
@@ -820,6 +941,9 @@ fn hill_rust(draws: &[f64], ks: &[f64]) -> Result<Vec<f64>> {
 
 extendr_module! {
     mod risk;
+    fn statistics_rust;
+    fn co_statistics_rust;
+    fn risk_ratios_rust;
     fn entropic_rust;
     fn esscher_rust;
     fn mes_rust;

@@ -419,8 +419,17 @@ impl EventSet {
         Ok(Self { inner })
     }
 
-    /// Years in long form: `years` from 1 to `n_years`, one per loss.
-    fn from_long(years: &[f64], losses: &[f64], n_years: f64, seed: f64) -> Result<Self> {
+    /// Years in long form: `years` from 1 to `n_years`, one per loss;
+    /// labels `label_values[[d]]` in dimension `label_dims[d]`, one per row
+    /// (none when `label_dims` is empty).
+    fn from_long(
+        years: &[f64],
+        losses: &[f64],
+        n_years: f64,
+        seed: f64,
+        label_dims: Vec<String>,
+        label_values: List,
+    ) -> Result<Self> {
         let years = years
             .iter()
             .map(|&y| {
@@ -431,14 +440,153 @@ impl EventSet {
                 Ok(y as usize - 1)
             })
             .collect::<Result<Vec<_>>>()?;
-        let inner = EventSetInner::from_long(
-            &years,
-            losses,
-            whole(n_years, "n_years")? as usize,
-            whole(seed, "seed")?,
-        )
+        let (n_years, seed) = (whole(n_years, "n_years")? as usize, whole(seed, "seed")?);
+        let inner = if label_dims.is_empty() {
+            EventSetInner::from_long(&years, losses, n_years, seed)
+        } else {
+            let labels = labels_from(label_dims, label_values)?;
+            EventSetInner::from_long_labeled(&years, losses, labels, n_years, seed)
+        }
         .map_err(to_r)?;
         Ok(Self { inner })
+    }
+
+    /// A year loss table's columns, checked and expanded: `years` from 1,
+    /// `slots` NULL or one per row, labels as in `from_long`, `n_years` and
+    /// `n_sims` NULL for their defaults, `expand` "tile" or "resample",
+    /// `unique_by` NULL for every label dimension, the values allowed in
+    /// `expected_dims[d]` in `expected_values[[d]]`, `source_hash` NULL or a
+    /// string.
+    #[allow(clippy::too_many_arguments)]
+    fn from_ylt(
+        years: &[f64],
+        losses: &[f64],
+        slots: Robj,
+        label_dims: Vec<String>,
+        label_values: List,
+        n_years: Nullable<f64>,
+        n_sims: Nullable<f64>,
+        expand: &str,
+        seed: f64,
+        unique_by: Robj,
+        expected_dims: Vec<String>,
+        expected_values: List,
+        source_hash: Robj,
+    ) -> Result<Self> {
+        use prospicio_aggregate::ylt::{Expansion, YearLossTable};
+        let seed = whole(seed, "seed")?;
+        let expansion = match expand {
+            "tile" => Expansion::Tile,
+            "resample" => Expansion::Resample { seed },
+            other => {
+                return Err(Error::Other(format!(
+                    "expand must be \"tile\" or \"resample\", not {other:?}"
+                )));
+            }
+        };
+        let years = years
+            .iter()
+            .map(|&y| whole(y, "years").map(|y| y as usize))
+            .collect::<Result<Vec<_>>>()?;
+        let mut ylt = YearLossTable::new(&years, losses).map_err(to_r)?;
+        let has_slots = !slots.is_null();
+        if has_slots {
+            let slots = slots
+                .as_real_vector()
+                .or_else(|| {
+                    slots
+                        .as_integer_vector()
+                        .map(|v| v.into_iter().map(f64::from).collect())
+                })
+                .ok_or_else(|| Error::Other("slots must be numeric or NULL".into()))?
+                .into_iter()
+                .map(|s| whole(s, "slots"))
+                .collect::<Result<Vec<_>>>()?;
+            ylt = ylt.with_slots(slots).map_err(to_r)?;
+        }
+        let dims = label_dims.clone();
+        if !label_dims.is_empty() {
+            ylt = ylt
+                .with_labels(labels_from(label_dims, label_values)?)
+                .map_err(to_r)?;
+        }
+        if let Nullable::NotNull(n_years) = n_years {
+            ylt = ylt
+                .with_n_years(whole(n_years, "n_years")? as usize)
+                .map_err(to_r)?;
+        }
+        if !source_hash.is_null() {
+            let h = source_hash
+                .as_str()
+                .ok_or_else(|| Error::Other("source_hash must be a string or NULL".into()))?;
+            ylt = ylt.with_source_hash(h);
+        }
+        if has_slots {
+            let by: Vec<String> = if unique_by.is_null() {
+                dims
+            } else {
+                unique_by
+                    .as_string_vector()
+                    .ok_or_else(|| Error::Other("unique_by must be character or NULL".into()))?
+            };
+            ylt.check_unique(&by.iter().map(String::as_str).collect::<Vec<_>>())
+                .map_err(to_r)?;
+        }
+        for (dim, values) in labels_from(expected_dims, expected_values)? {
+            ylt.check_values(&dim, &values.iter().map(String::as_str).collect::<Vec<_>>())
+                .map_err(to_r)?;
+        }
+        let n_sims = match n_sims {
+            Nullable::NotNull(n) => Some(whole(n, "n_sims")? as usize),
+            Nullable::Null => None,
+        };
+        Ok(Self {
+            inner: ylt.events(n_sims, expansion).map_err(to_r)?,
+        })
+    }
+
+    /// Labels `values[[d]]` in dimension `dims[d]`, one per loss.
+    fn with_labels(&self, dims: Vec<String>, values: List) -> Result<Self> {
+        let labels = labels_from(dims, values)?;
+        Ok(Self {
+            inner: self.inner.clone().with_labels(labels).map_err(to_r)?,
+        })
+    }
+
+    fn label_dims(&self) -> Vec<String> {
+        self.inner.label_dims().to_vec()
+    }
+
+    /// The label combinations as columns, one character vector per
+    /// dimension.
+    fn label_combinations(&self) -> List {
+        let combinations = self.inner.label_combinations();
+        List::from_values((0..self.inner.label_dims().len()).map(|d| {
+            Robj::from(
+                combinations
+                    .iter()
+                    .map(|c| c[d].clone())
+                    .collect::<Vec<String>>(),
+            )
+        }))
+    }
+
+    /// Year `sim`'s labels (1-based), one character vector per dimension;
+    /// empty when there are none.
+    fn labels(&self, sim: f64) -> Result<List> {
+        let sim = whole(sim, "sim")? as usize;
+        if sim == 0 || sim > self.inner.n_sims() {
+            return Err(Error::Other(format!(
+                "year {sim} out of range for {} simulated years",
+                self.inner.n_sims()
+            )));
+        }
+        let Some(year) = self.inner.labels(sim - 1) else {
+            return Ok(List::new(0));
+        };
+        Ok(List::from_values((0..self.inner.label_dims().len()).map(
+            |d| Robj::from(year.iter().map(|v| v[d].clone()).collect::<Vec<String>>()),
+        )))
     }
 
     fn merge(&self, other: &EventSet) -> Result<Self> {
@@ -528,6 +676,14 @@ impl EventSet {
         self.inner.seed() as f64
     }
 
+    /// The hash of the years' source, or NULL.
+    fn input_hash(&self) -> Nullable<String> {
+        match self.inner.input_hash() {
+            Some(h) => Nullable::NotNull(h.to_string()),
+            None => Nullable::Null,
+        }
+    }
+
     /// Year `sim`'s losses; `sim` is 1-based, as in R.
     fn events(&self, sim: f64) -> Result<Vec<f64>> {
         let sim = whole(sim, "sim")? as usize;
@@ -553,6 +709,13 @@ impl EventSet {
         let inner = self.inner.maxima().map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }
+}
+
+/// A hash of the file at `path`, as `ylt::hash_bytes` gives it.
+#[extendr]
+fn ylt_file_hash_rust(path: &str) -> Result<String> {
+    let bytes = std::fs::read(path).map_err(|e| Error::Other(format!("{path}: {e}")))?;
+    Ok(prospicio_aggregate::ylt::hash_bytes(&bytes))
 }
 
 /// The occurrence exceedance `1 − G_N(F(x))` at each `x`.
@@ -981,7 +1144,28 @@ extendr_module! {
     fn round_bucket_rust;
     fn occurrence_exceedance_rust;
     fn occurrence_pml_rust;
+    fn ylt_file_hash_rust;
     impl EventSet;
     fn aggregate_elt_values;
     fn aggregate_elt_simulate;
+}
+
+/// Labels from dimension names and a list of character vectors.
+fn labels_from(dims: Vec<String>, values: List) -> Result<Vec<(String, Vec<String>)>> {
+    if dims.len() != values.len() {
+        return Err(Error::Other(format!(
+            "{} label names for {} label vectors",
+            dims.len(),
+            values.len()
+        )));
+    }
+    dims.into_iter()
+        .zip(values.values())
+        .map(|(dim, v)| {
+            let v: Vec<String> = v
+                .as_string_vector()
+                .ok_or_else(|| Error::Other(format!("label {dim:?} must be character")))?;
+            Ok((dim, v))
+        })
+        .collect()
 }

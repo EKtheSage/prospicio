@@ -50,6 +50,7 @@ pub mod serial;
 pub mod severity;
 pub mod severity_fit;
 pub mod size_of_loss;
+pub mod statistics;
 pub mod truncated;
 pub mod tweedie;
 pub mod vine;

@@ -679,4 +679,25 @@ toy_imp <- permutation_importance(toy, toy_data, mae, c("age", "height"), seed =
 stopifnot(round(toy_imp$importance[1], 3) == 0.133, toy_imp$importance[2] == 0,
           identical(toy_imp$relative, c(100, 0)))
 
+# MARS knots (#465) against R earth 5.3, degree = 1, on the Chalk portfolio
+# (validation/scripts/r_mars_earth.R).
+chalk <- utils::read.csv("examples/data/chalk_portfolio.csv", comment.char = "#")
+chalk_x <- chalk[c("age", "veh_age", "exper", "noise")]
+chalk_freq <- chalk$claims / chalk$exposure
+mk <- mars_knots(chalk_x, chalk_freq)
+stopifnot(identical(mk$knots$age, 28), identical(mk$knots$veh_age, 5), length(mk$knots$noise) == 0,
+          identical(unname(mk$linear), c(TRUE, TRUE, FALSE, FALSE)))
+near(mk$rss, 7229.20770861623, 1e-9)
+near(mk$gcv, 0.36178591949671, 1e-9)
+mkw <- mars_knots(chalk_x, chalk_freq, weights = chalk$exposure, max_terms = 15, threshold = 0)
+stopifnot(identical(mkw$knots$exper, c(2, 7, 26)), mkw$steps$terms[4] == 2)
+near(mkw$rss, 5166.57719014687, 1e-9)
+mkb <- mars_knots(chalk_x, chalk_freq, max_terms = 15, threshold = 0, prune = TRUE)
+near(mkb$gcv, 0.361653658764754, 1e-9)
+stopifnot(nrow(mkb$terms) == 6, nrow(mkb$forward_terms) > nrow(mkb$terms))
+rhs <- paste(mars_formula(mkw), collapse = " + ")
+refit <- glm_fit(stats::as.formula(paste("freq ~", rhs)), cbind(chalk_x, freq = chalk_freq),
+                 family = "gaussian", weights = chalk$exposure)
+near(refit@deviance, mkw$rss, 1e-8)
+
 cat("prospicio R models tests passed\n")

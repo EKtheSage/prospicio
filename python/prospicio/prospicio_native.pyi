@@ -9053,7 +9053,7 @@ class EventSet:
             If ``sim`` is not a simulated year.
         """
     @staticmethod
-    def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0) -> EventSet:
+    def from_long(years: Sequence[int], losses: Sequence[float], n_years: int, seed: int = 0, labels: dict |None = None) -> EventSet:
         """
         Years of losses in long form, as a year loss table lists them: one
         row per loss with its year, an index from 0 to ``n_years - 1``.
@@ -9068,6 +9068,9 @@ class EventSet:
         n_years : int
             The number of simulated years, including those with no loss.
         seed : int, default 0
+        labels : dict of str to list of str, optional
+            Each row's labels, a list per label dimension (``{"peril":
+            [...], "class": [...]}``), as ``with_labels`` takes them.
         
         Returns
         -------
@@ -9079,6 +9082,9 @@ class EventSet:
         >>> e = EventSet.from_long([2, 0, 2], [5.0, 1.0, 7.0], 4)
         >>> e.counts(), e.events(2)
         ([1, 0, 2, 0], [5.0, 7.0])
+        >>> e = EventSet.from_long([2, 0, 2], [5.0, 1.0, 7.0], 4, labels={"peril": ["wind", "quake", "wind"]})
+        >>> e.labels(0)
+        {'peril': ['quake']}
         """
     @staticmethod
     def from_years(years: Sequence[Sequence[float]], sums_insured: Sequence[Sequence[float]] |None = None, seed: int = 0, times: Sequence[Sequence[float]] |None = None) -> EventSet:
@@ -9112,6 +9118,61 @@ class EventSet:
         >>> e.counts(), e.sums_insured(2)
         ([2, 0, 1], [50.0])
         """
+    @staticmethod
+    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
+        """
+        Years of losses from a year loss table's columns, checked and
+        expanded to a run's simulations.
+        
+        Rows are ordered by year, then slot (the given order breaking ties),
+        and each row is one loss: rows sharing a slot, an event hitting
+        several classes, stay separate losses, so an occurrence layer sees
+        each of them. ``prospicio.aggregate.read_ylt`` reads the columns
+        from a CSV or Parquet file.
+        
+        Parameters
+        ----------
+        years : list of int
+            Each row's year, from 1.
+        losses : list of float
+            Finite and non-negative.
+        slots : list of int, optional
+            Each row's event slot, which orders a year's rows.
+        labels : dict of str to list of str, optional
+            Each row's labels, a list per dimension (``{"peril": [...],
+            "class": [...]}``).
+        n_years : int, optional
+            The table's years, at least its largest year; by default the
+            largest year.
+        n_sims : int, optional
+            The simulations to expand to, by default ``n_years``.
+        expand : {"tile", "resample"}, default "tile"
+            ``"tile"``: simulation ``i`` (from 0) takes year ``i % n_years``,
+            so ``n_sims`` must be a multiple of ``n_years``. ``"resample"``:
+            each simulation takes a year drawn uniformly with replacement
+            from its own stream of ``seed``.
+        seed : int, default 0
+        unique_by : list of str, optional
+            With slots, no two rows may share a year, a slot and their values
+            in these label dimensions (``["peril"]``: one slot may hit several
+            classes, not repeat a peril); by default every label dimension.
+        expected : dict of str to list of str, optional
+            The values allowed in each named dimension (``{"peril": ["WS",
+            "EQ"]}``).
+        source_hash : str, optional
+            A hash of the source, recorded as results' input hash.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_ylt([2, 1, 2], [5.0, 1.0, 7.0], slots=[9, 1, 3], n_sims=4)
+        >>> e.events(1), e.events(3)
+        ([7.0, 5.0], [7.0, 5.0])
+        """
     def grouped(self, /, window_hours: float) -> EventSet:
         """
         Each year's losses grouped into occurrences by an hours clause.
@@ -9120,7 +9181,8 @@ class EventSet:
         occurrence, whose loss is their sum and whose time is the window's
         start; the next loss after the window opens the next one. A year is
         8,760 hours. Windows open at each first loss in turn, not where they
-        would recover most. Needs times; sums insured are not carried.
+        would recover most. Needs times; sums insured and labels are not
+        carried (group each peril's set before merging them).
         
         Parameters
         ----------
@@ -9140,6 +9202,11 @@ class EventSet:
         [30.0, 5.0]
         """
     @property
+    def has_labels(self, /) -> bool:
+        """
+        Whether the losses carry labels.
+        """
+    @property
     def has_sums_insured(self, /) -> bool:
         """
         Whether the losses carry sums insured.
@@ -9148,6 +9215,36 @@ class EventSet:
     def has_times(self, /) -> bool:
         """
         Whether the losses carry times.
+        """
+    @property
+    def input_hash(self, /) -> str |None:
+        """
+        A hash of the years' source (a year loss table's file), which
+        results record as their provenance's input hash, or ``None``.
+        """
+    @property
+    def label_combinations(self, /) -> list[list[str]]:
+        """
+        The distinct combinations of label values, one value per dimension,
+        sorted: the labels of ``Tower.apply``'s components.
+        """
+    @property
+    def label_dims(self, /) -> list[str]:
+        """
+        The label dimensions, empty without labels.
+        """
+    def labels(self, /, sim: int) -> dict |None:
+        """
+        Year ``sim``'s labels, a list per dimension with a value per loss,
+        or ``None``.
+        
+        Parameters
+        ----------
+        sim : int
+        
+        Returns
+        -------
+        dict of str to list of str or None
         """
     def maxima(self, /) -> PredictiveDistribution:
         """
@@ -9167,7 +9264,9 @@ class EventSet:
         The sets need the same number of years. With times on both, each
         year's losses are merged in time order (this set's first on a tie);
         with times on neither, this set's losses come first. Sums insured are
-        kept when both sets carry them.
+        kept when both sets carry them. Labels are kept when either carries
+        them: this set's dimensions, then the other's new ones, with ``""``
+        for a loss without a value in a dimension.
         
         Parameters
         ----------
@@ -9250,6 +9349,33 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+    def with_labels(self, /, labels: dict) -> EventSet:
+        """
+        The same events with labels, a peril or a class say.
+        
+        ``Tower.apply`` then gives gross, each layer's ceded loss and net by
+        label, with the label dimensions after ``kind`` and ``layer``;
+        ``merge`` keeps the labels of either set. Replaces any labels the
+        set had.
+        
+        Parameters
+        ----------
+        labels : dict of str to list of str
+            One list per label dimension, a value per loss, years in order as
+            ``events`` lists them. The names may not be ``"kind"`` or
+            ``"layer"``.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[5.0, 2.0], [9.0]]).with_labels({"peril": ["wind", "flood", "wind"]})
+        >>> e.label_dims, e.label_combinations
+        (['peril'], [['flood'], ['wind']])
         """
     def with_seasonal_times(self, /, weights: Sequence[float]) -> EventSet:
         """
@@ -12227,6 +12353,35 @@ class InverseGaussian:
         """
 
 @final
+class IrrResult:
+    """
+    The internal rates of return of simulated cash flows, from ``irr``.
+    """
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def found(self, /) -> list[bool]:
+        """
+        Whether each simulation's search found a root.
+        """
+    @property
+    def npv(self, /) -> list[float]:
+        """
+        The net present value at each rate, NaN where no root was found.
+        """
+    @property
+    def rate(self, /) -> list[float]:
+        """
+        Each simulation's annual rate, NaN where no root was found.
+        """
+    @property
+    def sign_changes(self, /) -> list[int]:
+        """
+        The roots each search saw on its grid: more than one means several
+        rates of return, and ``rate`` is the one nearest 0.
+        """
+
+@final
 class JointGrid:
     """
     A joint distribution of two losses on a grid, ``P(A = i * step_a, B = j
@@ -12496,6 +12651,15 @@ class Layer:
         ``1 - t``. Needs ``reinstatement_rates``, and events with times
         (``EventSet.with_uniform_times``, or ``times=`` in
         ``EventSet.from_years``).
+    allocation : {"event_order", "pro_rata"}, default "event_order"
+        How the annual terms (aggregate deductible and limit, reinstatements)
+        split the year's recovery among its events. ``"event_order"`` uses
+        the aggregate limit up in the order the events occur, so a later
+        event gets what is left. ``"pro_rata"`` scales every event's
+        recovery by the same factor, the annual recovery after the terms
+        over the one before them. The annual total is the same; the split by
+        event, and so what an inuring stage sees, differs. Cannot be
+        combined with ``pro_rata_time``.
     
     Raises
     ------
@@ -12518,8 +12682,12 @@ class Layer:
     ...               pro_rata_time=True)
     >>> round(timed.reinstatement_premium([22.0, 12.0], times=[0.25, 0.5]), 12)
     1.6
+    >>> Layer("10x5", 10.0, 5.0, reinstatements=1).ceded_by_event([15.0, 20.0, 10.0])
+    [10.0, 10.0, 0.0]
+    >>> Layer("10x5", 10.0, 5.0, reinstatements=1, allocation="pro_rata").ceded_by_event([15.0, 20.0, 10.0])
+    [8.0, 8.0, 4.0]
     """
-    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None, premium: float = 0.0, reinstatement_rates: Sequence[float] |None = None, pro_rata_time: bool = False) -> Layer: ...
+    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None, premium: float = 0.0, reinstatement_rates: Sequence[float] |None = None, pro_rata_time: bool = False, allocation: str = "event_order") -> Layer: ...
     def __repr__(self, /) -> str: ...
     @property
     def aggregate_deductible(self, /) -> float:
@@ -12530,6 +12698,12 @@ class Layer:
     def aggregate_limit(self, /) -> float:
         """
         Annual aggregate limit.
+        """
+    @property
+    def allocation(self, /) -> str:
+        """
+        How the annual terms split the year's recovery among its events:
+        ``"event_order"`` or ``"pro_rata"``.
         """
     @property
     def attachment(self, /) -> float:
@@ -15192,6 +15366,91 @@ class MackFit:
     def ultimate(self, /) -> list[float]:
         """
         Projected ultimate per origin.
+        """
+
+@final
+class MarsFit:
+    """
+    The knots MARS selected, from ``mars``: each term as
+    ``(name, knot, direction)``, with direction ``"up"`` for
+    ``max(0, x - k)``, ``"down"`` for ``max(0, k - x)`` and ``"linear"``
+    for ``x``.
+    """
+    def __repr__(self, /) -> str: ...
+    def add_terms(self, /, terms: Terms) -> Terms:
+        """
+        ``terms`` with each selected predictor added: ``numeric`` when
+        ``linear`` and ``hinges`` at its ``knots``, spanning the selected
+        terms.
+        
+        Parameters
+        ----------
+        terms : Terms
+        
+        Returns
+        -------
+        Terms
+        """
+    @property
+    def coefficients(self, /) -> list[float]:
+        """
+        The intercept and each selected term's coefficient.
+        """
+    @property
+    def forward_terms(self, /) -> list[tuple[str, float, str]]:
+        """
+        The forward pass's terms, before the backward pass.
+        """
+    @property
+    def gcv(self, /) -> float:
+        """
+        The GCV of the selected terms.
+        """
+    @property
+    def grsq(self, /) -> float:
+        """
+        ``1 - gcv / gcv0``.
+        """
+    def knots(self, /, name: str) -> list[float]:
+        """
+        The sorted knots of ``name``'s hinges, for ``Terms.hinges``.
+        """
+    def linear(self, /, name: str) -> bool:
+        """
+        Whether ``name`` enters linearly besides its hinges.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        The predictors' names.
+        """
+    @property
+    def rsq(self, /) -> float:
+        """
+        ``1 - rss / rss0``.
+        """
+    @property
+    def rss(self, /) -> float:
+        """
+        The (weighted) residual sum of squares, or the GLM's deviance.
+        """
+    @property
+    def steps(self, /) -> list[dict]:
+        """
+        The forward pass step by step: the terms each added, and the RSS
+        (or deviance), R² and GCV after it.
+        """
+    @property
+    def termination(self, /) -> str:
+        """
+        Why the forward pass stopped: ``"no_improvement"``,
+        ``"threshold"``, ``"gcv"``, ``"rsq"`` or ``"max_terms"``.
+        """
+    @property
+    def terms(self, /) -> list[tuple[str, float, str]]:
+        """
+        The selected terms ``(name, knot, direction)``, in the order the
+        forward pass added them, without the intercept.
         """
 
 @final
@@ -20062,6 +20321,36 @@ class PredictiveDistribution:
         -------
         list of tuple
         """
+    def correlation_from_pairs(self, /, dim: str, pairs: Sequence[tuple[int |str, int |str, float]]) -> list[list[float]]:
+        """
+        The correlation matrix between the groups of ``dim`` from a long
+        pairwise table, in the order of ``groups(dim)``. Each pair of
+        distinct groups appears once, in either order (both orders only
+        with the same value); a diagonal entry may be given and must be 1.
+        
+        Parameters
+        ----------
+        dim : str
+        pairs : list of tuple
+            ``(group, group, value)`` rows, values in ``[-1, 1]``.
+        
+        Returns
+        -------
+        list of list of float
+        
+        Raises
+        ------
+        ValueError
+            If a pair is missing, given twice with different values, names
+            an unknown group, or a value is outside ``[-1, 1]``.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(["peril"], [("wind",), ("quake",)], [[0.0, 1.0]] * 3)
+        >>> pd.correlation_from_pairs("peril", [("quake", "wind", 0.2)])
+        [[1.0, 0.2], [0.2, 1.0]]
+        """
     @property
     def dims(self, /) -> list[str]:
         """
@@ -20074,6 +20363,34 @@ class PredictiveDistribution:
         Returns
         -------
         list of list of float
+        """
+    def group_spearman(self, /, dim: str) -> tuple[list[Any], list[list[float]]]:
+        """
+        Spearman's rho between the totals of the groups of ``dim``, ties
+        given their average rank as ``scipy.stats.spearmanr``: what
+        ``reorder_groups`` achieved.
+        
+        Parameters
+        ----------
+        dim : str
+        
+        Returns
+        -------
+        tuple of (list, list of list of float)
+            The groups, as ``groups(dim)``, and the matrix.
+        """
+    def groups(self, /, dim: str) -> list[Any]:
+        """
+        The groups of dimension ``dim`` in order of first appearance: the
+        rows and columns of ``reorder_groups``' matrix.
+        
+        Parameters
+        ----------
+        dim : str
+        
+        Returns
+        -------
+        list of int or str
         """
     @staticmethod
     def join(parts: Sequence[tuple[str, PredictiveDistribution]], dim: str, same_simulations: bool = False) -> PredictiveDistribution:
@@ -20177,7 +20494,7 @@ class PredictiveDistribution:
         ValueError
             If ``p`` is outside ``[0, 1]``.
         """
-    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int, kind: str = "pearson") -> PredictiveDistribution:
         """
         Sets the dependence between the groups of dimension ``dim`` by
         Iman–Conover on the groups' totals, moving each group's simulations
@@ -20189,12 +20506,109 @@ class PredictiveDistribution:
         ----------
         dim : str
         correlation : list of list of float
-            One row and column per group, in order of first appearance.
+            One row and column per group, in order of first appearance
+            (``groups(dim)``); ``correlation_from_pairs`` builds it from a
+            long table.
+        seed : int
+        kind : str
+            ``"pearson"`` (the default: the normal scores' correlation, so
+            Spearman's rho comes out near ``(6/π) asin(r/2)``) or
+            ``"spearman"`` (a Spearman target, converted to ``2 sin(π ρ /
+            6)`` first).
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If the matrix (after conversion) is not a positive definite
+            correlation matrix, or ``kind`` is unknown.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> n = 4000
+        >>> pd = PredictiveDistribution(
+        ...     ["seg"], [("a",), ("b",)], [[i, (i * 7919) % n] for i in range(n)])
+        >>> r = pd.reorder_groups("seg", [[1, 0.6], [0.6, 1]], 5, kind="spearman")
+        >>> groups, rho = r.group_spearman("seg")
+        >>> groups, abs(rho[0][1] - 0.6) < 0.02
+        (['a', 'b'], True)
+        """
+    def reorder_groups_by_copula(self, /, dim: str, copula: Any, seed: int) -> PredictiveDistribution:
+        """
+        Sets the dependence between the groups of dimension ``dim`` by a
+        copula: ``n_sims`` draws of uniforms from ``copula`` (draw ``i`` on
+        stream ``i`` of ``seed``, as ``copula.sample``), and each group's
+        simulations, whole rows sorted by the group's total, take the ranks
+        of its column. The group totals then have the copula's rank pattern,
+        so a t, Gumbel or Clayton copula gives its joint tails to results
+        already simulated; every group keeps its distribution and internal
+        joint structure, as under ``reorder_groups``.
+        
+        Parameters
+        ----------
+        dim : str
+        copula : GaussianCopula, StudentTCopula, ArchimedeanCopula, NestedArchimedeanCopula or VineCopula
+            One dimension per group, in order of first appearance
+            (``groups(dim)``).
         seed : int
         
         Returns
         -------
         PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If the copula's dimension is not the number of groups.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> from prospicio.risk import ArchimedeanCopula
+        >>> n = 4000
+        >>> pd = PredictiveDistribution(
+        ...     ["seg"], [("a",), ("b",)], [[i, (i * 7919) % n] for i in range(n)])
+        >>> clayton = ArchimedeanCopula("clayton", 2.0, 2)  # Spearman's rho near 0.68
+        >>> r = pd.reorder_groups_by_copula("seg", clayton, 5)
+        >>> abs(r.group_spearman("seg")[1][0][1] - 0.68) < 0.03
+        True
+        """
+    def scale_to_totals(self, /, totals: Sequence[float]) -> PredictiveDistribution:
+        """
+        Every simulation's components rescaled pro rata to a new total.
+        
+        Component ``k`` in simulation ``s`` becomes ``c[s][k] * totals[s] /
+        sum_k c[s][k]`` (unchanged when the components sum to 0). This
+        carries a total computed from the components, a loss-ratio cap over
+        several classes or a stop loss on a mix of perils, back onto them in
+        proportion to their shares; it is not a capital allocation. The keys
+        and dimensions are kept.
+        
+        Parameters
+        ----------
+        totals : list of float
+            One total per simulation.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            Not one finite total per simulation, or a non-zero total where
+            the components sum to 0.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(["class"], [("motor",), ("home",)], [[6.0, 9.0], [3.0, 1.0]])
+        >>> pd.scale_to_totals([10.0, 4.0]).draw_matrix()
+        [[4.0, 6.0], [3.0, 1.0]]
         """
     def select(self, /, dim: str, keys: Sequence[int |str]) -> PredictiveDistribution:
         """
@@ -21263,13 +21677,17 @@ class Sampled:
         ValueError
             If ``p`` is outside ``[0, 1]``.
         """
-    def tvar(self, /, p: float) -> float:
+    def tvar(self, /, p: float, method: str = "exact") -> float:
         """
         Tail value at risk at level ``p``: the mean of the worst ``1 - p``.
         
         Parameters
         ----------
         p : float
+        method : str
+            ``"exact"`` (the default: the empirical distribution, mass ``1/n``
+            per draw) or ``"linear"`` (the mean of the linear quantile
+            function over ``[p, 1]``).
         
         Returns
         -------
@@ -21278,15 +21696,18 @@ class Sampled:
         Raises
         ------
         ValueError
-            If ``p`` is outside ``[0, 1]``.
+            If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
         """
-    def var(self, /, p: float) -> float:
+    def var(self, /, p: float, method: str = "inverted_cdf") -> float:
         """
         Value at risk at level ``p``.
         
         Parameters
         ----------
         p : float
+        method : str
+            ``"inverted_cdf"`` (the default, R ``type = 1``) or ``"linear"``
+            (numpy's default, R ``type = 7``).
         
         Returns
         -------
@@ -21295,7 +21716,7 @@ class Sampled:
         Raises
         ------
         ValueError
-            If ``p`` is outside ``[0, 1]``.
+            If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
         """
     def variance(self, /) -> float:
         """
@@ -22437,6 +22858,14 @@ class Tower:
         with ``select("kind", ["ceded"])`` before joining it to a book:
         summing over ``kind`` adds gross, ceded and net together.
         
+        With labels on the events (``EventSet.with_labels``) the label
+        dimensions follow ``kind`` and ``layer``: gross, each layer's ceded
+        loss and net come once per combination in
+        ``events.label_combinations``, each the sum over that combination's
+        events (a layer's split by event under its ``allocation``), and the
+        other components get ``""`` labels. ``aggregate(["kind", "layer"])``
+        gives back the unlabelled result.
+        
         Parameters
         ----------
         events : EventSet
@@ -22473,6 +22902,46 @@ class Tower:
         Returns
         -------
         PredictiveDistribution
+        """
+    def apply_annual(self, /, losses: Sequence[float]) -> PredictiveDistribution:
+        """
+        Applies the tower to plain annual losses, one per simulation, each
+        taken as one aggregate loss as in ``apply_aggregate``, with no
+        ``EventSet`` or ``PredictiveDistribution`` to build. A contract
+        stated on the loss ratio is a layer on money amounts: a loss-ratio
+        cap ``c`` on subject premium ``P`` is ``Layer.stop_loss(name, c * P,
+        0.0).with_premium_rate(1.0, P)``, so the ceded loss ratio is the
+        capped one, and a sliding scale keyed on it is
+        ``with_sliding_scale``. Several scales on the same loss-ratio grid
+        add pointwise into one; ``Layer.ceding_commission_for`` evaluates a
+        scale at any ceded loss. Components as ``apply``.
+        
+        Parameters
+        ----------
+        losses : Sequence[float]
+            Each simulation's annual loss, finite and non-negative.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            For no losses, a negative or non-finite loss, a surplus treaty or
+            reinstatements pro rata as to time.
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> cover = (Layer.stop_loss("cover", 120.0, 0.0)
+        ...          .with_premium_rate(1.0, 100.0)
+        ...          .with_sliding_scale([(0.3, 0.5), (0.1, 0.9)]))
+        >>> res = Tower([cover]).apply_annual([40.0, 70.0, 150.0])
+        >>> list(res.marginal(["ceded", "cover"]).draws)
+        [40.0, 70.0, 120.0]
+        >>> [round(x, 12) for x in res.marginal(["ceding_commission", "cover"]).draws]
+        [30.0, 20.0, 10.0]
         """
     def apply_term(self, /, years: Sequence[EventSet]) -> PredictiveDistribution:
         """
@@ -24876,6 +25345,58 @@ def classical_premium(principle: str, dist: Any, loading: float, q: float = 2.0)
     6.0
     """
 
+def co_statistics(items: Any, driver: Any, percentiles: Sequence[float], *, tvar_levels: Sequence[float] |None = None, rule: str = "round_half_even") -> dict:
+    """
+    Each item read at a driver's mean, percentiles and TVaRs: the item's
+    value on the simulation the driver's statistic selects, as a results
+    table reports a commission or a margin "at" each percentile of the loss
+    ratio.
+    
+    With ``o`` the driver's stable ascending order (ties keep simulation
+    order) and ``h = q (n - 1)`` for a level ``q`` in percent over 100,
+    ``"Mean"`` is the item on the first ``o[i]`` whose driver is at or above
+    the driver's mean, ``"Percentile <q>"`` the item on ``o[i]`` with ``i``
+    from ``h`` by ``rule``, and ``"TVaR <q>"`` the item's mean over
+    ``o[ceil(h):]`` whatever the rule.
+    
+    Parameters
+    ----------
+    items : PredictiveDistribution or dict of str to list of float
+        A predictive distribution reads every component.
+    driver : list of float, tuple or None
+        The driver's draws; for a predictive distribution also a
+        component's key (a tuple), or ``None`` for its total.
+    percentiles : list of float
+        In percent, in ``[0, 100]``.
+    tvar_levels : list of float, optional
+        In percent; by default 99, 99.5, 99.6, 99.8, 99.9 and 99.99.
+    rule : str
+        ``"round_half_even"`` (the default: halves to the even index, as
+        Python's and numpy's ``round``), ``"floor"`` or ``"ceil"``.
+    
+    Returns
+    -------
+    dict
+        For a dict of items, ``{item: {name: value}}``. For a
+        ``PredictiveDistribution``, columns: one list per dimension holding
+        each component's key, then one list per statistic.
+    
+    Raises
+    ------
+    ValueError
+        If the lengths differ, a value is not finite, a level is outside
+        ``[0, 100]`` or the rule is unknown.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import co_statistics
+    >>> ulr = [0.6, 0.9, 0.5, 0.7, 0.8]
+    >>> co = co_statistics({"margin": [0.3, 0.0, 0.4, 0.2, 0.1]}, ulr, [62.5],
+    ...                    tvar_levels=[62.5])
+    >>> co["margin"]["Percentile 62.5"], round(co["margin"]["TVaR 62.5"], 12)
+    (0.2, 0.05)
+    """
+
 def compound_moments(frequency: Any, severity: Any) -> CompoundMoments:
     """
     Compound moments to third order: the mean, variance and third cumulant
@@ -25980,6 +26501,46 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     True
     """
 
+def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str = "years", lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
+    """
+    The internal rate of return of each simulation's cash flows, an annual
+    rate discounting by ``(1 + r)^-t``.
+    
+    The flows' value is computed on a grid of ``points`` rates from
+    ``lower`` to ``upper``; of its sign changes (and exact zeros) the one
+    whose bracket's midpoint is nearest 0 is halved ``bisections`` times and
+    refined by ``newton_steps`` Newton steps clipped to the bracket. A
+    simulation with no root in the range (flows of one sign, say) has
+    ``found`` false and NaN; one with several has ``sign_changes`` above 1.
+    The defaults are a reference simulation model's.
+    
+    Parameters
+    ----------
+    flows : list of list of float
+        One simulation's flows a row, one column a time.
+    times : list of float
+        The time of each column, in ``unit`` from the start.
+    unit : str, default "years"
+        ``"years"``, ``"months"`` (a twelfth of a year) or ``"days"``
+        (actual/365).
+    lower, upper : float, optional
+        The range searched, by default -0.95 to 1.
+    points : int, default 400
+    bisections : int, default 8
+    newton_steps : int, default 3
+    
+    Returns
+    -------
+    IrrResult
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import irr
+    >>> r = irr([[-100.0, 230.0, -132.0], [10.0, 5.0, 1.0]], [0.0, 1.0, 2.0])
+    >>> [round(x, 12) for x in r.rate[:1]], r.found, r.sign_changes
+    ([0.1], [True, False], [2, 0])
+    """
+
 def k_fold(n: int, k: int, seed: int) -> list[tuple[list[int], list[int]]]:
     """
     ``k``-fold splits of ``n`` rows, shuffled with ``seed``.
@@ -26071,6 +26632,32 @@ def layer_loss_picks(severity: Grid, attachments: Sequence[float], picks: Sequen
     >>> picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
     >>> [round(10 * t, 6) for t in picked.to_dict()["target"]]
     [480.0, 420.0, 60.0]
+    """
+
+def leverage(rate: float, premium: float, funded: float, opening: float) -> float:
+    """
+    The leverage of written premium on capital,
+    ``rate * premium / (funded + opening)``. The rate is the caller's.
+    
+    Parameters
+    ----------
+    rate : float
+    premium : float
+        Written premium.
+    funded : float
+        Capital funded during the term.
+    opening : float
+        Capital held at the start.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import leverage
+    >>> leverage(0.5, 300.0, 50.0, 100.0)
+    1.0
     """
 
 def lift(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None, bands: int = 10) -> list[dict[str, float]]:
@@ -26292,6 +26879,49 @@ def marginal_expected_shortfall(pd: PredictiveDistribution, p: float) -> list[fl
     [2.5, 5.5]
     """
 
+def mars(x: dict, y: Sequence[float], weights: Sequence[float] |None = None, max_terms: int |None = None, threshold: float = 0.001, penalty: float = 2.0, min_span: int |None = None, end_span: int |None = None, prune: bool = False, family: str |None = None, link: str |None = None) -> MarsFit:
+    """
+    MARS knot selection for hinge terms (Friedman's forward pass, as R's
+    ``earth`` with ``degree = 1``), with an optional backward pass by GCV.
+    
+    Its knots, RSS and GCV match ``earth``'s on the Chalk portfolio,
+    weighted and unweighted. With ``family`` the search runs on that GLM's
+    deviance (working response and weights at each step), which ``earth``
+    has no counterpart for.
+    
+    Parameters
+    ----------
+    x : dict of str to list of float
+        The numeric predictors, in order.
+    y : list of float
+    weights : list of float, optional
+        Case weights (exposure); all equal is the same as none.
+    max_terms : int, optional
+        ``earth``'s ``nk``; by default ``min(200, max(20, 2p)) + 1``.
+    threshold : float
+        Stop when a step adds less than this to R² (``0`` turns it off).
+    penalty : float
+        GCV's cost per knot.
+    min_span, end_span : int, optional
+        Cases between knots and free of knots at each end; ``earth``'s
+        defaults by default.
+    prune : bool
+        Run the backward pass by GCV (``pmethod = "backward"``).
+    family, link : str, optional
+        Search on this GLM's deviance (``"poisson"``, ``"gamma"``, ...).
+    
+    Returns
+    -------
+    MarsFit
+    
+    Examples
+    --------
+    >>> x = [float(i) for i in range(60)]
+    >>> y = [1 + 0.5 * v + 3 * max(0.0, v - 31) for v in x]
+    >>> mars({"x": x}, y).knots("x")
+    [31.0]
+    """
+
 def match_tower(attachments: Sequence[float], layer_losses: Sequence[float], frequencies: Sequence[float |None] |None = None, rule: str = "minimize") -> TowerModel:
     """
     Matches a tower of contiguous layers, the last unlimited, with one
@@ -26370,6 +27000,30 @@ def mean_excess(draws: Sequence[float], thresholds: Sequence[float]) -> list[tup
     [(2.0, 1.5, 2)]
     """
 
+def moic(released: float, funded: float, opening: float) -> float:
+    """
+    The multiple on invested capital, ``1 + released / (funded + opening)``.
+    
+    Parameters
+    ----------
+    released : float
+        Equity released over the term.
+    funded : float
+        Capital funded during the term.
+    opening : float
+        Capital held at the start.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import moic
+    >>> moic(30.0, 40.0, 60.0)
+    1.3
+    """
+
 def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
     """
     The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
@@ -26385,6 +27039,34 @@ def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequenc
     Returns
     -------
     float
+    """
+
+def npv(flows: Sequence[Sequence[float]], times: Sequence[float], rate: float, *, unit: str = "years") -> list[float]:
+    """
+    The net present value of each simulation's cash flows at an annual
+    rate, ``sum_k x_k (1 + rate)^-t_k``.
+    
+    Parameters
+    ----------
+    flows : list of list of float
+        One simulation's flows a row, one column a time.
+    times : list of float
+        The time of each column, in ``unit`` from the start.
+    rate : float
+        Annual effective rate, above -1.
+    unit : str, default "years"
+        ``"years"``, ``"months"`` (a twelfth of a year) or ``"days"``
+        (actual/365).
+    
+    Returns
+    -------
+    list of float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import npv
+    >>> [abs(round(v, 12)) for v in npv([[-100.0, 121.0]], [0.0, 2.0], 0.1)]
+    [0.0]
     """
 
 def occurrence_cession_statistics(frequency: Any, severity: Grid, layers: Sequence[tuple[float, float, float]]) -> CessionStatistics:
@@ -27146,6 +27828,58 @@ def recommend_portfolio_grid(units: Any, log2: int = 16, p: float = ..., p_star:
     True
     """
 
+def risk_ratios(dist: Any, *, threshold: float = 0.0, sortino: str = "downside_deviation", omega: str = "partial_moments", tvar_levels: Sequence[float] |None = None, tvar: str = "exact") -> dict:
+    """
+    Risk ratios of a per-simulation result such as a margin, where large is
+    good, about a threshold ``t`` and under named conventions.
+    
+    ``"Sharpe"`` is ``(mean - t) / sd`` with the population SD;
+    ``"Sortino"`` is ``(mean - t)`` over the downside risk ``sortino``
+    names; ``"Omega"`` is the ratio ``omega`` names; ``"TVaR ratio <q>"`` is
+    ``(mean - t) / TVaR_q(-x)``, the TVaR of the result read as a loss
+    (STARR), negative when even the worst outcomes are above zero. A zero
+    denominator gives ``±inf``, or NaN when the numerator is 0 too.
+    
+    Parameters
+    ----------
+    dist : Sampled, PredictiveDistribution or list of float
+        A predictive distribution gives one row per component.
+    threshold : float
+    sortino : str
+        ``"downside_deviation"`` (the default: ``sqrt(mean(min(x - t,
+        0)**2))`` over all simulations) or ``"below_threshold_sd"`` (the
+        population SD of the values below ``t`` only, as a reference
+        pricing model computes it; NaN when none is).
+    omega : str
+        ``"partial_moments"`` (the default: ``mean(max(x - t, 0)) /
+        mean(max(t - x, 0))``) or ``"count"`` (``#(x > t) / #(x < t)``;
+        values equal to ``t`` count in neither).
+    tvar_levels : list of float, optional
+        In percent; by default 99.
+    tvar : str
+        ``"exact"`` (the default) or ``"linear"``, as for ``statistics``.
+    
+    Returns
+    -------
+    dict
+        As ``statistics`` returns: ``{name: value}``, or columns for a
+        ``PredictiveDistribution``.
+    
+    Raises
+    ------
+    ValueError
+        If the threshold is not finite, a level is outside ``[0, 100]`` or
+        a convention is unknown.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import risk_ratios
+    >>> r = risk_ratios([-2.0, -1.0, 1.0, 2.0, 5.0], sortino="below_threshold_sd",
+    ...                 omega="count")
+    >>> r["Sortino"], r["Omega"]
+    (2.0, 1.5)
+    """
+
 def roc(y: Sequence[float], score: Sequence[float], weights: Sequence[float] |None = None) -> dict:
     """
     The ROC curve of a binary model (CAS Monograph 5, section 7.3.1): the
@@ -27471,6 +28205,57 @@ def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     [0.5, 0.5]
     """
 
+def statistics(dist: Any, percentiles: Sequence[float], *, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact") -> dict:
+    """
+    A results table's statistics in one call, under stated conventions.
+    
+    Every table has ``"Mean"``, ``"SD"`` (population, dividing by ``n``),
+    ``"CoV"`` (``sd / mean``; 0 when both are 0, NaN when only the mean is),
+    ``"Min"``, ``"Max"`` and ``"Variance"``, then ``"Percentile <q>"`` for
+    each percentile, ``"TVaR <q>"`` for each TVaR level and ``"Mean + <k>
+    SD"``, ``"Mean - <k> SD"`` for each multiple, with levels in percent as
+    given, so the names are stable keys to join on.
+    
+    Parameters
+    ----------
+    dist : Sampled, PredictiveDistribution or list of float
+        A predictive distribution gives one row per component.
+    percentiles : list of float
+        In percent, in ``[0, 100]``.
+    tvar_levels : list of float, optional
+        In percent; by default 99, 99.5, 99.6, 99.8, 99.9 and 99.99.
+    sd_multiples : list of float, optional
+        By default 1, 2 and 3.
+    quantile : str
+        ``"inverted_cdf"`` (the default, ``Sampled.var``'s) or ``"linear"``
+        (numpy's default, R ``type = 7``).
+    tvar : str
+        ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw)
+        or ``"linear"`` (the mean of the linear quantile function over
+        ``[p, 1]``).
+    
+    Returns
+    -------
+    dict
+        For a ``Sampled`` or a list, ``{name: value}``. For a
+        ``PredictiveDistribution``, columns: one list per dimension holding
+        each component's key, then one list per statistic, ready for
+        ``pandas.DataFrame``.
+    
+    Raises
+    ------
+    ValueError
+        If a level is outside ``[0, 100]`` or a method name is unknown.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import statistics
+    >>> st = statistics([1.0, 2.0, 3.0, 4.0], [50], tvar_levels=[50],
+    ...                 quantile="linear", tvar="linear")
+    >>> st["Percentile 50"], st["TVaR 50"]
+    (2.5, 3.25)
+    """
+
 def target_encode(values: Sequence[str], y: Sequence[float], expected: Sequence[float], splits: Sequence[tuple[Sequence[int], Sequence[int]]], k: float, exposure: Sequence[float] |None = None) -> tuple[list[float], TargetEncoding]:
     """
     Out-of-fold target encoding of a high-cardinality factor with
@@ -27547,6 +28332,31 @@ def threshold_diagnostics(draws: Sequence[float], thresholds: Sequence[float]) -
     >>> d = threshold_diagnostics([1.0, 2.0, 3.0, 4.0, 5.0], [2.5])
     >>> d["n_above"], d["mean_excess"]
     ([3], [1.5])
+    """
+
+def tiered_fee(margins: Sequence[float], breakpoints: Sequence[float], slopes: Sequence[float]) -> list[float]:
+    """
+    A fee tiered on the margin: slope ``slopes[i]`` on the part of each
+    margin between ``breakpoints[i]`` and ``breakpoints[i + 1]``, the last
+    tier unbounded, nothing below the first breakpoint.
+    
+    Parameters
+    ----------
+    margins : list of float
+    breakpoints : list of float
+        Strictly increasing; the first is the floor.
+    slopes : list of float
+        One slope a breakpoint, the slope of the tier that starts there.
+    
+    Returns
+    -------
+    list of float
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import tiered_fee
+    >>> [round(f, 12) for f in tiered_fee([3.0, 10.0, 25.0], [5.0, 15.0], [0.1, 0.2])]
+    [0.0, 0.5, 3.0]
     """
 
 def time_ordered(periods: Sequence[int], n_test: int) -> list[tuple[list[int], list[int]]]:
@@ -27784,4 +28594,24 @@ def year_fraction(year: int, month: int, day: int) -> float:
     >>> from prospicio.pricing import year_fraction
     >>> year_fraction(2013, 6, 30) - year_fraction(2011, 1, 1)
     2.5
+    """
+
+def ylt_hash(data: bytes) -> str:
+    """
+    A hash of a year loss table's file bytes, ``"blake3:<hex>"``, which
+    ``EventSet.from_ylt`` records as its ``source_hash``.
+    
+    Parameters
+    ----------
+    data : bytes
+    
+    Returns
+    -------
+    str
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import ylt_hash
+    >>> ylt_hash(b"year,value").startswith("blake3:")
+    True
     """

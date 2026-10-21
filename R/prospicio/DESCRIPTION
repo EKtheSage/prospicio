@@ -8,8 +8,8 @@ License: MIT + file LICENSE | Apache License (== 2.0)
 Encoding: UTF-8
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.92 (Burn, for the neural networks)
 Depends: R (>= 4.2.0)
-Imports: S7, stats
-Suggests: ggplot2, lightgbm, MASS, xgboost
+Imports: S7, stats, utils
+Suggests: arrow, ggplot2, lightgbm, MASS, xgboost
 Config/rextendr/version: 0.9.0
 Config/build/bootstrap: TRUE
 Roxygen: list(markdown = TRUE)

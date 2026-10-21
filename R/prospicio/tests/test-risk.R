@@ -230,3 +230,62 @@ for (k in list(c(7, 353.8), c(13, 353.6), c(19, 352.9))) {
 }
 stopifnot(rearrange(cbind(1:4, 1:4))$value == 5)
 
+
+# A results table's statistics: R's quantile(type = 7) and the integral of
+# that quantile function for the linear TVaR; VaR() and TVaR() keep their
+# defaults and take the same methods.
+st_x <- c(7, 0, 100, 3, 1, 0, 45, 7, 12, 20)
+st_p <- c(0, 10, 25, 50, 90, 99, 100)
+st <- statistics(st_x, st_p, tvar_levels = c(0, 50, 90, 99), quantile = "linear", tvar = "linear")
+stopifnot(all(abs(st[paste("Percentile", st_p)] - quantile(st_x, st_p / 100, type = 7, names = FALSE)) < 1e-12))
+st_tvar <- function(p) integrate(function(u) quantile(st_x, u, type = 7, names = FALSE), p, 1,
+                                 subdivisions = 1000L, rel.tol = 1e-10)$value / (1 - p)
+for (q in c(0, 50, 90, 99)) stopifnot(abs(st[[paste("TVaR", q)]] / st_tvar(q / 100) - 1) < 1e-6)
+stopifnot(st[["Mean"]] == 19.5, abs(st[["Mean + 2 SD"]] - 19.5 - 2 * sqrt(mean((st_x - 19.5)^2))) < 1e-12)
+st_s <- sampled(st_x)
+stopifnot(VaR(st_s, 0.25, method = "linear") == st[["Percentile 25"]])
+stopifnot(TVaR(st_s, 0.9, method = "linear") == st[["TVaR 90"]])
+stopifnot(VaR(st_s, 0.25) == quantile(st_x, 0.25, type = 1, names = FALSE))
+stopifnot(inherits(try(VaR(st_s, 0.5, method = "nearest"), silent = TRUE), "try-error"))
+st_pd <- predictive_distribution(cbind(1:10, 2 * (1:10)), data.frame(lob = c("a", "b")))
+st_tab <- statistics(st_pd, 50, tvar_levels = 90, sd_multiples = 1)
+stopifnot(identical(st_tab$lob, c("a", "b")), all(st_tab$Mean == c(5.5, 11)))
+stopifnot(all(st_tab[["Percentile 50"]] == c(5, 10)), isTRUE(all.equal(st_tab[["TVaR 90"]], c(10, 20), tolerance = 1e-12)))
+
+# Items at the driver's percentiles, against the reference's selection in R:
+# o = order() (stable), round() halves to even, 0-based h.
+set.seed(7)
+co_n <- 2001
+co_ulr <- round(rlnorm(co_n, -0.4, 0.3), 2)
+co_cc <- 0.3 - 0.2 * pmin(pmax(co_ulr - 0.5, 0), 0.5)
+co <- co_statistics(list(cc = co_cc, margin = 1 - co_ulr - co_cc), co_ulr, c(50, 90, 99.5), tvar_levels = c(90, 99))
+co_o <- order(co_ulr)
+for (q in c(50, 90, 99.5)) {
+  stopifnot(co[1, paste("Percentile", q)] == co_cc[co_o[round(q / 100 * (co_n - 1)) + 1]])
+}
+for (q in c(90, 99)) {
+  tail <- co_o[(ceiling(q / 100 * (co_n - 1)) + 1):co_n]
+  stopifnot(isTRUE(all.equal(co[1, paste("TVaR", q)], mean(co_cc[tail]), tolerance = 1e-12)))
+}
+stopifnot(co$Mean[1] == co_cc[co_o[which(co_ulr[co_o] >= mean(co_ulr))[1]]], identical(co$item, c("cc", "margin")))
+co_small <- c(0.6, 0.9, 0.5, 0.7, 0.8)
+co_pick <- sapply(c("round_half_even", "floor", "ceil"), function(r)
+  co_statistics(list(x = co_small), co_small, 62.5, tvar_levels = 50, rule = r)[["Percentile 62.5"]])
+stopifnot(all(co_pick == c(0.7, 0.7, 0.8)))
+co_pd <- predictive_distribution(cbind(co_ulr, co_cc), data.frame(kind = c("ulr", "cc")))
+co_tab <- co_statistics(co_pd, list(kind = "ulr"), 90, tvar_levels = 90)
+stopifnot(identical(co_tab$kind, c("ulr", "cc")), co_tab[2, "Percentile 90"] == co[1, "Percentile 90"])
+stopifnot(nrow(co_statistics(co_pd, NULL, 50)) == 2)
+stopifnot(inherits(try(co_statistics(list(x = 1), c(1, 2), 50), silent = TRUE), "try-error"))
+
+# Risk ratios under the textbook and the reference's conventions.
+rr_x <- c(-3, -1, 0, 2, 4, 4)
+rr <- risk_ratios(rr_x, tvar_levels = 50)
+stopifnot(identical(names(rr), c("Sharpe", "Sortino", "Omega", "TVaR ratio 50")))
+stopifnot(abs(rr[["Sharpe"]] - 1 / sqrt(mean(rr_x^2) - 1)) < 1e-12, abs(rr[["Sortino"]] - 1 / sqrt(10 / 6)) < 1e-12)
+stopifnot(abs(rr[["Omega"]] - 2.5) < 1e-12, abs(rr[["TVaR ratio 50"]] - 0.75) < 1e-12)
+rr_ref <- risk_ratios(rr_x, sortino = "below_threshold_sd", omega = "count")
+stopifnot(abs(rr_ref[["Sortino"]] - 1) < 1e-12, rr_ref[["Omega"]] == 1.5)
+rr_pd <- risk_ratios(predictive_distribution(cbind(rr_x, 2 * rr_x), data.frame(lob = c("a", "b"))), threshold = 1)
+stopifnot(identical(rr_pd$lob, c("a", "b")), rr_pd$Sharpe[1] == 0)
+stopifnot(inherits(try(risk_ratios(rr_x, omega = "ratio"), silent = TRUE), "try-error"))

@@ -64,6 +64,68 @@ pub fn tvar_sorted(sorted: &[f64], p: f64) -> Result<f64> {
     Ok((partial + tail) / (1.0 - p))
 }
 
+/// Value at risk by linear interpolation of the order statistics: with
+/// `h = p (n - 1)`, `x[⌊h⌋] + (h - ⌊h⌋) (x[⌊h⌋ + 1] - x[⌊h⌋])`
+/// (`numpy.quantile(..., method="linear")`, R `quantile(..., type = 7)`).
+///
+/// `p = 0` gives the smallest draw and `p = 1` the largest. `sorted` must
+/// be non-empty and sorted ascending; this is checked only in debug builds.
+///
+/// ```
+/// use prospicio_prob::risk::var_linear_sorted;
+///
+/// let x = [1.0, 2.0, 3.0, 4.0];
+/// assert_eq!(var_linear_sorted(&x, 0.5), Ok(2.5));
+/// assert_eq!(var_linear_sorted(&x, 1.0), Ok(4.0));
+/// ```
+pub fn var_linear_sorted(sorted: &[f64], p: f64) -> Result<f64> {
+    check_probability(p)?;
+    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
+    let n = sorted.len();
+    let h = p * (n - 1) as f64;
+    let j = h.floor() as usize;
+    if j >= n - 1 {
+        return Ok(sorted[n - 1]);
+    }
+    Ok(sorted[j] + (h - j as f64) * (sorted[j + 1] - sorted[j]))
+}
+
+/// Tail value at risk as the mean of [`var_linear_sorted`]'s piecewise
+/// linear quantile function over `[p, 1]`: trapezoids on the positions
+/// `0, ..., n - 1`, from `h = p (n - 1)` to the largest draw.
+///
+/// This is the convention of simulation models that report numpy's linear
+/// quantiles; [`tvar_sorted`] is the exact TVaR of the empirical
+/// distribution. The two differ by a few tenths of a percent in thin tails
+/// and by more on a tail of repeated (tiled) draws. `p = 1` gives the
+/// largest draw. `sorted` must be non-empty and sorted ascending; this is
+/// checked only in debug builds.
+///
+/// ```
+/// use prospicio_prob::risk::tvar_linear_sorted;
+///
+/// let x = [1.0, 2.0, 3.0, 4.0];
+/// // The quantile function runs from 2.5 to 4 over the top half.
+/// assert_eq!(tvar_linear_sorted(&x, 0.5), Ok(3.25));
+/// assert_eq!(tvar_linear_sorted(&x, 0.0), Ok(2.5));
+/// ```
+pub fn tvar_linear_sorted(sorted: &[f64], p: f64) -> Result<f64> {
+    check_probability(p)?;
+    debug_assert!(is_sorted(sorted), "draws must be sorted ascending");
+    let n = sorted.len();
+    let top = (n - 1) as f64;
+    let h = p * top;
+    let j = h.floor() as usize;
+    if j >= n - 1 || h >= top {
+        return Ok(sorted[n - 1]);
+    }
+    let v = sorted[j] + (h - j as f64) * (sorted[j + 1] - sorted[j]);
+    let partial = (v + sorted[j + 1]) / 2.0 * ((j + 1) as f64 - h);
+    let seg = &sorted[j + 1..];
+    let full = (2.0 * seg.iter().sum::<f64>() - seg[0] - seg[seg.len() - 1]) / 2.0;
+    Ok((partial + full) / (top - h))
+}
+
 /// Value at risk of a discrete distribution: the smallest value `x` with
 /// `P(X <= x) >= p`, the lower quantile. `values` are ascending, `probs`
 /// their probabilities. `p = 0` gives the smallest value.

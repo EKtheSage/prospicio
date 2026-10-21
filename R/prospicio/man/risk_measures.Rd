@@ -17,7 +17,8 @@ other parametric families).}
 
 \item{p}{Probabilities in \verb{[0, 1]} (\verb{[0, 1)} for a severity's \code{TVaR()}).}
 
-\item{...}{Unused; for methods.}
+\item{...}{For a \link{sampled}, \code{method}: \code{"inverted_cdf"} or \code{"linear"} for
+\code{VaR()}, \code{"exact"} or \code{"linear"} for \code{TVaR()}. Otherwise unused.}
 }
 \value{
 Numeric vector the length of \code{p}.
@@ -30,6 +31,10 @@ VaR so it is coherent and continuous in \code{p}. For a
 For a parametric severity or a \link{grid_distribution}, \code{VaR()} is the lower
 quantile, as \code{quantile()}, and a severity's \code{TVaR()} is
 \verb{VaR(p) + E[(X - VaR(p))+] / (1 - p)}, infinite where the mean is.
+For a \link{sampled}, \code{method = "linear"} picks the other convention: \code{VaR()}
+is then \code{quantile(x, p, type = 7)} (numpy's default) and \code{TVaR()} the
+mean of that quantile function over \verb{[p, 1]}; the defaults are
+\code{"inverted_cdf"} and \code{"exact"}.
 }
 \examples{
 s <- sampled(c(1, 2, 3, 4))

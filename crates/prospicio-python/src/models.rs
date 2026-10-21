@@ -5073,3 +5073,231 @@ impl PyDoubleGlmFit {
         py.detach(|| fit.predict_dispersion(d)).map_err(to_py)
     }
 }
+
+/// The knots MARS selected, from ``mars``: each term as
+/// ``(name, knot, direction)``, with direction ``"up"`` for
+/// ``max(0, x - k)``, ``"down"`` for ``max(0, k - x)`` and ``"linear"``
+/// for ``x``.
+#[pyclass(name = "MarsFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyMarsFit {
+    inner: prospicio_glm::mars::MarsFit,
+}
+
+fn mars_terms(
+    names: &[String],
+    terms: &[prospicio_glm::mars::MarsTerm],
+) -> Vec<(String, f64, String)> {
+    use prospicio_glm::mars::Direction;
+    terms
+        .iter()
+        .map(|t| {
+            let d = match t.direction {
+                Direction::Up => "up",
+                Direction::Down => "down",
+                Direction::Linear => "linear",
+            };
+            (names[t.variable].clone(), t.knot, d.to_string())
+        })
+        .collect()
+}
+
+#[pymethods]
+impl PyMarsFit {
+    /// The predictors' names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// The selected terms ``(name, knot, direction)``, in the order the
+    /// forward pass added them, without the intercept.
+    #[getter]
+    fn terms(&self) -> Vec<(String, f64, String)> {
+        mars_terms(self.inner.names(), self.inner.terms())
+    }
+
+    /// The forward pass's terms, before the backward pass.
+    #[getter]
+    fn forward_terms(&self) -> Vec<(String, f64, String)> {
+        mars_terms(self.inner.names(), self.inner.forward_terms())
+    }
+
+    /// The forward pass step by step: the terms each added, and the RSS
+    /// (or deviance), R² and GCV after it.
+    #[getter]
+    fn steps<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+        self.inner
+            .steps()
+            .iter()
+            .map(|s| {
+                let d = pyo3::types::PyDict::new(py);
+                d.set_item("terms", mars_terms(self.inner.names(), &s.terms))?;
+                d.set_item("rss", s.rss)?;
+                d.set_item("rsq", s.rsq)?;
+                d.set_item("gcv", s.gcv)?;
+                Ok(d)
+            })
+            .collect()
+    }
+
+    /// Why the forward pass stopped: ``"no_improvement"``,
+    /// ``"threshold"``, ``"gcv"``, ``"rsq"`` or ``"max_terms"``.
+    #[getter]
+    fn termination(&self) -> &'static str {
+        use prospicio_glm::mars::Termination;
+        match self.inner.termination() {
+            Termination::NoImprovement => "no_improvement",
+            Termination::Threshold => "threshold",
+            Termination::Gcv => "gcv",
+            Termination::Rsq => "rsq",
+            Termination::MaxTerms => "max_terms",
+        }
+    }
+
+    /// The intercept and each selected term's coefficient.
+    #[getter]
+    fn coefficients(&self) -> Vec<f64> {
+        self.inner.coefficients().to_vec()
+    }
+
+    /// The (weighted) residual sum of squares, or the GLM's deviance.
+    #[getter]
+    fn rss(&self) -> f64 {
+        self.inner.rss()
+    }
+
+    /// The GCV of the selected terms.
+    #[getter]
+    fn gcv(&self) -> f64 {
+        self.inner.gcv()
+    }
+
+    /// ``1 - rss / rss0``.
+    #[getter]
+    fn rsq(&self) -> f64 {
+        self.inner.rsq()
+    }
+
+    /// ``1 - gcv / gcv0``.
+    #[getter]
+    fn grsq(&self) -> f64 {
+        self.inner.grsq()
+    }
+
+    /// The sorted knots of ``name``'s hinges, for ``Terms.hinges``.
+    fn knots(&self, name: &str) -> PyResult<Vec<f64>> {
+        self.inner.knots(name).map_err(to_py)
+    }
+
+    /// Whether ``name`` enters linearly besides its hinges.
+    fn linear(&self, name: &str) -> PyResult<bool> {
+        self.inner.linear(name).map_err(to_py)
+    }
+
+    /// ``terms`` with each selected predictor added: ``numeric`` when
+    /// ``linear`` and ``hinges`` at its ``knots``, spanning the selected
+    /// terms.
+    ///
+    /// Parameters
+    /// ----------
+    /// terms : Terms
+    ///
+    /// Returns
+    /// -------
+    /// Terms
+    fn add_terms(&self, terms: &PyTerms) -> PyTerms {
+        PyTerms {
+            inner: self.inner.add_terms(terms.inner.clone()),
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "MarsFit({} terms, rss={}, gcv={})",
+            self.inner.terms().len(),
+            self.inner.rss(),
+            self.inner.gcv()
+        )
+    }
+}
+
+/// MARS knot selection for hinge terms (Friedman's forward pass, as R's
+/// ``earth`` with ``degree = 1``), with an optional backward pass by GCV.
+///
+/// Its knots, RSS and GCV match ``earth``'s on the Chalk portfolio,
+/// weighted and unweighted. With ``family`` the search runs on that GLM's
+/// deviance (working response and weights at each step), which ``earth``
+/// has no counterpart for.
+///
+/// Parameters
+/// ----------
+/// x : dict of str to list of float
+///     The numeric predictors, in order.
+/// y : list of float
+/// weights : list of float, optional
+///     Case weights (exposure); all equal is the same as none.
+/// max_terms : int, optional
+///     ``earth``'s ``nk``; by default ``min(200, max(20, 2p)) + 1``.
+/// threshold : float
+///     Stop when a step adds less than this to R² (``0`` turns it off).
+/// penalty : float
+///     GCV's cost per knot.
+/// min_span, end_span : int, optional
+///     Cases between knots and free of knots at each end; ``earth``'s
+///     defaults by default.
+/// prune : bool
+///     Run the backward pass by GCV (``pmethod = "backward"``).
+/// family, link : str, optional
+///     Search on this GLM's deviance (``"poisson"``, ``"gamma"``, ...).
+///
+/// Returns
+/// -------
+/// MarsFit
+///
+/// Examples
+/// --------
+/// >>> x = [float(i) for i in range(60)]
+/// >>> y = [1 + 0.5 * v + 3 * max(0.0, v - 31) for v in x]
+/// >>> mars({"x": x}, y).knots("x")
+/// [31.0]
+#[pyfunction]
+#[pyo3(signature = (x, y, weights = None, max_terms = None, threshold = 0.001, penalty = 2.0, min_span = None, end_span = None, prune = false, family = None, link = None))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn mars(
+    x: &Bound<'_, pyo3::types::PyDict>,
+    y: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    max_terms: Option<usize>,
+    threshold: f64,
+    penalty: f64,
+    min_span: Option<usize>,
+    end_span: Option<usize>,
+    prune: bool,
+    family: Option<&str>,
+    link: Option<&str>,
+) -> PyResult<PyMarsFit> {
+    let mut names = Vec::new();
+    let mut columns = Vec::new();
+    for (k, v) in x.iter() {
+        names.push(k.extract::<String>()?);
+        columns.push(v.extract::<Vec<f64>>()?);
+    }
+    let mut spec = prospicio_glm::mars::Mars::new()
+        .threshold(threshold)
+        .penalty(penalty)
+        .prune(prune);
+    spec.max_terms = max_terms;
+    spec.min_span = min_span;
+    spec.end_span = end_span;
+    if let Some(name) = family {
+        let f = self::family(name, None, None)?;
+        spec = spec.glm(f, self::link(link, f, None)?);
+    } else if link.is_some() {
+        return Err(PyValueError::new_err("link needs a family"));
+    }
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let inner = spec
+        .fit(&refs, &columns, &y, weights.as_deref())
+        .map_err(to_py)?;
+    Ok(PyMarsFit { inner })
+}
