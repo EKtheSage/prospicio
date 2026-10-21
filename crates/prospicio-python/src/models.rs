@@ -4242,27 +4242,80 @@ impl PyNegativeBinomialFit {
 }
 
 /// Grouping factors from a dict of name to each row's labels (any values,
-/// read with ``str``), in the dict's order.
+/// read with ``str``), in the dict's order. A value may instead be a dict
+/// with ``labels``, ``slopes`` (a dict of covariate name to every row's
+/// value), ``intercept`` (default true) and ``correlated`` (default true;
+/// false makes each term a factor of its own, lme4's ``(1 + x || g)``).
 fn groupings(
     groups: &Bound<'_, pyo3::types::PyDict>,
 ) -> PyResult<Vec<prospicio_glm::glmm::Grouping>> {
-    groups
-        .iter()
-        .map(|(name, labels)| {
-            let name: String = name.extract()?;
-            let labels = labels
-                .try_iter()?
-                .map(|v| Ok(v?.str()?.to_string()))
-                .collect::<PyResult<Vec<String>>>()?;
-            Ok(prospicio_glm::glmm::Grouping::new(&name, labels))
-        })
-        .collect()
+    use prospicio_glm::glmm::Grouping;
+    let read_labels = |v: &Bound<'_, PyAny>| -> PyResult<Vec<String>> {
+        v.try_iter()?
+            .map(|v| Ok(v?.str()?.to_string()))
+            .collect::<PyResult<Vec<String>>>()
+    };
+    let mut out = Vec::new();
+    for (name, value) in groups.iter() {
+        let name: String = name.extract()?;
+        let Ok(spec) = value.cast::<pyo3::types::PyDict>() else {
+            out.push(Grouping::new(&name, read_labels(&value)?));
+            continue;
+        };
+        for key in spec.keys() {
+            let key: String = key.extract()?;
+            if !["labels", "slopes", "intercept", "correlated"].contains(&key.as_str()) {
+                return Err(PyValueError::new_err(format!(
+                    "grouping {name} has an unknown key {key:?}"
+                )));
+            }
+        }
+        let labels = read_labels(
+            &spec
+                .get_item("labels")?
+                .ok_or_else(|| PyValueError::new_err(format!("grouping {name} needs labels")))?,
+        )?;
+        let flag =
+            |key: &str| -> PyResult<bool> { spec.get_item(key)?.map_or(Ok(true), |v| v.extract()) };
+        let (intercept, correlated) = (flag("intercept")?, flag("correlated")?);
+        let mut slopes = Vec::new();
+        if let Some(s) = spec.get_item("slopes")? {
+            for (k, v) in s.cast::<pyo3::types::PyDict>()?.iter() {
+                slopes.push((k.extract::<String>()?, v.extract::<Vec<f64>>()?));
+            }
+        }
+        let base = Grouping::new(&name, labels);
+        if correlated {
+            let mut g = if intercept {
+                base
+            } else {
+                base.without_intercept()
+            };
+            g.slopes = slopes;
+            out.push(g);
+        } else {
+            if intercept {
+                out.push(base.clone());
+            }
+            for (k, v) in slopes {
+                out.push(base.clone().without_intercept().slope(&k, v));
+            }
+        }
+    }
+    Ok(out)
 }
 
-/// A GLM with random intercepts, ``log μ = Xβ + offset + Σ u``, each
-/// factor's intercepts ``N(0, σ²)``: the Poisson, gamma or Tweedie (fixed
-/// power in (1, 2)) with the log link, fitted by maximum marginal
-/// likelihood as glmmTMB and ``lme4::glmer``.
+/// A GLM with random intercepts and slopes, ``log μ = Xβ + offset + Σ zᵀb``,
+/// each factor's effects at a level ``N(0, Σ)`` with ``Σ`` unstructured:
+/// the Poisson, gamma or Tweedie (fixed power in (1, 2)) with the log
+/// link, fitted by maximum marginal likelihood as glmmTMB and
+/// ``lme4::glmer``.
+///
+/// ``fit``'s ``groups`` is a dict of each factor's name to every row's
+/// labels (a random intercept, ``(1 | g)``) or to a dict with ``labels``,
+/// ``slopes`` (covariate name to every row's value: ``(1 + x | g)``),
+/// ``intercept`` (false for ``(0 + x | g)``) and ``correlated`` (false for
+/// ``(1 + x || g)``).
 ///
 /// Parameters
 /// ----------
@@ -4272,8 +4325,8 @@ fn groupings(
 ///     The Tweedie power.
 /// nodes : int, optional
 ///     Adaptive Gauss–Hermite quadrature with this many nodes
-///     (``glmer(nAGQ = nodes)``), for a single grouping factor; the
-///     Laplace approximation when left out.
+///     (``glmer(nAGQ = nodes)``), for a single grouping factor with a
+///     single term; the Laplace approximation when left out.
 ///
 /// Examples
 /// --------
@@ -4318,10 +4371,11 @@ impl PyGlmm {
     /// ----------
     /// design : Design
     ///     The fixed effects, with any offset and prior weights.
-    /// groups : dict of str to sequence
-    ///     Each grouping factor's name and every row's label. Factors are
-    ///     crossed; a factor nested in another takes the joined labels, as
-    ///     lme4's ``a:b`` (``f"{a}:{b}"``).
+    /// groups : dict of str to sequence or dict
+    ///     Each grouping factor's name and every row's label, or a dict
+    ///     with ``labels``, ``slopes``, ``intercept`` and ``correlated``
+    ///     (see ``Glmm``). Factors are crossed; a factor nested in another
+    ///     takes the joined labels, as lme4's ``a:b`` (``f"{a}:{b}"``).
     /// y : sequence of float
     ///
     /// Returns
@@ -4341,7 +4395,7 @@ impl PyGlmm {
     }
 }
 
-/// A GLM with random intercepts, from ``Glmm.fit``.
+/// A GLM with random intercepts and slopes, from ``Glmm.fit``.
 #[pyclass(name = "GlmmFit", module = "prospicio.models", frozen)]
 pub(crate) struct PyGlmmFit {
     inner: prospicio_glm::glmm::GlmmFit,
@@ -4374,16 +4428,42 @@ impl PyGlmmFit {
         self.inner.covariance().to_vec()
     }
 
-    /// The grouping factors' names, in the order fitted.
+    /// Each random term's grouping factor, a factor repeated for each of
+    /// its terms (parallel to ``sd``).
     #[getter]
     fn group_names(&self) -> Vec<String> {
         self.inner.group_names().to_vec()
     }
 
-    /// Each factor's standard deviation ``σ``.
+    /// Each random term's name, ``"(Intercept)"`` or a slope's covariate.
+    #[getter]
+    fn term_names(&self) -> Vec<String> {
+        self.inner.term_names().to_vec()
+    }
+
+    /// Each random term's standard deviation ``σ``.
     #[getter]
     fn sd(&self) -> Vec<f64> {
         self.inner.sd().to_vec()
+    }
+
+    /// Each factor's correlation matrix of its terms, as a list of
+    /// ``(name, terms, matrix)``, the matrix a list of rows.
+    #[getter]
+    fn correlations(&self) -> Vec<(String, Vec<String>, Vec<Vec<f64>>)> {
+        self.inner
+            .random_effects()
+            .iter()
+            .zip(self.inner.correlations())
+            .map(|(r, c)| {
+                let d = r.terms.len();
+                (
+                    r.name.clone(),
+                    r.terms.clone(),
+                    c.chunks(d).map(<[f64]>::to_vec).collect(),
+                )
+            })
+            .collect()
     }
 
     /// Each ``σ``'s standard error, ``σ`` times that of ``log σ``; NaN
@@ -4423,7 +4503,7 @@ impl PyGlmmFit {
         self.inner.bic()
     }
 
-    /// Each row's mean with its random intercepts.
+    /// Each row's mean with its random effects.
     #[getter]
     fn fitted(&self) -> Vec<f64> {
         self.inner.fitted().to_vec()
@@ -4439,28 +4519,47 @@ impl PyGlmmFit {
         self.inner.converged()
     }
 
-    /// Each factor's random intercepts: a dict of name to a dict of
-    /// ``levels`` (sorted), ``values`` (the conditional modes),
-    /// ``conditional_variance`` (lme4's ``condVar``) and
-    /// ``prediction_variance`` (with the estimates' uncertainty, glmmTMB's
-    /// ``condVar``).
+    /// Each factor's random effects: a dict of name to a dict of
+    /// ``levels`` (sorted), ``terms`` and, for each term, ``values`` (the
+    /// conditional modes), ``conditional_variance`` (lme4's ``condVar``)
+    /// and ``prediction_variance`` (with the estimates' uncertainty,
+    /// glmmTMB's ``condVar``), each a dict of term to a list by level (the
+    /// independent factors of one name joined).
     #[getter]
     fn random_effects<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
         let out = pyo3::types::PyDict::new(py);
         for r in self.inner.random_effects() {
-            let d = pyo3::types::PyDict::new(py);
-            d.set_item("levels", &r.levels)?;
-            d.set_item("values", &r.values)?;
-            d.set_item("conditional_variance", &r.conditional_variance)?;
-            d.set_item("prediction_variance", &r.prediction_variance)?;
-            out.set_item(&r.name, d)?;
+            let d = match out.get_item(&r.name)? {
+                Some(d) => d.cast_into::<pyo3::types::PyDict>()?,
+                None => {
+                    let d = pyo3::types::PyDict::new(py);
+                    d.set_item("levels", &r.levels)?;
+                    d.set_item("terms", pyo3::types::PyList::empty(py))?;
+                    for key in ["values", "conditional_variance", "prediction_variance"] {
+                        d.set_item(key, pyo3::types::PyDict::new(py))?;
+                    }
+                    out.set_item(&r.name, &d)?;
+                    d
+                }
+            };
+            let item = |key: &str| -> PyResult<Bound<'py, PyAny>> {
+                d.get_item(key)?
+                    .ok_or_else(|| PyValueError::new_err(format!("no {key}")))
+            };
+            for (c, term) in r.terms.iter().enumerate() {
+                item("terms")?.cast::<pyo3::types::PyList>()?.append(term)?;
+                item("values")?.set_item(term, &r.values[c])?;
+                item("conditional_variance")?.set_item(term, &r.conditional_variance[c])?;
+                item("prediction_variance")?.set_item(term, &r.prediction_variance[c])?;
+            }
         }
         Ok(out)
     }
 
     /// Expected response for each row of ``design``, adding each row's
-    /// random intercepts by label; a level the fit has not seen, or a
-    /// factor left out of ``groups``, adds 0 (the population mean).
+    /// random effects by label and covariate (``groups`` as in
+    /// ``Glmm.fit``); a level the fit has not seen, or a factor left out of
+    /// ``groups``, adds 0 (the population mean).
     #[pyo3(signature = (design, groups = None))]
     fn predict(
         &self,

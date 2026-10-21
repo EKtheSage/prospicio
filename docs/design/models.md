@@ -712,48 +712,71 @@ differences more precisely instead.
 
 ## Mixed models
 
-`prospicio_glm::glmm::Glmm` fits a GLM with random intercepts (#358, the
-user's decisions of 2026-10-19, which also cover item 1 of the double-GLM
-issue): `log μ = Xβ + offset + Σₖ u_{k, level}` with each factor's
-intercepts `N(0, σₖ²)`, for the Poisson, gamma and Tweedie (fixed power in
-`(1, 2)`) with the log link. Grouping factors are a `Grouping` each (a name
-and every row's label); several are crossed, and `Grouping::nested(a, b)`
+`prospicio_glm::glmm::Glmm` fits a GLM with random intercepts and slopes
+(#358, the user's decisions of 2026-10-19, which also cover item 1 of the
+double-GLM issue, and of 2026-10-21 for the slopes):
+`log μ = Xβ + offset + Σₖ zₖᵀ b_{k, level}` with each factor's effects at
+a level `N(0, Σₖ)`, `Σₖ` unstructured, for the Poisson, gamma and Tweedie
+(fixed power in `(1, 2)`) with the log link. Grouping factors are a
+`Grouping` each (a name, every row's label, a random intercept unless
+`without_intercept`, and the random slopes added by `slope(name, values)`,
+lme4's `(1 + x | g)`); several are crossed, and `Grouping::nested(a, b)`
 is lme4's `a:b`, so `(1 | a/b)` is `a` and `Grouping::nested(a, b)`.
+Terms independent of each other, lme4's `(1 + x || g)`, are a factor each
+on the same labels.
 
-- **Fitting.** The marginal likelihood of `(β, log σ, log φ)` with the
-  intercepts integrated out, by the Laplace approximation by default (as
+- **Parameterization.** `b = Λ v` with `v ~ N(0, I)` and `Λₖ` the
+  Cholesky factor of `Σₖ` (lme4's spherical effects), so the Laplace
+  approximation is `g(v̂) − ½ log det(ΛᵀZᵀ W Z Λ + I)`, the same value as
+  in the effects themselves (the `det Λ` cancels), and a standard
+  deviation running to 0 leaves `H` at `I` rather than singular. `Σₖ` is
+  glmmTMB's `us` structure: the log standard deviations, then the strictly
+  lower entries, row by row, of a unit lower triangle whose rows
+  normalized are the correlation's Cholesky factor (two terms:
+  `ρ = θ / √(1 + θ²)`), so the parameters and their standard errors are
+  glmmTMB's `theta`.
+- **Fitting.** The marginal likelihood of `(β, θ, log φ)` with the
+  effects integrated out, by the Laplace approximation by default (as
   `glmer` and glmmTMB), or by adaptive Gauss–Hermite quadrature when there
-  is a single factor (`glmer(nAGQ = n)`). The inner mode `û` is found by
-  Newton's method to machine precision; `H = Zᵀ W Z + diag(1/σ²)` uses
-  the observed weights, as glmmTMB's automatic differentiation does (for
-  the canonical Poisson they are the expected weights `glmer` uses). The
-  outer maximization is BFGS on central-difference gradients, polished by
-  Newton steps on a finite-difference Hessian; that Hessian's inverse is
-  the covariance of `(β, log σ, log φ)`, as glmmTMB's `sdreport`. `H` is
-  dense when factors are crossed or nested, so the cost is `O(q³)` per
-  evaluation in the `q` levels; one factor keeps it diagonal. A sparse
+  is a single factor with a single term (`glmer(nAGQ = n)`, which refuses
+  more too). The inner mode `v̂` is found by Newton's method to machine
+  precision; `H` uses the observed weights `W`, as glmmTMB's automatic
+  differentiation does (for the canonical Poisson they are the expected
+  weights `glmer` uses). The outer maximization is BFGS on
+  central-difference gradients, polished by Newton steps on a
+  finite-difference Hessian; that Hessian's inverse is the covariance of
+  `(β, θ, log φ)`, as glmmTMB's `sdreport`. `H` is dense when factors are
+  crossed or nested or have slopes, so the cost is `O(q³)` per evaluation
+  in the `q` effects; one factor with one term keeps it diagonal. A sparse
   Cholesky would lift that limit if books with thousands of crossed levels
   need it.
 - **Dispersion.** `φ` is estimated by maximum likelihood inside the
   marginal likelihood (glmmTMB's choice), not by Pearson's statistic as
   `Glm` does. The Tweedie power is fixed; the reference fixes glmmTMB's
   `psi` with `map`.
-- **Results.** Each level's conditional mode `û` with its conditional
-  variance `(H⁻¹)ⱼⱼ` (lme4's `condVar`) and its prediction variance, which
-  adds the estimates' uncertainty `Jⱼ Σ Jⱼᵀ`, `J = ∂û/∂(β, log σ, log φ)`
-  (Kass and Steffey; glmmTMB's `condVar`); each `σₖ` and `φ` with
-  standard errors by the delta method from those of `log σₖ` and
-  `log φ`; the log-likelihood, AIC and BIC. `predict` adds
-  each row's intercepts by label, and a level the fit has not seen (or a
-  factor left out) contributes 0, the population mean.
+- **Results.** Each level's conditional modes `b̂ = Λ v̂`, term by term,
+  with their conditional variances, the diagonal of `Λ H⁻¹ Λᵀ` (lme4's
+  `condVar`), and their prediction variances, which add the estimates'
+  uncertainty `Jⱼ C Jⱼᵀ`, `J = ∂b̂/∂(β, θ, log φ)` (Kass and Steffey;
+  glmmTMB's `condVar`); each term's standard deviation and `φ` with
+  standard errors by the delta method from those of their logs; each
+  factor's correlation matrix; every parameter on the scale maximized
+  with its covariance; the log-likelihood, AIC and BIC. `predict` adds
+  each row's effects by label and covariate, and a level the fit has not
+  seen (or a factor left out) contributes 0, the population mean.
 - **Parity.** `validation/scripts/r_glmm.R`: glmmTMB on its Salamanders
   (one factor), lme4's grouseticks (location and brood nested in it) and a
   seeded simulated book (territory crossed with class; Poisson on
   exposure, gamma severities, Tweedie pure premiums with and without the
   second factor), and `glmer` on the two Poisson sets, Laplace and nine
-  quadrature nodes on Salamanders: 1,237 cases, coefficients to 2e-5,
+  quadrature nodes on Salamanders; and a seeded book with random slopes
+  (30 territories, `x` and `w` varying within each: `(1 + x | territory)`
+  for the Poisson on exposure, gamma severities and Tweedie pure premiums,
+  `(1 + x || territory)` and `(1 + x + w | territory)` for the Poisson,
+  `glmer` on the first two Poisson fits): 2,230 cases, coefficients to 2e-5,
   standard errors to 2e-4 against glmmTMB and 2e-3 against `glmer` (whose
-  `vcov` comes from its own finite-difference Hessian), modes to 1e-4,
+  `vcov` comes from its own finite-difference Hessian), correlations and
+  their parameters' standard errors to 2e-4, modes to 1e-4,
   log-likelihoods to 1e-8. The
   references' quirks (glmmTMB stopping short and polished in the script,
   its gamma dispersion parameter, `glmer`'s quadrature log-likelihood)
@@ -762,20 +785,28 @@ is lme4's `a:b`, so `(1 | a/b)` is `a` and `Grouping::nested(a, b)`.
   to −∞ with a gradient that never quite vanishes; the search stops after
   three steps that lower the objective by no more than round-off and
   counts as converged. A `σ` below 1e-4 is at the boundary: the other
-  parameters' covariance is taken with it held at 0 (β's standard errors
-  are then the GLM's), and its own standard error is NaN.
+  parameters' covariance is taken with it and its term's correlation
+  parameters held (β's standard errors are then the GLM's, when it is the
+  only term), and their own standard errors are NaN.
 - **Not a `Model`.** `Glmm` does not implement `prospicio_models::Model`,
   whose `fit` takes a design and a response: a GLMM also needs the
   grouping factors, and its `predict` their labels.
 - **Bindings.** Python `Glmm(family, power, nodes).fit(design, groups,
   y)`, with `groups` a dict of each factor's name and every row's labels
-  (a nested factor's labels joined, `f"{a}:{b}"`). R
-  `glmm_fit(formula, data, family, power, nodes)` reads lme4's
-  `(1 | g)` terms from the formula, `(1 | a/b)` as `(1 | a) + (1 | a:b)`;
-  its `predict()` takes the labels from `newdata`'s columns and leaves out
-  a factor whose columns are missing. A slope term `(x | g)` is an error.
-- **Later.** Random slopes (still being discussed with the user) and a
-  NUTS fit as an add-on.
+  (a nested factor's labels joined, `f"{a}:{b}"`), or a dict of `labels`,
+  `slopes` (covariate to values), `intercept` and `correlated` (false for
+  `||`); `random_effects` gives each factor's levels, terms and, by term,
+  the modes and variances. R `glmm_fit(formula, data, family, power,
+  nodes)` reads lme4's random terms from the formula: `(1 | g)`,
+  `(1 + x | g)` and `(x | g)`, `(0 + x | g)`, `(1 + x || g)`, and
+  `(1 | a/b)` as `(1 | a) + (1 | a:b)`; a slope is a numeric expression in
+  `data`'s columns. `sd` names a factor's intercept `g` and its slope
+  `g|x`, `correlations` gives each factor's matrix, and `random_effects`
+  a row for each level and term; its `predict()` takes the labels and
+  slopes from `newdata`'s columns and leaves out a factor whose columns
+  are missing.
+- **Later.** A NUTS fit of the same model (`prospicio-bayes`), on the
+  spherical effects `v` so that the sampler does not meet the funnel.
 
 ## Double GLMs
 

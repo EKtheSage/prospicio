@@ -1,11 +1,12 @@
-# Generalized linear mixed models with random intercepts: glmmTMB's
+# Generalized linear mixed models with random intercepts and slopes: glmmTMB's
 # Laplace fits of the Poisson, gamma and Tweedie (power fixed at 1.5), the
 # Poisson cross-checked against lme4's glmer, and glmer's adaptive
 # Gauss-Hermite quadrature (nAGQ = 9) for a single factor.
 #
 # Writes validation/data/glmm_salamanders.csv (glmmTMB's Salamanders),
 # glmm_grouseticks.csv (lme4's grouseticks), glmm_simulated.csv (a seeded
-# book with two crossed factors) and validation/reference/glmm_r.csv, which
+# book with two crossed factors), glmm_slopes.csv (a seeded book with
+# random slopes) and validation/reference/glmm_r.csv, which
 # validation/tests/models.rs checks. Run from the repository root:
 #   Rscript validation/scripts/r_glmm.R
 suppressPackageStartupMessages({
@@ -61,9 +62,21 @@ emit <- function(dataset, model, quantity, arg, value, tol) {
     source = source_of(model))
 }
 
+# A random term's argument: the factor for its intercept, `g|x` for a
+# slope; a level's, `g|level` and `g|level|x`.
+term_arg <- function(g, term) if (term == "(Intercept)") g else paste0(g, "|", term)
+level_arg <- function(g, level, term) {
+  if (term == "(Intercept)") paste0(g, "|", level) else paste(g, level, term, sep = "|")
+}
+
+# Term c's conditional variance at level j: lme4 gives the independent
+# terms of `(1 + x || g)` one array each.
+cond_var <- function(v, c, j) if (is.list(v)) v[[c]][1, 1, j] else v[c, c, j]
+
 # glmmTMB: β, their SEs, each σ, log σ's SE, φ (the response's variance is
-# φ μ^p), log φ's SE, the log-likelihood, and every level's mode and
-# condVar.
+# φ μ^p), log φ's SE, each correlation and its parameter's SE (glmmTMB's
+# theta: two terms have ρ = θ / √(1 + θ²)), the log-likelihood, and every
+# level's modes and condVar.
 emit_tmb <- function(dataset, model, fit, power) {
   b <- fixef(fit)$cond
   se <- sqrt(diag(vcov(fit)$cond))
@@ -74,9 +87,31 @@ emit_tmb <- function(dataset, model, fit, power) {
   vf <- vcov(fit, full = TRUE)
   vc <- VarCorr(fit)$cond
   th <- grep("^theta", colnames(vf))
+  # Each factor's theta: its log standard deviations, then (an
+  # unstructured covariance) its correlation parameters.
+  at <- 0
   for (j in seq_along(vc)) {
-    emit(dataset, model, "sd", names(vc)[j], attr(vc[[j]], "stddev"), 2e-5)
-    emit(dataset, model, "se_log_sd", names(vc)[j], sqrt(vf[th[j], th[j]]), 2e-4)
+    g <- names(vc)[j]
+    s <- attr(vc[[j]], "stddev")
+    terms <- names(s)
+    for (c in seq_along(s)) {
+      emit(dataset, model, "sd", term_arg(g, terms[c]), s[c], 2e-5)
+      emit(dataset, model, "se_log_sd", term_arg(g, terms[c]),
+           sqrt(vf[th[at + c], th[at + c]]), 2e-4)
+    }
+    n_theta <- length(s)
+    cor <- attr(vc[[j]], "correlation")
+    if (length(s) > 1 && !grepl("diag", model)) {
+      for (r in 2:length(s)) for (c in 1:(r - 1)) {
+        emit(dataset, model, "cor", paste(g, terms[r], terms[c], sep = "|"), cor[r, c], 2e-4)
+      }
+      n_theta <- length(s) * (length(s) + 1) / 2
+      for (k in (length(s) + 1):n_theta) {
+        emit(dataset, model, "se_theta", paste0(g, "|", k), sqrt(vf[th[at + k], th[at + k]]),
+             2e-4)
+      }
+    }
+    at <- at + n_theta
   }
   if (power > 1) {
     s <- sigma(fit)
@@ -92,10 +127,12 @@ emit_tmb <- function(dataset, model, fit, power) {
   re <- ranef(fit, condVar = TRUE)$cond
   for (g in names(re)) {
     v <- attr(re[[g]], "condVar")
-    for (j in seq_len(nrow(re[[g]]))) {
-      lab <- paste0(g, "|", rownames(re[[g]])[j])
-      emit(dataset, model, "ranef", lab, re[[g]][j, 1], 1e-4)
-      emit(dataset, model, "prediction_var", lab, v[1, 1, j], 1e-3)
+    for (c in seq_len(ncol(re[[g]]))) {
+      for (j in seq_len(nrow(re[[g]]))) {
+        lab <- level_arg(g, rownames(re[[g]])[j], colnames(re[[g]])[c])
+        emit(dataset, model, "ranef", lab, re[[g]][j, c], 1e-4)
+        emit(dataset, model, "prediction_var", lab, cond_var(v, c, j), 1e-3)
+      }
     }
   }
 }
@@ -107,8 +144,22 @@ emit_lme4 <- function(dataset, model, fit) {
     emit(dataset, model, "coef", names(b)[j], b[j], 2e-5)
     emit(dataset, model, "se", names(b)[j], se[j], 2e-3)
   }
+  # lme4 names the factors of `(1 + x || g)` g and g.1.
+  factor_of <- function(g) sub("\\.[0-9]+$", "", g)
   vc <- VarCorr(fit)
-  for (g in names(vc)) emit(dataset, model, "sd", g, attr(vc[[g]], "stddev"), 2e-5)
+  for (g in names(vc)) {
+    s <- attr(vc[[g]], "stddev")
+    for (c in seq_along(s)) {
+      emit(dataset, model, "sd", term_arg(factor_of(g), names(s)[c]), s[c], 2e-5)
+    }
+    if (length(s) > 1) {
+      cor <- attr(vc[[g]], "correlation")
+      for (r in 2:length(s)) for (c in 1:(r - 1)) {
+        emit(dataset, model, "cor", paste(factor_of(g), names(s)[r], names(s)[c], sep = "|"),
+             cor[r, c], 2e-4)
+      }
+    }
+  }
   # With quadrature (nAGQ > 1) glmer's log-likelihood leaves out the
   # saturated model's, sum(dpois(y, y, log = TRUE)); it is added back.
   ll <- as.numeric(logLik(fit))
@@ -117,10 +168,12 @@ emit_lme4 <- function(dataset, model, fit) {
   re <- ranef(fit, condVar = TRUE)
   for (g in names(re)) {
     v <- attr(re[[g]], "postVar")
-    for (j in seq_len(nrow(re[[g]]))) {
-      lab <- paste0(g, "|", rownames(re[[g]])[j])
-      emit(dataset, model, "ranef", lab, re[[g]][j, 1], 1e-4)
-      emit(dataset, model, "conditional_var", lab, v[1, 1, j], 1e-4)
+    for (c in seq_len(ncol(re[[g]]))) {
+      for (j in seq_len(nrow(re[[g]]))) {
+        lab <- level_arg(factor_of(g), rownames(re[[g]])[j], colnames(re[[g]])[c])
+        emit(dataset, model, "ranef", lab, re[[g]][j, c], 1e-4)
+        emit(dataset, model, "conditional_var", lab, cond_var(v, c, j), 1e-4)
+      }
     }
   }
 }
@@ -178,6 +231,46 @@ tw <- function(form) tmb(form, sim, family = tweedie(link = "log"),
                          start = list(psi = qlogis(0.5)), map = list(psi = factor(NA)))
 emit_tmb("simulated", "tweedie", tw(pure ~ x + urban + (1 | territory) + (1 | class)), 1.5)
 emit_tmb("simulated", "tweedie_one", tw(pure ~ x + urban + (1 | territory)), 1.5)
+
+# Random slopes: a book of 800 policies in 30 territories, x and w varying
+# within each, the territories' intercepts and slopes on x correlated.
+set.seed(20261021)
+n <- 800
+territory <- sprintf("t%02d", sample(30, n, replace = TRUE))
+x <- round(runif(n, -1, 1), 4)
+w <- round(runif(n, -1, 1), 4)
+exposure <- round(runif(n, 0.2, 1), 3)
+z <- matrix(rnorm(90), 30)
+b0 <- 0.4 * z[, 1]
+b1 <- 0.3 * (0.5 * z[, 1] + sqrt(0.75) * z[, 2])
+b2 <- 0.2 * z[, 3]
+t <- as.integer(substr(territory, 2, 3))
+eta <- 0.3 + 0.5 * x - 0.2 * w + b0[t] + b1[t] * x + b2[t] * w
+count <- rpois(n, exposure * exp(eta + 0.5))
+severity <- round(rgamma(n, shape = 2, scale = exp(eta + 6) / 2), 2)
+claims <- rpois(n, exposure * exp(eta + 0.7) * 2)
+premium <- sapply(claims, function(k) if (k == 0) 0 else sum(rgamma(k, shape = 1.5, scale = 400)))
+pure <- round(premium / exposure, 2)
+sl <- data.frame(count, severity, pure, exposure, x, w, territory)
+write.csv(sl, "validation/data/glmm_slopes.csv", row.names = FALSE)
+
+f <- tmb(count ~ x + w + (1 + x | territory) + offset(log(exposure)), sl, family = poisson)
+emit_tmb("slopes", "poisson", f, 1)
+g <- glmer(count ~ x + w + (1 + x | territory) + offset(log(exposure)), sl, family = poisson,
+           control = gctrl)
+emit_lme4("slopes", "poisson_glmer", g)
+f <- tmb(count ~ x + w + diag(1 + x | territory) + offset(log(exposure)), sl, family = poisson)
+emit_tmb("slopes", "poisson_diag", f, 1)
+g <- glmer(count ~ x + w + (1 + x || territory) + offset(log(exposure)), sl, family = poisson,
+           control = gctrl)
+emit_lme4("slopes", "poisson_diag_glmer", g)
+f <- tmb(count ~ x + w + (1 + x + w | territory) + offset(log(exposure)), sl, family = poisson)
+emit_tmb("slopes", "poisson_three", f, 1)
+f <- tmb(severity ~ x + w + (1 + x | territory), sl, family = Gamma(link = "log"))
+emit_tmb("slopes", "gamma", f, 2)
+f <- tmb(pure ~ x + w + (1 + x | territory), sl, family = tweedie(link = "log"),
+         start = list(psi = qlogis(0.5)), map = list(psi = factor(NA)))
+emit_tmb("slopes", "tweedie", f, 1.5)
 
 out <- do.call(rbind, rows)
 con <- file("validation/reference/glmm_r.csv", "w")

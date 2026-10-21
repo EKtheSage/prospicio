@@ -721,14 +721,15 @@ def test_glmm_matches_glmmtmb_and_glmer():
     assert fit.dispersion == 1.0
     assert fit.log_likelihood == pytest.approx(ref[("poisson", "loglik", "")], rel=1e-8)
     effects = fit.random_effects["site"]
+    assert effects["terms"] == ["(Intercept)"]
     j = effects["levels"].index("R-1")
-    assert effects["values"][j] == pytest.approx(
+    assert effects["values"]["(Intercept)"][j] == pytest.approx(
         ref[("poisson", "ranef", "site|R-1")], rel=1e-4, abs=1e-5
     )
-    assert effects["prediction_variance"][j] == pytest.approx(
+    assert effects["prediction_variance"]["(Intercept)"][j] == pytest.approx(
         ref[("poisson", "prediction_var", "site|R-1")], rel=1e-3
     )
-    assert effects["conditional_variance"][j] == pytest.approx(
+    assert effects["conditional_variance"]["(Intercept)"][j] == pytest.approx(
         ref[("poisson_glmer", "conditional_var", "site|R-1")], rel=1e-3
     )
     # A level the fit has not seen, or no groups, predicts the population mean.
@@ -736,7 +737,7 @@ def test_glmm_matches_glmmtmb_and_glmer():
     population = math.exp(sum(b * c[0] for b, c in zip(fit.coefficients, columns)))
     assert fit.predict(row, {"site": ["nowhere"]})[0] == pytest.approx(population, rel=1e-12)
     assert fit.predict(row)[0] == pytest.approx(population, rel=1e-12)
-    u = effects["values"][effects["levels"].index(site[0])]
+    u = effects["values"]["(Intercept)"][effects["levels"].index(site[0])]
     assert fit.predict(row, {"site": [site[0]]})[0] == pytest.approx(
         population * math.exp(u), rel=1e-12
     )
@@ -745,6 +746,64 @@ def test_glmm_matches_glmmtmb_and_glmer():
     agq = Glmm(nodes=9).fit(design, {"site": site}, y)
     assert agq.log_likelihood == pytest.approx(ref[("poisson_agq9", "loglik", "")], rel=1e-8)
     assert agq.sd[0] == pytest.approx(ref[("poisson_agq9", "sd", "site")], rel=2e-5)
+
+
+def test_glmm_random_slopes_match_glmmtmb():
+    # validation/scripts/r_glmm.R: glmmTMB 1.1.15.2 on the slopes book,
+    # count ~ x + w + (1 + x | territory) + offset(log(exposure)), and the
+    # slope independent of the intercept, (1 + x || territory).
+    import csv
+    import pathlib
+
+    from prospicio.models import Design, Glmm
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "validation"
+    with open(root / "data" / "glmm_slopes.csv") as f:
+        rows = list(csv.DictReader(f))
+    with open(root / "reference" / "glmm_r.csv") as f:
+        ref = {
+            (r["model"], r["quantity"], r["arg"]): float(r["expected"])
+            for r in csv.DictReader(line for line in f if not line.startswith("#"))
+            if r["dataset"] == "slopes"
+        }
+    x = [float(r["x"]) for r in rows]
+    w = [float(r["w"]) for r in rows]
+    offset = [math.log(float(r["exposure"])) for r in rows]
+    design = Design([[1.0] * len(rows), x, w], ["(Intercept)", "x", "w"], offset=offset)
+    y = [float(r["count"]) for r in rows]
+    territory = [r["territory"] for r in rows]
+    groups = {"territory": {"labels": territory, "slopes": {"x": x}}}
+    fit = Glmm().fit(design, groups, y)
+    assert fit.converged
+    assert fit.group_names == ["territory", "territory"]
+    assert fit.term_names == ["(Intercept)", "x"]
+    for b, name in zip(fit.coefficients, fit.names):
+        assert b == pytest.approx(ref[("poisson", "coef", name)], rel=2e-5, abs=2e-6)
+    assert fit.sd == pytest.approx(
+        [ref[("poisson", "sd", "territory")], ref[("poisson", "sd", "territory|x")]], rel=2e-5
+    )
+    name, terms, matrix = fit.correlations[0]
+    assert (name, terms) == ("territory", ["(Intercept)", "x"])
+    assert matrix[1][0] == pytest.approx(
+        ref[("poisson", "cor", "territory|x|(Intercept)")], rel=2e-4
+    )
+    assert fit.log_likelihood == pytest.approx(ref[("poisson", "loglik", "")], rel=1e-8)
+    effects = fit.random_effects["territory"]
+    assert effects["terms"] == ["(Intercept)", "x"]
+    j = effects["levels"].index("t07")
+    assert effects["values"]["x"][j] == pytest.approx(
+        ref[("poisson", "ranef", "territory|t07|x")], rel=1e-4, abs=1e-5
+    )
+    assert fit.predict(design, groups) == pytest.approx(fit.fitted, rel=1e-9)
+    independent = {"territory": {"labels": territory, "slopes": {"x": x}, "correlated": False}}
+    diag = Glmm().fit(design, independent, y)
+    assert diag.log_likelihood == pytest.approx(ref[("poisson_diag", "loglik", "")], rel=1e-8)
+    assert diag.random_effects["territory"]["terms"] == ["(Intercept)", "x"]
+    assert diag.predict(design, independent) == pytest.approx(diag.fitted, rel=1e-9)
+    with pytest.raises(ValueError, match="single term"):
+        Glmm(nodes=5).fit(design, groups, y)
+    with pytest.raises(ValueError, match="unknown key"):
+        Glmm().fit(design, {"territory": {"labels": territory, "slope": {"x": x}}}, y)
 
 
 def test_double_glm_matches_corrected_dglm():

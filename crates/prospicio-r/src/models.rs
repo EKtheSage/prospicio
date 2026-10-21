@@ -236,23 +236,54 @@ fn glm_nb_fit_design(
 }
 
 /// Grouping factors from their names and every row's labels, the factors
-/// one after another (`k` blocks of `n` labels).
-fn groupings(names: Vec<String>, labels: Vec<String>) -> Result<Vec<Grouping>> {
+/// one after another (`k` blocks of `n` labels), whether each has a random
+/// intercept (1 or 0), and the random slopes: each one's factor (0-based),
+/// covariate name and every row's value (blocks of `n`).
+fn groupings(
+    names: Vec<String>,
+    labels: Vec<String>,
+    intercepts: &[f64],
+    slope_factor: &[f64],
+    slope_names: Vec<String>,
+    slope_values: &[f64],
+) -> Result<Vec<Grouping>> {
     let k = names.len();
     if k == 0 {
         return Ok(Vec::new());
     }
-    if labels.len() % k != 0 {
+    if labels.len() % k != 0 || intercepts.len() != k {
         return Err(Error::Other(
             "the grouping labels do not match the factors".into(),
         ));
     }
     let n = labels.len() / k;
-    Ok(names
+    let m = slope_names.len();
+    if slope_factor.len() != m || slope_values.len() != m * n {
+        return Err(Error::Other(
+            "the random slopes do not match the factors".into(),
+        ));
+    }
+    let mut groups: Vec<Grouping> = names
         .iter()
         .enumerate()
-        .map(|(j, name)| Grouping::new(name, labels[j * n..(j + 1) * n].to_vec()))
-        .collect())
+        .map(|(j, name)| {
+            let g = Grouping::new(name, labels[j * n..(j + 1) * n].to_vec());
+            if intercepts[j] == 0.0 {
+                g.without_intercept()
+            } else {
+                g
+            }
+        })
+        .collect();
+    for (s, name) in slope_names.iter().enumerate() {
+        let j = whole(slope_factor[s], "slope_factor")? as usize;
+        let g = groups
+            .get_mut(j)
+            .ok_or_else(|| Error::Other(format!("slope {name} has no factor {j}")))?;
+        g.slopes
+            .push((name.clone(), slope_values[s * n..(s + 1) * n].to_vec()));
+    }
+    Ok(groups)
 }
 
 /// A double GLM: the mean on `x`, the log dispersion on `z`
@@ -378,8 +409,8 @@ impl DglmModel {
     }
 }
 
-/// A GLM with random intercepts (`docs/design/models.md`, "Mixed
-/// models"); `nodes` 0 for the Laplace approximation.
+/// A GLM with random intercepts and slopes (`docs/design/models.md`,
+/// "Mixed models"); `nodes` 0 for the Laplace approximation.
 #[allow(clippy::too_many_arguments)]
 #[extendr]
 fn glmm_fit_design(
@@ -392,6 +423,10 @@ fn glmm_fit_design(
     power: f64,
     group_names: Vec<String>,
     group_labels: Vec<String>,
+    intercepts: &[f64],
+    slope_factor: &[f64],
+    slope_names: Vec<String>,
+    slope_values: &[f64],
     nodes: f64,
 ) -> Result<GlmmModel> {
     let f = match family_name {
@@ -405,7 +440,14 @@ fn glmm_fit_design(
         }
     };
     let d = design(x, names, offset, weights)?;
-    let groups = groupings(group_names, group_labels)?;
+    let groups = groupings(
+        group_names,
+        group_labels,
+        intercepts,
+        slope_factor,
+        slope_names,
+        slope_values,
+    )?;
     let mut spec = Glmm::new(f);
     let nodes = whole(nodes, "nodes")?;
     if nodes > 0 {
@@ -415,7 +457,7 @@ fn glmm_fit_design(
     Ok(GlmmModel { inner })
 }
 
-/// A fitted GLM with random intercepts.
+/// A fitted GLM with random intercepts and slopes.
 #[extendr]
 pub(crate) struct GlmmModel {
     inner: GlmmFit,
@@ -483,33 +525,90 @@ impl GlmmModel {
         self.inner.converged()
     }
 
-    /// Each factor's levels, modes and variances, as a list by factor.
-    fn random_effects(&self) -> List {
-        let items: Vec<Robj> = self
+    fn term_names(&self) -> Vec<String> {
+        self.inner.term_names().to_vec()
+    }
+
+    /// Each factor's correlation matrix, row-major, as a list by factor.
+    fn correlations(&self) -> List {
+        let mut out = List::from_values(
+            self.inner
+                .correlations()
+                .iter()
+                .map(|c| Robj::from(c.clone())),
+        );
+        let names: Vec<&str> = self
             .inner
             .random_effects()
             .iter()
-            .map(|r| {
-                list!(
-                    level = r.levels.clone(),
-                    value = r.values.clone(),
-                    conditional_variance = r.conditional_variance.clone(),
-                    prediction_variance = r.prediction_variance.clone()
-                )
-                .into()
-            })
-            .collect();
-        let mut out = List::from_values(items);
-        let names: Vec<&str> = self
-            .inner
-            .group_names()
-            .iter()
-            .map(String::as_str)
+            .map(|r| r.name.as_str())
             .collect();
         let _ = out.set_names(names);
         out
     }
 
+    /// The terms of each correlation matrix, as a list by factor.
+    fn correlation_terms(&self) -> List {
+        List::from_values(
+            self.inner
+                .random_effects()
+                .iter()
+                .map(|r| Robj::from(r.terms.clone())),
+        )
+    }
+
+    /// Each factor's levels, terms, modes and variances, one row per
+    /// level and term, as a list by factor name (the factors of one name,
+    /// as `(1 + x || g)` gives, joined).
+    fn random_effects(&self) -> List {
+        let mut order: Vec<&str> = Vec::new();
+        use std::collections::HashMap;
+        let mut level: HashMap<&str, Vec<String>> = HashMap::new();
+        let mut term: HashMap<&str, Vec<String>> = HashMap::new();
+        let mut value: HashMap<&str, Vec<f64>> = HashMap::new();
+        let mut cond: HashMap<&str, Vec<f64>> = HashMap::new();
+        let mut pred: HashMap<&str, Vec<f64>> = HashMap::new();
+        for r in self.inner.random_effects() {
+            let name = r.name.as_str();
+            if !order.contains(&name) {
+                order.push(name);
+            }
+            for (c, t) in r.terms.iter().enumerate() {
+                level
+                    .entry(name)
+                    .or_default()
+                    .extend(r.levels.iter().cloned());
+                term.entry(name)
+                    .or_default()
+                    .extend(std::iter::repeat_n(t.clone(), r.levels.len()));
+                value.entry(name).or_default().extend(&r.values[c]);
+                cond.entry(name)
+                    .or_default()
+                    .extend(&r.conditional_variance[c]);
+                pred.entry(name)
+                    .or_default()
+                    .extend(&r.prediction_variance[c]);
+            }
+        }
+        let items: Vec<Robj> = order
+            .iter()
+            .map(|name| {
+                list!(
+                    level = level[name].clone(),
+                    term = term[name].clone(),
+                    value = value[name].clone(),
+                    conditional_variance = cond[name].clone(),
+                    prediction_variance = pred[name].clone()
+                )
+                .into()
+            })
+            .collect();
+        let mut out = List::from_values(items);
+        let _ = out.set_names(order);
+        out
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn predict(
         &self,
         x: &[f64],
@@ -517,9 +616,20 @@ impl GlmmModel {
         offset: &[f64],
         group_names: Vec<String>,
         group_labels: Vec<String>,
+        intercepts: &[f64],
+        slope_factor: &[f64],
+        slope_names: Vec<String>,
+        slope_values: &[f64],
     ) -> Result<Vec<f64>> {
         let d = design(x, names, offset, &[])?;
-        let groups = groupings(group_names, group_labels)?;
+        let groups = groupings(
+            group_names,
+            group_labels,
+            intercepts,
+            slope_factor,
+            slope_names,
+            slope_values,
+        )?;
         self.inner.predict(&d, &groups).map_err(to_r)
     }
 }

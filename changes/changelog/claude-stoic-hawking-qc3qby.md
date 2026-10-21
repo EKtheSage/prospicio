@@ -427,20 +427,25 @@
   full adds `family: Family::Poisson` or uses `..OdpGlm::default()` (#333, #445).
 ### Models
 
-- Generalized linear mixed models with random intercepts:
+- Generalized linear mixed models with random intercepts and slopes:
   `prospicio_glm::glmm::Glmm` fits the Poisson, gamma and Tweedie (fixed
   power) with the log link and one, nested (`Grouping::nested`) or crossed
-  grouping factors, by the Laplace approximation or, for one factor, by
-  adaptive Gauss-Hermite quadrature (`Glmm::quadrature`). `GlmmFit` gives
-  the fixed effects with their covariance, each factor's standard
-  deviation, the dispersion, the log-likelihood, AIC and BIC, and each
-  level's mode with its conditional and prediction variances; `predict`
-  gives a level the fit has not seen the population mean. At parity with
-  glmmTMB and lme4's `glmer` (#358).
+  grouping factors, each with a random intercept and any random slopes
+  (`Grouping::slope`, `without_intercept`) under an unstructured
+  covariance, by the Laplace approximation or, for one factor with one
+  term, by adaptive Gauss-Hermite quadrature (`Glmm::quadrature`).
+  `GlmmFit` gives the fixed effects with their covariance, each term's
+  standard deviation, each factor's correlations, every parameter with its
+  covariance (glmmTMB's `theta`), the dispersion, the log-likelihood, AIC
+  and BIC, and each level's modes with their conditional and prediction
+  variances; `predict` gives a level the fit has not seen the population
+  mean. At parity with glmmTMB and lme4's `glmer` (#358).
 - The GLMMs in Python and R: `prospicio.models.Glmm` and `GlmmFit`, with
-  grouping factors as a dict of labels, and R `glmm_fit()` with lme4's
-  `(1 | g)` and `(1 | a/b)` terms in the formula, returning a
-  `glmm_model` with `random_effects` and `predict()` (#358).
+  grouping factors as a dict of labels or of `labels`, `slopes`,
+  `intercept` and `correlated`, and R `glmm_fit()` with lme4's `(1 | g)`,
+  `(1 + x | g)`, `(0 + x | g)`, `(1 + x || g)` and `(1 | a/b)` terms in
+  the formula, returning a `glmm_model` with `sd`, `correlations`,
+  `random_effects` and `predict()` (#358).
 - Double GLMs: `prospicio_glm::dglm::DoubleGlm` fits a GLM for the mean
   and a gamma GLM with the log link for the dispersion, each on its own
   design, for the Gaussian, Poisson, gamma and Tweedie, by ML (the

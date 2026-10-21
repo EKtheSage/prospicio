@@ -6,7 +6,7 @@
 
 ## Next
 
-- [glmm-later] a NUTS fit of the GLMMs and random slopes, when the user decides them (#358)
+- [glmm-nuts] a NUTS fit of the GLMMs on the spherical effects, by the user's decision of 2026-10-21 (#358)
 - [survival-models] survival models when claim-level reserving resumes (`docs/design/models.md`)
 - [triangle-design-bridge] The triangle-to-design bridge and the diagonal backtest stay in the Reserving lane
 
@@ -36,3 +36,4 @@
 - [net-bindings] the elastic net's bounds and relaxed fits in Python (`ElasticNet(lower_limits=, upper_limits=)`, `ElasticNetFit.relax`, `ElasticNet.cross_validate_relaxed`, `RelaxedCv`) and R (`elastic_net_fit(lower_limits, upper_limits, relax)`, `coef()` and `predict()` with `gamma`, `elastic_net_cv(relax = TRUE, gamma)`), glmnet parity in both (#356)
 - model-agnostic explanations in Python and R (`permutation_importance`, `interaction_screen`, `partial_dependence`, on one fit or over folds; groups shuffled together; the shuffles from `resample::permutation`, so both languages give the same values; the monograph's Tables 9.1 to 9.4 reproduced; #355)
 - [dglm-ml-default] `DoubleGlm` by maximum likelihood by default, as `dglm` (the user's decision of 2026-10-21); REML is `DoubleGlm::reml()`, Python and R `method = "reml"`
+- [glmm-slopes] random slopes in the GLMMs, by the user's decision of 2026-10-21 (`Grouping::slope`, `without_intercept`: lme4's `(1 + x | g)`, `(0 + x | g)` and, as a factor for each term, `(1 + x || g)`, under glmmTMB's unstructured covariance on lme4's spherical effects `b = Λv`; glmmTMB and `glmer` parity on a seeded book with correlated, independent and two slopes, Poisson, gamma and Tweedie; Python `slopes` in `groups`, R formulas; #358)
