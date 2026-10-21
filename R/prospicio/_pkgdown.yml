@@ -220,6 +220,7 @@ reference:
       - robust_vcov
       - bayes_glm_fit
       - bayes_glm_model
+      - bayes_glmm_fit
       - bayes_loo
       - bayes_ppc
       - save_model

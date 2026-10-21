@@ -446,6 +446,15 @@
   `(1 + x | g)`, `(0 + x | g)`, `(1 + x || g)` and `(1 | a/b)` terms in
   the formula, returning a `glmm_model` with `sd`, `correlations`,
   `random_effects` and `predict()` (#358).
+- Bayesian GLMMs by NUTS: `prospicio_bayes::glmm::BayesGlmm` samples the
+  same models jointly with their random effects (non-centred, started at
+  the Laplace fit), with normal priors on the coefficients, half-normal
+  ones on the standard deviations and the dispersion and LKJ priors on the
+  correlations. `BayesGlmmFit` gives the parameters' and the effects'
+  draws, the summary with R-hat and ESS, each effect's posterior mean and
+  sd, the Laplace fit and the posterior mean of new rows' means. In Python
+  `prospicio.models.BayesGlmm` and `BayesGlmmFit`, in R
+  `bayes_glmm_fit()` with the random terms in the formula (#358).
 - Double GLMs: `prospicio_glm::dglm::DoubleGlm` fits a GLM for the mean
   and a gamma GLM with the log link for the dispersion, each on its own
   design, for the Gaussian, Poisson, gamma and Tweedie, by ML (the

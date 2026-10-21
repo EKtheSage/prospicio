@@ -10,6 +10,8 @@ actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta,
 
 bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
 
+bayes_glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, priors, sampler) .Call(wrap__bayes_glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, priors, sampler)
+
 glm_nested_test_rust <- function(small, big, kind) .Call(wrap__glm_nested_test_rust, small, big, kind)
 
 vif_rust <- function(x, names) .Call(wrap__vif_rust, x, names)
@@ -1034,6 +1036,34 @@ GlmmModel$predict <- function(x, names, offset, group_names, group_labels, inter
 
 #' @export
 `[[.GlmmModel` <- `$.GlmmModel`
+
+BayesGlmmModel <- new.env(parent = emptyenv())
+
+BayesGlmmModel$names <- function() .Call(wrap__BayesGlmmModel__names, self)
+
+BayesGlmmModel$parameter_names <- function() .Call(wrap__BayesGlmmModel__parameter_names, self)
+
+BayesGlmmModel$parameter_draws <- function() .Call(wrap__BayesGlmmModel__parameter_draws, self)
+
+BayesGlmmModel$effect_names <- function() .Call(wrap__BayesGlmmModel__effect_names, self)
+
+BayesGlmmModel$effect_draws <- function() .Call(wrap__BayesGlmmModel__effect_draws, self)
+
+BayesGlmmModel$divergences <- function() .Call(wrap__BayesGlmmModel__divergences, self)
+
+BayesGlmmModel$summary <- function() .Call(wrap__BayesGlmmModel__summary, self)
+
+BayesGlmmModel$laplace <- function() .Call(wrap__BayesGlmmModel__laplace, self)
+
+BayesGlmmModel$random_effects <- function() .Call(wrap__BayesGlmmModel__random_effects, self)
+
+BayesGlmmModel$predict <- function(x, names, offset, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values) .Call(wrap__BayesGlmmModel__predict, self, x, names, offset, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values)
+
+#' @export
+`$.BayesGlmmModel` <- function (self, name) { func <- BayesGlmmModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesGlmmModel` <- `$.BayesGlmmModel`
 
 DglmModel <- new.env(parent = emptyenv())
 

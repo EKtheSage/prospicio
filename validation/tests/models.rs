@@ -2321,3 +2321,51 @@ fn double_glms_match_dglm() {
         }
     });
 }
+
+/// The Bayesian GLMM sampled with NUTS on the random-slopes book: with
+/// 800 rows and weak priors the posterior is near the Laplace fit,
+/// coefficients, standard deviations, correlation and effects.
+#[test]
+fn bayes_glmm_on_the_slopes_book_is_near_the_laplace_fit() {
+    use prospicio_bayes::glmm::{BayesGlmm, Sampler};
+    let (_, design, groups, y) = glmm_case("slopes", "poisson");
+    let spec = BayesGlmm::new(Family::Poisson).sampler(Sampler {
+        chains: 4,
+        tune: 500,
+        draws: 500,
+        seed: 2026,
+        ..Sampler::default()
+    });
+    let fit = spec.fit(&design, &groups, &y).unwrap();
+    let laplace = fit.laplace();
+    assert_eq!(fit.divergences(), 0);
+    let summary = fit.summary().unwrap();
+    let mut at_mode = laplace.coefficients().to_vec();
+    at_mode.extend_from_slice(laplace.sd());
+    at_mode.push(laplace.correlations()[0][2]);
+    // The posterior means of the coefficients sit on the mode; those of
+    // the standard deviations a little above it, the prior and the skew
+    // of a scale's posterior lifting them.
+    for (k, (s, m)) in summary.iter().zip(&at_mode).enumerate() {
+        assert!(s.rhat < 1.05, "{} rhat {}", s.name, s.rhat);
+        let within = if k < 3 { 0.2 } else { 0.75 };
+        assert!(
+            (s.mean - m).abs() < within * s.sd,
+            "{}: posterior mean {} against the Laplace fit's {m}",
+            s.name,
+            s.mean
+        );
+    }
+    let post = fit.random_effects();
+    let mode = &laplace.random_effects()[0];
+    let mut worst = 0.0f64;
+    for c in 0..2 {
+        for l in 0..mode.levels.len() {
+            worst = worst.max((post[0].mean[c][l] - mode.values[c][l]).abs() / post[0].sd[c][l]);
+        }
+    }
+    assert!(
+        worst < 0.4,
+        "an effect is {worst} posterior sds off its mode"
+    );
+}

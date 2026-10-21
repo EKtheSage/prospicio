@@ -1424,6 +1424,131 @@ class BayesGlmFit:
         """
 
 @final
+class BayesGlmm:
+    """
+    A Bayesian GLMM: the model of ``Glmm`` with priors, sampled with NUTS
+    jointly with the random effects (non-centred, ``b = Λ v`` with
+    ``v ~ N(0, I)``), the chains started at the Laplace fit.
+    
+    The priors: ``N(0, prior_sd²)`` on each coefficient
+    (``intercept_sd`` for an all-ones column), half-normal with scale
+    ``sd_scale`` on each random term's standard deviation, LKJ(``lkj``) on
+    each factor's correlations (uniform at 1), and half-normal with scale
+    ``dispersion_scale`` on the gamma's or Tweedie's dispersion.
+    
+    Parameters
+    ----------
+    family : str, default "poisson"
+        ``"poisson"``, ``"gamma"`` or ``"tweedie"`` (needs ``power``).
+    power : float, optional
+        The Tweedie power, in (1, 2).
+    prior_sd, intercept_sd : float, default 2.5, 10.0
+    sd_scale : float, default 1.0
+    lkj : float, default 1.0
+    dispersion_scale : float, default 10.0
+    chains, tune, draws : int, default 4, 1000, 1000
+    seed : int, default 0
+    target_accept : float, default 0.8
+    max_depth : int, default 10
+    
+    Examples
+    --------
+    >>> from prospicio.models import BayesGlmm, Design
+    >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+    >>> site = [f"s{i % 4}" for i in range(40)]
+    >>> spec = BayesGlmm(chains=2, tune=300, draws=300)
+    >>> fit = spec.fit(Design([[1.0] * 40], ["(Intercept)"]), {"site": site}, y)
+    >>> all(s["rhat"] < 1.05 for s in fit.summary())
+    True
+    """
+    def __new__(cls, /, family: str = "poisson", power: float |None = None, prior_sd: float = 2.5, intercept_sd: float = 10.0, sd_scale: float = 1.0, lkj: float = 1.0, dispersion_scale: float = 10.0, chains: int = 4, tune: int = 1000, draws: int = 1000, seed: int = 0, target_accept: float = 0.8, max_depth: int = 10) -> BayesGlmm: ...
+    def fit(self, /, design: Design, groups: dict, y: Sequence[float]) -> BayesGlmmFit:
+        """
+        Samples the posterior.
+        
+        Parameters
+        ----------
+        design : Design
+            The fixed effects, with any offset and prior weights.
+        groups : dict of str to sequence or dict
+            The grouping factors, as in ``Glmm.fit``.
+        y : sequence of float
+        
+        Returns
+        -------
+        BayesGlmmFit
+        """
+
+@final
+class BayesGlmmFit:
+    """
+    A sampled Bayesian GLMM, from ``BayesGlmm.fit``.
+    """
+    @property
+    def divergences(self, /) -> int:
+        """
+        Divergent transitions among the kept draws.
+        """
+    @property
+    def effect_draws(self, /) -> list[list[float]]:
+        """
+        The random effects' draws, one row per draw, in the order of
+        ``effect_names``.
+        """
+    @property
+    def effect_names(self, /) -> list[str]:
+        """
+        The random effects' names, ``b[g|level|term]``.
+        """
+    @property
+    def laplace(self, /) -> GlmmFit:
+        """
+        The Laplace fit the chains started from.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        The fixed coefficients' names.
+        """
+    @property
+    def parameter_draws(self, /) -> list[list[float]]:
+        """
+        The parameters' draws on their natural scale, one row per draw
+        (chain by chain), in the order of ``parameter_names``.
+        """
+    @property
+    def parameter_names(self, /) -> list[str]:
+        """
+        The parameters' names: the coefficients, each factor's
+        ``sd[g|term]`` and ``cor[g|a,b]``, then ``dispersion`` when it is
+        free.
+        """
+    def predict(self, /, design: Design, groups: dict |None = None) -> list[float]:
+        """
+        The posterior mean of each row's mean, adding its random effects by
+        label and covariate (``groups`` as in ``Glmm.fit``); a level the fit
+        has not seen, or a factor left out, adds 0 in every draw.
+        """
+    @property
+    def random_effects(self, /) -> dict:
+        """
+        Each factor's random effects: a dict of name to a dict of
+        ``levels`` (sorted), ``terms``, and ``mean`` and ``sd`` (the
+        posterior's), each a dict of term to a list by level (the
+        independent factors of one name joined).
+        """
+    def summary(self, /) -> list[dict]:
+        """
+        Posterior summary of each parameter: one dict per parameter with
+        ``name``, ``mean``, ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``,
+        ``ess_bulk`` and ``ess_tail``.
+        
+        Returns
+        -------
+        list of dict
+        """
+
+@final
 class BayesOdp:
     """
     The Bayesian chain ladder of England and Verrall (2002, 2006): the

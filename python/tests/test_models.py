@@ -806,6 +806,50 @@ def test_glmm_random_slopes_match_glmmtmb():
         Glmm().fit(design, {"territory": {"labels": territory, "slope": {"x": x}}}, y)
 
 
+def test_bayes_glmm_on_the_slopes_book_is_near_the_laplace_fit():
+    # The NUTS fit of (1 + x | territory) on the slopes book: with 800 rows
+    # its posterior means sit near the Laplace fit.
+    import csv
+    import pathlib
+
+    from prospicio.models import BayesGlmm, Design
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "validation"
+    with open(root / "data" / "glmm_slopes.csv") as f:
+        rows = list(csv.DictReader(f))
+    x = [float(r["x"]) for r in rows]
+    w = [float(r["w"]) for r in rows]
+    offset = [math.log(float(r["exposure"])) for r in rows]
+    design = Design([[1.0] * len(rows), x, w], ["(Intercept)", "x", "w"], offset=offset)
+    y = [float(r["count"]) for r in rows]
+    groups = {"territory": {"labels": [r["territory"] for r in rows], "slopes": {"x": x}}}
+    fit = BayesGlmm(chains=4, tune=500, draws=500, seed=2026).fit(design, groups, y)
+    assert fit.divergences == 0
+    assert fit.parameter_names == [
+        "(Intercept)",
+        "x",
+        "w",
+        "sd[territory|(Intercept)]",
+        "sd[territory|x]",
+        "cor[territory|x,(Intercept)]",
+    ]
+    summary = fit.summary()
+    assert all(s["rhat"] < 1.05 for s in summary)
+    laplace = fit.laplace
+    for s, b in zip(summary, laplace.coefficients):
+        assert abs(s["mean"] - b) < 0.2 * s["sd"]
+    assert len(fit.parameter_draws) == 2000
+    assert len(fit.effect_draws[0]) == len(fit.effect_names) == 60
+    effects = fit.random_effects["territory"]
+    assert effects["terms"] == ["(Intercept)", "x"]
+    modes = laplace.random_effects["territory"]["values"]
+    for term in effects["terms"]:
+        for m, s, b in zip(effects["mean"][term], effects["sd"][term], modes[term]):
+            assert abs(m - b) < 0.4 * s
+    mu = fit.predict(design, groups)
+    assert len(mu) == len(rows) and all(v > 0 for v in mu)
+
+
 def test_double_glm_matches_corrected_dglm():
     # validation/scripts/r_dglm.R: dglm 1.8.6 with its mean step corrected,
     # on the simulated book; the gamma with the log link by REML and the

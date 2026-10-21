@@ -409,6 +409,35 @@ impl DglmModel {
     }
 }
 
+/// A GLMM's family by name.
+fn glmm_family(name: &str, power: f64) -> Result<Family> {
+    match name {
+        "poisson" => Ok(Family::Poisson),
+        "gamma" => Ok(Family::Gamma),
+        "tweedie" => Ok(Family::Tweedie { power }),
+        other => Err(Error::Other(format!(
+            "a GLMM's family must be poisson, gamma or tweedie, got {other}"
+        ))),
+    }
+}
+
+/// A posterior summary as a list of columns.
+fn summary_list(s: &[prospicio_bayes::nuts::ParamSummary]) -> List {
+    let col =
+        |g: fn(&prospicio_bayes::nuts::ParamSummary) -> f64| s.iter().map(g).collect::<Vec<f64>>();
+    list!(
+        parameter = s.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
+        mean = col(|p| p.mean),
+        sd = col(|p| p.sd),
+        q05 = col(|p| p.q05),
+        q50 = col(|p| p.q50),
+        q95 = col(|p| p.q95),
+        rhat = col(|p| p.rhat),
+        ess_bulk = col(|p| p.ess_bulk),
+        ess_tail = col(|p| p.ess_tail)
+    )
+}
+
 /// A GLM with random intercepts and slopes (`docs/design/models.md`,
 /// "Mixed models"); `nodes` 0 for the Laplace approximation.
 #[allow(clippy::too_many_arguments)]
@@ -429,16 +458,7 @@ fn glmm_fit_design(
     slope_values: &[f64],
     nodes: f64,
 ) -> Result<GlmmModel> {
-    let f = match family_name {
-        "poisson" => Family::Poisson,
-        "gamma" => Family::Gamma,
-        "tweedie" => Family::Tweedie { power },
-        other => {
-            return Err(Error::Other(format!(
-                "a GLMM's family must be poisson, gamma or tweedie, got {other}"
-            )));
-        }
-    };
+    let f = glmm_family(family_name, power)?;
     let d = design(x, names, offset, weights)?;
     let groups = groupings(
         group_names,
@@ -599,6 +619,177 @@ impl GlmmModel {
                     value = value[name].clone(),
                     conditional_variance = cond[name].clone(),
                     prediction_variance = pred[name].clone()
+                )
+                .into()
+            })
+            .collect();
+        let mut out = List::from_values(items);
+        let _ = out.set_names(order);
+        out
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn predict(
+        &self,
+        x: &[f64],
+        names: Vec<String>,
+        offset: &[f64],
+        group_names: Vec<String>,
+        group_labels: Vec<String>,
+        intercepts: &[f64],
+        slope_factor: &[f64],
+        slope_names: Vec<String>,
+        slope_values: &[f64],
+    ) -> Result<Vec<f64>> {
+        let d = design(x, names, offset, &[])?;
+        let groups = groupings(
+            group_names,
+            group_labels,
+            intercepts,
+            slope_factor,
+            slope_names,
+            slope_values,
+        )?;
+        self.inner.predict(&d, &groups).map_err(to_r)
+    }
+}
+
+/// A Bayesian GLMM sampled with NUTS (`docs/design/models.md`, "Mixed
+/// models"): the priors `prior_sd`, `intercept_sd`, `sd_scale`, `lkj` and
+/// `dispersion_scale`, and the sampler's six settings.
+#[allow(clippy::too_many_arguments)]
+#[extendr]
+fn bayes_glmm_fit_design(
+    x: &[f64],
+    names: Vec<String>,
+    y: &[f64],
+    offset: &[f64],
+    weights: &[f64],
+    family_name: &str,
+    power: f64,
+    group_names: Vec<String>,
+    group_labels: Vec<String>,
+    intercepts: &[f64],
+    slope_factor: &[f64],
+    slope_names: Vec<String>,
+    slope_values: &[f64],
+    priors: &[f64],
+    sampler: &[f64],
+) -> Result<BayesGlmmModel> {
+    use prospicio_bayes::glmm::{BayesGlmm, Sampler};
+    let [prior_sd, intercept_sd, sd_scale, lkj, dispersion_scale] = priors else {
+        return Err(Error::Other("priors needs five settings".into()));
+    };
+    let [chains, tune, draws, seed, target_accept, max_depth] = sampler else {
+        return Err(Error::Other("sampler needs six settings".into()));
+    };
+    let mut spec = BayesGlmm::new(glmm_family(family_name, power)?).sampler(Sampler {
+        chains: whole(*chains, "chains")? as usize,
+        tune: whole(*tune, "tune")? as usize,
+        draws: whole(*draws, "draws")? as usize,
+        seed: whole(*seed, "seed")?,
+        target_accept: *target_accept,
+        max_depth: whole(*max_depth, "max_depth")?,
+    });
+    spec.prior_sd = *prior_sd;
+    spec.intercept_sd = *intercept_sd;
+    spec.sd_scale = *sd_scale;
+    spec.lkj = *lkj;
+    spec.dispersion_scale = *dispersion_scale;
+    let d = design(x, names, offset, weights)?;
+    let groups = groupings(
+        group_names,
+        group_labels,
+        intercepts,
+        slope_factor,
+        slope_names,
+        slope_values,
+    )?;
+    let inner = spec.fit(&d, &groups, y).map_err(to_r)?;
+    Ok(BayesGlmmModel { inner })
+}
+
+/// A sampled Bayesian GLMM.
+#[extendr]
+pub(crate) struct BayesGlmmModel {
+    inner: prospicio_bayes::glmm::BayesGlmmFit,
+}
+
+#[extendr]
+impl BayesGlmmModel {
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    fn parameter_names(&self) -> Vec<String> {
+        self.inner.parameters().names().to_vec()
+    }
+
+    /// Row-major `n_draws × parameters`.
+    fn parameter_draws(&self) -> Vec<f64> {
+        self.inner.parameters().values().to_vec()
+    }
+
+    fn effect_names(&self) -> Vec<String> {
+        self.inner.effects().names().to_vec()
+    }
+
+    /// Row-major `n_draws × effects`.
+    fn effect_draws(&self) -> Vec<f64> {
+        self.inner.effects().values().to_vec()
+    }
+
+    fn divergences(&self) -> f64 {
+        self.inner.divergences() as f64
+    }
+
+    fn summary(&self) -> Result<List> {
+        Ok(summary_list(&self.inner.summary().map_err(to_r)?))
+    }
+
+    /// The Laplace fit the chains started from.
+    fn laplace(&self) -> GlmmModel {
+        GlmmModel {
+            inner: self.inner.laplace().clone(),
+        }
+    }
+
+    /// Each factor's levels, terms and posterior means and sds, one row
+    /// per level and term, as a list by factor name (the factors of one
+    /// name joined).
+    fn random_effects(&self) -> List {
+        use std::collections::HashMap;
+        let effects = self.inner.random_effects();
+        let mut order: Vec<&str> = Vec::new();
+        let mut level: HashMap<&str, Vec<String>> = HashMap::new();
+        let mut term: HashMap<&str, Vec<String>> = HashMap::new();
+        let mut mean: HashMap<&str, Vec<f64>> = HashMap::new();
+        let mut sd: HashMap<&str, Vec<f64>> = HashMap::new();
+        for r in &effects {
+            let name = r.name.as_str();
+            if !order.contains(&name) {
+                order.push(name);
+            }
+            for (c, t) in r.terms.iter().enumerate() {
+                level
+                    .entry(name)
+                    .or_default()
+                    .extend(r.levels.iter().cloned());
+                term.entry(name)
+                    .or_default()
+                    .extend(std::iter::repeat_n(t.clone(), r.levels.len()));
+                mean.entry(name).or_default().extend(&r.mean[c]);
+                sd.entry(name).or_default().extend(&r.sd[c]);
+            }
+        }
+        let items: Vec<Robj> = order
+            .iter()
+            .map(|name| {
+                list!(
+                    level = level[name].clone(),
+                    term = term[name].clone(),
+                    mean = mean[name].clone(),
+                    sd = sd[name].clone()
                 )
                 .into()
             })
@@ -1903,21 +2094,7 @@ impl BayesGlmModel {
     }
 
     fn summary(&self) -> Result<List> {
-        let s = self.inner.summary().map_err(to_r)?;
-        let col = |g: fn(&prospicio_bayes::glm::ParamSummary) -> f64| {
-            s.iter().map(g).collect::<Vec<f64>>()
-        };
-        Ok(list!(
-            parameter = s.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
-            mean = col(|p| p.mean),
-            sd = col(|p| p.sd),
-            q05 = col(|p| p.q05),
-            q50 = col(|p| p.q50),
-            q95 = col(|p| p.q95),
-            rhat = col(|p| p.rhat),
-            ess_bulk = col(|p| p.ess_bulk),
-            ess_tail = col(|p| p.ess_tail)
-        ))
+        Ok(summary_list(&self.inner.summary().map_err(to_r)?))
     }
 
     /// PSIS-LOO on the training data: `list(estimates, pointwise, pareto_k,
@@ -2245,6 +2422,8 @@ extendr_module! {
     fn elpd_waic_rust;
     fn glmm_fit_design;
     impl GlmmModel;
+    fn bayes_glmm_fit_design;
+    impl BayesGlmmModel;
     fn dglm_fit_design;
     impl DglmModel;
 }
