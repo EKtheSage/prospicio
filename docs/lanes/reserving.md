@@ -6,7 +6,7 @@
 
 ## Next
 
-- [excess-development] excess-layer loss development (#192, `docs/design/reserving-excess.md`, Proposed): excess LDFs from a ground-up triangle and a severity curve, credibility blending with benchmark patterns, a BF prior from the layer share; PR 1 `claude/excess-pattern` waits on the user's answers to the note's open decisions
+- [excess-development] excess-layer loss development (#192, `docs/design/reserving-excess.md`, Accepted 2026-10-21): excess LDFs from a ground-up triangle and a severity curve, credibility blending with benchmark patterns, a BF prior from the layer share; the user accepted all eleven recommendations on 2026-10-21; PR 1 `claude/excess-pattern` is next, after reading the sources in full for a worked example (the note's gate)
 
 ## Done
 
