@@ -5047,6 +5047,7 @@ mod tests {
     /// back to the centred scale, whose score under `log_posterior` with
     /// that year has mean zero (`conformance::score_z_at`). A warm start
     /// mis-centred, mis-scaled or mapped back wrongly fails one of them.
+    /// A light refit of 2 draws warns.
     fn light_refit_conforms(
         name: &str,
         m: &Compartmental,
@@ -5100,6 +5101,16 @@ mod tests {
             worst < SCORE_Z,
             "{name}: the light refit's score has mean z {z:?}"
         );
+        // The warning rule fires on a run too short for 100 effective
+        // draws of the closing reserve.
+        let tiny = LightRefit {
+            chains: 1,
+            tune: 1,
+            draws: 2,
+        };
+        year.warm_start(Some(tiny), opening).unwrap();
+        let (_, warned) = year.refit(&cells, 21).unwrap();
+        assert!(warned, "{name}: a light refit of 2 draws did not warn");
     }
 
     #[test]
