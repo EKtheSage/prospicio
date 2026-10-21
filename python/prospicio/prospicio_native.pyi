@@ -21334,13 +21334,17 @@ class Sampled:
         ValueError
             If ``p`` is outside ``[0, 1]``.
         """
-    def tvar(self, /, p: float) -> float:
+    def tvar(self, /, p: float, method: str = "exact") -> float:
         """
         Tail value at risk at level ``p``: the mean of the worst ``1 - p``.
         
         Parameters
         ----------
         p : float
+        method : str
+            ``"exact"`` (the default: the empirical distribution, mass ``1/n``
+            per draw) or ``"linear"`` (the mean of the linear quantile
+            function over ``[p, 1]``).
         
         Returns
         -------
@@ -21349,15 +21353,18 @@ class Sampled:
         Raises
         ------
         ValueError
-            If ``p`` is outside ``[0, 1]``.
+            If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
         """
-    def var(self, /, p: float) -> float:
+    def var(self, /, p: float, method: str = "inverted_cdf") -> float:
         """
         Value at risk at level ``p``.
         
         Parameters
         ----------
         p : float
+        method : str
+            ``"inverted_cdf"`` (the default, R ``type = 1``) or ``"linear"``
+            (numpy's default, R ``type = 7``).
         
         Returns
         -------
@@ -21366,7 +21373,7 @@ class Sampled:
         Raises
         ------
         ValueError
-            If ``p`` is outside ``[0, 1]``.
+            If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
         """
     def variance(self, /) -> float:
         """
@@ -27583,6 +27590,57 @@ def stacking_weights(lpd: Sequence[Sequence[float]]) -> list[float]:
     >>> w = stacking_weights([[-0.1, -0.1, -3.0, -3.0], [-3.0, -3.0, -0.1, -0.1]])
     >>> [round(x, 9) for x in w]
     [0.5, 0.5]
+    """
+
+def statistics(dist: Any, percentiles: Sequence[float], *, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact") -> dict:
+    """
+    A results table's statistics in one call, under stated conventions.
+    
+    Every table has ``"Mean"``, ``"SD"`` (population, dividing by ``n``),
+    ``"CoV"`` (``sd / mean``; 0 when both are 0, NaN when only the mean is),
+    ``"Min"``, ``"Max"`` and ``"Variance"``, then ``"Percentile <q>"`` for
+    each percentile, ``"TVaR <q>"`` for each TVaR level and ``"Mean + <k>
+    SD"``, ``"Mean - <k> SD"`` for each multiple, with levels in percent as
+    given, so the names are stable keys to join on.
+    
+    Parameters
+    ----------
+    dist : Sampled, PredictiveDistribution or list of float
+        A predictive distribution gives one row per component.
+    percentiles : list of float
+        In percent, in ``[0, 100]``.
+    tvar_levels : list of float, optional
+        In percent; by default 99, 99.5, 99.6, 99.8, 99.9 and 99.99.
+    sd_multiples : list of float, optional
+        By default 1, 2 and 3.
+    quantile : str
+        ``"inverted_cdf"`` (the default, ``Sampled.var``'s) or ``"linear"``
+        (numpy's default, R ``type = 7``).
+    tvar : str
+        ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw)
+        or ``"linear"`` (the mean of the linear quantile function over
+        ``[p, 1]``).
+    
+    Returns
+    -------
+    dict
+        For a ``Sampled`` or a list, ``{name: value}``. For a
+        ``PredictiveDistribution``, columns: one list per dimension holding
+        each component's key, then one list per statistic, ready for
+        ``pandas.DataFrame``.
+    
+    Raises
+    ------
+    ValueError
+        If a level is outside ``[0, 100]`` or a method name is unknown.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import statistics
+    >>> st = statistics([1.0, 2.0, 3.0, 4.0], [50], tvar_levels=[50],
+    ...                 quantile="linear", tvar="linear")
+    >>> st["Percentile 50"], st["TVaR 50"]
+    (2.5, 3.25)
     """
 
 def target_encode(values: Sequence[str], y: Sequence[float], expected: Sequence[float], splits: Sequence[tuple[Sequence[int], Sequence[int]]], k: float, exposure: Sequence[float] |None = None) -> tuple[list[float], TargetEncoding]:

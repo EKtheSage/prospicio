@@ -29,6 +29,7 @@ from .prospicio_native import (
     shapley,
     rearrange,
     simulate,
+    statistics,
     threshold_diagnostics,
     worst_var,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "LevelAllocation",
     "entropic",
     "esscher",
+    "statistics",
     "marginal_expected_shortfall",
     "covar",
     "esscher_allocation",

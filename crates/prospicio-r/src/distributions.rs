@@ -546,13 +546,20 @@ impl Sampled {
             .collect()
     }
 
-    fn var(&self, p: &[f64]) -> Result<Vec<f64>> {
-        p.iter().map(|&p| self.inner.var(p).map_err(to_r)).collect()
+    /// `method` is "inverted_cdf" (R `type = 1`) or "linear" (`type = 7`).
+    fn var(&self, p: &[f64], method: &str) -> Result<Vec<f64>> {
+        let method = crate::risk::quantile_method(method)?;
+        p.iter()
+            .map(|&p| self.inner.var_with(p, method).map_err(to_r))
+            .collect()
     }
 
-    fn tvar(&self, p: &[f64]) -> Result<Vec<f64>> {
+    /// `method` is "exact" (mass `1/n` per draw) or "linear" (the mean of
+    /// the linear quantile function over `[p, 1]`).
+    fn tvar(&self, p: &[f64], method: &str) -> Result<Vec<f64>> {
+        let method = crate::risk::tvar_method(method)?;
         p.iter()
-            .map(|&p| self.inner.tvar(p).map_err(to_r))
+            .map(|&p| self.inner.tvar_with(p, method).map_err(to_r))
             .collect()
     }
 }

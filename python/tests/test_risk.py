@@ -385,3 +385,47 @@ def test_worst_var_by_rearrangement():
     assert rearrange([[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]])["value"] == 5.0
     with pytest.raises(ValueError):
         rearrange([[1.0]], rotate=1, seed=1)
+
+
+def test_statistics_match_numpy_linear_and_the_integral_tvar():
+    np = pytest.importorskip("numpy")
+    from prospicio.risk import statistics
+
+    x = [7.0, 0.0, 100.0, 3.0, 1.0, 0.0, 45.0, 7.0, 12.0, 20.0]
+    pct = [0, 10, 25, 50, 90, 99, 100]
+    st = statistics(
+        x, pct, tvar_levels=[0, 50, 90, 99], quantile="linear", tvar="linear"
+    )
+    for q in pct:
+        assert st[f"Percentile {q}"] == pytest.approx(
+            np.quantile(x, q / 100, method="linear"), abs=1e-12
+        )
+    # The integral of the linear quantile function over [p, 1], numerically.
+    for q in [0, 50, 90, 99]:
+        u = np.linspace(q / 100, 1, 200_001)
+        trapezoid = getattr(np, "trapezoid", None) or np.trapz
+        tvar = trapezoid(np.quantile(x, u, method="linear"), u) / (1 - q / 100)
+        assert st[f"TVaR {q}"] == pytest.approx(tvar, rel=1e-6)
+    assert st["Mean"] == 19.5
+    assert st["SD"] == pytest.approx(np.std(x))
+    assert st["Mean + 2 SD"] == pytest.approx(19.5 + 2 * np.std(x))
+    # Sampled's own methods agree, and its defaults are unchanged.
+    s = Sampled(x)
+    assert s.var(0.25, method="linear") == st["Percentile 25"]
+    assert s.tvar(0.9, method="linear") == st["TVaR 90"]
+    assert s.var(0.25) == np.quantile(x, 0.25, method="inverted_cdf")
+    with pytest.raises(ValueError):
+        s.var(0.5, method="nearest")
+
+
+def test_statistics_of_a_predictive_distribution_by_component():
+    from prospicio.risk import statistics
+
+    rows = [[float(i), 2.0 * i] for i in range(1, 11)]
+    pd = PredictiveDistribution(["lob"], [(0,), (1,)], rows)
+    cols = statistics(pd, [50], tvar_levels=[90], sd_multiples=[1])
+    assert cols["lob"] == [0, 1]
+    assert cols["Mean"] == [5.5, 11.0]
+    assert cols["Percentile 50"] == [5.0, 10.0]
+    assert cols["TVaR 90"] == pytest.approx([10.0, 20.0], rel=1e-12)
+    assert list(cols)[:3] == ["lob", "Mean", "SD"]

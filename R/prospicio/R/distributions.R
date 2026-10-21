@@ -441,12 +441,17 @@ S7::method(print, grid_distribution) <- function(x, ...) {
 #' For a parametric severity or a [grid_distribution], `VaR()` is the lower
 #' quantile, as `quantile()`, and a severity's `TVaR()` is
 #' `VaR(p) + E[(X - VaR(p))+] / (1 - p)`, infinite where the mean is.
+#' For a [sampled], `method = "linear"` picks the other convention: `VaR()`
+#' is then `quantile(x, p, type = 7)` (numpy's default) and `TVaR()` the
+#' mean of that quantile function over `[p, 1]`; the defaults are
+#' `"inverted_cdf"` and `"exact"`.
 #'
 #' @param dist A [sampled], [predictive_distribution], [pot_tail],
 #'   [grid_distribution], or a severity ([lognormal], [pareto] and the
 #'   other parametric families).
 #' @param p Probabilities in `[0, 1]` (`[0, 1)` for a severity's `TVaR()`).
-#' @param ... Unused; for methods.
+#' @param ... For a [sampled], `method`: `"inverted_cdf"` or `"linear"` for
+#'   `VaR()`, `"exact"` or `"linear"` for `TVaR()`. Otherwise unused.
 #' @returns Numeric vector the length of `p`.
 #' @name risk_measures
 #' @examples
@@ -556,8 +561,12 @@ S7::method(quantile, sampled) <- function(x, probs, ...) {
   call[[1]] <- quote(quantile)
   rust_result(x@ptr$quantile(as.double(probs)), call)
 }
-S7::method(VaR, sampled) <- function(dist, p, ...) rust_result(dist@ptr$var(as.double(p)), s7_call())
-S7::method(TVaR, sampled) <- function(dist, p, ...) rust_result(dist@ptr$tvar(as.double(p)), s7_call())
+S7::method(VaR, sampled) <- function(dist, p, method = "inverted_cdf", ...) {
+  rust_result(dist@ptr$var(as.double(p), as.character(method)), s7_call())
+}
+S7::method(TVaR, sampled) <- function(dist, p, method = "exact", ...) {
+  rust_result(dist@ptr$tvar(as.double(p), as.character(method)), s7_call())
+}
 S7::method(print, sampled) <- function(x, ...) {
   cat(sprintf("<sampled> %d draws, mean = %s\n", length(x@draws), format(mean(x), digits = 6)))
   invisible(x)

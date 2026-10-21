@@ -260,6 +260,8 @@ aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .C
 
 occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, attachment) .Call(wrap__occurrence_layer_statistics_rust, frequency, severity, share, limit, attachment)
 
+statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
+
 entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)
 
 esscher_rust <- function(draws, h) .Call(wrap__esscher_rust, draws, h)
@@ -753,9 +755,9 @@ Sampled$cdf <- function(x) .Call(wrap__Sampled__cdf, self, x)
 
 Sampled$quantile <- function(p) .Call(wrap__Sampled__quantile, self, p)
 
-Sampled$var <- function(p) .Call(wrap__Sampled__var, self, p)
+Sampled$var <- function(p, method) .Call(wrap__Sampled__var, self, p, method)
 
-Sampled$tvar <- function(p) .Call(wrap__Sampled__tvar, self, p)
+Sampled$tvar <- function(p, method) .Call(wrap__Sampled__tvar, self, p, method)
 
 #' @export
 `$.Sampled` <- function (self, name) { func <- Sampled[[name]]; environment(func) <- environment(); func }

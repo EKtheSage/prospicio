@@ -239,6 +239,48 @@ S7::method(allocate, predictive_distribution) <- function(x, distortion, ...) {
   out
 }
 
+#' A results table's statistics
+#'
+#' The statistics a results table reports, in one call and under stated
+#' conventions: `"Mean"`, `"SD"` (population, dividing by `n`), `"CoV"`
+#' (`SD / Mean`; 0 when both are 0, `NaN` when only the mean is), `"Min"`,
+#' `"Max"` and `"Variance"`, then `"Percentile <q>"` for each percentile,
+#' `"TVaR <q>"` for each TVaR level and `"Mean + <k> SD"`, `"Mean - <k> SD"`
+#' for each multiple, with levels in percent as given, so the names are
+#' stable keys to join on.
+#'
+#' @param x A numeric vector of draws, a [sampled] or a
+#'   [predictive_distribution] (one row per component).
+#' @param percentiles Percentiles, in percent, in `[0, 100]`.
+#' @param tvar_levels TVaR levels in percent.
+#' @param sd_multiples Multiples of the standard deviation.
+#' @param quantile `"inverted_cdf"` (the default, [VaR()]'s, R `type = 1`)
+#'   or `"linear"` (`quantile(type = 7)`, numpy's default).
+#' @param tvar `"exact"` (the default, [TVaR()]'s, mass `1/n` per draw) or
+#'   `"linear"` (the mean of the linear quantile function over `[p, 1]`).
+#' @returns For draws or a [sampled], a named numeric vector. For a
+#'   [predictive_distribution], its `keys` data frame with one column per
+#'   statistic.
+#' @export
+#' @examples
+#' st <- statistics(c(1, 2, 3, 4), 50, tvar_levels = 50,
+#'                  quantile = "linear", tvar = "linear")
+#' st[c("Percentile 50", "TVaR 50")]
+statistics <- function(x, percentiles, tvar_levels = c(99, 99.5, 99.6, 99.8, 99.9, 99.99),
+                       sd_multiples = c(1, 2, 3), quantile = "inverted_cdf", tvar = "exact") {
+  one <- function(draws) {
+    st <- rust_result(statistics_rust(
+      as.double(draws), as.double(percentiles), as.double(tvar_levels),
+      as.double(sd_multiples), as.character(quantile), as.character(tvar)
+    ))
+    stats::setNames(st$values, st$names)
+  }
+  if (!S7::S7_inherits(x, predictive_distribution)) return(one(risk_draws(x)))
+  keys <- x@keys
+  rows <- lapply(seq_len(nrow(keys)), function(i) one(marginal(x, as.list(keys[i, , drop = FALSE]))@draws))
+  cbind(keys, as.data.frame(do.call(rbind, rows), check.names = FALSE))
+}
+
 #' Exponential-utility risk measures
 #'
 #' `entropic_risk()` is `(1 / theta) log E[exp(theta X)]`, the certainty
