@@ -168,6 +168,27 @@ impl Grouping {
         terms
     }
 
+    /// The factor's layout on `n` rows: its sorted levels, each row's
+    /// level and each term's value on every row. For the sampler in
+    /// `prospicio-bayes`, which needs the fit's own layout.
+    #[doc(hidden)]
+    pub fn layout(&self, n: usize) -> Result<FactorLayout> {
+        let columns = self.columns(n)?;
+        let set: BTreeSet<&String> = self.labels.iter().collect();
+        let levels: Vec<String> = set.into_iter().cloned().collect();
+        let lookup: HashMap<&str, usize> = levels
+            .iter()
+            .enumerate()
+            .map(|(j, l)| (l.as_str(), j))
+            .collect();
+        Ok(FactorLayout {
+            terms: self.terms(),
+            level: self.labels.iter().map(|l| lookup[l.as_str()]).collect(),
+            levels,
+            columns,
+        })
+    }
+
     /// Each term's value on every row, checked against `n` rows.
     fn columns(&self, n: usize) -> Result<Vec<Vec<f64>>> {
         if self.labels.len() != n {
@@ -205,6 +226,19 @@ impl Grouping {
         }
         Ok(columns)
     }
+}
+
+/// A grouping factor's layout ([`Grouping::layout`]).
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct FactorLayout {
+    pub terms: Vec<String>,
+    /// The levels, sorted.
+    pub levels: Vec<String>,
+    /// Each row's level, an index into `levels`.
+    pub level: Vec<usize>,
+    /// Each term's value on every row.
+    pub columns: Vec<Vec<f64>>,
 }
 
 /// How the random effects are integrated out.
@@ -251,7 +285,8 @@ impl Glmm {
     }
 
     /// The variance power `p` and whether `φ` is estimated.
-    fn power(&self) -> Result<(f64, bool)> {
+    #[doc(hidden)]
+    pub fn power(&self) -> Result<(f64, bool)> {
         match self.family {
             Family::Poisson => Ok((1.0, false)),
             Family::Gamma => Ok((2.0, true)),
@@ -323,26 +358,20 @@ impl Glmm {
         let mut levels = Vec::with_capacity(groups.len());
         let (mut start, mut theta) = (0, p);
         for g in groups {
-            let columns = g.columns(n)?;
-            let set: BTreeSet<&String> = g.labels.iter().collect();
-            let names: Vec<String> = set.into_iter().cloned().collect();
-            let lookup: HashMap<&str, usize> = names
-                .iter()
-                .enumerate()
-                .map(|(j, l)| (l.as_str(), j))
-                .collect();
-            let d = columns.len();
+            let layout = g.layout(n)?;
+            let d = layout.columns.len();
+            let m = layout.levels.len();
             factors.push(Factor {
                 d,
-                level: g.labels.iter().map(|l| lookup[l.as_str()]).collect(),
-                n_levels: names.len(),
-                columns,
+                level: layout.level,
+                n_levels: m,
+                columns: layout.columns,
                 start,
                 theta,
             });
-            start += names.len() * d;
+            start += m * d;
             theta += d * (d + 1) / 2;
-            levels.push(names);
+            levels.push(layout.levels);
         }
         let q = start;
         let n_theta = theta - p;
@@ -541,7 +570,8 @@ impl Glmm {
 /// The unit lower triangle `L` with the strictly lower entries `theta`,
 /// row by row, and its rows normalized: the Cholesky factor of the
 /// correlation matrix, row-major.
-fn correlation_factor(theta: &[f64], d: usize) -> Vec<f64> {
+#[doc(hidden)]
+pub fn correlation_factor(theta: &[f64], d: usize) -> Vec<f64> {
     let mut l = vec![0.0; d * d];
     let mut a = 0;
     for r in 0..d {
@@ -751,69 +781,116 @@ impl GlmmFit {
             ));
         }
         let mut eta = design.linear_predictor(&self.coefficients);
-        for g in groups {
-            if g.labels.len() != eta.len() {
-                return Err(Error::Data(format!(
-                    "grouping factor {} has {} labels for {} rows",
-                    g.name,
-                    g.labels.len(),
-                    eta.len()
-                )));
-            }
-            if !self.random_effects.iter().any(|r| r.name == g.name) {
-                return Err(Error::Data(format!(
-                    "the fit has no grouping factor {}",
-                    g.name
-                )));
-            }
-        }
+        let names: Vec<&str> = self
+            .random_effects
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect();
+        check_groups(groups, &names, eta.len())?;
         for re in &self.random_effects {
-            // The factors given under this name: the first one's labels,
-            // a slope's values from whichever carries them.
-            let given: Vec<&Grouping> = groups.iter().filter(|g| g.name == re.name).collect();
-            let Some(first) = given.first() else {
+            let Some(given) = given_effects(&re.name, &re.terms, &re.levels, groups, eta.len())?
+            else {
                 continue;
             };
-            let lookup: HashMap<&str, usize> = re
-                .levels
-                .iter()
-                .enumerate()
-                .map(|(j, l)| (l.as_str(), j))
-                .collect();
-            for (c, term) in re.terms.iter().enumerate() {
-                let column: Option<&[f64]> = if term == INTERCEPT {
-                    None
-                } else {
-                    let values = given
-                        .iter()
-                        .flat_map(|g| &g.slopes)
-                        .find(|(n, _)| n == term)
-                        .map(|(_, v)| v.as_slice())
-                        .ok_or_else(|| {
-                            Error::Data(format!(
-                                "grouping factor {} has no values for its slope {term}",
-                                re.name
-                            ))
-                        })?;
-                    if values.len() != eta.len() {
-                        return Err(Error::Data(format!(
-                            "slope {term} of grouping factor {} has {} values for {} rows",
-                            re.name,
-                            values.len(),
-                            eta.len()
-                        )));
-                    }
-                    Some(values)
-                };
-                for (i, (e, l)) in eta.iter_mut().zip(&first.labels).enumerate() {
-                    if let Some(&j) = lookup.get(l.as_str()) {
-                        *e += re.values[c][j] * column.map_or(1.0, |v| v[i]);
+            for (i, e) in eta.iter_mut().enumerate() {
+                if let Some(j) = given.level[i] {
+                    for (c, column) in given.columns.iter().enumerate() {
+                        *e += re.values[c][j] * column[i];
                     }
                 }
             }
         }
         Ok(eta.into_iter().map(f64::exp).collect())
     }
+}
+
+/// Checks the factors given for a prediction on `n` rows: each has `n`
+/// labels and a name among the fitted factors' `names`.
+#[doc(hidden)]
+pub fn check_groups(groups: &[Grouping], names: &[&str], n: usize) -> Result<()> {
+    for g in groups {
+        if g.labels.len() != n {
+            return Err(Error::Data(format!(
+                "grouping factor {} has {} labels for {n} rows",
+                g.name,
+                g.labels.len()
+            )));
+        }
+        if !names.contains(&g.name.as_str()) {
+            return Err(Error::Data(format!(
+                "the fit has no grouping factor {}",
+                g.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// A fitted factor's effects looked up for new rows
+/// ([`given_effects`]).
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct GivenEffects {
+    /// Each row's level among the fitted ones, `None` for a label the fit
+    /// has not seen.
+    pub level: Vec<Option<usize>>,
+    /// Each term's value on every row.
+    pub columns: Vec<Vec<f64>>,
+}
+
+/// The rows' levels and term values of the fitted factor `name` (with
+/// `terms` and sorted `levels`) from the factors given under that name:
+/// the first one's labels, a slope's values from whichever carries them.
+/// `None` when no factor of that name is given.
+#[doc(hidden)]
+pub fn given_effects(
+    name: &str,
+    terms: &[String],
+    levels: &[String],
+    groups: &[Grouping],
+    n: usize,
+) -> Result<Option<GivenEffects>> {
+    let given: Vec<&Grouping> = groups.iter().filter(|g| g.name == name).collect();
+    let Some(first) = given.first() else {
+        return Ok(None);
+    };
+    let lookup: HashMap<&str, usize> = levels
+        .iter()
+        .enumerate()
+        .map(|(j, l)| (l.as_str(), j))
+        .collect();
+    let mut columns = Vec::with_capacity(terms.len());
+    for term in terms {
+        if term == INTERCEPT {
+            columns.push(vec![1.0; n]);
+            continue;
+        }
+        let values = given
+            .iter()
+            .flat_map(|g| &g.slopes)
+            .find(|(s, _)| s == term)
+            .map(|(_, v)| v)
+            .ok_or_else(|| {
+                Error::Data(format!(
+                    "grouping factor {name} has no values for its slope {term}"
+                ))
+            })?;
+        if values.len() != n {
+            return Err(Error::Data(format!(
+                "slope {term} of grouping factor {name} has {} values for {n} rows",
+                values.len()
+            )));
+        }
+        columns.push(values.clone());
+    }
+    Ok(Some(GivenEffects {
+        level: first
+            .labels
+            .iter()
+            .map(|l| lookup.get(l.as_str()).copied())
+            .collect(),
+        columns,
+    }))
 }
 
 /// One grouping factor's layout.

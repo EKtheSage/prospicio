@@ -805,8 +805,43 @@ on the same labels.
   a row for each level and term; its `predict()` takes the labels and
   slopes from `newdata`'s columns and leaves out a factor whose columns
   are missing.
-- **Later.** A NUTS fit of the same model (`prospicio-bayes`), on the
-  spherical effects `v` so that the sampler does not meet the funnel.
+- **Bayesian fit** (the user's decision of 2026-10-21).
+  `prospicio_bayes::glmm::BayesGlmm` samples the same model with NUTS,
+  jointly with the effects, which it samples non-centred, `v ~ N(0, I)`, so
+  the chains do not meet the funnel between a standard deviation and its
+  effects. The parameters are the Laplace fit's (`β`, each factor's log
+  standard deviations and `us` parameters `θ`, `log φ`), and the layout
+  and correlation factor come from `prospicio-glm` itself
+  (`Grouping::layout`, `correlation_factor`, hidden from the docs), so the
+  two fits cannot drift apart. The chains start at the Laplace fit, its
+  effects mapped to `v` by forward substitution, with a standard deviation
+  below 0.05 raised to 0.05 and `|θ|` kept within 5, away from the neck
+  of the funnel. The priors: `N(0, 2.5²)` on the coefficients and
+  `N(0, 10²)` on the intercept (as `BayesGlm`), half-normal(1) on each
+  standard deviation, half-normal(10) on `φ`, and LKJ(`η`, 1 by default,
+  as brms) on each correlation matrix. In `θ` the LKJ density is
+  `−(d + 2η − 1) Σ_{r ≥ 1} log nᵣ` with `nᵣ = √(1 + |θᵣ|²)`: Stan's
+  `lkj_corr_cholesky` density `Σ (d − r + 2η − 3) log L_rr` on the
+  strictly lower entries of the Cholesky factor, whose row `r` is
+  `(θᵣ, 1) / nᵣ`, plus the log Jacobian `−(r + 2) log nᵣ` of
+  `θᵣ ↦ θᵣ / nᵣ`. The gradient is analytic (the Tweedie's in `log φ` by a
+  central difference of its series density) and checked against central
+  differences on two factors with one and three terms. Validation, with
+  no Stan: each correlation's prior marginal has the LKJ's variance
+  `1 / (2η + d − 1)` (Lewandowski, Kurowicka and Joe, 2009) for `d` from
+  2 to 4; on one factor of eight levels the posterior means and sds of
+  `β` and `σ` match those from integrating each level's effect on a grid,
+  within 6% of a posterior sd; on the slopes book the posterior means of
+  the coefficients are within 0.2 posterior sds of the Laplace fit, the
+  standard deviations and correlation within 0.75, every effect within
+  0.4, with no divergences and R̂ below 1.05. The fit gives the
+  parameters' draws on their natural scale (`sd[g|term]`, `cor[g|a,b]`,
+  `dispersion`), the effects' draws `b[g|level|term]`, each effect's
+  posterior mean and sd, the summary with R̂ and ESS, the Laplace fit,
+  and `predict`, the posterior mean of `μ` with effects looked up as
+  `GlmmFit::predict` does (0 for a level not seen). Python
+  `BayesGlmm(...).fit(design, groups, y)`, R `bayes_glmm_fit(formula,
+  data, ...)` with the random terms in the formula.
 
 ## Double GLMs
 

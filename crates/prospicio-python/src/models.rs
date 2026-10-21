@@ -3345,24 +3345,7 @@ impl PyBayesGlmFit {
     /// -------
     /// list of dict
     fn summary<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
-        self.inner
-            .summary()
-            .map_err(to_py)?
-            .into_iter()
-            .map(|s| {
-                let d = pyo3::types::PyDict::new(py);
-                d.set_item("name", s.name)?;
-                d.set_item("mean", s.mean)?;
-                d.set_item("sd", s.sd)?;
-                d.set_item("q05", s.q05)?;
-                d.set_item("q50", s.q50)?;
-                d.set_item("q95", s.q95)?;
-                d.set_item("rhat", s.rhat)?;
-                d.set_item("ess_bulk", s.ess_bulk)?;
-                d.set_item("ess_tail", s.ess_tail)?;
-                Ok(d)
-            })
-            .collect()
+        summary_dicts(py, self.inner.summary().map_err(to_py)?)
     }
 
     /// Pointwise log-likelihood of ``y`` given ``design``: one row per draw,
@@ -4305,6 +4288,44 @@ fn groupings(
     Ok(out)
 }
 
+/// A GLMM's family by name.
+fn glmm_family(family: &str, power: Option<f64>) -> PyResult<Family> {
+    match family {
+        "poisson" => Ok(Family::Poisson),
+        "gamma" => Ok(Family::Gamma),
+        "tweedie" => Ok(Family::Tweedie {
+            power: power.ok_or_else(|| PyValueError::new_err("tweedie needs power"))?,
+        }),
+        other => Err(PyValueError::new_err(format!(
+            "a GLMM's family must be poisson, gamma or tweedie, got {other:?}"
+        ))),
+    }
+}
+
+/// Posterior summaries as dicts with ``name``, ``mean``, ``sd``, ``q05``,
+/// ``q50``, ``q95``, ``rhat``, ``ess_bulk`` and ``ess_tail``.
+fn summary_dicts<'py>(
+    py: Python<'py>,
+    summary: Vec<prospicio_bayes::nuts::ParamSummary>,
+) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+    summary
+        .into_iter()
+        .map(|s| {
+            let d = pyo3::types::PyDict::new(py);
+            d.set_item("name", s.name)?;
+            d.set_item("mean", s.mean)?;
+            d.set_item("sd", s.sd)?;
+            d.set_item("q05", s.q05)?;
+            d.set_item("q50", s.q50)?;
+            d.set_item("q95", s.q95)?;
+            d.set_item("rhat", s.rhat)?;
+            d.set_item("ess_bulk", s.ess_bulk)?;
+            d.set_item("ess_tail", s.ess_tail)?;
+            Ok(d)
+        })
+        .collect()
+}
+
 /// A GLM with random intercepts and slopes, ``log μ = Xβ + offset + Σ zᵀb``,
 /// each factor's effects at a level ``N(0, Σ)`` with ``Σ`` unstructured:
 /// the Poisson, gamma or Tweedie (fixed power in (1, 2)) with the log
@@ -4346,19 +4367,7 @@ impl PyGlmm {
     #[new]
     #[pyo3(signature = (family = "poisson", power = None, nodes = None))]
     fn new(family: &str, power: Option<f64>, nodes: Option<usize>) -> PyResult<Self> {
-        let f = match family {
-            "poisson" => Family::Poisson,
-            "gamma" => Family::Gamma,
-            "tweedie" => Family::Tweedie {
-                power: power.ok_or_else(|| PyValueError::new_err("tweedie needs power"))?,
-            },
-            other => {
-                return Err(PyValueError::new_err(format!(
-                    "a GLMM's family must be poisson, gamma or tweedie, got {other:?}"
-                )));
-            }
-        };
-        let mut inner = prospicio_glm::glmm::Glmm::new(f);
+        let mut inner = prospicio_glm::glmm::Glmm::new(glmm_family(family, power)?);
         if let Some(n) = nodes {
             inner = inner.quadrature(n);
         }
@@ -4560,6 +4569,231 @@ impl PyGlmmFit {
     /// random effects by label and covariate (``groups`` as in
     /// ``Glmm.fit``); a level the fit has not seen, or a factor left out of
     /// ``groups``, adds 0 (the population mean).
+    #[pyo3(signature = (design, groups = None))]
+    fn predict(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        groups: Option<&Bound<'_, pyo3::types::PyDict>>,
+    ) -> PyResult<Vec<f64>> {
+        let groups = match groups {
+            Some(g) => groupings(g)?,
+            None => Vec::new(),
+        };
+        let (fit, d) = (&self.inner, &design.inner);
+        py.detach(|| fit.predict(d, &groups)).map_err(to_py)
+    }
+}
+
+/// A Bayesian GLMM: the model of ``Glmm`` with priors, sampled with NUTS
+/// jointly with the random effects (non-centred, ``b = Λ v`` with
+/// ``v ~ N(0, I)``), the chains started at the Laplace fit.
+///
+/// The priors: ``N(0, prior_sd²)`` on each coefficient
+/// (``intercept_sd`` for an all-ones column), half-normal with scale
+/// ``sd_scale`` on each random term's standard deviation, LKJ(``lkj``) on
+/// each factor's correlations (uniform at 1), and half-normal with scale
+/// ``dispersion_scale`` on the gamma's or Tweedie's dispersion.
+///
+/// Parameters
+/// ----------
+/// family : str, default "poisson"
+///     ``"poisson"``, ``"gamma"`` or ``"tweedie"`` (needs ``power``).
+/// power : float, optional
+///     The Tweedie power, in (1, 2).
+/// prior_sd, intercept_sd : float, default 2.5, 10.0
+/// sd_scale : float, default 1.0
+/// lkj : float, default 1.0
+/// dispersion_scale : float, default 10.0
+/// chains, tune, draws : int, default 4, 1000, 1000
+/// seed : int, default 0
+/// target_accept : float, default 0.8
+/// max_depth : int, default 10
+///
+/// Examples
+/// --------
+/// >>> from prospicio.models import BayesGlmm, Design
+/// >>> y = [float((i * 7) % 5 + i % 4) for i in range(40)]
+/// >>> site = [f"s{i % 4}" for i in range(40)]
+/// >>> spec = BayesGlmm(chains=2, tune=300, draws=300)
+/// >>> fit = spec.fit(Design([[1.0] * 40], ["(Intercept)"]), {"site": site}, y)
+/// >>> all(s["rhat"] < 1.05 for s in fit.summary())
+/// True
+#[pyclass(name = "BayesGlmm", module = "prospicio.models", frozen)]
+pub(crate) struct PyBayesGlmm {
+    inner: prospicio_bayes::glmm::BayesGlmm,
+}
+
+#[pymethods]
+impl PyBayesGlmm {
+    #[new]
+    #[pyo3(signature = (family = "poisson", power = None, prior_sd = 2.5, intercept_sd = 10.0, sd_scale = 1.0, lkj = 1.0, dispersion_scale = 10.0, chains = 4, tune = 1000, draws = 1000, seed = 0, target_accept = 0.8, max_depth = 10))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        family: &str,
+        power: Option<f64>,
+        prior_sd: f64,
+        intercept_sd: f64,
+        sd_scale: f64,
+        lkj: f64,
+        dispersion_scale: f64,
+        chains: usize,
+        tune: usize,
+        draws: usize,
+        seed: u64,
+        target_accept: f64,
+        max_depth: u64,
+    ) -> PyResult<Self> {
+        use prospicio_bayes::glmm::{BayesGlmm, Sampler};
+        let mut inner = BayesGlmm::new(glmm_family(family, power)?).sampler(Sampler {
+            chains,
+            tune,
+            draws,
+            seed,
+            target_accept,
+            max_depth,
+        });
+        inner.prior_sd = prior_sd;
+        inner.intercept_sd = intercept_sd;
+        inner.sd_scale = sd_scale;
+        inner.lkj = lkj;
+        inner.dispersion_scale = dispersion_scale;
+        Ok(Self { inner })
+    }
+
+    /// Samples the posterior.
+    ///
+    /// Parameters
+    /// ----------
+    /// design : Design
+    ///     The fixed effects, with any offset and prior weights.
+    /// groups : dict of str to sequence or dict
+    ///     The grouping factors, as in ``Glmm.fit``.
+    /// y : sequence of float
+    ///
+    /// Returns
+    /// -------
+    /// BayesGlmmFit
+    fn fit(
+        &self,
+        py: Python<'_>,
+        design: PyRef<'_, PyDesign>,
+        groups: &Bound<'_, pyo3::types::PyDict>,
+        y: Vec<f64>,
+    ) -> PyResult<PyBayesGlmmFit> {
+        let groups = groupings(groups)?;
+        let (spec, d) = (&self.inner, &design.inner);
+        let inner = py.detach(|| spec.fit(d, &groups, &y)).map_err(to_py)?;
+        Ok(PyBayesGlmmFit { inner })
+    }
+}
+
+/// A sampled Bayesian GLMM, from ``BayesGlmm.fit``.
+#[pyclass(name = "BayesGlmmFit", module = "prospicio.models", frozen)]
+pub(crate) struct PyBayesGlmmFit {
+    inner: prospicio_bayes::glmm::BayesGlmmFit,
+}
+
+#[pymethods]
+impl PyBayesGlmmFit {
+    /// The fixed coefficients' names.
+    #[getter]
+    fn names(&self) -> Vec<String> {
+        self.inner.names().to_vec()
+    }
+
+    /// The parameters' names: the coefficients, each factor's
+    /// ``sd[g|term]`` and ``cor[g|a,b]``, then ``dispersion`` when it is
+    /// free.
+    #[getter]
+    fn parameter_names(&self) -> Vec<String> {
+        self.inner.parameters().names().to_vec()
+    }
+
+    /// The parameters' draws on their natural scale, one row per draw
+    /// (chain by chain), in the order of ``parameter_names``.
+    #[getter]
+    fn parameter_draws(&self) -> Vec<Vec<f64>> {
+        let p = self.inner.parameters();
+        (0..p.n_draws()).map(|d| p.draw(d).to_vec()).collect()
+    }
+
+    /// The random effects' names, ``b[g|level|term]``.
+    #[getter]
+    fn effect_names(&self) -> Vec<String> {
+        self.inner.effects().names().to_vec()
+    }
+
+    /// The random effects' draws, one row per draw, in the order of
+    /// ``effect_names``.
+    #[getter]
+    fn effect_draws(&self) -> Vec<Vec<f64>> {
+        let e = self.inner.effects();
+        (0..e.n_draws()).map(|d| e.draw(d).to_vec()).collect()
+    }
+
+    /// Divergent transitions among the kept draws.
+    #[getter]
+    fn divergences(&self) -> usize {
+        self.inner.divergences()
+    }
+
+    /// The Laplace fit the chains started from.
+    #[getter]
+    fn laplace(&self) -> PyGlmmFit {
+        PyGlmmFit {
+            inner: self.inner.laplace().clone(),
+        }
+    }
+
+    /// Posterior summary of each parameter: one dict per parameter with
+    /// ``name``, ``mean``, ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``,
+    /// ``ess_bulk`` and ``ess_tail``.
+    ///
+    /// Returns
+    /// -------
+    /// list of dict
+    fn summary<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, pyo3::types::PyDict>>> {
+        summary_dicts(py, self.inner.summary().map_err(to_py)?)
+    }
+
+    /// Each factor's random effects: a dict of name to a dict of
+    /// ``levels`` (sorted), ``terms``, and ``mean`` and ``sd`` (the
+    /// posterior's), each a dict of term to a list by level (the
+    /// independent factors of one name joined).
+    #[getter]
+    fn random_effects<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyDict>> {
+        let out = pyo3::types::PyDict::new(py);
+        for r in self.inner.random_effects() {
+            let d = match out.get_item(&r.name)? {
+                Some(d) => d.cast_into::<pyo3::types::PyDict>()?,
+                None => {
+                    let d = pyo3::types::PyDict::new(py);
+                    d.set_item("levels", &r.levels)?;
+                    d.set_item("terms", pyo3::types::PyList::empty(py))?;
+                    for key in ["mean", "sd"] {
+                        d.set_item(key, pyo3::types::PyDict::new(py))?;
+                    }
+                    out.set_item(&r.name, &d)?;
+                    d
+                }
+            };
+            let item = |key: &str| -> PyResult<Bound<'py, PyAny>> {
+                d.get_item(key)?
+                    .ok_or_else(|| PyValueError::new_err(format!("no {key}")))
+            };
+            for (c, term) in r.terms.iter().enumerate() {
+                item("terms")?.cast::<pyo3::types::PyList>()?.append(term)?;
+                item("mean")?.set_item(term, &r.mean[c])?;
+                item("sd")?.set_item(term, &r.sd[c])?;
+            }
+        }
+        Ok(out)
+    }
+
+    /// The posterior mean of each row's mean, adding its random effects by
+    /// label and covariate (``groups`` as in ``Glmm.fit``); a level the fit
+    /// has not seen, or a factor left out, adds 0 in every draw.
     #[pyo3(signature = (design, groups = None))]
     fn predict(
         &self,

@@ -2223,6 +2223,122 @@ S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...)
               s7_call())
 }
 
+#' Bayesian GLMMs by NUTS
+#'
+#' `bayes_glmm_fit()` samples the posterior of the model of [glmm_fit()]
+#' (random terms written as in lme4) with nuts-rs, jointly with the random
+#' effects, which are sampled non-centred (`b = Lambda v` with
+#' `v ~ N(0, I)`, so the chains stay out of the funnel between a standard
+#' deviation and its effects). The priors: `N(0, prior_sd^2)` on each
+#' coefficient (`intercept_sd` for the intercept), half-normal with scale
+#' `sd_scale` on each random term's standard deviation, LKJ(`lkj`) on each
+#' factor's correlations (uniform at 1), and half-normal with scale
+#' `dispersion_scale` on the gamma's or Tweedie's dispersion. The chains
+#' start at the Laplace fit, which is kept as `laplace`. On a single
+#' factor the posterior matches exact integration, and on 800 rows with
+#' random slopes it sits on the Laplace fit (`docs/design/models.md`,
+#' "Mixed models").
+#'
+#' @inheritParams glmm_fit
+#' @param prior_sd,intercept_sd Prior standard deviations of the
+#'   coefficients and the intercept, on the log scale.
+#' @param sd_scale Scale of the half-normal prior on each random term's
+#'   standard deviation.
+#' @param lkj The LKJ prior's shape on each factor's correlations.
+#' @param dispersion_scale Scale of the half-normal prior on the
+#'   dispersion.
+#' @param chains,tune,draws Chains, warm-up draws and kept draws per chain.
+#' @param seed Seed, a whole number.
+#' @param target_accept Target acceptance rate for step-size adaptation.
+#' @param max_depth Largest tree depth.
+#' @returns A `bayes_glmm_model` with `coefficients` (posterior means),
+#'   `summary` (a data frame of mean, sd, quantiles, R-hat and ESS for each
+#'   coefficient, `sd[g|term]`, `cor[g|a,b]` and the `dispersion` when it
+#'   is free), `draws` (a matrix of those parameters, one row per draw),
+#'   `effect_draws` (a matrix of the random effects `b[g|level|term]`),
+#'   `random_effects` (a list by factor of data frames with each `level`
+#'   and `term`, its posterior `mean` and `sd`), `divergences` and
+#'   `laplace` (the [glmm_model] the chains started from). `predict()`
+#'   gives the posterior mean of each row's mean, its effects looked up as
+#'   in [glmm_fit()].
+#' @export
+#' @examples
+#' d <- data.frame(y = (0:39 * 7) %% 5 + 0:39 %% 4, site = paste0("s", 0:39 %% 4))
+#' m <- bayes_glmm_fit(y ~ 1 + (1 | site), d, chains = 2, tune = 300, draws = 300)
+#' m@summary
+bayes_glmm_fit <- function(formula, data, family = "poisson", power = NULL, offset = NULL,
+                           weights = NULL, prior_sd = 2.5, intercept_sd = 10, sd_scale = 1,
+                           lkj = 1, dispersion_scale = 10, chains = 4, tune = 1000, draws = 1000,
+                           seed = 0, target_accept = 0.8, max_depth = 10) {
+  bars <- glmm_bars(formula)
+  des <- model_design(bars$fixed, data, offset, weights)
+  g <- glmm_labels(bars$groups, data)
+  ptr <- rust_result(bayes_glmm_fit_design(
+    as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
+    if (is.null(power)) NaN else as.double(power), g$names, g$labels, g$intercepts,
+    g$slope_factor, g$slope_names, g$slope_values,
+    as.double(c(prior_sd, intercept_sd, sd_scale, lkj, dispersion_scale)),
+    as.double(c(chains, tune, draws, seed, target_accept, max_depth))
+  ))
+  bayes_glmm_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels, groups = bars$groups)
+}
+
+#' @rdname bayes_glmm_fit
+#' @param ptr,terms,xlevels,groups Internal.
+#' @export
+bayes_glmm_model <- S7::new_class(
+  "bayes_glmm_model",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("BayesGlmmModel"),
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    groups = S7::class_list,
+    coefficients = S7::new_property(S7::class_double, getter = function(self) {
+      nm <- self@ptr$names()
+      stats::setNames(colMeans(self@draws)[seq_along(nm)], nm)
+    }),
+    summary = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(self@ptr$summary())
+    }),
+    draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$parameter_names()
+      matrix(self@ptr$parameter_draws(), ncol = length(nm), byrow = TRUE,
+             dimnames = list(NULL, nm))
+    }),
+    effect_draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$effect_names()
+      matrix(self@ptr$effect_draws(), ncol = length(nm), byrow = TRUE,
+             dimnames = list(NULL, nm))
+    }),
+    random_effects = S7::new_property(S7::class_list, getter = function(self) {
+      lapply(self@ptr$random_effects(), as.data.frame)
+    }),
+    divergences = S7::new_property(S7::class_double, getter = function(self) self@ptr$divergences()),
+    laplace = S7::new_property(S7::class_any, getter = function(self) {
+      glmm_model(ptr = self@ptr$laplace(), terms = self@terms, xlevels = self@xlevels,
+                 groups = self@groups)
+    })
+  ),
+  constructor = function(ptr, terms, xlevels, groups) {
+    S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels, groups = groups)
+  }
+)
+
+S7::method(coef, bayes_glmm_model) <- function(object, ...) object@coefficients
+S7::method(predict, bayes_glmm_model) <- function(object, newdata, offset = NULL, ...) {
+  nd <- new_design(object, newdata, offset)
+  g <- glmm_labels(object@groups, newdata, required = FALSE)
+  rust_result(object@ptr$predict(as.double(nd$x), colnames(nd$x), nd$offset, g$names, g$labels,
+                                 g$intercepts, g$slope_factor, g$slope_names, g$slope_values),
+              s7_call())
+}
+S7::method(print, bayes_glmm_model) <- function(x, ...) {
+  cat(sprintf("<bayes_glmm_model> %d divergences\n", as.integer(x@divergences)))
+  print(x@summary)
+  invisible(x)
+}
+
 #' Double GLMs: a model for the dispersion as well as the mean
 #'
 #' `dglm_fit()` fits a GLM for the mean, `g(mu) = X beta + offset`, with

@@ -485,6 +485,21 @@ near(predict(dg, sl[1:3, ]), dg@fitted[1:3], 1e-9)
 stopifnot(inherits(try(glmm_fit(count ~ x + (1 + x | territory), sl, nodes = 5),
                        silent = TRUE), "try-error"))
 
+# The NUTS fit of the same model sits on the Laplace fit.
+bp <- bayes_glmm_fit(count ~ x + w + (1 + x | territory) + offset(log(exposure)), sl,
+                     chains = 4, tune = 500, draws = 500, seed = 2026)
+bs <- bp@summary
+stopifnot(bp@divergences == 0, all(bs$rhat < 1.05),
+          identical(bs$parameter[4:6], c("sd[territory|(Intercept)]", "sd[territory|x]",
+                                         "cor[territory|x,(Intercept)]")),
+          all(abs(bs$mean[1:3] - coef(bp@laplace)) < 0.2 * bs$sd[1:3]),
+          identical(dim(bp@draws), c(2000L, 6L)), ncol(bp@effect_draws) == 60)
+bre <- bp@random_effects$territory
+lre <- bp@laplace@random_effects$territory
+stopifnot(identical(bre$level, lre$level), identical(bre$term, lre$term),
+          all(abs(bre$mean - lre$value) < 0.4 * bre$sd))
+stopifnot(all(predict(bp, sl[1:3, ]) > 0))
+
 # Double GLMs against dglm 1.8.6 corrected (validation/scripts/r_dglm.R);
 # where dglm is right (the Poisson without an offset), against dglm live.
 dref <- utils::read.csv(file.path(root, "reference", "dglm_r.csv"), comment.char = "#")

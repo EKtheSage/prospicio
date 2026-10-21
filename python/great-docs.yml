@@ -141,6 +141,8 @@ reference:
       - models.GlmmFit
       - models.BayesGlm
       - models.BayesGlmFit
+      - models.BayesGlmm
+      - models.BayesGlmmFit
       - models.ElasticNet
       - models.ElasticNetFit
       - models.CvPath

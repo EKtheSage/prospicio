@@ -349,7 +349,7 @@ impl CpuLogpFunc for Posterior<'_> {
 }
 
 /// `∂ log f(y; μ, φ/w) / ∂φ` for the families whose dispersion is sampled.
-fn dll_dphi(family: Family, y: f64, mu: f64, w: f64, phi: f64) -> f64 {
+pub(crate) fn dll_dphi(family: Family, y: f64, mu: f64, w: f64, phi: f64) -> f64 {
     match family {
         Family::Gaussian => -0.5 / phi + 0.5 * w * (y - mu).powi(2) / (phi * phi),
         Family::Gamma => {
