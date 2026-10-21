@@ -713,4 +713,4 @@
   (`ylt::hash_bytes`) is the events' `EventSet::input_hash` and every
   result's provenance input hash. Python `prospicio.aggregate.read_ylt`
   and R `read_ylt()` read CSV or Parquet (with pyarrow or arrow);
-  `EventSet.from_ylt` and `event_set_from_ylt()` take columns (#484).
+  `EventSet.from_ylt` and `event_set_from_ylt()` take columns (#484, #496).
