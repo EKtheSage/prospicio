@@ -335,10 +335,11 @@ standard deviation of 0.12. The GAM's show no pattern; their sum of squares is
 even below what chance gives, as expected in the training data for a model
 that adapted its shape to them. Section 6.3.1 also notes
 that deviance residuals of counts cluster and do not look normal, and suggests
-randomized quantile residuals (Dunn and Smyth) instead; prospicio's
-`prospicio.models.pit` gives the randomized probability integral transform
-those residuals are built from. Section 6.4's Cook's distance needs the hat
-values, which `GlmFit` does not expose either (issue #334).
+randomized quantile residuals (Dunn and Smyth) instead; prospicio has them as
+`GlmFit.quantile_residuals` (and `prospicio.models.quantile_residuals` for any
+family), and `prospicio.models.pit` gives the randomized probability integral
+transform they are built from. Section 6.4's Cook's distance and hat values come
+from `GlmFit.diagnostics` (issue #334).
 
 ## 4. Validation on held-out data (sections 4.3 and 7)
 

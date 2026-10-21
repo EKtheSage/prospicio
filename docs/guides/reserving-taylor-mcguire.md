@@ -19,8 +19,9 @@ Two parts of prospicio carry the work. `prospicio.reserving` has the chain
 ladder, Mack and the ODP bootstrap on a `Triangle`. `prospicio.models` has the
 GLM (`Glm`, `Design`), which fits the monograph's models cell by cell, with any
 design you write down. The Rust crate also has the cross-classified ODP as a
-ready-made model (`OdpGlm`), but the bindings do not expose it yet (section 10),
-so here the design is built by hand. That turns out to be useful: every model
+ready-made model (`OdpGlm`, with `OdpGlm.cells` for a custom design, an analytic
+prediction error and residual diagnostics; section 10), but here the design is
+built by hand, to show what the model is. That turns out to be useful: every model
 in the monograph's chapter 7 is the same call with another design.
 
 ## 1. The data and the chain ladder
@@ -718,21 +719,20 @@ Table 3-3; that is the monograph's own rounding.
 **Not reproduced**: the plots (P-P plot, scatter and spread plots) are not
 drawn here; their inputs, the standardized residuals, are computed in section 5.
 
-**Gaps.** The monograph's methods all run above, but several steps are done by
-hand in numpy that a reserving library should do for you:
+**Gaps closed since this guide was written.** The steps below are done by hand
+in numpy above, and the library now does them:
 
-- *Reserving lane* (#333): `OdpGlm`, the cross-classified ODP fitted on a `Triangle`,
-  exists in the Rust crate but not in the Python or R bindings; it takes no
-  custom design, so parameter reduction (a parametric accident-year or
-  development-year effect), calendar-year terms and interactions (models 7-2,
-  7-10, 7-14) need the hand-built design used here; it has no analytic
-  prediction error (the delta-method MSEP by origin and in total of section 3);
-  and it offers no residual diagnostics (standardized residuals by
-  development, accident and calendar year, the actual-to-fitted heat map). It
-  fits only the ODP, not a gamma or Tweedie error.
-- *Models lane* (#334): `GlmFit` has no residuals (Pearson, deviance, standardized), no
-  leverages (hat values), no standard error of a prediction or of a sum of
-  predictions (the delta method's `g' Sigma g`), and no GCV.
+- *Reserving lane* (#333): `OdpGlm` is in the Python and R bindings. `OdpGlm.cells`
+  and `fit(..., design=)` take a custom design (parameter reduction, calendar-year
+  terms and interactions: models 7-2, 7-10 and 7-14 reproduce Tables 7-1, 7-3
+  and 7-5); `prediction_error()` gives the delta-method MSEP by origin and in
+  total (Table 5-4); `residuals()` and `residual_summary()` give the standardized
+  residuals by development, accident or calendar period (Figure 6-22's heat
+  map); and `OdpGlm(family=, power=)` fits a gamma or Tweedie error too.
+- *Models lane* (#334): `GlmFit.diagnostics` gives residuals, hat values and
+  Cook's distances, `prediction_se` and `sum_prediction_error` the standard error
+  of a prediction and of a sum of predictions, and `gcv` the GCV.
 
-Both are filed for their lanes: #333 (Reserving) and #334 (Models). Until they land, the functions above
-(`design`, `msep`, `standardized_deviance`, `heat_map`) are short enough to copy.
+The hand-built `design`, `msep`, `standardized_deviance` and `heat_map` above are
+kept because they show how each number arises; to reproduce them in your own work,
+use the functions above.

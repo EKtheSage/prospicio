@@ -645,19 +645,23 @@ that section 10.4 asks for.
 
 ## 5. What prospicio does not cover
 
-Gaps found while writing the Python guide, filed for the Models lane, hold for
-R too, since both packages call the same Rust code:
+Gaps found while writing the Python guide, filed for the Models lane and since
+closed, which hold for R too, since both packages call the same Rust code:
 
-- Model-agnostic explanations: permutation importance, partial dependence and
-  the pairwise interaction screen are written out by hand above; a helper that
-  takes any fitted model and new data would save the loops (#355).
+- Model-agnostic explanations (#355), now in the package:
+  `permutation_importance()`, `partial_dependence()` and `interaction_screen()`
+  take any fitted model and new data. The loops written out by hand above are
+  the same computations.
 - Bounds on elastic net coefficients (glmnet's `lower.limits` and
-  `upper.limits`) for monotone step functions (section 5.7.2), a built-in
-  relaxed lasso (section 4.5), and speed on hinge bases (#356).
-- Step, hinge and MARS bases (section 5.5), and out-of-fold target encoding
-  with a credibility constant (chapter 6; #357).
-- Generalized linear mixed models with a random intercept per level (section
-  6.5; #358).
+  `upper.limits`), the relaxed lasso and speed on hinge bases (#356, now in the
+  package): `elastic_net_fit(lower_limits, upper_limits, relax)` and
+  `elastic_net_cv(relax = TRUE)`.
+- Step and hinge bases and MARS knot selection (section 5.5; `mars_knots()` and
+  `mars_formula()`), and out-of-fold target encoding with a credibility constant
+  (chapter 6; `target_encode()`) (#357, #465, now in the package).
+- Generalized linear mixed models (section 6.5; #358, now in the package):
+  `glmm_fit()` with lme4's `(1 | g)` and `(1 + x | g)` terms, and
+  `bayes_glmm_fit()` for a NUTS fit.
 
 Everything the Python guides do has an R equivalent: `glm_fit()`,
 `elastic_net_fit()` (a path with `lambda = NULL`, its first `lambda` the
