@@ -204,7 +204,9 @@ pub(crate) fn one_year_seed(predictive: u64) -> u64 {
 /// (`reserving-bayes.md`, decision 22).
 pub(crate) fn synchronized_error() -> crate::Error {
     crate::Error::Bayes(
-        "Synchronized dependence resamples the residuals of the same positions in every          segment, and a posterior has no residuals to resample; use RankCorrelation to          correlate the segments (or Independent)"
+        "Synchronized dependence resamples the residuals of the same positions in every \
+         segment, and a posterior has no residuals to resample; use RankCorrelation to \
+         correlate the segments (or Independent)"
             .into(),
     )
 }
@@ -235,6 +237,7 @@ mod tests {
         assert!(m.starts_with("Synchronized dependence"), "{m}");
         assert!(m.contains("no residuals to resample"), "{m}");
         assert!(m.contains("RankCorrelation"), "{m}");
+        assert!(!m.contains("  "), "no runs of spaces: {m}");
     }
 
     #[test]
