@@ -463,6 +463,12 @@ impl ReinsuranceTower {
         Ok(PredictiveDistribution { inner })
     }
 
+    /// Plain annual losses, one per simulation, each as one aggregate loss.
+    fn apply_annual(&self, losses: &[f64]) -> Result<PredictiveDistribution> {
+        let inner = self.inner.apply_annual(losses).map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+
     fn apply(&self, events: Robj) -> Result<PredictiveDistribution> {
         let events = <&EventSet>::try_from(&events)
             .map_err(|_| Error::Other("events must be an event_set".into()))?;

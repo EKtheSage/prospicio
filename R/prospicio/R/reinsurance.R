@@ -612,11 +612,20 @@ tower_ceded <- function(tower, losses) {
 #' risk) each simulation's total is one aggregate loss: an adverse
 #' development cover or loss portfolio transfer on reserves, a stop-loss or
 #' quota share on premium risk. An occurrence layer then sees the total as
-#' one occurrence, so it acts as an aggregate excess of loss.
+#' one occurrence, so it acts as an aggregate excess of loss. A numeric
+#' vector holds plain annual losses, one per simulation, each taken the same
+#' way, with no `event_set` or [predictive_distribution] to build.
+#'
+#' A contract stated on the loss ratio is a layer on money amounts: a
+#' loss-ratio cap `c` on subject premium `P` is
+#' `aggregate_stop_loss(name, c * P, 0)` with `with_premium_rate(layer, 1, P)`,
+#' so the ceded loss ratio is the capped one, and a sliding scale keyed on it is [with_sliding_scale()].
+#' Several scales on the same loss-ratio grid add pointwise into one;
+#' [ceding_commission_for()] evaluates a scale at any ceded loss.
 #'
 #' @param tower A [reinsurance_tower].
-#' @param events An `event_set` from [simulate_events()], or a
-#'   [predictive_distribution].
+#' @param events An `event_set` from [simulate_events()], a
+#'   [predictive_distribution], or a numeric vector of annual losses.
 #' @param ... Unused; for methods.
 #' @returns A [predictive_distribution] with dimensions `kind` and `layer`:
 #'   `("gross", "ground_up")`, `("ceded", <layer name>)` per layer,
@@ -640,11 +649,19 @@ tower_ceded <- function(tower, losses) {
 #' tw <- reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6)))
 #' res <- apply_tower(tw, ev)
 #' aggregate(res, keep = "kind")@keys
+#' cover <- with_sliding_scale(
+#'   with_premium_rate(aggregate_stop_loss("cover", 120, 0), 1, 100),
+#'   c(0.3, 0.1), c(0.5, 0.9)
+#' )
+#' annual <- apply_tower(reinsurance_tower(list(cover)), c(40, 70, 150))
+#' draw_matrix(annual)
 apply_tower <- S7::new_generic("apply_tower", "tower", function(tower, events, ...) S7::S7_dispatch())
 
 S7::method(apply_tower, reinsurance_tower) <- function(tower, events, ...) {
   ptr <- if (S7::S7_inherits(events, predictive_distribution)) {
     tower@ptr$apply_aggregate(events@ptr)
+  } else if (is.numeric(events)) {
+    tower@ptr$apply_annual(as.double(events))
   } else {
     tower@ptr$apply(events@ptr)
   }

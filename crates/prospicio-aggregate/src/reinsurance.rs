@@ -1584,6 +1584,68 @@ impl Tower {
         PredictiveDistribution::from_draws(dims, components, draws, self.terms_provenance(base))
     }
 
+    /// Applies the tower to plain annual losses, one per simulation, each
+    /// taken as one aggregate loss as in [`apply_aggregate`](Self::apply_aggregate),
+    /// with no [`EventSet`] or [`PredictiveDistribution`] to build. A
+    /// contract stated on the loss ratio is a layer on money amounts: a
+    /// loss-ratio cap `c` on subject premium `P` is
+    /// `Layer::stop_loss(name, c × P, 0)` with `premium_rate(1, P)` (the
+    /// ceded loss ratio is then the capped one), and a sliding scale keyed
+    /// on it is [`Layer::sliding_scale`]. Several scales on the same
+    /// loss-ratio grid add pointwise into one, since a sum of piecewise
+    /// linear functions on the same anchors is one too.
+    /// [`Commission::rate`] evaluates a scale on any loss ratio.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, Tower};
+    /// use prospicio_prob::{Empirical, KeyValue};
+    ///
+    /// // Losses capped at a 120% loss ratio on a premium of 100, with a
+    /// // commission sliding from 30% at a 50% loss ratio to 10% at 90%.
+    /// let cover = Layer::stop_loss("cover", 120.0, 0.0).unwrap()
+    ///     .premium_rate(1.0, 100.0).unwrap()
+    ///     .sliding_scale(vec![(0.3, 0.5), (0.1, 0.9)]).unwrap();
+    /// let result = Tower::new(vec![cover]).unwrap().apply_annual(&[40.0, 70.0, 150.0]).unwrap();
+    /// let at = |k: &str| {
+    ///     let key: Vec<KeyValue> = vec![k.into(), "cover".into()];
+    ///     Empirical::draws(&result.marginal(&key).unwrap()).to_vec()
+    /// };
+    /// assert_eq!(at("ceded"), [40.0, 70.0, 120.0]);
+    /// let cc = at("ceding_commission");
+    /// assert!((cc[0] - 30.0).abs() < 1e-12 && (cc[1] - 20.0).abs() < 1e-12 && (cc[2] - 10.0).abs() < 1e-12);
+    /// ```
+    pub fn apply_annual(&self, losses: &[f64]) -> Result<PredictiveDistribution> {
+        if losses.is_empty() {
+            return Err(Error::Data("needs at least one annual loss".into()));
+        }
+        if let Some(&bad) = losses.iter().find(|x| !(x.is_finite() && **x >= 0.0)) {
+            return Err(Error::InvalidParameter {
+                name: "losses",
+                value: bad,
+                reason: "must be finite and non-negative",
+            });
+        }
+        if self.needs_sums_insured() {
+            return Err(Error::Data(
+                "a surplus treaty works risk by risk; an annual loss has no sum insured".into(),
+            ));
+        }
+        if self.needs_times() {
+            return Err(Error::Data(
+                "reinstatements pro rata as to time need event times; an annual loss has none"
+                    .into(),
+            ));
+        }
+        let provenance = Provenance::new("reinsurance_tower")
+            .version("prospicio-aggregate", env!("CARGO_PKG_VERSION"))
+            .param("loss", "annual losses");
+        self.apply_years(
+            losses.chunks(1).map(|t| (t, None, None)),
+            losses.len(),
+            provenance,
+        )
+    }
+
     /// Indices of the layers that satisfy `f`.
     fn indices(&self, f: impl Fn(&Layer) -> bool) -> Vec<usize> {
         (0..self.layers.len())
@@ -2840,6 +2902,34 @@ mod tests {
         let e = EventSet::from_years(vec![vec![5.0]], 0).unwrap();
         assert!(e.clone().with_sums_insured(vec![4.0]).is_err());
         assert!(e.with_sums_insured(vec![5.0, 6.0]).is_err());
+    }
+
+    #[test]
+    fn apply_annual_matches_apply_aggregate_and_checks_its_input() {
+        let cover = Layer::stop_loss("cover", 120.0, 0.0)
+            .unwrap()
+            .premium_rate(1.0, 100.0)
+            .unwrap()
+            .sliding_scale(vec![(0.3, 0.5), (0.1, 0.9)])
+            .unwrap()
+            .profit_commission(0.2, 0.1)
+            .unwrap();
+        let tower = Tower::new(vec![cover]).unwrap();
+        let losses = [0.0, 40.0, 70.0, 150.0, 95.5];
+        let annual = tower.apply_annual(&losses).unwrap();
+        let pd = PredictiveDistribution::from_draws(
+            vec!["line".into()],
+            vec![vec!["a".into()]],
+            losses.to_vec(),
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let aggregate = tower.apply_aggregate(&pd).unwrap();
+        assert_eq!(annual.components(), aggregate.components());
+        assert_eq!(annual.draw_matrix(), aggregate.draw_matrix());
+        assert!(tower.apply_annual(&[]).is_err());
+        assert!(tower.apply_annual(&[1.0, -1.0]).is_err());
+        assert!(tower.apply_annual(&[f64::NAN]).is_err());
     }
 
     #[test]

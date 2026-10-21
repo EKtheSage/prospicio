@@ -6,6 +6,7 @@
 
 ## Next
 
+- [brokerage-leg] brokerage on a loss-ratio scale as a leg of a layer (#477's last ask), waiting on the user
 
 ## Done
 
@@ -27,3 +28,4 @@
 - [mixing-families] the beta and Sichel mixings of `aggregate`'s mixed counts (`Mixing::Beta`, `Mixing::Sichel`, `Mixing::SichelSkewness` with `sichel_gamma` and `sichel_ig`; `ln_bessel_k` in `prospicio-math`; `aggregate` 1.2.0 parity for the Sichel and `sichel.ig`, quadrature for the beta and SciPy for `sichel.gamma`, where `aggregate` is wrong; Python and R)
 - #476 the annual limit split pro rata across a year's events (`LimitAllocation::ProRata` on `Layer`: the same annual total, a different split by event and so a different net for an inuring stage; refused with reinstatements pro rata as to time; Rust, Python `allocation=` and R `allocation =`)
 - #475 peril and class labels on simulated events, carried through a tower (`EventSet::with_labels`, kept by `merge`; `Tower::apply` by label after `kind` and `layer`, the split under each layer's limit allocation; Rust, Python and R)
+- #477 plain annual losses through a tower (`Tower::apply_annual`, a contract on the loss ratio as a stop loss of `c × P` with `premium_rate(1, P)` and a sliding scale on the capped ratio; Python `Tower.apply_annual`, R `apply_tower()` on a numeric vector)

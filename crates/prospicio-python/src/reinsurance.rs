@@ -1167,6 +1167,49 @@ impl PyTower {
         Ok(PyPredictiveDistribution { inner })
     }
 
+    /// Applies the tower to plain annual losses, one per simulation, each
+    /// taken as one aggregate loss as in ``apply_aggregate``, with no
+    /// ``EventSet`` or ``PredictiveDistribution`` to build. A contract
+    /// stated on the loss ratio is a layer on money amounts: a loss-ratio
+    /// cap ``c`` on subject premium ``P`` is ``Layer.stop_loss(name, c * P,
+    /// 0.0).with_premium_rate(1.0, P)``, so the ceded loss ratio is the
+    /// capped one, and a sliding scale keyed on it is
+    /// ``with_sliding_scale``. Several scales on the same loss-ratio grid
+    /// add pointwise into one; ``Layer.ceding_commission_for`` evaluates a
+    /// scale at any ceded loss. Components as ``apply``.
+    ///
+    /// Parameters
+    /// ----------
+    /// losses : Sequence[float]
+    ///     Each simulation's annual loss, finite and non-negative.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For no losses, a negative or non-finite loss, a surplus treaty or
+    ///     reinstatements pro rata as to time.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> cover = (Layer.stop_loss("cover", 120.0, 0.0)
+    /// ...          .with_premium_rate(1.0, 100.0)
+    /// ...          .with_sliding_scale([(0.3, 0.5), (0.1, 0.9)]))
+    /// >>> res = Tower([cover]).apply_annual([40.0, 70.0, 150.0])
+    /// >>> list(res.marginal(["ceded", "cover"]).draws)
+    /// [40.0, 70.0, 120.0]
+    /// >>> [round(x, 12) for x in res.marginal(["ceding_commission", "cover"]).draws]
+    /// [30.0, 20.0, 10.0]
+    fn apply_annual(&self, py: Python<'_>, losses: Vec<f64>) -> PyResult<PyPredictiveDistribution> {
+        let tower = &self.inner;
+        let inner = py.detach(|| tower.apply_annual(&losses)).map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
     /// Applies the tower over a contract term: ``years[t]`` holds year
     /// ``t + 1``'s simulated losses, and simulation ``j`` of every year
     /// belongs to the same path.

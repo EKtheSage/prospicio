@@ -163,6 +163,14 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   is unlimited cover from 0 with `AAD = r` and `AAL = l`. One formula
   covers all three contract types, and a stop-loss in a later stage covers
   the annual total net of earlier stages.
+- **Plain annual losses** (#477). `Tower::apply_annual` takes one annual
+  loss per simulation, each as one aggregate loss as `apply_aggregate`
+  takes a predictive distribution's totals. A contract stated on the loss
+  ratio is a layer on money amounts: a cap `c` on subject premium `P` is a
+  stop loss of `c × P` xs 0 with `premium_rate(1, P)`, so the ceded loss
+  ratio is the capped one and a sliding scale keyed on it reads it; scales
+  on one grid add pointwise. Brokerage on a loss-ratio scale is not a leg
+  yet (open, the user's decision).
 - **Inuring order is by stage.** `Tower::inuring(stages)` applies stages
   in order; layers within a stage see the same losses, and each later
   stage sees every event net of all earlier stages. `Tower::new(layers)`

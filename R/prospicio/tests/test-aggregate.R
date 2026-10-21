@@ -653,3 +653,16 @@ st_pd <- predictive_distribution(matrix(c(6, 3, 9, 1), ncol = 2), data.frame(cla
 st_m <- draw_matrix(scale_to_totals(st_pd, pmin(rowSums(draw_matrix(st_pd)), 10)))
 stopifnot(all(st_m == matrix(c(4, 3, 6, 1), ncol = 2)))
 stopifnot(inherits(try(scale_to_totals(st_pd, 1), silent = TRUE), "try-error"))
+
+# Plain annual losses through apply_tower (#477): a loss-ratio cap of 120%
+# on a premium of 100 with a commission sliding from 30% at 50% to 10% at 90%.
+cover <- with_sliding_scale(
+  with_premium_rate(aggregate_stop_loss("cover", 120, 0), 1, 100),
+  c(0.3, 0.1), c(0.5, 0.9)
+)
+annual <- apply_tower(reinsurance_tower(list(cover)), c(40, 70, 150))
+am <- draw_matrix(annual)
+stopifnot(identical(as.vector(am[, 2]), c(40, 70, 120)))
+close(as.vector(am[, 4]), c(30, 20, 10), 1e-12)
+close(as.vector(am[, 4]), ceding_commission_for(cover, am[, 2]), 1e-12)
+stopifnot(inherits(try(apply_tower(reinsurance_tower(list(cover)), c(1, -1)), silent = TRUE), "try-error"))

@@ -656,6 +656,10 @@
   and commissions labelled `""`; under an annual limit the split follows the layer's allocation.
   Unlabelled results are unchanged. Python `EventSet.with_labels`, `from_long(..., labels=)`,
   `labels`, R `with_labels()`, `event_labels()`, `event_set_from_long(..., labels =)` (#475).
+- `Tower::apply_annual` applies a tower to plain annual losses, one per simulation, with no
+  `EventSet` or `PredictiveDistribution` to build; a contract stated on the loss ratio (a cap and
+  a sliding scale on subject premium) is a stop loss with `premium_rate(1, P)` and a sliding
+  scale. Python `Tower.apply_annual`, R `apply_tower()` on a numeric vector (#477).
 
 ### Distributions and probability
 

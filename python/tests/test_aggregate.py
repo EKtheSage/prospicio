@@ -1167,3 +1167,27 @@ def test_scale_to_totals_carries_a_capped_total_back():
     assert scaled.components() == pd.components()
     with pytest.raises(ValueError):
         pd.scale_to_totals([1.0, 1.0, 1.0])
+
+
+def test_apply_annual_on_plain_losses():
+    from prospicio.distributions import PredictiveDistribution
+
+    # A loss-ratio cap of 120% on a premium of 100, with a commission
+    # sliding from 30% at a 50% loss ratio to 10% at 90% (#477).
+    cover = (Layer.stop_loss("cover", 120.0, 0.0)
+             .with_premium_rate(1.0, 100.0)
+             .with_sliding_scale([(0.3, 0.5), (0.1, 0.9)]))
+    losses = [40.0, 70.0, 150.0]
+    res = Tower([cover]).apply_annual(losses)
+    ceded = res.marginal(["ceded", "cover"]).draws
+    assert ceded == [40.0, 70.0, 120.0]
+    cc = res.marginal(["ceding_commission", "cover"]).draws
+    assert cc == pytest.approx([cover.ceding_commission_for(c) for c in ceded], rel=1e-12)
+    assert cc == pytest.approx([30.0, 20.0, 10.0], rel=1e-12)
+    # The same as apply_aggregate on the losses as draws.
+    agg = Tower([cover]).apply_aggregate(PredictiveDistribution(["line"], [("a",)], [[x] for x in losses]))
+    assert agg.marginal(["ceding_commission", "cover"]).draws == pytest.approx(cc, rel=1e-12)
+    with pytest.raises(ValueError):
+        Tower([cover]).apply_annual([1.0, -1.0])
+    with pytest.raises(ValueError):
+        Tower([cover]).apply_annual([])
