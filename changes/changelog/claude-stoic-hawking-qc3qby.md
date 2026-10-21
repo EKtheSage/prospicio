@@ -12,11 +12,11 @@
   `reorder_groups_by_copula_indexed` return each group's source
   simulations beside the result (Python `return_index=True`, R
   `index = TRUE`), so anything simulated with a group follows it without
-  matching values (#483).
+  matching values (#483, #504).
 
 ### Aggregate and reinsurance
 
 - `EventSet::permute` takes a set's years in another order, losses, sums
   insured, times and labels together: with a group's index from a reorder
   it keeps a class's large events with its reordered totals (Python
-  `EventSet.permute`, R `permute_events()`) (#483).
+  `EventSet.permute`, R `permute_events()`) (#483, #504).
