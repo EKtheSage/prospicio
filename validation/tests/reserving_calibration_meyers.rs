@@ -41,8 +41,9 @@
 //! * `RISK_RS_CALIBRATION_ARMS`: for example `mack,odp,crc` (default:
 //!   `mack,odp,bayes_odp,crc,csr,cay,compartmental`; `crc` runs paid and
 //!   incurred, `csr` paid, `cay` incurred, `bayes_odp` and `compartmental`
-//!   paid; `compartmental_2`, model 2 on paid, is about 11 times slower and
-//!   runs only when named);
+//!   paid; `compartmental_2`, model 2 on paid, takes about 59 s a fit
+//!   against model 1's 2.1 s on the panel (25 to 30 times slower) and runs
+//!   only when named);
 //! * `RISK_RS_CALIBRATION_LIMIT`: the first n triangles of each line, for a
 //!   timing probe (for example 2).
 //!
@@ -729,6 +730,12 @@ fn compartmental_accept(model_2: bool) -> f64 {
     .target_accept
 }
 
+/// The refit's target acceptance: a tenth of the remaining distance to 1
+/// closer than the first fit's (0.999 for model 1, 0.9999 for model 2).
+fn compartmental_refit_accept(model_2: bool) -> f64 {
+    1.0 - (1.0 - compartmental_accept(model_2)) / 10.0
+}
+
 /// Compartmental on paid, with outstanding from case incurred and the
 /// panel's premium, scored like the ODP bootstrap: the outcome less what is
 /// paid among the simulated reserves (the paid at the square's last age
@@ -785,10 +792,11 @@ impl ArmBasis {
             }
             "compartmental" | "compartmental_2" => {
                 let m2 = self.arm == "compartmental_2";
-                let first = compartmental_accept(m2);
-                with_refit_at(first, 1.0 - (1.0 - first) / 10.0, |ta| {
-                    score_compartmental(t, &compartmental_for(m2, self.seed(t), ta))
-                })
+                with_refit_at(
+                    compartmental_accept(m2),
+                    compartmental_refit_accept(m2),
+                    |ta| score_compartmental(t, &compartmental_for(m2, self.seed(t), ta)),
+                )
             }
             other => Err(format!("unknown arm {other}")),
         }
@@ -799,7 +807,8 @@ impl ArmBasis {
 const ALL_ARMS: &str = "mack,odp,bayes_odp,crc,csr,cay,compartmental,compartmental_2";
 
 /// The default of `RISK_RS_CALIBRATION_ARMS`: all but Compartmental model 2
-/// (about 61 s a fit, the note's decision 6), which runs only when named.
+/// (about 59 s a fit on the panel against model 1's 2.1 s), which runs only
+/// when named.
 const DEFAULT_ARMS: &str = "mack,odp,bayes_odp,crc,csr,cay,compartmental";
 
 /// The arms named by `RISK_RS_CALIBRATION_ARMS` (default [`DEFAULT_ARMS`]). An
@@ -1847,6 +1856,49 @@ mod tests {
         assert_eq!(*n.borrow(), 1);
     }
 
+    /// Compartmental's first fit is at the library's target acceptance and
+    /// its refit a tenth of the remaining distance to 1 closer; the refit
+    /// carries the first fit, and the rate swaps print only when present.
+    #[test]
+    fn compartmental_refits_a_tenth_closer_to_1_and_prints_its_swaps() {
+        use std::cell::RefCell;
+        close(compartmental_refit_accept(false), 0.999, 1e-12);
+        close(compartmental_refit_accept(true), 0.9999, 1e-12);
+        for m2 in [false, true] {
+            let (first, refit) = (compartmental_accept(m2), compartmental_refit_accept(m2));
+            let calls = RefCell::new(Vec::new());
+            let bad = DiagSummary {
+                divergences: 2,
+                rate_swaps: 7,
+                ..clean()
+            };
+            let r = with_refit_at(first, refit, |ta| {
+                calls.borrow_mut().push(ta);
+                Ok(if ta == first {
+                    scored_with(30.0, bad)
+                } else {
+                    scored_with(60.0, clean())
+                })
+            })
+            .unwrap();
+            assert_eq!(*calls.borrow(), vec![first, refit]);
+            close(r.percentile, 60.0, 0.0);
+            assert_eq!(r.first, Some((30.0, bad)));
+        }
+        assert!(!clean().text().contains("swaps"));
+        let swapped = DiagSummary {
+            rate_swaps: 7,
+            ..clean()
+        };
+        assert!(
+            swapped.text().ends_with(";div=0;swaps=7"),
+            "{}",
+            swapped.text()
+        );
+        // Swaps are recorded, not a refit trigger.
+        assert!(!swapped.needs_refit());
+    }
+
     #[test]
     fn the_diagnostics_reach_the_csv_and_the_log_line() {
         let panel = parse_panel(&synthetic_csv("ca", "1")).unwrap();
@@ -2017,7 +2069,23 @@ mod tests {
         m.sampler.tune = 200;
         m.sampler.draws = 200;
         m.n_sims = 500;
-        let s = score_compartmental(t, &m).unwrap();
+        let fit = m
+            .fit(
+                &t.training(),
+                Basis::Paid.name(),
+                Outstanding::FromIncurred(Basis::Incurred.name()),
+                "premium",
+            )
+            .unwrap();
+        let s = compartmental_scored(t, &fit).unwrap();
+        // The fit's diagnostics, its rate swaps included, are carried.
+        assert_eq!(
+            s.diag,
+            Some(DiagSummary {
+                rate_swaps: fit.rate_swaps,
+                ..DiagSummary::new(&fit.diagnostics)
+            })
+        );
         assert!(s.percentile >= 0.0 && s.percentile <= 100.0, "{s:?}");
         assert!(s.diag.is_some() && s.sd > 0.0);
         close(s.outcome, t.outcome(Basis::Paid), 0.0);

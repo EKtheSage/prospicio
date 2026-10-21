@@ -624,11 +624,14 @@ from the plan above:
   `compartmental_2`. The default is `mack,odp,bayes_odp,crc,csr,cay,
   compartmental`: model 2 runs only when named (decision 6, the note's
   recommendation, which the user has not overruled).
-* **CI.** Two unit tests run in the `bayes` job: a cut-down NUTS check on a
-  synthetic square (the reserves are shifted to ultimates, the run is
-  reproducible, the library's target acceptances) and a group 353
+* **CI.** Three unit tests run in the `bayes` job: the refit targets (0.999
+  and 0.9999) through `with_refit_at` with a stub fit, and the `swaps=`
+  text; a cut-down NUTS check on a synthetic square (the reserves are
+  shifted to ultimates, the fit's rate swaps are carried, the run is
+  reproducible, the library's target acceptances); and a group 353
   commercial auto check through `ArmBasis::run` (the predictive mean within
-  15% of the ODP bootstrap's, about 1.5 s). Company 337 is not a 10 by 10
+  15% of the ODP bootstrap's, about 1.5 s alone; the file's 22 tests take
+  about 2 s of wall time in release, run in parallel). Company 337 is not a 10 by 10
   square, so the paper's parity targets stay in
   `validation/tests/reserving_compartmental*.rs` and are not reused. The
   study stays `#[ignore]`d.

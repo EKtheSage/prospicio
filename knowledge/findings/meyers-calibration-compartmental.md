@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: On the rebuilt panel, Compartmental model 1 fails Meyers' percentile test in every line, with predictive intervals far too narrow; model 2 scores only 48 of 200 triangles
-description: Gesmann and Morris' compartmental model 1, at the paper's preset priors (fitted to workers' compensation company 337) and the library's sampler, scores all 200 triangles of the rebuilt panel on paid and fails Meyers' uniformity test at 5% in every line and in total (D 49.3 commercial auto, 36.9 personal auto, 26.8 workers' compensation, 66.3 other liability, 39.3 on all 200, against bounds of 19.2 and 9.6), worse in total than Mack, the ODP bootstrap, CRC and CSR on paid. Its predictive total has a median coefficient of variation of 1.3% to 3.8% in three lines, and other liability sits near the top of the predictive distribution. Model 2, whose log-normal likelihood needs every observed amount positive, scores 48 of 200 triangles (27 in workers' compensation) and fails in total (20.5 against 19.6) and in workers' compensation.
+description: Gesmann and Morris' compartmental model 1, at the paper's preset priors (fitted to workers' compensation company 337) and the library's sampler, scores all 200 triangles of the rebuilt panel on paid and fails Meyers' uniformity test at 5% in every line and in total (D 49.3 commercial auto, 36.9 personal auto, 26.8 workers' compensation, 66.3 other liability, 39.3 on all 200, against bounds of 19.2 and 9.6), with a larger total D (on all 200) than Mack, the ODP bootstrap, CRC and CSR on paid (on 193 to 200). Its predictive total has a median coefficient of variation of 1.3% to 3.8% in three lines, and other liability sits near the top of the predictive distribution. Model 2, whose log-normal likelihood needs every observed amount positive, scores 48 of 200 triangles (27 in workers' compensation) and fails in total (20.5 against 19.6) and in workers' compensation.
 tags: [reserving, compartmental, gesmann-morris, calibration, schedule-p, ks-test, nuts, preset-priors]
 status: draft
 generated: { by: claude-code/local-session, at: 2026-10-21T10:00:00-07:00 }
@@ -30,8 +30,17 @@ sha256 `075b3925...59d2` (the one of the Mack and ODP finding), seeds from
 `seed_for`. Not marked verified: no CI job runs the study, only two wiring
 tests (below). NUTS draws at a fixed seed differ between Windows and
 Linux, so the last digits are this platform's. The D values are recorded,
-not pinned. Model 1 ran with `RISK_RS_CALIBRATION_ARMS=compartmental`,
-model 2 with `compartmental_2`, each on all 200 triangles.
+not pinned. Both models ran on all 200 triangles in one run,
+`RISK_RS_CALIBRATION_ARMS=compartmental,compartmental_2`, with the panel
+copied to `target/calibration-pr4/` (`RISK_RS_CALIBRATION_PANEL`), so its
+`percentiles.csv` (sha256 `62822bcf...fadb7`) and `ks.csv` sit beside it
+and no later probe overwrites them. `target/` is not committed: every
+figure below is reproduced by that command (about 33 minutes on 16
+threads). The D values come from `ks.csv`; the medians, tail counts,
+coefficients of variation (`sd / mean`), mean over outcome, diagnostics
+and errors are computed from `percentiles.csv`'s `percentile`, `mean`,
+`sd`, `outcome`, `diagnostics`, `refit` and `error` columns. A first run
+of each model on the same seeds gave the same figures.
 
 * **Settings.** `Compartmental::new(CompartmentalPriors::gesmann_morris())`
   (model 1: normal likelihood on amounts, cumulative paid, paid and
@@ -57,14 +66,17 @@ model 2 with `compartmental_2`, each on all 200 triangles.
 
   | | CA | PA | WC | OL | All |
   |---|---|---|---|---|---|
-  | Compartmental 1, here | 49.3* | 36.9* | 26.8* | 66.3* | 39.3* |
+  | Compartmental 1, here | 49.3* | 36.9* | 26.8* | 66.3* | 39.3* (200) |
   | Mack paid, here | 23.2* | 48.3* | 33.4* | 10.3 (49) | 24.6* (199) |
   | ODP paid, here | 25.6* | 48.8* | 31.3* | 8.7 | 26.3* |
   | CRC paid, here | 20.7* (48) | 43.0* | 32.8* | 21.6* (45) | 26.4* (193) |
   | CSR paid, here | 5.5 (48) | 25.7* | 10.9 | 12.8 (45) | 4.6 (193) |
 
-  It fails in every line and in total. It is the worst of these arms in
-  commercial auto, other liability and in total; in personal auto and
+  Each line has 50 triangles unless the cell gives n; Compartmental model
+  1 scores all 200, the other arms a subset, so a comparison across rows
+  is of D on slightly different sets (and bounds: 9.6 on 200, 9.8 on
+  193). It fails in every line and in total. Its D is the largest of these
+  arms in commercial auto, other liability and in total; in personal auto and
   workers' compensation its D is below those of Mack, the ODP bootstrap and
   CRC (which also fail there) and above CSR's. It is the only one of these
   arms whose other liability D is above 22.
@@ -83,7 +95,9 @@ model 2 with `compartmental_2`, each on all 200 triangles.
   preset was fitted to, has the lowest D (26.8*), against 36.9*, 49.3* and
   66.3*, but it still fails, a little below Mack, the ODP bootstrap and CRC on paid
   (31.3 to 33.4) and above CSR (10.9).
-  Company 337 itself scores 55.4 under model 1 and 99.7 under model 2.
+  The panel's workers' compensation group 337 (the code of the paper's
+  company 337, whose triangle in the paper is not this square) scores 55.4 under model 1 and 99.7 under model 2 (its rows
+  of the run's `percentiles.csv`).
   Whether the other lines' worse D is the preset, the line's data (case
   incurred can be below paid, and other liability triangles are small) or
   both is not separated: a run with priors fitted per line is not built.
