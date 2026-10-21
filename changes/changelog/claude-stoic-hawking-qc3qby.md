@@ -27,4 +27,4 @@
   before the events in the year under annual terms, and gross, net and
   `totals` include it (Python `EventSet.with_aggregate_part`,
   `aggregate_part`, `Layer.sees_aggregate_part`; R `with_aggregate_part()`,
-  `aggregate_part()`) (#483).
+  `aggregate_part()`) (#483, #505).
