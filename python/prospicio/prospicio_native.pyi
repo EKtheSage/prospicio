@@ -15203,14 +15203,6 @@ class MarsFit:
         -------
         Terms
         """
-    def knots(self, /, name: str) -> list[float]:
-        """
-        The sorted knots of ``name``'s hinges, for ``Terms.hinges``.
-        """
-    def linear(self, /, name: str) -> bool:
-        """
-        Whether ``name`` enters linearly besides its hinges.
-        """
     @property
     def coefficients(self, /) -> list[float]:
         """
@@ -15230,6 +15222,14 @@ class MarsFit:
     def grsq(self, /) -> float:
         """
         ``1 - gcv / gcv0``.
+        """
+    def knots(self, /, name: str) -> list[float]:
+        """
+        The sorted knots of ``name``'s hinges, for ``Terms.hinges``.
+        """
+    def linear(self, /, name: str) -> bool:
+        """
+        Whether ``name`` enters linearly besides its hinges.
         """
     @property
     def names(self, /) -> list[str]:
