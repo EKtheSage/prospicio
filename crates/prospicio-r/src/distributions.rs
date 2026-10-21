@@ -873,14 +873,59 @@ fn reorder_groups_rust(
     dim: &str,
     correlation: &[f64],
     seed: f64,
+    kind: &str,
 ) -> Result<PredictiveDistribution> {
+    use prospicio_prob::portfolio::CorrelationKind;
+    let kind = match kind {
+        "pearson" => CorrelationKind::Pearson,
+        "spearman" => CorrelationKind::Spearman,
+        _ => {
+            return Err(Error::Other(format!(
+                "kind must be \"pearson\" or \"spearman\", not {kind:?}"
+            )));
+        }
+    };
     let pd = <&PredictiveDistribution>::try_from(&pd)
         .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
     let inner = pd
         .inner
-        .reorder_groups(dim, correlation, whole(seed, "seed")?)
+        .reorder_groups_with(dim, correlation, kind, whole(seed, "seed")?)
         .map_err(to_r)?;
     Ok(PredictiveDistribution { inner })
+}
+
+/// The groups' correlation matrix (row-major) from a long table of pairs.
+#[extendr]
+fn correlation_from_pairs_rust(
+    pd: Robj,
+    dim: &str,
+    first: Robj,
+    second: Robj,
+    values: &[f64],
+) -> Result<Vec<f64>> {
+    let pd = <&PredictiveDistribution>::try_from(&pd)
+        .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
+    let (a, b) = (key_column(&first)?, key_column(&second)?);
+    if a.len() != values.len() || b.len() != values.len() {
+        return Err(Error::Other(
+            "the pairs need two group columns and a value column of one length".into(),
+        ));
+    }
+    let pairs: Vec<(KeyValue, KeyValue, f64)> = a
+        .into_iter()
+        .zip(b)
+        .zip(values)
+        .map(|((a, b), &v)| (a, b, v))
+        .collect();
+    pd.inner.correlation_from_pairs(dim, &pairs).map_err(to_r)
+}
+
+/// Spearman's rho between the groups' totals (row-major).
+#[extendr]
+fn group_spearman_rust(pd: Robj, dim: &str) -> Result<Vec<f64>> {
+    let pd = <&PredictiveDistribution>::try_from(&pd)
+        .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
+    Ok(pd.inner.group_spearman(dim).map_err(to_r)?.1)
 }
 
 /// TVaR of a discrete distribution at each `p` (`risk::tvar_weighted`).
@@ -906,6 +951,8 @@ extendr_module! {
     fn tvar_threshold_rust;
     fn join_rust;
     fn reorder_groups_rust;
+    fn correlation_from_pairs_rust;
+    fn group_spearman_rust;
     fn blend_rust;
     fn blend_by_component_rust;
     impl Lognormal;

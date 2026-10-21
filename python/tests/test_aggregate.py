@@ -159,6 +159,31 @@ def test_portfolio_join_reorder_and_aggregate_cover():
         PredictiveDistribution.join([("a", reserve), ("a", premium)], "risk")
 
 
+def test_reorder_groups_to_a_spearman_target_from_a_long_table():
+    from prospicio.distributions import PredictiveDistribution
+
+    n = 20000
+    mult = [1, 7919, 104729]
+    pd = PredictiveDistribution(
+        ["class"], [("A",), ("B",), ("C",)],
+        [[float((i * m) % n) for m in mult] for i in range(n)])
+    assert pd.groups("class") == ["A", "B", "C"]
+    long = [("B", "A", 0.5), ("A", "C", 0.3), ("C", "B", 0.7)]
+    rho = pd.correlation_from_pairs("class", long)
+    assert rho == [[1.0, 0.5, 0.3], [0.5, 1.0, 0.7], [0.3, 0.7, 1.0]]
+    s = pd.reorder_groups("class", rho, 9, kind="spearman")
+    groups, got = s.group_spearman("class")
+    assert groups == ["A", "B", "C"]
+    assert all(abs(got[i][j] - rho[i][j]) < 0.01 for i in range(3) for j in range(3))
+    # Read as normal scores, the same matrix falls short by (6/pi) asin(r/2).
+    _, short = pd.reorder_groups("class", rho, 9).group_spearman("class")
+    assert short[1][2] < 0.695
+    with pytest.raises(ValueError):
+        pd.correlation_from_pairs("class", long[:2])
+    with pytest.raises(ValueError):
+        pd.reorder_groups("class", rho, 9, kind="kendall")
+
+
 def test_surplus_treaty_on_events_with_sums_insured():
     from prospicio.aggregate import EventSet
     from prospicio.reinsurance import Layer, Tower

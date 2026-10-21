@@ -42,6 +42,18 @@
   `prospicio.risk.statistics` and `Sampled.var(p, method=)`,
   `.tvar(p, method=)`; R `statistics()` and `VaR(x, p, method = )`,
   `TVaR(x, p, method = )` on a `sampled` (#474, #492).
+- A Spearman target for `reorder_groups`: `reorder_groups_with(dim,
+  correlation, CorrelationKind::Spearman, seed)` converts the matrix to
+  `2 sin(π ρ / 6)` before Iman-Conover, so the achieved rank correlation
+  of the group totals meets it (the default stays the normal scores'
+  correlation). `correlation_from_pairs` builds the matrix from a long
+  table `(group, group, rho)` with every pair once, `groups` lists the
+  groups in matrix order and `group_spearman` gives the achieved
+  Spearman's rho with ties at their average rank. Python
+  `reorder_groups(..., kind="spearman")`, `groups`,
+  `correlation_from_pairs`, `group_spearman`; R `reorder_groups(..., kind
+  = "spearman")` with a matrix or a three-column data frame, and
+  `group_spearman()` (#481).
 
 ### Pricing
 

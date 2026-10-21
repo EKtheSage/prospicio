@@ -110,6 +110,18 @@ ro <- reorder_groups(pf, "risk", matrix(c(1, 0.7, 0.7, 1), 2), seed = 5)
 stopifnot(identical(sort(draw_matrix(ro)[, 3]), sort(draw_matrix(prem)[, 1])))
 tot <- draw_matrix(aggregate(ro, keep = "risk"))
 stopifnot(cor(tot[, 1], tot[, 2], method = "spearman") > 0.5)
+# A Spearman target from a long table, checked against R's own Spearman.
+sp_n <- 20000
+sp <- predictive_distribution(sapply(c(1, 7919, 104729), function(m) ((0:(sp_n - 1)) * m) %% sp_n),
+                              data.frame(class = c("A", "B", "C")))
+sp_long <- data.frame(from = c("B", "A", "C"), to = c("A", "C", "B"), rho = c(0.5, 0.3, 0.7))
+sp_r <- reorder_groups(sp, "class", sp_long, seed = 9, kind = "spearman")
+sp_got <- group_spearman(sp_r, "class")
+sp_want <- matrix(c(1, 0.5, 0.3, 0.5, 1, 0.7, 0.3, 0.7, 1), 3, dimnames = list(c("A", "B", "C"), c("A", "B", "C")))
+stopifnot(all(abs(sp_got - sp_want) < 0.01))
+stopifnot(abs(sp_got["B", "C"] - cor(draw_matrix(sp_r), method = "spearman")[2, 3]) < 1e-12)
+stopifnot(group_spearman(reorder_groups(sp, "class", sp_want, seed = 9), "class")["B", "C"] < 0.695)
+stopifnot(inherits(try(reorder_groups(sp, "class", sp_long[1:2, ], seed = 9), silent = TRUE), "try-error"))
 stopifnot(inherits(try(join_predictive(list(res, prem), "risk"), silent = TRUE), "try-error"))
 
 # FFT grid sizing (aggregate 1.0.1: round_bucket rungs; bs 1/16 on this book).

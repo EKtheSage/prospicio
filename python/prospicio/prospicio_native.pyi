@@ -20133,6 +20133,36 @@ class PredictiveDistribution:
         -------
         list of tuple
         """
+    def correlation_from_pairs(self, /, dim: str, pairs: Sequence[tuple[int |str, int |str, float]]) -> list[list[float]]:
+        """
+        The correlation matrix between the groups of ``dim`` from a long
+        pairwise table, in the order of ``groups(dim)``. Each pair of
+        distinct groups appears once, in either order (both orders only
+        with the same value); a diagonal entry may be given and must be 1.
+        
+        Parameters
+        ----------
+        dim : str
+        pairs : list of tuple
+            ``(group, group, value)`` rows, values in ``[-1, 1]``.
+        
+        Returns
+        -------
+        list of list of float
+        
+        Raises
+        ------
+        ValueError
+            If a pair is missing, given twice with different values, names
+            an unknown group, or a value is outside ``[-1, 1]``.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(["peril"], [("wind",), ("quake",)], [[0.0, 1.0]] * 3)
+        >>> pd.correlation_from_pairs("peril", [("quake", "wind", 0.2)])
+        [[1.0, 0.2], [0.2, 1.0]]
+        """
     @property
     def dims(self, /) -> list[str]:
         """
@@ -20145,6 +20175,34 @@ class PredictiveDistribution:
         Returns
         -------
         list of list of float
+        """
+    def group_spearman(self, /, dim: str) -> tuple[list[Any], list[list[float]]]:
+        """
+        Spearman's rho between the totals of the groups of ``dim``, ties
+        given their average rank as ``scipy.stats.spearmanr``: what
+        ``reorder_groups`` achieved.
+        
+        Parameters
+        ----------
+        dim : str
+        
+        Returns
+        -------
+        tuple of (list, list of list of float)
+            The groups, as ``groups(dim)``, and the matrix.
+        """
+    def groups(self, /, dim: str) -> list[Any]:
+        """
+        The groups of dimension ``dim`` in order of first appearance: the
+        rows and columns of ``reorder_groups``' matrix.
+        
+        Parameters
+        ----------
+        dim : str
+        
+        Returns
+        -------
+        list of int or str
         """
     @staticmethod
     def join(parts: Sequence[tuple[str, PredictiveDistribution]], dim: str, same_simulations: bool = False) -> PredictiveDistribution:
@@ -20248,7 +20306,7 @@ class PredictiveDistribution:
         ValueError
             If ``p`` is outside ``[0, 1]``.
         """
-    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int) -> PredictiveDistribution:
+    def reorder_groups(self, /, dim: str, correlation: Sequence[Sequence[float]], seed: int, kind: str = "pearson") -> PredictiveDistribution:
         """
         Sets the dependence between the groups of dimension ``dim`` by
         Iman–Conover on the groups' totals, moving each group's simulations
@@ -20260,12 +20318,36 @@ class PredictiveDistribution:
         ----------
         dim : str
         correlation : list of list of float
-            One row and column per group, in order of first appearance.
+            One row and column per group, in order of first appearance
+            (``groups(dim)``); ``correlation_from_pairs`` builds it from a
+            long table.
         seed : int
+        kind : str
+            ``"pearson"`` (the default: the normal scores' correlation, so
+            Spearman's rho comes out near ``(6/π) asin(r/2)``) or
+            ``"spearman"`` (a Spearman target, converted to ``2 sin(π ρ /
+            6)`` first).
         
         Returns
         -------
         PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If the matrix (after conversion) is not a positive definite
+            correlation matrix, or ``kind`` is unknown.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> n = 4000
+        >>> pd = PredictiveDistribution(
+        ...     ["seg"], [("a",), ("b",)], [[i, (i * 7919) % n] for i in range(n)])
+        >>> r = pd.reorder_groups("seg", [[1, 0.6], [0.6, 1]], 5, kind="spearman")
+        >>> groups, rho = r.group_spearman("seg")
+        >>> groups, abs(rho[0][1] - 0.6) < 0.02
+        (['a', 'b'], True)
         """
     def select(self, /, dim: str, keys: Sequence[int |str]) -> PredictiveDistribution:
         """

@@ -48,7 +48,11 @@ tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rus
 
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
 
-reorder_groups_rust <- function(pd, dim, correlation, seed) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed)
+reorder_groups_rust <- function(pd, dim, correlation, seed, kind) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed, kind)
+
+correlation_from_pairs_rust <- function(pd, dim, first, second, values) .Call(wrap__correlation_from_pairs_rust, pd, dim, first, second, values)
+
+group_spearman_rust <- function(pd, dim) .Call(wrap__group_spearman_rust, pd, dim)
 
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 

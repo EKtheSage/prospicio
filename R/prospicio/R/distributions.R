@@ -722,7 +722,9 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' by Iman-Conover on the group totals, moving each group's simulations as
 #' whole rows: every group keeps its distribution and internal joint
 #' structure. Use [aggregate()], [VaR()], [TVaR()] and [capital_allocation()]
-#' on the result.
+#' on the result. `group_spearman()` is Spearman's rho between the group
+#' totals (ties at their average rank, as `cor(method = "spearman")`), to
+#' check what `reorder_groups()` achieved.
 #'
 #' @param parts A named list of [predictive_distribution]s with the same
 #'   number of simulations.
@@ -733,15 +735,26 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #'   reserve) and keep their pairing.
 #' @param x A [predictive_distribution].
 #' @param correlation Correlation matrix, one row and column per group in
-#'   order of first appearance.
+#'   order of first appearance (`unique(x@keys[[dim]])`), or a long table:
+#'   a data frame whose first two columns name a pair of groups and whose
+#'   third holds its value, each pair of distinct groups once.
 #' @param seed Seed, a whole number.
-#' @returns A [predictive_distribution].
+#' @param kind `"pearson"` (the default: the normal scores' correlation, so
+#'   Spearman's rho comes out near `(6 / pi) asin(r / 2)`) or `"spearman"`
+#'   (a Spearman target, converted to `2 sin(pi rho / 6)` first).
+#' @returns A [predictive_distribution]; `group_spearman()` a matrix with the
+#'   groups as dimnames.
 #' @name portfolio
 #' @examples
 #' a <- predictive_distribution(cbind(c(10, 12), c(20, 25)), data.frame(origin = c(2023, 2024)))
 #' b <- predictive_distribution(matrix(c(50, 40), ncol = 1), data.frame(lob = "motor"))
 #' p <- join_predictive(list(reserve = a, premium = b), "risk")
 #' p@keys
+#' n <- 4000
+#' pd <- predictive_distribution(cbind(0:(n - 1), ((0:(n - 1)) * 7919) %% n),
+#'                               data.frame(seg = c("a", "b")))
+#' rho <- data.frame(from = "a", to = "b", rho = 0.6)
+#' group_spearman(reorder_groups(pd, "seg", rho, seed = 5, kind = "spearman"), "seg")
 NULL
 
 #' One part of a predictive distribution
@@ -776,11 +789,26 @@ join_predictive <- function(parts, dim, same_simulations = FALSE) {
 
 #' @rdname portfolio
 #' @export
-reorder_groups <- function(x, dim, correlation, seed) {
-  correlation <- as.matrix(correlation)
+reorder_groups <- function(x, dim, correlation, seed, kind = "pearson") {
+  if (is.data.frame(correlation)) {
+    if (ncol(correlation) != 3) stop("a long correlation table has three columns", call. = FALSE)
+    flat <- rust_result(correlation_from_pairs_rust(
+      x@ptr, dim, correlation[[1]], correlation[[2]], as.double(correlation[[3]])
+    ))
+  } else {
+    flat <- as.double(t(as.matrix(correlation)))
+  }
   predictive_distribution(ptr = rust_result(
-    reorder_groups_rust(x@ptr, dim, as.double(t(correlation)), as.double(seed))
+    reorder_groups_rust(x@ptr, dim, flat, as.double(seed), as.character(kind))
   ))
+}
+
+#' @rdname portfolio
+#' @export
+group_spearman <- function(x, dim) {
+  groups <- as.character(unique(x@keys[[dim]]))
+  m <- rust_result(group_spearman_rust(x@ptr, dim))
+  matrix(m, length(groups), byrow = TRUE, dimnames = list(groups, groups))
 }
 
 #' Blend predictive distributions
