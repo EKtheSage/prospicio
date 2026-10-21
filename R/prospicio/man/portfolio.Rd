@@ -4,12 +4,15 @@
 \alias{portfolio}
 \alias{join_predictive}
 \alias{reorder_groups}
+\alias{reorder_groups_by_copula}
 \alias{group_spearman}
 \title{Join predictive distributions into a portfolio}
 \usage{
 join_predictive(parts, dim, same_simulations = FALSE)
 
 reorder_groups(x, dim, correlation, seed, kind = "pearson")
+
+reorder_groups_by_copula(x, dim, copula, seed)
 
 group_spearman(x, dim)
 }
@@ -36,6 +39,9 @@ third holds its value, each pair of distinct groups once.}
 \item{kind}{\code{"pearson"} (the default: the normal scores' correlation, so
 Spearman's rho comes out near \verb{(6 / pi) asin(r / 2)}) or \code{"spearman"}
 (a Spearman target, converted to \verb{2 sin(pi rho / 6)} first).}
+
+\item{copula}{A \link{copula} with one dimension per group, in order of first
+appearance.}
 }
 \value{
 A \link{predictive_distribution}; \code{group_spearman()} a matrix with the
@@ -54,6 +60,12 @@ structure. Use \code{\link[=aggregate]{aggregate()}}, \code{\link[=VaR]{VaR()}},
 on the result. \code{group_spearman()} is Spearman's rho between the group
 totals (ties at their average rank, as \code{cor(method = "spearman")}), to
 check what \code{reorder_groups()} achieved.
+\code{reorder_groups_by_copula()} sets the dependence by a \link{copula} instead:
+\code{n} draws of uniforms (draw \code{i} on stream \code{i - 1} of \code{seed}, as
+\code{\link[=copula_sample]{copula_sample()}}), and each group's simulations, whole rows sorted by the
+group's total, take the ranks of its column. The group totals then have
+the copula's rank pattern, so a t, Gumbel or Clayton copula gives its
+joint tails to results already simulated.
 }
 \examples{
 a <- predictive_distribution(cbind(c(10, 12), c(20, 25)), data.frame(origin = c(2023, 2024)))
@@ -65,4 +77,6 @@ pd <- predictive_distribution(cbind(0:(n - 1), ((0:(n - 1)) * 7919) \%\% n),
                               data.frame(seg = c("a", "b")))
 rho <- data.frame(from = "a", to = "b", rho = 0.6)
 group_spearman(reorder_groups(pd, "seg", rho, seed = 5, kind = "spearman"), "seg")
+# Clayton with theta = 2: Spearman's rho near 0.68, more joint low totals.
+group_spearman(reorder_groups_by_copula(pd, "seg", archimedean_copula("clayton", 2), 5), "seg")
 }

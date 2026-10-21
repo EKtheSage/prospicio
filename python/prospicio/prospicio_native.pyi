@@ -20462,6 +20462,46 @@ class PredictiveDistribution:
         >>> groups, abs(rho[0][1] - 0.6) < 0.02
         (['a', 'b'], True)
         """
+    def reorder_groups_by_copula(self, /, dim: str, copula: Any, seed: int) -> PredictiveDistribution:
+        """
+        Sets the dependence between the groups of dimension ``dim`` by a
+        copula: ``n_sims`` draws of uniforms from ``copula`` (draw ``i`` on
+        stream ``i`` of ``seed``, as ``copula.sample``), and each group's
+        simulations, whole rows sorted by the group's total, take the ranks
+        of its column. The group totals then have the copula's rank pattern,
+        so a t, Gumbel or Clayton copula gives its joint tails to results
+        already simulated; every group keeps its distribution and internal
+        joint structure, as under ``reorder_groups``.
+        
+        Parameters
+        ----------
+        dim : str
+        copula : GaussianCopula, StudentTCopula, ArchimedeanCopula, NestedArchimedeanCopula or VineCopula
+            One dimension per group, in order of first appearance
+            (``groups(dim)``).
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If the copula's dimension is not the number of groups.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> from prospicio.risk import ArchimedeanCopula
+        >>> n = 4000
+        >>> pd = PredictiveDistribution(
+        ...     ["seg"], [("a",), ("b",)], [[i, (i * 7919) % n] for i in range(n)])
+        >>> clayton = ArchimedeanCopula("clayton", 2.0, 2)  # Spearman's rho near 0.68
+        >>> r = pd.reorder_groups_by_copula("seg", clayton, 5)
+        >>> abs(r.group_spearman("seg")[1][0][1] - 0.68) < 0.03
+        True
+        """
     def scale_to_totals(self, /, totals: Sequence[float]) -> PredictiveDistribution:
         """
         Every simulation's components rescaled pro rata to a new total.

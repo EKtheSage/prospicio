@@ -725,6 +725,12 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' on the result. `group_spearman()` is Spearman's rho between the group
 #' totals (ties at their average rank, as `cor(method = "spearman")`), to
 #' check what `reorder_groups()` achieved.
+#' `reorder_groups_by_copula()` sets the dependence by a [copula] instead:
+#' `n` draws of uniforms (draw `i` on stream `i - 1` of `seed`, as
+#' [copula_sample()]), and each group's simulations, whole rows sorted by the
+#' group's total, take the ranks of its column. The group totals then have
+#' the copula's rank pattern, so a t, Gumbel or Clayton copula gives its
+#' joint tails to results already simulated.
 #'
 #' @param parts A named list of [predictive_distribution]s with the same
 #'   number of simulations.
@@ -738,6 +744,8 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #'   order of first appearance (`unique(x@keys[[dim]])`), or a long table:
 #'   a data frame whose first two columns name a pair of groups and whose
 #'   third holds its value, each pair of distinct groups once.
+#' @param copula A [copula] with one dimension per group, in order of first
+#'   appearance.
 #' @param seed Seed, a whole number.
 #' @param kind `"pearson"` (the default: the normal scores' correlation, so
 #'   Spearman's rho comes out near `(6 / pi) asin(r / 2)`) or `"spearman"`
@@ -755,6 +763,8 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #'                               data.frame(seg = c("a", "b")))
 #' rho <- data.frame(from = "a", to = "b", rho = 0.6)
 #' group_spearman(reorder_groups(pd, "seg", rho, seed = 5, kind = "spearman"), "seg")
+#' # Clayton with theta = 2: Spearman's rho near 0.68, more joint low totals.
+#' group_spearman(reorder_groups_by_copula(pd, "seg", archimedean_copula("clayton", 2), 5), "seg")
 NULL
 
 #' One part of a predictive distribution
@@ -820,6 +830,14 @@ reorder_groups <- function(x, dim, correlation, seed, kind = "pearson") {
   }
   predictive_distribution(ptr = rust_result(
     reorder_groups_rust(x@ptr, dim, flat, as.double(seed), as.character(kind))
+  ))
+}
+
+#' @rdname portfolio
+#' @export
+reorder_groups_by_copula <- function(x, dim, copula, seed) {
+  predictive_distribution(ptr = rust_result(
+    reorder_groups_by_copula_rust(x@ptr, dim, copula@ptr, as.double(seed))
   ))
 }
 
