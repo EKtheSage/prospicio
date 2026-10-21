@@ -354,7 +354,7 @@ impl PyIrrResult {
 /// Examples
 /// --------
 /// >>> from prospicio.pricing import npv
-/// >>> [round(v, 12) for v in npv([[-100.0, 121.0]], [0.0, 2.0], 0.1)]
+/// >>> [abs(round(v, 12)) for v in npv([[-100.0, 121.0]], [0.0, 2.0], 0.1)]
 /// [0.0]
 #[pyfunction]
 #[pyo3(signature = (flows, times, rate, *, unit = "years"))]

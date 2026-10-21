@@ -26334,36 +26334,6 @@ def iman_conover(pd: PredictiveDistribution, correlation: Sequence[Sequence[floa
     True
     """
 
-def k_fold(n: int, k: int, seed: int) -> list[tuple[list[int], list[int]]]:
-    """
-    ``k``-fold splits of ``n`` rows, shuffled with ``seed``.
-    
-    Parameters
-    ----------
-    n : int
-    k : int
-    seed : int
-    
-    Returns
-    -------
-    list of (list of int, list of int)
-        ``(train, test)`` row indices per fold.
-    """
-
-def ks_uniform(values: Sequence[float]) -> float:
-    """
-    Kolmogorov-Smirnov distance from the uniform on ``[0, 1]``; about
-    ``1.36 / sqrt(n)`` or less 95% of the time under uniformity.
-    
-    Parameters
-    ----------
-    values : list of float
-    
-    Returns
-    -------
-    float
-    """
-
 def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str = "years", lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
     """
     The internal rate of return of each simulation's cash flows, an annual
@@ -26402,6 +26372,36 @@ def irr(flows: Sequence[Sequence[float]], times: Sequence[float], *, unit: str =
     >>> r = irr([[-100.0, 230.0, -132.0], [10.0, 5.0, 1.0]], [0.0, 1.0, 2.0])
     >>> [round(x, 12) for x in r.rate[:1]], r.found, r.sign_changes
     ([0.1], [True, False], [2, 0])
+    """
+
+def k_fold(n: int, k: int, seed: int) -> list[tuple[list[int], list[int]]]:
+    """
+    ``k``-fold splits of ``n`` rows, shuffled with ``seed``.
+    
+    Parameters
+    ----------
+    n : int
+    k : int
+    seed : int
+    
+    Returns
+    -------
+    list of (list of int, list of int)
+        ``(train, test)`` row indices per fold.
+    """
+
+def ks_uniform(values: Sequence[float]) -> float:
+    """
+    Kolmogorov-Smirnov distance from the uniform on ``[0, 1]``; about
+    ``1.36 / sqrt(n)`` or less 95% of the time under uniformity.
+    
+    Parameters
+    ----------
+    values : list of float
+    
+    Returns
+    -------
+    float
     """
 
 def layer_cv(severity: Any, limit: float, attachment: float) -> float:
@@ -26898,7 +26898,7 @@ def npv(flows: Sequence[Sequence[float]], times: Sequence[float], rate: float, *
     Examples
     --------
     >>> from prospicio.pricing import npv
-    >>> [round(v, 12) for v in npv([[-100.0, 121.0]], [0.0, 2.0], 0.1)]
+    >>> [abs(round(v, 12)) for v in npv([[-100.0, 121.0]], [0.0, 2.0], 0.1)]
     [0.0]
     """
 
