@@ -1,42 +1,54 @@
-//! Generalized linear mixed models with random intercepts: the Poisson,
-//! gamma and Tweedie with the log link, one random intercept per level of
-//! each grouping factor, the factors one, nested or crossed
+//! Generalized linear mixed models: the Poisson, gamma and Tweedie with
+//! the log link, with random intercepts and slopes for each level of each
+//! grouping factor, the factors one, nested or crossed
 //! (`docs/design/models.md`, "Mixed models").
 //!
-//! The model for row `i` is `log μᵢ = xᵢᵀ β + oᵢ + Σₖ u_{k, gₖ(i)}` with
-//! `u_{k, l} ~ N(0, σₖ²)` independent, and `yᵢ` from the family with mean
-//! `μᵢ`, variance `φ V(μᵢ) / wᵢ` and `V(μ) = μᵖ` (`p = 1` for the Poisson,
-//! whose `φ` is 1, `p = 2` for the gamma). [`Glmm::fit`] maximizes the
-//! marginal likelihood of `β`, the `σₖ` and `φ`, with the random effects
-//! integrated out:
+//! The model for row `i` is `log μᵢ = xᵢᵀ β + oᵢ + Σₖ zₖᵢᵀ b_{k, gₖ(i)}`,
+//! where `zₖᵢ` holds factor `k`'s terms at row `i` (1 for its intercept,
+//! the covariate for a slope) and each level's effects
+//! `b_{k, l} ~ N(0, Σₖ)` are independent, with `Σₖ` unstructured: a
+//! standard deviation for each term and their correlations. `yᵢ` is from
+//! the family with mean `μᵢ`, variance `φ V(μᵢ) / wᵢ` and `V(μ) = μᵖ`
+//! (`p = 1` for the Poisson, whose `φ` is 1, `p = 2` for the gamma).
+//! [`Glmm::fit`] maximizes the marginal likelihood of `β`, the `Σₖ` and
+//! `φ`, with the random effects integrated out.
+//!
+//! The effects are written `b_{k, l} = Λₖ v_{k, l}` with `v ~ N(0, I)`
+//! and `Λₖ` the Cholesky factor of `Σₖ` (lme4's parameterization):
 //!
 //! - by the Laplace approximation (the default, as R's `glmer` and
-//!   glmmTMB): at the mode `û` of the joint log density
-//!   `g(u) = Σᵢ log f(yᵢ | u) − Σ u² / 2σ²`,
-//!   `log L ≈ g(û) − Σ log σ − ½ log det H`, where
-//!   `H = Zᵀ W Z + diag(1/σ²)` is minus the Hessian of `g` in `u`, with the
-//!   observed weights `W` (glmmTMB's choice; for the Poisson they are
-//!   the expected ones, so `glmer` agrees);
-//! - or, with a single grouping factor, by adaptive Gauss–Hermite
-//!   quadrature on each level's intercept, centred at `û` and scaled by
-//!   `H^(-1/2)` (`glmer(nAGQ = n)`); one node is the Laplace
+//!   glmmTMB): at the mode `v̂` of the joint log density
+//!   `g(v) = Σᵢ log f(yᵢ | v) − vᵀv / 2`,
+//!   `log L ≈ g(v̂) − ½ log det H`, where `H = ΛᵀZᵀ W Z Λ + I` is minus the
+//!   Hessian of `g` in `v`, with the observed weights `W` (glmmTMB's
+//!   choice; for the Poisson they are the expected ones, so `glmer`
+//!   agrees);
+//! - or, with a single grouping factor of a single term, by adaptive
+//!   Gauss–Hermite quadrature on each level's effect, centred at `v̂` and
+//!   scaled by `H^(-1/2)` (`glmer(nAGQ = n)`); one node is the Laplace
 //!   approximation.
 //!
-//! The inner mode is found by Newton's method on `u`, to machine
+//! `Σₖ = Λₖ Λₖᵀ` is parameterized as glmmTMB's `us` structure: the log
+//! standard deviations, then the strictly lower entries, row by row, of a
+//! unit lower triangle `L` whose rows normalized give the Cholesky factor
+//! of the correlation matrix (with two terms, `ρ = θ / √(1 + θ²)`).
+//!
+//! The inner mode is found by Newton's method on `v`, to machine
 //! precision, so that the outer objective is smooth; the outer
-//! maximization over `(β, log σ, log φ)` is quasi-Newton (BFGS) on
+//! maximization over `(β, θ, log φ)` is quasi-Newton (BFGS) on
 //! central-difference gradients, polished by Newton steps on a
 //! finite-difference Hessian, whose inverse is the covariance of the
-//! estimates. `H` is dense in the random effects (crossed factors couple
-//! them), so a fit with several factors costs `O(q³)` per evaluation in
-//! the `q` levels; one factor keeps `H` diagonal.
+//! estimates. `H` is dense in the random effects (crossed factors and
+//! slopes couple them), so a fit costs `O(q³)` per evaluation in the `q`
+//! effects; one factor with one term keeps `H` diagonal.
 //!
-//! The fit gives each level's predicted intercept `û` with its
-//! conditional variance `(H⁻¹)ⱼⱼ` at the estimates (`lme4`'s
-//! `condVar`), and the prediction variance that also carries the
-//! estimates' uncertainty, `(H⁻¹)ⱼⱼ + Jⱼ Σ Jⱼᵀ` with `J = ∂û/∂(β, θ)`
-//! (Kass and Steffey's correction, glmmTMB's `condVar`). A level the fit
-//! has not seen has intercept 0 in [`GlmmFit::predict`].
+//! The fit gives each level's predicted effects `b̂ = Λ v̂` with their
+//! conditional variances, the diagonal of `Λ H⁻¹ Λᵀ`, at the estimates
+//! (lme4's `condVar`), and the prediction variances that also carry the
+//! estimates' uncertainty, adding `Jⱼ C Jⱼᵀ` with `J = ∂b̂/∂(β, θ, log φ)`
+//! and `C` their covariance (Kass and Steffey's correction, glmmTMB's
+//! `condVar`). A level the fit has not seen has effects 0 in
+//! [`GlmmFit::predict`].
 //!
 //! ```
 //! use prospicio_glm::glmm::{Glmm, Grouping};
@@ -52,8 +64,10 @@
 //! let fit = Glmm::new(Family::Poisson).fit(&design, &[territory], &y).unwrap();
 //! let re = &fit.random_effects()[0];
 //! assert_eq!(re.levels, ["a", "b", "c"]);
+//! assert_eq!(re.terms, ["(Intercept)"]);
 //! // Territory b has the most claims, so the largest intercept.
-//! assert!(re.values[1] > re.values[0] && re.values[0] > re.values[2]);
+//! let u = &re.values[0];
+//! assert!(u[1] > u[0] && u[0] > u[2]);
 //! // A territory the fit has not seen gets the population mean.
 //! let new = Grouping::new("territory", vec!["d".into()]);
 //! let one = Design::new(vec!["(Intercept)".into()], vec![vec![1.0]]).unwrap();
@@ -70,25 +84,57 @@ use prospicio_models::{Design, Family, Link, Model};
 
 use crate::{Dispersion, Glm};
 
-/// One grouping factor: a name and each row's level.
+/// The name of a factor's random intercept among its terms.
+pub const INTERCEPT: &str = "(Intercept)";
+
+/// One grouping factor: a name, each row's level and the terms that vary
+/// by level, a random intercept and any random slopes, all correlated
+/// (lme4's `(1 + x | g)`).
+///
+/// Terms that are independent (lme4's `(1 + x || g)`) are separate
+/// factors on the same labels, one for each term.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Grouping {
     pub name: String,
     pub labels: Vec<String>,
+    /// Whether the factor has a random intercept.
+    pub intercept: bool,
+    /// The random slopes: each covariate's name and its value on every
+    /// row.
+    pub slopes: Vec<(String, Vec<f64>)>,
 }
 
 impl Grouping {
-    /// A grouping factor `name` with `labels[i]` the level of row `i`.
+    /// A grouping factor `name` with `labels[i]` the level of row `i` and
+    /// a random intercept.
     pub fn new(name: &str, labels: Vec<String>) -> Self {
         Self {
             name: name.to_string(),
             labels,
+            intercept: true,
+            slopes: Vec::new(),
         }
+    }
+
+    /// The same factor with a random slope on the covariate `name`, whose
+    /// value on row `i` is `values[i]`, correlated with the factor's other
+    /// terms.
+    pub fn slope(mut self, name: &str, values: Vec<f64>) -> Self {
+        self.slopes.push((name.to_string(), values));
+        self
+    }
+
+    /// The same factor without its random intercept (lme4's
+    /// `(0 + x | g)`).
+    pub fn without_intercept(mut self) -> Self {
+        self.intercept = false;
+        self
     }
 
     /// The factor `inner` nested in `outer`: named `outer:inner`, with
     /// levels `a:b`, so that the same inner label under two outer levels is
-    /// two levels (lme4's `(1 | outer/inner)` is `outer` and this).
+    /// two levels (lme4's `(1 | outer/inner)` is `outer` and this), and
+    /// `inner`'s terms.
     pub fn nested(outer: &Grouping, inner: &Grouping) -> Result<Self> {
         if outer.labels.len() != inner.labels.len() {
             return Err(Error::Data(format!(
@@ -107,7 +153,57 @@ impl Grouping {
                 .zip(&inner.labels)
                 .map(|(a, b)| format!("{a}:{b}"))
                 .collect(),
+            intercept: inner.intercept,
+            slopes: inner.slopes.clone(),
         })
+    }
+
+    /// The terms' names: the intercept first, then the slopes.
+    pub fn terms(&self) -> Vec<String> {
+        let mut terms = Vec::with_capacity(self.slopes.len() + 1);
+        if self.intercept {
+            terms.push(INTERCEPT.to_string());
+        }
+        terms.extend(self.slopes.iter().map(|(n, _)| n.clone()));
+        terms
+    }
+
+    /// Each term's value on every row, checked against `n` rows.
+    fn columns(&self, n: usize) -> Result<Vec<Vec<f64>>> {
+        if self.labels.len() != n {
+            return Err(Error::Data(format!(
+                "grouping factor {} has {} labels for {n} rows",
+                self.name,
+                self.labels.len()
+            )));
+        }
+        let mut columns = Vec::with_capacity(self.slopes.len() + 1);
+        if self.intercept {
+            columns.push(vec![1.0; n]);
+        }
+        for (name, values) in &self.slopes {
+            if name == INTERCEPT {
+                return Err(Error::Data(format!(
+                    "grouping factor {} has a slope named {INTERCEPT}",
+                    self.name
+                )));
+            }
+            if values.len() != n {
+                return Err(Error::Data(format!(
+                    "slope {name} of grouping factor {} has {} values for {n} rows",
+                    self.name,
+                    values.len()
+                )));
+            }
+            if let Some(bad) = values.iter().find(|v| !v.is_finite()) {
+                return Err(Error::Data(format!(
+                    "slope {name} of grouping factor {} has the value {bad}",
+                    self.name
+                )));
+            }
+            columns.push(values.clone());
+        }
+        Ok(columns)
     }
 }
 
@@ -117,8 +213,8 @@ pub enum Integration {
     /// The Laplace approximation (`glmer`'s `nAGQ = 1`, glmmTMB).
     Laplace,
     /// Adaptive Gauss–Hermite quadrature with `nodes` nodes on each
-    /// level's intercept (`glmer(nAGQ = nodes)`); a single grouping
-    /// factor only.
+    /// level's effect (`glmer(nAGQ = nodes)`); a single grouping factor
+    /// with a single term only.
     Quadrature { nodes: usize },
 }
 
@@ -173,15 +269,16 @@ impl Glmm {
     }
 
     /// Fits the GLMM of `y` on the fixed effects `design` (its offset and
-    /// prior weights included) with a random intercept for each factor in
+    /// prior weights included) with the random terms of each factor in
     /// `groups`.
     ///
-    /// Starts from the GLM without random effects and `σ = 0.5`. Fails if
-    /// there is no grouping factor, a factor's labels do not match the
-    /// rows, a response is outside the family's range, the design is
-    /// collinear, quadrature is asked for with more than one factor or no
-    /// nodes, or the optimization cannot leave its start; a fit that stops
-    /// at the iteration limit is returned with
+    /// Starts from the GLM without random effects, each standard
+    /// deviation 0.5 and each correlation 0. Fails if there is no grouping
+    /// factor, a factor has no term, a factor's labels or slopes do not
+    /// match the rows, a response is outside the family's range, the
+    /// design is collinear, quadrature is asked for with more than one
+    /// factor or term or with no nodes, or the optimization cannot leave
+    /// its start; a fit that stops at the iteration limit is returned with
     /// [`converged`](GlmmFit::converged) false.
     pub fn fit(&self, design: &Design, groups: &[Grouping], y: &[f64]) -> Result<GlmmFit> {
         let (power, free_dispersion) = self.power()?;
@@ -197,10 +294,17 @@ impl Glmm {
                 "a GLMM needs at least one grouping factor; fit a GLM instead".into(),
             ));
         }
+        if let Some(g) = groups.iter().find(|g| !g.intercept && g.slopes.is_empty()) {
+            return Err(Error::Data(format!(
+                "grouping factor {} has neither an intercept nor a slope",
+                g.name
+            )));
+        }
         if let Integration::Quadrature { nodes } = self.integration {
-            if groups.len() != 1 {
+            let terms: usize = groups.iter().map(|g| g.terms().len()).sum();
+            if groups.len() != 1 || terms != 1 {
                 return Err(Error::Data(format!(
-                    "quadrature takes a single grouping factor, not {}; use the Laplace approximation",
+                    "quadrature takes a single grouping factor with a single term, not {} factors with {terms} terms; use the Laplace approximation",
                     groups.len()
                 )));
             }
@@ -214,17 +318,12 @@ impl Glmm {
                 self.family.name()
             )));
         }
+        let p = design.n_cols();
+        let mut factors = Vec::with_capacity(groups.len());
         let mut levels = Vec::with_capacity(groups.len());
-        let mut index = vec![Vec::with_capacity(groups.len()); n];
-        let mut start = 0;
+        let (mut start, mut theta) = (0, p);
         for g in groups {
-            if g.labels.len() != n {
-                return Err(Error::Data(format!(
-                    "grouping factor {} has {} labels for {n} rows",
-                    g.name,
-                    g.labels.len()
-                )));
-            }
+            let columns = g.columns(n)?;
             let set: BTreeSet<&String> = g.labels.iter().collect();
             let names: Vec<String> = set.into_iter().cloned().collect();
             let lookup: HashMap<&str, usize> = names
@@ -232,17 +331,21 @@ impl Glmm {
                 .enumerate()
                 .map(|(j, l)| (l.as_str(), j))
                 .collect();
-            for (i, l) in g.labels.iter().enumerate() {
-                index[i].push(start + lookup[l.as_str()]);
-            }
-            start += names.len();
+            let d = columns.len();
+            factors.push(Factor {
+                d,
+                level: g.labels.iter().map(|l| lookup[l.as_str()]).collect(),
+                n_levels: names.len(),
+                columns,
+                start,
+                theta,
+            });
+            start += names.len() * d;
+            theta += d * (d + 1) / 2;
             levels.push(names);
         }
-        let factor_of: Vec<usize> = levels
-            .iter()
-            .enumerate()
-            .flat_map(|(k, l)| std::iter::repeat_n(k, l.len()))
-            .collect();
+        let q = start;
+        let n_theta = theta - p;
 
         // The GLM without random effects starts β and φ.
         let glm = Glm::new(self.family, Link::Log).dispersion(if free_dispersion {
@@ -251,10 +354,11 @@ impl Glmm {
             Dispersion::Fixed(1.0)
         });
         let start_fit = glm.fit(design, y)?;
-        let p = design.n_cols();
-        let k = groups.len();
         let mut x0 = start_fit.coefficients().to_vec();
-        x0.extend(std::iter::repeat_n(0.5f64.ln(), k));
+        for f in &factors {
+            x0.extend(std::iter::repeat_n(0.5f64.ln(), f.d));
+            x0.extend(std::iter::repeat_n(0.0, f.d * (f.d - 1) / 2));
+        }
         if free_dispersion {
             x0.push(start_fit.dispersion().ln());
         }
@@ -264,31 +368,30 @@ impl Glmm {
             y,
             power,
             free_dispersion,
-            index: &index,
-            factor_of: &factor_of,
-            n_factors: k,
+            factors: &factors,
+            n_theta,
+            q,
             integration: self.integration,
             nodes: match self.integration {
                 Integration::Quadrature { nodes } => gauss_hermite(nodes),
                 Integration::Laplace => (Vec::new(), Vec::new()),
             },
         };
-        let q = factor_of.len();
         // Each evaluation's inner iteration starts at the last one's mode.
-        let start_u = match problem.marginal(&x0, &vec![0.0; q], false) {
-            Ok(m) if m.log_likelihood.is_finite() => m.u,
+        let start_v = match problem.marginal(&x0, &vec![0.0; q], false) {
+            Ok(m) if m.log_likelihood.is_finite() => m.v,
             _ => {
                 return Err(Error::Data(
                     "the marginal likelihood is not finite at the GLM's estimates".into(),
                 ));
             }
         };
-        let warm = RefCell::new(start_u);
+        let warm = RefCell::new(start_v);
         let mut objective = |x: &[f64]| -> f64 {
             let m = problem.marginal(x, &warm.borrow(), false);
             match m {
                 Ok(m) if m.log_likelihood.is_finite() => {
-                    *warm.borrow_mut() = m.u;
+                    *warm.borrow_mut() = m.v;
                     -m.log_likelihood
                 }
                 _ => f64::INFINITY,
@@ -297,55 +400,73 @@ impl Glmm {
         let (x, iterations, converged) =
             minimize(&mut objective, x0, self.tolerance, self.max_iterations);
 
-        let u = warm.borrow().clone();
-        let at = problem.marginal(&x, &u, true)?;
+        let v = warm.borrow().clone();
+        let at = problem.marginal(&x, &v, true)?;
         let hessian = fd_hessian(&mut objective, &x, at.log_likelihood.abs());
         let d = x.len();
-        // A σ at the boundary (below 1e-4) leaves the likelihood flat in
-        // log σ: the other parameters' covariance is then taken with it
-        // held at 0, and its own standard error is NaN.
-        let boundary: Vec<bool> = (0..d)
-            .map(|a| a >= p && a < p + k && x[a] < 1e-4f64.ln())
-            .collect();
+        // A standard deviation at the boundary (below 1e-4) leaves the
+        // likelihood flat in its log, and in the correlations of its term:
+        // the other parameters' covariance is then taken with them held,
+        // and their own standard errors are NaN.
+        let mut boundary = vec![false; d];
+        for f in &factors {
+            let at_zero: Vec<bool> = (0..f.d).map(|c| x[f.theta + c] < 1e-4f64.ln()).collect();
+            for c in 0..f.d {
+                boundary[f.theta + c] = at_zero[c];
+            }
+            let mut a = f.theta + f.d;
+            for r in 1..f.d {
+                for c in 0..r {
+                    boundary[a] = at_zero[r] || at_zero[c];
+                    a += 1;
+                }
+            }
+        }
         let free: Vec<usize> = (0..d).filter(|&a| !boundary[a]).collect();
-        let f = free.len();
+        let nf = free.len();
         let sub: Vec<f64> = free
             .iter()
             .flat_map(|&a| free.iter().map(move |&b| (a, b)))
             .map(|(a, b)| hessian[a * d + b])
             .collect();
         let mut covariance = vec![f64::NAN; d * d];
-        if let Some(l) = cholesky(&sub, f) {
-            let inv = cholesky_inverse(&l, f);
+        if let Some(l) = cholesky(&sub, nf) {
+            let inv = cholesky_inverse(&l, nf);
             for (i, &a) in free.iter().enumerate() {
                 for (j, &b) in free.iter().enumerate() {
-                    covariance[a * d + b] = inv[i * f + j];
+                    covariance[a * d + b] = inv[i * nf + j];
                 }
             }
         }
 
-        // ∂û/∂(β, θ) by central differences, for the prediction variance.
+        // ∂b̂/∂(β, θ, log φ) by central differences, for the prediction
+        // variance.
         let mut jac = vec![vec![0.0; d]; q];
         for a in 0..d {
             let h = 1e-5 * x[a].abs().max(1.0);
             let mut xp = x.clone();
             xp[a] += h;
-            let up = problem.marginal(&xp, &at.u, false)?.u;
+            let up = problem.marginal(&xp, &at.v, false)?.b;
             xp[a] = x[a] - h;
-            let um = problem.marginal(&xp, &at.u, false)?.u;
+            let um = problem.marginal(&xp, &at.v, false)?.b;
             for j in 0..q {
                 jac[j][a] = (up[j] - um[j]) / (2.0 * h);
             }
         }
-        let mut random_effects = Vec::with_capacity(k);
-        let mut offset = 0;
-        for (g, names) in groups.iter().zip(&levels) {
+        let mut random_effects = Vec::with_capacity(factors.len());
+        let (mut group_names, mut term_names) = (Vec::new(), Vec::new());
+        let (mut sd, mut sd_standard_errors) = (Vec::new(), Vec::new());
+        let mut correlations = Vec::with_capacity(factors.len());
+        for ((g, names), f) in groups.iter().zip(&levels).zip(&factors) {
             let m = names.len();
-            let values = at.u[offset..offset + m].to_vec();
-            let conditional_variance = at.conditional_variance[offset..offset + m].to_vec();
-            let prediction_variance = (0..m)
-                .map(|j| {
-                    let row = &jac[offset + j];
+            let terms = g.terms();
+            let mut values = vec![vec![0.0; m]; f.d];
+            let mut conditional_variance = vec![vec![0.0; m]; f.d];
+            let mut prediction_variance = vec![vec![0.0; m]; f.d];
+            for l in 0..m {
+                for c in 0..f.d {
+                    let j = f.start + l * f.d + c;
+                    let row = &jac[j];
                     let extra: f64 = free
                         .iter()
                         .map(|&a| {
@@ -354,26 +475,38 @@ impl Glmm {
                                 .sum::<f64>()
                         })
                         .sum();
-                    conditional_variance[j] + extra
-                })
-                .collect();
+                    values[c][l] = at.b[j];
+                    conditional_variance[c][l] = at.conditional_variance[j];
+                    prediction_variance[c][l] = at.conditional_variance[j] + extra;
+                }
+            }
+            for (c, term) in terms.iter().enumerate() {
+                let s = x[f.theta + c].exp();
+                group_names.push(g.name.clone());
+                term_names.push(term.clone());
+                sd.push(s);
+                sd_standard_errors.push(s * covariance[(f.theta + c) * d + f.theta + c].sqrt());
+            }
+            correlations.push(correlation(
+                &x[f.theta + f.d..f.theta + f.d * (f.d + 1) / 2],
+                f.d,
+            ));
             random_effects.push(RandomEffects {
                 name: g.name.clone(),
+                terms,
                 levels: names.clone(),
                 values,
                 conditional_variance,
                 prediction_variance,
             });
-            offset += m;
         }
 
-        let sd: Vec<f64> = x[p..p + k].iter().map(|v| v.exp()).collect();
-        let sd_standard_errors = (0..k)
-            .map(|j| sd[j] * covariance[(p + j) * d + p + j].sqrt())
-            .collect();
         let (dispersion, dispersion_standard_error) = if free_dispersion {
-            let phi = x[p + k].exp();
-            (phi, phi * covariance[(p + k) * d + p + k].sqrt())
+            let phi = x[p + n_theta].exp();
+            (
+                phi,
+                phi * covariance[(p + n_theta) * d + p + n_theta].sqrt(),
+            )
         } else {
             (1.0, 0.0)
         };
@@ -386,13 +519,16 @@ impl Glmm {
             names: design.names().to_vec(),
             coefficients: x[..p].to_vec(),
             covariance: beta_covariance,
-            group_names: groups.iter().map(|g| g.name.clone()).collect(),
+            group_names,
+            term_names,
             sd,
             sd_standard_errors,
+            correlations,
+            parameters: x.clone(),
+            parameter_covariance: covariance,
             dispersion,
             dispersion_standard_error,
             log_likelihood: at.log_likelihood,
-            n_parameters: d,
             n_obs: n,
             fitted: at.mu,
             random_effects,
@@ -402,21 +538,60 @@ impl Glmm {
     }
 }
 
-/// The predicted intercepts of one grouping factor.
+/// The unit lower triangle `L` with the strictly lower entries `theta`,
+/// row by row, and its rows normalized: the Cholesky factor of the
+/// correlation matrix, row-major.
+fn correlation_factor(theta: &[f64], d: usize) -> Vec<f64> {
+    let mut l = vec![0.0; d * d];
+    let mut a = 0;
+    for r in 0..d {
+        l[r * d + r] = 1.0;
+        for c in 0..r {
+            l[r * d + c] = theta[a];
+            a += 1;
+        }
+        let norm = l[r * d..r * d + r + 1]
+            .iter()
+            .map(|v| v * v)
+            .sum::<f64>()
+            .sqrt();
+        for c in 0..=r {
+            l[r * d + c] /= norm;
+        }
+    }
+    l
+}
+
+/// The correlation matrix of glmmTMB's `us` parameters `theta`,
+/// row-major.
+fn correlation(theta: &[f64], d: usize) -> Vec<f64> {
+    let l = correlation_factor(theta, d);
+    (0..d * d)
+        .map(|ab| {
+            let (a, b) = (ab / d, ab % d);
+            (0..d).map(|c| l[a * d + c] * l[b * d + c]).sum()
+        })
+        .collect()
+}
+
+/// The predicted random effects of one grouping factor.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RandomEffects {
     /// The grouping factor's name.
     pub name: String,
+    /// Its terms: [`INTERCEPT`] first if it has one, then its slopes.
+    pub terms: Vec<String>,
     /// Its levels, sorted.
     pub levels: Vec<String>,
-    /// Each level's predicted intercept `û`, the conditional mode.
-    pub values: Vec<f64>,
-    /// `(H⁻¹)ⱼⱼ`: the variance of `u` given the data at the estimates
-    /// (lme4's `condVar`).
-    pub conditional_variance: Vec<f64>,
+    /// `values[c][l]`: term `c`'s predicted effect `b̂` at level `l`, the
+    /// conditional mode.
+    pub values: Vec<Vec<f64>>,
+    /// The variance of each effect given the data at the estimates, the
+    /// diagonal of `Λ H⁻¹ Λᵀ` (lme4's `condVar`), indexed as `values`.
+    pub conditional_variance: Vec<Vec<f64>>,
     /// The conditional variance plus the part from the estimates'
-    /// uncertainty, `Jⱼ Σ Jⱼᵀ` (glmmTMB's `condVar`).
-    pub prediction_variance: Vec<f64>,
+    /// uncertainty, `Jⱼ C Jⱼᵀ` (glmmTMB's `condVar`).
+    pub prediction_variance: Vec<Vec<f64>>,
 }
 
 /// A fitted GLMM.
@@ -427,12 +602,15 @@ pub struct GlmmFit {
     coefficients: Vec<f64>,
     covariance: Vec<f64>,
     group_names: Vec<String>,
+    term_names: Vec<String>,
     sd: Vec<f64>,
     sd_standard_errors: Vec<f64>,
+    correlations: Vec<Vec<f64>>,
+    parameters: Vec<f64>,
+    parameter_covariance: Vec<f64>,
     dispersion: f64,
     dispersion_standard_error: f64,
     log_likelihood: f64,
-    n_parameters: usize,
     n_obs: usize,
     fitted: Vec<f64>,
     random_effects: Vec<RandomEffects>,
@@ -457,7 +635,7 @@ impl GlmmFit {
     }
 
     /// The covariance of `β`, row-major: its block of the inverse Hessian
-    /// of `−log L` in `(β, log σ, log φ)`.
+    /// of `−log L` in `(β, θ, log φ)`.
     pub fn covariance(&self) -> &[f64] {
         &self.covariance
     }
@@ -468,19 +646,46 @@ impl GlmmFit {
         (0..p).map(|j| self.covariance[j * p + j].sqrt()).collect()
     }
 
-    /// The grouping factors' names, in the order fitted.
+    /// Each random term's grouping factor, in the order fitted, a factor
+    /// repeated for each of its terms (parallel to [`sd`](Self::sd)).
     pub fn group_names(&self) -> &[String] {
         &self.group_names
     }
 
-    /// Each grouping factor's standard deviation `σₖ`.
+    /// Each random term's name ([`INTERCEPT`] or a slope's covariate),
+    /// parallel to [`group_names`](Self::group_names).
+    pub fn term_names(&self) -> &[String] {
+        &self.term_names
+    }
+
+    /// Each random term's standard deviation.
     pub fn sd(&self) -> &[f64] {
         &self.sd
     }
 
-    /// The standard errors of the `σₖ`, by the delta method from `log σₖ`.
+    /// The standard errors of the standard deviations, by the delta method
+    /// from their logs.
     pub fn sd_standard_errors(&self) -> &[f64] {
         &self.sd_standard_errors
+    }
+
+    /// Each grouping factor's correlation matrix of its terms, row-major
+    /// (`[1.0]` for a factor with one term).
+    pub fn correlations(&self) -> &[Vec<f64>] {
+        &self.correlations
+    }
+
+    /// Every parameter on the scale maximized: `β`, each factor's log
+    /// standard deviations and correlation parameters (glmmTMB's `theta`),
+    /// and `log φ` if estimated.
+    pub fn parameters(&self) -> &[f64] {
+        &self.parameters
+    }
+
+    /// The covariance of [`parameters`](Self::parameters), row-major (NaN
+    /// in the rows of parameters at the boundary).
+    pub fn parameter_covariance(&self) -> &[f64] {
+        &self.parameter_covariance
     }
 
     /// The dispersion `φ` (the response's variance is `φ μᵖ / w`): 1 for
@@ -501,23 +706,24 @@ impl GlmmFit {
         self.log_likelihood
     }
 
-    /// `−2 log L + 2 k` with `k` the fixed effects, the `σₖ` and `φ` if
+    /// `−2 log L + 2 k` with `k` the parameters: the fixed effects, each
+    /// factor's standard deviations and correlations, and `φ` if
     /// estimated.
     pub fn aic(&self) -> f64 {
-        -2.0 * self.log_likelihood + 2.0 * self.n_parameters as f64
+        -2.0 * self.log_likelihood + 2.0 * self.parameters.len() as f64
     }
 
     /// `−2 log L + k log n`.
     pub fn bic(&self) -> f64 {
-        -2.0 * self.log_likelihood + self.n_parameters as f64 * (self.n_obs as f64).ln()
+        -2.0 * self.log_likelihood + self.parameters.len() as f64 * (self.n_obs as f64).ln()
     }
 
-    /// The conditional means `μᵢ` of the training rows, at `û`.
+    /// The conditional means `μᵢ` of the training rows, at `b̂`.
     pub fn fitted(&self) -> &[f64] {
         &self.fitted
     }
 
-    /// The predicted intercepts, one entry per grouping factor.
+    /// The predicted random effects, one entry per grouping factor.
     pub fn random_effects(&self) -> &[RandomEffects] {
         &self.random_effects
     }
@@ -532,10 +738,12 @@ impl GlmmFit {
         self.converged
     }
 
-    /// Means for new rows: `exp(xᵀ β + offset + Σ û)`, each factor's
-    /// intercept looked up by `groups` (matched by name; a level the fit
-    /// has not seen, or a factor not given, contributes 0, the population
-    /// mean). An empty `groups` predicts the population means.
+    /// Means for new rows: `exp(xᵀ β + offset + Σ zᵀ b̂)`, each factor's
+    /// effects looked up by `groups` (matched by name; a level the fit has
+    /// not seen, or a factor not given, contributes 0, the population
+    /// mean). The factors given under a name must carry the slopes of the
+    /// fitted factors of that name, by covariate. An empty `groups`
+    /// predicts the population means.
     pub fn predict(&self, design: &Design, groups: &[Grouping]) -> Result<Vec<f64>> {
         if design.names() != self.names.as_slice() {
             return Err(Error::Data(
@@ -552,22 +760,95 @@ impl GlmmFit {
                     eta.len()
                 )));
             }
-            let re = self
-                .random_effects
-                .iter()
-                .find(|r| r.name == g.name)
-                .ok_or_else(|| Error::Data(format!("the fit has no grouping factor {}", g.name)))?;
-            let lookup: HashMap<&str, f64> = re
+            if !self.random_effects.iter().any(|r| r.name == g.name) {
+                return Err(Error::Data(format!(
+                    "the fit has no grouping factor {}",
+                    g.name
+                )));
+            }
+        }
+        for re in &self.random_effects {
+            // The factors given under this name: the first one's labels,
+            // a slope's values from whichever carries them.
+            let given: Vec<&Grouping> = groups.iter().filter(|g| g.name == re.name).collect();
+            let Some(first) = given.first() else {
+                continue;
+            };
+            let lookup: HashMap<&str, usize> = re
                 .levels
                 .iter()
-                .map(String::as_str)
-                .zip(re.values.iter().copied())
+                .enumerate()
+                .map(|(j, l)| (l.as_str(), j))
                 .collect();
-            for (e, l) in eta.iter_mut().zip(&g.labels) {
-                *e += lookup.get(l.as_str()).copied().unwrap_or(0.0);
+            for (c, term) in re.terms.iter().enumerate() {
+                let column: Option<&[f64]> = if term == INTERCEPT {
+                    None
+                } else {
+                    let values = given
+                        .iter()
+                        .flat_map(|g| &g.slopes)
+                        .find(|(n, _)| n == term)
+                        .map(|(_, v)| v.as_slice())
+                        .ok_or_else(|| {
+                            Error::Data(format!(
+                                "grouping factor {} has no values for its slope {term}",
+                                re.name
+                            ))
+                        })?;
+                    if values.len() != eta.len() {
+                        return Err(Error::Data(format!(
+                            "slope {term} of grouping factor {} has {} values for {} rows",
+                            re.name,
+                            values.len(),
+                            eta.len()
+                        )));
+                    }
+                    Some(values)
+                };
+                for (i, (e, l)) in eta.iter_mut().zip(&first.labels).enumerate() {
+                    if let Some(&j) = lookup.get(l.as_str()) {
+                        *e += re.values[c][j] * column.map_or(1.0, |v| v[i]);
+                    }
+                }
             }
         }
         Ok(eta.into_iter().map(f64::exp).collect())
+    }
+}
+
+/// One grouping factor's layout.
+struct Factor {
+    /// Its number of terms.
+    d: usize,
+    /// Each row's level.
+    level: Vec<usize>,
+    n_levels: usize,
+    /// Each term's value on every row.
+    columns: Vec<Vec<f64>>,
+    /// Where its effects start in `v`: level `l`'s term `c` is
+    /// `start + l d + c`.
+    start: usize,
+    /// Where its parameters start in `x`: `d` log standard deviations,
+    /// then `d (d − 1) / 2` correlation parameters.
+    theta: usize,
+}
+
+impl Factor {
+    /// `Λ`, row-major lower triangular: the correlation factor's rows
+    /// scaled by the standard deviations.
+    fn lambda(&self, x: &[f64]) -> Option<Vec<f64>> {
+        let d = self.d;
+        let mut l = correlation_factor(&x[self.theta + d..self.theta + d * (d + 1) / 2], d);
+        for r in 0..d {
+            let s = x[self.theta + r].exp();
+            if !(s.is_finite() && s > 0.0) {
+                return None;
+            }
+            for c in 0..=r {
+                l[r * d + c] *= s;
+            }
+        }
+        l.iter().all(|v| v.is_finite()).then_some(l)
     }
 }
 
@@ -577,19 +858,19 @@ struct Problem<'a> {
     y: &'a [f64],
     power: f64,
     free_dispersion: bool,
-    /// Each row's random effects, as indices into `u`.
-    index: &'a [Vec<usize>],
-    /// Each random effect's factor.
-    factor_of: &'a [usize],
-    n_factors: usize,
+    factors: &'a [Factor],
+    /// The factors' parameters in all.
+    n_theta: usize,
+    /// The random effects in all.
+    q: usize,
     integration: Integration,
     /// Gauss–Hermite nodes and log weights (`log w + x²`).
     nodes: (Vec<f64>, Vec<f64>),
 }
 
-/// The joint log density `g(u)` of the data and the random effects, its
-/// gradient and minus its Hessian in `u` (diagonal with one factor), and
-/// the conditional means.
+/// The joint log density `g(v)` of the data and the random effects, its
+/// gradient and minus its Hessian in `v` (diagonal with one factor of one
+/// term), and the conditional means.
 struct Joint {
     g: f64,
     grad: Vec<f64>,
@@ -600,7 +881,11 @@ struct Joint {
 /// One evaluation of the marginal likelihood.
 struct Marginal {
     log_likelihood: f64,
-    u: Vec<f64>,
+    /// The mode `v̂`.
+    v: Vec<f64>,
+    /// The effects `b̂ = Λ v̂`.
+    b: Vec<f64>,
+    /// The diagonal of `Λ H⁻¹ Λᵀ` (empty unless asked for).
     conditional_variance: Vec<f64>,
     mu: Vec<f64>,
 }
@@ -625,61 +910,79 @@ impl Problem<'_> {
         (ll, s, h)
     }
 
-    /// The marginal log-likelihood at `x = (β, log σ, log φ)`, with the
-    /// inner Newton iteration started at `u0`; the conditional variances
-    /// only `with_variance` (empty otherwise, for several factors).
-    fn marginal(&self, x: &[f64], u0: &[f64], with_variance: bool) -> Result<Marginal> {
+    /// The marginal log-likelihood at `x = (β, θ, log φ)`, with the inner
+    /// Newton iteration started at `v0`; the conditional variances only
+    /// `with_variance`.
+    fn marginal(&self, x: &[f64], v0: &[f64], with_variance: bool) -> Result<Marginal> {
         let p = self.design.n_cols();
-        let k = self.n_factors;
         let beta = &x[..p];
-        let sigma2: Vec<f64> = x[p..p + k].iter().map(|v| (2.0 * v).exp()).collect();
         let phi = if self.free_dispersion {
-            x[p + k].exp()
+            x[p + self.n_theta].exp()
         } else {
             1.0
         };
-        if !(phi.is_finite() && phi > 0.0) || sigma2.iter().any(|s| !(s.is_finite() && *s > 0.0)) {
-            return Err(Error::Data("parameters out of range".into()));
+        let out_of_range = || Error::Data("parameters out of range".into());
+        if !(phi.is_finite() && phi > 0.0) {
+            return Err(out_of_range());
         }
+        let lambdas: Vec<Vec<f64>> = self
+            .factors
+            .iter()
+            .map(|f| f.lambda(x))
+            .collect::<Option<_>>()
+            .ok_or_else(out_of_range)?;
         let eta0 = self.design.linear_predictor(beta);
         let n = eta0.len();
-        let q = self.factor_of.len();
-        let diagonal = k == 1;
-        let mut u = u0.to_vec();
+        let q = self.q;
+        // Each row's effects and their coefficients `(Λᵀ z)_c` in `η`.
+        let rows: Vec<Vec<(usize, f64)>> = (0..n)
+            .map(|i| {
+                let mut row = Vec::new();
+                for (f, lam) in self.factors.iter().zip(&lambdas) {
+                    let base = f.start + f.level[i] * f.d;
+                    for c in 0..f.d {
+                        let a: f64 = (c..f.d).map(|r| f.columns[r][i] * lam[r * f.d + c]).sum();
+                        row.push((base + c, a));
+                    }
+                }
+                row
+            })
+            .collect();
+        let diagonal = self.factors.len() == 1 && self.factors[0].d == 1;
+        let mut v = v0.to_vec();
 
-        // g(u), its gradient and minus its Hessian at u.
-        let evaluate = |u: &[f64]| -> Option<Joint> {
+        // g(v), its gradient and minus its Hessian at v.
+        let evaluate = |v: &[f64]| -> Option<Joint> {
             let mut g = 0.0;
             let mut grad = vec![0.0; q];
             let mut hess = vec![0.0; if diagonal { q } else { q * q }];
             let mut mu = Vec::with_capacity(n);
-            for (i, (idx, e0)) in self.index.iter().zip(&eta0).enumerate() {
-                let eta = e0 + idx.iter().map(|&j| u[j]).sum::<f64>();
+            for (i, (row, e0)) in rows.iter().zip(&eta0).enumerate() {
+                let eta = e0 + row.iter().map(|&(j, a)| a * v[j]).sum::<f64>();
                 let (ll, s, h) = self.row(i, eta, phi);
                 if !ll.is_finite() {
                     return None;
                 }
                 g += ll;
                 mu.push(eta.exp());
-                for &a in idx {
-                    grad[a] += s;
+                for &(j, a) in row {
+                    grad[j] += s * a;
                     if diagonal {
-                        hess[a] += h;
+                        hess[j] += h * a * a;
                     } else {
-                        for &b in idx {
-                            hess[a * q + b] += h;
+                        for &(k, b) in row {
+                            hess[j * q + k] += h * a * b;
                         }
                     }
                 }
             }
             for j in 0..q {
-                let s2 = sigma2[self.factor_of[j]];
-                g -= u[j] * u[j] / (2.0 * s2);
-                grad[j] -= u[j] / s2;
+                g -= v[j] * v[j] / 2.0;
+                grad[j] -= v[j];
                 if diagonal {
-                    hess[j] += 1.0 / s2;
+                    hess[j] += 1.0;
                 } else {
-                    hess[j * q + j] += 1.0 / s2;
+                    hess[j * q + j] += 1.0;
                 }
             }
             Some(Joint { g, grad, hess, mu })
@@ -695,24 +998,24 @@ impl Problem<'_> {
             }
         };
 
-        let mut state = match evaluate(&u) {
+        let mut state = match evaluate(&v) {
             Some(s) => s,
             None => {
-                u = vec![0.0; q];
-                evaluate(&u).ok_or_else(|| Error::Data("the joint density is not finite".into()))?
+                v = vec![0.0; q];
+                evaluate(&v).ok_or_else(|| Error::Data("the joint density is not finite".into()))?
             }
         };
         for _ in 0..200 {
             let (step, _) = solve(&state.hess, &state.grad)
                 .ok_or_else(|| Error::Data("the random effects' Hessian is singular".into()))?;
-            let size = step.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+            let size = step.iter().fold(0.0f64, |m, s| m.max(s.abs()));
             let mut t = 1.0;
             let mut moved = false;
             for _ in 0..50 {
-                let trial: Vec<f64> = u.iter().zip(&step).map(|(a, b)| a + t * b).collect();
+                let trial: Vec<f64> = v.iter().zip(&step).map(|(a, b)| a + t * b).collect();
                 if let Some(next) = evaluate(&trial) {
                     if next.g >= state.g - 1e-12 * state.g.abs().max(1.0) {
-                        u = trial;
+                        v = trial;
                         state = next;
                         moved = true;
                         break;
@@ -731,52 +1034,78 @@ impl Problem<'_> {
         let Joint { g, hess, mu, .. } = state;
         let (_, factor) = solve(&hess, &vec![0.0; q])
             .ok_or_else(|| Error::Data("the random effects' Hessian is singular".into()))?;
-        let (log_det, conditional_variance) = if diagonal {
-            (
-                factor.iter().map(|h| h.ln()).sum::<f64>(),
-                factor.iter().map(|h| 1.0 / h).collect::<Vec<_>>(),
-            )
+        let log_det = if diagonal {
+            factor.iter().map(|h| h.ln()).sum::<f64>()
         } else {
-            let log_det = 2.0 * (0..q).map(|j| factor[j * q + j].ln()).sum::<f64>();
-            // The inverse costs as much as the rest of an evaluation:
-            // only the final one needs it.
-            let variance = if with_variance {
-                let inv = cholesky_inverse(&factor, q);
-                (0..q).map(|j| inv[j * q + j]).collect()
-            } else {
-                Vec::new()
-            };
-            (log_det, variance)
+            2.0 * (0..q).map(|j| factor[j * q + j].ln()).sum::<f64>()
         };
-        let log_sigma: f64 = self.factor_of.iter().map(|&f| 0.5 * sigma2[f].ln()).sum();
+        // b = Λ v, level by level.
+        let mut b = vec![0.0; q];
+        for (f, lam) in self.factors.iter().zip(&lambdas) {
+            for l in 0..f.n_levels {
+                let base = f.start + l * f.d;
+                for r in 0..f.d {
+                    b[base + r] = (0..=r).map(|c| lam[r * f.d + c] * v[base + c]).sum();
+                }
+            }
+        }
+        // The inverse costs as much as the rest of an evaluation: only the
+        // final one needs it.
+        let conditional_variance = if !with_variance {
+            Vec::new()
+        } else if diagonal {
+            let lam = lambdas[0][0];
+            factor.iter().map(|h| lam * lam / h).collect()
+        } else {
+            let inv = cholesky_inverse(&factor, q);
+            let mut out = vec![0.0; q];
+            for (f, lam) in self.factors.iter().zip(&lambdas) {
+                for l in 0..f.n_levels {
+                    let base = f.start + l * f.d;
+                    for r in 0..f.d {
+                        let mut s = 0.0;
+                        for a in 0..=r {
+                            for c in 0..=r {
+                                s += lam[r * f.d + a]
+                                    * inv[(base + a) * q + base + c]
+                                    * lam[r * f.d + c];
+                            }
+                        }
+                        out[base + r] = s;
+                    }
+                }
+            }
+            out
+        };
         let log_likelihood = match self.integration {
-            Integration::Laplace => g - log_sigma - 0.5 * log_det,
-            Integration::Quadrature { .. } => self.quadrature(&eta0, &u, &hess, &sigma2, phi)?,
+            Integration::Laplace => g - 0.5 * log_det,
+            Integration::Quadrature { .. } => self.quadrature(&eta0, &rows, &v, &hess, phi)?,
         };
         Ok(Marginal {
             log_likelihood,
-            u,
+            v,
+            b,
             conditional_variance,
             mu,
         })
     }
 
     /// Adaptive Gauss–Hermite quadrature on each level of the single
-    /// factor, centred at the mode `u` and scaled by `hess^(-1/2)`.
+    /// factor's single term, centred at the mode `v` and scaled by
+    /// `hess^(-1/2)`.
     fn quadrature(
         &self,
         eta0: &[f64],
-        u: &[f64],
+        rows: &[Vec<(usize, f64)>],
+        v: &[f64],
         hess: &[f64],
-        sigma2: &[f64],
         phi: f64,
     ) -> Result<f64> {
-        let q = u.len();
-        let mut rows = vec![Vec::new(); q];
-        for (i, idx) in self.index.iter().enumerate() {
-            rows[idx[0]].push(i);
+        let q = v.len();
+        let mut members = vec![Vec::new(); q];
+        for (i, row) in rows.iter().enumerate() {
+            members[row[0].0].push((i, row[0].1));
         }
-        let s2 = sigma2[0];
         let (x, lw) = &self.nodes;
         let mut total = 0.0;
         for j in 0..q {
@@ -785,12 +1114,12 @@ impl Problem<'_> {
                 .iter()
                 .zip(lw)
                 .map(|(xk, lwk)| {
-                    let v = u[j] + tau * xk;
-                    let ll: f64 = rows[j]
+                    let t = v[j] + tau * xk;
+                    let ll: f64 = members[j]
                         .iter()
-                        .map(|&i| self.row(i, eta0[i] + v, phi).0)
+                        .map(|&(i, a)| self.row(i, eta0[i] + a * t, phi).0)
                         .sum();
-                    lwk + ll - v * v / (2.0 * s2)
+                    lwk + ll - t * t / 2.0
                 })
                 .collect();
             let top = terms.iter().fold(f64::NEG_INFINITY, |m, &t| m.max(t));
@@ -800,7 +1129,7 @@ impl Problem<'_> {
                 ));
             }
             let sum: f64 = terms.iter().map(|t| (t - top).exp()).sum();
-            total += top + sum.ln() + tau.ln() - 0.5 * (2.0 * std::f64::consts::PI * s2).ln();
+            total += top + sum.ln() + tau.ln() - 0.5 * (2.0 * std::f64::consts::PI).ln();
         }
         Ok(total)
     }
@@ -1104,8 +1433,8 @@ mod tests {
         assert_eq!(population, unseen);
         let re = &fit.random_effects()[0];
         for j in 0..8 {
-            assert!(re.conditional_variance[j] > 0.0);
-            assert!(re.prediction_variance[j] > re.conditional_variance[j]);
+            assert!(re.conditional_variance[0][j] > 0.0);
+            assert!(re.prediction_variance[0][j] > re.conditional_variance[0][j]);
         }
         assert!(fit.standard_errors().iter().all(|s| *s > 0.0));
         assert!(fit.aic() > -2.0 * fit.log_likelihood());
@@ -1129,8 +1458,57 @@ mod tests {
         assert!((fit.coefficients()[0] - 2.2f64.ln()).abs() < 1e-6);
         assert!((fit.standard_errors()[0] - 1.0 / 88f64.sqrt()).abs() < 1e-5);
         let effects = &fit.random_effects()[0];
-        assert!(effects.values.iter().all(|v| v.abs() < 1e-4));
-        assert!(effects.prediction_variance.iter().all(|v| v.is_finite()));
+        assert!(effects.values[0].iter().all(|v| v.abs() < 1e-4));
+        assert!(effects.prediction_variance[0].iter().all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn slopes_predict_by_label_and_covariate() {
+        let (design, labels, y) = book();
+        let x = design.column(1).to_vec();
+        let g = [Grouping::new("g", labels.clone()).slope("x", x.clone())];
+        let fit = Glmm::new(Family::Poisson).fit(&design, &g, &y).unwrap();
+        assert!(fit.converged());
+        assert_eq!(fit.group_names(), ["g", "g"]);
+        assert_eq!(fit.term_names(), [INTERCEPT, "x"]);
+        assert_eq!(fit.parameters().len(), 2 + 3);
+        let re = &fit.random_effects()[0];
+        assert_eq!(re.terms, [INTERCEPT, "x"]);
+        assert_eq!((re.values.len(), re.values[1].len()), (2, 8));
+        let r = &fit.correlations()[0];
+        assert!(r[0] == 1.0 && r[3] == 1.0 && (r[1] - r[2]).abs() < 1e-15 && r[1].abs() < 1.0);
+        // The training rows' means are the predictions at their labels and
+        // covariates.
+        let mu = fit.predict(&design, &g).unwrap();
+        for (a, b) in mu.iter().zip(fit.fitted()) {
+            assert!((a - b).abs() < 1e-9 * b);
+        }
+        // A factor given without the slope's values is an error.
+        let bare = [Grouping::new("g", labels.clone())];
+        assert!(
+            fit.predict(&design, &bare)
+                .unwrap_err()
+                .to_string()
+                .contains("slope x")
+        );
+        // The slope adds a parameter for its sd and one for the
+        // correlation, and cannot lower the likelihood.
+        let intercepts = Glmm::new(Family::Poisson)
+            .fit(&design, &[Grouping::new("g", labels.clone())], &y)
+            .unwrap();
+        assert!(fit.log_likelihood() >= intercepts.log_likelihood() - 1e-6);
+        // Independent terms: a factor for each, on the same labels.
+        let split = [
+            Grouping::new("g", labels.clone()),
+            Grouping::new("g", labels).without_intercept().slope("x", x),
+        ];
+        let diag = Glmm::new(Family::Poisson).fit(&design, &split, &y).unwrap();
+        assert_eq!(diag.parameters().len(), 2 + 2);
+        assert!(diag.log_likelihood() <= fit.log_likelihood() + 1e-6);
+        let mu = diag.predict(&design, &split).unwrap();
+        for (a, b) in mu.iter().zip(diag.fitted()) {
+            assert!((a - b).abs() < 1e-9 * b);
+        }
     }
 
     #[test]
@@ -1166,13 +1544,30 @@ mod tests {
             msg(Glmm::new(Family::Poisson)
                 .quadrature(5)
                 .fit(&design, &two, &y))
-            .contains("single grouping")
+            .contains("single grouping factor with a single term")
         );
         assert!(
             Glmm::new(Family::Poisson)
                 .quadrature(0)
                 .fit(&design, &g, &y)
                 .is_err()
+        );
+        let slope = [g[0].clone().slope("x", vec![0.5; 40])];
+        assert!(
+            msg(Glmm::new(Family::Poisson)
+                .quadrature(5)
+                .fit(&design, &slope, &y))
+            .contains("2 terms")
+        );
+        let none = [g[0].clone().without_intercept()];
+        assert!(
+            msg(Glmm::new(Family::Poisson).fit(&design, &none, &y))
+                .contains("neither an intercept nor a slope")
+        );
+        let ragged = [g[0].clone().slope("x", vec![0.5; 3])];
+        assert!(
+            msg(Glmm::new(Family::Poisson).fit(&design, &ragged, &y))
+                .contains("3 values for 40 rows")
         );
         let short = [Grouping::new("g", vec!["a".into()])];
         assert!(

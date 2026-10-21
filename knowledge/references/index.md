@@ -1,7 +1,7 @@
 # Reference implementations
 
 * [statsmodels](statsmodels.md) - Python statsmodels, the reference for prospicio-glm's GLMs, robust standard errors and Tweedie profiles; its conventions and quirks.
-* [glmmTMB and lme4](glmmtmb-lme4.md) - The references for random-intercept GLMMs: glmmTMB stops short and is polished, its gamma dispersion parameter is the log shape, its condVar adds the estimates' uncertainty, and glmer's quadrature log-likelihood leaves out the saturated model's.
+* [glmmTMB and lme4](glmmtmb-lme4.md) - The references for GLMMs with random intercepts and slopes: glmmTMB stops short and is polished, its gamma dispersion parameter is the log shape, its condVar adds the estimates' uncertainty, and glmer's quadrature log-likelihood leaves out the saturated model's; glmmTMB's unstructured theta layout and lme4's split of `||` terms.
 * [R loo](r-loo.md) - The R package loo 2.6.0, the reference for ELPD by PSIS-LOO and WAIC, and 2.10.1 for the LOO-PIT by E_loo; its stacking_weights stops early.
 * [BayesBlend](bayesblend.md) - Ledger Investing's BayesBlend 0.0.8 (MIT), whose Stan models prospicio_bayes::stacking follows, including partial pooling and adaptive priors.
 * [R Pareto](r-pareto.md) - The R package Pareto 2.4.5 (GPL), used only for reference values; where its tower matching departs from Riegel (2018).

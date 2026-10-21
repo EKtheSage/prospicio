@@ -3,7 +3,7 @@
 \name{glmm_fit}
 \alias{glmm_fit}
 \alias{glmm_model}
-\title{Generalized linear mixed models with random intercepts}
+\title{Generalized linear mixed models with random intercepts and slopes}
 \usage{
 glmm_fit(
   formula,
@@ -19,7 +19,7 @@ glmm_model(ptr, terms, xlevels, groups)
 }
 \arguments{
 \item{formula}{A formula with the fixed effects and one or more
-\code{(1 | g)} terms.}
+random terms, \code{(1 | g)} or \code{(1 + x | g)}.}
 
 \item{data}{A data frame.}
 
@@ -35,29 +35,37 @@ and prior weights.}
 }
 \value{
 A \code{glmm_model} with \code{coefficients}, \code{std_errors}, \code{covariance}
-(of the coefficients), \code{sd} and \code{sd_std_errors} (each factor's
-standard deviation; the error is NaN for one at 0), \code{dispersion} and
+(of the coefficients), \code{sd} and \code{sd_std_errors} (each random term's
+standard deviation, named \code{g} for a factor's intercept and \code{g|x} for
+its slope on \code{x}; the error is NaN for one at 0), \code{correlations} (each
+factor's correlation matrix of its terms), \code{dispersion} and
 \code{dispersion_std_error} (\code{phi}: the variance is \verb{phi mu^p / w}; 1 for
 the Poisson), \code{log_likelihood}, \code{aic}, \code{bic}, \code{fitted}, \code{iterations},
 \code{converged}, and \code{random_effects}: a list by factor of data frames
-with each \code{level}, its conditional mode \code{value}, its
-\code{conditional_variance} (lme4's \code{condVar}) and its
+with a row for each \code{level} and \code{term}, its conditional mode \code{value},
+its \code{conditional_variance} (lme4's \code{condVar}) and its
 \code{prediction_variance} (with the estimates' uncertainty, glmmTMB's
-\code{condVar}). \code{predict()} adds each row's intercepts by label; a level
-the fit has not seen, or a factor whose columns \code{newdata} lacks, adds
-0, the population mean.
+\code{condVar}). \code{predict()} adds each row's effects by label and
+covariate; a level the fit has not seen, or a factor whose columns
+(its labels' or its slopes') \code{newdata} lacks, adds 0, the population
+mean.
 }
 \description{
-\code{glmm_fit()} fits a GLM with random intercepts,
-\verb{log(mu) = X beta + offset + sum(u)}, each grouping factor's intercepts
-\code{N(0, sigma^2)}, for the Poisson, gamma or Tweedie (fixed power in
-(1, 2)) with the log link, by maximum marginal likelihood as glmmTMB
-and \code{lme4::glmer()}: the Laplace approximation by default, or adaptive
-Gauss-Hermite quadrature with \code{nodes} nodes for a single factor
+\code{glmm_fit()} fits a GLM with random effects,
+\verb{log(mu) = X beta + offset + sum(z' b)}, each grouping factor's effects
+at a level \code{N(0, Sigma)} with \code{Sigma} unstructured (a standard
+deviation for each term and their correlations), for the Poisson, gamma
+or Tweedie (fixed power in (1, 2)) with the log link, by maximum
+marginal likelihood as glmmTMB and \code{lme4::glmer()}: the Laplace
+approximation by default, or adaptive Gauss-Hermite quadrature with
+\code{nodes} nodes for a single factor with a single term
 (\code{glmer(nAGQ = nodes)}). The dispersion is estimated by maximum
-likelihood, as glmmTMB does. Random intercepts are written as in lme4:
+likelihood, as glmmTMB does. Random terms are written as in lme4:
 \code{(1 | g)}, crossed factors \code{(1 | a) + (1 | b)}, nested ones \code{(1 | a/b)}
-(that is, \code{(1 | a) + (1 | a:b)}). The results match glmmTMB and \code{glmer}
+(that is, \code{(1 | a) + (1 | a:b)}), a random slope on a numeric
+covariate correlated with the intercept \code{(1 + x | g)} (or \code{(x | g)}),
+without the intercept \code{(0 + x | g)}, and independent of it
+\code{(1 + x || g)}. The results match glmmTMB and \code{glmer}
 (\code{validation/scripts/r_glmm.R}; \code{docs/design/models.md}, "Mixed
 models").
 }

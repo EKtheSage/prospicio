@@ -416,9 +416,9 @@ pr <- tweedie_profile(Days ~ Eth + Sex + Age + Lrn, quine, powers = c(1.1, 1.3, 
 near(pr$power, tw$power, 1e-2)
 near(pr$max_log_likelihood, tw$log_likelihood, 1e-6)
 
-# GLMMs with random intercepts agree with glmmTMB 1.1.15.2
-# (validation/scripts/r_glmm.R, its stored reference): nested factors on
-# lme4's grouseticks and crossed ones on the simulated book.
+# GLMMs agree with glmmTMB 1.1.15.2 and lme4 (validation/scripts/r_glmm.R,
+# its stored reference): nested factors on lme4's grouseticks, crossed ones
+# on the simulated book and random slopes on the slopes book.
 root <- if (dir.exists("validation")) "validation" else file.path("..", "..", "..", "validation")
 lines <- readLines(file.path(root, "reference", "glmm_r.csv"))
 ref <- utils::read.csv(text = lines[!startsWith(lines, "#")], stringsAsFactors = FALSE)
@@ -460,8 +460,30 @@ tw <- glmm_fit(pure ~ x + urban + (1 | territory) + (1 | class), sim, family = "
 near(tw@dispersion, want("simulated", "tweedie", "dispersion"), 2e-5)
 near(tw@log_likelihood, want("simulated", "tweedie", "loglik"), 1e-8)
 stopifnot(inherits(try(glmm_fit(ticks ~ year, gt), silent = TRUE), "try-error"),
-          inherits(try(glmm_fit(ticks ~ year + (height | location), gt), silent = TRUE),
+          inherits(try(glmm_fit(ticks ~ year + (0 | location), gt), silent = TRUE),
                    "try-error"))
+
+sl <- utils::read.csv(file.path(root, "data", "glmm_slopes.csv"))
+p <- glmm_fit(count ~ x + w + (1 + x | territory) + offset(log(exposure)), sl)
+stopifnot(p@converged, identical(names(p@sd), c("territory", "territory|x")))
+near(p@sd, c(want("slopes", "poisson", "sd", "territory"),
+             want("slopes", "poisson", "sd", "territory|x")), 2e-5)
+near(p@correlations$territory["x", "(Intercept)"],
+     want("slopes", "poisson", "cor", "territory|x|(Intercept)"), 2e-4)
+near(p@log_likelihood, want("slopes", "poisson", "loglik"), 1e-8)
+re <- p@random_effects$territory
+near(re$value[re$level == "t07" & re$term == "x"],
+     want("slopes", "poisson", "ranef", "territory|t07|x"), 1e-4)
+near(predict(p, sl[1:3, ]), p@fitted[1:3], 1e-9)
+# `(x | g)` has the intercept too; `||` makes the terms independent.
+near(glmm_fit(count ~ x + w + (x | territory) + offset(log(exposure)), sl)@log_likelihood,
+     p@log_likelihood, 1e-10)
+dg <- glmm_fit(count ~ x + w + (1 + x || territory) + offset(log(exposure)), sl)
+near(dg@log_likelihood, want("slopes", "poisson_diag", "loglik"), 1e-8)
+stopifnot(identical(unique(dg@random_effects$territory$term), c("(Intercept)", "x")))
+near(predict(dg, sl[1:3, ]), dg@fitted[1:3], 1e-9)
+stopifnot(inherits(try(glmm_fit(count ~ x + (1 + x | territory), sl, nodes = 5),
+                       silent = TRUE), "try-error"))
 
 # Double GLMs against dglm 1.8.6 corrected (validation/scripts/r_dglm.R);
 # where dglm is right (the Poisson without an offset), against dglm live.

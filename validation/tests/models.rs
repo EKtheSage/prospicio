@@ -2031,6 +2031,35 @@ fn glmm_case(
             let y = num(&data, "ticks");
             (terms, frame, vec![location, brood], y, None)
         }
+        "slopes" => {
+            let data = glmm_data("glmm_slopes.csv");
+            let (x, w) = (num(&data, "x"), num(&data, "w"));
+            let frame = Frame::new(vec![
+                ("x".into(), Column::Numeric(x.clone())),
+                ("w".into(), Column::Numeric(w.clone())),
+            ])
+            .unwrap();
+            let terms = Terms::new().intercept().numeric("x").numeric("w");
+            let territory = group(&data, "territory");
+            let groups = match model {
+                // `(1 + x || territory)`: a factor for each term.
+                "poisson_diag" => vec![
+                    territory.clone(),
+                    territory.without_intercept().slope("x", x),
+                ],
+                "poisson_three" => vec![territory.slope("x", x).slope("w", w)],
+                _ => vec![territory.slope("x", x)],
+            };
+            let (y, offset) = match model {
+                m if m.starts_with("poisson") => (
+                    num(&data, "count"),
+                    Some(num(&data, "exposure").iter().map(|e| e.ln()).collect()),
+                ),
+                "gamma" => (num(&data, "severity"), None),
+                _ => (num(&data, "pure"), None),
+            };
+            (terms, frame, groups, y, offset)
+        }
         _ => {
             let data = glmm_data("glmm_simulated.csv");
             let frame = Frame::new(vec![
@@ -2073,16 +2102,19 @@ fn glmm_case(
     (spec, design, groups, y)
 }
 
-/// Random-intercept GLMMs against glmmTMB (Laplace; Poisson, gamma and
-/// Tweedie with power 1.5; one, nested and crossed factors) and lme4's
-/// `glmer` (Laplace, and quadrature with 9 nodes): coefficients and their
-/// standard errors, each factor's standard deviation and its log's
-/// standard error, the dispersion, the log-likelihood, and every level's
-/// predicted intercept with its conditional (lme4) or prediction
-/// (glmmTMB) variance. `validation/scripts/r_glmm.R` writes the data and
-/// the reference.
+/// GLMMs against glmmTMB (Laplace; Poisson, gamma and Tweedie with power
+/// 1.5; random intercepts on one, nested and crossed factors, and random
+/// slopes: correlated with the intercept, independent of it, and two
+/// slopes) and lme4's `glmer` (Laplace, and quadrature with 9 nodes):
+/// coefficients and their standard errors, each random term's standard
+/// deviation and its log's standard error, the correlations and their
+/// parameters' standard errors, the dispersion, the log-likelihood, and
+/// every level's predicted effects with their conditional (lme4) or
+/// prediction (glmmTMB) variances. `validation/scripts/r_glmm.R` writes
+/// the data and the reference.
 #[test]
 fn glmm_matches_glmmtmb_and_glmer() {
+    use prospicio_glm::glmm::INTERCEPT;
     use std::collections::BTreeMap;
     let cases = reference("glmm_r.csv");
     let mut fits = BTreeMap::new();
@@ -2090,10 +2122,8 @@ fn glmm_matches_glmmtmb_and_glmer() {
     let r_name = |name: &str| name.replace(['[', ']'], "");
     check(&cases, |case| {
         // glmer's Laplace fit is the same model as glmmTMB's Poisson.
-        let model = match case.get("model") {
-            "poisson_glmer" => "poisson",
-            m => m,
-        };
+        let model = case.get("model");
+        let model = model.strip_suffix("_glmer").unwrap_or(model);
         let key = (case.get("dataset").to_string(), model.to_string());
         let fit = fits.entry(key.clone()).or_insert_with(|| {
             let (spec, design, groups, y) = glmm_case(&key.0, &key.1);
@@ -2105,16 +2135,56 @@ fn glmm_matches_glmmtmb_and_glmer() {
         });
         let arg = case.get("arg");
         let coef = || fit.names().iter().position(|n| r_name(n) == arg);
-        let factor = |name: &str| fit.group_names().iter().position(|n| n == name);
+        // `g` is a factor's intercept and `g|x` its slope on x.
+        let factor = |name: &str| {
+            let (g, t) = name.split_once('|').unwrap_or((name, INTERCEPT));
+            (0..fit.sd().len()).find(|&k| fit.group_names()[k] == g && fit.term_names()[k] == t)
+        };
+        // `g|level` and `g|level|x`.
         let level = |kind: &str| -> Option<f64> {
-            let (g, l) = arg.split_once('|')?;
-            let re = fit.random_effects().iter().find(|r| r.name == g)?;
+            let mut parts = arg.split('|');
+            let (g, l) = (parts.next()?, parts.next()?);
+            let t = parts.next().unwrap_or(INTERCEPT);
+            let re = fit
+                .random_effects()
+                .iter()
+                .find(|r| r.name == g && r.terms.iter().any(|v| v == t))?;
+            let c = re.terms.iter().position(|v| v == t)?;
             let j = re.levels.iter().position(|v| v == l)?;
             Some(match kind {
-                "ranef" => re.values[j],
-                "conditional_var" => re.conditional_variance[j],
-                _ => re.prediction_variance[j],
+                "ranef" => re.values[c][j],
+                "conditional_var" => re.conditional_variance[c][j],
+                _ => re.prediction_variance[c][j],
             })
+        };
+        // `g|x|(Intercept)`: the correlation of two of g's terms.
+        let correlation = || -> Option<f64> {
+            let mut parts = arg.split('|');
+            let (g, a, b) = (parts.next()?, parts.next()?, parts.next()?);
+            let k = fit.random_effects().iter().position(|r| r.name == g)?;
+            let terms = &fit.random_effects()[k].terms;
+            let (i, j) = (
+                terms.iter().position(|v| v == a)?,
+                terms.iter().position(|v| v == b)?,
+            );
+            Some(fit.correlations()[k][i * terms.len() + j])
+        };
+        // `g|k`: the standard error of g's k-th parameter (1-based, its
+        // log standard deviations first), glmmTMB's theta.
+        let theta_se = || -> Option<f64> {
+            let (g, k) = arg.split_once('|')?;
+            let k: usize = k.parse().ok()?;
+            let mut at = fit.coefficients().len();
+            for re in fit.random_effects() {
+                let d = re.terms.len();
+                if re.name == g {
+                    let a = at + k - 1;
+                    let n = fit.parameters().len();
+                    return Some(fit.parameter_covariance()[a * n + a].sqrt());
+                }
+                at += d * (d + 1) / 2;
+            }
+            None
         };
         match case.get("quantity") {
             "coef" => coef().map(|j| fit.coefficients()[j]),
@@ -2124,6 +2194,8 @@ fn glmm_matches_glmmtmb_and_glmer() {
             "dispersion" => Some(fit.dispersion()),
             "se_log_dispersion" => Some(fit.dispersion_standard_error() / fit.dispersion()),
             "loglik" => Some(fit.log_likelihood()),
+            "cor" => correlation(),
+            "se_theta" => theta_se(),
             q => level(q),
         }
     });

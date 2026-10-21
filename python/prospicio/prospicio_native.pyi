@@ -10656,10 +10656,17 @@ class GlmFit:
 @final
 class Glmm:
     """
-    A GLM with random intercepts, ``log μ = Xβ + offset + Σ u``, each
-    factor's intercepts ``N(0, σ²)``: the Poisson, gamma or Tweedie (fixed
-    power in (1, 2)) with the log link, fitted by maximum marginal
-    likelihood as glmmTMB and ``lme4::glmer``.
+    A GLM with random intercepts and slopes, ``log μ = Xβ + offset + Σ zᵀb``,
+    each factor's effects at a level ``N(0, Σ)`` with ``Σ`` unstructured:
+    the Poisson, gamma or Tweedie (fixed power in (1, 2)) with the log
+    link, fitted by maximum marginal likelihood as glmmTMB and
+    ``lme4::glmer``.
+    
+    ``fit``'s ``groups`` is a dict of each factor's name to every row's
+    labels (a random intercept, ``(1 | g)``) or to a dict with ``labels``,
+    ``slopes`` (covariate name to every row's value: ``(1 + x | g)``),
+    ``intercept`` (false for ``(0 + x | g)``) and ``correlated`` (false for
+    ``(1 + x || g)``).
     
     Parameters
     ----------
@@ -10669,8 +10676,8 @@ class Glmm:
         The Tweedie power.
     nodes : int, optional
         Adaptive Gauss–Hermite quadrature with this many nodes
-        (``glmer(nAGQ = nodes)``), for a single grouping factor; the
-        Laplace approximation when left out.
+        (``glmer(nAGQ = nodes)``), for a single grouping factor with a
+        single term; the Laplace approximation when left out.
     
     Examples
     --------
@@ -10690,10 +10697,11 @@ class Glmm:
         ----------
         design : Design
             The fixed effects, with any offset and prior weights.
-        groups : dict of str to sequence
-            Each grouping factor's name and every row's label. Factors are
-            crossed; a factor nested in another takes the joined labels, as
-            lme4's ``a:b`` (``f"{a}:{b}"``).
+        groups : dict of str to sequence or dict
+            Each grouping factor's name and every row's label, or a dict
+            with ``labels``, ``slopes``, ``intercept`` and ``correlated``
+            (see ``Glmm``). Factors are crossed; a factor nested in another
+            takes the joined labels, as lme4's ``a:b`` (``f"{a}:{b}"``).
         y : sequence of float
         
         Returns
@@ -10704,7 +10712,7 @@ class Glmm:
 @final
 class GlmmFit:
     """
-    A GLM with random intercepts, from ``Glmm.fit``.
+    A GLM with random intercepts and slopes, from ``Glmm.fit``.
     """
     @property
     def aic(self, /) -> float: ...
@@ -10717,6 +10725,12 @@ class GlmmFit:
         """
     @property
     def converged(self, /) -> bool: ...
+    @property
+    def correlations(self, /) -> list[tuple[str, list[str], list[list[float]]]]:
+        """
+        Each factor's correlation matrix of its terms, as a list of
+        ``(name, terms, matrix)``, the matrix a list of rows.
+        """
     @property
     def covariance(self, /) -> list[float]:
         """
@@ -10738,12 +10752,13 @@ class GlmmFit:
     @property
     def fitted(self, /) -> list[float]:
         """
-        Each row's mean with its random intercepts.
+        Each row's mean with its random effects.
         """
     @property
     def group_names(self, /) -> list[str]:
         """
-        The grouping factors' names, in the order fitted.
+        Each random term's grouping factor, a factor repeated for each of
+        its terms (parallel to ``sd``).
         """
     @property
     def iterations(self, /) -> int: ...
@@ -10760,22 +10775,24 @@ class GlmmFit:
     def predict(self, /, design: Design, groups: dict |None = None) -> list[float]:
         """
         Expected response for each row of ``design``, adding each row's
-        random intercepts by label; a level the fit has not seen, or a
-        factor left out of ``groups``, adds 0 (the population mean).
+        random effects by label and covariate (``groups`` as in
+        ``Glmm.fit``); a level the fit has not seen, or a factor left out of
+        ``groups``, adds 0 (the population mean).
         """
     @property
     def random_effects(self, /) -> dict:
         """
-        Each factor's random intercepts: a dict of name to a dict of
-        ``levels`` (sorted), ``values`` (the conditional modes),
-        ``conditional_variance`` (lme4's ``condVar``) and
-        ``prediction_variance`` (with the estimates' uncertainty, glmmTMB's
-        ``condVar``).
+        Each factor's random effects: a dict of name to a dict of
+        ``levels`` (sorted), ``terms`` and, for each term, ``values`` (the
+        conditional modes), ``conditional_variance`` (lme4's ``condVar``)
+        and ``prediction_variance`` (with the estimates' uncertainty,
+        glmmTMB's ``condVar``), each a dict of term to a list by level (the
+        independent factors of one name joined).
         """
     @property
     def sd(self, /) -> list[float]:
         """
-        Each factor's standard deviation ``σ``.
+        Each random term's standard deviation ``σ``.
         """
     @property
     def sd_standard_errors(self, /) -> list[float]:
@@ -10787,6 +10804,11 @@ class GlmmFit:
     def standard_errors(self, /) -> list[float]:
         """
         ``β``'s standard errors.
+        """
+    @property
+    def term_names(self, /) -> list[str]:
+        """
+        Each random term's name, ``"(Intercept)"`` or a slope's covariate.
         """
 
 @final

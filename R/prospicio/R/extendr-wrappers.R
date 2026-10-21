@@ -164,7 +164,7 @@ elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
 
 dglm_fit_design <- function(x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method) .Call(wrap__dglm_fit_design, x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method)
 
-glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, nodes) .Call(wrap__glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, nodes)
+glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes) .Call(wrap__glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes)
 
 local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
 
@@ -1019,9 +1019,15 @@ GlmmModel$iterations <- function() .Call(wrap__GlmmModel__iterations, self)
 
 GlmmModel$converged <- function() .Call(wrap__GlmmModel__converged, self)
 
+GlmmModel$term_names <- function() .Call(wrap__GlmmModel__term_names, self)
+
+GlmmModel$correlations <- function() .Call(wrap__GlmmModel__correlations, self)
+
+GlmmModel$correlation_terms <- function() .Call(wrap__GlmmModel__correlation_terms, self)
+
 GlmmModel$random_effects <- function() .Call(wrap__GlmmModel__random_effects, self)
 
-GlmmModel$predict <- function(x, names, offset, group_names, group_labels) .Call(wrap__GlmmModel__predict, self, x, names, offset, group_names, group_labels)
+GlmmModel$predict <- function(x, names, offset, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values) .Call(wrap__GlmmModel__predict, self, x, names, offset, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values)
 
 #' @export
 `$.GlmmModel` <- function (self, name) { func <- GlmmModel[[name]]; environment(func) <- environment(); func }
