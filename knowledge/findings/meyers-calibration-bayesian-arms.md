@@ -167,7 +167,11 @@ study since 2026-10-21 (below), and still not verified.
   compensation and all 200 (a D within the tolerance of its bound): the
   cells "Near the bound" above named. Not
   marked verified: no CI job runs the study, and the pins were recorded on
-  Windows.
+  Windows. The tolerances cover seed noise on that machine, from three
+  seeds (a range, not the tail: a pathological fit like CSR's on group
+  32875 landing on another triangle can move a cell of 14 to 19 triangles
+  further); the thread count changes no draw (3 threads against 16, bit
+  for bit); another platform is unverified.
 * **Cost.** The full study (1,600 fits: Mack, ODP bootstrap and the five
   Bayesian arm and basis pairs, 200 triangles) takes 230 s wall on 16
   threads. Serial (`RAYON_NUM_THREADS=1`, 3 triangles per line), the mean

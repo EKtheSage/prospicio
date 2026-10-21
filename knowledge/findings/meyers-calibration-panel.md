@@ -90,7 +90,9 @@ with cas-schedule-p 2026.6.13, duckdb 1.5.6, pandas 3.0.6 and Python
   point; the ODP bootstrap's D moved by at most 0.84 points in a line and
   0.21 on all 200 between three seeds, and its tolerance is 1.7 and 0.5.
   Still not marked verified: no CI job runs the study. Pins were recorded
-  on Windows; the note's "As built (PR 5)" gives the tolerances, their
+  on Windows, and the tolerances cover seed noise measured on that machine
+  (three seeds; the thread count changes no draw, measured at 3 threads
+  against 16); whether they cover another platform is unverified. The note's "As built (PR 5)" gives the tolerances, their
   derivation and how to re-pin.
 * **Cost.** All 600 fits (Mack on two bases, the ODP bootstrap) take 1.6 s
   in release.

@@ -939,20 +939,87 @@ fn pins_active(limit: Option<usize>, salt: Option<&str>) -> bool {
     limit.is_none() && salt.is_none_or(str::is_empty)
 }
 
-/// The panel hash the study ran on must be the pinned one. `meta` is
-/// `panel_meta.csv` as `panel_meta` reads it.
-fn check_panel_hash(meta: &[(String, String)]) -> Result<(), String> {
-    let found = meta
-        .iter()
-        .find(|(k, _)| k == "panel_sha256")
-        .map(|(_, v)| v.as_str());
-    if found == Some(PINNED_PANEL_SHA256) {
+/// The panel the study runs on must be the pinned one. `file_sha` is the
+/// sha256 of the panel file's own bytes ([`sha256_hex`]), the same digest
+/// the script writes to `panel_meta.csv`; the side file is not trusted, so a
+/// panel edited or rebuilt next to a stale `panel_meta.csv` fails too.
+fn check_panel_hash(file_sha: &str) -> Result<(), String> {
+    if file_sha == PINNED_PANEL_SHA256 {
         return Ok(());
     }
     Err(format!(
-        "the panel's sha256 is {}, not the pinned {PINNED_PANEL_SHA256}: the D pins were recorded on another panel (cas-schedule-p 2026.6.13) and say nothing about this one. Rebuild the panel with\n    {PANEL_COMMAND}\nor, after a reviewed change of panel, re-pin (the note, \"Pinning\"). Set RISK_RS_CALIBRATION_LIMIT or RISK_RS_CALIBRATION_SEED_SALT to run without pins",
-        found.unwrap_or("absent from panel_meta.csv")
+        "the panel's sha256 is {file_sha}, not the pinned {PINNED_PANEL_SHA256}: the D pins were recorded on another panel (cas-schedule-p 2026.6.13) and say nothing about this one. Rebuild the panel with\n    {PANEL_COMMAND}\nor, after a reviewed change of panel, re-pin (the note, \"Pinning\"). Set RISK_RS_CALIBRATION_LIMIT or RISK_RS_CALIBRATION_SEED_SALT to run without pins"
     ))
+}
+
+/// The SHA-256 of `bytes` as lowercase hex (FIPS 180-4), for the panel
+/// check: a few lines here rather than a new dependency of the workspace.
+fn sha256_hex(bytes: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
+    ];
+    let mut msg = bytes.to_vec();
+    let bits = (bytes.len() as u64).wrapping_mul(8);
+    msg.push(0x80);
+    while msg.len() % 64 != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&bits.to_be_bytes());
+    for block in msg.chunks_exact(64) {
+        let mut w = [0u32; 64];
+        for (i, word) in block.chunks_exact(4).enumerate() {
+            w[i] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
+        }
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
+        for i in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ (!e & g);
+            let t1 = hh
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(K[i])
+                .wrapping_add(w[i]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let t2 = s0.wrapping_add(maj);
+            hh = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(t1);
+            d = c;
+            c = b;
+            b = a;
+            a = t1.wrapping_add(t2);
+        }
+        for (x, y) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
+            *x = x.wrapping_add(y);
+        }
+    }
+    h.iter().fold(String::with_capacity(64), |mut s, x| {
+        let _ = write!(s, "{x:08x}");
+        s
+    })
 }
 
 /// The pins the run breaks. Only the cells the run covers are checked: an
@@ -964,7 +1031,9 @@ fn check_panel_hash(meta: &[(String, String)]) -> Result<(), String> {
 /// the tolerance of a pin that is further than the tolerance from the bound
 /// is on the pin's side of the bound, so only a pin within the tolerance of
 /// the bound ([`near_the_bound`]) may be passed on either side of it. A
-/// failure names a verdict that flipped.
+/// failure names a verdict that flipped. The reverse is checked too: a cell
+/// the run observed (in its scope, as above) with no pin fails, so an arm,
+/// basis or line added later is never left unasserted.
 fn check_pins(
     pins: &[Pin],
     observed: &[Observed],
@@ -1008,6 +1077,24 @@ fn check_pins(
             out.push(format!(
                 "{cell}: D {:.2} is {moved:.2} from the pinned {:.2} (tolerance {tol}){flipped}",
                 o.d, p.d
+            ));
+        }
+    }
+    for o in observed {
+        if o.scope.is_none() && !all_lines {
+            continue;
+        }
+        if !pins
+            .iter()
+            .any(|p| p.arm == o.arm && p.basis == o.basis && p.scope == o.scope)
+        {
+            out.push(format!(
+                "{} {} {}: scored {} triangles (D {:.2}) and has no pin",
+                o.arm,
+                o.basis.name(),
+                o.scope.map_or("all", Line::code),
+                o.n,
+                o.d
             ));
         }
     }
@@ -1074,9 +1161,12 @@ const fn pin(arm: &'static str, basis: Basis, scope: Option<Line>, n: usize, d: 
 /// 1.0 per line and 0.5 on all 200 for a NUTS arm, 0.1 for the
 /// deterministic Mack (platform arithmetic only), 0.5 on all 200 for the
 /// seeded ODP bootstrap. Compartmental model 2 was salted once, on
-/// 6, 10, 27 and 5 triangles, so it takes 2.0 and 1.0. The numbers, the
-/// measured differences and what the tolerance does not cover are in the
-/// note, "Pinning".
+/// 6, 10, 27 and 5 triangles, so it takes 2.0 and 1.0, a floor rather
+/// than a measured spread. The tolerances cover seed noise on the machine
+/// that measured it (Windows, x86-64; the thread count does not change a
+/// draw), from three seeds, a range and not the tail; whether they cover
+/// another platform is unverified. The numbers, the measured differences
+/// and what the tolerance does not cover are in the note, "Pinning".
 const TOLERANCES: &[(&str, f64, f64)] = &[
     ("mack", 0.1, 0.1),
     ("odp", 1.7, 0.5),
@@ -1577,8 +1667,18 @@ fn calibration_study() {
         }
     }
     println!("group 353 commercial auto equals validation/data/clrd_comauto_353.csv");
-    for (k, v) in panel_meta(&dir) {
+    let meta = panel_meta(&dir);
+    for (k, v) in &meta {
         println!("panel_meta {k}: {v}");
+    }
+    let file_sha = sha256_hex(&std::fs::read(&path).expect("the panel was just read"));
+    println!("panel sha256 (of the file): {file_sha}");
+    if let Some((_, v)) = meta.iter().find(|(k, _)| k == "panel_sha256")
+        && *v != file_sha
+    {
+        println!(
+            "warning: panel_meta.csv records sha256 {v}, not the panel file's: the side file is stale"
+        );
     }
 
     let lines = selected_lines(std::env::var("RISK_RS_CALIBRATION_LINES").ok().as_deref());
@@ -1586,6 +1686,13 @@ fn calibration_study() {
     let limit = std::env::var("RISK_RS_CALIBRATION_LIMIT")
         .ok()
         .and_then(|v| v.trim().parse::<usize>().ok());
+    // The pins (decision 7) hold only for the pinned panel: check its bytes
+    // before any fit, so a wrong panel fails in seconds, not after the run.
+    let salt = seed_salt();
+    let pinned = pins_active(limit, salt.as_deref());
+    if pinned && let Err(e) = check_panel_hash(&file_sha) {
+        panic!("{e}");
+    }
     let triangles = limit_per_line(
         all.into_iter()
             .filter(|t| lines.contains(&t.line))
@@ -1672,17 +1779,14 @@ fn calibration_study() {
     }
 
     // The pins (decision 7): the reviewed run's D per arm, basis and line,
-    // on the default seed, the whole panel and the pinned panel.
-    let salt = seed_salt();
-    if pins_active(limit, salt.as_deref()) {
+    // on the default seed, the whole panel and the pinned panel (its hash
+    // checked before the fits, above).
+    if pinned {
         let observed = observed_cells(&gs);
         println!(
             "\nthis run's cells as PINS source:\n{}",
             pins_source(&observed)
         );
-        if let Err(e) = check_panel_hash(&panel_meta(&dir)) {
-            panic!("{e}");
-        }
         let all_lines = lines.len() == Line::ALL.len();
         let broken = check_pins(PINS, &observed, all_lines, pin_tolerance);
         assert!(
@@ -2663,9 +2767,16 @@ mod tests {
         assert!(check_pins(&pins, &[o_ca, o_all], false, tol).is_empty());
         // With every line the all-200 cell counts again.
         assert_eq!(check_pins(&pins, &[o_ca, o_all], true, tol).len(), 1);
-        // An arm that was not run is skipped.
+        // An arm that was not run is skipped, but a cell observed with no
+        // pin fails.
         let other = Observed { arm: "odp", ..o_ca };
-        assert!(check_pins(&[p_ca], &[other], true, tol).is_empty());
+        let broken = check_pins(&[p_ca], &[other], true, tol);
+        assert_eq!(broken.len(), 1);
+        assert!(broken[0].contains("odp paid ca") && broken[0].contains("has no pin"));
+        // So does an all-200 cell with no pin, only when every line ran.
+        let (_, o_all) = cell(None, 200, 25.0);
+        assert!(check_pins(&[p_ca], &[o_ca, o_all], false, tol).is_empty());
+        assert_eq!(check_pins(&[p_ca], &[o_ca, o_all], true, tol).len(), 1);
         // A cell far off on a line that ran fails whatever else was run.
         let mut off = o_ca;
         off.d = 50.0;
@@ -2682,16 +2793,69 @@ mod tests {
 
     #[test]
     fn another_panel_hash_fails_with_the_command_to_rebuild() {
-        let ok = vec![("panel_sha256".to_string(), PINNED_PANEL_SHA256.to_string())];
-        assert!(check_panel_hash(&ok).is_ok());
-        let other = vec![("panel_sha256".to_string(), "abc".to_string())];
-        let e = check_panel_hash(&other).unwrap_err();
+        assert!(check_panel_hash(PINNED_PANEL_SHA256).is_ok());
+        let e = check_panel_hash("abc").unwrap_err();
         assert!(
             e.contains("abc")
                 && e.contains(PINNED_PANEL_SHA256)
                 && e.contains("calibration_panel.py")
         );
-        assert!(check_panel_hash(&[]).unwrap_err().contains("absent"));
+    }
+
+    #[test]
+    fn sha256_matches_the_fips_vectors() {
+        // FIPS 180-4 examples: the empty message, "abc", and a two-block
+        // message (56 bytes, so the padding takes a second block).
+        assert_eq!(
+            sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+            "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+        );
+    }
+
+    #[test]
+    fn every_arm_basis_and_scope_the_study_can_run_has_one_pin() {
+        for ab in selected_arms(Some(ALL_ARMS)) {
+            for scope in Line::ALL.iter().copied().map(Some).chain([None]) {
+                let n = PINS
+                    .iter()
+                    .filter(|p| p.arm == ab.arm && p.basis == ab.basis && p.scope == scope)
+                    .count();
+                assert_eq!(
+                    n,
+                    1,
+                    "{} {} {}: {n} pins",
+                    ab.arm,
+                    ab.basis.name(),
+                    scope.map_or("all", Line::code)
+                );
+            }
+        }
+        // And no pin for a cell the study cannot run.
+        let cells = selected_arms(Some(ALL_ARMS)).len() * (Line::ALL.len() + 1);
+        assert_eq!(PINS.len(), cells);
+    }
+
+    #[test]
+    fn pin_tolerance_reads_the_per_line_and_all_200_columns() {
+        assert_eq!(pin_tolerance("mack", Some(Line::Ca)), 0.1);
+        assert_eq!(pin_tolerance("csr", Some(Line::Ol)), 3.0);
+        assert_eq!(pin_tolerance("csr", None), 2.5);
+        assert_eq!(pin_tolerance("odp", None), 0.5);
+        for (arm, per_line, all) in TOLERANCES {
+            for line in Line::ALL {
+                assert_eq!(pin_tolerance(arm, Some(line)), *per_line, "{arm}");
+            }
+            assert_eq!(pin_tolerance(arm, None), *all, "{arm}");
+        }
+        assert!(pin_tolerance("unknown", None).is_nan());
     }
 
     #[test]

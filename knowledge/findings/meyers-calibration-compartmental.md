@@ -145,7 +145,9 @@ of each model on the same seeds gave the same figures.
   that take minutes). Model 2 on all 48 (20.5 against a bound of 19.6) is
   within its tolerance of the bound, so its verdict is not pinned. Not
   marked verified: no CI job runs the study, and the pins were recorded on
-  Windows.
+  Windows. Model 2's tolerance is a floor above one salted difference, not
+  a measured spread; the thread count changes no draw (model 1 at 3
+  threads against 16, bit for bit); another platform is unverified.
 * **Wiring.** `the_compartmental_arm_scores_a_synthetic_triangle` (cut-down
   sampler: the mean is an ultimate, not a reserve; reproducible by seed;
   the library's target acceptances) and `the_compartmental_arm_scores_group_353`

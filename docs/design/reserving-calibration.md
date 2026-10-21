@@ -707,11 +707,18 @@ job runs it.
 * **When it runs.** The study asserts the pins only on the default seed
   (`RISK_RS_CALIBRATION_SEED_SALT` unset) and without
   `RISK_RS_CALIBRATION_LIMIT`, since either makes another experiment (the
-  study then prints that the pins were not asserted). It first checks that
-  `panel_meta.csv`'s `panel_sha256` is the pinned
-  `075b3925...59d2` and fails with the command that rebuilds the panel if
-  not: a different panel (a new package version, a changed screen)
-  invalidates the pins. `RISK_RS_CALIBRATION_ARMS` and `_LINES` narrow
+  study then prints that the pins were not asserted). Right after it loads
+  the panel, before any fit, it hashes the panel file's own bytes
+  (sha256, the digest the script writes to `panel_meta.csv`) and fails with
+  the command that rebuilds the panel unless the hash is the pinned
+  `075b3925...59d2`: a different panel (a new package version, a changed
+  screen, a hand edit) invalidates the pins. `panel_meta.csv` is not
+  trusted for this (a stale one only prints a warning) and may be absent,
+  as for a panel copied elsewhere through `RISK_RS_CALIBRATION_PANEL`. A
+  cell the run observed with no pin fails as well, so an arm, basis or
+  line added later is asserted from its first run, and a unit test checks
+  that every arm and basis the study can run has a pin in each line and on
+  all 200. `RISK_RS_CALIBRATION_ARMS` and `_LINES` narrow
   what is checked: only the cells of the arms and lines that ran are
   asserted, and the all-200 cells only when all four lines ran (a run on
   fewer lines has another all-200 set). Mack's distance-to-Meyers
@@ -761,14 +768,29 @@ job runs it.
   fits is slow (none needed a refit), so it takes 2.0 per line and 1.0 on all.
   Every salted cell of both runs is inside its tolerance (checked: 95 cells
   across the two runs). The results are in the table above.
+* **What the tolerances do not cover.** They cover seed noise as measured
+  on this machine, and three seeds give a range, not the tail of the
+  spread. The study has rare pathological fits (CSR on commercial auto
+  group 32875 kept a fit with R-hat 1.168 and 444 divergences; 40 to 42
+  fits per NUTS arm fail their first diagnostics and are refitted), and
+  another seed can land one on another triangle; in a line where an arm
+  scores 5 to 19 triangles (`BayesOdp`, model 2) one percentile moves D by
+  several points, possibly more than twice the observed range. Model 2's
+  2.0 and 1.0 are a floor chosen above one salted difference, not a
+  measured spread. A broken pin is therefore first re-run with a salt
+  (below) before it is read as a change to a model.
 * **Platform.** The pins were recorded on Windows (x86-64, 16 threads).
   NUTS draws at a fixed seed differ between Windows and Linux (the
   seed-pinned test in `AGENTS.md`), as do the bootstrap's floating-point
-  sums in the last bits. The tolerances are meant to cover that: another
-  platform's draws are, to the study, another seed, and the tolerance is
-  twice the spread between seeds. That is an argument, not a measurement:
-  the study has not been run on Linux (nothing runs it in CI), and
-  Mack's tolerance (0.1) covers only floating-point differences. A run on
+  sums in the last bits. Whether the tolerances cover that is unverified:
+  the argument is that another platform's draws are, to the study, another
+  seed, but the study has not been run on Linux (nothing runs it in CI),
+  and Mack's tolerance (0.1) covers only floating-point differences. The
+  number of threads does not matter, measured: a run with
+  `RAYON_NUM_THREADS=3` and `RISK_RS_CALIBRATION_LIMIT=4` (the default
+  arms, 144 fits, 155 s) gave every column of `percentiles.csv` but the
+  wall time identical, bit for bit, to the same 144 rows of the pinned
+  16-thread run, diagnostics and refits included. A run on
   another platform that breaks a pin should first be re-run with a salt
   to see whether it is noise; if the seed spread is as large as the miss,
   widen the tolerance, not the pin.
@@ -782,17 +804,22 @@ job runs it.
   section's tables, and record the user's approval. A pin moves only with
   the user's review: the point of the check is that it fails when a
   change to a model moves a D.
-* **Tests.** Nine unit tests, cheap and not ignored, run in CI's `bayes`
+* **Tests.** Twelve unit tests, cheap and not ignored, run in CI's `bayes`
   job: a D at, inside and outside the tolerance (per line and on all 200),
   another count of scored triangles, a cell that scored nothing (NaN) and
   an arm with no tolerance (each fails), the flipped verdict named in the
   message and a pin near the bound, a narrowed run (an arm not run, a line
   not run and the all-200 cell of a partial run are skipped, a far-off cell
-  of a line that ran fails), the conditions that disable pins (limit, salt),
-  another panel hash, the salt (none keeps the seed, one changes it
-  deterministically), the `PINS` and `TOLERANCES` tables being well formed
-  (every pin has a tolerance and a known arm, n and D in range) and the
-  printed pins source.
+  of a line that ran fails, an observed cell with no pin fails), the
+  conditions that disable pins (limit, salt), another panel hash, SHA-256
+  against the FIPS 180-4 vectors, the salt (none keeps the seed, one
+  changes it deterministically), the `PINS` and `TOLERANCES` tables being
+  well formed (every pin has a tolerance and a known arm, n and D in
+  range), one pin for every arm, basis and scope the study can run and
+  none other, `pin_tolerance` reading the per-line and all-200 columns,
+  and the printed pins source. A run of the study on Mack alone checked
+  the hash on the real panel (it passes) and on the panel with one byte
+  added (it fails before any fit).
 * **Verification.** The study with the pins, default seed, all ten arm and
   basis pairs, on the pinned panel: passed, 50 of 50 pinned cells within their
   tolerance (`test result: ok. 1 passed`), 2,097 s on 16 threads (2,217 s
