@@ -3033,6 +3033,8 @@ impl PyMackFit {
     /// calendar year and in every later one, as R ChainLadder's
     /// ``CDR(MackChainLadder(x), dev = "all")``.
     ///
+    /// The method form of the ``cdr`` property, kept as its alias.
+    ///
     /// With a selected pattern (``Mack(ldf=...)``), each factor used varies
     /// with ``1 - w`` times the estimate's parameter error, so a fully
     /// selected link adds process error only; with weights strictly
@@ -3058,6 +3060,25 @@ impl PyMackFit {
         let fit = single(&self.inner, "claims_development_result", "")?;
         let inner = fit.claims_development_result().map_err(err)?;
         Ok(PyClaimsDevelopmentResult { inner })
+    }
+
+    /// Merz and Wüthrich's one-year view, as a property: the same
+    /// ``ClaimsDevelopmentResult`` that ``claims_development_result()``
+    /// returns (that method stays as an alias), named as ``OneYearFit.cdr``
+    /// names the claims development result. This one holds the analytic
+    /// standard errors; ``OneYearFit.cdr`` is the simulated distribution.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``claims_development_result()``.
+    ///
+    /// Returns
+    /// -------
+    /// ClaimsDevelopmentResult
+    #[getter]
+    fn cdr(&self) -> PyResult<PyClaimsDevelopmentResult> {
+        self.claims_development_result()
     }
 
     /// The fit of one segment, chosen by key values as
@@ -4278,8 +4299,10 @@ impl PyCapeCodFit {
         by_origin(&self.inner, |f| f.expected_loss.apriori.clone())
     }
 
-    /// Expected loss ratio per origin at the valuation's cost level, before
-    /// detrending.
+    /// Expected loss ratio per origin at the valuation date's price level,
+    /// before detrending. For a treaty year that incepts later, trend it
+    /// one more year (or the years from the valuation date to the treaty
+    /// year's average date) beyond this value.
     #[getter]
     fn trended_apriori(&self) -> Vec<f64> {
         by_origin(&self.inner, |f| f.trended_apriori.clone())

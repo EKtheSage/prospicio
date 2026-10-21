@@ -10,7 +10,9 @@ event_set(ptr)
 \item{ptr}{Internal.}
 }
 \value{
-An \code{event_set} object with read-only properties \code{n_sims} and \code{seed}.
+An \code{event_set} object with read-only properties \code{n_sims}, \code{seed},
+\code{input_hash} (a hash of the years' source, see \code{\link[=read_ylt]{read_ylt()}}, or \code{NULL}),
+\code{label_dims} and \code{label_combinations} (see \code{\link[=with_labels]{with_labels()}}).
 }
 \description{
 Created by \code{\link[=simulate_events]{simulate_events()}}.

@@ -78,6 +78,8 @@ reference:
       - aggregate.simulate_events
       - aggregate.EventSet
       - aggregate.EventLossTable
+      - aggregate.read_ylt
+      - aggregate.ylt_hash
       - aggregate.occurrence_exceedance
       - aggregate.occurrence_pml
       - aggregate.OccurrencePml
@@ -176,6 +178,8 @@ reference:
       - models.ks_uniform
       - models.target_encode
       - models.TargetEncoding
+      - models.mars
+      - models.MarsFit
       - models.k_fold
       - models.group_k_fold
       - models.time_ordered
@@ -337,6 +341,7 @@ reference:
       - risk.marginal_expected_shortfall
       - risk.covar
       - risk.esscher_allocation
+      - risk.statistics
       - risk.Allocation
       - risk.LevelAllocation
   - title: Dependence

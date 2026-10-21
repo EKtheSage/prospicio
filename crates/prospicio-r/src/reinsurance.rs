@@ -3,7 +3,7 @@
 
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
-use prospicio_aggregate::{Commission, Layer, LossSensitivePremium, Tower};
+use prospicio_aggregate::{Commission, Layer, LimitAllocation, LossSensitivePremium, Tower};
 
 use crate::aggregate::{AnyCount, EventSet, compound_list};
 use crate::distributions::{Grid, PredictiveDistribution};
@@ -21,6 +21,7 @@ impl XolLayer {
     /// negative for none; `paid` says whether `reinstatement_rates` were
     /// given. At most one of a finite `aggregate_limit`, `reinstatements`
     /// and paid reinstatements; `pro_rata_time` needs paid ones.
+    /// `allocation` is `"event_order"` or `"pro_rata"`.
     #[allow(clippy::too_many_arguments)]
     fn new(
         name: &str,
@@ -34,6 +35,7 @@ impl XolLayer {
         reinstatement_rates: &[f64],
         paid: bool,
         pro_rata_time: bool,
+        allocation: &str,
     ) -> Result<Self> {
         let layer = Layer::xol(name, limit, attachment)
             .and_then(|l| l.share(share))
@@ -72,6 +74,15 @@ impl XolLayer {
             layer.pro_rata_as_to_time().map_err(to_r)?
         } else {
             layer
+        };
+        let layer = match allocation {
+            "event_order" => layer,
+            "pro_rata" => layer.allocation(LimitAllocation::ProRata).map_err(to_r)?,
+            other => {
+                return Err(Error::Other(format!(
+                    "allocation must be \"event_order\" or \"pro_rata\", not \"{other}\""
+                )));
+            }
         };
         Ok(Self { inner: layer })
     }
@@ -144,6 +155,13 @@ impl XolLayer {
 
     fn pro_rata_time(&self) -> bool {
         self.inner.pro_rata_time
+    }
+
+    fn allocation(&self) -> &'static str {
+        match self.inner.allocation {
+            LimitAllocation::EventOrder => "event_order",
+            LimitAllocation::ProRata => "pro_rata",
+        }
     }
 
     fn with_loss_corridor(&self, lower: f64, upper: f64, retained: f64) -> Result<Self> {
@@ -442,6 +460,12 @@ impl ReinsuranceTower {
         let pd = <&PredictiveDistribution>::try_from(&losses)
             .map_err(|_| Error::Other("losses must be a predictive_distribution".into()))?;
         let inner = self.inner.apply_aggregate(&pd.inner).map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+
+    /// Plain annual losses, one per simulation, each as one aggregate loss.
+    fn apply_annual(&self, losses: &[f64]) -> Result<PredictiveDistribution> {
+        let inner = self.inner.apply_annual(losses).map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }
 

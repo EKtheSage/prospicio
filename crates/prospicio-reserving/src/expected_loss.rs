@@ -269,7 +269,9 @@ pub struct CapeCodFit {
     /// Ultimates, exposures and the detrended apriori per origin
     /// (chainladder-python's `detrended_apriori_`).
     pub expected_loss: ExpectedLossFit,
-    /// Apriori per origin at the valuation's cost level, before detrending.
+    /// Apriori per origin at the valuation date's price level, before
+    /// detrending. A treaty year that incepts later needs more trend beyond
+    /// this value (one more year for the next year).
     pub trended_apriori: Vec<f64>,
 }
 

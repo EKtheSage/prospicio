@@ -65,6 +65,9 @@ reference:
       - draws
       - severity
       - risk_measures
+      - statistics
+      - co_statistics
+      - risk_ratios
       - tvar_threshold
   - title: Predictive distributions
     contents:
@@ -73,6 +76,7 @@ reference:
       - portfolio
       - marginal
       - select_components
+      - scale_to_totals
       - total
       - draw_matrix
       - provenance
@@ -83,6 +87,7 @@ reference:
       - audit_grid
       - simulate_events
       - event_set_from_long
+      - read_ylt
       - event_loss_table
       - merge_event_sets
       - hours_clause
@@ -103,6 +108,7 @@ reference:
       - event_times
       - with_uniform_times
       - with_seasonal_times
+      - with_labels
       - event_set
       - events
       - event_counts
@@ -155,6 +161,7 @@ reference:
       - technical_quote
       - payment_pattern
       - price_over_payout
+      - npv
       - trend_large_losses
       - burning_cost
       - development_pattern
@@ -229,6 +236,7 @@ reference:
       - elastic_net_cv
       - gam_fit
       - gam_model
+      - mars_knots
       - cann_fit
       - cann_model
       - attention_cann_fit

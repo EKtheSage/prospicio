@@ -5,6 +5,7 @@ use prospicio_core::{Error, Result};
 use crate::distortion::Distortion;
 use crate::distribution::Distribution;
 use crate::risk::{tvar_sorted, var_sorted};
+use crate::statistics::{QuantileMethod, TvarMethod};
 
 /// Operations that are exact on draws: any statistic of the empirical
 /// distribution.
@@ -45,6 +46,30 @@ pub trait Empirical: Distribution {
     /// Tail value at risk at level `p`; see [`tvar_sorted`].
     fn tvar(&self, p: f64) -> Result<f64> {
         tvar_sorted(self.sorted(), p)
+    }
+
+    /// Value at risk at level `p` under `method`: [`var_sorted`] for
+    /// [`QuantileMethod::InvertedCdf`], linear interpolation of the order
+    /// statistics (numpy's default, R `type = 7`) for
+    /// [`QuantileMethod::Linear`].
+    ///
+    /// ```
+    /// use prospicio_prob::statistics::QuantileMethod;
+    /// use prospicio_prob::{Empirical, Sampled};
+    ///
+    /// let s = Sampled::new(vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+    /// assert_eq!(s.var_with(0.5, QuantileMethod::Linear), Ok(2.5));
+    /// assert_eq!(s.var_with(0.5, QuantileMethod::InvertedCdf), s.var(0.5));
+    /// ```
+    fn var_with(&self, p: f64, method: QuantileMethod) -> Result<f64> {
+        method.quantile(self.sorted(), p)
+    }
+
+    /// Tail value at risk at level `p` under `method`: [`tvar_sorted`] for
+    /// [`TvarMethod::Exact`], the mean of the linear quantile function over
+    /// `[p, 1]` for [`TvarMethod::Linear`].
+    fn tvar_with(&self, p: f64, method: TvarMethod) -> Result<f64> {
+        method.tvar(self.sorted(), p)
     }
 
     /// Distortion risk measure of the draws; see

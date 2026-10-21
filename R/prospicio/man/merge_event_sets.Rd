@@ -17,7 +17,9 @@ Both sets' losses in each year: a catastrophe event set with a
 non-catastrophe one, say. The sets need the same number of years. With
 times on both, each year's losses are merged in time order (\code{x}'s first on
 a tie); with times on neither, \code{x}'s losses come first. Sums insured are
-kept when both sets carry them.
+kept when both sets carry them. Labels (\code{\link[=with_labels]{with_labels()}}) are kept when
+either carries them: \code{x}'s dimensions, then \code{y}'s new ones, with \code{""} for
+a loss without a value in a dimension.
 }
 \examples{
 cat <- event_set_from_long(1, 100, 2)

@@ -6,6 +6,7 @@
 
 ## Next
 
+- [brokerage-leg] brokerage on a loss-ratio scale as a leg of a layer (#477's last ask), waiting on the user
 
 ## Done
 
@@ -25,3 +26,8 @@
 - the grid audit (`audit_grid` and `audit_portfolio_grid`, `aggregate` 1.2.0's `sharpen`: six moment errors scored by a power mean, the step doubled and halved on the center's size and half of it, the best sound cell taken with fewer points preferred, twice the points only when nothing smaller meets the target; `recommend_portfolio_grid` for several units; scores and selection to `aggregate`'s digits; Python and R; #317)
 - [guides-issues-for-aggregate] a mixing variable shared as `aggregate` 1.2.0 shares it, read from its source: across one aggregate's severity components (`fft` of a `MixedPoisson` on a `Mixture`, its mean, cv, skewness and quantiles to `aggregate`'s) and the two units of a bivariate (`fft_bivariate` with a mixed count), never across a portfolio's units, so no quadrature over a shared Θ (#316)
 - [mixing-families] the beta and Sichel mixings of `aggregate`'s mixed counts (`Mixing::Beta`, `Mixing::Sichel`, `Mixing::SichelSkewness` with `sichel_gamma` and `sichel_ig`; `ln_bessel_k` in `prospicio-math`; `aggregate` 1.2.0 parity for the Sichel and `sichel.ig`, quadrature for the beta and SciPy for `sichel.gamma`, where `aggregate` is wrong; Python and R)
+- #476 the annual limit split pro rata across a year's events (`LimitAllocation::ProRata` on `Layer`: the same annual total, a different split by event and so a different net for an inuring stage; refused with reinstatements pro rata as to time; Rust, Python `allocation=` and R `allocation =`)
+- #475 peril and class labels on simulated events, carried through a tower (`EventSet::with_labels`, kept by `merge`; `Tower::apply` by label after `kind` and `layer`, the split under each layer's limit allocation; Rust, Python and R)
+- #477 plain annual losses through a tower (`Tower::apply_annual`, a contract on the loss ratio as a stop loss of `c × P` with `premium_rate(1, P)` and a sliding scale on the capped ratio; Python `Tower.apply_annual`, R `apply_tower()` on a numeric vector)
+- #480 return metrics on simulated cash flows (`prospicio_pricing::returns`: NPV, the IRR searched as the reference model does with `found` and the roots seen, monthly or actual/365 offsets, MOIC, leverage, a tiered fee; Python and R)
+- #484 a year loss table read, checked and expanded (`ylt::YearLossTable`: rows ordered by year and slot, repeats within the named labels and unexpected labels refused, tiled to a whole multiple or resampled per simulation, the file's hash as the results' input hash; Python `read_ylt` and `EventSet.from_ylt`, R `read_ylt()` and `event_set_from_ylt()`, CSV or Parquet)

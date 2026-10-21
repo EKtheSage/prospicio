@@ -28,6 +28,7 @@ pub mod ruin;
 pub mod serial;
 pub mod sizing;
 pub mod term;
+pub mod ylt;
 
 pub use bivariate::{BivariateReport, Clash, JointGrid, fft_bivariate};
 pub use cat::EventLossTable;
@@ -45,7 +46,8 @@ pub use panjer::panjer;
 pub use picks::{PickedLayer, Picks, layer_loss_picks};
 pub use pml::{OccurrencePml, occurrence_exceedance, occurrence_pml};
 pub use reinsurance::{
-    Basis, CarryForward, Commission, Corridor, Layer, LossSensitivePremium, ProfitCommission, Tower,
+    Basis, CarryForward, Commission, Corridor, Layer, LimitAllocation, LossSensitivePremium,
+    ProfitCommission, Tower,
 };
 pub use renewal::{RenewalCount, Wait, WaitGrid, renewal_count};
 pub use ruin::{RenewalRuin, Ruin, SeverityPart, pollaczeck_khinchine, wiener_hopf};
@@ -53,3 +55,4 @@ pub use sizing::{
     AuditSettings, GridAudit, GridCell, GridSize, ScoreTerms, Sizing, SizingMethod, audit_grid,
     audit_portfolio_grid, fft_auto, recommend_grid, recommend_portfolio_grid, round_bucket,
 };
+pub use ylt::YearLossTable;

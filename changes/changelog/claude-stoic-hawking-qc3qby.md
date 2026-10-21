@@ -30,6 +30,53 @@
   `Gpd::fit_with_covariance` returns a fit with the covariance of
   `(xi, beta)`. Python `prospicio.risk.threshold_diagnostics` (a dict of
   columns) and R `threshold_diagnostics()` (a data frame) (#282).
+- A results table's statistics in one call: `prospicio_prob::statistics::StatisticsGrid`
+  gives the mean, SD, CoV, min, max, variance, the percentiles, TVaRs and
+  mean plus or minus multiples of the SD under stable names
+  (`"Percentile 99.5"`, `"TVaR 99"`, `"Mean + 2 SD"`), of a `Sampled` or of
+  each component of a `PredictiveDistribution`. Quantiles by the inverted
+  cdf (the default) or linearly as numpy and R `type = 7`
+  (`QuantileMethod`), TVaR exact (the default) or as the integral of the
+  linear quantile function (`TvarMethod`); `Sampled::var_with` and
+  `tvar_with`, `risk::var_linear_sorted` and `tvar_linear_sorted`. Python
+  `prospicio.risk.statistics` and `Sampled.var(p, method=)`,
+  `.tvar(p, method=)`; R `statistics()` and `VaR(x, p, method = )`,
+  `TVaR(x, p, method = )` on a `sampled` (#474, #492).
+- A Spearman target for `reorder_groups`: `reorder_groups_with(dim,
+  correlation, CorrelationKind::Spearman, seed)` converts the matrix to
+  `2 sin(π ρ / 6)` before Iman-Conover, so the achieved rank correlation
+  of the group totals meets it (the default stays the normal scores'
+  correlation). `correlation_from_pairs` builds the matrix from a long
+  table `(group, group, rho)` with every pair once, `groups` lists the
+  groups in matrix order and `group_spearman` gives the achieved
+  Spearman's rho with ties at their average rank. Python
+  `reorder_groups(..., kind="spearman")`, `groups`,
+  `correlation_from_pairs`, `group_spearman`; R `reorder_groups(..., kind
+  = "spearman")` with a matrix or a three-column data frame, and
+  `group_spearman()` (#481, #493).
+- Any copula's dependence on groups already simulated:
+  `PredictiveDistribution::reorder_groups_by_copula(dim, copula, seed)`
+  sorts each group's rows by its total and gives them the ranks of a
+  column of the copula's draws, so the totals take the t, Gumbel, Clayton,
+  nested or vine copula's rank pattern and joint tails, rows moving whole
+  as under `reorder_groups`. Python
+  `PredictiveDistribution.reorder_groups_by_copula`, R
+  `reorder_groups_by_copula()` (#482, #495).
+- Risk ratios on draws: `prospicio_prob::statistics::RiskRatios` gives the
+  Sharpe ratio (population SD), the Sortino ratio over the downside
+  deviation or, as a reference pricing model computes it, the SD of the
+  values below the threshold (`Sortino`), the Omega ratio of partial
+  moments or of counts (`Omega`) and the TVaR ratio `(mean - t) /
+  TVaR_q(-x)` under `TvarMethod`, about a threshold, of a `Sampled` or
+  each component of a `PredictiveDistribution`. Python
+  `prospicio.risk.risk_ratios`, R `risk_ratios()` (#486, #495).
+- Items read at a driver's percentiles: `StatisticsGrid::co_statistics`
+  reads each item on the simulation the driver's mean, percentile or TVaR
+  selects (the stable order of the driver, `h = q (n - 1)` rounded by
+  `IndexRule`: halves to even as Python's `round`, floor or ceil; the TVaR
+  over `o[ceil(h):]`), and `co_components` reads every component of a
+  `PredictiveDistribution` at one component's or the total's ranks.
+  Python `prospicio.risk.co_statistics`, R `co_statistics()` (#487, #495).
 
 ### Pricing
 
@@ -610,3 +657,60 @@
   gamma and inverse Gaussian and drawn by seed for the counts and the Tweedie's zero; `statmod::qresiduals`
   parity on quine. Python `GlmFit.quantile_residuals()` and `models.quantile_residuals()`, R
   `residuals(m, type = "quantile", seed = 0)` and `quantile_residuals()` (#464).
+- MARS knot selection for hinge terms: `prospicio_glm::mars::Mars` runs R earth's forward pass with
+  `degree = 1` (hinge pairs, earth's minimum and end spans, thresholds and GCV, weights optional) and an
+  optional backward pass by GCV; `MarsFit::add_terms` puts the knots into `Terms` as `numeric` and
+  `hinges`. With `glm(family, link)` each step scores candidates on the GLM's working response and
+  compares deviances. earth parity on the Chalk portfolio: the knots, RSS and GCV of default,
+  weighted, `nk = 15` and pruned runs. Python `models.mars()` and `MarsFit`, R `mars_knots()` and
+  `mars_formula()` (#465).
+
+### Aggregate and reinsurance
+
+- A layer's annual terms can split the year's recovery pro rata across its events
+  (`LimitAllocation::ProRata`, `Layer::allocation`): every event's recovery is scaled by the annual
+  recovery after the terms over the one before them, instead of using the limit up in event order.
+  The annual total is unchanged; the split by event, and so what an inuring stage sees, differs.
+  Refused with reinstatements pro rata as to time; written to a tower's JSON only when set. Python
+  `Layer(..., allocation="pro_rata")`, R `xol_layer(..., allocation = "pro_rata")` (#476, #493).
+- Labels on simulated events, a peril or a class, carried through a tower (`EventSet::with_labels`,
+  `from_long_labeled`, kept by `merge`): with labels `Tower::apply` gives gross, each layer's ceded
+  loss and net by label, with the label dimensions after `kind` and `layer` and the annual premiums
+  and commissions labelled `""`; under an annual limit the split follows the layer's allocation.
+  Unlabelled results are unchanged. Python `EventSet.with_labels`, `from_long(..., labels=)`,
+  `labels`, R `with_labels()`, `event_labels()`, `event_set_from_long(..., labels =)` (#475, #493).
+- `Tower::apply_annual` applies a tower to plain annual losses, one per simulation, with no
+  `EventSet` or `PredictiveDistribution` to build; a contract stated on the loss ratio (a cap and
+  a sliding scale on subject premium) is a stop loss with `premium_rate(1, P)` and a sliding
+  scale. Python `Tower.apply_annual`, R `apply_tower()` on a numeric vector (#477, #493).
+
+### Distributions and probability
+
+- `PredictiveDistribution::scale_to_totals` rescales each simulation's components pro rata to a new
+  total (factor 1 when they sum to 0): a loss-ratio cap over several classes or a stop loss on a mix
+  of perils carried back onto its components. Inside a tower, a cover on the annual total with
+  `LimitAllocation::ProRata` on labelled events does the same. Python
+  `PredictiveDistribution.scale_to_totals`, R `scale_to_totals()` (#478, #493).
+
+### Pricing
+
+- Return metrics on simulated cash flows (`prospicio_pricing::returns`): the NPV at an annual
+  rate, the IRR searched on a grid with a flag for whether a root was found and the number of
+  roots seen (the one nearest 0 kept), monthly or actual/365 offsets, MOIC, leverage of premium
+  on capital and a fee tiered on the margin. Python `npv`, `irr` (`IrrResult`), `moic`,
+  `leverage`, `tiered_fee` in `prospicio.pricing`; R `npv()`, `irr()`, `moic()`, `leverage()`,
+  `tiered_fee()` (#480, #494).
+
+### Aggregate and reinsurance
+
+- A vendor's year loss table read, checked and expanded:
+  `prospicio_aggregate::ylt::YearLossTable` takes each row's year (from
+  1), loss, event slot and labels, checks the losses, the years, repeated
+  year and slot within the labels named (`check_unique`) and the expected
+  label values (`check_values`), orders the rows by year and slot, and
+  expands the years to a run's simulations by tiling (a whole multiple) or
+  resampling each simulation from its own stream. The source file's hash
+  (`ylt::hash_bytes`) is the events' `EventSet::input_hash` and every
+  result's provenance input hash. Python `prospicio.aggregate.read_ylt`
+  and R `read_ylt()` read CSV or Parquet (with pyarrow or arrow);
+  `EventSet.from_ylt` and `event_set_from_ylt()` take columns (#484, #496).

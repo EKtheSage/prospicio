@@ -49,7 +49,7 @@ mod prospicio_native {
         PyPicks, PyRenewalRuin, PyRuin, audit_grid, audit_portfolio_grid, compound_moments,
         eventual_ruin, fft, fft_auto, fft_bivariate, layer_loss_picks, occurrence_exceedance,
         occurrence_pml, panjer, recommend_grid, recommend_portfolio_grid, round_bucket,
-        simulate_events, wiener_hopf,
+        simulate_events, wiener_hopf, ylt_hash,
     };
     #[pymodule_export]
     use super::casualty::{
@@ -82,11 +82,11 @@ mod prospicio_native {
     use super::models::{
         PyBayesGlm, PyBayesGlmFit, PyBayesGlmm, PyBayesGlmmFit, PyBayesStacking, PyCoding,
         PyCvPath, PyDesign, PyDoubleGlm, PyDoubleGlmFit, PyElasticNet, PyElasticNetFit, PyElpd,
-        PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit, PyHierarchicalStacking,
+        PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit, PyHierarchicalStacking, PyMarsFit,
         PyNegativeBinomialFit, PyNegativeBinomialGlm, PyRelaxedCv, PyStackingFit, PyTargetEncoding,
         PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected, confusion_matrix, crps, deviance,
         double_lift, elpd_loo, elpd_waic, f_test, gini, group_k_fold, k_fold, ks_uniform, lift,
-        likelihood_ratio_test, log_score, loo_pit, loss_ratio_chart, lppd, mcmc_diagnostics,
+        likelihood_ratio_test, log_score, loo_pit, loss_ratio_chart, lppd, mars, mcmc_diagnostics,
         normalized_gini, permutation, pinball_loss, pit, pit_from_draws, pit_histogram, ppc_check,
         pseudo_bma_weights, quantile_residuals, roc, simulate_from_means, stacking_weights,
         target_encode, time_ordered, tweedie_profile, vif,
@@ -115,7 +115,10 @@ mod prospicio_native {
         product_limit,
     };
     #[pymodule_export]
-    use super::payout::{PyPaymentPattern, PyPayoutPrice, price_over_payout};
+    use super::payout::{
+        PyIrrResult, PyPaymentPattern, PyPayoutPrice, irr, leverage, moic, npv, price_over_payout,
+        tiered_fee,
+    };
     #[pymodule_export]
     use super::pnl::{
         PyBook, PyExpense, PyGroup, PyLedger, PyLeg, derive_premium, occurrence_source,
@@ -158,8 +161,9 @@ mod prospicio_native {
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
         PyLevelAllocation, PyNestedArchimedeanCopula, PyPairCopula, PyPotTail, PyStudentTCopula,
-        PyVineCopula, allocate, calibrate, capital, covar, entropic, equal_risk, esscher,
-        esscher_allocation, haircut, hill, iman_conover, marginal_expected_shortfall, mean_excess,
-        rearrange, shapley, simulate, threshold_diagnostics, worst_var,
+        PyVineCopula, allocate, calibrate, capital, co_statistics, covar, entropic, equal_risk,
+        esscher, esscher_allocation, haircut, hill, iman_conover, marginal_expected_shortfall,
+        mean_excess, rearrange, risk_ratios, shapley, simulate, statistics, threshold_diagnostics,
+        worst_var,
     };
 }

@@ -15,6 +15,7 @@ xol_layer(
   premium = 0,
   reinstatement_rates = NULL,
   pro_rata_time = FALSE,
+  allocation = "event_order",
   ptr = NULL
 )
 }
@@ -49,6 +50,15 @@ limit a loss at time \code{t} (the fraction of the year elapsed) uses up is
 charged at \code{1 - t}. Needs \code{reinstatement_rates}, and events with times
 (\code{\link[=with_uniform_times]{with_uniform_times()}}, or \code{times} in \code{\link[=events_from_years]{events_from_years()}}).}
 
+\item{allocation}{How the annual terms (aggregate deductible and limit,
+reinstatements) split the year's recovery among its events:
+\code{"event_order"} uses the aggregate limit up in the order the events
+occur, so a later event gets what is left; \code{"pro_rata"} scales every
+event's recovery by the same factor, the annual recovery after the terms
+over the one before them. The annual total is the same; the split by
+event, and so what an inuring stage sees, differs. Cannot be combined
+with \code{pro_rata_time}.}
+
 \item{ptr}{Internal: an existing layer to wrap.}
 }
 \value{
@@ -75,6 +85,9 @@ reinstatement_premium(paid, c(22, 12))
 timed <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5),
                    pro_rata_time = TRUE)
 reinstatement_premium(timed, c(22, 12), times = c(0.25, 0.5))
+ceded_by_event(xol_layer("10x5", 10, 5, reinstatements = 1), c(15, 20, 10))
+ceded_by_event(xol_layer("10x5", 10, 5, reinstatements = 1, allocation = "pro_rata"),
+               c(15, 20, 10))
 }
 \seealso{
 \code{\link[=quota_share]{quota_share()}} and \code{\link[=aggregate_stop_loss]{aggregate_stop_loss()}} for the other contract

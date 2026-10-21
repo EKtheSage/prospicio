@@ -48,7 +48,13 @@ tvar_threshold_rust <- function(values, probs, p) .Call(wrap__tvar_threshold_rus
 
 join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rust, parts, labels, dim, same_simulations)
 
-reorder_groups_rust <- function(pd, dim, correlation, seed) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed)
+reorder_groups_rust <- function(pd, dim, correlation, seed, kind) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed, kind)
+
+reorder_groups_by_copula_rust <- function(pd, dim, copula, seed) .Call(wrap__reorder_groups_by_copula_rust, pd, dim, copula, seed)
+
+correlation_from_pairs_rust <- function(pd, dim, first, second, values) .Call(wrap__correlation_from_pairs_rust, pd, dim, first, second, values)
+
+group_spearman_rust <- function(pd, dim) .Call(wrap__group_spearman_rust, pd, dim)
 
 blend_rust <- function(models, weights, seed) .Call(wrap__blend_rust, models, weights, seed)
 
@@ -89,6 +95,8 @@ layer_loss_picks_rust <- function(severity, attachments, picks, claims) .Call(wr
 occurrence_exceedance_rust <- function(frequency, severity, x) .Call(wrap__occurrence_exceedance_rust, frequency, severity, x)
 
 occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_pml_rust, frequency, severity, p)
+
+ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
 
 credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
 
@@ -156,6 +164,8 @@ permutation_rust <- function(n, seed, stream) .Call(wrap__permutation_rust, n, s
 
 target_encode_rust <- function(values, y, expected, exposure, trains, tests, k) .Call(wrap__target_encode_rust, values, y, expected, exposure, trains, tests, k)
 
+mars_rust <- function(names, columns, y, weights, max_terms, threshold, penalty, min_span, end_span, prune, family_name, link_name) .Call(wrap__mars_rust, names, columns, y, weights, max_terms, threshold, penalty, min_span, end_span, prune, family_name, link_name)
+
 group_k_fold_rust <- function(groups, k, seed) .Call(wrap__group_k_fold_rust, groups, k, seed)
 
 time_ordered_rust <- function(periods, n_test) .Call(wrap__time_ordered_rust, periods, n_test)
@@ -191,6 +201,16 @@ pricing_payment_pattern <- function(times, values, from_development) .Call(wrap_
 pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_pattern_values, times, shares, rate, t)
 
 pricing_price_over_payout <- function(expected_loss, premium, assets, times, shares, rate, coc) .Call(wrap__pricing_price_over_payout, expected_loss, premium, assets, times, shares, rate, coc)
+
+pricing_npv <- function(flows, times, rate, unit) .Call(wrap__pricing_npv, flows, times, rate, unit)
+
+pricing_irr <- function(flows, times, unit, lower, upper, points, bisections, newton_steps) .Call(wrap__pricing_irr, flows, times, unit, lower, upper, points, bisections, newton_steps)
+
+pricing_moic <- function(released, funded, opening) .Call(wrap__pricing_moic, released, funded, opening)
+
+pricing_leverage <- function(rate, premium, funded, opening) .Call(wrap__pricing_leverage, rate, premium, funded, opening)
+
+pricing_tiered_fee <- function(margins, breakpoints, slopes) .Call(wrap__pricing_tiered_fee, margins, breakpoints, slopes)
 
 pricing_development_pattern <- function(ids, age, amount, ages) .Call(wrap__pricing_development_pattern, ids, age, amount, ages)
 
@@ -258,6 +278,12 @@ aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .C
 
 occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, attachment) .Call(wrap__occurrence_layer_statistics_rust, frequency, severity, share, limit, attachment)
 
+statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
+
+co_statistics_rust <- function(driver, items, percentiles, tvar_levels, rule) .Call(wrap__co_statistics_rust, driver, items, percentiles, tvar_levels, rule)
+
+risk_ratios_rust <- function(draws, threshold, sortino, omega, tvar_levels, tvar) .Call(wrap__risk_ratios_rust, draws, threshold, sortino, omega, tvar_levels, tvar)
+
 entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)
 
 esscher_rust <- function(draws, h) .Call(wrap__esscher_rust, draws, h)
@@ -292,7 +318,17 @@ EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__Eve
 
 EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
 
-EventSet$from_long <- function(years, losses, n_years, seed) .Call(wrap__EventSet__from_long, years, losses, n_years, seed)
+EventSet$from_long <- function(years, losses, n_years, seed, label_dims, label_values) .Call(wrap__EventSet__from_long, years, losses, n_years, seed, label_dims, label_values)
+
+EventSet$from_ylt <- function(years, losses, slots, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash) .Call(wrap__EventSet__from_ylt, years, losses, slots, label_dims, label_values, n_years, n_sims, expand, seed, unique_by, expected_dims, expected_values, source_hash)
+
+EventSet$with_labels <- function(dims, values) .Call(wrap__EventSet__with_labels, self, dims, values)
+
+EventSet$label_dims <- function() .Call(wrap__EventSet__label_dims, self)
+
+EventSet$label_combinations <- function() .Call(wrap__EventSet__label_combinations, self)
+
+EventSet$labels <- function(sim) .Call(wrap__EventSet__labels, self, sim)
 
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 
@@ -315,6 +351,8 @@ EventSet$sums_insured <- function(sim) .Call(wrap__EventSet__sums_insured, self,
 EventSet$n_sims <- function() .Call(wrap__EventSet__n_sims, self)
 
 EventSet$seed <- function() .Call(wrap__EventSet__seed, self)
+
+EventSet$input_hash <- function() .Call(wrap__EventSet__input_hash, self)
 
 EventSet$events <- function(sim) .Call(wrap__EventSet__events, self, sim)
 
@@ -346,7 +384,7 @@ HierarchicalCredibilityR$predictive <- function(weights, n_sims, seed) .Call(wra
 
 XolLayer <- new.env(parent = emptyenv())
 
-XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time) .Call(wrap__XolLayer__new, name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time)
+XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time, allocation) .Call(wrap__XolLayer__new, name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time, allocation)
 
 XolLayer$quota_share <- function(name, cession) .Call(wrap__XolLayer__quota_share, name, cession)
 
@@ -379,6 +417,8 @@ XolLayer$ceded <- function(losses) .Call(wrap__XolLayer__ceded, self, losses)
 XolLayer$ceded_by_event <- function(losses) .Call(wrap__XolLayer__ceded_by_event, self, losses)
 
 XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
+
+XolLayer$allocation <- function() .Call(wrap__XolLayer__allocation, self)
 
 XolLayer$with_loss_corridor <- function(lower, upper, retained) .Call(wrap__XolLayer__with_loss_corridor, self, lower, upper, retained)
 
@@ -453,6 +493,8 @@ ReinsuranceTower$on_grid <- function(frequency, severity, points) .Call(wrap__Re
 ReinsuranceTower$on_annual_grid <- function(annual) .Call(wrap__ReinsuranceTower__on_annual_grid, self, annual)
 
 ReinsuranceTower$apply_aggregate <- function(losses) .Call(wrap__ReinsuranceTower__apply_aggregate, self, losses)
+
+ReinsuranceTower$apply_annual <- function(losses) .Call(wrap__ReinsuranceTower__apply_annual, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
 
@@ -751,9 +793,9 @@ Sampled$cdf <- function(x) .Call(wrap__Sampled__cdf, self, x)
 
 Sampled$quantile <- function(p) .Call(wrap__Sampled__quantile, self, p)
 
-Sampled$var <- function(p) .Call(wrap__Sampled__var, self, p)
+Sampled$var <- function(p, method) .Call(wrap__Sampled__var, self, p, method)
 
-Sampled$tvar <- function(p) .Call(wrap__Sampled__tvar, self, p)
+Sampled$tvar <- function(p, method) .Call(wrap__Sampled__tvar, self, p, method)
 
 #' @export
 `$.Sampled` <- function (self, name) { func <- Sampled[[name]]; environment(func) <- environment(); func }
@@ -780,6 +822,8 @@ PredictiveDistribution$marginal <- function(key) .Call(wrap__PredictiveDistribut
 PredictiveDistribution$aggregate <- function(keep) .Call(wrap__PredictiveDistribution__aggregate, self, keep)
 
 PredictiveDistribution$select <- function(dim, keys) .Call(wrap__PredictiveDistribution__select, self, dim, keys)
+
+PredictiveDistribution$scale_to_totals <- function(totals) .Call(wrap__PredictiveDistribution__scale_to_totals, self, totals)
 
 PredictiveDistribution$total <- function() .Call(wrap__PredictiveDistribution__total, self)
 

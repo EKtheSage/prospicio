@@ -2090,3 +2090,13 @@ def test_tails_with_dependence():
             assert sorted(x) == sorted(y)
         x, y = line_totals(ranked)
         assert abs(spearman(x, y) - 0.5) < 4 * 0.75 / math.sqrt(2000)
+
+
+def test_mack_cdr_property_is_the_claims_development_result():
+    mack = Mack(sigma_interpolation="mack").fit(dataset("mw2008"), "values")
+    cdr = mack.cdr
+    assert isinstance(cdr, ClaimsDevelopmentResult)
+    assert cdr.total_one_year_standard_error == pytest.approx(81_080, abs=1)
+    alias = mack.claims_development_result()
+    assert alias.one_year_standard_error == cdr.one_year_standard_error
+    assert alias.total_by_calendar_year == cdr.total_by_calendar_year

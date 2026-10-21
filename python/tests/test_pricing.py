@@ -723,3 +723,39 @@ def test_tower_diagnostics_and_alpha_bounds():
     with pytest.raises(ValueError) as e:
         fit_references([(5.0, 5.0, 3.0)], [(5.0, 0.2)])
     assert "NaN" not in str(e.value)
+
+
+def test_return_metrics_on_cash_flows():
+    from prospicio.pricing import irr, leverage, moic, npv, tiered_fee
+
+    # One root at 10%; two at 10% and 20%, the one nearest 0 reported; none.
+    flows = [[-100.0, 0.0, 121.0], [-100.0, 230.0, -132.0], [10.0, 5.0, 1.0]]
+    r = irr(flows, [0.0, 1.0, 2.0])
+    assert len(r) == 3
+    assert r.rate[:2] == pytest.approx([0.1, 0.1], rel=1e-12)
+    assert r.found == [True, True, False]
+    assert r.sign_changes == [1, 2, 0]
+    assert math.isnan(r.rate[2]) and math.isnan(r.npv[2])
+    assert abs(r.npv[0]) < 1e-9
+    # Searched from 15% only the root at 20% is seen.
+    assert irr(flows[1:2], [0.0, 1.0, 2.0], lower=0.15).rate[0] == pytest.approx(0.2, rel=1e-12)
+    # Monthly against actual/365 on the same flows.
+    q = [[-100.0, 0.0, 0.0, 103.0]]
+    by_month = irr(q, [0.0, 1.0, 2.0, 3.0], unit="months").rate[0]
+    by_day = irr(q, [0.0, 31.0, 59.0, 90.0], unit="days").rate[0]
+    assert by_month == pytest.approx(1.03 ** 4 - 1, rel=1e-12)
+    assert by_day == pytest.approx(1.03 ** (365 / 90) - 1, rel=1e-12)
+    assert npv(q, [0.0, 1.0, 2.0, 3.0], by_month, unit="months")[0] == pytest.approx(0.0, abs=1e-9)
+    assert npv([[-50.0, 60.0]], [0.0, 1.0], 0.05)[0] == pytest.approx(-50.0 + 60.0 / 1.05, rel=1e-12)
+    assert moic(30.0, 40.0, 60.0) == pytest.approx(1.3, rel=1e-15)
+    assert leverage(0.5, 300.0, 50.0, 100.0) == pytest.approx(1.0, rel=1e-15)
+    fee = tiered_fee([-5.0, 10.0, 20.0, 50.0], [0.0, 10.0, 30.0], [0.05, 0.1, 0.25])
+    assert fee == pytest.approx([0.0, 0.5, 1.5, 7.5], rel=1e-14)
+    with pytest.raises(ValueError):
+        irr([[1.0, 2.0], [1.0]], [0.0, 1.0])
+    with pytest.raises(ValueError):
+        npv([[1.0]], [0.0], 0.1, unit="weeks")
+    with pytest.raises(ValueError):
+        moic(1.0, 0.0, 0.0)
+    with pytest.raises(ValueError):
+        tiered_fee([1.0], [1.0, 1.0], [0.1, 0.2])

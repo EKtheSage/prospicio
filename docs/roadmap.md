@@ -416,6 +416,10 @@ what it is aiming for by v1.0.
   (done), and `Compartmental::one_year_segments` gives the one-year view
   over segments (decision 8; Rust, Python and R).
   Claim-level reserving (v0.8) is parked; see the milestones.
+  Also next: excess-layer loss development (#192,
+  `reserving-excess.md`, Proposed): layer factors derived from a ground-up
+  incurred triangle and a severity, credibility blending with them, and a
+  BF prior from the layer share; PR 1 waits on the note's open decisions.
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

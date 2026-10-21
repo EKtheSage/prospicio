@@ -2497,3 +2497,201 @@ fn bayes_glmm_on_the_slopes_book_is_near_the_laplace_fit() {
         "an effect is {worst} posterior sds off its mode"
     );
 }
+
+/// The Chalk portfolio's numeric predictors (age, vehicle age, experience,
+/// noise), claim frequency and exposure.
+fn chalk() -> (Vec<Vec<f64>>, Vec<f64>, Vec<f64>) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../examples/data/chalk_portfolio.csv");
+    let text = std::fs::read_to_string(path).unwrap();
+    let mut lines = text.lines().filter(|l| !l.starts_with('#'));
+    let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let col = |name: &str| header.iter().position(|h| *h == name).unwrap();
+    let (age, veh, exper, noise, exposure, claims) = (
+        col("age"),
+        col("veh_age"),
+        col("exper"),
+        col("noise"),
+        col("exposure"),
+        col("claims"),
+    );
+    let mut x = vec![Vec::new(); 4];
+    let (mut y, mut w) = (Vec::new(), Vec::new());
+    for line in lines {
+        let f: Vec<&str> = line.split(',').collect();
+        let num = |i: usize| f[i].parse::<f64>().unwrap();
+        for (j, &i) in [age, veh, exper, noise].iter().enumerate() {
+            x[j].push(num(i));
+        }
+        w.push(num(exposure));
+        y.push(num(claims) / num(exposure));
+    }
+    (x, y, w)
+}
+
+/// MARS's forward and backward passes against R's `earth` 5.3.6 on the
+/// Chalk portfolio, `freq ~ age + veh_age + exper + noise`, `degree = 1`,
+/// unweighted and weighted by exposure: the knots, directions and order of
+/// every term, the RSS and the GCV. `validation/scripts/r_mars_earth.R`
+/// prints these.
+#[test]
+#[allow(clippy::excessive_precision)]
+fn mars_matches_earth_on_the_chalk_portfolio() {
+    use Direction::{Down, Up};
+    use prospicio_glm::mars::{Direction, Mars, MarsFit};
+    let (x, y, w) = chalk();
+    let names = ["age", "veh_age", "exper", "noise"];
+    let check =
+        |label: &str, fit: &MarsFit, terms: &[(usize, Direction, f64)], rss: f64, gcv: f64| {
+            let got: Vec<(usize, Direction, f64)> = fit
+                .terms()
+                .iter()
+                .map(|t| (t.variable, t.direction, t.knot))
+                .collect();
+            assert_eq!(got, terms, "{label}");
+            assert!(
+                (fit.rss() / rss - 1.0).abs() < 1e-10,
+                "{label}: rss {} against {rss}",
+                fit.rss()
+            );
+            assert!(
+                (fit.gcv() / gcv - 1.0).abs() < 1e-10,
+                "{label}: gcv {} against {gcv}",
+                fit.gcv()
+            );
+        };
+    // earth(..., pmethod = "none"): the defaults stop on the R² threshold.
+    let fit = Mars::new().fit(&names, &x, &y, None).unwrap();
+    check(
+        "default",
+        &fit,
+        &[(0, Up, 28.0), (0, Down, 28.0), (1, Up, 5.0), (1, Down, 5.0)],
+        7229.20770861623,
+        0.36178591949671,
+    );
+    let fit = Mars::new().fit(&names, &x, &y, Some(&w)).unwrap();
+    check(
+        "weighted",
+        &fit,
+        &[(0, Up, 26.0), (0, Down, 26.0), (1, Up, 5.0), (1, Down, 5.0)],
+        5175.71273734571,
+        0.259018701247121,
+    );
+    // thresh = 0, nk = 15: seven steps, pairs and single hinges.
+    let long = Mars::new().threshold(0.0).max_terms(15);
+    let fit = long.fit(&names, &x, &y, None).unwrap();
+    check(
+        "nk 15",
+        &fit,
+        &[
+            (0, Up, 28.0),
+            (0, Down, 28.0),
+            (1, Up, 5.0),
+            (1, Down, 5.0),
+            (2, Up, 37.0),
+            (2, Down, 37.0),
+            (0, Up, 79.0),
+            (2, Up, 53.0),
+            (1, Up, 7.0),
+            (0, Up, 76.0),
+        ],
+        7219.458147288,
+        0.361732146061438,
+    );
+    // Weighted, `earth` keeps h(7 - exper) in its forward pass and drops it
+    // as rank deficient afterwards; so does `forward_terms`.
+    let fit = long.fit(&names, &x, &y, Some(&w)).unwrap();
+    check(
+        "weighted nk 15",
+        &fit,
+        &[
+            (0, Up, 26.0),
+            (0, Down, 26.0),
+            (1, Up, 5.0),
+            (1, Down, 5.0),
+            (2, Up, 26.0),
+            (2, Down, 26.0),
+            (2, Up, 7.0),
+            (0, Up, 79.0),
+            (1, Up, 7.0),
+            (2, Up, 2.0),
+        ],
+        5166.57719014687,
+        0.258872205732776,
+    );
+    assert_eq!(fit.steps()[3].terms.len(), 2);
+    // earth(..., thresh = 0, nk = 15) with its default backward pass.
+    let fit = long.prune(true).fit(&names, &x, &y, None).unwrap();
+    check(
+        "backward",
+        &fit,
+        &[
+            (0, Down, 28.0),
+            (1, Down, 5.0),
+            (2, Up, 37.0),
+            (2, Up, 53.0),
+            (1, Up, 7.0),
+            (0, Up, 76.0),
+        ],
+        7223.67323614061,
+        0.361653658764754,
+    );
+}
+
+/// The knots feed `Terms`: `x` and hinges at the selected knots span
+/// `earth`'s pairs, so a weighted least squares refit on that design has
+/// `earth`'s RSS; and the deviance search on a Poisson frequency model
+/// reports the deviance of the GLM refit on its terms.
+#[test]
+fn mars_knots_feed_terms() {
+    use prospicio_glm::mars::Mars;
+    let (x, y, w) = chalk();
+    let names = ["age", "veh_age", "exper", "noise"];
+    let frame = Frame::new(
+        names
+            .iter()
+            .zip(&x)
+            .map(|(n, c)| (n.to_string(), Column::Numeric(c.clone())))
+            .collect(),
+    )
+    .unwrap();
+    let fit = Mars::new()
+        .threshold(0.0)
+        .max_terms(15)
+        .fit(&names, &x, &y, Some(&w))
+        .unwrap();
+    assert_eq!(fit.knots("exper").unwrap(), vec![2.0, 7.0, 26.0]);
+    assert!(fit.linear("exper").unwrap() && !fit.linear("noise").unwrap());
+    let design = fit
+        .add_terms(Terms::new().intercept())
+        .fit(&frame)
+        .unwrap()
+        .design(&frame)
+        .unwrap()
+        .with_weights(w.clone())
+        .unwrap();
+    let ls = Glm::new(Family::Gaussian, Link::Identity)
+        .fit(&design, &y)
+        .unwrap();
+    assert!((ls.deviance() / 5166.57719014687 - 1.0).abs() < 1e-9);
+
+    let poisson = Mars::new()
+        .glm(Family::Poisson, Link::Log)
+        .fit(&names, &x, &y, Some(&w))
+        .unwrap();
+    // The rate bends where the least squares search finds it.
+    assert_eq!(poisson.knots("age").unwrap(), vec![26.0]);
+    assert_eq!(poisson.knots("veh_age").unwrap(), vec![5.0]);
+    let design = poisson
+        .add_terms(Terms::new().intercept())
+        .fit(&frame)
+        .unwrap()
+        .design(&frame)
+        .unwrap()
+        .with_weights(w)
+        .unwrap();
+    let glm = Glm::new(Family::Poisson, Link::Log)
+        .fit(&design, &y)
+        .unwrap();
+    assert!((glm.deviance() / poisson.rss() - 1.0).abs() < 1e-9);
+}

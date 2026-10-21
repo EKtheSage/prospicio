@@ -2,8 +2,9 @@
 
 Status: **Implemented** (PR 1: event loss tables with secondary
 uncertainty, the OEP curve, simulated years, year loss tables; PR 2:
-merging event sets, the hours clause; clash stays parked) · Depends on:
-`EventSet`, towers · Lane: Aggregate · Issue: #196
+merging event sets, the hours clause; clash stays parked; PR 3: a year
+loss table checked and expanded, read from CSV or Parquet by the bindings)
+· Depends on: `EventSet`, towers · Lane: Aggregate · Issues: #196, #484
 
 ## Goal
 
@@ -35,6 +36,18 @@ PR 2: `EventSet::merge(&other)` puts two sets' losses in each year
 together (a cat event set with a non-cat one), and `EventSet::grouped(
 window_hours)` groups each year's losses into occurrences by an hours
 clause.
+
+PR 3 (#484): `prospicio_aggregate::ylt::YearLossTable` holds a vendor's
+year loss table as columns (each row's year from 1, loss, optional event
+slot and labels), checks it (`check_unique(dims)`: no repeated year and
+slot within the labels `dims`; `check_values(dim, expected)`; losses finite
+and non-negative and years from 1 on construction) and expands it to a
+run's simulations (`events(n_sims, Expansion::Tile | Resample { seed })`).
+`ylt::hash_bytes` hashes the source file, which the events carry as
+`EventSet::input_hash` into every result's provenance. Python
+`prospicio.aggregate.read_ylt(path, ...)` and R `read_ylt()` read CSV or
+Parquet (pyarrow or arrow, optional) into it; `EventSet.from_ylt` and
+`event_set_from_ylt()` take columns.
 
 Bindings: Python `prospicio.aggregate.EventLossTable`,
 `EventSet.from_long`, `EventSet.merge` and `EventSet.grouped`; R
@@ -79,6 +92,26 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
    set. A year is 8,760 hours; a window includes a loss exactly
    `window_hours` after its start. An occurrence's time is its window's
    start, and sums insured are not carried, since it spans risks.
+10. **A YLT's rows stay separate losses** (#484). Rows are ordered by year,
+    then slot, the file's order breaking ties. Rows that share a slot (one
+    event hitting several classes) are not summed into one occurrence, as
+    the reference model the issue reproduces does not sum them; a user who
+    wants one occurrence per event groups the rows first. The duplicate
+    check is by year, slot and the labels the user names (`unique_by`,
+    peril in the issue), every label by default, since which labels split
+    an event is the vendor's convention.
+11. **Tiling needs a whole multiple; resampling draws per simulation.**
+    `Tile` gives simulation `i` year `i mod n_years` and refuses a count
+    that is not a multiple of the table's years, which would weight the
+    early years more; `Resample` draws simulation `i`'s year from
+    `StreamRng::new(seed, i)`, so any simulation replays alone. `n_years`
+    is the largest year unless given, for a table whose last years have
+    no loss.
+12. **The file's hash is the results' input hash.** The bindings hash the
+    bytes they read (blake3 through `InputHasher`, so it is not a plain
+    blake3 of the file), and the events pass it to provenance's
+    `input_hash`; merging two sets with hashes hashes the pair in order.
+    The samplers stay unrecorded, as for any years from elsewhere.
 
 ## Validation
 
@@ -94,6 +127,12 @@ Bindings: Python `prospicio.aggregate.EventLossTable`,
   expected annual loss (`validation/tests/aggregate.rs`, module
   `event_loss_table`, 200,000 years).
 - The PML inverts the OEP to 1e-9.
+- A YLT orders its rows by year and slot, tiles (refusing a count that is
+  not a multiple), resamples each simulation from its own stream with
+  about equal shares of the years, names the rows a check fails on, and
+  carries the source hash into a result's provenance and through a merge
+  (unit tests in `ylt.rs`; Python and R tests read a synthetic CSV, and
+  Parquet when pyarrow is installed).
 
 ## Next
 

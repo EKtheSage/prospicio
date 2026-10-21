@@ -441,12 +441,17 @@ S7::method(print, grid_distribution) <- function(x, ...) {
 #' For a parametric severity or a [grid_distribution], `VaR()` is the lower
 #' quantile, as `quantile()`, and a severity's `TVaR()` is
 #' `VaR(p) + E[(X - VaR(p))+] / (1 - p)`, infinite where the mean is.
+#' For a [sampled], `method = "linear"` picks the other convention: `VaR()`
+#' is then `quantile(x, p, type = 7)` (numpy's default) and `TVaR()` the
+#' mean of that quantile function over `[p, 1]`; the defaults are
+#' `"inverted_cdf"` and `"exact"`.
 #'
 #' @param dist A [sampled], [predictive_distribution], [pot_tail],
 #'   [grid_distribution], or a severity ([lognormal], [pareto] and the
 #'   other parametric families).
 #' @param p Probabilities in `[0, 1]` (`[0, 1)` for a severity's `TVaR()`).
-#' @param ... Unused; for methods.
+#' @param ... For a [sampled], `method`: `"inverted_cdf"` or `"linear"` for
+#'   `VaR()`, `"exact"` or `"linear"` for `TVaR()`. Otherwise unused.
 #' @returns Numeric vector the length of `p`.
 #' @name risk_measures
 #' @examples
@@ -556,8 +561,12 @@ S7::method(quantile, sampled) <- function(x, probs, ...) {
   call[[1]] <- quote(quantile)
   rust_result(x@ptr$quantile(as.double(probs)), call)
 }
-S7::method(VaR, sampled) <- function(dist, p, ...) rust_result(dist@ptr$var(as.double(p)), s7_call())
-S7::method(TVaR, sampled) <- function(dist, p, ...) rust_result(dist@ptr$tvar(as.double(p)), s7_call())
+S7::method(VaR, sampled) <- function(dist, p, method = "inverted_cdf", ...) {
+  rust_result(dist@ptr$var(as.double(p), as.character(method)), s7_call())
+}
+S7::method(TVaR, sampled) <- function(dist, p, method = "exact", ...) {
+  rust_result(dist@ptr$tvar(as.double(p), as.character(method)), s7_call())
+}
 S7::method(print, sampled) <- function(x, ...) {
   cat(sprintf("<sampled> %d draws, mean = %s\n", length(x@draws), format(mean(x), digits = 6)))
   invisible(x)
@@ -713,7 +722,15 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #' by Iman-Conover on the group totals, moving each group's simulations as
 #' whole rows: every group keeps its distribution and internal joint
 #' structure. Use [aggregate()], [VaR()], [TVaR()] and [capital_allocation()]
-#' on the result.
+#' on the result. `group_spearman()` is Spearman's rho between the group
+#' totals (ties at their average rank, as `cor(method = "spearman")`), to
+#' check what `reorder_groups()` achieved.
+#' `reorder_groups_by_copula()` sets the dependence by a [copula] instead:
+#' `n` draws of uniforms (draw `i` on stream `i - 1` of `seed`, as
+#' [copula_sample()]), and each group's simulations, whole rows sorted by the
+#' group's total, take the ranks of its column. The group totals then have
+#' the copula's rank pattern, so a t, Gumbel or Clayton copula gives its
+#' joint tails to results already simulated.
 #'
 #' @param parts A named list of [predictive_distribution]s with the same
 #'   number of simulations.
@@ -724,15 +741,30 @@ S7::method(print, predictive_distribution) <- function(x, ...) {
 #'   reserve) and keep their pairing.
 #' @param x A [predictive_distribution].
 #' @param correlation Correlation matrix, one row and column per group in
-#'   order of first appearance.
+#'   order of first appearance (`unique(x@keys[[dim]])`), or a long table:
+#'   a data frame whose first two columns name a pair of groups and whose
+#'   third holds its value, each pair of distinct groups once.
+#' @param copula A [copula] with one dimension per group, in order of first
+#'   appearance.
 #' @param seed Seed, a whole number.
-#' @returns A [predictive_distribution].
+#' @param kind `"pearson"` (the default: the normal scores' correlation, so
+#'   Spearman's rho comes out near `(6 / pi) asin(r / 2)`) or `"spearman"`
+#'   (a Spearman target, converted to `2 sin(pi rho / 6)` first).
+#' @returns A [predictive_distribution]; `group_spearman()` a matrix with the
+#'   groups as dimnames.
 #' @name portfolio
 #' @examples
 #' a <- predictive_distribution(cbind(c(10, 12), c(20, 25)), data.frame(origin = c(2023, 2024)))
 #' b <- predictive_distribution(matrix(c(50, 40), ncol = 1), data.frame(lob = "motor"))
 #' p <- join_predictive(list(reserve = a, premium = b), "risk")
 #' p@keys
+#' n <- 4000
+#' pd <- predictive_distribution(cbind(0:(n - 1), ((0:(n - 1)) * 7919) %% n),
+#'                               data.frame(seg = c("a", "b")))
+#' rho <- data.frame(from = "a", to = "b", rho = 0.6)
+#' group_spearman(reorder_groups(pd, "seg", rho, seed = 5, kind = "spearman"), "seg")
+#' # Clayton with theta = 2: Spearman's rho near 0.68, more joint low totals.
+#' group_spearman(reorder_groups_by_copula(pd, "seg", archimedean_copula("clayton", 2), 5), "seg")
 NULL
 
 #' One part of a predictive distribution
@@ -757,6 +789,26 @@ select_components <- function(dist, dim, keys) {
   predictive_distribution(ptr = rust_result(dist@ptr$select(as.character(dim), keys)))
 }
 
+#' Rescale components to new totals
+#'
+#' Every simulation's components rescaled pro rata to a new total: component
+#' `k` in simulation `s` becomes `c[s, k] * totals[s] / sum(c[s, ])`
+#' (unchanged when the components sum to 0). This carries a total computed
+#' from the components, a loss-ratio cap over several classes or a stop loss
+#' on a mix of perils, back onto them in proportion to their shares; it is
+#' not a capital allocation. The keys and dimensions are kept.
+#'
+#' @param dist A [predictive_distribution].
+#' @param totals One total per simulation.
+#' @returns A [predictive_distribution].
+#' @export
+#' @examples
+#' pd <- predictive_distribution(matrix(c(6, 3, 9, 1), ncol = 2), data.frame(class = c("motor", "home")))
+#' draw_matrix(scale_to_totals(pd, pmin(rowSums(draw_matrix(pd)), 10)))
+scale_to_totals <- function(dist, totals) {
+  predictive_distribution(ptr = rust_result(dist@ptr$scale_to_totals(as.double(totals))))
+}
+
 #' @rdname portfolio
 #' @export
 join_predictive <- function(parts, dim, same_simulations = FALSE) {
@@ -767,11 +819,34 @@ join_predictive <- function(parts, dim, same_simulations = FALSE) {
 
 #' @rdname portfolio
 #' @export
-reorder_groups <- function(x, dim, correlation, seed) {
-  correlation <- as.matrix(correlation)
+reorder_groups <- function(x, dim, correlation, seed, kind = "pearson") {
+  if (is.data.frame(correlation)) {
+    if (ncol(correlation) != 3) stop("a long correlation table has three columns", call. = FALSE)
+    flat <- rust_result(correlation_from_pairs_rust(
+      x@ptr, dim, correlation[[1]], correlation[[2]], as.double(correlation[[3]])
+    ))
+  } else {
+    flat <- as.double(t(as.matrix(correlation)))
+  }
   predictive_distribution(ptr = rust_result(
-    reorder_groups_rust(x@ptr, dim, as.double(t(correlation)), as.double(seed))
+    reorder_groups_rust(x@ptr, dim, flat, as.double(seed), as.character(kind))
   ))
+}
+
+#' @rdname portfolio
+#' @export
+reorder_groups_by_copula <- function(x, dim, copula, seed) {
+  predictive_distribution(ptr = rust_result(
+    reorder_groups_by_copula_rust(x@ptr, dim, copula@ptr, as.double(seed))
+  ))
+}
+
+#' @rdname portfolio
+#' @export
+group_spearman <- function(x, dim) {
+  groups <- as.character(unique(x@keys[[dim]]))
+  m <- rust_result(group_spearman_rust(x@ptr, dim))
+  matrix(m, length(groups), byrow = TRUE, dimnames = list(groups, groups))
 }
 
 #' Blend predictive distributions
