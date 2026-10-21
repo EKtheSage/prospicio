@@ -146,6 +146,18 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   `["kind", "layer"]`: `(gross, ground_up)`, `(ceded, <name>)` per layer
   and `(net, retained)`. `aggregate(&["kind"])` gives gross, total ceded and
   net per year, and `net = gross − Σ ceded` holds in every year (tested).
+- **Labels split a tower's result** (#475). An `EventSet` may carry
+  labels, a value per loss in each label dimension (a peril, a class),
+  stored as an index into the sorted distinct combinations. With labels,
+  `Tower::apply` gives dimensions `["kind", "layer", <label dims>]`:
+  gross, each layer's ceded loss (the sum of its split by event, under the
+  layer's `LimitAllocation`) and net once per combination, and the annual
+  components (premiums and commissions) with `""` in every label
+  dimension, so `aggregate(&["kind", "layer"])` gives back the unlabelled
+  result and an unlabelled set's result is unchanged. `merge` keeps either
+  set's labels (this set's dimensions, then the other's new ones, `""` for
+  a missing value); `grouped` drops them, as it drops sums insured, since
+  an occurrence may span labels; a term's years (`apply_term`) ignore them.
 - **Quota share and stop-loss are layers.** A quota share with cession
   `c` is unlimited cover from 0 with `share = c`; a stop-loss `l` xs `r`
   is unlimited cover from 0 with `AAD = r` and `AAL = l`. One formula

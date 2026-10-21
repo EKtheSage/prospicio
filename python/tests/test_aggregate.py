@@ -1126,3 +1126,30 @@ def test_layer_third_moment():
     assert x.layer_third_moment(3.0, 0.0) == pytest.approx(want, rel=1e-10)
     assert x.layer_third_moment(math.inf, 0.0) == pytest.approx(48.0, rel=1e-10)
     assert Pareto(100.0, 2.5).layer_third_moment(math.inf, 0.0) == math.inf
+
+
+def test_tower_results_by_event_label():
+    from prospicio.aggregate import EventSet
+
+    events = EventSet.from_long(
+        [0, 0, 1, 1], [15.0, 20.0, 10.0, 4.0], 2,
+        labels={"peril": ["wind", "quake", "quake", "wind"]},
+    )
+    assert events.has_labels and events.label_dims == ["peril"]
+    assert events.labels(1) == {"peril": ["quake", "wind"]}
+    tower = Tower([Layer("10x5", 10.0, 5.0, aggregate_limit=15.0)])
+    result = tower.apply(events)
+    assert result.dims == ["kind", "layer", "peril"]
+    assert result.marginal(("ceded", "10x5", "wind")).draws == pytest.approx([10.0, 0.0])
+    assert result.marginal(("ceded", "10x5", "quake")).draws == pytest.approx([5.0, 5.0])
+    assert result.marginal(("net", "retained", "quake")).draws == pytest.approx([15.0, 5.0])
+    plain = tower.apply(EventSet.from_years([[15.0, 20.0], [10.0, 4.0]]))
+    back = result.aggregate(["kind", "layer"])
+    for key in [("gross", "ground_up"), ("ceded", "10x5"), ("net", "retained")]:
+        assert back.marginal(key).draws == pytest.approx(plain.marginal(key).draws)
+    # Merged with an unlabelled set, whose losses get "".
+    other = EventSet.from_years([[1.0], [2.0]])
+    merged = events.merge(other)
+    assert merged.label_combinations == [[""], ["quake"], ["wind"]]
+    with pytest.raises(ValueError):
+        events.with_labels({"kind": ["a"] * 4})

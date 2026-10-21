@@ -1119,6 +1119,14 @@ impl PyTower {
     /// with ``select("kind", ["ceded"])`` before joining it to a book:
     /// summing over ``kind`` adds gross, ceded and net together.
     ///
+    /// With labels on the events (``EventSet.with_labels``) the label
+    /// dimensions follow ``kind`` and ``layer``: gross, each layer's ceded
+    /// loss and net come once per combination in
+    /// ``events.label_combinations``, each the sum over that combination's
+    /// events (a layer's split by event under its ``allocation``), and the
+    /// other components get ``""`` labels. ``aggregate(["kind", "layer"])``
+    /// gives back the unlabelled result.
+    ///
     /// Parameters
     /// ----------
     /// events : EventSet

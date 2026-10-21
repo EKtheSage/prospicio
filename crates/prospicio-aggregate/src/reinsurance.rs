@@ -1343,6 +1343,18 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
     ) -> Vec<(f64, f64)> {
+        self.year_by_event(losses, si, times, None)
+    }
+
+    /// [`year`](Self::year), and with `by_event` each layer's ceded loss
+    /// by event (one vector per layer, in tower order).
+    fn year_by_event(
+        &self,
+        losses: &[f64],
+        si: Option<&[f64]>,
+        times: Option<&[f64]>,
+        mut by_event: Option<&mut Vec<Vec<f64>>>,
+    ) -> Vec<(f64, f64)> {
         let mut ceded = Vec::with_capacity(self.layers.len());
         let mut seen = losses.to_vec();
         let last_stage = self.stages.last().copied().unwrap_or(0);
@@ -1356,12 +1368,13 @@ impl Tower {
                     layer.share * layer.layer_loss(&seen, si),
                     layer.reinstatement_premium_at(&seen, si, times),
                 ));
-                if stage < last_stage {
-                    for (total, c) in stage_by_event
-                        .iter_mut()
-                        .zip(layer.ceded_by_event_si(&seen, si))
-                    {
+                if stage < last_stage || by_event.is_some() {
+                    let layer_by_event = layer.ceded_by_event_si(&seen, si);
+                    for (total, c) in stage_by_event.iter_mut().zip(&layer_by_event) {
                         *total += c;
+                    }
+                    if let Some(by_event) = by_event.as_deref_mut() {
+                        by_event.push(layer_by_event);
                     }
                 }
             }
@@ -1389,6 +1402,16 @@ impl Tower {
     /// `aggregate(&["kind"])` gives gross, total ceded and net (and the
     /// totals of the others); `net = gross - Σ ceded` in every year, so
     /// net is a loss, before any premium or commission.
+    ///
+    /// With labels on the events ([`EventSet::with_labels`]: a peril or a
+    /// class) the dimensions are `["kind", "layer", <label dimensions>]`:
+    /// gross, each layer's ceded loss and net come once for each
+    /// combination of labels in [`EventSet::label_combinations`], each the
+    /// sum over that combination's events (a layer's split by event, as
+    /// [`Layer::ceded_by_event`] gives it, under the layer's
+    /// [`LimitAllocation`]), and the other components, annual by nature,
+    /// get `""` in every label dimension. `aggregate(&["kind", "layer"])`
+    /// gives back the unlabelled result.
     ///
     /// Take one kind with `select("kind", ...)` before joining it to
     /// another distribution (the ceded part to a book, say): `aggregate(&[])`
@@ -1433,6 +1456,9 @@ impl Tower {
         // The events' seed, stream scheme and samplers (none for years
         // from elsewhere).
         let provenance = events.provenance("reinsurance_tower");
+        if events.has_labels() {
+            return self.apply_labeled(events, provenance);
+        }
         self.apply_years(
             (0..events.n_sims())
                 .map(|i| (events.events(i), events.sums_insured(i), events.times(i))),
@@ -1497,6 +1523,67 @@ impl Tower {
         )
     }
 
+    /// [`apply`](Self::apply) on labelled events: gross, each layer's
+    /// ceded loss and net by label combination, the other components with
+    /// `""` labels.
+    fn apply_labeled(&self, events: &EventSet, base: Provenance) -> Result<PredictiveDistribution> {
+        let labels = events.label_set().expect("the events carry labels");
+        let n_labels = labels.combinations.len();
+        let n_layers = self.layers.len();
+        let columns = Columns::new(self);
+        let unlabeled = columns.keys(self);
+        let blank = vec![KeyValue::from(""); labels.dims.len()];
+        let with = |key: &[KeyValue], combination: &[String]| -> Vec<KeyValue> {
+            key.iter()
+                .cloned()
+                .chain(combination.iter().map(|v| KeyValue::from(v.as_str())))
+                .collect()
+        };
+        // gross, each layer's ceded and net by label, in that order, then
+        // the annual components.
+        let mut components = Vec::new();
+        for key in &unlabeled[..n_layers + 2] {
+            for combination in &labels.combinations {
+                components.push(with(key, combination));
+            }
+        }
+        for key in &unlabeled[n_layers + 2..] {
+            components.push(key.iter().cloned().chain(blank.iter().cloned()).collect());
+        }
+        let n_sims = events.n_sims();
+        let mut draws = Vec::with_capacity(n_sims * components.len());
+        let mut annual = Vec::new();
+        for i in 0..n_sims {
+            let losses = events.events(i);
+            let (si, times) = (events.sums_insured(i), events.times(i));
+            let of = events.label_indices(i).expect("the events carry labels");
+            let mut by_event = Vec::with_capacity(n_layers);
+            let year = self.year_by_event(losses, si, times, Some(&mut by_event));
+            let by_label = |values: &[f64]| -> Vec<f64> {
+                let mut sums = vec![0.0; n_labels];
+                for (&x, &c) in values.iter().zip(of) {
+                    sums[c] += x;
+                }
+                sums
+            };
+            let gross = by_label(losses);
+            let ceded: Vec<Vec<f64>> = by_event.iter().map(|c| by_label(c)).collect();
+            draws.extend(&gross);
+            for c in &ceded {
+                draws.extend(c);
+            }
+            draws.extend((0..n_labels).map(|j| gross[j] - ceded.iter().map(|c| c[j]).sum::<f64>()));
+            // The annual components, as an unlabelled year writes them.
+            annual.clear();
+            let mut carried = vec![Carried::default(); 2 * n_layers];
+            self.push_terms(&columns, &mut annual, &year, 0, &mut carried);
+            draws.extend(&annual);
+        }
+        let mut dims = vec!["kind".to_string(), "layer".to_string()];
+        dims.extend(labels.dims.iter().cloned());
+        PredictiveDistribution::from_draws(dims, components, draws, self.terms_provenance(base))
+    }
+
     /// Indices of the layers that satisfy `f`.
     fn indices(&self, f: impl Fn(&Layer) -> bool) -> Vec<usize> {
         (0..self.layers.len())
@@ -1547,6 +1634,20 @@ impl Tower {
         let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
         draws.extend(year.iter().map(|(c, _)| c));
         draws.push(gross - ceded_total);
+        self.push_terms(columns, draws, &year, t, carried);
+    }
+
+    /// Appends one year's components after net: reinstatement and swing
+    /// premiums and commissions, from each layer's ceded loss and
+    /// reinstatement premium in `year`.
+    fn push_terms(
+        &self,
+        columns: &Columns,
+        draws: &mut Vec<f64>,
+        year: &[(f64, f64)],
+        t: usize,
+        carried: &mut [Carried],
+    ) {
         draws.extend(
             year.iter()
                 .zip(&columns.paid)
@@ -2309,6 +2410,89 @@ mod tests {
         .unwrap();
         assert_eq!(order.ceded(&losses), [20.0, 10.0]);
         assert_eq!(pro_rata.ceded(&losses), [20.0, 8.0]);
+    }
+
+    #[test]
+    fn labels_split_gross_ceded_and_net() {
+        // Two years: wind 15 and quake 20, then quake 10 and wind 4.
+        let events = EventSet::from_years(vec![vec![15.0, 20.0], vec![10.0, 4.0]], 3)
+            .unwrap()
+            .with_labels(vec![(
+                "peril".into(),
+                vec!["wind".into(), "quake".into(), "quake".into(), "wind".into()],
+            )])
+            .unwrap();
+        let layer = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .aggregate_limit(15.0)
+            .unwrap()
+            .ceding_commission(0.1)
+            .unwrap();
+        let tower = Tower::new(vec![layer]).unwrap();
+        let labeled = tower.apply(&events).unwrap();
+        assert_eq!(labeled.dims(), ["kind", "layer", "peril"]);
+        let key =
+            |k: &str, l: &str, p: &str| -> Vec<KeyValue> { vec![k.into(), l.into(), p.into()] };
+        let draws = |k: &str, l: &str, p: &str| {
+            prospicio_prob::Empirical::draws(&labeled.marginal(&key(k, l, p)).unwrap()).to_vec()
+        };
+        // Year 1 recovers 10 (wind) then 5 of quake's 10 under the limit;
+        // year 2 recovers 5 (quake) and nothing on 4.
+        assert_eq!(draws("gross", "ground_up", "wind"), [15.0, 4.0]);
+        assert_eq!(draws("ceded", "10x5", "wind"), [10.0, 0.0]);
+        assert_eq!(draws("ceded", "10x5", "quake"), [5.0, 5.0]);
+        assert_eq!(draws("net", "retained", "quake"), [15.0, 5.0]);
+        assert_eq!(draws("ceding_commission", "10x5", ""), [0.0, 0.0]);
+        // Summed over labels it is the unlabelled result.
+        let plain = tower
+            .apply(&EventSet::from_years(vec![vec![15.0, 20.0], vec![10.0, 4.0]], 3).unwrap())
+            .unwrap();
+        let back = labeled.aggregate(&["kind", "layer"]).unwrap();
+        for k in plain.components() {
+            assert_eq!(
+                prospicio_prob::Empirical::draws(&back.marginal(k).unwrap()),
+                prospicio_prob::Empirical::draws(&plain.marginal(k).unwrap()),
+            );
+        }
+        // Pro rata, quake's share of year 1 is 15 × 10 / 20.
+        let pro = Tower::new(vec![
+            Layer::xol("10x5", 10.0, 5.0)
+                .unwrap()
+                .aggregate_limit(15.0)
+                .unwrap()
+                .allocation(LimitAllocation::ProRata)
+                .unwrap(),
+        ])
+        .unwrap()
+        .apply(&events)
+        .unwrap();
+        let quake = pro.marginal(&key("ceded", "10x5", "quake")).unwrap();
+        assert_eq!(prospicio_prob::Empirical::draws(&quake), [7.5, 5.0]);
+    }
+
+    #[test]
+    fn labels_split_what_an_inuring_stage_sees() {
+        let events = EventSet::from_years(vec![vec![15.0, 20.0, 10.0]], 0)
+            .unwrap()
+            .with_labels(vec![(
+                "class".into(),
+                vec!["a".into(), "b".into(), "a".into()],
+            )])
+            .unwrap();
+        let first = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .reinstatements(1)
+            .unwrap();
+        let second = Layer::xol("5x5", 5.0, 5.0).unwrap();
+        let tower = Tower::inuring(vec![vec![first], vec![second]]).unwrap();
+        let result = tower.apply(&events).unwrap();
+        let at = |l: &str, c: &str| {
+            let key: Vec<KeyValue> = vec!["ceded".into(), l.into(), c.into()];
+            prospicio_prob::Empirical::draws(&result.marginal(&key).unwrap())[0]
+        };
+        // Nets behind the first stage: 5, 10, 10, so 0 + 5 + 5 for 5x5.
+        assert_eq!((at("10x5", "a"), at("10x5", "b")), (10.0, 10.0));
+        assert_eq!((at("5x5", "a"), at("5x5", "b")), (5.0, 5.0));
     }
 
     #[test]

@@ -19,6 +19,6 @@ Each year's losses grouped into occurrences: losses within \code{window_hours}
 of the first loss of a window are one occurrence, whose loss is their sum
 and whose time is the window's start; the next loss after the window opens
 the next one. A year is 8,760 hours. Windows open at each first loss in
-turn, not where they would recover most. Needs times; sums insured are not
-carried.
+turn, not where they would recover most. Needs times; sums insured and
+labels are not carried (group each peril's set before merging them).
 }

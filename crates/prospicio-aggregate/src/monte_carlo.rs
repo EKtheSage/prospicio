@@ -18,7 +18,9 @@ use rayon::prelude::*;
 /// treaty needs, and the time in the year it happened
 /// ([`EventSet::with_times`], [`EventSet::with_uniform_times`],
 /// [`EventSet::with_seasonal_times`]), which reinstatement premiums pro
-/// rata as to time need.
+/// rata as to time need. Losses may carry labels too, a peril or a class
+/// ([`EventSet::with_labels`]), by which [`crate::Tower::apply`] splits
+/// its result.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EventSet {
     /// `offsets[i]..offsets[i + 1]` indexes year `i`'s losses.
@@ -29,15 +31,74 @@ pub struct EventSet {
     /// One per loss when known: the fraction of the year elapsed, in
     /// `[0, 1]`, non-decreasing within each year.
     times: Option<Vec<f64>>,
+    /// Each loss's labels, when given.
+    labels: Option<Labels>,
     seed: u64,
     /// The samplers the losses were drawn with, for results' provenance:
     /// this build's when it drew them, `None` for years from elsewhere.
     samplers: Option<Vec<(String, String)>>,
 }
 
+/// Each loss's value in every label dimension, stored as an index into the
+/// distinct combinations of values.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Labels {
+    pub(crate) dims: Vec<String>,
+    /// The distinct combinations, one value per dimension, sorted.
+    pub(crate) combinations: Vec<Vec<String>>,
+    /// Each loss's combination.
+    pub(crate) of_loss: Vec<usize>,
+}
+
+impl Labels {
+    /// From each loss's values, one per dimension.
+    fn new(dims: Vec<String>, per_loss: Vec<Vec<String>>) -> Self {
+        let mut combinations = per_loss.clone();
+        combinations.sort();
+        combinations.dedup();
+        let of_loss = per_loss
+            .iter()
+            .map(|c| {
+                combinations
+                    .binary_search(c)
+                    .expect("every loss's combination is listed")
+            })
+            .collect();
+        Self {
+            dims,
+            combinations,
+            of_loss,
+        }
+    }
+
+    /// Loss `k`'s values, one per dimension.
+    fn values(&self, k: usize) -> &[String] {
+        &self.combinations[self.of_loss[k]]
+    }
+}
+
 /// Year `i`'s event times come from stream `TIME_STREAM + i`, apart from
 /// the streams the years' losses were drawn from.
 const TIME_STREAM: u64 = 1 << 63;
+
+/// The rows of a long table in the order `from_long` lists them: by year,
+/// in their own order within each year. Checks the lengths and years.
+fn long_order(years: &[usize], n_losses: usize, n_years: usize) -> Result<Vec<usize>> {
+    if years.len() != n_losses {
+        return Err(Error::Data(format!(
+            "{} years for {n_losses} losses",
+            years.len()
+        )));
+    }
+    if let Some(&y) = years.iter().find(|&&y| y >= n_years) {
+        return Err(Error::Data(format!(
+            "year {y} is not below n_years = {n_years}"
+        )));
+    }
+    let mut order: Vec<usize> = (0..n_losses).collect();
+    order.sort_by_key(|&k| years[k]);
+    Ok(order)
+}
 
 /// Simulates `n_sims` years of claims: a count from `frequency`, then that
 /// many independent losses from `severity`.
@@ -104,6 +165,7 @@ where
         losses,
         sums_insured: None,
         times: None,
+        labels: None,
         seed,
         samplers: Some(current_samplers()),
     })
@@ -149,6 +211,7 @@ impl EventSet {
             losses,
             sums_insured: None,
             times: None,
+            labels: None,
             seed,
             samplers: None,
         })
@@ -167,21 +230,136 @@ impl EventSet {
     /// assert_eq!(events.events(2), &[5.0, 7.0]);
     /// ```
     pub fn from_long(years: &[usize], losses: &[f64], n_years: usize, seed: u64) -> Result<Self> {
-        if years.len() != losses.len() {
-            return Err(Error::Data(format!(
-                "{} years for {} losses",
-                years.len(),
-                losses.len()
-            )));
-        }
+        let order = long_order(years, losses.len(), n_years)?;
         let mut grouped = vec![Vec::new(); n_years];
-        for (&y, &x) in years.iter().zip(losses) {
-            let year = grouped
-                .get_mut(y)
-                .ok_or_else(|| Error::Data(format!("year {y} is not below n_years = {n_years}")))?;
-            year.push(x);
+        for &k in &order {
+            grouped[years[k]].push(losses[k]);
         }
         Self::from_years(grouped, seed)
+    }
+
+    /// [`EventSet::from_long`] with each row's labels: `labels` holds one
+    /// `(dimension, values)` pair per label dimension, a value per row, as
+    /// [`EventSet::with_labels`] takes them.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    ///
+    /// let peril = vec!["wind".to_string(), "quake".into(), "wind".into()];
+    /// let events =
+    ///     EventSet::from_long_labeled(&[2, 0, 2], &[5.0, 1.0, 7.0], vec![("peril".into(), peril)], 3, 0)
+    ///         .unwrap();
+    /// assert_eq!(events.events(2), &[5.0, 7.0]);
+    /// assert_eq!(events.labels(0).unwrap(), [["quake".to_string()]]);
+    /// ```
+    pub fn from_long_labeled(
+        years: &[usize],
+        losses: &[f64],
+        labels: Vec<(String, Vec<String>)>,
+        n_years: usize,
+        seed: u64,
+    ) -> Result<Self> {
+        let order = long_order(years, losses.len(), n_years)?;
+        for (dim, values) in &labels {
+            if values.len() != losses.len() {
+                return Err(Error::Data(format!(
+                    "{} values of label {dim:?} for {} losses",
+                    values.len(),
+                    losses.len()
+                )));
+            }
+        }
+        let events = Self::from_long(years, losses, n_years, seed)?;
+        let labels = labels
+            .into_iter()
+            .map(|(dim, values)| (dim, order.iter().map(|&k| values[k].clone()).collect()))
+            .collect();
+        events.with_labels(labels)
+    }
+
+    /// The same events with labels, a peril or a class say: one
+    /// `(dimension, values)` pair per label dimension, a value per loss,
+    /// years in order as [`EventSet::events`] lists them. Replaces any
+    /// labels the set had. [`crate::Tower::apply`] then gives each of its
+    /// gross, ceded and net components by label; `merge` keeps them.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    ///
+    /// let events = EventSet::from_years(vec![vec![5.0, 2.0], vec![9.0]], 0)
+    ///     .unwrap()
+    ///     .with_labels(vec![("peril".into(), vec!["wind".into(), "flood".into(), "wind".into()])])
+    ///     .unwrap();
+    /// assert_eq!(events.label_dims(), ["peril"]);
+    /// assert_eq!(events.label_combinations(), [["flood"], ["wind"]]);
+    /// ```
+    pub fn with_labels(mut self, labels: Vec<(String, Vec<String>)>) -> Result<Self> {
+        if labels.is_empty() {
+            return Err(Error::Data("give at least one label dimension".into()));
+        }
+        let n = self.losses.len();
+        for (i, (dim, values)) in labels.iter().enumerate() {
+            if dim.is_empty() || dim == "kind" || dim == "layer" {
+                return Err(Error::Data(format!(
+                    "label dimension {dim:?}: names must be non-empty and not \"kind\" or \"layer\""
+                )));
+            }
+            if labels[..i].iter().any(|(d, _)| d == dim) {
+                return Err(Error::Data(format!("label dimension {dim:?} is repeated")));
+            }
+            if values.len() != n {
+                return Err(Error::Data(format!(
+                    "{} values of label {dim:?} for {n} losses",
+                    values.len()
+                )));
+            }
+        }
+        let per_loss = (0..n)
+            .map(|k| labels.iter().map(|(_, v)| v[k].clone()).collect())
+            .collect();
+        let dims = labels.into_iter().map(|(d, _)| d).collect();
+        self.labels = Some(Labels::new(dims, per_loss));
+        Ok(self)
+    }
+
+    /// Whether the losses carry labels.
+    pub fn has_labels(&self) -> bool {
+        self.labels.is_some()
+    }
+
+    /// The label dimensions, empty without labels.
+    pub fn label_dims(&self) -> &[String] {
+        self.labels.as_ref().map_or(&[], |l| &l.dims)
+    }
+
+    /// The distinct combinations of label values among the losses, one
+    /// value per dimension, sorted: the labels of [`crate::Tower::apply`]'s
+    /// components. Empty without labels.
+    pub fn label_combinations(&self) -> &[Vec<String>] {
+        self.labels.as_ref().map_or(&[], |l| &l.combinations)
+    }
+
+    /// Year `sim`'s labels, when known: one value per dimension for each
+    /// loss.
+    pub fn labels(&self, sim: usize) -> Option<Vec<&[String]>> {
+        self.labels.as_ref().map(|l| {
+            (self.offsets[sim]..self.offsets[sim + 1])
+                .map(|k| l.values(k))
+                .collect()
+        })
+    }
+
+    /// The labels, for the tower.
+    pub(crate) fn label_set(&self) -> Option<&Labels> {
+        self.labels.as_ref()
+    }
+
+    /// Year `sim`'s losses' label combinations, as indices into
+    /// [`EventSet::label_combinations`].
+    pub(crate) fn label_indices(&self, sim: usize) -> Option<&[usize]> {
+        self.labels
+            .as_ref()
+            .map(|l| &l.of_loss[self.offsets[sim]..self.offsets[sim + 1]])
     }
 
     /// The same events, recorded as drawn with `samplers`
@@ -403,6 +581,10 @@ impl EventSet {
     /// With times on both, each year's losses are merged in time order
     /// (this set's first on a tie); with times on neither, this set's
     /// losses come first. Sums insured are kept when both sets carry them.
+    /// Labels are kept when either set carries them: the dimensions are
+    /// this set's, then the other's not among them, and a loss without a
+    /// value in a dimension gets `""` (so a labelled catastrophe set merged
+    /// with an unlabelled one leaves the other's losses labelled `""`).
     /// The seed is this set's; the samplers are kept only when the two
     /// agree.
     ///
@@ -440,6 +622,31 @@ impl EventSet {
         }
         let with_si = self.sums_insured.is_some();
         let with_times = self.times.is_some();
+        let mut dims: Vec<String> = self.label_dims().to_vec();
+        dims.extend(
+            other
+                .label_dims()
+                .iter()
+                .filter(|d| !self.label_dims().contains(d))
+                .cloned(),
+        );
+        let with_labels = !dims.is_empty();
+        // Each set's loss `k`'s values in the merged dimensions.
+        let values_in = |src: &EventSet, k: usize| -> Vec<String> {
+            let Some(l) = &src.labels else {
+                return vec![String::new(); dims.len()];
+            };
+            let values = l.values(k);
+            dims.iter()
+                .map(|d| {
+                    l.dims
+                        .iter()
+                        .position(|x| x == d)
+                        .map_or_else(String::new, |i| values[i].clone())
+                })
+                .collect()
+        };
+        let mut per_loss = Vec::new();
         let mut offsets = Vec::with_capacity(self.offsets.len());
         offsets.push(0);
         let mut losses = Vec::with_capacity(self.losses.len() + other.losses.len());
@@ -466,6 +673,9 @@ impl EventSet {
                 if with_times {
                     times.push(t);
                 }
+                if with_labels {
+                    per_loss.push(values_in(src, src.offsets[y] + k));
+                }
             }
             offsets.push(losses.len());
         }
@@ -474,6 +684,7 @@ impl EventSet {
             losses,
             sums_insured: with_si.then_some(sums),
             times: with_times.then_some(times),
+            labels: with_labels.then(|| Labels::new(dims.clone(), per_loss)),
             seed: self.seed,
             samplers: if self.samplers == other.samplers {
                 self.samplers.clone()
@@ -488,7 +699,9 @@ impl EventSet {
     /// occurrence, whose loss is their sum and whose time is the window's
     /// start; the next loss after the window opens the next one. A year is
     /// 8,760 hours (times are fractions of the year). Needs times; sums
-    /// insured are not carried, since an occurrence spans risks.
+    /// insured are not carried, since an occurrence spans risks, and nor
+    /// are labels: group each peril's set before merging them to keep
+    /// those.
     ///
     /// Windows open at each first loss in turn, rather than where they
     /// would recover most, which a cedant may choose.
@@ -543,6 +756,7 @@ impl EventSet {
             losses,
             sums_insured: None,
             times: Some(times),
+            labels: None,
             seed: self.seed,
             samplers: self.samplers.clone(),
         })
@@ -560,7 +774,8 @@ impl EventSet {
             .map(|t| &t[self.offsets[sim]..self.offsets[sim + 1]])
     }
 
-    /// Simulations `range` alone, with their sums insured and times.
+    /// Simulations `range` alone, with their sums insured, times and
+    /// labels.
     pub(crate) fn slice(&self, range: std::ops::Range<usize>) -> EventSet {
         let (lo, hi) = (self.offsets[range.start], self.offsets[range.end]);
         EventSet {
@@ -571,6 +786,13 @@ impl EventSet {
             losses: self.losses[lo..hi].to_vec(),
             sums_insured: self.sums_insured.as_ref().map(|s| s[lo..hi].to_vec()),
             times: self.times.as_ref().map(|t| t[lo..hi].to_vec()),
+            // Every combination stays, so each slice's results have the
+            // same components.
+            labels: self.labels.as_ref().map(|l| Labels {
+                dims: l.dims.clone(),
+                combinations: l.combinations.clone(),
+                of_loss: l.of_loss[lo..hi].to_vec(),
+            }),
             seed: self.seed,
             samplers: self.samplers.clone(),
         }
@@ -642,6 +864,85 @@ impl EventSet {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn merge_keeps_the_labels_of_either_set() {
+        let cat = EventSet::from_years(vec![vec![100.0], vec![]], 1)
+            .unwrap()
+            .with_labels(vec![("peril".into(), vec!["wind".into()])])
+            .unwrap();
+        let other = EventSet::from_years(vec![vec![3.0], vec![5.0]], 2)
+            .unwrap()
+            .with_labels(vec![("class".into(), vec!["motor".into(), "home".into()])])
+            .unwrap();
+        let all = cat.merge(&other).unwrap();
+        assert_eq!(all.label_dims(), ["peril", "class"]);
+        assert_eq!(all.events(0), &[100.0, 3.0]);
+        let year: Vec<Vec<String>> = all.labels(0).unwrap().iter().map(|v| v.to_vec()).collect();
+        assert_eq!(
+            year,
+            [
+                vec!["wind".to_string(), String::new()],
+                vec![String::new(), "motor".into()]
+            ]
+        );
+        // An unlabelled set's losses get "" in every dimension.
+        let plain = EventSet::from_years(vec![vec![1.0], vec![2.0]], 0).unwrap();
+        let mixed = plain.merge(&cat).unwrap();
+        assert_eq!(
+            mixed.label_combinations(),
+            [vec![String::new()], vec!["wind".to_string()]]
+        );
+        assert!(!plain.merge(&plain).unwrap().has_labels());
+        assert_eq!(
+            all.slice(1..2).label_combinations(),
+            all.label_combinations()
+        );
+        assert!(
+            all.with_uniform_times()
+                .grouped(72.0)
+                .map(|g| !g.has_labels())
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn labels_are_checked() {
+        let events = EventSet::from_years(vec![vec![1.0, 2.0]], 0).unwrap();
+        let two = || vec!["a".to_string(), "b".into()];
+        assert!(events.clone().with_labels(vec![]).is_err());
+        assert!(
+            events
+                .clone()
+                .with_labels(vec![("kind".into(), two())])
+                .is_err()
+        );
+        assert!(
+            events
+                .clone()
+                .with_labels(vec![("".into(), two())])
+                .is_err()
+        );
+        assert!(
+            events
+                .clone()
+                .with_labels(vec![("p".into(), two()), ("p".into(), two())])
+                .is_err()
+        );
+        assert!(
+            events
+                .clone()
+                .with_labels(vec![("p".into(), vec!["a".into()])])
+                .is_err()
+        );
+        assert!(
+            EventSet::from_long_labeled(&[0], &[1.0], vec![("p".into(), two())], 1, 0).is_err()
+        );
+        assert!(
+            EventSet::from_long_labeled(&[1], &[1.0], vec![("p".into(), vec!["a".into()])], 1, 0)
+                .is_err()
+        );
+    }
+
     use super::*;
     use crate::fft;
     use prospicio_prob::{Grid, NegativeBinomial, Poisson};

@@ -300,7 +300,15 @@ EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__Eve
 
 EventSet$from_years <- function(years, sums_insured, seed, times) .Call(wrap__EventSet__from_years, years, sums_insured, seed, times)
 
-EventSet$from_long <- function(years, losses, n_years, seed) .Call(wrap__EventSet__from_long, years, losses, n_years, seed)
+EventSet$from_long <- function(years, losses, n_years, seed, label_dims, label_values) .Call(wrap__EventSet__from_long, years, losses, n_years, seed, label_dims, label_values)
+
+EventSet$with_labels <- function(dims, values) .Call(wrap__EventSet__with_labels, self, dims, values)
+
+EventSet$label_dims <- function() .Call(wrap__EventSet__label_dims, self)
+
+EventSet$label_combinations <- function() .Call(wrap__EventSet__label_combinations, self)
+
+EventSet$labels <- function(sim) .Call(wrap__EventSet__labels, self, sim)
 
 EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 

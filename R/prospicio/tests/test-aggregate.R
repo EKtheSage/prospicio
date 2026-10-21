@@ -632,3 +632,18 @@ local({
   stopifnot(abs(mean(ceded) - mean(marginal(by_kind, list("ceded")))) < 1e-6 * mean(ceded))
   stopifnot(inherits(try(select_components(res, "kind", "none"), silent = TRUE), "try-error"))
 })
+
+# Results by event label.
+lab <- event_set_from_long(c(1, 1, 2, 2), c(15, 20, 10, 4), 2,
+                           labels = list(peril = c("wind", "quake", "quake", "wind")))
+stopifnot(identical(lab@label_dims, "peril"), identical(event_labels(lab, 2)$peril, c("quake", "wind")))
+stopifnot(identical(lab@label_combinations$peril, c("quake", "wind")))
+res <- apply_tower(reinsurance_tower(list(xol_layer("10x5", 10, 5, aggregate_limit = 15))), lab)
+stopifnot(identical(res@dims, c("kind", "layer", "peril")))
+plain <- apply_tower(reinsurance_tower(list(xol_layer("10x5", 10, 5, aggregate_limit = 15))),
+                     events_from_years(list(c(15, 20), c(10, 4))))
+close(draw_matrix(aggregate(res, keep = "kind")), draw_matrix(aggregate(plain, keep = "kind")), 1e-12)
+stopifnot(is.null(event_labels(events_from_years(list(1)), 1)))
+mixed <- merge_event_sets(lab, events_from_years(list(1, 2)))
+stopifnot(identical(mixed@label_combinations$peril, c("", "quake", "wind")))
+stopifnot(inherits(try(with_labels(lab, list(kind = rep("a", 4))), silent = TRUE), "try-error"))

@@ -25,6 +25,11 @@ layer with a profit commission. \code{aggregate(result, keep = "kind")} gives
 gross, total ceded and net per year; net is a loss, before premiums and
 commissions. Take one kind with \code{\link[=select_components]{select_components()}} before joining it
 to a book: summing over \code{kind} adds gross, ceded and net together.
+With labels on the events (\code{\link[=with_labels]{with_labels()}}) the label dimensions follow
+\code{kind} and \code{layer}: gross, each layer's ceded loss and net come once per
+row of the events' \code{label_combinations}, each the sum over that
+combination's events (a layer's split by event under its \code{allocation}),
+and the other components get \code{""} labels; \code{aggregate(result, keep = c("kind", "layer"))} gives back the unlabelled result.
 }
 \description{
 With an \code{event_set} each year's individual losses go through the tower.

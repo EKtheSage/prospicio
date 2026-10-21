@@ -650,3 +650,9 @@
   The annual total is unchanged; the split by event, and so what an inuring stage sees, differs.
   Refused with reinstatements pro rata as to time; written to a tower's JSON only when set. Python
   `Layer(..., allocation="pro_rata")`, R `xol_layer(..., allocation = "pro_rata")` (#476).
+- Labels on simulated events, a peril or a class, carried through a tower (`EventSet::with_labels`,
+  `from_long_labeled`, kept by `merge`): with labels `Tower::apply` gives gross, each layer's ceded
+  loss and net by label, with the label dimensions after `kind` and `layer` and the annual premiums
+  and commissions labelled `""`; under an annual limit the split follows the layer's allocation.
+  Unlabelled results are unchanged. Python `EventSet.with_labels`, `from_long(..., labels=)`,
+  `labels`, R `with_labels()`, `event_labels()`, `event_set_from_long(..., labels =)` (#475).
