@@ -16,8 +16,8 @@ segment(fit, ...)
 \arguments{
 \item{fit}{A \link{chain_ladder_fit}, \link{mack_fit}, \link{expected_loss_fit},
 \link{cape_cod_fit}, \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit},
-\link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{meyers_fit}, \link{meyers_fits},
-\link{one_year_fit}, \link{bayes_one_year_fit}, \link{bayes_one_year_fits}, \link{clark_fit},
+\link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{bayes_bf_normalised_fit},
+\link{meyers_fit}, \link{meyers_fits}, \link{one_year_fit}, \link{bayes_one_year_fit}, \link{bayes_one_year_fits}, \link{clark_fit},
 \link{compartmental_fit}, \link{compartmental_fits}, \link{compartmental_one_year_fit} or
 \link{compartmental_one_year_fits} (a \link{clark_fit} or
 a compartmental fit not for \code{development_frame()}).}
@@ -30,8 +30,8 @@ A data.frame, or for \code{segment()} a fit of the same class.
 \description{
 Tables of a \link{chain_ladder_fit}, \link{mack_fit}, \link{expected_loss_fit},
 \link{cape_cod_fit}, \link{odp_bootstrap_fit}, \link{mack_bootstrap_fit},
-\link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{meyers_fit}, \link{meyers_fits},
-\link{one_year_fit}, \link{bayes_one_year_fit}, \link{bayes_one_year_fits}, \link{clark_fit} or
+\link{bayes_odp_fit}, \link{bayes_odp_fits}, \link{bayes_bf_fit}, \link{bayes_bf_normalised_fit},
+\link{meyers_fit}, \link{meyers_fits}, \link{one_year_fit}, \link{bayes_one_year_fit}, \link{bayes_one_year_fits}, \link{clark_fit} or
 \link{compartmental_fit}, \link{compartmental_fits}, \link{compartmental_one_year_fit} or
 \link{compartmental_one_year_fits} with the triangle's key columns by name. \code{as.data.frame(fit)} has one row per
 segment and origin: \code{origin}, \code{latest}, \code{ultimate} and \code{reserve} (the
@@ -39,8 +39,9 @@ method's own), plus for Mack \code{process_risk}, \code{parameter_risk} and
 \code{standard_error}, for the expected-loss methods \code{exposure} and \code{apriori}
 (and Cape Cod's \code{trended_apriori}), for the bootstraps the \code{mean} and
 \code{std_dev} of the bootstrapped reserve (for \code{\link[=bayes_odp]{bayes_odp()}},
-\code{\link[=bayes_odp_segments]{bayes_odp_segments()}}, \code{\link[=bayes_bf]{bayes_bf()}}, \code{\link[=meyers]{meyers()}} and \code{\link[=meyers_segments]{meyers_segments()}} of the posterior
-predictive reserve; \code{\link[=bayes_bf]{bayes_bf()}} adds the \code{exposure} and \code{prior_ultimate}, \code{\link[=meyers]{meyers()}} and
+\code{\link[=bayes_odp_segments]{bayes_odp_segments()}}, \code{\link[=bayes_bf]{bayes_bf()}}, \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}}, \code{\link[=meyers]{meyers()}} and
+\code{\link[=meyers_segments]{meyers_segments()}} of the posterior predictive reserve; \code{\link[=bayes_bf]{bayes_bf()}} and
+\code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}} add the \code{exposure} and \code{prior_ultimate}, \code{\link[=meyers]{meyers()}} and
 \code{\link[=meyers_segments]{meyers_segments()}} add the \code{premium} and the
 \code{ultimate_mean} and \code{ultimate_std_dev} of the predictive ultimate), and
 for Clark (Cape Cod)
@@ -53,7 +54,7 @@ one-year view (and \code{\link[=bayes_odp_one_year]{bayes_odp_one_year()}}'s) na
 \code{totals_frame()} has one row per segment with the same quantities for
 the segment's total (for the expected-loss methods the total \code{exposure},
 for the ODP bootstrap, its one-year view, \code{\link[=bayes_odp]{bayes_odp()}},
-\code{\link[=bayes_odp_segments]{bayes_odp_segments()}} and \code{\link[=bayes_bf]{bayes_bf()}} also the \code{scale}, for
+\code{\link[=bayes_odp_segments]{bayes_odp_segments()}}, \code{\link[=bayes_bf]{bayes_bf()}} and \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}} also the \code{scale}, for
 \code{\link[=bayes_odp_one_year]{bayes_odp_one_year()}} the \code{scale} and \code{flagged_share};
 for Clark its \code{omega}, \code{theta}, \code{scale} and, for Cape Cod, \code{elr}).
 \code{development_frame()} has one row per segment and age: \code{development},

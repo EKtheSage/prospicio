@@ -34,8 +34,9 @@ use prospicio_reserving::bayes::{
     PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
-    BayesBf, BayesBfFit as BayesBfInner, BayesOdp, BayesOdpFit as BayesOdpInner, Diagnostics,
-    Meyers, MeyersFit as MeyersInner, MeyersModel,
+    BayesBf, BayesBfFit as BayesBfInner, BayesBfNormalised,
+    BayesBfNormalisedFit as BayesBfNormalisedInner, BayesOdp, BayesOdpFit as BayesOdpInner,
+    Diagnostics, Meyers, MeyersFit as MeyersInner, MeyersModel,
 };
 
 use prospicio_glm::Glm;
@@ -1648,6 +1649,72 @@ impl Triangle {
         })
     }
 
+    /// The Bayesian Bornhuetter-Ferguson with a normalised development
+    /// pattern, of a single-segment triangle column with each origin's
+    /// exposure from the `exposure` column: a gamma prior with mean
+    /// `apriori` times the exposure and coefficient of variation `cv`
+    /// (infinite for a flat prior) on each origin's expected ultimate, a
+    /// normal prior with sd `development_sd` on each log ratio of a share
+    /// of the ultimate to the first age's, `process` error ("gamma" or "none"), NUTS
+    /// with `chains`, `tune` and `draws` per chain, `target_accept` and
+    /// `max_depth`, and `n_sims` predictive simulations, all replayed from
+    /// `seed`.
+    #[allow(clippy::too_many_arguments)]
+    fn bayes_bf_normalised(
+        &self,
+        column: &str,
+        exposure: &str,
+        apriori: f64,
+        cv: f64,
+        development_sd: f64,
+        process: &str,
+        chains: f64,
+        tune: f64,
+        draws: f64,
+        n_sims: f64,
+        seed: f64,
+        target_accept: f64,
+        max_depth: f64,
+    ) -> Result<BayesBfNormalisedFit> {
+        let model = bayes_bf_normalised_model(
+            &[apriori, cv, development_sd],
+            process,
+            &[chains, tune, draws, n_sims, seed, target_accept, max_depth],
+        )?;
+        let inner = model.fit(&self.inner, column, exposure).map_err(to_r)?;
+        Ok(BayesBfNormalisedFit { inner })
+    }
+
+    /// The one-year view of `bayes_bf_normalised` on a single-segment triangle column
+    /// by PSIS reweighting: `priors` are `apriori`, `cv` and
+    /// `development_sd`, `run` is `chains`, `tune`, `draws`, `n_sims`,
+    /// `seed`, `target_accept` and `max_depth`; a simulation whose Pareto
+    /// k is above `k_threshold` is handled as `refit`
+    /// ("moment_match_then_refit", "refit_flagged", "reweight_only" or
+    /// "refit_all") says.
+    #[allow(clippy::too_many_arguments)]
+    fn bayes_bf_normalised_one_year(
+        &self,
+        column: &str,
+        exposure: &str,
+        priors: Vec<f64>,
+        process: &str,
+        run: Vec<f64>,
+        k_threshold: f64,
+        refit: &str,
+        max_refits: Nullable<f64>,
+        one_year_sims: Nullable<f64>,
+    ) -> Result<BayesOneYearFit> {
+        let model = bayes_bf_normalised_model(&priors, process, &run)?;
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, one_year_sims)?;
+        let inner = model
+            .one_year(&self.inner, column, exposure, &settings)
+            .map_err(to_r)?;
+        Ok(BayesOneYearFit {
+            inner: BayesOneYearOf::BfNormalised(inner),
+        })
+    }
+
     /// The lifetime view under Mack's bootstrap: each origin's reserve
     /// simulated to the last age with `process` ("gamma", "lognormal",
     /// "residuals", "normal" or "none"), Mack's model averaged as `average`
@@ -3010,6 +3077,41 @@ fn bayes_bf_model(priors: &[f64], process: &str, run: &[f64]) -> Result<BayesBf>
     })
 }
 
+/// The `BayesBfNormalised` of `bayes_bf_normalised` and
+/// `bayes_bf_normalised_one_year`: `priors` are
+/// `apriori`, `cv` and `development_sd`, `run` is `chains`, `tune`,
+/// `draws`, `n_sims`, `seed`, `target_accept` and `max_depth`.
+fn bayes_bf_normalised_model(
+    priors: &[f64],
+    process: &str,
+    run: &[f64],
+) -> Result<BayesBfNormalised> {
+    let (&[apriori, cv, development_sd], &[chains, tune, draws, n_sims, seed, ta, md]) =
+        (priors, run)
+    else {
+        return Err(Error::Other(
+            "bayes_bf_normalised_model takes 3 priors and 7 run settings".into(),
+        ));
+    };
+    let boot = bootstrap(n_sims, seed, process, SegmentDependence::Independent)?;
+    Ok(BayesBfNormalised {
+        apriori,
+        cv,
+        development_sd,
+        process: boot.process,
+        sampler: BayesSampler {
+            chains: whole(chains, "chains")? as usize,
+            tune: whole(tune, "tune")? as usize,
+            draws: whole(draws, "draws")? as usize,
+            seed: 0,
+            target_accept: ta,
+            max_depth: whole(md, "max_depth")?,
+        },
+        n_sims: boot.n_sims,
+        seed: boot.seed,
+    })
+}
+
 /// The settings of a Bayesian one-year view: `k_threshold`, the `refit`
 /// policy by name (`None` for the model's one-year default), the most refits
 /// (`NULL` for no limit) and the number
@@ -3062,6 +3164,7 @@ pub(crate) struct BayesOneYearFit {
 enum BayesOneYearOf {
     Odp(BayesOneYearInner<BayesOdpInner>),
     Bf(BayesOneYearInner<BayesBfInner>),
+    BfNormalised(BayesOneYearInner<BayesBfNormalisedInner>),
     Meyers(Box<BayesOneYearInner<MeyersInner>>),
 }
 
@@ -3071,6 +3174,7 @@ macro_rules! each_bayes_one_year {
         match $view {
             BayesOneYearOf::Odp($f) => $body,
             BayesOneYearOf::Bf($f) => $body,
+            BayesOneYearOf::BfNormalised($f) => $body,
             BayesOneYearOf::Meyers($f) => $body,
         }
     };
@@ -3078,11 +3182,13 @@ macro_rules! each_bayes_one_year {
 
 #[extendr]
 impl BayesOneYearFit {
-    /// The model behind the view: "bayes_odp", "bayes_bf" or "meyers".
+    /// The model behind the view: "bayes_odp", "bayes_bf",
+    /// "bayes_bf_normalised" or "meyers".
     fn model(&self) -> &'static str {
         match &self.inner {
             BayesOneYearOf::Odp(_) => "bayes_odp",
             BayesOneYearOf::Bf(_) => "bayes_bf",
+            BayesOneYearOf::BfNormalised(_) => "bayes_bf_normalised",
             BayesOneYearOf::Meyers(_) => "meyers",
         }
     }
@@ -3110,6 +3216,20 @@ impl BayesOneYearFit {
             }),
             _ => Err(Error::Other(format!(
                 "the one-year view is {}'s, not bayes_bf's",
+                self.model()
+            ))),
+        }
+    }
+
+    /// The lifetime fit, as `bayes_bf_normalised` gives it; an error for
+    /// another model.
+    fn bf_normalised_fit(&self) -> Result<BayesBfNormalisedFit> {
+        match &self.inner {
+            BayesOneYearOf::BfNormalised(f) => Ok(BayesBfNormalisedFit {
+                inner: f.fit.clone(),
+            }),
+            _ => Err(Error::Other(format!(
+                "the one-year view is {}'s, not bayes_bf_normalised's",
                 self.model()
             ))),
         }
@@ -3684,6 +3804,137 @@ impl MeyersFit {
 
     /// PSIS-LOO of the observed cells on the log scale: `list(estimates,
     /// pointwise, pareto_k, k_threshold)`, as `BayesGlmFit$loo()`.
+    fn loo(&self) -> Result<List> {
+        let l = self.inner.loo().map_err(to_r)?;
+        let e = &l.estimate;
+        Ok(list!(
+            estimates = vec![e.elpd, e.se, e.p, e.ic],
+            pointwise = e.pointwise.clone(),
+            pareto_k = l.pareto_k,
+            k_threshold = l.k_threshold
+        ))
+    }
+
+    fn long_table(&self) -> List {
+        fit_table(self.inner.to_long())
+    }
+
+    fn totals_table(&self) -> List {
+        fit_table(self.inner.totals())
+    }
+
+    fn development_table(&self) -> List {
+        fit_table(self.inner.development_table())
+    }
+
+    /// The fit itself, as for any single-segment fit without keys: a
+    /// condition on a key is an error.
+    fn segment(&self, keys: Vec<String>, values: Vec<String>) -> Result<Self> {
+        let one = SegmentFits {
+            key_names: Vec::new(),
+            labels: vec![Label::new(Vec::<String>::new())],
+            fits: vec![()],
+        };
+        pick(&one, keys, values)?;
+        Ok(Self {
+            inner: self.inner.clone(),
+        })
+    }
+}
+
+/// A Bayesian Bornhuetter-Ferguson with a normalised pattern of a
+/// single-segment triangle column.
+#[extendr]
+pub(crate) struct BayesBfNormalisedFit {
+    inner: BayesBfNormalisedInner,
+}
+
+#[extendr]
+impl BayesBfNormalisedFit {
+    /// The volume-weighted chain ladder the model takes its latest values
+    /// and scale from.
+    fn chain_ladder(&self) -> ChainLadderFit {
+        ChainLadderFit {
+            inner: SegmentFits {
+                key_names: Vec::new(),
+                labels: vec![Label::new(Vec::<String>::new())],
+                fits: vec![self.inner.chain_ladder.clone()],
+            },
+        }
+    }
+
+    fn scale(&self) -> f64 {
+        self.inner.scale
+    }
+
+    fn exposure(&self) -> Vec<f64> {
+        self.inner.exposure.clone()
+    }
+
+    fn prior_ultimate(&self) -> Vec<f64> {
+        self.inner.prior_ultimate.clone()
+    }
+
+    /// The posterior mean of each age's share of the ultimate.
+    fn pattern(&self) -> Vec<f64> {
+        self.inner.pattern()
+    }
+
+    /// The posterior mean of each origin's expected ultimate.
+    fn expected_ultimate(&self) -> Vec<f64> {
+        self.inner.expected_ultimate()
+    }
+
+    fn reserves(&self) -> PredictiveDistribution {
+        PredictiveDistribution {
+            inner: self.inner.reserves.clone(),
+        }
+    }
+
+    /// `list(max_rhat, min_ess_bulk, min_ess_tail, divergences, warnings)`.
+    fn diagnostics(&self) -> List {
+        let d = &self.inner.diagnostics;
+        list!(
+            max_rhat = d.max_rhat,
+            min_ess_bulk = d.min_ess_bulk,
+            min_ess_tail = d.min_ess_tail,
+            divergences = d.divergences as f64,
+            warnings = d.warnings.clone()
+        )
+    }
+
+    fn parameter_names(&self) -> Vec<String> {
+        self.inner.posterior.names().to_vec()
+    }
+
+    /// Posterior draws, row-major `n_draws x n_parameters`, chain by chain.
+    fn draws(&self) -> Vec<f64> {
+        self.inner.posterior.values().to_vec()
+    }
+
+    fn chains(&self) -> f64 {
+        self.inner.posterior.chains() as f64
+    }
+
+    /// The posterior summary, columns as `bayes_glm_model@summary`.
+    fn summary(&self) -> Result<List> {
+        let s = self.inner.summary().map_err(to_r)?;
+        let col = |g: fn(&ParamSummary) -> f64| s.iter().map(g).collect::<Vec<f64>>();
+        Ok(list!(
+            parameter = s.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
+            mean = col(|p| p.mean),
+            sd = col(|p| p.sd),
+            q05 = col(|p| p.q05),
+            q50 = col(|p| p.q50),
+            q95 = col(|p| p.q95),
+            rhat = col(|p| p.rhat),
+            ess_bulk = col(|p| p.ess_bulk),
+            ess_tail = col(|p| p.ess_tail)
+        ))
+    }
+
+    /// PSIS-LOO of the observed increments: `list(estimates, pointwise,
+    /// pareto_k, k_threshold)`, as `BayesGlmFit$loo()`.
     fn loo(&self) -> Result<List> {
         let l = self.inner.loo().map_err(to_r)?;
         let e = &l.estimate;
@@ -4875,6 +5126,7 @@ extendr_module! {
     impl CompartmentalOneYearFit;
     impl CompartmentalOneYearFits;
     impl BayesBfFit;
+    impl BayesBfNormalisedFit;
     impl MackBootstrapFit;
     impl OneYearFit;
     impl ClarkFit;

@@ -2223,6 +2223,10 @@ Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, pro
 
 Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims)
 
+Triangle$bayes_bf_normalised <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf_normalised, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
+
+Triangle$bayes_bf_normalised_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__bayes_bf_normalised_one_year, self, column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims)
+
 Triangle$mack_bootstrap <- function(column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf) .Call(wrap__Triangle__mack_bootstrap, self, column, n_sims, seed, process, average, sigma_interpolation, excl, centre_residuals, tail, tail_sigma, tail_std_err, dependence, spearman, ldf)
 
 Triangle$odp_one_year <- function(column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf) .Call(wrap__Triangle__odp_one_year, self, column, method, exposure, apriori, n_iters, trend, decay, average, sigma_interpolation, excl, tail, bootstrap_tail, tail_std_err, n_sims, seed, process, dependence, spearman, ldf, bootstrap_ldf)
@@ -2541,6 +2545,8 @@ BayesOneYearFit$model <- function() .Call(wrap__BayesOneYearFit__model, self)
 BayesOneYearFit$fit <- function() .Call(wrap__BayesOneYearFit__fit, self)
 
 BayesOneYearFit$bf_fit <- function() .Call(wrap__BayesOneYearFit__bf_fit, self)
+
+BayesOneYearFit$bf_normalised_fit <- function() .Call(wrap__BayesOneYearFit__bf_normalised_fit, self)
 
 BayesOneYearFit$meyers_fit <- function() .Call(wrap__BayesOneYearFit__meyers_fit, self)
 
@@ -2951,6 +2957,48 @@ BayesBfFit$segment <- function(keys, values) .Call(wrap__BayesBfFit__segment, se
 
 #' @export
 `[[.BayesBfFit` <- `$.BayesBfFit`
+
+BayesBfNormalisedFit <- new.env(parent = emptyenv())
+
+BayesBfNormalisedFit$chain_ladder <- function() .Call(wrap__BayesBfNormalisedFit__chain_ladder, self)
+
+BayesBfNormalisedFit$scale <- function() .Call(wrap__BayesBfNormalisedFit__scale, self)
+
+BayesBfNormalisedFit$exposure <- function() .Call(wrap__BayesBfNormalisedFit__exposure, self)
+
+BayesBfNormalisedFit$prior_ultimate <- function() .Call(wrap__BayesBfNormalisedFit__prior_ultimate, self)
+
+BayesBfNormalisedFit$pattern <- function() .Call(wrap__BayesBfNormalisedFit__pattern, self)
+
+BayesBfNormalisedFit$expected_ultimate <- function() .Call(wrap__BayesBfNormalisedFit__expected_ultimate, self)
+
+BayesBfNormalisedFit$reserves <- function() .Call(wrap__BayesBfNormalisedFit__reserves, self)
+
+BayesBfNormalisedFit$diagnostics <- function() .Call(wrap__BayesBfNormalisedFit__diagnostics, self)
+
+BayesBfNormalisedFit$parameter_names <- function() .Call(wrap__BayesBfNormalisedFit__parameter_names, self)
+
+BayesBfNormalisedFit$draws <- function() .Call(wrap__BayesBfNormalisedFit__draws, self)
+
+BayesBfNormalisedFit$chains <- function() .Call(wrap__BayesBfNormalisedFit__chains, self)
+
+BayesBfNormalisedFit$summary <- function() .Call(wrap__BayesBfNormalisedFit__summary, self)
+
+BayesBfNormalisedFit$loo <- function() .Call(wrap__BayesBfNormalisedFit__loo, self)
+
+BayesBfNormalisedFit$long_table <- function() .Call(wrap__BayesBfNormalisedFit__long_table, self)
+
+BayesBfNormalisedFit$totals_table <- function() .Call(wrap__BayesBfNormalisedFit__totals_table, self)
+
+BayesBfNormalisedFit$development_table <- function() .Call(wrap__BayesBfNormalisedFit__development_table, self)
+
+BayesBfNormalisedFit$segment <- function(keys, values) .Call(wrap__BayesBfNormalisedFit__segment, self, keys, values)
+
+#' @export
+`$.BayesBfNormalisedFit` <- function (self, name) { func <- BayesBfNormalisedFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesBfNormalisedFit` <- `$.BayesBfNormalisedFit`
 
 MackBootstrapFit <- new.env(parent = emptyenv())
 

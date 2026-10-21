@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -50,6 +50,7 @@ together, as in `reserving-v02.md` decision 7.
 | 10 | `claude/bayes-one-year-meyers` | moment matching the default one-year fallback; `Meyers::one_year` and `one_year_segments` for CRC, CSR and CAY through `YearModel` (decision 19); in Rust, Python and R | PR 9, #279 |
 | 11 | `claude/bayes-one-year-compartmental` | `Compartmental::one_year` for models 1 and 2 through `YearModel` (decision 20), a refit budget (`max_refits`) for every model's view; in Rust, Python and R | PR 10 |
 | 12 | `claude/backtest-bindings` | the diagonal backtest in Python and R, each fit's diagnostics in the forecast and the backtest, two more metrics (decision 21, #342) | `main` |
+| 13 | `claude/bayes-bf-normalised` | `BayesBfNormalised`: the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate (decision 23, #410); in Rust, Python and R | `main` |
 | later | | the paid-incurred `Ipi` | PR 5 |
 
 PRs 2 to 4 touch the same binding files
@@ -996,6 +997,11 @@ pub struct BayesBfFit {
   about 7.5 s in a debug build (five fits), the unit tests about 2.5 s.
 * **Bindings** (decision 13): Python `BayesBf` and R `bayes_bf()`, for
   one segment, as `BayesOdp`'s.
+* **A twin with the prior on the ultimate** (decision 23, PR 13):
+  `BayesBfNormalised` normalises the pattern so that `apriori` is the
+  prior mean of each origin's expected ultimate, which `BayesBf`'s row
+  parameter is not (`knowledge/findings/bayes-bf-apriori-scale.md`);
+  `BayesBf` stays as built here, at EVW parity.
 
 ### 10. Validation
 
@@ -2383,7 +2389,8 @@ build compiles and clippy lints every arm; only what runs depends on it.
 The compartmental one-year validation takes the same gate (decision 20:
 model 1 without its refit comparison on a pull request, model 2 only in
 the full run). Since the user's decision of 2026-10-19 a pull request's
-conformance suite runs `BayesOdp` and `BayesBf` alone: Meyers' CRC and
+conformance suite runs `BayesOdp` and `BayesBf` alone (with
+`BayesBfNormalised` since PR 13, decision 23): Meyers' CRC and
 compartmental model 1, whose refits took most of its 11 minutes on CI,
 join only in the full run, and their own one-year files still check them
 on every pull request (`knowledge/environment/ci-runtime.md`).
@@ -2772,6 +2779,176 @@ a posterior has no residuals to resample and points to `RankCorrelation`
 (or `Independent`); a unit test pins its words. No parity test with the
 bootstrap's `Synchronized` is needed, since nothing is built.
 
+### 23. A Bayesian Bornhuetter–Ferguson whose prior sits on the ultimate (PR 13)
+
+Status: **Built** (2026-10-21), branch `claude/bayes-bf-normalised`, issue
+#410, in Rust, Python and R. The user decided on 2026-10-21 to add a new
+model with a normalised development pattern, leaving `BayesBf` unchanged
+at EVW parity (decision 9). `BayesBf`'s `apriori` multiplies `mu_w`, EVW's
+row parameter, not the ultimate, so the level of `apriori` is undone by
+the unnormalised pattern and barely moves the reserve
+(`knowledge/findings/bayes-bf-apriori-scale.md`); the Excel add-in's
+`PRO.BAYES.BF` waited on a model where the actuary's judgment sits on each
+origin's ultimate.
+
+**The model** (`crates/prospicio-reserving/src/bayes/bf_normalised.rs`):
+the quasi likelihood and the plug-in `phi` of decision 3, with the means
+
+```text
+mean_wd = U_w p_d,   U_w = exp(alpha_w),   p_d = exp(beta_d) / sum_k exp(beta_k),   beta_1 = 0
+U_w ~ Gamma(shape 1 / cv^2, mean m_w),   m_w = apriori x exposure_w
+beta_d ~ N(0, development_sd^2)   for d = 2, ..., m
+```
+
+`U_w` is the origin's expected ultimate, `p_d` the share of it that falls
+at age `d`, the shares summing to 1, so `apriori` is the expected ultimate
+loss ratio and `cv` how firmly it is held, as in `BornhuetterFerguson`.
+The shares are a softmax of log ratios to the first age's (the corner of
+decision 3), so the pattern's scale is identified and the model has
+`n + m - 1` parameters, where `BayesBf` has `n + m` with one direction
+held only by the prior on `beta` (decision 9: at `development_sd` 1,000
+and a flat `cv` that direction gave divergences). Draws are stored as
+`(alpha, beta_2..beta_m)` and sampled as `(u, beta)` with `u_w = alpha_w -
+log m_w`, a shift, so the log posterior needs no Jacobian and keeps full
+precision under a tight prior (as decision 9). The gradient and the
+negative Hessian are hand-written and checked against finite differences
+and the generic `Scalar` oracle (decision 15). The posterior is not
+concave through the softmax (the likelihood is in the unnormalised
+`(alpha', beta')`, the gamma prior on `U_w = exp(alpha') sum exp(beta)` is
+not), but it is unimodal in practice: Newton's ridge (`laplace::mode`)
+starts at the closed-form strong-prior mode (the ultimates at their prior,
+`u = 0`, and the shares `S_d / (M_d + lambda)` of the strong-prior limit
+below, `strong_prior_shares`), finds the mode from there, and NUTS runs on
+the scale whitened at it, as for `BayesOdp`. The start is not the raw
+pattern `S_d / M_d`: under a tight prior whose ultimates are far from the
+data's, the negative Hessian is indefinite there and the ridge, scaled by
+the prior's stiff curvature, crawls (from the raw pattern the fit at `cv`
+1e-4 did not converge). Propriety is `BayesBf`'s: every
+development column's increments must sum to more than zero and every
+origin's to more than `-phi / cv^2`, else `Error::Bayes`.
+
+**Which formulation, and why.** The issue offers two: Verrall's (2004)
+development parameters as proportions summing to 1, or `BayesBf` with the
+prior moved to `mu_w sum gamma_d`. They are one model: write `U_w = mu_w sum
+gamma_d` and `p_d = gamma_d / sum gamma`; the likelihood is unchanged and
+what differs is only which of the scales is pinned. This is the issue's
+recommendation, built with the corner and a softmax so that the free
+parameters are identified. I could not read Verrall (2004) in this
+session; the model is built from the issue's description of it, and no
+parity with his printed numbers is claimed. It estimates the pattern
+jointly with the ultimates, not in a chain ladder first stage.
+
+**Name.** `BayesBfNormalised` (Rust, Python), `bayes_bf_normalised()` and
+`bayes_bf_normalised_fit` (R), and `BayesBfNormalisedFit`, with
+`BayesBfNormalised::one_year` (`BayesBf`'s names plus `Normalised`). The
+settings, defaults (`apriori` 1, `cv` 0.1, `development_sd` 10, Gamma
+process, four chains of 1,000 and 1,000, 10,000 simulations) and errors
+are `BayesBf`'s. The fit adds `pattern()` (the posterior mean share of each
+age) and `expected_ultimate()` (the posterior mean of each `U_w`, what the
+prior is on). `prior_ultimate` is now the prior mean of the expected
+ultimate, `apriori x exposure`. Draw names are `alpha[1..n]` and
+`beta[2..m]`.
+
+**The one-year view** goes through `YearModel` (decision 17) by
+`OdpCells` and the shared `OdpYear`, like `BayesBf`: `eta(theta, w, d) =
+alpha_w + beta_d - log sum exp(beta)`. Every origin and age has an
+observed cell, so there is nothing to carry with the draws; `log_posterior`
+is on the stored `(alpha, beta)` through the shift to `u`, so moment
+matching's affine maps act on an unconstrained scale. The model passes the
+conformance suite in both halves (an entry in `every_model` of
+`reserving_bayes_one_year_conformance.rs`, run in the smoke set with
+`BayesOdp` and `BayesBf`). No `fit_segments`, as `BayesBf` has none.
+
+**What the limits are** (validation in
+`validation/tests/reserving_bayes_bf_normalised.rs`; unit tests in
+`bf_normalised.rs`):
+
+* *Vague limit.* `cv` infinite is the Bayesian chain ladder: on GenIns with
+  premium and on RAA with a synthetic premium each origin's and the total's
+  mean is within `0.1 s` and sd within 10% of `BayesOdp`'s, `s` its sd.
+  The mode's fitted means are the chain ladder's within 1e-4 at
+  `development_sd` 1,000 (unit test).
+* *Strong-prior limit.* With `U_w` fixed at `m_w` the shares maximise the
+  likelihood given the ultimates: `p_d = S_d / (M_d + lambda)`, `S_d` the
+  observed increments of column `d`, `M_d` the prior ultimates of the
+  origins observed there, `lambda` the root of `sum p_d = 1`. **When the
+  prior ultimates are the chain ladder's, `lambda` is 0, the shares are the
+  chain ladder's pattern and the reserve is the classical
+  `BornhuetterFerguson` reserve** (the mode to 1e-5 at any `cv` on GenIns,
+  a unit test; the fit with `cv` 0.001 and no process error is 0.25% below
+  it, 18,633,756 against 18,680,856, the posterior mean of the shares
+  against their mode). **At any other loss ratio the limit is not the
+  classical reserve**, which keeps the chain ladder's pattern whatever the
+  prior; here the pattern follows the ultimates, so the data are explained
+  partly by a slower or faster development. GenIns with premium, `cv`
+  0.001, no process error (the fit's total mean reserve against
+  `BornhuetterFerguson` at the same `apriori`): apriori 0.35: 13.80m
+  against 15.10m (-8.6%); 0.45: 19.19m against 19.41m (-1.1%); 0.55:
+  26.14m against 23.73m (+10.2%); 0.65: 36.02m against 28.04m (+28.4%).
+  The validation asserts each fit's mean within 1.5% of the closed-form
+  limit at its `apriori` (0.01% to 0.90% below it, the mean of the shares
+  against their mode) and each gap within 2 points of these figures.
+  The gap grows with the distance of `apriori` from the chain ladder's
+  loss ratio (about 0.45), and is larger above it. So the requirement
+  that the tight limit reproduce `Bf` "with the same apriori and pattern"
+  holds exactly where the prior is consistent with the pattern, and the
+  model is a joint one elsewhere. The user accepted this on 2026-10-21
+  (open decision 16). A model whose pattern is held at the
+  chain ladder's (Verrall's two-stage estimate, or a tight prior on the
+  pattern centred on selected factors, the issue's optional ask) would
+  reproduce `Bf` at every `apriori`; it is not built, and the user decided
+  on 2026-10-21 that it need not be (open decision 16).
+* *The prior is real.* RAA with a premium of 40,000 rising by 2,000 a year
+  (the finding's table), total mean reserve, `BayesBfNormalised` then
+  `BayesBf` (10,000 simulations, seed 1): cv 0.5: apriori 0.3 / 0.6 / 1.2
+  give 48,381 / 70,521 / 105,494 against 61,905 / 62,661 / 62,229; cv 0.2:
+  43,378 / 90,015 / 330,277 against 69,137 / 69,019 / 69,068; cv 0.05:
+  41,288 / 102,733 / 375,560 against 73,049 / 73,026 / 73,171. On GenIns
+  with premium (`cv` 0.1, no process error), `apriori` 0.4 against 0.6
+  (20% either side of 0.5) moves the three newest origins' summed reserve
+  by +50.3% under `BayesBfNormalised` and by 0.0% under `BayesBf` (a
+  unit test); the reserve rises with `apriori` at every `cv` and the
+  prior's pull grows as `cv` falls.
+* *The one-year view* (GenIns with premium, apriori 0.5, 10,000
+  reweighted simulations, seed 0): the total claims development result's sd
+  over `BayesOdp`'s is 1.065 under a flat prior, 0.617 at `cv` 0.2 and
+  0.344 at `cv` 0.05 (58% and 32% of the flat prior's: more of the year's
+  information goes to the pattern as the ultimates are held firmer). The
+  conformance suite's release half (GenIns, `cv` 0.2) over seeds 0 to 11:
+  the total CDR's mean z -0.29 on average (sd 0.77, largest 1.55 in
+  absolute value), the opening reserve's z 0.09 (sd 0.87, largest 1.42),
+  the root mean square gap to the refits, in sd of the total, 0.065 where
+  `k̂` is at most 0.7 (sd 0.005, largest 0.076; about 260 of 300
+  simulations) and 0.174 above it (sd 0.033, largest 0.234; about 38
+  simulations), every flagged simulation moment matched and none refitted.
+  The unflagged gap runs wider than `BayesBf`'s (0.056), so this model
+  has its own bound, 0.09 (`BF_NORMALISED_REFITS`: the mean plus 5 sds);
+  the other bounds are the suite's. Seed 0 takes about 12 s. The
+  moment-matching validation (`reserving_bayes_one_year_moment_match.rs`,
+  decision 18) runs it too, on the same GenIns settings and 1,000 years:
+  over seeds 0 to 11 every flagged simulation (107 to 149) is rescued and
+  the gap of the matched ones to their refits is 0.038 sd of the total on
+  average (sd 0.004; 0.15 to 0.25 under reweighting alone), so its bound
+  is 0.06 and its floor on the rescued share 0.99.
+
+**Runtime.** A default fit takes about 0.1 s in a release build (four
+chains of 1,000 and 1,000 on GenIns or RAA, no divergence at `cv` infinite,
+0.2 or 0.01); the unit tests about 1 s in release (14 tests, 11 sampling
+with NUTS and gated by `slow-tests`) and the validation file about 30 s.
+
+**Not built.** (a) The pattern held near given factors
+(chain ladder or selected, `SelectedPattern`), which would make the tight
+limit `Bf` at every `apriori`: the issue's optional ask, deferred; the
+user decided on 2026-10-21 (open decision 16) that the limit is
+acceptable as it is, so it waits until a user wants the classical
+pattern. (b) The exact Gamma-mixture predictive
+(Rao-Blackwellised reserve quantiles), also an optional ask, unchanged.
+(c) A Stan reference: none was run (no CmdStan in the build environments),
+so unlike `BayesBf` this model has no external parity file; its checks are
+the limits above, finite-difference and `Scalar`-oracle gradients, the
+conformance suite and `BayesOdp`. (d) `fit_segments` and the diagonal
+backtest, as for `BayesBf`.
+
 ## Open decisions for the user
 
 Each has a recommendation. Decided 2026-10-12 by the user: 1 (a), 2 (a),
@@ -2931,3 +3108,20 @@ are settled.
     refits before it becomes a default; (d) fewer simulations for model
     2's view. *Recommended: (c), measured, then (b) with what is left*;
     until the user decides, (a) stands.
+16. **The pattern held near given factors.** Raised 2026-10-21 by PR 13
+    (decision 23). Decided 2026-10-21 by the user: (a), leave it. The
+    tight-prior limit of `BayesBfNormalised` is acceptable as it is: it
+    equals the classical `BornhuetterFerguson` reserve only at the chain
+    ladder's ultimates, and otherwise the pattern is re-estimated given
+    the ultimates (decision 23 has the gap: -8.6% to +28.4% for `apriori`
+    0.35 to 0.65 on GenIns). (b), a prior on the pattern centred on given
+    factors with its own strength, is not built; it stays an option for a
+    user who wants the classical pattern. The question as raised:
+    `BayesBfNormalised` estimates the pattern jointly with the ultimates,
+    so its strong-prior limit is the classical reserve only where the
+    prior ultimates are the chain ladder's. (a) Leave it: the joint model
+    is the one the issue asked for; (b) add a prior on the pattern centred
+    on given factors (the chain ladder's, or a `SelectedPattern`) with its
+    own strength, so a tight one reproduces `Bf` at every `apriori` (the
+    issue's optional ask), as a setting of this model. *Recommended: (a)
+    now, (b) when a user wants the classical pattern.*

@@ -37,7 +37,7 @@ when from experience, and which pricing method fits which scenario.
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust, Python and R, with each fit's sampler diagnostics), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R) over segments (Rust, Python and R) and in the diagonal backtest with a held-out outstanding table (Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust, Python and R, with each fit's sampler diagnostics), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R) and its twin with a normalised pattern and the prior on the ultimate (`BayesBfNormalised`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R) over segments (Rust, Python and R) and in the diagonal backtest with a held-out outstanding table (Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R), ONNX import (`prospicio_nn::onnx`, Rust). Still to do: WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -251,6 +251,15 @@ what it is aiming for by v1.0.
     PR 4): England, Verrall and Wüthrich's gamma priors on the origins'
     row parameters, at parity with the same model in Stan and with
     their printed totals, in Python (`BayesBf`) and R (`bayes_bf()`).
+  - The Bayesian Bornhuetter–Ferguson with a normalised pattern,
+    `BayesBfNormalised` (`reserving-bayes.md` PR 13, decision 23, #410):
+    the origins' expected ultimates have the gamma prior and the pattern
+    is a set of shares summing to 1, so `apriori` is the ultimate loss
+    ratio and moves the reserve (`BayesBf`'s barely does). A flat prior
+    is the Bayesian chain ladder, a tight one at the chain ladder's
+    ultimates the classical Bornhuetter–Ferguson reserve; with its
+    one-year view through the generic engine, in Rust, Python
+    (`BayesBfNormalised`) and R (`bayes_bf_normalised()`).
   - Meyers' CAY, `MeyersModel::Cay` (`reserving-bayes.md`, PR 5): CRC
     with the previous origin's residual at the same age in each mean, at
     parity with his own `CAY.R` Stan code and his printed results on

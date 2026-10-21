@@ -178,7 +178,8 @@ and refits that failed theirs raise another (each prefixed with its
 segment's label over segments).
 
 Properties of a \code{bayes_one_year_fit}: \code{fit} (the \link{bayes_odp_fit}, the
-\link{bayes_bf_fit} from \code{\link[=bayes_bf_one_year]{bayes_bf_one_year()}} or the \link{meyers_fit} from
+\link{bayes_bf_fit} from \code{\link[=bayes_bf_one_year]{bayes_bf_one_year()}}, the \link{bayes_bf_normalised_fit} from
+\code{\link[=bayes_bf_normalised_one_year]{bayes_bf_normalised_one_year()}} or the \link{meyers_fit} from
 \code{\link[=meyers_one_year]{meyers_one_year()}}, with the posterior and lifetime reserves),
 \code{chain_ladder}, \code{origins},
 \code{development}; per origin (named as a \link{chain_ladder_fit}'s) \code{latest},

@@ -2,8 +2,8 @@
 //! (`OneYearRefit::MomentMatchThenRefit`, `docs/design/reserving-bayes.md`,
 //! decision 18), against refitting on the same years.
 //!
-//! For `BayesOdp` on RAA and GenIns and `BayesBf` on GenIns with premium
-//! (apriori 0.5, cv 0.2), at the defaults otherwise, the view is run under
+//! For `BayesOdp` on RAA and GenIns and `BayesBf` and `BayesBfNormalised`
+//! on GenIns with premium (apriori 0.5, cv 0.2), at the defaults otherwise, the view is run under
 //! `ReweightOnly`, `RefitFlagged` and `MomentMatchThenRefit` on the same
 //! 1,000 years, and:
 //!
@@ -34,7 +34,8 @@ use std::time::{Duration, Instant};
 use prospicio_prob::PredictiveDistribution;
 use prospicio_reserving::Triangle;
 use prospicio_reserving::bayes::{
-    BayesBf, BayesBfFit, BayesOdp, BayesOdpFit, BayesOneYear, BayesOneYearFit, OneYearRefit,
+    BayesBf, BayesBfFit, BayesBfNormalised, BayesBfNormalisedFit, BayesOdp, BayesOdpFit,
+    BayesOneYear, BayesOneYearFit, OneYearRefit,
 };
 use prospicio_validation::{triangle, triangle_columns};
 
@@ -47,11 +48,15 @@ const SWEEP_SIMS: usize = 2_000;
 /// `SIMS`.
 /// Over seeds 0 to 19: `rescued` at least 0.9964 (GenIns; 1 elsewhere),
 /// `gap_matched` mean + 4 sd 0.101 (RAA), 0.062 (GenIns) and 0.064
-/// (`BayesBf`), seed 0 at 0.049, 0.038 and 0.041.
+/// (`BayesBf`), seed 0 at 0.049, 0.038 and 0.041. `BayesBfNormalised`
+/// (decision 23), over seeds 0 to 11 at `SIMS` only (no `RefitAll` sweep):
+/// `rescued` 1 at every seed, `gap_matched` mean 0.038, sd 0.004, mean + 4
+/// sd 0.054, seed 0 at 0.043 (`gap_reweighted` 0.15 to 0.25).
 const BOUNDS: &[(&str, f64, f64)] = &[
     ("BayesOdp RAA", 0.99, 0.11),
     ("BayesOdp GenIns", 0.99, 0.07),
     ("BayesBf GenIns", 0.99, 0.07),
+    ("BayesBfNormalised GenIns", 0.99, 0.06),
 ];
 
 fn mean(x: &[f64]) -> f64 {
@@ -251,6 +256,21 @@ fn bf(tri: &Triangle) -> Box<Run<'_, BayesBfFit>> {
     })
 }
 
+/// `BayesBfNormalised` with the same settings as `bf` (decision 23).
+fn bf_normalised(tri: &Triangle) -> Box<Run<'_, BayesBfNormalisedFit>> {
+    Box::new(move |n_sims, seed, refit| {
+        BayesBfNormalised {
+            apriori: 0.5,
+            cv: 0.2,
+            n_sims,
+            seed,
+            ..BayesBfNormalised::default()
+        }
+        .one_year(tri, "paid", "premium", &settings(refit))
+        .unwrap()
+    })
+}
+
 /// One model's measures and wall times.
 type Outcome = (&'static str, Measured, Option<Measured>, [f64; 3]);
 
@@ -279,6 +299,12 @@ fn every_model(seed: u64, sweep: bool) -> Vec<Outcome> {
         outcome("BayesOdp RAA", &*odp(&raa), seed, sweep),
         outcome("BayesOdp GenIns", &*odp(&genins), seed, sweep),
         outcome("BayesBf GenIns", &*bf(&premium), seed, sweep),
+        outcome(
+            "BayesBfNormalised GenIns",
+            &*bf_normalised(&premium),
+            seed,
+            sweep,
+        ),
     ]
 }
 
