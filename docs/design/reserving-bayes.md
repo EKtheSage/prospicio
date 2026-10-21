@@ -50,6 +50,7 @@ together, as in `reserving-v02.md` decision 7.
 | 10 | `claude/bayes-one-year-meyers` | moment matching the default one-year fallback; `Meyers::one_year` and `one_year_segments` for CRC, CSR and CAY through `YearModel` (decision 19); in Rust, Python and R | PR 9, #279 |
 | 11 | `claude/bayes-one-year-compartmental` | `Compartmental::one_year` for models 1 and 2 through `YearModel` (decision 20), a refit budget (`max_refits`) for every model's view; in Rust, Python and R | PR 10 |
 | 12 | `claude/backtest-bindings` | the diagonal backtest in Python and R, each fit's diagnostics in the forecast and the backtest, two more metrics (decision 21, #342) | `main` |
+| 13 | `claude/bayes-bf-normalised` | `BayesBfNormalised`: the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate (decision 22, #410); in Rust, Python and R | `main` |
 | later | | the paid-incurred `Ipi` | PR 5 |
 
 PRs 2 to 4 touch the same binding files
