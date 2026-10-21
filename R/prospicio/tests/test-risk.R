@@ -230,3 +230,24 @@ for (k in list(c(7, 353.8), c(13, 353.6), c(19, 352.9))) {
 }
 stopifnot(rearrange(cbind(1:4, 1:4))$value == 5)
 
+
+# A results table's statistics: R's quantile(type = 7) and the integral of
+# that quantile function for the linear TVaR; VaR() and TVaR() keep their
+# defaults and take the same methods.
+st_x <- c(7, 0, 100, 3, 1, 0, 45, 7, 12, 20)
+st_p <- c(0, 10, 25, 50, 90, 99, 100)
+st <- statistics(st_x, st_p, tvar_levels = c(0, 50, 90, 99), quantile = "linear", tvar = "linear")
+stopifnot(all(abs(st[paste("Percentile", st_p)] - quantile(st_x, st_p / 100, type = 7, names = FALSE)) < 1e-12))
+st_tvar <- function(p) integrate(function(u) quantile(st_x, u, type = 7, names = FALSE), p, 1,
+                                 subdivisions = 1000L, rel.tol = 1e-10)$value / (1 - p)
+for (q in c(0, 50, 90, 99)) stopifnot(abs(st[[paste("TVaR", q)]] / st_tvar(q / 100) - 1) < 1e-6)
+stopifnot(st[["Mean"]] == 19.5, abs(st[["Mean + 2 SD"]] - 19.5 - 2 * sqrt(mean((st_x - 19.5)^2))) < 1e-12)
+st_s <- sampled(st_x)
+stopifnot(VaR(st_s, 0.25, method = "linear") == st[["Percentile 25"]])
+stopifnot(TVaR(st_s, 0.9, method = "linear") == st[["TVaR 90"]])
+stopifnot(VaR(st_s, 0.25) == quantile(st_x, 0.25, type = 1, names = FALSE))
+stopifnot(inherits(try(VaR(st_s, 0.5, method = "nearest"), silent = TRUE), "try-error"))
+st_pd <- predictive_distribution(cbind(1:10, 2 * (1:10)), data.frame(lob = c("a", "b")))
+st_tab <- statistics(st_pd, 50, tvar_levels = 90, sd_multiples = 1)
+stopifnot(identical(st_tab$lob, c("a", "b")), all(st_tab$Mean == c(5.5, 11)))
+stopifnot(all(st_tab[["Percentile 50"]] == c(5, 10)), all(st_tab[["TVaR 90"]] == c(10, 20)))

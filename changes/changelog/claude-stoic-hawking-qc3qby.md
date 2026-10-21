@@ -30,6 +30,18 @@
   `Gpd::fit_with_covariance` returns a fit with the covariance of
   `(xi, beta)`. Python `prospicio.risk.threshold_diagnostics` (a dict of
   columns) and R `threshold_diagnostics()` (a data frame) (#282).
+- A results table's statistics in one call: `prospicio_prob::statistics::StatisticsGrid`
+  gives the mean, SD, CoV, min, max, variance, the percentiles, TVaRs and
+  mean plus or minus multiples of the SD under stable names
+  (`"Percentile 99.5"`, `"TVaR 99"`, `"Mean + 2 SD"`), of a `Sampled` or of
+  each component of a `PredictiveDistribution`. Quantiles by the inverted
+  cdf (the default) or linearly as numpy and R `type = 7`
+  (`QuantileMethod`), TVaR exact (the default) or as the integral of the
+  linear quantile function (`TvarMethod`); `Sampled::var_with` and
+  `tvar_with`, `risk::var_linear_sorted` and `tvar_linear_sorted`. Python
+  `prospicio.risk.statistics` and `Sampled.var(p, method=)`,
+  `.tvar(p, method=)`; R `statistics()` and `VaR(x, p, method = )`,
+  `TVaR(x, p, method = )` on a `sampled` (#474).
 
 ### Pricing
 

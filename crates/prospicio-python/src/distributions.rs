@@ -1292,6 +1292,9 @@ impl PySampled {
     /// Parameters
     /// ----------
     /// p : float
+    /// method : str
+    ///     ``"inverted_cdf"`` (the default, R ``type = 1``) or ``"linear"``
+    ///     (numpy's default, R ``type = 7``).
     ///
     /// Returns
     /// -------
@@ -1300,9 +1303,12 @@ impl PySampled {
     /// Raises
     /// ------
     /// ValueError
-    ///     If ``p`` is outside ``[0, 1]``.
-    fn var(&self, p: f64) -> PyResult<f64> {
-        self.inner.var(p).map_err(to_py)
+    ///     If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
+    #[pyo3(signature = (p, method = "inverted_cdf"))]
+    fn var(&self, p: f64, method: &str) -> PyResult<f64> {
+        self.inner
+            .var_with(p, crate::risk::quantile_method(method)?)
+            .map_err(to_py)
     }
 
     /// Tail value at risk at level ``p``: the mean of the worst ``1 - p``.
@@ -1310,6 +1316,10 @@ impl PySampled {
     /// Parameters
     /// ----------
     /// p : float
+    /// method : str
+    ///     ``"exact"`` (the default: the empirical distribution, mass ``1/n``
+    ///     per draw) or ``"linear"`` (the mean of the linear quantile
+    ///     function over ``[p, 1]``).
     ///
     /// Returns
     /// -------
@@ -1318,9 +1328,12 @@ impl PySampled {
     /// Raises
     /// ------
     /// ValueError
-    ///     If ``p`` is outside ``[0, 1]``.
-    fn tvar(&self, p: f64) -> PyResult<f64> {
-        self.inner.tvar(p).map_err(to_py)
+    ///     If ``p`` is outside ``[0, 1]`` or ``method`` is unknown.
+    #[pyo3(signature = (p, method = "exact"))]
+    fn tvar(&self, p: f64, method: &str) -> PyResult<f64> {
+        self.inner
+            .tvar_with(p, crate::risk::tvar_method(method)?)
+            .map_err(to_py)
     }
 
     fn __len__(&self) -> usize {

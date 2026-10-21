@@ -65,6 +65,7 @@ reference:
       - draws
       - severity
       - risk_measures
+      - statistics
       - tvar_threshold
   - title: Predictive distributions
     contents:

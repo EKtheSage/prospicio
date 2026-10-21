@@ -6,6 +6,7 @@ use prospicio_core::StreamRng;
 use prospicio_prob::capital::{AllocationMethod, LevelAllocation, LevelMeasure};
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
+use prospicio_prob::statistics::{QuantileMethod, StatisticsGrid, TvarMethod};
 use prospicio_prob::{
     Archimedean, ArchimedeanCopula, Distortion, Empirical, Family, GaussianCopula, Provenance,
     StudentTCopula,
@@ -266,6 +267,49 @@ pub(crate) fn discrete_of(x: &Robj) -> Result<(Vec<f64>, Vec<f64>)> {
 fn as_predictive(pd: &Robj) -> Result<&PredictiveDistribution> {
     <&PredictiveDistribution>::try_from(pd)
         .map_err(|_| Error::Other("expected a predictive_distribution".into()))
+}
+
+/// A quantile method by name: "inverted_cdf" or "linear".
+pub(crate) fn quantile_method(name: &str) -> Result<QuantileMethod> {
+    match name {
+        "inverted_cdf" => Ok(QuantileMethod::InvertedCdf),
+        "linear" => Ok(QuantileMethod::Linear),
+        _ => Err(Error::Other(format!(
+            "quantile method must be \"inverted_cdf\" or \"linear\", not {name:?}"
+        ))),
+    }
+}
+
+/// A TVaR method by name: "exact" or "linear".
+pub(crate) fn tvar_method(name: &str) -> Result<TvarMethod> {
+    match name {
+        "exact" => Ok(TvarMethod::Exact),
+        "linear" => Ok(TvarMethod::Linear),
+        _ => Err(Error::Other(format!(
+            "TVaR method must be \"exact\" or \"linear\", not {name:?}"
+        ))),
+    }
+}
+
+/// A statistics table of draws: `names` and `values`, levels in percent.
+#[extendr]
+fn statistics_rust(
+    draws: &[f64],
+    percentiles: &[f64],
+    tvar_levels: &[f64],
+    sd_multiples: &[f64],
+    quantile: &str,
+    tvar: &str,
+) -> Result<List> {
+    let grid = StatisticsGrid::new(percentiles.to_vec())
+        .and_then(|g| g.tvar_levels(tvar_levels.to_vec()))
+        .and_then(|g| g.sd_multiples(sd_multiples.to_vec()))
+        .map_err(to_r)?
+        .quantile_method(quantile_method(quantile)?)
+        .tvar_method(tvar_method(tvar)?);
+    let sampled = prospicio_prob::Sampled::new(draws.to_vec()).map_err(to_r)?;
+    let st = grid.of(&sampled);
+    Ok(list!(names = st.names, values = st.values))
 }
 
 /// Entropic risk measure of draws at risk aversion `theta`.
@@ -820,6 +864,7 @@ fn hill_rust(draws: &[f64], ks: &[f64]) -> Result<Vec<f64>> {
 
 extendr_module! {
     mod risk;
+    fn statistics_rust;
     fn entropic_rust;
     fn esscher_rust;
     fn mes_rust;

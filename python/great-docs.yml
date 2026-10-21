@@ -339,6 +339,7 @@ reference:
       - risk.marginal_expected_shortfall
       - risk.covar
       - risk.esscher_allocation
+      - risk.statistics
       - risk.Allocation
       - risk.LevelAllocation
   - title: Dependence

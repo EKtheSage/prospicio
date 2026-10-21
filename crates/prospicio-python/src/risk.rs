@@ -6,15 +6,17 @@ use prospicio_prob::capital::{Allocation, AllocationMethod, LevelAllocation, Lev
 use prospicio_prob::copula::{self, Copula};
 use prospicio_prob::evt::{Gpd, PotTail};
 use prospicio_prob::rearrangement::Start;
+use prospicio_prob::statistics::{QuantileMethod, StatisticsGrid, TvarMethod};
 use prospicio_prob::{
     Archimedean, ArchimedeanCopula, Distortion, Empirical, Family, GaussianCopula, Provenance,
-    StudentTCopula,
+    Sampled, StudentTCopula,
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 
 use crate::distributions::{
-    KeyArg, PyGrid, PyPredictiveDistribution, PySampled, extract_severity, key_from_py,
+    KeyArg, PyGrid, PyPredictiveDistribution, PySampled, extract_severity, key_from_py, key_to_py,
 };
 use crate::to_py;
 
@@ -626,6 +628,121 @@ pub(crate) fn allocate(
 ) -> Vec<f64> {
     let (pd, d) = (&pd.inner, distortion.inner.clone());
     py.detach(|| pd.allocate(&d))
+}
+
+/// A quantile method from its numpy name: ``"inverted_cdf"`` or ``"linear"``.
+pub(crate) fn quantile_method(name: &str) -> PyResult<QuantileMethod> {
+    match name {
+        "inverted_cdf" => Ok(QuantileMethod::InvertedCdf),
+        "linear" => Ok(QuantileMethod::Linear),
+        _ => Err(PyValueError::new_err(format!(
+            "quantile method must be \"inverted_cdf\" or \"linear\", not {name:?}"
+        ))),
+    }
+}
+
+/// A TVaR method by name: ``"exact"`` or ``"linear"``.
+pub(crate) fn tvar_method(name: &str) -> PyResult<TvarMethod> {
+    match name {
+        "exact" => Ok(TvarMethod::Exact),
+        "linear" => Ok(TvarMethod::Linear),
+        _ => Err(PyValueError::new_err(format!(
+            "TVaR method must be \"exact\" or \"linear\", not {name:?}"
+        ))),
+    }
+}
+
+/// A results table's statistics in one call, under stated conventions.
+///
+/// Every table has ``"Mean"``, ``"SD"`` (population, dividing by ``n``),
+/// ``"CoV"`` (``sd / mean``; 0 when both are 0, NaN when only the mean is),
+/// ``"Min"``, ``"Max"`` and ``"Variance"``, then ``"Percentile <q>"`` for
+/// each percentile, ``"TVaR <q>"`` for each TVaR level and ``"Mean + <k>
+/// SD"``, ``"Mean - <k> SD"`` for each multiple, with levels in percent as
+/// given, so the names are stable keys to join on.
+///
+/// Parameters
+/// ----------
+/// dist : Sampled, PredictiveDistribution or list of float
+///     A predictive distribution gives one row per component.
+/// percentiles : list of float
+///     In percent, in ``[0, 100]``.
+/// tvar_levels : list of float, optional
+///     In percent; by default 99, 99.5, 99.6, 99.8, 99.9 and 99.99.
+/// sd_multiples : list of float, optional
+///     By default 1, 2 and 3.
+/// quantile : str
+///     ``"inverted_cdf"`` (the default, ``Sampled.var``'s) or ``"linear"``
+///     (numpy's default, R ``type = 7``).
+/// tvar : str
+///     ``"exact"`` (the default, ``Sampled.tvar``'s, mass ``1/n`` per draw)
+///     or ``"linear"`` (the mean of the linear quantile function over
+///     ``[p, 1]``).
+///
+/// Returns
+/// -------
+/// dict
+///     For a ``Sampled`` or a list, ``{name: value}``. For a
+///     ``PredictiveDistribution``, columns: one list per dimension holding
+///     each component's key, then one list per statistic, ready for
+///     ``pandas.DataFrame``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If a level is outside ``[0, 100]`` or a method name is unknown.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import statistics
+/// >>> st = statistics([1.0, 2.0, 3.0, 4.0], [50], tvar_levels=[50],
+/// ...                 quantile="linear", tvar="linear")
+/// >>> st["Percentile 50"], st["TVaR 50"]
+/// (2.5, 3.25)
+#[pyfunction]
+#[pyo3(signature = (dist, percentiles, *, tvar_levels = None, sd_multiples = None, quantile = "inverted_cdf", tvar = "exact"))]
+pub(crate) fn statistics<'py>(
+    py: Python<'py>,
+    dist: &Bound<'py, PyAny>,
+    percentiles: Vec<f64>,
+    tvar_levels: Option<Vec<f64>>,
+    sd_multiples: Option<Vec<f64>>,
+    quantile: &str,
+    tvar: &str,
+) -> PyResult<Bound<'py, PyDict>> {
+    let mut grid = StatisticsGrid::new(percentiles)
+        .map_err(to_py)?
+        .quantile_method(quantile_method(quantile)?)
+        .tvar_method(tvar_method(tvar)?);
+    if let Some(levels) = tvar_levels {
+        grid = grid.tvar_levels(levels).map_err(to_py)?;
+    }
+    if let Some(k) = sd_multiples {
+        grid = grid.sd_multiples(k).map_err(to_py)?;
+    }
+    let out = PyDict::new(py);
+    if let Ok(pd) = dist.extract::<PyRef<'_, PyPredictiveDistribution>>() {
+        let inner = &pd.inner;
+        let rows = py.detach(|| grid.components(inner));
+        for (d, dim) in pd.inner.dims().iter().enumerate() {
+            let keys: Vec<Bound<'py, PyAny>> = rows
+                .iter()
+                .map(|(key, _)| key_to_py(py, key).and_then(|t| t.get_item(d)))
+                .collect::<PyResult<_>>()?;
+            out.set_item(dim, keys)?;
+        }
+        for (j, name) in grid.names().iter().enumerate() {
+            let column: Vec<f64> = rows.iter().map(|(_, st)| st.values[j]).collect();
+            out.set_item(name, column)?;
+        }
+        return Ok(out);
+    }
+    let sampled = Sampled::new(draws_of(dist)?).map_err(to_py)?;
+    let st = py.detach(|| grid.of(&sampled));
+    for (name, value) in st.names.iter().zip(&st.values) {
+        out.set_item(name, value)?;
+    }
+    Ok(out)
 }
 
 /// The draws of a ``Sampled``, the total of a ``PredictiveDistribution``,
