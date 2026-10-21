@@ -80,15 +80,16 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::models::{
-        PyBayesGlm, PyBayesGlmFit, PyBayesStacking, PyCoding, PyCvPath, PyDesign, PyDoubleGlm,
-        PyDoubleGlmFit, PyElasticNet, PyElasticNetFit, PyElpd, PyGam, PyGamFit, PyGlm, PyGlmFit,
-        PyGlmm, PyGlmmFit, PyHierarchicalStacking, PyNegativeBinomialFit, PyNegativeBinomialGlm,
-        PyRelaxedCv, PyStackingFit, PyTargetEncoding, PyTerms, PyTweedieFit, PyTweedieGlm,
-        actual_vs_expected, confusion_matrix, crps, deviance, double_lift, elpd_loo, elpd_waic,
-        f_test, gini, group_k_fold, k_fold, ks_uniform, lift, likelihood_ratio_test, log_score,
-        loo_pit, loss_ratio_chart, lppd, mcmc_diagnostics, normalized_gini, permutation,
-        pinball_loss, pit, pit_from_draws, pit_histogram, ppc_check, pseudo_bma_weights, roc,
-        simulate_from_means, stacking_weights, target_encode, time_ordered, tweedie_profile, vif,
+        PyBayesGlm, PyBayesGlmFit, PyBayesGlmm, PyBayesGlmmFit, PyBayesStacking, PyCoding,
+        PyCvPath, PyDesign, PyDoubleGlm, PyDoubleGlmFit, PyElasticNet, PyElasticNetFit, PyElpd,
+        PyGam, PyGamFit, PyGlm, PyGlmFit, PyGlmm, PyGlmmFit, PyHierarchicalStacking,
+        PyNegativeBinomialFit, PyNegativeBinomialGlm, PyRelaxedCv, PyStackingFit, PyTargetEncoding,
+        PyTerms, PyTweedieFit, PyTweedieGlm, actual_vs_expected, confusion_matrix, crps, deviance,
+        double_lift, elpd_loo, elpd_waic, f_test, gini, group_k_fold, k_fold, ks_uniform, lift,
+        likelihood_ratio_test, log_score, loo_pit, loss_ratio_chart, lppd, mcmc_diagnostics,
+        normalized_gini, permutation, pinball_loss, pit, pit_from_draws, pit_histogram, ppc_check,
+        pseudo_bma_weights, roc, simulate_from_means, stacking_weights, target_encode,
+        time_ordered, tweedie_profile, vif,
     };
     #[pymodule_export]
     use super::natural::{

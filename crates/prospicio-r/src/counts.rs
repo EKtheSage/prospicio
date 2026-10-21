@@ -52,16 +52,38 @@ impl ClaimCount {
         })
     }
 
-    /// `mixing` is "gamma" or "inverse_gaussian".
-    fn mixed_poisson(mean: f64, cv: f64, mixing: &str, shift: f64) -> Result<Self> {
+    /// `mixing` is "gamma", "inverse_gaussian", "beta", "sichel",
+    /// "sichel_skewness", "sichel_gamma" or "sichel_ig"; `param` is the
+    /// beta's `max`, the Sichel shape or skewness, or the matched `f`.
+    fn mixed_poisson(mean: f64, cv: f64, mixing: &str, shift: f64, param: f64) -> Result<Self> {
         let mixing = match mixing {
             "gamma" => Mixing::Gamma { cv },
             "inverse_gaussian" => Mixing::InverseGaussian { cv },
+            "beta" => Mixing::Beta { cv, max: param },
+            "sichel" => Mixing::Sichel { cv, shape: param },
+            "sichel_skewness" => Mixing::SichelSkewness {
+                cv,
+                skewness: param,
+            },
+            "sichel_gamma" => Mixing::sichel_gamma(cv, param),
+            "sichel_ig" => Mixing::sichel_ig(cv, param),
             other => return Err(Error::Other(format!("unknown mixing {other:?}"))),
         };
         Ok(Self {
             inner: CountDist::MixedPoisson(MixedPoisson::new(mean, mixing, shift).map_err(to_r)?),
         })
+    }
+
+    /// The solved generalized inverse Gaussian of a Sichel mixing,
+    /// `c(shape, omega, eta)`, or an empty vector.
+    fn gig(&self) -> Vec<f64> {
+        match &self.inner {
+            CountDist::MixedPoisson(m) => m
+                .gig()
+                .map(|g| vec![g.shape, g.omega, g.eta])
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
     }
 
     fn compound_poisson(rate: f64, secondary: Robj) -> Result<Self> {

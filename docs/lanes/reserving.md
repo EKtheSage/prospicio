@@ -6,7 +6,6 @@
 
 ## Next
 
-
 ## Done
 
 - `Triangle`, Chain Ladder, Mack, ODP bootstrap and ODP GLM, diagonal backtest, segment fits

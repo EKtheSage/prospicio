@@ -132,6 +132,17 @@ a <- compound_distribution(zm, sev, 100, method = "panjer")
 b <- compound_distribution(zm, sev, 100, method = "fft")
 stopifnot(max(abs(a@probs - b@probs)) < 1e-12)
 stopifnot(inherits(try(compound_distribution(pig, sev, 100, method = "panjer"), silent = TRUE), "try-error"))
+# The beta and Sichel mixings (validation/scripts/aggregate_mixing.py): the
+# beta by quadrature, the Sichel against aggregate 1.2.0.
+bm <- mixed_poisson_count(10, 0.3, mixing = "beta", max = 30)
+stopifnot(abs(pmf(bm, 0) - 0.0011358609508610308) < 1e-14, is.null(gig_parameters(bm)))
+sm <- mixed_poisson_count(10, 0.4, mixing = "sichel", shape = 1.5)
+stopifnot(abs(pmf(sm, 0) - 0.0016178402835267376) < 1e-9, abs(variance(sm) - 26) < 1e-9)
+sig <- gig_parameters(mixed_poisson_count(10, 0.5, mixing = "sichel_ig", f = 0.3))
+stopifnot(abs(sig[["shape"]] / -4.5422134725837395 - 1) < 1e-8)
+same <- gig_parameters(mixed_poisson_count(10, 0.5, mixing = "sichel", skewness = 1.5 / 0.7))
+stopifnot(abs(same[["shape"]] / sig[["shape"]] - 1) < 1e-12)
+stopifnot(inherits(try(mixed_poisson_count(10, 0.5, mixing = "sichel"), silent = TRUE), "try-error"))
 
 # Named counts and tvar_threshold against aggregate 1.0.1.
 stopifnot(pmf(fixed_count(3), 3) == 1, abs(pmf(bernoulli_count(0.3), 1) - 0.3) < 1e-15,

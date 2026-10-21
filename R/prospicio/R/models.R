@@ -2008,18 +2008,34 @@ elpd_waic <- function(log_lik) {
   elpd_result(rust_result(elpd_waic_rust(as.double(t(log_lik)), as.double(ncol(log_lik)))))
 }
 
-# The random intercepts `(1 | g)` of a formula, in lme4's syntax: the
-# formula without them and each grouping factor as an expression (`g`,
-# `a:b`; `a/b` is `a` and `a:b`).
+# The random terms `(1 + x | g)` of a formula, in lme4's syntax: the
+# formula without them and each grouping factor as a list of its
+# expression (`g`, `a:b`; `a/b` is `a` and `a:b`), whether it has an
+# intercept and its slopes' expressions. `(1 + x || g)` is a factor for
+# each term.
 glmm_bars <- function(formula) {
   bars <- list()
   strip <- function(e) {
     if (is.call(e) && identical(e[[1]], as.name("(")) && is.call(e[[2]]) &&
-        identical(e[[2]][[1]], as.name("|"))) {
-      if (!isTRUE(all.equal(e[[2]][[2]], 1))) {
-        stop("a GLMM takes random intercepts only, (1 | g)", call. = FALSE)
+        (identical(e[[2]][[1]], as.name("|")) || identical(e[[2]][[1]], as.name("||")))) {
+      lhs <- stats::terms(stats::as.formula(call("~", e[[2]][[2]])))
+      intercept <- attr(lhs, "intercept") == 1
+      slopes <- attr(lhs, "term.labels")
+      if (!intercept && !length(slopes)) {
+        stop("a random term needs an intercept or a slope: ", deparse(e), call. = FALSE)
       }
-      bars[[length(bars) + 1]] <<- e[[2]][[3]]
+      if (identical(e[[2]][[1]], as.name("||"))) {
+        if (intercept) {
+          bars[[length(bars) + 1]] <<- list(group = e[[2]][[3]], intercept = TRUE,
+                                            slopes = character())
+        }
+        for (x in slopes) {
+          bars[[length(bars) + 1]] <<- list(group = e[[2]][[3]], intercept = FALSE, slopes = x)
+        }
+      } else {
+        bars[[length(bars) + 1]] <<- list(group = e[[2]][[3]], intercept = intercept,
+                                          slopes = slopes)
+      }
       return(NULL)
     }
     if (is.call(e) && identical(e[[1]], as.name("+"))) {
@@ -2037,47 +2053,73 @@ glmm_bars <- function(formula) {
     outer <- nest(g[[2]])
     c(outer, list(call(":", outer[[length(outer)]], g[[3]])))
   }
-  groups <- unlist(lapply(bars, nest))
-  if (!length(groups)) stop("a GLMM needs at least one random intercept, (1 | g)", call. = FALSE)
+  groups <- unlist(lapply(bars, function(b) {
+    lapply(nest(b$group), function(g) list(group = g, intercept = b$intercept, slopes = b$slopes))
+  }), recursive = FALSE)
+  if (!length(groups)) stop("a GLMM needs at least one random term, (1 | g)", call. = FALSE)
   list(fixed = fixed, groups = groups)
 }
 
-# Each grouping factor's name and its labels on `data`, those whose
-# columns `data` has (all of them, when `required`).
+# Each grouping factor's name, its labels, intercept and slopes on `data`,
+# those whose columns `data` has (all of them, when `required`), as
+# glmm_fit_design() takes them.
 glmm_labels <- function(groups, data, required = TRUE) {
-  names <- character()
-  labels <- character()
+  out <- list(names = character(), labels = character(), intercepts = numeric(),
+              slope_factor = numeric(), slope_names = character(), slope_values = numeric())
   for (g in groups) {
-    vars <- all.vars(g)
+    vars <- unique(c(all.vars(g$group), unlist(lapply(g$slopes, function(x) {
+      all.vars(str2lang(x))
+    }))))
     if (!all(vars %in% names(data))) {
-      if (required) stop("no column ", toString(setdiff(vars, names(data))), " for ", deparse(g),
-                         call. = FALSE)
+      if (required) {
+        stop("no column ", toString(setdiff(vars, names(data))), " for ", deparse(g$group),
+             call. = FALSE)
+      }
       next
     }
-    names <- c(names, deparse(g))
-    labels <- c(labels, do.call(paste, c(lapply(vars, function(v) as.character(data[[v]])),
-                                          sep = ":")))
+    for (x in g$slopes) {
+      v <- eval(str2lang(x), data, baseenv())
+      if (!is.numeric(v)) stop("a random slope must be numeric: ", x, call. = FALSE)
+      out$slope_factor <- c(out$slope_factor, length(out$names))
+      out$slope_names <- c(out$slope_names, x)
+      out$slope_values <- c(out$slope_values, as.double(v))
+    }
+    out$names <- c(out$names, deparse(g$group))
+    out$intercepts <- c(out$intercepts, as.double(g$intercept))
+    out$labels <- c(out$labels, do.call(paste, c(lapply(all.vars(g$group), function(v) {
+      as.character(data[[v]])
+    }), sep = ":")))
   }
-  list(names = names, labels = labels)
+  out
 }
 
-#' Generalized linear mixed models with random intercepts
+# A random term's name: its factor for an intercept, `g|x` for a slope.
+glmm_term_names <- function(groups, terms) {
+  ifelse(terms == "(Intercept)", groups, paste0(groups, "|", terms))
+}
+
+#' Generalized linear mixed models with random intercepts and slopes
 #'
-#' `glmm_fit()` fits a GLM with random intercepts,
-#' `log(mu) = X beta + offset + sum(u)`, each grouping factor's intercepts
-#' `N(0, sigma^2)`, for the Poisson, gamma or Tweedie (fixed power in
-#' (1, 2)) with the log link, by maximum marginal likelihood as glmmTMB
-#' and `lme4::glmer()`: the Laplace approximation by default, or adaptive
-#' Gauss-Hermite quadrature with `nodes` nodes for a single factor
+#' `glmm_fit()` fits a GLM with random effects,
+#' `log(mu) = X beta + offset + sum(z' b)`, each grouping factor's effects
+#' at a level `N(0, Sigma)` with `Sigma` unstructured (a standard
+#' deviation for each term and their correlations), for the Poisson, gamma
+#' or Tweedie (fixed power in (1, 2)) with the log link, by maximum
+#' marginal likelihood as glmmTMB and `lme4::glmer()`: the Laplace
+#' approximation by default, or adaptive Gauss-Hermite quadrature with
+#' `nodes` nodes for a single factor with a single term
 #' (`glmer(nAGQ = nodes)`). The dispersion is estimated by maximum
-#' likelihood, as glmmTMB does. Random intercepts are written as in lme4:
+#' likelihood, as glmmTMB does. Random terms are written as in lme4:
 #' `(1 | g)`, crossed factors `(1 | a) + (1 | b)`, nested ones `(1 | a/b)`
-#' (that is, `(1 | a) + (1 | a:b)`). The results match glmmTMB and `glmer`
+#' (that is, `(1 | a) + (1 | a:b)`), a random slope on a numeric
+#' covariate correlated with the intercept `(1 + x | g)` (or `(x | g)`),
+#' without the intercept `(0 + x | g)`, and independent of it
+#' `(1 + x || g)`. The results match glmmTMB and `glmer`
 #' (`validation/scripts/r_glmm.R`; `docs/design/models.md`, "Mixed
 #' models").
 #'
 #' @param formula A formula with the fixed effects and one or more
-#'   `(1 | g)` terms.
+#'   random terms, `(1 | g)` or `(1 + x | g)`.
 #' @param data A data frame.
 #' @param family `"poisson"`, `"gamma"` or `"tweedie"`.
 #' @param power The Tweedie power, in (1, 2).
@@ -2086,17 +2128,20 @@ glmm_labels <- function(groups, data, required = TRUE) {
 #' @param offset,weights Optional offset (added to any `offset()` term)
 #'   and prior weights.
 #' @returns A `glmm_model` with `coefficients`, `std_errors`, `covariance`
-#'   (of the coefficients), `sd` and `sd_std_errors` (each factor's
-#'   standard deviation; the error is NaN for one at 0), `dispersion` and
+#'   (of the coefficients), `sd` and `sd_std_errors` (each random term's
+#'   standard deviation, named `g` for a factor's intercept and `g|x` for
+#'   its slope on `x`; the error is NaN for one at 0), `correlations` (each
+#'   factor's correlation matrix of its terms), `dispersion` and
 #'   `dispersion_std_error` (`phi`: the variance is `phi mu^p / w`; 1 for
 #'   the Poisson), `log_likelihood`, `aic`, `bic`, `fitted`, `iterations`,
 #'   `converged`, and `random_effects`: a list by factor of data frames
-#'   with each `level`, its conditional mode `value`, its
-#'   `conditional_variance` (lme4's `condVar`) and its
+#'   with a row for each `level` and `term`, its conditional mode `value`,
+#'   its `conditional_variance` (lme4's `condVar`) and its
 #'   `prediction_variance` (with the estimates' uncertainty, glmmTMB's
-#'   `condVar`). `predict()` adds each row's intercepts by label; a level
-#'   the fit has not seen, or a factor whose columns `newdata` lacks, adds
-#'   0, the population mean.
+#'   `condVar`). `predict()` adds each row's effects by label and
+#'   covariate; a level the fit has not seen, or a factor whose columns
+#'   (its labels' or its slopes') `newdata` lacks, adds 0, the population
+#'   mean.
 #' @export
 #' @examples
 #' d <- data.frame(y = (0:39 * 7) %% 5 + 0:39 %% 4, site = paste0("s", 0:39 %% 4))
@@ -2111,7 +2156,8 @@ glmm_fit <- function(formula, data, family = "poisson", power = NULL, nodes = NU
   ptr <- rust_result(glmm_fit_design(as.double(des$x), colnames(des$x), des$y, des$offset,
                                      des$weights, family,
                                      if (is.null(power)) NaN else as.double(power),
-                                     g$names, g$labels,
+                                     g$names, g$labels, g$intercepts, g$slope_factor,
+                                     g$slope_names, g$slope_values,
                                      if (is.null(nodes)) 0 else as.double(nodes)))
   glmm_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels, groups = bars$groups)
 }
@@ -2137,10 +2183,17 @@ glmm_model <- S7::new_class(
       matrix(self@ptr$covariance(), length(nm), dimnames = list(nm, nm))
     }),
     sd = S7::new_property(S7::class_double, getter = function(self) {
-      stats::setNames(self@ptr$sd(), self@ptr$group_names())
+      stats::setNames(self@ptr$sd(), glmm_term_names(self@ptr$group_names(), self@ptr$term_names()))
     }),
     sd_std_errors = S7::new_property(S7::class_double, getter = function(self) {
-      stats::setNames(self@ptr$sd_std_errors(), self@ptr$group_names())
+      stats::setNames(self@ptr$sd_std_errors(),
+                      glmm_term_names(self@ptr$group_names(), self@ptr$term_names()))
+    }),
+    correlations = S7::new_property(S7::class_list, getter = function(self) {
+      terms <- self@ptr$correlation_terms()
+      out <- Map(function(r, t) matrix(r, length(t), dimnames = list(t, t)),
+                 self@ptr$correlations(), terms)
+      stats::setNames(out, names(self@ptr$correlations()))
     }),
     dispersion = S7::new_property(S7::class_double, getter = function(self) self@ptr$dispersion()),
     dispersion_std_error = S7::new_property(S7::class_double, getter = function(self) {
@@ -2165,8 +2218,125 @@ S7::method(coef, glmm_model) <- function(object, ...) object@coefficients
 S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...) {
   nd <- new_design(object, newdata, offset)
   g <- glmm_labels(object@groups, newdata, required = FALSE)
-  rust_result(object@ptr$predict(as.double(nd$x), colnames(nd$x), nd$offset, g$names, g$labels),
+  rust_result(object@ptr$predict(as.double(nd$x), colnames(nd$x), nd$offset, g$names, g$labels,
+                                 g$intercepts, g$slope_factor, g$slope_names, g$slope_values),
               s7_call())
+}
+
+#' Bayesian GLMMs by NUTS
+#'
+#' `bayes_glmm_fit()` samples the posterior of the model of [glmm_fit()]
+#' (random terms written as in lme4) with nuts-rs, jointly with the random
+#' effects, which are sampled non-centred (`b = Lambda v` with
+#' `v ~ N(0, I)`, so the chains stay out of the funnel between a standard
+#' deviation and its effects). The priors: `N(0, prior_sd^2)` on each
+#' coefficient (`intercept_sd` for the intercept), half-normal with scale
+#' `sd_scale` on each random term's standard deviation, LKJ(`lkj`) on each
+#' factor's correlations (uniform at 1), and half-normal with scale
+#' `dispersion_scale` on the gamma's or Tweedie's dispersion. The chains
+#' start at the Laplace fit, which is kept as `laplace`. On a single
+#' factor the posterior matches exact integration, and on 800 rows with
+#' random slopes it sits on the Laplace fit (`docs/design/models.md`,
+#' "Mixed models").
+#'
+#' @inheritParams glmm_fit
+#' @param prior_sd,intercept_sd Prior standard deviations of the
+#'   coefficients and the intercept, on the log scale.
+#' @param sd_scale Scale of the half-normal prior on each random term's
+#'   standard deviation.
+#' @param lkj The LKJ prior's shape on each factor's correlations.
+#' @param dispersion_scale Scale of the half-normal prior on the
+#'   dispersion.
+#' @param chains,tune,draws Chains, warm-up draws and kept draws per chain.
+#' @param seed Seed, a whole number.
+#' @param target_accept Target acceptance rate for step-size adaptation.
+#' @param max_depth Largest tree depth.
+#' @returns A `bayes_glmm_model` with `coefficients` (posterior means),
+#'   `summary` (a data frame of mean, sd, quantiles, R-hat and ESS for each
+#'   coefficient, `sd[g|term]`, `cor[g|a,b]` and the `dispersion` when it
+#'   is free), `draws` (a matrix of those parameters, one row per draw),
+#'   `effect_draws` (a matrix of the random effects `b[g|level|term]`),
+#'   `random_effects` (a list by factor of data frames with each `level`
+#'   and `term`, its posterior `mean` and `sd`), `divergences` and
+#'   `laplace` (the [glmm_model] the chains started from). `predict()`
+#'   gives the posterior mean of each row's mean, its effects looked up as
+#'   in [glmm_fit()].
+#' @export
+#' @examples
+#' d <- data.frame(y = (0:39 * 7) %% 5 + 0:39 %% 4, site = paste0("s", 0:39 %% 4))
+#' m <- bayes_glmm_fit(y ~ 1 + (1 | site), d, chains = 2, tune = 300, draws = 300)
+#' m@summary
+bayes_glmm_fit <- function(formula, data, family = "poisson", power = NULL, offset = NULL,
+                           weights = NULL, prior_sd = 2.5, intercept_sd = 10, sd_scale = 1,
+                           lkj = 1, dispersion_scale = 10, chains = 4, tune = 1000, draws = 1000,
+                           seed = 0, target_accept = 0.8, max_depth = 10) {
+  bars <- glmm_bars(formula)
+  des <- model_design(bars$fixed, data, offset, weights)
+  g <- glmm_labels(bars$groups, data)
+  ptr <- rust_result(bayes_glmm_fit_design(
+    as.double(des$x), colnames(des$x), des$y, des$offset, des$weights, family,
+    if (is.null(power)) NaN else as.double(power), g$names, g$labels, g$intercepts,
+    g$slope_factor, g$slope_names, g$slope_values,
+    as.double(c(prior_sd, intercept_sd, sd_scale, lkj, dispersion_scale)),
+    as.double(c(chains, tune, draws, seed, target_accept, max_depth))
+  ))
+  bayes_glmm_model(ptr = ptr, terms = des$terms, xlevels = des$xlevels, groups = bars$groups)
+}
+
+#' @rdname bayes_glmm_fit
+#' @param ptr,terms,xlevels,groups Internal.
+#' @export
+bayes_glmm_model <- S7::new_class(
+  "bayes_glmm_model",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("BayesGlmmModel"),
+    terms = S7::class_any,
+    xlevels = S7::class_any,
+    groups = S7::class_list,
+    coefficients = S7::new_property(S7::class_double, getter = function(self) {
+      nm <- self@ptr$names()
+      stats::setNames(colMeans(self@draws)[seq_along(nm)], nm)
+    }),
+    summary = S7::new_property(S7::class_any, getter = function(self) {
+      as.data.frame(self@ptr$summary())
+    }),
+    draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$parameter_names()
+      matrix(self@ptr$parameter_draws(), ncol = length(nm), byrow = TRUE,
+             dimnames = list(NULL, nm))
+    }),
+    effect_draws = S7::new_property(S7::class_any, getter = function(self) {
+      nm <- self@ptr$effect_names()
+      matrix(self@ptr$effect_draws(), ncol = length(nm), byrow = TRUE,
+             dimnames = list(NULL, nm))
+    }),
+    random_effects = S7::new_property(S7::class_list, getter = function(self) {
+      lapply(self@ptr$random_effects(), as.data.frame)
+    }),
+    divergences = S7::new_property(S7::class_double, getter = function(self) self@ptr$divergences()),
+    laplace = S7::new_property(S7::class_any, getter = function(self) {
+      glmm_model(ptr = self@ptr$laplace(), terms = self@terms, xlevels = self@xlevels,
+                 groups = self@groups)
+    })
+  ),
+  constructor = function(ptr, terms, xlevels, groups) {
+    S7::new_object(S7::S7_object(), ptr = ptr, terms = terms, xlevels = xlevels, groups = groups)
+  }
+)
+
+S7::method(coef, bayes_glmm_model) <- function(object, ...) object@coefficients
+S7::method(predict, bayes_glmm_model) <- function(object, newdata, offset = NULL, ...) {
+  nd <- new_design(object, newdata, offset)
+  g <- glmm_labels(object@groups, newdata, required = FALSE)
+  rust_result(object@ptr$predict(as.double(nd$x), colnames(nd$x), nd$offset, g$names, g$labels,
+                                 g$intercepts, g$slope_factor, g$slope_names, g$slope_values),
+              s7_call())
+}
+S7::method(print, bayes_glmm_model) <- function(x, ...) {
+  cat(sprintf("<bayes_glmm_model> %d divergences\n", as.integer(x@divergences)))
+  print(x@summary)
+  invisible(x)
 }
 
 #' Double GLMs: a model for the dispersion as well as the mean
@@ -2175,7 +2345,8 @@ S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...)
 #' variance `phi V(mu) / w`, and a gamma GLM with the log link for the
 #' dispersion, `log(phi) = Z gamma + doffset`, each on its own formula, as
 #' `dglm::dglm()` (Smyth's alternating scoring). The dispersion is
-#' estimated by REML by default; `method = "ml"` is `dglm()`'s default.
+#' estimated by maximum likelihood by default, as `dglm()`, or by REML
+#' (`method = "reml"`).
 #' `dglm` 1.8.6 weights its mean step by `w V(mu) / phi` and leaves the
 #' offset out of `mu.eta`, which is right only for a canonical link without
 #' an offset; this fit uses the scoring weights, so it agrees with `dglm()`
@@ -2188,7 +2359,7 @@ S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...)
 #' @param family `"gaussian"`, `"poisson"`, `"gamma"` or `"tweedie"`.
 #' @param link The mean's link; the family's canonical link by default.
 #' @param power The Tweedie power, in (1, 2).
-#' @param method `"reml"` or `"ml"`.
+#' @param method `"ml"` (the default) or `"reml"`.
 #' @param offset,weights Optional offset of the mean (added to any
 #'   `offset()` term) and prior weights.
 #' @param doffset Optional offset of the log dispersion (added to any
@@ -2210,7 +2381,7 @@ S7::method(predict, glmm_model) <- function(object, newdata, offset = NULL, ...)
 #' m@dispersion_coefficients
 #' predict(m, data.frame(urban = "yes"), type = "dispersion")
 dglm_fit <- function(formula, dformula = ~1, data, family = "gaussian", link = NULL, power = NULL,
-                     method = "reml", offset = NULL, weights = NULL, doffset = NULL,
+                     method = "ml", offset = NULL, weights = NULL, doffset = NULL,
                      link_power = NULL) {
   des <- model_design(formula, data, offset, weights)
   ddes <- model_design(dformula, data, doffset, NULL)

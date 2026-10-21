@@ -427,24 +427,38 @@
   full adds `family: Family::Poisson` or uses `..OdpGlm::default()` (#333, #445).
 ### Models
 
-- Generalized linear mixed models with random intercepts:
+- Generalized linear mixed models with random intercepts and slopes:
   `prospicio_glm::glmm::Glmm` fits the Poisson, gamma and Tweedie (fixed
   power) with the log link and one, nested (`Grouping::nested`) or crossed
-  grouping factors, by the Laplace approximation or, for one factor, by
-  adaptive Gauss-Hermite quadrature (`Glmm::quadrature`). `GlmmFit` gives
-  the fixed effects with their covariance, each factor's standard
-  deviation, the dispersion, the log-likelihood, AIC and BIC, and each
-  level's mode with its conditional and prediction variances; `predict`
-  gives a level the fit has not seen the population mean. At parity with
-  glmmTMB and lme4's `glmer` (#358).
+  grouping factors, each with a random intercept and any random slopes
+  (`Grouping::slope`, `without_intercept`) under an unstructured
+  covariance, by the Laplace approximation or, for one factor with one
+  term, by adaptive Gauss-Hermite quadrature (`Glmm::quadrature`).
+  `GlmmFit` gives the fixed effects with their covariance, each term's
+  standard deviation, each factor's correlations, every parameter with its
+  covariance (glmmTMB's `theta`), the dispersion, the log-likelihood, AIC
+  and BIC, and each level's modes with their conditional and prediction
+  variances; `predict` gives a level the fit has not seen the population
+  mean. At parity with glmmTMB and lme4's `glmer` (#358).
 - The GLMMs in Python and R: `prospicio.models.Glmm` and `GlmmFit`, with
-  grouping factors as a dict of labels, and R `glmm_fit()` with lme4's
-  `(1 | g)` and `(1 | a/b)` terms in the formula, returning a
-  `glmm_model` with `random_effects` and `predict()` (#358).
+  grouping factors as a dict of labels or of `labels`, `slopes`,
+  `intercept` and `correlated`, and R `glmm_fit()` with lme4's `(1 | g)`,
+  `(1 + x | g)`, `(0 + x | g)`, `(1 + x || g)` and `(1 | a/b)` terms in
+  the formula, returning a `glmm_model` with `sd`, `correlations`,
+  `random_effects` and `predict()` (#358).
+- Bayesian GLMMs by NUTS: `prospicio_bayes::glmm::BayesGlmm` samples the
+  same models jointly with their random effects (non-centred, started at
+  the Laplace fit), with normal priors on the coefficients, half-normal
+  ones on the standard deviations and the dispersion and LKJ priors on the
+  correlations. `BayesGlmmFit` gives the parameters' and the effects'
+  draws, the summary with R-hat and ESS, each effect's posterior mean and
+  sd, the Laplace fit and the posterior mean of new rows' means. In Python
+  `prospicio.models.BayesGlmm` and `BayesGlmmFit`, in R
+  `bayes_glmm_fit()` with the random terms in the formula (#358).
 - Double GLMs: `prospicio_glm::dglm::DoubleGlm` fits a GLM for the mean
   and a gamma GLM with the log link for the dispersion, each on its own
-  design, for the Gaussian, Poisson, gamma and Tweedie, by REML (the
-  default) or ML (`.ml()`). `DoubleGlmFit` gives both sets of coefficients
+  design, for the Gaussian, Poisson, gamma and Tweedie, by ML (the
+  default, as `dglm`) or REML (`.reml()`). `DoubleGlmFit` gives both sets of coefficients
   with their covariances, the fitted means and dispersions, `dglm`'s
   `m2loglik`, the REML criterion and AIC. At parity with R `dglm` where it
   is right; where its mean step is not (a non-canonical link such as the
@@ -563,3 +577,28 @@
   `GridAudit` keeps every cell and the reason for the choice. With
   `recommend_portfolio_grid`, a grid for several units. `aggregate`'s
   scores and choices on its books, to six digits (#317).
+
+### Distributions and probability
+
+- The beta and Sichel mixings of mixed Poisson counts, `aggregate`'s
+  `mixed beta`, `sichel`, `sichel.gamma` and `sichel.ig`:
+  `Mixing::Beta { cv, max }` (the Poisson mean `max` times a beta
+  variable), `Mixing::Sichel { cv, shape }` (a generalized inverse
+  Gaussian of the given shape) and `Mixing::SichelSkewness { cv, skewness }`
+  (the shape solved for a skewness), with `Mixing::sichel_gamma(cv, f)`
+  and `Mixing::sichel_ig(cv, f)`; `MixedPoisson::gig` gives the solved
+  parameters and `Mixing::cv` the coefficient of variation. At parity with
+  `aggregate` 1.2.0 for the Sichel and `sichel.ig`, and with quadrature
+  and SciPy where `aggregate` is wrong (its beta probabilities are off by
+  up to 8e-9, and `sichel.gamma 0.4 0.3` solves to a count of mean 14.76,
+  not 10). `prospicio_math::special::ln_bessel_k`, `ln K_nu(x)` for real
+  order. Python `Count.mixed_poisson(..., mixing="beta", max=)`,
+  `mixing="sichel"` with `shape=` or `skewness=`, `"sichel_gamma"` and
+  `"sichel_ig"` with `f=`, and `Count.gig()`; R `mixed_poisson_count()`
+  with the same arguments and `gig_parameters()`.
+
+### Breaking changes
+
+- `Mixing` has three new variants (`Beta`, `Sichel`, `SichelSkewness`);
+  Rust code that matches it exhaustively adds arms for them or uses
+  `Mixing::cv`.

@@ -10,6 +10,8 @@ actual_vs_expected_rust <- function(periods, y, mu, weights, family_name, theta,
 
 bayes_glm_fit_design <- function(x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler) .Call(wrap__bayes_glm_fit_design, x, names, y, offset, weights, family_name, link_name, theta, power, link_power, prior_sd, intercept_sd, dispersion, dispersion_scale, sampler)
 
+bayes_glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, priors, sampler) .Call(wrap__bayes_glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, priors, sampler)
+
 glm_nested_test_rust <- function(small, big, kind) .Call(wrap__glm_nested_test_rust, small, big, kind)
 
 vif_rust <- function(x, names) .Call(wrap__vif_rust, x, names)
@@ -164,7 +166,7 @@ elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
 
 dglm_fit_design <- function(x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method) .Call(wrap__dglm_fit_design, x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method)
 
-glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, nodes) .Call(wrap__glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, nodes)
+glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes) .Call(wrap__glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes)
 
 local_pareto_convert <- function(t, alpha, rel_tolerance, stop_survival, stop_at) .Call(wrap__local_pareto_convert, t, alpha, rel_tolerance, stop_survival, stop_at)
 
@@ -1019,15 +1021,49 @@ GlmmModel$iterations <- function() .Call(wrap__GlmmModel__iterations, self)
 
 GlmmModel$converged <- function() .Call(wrap__GlmmModel__converged, self)
 
+GlmmModel$term_names <- function() .Call(wrap__GlmmModel__term_names, self)
+
+GlmmModel$correlations <- function() .Call(wrap__GlmmModel__correlations, self)
+
+GlmmModel$correlation_terms <- function() .Call(wrap__GlmmModel__correlation_terms, self)
+
 GlmmModel$random_effects <- function() .Call(wrap__GlmmModel__random_effects, self)
 
-GlmmModel$predict <- function(x, names, offset, group_names, group_labels) .Call(wrap__GlmmModel__predict, self, x, names, offset, group_names, group_labels)
+GlmmModel$predict <- function(x, names, offset, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values) .Call(wrap__GlmmModel__predict, self, x, names, offset, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values)
 
 #' @export
 `$.GlmmModel` <- function (self, name) { func <- GlmmModel[[name]]; environment(func) <- environment(); func }
 
 #' @export
 `[[.GlmmModel` <- `$.GlmmModel`
+
+BayesGlmmModel <- new.env(parent = emptyenv())
+
+BayesGlmmModel$names <- function() .Call(wrap__BayesGlmmModel__names, self)
+
+BayesGlmmModel$parameter_names <- function() .Call(wrap__BayesGlmmModel__parameter_names, self)
+
+BayesGlmmModel$parameter_draws <- function() .Call(wrap__BayesGlmmModel__parameter_draws, self)
+
+BayesGlmmModel$effect_names <- function() .Call(wrap__BayesGlmmModel__effect_names, self)
+
+BayesGlmmModel$effect_draws <- function() .Call(wrap__BayesGlmmModel__effect_draws, self)
+
+BayesGlmmModel$divergences <- function() .Call(wrap__BayesGlmmModel__divergences, self)
+
+BayesGlmmModel$summary <- function() .Call(wrap__BayesGlmmModel__summary, self)
+
+BayesGlmmModel$laplace <- function() .Call(wrap__BayesGlmmModel__laplace, self)
+
+BayesGlmmModel$random_effects <- function() .Call(wrap__BayesGlmmModel__random_effects, self)
+
+BayesGlmmModel$predict <- function(x, names, offset, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values) .Call(wrap__BayesGlmmModel__predict, self, x, names, offset, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values)
+
+#' @export
+`$.BayesGlmmModel` <- function (self, name) { func <- BayesGlmmModel[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BayesGlmmModel` <- `$.BayesGlmmModel`
 
 DglmModel <- new.env(parent = emptyenv())
 
@@ -1829,7 +1865,9 @@ ClaimCount$zero_modified <- function(base, p0) .Call(wrap__ClaimCount__zero_modi
 
 ClaimCount$logarithmic <- function(p) .Call(wrap__ClaimCount__logarithmic, p)
 
-ClaimCount$mixed_poisson <- function(mean, cv, mixing, shift) .Call(wrap__ClaimCount__mixed_poisson, mean, cv, mixing, shift)
+ClaimCount$mixed_poisson <- function(mean, cv, mixing, shift, param) .Call(wrap__ClaimCount__mixed_poisson, mean, cv, mixing, shift, param)
+
+ClaimCount$gig <- function() .Call(wrap__ClaimCount__gig, self)
 
 ClaimCount$compound_poisson <- function(rate, secondary) .Call(wrap__ClaimCount__compound_poisson, rate, secondary)
 

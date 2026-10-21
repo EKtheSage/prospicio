@@ -32,6 +32,7 @@
 pub mod credibility;
 pub mod elpd;
 pub mod glm;
+pub mod glmm;
 pub mod nuts;
 pub mod ppc;
 pub mod stacking;

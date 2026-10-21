@@ -429,16 +429,17 @@ what it is aiming for by v1.0.
   product, cyclic and monotone smooths (GCV/UBRE and REML; monotone ones
   GCV/UBRE, as scam). This completes the GAM scope of v0.6. GLMMs with
   random intercepts (Poisson, gamma, Tweedie; one, nested or crossed
-  factors; Laplace, or adaptive quadrature for one factor; glmmTMB and
-  lme4 parity; Rust, Python and R, #358). Double GLMs (a dispersion
+  factors; random slopes, correlated or not; Laplace, or adaptive
+  quadrature for one factor; glmmTMB and lme4 parity; and a NUTS fit with
+  LKJ priors on the correlations, at the exact posterior on one factor;
+  Rust, Python and R, #358). Double GLMs (a dispersion
   model on its own design, REML or ML; `dglm` parity, corrected where its
   mean step is wrong; Rust, Python and R, #353). Elastic-net
   coefficient bounds, the relaxed lasso and its cross-validation, and an
   active-set solve for collinear bases (glmnet parity; Rust, Python
   and R, #356). Model-agnostic explanations: permutation importance,
   the interaction screen and partial dependence (Python and R, #355).
-- **Next:** a NUTS fit of the GLMMs and random slopes, when the user
-  decides them (#358).
+- **Next:** survival models, when claim-level reserving resumes.
 - **v1.0:** mgcv's useful part for Tweedie, Poisson and gamma.
 
 ### `prospicio-nn` (Models lane, opt-in)

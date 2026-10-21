@@ -12,10 +12,10 @@
 //! [`DoubleGlm::fit`] alternates a scoring step for `γ` at fixed means and
 //! one for `β` at fixed dispersions until both settle, as `dglm`.
 //!
-//! The dispersion is estimated by restricted maximum likelihood by
-//! default ([`DispersionMethod::Reml`]: each deviance's mean is corrected
-//! by its leverage in the mean model, Smyth and Verbyla's adjusted
-//! profile likelihood), or by maximum likelihood (`dglm`'s default).
+//! The dispersion is estimated by maximum likelihood by default, as
+//! `dglm`, or by restricted maximum likelihood ([`DispersionMethod::Reml`]:
+//! each deviance's mean is corrected by its leverage in the mean model,
+//! Smyth and Verbyla's adjusted profile likelihood).
 //!
 //! The mean step uses the scoring weights `w μ'(η)² / (φ V(μ))` with
 //! `μ'` at the full linear predictor. `dglm` 1.8.6 uses `w V(μ) / φ` and
@@ -75,22 +75,30 @@ pub struct DoubleGlm {
 }
 
 impl DoubleGlm {
-    /// REML (`dglm`'s default is ML: [`ml`](Self::ml)), tolerance `1e-11`, at
-    /// most 1000 alternations.
+    /// Maximum likelihood, as `dglm` (REML: [`reml`](Self::reml)),
+    /// tolerance `1e-11`, at most 1000 alternations.
     pub fn new(family: Family, link: Link) -> Self {
         Self {
             family,
             link,
-            method: DispersionMethod::Reml,
+            method: DispersionMethod::Ml,
             tolerance: 1e-11,
             max_iterations: 1000,
         }
     }
 
-    /// The same model by maximum likelihood.
+    /// The same model by maximum likelihood, the default.
     pub fn ml(self) -> Self {
         Self {
             method: DispersionMethod::Ml,
+            ..self
+        }
+    }
+
+    /// The same model by restricted maximum likelihood.
+    pub fn reml(self) -> Self {
+        Self {
+            method: DispersionMethod::Reml,
             ..self
         }
     }
@@ -653,7 +661,7 @@ mod tests {
         let glm = Glm::new(Family::Gamma, Link::Log).fit(&d, &y).unwrap();
         for spec in [
             DoubleGlm::new(Family::Gamma, Link::Log),
-            DoubleGlm::new(Family::Gamma, Link::Log).ml(),
+            DoubleGlm::new(Family::Gamma, Link::Log).reml(),
         ] {
             let fit = spec.fit(&d, &one, &y).unwrap();
             for (a, b) in fit.coefficients().iter().zip(glm.coefficients()) {
@@ -665,12 +673,13 @@ mod tests {
         }
         // REML's dispersion is the larger: it allows for the estimated mean.
         let reml = DoubleGlm::new(Family::Gamma, Link::Log)
+            .reml()
             .fit(&d, &one, &y)
             .unwrap();
         let ml = DoubleGlm::new(Family::Gamma, Link::Log)
-            .ml()
             .fit(&d, &one, &y)
             .unwrap();
+        assert_eq!(ml.method(), DispersionMethod::Ml);
         assert!(reml.dispersion_fitted()[0] > ml.dispersion_fitted()[0]);
     }
 

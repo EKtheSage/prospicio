@@ -58,8 +58,9 @@ convention at a bucket boundary.
    the product of the units' transforms). The mixing variable is shared only
    by one `Aggregate`'s severity components, which is prospicio's `fft` of a
    `MixedPoisson` on a `Mixture`, and by a `bivariate`'s two units, which is
-   `fft_bivariate` with a mixed count; both match. Left open: the beta and
-   Sichel mixings.
+   `fft_bivariate` with a mixed count; both match. The beta and Sichel
+   mixings followed (`Mixing::Beta`, `Mixing::Sichel`, `sichel_gamma`,
+   `sichel_ig`).
 2. **A grid audit.** aggregate's `sharpen` re-runs a build over probe bucket
    sizes and scores them, and the tail report grades the tail. prospicio reports
    `aliasing_error`, `tail_mass` and `mean_error` and sizes by `recommend_grid`
