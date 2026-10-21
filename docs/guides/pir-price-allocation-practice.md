@@ -248,6 +248,39 @@ under TVaR, and PLC gives it fewer still (113.2): PLC weights layers by
 objective probability and so is the least tail-sensitive of all, as section
 15.4.4 observes.
 
+The natural allocation depends on the distortion, so how far could the choice
+move Cat's premium? `Portfolio.premium_bounds` gives the lowest and highest
+premium each unit can receive under the linear allocation over **every**
+distortion that prices the capped total at the same premium (the companion
+guide's section 7 explains the method). All five distortions here share a
+total of 115.15, so one range serves them all, and each distortion's linear
+Cat premium lies in it:
+
+```python
+total = book.price(dists["ph"], p=0.999).total.premium
+for row in book.premium_bounds(total, assets=a):
+    print(f"{row['unit']}: {row['lower']:.2f} to {row['upper']:.2f}")
+for family, dist in dists.items():
+    linear = book.price(dist, p=0.999, allocation="linear").allocated[0].premium
+    print(f"{family:5s} linear Cat premium {linear:.2f}")
+```
+
+```text
+Cat: 28.69 to 35.95
+NonCat: 79.20 to 86.46
+ccoc  linear Cat premium 35.95
+ph    linear Cat premium 32.79
+wang  linear Cat premium 31.25
+dual  linear Cat premium 29.68
+tvar  linear Cat premium 28.69
+```
+
+The CCoC and TVaR sit at the two ends of the range, as in the companion
+guide's small book: the CCoC puts all its spare weight on the worst outcome,
+which loads Cat, the unit that owns the worst outcomes, and TVaR spreads it
+over the upper tail. The range for Cat, 28.69 to 35.95, is the room the choice
+of distortion leaves.
+
 ## 4. Is a reinsurance cover worth buying? (chapter 19)
 
 Chapter 19 asks whether an insurer that prices with a spectral risk measure
@@ -338,7 +371,3 @@ pieces (a `Portfolio` per candidate program) but no optimizer.
 - **The blend distortion** of Tables 15.35 to 15.40, calibrated in the book's
   section 11.4 to several spreads: see the case studies guide.
 - **Chapter 20**, strategy and marginal cost, has no computation to reproduce.
-- **Premium bounds on the case study**: `Portfolio.premium_bounds` enumerates
-  pairs of knots of the total and takes too long on the 70,000 totals of this
-  grid for a guide (#368); on a small book it is section 7 of the companion
-  guide.

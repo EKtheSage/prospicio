@@ -369,33 +369,40 @@ losses below it. For a fitted or assumed severity, `prospicio.pricing.ilf` and
 `loss_elimination_ratio` compute both exactly (see
 [`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md)).
 The book's tables, though, give only claim counts and loss totals per size
-band, and prospicio has no severity built from such a table, so the book's
-figures are a few lines of arithmetic. For the record, here they are, in plain
-Python:
+band. `SizeOfLoss` reads such a table as a severity, with each band's claims at
+the band's average, so its limited expected value is exact at every band edge,
+and `ilf`, `loss_elimination_ratio` and the layer functions take it like any
+other severity. `censored_las` does the censored method of Table 11.6, one
+table per policy limit:
 
 ```python
+from prospicio.distributions import SizeOfLoss
+from prospicio.pricing import censored_las, ilf, loss_elimination_ratio
+
 # Table 11.3: 5,000 uncensored claims, (count, losses) by band up to 100K, 250K, 500K, 1M.
-counts = [2_324, 1_923, 680, 73]
-losses = [117_629_223, 307_599_929, 222_793_514, 43_047_470]
-las_100 = (losses[0] + 100_000 * sum(counts[1:])) / sum(counts)
-las_250 = (losses[0] + losses[1] + 250_000 * sum(counts[2:])) / sum(counts)
+table = SizeOfLoss([0, 100e3, 250e3, 500e3, 1e6], [2_324, 1_923, 680, 73],
+                   [117_629_223, 307_599_929, 222_793_514, 43_047_470])
+las_100, las_250 = table.lev(100e3), table.lev(250e3)
 print(f"LAS(100K) {las_100:,.0f} (book 77,046)  LAS(250K) {las_250:,.0f} (book 122,696)"
-      f"  ILF {las_250 / las_100:.2f} (book 1.59)")
+      f"  ILF {ilf(table, 250e3, 100e3):.2f} (book 1.59)")
 
 # Table 11.6: the same claims censored at policy limits of 100K, 250K and 500K.
-layer_1 = (156_657_898 + 34_903_214 + 35_768_111 + 100_000 * (773 + 574 + 232)) / 5_000
-layer_2 = ((142_767_479 - 773 * 100_000) + (90_009_422 - 574 * 100_000) + 232 * 150_000) / (1_463 + 1_518)
-layer_3 = (81_092_725 - 232 * 250_000) / 1_518
-l1, l2, l3 = (half_up(x, 0) for x in (layer_1, layer_2, layer_3))  # the book adds rounded layers
+by_limit = [
+    SizeOfLoss([0, 100e3], [2_019], [156_657_898]),
+    SizeOfLoss([0, 100e3, 250e3], [690, 773], [34_903_214, 142_767_479]),
+    SizeOfLoss([0, 100e3, 250e3, 500e3], [712, 574, 232], [35_768_111, 90_009_422, 81_092_725]),
+]
+layers = censored_las(by_limit)
+l1, l2, l3 = (half_up(layer["severity"], 0) for layer in layers)  # the book adds rounded layers
 print(f"censored: layers {l1:,.0f} + {l2:,.0f} + {l3:,.0f} (book 77,046 + 44,575 + 15,213)")
 print(f"  LAS(250K) {l1 + l2:,.0f} (book 121,621)  LAS(500K) {l1 + l2 + l3:,.0f} (book 136,834)"
-      f"  unrounded {layer_1 + layer_2:,.1f} and {layer_1 + layer_2 + layer_3:,.1f}")
+      f"  unrounded {layers[1]['las']:,.1f} and {layers[2]['las']:,.1f}")
 
 # Table 11.8: loss elimination ratio of a 250 deductible, ground-up homeowners losses.
-counts = [3_200, 1_225, 1_187, 1_845, 2_543]
-losses = [240_365, 207_588, 463_954, 1_551_938, 11_140_545]
-eliminated = losses[0] + losses[1] + 250 * sum(counts[2:])
-print(f"LER(250) {eliminated / sum(losses):.3f} (book 0.135)")
+# Only the edge at 250 matters; the other edges are chosen to hold each band's average.
+homeowners = SizeOfLoss([0, 100, 250, 500, 1_000, float("inf")], [3_200, 1_225, 1_187, 1_845, 2_543],
+                        [240_365, 207_588, 463_954, 1_551_938, 11_140_545])
+print(f"LER(250) {loss_elimination_ratio(homeowners, 250):.3f} (book 0.135)")
 ```
 
 ```text
@@ -424,10 +431,6 @@ not, and some are filed as issues for the lane that owns the code:
   Appendix A, and averages over the latest n years: compute them and pass
   them to `ChainLadder` as a selected pattern, as in section 1 here and
   section 4 of the first guide (issue #339).
-- **Size-of-loss tables** (chapter 11): increased limit factors, the censored
-  layer method and loss elimination ratios from grouped counts and losses.
-  prospicio computes them from a severity distribution, not from a table
-  (section 5; issue #338).
 - **Traditional risk classification** (chapter 9: univariate pure premium
   and loss ratio relativities, adjusted for distributional bias; Appendix E),
   **multivariate classification and GLMs** (chapter 10 and Appendix F),
