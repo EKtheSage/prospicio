@@ -167,15 +167,69 @@ pub(crate) fn broadcast(
 }
 
 /// The exposure curve `G(x)` at each `x` in `[0, 1]`:
-/// `PRO.EXPOSURE.CURVE(x, curve, p1, [p2], [p3])`.
+/// `PRO.EXPOSURE.CURVE(x, curve, p1, [p2], [p3])`. A row of Swiss Re `c`
+/// (or MBBEFD `b`, `g`) against a column of `x` gives one column per
+/// curve.
 pub fn exposure_curve(args: &[Grid]) -> Result<Grid> {
-    let c = curve(&args[1], &args[2], &args[3], &args[4])?;
-    map1(&args[0], "x", false, |x| {
+    curve_table(args, "x", |c, x| {
         if (0.0..=1.0).contains(&x) {
             Ok(c.g(x))
         } else {
             Err(format!("x must be in [0, 1], got {x}"))
         }
+    })
+}
+
+/// `f` at each value of `args[0]` on the curves named by `args[1..5]`.
+/// One curve maps the values cell by cell. A Swiss Re `c` or an MBBEFD
+/// `b` and `g` given as a row (or column) of several values names one
+/// curve each, and the result is a table: a column of values against a
+/// row of curves, one column per curve, or a row of values against a
+/// column of curves, one row per curve.
+fn curve_table(
+    args: &[Grid],
+    name: &str,
+    f: impl Fn(&BandCurve, f64) -> Result<f64>,
+) -> Result<Grid> {
+    let xs = &args[0];
+    let tabulated = matches!(args[1].as_scalar(), Some(Value::Text(s)) if s.trim().eq_ignore_ascii_case("tabulated"));
+    let params = [&args[2], &args[3]]
+        .into_iter()
+        .find(|g| g.cells.len() > 1)
+        .filter(|_| !tabulated);
+    let Some(params) = params else {
+        let c = curve(&args[1], &args[2], &args[3], &args[4])?;
+        return map1(xs, name, false, |x| f(&c, x));
+    };
+    let n = params.cells.len();
+    let across = params.rows == 1;
+    if params.rows != 1 && params.columns != 1 {
+        return Err("several curves' parameters must be a row or a column".into());
+    }
+    if (across && xs.columns != 1) || (!across && xs.rows != 1) {
+        return Err(format!(
+            "with several curves, {name} must be a column against a row of parameters, \
+             or a row against a column"
+        ));
+    }
+    let curves = curves(&args[1], &args[2], &args[3], &args[4], n)?;
+    let m = xs.cells.len();
+    let (rows, columns) = if across { (m, n) } else { (n, m) };
+    let mut cells = Vec::with_capacity(m * n);
+    for r in 0..rows {
+        for c in 0..columns {
+            let (i, k) = if across { (r, c) } else { (c, r) };
+            let (xr, xc) = if across { (i, 0) } else { (0, i) };
+            cells.push(match amount(xs.get(xr, xc), name, xr, xc, false)? {
+                Some(x) => Value::number(f(&curves[k], x)?),
+                None => Value::Empty,
+            });
+        }
+    }
+    Ok(Grid {
+        rows,
+        columns,
+        cells,
     })
 }
 
@@ -195,8 +249,7 @@ pub fn share(args: &[Grid]) -> Result<Grid> {
 /// The destruction rate (loss over MPL) at each probability `u`:
 /// `PRO.EXPOSURE.QUANTILE(u, curve, p1, [p2], [p3])`.
 pub fn quantile(args: &[Grid]) -> Result<Grid> {
-    let c = curve(&args[1], &args[2], &args[3], &args[4])?;
-    map1(&args[0], "u", false, |u| {
+    curve_table(args, "u", |c, u| {
         if u > 0.0 && u < 1.0 {
             Ok(c.rate_quantile(u))
         } else {

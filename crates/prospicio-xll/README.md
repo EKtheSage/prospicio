@@ -24,8 +24,12 @@ gcc-mingw-w64-x86-64`). The smoke test runs when `x86_64-w64-mingw32-gcc`
 is found, under Wine off Windows.
 
 `python3 harness/make_workbook.py prospicio-xll-test.xlsx` (needs
-openpyxl) writes a test workbook: RAA with every function in place and R
-ChainLadder's totals beside them, plus Layers, ODP, ODP draws, Mack bootstrap, Expected loss (GenIns with premium), One-year and Triangle helpers sheets.
+openpyxl) writes a test workbook that calls every one of the add-in's
+functions with a check beside it (a published value, R or Python's, or an
+identity): RAA with R ChainLadder's totals, then a sheet per area (Layers,
+ODP and its draws, Mack bootstrap and its draws, Expected loss, One-year,
+Exposure, Ratemaking, Term, Bayesian and others). A check reads TRUE when
+the function agrees.
 
 ## Install in Excel
 
@@ -177,7 +181,11 @@ Ctrl+Alt+F9 to recalculate.
 - `curve` and `p1`, `p2`, `p3` (exposure curves): `"swiss_re"` (c, such
   as 1.5, 2, 3 or 4 for Swiss Re's Y1 to Y4, 5 for Lloyd's), `"mbbefd"`
   (b, g) or `"tabulated"` (a range of x from 0 to 1, a range of G(x) from
-  0 to 1, and optionally `"linear"` or `"log-log"` interpolation);
+  0 to 1, and optionally `"linear"` or `"log-log"` interpolation).
+  `PRO.EXPOSURE.CURVE` and `PRO.EXPOSURE.QUANTILE` tabulate several
+  curves at once: a column of x (or u) against a row of c (or of b or g,
+  the other a number or a row as long) gives one column per curve, and a
+  row against a column one row per curve;
   `mpl`: a risk's maximum possible loss or sum insured, a number or a
   range that broadcasts against the limits and attachments.
 - Credibility: `ratios` has one row per group and one column per period,

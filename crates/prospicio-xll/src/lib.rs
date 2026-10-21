@@ -759,7 +759,7 @@ pub static FUNCTIONS: &[Function] = &[
     Function {
         symbol: "pro_exposure_curve",
         name: "PRO.EXPOSURE.CURVE",
-        help: "Exposure curve G(x): the share of a risk's expected loss below a fraction x of its MPL.",
+        help: "Exposure curve G(x): the share of a risk's expected loss below a fraction x of its MPL. A column of x against a row of c (or b, g) gives one column per curve.",
         args: &[
             Arg {
                 name: "x",
@@ -782,7 +782,7 @@ pub static FUNCTIONS: &[Function] = &[
     Function {
         symbol: "pro_exposure_quantile",
         name: "PRO.EXPOSURE.QUANTILE",
-        help: "Destruction rate (loss over MPL) at each probability, for simulating losses from the curve.",
+        help: "Destruction rate (loss over MPL) at each probability, for simulating losses from the curve. A column of u against a row of c (or b, g) gives one column per curve.",
         args: &[PROBABILITY, EXPOSURE_CURVE, CP1, CP2, CP3],
         run: exposure::quantile,
     },

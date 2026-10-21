@@ -179,3 +179,85 @@ fn errors_come_back_as_text() {
         .contains("do not combine")
     );
 }
+
+/// A row of `c` against a column of `x` is a table, one column per curve,
+/// each column the single curve's; the transposed layout gives its
+/// transpose. The same holds for MBBEFD `b` and `g`, and for the quantile.
+#[test]
+fn a_row_of_parameters_gives_one_column_per_curve() {
+    let xs = [0.0, 0.1, 0.3, 0.7, 1.0];
+    let cs = [1.5, 2.0, 3.0, 4.0, 5.0];
+    let table = call(
+        "pro_exposure_curve",
+        vec![Grid::column(&xs), t("swiss_re"), Grid::row(&cs)],
+    );
+    assert_eq!((table.rows, table.columns), (5, 5));
+    for (k, &c) in cs.iter().enumerate() {
+        let one = call(
+            "pro_exposure_curve",
+            vec![Grid::column(&xs), t("swiss_re"), n(c)],
+        );
+        for i in 0..xs.len() {
+            assert_eq!(table.get(i, k), one.get(i, 0));
+        }
+    }
+    let transposed = call(
+        "pro_exposure_curve",
+        vec![Grid::row(&xs), t("swiss_re"), Grid::column(&cs)],
+    );
+    assert_eq!((transposed.rows, transposed.columns), (5, 5));
+    for i in 0..5 {
+        for k in 0..5 {
+            assert_eq!(transposed.get(k, i), table.get(i, k));
+        }
+    }
+
+    // MBBEFD: b a row, g one value for all.
+    let mb = call(
+        "pro_exposure_curve",
+        vec![
+            Grid::column(&xs),
+            t("mbbefd"),
+            Grid::row(&[2.0, 5.0]),
+            n(10.0),
+        ],
+    );
+    assert_eq!((mb.rows, mb.columns), (5, 2));
+    let one = call(
+        "pro_exposure_curve",
+        vec![Grid::column(&xs), t("mbbefd"), n(5.0), n(10.0)],
+    );
+    assert_eq!(mb.get(2, 1), one.get(2, 0));
+
+    let us = [0.5, 0.9, 0.99];
+    let q = call(
+        "pro_exposure_quantile",
+        vec![Grid::column(&us), t("swiss_re"), Grid::row(&cs)],
+    );
+    assert_eq!((q.rows, q.columns), (3, 5));
+    let one = call(
+        "pro_exposure_quantile",
+        vec![Grid::column(&us), t("swiss_re"), n(4.0)],
+    );
+    assert_eq!(q.get(1, 3), one.get(1, 0));
+
+    // A tabulated curve's x and G(x) are one curve, not several.
+    let tab = call(
+        "pro_exposure_curve",
+        vec![
+            Grid::column(&[0.25, 0.5]),
+            t("tabulated"),
+            Grid::row(&[0.0, 0.5, 1.0]),
+            Grid::row(&[0.0, 0.8, 1.0]),
+        ],
+    );
+    assert_eq!((tab.rows, tab.columns), (2, 1));
+    assert!((num(tab.get(0, 0)) - 0.4).abs() < 1e-12);
+
+    // Both a row: which way the table goes is ambiguous.
+    let e = call(
+        "pro_exposure_curve",
+        vec![Grid::row(&xs), t("swiss_re"), Grid::row(&cs)],
+    );
+    assert!(text(&e).contains("must be a column"), "{}", text(&e));
+}
