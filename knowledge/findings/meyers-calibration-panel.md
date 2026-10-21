@@ -82,10 +82,21 @@ with cas-schedule-p 2026.6.13, duckdb 1.5.6, pandas 3.0.6 and Python
   at -21 at 12 months) errors with "sigma can neither be estimated nor
   interpolated", so Mack paid has n = 49 in
   other liability and 199 in all. Mack incurred and the ODP score all 200.
+* **Pinned (PR 5, 2026-10-21).** The user reviewed the KS scores and
+  approved them, and the study (`PINS`, `TOLERANCES` in the harness) now
+  asserts every D of this finding. A rerun on the default seed reproduced
+  the D above to their rounding (0.1). Mack does not depend on the seed
+  (two salted runs gave the same D to the digit), so its tolerance is 0.1
+  point; the ODP bootstrap's D moved by at most 0.84 points in a line and
+  0.21 on all 200 between three seeds, and its tolerance is 1.7 and 0.5.
+  Still not marked verified: no CI job runs the study. Pins were recorded
+  on Windows; the note's "As built (PR 5)" gives the tolerances, their
+  derivation and how to re-pin.
 * **Cost.** All 600 fits (Mack on two bases, the ODP bootstrap) take 1.6 s
   in release.
 
 # Not yet shown
 
 The Bayesian arms are in [their own finding](/findings/meyers-calibration-bayesian-arms.md);
-Compartmental is PR 4. The D values here are recorded, not pinned.
+Compartmental is in its own finding. The D values here are pinned by the
+study but not verified (above).

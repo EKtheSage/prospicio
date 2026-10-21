@@ -45,16 +45,23 @@
 //!   against model 1's 2.1 s on the panel (25 to 30 times slower) and runs
 //!   only when named);
 //! * `RISK_RS_CALIBRATION_LIMIT`: the first n triangles of each line, for a
-//!   timing probe (for example 2).
+//!   timing probe (for example 2);
+//! * `RISK_RS_CALIBRATION_SEED_SALT`: any text, mixed into every fit's seed
+//!   (unset: the recorded run, bit for bit), to measure how far each arm's
+//!   D moves with the seed alone. A salted run asserts no pins.
 //!
 //! The script also writes `panel_check.csv` (the diff against Table A.2,
 //! with each code's rank in the screen) and `panel_meta.csv` (the package
 //! versions and the panel's sha256), which the study prints.
 //!
-//! First runs assert only the harness and the panel (decision 7): the
-//! panel's shape, group 353 commercial auto's square against
+//! The study asserts the harness and the panel (decision 7): the panel's
+//! shape, group 353 commercial auto's square against
 //! `validation/data/clrd_comauto_353.csv`, and Mack's D near Meyers'
-//! published values. Each other arm's D is recorded, not asserted. The
+//! published values. It also asserts the pins (`PINS`, `TOLERANCES`): every
+//! arm's D per line and on all 200, as the user reviewed it on 2026-10-21,
+//! within a tolerance set from the seed noise, on the pinned panel, the
+//! default seed and the whole panel (a narrowed run asserts only the cells
+//! it ran; `RISK_RS_CALIBRATION_LIMIT` or a seed salt asserts no pins). The
 //! unit tests `the_arms_reproduce_meyers_on_group_353` and
 //! `the_bayesian_arms_reproduce_meyers_on_group_353` check the arms'
 //! wiring on that square in CI's `bayes` job.
@@ -419,6 +426,27 @@ fn seed_for(line: Line, group: &str, arm: &str, basis: Basis) -> u64 {
     })
 }
 
+/// The seed with `RISK_RS_CALIBRATION_SEED_SALT` mixed in (FNV-1a over the
+/// salt's bytes, continuing from the seed). No salt, or an empty one, gives
+/// the seed unchanged, so a default run is the recorded run; a salt gives
+/// every NUTS and bootstrap fit another stream, to measure how much each
+/// arm's D moves with the seed alone (the note, "Pinning").
+fn salted(seed: u64, salt: Option<&str>) -> u64 {
+    match salt {
+        Some(s) if !s.is_empty() => s.bytes().fold(seed, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+        }),
+        _ => seed,
+    }
+}
+
+/// `RISK_RS_CALIBRATION_SEED_SALT`, if set and not empty.
+fn seed_salt() -> Option<String> {
+    std::env::var("RISK_RS_CALIBRATION_SEED_SALT")
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
 // ---------------------------------------------------------------------------
 // Meyers' published D statistics (percentage points)
 // ---------------------------------------------------------------------------
@@ -774,7 +802,10 @@ impl ArmBasis {
     }
 
     fn seed(self, t: &PanelTriangle) -> u64 {
-        seed_for(t.line, &t.group, self.arm, self.basis)
+        salted(
+            seed_for(t.line, &t.group, self.arm, self.basis),
+            seed_salt().as_deref(),
+        )
     }
 
     fn run(self, t: &PanelTriangle) -> Result<Scored, String> {
@@ -852,6 +883,266 @@ fn selected_lines(spec: Option<&str>) -> Vec<Line> {
         })
         .collect()
 }
+
+// ---------------------------------------------------------------------------
+// Pins: the recorded D of each arm, asserted by the study (decision 7)
+// ---------------------------------------------------------------------------
+
+/// The sha256 of the panel the pins were recorded on (`panel_meta.csv`,
+/// `panel_sha256`). A rebuild with another hash is another panel, and the
+/// pins say nothing about it.
+const PINNED_PANEL_SHA256: &str =
+    "075b392525b26c505c251ea1d94f1641b4c6ab4216ee085655e5ec678fff59d2";
+
+/// One pinned cell: the triangles an arm and basis scored in a line (or on
+/// all 200, `scope` `None`) and the Meyers D they gave, in percentage
+/// points, in the reviewed run.
+#[derive(Clone, Copy, Debug)]
+struct Pin {
+    arm: &'static str,
+    basis: Basis,
+    scope: Option<Line>,
+    n: usize,
+    d: f64,
+}
+
+/// What a run measured for one cell (the arm's own set of triangles).
+#[derive(Clone, Copy, Debug)]
+struct Observed {
+    arm: &'static str,
+    basis: Basis,
+    scope: Option<Line>,
+    n: usize,
+    d: f64,
+}
+
+/// How far an arm's D may move from its pin, in percentage points, before
+/// the study fails (`scope` `None` is all 200). The numbers are in
+/// [`TOLERANCES`] and the note, "Pinning". An arm with no entry has none:
+/// NaN is within no tolerance, so its cell fails loudly.
+fn pin_tolerance(arm: &str, scope: Option<Line>) -> f64 {
+    TOLERANCES
+        .iter()
+        .find(|(a, _, _)| *a == arm)
+        .map_or(
+            f64::NAN,
+            |(_, per_line, all)| {
+                if scope.is_some() { *per_line } else { *all }
+            },
+        )
+}
+
+/// Whether the study asserts its pins: only on the default seed and with
+/// every triangle of each line, since a salted seed or a limit is another
+/// experiment (the pins are for the recorded one).
+fn pins_active(limit: Option<usize>, salt: Option<&str>) -> bool {
+    limit.is_none() && salt.is_none_or(str::is_empty)
+}
+
+/// The panel hash the study ran on must be the pinned one. `meta` is
+/// `panel_meta.csv` as `panel_meta` reads it.
+fn check_panel_hash(meta: &[(String, String)]) -> Result<(), String> {
+    let found = meta
+        .iter()
+        .find(|(k, _)| k == "panel_sha256")
+        .map(|(_, v)| v.as_str());
+    if found == Some(PINNED_PANEL_SHA256) {
+        return Ok(());
+    }
+    Err(format!(
+        "the panel's sha256 is {}, not the pinned {PINNED_PANEL_SHA256}: the D pins were recorded on another panel (cas-schedule-p 2026.6.13) and say nothing about this one. Rebuild the panel with\n    {PANEL_COMMAND}\nor, after a reviewed change of panel, re-pin (the note, \"Pinning\"). Set RISK_RS_CALIBRATION_LIMIT or RISK_RS_CALIBRATION_SEED_SALT to run without pins",
+        found.unwrap_or("absent from panel_meta.csv")
+    ))
+}
+
+/// The pins the run breaks. Only the cells the run covers are checked: an
+/// arm or line that was not run is skipped, and so is `all` unless
+/// `all_lines` (a run on fewer lines has another all-200 set). A cell fails
+/// when it scored another number of triangles (its D is then another set's)
+/// or when D is further from the pin than the tolerance. The verdict (D
+/// above the 5% bound, `136 / sqrt(n)`) is held by the same test: a D within
+/// the tolerance of a pin that is further than the tolerance from the bound
+/// is on the pin's side of the bound, so only a pin within the tolerance of
+/// the bound ([`near_the_bound`]) may be passed on either side of it. A
+/// failure names a verdict that flipped.
+fn check_pins(
+    pins: &[Pin],
+    observed: &[Observed],
+    all_lines: bool,
+    tolerance: impl Fn(&str, Option<Line>) -> f64,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for p in pins {
+        if p.scope.is_none() && !all_lines {
+            continue;
+        }
+        let Some(o) = observed
+            .iter()
+            .find(|o| o.arm == p.arm && o.basis == p.basis && o.scope == p.scope)
+        else {
+            continue;
+        };
+        let cell = format!(
+            "{} {} {}",
+            p.arm,
+            p.basis.name(),
+            p.scope.map_or("all", Line::code)
+        );
+        if o.n != p.n {
+            out.push(format!(
+                "{cell}: scored {} triangles, pinned on {}",
+                o.n, p.n
+            ));
+            continue;
+        }
+        let tol = tolerance(p.arm, p.scope);
+        // A NaN D or tolerance is within no tolerance.
+        let moved = (o.d - p.d).abs();
+        if moved.is_nan() || tol.is_nan() || moved > tol {
+            let bound = ks_bound(p.n);
+            let flipped = if (o.d > bound) != (p.d > bound) {
+                format!("; the verdict flipped (bound {bound:.2})")
+            } else {
+                String::new()
+            };
+            out.push(format!(
+                "{cell}: D {:.2} is {moved:.2} from the pinned {:.2} (tolerance {tol}){flipped}",
+                o.d, p.d
+            ));
+        }
+    }
+    out
+}
+
+/// Whether the pin is within `tol` of the 5% bound of its n, so that a run
+/// within the tolerance of it may pass or fail there: its verdict is not
+/// pinned. Every other pin's verdict is.
+fn near_the_bound(p: &Pin, tol: f64) -> bool {
+    (p.d - ks_bound(p.n)).abs() <= tol
+}
+
+/// The own-set cells of a run, to check against the pins or to re-pin from.
+fn observed_cells(groups: &[Group]) -> Vec<Observed> {
+    groups
+        .iter()
+        .filter(|g| g.set == "own")
+        .map(|g| Observed {
+            arm: g.arm.arm,
+            basis: g.arm.basis,
+            scope: g.line,
+            n: g.percentiles.len(),
+            d: if g.percentiles.is_empty() {
+                f64::NAN
+            } else {
+                meyers_d(&g.percentiles)
+            },
+        })
+        .collect()
+}
+
+/// A run's cells as source lines for [`PINS`], to paste after a reviewed
+/// re-pin (the study prints them).
+fn pins_source(observed: &[Observed]) -> String {
+    let mut out = String::new();
+    for o in observed.iter().filter(|o| o.n > 0) {
+        let scope = o
+            .scope
+            .map_or("None".to_string(), |l| format!("Some(Line::{l:?})"));
+        let _ = writeln!(
+            out,
+            "    pin(\"{}\", Basis::{:?}, {scope}, {}, {:.2}),",
+            o.arm, o.basis, o.n, o.d
+        );
+    }
+    out
+}
+
+const fn pin(arm: &'static str, basis: Basis, scope: Option<Line>, n: usize, d: f64) -> Pin {
+    Pin {
+        arm,
+        basis,
+        scope,
+        n,
+        d,
+    }
+}
+
+/// Tolerances by arm: (arm, per line, all 200), in percentage points. Each
+/// is twice the largest difference in D between two of three seeds (the
+/// default and two salts, measured 2026-10-21 over the arm's bases, in a
+/// line and on all 200), rounded up to 0.1, or a floor if that is larger:
+/// 1.0 per line and 0.5 on all 200 for a NUTS arm, 0.1 for the
+/// deterministic Mack (platform arithmetic only), 0.5 on all 200 for the
+/// seeded ODP bootstrap. Compartmental model 2 was salted once, on
+/// 6, 10, 27 and 5 triangles, so it takes 2.0 and 1.0. The numbers, the
+/// measured differences and what the tolerance does not cover are in the
+/// note, "Pinning".
+const TOLERANCES: &[(&str, f64, f64)] = &[
+    ("mack", 0.1, 0.1),
+    ("odp", 1.7, 0.5),
+    ("bayes_odp", 2.1, 0.5),
+    ("crc", 3.5, 1.7),
+    ("csr", 3.0, 2.5),
+    ("cay", 2.5, 1.3),
+    ("compartmental", 2.7, 0.9),
+    ("compartmental_2", 2.0, 1.0),
+];
+
+/// The reviewed run's D (2026-10-21, Windows, the default seed, the panel of
+/// `PINNED_PANEL_SHA256`; approved by the user on 2026-10-21), with the
+/// number of triangles each arm scored in a line or on all 200.
+const PINS: &[Pin] = &[
+    pin("mack", Basis::Incurred, Some(Line::Ca), 50, 17.81),
+    pin("mack", Basis::Incurred, Some(Line::Pa), 50, 14.69),
+    pin("mack", Basis::Incurred, Some(Line::Wc), 50, 24.66),
+    pin("mack", Basis::Incurred, Some(Line::Ol), 50, 16.20),
+    pin("mack", Basis::Incurred, None, 200, 16.46),
+    pin("mack", Basis::Paid, Some(Line::Ca), 50, 23.19),
+    pin("mack", Basis::Paid, Some(Line::Pa), 50, 48.31),
+    pin("mack", Basis::Paid, Some(Line::Wc), 50, 33.36),
+    pin("mack", Basis::Paid, Some(Line::Ol), 49, 10.33),
+    pin("mack", Basis::Paid, None, 199, 24.64),
+    pin("odp", Basis::Paid, Some(Line::Ca), 50, 25.58),
+    pin("odp", Basis::Paid, Some(Line::Pa), 50, 48.83),
+    pin("odp", Basis::Paid, Some(Line::Wc), 50, 31.33),
+    pin("odp", Basis::Paid, Some(Line::Ol), 50, 8.74),
+    pin("odp", Basis::Paid, None, 200, 26.28),
+    pin("bayes_odp", Basis::Paid, Some(Line::Ca), 14, 53.83),
+    pin("bayes_odp", Basis::Paid, Some(Line::Pa), 19, 57.83),
+    pin("bayes_odp", Basis::Paid, Some(Line::Wc), 40, 36.53),
+    pin("bayes_odp", Basis::Paid, Some(Line::Ol), 14, 27.15),
+    pin("bayes_odp", Basis::Paid, None, 87, 38.49),
+    pin("crc", Basis::Incurred, Some(Line::Ca), 50, 8.61),
+    pin("crc", Basis::Incurred, Some(Line::Pa), 50, 11.82),
+    pin("crc", Basis::Incurred, Some(Line::Wc), 50, 17.32),
+    pin("crc", Basis::Incurred, Some(Line::Ol), 50, 10.45),
+    pin("crc", Basis::Incurred, None, 200, 10.29),
+    pin("crc", Basis::Paid, Some(Line::Ca), 48, 20.74),
+    pin("crc", Basis::Paid, Some(Line::Pa), 50, 42.97),
+    pin("crc", Basis::Paid, Some(Line::Wc), 50, 32.80),
+    pin("crc", Basis::Paid, Some(Line::Ol), 45, 21.57),
+    pin("crc", Basis::Paid, None, 193, 26.40),
+    pin("csr", Basis::Paid, Some(Line::Ca), 48, 5.53),
+    pin("csr", Basis::Paid, Some(Line::Pa), 50, 25.69),
+    pin("csr", Basis::Paid, Some(Line::Wc), 50, 10.92),
+    pin("csr", Basis::Paid, Some(Line::Ol), 45, 12.75),
+    pin("csr", Basis::Paid, None, 193, 4.62),
+    pin("cay", Basis::Incurred, Some(Line::Ca), 50, 12.20),
+    pin("cay", Basis::Incurred, Some(Line::Pa), 50, 10.14),
+    pin("cay", Basis::Incurred, Some(Line::Wc), 50, 14.99),
+    pin("cay", Basis::Incurred, Some(Line::Ol), 50, 10.65),
+    pin("cay", Basis::Incurred, None, 200, 6.96),
+    pin("compartmental", Basis::Paid, Some(Line::Ca), 50, 49.27),
+    pin("compartmental", Basis::Paid, Some(Line::Pa), 50, 36.86),
+    pin("compartmental", Basis::Paid, Some(Line::Wc), 50, 26.78),
+    pin("compartmental", Basis::Paid, Some(Line::Ol), 50, 66.28),
+    pin("compartmental", Basis::Paid, None, 200, 39.28),
+    pin("compartmental_2", Basis::Paid, Some(Line::Ca), 6, 27.32),
+    pin("compartmental_2", Basis::Paid, Some(Line::Pa), 10, 38.24),
+    pin("compartmental_2", Basis::Paid, Some(Line::Wc), 27, 29.36),
+    pin("compartmental_2", Basis::Paid, Some(Line::Ol), 5, 19.80),
+    pin("compartmental_2", Basis::Paid, None, 48, 20.52),
+];
 
 // ---------------------------------------------------------------------------
 // The study
@@ -1377,6 +1668,60 @@ fn calibration_study() {
             off.is_empty(),
             "Mack's D is not near Meyers' on the rebuilt panel. The tolerance is empirical: the panel is known to differ from Table A.2 on at least 26 printed codes (panel_check.csv), so a miss can come from the panel, not a bug:\n{}",
             off.join("\n")
+        );
+    }
+
+    // The pins (decision 7): the reviewed run's D per arm, basis and line,
+    // on the default seed, the whole panel and the pinned panel.
+    let salt = seed_salt();
+    if pins_active(limit, salt.as_deref()) {
+        let observed = observed_cells(&gs);
+        println!(
+            "\nthis run's cells as PINS source:\n{}",
+            pins_source(&observed)
+        );
+        if let Err(e) = check_panel_hash(&panel_meta(&dir)) {
+            panic!("{e}");
+        }
+        let all_lines = lines.len() == Line::ALL.len();
+        let broken = check_pins(PINS, &observed, all_lines, pin_tolerance);
+        assert!(
+            broken.is_empty(),
+            "{} pinned D value(s) moved. If the change is understood and the user approves it, re-pin from the source printed above (the note, \"Pinning\"):\n{}",
+            broken.len(),
+            broken.join("\n")
+        );
+        let checked = PINS
+            .iter()
+            .filter(|p| {
+                arms.iter().any(|a| a.arm == p.arm && a.basis == p.basis)
+                    && p.scope.map_or(all_lines, |l| lines.contains(&l))
+            })
+            .count();
+        println!("pins: {checked} cells checked, all within tolerance");
+        let near: Vec<String> = PINS
+            .iter()
+            .filter(|p| near_the_bound(p, pin_tolerance(p.arm, p.scope)))
+            .map(|p| {
+                format!(
+                    "{} {} {}",
+                    p.arm,
+                    p.basis.name(),
+                    p.scope.map_or("all", Line::code)
+                )
+            })
+            .collect();
+        println!(
+            "pins within tolerance of the 5% bound, whose verdict is not pinned: {}",
+            if near.is_empty() {
+                "none".to_string()
+            } else {
+                near.join("; ")
+            }
+        );
+    } else {
+        println!(
+            "pins not asserted (RISK_RS_CALIBRATION_LIMIT or RISK_RS_CALIBRATION_SEED_SALT is set)"
         );
     }
 }
@@ -2201,5 +2546,195 @@ mod tests {
         // percentile by tens of points.
         const BAYES_ODP_VS_BOOTSTRAP: f64 = 6.0;
         close(odp.percentile, boot.percentile, BAYES_ODP_VS_BOOTSTRAP);
+    }
+
+    #[test]
+    fn a_seed_salt_changes_the_seed_and_no_salt_keeps_it() {
+        let s = seed_for(Line::Ca, "353", "crc", Basis::Paid);
+        assert_eq!(salted(s, None), s);
+        assert_eq!(salted(s, Some("")), s);
+        assert_ne!(salted(s, Some("a")), s);
+        assert_ne!(salted(s, Some("a")), salted(s, Some("b")));
+        assert_eq!(salted(s, Some("a")), salted(s, Some("a")));
+        // Another triangle keeps another seed under the same salt.
+        let t = seed_for(Line::Pa, "353", "crc", Basis::Paid);
+        assert_ne!(salted(s, Some("a")), salted(t, Some("a")));
+    }
+
+    fn cell(scope: Option<Line>, n: usize, d: f64) -> (Pin, Observed) {
+        (
+            pin("mack", Basis::Paid, scope, n, d),
+            Observed {
+                arm: "mack",
+                basis: Basis::Paid,
+                scope,
+                n,
+                d,
+            },
+        )
+    }
+
+    /// Tolerance 2 points per line and 1 on all 200.
+    fn tol(_: &str, scope: Option<Line>) -> f64 {
+        if scope.is_some() { 2.0 } else { 1.0 }
+    }
+
+    #[test]
+    fn a_d_inside_the_tolerance_passes_and_outside_fails() {
+        let (p, mut o) = cell(Some(Line::Wc), 50, 33.4);
+        assert!(check_pins(&[p], &[o], true, tol).is_empty());
+        o.d = 35.3; // inside by 0.1
+        assert!(check_pins(&[p], &[o], true, tol).is_empty());
+        o.d = 35.5;
+        let broken = check_pins(&[p], &[o], true, tol);
+        assert_eq!(broken.len(), 1);
+        assert!(broken[0].contains("mack paid wc"), "{broken:?}");
+        o.d = 31.5;
+        assert!(check_pins(&[p], &[o], true, tol).is_empty());
+        o.d = 31.3;
+        assert_eq!(check_pins(&[p], &[o], true, tol).len(), 1);
+        // The all-200 cell has the tighter tolerance.
+        let (p, mut o) = cell(None, 200, 24.6);
+        o.d = 25.7;
+        assert_eq!(check_pins(&[p], &[o], true, tol).len(), 1);
+        o.d = 25.5;
+        assert!(check_pins(&[p], &[o], true, tol).is_empty());
+    }
+
+    #[test]
+    fn another_count_of_scored_triangles_or_no_score_fails() {
+        let (p, mut o) = cell(Some(Line::Ol), 49, 10.3);
+        o.n = 50;
+        let broken = check_pins(&[p], &[o], true, tol);
+        assert_eq!(broken.len(), 1);
+        assert!(broken[0].contains("scored 50 triangles, pinned on 49"));
+        // A cell that scored nothing has no D: it fails, not passes.
+        o.n = 49;
+        o.d = f64::NAN;
+        assert_eq!(check_pins(&[p], &[o], true, tol).len(), 1);
+        // An arm without a tolerance fails loudly, too.
+        let (p, o) = cell(Some(Line::Ca), 50, 20.0);
+        assert_eq!(
+            check_pins(&[p], &[o], true, |_, _| f64::NAN).len(),
+            1,
+            "NaN tolerance"
+        );
+    }
+
+    #[test]
+    fn the_verdict_may_flip_only_within_the_tolerance_of_the_bound() {
+        // The bound for n = 50 is 136 / sqrt(50) = 19.23.
+        let bound = ks_bound(50);
+        // Pinned 21.0, 1.8 above the bound (within the tolerance of 2): a D
+        // of 19.0 is within the tolerance of the pin and flips the verdict,
+        // which is allowed.
+        let (p, mut o) = cell(Some(Line::Ca), 50, bound + 1.8);
+        o.d = bound - 0.1;
+        assert!(check_pins(&[p], &[o], true, tol).is_empty());
+        assert!(near_the_bound(&p, 2.0));
+        // Pinned 2.5 above the bound (outside the tolerance of 2): a D that
+        // crosses the bound is more than 2 points from the pin, so the cell
+        // fails and the message names the flipped verdict.
+        let (p, mut o) = cell(Some(Line::Ca), 50, bound + 2.5);
+        assert!(!near_the_bound(&p, 2.0));
+        o.d = bound - 0.5;
+        let broken = check_pins(&[p], &[o], true, tol);
+        assert_eq!(broken.len(), 1);
+        assert!(broken[0].contains("verdict flipped"), "{broken:?}");
+        // Staying on the pinned side but too far fails without the flip.
+        o.d = bound + 5.0;
+        let broken = check_pins(&[p], &[o], true, tol);
+        assert_eq!(broken.len(), 1);
+        assert!(!broken[0].contains("verdict flipped"), "{broken:?}");
+        // Staying on the pinned side within the tolerance passes.
+        o.d = bound + 1.0;
+        assert!(check_pins(&[p], &[o], true, tol).is_empty());
+    }
+
+    #[test]
+    fn a_narrowed_run_asserts_only_what_it_ran() {
+        let (p_ca, o_ca) = cell(Some(Line::Ca), 50, 20.0);
+        let (p_wc, _) = cell(Some(Line::Wc), 50, 30.0);
+        let (p_all, mut o_all) = cell(None, 200, 25.0);
+        let pins = [p_ca, p_wc, p_all];
+        // Only commercial auto ran: wc has no cell, all is skipped even
+        // though its observed value is far off.
+        o_all.d = 99.0;
+        assert!(check_pins(&pins, &[o_ca, o_all], false, tol).is_empty());
+        // With every line the all-200 cell counts again.
+        assert_eq!(check_pins(&pins, &[o_ca, o_all], true, tol).len(), 1);
+        // An arm that was not run is skipped.
+        let other = Observed { arm: "odp", ..o_ca };
+        assert!(check_pins(&[p_ca], &[other], true, tol).is_empty());
+        // A cell far off on a line that ran fails whatever else was run.
+        let mut off = o_ca;
+        off.d = 50.0;
+        assert_eq!(check_pins(&pins, &[off], false, tol).len(), 1);
+    }
+
+    #[test]
+    fn pins_apply_only_to_the_default_seed_and_the_whole_panel() {
+        assert!(pins_active(None, None));
+        assert!(pins_active(None, Some("")));
+        assert!(!pins_active(Some(2), None));
+        assert!(!pins_active(None, Some("noise")));
+    }
+
+    #[test]
+    fn another_panel_hash_fails_with_the_command_to_rebuild() {
+        let ok = vec![("panel_sha256".to_string(), PINNED_PANEL_SHA256.to_string())];
+        assert!(check_panel_hash(&ok).is_ok());
+        let other = vec![("panel_sha256".to_string(), "abc".to_string())];
+        let e = check_panel_hash(&other).unwrap_err();
+        assert!(
+            e.contains("abc")
+                && e.contains(PINNED_PANEL_SHA256)
+                && e.contains("calibration_panel.py")
+        );
+        assert!(check_panel_hash(&[]).unwrap_err().contains("absent"));
+    }
+
+    #[test]
+    fn the_pins_are_well_formed() {
+        for p in PINS {
+            assert!(
+                p.n >= 1 && p.n <= if p.scope.is_some() { 50 } else { 200 },
+                "{p:?}"
+            );
+            assert!(p.d.is_finite() && (0.0..=100.0).contains(&p.d), "{p:?}");
+            assert!(
+                pin_tolerance(p.arm, p.scope) > 0.0,
+                "{} has no tolerance",
+                p.arm
+            );
+            assert!(
+                ALL_ARMS.split(',').any(|a| a == p.arm),
+                "{} is not an arm",
+                p.arm
+            );
+        }
+        for (arm, per_line, all) in TOLERANCES {
+            assert!(ALL_ARMS.split(',').any(|a| a == *arm));
+            assert!(*per_line > 0.0 && *all > 0.0);
+        }
+    }
+
+    #[test]
+    fn a_runs_cells_print_as_pins_source() {
+        let o = Observed {
+            arm: "odp",
+            basis: Basis::Paid,
+            scope: Some(Line::Pa),
+            n: 50,
+            d: 48.84,
+        };
+        let all = Observed {
+            scope: None,
+            n: 200,
+            ..o
+        };
+        let text = pins_source(&[o, all]);
+        assert!(text.contains("pin(\"odp\", Basis::Paid, Some(Line::Pa), 50, 48.84),"));
+        assert!(text.contains("pin(\"odp\", Basis::Paid, None, 200, 48.84),"));
     }
 }
