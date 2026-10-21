@@ -12,9 +12,9 @@
 
 use std::collections::HashSet;
 
-use prospicio_core::{Error, Result};
+use prospicio_core::{Error, Result, StreamRng};
 
-use crate::copula::target_ranks;
+use crate::copula::{Copula, target_ranks};
 use crate::predictive::{ComponentKey, KeyValue, PredictiveDistribution};
 use crate::provenance::Provenance;
 
@@ -224,9 +224,90 @@ impl PredictiveDistribution {
     /// ```
     pub fn reorder_groups(&self, dim: &str, correlation: &[f64], seed: u64) -> Result<Self> {
         let (groups, group_of) = self.group_index(dim)?;
-        let (n, m, g) = (self.n_sims(), self.n_components(), groups.len());
-        let ranks = target_ranks(n, g, correlation, seed)?;
-        let totals = self.group_totals(g, &group_of);
+        let ranks = target_ranks(self.n_sims(), groups.len(), correlation, seed)?;
+        self.reorder_to_ranks(
+            &group_of,
+            &ranks,
+            format!("{dim}: {correlation:?}, seed {seed}"),
+        )
+    }
+
+    /// Sets the dependence between the groups of dimension `dim` by a
+    /// copula: `n` draws of uniforms from `copula` (one dimension per group,
+    /// groups in order of first appearance; draw `i` uses stream `i` of
+    /// `seed`, as the bindings' `sample` does), and each group's
+    /// simulations, whole rows sorted by the group's total, take the ranks
+    /// of its column of uniforms. The groups' totals then have exactly the
+    /// rank pattern of the copula's draws, so a t, Gumbel or Clayton copula
+    /// gives the joint tails it would give simulated marginals, on results
+    /// already simulated. Every group keeps its distribution and internal
+    /// joint structure, as under [`reorder_groups`](Self::reorder_groups).
+    ///
+    /// ```
+    /// use prospicio_prob::copula::{Archimedean, ArchimedeanCopula};
+    /// use prospicio_prob::{KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// let n = 4000;
+    /// let pd = PredictiveDistribution::from_draws(
+    ///     vec!["seg".into()],
+    ///     vec![vec![KeyValue::from("a")], vec![KeyValue::from("b")]],
+    ///     (0..n).flat_map(|i| [i as f64, ((i * 7919) % n) as f64]).collect(),
+    ///     Provenance::new("example"),
+    /// )
+    /// .unwrap();
+    /// // Clayton with theta = 2: Kendall's tau 0.5, Spearman's rho near 0.68.
+    /// let clayton = ArchimedeanCopula::new(Archimedean::Clayton, 2.0, 2).unwrap();
+    /// let r = pd.reorder_groups_by_copula("seg", &clayton, 5).unwrap();
+    /// let (_, rho) = r.group_spearman("seg").unwrap();
+    /// assert!((rho[1] - 0.68).abs() < 0.03);
+    /// ```
+    pub fn reorder_groups_by_copula(
+        &self,
+        dim: &str,
+        copula: &dyn Copula,
+        seed: u64,
+    ) -> Result<Self> {
+        let (groups, group_of) = self.group_index(dim)?;
+        let (n, g) = (self.n_sims(), groups.len());
+        if copula.dim() != g {
+            return Err(Error::Data(format!(
+                "a {}-dimensional copula for {g} groups of dimension {dim:?}",
+                copula.dim()
+            )));
+        }
+        let mut columns = vec![vec![0.0; n]; g];
+        let mut u = vec![0.0; g];
+        for i in 0..n {
+            copula.sample(&mut StreamRng::new(seed, i as u64), &mut u);
+            for (column, x) in columns.iter_mut().zip(&u) {
+                column[i] = *x;
+            }
+        }
+        let ranks: Vec<Vec<usize>> = columns
+            .iter()
+            .map(|column| {
+                let mut order: Vec<usize> = (0..n).collect();
+                order.sort_by(|&a, &b| column[a].total_cmp(&column[b]));
+                let mut rank = vec![0; n];
+                for (r, &i) in order.iter().enumerate() {
+                    rank[i] = r;
+                }
+                rank
+            })
+            .collect();
+        self.reorder_to_ranks(&group_of, &ranks, format!("{dim}: copula, seed {seed}"))
+    }
+
+    /// Simulation `i` of the result takes, for group `g`, the row of rank
+    /// `ranks[g][i]` (0-based, ascending) among the group's totals.
+    fn reorder_to_ranks(
+        &self,
+        group_of: &[usize],
+        ranks: &[Vec<usize>],
+        note: String,
+    ) -> Result<Self> {
+        let (n, m) = (self.n_sims(), self.n_components());
+        let totals = self.group_totals(ranks.len(), group_of);
         // Each group's rows sorted by the group's total.
         let order: Vec<Vec<usize>> = totals
             .iter()
@@ -243,10 +324,7 @@ impl PredictiveDistribution {
                 draws[i * m + j] = self.row(source).expect("in range")[j];
             }
         }
-        let provenance = self.provenance().clone().param(
-            "reorder_groups",
-            format!("{dim}: {correlation:?}, seed {seed}"),
-        );
+        let provenance = self.provenance().clone().param("reorder_groups", note);
         Self::from_draws(
             self.dims().to_vec(),
             self.components().to_vec(),
@@ -720,5 +798,77 @@ mod tests {
             pd.reorder_groups_with("class", &bad, CorrelationKind::Spearman, 1)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn a_copula_reorder_gives_the_totals_the_copulas_ranks() {
+        use crate::copula::{Archimedean, ArchimedeanCopula, StudentTCopula};
+        let n = 3000;
+        // Two segments of two items each; within a segment item 1 is 3x item 0.
+        let draws: Vec<f64> = (0..n)
+            .flat_map(|i| {
+                let a = ((i * 7919) % n) as f64;
+                let b = ((i * 104_729) % n) as f64;
+                [a, 3.0 * a, b, b + 1.0]
+            })
+            .collect();
+        let k = |s: &str, j: i64| vec![KeyValue::from(s), KeyValue::Int(j)];
+        let pd = PredictiveDistribution::from_draws(
+            vec!["seg".into(), "item".into()],
+            vec![k("a", 0), k("a", 1), k("b", 0), k("b", 1)],
+            draws,
+            Provenance::new("test"),
+        )
+        .unwrap();
+        let gumbel = ArchimedeanCopula::new(Archimedean::Gumbel, 2.0, 2).unwrap();
+        let r = pd.reorder_groups_by_copula("seg", &gumbel, 9).unwrap();
+        for i in 0..n {
+            let row = r.row(i).unwrap();
+            assert_eq!(row[1], 3.0 * row[0]);
+            assert_eq!(row[3], row[2] + 1.0);
+        }
+        for key in pd.components() {
+            assert_eq!(
+                r.marginal(key).unwrap().sorted(),
+                pd.marginal(key).unwrap().sorted()
+            );
+        }
+        // The totals' ranks are the copula draws' ranks, draw i on stream i.
+        let totals = r.group_totals(2, &[0, 0, 1, 1]);
+        let mut u = [0.0; 2];
+        let draws: Vec<[f64; 2]> = (0..n)
+            .map(|i| {
+                gumbel.sample(&mut StreamRng::new(9, i as u64), &mut u);
+                u
+            })
+            .collect();
+        for g in 0..2 {
+            let rank_of = |v: &[f64]| average_ranks(v);
+            let column: Vec<f64> = draws.iter().map(|d| d[g]).collect();
+            assert_eq!(rank_of(&totals[g]), rank_of(&column));
+        }
+        // Gumbel with theta = 2: Kendall's tau 0.5, Spearman's rho near 0.68.
+        let (_, rho) = r.group_spearman("seg").unwrap();
+        assert!((rho[1] - 0.68).abs() < 0.03, "{}", rho[1]);
+
+        // A t copula with few degrees of freedom puts more joint extremes in
+        // the upper corner than Iman-Conover's normal scores at the same
+        // correlation.
+        let joint_top = |r: &PredictiveDistribution| {
+            let t = r.group_totals(2, &[0, 0, 1, 1]);
+            let (a, b) = (average_ranks(&t[0]), average_ranks(&t[1]));
+            let cut = 0.99 * n as f64;
+            a.iter()
+                .zip(&b)
+                .filter(|(x, y)| **x > cut && **y > cut)
+                .count()
+        };
+        let t = StudentTCopula::new(&[1.0, 0.5, 0.5, 1.0], 2, 2.0).unwrap();
+        let by_t = pd.reorder_groups_by_copula("seg", &t, 3).unwrap();
+        let normal = pd.reorder_groups("seg", &[1.0, 0.5, 0.5, 1.0], 3).unwrap();
+        assert!(joint_top(&by_t) > joint_top(&normal));
+
+        let clayton3 = ArchimedeanCopula::new(Archimedean::Clayton, 1.0, 3).unwrap();
+        assert!(pd.reorder_groups_by_copula("seg", &clayton3, 1).is_err());
     }
 }

@@ -50,6 +50,8 @@ join_rust <- function(parts, labels, dim, same_simulations) .Call(wrap__join_rus
 
 reorder_groups_rust <- function(pd, dim, correlation, seed, kind) .Call(wrap__reorder_groups_rust, pd, dim, correlation, seed, kind)
 
+reorder_groups_by_copula_rust <- function(pd, dim, copula, seed) .Call(wrap__reorder_groups_by_copula_rust, pd, dim, copula, seed)
+
 correlation_from_pairs_rust <- function(pd, dim, first, second, values) .Call(wrap__correlation_from_pairs_rust, pd, dim, first, second, values)
 
 group_spearman_rust <- function(pd, dim) .Call(wrap__group_spearman_rust, pd, dim)
@@ -275,6 +277,10 @@ aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .C
 occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, attachment) .Call(wrap__occurrence_layer_statistics_rust, frequency, severity, share, limit, attachment)
 
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
+
+co_statistics_rust <- function(driver, items, percentiles, tvar_levels, rule) .Call(wrap__co_statistics_rust, driver, items, percentiles, tvar_levels, rule)
+
+risk_ratios_rust <- function(draws, threshold, sortino, omega, tvar_levels, tvar) .Call(wrap__risk_ratios_rust, draws, threshold, sortino, omega, tvar_levels, tvar)
 
 entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)
 

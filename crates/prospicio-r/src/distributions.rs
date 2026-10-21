@@ -899,6 +899,26 @@ fn reorder_groups_rust(
     Ok(PredictiveDistribution { inner })
 }
 
+/// The groups of `dim` reordered to the ranks of a copula's draws, moving
+/// whole rows.
+#[extendr]
+fn reorder_groups_by_copula_rust(
+    pd: Robj,
+    dim: &str,
+    copula: Robj,
+    seed: f64,
+) -> Result<PredictiveDistribution> {
+    let pd = <&PredictiveDistribution>::try_from(&pd)
+        .map_err(|_| Error::Other("expected a predictive_distribution".into()))?;
+    let copula = <&crate::risk::RiskCopula>::try_from(&copula)
+        .map_err(|_| Error::Other("copula must be a copula".into()))?;
+    let inner = pd
+        .inner
+        .reorder_groups_by_copula(dim, copula.inner.as_copula(), whole(seed, "seed")?)
+        .map_err(to_r)?;
+    Ok(PredictiveDistribution { inner })
+}
+
 /// The groups' correlation matrix (row-major) from a long table of pairs.
 #[extendr]
 fn correlation_from_pairs_rust(
@@ -956,6 +976,7 @@ extendr_module! {
     fn tvar_threshold_rust;
     fn join_rust;
     fn reorder_groups_rust;
+    fn reorder_groups_by_copula_rust;
     fn correlation_from_pairs_rust;
     fn group_spearman_rust;
     fn blend_rust;

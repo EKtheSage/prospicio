@@ -418,6 +418,72 @@ def test_statistics_match_numpy_linear_and_the_integral_tvar():
         s.var(0.5, method="nearest")
 
 
+def test_co_statistics_follow_the_reference_selection():
+    import math
+    import random
+
+    from prospicio.risk import co_statistics
+
+    rng = random.Random(7)
+    n = 2001
+    # A driver with ties (rounded to 2 places) and two items on the same rows.
+    ulr = [round(rng.lognormvariate(-0.4, 0.3), 2) for _ in range(n)]
+    cc = [0.3 - 0.2 * min(max(u - 0.5, 0.0), 0.5) for u in ulr]
+    margin = [1.0 - u - c for u, c in zip(ulr, cc)]
+    qs = [50.0, 90.0, 99.5]
+    co = co_statistics({"cc": cc, "margin": margin}, ulr, qs, tvar_levels=[90.0, 99.0])
+    # The reference: o the stable argsort, Python's round (halves to even).
+    o = sorted(range(n), key=lambda i: ulr[i])
+    mean = sum(ulr) / n
+    first = next(i for i in o if ulr[i] >= mean)
+    for name, item in [("cc", cc), ("margin", margin)]:
+        got = co[name]
+        assert got["Mean"] == item[first]
+        for q in qs:
+            assert got[f"Percentile {q:g}"] == item[o[round(q / 100 * (n - 1))]]
+        for q in [90.0, 99.0]:
+            tail = o[math.ceil(q / 100 * (n - 1)):]
+            assert got[f"TVaR {q:g}"] == pytest.approx(sum(item[i] for i in tail) / len(tail), rel=1e-12)
+    # h = 0.625 * 4 = 2.5: halves to even, floor and ceil.
+    small = [0.6, 0.9, 0.5, 0.7, 0.8]
+    picks = {rule: co_statistics({"x": small}, small, [62.5], rule=rule)["x"]["Percentile 62.5"]
+             for rule in ["round_half_even", "floor", "ceil"]}
+    assert picks == {"round_half_even": 0.7, "floor": 0.7, "ceil": 0.8}
+    # Over a predictive distribution, at its total or at one component.
+    pd = PredictiveDistribution(["kind"], [("ulr",), ("cc",)], [[u, c] for u, c in zip(ulr, cc)])
+    cols = co_statistics(pd, ("ulr",), qs, tvar_levels=[90.0])
+    assert cols["kind"] == ["ulr", "cc"]
+    assert cols["Percentile 90"][1] == co["cc"]["Percentile 90"]
+    assert list(cols)[:3] == ["kind", "Mean", "Percentile 50"]
+    assert len(co_statistics(pd, None, qs)["Mean"]) == 2
+    with pytest.raises(ValueError):
+        co_statistics({"x": [1.0]}, [1.0, 2.0], [50])
+    with pytest.raises(ValueError):
+        co_statistics({"x": small}, small, [50], rule="nearest")
+
+
+def test_risk_ratios_under_the_reference_and_textbook_conventions():
+    from prospicio.risk import risk_ratios
+
+    x = [-3.0, -1.0, 0.0, 2.0, 4.0, 4.0]
+    r = risk_ratios(x, tvar_levels=[50.0])
+    assert list(r) == ["Sharpe", "Sortino", "Omega", "TVaR ratio 50"]
+    sd = (sum(v * v for v in x) / 6 - 1.0) ** 0.5
+    assert r["Sharpe"] == pytest.approx(1.0 / sd, rel=1e-12)
+    assert r["Sortino"] == pytest.approx(1.0 / (10.0 / 6) ** 0.5, rel=1e-12)
+    assert r["Omega"] == pytest.approx(2.5, rel=1e-12)
+    assert r["TVaR ratio 50"] == pytest.approx(0.75, rel=1e-12)
+    ref = risk_ratios(x, sortino="below_threshold_sd", omega="count")
+    assert ref["Sortino"] == pytest.approx(1.0, rel=1e-12)
+    assert ref["Omega"] == 1.5
+    assert risk_ratios([1.0, 2.0])["Omega"] == float("inf")
+    pd = PredictiveDistribution(["lob"], [(0,), (1,)], [[v, 2 * v] for v in x])
+    cols = risk_ratios(pd, threshold=1.0)
+    assert cols["lob"] == [0, 1] and cols["Sharpe"][0] == 0.0
+    with pytest.raises(ValueError):
+        risk_ratios(x, omega="ratio")
+
+
 def test_statistics_of_a_predictive_distribution_by_component():
     from prospicio.risk import statistics
 

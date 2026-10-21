@@ -54,6 +54,29 @@
   `correlation_from_pairs`, `group_spearman`; R `reorder_groups(..., kind
   = "spearman")` with a matrix or a three-column data frame, and
   `group_spearman()` (#481, #493).
+- Any copula's dependence on groups already simulated:
+  `PredictiveDistribution::reorder_groups_by_copula(dim, copula, seed)`
+  sorts each group's rows by its total and gives them the ranks of a
+  column of the copula's draws, so the totals take the t, Gumbel, Clayton,
+  nested or vine copula's rank pattern and joint tails, rows moving whole
+  as under `reorder_groups`. Python
+  `PredictiveDistribution.reorder_groups_by_copula`, R
+  `reorder_groups_by_copula()` (#482, #495).
+- Risk ratios on draws: `prospicio_prob::statistics::RiskRatios` gives the
+  Sharpe ratio (population SD), the Sortino ratio over the downside
+  deviation or, as a reference pricing model computes it, the SD of the
+  values below the threshold (`Sortino`), the Omega ratio of partial
+  moments or of counts (`Omega`) and the TVaR ratio `(mean - t) /
+  TVaR_q(-x)` under `TvarMethod`, about a threshold, of a `Sampled` or
+  each component of a `PredictiveDistribution`. Python
+  `prospicio.risk.risk_ratios`, R `risk_ratios()` (#486, #495).
+- Items read at a driver's percentiles: `StatisticsGrid::co_statistics`
+  reads each item on the simulation the driver's mean, percentile or TVaR
+  selects (the stable order of the driver, `h = q (n - 1)` rounded by
+  `IndexRule`: halves to even as Python's `round`, floor or ceil; the TVaR
+  over `o[ceil(h):]`), and `co_components` reads every component of a
+  `PredictiveDistribution` at one component's or the total's ranks.
+  Python `prospicio.risk.co_statistics`, R `co_statistics()` (#487, #495).
 
 ### Pricing
 

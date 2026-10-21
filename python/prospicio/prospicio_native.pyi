@@ -20462,6 +20462,46 @@ class PredictiveDistribution:
         >>> groups, abs(rho[0][1] - 0.6) < 0.02
         (['a', 'b'], True)
         """
+    def reorder_groups_by_copula(self, /, dim: str, copula: Any, seed: int) -> PredictiveDistribution:
+        """
+        Sets the dependence between the groups of dimension ``dim`` by a
+        copula: ``n_sims`` draws of uniforms from ``copula`` (draw ``i`` on
+        stream ``i`` of ``seed``, as ``copula.sample``), and each group's
+        simulations, whole rows sorted by the group's total, take the ranks
+        of its column. The group totals then have the copula's rank pattern,
+        so a t, Gumbel or Clayton copula gives its joint tails to results
+        already simulated; every group keeps its distribution and internal
+        joint structure, as under ``reorder_groups``.
+        
+        Parameters
+        ----------
+        dim : str
+        copula : GaussianCopula, StudentTCopula, ArchimedeanCopula, NestedArchimedeanCopula or VineCopula
+            One dimension per group, in order of first appearance
+            (``groups(dim)``).
+        seed : int
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            If the copula's dimension is not the number of groups.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> from prospicio.risk import ArchimedeanCopula
+        >>> n = 4000
+        >>> pd = PredictiveDistribution(
+        ...     ["seg"], [("a",), ("b",)], [[i, (i * 7919) % n] for i in range(n)])
+        >>> clayton = ArchimedeanCopula("clayton", 2.0, 2)  # Spearman's rho near 0.68
+        >>> r = pd.reorder_groups_by_copula("seg", clayton, 5)
+        >>> abs(r.group_spearman("seg")[1][0][1] - 0.68) < 0.03
+        True
+        """
     def scale_to_totals(self, /, totals: Sequence[float]) -> PredictiveDistribution:
         """
         Every simulation's components rescaled pro rata to a new total.
@@ -25230,6 +25270,58 @@ def classical_premium(principle: str, dist: Any, loading: float, q: float = 2.0)
     6.0
     """
 
+def co_statistics(items: Any, driver: Any, percentiles: Sequence[float], *, tvar_levels: Sequence[float] |None = None, rule: str = "round_half_even") -> dict:
+    """
+    Each item read at a driver's mean, percentiles and TVaRs: the item's
+    value on the simulation the driver's statistic selects, as a results
+    table reports a commission or a margin "at" each percentile of the loss
+    ratio.
+    
+    With ``o`` the driver's stable ascending order (ties keep simulation
+    order) and ``h = q (n - 1)`` for a level ``q`` in percent over 100,
+    ``"Mean"`` is the item on the first ``o[i]`` whose driver is at or above
+    the driver's mean, ``"Percentile <q>"`` the item on ``o[i]`` with ``i``
+    from ``h`` by ``rule``, and ``"TVaR <q>"`` the item's mean over
+    ``o[ceil(h):]`` whatever the rule.
+    
+    Parameters
+    ----------
+    items : PredictiveDistribution or dict of str to list of float
+        A predictive distribution reads every component.
+    driver : list of float, tuple or None
+        The driver's draws; for a predictive distribution also a
+        component's key (a tuple), or ``None`` for its total.
+    percentiles : list of float
+        In percent, in ``[0, 100]``.
+    tvar_levels : list of float, optional
+        In percent; by default 99, 99.5, 99.6, 99.8, 99.9 and 99.99.
+    rule : str
+        ``"round_half_even"`` (the default: halves to the even index, as
+        Python's and numpy's ``round``), ``"floor"`` or ``"ceil"``.
+    
+    Returns
+    -------
+    dict
+        For a dict of items, ``{item: {name: value}}``. For a
+        ``PredictiveDistribution``, columns: one list per dimension holding
+        each component's key, then one list per statistic.
+    
+    Raises
+    ------
+    ValueError
+        If the lengths differ, a value is not finite, a level is outside
+        ``[0, 100]`` or the rule is unknown.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import co_statistics
+    >>> ulr = [0.6, 0.9, 0.5, 0.7, 0.8]
+    >>> co = co_statistics({"margin": [0.3, 0.0, 0.4, 0.2, 0.1]}, ulr, [62.5],
+    ...                    tvar_levels=[62.5])
+    >>> co["margin"]["Percentile 62.5"], round(co["margin"]["TVaR 62.5"], 12)
+    (0.2, 0.05)
+    """
+
 def compound_moments(frequency: Any, severity: Any) -> CompoundMoments:
     """
     Compound moments to third order: the mean, variance and third cumulant
@@ -27659,6 +27751,58 @@ def recommend_portfolio_grid(units: Any, log2: int = 16, p: float = ..., p_star:
     ...                               (Poisson(2.0), Gamma(0.5, 1000.0))])
     >>> g.points <= 2**16
     True
+    """
+
+def risk_ratios(dist: Any, *, threshold: float = 0.0, sortino: str = "downside_deviation", omega: str = "partial_moments", tvar_levels: Sequence[float] |None = None, tvar: str = "exact") -> dict:
+    """
+    Risk ratios of a per-simulation result such as a margin, where large is
+    good, about a threshold ``t`` and under named conventions.
+    
+    ``"Sharpe"`` is ``(mean - t) / sd`` with the population SD;
+    ``"Sortino"`` is ``(mean - t)`` over the downside risk ``sortino``
+    names; ``"Omega"`` is the ratio ``omega`` names; ``"TVaR ratio <q>"`` is
+    ``(mean - t) / TVaR_q(-x)``, the TVaR of the result read as a loss
+    (STARR), negative when even the worst outcomes are above zero. A zero
+    denominator gives ``±inf``, or NaN when the numerator is 0 too.
+    
+    Parameters
+    ----------
+    dist : Sampled, PredictiveDistribution or list of float
+        A predictive distribution gives one row per component.
+    threshold : float
+    sortino : str
+        ``"downside_deviation"`` (the default: ``sqrt(mean(min(x - t,
+        0)**2))`` over all simulations) or ``"below_threshold_sd"`` (the
+        population SD of the values below ``t`` only, as a reference
+        pricing model computes it; NaN when none is).
+    omega : str
+        ``"partial_moments"`` (the default: ``mean(max(x - t, 0)) /
+        mean(max(t - x, 0))``) or ``"count"`` (``#(x > t) / #(x < t)``;
+        values equal to ``t`` count in neither).
+    tvar_levels : list of float, optional
+        In percent; by default 99.
+    tvar : str
+        ``"exact"`` (the default) or ``"linear"``, as for ``statistics``.
+    
+    Returns
+    -------
+    dict
+        As ``statistics`` returns: ``{name: value}``, or columns for a
+        ``PredictiveDistribution``.
+    
+    Raises
+    ------
+    ValueError
+        If the threshold is not finite, a level is outside ``[0, 100]`` or
+        a convention is unknown.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import risk_ratios
+    >>> r = risk_ratios([-2.0, -1.0, 1.0, 2.0, 5.0], sortino="below_threshold_sd",
+    ...                 omega="count")
+    >>> r["Sortino"], r["Omega"]
+    (2.0, 1.5)
     """
 
 def roc(y: Sequence[float], score: Sequence[float], weights: Sequence[float] |None = None) -> dict:

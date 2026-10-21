@@ -184,6 +184,43 @@ def test_reorder_groups_to_a_spearman_target_from_a_long_table():
         pd.reorder_groups("class", rho, 9, kind="kendall")
 
 
+def test_reorder_groups_by_a_copula_keeps_rows_and_takes_its_ranks():
+    from prospicio.distributions import PredictiveDistribution
+    from prospicio.risk import ArchimedeanCopula, GaussianCopula, StudentTCopula
+
+    n = 3000
+    pd = PredictiveDistribution(
+        ["seg", "item"], [("a", 0), ("a", 1), ("b", 0)],
+        [[float((i * 7919) % n), 3.0 * ((i * 7919) % n), float((i * 104729) % n)]
+         for i in range(n)])
+    gumbel = ArchimedeanCopula("gumbel", 2.0, 2)
+    r = pd.reorder_groups_by_copula("seg", gumbel, 9)
+    assert all(row[1] == 3.0 * row[0] for row in r.draw_matrix())
+    assert sorted(r.marginal(("b", 0)).draws) == sorted(pd.marginal(("b", 0)).draws)
+    # The totals' ranks are the ranks of the copula's draws on the same seed.
+    u = gumbel.sample(n, seed=9)
+    rank = lambda v: sorted(range(n), key=lambda i: v[i])
+    totals = r.aggregate(["seg"]).draw_matrix()
+    assert rank([t[1] for t in totals]) == rank([x[1] for x in u])
+    assert abs(r.group_spearman("seg")[1][0][1] - 0.68) < 0.03
+    # Few degrees of freedom: more joint extremes than normal scores.
+    rank_of = lambda d, g: _ranks([t[g] for t in d.aggregate(["seg"]).draw_matrix()])
+    top = lambda d: sum(
+        1 for x, y in zip(rank_of(d, 0), rank_of(d, 1)) if x > 0.99 * n and y > 0.99 * n)
+    t = pd.reorder_groups_by_copula("seg", StudentTCopula([[1, 0.5], [0.5, 1]], 2.0), 3)
+    normal = pd.reorder_groups_by_copula("seg", GaussianCopula([[1, 0.5], [0.5, 1]]), 3)
+    assert top(t) > top(normal)
+    with pytest.raises(ValueError):
+        pd.reorder_groups_by_copula("seg", ArchimedeanCopula("clayton", 1.0, 3), 1)
+
+
+def _ranks(v):
+    out = [0] * len(v)
+    for r, i in enumerate(sorted(range(len(v)), key=lambda i: v[i])):
+        out[i] = r + 1
+    return out
+
+
 def test_surplus_treaty_on_events_with_sums_insured():
     from prospicio.aggregate import EventSet
     from prospicio.reinsurance import Layer, Tower

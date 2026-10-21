@@ -123,6 +123,20 @@ stopifnot(abs(sp_got["B", "C"] - cor(draw_matrix(sp_r), method = "spearman")[2, 
 stopifnot(group_spearman(reorder_groups(sp, "class", sp_want, seed = 9), "class")["B", "C"] < 0.695)
 stopifnot(inherits(try(reorder_groups(sp, "class", sp_long[1:2, ], seed = 9), silent = TRUE), "try-error"))
 stopifnot(inherits(try(join_predictive(list(res, prem), "risk"), silent = TRUE), "try-error"))
+# A copula reorder: whole rows move, and the totals take the copula draws' ranks.
+cp_n <- 3000
+cp <- predictive_distribution(
+  cbind(((0:(cp_n - 1)) * 7919) %% cp_n, 3 * (((0:(cp_n - 1)) * 7919) %% cp_n), ((0:(cp_n - 1)) * 104729) %% cp_n),
+  data.frame(seg = c("a", "a", "b"), item = c(0, 1, 0))
+)
+gum <- archimedean_copula("gumbel", 2)
+cp_r <- reorder_groups_by_copula(cp, "seg", gum, seed = 9)
+cp_m <- draw_matrix(cp_r)
+stopifnot(all(cp_m[, 2] == 3 * cp_m[, 1]), identical(sort(cp_m[, 3]), sort(draw_matrix(cp)[, 3])))
+cp_u <- copula_sample(gum, cp_n, seed = 9)
+stopifnot(identical(rank(cp_m[, 1] + cp_m[, 2]), rank(cp_u[, 1])), identical(rank(cp_m[, 3]), rank(cp_u[, 2])))
+stopifnot(abs(group_spearman(cp_r, "seg")["a", "b"] - 0.68) < 0.03)
+stopifnot(inherits(try(reorder_groups_by_copula(cp, "seg", archimedean_copula("clayton", 1, dim = 3), 1), silent = TRUE), "try-error"))
 
 # FFT grid sizing (aggregate 1.0.1: round_bucket rungs; bs 1/16 on this book).
 stopifnot(identical(round_bucket(c(1.1, 2.5, 5.5, 2412, 0.3)), c(2, 4, 8, 4000, 0.5)))

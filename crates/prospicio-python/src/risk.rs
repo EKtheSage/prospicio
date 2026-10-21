@@ -745,6 +745,257 @@ pub(crate) fn statistics<'py>(
     Ok(out)
 }
 
+/// Each item read at a driver's mean, percentiles and TVaRs: the item's
+/// value on the simulation the driver's statistic selects, as a results
+/// table reports a commission or a margin "at" each percentile of the loss
+/// ratio.
+///
+/// With ``o`` the driver's stable ascending order (ties keep simulation
+/// order) and ``h = q (n - 1)`` for a level ``q`` in percent over 100,
+/// ``"Mean"`` is the item on the first ``o[i]`` whose driver is at or above
+/// the driver's mean, ``"Percentile <q>"`` the item on ``o[i]`` with ``i``
+/// from ``h`` by ``rule``, and ``"TVaR <q>"`` the item's mean over
+/// ``o[ceil(h):]`` whatever the rule.
+///
+/// Parameters
+/// ----------
+/// items : PredictiveDistribution or dict of str to list of float
+///     A predictive distribution reads every component.
+/// driver : list of float, tuple or None
+///     The driver's draws; for a predictive distribution also a
+///     component's key (a tuple), or ``None`` for its total.
+/// percentiles : list of float
+///     In percent, in ``[0, 100]``.
+/// tvar_levels : list of float, optional
+///     In percent; by default 99, 99.5, 99.6, 99.8, 99.9 and 99.99.
+/// rule : str
+///     ``"round_half_even"`` (the default: halves to the even index, as
+///     Python's and numpy's ``round``), ``"floor"`` or ``"ceil"``.
+///
+/// Returns
+/// -------
+/// dict
+///     For a dict of items, ``{item: {name: value}}``. For a
+///     ``PredictiveDistribution``, columns: one list per dimension holding
+///     each component's key, then one list per statistic.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the lengths differ, a value is not finite, a level is outside
+///     ``[0, 100]`` or the rule is unknown.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import co_statistics
+/// >>> ulr = [0.6, 0.9, 0.5, 0.7, 0.8]
+/// >>> co = co_statistics({"margin": [0.3, 0.0, 0.4, 0.2, 0.1]}, ulr, [62.5],
+/// ...                    tvar_levels=[62.5])
+/// >>> co["margin"]["Percentile 62.5"], round(co["margin"]["TVaR 62.5"], 12)
+/// (0.2, 0.05)
+#[pyfunction]
+#[pyo3(signature = (items, driver, percentiles, *, tvar_levels = None, rule = "round_half_even"))]
+pub(crate) fn co_statistics<'py>(
+    py: Python<'py>,
+    items: &Bound<'py, PyAny>,
+    driver: &Bound<'py, PyAny>,
+    percentiles: Vec<f64>,
+    tvar_levels: Option<Vec<f64>>,
+    rule: &str,
+) -> PyResult<Bound<'py, PyDict>> {
+    use prospicio_prob::statistics::IndexRule;
+    let rule = match rule {
+        "round_half_even" => IndexRule::RoundHalfEven,
+        "floor" => IndexRule::Floor,
+        "ceil" => IndexRule::Ceil,
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "rule must be \"round_half_even\", \"floor\" or \"ceil\", not {rule:?}"
+            )));
+        }
+    };
+    let mut grid = StatisticsGrid::new(percentiles).map_err(to_py)?;
+    if let Some(levels) = tvar_levels {
+        grid = grid.tvar_levels(levels).map_err(to_py)?;
+    }
+    let out = PyDict::new(py);
+    if let Ok(pd) = items.extract::<PyRef<'_, PyPredictiveDistribution>>() {
+        let inner = &pd.inner;
+        let rows = if driver.is_none() {
+            py.detach(|| grid.co_components(inner, None, rule))
+        } else if driver.is_instance_of::<pyo3::types::PyTuple>() {
+            let key = key_from_py(driver.extract::<Vec<KeyArg>>()?);
+            py.detach(|| grid.co_components(inner, Some(&key), rule))
+        } else {
+            let draws: Vec<f64> = driver.extract()?;
+            let columns: Vec<Vec<f64>> = inner
+                .components()
+                .iter()
+                .map(|k| {
+                    inner
+                        .marginal(k)
+                        .expect("listed component")
+                        .draws()
+                        .to_vec()
+                })
+                .collect();
+            py.detach(|| {
+                let refs: Vec<&[f64]> = columns.iter().map(Vec::as_slice).collect();
+                grid.co_statistics(&draws, &refs, rule)
+                    .map(|st| inner.components().iter().cloned().zip(st).collect())
+            })
+        }
+        .map_err(to_py)?;
+        for (d, dim) in pd.inner.dims().iter().enumerate() {
+            let keys: Vec<Bound<'py, PyAny>> = rows
+                .iter()
+                .map(|(key, _)| key_to_py(py, key).and_then(|t| t.get_item(d)))
+                .collect::<PyResult<_>>()?;
+            out.set_item(dim, keys)?;
+        }
+        for (j, name) in grid.co_names().iter().enumerate() {
+            let column: Vec<f64> = rows.iter().map(|(_, st)| st.values[j]).collect();
+            out.set_item(name, column)?;
+        }
+        return Ok(out);
+    }
+    let items: Vec<(String, Vec<f64>)> = items
+        .cast::<PyDict>()
+        .map_err(|_| {
+            PyTypeError::new_err("items must be a PredictiveDistribution or a dict of lists")
+        })?
+        .iter()
+        .map(|(k, v)| Ok((k.extract::<String>()?, v.extract::<Vec<f64>>()?)))
+        .collect::<PyResult<_>>()?;
+    let draws: Vec<f64> = driver.extract()?;
+    let stats = py
+        .detach(|| {
+            let refs: Vec<&[f64]> = items.iter().map(|(_, v)| v.as_slice()).collect();
+            grid.co_statistics(&draws, &refs, rule)
+        })
+        .map_err(to_py)?;
+    for ((name, _), st) in items.iter().zip(stats) {
+        let cells = PyDict::new(py);
+        for (n, v) in st.names.iter().zip(&st.values) {
+            cells.set_item(n, v)?;
+        }
+        out.set_item(name, cells)?;
+    }
+    Ok(out)
+}
+
+/// Risk ratios of a per-simulation result such as a margin, where large is
+/// good, about a threshold ``t`` and under named conventions.
+///
+/// ``"Sharpe"`` is ``(mean - t) / sd`` with the population SD;
+/// ``"Sortino"`` is ``(mean - t)`` over the downside risk ``sortino``
+/// names; ``"Omega"`` is the ratio ``omega`` names; ``"TVaR ratio <q>"`` is
+/// ``(mean - t) / TVaR_q(-x)``, the TVaR of the result read as a loss
+/// (STARR), negative when even the worst outcomes are above zero. A zero
+/// denominator gives ``±inf``, or NaN when the numerator is 0 too.
+///
+/// Parameters
+/// ----------
+/// dist : Sampled, PredictiveDistribution or list of float
+///     A predictive distribution gives one row per component.
+/// threshold : float
+/// sortino : str
+///     ``"downside_deviation"`` (the default: ``sqrt(mean(min(x - t,
+///     0)**2))`` over all simulations) or ``"below_threshold_sd"`` (the
+///     population SD of the values below ``t`` only, as a reference
+///     pricing model computes it; NaN when none is).
+/// omega : str
+///     ``"partial_moments"`` (the default: ``mean(max(x - t, 0)) /
+///     mean(max(t - x, 0))``) or ``"count"`` (``#(x > t) / #(x < t)``;
+///     values equal to ``t`` count in neither).
+/// tvar_levels : list of float, optional
+///     In percent; by default 99.
+/// tvar : str
+///     ``"exact"`` (the default) or ``"linear"``, as for ``statistics``.
+///
+/// Returns
+/// -------
+/// dict
+///     As ``statistics`` returns: ``{name: value}``, or columns for a
+///     ``PredictiveDistribution``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the threshold is not finite, a level is outside ``[0, 100]`` or
+///     a convention is unknown.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import risk_ratios
+/// >>> r = risk_ratios([-2.0, -1.0, 1.0, 2.0, 5.0], sortino="below_threshold_sd",
+/// ...                 omega="count")
+/// >>> r["Sortino"], r["Omega"]
+/// (2.0, 1.5)
+#[pyfunction]
+#[pyo3(signature = (dist, *, threshold = 0.0, sortino = "downside_deviation", omega = "partial_moments", tvar_levels = None, tvar = "exact"))]
+pub(crate) fn risk_ratios<'py>(
+    py: Python<'py>,
+    dist: &Bound<'py, PyAny>,
+    threshold: f64,
+    sortino: &str,
+    omega: &str,
+    tvar_levels: Option<Vec<f64>>,
+    tvar: &str,
+) -> PyResult<Bound<'py, PyDict>> {
+    use prospicio_prob::statistics::{Omega, RiskRatios, Sortino};
+    let sortino = match sortino {
+        "downside_deviation" => Sortino::DownsideDeviation,
+        "below_threshold_sd" => Sortino::BelowThresholdSd,
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "sortino must be \"downside_deviation\" or \"below_threshold_sd\", not {sortino:?}"
+            )));
+        }
+    };
+    let omega = match omega {
+        "partial_moments" => Omega::PartialMoments,
+        "count" => Omega::Count,
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "omega must be \"partial_moments\" or \"count\", not {omega:?}"
+            )));
+        }
+    };
+    let mut ratios = RiskRatios::new()
+        .threshold(threshold)
+        .map_err(to_py)?
+        .sortino(sortino)
+        .omega(omega)
+        .tvar_method(tvar_method(tvar)?);
+    if let Some(levels) = tvar_levels {
+        ratios = ratios.tvar_levels(levels).map_err(to_py)?;
+    }
+    let out = PyDict::new(py);
+    if let Ok(pd) = dist.extract::<PyRef<'_, PyPredictiveDistribution>>() {
+        let inner = &pd.inner;
+        let rows = py.detach(|| ratios.components(inner));
+        for (d, dim) in pd.inner.dims().iter().enumerate() {
+            let keys: Vec<Bound<'py, PyAny>> = rows
+                .iter()
+                .map(|(key, _)| key_to_py(py, key).and_then(|t| t.get_item(d)))
+                .collect::<PyResult<_>>()?;
+            out.set_item(dim, keys)?;
+        }
+        for (j, name) in ratios.names().iter().enumerate() {
+            let column: Vec<f64> = rows.iter().map(|(_, st)| st.values[j]).collect();
+            out.set_item(name, column)?;
+        }
+        return Ok(out);
+    }
+    let sampled = Sampled::new(draws_of(dist)?).map_err(to_py)?;
+    let st = py.detach(|| ratios.of(&sampled));
+    for (name, value) in st.names.iter().zip(&st.values) {
+        out.set_item(name, value)?;
+    }
+    Ok(out)
+}
+
 /// The draws of a ``Sampled``, the total of a ``PredictiveDistribution``,
 /// or a list of floats.
 fn draws_of(dist: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
