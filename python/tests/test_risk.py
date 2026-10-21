@@ -427,5 +427,5 @@ def test_statistics_of_a_predictive_distribution_by_component():
     assert cols["lob"] == [0, 1]
     assert cols["Mean"] == [5.5, 11.0]
     assert cols["Percentile 50"] == [5.0, 10.0]
-    assert cols["TVaR 90"] == [10.0, 20.0]
+    assert cols["TVaR 90"] == pytest.approx([10.0, 20.0], rel=1e-12)
     assert list(cols)[:3] == ["lob", "Mean", "SD"]

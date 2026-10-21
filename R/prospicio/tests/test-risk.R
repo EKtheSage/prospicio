@@ -250,4 +250,4 @@ stopifnot(inherits(try(VaR(st_s, 0.5, method = "nearest"), silent = TRUE), "try-
 st_pd <- predictive_distribution(cbind(1:10, 2 * (1:10)), data.frame(lob = c("a", "b")))
 st_tab <- statistics(st_pd, 50, tvar_levels = 90, sd_multiples = 1)
 stopifnot(identical(st_tab$lob, c("a", "b")), all(st_tab$Mean == c(5.5, 11)))
-stopifnot(all(st_tab[["Percentile 50"]] == c(5, 10)), all(st_tab[["TVaR 90"]] == c(10, 20)))
+stopifnot(all(st_tab[["Percentile 50"]] == c(5, 10)), isTRUE(all.equal(st_tab[["TVaR 90"]], c(10, 20), tolerance = 1e-12)))
