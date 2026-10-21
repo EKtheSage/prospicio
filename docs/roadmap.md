@@ -337,8 +337,9 @@ what it is aiming for by v1.0.
     decision 22, #394; `BayesOneYear::light_refit`, in Rust, Python and R):
     a shorter NUTS run scaled by the opening posterior and started at its
     mean brings model 2's totals within about 0.03 sd of full refits on
-    company 337 (reweighting only is 0.25 to 0.52 off) at a thirtieth of a
-    full refit's cost, 2,000 simulations in about 31 minutes. Off by
+    company 337 (reweighting only is 0.25 to 0.52 off) at about a thirtieth
+    of a full refit's cost, 2,000 simulations in about 31 minutes on 16
+    threads. Off by
     default: model 2 still reweights only until the user decides open
     decision 16.
   - Gesmann and Morris' compartmental model over segments and in the

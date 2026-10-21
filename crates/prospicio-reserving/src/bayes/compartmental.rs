@@ -36,8 +36,8 @@ const APPROXIMATE: &str = "the one-year view reweights its flagged simulations o
 default with development effects (model 2): moment matching rescues none of them and each \
 refit takes about as long as a fit. The view is approximate, about 0.4 sd of the total \
 claims development result off a refit per simulation on company 337; set light_refit to \
-refit them with a shorter sampler (within about 0.03 sd, about 30 minutes for 2,000 \
-simulations), or refit (with max_refits as a budget) for the fit's own sampler";
+refit them with a shorter sampler (within about 0.03 sd there, at about 20 times the run \
+time of this view), or refit (with max_refits as a budget) for the fit's own sampler";
 
 /// The one-compartment closed form (decision 2) per unit of premium:
 /// `OS(t) / (Π RLR) = k_er g(t)` and
@@ -1158,7 +1158,7 @@ impl Compartmental {
         let mut provenance = fit.reserves.provenance().clone();
         provenance.parameters.retain(|(k, _)| k != "output");
         provenance.model = format!("{}_one_year", provenance.model);
-        let provenance = one_year::provenance(provenance, settings, n_sims);
+        let provenance = one_year::provenance_with_light_refit(provenance, settings, n_sims);
         let cdr = PredictiveDistribution::from_draws(
             vec!["origin".into()],
             fit.origins.iter().map(|&o| vec![o.into()]).collect(),
@@ -1315,7 +1315,7 @@ impl Compartmental {
             .param("segments", fitted.len())
             .param("dependence", format!("{:?}", self.dependence));
         provenance.model = format!("{}_one_year", provenance.model);
-        let provenance = one_year::provenance(provenance, settings, n_sims);
+        let provenance = one_year::provenance_with_light_refit(provenance, settings, n_sims);
         let cdr = PredictiveDistribution::from_draws(dims, components, draws, provenance)?;
         let cdr = self.dependence.reorder_ranges(cdr, &ranges, self.seed)?;
         let segments = fitted.map(|(fit, year)| {
@@ -4993,7 +4993,8 @@ mod tests {
     /// `preset` with a small sampler: the training triangle with 1997, and
     /// the closed square of [`closed_triangle`], each sampled directly (the
     /// closed square has fewer cells than model 2 has parameters, which
-    /// `fit` refuses but the posterior does not need).
+    /// `fit` refuses but the posterior does not need). Then the light
+    /// refit's own check ([`light_refit_conforms`]).
     fn one_year_conformance(name: &str, preset: Compartmental) {
         use crate::bayes::one_year::YearModel;
         let m = Compartmental {
@@ -5013,7 +5014,7 @@ mod tests {
             (data, model, sampled)
         };
         let (open, closed) = (fitted(&triangle(true)), fitted(&closed_triangle()));
-        let year = year::CompartmentalYear::new(&m, &open.0).unwrap();
+        let mut year = year::CompartmentalYear::new(&m, &open.0).unwrap();
         let opening = year.opening_draws(&open.1, &open.2, 9).unwrap();
         let closed_year = year::CompartmentalYear::new(&m, &closed.0).unwrap();
         let closed_opening = closed_year.opening_draws(&closed.1, &closed.2, 9).unwrap();
@@ -5032,6 +5033,72 @@ mod tests {
             &opening,
             &closed_year,
             &closed_opening,
+        );
+        light_refit_conforms(name, &m, &open.0, &mut year, &opening);
+    }
+
+    /// The light refit (decision 22) samples the posterior the fit's own
+    /// sampler does, on the same layout: one year drawn from the opening
+    /// posterior, refitted by the fit's sampler (4 chains of 300 and 500,
+    /// the reference) and by the default light sampler, has the opening's
+    /// column names both ways, closing reserves whose mean agrees within
+    /// 0.3 of their sd and whose sd agrees within 25% (the Monte Carlo
+    /// error of the two is about 0.1 sd and 5%), and light draws, mapped
+    /// back to the centred scale, whose score under `log_posterior` with
+    /// that year has mean zero (`conformance::score_z_at`). A warm start
+    /// mis-centred, mis-scaled or mapped back wrongly fails one of them.
+    fn light_refit_conforms(
+        name: &str,
+        m: &Compartmental,
+        data: &Data,
+        year: &mut year::CompartmentalYear,
+        opening: &PosteriorDraws,
+    ) {
+        use crate::bayes::one_year::YearModel;
+        use crate::bayes::one_year::conformance::{SCORE_Z, score_z_at};
+        let mut cells = vec![0.0; year.n_year()];
+        year.draw_year(opening.draw(0), &mut StreamRng::new(13, 0), &mut cells);
+        let reference = Compartmental {
+            sampler: Sampler {
+                chains: 4,
+                tune: 300,
+                draws: 500,
+                ..m.sampler
+            },
+            ..m.clone()
+        };
+        let (full, _) = year::CompartmentalYear::new(&reference, data)
+            .unwrap()
+            .refit(&cells, 21)
+            .unwrap();
+        year.warm_start(Some(LightRefit::default()), opening)
+            .unwrap();
+        let (light, _) = year.refit(&cells, 21).unwrap();
+        assert_eq!(light.names(), opening.names(), "{name}: light refit");
+        assert_eq!(full.names(), opening.names(), "{name}: full refit");
+        let reserves = |draws: &PosteriorDraws| -> (f64, f64) {
+            let mut row = vec![0.0; year.n_origins()];
+            let t: Vec<f64> = (0..draws.n_draws())
+                .map(|d| {
+                    year.closing(draws.draw(d), &cells, &mut row);
+                    row.iter().sum()
+                })
+                .collect();
+            let n = t.len() as f64;
+            let mean = t.iter().sum::<f64>() / n;
+            let sd = (t.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt();
+            (mean, sd)
+        };
+        let ((mf, sf), (ml, sl)) = (reserves(&full), reserves(&light));
+        assert!(
+            (ml - mf).abs() < 0.3 * sf && (sl / sf - 1.0).abs() < 0.25,
+            "{name}: closing reserve {ml} (sd {sl}) light, {mf} (sd {sf}) full"
+        );
+        let z = score_z_at(&*year, &light, &cells);
+        let worst = z.iter().copied().fold(0.0, |w: f64, v| w.max(v.abs()));
+        assert!(
+            worst < SCORE_Z,
+            "{name}: the light refit's score has mean z {z:?}"
         );
     }
 

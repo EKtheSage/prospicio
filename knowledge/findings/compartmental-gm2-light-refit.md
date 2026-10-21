@@ -1,7 +1,7 @@
 ---
 type: Finding
-title: A warm-started, shorter refit puts compartmental model 2's one-year view within 0.03 sd of full refits, at a thirty-third of their cost
-description: On company 337, refitting model 2's one-year simulations with NUTS scaled by the opening posterior and started at its mean, 4 chains of 150 warm-up and 250 kept draws, gives totals within 0.02 to 0.04 sd of full refits (reweighting only is 0.25 to 0.52 off) at about 0.6 to 0.9 s of wall time a refit against 30 s; 2,000 simulations take 31 minutes. Two chains or fewer than about 400 iterations a chain lose it.
+title: A warm-started, shorter refit puts compartmental model 2's one-year view within 0.03 sd of full refits, at about a thirtieth of their cost
+description: On company 337, refitting model 2's one-year simulations with NUTS scaled by the opening posterior and started at its mean, 4 chains of 150 warm-up and 250 kept draws, gives totals within 0.029 to 0.035 sd of full refits on three seeds (reweighting only is 0.25 to 0.52 off) at about 0.6 to 0.9 s of wall time a refit against 30 s on 16 threads; 2,000 simulations take 31 minutes there. Measured for model 2 only. Two chains or fewer than about 400 iterations a chain lose it.
 tags: [bayes, reserving, one-year, compartmental, gesmann-morris, clrd, nuts, warm-start]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-21T00:00:00-07:00 }
@@ -39,17 +39,22 @@ about 11,000; chains, warm-up, draws):[^test]
 
 | seed, years | reweighting only | 4,150,250 | 4,300,500 | 4,100,150 | 4,50,100 | 4,100,100 | 2,200,300 | 2,300,500 |
 |---|---|---|---|---|---|---|---|---|
-| 0, 16 | 0.522 | | 0.020 | | | | | |
+| 0, 16 | 0.522 | 0.035 | 0.020 | | | | | |
 | 1, 32 | 0.252 | 0.029 | 0.025 | 0.059 | 0.059 | 0.076 | 0.047 | 0.045 |
 | 2, 24 | 0.297 | 0.033 | 0.038 | | | | | |
 
 Seed 0 also gave 0.015 at 4,500,1000. The mean gap stays within 0.02 of 0
 and the ratio of the totals' sds within 1.5% of 1. About 0.03 is the floor
 of the comparison (two full refits differ by their own Monte Carlo error),
-and 4,150,250 is the shortest run on it.
+and 4,150,250 is the shortest run on it. It was chosen on seed 1, so its
+0.029 there is in sample; seeds 0 and 2 (0.035, 0.033) were not used to
+choose it. Everything here is model 2: model 1 uses the light sampler only
+for what moment matching cannot rescue, and those refits were not compared
+with full refits.
 
-**Cost** (release, 16 threads, wall time): a refit takes about 0.6 to
-0.9 s against 30 s for a full one (1,047 s for 32 full refits and the fit,
+**Cost** (release, wall time on one 16-thread machine; a time per refit
+is a parallel run's wall time over its refits, so throughput, and scales
+with the hardware): a refit takes about 0.6 to 0.9 s against 30 s for a full one (1,047 s for 32 full refits and the fit,
 on seed 1). 2,000 simulations, every one flagged and refitted, took 1,872 s
 (the fit about 60 to 120 s of it), 29 refits warned, mean total claims
 development result 145 and sd 11,058; reweighting only takes about 85 s.

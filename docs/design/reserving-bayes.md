@@ -2756,8 +2756,9 @@ by default: the fit's own sampler for every refit, and every existing view
 unchanged bit for bit, provenance included (the provenance gains
 `light_refit` only when it is set). `LightRefit { chains, tune, draws }`
 defaults to 4 chains of 150 warm-up and 250 kept draws. `Compartmental`
-uses it and the other models ignore it (the Python and R bindings expose it
-on `Compartmental` only). A refit with it:
+uses it and records it in the provenance; the other models ignore it and do
+not record it, though a malformed value is still an error for every model
+(the Python and R bindings expose it on `Compartmental` only). A refit with it:
 
 * takes the opening posterior's draws (the fit's, with the fresh effects of
   1997 and the new ages drawn, which `simulate` already holds) back on the
@@ -2785,6 +2786,16 @@ cannot rescue. Python: `light_refit=True` or `(chains, tune, draws)` on
 or `c(chains, tune, draws)` on `compartmental_one_year()`,
 `compartmental_model_2_one_year()` and `compartmental_one_year_segments()`.
 
+**Checked on every PR's `bayes` job** (`light_refit_conforms`, run with
+the one-year conformance suite on models 1 and 2 with a small sampler):
+one year drawn from the opening posterior, refitted by the fit's sampler
+and by the default light one, gives the opening's column names both ways,
+closing reserves whose means agree within 0.3 of their sd and whose sds
+agree within 25%, and light draws whose score under `log_posterior` with
+that year has mean zero. Skipping the map back to the centred scale fails
+it on both models. The accuracy against full refits on company 337 below
+runs only weekly and on demand (`RISK_RS_FULL_BAYES`).
+
 **Results** (company 337 as in decision 20, model 2 at its defaults, the
 first years of the simulations of the seed; `RefitAll` with the full
 sampler is the reference; the gap is the rms over simulations of the
@@ -2793,7 +2804,7 @@ reweighted simulations (about 11,000); `model_2_light_refit`, ignored):
 
 | seed, years | reweighting only | 4,150,250 | 4,300,500 | 4,100,150 | 4,50,100 | 2,200,300 |
 |---|---|---|---|---|---|---|
-| 0, 16 | 0.522 | | 0.020 | | | |
+| 0, 16 | 0.522 | 0.035 | 0.020 | | | |
 | 1, 32 | 0.252 | 0.029 | 0.025 | 0.059 | 0.059 | 0.047 |
 | 2, 24 | 0.297 | 0.033 | 0.038 | | | |
 
@@ -2802,13 +2813,21 @@ ratio of the sds of the totals within 1.5% of 1 in every row. Two full
 refits differ by their own Monte Carlo error, so about 0.03 is the floor of
 the comparison: longer light refits (4,300,500; 4,500,1000 at 0.015 on seed
 0) do not get closer, shorter ones (4,100,150 and below) fall to 0.06 to
-0.08. The default, 4,150,250, is the shortest run at the floor. 2 chains
-are at the bound of the target (0.045 to 0.047).
+0.08. The default, 4,150,250, is the shortest run at the floor. It was
+chosen on seed 1, whose years also report it, so 0.029 is in sample; seeds
+0 and 2 (0.035 and 0.033) were not used to choose it. 2 chains are at the
+bound of the target (0.045 to 0.047). These figures are model 2 on
+company 337 only: model 1 uses the light sampler only for the simulations
+moment matching cannot rescue (about 5% on company 337), and those refits
+were not compared with full refits.
 
-**Cost** (`light_runtime`, ignored; release, 16 threads). A refit takes
-about 0.5 to 0.9 s of wall time with the 16 threads busy (32 refits of the
-default: 15 s beyond the fit on seed 1; full refits take 30 s each in the
-same conditions, about 33 times as long); 2,000 simulations, the default
+**Cost** (`light_runtime`, ignored; release, 16 threads). Every time here
+is wall time on one 16-thread machine, and a time per refit is the wall
+time of a parallel run over its refits (throughput, not one refit's
+latency), so it scales with the hardware. A refit takes about 0.5 to 0.9 s
+(32 refits of the default: 15 s beyond the fit on seed 1; full refits take
+about 30 s each in the same conditions, about 30 times the 0.9 s of the
+2,000-simulation run); 2,000 simulations, the default
 count, took 1,872 s (31 minutes): fit 61 to 120 s, every simulation flagged
 and refitted, 29 refits warned, mean total claims development result 145
 (sd 11,058). The default view of model 2 (reweighting only) takes about
@@ -2997,10 +3016,11 @@ are settled.
 16. **Whether model 2's one-year view refits with the light sampler by
     default.** Raised 2026-10-21 by decision 22 (#394), which builds the
     `light_refit` setting open decision 15 (c) asked for and measures it
-    against full refits on company 337: the gap of the totals is 0.03 sd
-    (0.02 to 0.04 on three seeds; reweighting only 0.25 to 0.52; the target
-    was 0.05), at about 0.6 to 0.9 s of wall time a refit, so 2,000
-    simulations take about 31 minutes against 85 s reweighted. Nothing
+    against full refits of model 2 on company 337: the gap of the totals is
+    0.03 sd (0.029 to 0.035 for the default on three seeds; reweighting only
+    0.25 to 0.52; the target was 0.05), at about 0.6 to 0.9 s of wall time
+    a refit on 16 threads, so 2,000 simulations take about 31 minutes there
+    against 85 s reweighted. Nothing
     changes until the user decides: model 2 still reweights only, with its
     warning. (a) Keep that and leave `light_refit` a choice (the docs and
     the warning say so and what it costs). (b) Make the light refit of the

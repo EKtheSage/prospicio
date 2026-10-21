@@ -1037,11 +1037,22 @@ pub(crate) fn provenance(
         .param("k_threshold", settings.k_threshold)
         .param("refit", format!("{:?}", settings.mode()))
         .param("one_year_sims", n_sims);
-    let provenance = match settings.max_refits {
+    match settings.max_refits {
         // Unchanged without a budget, as before decision 20.
         None => provenance,
         Some(m) => provenance.param("max_refits", m),
-    };
+    }
+}
+
+/// [`provenance`] with the light refit's sampler, for a model that uses
+/// [`BayesOneYear::light_refit`] (only `Compartmental`, decision 22): the
+/// other models ignore the setting and do not record it.
+pub(crate) fn provenance_with_light_refit(
+    provenance: Provenance,
+    settings: &BayesOneYear,
+    n_sims: usize,
+) -> Provenance {
+    let provenance = self::provenance(provenance, settings, n_sims);
     match settings.light_refit {
         // Unchanged without a light refit, as before decision 22.
         None => provenance,
@@ -1055,6 +1066,29 @@ pub(crate) fn provenance(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only a model that uses the light refit records it: the shared
+    /// provenance leaves it out, so a `BayesOdp`, `BayesBf` or `Meyers`
+    /// view given one does not report a sampler it did not use.
+    #[test]
+    fn only_a_model_that_uses_the_light_refit_records_it() {
+        let settings = BayesOneYear {
+            light_refit: Some(LightRefit::default()),
+            ..BayesOneYear::default()
+        };
+        let has = |p: &Provenance| p.parameters.iter().any(|(k, _)| k == "light_refit");
+        assert!(!has(&provenance(Provenance::new("m"), &settings, 10)));
+        let with = provenance_with_light_refit(Provenance::new("m"), &settings, 10);
+        assert!(
+            with.parameters
+                .contains(&("light_refit".into(), "4x150+250".into()))
+        );
+        let none = provenance_with_light_refit(Provenance::new("m"), &BayesOneYear::default(), 10);
+        assert_eq!(
+            none.parameters,
+            provenance(Provenance::new("m"), &BayesOneYear::default(), 10).parameters
+        );
+    }
 
     #[test]
     fn the_threshold_decides_the_refits() {
@@ -1231,6 +1265,17 @@ pub(crate) mod conformance {
     /// standard error taking the draws as independent. A parameter whose
     /// score does not vary gives 0 if its mean is 0 and infinity if not.
     pub(crate) fn score_z<M: YearModel>(model: &M, posterior: &PosteriorDraws) -> Vec<f64> {
+        score_z_at(model, posterior, &[])
+    }
+
+    /// [`score_z`] of the posterior after `year`, `log_posterior(theta,
+    /// year)`: the density a refit's draws should have mean score zero
+    /// under.
+    pub(crate) fn score_z_at<M: YearModel>(
+        model: &M,
+        posterior: &PosteriorDraws,
+        year: &[f64],
+    ) -> Vec<f64> {
         let (s, p) = (posterior.n_draws(), posterior.draw(0).len());
         let mut scores = vec![Vec::with_capacity(s); p];
         let mut theta = vec![0.0; p];
@@ -1240,9 +1285,9 @@ pub(crate) mod conformance {
                 let t = theta[i];
                 let h = 1e-5 * (1.0 + t.abs());
                 theta[i] = t + h;
-                let up = model.log_posterior(&theta, &[]);
+                let up = model.log_posterior(&theta, year);
                 theta[i] = t - h;
-                let down = model.log_posterior(&theta, &[]);
+                let down = model.log_posterior(&theta, year);
                 theta[i] = t;
                 score.push((up - down) / (2.0 * h));
             }

@@ -738,14 +738,7 @@ fn light_gaps(sims: usize, seed: u64, lights: &[LightRefit]) -> (f64, Vec<LightG
         let t = totals(&full.cdr);
         if let Some(c) = &cache {
             let text: Vec<String> = t.iter().map(|v| format!("{v:?}")).collect();
-            std::fs::write(
-                c,
-                text.join(
-                    "
-",
-                ),
-            )
-            .unwrap();
+            std::fs::write(c, text.join("\n")).unwrap();
         }
         t
     });
@@ -792,7 +785,8 @@ fn light_gaps(sims: usize, seed: u64, lights: &[LightRefit]) -> (f64, Vec<LightG
                 warned: v.refit_warnings,
             };
             println!(
-                "{light:?}: wall {wall:.1} s ({:.2} s a refit beyond the fit), rms gap to                  full {rms:.3}, mean {mean:.3}, warned {} of {sims}, sd ratio {:.3}",
+                "{light:?}: wall {wall:.1} s ({:.2} s a refit beyond the fit), rms gap to \
+                 full {rms:.3}, mean {mean:.3}, warned {} of {sims}, sd ratio {:.3}",
                 (wall - t_fit) / sims as f64,
                 g.warned,
                 g.sd_ratio
@@ -825,9 +819,10 @@ fn model_2_light_refit() {
 }
 
 /// The default light refit of model 2 comes within a small gap of its full
-/// refits on the first 16 years of seed 0 (measured 0.020 on those, 0.029
-/// on 32 of seed 1: the full refits' own noise is of that order), where
-/// reweighting only is 0.25 to 0.52 off; its sd of the total is the full
+/// refits on the first 16 years of seed 0 (measured 0.035 on those, mean
+/// 0.006, sd ratio 1.015; seed 0 was not used to choose the default, which
+/// was tuned on seed 1 at 0.029; the full refits' own noise is about 0.03),
+/// where reweighting only is 0.52 off; its sd of the total is the full
 /// refits' within 10%. Runs only with `RISK_RS_FULL_BAYES` (about 10
 /// minutes in release): the full refits are what costs.
 #[test]
