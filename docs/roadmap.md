@@ -395,7 +395,11 @@ what it is aiming for by v1.0.
   internal), PR B (`Compartmental`, Gesmann and Morris' model 1, in
   Rust, Python and R) and PR C (model 2, in Rust, Python and R) are
   done (the 200-triangle calibration study, `reserving-calibration.md`, can now use `TriangleModel
-  for Meyers`);
+  for Meyers`; the study is staged: PR 2, the panel and the harness with
+  Mack and the ODP bootstrap, and PR 3, `BayesOdp` on paid and Meyers'
+  CRC, CSR and CAY on his bases, are built and run by hand, and PR 4,
+  Compartmental, and pinning the D values after the user's review
+  remain);
   `Compartmental` has its one-year view too (PR 11, with the user's
   defaults of 2026-10-16), and `Compartmental::fit_segments` with the
   backtest in Rust, Python and R is `reserving-compartmental.md` PR E

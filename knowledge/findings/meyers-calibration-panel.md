@@ -87,5 +87,5 @@ with cas-schedule-p 2026.6.13, duckdb 1.5.6, pandas 3.0.6 and Python
 
 # Not yet shown
 
-The Bayesian arms (`BayesOdp`, Meyers' CRC, CSR and CAY) and Compartmental
-are PR 3 and PR 4. The D values here are recorded, not pinned.
+The Bayesian arms are in [their own finding](/findings/meyers-calibration-bayesian-arms.md);
+Compartmental is PR 4. The D values here are recorded, not pinned.

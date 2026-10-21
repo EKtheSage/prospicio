@@ -103,6 +103,14 @@ required-features = ["slow-bayes"]
 name = "reserving_compartmental_one_year"
 required-features = ["slow-bayes"]
 
-# The 200-triangle calibration study (docs/design/reserving-calibration.md):
-# its unit tests run in a plain `cargo test`; the study itself is #[ignore]d
-# and run by hand (see the file's header), so it needs no feature or CI entry.
+# The 200-triangle calibration study (docs/design/reserving-calibration.md).
+# The entry puts the file in CI's `bayes` job, which runs its unit tests and
+# the wiring check on group 353 (all five Bayesian arms at the study's
+# settings, about 2 s in release). The study itself stays #[ignore]d and runs
+# by hand only (the file's header): that job passes no `--include-ignored`.
+# The cost: a plain `cargo test` no longer builds the file, so its unit tests
+# run only in the `bayes` job, and a PR that touches only
+# validation/scripts/calibration_panel.py does not trigger that job.
+[[test]]
+name = "reserving_calibration_meyers"
+required-features = ["slow-bayes"]
