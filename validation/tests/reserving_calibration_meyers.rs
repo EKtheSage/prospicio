@@ -11,10 +11,12 @@
 //! each line, are tested for uniformity (Meyers' D and the two-sided
 //! Kolmogorov-Smirnov statistic against the `136 / sqrt(n)` bound).
 //!
-//! This file holds the harness (PRs 2 and 3 of the note): Mack on paid and
+//! This file holds the harness (PRs 2 to 4 of the note): Mack on paid and
 //! incurred and the ODP bootstrap on paid (PR 2); `BayesOdp` on paid and
 //! Meyers' CRC (paid and incurred), CSR (paid) and CAY (incurred) at his
-//! priors and the library's NUTS defaults (PR 3). The study is
+//! priors and the library's NUTS defaults (PR 3); Gesmann and Morris'
+//! compartmental model 1 on paid, and model 2 as an optional arm, at the
+//! paper's presets (PR 4). The study is
 //! `#[ignore]`d and run by hand; nothing in CI runs it. The file's
 //! `[[test]]` entry requires `slow-bayes`, so a plain `cargo test` does not
 //! build it and CI's `bayes` job runs it without `--include-ignored`: the
@@ -36,9 +38,11 @@
 //! environment variables read by the study itself:
 //!
 //! * `RISK_RS_CALIBRATION_LINES`: for example `ca,pa` (default all four);
-//! * `RISK_RS_CALIBRATION_ARMS`: for example `mack,odp,crc` (default all:
-//!   `mack,odp,bayes_odp,crc,csr,cay`; `crc` runs paid and incurred, `csr`
-//!   paid, `cay` incurred, `bayes_odp` paid);
+//! * `RISK_RS_CALIBRATION_ARMS`: for example `mack,odp,crc` (default:
+//!   `mack,odp,bayes_odp,crc,csr,cay,compartmental`; `crc` runs paid and
+//!   incurred, `csr` paid, `cay` incurred, `bayes_odp` and `compartmental`
+//!   paid; `compartmental_2`, model 2 on paid, is about 11 times slower and
+//!   runs only when named);
 //! * `RISK_RS_CALIBRATION_LIMIT`: the first n triangles of each line, for a
 //!   timing probe (for example 2).
 //!
@@ -61,7 +65,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use prospicio_prob::{Distribution, Lognormal, PredictiveDistribution};
-use prospicio_reserving::bayes::MeyersModel;
+use prospicio_reserving::bayes::{
+    Compartmental, CompartmentalFit, CompartmentalPriors, MeyersModel, Outstanding,
+};
 use prospicio_reserving::{
     BayesOdp, DevelopmentColumn, Diagnostics, Grain, Lag, Long, Mack, Meyers, Month, OdpBootstrap,
     Triangle,
@@ -483,6 +489,10 @@ struct DiagSummary {
     min_ess_bulk: f64,
     min_ess_tail: f64,
     divergences: usize,
+    /// Posterior draws with the rates swapped (`k_er <= k_p`;
+    /// Compartmental only, 0 for the other models). Recorded, not a refit
+    /// trigger.
+    rate_swaps: usize,
 }
 
 impl DiagSummary {
@@ -492,6 +502,7 @@ impl DiagSummary {
             min_ess_bulk: d.min_ess_bulk,
             min_ess_tail: d.min_ess_tail,
             divergences: d.divergences,
+            rate_swaps: 0,
         }
     }
 
@@ -507,8 +518,13 @@ impl DiagSummary {
     }
 
     fn text(&self) -> String {
+        let swaps = if self.rate_swaps > 0 {
+            format!(";swaps={}", self.rate_swaps)
+        } else {
+            String::new()
+        };
         format!(
-            "rhat={:.4};ess_bulk={:.0};ess_tail={:.0};div={}",
+            "rhat={:.4};ess_bulk={:.0};ess_tail={:.0};div={}{swaps}",
             self.max_rhat, self.min_ess_bulk, self.min_ess_tail, self.divergences
         )
     }
@@ -519,11 +535,22 @@ impl DiagSummary {
 /// carries the first fit's percentile and diagnostics. A refit that errors
 /// leaves the first fit as the result.
 fn with_refit(fit: impl Fn(f64) -> Result<Scored, String>) -> Result<Scored, String> {
-    let first = fit(FIRST_ACCEPT)?;
+    with_refit_at(FIRST_ACCEPT, REFIT_ACCEPT, fit)
+}
+
+/// [`with_refit`] with the two target acceptances given: Compartmental's
+/// first fit is at the library's own (0.99 for model 1, 0.999 for model 2),
+/// so its refit is a tenth of the remaining distance to 1 closer.
+fn with_refit_at(
+    first_accept: f64,
+    refit_accept: f64,
+    fit: impl Fn(f64) -> Result<Scored, String>,
+) -> Result<Scored, String> {
+    let first = fit(first_accept)?;
     let Some(diag) = first.diag.filter(DiagSummary::needs_refit) else {
         return Ok(first);
     };
-    Ok(match fit(REFIT_ACCEPT) {
+    Ok(match fit(refit_accept) {
         Ok(mut second) => {
             second.first = Some((first.percentile, diag));
             second
@@ -675,6 +702,58 @@ fn score_meyers(t: &PanelTriangle, basis: Basis, model: &Meyers) -> Result<Score
     Ok(scored)
 }
 
+/// Gesmann and Morris' model 1 (or model 2) with the paper's preset priors
+/// and the library's sampler, with this seed and target acceptance. The
+/// presets were fitted to workers' compensation company 337, so on the
+/// other lines the study partly tests the preset (the note, decision 1).
+fn compartmental_for(model_2: bool, seed: u64, target_accept: f64) -> Compartmental {
+    let mut m = if model_2 {
+        Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
+    } else {
+        Compartmental::new(CompartmentalPriors::gesmann_morris())
+    };
+    m.seed = seed;
+    m.sampler.target_accept = target_accept;
+    m
+}
+
+/// The library's own target acceptance of the model (0.99 for model 1,
+/// 0.999 for model 2), the first fit's.
+fn compartmental_accept(model_2: bool) -> f64 {
+    if model_2 {
+        Compartmental::model_2(CompartmentalPriors::gesmann_morris_2())
+    } else {
+        Compartmental::new(CompartmentalPriors::gesmann_morris())
+    }
+    .sampler
+    .target_accept
+}
+
+/// Compartmental on paid, with outstanding from case incurred and the
+/// panel's premium, scored like the ODP bootstrap: the outcome less what is
+/// paid among the simulated reserves (the paid at the square's last age
+/// less the latest paid).
+fn score_compartmental(t: &PanelTriangle, model: &Compartmental) -> Result<Scored, String> {
+    let fit = model
+        .fit(
+            &t.training(),
+            Basis::Paid.name(),
+            Outstanding::FromIncurred(Basis::Incurred.name()),
+            "premium",
+        )
+        .map_err(|e| e.to_string())?;
+    compartmental_scored(t, &fit)
+}
+
+fn compartmental_scored(t: &PanelTriangle, fit: &CompartmentalFit) -> Result<Scored, String> {
+    let mut scored = score_draws(t, Basis::Paid, &fit.reserves, &fit.latest_paid)?;
+    scored.diag = Some(DiagSummary {
+        rate_swaps: fit.rate_swaps,
+        ..DiagSummary::new(&fit.diagnostics)
+    });
+    Ok(scored)
+}
+
 /// An arm and basis the study runs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct ArmBasis {
@@ -704,24 +783,36 @@ impl ArmBasis {
                 };
                 with_refit(|ta| score_meyers(t, self.basis, &meyers_for(kind, self.seed(t), ta)))
             }
+            "compartmental" | "compartmental_2" => {
+                let m2 = self.arm == "compartmental_2";
+                let first = compartmental_accept(m2);
+                with_refit_at(first, 1.0 - (1.0 - first) / 10.0, |ta| {
+                    score_compartmental(t, &compartmental_for(m2, self.seed(t), ta))
+                })
+            }
             other => Err(format!("unknown arm {other}")),
         }
     }
 }
 
-/// Every arm the study has: the default of `RISK_RS_CALIBRATION_ARMS`.
-const ALL_ARMS: &str = "mack,odp,bayes_odp,crc,csr,cay";
+/// Every arm the study has.
+const ALL_ARMS: &str = "mack,odp,bayes_odp,crc,csr,cay,compartmental,compartmental_2";
 
-/// The arms named by `RISK_RS_CALIBRATION_ARMS` (default [`ALL_ARMS`]). An
+/// The default of `RISK_RS_CALIBRATION_ARMS`: all but Compartmental model 2
+/// (about 61 s a fit, the note's decision 6), which runs only when named.
+const DEFAULT_ARMS: &str = "mack,odp,bayes_odp,crc,csr,cay,compartmental";
+
+/// The arms named by `RISK_RS_CALIBRATION_ARMS` (default [`DEFAULT_ARMS`]). An
 /// arm runs on Meyers' bases: Mack and CRC on paid and incurred, the ODP
-/// bootstrap, `BayesOdp` and CSR on paid, CAY on incurred.
+/// bootstrap, `BayesOdp`, CSR and Compartmental (both models) on paid, CAY
+/// on incurred.
 fn selected_arms(spec: Option<&str>) -> Vec<ArmBasis> {
-    let spec = spec.unwrap_or(ALL_ARMS);
+    let spec = spec.unwrap_or(DEFAULT_ARMS);
     let mut out = Vec::new();
     for name in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         let bases: &[Basis] = match name {
             "mack" | "crc" => &[Basis::Paid, Basis::Incurred],
-            "odp" | "bayes_odp" | "csr" => &[Basis::Paid],
+            "odp" | "bayes_odp" | "csr" | "compartmental" | "compartmental_2" => &[Basis::Paid],
             "cay" => &[Basis::Incurred],
             other => panic!(
                 "RISK_RS_CALIBRATION_ARMS: unknown arm {other:?} (known: {})",
@@ -1013,7 +1104,7 @@ fn diagnostics_line(records: &[Record<'_>], arm: ArmBasis) -> Option<String> {
         .map(|(d, _)| d.min_ess_tail)
         .fold(f64::INFINITY, f64::min);
     Some(format!(
-        "{}: {} NUTS fits; first fit failed {first_failed} (R-hat above {RHAT_LIMIT} in {first_rhat}, a divergence in {first_div}), {refitted} refitted at {REFIT_ACCEPT}, {still} still failing; kept fits: max R-hat {max_rhat:.4}, {total_div} divergences, min ESS bulk {min_bulk:.0} tail {min_tail:.0}",
+        "{}: {} NUTS fits; first fit failed {first_failed} (R-hat above {RHAT_LIMIT} in {first_rhat}, a divergence in {first_div}), {refitted} refitted at a higher target acceptance ({REFIT_ACCEPT}; Compartmental a tenth of the way to 1), {still} still failing; kept fits: max R-hat {max_rhat:.4}, {total_div} divergences, min ESS bulk {min_bulk:.0} tail {min_tail:.0}",
         arm.label(),
         ds.len()
     ))
@@ -1592,8 +1683,22 @@ mod tests {
 
     #[test]
     fn the_selection_variables_parse() {
-        // Mack (2), ODP, BayesOdp, CRC (2), CSR, CAY.
-        assert_eq!(selected_arms(None).len(), 8);
+        // Mack (2), ODP, BayesOdp, CRC (2), CSR, CAY, Compartmental model 1;
+        // model 2 only when named.
+        assert_eq!(selected_arms(None).len(), 9);
+        assert!(
+            selected_arms(None)
+                .iter()
+                .all(|a| a.arm != "compartmental_2")
+        );
+        assert_eq!(
+            selected_arms(Some("compartmental_2"))[0].label(),
+            "compartmental_2_paid"
+        );
+        assert_eq!(
+            selected_arms(Some("compartmental, compartmental_2")).len(),
+            2
+        );
         assert_eq!(selected_arms(Some("odp")).len(), 1);
         let bases = |spec: &str| -> Vec<Basis> {
             selected_arms(Some(spec)).iter().map(|a| a.basis).collect()
@@ -1645,6 +1750,7 @@ mod tests {
             min_ess_bulk: 900.0,
             min_ess_tail: 800.0,
             divergences: 0,
+            rate_swaps: 0,
         }
     }
 
@@ -1873,6 +1979,101 @@ mod tests {
             // age-10 total, not near the reserve.
             assert!(s.mean > 0.5 * t.outcome(basis), "{kind:?} {s:?}");
         }
+    }
+
+    /// Compartmental on a synthetic square, with the sampler cut down: the
+    /// reserves are shifted by what is paid (the mean is an ultimate), the
+    /// rate swaps are carried and the run is reproducible by seed.
+    #[test]
+    fn the_compartmental_arm_scores_a_synthetic_triangle() {
+        let mut csv = String::from(PANEL_HEADER);
+        csv.push('\n');
+        let pattern = [
+            0.30, 0.25, 0.17, 0.12, 0.07, 0.04, 0.025, 0.015, 0.007, 0.003,
+        ];
+        for o in 0..ORIGINS {
+            let mut cum = 0.0;
+            for (d, &p) in pattern.iter().enumerate() {
+                cum += 1000.0
+                    * (1.0 + 0.1 * o as f64)
+                    * p
+                    * (1.0 + 0.2 * ((o * 7 + d * 3) as f64).sin());
+                let case = cum * (1.0 + 1.5 * (1.0 - d as f64 / 10.0));
+                let _ = writeln!(
+                    csv,
+                    "pa,1,{},{},{cum},{},{case},{},{}",
+                    FIRST_ORIGIN as usize + o,
+                    12 * (d + 1),
+                    case + 5.0,
+                    1500.0 + o as f64,
+                    2000.0
+                );
+            }
+        }
+        let panel = parse_panel(&csv).unwrap();
+        let t = &panel[0];
+        let mut m = compartmental_for(false, 1, 0.9);
+        m.sampler.chains = 2;
+        m.sampler.tune = 200;
+        m.sampler.draws = 200;
+        m.n_sims = 500;
+        let s = score_compartmental(t, &m).unwrap();
+        assert!(s.percentile >= 0.0 && s.percentile <= 100.0, "{s:?}");
+        assert!(s.diag.is_some() && s.sd > 0.0);
+        close(s.outcome, t.outcome(Basis::Paid), 0.0);
+        assert!(s.per_origin[0].is_nan() && s.per_origin[9].is_finite());
+        // An ultimate, near the data's age-10 total, not a reserve.
+        assert!(s.mean > 0.5 * t.outcome(Basis::Paid), "{s:?}");
+        close(
+            score_compartmental(t, &m).unwrap().percentile,
+            s.percentile,
+            0.0,
+        );
+        // Model 2 differs by its settings, not its wiring.
+        let m2 = compartmental_for(true, 1, 0.9);
+        assert_eq!(
+            m2.likelihood,
+            prospicio_reserving::bayes::CompartmentalLikelihood::LogNormal
+        );
+        close(compartmental_accept(false), 0.99, 0.0);
+        close(compartmental_accept(true), 0.999, 0.0);
+    }
+
+    /// Compartmental model 1 through the study's code path on Meyers' group
+    /// 353 commercial auto (paid, outstanding from case incurred, the
+    /// premium column). Meyers publishes no compartmental result, so the
+    /// check is of the wiring, against the models of this file: the
+    /// predictive mean ultimate agrees with the ODP bootstrap's and Mack's
+    /// on the same square (the preset is a WC prior, so loosely), the
+    /// percentile is a probability and the oldest origin is already at age
+    /// 10. About 1.5 s in release. (The paper's company 337 is not a 10 x 10
+    /// square, so its parity targets stay in `reserving_compartmental.rs`.)
+    /// On this square the preset gives a mean of 35,803 against the
+    /// bootstrap's 39,197 and the outcome 40,000: the percentile is 100.
+    #[test]
+    fn the_compartmental_arm_scores_group_353() {
+        let t = group_353();
+        let s = ArmBasis {
+            arm: "compartmental",
+            basis: Basis::Paid,
+        }
+        .run(&t)
+        .unwrap();
+        let boot = ArmBasis {
+            arm: "odp",
+            basis: Basis::Paid,
+        }
+        .run(&t)
+        .unwrap();
+        eprintln!(
+            "compartmental paid: {:.2} mean {:.0} sd {:.0} {:?}; odp bootstrap: {:.2} mean {:.0} sd {:.0}",
+            s.percentile, s.mean, s.sd, s.diag, boot.percentile, boot.mean, boot.sd
+        );
+        close(s.outcome, boot.outcome, 0.0);
+        close(s.mean, boot.mean, 0.15 * boot.mean);
+        assert!(s.per_origin[9].is_finite() && s.per_origin[0].is_nan());
+        assert!((0.0..=100.0).contains(&s.percentile));
+        assert!(s.diag.is_some_and(|d| !d.needs_refit()) || s.first.is_some());
     }
 
     /// The Bayesian arms on Meyers' own triangle, with the study's code
