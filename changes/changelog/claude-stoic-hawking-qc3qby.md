@@ -41,4 +41,4 @@
   commission scale's range. Towers with them are JSON format version 3
   (Python `with_brokerage`, `with_brokerage_scale`, `with_deduction`,
   `with_scales_before_annual_terms`, `Tower.deal_ratios`; R
-  `with_brokerage()`, `with_deduction()`, `deal_ratios()`) (#485, #477, #PR).
+  `with_brokerage()`, `with_deduction()`, `deal_ratios()`) (#485, #477, #511).
