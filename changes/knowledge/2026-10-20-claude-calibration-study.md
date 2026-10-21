@@ -1,1 +1,0 @@
-* **Creation**: [Meyers' 200-triangle Schedule P panel](/datasets/clrd-panel.md), from the calibration study's design note (branch claude/calibration-study): Table A.2 prints 175 of the 200 codes (25 for commercial auto), Meyers' published D statistics for Mack are the panel's acceptance test, and the panel is built at run time, not stored.

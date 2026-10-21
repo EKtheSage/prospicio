@@ -1,1 +1,0 @@
-* **Creation**: [The Bahnemann guides in R, what the R package covers](/findings/bahnemann-r-api-map.md), from the R twins of the Monograph 2 guides (branch guides/bahnemann-claims-r): lognormal() has no survival() or layer_variance(), R has no layer_second_moment() or std(), and every printed number equals the Python guides'.

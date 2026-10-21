@@ -1,1 +1,0 @@
-* **Creation**: [PanjerClass does not forward its third cumulant](/findings/panjer-class-third-cumulant.md), from the XLL aggregate functions (branch claude/xll-aggregate): the trait's defaults run for PanjerClass, and the cumulant from the raw third moment cancels at large means, 1.2e-7 off with 1,000 claims; the add-in unwraps to the concrete count.
