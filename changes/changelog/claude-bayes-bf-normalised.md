@@ -8,7 +8,8 @@
   ratio and moves the reserve, where `BayesBf`'s (EVW's Model 3.1,
   unchanged) barely does. A flat prior is the Bayesian chain ladder; a
   tight prior at the chain ladder's own ultimates is the classical
-  Bornhuetter-Ferguson reserve. It has the one-year view
+  Bornhuetter-Ferguson reserve (at other loss ratios the pattern is
+  re-estimated given the ultimates). It has the one-year view
   (`BayesBfNormalised::one_year`) through the generic engine. In Python
   `BayesBfNormalised` and `BayesBfNormalisedFit` (`pattern`,
   `expected_ultimate`) with `.one_year()`, and in R `bayes_bf_normalised()`,

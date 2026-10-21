@@ -2856,10 +2856,12 @@ conformance suite in both halves (an entry in `every_model` of
   loss ratio (about 0.45), and is larger above it. So the requirement
   that the tight limit reproduce `Bf` "with the same apriori and pattern"
   holds exactly where the prior is consistent with the pattern, and the
-  model is a joint one elsewhere. A model whose pattern is held at the
+  model is a joint one elsewhere. The user accepted this on 2026-10-21
+  (open decision 16). A model whose pattern is held at the
   chain ladder's (Verrall's two-stage estimate, or a tight prior on the
   pattern centred on selected factors, the issue's optional ask) would
-  reproduce `Bf` at every `apriori`; it is not built (follow-up below).
+  reproduce `Bf` at every `apriori`; it is not built, and the user decided
+  on 2026-10-21 that it need not be (open decision 16).
 * *The prior is real.* RAA with a premium of 40,000 rising by 2,000 a year
   (the finding's table), total mean reserve, `BayesBfNormalised` then
   `BayesBf` (10,000 simulations, seed 1): cv 0.5: apriori 0.3 / 0.6 / 1.2
@@ -2898,10 +2900,12 @@ chains of 1,000 and 1,000 on GenIns or RAA, no divergence at `cv` infinite,
 0.2 or 0.01); the unit tests about 1 s in release (14 tests, 11 sampling
 with NUTS and gated by `slow-tests`) and the validation file about 30 s.
 
-**Not built, and for the user.** (a) The pattern held near given factors
+**Not built.** (a) The pattern held near given factors
 (chain ladder or selected, `SelectedPattern`), which would make the tight
-limit `Bf` at every `apriori`: the issue's optional ask, deferred;
-recorded as open decision 16. (b) The exact Gamma-mixture predictive
+limit `Bf` at every `apriori`: the issue's optional ask, deferred; the
+user decided on 2026-10-21 (open decision 16) that the limit is
+acceptable as it is, so it waits until a user wants the classical
+pattern. (b) The exact Gamma-mixture predictive
 (Rao-Blackwellised reserve quantiles), also an optional ask, unchanged.
 (c) A Stan reference: none was run (no CmdStan in the build environments),
 so unlike `BayesBf` this model has no external parity file; its checks are
@@ -3069,14 +3073,19 @@ are settled.
     2's view. *Recommended: (c), measured, then (b) with what is left*;
     until the user decides, (a) stands.
 16. **The pattern held near given factors.** Raised 2026-10-21 by PR 13
-    (decision 23). `BayesBfNormalised` estimates the pattern jointly with
-    the ultimates, so its strong-prior limit is the classical
-    `BornhuetterFerguson` reserve only where the prior ultimates are the
-    chain ladder's (decision 23 has the gap: -8.6% to +28.4% for
-    `apriori` 0.35 to 0.65 on GenIns). (a) Leave it: the joint model is
-    the one the issue asked for; (b) add a prior on the pattern centred on
-    given factors (the chain ladder's, or a `SelectedPattern`) with its
-    own strength, so a tight one reproduces `Bf` at every `apriori`
-    (the issue's optional ask), as a setting of this model. *Recommended:
-    (a) now, (b) when a user wants the classical pattern.* Until the user
-    decides, (a) stands.
+    (decision 23). Decided 2026-10-21 by the user: (a), leave it. The
+    tight-prior limit of `BayesBfNormalised` is acceptable as it is: it
+    equals the classical `BornhuetterFerguson` reserve only at the chain
+    ladder's ultimates, and otherwise the pattern is re-estimated given
+    the ultimates (decision 23 has the gap: -8.6% to +28.4% for `apriori`
+    0.35 to 0.65 on GenIns). (b), a prior on the pattern centred on given
+    factors with its own strength, is not built; it stays an option for a
+    user who wants the classical pattern. The question as raised:
+    `BayesBfNormalised` estimates the pattern jointly with the ultimates,
+    so its strong-prior limit is the classical reserve only where the
+    prior ultimates are the chain ladder's. (a) Leave it: the joint model
+    is the one the issue asked for; (b) add a prior on the pattern centred
+    on given factors (the chain ladder's, or a `SelectedPattern`) with its
+    own strength, so a tight one reproduces `Bf` at every `apriori` (the
+    issue's optional ask), as a setting of this model. *Recommended: (a)
+    now, (b) when a user wants the classical pattern.*
