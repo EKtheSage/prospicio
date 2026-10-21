@@ -278,6 +278,10 @@ occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, 
 
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
 
+co_statistics_rust <- function(driver, items, percentiles, tvar_levels, rule) .Call(wrap__co_statistics_rust, driver, items, percentiles, tvar_levels, rule)
+
+risk_ratios_rust <- function(draws, threshold, sortino, omega, tvar_levels, tvar) .Call(wrap__risk_ratios_rust, draws, threshold, sortino, omega, tvar_levels, tvar)
+
 entropic_rust <- function(draws, theta) .Call(wrap__entropic_rust, draws, theta)
 
 esscher_rust <- function(draws, h) .Call(wrap__esscher_rust, draws, h)
