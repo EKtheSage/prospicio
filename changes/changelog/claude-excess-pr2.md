@@ -10,4 +10,4 @@
   factors from Pinto and Gogol's Pareto shape drift and a base development
   (the counts above the threshold or a base layer's losses), reproducing their
   and Bear's examples. A 500-book simulation study checks the derived pattern
-  and the blend against the layer's own chain ladder (#PR).
+  and the blend against the layer's own chain ladder (#510).
