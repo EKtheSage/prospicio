@@ -1322,6 +1322,80 @@ encode_target <- function(encoding, newvalues) {
   out
 }
 
+#' Knots for hinge terms by MARS
+#'
+#' A forward stepwise search over hinge pairs `max(0, x - k)` and
+#' `max(0, k - x)` in the manner of R earth with `degree = 1`: each step adds
+#' the pair on the variable and knot that most reduce the residual sum of
+#' squares (weighted when `weights` are given), with earth's minimum span
+#' between knots and end span, its stopping rules and its GCV with penalty
+#' `penalty`. With `prune = TRUE` a backward pass drops terms while that
+#' lowers the GCV. With `family`, each step scores candidates by weighted
+#' least squares on the GLM's working response and the deviance takes the
+#' residual sum of squares' place. Default runs on
+#' `examples/data/chalk_portfolio.csv` match earth's knots, RSS and GCV
+#' (`validation/scripts/r_mars_earth.R`). The knots enter [glm_fit()] as
+#' formula terms; `mars_formula()` writes them.
+#'
+#' @param x A data frame or named list of numeric predictors.
+#' @param y The response.
+#' @param weights Optional prior weights.
+#' @param max_terms The most terms, the intercept included (earth's `nk`);
+#'   `NULL` for earth's default `min(200, max(20, 2p)) + 1`.
+#' @param threshold Stop when a step raises the R-squared by less (earth's
+#'   `thresh`).
+#' @param penalty The GCV's cost per knot.
+#' @param min_span,end_span Observations between knots and at the ends;
+#'   `NULL` for earth's defaults from the number of predictors and rows.
+#' @param prune Run the backward pass by GCV.
+#' @param family,link A GLM family and link as in [glm_fit()] for the
+#'   deviance criterion; `NULL` for least squares.
+#' @param fit A `mars_knots` list.
+#' @returns `mars_knots()` a list with `terms` (a data frame of `variable`,
+#'   `knot` and `direction`, one of `"up"`, `"down"` or `"linear"`),
+#'   `forward_terms` (the same before pruning), `knots` and `linear` (per
+#'   variable), `coefficients` (the intercept first), `rss`, `gcv`, `rsq`,
+#'   `grsq`, `termination` and `steps` (a data frame of `terms`, `rss`,
+#'   `rsq` and `gcv` per forward step); `mars_formula()` the right-hand
+#'   side terms as a character vector, `x` for a linear term and
+#'   `I(pmax(0, x - k))` for each knot.
+#' @export
+#' @examples
+#' x <- data.frame(a = 1:40)
+#' y <- pmax(0, x$a - 20) + sin(x$a)
+#' fit <- mars_knots(x, y, min_span = 1, end_span = 1)
+#' fit$knots$a
+#' mars_formula(fit)
+mars_knots <- function(x, y, weights = NULL, max_terms = NULL, threshold = 0.001, penalty = 2,
+                       min_span = NULL, end_span = NULL, prune = FALSE, family = NULL, link = NULL) {
+  count <- function(v) if (is.null(v)) 0 else as.double(v)
+  r <- rust_result(mars_rust(
+    names(x), lapply(x, as.double), as.double(y),
+    if (is.null(weights)) double() else as.double(weights),
+    count(max_terms), as.double(threshold), as.double(penalty), count(min_span), count(end_span),
+    isTRUE(prune), if (is.null(family)) "" else family, if (is.null(link)) "" else link
+  ))
+  table <- function(t) data.frame(variable = t$variable, knot = t$knot, direction = t$direction)
+  knots <- r$knots
+  names(knots) <- names(x)
+  linear <- r$linear
+  names(linear) <- names(x)
+  structure(list(
+    terms = table(r$terms), forward_terms = table(r$forward_terms), knots = knots,
+    linear = linear, coefficients = r$coefficients, rss = r$rss, gcv = r$gcv, rsq = r$rsq,
+    grsq = r$grsq, termination = r$termination,
+    steps = data.frame(terms = r$step_terms, rss = r$step_rss, rsq = r$step_rsq, gcv = r$step_gcv)
+  ), class = "mars_knots")
+}
+
+#' @rdname mars_knots
+#' @export
+mars_formula <- function(fit) {
+  unlist(lapply(names(fit$knots), function(v) {
+    c(if (fit$linear[[v]]) v, vapply(fit$knots[[v]], function(k) sprintf("I(pmax(0, %s - %.17g))", v, k), ""))
+  }))
+}
+
 #' @rdname resampling
 #' @export
 k_fold <- function(n, k, seed) rust_result(k_fold_rust(as.double(n), as.double(k), as.double(seed)))

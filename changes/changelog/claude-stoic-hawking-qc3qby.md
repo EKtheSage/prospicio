@@ -610,3 +610,10 @@
   gamma and inverse Gaussian and drawn by seed for the counts and the Tweedie's zero; `statmod::qresiduals`
   parity on quine. Python `GlmFit.quantile_residuals()` and `models.quantile_residuals()`, R
   `residuals(m, type = "quantile", seed = 0)` and `quantile_residuals()` (#464).
+- MARS knot selection for hinge terms: `prospicio_glm::mars::Mars` runs R earth's forward pass with
+  `degree = 1` (hinge pairs, earth's minimum and end spans, thresholds and GCV, weights optional) and an
+  optional backward pass by GCV; `MarsFit::add_terms` puts the knots into `Terms` as `numeric` and
+  `hinges`. With `glm(family, link)` each step scores candidates on the GLM's working response and
+  compares deviances. earth parity on the Chalk portfolio: the knots, RSS and GCV of default,
+  weighted, `nk = 15` and pruned runs. Python `models.mars()` and `MarsFit`, R `mars_knots()` and
+  `mars_formula()` (#465).

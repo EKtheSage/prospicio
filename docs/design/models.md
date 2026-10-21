@@ -394,6 +394,20 @@ models and compares them.
   split's training rows only, and returns a `TargetEncoding` from all
   rows for new data. The expected values are the caller's (an overall
   mean or a first model), so the encoding is what that model misses.
+- **MARS knots** (#465, `prospicio_glm::mars`): a search for where hinges
+  go, not a model of its own. The forward pass is R earth's with
+  `degree = 1`, followed step by step (its span rules, the gates on a
+  knot's gain, its stopping rules and GCV, and the weighted pass's check
+  of a pair's lower hinge against a basis whose intercept is the
+  constant), since a pass that differs in any of these picks other knots
+  on real data. The result goes into `Terms` as `numeric(x)` and
+  `hinges(knots)`, which span earth's pairs, so the final model is an
+  ordinary GLM. The GLM criterion scores each step's candidates by
+  weighted least squares on the IRLS working response and refits the GLM
+  with the chosen pair, the deviance in the RSS's place; earth has no
+  such mode (its `glm` argument fits after a least-squares search), so
+  only the least-squares runs have parity. The backward pass drops the
+  term that least raises the RSS and keeps the size with the lowest GCV.
 - Decision: families and links are closed enums, like `Distortion`, so a
   fitted model serializes as data.
 

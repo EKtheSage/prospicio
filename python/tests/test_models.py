@@ -1211,3 +1211,41 @@ def test_permutation_importance_of_the_monographs_toy_table():
     imp = permutation_importance(Toy(), frame, y, build, mae, ["age", "height"], seed=3)
     assert round(imp.importance[0], 3) == 0.133 and imp.importance[1] == 0.0
     assert imp.relative == [100.0, 0.0]
+
+
+def test_mars_matches_earth_on_the_chalk_portfolio():
+    # R earth 5.3: earth(claims / exposure ~ age + veh_age + exper + noise,
+    # degree = 1, pmethod = "none"), unweighted and weighted by exposure
+    # (validation/scripts/r_mars_earth.R).
+    import csv
+    from pathlib import Path
+
+    from prospicio.models import Glm, Terms, mars
+
+    path = Path(__file__).resolve().parents[2] / "examples" / "data" / "chalk_portfolio.csv"
+    with open(path) as f:
+        rows = list(csv.DictReader(line for line in f if not line.startswith("#")))
+    names = ["age", "veh_age", "exper", "noise"]
+    x = {n: [float(r[n]) for r in rows] for n in names}
+    w = [float(r["exposure"]) for r in rows]
+    y = [float(r["claims"]) / e for r, e in zip(rows, w)]
+    fit = mars(x, y)
+    assert fit.terms == [
+        ("age", 28.0, "up"),
+        ("age", 28.0, "down"),
+        ("veh_age", 5.0, "up"),
+        ("veh_age", 5.0, "down"),
+    ]
+    assert fit.rss == pytest.approx(7229.20770861623, rel=1e-10)
+    assert fit.gcv == pytest.approx(0.36178591949671, rel=1e-10)
+    assert fit.termination == "threshold"
+    weighted = mars(x, y, weights=w, threshold=0.0, max_terms=15)
+    assert weighted.knots("exper") == [2.0, 7.0, 26.0]
+    assert weighted.rss == pytest.approx(5166.57719014687, rel=1e-10)
+    # The knots feed Terms: a weighted refit on them has earth's RSS.
+    terms = weighted.add_terms(Terms().intercept())
+    design = terms.fit(x).design(x, weights=w)
+    assert Glm("gaussian").fit(design, y).deviance == pytest.approx(5166.57719014687, rel=1e-9)
+    pruned = mars(x, y, threshold=0.0, max_terms=15, prune=True)
+    assert pruned.rss == pytest.approx(7223.67323614061, rel=1e-10)
+    assert len(pruned.terms) == 6

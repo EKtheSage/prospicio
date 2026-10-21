@@ -176,6 +176,8 @@ reference:
       - models.ks_uniform
       - models.target_encode
       - models.TargetEncoding
+      - models.mars
+      - models.MarsFit
       - models.k_fold
       - models.group_k_fold
       - models.time_ordered
