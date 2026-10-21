@@ -229,6 +229,7 @@ reference:
       - elastic_net_cv
       - gam_fit
       - gam_model
+      - mars_knots
       - cann_fit
       - cann_model
       - attention_cann_fit
