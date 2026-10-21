@@ -799,6 +799,8 @@ PredictiveDistribution$aggregate <- function(keep) .Call(wrap__PredictiveDistrib
 
 PredictiveDistribution$select <- function(dim, keys) .Call(wrap__PredictiveDistribution__select, self, dim, keys)
 
+PredictiveDistribution$scale_to_totals <- function(totals) .Call(wrap__PredictiveDistribution__scale_to_totals, self, totals)
+
 PredictiveDistribution$total <- function() .Call(wrap__PredictiveDistribution__total, self)
 
 PredictiveDistribution$mean <- function() .Call(wrap__PredictiveDistribution__mean, self)

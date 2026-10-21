@@ -735,6 +735,11 @@ impl PredictiveDistribution {
         Ok(Self { inner })
     }
 
+    fn scale_to_totals(&self, totals: &[f64]) -> Result<Self> {
+        let inner = self.inner.scale_to_totals(totals).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
     fn total(&self) -> Sampled {
         Sampled {
             inner: self.inner.total().clone(),

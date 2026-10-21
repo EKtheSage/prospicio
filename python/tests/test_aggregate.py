@@ -1153,3 +1153,17 @@ def test_tower_results_by_event_label():
     assert merged.label_combinations == [[""], ["quake"], ["wind"]]
     with pytest.raises(ValueError):
         events.with_labels({"kind": ["a"] * 4})
+
+
+def test_scale_to_totals_carries_a_capped_total_back():
+    from prospicio.distributions import PredictiveDistribution
+
+    pd = PredictiveDistribution(
+        ["class"], [("motor",), ("home",)], [[6.0, 9.0], [3.0, 1.0], [0.0, 0.0]]
+    )
+    capped = [min(sum(r), 10.0) for r in pd.draw_matrix()]
+    scaled = pd.scale_to_totals(capped)
+    assert scaled.draw_matrix() == [[4.0, 6.0], [3.0, 1.0], [0.0, 0.0]]
+    assert scaled.components() == pd.components()
+    with pytest.raises(ValueError):
+        pd.scale_to_totals([1.0, 1.0, 1.0])

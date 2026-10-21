@@ -74,6 +74,7 @@ reference:
       - portfolio
       - marginal
       - select_components
+      - scale_to_totals
       - total
       - draw_matrix
       - provenance

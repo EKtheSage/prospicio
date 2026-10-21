@@ -2471,6 +2471,41 @@ mod tests {
     }
 
     #[test]
+    fn a_pro_rata_stop_loss_splits_by_each_label_s_share() {
+        // A stop loss of 20 xs 30 on the annual total, pro rata across the
+        // year's events: each label gets its share of the gross loss.
+        let events = EventSet::from_years(vec![vec![30.0, 10.0, 20.0], vec![5.0, 15.0]], 0)
+            .unwrap()
+            .with_labels(vec![(
+                "peril".into(),
+                vec![
+                    "wind".into(),
+                    "quake".into(),
+                    "wind".into(),
+                    "quake".into(),
+                    "wind".into(),
+                ],
+            )])
+            .unwrap();
+        let cover = Layer::stop_loss("sl", 20.0, 30.0)
+            .unwrap()
+            .allocation(LimitAllocation::ProRata)
+            .unwrap();
+        let result = Tower::new(vec![cover]).unwrap().apply(&events).unwrap();
+        let at = |k: &str, l: &str, p: &str| {
+            let key: Vec<KeyValue> = vec![k.into(), l.into(), p.into()];
+            prospicio_prob::Empirical::draws(&result.marginal(&key).unwrap()).to_vec()
+        };
+        // Year 1: gross 60 (wind 50, quake 10), ceded 20, a third of each.
+        let (wind, quake) = (at("ceded", "sl", "wind"), at("ceded", "sl", "quake"));
+        assert!((wind[0] - 50.0 / 3.0).abs() < 1e-12 && (quake[0] - 10.0 / 3.0).abs() < 1e-12);
+        // Year 2: gross 20 is below the retention.
+        assert_eq!((wind[1], quake[1]), (0.0, 0.0));
+        let gross = at("gross", "ground_up", "wind");
+        assert!((wind[0] / gross[0] - 1.0 / 3.0).abs() < 1e-12);
+    }
+
+    #[test]
     fn labels_split_what_an_inuring_stage_sees() {
         let events = EventSet::from_years(vec![vec![15.0, 20.0, 10.0]], 0)
             .unwrap()

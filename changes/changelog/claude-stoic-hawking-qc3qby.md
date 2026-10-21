@@ -656,3 +656,11 @@
   and commissions labelled `""`; under an annual limit the split follows the layer's allocation.
   Unlabelled results are unchanged. Python `EventSet.with_labels`, `from_long(..., labels=)`,
   `labels`, R `with_labels()`, `event_labels()`, `event_set_from_long(..., labels =)` (#475).
+
+### Distributions and probability
+
+- `PredictiveDistribution::scale_to_totals` rescales each simulation's components pro rata to a new
+  total (factor 1 when they sum to 0): a loss-ratio cap over several classes or a stop loss on a mix
+  of perils carried back onto its components. Inside a tower, a cover on the annual total with
+  `LimitAllocation::ProRata` on labelled events does the same. Python
+  `PredictiveDistribution.scale_to_totals`, R `scale_to_totals()` (#478).

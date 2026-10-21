@@ -21,4 +21,5 @@ sources:
 * A layer's ceded loss by label is the sum of `Layer::ceded_by_event` over that label's events, through every inuring stage, so the by-label split of a later stage follows what the earlier stages left of each event.
 * In event order a later event gets what is left of the annual limit, so a peril whose events come late in the year recovers less; pro rata every event is scaled by the same factor and the split by label follows the recoveries before the annual terms.
 * Reinstatement and swing premiums and commissions depend on the year's ceded total only, so they are not split; they carry `""` in every label dimension.
+* A stop loss (or any cover on the annual total) under `LimitAllocation::ProRata` gives each label `component × capped / uncapped`, the reference model's pro-rata convention for a capped total: 20 xs 30 on wind 50 and quake 10 cedes wind 50/3 and quake 10/3. Outside a tower, `PredictiveDistribution::scale_to_totals` does the same to any components and a total per simulation (#478).
 * `merge` keeps labels from either set, filling `""` for a dimension a set lacks; `grouped` (an hours clause) drops them, since an occurrence may span perils.

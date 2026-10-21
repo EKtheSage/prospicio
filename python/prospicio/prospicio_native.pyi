@@ -20433,6 +20433,39 @@ class PredictiveDistribution:
         >>> groups, abs(rho[0][1] - 0.6) < 0.02
         (['a', 'b'], True)
         """
+    def scale_to_totals(self, /, totals: Sequence[float]) -> PredictiveDistribution:
+        """
+        Every simulation's components rescaled pro rata to a new total.
+        
+        Component ``k`` in simulation ``s`` becomes ``c[s][k] * totals[s] /
+        sum_k c[s][k]`` (unchanged when the components sum to 0). This
+        carries a total computed from the components, a loss-ratio cap over
+        several classes or a stop loss on a mix of perils, back onto them in
+        proportion to their shares; it is not a capital allocation. The keys
+        and dimensions are kept.
+        
+        Parameters
+        ----------
+        totals : list of float
+            One total per simulation.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Raises
+        ------
+        ValueError
+            Not one finite total per simulation, or a non-zero total where
+            the components sum to 0.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> pd = PredictiveDistribution(["class"], [("motor",), ("home",)], [[6.0, 9.0], [3.0, 1.0]])
+        >>> pd.scale_to_totals([10.0, 4.0]).draw_matrix()
+        [[4.0, 6.0], [3.0, 1.0]]
+        """
     def select(self, /, dim: str, keys: Sequence[int |str]) -> PredictiveDistribution:
         """
         The components whose value on dimension ``dim`` is one of ``keys``,

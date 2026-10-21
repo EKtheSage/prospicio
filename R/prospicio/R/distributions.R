@@ -779,6 +779,26 @@ select_components <- function(dist, dim, keys) {
   predictive_distribution(ptr = rust_result(dist@ptr$select(as.character(dim), keys)))
 }
 
+#' Rescale components to new totals
+#'
+#' Every simulation's components rescaled pro rata to a new total: component
+#' `k` in simulation `s` becomes `c[s, k] * totals[s] / sum(c[s, ])`
+#' (unchanged when the components sum to 0). This carries a total computed
+#' from the components, a loss-ratio cap over several classes or a stop loss
+#' on a mix of perils, back onto them in proportion to their shares; it is
+#' not a capital allocation. The keys and dimensions are kept.
+#'
+#' @param dist A [predictive_distribution].
+#' @param totals One total per simulation.
+#' @returns A [predictive_distribution].
+#' @export
+#' @examples
+#' pd <- predictive_distribution(matrix(c(6, 3, 9, 1), ncol = 2), data.frame(class = c("motor", "home")))
+#' draw_matrix(scale_to_totals(pd, pmin(rowSums(draw_matrix(pd)), 10)))
+scale_to_totals <- function(dist, totals) {
+  predictive_distribution(ptr = rust_result(dist@ptr$scale_to_totals(as.double(totals))))
+}
+
 #' @rdname portfolio
 #' @export
 join_predictive <- function(parts, dim, same_simulations = FALSE) {

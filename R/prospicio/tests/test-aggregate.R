@@ -647,3 +647,9 @@ stopifnot(is.null(event_labels(events_from_years(list(1)), 1)))
 mixed <- merge_event_sets(lab, events_from_years(list(1, 2)))
 stopifnot(identical(mixed@label_combinations$peril, c("", "quake", "wind")))
 stopifnot(inherits(try(with_labels(lab, list(kind = rep("a", 4))), silent = TRUE), "try-error"))
+
+# A capped total carried back onto its components.
+st_pd <- predictive_distribution(matrix(c(6, 3, 9, 1), ncol = 2), data.frame(class = c("motor", "home")))
+st_m <- draw_matrix(scale_to_totals(st_pd, pmin(rowSums(draw_matrix(st_pd)), 10)))
+stopifnot(all(st_m == matrix(c(4, 3, 6, 1), ncol = 2)))
+stopifnot(inherits(try(scale_to_totals(st_pd, 1), silent = TRUE), "try-error"))
