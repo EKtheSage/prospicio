@@ -554,16 +554,19 @@ Checked against the 1.2.0 documentation, prospicio lacks:
   compound at your step and at doubled and halved ones, scores each by moment
   errors against the exact moments, and returns the best sound cell as a
   `GridAudit`. It audits a grid you give it; it does not choose one for you.
-- **Mixing shared across the units of a portfolio.** In `aggregate`, units that
-  share a `mixed` frequency share the mixing variable and are therefore
-  correlated. `Portfolio.from_independent` treats units as independent; for two
-  lines with one event count use `Clash` or `fft_bivariate`, and for more use
-  simulation with a copula.
 - **Shifted and scaled severities in a distribution.** `10 * lognorm 1 + 20`
   is a transformation on a grid here (`Grid.map`), which keeps the mean and
   loses the continuous form.
 - **Exact rational compounds** (`nttagg`), the `cantor` severity, and the
   exhibit and chart documents.
+
+A shared mixing variable is not on that list. In `aggregate` 1.2.0 it is shared
+across the severity components of one `Aggregate` (one mixed count on the
+claim-weighted mixture) and across the two units of a bivariate, never across
+the units of a `Portfolio`, whose total is the product of their transforms.
+prospicio has both: `fft` of a mixed Poisson count on a `Mixture`, and
+`fft_bivariate` with a mixed count. `Portfolio.from_independent` treats units as
+independent, as `aggregate`'s portfolios do.
 
 Where to go next: [Aggregate distributions](aggregate-distributions.md) for
 sizing grids and the engines' failure modes,
