@@ -4134,8 +4134,8 @@ check_fit <- function(fit) {
 #'
 #' Tables of a [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #' [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
-#' [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
-#' [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit] or
+#' [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit],
+#' [meyers_fit], [meyers_fits], [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit] or
 #' [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit] or
 #' [compartmental_one_year_fits] with the triangle's key columns by name. `as.data.frame(fit)` has one row per
 #' segment and origin: `origin`, `latest`, `ultimate` and `reserve` (the
@@ -4143,8 +4143,9 @@ check_fit <- function(fit) {
 #' `standard_error`, for the expected-loss methods `exposure` and `apriori`
 #' (and Cape Cod's `trended_apriori`), for the bootstraps the `mean` and
 #' `std_dev` of the bootstrapped reserve (for [bayes_odp()],
-#' [bayes_odp_segments()], [bayes_bf()], [meyers()] and [meyers_segments()] of the posterior
-#' predictive reserve; [bayes_bf()] adds the `exposure` and `prior_ultimate`, [meyers()] and
+#' [bayes_odp_segments()], [bayes_bf()], [bayes_bf_normalised()], [meyers()] and
+#' [meyers_segments()] of the posterior predictive reserve; [bayes_bf()] and
+#' [bayes_bf_normalised()] add the `exposure` and `prior_ultimate`, [meyers()] and
 #' [meyers_segments()] add the `premium` and the
 #' `ultimate_mean` and `ultimate_std_dev` of the predictive ultimate), and
 #' for Clark (Cape Cod)
@@ -4157,7 +4158,7 @@ check_fit <- function(fit) {
 #' `totals_frame()` has one row per segment with the same quantities for
 #' the segment's total (for the expected-loss methods the total `exposure`,
 #' for the ODP bootstrap, its one-year view, [bayes_odp()],
-#' [bayes_odp_segments()] and [bayes_bf()] also the `scale`, for
+#' [bayes_odp_segments()], [bayes_bf()] and [bayes_bf_normalised()] also the `scale`, for
 #' [bayes_odp_one_year()] the `scale` and `flagged_share`;
 #' for Clark its `omega`, `theta`, `scale` and, for Cape Cod, `elr`).
 #' `development_frame()` has one row per segment and age: `development`,
@@ -4179,8 +4180,8 @@ check_fit <- function(fit) {
 #'
 #' @param fit A [chain_ladder_fit], [mack_fit], [expected_loss_fit],
 #'   [cape_cod_fit], [odp_bootstrap_fit], [mack_bootstrap_fit],
-#'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [meyers_fit], [meyers_fits],
-#'   [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit],
+#'   [bayes_odp_fit], [bayes_odp_fits], [bayes_bf_fit], [bayes_bf_normalised_fit],
+#'   [meyers_fit], [meyers_fits], [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit],
 #'   [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit] or
 #'   [compartmental_one_year_fits] (a [clark_fit] or
 #'   a compartmental fit not for `development_frame()`).

@@ -137,7 +137,8 @@ On a pull request that touches `prospicio-reserving`, `-bayes`, `-prob`,
 named for `bayes` or `meyers`, or `ci.yml`; and on every weekly and manual
 run. A push to `main` does not run them, the PR already did; since
 2026-10-19 it only builds them when the job's cache is missing, and a pull
-request's conformance suite runs `BayesOdp` and `BayesBf` alone
+request's conformance suite runs `BayesOdp`, `BayesBf` and
+`BayesBfNormalised` alone
 ([where CI's time went](/environment/ci-runtime.md)).
 
 [^ci]: CI, bayes job
