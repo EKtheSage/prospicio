@@ -52,14 +52,17 @@ it is checked in [the parity finding](/findings/excess-ldf-scale-shift-parity.md
   data. Their section 4 is a **shape change**: a single-parameter Pareto above
   k with shape `q_i` at report `i`, `LDF(i to j, xs ck) = (n_j / n_i)
   ((q_i - 1) / (q_j - 1)) c^(q_i - q_j)`; their p. 247 example is 2.5 x 4^0.5 =
-  5.0 and Appendix B (pp. 253-254) is 10^0.3 = 1.996 (PR 2's targets). Section
+  5.0 and Appendix B (pp. 253-254) is 10^0.3 = 1.996 (exactly 1.99526; both
+  reproduced by `ParetoShape` in PR 2, see
+  [the shape-drift finding](/findings/excess-shape-drift-parity.md)). Section
   5 (p. 248) gives the layer identity `LDF(c-d) = (f(c) - f(d)) / (f(c) /
   CDF_c - f(d) / CDF_d)`, `f` the ultimate excess over the ultimate ground-up
   loss. Paid layer factors (pp. 241-245) come from the incurred ones times a
   ratio of paid-to-reported ratios, which hardly varies by retention.
 * **Levine** tests the fit and restates the identity. **Bear** (1992)
   generalizes to bounded layers with equal limit-to-attachment ratios,
-  `f' = d c^(q_i - q_j)`; the p. 138 example is 3.5 x 2^0.15 = 3.88.
+  `f' = d c^(q_i - q_j)`; the p. 138 example is 3.5 x 2^0.15 = 3.88 (3.8835,
+  reproduced in PR 2).
 * **Siewert (1996)** splits development into counts times severity with
   limited severity relativities: `XSLDF = LDF (1 - R_(t+1)) / (1 - R_t)`, and
   the unlimited factor is the relativity-weighted average of the limited and
@@ -103,8 +106,9 @@ excess CDF of Year Three is 17.54 (-0.77% error).
 
 * **Shape drift is found in data.** Pinto and Gogol, Bear, Siewert (the
   Weibull shape) and Korn all find the shape moving with maturity, so a pure
-  scale shift may understate a high layer's development; PR 2's simulation
-  must include shape drift.
+  scale shift may understate a high layer's development. PR 2's simulation
+  confirms it: under shape drift the scale shift understates high layers by
+  14% to 29% ([the study](/findings/excess-simulation-study.md)).
 * **Paid is derived from incurred.** Pinto and Gogol and Bear get paid layer
   factors from incurred ones and ratios of paid-to-reported ratios, and
   Sahasrabuddhe says his method covers paid or reported losses, so decision 9

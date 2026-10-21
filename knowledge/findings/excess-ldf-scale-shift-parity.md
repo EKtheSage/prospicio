@@ -55,6 +55,9 @@ at scale 280,000 shifted by 280000/28138), not the solve.
   trip, a triangle built from the scales 3, 1.5, 1.1 and 1 on a lognormal
   capped at 200,000, which gives the scales back to 1e-9; an uncapped reading
   of the same data understates the development.
+  PR 2's simulation study adds a capped arm (the ground-up column limited
+  at 250,000), whose layer estimates match the uncapped arm's ([the
+  study](/findings/excess-simulation-study.md)).
 * Sahasrabuddhe's Example 3 (column 9, 0.856) is not pinned: it needs the
   example's trend indices and selected ratios.
 

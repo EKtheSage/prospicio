@@ -1,5 +1,5 @@
 //! Excess-layer development from a ground-up triangle
-//! (`docs/design/reserving-excess.md`, PR 1).
+//! (`docs/design/reserving-excess.md`, PRs 1 and 2).
 //!
 //! * Bloom and Patrik, "A Methodology for Avoiding the Pitfalls of Excess
 //!   Loss Development", CAS E-Forum Fall 2013, pp. 4-8: four claims with
@@ -18,10 +18,16 @@
 //!   shifts, which no source prints for a capped triangle.
 //! * The capped solve by round trip: a triangle built from a known scale
 //!   path gives back the scales.
+//! * Pinto and Gogol's shape change (PCAS 74, p. 247): 2.5 (4)^0.5 = 5.0,
+//!   and their Appendix B (pp. 253-254): the losses excess of 100,000
+//!   develop by 10^0.3 = 1.99526 times those excess of 10,000 (printed
+//!   1.996 from rounded amounts), every printed excess and layer amount
+//!   within its rounding. Bear's bounded layers (PCAS 79, p. 138): 3.5
+//!   (2.0)^0.15 = 3.8835, printed 3.88. `SeverityByMaturity::ParetoShape`.
 
 use prospicio_prob::{Distribution, Gamma, Grid, Lognormal, Severity};
 use prospicio_reserving::excess::{
-    Basis, ExcessPattern, Layer, SeverityByMaturity, layer_at_shift,
+    Basis, ExcessPattern, Layer, SeverityByMaturity, ShapeBase, layer_at_shift,
 };
 use prospicio_reserving::{
     ChainLadder, DevelopmentColumn, Grain, Long, Month, PatternWeight, Tail, Triangle,
@@ -366,4 +372,123 @@ fn a_sparse_layer_triangle_runs_on_the_derived_pattern() {
         1e-9,
         "2021 ultimate",
     );
+}
+
+/// The layer pattern under Pinto and Gogol's shape drift on one origin
+/// observed at two reports (12 and 24 months stand for report `i` and
+/// report `j`, which is ultimate): the base column develops by `d` and the
+/// Pareto shape above `threshold` moves from `q_i` to `q_j`.
+fn shape_drift(
+    d: f64,
+    threshold: f64,
+    q: (f64, f64),
+    layer: Layer,
+    base: ShapeBase,
+) -> ExcessPattern {
+    let tri = Triangle::from_long(&Long {
+        keys: &[],
+        origin: &[Month::january(2020); 2],
+        development: DevelopmentColumn::Age(&[12, 24]),
+        values: &[("base", &[1.0, d])],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap();
+    let model = SeverityByMaturity::pareto_shape(threshold, vec![(12, q.0), (24, q.1)], q.1, base);
+    ExcessPattern::from_ground_up(
+        &tri,
+        "base",
+        Basis::Incurred,
+        None,
+        &Tail::default(),
+        layer,
+        &model,
+    )
+    .unwrap()
+}
+
+#[test]
+fn pinto_gogol_shape_change_p247() {
+    // k = 25,000, retention 100,000 (c = 4), q from 1.75 at 1st report to
+    // 1.25 at 10th, d = 2.5 for the losses excess of 25,000:
+    // 2.5 (4)^0.5 = 5.0.
+    let base = ShapeBase::Losses(Layer::unlimited(25_000.0).unwrap());
+    let p = shape_drift(
+        2.5,
+        25_000.0,
+        (1.75, 1.25),
+        Layer::unlimited(100_000.0).unwrap(),
+        base,
+    );
+    close(p.layer_ldf[0], 5.0, 1e-12, "Pinto and Gogol p. 247");
+    assert_eq!(p.layer_tail, 1.0);
+    // The same from the counts above k: d = (n_j / n_i) (q_i - 1) / (q_j - 1),
+    // so n_j / n_i = 2.5 * 0.25 / 0.75.
+    let p = shape_drift(
+        2.5 * 0.25 / 0.75,
+        25_000.0,
+        (1.75, 1.25),
+        Layer::unlimited(100_000.0).unwrap(),
+        ShapeBase::Counts,
+    );
+    close(p.layer_ldf[0], 5.0, 1e-12, "the same from counts");
+}
+
+#[test]
+fn pinto_gogol_appendix_b() {
+    // Appendix B (pp. 253-254): k = 10,000, q = 1.6 at 27 months and 1.3 at
+    // ultimate, `a` the development of the losses excess of 10,000 from 27
+    // months to ultimate. The unlimited losses excess of 100,000 develop by
+    // 10^0.3 a = 1.99526 a, printed 1.996 a from the rounded .501 / .251.
+    let a = 3.0;
+    let base = ShapeBase::Losses(Layer::unlimited(10_000.0).unwrap());
+    let factor = |layer: Layer| shape_drift(a, 10_000.0, (1.6, 1.3), layer, base).layer_ldf[0] / a;
+    let xs = |r: f64| factor(Layer::unlimited(r * 1000.0).unwrap());
+    close(xs(100.0), 10f64.powf(0.3), 1e-12, "excess of 100,000");
+    close(xs(100.0), 1.996, 1e-3, "printed 1.996");
+    // Every printed amount at 27 months and at ultimate (three decimals of
+    // x and of a x): our factor lies within the rounding of their ratio.
+    let within = |ours: f64, ult: f64, at27: f64, what: &str| {
+        let lo = (ult - 5e-4) / (at27 + 5e-4);
+        let hi = (ult + 5e-4) / (at27 - 5e-4);
+        assert!(
+            lo <= ours && ours <= hi,
+            "{what}: {ours} not in [{lo}, {hi}]"
+        );
+    };
+    for (r, at27, ult) in [
+        (100.0, 0.251, 0.501),
+        (300.0, 0.130, 0.360),
+        (500.0, 0.096, 0.309),
+        (1000.0, 0.063, 0.251),
+    ] {
+        within(xs(r), ult, at27, &format!("excess of {r}k"));
+    }
+    for (from, to, at27, ult) in [
+        (100.0, 300.0, 0.121, 0.141),
+        (300.0, 500.0, 0.034, 0.051),
+        (500.0, 1000.0, 0.033, 0.058),
+    ] {
+        let layer = Layer::new(from * 1000.0, (to - from) * 1000.0).unwrap();
+        within(factor(layer), ult, at27, &format!("layer {from}k to {to}k"));
+    }
+}
+
+#[test]
+fn bear_bounded_layer_p138() {
+    // Bear (PCAS 79, p. 138): SPP parameters 1.25 at 24 months and 1.10 at
+    // ultimate above 100,000, the layer 100,000 to 300,000 develops by 3.5;
+    // the layer 200,000 to 600,000 (the same limit-to-attachment ratio, 3)
+    // develops by 3.5 (2.0)^0.15 = 3.8835, printed 3.88.
+    let base = ShapeBase::Losses(Layer::new(100_000.0, 200_000.0).unwrap());
+    let layer = Layer::new(200_000.0, 400_000.0).unwrap();
+    let p = shape_drift(3.5, 100_000.0, (1.25, 1.10), layer, base);
+    close(p.layer_ldf[0], 3.5 * 2f64.powf(0.15), 1e-12, "Bear p. 138");
+    close(p.layer_ldf[0], 3.88, 5e-3, "printed 3.88");
+    // With an unbounded base the ratios differ and so does the factor:
+    // the equal-ratio condition matters.
+    let unbounded = ShapeBase::Losses(Layer::unlimited(100_000.0).unwrap());
+    let q = shape_drift(3.5, 100_000.0, (1.25, 1.10), layer, unbounded);
+    assert!((q.layer_ldf[0] - p.layer_ldf[0]).abs() > 0.05);
 }

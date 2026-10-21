@@ -1,6 +1,6 @@
 # Design note: excess-layer loss development (excess LDFs, benchmark blending, a layer BF prior)
 
-Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). PR 2 to PR 4 are not built. Lane: Reserving
+Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); it opens decisions 17 to 19. PR 3 and PR 4 are not built. Lane: Reserving
 (`crates/prospicio-reserving/`; `prospicio-prob` severities used read-only;
 `prospicio-pricing` exposure curves reached only through the bindings, see
 open decision 2) · Depends on: `reserving-v02.md` (decision 2, the
@@ -127,9 +127,12 @@ sparse layer triangle cannot show that until late.
   decision 12's `pattern_rescale` does.
 * **Late-reported claims** (in `n_inf / n_j`) are assumed to share the size
   distribution of the claims reported by `j`, after the shift. Where late
-  claims are smaller (or larger) the layer factor is over (or under)
-  stated; the note records this as an assumption and the simulation study
-  varies it.
+  claims are smaller the count factor overstates a high layer's
+  development, but the shift `c_j`, the ground-up factor over the count
+  factor, is understated by the same late claims, so the net direction
+  depends on the layer: PR 2's study, with late claims half the size of
+  early ones, finds the dense layer understated by 0.8% and no bias on the
+  sparse layer (the two effects cancel there).
 
 How `S_j` becomes `S_inf` is the modelling choice. The literature offers
 these; the note proposes to build the first two.
@@ -181,12 +184,20 @@ where `w_j` is the weight on the derived or benchmark pattern. Sources of
   ratios conditions on the layer having been hit, and a near-empty
   column's ratios are huge. So `n_j` counts the claims in the layer at age
   `j` when a layer count column exists, and otherwise the origins observed
-  at both ages whose earlier layer value is positive. `k` is the real
-  credibility choice and has no default yet (open decision 11). Because
-  `n / (n + k)` ignores the variance of the ratios, the weight is also
-  capped so that one origin's link ratio cannot move the blended factor by
-  more than a stated share; PR 2 tests that a single huge ratio does not
-  dominate.
+  at both ages whose earlier layer value is positive (as built: the layer
+  claims at `j` summed over the origins observed at both ages). `k` is the
+  real credibility choice and has no default yet (open decisions 11 and
+  19). Because `n / (n + k)` ignores the variance of the ratios, the
+  credibility `z_j = n_j / (n_j + k)` is also capped so that removing any
+  one origin moves the blended factor by at most `max_influence` times the
+  blended factor (decision 17): `z_j |f_own - f_own(-i)| <= max_influence
+  * f_blend(z_j)` for every origin `i`, with `f_own(-i)` the volume-weighted
+  own factor without origin `i` (the derived factor when no other origin
+  is positive at `j`). An age where the own factor cannot be estimated
+  (every earlier value zero) gets `z_j = 0`, a weight of exactly 1 on the
+  derived factor, whatever the counts say, so `Development` takes the
+  sparse-age path there (decision 8 (b)). PR 2 tests that a single ratio of
+  500 among ratios of 2 moves the blend by exactly the stated 10%.
 * **Bühlmann–Straub** over the layer's origins, with the within and
   between variances from the link ratios. Possible later; `prospicio-pricing`
   has the credibility routines (Aggregate lane), reached from the bindings
@@ -219,9 +230,9 @@ after #410's normalised-pattern BF exists; that is a later PR.
 
 ## API
 
-Rust, a new module `excess` in `prospicio-reserving` (PR 1 built it; the
-names are as built, with `credibility_weights` and `ParetoShape` left to
-PR 2).
+Rust, a new module `excess` in `prospicio-reserving` (PR 1 built it and
+PR 2 added `credibility_weights`, `ParetoShape` and `ShapeBase`; the names
+are as built).
 
 ```rust
 pub struct Layer { pub attachment: f64, pub limit: f64 }  // limit may be INFINITY
@@ -236,8 +247,16 @@ pub enum SeverityByMaturity {
     /// `ultimate` is S_inf at the origins' price level (incurred basis);
     /// `ground_up_cap` is the per-claim limit of a capped ground-up column.
     ScaleShift { ultimate: Box<dyn Severity>, ground_up_cap: Option<f64> },
-    // PR 2: ParetoShape { alphas: Vec<(Lag, f64)>, threshold: f64, ... }
+    /// Pinto and Gogol's shape drift above `threshold` (PR 2): the alpha at
+    /// every development age and at ultimate, and the base development the
+    /// column holds (decision 18).
+    ParetoShape { threshold: f64, alphas: Vec<(Lag, f64)>,
+                  ultimate_alpha: f64, base: ShapeBase },
 }
+
+/// What the column holds under ParetoShape: the counts above the
+/// threshold, or the losses in a base layer at or above it.
+pub enum ShapeBase { Counts, Losses(Layer) }
 
 pub struct ExcessPattern {
     pub ages: Vec<Lag>,
@@ -245,7 +264,7 @@ pub struct ExcessPattern {
     pub layer_cdf: Vec<f64>,       // age to ultimate, with the tail
     pub ground_up_ldf: Vec<f64>,   // the check
     pub ground_up_tail: f64,
-    pub shifts: Vec<f64>,          // c_j, for ScaleShift, the last for the tail
+    pub shifts: Vec<f64>,          // c_j, for ScaleShift, the last for the tail; empty for ParetoShape
     pub layer_tail: f64,           // from the ground-up tail, 1 without one
 }
 
@@ -259,10 +278,11 @@ impl ExcessPattern {
     pub fn selected(&self, weight: PatternWeight) -> SelectedPattern;
     /// The layer's tail as a constant `Tail`.
     pub fn tail(&self) -> Tail;
-    // PR 2:
-    /// The weight on the benchmark: 1 - n/(n + k), n as in section 2.
-    pub fn credibility_weights(layer_triangle: &Triangle, column: &str,
-                               counts: Option<&str>, k: f64) -> Result<PatternWeight>;
+    /// The weight on the derived pattern (PR 2): 1 - z, z = n/(n + k)
+    /// capped by `max_influence` (section 2, decision 17).
+    pub fn credibility_weights(&self, layer_triangle: &Triangle, column: &str,
+                               counts: Option<&str>, k: f64,
+                               max_influence: f64) -> Result<PatternWeight>;
 }
 
 /// A copy of the triangle with column `name`: the exposure column times
@@ -334,10 +354,22 @@ an example that is exactly the scale shift, and PR 1 reproduces it:
   study carries a capped arm.
 
 Other sources, read in full: Pinto and Gogol (a shape change,
-`(n_j/n_i)((q_i-1)/(q_j-1))c^(q_i-q_j)`: their 5.0 and 1.996 are PR 2's
-targets), Bear's generalization to bounded layers (3.88), Siewert (counts
-times severity with Weibull fits that change shape; its 1.1684 agrees only
-within rounding) and Korn's section 6 (this note's model, no numbers).
+`(n_j/n_i)((q_i-1)/(q_j-1))c^(q_i-q_j)`), Bear's generalization to bounded
+layers, Siewert (counts times severity with Weibull fits that change shape;
+its 1.1684 agrees only within rounding) and Korn's section 6 (this note's
+model, no numbers). PR 2 reproduces the shape-drift examples through
+`ParetoShape` (`validation/tests/reserving_excess.rs`):
+
+| Target (source) | Printed | Computed |
+|---|---|---|
+| Pinto and Gogol p. 247: 2.5 (4)^0.5, excess of 100,000 over k = 25,000, q 1.75 to 1.25 | 5.0 | 5.0 (1e-12), from the losses excess of k or from the counts above k |
+| Pinto and Gogol Appendix B: excess of 100,000 over excess of 10,000, q 1.6 to 1.3 | 1.996 a | 10^0.3 = 1.99526 a; the printed value is .501 / .251 of rounded amounts |
+| Appendix B's eight excess and three layer amounts at 27 months and ultimate | three decimals | every factor within the rounding of the printed ratio |
+| Bear p. 138: 3.5 (2.0)^0.15, layer 200,000 to 600,000 from 100,000 to 300,000, q 1.25 to 1.10 | 3.88 | 3.8835 (1e-12) |
+
+Siewert's Table 6 (Weibull scale and shape both moving) and Sahasrabuddhe's
+Example 3 are not pinned: the first is not a Pareto shape drift and its
+parameters are rounded; the second needs the example's trend indices.
 
 * **Closed forms** (first, they need no source): the Pareto layer LDF at
   `alpha_j` and `alpha_inf`; the lognormal scale-shift illustration above
@@ -351,16 +383,41 @@ within rounding) and Korn's section 6 (this note's model, no numbers).
   excess development factor to each year's 400 xs 100 layer total; it
   derives none. It can check only that a supplied layer pattern is applied
   as Clark applies it, not the derivation.
-* **Self-consistency by simulation** (the main test of the method): with
-  fixed seeds, simulate a ground-up incurred claim process with a known
-  severity drift and known late-claim sizes, build the ground-up and layer
-  triangles, and compare the layer ultimate's root mean squared error over
-  at least 500 simulated triangles. Proposed acceptance (open decision
-  11): on a sparse layer (most cells at early ages zero) the derived
-  pattern's RMSE is below 0.8 times the layer's own chain ladder's; on a
-  dense layer the derived pattern's mean error is within two Monte Carlo
-  standard errors of zero. A run with late claims smaller than early ones
-  shows the bias the assumption above predicts.
+* **Self-consistency by simulation** (the main test of the method; PR 2,
+  `validation/tests/reserving_excess_simulation.rs`, results in
+  `knowledge/findings/excess-simulation-study.md`): 500 simulated books
+  per arm, ten accident years at ten ages, claims by a Poisson count with
+  report lags of up to four years, each claim developing to ultimate, so
+  the ground-up, count and layer triangles and the true layer ultimates
+  come from the same claims. Arms: a pure scale shift (lognormal, mean
+  30,000, log-sd 1.8, 400 claims a year); the same claims with the
+  ground-up column capped at 250,000 (the numerical solve); shape drift
+  (the log-sd at the first age 0.8 of the ultimate one, the mean
+  development unchanged); late claims half the size of early ones; and
+  Pareto shape drift above 100,000 (alpha from 3.0 to 2.2) fitted by
+  `ParetoShape` with the true shapes and by the scale shift. Each has a
+  dense, a thin and a sparse layer. Results (errors of the total layer
+  ultimate; ratios on the simulations where the own chain ladder fits,
+  which on the sparse layer fails in 284 to 429 of 500):
+  * where the model holds (scale, capped, Pareto by `ParetoShape`) the
+    derived pattern's RMSE is 0.003 to 0.056 times the own chain ladder's
+    on the sparse layer and 0.59 to 0.66 on the thin layer, and the capped
+    blend's is below 0.8 at every `k` from 1 to 200 on the sparse layer;
+    on the dense layer its mean error is within two Monte Carlo standard
+    errors of zero (-0.05%, -0.01% and 0.25%). The thresholds pass and are
+    asserted;
+  * shape drift makes the scale shift understate the high layers (26% on
+    the sparse layer, 14% on the thin one; the Pareto arm's scale shift
+    29% and 19%), while `ParetoShape` with the true shapes is unbiased;
+    the blend with the layer's own factors recovers part of it (best at
+    `k` of 10 to 20 on the thin and sparse layers);
+  * late claims half the size understate the dense layer by 0.8% and leave
+    the sparse layer unbiased (see "Late-reported claims" above);
+  * without the cap a small `k` is ruinous on the sparse layer (RMSE 3.1
+    times the mean ultimate at `k` = 1, against 0.43 capped);
+  * the layer's own chain ladder overstates a thin layer by 2.6% to 6.7%.
+  The study takes under a second in a debug build and runs in every
+  `cargo test`.
 * **Engine and input checks**: a layer triangle whose early ages are all
   zero fits with a weight of 1 on the derived pattern there, and errors as
   today with a weight below 1; Mack's sigma at those ages follows open
@@ -377,7 +434,7 @@ within rounding) and Korn's section 6 (this note's model, no numbers).
 |---|---|---|---|
 | 0 | `claude/excess-development-note` | this note, the lane bullet, the literature entry in `knowledge/` | `main` |
 | 1 | `claude/excess-pr1` | the sparse-age change to `Development` (decision 8); `ExcessPattern::from_ground_up` with scale shift, incurred only, one layer, the layer tail; `selected`, `layer_share`, `layer_exposure`; Rust only; the closed-form and engine checks; the sources read in full for a worked example (the gate above) and recorded in `knowledge/` | PR 0 |
-| 2 | `claude/excess-credibility` | `credibility_weights` with its cap, the shape-drift model, the simulation study with its acceptance thresholds | PR 1 |
+| 2 | `claude/excess-pr2` | `credibility_weights` with its cap, the shape-drift model, the simulation study with its acceptance thresholds (built) | PR 1 |
 | 3 | `claude/excess-bindings` | Python and R, the stub, `man/`, a note for the Guides lane | PR 2 |
 | 4 | `claude/excess-bayes-prior` | the layer share's uncertainty as a prior, after #410 | PR 3 and #410 |
 
@@ -528,6 +585,40 @@ picked:
     drift, a capped arm and late claims of other sizes, not only scale
     shifts, and report the derived pattern's RMSE under each.
     *Decided 2026-10-21 (the user): the option PR 1 picked, a base-development input beside the shapes, with the simulation requirements above as the plan for PR 2.*
+
+Opened in PR 2 (each built as the option closest to the note, for the
+user to decide):
+
+17. **The cap of `credibility_weights` and its signature.** The note named
+    no share and gave an associated function with `k` only. PR 2 builds a
+    method on the derived pattern (the cap needs the derived factor) with a
+    required `max_influence`: removing any one origin moves the blended
+    factor by at most that share of it (section 2). Where the layer's own
+    factor cannot be estimated the weight is exactly 1 even when a count
+    column says claims are in the layer. (a) As built. (b) A fixed share,
+    no argument. (c) A cap by volume share, `z <= 1 - max_i s_i`, which
+    does not stop one huge ratio from a small earlier value.
+    *Recommendation: (a);* the study uses 0.1.
+
+18. **The inputs of the shape drift.** Decision 16 asked for a base
+    development beside the shapes. PR 2 reads the base from the column of
+    `from_ground_up` (`ShapeBase::Counts`, the counts above the threshold,
+    or `ShapeBase::Losses(layer)`, a base layer at or above it, which
+    covers Pinto and Gogol's losses excess of the threshold and Bear's
+    bounded layer); `counts` must be `None`; an alpha is required at every
+    development age (none interpolated) and at ultimate; the layer must
+    attach at or above the threshold; `tail` is the base column's tail;
+    `shifts` is empty. (a) As built. (b) Also a constructor from given base
+    factors without a triangle. *Recommendation: (a),* with (b) if the
+    bindings want it.
+
+19. **A default `k`.** Decision 11 left `k` required until the study
+    reported RMSE across `k`. Where the model holds the RMSE falls as `k`
+    grows (the derived pattern alone is best); under shape drift a blend
+    near `k` = 20 beats both the derived pattern and the own factors on the
+    thin layer. (a) Keep `k` required. (b) A default of 20 with
+    `max_influence` 0.1. *Recommendation: (a) until the user has read the
+    study;* (b) is the candidate if a default is wanted.
 
 ## References
 
