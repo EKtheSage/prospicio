@@ -159,6 +159,11 @@ impl MackFit {
                 "needs volume-weighted factors (alpha = 1)",
             ));
         }
+        if dev.has_missing_factor() {
+            return Err(Error::ClaimsDevelopment(
+                "an age whose own factor could not be estimated (a fully selected sparse age) is not supported",
+            ));
+        }
         // No tail: a factor of exactly 1 past the oldest age and no
         // estimated factor replaced within the triangle.
         let n_links = dev.ldf.len();

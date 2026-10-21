@@ -1,6 +1,6 @@
 # Design note: excess-layer loss development (excess LDFs, benchmark blending, a layer BF prior)
 
-Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended; the gate that the sources be read in full for a worked example before PR 1 stands) · Lane: Reserving
+Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). PR 2 to PR 4 are not built. Lane: Reserving
 (`crates/prospicio-reserving/`; `prospicio-prob` severities used read-only;
 `prospicio-pricing` exposure curves reached only through the bindings, see
 open decision 2) · Depends on: `reserving-v02.md` (decision 2, the
@@ -93,9 +93,10 @@ The count ratio `n_inf / n_j` is the claim-count development (from a count
 triangle if one exists, else 1 where counts are complete early). So the work
 is to say how `S_j` moves to `S_inf`.
 
-**Illustration (own calculation, to become a unit test).** A lognormal
-severity with `sigma = 1.5` and mean 50,000, every claim scaled up by 1.3 on
-the way to ultimate and counts fixed. The ground-up LDF is 1.3. The factor of
+**Illustration (own calculation, now a unit test).** A lognormal
+severity with `sigma = 1.5` whose mean is 50,000 at the earlier age and
+65,000 at ultimate (every claim scaled up by 1.3 on the way to ultimate) and
+counts fixed. The ground-up LDF is 1.3. The factor of
 the layer 1m xs 0 is 1.275, of 750k xs 250k is 1.545, of 2m xs 1m is 1.761
 and of 7m xs 3m is 1.982. A ground-up factor of 1.3 puts a factor near 2 on
 a high layer, because development pushes claims over the attachment, and the
@@ -105,10 +106,14 @@ sparse layer triangle cannot show that until late.
 
 * **Basis: incurred only** (open decision 9). The formula scales reported
   claim sizes, case reserves included. On a paid triangle large claims pay
-  late, so a paid layer develops through payment timing, not through the
-  sizes of reported claims; PR 1 rejects a paid basis with an error, and a
-  paid layer pattern needs an explicit payment-timing assumption by size,
-  which is not in this plan.
+  late, so a paid layer develops through payment timing as well as through
+  the sizes of reported claims; PR 1 rejects a paid basis with an error (the
+  `Basis` argument). The literature does derive paid layer factors: Pinto
+  and Gogol and Bear get them from the incurred layer factors and ratios of
+  paid-to-reported ratios, which hardly vary by retention, and Sahasrabuddhe
+  says his method covers paid or reported losses. A paid pattern is
+  therefore a later option, built on such ratios or on an explicit
+  payment-timing assumption by size, not an impossible one.
 * **The supplied severity is `S_inf`**, the ultimate severity at the price
   level of the layer's origins. `S_j` is derived from it by the model
   below (for the scale shift, `X_j = X_inf / c_j`). A severity fitted to
@@ -140,6 +145,10 @@ these; the note proposes to build the first two.
   layer data or claim data. It needs a severity at each maturity, so it
   needs claim-level or layered input. The layer LDF is then a ratio of
   Pareto layer expectations at `alpha_j` and `alpha_inf`, a closed form.
+  The sources find this drift in data (Pinto and Gogol, Bear, Siewert's
+  Weibull shape and Korn all find the shape moving with maturity), so a pure
+  scale shift may understate the development of a high layer: PR 2's
+  simulation study must generate shape drift, not only scale shifts.
 * **Inflation leverage** (as the Sahasrabuddhe and Bloom and Patrik
   abstracts describe it): trend acts on the whole size distribution, so a
   layer's trend, and with it the development between calendar years,
@@ -210,37 +219,47 @@ after #410's normalised-pattern BF exists; that is a later PR.
 
 ## API
 
-Rust, a new module `excess` in `prospicio-reserving`. Names are proposed.
+Rust, a new module `excess` in `prospicio-reserving` (PR 1 built it; the
+names are as built, with `credibility_weights` and `ParetoShape` left to
+PR 2).
 
 ```rust
-pub struct Layer { pub attachment: f64, pub limit: f64 }
+pub struct Layer { pub attachment: f64, pub limit: f64 }  // limit may be INFINITY
+
+/// The loss basis of the ground-up triangle: only Incurred is derived.
+pub enum Basis { Incurred, Paid }
 
 /// How the severity at each maturity relates to the ultimate severity.
+#[non_exhaustive]
 pub enum SeverityByMaturity {
     /// X_inf = c_j * X_j; c_j solved from the ground-up triangle.
-    /// `ultimate` is S_inf at the origins' price level (incurred basis).
-    ScaleShift { ultimate: Box<dyn Severity> },
-    /// A Pareto whose shape changes with maturity (Pinto and Gogol).
-    ParetoShape { alphas: Vec<(Lag, f64)>, threshold: f64 },
+    /// `ultimate` is S_inf at the origins' price level (incurred basis);
+    /// `ground_up_cap` is the per-claim limit of a capped ground-up column.
+    ScaleShift { ultimate: Box<dyn Severity>, ground_up_cap: Option<f64> },
+    // PR 2: ParetoShape { alphas: Vec<(Lag, f64)>, threshold: f64, ... }
 }
 
 pub struct ExcessPattern {
     pub ages: Vec<Lag>,
     pub layer_ldf: Vec<f64>,       // age to next age
-    pub layer_cdf: Vec<f64>,       // age to ultimate
+    pub layer_cdf: Vec<f64>,       // age to ultimate, with the tail
     pub ground_up_ldf: Vec<f64>,   // the check
-    pub shifts: Vec<f64>,          // c_j, for ScaleShift
+    pub ground_up_tail: f64,
+    pub shifts: Vec<f64>,          // c_j, for ScaleShift, the last for the tail
     pub layer_tail: f64,           // from the ground-up tail, 1 without one
 }
 
 impl ExcessPattern {
     /// Layer pattern from the ground-up incurred column, an optional count
     /// column and the ground-up tail; a paid basis is an error.
-    pub fn from_ground_up(triangle: &Triangle, column: &str, counts: Option<&str>,
-                          tail: &Tail, layer: Layer, model: &SeverityByMaturity)
-                          -> Result<Self>;
+    pub fn from_ground_up(triangle: &Triangle, column: &str, basis: Basis,
+                          counts: Option<&str>, tail: &Tail, layer: Layer,
+                          model: &SeverityByMaturity) -> Result<Self>;
     /// As a `SelectedPattern` of kind `AgeToAge`, with the given weight.
     pub fn selected(&self, weight: PatternWeight) -> SelectedPattern;
+    /// The layer's tail as a constant `Tail`.
+    pub fn tail(&self) -> Tail;
+    // PR 2:
     /// The weight on the benchmark: 1 - n/(n + k), n as in section 2.
     pub fn credibility_weights(layer_triangle: &Triangle, column: &str,
                                counts: Option<&str>, k: f64) -> Result<PatternWeight>;
@@ -252,6 +271,9 @@ pub fn layer_exposure(triangle: &Triangle, exposure: &str, shares: &[f64],
                       name: &str) -> Result<Triangle>;
 /// The layer share of a severity, (LEV(b) - LEV(a)) / mean.
 pub fn layer_share(severity: &dyn Severity, layer: Layer) -> Result<f64>;
+/// The expected loss to the layer of one claim at the maturity whose
+/// claims are the ultimate ones divided by `shift`: (LEV(c b) - LEV(c a)) / c.
+pub fn layer_at_shift(ultimate: &dyn Severity, layer: Layer, shift: f64) -> f64;
 ```
 
 Python (`prospicio.reserving`) and R (`excess_pattern()`,
@@ -279,14 +301,43 @@ Python or R.
 
 ## Validation targets
 
-No external source is confirmed to print a worked example of a layer
-pattern derived from a ground-up triangle and a severity, and neither R
-`ChainLadder` nor chainladder-python has the feature. **Reading Pinto and
-Gogol, Siewert and Bloom and Patrik in full for such an example is a gate
-for PR 1**: if one is found its numbers go to `knowledge/` and become a
-parity test; if none is, the PR says plainly that the derived factor has no
-external parity target and rests on the closed forms and the simulation
-study below.
+**The gate is passed** (2026-10-21; the sources are listed in
+`knowledge/references/excess-development-literature.md`). Neither R
+`ChainLadder` nor chainladder-python has the feature, but one source prints
+an example that is exactly the scale shift, and PR 1 reproduces it:
+
+* **Bloom and Patrik (CAS E-Forum Fall 2013), pp. 4 to 8, the end-to-end
+  parity target.** Four claims (100, 375, 250 and 500 at 12 months), ground-up
+  factors 3.60 and 1.25, a deductible of 350 and 5% inflation. With the
+  ultimate severity as four point masses at 450, 1,687.5, 1,125 and 2,250
+  and the unlimited layer xs 350, `ExcessPattern::from_ground_up` returns
+  the printed excess factors of Years One, Two and Three (17.2, 1.3663 and
+  23.5; 14.768, 1.3583 and 20.06; 13.0797, 1.3511 and 17.6719, the paper
+  printing two decimals), the layer values 175, 3,010 and 4,112.5 and, for
+  the layer limited to 350, 1.3333 and 1,400. The severity is a `Grid`
+  of step 112.5, whose `lev` is exact at any limit.
+  `validation/tests/reserving_excess.rs`.
+* **Identities of printed inputs**: Bloom and Patrik's excess CDF from the
+  limited and unlimited factors and an ELF (17.54 from the unrounded
+  path; the rounded inputs give 17.59) and Pinto and Gogol's layer identity
+  (2.891, 2.697, 2.437 and 2.144 to the three decimals of their inputs).
+* **Sahasrabuddhe (E-Forum Fall 2010), Example 1, p. 18**: the rebasing of a
+  limited factor by the ratio of limited means at two exponential scales,
+  14.352 (computed 14.3519). It checks the rebasing identity through
+  `layer_at_shift`, not the solve for the shifts.
+* **The capped-data solve has no external example.** With an uncapped
+  ground-up column the shift is closed form, `c_j` equal to the ground-up
+  factor over the count factor. The numerical solve matters only for a
+  capped column, and no source prints one (Korn gives the equations, no
+  numbers). PR 1 tests it by round trip, a capped triangle built from a
+  known scale path and the scales recovered to 1e-9, and PR 2's simulation
+  study carries a capped arm.
+
+Other sources, read in full: Pinto and Gogol (a shape change,
+`(n_j/n_i)((q_i-1)/(q_j-1))c^(q_i-q_j)`: their 5.0 and 1.996 are PR 2's
+targets), Bear's generalization to bounded layers (3.88), Siewert (counts
+times severity with Weibull fits that change shape; its 1.1684 agrees only
+within rounding) and Korn's section 6 (this note's model, no numbers).
 
 * **Closed forms** (first, they need no source): the Pareto layer LDF at
   `alpha_j` and `alpha_inf`; the lognormal scale-shift illustration above
@@ -300,8 +351,6 @@ study below.
   excess development factor to each year's 400 xs 100 layer total; it
   derives none. It can check only that a supplied layer pattern is applied
   as Clark applies it, not the derivation.
-* **Pinto and Gogol (1987)**, **Siewert (1996)**, **Bloom and Patrik
-  (2013)**: candidates for the gate above; only abstracts have been read.
 * **Self-consistency by simulation** (the main test of the method): with
   fixed seeds, simulate a ground-up incurred claim process with a known
   severity drift and known late-claim sizes, build the ground-up and layer
@@ -327,7 +376,7 @@ study below.
 | PR | Branch | Holds | Base |
 |---|---|---|---|
 | 0 | `claude/excess-development-note` | this note, the lane bullet, the literature entry in `knowledge/` | `main` |
-| 1 | `claude/excess-pattern` | the sparse-age change to `Development` (decision 8); `ExcessPattern::from_ground_up` with scale shift, incurred only, one layer, the layer tail; `selected`, `layer_share`, `layer_exposure`; Rust only; the closed-form and engine checks; the sources read in full for a worked example (the gate above) and recorded in `knowledge/` | PR 0 |
+| 1 | `claude/excess-pr1` | the sparse-age change to `Development` (decision 8); `ExcessPattern::from_ground_up` with scale shift, incurred only, one layer, the layer tail; `selected`, `layer_share`, `layer_exposure`; Rust only; the closed-form and engine checks; the sources read in full for a worked example (the gate above) and recorded in `knowledge/` | PR 0 |
 | 2 | `claude/excess-credibility` | `credibility_weights` with its cap, the shape-drift model, the simulation study with its acceptance thresholds | PR 1 |
 | 3 | `claude/excess-bindings` | Python and R, the stub, `man/`, a note for the Guides lane | PR 2 |
 | 4 | `claude/excess-bayes-prior` | the layer share's uncertainty as a prior, after #410 | PR 3 and #410 |
@@ -399,10 +448,27 @@ The user decided every point below on 2026-10-21, taking each recommendation as 
    all-zero age. *Recommendation: (a), with (b) built on it in PR 2;* (c)
    silently invents a factor.
    *Decided 2026-10-21 (the user): the recommendation.*
+   *Built in PR 1, as refined:* the rule is never an error at a fully
+   selected age, and the triangle's own factor is still estimated where it
+   can be. Skipping the estimate at every weight-1 age would change the
+   reported `ldf`, `sigma` and `volume` of every existing fit that selects a
+   factor fully (decision 12 of `reserving-v02.md` keeps the estimated
+   fields the triangle's), so the new branch fires only where the old code
+   returned `Error::Factor` (earlier values summing to zero, a zero value
+   with an infinite weight, a geometric mean of a zero ratio) at an age
+   with weight 1. There `ldf` and `volume` are NaN, `sigma` is interpolated
+   as for any missing sigma and the standard error of the blended factor is
+   0. `DevelopmentFit::has_missing_factor` flags it; Merz and Wüthrich's
+   closed form and the bootstraps, which need every own factor, reject such
+   a fit with an error. `SigmaInterpolation::Mack` cannot fill a sparse
+   first age (it needs two earlier sigmas), so Mack's fit errors there;
+   `LogLinear`, the default, extrapolates.
 
 9. **Basis.** (a) Incurred only, paid rejected. (b) Paid too, with a
    payment-timing assumption by claim size. *Recommendation: (a);* (b)
-   needs claim-level data this plan does not use.
+   needs a payment-timing assumption by size that this plan does not have
+   (the literature derives paid layer factors from incurred ones and ratios
+   of paid-to-reported ratios, so paid is a later option, not impossible).
    *Decided 2026-10-21 (the user): the recommendation.*
 
 10. **The tail of the layer pattern.** (a) From the ground-up `Tail`, one
@@ -419,15 +485,59 @@ The user decided every point below on 2026-10-21, taking each recommendation as 
     thresholds as proposed under "Validation targets".
    *Decided 2026-10-21 (the user): the recommendation.*
 
+Opened in PR 1 (each was chosen as the option closest to the note, and is
+built so); the user decided each on 2026-10-21, accepting the option PR 1
+picked:
+
+12. **The basis argument.** The note rejected a paid basis (decision 9) but
+    gave `from_ground_up` no way to say which basis a column is. PR 1 adds
+    `Basis { Incurred, Paid }` as an argument, `Paid` an error. (a) As built.
+    (b) A flag on the severity model. (c) Infer from the column name, which
+    is fragile. *Recommendation: (a).*
+   *Decided 2026-10-21 (the user): the option PR 1 picked, (a) as built.*
+
+13. **A capped ground-up column.** The solve for `c_j` matters only when the
+    ground-up column is limited per claim, and the note's API had nowhere to
+    say so. PR 1 adds `ground_up_cap: Option<f64>` to `ScaleShift`: `None`
+    gives the closed form, a cap solves `c / LEV(c u) = r / LEV(u)` by
+    bisection. (a) As built. (b) A separate model variant. *Recommendation:
+    (a).*
+   *Decided 2026-10-21 (the user): the option PR 1 picked, (a) as built.*
+
+14. **The count tail.** With a count column the severity factor is the
+    ground-up factor over the count factor. Past the oldest age the count
+    factor is taken as 1 (counts are complete there) and the ground-up
+    `Tail` is all severity. (a) As built. (b) The same `Tail` fitted to the
+    counts as well, so a constant tail of 1.05 on both leaves the severity
+    alone. *Recommendation: (a);* revisit if a user's counts are still
+    developing at the oldest age.
+   *Decided 2026-10-21 (the user): the option PR 1 picked, (a) as built.*
+
+15. **The ground-up average.** The ground-up factors are the
+    volume-weighted ones (`Development::default()`), not a parameter of
+    `from_ground_up`. (a) As built. (b) Take a `Development`, for exclusions
+    and averages. *Recommendation: (b) in PR 2 or PR 3*, when the bindings
+    expose it; it is a field addition with a default.
+   *Decided 2026-10-21 (the user): the option PR 1 picked, (a) as built;* the take-a-`Development` option (b) stays a later field addition.
+
+16. **Shape drift's inputs and the simulation.** Pinto and Gogol and Bear
+    both need a base development (the count ratio `n_i/n_j`, or the
+    excess-of-threshold development) beside the shapes, which `ParetoShape {
+    alphas, threshold }` lacks; PR 2 adds an input for it. The sources find
+    the shape moving with maturity, so PR 2's simulation must generate shape
+    drift, a capped arm and late claims of other sizes, not only scale
+    shifts, and report the derived pattern's RMSE under each.
+    *Decided 2026-10-21 (the user): the option PR 1 picked, a base-development input beside the shapes, with the simulation requirements above as the plan for PR 2.*
+
 ## References
 
 Checked on 2026-10-21 against CAS abstract pages and the publishers'
-records. Confirmed from those pages: Pinto and Gogol, Siewert, Clark,
-Sahasrabuddhe, Gillam and Couret with Mahler's discussion, Boor, Verrall,
-and the Fall 2013 paper's title. Not confirmed: the Fall 2013 paper's
-authors, and Korn's year and pages; PR 1 confirms or drops them. Only
-abstracts were read, not full texts, so every formula above is this note's
-own, and what a paper is said to contain is what its abstract says.
+records, and in PR 1 against the full texts of Pinto and Gogol with Levine's
+and Bear's discussions, Siewert, Sahasrabuddhe, Bloom and Patrik and Korn
+(section 6). Bloom and Patrik's authors are confirmed from the paper, and
+Korn is Variance 11 (2017), 95-117. Boor and Mahler were skimmed; Gillam
+and Couret were not found. What each source prints, and the examples, are
+in `knowledge/references/excess-development-literature.md`.
 
 * Pinto, E. and Gogol, D. F. (1987). An Analysis of Excess Loss Development.
   *Proceedings of the Casualty Actuarial Society* 74, from p. 227 (discussion
@@ -446,12 +556,15 @@ own, and what a paper is said to contain is what its abstract says.
   consistent with each other.
 * Bloom, J. and Patrik, G. S. (2013). A Methodology for Avoiding the
   Pitfalls of Excess Loss Development. *CAS E-Forum*, Fall 2013, vol. 1.
-  Excess factors from ground-up data through excess loss factors. The
-  authors come from a file name (`05-Bloom-Patrik`) and a second search
-  result, since the abstract page names none: confirm in PR 1.
-* Korn, U. Strategies for Modeling Loss Development: Curve Fitting,
-  Credibility, and Layer Adjustments. *Variance* 11(1-2). Year and pages to
-  be confirmed in PR 1.
+  Excess factors from ground-up data through excess loss factors. Authors
+  Lynne Bloom and Lela Patrik (PwC), confirmed from the paper; its pages 4
+  to 8 are PR 1's parity target.
+* Bear, R. A. (1992). Discussion of Pinto and Gogol, *PCAS* 79, 134-148.
+  Generalizes Pinto and Gogol's shape-change factor to bounded layers
+  (`d c^(q_i - q_j)` for layers with equal limit-to-attachment ratios).
+* Korn, U. (2017). Strategies for Modeling Loss Development: Curve Fitting,
+  Credibility, and Layer Adjustments. *Variance* 11(1), 95-117. Section 6 is
+  this note's scale-shift model, with no numbers.
 * Gillam, W. R. and Couret, J. R. (1997). Retrospective Rating: 1997 Excess
   Loss Factors. *PCAS* 84; Mahler, H. C. (1998), discussion, *PCAS* 85,
   316–344; Boor, J. (2017), Unbiased Development for Individual Claims,

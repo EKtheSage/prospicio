@@ -995,6 +995,11 @@ impl MackBootstrap {
         }
         .fit_segment(segment, &segment.ages)?;
         let cl = &mack.chain_ladder;
+        if cl.development.has_missing_factor() {
+            return Err(Error::Bootstrap(
+                "an age whose own factor could not be estimated (a fully selected sparse age) is not supported",
+            ));
+        }
         // A constant tail's factor is drawn with Mack's standard error; an
         // estimated tail's is refitted, and a given standard error is an
         // error.

@@ -428,8 +428,11 @@ what it is aiming for by v1.0.
   Claim-level reserving (v0.8) is parked; see the milestones.
   Also next: excess-layer loss development (#192,
   `reserving-excess.md`, Accepted 2026-10-21): layer factors derived from a ground-up
-  incurred triangle and a severity, credibility blending with them, and a
-  BF prior from the layer share; the user accepted all eleven decisions as recommended, and PR 1 is next.
+  incurred triangle and a severity (PR 1, in Rust: `ExcessPattern::from_ground_up`,
+  `layer_share` and `layer_exposure`, with Bloom and Patrik's worked example
+  reproduced exactly; done), credibility blending with them and the Pareto shape
+  drift (PR 2), the bindings (PR 3) and a BF prior from the layer share's
+  uncertainty (PR 4, after #410).
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 
