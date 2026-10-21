@@ -48,3 +48,13 @@ gamma fit, without which R's IRLS diverges on quine) to 1e-10, 1e-6 and
 1e-6 at `summary(m)$dispersion`; the Poisson, `glm.nb` and binomial bounds
 `F(y − 1)` and `F(y)` to 1e-6, with every residual between their normal
 scores.
+
+# Where prospicio departs
+
+`qres.pois`, `qres.binom` and `qres.nbinom` draw on the lower tail,
+`runif(a = F(y − 1), b = F(y))`, so a count whose `F(y − 1)` rounds to 1 gets
+an infinite residual: on quine's Poisson fit two rows do. prospicio draws
+above the median on the upper tail (`Family::upper_tail_bounds`, the count's
+pmf summed past `y`) with the same uniform, so those residuals are finite
+and between `-qnorm(ppois(y - 1, mu, lower.tail = FALSE))` and
+`-qnorm(ppois(y, mu, lower.tail = FALSE))`, which the R test checks.

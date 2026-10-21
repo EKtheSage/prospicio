@@ -630,6 +630,8 @@ def test_glm_diagnostics_match_r():
     assert [qg[i] for i in (0, 49, 145)] == pytest.approx(
         [-1.566963914736516, 0.714809090957266, 1.470914293998306], rel=1e-6
     )
+
+
 def test_terms_build_rating_variables():
     data = {"age": [20.0, 30.0, 45.0, 60.0], "region": ["N", "S", "W", "S"], "size": ["small", "large", "medium", "small"]}
     coding = (
