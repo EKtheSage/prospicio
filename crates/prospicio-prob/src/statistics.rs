@@ -9,11 +9,11 @@
 //! that a caller can join on; [`StatisticsGrid::components`] does the same
 //! for every component of a [`PredictiveDistribution`].
 
-use prospicio_core::{Error, Result};
+use prospicio_core::{Error, Result, StreamRng};
 
 use crate::distribution::Distribution;
 use crate::predictive::{ComponentKey, PredictiveDistribution};
-use crate::risk::{tvar_linear_sorted, tvar_sorted, var_linear_sorted, var_sorted};
+use crate::risk::{rank, tvar_linear_sorted, tvar_sorted, var_linear_sorted, var_sorted};
 use crate::sampled::{Empirical, Sampled};
 
 /// How a quantile of draws is read.
@@ -612,6 +612,284 @@ impl RiskRatios {
     }
 }
 
+/// One column sorted once for the bootstrap: its values ascending and, for
+/// each, the simulation it came from.
+struct SortedColumn {
+    values: Vec<f64>,
+    sims: Vec<usize>,
+}
+
+impl SortedColumn {
+    fn new(column: &[f64]) -> Self {
+        let mut sims: Vec<usize> = (0..column.len()).collect();
+        sims.sort_by(|&a, &b| column[a].total_cmp(&column[b]));
+        Self {
+            values: sims.iter().map(|&s| column[s]).collect(),
+            sims,
+        }
+    }
+}
+
+/// A resample of a sorted column read from its counts: `counts[i]` copies
+/// of `values[i]`, with no re-sort.
+struct Resample<'a> {
+    values: &'a [f64],
+    counts: Vec<usize>,
+    /// `cum[i]`: the copies of `values[..=i]`.
+    cum: Vec<usize>,
+    /// `tail[i]`: the sum of every copy of `values[i..]`.
+    tail: Vec<f64>,
+    n: usize,
+}
+
+impl<'a> Resample<'a> {
+    fn new(column: &'a SortedColumn, sim_counts: &[usize]) -> Self {
+        let values = &column.values[..];
+        let counts: Vec<usize> = column.sims.iter().map(|&s| sim_counts[s]).collect();
+        let mut cum = Vec::with_capacity(counts.len());
+        let mut c = 0;
+        for &k in &counts {
+            c += k;
+            cum.push(c);
+        }
+        let mut tail = vec![0.0; counts.len() + 1];
+        for i in (0..counts.len()).rev() {
+            tail[i] = tail[i + 1] + counts[i] as f64 * values[i];
+        }
+        Self {
+            values,
+            counts,
+            cum,
+            tail,
+            n: c,
+        }
+    }
+
+    /// Where the resample's order statistic `k` (from 0) sits in `values`.
+    fn position(&self, k: usize) -> usize {
+        self.cum.partition_point(|&c| c <= k)
+    }
+
+    /// The resample's order statistic `k`, from 0.
+    fn order(&self, k: usize) -> f64 {
+        self.values[self.position(k)]
+    }
+
+    /// The sum of the resample's order statistics from `k` on.
+    fn suffix(&self, k: usize) -> f64 {
+        if k >= self.n {
+            return 0.0;
+        }
+        let i = self.position(k);
+        (self.cum[i] - k) as f64 * self.values[i] + self.tail[i + 1]
+    }
+
+    fn quantile(&self, method: QuantileMethod, p: f64) -> f64 {
+        let n = self.n;
+        match method {
+            QuantileMethod::InvertedCdf => self.order(rank(n, p) - 1),
+            QuantileMethod::Linear => {
+                let h = p * (n - 1) as f64;
+                let j = h.floor() as usize;
+                if j >= n - 1 {
+                    return self.order(n - 1);
+                }
+                let (a, b) = (self.order(j), self.order(j + 1));
+                a + (h - j as f64) * (b - a)
+            }
+        }
+    }
+
+    fn tvar(&self, method: TvarMethod, p: f64) -> f64 {
+        let n = self.n;
+        let nf = n as f64;
+        match method {
+            TvarMethod::Exact => {
+                if p == 1.0 {
+                    return self.order(n - 1);
+                }
+                let k = rank(n, p);
+                let partial = (k as f64 / nf - p) * self.order(k - 1);
+                (partial + self.suffix(k) / nf) / (1.0 - p)
+            }
+            TvarMethod::Linear => {
+                let top = (n - 1) as f64;
+                let h = p * top;
+                let j = h.floor() as usize;
+                if j >= n - 1 || h >= top {
+                    return self.order(n - 1);
+                }
+                let (a, b) = (self.order(j), self.order(j + 1));
+                let v = a + (h - j as f64) * (b - a);
+                let partial = (v + b) / 2.0 * ((j + 1) as f64 - h);
+                let full = (2.0 * self.suffix(j + 1) - b - self.order(n - 1)) / 2.0;
+                (partial + full) / (top - h)
+            }
+        }
+    }
+}
+
+impl StatisticsGrid {
+    /// The grid's statistics of a resample read from its counts, the cells
+    /// [`of`](Self::of) gives on the resample written out.
+    fn of_resample(&self, r: &Resample) -> Vec<f64> {
+        let nf = r.n as f64;
+        let mean = r
+            .values
+            .iter()
+            .zip(&r.counts)
+            .map(|(x, &k)| k as f64 * x)
+            .sum::<f64>()
+            / nf;
+        let variance = r
+            .values
+            .iter()
+            .zip(&r.counts)
+            .map(|(x, &k)| k as f64 * (x - mean) * (x - mean))
+            .sum::<f64>()
+            / nf;
+        let sd = variance.sqrt();
+        let cov = if mean == 0.0 {
+            if sd == 0.0 { 0.0 } else { f64::NAN }
+        } else {
+            sd / mean
+        };
+        let mut values = vec![mean, sd, cov, r.order(0), r.order(r.n - 1), variance];
+        values.extend(
+            self.percentiles
+                .iter()
+                .map(|q| r.quantile(self.quantile, q / 100.0)),
+        );
+        values.extend(
+            self.tvar_levels
+                .iter()
+                .map(|q| r.tvar(self.tvar, q / 100.0)),
+        );
+        for k in &self.sd_multiples {
+            values.push(mean + k * sd);
+            values.push(mean - k * sd);
+        }
+        values
+    }
+
+    /// Bootstrap standard errors of every cell of the grid, for each of
+    /// `columns`: per-simulation results (a total, a ceded loss, a margin)
+    /// in simulation order, all of the same length `n`.
+    ///
+    /// Each of `replicates` replicates draws `n` simulations with
+    /// replacement, one draw shared by every column so their joint
+    /// structure is kept: replicate `b` takes simulation
+    /// `⌊u n⌋` for each of the `n` uniforms `u` of `StreamRng::new(seed, b)`.
+    /// Its cells are read from the resample counts on each column's order,
+    /// sorted once, so a replicate costs `O(n)` per column and no sort. A
+    /// cell's standard error is the sample standard deviation (dividing by
+    /// `B − 1`) of its `B` replicate values, whatever the grid's own SD
+    /// convention; a cell that is NaN in a replicate (the CoV of a zero
+    /// mean) is NaN.
+    ///
+    /// Fails if there are no columns, a column is empty, the lengths
+    /// differ, a value is not finite or `replicates < 2`.
+    ///
+    /// ```
+    /// use prospicio_prob::statistics::StatisticsGrid;
+    ///
+    /// let x: Vec<f64> = (0..1000).map(|i| ((i * 37) % 1000) as f64).collect();
+    /// let grid = StatisticsGrid::new(vec![50.0]).unwrap();
+    /// let se = grid.bootstrap_se(&[&x], 200, 7).unwrap();
+    /// // The mean's standard error is close to sd / sqrt(n), about 9.1.
+    /// let mean_se = se[0].get("Mean").unwrap();
+    /// assert!((mean_se - 288.7 / 1000f64.sqrt()).abs() < 1.5);
+    /// ```
+    pub fn bootstrap_se(
+        &self,
+        columns: &[&[f64]],
+        replicates: usize,
+        seed: u64,
+    ) -> Result<Vec<Statistics>> {
+        let Some(first) = columns.first() else {
+            return Err(Error::Data("no columns to bootstrap".into()));
+        };
+        let n = first.len();
+        if n == 0 {
+            return Err(Error::Data("the columns have no simulations".into()));
+        }
+        for column in columns {
+            if column.len() != n {
+                return Err(Error::Data(format!(
+                    "a column has {} simulations and the first {n}",
+                    column.len()
+                )));
+            }
+            if let Some(&bad) = column.iter().find(|x| !x.is_finite()) {
+                return Err(Error::InvalidParameter {
+                    name: "columns",
+                    value: bad,
+                    reason: "must be finite",
+                });
+            }
+        }
+        if replicates < 2 {
+            return Err(Error::InvalidParameter {
+                name: "replicates",
+                value: replicates as f64,
+                reason: "must be at least 2",
+            });
+        }
+        let sorted: Vec<SortedColumn> = columns.iter().map(|c| SortedColumn::new(c)).collect();
+        let names = self.names();
+        // values[column][cell][replicate]
+        let mut values = vec![vec![Vec::with_capacity(replicates); names.len()]; columns.len()];
+        let mut counts = vec![0usize; n];
+        for b in 0..replicates {
+            counts.fill(0);
+            let mut rng = StreamRng::new(seed, b as u64);
+            for _ in 0..n {
+                let s = ((rng.next_open01() * n as f64) as usize).min(n - 1);
+                counts[s] += 1;
+            }
+            for (c, column) in sorted.iter().enumerate() {
+                let cells = self.of_resample(&Resample::new(column, &counts));
+                for (cell, v) in cells.into_iter().enumerate() {
+                    values[c][cell].push(v);
+                }
+            }
+        }
+        Ok(values
+            .into_iter()
+            .map(|cells| Statistics {
+                names: names.clone(),
+                values: cells.iter().map(|v| sample_sd(v)).collect(),
+            })
+            .collect())
+    }
+
+    /// [`bootstrap_se`](Self::bootstrap_se) of each component of `pd`, in
+    /// component order, with each component's key: one draw of simulations
+    /// per replicate shared by every component.
+    pub fn bootstrap_se_components(
+        &self,
+        pd: &PredictiveDistribution,
+        replicates: usize,
+        seed: u64,
+    ) -> Result<Vec<(ComponentKey, Statistics)>> {
+        let columns: Vec<Vec<f64>> = pd
+            .components()
+            .iter()
+            .map(|key| pd.marginal(key).expect("listed component").into_draws())
+            .collect();
+        let refs: Vec<&[f64]> = columns.iter().map(Vec::as_slice).collect();
+        let se = self.bootstrap_se(&refs, replicates, seed)?;
+        Ok(pd.components().iter().cloned().zip(se).collect())
+    }
+}
+
+/// The sample standard deviation, dividing by `len − 1`.
+fn sample_sd(v: &[f64]) -> f64 {
+    let n = v.len() as f64;
+    let mean = v.iter().sum::<f64>() / n;
+    (v.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (n - 1.0)).sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -856,5 +1134,123 @@ mod tests {
         assert!(flat.get("Omega").unwrap().is_nan());
         assert!(RiskRatios::new().threshold(f64::NAN).is_err());
         assert!(RiskRatios::new().tvar_levels(vec![101.0]).is_err());
+    }
+    /// Simulations with ties, a heavy tail and a negative value.
+    fn book(n: usize) -> Vec<f64> {
+        let mut rng = StreamRng::new(11, 0);
+        (0..n)
+            .map(|i| {
+                let u = rng.next_open01();
+                if i % 7 == 0 {
+                    3.0
+                } else {
+                    (1.0 - u).powf(-0.6) - 1.2
+                }
+            })
+            .collect()
+    }
+
+    fn full_grid() -> StatisticsGrid {
+        StatisticsGrid::new(vec![0.0, 1.0, 37.5, 50.0, 90.0, 99.0, 100.0])
+            .unwrap()
+            .tvar_levels(vec![0.0, 37.5, 90.0, 99.0, 99.9, 100.0])
+            .unwrap()
+    }
+
+    #[test]
+    fn a_resample_read_from_counts_matches_it_written_out() {
+        let x = book(503);
+        let column = SortedColumn::new(&x);
+        for b in 0..5u64 {
+            let mut rng = StreamRng::new(3, b);
+            let mut counts = vec![0usize; x.len()];
+            let mut written = Vec::new();
+            for _ in 0..x.len() {
+                let s = ((rng.next_open01() * x.len() as f64) as usize).min(x.len() - 1);
+                counts[s] += 1;
+                written.push(x[s]);
+            }
+            let written = Sampled::new(written).unwrap();
+            for q in [QuantileMethod::InvertedCdf, QuantileMethod::Linear] {
+                for t in [TvarMethod::Exact, TvarMethod::Linear] {
+                    let grid = full_grid().quantile_method(q).tvar_method(t);
+                    let got = grid.of_resample(&Resample::new(&column, &counts));
+                    let want = grid.of(&written);
+                    for ((name, g), w) in want.names.iter().zip(&got).zip(&want.values) {
+                        assert!(
+                            (g - w).abs() <= 1e-10 * w.abs().max(1.0),
+                            "{name} {q:?} {t:?}: {g} != {w}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_simulation_once_is_the_grid_itself() {
+        let x = book(64);
+        let grid = full_grid()
+            .quantile_method(QuantileMethod::Linear)
+            .tvar_method(TvarMethod::Linear);
+        let got = grid.of_resample(&Resample::new(&SortedColumn::new(&x), &[1; 64]));
+        let want = grid.of(&Sampled::new(x).unwrap());
+        for (g, w) in got.iter().zip(&want.values) {
+            assert!((g - w).abs() <= 1e-12 * w.abs().max(1.0));
+        }
+    }
+
+    #[test]
+    fn bootstrap_errors_are_shared_reproducible_and_checked() {
+        let x = book(2000);
+        let doubled: Vec<f64> = x.iter().map(|v| 2.0 * v).collect();
+        let constant = vec![5.0; 2000];
+        let grid = StatisticsGrid::new(vec![50.0, 99.0]).unwrap();
+        let se = grid
+            .bootstrap_se(&[&x, &doubled, &constant], 300, 9)
+            .unwrap();
+        // One draw shared by every column: a doubled column has twice the
+        // errors, the variance's four times and the CoV's the same.
+        for ((name, a), b) in se[0].names.iter().zip(&se[0].values).zip(&se[1].values) {
+            let want = match name.as_str() {
+                "CoV" => *a,
+                "Variance" => 4.0 * a,
+                _ => 2.0 * a,
+            };
+            assert!((want - b).abs() <= 1e-9 * b.abs().max(1.0), "{name}");
+        }
+        // A constant has no error, up to the rounding of its TVaRs.
+        assert!(se[2].values.iter().all(|&v| v.abs() < 1e-12));
+        // The mean's error is close to sd / sqrt(n).
+        let s = Sampled::new(x.clone()).unwrap();
+        let want = s.variance().sqrt() / 2000f64.sqrt();
+        assert!((se[0].get("Mean").unwrap() / want - 1.0).abs() < 0.15);
+        assert_eq!(grid.bootstrap_se(&[&x], 300, 9).unwrap()[0], se[0]);
+        assert!(grid.bootstrap_se(&[&x], 1, 9).is_err());
+        assert!(grid.bootstrap_se(&[&x, &x[1..]], 10, 9).is_err());
+        assert!(grid.bootstrap_se(&[], 10, 9).is_err());
+        assert!(grid.bootstrap_se(&[&[1.0, f64::NAN]], 10, 9).is_err());
+    }
+
+    #[test]
+    fn components_bootstrap_on_one_draw() {
+        let x = book(400);
+        let y: Vec<f64> = x.iter().map(|v| v + 1.0).collect();
+        let draws: Vec<f64> = x.iter().zip(&y).flat_map(|(a, b)| [*a, *b]).collect();
+        let pd = PredictiveDistribution::from_draws(
+            vec!["line".into()],
+            vec![vec!["a".into()], vec!["b".into()]],
+            draws,
+            crate::Provenance::new("test"),
+        )
+        .unwrap();
+        let grid = StatisticsGrid::new(vec![90.0]).unwrap();
+        let by = grid.bootstrap_se_components(&pd, 50, 4).unwrap();
+        let direct = grid.bootstrap_se(&[&x, &y], 50, 4).unwrap();
+        assert_eq!(by[0].1, direct[0]);
+        assert_eq!(by[1].1, direct[1]);
+        // A shift leaves the SD's error alone.
+        let (a, b) = (by[0].1.get("SD").unwrap(), by[1].1.get("SD").unwrap());
+        assert!((a - b).abs() <= 1e-9 * a);
     }
 }

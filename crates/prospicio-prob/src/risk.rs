@@ -321,7 +321,7 @@ fn check_draws(draws: &[f64]) -> Result<()> {
 
 /// Smallest `k` in `1..=n` with `k / n >= p`, using the same division as
 /// the empirical distribution function so the two agree exactly.
-fn rank(n: usize, p: f64) -> usize {
+pub(crate) fn rank(n: usize, p: f64) -> usize {
     let nf = n as f64;
     let mut k = ((p * nf).ceil() as usize).clamp(1, n);
     while k > 1 && (k - 1) as f64 / nf >= p {
