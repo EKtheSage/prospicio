@@ -46,8 +46,11 @@ use crate::triangle::{Label, Segment, Triangle};
 /// under a tight prior is `m_w` times the sum of `S_d / M_d` over all
 /// columns (below). On EVW's triangle that sum is 0.885, so the implied
 /// ultimate loss ratio is about 11.5% below `apriori`; `apriori` is the
-/// classical method's loss ratio only when the sum is 1. The log posterior is strictly concave; NUTS samples
-/// it on a scale whitened at the mode, as for `BayesOdp`.
+/// classical method's loss ratio only when the sum is 1. For a prior on the
+/// ultimate itself, so that `apriori` is the expected ultimate loss ratio,
+/// use [`BayesBfNormalised`](super::BayesBfNormalised) (decision 22). The log
+/// posterior is strictly concave; NUTS samples it on a scale whitened at the
+/// mode, as for `BayesOdp`.
 ///
 /// The prior's strength moves the reserve between two limits:
 ///
@@ -619,14 +622,18 @@ impl ReserveFit for BayesBfFit {
     }
 }
 
-fn origin_columns(exposure: &[f64], prior: &[f64]) -> Vec<(&'static str, Vec<f64>)> {
+pub(super) fn origin_columns(exposure: &[f64], prior: &[f64]) -> Vec<(&'static str, Vec<f64>)> {
     vec![
         ("exposure", exposure.to_vec()),
         ("prior_ultimate", prior.to_vec()),
     ]
 }
 
-fn total_columns(scale: f64, exposure: &[f64], prior: &[f64]) -> Vec<(&'static str, f64)> {
+pub(super) fn total_columns(
+    scale: f64,
+    exposure: &[f64],
+    prior: &[f64],
+) -> Vec<(&'static str, f64)> {
     vec![
         ("exposure", exposure.iter().sum()),
         ("prior_ultimate", prior.iter().sum()),
@@ -636,11 +643,11 @@ fn total_columns(scale: f64, exposure: &[f64], prior: &[f64]) -> Vec<(&'static s
 
 /// The chain ladder, scale and priors of a fit, for its long tables.
 #[derive(Debug, Clone)]
-struct PlugIn {
-    chain_ladder: ChainLadderFit,
-    scale: f64,
-    exposure: Vec<f64>,
-    prior_ultimate: Vec<f64>,
+pub(super) struct PlugIn {
+    pub(super) chain_ladder: ChainLadderFit,
+    pub(super) scale: f64,
+    pub(super) exposure: Vec<f64>,
+    pub(super) prior_ultimate: Vec<f64>,
 }
 
 impl ReserveFit for PlugIn {
@@ -720,7 +727,7 @@ fn natural_eta(n_origins: usize, theta: &[f64], w: usize, d: usize) -> f64 {
 
 /// The input hash of a fit: the column names, the segment and the
 /// exposures.
-fn input_hasher(
+pub(super) fn input_hasher(
     column: &str,
     exposure: &str,
     segment: &Segment,
