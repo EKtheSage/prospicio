@@ -676,4 +676,4 @@
   roots seen (the one nearest 0 kept), monthly or actual/365 offsets, MOIC, leverage of premium
   on capital and a fee tiered on the margin. Python `npv`, `irr` (`IrrResult`), `moic`,
   `leverage`, `tiered_fee` in `prospicio.pricing`; R `npv()`, `irr()`, `moic()`, `leverage()`,
-  `tiered_fee()` (#480).
+  `tiered_fee()` (#480, #494).
