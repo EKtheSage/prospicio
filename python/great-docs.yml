@@ -78,6 +78,8 @@ reference:
       - aggregate.simulate_events
       - aggregate.EventSet
       - aggregate.EventLossTable
+      - aggregate.read_ylt
+      - aggregate.ylt_hash
       - aggregate.occurrence_exceedance
       - aggregate.occurrence_pml
       - aggregate.OccurrencePml

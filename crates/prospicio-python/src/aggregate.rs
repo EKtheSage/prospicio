@@ -901,6 +901,119 @@ impl PyEventSet {
         Ok(Self { inner })
     }
 
+    /// Years of losses from a year loss table's columns, checked and
+    /// expanded to a run's simulations.
+    ///
+    /// Rows are ordered by year, then slot (the given order breaking ties),
+    /// and each row is one loss: rows sharing a slot, an event hitting
+    /// several classes, stay separate losses, so an occurrence layer sees
+    /// each of them. ``prospicio.aggregate.read_ylt`` reads the columns
+    /// from a CSV or Parquet file.
+    ///
+    /// Parameters
+    /// ----------
+    /// years : list of int
+    ///     Each row's year, from 1.
+    /// losses : list of float
+    ///     Finite and non-negative.
+    /// slots : list of int, optional
+    ///     Each row's event slot, which orders a year's rows.
+    /// labels : dict of str to list of str, optional
+    ///     Each row's labels, a list per dimension (``{"peril": [...],
+    ///     "class": [...]}``).
+    /// n_years : int, optional
+    ///     The table's years, at least its largest year; by default the
+    ///     largest year.
+    /// n_sims : int, optional
+    ///     The simulations to expand to, by default ``n_years``.
+    /// expand : {"tile", "resample"}, default "tile"
+    ///     ``"tile"``: simulation ``i`` (from 0) takes year ``i % n_years``,
+    ///     so ``n_sims`` must be a multiple of ``n_years``. ``"resample"``:
+    ///     each simulation takes a year drawn uniformly with replacement
+    ///     from its own stream of ``seed``.
+    /// seed : int, default 0
+    /// unique_by : list of str, optional
+    ///     With slots, no two rows may share a year, a slot and their values
+    ///     in these label dimensions (``["peril"]``: one slot may hit several
+    ///     classes, not repeat a peril); by default every label dimension.
+    /// expected : dict of str to list of str, optional
+    ///     The values allowed in each named dimension (``{"peril": ["WS",
+    ///     "EQ"]}``).
+    /// source_hash : str, optional
+    ///     A hash of the source, recorded as results' input hash.
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_ylt([2, 1, 2], [5.0, 1.0, 7.0], slots=[9, 1, 3], n_sims=4)
+    /// >>> e.events(1), e.events(3)
+    /// ([7.0, 5.0], [7.0, 5.0])
+    #[staticmethod]
+    #[pyo3(signature = (
+        years, losses, *, slots = None, labels = None, n_years = None, n_sims = None,
+        expand = "tile", seed = 0, unique_by = None, expected = None, source_hash = None
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_ylt(
+        years: Vec<usize>,
+        losses: Vec<f64>,
+        slots: Option<Vec<u64>>,
+        labels: Option<&Bound<'_, PyDict>>,
+        n_years: Option<usize>,
+        n_sims: Option<usize>,
+        expand: &str,
+        seed: u64,
+        unique_by: Option<Vec<String>>,
+        expected: Option<&Bound<'_, PyDict>>,
+        source_hash: Option<String>,
+    ) -> PyResult<Self> {
+        use prospicio_aggregate::ylt::{Expansion, YearLossTable};
+        let expansion = match expand {
+            "tile" => Expansion::Tile,
+            "resample" => Expansion::Resample { seed },
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "expand must be \"tile\" or \"resample\", not {other:?}"
+                )));
+            }
+        };
+        let mut ylt = YearLossTable::new(&years, &losses).map_err(to_py)?;
+        let has_slots = slots.is_some();
+        if let Some(slots) = slots {
+            ylt = ylt.with_slots(slots).map_err(to_py)?;
+        }
+        let labels = labels
+            .map(labels_from_dict)
+            .transpose()?
+            .unwrap_or_default();
+        let dims: Vec<String> = labels.iter().map(|(d, _)| d.clone()).collect();
+        ylt = ylt.with_labels(labels).map_err(to_py)?;
+        if let Some(n) = n_years {
+            ylt = ylt.with_n_years(n).map_err(to_py)?;
+        }
+        if let Some(h) = source_hash {
+            ylt = ylt.with_source_hash(h);
+        }
+        if has_slots {
+            let by = unique_by.unwrap_or(dims);
+            ylt.check_unique(&by.iter().map(String::as_str).collect::<Vec<_>>())
+                .map_err(to_py)?;
+        }
+        if let Some(expected) = expected {
+            for (dim, values) in labels_from_dict(expected)? {
+                ylt.check_values(&dim, &values.iter().map(String::as_str).collect::<Vec<_>>())
+                    .map_err(to_py)?;
+            }
+        }
+        Ok(Self {
+            inner: ylt.events(n_sims, expansion).map_err(to_py)?,
+        })
+    }
+
     /// The same events with labels, a peril or a class say.
     ///
     /// ``Tower.apply`` then gives gross, each layer's ceded loss and net by
@@ -1193,6 +1306,13 @@ impl PyEventSet {
     #[getter]
     fn seed(&self) -> u64 {
         self.inner.seed()
+    }
+
+    /// A hash of the years' source (a year loss table's file), which
+    /// results record as their provenance's input hash, or ``None``.
+    #[getter]
+    fn input_hash(&self) -> Option<String> {
+        self.inner.input_hash().map(str::to_string)
     }
 
     /// Year ``sim``'s individual losses, in the order they were drawn.
@@ -2683,6 +2803,27 @@ impl PyClash {
             self.inner.both()
         )
     }
+}
+
+/// A hash of a year loss table's file bytes, ``"blake3:<hex>"``, which
+/// ``EventSet.from_ylt`` records as its ``source_hash``.
+///
+/// Parameters
+/// ----------
+/// data : bytes
+///
+/// Returns
+/// -------
+/// str
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import ylt_hash
+/// >>> ylt_hash(b"year,value").startswith("blake3:")
+/// True
+#[pyfunction]
+pub fn ylt_hash(data: &[u8]) -> String {
+    prospicio_aggregate::ylt::hash_bytes(data)
 }
 
 /// Labels from a dict of dimension to values, in the dict's order.

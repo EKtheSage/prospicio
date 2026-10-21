@@ -37,6 +37,9 @@ pub struct EventSet {
     /// The samplers the losses were drawn with, for results' provenance:
     /// this build's when it drew them, `None` for years from elsewhere.
     samplers: Option<Vec<(String, String)>>,
+    /// A hash of the years' source, a year loss table's file say, kept as
+    /// results' input hash.
+    input_hash: Option<String>,
 }
 
 /// Each loss's value in every label dimension, stored as an index into the
@@ -74,6 +77,22 @@ impl Labels {
     /// Loss `k`'s values, one per dimension.
     fn values(&self, k: usize) -> &[String] {
         &self.combinations[self.of_loss[k]]
+    }
+}
+
+/// The hash of two merged sets' sources: either's alone, or one hash of
+/// both in order.
+fn merged_hash(a: &Option<String>, b: &Option<String>) -> Option<String> {
+    match (a, b) {
+        (None, None) => None,
+        (Some(h), None) | (None, Some(h)) => Some(h.clone()),
+        (Some(a), Some(b)) => Some(
+            prospicio_prob::provenance::InputHasher::new()
+                .str("merge")
+                .str(a)
+                .str(b)
+                .finish(),
+        ),
     }
 }
 
@@ -168,6 +187,7 @@ where
         labels: None,
         seed,
         samplers: Some(current_samplers()),
+        input_hash: None,
     })
 }
 
@@ -214,6 +234,7 @@ impl EventSet {
             labels: None,
             seed,
             samplers: None,
+            input_hash: None,
         })
     }
 
@@ -386,6 +407,29 @@ impl EventSet {
         self.samplers.as_deref()
     }
 
+    /// The same events with a hash of their source, which results record
+    /// as their provenance's `input_hash`: a year loss table's file hashed
+    /// by [`crate::ylt::hash_bytes`], say. `merge` combines the two sets'
+    /// hashes.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    ///
+    /// let events = EventSet::from_years(vec![vec![5.0]], 0)
+    ///     .unwrap()
+    ///     .with_input_hash(Some("blake3:ab".into()));
+    /// assert_eq!(events.totals().unwrap().provenance().input_hash.as_deref(), Some("blake3:ab"));
+    /// ```
+    pub fn with_input_hash(mut self, hash: Option<String>) -> Self {
+        self.input_hash = hash;
+        self
+    }
+
+    /// The hash of the years' source, if recorded.
+    pub fn input_hash(&self) -> Option<&str> {
+        self.input_hash.as_deref()
+    }
+
     /// Provenance for `model` on these years: the set's seed and stream
     /// scheme, and its samplers.
     pub(crate) fn provenance(&self, model: &str) -> Provenance {
@@ -393,6 +437,7 @@ impl EventSet {
             .version("prospicio-aggregate", env!("CARGO_PKG_VERSION"))
             .seed(self.seed, SIM_INDEX_SCHEME);
         p.samplers = self.samplers.clone();
+        p.input_hash = self.input_hash.clone();
         p
     }
 
@@ -691,6 +736,7 @@ impl EventSet {
             } else {
                 None
             },
+            input_hash: merged_hash(&self.input_hash, &other.input_hash),
         })
     }
 
@@ -759,6 +805,7 @@ impl EventSet {
             labels: None,
             seed: self.seed,
             samplers: self.samplers.clone(),
+            input_hash: self.input_hash.clone(),
         })
     }
 
@@ -795,6 +842,7 @@ impl EventSet {
             }),
             seed: self.seed,
             samplers: self.samplers.clone(),
+            input_hash: self.input_hash.clone(),
         }
     }
 

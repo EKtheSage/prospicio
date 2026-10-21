@@ -28,6 +28,7 @@ pub mod ruin;
 pub mod serial;
 pub mod sizing;
 pub mod term;
+pub mod ylt;
 
 pub use bivariate::{BivariateReport, Clash, JointGrid, fft_bivariate};
 pub use cat::EventLossTable;
@@ -54,3 +55,4 @@ pub use sizing::{
     AuditSettings, GridAudit, GridCell, GridSize, ScoreTerms, Sizing, SizingMethod, audit_grid,
     audit_portfolio_grid, fft_auto, recommend_grid, recommend_portfolio_grid, round_bucket,
 };
+pub use ylt::YearLossTable;

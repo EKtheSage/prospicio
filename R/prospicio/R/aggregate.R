@@ -685,6 +685,7 @@ event_sums_insured <- function(x, sim) rust_result(x@ptr$sums_insured(as.double(
 #'
 #' @param ptr Internal.
 #' @returns An `event_set` object with read-only properties `n_sims`, `seed`,
+#'   `input_hash` (a hash of the years' source, see [read_ylt()], or `NULL`),
 #'   `label_dims` and `label_combinations` (see [with_labels()]).
 #' @export
 #' @keywords internal
@@ -695,6 +696,7 @@ event_set <- S7::new_class(
     ptr = S7::new_S3_class("EventSet"),
     n_sims = S7::new_property(S7::class_double, getter = function(self) self@ptr$n_sims()),
     seed = S7::new_property(S7::class_double, getter = function(self) self@ptr$seed()),
+    input_hash = S7::new_property(S7::class_any, getter = function(self) self@ptr$input_hash()),
     label_dims = S7::new_property(S7::class_character, getter = function(self) self@ptr$label_dims()),
     label_combinations = S7::new_property(S7::class_any, getter = function(self) {
       dims <- self@ptr$label_dims()
@@ -782,6 +784,103 @@ event_set_from_long <- function(years, losses, n_years, seed = 0, labels = NULL)
   event_set(ptr = rust_result(EventSet$from_long(as.double(years), as.double(losses),
                                                  as.double(n_years), as.double(seed),
                                                  l$dims, l$values)))
+}
+
+#' Read a year loss table
+#'
+#' Years of events from a vendor's year loss table, one row per non-zero
+#' event loss, checked and expanded to a run's simulations. `read_ylt()`
+#' reads a CSV or Parquet file (Parquet needs the arrow package);
+#' `event_set_from_ylt()` takes the columns.
+#'
+#' The rows are checked: losses finite and non-negative, years from 1, no two
+#' rows with the same year, slot and values in the `unique_by` labels, labels
+#' among the `expected` values. They are ordered by year, then slot, the
+#' file's order breaking ties. Each row is one loss: rows sharing a slot, one
+#' event hitting several classes, stay separate losses, so an occurrence
+#' layer sees each of them. `read_ylt()` hashes the file's bytes into the
+#' events' `input_hash`, which results keep in their [provenance()].
+#'
+#' @param path The file.
+#' @param year,loss The columns of each row's year, from 1, and its loss.
+#' @param slot The column of each row's event slot, or `NULL` to keep the
+#'   file's order within a year and skip the check for repeats.
+#' @param labels Columns kept as labels, `c("peril", "class")` say, by which
+#'   [apply_tower()] splits its results.
+#' @param n_years The table's years, at least its largest year; `NULL` for
+#'   the largest year.
+#' @param n_sims The simulations to expand to; `NULL` for `n_years`.
+#' @param expand `"tile"`: the simulations take the table's years in turn,
+#'   so `n_sims` must be a multiple of `n_years`. `"resample"`: each
+#'   simulation takes a year drawn uniformly with replacement from its own
+#'   stream of `seed`.
+#' @param seed The seed of `"resample"`.
+#' @param unique_by With slots, the labels within which a year's slot may not
+#'   repeat (`"peril"`: one slot may hit several classes); `NULL` for every
+#'   label.
+#' @param expected `NULL`, or a named list of the values allowed in each
+#'   label (`list(peril = c("WS", "EQ"))`).
+#' @param format `"csv"` or `"parquet"`; `NULL` for Parquet when the file
+#'   ends in `.parquet` or `.pq`, CSV otherwise.
+#' @param years,losses,slots Each row's year (from 1), loss and slot
+#'   (`NULL` for none).
+#' @param source_hash `NULL`, or a hash of the source kept as the events'
+#'   `input_hash`.
+#' @returns An [event_set].
+#' @export
+#' @examples
+#' path <- tempfile(fileext = ".csv")
+#' writeLines(c("year,peril,slot,value", "2,wind,9,5", "1,quake,1,1", "2,wind,3,7"), path)
+#' ev <- read_ylt(path, labels = "peril", n_sims = 4)
+#' events(ev, 2)
+#' event_labels(ev, 2)
+#' ev@input_hash
+read_ylt <- function(path, year = "year", loss = "value", slot = "slot", labels = NULL,
+                     n_years = NULL, n_sims = NULL, expand = "tile", seed = 0,
+                     unique_by = NULL, expected = NULL, format = NULL) {
+  path <- normalizePath(path, mustWork = TRUE)
+  if (is.null(format)) {
+    format <- if (grepl("\\.(parquet|pq)$", tolower(path))) "parquet" else "csv"
+  }
+  columns <- c(year, loss, slot, labels)
+  df <- switch(format,
+    csv = utils::read.csv(path, colClasses = "character", check.names = FALSE,
+                          fileEncoding = "UTF-8-BOM"),
+    parquet = {
+      if (!requireNamespace("arrow", quietly = TRUE)) {
+        stop("reading a Parquet year loss table needs the arrow package", call. = FALSE)
+      }
+      as.data.frame(arrow::read_parquet(path))
+    },
+    stop('format must be "csv" or "parquet"', call. = FALSE)
+  )
+  missing <- setdiff(columns, names(df))
+  if (length(missing)) stop(sprintf("%s: no column '%s'", path, missing[1]), call. = FALSE)
+  event_set_from_ylt(
+    as.numeric(df[[year]]), as.numeric(df[[loss]]),
+    slots = if (is.null(slot)) NULL else as.numeric(df[[slot]]),
+    labels = if (length(labels)) lapply(df[labels], as.character) else NULL,
+    n_years = n_years, n_sims = n_sims, expand = expand, seed = seed,
+    unique_by = unique_by, expected = expected,
+    source_hash = rust_result(ylt_file_hash_rust(path))
+  )
+}
+
+#' @rdname read_ylt
+#' @export
+event_set_from_ylt <- function(years, losses, slots = NULL, labels = NULL, n_years = NULL,
+                               n_sims = NULL, expand = "tile", seed = 0, unique_by = NULL,
+                               expected = NULL, source_hash = NULL) {
+  l <- label_columns(labels)
+  e <- label_columns(expected)
+  null_or <- function(x) if (is.null(x)) NULL else as.double(x)
+  event_set(ptr = rust_result(EventSet$from_ylt(
+    as.double(years), as.double(losses),
+    if (is.null(slots)) NULL else as.double(slots),
+    l$dims, l$values, null_or(n_years), null_or(n_sims), expand, as.double(seed),
+    if (is.null(unique_by)) NULL else as.character(unique_by),
+    e$dims, e$values, source_hash
+  )))
 }
 
 #' Label the events

@@ -9104,6 +9104,61 @@ class EventSet:
         >>> e.counts(), e.sums_insured(2)
         ([2, 0, 1], [50.0])
         """
+    @staticmethod
+    def from_ylt(years: Sequence[int], losses: Sequence[float], *, slots: Sequence[int] |None = None, labels: dict |None = None, n_years: int |None = None, n_sims: int |None = None, expand: str = "tile", seed: int = 0, unique_by: Sequence[str] |None = None, expected: dict |None = None, source_hash: str |None = None) -> EventSet:
+        """
+        Years of losses from a year loss table's columns, checked and
+        expanded to a run's simulations.
+        
+        Rows are ordered by year, then slot (the given order breaking ties),
+        and each row is one loss: rows sharing a slot, an event hitting
+        several classes, stay separate losses, so an occurrence layer sees
+        each of them. ``prospicio.aggregate.read_ylt`` reads the columns
+        from a CSV or Parquet file.
+        
+        Parameters
+        ----------
+        years : list of int
+            Each row's year, from 1.
+        losses : list of float
+            Finite and non-negative.
+        slots : list of int, optional
+            Each row's event slot, which orders a year's rows.
+        labels : dict of str to list of str, optional
+            Each row's labels, a list per dimension (``{"peril": [...],
+            "class": [...]}``).
+        n_years : int, optional
+            The table's years, at least its largest year; by default the
+            largest year.
+        n_sims : int, optional
+            The simulations to expand to, by default ``n_years``.
+        expand : {"tile", "resample"}, default "tile"
+            ``"tile"``: simulation ``i`` (from 0) takes year ``i % n_years``,
+            so ``n_sims`` must be a multiple of ``n_years``. ``"resample"``:
+            each simulation takes a year drawn uniformly with replacement
+            from its own stream of ``seed``.
+        seed : int, default 0
+        unique_by : list of str, optional
+            With slots, no two rows may share a year, a slot and their values
+            in these label dimensions (``["peril"]``: one slot may hit several
+            classes, not repeat a peril); by default every label dimension.
+        expected : dict of str to list of str, optional
+            The values allowed in each named dimension (``{"peril": ["WS",
+            "EQ"]}``).
+        source_hash : str, optional
+            A hash of the source, recorded as results' input hash.
+        
+        Returns
+        -------
+        EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_ylt([2, 1, 2], [5.0, 1.0, 7.0], slots=[9, 1, 3], n_sims=4)
+        >>> e.events(1), e.events(3)
+        ([7.0, 5.0], [7.0, 5.0])
+        """
     def grouped(self, /, window_hours: float) -> EventSet:
         """
         Each year's losses grouped into occurrences by an hours clause.
@@ -9146,6 +9201,12 @@ class EventSet:
     def has_times(self, /) -> bool:
         """
         Whether the losses carry times.
+        """
+    @property
+    def input_hash(self, /) -> str |None:
+        """
+        A hash of the years' source (a year loss table's file), which
+        results record as their provenance's input hash, or ``None``.
         """
     @property
     def label_combinations(self, /) -> list[list[str]]:
@@ -28519,4 +28580,24 @@ def year_fraction(year: int, month: int, day: int) -> float:
     >>> from prospicio.pricing import year_fraction
     >>> year_fraction(2013, 6, 30) - year_fraction(2011, 1, 1)
     2.5
+    """
+
+def ylt_hash(data: bytes) -> str:
+    """
+    A hash of a year loss table's file bytes, ``"blake3:<hex>"``, which
+    ``EventSet.from_ylt`` records as its ``source_hash``.
+    
+    Parameters
+    ----------
+    data : bytes
+    
+    Returns
+    -------
+    str
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import ylt_hash
+    >>> ylt_hash(b"year,value").startswith("blake3:")
+    True
     """
