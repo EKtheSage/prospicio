@@ -929,11 +929,7 @@ impl Compartmental {
     ) -> Result<CompartmentalFits> {
         self.validate()?;
         if self.dependence == SegmentDependence::Synchronized {
-            return Err(Error::Bayes(
-                "Synchronized dependence draws the residuals of the same positions in every \
-                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
-                    .into(),
-            ));
+            return Err(super::synchronized_error());
         }
         self.dependence.validate(triangle.index().len())?;
         let mut k = 0;
@@ -1248,11 +1244,7 @@ impl Compartmental {
         self.validate()?;
         settings.validate()?;
         if self.dependence == SegmentDependence::Synchronized {
-            return Err(Error::Bayes(
-                "Synchronized dependence draws the residuals of the same positions in every \
-                 segment, and a posterior has no residuals; use Independent or RankCorrelation"
-                    .into(),
-            ));
+            return Err(super::synchronized_error());
         }
         self.dependence.validate(triangle.index().len())?;
         let (settings, n_sims, approximate) = self.one_year_defaults(settings);

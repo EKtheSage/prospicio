@@ -200,6 +200,17 @@ pub(crate) fn one_year_seed(predictive: u64) -> u64 {
     StreamRng::new(predictive, u64::MAX).next_u64()
 }
 
+/// The error every Bayesian model returns for `SegmentDependence::Synchronized`
+/// (`reserving-bayes.md`, decision 22).
+pub(crate) fn synchronized_error() -> crate::Error {
+    crate::Error::Bayes(
+        "Synchronized dependence resamples the residuals of the same positions in every \
+         segment, and a posterior has no residuals to resample; use RankCorrelation to \
+         correlate the segments (or Independent)"
+            .into(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +227,17 @@ mod tests {
             ess_bulk,
             ess_tail,
         }
+    }
+
+    #[test]
+    fn synchronized_dependence_is_refused_with_the_reason_and_the_alternative() {
+        let crate::Error::Bayes(m) = synchronized_error() else {
+            panic!("an Error::Bayes");
+        };
+        assert!(m.starts_with("Synchronized dependence"), "{m}");
+        assert!(m.contains("no residuals to resample"), "{m}");
+        assert!(m.contains("RankCorrelation"), "{m}");
+        assert!(!m.contains("  "), "no runs of spaces: {m}");
     }
 
     #[test]

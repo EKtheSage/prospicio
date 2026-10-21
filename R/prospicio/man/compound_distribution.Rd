@@ -25,6 +25,14 @@ Panjer's recursion or by FFT. The result's \code{report} property records the
 error: \code{tail_mass} (probability above the last point, lumped onto it),
 \code{aliasing_error} (FFT only; check it first) and \code{mean_error}.
 }
+\details{
+Both methods assume the claim count independent of the severities and the
+severities independent and identically distributed. For dependence use
+\code{\link[=fft_bivariate]{fft_bivariate()}} or \code{\link[=clash_aggregate]{clash_aggregate()}} (two lines hit by the same
+events), one \code{\link[=mixed_poisson_count]{mixed_poisson_count()}} on a \code{\link[=mixture_distribution]{mixture_distribution()}}
+(components sharing a mixing variable) or \code{\link[=reorder_groups]{reorder_groups()}} on simulated
+totals.
+}
 \examples{
 sev <- grid_distribution(1, c(0.1, 0.3, 0.25, 0.2, 0.1, 0.05))
 agg <- compound_distribution(poisson_count(3), sev, points = 100)

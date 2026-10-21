@@ -4088,8 +4088,10 @@ class CapeCodFit:
     @property
     def trended_apriori(self, /) -> list[float]:
         """
-        Expected loss ratio per origin at the valuation's cost level, before
-        detrending.
+        Expected loss ratio per origin at the valuation date's price level,
+        before detrending. For a treaty year that incepts later, trend it
+        one more year (or the years from the valuation date to the treaty
+        year's average date) beyond this value.
         """
     @property
     def ultimate(self, /) -> list[float]:
@@ -15136,6 +15138,24 @@ class MackFit:
         Age-to-ultimate factors, including the tail.
         """
     @property
+    def cdr(self, /) -> ClaimsDevelopmentResult:
+        """
+        Merz and Wüthrich's one-year view, as a property: the same
+        ``ClaimsDevelopmentResult`` that ``claims_development_result()``
+        returns (that method stays as an alias), named as ``OneYearFit.cdr``
+        names the claims development result. This one holds the analytic
+        standard errors; ``OneYearFit.cdr`` is the simulated distribution.
+        
+        Raises
+        ------
+        ValueError
+            As ``claims_development_result()``.
+        
+        Returns
+        -------
+        ClaimsDevelopmentResult
+        """
+    @property
     def chain_ladder(self, /) -> ChainLadderFit:
         """
         The underlying chain-ladder projection.
@@ -15146,6 +15166,8 @@ class MackFit:
         claims development result of each origin and in total, in the next
         calendar year and in every later one, as R ChainLadder's
         ``CDR(MackChainLadder(x), dev = "all")``.
+        
+        The method form of the ``cdr`` property, kept as its alias.
         
         With a selected pattern (``Mack(ldf=...)``), each factor used varies
         with ``1 - w`` times the estimate's parameter error, so a fully
@@ -25977,6 +25999,12 @@ def fft(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundRepo
     Works for large claim counts that make ``panjer`` underflow. Check
     ``report.aliasing_error`` before using the result.
     
+    Assumes the claim count independent of the severities and the severities
+    independent and identically distributed. For dependence use
+    ``fft_bivariate`` or ``Clash`` (two lines hit by the same events), one
+    ``Count.mixed_poisson`` on a ``Mixture`` (components sharing a mixing
+    variable) or ``PredictiveDistribution.reorder_groups`` on simulated totals.
+    
     Parameters
     ----------
     frequency : Poisson, NegativeBinomial or Binomial
@@ -25997,6 +26025,12 @@ def fft_auto(frequency: Any, severity: Any, log2: int = 16, p: float = ..., p_st
     """
     The compound distribution by FFT on the grid ``recommend_grid``
     chooses, the severity discretized by rounding.
+    
+    Assumes the claim count independent of the severities and the severities
+    independent and identically distributed. For dependence use
+    ``fft_bivariate`` or ``Clash`` (two lines hit by the same events), one
+    ``Count.mixed_poisson`` on a ``Mixture`` (components sharing a mixing
+    variable) or ``PredictiveDistribution.reorder_groups`` on simulated totals.
     
     Parameters
     ----------
@@ -27248,6 +27282,12 @@ def occurrence_source(frequency: Any, severity: Grid, occurrence: Tower, points:
 def panjer(frequency: Any, severity: Grid, points: int) -> tuple[Grid, CompoundReport]:
     """
     Aggregate loss ``S = X_1 + ... + X_N`` by Panjer's recursion.
+    
+    Assumes the claim count independent of the severities and the severities
+    independent and identically distributed. For dependence use
+    ``fft_bivariate`` or ``Clash`` (two lines hit by the same events), one
+    ``Count.mixed_poisson`` on a ``Mixture`` (components sharing a mixing
+    variable) or ``PredictiveDistribution.reorder_groups`` on simulated totals.
     
     Parameters
     ----------

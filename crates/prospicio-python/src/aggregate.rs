@@ -157,6 +157,12 @@ fn compound(
 
 /// Aggregate loss ``S = X_1 + ... + X_N`` by Panjer's recursion.
 ///
+/// Assumes the claim count independent of the severities and the severities
+/// independent and identically distributed. For dependence use
+/// ``fft_bivariate`` or ``Clash`` (two lines hit by the same events), one
+/// ``Count.mixed_poisson`` on a ``Mixture`` (components sharing a mixing
+/// variable) or ``PredictiveDistribution.reorder_groups`` on simulated totals.
+///
 /// Parameters
 /// ----------
 /// frequency : Poisson, NegativeBinomial or Binomial
@@ -198,6 +204,12 @@ pub(crate) fn panjer(
 ///
 /// Works for large claim counts that make ``panjer`` underflow. Check
 /// ``report.aliasing_error`` before using the result.
+///
+/// Assumes the claim count independent of the severities and the severities
+/// independent and identically distributed. For dependence use
+/// ``fft_bivariate`` or ``Clash`` (two lines hit by the same events), one
+/// ``Count.mixed_poisson`` on a ``Mixture`` (components sharing a mixing
+/// variable) or ``PredictiveDistribution.reorder_groups`` on simulated totals.
 ///
 /// Parameters
 /// ----------
@@ -379,6 +391,12 @@ pub(crate) fn recommend_grid(
 
 /// The compound distribution by FFT on the grid ``recommend_grid``
 /// chooses, the severity discretized by rounding.
+///
+/// Assumes the claim count independent of the severities and the severities
+/// independent and identically distributed. For dependence use
+/// ``fft_bivariate`` or ``Clash`` (two lines hit by the same events), one
+/// ``Count.mixed_poisson`` on a ``Mixture`` (components sharing a mixing
+/// variable) or ``PredictiveDistribution.reorder_groups`` on simulated totals.
 ///
 /// Parameters
 /// ----------

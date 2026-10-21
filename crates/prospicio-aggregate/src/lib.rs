@@ -8,6 +8,20 @@
 //!
 //! This crate holds no numerics of its own beyond the aggregation
 //! algorithms: distributions, grids and risk measures come from `prospicio-prob`.
+//!
+//! # Independence
+//!
+//! Panjer's recursion and the FFT ([`panjer()`], [`fft()`]) assume the
+//! collective model: the claim count independent of the severities and the
+//! severities independent and identically distributed. Units combined on a
+//! grid, a portfolio's total as the product of its units' transforms, are
+//! independent of each other too. Dependence takes another tool:
+//! [`fft_bivariate`] or the clash model ([`Clash`]) for two lines hit by the
+//! same events or sharing a count, one mixed count on a severity mixture for
+//! components that share a mixing variable, and
+//! `PredictiveDistribution::reorder_groups` (or `reorder_groups_by_copula`)
+//! for a rank correlation or a copula between units' simulated totals.
+//! Monte Carlo on an [`EventSet`] keeps whatever dependence its events carry.
 
 pub mod bivariate;
 pub mod cat;

@@ -714,3 +714,9 @@
   result's provenance input hash. Python `prospicio.aggregate.read_ylt`
   and R `read_ylt()` read CSV or Parquet (with pyarrow or arrow);
   `EventSet.from_ylt` and `event_set_from_ylt()` take columns (#484, #496).
+- The docs say where Panjer and the FFT assume independence (the count
+  independent of the severities, i.i.d. severities, independent units on a
+  grid) and name the dependent alternatives: `fft_bivariate`, the clash
+  model, a mixed count on a severity mixture and `reorder_groups` on
+  simulations; in the crate docs, `aggregate.md` and the Python and R help
+  for `panjer`, `fft`, `fft_auto` and `compound_distribution()` (#491).

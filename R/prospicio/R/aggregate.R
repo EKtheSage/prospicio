@@ -12,6 +12,13 @@ NULL
 #' error: `tail_mass` (probability above the last point, lumped onto it),
 #' `aliasing_error` (FFT only; check it first) and `mean_error`.
 #'
+#' Both methods assume the claim count independent of the severities and the
+#' severities independent and identically distributed. For dependence use
+#' [fft_bivariate()] or [clash_aggregate()] (two lines hit by the same
+#' events), one [mixed_poisson_count()] on a [mixture_distribution()]
+#' (components sharing a mixing variable) or [reorder_groups()] on simulated
+#' totals.
+#'
 #' @param frequency A [poisson_count], [negative_binomial_count] or [binomial_count].
 #' @param severity A [grid_distribution], usually from [discretize()].
 #' @param points Number of points in the aggregate grid.
