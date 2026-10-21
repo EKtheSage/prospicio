@@ -58,7 +58,7 @@
 //! shape, group 353 commercial auto's square against
 //! `validation/data/clrd_comauto_353.csv`, and Mack's D near Meyers'
 //! published values. It also asserts the pins (`PINS`, `TOLERANCES`): every
-//! arm's D per line and on all 200, as the user reviewed it on 2026-10-21,
+//! arm's D per line and on all 200, as the user reviewed it on 2026-10-20,
 //! within a tolerance set from the seed noise, on the pinned panel, the
 //! default seed and the whole panel (a narrowed run asserts only the cells
 //! it ran; `RISK_RS_CALIBRATION_LIMIT` or a seed salt asserts no pins). The
@@ -1156,7 +1156,7 @@ const fn pin(arm: &'static str, basis: Basis, scope: Option<Line>, n: usize, d: 
 
 /// Tolerances by arm: (arm, per line, all 200), in percentage points. Each
 /// is twice the largest difference in D between two of three seeds (the
-/// default and two salts, measured 2026-10-21 over the arm's bases, in a
+/// default and two salts, measured 2026-10-20 over the arm's bases, in a
 /// line and on all 200), rounded up to 0.1, or a floor if that is larger:
 /// 1.0 per line and 0.5 on all 200 for a NUTS arm, 0.1 for the
 /// deterministic Mack (platform arithmetic only), 0.5 on all 200 for the
@@ -1178,8 +1178,8 @@ const TOLERANCES: &[(&str, f64, f64)] = &[
     ("compartmental_2", 2.0, 1.0),
 ];
 
-/// The reviewed run's D (2026-10-21, Windows, the default seed, the panel of
-/// `PINNED_PANEL_SHA256`; approved by the user on 2026-10-21), with the
+/// The reviewed run's D (2026-10-20, Windows, the default seed, the panel of
+/// `PINNED_PANEL_SHA256`; approved by the user on 2026-10-20), with the
 /// number of triangles each arm scored in a line or on all 200.
 const PINS: &[Pin] = &[
     pin("mack", Basis::Incurred, Some(Line::Ca), 50, 17.81),

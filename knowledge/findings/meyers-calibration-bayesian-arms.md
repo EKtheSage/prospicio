@@ -31,7 +31,7 @@ sha256 `075b3925...59d2` (the one of the Mack and ODP finding), seeds from
 marked verified: no CI job runs the study, only the wiring test on group
 353 (below). NUTS draws at a fixed seed differ between Windows and Linux,
 so the last digits are this platform's. The D values are pinned by the
-study since 2026-10-21 (below), and still not verified.
+study since 2026-10-20 (below), and still not verified.
 
 * **Settings.** `Meyers` and `BayesOdp` at their defaults: Meyers' priors
   (`logelr ~ N(-0.4, 3.162^2)`, origin and development effects
@@ -154,7 +154,7 @@ study since 2026-10-21 (below), and still not verified.
   paid has one pathological fit, commercial auto group 32875 (R-hat
   1.168, bulk ESS 17, 444 divergences), whose percentile is kept; the
   other kept fits have bulk ESS of at least 614.
-* **Pinned (PR 5, 2026-10-21).** The user reviewed the KS scores and
+* **Pinned (PR 5, 2026-10-20).** The user reviewed the KS scores and
   approved them; the study asserts every D above within a tolerance. A
   rerun on the default seed reproduced them to their rounding, and two
   salted runs measured how far the seed alone moves D, in points (largest

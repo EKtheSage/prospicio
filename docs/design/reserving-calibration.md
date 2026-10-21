@@ -1,6 +1,6 @@
 # Design note: the 200-triangle calibration study (Meyers' ultimate percentile test)
 
-Status: **Accepted**, built through PR 5, D values pinned (2026-10-21; opened 2026-10-20; issue #392; the user decided the
+Status: **Accepted**, built through PR 5, D values pinned (2026-10-20; opened 2026-10-20; issue #392; the user decided the
 points marked "the user decided"; two points the user did not decide are
 taken as this note's recommendation and marked so) · Lane: Reserving
 (`validation/` only; `crates/prospicio-reserving/` only if a thin helper
@@ -359,7 +359,7 @@ regress):
   near Meyers' (decision 3). The arms' D values are recorded, not
   asserted.
 * **After the user reviews a run**, each arm's D is pinned within a
-  tolerance set from measured seed noise (built in PR 5, 2026-10-21; see
+  tolerance set from measured seed noise (built in PR 5, 2026-10-20; see
   "As built (PR 5)": tolerances from 0.1 to 3.5 points per line, 0.1 to
   2.5 on all 200, not the 3 and 1.5 expected before the noise was
   measured). Because no CI job runs the study, the findings are not marked
@@ -599,7 +599,7 @@ monograph, checked against `08-Meyers.pdf`); his D values are in
 * **Not done here**: pinning the D values (after the user reviews the
   run), Compartmental (PR 4), a run on the printed codes only.
 
-## As built (PR 4, 2026-10-21)
+## As built (PR 4, 2026-10-20)
 
 PR 4 (`claude/calibration-compartmental`, on `main` after PR 3) adds the
 arms `compartmental` (model 1) and `compartmental_2` (model 2), both on
@@ -658,10 +658,10 @@ from the plan above:
   only. With PR 4 the study's arms are all built.
 
 
-## As built (PR 5, 2026-10-21): Pinning
+## As built (PR 5, 2026-10-20): Pinning
 
 The user reviewed the runs of PRs 2 to 4 and approved the KS scores on
-2026-10-21 ("ok with the ks scores"), so decision 7's "record, then
+2026-10-20 ("ok with the ks scores"), so decision 7's "record, then
 regress" step is built: every arm's D is pinned within a tolerance, and
 the ignored study asserts the pins. The study is still run by hand; no CI
 job runs it.
@@ -671,7 +671,7 @@ job runs it.
   triangles it scored and its Meyers D in each line and on all 200: 50
   cells. The arms are Mack (paid, incurred), the ODP bootstrap, `BayesOdp`,
   CRC (paid, incurred), CSR, CAY, Compartmental model 1 and model 2. The
-  values are the 2026-10-21 run on the default seed (below), to two
+  values are the 2026-10-20 run on the default seed (below), to two
   decimals. The pass or fail verdict of a cell (D above `136 / sqrt(n)`)
   follows from its pinned D and n, so it is pinned with them:
 
@@ -726,7 +726,7 @@ job runs it.
 * **Measuring the noise.** The seed is `seed_for(line, group, arm, basis)`
   (FNV-1a). `RISK_RS_CALIBRATION_SEED_SALT` mixes a text into every fit's
   seed (`salted`: unset or empty keeps the seed, so the default run is the
-  recorded run bit for bit). On 2026-10-21, on Windows with 16 threads, in
+  recorded run bit for bit). On 2026-10-20, on Windows with 16 threads, in
   release:
   * *The default seed reproduced the recorded run.* All 50 cells agree
     with the findings' tables to their rounding (0.1), and for the two

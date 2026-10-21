@@ -82,7 +82,7 @@ with cas-schedule-p 2026.6.13, duckdb 1.5.6, pandas 3.0.6 and Python
   at -21 at 12 months) errors with "sigma can neither be estimated nor
   interpolated", so Mack paid has n = 49 in
   other liability and 199 in all. Mack incurred and the ODP score all 200.
-* **Pinned (PR 5, 2026-10-21).** The user reviewed the KS scores and
+* **Pinned (PR 5, 2026-10-20).** The user reviewed the KS scores and
   approved them, and the study (`PINS`, `TOLERANCES` in the harness) now
   asserts every D of this finding. A rerun on the default seed reproduced
   the D above to their rounding (0.1). Mack does not depend on the seed
