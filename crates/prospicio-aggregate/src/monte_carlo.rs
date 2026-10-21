@@ -33,6 +33,10 @@ pub struct EventSet {
     times: Option<Vec<f64>>,
     /// Each loss's labels, when given.
     labels: Option<Labels>,
+    /// Each year's aggregate part, when given: amounts with no event or
+    /// time (attritional losses, say), which only covers without
+    /// per-occurrence terms see.
+    aggregate: Option<AggregatePart>,
     seed: u64,
     /// The samplers the losses were drawn with, for results' provenance:
     /// this build's when it drew them, `None` for years from elsewhere.
@@ -53,25 +57,55 @@ pub(crate) struct Labels {
     pub(crate) of_loss: Vec<usize>,
 }
 
+/// Amounts in each year with no event or time: one row a year, one
+/// column per combination of labels.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct AggregatePart {
+    /// Each column's combination, an index into the labels'
+    /// combinations (0 without labels).
+    pub(crate) of_column: Vec<usize>,
+    /// Row-major, `of_column.len()` amounts a year.
+    pub(crate) amounts: Vec<f64>,
+}
+
+impl AggregatePart {
+    fn row(&self, sim: usize) -> &[f64] {
+        let m = self.of_column.len();
+        &self.amounts[sim * m..(sim + 1) * m]
+    }
+}
+
 impl Labels {
     /// From each loss's values, one per dimension.
     fn new(dims: Vec<String>, per_loss: Vec<Vec<String>>) -> Self {
-        let mut combinations = per_loss.clone();
+        Self::with_columns(dims, per_loss, &[]).0
+    }
+
+    /// From each loss's values and each aggregate column's, whose
+    /// combinations are listed too; with each column's combination.
+    fn with_columns(
+        dims: Vec<String>,
+        per_loss: Vec<Vec<String>>,
+        columns: &[Vec<String>],
+    ) -> (Self, Vec<usize>) {
+        let mut combinations: Vec<Vec<String>> = per_loss.iter().chain(columns).cloned().collect();
         combinations.sort();
         combinations.dedup();
-        let of_loss = per_loss
-            .iter()
-            .map(|c| {
-                combinations
-                    .binary_search(c)
-                    .expect("every loss's combination is listed")
-            })
-            .collect();
-        Self {
-            dims,
-            combinations,
-            of_loss,
-        }
+        let index = |c: &Vec<String>| {
+            combinations
+                .binary_search(c)
+                .expect("every combination is listed")
+        };
+        let of_loss = per_loss.iter().map(index).collect();
+        let of_column = columns.iter().map(index).collect();
+        (
+            Self {
+                dims,
+                combinations,
+                of_loss,
+            },
+            of_column,
+        )
     }
 
     /// Loss `k`'s values, one per dimension.
@@ -185,6 +219,7 @@ where
         sums_insured: None,
         times: None,
         labels: None,
+        aggregate: None,
         seed,
         samplers: Some(current_samplers()),
         input_hash: None,
@@ -232,6 +267,7 @@ impl EventSet {
             sums_insured: None,
             times: None,
             labels: None,
+            aggregate: None,
             seed,
             samplers: None,
             input_hash: None,
@@ -315,6 +351,11 @@ impl EventSet {
     /// assert_eq!(events.label_combinations(), [["flood"], ["wind"]]);
     /// ```
     pub fn with_labels(mut self, labels: Vec<(String, Vec<String>)>) -> Result<Self> {
+        if self.aggregate.is_some() {
+            return Err(Error::Data(
+                "label the events before giving the aggregate part".into(),
+            ));
+        }
         if labels.is_empty() {
             return Err(Error::Data("give at least one label dimension".into()));
         }
@@ -383,6 +424,159 @@ impl EventSet {
             .map(|l| &l.of_loss[self.offsets[sim]..self.offsets[sim + 1]])
     }
 
+    /// The same events with an aggregate part: amounts in each year that
+    /// are no event and have no time, attritional losses say, one column
+    /// for each component of `part`, which needs as many simulations as
+    /// the set has years. Simulation `i` of `part` goes with year `i`.
+    /// Replaces any aggregate part the set had.
+    ///
+    /// The part's dimensions are label dimensions, so it can be given by
+    /// peril or class: the set's labels get the part's dimensions not
+    /// among them, with `""` for every loss, and each component's values
+    /// (`""` in the set's dimensions it lacks) join
+    /// [`label_combinations`](Self::label_combinations). A part with no
+    /// dimensions is one unlabelled amount a year.
+    ///
+    /// [`crate::Tower::apply`] counts the part in gross and net, and only
+    /// a layer that [sees the aggregate part](crate::Layer::sees_aggregate_part)
+    /// (a quota share or a stop loss: no per-occurrence attachment or
+    /// limit, on the loss) cedes from it; per-occurrence layers see the
+    /// events alone. In each year the part comes before the events, so a
+    /// binding annual deductible is used up on it first and a binding
+    /// annual limit stops the last events (`LimitAllocation::EventOrder`),
+    /// unless the layer shares them pro rata. [`totals`](Self::totals)
+    /// includes it; [`maxima`](Self::maxima) and
+    /// [`counts`](Self::counts), which count occurrences, do not.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, Layer, Tower};
+    /// use prospicio_prob::{Empirical, KeyValue, PredictiveDistribution, Provenance};
+    ///
+    /// // Attritional 10, 40, 30 beside large losses; a 30 xs 25 per risk
+    /// // sees the large ones alone, a quota share sees everything.
+    /// let attritional = PredictiveDistribution::from_draws(
+    ///     vec![], vec![vec![]], vec![10.0, 40.0, 30.0], Provenance::new("attritional"),
+    /// )
+    /// .unwrap();
+    /// let events = EventSet::from_years(vec![vec![], vec![50.0], vec![5.0, 60.0]], 0)
+    ///     .unwrap()
+    ///     .with_aggregate_part(&attritional)
+    ///     .unwrap();
+    /// let tower = Tower::new(vec![
+    ///     Layer::xol("30x25", 30.0, 25.0).unwrap(),
+    ///     Layer::quota_share("QS", 0.5).unwrap(),
+    /// ])
+    /// .unwrap();
+    /// let result = tower.apply(&events).unwrap();
+    /// let at = |kind: &str, layer: &str| {
+    ///     let key: Vec<KeyValue> = vec![kind.into(), layer.into()];
+    ///     Empirical::draws(&result.marginal(&key).unwrap()).to_vec()
+    /// };
+    /// assert_eq!(at("gross", "ground_up"), [10.0, 90.0, 95.0]);
+    /// assert_eq!(at("ceded", "30x25"), [0.0, 25.0, 30.0]);
+    /// assert_eq!(at("ceded", "QS"), [5.0, 45.0, 47.5]);
+    /// ```
+    pub fn with_aggregate_part(mut self, part: &PredictiveDistribution) -> Result<Self> {
+        let n = self.n_sims();
+        if part.n_sims() != n {
+            return Err(Error::Data(format!(
+                "an aggregate part of {} simulations for {n} years",
+                part.n_sims()
+            )));
+        }
+        if let Some(&bad) = part
+            .draw_matrix()
+            .iter()
+            .find(|x| !(x.is_finite() && **x >= 0.0))
+        {
+            return Err(Error::InvalidParameter {
+                name: "part",
+                value: bad,
+                reason: "must be finite and non-negative",
+            });
+        }
+        if let Some(dim) = part.dims().iter().find(|d| *d == "kind" || *d == "layer") {
+            return Err(Error::Data(format!(
+                "label dimension {dim:?}: names must not be \"kind\" or \"layer\""
+            )));
+        }
+        let mut dims = self.label_dims().to_vec();
+        dims.extend(
+            part.dims()
+                .iter()
+                .filter(|d| !self.label_dims().contains(d))
+                .cloned(),
+        );
+        if dims.is_empty() {
+            // No labels anywhere: one amount a year.
+            self.aggregate = Some(AggregatePart {
+                of_column: vec![0],
+                amounts: (0..n)
+                    .map(|i| part.row(i).expect("a row a year").iter().sum())
+                    .collect(),
+            });
+            return Ok(self);
+        }
+        let per_loss: Vec<Vec<String>> = (0..self.losses.len())
+            .map(|k| {
+                let values = self.labels.as_ref().map(|l| l.values(k));
+                dims.iter()
+                    .enumerate()
+                    .map(|(i, _)| values.and_then(|v| v.get(i)).cloned().unwrap_or_default())
+                    .collect()
+            })
+            .collect();
+        let columns: Vec<Vec<String>> = part
+            .components()
+            .iter()
+            .map(|key| {
+                dims.iter()
+                    .map(|d| {
+                        part.dims()
+                            .iter()
+                            .position(|x| x == d)
+                            .map_or_else(String::new, |i| key[i].to_string())
+                    })
+                    .collect()
+            })
+            .collect();
+        let (labels, of_column) = Labels::with_columns(dims, per_loss, &columns);
+        self.labels = Some(labels);
+        self.aggregate = Some(AggregatePart {
+            of_column,
+            amounts: part.draw_matrix().to_vec(),
+        });
+        Ok(self)
+    }
+
+    /// Whether the years carry an aggregate part.
+    pub fn has_aggregate_part(&self) -> bool {
+        self.aggregate.is_some()
+    }
+
+    /// Year `sim`'s aggregate part, when given: one amount per column, in
+    /// the order of [`aggregate_part_labels`](Self::aggregate_part_labels).
+    pub fn aggregate_part(&self, sim: usize) -> Option<&[f64]> {
+        self.aggregate.as_ref().map(|a| a.row(sim))
+    }
+
+    /// Each column of the aggregate part's labels, one value per label
+    /// dimension (none without labels), when the part is given.
+    pub fn aggregate_part_labels(&self) -> Option<Vec<&[String]>> {
+        self.aggregate.as_ref().map(|a| {
+            a.of_column
+                .iter()
+                .map(|&c| self.labels.as_ref().map_or(&[][..], |l| &l.combinations[c]))
+                .collect()
+        })
+    }
+
+    /// Each column of the aggregate part's combination, as an index into
+    /// [`EventSet::label_combinations`].
+    pub(crate) fn aggregate_part_indices(&self) -> Option<&[usize]> {
+        self.aggregate.as_ref().map(|a| &a.of_column[..])
+    }
+
     /// The same events, recorded as drawn with `samplers`
     /// ([`Provenance::samplers`]): [`current_samplers`] for years this
     /// build simulated, as a risk profile's simulation does, or `None` when
@@ -438,6 +632,9 @@ impl EventSet {
             .seed(self.seed, SIM_INDEX_SCHEME);
         p.samplers = self.samplers.clone();
         p.input_hash = self.input_hash.clone();
+        if let Some(a) = &self.aggregate {
+            p = p.param("aggregate_part", format!("{} columns", a.of_column.len()));
+        }
         p
     }
 
@@ -669,7 +866,11 @@ impl EventSet {
         let mut sums = Vec::new();
         let mut times = Vec::new();
         let mut of_loss = Vec::new();
+        let mut aggregate = Vec::new();
         for &y in index {
+            if let Some(a) = &self.aggregate {
+                aggregate.extend_from_slice(a.row(y));
+            }
             let range = self.offsets[y]..self.offsets[y + 1];
             losses.extend_from_slice(&self.losses[range.clone()]);
             if let Some(s) = &self.sums_insured {
@@ -693,6 +894,10 @@ impl EventSet {
                 combinations: l.combinations.clone(),
                 of_loss,
             }),
+            aggregate: self.aggregate.as_ref().map(|a| AggregatePart {
+                of_column: a.of_column.clone(),
+                amounts: aggregate,
+            }),
             seed: self.seed,
             samplers: self.samplers.clone(),
             input_hash: self.input_hash.clone(),
@@ -708,7 +913,8 @@ impl EventSet {
     /// this set's, then the other's not among them, and a loss without a
     /// value in a dimension gets `""` (so a labelled catastrophe set merged
     /// with an unlabelled one leaves the other's losses labelled `""`).
-    /// The seed is this set's; the samplers are kept only when the two
+    /// Either set's aggregate part is kept, and the two sets' columns
+    /// with the same labels are added. The seed is this set's; the samplers are kept only when the two
     /// agree.
     ///
     /// ```
@@ -802,12 +1008,60 @@ impl EventSet {
             }
             offsets.push(losses.len());
         }
+        // Either set's aggregate columns in the merged dimensions, one
+        // column per combination, the amounts of a shared one added.
+        let mut columns: Vec<Vec<String>> = Vec::new();
+        let mut column_of: Vec<(usize, usize, usize)> = Vec::new(); // (set, column, merged column)
+        for (set, src) in [self, other].into_iter().enumerate() {
+            let Some(a) = &src.aggregate else { continue };
+            for (j, &c) in a.of_column.iter().enumerate() {
+                let values: Vec<String> = match &src.labels {
+                    Some(l) => dims
+                        .iter()
+                        .map(|d| {
+                            l.dims
+                                .iter()
+                                .position(|x| x == d)
+                                .map_or_else(String::new, |i| l.combinations[c][i].clone())
+                        })
+                        .collect(),
+                    None => vec![String::new(); dims.len()],
+                };
+                let at = columns
+                    .iter()
+                    .position(|v| *v == values)
+                    .unwrap_or_else(|| {
+                        columns.push(values);
+                        columns.len() - 1
+                    });
+                column_of.push((set, j, at));
+            }
+        }
+        let n = self.n_sims();
+        let aggregate_amounts = (!column_of.is_empty()).then(|| {
+            let m = columns.len();
+            let mut amounts = vec![0.0; n * m];
+            for &(set, j, at) in &column_of {
+                let src = if set == 0 { self } else { other };
+                for i in 0..n {
+                    amounts[i * m + at] += src.aggregate_part(i).expect("the set has the part")[j];
+                }
+            }
+            amounts
+        });
+        let (labels, of_column) = if with_labels {
+            let (l, of) = Labels::with_columns(dims.clone(), per_loss, &columns);
+            (Some(l), of)
+        } else {
+            (None, vec![0; columns.len()])
+        };
         Ok(Self {
             offsets,
             losses,
             sums_insured: with_si.then_some(sums),
             times: with_times.then_some(times),
-            labels: with_labels.then(|| Labels::new(dims.clone(), per_loss)),
+            labels,
+            aggregate: aggregate_amounts.map(|amounts| AggregatePart { of_column, amounts }),
             seed: self.seed,
             samplers: if self.samplers == other.samplers {
                 self.samplers.clone()
@@ -825,7 +1079,8 @@ impl EventSet {
     /// 8,760 hours (times are fractions of the year). Needs times; sums
     /// insured are not carried, since an occurrence spans risks, and nor
     /// are labels: group each peril's set before merging them to keep
-    /// those.
+    /// those. An aggregate part stays, summed over its labels into one
+    /// amount a year.
     ///
     /// Windows open at each first loss in turn, rather than where they
     /// would recover most, which a cedant may choose.
@@ -881,6 +1136,10 @@ impl EventSet {
             sums_insured: None,
             times: Some(times),
             labels: None,
+            aggregate: self.aggregate.as_ref().map(|a| AggregatePart {
+                of_column: vec![0],
+                amounts: (0..self.n_sims()).map(|i| a.row(i).iter().sum()).collect(),
+            }),
             seed: self.seed,
             samplers: self.samplers.clone(),
             input_hash: self.input_hash.clone(),
@@ -917,6 +1176,13 @@ impl EventSet {
                 dims: l.dims.clone(),
                 combinations: l.combinations.clone(),
                 of_loss: l.of_loss[lo..hi].to_vec(),
+            }),
+            aggregate: self.aggregate.as_ref().map(|a| {
+                let m = a.of_column.len();
+                AggregatePart {
+                    of_column: a.of_column.clone(),
+                    amounts: a.amounts[range.start * m..range.end * m].to_vec(),
+                }
             }),
             seed: self.seed,
             samplers: self.samplers.clone(),
@@ -961,7 +1227,10 @@ impl EventSet {
     /// provenance.
     pub fn totals(&self) -> Result<PredictiveDistribution> {
         let totals = (0..self.n_sims())
-            .map(|i| self.events(i).iter().sum())
+            .map(|i| {
+                self.events(i).iter().sum::<f64>()
+                    + self.aggregate_part(i).map_or(0.0, |a| a.iter().sum())
+            })
             .collect();
         PredictiveDistribution::from_draws(
             vec![],
@@ -990,6 +1259,103 @@ impl EventSet {
 
 #[cfg(test)]
 mod tests {
+    fn part(dims: Vec<String>, keys: Vec<Vec<&str>>, draws: Vec<f64>) -> PredictiveDistribution {
+        let keys = keys
+            .into_iter()
+            .map(|k| k.into_iter().map(prospicio_prob::KeyValue::from).collect())
+            .collect();
+        PredictiveDistribution::from_draws(dims, keys, draws, Provenance::new("part")).unwrap()
+    }
+
+    #[test]
+    fn the_aggregate_part_follows_its_years() {
+        let p = part(
+            vec!["peril".into()],
+            vec![vec!["fire"], vec!["wind"]],
+            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        );
+        let events = EventSet::from_years(vec![vec![7.0], vec![], vec![8.0, 9.0]], 0)
+            .unwrap()
+            .with_times(vec![0.5, 0.1, 0.2])
+            .unwrap()
+            .with_aggregate_part(&p)
+            .unwrap();
+        // The events get "" in the part's dimension.
+        assert_eq!(events.label_combinations(), [[""], ["fire"], ["wind"]]);
+        assert_eq!(events.aggregate_part_indices(), Some(&[1, 2][..]));
+        let moved = events.permute(&[2, 0, 0]).unwrap();
+        assert_eq!(moved.aggregate_part(0), Some(&[5.0, 6.0][..]));
+        assert_eq!(moved.aggregate_part(2), Some(&[1.0, 2.0][..]));
+        assert_eq!(moved.events(0), &[8.0, 9.0]);
+        let years = events.term_years(3).unwrap();
+        assert_eq!(years[1].aggregate_part(0), Some(&[3.0, 4.0][..]));
+        let totals: Vec<f64> =
+            prospicio_prob::Empirical::draws(events.totals().unwrap().total()).to_vec();
+        assert_eq!(totals, [10.0, 7.0, 28.0]);
+        let maxima: Vec<f64> =
+            prospicio_prob::Empirical::draws(events.maxima().unwrap().total()).to_vec();
+        assert_eq!(maxima, [7.0, 0.0, 9.0]);
+        assert_eq!(events.counts(), [1, 0, 2]);
+        // An hours clause keeps the part, summed over its labels.
+        let grouped = events.grouped(0.0).unwrap();
+        assert!(!grouped.has_labels());
+        assert_eq!(grouped.aggregate_part(2), Some(&[11.0][..]));
+        // Labels go before the part.
+        assert!(
+            events
+                .clone()
+                .with_labels(vec![("class".into(), vec!["a".into(); 3])])
+                .is_err()
+        );
+        let short = part(vec![], vec![vec![]], vec![1.0, 2.0]);
+        assert!(events.clone().with_aggregate_part(&short).is_err());
+        let negative = part(vec![], vec![vec![]], vec![1.0, -2.0, 3.0]);
+        assert!(events.clone().with_aggregate_part(&negative).is_err());
+        let kind = part(vec!["kind".into()], vec![vec!["a"]], vec![1.0, 2.0, 3.0]);
+        assert!(events.clone().with_aggregate_part(&kind).is_err());
+    }
+
+    #[test]
+    fn merging_adds_aggregate_parts_with_the_same_labels() {
+        let a = EventSet::from_years(vec![vec![7.0], vec![]], 0)
+            .unwrap()
+            .with_aggregate_part(&part(
+                vec!["peril".into()],
+                vec![vec!["fire"]],
+                vec![1.0, 2.0],
+            ))
+            .unwrap();
+        let b = EventSet::from_years(vec![vec![], vec![3.0]], 0)
+            .unwrap()
+            .with_aggregate_part(&part(
+                vec!["peril".into()],
+                vec![vec!["fire"], vec!["wind"]],
+                vec![10.0, 20.0, 30.0, 40.0],
+            ))
+            .unwrap();
+        let all = a.merge(&b).unwrap();
+        let labels: Vec<Vec<String>> = all
+            .aggregate_part_labels()
+            .unwrap()
+            .into_iter()
+            .map(<[String]>::to_vec)
+            .collect();
+        assert_eq!(labels, [["fire"], ["wind"]]);
+        assert_eq!(all.aggregate_part(0), Some(&[11.0, 20.0][..]));
+        assert_eq!(all.aggregate_part(1), Some(&[32.0, 40.0][..]));
+        // Unlabelled parts add into one amount a year; one set's alone is kept.
+        let c = EventSet::from_years(vec![vec![1.0], vec![2.0]], 0).unwrap();
+        let d = c
+            .clone()
+            .with_aggregate_part(&part(vec![], vec![vec![]], vec![5.0, 6.0]))
+            .unwrap();
+        let both = d.merge(&d).unwrap();
+        assert_eq!(both.aggregate_part(1), Some(&[12.0][..]));
+        assert!(!both.has_labels());
+        assert_eq!(c.merge(&d).unwrap().aggregate_part(0), Some(&[5.0][..]));
+        assert!(!c.merge(&c).unwrap().has_aggregate_part());
+    }
+
     #[test]
     fn merge_keeps_the_labels_of_either_set() {
         let cat = EventSet::from_years(vec![vec![100.0], vec![]], 1)

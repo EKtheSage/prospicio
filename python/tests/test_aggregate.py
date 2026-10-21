@@ -1311,3 +1311,33 @@ def test_reorder_index_keeps_a_class_s_events_with_its_totals_on_tied_draws():
     assert isinstance(pd.reorder_groups("class", [[1, 0.7], [0.7, 1]], 3), PredictiveDistribution)
     with pytest.raises(ValueError):
         large.permute([n])
+
+
+def test_an_aggregate_part_is_seen_only_by_covers_without_occurrence_terms():
+    from prospicio.aggregate import EventSet
+    from prospicio.distributions import PredictiveDistribution
+
+    # #483: attritional by peril beside wind and flood events.
+    part = PredictiveDistribution(["peril"], [("wind",), ("fire",)], [[1.0, 9.0], [2.0, 38.0], [3.0, 27.0]])
+    events = (
+        EventSet.from_years([[], [50.0], [5.0, 60.0]])
+        .with_labels({"peril": ["wind", "flood", "wind"]})
+        .with_aggregate_part(part)
+    )
+    assert events.has_aggregate_part
+    assert events.label_combinations == [["fire"], ["flood"], ["wind"]]
+    assert events.aggregate_part_labels == [["wind"], ["fire"]]
+    assert events.aggregate_part(1) == [2.0, 38.0]
+    xol, qs = Layer("30x25", 30.0, 25.0), Layer.quota_share("QS", 0.5)
+    assert qs.sees_aggregate_part and not xol.sees_aggregate_part
+    r = Tower([xol, qs]).apply(events)
+    assert list(r.marginal(("ceded", "30x25", "wind")).draws) == [0.0, 25.0, 30.0]
+    assert list(r.marginal(("ceded", "30x25", "fire")).draws) == [0.0, 0.0, 0.0]
+    assert list(r.marginal(("ceded", "QS", "fire")).draws) == [4.5, 19.0, 13.5]
+    assert list(r.marginal(("gross", "ground_up", "wind")).draws) == [1.0, 52.0, 63.0]
+    assert list(events.totals().total().draws) == [10.0, 90.0, 95.0]
+    with pytest.raises(ValueError):
+        EventSet.from_years([[1.0]]).with_aggregate_part(part)
+    with pytest.raises(IndexError):
+        events.aggregate_part(3)
+    assert EventSet.from_years([[1.0]]).aggregate_part(0) is None

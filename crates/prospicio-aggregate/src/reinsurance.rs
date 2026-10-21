@@ -382,6 +382,24 @@ impl Layer {
         matches!(self.basis, Basis::Surplus { .. })
     }
 
+    /// Whether the layer cedes from an [`EventSet`]'s aggregate part
+    /// ([`EventSet::with_aggregate_part`]): it has no per-occurrence terms,
+    /// that is it is on the loss with attachment 0 and no limit, as a
+    /// quota share or a stop loss is. A layer with per-occurrence terms
+    /// sees the events alone, since an amount that is no event has no
+    /// occurrence to attach to.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    ///
+    /// assert!(Layer::quota_share("QS", 0.3).unwrap().sees_aggregate_part());
+    /// assert!(Layer::stop_loss("SL", 50.0, 100.0).unwrap().sees_aggregate_part());
+    /// assert!(!Layer::xol("5x5", 5.0, 5.0).unwrap().sees_aggregate_part());
+    /// ```
+    pub fn sees_aggregate_part(&self) -> bool {
+        self.basis == Basis::Loss && self.attachment == 0.0 && self.limit == f64::INFINITY
+    }
+
     /// An aggregate stop-loss: `limit` xs `retention` on the year's total
     /// loss. It is an unlimited per-occurrence layer from 0 whose annual
     /// deductible is `retention` and annual limit `limit`, so it covers
@@ -1343,20 +1361,36 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
     ) -> Vec<(f64, f64)> {
-        self.year_by_event(losses, si, times, None)
+        self.year_by_event(&[], losses, si, times, None)
     }
 
-    /// [`year`](Self::year), and with `by_event` each layer's ceded loss
-    /// by event (one vector per layer, in tower order).
+    /// [`year`](Self::year) with an aggregate part `aggregate` beside the
+    /// events, and with `by_event` each layer's ceded loss by entry (one
+    /// vector per layer, in tower order, the aggregate part's entries
+    /// first). The aggregate part comes before the events in the year and
+    /// only layers that [see it](Layer::sees_aggregate_part) cede from it.
     fn year_by_event(
         &self,
+        aggregate: &[f64],
         losses: &[f64],
         si: Option<&[f64]>,
         times: Option<&[f64]>,
         mut by_event: Option<&mut Vec<Vec<f64>>>,
     ) -> Vec<(f64, f64)> {
         let mut ceded = Vec::with_capacity(self.layers.len());
-        let mut seen = losses.to_vec();
+        let n_agg = aggregate.len();
+        let mut seen: Vec<f64> = aggregate.iter().chain(losses).copied().collect();
+        // A layer that sees the aggregate part is on the loss, so needs no
+        // sum insured; the part's time is the year's start.
+        let all_times: Option<Vec<f64>> = (n_agg > 0)
+            .then(|| {
+                times.map(|t| {
+                    std::iter::repeat_n(0.0, n_agg)
+                        .chain(t.iter().copied())
+                        .collect()
+                })
+            })
+            .flatten();
         let last_stage = self.stages.last().copied().unwrap_or(0);
         let mut i = 0;
         while i < self.layers.len() {
@@ -1364,12 +1398,21 @@ impl Tower {
             let end = i + self.stages[i..].iter().take_while(|&&s| s == stage).count();
             let mut stage_by_event = vec![0.0; seen.len()];
             for layer in &self.layers[i..end] {
+                let sees = n_agg > 0 && layer.sees_aggregate_part();
+                let (x, s, t) = if sees {
+                    (&seen[..], None, all_times.as_deref())
+                } else {
+                    (&seen[n_agg..], si, times)
+                };
                 ceded.push((
-                    layer.share * layer.layer_loss(&seen, si),
-                    layer.reinstatement_premium_at(&seen, si, times),
+                    layer.share * layer.layer_loss(x, s),
+                    layer.reinstatement_premium_at(x, s, t),
                 ));
                 if stage < last_stage || by_event.is_some() {
-                    let layer_by_event = layer.ceded_by_event_si(&seen, si);
+                    let mut layer_by_event = layer.ceded_by_event_si(x, s);
+                    if !sees && n_agg > 0 {
+                        layer_by_event.splice(0..0, std::iter::repeat_n(0.0, n_agg));
+                    }
                     for (total, c) in stage_by_event.iter_mut().zip(&layer_by_event) {
                         *total += c;
                     }
@@ -1460,8 +1503,14 @@ impl Tower {
             return self.apply_labeled(events, provenance);
         }
         self.apply_years(
-            (0..events.n_sims())
-                .map(|i| (events.events(i), events.sums_insured(i), events.times(i))),
+            (0..events.n_sims()).map(|i| {
+                (
+                    events.aggregate_part(i).unwrap_or(&[]),
+                    events.events(i),
+                    events.sums_insured(i),
+                    events.times(i),
+                )
+            }),
             events.n_sims(),
             provenance,
         )
@@ -1517,7 +1566,7 @@ impl Tower {
             .param("loss", format!("total of {}", source.model))
             .draws_from(source);
         self.apply_years(
-            totals.chunks(1).map(|t| (t, None, None)),
+            totals.chunks(1).map(|t| (&[][..], t, None, None)),
             totals.len(),
             provenance,
         )
@@ -1551,22 +1600,31 @@ impl Tower {
             components.push(key.iter().cloned().chain(blank.iter().cloned()).collect());
         }
         let n_sims = events.n_sims();
+        let agg_of = events.aggregate_part_indices().unwrap_or(&[]);
         let mut draws = Vec::with_capacity(n_sims * components.len());
         let mut annual = Vec::new();
         for i in 0..n_sims {
             let losses = events.events(i);
+            let aggregate = events.aggregate_part(i).unwrap_or(&[]);
             let (si, times) = (events.sums_insured(i), events.times(i));
-            let of = events.label_indices(i).expect("the events carry labels");
+            // Each entry's combination: the aggregate part's, then the
+            // events'.
+            let of: Vec<usize> = agg_of
+                .iter()
+                .chain(events.label_indices(i).expect("the events carry labels"))
+                .copied()
+                .collect();
             let mut by_event = Vec::with_capacity(n_layers);
-            let year = self.year_by_event(losses, si, times, Some(&mut by_event));
+            let year = self.year_by_event(aggregate, losses, si, times, Some(&mut by_event));
             let by_label = |values: &[f64]| -> Vec<f64> {
                 let mut sums = vec![0.0; n_labels];
-                for (&x, &c) in values.iter().zip(of) {
+                for (&x, &c) in values.iter().zip(&of) {
                     sums[c] += x;
                 }
                 sums
             };
-            let gross = by_label(losses);
+            let all: Vec<f64> = aggregate.iter().chain(losses).copied().collect();
+            let gross = by_label(&all);
             let ceded: Vec<Vec<f64>> = by_event.iter().map(|c| by_label(c)).collect();
             draws.extend(&gross);
             for c in &ceded {
@@ -1640,7 +1698,7 @@ impl Tower {
             .version("prospicio-aggregate", env!("CARGO_PKG_VERSION"))
             .param("loss", "annual losses");
         self.apply_years(
-            losses.chunks(1).map(|t| (t, None, None)),
+            losses.chunks(1).map(|t| (&[][..], t, None, None)),
             losses.len(),
             provenance,
         )
@@ -1655,16 +1713,25 @@ impl Tower {
 
     fn apply_years<'a>(
         &self,
-        years: impl Iterator<Item = (&'a [f64], Option<&'a [f64]>, Option<&'a [f64]>)>,
+        years: impl Iterator<Item = (&'a [f64], &'a [f64], Option<&'a [f64]>, Option<&'a [f64]>)>,
         n_sims: usize,
         base: Provenance,
     ) -> Result<PredictiveDistribution> {
         let columns = Columns::new(self);
         let mut draws = Vec::with_capacity(n_sims * columns.len(self));
-        for (losses, si, times) in years {
+        for (aggregate, losses, si, times) in years {
             // A single year starts with nothing carried.
             let mut carried = vec![Carried::default(); 2 * self.layers.len()];
-            self.push_year(&columns, &mut draws, losses, si, times, 0, &mut carried);
+            self.push_year(
+                &columns,
+                &mut draws,
+                aggregate,
+                losses,
+                si,
+                times,
+                0,
+                &mut carried,
+            );
         }
         let components = columns.keys(self);
         PredictiveDistribution::from_draws(
@@ -1676,7 +1743,8 @@ impl Tower {
     }
 
     /// Appends one year's components (in the order of [`Columns::keys`])
-    /// to `draws`: year `t` of a term, with what earlier years carried in
+    /// to `draws`: year `t` of a term, with its aggregate part
+    /// `aggregate` (empty without one) and what earlier years carried in
     /// `carried` (two per layer: the profit commission's, then the sliding
     /// scale's).
     #[allow(clippy::too_many_arguments)]
@@ -1684,15 +1752,16 @@ impl Tower {
         &self,
         columns: &Columns,
         draws: &mut Vec<f64>,
+        aggregate: &[f64],
         losses: &[f64],
         si: Option<&[f64]>,
         times: Option<&[f64]>,
         t: usize,
         carried: &mut [Carried],
     ) {
-        let gross: f64 = losses.iter().sum();
+        let gross: f64 = aggregate.iter().chain(losses).sum();
         draws.push(gross);
-        let year = self.year(losses, si, times);
+        let year = self.year_by_event(aggregate, losses, si, times, None);
         let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
         draws.extend(year.iter().map(|(c, _)| c));
         draws.push(gross - ceded_total);
@@ -1932,6 +2001,212 @@ mod tests {
     use crate::simulate_events;
     use prospicio_prob::provenance::SIM_INDEX_SCHEME;
     use prospicio_prob::{Distribution, Lognormal, Poisson, Severity};
+
+    /// #483's three years: attritional 10, 40, 30 and large losses [],
+    /// [50], [5, 60], the attritional given by `part`.
+    fn attritional_years(part: PredictiveDistribution) -> EventSet {
+        EventSet::from_years(vec![vec![], vec![50.0], vec![5.0, 60.0]], 0)
+            .unwrap()
+            .with_aggregate_part(&part)
+            .unwrap()
+    }
+
+    fn unlabelled(values: Vec<f64>) -> PredictiveDistribution {
+        PredictiveDistribution::from_draws(vec![], vec![vec![]], values, Provenance::new("part"))
+            .unwrap()
+    }
+
+    fn column(result: &PredictiveDistribution, key: &[&str]) -> Vec<f64> {
+        let key: Vec<KeyValue> = key.iter().map(|&k| k.into()).collect();
+        prospicio_prob::Empirical::draws(&result.marginal(&key).unwrap()).to_vec()
+    }
+
+    fn close(a: &[f64], b: &[f64]) {
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b) {
+            assert!((x - y).abs() < 1e-12, "{a:?} vs {b:?}");
+        }
+    }
+
+    #[test]
+    fn occurrence_terms_skip_the_aggregate_part() {
+        let events = attritional_years(unlabelled(vec![10.0, 40.0, 30.0]));
+        let tower = Tower::new(vec![
+            Layer::xol("30x25", 30.0, 25.0).unwrap(),
+            Layer::quota_share("QS", 0.5).unwrap(),
+            Layer::stop_loss("SL", 50.0, 40.0).unwrap(),
+        ])
+        .unwrap();
+        let r = tower.apply(&events).unwrap();
+        // The issue's table: 0, 25, 30, where one event for the year
+        // would cede 0, 40, 35.
+        close(&column(&r, &["ceded", "30x25"]), &[0.0, 25.0, 30.0]);
+        close(&column(&r, &["ceded", "QS"]), &[5.0, 45.0, 47.5]);
+        close(&column(&r, &["ceded", "SL"]), &[0.0, 50.0, 50.0]);
+        let gross = column(&r, &["gross", "ground_up"]);
+        close(&gross, &[10.0, 90.0, 95.0]);
+        let net = column(&r, &["net", "retained"]);
+        for i in 0..3 {
+            let ceded: f64 = ["30x25", "QS", "SL"]
+                .iter()
+                .map(|l| column(&r, &["ceded", l])[i])
+                .sum();
+            assert!((net[i] - (gross[i] - ceded)).abs() < 1e-12);
+        }
+        close(
+            prospicio_prob::Empirical::draws(events.totals().unwrap().total()),
+            &gross,
+        );
+    }
+
+    #[test]
+    fn inuring_stages_see_the_aggregate_part_net_of_earlier_ones() {
+        let events = attritional_years(unlabelled(vec![10.0, 40.0, 30.0]));
+        // A per risk inuring to a stop loss: the stop loss sees the
+        // attritional whole and the large losses net, 10, 65, 65.
+        let tower = Tower::inuring(vec![
+            vec![Layer::xol("30x25", 30.0, 25.0).unwrap()],
+            vec![Layer::stop_loss("SL", 50.0, 40.0).unwrap()],
+        ])
+        .unwrap();
+        let r = tower.apply(&events).unwrap();
+        close(&column(&r, &["ceded", "30x25"]), &[0.0, 25.0, 30.0]);
+        close(&column(&r, &["ceded", "SL"]), &[0.0, 25.0, 25.0]);
+        // A quota share inuring to a per risk: the per risk sees the large
+        // losses at half, 25 and 2.5, 30.
+        let tower = Tower::inuring(vec![
+            vec![Layer::quota_share("QS", 0.5).unwrap()],
+            vec![Layer::xol("30x25", 30.0, 25.0).unwrap()],
+        ])
+        .unwrap();
+        let r = tower.apply(&events).unwrap();
+        close(&column(&r, &["ceded", "QS"]), &[5.0, 45.0, 47.5]);
+        close(&column(&r, &["ceded", "30x25"]), &[0.0, 0.0, 5.0]);
+    }
+
+    #[test]
+    fn the_aggregate_part_comes_first_in_the_year() {
+        let part = PredictiveDistribution::from_draws(
+            vec!["class".into()],
+            vec![vec!["attritional".into()]],
+            vec![10.0, 40.0, 30.0],
+            Provenance::new("part"),
+        )
+        .unwrap();
+        let events = EventSet::from_years(vec![vec![], vec![50.0], vec![5.0, 60.0]], 0)
+            .unwrap()
+            .with_labels(vec![("class".into(), vec!["large".into(); 3])])
+            .unwrap()
+            .with_aggregate_part(&part)
+            .unwrap();
+        assert_eq!(events.label_combinations(), [["attritional"], ["large"]]);
+        // The deductible of 40 is used up on the attritional first.
+        let sl = Layer::stop_loss("SL", 50.0, 40.0).unwrap();
+        let r = Tower::new(vec![sl.clone()])
+            .unwrap()
+            .apply(&events)
+            .unwrap();
+        close(
+            &column(&r, &["ceded", "SL", "attritional"]),
+            &[0.0, 0.0, 0.0],
+        );
+        close(&column(&r, &["ceded", "SL", "large"]), &[0.0, 50.0, 50.0]);
+        close(
+            &column(&r, &["gross", "ground_up", "attritional"]),
+            &[10.0, 40.0, 30.0],
+        );
+        close(
+            &column(&r, &["net", "retained", "attritional"]),
+            &[10.0, 40.0, 30.0],
+        );
+        // Pro rata, the same annual total shared by amount.
+        let pro_rata = sl.allocation(LimitAllocation::ProRata).unwrap();
+        let r = Tower::new(vec![pro_rata]).unwrap().apply(&events).unwrap();
+        close(
+            &column(&r, &["ceded", "SL", "attritional"]),
+            &[0.0, 40.0 * 50.0 / 90.0, 30.0 * 50.0 / 95.0],
+        );
+        close(
+            &column(&r, &["ceded", "SL", "large"]),
+            &[0.0, 50.0 * 50.0 / 90.0, 65.0 * 50.0 / 95.0],
+        );
+    }
+
+    #[test]
+    fn the_aggregate_part_by_peril() {
+        // Attritional wind and fire beside wind and flood events: fire has
+        // no events, and a per risk cedes nothing of either attritional.
+        let part = PredictiveDistribution::from_draws(
+            vec!["peril".into()],
+            vec![vec!["wind".into()], vec!["fire".into()]],
+            vec![1.0, 9.0, 2.0, 38.0, 3.0, 27.0],
+            Provenance::new("part"),
+        )
+        .unwrap();
+        let events = EventSet::from_years(vec![vec![], vec![50.0], vec![5.0, 60.0]], 0)
+            .unwrap()
+            .with_labels(vec![(
+                "peril".into(),
+                vec!["wind".into(), "flood".into(), "wind".into()],
+            )])
+            .unwrap()
+            .with_aggregate_part(&part)
+            .unwrap();
+        assert_eq!(events.label_combinations(), [["fire"], ["flood"], ["wind"]]);
+        let labels: Vec<Vec<String>> = events
+            .aggregate_part_labels()
+            .unwrap()
+            .into_iter()
+            .map(<[String]>::to_vec)
+            .collect();
+        assert_eq!(labels, [["wind"], ["fire"]]);
+        assert_eq!(events.aggregate_part(1), Some(&[2.0, 38.0][..]));
+        let tower = Tower::new(vec![
+            Layer::xol("30x25", 30.0, 25.0).unwrap(),
+            Layer::quota_share("QS", 0.5).unwrap(),
+        ])
+        .unwrap();
+        let r = tower.apply(&events).unwrap();
+        close(
+            &column(&r, &["gross", "ground_up", "fire"]),
+            &[9.0, 38.0, 27.0],
+        );
+        close(
+            &column(&r, &["gross", "ground_up", "flood"]),
+            &[0.0, 0.0, 5.0],
+        );
+        close(
+            &column(&r, &["gross", "ground_up", "wind"]),
+            &[1.0, 52.0, 63.0],
+        );
+        close(&column(&r, &["ceded", "30x25", "wind"]), &[0.0, 25.0, 30.0]);
+        close(&column(&r, &["ceded", "30x25", "fire"]), &[0.0, 0.0, 0.0]);
+        close(&column(&r, &["ceded", "QS", "fire"]), &[4.5, 19.0, 13.5]);
+        // Summed over labels, the unlabelled result.
+        let flat = attritional_years(unlabelled(vec![10.0, 40.0, 30.0]));
+        let a = r.aggregate(&["kind", "layer"]).unwrap();
+        let b = tower.apply(&flat).unwrap();
+        close(a.draw_matrix(), b.draw_matrix());
+    }
+
+    #[test]
+    fn a_term_sees_each_years_aggregate_part() {
+        let events = attritional_years(unlabelled(vec![10.0, 40.0, 30.0]));
+        let years = events.term_years(3).unwrap();
+        let tower = Tower::new(vec![Layer::quota_share("QS", 0.5).unwrap()]).unwrap();
+        let r = tower.apply_term(&years).unwrap();
+        let ceded: Vec<f64> = (1..=3)
+            .map(|t| {
+                let key = vec![
+                    KeyValue::from("ceded"),
+                    KeyValue::from("QS"),
+                    KeyValue::Int(t),
+                ];
+                prospicio_prob::Empirical::draws(&r.marginal(&key).unwrap())[0]
+            })
+            .collect();
+        close(&ceded, &[5.0, 45.0, 47.5]);
+    }
 
     #[test]
     fn the_seven_million_example() {

@@ -92,6 +92,7 @@ reference:
       - event_loss_table
       - merge_event_sets
       - permute_events
+      - with_aggregate_part
       - hours_clause
       - occurrence_pml
       - compound_moments

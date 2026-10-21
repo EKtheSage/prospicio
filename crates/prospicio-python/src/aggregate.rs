@@ -1066,6 +1066,94 @@ impl PyEventSet {
         })
     }
 
+    /// The same events with an aggregate part: amounts in each year that
+    /// are no event and have no time, attritional losses say, one column
+    /// per component of ``part``.
+    ///
+    /// ``part`` needs as many simulations as the set has years; simulation
+    /// ``i`` goes with year ``i``. Its dimensions are label dimensions, so
+    /// the part can be given by peril or class: the set's labels get the
+    /// part's dimensions not among them, with ``""`` for every loss. A part
+    /// with no dimensions is one unlabelled amount a year. Replaces any
+    /// aggregate part the set had; label the events first.
+    ///
+    /// ``Tower.apply`` counts the part in gross and net, and only layers
+    /// that see it (``Layer.sees_aggregate_part``: quota shares and stop
+    /// losses) cede from it. In each year it comes before the events, so a
+    /// binding annual deductible is used up on it first, unless the layer
+    /// shares annual terms pro rata. ``totals`` includes it; ``maxima`` and
+    /// ``counts`` do not.
+    ///
+    /// Parameters
+    /// ----------
+    /// part : PredictiveDistribution
+    ///
+    /// Returns
+    /// -------
+    /// EventSet
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``part`` has another number of simulations, a negative or
+    ///     non-finite amount, or a dimension ``"kind"`` or ``"layer"``, or
+    ///     if labels are given after the part.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> attritional = PredictiveDistribution([], [()], [[10.0], [40.0], [30.0]])
+    /// >>> e = EventSet.from_years([[], [50.0], [5.0, 60.0]]).with_aggregate_part(attritional)
+    /// >>> r = Tower([Layer("30x25", 30.0, 25.0)]).apply(e)
+    /// >>> list(r.marginal(("ceded", "30x25")).draws)
+    /// [0.0, 25.0, 30.0]
+    fn with_aggregate_part(&self, part: &PyPredictiveDistribution) -> PyResult<Self> {
+        Ok(Self {
+            inner: self
+                .inner
+                .clone()
+                .with_aggregate_part(&part.inner)
+                .map_err(to_py)?,
+        })
+    }
+
+    /// Whether the years carry an aggregate part.
+    #[getter]
+    fn has_aggregate_part(&self) -> bool {
+        self.inner.has_aggregate_part()
+    }
+
+    /// Year ``sim``'s aggregate part, one amount per column in the order of
+    /// ``aggregate_part_labels``, or ``None``.
+    ///
+    /// Parameters
+    /// ----------
+    /// sim : int
+    ///
+    /// Returns
+    /// -------
+    /// list of float or None
+    fn aggregate_part(&self, sim: usize) -> PyResult<Option<Vec<f64>>> {
+        if sim >= self.inner.n_sims() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                "year {sim} out of range for {} simulated years",
+                self.inner.n_sims()
+            )));
+        }
+        Ok(self.inner.aggregate_part(sim).map(<[f64]>::to_vec))
+    }
+
+    /// Each column of the aggregate part's labels, one value per label
+    /// dimension, or ``None`` without a part.
+    #[getter]
+    fn aggregate_part_labels(&self) -> Option<Vec<Vec<String>>> {
+        self.inner
+            .aggregate_part_labels()
+            .map(|cols| cols.into_iter().map(<[String]>::to_vec).collect())
+    }
+
     /// Whether the losses carry labels.
     #[getter]
     fn has_labels(&self) -> bool {

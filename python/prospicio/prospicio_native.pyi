@@ -9428,6 +9428,25 @@ class EventSet:
     threads.
     """
     def __repr__(self, /) -> str: ...
+    def aggregate_part(self, /, sim: int) -> list[float] |None:
+        """
+        Year ``sim``'s aggregate part, one amount per column in the order of
+        ``aggregate_part_labels``, or ``None``.
+        
+        Parameters
+        ----------
+        sim : int
+        
+        Returns
+        -------
+        list of float or None
+        """
+    @property
+    def aggregate_part_labels(self, /) -> list[list[str]] |None:
+        """
+        Each column of the aggregate part's labels, one value per label
+        dimension, or ``None`` without a part.
+        """
     def counts(self, /) -> list[int]:
         """
         Number of losses in each year.
@@ -9601,6 +9620,11 @@ class EventSet:
         >>> e = EventSet.from_years([[10.0, 20.0, 5.0]], times=[[0.5, 0.5 + 30 * h, 0.5 + 80 * h]])
         >>> e.grouped(72.0).events(0)
         [30.0, 5.0]
+        """
+    @property
+    def has_aggregate_part(self, /) -> bool:
+        """
+        Whether the years carry an aggregate part.
         """
     @property
     def has_labels(self, /) -> bool:
@@ -9780,6 +9804,52 @@ class EventSet:
         Returns
         -------
         PredictiveDistribution
+        """
+    def with_aggregate_part(self, /, part: PredictiveDistribution) -> EventSet:
+        """
+        The same events with an aggregate part: amounts in each year that
+        are no event and have no time, attritional losses say, one column
+        per component of ``part``.
+        
+        ``part`` needs as many simulations as the set has years; simulation
+        ``i`` goes with year ``i``. Its dimensions are label dimensions, so
+        the part can be given by peril or class: the set's labels get the
+        part's dimensions not among them, with ``""`` for every loss. A part
+        with no dimensions is one unlabelled amount a year. Replaces any
+        aggregate part the set had; label the events first.
+        
+        ``Tower.apply`` counts the part in gross and net, and only layers
+        that see it (``Layer.sees_aggregate_part``: quota shares and stop
+        losses) cede from it. In each year it comes before the events, so a
+        binding annual deductible is used up on it first, unless the layer
+        shares annual terms pro rata. ``totals`` includes it; ``maxima`` and
+        ``counts`` do not.
+        
+        Parameters
+        ----------
+        part : PredictiveDistribution
+        
+        Returns
+        -------
+        EventSet
+        
+        Raises
+        ------
+        ValueError
+            If ``part`` has another number of simulations, a negative or
+            non-finite amount, or a dimension ``"kind"`` or ``"layer"``, or
+            if labels are given after the part.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> attritional = PredictiveDistribution([], [()], [[10.0], [40.0], [30.0]])
+        >>> e = EventSet.from_years([[], [50.0], [5.0, 60.0]]).with_aggregate_part(attritional)
+        >>> r = Tower([Layer("30x25", 30.0, 25.0)]).apply(e)
+        >>> list(r.marginal(("ceded", "30x25")).draws)
+        [0.0, 25.0, 30.0]
         """
     def with_labels(self, /, labels: dict) -> EventSet:
         """
@@ -13351,6 +13421,14 @@ class Layer:
     def reinstatement_rates(self, /) -> list[float]:
         """
         Rate of each paid reinstatement; empty when reinstatements are free.
+        """
+    @property
+    def sees_aggregate_part(self, /) -> bool:
+        """
+        Whether the layer cedes from an ``EventSet``'s aggregate part: it is
+        on the loss with attachment 0 and no limit, as a quota share or a
+        stop loss is. A layer with a per-occurrence attachment or limit sees
+        the events alone.
         """
     @property
     def share(self, /) -> float:

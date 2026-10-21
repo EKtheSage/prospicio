@@ -693,7 +693,9 @@ event_sums_insured <- function(x, sim) rust_result(x@ptr$sums_insured(as.double(
 #' @param ptr Internal.
 #' @returns An `event_set` object with read-only properties `n_sims`, `seed`,
 #'   `input_hash` (a hash of the years' source, see [read_ylt()], or `NULL`),
-#'   `label_dims` and `label_combinations` (see [with_labels()]).
+#'   `label_dims` and `label_combinations` (see [with_labels()]),
+#'   `has_aggregate_part` and `aggregate_part_labels` (see
+#'   [with_aggregate_part()]).
 #' @export
 #' @keywords internal
 event_set <- S7::new_class(
@@ -709,6 +711,15 @@ event_set <- S7::new_class(
       dims <- self@ptr$label_dims()
       if (!length(dims)) return(NULL)
       as.data.frame(stats::setNames(self@ptr$label_combinations(), dims), stringsAsFactors = FALSE)
+    }),
+    has_aggregate_part = S7::new_property(
+      S7::class_logical, getter = function(self) self@ptr$has_aggregate_part()
+    ),
+    aggregate_part_labels = S7::new_property(S7::class_any, getter = function(self) {
+      if (!self@ptr$has_aggregate_part()) return(NULL)
+      dims <- self@ptr$label_dims()
+      if (!length(dims)) return(NULL)
+      as.data.frame(stats::setNames(self@ptr$aggregate_part_labels(), dims), stringsAsFactors = FALSE)
     })
   ),
   constructor = function(ptr) S7::new_object(S7::S7_object(), ptr = ptr)
@@ -923,6 +934,51 @@ event_labels <- function(x, sim) {
   v <- rust_result(x@ptr$labels(as.double(sim)))
   if (!length(v)) return(NULL)
   as.data.frame(stats::setNames(v, x@ptr$label_dims()), stringsAsFactors = FALSE)
+}
+
+#' An aggregate part beside the events
+#'
+#' The same events with an aggregate part: amounts in each year that are no
+#' event and have no time, attritional losses say, one column per component
+#' of `part`. Simulation `i` of `part` goes with year `i`. Its dimensions are
+#' label dimensions, so the part can be given by peril or class: the set's
+#' labels get the part's dimensions not among them, with `""` for every loss.
+#' A part with no dimensions is one unlabelled amount a year. Replaces any
+#' aggregate part the set had; label the events first ([with_labels()]).
+#'
+#' [apply_tower()] counts the part in gross and net, and only layers that see
+#' it (the `sees_aggregate_part` property of an [xol_layer()]: quota shares
+#' and stop losses) cede from it; per-occurrence layers see the events alone.
+#' In each year it comes before the events, so a binding annual deductible is
+#' used up on it first, unless the layer shares annual terms pro rata.
+#' The events' [total()] includes it; [event_counts()] and the occurrence
+#' maxima do not.
+#'
+#' @param x An [event_set].
+#' @param part A [predictive_distribution] with `x@n_sims` simulations and
+#'   non-negative draws.
+#' @returns `with_aggregate_part()`: an [event_set] (its `aggregate_part_labels`
+#'   property is a data frame of each column's labels, `NULL` without labels).
+#'   `aggregate_part()`: year `sim`'s amounts, one per column, or `NULL`
+#'   without a part.
+#' @export
+#' @examples
+#' attritional <- predictive_distribution(matrix(c(10, 40, 30)), data.frame(class = "attritional"))
+#' ev <- with_aggregate_part(events_from_years(list(numeric(0), 50, c(5, 60))), attritional)
+#' tower <- reinsurance_tower(list(xol_layer("30x25", 30, 25)))
+#' r <- apply_tower(tower, ev)
+#' ev@aggregate_part_labels
+#' aggregate_part(ev, 2)
+with_aggregate_part <- function(x, part) {
+  event_set(ptr = rust_result(x@ptr$with_aggregate_part(part@ptr)))
+}
+
+#' @rdname with_aggregate_part
+#' @param sim Year number, from 1 to `x@n_sims`.
+#' @export
+aggregate_part <- function(x, sim) {
+  if (!x@ptr$has_aggregate_part()) return(NULL)
+  rust_result(x@ptr$aggregate_part(as.double(sim)))
 }
 
 # Label dimensions and their values as character vectors.

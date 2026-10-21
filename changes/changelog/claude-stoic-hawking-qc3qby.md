@@ -20,3 +20,11 @@
   insured, times and labels together: with a group's index from a reorder
   it keeps a class's large events with its reordered totals (Python
   `EventSet.permute`, R `permute_events()`) (#483, #504).
+- An aggregate part on an `EventSet` (`EventSet::with_aggregate_part`):
+  amounts a year with no event or time, attritional losses by peril or
+  class, which quota shares and stop losses cede from
+  (`Layer::sees_aggregate_part`) and per-occurrence layers skip; it comes
+  before the events in the year under annual terms, and gross, net and
+  `totals` include it (Python `EventSet.with_aggregate_part`,
+  `aggregate_part`, `Layer.sees_aggregate_part`; R `with_aggregate_part()`,
+  `aggregate_part()`) (#483, #505).

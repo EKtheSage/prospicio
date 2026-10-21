@@ -88,7 +88,12 @@ impl Tower {
             n_sims,
             |t, j| {
                 let e = &years[t];
-                (e.events(j), e.sums_insured(j), e.times(j))
+                (
+                    e.aggregate_part(j).unwrap_or(&[]),
+                    e.events(j),
+                    e.sums_insured(j),
+                    e.times(j),
+                )
             },
             provenance,
         )
@@ -129,7 +134,7 @@ impl Tower {
         self.apply_paths(
             years.len(),
             n_sims,
-            |t, j| (std::slice::from_ref(&totals[t][j]), None, None),
+            |t, j| (&[][..], std::slice::from_ref(&totals[t][j]), None, None),
             provenance,
         )
     }
@@ -138,7 +143,7 @@ impl Tower {
         &self,
         n_years: usize,
         n_sims: usize,
-        year: impl Fn(usize, usize) -> (&'a [f64], Option<&'a [f64]>, Option<&'a [f64]>),
+        year: impl Fn(usize, usize) -> (&'a [f64], &'a [f64], Option<&'a [f64]>, Option<&'a [f64]>),
         base: Provenance,
     ) -> Result<PredictiveDistribution> {
         let columns = Columns::new(self);
@@ -147,8 +152,17 @@ impl Tower {
         for j in 0..n_sims {
             let mut carried = vec![Carried::default(); 2 * self.layers.len()];
             for t in 0..n_years {
-                let (losses, si, times) = year(t, j);
-                self.push_year(&columns, &mut draws, losses, si, times, t, &mut carried);
+                let (aggregate, losses, si, times) = year(t, j);
+                self.push_year(
+                    &columns,
+                    &mut draws,
+                    aggregate,
+                    losses,
+                    si,
+                    times,
+                    t,
+                    &mut carried,
+                );
             }
         }
         let keys = columns.keys(self);

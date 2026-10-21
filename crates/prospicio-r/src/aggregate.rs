@@ -589,6 +589,52 @@ impl EventSet {
         )))
     }
 
+    fn with_aggregate_part(&self, part: &PredictiveDistribution) -> Result<Self> {
+        Ok(Self {
+            inner: self
+                .inner
+                .clone()
+                .with_aggregate_part(&part.inner)
+                .map_err(to_r)?,
+        })
+    }
+
+    fn has_aggregate_part(&self) -> bool {
+        self.inner.has_aggregate_part()
+    }
+
+    /// Year `sim`'s aggregate part (1-based), one amount per column;
+    /// empty without one.
+    fn aggregate_part(&self, sim: f64) -> Result<Vec<f64>> {
+        let sim = whole(sim, "sim")? as usize;
+        if sim == 0 || sim > self.inner.n_sims() {
+            return Err(Error::Other(format!(
+                "year {sim} out of range for {} simulated years",
+                self.inner.n_sims()
+            )));
+        }
+        Ok(self
+            .inner
+            .aggregate_part(sim - 1)
+            .map_or_else(Vec::new, <[f64]>::to_vec))
+    }
+
+    /// The aggregate part's columns' labels, one character vector per
+    /// dimension; empty without a part or labels.
+    fn aggregate_part_labels(&self) -> List {
+        let Some(columns) = self.inner.aggregate_part_labels() else {
+            return List::new(0);
+        };
+        List::from_values((0..self.inner.label_dims().len()).map(|d| {
+            Robj::from(
+                columns
+                    .iter()
+                    .map(|c| c[d].clone())
+                    .collect::<Vec<String>>(),
+            )
+        }))
+    }
+
     fn merge(&self, other: &EventSet) -> Result<Self> {
         Ok(Self {
             inner: self.inner.merge(&other.inner).map_err(to_r)?,

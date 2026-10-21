@@ -69,7 +69,9 @@ flat rate, \code{sliding_scale} a data frame of \code{commission} and \code{loss
 \code{swing_rating} \code{c(basic, lcm, minimum, maximum)}; \code{profit_commission_carry}
 \code{list(years)} and \code{sliding_scale_carry} \code{list(deficit, credit, years)}
 (\code{NULL} when nothing is carried, \code{years} \code{NULL} without limit); each empty when there
-is none).
+is none), and \code{sees_aggregate_part}, whether the layer cedes from an
+event set's aggregate part (\code{\link[=with_aggregate_part]{with_aggregate_part()}}: on the loss with
+attachment 0 and no limit, a quota share or a stop loss).
 }
 \description{
 \code{limit} xs \code{attachment} on each loss, then annual terms. For one year,
