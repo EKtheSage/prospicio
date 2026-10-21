@@ -1,10 +1,12 @@
 # Reserving lane
 
-**Session:** Local. **Owns:** `crates/prospicio-reserving/`, `validation/tests/reserving*.rs`, `docs/design/triangle.md`, `docs/design/reserving-v02.md`, `docs/design/reserving-bayes.md`, `docs/design/reserving-compartmental.md`
+**Session:** Local. **Owns:** `crates/prospicio-reserving/`, `validation/tests/reserving*.rs`, `docs/design/triangle.md`, `docs/design/reserving-v02.md`, `docs/design/reserving-bayes.md`, `docs/design/reserving-compartmental.md`, `docs/design/reserving-excess.md`
 
 <!-- One bullet per line. A PR edits only the bullets about its own item. This file merges with git's union driver (.gitattributes). -->
 
 ## Next
+
+- [excess-development] excess-layer loss development (#192, `docs/design/reserving-excess.md`, Proposed): excess LDFs from a ground-up triangle and a severity curve, credibility blending with benchmark patterns, a BF prior from the layer share; PR 1 `claude/excess-pattern` waits on the user's answers to the note's open decisions
 
 ## Done
 
