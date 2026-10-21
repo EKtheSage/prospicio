@@ -60,6 +60,9 @@ pub struct Layer {
     /// Whether reinstatement premiums are also pro rata as to time: each
     /// event's share is scaled by the part of the year left after it.
     pub pro_rata_time: bool,
+    /// How a binding annual deductible or limit is shared among the
+    /// year's events; see [`Layer::allocation`].
+    pub allocation: LimitAllocation,
     /// A band of the annual layer loss the cedant keeps; see
     /// [`Layer::loss_corridor`].
     pub corridor: Option<Corridor>,
@@ -249,6 +252,25 @@ impl Corridor {
     }
 }
 
+/// How a layer's annual terms (the deductible, a corridor, the annual
+/// limit) are shared among the year's events when they bite. The annual
+/// ceded loss is the same either way; only the split by event differs, and
+/// with it what a later inuring stage sees of each event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LimitAllocation {
+    /// The events in the order given, taken as chronological: the
+    /// deductible absorbs the first recoveries and the annual limit cuts
+    /// the last.
+    #[default]
+    EventOrder,
+    /// Every event of the year scaled by the same factor: event `e` with
+    /// recovery `u_e` (after the per-occurrence terms) cedes
+    /// `share × u_e × A(U) / U`, where `U = Σ u_e` and `A` applies the
+    /// annual terms. With no deductible or corridor the factor is
+    /// `min(1, annual limit / U)`.
+    ProRata,
+}
+
 /// What a layer's per-event recovery is figured on.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Basis {
@@ -300,6 +322,7 @@ impl Layer {
             premium: 0.0,
             reinstatement_rates: Vec::new(),
             pro_rata_time: false,
+            allocation: LimitAllocation::EventOrder,
             corridor: None,
             commission: None,
             profit_commission: None,
@@ -547,6 +570,13 @@ impl Layer {
                 "must be given (paid_reinstatements) before pro rata as to time",
             ));
         }
+        if self.allocation == LimitAllocation::ProRata {
+            return Err(Error::Data(
+                "reinstatements pro rata as to time need the annual limit used in event \
+                 order, not pro rata"
+                    .into(),
+            ));
+        }
         self.pro_rata_time = true;
         Ok(self)
     }
@@ -555,6 +585,35 @@ impl Layer {
     /// rata as to time).
     pub fn needs_times(&self) -> bool {
         self.pro_rata_time
+    }
+
+    /// How a binding annual deductible or limit is shared among the
+    /// year's events ([`LimitAllocation`]): in event order (the default)
+    /// or pro rata. It changes [`ceded_by_event`](Self::ceded_by_event),
+    /// and so the losses a later inuring stage sees, not the annual ceded
+    /// loss. Pro rata cannot be combined with reinstatements pro rata as
+    /// to time, whose premium follows the order in which the limit is
+    /// used.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, LimitAllocation};
+    ///
+    /// // 10 xs 5, one reinstatement: 20 a year. Recoveries 10, 10, 5 = 25.
+    /// let layer = Layer::xol("10x5", 10.0, 5.0).unwrap().reinstatements(1).unwrap();
+    /// assert_eq!(layer.ceded_by_event(&[15.0, 20.0, 10.0]), [10.0, 10.0, 0.0]);
+    /// let pro_rata = layer.allocation(LimitAllocation::ProRata).unwrap();
+    /// assert_eq!(pro_rata.ceded_by_event(&[15.0, 20.0, 10.0]), [8.0, 8.0, 4.0]);
+    /// ```
+    pub fn allocation(mut self, allocation: LimitAllocation) -> Result<Self> {
+        if allocation == LimitAllocation::ProRata && self.pro_rata_time {
+            return Err(Error::Data(
+                "reinstatements pro rata as to time need the annual limit used in event \
+                 order, not pro rata"
+                    .into(),
+            ));
+        }
+        self.allocation = allocation;
+        Ok(self)
     }
 
     /// Sets the premium from a deposit `amount` quoted for 100% of the
@@ -1076,10 +1135,12 @@ impl Layer {
 
     /// Ceded loss per event for one year, in the order given.
     ///
-    /// Annual terms are used up in that order (losses are taken as
-    /// chronological): the deductible absorbs the first recoveries and the
-    /// annual limit stops the last ones. Event `k` cedes the increase in
-    /// annual ceded loss it causes, so the entries sum to
+    /// By default ([`LimitAllocation::EventOrder`]) annual terms are used
+    /// up in that order (losses are taken as chronological): the
+    /// deductible absorbs the first recoveries and the annual limit stops
+    /// the last ones. Event `k` cedes the increase in annual ceded loss it
+    /// causes. Under [`LimitAllocation::ProRata`] every event is scaled by
+    /// the same factor instead. Either way the entries sum to
     /// [`ceded`](Self::ceded) up to rounding.
     ///
     /// ```
@@ -1096,6 +1157,24 @@ impl Layer {
     }
 
     fn ceded_by_event_si(&self, losses: &[f64], si: Option<&[f64]>) -> Vec<f64> {
+        if self.allocation == LimitAllocation::ProRata {
+            let recoveries: Vec<f64> = losses
+                .iter()
+                .enumerate()
+                .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e])))
+                .collect();
+            let total: f64 = recoveries.iter().sum();
+            // No recovery, nothing to share; the factor is 1 by convention.
+            let factor = if total > 0.0 {
+                self.after_terms(total) / total
+            } else {
+                1.0
+            };
+            return recoveries
+                .into_iter()
+                .map(|u| self.share * u * factor)
+                .collect();
+        }
         let mut before = 0.0;
         self.cumulative_layer_loss(losses, si)
             .into_iter()
@@ -1510,6 +1589,9 @@ impl Tower {
                 if l.pro_rata_time {
                     terms += ", pro rata as to time";
                 }
+            }
+            if l.allocation == LimitAllocation::ProRata {
+                terms += ", annual terms pro rata across events";
             }
             if l.reinstatement_rates.is_empty() && l.premium > 0.0 {
                 terms += &format!(", premium {}", l.premium);
@@ -2151,6 +2233,82 @@ mod tests {
         assert_eq!(sl.ceded(&[60.0, 70.0]), 30.0);
         assert_eq!(sl.ceded(&[200.0]), 50.0);
         assert!(Layer::stop_loss("SL", 50.0, f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn pro_rata_scales_every_event_by_the_same_factor() {
+        // #476's rule: u = 3, 10, 7 after the occurrence terms, U = 20; the
+        // deductible 4 and annual limit 15 leave 15, so f = 0.75.
+        let layer = Layer::xol("L", 10.0, 5.0)
+            .unwrap()
+            .aggregate_deductible(4.0)
+            .unwrap()
+            .aggregate_limit(15.0)
+            .unwrap()
+            .share(0.5)
+            .unwrap();
+        let losses = [8.0, 20.0, 12.0];
+        let pro_rata = layer.clone().allocation(LimitAllocation::ProRata).unwrap();
+        let split = pro_rata.ceded_by_event(&losses);
+        for (got, want) in split.iter().zip([1.125, 3.75, 2.625]) {
+            assert!((got - want).abs() < 1e-12, "{got} vs {want}");
+        }
+        // The annual total is the same under both rules.
+        let total: f64 = split.iter().sum();
+        assert!((total - layer.ceded(&losses)).abs() < 1e-12);
+        assert_eq!(pro_rata.ceded(&losses), layer.ceded(&losses));
+        // When the annual terms do not bite, the rules agree.
+        let free = Layer::xol("F", 10.0, 5.0).unwrap();
+        let free_pr = free.clone().allocation(LimitAllocation::ProRata).unwrap();
+        assert_eq!(
+            free.ceded_by_event(&losses),
+            free_pr.ceded_by_event(&losses)
+        );
+        // No recovery, nothing ceded.
+        assert_eq!(pro_rata.ceded_by_event(&[1.0, 2.0]), [0.0, 0.0]);
+        assert!(pro_rata.ceded_by_event(&[]).is_empty());
+        // Not with reinstatements pro rata as to time, either way round.
+        let timed = Layer::xol("T", 10.0, 5.0)
+            .unwrap()
+            .paid_reinstatements(1.0, vec![1.0])
+            .unwrap();
+        assert!(
+            timed
+                .clone()
+                .pro_rata_as_to_time()
+                .unwrap()
+                .allocation(LimitAllocation::ProRata)
+                .is_err()
+        );
+        assert!(
+            timed
+                .allocation(LimitAllocation::ProRata)
+                .unwrap()
+                .pro_rata_as_to_time()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn pro_rata_changes_what_a_later_stage_sees() {
+        // Stage 1: 10 xs 5 with one reinstatement (20 a year) on 15, 20, 10.
+        // In event order it cedes 10, 10, 0 and leaves 5, 10, 10; pro rata
+        // 8, 8, 4 and leaves 7, 12, 6. Stage 2, 5 xs 5, recovers 0 + 5 + 5
+        // against 2 + 5 + 1.
+        let first = Layer::xol("10x5", 10.0, 5.0)
+            .unwrap()
+            .reinstatements(1)
+            .unwrap();
+        let second = Layer::xol("5x5", 5.0, 5.0).unwrap();
+        let losses = [15.0, 20.0, 10.0];
+        let order = Tower::inuring(vec![vec![first.clone()], vec![second.clone()]]).unwrap();
+        let pro_rata = Tower::inuring(vec![
+            vec![first.allocation(LimitAllocation::ProRata).unwrap()],
+            vec![second],
+        ])
+        .unwrap();
+        assert_eq!(order.ceded(&losses), [20.0, 10.0]);
+        assert_eq!(pro_rata.ceded(&losses), [20.0, 8.0]);
     }
 
     #[test]

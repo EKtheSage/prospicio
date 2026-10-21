@@ -32,6 +32,14 @@ NULL
 #'   limit a loss at time `t` (the fraction of the year elapsed) uses up is
 #'   charged at `1 - t`. Needs `reinstatement_rates`, and events with times
 #'   ([with_uniform_times()], or `times` in [events_from_years()]).
+#' @param allocation How the annual terms (aggregate deductible and limit,
+#'   reinstatements) split the year's recovery among its events:
+#'   `"event_order"` uses the aggregate limit up in the order the events
+#'   occur, so a later event gets what is left; `"pro_rata"` scales every
+#'   event's recovery by the same factor, the annual recovery after the terms
+#'   over the one before them. The annual total is the same; the split by
+#'   event, and so what an inuring stage sees, differs. Cannot be combined
+#'   with `pro_rata_time`.
 #' @param ptr Internal: an existing layer to wrap.
 #' @returns An `xol_layer` object with read-only properties for each term
 #'   (`loss_corridor` is `c(lower, upper, retained)`, `ceding_commission` the
@@ -55,6 +63,9 @@ NULL
 #' timed <- xol_layer("10x10", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5),
 #'                    pro_rata_time = TRUE)
 #' reinstatement_premium(timed, c(22, 12), times = c(0.25, 0.5))
+#' ceded_by_event(xol_layer("10x5", 10, 5, reinstatements = 1), c(15, 20, 10))
+#' ceded_by_event(xol_layer("10x5", 10, 5, reinstatements = 1, allocation = "pro_rata"),
+#'                c(15, 20, 10))
 xol_layer <- S7::new_class(
   "xol_layer",
   package = "prospicio",
@@ -73,6 +84,7 @@ xol_layer <- S7::new_class(
       S7::class_double, getter = function(self) self@ptr$reinstatement_rates()
     ),
     pro_rata_time = S7::new_property(S7::class_logical, getter = function(self) self@ptr$pro_rata_time()),
+    allocation = S7::new_property(S7::class_character, getter = function(self) self@ptr$allocation()),
     loss_corridor = S7::new_property(S7::class_double, getter = function(self) self@ptr$loss_corridor()),
     ceding_commission = S7::new_property(
       S7::class_double, getter = function(self) self@ptr$ceding_commission()
@@ -105,14 +117,15 @@ xol_layer <- S7::new_class(
   ),
   constructor = function(name, limit, attachment, share = 1, aggregate_deductible = 0,
                          aggregate_limit = Inf, reinstatements = NULL, premium = 0,
-                         reinstatement_rates = NULL, pro_rata_time = FALSE, ptr = NULL) {
+                         reinstatement_rates = NULL, pro_rata_time = FALSE,
+                         allocation = "event_order", ptr = NULL) {
     if (is.null(ptr)) {
       reinst <- if (is.null(reinstatements)) -1 else as.double(reinstatements)
       ptr <- rust_result(XolLayer$new(
         as.character(name), as.double(limit), as.double(attachment), as.double(share),
         as.double(aggregate_deductible), as.double(aggregate_limit), reinst,
         as.double(premium), as.double(reinstatement_rates), !is.null(reinstatement_rates),
-        isTRUE(pro_rata_time)
+        isTRUE(pro_rata_time), as.character(allocation)
       ))
     }
     S7::new_object(S7::S7_object(), ptr = ptr)

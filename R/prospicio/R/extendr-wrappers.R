@@ -354,7 +354,7 @@ HierarchicalCredibilityR$predictive <- function(weights, n_sims, seed) .Call(wra
 
 XolLayer <- new.env(parent = emptyenv())
 
-XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time) .Call(wrap__XolLayer__new, name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time)
+XolLayer$new <- function(name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time, allocation) .Call(wrap__XolLayer__new, name, limit, attachment, share, aggregate_deductible, aggregate_limit, reinstatements, premium, reinstatement_rates, paid, pro_rata_time, allocation)
 
 XolLayer$quota_share <- function(name, cession) .Call(wrap__XolLayer__quota_share, name, cession)
 
@@ -387,6 +387,8 @@ XolLayer$ceded <- function(losses) .Call(wrap__XolLayer__ceded, self, losses)
 XolLayer$ceded_by_event <- function(losses) .Call(wrap__XolLayer__ceded_by_event, self, losses)
 
 XolLayer$pro_rata_time <- function() .Call(wrap__XolLayer__pro_rata_time, self)
+
+XolLayer$allocation <- function() .Call(wrap__XolLayer__allocation, self)
 
 XolLayer$with_loss_corridor <- function(lower, upper, retained) .Call(wrap__XolLayer__with_loss_corridor, self, lower, upper, retained)
 

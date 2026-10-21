@@ -163,6 +163,12 @@ an insurer and its reinsurers. All numerics that are not aggregation itself
   annual ceded loss, which does not depend on order; only later stages do.
   Simulated events are in simulation order, which is their time order;
   events may carry times too (below).
+  `Layer::allocation(LimitAllocation::ProRata)` splits the annual terms
+  pro rata instead (#476): with per-event recoveries `u_e` summing to `U`,
+  event `e` cedes `share × u_e × after_terms(U) / U` (factor 1 when
+  `U = 0`). The annual total is the same; the nets a later stage sees are
+  not. It is refused with pro rata as to time, whose charge depends on
+  when the limit is used up.
 - **Reinstatement premiums are pro rata as to amount.** With layer loss
   `L` at 100% after annual terms, `paid_reinstatements(premium, rates)`
   charges `premium × Σ_k rates[k] × min(max(L - k·l, 0), l) / l`, where

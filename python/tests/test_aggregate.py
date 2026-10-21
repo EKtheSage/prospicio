@@ -239,6 +239,28 @@ def test_reinstatements_pro_rata_as_to_time():
     rp = Tower([one]).apply(dated).marginal(("reinstatement_premium", "10x10"))
     assert abs(rp.mean() - 1.0) < 4 * (rp.variance() / n) ** 0.5
 
+
+def test_annual_limit_pro_rata_across_events():
+    # 10x5 with one reinstatement on [15, 20, 10]: recoveries 10, 10, 5 and
+    # an annual limit of 20.
+    order = Layer("10x5", 10.0, 5.0, reinstatements=1)
+    pro = Layer("10x5", 10.0, 5.0, reinstatements=1, allocation="pro_rata")
+    assert order.allocation == "event_order" and pro.allocation == "pro_rata"
+    assert order.ceded_by_event([15.0, 20.0, 10.0]) == pytest.approx([10.0, 10.0, 0.0])
+    assert pro.ceded_by_event([15.0, 20.0, 10.0]) == pytest.approx([8.0, 8.0, 4.0])
+    assert pro.ceded([15.0, 20.0, 10.0]) == pytest.approx(order.ceded([15.0, 20.0, 10.0]))
+    # What an inuring 5x5 sees: 5, 10, 10 in event order, 7, 12, 6 pro rata.
+    second = Layer("5x5", 5.0, 5.0)
+    assert Tower.inuring([[order], [second]]).ceded([15.0, 20.0, 10.0]) == pytest.approx([20.0, 10.0])
+    inuring = Tower.inuring([[pro], [second]])
+    assert inuring.ceded([15.0, 20.0, 10.0]) == pytest.approx([20.0, 8.0])
+    assert Tower.from_json(inuring.to_json()).ceded([15.0, 20.0, 10.0]) == pytest.approx([20.0, 8.0])
+    with pytest.raises(ValueError):
+        Layer("10x5", 10.0, 5.0, allocation="by_size")
+    with pytest.raises(ValueError):
+        Layer("10x10", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0], pro_rata_time=True,
+              allocation="pro_rata")
+
     e = EventSet.from_years([[5.0, 2.0], [9.0]], times=[[0.1, 0.6], [0.3]])
     assert e.times(1) == [0.3]
     with pytest.raises(ValueError):

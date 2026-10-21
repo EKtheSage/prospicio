@@ -12482,6 +12482,15 @@ class Layer:
         ``1 - t``. Needs ``reinstatement_rates``, and events with times
         (``EventSet.with_uniform_times``, or ``times=`` in
         ``EventSet.from_years``).
+    allocation : {"event_order", "pro_rata"}, default "event_order"
+        How the annual terms (aggregate deductible and limit, reinstatements)
+        split the year's recovery among its events. ``"event_order"`` uses
+        the aggregate limit up in the order the events occur, so a later
+        event gets what is left. ``"pro_rata"`` scales every event's
+        recovery by the same factor, the annual recovery after the terms
+        over the one before them. The annual total is the same; the split by
+        event, and so what an inuring stage sees, differs. Cannot be
+        combined with ``pro_rata_time``.
     
     Raises
     ------
@@ -12504,8 +12513,12 @@ class Layer:
     ...               pro_rata_time=True)
     >>> round(timed.reinstatement_premium([22.0, 12.0], times=[0.25, 0.5]), 12)
     1.6
+    >>> Layer("10x5", 10.0, 5.0, reinstatements=1).ceded_by_event([15.0, 20.0, 10.0])
+    [10.0, 10.0, 0.0]
+    >>> Layer("10x5", 10.0, 5.0, reinstatements=1, allocation="pro_rata").ceded_by_event([15.0, 20.0, 10.0])
+    [8.0, 8.0, 4.0]
     """
-    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None, premium: float = 0.0, reinstatement_rates: Sequence[float] |None = None, pro_rata_time: bool = False) -> Layer: ...
+    def __new__(cls, /, name: str, limit: float, attachment: float, share: float = 1.0, aggregate_deductible: float = 0.0, aggregate_limit: float |None = None, reinstatements: int |None = None, premium: float = 0.0, reinstatement_rates: Sequence[float] |None = None, pro_rata_time: bool = False, allocation: str = "event_order") -> Layer: ...
     def __repr__(self, /) -> str: ...
     @property
     def aggregate_deductible(self, /) -> float:
@@ -12516,6 +12529,12 @@ class Layer:
     def aggregate_limit(self, /) -> float:
         """
         Annual aggregate limit.
+        """
+    @property
+    def allocation(self, /) -> str:
+        """
+        How the annual terms split the year's recovery among its events:
+        ``"event_order"`` or ``"pro_rata"``.
         """
     @property
     def attachment(self, /) -> float:

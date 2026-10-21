@@ -641,3 +641,12 @@
   compares deviances. earth parity on the Chalk portfolio: the knots, RSS and GCV of default,
   weighted, `nk = 15` and pruned runs. Python `models.mars()` and `MarsFit`, R `mars_knots()` and
   `mars_formula()` (#465).
+
+### Aggregate and reinsurance
+
+- A layer's annual terms can split the year's recovery pro rata across its events
+  (`LimitAllocation::ProRata`, `Layer::allocation`): every event's recovery is scaled by the annual
+  recovery after the terms over the one before them, instead of using the limit up in event order.
+  The annual total is unchanged; the split by event, and so what an inuring stage sees, differs.
+  Refused with reinstatements pro rata as to time; written to a tower's JSON only when set. Python
+  `Layer(..., allocation="pro_rata")`, R `xol_layer(..., allocation = "pro_rata")` (#476).

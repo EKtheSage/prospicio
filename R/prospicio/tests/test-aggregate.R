@@ -182,6 +182,17 @@ stopifnot(inherits(try(apply_tower(reinsurance_tower(list(one)), ev), silent = T
 dated <- with_uniform_times(ev)
 rp <- draw_matrix(apply_tower(reinsurance_tower(list(one)), dated))[, 4]
 stopifnot(abs(mean(rp) - 1) < 4 * sd(rp) / sqrt(n), length(event_times(ev, 1)) == 0)
+
+# The annual limit shared pro rata across the year's events.
+order <- xol_layer("10x5", 10, 5, reinstatements = 1)
+pro <- xol_layer("10x5", 10, 5, reinstatements = 1, allocation = "pro_rata")
+stopifnot(order@allocation == "event_order", pro@allocation == "pro_rata")
+close(ceded_by_event(order, c(15, 20, 10)), c(10, 10, 0), 1e-12)
+close(ceded_by_event(pro, c(15, 20, 10)), c(8, 8, 4), 1e-12)
+stopifnot(inherits(try(xol_layer("f", 10, 5, allocation = "by_size"), silent = TRUE), "try-error"))
+stopifnot(inherits(try(xol_layer("f", 10, 10, premium = 2, reinstatement_rates = 1,
+                                 pro_rata_time = TRUE, allocation = "pro_rata"),
+                       silent = TRUE), "try-error"))
 # Losses only in the second half of the year: 2 E[1 - t] = 0.5.
 late <- with_seasonal_times(ev, c(0, 1))
 stopifnot(all(sapply(1:100, function(i) event_times(late, i)) >= 0.5))

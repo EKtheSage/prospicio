@@ -31,7 +31,7 @@
 use prospicio_core::{Error, Result};
 use serde_json::{Map, Number, Value, json};
 
-use crate::reinsurance::{Basis, Commission, Layer, LossSensitivePremium, Tower};
+use crate::reinsurance::{Basis, Commission, Layer, LimitAllocation, LossSensitivePremium, Tower};
 
 /// Value of the `format` field.
 const FORMAT: &str = "risk_rs.tower";
@@ -141,6 +141,10 @@ fn layer_json(l: &Layer) -> Value {
         Value::Array(l.reinstatement_rates.iter().map(|&r| num(r)).collect()),
     );
     m.insert("pro_rata_time".into(), json!(l.pro_rata_time));
+    // Written only when not the default, so older documents read the same.
+    if l.allocation == LimitAllocation::ProRata {
+        m.insert("allocation".into(), json!("pro_rata"));
+    }
     if let Some(c) = &l.corridor {
         m.insert(
             "loss_corridor".into(),
@@ -242,6 +246,19 @@ fn layer_from(m: &Map<String, Value>) -> Result<Layer> {
         None | Some(Value::Bool(false)) => {}
         Some(Value::Bool(true)) => layer = layer.pro_rata_as_to_time()?,
         Some(_) => return Err(Error::Data("pro_rata_time must be true or false".into())),
+    }
+    // Absent in documents written before it, and for event order.
+    match m.get("allocation") {
+        None => {}
+        Some(Value::String(a)) if a == "event_order" => {}
+        Some(Value::String(a)) if a == "pro_rata" => {
+            layer = layer.allocation(LimitAllocation::ProRata)?;
+        }
+        Some(_) => {
+            return Err(Error::Data(
+                "allocation must be \"event_order\" or \"pro_rata\"".into(),
+            ));
+        }
     }
     // Absent in documents written before corridors, and for a layer
     // without one.
@@ -466,6 +483,41 @@ mod tests {
         for i in 0..a.n_sims() {
             assert_eq!(a.row(i).unwrap(), b.row(i).unwrap());
         }
+    }
+
+    #[test]
+    fn the_limit_allocation_round_trips() {
+        let layer = Layer::xol("L", 10.0, 5.0)
+            .unwrap()
+            .reinstatements(1)
+            .unwrap()
+            .allocation(LimitAllocation::ProRata)
+            .unwrap();
+        let tower = Tower::new(vec![layer]).unwrap();
+        let json = tower.to_json();
+        assert!(json.contains("\"allocation\":\"pro_rata\""));
+        let back = Tower::from_json(&json).unwrap();
+        assert_eq!(back.layers[0].allocation, LimitAllocation::ProRata);
+        assert_eq!(back, tower);
+        // Event order is the default and is not written; it reads back
+        // from either spelling.
+        let plain = Tower::new(vec![Layer::xol("L", 10.0, 5.0).unwrap()])
+            .unwrap()
+            .to_json();
+        assert!(!plain.contains("allocation"));
+        let spelled = plain.replace(
+            "\"pro_rata_time\":false",
+            "\"pro_rata_time\":false,\"allocation\":\"event_order\"",
+        );
+        assert_eq!(
+            Tower::from_json(&spelled).unwrap().layers[0].allocation,
+            LimitAllocation::EventOrder
+        );
+        let bad = plain.replace(
+            "\"pro_rata_time\":false",
+            "\"pro_rata_time\":false,\"allocation\":3",
+        );
+        assert!(Tower::from_json(&bad).is_err());
     }
 
     #[test]
