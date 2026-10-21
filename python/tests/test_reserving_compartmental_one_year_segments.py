@@ -231,15 +231,17 @@ def test_the_default_refit_mode(two):
     assert matched > 0
 
 
-def test_model_2_default_is_approximate_and_warns(two):
-    # The user's decision of 2026-10-16: model 2's default view reweights
+def test_model_2_reweight_only_is_approximate_and_warns(two):
+    # Since the user's decision of 2026-10-21 model 2's default refits the
+    # flagged simulations with the light sampler; light_refit=False reweights
     # only, with a warning that it is approximate (short chains may miss a
     # diagnostic threshold too).
     short = Compartmental.model_2(GM2, chains=2, tune=200, draws=200, target_accept=0.9,
                                   seed=5)
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
-        views = short.one_year_segments(two, "paid", "premium", incurred="incurred", n_sims=50)
+        views = short.one_year_segments(two, "paid", "premium", incurred="incurred", n_sims=50,
+                                        light_refit=False)
     assert "approximate" in views.approximate
     assert any(issubclass(w.category, UserWarning) and "approximate" in str(w.message)
                for w in record)

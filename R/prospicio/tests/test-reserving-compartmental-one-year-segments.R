@@ -155,8 +155,9 @@ for (name in c("a", "b")) {
 }
 stopifnot(matched > 0)
 
-# The user's decision of 2026-10-16: model 2's default view reweights only,
-# with a warning that it is approximate (short chains may miss a diagnostic
+# Since the user's decision of 2026-10-21 model 2's default refits the flagged
+# simulations with the light sampler; light_refit = FALSE reweights only, with
+# a warning that it is approximate (short chains may miss a diagnostic
 # threshold too).
 model_2_segments <- function(...) {
   with_warnings(compartmental_one_year_segments(
@@ -164,7 +165,7 @@ model_2_segments <- function(...) {
     scale = "loss_ratio", paid_response = "incremental", chains = 2, tune = 200, draws = 200,
     target_accept = 0.9, seed = 5, one_year_sims = 50, ...))
 }
-m2 <- model_2_segments()
+m2 <- model_2_segments(light_refit = FALSE)
 stopifnot(
   grepl("approximate", m2$value@approximate, fixed = TRUE),
   any(grepl("approximate", m2$warnings, fixed = TRUE))
