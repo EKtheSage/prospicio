@@ -238,16 +238,19 @@ fn in_layer(x: f64, layer: Layer) -> f64 {
 
 /// The upper triangle of the columns, each a sum over the claims reported
 /// by the age of a function of the claim's size there.
-fn triangle(claims: &[Claim], columns: &[(String, Box<dyn Fn(f64) -> f64>)]) -> Triangle {
+/// A named column: its value for one claim of the given size.
+type Column = (String, Box<dyn Fn(f64) -> f64>);
+
+fn triangle(claims: &[Claim], columns: &[Column]) -> Triangle {
     let ages = ages();
     let mut origin = Vec::new();
     let mut age = Vec::new();
     let mut values = vec![Vec::new(); columns.len()];
     for o in 0..N_ORIGINS {
         let of_origin: Vec<&Claim> = claims.iter().filter(|cl| cl.origin == o).collect();
-        for d in 0..N_AGES - o {
+        for (d, &at) in ages.iter().enumerate().take(N_AGES - o) {
             origin.push(Month::january(2010 + o as i32));
-            age.push(ages[d]);
+            age.push(at);
             let mut sums = vec![0.0; columns.len()];
             for cl in of_origin.iter().filter(|cl| cl.report <= d) {
                 for (sum, (_, f)) in sums.iter_mut().zip(columns) {
@@ -317,7 +320,7 @@ fn method_names() -> Vec<String> {
 fn simulate(arm: Arm, sim: usize) -> Vec<(f64, Vec<Option<f64>>)> {
     let claims = claims(arm, sim);
     let layers = arm.layers();
-    let mut columns: Vec<(String, Box<dyn Fn(f64) -> f64>)> = vec![
+    let mut columns: Vec<Column> = vec![
         ("gu".into(), Box::new(|x| x)),
         ("count".into(), Box::new(|_| 1.0)),
         ("gu capped".into(), Box::new(|x: f64| x.min(CAP))),
