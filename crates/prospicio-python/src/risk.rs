@@ -884,6 +884,168 @@ pub(crate) fn co_statistics<'py>(
     Ok(out)
 }
 
+/// Bootstrap standard errors of every statistic ``statistics`` reports.
+///
+/// Each replicate draws the simulations with replacement, one draw shared by
+/// every column so their joint structure is kept, and reads the statistics
+/// from the resample counts on each column's order, sorted once. A
+/// statistic's standard error is the sample SD (dividing by ``B - 1``) of its
+/// ``replicates`` values. Resampling a model's stored per-simulation results
+/// this way takes seconds where re-running the model per replicate takes
+/// minutes.
+///
+/// With ``hold_fixed``, each simulation keeps its fixed part (a tiled
+/// catalogue's loss, say) and only the rest is resampled: replicate
+/// simulation ``i`` is ``hold_fixed[i] + (x - hold_fixed)[s_i]``, so the
+/// errors are conditional on the fixed part. Each replicate is then sorted.
+///
+/// Parameters
+/// ----------
+/// dist : Sampled, list of float, dict of str to list of float, or PredictiveDistribution
+///     The per-simulation results. A dict's lists and a predictive
+///     distribution's components share each replicate's draw.
+/// percentiles : list of float
+///     In percent, in ``[0, 100]``.
+/// replicates : int, default 200
+///     At least 2.
+/// seed : int, default 0
+///     Replicate ``b`` draws from stream ``b`` of ``seed``.
+/// hold_fixed : same kind as ``dist``, optional
+///     The fixed part of each column: a list for a list, a dict with the
+///     same keys for a dict, a predictive distribution with the same
+///     components for one.
+/// tvar_levels, sd_multiples, quantile, tvar
+///     As for ``statistics``.
+///
+/// Returns
+/// -------
+/// dict
+///     As ``statistics`` returns, with standard errors for values; for a
+///     dict, ``{item: {name: se}}``.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If the columns are empty or of different lengths, a value is not
+///     finite, ``replicates < 2``, ``hold_fixed`` does not match ``dist``,
+///     a level is outside ``[0, 100]`` or a method name is unknown.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.risk import bootstrap_se
+/// >>> x = [float((i * 37) % 1000) for i in range(1000)]
+/// >>> se = bootstrap_se(x, [50], replicates=200, seed=7)
+/// >>> 7 < se["Mean"] < 11
+/// True
+#[pyfunction]
+#[pyo3(signature = (dist, percentiles, *, replicates = 200, seed = 0, hold_fixed = None, tvar_levels = None, sd_multiples = None, quantile = "inverted_cdf", tvar = "exact"))]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn bootstrap_se<'py>(
+    py: Python<'py>,
+    dist: &Bound<'py, PyAny>,
+    percentiles: Vec<f64>,
+    replicates: usize,
+    seed: u64,
+    hold_fixed: Option<&Bound<'py, PyAny>>,
+    tvar_levels: Option<Vec<f64>>,
+    sd_multiples: Option<Vec<f64>>,
+    quantile: &str,
+    tvar: &str,
+) -> PyResult<Bound<'py, PyDict>> {
+    let mut grid = StatisticsGrid::new(percentiles)
+        .map_err(to_py)?
+        .quantile_method(quantile_method(quantile)?)
+        .tvar_method(tvar_method(tvar)?);
+    if let Some(levels) = tvar_levels {
+        grid = grid.tvar_levels(levels).map_err(to_py)?;
+    }
+    if let Some(k) = sd_multiples {
+        grid = grid.sd_multiples(k).map_err(to_py)?;
+    }
+    let out = PyDict::new(py);
+    if let Ok(pd) = dist.extract::<PyRef<'_, PyPredictiveDistribution>>() {
+        let fixed = hold_fixed
+            .map(|f| {
+                f.extract::<PyRef<'_, PyPredictiveDistribution>>()
+                    .map_err(|_| {
+                        PyTypeError::new_err("hold_fixed must be a PredictiveDistribution for one")
+                    })
+                    .map(|f| f.inner.clone())
+            })
+            .transpose()?;
+        let inner = &pd.inner;
+        let rows = py
+            .detach(|| grid.bootstrap_se_components(inner, fixed.as_ref(), replicates, seed))
+            .map_err(to_py)?;
+        for (d, dim) in pd.inner.dims().iter().enumerate() {
+            let keys: Vec<Bound<'py, PyAny>> = rows
+                .iter()
+                .map(|(key, _)| key_to_py(py, key).and_then(|t| t.get_item(d)))
+                .collect::<PyResult<_>>()?;
+            out.set_item(dim, keys)?;
+        }
+        for (j, name) in grid.names().iter().enumerate() {
+            let column: Vec<f64> = rows.iter().map(|(_, st)| st.values[j]).collect();
+            out.set_item(name, column)?;
+        }
+        return Ok(out);
+    }
+    let run = |columns: Vec<Vec<f64>>, fixed: Option<Vec<Vec<f64>>>| {
+        py.detach(|| {
+            let refs: Vec<&[f64]> = columns.iter().map(Vec::as_slice).collect();
+            match &fixed {
+                None => grid.bootstrap_se(&refs, replicates, seed),
+                Some(f) => {
+                    let held: Vec<&[f64]> = f.iter().map(Vec::as_slice).collect();
+                    grid.bootstrap_se_holding(&refs, &held, replicates, seed)
+                }
+            }
+        })
+        .map_err(to_py)
+    };
+    if let Ok(items) = dist.cast::<PyDict>() {
+        let items: Vec<(String, Vec<f64>)> = items
+            .iter()
+            .map(|(k, v)| Ok((k.extract::<String>()?, v.extract::<Vec<f64>>()?)))
+            .collect::<PyResult<_>>()?;
+        let fixed = hold_fixed
+            .map(|f| {
+                let f = f
+                    .cast::<PyDict>()
+                    .map_err(|_| PyTypeError::new_err("hold_fixed must be a dict for a dict"))?;
+                items
+                    .iter()
+                    .map(|(name, _)| {
+                        f.get_item(name)?
+                            .ok_or_else(|| {
+                                PyValueError::new_err(format!("hold_fixed has no {name:?}"))
+                            })?
+                            .extract::<Vec<f64>>()
+                    })
+                    .collect::<PyResult<Vec<_>>>()
+            })
+            .transpose()?;
+        let names: Vec<String> = items.iter().map(|(n, _)| n.clone()).collect();
+        let stats = run(items.into_iter().map(|(_, v)| v).collect(), fixed)?;
+        for (name, st) in names.iter().zip(stats) {
+            let cells = PyDict::new(py);
+            for (n, v) in st.names.iter().zip(&st.values) {
+                cells.set_item(n, v)?;
+            }
+            out.set_item(name, cells)?;
+        }
+        return Ok(out);
+    }
+    let fixed = hold_fixed
+        .map(|f| draws_of(f).map(|d| vec![d]))
+        .transpose()?;
+    let st = run(vec![draws_of(dist)?], fixed)?;
+    for (name, value) in st[0].names.iter().zip(&st[0].values) {
+        out.set_item(name, value)?;
+    }
+    Ok(out)
+}
+
 /// Risk ratios of a per-simulation result such as a margin, where large is
 /// good, about a threshold ``t`` and under named conventions.
 ///

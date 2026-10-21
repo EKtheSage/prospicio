@@ -289,3 +289,21 @@ stopifnot(abs(rr_ref[["Sortino"]] - 1) < 1e-12, rr_ref[["Omega"]] == 1.5)
 rr_pd <- risk_ratios(predictive_distribution(cbind(rr_x, 2 * rr_x), data.frame(lob = c("a", "b"))), threshold = 1)
 stopifnot(identical(rr_pd$lob, c("a", "b")), rr_pd$Sharpe[1] == 0)
 stopifnot(inherits(try(risk_ratios(rr_x, omega = "ratio"), silent = TRUE), "try-error"))
+
+# Bootstrap standard errors (#488): one draw shared by every column, a part
+# held fixed.
+bs_x <- as.double((seq_len(1000) * 37) %% 1000)
+bs <- bootstrap_se(bs_x, c(50, 99), replicates = 200, seed = 7)
+stopifnot(bs["Mean"] > 7, bs["Mean"] < 11, identical(bs, bootstrap_se(bs_x, c(50, 99), replicates = 200, seed = 7)))
+bs_by <- bootstrap_se(list(a = bs_x, b = 2 * bs_x), 50, replicates = 50, seed = 1)
+stopifnot(identical(bs_by$item, c("a", "b")),
+          abs(bs_by[["Percentile 50"]][2] - 2 * bs_by[["Percentile 50"]][1]) < 1e-9)
+bs_held <- bootstrap_se(bs_x, 50, replicates = 50, seed = 1, hold_fixed = bs_x)
+stopifnot(all(abs(bs_held) < 1e-9))
+bs_none <- bootstrap_se(bs_x, 50, replicates = 50, seed = 1, hold_fixed = 0 * bs_x)
+bs_plain <- bootstrap_se(bs_x, 50, replicates = 50, seed = 1)
+stopifnot(abs(bs_none["Percentile 50"] - bs_plain["Percentile 50"]) < 1e-9)
+bs_pd <- bootstrap_se(predictive_distribution(cbind(bs_x[1:200], bs_x[1:200] + 1), data.frame(lob = c("a", "b"))),
+                      90, replicates = 30, seed = 2)
+stopifnot(identical(bs_pd$lob, c("a", "b")), abs(bs_pd$SD[1] - bs_pd$SD[2]) < 1e-9)
+stopifnot(inherits(try(bootstrap_se(bs_x, 50, replicates = 1), silent = TRUE), "try-error"))

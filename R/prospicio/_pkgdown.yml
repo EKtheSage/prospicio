@@ -66,6 +66,7 @@ reference:
       - severity
       - risk_measures
       - statistics
+      - bootstrap_se
       - co_statistics
       - risk_ratios
       - tvar_threshold

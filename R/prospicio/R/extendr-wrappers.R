@@ -280,6 +280,8 @@ occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, 
 
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
 
+bootstrap_se_rust <- function(columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed) .Call(wrap__bootstrap_se_rust, columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed)
+
 co_statistics_rust <- function(driver, items, percentiles, tvar_levels, rule) .Call(wrap__co_statistics_rust, driver, items, percentiles, tvar_levels, rule)
 
 risk_ratios_rust <- function(draws, threshold, sortino, omega, tvar_levels, tvar) .Call(wrap__risk_ratios_rust, draws, threshold, sortino, omega, tvar_levels, tvar)

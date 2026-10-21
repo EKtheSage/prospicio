@@ -495,3 +495,36 @@ def test_statistics_of_a_predictive_distribution_by_component():
     assert cols["Percentile 50"] == [5.0, 10.0]
     assert cols["TVaR 90"] == pytest.approx([10.0, 20.0], rel=1e-12)
     assert list(cols)[:3] == ["lob", "Mean", "SD"]
+
+
+def test_bootstrap_se_shares_one_draw_and_holds_a_part_fixed():
+    from prospicio.risk import bootstrap_se
+
+    x = [float((i * 37) % 1000) for i in range(1000)]
+    se = bootstrap_se(x, [50, 99], replicates=200, seed=7)
+    assert list(se)[:3] == ["Mean", "SD", "CoV"]
+    # The mean's error is close to sd / sqrt(n), about 9.1.
+    assert 7 < se["Mean"] < 11
+    assert bootstrap_se(x, [50, 99], replicates=200, seed=7) == se
+
+    # One draw for every item of a dict: a doubled item has twice the errors.
+    by = bootstrap_se({"a": x, "b": [2 * v for v in x]}, [50], replicates=50, seed=1)
+    assert by["b"]["Percentile 50"] == pytest.approx(2 * by["a"]["Percentile 50"])
+
+    # Holding the whole column fixed leaves no error; holding nothing is the
+    # plain bootstrap.
+    held = bootstrap_se(x, [50], replicates=50, seed=1, hold_fixed=x)
+    assert all(abs(v) < 1e-9 for v in held.values())
+    none = bootstrap_se(x, [50], replicates=50, seed=1, hold_fixed=[0.0] * len(x))
+    plain = bootstrap_se(x, [50], replicates=50, seed=1)
+    assert none["Percentile 50"] == pytest.approx(plain["Percentile 50"])
+
+    rows = [[v, v + 1.0] for v in x[:200]]
+    pd = PredictiveDistribution(["lob"], [(0,), (1,)], rows)
+    cols = bootstrap_se(pd, [90], replicates=30, seed=2)
+    assert cols["lob"] == [0, 1]
+    assert cols["SD"][0] == pytest.approx(cols["SD"][1])
+    with pytest.raises(ValueError, match="replicates"):
+        bootstrap_se(x, [50], replicates=1)
+    with pytest.raises(ValueError, match="hold_fixed has no"):
+        bootstrap_se({"a": x}, [50], hold_fixed={"b": x})

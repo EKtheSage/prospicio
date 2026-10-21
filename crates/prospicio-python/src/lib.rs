@@ -161,9 +161,9 @@ mod prospicio_native {
     use super::risk::{
         PyAllocation, PyArchimedeanCopula, PyDistortion, PyGaussianCopula, PyGpd,
         PyLevelAllocation, PyNestedArchimedeanCopula, PyPairCopula, PyPotTail, PyStudentTCopula,
-        PyVineCopula, allocate, calibrate, capital, co_statistics, covar, entropic, equal_risk,
-        esscher, esscher_allocation, haircut, hill, iman_conover, marginal_expected_shortfall,
-        mean_excess, rearrange, risk_ratios, shapley, simulate, statistics, threshold_diagnostics,
-        worst_var,
+        PyVineCopula, allocate, bootstrap_se, calibrate, capital, co_statistics, covar, entropic,
+        equal_risk, esscher, esscher_allocation, haircut, hill, iman_conover,
+        marginal_expected_shortfall, mean_excess, rearrange, risk_ratios, shapley, simulate,
+        statistics, threshold_diagnostics, worst_var,
     };
 }

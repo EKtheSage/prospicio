@@ -25532,6 +25532,63 @@ def audit_portfolio_grid(units: Any, step: float |None = None, log2: int |None =
     True
     """
 
+def bootstrap_se(dist: Any, percentiles: Sequence[float], *, replicates: int = 200, seed: int = 0, hold_fixed: Any |None = None, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact") -> dict:
+    """
+    Bootstrap standard errors of every statistic ``statistics`` reports.
+    
+    Each replicate draws the simulations with replacement, one draw shared by
+    every column so their joint structure is kept, and reads the statistics
+    from the resample counts on each column's order, sorted once. A
+    statistic's standard error is the sample SD (dividing by ``B - 1``) of its
+    ``replicates`` values. Resampling a model's stored per-simulation results
+    this way takes seconds where re-running the model per replicate takes
+    minutes.
+    
+    With ``hold_fixed``, each simulation keeps its fixed part (a tiled
+    catalogue's loss, say) and only the rest is resampled: replicate
+    simulation ``i`` is ``hold_fixed[i] + (x - hold_fixed)[s_i]``, so the
+    errors are conditional on the fixed part. Each replicate is then sorted.
+    
+    Parameters
+    ----------
+    dist : Sampled, list of float, dict of str to list of float, or PredictiveDistribution
+        The per-simulation results. A dict's lists and a predictive
+        distribution's components share each replicate's draw.
+    percentiles : list of float
+        In percent, in ``[0, 100]``.
+    replicates : int, default 200
+        At least 2.
+    seed : int, default 0
+        Replicate ``b`` draws from stream ``b`` of ``seed``.
+    hold_fixed : same kind as ``dist``, optional
+        The fixed part of each column: a list for a list, a dict with the
+        same keys for a dict, a predictive distribution with the same
+        components for one.
+    tvar_levels, sd_multiples, quantile, tvar
+        As for ``statistics``.
+    
+    Returns
+    -------
+    dict
+        As ``statistics`` returns, with standard errors for values; for a
+        dict, ``{item: {name: se}}``.
+    
+    Raises
+    ------
+    ValueError
+        If the columns are empty or of different lengths, a value is not
+        finite, ``replicates < 2``, ``hold_fixed`` does not match ``dist``,
+        a level is outside ``[0, 100]`` or a method name is unknown.
+    
+    Examples
+    --------
+    >>> from prospicio.risk import bootstrap_se
+    >>> x = [float((i * 37) % 1000) for i in range(1000)]
+    >>> se = bootstrap_se(x, [50], replicates=200, seed=7)
+    >>> 7 < se["Mean"] < 11
+    True
+    """
+
 def buhlmann_straub(ratios: Sequence[Sequence[float]], weights: Sequence[Sequence[float]] |None = None, estimator: str = "unbiased", tol: float = 1.4901161193847656e-8, max_iter: int = 100) -> BuhlmannStraubFit:
     """
     The Bühlmann–Straub credibility model, as R's ``actuar::cm(~group)``:

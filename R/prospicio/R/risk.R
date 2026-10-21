@@ -281,6 +281,75 @@ statistics <- function(x, percentiles, tvar_levels = c(99, 99.5, 99.6, 99.8, 99.
   cbind(keys, as.data.frame(do.call(rbind, rows), check.names = FALSE))
 }
 
+#' Bootstrap standard errors of a results table's statistics
+#'
+#' The standard error of every statistic [statistics()] reports, from the
+#' per-simulation results alone. Each replicate draws the simulations with
+#' replacement, one draw shared by every column so their joint structure is
+#' kept, and reads the statistics from the resample counts on each column's
+#' order, sorted once; a statistic's standard error is the sample SD
+#' (dividing by `B - 1`) of its `replicates` values.
+#'
+#' With `hold_fixed`, each simulation keeps its fixed part (a tiled
+#' catalogue's loss, say) and only the rest is resampled: replicate
+#' simulation `i` is `hold_fixed[i] + (x - hold_fixed)[s_i]`, so the errors
+#' are conditional on the fixed part.
+#'
+#' @param x A numeric vector of draws or a [sampled], a named list or data
+#'   frame of numeric vectors of equal length, or a [predictive_distribution]
+#'   (one row per component). A list's vectors and a distribution's
+#'   components share each replicate's draw.
+#' @param percentiles Percentiles, in percent, in `[0, 100]`.
+#' @param replicates Number of replicates, at least 2.
+#' @param seed Replicate `b` draws from stream `b` of `seed`.
+#' @param hold_fixed `NULL`, or the fixed part of each column, of the same
+#'   kind as `x`: a vector for a vector, a list with the same names for a
+#'   list, a [predictive_distribution] with the same components for one.
+#' @param tvar_levels,sd_multiples,quantile,tvar As for [statistics()].
+#' @returns For draws or a [sampled], a named numeric vector of standard
+#'   errors. For a list, a data frame with an `item` column and one column
+#'   per statistic. For a [predictive_distribution], its `keys` data frame
+#'   with one column per statistic.
+#' @export
+#' @examples
+#' x <- (seq_len(1000) * 37) %% 1000
+#' se <- bootstrap_se(x, 50, replicates = 200, seed = 7)
+#' se["Mean"]
+bootstrap_se <- function(x, percentiles, replicates = 200, seed = 0, hold_fixed = NULL,
+                         tvar_levels = c(99, 99.5, 99.6, 99.8, 99.9, 99.99),
+                         sd_multiples = c(1, 2, 3), quantile = "inverted_cdf", tvar = "exact") {
+  columns_of <- function(y, keys) {
+    lapply(seq_len(nrow(keys)), function(i) marginal(y, as.list(keys[i, , drop = FALSE]))@draws)
+  }
+  if (S7::S7_inherits(x, predictive_distribution)) {
+    keys <- x@keys
+    columns <- columns_of(x, keys)
+    fixed <- if (is.null(hold_fixed)) NULL else columns_of(hold_fixed, keys)
+  } else if (is.list(x) && !S7::S7_inherits(x)) {
+    columns <- lapply(x, as.double)
+    fixed <- if (is.null(hold_fixed)) NULL else lapply(names(x), function(nm) {
+      if (is.null(hold_fixed[[nm]])) stop(sprintf("hold_fixed has no %s", nm), call. = FALSE)
+      as.double(hold_fixed[[nm]])
+    })
+  } else {
+    columns <- list(risk_draws(x))
+    fixed <- if (is.null(hold_fixed)) NULL else list(risk_draws(hold_fixed))
+  }
+  st <- rust_result(bootstrap_se_rust(
+    unlist(columns), length(columns), if (is.null(fixed)) NULL else unlist(fixed),
+    as.double(percentiles), as.double(tvar_levels), as.double(sd_multiples),
+    as.character(quantile), as.character(tvar), as.double(replicates), as.double(seed)
+  ))
+  rows <- do.call(rbind, lapply(st$values, function(v) stats::setNames(v, st$names)))
+  if (S7::S7_inherits(x, predictive_distribution)) {
+    return(cbind(x@keys, as.data.frame(rows, check.names = FALSE)))
+  }
+  if (is.list(x) && !S7::S7_inherits(x)) {
+    return(cbind(data.frame(item = names(x)), as.data.frame(rows, check.names = FALSE)))
+  }
+  rows[1, ]
+}
+
 #' Items read at a driver's percentiles
 #'
 #' Each item read at the driver's mean, percentiles and TVaRs: the item's

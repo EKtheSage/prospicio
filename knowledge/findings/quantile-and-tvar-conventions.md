@@ -41,3 +41,16 @@ it matters for parity on a small example and little on a large run.
 `CoV`, `Min`, `Max`, `Variance`, `Percentile <q>`, `TVaR <q>`,
 `Mean + <k> SD` and `Mean - <k> SD`, with the levels in percent as given,
 so a table from another tool can be joined on the names.
+
+A bootstrap standard error of these statistics (`StatisticsGrid::bootstrap_se`)
+needs no resampled copy of the columns. A replicate is a count of how
+often each simulation was drawn; on a column sorted once, the cumulative
+counts give the k-th order statistic by a binary search and a suffix sum
+gives the tail beyond it, so both conventions' percentiles and TVaRs of a
+replicate cost O(n) without a sort. The unit tests check this against the
+replicate written out and sorted, to 1e-10, under all four pairings of the
+quantile and TVaR conventions. Every column of a replicate uses the same
+draw, so the items' errors come from the same resamples. Holding a fixed
+part of each simulation (`bootstrap_se_holding`: simulation i is
+`fixed[i] + rest[s_i]`) breaks the sorted order, so that replicate is
+written out and sorted, at O(n log n).
