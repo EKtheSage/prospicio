@@ -105,8 +105,12 @@ required-features = ["slow-bayes"]
 
 # The 200-triangle calibration study (docs/design/reserving-calibration.md).
 # The entry puts the file in CI's `bayes` job, which runs its unit tests and
-# the wiring check on group 353 (all five Bayesian arms at the study's
-# settings, about 2 s in release). The study itself stays #[ignore]d and runs
+# the wiring checks on group 353 (Mack, the ODP bootstrap and the six
+# Bayesian arm and basis pairs of the default run, Compartmental model 1
+# included, at the study's settings) and on synthetic squares (cut-down NUTS
+# runs, Compartmental's too): 22 tests, about 2 s of wall time in release on
+# 16 threads, since they run in parallel (Compartmental's group 353 check
+# alone about 1.5 s). The study itself stays #[ignore]d and runs
 # by hand only (the file's header): that job passes no `--include-ignored`.
 # The cost: a plain `cargo test` no longer builds the file, so its unit tests
 # run only in the `bayes` job, and a PR that touches only

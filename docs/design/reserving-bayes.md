@@ -852,7 +852,7 @@ the log density is not `None` in the diagonal backtest.
   1.39. On group 353 incurred (where the GLM's IRLS does not converge)
   CSR's and CAY's log densities are within 0.07 of CRC's. This is the
   diagonal view only; Meyers' own calibration test is of the ultimate,
-  from the whole upper triangle (the 200-triangle study, next).
+  from the whole upper triangle (the 200-triangle study, built: `reserving-calibration.md`).
 
 The proposal:
 
