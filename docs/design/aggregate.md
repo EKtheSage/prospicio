@@ -457,7 +457,9 @@ an `EventSet` keeps whatever dependence its events carry (#491).
     simulation `j` of every year is path `j`. The years are whatever the
     caller gives: independent years (`EventSet::term_years(n)` splits one
     simulation into `n` consecutive blocks, so path `j`'s year `t` is
-    simulation `t·n_paths + j` and replays alone), or years that share a
+    simulation `t·n_paths + j` and replays alone), years whose totals
+    have a rank correlation (`EventSet::correlated_years`, see
+    "Underwriting years with a rank correlation"), or years that share a
     trend or a parameter drawn once per path. `apply_aggregate_term`
     does the same on aggregate losses. The result has dimensions `["kind",
     "layer", "year"]`, `apply`'s components once per year with the year
@@ -1193,6 +1195,67 @@ pricing model (`knowledge/findings/deal-ratios-and-scale-keys.md`).
    covers. `TowerGrids` and `AnnualGrids` report the
    expected commissions but not brokerage or deductions. Those come from
    simulated years and `deal_ratios`.
+
+### Underwriting years with a rank correlation
+
+Issue #489, with the user's reading of a reference multi-year pricing model
+(the user's answers of 2026-10-22; nothing of the reference model is kept in
+the repo).
+
+1. **Dependence between years is a rank correlation of their totals**
+   (`EventSet::correlated_years(n_years, correlation, kind, draws, seed)`).
+   The years are built from one event set by Iman–Conover on each year's
+   total (its events and its aggregate part): one correlation for every
+   pair of years, or a full matrix, as Spearman's rho (`CorrelationKind::
+   Spearman`, converted to the normal scores' `2 sin(πρ/6)`) or as the
+   normal scores' correlation (`Pearson`). Each simulation moves as a whole
+   year (`EventSet::permute`), keeping its events, times, sums insured,
+   labels and aggregate part, so the years feed `Tower::apply_term`
+   unchanged. No parameter is drawn per path and no year depends on the one
+   before (no AR(1)); the user chose a correlation between periods over
+   both.
+2. **Draws.** `YearDraws::Same` (the default) reorders all the simulations
+   for every year, so each year has exactly the one-year distribution and
+   the term's mean is the one-year mean; years then share simulations, in
+   different paths. `YearDraws::Blocks` takes year `t` from block `t` of
+   `term_years`, so no simulation is used twice and each year's
+   distribution is only close to the one-year one.
+3. **Calibration to a ratio of spreads.**
+   `EventSet::calibrate_year_correlation(n_years, ratio, ...)` finds the
+   one correlation for which the mean of a term's yearly totals has `ratio`
+   times the standard deviation of one year's total (the average of the
+   years' standard deviations), by bisection on the simulations themselves,
+   since the reordering's achieved correlation is not the target's exactly.
+   With the same premium each year, it is the ratio of the term's loss
+   ratio's spread to one year's, the way a multi-year deal's dependence is
+   usually stated. Independent years give `1/√T`, identical years 1; a
+   ratio below `1/√T` needs a negative correlation, down to the bound that
+   keeps the matrix positive definite (`-1/(T-1)`), and a target outside
+   the reachable range returns the bound with the ratio it achieves.
+   `year_correlation_for_ratio(T, ratio)` is the closed form for Pearson's
+   correlation of the totals, `(T·ratio² − 1)/(T − 1)`, close to the
+   calibrated Spearman value for a book near the normal and a start
+   otherwise.
+4. **Open: one accident-period timeline shared by underwriting years.**
+   Correlated totals stand in for what a multi-year deal really shares:
+   losses that happen in one accident period and fall to several
+   underwriting years. A catastrophe in accident year `a` falls, under a
+   risks-attaching (RAD) cover, to every underwriting year whose policies
+   are in force then, each by its share of the exposure; under a
+   losses-occurring (LOD) cover, to the year whose period contains it. An
+   interlocking clause then splits an event's loss that spans two
+   underwriting years and applies each year's retention and limit to its
+   share. Prospicio has no such timeline: `apply_term` takes one event set
+   a year, `with_times` gives times as fractions of a year, and nothing
+   records an underwriting or accident year. Building it needs three
+   choices from the user (`[shared-timeline]`): where absolute time lives
+   (an accident-period event set with times over the whole term, or each
+   underwriting year's events carrying their accident year), whether the
+   cover basis (RAD or LOD) is set on a `Layer` or on the `Tower`, and
+   whether interlocking is in scope now. No reference output exists for
+   the risks-attaching case, so its check would be by construction (an LOD
+   cover on a one-year timeline equal to `apply`, a RAD cover with all
+   exposure in one year equal to LOD).
 
 ## Validation
 

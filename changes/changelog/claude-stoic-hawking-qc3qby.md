@@ -91,3 +91,11 @@
   and flows by calendar year (#490); in Python (`DealRun`, `DealBook`,
   `BookCashflows`) and R (`deal_run()`, `deal_book()` and the `book_*()`
   functions).
+- Underwriting years with a rank correlation for multi-year terms:
+  `EventSet::correlated_years` reorders whole simulated years so their
+  totals have a Spearman or normal-score correlation, every year keeping the
+  one-year distribution, and `calibrate_year_correlation` finds the
+  correlation for a target ratio of the term's spread to one year's (#489);
+  in Python (`EventSet.correlated_years`, `.calibrate_year_correlation`,
+  `year_correlation_for_ratio`) and R (`correlated_years()`,
+  `calibrate_year_correlation()`, `year_correlation_for_ratio()`).

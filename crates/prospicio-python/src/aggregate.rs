@@ -1441,6 +1441,120 @@ impl PyEventSet {
             .collect())
     }
 
+    /// A term of ``n_years`` underwriting years whose yearly totals (each
+    /// year's losses and aggregate part) have a rank correlation, set by
+    /// Iman–Conover. Each year's simulations move as whole years, keeping
+    /// their events, times, sums insured, labels and aggregate part, so the
+    /// years go to ``Tower.apply_term`` as they come.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_years : int
+    ///     At least 2.
+    /// correlation : float or list of list of float
+    ///     One correlation for every pair of years, or the full matrix.
+    /// kind : {"spearman", "pearson"}
+    ///     ``"spearman"`` (the default) targets Spearman's rho of the
+    ///     totals; ``"pearson"`` the correlation of their normal scores, as
+    ///     ``PredictiveDistribution.reorder_groups``.
+    /// draws : {"same", "blocks"}
+    ///     ``"same"`` (the default): every year reorders all the
+    ///     simulations, so each has exactly the one-year distribution and
+    ///     the term's mean the one-year mean; ``"blocks"``: year ``t`` is
+    ///     block ``t`` of ``term_years``.
+    /// seed : int
+    ///     The same seed gives the same years.
+    ///
+    /// Returns
+    /// -------
+    /// list of EventSet
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[float(i)] for i in range(10)])
+    /// >>> years = e.correlated_years(2, 0.9, seed=1)
+    /// >>> sorted(y.events(i)[0] for y in years[:1] for i in range(10)) == [float(i) for i in range(10)]
+    /// True
+    #[pyo3(signature = (n_years, correlation, *, kind = "spearman", draws = "same", seed = 0))]
+    fn correlated_years(
+        &self,
+        py: Python<'_>,
+        n_years: usize,
+        correlation: &Bound<'_, PyAny>,
+        kind: &str,
+        draws: &str,
+        seed: u64,
+    ) -> PyResult<Vec<Self>> {
+        let correlation: Vec<f64> = match correlation.extract::<f64>() {
+            Ok(rho) => vec![rho],
+            Err(_) => correlation
+                .extract::<Vec<Vec<f64>>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
+        };
+        let (kind, draws) = (correlation_kind(kind)?, year_draws(draws)?);
+        let inner = &self.inner;
+        Ok(py
+            .detach(|| inner.correlated_years(n_years, &correlation, kind, draws, seed))
+            .map_err(to_py)?
+            .into_iter()
+            .map(|inner| Self { inner })
+            .collect())
+    }
+
+    /// The correlation between every pair of ``n_years`` years for which
+    /// ``correlated_years`` gives a term whose mean yearly total has
+    /// ``ratio`` times the standard deviation of one year's total, found by
+    /// bisection on these simulations. With the same premium each year,
+    /// that is the ratio of the term's loss ratio's spread to one year's.
+    /// Independent years give ``1 / sqrt(n_years)``, identical ones 1.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_years : int
+    /// ratio : float
+    ///     In ``[0, 1]``.
+    /// kind, draws, seed
+    ///     As ``correlated_years``.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (float, float, list of EventSet)
+    ///     The correlation, the ratio it achieves and the years under it.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> from prospicio.distributions import Lognormal, Poisson
+    /// >>> from prospicio.aggregate import simulate_events
+    /// >>> e = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(100.0, 1.0), 4000, seed=7)
+    /// >>> rho, achieved, years = e.calibrate_year_correlation(3, 0.75, seed=11)
+    /// >>> abs(achieved - 0.75) < 1e-3, 0 < rho < 1, len(years)
+    /// (True, True, 3)
+    #[pyo3(signature = (n_years, ratio, *, kind = "spearman", draws = "same", seed = 0))]
+    fn calibrate_year_correlation(
+        &self,
+        py: Python<'_>,
+        n_years: usize,
+        ratio: f64,
+        kind: &str,
+        draws: &str,
+        seed: u64,
+    ) -> PyResult<(f64, f64, Vec<Self>)> {
+        let (kind, draws) = (correlation_kind(kind)?, year_draws(draws)?);
+        let inner = &self.inner;
+        let fit = py
+            .detach(|| inner.calibrate_year_correlation(n_years, ratio, kind, draws, seed))
+            .map_err(to_py)?;
+        Ok((
+            fit.correlation,
+            fit.ratio,
+            fit.years.into_iter().map(|inner| Self { inner }).collect(),
+        ))
+    }
+
     /// The seed the years were drawn from.
     #[getter]
     fn seed(&self) -> u64 {
@@ -2971,4 +3085,43 @@ fn labels_from_dict(labels: &Bound<'_, PyDict>) -> PyResult<Vec<(String, Vec<Str
         .iter()
         .map(|(k, v)| Ok((k.extract::<String>()?, v.extract::<Vec<String>>()?)))
         .collect()
+}
+
+fn correlation_kind(kind: &str) -> PyResult<prospicio_prob::portfolio::CorrelationKind> {
+    use prospicio_prob::portfolio::CorrelationKind;
+    match kind {
+        "pearson" => Ok(CorrelationKind::Pearson),
+        "spearman" => Ok(CorrelationKind::Spearman),
+        _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "kind must be \"pearson\" or \"spearman\", not {kind:?}"
+        ))),
+    }
+}
+
+fn year_draws(draws: &str) -> PyResult<prospicio_aggregate::term::YearDraws> {
+    use prospicio_aggregate::term::YearDraws;
+    match draws {
+        "same" => Ok(YearDraws::Same),
+        "blocks" => Ok(YearDraws::Blocks),
+        _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "draws must be \"same\" or \"blocks\", not {draws:?}"
+        ))),
+    }
+}
+
+/// The correlation between every pair of ``n_years`` years whose totals
+/// have the same spread for which the mean of a term's yearly totals has
+/// ``ratio`` times one year's standard deviation:
+/// ``(n_years * ratio**2 - 1) / (n_years - 1)``. Pearson's correlation of
+/// the totals: a start; ``EventSet.calibrate_year_correlation`` hits the
+/// ratio on the simulations themselves.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import year_correlation_for_ratio
+/// >>> year_correlation_for_ratio(3, 1.0)
+/// 1.0
+#[pyfunction]
+pub(crate) fn year_correlation_for_ratio(n_years: usize, ratio: f64) -> PyResult<f64> {
+    prospicio_aggregate::term::year_correlation_for_ratio(n_years, ratio).map_err(to_py)
 }

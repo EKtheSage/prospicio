@@ -9944,6 +9944,76 @@ class EventSet:
         Each column of the aggregate part's labels, one value per label
         dimension, or ``None`` without a part.
         """
+    def calibrate_year_correlation(self, /, n_years: int, ratio: float, *, kind: str = "spearman", draws: str = "same", seed: int = 0) -> tuple[float, float, list[EventSet]]:
+        """
+        The correlation between every pair of ``n_years`` years for which
+        ``correlated_years`` gives a term whose mean yearly total has
+        ``ratio`` times the standard deviation of one year's total, found by
+        bisection on these simulations. With the same premium each year,
+        that is the ratio of the term's loss ratio's spread to one year's.
+        Independent years give ``1 / sqrt(n_years)``, identical ones 1.
+        
+        Parameters
+        ----------
+        n_years : int
+        ratio : float
+            In ``[0, 1]``.
+        kind, draws, seed
+            As ``correlated_years``.
+        
+        Returns
+        -------
+        tuple of (float, float, list of EventSet)
+            The correlation, the ratio it achieves and the years under it.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.distributions import Lognormal, Poisson
+        >>> from prospicio.aggregate import simulate_events
+        >>> e = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(100.0, 1.0), 4000, seed=7)
+        >>> rho, achieved, years = e.calibrate_year_correlation(3, 0.75, seed=11)
+        >>> abs(achieved - 0.75) < 1e-3, 0 < rho < 1, len(years)
+        (True, True, 3)
+        """
+    def correlated_years(self, /, n_years: int, correlation: Any, *, kind: str = "spearman", draws: str = "same", seed: int = 0) -> list[EventSet]:
+        """
+        A term of ``n_years`` underwriting years whose yearly totals (each
+        year's losses and aggregate part) have a rank correlation, set by
+        Iman–Conover. Each year's simulations move as whole years, keeping
+        their events, times, sums insured, labels and aggregate part, so the
+        years go to ``Tower.apply_term`` as they come.
+        
+        Parameters
+        ----------
+        n_years : int
+            At least 2.
+        correlation : float or list of list of float
+            One correlation for every pair of years, or the full matrix.
+        kind : {"spearman", "pearson"}
+            ``"spearman"`` (the default) targets Spearman's rho of the
+            totals; ``"pearson"`` the correlation of their normal scores, as
+            ``PredictiveDistribution.reorder_groups``.
+        draws : {"same", "blocks"}
+            ``"same"`` (the default): every year reorders all the
+            simulations, so each has exactly the one-year distribution and
+            the term's mean the one-year mean; ``"blocks"``: year ``t`` is
+            block ``t`` of ``term_years``.
+        seed : int
+            The same seed gives the same years.
+        
+        Returns
+        -------
+        list of EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[float(i)] for i in range(10)])
+        >>> years = e.correlated_years(2, 0.9, seed=1)
+        >>> sorted(y.events(i)[0] for y in years[:1] for i in range(10)) == [float(i) for i in range(10)]
+        True
+        """
     def counts(self, /) -> list[int]:
         """
         Number of losses in each year.
@@ -30741,6 +30811,22 @@ def worst_var(marginals: Sequence[Any], p: float, n: int = 100, rotate: int |Non
     >>> m = [Lognormal.from_mean_cv(10.0, cv) for cv in (1.0, 2.0, 3.0)]
     >>> round(worst_var(m, 0.99, n=40, rotate=19)["value"], 1)
     352.9
+    """
+
+def year_correlation_for_ratio(n_years: int, ratio: float) -> float:
+    """
+    The correlation between every pair of ``n_years`` years whose totals
+    have the same spread for which the mean of a term's yearly totals has
+    ``ratio`` times one year's standard deviation:
+    ``(n_years * ratio**2 - 1) / (n_years - 1)``. Pearson's correlation of
+    the totals: a start; ``EventSet.calibrate_year_correlation`` hits the
+    ratio on the simulations themselves.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import year_correlation_for_ratio
+    >>> year_correlation_for_ratio(3, 1.0)
+    1.0
     """
 
 def year_fraction(year: int, month: int, day: int) -> float:

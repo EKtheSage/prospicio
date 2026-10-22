@@ -98,6 +98,8 @@ occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_p
 
 ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
 
+year_correlation_for_ratio_rust <- function(n_years, ratio) .Call(wrap__year_correlation_for_ratio_rust, n_years, ratio)
+
 credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
@@ -361,6 +363,10 @@ EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 
 EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
+
+EventSet$correlated_years <- function(n_years, correlation, kind, draws, seed) .Call(wrap__EventSet__correlated_years, self, n_years, correlation, kind, draws, seed)
+
+EventSet$calibrate_year_correlation <- function(n_years, ratio, kind, draws, seed) .Call(wrap__EventSet__calibrate_year_correlation, self, n_years, ratio, kind, draws, seed)
 
 EventSet$grouped <- function(window_hours) .Call(wrap__EventSet__grouped, self, window_hours)
 

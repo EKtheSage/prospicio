@@ -56,6 +56,7 @@ from .prospicio_native import (
     size_premium,
     stack,
     wiener_hopf,
+    year_correlation_for_ratio,
     ylt_hash,
 )
 
@@ -75,6 +76,7 @@ __all__ = [
     "EventSet",
     "EventLossTable",
     "read_ylt",
+    "year_correlation_for_ratio",
     "ylt_hash",
     "occurrence_exceedance",
     "occurrence_pml",

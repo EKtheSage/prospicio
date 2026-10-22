@@ -672,6 +672,61 @@ impl EventSet {
         ))
     }
 
+    /// A list of `n_years` event sets whose totals have the correlation
+    /// `correlation` (one value or a row-major matrix).
+    fn correlated_years(
+        &self,
+        n_years: f64,
+        correlation: &[f64],
+        kind: &str,
+        draws: &str,
+        seed: f64,
+    ) -> Result<List> {
+        let years = self
+            .inner
+            .correlated_years(
+                whole(n_years, "n_years")? as usize,
+                correlation,
+                correlation_kind(kind)?,
+                year_draws(draws)?,
+                whole(seed, "seed")?,
+            )
+            .map_err(to_r)?;
+        Ok(List::from_values(
+            years.into_iter().map(|inner| Robj::from(Self { inner })),
+        ))
+    }
+
+    /// The calibration: `correlation`, `ratio` and the `years`.
+    fn calibrate_year_correlation(
+        &self,
+        n_years: f64,
+        ratio: f64,
+        kind: &str,
+        draws: &str,
+        seed: f64,
+    ) -> Result<List> {
+        let fit = self
+            .inner
+            .calibrate_year_correlation(
+                whole(n_years, "n_years")? as usize,
+                ratio,
+                correlation_kind(kind)?,
+                year_draws(draws)?,
+                whole(seed, "seed")?,
+            )
+            .map_err(to_r)?;
+        Ok(list!(
+            correlation = fit.correlation,
+            ratio = fit.ratio,
+            years = List::from_values(
+                fit.years
+                    .into_iter()
+                    .map(|inner| Robj::from(Self { inner }))
+            )
+        ))
+    }
+
     fn grouped(&self, window_hours: f64) -> Result<Self> {
         Ok(Self {
             inner: self.inner.grouped(window_hours).map_err(to_r)?,
@@ -1211,6 +1266,7 @@ extendr_module! {
     fn occurrence_exceedance_rust;
     fn occurrence_pml_rust;
     fn ylt_file_hash_rust;
+    fn year_correlation_for_ratio_rust;
     impl EventSet;
     fn aggregate_elt_values;
     fn aggregate_elt_simulate;
@@ -1234,4 +1290,36 @@ fn labels_from(dims: Vec<String>, values: List) -> Result<Vec<(String, Vec<Strin
             Ok((dim, v))
         })
         .collect()
+}
+
+fn correlation_kind(kind: &str) -> Result<prospicio_prob::portfolio::CorrelationKind> {
+    use prospicio_prob::portfolio::CorrelationKind;
+    match kind {
+        "pearson" => Ok(CorrelationKind::Pearson),
+        "spearman" => Ok(CorrelationKind::Spearman),
+        _ => Err(Error::Other(format!(
+            "kind must be \"pearson\" or \"spearman\", not {kind:?}"
+        ))),
+    }
+}
+
+fn year_draws(draws: &str) -> Result<prospicio_aggregate::term::YearDraws> {
+    use prospicio_aggregate::term::YearDraws;
+    match draws {
+        "same" => Ok(YearDraws::Same),
+        "blocks" => Ok(YearDraws::Blocks),
+        _ => Err(Error::Other(format!(
+            "draws must be \"same\" or \"blocks\", not {draws:?}"
+        ))),
+    }
+}
+
+/// `(T r² − 1) / (T − 1)`.
+#[extendr]
+fn year_correlation_for_ratio_rust(n_years: f64, ratio: f64) -> Result<f64> {
+    prospicio_aggregate::term::year_correlation_for_ratio(
+        whole(n_years, "n_years")? as usize,
+        ratio,
+    )
+    .map_err(to_r)
 }
