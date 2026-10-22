@@ -14,8 +14,9 @@ The block below rebuilds what part 1 built and this part uses, in one go: the
 simulated portfolio with its known truth (20,000 policies, folds from the
 policy number, folds 7 to 9 for testing), the pseudo-R2 helper and
 cross-validation loop, the baseline GLM and boosting designs, the age steps the
-lasso keeps, and the make's out-of-fold target encoding. Part 1 explains each
-piece.
+lasso keeps, and the make's out-of-fold target encoding (`target_encode`, with
+the encoding for rows outside the training folds from its returned
+`TargetEncoding`). Part 1 explains each piece.
 
 ```python
 import math
@@ -137,22 +138,22 @@ expected[~train] = Glm("poisson").fit(X_base.select(rows(train)), claims[train].
     X_base.select(rows(~train)))
 
 
-def encode(source, K):
-    """Each make's shrunk actual-to-expected ratio from the rows in `source`."""
-    actual = np.bincount(make[source], claims[source], minlength=300)
-    exp_ = np.bincount(make[source], expected[source], minlength=300)
-    expo = np.bincount(make[source], exposure[source], minlength=300)
-    z = expo / (expo + K)
-    return 1 - z + z * np.divide(actual, exp_, out=np.ones(300), where=exp_ > 0)
+from prospicio.models import target_encode
+
+make_level = make.astype(str).tolist()
 
 
 def make_feature(K, held_out=None):
-    """Per policy: a training row in fold j is encoded from the training folds other than j
-    (and other than the held-out fold); every other row from all training folds but the held-out one."""
-    te = encode(train & (fold != held_out), K)[make]
-    for j in range(7):
-        if j != held_out:
-            te[fold == j] = encode(train & (fold != j) & (fold != held_out), K)[make[fold == j]]
+    """Per policy, the log of the make's shrunk actual-to-expected ratio: a training row in fold j is
+    encoded from the training folds other than j (and other than the held-out fold), every other row
+    from all training folds but the held-out one."""
+    src = np.flatnonzero(train & (fold != held_out))
+    splits = [(np.flatnonzero(fold[src] != j).tolist(), np.flatnonzero(fold[src] == j).tolist())
+              for j in range(7) if j != held_out]
+    oof, encoding = target_encode([make_level[i] for i in src], claims[src].tolist(),
+                                  expected[src].tolist(), splits, K, exposure[src].tolist())
+    te = np.array(encoding.encode(make_level))
+    te[src] = oof
     return np.log(te)
 
 
@@ -404,8 +405,13 @@ features) and the same make encoding, as the monograph does: it notes that the
 two models would share one encoding but for its boosting library's built-in
 one. As in section 9.5.1, each importance is computed on the held-out fold of
 each of the seven cross-validation models and averaged, as the loss of
-pseudo-R2 when the feature is shuffled. The loop also keeps what the next two
-sections need: the losses from shuffling pairs and the partial dependence on age.
+pseudo-R2 when the feature is shuffled; `permutation_importance` takes a score
+to minimize, so the pseudo-R2 goes in as its negative. Its `splits` argument
+would fit the models itself, but the make encoding here is rebuilt for each
+held-out fold, so the loop fits the two models on each fold, explains them on
+the fold's held-out rows (seeding the shuffle with the fold), and `combine`
+pools the seven results. The same loop runs what the next two sections need:
+`partial_dependence` on age and the pairwise `interaction_screen`.
 
 ```python
 veh_knots = [2, 4, 6, 8, 10]
@@ -436,15 +442,12 @@ def frame(mask, log_te):
             "log_te": log_te[mask], "noise": noise[mask], "exposure": exposure[mask]}
 
 
-def shuffled(f, names, perm):
-    return {k: (v[perm] if k in names else v) for k, v in f.items()}
-
+from prospicio.models import (InteractionScreen, PartialDependence, PermutationImportance,
+                              interaction_screen, partial_dependence, permutation_importance)
 
 designs = {"GLM": glm_design, "GBM": tree_design}
-score_full = {m: [] for m in designs}
-loss = {m: {x: [] for x in features} for m in designs}
-pair_loss = {}
-pd_by_age = {m: [] for m in designs}
+neg_r2 = lambda y, mu, d: -pseudo_r2(y, mu, np.exp(d.offset))
+imp_by, pd_by, screen_by = {m: [] for m in designs}, {m: [] for m in designs}, []
 glm_with_interaction = []
 for k in range(7):
     log_te_k = make_feature(64, held_out=k)
@@ -453,24 +456,19 @@ for k in range(7):
     models = {"GLM": Glm("poisson").fit(glm_design(fit_f), claims[fit_mask].tolist()),
               "GBM": Booster("poisson", n_rounds=150, learning_rate=0.05, params=gbm_params, seed=1)
               .fit(tree_design(fit_f), claims[fit_mask].tolist())}
-    perm = np.random.default_rng(k).permutation(val_mask.sum())
     for m, model in models.items():
-        score = lambda f: pseudo_r2(y_val, model.predict(designs[m](f)), f["exposure"])
-        full = score(val_f)
-        score_full[m].append(full)
-        for x in features:
-            loss[m][x].append(full - score(shuffled(val_f, [x], perm)))
-        if m == "GBM":
-            for i, a in enumerate(features):
-                for b in features[i + 1:]:
-                    pair_loss.setdefault((a, b), []).append(full - score(shuffled(val_f, [a, b], perm)))
-        pd_by_age[m].append([np.mean(model.predict(designs[m](dict(val_f, age=np.full(len(y_val), v)))))
-                             for v in ages])
+        imp_by[m].append(permutation_importance(model, val_f, y_val, designs[m], neg_r2, features, seed=k))
+        pd_by[m].append(partial_dependence(model, val_f, designs[m], "age", ages))
+    screen_by.append(interaction_screen(models["GBM"], val_f, y_val, tree_design, neg_r2, features, seed=k))
     with_i = Glm("poisson").fit(glm_design(fit_f, interaction=True), claims[fit_mask].tolist())
     glm_with_interaction.append(pseudo_r2(y_val, with_i.predict(glm_design(val_f, interaction=True)), val_f["exposure"]))
 
-mean_loss = {m: {x: float(np.mean(v)) for x, v in loss[m].items()} for m in designs}
-print(f"cv pseudo-R2: GLM {np.mean(score_full['GLM']):.3f}, GBM {np.mean(score_full['GBM']):.3f}")
+importance = {m: PermutationImportance.combine(v) for m, v in imp_by.items()}
+pd_age = {m: PartialDependence.combine(v) for m, v in pd_by.items()}
+screen = InteractionScreen.combine(screen_by)
+score_full = {m: -np.mean(imp.base) for m, imp in importance.items()}
+mean_loss = {m: dict(zip(imp.features, imp.importance)) for m, imp in importance.items()}
+print(f"cv pseudo-R2: GLM {score_full['GLM']:.3f}, GBM {score_full['GBM']:.3f}")
 print(f"{'feature':8s} {'GLM loss':>9s} {'GBM loss':>9s}")
 for x in sorted(features, key=lambda x: -mean_loss["GLM"][x]):
     print(f"{x:8s} {mean_loss['GLM'][x]:9.3f} {mean_loss['GBM'][x]:9.3f}")
@@ -479,12 +477,12 @@ for x in sorted(features, key=lambda x: -mean_loss["GLM"][x]):
 ```text
 cv pseudo-R2: GLM 0.055, GBM 0.048
 feature   GLM loss  GBM loss
-log_te       0.037     0.032
-age          0.036     0.035
-power        0.017     0.017
-veh_age      0.010     0.008
-region       0.010     0.004
-noise        0.000    -0.001
+log_te       0.039     0.033
+age          0.037     0.034
+power        0.019     0.019
+veh_age      0.011     0.009
+region       0.008     0.003
+noise        0.000    -0.000
 ```
 
 The two models agree on which features matter and roughly in which order, and
@@ -524,9 +522,9 @@ the interaction):
 
 ```python
 true_age = np.exp(0.9 * np.exp(-(np.array(ages) - 18) / 6) + 0.0015 * np.maximum(np.array(ages) - 60, 0) ** 1.5)
-pd_mean = {m: np.mean(np.array(v), axis=0) for m, v in pd_by_age.items()}
+pd_rel = {m: pd.relative(40) for m, pd in pd_age.items()}
 for i, a in enumerate(ages):
-    print(f"age {a}: GLM {pd_mean['GLM'][i] / pd_mean['GLM'][3]:.2f}  GBM {pd_mean['GBM'][i] / pd_mean['GBM'][3]:.2f}  "
+    print(f"age {a}: GLM {pd_rel['GLM'][i]:.2f}  GBM {pd_rel['GBM'][i]:.2f}  "
           f"true (low power) {true_age[i] / true_age[3]:.2f}")
 ```
 
@@ -574,22 +572,23 @@ cross-validated score with and without one more column for the pair it puts
 first:
 
 ```python
-strength = {pair: mean_loss["GBM"][pair[0]] + mean_loss["GBM"][pair[1]] - np.mean(v) for pair, v in pair_loss.items()}
-for (a, b), s in sorted(strength.items(), key=lambda kv: -kv[1])[:3]:
-    print(f"{a:8s} x {b:8s} {s:.4f}")
-print(f"GLM cv pseudo-R2 {np.mean(score_full['GLM']):.3f}, with a young-driver high-power term "
+for row in screen.table()[:3]:
+    print(f"{row['a']:8s} x {row['b']:8s} {row['strength']:.4f}")
+print(f"GLM cv pseudo-R2 {score_full['GLM']:.3f}, with a young-driver high-power term "
       f"{np.mean(glm_with_interaction):.3f}")
 ```
 
 ```text
-age      x power    0.0044
-age      x log_te   0.0025
-region   x log_te   0.0010
+age      x power    0.0051
+age      x log_te   0.0012
+veh_age  x noise    0.0006
 GLM cv pseudo-R2 0.055, with a young-driver high-power term 0.058
 ```
 
 Age and power come first, which is the interaction that was planted, and the
-GLM gains when given it. In the monograph, the leaves of a decision tree fitted
+GLM gains when given it. The pairs after it are a quarter of its strength or
+less and their order moves with the shuffle (the third here involves the noise
+feature, which interacts with nothing). In the monograph, the leaves of a decision tree fitted
 to the ratio of boosting to GLM predictions played this role and lifted the
 cross-validated pseudo-R2 from 0.151 to 0.156; prospicio has no decision tree,
 but a `Booster` with one tree and a few leaves is one, and the hand-made column
@@ -651,8 +650,8 @@ Gaps found while writing this guide, filed for the Models lane and since closed:
 
 - Model-agnostic explanations (#355), now in the library:
   `permutation_importance`, `partial_dependence` and `interaction_screen` in
-  `prospicio.models` take any fitted model, a frame and a design builder. The
-  loops written out by hand above are the same computations.
+  `prospicio.models` take any fitted model, a frame and a design builder;
+  sections 3.2 to 3.4 use them.
 - Bounds on elastic net coefficients (glmnet's `lower.limits` and
   `upper.limits`), the relaxed lasso and its cross-validation, and an
   active-set solve for hinge bases (#356, now in the library):
@@ -661,8 +660,8 @@ Gaps found while writing this guide, filed for the Models lane and since closed:
   under a second instead of 40.
 - Step, hinge and MARS bases as `Terms` (section 5.5; `Terms.steps`,
   `Terms.hinges` and `mars()` for knot selection) and out-of-fold target encoding
-  with a credibility constant (chapter 6; `target_encode`) (#357, #465, now in the
-  library).
+  with a credibility constant (chapter 6; `target_encode`, which builds the make
+  feature above) (#357, #465, now in the library).
 - Generalized linear mixed models (section 6.5; #358, now in the library):
   `Glmm` with random intercepts and slopes, one, nested or crossed grouping
   factors, and `BayesGlmm` for a NUTS fit.
