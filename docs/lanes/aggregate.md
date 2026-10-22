@@ -6,7 +6,6 @@
 
 ## Next
 
-- [interlocking] interlocking clauses under RAD, after RAD and LOD (#489, `aggregate.md` item 4.9): no reference output yet
 
 ## Done
 
@@ -47,3 +46,4 @@
 - [shared-timeline] one accident-period timeline shared by the underwriting years of a term (`prospicio_aggregate::timeline`: `Timeline` holding each event once over the term in accident months, stitched from accident years by `Timeline::from_years`; `Exposure` shares by underwriting year and month, `Exposure::uniform` for policies written evenly; `Timeline::years` under `CoverBasis::LossesOccurring` or `RisksAttaching`, each year's losses keeping their event's index; checked by construction; Rust; #489)
 - [cover-basis] the cover basis on `Tower` (`Tower::cover_basis`, one basis for every layer as for a programme's contracts; `Tower::apply_timeline` over the contract years it gives, refusing a tower without one; JSON format version 5 with `"cover_basis"`; Rust; #489)
 - [timeline-bindings] `Timeline`, `Exposure` and the cover basis in Python (`Timeline`, `Exposure`, `Tower.with_cover_basis`, `Tower.apply_timeline`) and R (`timeline()`, `timeline_years()`, `uniform_exposure()`, `with_cover_basis()`, `apply_tower_timeline()`), which closes #489 (`aggregate.md` item 4.11)
+- [interlocking] interlocking contracts under risks attaching (`Tower::interlocking`, off by default: each contract's limit cut for an event by the year's share of the event's loss across the programme's underwriting years in the term, retentions whole, each year's annual terms on its own recoveries; JSON format version 6; Python `Tower.with_interlocking`, R `with_interlocking()`; `aggregate.md` item 4.9; checked by construction, no reference output)
