@@ -1236,26 +1236,74 @@ the repo).
    correlation of the totals, `(T·ratio² − 1)/(T − 1)`, close to the
    calibrated Spearman value for a book near the normal and a start
    otherwise.
-4. **Open: one accident-period timeline shared by underwriting years.**
-   Correlated totals stand in for what a multi-year deal really shares:
-   losses that happen in one accident period and fall to several
-   underwriting years. A catastrophe in accident year `a` falls, under a
-   risks-attaching (RAD) cover, to every underwriting year whose policies
-   are in force then, each by its share of the exposure; under a
-   losses-occurring (LOD) cover, to the year whose period contains it. An
-   interlocking clause then splits an event's loss that spans two
-   underwriting years and applies each year's retention and limit to its
-   share. Prospicio has no such timeline: `apply_term` takes one event set
-   a year, `with_times` gives times as fractions of a year, and nothing
-   records an underwriting or accident year. Building it needs three
-   choices from the user (`[shared-timeline]`): where absolute time lives
-   (an accident-period event set with times over the whole term, or each
-   underwriting year's events carrying their accident year), whether the
-   cover basis (RAD or LOD) is set on a `Layer` or on the `Tower`, and
-   whether interlocking is in scope now. No reference output exists for
-   the risks-attaching case, so its check would be by construction (an LOD
-   cover on a one-year timeline equal to `apply`, a RAD cover with all
-   exposure in one year equal to LOD).
+4. **One accident-period timeline shared by underwriting years** (the
+   user's choices of 2026-10-22; built in three PRs: the timeline and the
+   years it gives (`[shared-timeline]`), the basis on `Tower`
+   (`[cover-basis]`), the bindings (`[timeline-bindings]`)). A
+   catastrophe in an accident month falls, under a risks-attaching (RAD)
+   cover, to every underwriting year whose policies are in force then, each
+   by its share of the exposure; under a losses-occurring (LOD) cover, to
+   the contract year whose period contains it.
+   1. *Absolute time lives on one event set for the whole term*
+      (`Timeline`): simulation `j` is one path of `months` accident
+      months, each event stored once with its time as a fraction of the
+      term. One event keeps one identity, so the split into underwriting
+      years happens only when a basis is applied, and each year's losses
+      keep the index of the event they came from
+      (`Timeline::years_with_sources`), which is what interlocking will
+      need. `Timeline::from_years` stitches one event set per accident
+      year (from `term_years` or `correlated_years`, each with times)
+      into a timeline, year `t`'s time `τ` becoming `(t + τ) / T`.
+   2. *The month is the resolution.* An event at term time `x` of `M`
+      months is in accident month `⌊x·M⌋` (the last month for `x = 1`), so
+      a time on a month's start belongs to that month. Twelve months make
+      a year.
+   3. *Exposure shares* (`Exposure`): one row per underwriting year, one
+      share per accident month, each in `[0, 1]`, and the shares of a
+      month add to at most 1. A month's shares are of a full book: the
+      rest of the month's loss belongs to underwriting years outside the
+      term (the run-off of earlier years, or later years), so a timeline
+      simulated at the full book's frequency throughout is right.
+      `Exposure::uniform(n_years, policy_months)` writes each year's
+      policies evenly over its twelve months, each in force for
+      `policy_months` from mid-month; year `u`'s share of month `m` is its
+      policies' time in force in `m` over `policy_months`, so the shares of
+      a month in mid-term add to 1.
+   4. *Contract years.* `CoverBasis::LossesOccurring`: contract year `k`
+      takes every event in accident months `12k..12k + 12` whole; the
+      exposure gives only the number of years. `CoverBasis::
+      RisksAttaching`: underwriting year `u` takes `share[u][m]` of each
+      event in month `m`, and an event with no share in `u` is not in its
+      year. The timeline must cover the term's months (`12·T` for LOD,
+      the exposure's months for RAD).
+   5. *Times in a contract year* stay in `[0, 1]`, as `EventSet` needs and
+      pro rata reinstatements read: under LOD the time within the year;
+      under RAD the time from the first month in which the year has a share
+      to the end of the last, as a fraction of that span (so a year of
+      12-month policies spans 24 months).
+   6. *Sums insured* are scaled by the share with the loss, so the degree
+      of damage an exposure curve reads is unchanged. Labels are kept.
+   7. *An aggregate part* (attritional losses with no event or time) is
+      refused on a timeline for now: its split by accident month is not
+      decided.
+   8. *The basis is set on the `Tower`*, as the reference model sets it on
+      a programme: a `Tower` is the layers on one loss source, as a
+      programme is, and a deal of several programmes is several towers in
+      a book. A deal-level scale (`DealScale`) spanning programmes needs
+      them in one tower, so they then share one basis; mixed bases within
+      one tower have no reference output and are not built.
+   9. *Interlocking* (each contract's limit cut to its share of an event
+      that spans underwriting years, so one event cannot use a limit
+      twice) comes after RAD and LOD (`[interlocking]`). It acts only
+      under RAD when an event falls to two years, has no reference output,
+      and needs the event's total covered loss across the years, which the
+      source indices give.
+   10. *Checks by construction*, since no reference output exists for RAD:
+      LOD on a one-year timeline equals `apply`; RAD with all of each
+      month's exposure in one year equals LOD on that year; with shares
+      adding to 1 in every month, the years' totals add to the timeline's
+      total in each simulation; a timeline stitched from correlated years
+      keeps their correlation under LOD.
 
 ## Validation
 

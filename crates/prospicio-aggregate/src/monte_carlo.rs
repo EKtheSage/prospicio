@@ -1158,6 +1158,54 @@ impl EventSet {
             .map(|t| &t[self.offsets[sim]..self.offsets[sim + 1]])
     }
 
+    /// The offset of simulation `sim`'s first loss among all the losses.
+    pub(crate) fn offset(&self, sim: usize) -> usize {
+        self.offsets[sim]
+    }
+
+    /// A set with one simulation per entry of `rows`, each a list of
+    /// `(loss, scale, time)`: loss `loss` (an index among all this set's
+    /// losses) times `scale`, with its sum insured scaled alike and its
+    /// labels, at `time`. The times must lie in `[0, 1]` and not decrease
+    /// within a simulation. The set must have no aggregate part.
+    pub(crate) fn rebuilt(&self, rows: &[Vec<(usize, f64, f64)>]) -> EventSet {
+        debug_assert!(self.aggregate.is_none());
+        let mut offsets = Vec::with_capacity(rows.len() + 1);
+        offsets.push(0);
+        let mut losses = Vec::new();
+        let mut sums = Vec::new();
+        let mut times = Vec::new();
+        let mut of_loss = Vec::new();
+        for row in rows {
+            for &(i, scale, time) in row {
+                losses.push(self.losses[i] * scale);
+                if let Some(s) = &self.sums_insured {
+                    sums.push(s[i] * scale);
+                }
+                times.push(time);
+                if let Some(l) = &self.labels {
+                    of_loss.push(l.of_loss[i]);
+                }
+            }
+            offsets.push(losses.len());
+        }
+        EventSet {
+            offsets,
+            losses,
+            sums_insured: self.sums_insured.as_ref().map(|_| sums),
+            times: Some(times),
+            labels: self.labels.as_ref().map(|l| Labels {
+                dims: l.dims.clone(),
+                combinations: l.combinations.clone(),
+                of_loss,
+            }),
+            aggregate: None,
+            seed: self.seed,
+            samplers: self.samplers.clone(),
+            input_hash: self.input_hash.clone(),
+        }
+    }
+
     /// Simulations `range` alone, with their sums insured, times and
     /// labels.
     pub(crate) fn slice(&self, range: std::ops::Range<usize>) -> EventSet {
