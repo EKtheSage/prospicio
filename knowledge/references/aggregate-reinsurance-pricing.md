@@ -109,7 +109,8 @@ sources:
   noise out to the grid's top, and cubed distance makes it count. Measured on
   2026-10-22 (the round-off removed from `Tower::on_grid`'s grids by #367 is
   the likely cause of the change), the 250 xs 250 layer's skewness differs
-  from aggregate's density by `1.5e-6` (`1.2e-5` when this note was first
+  from aggregate's density by `1.5e-6` on Windows and `1.8e-6` on Linux, the
+  noise being platform-dependent (`1.2e-5` when this note was first
   written), and by under `1e-13` once the probability beyond 10,000
   (`5.6e-16` in all) is dropped. The worst skewness difference is now the 50%
   stop-loss share's `9.5e-6`, where aggregate's re-bucketing adds to it; the

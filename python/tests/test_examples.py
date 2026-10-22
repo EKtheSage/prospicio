@@ -304,6 +304,9 @@ def test_reinsurance_pricing(monkeypatch, capsys):
     var = sum((x - mean) ** 2 * q for x, q in kept)
     skew_below = sum((x - mean) ** 3 * q for x, q in kept) / var**1.5
     assert abs(skew_below / central - 1) < 1e-13  # "brings it under 1e-13"
+    # On the whole grid the difference is the noise itself, which differs by platform (1.5e-6 on Windows,
+    # 1.8e-6 on Ubuntu), so the prose says "about 2e-6" and this checks the range.
+    assert 1e-6 < abs(ns["whole"] / central - 1) < 2.5e-6
     quoted = ns["quoted"]  # aggregate's quoted skew against its density's, largest difference first
     for (example, quantity), _ in quoted[:4]:
         # "the density's rounding deficit (`1 - sum(p)`, of order 1e-15 to 1e-14)"
@@ -321,7 +324,7 @@ def test_reinsurance_pricing(monkeypatch, capsys):
         f"{sci(max(share_skews))}, and a quantile by at most half a bucket",
         f"({sci(worst('tail')['diff'])} observed)",
         f"({ns['POINTS'] * bs1:,.0f} for a bucket of {bs1:g})",
-        f"the layer 250 xs 250 differs by {sci(ns['whole'] / central - 1)};",
+        "the layer 250 xs 250 differs by about 2e-6",
         f"differs again, by up to {sci(quoted[0][1])}",
         f"The worst difference observed, {sci(worst('skew')['diff'])}, is the 50% stop-loss share",
     )
