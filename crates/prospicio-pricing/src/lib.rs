@@ -37,6 +37,7 @@
 //! See `docs/design/pareto.md`.
 
 pub mod bounds;
+pub mod cashflow;
 pub mod casualty;
 pub mod classical;
 pub mod credibility;

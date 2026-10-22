@@ -1,7 +1,7 @@
 # Design note: the time value of money in a price
 
 Status: **Implemented** · Depends on: `risk_load` prices · Lane: Aggregate ·
-Issues: #195, #480 (return metrics)
+Issues: #195, #480 (return metrics), #479 (the cash-flow engine)
 
 ## Goal
 
@@ -47,8 +47,30 @@ flows, one simulation a row:
 Bindings: Python `npv`, `irr` (an `IrrResult` of lists), `moic`,
 `leverage`, `tiered_fee` in `prospicio.pricing`; R `npv()`, `irr()` (a data
 frame), `moic()`, `leverage()`, `tiered_fee()`. The metrics are arithmetic
-on flows and times; they do not depend on how the flows were built, and
-move with #479's cash-flow engine if that lands in another crate.
+on flows and times; they do not depend on how the flows were built.
+
+`prospicio_pricing::cashflow` (#479), a collateralised deal's monthly
+accounts per simulation:
+
+- `CashflowTerms`: the premium, `MonthlyPatterns` (cumulative written,
+  earned and paid shares by month), the commutation month `T`, and one rule
+  per account, each a public field: `requirement` and
+  `commutation_requirement` (`Requirement`), `premium_flow`
+  (`PremiumFlow` with `Adjustment`s), `funding` (`Funding`: `Dates`,
+  `FundingRule`, `FundingSource`), `collateral_release` (`Timing`),
+  `interest` (`Interest`) and `operating` (`Operating`: opening capital,
+  an expense rate on the requirement, a `Buffer`, a release `Timing`, a
+  `PerformanceFee`).
+- `run(u, commission)` gives `Cashflows`: the investor's monthly net flows
+  (`n × T`, row-major, months `0..T`), funded, opening, released before
+  commutation, distributed at it, the fee and the commutation payment,
+  with `npv(rate)` and `irr(options)` through `npv_rows` and `irr_rows`.
+  `run_with_requirement` takes each simulation's requirement path in
+  place of the terms.
+- `trace(u, commission)` gives every account line of one simulation
+  month by month (`Trace`), with `conservation_error()`.
+
+Bindings follow in a second PR (`[cashflow-bindings]`).
 
 ## Decisions
 
@@ -98,6 +120,67 @@ move with #479's cash-flow engine if that lands in another crate.
     `Σ_i s_i (clip(m, b_i, b_{i+1}) − b_i)`, the last tier unbounded. The
     tiers are the caller's; none ships with the library.
 
+13. **The cash-flow engine is a module of `prospicio-pricing`** (the user's
+    decision of 2026-10-22, over a crate of its own): it sits beside the
+    payout and the return metrics, and moves to a crate only if cash-flow
+    work grows into a domain of its own.
+14. **Every rule is a parameter; none is the reference model's by
+    default.** The constructor's defaults are the simplest deal (premium
+    collected when written, the shortfall called every month from the
+    investor, excess released monthly, no interest, expenses, buffer or
+    fee); #479's chain is one setting of the fields, written out in the
+    module's tests, not a preset.
+15. **A requirement is a sum of loads on named bases** (unearned premium
+    `W − E`, the reserve on earned `u E − C`, the outstanding `u P − C`,
+    written, earned, a fixed amount) **with a floor and an optional switch
+    to the limit**: when `trigger × u ≥ cap` it is `cap × W − C`, #479's
+    rule. The commutation requirement is the same type, so the issue's
+    `UEP_load × UEP + commutation_load × u P (1 − cPD)` is two terms; no
+    load on the outstanding is assumed. A per-simulation requirement path
+    can be given instead (`run_with_requirement`).
+16. **Funding has dates, a rule and a source.** The rule is the rise in
+    the obligation `S_t − premium_offset × W_{t−lag}` (#479's) measured
+    from the previous funding date's obligation or from the highest so far,
+    both offered since the issue does not say which, or the trust's
+    shortfall. The source is the investor or the operating account first.
+17. **The trust's month**: opening balance, plus the call, the premium
+    collected (`collected_rate × ΔW_{t−lag}`) and any adjustment
+    (`written_rate × W − c × E`, read at the patterns' last month or at
+    the adjustment's month), less the claims paid; interest at
+    `yield / 12` on the average, opening or closing balance; then the
+    excess over the requirement is released when `collateral_release`
+    says. The balance may go below zero (an overdraft): under the
+    obligation rule nothing calls the claims paid, and the trace shows it.
+18. **Commutation is month `T − 1`**, where the requirement is the
+    commutation requirement, paid to the cedant; the trust's balance above
+    it, or below it, goes to the operating account, which pays the fee and
+    distributes the rest, so both accounts end at zero.
+19. **The operating account** opens with `opening_fixed + opening_share ×
+    P`, paid by the investor at month 0, pays `expense_rate / 12` of each
+    month's requirement, and releases what it holds above its buffer (the
+    next `months` months' claims, expenses or both, on the regular
+    requirement, so the patterns must reach `T + months`).
+20. **The fee reads the profit**, the investor's inflows before the fee
+    less its outflows, as an amount or over the premium or the capital
+    (funded plus opening); the tiered amount is multiplied back by the
+    divisor.
+
+## Open decisions (cash-flow engine)
+
+These need the user's reference run; until then the engine offers each
+choice as a setting.
+
+- Which obligation the issue's `ob_prev` is: the previous funding date's
+  (`ObligationReference::PreviousDate`) or the highest so far
+  (`RunningMax`).
+- Whether the obligation should net the claims paid: as the issue writes
+  it, the trust runs below zero by the claims paid between rises.
+- What the performance fee's margin is (`FeeBasis`) and whether
+  `adj_rate × cWP_end − cc × cEP_end` reads the ultimate or the
+  adjustment month's premium (`AdjustmentBase`).
+- Whether the commutation reserve carries a load: the issue lists a load
+  on it among the negative controls.
+
 ## Validation
 
 - Closed forms: an annuity's discount factor, the capital years of an
@@ -115,3 +198,16 @@ move with #479's cash-flow engine if that lands in another crate.
   row at a time; monthly against actual/365 in closed form; a three-tier
   fee by hand (unit tests in `returns.rs`, and the same cases in Python
   and R).
+- The cash-flow engine (#479; unit tests in `cashflow.rs`): money is
+  conserved (premium, adjustments and interest in equal the investor's net
+  flows, the fee, claims, expenses and the commutation payment out, to
+  1e-9) and both accounts end at zero, under five settings that between
+  them use every rule, at loss ratios from 0 to 2; a three-month deal by
+  hand; the limit switch's requirement by hand; calls only on funding
+  dates; the running maximum calling no more than the previous date; each
+  of the issue's negative controls (monthly funding, no buffer, interest on
+  the opening balance, a load on the commutation reserve, no unearned
+  premium at commutation) moving the flows; the flows' NPV at 0 equal to
+  released plus distributed less funded and opening. No parity with the
+  reference model: its numbers are in the user's local reproduction, so
+  the findings are not marked verified.
