@@ -682,6 +682,44 @@ impl ReinsuranceTower {
         Ok(PredictiveDistribution { inner })
     }
 
+    /// The tower with its cover basis.
+    fn with_cover_basis(&self, basis: &str) -> Result<Self> {
+        let basis = crate::aggregate::cover_basis(basis)?;
+        Ok(Self {
+            inner: self.inner.clone().cover_basis(basis),
+        })
+    }
+
+    /// The cover basis's name, or `NULL`.
+    fn cover_basis(&self) -> Robj {
+        use prospicio_aggregate::timeline::CoverBasis;
+        match self.inner.cover_basis {
+            None => ().into(),
+            Some(CoverBasis::LossesOccurring) => "losses_occurring".into(),
+            Some(CoverBasis::RisksAttaching) => "risks_attaching".into(),
+        }
+    }
+
+    /// The term on the timeline of `events` over `months`, with the
+    /// exposure's shares row-major over `n_years` rows.
+    fn apply_timeline(
+        &self,
+        events: Robj,
+        months: f64,
+        shares: &[f64],
+        n_years: f64,
+    ) -> Result<PredictiveDistribution> {
+        let events = <&EventSet>::try_from(&events)
+            .map_err(|_| Error::Other("events must be an event_set".into()))?;
+        let timeline = crate::aggregate::timeline(&events.inner, months)?;
+        let exposure = crate::aggregate::exposure(shares, n_years)?;
+        let inner = self
+            .inner
+            .apply_timeline(&timeline, &exposure)
+            .map_err(to_r)?;
+        Ok(PredictiveDistribution { inner })
+    }
+
     /// `years` a list of event sets, one per year of the term.
     fn apply_term(&self, years: List) -> Result<PredictiveDistribution> {
         let years = years

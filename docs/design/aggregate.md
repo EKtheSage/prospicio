@@ -1310,6 +1310,15 @@ the repo).
       adding to 1 in every month, the years' totals add to the timeline's
       total in each simulation; a timeline stitched from correlated years
       keeps their correlation under LOD.
+   11. *Bindings.* Python has `Timeline(events, months)`,
+      `Timeline.from_years`, `years` and `years_with_sources`,
+      `Exposure(shares)` and `Exposure.uniform`, and on `Tower`
+      `with_cover_basis`, `cover_basis` and `apply_timeline`; a basis is
+      named `"losses_occurring"` or `"risks_attaching"`. R has
+      `timeline()`, `timeline_from_years()`, `timeline_years()` (sources
+      from 1), `uniform_exposure()` (an exposure is a matrix, a row per
+      underwriting year), `with_cover_basis()`, the tower's `cover_basis`
+      property and `apply_tower_timeline()`.
 
 ## Validation
 
