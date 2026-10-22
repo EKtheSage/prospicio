@@ -690,6 +690,18 @@ impl ReinsuranceTower {
         })
     }
 
+    /// The tower with its contracts interlocking or not.
+    fn with_interlocking(&self, on: bool) -> Self {
+        Self {
+            inner: self.inner.clone().interlocking(on),
+        }
+    }
+
+    /// Whether the tower's contracts interlock.
+    fn interlocking(&self) -> bool {
+        self.inner.interlocking
+    }
+
     /// The cover basis's name, or `NULL`.
     fn cover_basis(&self) -> Robj {
         use prospicio_aggregate::timeline::CoverBasis;

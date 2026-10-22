@@ -1463,6 +1463,48 @@ impl PyTower {
             .map(crate::aggregate::cover_basis_name)
     }
 
+    /// The tower with its contracts interlocking or not; off by default.
+    ///
+    /// Under risks attaching an event that several underwriting years
+    /// write falls to each by its share. With interlocking each contract's
+    /// limit is cut, for that event, by the year's share of the event's
+    /// loss across the programme's underwriting years in the term; the
+    /// retention is not cut, and each year's annual terms apply to its
+    /// recoveries. Under losses occurring it changes nothing.
+    ///
+    /// Parameters
+    /// ----------
+    /// on : bool, default True
+    ///
+    /// Returns
+    /// -------
+    /// Tower
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+    /// >>> shares = [[0.0] * 24, [0.0] * 24]
+    /// >>> shares[0][13], shares[1][13] = 0.25, 0.75
+    /// >>> tower = (Tower([Layer("XL", 50.0, 20.0)]).with_cover_basis("risks_attaching")
+    /// ...          .with_interlocking())
+    /// >>> rad = tower.apply_timeline(Timeline(events, 24), Exposure(shares))
+    /// >>> [rad.select("year", [y]).select("kind", ["ceded"]).mean() for y in (1, 2)]
+    /// [5.0, 37.5]
+    #[pyo3(signature = (on = true))]
+    fn with_interlocking(&self, on: bool) -> Self {
+        Self {
+            inner: self.inner.clone().interlocking(on),
+        }
+    }
+
+    /// Whether the tower's contracts interlock.
+    #[getter(interlocking)]
+    fn get_interlocking(&self) -> bool {
+        self.inner.interlocking
+    }
+
     /// Each deal's name and sections, in the order they were added.
     #[getter]
     fn deals(&self) -> Vec<(String, Vec<String>)> {

@@ -574,6 +574,10 @@ ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, 
 
 ReinsuranceTower$with_cover_basis <- function(basis) .Call(wrap__ReinsuranceTower__with_cover_basis, self, basis)
 
+ReinsuranceTower$with_interlocking <- function(on) .Call(wrap__ReinsuranceTower__with_interlocking, self, on)
+
+ReinsuranceTower$interlocking <- function() .Call(wrap__ReinsuranceTower__interlocking, self)
+
 ReinsuranceTower$cover_basis <- function() .Call(wrap__ReinsuranceTower__cover_basis, self)
 
 ReinsuranceTower$apply_timeline <- function(events, months, shares, n_years) .Call(wrap__ReinsuranceTower__apply_timeline, self, events, months, shares, n_years)
