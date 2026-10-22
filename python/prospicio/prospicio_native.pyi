@@ -10997,6 +10997,67 @@ class Expense:
         """
 
 @final
+class Exposure:
+    """
+    Each underwriting year's share of a full book's exposure in each
+    accident month from the start of a term.
+    
+    One row a year, one share a month; a month's shares add to at most 1,
+    the rest belonging to underwriting years outside the term.
+    
+    Parameters
+    ----------
+    shares : list of list of float
+        One row per underwriting year, all of the same length.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Exposure
+    >>> e = Exposure.uniform(2, 12)
+    >>> e.n_years, e.months
+    (2, 36)
+    >>> round(e.shares[0][12] + e.shares[1][12], 12)
+    1.0
+    """
+    def __new__(cls, /, shares: Sequence[Sequence[float]]) -> Exposure: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def months(self, /) -> int:
+        """
+        The number of accident months.
+        """
+    @property
+    def n_years(self, /) -> int:
+        """
+        The number of underwriting years.
+        """
+    @property
+    def shares(self, /) -> list[list[float]]:
+        """
+        The shares, one row a year.
+        """
+    @staticmethod
+    def uniform(n_years: int, policy_months: int) -> Exposure:
+        """
+        ``n_years`` underwriting years, each writing its policies evenly
+        over its twelve months, each policy in force for ``policy_months``
+        from the middle of the month it is written in.
+        
+        Year ``u``'s share of month ``m`` is its policies' time in force in
+        ``m`` over ``policy_months``: the shares of a month in mid-term add
+        to 1, and the exposure runs ``12 * n_years + policy_months`` months.
+        
+        Parameters
+        ----------
+        n_years : int
+        policy_months : int
+        
+        Returns
+        -------
+        Exposure
+        """
+
+@final
 class Gam:
     """
     A generalized additive model: a ``Glm`` plus P-spline smooths of
@@ -24683,6 +24744,102 @@ class Terms:
         """
 
 @final
+class Timeline:
+    """
+    Events over a whole term of accident months, shared by its
+    underwriting years.
+    
+    Simulation ``j`` is one path; each event is stored once, with its time
+    as a fraction of the term, and is in accident month ``floor(x * months)``
+    (the last month for ``x = 1``). A cover basis splits the timeline into
+    contract years: ``Tower.apply_timeline``, or ``years`` for the years
+    themselves.
+    
+    Parameters
+    ----------
+    events : EventSet
+        With times (``with_uniform_times``, say) as fractions of the term,
+        and no aggregate part.
+    months : int
+        The number of accident months.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+    >>> events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+    >>> timeline = Timeline(events, 24)
+    >>> shares = [[0.0] * 24, [0.0] * 24]
+    >>> shares[0][13], shares[1][13] = 0.25, 0.75
+    >>> rad = timeline.years("risks_attaching", Exposure(shares))
+    >>> rad[0].events(0), rad[1].events(0)
+    ([25.0], [75.0])
+    """
+    def __new__(cls, /, events: EventSet, months: int) -> Timeline: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def events(self, /) -> EventSet:
+        """
+        The events, with times as fractions of the term.
+        """
+    @staticmethod
+    def from_years(years: Sequence[EventSet]) -> Timeline:
+        """
+        A timeline stitched from one event set per accident year.
+        
+        Each year needs times within its year and the same number of
+        simulations; year ``t``'s event at time ``tau`` is at
+        ``(t + tau) / T`` of the term. The years can come from
+        ``EventSet.term_years`` or ``EventSet.correlated_years``.
+        
+        Parameters
+        ----------
+        years : list of EventSet
+        
+        Returns
+        -------
+        Timeline
+        """
+    @property
+    def months(self, /) -> int:
+        """
+        The number of accident months.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of simulated paths.
+        """
+    def years(self, /, basis: str, exposure: Exposure) -> list[EventSet]:
+        """
+        The contract years under ``basis``, for ``Tower.apply_term``.
+        
+        Under ``"losses_occurring"``, contract year ``k`` takes every event
+        in accident months ``12k`` to ``12k + 11`` whole; ``exposure`` gives
+        only the number of years. Under ``"risks_attaching"``, underwriting
+        year ``u`` takes its share of each event in each month (sums insured
+        scaled alike), at its time over the months the year has a share.
+        
+        Parameters
+        ----------
+        basis : {"losses_occurring", "risks_attaching"}
+        exposure : Exposure
+        
+        Returns
+        -------
+        list of EventSet
+        """
+    def years_with_sources(self, /, basis: str, exposure: Exposure) -> tuple[list[EventSet], list[list[int]]]:
+        """
+        ``years`` with each year's sources: for each of the year's losses,
+        in order, its event's index among all the timeline's losses, so the
+        same event can be found in every year it falls to.
+        
+        Returns
+        -------
+        tuple of (list of EventSet, list of list of int)
+        """
+
+@final
 class TokenAttention:
     """
     Attention from ``[CLS]`` to each feature token in the last block, per
@@ -24895,6 +25052,35 @@ class Tower:
         >>> term.select("year", [2]).select("kind", ["profit_commission"]).mean()
         8.75
         """
+    def apply_timeline(self, /, timeline: Timeline, exposure: Exposure) -> PredictiveDistribution:
+        """
+        ``apply_term`` on the contract years a timeline splits into under
+        the tower's cover basis (``with_cover_basis``; an error without one).
+        
+        Parameters
+        ----------
+        timeline : Timeline
+        exposure : Exposure
+            Each underwriting year's share of each accident month; under
+            losses occurring only its number of years is used.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+        >>> timeline = Timeline(events, 24)
+        >>> shares = [[0.0] * 24, [0.0] * 24]
+        >>> shares[0][13], shares[1][13] = 0.25, 0.75
+        >>> tower = Tower([Layer("XL", 50.0, 20.0)]).with_cover_basis("risks_attaching")
+        >>> rad = tower.apply_timeline(timeline, Exposure(shares))
+        >>> [rad.select("year", [y]).select("kind", ["ceded"]).mean() for y in (1, 2)]
+        [5.0, 50.0]
+        """
     def ceded(self, /, losses: Sequence[float]) -> list[float]:
         """
         Ceded loss of each layer, in order, for one year's losses.
@@ -24906,6 +25092,11 @@ class Tower:
         Returns
         -------
         list of float
+        """
+    @property
+    def cover_basis(self, /) -> str |None:
+        """
+        The cover basis's name, or ``None`` until one is set.
         """
     def deal_ledger(self, /, source: Any, layer: str) -> Ledger:
         """
@@ -25178,6 +25369,21 @@ class Tower:
         >>> back = Tower.from_json(tower.to_json())
         >>> back.to_json() == tower.to_json()
         True
+        """
+    def with_cover_basis(self, /, basis: str) -> Tower:
+        """
+        The tower with its cover basis, which ``apply_timeline`` needs:
+        ``"losses_occurring"`` (contract years by accident period) or
+        ``"risks_attaching"`` (by underwriting period). A tower is one
+        programme, so the basis is one for all its layers.
+        
+        Parameters
+        ----------
+        basis : {"losses_occurring", "risks_attaching"}
+        
+        Returns
+        -------
+        Tower
         """
     def with_deal_scale(self, /, name: str, sections: Sequence[str], sliding_scale: Sequence[tuple[float, float]] |None = None, brokerage: float |None = None, brokerage_scale: Sequence[tuple[float, float]] |None = None, carry_deficit: bool = False, carry_credit: bool = False, carry_years: int |None = None, brokerage_within_commission_range: bool = False) -> Tower:
         """

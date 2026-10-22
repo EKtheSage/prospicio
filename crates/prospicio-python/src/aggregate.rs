@@ -3125,3 +3125,257 @@ fn year_draws(draws: &str) -> PyResult<prospicio_aggregate::term::YearDraws> {
 pub(crate) fn year_correlation_for_ratio(n_years: usize, ratio: f64) -> PyResult<f64> {
     prospicio_aggregate::term::year_correlation_for_ratio(n_years, ratio).map_err(to_py)
 }
+
+/// A cover basis from its name: ``"losses_occurring"`` (or ``"lod"``) or
+/// ``"risks_attaching"`` (or ``"rad"``).
+pub(crate) fn cover_basis(name: &str) -> PyResult<prospicio_aggregate::timeline::CoverBasis> {
+    use prospicio_aggregate::timeline::CoverBasis;
+    match name {
+        "losses_occurring" | "lod" => Ok(CoverBasis::LossesOccurring),
+        "risks_attaching" | "rad" => Ok(CoverBasis::RisksAttaching),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unknown cover basis {other:?}: expected \"losses_occurring\" or \"risks_attaching\""
+        ))),
+    }
+}
+
+/// The name of a cover basis.
+pub(crate) fn cover_basis_name(basis: prospicio_aggregate::timeline::CoverBasis) -> &'static str {
+    use prospicio_aggregate::timeline::CoverBasis;
+    match basis {
+        CoverBasis::LossesOccurring => "losses_occurring",
+        CoverBasis::RisksAttaching => "risks_attaching",
+    }
+}
+
+/// Each underwriting year's share of a full book's exposure in each
+/// accident month from the start of a term.
+///
+/// One row a year, one share a month; a month's shares add to at most 1,
+/// the rest belonging to underwriting years outside the term.
+///
+/// Parameters
+/// ----------
+/// shares : list of list of float
+///     One row per underwriting year, all of the same length.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import Exposure
+/// >>> e = Exposure.uniform(2, 12)
+/// >>> e.n_years, e.months
+/// (2, 36)
+/// >>> round(e.shares[0][12] + e.shares[1][12], 12)
+/// 1.0
+#[pyclass(name = "Exposure", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyExposure {
+    pub(crate) inner: prospicio_aggregate::timeline::Exposure,
+}
+
+#[pymethods]
+impl PyExposure {
+    #[new]
+    fn new(shares: Vec<Vec<f64>>) -> PyResult<Self> {
+        let inner = prospicio_aggregate::timeline::Exposure::new(shares).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// ``n_years`` underwriting years, each writing its policies evenly
+    /// over its twelve months, each policy in force for ``policy_months``
+    /// from the middle of the month it is written in.
+    ///
+    /// Year ``u``'s share of month ``m`` is its policies' time in force in
+    /// ``m`` over ``policy_months``: the shares of a month in mid-term add
+    /// to 1, and the exposure runs ``12 * n_years + policy_months`` months.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_years : int
+    /// policy_months : int
+    ///
+    /// Returns
+    /// -------
+    /// Exposure
+    #[staticmethod]
+    fn uniform(n_years: usize, policy_months: usize) -> PyResult<Self> {
+        let inner = prospicio_aggregate::timeline::Exposure::uniform(n_years, policy_months)
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The number of underwriting years.
+    #[getter]
+    fn n_years(&self) -> usize {
+        self.inner.n_years()
+    }
+
+    /// The number of accident months.
+    #[getter]
+    fn months(&self) -> usize {
+        self.inner.months()
+    }
+
+    /// The shares, one row a year.
+    #[getter]
+    fn shares(&self) -> Vec<Vec<f64>> {
+        self.inner.shares().to_vec()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Exposure({} underwriting years over {} months)",
+            self.inner.n_years(),
+            self.inner.months()
+        )
+    }
+}
+
+/// Events over a whole term of accident months, shared by its
+/// underwriting years.
+///
+/// Simulation ``j`` is one path; each event is stored once, with its time
+/// as a fraction of the term, and is in accident month ``floor(x * months)``
+/// (the last month for ``x = 1``). A cover basis splits the timeline into
+/// contract years: ``Tower.apply_timeline``, or ``years`` for the years
+/// themselves.
+///
+/// Parameters
+/// ----------
+/// events : EventSet
+///     With times (``with_uniform_times``, say) as fractions of the term,
+///     and no aggregate part.
+/// months : int
+///     The number of accident months.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+/// >>> events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+/// >>> timeline = Timeline(events, 24)
+/// >>> shares = [[0.0] * 24, [0.0] * 24]
+/// >>> shares[0][13], shares[1][13] = 0.25, 0.75
+/// >>> rad = timeline.years("risks_attaching", Exposure(shares))
+/// >>> rad[0].events(0), rad[1].events(0)
+/// ([25.0], [75.0])
+#[pyclass(name = "Timeline", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyTimeline {
+    pub(crate) inner: prospicio_aggregate::timeline::Timeline,
+}
+
+#[pymethods]
+impl PyTimeline {
+    #[new]
+    fn new(events: PyRef<'_, PyEventSet>, months: usize) -> PyResult<Self> {
+        let inner = prospicio_aggregate::timeline::Timeline::new(events.inner.clone(), months)
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// A timeline stitched from one event set per accident year.
+    ///
+    /// Each year needs times within its year and the same number of
+    /// simulations; year ``t``'s event at time ``tau`` is at
+    /// ``(t + tau) / T`` of the term. The years can come from
+    /// ``EventSet.term_years`` or ``EventSet.correlated_years``.
+    ///
+    /// Parameters
+    /// ----------
+    /// years : list of EventSet
+    ///
+    /// Returns
+    /// -------
+    /// Timeline
+    #[staticmethod]
+    fn from_years(years: Vec<PyRef<'_, PyEventSet>>) -> PyResult<Self> {
+        let years: Vec<EventSet> = years.iter().map(|e| e.inner.clone()).collect();
+        let inner = prospicio_aggregate::timeline::Timeline::from_years(&years).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The events, with times as fractions of the term.
+    #[getter]
+    fn events(&self) -> PyEventSet {
+        PyEventSet {
+            inner: self.inner.events().clone(),
+        }
+    }
+
+    /// The number of accident months.
+    #[getter]
+    fn months(&self) -> usize {
+        self.inner.months()
+    }
+
+    /// The number of simulated paths.
+    #[getter]
+    fn n_sims(&self) -> usize {
+        self.inner.n_sims()
+    }
+
+    /// The contract years under ``basis``, for ``Tower.apply_term``.
+    ///
+    /// Under ``"losses_occurring"``, contract year ``k`` takes every event
+    /// in accident months ``12k`` to ``12k + 11`` whole; ``exposure`` gives
+    /// only the number of years. Under ``"risks_attaching"``, underwriting
+    /// year ``u`` takes its share of each event in each month (sums insured
+    /// scaled alike), at its time over the months the year has a share.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"losses_occurring", "risks_attaching"}
+    /// exposure : Exposure
+    ///
+    /// Returns
+    /// -------
+    /// list of EventSet
+    fn years(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        exposure: PyRef<'_, PyExposure>,
+    ) -> PyResult<Vec<PyEventSet>> {
+        let basis = cover_basis(basis)?;
+        let (timeline, exposure) = (&self.inner, &exposure.inner);
+        Ok(py
+            .detach(|| timeline.years(basis, exposure))
+            .map_err(to_py)?
+            .into_iter()
+            .map(|inner| PyEventSet { inner })
+            .collect())
+    }
+
+    /// ``years`` with each year's sources: for each of the year's losses,
+    /// in order, its event's index among all the timeline's losses, so the
+    /// same event can be found in every year it falls to.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (list of EventSet, list of list of int)
+    fn years_with_sources(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        exposure: PyRef<'_, PyExposure>,
+    ) -> PyResult<(Vec<PyEventSet>, Vec<Vec<usize>>)> {
+        let basis = cover_basis(basis)?;
+        let (timeline, exposure) = (&self.inner, &exposure.inner);
+        let (years, sources) = py
+            .detach(|| timeline.years_with_sources(basis, exposure))
+            .map_err(to_py)?;
+        Ok((
+            years
+                .into_iter()
+                .map(|inner| PyEventSet { inner })
+                .collect(),
+            sources,
+        ))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Timeline({} paths over {} months)",
+            self.inner.n_sims(),
+            self.inner.months()
+        )
+    }
+}

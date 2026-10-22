@@ -9,7 +9,9 @@ use prospicio_prob::PredictiveDistribution;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::aggregate::{AnyCount, PyCompoundMoments, PyCompoundReport, PyEventSet};
+use crate::aggregate::{
+    AnyCount, PyCompoundMoments, PyCompoundReport, PyEventSet, PyExposure, PyTimeline,
+};
 use crate::distributions::{PyGrid, PyPredictiveDistribution};
 use crate::risk::PyDistortion;
 use crate::to_py;
@@ -1434,6 +1436,33 @@ impl PyTower {
         Ok(Self { inner })
     }
 
+    /// The tower with its cover basis, which ``apply_timeline`` needs:
+    /// ``"losses_occurring"`` (contract years by accident period) or
+    /// ``"risks_attaching"`` (by underwriting period). A tower is one
+    /// programme, so the basis is one for all its layers.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"losses_occurring", "risks_attaching"}
+    ///
+    /// Returns
+    /// -------
+    /// Tower
+    fn with_cover_basis(&self, basis: &str) -> PyResult<Self> {
+        let basis = crate::aggregate::cover_basis(basis)?;
+        Ok(Self {
+            inner: self.inner.clone().cover_basis(basis),
+        })
+    }
+
+    /// The cover basis's name, or ``None`` until one is set.
+    #[getter(cover_basis)]
+    fn get_cover_basis(&self) -> Option<&'static str> {
+        self.inner
+            .cover_basis
+            .map(crate::aggregate::cover_basis_name)
+    }
+
     /// Each deal's name and sections, in the order they were added.
     #[getter]
     fn deals(&self) -> Vec<(String, Vec<String>)> {
@@ -1727,6 +1756,45 @@ impl PyTower {
         let years: Vec<EventSet> = years.iter().map(|e| e.inner.clone()).collect();
         let tower = &self.inner;
         let inner = py.detach(|| tower.apply_term(&years)).map_err(to_py)?;
+        Ok(PyPredictiveDistribution { inner })
+    }
+
+    /// ``apply_term`` on the contract years a timeline splits into under
+    /// the tower's cover basis (``with_cover_basis``; an error without one).
+    ///
+    /// Parameters
+    /// ----------
+    /// timeline : Timeline
+    /// exposure : Exposure
+    ///     Each underwriting year's share of each accident month; under
+    ///     losses occurring only its number of years is used.
+    ///
+    /// Returns
+    /// -------
+    /// PredictiveDistribution
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+    /// >>> from prospicio.reinsurance import Layer, Tower
+    /// >>> events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+    /// >>> timeline = Timeline(events, 24)
+    /// >>> shares = [[0.0] * 24, [0.0] * 24]
+    /// >>> shares[0][13], shares[1][13] = 0.25, 0.75
+    /// >>> tower = Tower([Layer("XL", 50.0, 20.0)]).with_cover_basis("risks_attaching")
+    /// >>> rad = tower.apply_timeline(timeline, Exposure(shares))
+    /// >>> [rad.select("year", [y]).select("kind", ["ceded"]).mean() for y in (1, 2)]
+    /// [5.0, 50.0]
+    fn apply_timeline(
+        &self,
+        py: Python<'_>,
+        timeline: PyRef<'_, PyTimeline>,
+        exposure: PyRef<'_, PyExposure>,
+    ) -> PyResult<PyPredictiveDistribution> {
+        let (tower, timeline, exposure) = (&self.inner, &timeline.inner, &exposure.inner);
+        let inner = py
+            .detach(|| tower.apply_timeline(timeline, exposure))
+            .map_err(to_py)?;
         Ok(PyPredictiveDistribution { inner })
     }
 

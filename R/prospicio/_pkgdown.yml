@@ -118,6 +118,7 @@ reference:
       - event_counts
       - term_years
       - correlated_years
+      - timeline
   - title: Reinsurance
     contents:
       - xol_layer
@@ -141,6 +142,7 @@ reference:
       - tower_ceded
       - apply_tower
       - apply_tower_term
+      - with_cover_basis
       - deal_ratios
       - with_deal_scale
       - tower_on_grid

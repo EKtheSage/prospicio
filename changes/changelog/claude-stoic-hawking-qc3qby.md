@@ -109,3 +109,8 @@
   attaching) and `Tower::apply_timeline`, which applies the tower over the
   contract years that basis gives on a `Timeline`; a tower with a basis is
   JSON format version 5 (#489; Rust).
+- The shared timeline and a tower's cover basis in Python (`Timeline`,
+  `Exposure`, `Tower.with_cover_basis`, `Tower.apply_timeline`) and R
+  (`timeline()`, `timeline_from_years()`, `timeline_years()`,
+  `uniform_exposure()`, `with_cover_basis()`, `apply_tower_timeline()`)
+  (#489).

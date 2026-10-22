@@ -746,7 +746,8 @@ reinsurance_tower <- S7::new_class(
     ptr = S7::new_S3_class("ReinsuranceTower"),
     layer_names = S7::new_property(S7::class_character, getter = function(self) self@ptr$layer_names()),
     stages = S7::new_property(S7::class_double, getter = function(self) self@ptr$stages()),
-    deal_names = S7::new_property(S7::class_character, getter = function(self) self@ptr$deal_names())
+    deal_names = S7::new_property(S7::class_character, getter = function(self) self@ptr$deal_names()),
+    cover_basis = S7::new_property(S7::class_any, getter = function(self) self@ptr$cover_basis())
   ),
   constructor = function(layers, ptr = NULL) {
     if (is.null(ptr)) {
@@ -918,6 +919,47 @@ apply_tower_term <- function(tower, years) {
     tower@ptr$apply_term(ptrs)
   }
   predictive_distribution(ptr = rust_result(ptr))
+}
+
+#' Reinsurance tower on a timeline
+#'
+#' `with_cover_basis()` sets the tower's cover basis, which
+#' `apply_tower_timeline()` needs. A tower is one programme, so the basis is
+#' one for all its layers. `apply_tower_timeline()` splits a [timeline()]
+#' into contract years under that basis ([timeline_years()]) and applies the
+#' tower to them as [apply_tower_term()] does.
+#'
+#' @param tower A [reinsurance_tower].
+#' @param basis `"losses_occurring"` (contract years by accident period) or
+#'   `"risks_attaching"` (by underwriting period).
+#' @param timeline A [timeline()].
+#' @param exposure A matrix of shares, one row per underwriting year and
+#'   one column per accident month ([uniform_exposure()]); under losses
+#'   occurring only its number of rows is used.
+#' @returns `with_cover_basis()` the [reinsurance_tower] with the basis (its
+#'   `cover_basis` property, `NULL` until set); `apply_tower_timeline()` a
+#'   [predictive_distribution] as [apply_tower_term()] gives.
+#' @export
+#' @examples
+#' ev <- events_from_years(list(100), times = list(13.5 / 24))
+#' shares <- matrix(0, 2, 24)
+#' shares[1, 14] <- 0.25
+#' shares[2, 14] <- 0.75
+#' tw <- with_cover_basis(reinsurance_tower(list(xol_layer("XL", 50, 20))), "risks_attaching")
+#' rad <- apply_tower_timeline(tw, timeline(ev, 24), shares)
+#' draw_matrix(select_components(rad, "kind", "ceded"))
+with_cover_basis <- function(tower, basis) {
+  reinsurance_tower(ptr = rust_result(tower@ptr$with_cover_basis(as.character(basis))))
+}
+
+#' @rdname with_cover_basis
+#' @export
+apply_tower_timeline <- function(tower, timeline, exposure) {
+  exposure <- as.matrix(exposure)
+  predictive_distribution(ptr = rust_result(tower@ptr$apply_timeline(
+    timeline@events@ptr, as.double(timeline@months), as.double(t(exposure)),
+    as.double(nrow(exposure))
+  )))
 }
 
 S7::method(print, reinsurance_tower) <- function(x, ...) {

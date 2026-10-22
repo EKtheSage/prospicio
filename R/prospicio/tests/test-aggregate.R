@@ -829,3 +829,39 @@ stopifnot(inherits(try(deal_ledger(dtw2, list(160, 1), "C"), silent = TRUE), "tr
 stopifnot(inherits(try(with_deal_scale(reinsurance_tower(list(sa, sb)), "deal", "A", brokerage = 0.01), silent = TRUE), "try-error"))
 stopifnot(inherits(try(with_deal_scale(reinsurance_tower(list(sa, sb)), "deal", c("A", "B")), silent = TRUE), "try-error"))
 stopifnot(inherits(try(with_deal_scale(reinsurance_tower(list(sa, sb)), "d", c("A", "B"), brokerage = 0.01, carry_years = 1.5), silent = TRUE), "try-error"))
+
+# A timeline shared by its underwriting years: an event straddling two years
+# under risks attaching splits by exposure share; under losses occurring it
+# falls whole to its accident year.
+ev <- events_from_years(list(100), times = list(13.5 / 24))
+tl <- timeline(ev, 24)
+stopifnot(tl@months == 24, tl@n_sims == 1)
+shares <- matrix(0, 2, 24)
+shares[1, 14] <- 0.25
+shares[2, 14] <- 0.75
+rad <- timeline_years(tl, "risks_attaching", shares, sources = TRUE)
+stopifnot(identical(events(rad$years[[1]], 1), 25), identical(events(rad$years[[2]], 1), 75))
+stopifnot(identical(rad$sources, list(1, 1)))
+lod <- timeline_years(tl, "losses_occurring", shares)
+stopifnot(length(events(lod[[1]], 1)) == 0, identical(events(lod[[2]], 1), 100))
+tw <- reinsurance_tower(list(xol_layer("XL", 50, 20)))
+stopifnot(is.null(tw@cover_basis))
+stopifnot(inherits(try(apply_tower_timeline(tw, tl, shares), silent = TRUE), "try-error"))
+tw <- with_cover_basis(tw, "risks_attaching")
+stopifnot(identical(tw@cover_basis, "risks_attaching"))
+ceded <- draw_matrix(select_components(apply_tower_timeline(tw, tl, shares), "kind", "ceded"))
+stopifnot(all(abs(ceded[1, ] - c(5, 50)) < 1e-12))
+stopifnot(inherits(try(with_cover_basis(tw, "claims_made"), silent = TRUE), "try-error"))
+stopifnot(inherits(try(timeline(ev, 0), silent = TRUE), "try-error"))
+# Uniform exposure: mid-term months add to 1; stitched years equal LOD years.
+ue <- uniform_exposure(2, 12)
+stopifnot(identical(dim(ue), c(2L, 36L)), abs(sum(ue[, 13]) - 1) < 1e-12)
+stopifnot(all(abs(rowSums(ue) - 12) < 1e-12))
+ev3 <- with_uniform_times(simulate_events(poisson_count(2), lognormal(3, 1), 3 * 200, seed = 5))
+yrs <- term_years(ev3, 3)
+st <- timeline_from_years(yrs)
+stopifnot(st@months == 36, st@n_sims == 200)
+back <- timeline_years(st, "losses_occurring", uniform_exposure(3, 12))
+for (t in 1:3) {
+  stopifnot(all(abs(draw_matrix(total(back[[t]])) - draw_matrix(total(yrs[[t]]))) < 1e-9))
+}

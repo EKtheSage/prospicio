@@ -100,6 +100,10 @@ ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
 
 year_correlation_for_ratio_rust <- function(n_years, ratio) .Call(wrap__year_correlation_for_ratio_rust, n_years, ratio)
 
+timeline_from_years_rust <- function(years) .Call(wrap__timeline_from_years_rust, years)
+
+exposure_uniform_rust <- function(n_years, policy_months) .Call(wrap__exposure_uniform_rust, n_years, policy_months)
+
 credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
@@ -364,6 +368,10 @@ EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 
 EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
 
+EventSet$timeline_check <- function(months) .Call(wrap__EventSet__timeline_check, self, months)
+
+EventSet$timeline_years <- function(months, basis, shares, n_years, sources) .Call(wrap__EventSet__timeline_years, self, months, basis, shares, n_years, sources)
+
 EventSet$correlated_years <- function(n_years, correlation, kind, draws, seed) .Call(wrap__EventSet__correlated_years, self, n_years, correlation, kind, draws, seed)
 
 EventSet$calibrate_year_correlation <- function(n_years, ratio, kind, draws, seed) .Call(wrap__EventSet__calibrate_year_correlation, self, n_years, ratio, kind, draws, seed)
@@ -563,6 +571,12 @@ ReinsuranceTower$deal_ratios <- function(result, layer) .Call(wrap__ReinsuranceT
 ReinsuranceTower$apply_annual <- function(losses) .Call(wrap__ReinsuranceTower__apply_annual, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
+
+ReinsuranceTower$with_cover_basis <- function(basis) .Call(wrap__ReinsuranceTower__with_cover_basis, self, basis)
+
+ReinsuranceTower$cover_basis <- function() .Call(wrap__ReinsuranceTower__cover_basis, self)
+
+ReinsuranceTower$apply_timeline <- function(events, months, shares, n_years) .Call(wrap__ReinsuranceTower__apply_timeline, self, events, months, shares, n_years)
 
 ReinsuranceTower$apply_term <- function(years) .Call(wrap__ReinsuranceTower__apply_term, self, years)
 
