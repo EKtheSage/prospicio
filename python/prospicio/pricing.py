@@ -11,13 +11,18 @@ IndexClause, AsIf), casualty exposure rating over a table of policies
 (CasualtyProfile, IlfTable, ElfTable, CasualtyRating, ParetoAnchor,
 poisson_tail), the time value of money (PaymentPattern,
 price_over_payout, PayoutPrice) and return metrics on simulated cash flows
-(npv, irr, IrrResult, moic, leverage, tiered_fee)."""
+(npv, irr, IrrResult, moic, leverage, tiered_fee), and a collateralised
+deal's monthly cash flows (CashflowTerms, CollateralRequirement,
+PremiumAdjustment, Cashflows)."""
 
 from .prospicio_native import (
     AsIf,
     BurningCost,
+    CashflowTerms,
+    Cashflows,
     CasualtyProfile,
     CasualtyRating,
+    CollateralRequirement,
     CollectiveModel,
     DevelopmentPattern,
     ElfTable,
@@ -36,6 +41,7 @@ from .prospicio_native import (
     Portfolio,
     PortfolioPrice,
     Price,
+    PremiumAdjustment,
     PreparedLosses,
     PricingBounds,
     Provisions,
@@ -143,4 +149,8 @@ __all__ = [
     "moic",
     "leverage",
     "tiered_fee",
+    "CashflowTerms",
+    "CollateralRequirement",
+    "PremiumAdjustment",
+    "Cashflows",
 ]

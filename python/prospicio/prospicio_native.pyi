@@ -4513,6 +4513,206 @@ class CapeCodFit:
         """
 
 @final
+class CashflowTerms:
+    """
+    A collateralised deal's monthly cash flows: the premium, the monthly
+    patterns, the collateral requirement and one rule for each account.
+    
+    Month ``t`` runs from 0 to the commutation month ``T - 1``. Each month
+    the trust takes the capital called, the premium collected and any
+    adjustment, pays the month's claims, earns interest and releases what
+    it holds above the requirement to the operating account, which pays
+    the expenses and releases to the investor what it holds above its
+    buffer. At commutation the trust pays the commutation requirement to
+    the cedant, the operating account takes the rest (or makes good a
+    shortfall), pays the fee and distributes what is left.
+    
+    Parameters
+    ----------
+    premium : float
+    commutation_month : int
+        ``T``: the deal commutes at the end of month ``T - 1``.
+    written, earned, paid : list of float
+        Cumulative monthly shares of the premium written and earned and the
+        ultimate loss paid, all of one length, at least ``T`` plus the
+        buffer's months.
+    requirement : CollateralRequirement
+    commutation_requirement : CollateralRequirement, optional
+        What the trust pays at commutation; by default ``requirement``.
+    collected_rate : float, default 1
+        The share of written premium paid into the trust.
+    lag : int, default 0
+        The months between writing and collection.
+    adjustments : list of PremiumAdjustment, optional
+    funding_dates : default "monthly"
+        The months capital may be called: ``"monthly"``, ``"quarterly"``,
+        an interval, a list of months or ``{"every": n, "first": m}``.
+    funding_rule : {"shortfall", "obligation-increase"}, default "shortfall"
+        Call what the trust lacks, or the rise in the obligation
+        ``S_t - premium_offset * W_{t - lag}`` over ``reference``.
+    premium_offset : float, default 1
+    reference : {"previous-date", "running-max"}, default "previous-date"
+    funding_source : {"investor", "operating-first"}, default "investor"
+    collateral_release : default "monthly"
+        When the trust releases its excess: the dates above or
+        ``"at-commutation"``.
+    annual_yield : float, default 0
+        The trust's yield, compounded monthly.
+    interest_basis : {"average", "opening", "closing"}, default "average"
+    opening_fixed, opening_share : float, default 0
+        The operating account's opening capital, ``opening_fixed +
+        opening_share * premium``.
+    expense_rate : float, default 0
+        The annual expense rate on the requirement, a twelfth a month.
+    buffer_months : int, default 0
+        The operating account keeps the requirement's rise over the next
+        ``buffer_months`` months, with the claims paid (``buffer_paid``)
+        and the expenses (``buffer_expenses``) over them when asked.
+    buffer_paid, buffer_expenses : bool, default False
+    equity_release : default "monthly"
+        When the operating account releases its excess to the investor.
+    fee : (list of float, list of float), optional
+        A performance fee's ``(breakpoints, slopes)``, as ``tiered_fee``.
+    fee_basis : {"profit", "profit-over-premium", "profit-over-capital"}, default "profit"
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import CashflowTerms, CollateralRequirement
+    >>> terms = CashflowTerms(
+    ...     100.0, 3, [1.0] * 3, [1 / 3, 2 / 3, 1.0], [1 / 3, 2 / 3, 1.0],
+    ...     CollateralRequirement({"reserve": 1.0}),
+    ...     commutation_requirement=CollateralRequirement({"outstanding": 1.0}),
+    ... )
+    >>> out = terms.run([0.6, 1.5])
+    >>> [[round(x, 9) for x in row] for row in out.flows]
+    [[80.0, -20.0, -20.0], [50.0, -50.0, -50.0]]
+    >>> [round(x, 9) for x in out.funded]
+    [40.0, 100.0]
+    """
+    def __new__(cls, /, premium: float, commutation_month: int, written: Sequence[float], earned: Sequence[float], paid: Sequence[float], requirement: CollateralRequirement, *, commutation_requirement: CollateralRequirement |None = None, collected_rate: float = 1.0, lag: int = 0, adjustments: Sequence[PremiumAdjustment] |None = None, funding_dates: Any |None = None, funding_rule: str = "shortfall", premium_offset: float = 1.0, reference: str = "previous-date", funding_source: str = "investor", collateral_release: Any |None = None, annual_yield: float = 0.0, interest_basis: str = "average", opening_fixed: float = 0.0, opening_share: float = 0.0, expense_rate: float = 0.0, buffer_months: int = 0, buffer_paid: bool = False, buffer_expenses: bool = False, equity_release: Any |None = None, fee: tuple[Sequence[float], Sequence[float]] |None = None, fee_basis: str = "profit") -> CashflowTerms: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def commutation_month(self, /) -> int:
+        """
+        The month count ``T``: the deal commutes at the end of month ``T - 1``.
+        """
+    @property
+    def premium(self, /) -> float:
+        """
+        The premium.
+        """
+    def run(self, /, u: Sequence[float], commission: Sequence[float] |None = None) -> Cashflows:
+        """
+        Each simulation's cash flows to the investor, from its ultimate
+        loss ratio and commission rate (0 when not given).
+        
+        Parameters
+        ----------
+        u : list of float
+        commission : list of float, optional
+        
+        Returns
+        -------
+        Cashflows
+        """
+    def run_with_requirement(self, /, u: Sequence[float], requirement: Sequence[Sequence[float]], commission: Sequence[float] |None = None) -> Cashflows:
+        """
+        ``run`` with each simulation's requirement given month by month,
+        one row a simulation of ``commutation_month + buffer_months``
+        values, in place of ``requirement``; the commutation requirement is
+        still read from its terms.
+        
+        Parameters
+        ----------
+        u : list of float
+        requirement : list of list of float
+        commission : list of float, optional
+        
+        Returns
+        -------
+        Cashflows
+        """
+    def trace(self, /, u: float, commission: float = 0.0) -> dict:
+        """
+        Every account line of one simulation, month by month: a dict of
+        columns, each a list of ``commutation_month`` values, with the
+        scalars ``commutation_paid``, ``fee`` and ``conservation_error``
+        (the cash created or lost over the deal, 0 up to rounding).
+        
+        Parameters
+        ----------
+        u : float
+        commission : float, default 0
+        
+        Returns
+        -------
+        dict
+        """
+
+@final
+class Cashflows:
+    """
+    Simulated monthly cash flows to the investor, from
+    ``CashflowTerms.run``: positive when paid to the investor.
+    """
+    def __len__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def commutation(self, /) -> list[float]:
+        """
+        What each trust paid the cedant at commutation.
+        """
+    @property
+    def distributed(self, /) -> list[float]:
+        """
+        What each investor received at commutation, after the fee.
+        """
+    @property
+    def fee(self, /) -> list[float]:
+        """
+        The performance fee in each simulation.
+        """
+    @property
+    def flows(self, /) -> list[list[float]]:
+        """
+        Each simulation's flows, one list of ``months`` values a simulation.
+        """
+    @property
+    def funded(self, /) -> list[float]:
+        """
+        The capital each simulation's investor paid into the trust.
+        """
+    def irr(self, /, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> IrrResult:
+        """
+        Each simulation's annual internal rate of return, as ``irr``.
+        """
+    @property
+    def month_offsets(self, /) -> list[float]:
+        """
+        The months 0 to ``months - 1``, the times of ``flows`` for ``npv``
+        and ``irr`` with ``unit="months"``.
+        """
+    @property
+    def months(self, /) -> int:
+        """
+        The months a simulation runs, the commutation month.
+        """
+    def npv(self, /, rate: float) -> list[float]:
+        """
+        Each simulation's net present value at an annual rate.
+        """
+    @property
+    def opening(self, /) -> list[float]:
+        """
+        The opening capital each investor paid in.
+        """
+    @property
+    def released(self, /) -> list[float]:
+        """
+        The equity released to each investor before commutation.
+        """
+
+@final
 class CasualtyProfile:
     """
     A book of casualty policies, each rated on its own curve
@@ -5723,6 +5923,53 @@ class Coding:
     def names(self, /) -> list[str]:
         """
         Design matrix column names.
+        """
+
+@final
+class CollateralRequirement:
+    """
+    What a collateral account must hold at the end of each month: a sum of
+    loads on bases, floored, with an optional switch to a limit.
+    
+    With ``W``, ``E`` and ``C`` the premium written, the premium earned and
+    the loss paid to date, ``u`` the ultimate loss ratio and ``P`` the
+    premium, the bases are ``"unearned-premium"`` (``W - E``),
+    ``"reserve"`` (``u E - C``), ``"outstanding"`` (``u P - C``),
+    ``"written"`` (``W``), ``"earned"`` (``E``) and ``"fixed"`` (1, so the
+    load is an amount).
+    
+    Parameters
+    ----------
+    terms : dict of str to float, or list of (str, float)
+        The load on each base.
+    floor : float, default 0
+        The least the requirement can be.
+    limit : (float, float), optional
+        ``(trigger, cap)``: when ``trigger * u >= cap`` the requirement is
+        ``cap * W - C`` in place of the terms.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import CollateralRequirement
+    >>> CollateralRequirement({"unearned-premium": 0.3, "reserve": 1.2}, limit=(1.2, 1.5))
+    CollateralRequirement(terms=[('unearned-premium', 0.3), ('reserve', 1.2)], floor=0, limit=(1.2, 1.5))
+    """
+    def __new__(cls, /, terms: Any, *, floor: float = 0.0, limit: tuple[float, float] |None = None) -> CollateralRequirement: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def floor(self, /) -> float:
+        """
+        The least the requirement can be.
+        """
+    @property
+    def limit(self, /) -> tuple[float, float] |None:
+        """
+        ``(trigger, cap)``, or None.
+        """
+    @property
+    def terms(self, /) -> list[tuple[str, float]]:
+        """
+        The load on each base, in the order given.
         """
 
 @final
@@ -21703,6 +21950,52 @@ class PredictiveDistribution:
         Returns
         -------
         float
+        """
+
+@final
+class PremiumAdjustment:
+    """
+    A premium adjustment paid into the trust at the end of a month: the
+    rate on written premium less ``u`` (the ultimate loss ratio, or the loss
+    paid to date over the premium written to date), and less the
+    commission rate when asked, times the premium written to date.
+    
+    Parameters
+    ----------
+    month : int
+        The month, before commutation.
+    written_rate : float
+        The rate on written premium the loss ratio is set against.
+    less_commission : bool, default False
+    base : {"ultimate", "to-date"}, default "ultimate"
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import PremiumAdjustment
+    >>> PremiumAdjustment(18, 0.3, less_commission=True)
+    PremiumAdjustment(month=18, written_rate=0.3, less_commission=True, base='ultimate')
+    """
+    def __new__(cls, /, month: int, written_rate: float, *, less_commission: bool = False, base: str = "ultimate") -> PremiumAdjustment: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def base(self, /) -> str:
+        """
+        ``"ultimate"`` or ``"to-date"``.
+        """
+    @property
+    def less_commission(self, /) -> bool:
+        """
+        Whether the commission rate comes off too.
+        """
+    @property
+    def month(self, /) -> int:
+        """
+        The month, before commutation.
+        """
+    @property
+    def written_rate(self, /) -> float:
+        """
+        The rate on written premium the loss ratio is set against.
         """
 
 @final

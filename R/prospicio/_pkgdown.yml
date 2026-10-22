@@ -169,6 +169,9 @@ reference:
       - payment_pattern
       - price_over_payout
       - npv
+      - cashflow_terms
+      - cashflow_requirement
+      - cashflow_adjustment
       - trend_large_losses
       - burning_cost
       - development_pattern

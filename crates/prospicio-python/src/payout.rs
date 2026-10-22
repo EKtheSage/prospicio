@@ -292,7 +292,7 @@ fn flow_matrix(flows: Vec<Vec<f64>>, times: usize) -> PyResult<Vec<f64>> {
 /// The internal rates of return of simulated cash flows, from ``irr``.
 #[pyclass(name = "IrrResult", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyIrrResult {
-    inner: Vec<returns::Irr>,
+    pub(crate) inner: Vec<returns::Irr>,
 }
 
 #[pymethods]

@@ -6,7 +6,6 @@
 
 ## Next
 
-- [cashflow-bindings] #479's cash-flow engine in Python and R (`CashflowTerms`, `run`, `trace`), and parity with the user's reference run once they share its numbers
 
 ## Done
 
@@ -38,3 +37,5 @@
 - [deal-scale] a deal-level sliding scale and brokerage read on the loss ratio of several sections together, added to the sections' own (`DealScale`, `Tower::deal_scale`: the sum of the sections' keys over their premiums, its own carry over a term, `deal_ratios` on a deal, JSON format version 4, refused by the grids and the P&L ledger; Rust, Python and R; #477)
 - [deal-ledger] a layer's or deal's brokerage and deductions as legs of the reinsurer's P&L ledger (`Tower::deal_ledger`: one sell group over the annual gross losses, the tower applied to each atom as one annual loss, legs Premium, Loss, Ceding and Profit commission, Brokerage and each deduction, each row at each atom equal to `deal_ratios` times the premium; Python `Tower.deal_ledger`, R `deal_ledger()`; #477)
 - #479 a monthly cash-flow engine for collateralised deals in `prospicio-pricing` (`prospicio_pricing::cashflow`, the user's choice of a module over a crate: a trust and an operating account per simulation, every rule a setting (requirement loads on named bases with a floor and a limit switch, a commutation requirement, premium collection and adjustments, funding dates, rule and source, release timing, interest, opening capital, expenses, a buffer, a tiered fee), `run` for `npv_rows` and `irr_rows`, `trace` with a conservation check; Rust; `time-value.md` decisions 13 to 20)
+- [cashflow-bindings] #479's cash-flow engine in Python (`CashflowTerms`, `CollateralRequirement`, `PremiumAdjustment`, `Cashflows`; `run`, `run_with_requirement`, `trace`) and R (`cashflow_terms()`, `cashflow_requirement()`, `cashflow_adjustment()`, `cashflow_run()`, `cashflow_trace()`), every rule named as in Rust, the Rust tests' trough of the trust under the obligation rule reproduced in both
+- [cashflow-parity] #479's four open conventions (the obligation's reference, netting claims paid, the fee's margin and the adjustment's premium, a load on the commutation reserve) accepted by the user on 2026-10-22 as settings with their defaults as built; no parity run against the reference model planned

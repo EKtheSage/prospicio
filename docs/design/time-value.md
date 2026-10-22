@@ -70,7 +70,21 @@ accounts per simulation:
 - `trace(u, commission)` gives every account line of one simulation
   month by month (`Trace`), with `conservation_error()`.
 
-Bindings follow in a second PR (`[cashflow-bindings]`).
+In Python (`prospicio.pricing`, `[cashflow-bindings]`): `CashflowTerms`
+takes the premium, the commutation month, the three patterns and a
+`CollateralRequirement` (loads by base name, a floor, a `(trigger, cap)`
+limit), with every rule a keyword (names for the enums; dates as
+`"monthly"`, `"quarterly"`, an interval, a list of months or
+`{"every": n, "first": m}`; `"at-commutation"` for a release;
+`PremiumAdjustment`s; a fee as `(breakpoints, slopes)`); `run` gives
+`Cashflows` (`flows` a list of rows, `npv`, `irr` as `IrrResult`),
+`run_with_requirement` takes the rows, and `trace` gives a dict of the
+account columns with `conservation_error`. In R: `cashflow_requirement()`,
+`cashflow_adjustment()`, `cashflow_terms()` with the same arguments,
+`cashflow_run()` (a `flows` matrix and `months` for `npv()` and `irr()`
+with `unit = "months"`, `months_requirement` for a given path) and
+`cashflow_trace()` (an `accounts` data frame). Both check the terms when
+they are built.
 
 ## Decisions
 
@@ -165,10 +179,11 @@ Bindings follow in a second PR (`[cashflow-bindings]`).
     (funded plus opening); the tiered amount is multiplied back by the
     divisor.
 
-## Open decisions (cash-flow engine)
+## Conventions left as settings (cash-flow engine)
 
-These need the user's reference run; until then the engine offers each
-choice as a setting.
+The user accepted these on 2026-10-22 as built: each stays a setting with
+the default it has, and no parity run against the reference model is
+planned.
 
 - Which obligation the issue's `ob_prev` is: the previous funding date's
   (`ObligationReference::PreviousDate`) or the highest so far

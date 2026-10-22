@@ -65,4 +65,7 @@
   dates, rule and source, release timing, interest, opening capital,
   expenses, a buffer and a tiered performance fee); `CashflowTerms::run`
   gives the investor's monthly flows for `npv_rows` and `irr_rows`, and
-  `trace` every account line of one simulation (#479, Rust only for now).
+  `trace` every account line of one simulation (#479); in Python (`prospicio.pricing.CashflowTerms`, `CollateralRequirement`,
+  `PremiumAdjustment`, `Cashflows`) and R (`cashflow_terms()`,
+  `cashflow_requirement()`, `cashflow_adjustment()`, `cashflow_run()`,
+  `cashflow_trace()`).

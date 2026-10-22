@@ -759,3 +759,152 @@ def test_return_metrics_on_cash_flows():
         moic(1.0, 0.0, 0.0)
     with pytest.raises(ValueError):
         tiered_fee([1.0], [1.0, 1.0], [0.1, 0.2])
+
+
+def _ramp(m, n=60):
+    return [min((t + 1) / m, 1.0) for t in range(n)]
+
+
+def _full_cashflow_terms(**changes):
+    # The issue's chain with every rule set, as the Rust tests' `full()`.
+    kwargs = dict(
+        commutation_requirement=P.CollateralRequirement(
+            {"unearned-premium": 0.3, "outstanding": 1.0}
+        ),
+        collected_rate=0.7,
+        lag=2,
+        adjustments=[P.PremiumAdjustment(18, 0.1, less_commission=True)],
+        funding_dates="quarterly",
+        funding_rule="obligation-increase",
+        premium_offset=0.7,
+        reference="running-max",
+        annual_yield=0.04,
+        opening_fixed=5.0,
+        opening_share=0.1,
+        expense_rate=0.02,
+        buffer_months=12,
+        buffer_paid=True,
+        buffer_expenses=True,
+        fee=([0.0, 0.1], [0.1, 0.2]),
+        fee_basis="profit-over-capital",
+    )
+    kwargs.update(changes)
+    return P.CashflowTerms(
+        100.0,
+        30,
+        _ramp(12),
+        _ramp(36),
+        _ramp(48),
+        P.CollateralRequirement({"unearned-premium": 0.3, "reserve": 1.2}, limit=(1.2, 1.5)),
+        **kwargs,
+    )
+
+
+def test_cashflow_terms_hand_case():
+    thirds = [1 / 3, 2 / 3, 1.0]
+    terms = P.CashflowTerms(
+        100.0,
+        3,
+        [1.0] * 3,
+        thirds,
+        thirds,
+        P.CollateralRequirement({"reserve": 1.0}),
+        commutation_requirement=P.CollateralRequirement({"outstanding": 1.0}),
+    )
+    out = terms.run([0.6, 1.5])
+    assert len(out) == 2 and out.months == 3
+    assert out.flows[0] == pytest.approx([80.0, -20.0, -20.0], abs=1e-9)
+    assert out.flows[1] == pytest.approx([50.0, -50.0, -50.0], abs=1e-9)
+    assert out.funded == pytest.approx([40.0, 100.0], abs=1e-9)
+    assert out.month_offsets == [0.0, 1.0, 2.0]
+    # The flows discounted monthly at an annual rate, as `npv` with months.
+    want = P.npv(out.flows, out.month_offsets, 0.05, unit="months")
+    assert out.npv(0.05) == pytest.approx(want, rel=1e-12)
+    tr = terms.trace(1.5)
+    assert tr["month"] == [0, 1, 2]
+    assert tr["investor"] == pytest.approx(out.flows[1], abs=1e-9)
+    assert tr["funding_investor"] == pytest.approx([0.0, 50.0, 50.0], abs=1e-9)
+    assert abs(tr["conservation_error"]) < 1e-9
+
+
+def test_cashflow_terms_every_rule():
+    # The Rust test's pinned trough: the obligation rule nets the premium
+    # but not the claims, so the trust runs below zero.
+    terms = _full_cashflow_terms()
+    tr = terms.trace(0.9, 0.2)
+    assert min(tr["collateral_balance"]) == pytest.approx(-8.885288354521, abs=1e-9)
+    shortfall = _full_cashflow_terms(funding_rule="shortfall")
+    assert min(shortfall.trace(0.9, 0.2)["collateral_balance"]) >= -1e-9
+    variants = [
+        terms,
+        _full_cashflow_terms(funding_rule="shortfall", funding_source="operating-first"),
+        _full_cashflow_terms(
+            funding_dates=[0, 7, 20],
+            premium_offset=0.5,
+            reference="previous-date",
+            collateral_release="at-commutation",
+            interest_basis="opening",
+        ),
+        _full_cashflow_terms(
+            collateral_release="quarterly",
+            equity_release={"every": 6, "first": 5},
+            interest_basis="closing",
+            fee=([10.0], [0.25]),
+            fee_basis="profit",
+            adjustments=[P.PremiumAdjustment(18, 0.1, less_commission=True, base="to-date")],
+        ),
+        _full_cashflow_terms(equity_release="at-commutation", buffer_months=0),
+    ]
+    u = [0.4, 0.9, 1.3, 2.0]
+    c = [0.2] * 4
+    for t in variants:
+        out = t.run(u, c)
+        for j in range(len(u)):
+            tr = t.trace(u[j], c[j])
+            assert abs(tr["conservation_error"]) < 1e-9
+            assert tr["investor"] == pytest.approx(out.flows[j], abs=1e-9)
+            assert tr["fee"] == pytest.approx(out.fee[j], abs=1e-12)
+    # The NPV at 5% falls as the loss ratio rises, and each IRR found
+    # prices the flows at 0.
+    out = shortfall.run(u, c)
+    v = out.npv(0.05)
+    assert all(a > b for a, b in zip(v, v[1:]))
+    r = out.irr()
+    assert all(abs(x) < 1e-6 for x, f in zip(r.npv, r.found) if f)
+
+
+def test_cashflow_run_with_requirement():
+    terms = _full_cashflow_terms(funding_rule="shortfall", buffer_months=0)
+    u, c = [0.7, 1.4], [0.2, 0.2]
+    rows = [terms.trace(x, y)["requirement"] for x, y in zip(u, c)]
+    # The requirement the terms compute, given back month by month, but for
+    # the commutation month, which reads the commutation requirement.
+    given = terms.run_with_requirement(u, rows, c)
+    out = terms.run(u, c)
+    for a, b in zip(given.flows, out.flows):
+        assert a == pytest.approx(b, abs=1e-9)
+    with pytest.raises(ValueError, match="row 0 has 3 months"):
+        terms.run_with_requirement(u, [[0.0] * 3, [0.0] * 3], c)
+
+
+def test_cashflow_terms_errors():
+    thirds = [1 / 3, 2 / 3, 1.0]
+    req = P.CollateralRequirement([("reserve", 1.0)])
+    with pytest.raises(ValueError, match="unknown base"):
+        P.CollateralRequirement({"ibnr": 1.0})
+    with pytest.raises(ValueError, match="unknown base"):
+        P.PremiumAdjustment(1, 0.1, base="final")
+    with pytest.raises(ValueError, match="need 4"):
+        P.CashflowTerms(100.0, 4, [1.0] * 3, thirds, thirds, req)
+    with pytest.raises(ValueError, match="not before commutation"):
+        P.CashflowTerms(100.0, 3, [1.0] * 3, thirds, thirds, req,
+                        adjustments=[P.PremiumAdjustment(3, 0.1)])
+    with pytest.raises(ValueError, match="interval of 0"):
+        P.CashflowTerms(100.0, 3, [1.0] * 3, thirds, thirds, req, funding_dates=0)
+    with pytest.raises(ValueError, match="unknown dates"):
+        P.CashflowTerms(100.0, 3, [1.0] * 3, thirds, thirds, req, funding_dates="weekly")
+    with pytest.raises(ValueError, match="unknown funding rule"):
+        P.CashflowTerms(100.0, 3, [1.0] * 3, thirds, thirds, req, funding_rule="calls")
+    with pytest.raises(ValueError, match="unknown fee basis"):
+        P.CashflowTerms(100.0, 3, [1.0] * 3, thirds, thirds, req, fee=([0.0], [0.1]),
+                        fee_basis="carry")

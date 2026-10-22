@@ -3366,6 +3366,26 @@ OnnxPredictorModel$predict_distribution <- function(x, names, offset, weights, n
 #' @export
 `[[.OnnxPredictorModel` <- `$.OnnxPredictorModel`
 
+Cashflow <- new.env(parent = emptyenv())
+
+Cashflow$new <- function(premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis) .Call(wrap__Cashflow__new, premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis)
+
+Cashflow$run <- function(u, commission, requirement) .Call(wrap__Cashflow__run, self, u, commission, requirement)
+
+Cashflow$trace <- function(u, commission) .Call(wrap__Cashflow__trace, self, u, commission)
+
+Cashflow$buffer_months <- function() .Call(wrap__Cashflow__buffer_months, self)
+
+Cashflow$commutation_month <- function() .Call(wrap__Cashflow__commutation_month, self)
+
+Cashflow$premium <- function() .Call(wrap__Cashflow__premium, self)
+
+#' @export
+`$.Cashflow` <- function (self, name) { func <- Cashflow[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Cashflow` <- `$.Cashflow`
+
 casualty_book_rust <- function(kinds, severities, limits, values, limit, premium, elr, attachment, share, curve, tag) .Call(wrap__casualty_book_rust, kinds, severities, limits, values, limit, premium, elr, attachment, share, curve, tag)
 
 pareto_anchor_rust <- function(threshold, losses, censored) .Call(wrap__pareto_anchor_rust, threshold, losses, censored)

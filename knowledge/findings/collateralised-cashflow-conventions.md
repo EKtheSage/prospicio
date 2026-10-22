@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: A collateralised deal's monthly accounts conserve money, and the issue's funding rule lets the trust run below zero
-description: "In prospicio_pricing::cashflow the premium, adjustments and interest paid into the trust equal the investor's net flows, the fee, the claims, the expenses and the commutation payment, to 1e-9, under every rule; #479's funding rule (the rise in the requirement net of premium collected) never calls the claims paid, so on a test deal the trust falls to about -8.9 per 100 of premium. Which obligation the rise is measured from, what the fee's margin is, when the adjustment reads the premium and whether the commutation reserve is loaded are open until the user's reference run."
+description: "In prospicio_pricing::cashflow the premium, adjustments and interest paid into the trust equal the investor's net flows, the fee, the claims, the expenses and the commutation payment, to 1e-9, under every rule; #479's funding rule (the rise in the requirement net of premium collected) never calls the claims paid, so on a test deal the trust falls to about -8.9 per 100 of premium. Which obligation the rise is measured from, what the fee's margin is, when the adjustment reads the premium and whether the commutation reserve is loaded are left as settings, as the user accepted on 2026-10-22."
 tags: [prospicio-pricing, cashflow, collateral, reinsurance, reference-model]
 status: draft
 generated: { by: claude-code/cloud-session, at: 2026-10-22T03:00:00Z }
@@ -41,7 +41,8 @@ lowest; the shortfall rule keeps it at the requirement
 engine follows the issue and lets the balance go below zero, visible in
 `Trace::collateral_balance`.
 
-**Open until the reference run.** The engine offers each as a setting:
+**Left as settings.** The engine offers each as a setting, and the user
+accepted them as built on 2026-10-22:
 
 - the obligation the rise is measured from: the previous funding date's or
   the highest so far;
@@ -52,5 +53,5 @@ engine follows the issue and lets the balance go below zero, visible in
 - whether the commutation reserve carries a load (the issue lists one among
   its negative controls).
 
-No parity has been run against the reference model, whose numbers are in
-the user's local reproduction, so nothing here is marked verified.
+No parity has been run against the reference model, and none is planned,
+so nothing here is marked verified.
