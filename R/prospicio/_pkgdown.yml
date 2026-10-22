@@ -302,6 +302,7 @@ reference:
       - mack_fit
       - odp_glm_fit
       - odp_glm_cells
+      - excess_pattern
       - residual_summary
       - claims_development_result
       - tail_constant

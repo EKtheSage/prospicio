@@ -1940,7 +1940,7 @@ pub(crate) struct ReservingTail {
     inner: Tail,
 }
 
-fn tail_arg(tail: &Robj) -> Result<Tail> {
+pub(crate) fn tail_arg(tail: &Robj) -> Result<Tail> {
     <&ReservingTail>::try_from(tail)
         .map(|t| t.inner)
         .map_err(|_| Error::Other("tail must be a tail estimator".into()))

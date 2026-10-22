@@ -324,6 +324,13 @@ reference:
       - reserving.ClarkLdf
       - reserving.ClarkCapeCod
       - reserving.ClarkFit
+      - reserving.ExcessLayer
+      - reserving.ScaleShift
+      - reserving.ParetoShape
+      - reserving.ExcessPattern
+      - reserving.layer_share
+      - reserving.layer_exposure
+      - reserving.layer_at_shift
   - title: Risk measures
     desc: Distortion risk measures, and capital allocation to components.
     contents:

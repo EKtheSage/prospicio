@@ -314,6 +314,16 @@ hill_rust <- function(draws, ks) .Call(wrap__hill_rust, draws, ks)
 
 threshold_diagnostics_rust <- function(draws, thresholds) .Call(wrap__threshold_diagnostics_rust, draws, thresholds)
 
+excess_pattern_rust <- function(triangle, column, attachment, limit, kind, ultimate, ground_up_cap, threshold, alpha_ages, alphas, ultimate_alpha, base_attachment, base_limit, counts, tail) .Call(wrap__excess_pattern_rust, triangle, column, attachment, limit, kind, ultimate, ground_up_cap, threshold, alpha_ages, alphas, ultimate_alpha, base_attachment, base_limit, counts, tail)
+
+excess_credibility_weights_rust <- function(ages, layer_ldf, layer_cdf, ground_up_ldf, ground_up_tail, shifts, layer_tail, layer_triangle, column, counts, k, max_influence) .Call(wrap__excess_credibility_weights_rust, ages, layer_ldf, layer_cdf, ground_up_ldf, ground_up_tail, shifts, layer_tail, layer_triangle, column, counts, k, max_influence)
+
+excess_layer_share_rust <- function(severity, attachment, limit) .Call(wrap__excess_layer_share_rust, severity, attachment, limit)
+
+excess_layer_at_shift_rust <- function(severity, attachment, limit, shift) .Call(wrap__excess_layer_at_shift_rust, severity, attachment, limit, shift)
+
+excess_layer_exposure_rust <- function(triangle, exposure, shares, name) .Call(wrap__excess_layer_exposure_rust, triangle, exposure, shares, name)
+
 EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)

@@ -434,8 +434,11 @@ what it is aiming for by v1.0.
   drift (PR 2, in Rust: `credibility_weights` with its cap and
   `SeverityByMaturity::ParetoShape`, Pinto and Gogol's and Bear's examples
   reproduced, and a 500-book simulation study that passes the note's
-  thresholds where the model holds; done), the bindings (PR 3) and a BF prior
-  from the layer share's uncertainty (PR 4, after #410).
+  thresholds where the model holds; done), the Python and R bindings (PR 3:
+  `ExcessPattern`, `credibility_weights`, `ParetoShape`, `layer_share` and
+  `layer_exposure`, usable in the chain ladder, Mack and the expected-loss
+  methods through `ldf`; done) and a BF prior from the layer share's
+  uncertainty (PR 4, after #410).
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 

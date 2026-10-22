@@ -9954,6 +9954,212 @@ class EventSet:
         """
 
 @final
+class ExcessLayer:
+    """
+    An excess layer ``limit xs attachment``, the same for every origin.
+    
+    Parameters
+    ----------
+    attachment : float
+        Where the layer starts: finite and not negative (0 for a layer from
+        the ground up).
+    limit : float, default inf
+        The layer's width: positive, or infinite for an unlimited layer
+        (``attachment`` and above).
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import ExcessLayer
+    >>> ExcessLayer(350.0)
+    ExcessLayer(attachment=350.0, limit=inf)
+    >>> ExcessLayer(500.0, 500.0).exhaustion
+    1000.0
+    """
+    def __eq__(self, other: object, /) -> bool: ...
+    def __getnewargs__(self, /) -> tuple[float, float]: ...
+    def __new__(cls, /, attachment: float, limit: float = ...) -> ExcessLayer: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def attachment(self, /) -> float:
+        """
+        Where the layer starts.
+        """
+    @property
+    def exhaustion(self, /) -> float:
+        """
+        The top of the layer, ``attachment + limit``.
+        """
+    @property
+    def limit(self, /) -> float:
+        """
+        The layer's width; infinite for an unlimited layer.
+        """
+
+@final
+class ExcessPattern:
+    """
+    A layer's development pattern derived from the ground-up triangle:
+    the layer's age-to-age factors, its factors to ultimate and its tail,
+    from the ground-up incurred factors and a severity by maturity
+    (Bloom and Patrik, CAS E-Forum Fall 2013; Sahasrabuddhe, E-Forum Fall
+    2010; Pinto and Gogol, PCAS 74 (1987)). Build one with
+    ``ExcessPattern.from_ground_up``.
+    
+    The pattern goes into ``ChainLadder``, ``Mack`` and the expected-loss
+    methods of a *layer* triangle through ``selected``, which gives their
+    ``ldf``, ``ldf_kind`` and ``ldf_weight`` arguments, and ``tail``:
+    ``ChainLadder(tail=p.tail, **p.selected(weight))``.
+    
+    Examples
+    --------
+    Bloom and Patrik's four claims (100, 375, 250 and 500 at 12 months)
+    developing 3.60 and 1.25 to ultimate, in the layer excess of 350.
+    
+    >>> from prospicio.distributions import Grid
+    >>> from prospicio.reserving import ExcessLayer, ExcessPattern, ScaleShift, Triangle
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2020], [12, 24, 36],
+    ...     {"incurred": [1225.0, 4410.0, 5512.5]},
+    ... )
+    >>> probs = [0.0] * 21
+    >>> for j in (4, 15, 10, 20):
+    ...     probs[j] = 0.25
+    >>> ultimate = Grid(112.5, probs)
+    >>> p = ExcessPattern.from_ground_up(
+    ...     tri, "incurred", ExcessLayer(350.0), ScaleShift(ultimate)
+    ... )
+    >>> round(p.layer_ldf[0], 6), round(p.layer_cdf[0], 6)
+    (17.2, 23.5)
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        Development ages (months) of the ground-up triangle.
+        """
+    def credibility_weights(self, /, layer_triangle: Triangle, column: str, k: float, max_influence: float, counts: str |None = None) -> dict:
+        """
+        The weight on the derived pattern at each age, ``1 - z`` with
+        ``z = n / (n + k)``, ``n`` the layer triangle's claim count (or its
+        origins with a positive earlier value without counts) at the earlier
+        age and ``k`` the credibility constant, capped so that removing any
+        one origin moves the blended factor by at most ``max_influence`` of
+        it. Where the layer's own factor cannot be estimated the weight is 1.
+        
+        Parameters
+        ----------
+        layer_triangle : Triangle
+            The layer's own triangle, a single segment on the pattern's ages.
+        column : str
+            The layer loss column.
+        k : float
+            The credibility constant, positive. No default (design note,
+            decision 19): the simulation study favours about 20.
+        max_influence : float
+            The share of the blended factor one origin may move, positive.
+        counts : str, optional
+            The layer's claim count column on the same origins and ages.
+        
+        Returns
+        -------
+        dict of int to float
+            The weight at each age except the oldest, for ``ldf_weight``.
+        """
+    @staticmethod
+    def from_ground_up(triangle: Triangle, column: str, layer: Any, model: Any, counts: str |None = None, tail: Any |None = None, basis: str = "incurred") -> ExcessPattern:
+        """
+        The layer pattern from the ground-up incurred column, an optional
+        claim count column and the ground-up tail.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            A single-segment triangle holding the ground-up column.
+        column : str
+            The ground-up incurred (reported) loss column. Under a
+            ``ParetoShape`` it is the base development the model names (its
+            counts above the threshold, or its base losses).
+        layer : ExcessLayer
+            The layer, with positive expected loss at every age in the model.
+        model : ScaleShift or ParetoShape
+            How the severity at each maturity relates to the ultimate one.
+        counts : str, optional
+            A reported claim count column on the same ages. Without it the
+            counts are taken as complete at every age, which mixes frequency
+            development into the severity shift. Not allowed with a
+            ``ParetoShape``.
+        tail : float or tail estimator, optional
+            The ground-up tail of the chain ladder: it fixes one more shift
+            for the oldest age and the layer's tail. No tail by default.
+        basis : {"incurred"}, default "incurred"
+            The loss basis of the column. Only ``"incurred"`` is derived;
+            ``"paid"`` is an error (design note, decision 9).
+        
+        Returns
+        -------
+        ExcessPattern
+        """
+    @property
+    def ground_up_ldf(self, /) -> list[float]:
+        """
+        The ground-up age-to-age factors the pattern was derived from.
+        """
+    @property
+    def ground_up_tail(self, /) -> float:
+        """
+        The ground-up factor from the oldest age to ultimate.
+        """
+    @property
+    def layer_cdf(self, /) -> list[float]:
+        """
+        The layer's factors from each age to ultimate, with the tail.
+        """
+    @property
+    def layer_ldf(self, /) -> list[float]:
+        """
+        The layer's age-to-age factors, one fewer than the ages.
+        """
+    @property
+    def ldf(self, /) -> dict:
+        """
+        The layer's age-to-age factors as a dict from age in months, the
+        ``ldf`` argument of the methods with ``ldf_kind="ldf"``.
+        """
+    def selected(self, /, weight: Any |None = None) -> dict:
+        """
+        The derived pattern as the arguments of the chain ladder, Mack and
+        the expected-loss methods.
+        
+        Parameters
+        ----------
+        weight : float or dict, default 1.0
+            The weight on the derived factors, a number or a dict from age
+            in months to a number (``credibility_weights`` gives one); the
+            rest goes to the factors estimated from the layer triangle.
+            Weight 1 selects the derived factors alone, which a sparse layer
+            triangle needs.
+        
+        Returns
+        -------
+        dict
+            ``ldf``, ``ldf_kind`` and ``ldf_weight``, to be passed as keyword
+            arguments. The layer's tail is separate: ``tail``.
+        """
+    @property
+    def shifts(self, /) -> list[float]:
+        """
+        The scale shift of each age, the last for the tail; empty under a
+        ``ParetoShape``.
+        """
+    @property
+    def tail(self, /) -> float:
+        """
+        The layer's factor from the oldest age to ultimate (1 without a
+        ground-up tail under a scale shift). Pass it as the ``tail`` of the
+        layer's chain ladder.
+        """
+
+@final
 class ExpectedLoss:
     """
     The expected loss ratio method: each origin's ultimate is ``apriori``
@@ -19453,6 +19659,59 @@ class ParetoAnchor:
         """
 
 @final
+class ParetoShape:
+    """
+    Pinto and Gogol's Pareto shape drift above a threshold: the claims above
+    ``threshold`` are Pareto at every development age, with a shape that moves
+    with maturity, and the layer's development follows from a base
+    development the triangle column holds (Pinto and Gogol, PCAS 74 (1987);
+    Bear, PCAS 79 (1992)).
+    
+    Parameters
+    ----------
+    threshold : float
+        The threshold above which claims are Pareto.
+    alphas : dict of int to float
+        The Pareto shape at every development age of the column, by age in
+        months (none is interpolated).
+    ultimate_alpha : float
+        The shape of the fully developed claims.
+    base : {"counts"} or ExcessLayer, default "counts"
+        What the triangle column holds: ``"counts"`` for the number of
+        claims above the threshold, or an ``ExcessLayer`` (attaching at or
+        above the threshold) for the losses in a base layer, such as
+        ``ExcessLayer(threshold)`` for the losses excess of the threshold.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import ParetoShape
+    >>> ParetoShape(100.0, {12: 1.0, 24: 1.5}, 2.0).base
+    'counts'
+    """
+    def __new__(cls, /, threshold: float, alphas: Any, ultimate_alpha: float, base: Any |None = None) -> ParetoShape: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def alphas(self, /) -> dict:
+        """
+        The shapes by age in months.
+        """
+    @property
+    def base(self, /) -> Any:
+        """
+        ``"counts"``, or the ``ExcessLayer`` of the base losses.
+        """
+    @property
+    def threshold(self, /) -> float:
+        """
+        The threshold above which claims are Pareto.
+        """
+    @property
+    def ultimate_alpha(self, /) -> float:
+        """
+        The shape of the fully developed claims.
+        """
+
+@final
 class PaymentPattern:
     """
     The share of the ultimate loss paid at each time, in years from the
@@ -22477,6 +22736,44 @@ class Sampled:
         Returns
         -------
         float
+        """
+
+@final
+class ScaleShift:
+    """
+    The scale shift of the severity by maturity (decision 1, the default):
+    the severity of a claim at each development age is the ultimate
+    severity divided by a shift ``c_j`` solved from the ground-up triangle,
+    ``X_ultimate = c_j X_j``.
+    
+    Parameters
+    ----------
+    ultimate : severity distribution
+        The ultimate severity at the price level of the layer's origins,
+        incurred basis (trended by the caller). Any severity of
+        ``prospicio.distributions`` with exact limited moments.
+    ground_up_cap : float, optional
+        The per-claim limit of a capped ground-up column (as in a triangle
+        limited at 1 million); ``None`` for an unlimited column.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Lognormal
+    >>> from prospicio.reserving import ScaleShift
+    >>> ScaleShift(Lognormal(8.0, 1.0)).ground_up_cap is None
+    True
+    """
+    def __new__(cls, /, ultimate: Any, ground_up_cap: float |None = None) -> ScaleShift: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def ground_up_cap(self, /) -> float |None:
+        """
+        The per-claim limit of a capped ground-up column, or ``None``.
+        """
+    @property
+    def ultimate(self, /) -> Any:
+        """
+        The ultimate severity.
         """
 
 @final
@@ -27560,6 +27857,33 @@ def ks_uniform(values: Sequence[float]) -> float:
     float
     """
 
+def layer_at_shift(ultimate: Any, layer: Any, shift: float) -> float:
+    """
+    The expected loss to the layer of one claim at the maturity whose
+    claims are the ultimate ones divided by ``shift``:
+    ``(LEV(c b) - LEV(c a)) / c``. With ``shift = 1`` it is the layer at
+    ultimate.
+    
+    Parameters
+    ----------
+    ultimate : severity distribution
+        The ultimate severity.
+    layer : ExcessLayer
+    shift : float
+        The scale shift ``c`` (``X_ultimate = c X_j``), positive.
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Pareto
+    >>> from prospicio.reserving import ExcessLayer, layer_at_shift
+    >>> round(layer_at_shift(Pareto(1.0, 2.0), ExcessLayer(4.0), 1.0), 12)
+    0.25
+    """
+
 def layer_cv(severity: Any, limit: float, attachment: float) -> float:
     """
     Coefficient of variation of the loss to ``limit`` xs ``attachment``
@@ -27584,6 +27908,45 @@ def layer_cv(severity: Any, limit: float, attachment: float) -> float:
     >>> from prospicio.pricing import layer_cv
     >>> round(layer_cv(Gamma(1.0, 100.0), float("inf"), 50.0), 9)
     1.0
+    """
+
+def layer_exposure(triangle: Triangle, exposure: str, shares: Any, name: str) -> Triangle:
+    """
+    A copy of the triangle with a column ``name``: the ``exposure`` column
+    times each origin's layer share, so that a Bornhuetter-Ferguson or Cape
+    Cod prior reads the layer's exposure.
+    
+    The share comes from a severity (``layer_share``) or from an exposure
+    curve of ``prospicio.pricing`` (``curve.layer_share(limit, attachment,
+    mpl)``): the reserving core takes shares and not curves (design note,
+    decision 2).
+    
+    Parameters
+    ----------
+    triangle : Triangle
+    exposure : str
+        The exposure (premium) column.
+    shares : float or list of float
+        One share for every origin, or one per origin, each between 0 and 1.
+    name : str
+        The new column's name, not already a column.
+    
+    Returns
+    -------
+    Triangle
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import Mbbefd
+    >>> from prospicio.reserving import Triangle, layer_exposure
+    >>> tri = Triangle.from_long(
+    ...     [2020, 2020, 2021], [12, 24, 12],
+    ...     {"paid": [10.0, 15.0, 11.0], "premium": [100.0, 100.0, 120.0]},
+    ... )
+    >>> share = Mbbefd.swiss_re(3.0).layer_share(5e6, 5e6, 10e6)
+    >>> layered = layer_exposure(tri, "premium", share, "layer_premium")
+    >>> "layer_premium" in layered.columns
+    True
     """
 
 def layer_loss_picks(severity: Grid, attachments: Sequence[float], picks: Sequence[float], claims: float = 1.0) -> Picks:
@@ -27621,6 +27984,32 @@ def layer_loss_picks(severity: Grid, attachments: Sequence[float], picks: Sequen
     >>> picked = layer_loss_picks(sev, [100, 500, 1000], [480, 420, 60], claims=10)
     >>> [round(10 * t, 6) for t in picked.to_dict()["target"]]
     [480.0, 420.0, 60.0]
+    """
+
+def layer_share(severity: Any, layer: Any) -> float:
+    """
+    The layer's share of a severity's mean, ``(LEV(b) - LEV(a)) / mean``,
+    on the ultimate basis.
+    
+    An exposure curve's share comes from the curve, ``curve.layer_share(limit,
+    attachment, mpl)``, and goes to ``layer_exposure`` the same way.
+    
+    Parameters
+    ----------
+    severity : severity distribution
+        Any severity with exact limited moments.
+    layer : ExcessLayer
+    
+    Returns
+    -------
+    float
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Pareto
+    >>> from prospicio.reserving import ExcessLayer, layer_share
+    >>> round(layer_share(Pareto(1.0, 2.0), ExcessLayer(4.0)), 12)
+    0.125
     """
 
 def leverage(rate: float, premium: float, funded: float, opening: float) -> float:
