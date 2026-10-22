@@ -98,6 +98,12 @@ occurrence_pml_rust <- function(frequency, severity, p) .Call(wrap__occurrence_p
 
 ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
 
+year_correlation_for_ratio_rust <- function(n_years, ratio) .Call(wrap__year_correlation_for_ratio_rust, n_years, ratio)
+
+timeline_from_years_rust <- function(years) .Call(wrap__timeline_from_years_rust, years)
+
+exposure_uniform_rust <- function(n_years, policy_months) .Call(wrap__exposure_uniform_rust, n_years, policy_months)
+
 credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
 
 buhlmann_straub_rust <- function(ratios, weights, nrow, ncol, estimator, tol, max_iter) .Call(wrap__buhlmann_straub_rust, ratios, weights, nrow, ncol, estimator, tol, max_iter)
@@ -326,7 +332,9 @@ excess_layer_at_shift_rust <- function(severity, attachment, limit, shift) .Call
 
 excess_layer_exposure_rust <- function(triangle, exposure, shares, name) .Call(wrap__excess_layer_exposure_rust, triangle, exposure, shares, name)
 
-layer_share_prior_cv_rust <- function(apriori, apriori_cv, shares, share_cv) .Call(wrap__layer_share_prior_cv_rust, apriori, apriori_cv, shares, share_cv)
+layer_share_prior_cv_rust <- function(apriori, apriori_cv, shares, share_cv, common) .Call(wrap__layer_share_prior_cv_rust, apriori, apriori_cv, shares, share_cv, common)
+
+layer_share_prior_total_rust <- function(apriori, apriori_cv, shares, share_cv, common, exposure) .Call(wrap__layer_share_prior_total_rust, apriori, apriori_cv, shares, share_cv, common, exposure)
 
 EventSet <- new.env(parent = emptyenv())
 
@@ -359,6 +367,14 @@ EventSet$merge <- function(other) .Call(wrap__EventSet__merge, self, other)
 EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 
 EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
+
+EventSet$timeline_check <- function(months) .Call(wrap__EventSet__timeline_check, self, months)
+
+EventSet$timeline_years <- function(months, basis, shares, n_years, sources) .Call(wrap__EventSet__timeline_years, self, months, basis, shares, n_years, sources)
+
+EventSet$correlated_years <- function(n_years, correlation, kind, draws, seed) .Call(wrap__EventSet__correlated_years, self, n_years, correlation, kind, draws, seed)
+
+EventSet$calibrate_year_correlation <- function(n_years, ratio, kind, draws, seed) .Call(wrap__EventSet__calibrate_year_correlation, self, n_years, ratio, kind, draws, seed)
 
 EventSet$grouped <- function(window_hours) .Call(wrap__EventSet__grouped, self, window_hours)
 
@@ -555,6 +571,12 @@ ReinsuranceTower$deal_ratios <- function(result, layer) .Call(wrap__ReinsuranceT
 ReinsuranceTower$apply_annual <- function(losses) .Call(wrap__ReinsuranceTower__apply_annual, self, losses)
 
 ReinsuranceTower$apply <- function(events) .Call(wrap__ReinsuranceTower__apply, self, events)
+
+ReinsuranceTower$with_cover_basis <- function(basis) .Call(wrap__ReinsuranceTower__with_cover_basis, self, basis)
+
+ReinsuranceTower$cover_basis <- function() .Call(wrap__ReinsuranceTower__cover_basis, self)
+
+ReinsuranceTower$apply_timeline <- function(events, months, shares, n_years) .Call(wrap__ReinsuranceTower__apply_timeline, self, events, months, shares, n_years)
 
 ReinsuranceTower$apply_term <- function(years) .Call(wrap__ReinsuranceTower__apply_term, self, years)
 
@@ -2283,7 +2305,7 @@ Triangle$bayes_bf <- function(column, exposure, apriori, cv, development_sd, pro
 
 Triangle$bayes_bf_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__bayes_bf_one_year, self, column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims)
 
-Triangle$bayes_bf_normalised <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth) .Call(wrap__Triangle__bayes_bf_normalised, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth)
+Triangle$bayes_bf_normalised <- function(column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, common_cv) .Call(wrap__Triangle__bayes_bf_normalised, self, column, exposure, apriori, cv, development_sd, process, chains, tune, draws, n_sims, seed, target_accept, max_depth, common_cv)
 
 Triangle$bayes_bf_normalised_one_year <- function(column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims) .Call(wrap__Triangle__bayes_bf_normalised_one_year, self, column, exposure, priors, process, run, k_threshold, refit, max_refits, one_year_sims)
 
@@ -3369,6 +3391,60 @@ OnnxPredictorModel$predict_distribution <- function(x, names, offset, weights, n
 
 #' @export
 `[[.OnnxPredictorModel` <- `$.OnnxPredictorModel`
+
+BookDeal <- new.env(parent = emptyenv())
+
+BookDeal$new <- function(name, premium, loss, names, deductions, outside, inception) .Call(wrap__BookDeal__new, name, premium, loss, names, deductions, outside, inception)
+
+BookDeal$from_tower <- function(name, tower, result, layer, inception) .Call(wrap__BookDeal__from_tower, name, tower, result, layer, inception)
+
+BookDeal$with_inception <- function(inception) .Call(wrap__BookDeal__with_inception, self, inception)
+
+BookDeal$with_patterns <- function(written, earned, paid) .Call(wrap__BookDeal__with_patterns, self, written, earned, paid)
+
+BookDeal$with_flows <- function(months, flows, funded, opening, terms) .Call(wrap__BookDeal__with_flows, self, months, flows, funded, opening, terms)
+
+BookDeal$name <- function() .Call(wrap__BookDeal__name, self)
+
+BookDeal$n_sims <- function() .Call(wrap__BookDeal__n_sims, self)
+
+BookDeal$inception <- function() .Call(wrap__BookDeal__inception, self)
+
+#' @export
+`$.BookDeal` <- function (self, name) { func <- BookDeal[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BookDeal` <- `$.BookDeal`
+
+Book <- new.env(parent = emptyenv())
+
+Book$new <- function(deals) .Call(wrap__Book__new, deals)
+
+Book$select <- function(names) .Call(wrap__Book__select, self, names)
+
+Book$shifted <- function(name, inception) .Call(wrap__Book__shifted, self, name, inception)
+
+Book$names <- function() .Call(wrap__Book__names, self)
+
+Book$n_sims <- function() .Call(wrap__Book__n_sims, self)
+
+Book$items <- function() .Call(wrap__Book__items, self)
+
+Book$amounts <- function() .Call(wrap__Book__amounts, self)
+
+Book$summary <- function() .Call(wrap__Book__summary, self)
+
+Book$distribution <- function(item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail) .Call(wrap__Book__distribution, self, item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail)
+
+Book$cashflows <- function(rate, lower, upper, points, bisections, newton_steps) .Call(wrap__Book__cashflows, self, rate, lower, upper, points, bisections, newton_steps)
+
+Book$calendar <- function(start_year) .Call(wrap__Book__calendar, self, start_year)
+
+#' @export
+`$.Book` <- function (self, name) { func <- Book[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Book` <- `$.Book`
 
 Cashflow <- new.env(parent = emptyenv())
 

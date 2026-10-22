@@ -775,6 +775,165 @@ term_years <- function(x, n_years) {
   lapply(rust_result(x@ptr$term_years(as.double(n_years))), event_set)
 }
 
+#' Underwriting years with a rank correlation
+#'
+#' `correlated_years()` gives a term of `n_years` years whose yearly totals
+#' (each year's losses and aggregate part) have a rank correlation, set by
+#' Iman-Conover, for [apply_tower_term()]. Each year's simulations move as
+#' whole years, keeping their events, times, sums insured, labels and
+#' aggregate part. `calibrate_year_correlation()` finds the correlation
+#' between every pair of years for which the mean of a term's yearly totals
+#' has `ratio` times the standard deviation of one year's total, by
+#' bisection on the simulations; with the same premium each year that is
+#' the ratio of the term's loss ratio's spread to one year's (independent
+#' years give `1 / sqrt(n_years)`, identical ones 1).
+#' `year_correlation_for_ratio()` is the closed form for Pearson's
+#' correlation of the totals, `(n_years * ratio^2 - 1) / (n_years - 1)`, a
+#' start.
+#'
+#' @param x An [event_set].
+#' @param n_years The number of years, at least 2.
+#' @param correlation One correlation for every pair of years, or the full
+#'   matrix.
+#' @param kind `"spearman"` (Spearman's rho of the totals) or `"pearson"`
+#'   (the correlation of their normal scores, as [reorder_groups()]).
+#' @param draws `"same"`: every year reorders all the simulations, so each
+#'   has exactly the one-year distribution and the term's mean the one-year
+#'   mean; `"blocks"`: year `t` is block `t` of [term_years()].
+#' @param seed The same seed gives the same years.
+#' @param ratio The target ratio, in `[0, 1]`.
+#' @returns `correlated_years()` a list of `n_years` [event_set]s;
+#'   `calibrate_year_correlation()` a list of `correlation`, the `ratio` it
+#'   achieves and the `years`; `year_correlation_for_ratio()` a number.
+#' @export
+#' @examples
+#' ev <- simulate_events(poisson_count(2), lognormal(4, 1), 4000, seed = 7)
+#' years <- correlated_years(ev, 3, 0.5, seed = 11)
+#' fit <- calibrate_year_correlation(ev, 3, 0.75, seed = 11)
+#' c(fit$correlation, fit$ratio)
+#' year_correlation_for_ratio(3, 0.75)
+correlated_years <- function(x, n_years, correlation, kind = "spearman", draws = "same",
+                             seed = 0) {
+  correlation <- if (is.matrix(correlation)) as.double(t(correlation)) else as.double(correlation)
+  lapply(rust_result(x@ptr$correlated_years(as.double(n_years), correlation, kind, draws,
+                                            as.double(seed))), event_set)
+}
+
+#' @rdname correlated_years
+#' @export
+calibrate_year_correlation <- function(x, n_years, ratio, kind = "spearman", draws = "same",
+                                       seed = 0) {
+  r <- rust_result(x@ptr$calibrate_year_correlation(as.double(n_years), as.double(ratio), kind,
+                                                    draws, as.double(seed)))
+  r$years <- lapply(r$years, event_set)
+  r
+}
+
+#' @rdname correlated_years
+#' @export
+year_correlation_for_ratio <- function(n_years, ratio) {
+  rust_result(year_correlation_for_ratio_rust(as.double(n_years), as.double(ratio)))
+}
+
+#' Timeline of a term shared by its underwriting years
+#'
+#' A timeline holds the events of a whole term of accident months once:
+#' simulation `j` is one path, and each event's time, a fraction of the
+#' term, puts it in accident month `floor(time * months)` (the last month
+#' for time 1). `timeline_from_years()` stitches one [event_set] per
+#' accident year, each with times within its year (from [term_years()] or
+#' [correlated_years()], say): year `t`'s event at time `tau` is at
+#' `(t - 1 + tau) / T` of the term.
+#'
+#' `timeline_years()` splits it into contract years for
+#' [apply_tower_term()]. Under `"losses_occurring"`, contract year `k` takes
+#' every event in accident months `12 (k - 1) + 1` to `12 k` whole. Under
+#' `"risks_attaching"`, underwriting year `u` takes `exposure[u, m]` of each
+#' event in month `m`, sums insured scaled alike, at its time over the
+#' months the year has a share; the same event can fall to several years.
+#' [apply_tower_timeline()] does both steps under a tower's basis.
+#'
+#' `uniform_exposure()` writes each of `n_years` underwriting years evenly
+#' over its twelve months, each policy in force for `policy_months` from
+#' the middle of its month: a year's share of a month is its policies' time
+#' in force there over `policy_months`, so a month in mid-term has shares
+#' adding to 1 and the exposure runs `12 * n_years + policy_months` months.
+#'
+#' @param events An [event_set] with times and no aggregate part.
+#' @param months The number of accident months.
+#' @param years A list of [event_set]s, one per accident year.
+#' @param timeline A `timeline`.
+#' @param basis `"losses_occurring"` or `"risks_attaching"`.
+#' @param exposure A matrix of shares in `[0, 1]`, one row per underwriting
+#'   year, one column per accident month, each column adding to at most 1.
+#' @param sources Also return each year's sources: for each of its losses,
+#'   in order, its event's index among all the timeline's losses, from 1.
+#' @param n_years,policy_months The number of underwriting years and each
+#'   policy's months in force.
+#' @returns `timeline()` and `timeline_from_years()` a `timeline` with
+#'   properties `events`, `months` and `n_sims`; `timeline_years()` a list
+#'   of [event_set]s, one per contract year, or with `sources` a list of
+#'   `years` and `sources`; `uniform_exposure()` a matrix.
+#' @export
+#' @examples
+#' ev <- events_from_years(list(100), times = list(13.5 / 24))
+#' shares <- matrix(0, 2, 24)
+#' shares[1, 14] <- 0.25
+#' shares[2, 14] <- 0.75
+#' rad <- timeline_years(timeline(ev, 24), "risks_attaching", shares)
+#' c(mean(total(rad[[1]])), mean(total(rad[[2]])))
+#' e <- uniform_exposure(2, 12)
+#' dim(e)
+#' colSums(e)[13]
+timeline <- S7::new_class(
+  "timeline",
+  package = "prospicio",
+  properties = list(
+    events = event_set,
+    months = S7::class_double,
+    n_sims = S7::new_property(S7::class_double, getter = function(self) self@events@n_sims)
+  ),
+  constructor = function(events, months) {
+    rust_result(events@ptr$timeline_check(as.double(months)))
+    S7::new_object(S7::S7_object(), events = events, months = as.double(months))
+  }
+)
+
+#' @rdname timeline
+#' @export
+timeline_from_years <- function(years) {
+  r <- rust_result(timeline_from_years_rust(lapply(years, function(y) y@ptr)))
+  timeline(event_set(r$events), r$months)
+}
+
+#' @rdname timeline
+#' @export
+timeline_years <- function(timeline, basis, exposure, sources = FALSE) {
+  exposure <- as.matrix(exposure)
+  r <- rust_result(timeline@events@ptr$timeline_years(
+    timeline@months, as.character(basis), as.double(t(exposure)), as.double(nrow(exposure)),
+    isTRUE(sources)
+  ))
+  if (isTRUE(sources)) {
+    r$years <- lapply(r$years, event_set)
+    r
+  } else {
+    lapply(r, event_set)
+  }
+}
+
+#' @rdname timeline
+#' @export
+uniform_exposure <- function(n_years, policy_months) {
+  r <- rust_result(exposure_uniform_rust(as.double(n_years), as.double(policy_months)))
+  matrix(r$shares, nrow = n_years, ncol = r$months, byrow = TRUE)
+}
+
+S7::method(print, timeline) <- function(x, ...) {
+  cat(sprintf("<timeline> %d paths over %d months\n", as.integer(x@n_sims), as.integer(x@months)))
+  invisible(x)
+}
+
 #' Year loss table in long form
 #'
 #' Years of losses from a year loss table: one row per loss with its year,

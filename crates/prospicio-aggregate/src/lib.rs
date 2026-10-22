@@ -43,13 +43,14 @@ pub mod ruin;
 pub mod serial;
 pub mod sizing;
 pub mod term;
+pub mod timeline;
 pub mod ylt;
 
 pub use bivariate::{BivariateReport, Clash, JointGrid, fft_bivariate};
 pub use cat::EventLossTable;
 pub use collective::CollectiveModel;
 pub use compound::{CompoundMethod, CompoundReport};
-pub use deal::{DealScale, Deduction};
+pub use deal::{DealColumn, DealColumns, DealScale, Deduction};
 pub use fft::fft;
 pub use grid_reinsurance::{AnnualGrids, TowerGrids, TowerPrice, ViewPrice};
 pub use layer_statistics::{

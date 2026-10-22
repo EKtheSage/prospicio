@@ -457,7 +457,9 @@ an `EventSet` keeps whatever dependence its events carry (#491).
     simulation `j` of every year is path `j`. The years are whatever the
     caller gives: independent years (`EventSet::term_years(n)` splits one
     simulation into `n` consecutive blocks, so path `j`'s year `t` is
-    simulation `t·n_paths + j` and replays alone), or years that share a
+    simulation `t·n_paths + j` and replays alone), years whose totals
+    have a rank correlation (`EventSet::correlated_years`, see
+    "Underwriting years with a rank correlation"), or years that share a
     trend or a parameter drawn once per path. `apply_aggregate_term`
     does the same on aggregate losses. The result has dimensions `["kind",
     "layer", "year"]`, `apply`'s components once per year with the year
@@ -1172,6 +1174,10 @@ pricing model (`knowledge/findings/deal-ratios-and-scale-keys.md`).
    `combined_ratio`, `margin = 1 - combined_ratio` and `nmbf` (the margin
    plus the deductions kept outside). The commissions are read from the
    result, so carried amounts count as they were paid.
+   `Tower::deal_columns(result, layer)` gives the amounts behind the
+   ratios (the premium, the ceded loss and each deduction with its NMBF
+   flag), one year at a time, for a book of deals to add up
+   (`prospicio_pricing::book`, #490).
 7. **JSON.** A tower with brokerage, deductions or either flag is format
    version 3; others keep their version.
 8. **The ledger and the grids.** The P&L builders book a tower only as
@@ -1189,6 +1195,130 @@ pricing model (`knowledge/findings/deal-ratios-and-scale-keys.md`).
    covers. `TowerGrids` and `AnnualGrids` report the
    expected commissions but not brokerage or deductions. Those come from
    simulated years and `deal_ratios`.
+
+### Underwriting years with a rank correlation
+
+Issue #489, with the user's reading of a reference multi-year pricing model
+(the user's answers of 2026-10-22; nothing of the reference model is kept in
+the repo).
+
+1. **Dependence between years is a rank correlation of their totals**
+   (`EventSet::correlated_years(n_years, correlation, kind, draws, seed)`).
+   The years are built from one event set by Iman–Conover on each year's
+   total (its events and its aggregate part): one correlation for every
+   pair of years, or a full matrix, as Spearman's rho (`CorrelationKind::
+   Spearman`, converted to the normal scores' `2 sin(πρ/6)`) or as the
+   normal scores' correlation (`Pearson`). Each simulation moves as a whole
+   year (`EventSet::permute`), keeping its events, times, sums insured,
+   labels and aggregate part, so the years feed `Tower::apply_term`
+   unchanged. No parameter is drawn per path and no year depends on the one
+   before (no AR(1)); the user chose a correlation between periods over
+   both.
+2. **Draws.** `YearDraws::Same` (the default) reorders all the simulations
+   for every year, so each year has exactly the one-year distribution and
+   the term's mean is the one-year mean; years then share simulations, in
+   different paths. `YearDraws::Blocks` takes year `t` from block `t` of
+   `term_years`, so no simulation is used twice and each year's
+   distribution is only close to the one-year one.
+3. **Calibration to a ratio of spreads.**
+   `EventSet::calibrate_year_correlation(n_years, ratio, ...)` finds the
+   one correlation for which the mean of a term's yearly totals has `ratio`
+   times the standard deviation of one year's total (the average of the
+   years' standard deviations), by bisection on the simulations themselves,
+   since the reordering's achieved correlation is not the target's exactly.
+   With the same premium each year, it is the ratio of the term's loss
+   ratio's spread to one year's, the way a multi-year deal's dependence is
+   usually stated. Independent years give `1/√T`, identical years 1; a
+   ratio below `1/√T` needs a negative correlation, down to the bound that
+   keeps the matrix positive definite (`-1/(T-1)`), and a target outside
+   the reachable range returns the bound with the ratio it achieves.
+   `year_correlation_for_ratio(T, ratio)` is the closed form for Pearson's
+   correlation of the totals, `(T·ratio² − 1)/(T − 1)`, close to the
+   calibrated Spearman value for a book near the normal and a start
+   otherwise.
+4. **One accident-period timeline shared by underwriting years** (the
+   user's choices of 2026-10-22; built in three PRs: the timeline and the
+   years it gives (`[shared-timeline]`), the basis on `Tower`
+   (`[cover-basis]`), the bindings (`[timeline-bindings]`)). A
+   catastrophe in an accident month falls, under a risks-attaching (RAD)
+   cover, to every underwriting year whose policies are in force then, each
+   by its share of the exposure; under a losses-occurring (LOD) cover, to
+   the contract year whose period contains it.
+   1. *Absolute time lives on one event set for the whole term*
+      (`Timeline`): simulation `j` is one path of `months` accident
+      months, each event stored once with its time as a fraction of the
+      term. One event keeps one identity, so the split into underwriting
+      years happens only when a basis is applied, and each year's losses
+      keep the index of the event they came from
+      (`Timeline::years_with_sources`), which is what interlocking will
+      need. `Timeline::from_years` stitches one event set per accident
+      year (from `term_years` or `correlated_years`, each with times)
+      into a timeline, year `t`'s time `τ` becoming `(t + τ) / T`.
+   2. *The month is the resolution.* An event at term time `x` of `M`
+      months is in accident month `⌊x·M⌋` (the last month for `x = 1`), so
+      a time on a month's start belongs to that month. Twelve months make
+      a year.
+   3. *Exposure shares* (`Exposure`): one row per underwriting year, one
+      share per accident month, each in `[0, 1]`, and the shares of a
+      month add to at most 1. A month's shares are of a full book: the
+      rest of the month's loss belongs to underwriting years outside the
+      term (the run-off of earlier years, or later years), so a timeline
+      simulated at the full book's frequency throughout is right.
+      `Exposure::uniform(n_years, policy_months)` writes each year's
+      policies evenly over its twelve months, each in force for
+      `policy_months` from mid-month; year `u`'s share of month `m` is its
+      policies' time in force in `m` over `policy_months`, so the shares of
+      a month in mid-term add to 1.
+   4. *Contract years.* `CoverBasis::LossesOccurring`: contract year `k`
+      takes every event in accident months `12k..12k + 12` whole; the
+      exposure gives only the number of years. `CoverBasis::
+      RisksAttaching`: underwriting year `u` takes `share[u][m]` of each
+      event in month `m`, and an event with no share in `u` is not in its
+      year. The timeline must cover the term's months (`12·T` for LOD,
+      the exposure's months for RAD).
+   5. *Times in a contract year* stay in `[0, 1]`, as `EventSet` needs and
+      pro rata reinstatements read: under LOD the time within the year;
+      under RAD the time from the first month in which the year has a share
+      to the end of the last, as a fraction of that span (so a year of
+      12-month policies spans 24 months).
+   6. *Sums insured* are scaled by the share with the loss, so the degree
+      of damage an exposure curve reads is unchanged. Labels are kept.
+   7. *An aggregate part* (attritional losses with no event or time) is
+      refused on a timeline for now: its split by accident month is not
+      decided.
+   8. *The basis is set on the `Tower`*, as the reference model sets it on
+      a programme: a `Tower` is the layers on one loss source, as a
+      programme is, and a deal of several programmes is several towers in
+      a book. A deal-level scale (`DealScale`) spanning programmes needs
+      them in one tower, so they then share one basis; mixed bases within
+      one tower have no reference output and are not built.
+      `Tower::cover_basis(basis)` sets it, and `Tower::apply_timeline(
+      timeline, exposure)` applies the tower over the contract years it
+      gives, as `apply_term` does; it fails when no basis is set, since a
+      programme's basis is required, not defaulted. A tower with a basis
+      is JSON format version 5 (`"cover_basis": "losses_occurring" |
+      "risks_attaching"`); other towers keep their version.
+   9. *Interlocking* (each contract's limit cut to its share of an event
+      that spans underwriting years, so one event cannot use a limit
+      twice) comes after RAD and LOD (`[interlocking]`). It acts only
+      under RAD when an event falls to two years, has no reference output,
+      and needs the event's total covered loss across the years, which the
+      source indices give.
+   10. *Checks by construction*, since no reference output exists for RAD:
+      LOD on a one-year timeline equals `apply`; RAD with all of each
+      month's exposure in one year equals LOD on that year; with shares
+      adding to 1 in every month, the years' totals add to the timeline's
+      total in each simulation; a timeline stitched from correlated years
+      keeps their correlation under LOD.
+   11. *Bindings.* Python has `Timeline(events, months)`,
+      `Timeline.from_years`, `years` and `years_with_sources`,
+      `Exposure(shares)` and `Exposure.uniform`, and on `Tower`
+      `with_cover_basis`, `cover_basis` and `apply_timeline`; a basis is
+      named `"losses_occurring"` or `"risks_attaching"`. R has
+      `timeline()`, `timeline_from_years()`, `timeline_years()` (sources
+      from 1), `uniform_exposure()` (an exposure is a matrix, a row per
+      underwriting year), `with_cover_basis()`, the tower's `cover_basis`
+      property and `apply_tower_timeline()`.
 
 ## Validation
 

@@ -79,3 +79,38 @@
   age, times from the age and shares over the outstanding (Python
   `PaymentPattern.unpaid_from`, R `payment_pattern_unpaid()`), and
   Pentagon's loss under Price's name, `expected_loss`, in Python (#214).
+- A book of deals on one shared simulation (`prospicio_pricing::book`):
+  `DealRun` holds a deal's premium, loss and deductions in each
+  simulation (from `Tower::deal_columns`, the amounts behind
+  `deal_ratios`, or from arrays), its inception in months and its
+  investor's flows; `DealBook` selects and shifts deals and gives every
+  amount by deal and in total with ratios as sums over sums, the
+  distribution of an item with each deal's contribution and marginal
+  effect on either tail, the investors' flows on one calendar with the
+  book's IRR, NPV and MOIC on the summed flows, and premium, paid loss
+  and flows by calendar year (#490); in Python (`DealRun`, `DealBook`,
+  `BookCashflows`) and R (`deal_run()`, `deal_book()` and the `book_*()`
+  functions).
+- Underwriting years with a rank correlation for multi-year terms:
+  `EventSet::correlated_years` reorders whole simulated years so their
+  totals have a Spearman or normal-score correlation, every year keeping the
+  one-year distribution, and `calibrate_year_correlation` finds the
+  correlation for a target ratio of the term's spread to one year's (#489);
+  in Python (`EventSet.correlated_years`, `.calibrate_year_correlation`,
+  `year_correlation_for_ratio`) and R (`correlated_years()`,
+  `calibrate_year_correlation()`, `year_correlation_for_ratio()`).
+- One accident-period timeline shared by the underwriting years of a term
+  (`prospicio_aggregate::timeline`): `Timeline` holds each event once over
+  the term's accident months, `Exposure` gives each underwriting year's
+  share of each month, and `Timeline::years` splits it into contract years
+  for `Tower::apply_term` on a losses-occurring or risks-attaching basis
+  (#489; Rust).
+- A tower's cover basis (`Tower::cover_basis`, losses occurring or risks
+  attaching) and `Tower::apply_timeline`, which applies the tower over the
+  contract years that basis gives on a `Timeline`; a tower with a basis is
+  JSON format version 5 (#489; Rust).
+- The shared timeline and a tower's cover basis in Python (`Timeline`,
+  `Exposure`, `Tower.with_cover_basis`, `Tower.apply_timeline`) and R
+  (`timeline()`, `timeline_from_years()`, `timeline_years()`,
+  `uniform_exposure()`, `with_cover_basis()`, `apply_tower_timeline()`)
+  (#489).

@@ -1333,7 +1333,7 @@ class BayesBfNormalised:
     >>> fit.parameter_names[:2]
     ['alpha[1]', 'alpha[2]']
     """
-    def __new__(cls, /, apriori: float = 1.0, cv: float = 0.1, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> BayesBfNormalised: ...
+    def __new__(cls, /, apriori: float = 1.0, cv: float = 0.1, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10, common_cv: float |None = None) -> BayesBfNormalised: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -1344,6 +1344,12 @@ class BayesBfNormalised:
     def chains(self, /) -> int:
         """
         Number of NUTS chains.
+        """
+    @property
+    def common_cv(self, /) -> float |None:
+        """
+        The coefficient of variation of the multiplier common to all
+        origins' prior ultimates, or ``None`` if there is none.
         """
     @property
     def cv(self, /) -> float:
@@ -3632,6 +3638,55 @@ class Book:
     def premium(self, /) -> float:
         """
         The gross premium.
+        """
+
+@final
+class BookCashflows:
+    """
+    The book's investors' flows from ``DealBook.cashflows``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def deals(self, /) -> list[str]:
+        """
+        The deals' names, in the book's order.
+        """
+    @property
+    def flows(self, /) -> list[list[float]]:
+        """
+        The book's net flow in each month, one list a simulation: the
+        deals' flows summed after their inceptions.
+        """
+    @property
+    def irr(self, /) -> IrrResult:
+        """
+        The book's IRR in each simulation, on its summed flows.
+        """
+    @property
+    def irr_by_deal(self, /) -> dict[str, IrrResult]:
+        """
+        Each deal's own IRR in each simulation, by name.
+        """
+    @property
+    def mean_by_deal(self, /) -> dict[str, list[float]]:
+        """
+        Each deal's mean flow in each month of the book, by name.
+        """
+    @property
+    def moic(self, /) -> list[float]:
+        """
+        The book's MOIC in each simulation: one plus its summed flows over
+        the capital funded and opened over every deal.
+        """
+    @property
+    def months(self, /) -> int:
+        """
+        The book's months, month 0 at 1 January of its first year.
+        """
+    @property
+    def npv(self, /) -> list[float]:
+        """
+        The book's NPV in each simulation, to month 0.
         """
 
 @final
@@ -8343,6 +8398,163 @@ class CvPath:
         """
 
 @final
+class DealBook:
+    """
+    Several deals on one shared simulation: simulation ``j`` of every deal
+    is the same year, so the book adds them without reordering.
+    
+    >>> from prospicio.pricing import DealBook, DealRun
+    >>> a = DealRun("a", [100.0, 100.0], [40.0, 80.0])
+    >>> b = DealRun("b", [300.0, 300.0], [150.0, 330.0])
+    >>> s = DealBook([a, b]).summary()
+    >>> [r for d, i, r in zip(s["deal"], s["item"], s["ratio"]) if (d, i) == ("total", "loss")]
+    [0.75]
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, deals: Sequence[DealRun]) -> DealBook: ...
+    def __repr__(self, /) -> str: ...
+    def amounts(self, /) -> PredictiveDistribution:
+        """
+        Every item of every deal and of the book in each simulation, with
+        dimensions ``["item", "deal"]``, the deals then ``"total"``.
+        """
+    def calendar(self, /, start_year: int) -> PredictiveDistribution:
+        """
+        The book by calendar year, with dimensions ``["item", "deal",
+        "year"]``: written and earned premium and paid loss from each deal's
+        patterns, and the investors' flows when every deal has them; book
+        month ``m`` falls in ``start_year + m // 12``.
+        """
+    def cashflows(self, /, rate: float = 0.0, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> BookCashflows:
+        """
+        The investors' flows on the book's calendar, each deal's moved to
+        its inception and summed in each simulation, with the book's IRR,
+        NPV at ``rate`` and MOIC on the summed flows. Every deal needs
+        flows (``DealRun.with_cashflows`` or ``with_flows``).
+        """
+    def distribution(self, /, item: str, percentiles: Sequence[float], *, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact", tail: str = "upper") -> dict:
+        """
+        The book's statistics of ``item`` and, for each deal, its
+        contribution at the book's ranks and its marginal effect (the book
+        less the book without it), as a dict with ``"total"``,
+        ``"contribution"`` and ``"marginal"`` (each deal's cells by name).
+        ``tail="lower"`` reads low values as the risk, as for a margin.
+        ``percentiles`` and the keywords set the grid as ``statistics``
+        does.
+        
+        >>> from prospicio.pricing import DealBook, DealRun
+        >>> a = DealRun("a", [10.0] * 4, [1.0, 2.0, 3.0, 9.0])
+        >>> b = DealRun("b", [10.0] * 4, [4.0, 1.0, 2.0, 3.0])
+        >>> d = DealBook([a, b]).distribution("loss", [], tvar_levels=[50.0])
+        >>> d["total"]["TVaR 50"], d["contribution"]["a"]["TVaR 50"]
+        (8.5, 6.0)
+        """
+    @property
+    def items(self, /) -> list[str]:
+        """
+        The items of ``amounts``: ``premium``, ``loss``, each deduction,
+        ``total_deductions``, ``nmbf`` and ``margin``.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of simulations.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        The deals' names, in order.
+        """
+    def select(self, /, names: Sequence[str]) -> DealBook:
+        """
+        The deals named in ``names``, in that order.
+        """
+    def shifted(self, /, name: str, month: int) -> DealBook:
+        """
+        The book with the deal ``name`` incepting at ``month`` instead.
+        """
+    def summary(self, /) -> dict:
+        """
+        The mean of every item by deal and in total with its ratio to the
+        mean premium, as columns ``deal``, ``item``, ``mean`` and ``ratio``.
+        The book's ratios are sums over sums.
+        """
+
+@final
+class DealRun:
+    """
+    One deal's results in each simulation of a shared simulation: its
+    premium, its loss and its deductions (a commission, the brokerage, a
+    fee), each a list with one amount a simulation, and its inception in
+    months from 1 January of the book's first year.
+    
+    ``deductions`` maps each deduction's name to its amounts, or to
+    ``(amounts, outside_nmbf)`` for one NMBF leaves out (a manager's fee).
+    The ``with_`` methods return a new run.
+    
+    >>> from prospicio.pricing import DealRun
+    >>> run = DealRun("cat", [100.0, 100.0], [40.0, 150.0],
+    ...               deductions={"brokerage": [2.5, 2.5]}, inception=6)
+    >>> run.n_sims, run.inception
+    (2, 6)
+    """
+    def __new__(cls, /, name: str, premium: Sequence[float], loss: Sequence[float], *, deductions: dict |None = None, inception: int = 0) -> DealRun: ...
+    def __repr__(self, /) -> str: ...
+    @staticmethod
+    def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0) -> DealRun:
+        """
+        A layer's or deal's run from a result of ``tower``: its premium,
+        ceded loss, commissions, brokerage and deductions, the amounts
+        behind ``Tower.deal_ratios``, under the name ``name``.
+        
+        >>> from prospicio.pricing import DealRun
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> cover = (Layer.stop_loss("cover", 120.0, 0.0)
+        ...          .with_premium_rate(1.0, 100.0).with_brokerage(0.025))
+        >>> tower = Tower([cover])
+        >>> run = DealRun.from_tower("cover", tower, tower.apply_annual([40.0, 150.0]), "cover")
+        >>> run.n_sims
+        2
+        """
+    @property
+    def inception(self, /) -> int:
+        """
+        The inception month.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of simulations.
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The deal's name.
+        """
+    def with_cashflows(self, /, terms: CashflowTerms, cashflows: Cashflows) -> DealRun:
+        """
+        The run with its investor's flows from ``terms.run(...)``, one
+        simulation for each of the deal's, and the terms' patterns.
+        """
+    def with_flows(self, /, flows: Sequence[Sequence[float]], funded: Sequence[float], opening: Sequence[float]) -> DealRun:
+        """
+        The run with its investor's net flows from any model: one list of
+        monthly flows from inception a simulation, and the capital paid in
+        during the term (``funded``) and at inception (``opening``).
+        """
+    def with_inception(self, /, month: int) -> DealRun:
+        """
+        The run incepting at ``month``, counted from 1 January of the
+        book's first year. It moves the deal's flows and patterns, not its
+        losses.
+        """
+    def with_patterns(self, /, written: Sequence[float], earned: Sequence[float], paid: Sequence[float]) -> DealRun:
+        """
+        The run with its monthly cumulative written, earned and paid
+        shares, for ``DealBook.calendar``.
+        """
+
+@final
 class Design:
     """
     A design matrix with an offset and prior weights.
@@ -9732,6 +9944,76 @@ class EventSet:
         Each column of the aggregate part's labels, one value per label
         dimension, or ``None`` without a part.
         """
+    def calibrate_year_correlation(self, /, n_years: int, ratio: float, *, kind: str = "spearman", draws: str = "same", seed: int = 0) -> tuple[float, float, list[EventSet]]:
+        """
+        The correlation between every pair of ``n_years`` years for which
+        ``correlated_years`` gives a term whose mean yearly total has
+        ``ratio`` times the standard deviation of one year's total, found by
+        bisection on these simulations. With the same premium each year,
+        that is the ratio of the term's loss ratio's spread to one year's.
+        Independent years give ``1 / sqrt(n_years)``, identical ones 1.
+        
+        Parameters
+        ----------
+        n_years : int
+        ratio : float
+            In ``[0, 1]``.
+        kind, draws, seed
+            As ``correlated_years``.
+        
+        Returns
+        -------
+        tuple of (float, float, list of EventSet)
+            The correlation, the ratio it achieves and the years under it.
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> from prospicio.distributions import Lognormal, Poisson
+        >>> from prospicio.aggregate import simulate_events
+        >>> e = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(100.0, 1.0), 4000, seed=7)
+        >>> rho, achieved, years = e.calibrate_year_correlation(3, 0.75, seed=11)
+        >>> abs(achieved - 0.75) < 1e-3, 0 < rho < 1, len(years)
+        (True, True, 3)
+        """
+    def correlated_years(self, /, n_years: int, correlation: Any, *, kind: str = "spearman", draws: str = "same", seed: int = 0) -> list[EventSet]:
+        """
+        A term of ``n_years`` underwriting years whose yearly totals (each
+        year's losses and aggregate part) have a rank correlation, set by
+        Iman–Conover. Each year's simulations move as whole years, keeping
+        their events, times, sums insured, labels and aggregate part, so the
+        years go to ``Tower.apply_term`` as they come.
+        
+        Parameters
+        ----------
+        n_years : int
+            At least 2.
+        correlation : float or list of list of float
+            One correlation for every pair of years, or the full matrix.
+        kind : {"spearman", "pearson"}
+            ``"spearman"`` (the default) targets Spearman's rho of the
+            totals; ``"pearson"`` the correlation of their normal scores, as
+            ``PredictiveDistribution.reorder_groups``.
+        draws : {"same", "blocks"}
+            ``"same"`` (the default): every year reorders all the
+            simulations, so each has exactly the one-year distribution and
+            the term's mean the one-year mean; ``"blocks"``: year ``t`` is
+            block ``t`` of ``term_years``.
+        seed : int
+            The same seed gives the same years.
+        
+        Returns
+        -------
+        list of EventSet
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet
+        >>> e = EventSet.from_years([[float(i)] for i in range(10)])
+        >>> years = e.correlated_years(2, 0.9, seed=1)
+        >>> sorted(y.events(i)[0] for y in years[:1] for i in range(10)) == [float(i) for i in range(10)]
+        True
+        """
     def counts(self, /) -> list[int]:
         """
         Number of losses in each year.
@@ -10712,6 +10994,67 @@ class Expense:
     def terms(self, /) -> list[tuple[str, float]]:
         """
         The ``(basis, value)`` terms.
+        """
+
+@final
+class Exposure:
+    """
+    Each underwriting year's share of a full book's exposure in each
+    accident month from the start of a term.
+    
+    One row a year, one share a month; a month's shares add to at most 1,
+    the rest belonging to underwriting years outside the term.
+    
+    Parameters
+    ----------
+    shares : list of list of float
+        One row per underwriting year, all of the same length.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import Exposure
+    >>> e = Exposure.uniform(2, 12)
+    >>> e.n_years, e.months
+    (2, 36)
+    >>> round(e.shares[0][12] + e.shares[1][12], 12)
+    1.0
+    """
+    def __new__(cls, /, shares: Sequence[Sequence[float]]) -> Exposure: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def months(self, /) -> int:
+        """
+        The number of accident months.
+        """
+    @property
+    def n_years(self, /) -> int:
+        """
+        The number of underwriting years.
+        """
+    @property
+    def shares(self, /) -> list[list[float]]:
+        """
+        The shares, one row a year.
+        """
+    @staticmethod
+    def uniform(n_years: int, policy_months: int) -> Exposure:
+        """
+        ``n_years`` underwriting years, each writing its policies evenly
+        over its twelve months, each policy in force for ``policy_months``
+        from the middle of the month it is written in.
+        
+        Year ``u``'s share of month ``m`` is its policies' time in force in
+        ``m`` over ``policy_months``: the shares of a month in mid-term add
+        to 1, and the exposure runs ``12 * n_years + policy_months`` months.
+        
+        Parameters
+        ----------
+        n_years : int
+        policy_months : int
+        
+        Returns
+        -------
+        Exposure
         """
 
 @final
@@ -14459,12 +14802,19 @@ class LayerSharePrior:
     on the layer's expected ultimate, centred there, whose coefficient of
     variation is that of a product of two independent variables,
     ``cv = sqrt((1 + apriori_cv**2) * (1 + share_cv**2) - 1)``: the moments
-    are exact, the gamma is their match. The layer's development pattern is
-    estimated from the layer's own triangle under the model's vague prior
-    on the pattern; an excess pattern from ``ExcessPattern`` does not enter
-    (open decision 22 of the design note). The prior is independent across
-    origins, although one share error is common to all of them (open
-    decision 23).
+    are exact. One share error is common to all origins (the default,
+    ``share_dependence="common"``): the model carries one more parameter, a
+    gamma multiplier ``s`` with mean 1 and cv ``share_cv``, sampled with the
+    others, and each origin's prior ultimate is a gamma with mean
+    ``exposure * apriori * share * s`` and cv ``apriori_cv``, so every origin
+    keeps the marginal cv above, the origins' priors are correlated and the
+    data update the share for every origin at once (``log_share`` in the
+    fit's parameters). ``share_dependence="per_origin"`` is the first
+    version: an independent share error at each origin, which understates
+    the total's interval. The layer's development pattern is estimated from
+    the layer's own triangle under the model's vague prior on the pattern;
+    an excess pattern from ``ExcessPattern`` does not enter (open decision
+    22 of the design note).
     
     Parameters
     ----------
@@ -14478,6 +14828,11 @@ class LayerSharePrior:
         The loss ratio's coefficient of variation (``inf`` is flat).
     share_cv : float, default 0.0
         The share's coefficient of variation, the same at every origin.
+    share_dependence : {"common", "per_origin"}, default "common"
+        Whether one share error is common to all origins or each origin has
+        its own. A known share (``share_cv`` 0) or a flat prior has nothing
+        to share and is the per-origin model; a common share error needs a
+        positive ``apriori_cv``.
     
     Examples
     --------
@@ -14485,8 +14840,10 @@ class LayerSharePrior:
     >>> prior = LayerSharePrior(0.65, 0.2, apriori_cv=0.1, share_cv=0.3)
     >>> round(prior.layer_apriori(0), 12), round(prior.cv ** 2, 12)
     (0.13, 0.1009)
+    >>> prior.share_dependence
+    'common'
     """
-    def __new__(cls, /, apriori: float, shares: Any, apriori_cv: float = 0.1, share_cv: float = 0.0) -> LayerSharePrior: ...
+    def __new__(cls, /, apriori: float, shares: Any, apriori_cv: float = 0.1, share_cv: float = 0.0, share_dependence: str = "common") -> LayerSharePrior: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -14501,9 +14858,11 @@ class LayerSharePrior:
     @property
     def cv(self, /) -> float:
         """
-        The coefficient of variation of the gamma prior on the layer's
+        The marginal coefficient of variation of the prior on each origin's
         expected ultimate: ``sqrt((1 + apriori_cv**2) * (1 + share_cv**2) -
-        1)``, ``inf`` if either is.
+        1)``, ``inf`` if either is. It is the gamma's cv under
+        ``"per_origin"``; under ``"common"`` the model's own cv is
+        ``apriori_cv`` and the multiplier's ``share_cv``.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str, model: BayesBfNormalised |None = None) -> BayesBfNormalisedFit:
         """
@@ -14533,7 +14892,7 @@ class LayerSharePrior:
             As ``BayesBfNormalised.fit``; if the prior's ``cv`` is 0.
         """
     @staticmethod
-    def from_severity(apriori: float, severity: Any, layer: Any, apriori_cv: float = 0.1, share_cv: float = 0.0) -> LayerSharePrior:
+    def from_severity(apriori: float, severity: Any, layer: Any, apriori_cv: float = 0.1, share_cv: float = 0.0, share_dependence: str = "common") -> LayerSharePrior:
         """
         A prior with the share of a severity in a layer (``layer_share``,
         ultimate basis) and its coefficient of variation.
@@ -14545,13 +14904,14 @@ class LayerSharePrior:
         layer : ExcessLayer
         apriori_cv : float, default 0.1
         share_cv : float, default 0.0
+        share_dependence : {"common", "per_origin"}, default "common"
         
         Returns
         -------
         LayerSharePrior
         """
     @staticmethod
-    def from_share_se(apriori: float, share: float, share_se: float, apriori_cv: float = 0.1) -> LayerSharePrior:
+    def from_share_se(apriori: float, share: float, share_se: float, apriori_cv: float = 0.1, share_dependence: str = "common") -> LayerSharePrior:
         """
         A prior from one share and its standard error: the share's
         coefficient of variation is ``share_se / share``.
@@ -14562,10 +14922,17 @@ class LayerSharePrior:
         share : float
         share_se : float
         apriori_cv : float, default 0.1
+        share_dependence : {"common", "per_origin"}, default "common"
         
         Returns
         -------
         LayerSharePrior
+        """
+    @property
+    def has_common_factor(self, /) -> bool:
+        """
+        Whether the model carries a multiplier common to all origins: the
+        share error is ``"common"`` and both cvs are positive and finite.
         """
     def layer_apriori(self, /, i: int) -> float:
         """
@@ -14589,11 +14956,16 @@ class LayerSharePrior:
         ----------
         model : BayesBfNormalised, optional
             Supplies the sampler, process error, simulations and seed; its
-            own ``apriori`` and ``cv`` are replaced.
+            own ``apriori``, ``cv`` and ``common_cv`` are replaced.
         
         Returns
         -------
         BayesBfNormalised
+        
+        Raises
+        ------
+        ValueError
+            A common share error with ``apriori_cv`` 0.
         """
     def one_year(self, /, triangle: Triangle, column: str, exposure: str, model: BayesBfNormalised |None = None, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> BayesOneYearFit:
         """
@@ -14615,10 +14987,34 @@ class LayerSharePrior:
         -------
         BayesOneYearFit
         """
+    def prior_total(self, /, exposure: Sequence[float]) -> tuple[float, float]:
+        """
+        The mean and standard deviation of the prior of the layer's total
+        expected ultimate, in closed form: ``c_e**2 * (1 + c_s**2) * sum(m**2)
+        + c_s**2 * sum(m)**2`` for a common share error and ``((1 + c_e**2) *
+        (1 + c_s**2) - 1) * sum(m**2)`` for independent ones, with ``m`` each
+        origin's prior ultimate ``exposure * apriori * share``.
+        
+        Parameters
+        ----------
+        exposure : list of float
+            The ground-up exposure of each origin.
+        
+        Returns
+        -------
+        tuple of float
+            ``(mean, sd)``; ``sd`` is ``inf`` for a flat prior.
+        """
     @property
     def share_cv(self, /) -> float:
         """
         The share's coefficient of variation.
+        """
+    @property
+    def share_dependence(self, /) -> str:
+        """
+        ``"common"`` or ``"per_origin"``: whether one share error is common
+        to all origins.
         """
     @property
     def shares(self, /) -> list[float]:
@@ -24348,6 +24744,102 @@ class Terms:
         """
 
 @final
+class Timeline:
+    """
+    Events over a whole term of accident months, shared by its
+    underwriting years.
+    
+    Simulation ``j`` is one path; each event is stored once, with its time
+    as a fraction of the term, and is in accident month ``floor(x * months)``
+    (the last month for ``x = 1``). A cover basis splits the timeline into
+    contract years: ``Tower.apply_timeline``, or ``years`` for the years
+    themselves.
+    
+    Parameters
+    ----------
+    events : EventSet
+        With times (``with_uniform_times``, say) as fractions of the term,
+        and no aggregate part.
+    months : int
+        The number of accident months.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+    >>> events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+    >>> timeline = Timeline(events, 24)
+    >>> shares = [[0.0] * 24, [0.0] * 24]
+    >>> shares[0][13], shares[1][13] = 0.25, 0.75
+    >>> rad = timeline.years("risks_attaching", Exposure(shares))
+    >>> rad[0].events(0), rad[1].events(0)
+    ([25.0], [75.0])
+    """
+    def __new__(cls, /, events: EventSet, months: int) -> Timeline: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def events(self, /) -> EventSet:
+        """
+        The events, with times as fractions of the term.
+        """
+    @staticmethod
+    def from_years(years: Sequence[EventSet]) -> Timeline:
+        """
+        A timeline stitched from one event set per accident year.
+        
+        Each year needs times within its year and the same number of
+        simulations; year ``t``'s event at time ``tau`` is at
+        ``(t + tau) / T`` of the term. The years can come from
+        ``EventSet.term_years`` or ``EventSet.correlated_years``.
+        
+        Parameters
+        ----------
+        years : list of EventSet
+        
+        Returns
+        -------
+        Timeline
+        """
+    @property
+    def months(self, /) -> int:
+        """
+        The number of accident months.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of simulated paths.
+        """
+    def years(self, /, basis: str, exposure: Exposure) -> list[EventSet]:
+        """
+        The contract years under ``basis``, for ``Tower.apply_term``.
+        
+        Under ``"losses_occurring"``, contract year ``k`` takes every event
+        in accident months ``12k`` to ``12k + 11`` whole; ``exposure`` gives
+        only the number of years. Under ``"risks_attaching"``, underwriting
+        year ``u`` takes its share of each event in each month (sums insured
+        scaled alike), at its time over the months the year has a share.
+        
+        Parameters
+        ----------
+        basis : {"losses_occurring", "risks_attaching"}
+        exposure : Exposure
+        
+        Returns
+        -------
+        list of EventSet
+        """
+    def years_with_sources(self, /, basis: str, exposure: Exposure) -> tuple[list[EventSet], list[list[int]]]:
+        """
+        ``years`` with each year's sources: for each of the year's losses,
+        in order, its event's index among all the timeline's losses, so the
+        same event can be found in every year it falls to.
+        
+        Returns
+        -------
+        tuple of (list of EventSet, list of list of int)
+        """
+
+@final
 class TokenAttention:
     """
     Attention from ``[CLS]`` to each feature token in the last block, per
@@ -24560,6 +25052,35 @@ class Tower:
         >>> term.select("year", [2]).select("kind", ["profit_commission"]).mean()
         8.75
         """
+    def apply_timeline(self, /, timeline: Timeline, exposure: Exposure) -> PredictiveDistribution:
+        """
+        ``apply_term`` on the contract years a timeline splits into under
+        the tower's cover basis (``with_cover_basis``; an error without one).
+        
+        Parameters
+        ----------
+        timeline : Timeline
+        exposure : Exposure
+            Each underwriting year's share of each accident month; under
+            losses occurring only its number of years is used.
+        
+        Returns
+        -------
+        PredictiveDistribution
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+        >>> timeline = Timeline(events, 24)
+        >>> shares = [[0.0] * 24, [0.0] * 24]
+        >>> shares[0][13], shares[1][13] = 0.25, 0.75
+        >>> tower = Tower([Layer("XL", 50.0, 20.0)]).with_cover_basis("risks_attaching")
+        >>> rad = tower.apply_timeline(timeline, Exposure(shares))
+        >>> [rad.select("year", [y]).select("kind", ["ceded"]).mean() for y in (1, 2)]
+        [5.0, 50.0]
+        """
     def ceded(self, /, losses: Sequence[float]) -> list[float]:
         """
         Ceded loss of each layer, in order, for one year's losses.
@@ -24571,6 +25092,11 @@ class Tower:
         Returns
         -------
         list of float
+        """
+    @property
+    def cover_basis(self, /) -> str |None:
+        """
+        The cover basis's name, or ``None`` until one is set.
         """
     def deal_ledger(self, /, source: Any, layer: str) -> Ledger:
         """
@@ -24843,6 +25369,21 @@ class Tower:
         >>> back = Tower.from_json(tower.to_json())
         >>> back.to_json() == tower.to_json()
         True
+        """
+    def with_cover_basis(self, /, basis: str) -> Tower:
+        """
+        The tower with its cover basis, which ``apply_timeline`` needs:
+        ``"losses_occurring"`` (contract years by accident period) or
+        ``"risks_attaching"`` (by underwriting period). A tower is one
+        programme, so the basis is one for all its layers.
+        
+        Parameters
+        ----------
+        basis : {"losses_occurring", "risks_attaching"}
+        
+        Returns
+        -------
+        Tower
         """
     def with_deal_scale(self, /, name: str, sections: Sequence[str], sliding_scale: Sequence[tuple[float, float]] |None = None, brokerage: float |None = None, brokerage_scale: Sequence[tuple[float, float]] |None = None, carry_deficit: bool = False, carry_credit: bool = False, carry_years: int |None = None, brokerage_within_commission_range: bool = False) -> Tower:
         """
@@ -30476,6 +31017,22 @@ def worst_var(marginals: Sequence[Any], p: float, n: int = 100, rotate: int |Non
     >>> m = [Lognormal.from_mean_cv(10.0, cv) for cv in (1.0, 2.0, 3.0)]
     >>> round(worst_var(m, 0.99, n=40, rotate=19)["value"], 1)
     352.9
+    """
+
+def year_correlation_for_ratio(n_years: int, ratio: float) -> float:
+    """
+    The correlation between every pair of ``n_years`` years whose totals
+    have the same spread for which the mean of a term's yearly totals has
+    ``ratio`` times one year's standard deviation:
+    ``(n_years * ratio**2 - 1) / (n_years - 1)``. Pearson's correlation of
+    the totals: a start; ``EventSet.calibrate_year_correlation`` hits the
+    ratio on the simulations themselves.
+    
+    Examples
+    --------
+    >>> from prospicio.aggregate import year_correlation_for_ratio
+    >>> year_correlation_for_ratio(3, 1.0)
+    1.0
     """
 
 def year_fraction(year: int, month: int, day: int) -> float:

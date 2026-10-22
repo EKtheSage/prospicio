@@ -1,6 +1,6 @@
 # Design note: Bayesian reserving (Bayesian chain ladder, Meyers' models)
 
-Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
+Status: **Partly decided; PR 1 merged (#188); PR 3 merged (#200); PR 2 merged (#207); PR 4 merged (#208); PR 5 (CAY) built; PR 6 (Meyers over segments and in the backtest) built; PR 8 (the one-year view by PSIS) built; PR 9 (one generic one-year view, `BayesBf`'s) built; PR 13 (`BayesBfNormalised`) built; PR 14 (the light refit of the compartmental one-year view, decision 24, #394) built, its default open decision 17; PR 15 (the common share multiplier of `BayesBfNormalised`, decision 25, #518) built** (proposed 2026-10-11; on 2026-10-12 the user decided open decisions 1, 2 and 5 as recommended and 7 for the CAS data model repository, and took the recommendation on open decisions 3 and 4 for now; decisions 1 to 6 and 10 below are settled. PR 1 (`claude/bayes-odp`, merged as #188) built the `bayes` feature, `BayesOdp`, the Stan reference on GenIns and RAA, and the Python and R bindings (decision 13, for one segment). PR 3 (`claude/bayes-meyers`, merged as #200, decision 7) built: `Meyers` with CRC and CSR in Rust, Meyers' group 353 data, his transcribed Stan code as the reference, and the Python and R bindings (decision 13, for one segment). PR 2 (`claude/bayes-segments`, merged as #207) built decisions 8 and 11 ( `BayesOdp::fit_segments` and `BayesOdp` in the diagonal backtest, with `fit_segments` in Python and R, decision 13). PR 4 (`claude/bayes-bf`, merged as #208; decision 9, at the user's request) built `BayesBf`, EVW's triangle, the Stan reference, and the Python and R bindings (decision 13, for one segment). PR 5 is built on `claude/bayes-cay` (decision 7, "CAY"): `MeyersModel::Cay`, Meyers' `CAY.R` transcribed as the Stan reference, his printed results, and the Python and R bindings (`Meyers("cay", rho_shape=2.0)`, `meyers(model = "cay", rho_shape = 2)`; decision 13). PR 6 is built in Rust on `claude/bayes-meyers-segments`, stacked on PR 5 (decisions 8 and 11, "Meyers"): `Meyers::fit_segments`, `Meyers::dependence` and `TriangleModel for Meyers` for CRC, CSR and CAY, with premium added to the CLRD lines, and `fit_segments` in Python and R (`Meyers(..., dependence=, spearman=).fit_segments`, `meyers_segments()`; decision 13). PR 8 is built in Rust on `claude/bayes-one-year` (decision 16): `BayesOdp::one_year` and `one_year_segments`, the claims development result by PSIS reweighting with the flagged simulations refitted by NUTS, with the Python and R bindings (`BayesOdp.one_year` and `one_year_segments`, `bayes_odp_one_year()` and `bayes_odp_one_year_segments()`; decision 13). PR 9 is built on `claude/bayes-one-year-generic`, stacked on the Models-lane PR #273 that made `prospicio_bayes::elpd::psis` public (decision 17, open decisions 12 to 14 decided by the user on 2026-10-15): one interface every Bayesian model's one-year view implements, the view written once over it, a conformance suite run on every implementor, `BayesOdp` moved onto it bit for bit, `BayesBf::one_year` with its Python and R bindings (`BayesBf.one_year`, `bayes_bf_one_year()`; decision 13), and moment matching before refitting (decision 18, the opt-in `MomentMatchThenRefit`, in Rust, Python and R). PR 10 is built on `claude/bayes-one-year-meyers`, stacked on PR 9 and the CI slow-tests PR #279 (decision 19, the user's decisions of 2026-10-15 on open decisions 12 and 14): moment matching is the default fallback of the one-year view, and `Meyers` (CRC, CSR and CAY) has the one-year view through `YearModel`, with `one_year_segments`, in Rust, Python and R. PR 11 is built on `claude/bayes-one-year-compartmental`, stacked on PR 10 (decision 20): `Compartmental` (models 1 and 2) has the one-year view through `YearModel`, and every model's view takes a refit budget (`max_refits`), in Rust, Python and R; the user decided open decision 15 on 2026-10-16: model 1's view moment-matches by default, model 2's reweights only with a warning that it is approximate, both run at most 2,000 one-year simulations by default, and pull requests run model 1 of the compartmental one-year validation only. `Compartmental::one_year_segments` is built on `claude/compartmental-one-year-segments` (`reserving-compartmental.md` decision 8, "Built (one-year view over segments)"), in Rust, Python and R. PR 13 is built on `claude/bayes-bf-normalised` (decision 23, #410, the user's decision of 2026-10-21): `BayesBfNormalised`, the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate, beside `BayesBf` (unchanged at EVW parity), with its one-year view through `YearModel` (a fifth implementor, in the conformance suite's pull-request smoke run) and the Python and R bindings (`BayesBfNormalised`, `bayes_bf_normalised()`; decision 13). The rest stay Proposed) · Lane: Reserving, with the Models lane for `prospicio-bayes` · Depends on: `triangle.md`, `reserving-v02.md` (exposure, tails, the bootstraps, dependence between segments), `models.md` (`prospicio-bayes`, NUTS, diagnostics), `predictive-distribution.md`, `docs/roadmap.md` (v0.7 row; `prospicio-bayes` Next, item 1)
 
 ## Goal
 
@@ -52,6 +52,7 @@ together, as in `reserving-v02.md` decision 7.
 | 12 | `claude/backtest-bindings` | the diagonal backtest in Python and R, each fit's diagnostics in the forecast and the backtest, two more metrics (decision 21, #342) | `main` |
 | 13 | `claude/bayes-bf-normalised` | `BayesBfNormalised`: the Bayesian Bornhuetter–Ferguson with a normalised pattern and the prior on the ultimate (decision 23, #410); in Rust, Python and R | `main` |
 | 14 | `claude/gm2-one-year-accuracy` | `BayesOneYear::light_refit`: a warm-started, shorter sampler for the refits of `Compartmental`'s one-year view, model 2's within 0.03 sd of full refits (decision 24, #394); in Rust, Python and R | `main` |
+| 15 | `claude/excess-share-common` | `BayesBfNormalised::common_cv`: one multiplier common to all origins' prior ultimates, for the excess-layer BF prior (decision 25, #518); in Rust, Python and R | PR 13 |
 | later | | the paid-incurred `Ipi` | PR 5 |
 
 PRs 2 to 4 touch the same binding files
@@ -3085,6 +3086,92 @@ about a quarter of the refits), which the warning above counts: 122 and
 386 of 400 refits warned, against 4. Not built: the light refit uses the
 fit's own `target_accept`, and the saving of 1.8 times is open decision
 17's choice (d).
+
+### 25. A share multiplier common to all origins (PR 15, #518)
+
+Built in Rust, Python and R on `claude/excess-share-common` (2026-10-22).
+The excess-layer BF prior (`reserving-excess.md`, section 3 and open
+decision 23) needs one share error that is common to every origin: if the
+share is wrong, it is wrong for all of them. `BayesBfNormalised`'s gamma
+priors are independent across origins, so the user decided on 2026-10-22 to
+add one multiplier `s` as a parameter of the model.
+
+**The model.** `BayesBfNormalised::common_cv: Option<f64>`, `None` by default.
+With `Some(c)`:
+
+```text
+s ~ Gamma(shape k = 1 / c^2, mean 1)            (t = log s)
+U_w | s ~ Gamma(shape a = 1 / cv^2, mean m_w s)  independently over origins
+```
+
+and the rest of decision 23 unchanged (the means `U_w p_d`, the softmax
+pattern, the plug-in `phi`). Marginally each `U_w` has mean `m_w` and `cv_m^2
+= (1 + cv^2)(1 + c^2) - 1`, the same as PR 4's single gamma; `Cov(U_w, U_v) =
+c^2 m_w m_v`. The multiplier is a gamma rather than a lognormal (excess note,
+open decision 26): the same form as the origins' priors, so one more term
+`k (t - expm1 t)` and the origins' term moved to `v = u - t`.
+
+**Parameters.** The sampling scale is `(u_1..u_n, beta_2..beta_m, t)` with `u_w
+= alpha_w - log m_w` and `t = log s` the last, so `dim = n + m` instead of `n
++ m - 1`; the draws are stored as `(alpha, beta, t)` and named `alpha[w]`,
+`beta[d]` and `log_share`. The log posterior is the sum of
+
+```text
+a (v_w - expm1 v_w)  over origins, v_w = u_w - t        (the origins | s)
+k (t - expm1 t)                                          (the multiplier)
+-(1/2) beta_d^2 / development_sd^2                       (the pattern)
+sum over cells (X eta - exp eta) / phi, eta = u_w + log m_w + beta_d - log sum exp beta
+```
+
+`t` enters only the prior, never the likelihood, which depends on `u` and
+`beta`. The gradient and the negative Hessian are hand-written (`d/dt` is
+`-k expm1 t + a sum expm1 v_w`, the Hessian block `a e^{v_w}` on the origin's
+diagonal, `-a e^{v_w}` against `t` and `k e^t + a sum e^{v_w}` for `t`),
+checked against finite differences and the generic `Scalar` density. With
+`common_cv` `None` the code takes `t = 0` and `v_w = u_w - 0`, which is `u_w`
+exactly, so every existing result is unchanged bit for bit (the existing unit
+tests, validation files and the provenance are untouched; the provenance names
+`common_cv` only when it is set). The free functions that read the pattern's
+block (`log_sum`, `log_pattern`, `natural_eta`) take `n_dev` so they ignore
+the trailing `t`. The mode finder starts at the strong-prior mode with `t =
+0`; NUTS runs whitened at the mode, which absorbs the strong prior
+correlation between `u_w` and `t`.
+
+**Propriety and settings.** `common_cv` must be finite and positive and
+`cv` finite: with a flat `cv` (shape 0) the multiplier would not be
+identified (an error). `LayerSharePrior` uses the multiplier only when the
+share error is common, positive and finite and the loss ratio's cv finite; a
+common share error with `apriori_cv` 0 is an error (excess note, open
+decision 25). The multiplier does not change the propriety conditions of
+decision 23.
+
+**The one-year view** is the shared `OdpYear` through `NormalisedRefit`
+unchanged, because `eta` reads only `alpha` and `beta` from a draw. The draw
+carries `t`, which is all the year's cells can inform that the predictive step
+would otherwise draw afresh (nothing: `t` is a posterior parameter, not drawn
+per simulation); it is stored on an unconstrained scale that is an affine map
+of the sampling scale (`alpha = u + log m`, `t = t`), so moment matching's
+shifts and scalings stay valid and `log_posterior` needs no Jacobian. A refit
+extends the cells and samples the same `(u, beta, t)` model from the opening
+mean. The conformance suite passes with the multiplier in both halves (the
+unit check `the_one_year_view_conforms` and an entry in `every_model` of
+`reserving_bayes_one_year_conformance.rs`, GenIns, apriori 0.5, `cv` 0.2,
+`common_cv` 0.5, run in the smoke set): seed 0, 300 simulations, mean z
+-0.52, opening z 0.53, the gap to the refits 0.053 sd of the total where `k̂`
+is at most 0.7 (265 simulations) and 0.199 above it (35 simulations, all
+moment matched, none refitted), against the model's bound of 0.09 for the
+unflagged gap (`BF_NORMALISED_REFITS`).
+
+**Validation** is `validation/tests/reserving_bayes_excess_prior.rs` (the
+numbers are in `reserving-excess.md`, "Validation targets"): the prior
+moments, a vanishing multiplier against the plain model, the posterior total
+against independent priors and the posterior of `s` on a layer with a known
+wrong share. The unit tests in `bf_normalised.rs` check the model's log prior
+against the hierarchical gamma density, the gradient, the Hessian and the
+generic oracle. **The finding that matters:** the common multiplier widens the
+total's *prior* interval by a factor of about 3 (the covariance) but its
+*posterior* interval on GenIns's layer is narrower than the independent
+prior's, because the origins pool their information about `s`.
 
 ## Open decisions for the user
 

@@ -1679,9 +1679,10 @@ impl Triangle {
         seed: f64,
         target_accept: f64,
         max_depth: f64,
+        common_cv: f64,
     ) -> Result<BayesBfNormalisedFit> {
         let model = bayes_bf_normalised_model(
-            &[apriori, cv, development_sd],
+            &[apriori, cv, development_sd, common_cv],
             process,
             &[chains, tune, draws, n_sims, seed, target_accept, max_depth],
         )?;
@@ -3083,18 +3084,19 @@ fn bayes_bf_model(priors: &[f64], process: &str, run: &[f64]) -> Result<BayesBf>
 
 /// The `BayesBfNormalised` of `bayes_bf_normalised` and
 /// `bayes_bf_normalised_one_year`: `priors` are
-/// `apriori`, `cv` and `development_sd`, `run` is `chains`, `tune`,
+/// `apriori`, `cv`, `development_sd` and `common_cv` (0 for no multiplier
+/// common to all origins), `run` is `chains`, `tune`,
 /// `draws`, `n_sims`, `seed`, `target_accept` and `max_depth`.
 fn bayes_bf_normalised_model(
     priors: &[f64],
     process: &str,
     run: &[f64],
 ) -> Result<BayesBfNormalised> {
-    let (&[apriori, cv, development_sd], &[chains, tune, draws, n_sims, seed, ta, md]) =
+    let (&[apriori, cv, development_sd, common_cv], &[chains, tune, draws, n_sims, seed, ta, md]) =
         (priors, run)
     else {
         return Err(Error::Other(
-            "bayes_bf_normalised_model takes 3 priors and 7 run settings".into(),
+            "bayes_bf_normalised_model takes 4 priors and 7 run settings".into(),
         ));
     };
     let boot = bootstrap(n_sims, seed, process, SegmentDependence::Independent)?;
@@ -3113,6 +3115,7 @@ fn bayes_bf_normalised_model(
         },
         n_sims: boot.n_sims,
         seed: boot.seed,
+        common_cv: (common_cv != 0.0).then_some(common_cv),
     })
 }
 

@@ -10,7 +10,8 @@ simulations (read_ylt, EventSet.from_ylt), and the P&L ledger (Ledger, Group, Le
 ledgers' results side by side; Book, Expense and derive_premium build the ledger of
 a book and its annual covers, and occurrence_source the joint gross and ceded loss
 its occurrence covers are walked over; pnl_program prices a book and its covers from
-target combined ratios). Layers and towers are in
+target combined ratios), and a term of accident months shared by its underwriting
+years (Timeline, Exposure). Layers and towers are in
 ``prospicio.reinsurance``."""
 
 from .prospicio_native import (
@@ -23,6 +24,7 @@ from .prospicio_native import (
     EventLossTable,
     EventSet,
     Expense,
+    Exposure,
     GridAudit,
     GridSize,
     Group,
@@ -33,6 +35,7 @@ from .prospicio_native import (
     Picks,
     RenewalRuin,
     Ruin,
+    Timeline,
     audit_grid,
     audit_portfolio_grid,
     compound_moments,
@@ -56,6 +59,7 @@ from .prospicio_native import (
     size_premium,
     stack,
     wiener_hopf,
+    year_correlation_for_ratio,
     ylt_hash,
 )
 
@@ -74,7 +78,10 @@ __all__ = [
     "simulate_events",
     "EventSet",
     "EventLossTable",
+    "Timeline",
+    "Exposure",
     "read_ylt",
+    "year_correlation_for_ratio",
     "ylt_hash",
     "occurrence_exceedance",
     "occurrence_pml",

@@ -7,6 +7,7 @@ use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance}
 
 use crate::deal::{DealScale, Deduction};
 use crate::monte_carlo::EventSet;
+use crate::timeline::CoverBasis;
 
 /// A per-occurrence excess-of-loss layer: `limit` xs `attachment` on each
 /// loss, then annual terms.
@@ -1285,6 +1286,10 @@ pub struct Tower {
     /// Scales read on the loss ratio of several layers together
     /// ([`Tower::deal_scale`]), in the order they were added.
     pub deals: Vec<DealScale>,
+    /// How the programme attaches to a term's losses, for
+    /// [`Tower::apply_timeline`]: `None` until set with
+    /// [`Tower::cover_basis`].
+    pub cover_basis: Option<CoverBasis>,
 }
 
 impl Tower {
@@ -1329,6 +1334,7 @@ impl Tower {
             layers,
             stages: stage_of,
             deals: Vec::new(),
+            cover_basis: None,
         })
     }
 

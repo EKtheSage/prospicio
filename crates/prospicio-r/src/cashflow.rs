@@ -86,7 +86,7 @@ fn timing(kind: &str, values: &[f64], name: &str) -> Result<Timing> {
 /// documents the arguments.
 #[extendr]
 pub(crate) struct Cashflow {
-    inner: CashflowTerms,
+    pub(crate) inner: CashflowTerms,
 }
 
 #[extendr]

@@ -6,7 +6,9 @@ predictive interval are checked in
 validation/tests/reserving_bayes_excess_prior.rs; these tests check the
 binding and that Python gives the numbers the Rust test and the R twin give
 (R/prospicio/tests/test-reserving-bayes-excess-prior.R): the same cv, the
-same prior ultimates, the same layer exposure.
+same prior ultimates, the same layer exposure, and the same prior moments of
+the total with a share error common to all origins (decision 25 of
+docs/design/reserving-bayes.md, #518).
 """
 
 import csv
@@ -51,10 +53,41 @@ def test_the_cv_is_that_of_a_product_of_independents():
     assert p.cv**2 == pytest.approx(1.01 * 1.09 - 1.0, abs=1e-14)
     assert p.layer_apriori(0) == pytest.approx(0.65 * SHARE, abs=1e-15)
     assert (p.apriori, p.apriori_cv, p.share_cv, p.shares) == (0.65, 0.1, 0.3, [SHARE])
+    assert p.share_dependence == "common" and p.has_common_factor
     # One factor known: the other's cv alone.
     assert LayerSharePrior(0.5, 0.2, apriori_cv=0.0, share_cv=0.3).cv == pytest.approx(0.3)
     assert LayerSharePrior(0.5, 0.2, share_cv=math.inf).cv == math.inf
     assert repr(p).startswith("LayerSharePrior(apriori=0.65, shares=[0.25]")
+    assert 'share_dependence="common"' in repr(p)
+
+
+def test_the_prior_moments_of_the_total_are_exact():
+    # The same exposures, shares and cvs as the R twin. Closed forms from
+    # first principles, m_i the origins' prior ultimates.
+    exposure = [100.0, 150.0, 220.0, 90.0]
+    shares = [0.2, 0.25, 0.3, 0.2]
+    ce, cs = 0.25, 0.7
+    m = [0.6 * e * s for e, s in zip(exposure, shares)]
+    total, squares = sum(m), sum(x * x for x in m)
+    common = LayerSharePrior(0.6, shares, apriori_cv=ce, share_cv=cs)
+    mean, sd = common.prior_total(exposure)
+    assert mean == pytest.approx(total, abs=1e-12)
+    want = ce**2 * (1 + cs**2) * squares + cs**2 * total**2
+    assert sd == pytest.approx(math.sqrt(want), rel=1e-12)
+    per = LayerSharePrior(
+        0.6, shares, apriori_cv=ce, share_cv=cs, share_dependence="per_origin"
+    )
+    assert per.share_dependence == "per_origin" and not per.has_common_factor
+    want = ((1 + ce**2) * (1 + cs**2) - 1) * squares
+    assert per.prior_total(exposure)[1] == pytest.approx(math.sqrt(want), rel=1e-12)
+    assert sd > per.prior_total(exposure)[1]
+    # The same numbers in the R twin.
+    assert (mean, sd) == pytest.approx((84.9, 61.2), rel=1e-3)
+    assert LayerSharePrior(0.6, shares, share_cv=math.inf).prior_total(exposure)[1] == math.inf
+    with pytest.raises(ValueError, match="exposure"):
+        common.prior_total([1.0, 2.0])
+    with pytest.raises(ValueError, match="share_dependence"):
+        LayerSharePrior(0.6, shares, share_dependence="shared")
 
 
 def test_the_three_routes_to_a_share():
@@ -87,9 +120,20 @@ def test_the_layer_exposure_and_the_model(tri):
     assert "layer_exposure" in layered.columns
     base = BayesBfNormalised(seed=3, n_sims=500)
     m = p.model(base)
-    assert (m.apriori, m.cv, m.seed, m.n_sims) == (0.5, p.cv, 3, 500)
+    # A common share error: the loss ratio's cv, and the share's on the
+    # multiplier.
+    assert (m.apriori, m.cv, m.common_cv, m.seed, m.n_sims) == (0.5, 0.1, 0.3, 3, 500)
+    per = LayerSharePrior(0.5, SHARE, apriori_cv=0.1, share_cv=0.3, share_dependence="per_origin")
+    pm = per.model(base)
+    assert (pm.cv, pm.common_cv) == (pytest.approx(p.cv), None)
+    # A known loss ratio cannot be shared.
+    with pytest.raises(ValueError, match="apriori_cv"):
+        LayerSharePrior(0.5, SHARE, apriori_cv=0.0, share_cv=0.3).model(base)
     fit = p.fit(tri, "layer", "prior", model=base)
     assert isinstance(fit, BayesBfNormalisedFit)
+    # The multiplier is the last parameter of the fit.
+    assert fit.parameter_names[-1] == "log_share"
+    assert per.fit(tri, "layer", "prior", model=base).parameter_names[-1] != "log_share"
     # The prior ultimate is the ground-up exposure times apriori times the
     # share: the same numbers as the Rust and R tests.
     ground_up = BayesBfNormalised(n_sims=100).fit(
@@ -104,12 +148,20 @@ def test_the_layer_exposure_and_the_model(tri):
 
 def test_the_share_uncertainty_widens_the_interval(tri):
     base = BayesBfNormalised(seed=3, n_sims=2000)
-    sds = []
-    for share_cv in (1e-3, 0.5, 1.2):
-        p = LayerSharePrior(0.35, SHARE, apriori_cv=0.1, share_cv=share_cv)
-        fit = p.fit(tri, "layer", "prior", model=base)
-        sds.append(fit.reserves.variance() ** 0.5)
-    assert sds[0] < sds[1] < sds[2]
+    for dependence in ("common", "per_origin"):
+        sds = []
+        for share_cv in (1e-3, 0.5, 1.2):
+            p = LayerSharePrior(
+                0.35, SHARE, apriori_cv=0.1, share_cv=share_cv, share_dependence=dependence
+            )
+            fit = p.fit(tri, "layer", "prior", model=base)
+            sds.append(fit.reserves.variance() ** 0.5)
+        # A share error widens the interval over a known share; independent
+        # priors keep widening it, a common one is learned from all origins
+        # (the Rust validation reports the numbers).
+        assert sds[0] < sds[1]
+        if dependence == "per_origin":
+            assert sds[1] < sds[2]
 
 
 def test_the_one_year_view(tri):

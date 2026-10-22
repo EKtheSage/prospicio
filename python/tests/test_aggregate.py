@@ -1135,6 +1135,36 @@ def test_tower_over_a_term_carries_deficits():
         events.term_years(7)
 
 
+def test_correlated_years_keep_the_marginal_and_hit_the_ratio():
+    import numpy as np
+    from prospicio.aggregate import year_correlation_for_ratio
+
+    events = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(10.0, 1.0), 2_000, seed=3)
+    one = np.sort(np.array(events.totals().draw_matrix())[:, 0])
+    years = events.correlated_years(3, 0.5, seed=5)
+    assert [y.n_sims for y in years] == [2_000] * 3
+    totals = np.column_stack([np.array(y.totals().draw_matrix())[:, 0] for y in years])
+    for t in range(3):
+        assert (np.sort(totals[:, t]) == one).all()
+    ranks = np.argsort(np.argsort(totals, axis=0), axis=0)
+    assert np.corrcoef(ranks[:, 0], ranks[:, 1])[0, 1] == pytest.approx(0.5, abs=0.05)
+    again = events.correlated_years(3, [[1.0, 0.5, 0.5], [0.5, 1.0, 0.5], [0.5, 0.5, 1.0]], seed=5)
+    assert all(a.events(9) == b.events(9) for a, b in zip(years, again))
+    blocks = events.correlated_years(2, 0.3, kind="pearson", draws="blocks", seed=1)
+    assert [y.n_sims for y in blocks] == [1_000] * 2
+    rho, achieved, cal = events.calibrate_year_correlation(3, 0.7, seed=5)
+    assert achieved == pytest.approx(0.7, abs=1e-3) and len(cal) == 3
+    mean = np.column_stack([np.array(y.totals().draw_matrix())[:, 0] for y in cal]).mean(axis=1)
+    assert mean.std() / one.std() == pytest.approx(achieved, rel=1e-9)
+    assert year_correlation_for_ratio(3, 1 / 3**0.5) == pytest.approx(0.0, abs=1e-12)
+    with pytest.raises(ValueError):
+        events.correlated_years(3, 0.5, kind="kendall")
+    with pytest.raises(ValueError):
+        events.correlated_years(3, 0.5, draws="shuffled")
+    with pytest.raises(ValueError):
+        year_correlation_for_ratio(1, 0.5)
+
+
 def test_normal_power_and_wilson_hilferty():
     import statistics
 
@@ -1451,3 +1481,58 @@ def test_deal_scale_reads_sections_together():
     assert tower.deal_ledger(([160.0], [1.0]), "B").result.values == pytest.approx([100 - 110 - 15 - 3])
     with pytest.raises(ValueError):
         tower.deal_ledger(([160.0], [1.0]), "C")
+
+
+def test_a_timeline_splits_by_cover_basis():
+    from prospicio.aggregate import EventSet, Exposure, Timeline
+
+    # One event of 100 in accident month 14 (index 13), written by two
+    # underwriting years: risks attaching splits it by share, losses
+    # occurring gives it whole to the second accident year.
+    events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+    timeline = Timeline(events, 24)
+    assert (timeline.months, timeline.n_sims) == (24, 1)
+    shares = [[0.0] * 24, [0.0] * 24]
+    shares[0][13], shares[1][13] = 0.25, 0.75
+    exposure = Exposure(shares)
+    years, sources = timeline.years_with_sources("risks_attaching", exposure)
+    assert [y.events(0) for y in years] == [[25.0], [75.0]]
+    assert sources == [[0], [0]]
+    lod = timeline.years("losses_occurring", exposure)
+    assert [y.events(0) for y in lod] == [[], [100.0]]
+
+    tower = Tower([Layer("XL", 50.0, 20.0)])
+    assert tower.cover_basis is None
+    with pytest.raises(ValueError):
+        tower.apply_timeline(timeline, exposure)
+    with pytest.raises(ValueError):
+        tower.with_cover_basis("claims_made")
+    rad = tower.with_cover_basis("risks_attaching")
+    assert rad.cover_basis == "risks_attaching"
+    assert Tower.from_json(rad.to_json()).cover_basis == "risks_attaching"
+    result = rad.apply_timeline(timeline, exposure)
+    ceded = [result.select("year", [y]).select("kind", ["ceded"]).mean() for y in (1, 2)]
+    assert ceded == pytest.approx([5.0, 50.0], abs=1e-12)
+
+    with pytest.raises(ValueError):
+        Timeline(events, 0)
+    with pytest.raises(ValueError):
+        Exposure([[1.5]])
+
+
+def test_a_stitched_timeline_gives_back_its_years_under_losses_occurring():
+    from prospicio.aggregate import Exposure, Timeline
+
+    ev = simulate_events(Poisson(2.0), Lognormal(3.0, 1.0), 3 * 200, seed=5).with_uniform_times()
+    years = ev.term_years(3)
+    timeline = Timeline.from_years(years)
+    assert (timeline.months, timeline.n_sims) == (36, 200)
+    back = timeline.years("losses_occurring", Exposure.uniform(3, 12))
+    for b, y in zip(back, years):
+        got = [row[0] for row in b.totals().draw_matrix()]
+        assert got == pytest.approx([row[0] for row in y.totals().draw_matrix()], abs=1e-9)
+
+    uniform = Exposure.uniform(2, 12)
+    assert (uniform.n_years, uniform.months) == (2, 36)
+    assert sum(row[12] for row in uniform.shares) == pytest.approx(1.0)
+    assert [sum(row) for row in uniform.shares] == pytest.approx([12.0, 12.0])

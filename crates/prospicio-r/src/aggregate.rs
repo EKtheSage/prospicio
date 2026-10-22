@@ -672,6 +672,103 @@ impl EventSet {
         ))
     }
 
+    /// Checks that this event set can be a timeline of `months` months.
+    fn timeline_check(&self, months: f64) -> Result<()> {
+        timeline(&self.inner, months).map(|_| ())
+    }
+
+    /// The contract years of the timeline of this event set over `months`
+    /// under `basis`, with the exposure's shares row-major over `n_years`
+    /// rows; with `sources`, a list of `years` and `sources` (each loss's
+    /// index among the timeline's losses, from 1).
+    fn timeline_years(
+        &self,
+        months: f64,
+        basis: &str,
+        shares: &[f64],
+        n_years: f64,
+        sources: bool,
+    ) -> Result<Robj> {
+        let timeline = timeline(&self.inner, months)?;
+        let exposure = exposure(shares, n_years)?;
+        let basis = cover_basis(basis)?;
+        let (years, src) = if sources {
+            let (y, s) = timeline
+                .years_with_sources(basis, &exposure)
+                .map_err(to_r)?;
+            (y, Some(s))
+        } else {
+            (timeline.years(basis, &exposure).map_err(to_r)?, None)
+        };
+        let years = List::from_values(years.into_iter().map(|inner| Robj::from(Self { inner })));
+        Ok(match src {
+            None => years.into(),
+            Some(src) => list!(
+                years = years,
+                sources = List::from_values(
+                    src.into_iter()
+                        .map(|s| { s.into_iter().map(|i| i as f64 + 1.0).collect::<Vec<f64>>() })
+                )
+            )
+            .into(),
+        })
+    }
+
+    /// A list of `n_years` event sets whose totals have the correlation
+    /// `correlation` (one value or a row-major matrix).
+    fn correlated_years(
+        &self,
+        n_years: f64,
+        correlation: &[f64],
+        kind: &str,
+        draws: &str,
+        seed: f64,
+    ) -> Result<List> {
+        let years = self
+            .inner
+            .correlated_years(
+                whole(n_years, "n_years")? as usize,
+                correlation,
+                correlation_kind(kind)?,
+                year_draws(draws)?,
+                whole(seed, "seed")?,
+            )
+            .map_err(to_r)?;
+        Ok(List::from_values(
+            years.into_iter().map(|inner| Robj::from(Self { inner })),
+        ))
+    }
+
+    /// The calibration: `correlation`, `ratio` and the `years`.
+    fn calibrate_year_correlation(
+        &self,
+        n_years: f64,
+        ratio: f64,
+        kind: &str,
+        draws: &str,
+        seed: f64,
+    ) -> Result<List> {
+        let fit = self
+            .inner
+            .calibrate_year_correlation(
+                whole(n_years, "n_years")? as usize,
+                ratio,
+                correlation_kind(kind)?,
+                year_draws(draws)?,
+                whole(seed, "seed")?,
+            )
+            .map_err(to_r)?;
+        Ok(list!(
+            correlation = fit.correlation,
+            ratio = fit.ratio,
+            years = List::from_values(
+                fit.years
+                    .into_iter()
+                    .map(|inner| Robj::from(Self { inner }))
+            )
+        ))
+    }
+
     fn grouped(&self, window_hours: f64) -> Result<Self> {
         Ok(Self {
             inner: self.inner.grouped(window_hours).map_err(to_r)?,
@@ -1211,6 +1308,9 @@ extendr_module! {
     fn occurrence_exceedance_rust;
     fn occurrence_pml_rust;
     fn ylt_file_hash_rust;
+    fn year_correlation_for_ratio_rust;
+    fn timeline_from_years_rust;
+    fn exposure_uniform_rust;
     impl EventSet;
     fn aggregate_elt_values;
     fn aggregate_elt_simulate;
@@ -1234,4 +1334,109 @@ fn labels_from(dims: Vec<String>, values: List) -> Result<Vec<(String, Vec<Strin
             Ok((dim, v))
         })
         .collect()
+}
+
+fn correlation_kind(kind: &str) -> Result<prospicio_prob::portfolio::CorrelationKind> {
+    use prospicio_prob::portfolio::CorrelationKind;
+    match kind {
+        "pearson" => Ok(CorrelationKind::Pearson),
+        "spearman" => Ok(CorrelationKind::Spearman),
+        _ => Err(Error::Other(format!(
+            "kind must be \"pearson\" or \"spearman\", not {kind:?}"
+        ))),
+    }
+}
+
+fn year_draws(draws: &str) -> Result<prospicio_aggregate::term::YearDraws> {
+    use prospicio_aggregate::term::YearDraws;
+    match draws {
+        "same" => Ok(YearDraws::Same),
+        "blocks" => Ok(YearDraws::Blocks),
+        _ => Err(Error::Other(format!(
+            "draws must be \"same\" or \"blocks\", not {draws:?}"
+        ))),
+    }
+}
+
+/// `(T r² − 1) / (T − 1)`.
+#[extendr]
+fn year_correlation_for_ratio_rust(n_years: f64, ratio: f64) -> Result<f64> {
+    prospicio_aggregate::term::year_correlation_for_ratio(
+        whole(n_years, "n_years")? as usize,
+        ratio,
+    )
+    .map_err(to_r)
+}
+
+pub(crate) fn cover_basis(basis: &str) -> Result<prospicio_aggregate::timeline::CoverBasis> {
+    use prospicio_aggregate::timeline::CoverBasis;
+    match basis {
+        "losses_occurring" | "lod" => Ok(CoverBasis::LossesOccurring),
+        "risks_attaching" | "rad" => Ok(CoverBasis::RisksAttaching),
+        _ => Err(Error::Other(format!(
+            "basis must be \"losses_occurring\" or \"risks_attaching\", not {basis:?}"
+        ))),
+    }
+}
+
+pub(crate) fn timeline(
+    events: &EventSetInner,
+    months: f64,
+) -> Result<prospicio_aggregate::timeline::Timeline> {
+    prospicio_aggregate::timeline::Timeline::new(events.clone(), whole(months, "months")? as usize)
+        .map_err(to_r)
+}
+
+/// An exposure from its shares, row-major over `n_years` rows.
+pub(crate) fn exposure(
+    shares: &[f64],
+    n_years: f64,
+) -> Result<prospicio_aggregate::timeline::Exposure> {
+    let n = whole(n_years, "n_years")? as usize;
+    if n == 0 || shares.len() % n != 0 {
+        return Err(Error::Other(format!(
+            "{} shares do not make {n} rows",
+            shares.len()
+        )));
+    }
+    let rows = shares
+        .chunks(shares.len() / n)
+        .map(<[f64]>::to_vec)
+        .collect();
+    prospicio_aggregate::timeline::Exposure::new(rows).map_err(to_r)
+}
+
+/// A timeline stitched from one event set per accident year: its
+/// `events` and `months`.
+#[extendr]
+fn timeline_from_years_rust(years: List) -> Result<List> {
+    let years = years
+        .values()
+        .map(|y| {
+            <&EventSet>::try_from(&y)
+                .map(|e| e.inner.clone())
+                .map_err(|_| Error::Other("each year must be an event_set".into()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let timeline = prospicio_aggregate::timeline::Timeline::from_years(&years).map_err(to_r)?;
+    Ok(list!(
+        events = EventSet {
+            inner: timeline.events().clone()
+        },
+        months = timeline.months() as f64
+    ))
+}
+
+/// `Exposure::uniform`'s shares, row-major, with its `months`.
+#[extendr]
+fn exposure_uniform_rust(n_years: f64, policy_months: f64) -> Result<List> {
+    let e = prospicio_aggregate::timeline::Exposure::uniform(
+        whole(n_years, "n_years")? as usize,
+        whole(policy_months, "policy_months")? as usize,
+    )
+    .map_err(to_r)?;
+    Ok(list!(
+        shares = e.shares().iter().flatten().copied().collect::<Vec<f64>>(),
+        months = e.months() as f64
+    ))
 }

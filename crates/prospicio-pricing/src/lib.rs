@@ -36,6 +36,7 @@
 //!
 //! See `docs/design/pareto.md`.
 
+pub mod book;
 pub mod bounds;
 pub mod cashflow;
 pub mod casualty;

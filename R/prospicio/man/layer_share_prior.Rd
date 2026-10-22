@@ -2,6 +2,7 @@
 % Please edit documentation in R/excess.R
 \name{layer_share_prior}
 \alias{layer_share_prior}
+\alias{layer_prior_total}
 \alias{bayes_bf_layer}
 \alias{bayes_bf_layer_one_year}
 \title{A Bayesian Bornhuetter-Ferguson prior for an excess layer}
@@ -11,8 +12,11 @@ layer_share_prior(
   shares,
   apriori_cv = 0.1,
   share_cv = 0,
-  share_se = NULL
+  share_se = NULL,
+  share_dependence = c("common", "per_origin")
 )
+
+layer_prior_total(prior, exposure_values)
 
 bayes_bf_layer(triangle, column, exposure, prior, ...)
 
@@ -32,10 +36,16 @@ origin.}
 \item{share_se}{The standard error of a single share, instead of
 \code{share_cv}; the coefficient of variation is \code{share_se / shares}.}
 
-\item{triangle, column, exposure}{A single-segment cumulative triangle,
-the layer's losses and the ground-up exposure column.}
+\item{share_dependence}{\code{"common"} (the default) for one share error
+common to all origins or \code{"per_origin"} for an independent one at each.}
 
 \item{prior}{A \code{layer_share_prior()}.}
+
+\item{exposure_values}{The ground-up exposure of each origin, for
+\code{layer_prior_total()}.}
+
+\item{triangle, column, exposure}{A single-segment cumulative triangle,
+the layer's losses and the ground-up exposure column.}
 
 \item{...}{The other arguments of \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}} (or
 \code{\link[=bayes_bf_normalised_one_year]{bayes_bf_normalised_one_year()}}): \code{development_sd}, \code{process},
@@ -46,7 +56,7 @@ the layer's losses and the ground-up exposure column.}
 \value{
 \code{layer_share_prior()} a \code{layer_share_prior}; \code{bayes_bf_layer()}
 a \link{bayes_bf_normalised_fit}; \code{bayes_bf_layer_one_year()} a
-\link{bayes_one_year_fit}.
+\link{bayes_one_year_fit}; \code{layer_prior_total()} \code{c(mean = , sd = )}.
 }
 \description{
 The prior of a layer's expected ultimate for \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}},
@@ -57,11 +67,20 @@ exposure times \code{apriori} times the share. The normalised BF puts a gamma
 prior on the layer's expected ultimate, centred there, whose coefficient
 of variation is that of a product of two independent variables,
 \code{cv = sqrt((1 + apriori_cv^2) * (1 + share_cv^2) - 1)}: the moments are
-exact, the gamma is their match. The layer's development pattern is
+exact. One share error is common to all origins (the default,
+\code{share_dependence = "common"}): the model carries one more parameter, a
+gamma multiplier \code{s} with mean 1 and cv \code{share_cv}, sampled with the
+others and named \code{log_share} among the fit's draws, and each origin's
+prior ultimate is a gamma with mean \code{exposure * apriori * share * s} and
+cv \code{apriori_cv}. Every origin keeps the marginal cv above, the origins'
+priors are correlated and the data update the share for every origin at
+once. \code{share_dependence = "per_origin"} is the first version, an
+independent share error at each origin, which understates the total's
+interval. A known share (\code{share_cv = 0}) or a flat prior has nothing to
+share and is the per-origin model; a common share error needs a positive
+\code{apriori_cv}. The layer's development pattern is
 estimated from the layer's own triangle under the model's vague prior on
 the pattern; an \code{\link[=excess_pattern]{excess_pattern()}} does not enter (open decision 22).
-The prior is independent across origins, although one share error is
-common to all of them (open decision 23).
 }
 \details{
 \itemize{
@@ -80,7 +99,13 @@ result is a \link{bayes_bf_normalised_fit}.
 }
 
 A \code{layer_share_prior} has the properties \code{apriori}, \code{apriori_cv},
-\code{shares}, \code{share_cv} and \code{cv}.
+\code{shares}, \code{share_cv}, \code{share_dependence}, \code{cv} (the marginal cv of each
+origin's prior ultimate), \code{model_cv} and \code{common_cv} (the \code{cv} and the
+\code{common_cv} of the \code{\link[=bayes_bf_normalised]{bayes_bf_normalised()}} that \code{bayes_bf_layer()} fits;
+\code{common_cv} is 0 when there is no common multiplier) and
+\code{has_common_factor}. \code{layer_prior_total()} gives the mean and standard
+deviation of the prior of the layer's total expected ultimate over
+origins with a ground-up \code{exposure}, in closed form.
 
 This is Python's \code{LayerSharePrior}.
 }

@@ -487,4 +487,55 @@ stopifnot(inherits(try(grid_distribution(1, c(0, 0), normalize = TRUE), silent =
 stopifnot(identical(distortion("proportional_hazard", 0.7)@parameter, 0.7),
           is.na(distortion("lep", 0.1, r0 = 0.05)@parameter))
 
+# #490: a book of deals on one shared simulation.
+a <- deal_run("a", rep(100, 4), c(40, 80, 20, 160),
+              deductions = list(brokerage = rep(2.5, 4), fee = rep(5, 4)), outside_nmbf = "fee")
+b <- deal_run("b", rep(300, 4), c(150, 330, 90, 210),
+              deductions = list(brokerage = rep(7.5, 4), fee = rep(15, 4)), outside_nmbf = "fee")
+book <- deal_book(list(a, b))
+stopifnot(identical(book$ptr$names(), c("a", "b")),
+          identical(book$ptr$items(), c("premium", "loss", "brokerage", "fee", "total_deductions",
+                                        "nmbf", "margin")))
+amounts <- book_amounts(book)
+k <- amounts@keys
+near(draw_matrix(amounts)[, k$item == "loss" & k$deal == "total"], c(190, 410, 110, 370))
+s <- book_summary(book)
+near(s$ratio[s$deal == "total" & s$item == "loss"], 270 / 400)
+near(s$mean[s$deal == "a" & s$item == "nmbf"], 100 - 75 - 2.5)
+d <- book_distribution(book, "loss", 90, tvar_levels = 50)
+near(rowSums(d$contribution), d$total[rownames(d$contribution)])
+near(d$total[["TVaR 50"]], (410 + 370) / 2)
+stopifnot(identical(colnames(book_distribution(book, "margin", 10, tail = "lower")$marginal),
+                    c("a", "b")))
+stopifnot(inherits(try(deal_book(list(a, a)), silent = TRUE), "try-error"),
+          inherits(try(book_distribution(book, "loss", 90, tail = "middle"), silent = TRUE),
+                   "try-error"),
+          identical(book_select(book, "b")$ptr$names(), "b"))
+flows_a <- matrix(c(-10, 0, 10.1), 4, 3, byrow = TRUE)
+a <- deal_run("a", rep(100, 4), c(40, 80, 20, 160), flows = flows_a, funded = rep(0, 4),
+              opening = rep(10, 4))
+b <- deal_run("b", rep(300, 4), c(150, 330, 90, 210), flows = 2 * flows_a, funded = rep(0, 4),
+              opening = rep(20, 4), inception = 1)
+one <- book_cashflows(deal_book(list(a)))
+stopifnot(all(one$irr$found))
+near(one$irr$rate, rep(1.01^6 - 1, 4), rel = 1e-9)
+out <- book_cashflows(deal_book(list(a, b)), 0.05)
+near(out$flows[1, ], c(-10, -20, 10.1, 20.2))
+near(out$moic, rep(1 + 0.3 / 30, 4))
+near(out$mean_by_deal[, "b"], c(0, -20, 0, 20.2))
+b0 <- deal_run("b", rep(300, 4), c(150, 330, 90, 210), flows = 2 * flows_a, funded = rep(0, 4),
+               opening = rep(20, 4))
+near(book_cashflows(book_shift(deal_book(list(a, b0)), "b", 1), 0.05)$npv, out$npv)
+stopifnot(identical(names(out$irr_by_deal), c("a", "b")))
+terms <- cashflow_terms(100, 3, rep(1, 3), thirds, thirds, cashflow_requirement(c(reserve = 1)))
+run <- cashflow_run(terms, c(0.6, 1.5, 0.2, 0.9))
+cal <- book_calendar(deal_book(list(deal_run("c", rep(100, 4), c(60, 150, 20, 90),
+                                             inception = 11, cashflows = run, terms = terms))),
+                     2027)
+k <- cal@keys
+w <- k$item == "earned_premium" & k$deal == "total"
+stopifnot(identical(as.integer(k$year[w]), c(2027L, 2028L)))
+# earned evenly over three months from December 2027: a third in 2027
+near(draw_matrix(cal)[1, w], c(100 / 3, 200 / 3), rel = 1e-12)
+
 cat("prospicio R pricing tests passed\n")

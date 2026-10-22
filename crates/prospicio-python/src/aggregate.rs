@@ -1441,6 +1441,120 @@ impl PyEventSet {
             .collect())
     }
 
+    /// A term of ``n_years`` underwriting years whose yearly totals (each
+    /// year's losses and aggregate part) have a rank correlation, set by
+    /// Iman–Conover. Each year's simulations move as whole years, keeping
+    /// their events, times, sums insured, labels and aggregate part, so the
+    /// years go to ``Tower.apply_term`` as they come.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_years : int
+    ///     At least 2.
+    /// correlation : float or list of list of float
+    ///     One correlation for every pair of years, or the full matrix.
+    /// kind : {"spearman", "pearson"}
+    ///     ``"spearman"`` (the default) targets Spearman's rho of the
+    ///     totals; ``"pearson"`` the correlation of their normal scores, as
+    ///     ``PredictiveDistribution.reorder_groups``.
+    /// draws : {"same", "blocks"}
+    ///     ``"same"`` (the default): every year reorders all the
+    ///     simulations, so each has exactly the one-year distribution and
+    ///     the term's mean the one-year mean; ``"blocks"``: year ``t`` is
+    ///     block ``t`` of ``term_years``.
+    /// seed : int
+    ///     The same seed gives the same years.
+    ///
+    /// Returns
+    /// -------
+    /// list of EventSet
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> e = EventSet.from_years([[float(i)] for i in range(10)])
+    /// >>> years = e.correlated_years(2, 0.9, seed=1)
+    /// >>> sorted(y.events(i)[0] for y in years[:1] for i in range(10)) == [float(i) for i in range(10)]
+    /// True
+    #[pyo3(signature = (n_years, correlation, *, kind = "spearman", draws = "same", seed = 0))]
+    fn correlated_years(
+        &self,
+        py: Python<'_>,
+        n_years: usize,
+        correlation: &Bound<'_, PyAny>,
+        kind: &str,
+        draws: &str,
+        seed: u64,
+    ) -> PyResult<Vec<Self>> {
+        let correlation: Vec<f64> = match correlation.extract::<f64>() {
+            Ok(rho) => vec![rho],
+            Err(_) => correlation
+                .extract::<Vec<Vec<f64>>>()?
+                .into_iter()
+                .flatten()
+                .collect(),
+        };
+        let (kind, draws) = (correlation_kind(kind)?, year_draws(draws)?);
+        let inner = &self.inner;
+        Ok(py
+            .detach(|| inner.correlated_years(n_years, &correlation, kind, draws, seed))
+            .map_err(to_py)?
+            .into_iter()
+            .map(|inner| Self { inner })
+            .collect())
+    }
+
+    /// The correlation between every pair of ``n_years`` years for which
+    /// ``correlated_years`` gives a term whose mean yearly total has
+    /// ``ratio`` times the standard deviation of one year's total, found by
+    /// bisection on these simulations. With the same premium each year,
+    /// that is the ratio of the term's loss ratio's spread to one year's.
+    /// Independent years give ``1 / sqrt(n_years)``, identical ones 1.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_years : int
+    /// ratio : float
+    ///     In ``[0, 1]``.
+    /// kind, draws, seed
+    ///     As ``correlated_years``.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (float, float, list of EventSet)
+    ///     The correlation, the ratio it achieves and the years under it.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> from prospicio.distributions import Lognormal, Poisson
+    /// >>> from prospicio.aggregate import simulate_events
+    /// >>> e = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(100.0, 1.0), 4000, seed=7)
+    /// >>> rho, achieved, years = e.calibrate_year_correlation(3, 0.75, seed=11)
+    /// >>> abs(achieved - 0.75) < 1e-3, 0 < rho < 1, len(years)
+    /// (True, True, 3)
+    #[pyo3(signature = (n_years, ratio, *, kind = "spearman", draws = "same", seed = 0))]
+    fn calibrate_year_correlation(
+        &self,
+        py: Python<'_>,
+        n_years: usize,
+        ratio: f64,
+        kind: &str,
+        draws: &str,
+        seed: u64,
+    ) -> PyResult<(f64, f64, Vec<Self>)> {
+        let (kind, draws) = (correlation_kind(kind)?, year_draws(draws)?);
+        let inner = &self.inner;
+        let fit = py
+            .detach(|| inner.calibrate_year_correlation(n_years, ratio, kind, draws, seed))
+            .map_err(to_py)?;
+        Ok((
+            fit.correlation,
+            fit.ratio,
+            fit.years.into_iter().map(|inner| Self { inner }).collect(),
+        ))
+    }
+
     /// The seed the years were drawn from.
     #[getter]
     fn seed(&self) -> u64 {
@@ -2971,4 +3085,297 @@ fn labels_from_dict(labels: &Bound<'_, PyDict>) -> PyResult<Vec<(String, Vec<Str
         .iter()
         .map(|(k, v)| Ok((k.extract::<String>()?, v.extract::<Vec<String>>()?)))
         .collect()
+}
+
+fn correlation_kind(kind: &str) -> PyResult<prospicio_prob::portfolio::CorrelationKind> {
+    use prospicio_prob::portfolio::CorrelationKind;
+    match kind {
+        "pearson" => Ok(CorrelationKind::Pearson),
+        "spearman" => Ok(CorrelationKind::Spearman),
+        _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "kind must be \"pearson\" or \"spearman\", not {kind:?}"
+        ))),
+    }
+}
+
+fn year_draws(draws: &str) -> PyResult<prospicio_aggregate::term::YearDraws> {
+    use prospicio_aggregate::term::YearDraws;
+    match draws {
+        "same" => Ok(YearDraws::Same),
+        "blocks" => Ok(YearDraws::Blocks),
+        _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "draws must be \"same\" or \"blocks\", not {draws:?}"
+        ))),
+    }
+}
+
+/// The correlation between every pair of ``n_years`` years whose totals
+/// have the same spread for which the mean of a term's yearly totals has
+/// ``ratio`` times one year's standard deviation:
+/// ``(n_years * ratio**2 - 1) / (n_years - 1)``. Pearson's correlation of
+/// the totals: a start; ``EventSet.calibrate_year_correlation`` hits the
+/// ratio on the simulations themselves.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import year_correlation_for_ratio
+/// >>> year_correlation_for_ratio(3, 1.0)
+/// 1.0
+#[pyfunction]
+pub(crate) fn year_correlation_for_ratio(n_years: usize, ratio: f64) -> PyResult<f64> {
+    prospicio_aggregate::term::year_correlation_for_ratio(n_years, ratio).map_err(to_py)
+}
+
+/// A cover basis from its name: ``"losses_occurring"`` (or ``"lod"``) or
+/// ``"risks_attaching"`` (or ``"rad"``).
+pub(crate) fn cover_basis(name: &str) -> PyResult<prospicio_aggregate::timeline::CoverBasis> {
+    use prospicio_aggregate::timeline::CoverBasis;
+    match name {
+        "losses_occurring" | "lod" => Ok(CoverBasis::LossesOccurring),
+        "risks_attaching" | "rad" => Ok(CoverBasis::RisksAttaching),
+        other => Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "unknown cover basis {other:?}: expected \"losses_occurring\" or \"risks_attaching\""
+        ))),
+    }
+}
+
+/// The name of a cover basis.
+pub(crate) fn cover_basis_name(basis: prospicio_aggregate::timeline::CoverBasis) -> &'static str {
+    use prospicio_aggregate::timeline::CoverBasis;
+    match basis {
+        CoverBasis::LossesOccurring => "losses_occurring",
+        CoverBasis::RisksAttaching => "risks_attaching",
+    }
+}
+
+/// Each underwriting year's share of a full book's exposure in each
+/// accident month from the start of a term.
+///
+/// One row a year, one share a month; a month's shares add to at most 1,
+/// the rest belonging to underwriting years outside the term.
+///
+/// Parameters
+/// ----------
+/// shares : list of list of float
+///     One row per underwriting year, all of the same length.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import Exposure
+/// >>> e = Exposure.uniform(2, 12)
+/// >>> e.n_years, e.months
+/// (2, 36)
+/// >>> round(e.shares[0][12] + e.shares[1][12], 12)
+/// 1.0
+#[pyclass(name = "Exposure", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyExposure {
+    pub(crate) inner: prospicio_aggregate::timeline::Exposure,
+}
+
+#[pymethods]
+impl PyExposure {
+    #[new]
+    fn new(shares: Vec<Vec<f64>>) -> PyResult<Self> {
+        let inner = prospicio_aggregate::timeline::Exposure::new(shares).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// ``n_years`` underwriting years, each writing its policies evenly
+    /// over its twelve months, each policy in force for ``policy_months``
+    /// from the middle of the month it is written in.
+    ///
+    /// Year ``u``'s share of month ``m`` is its policies' time in force in
+    /// ``m`` over ``policy_months``: the shares of a month in mid-term add
+    /// to 1, and the exposure runs ``12 * n_years + policy_months`` months.
+    ///
+    /// Parameters
+    /// ----------
+    /// n_years : int
+    /// policy_months : int
+    ///
+    /// Returns
+    /// -------
+    /// Exposure
+    #[staticmethod]
+    fn uniform(n_years: usize, policy_months: usize) -> PyResult<Self> {
+        let inner = prospicio_aggregate::timeline::Exposure::uniform(n_years, policy_months)
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The number of underwriting years.
+    #[getter]
+    fn n_years(&self) -> usize {
+        self.inner.n_years()
+    }
+
+    /// The number of accident months.
+    #[getter]
+    fn months(&self) -> usize {
+        self.inner.months()
+    }
+
+    /// The shares, one row a year.
+    #[getter]
+    fn shares(&self) -> Vec<Vec<f64>> {
+        self.inner.shares().to_vec()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Exposure({} underwriting years over {} months)",
+            self.inner.n_years(),
+            self.inner.months()
+        )
+    }
+}
+
+/// Events over a whole term of accident months, shared by its
+/// underwriting years.
+///
+/// Simulation ``j`` is one path; each event is stored once, with its time
+/// as a fraction of the term, and is in accident month ``floor(x * months)``
+/// (the last month for ``x = 1``). A cover basis splits the timeline into
+/// contract years: ``Tower.apply_timeline``, or ``years`` for the years
+/// themselves.
+///
+/// Parameters
+/// ----------
+/// events : EventSet
+///     With times (``with_uniform_times``, say) as fractions of the term,
+///     and no aggregate part.
+/// months : int
+///     The number of accident months.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+/// >>> events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+/// >>> timeline = Timeline(events, 24)
+/// >>> shares = [[0.0] * 24, [0.0] * 24]
+/// >>> shares[0][13], shares[1][13] = 0.25, 0.75
+/// >>> rad = timeline.years("risks_attaching", Exposure(shares))
+/// >>> rad[0].events(0), rad[1].events(0)
+/// ([25.0], [75.0])
+#[pyclass(name = "Timeline", module = "prospicio.aggregate", frozen)]
+pub(crate) struct PyTimeline {
+    pub(crate) inner: prospicio_aggregate::timeline::Timeline,
+}
+
+#[pymethods]
+impl PyTimeline {
+    #[new]
+    fn new(events: PyRef<'_, PyEventSet>, months: usize) -> PyResult<Self> {
+        let inner = prospicio_aggregate::timeline::Timeline::new(events.inner.clone(), months)
+            .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// A timeline stitched from one event set per accident year.
+    ///
+    /// Each year needs times within its year and the same number of
+    /// simulations; year ``t``'s event at time ``tau`` is at
+    /// ``(t + tau) / T`` of the term. The years can come from
+    /// ``EventSet.term_years`` or ``EventSet.correlated_years``.
+    ///
+    /// Parameters
+    /// ----------
+    /// years : list of EventSet
+    ///
+    /// Returns
+    /// -------
+    /// Timeline
+    #[staticmethod]
+    fn from_years(years: Vec<PyRef<'_, PyEventSet>>) -> PyResult<Self> {
+        let years: Vec<EventSet> = years.iter().map(|e| e.inner.clone()).collect();
+        let inner = prospicio_aggregate::timeline::Timeline::from_years(&years).map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// The events, with times as fractions of the term.
+    #[getter]
+    fn events(&self) -> PyEventSet {
+        PyEventSet {
+            inner: self.inner.events().clone(),
+        }
+    }
+
+    /// The number of accident months.
+    #[getter]
+    fn months(&self) -> usize {
+        self.inner.months()
+    }
+
+    /// The number of simulated paths.
+    #[getter]
+    fn n_sims(&self) -> usize {
+        self.inner.n_sims()
+    }
+
+    /// The contract years under ``basis``, for ``Tower.apply_term``.
+    ///
+    /// Under ``"losses_occurring"``, contract year ``k`` takes every event
+    /// in accident months ``12k`` to ``12k + 11`` whole; ``exposure`` gives
+    /// only the number of years. Under ``"risks_attaching"``, underwriting
+    /// year ``u`` takes its share of each event in each month (sums insured
+    /// scaled alike), at its time over the months the year has a share.
+    ///
+    /// Parameters
+    /// ----------
+    /// basis : {"losses_occurring", "risks_attaching"}
+    /// exposure : Exposure
+    ///
+    /// Returns
+    /// -------
+    /// list of EventSet
+    fn years(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        exposure: PyRef<'_, PyExposure>,
+    ) -> PyResult<Vec<PyEventSet>> {
+        let basis = cover_basis(basis)?;
+        let (timeline, exposure) = (&self.inner, &exposure.inner);
+        Ok(py
+            .detach(|| timeline.years(basis, exposure))
+            .map_err(to_py)?
+            .into_iter()
+            .map(|inner| PyEventSet { inner })
+            .collect())
+    }
+
+    /// ``years`` with each year's sources: for each of the year's losses,
+    /// in order, its event's index among all the timeline's losses, so the
+    /// same event can be found in every year it falls to.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of (list of EventSet, list of list of int)
+    fn years_with_sources(
+        &self,
+        py: Python<'_>,
+        basis: &str,
+        exposure: PyRef<'_, PyExposure>,
+    ) -> PyResult<(Vec<PyEventSet>, Vec<Vec<usize>>)> {
+        let basis = cover_basis(basis)?;
+        let (timeline, exposure) = (&self.inner, &exposure.inner);
+        let (years, sources) = py
+            .detach(|| timeline.years_with_sources(basis, exposure))
+            .map_err(to_py)?;
+        Ok((
+            years
+                .into_iter()
+                .map(|inner| PyEventSet { inner })
+                .collect(),
+            sources,
+        ))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Timeline({} paths over {} months)",
+            self.inner.n_sims(),
+            self.inner.months()
+        )
+    }
 }

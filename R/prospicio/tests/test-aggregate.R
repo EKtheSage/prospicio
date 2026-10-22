@@ -298,6 +298,23 @@ stopifnot(ncol(tm) == 3 * 4)
 for (j in c(1, 17, 500)) {
   close(tm[j, c(4, 8, 12)], profit_commissions_over(ptc, tm[j, c(2, 6, 10)]), 1e-12)
 }
+# Rank-correlated underwriting years keep each year's distribution.
+ev2 <- simulate_events(poisson_count(2), lognormal_from_mean_cv(10, 1), 2000, seed = 3)
+one <- sort(draw_matrix(total(ev2))[, 1])
+cy <- correlated_years(ev2, 3, 0.5, seed = 5)
+ct <- sapply(cy, function(y) draw_matrix(total(y))[, 1])
+for (t in 1:3) stopifnot(identical(sort(ct[, t]), one))
+stopifnot(abs(cor(ct[, 1], ct[, 2], method = "spearman") - 0.5) < 0.05)
+cm <- correlated_years(ev2, 3, matrix(c(1, .5, .5, .5, 1, .5, .5, .5, 1), 3), seed = 5)
+stopifnot(identical(events(cm[[3]], 9), events(cy[[3]], 9)))
+stopifnot(length(correlated_years(ev2, 2, 0.3, kind = "pearson", draws = "blocks")) == 2)
+cal <- calibrate_year_correlation(ev2, 3, 0.7, seed = 5)
+stopifnot(abs(cal$ratio - 0.7) < 1e-3, length(cal$years) == 3)
+cmean <- rowMeans(sapply(cal$years, function(y) draw_matrix(total(y))[, 1]))
+close(sd(cmean) / sd(one), cal$ratio, 1e-9)
+stopifnot(abs(year_correlation_for_ratio(3, 1 / sqrt(3))) < 1e-12)
+stopifnot(inherits(try(correlated_years(ev2, 3, 0.5, kind = "kendall"), silent = TRUE), "try-error"))
+stopifnot(inherits(try(year_correlation_for_ratio(1, 0.5), silent = TRUE), "try-error"))
 alone <- draw_matrix(apply_tower(reinsurance_tower(list(ptc)), yrs[[1]]))
 stopifnot(isTRUE(all.equal(unname(alone), unname(tm[, 1:4]))))
 agg <- apply_tower_term(reinsurance_tower(list(pcc)), lapply(yrs[1:2], total))
@@ -812,3 +829,39 @@ stopifnot(inherits(try(deal_ledger(dtw2, list(160, 1), "C"), silent = TRUE), "tr
 stopifnot(inherits(try(with_deal_scale(reinsurance_tower(list(sa, sb)), "deal", "A", brokerage = 0.01), silent = TRUE), "try-error"))
 stopifnot(inherits(try(with_deal_scale(reinsurance_tower(list(sa, sb)), "deal", c("A", "B")), silent = TRUE), "try-error"))
 stopifnot(inherits(try(with_deal_scale(reinsurance_tower(list(sa, sb)), "d", c("A", "B"), brokerage = 0.01, carry_years = 1.5), silent = TRUE), "try-error"))
+
+# A timeline shared by its underwriting years: an event straddling two years
+# under risks attaching splits by exposure share; under losses occurring it
+# falls whole to its accident year.
+ev <- events_from_years(list(100), times = list(13.5 / 24))
+tl <- timeline(ev, 24)
+stopifnot(tl@months == 24, tl@n_sims == 1)
+shares <- matrix(0, 2, 24)
+shares[1, 14] <- 0.25
+shares[2, 14] <- 0.75
+rad <- timeline_years(tl, "risks_attaching", shares, sources = TRUE)
+stopifnot(identical(events(rad$years[[1]], 1), 25), identical(events(rad$years[[2]], 1), 75))
+stopifnot(identical(rad$sources, list(1, 1)))
+lod <- timeline_years(tl, "losses_occurring", shares)
+stopifnot(length(events(lod[[1]], 1)) == 0, identical(events(lod[[2]], 1), 100))
+tw <- reinsurance_tower(list(xol_layer("XL", 50, 20)))
+stopifnot(is.null(tw@cover_basis))
+stopifnot(inherits(try(apply_tower_timeline(tw, tl, shares), silent = TRUE), "try-error"))
+tw <- with_cover_basis(tw, "risks_attaching")
+stopifnot(identical(tw@cover_basis, "risks_attaching"))
+ceded <- draw_matrix(select_components(apply_tower_timeline(tw, tl, shares), "kind", "ceded"))
+stopifnot(all(abs(ceded[1, ] - c(5, 50)) < 1e-12))
+stopifnot(inherits(try(with_cover_basis(tw, "claims_made"), silent = TRUE), "try-error"))
+stopifnot(inherits(try(timeline(ev, 0), silent = TRUE), "try-error"))
+# Uniform exposure: mid-term months add to 1; stitched years equal LOD years.
+ue <- uniform_exposure(2, 12)
+stopifnot(identical(dim(ue), c(2L, 36L)), abs(sum(ue[, 13]) - 1) < 1e-12)
+stopifnot(all(abs(rowSums(ue) - 12) < 1e-12))
+ev3 <- with_uniform_times(simulate_events(poisson_count(2), lognormal(3, 1), 3 * 200, seed = 5))
+yrs <- term_years(ev3, 3)
+st <- timeline_from_years(yrs)
+stopifnot(st@months == 36, st@n_sims == 200)
+back <- timeline_years(st, "losses_occurring", uniform_exposure(3, 12))
+for (t in 1:3) {
+  stopifnot(all(abs(draw_matrix(total(back[[t]])) - draw_matrix(total(yrs[[t]]))) < 1e-9))
+}

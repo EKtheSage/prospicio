@@ -1,7 +1,8 @@
 # Design note: the time value of money in a price
 
 Status: **Implemented** · Depends on: `risk_load` prices · Lane: Aggregate ·
-Issues: #195, #480 (return metrics), #479 (the cash-flow engine)
+Issues: #195, #480 (return metrics), #479 (the cash-flow engine), #490
+(a book of deals)
 
 ## Goal
 
@@ -88,6 +89,40 @@ account columns with `conservation_error`. In R: `cashflow_requirement()`,
 with `unit = "months"`, `months_requirement` for a given path) and
 `cashflow_trace()` (an `accounts` data frame). Both check the terms when
 they are built.
+
+`prospicio_pricing::book` (#490), several deals on one shared simulation:
+
+- `DealRun`: one deal's premium, loss and deductions in each simulation
+  (`new` and `deduction`, `from_tower` or `from_columns` over
+  `Tower::deal_columns`, the amounts behind `deal_ratios`), its inception
+  in months from 1 January of the book's first year, its
+  `MonthlyPatterns`, and its investor's flows (`cashflows` from a
+  `CashflowTerms` and its `Cashflows`, or `flows` from any model).
+- `DealBook`: `select` and `shifted` by name, and four tables:
+  `amounts` (every item by deal and in total, `["item", "deal"]`) with
+  `summary` (means and ratios to the mean premium);
+  `distribution(item, grid, tail)` (the book's statistics, each deal's
+  contribution at the book's ranks and its marginal effect);
+  `cashflows(rate, options)` (the summed flows on the book's calendar and
+  the book's IRR, NPV and MOIC on them, with each deal's mean flows and
+  own IRR); `calendar(start_year)` (written and earned premium, paid loss
+  and investor flows by calendar year).
+
+In Python (`prospicio.pricing`): `DealRun(name, premium, loss,
+deductions=, inception=)` (a deduction NMBF leaves out given as
+`(amounts, True)`), `DealRun.from_tower`, and `with_inception`,
+`with_patterns`, `with_cashflows(terms, cashflows)` and `with_flows`, each
+returning a new run; `DealBook` with `select`, `shifted`, `amounts()` and
+`calendar(start_year)` as `PredictiveDistribution`s, `summary()` as
+columns, `distribution(item, percentiles, ..., tail=)` as a dict of the
+total and each deal's contribution and marginal cells, and `cashflows(rate)`
+as a `BookCashflows` (the book's `irr` an `IrrResult`, `irr_by_deal` and
+`mean_by_deal` by name). In R: `deal_run()` (deductions a named list,
+`outside_nmbf` their names NMBF leaves out, flows from a `cashflow_run()`
+with its `terms` or a matrix) and `deal_run_from_tower()`, `deal_book()`,
+`book_select()`, `book_shift()`, `book_amounts()`, `book_summary()` (a
+data frame), `book_distribution()` (matrices with a column a deal),
+`book_cashflows()` and `book_calendar()`.
 
 ## Decisions
 
@@ -181,6 +216,49 @@ they are built.
     less its outflows, as an amount or over the premium or the capital
     (funded plus opening); the tiered amount is multiplied back by the
     divisor.
+21. **A book's deals read one shared simulation** (the user's decision of
+    2026-10-22): simulation `j` of every deal is the same year, from one
+    year loss table or event catalog, so the book adds the deals without
+    reordering, and a book whose deals have different numbers of
+    simulations is an error. A book of deals simulated separately would
+    need a copula first, which the book does not apply.
+22. **The inception moves only the cash flows** (the user's decision of
+    2026-10-22): a deal's flows and patterns start at its inception month
+    on the book's calendar, and its losses stay those of its own contract
+    year. Book month 0 is 1 January of the first calendar year, and a
+    shift is a whole number of months. The cost is accepted: an event in
+    March of simulation `j` falls in a 1 January deal's first calendar
+    year and a 1 July deal's second, so the calendar-year view of one
+    event can split across years. Rebuilding a shifted deal's year from
+    two catalog years would need every deal's event times, and changes
+    the deal's own result.
+23. **Each deal keeps its own collateral trust** (the user's decision of
+    2026-10-22): the book adds the investors' flows and does not pool
+    collateral, so the cash-flow engine runs once a deal.
+24. **All four tables are built** (the user's decision of 2026-10-22):
+    amounts with their summary, the distribution, the investors' flows
+    and the calendar years. A book's ratio is its total over its total
+    premium, a sum over sums. A deduction a deal does not have is 0 for
+    it, and two deductions of one name must agree on whether NMBF leaves
+    them out.
+25. **The book's IRR is on the summed flows** (the user's decision of
+    2026-10-22), each simulation's flows of every deal added month by
+    month, never an average of the deals' IRRs; its NPV is to book month
+    0. Its MOIC is `1 + Σ flows / C` with `C` the capital funded plus the
+    opening capital over every deal, `moic` with the investor's net gain
+    (decision 11), so a book of one deal gives the deal's own.
+26. **A deal's contribution is read at the book's ranks**
+    (`StatisticsGrid::co_statistics` with the book's total as the
+    driver): at each percentile, the deal's value in the simulation the
+    book's percentile selects; at each TVaR, its mean over the book's
+    tail. The mean is the deal's own mean, not its value at the book's
+    mean, so every contribution adds up to the book's. The marginal
+    effect is the book's statistic less the book's without the deal, and
+    the marginal effects need not add up.
+27. **The tail is a setting**: `Tail::Upper` reads high values as the
+    risk (a loss), `Tail::Lower` low ones (a margin) by reading the
+    item's negative and turning the values back, so `"TVaR 99"` of a
+    margin is the mean of its lowest 1%.
 
 ## Conventions left as settings (cash-flow engine)
 
@@ -229,3 +307,12 @@ planned.
   released plus distributed less funded and opening. No parity with the
   reference model: its numbers are in the user's local reproduction, so
   the findings are not marked verified.
+- A book of deals (#490): a book of one layer gives its `deal_ratios`
+  times its premium for every item; the book's amounts are the deals'
+  sums and its ratios sums over sums; contributions add up to the book's
+  at every cell; a book of one deal gives the deal's own flows, IRR, NPV
+  and MOIC, and a shift of `k` months leaves the IRR and multiplies the
+  NPV by `(1 + r)^(−k/12)`; the book's flows are the deals' shifted and
+  summed; the calendar places a 1 July deal's written premium half in
+  each year and each deal's paid loss adds up to its loss
+  (`prospicio_pricing::book` tests).

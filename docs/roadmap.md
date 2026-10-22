@@ -439,7 +439,8 @@ what it is aiming for by v1.0.
   `layer_exposure`, usable in the chain ladder, Mack and the expected-loss
   methods through `ldf`; done) and a BF prior from the layer share's
   uncertainty (PR 4: `LayerSharePrior` over the normalised Bayesian BF, in
-  Rust, Python and R; done, which finishes the plan).
+  Rust, Python and R; done, which finishes the plan; PR 5, #518: one share
+  error common to all origins as a parameter of the model, the default; done).
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 
