@@ -5,9 +5,11 @@ ODP bootstrap with its simulated one-year view of the chain
 ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
 one-year views under Mack's process, and the Bayesian ODP chain ladder, the Bayesian
 Bornhuetter-Ferguson, Meyers' CRC, CSR and CAY models and Gesmann and Morris'
-compartmental model sampled with NUTS
+compartmental model sampled with NUTS, and
+excess-layer development patterns derived from a ground-up triangle
 (docs/design/triangle.md, docs/design/reserving-v02.md,
-docs/design/reserving-bayes.md, docs/design/reserving-compartmental.md)."""
+docs/design/reserving-bayes.md, docs/design/reserving-compartmental.md,
+docs/design/reserving-excess.md)."""
 
 from .prospicio_native import (
     Backtest,
@@ -37,6 +39,8 @@ from .prospicio_native import (
     CompartmentalOneYearFit,
     CompartmentalOneYearFits,
     CompartmentalPriors,
+    ExcessLayer,
+    ExcessPattern,
     ExpectedLoss,
     ExpectedLossFit,
     GlmCandidate,
@@ -52,12 +56,17 @@ from .prospicio_native import (
     OdpGlm,
     OdpGlmFit,
     OneYearFit,
+    ParetoShape,
+    ScaleShift,
     TailBondy,
     TailConstant,
     TailCurve,
     TailLogLinear,
     Triangle,
     diagonal_backtest,
+    layer_at_shift,
+    layer_exposure,
+    layer_share,
 )
 
 __all__ = [
@@ -109,4 +118,11 @@ __all__ = [
     "Backtest",
     "GlmCandidate",
     "diagonal_backtest",
+    "ExcessLayer",
+    "ScaleShift",
+    "ParetoShape",
+    "ExcessPattern",
+    "layer_share",
+    "layer_exposure",
+    "layer_at_shift",
 ]

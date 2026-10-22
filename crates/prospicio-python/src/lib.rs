@@ -19,6 +19,7 @@ mod counts;
 mod credibility;
 mod discrete;
 mod distributions;
+mod excess;
 mod experience;
 mod grouped_fit;
 mod models;
@@ -68,6 +69,11 @@ mod prospicio_native {
     use super::distributions::{
         PyDiscretizationReport, PyGrid, PyLognormal, PyNegativeBinomial, PyPoisson,
         PyPredictiveDistribution, PySampled, from_json, to_json,
+    };
+    #[pymodule_export]
+    use super::excess::{
+        PyExcessLayer, PyExcessPattern, PyParetoShape, PyScaleShift, layer_at_shift,
+        layer_exposure, layer_share,
     };
     #[pymodule_export]
     use super::experience::{

@@ -210,13 +210,13 @@ fn pattern_kind_name(kind: PatternKind) -> &'static str {
     }
 }
 
-fn py_repr(obj: &Bound<'_, PyAny>) -> String {
+pub(crate) fn py_repr(obj: &Bound<'_, PyAny>) -> String {
     obj.repr().map_or_else(|_| "?".into(), |r| r.to_string())
 }
 
 /// `(age, value)` pairs of a dict (or any mapping, a pandas Series too)
 /// from age in months to a number.
-fn age_values(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Vec<(Lag, f64)>> {
+pub(crate) fn age_values(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Vec<(Lag, f64)>> {
     if obj.is_instance_of::<PyString>() || !obj.hasattr("items")? {
         return Err(PyTypeError::new_err(format!(
             "{what} must be a dict from age in months to a number, got {}",
@@ -1776,7 +1776,7 @@ fn tail_repr(tail: &Tail) -> String {
 /// The ``tail`` argument of ``ChainLadder``, ``Mack`` and the
 /// expected-loss methods: ``None`` (no tail), a number (a constant factor)
 /// or a tail estimator.
-fn tail_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Tail> {
+pub(crate) fn tail_arg(obj: Option<&Bound<'_, PyAny>>) -> PyResult<Tail> {
     let Some(obj) = obj.filter(|o| !o.is_none()) else {
         return Ok(Tail::default());
     };
