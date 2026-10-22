@@ -70,6 +70,7 @@ mod bf;
 mod bf_normalised;
 mod compartmental;
 mod dual;
+mod excess_prior;
 mod laplace;
 mod meyers;
 mod moment_match;
@@ -86,6 +87,7 @@ pub use compartmental::{
     CompartmentalPriors, CompartmentalSegment, CompartmentalStart, Fitted, HalfPrior, Outstanding,
     PaidResponse, PositivePrior, RateOrder, RealPrior, Scale,
 };
+pub use excess_prior::{LAYER_EXPOSURE_COLUMN, LayerSharePrior};
 pub use meyers::{Meyers, MeyersFit, MeyersFits, MeyersModel, MeyersSegment};
 pub use odp::{BayesOdp, BayesOdpFit, BayesOdpFits, BayesOdpSegment};
 pub use one_year::{

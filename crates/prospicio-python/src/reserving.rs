@@ -29,8 +29,8 @@ use prospicio_reserving::bayes::{
     BayesOneYear, BayesOneYearFit, BayesOneYearFits, BayesOneYearSegment, Compartmental,
     CompartmentalCandidate, CompartmentalFit, CompartmentalFits, CompartmentalLikelihood,
     CompartmentalOneYearFits, CompartmentalPriors, CompartmentalSegment, CompartmentalStart,
-    Fitted, HalfPrior, LightRefit, MeyersFits, MeyersSegment, OneYearRefit, Outstanding,
-    PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
+    Fitted, HalfPrior, LayerSharePrior, LightRefit, MeyersFits, MeyersSegment, OneYearRefit,
+    Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
 };
 use prospicio_reserving::{
     Backtest, BayesOdp, BayesOdpFit, Diagnostics, GlmCandidate, Meyers, MeyersFit, MeyersModel,
@@ -8948,7 +8948,7 @@ impl PyBayesBfFit {
 /// ['alpha[1]', 'alpha[2]']
 #[pyclass(name = "BayesBfNormalised", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBayesBfNormalised {
-    inner: BayesBfNormalised,
+    pub(crate) inner: BayesBfNormalised,
 }
 
 #[pymethods]
@@ -9467,6 +9467,323 @@ impl PyBayesBfNormalisedFit {
             self.inner.reserves.n_sims(),
             self.inner.scale,
             self.inner.diagnostics.warnings.len(),
+        )
+    }
+}
+
+/// The prior of a layer's expected ultimate for ``BayesBfNormalised``, from
+/// the ground-up expected loss ratio and the layer share, each with an
+/// uncertainty (``docs/design/reserving-excess.md``, PR 4).
+///
+/// The layer's a-priori ultimate for origin ``i`` is the ground-up exposure
+/// times ``apriori`` times the share. The normalised BF puts a gamma prior
+/// on the layer's expected ultimate, centred there, whose coefficient of
+/// variation is that of a product of two independent variables,
+/// ``cv = sqrt((1 + apriori_cv**2) * (1 + share_cv**2) - 1)``: the moments
+/// are exact, the gamma is their match. The layer's development pattern is
+/// estimated from the layer's own triangle under the model's vague prior
+/// on the pattern; an excess pattern from ``ExcessPattern`` does not enter
+/// (open decision 22 of the design note). The prior is independent across
+/// origins, although one share error is common to all of them (open
+/// decision 23).
+///
+/// Parameters
+/// ----------
+/// apriori : float
+///     The ground-up expected ultimate loss ratio.
+/// shares : float or list of float
+///     The layer share (``layer_share`` of a severity, or an exposure
+///     curve's ``layer_share``), one for all origins or one per origin,
+///     each in ``(0, 1]``.
+/// apriori_cv : float, default 0.1
+///     The loss ratio's coefficient of variation (``inf`` is flat).
+/// share_cv : float, default 0.0
+///     The share's coefficient of variation, the same at every origin.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import LayerSharePrior
+/// >>> prior = LayerSharePrior(0.65, 0.2, apriori_cv=0.1, share_cv=0.3)
+/// >>> round(prior.layer_apriori(0), 12), round(prior.cv ** 2, 12)
+/// (0.13, 0.1009)
+#[pyclass(name = "LayerSharePrior", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyLayerSharePrior {
+    inner: LayerSharePrior,
+}
+
+fn shares_arg(shares: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
+    if let Ok(one) = shares.extract::<f64>() {
+        return Ok(vec![one]);
+    }
+    shares.extract().map_err(|_| {
+        PyTypeError::new_err(format!(
+            "shares must be a number or a list of numbers, got {}",
+            py_repr(shares)
+        ))
+    })
+}
+
+#[pymethods]
+impl PyLayerSharePrior {
+    #[new]
+    #[pyo3(signature = (apriori, shares, apriori_cv = 0.1, share_cv = 0.0))]
+    fn new(
+        apriori: f64,
+        shares: &Bound<'_, PyAny>,
+        apriori_cv: f64,
+        share_cv: f64,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: LayerSharePrior::new(apriori, apriori_cv, &shares_arg(shares)?, share_cv)
+                .map_err(err)?,
+        })
+    }
+
+    /// A prior from one share and its standard error: the share's
+    /// coefficient of variation is ``share_se / share``.
+    ///
+    /// Parameters
+    /// ----------
+    /// apriori : float
+    /// share : float
+    /// share_se : float
+    /// apriori_cv : float, default 0.1
+    ///
+    /// Returns
+    /// -------
+    /// LayerSharePrior
+    #[staticmethod]
+    #[pyo3(signature = (apriori, share, share_se, apriori_cv = 0.1))]
+    fn from_share_se(apriori: f64, share: f64, share_se: f64, apriori_cv: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: LayerSharePrior::from_share_se(apriori, apriori_cv, share, share_se)
+                .map_err(err)?,
+        })
+    }
+
+    /// A prior with the share of a severity in a layer (``layer_share``,
+    /// ultimate basis) and its coefficient of variation.
+    ///
+    /// Parameters
+    /// ----------
+    /// apriori : float
+    /// severity : severity distribution
+    /// layer : ExcessLayer
+    /// apriori_cv : float, default 0.1
+    /// share_cv : float, default 0.0
+    ///
+    /// Returns
+    /// -------
+    /// LayerSharePrior
+    #[staticmethod]
+    #[pyo3(signature = (apriori, severity, layer, apriori_cv = 0.1, share_cv = 0.0))]
+    fn from_severity(
+        apriori: f64,
+        severity: &Bound<'_, PyAny>,
+        layer: &Bound<'_, PyAny>,
+        apriori_cv: f64,
+        share_cv: f64,
+    ) -> PyResult<Self> {
+        let sev = crate::distributions::extract_severity(severity)?;
+        let layer = crate::excess::layer_of(layer, "layer")?;
+        Ok(Self {
+            inner: LayerSharePrior::from_severity(apriori, apriori_cv, &sev, layer, share_cv)
+                .map_err(err)?,
+        })
+    }
+
+    /// The ground-up expected ultimate loss ratio.
+    #[getter]
+    fn apriori(&self) -> f64 {
+        self.inner.apriori
+    }
+
+    /// The loss ratio's coefficient of variation.
+    #[getter]
+    fn apriori_cv(&self) -> f64 {
+        self.inner.apriori_cv
+    }
+
+    /// The layer shares, one or one per origin.
+    #[getter]
+    fn shares(&self) -> Vec<f64> {
+        self.inner.shares.clone()
+    }
+
+    /// The share's coefficient of variation.
+    #[getter]
+    fn share_cv(&self) -> f64 {
+        self.inner.share_cv
+    }
+
+    /// The coefficient of variation of the gamma prior on the layer's
+    /// expected ultimate: ``sqrt((1 + apriori_cv**2) * (1 + share_cv**2) -
+    /// 1)``, ``inf`` if either is.
+    #[getter]
+    fn cv(&self) -> f64 {
+        self.inner.cv()
+    }
+
+    /// The layer's a-priori loss ratio at origin ``i`` (0-based): the
+    /// ground-up loss ratio times that origin's share.
+    ///
+    /// Parameters
+    /// ----------
+    /// i : int
+    ///
+    /// Returns
+    /// -------
+    /// float
+    fn layer_apriori(&self, i: usize) -> PyResult<f64> {
+        if self.inner.shares.len() > 1 && i >= self.inner.shares.len() {
+            return Err(PyValueError::new_err(format!(
+                "origin {i} is out of range for {} shares",
+                self.inner.shares.len()
+            )));
+        }
+        Ok(self.inner.layer_apriori(i))
+    }
+
+    /// ``model`` (default settings if omitted) with this prior's ground-up
+    /// ``apriori`` and its ``cv``, for the triangle of ``triangle``.
+    ///
+    /// Parameters
+    /// ----------
+    /// model : BayesBfNormalised, optional
+    ///     Supplies the sampler, process error, simulations and seed; its
+    ///     own ``apriori`` and ``cv`` are replaced.
+    ///
+    /// Returns
+    /// -------
+    /// BayesBfNormalised
+    #[pyo3(signature = (model = None))]
+    fn model(&self, model: Option<PyRef<'_, PyBayesBfNormalised>>) -> PyBayesBfNormalised {
+        let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
+        PyBayesBfNormalised {
+            inner: self.inner.model(&base),
+        }
+    }
+
+    /// ``triangle`` with a ``"layer_exposure"`` column: the ground-up
+    /// exposure column times each origin's share.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// exposure : str
+    ///     The ground-up exposure column.
+    ///
+    /// Returns
+    /// -------
+    /// Triangle
+    fn triangle(&self, triangle: PyRef<'_, PyTriangle>, exposure: &str) -> PyResult<PyTriangle> {
+        Ok(PyTriangle {
+            inner: self
+                .inner
+                .triangle(&triangle.inner, exposure)
+                .map_err(err)?,
+        })
+    }
+
+    /// Fits the layer losses ``column`` of a single-segment cumulative
+    /// triangle that also holds the ground-up ``exposure`` column, with
+    /// this prior: ``BayesBfNormalised.fit`` on the layer exposure. Raises
+    /// one ``UserWarning`` listing the failed diagnostics, if any.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    ///     The layer losses.
+    /// exposure : str
+    ///     The ground-up exposure column.
+    /// model : BayesBfNormalised, optional
+    ///     The sampler and other settings; its ``apriori`` and ``cv`` are
+    ///     replaced by the prior's.
+    ///
+    /// Returns
+    /// -------
+    /// BayesBfNormalisedFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     As ``BayesBfNormalised.fit``; if the prior's ``cv`` is 0.
+    #[pyo3(signature = (triangle, column, exposure, model = None))]
+    fn fit(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        exposure: &str,
+        model: Option<PyRef<'_, PyBayesBfNormalised>>,
+    ) -> PyResult<PyBayesBfNormalisedFit> {
+        let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
+        let (prior, tri) = (&self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| prior.fit(&base, tri, column, exposure))
+            .map_err(err)?;
+        warn_diagnostics(py, "LayerSharePrior", &inner.diagnostics.warnings)?;
+        Ok(PyBayesBfNormalisedFit { inner })
+    }
+
+    /// The one-year view of the same fit (``BayesBfNormalised.one_year``).
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    /// column : str
+    /// exposure : str
+    /// model : BayesBfNormalised, optional
+    /// k_threshold : float, default 0.7
+    /// refit : str, default "moment_match_then_refit"
+    /// max_refits : int, optional
+    /// n_sims : int, optional
+    ///     As in ``BayesBfNormalised.one_year``.
+    ///
+    /// Returns
+    /// -------
+    /// BayesOneYearFit
+    #[pyo3(signature = (triangle, column, exposure, model = None, k_threshold = 0.7, refit = "moment_match_then_refit", max_refits = None, n_sims = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn one_year(
+        &self,
+        py: Python<'_>,
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        exposure: &str,
+        model: Option<PyRef<'_, PyBayesBfNormalised>>,
+        k_threshold: f64,
+        refit: &str,
+        max_refits: Option<usize>,
+        n_sims: Option<usize>,
+    ) -> PyResult<PyBayesOneYearFit> {
+        let settings = one_year_settings(k_threshold, Some(refit), max_refits, n_sims)?;
+        let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
+        let (prior, tri) = (&self.inner, &triangle.inner);
+        let inner = py
+            .detach(|| prior.one_year(&base, tri, column, exposure, &settings))
+            .map_err(err)?;
+        warn_diagnostics(py, "LayerSharePrior", &inner.fit.diagnostics.warnings)?;
+        warn_refits(
+            py,
+            "LayerSharePrior",
+            &[(
+                String::new(),
+                inner.refitted.len(),
+                inner.refit_warnings,
+                inner.unrefitted.len(),
+            )],
+        )?;
+        Ok(PyBayesOneYearFit {
+            inner: BayesOneYearOf::BfNormalised(inner),
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "LayerSharePrior(apriori={:?}, shares={:?}, apriori_cv={:?}, share_cv={:?})",
+            self.inner.apriori, self.inner.shares, self.inner.apriori_cv, self.inner.share_cv,
         )
     }
 }

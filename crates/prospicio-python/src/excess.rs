@@ -95,7 +95,7 @@ impl PyExcessLayer {
     }
 }
 
-fn layer_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Layer> {
+pub(crate) fn layer_of(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Layer> {
     obj.extract::<PyRef<'_, PyExcessLayer>>()
         .map(|l| l.inner)
         .map_err(|_| {

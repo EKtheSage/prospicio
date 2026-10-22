@@ -18,7 +18,7 @@ sources:
     title: The Rust parity tests the bindings reproduce
   - id: design
     resource: ../docs/design/reserving-excess.md
-    title: The design note, API section and open decisions 20 and 21
+    title: The design note, API section and decisions 20 and 21 (decided by the user on 2026-10-22 as built)
 ---
 
 # What was found
