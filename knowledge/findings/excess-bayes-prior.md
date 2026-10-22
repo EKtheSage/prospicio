@@ -40,6 +40,7 @@ sources:
   ultimates up and the wider the interval.
 * `BayesBfNormalised` has no prior or fixed value for the development
   pattern (the vague `development_sd` only), so an `ExcessPattern` cannot
-  inform it (design note, open decision 22). The gamma priors are
-  independent across origins although one share error is common to all of
-  them (decision 23), so the total's interval is understated.
+  inform it (design note, decision 22, decided by the user on 2026-10-21;
+  the share's cv is an input, decision 24, decided the same day). The gamma
+  priors are independent across origins although one share error is common
+  to all of them (decision 23, still open), so the total's interval is understated.

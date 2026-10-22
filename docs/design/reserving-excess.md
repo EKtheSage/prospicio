@@ -696,7 +696,7 @@ decided each on 2026-10-21, accepting the option PR 2 picked):
    *Decided 2026-10-21 (the user): (a), `k` stays required for now, with no default;* the candidate default for later is `k` = 20 with `max_influence` 0.1.
 
 Opened in PR 3 (each built as the option closest to the existing bindings;
-open until the user decides):
+22 and 24 decided by the user on 2026-10-21, 20, 21 and 23 open):
 
 20. **Binding names.** The note called the Python class `Layer` and the
     basis an enum. `prospicio.reinsurance` already has a `Layer`, and the
@@ -733,6 +733,7 @@ open until the user decides):
     own file, with the `YearModel` conformance rerun. (c) Fix the pattern at
     the derived one. *Recommendation: (a) for now, (b) as a later PR if the
     sparse layer's pattern turns out to be the weak point.*
+   *Decided 2026-10-21 (the user): (a) as built;* the excess pattern does not inform the normalised BF's pattern, and (b) stays a later PR if the sparse layer's pattern is the weak point.
 
 23. **One share error is common to every origin; the prior is independent.**
     The share's uncertainty is a parameter error, the same at every origin,
@@ -755,6 +756,7 @@ open until the user decides):
     (b) A helper for the Pareto family. *Recommendation: (a);* the delta
     method is a few lines in the caller's hands and the share of other
     families would need their own.
+   *Decided 2026-10-21 (the user): (a) as built;* the share's cv is an input, and no helper for the Pareto family.
 
 ## For the Guides lane
 
