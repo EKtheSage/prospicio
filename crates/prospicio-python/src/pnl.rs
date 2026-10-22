@@ -215,7 +215,7 @@ impl PyGroup {
 
 /// A source: a :class:`Grid`, a tuple ``(values, probs)``, or a joint
 /// source ``(gross, ceded, probs)``.
-fn source_of(source: &Bound<'_, PyAny>) -> PyResult<Source> {
+pub(crate) fn source_of(source: &Bound<'_, PyAny>) -> PyResult<Source> {
     Ok(if let Ok(g) = source.extract::<PyRef<'_, PyGrid>>() {
         Source::from_grid(&g.inner).map_err(to_py)?
     } else if let Ok(t) = source.cast::<PyTuple>() {
@@ -287,7 +287,7 @@ fn ladder_label(prefix: &str, q: f64) -> String {
 /// (['Premium', 'Loss', 'Total'], [10.0, -8.0, 2.0])
 #[pyclass(name = "Ledger", module = "prospicio.aggregate", frozen)]
 pub(crate) struct PyLedger {
-    inner: RsLedger,
+    pub(crate) inner: RsLedger,
 }
 
 #[pymethods]

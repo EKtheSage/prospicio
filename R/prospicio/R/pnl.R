@@ -334,6 +334,42 @@ book_ledger <- function(book, source, tower = NULL, face = "consolidated") {
   structure(list(ptr = ptr), class = "pnl_ledger")
 }
 
+#' The reinsurer's P&L ledger of a layer or a deal
+#'
+#' One group that sells the cover, named `layer`: the premium received
+#' against the ceded loss, the commissions paid, the brokerage and each
+#' deduction ([with_brokerage()], [with_deduction()]), every leg at each
+#' atom of `source`. The tower is applied to each atom as one annual loss
+#' ([apply_tower()]), so the amounts are those [deal_ratios()] divides by
+#' the premium; a deal ([with_deal_scale()]) books its sections' amounts
+#' with its own. [book_ledger()] books the same tower as covers bought and
+#' leaves brokerage and deductions out.
+#'
+#' The rows are `Premium`, `Loss`, `Ceding commission`, `Profit
+#' commission`, `Brokerage` and each deduction by its label, as the layer
+#' has them. NMBF is not a row: [deal_ratios()] gives it.
+#'
+#' @param tower A [reinsurance_tower].
+#' @param source The annual gross loss: a [grid_distribution] or a list of
+#'   values and probabilities.
+#' @param layer The layer's or the deal's name.
+#' @returns A `pnl_ledger`. It fails on a layer that cannot apply to an
+#'   annual loss, a booked layer with paid reinstatements, or an unknown
+#'   layer or deal.
+#' @export
+#' @examples
+#' cover <- with_premium_rate(aggregate_stop_loss("cover", 120, 0), 1, 100)
+#' cover <- with_ceding_commission(cover, 0.2)
+#' cover <- with_brokerage(cover, 0.025)
+#' cover <- with_deduction(cover, "tax", 0.03)
+#' l <- deal_ledger(reinsurance_tower(list(cover)), list(c(40, 150), c(0.5, 0.5)), "cover")
+#' ledger_sheet(l)
+deal_ledger <- function(tower, source, layer) {
+  src <- pnl_source(source)
+  ptr <- rust_result(PnlLedger$deal(src$values, src$probs, tower@ptr, as.character(layer)))
+  structure(list(ptr = ptr), class = "pnl_ledger")
+}
+
 #' @rdname pnl_book
 #' @export
 derive_premium <- function(technical, expenses) {

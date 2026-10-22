@@ -51,3 +51,8 @@
   are JSON format version 4; the grids and the P&L ledger refuse them
   (Python `Tower.with_deal_scale`, `Tower.deals`; R `with_deal_scale()`)
   ([deal-scale], #477).
+- The reinsurer's P&L ledger of a layer or a deal (`Tower::deal_ledger`):
+  one sell group over the annual gross losses with the premium, the ceded
+  loss, the commissions, the brokerage and each deduction as legs, the
+  amounts `deal_ratios` divides by the premium (Python `Tower.deal_ledger`;
+  R `deal_ledger()`) ([deal-ledger], #477).

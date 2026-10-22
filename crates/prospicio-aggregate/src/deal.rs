@@ -29,7 +29,7 @@
 use prospicio_core::{Error, Result};
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution};
 
-use crate::pnl::ExpenseBasis;
+use crate::pnl::{ExpenseBasis, Group, Layout, Ledger, Leg, LegKind, Source};
 use crate::reinsurance::{CarryForward, Commission, Layer, Tower, checked_anchors};
 
 /// Kinds a tower's result already uses, and the names of the deal ratios:
@@ -582,62 +582,95 @@ impl Tower {
         }
     }
 
-    /// The deal ratios of one layer or one deal ([`deal_scale`](Self::deal_scale))
-    /// in each simulation of `result`, a
-    /// result of this tower ([`apply`](Self::apply),
-    /// [`apply_aggregate`](Self::apply_aggregate),
-    /// [`apply_annual`](Self::apply_annual) or
-    /// [`apply_term`](Self::apply_term)): every amount over the year's
-    /// premium for the placed share, the fixed premium or the swing-rated
-    /// one (reinstatement premiums are not in it).
+    /// The reinsurer's P&L ledger of one layer or one deal
+    /// ([`deal_scale`](Self::deal_scale)) over the annual gross losses
+    /// `gross`: one [`Group::sell`] named `layer`, the premium received
+    /// against the ceded loss, the commissions paid, the brokerage and each
+    /// deduction ([`Layer::deduction`]), every leg at each atom of the
+    /// source. The tower is applied to each atom as one annual loss
+    /// ([`apply_annual`](Self::apply_annual)), so every term reads the
+    /// annual total, scales keyed before annual terms and a deal's scales
+    /// included, and the amounts are those [`deal_ratios`](Self::deal_ratios)
+    /// divides by the premium. A deal books its sections' amounts with its
+    /// own.
     ///
-    /// The result has dimension `["ratio"]` (`["ratio", "year"]` for a
-    /// term) and components `loss_ratio` (the ceded loss over the
-    /// premium), `loss_ratio_before_terms` for a layer whose scales read it
-    /// ([`Layer::scales_before_annual_terms`]), then `ceding_commission`,
-    /// `profit_commission` and `brokerage` where the layer has them, each
-    /// deduction by its label, `total_deductions`, `combined_ratio`,
-    /// `nmbf` and `margin`; see the [module](crate::deal) for the
-    /// formulas. The commissions are read from `result`, so a sliding
-    /// scale or profit commission carried over a term counts as it was
-    /// paid. Labels on the events are summed over.
+    /// The cedant's ledger ([`Book::ledger`](crate::pnl::Book::ledger))
+    /// books the same tower as covers bought and leaves brokerage and
+    /// deductions out, since they come out of what the reinsurer receives.
     ///
-    /// For a deal, every amount is summed over its sections, with the
-    /// deal's own commission and brokerage added to theirs, over the
-    /// sections' premium together; deductions with the same label add.
-    /// A section's own ratios leave the deal's scales out.
+    /// The legs are `Premium` (kind premium), `Loss` (loss), `Ceding
+    /// commission` and `Profit commission` (commission), `Brokerage` and each
+    /// deduction by its label (expense). NMBF is not a ledger row:
+    /// [`deal_ratios`](Self::deal_ratios) gives it.
     ///
-    /// Fails if the tower has no layer or deal named `layer`, if `result` lacks
-    /// one of its components (it is not this tower's), or if a year's
-    /// premium is not positive.
+    /// Fails on a joint source (occurrence covers), a layer the tower
+    /// cannot apply to an annual loss (a surplus treaty, reinstatements pro
+    /// rata as to time), a booked layer with paid reinstatements (they
+    /// belong to an occurrence cover), an unknown layer or deal, or a
+    /// ledger the kernel refuses.
     ///
     /// ```
+    /// use prospicio_aggregate::pnl::Source;
     /// use prospicio_aggregate::{Deduction, Layer, Tower};
-    /// use prospicio_prob::{Empirical, KeyValue};
     ///
-    /// // A quota share of a book with subject premium 100, losses capped at
-    /// // a 120% loss ratio, a sliding commission, 2.5% brokerage, 3% tax and
-    /// // a 5% manager's fee outside NMBF.
+    /// // A cover of 120 xs 0 for a premium of 100 with a 20% commission,
+    /// // 2.5% brokerage and 3% tax, on annual losses of 40 or 150.
     /// let cover = Layer::stop_loss("cover", 120.0, 0.0).unwrap()
     ///     .premium_rate(1.0, 100.0).unwrap()
-    ///     .sliding_scale(vec![(0.3, 0.5), (0.1, 0.9)]).unwrap()
+    ///     .ceding_commission(0.2).unwrap()
     ///     .brokerage(0.025).unwrap()
-    ///     .deduction(Deduction::premium("tax", 0.03).unwrap()).unwrap()
-    ///     .deduction(Deduction::premium("manager_fee", 0.05).unwrap().outside_nmbf()).unwrap();
+    ///     .deduction(Deduction::premium("tax", 0.03).unwrap()).unwrap();
     /// let tower = Tower::new(vec![cover]).unwrap();
-    /// let result = tower.apply_annual(&[40.0, 70.0, 150.0]).unwrap();
-    /// let ratios = tower.deal_ratios(&result, "cover").unwrap();
-    /// let at = |k: &str| Empirical::draws(&ratios.marginal(&vec![KeyValue::from(k)]).unwrap()).to_vec();
-    /// // At a 70% loss ratio: CC 20%, so TD = 20 + 2.5 + 3 + 5 = 30.5%.
-    /// assert!((at("combined_ratio")[1] - 1.005).abs() < 1e-12);
-    /// assert!((at("margin")[1] + 0.005).abs() < 1e-12);
-    /// assert!((at("nmbf")[1] - 0.045).abs() < 1e-12);
+    /// let gross = Source::new(vec![40.0, 150.0], vec![0.5, 0.5]).unwrap();
+    /// let ledger = tower.deal_ledger(&gross, "cover").unwrap();
+    /// // 100 − 20 − 2.5 − 3 = 74.5 less the ceded 40 or 120.
+    /// assert_eq!(ledger.result().values(), [34.5, -45.5]);
+    /// assert!((ledger.row("Brokerage").unwrap().mean() + 2.5).abs() < 1e-12);
     /// ```
-    pub fn deal_ratios(
-        &self,
-        result: &PredictiveDistribution,
-        layer: &str,
-    ) -> Result<PredictiveDistribution> {
+    pub fn deal_ledger(&self, gross: &Source, layer: &str) -> Result<Ledger> {
+        if gross.second().is_some() {
+            return Err(Error::Data(
+                "a deal's ledger reads annual gross losses; a joint source carries occurrence \
+                 covers"
+                    .into(),
+            ));
+        }
+        let booked: Vec<&Layer> = match self.deals.iter().find(|d| d.name == layer) {
+            Some(d) => self
+                .layers
+                .iter()
+                .filter(|l| d.sections.contains(&l.name))
+                .collect(),
+            None => self.layers.iter().filter(|l| l.name == layer).collect(),
+        };
+        if let Some(l) = booked.iter().find(|l| !l.reinstatement_rates.is_empty()) {
+            return Err(Error::Data(format!(
+                "layer {:?} has paid reinstatements, which apply to an occurrence cover; an \
+                 annual loss has no occurrences",
+                l.name
+            )));
+        }
+        let result = self.apply_annual(gross.values())?;
+        let a = self.deal_amounts(&result, layer)?;
+        let column = |f: &dyn Fn(&YearAmounts) -> f64| a.amounts.iter().map(f).collect::<Vec<_>>();
+        let mut group = Group::sell(layer)
+            .consideration(Leg::values("Premium", column(&|y| y.premium)).kind(LegKind::Premium))
+            .obligation(Leg::values("Loss", column(&|y| y.ceded)).kind(LegKind::Loss));
+        for (k, name) in a.names.iter().enumerate() {
+            let (label, kind) = match name.as_str() {
+                "ceding_commission" => ("Ceding commission", LegKind::Commission),
+                "profit_commission" => ("Profit commission", LegKind::Commission),
+                "brokerage" => ("Brokerage", LegKind::Expense),
+                other => (other, LegKind::Expense),
+            };
+            group = group.obligation(Leg::values(label, column(&|y| y.terms[k])).kind(kind));
+        }
+        Ledger::new(gross, vec![group], Layout::new(layer))
+    }
+
+    /// Each simulation's amounts of a layer or deal in a tower's result,
+    /// as [`deal_ratios`](Self::deal_ratios) reads them.
+    fn deal_amounts(&self, result: &PredictiveDistribution, layer: &str) -> Result<DealAmounts> {
         // What is read: the layer alone, or a deal's sections and its own
         // components.
         let deal = self.deals.iter().find(|d| d.name == layer);
@@ -785,43 +818,125 @@ impl Tower {
             })
             .collect::<Result<Vec<_>>>()?;
         let fixed: f64 = sections.iter().map(|l| l.premium).sum();
-        let mut ratio_names = vec!["loss_ratio"];
-        if keyed {
-            ratio_names.push("loss_ratio_before_terms");
-        }
-        ratio_names.extend(terms.iter().map(|t| t.name.as_str()));
-        ratio_names.extend(["total_deductions", "combined_ratio", "nmbf", "margin"]);
-        let width = ratio_names.len() * years.len();
-        let mut draws = Vec::with_capacity(pd.n_sims() * width);
+        let mut years_amounts = Vec::with_capacity(pd.n_sims() * years.len());
         for i in 0..pd.n_sims() {
             let row = pd.row(i).expect("a simulation within range");
             for c in &cols {
-                let premium = c.swing.map_or(fixed, |k| row[k]);
-                if premium.is_nan() || premium <= 0.0 {
-                    return Err(Error::Data(format!(
-                        "deal ratios need a positive premium; {layer:?} has {premium} in simulation {i}"
-                    )));
-                }
-                let lr = c.ceded.iter().map(|&k| row[k]).sum::<f64>() / premium;
-                draws.push(lr);
-                if let Some(k) = c.before {
-                    draws.push(row[k] / premium);
-                }
-                let (mut total, mut fees) = (0.0, 0.0);
-                for (parts, term) in c.terms.iter().zip(&terms) {
-                    let r = parts.iter().map(|&k| row[k]).sum::<f64>() / premium;
-                    draws.push(r);
-                    total += r;
-                    if term.outside {
-                        fees += r;
-                    }
-                }
-                let cr = lr + total;
-                let margin = 1.0 - cr;
-                draws.extend([total, cr, margin + fees, margin]);
+                years_amounts.push(YearAmounts {
+                    premium: c.swing.map_or(fixed, |k| row[k]),
+                    ceded: c.ceded.iter().map(|&k| row[k]).sum(),
+                    before: c.before.map(|k| row[k]),
+                    terms: c
+                        .terms
+                        .iter()
+                        .map(|parts| parts.iter().map(|&k| row[k]).sum())
+                        .collect(),
+                });
             }
         }
-        let components: Vec<ComponentKey> = years
+        Ok(DealAmounts {
+            term,
+            years,
+            keyed,
+            names: terms.iter().map(|t| t.name.clone()).collect(),
+            outside: terms.iter().map(|t| t.outside).collect(),
+            amounts: years_amounts,
+            provenance: pd.provenance().clone(),
+        })
+    }
+
+    /// The deal ratios of one layer or one deal ([`deal_scale`](Self::deal_scale))
+    /// in each simulation of `result`, a
+    /// result of this tower ([`apply`](Self::apply),
+    /// [`apply_aggregate`](Self::apply_aggregate),
+    /// [`apply_annual`](Self::apply_annual) or
+    /// [`apply_term`](Self::apply_term)): every amount over the year's
+    /// premium for the placed share, the fixed premium or the swing-rated
+    /// one (reinstatement premiums are not in it).
+    ///
+    /// The result has dimension `["ratio"]` (`["ratio", "year"]` for a
+    /// term) and components `loss_ratio` (the ceded loss over the
+    /// premium), `loss_ratio_before_terms` for a layer whose scales read it
+    /// ([`Layer::scales_before_annual_terms`]), then `ceding_commission`,
+    /// `profit_commission` and `brokerage` where the layer has them, each
+    /// deduction by its label, `total_deductions`, `combined_ratio`,
+    /// `nmbf` and `margin`; see the [module](crate::deal) for the
+    /// formulas. The commissions are read from `result`, so a sliding
+    /// scale or profit commission carried over a term counts as it was
+    /// paid. Labels on the events are summed over.
+    ///
+    /// For a deal, every amount is summed over its sections, with the
+    /// deal's own commission and brokerage added to theirs, over the
+    /// sections' premium together; deductions with the same label add.
+    /// A section's own ratios leave the deal's scales out.
+    ///
+    /// Fails if the tower has no layer or deal named `layer`, if `result` lacks
+    /// one of its components (it is not this tower's), or if a year's
+    /// premium is not positive.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Deduction, Layer, Tower};
+    /// use prospicio_prob::{Empirical, KeyValue};
+    ///
+    /// // A quota share of a book with subject premium 100, losses capped at
+    /// // a 120% loss ratio, a sliding commission, 2.5% brokerage, 3% tax and
+    /// // a 5% manager's fee outside NMBF.
+    /// let cover = Layer::stop_loss("cover", 120.0, 0.0).unwrap()
+    ///     .premium_rate(1.0, 100.0).unwrap()
+    ///     .sliding_scale(vec![(0.3, 0.5), (0.1, 0.9)]).unwrap()
+    ///     .brokerage(0.025).unwrap()
+    ///     .deduction(Deduction::premium("tax", 0.03).unwrap()).unwrap()
+    ///     .deduction(Deduction::premium("manager_fee", 0.05).unwrap().outside_nmbf()).unwrap();
+    /// let tower = Tower::new(vec![cover]).unwrap();
+    /// let result = tower.apply_annual(&[40.0, 70.0, 150.0]).unwrap();
+    /// let ratios = tower.deal_ratios(&result, "cover").unwrap();
+    /// let at = |k: &str| Empirical::draws(&ratios.marginal(&vec![KeyValue::from(k)]).unwrap()).to_vec();
+    /// // At a 70% loss ratio: CC 20%, so TD = 20 + 2.5 + 3 + 5 = 30.5%.
+    /// assert!((at("combined_ratio")[1] - 1.005).abs() < 1e-12);
+    /// assert!((at("margin")[1] + 0.005).abs() < 1e-12);
+    /// assert!((at("nmbf")[1] - 0.045).abs() < 1e-12);
+    /// ```
+    pub fn deal_ratios(
+        &self,
+        result: &PredictiveDistribution,
+        layer: &str,
+    ) -> Result<PredictiveDistribution> {
+        let a = self.deal_amounts(result, layer)?;
+        let mut ratio_names = vec!["loss_ratio"];
+        if a.keyed {
+            ratio_names.push("loss_ratio_before_terms");
+        }
+        ratio_names.extend(a.names.iter().map(String::as_str));
+        ratio_names.extend(["total_deductions", "combined_ratio", "nmbf", "margin"]);
+        let mut draws = Vec::with_capacity(a.amounts.len() * ratio_names.len());
+        for (j, y) in a.amounts.iter().enumerate() {
+            let premium = y.premium;
+            if premium.is_nan() || premium <= 0.0 {
+                return Err(Error::Data(format!(
+                    "deal ratios need a positive premium; {layer:?} has {premium} in simulation {}",
+                    j / a.years.len()
+                )));
+            }
+            let lr = y.ceded / premium;
+            draws.push(lr);
+            if let Some(b) = y.before {
+                draws.push(b / premium);
+            }
+            let (mut total, mut fees) = (0.0, 0.0);
+            for (&x, &out) in y.terms.iter().zip(&a.outside) {
+                let r = x / premium;
+                draws.push(r);
+                total += r;
+                if out {
+                    fees += r;
+                }
+            }
+            let cr = lr + total;
+            let margin = 1.0 - cr;
+            draws.extend([total, cr, margin + fees, margin]);
+        }
+        let components: Vec<ComponentKey> = a
+            .years
             .iter()
             .flat_map(|y| {
                 ratio_names.iter().map(move |n| {
@@ -832,12 +947,35 @@ impl Tower {
             })
             .collect();
         let mut out_dims = vec!["ratio".to_string()];
-        if term {
+        if a.term {
             out_dims.push("year".into());
         }
-        let provenance = pd.provenance().clone().param("deal_ratios", layer);
+        let provenance = a.provenance.param("deal_ratios", layer);
         PredictiveDistribution::from_draws(out_dims, components, draws, provenance)
     }
+}
+
+/// A layer's or deal's amounts in a tower's result, simulation by
+/// simulation and, over a term, year by year.
+struct DealAmounts {
+    term: bool,
+    years: Vec<Option<KeyValue>>,
+    keyed: bool,
+    /// The commissions, brokerage and deductions, in order.
+    names: Vec<String>,
+    outside: Vec<bool>,
+    /// Simulation-major, one per year.
+    amounts: Vec<YearAmounts>,
+    provenance: prospicio_prob::Provenance,
+}
+
+/// One year's amounts: the premium, the ceded loss, the scales' key where
+/// it is not the ceded loss, and each term of [`DealAmounts::names`].
+struct YearAmounts {
+    premium: f64,
+    ceded: f64,
+    before: Option<f64>,
+    terms: Vec<f64>,
 }
 
 #[cfg(test)]
@@ -1333,5 +1471,55 @@ mod tests {
         let result = mixed.apply_annual(&[100.0]).unwrap();
         assert!(mixed.deal_ratios(&result, "deal").is_err());
         assert!(mixed.deal_ratios(&result, "A").is_ok());
+    }
+
+    #[test]
+    fn the_ledger_books_a_deal_atom_by_atom_as_its_ratios() {
+        let tower = two_sections(deal_scale().brokerage(0.01).unwrap());
+        let values = vec![20.0, 60.0, 160.0, 240.0];
+        let gross = Source::new(values.clone(), vec![0.4, 0.3, 0.2, 0.1]).unwrap();
+        let ledger = tower.deal_ledger(&gross, "deal").unwrap();
+        let ratios = tower
+            .deal_ratios(&tower.apply_annual(&values).unwrap(), "deal")
+            .unwrap();
+        // The result at each atom is the margin times the deals' premium.
+        let margin = draws(&ratios, &["margin"]);
+        for (r, m) in ledger.result().values().iter().zip(&margin) {
+            assert!((r - 200.0 * m).abs() < 1e-9, "{r} {m}");
+        }
+        // Each leg is the ratio times the premium, with the sign of an
+        // obligation.
+        for (row, ratio) in [
+            ("Loss", "loss_ratio"),
+            ("Ceding commission", "ceding_commission"),
+            ("Brokerage", "brokerage"),
+            ("tax", "tax"),
+        ] {
+            let leg = ledger.row(row).unwrap().values();
+            for (l, x) in leg.iter().zip(draws(&ratios, &[ratio])) {
+                assert!((l + 200.0 * x).abs() < 1e-9, "{row}");
+            }
+        }
+        assert_eq!(ledger.row("Premium").unwrap().values(), [200.0; 4]);
+        // A section alone books its own terms.
+        let a = tower.deal_ledger(&gross, "A").unwrap();
+        assert!(a.row("Brokerage").is_none() && a.row("tax").is_some());
+    }
+
+    #[test]
+    fn the_ledger_refuses_what_an_annual_loss_cannot_carry() {
+        let tower = two_sections(deal_scale());
+        let joint = Source::joint(vec![10.0, 20.0], vec![5.0, 10.0], vec![0.5, 0.5]).unwrap();
+        assert!(tower.deal_ledger(&joint, "deal").is_err());
+        let gross = Source::new(vec![10.0, 20.0], vec![0.5, 0.5]).unwrap();
+        assert!(tower.deal_ledger(&gross, "nope").is_err());
+        let reinstated = Tower::new(vec![
+            Layer::xol("L", 10.0, 5.0)
+                .unwrap()
+                .paid_reinstatements(2.0, vec![1.0])
+                .unwrap(),
+        ])
+        .unwrap();
+        assert!(reinstated.deal_ledger(&gross, "L").is_err());
     }
 }

@@ -76,3 +76,7 @@ before terms), each deduction, the total, the combined ratio, NMBF and
 the margin. The tests check `TD - CC - BK` equal to the flat legs,
 `sd(TD) = sd(CC)`, `NMBF - margin` equal to the fee, a loss-basis leg
 spreading the total, and the scales read at 140% under a 120% cap.
+`Tower::deal_ledger` books the same amounts as legs of the reinsurer's
+P&L ledger (one sell group per layer or deal, every leg at each atom of
+the annual gross loss); its tests check each row's mean against
+`deal_ratios` times the premium, atom by atom.
