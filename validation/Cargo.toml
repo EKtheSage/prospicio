@@ -56,6 +56,10 @@ name = "reserving_bayes_bf_normalised"
 required-features = ["slow-bayes"]
 
 [[test]]
+name = "reserving_bayes_excess_prior"
+required-features = ["slow-bayes"]
+
+[[test]]
 name = "reserving_bayes_segments"
 required-features = ["slow-bayes"]
 
