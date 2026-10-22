@@ -10,11 +10,15 @@
 //! underwriting year `u` takes its [`Exposure`] share of each event in the
 //! months its policies are in force, so one event can fall to two years.
 //! Each year's losses keep the index of the event they came from
-//! ([`Timeline::years_with_sources`]).
+//! ([`Timeline::years_with_sources`]). A tower's basis is set with
+//! [`Tower::cover_basis`] and applied with [`Tower::apply_timeline`].
 
 use prospicio_core::{Error, Result};
 
+use prospicio_prob::PredictiveDistribution;
+
 use crate::monte_carlo::EventSet;
+use crate::reinsurance::Tower;
 
 /// Accident months in a year.
 pub const MONTHS_PER_YEAR: usize = 12;
@@ -374,6 +378,64 @@ impl Timeline {
         }
         let years = rows.iter().map(|r| self.events.rebuilt(r)).collect();
         Ok((years, sources))
+    }
+}
+
+impl Tower {
+    /// The tower with its cover basis set: how the programme attaches to
+    /// the losses of a term when applied to a [`Timeline`]. One basis holds
+    /// for every layer of the tower, as for every contract of a
+    /// programme; a deal of programmes on different bases is several
+    /// towers.
+    pub fn cover_basis(mut self, basis: CoverBasis) -> Self {
+        self.cover_basis = Some(basis);
+        self
+    }
+
+    /// Applies the tower over the contract years that its cover basis
+    /// gives on `timeline` ([`Timeline::years`] with `exposure`), as
+    /// [`apply_term`](Self::apply_term) does: the result's `year` is the
+    /// contract year, `1..=exposure.n_years()`. Fails if the basis is not
+    /// set: a programme's basis is required, not defaulted.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, Layer, Tower};
+    /// use prospicio_aggregate::timeline::{CoverBasis, Exposure, Timeline};
+    ///
+    /// // One path of 24 months: an event of 100 in month 13.
+    /// let events = EventSet::from_years(vec![vec![100.0]], 0)
+    ///     .unwrap().with_times(vec![13.5 / 24.0]).unwrap();
+    /// let timeline = Timeline::new(events, 24).unwrap();
+    /// let mut shares = vec![vec![0.0; 24]; 2];
+    /// shares[0][13] = 0.25;
+    /// shares[1][13] = 0.75;
+    /// let exposure = Exposure::new(shares).unwrap();
+    /// let xl = Layer::xol("XL", 50.0, 20.0).unwrap();
+    /// let tower = Tower::new(vec![xl]).unwrap();
+    /// assert!(tower.apply_timeline(&timeline, &exposure).is_err());
+    /// let rad = tower
+    ///     .cover_basis(CoverBasis::RisksAttaching)
+    ///     .apply_timeline(&timeline, &exposure)
+    ///     .unwrap();
+    /// // Year 1 takes 25 of the event, 5 above 20; year 2 takes 75, 50 of it in the layer.
+    /// let ceded = |year: i64| {
+    ///     use prospicio_prob::KeyValue;
+    ///     let key = vec![KeyValue::from("ceded"), KeyValue::from("XL"), KeyValue::Int(year)];
+    ///     prospicio_prob::Empirical::draws(&rad.marginal(&key).unwrap())[0]
+    /// };
+    /// assert_eq!((ceded(1), ceded(2)), (5.0, 50.0));
+    /// ```
+    pub fn apply_timeline(
+        &self,
+        timeline: &Timeline,
+        exposure: &Exposure,
+    ) -> Result<PredictiveDistribution> {
+        let basis = self.cover_basis.ok_or_else(|| {
+            Error::Data(
+                "the tower has no cover basis: set losses occurring or risks attaching".into(),
+            )
+        })?;
+        self.apply_term(&timeline.years(basis, exposure)?)
     }
 }
 
