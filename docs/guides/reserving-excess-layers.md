@@ -685,12 +685,36 @@ has one share, and `LayerSharePrior` models it so by default
 origin's prior, with mean 1 and cv `share_cv`, sampled with the other
 parameters, so that all the origins together update the share. The first form,
 `share_dependence="per_origin"`, draws an independent share error at each
-origin, which understates the prior uncertainty of the total. On the Reserving
-lane's validation layer (a quarter of GenIns's paid triangle; means over 20
-seeds in `knowledge/findings/excess-bayes-prior.md`) the total reserve's sd
-rose only about 2% as the share's cv went from 0.3 to 1.5 under the common
-share, since ten origins pin the share down, against about 42% (514,000 to
-730,000) under independent errors.
+origin. Each origin's prior is the same under both; the total's is not.
+`prior_total` gives the prior of the layer's total expected ultimate in closed
+form:
+
+```python
+exposure = [PREMIUM] * len(YEARS)
+for dependence in ("common", "per_origin"):
+    p = LayerSharePrior(elr, working_share, apriori_cv=0.1, share_cv=0.3,
+                        share_dependence=dependence)
+    mean, sd = p.prior_total(exposure)
+    print(f"{dependence:10}  prior total mean {mean:,.0f}  sd {sd:,.0f}")
+```
+
+```text
+common      prior total mean 9,426,049  sd 2,844,887
+per_origin  prior total mean 9,426,049  sd 946,837
+```
+
+Independent errors understate the total's prior sd threefold here. The
+posterior goes the other way: once the ten origins identify the share, each
+origin is held to its prior with the loss ratio's own cv, so the common share
+gives the narrower fitted interval. On the Reserving lane's validation layer
+(a quarter of GenIns's paid triangle; means over 20 seeds in
+`knowledge/findings/excess-bayes-prior.md`) the total reserve's posterior sd
+under the common share was about 497,000 at a share cv of 0.3 and rose only
+about 2% as the cv went to 1.5, against 514,000 to 730,000 (about 42%) under
+independent errors. A single fit's sd moves by about 1.5% from seed to seed,
+so compare such runs over several seeds. Where the data cannot identify the
+share (few origins, or all of them immature) the common model's total stays
+the wider.
 
 ## 7. What prospicio does not cover
 

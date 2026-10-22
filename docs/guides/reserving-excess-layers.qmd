@@ -722,33 +722,51 @@ working layer share 0.2590; prior cv 0.3176 = sqrt(1.01 x 1.09 - 1) = 0.3176
 prior ultimate a year 942,605 = 0.6618 x 0.2590 x 5,500,000
 ```
 
-How much the share's uncertainty matters shows in the predictive
-distribution of the reserve. We refit with the share's cv at 0.05, 0.3 and
-1.0. The posterior is a Monte Carlo result, and the last digits of a NUTS run
+The posterior is a Monte Carlo result, and the last digits of a NUTS run
 differ between platforms (see [`reserving-meyers.qmd`](reserving-meyers.qmd)), so
-the checked block prints only what does not depend on them:
+this guide prints only the prior, which is exact, and leaves the posterior to
+your own run: `fit@reserves` is the predictive distribution of the reserve.
+
+What the share's cv does to that distribution depends on how the share's error
+is modelled. The error is one and the same for every origin, since the layer
+has one share, and `layer_share_prior()` models it so by default
+(`share_dependence = "common"`, issue #518): one gamma multiplier on every
+origin's prior, with mean 1 and cv `share_cv`, sampled with the other
+parameters, so that all the origins together update the share. The first form,
+`share_dependence = "per_origin"`, draws an independent share error at each
+origin. Each origin's prior is the same under both; the total's is not.
+`layer_prior_total()` gives the prior of the layer's total expected ultimate in
+closed form:
 
 ```{r}
-sds <- c()
-for (share_cv in c(0.05, 0.3, 1.0)) {
-  p_cv <- layer_share_prior(elr, working_share, apriori_cv = 0.1, share_cv = share_cv)
-  f <- suppressWarnings(bayes_bf_layer(book, "working", "premium", p_cv, seed = 1, n_sims = 2000))
-  sds[as.character(share_cv)] <- sqrt(variance(f@reserves))
+exposure_values <- rep(premium, length(years))
+for (dependence in c("common", "per_origin")) {
+  p <- layer_share_prior(elr, working_share, apriori_cv = 0.1, share_cv = 0.3,
+                         share_dependence = dependence)
+  total <- layer_prior_total(p, exposure_values)
+  cat(sprintf("%-10s  prior total mean %s  sd %s
+", dependence, comma(total[["mean"]]),
+              comma(total[["sd"]])))
 }
-cat("the reserve's sd rises with the share's cv:", if (sds[1] < sds[2] && sds[2] < sds[3]) "True" else "False", "\n")
-cat("at cv 1.0 the sd is over 1.3 times that at cv 0.05:", if (sds[3] > 1.3 * sds[1]) "True" else "False", "\n")
 ```
 
 ```text
-the reserve's sd rises with the share's cv: True
-at cv 1.0 the sd is over 1.3 times that at cv 0.05: True
+common      prior total mean 9,426,049  sd 2,844,887
+per_origin  prior total mean 9,426,049  sd 946,837
 ```
 
-A run on Windows gave a reserve sd of about 286,000, 379,000 and 417,000 for
-the three cvs (a recorded run, not checked by CI). One caveat, decision 23 of
-the design note: the share's error is common to every origin, but the gamma
-priors are independent across origins, so the prior uncertainty of the total
-is understated. A shared share multiplier is planned (#518).
+Independent errors understate the total's prior sd threefold here. The
+posterior goes the other way: once the ten origins identify the share, each
+origin is held to its prior with the loss ratio's own cv, so the common share
+gives the narrower fitted interval. On the Reserving lane's validation layer
+(a quarter of GenIns's paid triangle; means over 20 seeds in
+`knowledge/findings/excess-bayes-prior.md`) the total reserve's posterior sd
+under the common share was about 497,000 at a share cv of 0.3 and rose only
+about 2% as the cv went to 1.5, against 514,000 to 730,000 (about 42%) under
+independent errors. A single fit's sd moves by about 1.5% from seed to seed,
+so compare such runs over several seeds. Where the data cannot identify the
+share (few origins, or all of them immature) the common model's total stays
+the wider.
 
 ## 7. What prospicio does not cover
 
@@ -770,7 +788,8 @@ is understated. A shared share multiplier is planned (#518).
 - **The derived pattern in the Bayesian BF.** `layer_share_prior()` estimates the
   layer's pattern from its own triangle, so it does not use the derived
   pattern and cannot fit a layer whose own factor is missing at some age
-  (section 6). The share's error is independent across origins until #518.
+  (section 6). The share's cv is an input; no helper derives it from a
+  severity's parameter uncertainty (decision 24).
 - **Bühlmann-Straub credibility** of the layer's link ratios, and a default `k`.
   The weights are `1 - n / (n + k)` with a required `k`.
 - **Claim-level development** (Boor, Gillam and Couret's excess loss factors):

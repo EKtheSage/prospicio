@@ -11,7 +11,7 @@ This lane writes about the library and does not change crates; a gap it finds be
 ## Next
 
 - [guides-open] open, waiting on the user
-- keep the guides and notebooks current as the library changes, and update them when #192 lands
+- [guides-current] keep the guides and notebooks current as the library changes
 
 ## Done
 
@@ -35,3 +35,6 @@ This lane writes about the library and does not change crates; a gap it finds be
 - Then (2026-10-18) the Pricing Insurance Risk guides (`pir-risk-measures`, `pir-portfolio-pricing`, `pir-price-allocation`, `pir-price-allocation-practice`; Parts I to III of the book) and Monograph 15 chapters 3 to 6 (`capital-modeling-monograph-15-theory`, `-applications`), each with an R twin, and `docs/guides/reading-list.md` mapping every source text to its guides, knowledge file and open issues (keep it current as guides merge; its page has no code, `PROSE_PAGES` in `python/tests/test_guides.py`)
 - Gaps went to issues #365 to #369, #373 and #375 for the Aggregate and Probability lanes
 - [guides-sync-0.0.4] (2026-10-21) stale gap passages updated now that their issues closed, in `reserving-taylor-mcguire`, `glm-ratemaking-goldburd-validation`, `glm-to-comprehensive-pricing-chalk-2` and `pir-price-allocation`, each with its R twin (`OdpGlm`, `GlmFit` diagnostics and quantile residuals, the explanation helpers, the elastic net bounds, MARS, GLMMs, `bodoff_price`), and the reading list's open-issues column (only the excess-layer development issue is open)
+- #400 the Friedland and Werner-Modlin guides on the built averages (branch `guides/refresh-2`): `ChainLadder(average=, n_periods=, drop_high=, drop_low=)` and the geometric average replace the hand-written averages and the cut triangle, `n_links` printed, XYZ Insurer's CDFs below 1 passed with `ldf_kind="cdf"`, and Werner and Modlin's Appendix A shows the library's exact high/low selection beside the book's rounded-to-four-places one; Python and R twins
+- #446 the compartmental guide's gap bullet replaced by the built `Compartmental.fit_segments`, `one_year_segments`, `candidate`, `CompartmentalCandidate.outstanding_backtest` and `diagonal_backtest` (R `compartmental_segments()`, `compartmental_one_year_segments()`, `compartmental_candidate()`, `compartmental_outstanding_backtest()`, `diagonal_backtest()`), and the Goldburd R twin's stale #360 gap row removed
+- [excess-layer-guide] `docs/guides/reserving-excess-layers.md` with its R twin (#192 landed): why a layer develops slowly, Bloom and Patrik's, Pinto and Gogol's and Bear's printed factors beside prospicio's, the derived pattern in the chain ladder, Mack, BF and Cape Cod on a simulated sparse layer, credibility blending, and the layer-share BF prior with the common share error of #518 (`prior_total`, R `layer_prior_total()`: the common share triples the total's prior sd on the guide's working layer, while the fitted sd is the narrower); listed in the README, the reading list and the pkgdown Reserving group; the stale #192 gap passages in `choosing-a-method.md` and `experience-and-exposure-rating.md` now point to it
