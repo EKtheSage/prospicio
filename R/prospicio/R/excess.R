@@ -319,11 +319,20 @@ layer_exposure <- function(triangle, exposure, shares, name) {
 #' prior on the layer's expected ultimate, centred there, whose coefficient
 #' of variation is that of a product of two independent variables,
 #' `cv = sqrt((1 + apriori_cv^2) * (1 + share_cv^2) - 1)`: the moments are
-#' exact, the gamma is their match. The layer's development pattern is
+#' exact. One share error is common to all origins (the default,
+#' `share_dependence = "common"`): the model carries one more parameter, a
+#' gamma multiplier `s` with mean 1 and cv `share_cv`, sampled with the
+#' others and named `log_share` among the fit's draws, and each origin's
+#' prior ultimate is a gamma with mean `exposure * apriori * share * s` and
+#' cv `apriori_cv`. Every origin keeps the marginal cv above, the origins'
+#' priors are correlated and the data update the share for every origin at
+#' once. `share_dependence = "per_origin"` is the first version, an
+#' independent share error at each origin, which understates the total's
+#' interval. A known share (`share_cv = 0`) or a flat prior has nothing to
+#' share and is the per-origin model; a common share error needs a positive
+#' `apriori_cv`. The layer's development pattern is
 #' estimated from the layer's own triangle under the model's vague prior on
 #' the pattern; an [excess_pattern()] does not enter (open decision 22).
-#' The prior is independent across origins, although one share error is
-#' common to all of them (open decision 23).
 #'
 #' * `layer_share_prior()` builds the prior. `shares` is the layer share, a
 #'   severity's [layer_share()] or an exposure curve's
@@ -339,7 +348,13 @@ layer_exposure <- function(triangle, exposure, shares, name) {
 #'   [bayes_bf_normalised_one_year()].
 #'
 #' A `layer_share_prior` has the properties `apriori`, `apriori_cv`,
-#' `shares`, `share_cv` and `cv`.
+#' `shares`, `share_cv`, `share_dependence`, `cv` (the marginal cv of each
+#' origin's prior ultimate), `model_cv` and `common_cv` (the `cv` and the
+#' `common_cv` of the [bayes_bf_normalised()] that `bayes_bf_layer()` fits;
+#' `common_cv` is 0 when there is no common multiplier) and
+#' `has_common_factor`. `layer_prior_total()` gives the mean and standard
+#' deviation of the prior of the layer's total expected ultimate over
+#' origins with a ground-up `exposure`, in closed form.
 #'
 #' This is Python's `LayerSharePrior`.
 #'
@@ -351,6 +366,10 @@ layer_exposure <- function(triangle, exposure, shares, name) {
 #'   origin.
 #' @param share_se The standard error of a single share, instead of
 #'   `share_cv`; the coefficient of variation is `share_se / shares`.
+#' @param share_dependence `"common"` (the default) for one share error
+#'   common to all origins or `"per_origin"` for an independent one at each.
+#' @param exposure_values The ground-up exposure of each origin, for
+#'   `layer_prior_total()`.
 #' @param prior A `layer_share_prior()`.
 #' @param triangle,column,exposure A single-segment cumulative triangle,
 #'   the layer's losses and the ground-up exposure column.
@@ -361,7 +380,7 @@ layer_exposure <- function(triangle, exposure, shares, name) {
 #'   `max_refits` and `one_year_sims`.
 #' @returns `layer_share_prior()` a `layer_share_prior`; `bayes_bf_layer()`
 #'   a [bayes_bf_normalised_fit]; `bayes_bf_layer_one_year()` a
-#'   [bayes_one_year_fit].
+#'   [bayes_one_year_fit]; `layer_prior_total()` `c(mean = , sd = )`.
 #' @seealso [layer_share()], [layer_exposure()], [bayes_bf_normalised()].
 #' @export
 #' @examples
@@ -376,9 +395,15 @@ layer_share_prior <- S7::new_class(
     apriori_cv = S7::class_double,
     shares = S7::class_double,
     share_cv = S7::class_double,
-    cv = S7::class_double
+    share_dependence = S7::class_character,
+    cv = S7::class_double,
+    model_cv = S7::class_double,
+    common_cv = S7::class_double,
+    has_common_factor = S7::class_logical
   ),
-  constructor = function(apriori, shares, apriori_cv = 0.1, share_cv = 0, share_se = NULL) {
+  constructor = function(apriori, shares, apriori_cv = 0.1, share_cv = 0, share_se = NULL,
+                         share_dependence = c("common", "per_origin")) {
+    share_dependence <- match.arg(share_dependence)
     if (!is.numeric(shares) || anyNA(shares) || !length(shares)) {
       stop("shares must be a number or a numeric vector", call. = FALSE)
     }
@@ -394,16 +419,20 @@ layer_share_prior <- S7::new_class(
     apriori_cv <- single_number(apriori_cv, "apriori_cv")
     share_cv <- single_number(share_cv, "share_cv")
     shares <- as.double(shares)
-    cv <- rust_result(layer_share_prior_cv_rust(apriori, apriori_cv, shares, share_cv))
+    parts <- rust_result(layer_share_prior_cv_rust(apriori, apriori_cv, shares, share_cv,
+                                                    share_dependence == "common"))
     S7::new_object(S7::S7_object(), apriori = apriori, apriori_cv = apriori_cv, shares = shares,
-                   share_cv = share_cv, cv = cv)
+                   share_cv = share_cv, share_dependence = share_dependence, cv = parts[1],
+                   model_cv = parts[2], common_cv = parts[3], has_common_factor = parts[4] == 1)
   }
 )
 
 S7::method(print, layer_share_prior) <- function(x, ...) {
-  cat(sprintf("layer_share_prior(apriori = %s, shares = %s, apriori_cv = %s, share_cv = %s)\n",
+  cat(sprintf(paste0("layer_share_prior(apriori = %s, shares = %s, apriori_cv = %s, ",
+                     "share_cv = %s, share_dependence = %s)\n"),
               format(x@apriori, digits = 15), paste(format(x@shares, digits = 15), collapse = ", "),
-              format(x@apriori_cv, digits = 15), format(x@share_cv, digits = 15)))
+              format(x@apriori_cv, digits = 15), format(x@share_cv, digits = 15),
+              dQuote(x@share_dependence, FALSE)))
   invisible(x)
 }
 
@@ -415,10 +444,24 @@ check_layer_prior <- function(prior) {
 
 #' @rdname layer_share_prior
 #' @export
+layer_prior_total <- function(prior, exposure_values) {
+  check_layer_prior(prior)
+  if (!is.numeric(exposure_values) || anyNA(exposure_values) || !length(exposure_values)) {
+    stop("exposure_values must be a numeric vector", call. = FALSE)
+  }
+  out <- rust_result(layer_share_prior_total_rust(prior@apriori, prior@apriori_cv, prior@shares,
+                                                  prior@share_cv, prior@share_dependence == "common",
+                                                  as.double(exposure_values)))
+  c(mean = out[1], sd = out[2])
+}
+
+#' @rdname layer_share_prior
+#' @export
 bayes_bf_layer <- function(triangle, column, exposure, prior, ...) {
   check_layer_prior(prior)
   layered <- layer_exposure(triangle, exposure, prior@shares, "layer_exposure")
-  bayes_bf_normalised(layered, column, "layer_exposure", apriori = prior@apriori, cv = prior@cv, ...)
+  bayes_bf_normalised(layered, column, "layer_exposure", apriori = prior@apriori,
+                      cv = prior@model_cv, common_cv = prior@common_cv, ...)
 }
 
 #' @rdname layer_share_prior
@@ -427,5 +470,5 @@ bayes_bf_layer_one_year <- function(triangle, column, exposure, prior, ...) {
   check_layer_prior(prior)
   layered <- layer_exposure(triangle, exposure, prior@shares, "layer_exposure")
   bayes_bf_normalised_one_year(layered, column, "layer_exposure", apriori = prior@apriori,
-                               cv = prior@cv, ...)
+                               cv = prior@model_cv, common_cv = prior@common_cv, ...)
 }

@@ -66,7 +66,7 @@ pub(crate) struct OracleErrors {
 
 /// Checks `model`'s generic value and chunked dual gradient against its
 /// hand-written `log_posterior` at `points`, to 1e-12 relative (the
-/// gradient both against its largest component and componentwise); returns
+/// gradient against its largest component, and componentwise to 1e-11); returns
 /// and prints the largest errors.
 pub(crate) fn assert_oracle<M: Posterior + GenericDensity>(
     label: &str,
@@ -115,7 +115,13 @@ pub(crate) fn assert_oracle<M: Posterior + GenericDensity>(
         errors.gradient
     );
     assert!(
-        errors.componentwise <= 1e-12,
+        // 1e-11, not 1e-12: a component much smaller than the largest is a
+        // cancellation of terms of the larger scale, so its relative error is
+        // the scaled error (1e-14) over its size, and round-off differs
+        // between platforms (CI measured 1.9e-12 on BayesBfNormalised with a
+        // common multiplier where Windows gives 3.9e-13). A wrong derivative
+        // is off by orders of magnitude more.
+        errors.componentwise <= 1e-11,
         "{label}: componentwise gradient {:e}",
         errors.componentwise
     );

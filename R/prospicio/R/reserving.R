@@ -3328,7 +3328,8 @@ bayes_bf_normalised_fit <- S7::new_class(
 #' @export
 bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.1, development_sd = 10,
                      process = c("gamma", "none"), chains = 4, tune = 1000, draws = 1000,
-                     n_sims = 10000, seed = 0, target_accept = 0.95, max_depth = 10) {
+                     n_sims = 10000, seed = 0, target_accept = 0.95, max_depth = 10,
+                     common_cv = 0) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
   ptr <- rust_result(triangle@ptr$bayes_bf_normalised(
@@ -3336,7 +3337,7 @@ bayes_bf_normalised <- function(triangle, column, exposure, apriori = 1, cv = 0.
     single_number(development_sd, "development_sd"), process, single_number(chains, "chains"),
     single_number(tune, "tune"), single_number(draws, "draws"), single_number(n_sims, "n_sims"),
     single_number(seed, "seed"), single_number(target_accept, "target_accept"),
-    single_number(max_depth, "max_depth")))
+    single_number(max_depth, "max_depth"), single_number(common_cv, "common_cv")))
   fit <- bayes_bf_normalised_fit(ptr = ptr)
   failed <- fit@diagnostics$warnings
   if (length(failed)) {
@@ -3403,12 +3404,13 @@ bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1
                               target_accept = 0.95, max_depth = 10, k_threshold = 0.7,
                               refit = c("moment_match_then_refit", "refit_flagged",
                                         "reweight_only", "refit_all"),
-                              max_refits = NULL, one_year_sims = NULL) {
+                              max_refits = NULL, one_year_sims = NULL, common_cv = 0) {
   cols <- exposure_columns(triangle, column, exposure)
   process <- match.arg(process)
   refit <- match.arg(refit)
   priors <- c(single_number(apriori, "apriori"), single_number(cv, "cv"),
-              single_number(development_sd, "development_sd"))
+              single_number(development_sd, "development_sd"),
+              single_number(common_cv, "common_cv"))
   run <- c(single_number(chains, "chains"), single_number(tune, "tune"),
            single_number(draws, "draws"), single_number(n_sims, "n_sims"),
            single_number(seed, "seed"), single_number(target_accept, "target_accept"),

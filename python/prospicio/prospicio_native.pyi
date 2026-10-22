@@ -1333,7 +1333,7 @@ class BayesBfNormalised:
     >>> fit.parameter_names[:2]
     ['alpha[1]', 'alpha[2]']
     """
-    def __new__(cls, /, apriori: float = 1.0, cv: float = 0.1, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10) -> BayesBfNormalised: ...
+    def __new__(cls, /, apriori: float = 1.0, cv: float = 0.1, development_sd: float = 10.0, process: str = "gamma", chains: int = 4, tune: int = 1000, draws: int = 1000, n_sims: int = 10000, seed: int = 0, target_accept: float = 0.95, max_depth: int = 10, common_cv: float |None = None) -> BayesBfNormalised: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -1344,6 +1344,12 @@ class BayesBfNormalised:
     def chains(self, /) -> int:
         """
         Number of NUTS chains.
+        """
+    @property
+    def common_cv(self, /) -> float |None:
+        """
+        The coefficient of variation of the multiplier common to all
+        origins' prior ultimates, or ``None`` if there is none.
         """
     @property
     def cv(self, /) -> float:
@@ -14665,12 +14671,19 @@ class LayerSharePrior:
     on the layer's expected ultimate, centred there, whose coefficient of
     variation is that of a product of two independent variables,
     ``cv = sqrt((1 + apriori_cv**2) * (1 + share_cv**2) - 1)``: the moments
-    are exact, the gamma is their match. The layer's development pattern is
-    estimated from the layer's own triangle under the model's vague prior
-    on the pattern; an excess pattern from ``ExcessPattern`` does not enter
-    (open decision 22 of the design note). The prior is independent across
-    origins, although one share error is common to all of them (open
-    decision 23).
+    are exact. One share error is common to all origins (the default,
+    ``share_dependence="common"``): the model carries one more parameter, a
+    gamma multiplier ``s`` with mean 1 and cv ``share_cv``, sampled with the
+    others, and each origin's prior ultimate is a gamma with mean
+    ``exposure * apriori * share * s`` and cv ``apriori_cv``, so every origin
+    keeps the marginal cv above, the origins' priors are correlated and the
+    data update the share for every origin at once (``log_share`` in the
+    fit's parameters). ``share_dependence="per_origin"`` is the first
+    version: an independent share error at each origin, which understates
+    the total's interval. The layer's development pattern is estimated from
+    the layer's own triangle under the model's vague prior on the pattern;
+    an excess pattern from ``ExcessPattern`` does not enter (open decision
+    22 of the design note).
     
     Parameters
     ----------
@@ -14684,6 +14697,11 @@ class LayerSharePrior:
         The loss ratio's coefficient of variation (``inf`` is flat).
     share_cv : float, default 0.0
         The share's coefficient of variation, the same at every origin.
+    share_dependence : {"common", "per_origin"}, default "common"
+        Whether one share error is common to all origins or each origin has
+        its own. A known share (``share_cv`` 0) or a flat prior has nothing
+        to share and is the per-origin model; a common share error needs a
+        positive ``apriori_cv``.
     
     Examples
     --------
@@ -14691,8 +14709,10 @@ class LayerSharePrior:
     >>> prior = LayerSharePrior(0.65, 0.2, apriori_cv=0.1, share_cv=0.3)
     >>> round(prior.layer_apriori(0), 12), round(prior.cv ** 2, 12)
     (0.13, 0.1009)
+    >>> prior.share_dependence
+    'common'
     """
-    def __new__(cls, /, apriori: float, shares: Any, apriori_cv: float = 0.1, share_cv: float = 0.0) -> LayerSharePrior: ...
+    def __new__(cls, /, apriori: float, shares: Any, apriori_cv: float = 0.1, share_cv: float = 0.0, share_dependence: str = "common") -> LayerSharePrior: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -14707,9 +14727,11 @@ class LayerSharePrior:
     @property
     def cv(self, /) -> float:
         """
-        The coefficient of variation of the gamma prior on the layer's
+        The marginal coefficient of variation of the prior on each origin's
         expected ultimate: ``sqrt((1 + apriori_cv**2) * (1 + share_cv**2) -
-        1)``, ``inf`` if either is.
+        1)``, ``inf`` if either is. It is the gamma's cv under
+        ``"per_origin"``; under ``"common"`` the model's own cv is
+        ``apriori_cv`` and the multiplier's ``share_cv``.
         """
     def fit(self, /, triangle: Triangle, column: str, exposure: str, model: BayesBfNormalised |None = None) -> BayesBfNormalisedFit:
         """
@@ -14739,7 +14761,7 @@ class LayerSharePrior:
             As ``BayesBfNormalised.fit``; if the prior's ``cv`` is 0.
         """
     @staticmethod
-    def from_severity(apriori: float, severity: Any, layer: Any, apriori_cv: float = 0.1, share_cv: float = 0.0) -> LayerSharePrior:
+    def from_severity(apriori: float, severity: Any, layer: Any, apriori_cv: float = 0.1, share_cv: float = 0.0, share_dependence: str = "common") -> LayerSharePrior:
         """
         A prior with the share of a severity in a layer (``layer_share``,
         ultimate basis) and its coefficient of variation.
@@ -14751,13 +14773,14 @@ class LayerSharePrior:
         layer : ExcessLayer
         apriori_cv : float, default 0.1
         share_cv : float, default 0.0
+        share_dependence : {"common", "per_origin"}, default "common"
         
         Returns
         -------
         LayerSharePrior
         """
     @staticmethod
-    def from_share_se(apriori: float, share: float, share_se: float, apriori_cv: float = 0.1) -> LayerSharePrior:
+    def from_share_se(apriori: float, share: float, share_se: float, apriori_cv: float = 0.1, share_dependence: str = "common") -> LayerSharePrior:
         """
         A prior from one share and its standard error: the share's
         coefficient of variation is ``share_se / share``.
@@ -14768,10 +14791,17 @@ class LayerSharePrior:
         share : float
         share_se : float
         apriori_cv : float, default 0.1
+        share_dependence : {"common", "per_origin"}, default "common"
         
         Returns
         -------
         LayerSharePrior
+        """
+    @property
+    def has_common_factor(self, /) -> bool:
+        """
+        Whether the model carries a multiplier common to all origins: the
+        share error is ``"common"`` and both cvs are positive and finite.
         """
     def layer_apriori(self, /, i: int) -> float:
         """
@@ -14795,11 +14825,16 @@ class LayerSharePrior:
         ----------
         model : BayesBfNormalised, optional
             Supplies the sampler, process error, simulations and seed; its
-            own ``apriori`` and ``cv`` are replaced.
+            own ``apriori``, ``cv`` and ``common_cv`` are replaced.
         
         Returns
         -------
         BayesBfNormalised
+        
+        Raises
+        ------
+        ValueError
+            A common share error with ``apriori_cv`` 0.
         """
     def one_year(self, /, triangle: Triangle, column: str, exposure: str, model: BayesBfNormalised |None = None, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> BayesOneYearFit:
         """
@@ -14821,10 +14856,34 @@ class LayerSharePrior:
         -------
         BayesOneYearFit
         """
+    def prior_total(self, /, exposure: Sequence[float]) -> tuple[float, float]:
+        """
+        The mean and standard deviation of the prior of the layer's total
+        expected ultimate, in closed form: ``c_e**2 * (1 + c_s**2) * sum(m**2)
+        + c_s**2 * sum(m)**2`` for a common share error and ``((1 + c_e**2) *
+        (1 + c_s**2) - 1) * sum(m**2)`` for independent ones, with ``m`` each
+        origin's prior ultimate ``exposure * apriori * share``.
+        
+        Parameters
+        ----------
+        exposure : list of float
+            The ground-up exposure of each origin.
+        
+        Returns
+        -------
+        tuple of float
+            ``(mean, sd)``; ``sd`` is ``inf`` for a flat prior.
+        """
     @property
     def share_cv(self, /) -> float:
         """
         The share's coefficient of variation.
+        """
+    @property
+    def share_dependence(self, /) -> str:
+        """
+        ``"common"`` or ``"per_origin"``: whether one share error is common
+        to all origins.
         """
     @property
     def shares(self, /) -> list[float]:
