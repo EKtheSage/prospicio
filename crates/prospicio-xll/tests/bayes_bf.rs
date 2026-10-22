@@ -106,10 +106,16 @@ fn views_are_the_library_fit() {
     let ult = small("ultimates");
     assert_eq!((ult.rows, ult.columns), (12, 6));
     let posterior = fit.expected_ultimate();
-    for w in 0..10 {
-        assert_eq!(num(ult.get(w + 1, 1)), fit.exposure[w]);
-        assert_eq!(num(ult.get(w + 1, 3)), fit.prior_ultimate[w]);
-        assert_eq!(num(ult.get(w + 1, 4)), posterior[w]);
+    for (w, ((&e, &m), &u)) in fit
+        .exposure
+        .iter()
+        .zip(&fit.prior_ultimate)
+        .zip(&posterior)
+        .enumerate()
+    {
+        assert_eq!(num(ult.get(w + 1, 1)), e);
+        assert_eq!(num(ult.get(w + 1, 3)), m);
+        assert_eq!(num(ult.get(w + 1, 4)), u);
     }
     assert_eq!(
         num(ult.get(TOTAL, 3)),

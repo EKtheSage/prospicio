@@ -51,6 +51,9 @@ typedef XLOPER12 *(*Fn19)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER
 typedef XLOPER12 *(*Fn15)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                           XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                           XLOPER12 *, XLOPER12 *, XLOPER12 *);
+typedef XLOPER12 *(*Fn14)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                           XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                           XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn10)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                           XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn9)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
@@ -156,7 +159,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("ninety-six functions registered", registered == 96);
+    check("ninety-seven functions registered", registered == 97);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -536,6 +539,29 @@ int main(int argc, char **argv) {
     printf("PRO.BAYES.ODP(RAA, \"diagnostics\"): max R-hat %.4f\n", rhat);
     check("PRO.BAYES.ODP samples RAA with R-hat under 1.01", bd_ok && rhat < 1.01);
     free12(bd);
+
+    /* The Bayesian BF on RAA with a flat premium of 40,000 and an a priori
+     * loss ratio of 0.6: the diagnostics again, on worker threads. */
+    XLOPER12 bf_prem_cells[10], bf_prem, bf_lr;
+    for (int i = 0; i < 10; i++) {
+        bf_prem_cells[i].xltype = xltypeNum;
+        bf_prem_cells[i].val.num = 40000;
+    }
+    bf_prem.xltype = xltypeMulti;
+    bf_prem.val.array.lparray = bf_prem_cells;
+    bf_prem.val.array.rows = 10;
+    bf_prem.val.array.columns = 1;
+    bf_lr.xltype = xltypeNum;
+    bf_lr.val.num = 0.6;
+    XLOPER12 *bb = ((Fn14)GetProcAddress(xll, "pro_bayes_bf"))(&tri, &bf_prem, &bf_lr, &missing, &diag, &missing,
+                                                                &missing, &missing, &missing, &missing, &missing,
+                                                                &missing, &missing, &missing);
+    int bb_ok = (bb->xltype & 0xFFF) == xltypeMulti && bb->val.array.columns == 2 &&
+                (bb->val.array.lparray[1].xltype & 0xFFF) == xltypeNum;
+    double bf_rhat = bb_ok ? bb->val.array.lparray[1].val.num : 99;
+    printf("PRO.BAYES.BF(RAA, premium, 0.6, , \"diagnostics\"): max R-hat %.4f\n", bf_rhat);
+    check("PRO.BAYES.BF samples RAA with R-hat under 1.01", bb_ok && bf_rhat < 1.01);
+    free12(bb);
 
     /* A lognormal fitted to a column of losses: meanlog is the mean of the
      * logs, in the params table's second row. */

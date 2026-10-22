@@ -663,7 +663,14 @@ real Excel.
     CV (0.1, the library's default) or `"flat"` for a flat prior on the
     log ultimate, and `prior_sd` is the SD of the pattern's log share
     ratios. `common_cv`, last, is the library's multiplier common to all
-    origins (`reserving-bayes.md` decision 25), omitted for none. Its
+    origins (`reserving-bayes.md` decision 25), omitted for none. The
+    library's excess-layer prior (`LayerSharePrior`, `reserving-bayes.md`
+    decision 25) needs no function of its own: it is this model with the
+    layer's exposure (premium times the layer's share of the ground-up
+    loss) as `exposure`, the ground-up loss ratio as `apriori`, its CV as
+    `cv` and the share's CV as `common_cv` (or, with an error of its own
+    per origin, the combined CV `sqrt((1 + cv^2)(1 + share_cv^2) - 1)` as
+    `cv`, `common_cv` omitted). Its
     views are `PRO.BAYES.ODP`'s three plus `"ultimates"` (exposure,
     latest, prior and posterior expected ultimate, posterior loss ratio),
     the comparison a BF exhibit makes. The fits are kept as decision 21's,

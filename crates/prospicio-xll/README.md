@@ -221,7 +221,8 @@ Ctrl+Alt+F9 to recalculate.
   `prior_sd` (10) is the pattern's prior SD; `common_cv`, if given, adds
   one multiplier common to every origin's prior ultimate with that CV
   (a shared error in the a priori loss ratio). The same draws, chains
-  and seed arguments, and the same kept fits, as `PRO.BAYES.ODP`.
+  and seed arguments as `PRO.BAYES.ODP`, and its own last eight fits
+  kept.
 - `PRO.SEV.FIT`: `family` is `lognormal`, `gamma`, `weibull`, `burr`,
   `lomax` (fitted by maximum likelihood, each loss conditioned on exceeding its
   reporting threshold) or `pareto`, `piecewise_pareto`, `gen_pareto`
