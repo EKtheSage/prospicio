@@ -179,10 +179,11 @@ they are built.
     (funded plus opening); the tiered amount is multiplied back by the
     divisor.
 
-## Open decisions (cash-flow engine)
+## Conventions left as settings (cash-flow engine)
 
-These need the user's reference run; until then the engine offers each
-choice as a setting.
+The user accepted these on 2026-10-22 as built: each stays a setting with
+the default it has, and no parity run against the reference model is
+planned.
 
 - Which obligation the issue's `ob_prev` is: the previous funding date's
   (`ObligationReference::PreviousDate`) or the highest so far
