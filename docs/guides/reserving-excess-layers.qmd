@@ -744,8 +744,7 @@ for (dependence in c("common", "per_origin")) {
   p <- layer_share_prior(elr, working_share, apriori_cv = 0.1, share_cv = 0.3,
                          share_dependence = dependence)
   total <- layer_prior_total(p, exposure_values)
-  cat(sprintf("%-10s  prior total mean %s  sd %s
-", dependence, comma(total[["mean"]]),
+  cat(sprintf("%-10s  prior total mean %s  sd %s\n", dependence, comma(total[["mean"]]),
               comma(total[["sd"]])))
 }
 ```
@@ -759,14 +758,15 @@ Independent errors understate the total's prior sd threefold here. The
 posterior goes the other way: once the ten origins identify the share, each
 origin is held to its prior with the loss ratio's own cv, so the common share
 gives the narrower fitted interval. On the Reserving lane's validation layer
-(a quarter of GenIns's paid triangle; means over 20 seeds in
-`knowledge/findings/excess-bayes-prior.md`) the total reserve's posterior sd
-under the common share was about 497,000 at a share cv of 0.3 and rose only
-about 2% as the cv went to 1.5, against 514,000 to 730,000 (about 42%) under
-independent errors. A single fit's sd moves by about 1.5% from seed to seed,
-so compare such runs over several seeds. Where the data cannot identify the
-share (few origins, or all of them immature) the common model's total stays
-the wider.
+(a quarter of GenIns's paid triangle; each figure the mean of the fits'
+total reserve sd over seeds 1 to 20 for the common share and over 10 seeds
+for independent errors, in `knowledge/findings/excess-bayes-prior.md`) the
+total reserve's posterior sd under the common share was about 497,000 at a
+share cv of 0.3 and rose only about 2% as the cv went to 1.5, while under
+independent errors it rose from 514,000 to 730,000 (about 42%). A single
+fit's sd moves by about 1.5% from seed to seed, so compare such runs over
+several seeds. Where the data cannot identify the share (few origins, or all
+of them immature) the common model's total stays the wider.
 
 ## 7. What prospicio does not cover
 
