@@ -1,6 +1,6 @@
 # Design note: excess-layer loss development (excess LDFs, benchmark blending, a layer BF prior)
 
-Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); the user decided its decisions 17 to 19 on 2026-10-21, accepting the options PR 2 picked. PR 3 and PR 4 are not built. Lane: Reserving
+Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); the user decided its decisions 17 to 19 on 2026-10-21, accepting the options PR 2 picked. **PR 3 is built** (branch `claude/excess-pr3`, 2026-10-21): the Python and R bindings (see "API"; the names are open decision 20, the shape of the arguments decision 21). PR 4 is not built. Lane: Reserving
 (`crates/prospicio-reserving/`; `prospicio-prob` severities used read-only;
 `prospicio-pricing` exposure curves reached only through the bindings, see
 open decision 2) · Depends on: `reserving-v02.md` (decision 2, the
@@ -296,14 +296,39 @@ pub fn layer_share(severity: &dyn Severity, layer: Layer) -> Result<f64>;
 pub fn layer_at_shift(ultimate: &dyn Severity, layer: Layer, shift: f64) -> f64;
 ```
 
-Python (`prospicio.reserving`) and R (`excess_pattern()`,
-`excess_credibility_weights()`, `layer_exposure()`) mirror this, with the
-severity passed as an existing distribution object. The derived pattern
-goes in through the existing `ldf=`, `ldf_kind=` and `ldf_weight=`
-arguments, so `ChainLadder`, `Mack`, the BF family and the bootstraps get no
-new parameter. `layer_exposure` takes shares, so a severity's
-`layer_share` or an exposure curve's `layer_share` can be passed from
-Python or R.
+Python (`prospicio.reserving`), as built in PR 3:
+
+```python
+ExcessLayer(attachment, limit=inf)                      # Layer
+ScaleShift(ultimate, ground_up_cap=None)                # ultimate: any severity
+ParetoShape(threshold, alphas, ultimate_alpha, base="counts")  # base: "counts" or ExcessLayer
+ExcessPattern.from_ground_up(triangle, column, layer, model,
+                             counts=None, tail=None, basis="incurred")
+p.ages, p.layer_ldf, p.layer_cdf, p.ground_up_ldf, p.ground_up_tail, p.shifts
+p.tail                       # the layer's tail, for the method's `tail=`
+p.ldf                        # {age: factor}
+p.selected(weight=1.0)       # {"ldf", "ldf_kind": "ldf", "ldf_weight"} to splat
+p.credibility_weights(layer_triangle, column, k, max_influence, counts=None)  # {age: weight}
+layer_share(severity, layer)
+layer_exposure(triangle, exposure, shares, name)        # shares: a number or a list
+layer_at_shift(ultimate, layer, shift)
+```
+
+R, the same under snake_case names with S7 objects: `excess_layer()`,
+`scale_shift()`, `pareto_shape()`, `excess_pattern(triangle, column, layer,
+model, counts, tail)` (an `excess_pattern` with the same properties),
+`excess_selected(pattern, weight)`, `excess_credibility_weights(pattern,
+layer_triangle, column, k, max_influence, counts)`, `layer_share()`,
+`layer_exposure()` and `layer_at_shift()`.
+
+The derived pattern goes in through the existing `ldf=`, `ldf_kind=` and
+`ldf_weight=` arguments, so `ChainLadder`, `Mack`, the BF family and the
+bootstraps get no new parameter: `ChainLadder(tail=p.tail,
+**p.selected(w))` in Python, `do.call(chain_ladder, c(list(tri, "layer",
+tail = p@tail), excess_selected(p, w)))` in R. `layer_exposure` takes shares
+(decision 2 (a)): a severity's `layer_share`, or an exposure curve's own
+`layer_share(limit, attachment, mpl)` (Python `Mbbefd` and `TabulatedCurve`,
+R `exposure_layer_share()`), so no new route is needed in the bindings.
 
 ## Crates touched
 
@@ -435,7 +460,7 @@ parameters are rounded; the second needs the example's trend indices.
 | 0 | `claude/excess-development-note` | this note, the lane bullet, the literature entry in `knowledge/` | `main` |
 | 1 | `claude/excess-pr1` | the sparse-age change to `Development` (decision 8); `ExcessPattern::from_ground_up` with scale shift, incurred only, one layer, the layer tail; `selected`, `layer_share`, `layer_exposure`; Rust only; the closed-form and engine checks; the sources read in full for a worked example (the gate above) and recorded in `knowledge/` | PR 0 |
 | 2 | `claude/excess-pr2` | `credibility_weights` with its cap, the shape-drift model, the simulation study with its acceptance thresholds (built) | PR 1 |
-| 3 | `claude/excess-bindings` | Python and R, the stub, `man/`, a note for the Guides lane | PR 2 |
+| 3 | `claude/excess-pr3` | Python and R, the stub, `man/`, a note for the Guides lane (built) | PR 2 |
 | 4 | `claude/excess-bayes-prior` | the layer share's uncertainty as a prior, after #410 | PR 3 and #410 |
 
 Each PR ends with its design status, the lane row, the roadmap row, a
@@ -622,6 +647,42 @@ decided each on 2026-10-21, accepting the option PR 2 picked):
     `max_influence` 0.1. *Recommendation: (a) until the user has read the
     study;* (b) is the candidate if a default is wanted.
    *Decided 2026-10-21 (the user): (a), `k` stays required for now, with no default;* the candidate default for later is `k` = 20 with `max_influence` 0.1.
+
+Opened in PR 3 (each built as the option closest to the existing bindings;
+open until the user decides):
+
+20. **Binding names.** The note called the Python class `Layer` and the
+    basis an enum. `prospicio.reinsurance` already has a `Layer`, and the
+    native module is flat, so a second class of that name cannot exist:
+    Python's is `ExcessLayer` and R's `excess_layer()`. `Basis` is the
+    string `basis="incurred"` (`"paid"` is an error, decision 9) and
+    `ShapeBase` is `"counts"` or an `ExcessLayer`. R's `layer_share()`,
+    `layer_exposure()` and `layer_at_shift()` keep the Rust names. (a) As
+    built. (b) `Layer` in `prospicio.reserving` as an alias of the same
+    class under another native name. *Recommendation: (a).*
+
+21. **How the pattern reaches a method, and the R object.** A method takes
+    `ldf`, `ldf_kind` and `ldf_weight` and a separate `tail`, so the pattern
+    gives them as a dict to splat (`selected(weight)`) and `tail`; no method
+    takes an `ExcessPattern` itself. `credibility_weights` has the layer
+    triangle, the column, `k` and `max_influence` as required arguments (the
+    cap is required as in decision 17) and `counts` optional. In R the
+    `excess_pattern` holds plain numbers and hands them back to Rust for
+    `excess_credibility_weights()`, which reads only the ages and the layer
+    factors. (a) As built. (b) Let `ChainLadder(pattern=p, weight=w)` take
+    the pattern directly. *Recommendation: (a),* with (b) if the Guides lane
+    finds the splat clumsy.
+
+## For the Guides lane
+
+`ExcessPattern.from_ground_up(...)` then `ChainLadder(tail=p.tail,
+**p.selected(w))` on the layer triangle is the whole workflow; `w` is 1 for
+a sparse layer, or `p.credibility_weights(layer_tri, "layer", k, 0.1)`
+(k near 20 is the study's candidate, decision 19) for a blend. The bindings'
+tests (`python/tests/test_reserving_excess.py`,
+`R/prospicio/tests/test-reserving-excess.R`) are worked examples with the
+literature's numbers. `docs/guides/reserving-methods.md` is untouched
+(decision 7).
 
 ## References
 
