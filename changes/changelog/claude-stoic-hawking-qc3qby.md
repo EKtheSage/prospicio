@@ -99,3 +99,9 @@
   in Python (`EventSet.correlated_years`, `.calibrate_year_correlation`,
   `year_correlation_for_ratio`) and R (`correlated_years()`,
   `calibrate_year_correlation()`, `year_correlation_for_ratio()`).
+- One accident-period timeline shared by the underwriting years of a term
+  (`prospicio_aggregate::timeline`): `Timeline` holds each event once over
+  the term's accident months, `Exposure` gives each underwriting year's
+  share of each month, and `Timeline::years` splits it into contract years
+  for `Tower::apply_term` on a losses-occurring or risks-attaching basis
+  (#489; Rust).

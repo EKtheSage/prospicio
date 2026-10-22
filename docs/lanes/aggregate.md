@@ -6,7 +6,9 @@
 
 ## Next
 
-- [shared-timeline] one accident-period event timeline shared by underwriting years, with a RAD or LOD cover basis and interlocking (#489, `aggregate.md` "Underwriting years with a rank correlation", item 4): waits on the user's three choices
+- [cover-basis] the cover basis (RAD or LOD) on `Tower` with `Tower::apply_timeline` and its JSON (#489, `aggregate.md` "Underwriting years with a rank correlation", item 4.8)
+- [timeline-bindings] `Timeline`, `Exposure` and the cover basis in Python and R (#489); the last PR of #489
+- [interlocking] interlocking clauses under RAD, after RAD and LOD (#489, `aggregate.md` item 4.9): no reference output yet
 
 ## Done
 
@@ -44,3 +46,4 @@
 - #490 a book of deals on one shared simulation in Rust (`prospicio_pricing::book`, `time-value.md` decisions 21 to 27: `DealRun` from a tower's `deal_columns` or arrays, with an inception in months and its patterns and investor flows; `DealBook` with `select` and `shifted`, and four tables: `amounts` and `summary` as sums over sums, `distribution` with contributions at the book's ranks and marginal effects on either tail, `cashflows` with the IRR, NPV and MOIC on the summed flows, `calendar` by calendar year; the shift moves only the cash flows, each deal keeps its own trust)
 - [portfolio-bindings] #490's book of deals in Python (`DealRun`, `DealBook`, `BookCashflows` in `prospicio.pricing`) and R (`deal_run()`, `deal_run_from_tower()`, `deal_book()`, `book_select()`, `book_shift()`, `book_amounts()`, `book_summary()`, `book_distribution()`, `book_cashflows()`, `book_calendar()`), which closes #490
 - #489 underwriting years with a rank correlation (`EventSet::correlated_years`: Iman–Conover on each year's total, Spearman or normal scores, one value or a matrix, every year the one-year marginal or `term_years`' blocks; `calibrate_year_correlation` to a term-over-one-year spread ratio, `year_correlation_for_ratio` its closed form; Python and R); the shared accident-period timeline waits in Next
+- [shared-timeline] one accident-period timeline shared by the underwriting years of a term (`prospicio_aggregate::timeline`: `Timeline` holding each event once over the term in accident months, stitched from accident years by `Timeline::from_years`; `Exposure` shares by underwriting year and month, `Exposure::uniform` for policies written evenly; `Timeline::years` under `CoverBasis::LossesOccurring` or `RisksAttaching`, each year's losses keeping their event's index; checked by construction; Rust; #489)
