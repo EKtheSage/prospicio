@@ -173,10 +173,13 @@ jobs:
         run: cargo clippy -p prospicio-r -- -D warnings
       # lightgbm and xgboost are optional engines for booster_fit(). The
       # boosting tests skip a missing engine and install.packages() only
-      # warns on failure, so check that each one loads.
+      # warns on failure, so check that each one loads. On Windows R starts
+      # with no CRAN mirror set, so fall back to the cloud mirror when none
+      # is; Ubuntu keeps setup-r's RSPM binaries.
       - if: steps.plan.outputs.build == 'true'
         run: >-
-          Rscript -e "pkgs <- c('S7', 'lightgbm', 'xgboost'); install.packages(pkgs);
+          Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) };
+          pkgs <- c('S7', 'lightgbm', 'xgboost'); install.packages(pkgs);
           for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
       - if: steps.plan.outputs.build == 'true'
         run: R CMD INSTALL R/prospicio
@@ -207,7 +210,7 @@ jobs:
         run: |
           # Forward slashes: R reads the paths inside string literals.
           tmp=$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")
-          Rscript -e "install.packages(c('remotes', 'pkgbuild'))"
+          Rscript -e "r <- getOption('repos'); if (is.null(r) || r['CRAN'] %in% c('@CRAN@', NA)) { r['CRAN'] <- 'https://cloud.r-project.org'; options(repos = r) }; install.packages(c('remotes', 'pkgbuild'))"
           git archive --format=tar.gz --prefix=prospicio/ -o "$tmp/repo.tar.gz" HEAD
           mkdir "$tmp/rlib"
           Rscript -e "remotes::install_local('$tmp/repo.tar.gz', subdir = 'R/prospicio', lib = '$tmp/rlib', dependencies = FALSE, upgrade = 'never', force = TRUE)"
