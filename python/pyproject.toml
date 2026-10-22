@@ -39,6 +39,8 @@ dev = [
     # Engines behind prospicio.boosting; the CPU-only XGBoost wheel is
     # 6 MB where the full one bundles 200+ MB of GPU libraries.
     "lightgbm",
+    # The notebook tests run the chart cells under the Agg backend.
+    "matplotlib",
     "xgboost-cpu ; sys_platform == 'linux'",
     "xgboost ; sys_platform != 'linux'",
 ]
