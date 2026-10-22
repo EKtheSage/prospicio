@@ -1172,6 +1172,10 @@ pricing model (`knowledge/findings/deal-ratios-and-scale-keys.md`).
    `combined_ratio`, `margin = 1 - combined_ratio` and `nmbf` (the margin
    plus the deductions kept outside). The commissions are read from the
    result, so carried amounts count as they were paid.
+   `Tower::deal_columns(result, layer)` gives the amounts behind the
+   ratios (the premium, the ceded loss and each deduction with its NMBF
+   flag), one year at a time, for a book of deals to add up
+   (`prospicio_pricing::book`, #490).
 7. **JSON.** A tower with brokerage, deductions or either flag is format
    version 3; others keep their version.
 8. **The ledger and the grids.** The P&L builders book a tower only as
