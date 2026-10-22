@@ -647,19 +647,25 @@ asks for.
 
 ## 5. What prospicio does not cover
 
-Gaps found while writing this guide, filed for the Models lane:
+Gaps found while writing this guide, filed for the Models lane and since closed:
 
-- Model-agnostic explanations: permutation importance, partial dependence and
-  the pairwise interaction screen are written out by hand above; a helper that
-  takes any fitted model and a design would save the loops (#355).
+- Model-agnostic explanations (#355), now in the library:
+  `permutation_importance`, `partial_dependence` and `interaction_screen` in
+  `prospicio.models` take any fitted model, a frame and a design builder. The
+  loops written out by hand above are the same computations.
 - Bounds on elastic net coefficients (glmnet's `lower.limits` and
-  `upper.limits`) for monotone step functions (section 5.7.2), a built-in
-  relaxed lasso (section 4.5), and speed on hinge bases: twenty hinges took over
-  40 seconds against a quarter of a second for twenty steps (#356).
-- Step, hinge and MARS bases as `Terms` (section 5.5), and out-of-fold target
-  encoding with a credibility constant (chapter 6; #357).
-- Generalized linear mixed models with a random intercept per level (section
-  6.5; #358).
+  `upper.limits`), the relaxed lasso and its cross-validation, and an
+  active-set solve for hinge bases (#356, now in the library):
+  `ElasticNet(lower_limits=, upper_limits=)`, `ElasticNetFit.relax` and
+  `ElasticNet.cross_validate_relaxed`; a 20-hinge cross-validated path takes
+  under a second instead of 40.
+- Step, hinge and MARS bases as `Terms` (section 5.5; `Terms.steps`,
+  `Terms.hinges` and `mars()` for knot selection) and out-of-fold target encoding
+  with a credibility constant (chapter 6; `target_encode`) (#357, #465, now in the
+  library).
+- Generalized linear mixed models (section 6.5; #358, now in the library):
+  `Glmm` with random intercepts and slopes, one, nested or crossed grouping
+  factors, and `BayesGlmm` for a NUTS fit.
 
 Not in prospicio and not filed, since general tools do them: principal
 components (section 7.4.5), word embeddings (section 6.4.4) and decision trees

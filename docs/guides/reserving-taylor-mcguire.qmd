@@ -35,8 +35,9 @@ reserving method to pick in general, read
 Two parts of prospicio carry the work: `triangle()`, `chain_ladder()`,
 `mack()` and `odp_bootstrap()` on the triangle, and `glm_fit()` for the
 monograph's models cell by cell, with any design you write down. The Rust
-crate also has the cross-classified ODP as a ready-made model (`OdpGlm`), but
-the R package does not expose it yet (section 10).
+crate also has the cross-classified ODP as a ready-made model, `odp_glm()` in
+R (with `odp_glm_cells()` for a custom design, an analytic prediction error and
+residual diagnostics; section 10), but here the design is built by hand.
 
 Each R chunk is followed by the text it prints.
 `R/prospicio/tests/test-guides.R` runs the chunks in order and requires each
@@ -626,13 +627,15 @@ The matches and differences are those of the Python guide: Tables 3-1 to 3-5,
 5-1, 5-4, 7-1, 7-3 and 7-5 and the heat maps exactly; the bootstraps within
 noise, with means raised by the lognormal bias; Table 7-7 within about one unit.
 
-**Gaps**, filed for their lanes:
+**Gaps closed since this guide was written**, in the library now:
 
-- *Reserving lane* (#333): the R package has no `odp_glm()` (the Rust `OdpGlm`
-  is not wrapped); there is no analytic prediction error by origin, no custom
-  design for parameter reduction, calendar-year terms or interactions on a
-  triangle, no residual diagnostics, and no gamma cross-classified model on a
-  `triangle`.
-- *Models lane* (#334): a `glm_model` has no `residuals()` (Pearson, deviance,
-  standardized), no `hatvalues()`, no standard error of a prediction or of a
-  sum of predictions (`predict(..., se.fit = TRUE)` in `stats`), and no GCV.
+- *Reserving lane* (#333): `odp_glm()` fits the cross-classified ODP on a
+  `triangle`; `odp_glm_cells()` and `odp_glm(formula = ~ ...)` take a custom design
+  (parameter reduction, calendar-year terms, interactions), the fit carries the
+  analytic prediction error by origin and in total, `residual_summary()` gives the
+  standardized residuals by development, accident or calendar period, and
+  `family =` and `power =` fit a gamma or Tweedie error.
+- *Models lane* (#334): `glm_diagnostics()` gives residuals, hat values and
+  Cook's distances, `prediction_se()` and `sum_prediction_error()` the standard
+  errors of a prediction and of a sum of predictions, and a `glm_model` has
+  `residuals()`, `hatvalues()`, `rstandard()` and `cooks.distance()`.

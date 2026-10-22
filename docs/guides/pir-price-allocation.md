@@ -529,8 +529,10 @@ calibrated slightly off the CCoC premium of 30.7364 or rounded up from
 0.821554.
 
 The PLC columns of Tables 15.32 and 15.33, where each layer's shared liability
-is split at that layer's own return, are not reproduced: prospicio's `bodoff`
-returns the asset shares, not the layer-by-layer split under a distortion.
+is split at that layer's own return, are not reproduced against the book's
+printed values here. `Portfolio.bodoff_price(distortion, ...)` now does that
+split under any distortion (Table 15.24 is exact under the CCoC), where `bodoff`
+returns only the asset shares.
 
 ### The summary table
 
@@ -637,8 +639,9 @@ for it; together, 100 of assets back both, and the premium falls from 40.64 to
 - **Kernel estimates of `kappa`** (Example 264) and the unit funding tables'
   intermediate columns (Tables 15.12 and 15.13): their end results are checked
   above.
-- **PLC under a distortion other than CCoC** (the PLC halves of Tables 15.32
-  and 15.33; #368).
+- **The PLC halves of Tables 15.32 and 15.33**: `Portfolio.bodoff_price` prices
+  Bodoff's layers under a distortion other than the CCoC (#368), but the book's
+  printed values are not set beside it here.
 
 Where to go next: [Price allocation in practice](pir-price-allocation-practice.md)
 for the case-study tables of chapters 13 and 15 and the ceded reinsurance
