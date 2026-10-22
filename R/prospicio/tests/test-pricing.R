@@ -81,7 +81,6 @@ stopifnot(inherits(try(mbbefd(-1, 2), silent = TRUE), "try-error"))
 sg <- severity_exposure_curve(pareto(1e5, 1.5), 1e7, c(0, 1))
 stopifnot(sg[1] == 0, abs(sg[2] - 1) < 1e-12)
 
-cat("prospicio R pricing tests passed\n")
 
 # Tabulated exposure curves and destruction-rate quantiles.
 tc <- tabulated_curve(c(0, 0.1, 0.5, 1), c(0, 0.4, 0.8, 1))
@@ -400,3 +399,78 @@ stopifnot(inherits(try(irr(flows, c(0, 1)), silent = TRUE), "try-error"))
 stopifnot(inherits(try(npv(1, 0, 0.1, unit = "weeks"), silent = TRUE), "try-error"))
 stopifnot(inherits(try(moic(1, 0, 0), silent = TRUE), "try-error"))
 stopifnot(inherits(try(tiered_fee(1, c(1, 1), c(0.1, 0.2)), silent = TRUE), "try-error"))
+
+# A collateralised deal's monthly cash flows (#479).
+thirds <- (1:3) / 3
+terms <- cashflow_terms(100, 3, rep(1, 3), thirds, thirds, cashflow_requirement(c(reserve = 1)),
+                        commutation_requirement = cashflow_requirement(c(outstanding = 1)))
+run <- cashflow_run(terms, c(0.6, 1.5))
+stopifnot(all(abs(run$flows - rbind(c(80, -20, -20), c(50, -50, -50))) < 1e-9))
+stopifnot(all(abs(run$funded - c(40, 100)) < 1e-9), identical(run$months, c(0, 1, 2)))
+tr <- cashflow_trace(terms, 1.5)
+stopifnot(all(abs(tr$accounts$investor - run$flows[2, ]) < 1e-9), abs(tr$conservation_error) < 1e-9)
+stopifnot(identical(tr$accounts$month, c(0, 1, 2)))
+ramp <- function(m) pmin((1:60) / m, 1)
+full <- function(...) {
+  args <- list(100, 30, ramp(12), ramp(36), ramp(48),
+               cashflow_requirement(c("unearned-premium" = 0.3, reserve = 1.2), limit = c(1.2, 1.5)),
+               commutation_requirement = cashflow_requirement(c("unearned-premium" = 0.3,
+                                                                outstanding = 1)),
+               collected_rate = 0.7, lag = 2,
+               adjustments = list(cashflow_adjustment(18, 0.1, less_commission = TRUE)),
+               funding_dates = "quarterly", funding_rule = "obligation-increase",
+               premium_offset = 0.7, reference = "running-max", annual_yield = 0.04,
+               opening_fixed = 5, opening_share = 0.1, expense_rate = 0.02, buffer_months = 12,
+               buffer_paid = TRUE, buffer_expenses = TRUE, fee = list(c(0, 0.1), c(0.1, 0.2)),
+               fee_basis = "profit-over-capital")
+  changes <- list(...)
+  args[names(changes)] <- changes
+  do.call(cashflow_terms, args)
+}
+# The Rust and Python tests' trough under the obligation rule.
+stopifnot(abs(min(cashflow_trace(full(), 0.9, 0.2)$accounts$collateral_balance) +
+                8.885288354521) < 1e-9)
+stopifnot(min(cashflow_trace(full(funding_rule = "shortfall"), 0.9, 0.2)$accounts$
+                collateral_balance) >= -1e-9)
+variants <- list(
+  full(),
+  full(funding_rule = "shortfall", funding_source = "operating-first"),
+  full(funding_dates = c(0, 7, 20), premium_offset = 0.5, reference = "previous-date",
+       collateral_release = "at-commutation", interest_basis = "opening"),
+  full(collateral_release = "quarterly", equity_release = list(every = 6, first = 5),
+       interest_basis = "closing", fee = list(10, 0.25), fee_basis = "profit",
+       adjustments = list(cashflow_adjustment(18, 0.1, TRUE, base = "to-date"))),
+  full(equity_release = "at-commutation", buffer_months = 0)
+)
+u <- c(0.4, 0.9, 1.3, 2)
+for (v in variants) {
+  out <- cashflow_run(v, u, 0.2)
+  for (j in seq_along(u)) {
+    tj <- cashflow_trace(v, u[j], 0.2)
+    stopifnot(abs(tj$conservation_error) < 1e-9, all(abs(tj$accounts$investor - out$flows[j, ]) < 1e-9),
+              abs(tj$fee - out$fee[j]) < 1e-12)
+  }
+}
+short <- full(funding_rule = "shortfall")
+value <- npv(cashflow_run(short, u, 0.2)$flows, 0:29, 0.05, unit = "months")
+stopifnot(all(diff(value) < 0))
+# A requirement given month by month, as the terms compute it.
+short0 <- full(funding_rule = "shortfall", buffer_months = 0)
+rows <- t(sapply(c(0.7, 1.4), function(x) cashflow_trace(short0, x, 0.2)$accounts$requirement))
+given <- cashflow_run(short0, c(0.7, 1.4), 0.2, months_requirement = rows)
+stopifnot(all(abs(given$flows - cashflow_run(short0, c(0.7, 1.4), 0.2)$flows) < 1e-9))
+stopifnot(inherits(try(cashflow_run(short0, c(0.7, 1.4), 0.2, months_requirement = rows[, 1:3]),
+                       silent = TRUE), "try-error"))
+req <- cashflow_requirement(c(reserve = 1))
+fails <- function(...) inherits(try(cashflow_terms(100, 3, rep(1, 3), thirds, thirds, req, ...),
+                                    silent = TRUE), "try-error")
+stopifnot(inherits(try(cashflow_terms(100, 3, rep(1, 3), thirds, thirds,
+                                      cashflow_requirement(c(ibnr = 1))), silent = TRUE),
+                   "try-error"))
+stopifnot(inherits(try(cashflow_requirement(1), silent = TRUE), "try-error"))
+stopifnot(fails(adjustments = list(cashflow_adjustment(3, 0.1))), fails(funding_dates = 0),
+          fails(funding_dates = "weekly"), fails(collateral_release = list(first = 2)))
+stopifnot(inherits(try(cashflow_terms(100, 4, rep(1, 3), thirds, thirds, req), silent = TRUE),
+                   "try-error"))
+
+cat("prospicio R pricing tests passed\n")
