@@ -158,10 +158,10 @@ mod prospicio_native {
         PyChainLadderFit, PyClaimsDevelopmentResult, PyClarkCapeCod, PyClarkFit, PyClarkLdf,
         PyCompartmental, PyCompartmentalCandidate, PyCompartmentalFit, PyCompartmentalFits,
         PyCompartmentalOneYearFit, PyCompartmentalOneYearFits, PyCompartmentalPriors,
-        PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyMack, PyMackBootstrap,
-        PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits, PyOdpBootstrap,
-        PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve, PyTailLogLinear,
-        PyTriangle, diagonal_backtest,
+        PyExpectedLoss, PyExpectedLossFit, PyGlmCandidate, PyLayerSharePrior, PyMack,
+        PyMackBootstrap, PyMackBootstrapFit, PyMackFit, PyMeyers, PyMeyersFit, PyMeyersFits,
+        PyOdpBootstrap, PyOdpBootstrapFit, PyOneYearFit, PyTailBondy, PyTailConstant, PyTailCurve,
+        PyTailLogLinear, PyTriangle, diagonal_backtest,
     };
     #[pymodule_export]
     use super::risk::{

@@ -14185,6 +14185,200 @@ class Layer:
         """
 
 @final
+class LayerSharePrior:
+    """
+    The prior of a layer's expected ultimate for ``BayesBfNormalised``, from
+    the ground-up expected loss ratio and the layer share, each with an
+    uncertainty (``docs/design/reserving-excess.md``, PR 4).
+    
+    The layer's a-priori ultimate for origin ``i`` is the ground-up exposure
+    times ``apriori`` times the share. The normalised BF puts a gamma prior
+    on the layer's expected ultimate, centred there, whose coefficient of
+    variation is that of a product of two independent variables,
+    ``cv = sqrt((1 + apriori_cv**2) * (1 + share_cv**2) - 1)``: the moments
+    are exact, the gamma is their match. The layer's development pattern is
+    estimated from the layer's own triangle under the model's vague prior
+    on the pattern; an excess pattern from ``ExcessPattern`` does not enter
+    (open decision 22 of the design note). The prior is independent across
+    origins, although one share error is common to all of them (open
+    decision 23).
+    
+    Parameters
+    ----------
+    apriori : float
+        The ground-up expected ultimate loss ratio.
+    shares : float or list of float
+        The layer share (``layer_share`` of a severity, or an exposure
+        curve's ``layer_share``), one for all origins or one per origin,
+        each in ``(0, 1]``.
+    apriori_cv : float, default 0.1
+        The loss ratio's coefficient of variation (``inf`` is flat).
+    share_cv : float, default 0.0
+        The share's coefficient of variation, the same at every origin.
+    
+    Examples
+    --------
+    >>> from prospicio.reserving import LayerSharePrior
+    >>> prior = LayerSharePrior(0.65, 0.2, apriori_cv=0.1, share_cv=0.3)
+    >>> round(prior.layer_apriori(0), 12), round(prior.cv ** 2, 12)
+    (0.13, 0.1009)
+    """
+    def __new__(cls, /, apriori: float, shares: Any, apriori_cv: float = 0.1, share_cv: float = 0.0) -> LayerSharePrior: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def apriori(self, /) -> float:
+        """
+        The ground-up expected ultimate loss ratio.
+        """
+    @property
+    def apriori_cv(self, /) -> float:
+        """
+        The loss ratio's coefficient of variation.
+        """
+    @property
+    def cv(self, /) -> float:
+        """
+        The coefficient of variation of the gamma prior on the layer's
+        expected ultimate: ``sqrt((1 + apriori_cv**2) * (1 + share_cv**2) -
+        1)``, ``inf`` if either is.
+        """
+    def fit(self, /, triangle: Triangle, column: str, exposure: str, model: BayesBfNormalised |None = None) -> BayesBfNormalisedFit:
+        """
+        Fits the layer losses ``column`` of a single-segment cumulative
+        triangle that also holds the ground-up ``exposure`` column, with
+        this prior: ``BayesBfNormalised.fit`` on the layer exposure. Raises
+        one ``UserWarning`` listing the failed diagnostics, if any.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+            The layer losses.
+        exposure : str
+            The ground-up exposure column.
+        model : BayesBfNormalised, optional
+            The sampler and other settings; its ``apriori`` and ``cv`` are
+            replaced by the prior's.
+        
+        Returns
+        -------
+        BayesBfNormalisedFit
+        
+        Raises
+        ------
+        ValueError
+            As ``BayesBfNormalised.fit``; if the prior's ``cv`` is 0.
+        """
+    @staticmethod
+    def from_severity(apriori: float, severity: Any, layer: Any, apriori_cv: float = 0.1, share_cv: float = 0.0) -> LayerSharePrior:
+        """
+        A prior with the share of a severity in a layer (``layer_share``,
+        ultimate basis) and its coefficient of variation.
+        
+        Parameters
+        ----------
+        apriori : float
+        severity : severity distribution
+        layer : ExcessLayer
+        apriori_cv : float, default 0.1
+        share_cv : float, default 0.0
+        
+        Returns
+        -------
+        LayerSharePrior
+        """
+    @staticmethod
+    def from_share_se(apriori: float, share: float, share_se: float, apriori_cv: float = 0.1) -> LayerSharePrior:
+        """
+        A prior from one share and its standard error: the share's
+        coefficient of variation is ``share_se / share``.
+        
+        Parameters
+        ----------
+        apriori : float
+        share : float
+        share_se : float
+        apriori_cv : float, default 0.1
+        
+        Returns
+        -------
+        LayerSharePrior
+        """
+    def layer_apriori(self, /, i: int) -> float:
+        """
+        The layer's a-priori loss ratio at origin ``i`` (0-based): the
+        ground-up loss ratio times that origin's share.
+        
+        Parameters
+        ----------
+        i : int
+        
+        Returns
+        -------
+        float
+        """
+    def model(self, /, model: BayesBfNormalised |None = None) -> BayesBfNormalised:
+        """
+        ``model`` (default settings if omitted) with this prior's ground-up
+        ``apriori`` and its ``cv``, for the triangle of ``triangle``.
+        
+        Parameters
+        ----------
+        model : BayesBfNormalised, optional
+            Supplies the sampler, process error, simulations and seed; its
+            own ``apriori`` and ``cv`` are replaced.
+        
+        Returns
+        -------
+        BayesBfNormalised
+        """
+    def one_year(self, /, triangle: Triangle, column: str, exposure: str, model: BayesBfNormalised |None = None, k_threshold: float = 0.7, refit: str = "moment_match_then_refit", max_refits: int |None = None, n_sims: int |None = None) -> BayesOneYearFit:
+        """
+        The one-year view of the same fit (``BayesBfNormalised.one_year``).
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        column : str
+        exposure : str
+        model : BayesBfNormalised, optional
+        k_threshold : float, default 0.7
+        refit : str, default "moment_match_then_refit"
+        max_refits : int, optional
+        n_sims : int, optional
+            As in ``BayesBfNormalised.one_year``.
+        
+        Returns
+        -------
+        BayesOneYearFit
+        """
+    @property
+    def share_cv(self, /) -> float:
+        """
+        The share's coefficient of variation.
+        """
+    @property
+    def shares(self, /) -> list[float]:
+        """
+        The layer shares, one or one per origin.
+        """
+    def triangle(self, /, triangle: Triangle, exposure: str) -> Triangle:
+        """
+        ``triangle`` with a ``"layer_exposure"`` column: the ground-up
+        exposure column times each origin's share.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+        exposure : str
+            The ground-up exposure column.
+        
+        Returns
+        -------
+        Triangle
+        """
+
+@final
 class LayerStatistics:
     """
     A per-occurrence layer's statistics, from
