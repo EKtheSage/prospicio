@@ -10,4 +10,4 @@
   derived from the ground-up triangle goes into `ChainLadder`, `Mack` and the
   expected-loss methods through their `ldf`, `ldf_kind`, `ldf_weight` and `tail`
   arguments. Bloom and Patrik's, Pinto and Gogol's and Bear's examples are
-  reproduced in both languages.
+  reproduced in both languages (#513).
