@@ -297,16 +297,14 @@ def test_reinsurance_pricing(monkeypatch, capsys):
     tie = min(min(grid.cdf(grid.quantile(p)) - p, p - grid.cdf(grid.quantile(p) - grid.step))
               for _, grid, share in compared if not share for p in (0.5, 0.9, 0.99, 0.999))
     assert len(compared) >= 25 and tie > 0
-    layer = ns["tower_grids"].ceded[1]  # 250 xs 250
-    central = agg["tower_gross", "layer_250x250_ceded_skew_central"]
-    kept = [(i * layer.step, q) for i, q in enumerate(layer.probs) if i * layer.step < 10000.0]
-    mean = sum(x * q for x, q in kept)
-    var = sum((x - mean) ** 2 * q for x, q in kept)
-    skew_below = sum((x - mean) ** 3 * q for x, q in kept) / var**1.5
-    assert abs(skew_below / central - 1) < 1e-13  # "brings it under 1e-13"
-    # On the whole grid the difference is the noise itself, which differs by platform (1.5e-6 on Windows,
-    # 1.8e-6 on Ubuntu), so the prose says "about 2e-6" and this checks the range.
-    assert 1e-6 < abs(ns["whole"] / central - 1) < 2.5e-6
+    # The 250 xs 250 layer's skewness as the notebook computes it, without and with the top of the grid.
+    central = ns["central"]
+    assert central == agg["tower_gross", "layer_250x250_ceded_skew_central"]
+    assert abs(ns["below"] / central - 1) < 1e-13  # "brings it under 1e-13"
+    # On the whole grid the difference is the noise itself, which differs by platform: 1.5e-6 on Windows and
+    # 1.8e-6 on Ubuntu, observed on 2026-10-22. The prose says "about 2e-6"; the band is wide on both sides
+    # (down to 5e-7, a third of the smallest seen) so another platform's noise does not fail it.
+    assert 5e-7 < abs(ns["whole"] / central - 1) < 2.5e-6
     quoted = ns["quoted"]  # aggregate's quoted skew against its density's, largest difference first
     for (example, quantity), _ in quoted[:4]:
         # "the density's rounding deficit (`1 - sum(p)`, of order 1e-15 to 1e-14)"

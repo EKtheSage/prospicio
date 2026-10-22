@@ -106,17 +106,20 @@ sources:
   `*_skew_central`, with `*_density_deficit`); the notebook compares
   prospicio's skewness with `*_skew_central`, to `2e-5`.
 * **FFT noise at the top of the grid moves skewness.** prospicio's FFT leaves
-  noise out to the grid's top, and cubed distance makes it count. Measured on
-  2026-10-22 (the round-off removed from `Tower::on_grid`'s grids by #367 is
-  the likely cause of the change), the 250 xs 250 layer's skewness differs
-  from aggregate's density by `1.5e-6` on Windows and `1.8e-6` on Linux, the
-  noise being platform-dependent (`1.2e-5` when this note was first
-  written), and by under `1e-13` once the probability beyond 10,000
-  (`5.6e-16` in all) is dropped. The worst skewness difference is now the 50%
-  stop-loss share's `9.5e-6`, where aggregate's re-bucketing adds to it; the
-  80% share's is `1.5e-6`. Means, standard deviations and CVs agree to `1e-6`
-  or better. `python/tests/test_examples.py` checks each of these numbers
-  against the notebook's prose (#269).
+  noise out to the grid's top, and cubed distance makes it count. The 250 xs
+  250 layer's skewness differs from aggregate's density by about `2e-6`
+  (observed `1.5e-6` Windows, `1.8e-6` Linux, on 2026-10-22: the noise depends
+  on the platform), and by under `1e-13` once the probability beyond 10,000 is
+  dropped. It was `1.2e-5` when this note was first written; the round-off
+  removed from `Tower::on_grid`'s grids by #367 is the likely cause of the
+  change, an inference that no test checks. The worst skewness difference is
+  the 50% stop-loss share's `9.5e-6`, where aggregate's re-bucketing adds to
+  it; the 80% share's is `1.5e-6`. Means and standard deviations agree to
+  better than `1e-7`. What CI checks (`test_reinsurance_pricing`, #269): the
+  layer's difference lies between `5e-7` and `2.5e-6` and the prose says
+  "about 2e-6", the `1e-13`, the two share figures as the prose prints them,
+  the 50% share being the worst, and the `1e-7` on means and standard
+  deviations. The per-platform values are observations, not checked.
 * **A share off the grid is re-bucketed, adding variance.** An 80% share of
   1,000 xs 1,000 has ceded values at multiples of 3.2 on a step-4 grid;
   aggregate splits them, prospicio keeps a step `0.8 * 4`. Means agree to
