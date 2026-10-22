@@ -79,3 +79,13 @@
   age, times from the age and shares over the outstanding (Python
   `PaymentPattern.unpaid_from`, R `payment_pattern_unpaid()`), and
   Pentagon's loss under Price's name, `expected_loss`, in Python (#214).
+- A book of deals on one shared simulation (`prospicio_pricing::book`):
+  `DealRun` holds a deal's premium, loss and deductions in each
+  simulation (from `Tower::deal_columns`, the amounts behind
+  `deal_ratios`, or from arrays), its inception in months and its
+  investor's flows; `DealBook` selects and shifts deals and gives every
+  amount by deal and in total with ratios as sums over sums, the
+  distribution of an item with each deal's contribution and marginal
+  effect on either tail, the investors' flows on one calendar with the
+  book's IRR, NPV and MOIC on the summed flows, and premium, paid loss
+  and flows by calendar year (#490). In Rust only for now.

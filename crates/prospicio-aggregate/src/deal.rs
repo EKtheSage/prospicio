@@ -955,6 +955,95 @@ impl Tower {
     }
 }
 
+impl Tower {
+    /// The amounts behind [`deal_ratios`](Self::deal_ratios), one value a
+    /// simulation: the premium, the ceded loss, and each commission,
+    /// brokerage and deduction with whether NMBF leaves it out. A portfolio
+    /// of deals adds these up, so that its ratios are sums over sums
+    /// (`prospicio_pricing::book`).
+    ///
+    /// Fails as [`deal_ratios`](Self::deal_ratios) does, and for the result
+    /// of a term of more than one year: a deal's years are read one at a
+    /// time.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, Tower};
+    ///
+    /// let cover = Layer::stop_loss("cover", 120.0, 0.0).unwrap()
+    ///     .premium_rate(1.0, 100.0).unwrap()
+    ///     .brokerage(0.025).unwrap();
+    /// let tower = Tower::new(vec![cover]).unwrap();
+    /// let result = tower.apply_annual(&[40.0, 70.0, 150.0]).unwrap();
+    /// let a = tower.deal_columns(&result, "cover").unwrap();
+    /// assert_eq!(a.premium, [100.0, 100.0, 100.0]);
+    /// assert_eq!(a.loss, [40.0, 70.0, 120.0]);
+    /// assert_eq!(a.deductions[0].name, "brokerage");
+    /// assert_eq!(a.deductions[0].values, [2.5, 2.5, 2.5]);
+    /// ```
+    pub fn deal_columns(
+        &self,
+        result: &PredictiveDistribution,
+        layer: &str,
+    ) -> Result<DealColumns> {
+        let a = self.deal_amounts(result, layer)?;
+        if a.years.len() > 1 {
+            return Err(Error::Data(format!(
+                "{layer:?} is read over {} years; deal columns take one year at a time",
+                a.years.len()
+            )));
+        }
+        let mut deductions: Vec<DealColumn> = a
+            .names
+            .iter()
+            .zip(&a.outside)
+            .map(|(name, &outside_nmbf)| DealColumn {
+                name: name.clone(),
+                outside_nmbf,
+                values: Vec::with_capacity(a.amounts.len()),
+            })
+            .collect();
+        let mut premium = Vec::with_capacity(a.amounts.len());
+        let mut loss = Vec::with_capacity(a.amounts.len());
+        for y in &a.amounts {
+            premium.push(y.premium);
+            loss.push(y.ceded);
+            for (d, &x) in deductions.iter_mut().zip(&y.terms) {
+                d.values.push(x);
+            }
+        }
+        Ok(DealColumns {
+            premium,
+            loss,
+            deductions,
+        })
+    }
+}
+
+/// A layer's or deal's amounts simulation by simulation, from
+/// [`Tower::deal_columns`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct DealColumns {
+    /// The year's premium for the placed share.
+    pub premium: Vec<f64>,
+    /// The ceded loss.
+    pub loss: Vec<f64>,
+    /// The commissions, brokerage and deductions, in the order of
+    /// [`Tower::deal_ratios`].
+    pub deductions: Vec<DealColumn>,
+}
+
+/// One deduction of [`DealColumns`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct DealColumn {
+    /// Its name: `ceding_commission`, `profit_commission`, `brokerage` or a
+    /// deduction's label.
+    pub name: String,
+    /// Whether NMBF leaves it out.
+    pub outside_nmbf: bool,
+    /// Its amount in each simulation.
+    pub values: Vec<f64>,
+}
+
 /// A layer's or deal's amounts in a tower's result, simulation by
 /// simulation and, over a term, year by year.
 struct DealAmounts {
