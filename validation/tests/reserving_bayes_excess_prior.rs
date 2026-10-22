@@ -339,8 +339,7 @@ fn a_vanishing_common_share_is_the_plain_model() {
     }
     .fit(&prior_triangle(&tri), "layer", "layer_exposure")
     .unwrap();
-    let (pa, pp) = (a.reserves.total().mean(), plain.reserves.total().mean());
-    assert!((pa / pp - 1.0).abs() < 1e-6, "{pa} vs {pp}");
+    assert_eq!(a.reserves.draw_matrix(), plain.reserves.draw_matrix());
     // A tiny common cv gives it up to Monte Carlo error.
     let tiny = LayerSharePrior::new(0.35, 0.1, &[SHARE], 1e-4).unwrap();
     assert!(tiny.has_common_factor());

@@ -1,6 +1,6 @@
 # Design note: excess-layer loss development (excess LDFs, benchmark blending, a layer BF prior)
 
-Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); the user decided its decisions 17 to 19 on 2026-10-21, accepting the options PR 2 picked. **PR 3 is built** (branch `claude/excess-pr3`, 2026-10-21): the Python and R bindings (see "API"; the names are open decision 20, the shape of the arguments decision 21). **PR 4 is built** (branch `claude/excess-pr4`, 2026-10-21): `LayerSharePrior`, the layer share and its uncertainty as the gamma prior of `BayesBfNormalised`, in Rust, Python and R (see section 3 and open decisions 22 to 24). The plan is built; the user decided 20, 21 and 23 on 2026-10-22 (20 and 21 as PR 3 picked them, 23 option (a), to be built under issue #518). Lane: Reserving
+Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); the user decided its decisions 17 to 19 on 2026-10-21, accepting the options PR 2 picked. **PR 3 is built** (branch `claude/excess-pr3`, 2026-10-21): the Python and R bindings (see "API"; the names are open decision 20, the shape of the arguments decision 21). **PR 4 is built** (branch `claude/excess-pr4`, 2026-10-21): `LayerSharePrior`, the layer share and its uncertainty as the gamma prior of `BayesBfNormalised`, in Rust, Python and R (see section 3 and open decisions 22 to 24). The plan is built; the user decided 20, 21 and 23 on 2026-10-22 (20 and 21 as PR 3 picked them, 23 option (a)). **23(a) is built** (branch `claude/excess-share-common`, 2026-10-22, issue #518): one share multiplier common to all origins in `BayesBfNormalised`, the default of `LayerSharePrior`, in Rust, Python and R (see section 3 and open decisions 25 to 27). Lane: Reserving
 (`crates/prospicio-reserving/`; `prospicio-prob` severities used read-only;
 `prospicio-pricing` exposure curves reached only through the bindings, see
 open decision 2) · Depends on: `reserving-v02.md` (decision 2, the
@@ -246,12 +246,42 @@ its uncertainty as a cv or a standard error (`cv = se / share`). The adapter
 returns the model (`LayerSharePrior::model(&base)`, the base model supplying
 the sampler and the seed), the triangle with the layer exposure column
 (`LAYER_EXPOSURE_COLUMN`) and the fit and the one-year view of that model, so
-no new Bayesian model type exists and the `YearModel` conformance suite does
-not apply. The layer's development pattern is estimated from the layer's own
+no new Bayesian model type exists. (This is the per-origin prior; PR 5 below
+makes a share error common to all origins the default and adds a parameter to
+the model, whose configuration the `YearModel` conformance suite then covers.) The layer's development pattern is estimated from the layer's own
 triangle under the normalised BF's vague prior on the pattern, so the derived
 excess pattern does not enter (open decision 22). The checks are in
 `validation/tests/reserving_bayes_excess_prior.rs` (see "Validation
 targets").
+
+**PR 5 (built): one share error common to all origins** (decision 23(a),
+issue #518). The share is wrong for every origin or for none, but PR 4's gamma
+priors are independent across origins. `BayesBfNormalised` gets an optional
+`common_cv`; with `Some(c)` the model has one more parameter, a multiplier `s`
+with `s ~ Gamma(shape 1 / c^2, mean 1)` (a gamma, recorded as open decision
+26), and origin `i`'s expected ultimate is conditional on it,
+
+    U_i | s ~ Gamma(shape 1 / cv_elr^2, mean exposure_i * ELR * share_i * s),
+
+so each origin keeps its own loss-ratio uncertainty `cv_elr`, `s` is sampled
+jointly with the other parameters (the last one, `log_share = log s`, on the
+unconstrained scale, carried with each draw) and the data update the share for
+every origin at once. The marginal moments are PR 4's: each `U_i` has mean
+`m_i` and `cv^2 = (1 + cv_elr^2)(1 + cv_share^2) - 1`; what changes is the
+dependence, `Cov(U_i, U_j) = cv_share^2 m_i m_j`, and the total's prior
+variance,
+
+    Var(sum U) = cv_elr^2 (1 + cv_share^2) sum m_i^2 + cv_share^2 (sum m_i)^2
+
+against `((1 + cv_elr^2)(1 + cv_share^2) - 1) sum m_i^2` for independent priors
+(`LayerSharePrior::prior_total`). `LayerSharePrior` takes a `ShareDependence`,
+`Common` by default (the user's decision of 2026-10-22) or `PerOrigin`, PR 4's
+prior kept for comparison; Python `share_dependence="common"` or
+`"per_origin"`, R `share_dependence = `. Without a share error (`share_cv` 0),
+with a flat prior on either factor, or with `PerOrigin`, the model is PR 4's,
+bit for bit; a common share error needs `apriori_cv > 0` (open decision 25).
+The design of the model, its parameterisation and its one-year view are
+`reserving-bayes.md` decision 25.
 
 ## API
 
@@ -490,6 +520,46 @@ parameters are rounded; the second needs the example's trend indices.
   Python and R reproduce the prior's cv, the layer exposure and the prior
   ultimates (`python/tests/test_reserving_bayes_excess_prior.py`,
   `R/prospicio/tests/test-reserving-bayes-excess-prior.R`).
+* **A share error common to all origins (PR 5)**, the same file, Python and R
+  (the layer and the 0.35 ELR as above):
+  * the total's prior variance is the closed form with the covariance
+    `cv_share^2 m_i m_j` (to 1e-9 against the sum over pairs, to Monte Carlo
+    error against 400,000 draws of the generative law in a unit test, and the
+    model's log prior equals the hierarchical gamma density in a unit test);
+    on the layer the prior total's sd is 3.12 million, 6.21 million and 12.4
+    million at share cvs 0.3, 0.6 and 1.2, against 1.04 million, 2.01 million
+    and 3.97 million for independent priors (ratios 2.99, 3.10 and 3.12);
+  * a vanishing share cv is the plain model: `share_cv` 0 is the per-origin
+    model draw for draw, and a common cv of 1e-4 gives the total's mean 3.692
+    million and sd 303,464 against the plain 3.689 million and 303,919;
+  * **the posterior total's interval does not widen against independent
+    priors, it narrows** (the premise of issue #518 holds for the prior, not
+    for the posterior): total reserve sd 500,829, 516,247 and 505,205 at
+    share cvs 0.3, 0.6 and 1.2 under a common share, against 514,073, 640,309
+    and 703,356 under independent priors (ratios 0.97, 0.81 and 0.72); 95%
+    widths 1.97 million, 2.02 million and 1.97 million against 2.01 million,
+    2.48 million and 2.73 million; means 4.88 million, 4.94 million and 4.93
+    million against 4.28 million, 4.54 million and 4.66 million. A known
+    share (cv 0.001) gives 304,352 and 307,509. Against a known share the
+    common error still widens the interval by 65% (sd 304,000 to 501,000);
+    what it does not do is keep widening with the share's cv, because the
+    ten origins identify `s` (posterior sd about 0.08) and each origin is then
+    held to `m_i s` with the loss ratio's own cv of 0.1, where the
+    independent prior gives each origin the whole marginal cv (up to 1.21) and
+    no way to learn from the others. The same holds on immature layers (in
+    exploratory runs, not in the test file, on the four to six youngest origins
+    of GenIns at ELRs 0.35 and 0.5, the common sd was 0.71 to 0.84 of the
+    independent one at share cvs 0.3 to 1.2);
+  * on a layer generated with a known wrong share (the data are 0.35 of paid
+    where the prior says 0.25, so `s` should be 1.4, with the loss ratio set
+    to what the 0.25 layer implies, `apriori_cv` 0.1 and `share_cv` 0.5) the
+    posterior of `s` has mean 1.419 and sd 0.080, and the total expected
+    ultimate over its prior value is 1.422 against the truth 1.4; independent
+    priors reach 1.349;
+  * the model's gradient and negative Hessian match finite differences, the
+    generic `Scalar` density matches the hand-written one, and the one-year
+    conformance suite passes with the multiplier in both halves (see
+    `reserving-bayes.md` decision 25).
 * **Engine and input checks**: a layer triangle whose early ages are all
   zero fits with a weight of 1 on the derived pattern there, and errors as
   today with a weight below 1; Mack's sigma at those ages follows open
@@ -509,6 +579,7 @@ parameters are rounded; the second needs the example's trend indices.
 | 2 | `claude/excess-pr2` | `credibility_weights` with its cap, the shape-drift model, the simulation study with its acceptance thresholds (built) | PR 1 |
 | 3 | `claude/excess-pr3` | Python and R, the stub, `man/`, a note for the Guides lane (built) | PR 2 |
 | 4 | `claude/excess-pr4` | the layer share's uncertainty as a prior: `LayerSharePrior` in Rust, Python and R over `BayesBfNormalised` (built) | PR 3 and #410 |
+| 5 | `claude/excess-share-common` | one share error common to all origins (decision 23(a), #518): `BayesBfNormalised::common_cv`, `ShareDependence`, Rust, Python and R (built) | PR 4 |
 
 Each PR ends with its design status, the lane row, the roadmap row, a
 changelog fragment and a knowledge fragment.
@@ -749,7 +820,51 @@ Opened in PR 3 (each built as the option closest to the existing bindings;
     a parameter of the model (a change to the sampler's model, not an
     adapter). *Recommendation: (a), with (b) if the total reserve's interval
     matters more than the origin by origin ones.*
-   *Decided 2026-10-22 (the user): (a) of the user's alternatives, a single shared share multiplier `s` with mean 1 and cv equal to the share's cv, by which every origin's prior ultimate is multiplied, sampled jointly with the normalised BF's parameters so the data update the share for every origin; one extra parameter in `BayesBfNormalised` (or a layer variant of it), with the `YearModel` conformance suite rerun and its own validation. Not built in PR 4: issue #518, a follow-up PR. Until then the adapter's priors stay independent and the total's interval is understated.*
+   *Decided 2026-10-22 (the user): (a) of the user's alternatives, a single shared share multiplier `s` with mean 1 and cv equal to the share's cv, by which every origin's prior ultimate is multiplied, sampled jointly with the normalised BF's parameters so the data update the share for every origin; one extra parameter in `BayesBfNormalised` (or a layer variant of it), with the `YearModel` conformance suite rerun and its own validation. Not built in PR 4: issue #518, a follow-up PR.*
+   *Built 2026-10-22 (PR 5, branch `claude/excess-share-common`, issue #518): a parameter of `BayesBfNormalised` itself (`common_cv`, absent by default), the default of `LayerSharePrior`; see section 3. The total's **prior** interval is the wider one, by the closed form; the **posterior** total interval is narrower than PR 4's on GenIns, not wider, as the validation section reports.*
+
+Opened in PR 5 (each built as the option closest to the issue and this note;
+open, for the user):
+
+25. **A common share error needs a positive loss-ratio cv.** With `apriori_cv`
+    0 every origin's ultimate would be the same multiple of its prior mean,
+    `U_i = m_i s`, a model with no origin-level parameter, which the
+    normalised BF (whose `cv` must be positive) cannot represent. (a) As
+    built: `LayerSharePrior::model` (and so `fit` and `one_year`) is an error
+    for the common dependence with `apriori_cv` 0, naming `PerOrigin` or a
+    small cv. (b) Fall back to the per-origin prior (which is then the
+    marginal `cv_share` alone and independent, the wrong dependence under
+    the default). (c) Represent `U_i = m_i s` as a model in which `alpha_i`
+    is `log m_i + t`. *Recommendation: (a);* a loss ratio held as known is
+    rare for a layer, and (c) is a second model.
+
+26. **The multiplier is a gamma, not a lognormal.** `s` has mean 1 and cv
+    `share_cv`; both a gamma and a lognormal (`sigma^2 = log(1 + cv^2)`) match
+    that. (a) As built: a gamma, sampled as `t = log s` with the density
+    `k (t - exp t)`, `k = 1 / cv^2`, the same form as the origins' priors
+    (`u - expm1 u`), conjugate in form with `U_i | s` and with exact moments;
+    it is skewed to the right at large cvs (shape below 1 at cv above 1).
+    (b) A lognormal, which is symmetric on the unconstrained scale. *Recommendation:
+    (a);* the two differ only in the tails and the share's own distribution
+    is not known to that detail.
+
+27. **The default total interval changes, and narrows.** Open decision 23(a)
+    expected the shared multiplier to widen the total's interval; on GenIns's
+    layer the posterior total's sd is 0.97, 0.81 and 0.72 times PR 4's at
+    share cvs 0.3, 0.6 and 1.2 (the prior total is 3.0 times as wide). The
+    reason is pooling: the data identify `s` and tie every origin to it, which
+    independent priors with the marginal cv cannot (see section 3). The
+    default is `Common`, as the user decided. (a) As built: `Common` by
+    default, `PerOrigin` available, the change marked breaking in the
+    changelog. (b) `PerOrigin` by default, as in PR 4, and `Common` opt in.
+    (c) Keep the common error in the posterior total by not letting the data
+    update it: hold `s` at its prior (draw it per simulation from its gamma,
+    outside the sampler), which keeps the prior's threefold widening, but it
+    contradicts the issue's "the data updates the share for every origin" and
+    leaves the year's cells unable to inform it. *Recommendation: (a);* it is the coherent model of a share that is wrong
+    for every origin or for none, and PR 4's wider intervals came from
+    discarding what the ten origins say about each other. A user who wants
+    the conservative PR 4 interval uses `PerOrigin`.
 
 24. **The share's cv is an input.** The adapter takes a cv or a standard
     error of the share and does not derive it from a severity's parameter
