@@ -324,6 +324,8 @@ excess_layer_at_shift_rust <- function(severity, attachment, limit, shift) .Call
 
 excess_layer_exposure_rust <- function(triangle, exposure, shares, name) .Call(wrap__excess_layer_exposure_rust, triangle, exposure, shares, name)
 
+layer_share_prior_cv_rust <- function(apriori, apriori_cv, shares, share_cv) .Call(wrap__layer_share_prior_cv_rust, apriori, apriori_cv, shares, share_cv)
+
 EventSet <- new.env(parent = emptyenv())
 
 EventSet$simulate <- function(frequency, severity, n_sims, seed) .Call(wrap__EventSet__simulate, frequency, severity, n_sims, seed)

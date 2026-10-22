@@ -303,6 +303,7 @@ reference:
       - odp_glm_fit
       - odp_glm_cells
       - excess_pattern
+      - layer_share_prior
       - residual_summary
       - claims_development_result
       - tail_constant

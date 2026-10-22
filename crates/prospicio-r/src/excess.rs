@@ -11,6 +11,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_core::Lag;
 use prospicio_reserving::PatternWeight;
+use prospicio_reserving::bayes::LayerSharePrior;
 use prospicio_reserving::excess::{
     Basis, ExcessPattern, Layer, SeverityByMaturity, ShapeBase, layer_at_shift, layer_exposure,
     layer_share,
@@ -211,6 +212,20 @@ fn excess_layer_exposure_rust(
     Ok(Triangle { inner })
 }
 
+/// The coefficient of variation of `layer_share_prior()`: the prior of the
+/// layer's expected ultimate, after the inputs are validated.
+#[extendr]
+fn layer_share_prior_cv_rust(
+    apriori: f64,
+    apriori_cv: f64,
+    shares: Vec<f64>,
+    share_cv: f64,
+) -> Result<f64> {
+    Ok(LayerSharePrior::new(apriori, apriori_cv, &shares, share_cv)
+        .map_err(to_r)?
+        .cv())
+}
+
 extendr_module! {
     mod excess;
     fn excess_pattern_rust;
@@ -218,4 +233,5 @@ extendr_module! {
     fn excess_layer_share_rust;
     fn excess_layer_at_shift_rust;
     fn excess_layer_exposure_rust;
+    fn layer_share_prior_cv_rust;
 }

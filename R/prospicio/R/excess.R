@@ -308,3 +308,124 @@ layer_exposure <- function(triangle, exposure, shares, name) {
   ptr <- rust_result(excess_layer_exposure_rust(triangle@ptr, exposure, as.double(shares), name))
   triangle(ptr = ptr)
 }
+
+#' A Bayesian Bornhuetter-Ferguson prior for an excess layer
+#'
+#' The prior of a layer's expected ultimate for [bayes_bf_normalised()],
+#' from the ground-up expected loss ratio and the layer share, each with an
+#' uncertainty (issue #192; design note `docs/design/reserving-excess.md`,
+#' PR 4). The layer's a-priori ultimate for origin `i` is the ground-up
+#' exposure times `apriori` times the share. The normalised BF puts a gamma
+#' prior on the layer's expected ultimate, centred there, whose coefficient
+#' of variation is that of a product of two independent variables,
+#' `cv = sqrt((1 + apriori_cv^2) * (1 + share_cv^2) - 1)`: the moments are
+#' exact, the gamma is their match. The layer's development pattern is
+#' estimated from the layer's own triangle under the model's vague prior on
+#' the pattern; an [excess_pattern()] does not enter (open decision 22).
+#' The prior is independent across origins, although one share error is
+#' common to all of them (open decision 23).
+#'
+#' * `layer_share_prior()` builds the prior. `shares` is the layer share, a
+#'   severity's [layer_share()] or an exposure curve's
+#'   [exposure_layer_share()], one for all origins or one per origin, each
+#'   in `(0, 1]`. `share_cv` is its coefficient of variation, or give the
+#'   standard error `share_se` of a single share instead.
+#' * `bayes_bf_layer()` fits the layer losses `column` of a triangle that
+#'   also holds the ground-up `exposure` column: [layer_exposure()] with the
+#'   shares, then [bayes_bf_normalised()] with `apriori` and the prior's
+#'   `cv`. The other arguments are those of [bayes_bf_normalised()]. The
+#'   result is a [bayes_bf_normalised_fit].
+#' * `bayes_bf_layer_one_year()` is the one-year view of the same fit, as
+#'   [bayes_bf_normalised_one_year()].
+#'
+#' A `layer_share_prior` has the properties `apriori`, `apriori_cv`,
+#' `shares`, `share_cv` and `cv`.
+#'
+#' This is Python's `LayerSharePrior`.
+#'
+#' @param apriori The ground-up expected ultimate loss ratio.
+#' @param shares The layer share, one number or one per origin.
+#' @param apriori_cv The loss ratio's coefficient of variation (`Inf` is
+#'   flat).
+#' @param share_cv The share's coefficient of variation, the same at every
+#'   origin.
+#' @param share_se The standard error of a single share, instead of
+#'   `share_cv`; the coefficient of variation is `share_se / shares`.
+#' @param prior A `layer_share_prior()`.
+#' @param triangle,column,exposure A single-segment cumulative triangle,
+#'   the layer's losses and the ground-up exposure column.
+#' @param ... The other arguments of [bayes_bf_normalised()] (or
+#'   [bayes_bf_normalised_one_year()]): `development_sd`, `process`,
+#'   `chains`, `tune`, `draws`, `n_sims`, `seed`, `target_accept`,
+#'   `max_depth` and, for the one-year view, `k_threshold`, `refit`,
+#'   `max_refits` and `one_year_sims`.
+#' @returns `layer_share_prior()` a `layer_share_prior`; `bayes_bf_layer()`
+#'   a [bayes_bf_normalised_fit]; `bayes_bf_layer_one_year()` a
+#'   [bayes_one_year_fit].
+#' @seealso [layer_share()], [layer_exposure()], [bayes_bf_normalised()].
+#' @export
+#' @examples
+#' prior <- layer_share_prior(0.65, 0.2, apriori_cv = 0.1, share_cv = 0.3)
+#' prior@cv^2
+#' prior@apriori * prior@shares
+layer_share_prior <- S7::new_class(
+  "layer_share_prior",
+  package = "prospicio",
+  properties = list(
+    apriori = S7::class_double,
+    apriori_cv = S7::class_double,
+    shares = S7::class_double,
+    share_cv = S7::class_double,
+    cv = S7::class_double
+  ),
+  constructor = function(apriori, shares, apriori_cv = 0.1, share_cv = 0, share_se = NULL) {
+    if (!is.numeric(shares) || anyNA(shares) || !length(shares)) {
+      stop("shares must be a number or a numeric vector", call. = FALSE)
+    }
+    if (!is.null(share_se)) {
+      if (length(shares) != 1) stop("share_se needs a single share", call. = FALSE)
+      share_se <- single_number(share_se, "share_se")
+      if (!is.finite(share_se) || share_se < 0) {
+        stop("share_se must be finite and not negative", call. = FALSE)
+      }
+      share_cv <- share_se / shares
+    }
+    apriori <- single_number(apriori, "apriori")
+    apriori_cv <- single_number(apriori_cv, "apriori_cv")
+    share_cv <- single_number(share_cv, "share_cv")
+    shares <- as.double(shares)
+    cv <- rust_result(layer_share_prior_cv_rust(apriori, apriori_cv, shares, share_cv))
+    S7::new_object(S7::S7_object(), apriori = apriori, apriori_cv = apriori_cv, shares = shares,
+                   share_cv = share_cv, cv = cv)
+  }
+)
+
+S7::method(print, layer_share_prior) <- function(x, ...) {
+  cat(sprintf("layer_share_prior(apriori = %s, shares = %s, apriori_cv = %s, share_cv = %s)\n",
+              format(x@apriori, digits = 15), paste(format(x@shares, digits = 15), collapse = ", "),
+              format(x@apriori_cv, digits = 15), format(x@share_cv, digits = 15)))
+  invisible(x)
+}
+
+check_layer_prior <- function(prior) {
+  if (!S7::S7_inherits(prior, layer_share_prior)) {
+    stop("prior must be a layer_share_prior()", call. = FALSE)
+  }
+}
+
+#' @rdname layer_share_prior
+#' @export
+bayes_bf_layer <- function(triangle, column, exposure, prior, ...) {
+  check_layer_prior(prior)
+  layered <- layer_exposure(triangle, exposure, prior@shares, "layer_exposure")
+  bayes_bf_normalised(layered, column, "layer_exposure", apriori = prior@apriori, cv = prior@cv, ...)
+}
+
+#' @rdname layer_share_prior
+#' @export
+bayes_bf_layer_one_year <- function(triangle, column, exposure, prior, ...) {
+  check_layer_prior(prior)
+  layered <- layer_exposure(triangle, exposure, prior@shares, "layer_exposure")
+  bayes_bf_normalised_one_year(layered, column, "layer_exposure", apriori = prior@apriori,
+                               cv = prior@cv, ...)
+}
