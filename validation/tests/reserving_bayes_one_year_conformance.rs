@@ -444,12 +444,14 @@ fn bf(tri: &Triangle) -> Box<Run<'_, BayesBfFit>> {
 }
 
 /// `BayesBfNormalised` with GenIns' premium, apriori 0.5 and cv 0.2, the
-/// same settings as `bf`.
-fn bf_normalised(tri: &Triangle) -> Box<Run<'_, BayesBfNormalisedFit>> {
+/// same settings as `bf`, with a multiplier common to all origins of
+/// coefficient of variation `common_cv` if given (decision 25).
+fn bf_normalised(tri: &Triangle, common_cv: Option<f64>) -> Box<Run<'_, BayesBfNormalisedFit>> {
     Box::new(move |n_sims, seed, refit| {
         BayesBfNormalised {
             apriori: 0.5,
             cv: 0.2,
+            common_cv,
             n_sims,
             seed,
             ..BayesBfNormalised::default()
@@ -679,8 +681,22 @@ fn every_model(seed: u64, strict: bool) -> Vec<(&'static str, Measured)> {
             "BayesBfNormalised GenIns",
             conform(
                 "BayesBfNormalised GenIns",
-                &*bf_normalised(&premium),
-                Some(&*bf_normalised(&closed)),
+                &*bf_normalised(&premium, None),
+                Some(&*bf_normalised(&closed, None)),
+                bf_normalised_reserves,
+                BF_NORMALISED_REFITS,
+                seed,
+                strict,
+            ),
+        ));
+        // The layer prior's common share multiplier (decision 25): one more
+        // parameter, stored as log s and carried with each draw.
+        out.push((
+            "BayesBfNormalised common GenIns",
+            conform(
+                "BayesBfNormalised common GenIns",
+                &*bf_normalised(&premium, Some(0.5)),
+                Some(&*bf_normalised(&closed, Some(0.5))),
                 bf_normalised_reserves,
                 BF_NORMALISED_REFITS,
                 seed,
