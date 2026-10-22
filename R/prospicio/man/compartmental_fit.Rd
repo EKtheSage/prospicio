@@ -75,8 +75,9 @@ amounts over the origin's premium (model 2).}
 \item{paid_response}{\code{"cumulative"} (model 1) or \code{"incremental"} (model
 2).}
 
-\item{fitted}{\code{"paid_and_outstanding"}; \code{"paid_and_incurred"},
-\code{"paid_only"} and \code{"incurred_only"} are not yet built.}
+\item{fitted}{\code{"paid_and_outstanding"} or \code{"paid_and_incurred"} (incurred
+replaces outstanding as the second response, as above); \code{"paid_only"} and
+\code{"incurred_only"} are not yet built.}
 
 \item{rate_order}{\code{"free"} or \code{"ordered"}, as above.}
 
@@ -128,8 +129,14 @@ every combination of \code{likelihood}, \code{scale} and \code{paid_response} is
 built. Under \code{likelihood = "lognormal"} every response must be
 positive, and under \code{paid_response = "incremental"} each paid cell needs
 the paid at the age before; the fit stops with an error naming the cell
-otherwise. \code{fitted} other than \code{"paid_and_outstanding"} is accepted, but
-the fit stops with an error saying it is not yet built.
+otherwise. \code{fitted = "paid_and_incurred"} fits paid and incurred, with incurred in place of
+outstanding as the second response: the mean of an incurred cell is \code{RLR_i (OS(t) +
+RRF_i PD(t))} times premium (or as a loss ratio), with the cumulative \code{PD} even
+under \code{paid_response = "incremental"}, and \code{log_sigma_os} is the incurred sigma.
+Give the incurred column as \code{incurred}, or an outstanding column as \code{outstanding}
+and the incurred is outstanding plus paid where both are observed. The fit's
+\code{outstanding} then holds the future incurred cells. \code{"paid_only"} and
+\code{"incurred_only"} are not yet built.
 
 \code{compartmental_model_2()} is \code{compartmental()} with model 2's
 likelihood, scale and paid response, and a longer, finer sampler: four
@@ -193,7 +200,7 @@ first, with the full log density of each response, normal or log-normal
 (with its \verb{-log y} term), as brms' \code{log_lik}, on the response's scale
 (compare it only with fits of the same responses), plus \code{n_outstanding}, \code{elpd_outstanding} and \code{elpd_paid}.
 
-Errors: if \code{fitted} is not yet built; if a response is not positive
+Errors: if \code{fitted} is \code{"paid_only"} or \code{"incurred_only"}, not yet built; if a response is not positive
 under the log-normal, or a paid cell has no paid at the age before
 under incremental paid; if not exactly one of
 \code{outstanding} and \code{incurred} is given; if a column is missing, the

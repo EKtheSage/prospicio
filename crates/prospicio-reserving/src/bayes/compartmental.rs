@@ -106,7 +106,16 @@ pub enum Fitted {
     /// Paid and outstanding, as both of the paper's models.
     #[default]
     PaidAndOutstanding,
-    /// Paid and incurred: not yet built ([`Error::Bayes`]).
+    /// Paid and incurred (decision 12): incurred replaces outstanding as
+    /// the second response. Each incurred cell's mean is `RLR_i w_i` times the sum of
+    /// `OS(t)` and `RRF_i PD(t)`, with the cumulative `PD` (even under incremental
+    /// paid), `w_i` being the premium on the amount scale and 1 on the
+    /// ratio scale. The second `σ` is the incurred response's. The second
+    /// column of the fit gives the incurred cells: from an incurred
+    /// column ([`Outstanding::FromIncurred`]) directly, from an outstanding
+    /// column ([`Outstanding::Column`]) as outstanding plus paid where both
+    /// are observed. The fit's `outstanding` distribution then holds the
+    /// future incurred cells.
     PaidAndIncurred,
     /// Paid alone: not yet built ([`Error::Bayes`]); from paid alone only
     /// `RLR × RRF` is identified (decision 2).
@@ -760,7 +769,7 @@ impl Compartmental {
         predictive: Stream,
     ) -> Result<CompartmentalFit> {
         self.validate()?;
-        let data = Data::new(triangle, paid, outstanding, premium)?;
+        let data = Data::new(triangle, paid, outstanding, premium, self.fitted)?;
         let model = Model::new(
             &data,
             self.priors,
@@ -1625,6 +1634,7 @@ impl Compartmental {
             likelihood: self.likelihood,
             loss_ratio: self.scale == Scale::LossRatio,
             incremental: self.paid_response == PaidResponse::Incremental,
+            incurred: self.fitted == Fitted::PaidAndIncurred,
         }
     }
 
@@ -1636,7 +1646,7 @@ impl Compartmental {
         };
         match self.fitted {
             Fitted::PaidAndOutstanding => {}
-            Fitted::PaidAndIncurred => return not_yet("fitting paid and incurred"),
+            Fitted::PaidAndIncurred => {}
             Fitted::PaidOnly => return not_yet("fitting paid alone"),
             Fitted::IncurredOnly => return not_yet("fitting incurred alone"),
         }
@@ -2321,6 +2331,7 @@ impl Data {
         paid: &str,
         outstanding: Outstanding<'_>,
         premium: &str,
+        fitted: Fitted,
     ) -> Result<Self> {
         let (origins, premiums, grain) = premium_of(triangle, premium)?;
         let premium_segment = triangle.segment(premium)?;
@@ -2368,26 +2379,35 @@ impl Data {
             Ok(out)
         };
         let paid_cells = cells_of(&paid_segment, paid)?;
+        let incurred = fitted == Fitted::PaidAndIncurred;
+        let paid_at = |i: usize, k: usize| paid_cells.iter().find(|c| c.0 == i && c.1 == k);
         let os_cells = match outstanding {
+            // Incurred is outstanding plus paid where both are observed.
+            Outstanding::Column(column) if incurred => {
+                cells_of(&triangle.segment(column)?, column)?
+                    .into_iter()
+                    .filter_map(|(i, k, v)| paid_at(i, k).map(|c| (i, k, v + c.2)))
+                    .collect()
+            }
             Outstanding::Column(column) => cells_of(&triangle.segment(column)?, column)?,
+            // The incurred cells as they are.
+            Outstanding::FromIncurred(column) if incurred => {
+                cells_of(&triangle.segment(column)?, column)?
+            }
             Outstanding::FromIncurred(column) => {
                 let incurred = cells_of(&triangle.segment(column)?, column)?;
                 incurred
                     .into_iter()
-                    .filter_map(|(i, k, v)| {
-                        paid_cells
-                            .iter()
-                            .find(|c| c.0 == i && c.1 == k)
-                            .map(|c| (i, k, v - c.2))
-                    })
+                    .filter_map(|(i, k, v)| paid_at(i, k).map(|c| (i, k, v - c.2)))
                     .collect()
             }
         };
         if os_cells.is_empty() {
             return Err(Error::Bayes(format!(
-                "column {} gives no outstanding cell; the model needs the outstanding column \
+                "column {} gives no {} cell; the model needs the second response's column \
                  (from paid alone only RLR x RRF is identified)",
-                outstanding_name(outstanding)
+                outstanding_name(outstanding),
+                if incurred { "incurred" } else { "outstanding" }
             )));
         }
         let n = origins.len();
@@ -2484,6 +2504,8 @@ struct Response {
     loss_ratio: bool,
     /// Incremental paid (else cumulative).
     incremental: bool,
+    /// The second response is incurred (else outstanding).
+    incurred: bool,
 }
 
 impl Response {
@@ -2492,12 +2514,14 @@ impl Response {
         likelihood: CompartmentalLikelihood::Normal,
         loss_ratio: false,
         incremental: false,
+        incurred: false,
     };
     /// Their model 2: log-normal on loss ratios, incremental paid.
     const MODEL_2: Self = Self {
         likelihood: CompartmentalLikelihood::LogNormal,
         loss_ratio: true,
         incremental: true,
+        incurred: false,
     };
 
     fn log_normal(self) -> bool {
@@ -2786,6 +2810,7 @@ impl Model {
                 };
                 if log_normal && !(y > 0.0 && y.is_finite()) {
                     let what = match (paid, before.is_some()) {
+                        (false, _) if response.incurred => "incurred",
                         (false, _) => "outstanding",
                         (true, true) => "incremental paid",
                         (true, false) => "paid",
@@ -3168,6 +3193,9 @@ impl Model {
                 None => pd,
             };
             base * rrf * pd
+        } else if self.response.incurred {
+            let (os, pd) = one_os(k_er, k_p, c.t);
+            base * (os + rrf * pd)
         } else {
             base * one_os(k_er, k_p, c.t).0
         }
@@ -3269,7 +3297,11 @@ impl Model {
                 let (a, b) = scale[self.level[c.origin].expect("an observed origin has a level")];
                 let mean = if !c.paid {
                     n_os += 1.0;
-                    a * os
+                    if self.response.incurred {
+                        a * os + b * pd
+                    } else {
+                        a * os
+                    }
                 } else if c.t_before.is_some() {
                     b * (pd - curves[c.k - 1].1)
                 } else {
@@ -3484,8 +3516,12 @@ impl Model {
             };
         }
         for (x, &(i, k)) in row[n_paid..].iter_mut().zip(&future.outstanding) {
-            let (th, (os, _), _) = cell(get(i, rng), k);
-            let mean = self.premium[i] * th[RLR] * os;
+            let (th, (os, pd), _) = cell(get(i, rng), k);
+            let mean = if self.response.incurred {
+                self.premium[i] * th[RLR] * (os + th[RRF] * pd)
+            } else {
+                self.premium[i] * th[RLR] * os
+            };
             *x = self.draw_cell(mean, sigma_os, i, rng);
         }
     }
@@ -3863,7 +3899,14 @@ mod tests {
 
     fn model_with(priors: CompartmentalPriors, ordered: bool, response: Response) -> Model {
         let tri = triangle(true);
-        let data = Data::new(&tri, "paid", incurred(), "premium").unwrap();
+        let data = Data::new(
+            &tri,
+            "paid",
+            incurred(),
+            "premium",
+            Fitted::PaidAndOutstanding,
+        )
+        .unwrap();
         Model::new(&data, priors, ordered, response).unwrap()
     }
 
@@ -4097,6 +4140,201 @@ mod tests {
         let mut g = vec![0.0; m.dim()];
         let got = m.log_posterior(x, &mut g);
         assert!((got - f).abs() <= 1e-12 * f.abs(), "{got} vs {f}");
+    }
+
+    /// A model of the training triangle fitted to paid and incurred.
+    pub(super) fn model_incurred(
+        priors: CompartmentalPriors,
+        ordered: bool,
+        response: Response,
+    ) -> Model {
+        let tri = triangle(true);
+        let data = Data::new(&tri, "paid", incurred(), "premium", Fitted::PaidAndIncurred).unwrap();
+        Model::new(
+            &data,
+            priors,
+            ordered,
+            Response {
+                incurred: true,
+                ..response
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_incurred_cells_are_the_incurred_column_or_the_outstanding_plus_paid() {
+        let tri = triangle(true);
+        let direct =
+            Data::new(&tri, "paid", incurred(), "premium", Fitted::PaidAndIncurred).unwrap();
+        let summed = Data::new(
+            &tri,
+            "paid",
+            Outstanding::Column("os"),
+            "premium",
+            Fitted::PaidAndIncurred,
+        )
+        .unwrap();
+        assert_eq!(direct.outstanding.len(), 45);
+        assert_eq!(direct.outstanding[0].2, 62679.);
+        assert_eq!(direct.outstanding.len(), summed.outstanding.len());
+        for (a, b) in direct.outstanding.iter().zip(&summed.outstanding) {
+            assert_eq!((a.0, a.1), (b.0, b.1));
+            assert!((a.2 - b.2).abs() < 1e-9 * a.2.abs(), "{a:?} {b:?}");
+        }
+    }
+
+    #[test]
+    fn the_incurred_density_is_the_model_written_out() {
+        // The same hand computation as for paid and outstanding, with the
+        // second mean RLR (OS + RRF PD) times the premium.
+        let m = model_incurred(
+            CompartmentalPriors::gesmann_morris(),
+            false,
+            Response::MODEL_1,
+        );
+        assert!(m.response.incurred);
+        assert_eq!(m.cells[0].y, 62679.);
+        let x = &points(&m)[3];
+        let half_t = |l: f64, s: f64| l - 5.5 * ((l.exp() / s).powi(2) / 10.0).ln_1p();
+        let cauchy = |v: f64| -((v / 1000.0).powi(2)).ln_1p();
+        let (a, b) = (3.0 * (0.1 * x[0]).exp(), (0.1 * x[1]).exp());
+        let rho = x[6].tanh();
+        let ls = m.log_sigma0();
+        let mut f = -0.5 * (x[0] * x[0] + x[1] * x[1] + x[2] * x[2] + x[3] * x[3])
+            + half_t(x[4], 0.2)
+            + half_t(x[5], 0.1)
+            + (1.0 - rho * rho).ln()
+            + cauchy(x[ls])
+            + cauchy(x[ls + 1]);
+        for z in &x[m.layout.z0..ls] {
+            f -= 0.5 * z * z;
+        }
+        for c in &m.cells {
+            let j = m.level[c.origin].unwrap();
+            let (z1, z2) = (x[m.layout.z0 + 2 * j], x[m.layout.z0 + 2 * j + 1]);
+            let u1 = x[4].exp() * z1;
+            let u2 = x[5].exp() * (rho * z1 + (1.0 - rho * rho).sqrt() * z2);
+            let rlr = 0.7 * (0.2 * (x[2] + u1)).exp();
+            let rrf = 0.8 * (0.1 * (x[3] + u2)).exp();
+            let t = c.t;
+            let os = rlr * a / (a - b) * ((-b * t).exp() - (-a * t).exp());
+            let pd =
+                rlr * rrf / (a - b) * (a * (1.0 - (-b * t).exp()) - b * (1.0 - (-a * t).exp()));
+            let (mean, l) = if c.paid {
+                (pd, x[ls + 1])
+            } else {
+                (os + pd, x[ls])
+            };
+            let r = (c.y - PREMIUM[c.origin] * mean) / l.exp();
+            f -= l + 0.5 * r * r;
+        }
+        let mut g = vec![0.0; m.dim()];
+        let got = m.log_posterior(x, &mut g);
+        assert!((got - f).abs() <= 1e-12 * f.abs(), "{got} vs {f}");
+    }
+
+    #[test]
+    fn the_incurred_gradient_matches_central_differences() {
+        for ordered in [false, true] {
+            let m = model_incurred(
+                CompartmentalPriors::gesmann_morris(),
+                ordered,
+                Response::MODEL_1,
+            );
+            for x in points(&m) {
+                assert_gradient(|t, g| m.log_posterior(t, g), &x);
+            }
+            // Model 2's hierarchy and response on incurred.
+            let m = model_incurred(
+                CompartmentalPriors::gesmann_morris_2(),
+                ordered,
+                Response::MODEL_2,
+            );
+            for x in points(&m).iter().step_by(4) {
+                assert_gradient(|t, g| m.log_posterior(t, g), x);
+            }
+        }
+    }
+
+    #[test]
+    fn the_incurred_cellwise_gradient_is_the_generic_densitys() {
+        let m = model_incurred(
+            CompartmentalPriors::gesmann_morris_2(),
+            false,
+            Response::MODEL_2,
+        );
+        assert!(m.cellwise);
+        for x in points(&m).iter().step_by(3) {
+            let mut want = vec![0.0; m.dim()];
+            let f = gradient::<CHUNK>(x, &mut want, |t| m.log_density(t));
+            let mut got = vec![0.0; m.dim()];
+            let g = m.cellwise_gradient(x, &mut got);
+            let scale = want.iter().fold(0.0f64, |a, v| a.max(v.abs()));
+            assert!((g - f).abs() <= 1e-12 * f.abs());
+            for (a, b) in got.iter().zip(&want) {
+                assert!((a - b).abs() <= 1e-12 * scale);
+            }
+        }
+    }
+
+    #[test]
+    fn the_incurred_mean_is_the_outstanding_plus_the_paid_mean() {
+        // Cell by cell: incurred = outstanding + cumulative paid, under both
+        // paid responses (the paid cumulative even when paid is incremental).
+        let (os_model, inc_model) = (
+            model_with(
+                CompartmentalPriors::gesmann_morris_2(),
+                false,
+                Response::MODEL_2,
+            ),
+            model_incurred(
+                CompartmentalPriors::gesmann_morris_2(),
+                false,
+                Response::MODEL_2,
+            ),
+        );
+        let c = os_model.cells[0];
+        assert!(!c.paid);
+        let th = [1.2, 0.3, 0.8, 0.9];
+        let os = os_model.cell_mean(&c, th);
+        let paid_cum = {
+            let (_, pd) = one_os(th[KER], th[KP], c.t);
+            c.w * th[RLR] * th[RRF] * pd
+        };
+        let inc = inc_model.cell_mean(&c, th);
+        assert!((inc - (os + paid_cum)).abs() <= 1e-12 * inc);
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_paid_and_incurred_fit_from_either_second_column() {
+        let tri = triangle(true);
+        let m = Compartmental {
+            fitted: Fitted::PaidAndIncurred,
+            ..quick(1)
+        };
+        let fits: Vec<_> = [incurred(), Outstanding::Column("os")]
+            .into_iter()
+            .map(|second| m.fit(&tri, "paid", second, "premium").unwrap())
+            .collect();
+        for fit in &fits {
+            assert_eq!(fit.model.n_outstanding, 45);
+            assert_eq!(fit.reserves.n_components(), 10);
+            // The future incurred cells are above the future paid in the
+            // mean (the 1990 origin at age 10).
+            let key = vec![Period::year(1990).into(), KeyValue::Int(120)];
+            let paid = fit.paid.marginal(&key).unwrap().mean();
+            let inc = fit.outstanding.marginal(&key).unwrap().mean();
+            assert!(inc > 0.9 * paid, "{inc} {paid}");
+            assert!(fit.reserves.total().mean() > 0.0);
+        }
+        // The incurred column, and the outstanding column plus paid, are
+        // the same data.
+        assert_eq!(fits[0].posterior, fits[1].posterior);
     }
 
     #[test]
@@ -4356,13 +4594,6 @@ mod tests {
                 .to_string()
         };
         let cases = [
-            (
-                Compartmental {
-                    fitted: Fitted::PaidAndIncurred,
-                    ..preset()
-                },
-                "paid and incurred",
-            ),
             (
                 Compartmental {
                     fitted: Fitted::PaidOnly,
@@ -4705,6 +4936,7 @@ mod tests {
                             likelihood,
                             loss_ratio,
                             incremental,
+                            incurred: false,
                         };
                         let priors = if two {
                             CompartmentalPriors::gesmann_morris_2()
@@ -5002,12 +5234,26 @@ mod tests {
     fn the_coming_year_of_the_training_triangle() {
         use crate::bayes::one_year::YearModel;
         for (preset, cells) in [(preset(), 20), (preset_2(), 20)] {
-            let data = Data::new(&triangle(true), "paid", incurred(), "premium").unwrap();
+            let data = Data::new(
+                &triangle(true),
+                "paid",
+                incurred(),
+                "premium",
+                Fitted::PaidAndOutstanding,
+            )
+            .unwrap();
             let year = year::CompartmentalYear::new(&preset, &data).unwrap();
             // Every origin's next diagonal, paid and outstanding: 1988 at
             // 120 months, ..., 1997 at 12 months.
             assert_eq!(year.n_year(), cells);
-            let data = Data::new(&triangle(false), "paid", incurred(), "premium").unwrap();
+            let data = Data::new(
+                &triangle(false),
+                "paid",
+                incurred(),
+                "premium",
+                Fitted::PaidAndOutstanding,
+            )
+            .unwrap();
             // Without 1997 the square has 9 ages and 1988 is at the last.
             assert_eq!(
                 year::CompartmentalYear::new(&preset, &data)
@@ -5015,7 +5261,14 @@ mod tests {
                     .n_year(),
                 16
             );
-            let data = Data::new(&closed_triangle(), "paid", incurred(), "premium").unwrap();
+            let data = Data::new(
+                &closed_triangle(),
+                "paid",
+                incurred(),
+                "premium",
+                Fitted::PaidAndOutstanding,
+            )
+            .unwrap();
             assert_eq!(
                 year::CompartmentalYear::new(&preset, &data)
                     .unwrap()
@@ -5044,7 +5297,7 @@ mod tests {
             ..preset
         };
         let fitted = |tri: &Triangle| {
-            let data = Data::new(tri, "paid", incurred(), "premium").unwrap();
+            let data = Data::new(tri, "paid", incurred(), "premium", m.fitted).unwrap();
             let model = Model::new(&data, m.priors, false, m.response()).unwrap();
             let (_, sampled, _) = m.sample(&model, 5).unwrap();
             (data, model, sampled)
@@ -5156,6 +5409,21 @@ mod tests {
     )]
     fn the_one_year_view_of_model_1_conforms() {
         one_year_conformance("compartmental model 1", preset());
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_of_paid_and_incurred_conforms() {
+        one_year_conformance(
+            "compartmental paid and incurred",
+            Compartmental {
+                fitted: Fitted::PaidAndIncurred,
+                ..preset()
+            },
+        );
     }
 
     #[test]

@@ -6167,8 +6167,14 @@ class Compartmental:
     ``likelihood="lognormal"`` every response must be positive, and under
     ``paid_response="incremental"`` each paid cell needs the paid at the
     age before; ``fit`` raises ``ValueError`` naming the cell otherwise.
-    ``fitted`` other than ``"paid_and_outstanding"`` is accepted here, but
-    ``fit`` raises ``ValueError`` saying it is not yet built.
+    ``fitted="paid_and_incurred"`` fits paid and incurred, with incurred in place of
+    outstanding as the second response: the mean of an incurred cell is ``RLR_i (OS(t) +
+    RRF_i PD(t))`` times premium (or as a loss ratio), with the cumulative ``PD`` even
+    under ``paid_response="incremental"``, and ``log_sigma_os`` is the incurred sigma.
+    Give the incurred column as ``incurred=``, or an outstanding column as
+    ``outstanding=`` and the incurred is outstanding plus paid where both are observed.
+    The fit's ``outstanding`` then holds the future incurred cells. ``"paid_only"`` and
+    ``"incurred_only"`` are not yet built.
     
     An origin with a premium and no observed cell (the papers' training
     triangle has one) draws its effects from the population in each
@@ -6208,8 +6214,9 @@ class Compartmental:
     paid_response : str
         ``"cumulative"`` (model 1) or ``"incremental"`` (model 2).
     fitted : str
-        ``"paid_and_outstanding"``; ``"paid_and_incurred"``, ``"paid_only"``
-        and ``"incurred_only"`` are not yet built.
+        ``"paid_and_outstanding"`` or ``"paid_and_incurred"`` (incurred replaces
+        outstanding as the second response, as above); ``"paid_only"`` and
+        ``"incurred_only"`` are not yet built.
     rate_order : str
         ``"free"`` or ``"ordered"``, as above.
     start : str
@@ -6343,7 +6350,7 @@ class Compartmental:
         Raises
         ------
         ValueError
-            If a setting of the model is not yet built; if not exactly one
+            If a setting of the model (``"paid_only"`` or ``"incurred_only"``) is not yet built; if not exactly one
             of ``outstanding`` and ``incurred`` is given; if a column is
             missing, the triangle has several segments, a premium is missing
             or not positive, or the origin and development grains differ; if
