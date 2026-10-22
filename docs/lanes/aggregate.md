@@ -6,6 +6,7 @@
 
 ## Next
 
+- [cashflow-bindings] #479's cash-flow engine in Python and R (`CashflowTerms`, `run`, `trace`), and parity with the user's reference run once they share its numbers
 
 ## Done
 
@@ -36,3 +37,4 @@
 - [brokerage-leg] #485 brokerage and a deal's deductions on a layer, with the scales keyed before annual terms (#477): `Layer::brokerage` and `brokerage_scale`, `Deduction` on premium, loss or an amount and inside or outside NMBF, `scales_before_annual_terms` and `brokerage_within_commission_range` as options, `Tower::deal_ratios` per simulation (loss ratio before and after terms, each deduction, TD, CR, NMBF, margin; by year over a term), JSON version 3; Python `with_brokerage`, `with_deduction`, `Tower.deal_ratios`, R `with_brokerage()`, `with_deduction()`, `deal_ratios()`
 - [deal-scale] a deal-level sliding scale and brokerage read on the loss ratio of several sections together, added to the sections' own (`DealScale`, `Tower::deal_scale`: the sum of the sections' keys over their premiums, its own carry over a term, `deal_ratios` on a deal, JSON format version 4, refused by the grids and the P&L ledger; Rust, Python and R; #477)
 - [deal-ledger] a layer's or deal's brokerage and deductions as legs of the reinsurer's P&L ledger (`Tower::deal_ledger`: one sell group over the annual gross losses, the tower applied to each atom as one annual loss, legs Premium, Loss, Ceding and Profit commission, Brokerage and each deduction, each row at each atom equal to `deal_ratios` times the premium; Python `Tower.deal_ledger`, R `deal_ledger()`; #477)
+- #479 a monthly cash-flow engine for collateralised deals in `prospicio-pricing` (`prospicio_pricing::cashflow`, the user's choice of a module over a crate: a trust and an operating account per simulation, every rule a setting (requirement loads on named bases with a floor and a limit switch, a commutation requirement, premium collection and adjustments, funding dates, rule and source, release timing, interest, opening capital, expenses, a buffer, a tiered fee), `run` for `npv_rows` and `irr_rows`, `trace` with a conservation check; Rust; `time-value.md` decisions 13 to 20)
