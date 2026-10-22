@@ -1,6 +1,6 @@
 # Design note: excess-layer loss development (excess LDFs, benchmark blending, a layer BF prior)
 
-Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); it opens decisions 17 to 19. PR 3 and PR 4 are not built. Lane: Reserving
+Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); the user decided its decisions 17 to 19 on 2026-10-21, accepting the options PR 2 picked. PR 3 and PR 4 are not built. Lane: Reserving
 (`crates/prospicio-reserving/`; `prospicio-prob` severities used read-only;
 `prospicio-pricing` exposure curves reached only through the bindings, see
 open decision 2) · Depends on: `reserving-v02.md` (decision 2, the
@@ -586,8 +586,8 @@ picked:
     shifts, and report the derived pattern's RMSE under each.
     *Decided 2026-10-21 (the user): the option PR 1 picked, a base-development input beside the shapes, with the simulation requirements above as the plan for PR 2.*
 
-Opened in PR 2 (each built as the option closest to the note, for the
-user to decide):
+Opened in PR 2 (each built as the option closest to the note; the user
+decided each on 2026-10-21, accepting the option PR 2 picked):
 
 17. **The cap of `credibility_weights` and its signature.** The note named
     no share and gave an associated function with `k` only. PR 2 builds a
@@ -599,6 +599,7 @@ user to decide):
     no argument. (c) A cap by volume share, `z <= 1 - max_i s_i`, which
     does not stop one huge ratio from a small earlier value.
     *Recommendation: (a);* the study uses 0.1.
+   *Decided 2026-10-21 (the user): the option PR 2 picked, (a) as built.*
 
 18. **The inputs of the shape drift.** Decision 16 asked for a base
     development beside the shapes. PR 2 reads the base from the column of
@@ -611,6 +612,7 @@ user to decide):
     `shifts` is empty. (a) As built. (b) Also a constructor from given base
     factors without a triangle. *Recommendation: (a),* with (b) if the
     bindings want it.
+   *Decided 2026-10-21 (the user): the option PR 2 picked, (a) as built;* the constructor from given base factors (b) stays a later addition.
 
 19. **A default `k`.** Decision 11 left `k` required until the study
     reported RMSE across `k`. Where the model holds the RMSE falls as `k`
@@ -619,6 +621,7 @@ user to decide):
     thin layer. (a) Keep `k` required. (b) A default of 20 with
     `max_influence` 0.1. *Recommendation: (a) until the user has read the
     study;* (b) is the candidate if a default is wanted.
+   *Decided 2026-10-21 (the user): (a), `k` stays required for now, with no default;* the candidate default for later is `k` = 20 with `max_influence` 0.1.
 
 ## References
 
