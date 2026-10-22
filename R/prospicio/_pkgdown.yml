@@ -172,6 +172,7 @@ reference:
       - cashflow_terms
       - cashflow_requirement
       - cashflow_adjustment
+      - deal_run
       - trend_large_losses
       - burning_cost
       - development_pattern
