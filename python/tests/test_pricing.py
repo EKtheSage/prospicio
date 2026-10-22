@@ -934,3 +934,75 @@ def test_issue_214_conveniences():
     d = ar.risk.Distortion
     assert d.proportional_hazard(0.7).parameter == 0.7
     assert d.lep(0.05, 0.1).parameter is None
+
+
+def _book_pair():
+    a = P.DealRun("a", [100.0] * 4, [40.0, 80.0, 20.0, 160.0],
+                  deductions={"brokerage": [2.5] * 4, "fee": ([5.0] * 4, True)})
+    b = P.DealRun("b", [300.0] * 4, [150.0, 330.0, 90.0, 210.0],
+                  deductions={"brokerage": [7.5] * 4, "fee": ([15.0] * 4, True)})
+    return a, b
+
+
+def test_deal_book_sums_and_summary():
+    a, b = _book_pair()
+    book = P.DealBook([a, b])
+    assert book.names == ["a", "b"] and book.n_sims == 4 and len(book) == 2
+    assert book.items == ["premium", "loss", "brokerage", "fee", "total_deductions", "nmbf", "margin"]
+    amounts = book.amounts()
+    assert amounts.dims == ["item", "deal"]
+    loss = amounts.marginal(("loss", "total")).draws
+    assert loss == pytest.approx([190.0, 410.0, 110.0, 370.0])
+    s = book.summary()
+    row = {(d, i): (m, r) for d, i, m, r in zip(s["deal"], s["item"], s["mean"], s["ratio"])}
+    # the book's ratios are sums over sums
+    assert row[("total", "loss")] == pytest.approx((270.0, 270.0 / 400.0))
+    assert row[("a", "nmbf")][0] == pytest.approx(100.0 - 75.0 - 2.5)
+    assert book.select(["b"]).names == ["b"]
+    with pytest.raises(ValueError):
+        P.DealBook([a, a])
+    with pytest.raises(ValueError):
+        P.DealRun("c", [1.0], [1.0], deductions={"margin": [0.0]})
+
+
+def test_deal_book_distribution_adds_up():
+    a, b = _book_pair()
+    d = P.DealBook([a, b]).distribution("loss", [90.0], tvar_levels=[50.0])
+    total = d["total"]
+    # every cell of a contribution adds up to the book's
+    for name in d["contribution"]["a"]:
+        parts = sum(d["contribution"][k][name] for k in ("a", "b"))
+        assert parts == pytest.approx(total[name])
+    assert total["TVaR 50"] == pytest.approx((410.0 + 370.0) / 2)
+    low = P.DealBook([a, b]).distribution("margin", [10.0], tail="lower")
+    assert set(low["marginal"]) == {"a", "b"}
+    with pytest.raises(ValueError, match="unknown tail"):
+        P.DealBook([a, b]).distribution("loss", [90.0], tail="middle")
+
+
+def test_deal_book_cashflows_and_calendar():
+    a, b = _book_pair()
+    a = a.with_flows([[-10.0, 0.0, 10.1]] * 4, [0.0] * 4, [10.0] * 4)
+    b = b.with_flows([[-20.0, 0.0, 20.2]] * 4, [0.0] * 4, [20.0] * 4)
+    one = P.DealBook([a]).cashflows()
+    assert all(one.irr.found)
+    assert one.irr.rate == pytest.approx(one.irr_by_deal["a"].rate)
+    assert one.irr.rate[0] == pytest.approx(1.01**6 - 1.0)
+    book = P.DealBook([a, b.with_inception(1)])
+    out = book.cashflows(0.05)
+    assert out.deals == ["a", "b"] and out.months == 4
+    assert out.flows[0] == pytest.approx([-10.0, -20.0, 10.1, 20.2])
+    assert out.moic == pytest.approx([1.0 + 0.3 / 30.0] * 4)
+    assert out.mean_by_deal["b"] == pytest.approx([0.0, -20.0, 0.0, 20.2])
+    shifted = P.DealBook([a, b]).shifted("b", 1)
+    assert shifted.cashflows(0.05).npv == pytest.approx(out.npv)
+    terms = _full_cashflow_terms()
+    run = terms.run([0.6, 1.5, 0.2, 0.9])
+    c = P.DealRun("c", [100.0] * 4, [60.0, 150.0, 20.0, 90.0]).with_cashflows(terms, run)
+    cal = P.DealBook([c.with_inception(6)]).calendar(2027)
+    assert cal.dims == ["item", "deal", "year"]
+    keys = [k for k in cal.components() if k[:2] == ("written_premium", "total")]
+    assert [k[2] for k in keys] == list(range(2027, 2033))
+    # written over twelve months from July 2027: half in each year
+    assert cal.marginal(keys[0]).draws[0] == pytest.approx(50.0)
+    assert sum(cal.marginal(k).draws[0] for k in keys) == pytest.approx(100.0)

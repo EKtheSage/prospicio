@@ -367,7 +367,7 @@ impl PyPremiumAdjustment {
 /// [40.0, 100.0]
 #[pyclass(name = "CashflowTerms", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyCashflowTerms {
-    inner: CashflowTerms,
+    pub(crate) inner: CashflowTerms,
 }
 
 #[pymethods]
@@ -656,7 +656,7 @@ fn trace_dict<'py>(py: Python<'py>, t: &Trace) -> PyResult<Bound<'py, PyDict>> {
 /// ``CashflowTerms.run``: positive when paid to the investor.
 #[pyclass(name = "Cashflows", module = "prospicio.pricing", frozen)]
 pub(crate) struct PyCashflows {
-    inner: Cashflows,
+    pub(crate) inner: Cashflows,
 }
 
 #[pymethods]

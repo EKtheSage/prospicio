@@ -108,6 +108,22 @@ they are built.
   own IRR); `calendar(start_year)` (written and earned premium, paid loss
   and investor flows by calendar year).
 
+In Python (`prospicio.pricing`): `DealRun(name, premium, loss,
+deductions=, inception=)` (a deduction NMBF leaves out given as
+`(amounts, True)`), `DealRun.from_tower`, and `with_inception`,
+`with_patterns`, `with_cashflows(terms, cashflows)` and `with_flows`, each
+returning a new run; `DealBook` with `select`, `shifted`, `amounts()` and
+`calendar(start_year)` as `PredictiveDistribution`s, `summary()` as
+columns, `distribution(item, percentiles, ..., tail=)` as a dict of the
+total and each deal's contribution and marginal cells, and `cashflows(rate)`
+as a `BookCashflows` (the book's `irr` an `IrrResult`, `irr_by_deal` and
+`mean_by_deal` by name). In R: `deal_run()` (deductions a named list,
+`outside_nmbf` their names NMBF leaves out, flows from a `cashflow_run()`
+with its `terms` or a matrix) and `deal_run_from_tower()`, `deal_book()`,
+`book_select()`, `book_shift()`, `book_amounts()`, `book_summary()` (a
+data frame), `book_distribution()` (matrices with a column a deal),
+`book_cashflows()` and `book_calendar()`.
+
 ## Decisions
 
 1. **Times run from inception; ages are read as times.** A paid chain

@@ -88,4 +88,6 @@
   distribution of an item with each deal's contribution and marginal
   effect on either tail, the investors' flows on one calendar with the
   book's IRR, NPV and MOIC on the summed flows, and premium, paid loss
-  and flows by calendar year (#490). In Rust only for now.
+  and flows by calendar year (#490); in Python (`DealRun`, `DealBook`,
+  `BookCashflows`) and R (`deal_run()`, `deal_book()` and the `book_*()`
+  functions).

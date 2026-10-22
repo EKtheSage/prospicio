@@ -3635,6 +3635,55 @@ class Book:
         """
 
 @final
+class BookCashflows:
+    """
+    The book's investors' flows from ``DealBook.cashflows``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def deals(self, /) -> list[str]:
+        """
+        The deals' names, in the book's order.
+        """
+    @property
+    def flows(self, /) -> list[list[float]]:
+        """
+        The book's net flow in each month, one list a simulation: the
+        deals' flows summed after their inceptions.
+        """
+    @property
+    def irr(self, /) -> IrrResult:
+        """
+        The book's IRR in each simulation, on its summed flows.
+        """
+    @property
+    def irr_by_deal(self, /) -> dict[str, IrrResult]:
+        """
+        Each deal's own IRR in each simulation, by name.
+        """
+    @property
+    def mean_by_deal(self, /) -> dict[str, list[float]]:
+        """
+        Each deal's mean flow in each month of the book, by name.
+        """
+    @property
+    def moic(self, /) -> list[float]:
+        """
+        The book's MOIC in each simulation: one plus its summed flows over
+        the capital funded and opened over every deal.
+        """
+    @property
+    def months(self, /) -> int:
+        """
+        The book's months, month 0 at 1 January of its first year.
+        """
+    @property
+    def npv(self, /) -> list[float]:
+        """
+        The book's NPV in each simulation, to month 0.
+        """
+
+@final
 class BornhuetterFerguson:
     """
     The Bornhuetter–Ferguson method: each origin's latest value plus the
@@ -8340,6 +8389,163 @@ class CvPath:
     def se(self, /) -> list[float]:
         """
         Standard error of ``mean``, per ``lam``.
+        """
+
+@final
+class DealBook:
+    """
+    Several deals on one shared simulation: simulation ``j`` of every deal
+    is the same year, so the book adds them without reordering.
+    
+    >>> from prospicio.pricing import DealBook, DealRun
+    >>> a = DealRun("a", [100.0, 100.0], [40.0, 80.0])
+    >>> b = DealRun("b", [300.0, 300.0], [150.0, 330.0])
+    >>> s = DealBook([a, b]).summary()
+    >>> [r for d, i, r in zip(s["deal"], s["item"], s["ratio"]) if (d, i) == ("total", "loss")]
+    [0.75]
+    """
+    def __len__(self, /) -> int: ...
+    def __new__(cls, /, deals: Sequence[DealRun]) -> DealBook: ...
+    def __repr__(self, /) -> str: ...
+    def amounts(self, /) -> PredictiveDistribution:
+        """
+        Every item of every deal and of the book in each simulation, with
+        dimensions ``["item", "deal"]``, the deals then ``"total"``.
+        """
+    def calendar(self, /, start_year: int) -> PredictiveDistribution:
+        """
+        The book by calendar year, with dimensions ``["item", "deal",
+        "year"]``: written and earned premium and paid loss from each deal's
+        patterns, and the investors' flows when every deal has them; book
+        month ``m`` falls in ``start_year + m // 12``.
+        """
+    def cashflows(self, /, rate: float = 0.0, *, lower: float |None = None, upper: float |None = None, points: int = 400, bisections: int = 8, newton_steps: int = 3) -> BookCashflows:
+        """
+        The investors' flows on the book's calendar, each deal's moved to
+        its inception and summed in each simulation, with the book's IRR,
+        NPV at ``rate`` and MOIC on the summed flows. Every deal needs
+        flows (``DealRun.with_cashflows`` or ``with_flows``).
+        """
+    def distribution(self, /, item: str, percentiles: Sequence[float], *, tvar_levels: Sequence[float] |None = None, sd_multiples: Sequence[float] |None = None, quantile: str = "inverted_cdf", tvar: str = "exact", tail: str = "upper") -> dict:
+        """
+        The book's statistics of ``item`` and, for each deal, its
+        contribution at the book's ranks and its marginal effect (the book
+        less the book without it), as a dict with ``"total"``,
+        ``"contribution"`` and ``"marginal"`` (each deal's cells by name).
+        ``tail="lower"`` reads low values as the risk, as for a margin.
+        ``percentiles`` and the keywords set the grid as ``statistics``
+        does.
+        
+        >>> from prospicio.pricing import DealBook, DealRun
+        >>> a = DealRun("a", [10.0] * 4, [1.0, 2.0, 3.0, 9.0])
+        >>> b = DealRun("b", [10.0] * 4, [4.0, 1.0, 2.0, 3.0])
+        >>> d = DealBook([a, b]).distribution("loss", [], tvar_levels=[50.0])
+        >>> d["total"]["TVaR 50"], d["contribution"]["a"]["TVaR 50"]
+        (8.5, 6.0)
+        """
+    @property
+    def items(self, /) -> list[str]:
+        """
+        The items of ``amounts``: ``premium``, ``loss``, each deduction,
+        ``total_deductions``, ``nmbf`` and ``margin``.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of simulations.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        The deals' names, in order.
+        """
+    def select(self, /, names: Sequence[str]) -> DealBook:
+        """
+        The deals named in ``names``, in that order.
+        """
+    def shifted(self, /, name: str, month: int) -> DealBook:
+        """
+        The book with the deal ``name`` incepting at ``month`` instead.
+        """
+    def summary(self, /) -> dict:
+        """
+        The mean of every item by deal and in total with its ratio to the
+        mean premium, as columns ``deal``, ``item``, ``mean`` and ``ratio``.
+        The book's ratios are sums over sums.
+        """
+
+@final
+class DealRun:
+    """
+    One deal's results in each simulation of a shared simulation: its
+    premium, its loss and its deductions (a commission, the brokerage, a
+    fee), each a list with one amount a simulation, and its inception in
+    months from 1 January of the book's first year.
+    
+    ``deductions`` maps each deduction's name to its amounts, or to
+    ``(amounts, outside_nmbf)`` for one NMBF leaves out (a manager's fee).
+    The ``with_`` methods return a new run.
+    
+    >>> from prospicio.pricing import DealRun
+    >>> run = DealRun("cat", [100.0, 100.0], [40.0, 150.0],
+    ...               deductions={"brokerage": [2.5, 2.5]}, inception=6)
+    >>> run.n_sims, run.inception
+    (2, 6)
+    """
+    def __new__(cls, /, name: str, premium: Sequence[float], loss: Sequence[float], *, deductions: dict |None = None, inception: int = 0) -> DealRun: ...
+    def __repr__(self, /) -> str: ...
+    @staticmethod
+    def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0) -> DealRun:
+        """
+        A layer's or deal's run from a result of ``tower``: its premium,
+        ceded loss, commissions, brokerage and deductions, the amounts
+        behind ``Tower.deal_ratios``, under the name ``name``.
+        
+        >>> from prospicio.pricing import DealRun
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> cover = (Layer.stop_loss("cover", 120.0, 0.0)
+        ...          .with_premium_rate(1.0, 100.0).with_brokerage(0.025))
+        >>> tower = Tower([cover])
+        >>> run = DealRun.from_tower("cover", tower, tower.apply_annual([40.0, 150.0]), "cover")
+        >>> run.n_sims
+        2
+        """
+    @property
+    def inception(self, /) -> int:
+        """
+        The inception month.
+        """
+    @property
+    def n_sims(self, /) -> int:
+        """
+        The number of simulations.
+        """
+    @property
+    def name(self, /) -> str:
+        """
+        The deal's name.
+        """
+    def with_cashflows(self, /, terms: CashflowTerms, cashflows: Cashflows) -> DealRun:
+        """
+        The run with its investor's flows from ``terms.run(...)``, one
+        simulation for each of the deal's, and the terms' patterns.
+        """
+    def with_flows(self, /, flows: Sequence[Sequence[float]], funded: Sequence[float], opening: Sequence[float]) -> DealRun:
+        """
+        The run with its investor's net flows from any model: one list of
+        monthly flows from inception a simulation, and the capital paid in
+        during the term (``funded``) and at inception (``opening``).
+        """
+    def with_inception(self, /, month: int) -> DealRun:
+        """
+        The run incepting at ``month``, counted from 1 January of the
+        book's first year. It moves the deal's flows and patterns, not its
+        losses.
+        """
+    def with_patterns(self, /, written: Sequence[float], earned: Sequence[float], paid: Sequence[float]) -> DealRun:
+        """
+        The run with its monthly cumulative written, earned and paid
+        shares, for ``DealBook.calendar``.
         """
 
 @final

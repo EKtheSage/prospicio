@@ -13,10 +13,12 @@ poisson_tail), the time value of money (PaymentPattern,
 price_over_payout, PayoutPrice) and return metrics on simulated cash flows
 (npv, irr, IrrResult, moic, leverage, tiered_fee), and a collateralised
 deal's monthly cash flows (CashflowTerms, CollateralRequirement,
-PremiumAdjustment, Cashflows)."""
+PremiumAdjustment, Cashflows), and a book of deals on one shared simulation
+(DealRun, DealBook, BookCashflows)."""
 
 from .prospicio_native import (
     AsIf,
+    BookCashflows,
     BurningCost,
     CashflowTerms,
     Cashflows,
@@ -24,6 +26,8 @@ from .prospicio_native import (
     CasualtyRating,
     CollateralRequirement,
     CollectiveModel,
+    DealBook,
+    DealRun,
     DevelopmentPattern,
     ElfTable,
     IlfTable,
@@ -153,4 +157,7 @@ __all__ = [
     "CollateralRequirement",
     "PremiumAdjustment",
     "Cashflows",
+    "DealRun",
+    "DealBook",
+    "BookCashflows",
 ]
