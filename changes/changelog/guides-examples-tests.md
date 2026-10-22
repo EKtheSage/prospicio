@@ -5,4 +5,4 @@
   and run the chart cells under matplotlib's Agg backend; two stale skewness
   figures in `reinsurance_pricing` and its R twin are corrected. A notebook
   opened outside the repository now raises a `FileNotFoundError` that says
-  where to run it, not a bare `StopIteration` (#269).
+  where to run it, not a bare `StopIteration` (#269, #531).
