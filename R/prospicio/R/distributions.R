@@ -324,7 +324,9 @@ S7::method(print, negative_binomial_count) <- function(x, ...) {
 #' [stop_loss()] and [layer()], all exact on the grid.
 #'
 #' @param step Grid step; finite and positive.
-#' @param probs Non-negative probabilities summing to 1.
+#' @param probs Non-negative probabilities summing to 1 within 1e-9.
+#' @param normalize Divide `probs` by their sum first, for hand-built or
+#'   rounded probabilities; the sum must be positive.
 #' @returns A `grid_distribution` object, which inherits from [distribution]. Its `report`
 #'   property is `NULL` for a grid built from probabilities, or a list with
 #'   `method`, `step`, `points`, `tail_mass`, `source_mean`, `grid_mean` and
@@ -344,8 +346,17 @@ grid_distribution <- S7::new_class(
     probs = S7::new_property(S7::class_double, getter = function(self) self@ptr$probs()),
     report = S7::new_property(S7::class_any, getter = function(self) self@ptr$report())
   ),
-  constructor = function(step, probs, ptr = NULL) {
-    if (is.null(ptr)) ptr <- rust_result(Grid$new(as.double(step), as.double(probs)))
+  constructor = function(step, probs, normalize = FALSE, ptr = NULL) {
+    if (is.null(ptr)) {
+      probs <- as.double(probs)
+      if (isTRUE(normalize)) {
+        if (any(!is.finite(probs) | probs < 0) || !(sum(probs) > 0)) {
+          stop("probs must be finite, non-negative and have a positive sum", call. = FALSE)
+        }
+        probs <- probs / sum(probs)
+      }
+      ptr <- rust_result(Grid$new(as.double(step), probs))
+    }
     S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )

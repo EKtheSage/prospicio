@@ -200,6 +200,8 @@ pricing_payment_pattern <- function(times, values, from_development) .Call(wrap_
 
 pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_pattern_values, times, shares, rate, t)
 
+pricing_pattern_unpaid <- function(times, shares, age) .Call(wrap__pricing_pattern_unpaid, times, shares, age)
+
 pricing_price_over_payout <- function(expected_loss, premium, assets, times, shares, rate, coc) .Call(wrap__pricing_price_over_payout, expected_loss, premium, assets, times, shares, rate, coc)
 
 pricing_npv <- function(flows, times, rate, unit) .Call(wrap__pricing_npv, flows, times, rate, unit)

@@ -1315,6 +1315,19 @@ fn pricing_payment_pattern(times: &[f64], values: &[f64], from_development: bool
     ))
 }
 
+/// The pattern of what is unpaid at `age`, with times from `age`.
+#[extendr]
+fn pricing_pattern_unpaid(times: &[f64], shares: &[f64], age: f64) -> Result<List> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec())
+        .and_then(|p| p.unpaid_from(age))
+        .map_err(to_r)?;
+    Ok(list!(
+        times = p.times().to_vec(),
+        shares = p.shares().to_vec(),
+        duration = p.duration()
+    ))
+}
+
 /// A pattern's discount factor and capital years at `rate`, and the share
 /// outstanding at each of `t`.
 #[extendr]
@@ -1648,6 +1661,7 @@ extendr_module! {
     fn pricing_as_if;
     fn pricing_payment_pattern;
     fn pricing_pattern_values;
+    fn pricing_pattern_unpaid;
     fn pricing_price_over_payout;
     fn pricing_npv;
     fn pricing_irr;

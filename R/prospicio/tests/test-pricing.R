@@ -473,4 +473,18 @@ stopifnot(fails(adjustments = list(cashflow_adjustment(3, 0.1))), fails(funding_
 stopifnot(inherits(try(cashflow_terms(100, 4, rep(1, 3), thirds, thirds, req), silent = TRUE),
                    "try-error"))
 
+# #214: the unpaid part of a pattern, a grid normalized, a distortion's
+# single parameter.
+p <- payment_pattern_from_development(c(1, 2, 3, 4), c(4, 2, 1.25, 1))
+u <- payment_pattern_unpaid(p, 1.5)
+stopifnot(isTRUE(all.equal(u$times, c(0.5, 1.5, 2.5))),
+          isTRUE(all.equal(u$shares, c(0.25, 0.3, 0.2) / 0.75, tolerance = 1e-14)))
+stopifnot(inherits(try(payment_pattern_unpaid(p, 4), silent = TRUE), "try-error"))
+stopifnot(inherits(try(grid_distribution(1, c(0.4999999, 0.25, 0.25)), silent = TRUE), "try-error"))
+g <- grid_distribution(1, c(0.4999999, 0.25, 0.25), normalize = TRUE)
+stopifnot(abs(sum(g@probs) - 1) < 1e-15)
+stopifnot(inherits(try(grid_distribution(1, c(0, 0), normalize = TRUE), silent = TRUE), "try-error"))
+stopifnot(identical(distortion("proportional_hazard", 0.7)@parameter, 0.7),
+          is.na(distortion("lep", 0.1, r0 = 0.05)@parameter))
+
 cat("prospicio R pricing tests passed\n")

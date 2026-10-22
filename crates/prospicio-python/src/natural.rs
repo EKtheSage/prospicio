@@ -94,6 +94,12 @@ impl PyPentagon {
         self.inner.loss
     }
 
+    /// ``loss`` under the name ``Price`` gives it.
+    #[getter]
+    fn expected_loss(&self) -> f64 {
+        self.inner.loss
+    }
+
     /// Margin ``M = P - L``.
     #[getter]
     fn margin(&self) -> f64 {

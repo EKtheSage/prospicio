@@ -14,6 +14,12 @@
   `index = TRUE`), so anything simulated with a group follows it without
   matching values (#483, #504).
 
+- `Grid::normalized` rescales probabilities that do not sum to 1, which
+  `Grid::new` rejects (Python `Grid(..., normalize=True)`, R
+  `grid_distribution(..., normalize = TRUE)`), and
+  `Distortion::parameter` gives a one-parameter family's parameter (Python
+  `Distortion.parameter`, R `@parameter`) (#214).
+
 ### Aggregate and reinsurance
 
 - `EventSet::permute` takes a set's years in another order, losses, sums
@@ -69,3 +75,7 @@
   `PremiumAdjustment`, `Cashflows`) and R (`cashflow_terms()`,
   `cashflow_requirement()`, `cashflow_adjustment()`, `cashflow_run()`,
   `cashflow_trace()`).
+- `PaymentPattern::unpaid_from(age)`: the pattern of what is unpaid at an
+  age, times from the age and shares over the outstanding (Python
+  `PaymentPattern.unpaid_from`, R `payment_pattern_unpaid()`), and
+  Pentagon's loss under Price's name, `expected_loss`, in Python (#214).

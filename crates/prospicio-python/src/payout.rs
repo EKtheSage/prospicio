@@ -84,6 +84,31 @@ impl PyPaymentPattern {
         })
     }
 
+    /// The pattern of what is unpaid at ``age``, with times measured from
+    /// ``age``: the payments after it, each over the share outstanding. For
+    /// a reserve valued at ``age``, such as one ceded under a loss portfolio
+    /// transfer; payments at ``age`` itself count as paid.
+    ///
+    /// Parameters
+    /// ----------
+    /// age : float
+    ///
+    /// Returns
+    /// -------
+    /// PaymentPattern
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import PaymentPattern
+    /// >>> p = PaymentPattern([1.0, 2.0, 3.0, 4.0], [0.25] * 4).unpaid_from(2.0)
+    /// >>> p.times, p.shares
+    /// ([1.0, 2.0], [0.5, 0.5])
+    fn unpaid_from(&self, age: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: self.inner.unpaid_from(age).map_err(to_py)?,
+        })
+    }
+
     /// The times.
     #[getter]
     fn times(&self) -> Vec<f64> {

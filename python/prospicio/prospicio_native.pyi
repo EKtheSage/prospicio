@@ -8998,6 +8998,18 @@ class Distortion:
         Distortion
         """
     @property
+    def parameter(self, /) -> float |None:
+        """
+        The parameter of a family with one, such as the proportional
+        hazard's ``rho``; None for a family with several or none.
+        
+        Examples
+        --------
+        >>> from prospicio.risk import Distortion
+        >>> Distortion.wang(0.3).parameter, Distortion.lep(0.05, 0.1).parameter
+        (0.3, None)
+        """
+    @property
     def parameters(self, /) -> dict[str, float]:
         """
         The scalar parameters by name, as the constructor takes them, for
@@ -12167,7 +12179,11 @@ class Grid:
     step : float
         Grid step; must be positive.
     probs : list of float
-        Probabilities at ``0, step, ...``; non-negative, summing to 1.
+        Probabilities at ``0, step, ...``; non-negative, summing to 1 within
+        1e-9.
+    normalize : bool, default False
+        Divide ``probs`` by their sum first, for hand-built or rounded
+        probabilities; the sum must be positive.
     
     Raises
     ------
@@ -12183,7 +12199,7 @@ class Grid:
     """
     def __getnewargs__(self, /) -> tuple[float, list[float]]: ...
     def __len__(self, /) -> int: ...
-    def __new__(cls, /, step: float, probs: Sequence[float]) -> Grid: ...
+    def __new__(cls, /, step: float, probs: Sequence[float], *, normalize: bool = False) -> Grid: ...
     def __repr__(self, /) -> str: ...
     def cdf(self, /, x: float) -> float:
         """
@@ -20071,6 +20087,28 @@ class PaymentPattern:
         """
         The times.
         """
+    def unpaid_from(self, /, age: float) -> PaymentPattern:
+        """
+        The pattern of what is unpaid at ``age``, with times measured from
+        ``age``: the payments after it, each over the share outstanding. For
+        a reserve valued at ``age``, such as one ceded under a loss portfolio
+        transfer; payments at ``age`` itself count as paid.
+        
+        Parameters
+        ----------
+        age : float
+        
+        Returns
+        -------
+        PaymentPattern
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import PaymentPattern
+        >>> p = PaymentPattern([1.0, 2.0, 3.0, 4.0], [0.25] * 4).unpaid_from(2.0)
+        >>> p.times, p.shares
+        ([1.0, 2.0], [0.5, 0.5])
+        """
 
 @final
 class PayoutPrice:
@@ -20149,6 +20187,11 @@ class Pentagon:
     def discount(self, /) -> float:
         """
         Discount ``M / (a - L)``; ``P = (1 - discount) L + discount a``.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        ``loss`` under the name ``Price`` gives it.
         """
     @property
     def loss(self, /) -> float:
