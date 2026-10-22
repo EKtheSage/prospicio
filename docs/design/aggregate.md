@@ -1292,6 +1292,12 @@ the repo).
       a book. A deal-level scale (`DealScale`) spanning programmes needs
       them in one tower, so they then share one basis; mixed bases within
       one tower have no reference output and are not built.
+      `Tower::cover_basis(basis)` sets it, and `Tower::apply_timeline(
+      timeline, exposure)` applies the tower over the contract years it
+      gives, as `apply_term` does; it fails when no basis is set, since a
+      programme's basis is required, not defaulted. A tower with a basis
+      is JSON format version 5 (`"cover_basis": "losses_occurring" |
+      "risks_attaching"`); other towers keep their version.
    9. *Interlocking* (each contract's limit cut to its share of an event
       that spans underwriting years, so one event cannot use a limit
       twice) comes after RAD and LOD (`[interlocking]`). It acts only

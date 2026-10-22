@@ -105,3 +105,7 @@
   share of each month, and `Timeline::years` splits it into contract years
   for `Tower::apply_term` on a losses-occurring or risks-attaching basis
   (#489; Rust).
+- A tower's cover basis (`Tower::cover_basis`, losses occurring or risks
+  attaching) and `Tower::apply_timeline`, which applies the tower over the
+  contract years that basis gives on a `Timeline`; a tower with a basis is
+  JSON format version 5 (#489; Rust).
