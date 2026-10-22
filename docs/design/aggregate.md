@@ -1298,12 +1298,25 @@ the repo).
       programme's basis is required, not defaulted. A tower with a basis
       is JSON format version 5 (`"cover_basis": "losses_occurring" |
       "risks_attaching"`); other towers keep their version.
-   9. *Interlocking* (each contract's limit cut to its share of an event
-      that spans underwriting years, so one event cannot use a limit
-      twice) comes after RAD and LOD (`[interlocking]`). It acts only
-      under RAD when an event falls to two years, has no reference output,
-      and needs the event's total covered loss across the years, which the
-      source indices give.
+   9. *Interlocking* is a programme setting, `Tower::interlocking(on)`,
+      off by default (the user's decision of 2026-10-22). It acts only
+      under RAD, when an event falls in a month that several underwriting
+      years write. For that event each contract's applied limit is cut by
+      the factor (the loss the year's contract covers) / (the event's loss
+      across the programme's underwriting years in the term), that is
+      `s_u / Σ_v s_v` of the month's shares; years outside the term do not
+      count. Retentions are not cut, so with an event of 100 written 25/75
+      and a 50 xs 20 layer the years cede 5 and 37.5 (5 and 50 without).
+      Each year's annual terms (aggregate deductible and limit,
+      reinstatements and their premiums, which are pro rata to the reduced
+      recoveries) apply to its own recoveries. Inuring stages see the same
+      factor on each event. The factors come from the source indices of
+      `Timeline::years_with_sources`, so one event keeps its identity
+      across the years. A tower with interlocking is JSON format version 6
+      (`"interlocking": true`). Checks by construction: off equals the
+      results before; on equals off under LOD and when one year writes
+      each month; on never cedes more of one event than one limit across
+      the years, and never more than off.
    10. *Checks by construction*, since no reference output exists for RAD:
       LOD on a one-year timeline equals `apply`; RAD with all of each
       month's exposure in one year equals LOD on that year; with shares
@@ -1319,6 +1332,9 @@ the repo).
       from 1), `uniform_exposure()` (an exposure is a matrix, a row per
       underwriting year), `with_cover_basis()`, the tower's `cover_basis`
       property and `apply_tower_timeline()`.
+      Interlocking is `Tower.with_interlocking(on=True)` and the
+      `interlocking` property in Python, `with_interlocking()` and the
+      tower's `interlocking` property in R.
 
 ## Validation
 

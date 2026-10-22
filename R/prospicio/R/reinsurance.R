@@ -747,7 +747,8 @@ reinsurance_tower <- S7::new_class(
     layer_names = S7::new_property(S7::class_character, getter = function(self) self@ptr$layer_names()),
     stages = S7::new_property(S7::class_double, getter = function(self) self@ptr$stages()),
     deal_names = S7::new_property(S7::class_character, getter = function(self) self@ptr$deal_names()),
-    cover_basis = S7::new_property(S7::class_any, getter = function(self) self@ptr$cover_basis())
+    cover_basis = S7::new_property(S7::class_any, getter = function(self) self@ptr$cover_basis()),
+    interlocking = S7::new_property(S7::class_logical, getter = function(self) self@ptr$interlocking())
   ),
   constructor = function(layers, ptr = NULL) {
     if (is.null(ptr)) {
@@ -950,6 +951,34 @@ apply_tower_term <- function(tower, years) {
 #' draw_matrix(select_components(rad, "kind", "ceded"))
 with_cover_basis <- function(tower, basis) {
   reinsurance_tower(ptr = rust_result(tower@ptr$with_cover_basis(as.character(basis))))
+}
+
+#' Interlocking contracts under risks attaching
+#'
+#' Under risks attaching an event that several underwriting years write
+#' falls to each by its share. With interlocking each contract's limit is
+#' cut, for that event, by the year's share of the event's loss across the
+#' programme's underwriting years in the term, so the event cannot use a
+#' limit in each year. The retention is not cut, and each year's annual
+#' terms (aggregate deductible and limit, reinstatements and their
+#' premiums) apply to its recoveries. Under losses occurring it changes
+#' nothing. Off by default.
+#'
+#' @param tower A [reinsurance_tower].
+#' @param on Interlock (`TRUE`) or not.
+#' @returns The [reinsurance_tower]; its `interlocking` property says
+#'   which.
+#' @export
+#' @examples
+#' ev <- events_from_years(list(100), times = list(13.5 / 24))
+#' shares <- matrix(0, 2, 24)
+#' shares[1, 14] <- 0.25
+#' shares[2, 14] <- 0.75
+#' tw <- with_cover_basis(reinsurance_tower(list(xol_layer("XL", 50, 20))), "risks_attaching")
+#' tw <- with_interlocking(tw)
+#' draw_matrix(select_components(apply_tower_timeline(tw, timeline(ev, 24), shares), "kind", "ceded"))
+with_interlocking <- function(tower, on = TRUE) {
+  reinsurance_tower(ptr = tower@ptr$with_interlocking(isTRUE(on)))
 }
 
 #' @rdname with_cover_basis

@@ -57,6 +57,17 @@ impl Tower {
     /// assert_eq!(pc(2), [5.0, 12.5]);
     /// ```
     pub fn apply_term(&self, years: &[EventSet]) -> Result<PredictiveDistribution> {
+        self.apply_term_with(years, None)
+    }
+
+    /// [`apply_term`](Self::apply_term) with `factors[t]` scaling the
+    /// limit of each of year `t`'s losses, in the order of its simulations
+    /// and their events (interlocking, [`Tower::interlocking`]).
+    pub(crate) fn apply_term_with(
+        &self,
+        years: &[EventSet],
+        factors: Option<&[Vec<f64>]>,
+    ) -> Result<PredictiveDistribution> {
         let first = years
             .first()
             .ok_or_else(|| Error::Data("a term needs at least one year".into()))?;
@@ -92,11 +103,14 @@ impl Tower {
             n_sims,
             |t, j| {
                 let e = &years[t];
+                let losses = e.events(j);
+                let lf = factors.map(|f| &f[t][e.offset(j)..e.offset(j) + losses.len()]);
                 (
                     e.aggregate_part(j).unwrap_or(&[]),
-                    e.events(j),
+                    losses,
                     e.sums_insured(j),
                     e.times(j),
+                    lf,
                 )
             },
             provenance,
@@ -138,7 +152,15 @@ impl Tower {
         self.apply_paths(
             years.len(),
             n_sims,
-            |t, j| (&[][..], std::slice::from_ref(&totals[t][j]), None, None),
+            |t, j| {
+                (
+                    &[][..],
+                    std::slice::from_ref(&totals[t][j]),
+                    None,
+                    None,
+                    None,
+                )
+            },
             provenance,
         )
     }
@@ -147,7 +169,7 @@ impl Tower {
         &self,
         n_years: usize,
         n_sims: usize,
-        year: impl Fn(usize, usize) -> (&'a [f64], &'a [f64], Option<&'a [f64]>, Option<&'a [f64]>),
+        year: impl Fn(usize, usize) -> YearInputs<'a>,
         base: Provenance,
     ) -> Result<PredictiveDistribution> {
         let columns = Columns::new(self);
@@ -156,7 +178,7 @@ impl Tower {
         for j in 0..n_sims {
             let mut carried = self.carries();
             for t in 0..n_years {
-                let (aggregate, losses, si, times) = year(t, j);
+                let (aggregate, losses, si, times, lf) = year(t, j);
                 self.push_year(
                     &columns,
                     &mut draws,
@@ -164,6 +186,7 @@ impl Tower {
                     losses,
                     si,
                     times,
+                    lf,
                     t,
                     &mut carried,
                 );
@@ -190,6 +213,16 @@ impl Tower {
         )
     }
 }
+
+/// One year of one path: the aggregate part, the losses, their sums
+/// insured, times and limit factors.
+type YearInputs<'a> = (
+    &'a [f64],
+    &'a [f64],
+    Option<&'a [f64]>,
+    Option<&'a [f64]>,
+    Option<&'a [f64]>,
+);
 
 impl EventSet {
     /// Splits the simulations into a term of `n_years` consecutive blocks:

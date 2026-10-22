@@ -1536,3 +1536,25 @@ def test_a_stitched_timeline_gives_back_its_years_under_losses_occurring():
     assert (uniform.n_years, uniform.months) == (2, 36)
     assert sum(row[12] for row in uniform.shares) == pytest.approx(1.0)
     assert [sum(row) for row in uniform.shares] == pytest.approx([12.0, 12.0])
+
+
+def test_interlocking_cuts_each_years_limit_by_its_share():
+    from prospicio.aggregate import EventSet, Exposure, Timeline
+
+    events = EventSet.from_years([[100.0]], times=[[13.5 / 24]])
+    shares = [[0.0] * 24, [0.0] * 24]
+    shares[0][13], shares[1][13] = 0.25, 0.75
+    layer = Layer("XL", 50.0, 20.0, premium=10.0, reinstatement_rates=[1.0])
+    tower = Tower([layer]).with_cover_basis("risks_attaching")
+    assert tower.interlocking is False
+    on = tower.with_interlocking()
+    assert on.interlocking is True and on.with_interlocking(False).interlocking is False
+    assert Tower.from_json(on.to_json()).interlocking is True
+
+    def by_year(t, kind):
+        r = t.apply_timeline(Timeline(events, 24), Exposure(shares))
+        return [r.select("year", [y]).select("kind", [kind]).mean() for y in (1, 2)]
+
+    assert by_year(tower, "ceded") == pytest.approx([5.0, 50.0])
+    assert by_year(on, "ceded") == pytest.approx([5.0, 37.5])
+    assert by_year(on, "reinstatement_premium") == pytest.approx([1.0, 7.5])
