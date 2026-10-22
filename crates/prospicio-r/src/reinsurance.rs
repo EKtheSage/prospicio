@@ -5,7 +5,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::pnl::ExpenseBasis;
 use prospicio_aggregate::{
-    Commission, Deduction, Layer, LimitAllocation, LossSensitivePremium, Tower,
+    Commission, DealScale, Deduction, Layer, LimitAllocation, LossSensitivePremium, Tower,
 };
 
 use crate::aggregate::{AnyCount, EventSet, compound_list};
@@ -496,6 +496,85 @@ impl ReinsuranceTower {
         self.inner.stages.iter().map(|&s| s as f64 + 1.0).collect()
     }
 
+    fn deal_names(&self) -> Vec<String> {
+        self.inner.deals.iter().map(|d| d.name.clone()).collect()
+    }
+
+    /// A deal's scales on several layers together. Empty vectors leave a
+    /// term out; `brokerage` and `carry_years` have at most one value.
+    #[allow(clippy::too_many_arguments)]
+    fn with_deal_scale(
+        &self,
+        name: &str,
+        sections: Vec<String>,
+        commission: &[f64],
+        loss_ratio: &[f64],
+        brokerage: &[f64],
+        brokerage_rate: &[f64],
+        brokerage_loss_ratio: &[f64],
+        carry_deficit: bool,
+        carry_credit: bool,
+        carry_years: &[f64],
+        brokerage_within_commission_range: bool,
+    ) -> Result<Self> {
+        let pairs = |a: &[f64], b: &[f64], what: &str| -> Result<Vec<(f64, f64)>> {
+            if a.len() != b.len() {
+                return Err(Error::Other(format!("give one loss ratio per {what}")));
+            }
+            Ok(a.iter().copied().zip(b.iter().copied()).collect())
+        };
+        if brokerage.len() > 1 || carry_years.len() > 1 {
+            return Err(Error::Other(
+                "brokerage and carry_years take one value".into(),
+            ));
+        }
+        if !brokerage.is_empty() && !brokerage_rate.is_empty() {
+            return Err(Error::Other(
+                "give brokerage or a brokerage scale, not both".into(),
+            ));
+        }
+        let mut deal = DealScale::new(name, sections).map_err(to_r)?;
+        if !commission.is_empty() {
+            deal = deal
+                .sliding_scale(pairs(commission, loss_ratio, "commission")?)
+                .map_err(to_r)?;
+        }
+        let years = carry_years
+            .first()
+            .map(|&y| {
+                if y.is_finite() && y >= 1.0 && y.fract() == 0.0 {
+                    Ok(y as u32)
+                } else {
+                    Err(Error::Other(
+                        "carry_years must be a whole number from 1".into(),
+                    ))
+                }
+            })
+            .transpose()?;
+        if carry_deficit || carry_credit || years.is_some() {
+            deal = deal
+                .carry_forward(carry_deficit, carry_credit, years)
+                .map_err(to_r)?;
+        }
+        if let Some(&rate) = brokerage.first() {
+            deal = deal.brokerage(rate).map_err(to_r)?;
+        }
+        if !brokerage_rate.is_empty() {
+            deal = deal
+                .brokerage_scale(pairs(
+                    brokerage_rate,
+                    brokerage_loss_ratio,
+                    "brokerage rate",
+                )?)
+                .map_err(to_r)?;
+        }
+        if brokerage_within_commission_range {
+            deal = deal.brokerage_within_commission_range();
+        }
+        let inner = self.inner.clone().deal_scale(deal).map_err(to_r)?;
+        Ok(Self { inner })
+    }
+
     fn ceded(&self, losses: &[f64]) -> Vec<f64> {
         self.inner.ceded(losses)
     }
@@ -582,7 +661,7 @@ impl ReinsuranceTower {
         Ok(PredictiveDistribution { inner })
     }
 
-    /// The deal ratios of `layer` in a result of this tower.
+    /// The deal ratios of a layer or a deal in a result of this tower.
     fn deal_ratios(&self, result: Robj, layer: &str) -> Result<PredictiveDistribution> {
         let pd = <&PredictiveDistribution>::try_from(&result)
             .map_err(|_| Error::Other("result must be a predictive_distribution".into()))?;

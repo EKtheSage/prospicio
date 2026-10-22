@@ -5,7 +5,7 @@
 use prospicio_core::{Error, Result};
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
 
-use crate::deal::Deduction;
+use crate::deal::{DealScale, Deduction};
 use crate::monte_carlo::EventSet;
 
 /// A per-occurrence excess-of-loss layer: `limit` xs `attachment` on each
@@ -946,31 +946,17 @@ impl Layer {
         t: usize,
         carry: &mut Carried,
     ) -> f64 {
-        let Some(Commission::SlidingScale(anchors)) = &self.commission else {
+        let Some(scale @ Commission::SlidingScale(_)) = &self.commission else {
             return self.ceding_commission_for(ceded);
         };
-        let Some(cf) = &self.sliding_scale_carry else {
-            return self
-                .commission
-                .as_ref()
-                .map_or(0.0, |c| c.rate(key / self.premium) * self.premium);
-        };
-        let premium = self.premium;
-        let (lr_min, lr_max) = (anchors[0].1, anchors[anchors.len() - 1].1);
-        let cf = *cf;
-        let total = carry.step(key, t, cf.years, |x| {
-            let mut out = 0.0;
-            if cf.deficit {
-                out += (x - lr_max * premium).max(0.0);
-            }
-            if cf.credit {
-                out += (x - lr_min * premium).min(0.0);
-            }
-            out
-        });
-        self.commission
-            .as_ref()
-            .map_or(0.0, |c| c.rate(total / premium) * premium)
+        scale_in(
+            scale,
+            self.premium,
+            key,
+            t,
+            carry,
+            self.sliding_scale_carry.as_ref(),
+        )
     }
 
     /// Swing rating: the year's premium is `terms.premium(ceded loss)`,
@@ -1296,6 +1282,9 @@ pub struct Tower {
     pub layers: Vec<Layer>,
     /// Stage of each layer, starting at 0 and non-decreasing.
     pub stages: Vec<usize>,
+    /// Scales read on the loss ratio of several layers together
+    /// ([`Tower::deal_scale`]), in the order they were added.
+    pub deals: Vec<DealScale>,
 }
 
 impl Tower {
@@ -1339,6 +1328,7 @@ impl Tower {
         Ok(Self {
             layers,
             stages: stage_of,
+            deals: Vec::new(),
         })
     }
 
@@ -1469,7 +1459,10 @@ impl Tower {
     /// <layer name>)` for each with brokerage, `(<label>, <layer name>)`
     /// for each of a layer's [deductions](Layer::deduction), and
     /// `(loss_before_terms, <layer name>)` for each layer whose scales read
-    /// it ([`Layer::scales_before_annual_terms`]). A fixed premium
+    /// it ([`Layer::scales_before_annual_terms`]), then for each deal
+    /// ([`Tower::deal_scale`]) its `(ceding_commission, <deal>)`,
+    /// `(brokerage, <deal>)` and `(loss_before_terms, <deal>)` where it has
+    /// them. A fixed premium
     /// is the layer's `premium` and gets no component;
     /// [`deal_ratios`](Self::deal_ratios) turns a layer's components into
     /// ratios of it.
@@ -1672,7 +1665,7 @@ impl Tower {
             draws.extend((0..n_labels).map(|j| gross[j] - ceded.iter().map(|c| c[j]).sum::<f64>()));
             // The annual components, as an unlabelled year writes them.
             annual.clear();
-            let mut carried = vec![Carried::default(); 2 * n_layers];
+            let mut carried = self.carries();
             self.push_terms(&columns, &mut annual, &year, &keys, 0, &mut carried);
             draws.extend(&annual);
         }
@@ -1764,7 +1757,7 @@ impl Tower {
         let mut draws = Vec::with_capacity(n_sims * columns.len(self));
         for (aggregate, losses, si, times) in years {
             // A single year starts with nothing carried.
-            let mut carried = vec![Carried::default(); 2 * self.layers.len()];
+            let mut carried = self.carries();
             self.push_year(
                 &columns,
                 &mut draws,
@@ -1858,6 +1851,36 @@ impl Tower {
             draws.extend(l.deductions.iter().map(|d| l.deduction_for(d, ceded(i))));
         }
         draws.extend(columns.keyed.iter().map(|&i| keys[i]));
+        // Each deal's scales on its sections' keys and premiums together,
+        // its carry after the layers' two each.
+        let n = self.layers.len();
+        for (j, (deal, sections)) in self.deals.iter().zip(&columns.deals).enumerate() {
+            let premium: f64 = sections.iter().map(|&i| self.layers[i].premium).sum();
+            let key: f64 = sections.iter().map(|&i| keys[i]).sum();
+            if let Some(scale) = &deal.commission {
+                let carry = &mut carried[2 * n + j];
+                draws.push(scale_in(
+                    scale,
+                    premium,
+                    key,
+                    t,
+                    carry,
+                    deal.commission_carry.as_ref(),
+                ));
+            }
+            if deal.brokerage.is_some() {
+                draws.push(deal.brokerage_at(premium, key));
+            }
+            if deal_keyed(self, sections) {
+                draws.push(key);
+            }
+        }
+    }
+
+    /// What a simulated term carries, empty: two per layer (the profit
+    /// commission's, then the sliding scale's), then one per deal.
+    pub(crate) fn carries(&self) -> Vec<Carried> {
+        vec![Carried::default(); 2 * self.layers.len() + self.deals.len()]
     }
 
     /// The provenance of a result: `base` with every layer's terms.
@@ -1937,8 +1960,40 @@ impl Tower {
             }
             provenance = provenance.param(format!("layer:{}", l.name), terms);
         }
+        for d in &self.deals {
+            provenance = provenance.param(format!("deal:{}", d.name), d.terms_text());
+        }
         provenance
     }
+}
+
+/// Year `t`'s amount on a scale over `premium` read at the loss `key`,
+/// carrying deficits and credits in `carry` as `cf` says (a flat rate or
+/// no `cf` reads the year alone).
+pub(crate) fn scale_in(
+    scale: &Commission,
+    premium: f64,
+    key: f64,
+    t: usize,
+    carry: &mut Carried,
+    cf: Option<&CarryForward>,
+) -> f64 {
+    let (Commission::SlidingScale(anchors), Some(cf)) = (scale, cf) else {
+        return scale.rate(key / premium) * premium;
+    };
+    let (lr_min, lr_max) = (anchors[0].1, anchors[anchors.len() - 1].1);
+    let cf = *cf;
+    let total = carry.step(key, t, cf.years, |x| {
+        let mut out = 0.0;
+        if cf.deficit {
+            out += (x - lr_max * premium).max(0.0);
+        }
+        if cf.credit {
+            out += (x - lr_min * premium).min(0.0);
+        }
+        out
+    });
+    scale.rate(total / premium) * premium
 }
 
 fn carry_text(cf: &CarryForward) -> String {
@@ -1958,6 +2013,16 @@ pub(crate) struct Columns {
     brokerage: Vec<usize>,
     deductions: Vec<usize>,
     keyed: Vec<usize>,
+    /// Each deal's sections, by index.
+    deals: Vec<Vec<usize>>,
+}
+
+/// Whether a deal reads a key other than its sections' ceded loss: some
+/// section's scales read the loss before annual terms.
+fn deal_keyed(tower: &Tower, sections: &[usize]) -> bool {
+    sections
+        .iter()
+        .any(|&i| tower.layers[i].scales_before_annual_terms)
 }
 
 impl Columns {
@@ -1974,6 +2039,22 @@ impl Columns {
             brokerage: tower.indices(|l| l.brokerage.is_some()),
             deductions: tower.indices(|l| !l.deductions.is_empty()),
             keyed: tower.indices(|l| l.scales_before_annual_terms),
+            deals: tower
+                .deals
+                .iter()
+                .map(|d| {
+                    d.sections
+                        .iter()
+                        .map(|name| {
+                            tower
+                                .layers
+                                .iter()
+                                .position(|l| &l.name == name)
+                                .expect("a deal's sections are layers of its tower")
+                        })
+                        .collect()
+                })
+                .collect(),
         }
     }
 
@@ -1987,6 +2068,16 @@ impl Columns {
             + self.profit.len()
             + self.brokerage.len()
             + self.keyed.len()
+            + self
+                .deals
+                .iter()
+                .zip(&tower.deals)
+                .map(|(sections, d)| {
+                    usize::from(d.commission.is_some())
+                        + usize::from(d.brokerage.is_some())
+                        + usize::from(deal_keyed(tower, sections))
+                })
+                .sum::<usize>()
             + self
                 .deductions
                 .iter()
@@ -2026,6 +2117,17 @@ impl Columns {
                 .iter()
                 .map(|&i| key("loss_before_terms", &s.layers[i].name)),
         );
+        for (d, sections) in s.deals.iter().zip(&self.deals) {
+            if d.commission.is_some() {
+                components.push(key("ceding_commission", &d.name));
+            }
+            if d.brokerage.is_some() {
+                components.push(key("brokerage", &d.name));
+            }
+            if deal_keyed(s, sections) {
+                components.push(key("loss_before_terms", &d.name));
+            }
+        }
         components
     }
 }

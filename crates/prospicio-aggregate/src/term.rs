@@ -14,7 +14,7 @@ use prospicio_core::{Error, Result};
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::monte_carlo::EventSet;
-use crate::reinsurance::{Carried, Columns, Tower};
+use crate::reinsurance::{Columns, Tower};
 
 impl Tower {
     /// Applies the tower over a contract term of `years.len()` years, each
@@ -150,7 +150,7 @@ impl Tower {
         let width = columns.len(self);
         let mut draws = Vec::with_capacity(n_sims * n_years * width);
         for j in 0..n_sims {
-            let mut carried = vec![Carried::default(); 2 * self.layers.len()];
+            let mut carried = self.carries();
             for t in 0..n_years {
                 let (aggregate, losses, si, times) = year(t, j);
                 self.push_year(

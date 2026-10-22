@@ -1145,8 +1145,24 @@ pricing model (`knowledge/findings/deal-ratios-and-scale-keys.md`).
 5. **Sections.** A deal of several sections is one layer per section, each
    scale on its own section's loss ratio and premium, and the amounts add.
    Summing scales point by point on one grid is right only for one section.
-   A deal-level scale read on the loss ratio of several sections together
-   is not built (Next: `[deal-scale]`).
+   A deal-level scale is a `DealScale` added with `Tower::deal_scale`
+   (`[deal-scale]`): a sliding-scale commission and a brokerage (flat or a
+   scale, optionally held in the deal commission's range) read on the sum
+   of the sections' keys over the sum of their premiums, paid on that
+   summed premium, and added to the sections' own. Each section's key is
+   the one its own scales read (the ceded loss, or the loss before annual
+   terms), so a deal has no key flag of its own. A deal has at least two
+   sections, each with a positive fixed premium (no swing rating or paid
+   reinstatements) and in no other deal. Its commission carries deficits
+   and credits over a term on the deal's key, apart from the sections'
+   carries. The results gain `(ceding_commission, <deal>)`,
+   `(brokerage, <deal>)` and, when a section reads its loss before terms,
+   `(loss_before_terms, <deal>)`. `deal_ratios` takes a deal's name and
+   sums the sections' amounts with the deal's over their premium; a
+   section's own ratios leave the deal out, since no allocation of the
+   deal's amounts to sections was decided. The grid methods and the P&L
+   ledger refuse a tower with a deal: they see one layer's ceded loss at
+   a time. JSON format version 4 carries `"deals"` beside the stages.
 6. **Ratios.** `Tower::deal_ratios(result, layer)` reads a tower's result,
    annual or over a term (with a `year` dimension). Every amount is over
    the year's premium for the placed share (fixed or swing rated;

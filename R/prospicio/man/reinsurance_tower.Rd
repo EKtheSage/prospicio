@@ -13,7 +13,8 @@ reinsurance_tower(layers, ptr = NULL)
 }
 \value{
 A \code{reinsurance_tower} object; apply it with \code{\link[=apply_tower]{apply_tower()}}. Its
-\code{stages} property gives each layer's stage, from 1.
+\code{stages} property gives each layer's stage, from 1, and \code{deal_names}
+the deals added by \code{\link[=with_deal_scale]{with_deal_scale()}}.
 }
 \description{
 Layers applied to the same ground-up losses, in one stage. For inuring

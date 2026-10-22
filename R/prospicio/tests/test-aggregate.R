@@ -788,3 +788,22 @@ held <- with_brokerage_within_commission_range(
                                           c(0.3, 0.1), c(0.5, 0.7)), c(0.03, 0.01), c(0.5, 0.9))
 )
 stopifnot(abs(brokerage_for(held, 90) - 2) < 1e-12, held@brokerage_within_commission_range)
+
+# A deal's scale reads its sections' loss ratio together ([deal-scale]).
+sa <- with_sliding_scale(with_premium_rate(aggregate_stop_loss("A", 50, 0), 1, 100), c(0.35, 0.15), c(0.5, 0.9))
+sb <- with_sliding_scale(with_premium_rate(aggregate_stop_loss("B", Inf, 50), 1, 100), c(0.35, 0.15), c(0.5, 0.9))
+dtw2 <- with_deal_scale(reinsurance_tower(list(sa, sb)), "deal", c("A", "B"),
+  commission = c(0.2, 0.1), loss_ratio = c(0.5, 0.9), brokerage = 0.01, carry_deficit = TRUE)
+stopifnot(identical(dtw2@deal_names, "deal"))
+dres2 <- apply_tower(dtw2, 160)
+dm2 <- draw_matrix(dres2)
+dcol <- function(k, l) dm2[, which(dres2@keys$kind == k & dres2@keys$layer == l)]
+stopifnot(abs(dcol("ceding_commission", "deal") - 25) < 1e-12, abs(dcol("brokerage", "deal") - 2) < 1e-12)
+stopifnot(abs(dcol("ceding_commission", "A") - 35) < 1e-12)
+dr2 <- deal_ratios(dtw2, dres2, "deal")
+dm3 <- draw_matrix(dr2)
+stopifnot(abs(dm3[, which(dr2@keys$ratio == "ceding_commission")] - 75 / 200) < 1e-12)
+stopifnot(identical(tower_to_json(tower_from_json(tower_to_json(dtw2))), tower_to_json(dtw2)))
+stopifnot(inherits(try(with_deal_scale(reinsurance_tower(list(sa, sb)), "deal", "A", brokerage = 0.01), silent = TRUE), "try-error"))
+stopifnot(inherits(try(with_deal_scale(reinsurance_tower(list(sa, sb)), "deal", c("A", "B")), silent = TRUE), "try-error"))
+stopifnot(inherits(try(with_deal_scale(reinsurance_tower(list(sa, sb)), "d", c("A", "B"), brokerage = 0.01, carry_years = 1.5), silent = TRUE), "try-error"))

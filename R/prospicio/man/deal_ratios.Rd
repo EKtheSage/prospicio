@@ -2,7 +2,7 @@
 % Please edit documentation in R/reinsurance.R
 \name{deal_ratios}
 \alias{deal_ratios}
-\title{Deal ratios of a layer}
+\title{Deal ratios of a layer or a deal}
 \usage{
 deal_ratios(tower, result, layer)
 }
@@ -11,7 +11,7 @@ deal_ratios(tower, result, layer)
 
 \item{result}{A \link{predictive_distribution} from applying \code{tower}.}
 
-\item{layer}{The layer's name.}
+\item{layer}{The layer's or the deal's name.}
 }
 \value{
 A \link{predictive_distribution} with dimension \code{ratio} (and \code{year}
@@ -21,14 +21,18 @@ scales read it, \code{ceding_commission}, \code{profit_commission} and
 \code{total_deductions}, \code{combined_ratio}, \code{nmbf} and \code{margin}.
 }
 \description{
-Each simulation's ratios of one layer in a result of this tower
+Each simulation's ratios of one layer or one deal (\code{\link[=with_deal_scale]{with_deal_scale()}})
+in a result of this tower
 (\code{\link[=apply_tower]{apply_tower()}} or \code{\link[=apply_tower_term]{apply_tower_term()}}), every amount over the year's
 premium for the placed share (fixed or swing rated; reinstatement
 premiums are not in it). With \code{d} the deductions (\code{\link[=with_brokerage]{with_brokerage()}}):
 \code{total_deductions = CC + PC + BK + sum(d)}, `combined_ratio = loss_ratio
 \itemize{
 \item total_deductions\verb{, }margin = 1 - combined_ratio\verb{, and }nmbf` the
-margin plus the deductions kept outside it.
+margin plus the deductions kept outside it. For a deal, every amount is
+summed over its sections with the deal's own commission and brokerage
+added, over the sections' premium together; a section's own ratios
+leave the deal's scales out.
 }
 }
 \examples{

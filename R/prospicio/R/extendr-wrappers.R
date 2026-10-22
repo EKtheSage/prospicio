@@ -524,6 +524,10 @@ ReinsuranceTower$layer_names <- function() .Call(wrap__ReinsuranceTower__layer_n
 
 ReinsuranceTower$stages <- function() .Call(wrap__ReinsuranceTower__stages, self)
 
+ReinsuranceTower$deal_names <- function() .Call(wrap__ReinsuranceTower__deal_names, self)
+
+ReinsuranceTower$with_deal_scale <- function(name, sections, commission, loss_ratio, brokerage, brokerage_rate, brokerage_loss_ratio, carry_deficit, carry_credit, carry_years, brokerage_within_commission_range) .Call(wrap__ReinsuranceTower__with_deal_scale, self, name, sections, commission, loss_ratio, brokerage, brokerage_rate, brokerage_loss_ratio, carry_deficit, carry_credit, carry_years, brokerage_within_commission_range)
+
 ReinsuranceTower$ceded <- function(losses) .Call(wrap__ReinsuranceTower__ceded, self, losses)
 
 ReinsuranceTower$on_grid <- function(frequency, severity, points) .Call(wrap__ReinsuranceTower__on_grid, self, frequency, severity, points)

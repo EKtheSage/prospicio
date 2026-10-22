@@ -1467,6 +1467,13 @@ fn per_claim(tower: &Tower) -> Result<Tower> {
 /// reinstatements on a tier of several layers (the joint carries the
 /// tier's total cession), or loss-sensitive terms.
 fn check_occurrence(tower: &Tower) -> Result<()> {
+    if let Some(d) = tower.deals.first() {
+        return Err(Error::Data(format!(
+            "deal {:?} reads the loss ratio of several layers together; as in aggregate, \
+             loss-sensitive terms go on an aggregate cover",
+            d.name
+        )));
+    }
     if annual_occurrence(tower).is_some() {
         let l = &tower.layers[0];
         if l.pro_rata_time {
