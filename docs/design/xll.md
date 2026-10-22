@@ -349,8 +349,9 @@ real Excel.
     the last effect's posterior mean is -5.1 at 10, -2.4 at 3 and -0.9
     at 1, the total mean reserve 54,600, 59,100 and 74,000). The help and
     the README say to keep it wide (user, 2026-10-19;
-    `knowledge/findings/bayes-odp-tight-prior.md`). Other Bayesian models (`BayesBf`, Meyers', the
-    compartmental models) follow the same pattern when wanted.
+    `knowledge/findings/bayes-odp-tight-prior.md`). Other Bayesian models follow the same pattern
+    when wanted: the BF with a normalised pattern does (decision 38);
+    Meyers' and the compartmental models do not yet.
 22. **PML curves by return period, occurrence beside aggregate** (user,
     2026-10-16, the parity plan's next items). `PRO.AGG.PML` takes the
     count and severity as `PRO.AGG.STATS` does (decision 20) and return
@@ -645,10 +646,32 @@ real Excel.
     each, across the other direction from the x. Both directions the same
     way is ambiguous and is an error, and a tabulated curve stays one
     curve (its parameters are ranges by nature). `harness/make_workbook.py`
-    now calls all 96 functions, each with a TRUE/FALSE check beside it;
+    now calls all 96 functions (97 with decision 38's), each with a TRUE/FALSE check beside it;
     the twelve it left out are on the sheets of their area and a new
     "Mack draws" sheet, and the two P95 checks on the ODP sheet read the
     P95 column, not P90.
+38. **The Bayesian BF puts its prior on the ultimate** (user, 2026-10-22,
+    "go ahead", after `BayesBfNormalised` merged; decision 21's pattern).
+    `PRO.BAYES.BF(triangle, exposure, apriori, [cv], [output], ...)` runs
+    the Reserving lane's `BayesBfNormalised`, not `BayesBf`: its pattern
+    is normalised, so each origin's gamma prior has mean `apriori` times
+    exposure and is on the ultimate a Bornhuetter-Ferguson user means,
+    where `BayesBf`'s level is absorbed by its pattern
+    (`knowledge/findings/bayes-bf-apriori-scale.md`). The arguments
+    follow `PRO.BF`'s (triangle, exposure, apriori first) and then
+    `PRO.BAYES.ODP`'s sampler arguments in its order; `cv` is the prior's
+    CV (0.1, the library's default) or `"flat"` for a flat prior on the
+    log ultimate, and `prior_sd` is the SD of the pattern's log share
+    ratios. `common_cv`, last, is the library's multiplier common to all
+    origins (`reserving-bayes.md` decision 25), omitted for none. Its
+    views are `PRO.BAYES.ODP`'s three plus `"ultimates"` (exposure,
+    latest, prior and posterior expected ultimate, posterior loss ratio),
+    the comparison a BF exhibit makes. The fits are kept as decision 21's,
+    eight per model. The tests check every view against the library's
+    fit at the same seed, the flat limit against `PRO.BAYES.ODP` within
+    Monte Carlo error and the tight limit at the chain ladder's ultimates
+    against `PRO.BF`'s reserve. `BayesBf` (EVW's Model 3.1) stays
+    without a sheet form; its one use, EVW parity, is a library check.
 
 ## Parity plan
 
@@ -714,14 +737,6 @@ an XLL function (decision 4: no state) does not hold.
   functions as the user asks (nested
   Archimedean copulas and vines, and the expected multi-year commission
   on the grid, are the nearest left out).
-- **`PRO.BAYES.BF`** (proposed with priors on the ultimate, premium times
-  an a-priori loss ratio with a CV): `BayesBf` cannot carry that prior.
-  Its pattern is not normalised, so the a-priori level is absorbed by the
-  pattern and only the premium's shape across origins and the CV move
-  the reserve (`knowledge/findings/bayes-bf-apriori-scale.md`). Either
-  wrap `BayesBf` as it is, with `apriori` documented as nearly inert,
-  or wait for a Bayesian BF with a normalised pattern in the Reserving
-  lane (asked in #410).
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and

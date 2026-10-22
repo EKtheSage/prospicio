@@ -140,6 +140,7 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.TOWER.PRICE(count_mean, [dispersion], family, p1, p2, [p3], [limit], [attachment], limits, attachments, [shares], [agg_deductibles], [agg_limits], [cover_limit], [cover_retention], distortion, parameter, [step], [points])` | A tower's views priced by a distortion on the annual grid |
 | `PRO.AGG.PML(count_mean, [dispersion], family, p1, p2, [p3], [return_periods], [step], [points])` | Occurrence and aggregate PML curves by return period |
 | `PRO.BAYES.ODP(triangle, [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins])` | Bayesian ODP chain ladder by MCMC (NUTS): reserves, posterior, diagnostics |
+| `PRO.BAYES.BF(triangle, exposure, apriori, [cv], [output], [draws], [chains], [seed], [sims], [percentiles], [prior_sd], [process], [origins], [common_cv])` | Bayesian Bornhuetter-Ferguson by MCMC (NUTS), a gamma prior on each ultimate: reserves, ultimates, posterior, diagnostics |
 | `PRO.PROFILE(sums_insured, expected_losses, limit, attachment, curve, p1, [p2], [p3], [lower], [upper], [spread], [retention], [lines])` | Exposure-rated risk profile by band, with a total |
 
 - `triangle`: cumulative values only, one row per origin (oldest first),
@@ -209,6 +210,18 @@ Ctrl+Alt+F9 to recalculate.
   74,000 at 1 (the chain ladder's is 52,135).
   The last eight fits are kept, so the three views of one fit sample
   once.
+- `PRO.BAYES.BF`: each origin's expected ultimate has a gamma prior with
+  mean `apriori` times `exposure` and CV `cv` (0.1 if omitted), and the
+  pattern is a share of the ultimate at each age. A small `cv` holds the
+  a priori firmly and approaches `PRO.BF`; `"flat"` lets the data decide
+  and gives `PRO.BAYES.ODP`'s reserves. `output` is `"reserves"`
+  (default), `"ultimates"` (prior and posterior expected ultimate per
+  origin), `"params"` (`alpha[w]`, the log ultimates, and `beta[d]`, the
+  pattern's log share ratios to the first age) or `"diagnostics"`.
+  `prior_sd` (10) is the pattern's prior SD; `common_cv`, if given, adds
+  one multiplier common to every origin's prior ultimate with that CV
+  (a shared error in the a priori loss ratio). The same draws, chains
+  and seed arguments, and the same kept fits, as `PRO.BAYES.ODP`.
 - `PRO.SEV.FIT`: `family` is `lognormal`, `gamma`, `weibull`, `burr`,
   `lomax` (fitted by maximum likelihood, each loss conditioned on exceeding its
   reporting threshold) or `pareto`, `piecewise_pareto`, `gen_pareto`
