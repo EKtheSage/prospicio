@@ -23747,23 +23747,26 @@ class Tower:
         """
     def deal_ratios(self, /, result: PredictiveDistribution, layer: str) -> PredictiveDistribution:
         """
-        The deal ratios of one layer in each simulation of a result of this
-        tower (``apply``, ``apply_aggregate``, ``apply_annual`` or
-        ``apply_term``).
+        The deal ratios of one layer or one deal (``with_deal_scale``) in
+        each simulation of a result of this tower (``apply``,
+        ``apply_aggregate``, ``apply_annual`` or ``apply_term``).
         
         Every amount is over the year's premium for the placed share (the
         fixed or the swing-rated premium; reinstatement premiums are not in
         it). With ``d`` the deductions: ``total_deductions = CC + PC + BK +
         sum(d)``, ``combined_ratio = loss_ratio + total_deductions``,
         ``margin = 1 - combined_ratio`` and ``nmbf = margin`` plus the
-        deductions kept outside it.
+        deductions kept outside it. For a deal, every amount is summed over
+        its sections with the deal's own commission and brokerage added,
+        over the sections' premium together; a section's own ratios leave
+        the deal's scales out.
         
         Parameters
         ----------
         result : PredictiveDistribution
             A result of this tower.
         layer : str
-            The layer's name.
+            The layer's or the deal's name.
         
         Returns
         -------
@@ -23778,8 +23781,8 @@ class Tower:
         Raises
         ------
         ValueError
-            For an unknown layer, a result that is not this tower's, or a
-            premium that is not positive.
+            For an unknown layer or deal, a result that is not this tower's,
+            or a premium that is not positive.
         
         Examples
         --------
@@ -23794,6 +23797,11 @@ class Tower:
         >>> r = tower.deal_ratios(tower.apply_annual([40.0, 70.0, 150.0]), "cover")
         >>> [round(r.marginal([k]).draws[1], 12) for k in ["combined_ratio", "margin", "nmbf"]]
         [1.005, -0.005, 0.045]
+        """
+    @property
+    def deals(self, /) -> list[tuple[str, list[str]]]:
+        """
+        Each deal's name and sections, in the order they were added.
         """
     @staticmethod
     def from_json(text: str) -> Tower:
@@ -23960,6 +23968,65 @@ class Tower:
         >>> back = Tower.from_json(tower.to_json())
         >>> back.to_json() == tower.to_json()
         True
+        """
+    def with_deal_scale(self, /, name: str, sections: Sequence[str], sliding_scale: Sequence[tuple[float, float]] |None = None, brokerage: float |None = None, brokerage_scale: Sequence[tuple[float, float]] |None = None, carry_deficit: bool = False, carry_credit: bool = False, carry_years: int |None = None, brokerage_within_commission_range: bool = False) -> Tower:
+        """
+        The same tower with a deal's scales read on the loss ratio of
+        several layers together.
+        
+        The deal's commission and brokerage read the sum of its sections'
+        keys (each section's ceded loss, or its loss before annual terms
+        with ``with_scales_before_annual_terms``) over the sum of their
+        premiums, are paid on that summed premium, and add to whatever each
+        section pays on its own. Results gain ``("ceding_commission",
+        name)``, ``("brokerage", name)`` and, when a section reads its
+        scales before annual terms, ``("loss_before_terms", name)``;
+        ``deal_ratios`` takes the deal's name. The grid methods and the P&L
+        ledger refuse a tower with a deal.
+        
+        Parameters
+        ----------
+        name : str
+            Not a layer's or another deal's name.
+        sections : list of str
+            At least two layers, each with a positive fixed premium (no
+            swing rating or paid reinstatements) and in no other deal.
+        sliding_scale : list of (float, float), optional
+            ``(commission, loss_ratio)`` anchors; the commission must not
+            rise with the loss ratio.
+        brokerage : float, optional
+            A flat brokerage rate on the deal's premium.
+        brokerage_scale : list of (float, float), optional
+            ``(rate, loss_ratio)`` anchors instead of a flat rate.
+        carry_deficit, carry_credit : bool, default False
+            Carry the deal commission's deficits or credits between the
+            years of a term, on the deal's key.
+        carry_years : int, optional
+            How many later years a carried amount lasts; ``None`` without
+            limit.
+        brokerage_within_commission_range : bool, default False
+            Hold the brokerage key inside the deal commission's range.
+        
+        Returns
+        -------
+        Tower
+        
+        Raises
+        ------
+        ValueError
+            For a deal with no scale, a taken name, an unknown, repeated or
+            unpriced section, or a section of another deal.
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> a = Layer.stop_loss("A", 50.0, 0.0).with_premium_rate(1.0, 100.0)
+        >>> b = Layer.stop_loss("B", float("inf"), 50.0).with_premium_rate(1.0, 100.0)
+        >>> tower = Tower([a, b]).with_deal_scale(
+        ...     "deal", ["A", "B"], sliding_scale=[(0.35, 0.5), (0.15, 0.9)])
+        >>> result = tower.apply_annual([160.0])
+        >>> round(result.marginal(["ceding_commission", "deal"]).draws[0], 12)
+        40.0
         """
 
 @final

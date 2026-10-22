@@ -32,22 +32,28 @@
 //! …, "basis": "premium" | "loss" | "fixed", "value": …, "inside_nmbf":
 //! …}, …]`, and the flags `"scales_before_annual_terms": true` and
 //! `"brokerage_within_commission_range": true` (format version 3).
+//! A tower with deal scales ([`Tower::deal_scale`]) has `"deals": [{"name":
+//! …, "sections": [layer names], "sliding_scale": [[commission,
+//! loss_ratio], …], "carry": {"deficit": …, "credit": …, "years": n},
+//! "brokerage": rate | "brokerage_scale": [[rate, loss_ratio], …],
+//! "brokerage_within_commission_range": true}, …]` beside the stages, each
+//! key but the name and sections only when set (format version 4).
 
 use prospicio_core::{Error, Result};
 use serde_json::{Map, Number, Value, json};
 
-use crate::deal::Deduction;
+use crate::deal::{DealScale, Deduction};
 use crate::pnl::ExpenseBasis;
 use crate::reinsurance::{Basis, Commission, Layer, LimitAllocation, LossSensitivePremium, Tower};
 
 /// Value of the `format` field.
 const FORMAT: &str = "risk_rs.tower";
 /// The newest format version this build reads. A document is stamped at
-/// the oldest version that reads it: 3 when a layer has brokerage,
+/// the oldest version that reads it: 4 with a deal scale, 3 when a layer has brokerage,
 /// deductions or a scale read before annual terms, 2 when a layer carries
 /// deficits or credits over a term (which older readers would drop), else
 /// 1.
-const FORMAT_VERSION: u64 = 3;
+const FORMAT_VERSION: u64 = 4;
 
 impl Tower {
     /// The programme as a JSON document; [`from_json`](Self::from_json)
@@ -85,11 +91,22 @@ impl Tower {
                 || l.scales_before_annual_terms
                 || l.brokerage_within_commission_range
         });
-        let doc = json!({
+        let mut doc = json!({
             "format": FORMAT,
-            "format_version": if deal { 3 } else if carries { 2 } else { 1 },
+            "format_version": if !self.deals.is_empty() {
+                4
+            } else if deal {
+                3
+            } else if carries {
+                2
+            } else {
+                1
+            },
             "stages": stages,
         });
+        if !self.deals.is_empty() {
+            doc["deals"] = Value::Array(self.deals.iter().map(deal_json).collect());
+        }
         serde_json::to_string(&doc).expect("a JSON value serializes")
     }
 
@@ -128,8 +145,115 @@ impl Tower {
                     .collect::<Result<Vec<_>>>()
             })
             .collect::<Result<Vec<_>>>()?;
-        Tower::inuring(stages)
+        let mut tower = Tower::inuring(stages)?;
+        match top.get("deals") {
+            None | Some(Value::Null) => {}
+            Some(Value::Array(list)) => {
+                for d in list {
+                    tower = tower.deal_scale(deal_from(object(d, "deal")?)?)?;
+                }
+            }
+            Some(_) => return Err(Error::Data("deals must be a list".into())),
+        }
+        Ok(tower)
     }
+}
+
+fn pairs_json(anchors: &[(f64, f64)]) -> Value {
+    Value::Array(
+        anchors
+            .iter()
+            .map(|&(c, lr)| Value::Array(vec![num(c), num(lr)]))
+            .collect(),
+    )
+}
+
+fn pairs_from(v: &Value, name: &str) -> Result<Vec<(f64, f64)>> {
+    v.as_array()
+        .ok_or_else(|| Error::Data(format!("{name} must be a list")))?
+        .iter()
+        .map(|p| match p.as_array().map(Vec::as_slice) {
+            Some([c, lr]) => Ok((to_f64(c, name)?, to_f64(lr, name)?)),
+            _ => Err(Error::Data(format!(
+                "{name} must list [rate, loss_ratio] pairs"
+            ))),
+        })
+        .collect()
+}
+
+fn deal_json(d: &DealScale) -> Value {
+    let mut m = Map::new();
+    m.insert("name".into(), json!(d.name));
+    m.insert("sections".into(), json!(d.sections));
+    if let Some(Commission::SlidingScale(a)) = &d.commission {
+        m.insert("sliding_scale".into(), pairs_json(a));
+    }
+    if let Some(cf) = &d.commission_carry {
+        m.insert(
+            "carry".into(),
+            json!({"deficit": cf.deficit, "credit": cf.credit, "years": cf.years}),
+        );
+    }
+    match &d.brokerage {
+        Some(Commission::Flat(b)) => {
+            m.insert("brokerage".into(), num(*b));
+        }
+        Some(Commission::SlidingScale(a)) => {
+            m.insert("brokerage_scale".into(), pairs_json(a));
+        }
+        None => {}
+    }
+    if d.brokerage_within_commission_range {
+        m.insert("brokerage_within_commission_range".into(), json!(true));
+    }
+    Value::Object(m)
+}
+
+fn deal_from(m: &Map<String, Value>) -> Result<DealScale> {
+    let name = m
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| Error::Data("a deal's name must be a string".into()))?;
+    let sections = array(m, "sections")?
+        .iter()
+        .map(|s| {
+            s.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| Error::Data("a deal's sections must be layer names".into()))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut deal = DealScale::new(name, sections)?;
+    if let Some(v) = m.get("sliding_scale").filter(|v| !v.is_null()) {
+        deal = deal.sliding_scale(pairs_from(v, "sliding_scale")?)?;
+    }
+    match m.get("carry") {
+        None | Some(Value::Null) => {}
+        Some(Value::Object(cf)) => {
+            let flag = |k: &str| {
+                cf.get(k)
+                    .and_then(Value::as_bool)
+                    .ok_or_else(|| Error::Data(format!("a deal's carry needs a boolean {k}")))
+            };
+            deal = deal.carry_forward(flag("deficit")?, flag("credit")?, carry_years(cf)?)?;
+        }
+        Some(_) => return Err(Error::Data("a deal's carry must be an object".into())),
+    }
+    if m.get("brokerage").is_some_and(|v| !v.is_null()) {
+        deal = deal.brokerage(float(m, "brokerage")?)?;
+    }
+    if let Some(v) = m.get("brokerage_scale").filter(|v| !v.is_null()) {
+        deal = deal.brokerage_scale(pairs_from(v, "brokerage_scale")?)?;
+    }
+    match m.get("brokerage_within_commission_range") {
+        None | Some(Value::Null | Value::Bool(false)) => {}
+        Some(Value::Bool(true)) => deal = deal.brokerage_within_commission_range(),
+        Some(_) => {
+            return Err(Error::Data(
+                "brokerage_within_commission_range must be a boolean".into(),
+            ));
+        }
+    }
+    Ok(deal)
 }
 
 fn layer_json(l: &Layer) -> Value {
@@ -655,6 +779,47 @@ mod tests {
     }
 
     #[test]
+    fn a_deal_scale_round_trips() {
+        let section = |name: &str, attachment: f64| {
+            Layer::xol(name, 50.0, attachment)
+                .unwrap()
+                .premium_rate(1.0, 100.0)
+                .unwrap()
+        };
+        let deal = crate::DealScale::new("deal", ["A", "B"])
+            .unwrap()
+            .sliding_scale(vec![(0.3, 0.5), (0.1, 0.9)])
+            .unwrap()
+            .carry_forward(true, true, Some(3))
+            .unwrap()
+            .brokerage_scale(vec![(0.01, 0.5), (0.03, 0.9)])
+            .unwrap()
+            .brokerage_within_commission_range();
+        let tower = Tower::new(vec![section("A", 0.0), section("B", 50.0)])
+            .unwrap()
+            .deal_scale(deal)
+            .unwrap();
+        let text = tower.to_json();
+        assert!(text.contains("\"format_version\":4") && text.contains("\"deals\":"));
+        let back = Tower::from_json(&text).unwrap();
+        assert_eq!(back, tower);
+        assert_eq!(back.to_json(), text);
+        // A flat deal brokerage, and a deal on a missing section.
+        let flat = Tower::new(vec![section("A", 0.0), section("B", 50.0)])
+            .unwrap()
+            .deal_scale(
+                crate::DealScale::new("d", ["A", "B"])
+                    .unwrap()
+                    .brokerage(0.02)
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(Tower::from_json(&flat.to_json()).unwrap(), flat);
+        assert!(Tower::from_json(&text.replace("[\"A\",\"B\"]", "[\"A\",\"C\"]")).is_err());
+        assert!(Tower::from_json(&text.replace("\"deals\":[", "\"deals\":[1,")).is_err());
+    }
+
+    #[test]
     fn the_limit_allocation_round_trips() {
         let layer = Layer::xol("L", 10.0, 5.0)
             .unwrap()
@@ -697,7 +862,7 @@ mod tests {
         assert!(Tower::from_json("not json").is_err());
         assert!(Tower::from_json(&good.replace("risk_rs.tower", "risk_rs.distribution")).is_err());
         assert!(
-            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":4"))
+            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":5"))
                 .is_err()
         );
         assert!(Tower::from_json(&good.replace("\"loss\"", "\"cat\"")).is_err());

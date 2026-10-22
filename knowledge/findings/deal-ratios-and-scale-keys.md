@@ -4,7 +4,7 @@ title: A reference pricing model's deal deductions are flat on premium and its s
 description: "In a reference simulation pricing model the TPA fee, tax, reinsurance cost and fronting fee are flat rates on the placed premium, so they shift the total deductions without spreading them (sd(TD) = sd(CC) with flat brokerage), and only the manager's fee sits outside NMBF. Its commission and brokerage scales read the loss ratio before the loss-ratio cap and corridor, held inside the commission scale's range, each section on its own loss ratio. NMBF = 1 - ULR - CC - BK holds only with the four legs at zero, and summing scales point by point only for a one-section deal."
 tags: [prospicio-aggregate, reinsurance, deal-ratios, brokerage, sliding-scale, reference-model]
 status: stable
-generated: { by: claude-code/cloud-session, at: 2026-10-21T23:30:00Z }
+generated: { by: claude-code/cloud-session, at: 2026-10-22T01:00:00Z }
 sources:
   - id: issue-485
     resource: https://github.com/EKtheSage/prospicio/issues/485
@@ -62,8 +62,15 @@ deductible, corridor and annual limit, so a cap stated as an
 `aggregate_limit` reproduces the reference's `LR` key; the default stays
 the ceded loss ratio, as `aggregate` reads it.
 `Layer::brokerage_within_commission_range` is the clamp, off by default.
-A deal of several sections is one layer per section. A deal-level scale
-read on the loss ratio of several sections together is not built.
+A deal of several sections is one layer per section, and a deal-level
+scale read on the loss ratio of the sections together is a `DealScale`
+(`Tower::deal_scale`): its key is the sum of the sections' keys (each the
+ceded loss or the loss before terms, as that section's scales read it),
+its premium the sum of theirs, and its commission and brokerage add to the
+sections' own. The tests check, on two sections at 50% and 110% loss
+ratios, that the deal scale at their joint 80% differs from the sections'
+scales summed, and that the deal and section commissions together exceed
+the deal scale's maximum, as in the workbook above.
 `Tower::deal_ratios` gives each simulation's loss ratio (and the one
 before terms), each deduction, the total, the combined ratio, NMBF and
 the margin. The tests check `TD - CC - BK` equal to the flat legs,

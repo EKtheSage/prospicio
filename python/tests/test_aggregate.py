@@ -1402,3 +1402,42 @@ def test_scales_read_before_the_cap():
     assert list(r.marginal(["loss_ratio_before_terms"]).draws) == [0.4, 1.4]
     flags = Layer("x", 1.0, 0.0).with_scales_before_annual_terms()
     assert flags.scales_before_annual_terms and not flags.brokerage_within_commission_range
+
+
+def test_deal_scale_reads_sections_together():
+    scale = [(0.35, 0.5), (0.15, 0.9)]
+    a = Layer.stop_loss("A", 50.0, 0.0).with_premium_rate(1.0, 100.0).with_sliding_scale(scale)
+    b = (
+        Layer.stop_loss("B", math.inf, 50.0)
+        .with_premium_rate(1.0, 100.0)
+        .with_sliding_scale(scale)
+        .with_deduction("tax", 0.03)
+    )
+    tower = Tower([a, b]).with_deal_scale(
+        "deal",
+        ["A", "B"],
+        sliding_scale=[(0.2, 0.5), (0.1, 0.9)],
+        brokerage=0.01,
+        carry_deficit=True,
+    )
+    assert tower.deals == [("deal", ["A", "B"])]
+    result = tower.apply_annual([160.0])
+    at = lambda *k: result.marginal(list(k)).draws[0]
+    # The deal at 80%: 20% - 0.1 x 0.75 = 12.5% of 200.
+    assert at("ceding_commission", "deal") == pytest.approx(25.0)
+    assert at("brokerage", "deal") == pytest.approx(2.0)
+    assert at("ceding_commission", "A") == pytest.approx(35.0)
+    r = tower.deal_ratios(result, "deal")
+    assert r.marginal(["loss_ratio"]).draws[0] == pytest.approx(0.8)
+    assert r.marginal(["ceding_commission"]).draws[0] == pytest.approx((35 + 15 + 25) / 200)
+    assert r.marginal(["tax"]).draws[0] == pytest.approx(0.015)
+    back = Tower.from_json(tower.to_json())
+    assert back.to_json() == tower.to_json()
+    with pytest.raises(ValueError):
+        Tower([a, b]).with_deal_scale("deal", ["A"], brokerage=0.01)
+    with pytest.raises(ValueError):
+        Tower([a, b]).with_deal_scale("deal", ["A", "B"])
+    with pytest.raises(ValueError):
+        Tower([a, b]).with_deal_scale("A", ["A", "B"], brokerage=0.01)
+    with pytest.raises(ValueError):
+        Tower([a, b]).with_deal_scale("deal", ["A", "B"], brokerage=0.01, brokerage_scale=[(0.01, 0.5)])

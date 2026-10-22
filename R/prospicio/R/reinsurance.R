@@ -378,6 +378,59 @@ premium_for <- function(layer, ceded) {
   layer@ptr$premium_for(as.double(ceded))
 }
 
+#' Deal scales on several layers together
+#'
+#' A deal's sliding-scale commission and brokerage read on the loss ratio of
+#' several layers (its sections) together: the sum of the sections' keys
+#' (each section's ceded loss, or its loss before annual terms with
+#' [with_scales_before_annual_terms()]) over the sum of their premiums, paid
+#' on that summed premium and added to what each section pays on its own.
+#' Results gain `("ceding_commission", name)`, `("brokerage", name)` and,
+#' when a section reads its scales before annual terms,
+#' `("loss_before_terms", name)`; [deal_ratios()] takes the deal's name.
+#' The grid functions and the P&L ledger refuse a tower with a deal.
+#'
+#' @param tower A [reinsurance_tower].
+#' @param name The deal's name, not a layer's or another deal's.
+#' @param sections At least two layer names, each layer with a positive
+#'   fixed premium (no swing rating or paid reinstatements) and in no other
+#'   deal.
+#' @param commission,loss_ratio The sliding scale's anchors, as in
+#'   [with_sliding_scale()]; `NULL` for none.
+#' @param brokerage A flat brokerage rate on the deal's premium, or `NULL`.
+#' @param brokerage_rate,brokerage_loss_ratio A brokerage scale's anchors
+#'   instead, as in [with_brokerage_scale()].
+#' @param carry_deficit,carry_credit Carry the deal commission's deficits or
+#'   credits between the years of a term, on the deal's key.
+#' @param carry_years How many later years a carried amount lasts; `NULL`
+#'   without limit.
+#' @param brokerage_within_commission_range Hold the brokerage key inside
+#'   the deal commission's range.
+#' @returns The [reinsurance_tower] with the deal. Its `deal_names`
+#'   property lists its deals.
+#' @export
+#' @examples
+#' a <- with_premium_rate(aggregate_stop_loss("A", 50, 0), 1, 100)
+#' b <- with_premium_rate(aggregate_stop_loss("B", Inf, 50), 1, 100)
+#' tw <- with_deal_scale(reinsurance_tower(list(a, b)), "deal", c("A", "B"),
+#'   commission = c(0.35, 0.15), loss_ratio = c(0.5, 0.9))
+#' result <- apply_tower(tw, 160)
+#' draw_matrix(deal_ratios(tw, result, "deal"))
+with_deal_scale <- function(tower, name, sections, commission = NULL, loss_ratio = NULL,
+                            brokerage = NULL, brokerage_rate = NULL,
+                            brokerage_loss_ratio = NULL, carry_deficit = FALSE,
+                            carry_credit = FALSE, carry_years = NULL,
+                            brokerage_within_commission_range = FALSE) {
+  num <- function(x) if (is.null(x)) double() else as.double(x)
+  ptr <- rust_result(tower@ptr$with_deal_scale(
+    as.character(name), as.character(sections), num(commission), num(loss_ratio),
+    num(brokerage), num(brokerage_rate), num(brokerage_loss_ratio),
+    isTRUE(carry_deficit), isTRUE(carry_credit), num(carry_years),
+    isTRUE(brokerage_within_commission_range)
+  ))
+  reinsurance_tower(ptr = ptr)
+}
+
 #' @rdname premium_for
 #' @export
 ceding_commission_for <- function(layer, ceded) {
@@ -475,19 +528,23 @@ deduction_for <- function(layer, label, ceded) {
   rust_result(layer@ptr$deduction_for(as.character(label), as.double(ceded)))
 }
 
-#' Deal ratios of a layer
+#' Deal ratios of a layer or a deal
 #'
-#' Each simulation's ratios of one layer in a result of this tower
+#' Each simulation's ratios of one layer or one deal ([with_deal_scale()])
+#' in a result of this tower
 #' ([apply_tower()] or [apply_tower_term()]), every amount over the year's
 #' premium for the placed share (fixed or swing rated; reinstatement
 #' premiums are not in it). With `d` the deductions ([with_brokerage()]):
 #' `total_deductions = CC + PC + BK + sum(d)`, `combined_ratio = loss_ratio
 #' + total_deductions`, `margin = 1 - combined_ratio`, and `nmbf` the
-#' margin plus the deductions kept outside it.
+#' margin plus the deductions kept outside it. For a deal, every amount is
+#' summed over its sections with the deal's own commission and brokerage
+#' added, over the sections' premium together; a section's own ratios
+#' leave the deal's scales out.
 #'
 #' @param tower A [reinsurance_tower].
 #' @param result A [predictive_distribution] from applying `tower`.
-#' @param layer The layer's name.
+#' @param layer The layer's or the deal's name.
 #' @returns A [predictive_distribution] with dimension `ratio` (and `year`
 #'   for a term): `loss_ratio`, `loss_ratio_before_terms` for a layer whose
 #'   scales read it, `ceding_commission`, `profit_commission` and
@@ -676,7 +733,8 @@ S7::method(print, xol_layer) <- function(x, ...) {
 #' @param layers A list of [xol_layer] objects with unique names.
 #' @param ptr Internal: an existing tower to wrap.
 #' @returns A `reinsurance_tower` object; apply it with [apply_tower()]. Its
-#'   `stages` property gives each layer's stage, from 1.
+#'   `stages` property gives each layer's stage, from 1, and `deal_names`
+#'   the deals added by [with_deal_scale()].
 #' @export
 #' @examples
 #' tw <- reinsurance_tower(list(xol_layer("5x5", 5e6, 5e6), xol_layer("15x10", 15e6, 10e6)))
@@ -687,7 +745,8 @@ reinsurance_tower <- S7::new_class(
   properties = list(
     ptr = S7::new_S3_class("ReinsuranceTower"),
     layer_names = S7::new_property(S7::class_character, getter = function(self) self@ptr$layer_names()),
-    stages = S7::new_property(S7::class_double, getter = function(self) self@ptr$stages())
+    stages = S7::new_property(S7::class_double, getter = function(self) self@ptr$stages()),
+    deal_names = S7::new_property(S7::class_character, getter = function(self) self@ptr$deal_names())
   ),
   constructor = function(layers, ptr = NULL) {
     if (is.null(ptr)) {

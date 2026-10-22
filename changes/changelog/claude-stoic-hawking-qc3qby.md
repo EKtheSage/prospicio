@@ -42,3 +42,12 @@
   (Python `with_brokerage`, `with_brokerage_scale`, `with_deduction`,
   `with_scales_before_annual_terms`, `Tower.deal_ratios`; R
   `with_brokerage()`, `with_deduction()`, `deal_ratios()`) (#485, #477, #511).
+- A deal-level scale on several layers together (`Tower::deal_scale` with a
+  `DealScale`): a sliding-scale commission and a brokerage read on the sum
+  of the sections' keys over the sum of their premiums, paid on that
+  premium and added to each section's own, with its own carry over a term.
+  The results gain `(ceding_commission, <deal>)` and `(brokerage,
+  <deal>)`, and `Tower::deal_ratios` takes a deal's name. Towers with a deal
+  are JSON format version 4; the grids and the P&L ledger refuse them
+  (Python `Tower.with_deal_scale`, `Tower.deals`; R `with_deal_scale()`)
+  ([deal-scale], #477).
