@@ -11,7 +11,7 @@ use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_core::Lag;
 use prospicio_reserving::PatternWeight;
-use prospicio_reserving::bayes::LayerSharePrior;
+use prospicio_reserving::bayes::{LayerSharePrior, ShareDependence};
 use prospicio_reserving::excess::{
     Basis, ExcessPattern, Layer, SeverityByMaturity, ShapeBase, layer_at_shift, layer_exposure,
     layer_share,
@@ -212,18 +212,68 @@ fn excess_layer_exposure_rust(
     Ok(Triangle { inner })
 }
 
-/// The coefficient of variation of `layer_share_prior()`: the prior of the
-/// layer's expected ultimate, after the inputs are validated.
+/// The prior of `layer_share_prior()` after the inputs are validated:
+/// `c(cv, model_cv, common_cv, has_common_factor)`. `cv` is the marginal
+/// coefficient of variation of the layer's expected ultimate at each origin,
+/// `model_cv` and `common_cv` the `cv` and the `common_cv` of the model that
+/// `bayes_bf_layer()` fits (`common_cv` 0 for none). `common` is whether the
+/// share error is common to all origins (otherwise per origin).
+fn layer_prior(
+    apriori: f64,
+    apriori_cv: f64,
+    shares: &[f64],
+    share_cv: f64,
+    common: bool,
+) -> Result<LayerSharePrior> {
+    let dependence = if common {
+        ShareDependence::Common
+    } else {
+        ShareDependence::PerOrigin
+    };
+    Ok(LayerSharePrior::new(apriori, apriori_cv, shares, share_cv)
+        .map_err(to_r)?
+        .with_dependence(dependence))
+}
+
 #[extendr]
 fn layer_share_prior_cv_rust(
     apriori: f64,
     apriori_cv: f64,
     shares: Vec<f64>,
     share_cv: f64,
-) -> Result<f64> {
-    Ok(LayerSharePrior::new(apriori, apriori_cv, &shares, share_cv)
-        .map_err(to_r)?
-        .cv())
+    common: bool,
+) -> Result<Vec<f64>> {
+    let prior = layer_prior(apriori, apriori_cv, &shares, share_cv, common)?;
+    // The model's cv and common_cv as `LayerSharePrior::model` sets them; a
+    // common share error with a known loss ratio is an error when the
+    // model is fitted, as in Python.
+    let (model_cv, common_cv) = if prior.has_common_factor() {
+        (prior.apriori_cv, prior.share_cv)
+    } else {
+        (prior.cv(), 0.0)
+    };
+    Ok(vec![
+        prior.cv(),
+        model_cv,
+        common_cv,
+        f64::from(u8::from(prior.has_common_factor())),
+    ])
+}
+
+/// The mean and standard deviation of the prior of the layer's total
+/// expected ultimate over origins with ground-up `exposure`.
+#[extendr]
+fn layer_share_prior_total_rust(
+    apriori: f64,
+    apriori_cv: f64,
+    shares: Vec<f64>,
+    share_cv: f64,
+    common: bool,
+    exposure: Vec<f64>,
+) -> Result<Vec<f64>> {
+    let prior = layer_prior(apriori, apriori_cv, &shares, share_cv, common)?;
+    let (mean, sd) = prior.prior_total(&exposure).map_err(to_r)?;
+    Ok(vec![mean, sd])
 }
 
 extendr_module! {
@@ -234,4 +284,5 @@ extendr_module! {
     fn excess_layer_at_shift_rust;
     fn excess_layer_exposure_rust;
     fn layer_share_prior_cv_rust;
+    fn layer_share_prior_total_rust;
 }

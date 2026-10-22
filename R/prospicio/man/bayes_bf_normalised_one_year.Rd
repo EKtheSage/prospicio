@@ -22,7 +22,8 @@ bayes_bf_normalised_one_year(
   k_threshold = 0.7,
   refit = c("moment_match_then_refit", "refit_flagged", "reweight_only", "refit_all"),
   max_refits = NULL,
-  one_year_sims = NULL
+  one_year_sims = NULL,
+  common_cv = 0
 )
 }
 \arguments{

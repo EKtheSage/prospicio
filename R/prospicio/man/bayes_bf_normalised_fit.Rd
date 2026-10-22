@@ -21,7 +21,8 @@ bayes_bf_normalised(
   n_sims = 10000,
   seed = 0,
   target_accept = 0.95,
-  max_depth = 10
+  max_depth = 10,
+  common_cv = 0
 )
 }
 \arguments{

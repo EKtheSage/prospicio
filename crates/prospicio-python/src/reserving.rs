@@ -31,6 +31,7 @@ use prospicio_reserving::bayes::{
     CompartmentalOneYearFits, CompartmentalPriors, CompartmentalSegment, CompartmentalStart,
     Fitted, HalfPrior, LayerSharePrior, LightRefit, MeyersFits, MeyersSegment, OneYearRefit,
     Outstanding, PaidResponse, PositivePrior, RateOrder, RealPrior, Scale as CompartmentalScale,
+    ShareDependence,
 };
 use prospicio_reserving::{
     Backtest, BayesOdp, BayesOdpFit, Diagnostics, GlmCandidate, Meyers, MeyersFit, MeyersModel,
@@ -8966,6 +8967,7 @@ impl PyBayesBfNormalised {
         seed = 0,
         target_accept = 0.95,
         max_depth = 10,
+        common_cv = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -8980,6 +8982,7 @@ impl PyBayesBfNormalised {
         seed: u64,
         target_accept: f64,
         max_depth: u64,
+        common_cv: Option<f64>,
     ) -> PyResult<Self> {
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
@@ -9000,8 +9003,16 @@ impl PyBayesBfNormalised {
                 },
                 n_sims,
                 seed,
+                common_cv,
             },
         })
+    }
+
+    /// The coefficient of variation of the multiplier common to all
+    /// origins' prior ultimates, or ``None`` if there is none.
+    #[getter]
+    fn common_cv(&self) -> Option<f64> {
+        self.inner.common_cv
     }
 
     /// Prior mean of each origin's expected ultimate per unit of exposure.
@@ -9480,12 +9491,19 @@ impl PyBayesBfNormalisedFit {
 /// on the layer's expected ultimate, centred there, whose coefficient of
 /// variation is that of a product of two independent variables,
 /// ``cv = sqrt((1 + apriori_cv**2) * (1 + share_cv**2) - 1)``: the moments
-/// are exact, the gamma is their match. The layer's development pattern is
-/// estimated from the layer's own triangle under the model's vague prior
-/// on the pattern; an excess pattern from ``ExcessPattern`` does not enter
-/// (open decision 22 of the design note). The prior is independent across
-/// origins, although one share error is common to all of them (open
-/// decision 23).
+/// are exact. One share error is common to all origins (the default,
+/// ``share_dependence="common"``): the model carries one more parameter, a
+/// gamma multiplier ``s`` with mean 1 and cv ``share_cv``, sampled with the
+/// others, and each origin's prior ultimate is a gamma with mean
+/// ``exposure * apriori * share * s`` and cv ``apriori_cv``, so every origin
+/// keeps the marginal cv above, the origins' priors are correlated and the
+/// data update the share for every origin at once (``log_share`` in the
+/// fit's parameters). ``share_dependence="per_origin"`` is the first
+/// version: an independent share error at each origin, which understates
+/// the total's interval. The layer's development pattern is estimated from
+/// the layer's own triangle under the model's vague prior on the pattern;
+/// an excess pattern from ``ExcessPattern`` does not enter (open decision
+/// 22 of the design note).
 ///
 /// Parameters
 /// ----------
@@ -9499,6 +9517,11 @@ impl PyBayesBfNormalisedFit {
 ///     The loss ratio's coefficient of variation (``inf`` is flat).
 /// share_cv : float, default 0.0
 ///     The share's coefficient of variation, the same at every origin.
+/// share_dependence : {"common", "per_origin"}, default "common"
+///     Whether one share error is common to all origins or each origin has
+///     its own. A known share (``share_cv`` 0) or a flat prior has nothing
+///     to share and is the per-origin model; a common share error needs a
+///     positive ``apriori_cv``.
 ///
 /// Examples
 /// --------
@@ -9506,9 +9529,21 @@ impl PyBayesBfNormalisedFit {
 /// >>> prior = LayerSharePrior(0.65, 0.2, apriori_cv=0.1, share_cv=0.3)
 /// >>> round(prior.layer_apriori(0), 12), round(prior.cv ** 2, 12)
 /// (0.13, 0.1009)
+/// >>> prior.share_dependence
+/// 'common'
 #[pyclass(name = "LayerSharePrior", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyLayerSharePrior {
     inner: LayerSharePrior,
+}
+
+fn share_dependence_arg(name: &str) -> PyResult<ShareDependence> {
+    match name {
+        "common" => Ok(ShareDependence::Common),
+        "per_origin" => Ok(ShareDependence::PerOrigin),
+        _ => Err(PyValueError::new_err(format!(
+            "unknown share_dependence {name:?}; expected \"common\" or \"per_origin\""
+        ))),
+    }
 }
 
 fn shares_arg(shares: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
@@ -9526,16 +9561,18 @@ fn shares_arg(shares: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
 #[pymethods]
 impl PyLayerSharePrior {
     #[new]
-    #[pyo3(signature = (apriori, shares, apriori_cv = 0.1, share_cv = 0.0))]
+    #[pyo3(signature = (apriori, shares, apriori_cv = 0.1, share_cv = 0.0, share_dependence = "common"))]
     fn new(
         apriori: f64,
         shares: &Bound<'_, PyAny>,
         apriori_cv: f64,
         share_cv: f64,
+        share_dependence: &str,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: LayerSharePrior::new(apriori, apriori_cv, &shares_arg(shares)?, share_cv)
-                .map_err(err)?,
+                .map_err(err)?
+                .with_dependence(share_dependence_arg(share_dependence)?),
         })
     }
 
@@ -9548,16 +9585,24 @@ impl PyLayerSharePrior {
     /// share : float
     /// share_se : float
     /// apriori_cv : float, default 0.1
+    /// share_dependence : {"common", "per_origin"}, default "common"
     ///
     /// Returns
     /// -------
     /// LayerSharePrior
     #[staticmethod]
-    #[pyo3(signature = (apriori, share, share_se, apriori_cv = 0.1))]
-    fn from_share_se(apriori: f64, share: f64, share_se: f64, apriori_cv: f64) -> PyResult<Self> {
+    #[pyo3(signature = (apriori, share, share_se, apriori_cv = 0.1, share_dependence = "common"))]
+    fn from_share_se(
+        apriori: f64,
+        share: f64,
+        share_se: f64,
+        apriori_cv: f64,
+        share_dependence: &str,
+    ) -> PyResult<Self> {
         Ok(Self {
             inner: LayerSharePrior::from_share_se(apriori, apriori_cv, share, share_se)
-                .map_err(err)?,
+                .map_err(err)?
+                .with_dependence(share_dependence_arg(share_dependence)?),
         })
     }
 
@@ -9571,24 +9616,27 @@ impl PyLayerSharePrior {
     /// layer : ExcessLayer
     /// apriori_cv : float, default 0.1
     /// share_cv : float, default 0.0
+    /// share_dependence : {"common", "per_origin"}, default "common"
     ///
     /// Returns
     /// -------
     /// LayerSharePrior
     #[staticmethod]
-    #[pyo3(signature = (apriori, severity, layer, apriori_cv = 0.1, share_cv = 0.0))]
+    #[pyo3(signature = (apriori, severity, layer, apriori_cv = 0.1, share_cv = 0.0, share_dependence = "common"))]
     fn from_severity(
         apriori: f64,
         severity: &Bound<'_, PyAny>,
         layer: &Bound<'_, PyAny>,
         apriori_cv: f64,
         share_cv: f64,
+        share_dependence: &str,
     ) -> PyResult<Self> {
         let sev = crate::distributions::extract_severity(severity)?;
         let layer = crate::excess::layer_of(layer, "layer")?;
         Ok(Self {
             inner: LayerSharePrior::from_severity(apriori, apriori_cv, &sev, layer, share_cv)
-                .map_err(err)?,
+                .map_err(err)?
+                .with_dependence(share_dependence_arg(share_dependence)?),
         })
     }
 
@@ -9616,12 +9664,50 @@ impl PyLayerSharePrior {
         self.inner.share_cv
     }
 
-    /// The coefficient of variation of the gamma prior on the layer's
+    /// ``"common"`` or ``"per_origin"``: whether one share error is common
+    /// to all origins.
+    #[getter]
+    fn share_dependence(&self) -> &'static str {
+        match self.inner.dependence {
+            ShareDependence::Common => "common",
+            ShareDependence::PerOrigin => "per_origin",
+        }
+    }
+
+    /// The marginal coefficient of variation of the prior on each origin's
     /// expected ultimate: ``sqrt((1 + apriori_cv**2) * (1 + share_cv**2) -
-    /// 1)``, ``inf`` if either is.
+    /// 1)``, ``inf`` if either is. It is the gamma's cv under
+    /// ``"per_origin"``; under ``"common"`` the model's own cv is
+    /// ``apriori_cv`` and the multiplier's ``share_cv``.
     #[getter]
     fn cv(&self) -> f64 {
         self.inner.cv()
+    }
+
+    /// Whether the model carries a multiplier common to all origins: the
+    /// share error is ``"common"`` and both cvs are positive and finite.
+    #[getter]
+    fn has_common_factor(&self) -> bool {
+        self.inner.has_common_factor()
+    }
+
+    /// The mean and standard deviation of the prior of the layer's total
+    /// expected ultimate, in closed form: ``c_e**2 * (1 + c_s**2) * sum(m**2)
+    /// + c_s**2 * sum(m)**2`` for a common share error and ``((1 + c_e**2) *
+    /// (1 + c_s**2) - 1) * sum(m**2)`` for independent ones, with ``m`` each
+    /// origin's prior ultimate ``exposure * apriori * share``.
+    ///
+    /// Parameters
+    /// ----------
+    /// exposure : list of float
+    ///     The ground-up exposure of each origin.
+    ///
+    /// Returns
+    /// -------
+    /// tuple of float
+    ///     ``(mean, sd)``; ``sd`` is ``inf`` for a flat prior.
+    fn prior_total(&self, exposure: Vec<f64>) -> PyResult<(f64, f64)> {
+        self.inner.prior_total(&exposure).map_err(err)
     }
 
     /// The layer's a-priori loss ratio at origin ``i`` (0-based): the
@@ -9651,17 +9737,25 @@ impl PyLayerSharePrior {
     /// ----------
     /// model : BayesBfNormalised, optional
     ///     Supplies the sampler, process error, simulations and seed; its
-    ///     own ``apriori`` and ``cv`` are replaced.
+    ///     own ``apriori``, ``cv`` and ``common_cv`` are replaced.
     ///
     /// Returns
     /// -------
     /// BayesBfNormalised
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     A common share error with ``apriori_cv`` 0.
     #[pyo3(signature = (model = None))]
-    fn model(&self, model: Option<PyRef<'_, PyBayesBfNormalised>>) -> PyBayesBfNormalised {
+    fn model(
+        &self,
+        model: Option<PyRef<'_, PyBayesBfNormalised>>,
+    ) -> PyResult<PyBayesBfNormalised> {
         let base = model.map_or_else(BayesBfNormalised::default, |m| m.inner.clone());
-        PyBayesBfNormalised {
-            inner: self.inner.model(&base),
-        }
+        Ok(PyBayesBfNormalised {
+            inner: self.inner.model(&base).map_err(err)?,
+        })
     }
 
     /// ``triangle`` with a ``"layer_exposure"`` column: the ground-up
@@ -9782,8 +9876,12 @@ impl PyLayerSharePrior {
 
     fn __repr__(&self) -> String {
         format!(
-            "LayerSharePrior(apriori={:?}, shares={:?}, apriori_cv={:?}, share_cv={:?})",
-            self.inner.apriori, self.inner.shares, self.inner.apriori_cv, self.inner.share_cv,
+            "LayerSharePrior(apriori={:?}, shares={:?}, apriori_cv={:?}, share_cv={:?}, share_dependence={:?})",
+            self.inner.apriori,
+            self.inner.shares,
+            self.inner.apriori_cv,
+            self.inner.share_cv,
+            self.share_dependence(),
         )
     }
 }
