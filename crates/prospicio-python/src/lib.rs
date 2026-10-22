@@ -14,6 +14,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 mod aggregate;
+mod book;
 mod cashflow;
 mod casualty;
 mod counts;
@@ -53,6 +54,8 @@ mod prospicio_native {
         occurrence_pml, panjer, recommend_grid, recommend_portfolio_grid, round_bucket,
         simulate_events, wiener_hopf, ylt_hash,
     };
+    #[pymodule_export]
+    use super::book::{PyBookCashflows, PyDealBook, PyDealRun};
     #[pymodule_export]
     use super::cashflow::{
         PyCashflowTerms, PyCashflows, PyCollateralRequirement, PyPremiumAdjustment,

@@ -3370,6 +3370,60 @@ OnnxPredictorModel$predict_distribution <- function(x, names, offset, weights, n
 #' @export
 `[[.OnnxPredictorModel` <- `$.OnnxPredictorModel`
 
+BookDeal <- new.env(parent = emptyenv())
+
+BookDeal$new <- function(name, premium, loss, names, deductions, outside, inception) .Call(wrap__BookDeal__new, name, premium, loss, names, deductions, outside, inception)
+
+BookDeal$from_tower <- function(name, tower, result, layer, inception) .Call(wrap__BookDeal__from_tower, name, tower, result, layer, inception)
+
+BookDeal$with_inception <- function(inception) .Call(wrap__BookDeal__with_inception, self, inception)
+
+BookDeal$with_patterns <- function(written, earned, paid) .Call(wrap__BookDeal__with_patterns, self, written, earned, paid)
+
+BookDeal$with_flows <- function(months, flows, funded, opening, terms) .Call(wrap__BookDeal__with_flows, self, months, flows, funded, opening, terms)
+
+BookDeal$name <- function() .Call(wrap__BookDeal__name, self)
+
+BookDeal$n_sims <- function() .Call(wrap__BookDeal__n_sims, self)
+
+BookDeal$inception <- function() .Call(wrap__BookDeal__inception, self)
+
+#' @export
+`$.BookDeal` <- function (self, name) { func <- BookDeal[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BookDeal` <- `$.BookDeal`
+
+Book <- new.env(parent = emptyenv())
+
+Book$new <- function(deals) .Call(wrap__Book__new, deals)
+
+Book$select <- function(names) .Call(wrap__Book__select, self, names)
+
+Book$shifted <- function(name, inception) .Call(wrap__Book__shifted, self, name, inception)
+
+Book$names <- function() .Call(wrap__Book__names, self)
+
+Book$n_sims <- function() .Call(wrap__Book__n_sims, self)
+
+Book$items <- function() .Call(wrap__Book__items, self)
+
+Book$amounts <- function() .Call(wrap__Book__amounts, self)
+
+Book$summary <- function() .Call(wrap__Book__summary, self)
+
+Book$distribution <- function(item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail) .Call(wrap__Book__distribution, self, item, percentiles, tvar_levels, sd_multiples, quantile, tvar, tail)
+
+Book$cashflows <- function(rate, lower, upper, points, bisections, newton_steps) .Call(wrap__Book__cashflows, self, rate, lower, upper, points, bisections, newton_steps)
+
+Book$calendar <- function(start_year) .Call(wrap__Book__calendar, self, start_year)
+
+#' @export
+`$.Book` <- function (self, name) { func <- Book[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Book` <- `$.Book`
+
 Cashflow <- new.env(parent = emptyenv())
 
 Cashflow$new <- function(premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis) .Call(wrap__Cashflow__new, premium, commutation_month, written, earned, paid, bases, loads, floor, limit, commutation_bases, commutation_loads, commutation_floor, commutation_limit, collected_rate, lag, adjustment_month, adjustment_rate, adjustment_less_commission, adjustment_base, funding_kind, funding_values, funding_rule, premium_offset, reference, funding_source, release_kind, release_values, annual_yield, interest_basis, opening_fixed, opening_share, expense_rate, buffer_months, buffer_paid, buffer_expenses, equity_kind, equity_values, fee_breakpoints, fee_slopes, fee_basis)

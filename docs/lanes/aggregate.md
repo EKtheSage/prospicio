@@ -6,7 +6,6 @@
 
 ## Next
 
-- [portfolio-bindings] #490's book of deals in Python and R (`DealRun`, `DealBook` and its four tables)
 
 ## Done
 
@@ -42,3 +41,4 @@
 - [cashflow-parity] #479's four open conventions (the obligation's reference, netting claims paid, the fee's margin and the adjustment's premium, a load on the commutation reserve) accepted by the user on 2026-10-22 as settings with their defaults as built; no parity run against the reference model planned
 - [issue-214-conveniences] #214's Aggregate and Probability items: `Distortion::parameter`, `Grid::normalized` (Python `normalize=True`, R `normalize = TRUE`), `PaymentPattern::unpaid_from` (Python, R `payment_pattern_unpaid()`) and Pentagon's `expected_loss` in Python; #214 stays open for its Reserving items
 - #490 a book of deals on one shared simulation in Rust (`prospicio_pricing::book`, `time-value.md` decisions 21 to 27: `DealRun` from a tower's `deal_columns` or arrays, with an inception in months and its patterns and investor flows; `DealBook` with `select` and `shifted`, and four tables: `amounts` and `summary` as sums over sums, `distribution` with contributions at the book's ranks and marginal effects on either tail, `cashflows` with the IRR, NPV and MOIC on the summed flows, `calendar` by calendar year; the shift moves only the cash flows, each deal keeps its own trust)
+- [portfolio-bindings] #490's book of deals in Python (`DealRun`, `DealBook`, `BookCashflows` in `prospicio.pricing`) and R (`deal_run()`, `deal_run_from_tower()`, `deal_book()`, `book_select()`, `book_shift()`, `book_amounts()`, `book_summary()`, `book_distribution()`, `book_cashflows()`, `book_calendar()`), which closes #490

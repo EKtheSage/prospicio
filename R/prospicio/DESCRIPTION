@@ -17,6 +17,7 @@ Config/roxygen2/version: 8.1.0
 Collate: 
     'distributions.R'
     'aggregate.R'
+    'book.R'
     'models.R'
     'boosting.R'
     'cashflow.R'
