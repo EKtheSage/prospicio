@@ -534,9 +534,13 @@ parameters are rounded; the second needs the example's trend indices.
     million and sd 303,464 against the plain 3.689 million and 303,919;
   * **the posterior total's interval does not widen against independent
     priors, it narrows** (the premise of issue #518 holds for the prior, not
-    for the posterior): total reserve sd 500,829, 516,247 and 505,205 at
-    share cvs 0.3, 0.6 and 1.2 under a common share, against 514,073, 640,309
-    and 703,356 under independent priors (ratios 0.97, 0.81 and 0.72); 95%
+    for the posterior): total reserve sd 497,000, 505,000 and 509,000 at
+    share cvs 0.3, 0.6 and 1.2 under a common share (means over 20 seeds, run
+    by hand on 2026-10-22; a single seed gave 500,829, 516,247 and 505,205,
+    whose wobble was seed noise, one fit's sd varying about 1.5% by seed, and
+    the true rise is about 2% from cv 0.3 to 1.5), against 514,000, 639,000
+    and 710,000 under independent priors (10 seeds; ratios 0.97, 0.79 and
+    0.72); 95%
     widths 1.97 million, 2.02 million and 1.97 million against 2.01 million,
     2.48 million and 2.73 million; means 4.88 million, 4.94 million and 4.93
     million against 4.28 million, 4.54 million and 4.66 million. A known
@@ -849,6 +853,11 @@ Opened in PR 5 (each built as the option closest to the issue and this note;
     (a);* the two differ only in the tails and the share's own distribution
     is not known to that detail.
    *Decided 2026-10-22 (the user): (a) as built;* a gamma prior on `s`, not a lognormal.
+   A 20-seed check on 2026-10-22 (by hand, not in CI) found a lognormal prior with
+   the same mean and cv within 0.5% of the gamma's total sd on GenIns's layer
+   (496k, 505k, 503k, 502k, 504k against 497k, 505k, 506k, 509k, 508k at share
+   cvs 0.3 to 1.5), so the choice does not matter on that data; see the finding
+   `excess-bayes-prior`.
 
 27. **The default total interval changes, and narrows.** Open decision 23(a)
     expected the shared multiplier to widen the total's interval (it widens the prior total and, where the data cannot identify `s`, the fitted one); on GenIns's

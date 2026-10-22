@@ -54,15 +54,35 @@ sources:
   0.6 and 1.2, against 1.04 million, 2.01 million and 3.97 million (ratios
   2.99, 3.10, 3.12; closed form, and a 400,000-draw simulation of the generative
   law agrees). **The posterior total is narrower, not wider**: its sd is
-  500,829, 516,247 and 505,205 against 514,073, 640,309 and 703,356 under
-  independent priors (ratios 0.97, 0.81, 0.72), 95% widths 1.97, 2.02 and 1.97
-  million against 2.01, 2.48 and 2.73 million. The ten origins identify `s`
+  497,000, 505,000 and 509,000 at share cvs 0.3, 0.6 and 1.2 (means over 20
+  seeds; a single seed gave 500,829, 516,247 and 505,205) against 514,000,
+  639,000 and 710,000 under independent priors (10 seeds; ratios 0.97, 0.79,
+  0.72). The ten origins identify `s`
   (sd about 0.08), after which each origin is held to `m_i s` with the loss
   ratio's own cv, where independent priors give each origin the whole marginal
   cv and no way to learn from the others. Independent priors understate the
   total's prior interval and overstate its fitted (posterior) interval once the
   data identify `s`; where they cannot (few origins, or all immature) the
-  common model's total stays wider. Against a known share the common
+  common model's total stays wider. **The common total's sd is flat in the
+  share's cv, with a small real rise.** The single-seed values above (501k,
+  516k, 505k) looked non-monotone, but that was seed noise: one fit's total sd
+  varies by 5.5k to 8.2k (about 1.5%) from seed to seed. A 20-seed experiment
+  (run by hand on 2026-10-22, not in CI; the layer 0.25 of GenIns paid,
+  `LayerSharePrior::new(0.35, 0.1, &[0.25], cv)`, `BayesBfNormalised`
+  defaults of 4 chains with 1000 warmup and 1000 draws, target accept 0.95,
+  10,000 simulations, seeds 1 to 20) gives the mean total sd by share cv 0.3,
+  0.6, 0.9, 1.2 and 1.5 of 497.4k, 505.0k, 506.2k, 509.0k and 508.3k (Monte
+  Carlo standard error of each mean 1.2k to 1.8k) and the posterior mean of
+  `s` of 1.298, 1.308, 1.311, 1.311 and 1.311 (sd 0.073 to 0.075). The sd rises
+  about 2% from cv 0.3 to 1.5, about five standard errors, then saturates;
+  `s` rises slightly and saturates, and does not fall, so the gamma's mode at
+  0 for a cv above 1 does not pull `s` down on this data. The per-origin
+  priors (10 seeds) give 514k, 639k, 698k, 710k and 730k at the same cvs. A
+  lognormal prior on `s` with the same mean and cv gave 496k, 505k, 503k, 502k
+  and 504k, within 0.5% of the gamma, so the two are indistinguishable here
+  and decision 26 (gamma) stands. No divergences and R-hat at most 1.007 in
+  either. Not tested: data where every origin is immature, or very few
+  origins, where the prior matters. Against a known share the common
   error still widens the posterior sd by 65% (304,000 to 501,000), and then
   stops growing with the share's cv.
 * On a layer generated with a known wrong share (0.35 of paid where the prior
