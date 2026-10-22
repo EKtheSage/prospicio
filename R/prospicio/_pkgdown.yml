@@ -122,6 +122,7 @@ reference:
       - with_loss_corridor
       - with_rate_on_line
       - with_ceding_commission
+      - with_brokerage
       - with_profit_commission_carry_forward
       - with_swing_rating
       - premium_for
@@ -138,6 +139,7 @@ reference:
       - tower_ceded
       - apply_tower
       - apply_tower_term
+      - deal_ratios
       - tower_on_grid
       - tower_on_annual_grid
       - tower_price

@@ -1489,6 +1489,7 @@ fn check_occurrence(tower: &Tower) -> Result<()> {
         }
         let variable = l.swing.is_some()
             || matches!(l.commission, Some(Commission::SlidingScale(_)))
+            || matches!(l.brokerage, Some(Commission::SlidingScale(_)))
             || l.profit_commission.is_some();
         if variable {
             return Err(Error::Data(format!(
@@ -1629,6 +1630,7 @@ fn check_events(tower: &Tower) -> Result<()> {
 /// ([`Book::occurrence_ledger`]).
 fn check_tower(tower: &Tower) -> Result<()> {
     check_events(tower)?;
+    tower.check_scales_on_ceded("the ledger's annual source")?;
     if let Some(l) = tower
         .layers
         .iter()

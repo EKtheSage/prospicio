@@ -1341,3 +1341,64 @@ def test_an_aggregate_part_is_seen_only_by_covers_without_occurrence_terms():
     with pytest.raises(IndexError):
         events.aggregate_part(3)
     assert EventSet.from_years([[1.0]]).aggregate_part(0) is None
+
+
+def test_deal_deductions_and_ratios():
+    from prospicio.reinsurance import Layer, Tower
+
+    deal = (
+        Layer.stop_loss("deal", 120.0, 0.0)
+        .with_premium_rate(1.0, 100.0)
+        .with_sliding_scale([(0.35, 0.5), (0.15, 0.9)])
+        .with_brokerage(0.025)
+        .with_deduction("tpa", 0.01)
+        .with_deduction("tax", 0.03)
+        .with_deduction("ri_cost", 0.02)
+        .with_deduction("fronting", 0.005)
+        .with_deduction("ms_fee", 0.05, inside_nmbf=False)
+    )
+    assert deal.brokerage == 0.025 and deal.brokerage_scale is None
+    assert deal.deductions[-1] == ("ms_fee", "premium", 0.05, False)
+    tower = Tower([deal])
+    losses = [20.0, 45.0, 60.0, 75.0, 95.0, 150.0]
+    r = tower.deal_ratios(tower.apply_annual(losses), "deal")
+    get = lambda k: list(r.marginal([k]).draws)
+    td, cc, bk = get("total_deductions"), get("ceding_commission"), get("brokerage")
+    for i in range(len(losses)):
+        assert td[i] - cc[i] - bk[i] == pytest.approx(0.115, abs=1e-12)
+        assert get("nmbf")[i] - get("margin")[i] == pytest.approx(0.05, abs=1e-12)
+    # The legs and the fee survive a round trip through JSON.
+    assert Tower.from_json(tower.to_json()).to_json() == tower.to_json()
+    with pytest.raises(ValueError):
+        deal.with_deduction("tax", 0.01)
+    with pytest.raises(ValueError):
+        deal.with_deduction("brokerage", 0.01)
+    with pytest.raises(ValueError):
+        deal.with_deduction("x", 0.01, basis="lots")
+    with pytest.raises(ValueError):
+        tower.deal_ratios(tower.apply_annual(losses), "nope")
+
+
+def test_scales_read_before_the_cap():
+    from prospicio.reinsurance import Layer, Tower
+
+    def tower(before):
+        layer = (
+            Layer("deal", 1000.0, 0.0, aggregate_limit=120.0)
+            .with_premium_rate(1.0, 100.0)
+            .with_sliding_scale([(0.3, 0.5), (0.1, 1.5)])
+            .with_brokerage_scale([(0.01, 0.5), (0.03, 1.5)])
+            .with_brokerage_within_commission_range()
+        )
+        return Tower([layer.with_scales_before_annual_terms() if before else layer])
+
+    b = tower(True)
+    res = b.apply_annual([40.0, 140.0])
+    cc = list(res.marginal(["ceding_commission", "deal"]).draws)
+    assert cc[1] == pytest.approx(100 * (0.3 - 0.2 * 0.9), abs=1e-12)
+    a = list(tower(False).apply_annual([140.0]).marginal(["ceding_commission", "deal"]).draws)
+    assert a[0] == pytest.approx(100 * (0.3 - 0.2 * 0.7), abs=1e-12)
+    r = b.deal_ratios(res, "deal")
+    assert list(r.marginal(["loss_ratio_before_terms"]).draws) == [0.4, 1.4]
+    flags = Layer("x", 1.0, 0.0).with_scales_before_annual_terms()
+    assert flags.scales_before_annual_terms and not flags.brokerage_within_commission_range

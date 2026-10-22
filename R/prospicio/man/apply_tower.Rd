@@ -20,8 +20,11 @@ A \link{predictive_distribution} with dimensions \code{kind} and \code{layer}:
 \verb{("net", "retained")}, then \verb{("reinstatement_premium", <layer name>)} per
 layer with paid reinstatements, \verb{("swing_premium", <layer name>)} per
 swing-rated layer, \verb{("ceding_commission", <layer name>)} per layer with a
-flat or sliding commission and \verb{("profit_commission", <layer name>)} per
-layer with a profit commission. \code{aggregate(result, keep = "kind")} gives
+flat or sliding commission, \verb{("profit_commission", <layer name>)} per
+layer with a profit commission, \verb{("brokerage", <layer name>)} per layer
+with brokerage, \verb{(<label>, <layer name>)} per deduction and
+\verb{("loss_before_terms", <layer name>)} per layer whose scales read it
+(\code{\link[=with_brokerage]{with_brokerage()}}; \code{\link[=deal_ratios]{deal_ratios()}} turns them into ratios). \code{aggregate(result, keep = "kind")} gives
 gross, total ceded and net per year; net is a loss, before premiums and
 commissions. Take one kind with \code{\link[=select_components]{select_components()}} before joining it
 to a book: summing over \code{kind} adds gross, ceded and net together.
@@ -46,8 +49,11 @@ A contract stated on the loss ratio is a layer on money amounts: a
 loss-ratio cap \code{c} on subject premium \code{P} is
 \code{aggregate_stop_loss(name, c * P, 0)} with \code{with_premium_rate(layer, 1, P)},
 so the ceded loss ratio is the capped one, and a sliding scale keyed on it is \code{\link[=with_sliding_scale]{with_sliding_scale()}}.
-Several scales on the same loss-ratio grid add pointwise into one;
-\code{\link[=ceding_commission_for]{ceding_commission_for()}} evaluates a scale at any ceded loss.
+To key the scales on the loss ratio before the cap, state the cap as
+\code{aggregate_limit} and use \code{\link[=with_scales_before_annual_terms]{with_scales_before_annual_terms()}}. A deal of
+several sections is one layer per section, each scale reading its own
+section's loss ratio, and the amounts add; \code{\link[=ceding_commission_for]{ceding_commission_for()}}
+evaluates a scale at any ceded loss.
 }
 \examples{
 ev <- simulate_events(poisson_count(2), lognormal_from_mean_cv(3e6, 1.5), 1000, seed = 7)

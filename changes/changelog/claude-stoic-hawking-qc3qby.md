@@ -28,3 +28,17 @@
   `totals` include it (Python `EventSet.with_aggregate_part`,
   `aggregate_part`, `Layer.sees_aggregate_part`; R `with_aggregate_part()`,
   `aggregate_part()`) (#483, #505).
+- A deal's deductions on a layer: brokerage, flat (`Layer::brokerage`) or
+  on a loss-ratio scale (`brokerage_scale`), and `Deduction`s (a TPA fee,
+  tax, reinsurance cost, fronting, a manager's fee) on the premium, the
+  ceded loss or an amount, inside or outside NMBF, each its own component
+  of a tower's results. `Tower::deal_ratios` gives each simulation's loss
+  ratio, each deduction, the total, the combined ratio, NMBF and the
+  margin, by year over a term. `Layer::scales_before_annual_terms` keys the
+  commission and brokerage scales on the loss ratio before the annual terms
+  and adds `loss_before_terms` to the results.
+  `brokerage_within_commission_range` holds the brokerage key in the
+  commission scale's range. Towers with them are JSON format version 3
+  (Python `with_brokerage`, `with_brokerage_scale`, `with_deduction`,
+  `with_scales_before_annual_terms`, `Tower.deal_ratios`; R
+  `with_brokerage()`, `with_deduction()`, `deal_ratios()`) (#485, #477, #511).

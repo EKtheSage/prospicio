@@ -5,6 +5,7 @@
 use prospicio_core::{Error, Result};
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
 
+use crate::deal::Deduction;
 use crate::monte_carlo::EventSet;
 
 /// A per-occurrence excess-of-loss layer: `limit` xs `attachment` on each
@@ -80,6 +81,20 @@ pub struct Layer {
     /// Swing rating at 100% of the layer: the year's premium as a function
     /// of its ceded loss, in place of `premium`; see [`Layer::swing_rated`].
     pub swing: Option<LossSensitivePremium>,
+    /// Brokerage on the year's premium: a flat rate or a scale on the
+    /// loss ratio; see [`Layer::brokerage`].
+    pub brokerage: Option<Commission>,
+    /// Other deductions from the premium (a TPA fee, tax, reinsurance
+    /// cost, a fronting fee, a manager's fee); see [`Layer::deduction`].
+    pub deductions: Vec<Deduction>,
+    /// Whether the sliding scales (commission and brokerage) read the loss
+    /// ratio before the annual terms; see
+    /// [`Layer::scales_before_annual_terms`].
+    pub scales_before_annual_terms: bool,
+    /// Whether a brokerage scale reads its loss ratio held inside the
+    /// sliding-scale commission's range; see
+    /// [`Layer::brokerage_within_commission_range`].
+    pub brokerage_within_commission_range: bool,
 }
 
 /// A premium that depends on the year's loss `x`:
@@ -329,6 +344,10 @@ impl Layer {
             profit_commission_carry: None,
             sliding_scale_carry: None,
             swing: None,
+            brokerage: None,
+            deductions: Vec::new(),
+            scales_before_annual_terms: false,
+            brokerage_within_commission_range: false,
         })
     }
 
@@ -749,31 +768,7 @@ impl Layer {
     /// ```
     pub fn sliding_scale(mut self, anchors: Vec<(f64, f64)>) -> Result<Self> {
         self.check_loss_ratio_terms("sliding_scale")?;
-        if anchors.is_empty() {
-            return Err(invalid("anchors", 0.0, "must not be empty"));
-        }
-        let mut anchors = anchors;
-        for &(c, lr) in &anchors {
-            if !(c.is_finite() && (0.0..=1.0).contains(&c)) {
-                return Err(invalid("commission", c, "must be in [0, 1]"));
-            }
-            if !(lr.is_finite() && lr >= 0.0) {
-                return Err(invalid("loss_ratio", lr, "must be finite and non-negative"));
-            }
-        }
-        anchors.sort_by(|a, b| a.1.total_cmp(&b.1));
-        for w in anchors.windows(2) {
-            if w[1].1 == w[0].1 {
-                return Err(invalid("loss_ratio", w[1].1, "must not repeat"));
-            }
-            if w[1].0 > w[0].0 {
-                return Err(invalid(
-                    "commission",
-                    w[1].0,
-                    "must not rise with the loss ratio",
-                ));
-            }
-        }
+        let anchors = checked_anchors(anchors, true)?;
         self.commission = Some(Commission::SlidingScale(anchors));
         Ok(self)
     }
@@ -925,7 +920,7 @@ impl Layer {
         ceded
             .iter()
             .enumerate()
-            .map(|(t, &c)| self.ceding_commission_in(c, t, &mut carry))
+            .map(|(t, &c)| self.ceding_commission_in(c, c, t, &mut carry))
             .collect()
     }
 
@@ -941,16 +936,29 @@ impl Layer {
     }
 
     /// Year `t`'s ceding commission in a term, updating what is carried.
-    pub(crate) fn ceding_commission_in(&self, ceded: f64, t: usize, carry: &mut Carried) -> f64 {
-        let (Some(Commission::SlidingScale(anchors)), Some(cf)) =
-            (&self.commission, &self.sliding_scale_carry)
-        else {
+    /// `key` is the loss the scale reads: the ceded loss, or with
+    /// [`scales_before_annual_terms`](Self::scales_before_annual_terms) the
+    /// ceded share of the loss before the annual terms.
+    pub(crate) fn ceding_commission_in(
+        &self,
+        ceded: f64,
+        key: f64,
+        t: usize,
+        carry: &mut Carried,
+    ) -> f64 {
+        let Some(Commission::SlidingScale(anchors)) = &self.commission else {
             return self.ceding_commission_for(ceded);
+        };
+        let Some(cf) = &self.sliding_scale_carry else {
+            return self
+                .commission
+                .as_ref()
+                .map_or(0.0, |c| c.rate(key / self.premium) * self.premium);
         };
         let premium = self.premium;
         let (lr_min, lr_max) = (anchors[0].1, anchors[anchors.len() - 1].1);
         let cf = *cf;
-        let total = carry.step(ceded, t, cf.years, |x| {
+        let total = carry.step(key, t, cf.years, |x| {
             let mut out = 0.0;
             if cf.deficit {
                 out += (x - lr_max * premium).max(0.0);
@@ -993,6 +1001,7 @@ impl Layer {
             ));
         }
         if matches!(self.commission, Some(Commission::SlidingScale(_)))
+            || matches!(self.brokerage, Some(Commission::SlidingScale(_)))
             || self.profit_commission.is_some()
         {
             return Err(invalid(
@@ -1007,7 +1016,7 @@ impl Layer {
 
     /// A sliding scale and a profit commission read the loss ratio on a
     /// fixed premium.
-    fn check_loss_ratio_terms(&self, name: &'static str) -> Result<()> {
+    pub(crate) fn check_loss_ratio_terms(&self, name: &'static str) -> Result<()> {
         if self.swing.is_some() {
             return Err(invalid(name, 0.0, "cannot be combined with swing rating"));
         }
@@ -1041,6 +1050,9 @@ impl Layer {
     /// The year's ceding commission given its ceded loss: the rate (flat,
     /// or from the sliding scale at the loss ratio `ceded / premium`) times
     /// the year's premium; zero without one.
+    /// A layer with
+    /// [`scales_before_annual_terms`](Self::scales_before_annual_terms)
+    /// reads its scale on another loss, which a tower's result gives.
     pub fn ceding_commission_for(&self, ceded: f64) -> f64 {
         let Some(commission) = &self.commission else {
             return 0.0;
@@ -1143,12 +1155,16 @@ impl Layer {
 
     /// Annual layer loss at 100%, after annual terms.
     fn layer_loss(&self, losses: &[f64], si: Option<&[f64]>) -> f64 {
-        let recovery: f64 = losses
+        self.after_terms(self.before_terms(losses, si))
+    }
+
+    /// Annual layer loss at 100%, before annual terms.
+    fn before_terms(&self, losses: &[f64], si: Option<&[f64]>) -> f64 {
+        losses
             .iter()
             .enumerate()
             .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e])))
-            .sum();
-        self.after_terms(recovery)
+            .sum()
     }
 
     /// Ceded loss per event for one year, in the order given.
@@ -1361,7 +1377,7 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
     ) -> Vec<(f64, f64)> {
-        self.year_by_event(&[], losses, si, times, None)
+        self.year_by_event(&[], losses, si, times, None, None)
     }
 
     /// [`year`](Self::year) with an aggregate part `aggregate` beside the
@@ -1369,6 +1385,9 @@ impl Tower {
     /// vector per layer, in tower order, the aggregate part's entries
     /// first). The aggregate part comes before the events in the year and
     /// only layers that [see it](Layer::sees_aggregate_part) cede from it.
+    /// With `keys` each layer's scale key: the ceded loss, or for a layer
+    /// with [`scales_before_annual_terms`](Layer::scales_before_annual_terms)
+    /// its share of the year's recoveries before the annual terms.
     fn year_by_event(
         &self,
         aggregate: &[f64],
@@ -1376,6 +1395,7 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
         mut by_event: Option<&mut Vec<Vec<f64>>>,
+        mut keys: Option<&mut Vec<f64>>,
     ) -> Vec<(f64, f64)> {
         let mut ceded = Vec::with_capacity(self.layers.len());
         let n_agg = aggregate.len();
@@ -1404,10 +1424,15 @@ impl Tower {
                 } else {
                     (&seen[n_agg..], si, times)
                 };
-                ceded.push((
-                    layer.share * layer.layer_loss(x, s),
-                    layer.reinstatement_premium_at(x, s, t),
-                ));
+                let layer_ceded = layer.share * layer.layer_loss(x, s);
+                ceded.push((layer_ceded, layer.reinstatement_premium_at(x, s, t)));
+                if let Some(keys) = keys.as_deref_mut() {
+                    keys.push(if layer.scales_before_annual_terms {
+                        layer.share * layer.before_terms(x, s)
+                    } else {
+                        layer_ceded
+                    });
+                }
                 if stage < last_stage || by_event.is_some() {
                     let mut layer_by_event = layer.ceded_by_event_si(x, s);
                     if !sees && n_agg > 0 {
@@ -1439,9 +1464,15 @@ impl Tower {
     /// `(reinstatement_premium, <layer name>)` for each layer with paid
     /// reinstatements, `(swing_premium, <layer name>)` for each
     /// swing-rated layer, `(ceding_commission, <layer name>)` for each
-    /// layer with a flat or sliding commission and `(profit_commission,
-    /// <layer name>)` for each with a profit commission. A fixed premium
-    /// is the layer's `premium` and gets no component.
+    /// layer with a flat or sliding commission, `(profit_commission,
+    /// <layer name>)` for each with a profit commission, `(brokerage,
+    /// <layer name>)` for each with brokerage, `(<label>, <layer name>)`
+    /// for each of a layer's [deductions](Layer::deduction), and
+    /// `(loss_before_terms, <layer name>)` for each layer whose scales read
+    /// it ([`Layer::scales_before_annual_terms`]). A fixed premium
+    /// is the layer's `premium` and gets no component;
+    /// [`deal_ratios`](Self::deal_ratios) turns a layer's components into
+    /// ratios of it.
     /// `aggregate(&["kind"])` gives gross, total ceded and net (and the
     /// totals of the others); `net = gross - Σ ceded` in every year, so
     /// net is a loss, before any premium or commission.
@@ -1615,7 +1646,15 @@ impl Tower {
                 .copied()
                 .collect();
             let mut by_event = Vec::with_capacity(n_layers);
-            let year = self.year_by_event(aggregate, losses, si, times, Some(&mut by_event));
+            let mut keys = Vec::with_capacity(n_layers);
+            let year = self.year_by_event(
+                aggregate,
+                losses,
+                si,
+                times,
+                Some(&mut by_event),
+                Some(&mut keys),
+            );
             let by_label = |values: &[f64]| -> Vec<f64> {
                 let mut sums = vec![0.0; n_labels];
                 for (&x, &c) in values.iter().zip(&of) {
@@ -1634,7 +1673,7 @@ impl Tower {
             // The annual components, as an unlabelled year writes them.
             annual.clear();
             let mut carried = vec![Carried::default(); 2 * n_layers];
-            self.push_terms(&columns, &mut annual, &year, 0, &mut carried);
+            self.push_terms(&columns, &mut annual, &year, &keys, 0, &mut carried);
             draws.extend(&annual);
         }
         let mut dims = vec!["kind".to_string(), "layer".to_string()];
@@ -1649,9 +1688,13 @@ impl Tower {
     /// loss-ratio cap `c` on subject premium `P` is
     /// `Layer::stop_loss(name, c × P, 0)` with `premium_rate(1, P)` (the
     /// ceded loss ratio is then the capped one), and a sliding scale keyed
-    /// on it is [`Layer::sliding_scale`]. Several scales on the same
-    /// loss-ratio grid add pointwise into one, since a sum of piecewise
-    /// linear functions on the same anchors is one too.
+    /// on it is [`Layer::sliding_scale`]. To key the scales on the loss
+    /// ratio before the cap, state the cap as an
+    /// [`aggregate_limit`](Layer::aggregate_limit) and set
+    /// [`Layer::scales_before_annual_terms`]. A deal of several sections
+    /// is one layer per section, each scale reading its own section's
+    /// loss ratio on its own premium, and the amounts add; adding the
+    /// scales point by point is right only for one section.
     /// [`Commission::rate`] evaluates a scale on any loss ratio.
     ///
     /// ```
@@ -1761,21 +1804,24 @@ impl Tower {
     ) {
         let gross: f64 = aggregate.iter().chain(losses).sum();
         draws.push(gross);
-        let year = self.year_by_event(aggregate, losses, si, times, None);
+        let mut keys = Vec::with_capacity(self.layers.len());
+        let year = self.year_by_event(aggregate, losses, si, times, None, Some(&mut keys));
         let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
         draws.extend(year.iter().map(|(c, _)| c));
         draws.push(gross - ceded_total);
-        self.push_terms(columns, draws, &year, t, carried);
+        self.push_terms(columns, draws, &year, &keys, t, carried);
     }
 
     /// Appends one year's components after net: reinstatement and swing
-    /// premiums and commissions, from each layer's ceded loss and
-    /// reinstatement premium in `year`.
+    /// premiums, commissions, brokerage, deductions and the loss before
+    /// annual terms, from each layer's ceded loss and reinstatement
+    /// premium in `year` and its scale key in `keys`.
     fn push_terms(
         &self,
         columns: &Columns,
         draws: &mut Vec<f64>,
         year: &[(f64, f64)],
+        keys: &[f64],
         t: usize,
         carried: &mut [Carried],
     ) {
@@ -1793,13 +1839,25 @@ impl Tower {
                 .map(|&i| self.layers[i].premium_for(ceded(i))),
         );
         for &i in &columns.commission {
-            let c = self.layers[i].ceding_commission_in(ceded(i), t, &mut carried[2 * i + 1]);
+            let c =
+                self.layers[i].ceding_commission_in(ceded(i), keys[i], t, &mut carried[2 * i + 1]);
             draws.push(c);
         }
         for &i in &columns.profit {
             let c = self.layers[i].profit_commission_in(ceded(i), t, &mut carried[2 * i]);
             draws.push(c);
         }
+        draws.extend(
+            columns
+                .brokerage
+                .iter()
+                .map(|&i| self.layers[i].brokerage_keyed(ceded(i), keys[i])),
+        );
+        for &i in &columns.deductions {
+            let l = &self.layers[i];
+            draws.extend(l.deductions.iter().map(|d| l.deduction_for(d, ceded(i))));
+        }
+        draws.extend(columns.keyed.iter().map(|&i| keys[i]));
     }
 
     /// The provenance of a result: `base` with every layer's terms.
@@ -1844,6 +1902,28 @@ impl Tower {
             if let Some(pc) = &l.profit_commission {
                 terms += &format!(", profit commission {} after {}", pc.share, pc.allowance);
             }
+            match &l.brokerage {
+                Some(Commission::Flat(b)) => terms += &format!(", brokerage {b}"),
+                Some(Commission::SlidingScale(a)) => {
+                    terms += &format!(", brokerage scale (rate, loss ratio) {a:?}");
+                }
+                None => {}
+            }
+            for d in &l.deductions {
+                terms += &format!(
+                    ", deduction {} {} on {}{}",
+                    d.label,
+                    d.value,
+                    d.basis.name(),
+                    if d.inside_nmbf { "" } else { " outside nmbf" }
+                );
+            }
+            if l.scales_before_annual_terms {
+                terms += ", scales before annual terms";
+            }
+            if l.brokerage_within_commission_range {
+                terms += ", brokerage within the commission's range";
+            }
             if let Some(cf) = &l.profit_commission_carry {
                 terms += &format!(", profit commission deficits carried {}", carry_text(cf));
             }
@@ -1875,6 +1955,9 @@ pub(crate) struct Columns {
     swing: Vec<usize>,
     commission: Vec<usize>,
     profit: Vec<usize>,
+    brokerage: Vec<usize>,
+    deductions: Vec<usize>,
+    keyed: Vec<usize>,
 }
 
 impl Columns {
@@ -1888,6 +1971,9 @@ impl Columns {
             swing: tower.indices(|l| l.swing.is_some()),
             commission: tower.indices(|l| l.commission.is_some()),
             profit: tower.indices(|l| l.profit_commission.is_some()),
+            brokerage: tower.indices(|l| l.brokerage.is_some()),
+            deductions: tower.indices(|l| !l.deductions.is_empty()),
+            keyed: tower.indices(|l| l.scales_before_annual_terms),
         }
     }
 
@@ -1899,6 +1985,13 @@ impl Columns {
             + self.swing.len()
             + self.commission.len()
             + self.profit.len()
+            + self.brokerage.len()
+            + self.keyed.len()
+            + self
+                .deductions
+                .iter()
+                .map(|&i| tower.layers[i].deductions.len())
+                .sum::<usize>()
     }
 
     /// The `(kind, layer)` key of each of a year's components.
@@ -1920,11 +2013,55 @@ impl Columns {
             ("swing_premium", &self.swing),
             ("ceding_commission", &self.commission),
             ("profit_commission", &self.profit),
+            ("brokerage", &self.brokerage),
         ] {
             components.extend(layers.iter().map(|&i| key(kind, &s.layers[i].name)));
         }
+        for &i in &self.deductions {
+            let l = &s.layers[i];
+            components.extend(l.deductions.iter().map(|d| key(&d.label, &l.name)));
+        }
+        components.extend(
+            self.keyed
+                .iter()
+                .map(|&i| key("loss_before_terms", &s.layers[i].name)),
+        );
         components
     }
+}
+
+/// `(rate, loss_ratio)` anchors checked and sorted by loss ratio: rates in
+/// `[0, 1]`, loss ratios finite, non-negative and distinct, and with
+/// `falling` rates that do not rise with the loss ratio.
+pub(crate) fn checked_anchors(
+    mut anchors: Vec<(f64, f64)>,
+    falling: bool,
+) -> Result<Vec<(f64, f64)>> {
+    if anchors.is_empty() {
+        return Err(invalid("anchors", 0.0, "must not be empty"));
+    }
+    for &(c, lr) in &anchors {
+        if !(c.is_finite() && (0.0..=1.0).contains(&c)) {
+            return Err(invalid("commission", c, "must be in [0, 1]"));
+        }
+        if !(lr.is_finite() && lr >= 0.0) {
+            return Err(invalid("loss_ratio", lr, "must be finite and non-negative"));
+        }
+    }
+    anchors.sort_by(|a, b| a.1.total_cmp(&b.1));
+    for w in anchors.windows(2) {
+        if w[1].1 == w[0].1 {
+            return Err(invalid("loss_ratio", w[1].1, "must not repeat"));
+        }
+        if falling && w[1].0 > w[0].0 {
+            return Err(invalid(
+                "commission",
+                w[1].0,
+                "must not rise with the loss ratio",
+            ));
+        }
+    }
+    Ok(anchors)
 }
 
 fn check_carry_years(years: Option<u32>) -> Result<()> {

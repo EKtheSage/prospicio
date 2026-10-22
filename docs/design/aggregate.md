@@ -1112,6 +1112,61 @@ mean is 14.76, not 10); SciPy's nested `brentq` solve gives the shape
 0.4306 that meets all three targets, and prospicio agrees with it at
 `1e-12`.
 
+### Deal deductions and ratios
+
+Issues #485 and #477, with the user's reading of a reference simulation
+pricing model (`knowledge/findings/deal-ratios-and-scale-keys.md`).
+
+1. **Brokerage** is a `Commission` in its own slot on `Layer`
+   (`Layer::brokerage` flat, `Layer::brokerage_scale` on the loss ratio).
+   The scale type and function are the sliding scale's (linear between
+   anchors, held at the ends), but the rate need not fall. It sets the
+   brokerage in the results and ratios. A provisional brokerage for cash
+   flows belongs to #479.
+2. **Other deductions** are `Deduction`s: a label, a basis
+   (`ExpenseBasis`: a rate of the year's premium by default, of the ceded
+   loss, or an amount) and whether NMBF counts it (yes by default; a
+   manager's fee is kept outside). Each is its own `(label, layer)` kind in
+   a tower's result, after the profit commission and brokerage. Labels
+   cannot be a result's kinds or a ratio's names.
+3. **The scales' key.** By default both scales read the ceded loss ratio,
+   as `aggregate` does. `Layer::scales_before_annual_terms` keys them on the
+   placed share of the year's recoveries before the annual deductible,
+   corridor and annual limit, over the premium. That is the reference
+   model's `LR`, the loss ratio before the cap and corridor, when the cap is
+   stated as an `aggregate_limit`. The result then carries
+   `(loss_before_terms, layer)`, and a sliding-scale carry over a term
+   accumulates that key. The grid methods and the P&L ledger see only the
+   ceded loss, so they refuse such a layer with annual terms and a sliding
+   scale.
+4. **The clamp.** `Layer::brokerage_within_commission_range` holds the
+   brokerage key inside the commission scale's loss-ratio range. It is the
+   reference model's convention but off by default.
+5. **Sections.** A deal of several sections is one layer per section, each
+   scale on its own section's loss ratio and premium, and the amounts add.
+   Summing scales point by point on one grid is right only for one section.
+   A deal-level scale read on the loss ratio of several sections together
+   is not built (Next: `[deal-scale]`).
+6. **Ratios.** `Tower::deal_ratios(result, layer)` reads a tower's result,
+   annual or over a term (with a `year` dimension). Every amount is over
+   the year's premium for the placed share (fixed or swing rated;
+   reinstatement premiums are not in it). It gives `loss_ratio`,
+   `loss_ratio_before_terms` where the scales read it, CC, PC and BK where
+   present, each deduction, `total_deductions = CC + PC + BK + sum(d)`,
+   `combined_ratio`, `margin = 1 - combined_ratio` and `nmbf` (the margin
+   plus the deductions kept outside). The commissions are read from the
+   result, so carried amounts count as they were paid.
+7. **JSON.** A tower with brokerage, deductions or either flag is format
+   version 3; others keep their version.
+8. **The ledger and the grids.** The P&L builders book a tower only as
+   covers the book buys (buy groups: the premium paid, the commissions
+   received). Brokerage and the other deductions come out of the premium
+   the reinsurer receives, so the cedant's ledger correctly leaves them
+   out. Booking them as legs of the reinsurer's own ledger is a later PR
+   (Next: `[deal-ledger]`). `TowerGrids` and `AnnualGrids` report the
+   expected commissions but not brokerage or deductions. Those come from
+   simulated years and `deal_ratios`.
+
 ## Validation
 
 `validation/tests/aggregate.rs` checks Panjer and FFT against a brute-force

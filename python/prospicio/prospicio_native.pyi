@@ -13237,6 +13237,34 @@ class Layer:
         """
         Per-occurrence attachment.
         """
+    @property
+    def brokerage(self, /) -> float |None:
+        """
+        The flat brokerage rate, or ``None`` (also when it is on a scale).
+        """
+    def brokerage_for(self, /, ceded: float) -> float:
+        """
+        The year's brokerage given its ceded loss.
+        
+        Parameters
+        ----------
+        ceded : float
+        
+        Returns
+        -------
+        float
+        """
+    @property
+    def brokerage_scale(self, /) -> list[tuple[float, float]] |None:
+        """
+        The brokerage scale's ``(rate, loss_ratio)`` anchors in increasing
+        loss ratio, or ``None``.
+        """
+    @property
+    def brokerage_within_commission_range(self, /) -> bool:
+        """
+        Whether the brokerage scale is held inside the commission's range.
+        """
     def ceded(self, /, losses: Sequence[float]) -> float:
         """
         Ceded loss for one year's losses.
@@ -13316,6 +13344,30 @@ class Layer:
         Returns
         -------
         list of float
+        """
+    def deduction_for(self, /, label: str, ceded: float) -> float:
+        """
+        The year's amount of the deduction labelled ``label`` given its
+        ceded loss.
+        
+        Parameters
+        ----------
+        label : str
+        ceded : float
+        
+        Returns
+        -------
+        float
+        
+        Raises
+        ------
+        ValueError
+            If the layer has no deduction labelled ``label``.
+        """
+    @property
+    def deductions(self, /) -> list[tuple[str, str, float, bool]]:
+        """
+        The deductions as ``(label, basis, value, inside_nmbf)``.
         """
     @property
     def limit(self, /) -> float:
@@ -13449,6 +13501,11 @@ class Layer:
         Rate of each paid reinstatement; empty when reinstatements are free.
         """
     @property
+    def scales_before_annual_terms(self, /) -> bool:
+        """
+        Whether the sliding scales read the loss ratio before annual terms.
+        """
+    @property
     def sees_aggregate_part(self, /) -> bool:
         """
         Whether the layer cedes from an ``EventSet``'s aggregate part: it is
@@ -13535,6 +13592,67 @@ class Layer:
         The swing rating at 100% as ``(basic, lcm, minimum, maximum)``, or
         ``None``.
         """
+    def with_brokerage(self, /, rate: float) -> Layer:
+        """
+        The same layer with a flat brokerage: ``rate`` of the year's
+        premium. It replaces any brokerage set before.
+        
+        Parameters
+        ----------
+        rate : float
+            In ``[0, 1]``.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0).with_brokerage(0.025)
+        >>> round(qs.brokerage_for(70.0), 12)
+        2.5
+        """
+    def with_brokerage_scale(self, /, anchors: Sequence[tuple[float, float]]) -> Layer:
+        """
+        The same layer with brokerage on a scale of the loss ratio.
+        
+        The rate is read from ``(rate, loss_ratio)`` anchors as a sliding
+        scale is, linear between anchors and flat beyond the first and
+        last, and may rise or fall with the loss ratio. It reads the ceded
+        loss ratio, or the one before annual terms with
+        ``with_scales_before_annual_terms``, held inside a sliding-scale
+        commission's range with ``with_brokerage_within_commission_range``.
+        Set the premium first; it cannot be combined with swing rating or
+        paid reinstatements.
+        
+        Parameters
+        ----------
+        anchors : list of (float, float)
+            ``(rate, loss_ratio)`` pairs.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+        ...       .with_brokerage_scale([(0.03, 0.5), (0.01, 0.8)]))
+        >>> round(qs.brokerage_for(65.0), 12)
+        2.0
+        """
+    def with_brokerage_within_commission_range(self, /) -> Layer:
+        """
+        The same layer with its brokerage scale reading the loss ratio held
+        inside the sliding-scale commission's range, from its first anchor
+        to its last.
+        
+        Returns
+        -------
+        Layer
+        """
     def with_ceding_commission(self, /, rate: float) -> Layer:
         """
         The same layer with a flat ceding commission: ``rate`` of the
@@ -13549,6 +13667,40 @@ class Layer:
         Returns
         -------
         Layer
+        """
+    def with_deduction(self, /, label: str, value: float, basis: str = "premium", inside_nmbf: bool = True) -> Layer:
+        """
+        The same layer with another deduction from its premium: a TPA fee,
+        tax, reinsurance cost, a fronting fee or a manager's fee.
+        
+        Each deduction is its own ``(label, layer)`` component in a tower's
+        results and its own ratio in ``Tower.deal_ratios``.
+        
+        Parameters
+        ----------
+        label : str
+            Its name, distinct from the layer's other deductions and from
+            the kinds a tower's result and the deal ratios use.
+        value : float
+            The rate, or the amount for ``basis="fixed"``; non-negative.
+        basis : {"premium", "loss", "fixed"}
+            A rate of the year's premium, of its ceded loss, or an amount.
+        inside_nmbf : bool
+            Whether the nominal margin before fees counts it; ``False`` for
+            a fee kept outside it, such as a manager's fee.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer
+        >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+        ...       .with_deduction("tax", 0.03)
+        ...       .with_deduction("tpa", 0.02, basis="loss"))
+        >>> [round(qs.deduction_for(k, 70.0), 12) for k in ["tax", "tpa"]]
+        [3.0, 1.4]
         """
     def with_deposit_premium(self, /, amount: float) -> Layer:
         """
@@ -13700,6 +13852,36 @@ class Layer:
         >>> from prospicio.reinsurance import Layer
         >>> Layer("10x10", 10e6, 10e6).with_rate_on_line(0.125).premium
         1250000.0
+        """
+    def with_scales_before_annual_terms(self, /) -> Layer:
+        """
+        The same layer with its sliding scales (commission and brokerage)
+        read on the loss ratio before the annual terms.
+        
+        That is the placed share of the year's recoveries before the
+        annual deductible, the corridor and the annual limit, over the
+        premium: a loss-ratio cap stated as ``aggregate_limit`` then caps
+        the ceded loss but not what the scales read. A tower's result
+        then has each year's ``("loss_before_terms", <layer>)``. The grid
+        methods and the P&L ledger refuse such a layer with annual terms
+        and a sliding scale.
+        
+        Returns
+        -------
+        Layer
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> cover = (Layer("cover", 1000.0, 0.0, aggregate_limit=120.0)
+        ...          .with_premium_rate(1.0, 100.0)
+        ...          .with_sliding_scale([(0.3, 0.5), (0.1, 1.5)])
+        ...          .with_scales_before_annual_terms())
+        >>> res = Tower([cover]).apply_annual([140.0])
+        >>> [res.marginal([k, "cover"]).draws[0] for k in ["ceded", "loss_before_terms"]]
+        [120.0, 140.0]
+        >>> round(res.marginal(["ceding_commission", "cover"]).draws[0], 12)
+        12.0
         """
     def with_sliding_scale(self, /, anchors: Sequence[tuple[float, float]]) -> Layer:
         """
@@ -23482,9 +23664,12 @@ class Tower:
         cap ``c`` on subject premium ``P`` is ``Layer.stop_loss(name, c * P,
         0.0).with_premium_rate(1.0, P)``, so the ceded loss ratio is the
         capped one, and a sliding scale keyed on it is
-        ``with_sliding_scale``. Several scales on the same loss-ratio grid
-        add pointwise into one; ``Layer.ceding_commission_for`` evaluates a
-        scale at any ceded loss. Components as ``apply``.
+        ``with_sliding_scale``. To key the scales on the loss ratio before
+        the cap, state the cap as ``aggregate_limit`` and use
+        ``with_scales_before_annual_terms``. A deal of several sections is
+        one layer per section, each scale reading its own section's loss
+        ratio, and the amounts add; ``Layer.ceding_commission_for``
+        evaluates a scale at any ceded loss. Components as ``apply``.
         
         Parameters
         ----------
@@ -23559,6 +23744,56 @@ class Tower:
         Returns
         -------
         list of float
+        """
+    def deal_ratios(self, /, result: PredictiveDistribution, layer: str) -> PredictiveDistribution:
+        """
+        The deal ratios of one layer in each simulation of a result of this
+        tower (``apply``, ``apply_aggregate``, ``apply_annual`` or
+        ``apply_term``).
+        
+        Every amount is over the year's premium for the placed share (the
+        fixed or the swing-rated premium; reinstatement premiums are not in
+        it). With ``d`` the deductions: ``total_deductions = CC + PC + BK +
+        sum(d)``, ``combined_ratio = loss_ratio + total_deductions``,
+        ``margin = 1 - combined_ratio`` and ``nmbf = margin`` plus the
+        deductions kept outside it.
+        
+        Parameters
+        ----------
+        result : PredictiveDistribution
+            A result of this tower.
+        layer : str
+            The layer's name.
+        
+        Returns
+        -------
+        PredictiveDistribution
+            Dimension ``["ratio"]`` (``["ratio", "year"]`` for a term):
+            ``loss_ratio``, ``loss_ratio_before_terms`` for a layer whose
+            scales read it, ``ceding_commission``, ``profit_commission`` and
+            ``brokerage`` where the layer has them, each deduction by its
+            label, ``total_deductions``, ``combined_ratio``, ``nmbf`` and
+            ``margin``.
+        
+        Raises
+        ------
+        ValueError
+            For an unknown layer, a result that is not this tower's, or a
+            premium that is not positive.
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> cover = (Layer.stop_loss("cover", 120.0, 0.0)
+        ...          .with_premium_rate(1.0, 100.0)
+        ...          .with_sliding_scale([(0.3, 0.5), (0.1, 0.9)])
+        ...          .with_brokerage(0.025)
+        ...          .with_deduction("tax", 0.03)
+        ...          .with_deduction("manager_fee", 0.05, inside_nmbf=False))
+        >>> tower = Tower([cover])
+        >>> r = tower.deal_ratios(tower.apply_annual([40.0, 70.0, 150.0]), "cover")
+        >>> [round(r.marginal([k]).draws[1], 12) for k in ["combined_ratio", "margin", "nmbf"]]
+        [1.005, -0.005, 0.045]
         """
     @staticmethod
     def from_json(text: str) -> Tower:

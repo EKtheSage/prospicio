@@ -749,3 +749,42 @@ stopifnot(all(apm("ceded", "QS", "fire") == c(4.5, 19, 13.5)))
 stopifnot(all(draw_matrix(total(ap))[, 1] == c(10, 90, 95)))
 stopifnot(is.null(aggregate_part(events_from_years(list(1)), 1)))
 stopifnot(inherits(try(with_aggregate_part(events_from_years(list(1)), part), silent = TRUE), "try-error"))
+
+# A deal's deductions (#485): premium legs shift the total deductions
+# without spreading them, and only the manager's fee sits outside NMBF.
+deal <- with_premium_rate(aggregate_stop_loss("deal", 120, 0), 1, 100)
+deal <- with_brokerage(with_sliding_scale(deal, c(0.35, 0.15), c(0.5, 0.9)), 0.025)
+for (leg in list(c("tpa", 0.01), c("tax", 0.03), c("ri_cost", 0.02), c("fronting", 0.005))) {
+  deal <- with_deduction(deal, leg[[1]], as.double(leg[[2]]))
+}
+deal <- with_deduction(deal, "ms_fee", 0.05, inside_nmbf = FALSE)
+stopifnot(deal@brokerage == 0.025, is.null(deal@brokerage_scale))
+stopifnot(identical(deal@deductions$inside_nmbf, c(TRUE, TRUE, TRUE, TRUE, FALSE)))
+dtw <- reinsurance_tower(list(deal))
+dres <- apply_tower(dtw, c(20, 45, 60, 75, 95, 150))
+dr <- deal_ratios(dtw, dres, "deal")
+dm <- draw_matrix(dr)
+rcol <- function(k) dm[, which(dr@keys$ratio == k)]
+stopifnot(all(abs(rcol("total_deductions") - rcol("ceding_commission") - rcol("brokerage") - 0.115) < 1e-12))
+stopifnot(all(abs(rcol("nmbf") - rcol("margin") - 0.05) < 1e-12))
+stopifnot(abs(sd(rcol("total_deductions")) - sd(rcol("ceding_commission"))) < 1e-12)
+stopifnot(identical(tower_to_json(tower_from_json(tower_to_json(dtw))), tower_to_json(dtw)))
+stopifnot(inherits(try(with_deduction(deal, "tax", 0.01), silent = TRUE), "try-error"))
+stopifnot(inherits(try(with_deduction(deal, "x", 0.01, basis = "lots"), silent = TRUE), "try-error"))
+stopifnot(inherits(try(deal_ratios(dtw, dres, "nope"), silent = TRUE), "try-error"))
+
+# The scales read the loss ratio before an annual cap when asked (#477).
+capped <- with_premium_rate(xol_layer("deal", 1000, 0, aggregate_limit = 120), 1, 100)
+capped <- with_sliding_scale(capped, c(0.3, 0.1), c(0.5, 1.5))
+before <- with_scales_before_annual_terms(capped)
+stopifnot(before@scales_before_annual_terms, !capped@scales_before_annual_terms)
+cres <- apply_tower(reinsurance_tower(list(before)), c(40, 140))
+cm <- draw_matrix(cres)
+ccol <- function(k) cm[, which(cres@keys$kind == k)]
+stopifnot(all(ccol("ceded") == c(40, 120)), all(ccol("loss_before_terms") == c(40, 140)))
+stopifnot(abs(ccol("ceding_commission")[2] - 100 * (0.3 - 0.2 * 0.9)) < 1e-12)
+held <- with_brokerage_within_commission_range(
+  with_brokerage_scale(with_sliding_scale(with_premium_rate(quota_share("QS", 0.5), 1, 200),
+                                          c(0.3, 0.1), c(0.5, 0.7)), c(0.03, 0.01), c(0.5, 0.9))
+)
+stopifnot(abs(brokerage_for(held, 90) - 2) < 1e-12, held@brokerage_within_commission_range)

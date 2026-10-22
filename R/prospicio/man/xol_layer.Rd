@@ -69,7 +69,11 @@ flat rate, \code{sliding_scale} a data frame of \code{commission} and \code{loss
 \code{swing_rating} \code{c(basic, lcm, minimum, maximum)}; \code{profit_commission_carry}
 \code{list(years)} and \code{sliding_scale_carry} \code{list(deficit, credit, years)}
 (\code{NULL} when nothing is carried, \code{years} \code{NULL} without limit); each empty when there
-is none), and \code{sees_aggregate_part}, whether the layer cedes from an
+is none; \code{brokerage} the flat rate, \code{brokerage_scale} a data frame of
+\code{rate} and \code{loss_ratio}, \code{deductions} a data frame of \code{label}, \code{basis},
+\code{value} and \code{inside_nmbf} (or \code{NULL}), and the flags
+\code{scales_before_annual_terms} and \code{brokerage_within_commission_range};
+see \code{\link[=with_brokerage]{with_brokerage()}}), and \code{sees_aggregate_part}, whether the layer cedes from an
 event set's aggregate part (\code{\link[=with_aggregate_part]{with_aggregate_part()}}: on the loss with
 attachment 0 and no limit, a quota share or a stop loss).
 }
