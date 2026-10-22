@@ -8,9 +8,13 @@
 //! of the first year's losses, year 2 simulation `j` of the second's, and
 //! so on. The years' losses are whatever the caller gives: independent
 //! years ([`EventSet::term_years`] splits one simulation into consecutive
-//! blocks), or years that share a trend or a parameter drawn once per path.
+//! blocks), years whose totals have a rank correlation
+//! ([`EventSet::correlated_years`], calibrated to a target spread of the
+//! term's mean by [`EventSet::calibrate_year_correlation`]), or years that
+//! share a trend or a parameter drawn once per path.
 
 use prospicio_core::{Error, Result};
+use prospicio_prob::portfolio::CorrelationKind;
 use prospicio_prob::{ComponentKey, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::monte_carlo::EventSet;
@@ -221,6 +225,271 @@ impl EventSet {
             .map(|t| self.slice(t * n..(t + 1) * n))
             .collect())
     }
+}
+
+/// Where [`EventSet::correlated_years`] takes each year's simulations from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum YearDraws {
+    /// Every year is a reordering of all the simulations: each year has
+    /// exactly the one-year distribution, so a term's mean has exactly the
+    /// one-year mean, and only the pairing of the years changes.
+    #[default]
+    Same,
+    /// Year `t` is block `t` of [`EventSet::term_years`]: the years are
+    /// different draws, each `n_sims / n_years` of them.
+    Blocks,
+}
+
+/// A calibration from [`EventSet::calibrate_year_correlation`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct YearCalibration {
+    /// The correlation between every pair of years, of the kind asked for.
+    pub correlation: f64,
+    /// The ratio it achieves on the simulations: the standard deviation of
+    /// the mean of a term's yearly totals over that of one year's total.
+    pub ratio: f64,
+    /// The term's years under it.
+    pub years: Vec<EventSet>,
+}
+
+/// The correlation between every pair of `n_years` years whose totals have
+/// the same spread for which the mean of a term's yearly totals has
+/// `ratio` times one year's standard deviation:
+/// `ρ = (T r² − 1) / (T − 1)`, from `sd(mean) / sd = √((1 + (T − 1) ρ) / T)`.
+/// It is Pearson's correlation of the totals: a start for
+/// [`EventSet::correlated_years`], which imposes a rank correlation, and
+/// [`EventSet::calibrate_year_correlation`] hits the ratio on the
+/// simulations themselves.
+///
+/// ```
+/// use prospicio_aggregate::term::year_correlation_for_ratio;
+///
+/// // Independent years: sd(mean) = sd / √T.
+/// assert!(year_correlation_for_ratio(3, 1.0 / 3f64.sqrt()).unwrap().abs() < 1e-15);
+/// assert_eq!(year_correlation_for_ratio(3, 1.0).unwrap(), 1.0);
+/// ```
+pub fn year_correlation_for_ratio(n_years: usize, ratio: f64) -> Result<f64> {
+    if n_years < 2 {
+        return Err(Error::Data("a term needs at least two years".into()));
+    }
+    if !(0.0..=1.0).contains(&ratio) {
+        return Err(Error::Data(format!(
+            "the ratio of the term's spread to one year's must be in [0, 1], got {ratio}"
+        )));
+    }
+    let t = n_years as f64;
+    Ok((t * ratio * ratio - 1.0) / (t - 1.0))
+}
+
+impl EventSet {
+    /// A term of `n_years` years whose yearly totals (each year's losses
+    /// and aggregate part) have the correlation `correlation`, imposed by
+    /// Iman–Conover as [`PredictiveDistribution::reorder_groups_indexed`]
+    /// does: one value for every pair of years, or a full `n_years ×
+    /// n_years` matrix, row-major, of the kind `kind` (`Spearman` for a
+    /// rank correlation of the totals). Each year's simulations move as
+    /// whole years ([`permute`](Self::permute)), so every year keeps its
+    /// events, times, sums insured, labels and aggregate part, and the
+    /// years go to [`Tower::apply_term`] as they come. `draws` says whether
+    /// every year reorders all the simulations or takes its own block of
+    /// them. The same `seed` gives the same years.
+    ///
+    /// ```
+    /// use prospicio_aggregate::simulate_events;
+    /// use prospicio_aggregate::term::YearDraws;
+    /// use prospicio_prob::portfolio::CorrelationKind;
+    /// use prospicio_prob::{Lognormal, Poisson};
+    ///
+    /// let events = simulate_events(
+    ///     &Poisson::new(2.0).unwrap(),
+    ///     &Lognormal::from_mean_cv(100.0, 1.0).unwrap(),
+    ///     4_000,
+    ///     7,
+    /// )
+    /// .unwrap();
+    /// let years = events
+    ///     .correlated_years(3, &[0.5], CorrelationKind::Spearman, YearDraws::Same, 11)
+    ///     .unwrap();
+    /// // Each year is a reordering of the same simulations.
+    /// let total = |e: &prospicio_aggregate::EventSet| {
+    ///     (0..e.n_sims()).map(|i| e.events(i).iter().sum::<f64>()).sum::<f64>()
+    /// };
+    /// assert!((total(&years[2]) - total(&events)).abs() < 1e-6 * total(&events));
+    /// ```
+    pub fn correlated_years(
+        &self,
+        n_years: usize,
+        correlation: &[f64],
+        kind: CorrelationKind,
+        draws: YearDraws,
+        seed: u64,
+    ) -> Result<Vec<EventSet>> {
+        if n_years < 2 {
+            return Err(Error::Data(
+                "correlated years need at least two years".into(),
+            ));
+        }
+        let matrix = match correlation {
+            [rho] => (0..n_years * n_years)
+                .map(|k| {
+                    if k / n_years == k % n_years {
+                        1.0
+                    } else {
+                        *rho
+                    }
+                })
+                .collect::<Vec<_>>(),
+            m if m.len() == n_years * n_years => m.to_vec(),
+            m => {
+                return Err(Error::Data(format!(
+                    "the correlation is one value or a {n_years} × {n_years} matrix, got {} values",
+                    m.len()
+                )));
+            }
+        };
+        let sources = match draws {
+            YearDraws::Same => vec![self.clone(); n_years],
+            YearDraws::Blocks => self.term_years(n_years)?,
+        };
+        let totals: Vec<Vec<f64>> = sources.iter().map(year_totals).collect();
+        let n = totals[0].len();
+        let pd = PredictiveDistribution::from_draws(
+            vec!["year".into()],
+            (1..=n_years as i64)
+                .map(|t| vec![KeyValue::Int(t)])
+                .collect(),
+            (0..n)
+                .flat_map(|i| totals.iter().map(move |c| c[i]))
+                .collect(),
+            Provenance::new("correlated_years"),
+        )?;
+        let (_, index) = pd.reorder_groups_indexed("year", &matrix, kind, seed)?;
+        sources
+            .iter()
+            .zip(&index)
+            .map(|(events, index)| events.permute(index))
+            .collect()
+    }
+
+    /// The correlation between every pair of `n_years` years for which
+    /// [`correlated_years`](Self::correlated_years) gives a term whose mean
+    /// yearly total has `ratio` times the standard deviation of one year's
+    /// total, found by bisection on the simulations with the same `kind`,
+    /// `draws` and `seed`; with the ratio it achieves and the years. A
+    /// target between independent years (`1 / √T`) and identical ones (1)
+    /// asks for positive dependence; one below `1 / √T`, negative.
+    ///
+    /// A loss ratio is a total over a premium, so with the same premium in
+    /// each year the ratio of the term's loss ratio's spread to one year's
+    /// is the same ratio.
+    ///
+    /// ```
+    /// use prospicio_aggregate::simulate_events;
+    /// use prospicio_aggregate::term::YearDraws;
+    /// use prospicio_prob::portfolio::CorrelationKind;
+    /// use prospicio_prob::{Lognormal, Poisson};
+    ///
+    /// let events = simulate_events(
+    ///     &Poisson::new(2.0).unwrap(),
+    ///     &Lognormal::from_mean_cv(100.0, 1.0).unwrap(),
+    ///     4_000,
+    ///     7,
+    /// )
+    /// .unwrap();
+    /// let fit = events
+    ///     .calibrate_year_correlation(3, 0.75, CorrelationKind::Spearman, YearDraws::Same, 11)
+    ///     .unwrap();
+    /// assert!((fit.ratio - 0.75).abs() < 1e-3);
+    /// assert!(fit.correlation > 0.0 && fit.correlation < 1.0);
+    /// ```
+    pub fn calibrate_year_correlation(
+        &self,
+        n_years: usize,
+        ratio: f64,
+        kind: CorrelationKind,
+        draws: YearDraws,
+        seed: u64,
+    ) -> Result<YearCalibration> {
+        year_correlation_for_ratio(n_years, ratio)?;
+        let achieved = |rho: f64| -> Result<(f64, Vec<EventSet>)> {
+            let years = self.correlated_years(n_years, &[rho], kind, draws, seed)?;
+            Ok((term_ratio(&years), years))
+        };
+        // The equicorrelation matrix of normal scores is positive definite
+        // on (-1 / (T - 1), 1); stay a little inside, on the kind's scale.
+        let edge = 1e-6;
+        let floor = -1.0 / (n_years as f64 - 1.0) + edge;
+        let mut lo = match kind {
+            CorrelationKind::Pearson => floor,
+            CorrelationKind::Spearman => 6.0 / std::f64::consts::PI * (floor / 2.0).asin(),
+        };
+        let mut hi = 1.0 - edge;
+        let (r_lo, low) = achieved(lo)?;
+        let (r_hi, high) = achieved(hi)?;
+        if ratio <= r_lo {
+            return Ok(YearCalibration {
+                correlation: lo,
+                ratio: r_lo,
+                years: low,
+            });
+        }
+        if ratio >= r_hi {
+            return Ok(YearCalibration {
+                correlation: hi,
+                ratio: r_hi,
+                years: high,
+            });
+        }
+        let mut best = (hi, r_hi, high);
+        for _ in 0..60 {
+            let mid = 0.5 * (lo + hi);
+            let (r, years) = achieved(mid)?;
+            if (r - ratio).abs() < (best.1 - ratio).abs() {
+                best = (mid, r, years);
+            }
+            if r < ratio {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+            if hi - lo < 1e-9 {
+                break;
+            }
+        }
+        Ok(YearCalibration {
+            correlation: best.0,
+            ratio: best.1,
+            years: best.2,
+        })
+    }
+}
+
+/// Each year's total: its losses and its aggregate part.
+fn year_totals(events: &EventSet) -> Vec<f64> {
+    (0..events.n_sims())
+        .map(|i| {
+            events.events(i).iter().sum::<f64>()
+                + events.aggregate_part(i).map_or(0.0, |a| a.iter().sum())
+        })
+        .collect()
+}
+
+fn sd(x: &[f64]) -> f64 {
+    let n = x.len() as f64;
+    let mean = x.iter().sum::<f64>() / n;
+    (x.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n).sqrt()
+}
+
+/// The standard deviation of the mean of a term's yearly totals over the
+/// average of the years' own.
+fn term_ratio(years: &[EventSet]) -> f64 {
+    let totals: Vec<Vec<f64>> = years.iter().map(year_totals).collect();
+    let t = totals.len() as f64;
+    let mean: Vec<f64> = (0..totals[0].len())
+        .map(|i| totals.iter().map(|c| c[i]).sum::<f64>() / t)
+        .collect();
+    let one = totals.iter().map(|c| sd(c)).sum::<f64>() / t;
+    sd(&mean) / one
 }
 
 #[cfg(test)]
@@ -486,5 +755,142 @@ mod tests {
             .ceding_commission(0.3)
             .unwrap();
         assert_eq!(flat.sliding_scale_carry, None);
+    }
+
+    fn ranks(x: &[f64]) -> Vec<f64> {
+        let mut idx: Vec<usize> = (0..x.len()).collect();
+        idx.sort_by(|&a, &b| x[a].total_cmp(&x[b]));
+        let mut r = vec![0.0; x.len()];
+        for (k, &i) in idx.iter().enumerate() {
+            r[i] = k as f64;
+        }
+        r
+    }
+
+    fn pearson(x: &[f64], y: &[f64]) -> f64 {
+        let n = x.len() as f64;
+        let (mx, my) = (x.iter().sum::<f64>() / n, y.iter().sum::<f64>() / n);
+        let cov: f64 = x.iter().zip(y).map(|(a, b)| (a - mx) * (b - my)).sum();
+        cov / (sd(x) * sd(y) * n)
+    }
+
+    fn book(n: usize) -> EventSet {
+        simulate_events(
+            &Poisson::new(3.0).unwrap(),
+            &Lognormal::from_mean_cv(100.0, 1.5).unwrap(),
+            n,
+            5,
+        )
+        .unwrap()
+    }
+
+    fn sorted(mut x: Vec<f64>) -> Vec<f64> {
+        x.sort_by(f64::total_cmp);
+        x
+    }
+
+    #[test]
+    fn correlated_years_reorder_the_same_draws_to_the_target_rank_correlation() {
+        let events = book(5_000);
+        let years = events
+            .correlated_years(3, &[0.4], CorrelationKind::Spearman, YearDraws::Same, 3)
+            .unwrap();
+        let one = sorted(year_totals(&events));
+        let totals: Vec<Vec<f64>> = years.iter().map(year_totals).collect();
+        for c in &totals {
+            assert_eq!(sorted(c.clone()), one);
+        }
+        for (a, b) in [(0, 1), (0, 2), (1, 2)] {
+            let rho = pearson(&ranks(&totals[a]), &ranks(&totals[b]));
+            assert!((rho - 0.4).abs() < 0.03, "{a} {b}: {rho}");
+        }
+        // Reproducible by seed.
+        let again = events
+            .correlated_years(3, &[0.4], CorrelationKind::Spearman, YearDraws::Same, 3)
+            .unwrap();
+        assert_eq!(again, years);
+    }
+
+    #[test]
+    fn correlated_years_take_a_matrix_and_blocks() {
+        let events = book(3_000);
+        let m = [1.0, 0.6, 0.0, 0.6, 1.0, 0.3, 0.0, 0.3, 1.0];
+        let years = events
+            .correlated_years(3, &m, CorrelationKind::Spearman, YearDraws::Blocks, 9)
+            .unwrap();
+        let blocks = events.term_years(3).unwrap();
+        let totals: Vec<Vec<f64>> = years.iter().map(year_totals).collect();
+        for (c, b) in totals.iter().zip(&blocks) {
+            assert_eq!(c.len(), 1_000);
+            assert_eq!(sorted(c.clone()), sorted(year_totals(b)));
+        }
+        for (a, b, want) in [(0, 1, 0.6), (0, 2, 0.0), (1, 2, 0.3)] {
+            let rho = pearson(&ranks(&totals[a]), &ranks(&totals[b]));
+            assert!((rho - want).abs() < 0.05, "{a} {b}: {rho}");
+        }
+        // The years go to a term as they come.
+        let term = Tower::new(vec![pc_layer(None)])
+            .unwrap()
+            .apply_term(&years)
+            .unwrap();
+        assert_eq!(term.n_sims(), 1_000);
+    }
+
+    #[test]
+    fn calibration_hits_the_term_spread() {
+        let events = book(4_000);
+        for (ratio, kind) in [
+            (0.8, CorrelationKind::Spearman),
+            (0.65, CorrelationKind::Pearson),
+            (0.5, CorrelationKind::Spearman),
+        ] {
+            let fit = events
+                .calibrate_year_correlation(3, ratio, kind, YearDraws::Same, 2)
+                .unwrap();
+            assert!((fit.ratio - ratio).abs() < 1e-3, "{ratio}: {}", fit.ratio);
+            assert!((term_ratio(&fit.years) - fit.ratio).abs() < 1e-15);
+            // Below 1 / √3, the years are negatively dependent.
+            assert_eq!(fit.correlation < 0.0, ratio < 1.0 / 3f64.sqrt());
+        }
+        // On a near-normal book the closed form is close.
+        let near_normal = simulate_events(
+            &Poisson::new(200.0).unwrap(),
+            &Lognormal::from_mean_cv(100.0, 0.2).unwrap(),
+            4_000,
+            5,
+        )
+        .unwrap();
+        let fit = near_normal
+            .calibrate_year_correlation(3, 0.8, CorrelationKind::Pearson, YearDraws::Same, 2)
+            .unwrap();
+        let closed = year_correlation_for_ratio(3, 0.8).unwrap();
+        assert!(
+            (fit.correlation - closed).abs() < 0.03,
+            "{} {closed}",
+            fit.correlation
+        );
+    }
+
+    #[test]
+    fn correlated_years_errors() {
+        let events = book(100);
+        let k = CorrelationKind::Spearman;
+        assert!(
+            events
+                .correlated_years(1, &[0.5], k, YearDraws::Same, 0)
+                .is_err()
+        );
+        assert!(
+            events
+                .correlated_years(3, &[0.5, 0.5], k, YearDraws::Same, 0)
+                .is_err()
+        );
+        assert!(
+            events
+                .correlated_years(3, &[0.5], k, YearDraws::Blocks, 0)
+                .is_err()
+        );
+        assert!(year_correlation_for_ratio(3, 1.2).is_err());
+        assert!(year_correlation_for_ratio(1, 0.5).is_err());
     }
 }

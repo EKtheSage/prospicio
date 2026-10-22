@@ -775,6 +775,66 @@ term_years <- function(x, n_years) {
   lapply(rust_result(x@ptr$term_years(as.double(n_years))), event_set)
 }
 
+#' Underwriting years with a rank correlation
+#'
+#' `correlated_years()` gives a term of `n_years` years whose yearly totals
+#' (each year's losses and aggregate part) have a rank correlation, set by
+#' Iman-Conover, for [apply_tower_term()]. Each year's simulations move as
+#' whole years, keeping their events, times, sums insured, labels and
+#' aggregate part. `calibrate_year_correlation()` finds the correlation
+#' between every pair of years for which the mean of a term's yearly totals
+#' has `ratio` times the standard deviation of one year's total, by
+#' bisection on the simulations; with the same premium each year that is
+#' the ratio of the term's loss ratio's spread to one year's (independent
+#' years give `1 / sqrt(n_years)`, identical ones 1).
+#' `year_correlation_for_ratio()` is the closed form for Pearson's
+#' correlation of the totals, `(n_years * ratio^2 - 1) / (n_years - 1)`, a
+#' start.
+#'
+#' @param x An [event_set].
+#' @param n_years The number of years, at least 2.
+#' @param correlation One correlation for every pair of years, or the full
+#'   matrix.
+#' @param kind `"spearman"` (Spearman's rho of the totals) or `"pearson"`
+#'   (the correlation of their normal scores, as [reorder_groups()]).
+#' @param draws `"same"`: every year reorders all the simulations, so each
+#'   has exactly the one-year distribution and the term's mean the one-year
+#'   mean; `"blocks"`: year `t` is block `t` of [term_years()].
+#' @param seed The same seed gives the same years.
+#' @param ratio The target ratio, in `[0, 1]`.
+#' @returns `correlated_years()` a list of `n_years` [event_set]s;
+#'   `calibrate_year_correlation()` a list of `correlation`, the `ratio` it
+#'   achieves and the `years`; `year_correlation_for_ratio()` a number.
+#' @export
+#' @examples
+#' ev <- simulate_events(poisson_count(2), lognormal(4, 1), 4000, seed = 7)
+#' years <- correlated_years(ev, 3, 0.5, seed = 11)
+#' fit <- calibrate_year_correlation(ev, 3, 0.75, seed = 11)
+#' c(fit$correlation, fit$ratio)
+#' year_correlation_for_ratio(3, 0.75)
+correlated_years <- function(x, n_years, correlation, kind = "spearman", draws = "same",
+                             seed = 0) {
+  correlation <- if (is.matrix(correlation)) as.double(t(correlation)) else as.double(correlation)
+  lapply(rust_result(x@ptr$correlated_years(as.double(n_years), correlation, kind, draws,
+                                            as.double(seed))), event_set)
+}
+
+#' @rdname correlated_years
+#' @export
+calibrate_year_correlation <- function(x, n_years, ratio, kind = "spearman", draws = "same",
+                                       seed = 0) {
+  r <- rust_result(x@ptr$calibrate_year_correlation(as.double(n_years), as.double(ratio), kind,
+                                                    draws, as.double(seed)))
+  r$years <- lapply(r$years, event_set)
+  r
+}
+
+#' @rdname correlated_years
+#' @export
+year_correlation_for_ratio <- function(n_years, ratio) {
+  rust_result(year_correlation_for_ratio_rust(as.double(n_years), as.double(ratio)))
+}
+
 #' Year loss table in long form
 #'
 #' Years of losses from a year loss table: one row per loss with its year,

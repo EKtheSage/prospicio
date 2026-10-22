@@ -1135,6 +1135,36 @@ def test_tower_over_a_term_carries_deficits():
         events.term_years(7)
 
 
+def test_correlated_years_keep_the_marginal_and_hit_the_ratio():
+    import numpy as np
+    from prospicio.aggregate import year_correlation_for_ratio
+
+    events = simulate_events(Poisson(2.0), Lognormal.from_mean_cv(10.0, 1.0), 2_000, seed=3)
+    one = np.sort(np.array(events.totals().draw_matrix())[:, 0])
+    years = events.correlated_years(3, 0.5, seed=5)
+    assert [y.n_sims for y in years] == [2_000] * 3
+    totals = np.column_stack([np.array(y.totals().draw_matrix())[:, 0] for y in years])
+    for t in range(3):
+        assert (np.sort(totals[:, t]) == one).all()
+    ranks = np.argsort(np.argsort(totals, axis=0), axis=0)
+    assert np.corrcoef(ranks[:, 0], ranks[:, 1])[0, 1] == pytest.approx(0.5, abs=0.05)
+    again = events.correlated_years(3, [[1.0, 0.5, 0.5], [0.5, 1.0, 0.5], [0.5, 0.5, 1.0]], seed=5)
+    assert all(a.events(9) == b.events(9) for a, b in zip(years, again))
+    blocks = events.correlated_years(2, 0.3, kind="pearson", draws="blocks", seed=1)
+    assert [y.n_sims for y in blocks] == [1_000] * 2
+    rho, achieved, cal = events.calibrate_year_correlation(3, 0.7, seed=5)
+    assert achieved == pytest.approx(0.7, abs=1e-3) and len(cal) == 3
+    mean = np.column_stack([np.array(y.totals().draw_matrix())[:, 0] for y in cal]).mean(axis=1)
+    assert mean.std() / one.std() == pytest.approx(achieved, rel=1e-9)
+    assert year_correlation_for_ratio(3, 1 / 3**0.5) == pytest.approx(0.0, abs=1e-12)
+    with pytest.raises(ValueError):
+        events.correlated_years(3, 0.5, kind="kendall")
+    with pytest.raises(ValueError):
+        events.correlated_years(3, 0.5, draws="shuffled")
+    with pytest.raises(ValueError):
+        year_correlation_for_ratio(1, 0.5)
+
+
 def test_normal_power_and_wilson_hilferty():
     import statistics
 

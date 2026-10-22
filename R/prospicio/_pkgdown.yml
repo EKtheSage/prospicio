@@ -117,6 +117,7 @@ reference:
       - events
       - event_counts
       - term_years
+      - correlated_years
   - title: Reinsurance
     contents:
       - xol_layer
