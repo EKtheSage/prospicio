@@ -71,7 +71,7 @@ pub use backtest::{
 #[cfg(feature = "bayes")]
 pub use bayes::{
     BayesBf, BayesBfFit, BayesBfNormalised, BayesBfNormalisedFit, BayesOdp, BayesOdpFit,
-    LayerSharePrior, Meyers, MeyersFit, MeyersModel,
+    LayerSharePrior, Meyers, MeyersFit, MeyersModel, ShareDependence,
 };
 pub use bootstrap::{
     OdpBootstrap, OdpBootstrapFit, OdpBootstrapFits, OdpBootstrapSegment, ProcessDistribution,

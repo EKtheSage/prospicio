@@ -137,6 +137,17 @@ pub struct BayesBfNormalised {
     /// Seed of the chains and of the simulations, each through its own
     /// derived seed (module docs, "Seeds").
     pub seed: u64,
+    /// The coefficient of variation of one multiplier `s` common to all
+    /// origins (`None`, the default, has no such multiplier and the model is
+    /// unchanged). With `Some(c)` every origin's prior is conditional on
+    /// `s ~ Gamma(shape 1 / c^2, mean 1)`: `U_w | s ~ Gamma(shape 1 / cv^2,
+    /// mean s m_w)`, and `s` is sampled with the other parameters as the
+    /// last one, `log_share` (`t = log s`), so the data update it for every
+    /// origin at once. Each `U_w` keeps the mean `m_w`, and its marginal cv
+    /// is `sqrt((1 + cv^2)(1 + c^2) - 1)`; the origins' priors are no longer
+    /// independent (design note `reserving-bayes.md`, decision 25). It
+    /// needs a finite `cv` and a finite, positive `c`.
+    pub common_cv: Option<f64>,
 }
 
 impl Default for BayesBfNormalised {
@@ -157,6 +168,7 @@ impl Default for BayesBfNormalised {
             },
             n_sims: 10_000,
             seed: 0,
+            common_cv: None,
         }
     }
 }
@@ -394,6 +406,24 @@ impl BayesBfNormalised {
                 expected: "a positive number of simulations",
             });
         }
+        if let Some(c) = self.common_cv {
+            if !(c.is_finite() && c > 0.0) {
+                return Err(Error::InvalidSetting {
+                    name: "common_cv",
+                    value: c,
+                    expected: "a finite, positive coefficient of variation (None for no \
+                               common multiplier)",
+                });
+            }
+            if !self.cv.is_finite() {
+                return Err(Error::InvalidSetting {
+                    name: "cv",
+                    value: self.cv,
+                    expected: "a finite coefficient of variation when common_cv is set \
+                               (the common multiplier is not identified under a flat prior)",
+                });
+            }
+        }
         Ok(())
     }
 
@@ -466,12 +496,18 @@ impl BayesBfNormalised {
         let share = strong_prior_shares(&column_sum, &column_prior);
         let mut start = vec![0.0; no];
         start.extend((1..nd).map(|d| (share[d] / share[0]).ln()));
+        // The common multiplier starts at its prior mean, t = 0.
+        let common_shape = self.common_cv.map(|c| c.powi(-2));
+        if common_shape.is_some() {
+            start.push(0.0);
+        }
         let model = Model {
             n_origins: no,
             n_dev: nd,
             cells,
             phi,
             shape,
+            common_shape,
             log_prior: prior_ultimate.iter().map(|m| m.ln()).collect(),
             prior_ultimate,
             development_precision: self.development_sd.powi(-2),
@@ -487,9 +523,16 @@ impl BayesBfNormalised {
         hasher: InputHasher,
     ) -> Provenance {
         let s = &self.sampler;
-        Provenance::new("bayes_bf_normalised")
+        let provenance = Provenance::new("bayes_bf_normalised")
             .param("apriori", self.apriori)
-            .param("cv", self.cv)
+            .param("cv", self.cv);
+        // Only a model with the multiplier names it, so the others'
+        // provenance is unchanged.
+        let provenance = match self.common_cv {
+            Some(c) => provenance.param("common_cv", c),
+            None => provenance,
+        };
+        provenance
             .param("development_sd", self.development_sd)
             .param("scale", model.phi)
             .param("process", format!("{:?}", self.process))
@@ -667,6 +710,10 @@ struct Model {
     /// Shape `1 / cv^2` of the gamma prior on each `U_w`; 0 is flat on
     /// `alpha_w`.
     shape: f64,
+    /// Shape `1 / common_cv^2` of the gamma prior (mean 1) on the common
+    /// multiplier `s = exp(t)`, whose `t` is the last parameter; `None`
+    /// has no such parameter. With it `U_w` is a gamma with mean `s m_w`.
+    common_shape: Option<f64>,
     /// Prior mean `m_w` of each `U_w`.
     prior_ultimate: Vec<f64>,
     /// `log m_w`.
@@ -681,13 +728,28 @@ impl Model {
             .map(|w| format!("alpha[{w}]"))
             .collect();
         names.extend((2..=self.n_dev).map(|d| format!("beta[{d}]")));
+        if self.common_shape.is_some() {
+            names.push("log_share".into());
+        }
         names
+    }
+
+    /// The index of `t = log s` (the last parameter), if there is a common
+    /// multiplier.
+    fn t_index(&self) -> Option<usize> {
+        self.common_shape.map(|_| self.n_origins + self.n_dev - 1)
+    }
+
+    /// `t = log s` of `theta`, 0 without a common multiplier (so that
+    /// `u - t` is `u` bit for bit).
+    fn t(&self, theta: &[f64]) -> f64 {
+        self.t_index().map_or(0.0, |j| theta[j])
     }
 
     /// `log sum_k exp(beta_k)` with `beta_1 = 0`, on either scale (the
     /// development block is the same).
     fn log_sum(&self, theta: &[f64]) -> f64 {
-        log_sum(self.n_origins, theta)
+        log_sum(self.n_origins, self.n_dev, theta)
     }
 
     /// `eta_wd` on the sampling scale `theta = (u, beta)`: centred on the
@@ -758,15 +820,15 @@ fn strong_prior_shares(column_sum: &[f64], column_prior: &[f64]) -> Vec<f64> {
 
 /// `log sum_k exp(beta_k)` of the development block of `theta` (after
 /// `n_origins` entries), with `beta_1 = 0`.
-fn log_sum(n_origins: usize, theta: &[f64]) -> f64 {
-    let rest = &theta[n_origins..];
+fn log_sum(n_origins: usize, n_dev: usize, theta: &[f64]) -> f64 {
+    let rest = &theta[n_origins..n_origins + n_dev - 1];
     let top = rest.iter().fold(0.0_f64, |m, &b| m.max(b));
     top + ((-top).exp() + rest.iter().map(|b| (b - top).exp()).sum::<f64>()).ln()
 }
 
 /// `log p_d` of every age from a draw of `(alpha, beta)`.
 fn log_pattern(n_origins: usize, n_dev: usize, theta: &[f64]) -> Vec<f64> {
-    let l = log_sum(n_origins, theta);
+    let l = log_sum(n_origins, n_dev, theta);
     (0..n_dev)
         .map(|d| {
             if d == 0 {
@@ -779,13 +841,13 @@ fn log_pattern(n_origins: usize, n_dev: usize, theta: &[f64]) -> Vec<f64> {
 }
 
 /// `eta_wd` from a draw of `(alpha, beta)` with `n_origins` origins.
-fn natural_eta(n_origins: usize, theta: &[f64], w: usize, d: usize) -> f64 {
+fn natural_eta(n_origins: usize, n_dev: usize, theta: &[f64], w: usize, d: usize) -> f64 {
     let beta = if d == 0 {
         0.0
     } else {
         theta[n_origins + d - 1]
     };
-    theta[w] + beta - log_sum(n_origins, theta)
+    theta[w] + beta - log_sum(n_origins, n_dev, theta)
 }
 
 /// A fitted [`BayesBfNormalised`] as the one-year view sees it
@@ -822,7 +884,7 @@ impl<'a> NormalisedRefit<'a> {
 
 impl OdpCells for NormalisedRefit<'_> {
     fn eta(&self, theta: &[f64], w: usize, d: usize) -> f64 {
-        natural_eta(self.model.n_origins, theta, w, d)
+        natural_eta(self.model.n_origins, self.model.n_dev, theta, w, d)
     }
 
     fn phi(&self) -> f64 {
@@ -857,7 +919,7 @@ impl OdpCells for NormalisedRefit<'_> {
 /// non-concave start.
 impl Posterior for Model {
     fn dim(&self) -> usize {
-        self.n_origins + self.n_dev - 1
+        self.n_origins + self.n_dev - 1 + usize::from(self.common_shape.is_some())
     }
 
     fn log_posterior(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
@@ -866,16 +928,26 @@ impl Posterior for Model {
         let mut f = 0.0;
         // Gamma(shape, rate shape / m) on U = exp(alpha), with the
         // Jacobian: shape alpha - shape exp(alpha) / m, here less its value
-        // at alpha = log m, in u = alpha - log m (as BayesBf).
+        // at alpha = log m, in u = alpha - log m (as BayesBf). With a
+        // common multiplier s = exp(t) the mean is m s, so the term is in
+        // v = u - t (t = 0 without one: v = u exactly), and t has the
+        // Gamma(common shape, mean 1) prior in log s, k (t - expm1 t).
+        let t = self.t(theta);
+        let mut t_grad = 0.0;
         for w in 0..no {
-            let u = theta[w];
-            let em1 = u.exp_m1();
-            f += self.shape * (u - em1);
+            let v = theta[w] - t;
+            let em1 = v.exp_m1();
+            f += self.shape * (v - em1);
             grad[w] = -self.shape * em1;
+            t_grad += self.shape * em1;
         }
-        for j in no..self.dim() {
+        for j in no..no + nd - 1 {
             f -= 0.5 * self.development_precision * theta[j] * theta[j];
             grad[j] = -self.development_precision * theta[j];
+        }
+        if let (Some(k), Some(j)) = (self.common_shape, self.t_index()) {
+            f += k * (t - t.exp_m1());
+            grad[j] = t_grad - k * t.exp_m1();
         }
         let mut total = 0.0;
         for &(w, d, x) in &self.cells {
@@ -902,11 +974,24 @@ impl Posterior for Model {
         let l = self.log_sum(theta);
         let share: Vec<f64> = (1..nd).map(|k| (theta[no + k - 1] - l).exp()).collect();
         let mut h = vec![0.0; p * p];
+        let t = self.t(theta);
+        let mut t_curvature = 0.0;
         for w in 0..no {
-            h[w * p + w] = self.shape * theta[w].exp();
+            let curvature = self.shape * (theta[w] - t).exp();
+            h[w * p + w] = curvature;
+            t_curvature += curvature;
         }
-        for j in no..p {
+        for j in no..no + nd - 1 {
             h[j * p + j] = self.development_precision;
+        }
+        if let (Some(k), Some(j)) = (self.common_shape, self.t_index()) {
+            // v = u - t: d2/du2 = c, d2/du dt = -c, d2/dt2 = sum c.
+            h[j * p + j] = t_curvature + k * t.exp();
+            for w in 0..no {
+                let cross = -self.shape * (theta[w] - t).exp();
+                h[w * p + j] = cross;
+                h[j * p + w] = cross;
+            }
         }
         let mut total = 0.0;
         let mut v = vec![0.0; p];
@@ -957,11 +1042,19 @@ impl super::autodiff::GenericDensity for Model {
     fn log_density<S: super::scalar::Scalar>(&self, theta: &[S]) -> S {
         let no = self.n_origins;
         let mut f = S::from_f64(0.0);
+        let t = match self.t_index() {
+            Some(j) => theta[j],
+            None => S::from_f64(0.0),
+        };
         for &u in &theta[..no] {
-            f += (u - u.exp_m1()) * self.shape;
+            let v = u - t;
+            f += (v - v.exp_m1()) * self.shape;
+        }
+        if let Some(k) = self.common_shape {
+            f += (t - t.exp_m1()) * k;
         }
         let mut sum = S::from_f64(1.0);
-        for &b in &theta[no..] {
+        for &b in &theta[no..no + self.n_dev - 1] {
             f -= b * b * (0.5 * self.development_precision);
             sum += b.exp();
         }
@@ -1096,9 +1189,14 @@ mod tests {
 
     #[test]
     fn the_gradient_and_hessian_match_finite_differences() {
-        for cv in [0.2, f64::INFINITY] {
-            let model = BayesBfNormalised { cv, ..quick(0) };
+        for (cv, common_cv) in [(0.2, None), (f64::INFINITY, None), (0.2, Some(0.5))] {
+            let model = BayesBfNormalised {
+                cv,
+                common_cv,
+                ..quick(0)
+            };
             let (_, model, start) = prepared(&genins(), &model);
+            assert_eq!(model.dim(), 10 + 9 + usize::from(common_cv.is_some()));
             let x: Vec<f64> = start
                 .iter()
                 .enumerate()
@@ -1135,16 +1233,110 @@ mod tests {
     #[test]
     fn the_generic_density_matches_the_hand_written_one() {
         use crate::bayes::autodiff::{assert_oracle, posterior_points};
-        for (label, cv) in [
-            ("BayesBfNormalised cv 0.2", 0.2),
-            ("BayesBfNormalised flat", f64::INFINITY),
+        for (label, cv, common_cv) in [
+            ("BayesBfNormalised cv 0.2", 0.2, None),
+            ("BayesBfNormalised flat", f64::INFINITY, None),
+            ("BayesBfNormalised common 0.5", 0.2, Some(0.5)),
         ] {
-            let model = BayesBfNormalised { cv, ..quick(0) };
+            let model = BayesBfNormalised {
+                cv,
+                common_cv,
+                ..quick(0)
+            };
             let (_, model, start) = prepared(&genins(), &model);
             let mode = mode(&model, start).unwrap();
             let whitened = Whitened::new(&model, &mode).unwrap();
             let points = posterior_points(&whitened, model.dim(), 20);
             assert_oracle(label, &model, &points);
+        }
+    }
+
+    /// The prior part of the log posterior with a common multiplier is the
+    /// hierarchical gamma law: `s ~ Gamma(k, mean 1)` and `U_w | s ~
+    /// Gamma(a, mean m_w s)`, each on the log scale of its variable. Two
+    /// points' difference removes the constants.
+    #[test]
+    fn the_common_prior_is_the_hierarchical_gamma() {
+        use prospicio_math::special::ln_gamma;
+        let (cv, c) = (0.3_f64, 0.6_f64);
+        let model = BayesBfNormalised {
+            cv,
+            common_cv: Some(c),
+            ..quick(0)
+        };
+        let (_, mut model, _) = prepared(&genins(), &model);
+        model.cells.clear();
+        let (a, k) = (cv.powi(-2), c.powi(-2));
+        // log density of (alpha, t): the Gamma(k, k) density of s on log s,
+        // and the Gamma(a, a / (m s)) density of U on log U.
+        let reference = |alpha: &[f64], t: f64| {
+            let mut f = k * t - k * t.exp() + k * k.ln() - ln_gamma(k);
+            for (w, al) in alpha.iter().enumerate() {
+                let v = al - model.log_prior[w] - t;
+                f += a * v - a * v.exp() + a * a.ln() - ln_gamma(a);
+            }
+            f
+        };
+        let no = model.n_origins;
+        let beta = vec![0.0; model.n_dev - 1];
+        let point = |u: &[f64], t: f64| {
+            let mut theta = u.to_vec();
+            theta.extend_from_slice(&beta);
+            theta.push(t);
+            theta
+        };
+        let mut grad = vec![0.0; model.dim()];
+        let (u0, t0) = (vec![0.0; no], 0.0);
+        let u1: Vec<f64> = (0..no).map(|w| 0.3 - 0.07 * w as f64).collect();
+        let t1 = 0.4;
+        let alpha = |u: &[f64]| -> Vec<f64> {
+            u.iter().zip(&model.log_prior).map(|(u, l)| u + l).collect()
+        };
+        let model_diff = model.log_posterior(&point(&u1, t1), &mut grad)
+            - model.log_posterior(&point(&u0, t0), &mut grad);
+        let ref_diff = reference(&alpha(&u1), t1) - reference(&alpha(&u0), t0);
+        assert!(
+            (model_diff - ref_diff).abs() < 1e-9 * (1.0 + ref_diff.abs()),
+            "{model_diff} vs {ref_diff}"
+        );
+        // Without the multiplier it is the independent gamma of PR 4.
+        let plain = BayesBfNormalised { cv, ..quick(0) };
+        let (_, mut plain, _) = prepared(&genins(), &plain);
+        plain.cells.clear();
+        let mut theta = u1.clone();
+        theta.extend_from_slice(&beta);
+        let mut g = vec![0.0; plain.dim()];
+        let mut theta0 = u0.clone();
+        theta0.extend_from_slice(&beta);
+        let plain_diff = plain.log_posterior(&theta, &mut g) - plain.log_posterior(&theta0, &mut g);
+        let want: f64 = u1
+            .iter()
+            .zip(&u0)
+            .map(|(a1, a0)| {
+                let f = |v: f64| a * v - a * v.exp();
+                f(*a1) - f(*a0)
+            })
+            .sum();
+        assert!((plain_diff - want).abs() < 1e-9 * (1.0 + want.abs()));
+    }
+
+    /// An invalid combination is an error, not a silent fallback.
+    #[test]
+    fn a_common_multiplier_needs_a_proper_prior() {
+        for (cv, common_cv) in [
+            (f64::INFINITY, Some(0.3)),
+            (0.2, Some(0.0)),
+            (0.2, Some(-0.1)),
+            (0.2, Some(f64::INFINITY)),
+            (0.2, Some(f64::NAN)),
+        ] {
+            let model = BayesBfNormalised {
+                cv,
+                common_cv,
+                ..quick(0)
+            };
+            let e = model.fit(&genins(), "values", "premium").unwrap_err();
+            assert!(matches!(e, Error::InvalidSetting { .. }), "{e}");
         }
     }
 
@@ -1636,11 +1828,16 @@ mod tests {
             ],
             &[5000.0, 6000.0, 6000.0, 7000.0],
         );
-        for (name, cv) in [
-            ("BayesBfNormalised cv 0.2", 0.2),
-            ("BayesBfNormalised flat", f64::INFINITY),
+        for (name, cv, common_cv) in [
+            ("BayesBfNormalised cv 0.2", 0.2, None),
+            ("BayesBfNormalised flat", f64::INFINITY, None),
+            ("BayesBfNormalised common 0.5", 0.2, Some(0.5)),
         ] {
-            let model = BayesBfNormalised { cv, ..quick(6) };
+            let model = BayesBfNormalised {
+                cv,
+                common_cv,
+                ..quick(6)
+            };
             let fitted: Vec<(Triangle, Segment, BayesBfNormalisedFit)> = [genins(), square.clone()]
                 .into_iter()
                 .map(|tri| {
@@ -1679,6 +1876,46 @@ mod tests {
                 &fitted[1].2.posterior,
             );
         }
+    }
+
+    /// The multiplier is a parameter of the fit, named `log_share` and
+    /// last, and a vanishing cv for it is the plain model: the reserves
+    /// agree within Monte Carlo error and `s` stays at 1.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_vanishing_common_multiplier_is_the_plain_model() {
+        let plain = quick(8).fit(&genins(), "values", "premium").unwrap();
+        let common = BayesBfNormalised {
+            common_cv: Some(1e-4),
+            ..quick(8)
+        }
+        .fit(&genins(), "values", "premium")
+        .unwrap();
+        assert_eq!(common.posterior.dim(), plain.posterior.dim() + 1);
+        assert_eq!(common.posterior.names().last().unwrap(), "log_share");
+        let t = common.posterior.mean()[common.posterior.dim() - 1];
+        assert!(t.abs() < 1e-3, "{t}");
+        let (a, b) = (plain.reserves.total(), common.reserves.total());
+        assert!(
+            (a.mean() / b.mean() - 1.0).abs() < 0.02,
+            "{} {}",
+            a.mean(),
+            b.mean()
+        );
+        assert!((a.std_dev() / b.std_dev() - 1.0).abs() < 0.08);
+        assert!(common.diagnostics.warnings.is_empty());
+        // Provenance names the multiplier only when there is one.
+        let has = |fit: &BayesBfNormalisedFit| {
+            fit.reserves
+                .provenance()
+                .parameters
+                .iter()
+                .any(|(k, _)| k == "common_cv")
+        };
+        assert!(has(&common) && !has(&plain));
     }
 
     #[test]
