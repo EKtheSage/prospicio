@@ -1,6 +1,6 @@
 # Design note: excess-layer loss development (excess LDFs, benchmark blending, a layer BF prior)
 
-Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); the user decided its decisions 17 to 19 on 2026-10-21, accepting the options PR 2 picked. **PR 3 is built** (branch `claude/excess-pr3`, 2026-10-21): the Python and R bindings (see "API"; the names are open decision 20, the shape of the arguments decision 21). PR 4 is not built. Lane: Reserving
+Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); the user decided its decisions 17 to 19 on 2026-10-21, accepting the options PR 2 picked. **PR 3 is built** (branch `claude/excess-pr3`, 2026-10-21): the Python and R bindings (see "API"; the names are open decision 20, the shape of the arguments decision 21). **PR 4 is built** (branch `claude/excess-pr4`, 2026-10-21): `LayerSharePrior`, the layer share and its uncertainty as the gamma prior of `BayesBfNormalised`, in Rust, Python and R (see section 3 and open decisions 22 to 24). The plan is built; decisions 20 and 21 stay open. Lane: Reserving
 (`crates/prospicio-reserving/`; `prospicio-prob` severities used read-only;
 `prospicio-pricing` exposure curves reached only through the bindings, see
 open decision 2) · Depends on: `reserving-v02.md` (decision 2, the
@@ -225,8 +225,33 @@ column times the origin's share, so the latest cumulative value is
 fine for the prior, which is per origin, while the pattern stays one per
 age). The caller passes that column's name. Cape Cod then estimates the layer loss ratio from the
 layer's own used-up exposure, as it does today. An uncertain `s` (a Pareto
-shape with a standard error) becomes a prior for the Bayesian BF only
-after #410's normalised-pattern BF exists; that is a later PR.
+shape with a standard error) is the prior of the Bayesian BF of #410
+(`BayesBfNormalised`, decision 23 of `reserving-bayes.md`), built in PR 4.
+
+**PR 4 (built): `LayerSharePrior`.** A thin adapter over `BayesBfNormalised`,
+which has a gamma prior on each origin's expected ultimate with mean
+`apriori` times an exposure and a coefficient of variation `cv`. For the
+layer, the exposure is `layer_exposure`'s column (ground-up exposure times
+the share), `apriori` is the ground-up loss ratio, and the `cv` combines the
+two uncertainties as the cv of a product of independent variables,
+
+    cv^2 = (1 + cv_elr^2) (1 + cv_share^2) - 1,
+
+which is exact for the first two moments (`Var(XY) = E(X)^2 E(Y)^2
+((1 + c_x^2)(1 + c_y^2) - 1)`); the gamma is the moment match of the product,
+not its exact law. If either cv is infinite the prior is flat; if one is 0
+the other's cv alone remains. The share comes from `layer_share` of a
+severity, an exposure curve's own share (in the bindings) or any number, with
+its uncertainty as a cv or a standard error (`cv = se / share`). The adapter
+returns the model (`LayerSharePrior::model(&base)`, the base model supplying
+the sampler and the seed), the triangle with the layer exposure column
+(`LAYER_EXPOSURE_COLUMN`) and the fit and the one-year view of that model, so
+no new Bayesian model type exists and the `YearModel` conformance suite does
+not apply. The layer's development pattern is estimated from the layer's own
+triangle under the normalised BF's vague prior on the pattern, so the derived
+excess pattern does not enter (open decision 22). The checks are in
+`validation/tests/reserving_bayes_excess_prior.rs` (see "Validation
+targets").
 
 ## API
 
@@ -443,6 +468,28 @@ parameters are rounded; the second needs the example's trend indices.
   * the layer's own chain ladder overstates a thin layer by 2.6% to 6.7%.
   The study takes under a second in a debug build and runs in every
   `cargo test`.
+* **The Bayesian prior (PR 4)**, `validation/tests/reserving_bayes_excess_prior.rs`
+  (a layer triangle that is a quarter of GenIns's paid values, with its
+  premium as the ground-up exposure and a share of 0.25; a seeded fit takes
+  under a second in release):
+  * the prior moments are exact: the model's `cv` equals the cv of a product
+    of independent variables from raw moments (to 1e-14), and each origin's
+    prior ultimate is `ELR * share * premium`; Pareto(1, 2) xs 4 gives the
+    closed-form share 1/8;
+  * under a tight prior (both cvs 0.0005) the posterior mean of the total
+    reserve is within 0.15% (ELR 0.45) and 0.73% (ELR 0.55) of decision 23's
+    closed-form limit applied to the layer values (the shares
+    `S_d / (M_d + lambda)` at the layer's prior ultimates); the test allows 1.5%;
+  * the share's uncertainty widens the predictive interval, at an ELR of 0.35
+    (below what the data say): with the share's cv at 0.001, 0.3, 0.6 and
+    1.2 the total reserve's sd is 308,000, 514,000, 640,000 and 703,000, its
+    95% interval 1.21 million, 2.01 million, 2.48 million and 2.73 million
+    wide, and its mean 3.69 million, 4.28 million, 4.54 million and 4.66
+    million, the data pulling the ultimates up as the prior loosens;
+  * a flat share (`share_cv` infinite) is the flat normalised BF.
+  Python and R reproduce the prior's cv, the layer exposure and the prior
+  ultimates (`python/tests/test_reserving_bayes_excess_prior.py`,
+  `R/prospicio/tests/test-reserving-bayes-excess-prior.R`).
 * **Engine and input checks**: a layer triangle whose early ages are all
   zero fits with a weight of 1 on the derived pattern there, and errors as
   today with a weight below 1; Mack's sigma at those ages follows open
@@ -461,7 +508,7 @@ parameters are rounded; the second needs the example's trend indices.
 | 1 | `claude/excess-pr1` | the sparse-age change to `Development` (decision 8); `ExcessPattern::from_ground_up` with scale shift, incurred only, one layer, the layer tail; `selected`, `layer_share`, `layer_exposure`; Rust only; the closed-form and engine checks; the sources read in full for a worked example (the gate above) and recorded in `knowledge/` | PR 0 |
 | 2 | `claude/excess-pr2` | `credibility_weights` with its cap, the shape-drift model, the simulation study with its acceptance thresholds (built) | PR 1 |
 | 3 | `claude/excess-pr3` | Python and R, the stub, `man/`, a note for the Guides lane (built) | PR 2 |
-| 4 | `claude/excess-bayes-prior` | the layer share's uncertainty as a prior, after #410 | PR 3 and #410 |
+| 4 | `claude/excess-pr4` | the layer share's uncertainty as a prior: `LayerSharePrior` in Rust, Python and R over `BayesBfNormalised` (built) | PR 3 and #410 |
 
 Each PR ends with its design status, the lane row, the roadmap row, a
 changelog fragment and a knowledge fragment.
@@ -672,6 +719,42 @@ open until the user decides):
     factors. (a) As built. (b) Let `ChainLadder(pattern=p, weight=w)` take
     the pattern directly. *Recommendation: (a),* with (b) if the Guides lane
     finds the splat clumsy.
+
+22. **The excess pattern does not inform the Bayesian BF's pattern.**
+    `BayesBfNormalised` estimates its development pattern jointly with the
+    ultimates under a vague normal prior (`development_sd`) on the log ratios
+    of the shares to the first age's, centred on 0. It has no argument for a
+    pattern prior or a fixed pattern, so an `ExcessPattern` (PR 1 and PR 2)
+    cannot enter it, and a sparse layer's own pattern is only as good as its
+    data. (a) As built: the pattern is the layer's own, the excess pattern
+    reaches the classical BF through `ldf`. (b) A pattern prior in
+    `BayesBfNormalised`: a mean for `beta` from the derived pattern and a
+    standard deviation from the credibility weight, in the Reserving lane's
+    own file, with the `YearModel` conformance rerun. (c) Fix the pattern at
+    the derived one. *Recommendation: (a) for now, (b) as a later PR if the
+    sparse layer's pattern turns out to be the weak point.*
+
+23. **One share error is common to every origin; the prior is independent.**
+    The share's uncertainty is a parameter error, the same at every origin,
+    but the gamma priors of `BayesBfNormalised` are independent across
+    origins, so the layer's total ultimate is less uncertain a priori than a
+    common share error makes it (with equal cv `c` at every origin the
+    total's prior cv is below `c`). The posterior is driven by the data, and in the
+    validation the predictive sd still rises with the share's cv, but the
+    widening is understated for the total. (a) As built, documented. (b) A
+    shared multiplier `s` on the layer exposure, with its own gamma prior, as
+    a parameter of the model (a change to the sampler's model, not an
+    adapter). *Recommendation: (a), with (b) if the total reserve's interval
+    matters more than the origin by origin ones.*
+
+24. **The share's cv is an input.** The adapter takes a cv or a standard
+    error of the share and does not derive it from a severity's parameter
+    uncertainty (a Pareto alpha's standard error through the delta method,
+    or a lognormal's). (a) As built: the caller supplies it, from
+    `Pareto.fit_with_standard_error` and the share's derivative, say.
+    (b) A helper for the Pareto family. *Recommendation: (a);* the delta
+    method is a few lines in the caller's hands and the share of other
+    families would need their own.
 
 ## For the Guides lane
 

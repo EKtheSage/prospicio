@@ -438,7 +438,8 @@ what it is aiming for by v1.0.
   `ExcessPattern`, `credibility_weights`, `ParetoShape`, `layer_share` and
   `layer_exposure`, usable in the chain ladder, Mack and the expected-loss
   methods through `ldf`; done) and a BF prior from the layer share's
-  uncertainty (PR 4, after #410).
+  uncertainty (PR 4: `LayerSharePrior` over the normalised Bayesian BF, in
+  Rust, Python and R; done, which finishes the plan).
 - **v1.0:** every reserve as a joint `PredictiveDistribution`, ready for
   capital.
 
