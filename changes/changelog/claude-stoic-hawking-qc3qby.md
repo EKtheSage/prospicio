@@ -56,3 +56,13 @@
   loss, the commissions, the brokerage and each deduction as legs, the
   amounts `deal_ratios` divides by the premium (Python `Tower.deal_ledger`;
   R `deal_ledger()`) ([deal-ledger], #477).
+- A monthly cash-flow engine for collateralised deals
+  (`prospicio_pricing::cashflow`): a trust account and an investor's
+  operating account per simulation, from its ultimate loss ratio and
+  commission, with every rule a setting (the collateral requirement as
+  loads on named bases with a floor and a switch to the limit, a
+  commutation requirement, premium collection and adjustments, funding
+  dates, rule and source, release timing, interest, opening capital,
+  expenses, a buffer and a tiered performance fee); `CashflowTerms::run`
+  gives the investor's monthly flows for `npv_rows` and `irr_rows`, and
+  `trace` every account line of one simulation (#479, Rust only for now).
