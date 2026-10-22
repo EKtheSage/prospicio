@@ -110,6 +110,36 @@ impl Grid {
         Ok(Self { step, probs })
     }
 
+    /// [`new`](Self::new) with `probs` divided by their sum, for hand-built
+    /// or rounded probabilities that do not sum to 1 within 1e-9; the sum
+    /// must be positive.
+    ///
+    /// ```
+    /// use prospicio_prob::Grid;
+    ///
+    /// let g = Grid::normalized(1.0, vec![0.4999999, 0.25, 0.25]).unwrap();
+    /// assert!((g.probs().iter().sum::<f64>() - 1.0).abs() < 1e-15);
+    /// ```
+    pub fn normalized(step: f64, probs: Vec<f64>) -> Result<Self> {
+        if let Some(&bad) = probs.iter().find(|p| !p.is_finite() || **p < 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "probs",
+                value: bad,
+                reason: "must all be finite and non-negative",
+            });
+        }
+        // The values are finite and at least 0, so a bad sum is 0 or overflowed.
+        let total: f64 = probs.iter().sum();
+        if total <= 0.0 || !total.is_finite() {
+            return Err(Error::InvalidParameter {
+                name: "probs",
+                value: total,
+                reason: "must have a positive sum",
+            });
+        }
+        Self::new(step, probs.into_iter().map(|p| p / total).collect())
+    }
+
     /// Discretizes `source` by local moment matching on the mean, using its
     /// limited expected values:
     ///
@@ -482,6 +512,17 @@ impl Severity for Grid {
 mod tests {
     use super::*;
     use crate::Lognormal;
+
+    #[test]
+    fn normalized_rescales_what_new_rejects() {
+        let probs = vec![0.4999999, 0.25, 0.25];
+        assert!(Grid::new(1.0, probs.clone()).is_err());
+        let g = Grid::normalized(1.0, probs).unwrap();
+        assert!((g.probs()[0] - 0.4999999 / 0.9999999).abs() < 1e-15);
+        assert!(Grid::normalized(1.0, vec![0.0, 0.0]).is_err());
+        assert!(Grid::normalized(1.0, vec![0.5, -0.1]).is_err());
+        assert!(Grid::normalized(1.0, vec![]).is_err());
+    }
 
     #[test]
     fn map_keeps_mass_and_mean_off_the_points() {

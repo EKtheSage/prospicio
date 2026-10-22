@@ -145,6 +145,41 @@ impl PaymentPattern {
         )
     }
 
+    /// The pattern of what is unpaid at `age`, with times measured from
+    /// `age`: the payments after it, each over the share outstanding. For
+    /// a reserve valued at `age`, such as one ceded under a loss portfolio
+    /// transfer; payments at `age` itself count as paid.
+    ///
+    /// ```
+    /// use prospicio_pricing::payout::PaymentPattern;
+    ///
+    /// let p = PaymentPattern::new(vec![1.0, 2.0, 3.0, 4.0], vec![0.25; 4]).unwrap();
+    /// let unpaid = p.unpaid_from(2.0).unwrap();
+    /// assert_eq!(unpaid.times(), [1.0, 2.0]);
+    /// assert_eq!(unpaid.shares(), [0.5, 0.5]);
+    /// ```
+    pub fn unpaid_from(&self, age: f64) -> Result<Self> {
+        if !(age.is_finite() && age >= 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "age",
+                value: age,
+                reason: "must be finite and non-negative",
+            });
+        }
+        let outstanding = self.outstanding(age);
+        let (times, shares): (Vec<f64>, Vec<f64>) = self
+            .times
+            .iter()
+            .zip(&self.shares)
+            .filter(|(t, s)| **t > age && **s > 0.0)
+            .map(|(t, s)| (t - age, s / outstanding))
+            .unzip();
+        if times.is_empty() {
+            return Err(Error::Data(format!("nothing is unpaid at age {age}")));
+        }
+        Self::new(times, shares)
+    }
+
     /// The times.
     pub fn times(&self) -> &[f64] {
         &self.times
@@ -314,6 +349,37 @@ mod tests {
         let want = 1.0 + 0.75 * v + 0.5 * v * v + 0.25 * v.powi(3);
         assert!((p.capital_years(0.05) - want).abs() < 1e-15);
         assert_eq!(p.discount_factor(0.0), 1.0);
+    }
+
+    #[test]
+    fn the_unpaid_part_reprices_the_tail_of_the_pattern() {
+        let p = PaymentPattern::from_development(&[1.0, 2.0, 3.0, 4.0], &[4.0, 2.0, 1.25, 1.0])
+            .unwrap();
+        // Paid 0.25, 0.5, 0.8, 1: at 1.5 the share outstanding is 0.75, paid
+        // 0.25, 0.3 and 0.2 at 0.5, 1.5 and 2.5 years from the valuation.
+        let u = p.unpaid_from(1.5).unwrap();
+        assert_eq!(u.times(), [0.5, 1.5, 2.5]);
+        let want = [0.25 / 0.75, 0.3 / 0.75, 0.2 / 0.75];
+        for (a, b) in u.shares().iter().zip(want) {
+            assert!((a - b).abs() < 1e-14);
+        }
+        // Discounting the unpaid part from inception is the original
+        // discount on the payments after the age, over the outstanding.
+        let rate = 0.05;
+        let after: f64 = p
+            .times()
+            .iter()
+            .zip(p.shares())
+            .filter(|(t, _)| **t > 1.5)
+            .map(|(t, s)| s * (1.0f64 + rate).powf(-t))
+            .sum();
+        let at_age = u.discount_factor(rate) * (1.0f64 + rate).powf(-1.5) * 0.75;
+        assert!((after - at_age).abs() < 1e-15);
+        // At age 0 the pattern is unchanged.
+        assert_eq!(p.unpaid_from(0.0).unwrap(), p);
+        assert!(p.unpaid_from(4.0).is_err());
+        assert!(p.unpaid_from(-1.0).is_err());
+        assert!(p.unpaid_from(f64::NAN).is_err());
     }
 
     #[test]

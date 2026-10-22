@@ -38,12 +38,14 @@ NULL
 #' @returns A `distortion` object with `kind` and `param` properties, and
 #'   `parameters`, the scalar parameters by name as the constructor takes
 #'   them (for example `c(rho = 0.7)`, or `c(r0 = 0.1, slope = 2)`; empty for
-#'   weighted TVaR, mixtures, minimums and convex envelopes). Use it with
-#'   [risk_measure()] and [allocate()].
+#'   weighted TVaR, mixtures, minimums and convex envelopes), and
+#'   `parameter`, the one parameter of a family with one (`NA` for a family
+#'   with several or none). Use it with [risk_measure()] and [allocate()].
 #' @export
 #' @examples
 #' d <- distortion("wang", 0.5)
 #' d@parameters
+#' d@parameter
 #' risk_measure(sampled(c(10, 20, 30, 40, 50)), d)
 #' distortion_g(distortion("dual_power", 2), 0.3)
 #' risk_measure(sampled(c(1, 2, 3, 4)), distortion("ccoc", 0.25)) # (2.5 + 0.25 * 4) / 1.25
@@ -59,6 +61,13 @@ distortion <- S7::new_class(
       getter = function(self) {
         p <- self@ptr$parameters()
         if (length(p) == 0) stats::setNames(numeric(), character()) else unlist(p)
+      }
+    ),
+    parameter = S7::new_property(
+      S7::class_double,
+      getter = function(self) {
+        p <- self@parameters
+        if (length(p) == 1) unname(p) else NA_real_
       }
     )
   ),

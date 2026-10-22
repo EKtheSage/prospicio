@@ -908,3 +908,29 @@ def test_cashflow_terms_errors():
     with pytest.raises(ValueError, match="unknown fee basis"):
         P.CashflowTerms(100.0, 3, [1.0] * 3, thirds, thirds, req, fee=([0.0], [0.1]),
                         fee_basis="carry")
+
+
+def test_issue_214_conveniences():
+    # The unpaid part of a pattern valued at an age, times from the age.
+    p = P.PaymentPattern.from_development([1.0, 2.0, 3.0, 4.0], [4.0, 2.0, 1.25, 1.0])
+    u = p.unpaid_from(1.5)
+    assert u.times == [0.5, 1.5, 2.5]
+    assert u.shares == pytest.approx([0.25 / 0.75, 0.3 / 0.75, 0.2 / 0.75], rel=1e-14)
+    after = sum(s * 1.05 ** -t for t, s in zip(p.times, p.shares) if t > 1.5)
+    assert u.discount_factor(0.05) * 1.05 ** -1.5 * 0.75 == pytest.approx(after, rel=1e-14)
+    with pytest.raises(ValueError, match="nothing is unpaid"):
+        p.unpaid_from(4.0)
+    # Pentagon's loss under Price's name.
+    pent = P.Pentagon.solve(loss=46.6, assets=100.0, return_on_capital=0.15)
+    assert pent.expected_loss == pent.loss
+    # A grid from probabilities that miss 1 by more than 1e-9.
+    with pytest.raises(ValueError, match="sum to 1"):
+        ar.distributions.Grid(1.0, [0.4999999, 0.25, 0.25])
+    g = ar.distributions.Grid(1.0, [0.4999999, 0.25, 0.25], normalize=True)
+    assert sum(g.probs) == pytest.approx(1.0, abs=1e-15)
+    with pytest.raises(ValueError, match="positive sum"):
+        ar.distributions.Grid(1.0, [0.0, 0.0], normalize=True)
+    # A distortion's single parameter.
+    d = ar.risk.Distortion
+    assert d.proportional_hazard(0.7).parameter == 0.7
+    assert d.lep(0.05, 0.1).parameter is None

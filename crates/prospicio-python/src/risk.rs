@@ -459,6 +459,19 @@ impl PyDistortion {
         self.inner.parameters().into_iter().collect()
     }
 
+    /// The parameter of a family with one, such as the proportional
+    /// hazard's ``rho``; None for a family with several or none.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.risk import Distortion
+    /// >>> Distortion.wang(0.3).parameter, Distortion.lep(0.05, 0.1).parameter
+    /// (0.3, None)
+    #[getter]
+    fn parameter(&self) -> Option<f64> {
+        self.inner.parameter()
+    }
+
     fn __repr__(&self) -> String {
         repr(&self.inner)
     }

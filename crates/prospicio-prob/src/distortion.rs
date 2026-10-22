@@ -480,6 +480,22 @@ impl Distortion {
         }
     }
 
+    /// The parameter of a family with one, such as the proportional
+    /// hazard's `rho`; `None` for a family with several or none.
+    ///
+    /// ```
+    /// use prospicio_prob::Distortion;
+    ///
+    /// assert_eq!(Distortion::wang(0.3).unwrap().parameter(), Some(0.3));
+    /// assert_eq!(Distortion::lep(0.05, 0.1).unwrap().parameter(), None);
+    /// ```
+    pub fn parameter(&self) -> Option<f64> {
+        match self.parameters().as_slice() {
+            [(_, p)] => Some(*p),
+            _ => None,
+        }
+    }
+
     /// The probability mass the distortion puts on the largest outcome:
     /// `g(0+)`, the limit of `g(s)` as `s` falls to 0. Zero except for
     /// `Ccoc`, and for `CappedLinear`, `Lep` and `LinearYield` with

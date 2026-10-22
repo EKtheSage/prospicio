@@ -31,8 +31,9 @@ distortion(
 A \code{distortion} object with \code{kind} and \code{param} properties, and
 \code{parameters}, the scalar parameters by name as the constructor takes
 them (for example \code{c(rho = 0.7)}, or \code{c(r0 = 0.1, slope = 2)}; empty for
-weighted TVaR, mixtures, minimums and convex envelopes). Use it with
-\code{\link[=risk_measure]{risk_measure()}} and \code{\link[=allocate]{allocate()}}.
+weighted TVaR, mixtures, minimums and convex envelopes), and
+\code{parameter}, the one parameter of a family with one (\code{NA} for a family
+with several or none). Use it with \code{\link[=risk_measure]{risk_measure()}} and \code{\link[=allocate]{allocate()}}.
 }
 \description{
 A concave distortion \code{g} of the survival function, giving the coherent
@@ -66,6 +67,7 @@ See also \code{\link[=distortion_mixture]{distortion_mixture()}}, \code{\link[=d
 \examples{
 d <- distortion("wang", 0.5)
 d@parameters
+d@parameter
 risk_measure(sampled(c(10, 20, 30, 40, 50)), d)
 distortion_g(distortion("dual_power", 2), 0.3)
 risk_measure(sampled(c(1, 2, 3, 4)), distortion("ccoc", 0.25)) # (2.5 + 0.25 * 4) / 1.25

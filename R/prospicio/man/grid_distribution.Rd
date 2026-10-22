@@ -4,12 +4,15 @@
 \alias{grid_distribution}
 \title{Distribution on an evenly spaced grid}
 \usage{
-grid_distribution(step, probs, ptr = NULL)
+grid_distribution(step, probs, normalize = FALSE, ptr = NULL)
 }
 \arguments{
 \item{step}{Grid step; finite and positive.}
 
-\item{probs}{Non-negative probabilities summing to 1.}
+\item{probs}{Non-negative probabilities summing to 1 within 1e-9.}
+
+\item{normalize}{Divide \code{probs} by their sum first, for hand-built or
+rounded probabilities; the sum must be positive.}
 }
 \value{
 A \code{grid_distribution} object, which inherits from \link{distribution}. Its \code{report}

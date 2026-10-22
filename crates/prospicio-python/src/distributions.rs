@@ -851,7 +851,11 @@ impl PyDiscretizationReport {
 /// step : float
 ///     Grid step; must be positive.
 /// probs : list of float
-///     Probabilities at ``0, step, ...``; non-negative, summing to 1.
+///     Probabilities at ``0, step, ...``; non-negative, summing to 1 within
+///     1e-9.
+/// normalize : bool, default False
+///     Divide ``probs`` by their sum first, for hand-built or rounded
+///     probabilities; the sum must be positive.
 ///
 /// Raises
 /// ------
@@ -879,8 +883,14 @@ fn discretized(
 #[pymethods]
 impl PyGrid {
     #[new]
-    fn new(step: f64, probs: Vec<f64>) -> PyResult<Self> {
-        let inner = Grid::new(step, probs).map_err(to_py)?;
+    #[pyo3(signature = (step, probs, *, normalize = false))]
+    fn new(step: f64, probs: Vec<f64>, normalize: bool) -> PyResult<Self> {
+        let inner = if normalize {
+            Grid::normalized(step, probs)
+        } else {
+            Grid::new(step, probs)
+        }
+        .map_err(to_py)?;
         Ok(Self { inner })
     }
 

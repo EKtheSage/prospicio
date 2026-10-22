@@ -28,6 +28,9 @@ validation checks closed forms instead.
   by each age is one over its factor. `shifted(by)` moves it later.
 - `duration()`, `outstanding(t)`, `discount_factor(rate)` and
   `capital_years(rate)`.
+- `unpaid_from(age)`: the pattern of what is unpaid at an age, its times
+  from the age and its shares over `outstanding(age)`, to discount reserves
+  held at a valuation (#214).
 - `price_over_payout(&price, &rule, &pattern, rate) -> PayoutPrice`: a
   one-period `Price` restated over the payout.
 

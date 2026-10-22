@@ -1631,15 +1631,21 @@ as_if_history <- function(prepared, historical, years, proposed) {
 #' @param pattern A `payment_pattern`.
 #' @param rate Annual effective discount rate.
 #' @param t Times at which to read the share outstanding.
+#' @param age The age at which a reserve is valued.
 #' @returns `payment_pattern()` and `payment_pattern_from_development()`: a
 #'   `payment_pattern`, a list with `times`, `shares` and `duration` (the
 #'   mean time to payment). `pattern_values()`: a list with
 #'   `discount_factor`, `capital_years` and `outstanding`.
+#'   `payment_pattern_unpaid()`: the `payment_pattern` of what is unpaid at
+#'   `age`, with times measured from `age` (the payments after it, each over
+#'   the share outstanding; payments at `age` count as paid), for a reserve
+#'   valued at that age, such as one ceded under a loss portfolio transfer.
 #' @export
 #' @examples
 #' p <- payment_pattern_from_development(c(1, 2, 3), c(4, 1.25, 1))
 #' p$shares
 #' pattern_values(p, rate = 0.05, t = 1)
+#' payment_pattern_unpaid(p, 1)$shares
 payment_pattern <- function(times, shares) {
   r <- rust_result(pricing_payment_pattern(as.double(times), as.double(shares), FALSE))
   structure(r, class = "payment_pattern")
@@ -1649,6 +1655,13 @@ payment_pattern <- function(times, shares) {
 #' @export
 payment_pattern_from_development <- function(ages, factors) {
   r <- rust_result(pricing_payment_pattern(as.double(ages), as.double(factors), TRUE))
+  structure(r, class = "payment_pattern")
+}
+
+#' @rdname payment_pattern
+#' @export
+payment_pattern_unpaid <- function(pattern, age) {
+  r <- rust_result(pricing_pattern_unpaid(pattern$times, pattern$shares, as.double(age)))
   structure(r, class = "payment_pattern")
 }
 

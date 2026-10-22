@@ -3,12 +3,15 @@
 \name{payment_pattern}
 \alias{payment_pattern}
 \alias{payment_pattern_from_development}
+\alias{payment_pattern_unpaid}
 \alias{pattern_values}
 \title{Payment pattern}
 \usage{
 payment_pattern(times, shares)
 
 payment_pattern_from_development(ages, factors)
+
+payment_pattern_unpaid(pattern, age)
 
 pattern_values(pattern, rate = 0, t = double())
 }
@@ -23,6 +26,8 @@ pattern_values(pattern, rate = 0, t = double())
 
 \item{pattern}{A \code{payment_pattern}.}
 
+\item{age}{The age at which a reserve is valued.}
+
 \item{rate}{Annual effective discount rate.}
 
 \item{t}{Times at which to read the share outstanding.}
@@ -32,6 +37,10 @@ pattern_values(pattern, rate = 0, t = double())
 \code{payment_pattern}, a list with \code{times}, \code{shares} and \code{duration} (the
 mean time to payment). \code{pattern_values()}: a list with
 \code{discount_factor}, \code{capital_years} and \code{outstanding}.
+\code{payment_pattern_unpaid()}: the \code{payment_pattern} of what is unpaid at
+\code{age}, with times measured from \code{age} (the payments after it, each over
+the share outstanding; payments at \code{age} count as paid), for a reserve
+valued at that age, such as one ceded under a loss portfolio transfer.
 }
 \description{
 The share of the ultimate loss paid at each time, in years from the
@@ -54,4 +63,5 @@ discount factor.
 p <- payment_pattern_from_development(c(1, 2, 3), c(4, 1.25, 1))
 p$shares
 pattern_values(p, rate = 0.05, t = 1)
+payment_pattern_unpaid(p, 1)$shares
 }
