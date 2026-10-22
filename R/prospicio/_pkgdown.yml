@@ -100,6 +100,7 @@ reference:
       - wiener_hopf
       - pnl_ledger
       - pnl_book
+      - deal_ledger
       - occurrence_source
       - book_occurrence_peel
       - pnl_program

@@ -23745,6 +23745,54 @@ class Tower:
         -------
         list of float
         """
+    def deal_ledger(self, /, source: Any, layer: str) -> Ledger:
+        """
+        The reinsurer's P&L ledger of one layer or one deal
+        (:meth:`with_deal_scale`) over the annual gross losses ``source``:
+        one group that sells the cover, named ``layer``, with the premium
+        received against the ceded loss, the commissions paid, the brokerage
+        and each deduction, every leg at each atom of the source.
+        
+        The tower is applied to each atom as one annual loss
+        (:meth:`apply_annual`), so the amounts are those :meth:`deal_ratios`
+        divides by the premium. A deal books its sections' amounts with its
+        own. :meth:`prospicio.aggregate.Book.ledger` books the same tower as
+        covers bought and leaves brokerage and deductions out.
+        
+        The rows are ``Premium``, ``Loss``, ``Ceding commission``, ``Profit
+        commission``, ``Brokerage`` and each deduction by its label, as the
+        layer has them. NMBF is not a row: :meth:`deal_ratios` gives it.
+        
+        Parameters
+        ----------
+        source : Grid or tuple of (list of float, list of float)
+            The annual gross loss.
+        layer : str
+            A layer or a deal.
+        
+        Returns
+        -------
+        prospicio.aggregate.Ledger
+        
+        Raises
+        ------
+        ValueError
+            A joint source, a layer that cannot apply to an annual loss, a
+            booked layer with paid reinstatements, or an unknown layer or
+            deal.
+        
+        Examples
+        --------
+        >>> from prospicio.reinsurance import Layer, Tower
+        >>> cover = (Layer.stop_loss("cover", 120.0, 0.0)
+        ...          .with_premium_rate(1.0, 100.0)
+        ...          .with_ceding_commission(0.2)
+        ...          .with_brokerage(0.025)
+        ...          .with_deduction("tax", 0.03))
+        >>> ledger = Tower([cover]).deal_ledger(([40.0, 150.0], [0.5, 0.5]), "cover")
+        >>> ledger.result.values
+        [-45.5, 34.5]
+        """
     def deal_ratios(self, /, result: PredictiveDistribution, layer: str) -> PredictiveDistribution:
         """
         The deal ratios of one layer or one deal (``with_deal_scale``) in

@@ -6,7 +6,6 @@
 
 ## Next
 
-- [deal-ledger] a deal's brokerage and deductions as legs of the reinsurer's P&L ledger (#485's typed terms booked on the selling side)
 
 ## Done
 
@@ -36,3 +35,4 @@
 - [attritional-part] #483 an aggregate (attritional) part on `EventSet` (`with_aggregate_part`, by peril or class), ceded from only by layers with no per-occurrence terms (`Layer::sees_aggregate_part`: quota shares, stop losses), before the events in the year under annual terms, carried by `permute`, `merge`, `grouped`, `term_years` and inuring stages (#483, second part; Python `EventSet.with_aggregate_part`, `Layer.sees_aggregate_part`, R `with_aggregate_part()`, `aggregate_part()`)
 - [brokerage-leg] #485 brokerage and a deal's deductions on a layer, with the scales keyed before annual terms (#477): `Layer::brokerage` and `brokerage_scale`, `Deduction` on premium, loss or an amount and inside or outside NMBF, `scales_before_annual_terms` and `brokerage_within_commission_range` as options, `Tower::deal_ratios` per simulation (loss ratio before and after terms, each deduction, TD, CR, NMBF, margin; by year over a term), JSON version 3; Python `with_brokerage`, `with_deduction`, `Tower.deal_ratios`, R `with_brokerage()`, `with_deduction()`, `deal_ratios()`
 - [deal-scale] a deal-level sliding scale and brokerage read on the loss ratio of several sections together, added to the sections' own (`DealScale`, `Tower::deal_scale`: the sum of the sections' keys over their premiums, its own carry over a term, `deal_ratios` on a deal, JSON format version 4, refused by the grids and the P&L ledger; Rust, Python and R; #477)
+- [deal-ledger] a layer's or deal's brokerage and deductions as legs of the reinsurer's P&L ledger (`Tower::deal_ledger`: one sell group over the annual gross losses, the tower applied to each atom as one annual loss, legs Premium, Loss, Ceding and Profit commission, Brokerage and each deduction, each row at each atom equal to `deal_ratios` times the premium; Python `Tower.deal_ledger`, R `deal_ledger()`; #477)

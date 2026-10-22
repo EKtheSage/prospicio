@@ -1178,8 +1178,15 @@ pricing model (`knowledge/findings/deal-ratios-and-scale-keys.md`).
    covers the book buys (buy groups: the premium paid, the commissions
    received). Brokerage and the other deductions come out of the premium
    the reinsurer receives, so the cedant's ledger correctly leaves them
-   out. Booking them as legs of the reinsurer's own ledger is a later PR
-   (Next: `[deal-ledger]`). `TowerGrids` and `AnnualGrids` report the
+   out. The reinsurer's own ledger is `Tower::deal_ledger(gross, layer)`
+   (`[deal-ledger]`): one sell group for a layer or a deal over the annual
+   gross losses, the tower applied to each atom as one annual loss, with
+   legs `Premium`, `Loss`, `Ceding commission`, `Profit commission`,
+   `Brokerage` and each deduction by its label. Its amounts are those
+   `deal_ratios` divides by the premium, and a deal books its sections'
+   amounts with its own. NMBF is not a row. It refuses a joint source and
+   a booked layer with paid reinstatements, which belong to occurrence
+   covers. `TowerGrids` and `AnnualGrids` report the
    expected commissions but not brokerage or deductions. Those come from
    simulated years and `deal_ratios`.
 

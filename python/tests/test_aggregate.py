@@ -1441,3 +1441,13 @@ def test_deal_scale_reads_sections_together():
         Tower([a, b]).with_deal_scale("A", ["A", "B"], brokerage=0.01)
     with pytest.raises(ValueError):
         Tower([a, b]).with_deal_scale("deal", ["A", "B"], brokerage=0.01, brokerage_scale=[(0.01, 0.5)])
+    # The reinsurer's ledger books the deal's amounts with its sections'
+    # ([deal-ledger]): 200 - 160 - (35 + 15 + 25) - 2 - 3 = -40.
+    ledger = tower.deal_ledger(([160.0], [1.0]), "deal")
+    assert ledger.result.values == pytest.approx([-40.0])
+    assert ledger.row("Ceding commission").mean() == pytest.approx(-75.0)
+    assert ledger.row("Brokerage").mean() == pytest.approx(-2.0)
+    assert ledger.row("tax").mean() == pytest.approx(-3.0)
+    assert tower.deal_ledger(([160.0], [1.0]), "B").result.values == pytest.approx([100 - 110 - 15 - 3])
+    with pytest.raises(ValueError):
+        tower.deal_ledger(([160.0], [1.0]), "C")

@@ -178,6 +178,17 @@ impl PnlLedger {
         })
     }
 
+    /// The reinsurer's ledger of one layer or deal of `tower` over the
+    /// annual gross losses `(values, probs)` (`Tower::deal_ledger`).
+    fn deal(values: &[f64], probs: &[f64], tower: Robj, layer: &str) -> Result<Self> {
+        let source = Source::new(values.to_vec(), probs.to_vec()).map_err(to_r)?;
+        let tower = tower_of(&tower)?
+            .ok_or_else(|| Error::Other("tower must be a reinsurance_tower".into()))?;
+        Ok(Self {
+            inner: tower.inner.deal_ledger(&source, layer).map_err(to_r)?,
+        })
+    }
+
     /// A book's ledger with occurrence covers over the joint source
     /// `(gross, ceded, probs)`, the rest as `book`; `aggregate` is NULL or
     /// a `ReinsuranceTower`.
