@@ -1,7 +1,7 @@
 ---
 type: Finding
 title: The layer share's uncertainty widens a layer's Bayesian BF interval, and the tight prior reaches the closed-form limit
-description: LayerSharePrior feeds a layer's ground-up loss ratio times its share to BayesBfNormalised with the cv of a product of independent variables; a tight prior reaches decision 23's closed-form limit on layer values and a larger share cv widens the predictive interval, while the excess pattern cannot enter the model's pattern and one share error is treated as independent across origins.
+description: LayerSharePrior feeds a layer's ground-up loss ratio times its share to BayesBfNormalised with the cv of a product of independent variables; a tight prior reaches decision 23's closed-form limit on layer values and a larger share cv widens the predictive interval, while the excess pattern cannot enter the model's pattern and one share error is treated as independent across origins (the shared multiplier is a follow-up, #518).
 tags: [reserving, excess-development, bayesian, bornhuetter-ferguson, prior]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-21T23:30:00Z }
@@ -43,4 +43,4 @@ sources:
   inform it (design note, decision 22, decided by the user on 2026-10-21;
   the share's cv is an input, decision 24, decided the same day). The gamma
   priors are independent across origins although one share error is common
-  to all of them (decision 23, still open), so the total's interval is understated.
+  to all of them (decision 23, decided by the user on 2026-10-22 as a single shared share multiplier, to be built under issue #518), so until then the total's interval is understated.

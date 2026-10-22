@@ -1,6 +1,6 @@
 # Design note: excess-layer loss development (excess LDFs, benchmark blending, a layer BF prior)
 
-Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); the user decided its decisions 17 to 19 on 2026-10-21, accepting the options PR 2 picked. **PR 3 is built** (branch `claude/excess-pr3`, 2026-10-21): the Python and R bindings (see "API"; the names are open decision 20, the shape of the arguments decision 21). **PR 4 is built** (branch `claude/excess-pr4`, 2026-10-21): `LayerSharePrior`, the layer share and its uncertainty as the gamma prior of `BayesBfNormalised`, in Rust, Python and R (see section 3 and open decisions 22 to 24). The plan is built; decisions 20 and 21 stay open. Lane: Reserving
+Status: **Accepted** (2026-10-21; issue #192, which the user chose on 2026-10-21; on 2026-10-21 the user decided all eleven open decisions as recommended and, on merging PR 1, decisions 12 to 16 as PR 1 picked them). **PR 1 is built** (branch `claude/excess-pr1`, 2026-10-21): the sparse-age change to `Development`, `ExcessPattern::from_ground_up` with the scale shift, `layer_share` and `layer_exposure`, in Rust; the literature gate is passed (see "Validation targets"). **PR 2 is built** (branch `claude/excess-pr2`, 2026-10-21): `ExcessPattern::credibility_weights` with its cap, the Pareto shape drift (`SeverityByMaturity::ParetoShape` with `ShapeBase`) at parity with Pinto and Gogol's and Bear's examples, and the simulation study, which passes decision 11's thresholds where the model holds (see "Validation targets"); the user decided its decisions 17 to 19 on 2026-10-21, accepting the options PR 2 picked. **PR 3 is built** (branch `claude/excess-pr3`, 2026-10-21): the Python and R bindings (see "API"; the names are open decision 20, the shape of the arguments decision 21). **PR 4 is built** (branch `claude/excess-pr4`, 2026-10-21): `LayerSharePrior`, the layer share and its uncertainty as the gamma prior of `BayesBfNormalised`, in Rust, Python and R (see section 3 and open decisions 22 to 24). The plan is built; the user decided 20, 21 and 23 on 2026-10-22 (20 and 21 as PR 3 picked them, 23 option (a), to be built under issue #518). Lane: Reserving
 (`crates/prospicio-reserving/`; `prospicio-prob` severities used read-only;
 `prospicio-pricing` exposure curves reached only through the bindings, see
 open decision 2) · Depends on: `reserving-v02.md` (decision 2, the
@@ -707,6 +707,7 @@ Opened in PR 3 (each built as the option closest to the existing bindings;
     `layer_exposure()` and `layer_at_shift()` keep the Rust names. (a) As
     built. (b) `Layer` in `prospicio.reserving` as an alias of the same
     class under another native name. *Recommendation: (a).*
+   *Decided 2026-10-22 (the user): the option PR 3 picked, (a) as built.*
 
 21. **How the pattern reaches a method, and the R object.** A method takes
     `ldf`, `ldf_kind` and `ldf_weight` and a separate `tail`, so the pattern
@@ -719,6 +720,7 @@ Opened in PR 3 (each built as the option closest to the existing bindings;
     factors. (a) As built. (b) Let `ChainLadder(pattern=p, weight=w)` take
     the pattern directly. *Recommendation: (a),* with (b) if the Guides lane
     finds the splat clumsy.
+   *Decided 2026-10-22 (the user): the option PR 3 picked, (a) as built.*
 
 22. **The excess pattern does not inform the Bayesian BF's pattern.**
     `BayesBfNormalised` estimates its development pattern jointly with the
@@ -747,6 +749,7 @@ Opened in PR 3 (each built as the option closest to the existing bindings;
     a parameter of the model (a change to the sampler's model, not an
     adapter). *Recommendation: (a), with (b) if the total reserve's interval
     matters more than the origin by origin ones.*
+   *Decided 2026-10-22 (the user): (a) of the user's alternatives, a single shared share multiplier `s` with mean 1 and cv equal to the share's cv, by which every origin's prior ultimate is multiplied, sampled jointly with the normalised BF's parameters so the data update the share for every origin; one extra parameter in `BayesBfNormalised` (or a layer variant of it), with the `YearModel` conformance suite rerun and its own validation. Not built in PR 4: issue #518, a follow-up PR. Until then the adapter's priors stay independent and the total's interval is understated.*
 
 24. **The share's cv is an input.** The adapter takes a cv or a standard
     error of the share and does not derive it from a severity's parameter
