@@ -447,9 +447,12 @@ the unrounded factors (2.1879 at 15 months rather than 2.19) give a total
 
 Appendix A's Loss Development exhibit does the same on reported losses and
 paid ALAE for accident years 2009 to 2015, and selects the straight average
-excluding the highest and lowest link ratio. prospicio has no "excluding high
-and low" average, so the selection is a line of R fed to `chain_ladder()` as
-a selected pattern:
+excluding the highest and lowest link ratio. That average is built in:
+`chain_ladder(average = "simple", drop_high = 1, drop_low = 1)`, whose
+`n_links` shows how many link ratios each factor kept. The book, though,
+averages link ratios rounded to four places and chains its selections rounded
+to four places, so its factors to ultimate come from that rounded selection,
+passed as a selected pattern. The chunk prints both:
 
 ```{r}
 ta <- long_triangle(2009, c(15, 27, 39, 51, 63), list(
@@ -465,10 +468,13 @@ all_year <- chain_ladder(ta, average = "simple")@ldf
 cat("all-year average, exact ", sprintf("%.4f", all_year), "\n")
 cat("all-year, rounded links ", sprintf("%.4f", sapply(links, function(x) half_up(mean(x), 4))), "\n")
 cat("book all-year average   ", c("1.0704", "1.0380", "1.0113", "0.9898"), "\n")
+exact <- chain_ladder(ta, average = "simple", drop_high = 1, drop_low = 1)
+cat("high/low out, exact     ", sprintf("%.4f", exact@ldf), " n_links", exact@n_links, "\n")
 hi_lo <- sapply(links, function(x) half_up((sum(x) - max(x) - min(x)) / (length(x) - 2), 4))
-cat("excluding high and low  ", sprintf("%.4f", hi_lo), " book", c("1.0665", "1.0279", "1.0208", "0.9799"), "\n")
+cat("high/low out, rounded   ", sprintf("%.4f", hi_lo), " book", c("1.0665", "1.0279", "1.0208", "0.9799"), "\n")
 fit <- chain_ladder(ta, ldf = stats::setNames(hi_lo, c(15, 27, 39, 51)), ldf_kind = "ldf")
-cat("age to ultimate         ", sprintf("%.4f", fit@cdf), " book",
+cat("to ultimate, exact      ", sprintf("%.4f", exact@cdf), "\n")
+cat("to ultimate, rounded    ", sprintf("%.4f", fit@cdf), " book",
     c("1.0966", "1.0282", "1.0003", "0.9799", "1.0000"), "\n")
 ```
 
@@ -476,11 +482,19 @@ cat("age to ultimate         ", sprintf("%.4f", fit@cdf), " book",
 all-year average, exact  1.0703 1.0380 1.0113 0.9898
 all-year, rounded links  1.0704 1.0380 1.0113 0.9898
 book all-year average    1.0704 1.0380 1.0113 0.9898
-excluding high and low   1.0665 1.0279 1.0208 0.9799  book 1.0665 1.0279 1.0208 0.9799
-age to ultimate          1.0966 1.0282 1.0003 0.9799 1.0000  book 1.0966 1.0282 1.0003 0.9799 1.0000
+high/low out, exact      1.0665 1.0279 1.0208 0.9799  n_links 4 3 2 1
+high/low out, rounded    1.0665 1.0279 1.0208 0.9799  book 1.0665 1.0279 1.0208 0.9799
+to ultimate, exact       1.0965 1.0281 1.0002 0.9799 1.0000
+to ultimate, rounded     1.0966 1.0282 1.0003 0.9799 1.0000  book 1.0966 1.0282 1.0003 0.9799 1.0000
 ```
 
-The selected factors and the factors to ultimate agree with the exhibit; the
+Dropping the highest and lowest leaves 4, 3, 2 and 1 of the 6, 5, 4 and 3 link
+ratios (`n_links`). The library's exact average agrees with the book's
+selection to four places at every age, but chained unrounded it gives factors
+to ultimate 1 lower in the fourth place at 15, 27 and 39 months (1.0965 against
+the book's 1.0966); chaining the rounded selection, as the book does,
+reproduces the exhibit. The selected factors and the factors to ultimate then
+agree with the exhibit; the
 last five accident years' factors (1.0000, 0.9799, 1.0003, 1.0282, 1.0966)
 are the development column of the indication in section 8. The 15-to-27
 straight average is 1.07035 on the rounded link ratios and prints as 1.0704;

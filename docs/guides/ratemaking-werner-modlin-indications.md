@@ -20,13 +20,15 @@ suite is `validation/tests/pricing.rs`.
 
 ## 1. The factors, recomputed
 
-The indications use the factors the first guide derives. This block
-recomputes them in one place, rounded to four places as the exhibits print
-them: Appendix A's on-level factors (from the book's printed cumulative rate
-level indices), its two-step premium trend, its development factors (the
-straight average of link ratios excluding the highest and lowest, chained to
-ultimate) and its two-step loss trend; and Appendix C's on-level factors and
-net trend (8.9% over trend lengths the book rounds to two places).
+The indications use the factors the first guide derives. This block recomputes
+them in one place, rounded to four places as the exhibits print them: Appendix
+A's on-level factors (from the book's printed cumulative rate level indices),
+its two-step premium trend, its development factors (the straight average of
+link ratios excluding the highest and lowest, `ChainLadder(average="simple",
+drop_high=1, drop_low=1)`, with the selection rounded to four places before it
+is chained to ultimate, as section 4 of the first guide explains) and its
+two-step loss trend; and Appendix C's on-level factors and net trend (8.9%
+over trend lengths the book rounds to two places).
 
 ```python
 from decimal import Decimal, ROUND_HALF_UP
@@ -80,8 +82,8 @@ ages = [15, 27, 39, 51, 63]
 tri = Triangle.from_long([2009 + i for col in columns for i in range(len(col))],
                          [a for a, col in zip(ages, columns) for _ in col],
                          {"reported": [float(x) for col in columns for x in col]})
-links = [[half_up(c1[i] / c0[i], 4) for i in range(len(c1))] for c0, c1 in zip(columns, columns[1:])]
-hi_lo = [half_up((sum(c) - max(c) - min(c)) / (len(c) - 2), 4) for c in links]
+# The straight average excluding the highest and lowest link ratio, selected to 4 places.
+hi_lo = [half_up(f, 4) for f in ChainLadder(average="simple", drop_high=1, drop_low=1).fit(tri, "reported").ldf]
 cdf = ChainLadder(ldf=dict(zip(ages, hi_lo)), ldf_kind="ldf").fit(tri, "reported").cdf
 a_development = [half_up(c, 4) for c in cdf][::-1]
 
@@ -426,11 +428,6 @@ not, and some are filed as issues for the lane that owns the code:
   written, earned, unearned and in-force amounts, the 24ths rule, the
   extension of exposures through a rating algorithm) and premium
   development. prospicio starts from aggregated figures.
-- **Development averages other than volume weighted, simple or regression**,
-  such as the straight average excluding the highest and lowest link ratio of
-  Appendix A, and averages over the latest n years: compute them and pass
-  them to `ChainLadder` as a selected pattern, as in section 1 here and
-  section 4 of the first guide (issue #339).
 - **Traditional risk classification** (chapter 9: univariate pure premium
   and loss ratio relativities, adjusted for distributional bias; Appendix E),
   **multivariate classification and GLMs** (chapter 10 and Appendix F),
@@ -466,13 +463,14 @@ applied, as in the code above, each printed figure is reproduced:
 | Table 6.12, 27-39 arithmetic average | 1.30 | 1.2932 | average of link ratios rounded to 2 places |
 | Table 6.13, ultimate losses | 14,095 | 14,093.7 | factors to ultimate rounded to 2 places |
 | Appendix A, 15-27 all-year average | 1.0704 | 1.0703 | link ratios rounded to 4 places |
+| Appendix A, 15-ultimate development factor | 1.0966 | 1.0965 | selected factors rounded to 4 places before chaining |
 | Appendix C, 2010 net trend factor | 1.7902 | 1.7907 | trend length rounded to 6.83 |
 | Table 12.1, 5% and 99% standard | 2,652 | 2,654 | z rounded to 2.575 |
 | Appendix A, total projected premium | 7,883,252 | 7,883,253.19 | sum of rounded rows |
 | Appendix B, weighted pure premium | 493.63 | 493.69 | credibility rounded to 79.5% |
 | Appendix B, non-modelled cat load | 29.11 | 29.28 | ratios rounded to 3 places |
 | Appendix C, credibility-weighted change | 41.6% | 41.57% | indication and Z rounded first (same printed tenth) |
-| Table 11.6, censored LAS(250K) | 121,621 | 121,620.4 | layers rounded to the dollar before adding |
+| Table 11.6, censored LAS(250K) | 121,621 | 121,620.5 | layers rounded to the dollar before adding |
 
 Separately, three slips in the book itself, none of which changes an
 indication: Appendix A's Premium Trend-3 footnote
