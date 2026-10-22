@@ -813,9 +813,9 @@ Opened in PR 3 (each built as the option closest to the existing bindings;
     but the gamma priors of `BayesBfNormalised` are independent across
     origins, so the layer's total ultimate is less uncertain a priori than a
     common share error makes it (with equal cv `c` at every origin the
-    total's prior cv is below `c`). The posterior is driven by the data, and in the
-    validation the predictive sd still rises with the share's cv, but the
-    widening is understated for the total. (a) As built, documented. (b) A
+    total's prior cv is below `c`). Independent priors therefore understate the
+    total's prior interval; as built, the posterior is driven by the data, and
+    in the validation the predictive sd still rises with the share's cv. (a) As built, documented. (b) A
     shared multiplier `s` on the layer exposure, with its own gamma prior, as
     a parameter of the model (a change to the sampler's model, not an
     adapter). *Recommendation: (a), with (b) if the total reserve's interval
@@ -824,7 +824,7 @@ Opened in PR 3 (each built as the option closest to the existing bindings;
    *Built 2026-10-22 (PR 5, branch `claude/excess-share-common`, issue #518): a parameter of `BayesBfNormalised` itself (`common_cv`, absent by default), the default of `LayerSharePrior`; see section 3. The total's **prior** interval is the wider one, by the closed form; the **posterior** total interval is narrower than PR 4's on GenIns, not wider, as the validation section reports.*
 
 Opened in PR 5 (each built as the option closest to the issue and this note;
-open, for the user):
+25 to 27 decided by the user on 2026-10-22):
 
 25. **A common share error needs a positive loss-ratio cv.** With `apriori_cv`
     0 every origin's ultimate would be the same multiple of its prior mean,
@@ -837,6 +837,7 @@ open, for the user):
     the default). (c) Represent `U_i = m_i s` as a model in which `alpha_i`
     is `log m_i + t`. *Recommendation: (a);* a loss ratio held as known is
     rare for a layer, and (c) is a second model.
+   *Decided 2026-10-22 (the user): (a) as built;* a common share error with `apriori_cv` 0 is an error.
 
 26. **The multiplier is a gamma, not a lognormal.** `s` has mean 1 and cv
     `share_cv`; both a gamma and a lognormal (`sigma^2 = log(1 + cv^2)`) match
@@ -847,9 +848,10 @@ open, for the user):
     (b) A lognormal, which is symmetric on the unconstrained scale. *Recommendation:
     (a);* the two differ only in the tails and the share's own distribution
     is not known to that detail.
+   *Decided 2026-10-22 (the user): (a) as built;* a gamma prior on `s`, not a lognormal.
 
 27. **The default total interval changes, and narrows.** Open decision 23(a)
-    expected the shared multiplier to widen the total's interval; on GenIns's
+    expected the shared multiplier to widen the total's interval (it widens the prior total and, where the data cannot identify `s`, the fitted one); on GenIns's
     layer the posterior total's sd is 0.97, 0.81 and 0.72 times PR 4's at
     share cvs 0.3, 0.6 and 1.2 (the prior total is 3.0 times as wide). The
     reason is pooling: the data identify `s` and tie every origin to it, which
@@ -865,6 +867,7 @@ open, for the user):
     for every origin or for none, and PR 4's wider intervals came from
     discarding what the ten origins say about each other. A user who wants
     the conservative PR 4 interval uses `PerOrigin`.
+   *Decided 2026-10-22 (the user): (a) as built;* `Common` stays the default. Under `Common` the prior total is wider, but the fitted (posterior) total is narrower than under independent per-origin priors once the data identify `s`, as on GenIns's layer; where they cannot (few origins, or all immature) the total stays wider.
 
 24. **The share's cv is an input.** The adapter takes a cv or a standard
     error of the share and does not derive it from a severity's parameter

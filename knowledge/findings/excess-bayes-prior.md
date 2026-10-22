@@ -59,9 +59,10 @@ sources:
   million against 2.01, 2.48 and 2.73 million. The ten origins identify `s`
   (sd about 0.08), after which each origin is held to `m_i s` with the loss
   ratio's own cv, where independent priors give each origin the whole marginal
-  cv and no way to learn from the others; the premise of #518, that
-  independent priors understate the total's interval, holds for the prior, not
-  for the posterior of a data-rich triangle. Against a known share the common
+  cv and no way to learn from the others. Independent priors understate the
+  total's prior interval and overstate its fitted (posterior) interval once the
+  data identify `s`; where they cannot (few origins, or all immature) the
+  common model's total stays wider. Against a known share the common
   error still widens the posterior sd by 65% (304,000 to 501,000), and then
   stops growing with the share's cv.
 * On a layer generated with a known wrong share (0.35 of paid where the prior

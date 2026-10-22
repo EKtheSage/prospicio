@@ -9,7 +9,9 @@
   the data update the share for every origin. The total's prior interval is
   about three times as wide as with independent priors, but its posterior
   interval is narrower on the test layer (the origins pool what they say about
-  the share), so layer fits with a share cv change by default. Pass
+  the share), so layer fits with a share cv change by default, and the default fitted total
+  interval narrows on well-developed triangles (where the data cannot identify
+  the share it stays wider). Pass
   `share_dependence="per_origin"` (R `share_dependence = "per_origin"`, Rust
   `ShareDependence::PerOrigin`) for the previous independent priors. A common
   share error needs `apriori_cv > 0`; `LayerSharePrior::model` returns a
