@@ -16,6 +16,7 @@ mod counts;
 mod credibility;
 mod discrete;
 mod distributions;
+mod excess;
 mod models;
 #[cfg(feature = "nn")]
 mod nn;
@@ -61,6 +62,7 @@ extendr_module! {
     use credibility;
     use discrete;
     use distributions;
+    use excess;
     use models;
     use nn;
     use normal;
