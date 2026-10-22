@@ -12,6 +12,13 @@ Knowledge files are in the repository's
 [`knowledge/`](https://github.com/EKtheSage/prospicio/tree/main/knowledge)
 bundle; issue numbers are on GitHub.
 
+## Start here
+
+[A first course](a-first-course.md) follows no single text: it is the page to
+read before the others, from a loss distribution to a priced book, with two
+worked decisions and a checklist. Its sources are the texts below, chiefly
+*Pricing Insurance Risk*, Monograph 15 and Clark.
+
 ## Pricing and capital
 
 | Source | Guides | Knowledge | Open issues |
