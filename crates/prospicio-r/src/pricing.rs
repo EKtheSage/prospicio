@@ -714,6 +714,32 @@ fn pricing_price(losses: Robj, assets: Robj, rate: Option<f64>, pricing: Robj) -
     Ok(price_list(&p))
 }
 
+/// The upfront premium of a cover whose reinstatement premium counts in
+/// its own price (#587).
+#[extendr]
+fn pricing_price_with_reinstatements(
+    losses: &[f64],
+    g: &[f64],
+    assets: Robj,
+    rate: Option<f64>,
+    pricing: Robj,
+) -> Result<List> {
+    let rule = premium_rule(rate, &pricing)?;
+    let assets = distortion_arg(&assets, "assets")?;
+    let r = risk_load::price_with_reinstatements(losses, g, &rule, &assets).map_err(to_r)?;
+    Ok(list!(
+        upfront = r.upfront,
+        expected_reinstatement_premium = r.expected_reinstatement_premium,
+        expected_premium = r.expected_premium(),
+        expected_loss = r.expected_loss,
+        margin = r.margin(),
+        capital = r.capital(),
+        return_on_capital = r.return_on_capital(),
+        net = price_list(&r.net),
+        iterations = r.iterations as f64
+    ))
+}
+
 /// Portfolio price: `list(total, allocated, standalone)`, the last two
 /// as lists of columns, one value per component.
 #[extendr]
@@ -1824,6 +1850,7 @@ extendr_module! {
     impl RiskProfile;
     fn pricing_severity_exposure_curve;
     fn pricing_price;
+    fn pricing_price_with_reinstatements;
     fn pricing_price_portfolio;
     fn pricing_ilf;
     fn pricing_layer_cv;

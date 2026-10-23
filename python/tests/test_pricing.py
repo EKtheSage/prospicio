@@ -1111,3 +1111,29 @@ def test_monthly_patterns_from_a_payment_pattern():
         100.0, 60, w, e, paid, P.CollateralRequirement({"outstanding": 1.0})
     )
     assert len(terms.run([0.7])) == 1
+
+
+def test_reinstatement_premium_in_its_own_price():
+    from prospicio.distributions import Sampled
+    from prospicio.pricing import price, price_with_reinstatements
+    from prospicio.risk import Distortion
+
+    x = [0.0, 1.0, 0.0, 3.0, 8.0, 0.5, 12.0, 0.0]
+    assets = Distortion.tvar(0.8)
+    plain = price(Sampled(x), assets, cost_of_capital=0.15)
+    c = price_with_reinstatements(x, [0.4] * 8, assets, cost_of_capital=0.15)
+    assert c.upfront == pytest.approx(plain.premium / 1.4, rel=1e-10)
+    g = [min(v / 10, 1.0) for v in x]
+    mean_g = sum(g) / 8
+    sundt = price_with_reinstatements(
+        x, g, assets, distortion=Distortion.proportional_hazard(1.0)
+    )
+    assert sundt.upfront == pytest.approx(sum(x) / 8 / (1 + mean_g), rel=1e-10)
+    r = price_with_reinstatements(x, g, assets, cost_of_capital=0.15)
+    assert r.upfront < plain.premium
+    assert r.return_on_capital == pytest.approx(0.15, rel=1e-9)
+    assert r.expected_premium == pytest.approx(r.upfront * (1 + mean_g))
+    assert r.net.premium == r.upfront
+    assert 0 < r.iterations < 200
+    with pytest.raises(ValueError):
+        price_with_reinstatements(x, [0.1] * 3, assets, cost_of_capital=0.15)

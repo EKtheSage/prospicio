@@ -617,8 +617,20 @@ underwriter builds from a risk-loaded price, as the Guides lane's
   refused. Such a tower's total can be quoted on simulated events
   (`Tower::apply` and `price`). Python `TowerQuote.technical`, R
   `tower_quote()`.
-- **Not yet:** a distortion price whose assets count the reinstatement
-  premium, `P = price(X − P g)`, is #587.
+- **Reinstatement premium in its own price (#587).** With `g` the
+  reinstatement premium per unit of upfront premium in each simulation,
+  the reinsurer's net outcome is `X − P g`, so its assets and its price
+  depend on `P`. `risk_load::price_with_reinstatements` solves
+  `P = price(X − P g)` under either rule. The gap `price(X − P g) − P`
+  falls as `P` rises (the price is monotone and translation invariant and
+  `g ≥ 0`), from `price(X)` at 0 to at most 0 at `price(X)`, so the root
+  is unique and is found by bisection to a relative `1e-12`. Checked
+  against the three closed forms: `g = 0` is `price`, a constant `g` is
+  `price(X) / (1 + g)`, and the identity distortion is Sundt's
+  `E[X] / (1 + E[g])`. At the solution the net outcome earns the rate
+  asked for. The quote's flat `reinstatement_rate` (PR A) stays the
+  simpler reading, where the assets are those of `X`. Python
+  `price_with_reinstatements`, R `price_with_reinstatements()`.
 
 Validated by identities (zero loads give the risk premium; the loads net
 back to it; at the technical premium the return is the rate asked for;
