@@ -6921,7 +6921,7 @@ class CompartmentalFit:
         Origin period of each component, those of the premium column.
         """
     @property
-    def outstanding(self, /) -> PredictiveDistribution | None:
+    def outstanding(self, /) -> PredictiveDistribution |None:
         """
         Posterior predictive outstanding (or incurred, the second response)
         of each future cell of the square, laid out as ``paid``; ``None``
@@ -7115,7 +7115,7 @@ class CompartmentalFits:
         segment's premium column.
         """
     @property
-    def outstanding(self, /) -> PredictiveDistribution | None:
+    def outstanding(self, /) -> PredictiveDistribution |None:
         """
         Posterior predictive outstanding (or incurred) of each future cell of
         every segment, laid out as ``paid``; ``None`` under
