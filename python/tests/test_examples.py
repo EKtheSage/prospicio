@@ -132,6 +132,8 @@ def test_one_year_view(monkeypatch, capsys):
 
     # The net view pays for the cover (#267): surplus premium less commission, the XL's deposit and each
     # year's reinstatement premium, so its mean exceeds the gross mean by premiums less recoveries.
+    assert_says(text, "the original business runs at a 60% loss ratio, and the treaty pays a 35% ceding commission")
+    assert (ns["original_loss_ratio"], ns["ceding_commission"]) == (0.60, 0.35)
     commission = ns["commission"]
     assert ns["surplus"].premium == pytest.approx(ns["profile"].expected_surplus_loss(2e6, 4.0) / 0.6, rel=1e-12)
     assert commission.mean() == pytest.approx(0.35 * ns["surplus"].premium, rel=1e-9)
