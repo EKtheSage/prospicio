@@ -1,0 +1,6 @@
+contract,cedent,kind,perils,attachment,limit,aggregate_deductible,aggregate_limit,share,reinstatements,reinstatement_rate,rate_on_line,ceding_commission,hours
+alder_cat_1,alder,occurrence_xl,all,30.0,40.0,0.0,,0.3,1,1.0,0.15,,72
+alder_cat_2,alder,occurrence_xl,all,70.0,100.0,0.0,,0.2,1,1.0,0.05,,72
+bracken_cat,bracken,occurrence_xl,all,25.0,50.0,0.0,,0.25,2,1.0,0.14,,72
+bracken_agg,bracken,aggregate_xl,CS+FL,,,40.0,30.0,0.25,,,0.06,,
+corran_qs,corran,quota_share,all,0.0,150.0,0.0,300.0,0.1,,,,0.25,72

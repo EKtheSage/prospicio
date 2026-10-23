@@ -1,0 +1,492 @@
+---
+title: "Property catastrophe 3: writing Larkspur's contracts in code"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+A catastrophe treaty is a function. It takes a year of the cedent's event
+losses and returns what the reinsurer pays. The terms of the contract decide
+the shape of that function: how pieces of one storm are added up, where each
+loss attaches, how much limit a year has, which losses it sees and how the
+recovery is shared. This page turns each of Larkspur Re's five contracts into
+code, cedent by cedent, from `examples/data/cat_book_contracts.csv`, checks the
+terms on small years you can follow by hand, and then runs them on the 2,000
+simulated years of the book. The story, the files and the notation are on
+[the overview](cat-0-overview.qmd); the loss tables are introduced on
+[page 1](cat-1-loss-tables.qmd).
+
+This is the R twin of the Python guide
+[`cat-3-contract-terms.md`](cat-3-contract-terms.md): the same sections, the
+same files and the same numbers. Each R chunk is followed by the text it
+prints, and `R/prospicio/tests/test-guides.R` requires each one to print
+exactly that text. Lists print in the Python page's form, so the two pages
+read the same.
+
+## 1. The book and its contracts
+
+The year event loss table (YELT) holds one row per cedent per event piece,
+with a day and an hour. `read_ylt()` does not read a time column yet
+(#594), so this page builds each cedent's event set by hand with
+`events_from_years()`: one vector of losses per year, the time of each loss as
+a fraction of the year, and the peril as a label.
+
+```{r}
+library(prospicio)
+
+# The data files, found from the repository root (CI) or from docs/guides (Quarto).
+find_data <- function(name, dir = getwd()) {
+  repeat {
+    path <- file.path(dir, "examples", "data", name)
+    if (file.exists(path)) return(path)
+    parent <- dirname(dir)
+    if (identical(parent, dir)) stop("examples/data/", name, " not found", call. = FALSE)
+    dir <- parent
+  }
+}
+read_book <- function(name) {
+  utils::read.csv(find_data(name), colClasses = "character", na.strings = character())
+}
+
+YELT <- utils::read.csv(find_data("cat_book_yelt.csv"), stringsAsFactors = FALSE)
+CONTRACTS <- read_book("cat_book_contracts.csv")
+rownames(CONTRACTS) <- CONTRACTS$contract
+CEDENTS <- read_book("cat_book_cedents.csv")
+rownames(CEDENTS) <- CEDENTS$cedent
+N_YEARS <- 2000
+
+# One cedent's years of losses, with times (fraction of the year) and peril labels.
+cedent_events <- function(cedent, perils = "all") {
+  keep <- YELT$cedent == cedent
+  if (perils != "all") keep <- keep & YELT$peril %in% strsplit(perils, "+", fixed = TRUE)[[1]]
+  rows <- YELT[keep, ]
+  year <- factor(rows$year, levels = seq_len(N_YEARS))
+  time <- ((rows$day - 1) * 24 + rows$hour) / 8760
+  ev <- events_from_years(unname(split(rows$loss, year)), times = unname(split(time, year)))
+  with_labels(ev, list(peril = unlist(split(rows$peril, year), use.names = FALSE)))
+}
+
+for (name in rownames(CONTRACTS)) {
+  k <- CONTRACTS[name, ]
+  cat(sprintf("%-12s %-14s perils %-6s share %-5s hours %s\n", name, k$kind, k$perils, k$share,
+              if (nzchar(k$hours)) k$hours else "-"))
+}
+```
+
+```text
+alder_cat_1  occurrence_xl  perils all    share 0.3   hours 72
+alder_cat_2  occurrence_xl  perils all    share 0.2   hours 72
+bracken_cat  occurrence_xl  perils all    share 0.25  hours 72
+bracken_agg  aggregate_xl   perils CS+FL  share 0.25  hours -
+corran_qs    quota_share    perils all    share 0.1   hours 72
+```
+
+Each row of the file becomes one `xol_layer()`. The amounts in the file are on
+a 100% basis and `share` is Larkspur's signed line, so the layer's `share`
+scales every recovery and the premium is the rate on line times the limit
+times the share. The function below is the only place the terms are read;
+nothing later on the page types a number from the table.
+
+```{r}
+num <- function(x) if (nzchar(x)) as.numeric(x) else NA_real_
+
+contract_layer <- function(k) {
+  share <- num(k$share)
+  if (k$kind == "occurrence_xl") {
+    limit <- num(k$limit)
+    return(xol_layer(k$contract, limit, num(k$attachment), share = share,
+                     premium = num(k$rate_on_line) * limit * share,
+                     reinstatement_rates = rep(num(k$reinstatement_rate), as.integer(k$reinstatements))))
+  }
+  if (k$kind == "aggregate_xl") {
+    agg_limit <- num(k$aggregate_limit)
+    return(xol_layer(k$contract, Inf, 0, share = share,
+                     aggregate_deductible = num(k$aggregate_deductible), aggregate_limit = agg_limit,
+                     premium = num(k$rate_on_line) * agg_limit * share))
+  }
+  premium <- share * as.numeric(CEDENTS[k$cedent, "cat_premium"])
+  with_ceding_commission(
+    xol_layer(k$contract, num(k$limit), 0, share = share, aggregate_limit = num(k$aggregate_limit),
+              premium = premium),
+    num(k$ceding_commission)
+  )
+}
+
+# Python's spelling of an infinite amount, so both pages print the same.
+amount <- function(x, width) if (is.infinite(x)) formatC("inf", width = width) else sprintf("%*.0f", width, x)
+
+LAYERS <- lapply(setNames(rownames(CONTRACTS), rownames(CONTRACTS)), function(n) contract_layer(CONTRACTS[n, ]))
+for (name in names(LAYERS)) {
+  l <- LAYERS[[name]]
+  cat(sprintf("%-12s %s xs %s  annual limit %s  premium %.3f\n", name, amount(l@limit, 6),
+              amount(l@attachment, 4), amount(l@aggregate_limit, 6), l@premium))
+}
+```
+
+```text
+alder_cat_1      40 xs   30  annual limit     80  premium 1.800
+alder_cat_2     100 xs   70  annual limit    200  premium 1.000
+bracken_cat      50 xs   25  annual limit    150  premium 1.750
+bracken_agg     inf xs    0  annual limit     30  premium 0.450
+corran_qs       150 xs    0  annual limit    300  premium 3.000
+```
+
+An occurrence layer with one paid reinstatement has an annual limit of twice
+its occurrence limit; the aggregate cover has no occurrence limit at all.
+
+## 2. What counts as one loss: the hours clause
+
+A storm can reach the loss table in pieces: a windstorm that crosses the coast
+over two days, or a run of hail cells. The hours clause says how many hours of
+losses make one **occurrence**. For a layer this matters a lot: two pieces of
+25 under 40 xs 30 recover nothing apart and 20 together.
+
+**The rule on this track.** `hours_clause()` starts a window at the first
+piece of a year, adds every piece that falls within that many hours of it
+into one occurrence, and starts the next window at the next piece. All perils
+are grouped together, with the single `hours` value the contracts file gives
+each contract. Both are simplifications. A real clause usually lets the
+cedent choose where each window starts, to its advantage, so a window fixed
+at the first piece can understate recoveries. Many clauses also define an
+occurrence per peril, with a longer window for flood (often 168 hours) than
+for windstorm. The chunk below checks how much the per-peril reading changes
+on this book.
+
+```{r}
+# Numbers and vectors printed as Python prints them, so both pages print the same.
+py_num <- function(v) {
+  v <- as.character(round(v, 4))
+  if (grepl("[.e]", v)) v else paste0(v, ".0")
+}
+py_list <- function(x) {
+  if (!length(x)) return("[]")
+  if (is.character(x)) return(paste0("['", paste(x, collapse = "', '"), "']"))
+  paste0("[", paste(vapply(x, py_num, character(1)), collapse = ", "), "]")
+}
+
+alder <- cedent_events("alder")
+alder_72 <- hours_clause(alder, 72)
+cat("pieces", sum(event_counts(alder)), " occurrences", sum(event_counts(alder_72)), "\n")
+cat("labels before", py_list(alder@label_dims), " after", py_list(alder_72@label_dims), "\n")
+
+ceded_mean <- function(layer, events) {
+  res <- aggregate(apply_tower(reinsurance_tower(list(layer)), events), keep = c("kind", "layer"))
+  mean(marginal(res, list(kind = "ceded", layer = layer@name)))
+}
+
+cat_1 <- LAYERS[["alder_cat_1"]]
+cat(sprintf("alder_cat_1 expected loss, pieces %.4f, 72 hours %.4f\n",
+            ceded_mean(cat_1, alder), ceded_mean(cat_1, alder_72)))
+```
+
+```text
+pieces 5391  occurrences 4238
+labels before ['peril']  after []
+alder_cat_1 expected loss, pieces 0.7778, 72 hours 0.8230
+```
+
+Grouping lifts the expected loss by about 6%. It also drops the labels: an
+occurrence made of pieces of two perils has no single peril. To group peril
+by peril, group each peril on its own, label it again, and merge the perils
+back into one set with `merge_event_sets()`, which keeps the labels and puts
+each year's occurrences in time order. Page 4 reuses this helper to split a
+program by peril.
+
+```{r}
+grouped_by_peril <- function(cedent, hours) {
+  out <- NULL
+  for (p in c("WS", "EQ", "FL", "CS")) {
+    g <- hours_clause(cedent_events(cedent, p), hours)
+    g <- with_labels(g, list(peril = rep(p, sum(event_counts(g)))))
+    out <- if (is.null(out)) g else merge_event_sets(out, g)
+  }
+  out
+}
+
+alder_72p <- grouped_by_peril("alder", 72)
+cat("occurrences, grouped peril by peril", sum(event_counts(alder_72p)), " labels",
+    py_list(alder_72p@label_dims), "\n")
+cat(sprintf("alder_cat_1 expected loss %.4f\n", ceded_mean(cat_1, alder_72p)))
+```
+
+```text
+occurrences, grouped peril by peril 4275  labels ['peril']
+alder_cat_1 expected loss 0.8229
+```
+
+A few more occurrences survive, because pieces of different perils that fall
+within 72 hours no longer join, and the expected loss barely moves on this
+book. So the track keeps the single all-perils clause for pricing, and uses
+the per-peril grouping only where it needs the peril labels.
+
+## 3. Alder's layers: occurrence excess of loss with reinstatements
+
+Each occurrence of size `x` recovers `min(max(x - a, 0), l)` from a layer
+`l xs a`. Over a year the recoveries add up until the annual limit is used,
+which is `l` times one plus the number of reinstatements. The reinsurer's
+part is its share of that. Paid reinstatements cost the cedent extra premium;
+page 5 prices them.
+
+`ceded_by_event()` shows the order. Take `alder_cat_1` (40 xs 30, 30%, one
+reinstatement, so 80 of annual limit) and a year of four occurrences: one
+below the attachment, one through the top of the layer, and two in the
+middle.
+
+```{r}
+year <- c(28, 110, 64, 95)
+line <- as.numeric(CONTRACTS["alder_cat_1", "share"])
+left <- cat_1@aggregate_limit
+cat(" loss  at 100%  limit left  Larkspur's line\n")
+recs <- ceded_by_event(cat_1, year)
+for (i in seq_along(year)) {
+  left <- left - recs[i] / line
+  cat(sprintf("%5.0f %8.1f %11.1f %16.2f\n", year[i], recs[i] / line, max(left, 0), recs[i]))
+}
+cat(sprintf("year: %.2f\n", ceded(cat_1, year)))
+```
+
+```text
+ loss  at 100%  limit left  Larkspur's line
+   28      0.0        80.0             0.00
+  110     40.0        40.0            12.00
+   64     34.0         6.0            10.20
+   95      6.0         0.0             1.80
+year: 24.00
+```
+
+The 95 would recover 40 on its own, but only 6 of the year's limit is left.
+The losses must be in time order, since the limit runs out on the last
+occurrences. The book's years already are: the file lists each year's pieces
+by `slot`, which is chronological.
+
+## 4. Corran's quota share: an event limit and an annual limit
+
+A plain quota share cedes a fixed share of every loss. Cat quota shares
+usually cap it: an event limit on each occurrence and an annual limit on the
+year. `corran_qs` cedes 10% with an event limit of 150 and an annual limit of
+300, both on a 100% basis. As a layer, that is 150 xs 0 at a 10% share with an
+annual limit of 300. In a year of 200 and 120 the first event is capped at 150,
+so the cover pays 10% of 270. `quota_share()` has no limits and pays 10% of
+320.
+
+```{r}
+qs <- LAYERS[["corran_qs"]]
+cat(py_num(ceded(qs, c(200, 120))), py_list(ceded_by_event(qs, c(200, 120))), "\n")
+cat(py_num(ceded(quota_share("uncapped", 0.1), c(200, 120))), "\n")
+```
+
+```text
+27.0 [15.0, 12.0]
+32.0
+```
+
+## 5. Bracken's aggregate cover, and the losses it sees
+
+The **subject losses** of a contract are the cedent's losses it applies to:
+its perils, grouped by its hours clause, before the contract's own terms.
+`bracken_agg` covers only convective storm and flood. The cleanest way to
+scope a contract to some perils is to leave the other perils out of the
+subject losses before the contract sees them. Here that happens in the data,
+with `cedent_events("bracken", "CS+FL")`.
+
+The library also splits results by label, but the split comes after ceding.
+Take a year with an earthquake of 25 and then a windstorm of 30 under 20 xs 10
+with an annual limit of 20. The earthquake recovers 15 and leaves 5 of limit
+for the windstorm. A windstorm-only treaty would have paid the windstorm 20.
+
+```{r}
+year <- with_labels(events_from_years(list(c(25, 30)), times = list(c(0.1, 0.2))),
+                    list(peril = c("EQ", "WS")))
+small <- xol_layer("20 xs 10", 20, 10, aggregate_limit = 20)
+split_res <- apply_tower(reinsurance_tower(list(small)), year)
+for (peril in c("EQ", "WS")) {
+  m <- mean(marginal(split_res, list(kind = "ceded", layer = "20 xs 10", peril = peril)))
+  cat(sprintf("%s share of the all-perils recovery %.1f\n", peril, m))
+}
+ws_only <- apply_tower(reinsurance_tower(list(small)), events_from_years(list(30), times = list(0.2)))
+ws_only <- aggregate(ws_only, keep = c("kind", "layer"))
+cat(sprintf("WS under a windstorm-only treaty %.1f\n",
+            mean(marginal(ws_only, list(kind = "ceded", layer = "20 xs 10")))))
+```
+
+```text
+EQ share of the all-perils recovery 15.0
+WS share of the all-perils recovery 5.0
+WS under a windstorm-only treaty 20.0
+```
+
+So a label split answers "how much of this treaty's recovery came from
+windstorm", not "what would a windstorm treaty pay". There is no function that
+filters an `event_set` by label or scopes a layer to some labels
+(#584).
+
+An aggregate cover looks at the year's total: `share * min(max(S - AD, 0), AL)`
+with `S` the sum of the covered losses, `AD` the aggregate deductible and `AL`
+the aggregate limit. In prospicio it is a layer with an infinite occurrence
+limit, no attachment, and the annual terms. `bracken_agg` is 30 xs 40 in the
+aggregate at 25%. A year of 10, 20 and 25 totals 55, so the cover pays a
+quarter of 15.
+
+```{r}
+agg <- LAYERS[["bracken_agg"]]
+cat(py_num(ceded(agg, c(10, 20, 25))), "\n")
+cat("event order", py_list(ceded_by_event(agg, c(10, 20, 25))), "\n")
+agg_pro_rata <- xol_layer("bracken_agg", Inf, 0, share = 0.25, aggregate_deductible = 40,
+                          aggregate_limit = 30, allocation = "pro_rata")
+cat("pro rata   ", py_list(ceded_by_event(agg_pro_rata, c(10, 20, 25))), "\n")
+```
+
+```text
+3.75
+event order [0.0, 0.0, 3.75]
+pro rata    [0.6818, 1.3636, 1.7045]
+```
+
+The annual figure is the same either way. The split by event differs: in
+event order the deductible eats the first losses and the third event carries
+all of the recovery, while `allocation = "pro_rata"` scales every event by the
+same factor. The split matters only when something downstream reads events,
+such as a later inuring stage (page 4).
+
+On the book, the cover sees Bracken's convective storm and flood losses only.
+
+```{r}
+bracken_csfl <- cedent_events("bracken", "CS+FL")
+annual <- total(total(bracken_csfl))@draws
+largest <- total(annual_maxima(bracken_csfl))@draws
+past <- which(annual > 40)
+cat(sprintf("mean CS+FL annual loss %.4f\n", sum(annual) / N_YEARS))
+cat(sprintf("years past the deductible %.4f, years that use the whole limit %.4f\n",
+            length(past) / N_YEARS, sum(annual >= 70) / N_YEARS))
+cat(sprintf("of the %d years past the deductible, %d have one loss above 40\n",
+            length(past), sum(largest[past] > 40)))
+cat(sprintf("bracken_agg expected loss %.4f, premium %.4f\n", ceded_mean(agg, bracken_csfl), agg@premium))
+```
+
+```text
+mean CS+FL annual loss 7.1642
+years past the deductible 0.0325, years that use the whole limit 0.0130
+of the 65 years past the deductible, 52 have one loss above 40
+bracken_agg expected loss 0.1621, premium 0.4500
+```
+
+The cover attaches in about one year in thirty. An aggregate cover is often
+sold to protect a cedent's earnings against a run of medium-sized events, but
+this one has no cap on what one event can contribute, so on this book it is
+mostly triggered by a single large flood or storm outbreak: in 52 of the 65
+years past the deductible, one loss alone is above it. A cedent that wants
+frequency protection adds an each-and-every-loss cap, which limits each
+event's contribution to the aggregate.
+
+## 6. All five contracts on the book
+
+With the subject losses chosen by perils and grouped by each contract's
+hours clause, every contract runs the same way. The loss ratio here is the
+expected ceded loss over the upfront premium, before reinstatement premium
+and commissions.
+
+```{r}
+subject <- function(k) {
+  e <- cedent_events(k$cedent, k$perils)
+  if (nzchar(k$hours)) hours_clause(e, as.numeric(k$hours)) else e
+}
+
+for (name in rownames(CONTRACTS)) {
+  l <- LAYERS[[name]]
+  el <- ceded_mean(l, subject(CONTRACTS[name, ]))
+  cat(sprintf("%-12s expected loss %7.4f  premium %6.3f  loss ratio %.3f\n", name, el, l@premium,
+              el / l@premium))
+}
+```
+
+```text
+alder_cat_1  expected loss  0.8230  premium  1.800  loss ratio 0.457
+alder_cat_2  expected loss  0.4163  premium  1.000  loss ratio 0.416
+bracken_cat  expected loss  0.6847  premium  1.750  loss ratio 0.391
+bracken_agg  expected loss  0.1621  premium  0.450  loss ratio 0.360
+corran_qs    expected loss  1.2025  premium  3.000  loss ratio 0.401
+```
+
+## 7. The contract year
+
+A treaty covers losses occurring in a period, or losses on policies written in
+a period (risks attaching). prospicio models that with a `timeline()` of
+accident months, an exposure matrix that says how much of each month each
+underwriting year carries, and a tower with a cover basis
+(`with_cover_basis()`). Under losses occurring, contract years start at month
+0 of the timeline. A small example shows a trap: an 18-month timeline with one
+underwriting year keeps an event in month 3 and drops one in month 16 without
+a word.
+
+```{r}
+ev <- events_from_years(list(c(100, 80)), times = list(c(3 / 18, 16.2 / 18)))
+lo <- with_cover_basis(reinsurance_tower(list(xol_layer("XL", 50, 20))), "losses_occurring")
+res <- apply_tower_timeline(lo, timeline(ev, 18), matrix(1, nrow = 1, ncol = 18))
+keys <- res@keys
+cat("[", paste(sprintf("('%s', '%s', %s)", keys$kind, keys$layer, keys$year), collapse = ", "), "]\n",
+    sep = "")
+cat(sprintf("gross seen %.1f\n", mean(marginal(res, list(kind = "gross", layer = "ground_up", year = 1)))))
+```
+
+```text
+[('gross', 'ground_up', 1), ('ceded', 'XL', 1), ('net', 'retained', 1)]
+gross seen 100.0
+```
+
+The second event, 80 in month 16, is in no contract year and so in no
+result. There is no way to say that a contract runs from, say, 1 July to
+30 June of dated events, or to be warned when an event falls outside every
+contract year (#586). Here the simulated years are already contract
+years, so the page needs none of this.
+
+## 8. Surplus and per-risk covers
+
+A surplus treaty cedes each risk in proportion to how far its sum insured
+exceeds a retention, and a per-risk excess of loss attaches on each risk
+rather than each event. Both need losses by risk, which a catastrophe event
+table does not have. `surplus_treaty()` and risk profiles are covered in
+[`reinsurance-price.md`](reinsurance-price.md), a Python guide. What the
+library lacks for a cat program is a per-risk layer with an event limit (a
+cap on the sum of per-risk recoveries from one event) and a per-risk layer
+inuring to a cat layer, so the cat layer sees each event net of the per-risk
+recoveries (#585).
+
+## What is missing
+
+Several common cat terms have no direct form in the library:
+
+- a franchise deductible, which pays the whole loss once it passes the
+  deductible;
+- an nth-event cover, which pays only the second (or third) occurrence of a
+  year;
+- a top-and-drop layer, which sits on top of a program and drops down when
+  the lower layers are exhausted;
+- index or parametric triggers and industry loss warranties, which pay on an
+  industry figure or a physical measure rather than the cedent's loss.
+
+Each can be built by hand from `ceded_by_event()` or from the event losses,
+but none is an `xol_layer()` setting (#591; parametric and index
+triggers for cat bonds are also part of #570). A no-claims bonus, which page 5
+approximates with a sliding scale, is #592. The earlier sections name
+the other gaps: a time column for `read_ylt()` (#594), filtering by
+label (#584), the contract year (#586) and per-risk covers
+in a cat program (#585).
+
+## In Python
+
+The Python guide, [cat-3-contract-terms.md](cat-3-contract-terms.md), builds
+the same contracts with `Layer`, `Layer.quota_share`,
+`Layer.with_ceding_commission`, `EventSet.grouped`, `EventSet.merge`,
+`Layer.ceded_by_event`, `Tower.apply`, `Timeline` and `Tower.apply_timeline`.
+
+## Further reading
+
+Page 4, [programs](cat-4-programs.qmd), stacks these contracts into programs.
+[reinsurance.dev](https://reinsurance.dev) by Oliver Baltzer is another
+introduction to property catastrophe reinsurance.
