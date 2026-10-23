@@ -969,6 +969,11 @@ impl MackBootstrap {
     /// and links, and the tail each simulation draws.
     pub(crate) fn model(&self, segment: &Segment) -> Result<(MackBootstrapSegment, MackDraw)> {
         self.development.reject_geometric("Mack's bootstrap")?;
+        if segment.is_latest_diagonal_only() {
+            return Err(Error::LatestDiagonalOnly {
+                method: "Mack's bootstrap",
+            });
+        }
         for o in 0..segment.n_origins {
             let (last, _) = segment.latest(o)?;
             for d in 0..=last {

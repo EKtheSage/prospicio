@@ -901,6 +901,11 @@ pub(crate) fn prepare_selected(
     exclusions: Exclusions,
 ) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
     let (no, nd) = (segment.n_origins, segment.n_dev);
+    if segment.is_latest_diagonal_only() {
+        return Err(Error::LatestDiagonalOnly {
+            method: "the ODP bootstrap",
+        });
+    }
     let development = exclusions.development(pattern);
     let kept = development.kept_mask(segment)?;
     let chain_ladder = ChainLadder { tail, development }.fit_segment(segment, ages)?;
