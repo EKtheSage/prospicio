@@ -114,3 +114,8 @@
   (`timeline()`, `timeline_from_years()`, `timeline_years()`,
   `uniform_exposure()`, `with_cover_basis()`, `apply_tower_timeline()`)
   (#489).
+- Interlocking contracts under risks attaching (`Tower::interlocking`,
+  off by default): an event that several underwriting years write cuts
+  each year's contract limits by that year's share of the event; a tower
+  with interlocking is JSON format version 6 (Rust, Python
+  `Tower.with_interlocking`, R `with_interlocking()`).

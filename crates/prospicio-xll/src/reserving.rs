@@ -35,7 +35,7 @@ pub fn triangle(grid: &Grid) -> Result<Triangle> {
 }
 
 /// The measure name of an exposure column inside the triangle.
-const EXPOSURE: &str = "exposure";
+pub(crate) const EXPOSURE: &str = "exposure";
 
 /// The triangle laid out in `grid`, with `exposure` (one value per origin)
 /// as a second measure on every observed cell of its origin when given.
@@ -45,11 +45,7 @@ fn triangle_with(grid: &Grid, exposure: Option<&[f64]>) -> Result<Triangle> {
 
 /// The triangle laid out in `grid`, of cumulative values or, with
 /// `cumulative` false, of incremental ones.
-pub(crate) fn triangle_of(
-    grid: &Grid,
-    exposure: Option<&[f64]>,
-    cumulative: bool,
-) -> Result<Triangle> {
+pub fn triangle_of(grid: &Grid, exposure: Option<&[f64]>, cumulative: bool) -> Result<Triangle> {
     if grid.rows < 1 || grid.columns < 2 {
         return Err("the triangle needs at least two development columns".into());
     }
@@ -815,7 +811,7 @@ fn number_or(grid: &Grid, name: &str, default: f64) -> Result<f64> {
 }
 
 /// The triangle and exposure arguments of an expected-loss method.
-fn exposed_triangle(triangle_arg: &Grid, exposure_arg: &Grid) -> Result<Triangle> {
+pub(crate) fn exposed_triangle(triangle_arg: &Grid, exposure_arg: &Grid) -> Result<Triangle> {
     let e = exposure(exposure_arg, triangle_arg.rows)?;
     triangle_with(triangle_arg, Some(&e))
 }

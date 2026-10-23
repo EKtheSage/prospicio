@@ -4195,6 +4195,9 @@ source = { editable = "." }
 dev = [
     { name = "lightgbm", version = "4.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "lightgbm", version = "4.7.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "matplotlib", version = "3.11.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "maturin" },
     { name = "nbstripout", version = "0.8.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "nbstripout", version = "0.9.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -4230,6 +4233,7 @@ examples = [
 [package.metadata.requires-dev]
 dev = [
     { name = "lightgbm" },
+    { name = "matplotlib" },
     { name = "maturin", specifier = ">=1.7,<2" },
     { name = "nbstripout" },
     { name = "pandas" },
