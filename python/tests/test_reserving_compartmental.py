@@ -128,15 +128,56 @@ def test_settings_and_defaults():
         Compartmental(GM, n_sims=0)
 
 
-@pytest.mark.parametrize("setting", [
-    dict(fitted="paid_only"),
-    dict(fitted="incurred_only"),
-])
-def test_settings_not_yet_built(tri, setting):
-    m = Compartmental(GM, **setting)  # accepted and named
-    assert getattr(m, next(iter(setting))) == next(iter(setting.values()))
-    with pytest.raises(ValueError, match="not yet built"):
+@pytest.mark.parametrize("fitted", ["paid_only", "incurred_only"])
+def test_one_response_needs_ordered_rates(tri, fitted):
+    m = Compartmental(GM, fitted=fitted)  # accepted and named
+    assert m.fitted == fitted
+    with pytest.raises(ValueError, match="needs rate_order Ordered"):
         m.fit(tri, "paid", "premium", incurred="incurred")
+
+
+def test_paid_only(tri):
+    # Paid alone: the second column is not read, the fit has one sigma and
+    # no outstanding cells.
+    short = dict(chains=2, tune=200, draws=200, n_sims=200, seed=3)
+    m = Compartmental(GM, fitted="paid_only", rate_order="ordered", **short)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        a = m.fit(tri, "paid", "premium")
+        b = m.fit(tri, "paid", "premium", incurred="incurred")
+    assert a.outstanding is None
+    with pytest.raises(ValueError, match="no outstanding cells"):
+        a.outstanding_frame()
+    assert a.reserves.mean() == b.reserves.mean()  # the column is not read
+    assert dict(a.reserves.provenance()["parameters"])["outstanding"] == "not read"
+    names = a.parameter_names
+    assert names[:5] == ["k_er", "k_p", "RLR", "RRF", "sigma_pd"]
+    assert "sigma_os" not in names and "log_sigma_os" not in names
+    assert a.rate_swaps == 0
+    # Stan: total reserve 176,357 (sd 9,577).
+    assert a.reserves.mean() == pytest.approx(176_357, rel=0.05)
+    by = a.loo_by_type()
+    assert by["n_outstanding"] == 0 and by["elpd_outstanding"] == 0.0
+    assert len(a.loo().pointwise) == 45
+
+
+def test_incurred_only(tri):
+    # Incurred alone: the paid column supplies the latest paid only, and the
+    # future paid cells are expected values.
+    short = dict(chains=2, tune=200, draws=200, n_sims=200, seed=3)
+    m = Compartmental(GM, fitted="incurred_only", rate_order="ordered", **short)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        a = m.fit(tri, "paid", "premium", incurred="incurred")
+    assert a.outstanding is not None and len(a.outstanding.components()) == 55
+    names = a.parameter_names
+    assert names[:5] == ["k_er", "k_p", "RLR", "RRF", "sigma_os"]
+    assert "sigma_pd" not in names
+    assert a.latest_paid[0] > 0
+    # Stan: total reserve 219,074 (sd 10,017).
+    assert a.reserves.mean() == pytest.approx(219_074, rel=0.05)
+    by = a.loo_by_type()
+    assert by["n_outstanding"] == 45 and by["elpd_paid"] == 0.0
 
 
 def test_paid_and_incurred(tri):

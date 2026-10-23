@@ -117,10 +117,28 @@ pub enum Fitted {
     /// are observed. The fit's `outstanding` distribution then holds the
     /// future incurred cells.
     PaidAndIncurred,
-    /// Paid alone: not yet built ([`Error::Bayes`]); from paid alone only
-    /// `RLR × RRF` is identified (decision 2).
+    /// Paid alone (decision 12), cumulative or incremental, under either
+    /// likelihood and scale. It needs [`RateOrder::Ordered`] (an
+    /// [`Error::Bayes`] under [`RateOrder::Free`]): from one response the
+    /// means are invariant under the rate swap, and from paid alone only
+    /// `RLR × RRF` and the pair of rates are identified, so the priors on
+    /// `RLR` and `RRF` carry their split. The second column of the fit is
+    /// not read, and the model has one `σ` (paid's, `sigma_pd`). The fit
+    /// has no outstanding distribution
+    /// ([`CompartmentalFit::outstanding`] is `None`): the outstanding
+    /// depends on `RLR` alone, which only its prior pins.
     PaidOnly,
-    /// Incurred alone: not yet built ([`Error::Bayes`]).
+    /// Incurred alone (decision 12): each incurred cell's mean as under
+    /// [`PaidAndIncurred`](Self::PaidAndIncurred), the second column giving
+    /// the incurred as there. It needs [`RateOrder::Ordered`] as
+    /// [`PaidOnly`](Self::PaidOnly) does. The model has one `σ` (the
+    /// incurred's, `sigma_os`). The paid column is still read, for each
+    /// origin's latest paid only: the reserve is the expected paid at the
+    /// last age (from the latent paid path `RLR_i RRF_i PD(t)`, which the
+    /// late incurred cells pin) less the latest paid, and the future paid
+    /// cells are those expected values, without observation noise, since no
+    /// paid cell is fitted. The fit's `outstanding` holds the future
+    /// incurred cells, drawn with the incurred `σ`.
     IncurredOnly,
 }
 
@@ -576,8 +594,9 @@ fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
 /// ([`model_2`](Self::model_2) sets the log-normal likelihood on loss
 /// ratios with incremental paid and a longer, finer sampler).
 ///
-/// [`fitted`](Self::fitted) takes paid and outstanding only, for now; any
-/// other value is an [`Error::Bayes`] saying it is not yet built.
+/// [`fitted`](Self::fitted) chooses the responses: paid and outstanding
+/// (the default), paid and incurred, or one of them alone, which needs
+/// [`RateOrder::Ordered`] (decision 12).
 ///
 /// ```
 /// use prospicio_bayes::nuts::Sampler;
@@ -649,8 +668,7 @@ pub struct Compartmental {
     pub scale: Scale,
     /// Cumulative or incremental paid.
     pub paid_response: PaidResponse,
-    /// The responses fitted: [`PaidAndOutstanding`](Fitted::PaidAndOutstanding)
-    /// only, for now.
+    /// The responses fitted ([`Fitted`]).
     pub fitted: Fitted,
     /// How the rates are kept apart.
     pub rate_order: RateOrder,
@@ -732,10 +750,13 @@ impl Compartmental {
         }
     }
 
-    /// Fits paid and outstanding of a single-segment cumulative triangle
+    /// Fits paid and outstanding (or the responses [`fitted`](Self::fitted)
+    /// names) of a single-segment cumulative triangle
     /// with premium from its `premium` column (the latest value per origin).
-    /// The fit's origins are the premium column's; an origin with no paid
-    /// or outstanding cell is drawn from the population. Failed diagnostics
+    /// The fit's origins are the premium column's; an origin with no
+    /// fitted cell is drawn from the population. Under
+    /// [`Fitted::PaidOnly`] `outstanding` is not read (any value will do).
+    /// Failed diagnostics
     /// do not fail the fit: they are warnings in
     /// [`CompartmentalFit::diagnostics`], as is any posterior draw with
     /// `k_er <= k_p` under [`RateOrder::Free`].
@@ -804,11 +825,19 @@ impl Compartmental {
 
         let mut hasher = InputHasher::new();
         hasher.str(paid);
-        hasher.str(outstanding_name(outstanding));
+        if self.fitted != Fitted::PaidOnly {
+            hasher.str(outstanding_name(outstanding));
+        }
         hasher.str(premium);
         hasher.f64s(&data.premium);
         for c in &model.cells {
             hasher.f64s(&[c.origin as f64, c.t, c.y, f64::from(u8::from(c.paid))]);
+        }
+        if !model.response.paid {
+            // The paid column gives each origin's latest paid only.
+            for l in &data.latest_paid {
+                hasher.f64s(&l.map_or([-1.0, 0.0], |(k, v)| [k as f64, v]));
+            }
         }
         let provenance = self.provenance(paid, outstanding, premium, hasher);
 
@@ -868,12 +897,16 @@ impl Compartmental {
             paid_draws,
             with_output("paid"),
         )?;
-        let os_pd = PredictiveDistribution::from_draws(
-            vec!["origin".into(), "age".into()],
-            cell_keys(&future.outstanding),
-            os_draws,
-            with_output("outstanding"),
-        )?;
+        let os_pd = if model.response.second {
+            Some(PredictiveDistribution::from_draws(
+                vec!["origin".into(), "age".into()],
+                cell_keys(&future.outstanding),
+                os_draws,
+                with_output("outstanding"),
+            )?)
+        } else {
+            None
+        };
         let ultimate_loss_ratio = model.mean_ultimate_loss_ratios(&posterior);
         Ok(CompartmentalFit {
             origins: data.origins.clone(),
@@ -972,7 +1005,7 @@ impl Compartmental {
         for s in &fitted.fits {
             let f = &s.fit;
             let m = f.reserves.n_components();
-            let len = m + f.paid.n_components() + f.outstanding.n_components();
+            let len: usize = f.parts().iter().map(|p| p.n_components()).sum();
             ranges.push(width..width + len);
             ranked.push(width..width + m);
             width += len;
@@ -980,7 +1013,7 @@ impl Compartmental {
         let mut rows = Vec::with_capacity(self.n_sims * width);
         for i in 0..self.n_sims {
             for s in &fitted.fits {
-                for part in [&s.fit.reserves, &s.fit.paid, &s.fit.outstanding] {
+                for part in s.fit.parts() {
                     let n = part.n_components();
                     rows.extend_from_slice(&part.draw_matrix()[i * n..(i + 1) * n]);
                 }
@@ -993,7 +1026,7 @@ impl Compartmental {
             let f = &mut s.fit;
             let mut start = range.start;
             let mut rebuilt = Vec::with_capacity(3);
-            for part in [&f.reserves, &f.paid, &f.outstanding] {
+            for part in f.parts() {
                 let n = part.n_components();
                 let draws = rows
                     .chunks_exact(width)
@@ -1008,14 +1041,17 @@ impl Compartmental {
                 start += n;
             }
             let mut rebuilt = rebuilt.into_iter();
-            f.reserves = rebuilt.next().expect("three parts");
-            f.paid = rebuilt.next().expect("three parts");
-            f.outstanding = rebuilt.next().expect("three parts");
+            f.reserves = rebuilt.next().expect("the reserves");
+            f.paid = rebuilt.next().expect("the paid cells");
+            // The future outstanding (or incurred) cells, when fitted.
+            f.outstanding = rebuilt.next();
         }
 
         let mut hasher = InputHasher::new();
         hasher.str(paid);
-        hasher.str(outstanding_name(outstanding));
+        if self.fitted != Fitted::PaidOnly {
+            hasher.str(outstanding_name(outstanding));
+        }
         hasher.str(premium);
         for (label, s) in fitted.iter() {
             hasher.str(&label.to_string());
@@ -1634,21 +1670,28 @@ impl Compartmental {
             likelihood: self.likelihood,
             loss_ratio: self.scale == Scale::LossRatio,
             incremental: self.paid_response == PaidResponse::Incremental,
-            incurred: self.fitted == Fitted::PaidAndIncurred,
+            incurred: matches!(self.fitted, Fitted::PaidAndIncurred | Fitted::IncurredOnly),
+            paid: self.fitted != Fitted::IncurredOnly,
+            second: self.fitted != Fitted::PaidOnly,
         }
     }
 
     fn validate(&self) -> Result<()> {
-        let not_yet = |what: &str| {
-            Err(Error::Bayes(format!(
-                "{what} is not yet built; this release fits paid and outstanding together"
-            )))
+        let one = match self.fitted {
+            Fitted::PaidAndOutstanding | Fitted::PaidAndIncurred => None,
+            Fitted::PaidOnly => Some("paid"),
+            Fitted::IncurredOnly => Some("incurred"),
         };
-        match self.fitted {
-            Fitted::PaidAndOutstanding => {}
-            Fitted::PaidAndIncurred => {}
-            Fitted::PaidOnly => return not_yet("fitting paid alone"),
-            Fitted::IncurredOnly => return not_yet("fitting incurred alone"),
+        if let Some(what) = one
+            && self.rate_order == RateOrder::Free
+        {
+            return Err(Error::Bayes(format!(
+                "fitting {what} alone needs rate_order Ordered: from one response the means \
+                 are unchanged by the rate swap (k_er, k_p, RLR, RRF) -> (k_p, k_er, \
+                 RLR k_er / k_p, RRF k_p / k_er), and from paid alone only RLR x RRF is \
+                 identified, so under free rates the posterior has two modes the data cannot \
+                 tell apart (design note decisions 2 and 12); set rate_order to Ordered"
+            )));
         }
         self.validate_priors()?;
         if self.n_sims == 0 {
@@ -1700,7 +1743,14 @@ impl Compartmental {
             .param("n_sims", self.n_sims)
             .param("seed", self.seed)
             .param("paid", paid)
-            .param("outstanding", format!("{outstanding:?}"))
+            .param(
+                "outstanding",
+                if self.fitted == Fitted::PaidOnly {
+                    "not read".to_string()
+                } else {
+                    format!("{outstanding:?}")
+                },
+            )
             .param("premium", premium)
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"))
             .input_hash(hasher.finish())
@@ -1751,7 +1801,9 @@ pub struct CompartmentalFit {
     /// `tau_ker`, `tau_kp`) on the `o` scale, `rho` (and `tau_dev_ker`,
     /// `tau_dev_kp`, `tau_dev_RLR`, `tau_dev_RRF`), `log_sigma_os` and
     /// `log_sigma_pd`. Each name in parentheses is there only when the
-    /// priors have that effect.
+    /// priors have that effect. With one response fitted there is one
+    /// `sigma` and one `log_sigma`: `sigma_pd` under [`Fitted::PaidOnly`],
+    /// `sigma_os` (the incurred's) under [`Fitted::IncurredOnly`].
     pub posterior: PosteriorDraws,
     /// R-hat, ESS and divergences, with warnings for failed thresholds and
     /// (under [`RateOrder::Free`]) for draws with `k_er <= k_p`.
@@ -1772,11 +1824,15 @@ pub struct CompartmentalFit {
     pub reserves: PredictiveDistribution,
     /// Posterior predictive cumulative paid of each future cell of the square
     /// (after each origin's latest paid), dimensions `origin` and `age`
-    /// (months), with the same simulations as the reserves.
+    /// (months), with the same simulations as the reserves. Under
+    /// [`Fitted::IncurredOnly`] no paid cell is fitted and each value is
+    /// the expected paid given the draw, without observation noise.
     pub paid: PredictiveDistribution,
-    /// Posterior predictive outstanding of each future cell of the square
-    /// (after each origin's latest outstanding), the same layout.
-    pub outstanding: PredictiveDistribution,
+    /// Posterior predictive outstanding (the incurred, when it is the second
+    /// response) of each future cell of the square (after each origin's
+    /// latest one), the same layout; `None` under [`Fitted::PaidOnly`],
+    /// which fits no second response.
+    pub outstanding: Option<PredictiveDistribution>,
     /// Each origin's posterior mean ultimate loss ratio `RLR_i RRF_i`, at a
     /// zero development effect (for an origin drawn from the population, the
     /// mean over its effect too). The model's ultimate, without process
@@ -1816,8 +1872,9 @@ pub struct CompartmentalFits {
     /// `origin` and `age` (months), from the same simulations as
     /// [`reserves`](Self::reserves).
     pub paid: PredictiveDistribution,
-    /// The future outstanding of every segment, the same layout.
-    pub outstanding: PredictiveDistribution,
+    /// The future outstanding (or incurred) of every segment, the same
+    /// layout; `None` under [`Fitted::PaidOnly`].
+    pub outstanding: Option<PredictiveDistribution>,
 }
 
 impl CompartmentalFits {
@@ -1860,10 +1917,20 @@ impl CompartmentalFits {
                 p.param("output", output),
             )?)
         };
+        // Every segment has the same settings, so all or none fit a second
+        // response.
+        let outstanding = if segments.fits[0].fit.outstanding.is_some() {
+            Some(joint(
+                |f| f.outstanding.as_ref().expect("every segment fits it"),
+                "outstanding",
+            )?)
+        } else {
+            None
+        };
         Ok(Self {
             reserves: joint(|f| &f.reserves, "reserves")?,
             paid: joint(|f| &f.paid, "paid")?,
-            outstanding: joint(|f| &f.outstanding, "outstanding")?,
+            outstanding,
             segments,
         })
     }
@@ -1892,7 +1959,8 @@ impl CompartmentalFits {
         Ok(self.stack(tables.collect::<Result<_>>()?))
     }
 
-    /// The same for [`outstanding`](Self::outstanding).
+    /// The same for [`outstanding`](Self::outstanding); an
+    /// [`Error::Bayes`] under [`Fitted::PaidOnly`].
     pub fn outstanding_table(&self) -> Result<FitTable> {
         let tables = self.segments.fits.iter().map(|s| s.fit.outstanding_table());
         Ok(self.stack(tables.collect::<Result<_>>()?))
@@ -2227,9 +2295,25 @@ impl CompartmentalFit {
         cell_table(&self.paid)
     }
 
-    /// The same for [`outstanding`](Self::outstanding).
+    /// The same for [`outstanding`](Self::outstanding); an
+    /// [`Error::Bayes`] under [`Fitted::PaidOnly`], which fits no second
+    /// response.
     pub fn outstanding_table(&self) -> Result<FitTable> {
-        cell_table(&self.outstanding)
+        match &self.outstanding {
+            Some(outstanding) => cell_table(outstanding),
+            None => Err(Error::Bayes(
+                "a fit of paid alone (Fitted::PaidOnly) has no outstanding cells".into(),
+            )),
+        }
+    }
+
+    /// The reserves, the future paid cells and, when fitted, the future
+    /// cells of the second response: the parts of a segment's row in
+    /// [`Compartmental::fit_segments`].
+    fn parts(&self) -> Vec<&PredictiveDistribution> {
+        let mut parts = vec![&self.reserves, &self.paid];
+        parts.extend(&self.outstanding);
+        parts
     }
 }
 
@@ -2313,6 +2397,10 @@ struct Data {
     latest_paid: Vec<Option<(usize, f64)>>,
     /// Each origin's latest observed outstanding age index.
     latest_outstanding: Vec<Option<usize>>,
+    /// Whether the second response is fitted (all but
+    /// [`Fitted::PaidOnly`]); without it the square has no future
+    /// outstanding cells.
+    second: bool,
 }
 
 /// The future cells of the square: `(origin, age index)` of each paid and
@@ -2379,9 +2467,12 @@ impl Data {
             Ok(out)
         };
         let paid_cells = cells_of(&paid_segment, paid)?;
-        let incurred = fitted == Fitted::PaidAndIncurred;
+        let incurred = matches!(fitted, Fitted::PaidAndIncurred | Fitted::IncurredOnly);
+        let second = fitted != Fitted::PaidOnly;
         let paid_at = |i: usize, k: usize| paid_cells.iter().find(|c| c.0 == i && c.1 == k);
         let os_cells = match outstanding {
+            // Paid alone: the second column is not read.
+            _ if !second => Vec::new(),
             // Incurred is outstanding plus paid where both are observed.
             Outstanding::Column(column) if incurred => {
                 cells_of(&triangle.segment(column)?, column)?
@@ -2402,10 +2493,10 @@ impl Data {
                     .collect()
             }
         };
-        if os_cells.is_empty() {
+        if second && os_cells.is_empty() {
             return Err(Error::Bayes(format!(
                 "column {} gives no {} cell; the model needs the second response's column \
-                 (from paid alone only RLR x RRF is identified)",
+                 (or Fitted::PaidOnly, with ordered rates)",
                 outstanding_name(outstanding),
                 if incurred { "incurred" } else { "outstanding" }
             )));
@@ -2427,6 +2518,7 @@ impl Data {
             paid: paid_cells,
             latest_paid: Vec::new(),
             latest_outstanding: Vec::new(),
+            second,
         };
         data.set_latest();
         Ok(data)
@@ -2482,7 +2574,7 @@ impl Data {
             }
         }
         let mut outstanding = Vec::new();
-        for i in 0..n {
+        for i in (0..n).filter(|_| self.second) {
             let from = self.latest_outstanding[i].map_or(0, |k| k + 1);
             for k in from..self.n_ages {
                 outstanding.push((i, k));
@@ -2506,6 +2598,11 @@ struct Response {
     incremental: bool,
     /// The second response is incurred (else outstanding).
     incurred: bool,
+    /// The paid cells are fitted (all but [`Fitted::IncurredOnly`]).
+    paid: bool,
+    /// The second response's cells are fitted (all but
+    /// [`Fitted::PaidOnly`]).
+    second: bool,
 }
 
 impl Response {
@@ -2515,6 +2612,8 @@ impl Response {
         loss_ratio: false,
         incremental: false,
         incurred: false,
+        paid: true,
+        second: true,
     };
     /// Their model 2: log-normal on loss ratios, incremental paid.
     const MODEL_2: Self = Self {
@@ -2522,10 +2621,36 @@ impl Response {
         loss_ratio: true,
         incremental: true,
         incurred: false,
+        paid: true,
+        second: true,
     };
 
     fn log_normal(self) -> bool {
         self.likelihood == CompartmentalLikelihood::LogNormal
+    }
+
+    /// Whether the cells of a type (`paid`, else the second response) are
+    /// fitted.
+    fn fits(self, paid: bool) -> bool {
+        if paid { self.paid } else { self.second }
+    }
+
+    /// The fitted types in the order of their `log σ` in `theta` and in a
+    /// natural-scale draw: the second response's (`false`), then paid's
+    /// (`true`), each only when fitted.
+    fn sigma_types(self) -> impl Iterator<Item = bool> {
+        [false, true].into_iter().filter(move |&p| self.fits(p))
+    }
+
+    /// The number of `log σ`: one per fitted type.
+    fn n_sigma(self) -> usize {
+        usize::from(self.paid) + usize::from(self.second)
+    }
+
+    /// The position among the `log σ` of a fitted type's, `None` for a type
+    /// not fitted.
+    fn sigma_slot(self, paid: bool) -> Option<usize> {
+        self.fits(paid).then(|| usize::from(paid && self.second))
     }
 }
 
@@ -2614,8 +2739,12 @@ struct Layout {
     z_rate: [Option<usize>; 2],
     /// The first `z` of the development effects on each parameter.
     z_dev: [Option<usize>; 4],
-    /// `log σ_OS`; `log σ_PD` follows.
+    /// The first `log σ`, one per fitted type ([`Response::sigma_types`]):
+    /// `log σ_OS` then `log σ_PD` with both fitted.
     log_sigma0: usize,
+    /// The number of `log σ` (and of `σ` after the four population values
+    /// of a natural-scale draw).
+    n_sigma: usize,
     /// In a natural-scale draw: the first origin value of each parameter.
     nat_origin: [Option<usize>; 4],
     /// The first development effect (on the `o` scale) of each parameter.
@@ -2625,12 +2754,17 @@ struct Layout {
     nat_tau_rate: [Option<usize>; 2],
     nat_rho: usize,
     nat_tau_dev: [Option<usize>; 4],
-    /// `log_sigma_os`; `log_sigma_pd` follows.
+    /// The first `log_sigma`, as in `theta`.
     nat_log_sigma: usize,
 }
 
 impl Layout {
-    fn new(priors: &CompartmentalPriors, n_levels: usize, n_dev_levels: usize) -> Self {
+    fn new(
+        priors: &CompartmentalPriors,
+        n_levels: usize,
+        n_dev_levels: usize,
+        n_sigma: usize,
+    ) -> Self {
         let rate = priors.rate_effect_sd();
         let dev = priors.development_effect_sd;
         let mut at = ATANH_RHO + 1;
@@ -2647,12 +2781,13 @@ impl Layout {
         let z_rate = rate.map(|p| next(p.is_some(), n_levels, &mut at));
         let z_dev = dev.map(|p| next(p.is_some(), n_dev_levels, &mut at));
         let log_sigma0 = at;
-        let mut n = 6 + 2 * n_levels;
+        let head = 4 + n_sigma;
+        let mut n = head + 2 * n_levels;
         let nat_origin = [
             next(rate[0].is_some(), n_levels, &mut n),
             next(rate[1].is_some(), n_levels, &mut n),
-            Some(6),
-            Some(6 + n_levels),
+            Some(head),
+            Some(head + n_levels),
         ];
         let nat_dev = dev.map(|p| next(p.is_some(), n_dev_levels, &mut n));
         let nat_b0 = n;
@@ -2668,6 +2803,7 @@ impl Layout {
             z_rate,
             z_dev,
             log_sigma0,
+            n_sigma,
             nat_origin,
             nat_dev,
             nat_b0,
@@ -2683,7 +2819,8 @@ impl Layout {
 /// b_RLR, b_RRF, log τ_RLR, log τ_RRF, atanh ρ, [log τ_ker, log τ_kp,
 /// log τ_dev_ker, .., log τ_dev_RRF], z_11, z_12, .., z_m1, z_m2, [z_ker,
 /// z_kp by origin, z_dev_ker, .., z_dev_RRF by development level],
-/// log σ_OS, log σ_PD)` over the `m` origins with an observed cell, where
+/// log σ_OS, log σ_PD)` over the `m` origins with an observed cell (with one
+/// response fitted, its `log σ` alone), where
 /// the bracketed blocks are there only for the effects the priors have and
 /// under [`RateOrder::Ordered`] `k_er = k_p + e^delta` (the population
 /// rates). A cell's parameters are `θ = m e^(s (b + u_origin + u_dev))`.
@@ -2767,7 +2904,16 @@ impl Model {
         let n = data.origins.len();
         let mut has = vec![all_levels; n];
         let mut has_age = vec![all_levels; data.n_ages];
-        for c in data.outstanding.iter().chain(&data.paid) {
+        // Only the fitted cells: under incurred alone the paid cells give
+        // each origin's latest paid and nothing else.
+        let none: &[(usize, usize, f64)] = &[];
+        let fitted_os = if response.second {
+            &data.outstanding[..]
+        } else {
+            none
+        };
+        let fitted_paid = if response.paid { &data.paid[..] } else { none };
+        for c in fitted_os.iter().chain(fitted_paid) {
             has[c.0] = true;
             has_age[c.1] = true;
         }
@@ -2833,13 +2979,11 @@ impl Model {
                     paid,
                 })
             };
-        let mut os = data
-            .outstanding
+        let mut os = fitted_os
             .iter()
             .map(|&(i, k, v)| obs(i, k, v, None, false))
             .collect::<Result<Vec<Obs>>>()?;
-        let mut pd = data
-            .paid
+        let mut pd = fitted_paid
             .iter()
             .map(|&(i, k, v)| {
                 let before = if response.incremental && k > 0 {
@@ -2870,7 +3014,12 @@ impl Model {
         let mut cells = os;
         cells.extend(pd);
         let n_observed = cells.iter().map(|c| c.k + 1).max().unwrap_or(0);
-        let layout = Layout::new(&priors, level_origin.len(), dev_labels.len());
+        let layout = Layout::new(
+            &priors,
+            level_origin.len(),
+            dev_labels.len(),
+            response.n_sigma(),
+        );
         let cellwise = priors.hierarchy() != Hierarchy::Model1;
         debug_assert!(layout.z0 + 2 <= GLOBALS);
         Ok(Self {
@@ -2926,8 +3075,34 @@ impl Model {
                 f += half_on_log(g[*at], prior);
             }
         }
-        let n = lay.z0;
-        f + real_prior(g[n], pr.log_sigma[0]) + real_prior(g[n + 1], pr.log_sigma[1])
+        self.sigma_prior(f, &g[lay.z0..])
+    }
+
+    /// `f` plus the prior terms of the `log σ` (`log_sigma`, in the order
+    /// of [`Response::sigma_types`]), added one by one: `log_sigma[0]` of
+    /// the priors on the second response's, `log_sigma[1]` on paid's.
+    fn sigma_prior<S: Scalar>(&self, f: S, log_sigma: &[S]) -> S {
+        let pr = &self.priors;
+        self.response
+            .sigma_types()
+            .zip(log_sigma)
+            .fold(f, |f, (paid, &l)| {
+                f + real_prior(l, pr.log_sigma[usize::from(paid)])
+            })
+    }
+
+    /// The `log σ` slot of a fitted cell type.
+    fn slot(&self, paid: bool) -> usize {
+        self.response
+            .sigma_slot(paid)
+            .expect("only fitted cells have a sigma")
+    }
+
+    /// The `σ` of each type, the second response's then paid's, from a
+    /// natural-scale draw; 0 for a type not fitted (its cells, if any are
+    /// predicted, are their expected values).
+    fn sigmas(&self, nat: &[f64]) -> [f64; 2] {
+        [false, true].map(|paid| self.response.sigma_slot(paid).map_or(0.0, |s| nat[4 + s]))
     }
 
     /// One cell's term of the log likelihood, `-r² / 2 - log σ`, from the
@@ -2952,15 +3127,14 @@ impl Model {
     /// checks it).
     fn cellwise_gradient(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
         let lay = &self.layout;
-        let (z0, ls) = (lay.z0, self.log_sigma0());
+        let (z0, ls, ns) = (lay.z0, self.log_sigma0(), lay.n_sigma);
         grad.fill(0.0);
         let mut globals = theta[..z0].to_vec();
-        globals.extend([theta[ls], theta[ls + 1]]);
+        globals.extend_from_slice(&theta[ls..ls + ns]);
         let mut g = vec![0.0; globals.len()];
         let mut f = gradient::<GLOBALS>(&globals, &mut g, |x| self.prior_globals(x));
         grad[..z0].copy_from_slice(&g[..z0]);
-        grad[ls] = g[z0];
-        grad[ls + 1] = g[z0 + 1];
+        grad[ls..ls + ns].copy_from_slice(&g[z0..z0 + ns]);
         for j in z0..ls {
             f -= theta[j] * theta[j] * 0.5;
             grad[j] -= theta[j];
@@ -2977,7 +3151,7 @@ impl Model {
             let d = self.dev_level[c.k].expect("an observed age has a level");
             let o: [Dual<5>; 4] =
                 std::array::from_fn(|p| Dual::variable(b[p] + u[p][j] + v[p][d], p));
-            let at = ls + usize::from(c.paid);
+            let at = ls + self.slot(c.paid);
             let t = self.cell_term(c, o, Dual::variable(theta[at], 4));
             f += t.v;
             grad[at] += t.d[4];
@@ -3038,7 +3212,7 @@ impl Model {
         self.dev_labels.len()
     }
 
-    /// Position of `log σ_OS`; `log σ_PD` follows.
+    /// Position of the first `log σ` ([`Layout::log_sigma0`]).
     fn log_sigma0(&self) -> usize {
         self.layout.log_sigma0
     }
@@ -3086,17 +3260,23 @@ impl Model {
                 names.extend((0..self.n_dev_levels()).map(|d| format!("z_dev_{}[{d}]", short)));
             }
         }
-        names.push("log_sigma_os".into());
-        names.push("log_sigma_pd".into());
+        names.extend(self.sigma_names("log_sigma"));
         names
+    }
+
+    /// `{prefix}_os` and `{prefix}_pd`, each when its type is fitted.
+    fn sigma_names(&self, prefix: &str) -> Vec<String> {
+        self.response
+            .sigma_types()
+            .map(|paid| format!("{prefix}_{}", if paid { "pd" } else { "os" }))
+            .collect()
     }
 
     /// The names of the natural-scale draws ([`CompartmentalFit::posterior`]).
     fn names(&self) -> Vec<String> {
         let lay = &self.layout;
-        let mut names: Vec<String> = ["k_er", "k_p", "RLR", "RRF", "sigma_os", "sigma_pd"]
-            .map(String::from)
-            .to_vec();
+        let mut names: Vec<String> = ["k_er", "k_p", "RLR", "RRF"].map(String::from).to_vec();
+        names.extend(self.sigma_names("sigma"));
         for p in [RLR, RRF, KER, KP] {
             if lay.nat_origin[p].is_some() {
                 for j in 0..self.n_levels() {
@@ -3123,8 +3303,7 @@ impl Model {
                 names.push(format!("tau_dev_{}", short));
             }
         }
-        names.push("log_sigma_os".into());
-        names.push("log_sigma_pd".into());
+        names.extend(self.sigma_names("log_sigma"));
         names
     }
 
@@ -3247,11 +3426,13 @@ impl Model {
         for &z in &theta[lay.z0..ls] {
             f -= z * z * 0.5;
         }
-        let (ls_os, ls_pd) = (theta[ls], theta[ls + 1]);
-        f += real_prior(ls_os, pr.log_sigma[0]) + real_prior(ls_pd, pr.log_sigma[1]);
-        let inv = [(-ls_os).exp(), (-ls_pd).exp()];
+        let log_sigma = &theta[ls..ls + lay.n_sigma];
+        f += self.sigma_prior(S::from_f64(0.0), log_sigma);
+        // 1 / σ of each fitted type, by slot.
+        let inv: Vec<S> = log_sigma.iter().map(|&l| (-l).exp()).collect();
         let (u, v) = self.effects(theta);
-        let mut n_os = 0.0;
+        // The number of cells of each slot.
+        let mut n_cells = [0.0; 2];
         if self.cellwise {
             // Each cell its own parameters.
             let b = [b_ker, theta[B_KP], theta[B_RLR], theta[B_RRF]];
@@ -3261,10 +3442,9 @@ impl Model {
                 let d = self.dev_level[c.k].expect("an observed age has a level");
                 let th: [S; 4] =
                     std::array::from_fn(|p| ((b[p] + u[p][j] + v[p][d]) * ms[p].1).exp() * ms[p].0);
-                let r = self.residual(c, self.cell_mean(c, th)) * inv[usize::from(c.paid)];
-                if !c.paid {
-                    n_os += 1.0;
-                }
+                let s = self.slot(c.paid);
+                let r = self.residual(c, self.cell_mean(c, th)) * inv[s];
+                n_cells[s] += 1.0;
                 f -= r * r * 0.5;
             }
         } else {
@@ -3295,8 +3475,9 @@ impl Model {
             for c in &self.cells {
                 let (os, pd) = curves[c.k];
                 let (a, b) = scale[self.level[c.origin].expect("an observed origin has a level")];
+                let s = self.slot(c.paid);
+                n_cells[s] += 1.0;
                 let mean = if !c.paid {
-                    n_os += 1.0;
                     if self.response.incurred {
                         a * os + b * pd
                     } else {
@@ -3307,12 +3488,14 @@ impl Model {
                 } else {
                     b * pd
                 };
-                let r = self.residual(c, mean) * inv[usize::from(c.paid)];
+                let r = self.residual(c, mean) * inv[s];
                 f -= r * r * 0.5;
             }
         }
-        let n_pd = (self.cells.len() - self.n_outstanding) as f64;
-        f - ls_os * n_os - ls_pd * n_pd
+        log_sigma
+            .iter()
+            .zip(n_cells)
+            .fold(f, |f, (&l, n)| f - l * n)
     }
 
     /// `theta` on the natural scale ([`names`](Self::names)).
@@ -3324,14 +3507,14 @@ impl Model {
         let (k_er, k_p, b_ker) = self.rates(theta);
         let ls = self.log_sigma0();
         let (u, v) = self.effects(theta);
+        let log_sigma = &theta[ls..ls + lay.n_sigma];
         let mut out = vec![
             k_er,
             k_p,
             m_rlr * (s_rlr * theta[B_RLR]).exp(),
             m_rrf * (s_rrf * theta[B_RRF]).exp(),
-            theta[ls].exp(),
-            theta[ls + 1].exp(),
         ];
+        out.extend(log_sigma.iter().map(|l| l.exp()));
         let b = [b_ker, theta[B_KP], theta[B_RLR], theta[B_RRF]];
         for p in [RLR, RRF, KER, KP] {
             if lay.nat_origin[p].is_some() {
@@ -3358,7 +3541,7 @@ impl Model {
         for l in lay.tau_dev.into_iter().flatten() {
             out.push(theta[l].exp());
         }
-        out.extend([theta[ls], theta[ls + 1]]);
+        out.extend_from_slice(log_sigma);
         out
     }
 
@@ -3472,7 +3655,8 @@ impl Model {
     /// cells, and an age with none one new set for all its cells.
     fn simulate(&self, nat: &[f64], future: &Future, rng: &mut StreamRng, row: &mut [f64]) {
         let (k_er, k_p) = (nat[0], nat[1]);
-        let (sigma_os, sigma_pd) = (nat[4], nat[5]);
+        // Under incurred alone paid has no σ: its cells are their means.
+        let [sigma_os, sigma_pd] = self.sigmas(nat);
         let dev = if self.has_dev() {
             self.dev_multipliers(nat, rng)
         } else {
@@ -3529,7 +3713,7 @@ impl Model {
     /// The full log density of each cell's response from a natural-scale
     /// draw, appended to `out`: normal, or log-normal (with its `-ln y`).
     fn log_likelihoods(&self, nat: &[f64], out: &mut Vec<f64>) {
-        let (sigma_os, sigma_pd) = (nat[4], nat[5]);
+        let [sigma_os, sigma_pd] = self.sigmas(nat);
         let half_log_tau = 0.5 * std::f64::consts::TAU.ln();
         for (c, th) in self.cells.iter().zip(self.observed_parameters(nat)) {
             let mean = self.cell_mean(c, th);
@@ -3599,12 +3783,28 @@ impl Model {
         sums.iter().map(|s| s / draws).collect()
     }
 
-    /// The start of the pilot run (decision 5).
+    /// The start of the pilot run (decision 5). Under one response
+    /// ([`Fitted::PaidOnly`], [`Fitted::IncurredOnly`]) the least squares
+    /// of the population curve is not identified (from paid alone only
+    /// `RLR x RRF`) and runs off along the free direction (on company 337 to
+    /// `RLR` near 1e-136), so the data start is taken only when its log
+    /// posterior is above the prior centre's (decision 12).
     fn start(&self, start: CompartmentalStart) -> Vec<f64> {
         if start == CompartmentalStart::Data
             && let Some(theta) = self.data_start()
         {
-            return theta;
+            if self.response.paid && self.response.second {
+                return theta;
+            }
+            let centre = self.prior_centre_start();
+            let mut grad = vec![0.0; self.dim()];
+            let at_data = self.log_posterior(&theta, &mut grad);
+            let at_centre = self.log_posterior(&centre, &mut grad);
+            return if at_data >= at_centre || at_centre.is_nan() {
+                theta
+            } else {
+                centre
+            };
         }
         self.prior_centre_start()
     }
@@ -3645,19 +3845,25 @@ impl Model {
                 theta[*at] = half_median(prior).ln();
             }
         }
-        let rms = self.residual_rms(population);
-        let ls = self.log_sigma0();
-        theta[ls] = rms[0].ln();
-        theta[ls + 1] = rms[1].ln();
+        self.set_log_sigma(&mut theta, self.residual_rms(population));
         let mut grad = vec![0.0; theta.len()];
         let f = self.log_posterior(&theta, &mut grad);
         (f.is_finite() && theta.iter().all(|v| v.is_finite())).then_some(theta)
     }
 
+    /// Each fitted type's `log σ` in `theta` at the log of its `rms` (the
+    /// second response's, then paid's).
+    fn set_log_sigma(&self, theta: &mut [f64], rms: [f64; 2]) {
+        let ls = self.log_sigma0();
+        for (s, paid) in self.response.sigma_types().enumerate() {
+            theta[ls + s] = rms[usize::from(paid)].ln();
+        }
+    }
+
     /// The root mean square residual (on the likelihood's scale) of the
     /// outstanding and the paid cells about the population curve, each at
     /// least `1e-6` of its cells' mean absolute value (of 1 on the log
-    /// scale).
+    /// scale); 1 for a type with no cell (not fitted, so never used).
     fn residual_rms(&self, population: [f64; 4]) -> [f64; 2] {
         let mut sum = [0.0; 2];
         let mut size = [0.0; 2];
@@ -3674,6 +3880,9 @@ impl Model {
             count[k] += 1.0;
         }
         [0, 1].map(|k| {
+            if count[k] == 0.0 {
+                return 1.0;
+            }
             let floor = 1e-6 * (size[k] / count[k]).max(1.0);
             (sum[k] / count[k]).sqrt().max(floor)
         })
@@ -3724,10 +3933,7 @@ impl Model {
             // A curve too far from the data to give a finite density: the
             // log σ at the scale of the data.
             let mut theta = vec![0.0; self.dim()];
-            let ls = self.log_sigma0();
-            let rms = self.residual_rms([k_er, k_p, rlr, rrf]);
-            theta[ls] = rms[0].ln();
-            theta[ls + 1] = rms[1].ln();
+            self.set_log_sigma(&mut theta, self.residual_rms([k_er, k_p, rlr, rrf]));
             theta
         })
     }
@@ -3735,7 +3941,7 @@ impl Model {
 
 impl Posterior for Model {
     fn dim(&self) -> usize {
-        self.log_sigma0() + 2
+        self.log_sigma0() + self.layout.n_sigma
     }
 
     fn log_posterior(&self, theta: &[f64], grad: &mut [f64]) -> f64 {
@@ -4048,8 +4254,9 @@ mod tests {
                 for (j, z) in x[z0..ls0].iter_mut().enumerate() {
                     *z = spread * wobble(13 + j);
                 }
-                x[ls0] = ls[0] + wobble(ls0);
-                x[ls0 + 1] = ls[1] + wobble(ls0 + 1);
+                for (s, paid) in model.response.sigma_types().enumerate() {
+                    x[ls0 + s] = ls[usize::from(paid)] + wobble(ls0 + s);
+                }
                 x
             })
             .collect()
@@ -4306,6 +4513,205 @@ mod tests {
         assert!((inc - (os + paid_cum)).abs() <= 1e-12 * inc);
     }
 
+    /// A model of the training triangle fitted to one response alone
+    /// (`Fitted::PaidOnly` or `Fitted::IncurredOnly`), with `response`'s
+    /// likelihood, scale and paid response.
+    pub(super) fn model_one(
+        fitted: Fitted,
+        priors: CompartmentalPriors,
+        ordered: bool,
+        response: Response,
+    ) -> Model {
+        let tri = triangle(true);
+        let data = Data::new(&tri, "paid", incurred(), "premium", fitted).unwrap();
+        let settings = Compartmental {
+            fitted,
+            likelihood: response.likelihood,
+            scale: if response.loss_ratio {
+                Scale::LossRatio
+            } else {
+                Scale::Amount
+            },
+            paid_response: if response.incremental {
+                PaidResponse::Incremental
+            } else {
+                PaidResponse::Cumulative
+            },
+            ..preset()
+        };
+        Model::new(&data, priors, ordered, settings.response()).unwrap()
+    }
+
+    #[test]
+    fn the_one_response_layout_on_the_papers_training_triangle() {
+        let pr = CompartmentalPriors::gesmann_morris();
+        let paid = model_one(Fitted::PaidOnly, pr, true, Response::MODEL_1);
+        let inc = model_one(Fitted::IncurredOnly, pr, true, Response::MODEL_1);
+        // One sigma fewer than paid and outstanding's 27.
+        for m in [&paid, &inc] {
+            assert_eq!(m.dim(), 26);
+            assert_eq!(m.cells.len(), 45);
+            assert_eq!(m.n_levels(), 9);
+            assert_eq!(m.level[9], None);
+            let names = m.names();
+            assert_eq!(names.len(), 5 + 18 + 8);
+            assert_eq!(names[5], "RLR[1988]");
+            assert_eq!(names[14], "RRF[1988]");
+            assert_eq!(m.sampled_names().len(), m.dim());
+            assert_eq!(m.natural(&points(m)[0]).len(), names.len());
+        }
+        assert_eq!(paid.n_outstanding, 0);
+        assert!(paid.cells.iter().all(|c| c.paid));
+        assert_eq!(paid.names()[4], "sigma_pd");
+        assert_eq!(paid.names().last().unwrap(), "log_sigma_pd");
+        assert_eq!(inc.n_outstanding, 45);
+        assert!(inc.cells.iter().all(|c| !c.paid));
+        assert_eq!(inc.cells[0].y, 62679.);
+        assert_eq!(inc.names()[4], "sigma_os");
+        assert_eq!(inc.names().last().unwrap(), "log_sigma_os");
+        assert!(inc.response.incurred);
+        // Incurred alone keeps each origin's latest paid, from the paid
+        // column, for the reserves.
+        assert_eq!(inc.latest_paid[3], PAID[3][5]);
+        assert_eq!(paid.latest_paid, inc.latest_paid);
+        // Model 2's hierarchy with incremental paid alone, and incurred
+        // alone under the log-normal likelihood.
+        let pr2 = CompartmentalPriors::gesmann_morris_2();
+        let paid_2 = model_one(Fitted::PaidOnly, pr2, true, Response::MODEL_2);
+        assert!(paid_2.cellwise && paid_2.cells.iter().all(|c| c.paid));
+        assert!(paid_2.cells.iter().filter(|c| c.t_before.is_some()).count() == 36);
+        let inc_2 = model_one(Fitted::IncurredOnly, pr2, true, Response::MODEL_2);
+        assert_eq!(inc_2.dim(), model_2(true).dim() - 1);
+    }
+
+    /// The log density of one response alone, against the model written out
+    /// in f64 under ordered rates: `k_p = e^(0.1 x_1)`, `k_er = k_p +
+    /// e^(x_0)` with `b_ker`'s normal prior and the Jacobian `x_0 - ln
+    /// k_er`, one `log σ` with its prior, and the cells of the one type.
+    #[test]
+    fn the_one_response_density_is_the_model_written_out() {
+        let pr = CompartmentalPriors::gesmann_morris();
+        for fitted in [Fitted::PaidOnly, Fitted::IncurredOnly] {
+            let m = model_one(fitted, pr, true, Response::MODEL_1);
+            let x = &points(&m)[3];
+            let half_t = |l: f64, s: f64| l - 5.5 * ((l.exp() / s).powi(2) / 10.0).ln_1p();
+            let cauchy = |v: f64| -((v / 1000.0).powi(2)).ln_1p();
+            let b = (0.1 * x[1]).exp();
+            let a = b + x[0].exp();
+            let b_ker = (a / 3.0).ln() / 0.1;
+            let rho = x[6].tanh();
+            let ls = m.log_sigma0();
+            assert_eq!(ls + 1, m.dim());
+            let mut f = -0.5 * (b_ker * b_ker + x[1] * x[1] + x[2] * x[2] + x[3] * x[3]) + x[0]
+                - a.ln()
+                + half_t(x[4], 0.2)
+                + half_t(x[5], 0.1)
+                + (1.0 - rho * rho).ln()
+                + cauchy(x[ls]);
+            for z in &x[m.layout.z0..ls] {
+                f -= 0.5 * z * z;
+            }
+            for c in &m.cells {
+                let j = m.level[c.origin].unwrap();
+                let (z1, z2) = (x[m.layout.z0 + 2 * j], x[m.layout.z0 + 2 * j + 1]);
+                let u1 = x[4].exp() * z1;
+                let u2 = x[5].exp() * (rho * z1 + (1.0 - rho * rho).sqrt() * z2);
+                let rlr = 0.7 * (0.2 * (x[2] + u1)).exp();
+                let rrf = 0.8 * (0.1 * (x[3] + u2)).exp();
+                let t = c.t;
+                let os = rlr * a / (a - b) * ((-b * t).exp() - (-a * t).exp());
+                let pd =
+                    rlr * rrf / (a - b) * (a * (1.0 - (-b * t).exp()) - b * (1.0 - (-a * t).exp()));
+                let mean = if fitted == Fitted::PaidOnly {
+                    assert!(c.paid);
+                    pd
+                } else {
+                    assert!(!c.paid);
+                    os + pd
+                };
+                let r = (c.y - PREMIUM[c.origin] * mean) / x[ls].exp();
+                f -= x[ls] + 0.5 * r * r;
+            }
+            let mut g = vec![0.0; m.dim()];
+            let got = m.log_posterior(x, &mut g);
+            assert!(
+                (got - f).abs() <= 1e-12 * f.abs(),
+                "{fitted:?}: {got} vs {f}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_one_response_gradient_matches_central_differences() {
+        for fitted in [Fitted::PaidOnly, Fitted::IncurredOnly] {
+            for ordered in [true, false] {
+                let m = model_one(
+                    fitted,
+                    CompartmentalPriors::gesmann_morris(),
+                    ordered,
+                    Response::MODEL_1,
+                );
+                for x in points(&m).iter().step_by(2) {
+                    assert_gradient(|t, g| m.log_posterior(t, g), x);
+                }
+                // Model 2's hierarchy and response (effects by cell).
+                let m = model_one(
+                    fitted,
+                    CompartmentalPriors::gesmann_morris_2(),
+                    ordered,
+                    Response::MODEL_2,
+                );
+                for x in points(&m).iter().step_by(5) {
+                    assert_gradient(|t, g| m.log_posterior(t, g), x);
+                    // The hand-written chain rule is the generic dual pass's.
+                    let mut want = vec![0.0; m.dim()];
+                    let f = gradient::<CHUNK>(x, &mut want, |t| m.log_density(t));
+                    let mut got = vec![0.0; m.dim()];
+                    let g = m.cellwise_gradient(x, &mut got);
+                    let scale = want.iter().fold(0.0f64, |a, v| a.max(v.abs()));
+                    assert!((g - f).abs() <= 1e-12 * f.abs());
+                    for (a, b) in got.iter().zip(&want) {
+                        assert!((a - b).abs() <= 1e-12 * scale);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Under incurred alone the future paid cells of an origin with data are
+    /// their expected values given the draw, whatever the random numbers,
+    /// and its future incurred cells are drawn with the incurred sigma;
+    /// under paid alone the square has no future outstanding cell.
+    #[test]
+    fn the_one_response_simulations() {
+        let pr = CompartmentalPriors::gesmann_morris();
+        let tri = triangle(true);
+        let inc = model_one(Fitted::IncurredOnly, pr, true, Response::MODEL_1);
+        let data = Data::new(&tri, "paid", incurred(), "premium", Fitted::IncurredOnly).unwrap();
+        let future = data.future_cells();
+        assert_eq!(future.outstanding.len(), future.paid.len());
+        let nat = inc.natural(&points(&inc)[0]);
+        let width = future.paid.len() + future.outstanding.len();
+        let (mut a, mut b) = (vec![0.0; width], vec![0.0; width]);
+        inc.simulate(&nat, &future, &mut StreamRng::new(1, 0), &mut a);
+        inc.simulate(&nat, &future, &mut StreamRng::new(2, 0), &mut b);
+        let (k_er, k_p) = (nat[0], nat[1]);
+        let mut unused = StreamRng::new(0, 0);
+        for (j, &(i, k)) in future.paid.iter().enumerate() {
+            if inc.level[i].is_none() {
+                continue;
+            }
+            assert_eq!(a[j], b[j], "paid of origin {i} at age index {k}");
+            let th = inc.origin_values(&nat, i, &mut unused);
+            let want = PREMIUM[i] * th[RLR] * th[RRF] * one_os(k_er, k_p, inc.times[k]).1;
+            assert!((a[j] - want).abs() <= 1e-9 * want, "{} vs {want}", a[j]);
+        }
+        let n_paid = future.paid.len();
+        assert!(a[n_paid..].iter().zip(&b[n_paid..]).all(|(x, y)| x != y));
+        let paid = Data::new(&tri, "paid", incurred(), "premium", Fitted::PaidOnly).unwrap();
+        assert!(paid.future_cells().outstanding.is_empty());
+    }
+
     #[test]
     #[cfg_attr(
         not(feature = "slow-tests"),
@@ -4328,13 +4734,75 @@ mod tests {
             // mean (the 1990 origin at age 10).
             let key = vec![Period::year(1990).into(), KeyValue::Int(120)];
             let paid = fit.paid.marginal(&key).unwrap().mean();
-            let inc = fit.outstanding.marginal(&key).unwrap().mean();
+            let inc = fit
+                .outstanding
+                .as_ref()
+                .unwrap()
+                .marginal(&key)
+                .unwrap()
+                .mean();
             assert!(inc > 0.9 * paid, "{inc} {paid}");
             assert!(fit.reserves.total().mean() > 0.0);
         }
         // The incurred column, and the outstanding column plus paid, are
         // the same data.
         assert_eq!(fits[0].posterior, fits[1].posterior);
+    }
+
+    /// The outputs of a fit of one response: under paid alone no
+    /// outstanding distribution or table, no outstanding cell in the loo
+    /// and no `sigma_os`; under incurred alone the future incurred cells and
+    /// no paid cell in the loo; reserves either way, and the same under
+    /// `fit_segments`.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_outputs_of_one_response() {
+        let tri = triangle(true);
+        for fitted in [Fitted::PaidOnly, Fitted::IncurredOnly] {
+            let m = Compartmental {
+                fitted,
+                rate_order: RateOrder::Ordered,
+                ..quick(3)
+            };
+            let fit = m.fit(&tri, "paid", incurred(), "premium").unwrap();
+            assert_eq!(fit.reserves.n_components(), 10);
+            assert!(fit.reserves.total().mean() > 0.0);
+            assert_eq!(fit.rate_swaps, 0);
+            let loo = fit.loo().unwrap();
+            let names = fit.posterior.names();
+            let segments = m.fit_segments(&tri, "paid", incurred(), "premium").unwrap();
+            if fitted == Fitted::PaidOnly {
+                assert!(fit.outstanding.is_none() && fit.outstanding_table().is_err());
+                assert_eq!((loo.n_outstanding, loo.elpd_outstanding), (0, 0.0));
+                assert!(!names.iter().any(|n| n.contains("sigma_os")));
+                assert!(segments.outstanding.is_none() && segments.outstanding_table().is_err());
+                // The provenance records that the second column was not read.
+                assert!(
+                    fit.reserves
+                        .provenance()
+                        .parameters
+                        .iter()
+                        .any(|(k, v)| k == "outstanding" && v == "not read")
+                );
+            } else {
+                let os = fit.outstanding.as_ref().unwrap();
+                assert_eq!(os.n_components(), fit.paid.n_components());
+                assert_eq!(
+                    fit.outstanding_table().unwrap().values[0].1.len(),
+                    os.n_components()
+                );
+                assert_eq!((loo.n_outstanding, loo.elpd_paid), (45, 0.0));
+                assert!(!names.iter().any(|n| n.contains("sigma_pd")));
+                assert!(segments.outstanding.is_some());
+            }
+            assert_eq!(
+                segments.reserves.n_components(),
+                fit.reserves.n_components()
+            );
+        }
     }
 
     #[test]
@@ -4421,7 +4889,10 @@ mod tests {
         assert_eq!(fit.reserves.n_components(), 10);
         // Future paid: 1988 at age 10, 1989 at 9 and 10, ..., 1997 at all 10.
         assert_eq!(fit.paid.n_components(), (1..=9).sum::<usize>() + 10);
-        assert_eq!(fit.outstanding.n_components(), fit.paid.n_components());
+        assert_eq!(
+            fit.outstanding.as_ref().unwrap().n_components(),
+            fit.paid.n_components()
+        );
         // The reserve is the paid at age 10 less the latest paid.
         let key = vec![Period::year(1990).into(), KeyValue::Int(120)];
         let at_10 = fit.paid.marginal(&key).unwrap();
@@ -4446,7 +4917,7 @@ mod tests {
         assert!(q("q05") < q("q50") && q("q50") < q("q95"));
         assert_eq!(
             fit.outstanding_table().unwrap().n_rows(),
-            fit.outstanding.n_components()
+            fit.outstanding.as_ref().unwrap().n_components()
         );
         assert_eq!(fit.summary().unwrap().len(), 33);
         let loo = fit.loo().unwrap();
@@ -4585,34 +5056,67 @@ mod tests {
         assert!((y_sum / n as f64).abs() < 0.03, "{}", y_sum / n as f64);
     }
 
+    /// One response alone needs ordered rates (decision 12): under free
+    /// rates the fit, the segments, the one-year view and the backtest's
+    /// fit are errors that say why; with ordered rates the settings are
+    /// valid.
     #[test]
-    fn settings_not_yet_built_are_errors() {
+    fn one_response_needs_ordered_rates() {
         let tri = triangle(true);
-        let fit = |m: Compartmental| {
-            m.fit(&tri, "paid", incurred(), "premium")
-                .unwrap_err()
-                .to_string()
-        };
-        let cases = [
-            (
-                Compartmental {
-                    fitted: Fitted::PaidOnly,
-                    ..preset()
-                },
-                "paid alone",
-            ),
-            (
-                Compartmental {
-                    fitted: Fitted::IncurredOnly,
-                    ..preset()
-                },
-                "incurred alone",
-            ),
-        ];
-        for (m, what) in cases {
-            let e = fit(m);
-            assert!(e.contains(what) && e.contains("not yet"), "{e}");
+        for (fitted, what) in [
+            (Fitted::PaidOnly, "paid alone"),
+            (Fitted::IncurredOnly, "incurred alone"),
+        ] {
+            let free = Compartmental { fitted, ..preset() };
+            let errors = [
+                free.fit(&tri, "paid", incurred(), "premium").unwrap_err(),
+                free.fit_segments(&tri, "paid", incurred(), "premium")
+                    .unwrap_err(),
+                free.one_year(
+                    &tri,
+                    "paid",
+                    incurred(),
+                    "premium",
+                    &BayesOneYear::default(),
+                )
+                .unwrap_err(),
+            ];
+            for e in errors {
+                let e = e.to_string();
+                assert!(
+                    e.contains(what) && e.contains("rate_order Ordered") && e.contains("swap"),
+                    "{e}"
+                );
+            }
+            let ordered = Compartmental {
+                rate_order: RateOrder::Ordered,
+                ..free
+            };
+            assert!(ordered.validate().is_ok());
         }
+        // Paid alone does not read the second column: a missing one is no
+        // error.
+        let paid_only = Data::new(
+            &tri,
+            "paid",
+            Outstanding::Column("no such column"),
+            "premium",
+            Fitted::PaidOnly,
+        )
+        .unwrap();
+        assert!(
+            paid_only.outstanding.is_empty() && paid_only.future_cells().outstanding.is_empty()
+        );
+        assert!(
+            Data::new(
+                &tri,
+                "paid",
+                Outstanding::Column("no such column"),
+                "premium",
+                Fitted::IncurredOnly,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -4937,6 +5441,8 @@ mod tests {
                             loss_ratio,
                             incremental,
                             incurred: false,
+                            paid: true,
+                            second: true,
                         };
                         let priors = if two {
                             CompartmentalPriors::gesmann_morris_2()
@@ -5298,7 +5804,8 @@ mod tests {
         };
         let fitted = |tri: &Triangle| {
             let data = Data::new(tri, "paid", incurred(), "premium", m.fitted).unwrap();
-            let model = Model::new(&data, m.priors, false, m.response()).unwrap();
+            let ordered = m.rate_order == RateOrder::Ordered;
+            let model = Model::new(&data, m.priors, ordered, m.response()).unwrap();
             let (_, sampled, _) = m.sample(&model, 5).unwrap();
             (data, model, sampled)
         };
@@ -5315,7 +5822,8 @@ mod tests {
             4 + 4
         };
         assert_eq!(opening.dim(), open.2.dim() + added);
-        assert_eq!(year.n_year(), 20);
+        // Each fitted type's next diagonal: 10 cells.
+        assert_eq!(year.n_year(), 10 * m.response().n_sigma());
         crate::bayes::one_year::conformance::check(
             name,
             &year,
@@ -5421,6 +5929,38 @@ mod tests {
             "compartmental paid and incurred",
             Compartmental {
                 fitted: Fitted::PaidAndIncurred,
+                ..preset()
+            },
+        );
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_of_paid_alone_conforms() {
+        one_year_conformance(
+            "compartmental paid alone",
+            Compartmental {
+                fitted: Fitted::PaidOnly,
+                rate_order: RateOrder::Ordered,
+                ..preset()
+            },
+        );
+    }
+
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_of_incurred_alone_conforms() {
+        one_year_conformance(
+            "compartmental incurred alone",
+            Compartmental {
+                fitted: Fitted::IncurredOnly,
+                rate_order: RateOrder::Ordered,
                 ..preset()
             },
         );
@@ -5795,8 +6335,8 @@ mod tests {
             assert_eq!(alone.reserves.draw_matrix(), seg.reserves.draw_matrix());
             assert_eq!(alone.paid.draw_matrix(), seg.paid.draw_matrix());
             assert_eq!(
-                alone.outstanding.draw_matrix(),
-                seg.outstanding.draw_matrix()
+                alone.outstanding.as_ref().unwrap().draw_matrix(),
+                seg.outstanding.as_ref().unwrap().draw_matrix()
             );
         }
         // `fit` is the base streams' fit.
@@ -5820,8 +6360,8 @@ mod tests {
         assert_eq!(fits.paid.dims(), ["lob", "origin", "age"]);
         assert_eq!(fits.paid.n_components(), 2 * a.paid.n_components());
         assert_eq!(
-            fits.outstanding.n_components(),
-            2 * a.outstanding.n_components()
+            fits.outstanding.as_ref().unwrap().n_components(),
+            2 * a.outstanding.as_ref().unwrap().n_components()
         );
         let long = fits.to_long();
         assert_eq!(long.keys[0].1.len(), 10);

@@ -85,11 +85,11 @@ expect_error_like(compartmental(tri, "paid", "premium", incurred = "incurred"),
 expect_error_like(compartmental(tri, "paid", "premium", list(), incurred = "incurred"),
                   "priors must be a compartmental_priors list")
 
-# The other settings are named but not yet built.
+# One response alone needs ordered rates.
 for (setting in list(list(fitted = "paid_only"), list(fitted = "incurred_only"))) {
   expect_error_like(do.call(compartmental, c(list(tri, "paid", "premium", gm,
                                                   incurred = "incurred"), setting)),
-                    "not yet built")
+                    "needs rate_order Ordered")
 }
 expect_error_like(compartmental(tri, "paid", "premium", gm), "give exactly one of outstanding")
 expect_error_like(compartmental(tri, "paid", "premium", gm, outstanding = "incurred",
@@ -275,6 +275,22 @@ inc <- suppressWarnings(compartmental(tri, "paid", "premium", gm, incurred = "in
                                       draws = 100, n_sims = 200, seed = 5))
 stopifnot(all(is.finite(draw_matrix(inc@reserves)[1, ])), nrow(inc@outstanding@keys) == 55,
           provenance(inc@reserves)$model == "compartmental")
+
+# Paid alone reads no second column and has no outstanding cells; incurred
+# alone has one sigma and the future incurred cells.
+paid_alone <- suppressWarnings(compartmental(tri, "paid", "premium", gm, fitted = "paid_only",
+                                             rate_order = "ordered", chains = 2, tune = 200,
+                                             draws = 200, n_sims = 200, seed = 3))
+stopifnot(is.null(paid_alone@outstanding), all(is.finite(draw_matrix(paid_alone@reserves)[1, ])),
+          "sigma_pd" %in% colnames(paid_alone@draws),
+          !("sigma_os" %in% colnames(paid_alone@draws)))
+expect_error_like(paid_alone@outstanding_table, "no outstanding cells")
+incurred_alone <- suppressWarnings(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
+                                                 fitted = "incurred_only",
+                                                 rate_order = "ordered", chains = 2, tune = 200,
+                                                 draws = 200, n_sims = 200, seed = 3))
+stopifnot(nrow(incurred_alone@outstanding@keys) == 55,
+          !("sigma_pd" %in% colnames(incurred_alone@draws)))
 
 # Every combination of likelihood, scale and paid response is built.
 for (setting in list(list(scale = "loss_ratio"), list(paid_response = "incremental"),
