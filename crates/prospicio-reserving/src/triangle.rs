@@ -1099,6 +1099,20 @@ impl Segment {
             .collect()
     }
 
+    /// Whether every origin is observed at one age at most, on a grid of
+    /// several ages: the segment holds a latest diagonal only, with no link
+    /// ratio (`reserving-v02.md`, decision 15). A row with holes is not
+    /// one, though it may have no link ratio either.
+    pub(crate) fn is_latest_diagonal_only(&self) -> bool {
+        self.n_dev > 1
+            && (0..self.n_origins).all(|o| {
+                (0..self.n_dev)
+                    .filter(|&d| self.get(o, d).is_some())
+                    .count()
+                    <= 1
+            })
+    }
+
     /// Valuation month of the cell at `origin`, `dev`.
     pub(crate) fn valuation_of(&self, origin: usize, dev: usize) -> Month {
         self.origins[origin]

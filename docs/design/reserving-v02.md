@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -2689,3 +2689,83 @@ it:
 8. The geometric average stays rejected in the bootstraps and their
    one-year views, and the closed form's rejection now points to
    `MackBootstrap::one_year`.
+
+### 15. A latest diagonal with a selected pattern
+
+Status: **Built** (2026-10-23), issue #544, branch `claude/diagonal-pr1`,
+in Rust. This is the issue's first PR; the rest (a dedicated diagonal
+type, development fitted on one triangle and applied to another, the
+bindings) is planned in the issue and listed in the lane's Next.
+
+Bordereaux hold one latest value per origin with its age, not a triangle,
+and the pattern comes from elsewhere (a prior study, an industry triangle,
+a benchmark). `Triangle::from_long` already builds a triangle from such
+rows: one observed cell per origin. The chain ladder and the expected-loss
+methods then failed even with a fully selected pattern, with "factor from
+development index 0: no origin is observed at both ages", because
+`Development::fit_segment` asked `kept_links` for the age's link ratios
+before it checked whether the age is fully selected. The excess-layer
+leniency (`reserving-excess.md`, decision 8) covered only the estimate's
+errors, which come later.
+
+1. **A fully selected age with no link ratio is missing, not an error.**
+   At an age whose selected factor has weight 1 and where no origin is
+   observed at both ages, the fit leaves the triangle's own factor
+   missing: `ldf` and `volume` NaN, no sigma, `n_links` 0, as the
+   excess-layer leniency does. The check comes before `kept_links`. An
+   age that is not fully selected keeps the old error with the same text,
+   and so does a fully selected age whose link ratios are all removed by
+   `n_periods` ("no link ratio is left after n_periods"): that is a
+   setting at odds with the data, not a diagonal.
+2. **The kept mask skips an age with no link ratio.** The bootstraps'
+   `Development::kept_mask` no longer errors at such an age; it keeps
+   none there, and the fit says whether the age is an error.
+3. **What works on a latest diagonal.** The chain ladder, the expected
+   loss method, Bornhuetter-Ferguson, Benktander and Cape Cod (with its
+   `trend` and `decay`), with the pattern as age-to-age factors, factors
+   to ultimate or percents developed, and any tail. An estimated tail
+   (`Tail::Curve`, `Tail::Bondy`, `Tail::LogLinear`) is fitted to the
+   factors in use, here the selected ones, so a diagonal takes the tail
+   its full triangle would. The results are the same fit types, so
+   `totals()`, `reserves()` and the long tables work unchanged. The
+   pattern's ages follow decision 12 unchanged: each must be on the
+   triangle's grid, which `from_long` builds from the youngest observed
+   age to the oldest (so a pattern from 12 months does not fit a diagonal
+   whose youngest origin is at 24 months), a cumulative pattern fills the
+   ages between two of its own, and an age-to-age pattern must give every
+   age the diagonal needs. Ages off the grid or before the youngest origin
+   are for the dedicated diagonal type of the issue's next PR.
+4. **What a latest diagonal is rejected by, by name.** Mack's model (and
+   with it Merz and Wüthrich's closed form), Mack's bootstrap and the ODP
+   bootstrap need link ratios for sigma, the scale and the residuals. A
+   segment where every origin is observed at one age at most
+   (`Segment::is_latest_diagonal_only`) gets the new
+   `Error::LatestDiagonalOnly { method }`, which says the triangle holds a
+   latest diagonal only and that the chain ladder and the expected-loss
+   methods project it with a fully selected pattern. Before, all three
+   failed with the chain ladder's link-ratio error ("factor from
+   development index 0: no origin is observed at both ages"), or Mack's
+   bootstrap with "every origin must be observed from the first age to
+   its latest". A triangle with holes and no link ratio, or with link
+   ratios at some ages and a fully selected age with none elsewhere, is
+   not a latest diagonal and gets the errors it had: Mack fills the
+   missing sigma where its interpolation can and otherwise says it
+   cannot, and the bootstraps reject the holes or the missing factor.
+5. **Checks** (`validation/tests/reserving_latest_diagonal.rs`): a
+   six-origin diagonal by hand for the chain ladder (also on percents
+   developed; the youngest origin's 150 at a factor to ultimate of 12/7
+   gives 257.14), Bornhuetter-Ferguson (208.33 at an ELR of 0.7 on a
+   premium of 200), Benktander, Cape Cod and the expected loss method;
+   the latest diagonal cut from GenIns and RAA, with the full triangle's
+   own factors selected as age-to-age factors and as factors to ultimate,
+   gives every origin the full triangle's chain ladder ultimate; the
+   diagonal cut from the CAS workers' compensation triangle gives the full
+   triangle's Bornhuetter-Ferguson, Benktander and Cape Cod ultimates
+   under the same selected pattern; the three estimated tails on GenIns's
+   diagonal equal the full triangle's; a partial pattern keeps the
+   link-ratio error at its first unselected age, and a fully selected age
+   whose link ratios `n_periods` removes keeps its error; Mack, Mack's
+   bootstrap and the ODP bootstrap return `LatestDiagonalOnly`, and a
+   triangle with holes and no link ratio does not. chainladder-python's
+   `DevelopmentConstant` on a latest diagonal is left for the dedicated
+   type's PR, with the fit-and-apply path it compares against.

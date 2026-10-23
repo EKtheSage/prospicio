@@ -112,6 +112,11 @@ impl Mack {
 
     pub(crate) fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<MackFit> {
         self.development.reject_geometric("Mack's model")?;
+        if segment.is_latest_diagonal_only() {
+            return Err(Error::LatestDiagonalOnly {
+                method: "Mack's model",
+            });
+        }
         if segment.n_dev < 3 {
             return Err(Error::TooFewAges {
                 needed: 3,
