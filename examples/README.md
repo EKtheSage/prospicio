@@ -38,6 +38,22 @@ quarto render examples/reading_path.qmd
 
 They are also pages of the docs site, under "Articles", "Worked examples" on the R site: `cargo xtask r` stages them as pkgdown articles and runs them in full, and fails if `reinsurance_pricing.qmd` reports a comparison outside its tolerance. That build runs in CI's `docs` job when a pull request touches the bindings, `R/` or `xtask/`, and in the Pages run after a merge to `main`; a pull request that touches only `examples/` does not render them. Rendered `.html` is not committed.
 
+## Data for the guides
+
+Some guides read small synthetic data sets kept in `data/`, each written by a
+seeded script next to it, which a test in `python/tests/test_guides.py`
+checks the committed files against:
+
+- `chalk_portfolio.csv` and `chalk_toys.csv`, written by
+  `make_chalk_portfolio.py`, for the CAS Monograph 16 guides.
+- `cat_book_yelt.csv`, `cat_book_elt_alder.csv`, `cat_book_cedents.csv` and
+  `cat_book_contracts.csv`, written by `make_cat_book.py` (numpy only, seed
+  20261023), for the property-catastrophe track (`docs/guides/cat-*.md`): a
+  fictional reinsurer's contracts for three cedents, an event loss table and
+  2,000 simulated years of dated events, in millions of a synthetic currency.
+  The guide [`cat-0-overview.md`](../docs/guides/cat-0-overview.md) describes
+  them.
+
 ## Running a notebook
 
 To run one, clone the repository (the notebooks read their data from

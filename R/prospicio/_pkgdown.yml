@@ -381,6 +381,20 @@ articles:
       - starts_with("articles/pir-")
       - starts_with("articles/capital-")
       - starts_with("articles/ratemaking-")
+  - title: Property catastrophe reinsurance
+    navbar: Property catastrophe reinsurance
+    desc: >
+      A track on one synthetic book, read in order: loss tables, risk metrics, contract terms, programs, the money around the loss, pricing and the portfolio.
+    contents:
+      - articles/cat-0-overview
+      - articles/cat-1-loss-tables
+      - articles/cat-2-risk-metrics
+      - articles/cat-3-contract-terms
+      - articles/cat-4-programs
+      - articles/cat-5-beyond-loss
+      - articles/cat-6-pricing
+      - articles/cat-7-portfolio
+      - starts_with("articles/cat-")
   - title: Distributions and GLMs
     navbar: Distributions and GLMs
     desc: >

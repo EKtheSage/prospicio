@@ -76,6 +76,21 @@ Start here, in this order:
 | [`glm-ratemaking-goldburd.md`](glm-ratemaking-goldburd.md) | CAS Monograph 5 (Goldburd, Khare, Tevet and Guller), part 1: the GLM as a multiplicative rating plan, base levels, offsets and weights, Poisson, negative binomial, gamma, inverse Gaussian and Tweedie, the F-test, AIC and BIC, with the monograph's printed arithmetic beside prospicio's and the list of what prospicio does not support |
 | [`glm-ratemaking-goldburd-validation.md`](glm-ratemaking-goldburd-validation.md) | CAS Monograph 5, part 2: partial residuals, bins, polynomials, hinges and GAM splines, interactions, deviance and binned working residuals, holdout lift, double lift and loss ratio charts, the Gini index and ROC, stability and the elastic net |
 
+**Property catastrophe reinsurance**
+
+Read in order; each page builds on the one before it.
+
+| Guide | What it answers |
+|---|---|
+| [`cat-0-overview.md`](cat-0-overview.md) | A property-catastrophe track on one synthetic book: Larkspur Re, a fictional reinsurer, renews five contracts for three cedents; the story, the four data files, the pages in order and the notation they share. |
+| [`cat-1-loss-tables.md`](cat-1-loss-tables.md) | What the cat model hands over: year event loss tables, year loss tables and event loss tables, secondary uncertainty, reading a YELT into prospicio with its checks, event times, and an ELT reconciled with the simulated years. |
+| [`cat-2-risk-metrics.md`](cat-2-risk-metrics.md) | How bad a cedent's year can get: VaR and TVaR on simulated years and the quantile conventions behind them (Hyndman and Fan), a window TVaR, occurrence and aggregate exceedance curves, return-period losses, and how often a layer is attached or used up. |
+| [`cat-3-contract-terms.md`](cat-3-contract-terms.md) | Cat contracts in code: the hours clause, occurrence layers with paid reinstatements, a capped quota share, an aggregate cover and the losses it sees, the contract year, and surplus and per-risk covers beside a cat program. |
+| [`cat-4-programs.md`](cat-4-programs.md) | Stacked covers and who keeps what: layers in a program, a signed line against the whole layer, a quota share inuring to a cat cover, what an aggregate cover can reach, a split by peril, and a retro on the reinsurer's own deals. |
+| [`cat-5-beyond-loss.md`](cat-5-beyond-loss.md) | The money around the loss: reinstatement premium and the season, ceding and profit commissions, sliding scales and brokerage, a no-claims bonus approximated, and the reinsurer's deal ledger. |
+| [`cat-6-pricing.md`](cat-6-pricing.md) | A price for one cat layer: cost of capital and distortion prices, the technical quote with expenses and brokerage, the reinstatement premium inside the price by a root-find, sensitivities, and whether the market price is adequate. |
+| [`cat-7-portfolio.md`](cat-7-portfolio.md) | The reinsurer's whole book: five deals on shared simulated years, the book's tail, Euler capital allocation and diversification, the book priced on its capital, marginal prices of a new deal, and a return on allocated capital. |
+
 **Distributions**
 
 | Guide | What it answers |
@@ -130,6 +145,14 @@ twins in [`examples/`](../../examples/README.md):
 | [`pir-risk-measures.qmd`](pir-risk-measures.qmd) | `pir-risk-measures.md` |
 | [`reserving-compartmental.qmd`](reserving-compartmental.qmd) | `reserving-compartmental.md` |
 | [`reserving-excess-layers.qmd`](reserving-excess-layers.qmd) | `reserving-excess-layers.md` |
+| [`cat-0-overview.qmd`](cat-0-overview.qmd) | `cat-0-overview.md` |
+| [`cat-1-loss-tables.qmd`](cat-1-loss-tables.qmd) | `cat-1-loss-tables.md` |
+| [`cat-2-risk-metrics.qmd`](cat-2-risk-metrics.qmd) | `cat-2-risk-metrics.md` |
+| [`cat-3-contract-terms.qmd`](cat-3-contract-terms.qmd) | `cat-3-contract-terms.md` |
+| [`cat-4-programs.qmd`](cat-4-programs.qmd) | `cat-4-programs.md` |
+| [`cat-5-beyond-loss.qmd`](cat-5-beyond-loss.qmd) | `cat-5-beyond-loss.md` |
+| [`cat-6-pricing.qmd`](cat-6-pricing.qmd) | `cat-6-pricing.md` |
+| [`cat-7-portfolio.qmd`](cat-7-portfolio.qmd) | `cat-7-portfolio.md` |
 
 Each R chunk is followed by the text it prints, and
 `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R tests) runs
