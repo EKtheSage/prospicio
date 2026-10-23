@@ -427,6 +427,15 @@ what it is aiming for by v1.0.
     expected-loss family, on a grid of the diagonal's and the pattern's
     ages, so off-grid ages are read log-linearly; parity with
     chainladder-python's `DevelopmentConstant` on the latest diagonal.
+  - A fitted development applied to another book (`reserving-v02.md`,
+    decision 17; branch `claude/diagonal-pr3`, issue #544, in Rust):
+    `ChainLadderFit::to_chain_ladder` freezes a fit as a fully selected
+    pattern and a constant tail, and `LatestDiagonal::from_triangle` takes
+    another triangle's latest diagonal, so a development fitted on one
+    book projects another book or a bordereau, by the chain ladder and the
+    expected-loss family; parity with chainladder-python's
+    `fit(source).predict(target)`. `LatestDiagonal` over segments and the
+    bindings are the issue's next PRs.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

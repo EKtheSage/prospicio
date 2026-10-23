@@ -13,11 +13,12 @@
 
 use prospicio_core::{Grain, Lag, Month, Period};
 
+use crate::expected_loss::origin_exposure;
 use crate::triangle::Segment;
 use crate::{
     Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit, Development,
     Error, ExpectedLoss, ExpectedLossFit, PatternKind, PatternWeight, Result, SelectedPattern,
-    Tail,
+    Tail, Triangle,
 };
 
 /// The exposure column named in errors.
@@ -150,6 +151,97 @@ impl LatestDiagonal {
             ages.push(age as Lag);
         }
         Self::new(origin_grain, origins, &ages, latest)
+    }
+
+    /// The latest diagonal of `column` in a single-segment `triangle`
+    /// (`reserving-v02.md`, decision 17): each origin at the age of its last
+    /// observed cell, with its cumulative value there, at the triangle's
+    /// origin grain. With `exposure`, each origin also takes the last
+    /// observed value of that column, as the expected-loss methods read the
+    /// exposure on a triangle. The origins run over the ones the column
+    /// observes, oldest first.
+    ///
+    /// This is how a development fitted on one book is applied to another:
+    /// `source.to_chain_ladder().fit_diagonal(&LatestDiagonal::from_triangle(&book, "paid", None)?)`,
+    /// chainladder-python's `fit(source).predict(book)`
+    /// ([`ChainLadderFit::to_chain_ladder`]). An origin whose cell on the
+    /// latest diagonal is missing is projected from its last observed cell.
+    ///
+    /// The diagonal is valued at `column`'s own latest month, so Cape Cod's
+    /// `fit_diagonal` trends to it, where [`CapeCod::fit`] on the triangle
+    /// trends to the triangle's valuation, the latest month of any column.
+    /// When another column (a premium) runs later than `column`, the trended
+    /// aprioris differ by the trend over the gap; the detrended aprioris and
+    /// the ultimates agree as long as every origin ends by `column`'s
+    /// valuation.
+    ///
+    /// Errors: [`Error::MultipleSegments`] for a triangle with several index
+    /// positions, [`Error::UnknownColumn`] for a column it does not have,
+    /// [`Error::EmptyOrigin`] for an origin with no observed cell and
+    /// [`Error::InvalidExposure`] for an exposure that is not finite and
+    /// positive.
+    ///
+    /// ```
+    /// use prospicio_reserving::{
+    ///     BornhuetterFerguson, ChainLadder, DevelopmentColumn, Grain, LatestDiagonal, Long, Month,
+    ///     Triangle,
+    /// };
+    ///
+    /// let origin = [2020, 2020, 2021].map(Month::january);
+    /// let book = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 12]),
+    ///     values: &[
+    ///         ("paid", &[100.0, 150.0, 200.0]),
+    ///         ("premium", &[400.0, 450.0, 500.0]),
+    ///     ],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })
+    /// .unwrap();
+    /// let diagonal = LatestDiagonal::from_triangle(&book, "paid", Some("premium")).unwrap();
+    /// assert_eq!(diagonal.ages(), [24, 12]);
+    /// assert_eq!(diagonal.latest(), [150.0, 200.0]);
+    /// // Each origin's last observed premium: 450 at 24 months for 2020.
+    /// assert_eq!(diagonal.exposure(), Some([450.0, 500.0].as_slice()));
+    ///
+    /// // The book's own development, applied to its diagonal.
+    /// let own = ChainLadder::default().fit(&book, "paid").unwrap();
+    /// let cl = own.to_chain_ladder().fit_diagonal(&diagonal).unwrap();
+    /// assert_eq!(cl.ultimate, own.ultimate);
+    /// assert_eq!(cl.ultimate, [150.0, 300.0]);
+    /// let bf = BornhuetterFerguson { apriori: 0.5, chain_ladder: own.to_chain_ladder() }
+    ///     .fit_diagonal(&diagonal)
+    ///     .unwrap();
+    /// assert_eq!(bf.exposure, [450.0, 500.0]);
+    /// // 150 + 0.5 × 450 × (1 - 1) and 200 + 0.5 × 500 × (1 - 1/1.5).
+    /// assert_eq!(bf.ultimate[0], 150.0);
+    /// assert!((bf.ultimate[1] - (200.0 + 250.0 / 3.0)).abs() < 1e-9);
+    /// ```
+    pub fn from_triangle(
+        triangle: &Triangle,
+        column: &str,
+        exposure: Option<&str>,
+    ) -> Result<Self> {
+        let segment = triangle.segment(column)?;
+        let mut origins = Vec::with_capacity(segment.n_origins);
+        let mut ages = Vec::with_capacity(segment.n_origins);
+        let mut latest = Vec::with_capacity(segment.n_origins);
+        for o in 0..segment.n_origins {
+            let (d, v) = segment.latest(o)?;
+            origins.push(segment.origins[o].start());
+            ages.push(segment.ages[d]);
+            latest.push(v);
+        }
+        let diagonal = Self::new(triangle.origin_grain(), &origins, &ages, &latest)?;
+        match exposure {
+            Some(e) => {
+                diagonal.with_exposure(&origin_exposure(&segment, &triangle.segment(e)?, e)?)
+            }
+            None => Ok(diagonal),
+        }
     }
 
     /// The diagonal with an exposure (premium) per origin, in the order of
