@@ -1463,6 +1463,18 @@ def test_deal_scale_reads_sections_together():
     assert r.marginal(["tax"]).draws[0] == pytest.approx(0.015)
     back = Tower.from_json(tower.to_json())
     assert back.to_json() == tower.to_json()
+    # On an annual loss grid ([deal-grid]): 40 or 160, equally likely.
+    probs = [0.0] * 17
+    probs[4] = probs[16] = 0.5
+    g = tower.on_annual_grid(Grid(10.0, probs))
+    both = tower.apply_annual([40.0, 160.0])
+    mean = lambda *k: sum(both.marginal(list(k)).draws) / 2
+    assert g.expected_deal_ceding_commission["deal"] == pytest.approx(mean("ceding_commission", "deal"), abs=1e-12)
+    assert g.expected_deal_brokerage["deal"] == pytest.approx(2.0, abs=1e-12)
+    # A compound grid cannot: the stop losses' annual terms make the sum of
+    # dependent annual totals.
+    with pytest.raises(ValueError, match="annual terms"):
+        tower.on_grid(Poisson(2.0), Grid(10.0, [0.0, 0.5, 0.5]), 64)
     with pytest.raises(ValueError):
         Tower([a, b]).with_deal_scale("deal", ["A"], brokerage=0.01)
     with pytest.raises(ValueError):

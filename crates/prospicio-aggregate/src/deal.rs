@@ -519,8 +519,13 @@ impl Tower {
     /// deal's or one a result uses, if a section is not a layer of the
     /// tower or is a section of another deal, or if a section has no
     /// positive fixed premium (it is swing rated, has paid reinstatements,
-    /// or has no premium). The grid methods and the P&L ledger refuse a
-    /// tower with a deal: they see one layer's ceded loss at a time.
+    /// or has no premium).
+    ///
+    /// [`on_annual_grid`](Self::on_annual_grid) gives each deal's expected
+    /// commission and brokerage, [`on_grid`](Self::on_grid) too when no
+    /// section has annual terms (and refuses the deal otherwise), and the
+    /// cedant's P&L ledger books the deal's commission; a grid is one year,
+    /// so a deal's carry over a term does not arise there.
     pub fn deal_scale(mut self, deal: DealScale) -> Result<Self> {
         if deal.commission.is_none() && deal.brokerage.is_none() {
             return Err(Error::Data(format!(
@@ -557,16 +562,8 @@ impl Tower {
     }
 
     /// Fails if a layer reads a sliding scale (commission or brokerage)
-    /// before annual terms it has, or the tower has a deal: `what` sees
-    /// only each layer's ceded loss.
+    /// before annual terms it has: `what` sees only each layer's ceded loss.
     pub(crate) fn check_scales_on_ceded(&self, what: &str) -> Result<()> {
-        if let Some(d) = self.deals.first() {
-            return Err(Error::Data(format!(
-                "deal {:?} reads the loss ratio of several layers together, which {what} cannot \
-                 see; use Tower::apply on simulated years",
-                d.name
-            )));
-        }
         let sliding = |c: &Option<Commission>| matches!(c, Some(Commission::SlidingScale(_)));
         match self.layers.iter().find(|l| {
             l.scales_before_annual_terms
@@ -580,6 +577,36 @@ impl Tower {
             ))),
             None => Ok(()),
         }
+    }
+
+    /// Each deal's sections, by index in the tower.
+    pub(crate) fn deal_sections(&self) -> Vec<Vec<usize>> {
+        self.deals
+            .iter()
+            .map(|d| {
+                d.sections
+                    .iter()
+                    .map(|name| {
+                        self.layers
+                            .iter()
+                            .position(|l| &l.name == name)
+                            .expect("a deal's sections are layers of its tower")
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Deal `j`'s ceding commission and brokerage in one year (nothing
+    /// carried) whose sections' scale keys sum to `key`.
+    pub(crate) fn deal_terms_at(&self, j: usize, sections: &[usize], key: f64) -> (f64, f64) {
+        let deal = &self.deals[j];
+        let premium: f64 = sections.iter().map(|&i| self.layers[i].premium).sum();
+        let commission = deal
+            .commission
+            .as_ref()
+            .map_or(0.0, |c| c.rate(key / premium) * premium);
+        (commission, deal.brokerage_at(premium, key))
     }
 
     /// The reinsurer's P&L ledger of one layer or one deal
@@ -1490,10 +1517,23 @@ mod tests {
         let r = tower.deal_ratios(&result, "deal").unwrap();
         assert!((draws(&r, &["loss_ratio"])[0] - 0.6).abs() < 1e-12);
         assert!((draws(&r, &["loss_ratio_before_terms"])[0] - 1.05).abs() < 1e-12);
-        // The grids refuse a deal, naming it.
-        let annual = Grid::new(10.0, vec![0.25; 4]).unwrap();
-        let err = tower.on_annual_grid(&annual).unwrap_err();
-        assert!(err.to_string().contains("deal \"deal\""));
+        // The annual grid reads the same keys at each annual total: here 0
+        // and 150, equally likely.
+        let annual = Grid::new(50.0, vec![0.5, 0.0, 0.0, 0.5]).unwrap();
+        let g = tower.on_annual_grid(&annual).unwrap();
+        let sims = tower.apply_annual(&[0.0, 150.0]).unwrap();
+        let mean = |kind: &str| draws(&sims, &[kind, "deal"]).iter().sum::<f64>() / 2.0;
+        assert!((g.expected_deal_ceding_commission[0] - mean("ceding_commission")).abs() < 1e-12);
+        assert!((g.expected_deal_brokerage[0] - mean("brokerage")).abs() < 1e-12);
+        // A compound grid cannot: a section has annual terms. The error
+        // names the deal and the section.
+        let sev = Grid::new(10.0, vec![0.0, 0.5, 0.5]).unwrap();
+        let poisson = prospicio_prob::Poisson::new(2.0).unwrap();
+        let err = tower.on_grid(&poisson, &sev, 64).unwrap_err().to_string();
+        assert!(
+            err.contains("deal \"deal\"") && err.contains("\"A\""),
+            "{err}"
+        );
     }
 
     #[test]

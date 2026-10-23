@@ -8,6 +8,7 @@ use prospicio_aggregate::{
 use prospicio_prob::PredictiveDistribution;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::collections::HashMap;
 
 use crate::aggregate::{
     AnyCount, PyCompoundMoments, PyCompoundReport, PyEventSet, PyExposure, PyTimeline,
@@ -1219,6 +1220,13 @@ pub(crate) struct PyTower {
     pub(crate) inner: Tower,
 }
 
+impl PyTower {
+    /// The deals' names, in the order they were added.
+    fn deal_names(&self) -> Vec<String> {
+        self.inner.deals.iter().map(|d| d.name.clone()).collect()
+    }
+}
+
 #[pymethods]
 impl PyTower {
     #[new]
@@ -1339,8 +1347,10 @@ impl PyTower {
     /// section pays on its own. Results gain ``("ceding_commission",
     /// name)``, ``("brokerage", name)`` and, when a section reads its
     /// scales before annual terms, ``("loss_before_terms", name)``;
-    /// ``deal_ratios`` takes the deal's name. The grid methods and the P&L
-    /// ledger refuse a tower with a deal.
+    /// ``deal_ratios`` takes the deal's name. ``on_annual_grid`` gives each
+    /// deal's expected commission and brokerage, ``on_grid`` too when no
+    /// section has annual terms, and the cedant's P&L ledger books the
+    /// deal's commission.
     ///
     /// Parameters
     /// ----------
@@ -1911,7 +1921,10 @@ impl PyTower {
         let inner = py
             .detach(|| tower.on_grid(n.as_counting(), &sev, points))
             .map_err(to_py)?;
-        Ok(PyTowerGrids { inner })
+        Ok(PyTowerGrids {
+            inner,
+            deal_names: self.deal_names(),
+        })
     }
 
     /// The tower applied to an annual loss on a grid, each year's total
@@ -1949,6 +1962,7 @@ impl PyTower {
     fn on_annual_grid(&self, annual: PyRef<'_, PyGrid>) -> PyResult<PyAnnualGrids> {
         Ok(PyAnnualGrids {
             inner: self.inner.on_annual_grid(&annual.inner).map_err(to_py)?,
+            deal_names: self.deal_names(),
         })
     }
 
@@ -1965,6 +1979,7 @@ impl PyTower {
 #[pyclass(name = "TowerGrids", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyTowerGrids {
     inner: TowerGrids,
+    deal_names: Vec<String>,
 }
 
 #[pymethods]
@@ -2048,6 +2063,28 @@ impl PyTowerGrids {
     #[getter]
     fn expected_profit_commission(&self) -> Vec<f64> {
         self.inner.expected_profit_commission.clone()
+    }
+
+    /// Expected ceding commission of each deal (``Tower.deal_scale``), by
+    /// its name, read on its sections' loss ratio together; 0 for a deal
+    /// without one.
+    #[getter]
+    fn expected_deal_ceding_commission(&self) -> HashMap<String, f64> {
+        self.deal_names
+            .iter()
+            .cloned()
+            .zip(self.inner.expected_deal_ceding_commission.iter().copied())
+            .collect()
+    }
+
+    /// Expected brokerage of each deal, by its name; 0 without one.
+    #[getter]
+    fn expected_deal_brokerage(&self) -> HashMap<String, f64> {
+        self.deal_names
+            .iter()
+            .cloned()
+            .zip(self.inner.expected_deal_brokerage.iter().copied())
+            .collect()
     }
 
     /// Each view priced on its own by a distortion: the stand-alone price
@@ -2539,6 +2576,7 @@ pub(crate) fn aggregate_layer_statistics(
 #[pyclass(name = "AnnualGrids", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyAnnualGrids {
     inner: AnnualGrids,
+    deal_names: Vec<String>,
 }
 
 #[pymethods]
@@ -2592,6 +2630,28 @@ impl PyAnnualGrids {
     #[getter]
     fn expected_profit_commission(&self) -> Vec<f64> {
         self.inner.expected_profit_commission.clone()
+    }
+
+    /// Expected ceding commission of each deal (``Tower.deal_scale``), by
+    /// its name, read on its sections' loss ratio together; 0 for a deal
+    /// without one.
+    #[getter]
+    fn expected_deal_ceding_commission(&self) -> HashMap<String, f64> {
+        self.deal_names
+            .iter()
+            .cloned()
+            .zip(self.inner.expected_deal_ceding_commission.iter().copied())
+            .collect()
+    }
+
+    /// Expected brokerage of each deal, by its name; 0 without one.
+    #[getter]
+    fn expected_deal_brokerage(&self) -> HashMap<String, f64> {
+        self.deal_names
+            .iter()
+            .cloned()
+            .zip(self.inner.expected_deal_brokerage.iter().copied())
+            .collect()
     }
 
     /// Whether every ceded and net loss fell on a grid point. The
