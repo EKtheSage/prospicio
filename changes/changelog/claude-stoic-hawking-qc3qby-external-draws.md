@@ -1,7 +1,7 @@
 ### Models
 
 - MCMC draws from outside prospicio in its Bayes diagnostics and PSIS-LOO
-  (#395): `PosteriorDraws::from_chains`, `log_likelihood`,
+  (#395, #543): `PosteriorDraws::from_chains`, `log_likelihood`,
   `relative_efficiency` and `loo`, and `prospicio_bayes::stan_csv::read`
   for CmdStan's CSV files (warmup dropped, sampler columns kept apart,
   divergences counted). Python `Draws`, `read_stan_csv`,
