@@ -986,8 +986,7 @@ with_interlocking <- function(tower, on = TRUE) {
 apply_tower_timeline <- function(tower, timeline, exposure) {
   exposure <- as.matrix(exposure)
   predictive_distribution(ptr = rust_result(tower@ptr$apply_timeline(
-    timeline@events@ptr, as.double(timeline@months), as.double(t(exposure)),
-    as.double(nrow(exposure))
+    timeline@ptr, as.double(t(exposure)), as.double(nrow(exposure))
   )))
 }
 

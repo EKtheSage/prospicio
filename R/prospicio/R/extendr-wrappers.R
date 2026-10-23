@@ -100,8 +100,6 @@ ylt_file_hash_rust <- function(path) .Call(wrap__ylt_file_hash_rust, path)
 
 year_correlation_for_ratio_rust <- function(n_years, ratio) .Call(wrap__year_correlation_for_ratio_rust, n_years, ratio)
 
-timeline_from_years_rust <- function(years) .Call(wrap__timeline_from_years_rust, years)
-
 exposure_uniform_rust <- function(n_years, policy_months) .Call(wrap__exposure_uniform_rust, n_years, policy_months)
 
 credibility_standards <- function(p, k, cv) .Call(wrap__credibility_standards, p, k, cv)
@@ -368,10 +366,6 @@ EventSet$permute <- function(index) .Call(wrap__EventSet__permute, self, index)
 
 EventSet$term_years <- function(n_years) .Call(wrap__EventSet__term_years, self, n_years)
 
-EventSet$timeline_check <- function(months) .Call(wrap__EventSet__timeline_check, self, months)
-
-EventSet$timeline_years <- function(months, basis, shares, n_years, sources) .Call(wrap__EventSet__timeline_years, self, months, basis, shares, n_years, sources)
-
 EventSet$correlated_years <- function(n_years, correlation, kind, draws, seed) .Call(wrap__EventSet__correlated_years, self, n_years, correlation, kind, draws, seed)
 
 EventSet$calibrate_year_correlation <- function(n_years, ratio, kind, draws, seed) .Call(wrap__EventSet__calibrate_year_correlation, self, n_years, ratio, kind, draws, seed)
@@ -409,6 +403,28 @@ EventSet$maxima <- function() .Call(wrap__EventSet__maxima, self)
 
 #' @export
 `[[.EventSet` <- `$.EventSet`
+
+Timeline <- new.env(parent = emptyenv())
+
+Timeline$new <- function(events, months, pattern) .Call(wrap__Timeline__new, events, months, pattern)
+
+Timeline$from_years <- function(years, pattern) .Call(wrap__Timeline__from_years, years, pattern)
+
+Timeline$events <- function() .Call(wrap__Timeline__events, self)
+
+Timeline$months <- function() .Call(wrap__Timeline__months, self)
+
+Timeline$aggregate_pattern <- function() .Call(wrap__Timeline__aggregate_pattern, self)
+
+Timeline$has_aggregate_part <- function() .Call(wrap__Timeline__has_aggregate_part, self)
+
+Timeline$years <- function(basis, shares, n_years, sources) .Call(wrap__Timeline__years, self, basis, shares, n_years, sources)
+
+#' @export
+`$.Timeline` <- function (self, name) { func <- Timeline[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.Timeline` <- `$.Timeline`
 
 HierarchicalCredibilityR <- new.env(parent = emptyenv())
 
@@ -580,7 +596,7 @@ ReinsuranceTower$interlocking <- function() .Call(wrap__ReinsuranceTower__interl
 
 ReinsuranceTower$cover_basis <- function() .Call(wrap__ReinsuranceTower__cover_basis, self)
 
-ReinsuranceTower$apply_timeline <- function(events, months, shares, n_years) .Call(wrap__ReinsuranceTower__apply_timeline, self, events, months, shares, n_years)
+ReinsuranceTower$apply_timeline <- function(timeline, shares, n_years) .Call(wrap__ReinsuranceTower__apply_timeline, self, timeline, shares, n_years)
 
 ReinsuranceTower$apply_term <- function(years) .Call(wrap__ReinsuranceTower__apply_term, self, years)
 

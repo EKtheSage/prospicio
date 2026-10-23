@@ -3239,13 +3239,22 @@ impl PyExposure {
 /// contract years: ``Tower.apply_timeline``, or ``years`` for the years
 /// themselves.
 ///
+/// An aggregate part of the events (``EventSet.with_aggregate_part``) has
+/// no time: it is spread over its accident period's months by
+/// ``aggregate_pattern`` and each month's amount falls to the contract
+/// years as an event in that month would.
+///
 /// Parameters
 /// ----------
 /// events : EventSet
-///     With times (``with_uniform_times``, say) as fractions of the term,
-///     and no aggregate part.
+///     With times (``with_uniform_times``, say) as fractions of the term.
+///     An aggregate part is the whole term's.
 /// months : int
 ///     The number of accident months.
+/// aggregate_pattern : list of float, optional
+///     Twelve non-negative weights, one for each month of an accident
+///     year, that spread the aggregate part over the months (they need
+///     not add to 1). Uniform by default.
 ///
 /// Examples
 /// --------
@@ -3262,13 +3271,31 @@ pub(crate) struct PyTimeline {
     pub(crate) inner: prospicio_aggregate::timeline::Timeline,
 }
 
+impl PyTimeline {
+    fn patterned(
+        inner: prospicio_aggregate::timeline::Timeline,
+        pattern: Option<Vec<f64>>,
+    ) -> PyResult<Self> {
+        let inner = match pattern {
+            Some(p) => inner.with_aggregate_pattern(&p).map_err(to_py)?,
+            None => inner,
+        };
+        Ok(Self { inner })
+    }
+}
+
 #[pymethods]
 impl PyTimeline {
     #[new]
-    fn new(events: PyRef<'_, PyEventSet>, months: usize) -> PyResult<Self> {
+    #[pyo3(signature = (events, months, aggregate_pattern = None))]
+    fn new(
+        events: PyRef<'_, PyEventSet>,
+        months: usize,
+        aggregate_pattern: Option<Vec<f64>>,
+    ) -> PyResult<Self> {
         let inner = prospicio_aggregate::timeline::Timeline::new(events.inner.clone(), months)
             .map_err(to_py)?;
-        Ok(Self { inner })
+        Self::patterned(inner, aggregate_pattern)
     }
 
     /// A timeline stitched from one event set per accident year.
@@ -3276,23 +3303,59 @@ impl PyTimeline {
     /// Each year needs times within its year and the same number of
     /// simulations; year ``t``'s event at time ``tau`` is at
     /// ``(t + tau) / T`` of the term. The years can come from
-    /// ``EventSet.term_years`` or ``EventSet.correlated_years``.
+    /// ``EventSet.term_years`` or ``EventSet.correlated_years``. Each
+    /// year's aggregate part stays its accident year's, spread over its
+    /// twelve months by ``aggregate_pattern``.
     ///
     /// Parameters
     /// ----------
     /// years : list of EventSet
+    /// aggregate_pattern : list of float, optional
+    ///     Twelve non-negative monthly weights; uniform by default.
     ///
     /// Returns
     /// -------
     /// Timeline
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+    /// >>> from prospicio.distributions import PredictiveDistribution
+    /// >>> part = PredictiveDistribution([], [()], [[120.0]])
+    /// >>> year = EventSet.from_years([[]], times=[[]]).with_aggregate_part(part)
+    /// >>> halves = [[1.0] * 6 + [0.0] * 6, [0.0] * 6 + [1.0] * 6]
+    /// >>> even = Timeline.from_years([year])
+    /// >>> [y.aggregate_part(0) for y in even.years("risks_attaching", Exposure(halves))]
+    /// [[60.0], [60.0]]
+    /// >>> december = Timeline.from_years([year], aggregate_pattern=[0.0] * 11 + [1.0])
+    /// >>> [y.aggregate_part(0) for y in december.years("risks_attaching", Exposure(halves))]
+    /// [[0.0], [120.0]]
     #[staticmethod]
-    fn from_years(years: Vec<PyRef<'_, PyEventSet>>) -> PyResult<Self> {
+    #[pyo3(signature = (years, aggregate_pattern = None))]
+    fn from_years(
+        years: Vec<PyRef<'_, PyEventSet>>,
+        aggregate_pattern: Option<Vec<f64>>,
+    ) -> PyResult<Self> {
         let years: Vec<EventSet> = years.iter().map(|e| e.inner.clone()).collect();
         let inner = prospicio_aggregate::timeline::Timeline::from_years(&years).map_err(to_py)?;
-        Ok(Self { inner })
+        Self::patterned(inner, aggregate_pattern)
     }
 
-    /// The events, with times as fractions of the term.
+    /// The weight of each month of an accident year that spreads the
+    /// aggregate part, as set (uniform by default).
+    #[getter]
+    fn aggregate_pattern(&self) -> Vec<f64> {
+        self.inner.aggregate_pattern().to_vec()
+    }
+
+    /// Whether the timeline carries an aggregate part.
+    #[getter]
+    fn has_aggregate_part(&self) -> bool {
+        self.inner.has_aggregate_part()
+    }
+
+    /// The events, with times as fractions of the term, without the
+    /// aggregate part.
     #[getter]
     fn events(&self) -> PyEventSet {
         PyEventSet {

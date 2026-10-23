@@ -577,6 +577,27 @@ impl EventSet {
         self.aggregate.as_ref().map(|a| &a.of_column[..])
     }
 
+    /// The same events without their aggregate part, and the part. The labels keep every combination, the
+    /// part's too, so [`with_aggregate_columns`](Self::with_aggregate_columns)
+    /// can put amounts back on the same columns.
+    pub(crate) fn without_aggregate_part(mut self) -> (Self, Option<AggregatePart>) {
+        let part = self.aggregate.take();
+        (self, part)
+    }
+
+    /// The same events with an aggregate part of `amounts` (row-major, one
+    /// row a simulation) on the columns `of_column`, indices into the
+    /// set's label combinations.
+    pub(crate) fn with_aggregate_columns(
+        mut self,
+        of_column: Vec<usize>,
+        amounts: Vec<f64>,
+    ) -> Self {
+        debug_assert_eq!(amounts.len(), self.n_sims() * of_column.len());
+        self.aggregate = Some(AggregatePart { of_column, amounts });
+        self
+    }
+
     /// The same events, recorded as drawn with `samplers`
     /// ([`Provenance::samplers`]): [`current_samplers`] for years this
     /// build simulated, as a risk profile's simulation does, or `None` when

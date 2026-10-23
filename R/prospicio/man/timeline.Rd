@@ -7,20 +7,28 @@
 \alias{uniform_exposure}
 \title{Timeline of a term shared by its underwriting years}
 \usage{
-timeline(events, months)
+timeline(events, months, aggregate_pattern = NULL, ptr = NULL)
 
-timeline_from_years(years)
+timeline_from_years(years, aggregate_pattern = NULL)
 
 timeline_years(timeline, basis, exposure, sources = FALSE)
 
 uniform_exposure(n_years, policy_months)
 }
 \arguments{
-\item{events}{An \link{event_set} with times and no aggregate part.}
+\item{events}{An \link{event_set} with times. An aggregate part is the
+whole term's.}
 
 \item{months}{The number of accident months.}
 
-\item{years}{A list of \link{event_set}s, one per accident year.}
+\item{aggregate_pattern}{Twelve non-negative weights, one for each month
+of an accident year, that spread the aggregate part over the months
+(they need not add to 1); \code{NULL} for uniform.}
+
+\item{ptr}{Internal: the Rust timeline.}
+
+\item{years}{A list of \link{event_set}s, one per accident year; each one's
+aggregate part stays its accident year's.}
 
 \item{timeline}{A \code{timeline}.}
 
@@ -37,7 +45,8 @@ policy's months in force.}
 }
 \value{
 \code{timeline()} and \code{timeline_from_years()} a \code{timeline} with
-properties \code{events}, \code{months} and \code{n_sims}; \code{timeline_years()} a list
+properties \code{events} (without the aggregate part), \code{months}, \code{n_sims},
+\code{aggregate_pattern} and \code{has_aggregate_part}; \code{timeline_years()} a list
 of \link{event_set}s, one per contract year, or with \code{sources} a list of
 \code{years} and \code{sources}; \code{uniform_exposure()} a matrix.
 }
@@ -58,6 +67,14 @@ every event in accident months \code{12 (k - 1) + 1} to \verb{12 k} whole. Under
 event in month \code{m}, sums insured scaled alike, at its time over the
 months the year has a share; the same event can fall to several years.
 \code{\link[=apply_tower_timeline]{apply_tower_timeline()}} does both steps under a tower's basis.
+
+An aggregate part of the events (\code{\link[=with_aggregate_part]{with_aggregate_part()}}) has no time.
+The timeline keeps it by accident period (each accident year of
+\code{timeline_from_years()}, the whole term of \code{timeline()}) and spreads it
+over the period's months by \code{aggregate_pattern}: a month's weight over
+the period's weights. Each month's amount falls to the contract years
+as an event in that month would, so a quota share or stop loss in each
+year sees its part.
 
 \code{uniform_exposure()} writes each of \code{n_years} underwriting years evenly
 over its twelve months, each policy in force for \code{policy_months} from

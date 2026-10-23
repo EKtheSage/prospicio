@@ -24762,13 +24762,22 @@ class Timeline:
     contract years: ``Tower.apply_timeline``, or ``years`` for the years
     themselves.
     
+    An aggregate part of the events (``EventSet.with_aggregate_part``) has
+    no time: it is spread over its accident period's months by
+    ``aggregate_pattern`` and each month's amount falls to the contract
+    years as an event in that month would.
+    
     Parameters
     ----------
     events : EventSet
-        With times (``with_uniform_times``, say) as fractions of the term,
-        and no aggregate part.
+        With times (``with_uniform_times``, say) as fractions of the term.
+        An aggregate part is the whole term's.
     months : int
         The number of accident months.
+    aggregate_pattern : list of float, optional
+        Twelve non-negative weights, one for each month of an accident
+        year, that spread the aggregate part over the months (they need
+        not add to 1). Uniform by default.
     
     Examples
     --------
@@ -24781,30 +24790,60 @@ class Timeline:
     >>> rad[0].events(0), rad[1].events(0)
     ([25.0], [75.0])
     """
-    def __new__(cls, /, events: EventSet, months: int) -> Timeline: ...
+    def __new__(cls, /, events: EventSet, months: int, aggregate_pattern: Sequence[float] |None = None) -> Timeline: ...
     def __repr__(self, /) -> str: ...
+    @property
+    def aggregate_pattern(self, /) -> list[float]:
+        """
+        The weight of each month of an accident year that spreads the
+        aggregate part, as set (uniform by default).
+        """
     @property
     def events(self, /) -> EventSet:
         """
-        The events, with times as fractions of the term.
+        The events, with times as fractions of the term, without the
+        aggregate part.
         """
     @staticmethod
-    def from_years(years: Sequence[EventSet]) -> Timeline:
+    def from_years(years: Sequence[EventSet], aggregate_pattern: Sequence[float] |None = None) -> Timeline:
         """
         A timeline stitched from one event set per accident year.
         
         Each year needs times within its year and the same number of
         simulations; year ``t``'s event at time ``tau`` is at
         ``(t + tau) / T`` of the term. The years can come from
-        ``EventSet.term_years`` or ``EventSet.correlated_years``.
+        ``EventSet.term_years`` or ``EventSet.correlated_years``. Each
+        year's aggregate part stays its accident year's, spread over its
+        twelve months by ``aggregate_pattern``.
         
         Parameters
         ----------
         years : list of EventSet
+        aggregate_pattern : list of float, optional
+            Twelve non-negative monthly weights; uniform by default.
         
         Returns
         -------
         Timeline
+        
+        Examples
+        --------
+        >>> from prospicio.aggregate import EventSet, Exposure, Timeline
+        >>> from prospicio.distributions import PredictiveDistribution
+        >>> part = PredictiveDistribution([], [()], [[120.0]])
+        >>> year = EventSet.from_years([[]], times=[[]]).with_aggregate_part(part)
+        >>> halves = [[1.0] * 6 + [0.0] * 6, [0.0] * 6 + [1.0] * 6]
+        >>> even = Timeline.from_years([year])
+        >>> [y.aggregate_part(0) for y in even.years("risks_attaching", Exposure(halves))]
+        [[60.0], [60.0]]
+        >>> december = Timeline.from_years([year], aggregate_pattern=[0.0] * 11 + [1.0])
+        >>> [y.aggregate_part(0) for y in december.years("risks_attaching", Exposure(halves))]
+        [[0.0], [120.0]]
+        """
+    @property
+    def has_aggregate_part(self, /) -> bool:
+        """
+        Whether the timeline carries an aggregate part.
         """
     @property
     def months(self, /) -> int:

@@ -865,6 +865,30 @@ back <- timeline_years(st, "losses_occurring", uniform_exposure(3, 12))
 for (t in 1:3) {
   stopifnot(all(abs(draw_matrix(total(back[[t]])) - draw_matrix(total(yrs[[t]]))) < 1e-9))
 }
+# An aggregate part on a timeline: each accident year keeps its own under
+# losses occurring, follows the month's shares under risks attaching, and is
+# spread by the pattern.
+ap_year <- function(amount) {
+  with_aggregate_part(events_from_years(list(numeric(0), numeric(0)), times = list(numeric(0), numeric(0))),
+                      predictive_distribution(matrix(c(amount, 2 * amount), 2), data.frame(peril = "fire")))
+}
+ap_years <- list(ap_year(120), ap_year(60))
+apt <- timeline_from_years(ap_years)
+stopifnot(apt@has_aggregate_part, identical(apt@aggregate_pattern, rep(1, 12)), !apt@events@has_aggregate_part)
+lo <- timeline_years(apt, "losses_occurring", uniform_exposure(2, 12))
+stopifnot(identical(aggregate_part(lo[[1]], 2), 240), identical(aggregate_part(lo[[2]], 1), 60))
+ra_shares <- rbind(c(rep(1, 12), rep(0.25, 12)), c(rep(0, 12), rep(0.75, 12)))
+ra <- timeline_years(apt, "risks_attaching", ra_shares)
+stopifnot(abs(aggregate_part(ra[[1]], 1) - 135) < 1e-9, abs(aggregate_part(ra[[2]], 2) - 90) < 1e-9)
+dec <- timeline_from_years(ap_years, aggregate_pattern = c(rep(0, 11), 1))
+late <- rbind(c(rep(1, 11), 0, rep(0, 12)), c(rep(0, 11), 1, rep(1, 12)))
+stopifnot(abs(aggregate_part(timeline_years(dec, "risks_attaching", late)[[1]], 1)) < 1e-12)
+stopifnot(inherits(try(timeline_from_years(ap_years, aggregate_pattern = rep(1, 11)), silent = TRUE), "try-error"))
+term <- timeline(ap_year(240), 24, aggregate_pattern = rep(1, 12))
+stopifnot(abs(aggregate_part(timeline_years(term, "losses_occurring", uniform_exposure(2, 12))[[2]], 1) - 120) < 1e-9)
+qs_tl <- with_cover_basis(reinsurance_tower(list(quota_share("QS", 0.5))), "losses_occurring")
+ceded <- draw_matrix(select_components(apply_tower_timeline(qs_tl, apt, uniform_exposure(2, 12)), "kind", "ceded"))
+stopifnot(all(abs(ceded[1, ] - c(60, 30)) < 1e-9))
 # Interlocking cuts each year's limit by its share of the event: 50 xs 20 on
 # 25 and 75 of an event of 100 cedes 5 and 37.5, not 5 and 50.
 tw <- with_cover_basis(reinsurance_tower(list(xol_layer("XL", 50, 20))), "risks_attaching")
