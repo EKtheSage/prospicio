@@ -40,7 +40,9 @@
 //! key but the name and sections only when set (format version 4).
 //! A tower with a cover basis ([`Tower::cover_basis`]) has
 //! `"cover_basis": "losses_occurring" | "risks_attaching"` (format version
-//! 5); a document without one loads with none.
+//! 5); a document without one loads with none. A tower whose contracts
+//! interlock ([`Tower::interlocking`]) has `"interlocking": true` (format
+//! version 6); a document without the key loads with interlocking off.
 
 use prospicio_core::{Error, Result};
 use serde_json::{Map, Number, Value, json};
@@ -53,11 +55,11 @@ use crate::timeline::CoverBasis;
 /// Value of the `format` field.
 const FORMAT: &str = "risk_rs.tower";
 /// The newest format version this build reads. A document is stamped at
-/// the oldest version that reads it: 5 with a cover basis, 4 with a deal scale, 3 when a layer has brokerage,
+/// the oldest version that reads it: 6 with interlocking, 5 with a cover basis, 4 with a deal scale, 3 when a layer has brokerage,
 /// deductions or a scale read before annual terms, 2 when a layer carries
 /// deficits or credits over a term (which older readers would drop), else
 /// 1.
-const FORMAT_VERSION: u64 = 5;
+const FORMAT_VERSION: u64 = 6;
 
 impl Tower {
     /// The programme as a JSON document; [`from_json`](Self::from_json)
@@ -97,7 +99,9 @@ impl Tower {
         });
         let mut doc = json!({
             "format": FORMAT,
-            "format_version": if self.cover_basis.is_some() {
+            "format_version": if self.interlocking {
+                6
+            } else if self.cover_basis.is_some() {
                 5
             } else if !self.deals.is_empty() {
                 4
@@ -118,6 +122,9 @@ impl Tower {
                 CoverBasis::LossesOccurring => "losses_occurring",
                 CoverBasis::RisksAttaching => "risks_attaching",
             });
+        }
+        if self.interlocking {
+            doc["interlocking"] = Value::Bool(true);
         }
         serde_json::to_string(&doc).expect("a JSON value serializes")
     }
@@ -180,6 +187,11 @@ impl Tower {
                     "unknown cover basis {other}: expected \"losses_occurring\" or \"risks_attaching\""
                 )));
             }
+        }
+        match top.get("interlocking") {
+            None | Some(Value::Null) => {}
+            Some(Value::Bool(on)) => tower = tower.interlocking(*on),
+            Some(_) => return Err(Error::Data("interlocking must be true or false".into())),
         }
         Ok(tower)
     }
@@ -902,6 +914,23 @@ mod tests {
     }
 
     #[test]
+    fn interlocking_round_trips() {
+        let plain = Tower::new(vec![Layer::xol("L", 10.0, 5.0).unwrap()])
+            .unwrap()
+            .cover_basis(CoverBasis::RisksAttaching);
+        let tower = plain.clone().interlocking(true);
+        let text = tower.to_json();
+        assert!(text.contains("\"format_version\":6") && text.contains("\"interlocking\":true"));
+        assert_eq!(Tower::from_json(&text).unwrap(), tower);
+        let off = plain.to_json();
+        assert!(!off.contains("interlocking"));
+        assert!(!Tower::from_json(&off).unwrap().interlocking);
+        assert!(
+            Tower::from_json(&text.replace("\"interlocking\":true", "\"interlocking\":1")).is_err()
+        );
+    }
+
+    #[test]
     fn refuses_bad_documents() {
         let good = Tower::new(vec![Layer::xol("L", 1.0, 1.0).unwrap()])
             .unwrap()
@@ -909,7 +938,7 @@ mod tests {
         assert!(Tower::from_json("not json").is_err());
         assert!(Tower::from_json(&good.replace("risk_rs.tower", "risk_rs.distribution")).is_err());
         assert!(
-            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":6"))
+            Tower::from_json(&good.replace("\"format_version\":1", "\"format_version\":7"))
                 .is_err()
         );
         assert!(Tower::from_json(&good.replace("\"loss\"", "\"cat\"")).is_err());

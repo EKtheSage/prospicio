@@ -65,6 +65,9 @@ in `reserving-v02.md` decision 7 and `reserving-bayes.md` open decision 10.
 | D | `claude/bayes-compartmental-two-os` | the two-OS model (fast and slow settlement), the generic RK4 solver as its oracle (decision 3) | PR B |
 | E | `claude/bayes-compartmental-segments` | `Compartmental::fit_segments` with `SegmentDependence`, and `CompartmentalCandidate` for the diagonal backtest with a held-out outstanding table (decision 8); Python and R `fit_segments`. **Built** | PR B, and the Meyers segments branch merged |
 | F | `claude/bayes-one-year-compartmental` | the one-year view of models 1 and 2 through `YearModel` (decision 11; `reserving-bayes.md` decision 20), a refit budget for every model's view; Python and R bindings | the Meyers one-year PR (#280) |
+| G | `claude/compartmental-paid-incurred` | `Fitted::PaidAndIncurred`: incurred replaces outstanding as the second response (decision 12); its own Stan reference; Rust, Python and R. **Built** | `main` |
+| H | planned | `Fitted::PaidOnly` and `Fitted::IncurredOnly`, which require `RateOrder::Ordered` (decision 12) | PR G |
+| I | planned | unequal origin and development grain (decision 12) | PR G |
 | later | | multistage exposure on the RK4 solver; market cycles; AR(1) residuals (open decision 8) | PR D |
 
 PRs B to E touch the same binding files as the other Bayesian models
@@ -166,7 +169,7 @@ value has its Stan reference (normal, amounts and cumulative paid in
 `compartmental_gm2.stan`); the mixed combinations have no reference of
 their own and are checked by a unit test against the model written out in
 `f64` with the paper's closed form, for both presets' hierarchies (1e-12).
-`Fitted` still takes paid and outstanding only. The hierarchy is not a
+`Fitted` takes paid and outstanding, and since PR G paid and incurred (decision 12). The hierarchy is not a
 setting of its own but follows from the priors (decision 6):
 `CompartmentalPriors::gesmann_morris_2()` is model 2's, and
 `Compartmental::model_2(priors)` sets model 2's likelihood, scale, paid
@@ -883,7 +886,7 @@ shows the check. A bad prior setting is `InvalidSetting` naming it.
 
 **Built (PR C, Rust core).** `CompartmentalLikelihood::LogNormal`,
 `Scale::LossRatio` and `PaidResponse::Incremental` are built (decision 1),
-`Fitted`'s other values still `Error::Bayes`. `CompartmentalPriors` gains
+`Fitted`'s other values still `Error::Bayes` (PR G builds `PaidAndIncurred`). `CompartmentalPriors` gains
 the three effect fields of decision 2 (a struct literal now needs them;
 `..CompartmentalPriors::gesmann_morris()` keeps model 1's hierarchy) and
 `CompartmentalPriors::gesmann_morris_2()`. `Compartmental::model_2(priors)`
@@ -1558,6 +1561,61 @@ open decision 15; what is particular to this model:
 * A fit needs a future cell, so a fully developed square has no fit and
   no view; the conformance suite's "no year" check samples such a square
   directly in the unit tests.
+
+### 12. Paid and incurred (PR G)
+
+Decided by the user on 2026-10-22: "`Fitted::PaidAndIncurred`: incurred
+replaces outstanding as the second response." Built in Rust, Python and R
+on `claude/compartmental-paid-incurred`.
+
+* **The model.** Two responses, paid and incurred, with the same parameters
+  as paid and outstanding. An incurred cell's mean is `RLR_i w_i (OS(t) +
+  RRF_i PD(t))`, with `w_i` the premium on the amount scale and 1 on the
+  loss-ratio scale and `OS` and `PD` from the closed form `one_os`. `PD`
+  is the cumulative paid even when the paid response is incremental (the
+  incurred is a stock, not a flow). The second `sigma` (`log_sigma_os` in
+  the posterior, the slot that holds the outstanding's) is the incurred
+  response's. Both likelihoods apply; the log-normal needs every incurred
+  cell positive, which outstanding does not guarantee (the calibration
+  panel has 123 cells with an outstanding at or below zero,
+  `knowledge/findings/meyers-calibration-compartmental.md`).
+* **Inputs.** The second column of `fit` supplies the incurred.
+  `Outstanding::FromIncurred(col)` (Python `incurred=`, R `incurred =`)
+  gives incurred cells directly, wherever the column has a value, with no
+  need for a paid cell. `Outstanding::Column(col)` (`outstanding=`) gives
+  incurred as the outstanding plus the paid, where both are observed. Under
+  `PaidAndOutstanding` the two arguments mean what they did, bit for bit.
+* **Consumers of the second response.** The fit's `outstanding`
+  distribution (and `outstanding_table`, `Future.outstanding`) holds the
+  future cells of the second response, so future incurred under this
+  setting, drawn with the incurred sigma; the reserve and the paid cells
+  are unchanged in meaning. `loo()` splits as before, `n_outstanding` and
+  `elpd_outstanding` counting the incurred cells. `fit_segments` fits each
+  segment with the same setting. The one-year view (`YearModel`) needs no
+  change: its second-response cells use `cell_mean`, so they are incurred
+  cells, and the conformance suite passes on it
+  (`the_one_year_view_of_paid_and_incurred_conforms`). The diagonal
+  backtest's second table scores held-out incurred diagonals under this
+  setting (the closed-form density uses the same mean). The prior
+  predictive check keeps drawing the mean outstanding and paid paths.
+  The model name in the provenance is `compartmental` (not `_gm1`).
+* **Validation (decision 1: each shipped value has its own reference).**
+  `scripts/stan/compartmental_gm1_incurred.stan` is the model 1 program
+  with the one changed mean, run by
+  `scripts/reserving_compartmental_incurred_stan.py` on company 337 (the
+  same data, settings and tolerances as model 1) into
+  `reference/reserving_compartmental_incurred_stan.csv`, read by
+  `validation/tests/reserving_compartmental_incurred.rs`.
+  Built result: all 3,040 reference-row comparisons of a 20-seed sweep pass at model 1's tolerances (not re-measured on 200 seeds for this variant), and the total reserve is 175,318 (sd 9,469) against Stan's 175,570 (9,478), 1.3% above the paid and outstanding fit's 173,341. The results are in `knowledge/findings/compartmental-paid-incurred.md`.
+  Unit tests check the log density against a hand computation, the
+  gradient against central differences and against the generic dual pass,
+  and the incurred cells against the two ways of building them.
+* **Decided, not built (later PRs).** `Fitted::PaidOnly` and
+  `Fitted::IncurredOnly` require `RateOrder::Ordered`, because from one
+  response only `RLR x RRF` is identified (decision 2); the fit refuses
+  `RateOrder::Free` for them (PR H). Unequal origin and development grain is
+  in scope and comes in a later PR (PR I). Until they land both still return
+  the not-yet-built error.
 
 ## Risks
 

@@ -865,3 +865,11 @@ back <- timeline_years(st, "losses_occurring", uniform_exposure(3, 12))
 for (t in 1:3) {
   stopifnot(all(abs(draw_matrix(total(back[[t]])) - draw_matrix(total(yrs[[t]]))) < 1e-9))
 }
+# Interlocking cuts each year's limit by its share of the event: 50 xs 20 on
+# 25 and 75 of an event of 100 cedes 5 and 37.5, not 5 and 50.
+tw <- with_cover_basis(reinsurance_tower(list(xol_layer("XL", 50, 20))), "risks_attaching")
+stopifnot(identical(tw@interlocking, FALSE))
+on <- with_interlocking(tw)
+stopifnot(identical(on@interlocking, TRUE), identical(with_interlocking(on, FALSE)@interlocking, FALSE))
+ceded <- draw_matrix(select_components(apply_tower_timeline(on, tl, shares), "kind", "ceded"))
+stopifnot(all(abs(ceded[1, ] - c(5, 37.5)) < 1e-12))
