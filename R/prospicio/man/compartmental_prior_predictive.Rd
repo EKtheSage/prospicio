@@ -52,8 +52,8 @@ drawn from their priors restricted to \code{k_er > k_p}. The seed is derived fro
 simulations' is.
 }
 \details{
-Errors: if a prior setting is invalid, \code{n_sims} is 0, the premium column
-is missing or not positive, or the origin and development grains differ.
+Errors: if a prior setting is invalid, \code{n_sims} is 0, or the premium column
+is missing or not positive.
 }
 \examples{
 long <- data.frame(year = rep(1988:1990, 3:1), age = c(12, 24, 36, 12, 24, 12),

@@ -7,7 +7,10 @@
 //! origin by origin and then age by age, then the outstanding cells in the
 //! same order. Each type runs from the origin's latest observed cell of
 //! that type to the last cell whose valuation falls in the year, so an
-//! origin that lags the valuation catches up. Given a posterior draw the
+//! origin that lags the valuation catches up, and with a development grain
+//! finer than a year (decision 13) the year holds up to four quarterly or
+//! twelve monthly cells of each type per origin, as the generic engine's
+//! `YearCells` finds them for the bootstraps. Given a posterior draw the
 //! response of each cell (the amount or loss ratio, the paid cumulative or
 //! incremental, as the fit's settings say) is normal or log-normal about
 //! its mean, independently, as in the fit. With one response fitted

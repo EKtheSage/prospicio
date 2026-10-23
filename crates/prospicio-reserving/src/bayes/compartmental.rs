@@ -575,9 +575,13 @@ fn draw_half(prior: HalfPrior, rng: &mut StreamRng) -> f64 {
 /// draw's `τ` and `ρ` (decision 2); the fit lists such origins in
 /// [`CompartmentalFit::population_origins`]. The reserve is the paid to the
 /// square's last age less the latest observed paid (decision 5): the square
-/// has as many ages as the premium column has origins, and an origin
-/// observed at that age has a reserve of 0. The origin and development
-/// grains must be equal.
+/// runs for as many origin periods as the premium column has origins, in
+/// development periods, and an origin observed at that age has a reserve of
+/// 0. The origin grain must be a whole multiple of the development grain
+/// (decision 13: annual origins with quarterly development give 40 ages for
+/// ten origins); each cell's development time is its age in years on every
+/// grain, so the rates are per year, and an incremental paid cell is the
+/// increment over one development period.
 ///
 /// The likelihood, the response scale and the paid response are settings
 /// (decision 1), each combination allowed: [`likelihood`](Self::likelihood)
@@ -1489,13 +1493,16 @@ impl Compartmental {
         }
         let (origins, premiums, grain) = premium_of(triangle, premium)?;
         let n = origins.len();
-        let ages: Vec<Lag> = (1..=n as u32).map(|k| k * grain.months()).collect();
-        let times: Vec<f64> = ages.iter().map(|&a| f64::from(a) / 12.0).collect();
+        // The square: `n` origin periods of development, in development
+        // periods (decision 13).
+        let na = grain.square_ages(n);
+        let ages: Vec<Lag> = (0..na).map(|k| grain.age(k)).collect();
+        let times: Vec<f64> = (0..na).map(|k| grain.time(k)).collect();
         let pr = self.priors;
         let ordered = self.rate_order == RateOrder::Ordered;
         let cellwise = pr.rates_vary() || pr.development_effect_sd.iter().any(Option::is_some);
         let incremental = self.paid_response == PaidResponse::Incremental;
-        let mut keys = Vec::with_capacity(n * n);
+        let mut keys = Vec::with_capacity(n * na);
         for &o in &origins {
             for &a in &ages {
                 keys.push(vec![o.into(), KeyValue::Int(i64::from(a))]);
@@ -1511,7 +1518,7 @@ impl Compartmental {
             .version("prospicio-reserving", env!("CARGO_PKG_VERSION"));
         let both = PredictiveDistribution::simulate(
             vec!["cell".into()],
-            (0..2 * n * n)
+            (0..2 * n * na)
                 .map(|j| vec![KeyValue::Int(j as i64)])
                 .collect(),
             n_sims,
@@ -1549,8 +1556,8 @@ impl Compartmental {
                         let rlr = m_rlr * (s_rlr * (b_rlr + u1)).exp() * premiums[i];
                         let rrf = m_rrf * (s_rrf * (b_rrf + u2)).exp();
                         for (k, (os, pd)) in curves.iter().enumerate() {
-                            row[i * n + k] = rlr * os;
-                            row[n * n + i * n + k] = rlr * rrf * pd;
+                            row[i * na + k] = rlr * os;
+                            row[n * na + i * na + k] = rlr * rrf * pd;
                         }
                     }
                     return;
@@ -1562,7 +1569,7 @@ impl Compartmental {
                 let tau_dev = pr
                     .development_effect_sd
                     .map(|p| p.map(|h| draw_half(h, rng)));
-                let dev: Vec<[f64; 4]> = (0..n)
+                let dev: Vec<[f64; 4]> = (0..na)
                     .map(|_| tau_dev.map(|t| t.map_or(0.0, |t| t * normal(rng))))
                     .collect();
                 let medians = [(m_er, s_er), (m_p, s_p), (m_rlr, s_rlr), (m_rrf, s_rrf)];
@@ -1582,7 +1589,7 @@ impl Compartmental {
                         });
                         let (os, pd) = one_os(ker, kp, t);
                         let base = rlr * premiums[i];
-                        row[i * n + k] = base * os;
+                        row[i * na + k] = base * os;
                         cum = if incremental {
                             let before = if k == 0 {
                                 0.0
@@ -1593,7 +1600,7 @@ impl Compartmental {
                         } else {
                             base * rrf * pd
                         };
-                        row[n * n + i * n + k] = cum;
+                        row[n * na + i * na + k] = cum;
                     }
                 }
             },
@@ -1601,8 +1608,8 @@ impl Compartmental {
         let split = |half: usize, name: &str| -> Result<PredictiveDistribution> {
             let draws: Vec<f64> = both
                 .draw_matrix()
-                .chunks_exact(2 * n * n)
-                .flat_map(|r| r[half * n * n..(half + 1) * n * n].to_vec())
+                .chunks_exact(2 * n * na)
+                .flat_map(|r| r[half * n * na..(half + 1) * n * na].to_vec())
                 .collect();
             Ok(PredictiveDistribution::from_draws(
                 vec!["origin".into(), "age".into()],
@@ -2350,18 +2357,71 @@ fn cell_table(cells: &PredictiveDistribution) -> Result<FitTable> {
     })
 }
 
-/// Each origin of the premium column, its premium (the latest value, which
-/// must be finite and positive) and the grain of the square.
-fn premium_of(triangle: &Triangle, premium: &str) -> Result<(Vec<Period>, Vec<f64>, Grain)> {
-    let grain = triangle.development_grain();
-    if triangle.origin_grain() != grain {
-        return Err(Error::Bayes(format!(
-            "origin grain {} and development grain {} differ; the compartmental model's \
-             square needs them equal (not yet built otherwise)",
-            triangle.origin_grain(),
-            grain
-        )));
+/// The grains of a fit's square (decision 13): the origin grain must be a
+/// whole multiple of the development grain (annual origins with quarterly
+/// or monthly development, quarterly origins with monthly development, or
+/// equal grains).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SquareGrain {
+    origin: Grain,
+    development: Grain,
+}
+
+impl SquareGrain {
+    fn new(origin: Grain, development: Grain) -> Result<Self> {
+        if !origin.is_multiple_of(development) {
+            return Err(Error::Bayes(format!(
+                "origin grain {origin} is not a whole multiple of development grain \
+                 {development}; the compartmental model needs each origin period to be a \
+                 whole number of development periods"
+            )));
+        }
+        Ok(Self {
+            origin,
+            development,
+        })
     }
+
+    /// Development periods per origin period.
+    fn per_origin(self) -> usize {
+        (self.origin.months() / self.development.months()) as usize
+    }
+
+    /// The square's ages for `n_origins` origins: `n_origins` origin
+    /// periods, in development periods (decision 5's horizon).
+    fn square_ages(self, n_origins: usize) -> usize {
+        n_origins * self.per_origin()
+    }
+
+    /// The age in months of age index `k`.
+    fn age(self, k: usize) -> Lag {
+        (k as Lag + 1) * self.development.months()
+    }
+
+    /// The age index of an age in months, which must be a whole positive
+    /// number of development periods.
+    fn age_index(self, age: Lag) -> Result<usize> {
+        let months = self.development.months();
+        if age == 0 || age % months != 0 {
+            return Err(Error::Bayes(format!(
+                "development age {age} months is not a whole number of {} periods",
+                self.development
+            )));
+        }
+        Ok((age / months - 1) as usize)
+    }
+
+    /// The development time of age index `k` in years (decision 13): the
+    /// age in months over 12, on every grain.
+    fn time(self, k: usize) -> f64 {
+        f64::from(self.age(k)) / 12.0
+    }
+}
+
+/// Each origin of the premium column, its premium (the latest value, which
+/// must be finite and positive) and the grains of the square.
+fn premium_of(triangle: &Triangle, premium: &str) -> Result<(Vec<Period>, Vec<f64>, SquareGrain)> {
+    let grain = SquareGrain::new(triangle.origin_grain(), triangle.development_grain())?;
     let segment = triangle.segment(premium)?;
     let premiums = (0..segment.n_origins)
         .map(|o| {
@@ -2386,8 +2446,8 @@ fn premium_of(triangle: &Triangle, premium: &str) -> Result<(Vec<Period>, Vec<f6
 struct Data {
     origins: Vec<Period>,
     premium: Vec<f64>,
-    grain: Grain,
-    /// The square's number of ages.
+    grain: SquareGrain,
+    /// The square's number of ages, in development periods.
     n_ages: usize,
     /// `(origin, age index, value)` of each observed outstanding cell.
     outstanding: Vec<(usize, usize, f64)>,
@@ -2424,7 +2484,6 @@ impl Data {
         let (origins, premiums, grain) = premium_of(triangle, premium)?;
         let premium_segment = triangle.segment(premium)?;
         let paid_segment = triangle.segment(paid)?;
-        let months = grain.months();
         // The fit's origin of a segment's origin `o`.
         let origin_of = |segment: &Segment, o: usize, column: &str| -> Result<usize> {
             (segment.origin_offset + o)
@@ -2437,14 +2496,7 @@ impl Data {
                     ))
                 })
         };
-        let age_index = |age: Lag| -> Result<usize> {
-            if age == 0 || age % months != 0 {
-                return Err(Error::Bayes(format!(
-                    "development age {age} months is not a whole number of {grain} periods"
-                )));
-            }
-            Ok((age / months - 1) as usize)
-        };
+        let age_index = |age: Lag| grain.age_index(age);
         let cells_of = |segment: &Segment, column: &str| -> Result<Vec<(usize, usize, f64)>> {
             let mut out = Vec::new();
             for o in 0..segment.n_origins {
@@ -2501,25 +2553,18 @@ impl Data {
                 if incurred { "incurred" } else { "outstanding" }
             )));
         }
-        let n = origins.len();
-        let observed_ages = paid_cells
-            .iter()
-            .chain(&os_cells)
-            .map(|c| c.1 + 1)
-            .max()
-            .unwrap_or(0);
-        let n_ages = n.max(observed_ages);
         let mut data = Self {
             origins,
             premium: premiums,
             grain,
-            n_ages,
+            n_ages: 0,
             outstanding: os_cells,
             paid: paid_cells,
             latest_paid: Vec::new(),
             latest_outstanding: Vec::new(),
             second,
         };
+        data.n_ages = data.square_ages();
         data.set_latest();
         Ok(data)
     }
@@ -2557,7 +2602,21 @@ impl Data {
 
     /// The age in months of age index `k`.
     fn age(&self, k: usize) -> Lag {
-        (k as Lag + 1) * self.grain.months()
+        self.grain.age(k)
+    }
+
+    /// The square's number of ages with the cells as they are now: the
+    /// premium column's origin periods in development periods (decision
+    /// 13), or the latest observed age if later.
+    fn square_ages(&self) -> usize {
+        self.grain.square_ages(self.origins.len()).max(
+            self.paid
+                .iter()
+                .chain(&self.outstanding)
+                .map(|c| c.1 + 1)
+                .max()
+                .unwrap_or(0),
+        )
     }
 
     fn future_cells(&self) -> Future {
@@ -2937,9 +2996,7 @@ impl Model {
                 dev_labels.push(data.age(k).to_string());
             }
         }
-        let times: Vec<f64> = (0..data.n_ages)
-            .map(|k| f64::from(data.age(k)) / 12.0)
-            .collect();
+        let times: Vec<f64> = (0..data.n_ages).map(|k| data.grain.time(k)).collect();
         let log_normal = response.log_normal();
         let obs =
             |origin: usize, k: usize, value: f64, before: Option<f64>, paid: bool| -> Result<Obs> {
@@ -5190,7 +5247,8 @@ mod tests {
         assert!(err("nope", incurred(), "premium").contains("nope"));
         assert!(err("paid", Outstanding::Column("nope"), "premium").contains("nope"));
         assert!(err("paid", incurred(), "nope").contains("nope"));
-        // An outstanding column with no cell, and unequal grains.
+        // An outstanding column with no cell, and too few cells on an
+        // unequal grain (accepted since decision 13).
         let origin: Vec<Month> = (0..3).map(|w| Month::january(2000 + w)).collect();
         let small = |development_grain: Grain, ages: &[Lag], os: &[f64]| {
             Triangle::from_long(&Long {
@@ -5219,7 +5277,7 @@ mod tests {
             .fit(&quarterly, "paid", Outstanding::Column("os"), "premium")
             .unwrap_err()
             .to_string();
-        assert!(e.contains("grain"), "{e}");
+        assert!(e.contains("more cells than parameters"), "{e}");
         let few = small(Grain::Year, &[12, 12, 12], &[1.0, 2.0, 3.0]);
         let e = preset()
             .fit(&few, "paid", Outstanding::Column("os"), "premium")
@@ -5736,6 +5794,333 @@ mod tests {
         .unwrap()
     }
 
+    /// A triangle with annual origins 1988 to 1992 and quarterly
+    /// development (decision 13), valued at the end of 1992 (1988 at 3 to
+    /// 60 months, 1992 at 3 to 12: 60 cells of each type), or, when
+    /// `closed`, every origin at 3 to 60 months (the closed square, no
+    /// year). Each cell is the closed form of model 1 at `k_er` 1.8, `k_p`
+    /// 0.45 and each origin's own `RLR` and `RRF`, times its premium, with
+    /// a deterministic wobble of up to 8% on each outstanding and each paid
+    /// increment, so both stay positive.
+    pub(super) fn quarterly_triangle(closed: bool) -> Triangle {
+        quarterly_lines(&[""], closed)
+    }
+
+    /// [`quarterly_triangle`] once for each of `names`, with a key `lob`
+    /// unless `names` is `[""]`.
+    pub(super) fn quarterly_lines(names: &[&str], closed: bool) -> Triangle {
+        let (mut lob, mut origin, mut ages) = (vec![], vec![], vec![]);
+        let (mut paid, mut inc, mut prem) = (vec![], vec![], vec![]);
+        for (w, name) in (0..5usize).flat_map(|w| names.iter().map(move |n| (w, *n))) {
+            let rlr = 0.75 + 0.03 * (w as f64).sin();
+            let rrf = 0.8 + 0.02 * (2.0 * w as f64).cos();
+            let n_ages = if closed { 20 } else { 4 * (5 - w) };
+            let (mut p, mut before) = (0.0, 0.0);
+            for d in 0..n_ages {
+                let age = 3 * (d as Lag + 1);
+                let (os, pd) = one_os(1.8, 0.45, f64::from(age) / 12.0);
+                let wobble = |j: usize| 1.0 + 0.08 * ((7 * w + 3 * d + j) as f64).sin();
+                // The wobble on each increment, so every increment is
+                // positive.
+                p += PREMIUM[w] * rlr * rrf * (pd - before) * wobble(0);
+                before = pd;
+                lob.push(name);
+                origin.push(Month::january(1988 + w as i32));
+                ages.push(age);
+                paid.push(p);
+                inc.push(PREMIUM[w] * rlr * os * wobble(1) + p);
+                prem.push(PREMIUM[w]);
+            }
+        }
+        let key = [("lob", &lob[..])];
+        Triangle::from_long(&Long {
+            keys: if names == [""] { &[] } else { &key },
+            origin: &origin,
+            development: DevelopmentColumn::Age(&ages),
+            values: &[("paid", &paid), ("incurred", &inc), ("premium", &prem)],
+            origin_grain: Grain::Year,
+            development_grain: Grain::Quarter,
+            cumulative: true,
+        })
+        .unwrap()
+    }
+
+    /// The grains of the square (decision 13): the origin grain a whole
+    /// multiple of the development grain, else an error naming both.
+    #[test]
+    fn the_square_needs_whole_development_periods_in_an_origin() {
+        use Grain::{Month, Quarter, Semester, Year};
+        for (origin, development, per) in [
+            (Year, Year, 1),
+            (Year, Semester, 2),
+            (Year, Quarter, 4),
+            (Year, Month, 12),
+            (Semester, Quarter, 2),
+            (Quarter, Month, 3),
+            (Quarter, Quarter, 1),
+        ] {
+            let g = SquareGrain::new(origin, development).unwrap();
+            assert_eq!(g.per_origin(), per);
+            assert_eq!(g.square_ages(10), 10 * per);
+        }
+        for (origin, development) in [(Quarter, Semester), (Quarter, Year), (Month, Quarter)] {
+            let e = SquareGrain::new(origin, development)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                e.contains(&format!("origin grain {origin}"))
+                    && e.contains(&format!("development grain {development}")),
+                "{e}"
+            );
+        }
+    }
+
+    /// Ages map to their time in years on every grain (decision 13), so an
+    /// equal-grain fit keeps its times: annual ages 12 to 120 months are 1
+    /// to 10 years, quarterly ages 3 to 120 months are 0.25 to 10 years.
+    #[test]
+    fn ages_map_to_years_and_the_square_to_the_origin_periods() {
+        let annual = SquareGrain::new(Grain::Year, Grain::Year).unwrap();
+        let quarterly = SquareGrain::new(Grain::Year, Grain::Quarter).unwrap();
+        let monthly = SquareGrain::new(Grain::Quarter, Grain::Month).unwrap();
+        for k in 0..10 {
+            assert_eq!(annual.age(k), 12 * (k as Lag + 1));
+            assert_eq!(annual.time(k), (k + 1) as f64);
+            assert_eq!(annual.age_index(annual.age(k)).unwrap(), k);
+        }
+        for k in 0..40 {
+            assert_eq!(quarterly.age(k), 3 * (k as Lag + 1));
+            assert_eq!(quarterly.time(k), (k + 1) as f64 / 4.0);
+            assert_eq!(quarterly.age_index(quarterly.age(k)).unwrap(), k);
+        }
+        // Quarterly origins with monthly development: still years.
+        assert_eq!(monthly.time(5), 0.5);
+        assert!(quarterly.age_index(4).is_err());
+        assert!(quarterly.age_index(0).is_err());
+        // The data and the model of the quarterly triangle: 5 origins, so
+        // the square has 5 years of quarterly ages, 20.
+        let tri = quarterly_triangle(false);
+        let data = Data::new(&tri, "paid", incurred(), "premium", Fitted::PaidAndIncurred).unwrap();
+        assert_eq!(data.n_ages, 20);
+        assert_eq!((data.paid.len(), data.outstanding.len()), (60, 60));
+        assert_eq!(data.latest_paid[4].map(|l| l.0), Some(3));
+        assert_eq!(data.age(19), 60);
+        let model = Model::new(
+            &data,
+            CompartmentalPriors::gesmann_morris(),
+            false,
+            Response {
+                incurred: true,
+                ..Response::MODEL_1
+            },
+        )
+        .unwrap();
+        assert_eq!(model.times.len(), 20);
+        assert_eq!(model.times[0], 0.25);
+        assert_eq!(model.times[19], 5.0);
+        // The future cells run to the square's last age, 60 months: 1988
+        // is complete, 1992 has 16 future quarters.
+        let future = data.future_cells();
+        let count = |i: usize| future.paid.iter().filter(|c| c.0 == i).count();
+        assert_eq!((0..5).map(count).collect::<Vec<_>>(), [0, 4, 8, 12, 16]);
+        assert_eq!(future.last_paid[0], None);
+        assert_eq!(future.paid[future.last_paid[4].unwrap()], (4, 19));
+        // With a sixth origin (premium only) the square has 24 ages.
+        let mut more = data.clone();
+        more.origins.push(Period::year(1993));
+        more.premium.push(PREMIUM[5]);
+        assert_eq!(more.square_ages(), 24);
+    }
+
+    /// Incremental paid on quarterly development is the increment over one
+    /// quarter: each paid cell after the first age is its paid less that
+    /// of the quarter before, with `t_before` a quarter earlier.
+    #[test]
+    fn incremental_paid_is_the_increment_over_one_development_period() {
+        let tri = quarterly_triangle(false);
+        let data = Data::new(&tri, "paid", incurred(), "premium", Fitted::PaidAndIncurred).unwrap();
+        let response = Response {
+            incurred: true,
+            ..Response::MODEL_2
+        };
+        let model = Model::new(
+            &data,
+            CompartmentalPriors::gesmann_morris_2(),
+            false,
+            response,
+        )
+        .unwrap();
+        let paid_at = |i: usize, k: usize| {
+            data.paid
+                .iter()
+                .find(|c| c.0 == i && c.1 == k)
+                .map(|c| c.2)
+                .unwrap()
+        };
+        let cells = &model.cells[model.n_outstanding..];
+        assert_eq!(cells.len(), 60);
+        for c in cells {
+            let before = if c.k == 0 {
+                assert_eq!(c.t_before, None);
+                0.0
+            } else {
+                assert_eq!(c.t_before, Some(c.t - 0.25));
+                paid_at(c.origin, c.k - 1)
+            };
+            let want = (paid_at(c.origin, c.k) - before) / PREMIUM[c.origin];
+            assert!(
+                (c.y - want).abs() <= 1e-12 * want.abs(),
+                "{} vs {want}",
+                c.y
+            );
+        }
+        // One development level per quarterly age with a cell (20).
+        assert_eq!(model.dev_labels.len(), 20);
+        assert_eq!(model.dev_labels[1], "6");
+    }
+
+    /// The gradient on the quarterly triangle against central differences,
+    /// for model 1 and for model 2's hierarchy and response, each with
+    /// paid and incurred.
+    #[test]
+    fn the_unequal_grain_gradient_matches_central_differences() {
+        let tri = quarterly_triangle(false);
+        let data = Data::new(&tri, "paid", incurred(), "premium", Fitted::PaidAndIncurred).unwrap();
+        for (priors, response, step) in [
+            (CompartmentalPriors::gesmann_morris(), Response::MODEL_1, 2),
+            (
+                CompartmentalPriors::gesmann_morris_2(),
+                Response::MODEL_2,
+                5,
+            ),
+        ] {
+            for ordered in [false, true] {
+                let response = Response {
+                    incurred: true,
+                    ..response
+                };
+                let m = Model::new(&data, priors, ordered, response).unwrap();
+                for x in points(&m).iter().step_by(step) {
+                    assert_gradient(|t, g| m.log_posterior(t, g), x);
+                }
+            }
+        }
+    }
+
+    /// The prior predictive check on the quarterly triangle draws the
+    /// square of 5 origins by 20 quarterly ages.
+    #[test]
+    fn the_prior_check_draws_the_quarterly_square() {
+        let tri = quarterly_triangle(false);
+        let paths = preset().prior_predictive(&tri, "premium", 50).unwrap();
+        assert_eq!(paths.paid.components().len(), 5 * 20);
+        assert_eq!(paths.outstanding.components().len(), 5 * 20);
+        assert_eq!(
+            paths.paid.components()[19],
+            vec![Period::year(1988).into(), KeyValue::Int(60)]
+        );
+        // Every path starts at 0 and the paid rises along each origin.
+        let draws = paths.paid.draw_matrix();
+        for row in draws.chunks_exact(100) {
+            for i in 0..5 {
+                let r = &row[i * 20..(i + 1) * 20];
+                assert!(r.windows(2).all(|w| w[1] >= w[0]), "{r:?}");
+            }
+        }
+    }
+
+    /// A fit on the quarterly triangle: reserves to 60 months, future cells
+    /// keyed by their age in months, and the coming year of four quarters
+    /// of each type for every open origin.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn a_fit_on_unequal_grain() {
+        use crate::bayes::one_year::YearModel;
+        let tri = quarterly_triangle(false);
+        let fit = Compartmental {
+            fitted: Fitted::PaidAndIncurred,
+            ..quick(4)
+        }
+        .fit(&tri, "paid", incurred(), "premium")
+        .unwrap();
+        let ages: std::collections::BTreeSet<i64> = fit
+            .paid
+            .components()
+            .iter()
+            .map(|k| match k[1] {
+                KeyValue::Int(a) => a,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(ages.first(), Some(&15));
+        assert_eq!(ages.last(), Some(&60));
+        assert_eq!(fit.paid.components().len(), 4 + 8 + 12 + 16);
+        // 1988 is at the square's last age.
+        let r = fit
+            .reserves
+            .marginal(&vec![Period::year(1988).into()])
+            .unwrap();
+        assert_eq!(r.mean(), 0.0);
+        let total = fit.reserves.total().mean();
+        assert!(total > 0.0 && total.is_finite(), "{total}");
+        let data = Data::new(&tri, "paid", incurred(), "premium", Fitted::PaidAndIncurred).unwrap();
+        let m = quick(4);
+        let year = year::CompartmentalYear::new(&m, &data).unwrap();
+        // 1989 to 1992, four quarters each, paid and outstanding.
+        assert_eq!(year.n_year(), 2 * 4 * 4);
+    }
+
+    /// `fit_segments` on two lines of the quarterly triangle: each segment
+    /// is fitted on its own square of 20 quarterly ages.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn segments_on_unequal_grain() {
+        let tri = quarterly_lines(&["A", "B"], false);
+        let fits = quick(2)
+            .fit_segments(&tri, "paid", incurred(), "premium")
+            .unwrap();
+        assert_eq!(fits.segments.len(), 2);
+        for s in &fits.segments.fits {
+            assert_eq!(s.fit.paid.components().len(), 4 + 8 + 12 + 16);
+            assert!(s.fit.reserves.total().mean() > 0.0);
+        }
+        assert_eq!(fits.reserves.n_components(), 2 * 5);
+    }
+
+    /// The one-year conformance suite on the quarterly triangle, models 1
+    /// and 2 (paid and incurred): the year holds four quarterly cells of
+    /// each type for each open origin, chained as increments under model
+    /// 2; every origin and age has a cell, so no level is added.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_one_year_view_on_unequal_grain_conforms() {
+        for (name, preset) in [
+            ("compartmental quarterly", preset()),
+            ("compartmental model 2 quarterly", preset_2()),
+        ] {
+            one_year_conformance_on(
+                name,
+                Compartmental {
+                    fitted: Fitted::PaidAndIncurred,
+                    ..preset
+                },
+                &quarterly_triangle(false),
+                &quarterly_triangle(true),
+                0,
+                2 * 4 * 4,
+            );
+        }
+    }
+
     #[test]
     fn the_coming_year_of_the_training_triangle() {
         use crate::bayes::one_year::YearModel;
@@ -5791,6 +6176,36 @@ mod tests {
     /// `fit` refuses but the posterior does not need). Then the light
     /// refit's own check ([`light_refit_conforms`]).
     fn one_year_conformance(name: &str, preset: Compartmental) {
+        // 1997's two `z` (and, with development effects, age 10's) are
+        // added to each draw; each fitted type's next diagonal has 10
+        // cells.
+        let added = if preset.priors.hierarchy() == Hierarchy::Model1 {
+            2
+        } else {
+            4 + 4
+        };
+        let n_year = 10 * preset.response().n_sigma();
+        one_year_conformance_on(
+            name,
+            preset,
+            &triangle(true),
+            &closed_triangle(),
+            added,
+            n_year,
+        );
+    }
+
+    /// [`one_year_conformance`] on the triangle `open` and the closed
+    /// square `closed`, with `added` levels no cell informs and `n_year`
+    /// cells in the year.
+    fn one_year_conformance_on(
+        name: &str,
+        preset: Compartmental,
+        open_triangle: &Triangle,
+        closed_triangle: &Triangle,
+        added: usize,
+        n_year: usize,
+    ) {
         use crate::bayes::one_year::YearModel;
         let m = Compartmental {
             sampler: Sampler {
@@ -5809,21 +6224,13 @@ mod tests {
             let (_, sampled, _) = m.sample(&model, 5).unwrap();
             (data, model, sampled)
         };
-        let (open, closed) = (fitted(&triangle(true)), fitted(&closed_triangle()));
+        let (open, closed) = (fitted(open_triangle), fitted(closed_triangle));
         let mut year = year::CompartmentalYear::new(&m, &open.0).unwrap();
         let opening = year.opening_draws(&open.1, &open.2, 9).unwrap();
         let closed_year = year::CompartmentalYear::new(&m, &closed.0).unwrap();
         let closed_opening = closed_year.opening_draws(&closed.1, &closed.2, 9).unwrap();
-        // 1997's two `z` (and, with development effects, age 10's) are
-        // added to each draw.
-        let added = if m.priors.hierarchy() == Hierarchy::Model1 {
-            2
-        } else {
-            4 + 4
-        };
         assert_eq!(opening.dim(), open.2.dim() + added);
-        // Each fitted type's next diagonal: 10 cells.
-        assert_eq!(year.n_year(), 10 * m.response().n_sigma());
+        assert_eq!(year.n_year(), n_year);
         crate::bayes::one_year::conformance::check(
             name,
             &year,

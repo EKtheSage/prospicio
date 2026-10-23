@@ -464,3 +464,27 @@ default_light <- suppressWarnings(compartmental_model_2_one_year(
 stopifnot(identical(provenance(default_light@cdr)$parameters[["light_refit"]], "4x150+250"))
 expect_error_like(compartmental_one_year(tri, "paid", "premium", gm, incurred = "incurred",
                                          light_refit = c(2, 60)), "light_refit")
+
+# Unequal grain (decision 13): annual origins with quarterly development,
+# the triangle validation/tests/reserving_compartmental_grain.rs fits
+# (simulated from model 1 with known parameters). The square runs ten
+# years, 40 quarterly ages, so each origin's paid runs to 120 months.
+sim <- utils::read.csv(file.path("validation", "data", "compartmental_sim_quarterly.csv"),
+                       comment.char = "#")
+stopifnot(nrow(sim) == 220)
+qtri <- triangle(sim, "origin", "development", c("paid", "outstanding", "premium"),
+                 origin_grain = "Y", development_grain = "Q")
+stopifnot(qtri@origin_grain == "Y", qtri@development_grain == "Q")
+qfit <- compartmental(qtri, "paid", "premium", gm, outstanding = "outstanding", n_sims = 2000)
+qages <- qfit@paid@keys$age
+stopifnot(
+  identical(qfit@origins, as.character(2011:2020)),
+  length(qfit@population_origins) == 0,
+  min(qages) == 15, max(qages) == 120,
+  nrow(qfit@paid@keys) == sum(4 * (1:9))
+)
+# Seed 0 at the defaults; Stan's posterior mean of the total is in
+# validation/reference/reserving_compartmental_grain_stan.csv.
+near(mean(qfit@reserves), 74873, 0.02)
+qpaths <- compartmental_prior_predictive(qtri, "premium", gm, n_sims = 100)
+stopifnot(nrow(qpaths$paid@keys) == 10 * 40)
