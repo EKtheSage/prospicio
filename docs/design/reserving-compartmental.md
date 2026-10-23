@@ -1710,7 +1710,10 @@ on `claude/compartmental-paid-incurred`.
     response alone, and a narrower prior (the paper's, or a struct update
     of this one) is the option of a user who holds information about the
     rates that is not in the data. The docs of `Fitted::PaidOnly`,
-    `Fitted::IncurredOnly`, the presets, and the Python and R help say so.
+    `Fitted::IncurredOnly`, the presets, and the Python and R help say so
+    (since 2026-10-23 `diffuse()` is the starting point for paid alone
+    only; incurred alone refuses it, see "A payment-rate prior the user
+    believes" below).
   * *What company 337 shows.* The diffuse prior works for paid alone: `k_p`
     is pinned by the paid (the posterior sd of its log is 5% of the
     prior's), the fit converges at the defaults (5 seeds: max R-hat at most
@@ -1740,15 +1743,38 @@ on `claude/compartmental-paid-incurred`.
     reserve is then their prior's; the warning says what the number
     depends on rather than that it is wrong. The check is on the prior's
     width, not its centre, so it cannot tell a good prior from a bad one.
-  * *Open (for the user).* Incurred alone with the diffuse default gives a
-    reserve that is not usable, which the user's rule ("the data set the
-    fit") cannot repair, since the data do not set `k_p`. Options: (a) keep
-    as built, the preset and the warning; (b) make `Fitted::IncurredOnly`
-    refuse a `k_p` prior wider than some sd, so that it takes a prior the
-    user believes; (c) make the incurred-alone result carry the prior's
-    role in its type (a flag on the fit) and keep the reserve out of
-    `reserves` until the user accepts it. Recommended: (a) now, (b) if the
-    user prefers an error to a warning.
+  * *A payment-rate prior the user believes (decided by the user on
+    2026-10-23).* Incurred alone with the diffuse default gives a reserve
+    that is not usable, which the user's rule ("the data set the fit")
+    cannot repair, since the data do not set `k_p`. The options were (a)
+    keep the preset and the warning, (b) refuse a `k_p` prior wider than
+    some sd, (c) carry the prior's role in the fit's type. The user chose
+    (b): "Require a payment-rate prior. Incurred-only refuses a k_p prior
+    wider than a set width, and the user must give one they believe.
+    Diffuse stays the starting point for paid alone. The warning stays."
+    Built: `Compartmental::validate` returns `Error::Bayes` under
+    `Fitted::IncurredOnly` when the log-scale sd of the `k_p` prior exceeds
+    `MAX_INCURRED_ONLY_KP_SD`, 0.5 (the bound itself is accepted: 0.5 and
+    the paper's 0.1 pass, 1.0 and 0.51 do not). `PositivePrior` has one
+    variant, `LogNormal { median, sd }`, whose `sd` is the log-scale sd
+    (`median e^(sd o)`, `o ~ N(0, 1)`), so the rule reads `sd` directly; a
+    new variant would have to define its log-scale sd for the rule. The
+    check is in `validate`, which `fit`, `fit_segments`, `one_year`,
+    `one_year_segments` and the diagonal backtest each call before any data
+    are read, so all of them refuse; `prior_predictive` does not apply it,
+    so the user can still see what a refused set implies. The message says
+    that incurred alone does not identify the payment rate, so the reserve
+    follows this prior, and that the user must give a `k_p` prior they
+    believe (from the book's paid history or a paid-and-incurred fit of a
+    similar book) or fit paid as well. Only `k_p` is checked: the other
+    three priors may stay wide (the reserve moved with `k_p`'s, which is
+    where the paid run-off comes from). The bound 0.5 is the widest width
+    measured whose reserve is still informative (163,000, sd 51,500, `k_p`
+    0.41, against 203,000 at 0.3 and 87,700 at 0.7); it is a rule, not a
+    result, and the warning stays for any accepted prior. `diffuse()` stays
+    the documented starting point for `Fitted::PaidOnly`, and the docs of
+    `Fitted::IncurredOnly`, `Fitted::PaidOnly`, `diffuse()`, the priors'
+    struct, and the Python and R help say so.
 * **Unequal grain (PR I).** Unequal origin and development grain is in
   scope and comes in a later PR; until then it returns an error.
 

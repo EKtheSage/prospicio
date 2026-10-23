@@ -105,6 +105,11 @@ for (setting in list(list(fitted = "paid_only"), list(fitted = "incurred_only"))
                                                   incurred = "incurred"), setting)),
                     "needs rate_order Ordered")
 }
+# Incurred alone refuses a k_p prior wider than 0.5 (the diffuse preset's is 1).
+expect_error_like(compartmental(tri, "paid", "premium", compartmental_diffuse_priors(),
+                                incurred = "incurred", fitted = "incurred_only",
+                                rate_order = "ordered"),
+                  "at most 0.5")
 expect_error_like(compartmental(tri, "paid", "premium", gm), "give exactly one of outstanding")
 expect_error_like(compartmental(tri, "paid", "premium", gm, outstanding = "incurred",
                                 incurred = "incurred"),

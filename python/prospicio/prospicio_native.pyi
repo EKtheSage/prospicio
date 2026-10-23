@@ -6186,11 +6186,13 @@ class Compartmental:
     reserve is the expected paid at the last age less the latest paid, and the future paid
     cells are expected values, without noise, since no paid cell is fitted.
     
-    Use ``CompartmentalPriors.diffuse()`` for a fit to one response alone. Under
-    ``"incurred_only"`` no paid cell is fitted, so where the incurred does not pin the payment
-    rate ``k_p`` its prior sets the paid run-off (on company 337 the paper's narrow prior
-    put the reserve 26% above the fit to paid and outstanding); a narrower prior is for a user
-    who holds information about the rates that is not in the data.
+    ``CompartmentalPriors.diffuse()`` is the starting point for ``"paid_only"``. Under
+    ``"incurred_only"`` no paid cell is fitted, so the incurred does not identify the payment
+    rate ``k_p`` and its prior sets the paid run-off and the reserve at every width (on company
+    337 the paper's narrow prior put the reserve 26% above the fit to paid and outstanding):
+    the fit refuses a ``k_p`` prior with a log-scale sd above 0.5, so the diffuse preset is an
+    error there, and you give a ``k_p`` prior you believe, for example from the book's paid
+    history or from a paid-and-incurred fit of a similar book.
     
     An origin with a premium and no observed cell (the papers' training
     triangle has one) draws its effects from the population in each
@@ -7548,10 +7550,11 @@ class CompartmentalPriors:
     them silently. ``CompartmentalPriors.gesmann_morris()`` is the paper's
     model 1 and ``CompartmentalPriors.gesmann_morris_2()`` its model 2;
     check any set with ``Compartmental.prior_predictive`` before fitting.
-    ``CompartmentalPriors.diffuse()`` is the default for a fit to one response
-    alone (``fitted="incurred_only"`` or ``"paid_only"``): it leaves the rates to the
-    data. Use a narrower prior, such as the paper's, when you hold information about
-    the rates that is not in the data.
+    ``CompartmentalPriors.diffuse()`` is the starting point for a fit to paid alone
+    (``fitted="paid_only"``): it leaves the rates to the data. A fit to incurred alone
+    (``fitted="incurred_only"``) refuses a ``k_p`` prior with a log-scale sd above 0.5,
+    so give it a prior you believe, such as the paper's. Use a narrower prior than the
+    preset also when you hold information about the rates that is not in the data.
     
     Each positive parameter ``θ`` (``k_er``, ``k_p``, ``rlr``, ``rrf``) is
     ``median * exp(sd * o)`` with ``o ~ N(0, 1)``: a log-normal prior with
@@ -7641,17 +7644,17 @@ class CompartmentalPriors:
         A diffuse set for model 1: the paper's medians (``k_er`` 3, ``k_p`` 1,
         ``rlr`` 0.7, ``rrf`` 0.8) with a log-scale sd of 1 on each of the four,
         5 to 10 times the paper's, and its effect sds and ``log sigma`` priors.
-        Use it as the default for a fit to one response alone
-        (``fitted="incurred_only"`` or ``"paid_only"``). Under incurred alone no
-        paid cell is fitted, so where the incurred does not pin the payment rate
-        ``k_p`` its prior sets the paid run-off: the paper's narrow prior on
-        ``k_p`` put the reserve on company 337 26% above the fit to paid and
-        outstanding. Replace the priors with narrower ones (``replace`` or
-        ``gesmann_morris``) when you hold information about the rates that is not
-        in the data, for example a payment pattern from a similar book.
-        On company 337 it fits paid alone well, but incurred alone is not
-        identified (the reserve's sd is about 150,000), and the fit then
-        warns that the reserve comes from the prior.
+        Use it as the starting point for a fit to paid alone
+        (``fitted="paid_only"``), where the paid cells pin the rates. It is
+        refused for a fit to incurred alone (``fitted="incurred_only"``): no
+        paid cell is fitted there, so the payment rate ``k_p`` and with it the
+        paid run-off and the reserve follow the prior on ``k_p`` at every width
+        (on company 337 -51,000 with an sd of about 150,000 at a log-scale sd of
+        1, 203,000 at 0.3), and a ``k_p`` prior with a log-scale sd above 0.5 is
+        an error. For incurred alone replace ``k_p`` with a prior you believe
+        (``replace``), for example one from the book's paid history or from a
+        paid-and-incurred fit of a similar book; the paper's narrow prior put
+        the reserve on company 337 26% above the fit to paid and outstanding.
         
         Returns
         -------

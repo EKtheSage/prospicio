@@ -111,7 +111,9 @@ sources:
 
 * The diffuse preset (the user's decision of 2026-10-22: a diffuse prior as
   the default for one-response fits, a narrow one as an option for a user
-  with information that is not in the data), `CompartmentalPriors::diffuse()`:
+  with information that is not in the data; narrowed on 2026-10-23 to paid
+  alone, since incurred alone refuses a `k_p` sd above 0.5),
+  `CompartmentalPriors::diffuse()`:
   the paper's medians with a log-scale sd of 1 on `k_er`, `k_p`, `RLR` and
   `RRF` (the paper's are 0.1 to 0.2), the rest as the paper's. Ordered rates,
   the defaults, seeds 0 to 4 (mean over seeds, with the range of the total
@@ -165,7 +167,14 @@ sources:
   A diffuse prior does not help: it leaves the reserve unidentified
   (negative on average, an sd of 150,000). Fit it with a prior on `k_p` the
   user believes, which the fit flags with a warning, or prefer a fit with
-  paid. `CompartmentalPriors::diffuse()` is the default for paid alone.
+  paid. `CompartmentalPriors::diffuse()` is the starting point for paid
+  alone only: by the user's decision of 2026-10-23 incurred alone refuses a
+  `k_p` prior with a log-scale sd above 0.5
+  (`MAX_INCURRED_ONLY_KP_SD`), so the diffuse preset is an error there and
+  the user gives a prior they believe, for example from the book's paid
+  history or a paid-and-incurred fit of a similar book. The rows above for
+  incurred alone at an sd of 0.7 and under the diffuse preset were measured
+  before that decision and are no longer reachable.
 * The Stan references are the only check of either variant besides unit
   tests (the log density against the model written out to 1e-12, the
   gradient against central differences and the generic dual pass, the

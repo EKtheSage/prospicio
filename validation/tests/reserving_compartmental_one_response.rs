@@ -512,14 +512,15 @@ fn diffuse_model(fitted: Fitted, seed: u64) -> Compartmental {
     }
 }
 
-/// The diffuse preset on each variant over a few seeds, recorded in
+/// The diffuse preset on paid alone over a few seeds (incurred alone refuses
+/// it, `diffuse_preset_is_refused_on_incurred_alone`), recorded in
 /// `knowledge/findings/compartmental-one-response.md`. Run in a release build:
 /// `cargo test --release -p prospicio-validation --features slow-bayes --test
 /// reserving_compartmental_one_response diffuse_sweep -- --ignored --nocapture`.
 #[test]
 #[ignore]
 fn diffuse_sweep() {
-    for (fitted, _) in MODES {
+    for fitted in [Fitted::PaidOnly] {
         for seed in 0..5 {
             let start = Instant::now();
             let fit = run(&diffuse_model(fitted, seed));
@@ -540,14 +541,16 @@ fn diffuse_sweep() {
     }
 }
 
-/// Incurred alone under log-scale sds between the paper's and the diffuse
-/// preset's, for `DIFFUSE_SDS` (comma separated, default 0.3,0.5,0.7), on
-/// all four rate and ratio priors, seeds 0 to 2.
+/// Incurred alone under log-scale sds between the paper's and the widest
+/// the fit accepts (0.5), for `DIFFUSE_SDS` (comma separated, default 0.3,0.5),
+/// on all four rate and ratio priors, seeds 0 to 2. A wider sd is refused
+/// (`MAX_INCURRED_ONLY_KP_SD`); the 0.7 and 1.0 rows of the findings note were
+/// measured before that decision.
 #[test]
 #[ignore]
 fn incurred_sd_ladder() {
     let sds: Vec<f64> = std::env::var("DIFFUSE_SDS")
-        .unwrap_or_else(|_| "0.3,0.5,0.7".into())
+        .unwrap_or_else(|_| "0.3,0.5".into())
         .split(',')
         .map(|s| s.parse().unwrap())
         .collect();
@@ -608,29 +611,27 @@ fn diffuse_priors_on_paid_alone() {
     assert!(log_kp_sd(&fit) < 0.1, "{}", log_kp_sd(&fit));
 }
 
-/// The diffuse preset, incurred alone: a finding, not a fit to rely on. The
-/// incurred does not identify `k_p` (the posterior sd of its log is about 60%
-/// of the prior's), so the paid run-off and the reserve come from the prior:
-/// the mean total reserve is -44,000 to -61,000 over 5 seeds (the sd
-/// 145,000 to 156,000), against 219,051 under the paper's preset and
-/// 173,390 with paid and outstanding. The fit says so in its warnings.
+/// The diffuse preset, incurred alone (decision 12, the user's decision of
+/// 2026-10-23): refused. The incurred does not identify `k_p`, so the reserve
+/// follows the prior on `k_p` at every width (on company 337 -51,000 with an
+/// sd of 152,000 at a log-scale sd of 1, 203,000 at 0.3), and a `k_p` prior
+/// wider than 0.5 is an error before any data are read. The error comes from
+/// `fit`; the fit is not run.
 #[test]
-fn diffuse_priors_on_incurred_alone_are_not_identified() {
-    let fit = run(&diffuse_model(Fitted::IncurredOnly, 0));
-    report("IncurredOnly diffuse", &fit, std::time::Duration::ZERO);
-    let share = log_kp_sd(&fit);
-    assert!(share > 0.5 && share < 0.8, "{share}");
+fn diffuse_preset_is_refused_on_incurred_alone() {
+    let err = diffuse_model(Fitted::IncurredOnly, 0)
+        .fit(
+            training(),
+            "paid",
+            Outstanding::FromIncurred("incurred"),
+            "premium",
+        )
+        .expect_err("a k_p prior with a log-scale sd of 1 is refused");
+    let message = err.to_string();
     assert!(
-        fit.diagnostics
-            .warnings
-            .iter()
-            .any(|w| w.contains("does not identify the payment rate")),
-        "{:?}",
-        fit.diagnostics.warnings
+        message.contains("does not identify the payment rate") && message.contains("at most 0.5"),
+        "{message}"
     );
-    let total = fit.reserves.total();
-    assert!(total.std_dev() > 100_000.0, "{}", total.std_dev());
-    assert!(total.mean() < 100_000.0, "{}", total.mean());
 }
 
 /// Under the paper's preset the same warning fires on incurred alone (the

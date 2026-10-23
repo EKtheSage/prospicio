@@ -4552,19 +4552,19 @@ S7::method(print, cape_cod_fit) <- function(x, ...) print_expected_loss(x, "cape
 #' `rrf`; and `normal(log 0.2, 0.2)` on each `log sigma` (the text gives a
 #' median of 0.1). Use it with [compartmental_model_2()].
 #'
-#' `compartmental_diffuse_priors()` is the default for a fit to one response
-#' alone (`fitted = "incurred_only"` or `"paid_only"`): the paper's medians for
-#' model 1 with a log-scale sd of 1 on `k_er`, `k_p`, `rlr` and `rrf`, 5 to 10
-#' times the paper's, and its effect sds and `log sigma` priors, so the data
-#' and not the prior set the rates. Under incurred alone no paid cell is
-#' fitted, so where the incurred does not pin the payment rate `k_p` its prior
-#' sets the paid run-off: the paper's narrow prior on `k_p` put the reserve on
-#' company 337 26% above the fit to paid and outstanding. Use a narrower
-#' prior, such as the paper's, when you hold information about the rates that
-#' is not in the data, for example a payment pattern from a similar book.
-#' On company 337 it fits paid alone well, but incurred alone is not
-#' identified (the reserve's sd is about 150,000), and the fit then
-#' warns that the reserve comes from the prior.
+#' `compartmental_diffuse_priors()` is the starting point for a fit to paid
+#' alone (`fitted = "paid_only"`): the paper's medians for model 1 with a
+#' log-scale sd of 1 on `k_er`, `k_p`, `rlr` and `rrf`, 5 to 10 times the
+#' paper's, and its effect sds and `log sigma` priors, so the data and not the
+#' prior set the rates. It is refused for a fit to incurred alone
+#' (`fitted = "incurred_only"`): no paid cell is fitted there, so the incurred
+#' does not identify the payment rate `k_p` and its prior sets the paid
+#' run-off and the reserve at every width (on company 337 -51,000 with an sd
+#' of about 150,000 at a log-scale sd of 1, 203,000 at 0.3), and a `k_p` prior
+#' with a log-scale sd above 0.5 is an error. For incurred alone give a `k_p`
+#' prior you believe, for example one from the book's paid history or from a
+#' paid-and-incurred fit of a similar book; the paper's narrow prior put the
+#' reserve on company 337 26% above the fit to paid and outstanding.
 #'
 #' Each positive parameter `theta` (`k_er`, `k_p`, `rlr`, `rrf`) is
 #' `median * exp(sd * o)` with `o ~ N(0, 1)`: a log-normal prior with that
@@ -4794,11 +4794,15 @@ compartmental_prior_values <- function(priors, call) {
 #' latest paid only: the reserve is the expected paid at the last age less
 #' the latest paid, and the future paid cells are expected values, without
 #' noise, since no paid cell is fitted. Of the one-year views and the
-#' backtest candidates only Python and Rust take these settings. Use
-#' [compartmental_diffuse_priors()] for a fit to one response alone: where the
-#' incurred does not pin the payment rate `k_p`, its prior sets the paid
-#' run-off (on company 337 the paper's narrow prior put the reserve 26% above
-#' the fit to paid and outstanding).
+#' backtest candidates only Python and Rust take these settings.
+#' [compartmental_diffuse_priors()] is the starting point for `"paid_only"`.
+#' Under `"incurred_only"` the incurred does not identify the payment rate
+#' `k_p`, so its prior sets the paid run-off and the reserve at every width
+#' (on company 337 the paper's narrow prior put the reserve 26% above the fit
+#' to paid and outstanding): the fit refuses a `k_p` prior with a log-scale sd
+#' above 0.5, so the diffuse preset is an error there, and you give a `k_p`
+#' prior you believe, for example from the book's paid history or from a
+#' paid-and-incurred fit of a similar book.
 #'
 #' `compartmental_model_2()` is `compartmental()` with model 2's
 #' likelihood, scale and paid response, and a longer, finer sampler: four

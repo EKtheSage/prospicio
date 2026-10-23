@@ -147,15 +147,18 @@ pub enum Fitted {
     /// incurred cells, drawn with the incurred `σ`.
     ///
     /// The incurred alone does not identify the payment rate `k_p`, so the
-    /// paid run-off and the reserve come from its prior. The user's decision
-    /// of 2026-10-22 is [`CompartmentalPriors::diffuse`] as the default prior
-    /// and a narrower one as the option of a user who holds information about
-    /// the rates that is not in the data. On company 337 the diffuse prior
-    /// leaves the reserve unidentified (a mean of about -50,000 and an sd of
-    /// about 150,000, against 219,051 under the paper's preset and 173,390
-    /// with paid and outstanding), and the fit warns, here and under any
-    /// prior, when the posterior sd of `log k_p` is more than half its
-    /// prior's. Prefer a fit with paid, or a prior on `k_p` you believe.
+    /// paid run-off and the reserve come from its prior, at every width of
+    /// it. The user's decision of 2026-10-23 is that this fit requires a
+    /// prior on `k_p` the user believes: it refuses one with a log-scale sd
+    /// above [`MAX_INCURRED_ONLY_KP_SD`] (0.5) with an [`Error::Bayes`],
+    /// before any data are read, so [`CompartmentalPriors::diffuse`] (sd 1)
+    /// is refused and the paper's preset (0.1) is accepted. Take the prior
+    /// from the book's paid history or from a paid-and-incurred fit of a
+    /// similar book. On company 337 the reserve runs from -51,000 (sd
+    /// 152,000) at a log-scale sd of 1 to 203,000 at 0.3, against 219,051
+    /// under the paper's preset and 173,390 with paid and outstanding, and
+    /// the fit warns, under any accepted prior, when the posterior sd of
+    /// `log k_p` is more than half its prior's. Prefer a fit with paid.
     IncurredOnly,
 }
 
@@ -221,11 +224,13 @@ pub enum RealPrior {
 /// so the library does not choose them silently. Check a set with
 /// [`Compartmental::prior_predictive`] before fitting.
 ///
-/// [`diffuse`](Self::diffuse) is the set to use for a fit to one response
-/// alone ([`Fitted::PaidOnly`], [`Fitted::IncurredOnly`]), where the data
-/// should set the rates: a narrow prior, such as
+/// [`diffuse`](Self::diffuse) is the starting point for a fit to paid alone
+/// ([`Fitted::PaidOnly`]), where the paid cells pin the rates and the data
+/// should set them; a narrow prior, such as
 /// [`gesmann_morris`](Self::gesmann_morris)'s, is the option of a user who
-/// holds information about the rates that is not in the data.
+/// holds information about the rates that is not in the data. A fit to
+/// incurred alone ([`Fitted::IncurredOnly`]) refuses a `k_p` prior wider
+/// than [`MAX_INCURRED_ONLY_KP_SD`], so it needs a prior the user believes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CompartmentalPriors {
     /// The reporting rate `k_er`.
@@ -315,17 +320,18 @@ impl CompartmentalPriors {
     /// origin effect sds and the priors on `log σ` are
     /// [`gesmann_morris`](Self::gesmann_morris)'s.
     ///
-    /// Use it as the default for a fit to one response alone
-    /// ([`Fitted::IncurredOnly`], [`Fitted::PaidOnly`]). Under incurred
-    /// alone no paid cell is fitted, so the payment rate `k_p`, and with it
-    /// the paid run-off, is set by its prior where the incurred does not pin
-    /// it: the paper's `k_p` prior (sd 0.1) is a belief, not a default, and
-    /// on company 337 it put the reserve 26% above the fit to paid and
-    /// outstanding. Use a narrower prior (a struct update on this one, or
-    /// [`gesmann_morris`](Self::gesmann_morris)) when you hold information
-    /// about the rates that is not in the data, for example a payment
-    /// pattern from a similar book. Check either with
-    /// [`Compartmental::prior_predictive`].
+    /// Use it as the starting point for a fit to paid alone
+    /// ([`Fitted::PaidOnly`]), where the paid cells pin the rates. It is
+    /// refused for a fit to incurred alone ([`Fitted::IncurredOnly`]): no
+    /// paid cell is fitted there, so the payment rate `k_p`, and with it the
+    /// paid run-off and the reserve, follow the prior on `k_p` at every
+    /// width, and a `k_p` sd above [`MAX_INCURRED_ONLY_KP_SD`] (0.5) is an
+    /// error (the user's decision of 2026-10-23). For incurred alone use a
+    /// struct update on this preset with a `k_p` prior you believe (the
+    /// paper's `k_p` prior, sd 0.1, put the reserve on company 337 26% above
+    /// the fit to paid and outstanding), for example one from the book's
+    /// paid history or from a paid-and-incurred fit of a similar book. Check
+    /// any set with [`Compartmental::prior_predictive`].
     pub fn diffuse() -> Self {
         let wide = |median: f64| PositivePrior::LogNormal { median, sd: 1.0 };
         Self {
@@ -509,6 +515,13 @@ fn ordered_rates(pr: CompartmentalPriors, rng: &mut StreamRng) -> (f64, f64) {
     let y = norm_quantile(rng.next_open01());
     ((s_er * z + s_p * y) / s, (s_er * y - s_p * z) / s)
 }
+
+/// The widest log-scale sd of the `k_p` prior that [`Fitted::IncurredOnly`]
+/// accepts (decision 12, the user's decision of 2026-10-23). The incurred
+/// alone does not identify the payment rate, so the reserve follows this
+/// prior at every width; a wider prior is refused and the user must give one
+/// they believe. [`CompartmentalPriors::diffuse`] (sd 1) is refused.
+pub const MAX_INCURRED_ONLY_KP_SD: f64 = 0.5;
 
 /// Under [`Fitted::IncurredOnly`] the fit warns when the posterior sd of
 /// `log k_p` is more than this share of the prior's (decision 12): the data
@@ -1791,6 +1804,20 @@ impl Compartmental {
             )));
         }
         self.validate_priors()?;
+        if self.fitted == Fitted::IncurredOnly {
+            let (_, sd) = lognormal(self.priors.k_p);
+            if sd > MAX_INCURRED_ONLY_KP_SD {
+                return Err(Error::Bayes(format!(
+                    "fitting incurred alone needs a prior on k_p with a log-scale sd of at most \
+                     {MAX_INCURRED_ONLY_KP_SD}, and this one has {sd}: the incurred does not identify the \
+                     payment rate, so the paid run-off and the reserve follow the prior on k_p, and a wide \
+                     prior leaves them unidentified (on company 337 the reserve runs from -51,000 at a \
+                     log-scale sd of 1 to 203,000 at 0.3). Give a prior you believe, for example from the \
+                     book's paid history or a paid-and-incurred fit of a similar book, or fit paid as well \
+                     (decision 12)"
+                )));
+            }
+        }
         if self.n_sims == 0 {
             return Err(Error::InvalidSetting {
                 name: "n_sims",
@@ -5414,6 +5441,60 @@ mod tests {
         assert!(warned(&incurred_alone), "{:?}", incurred_alone.diagnostics);
         assert!(!warned(&fit(Fitted::PaidOnly)));
         assert!(!warned(&fit(Fitted::PaidAndIncurred)));
+    }
+
+    #[test]
+    fn incurred_alone_refuses_a_wide_payment_rate_prior() {
+        let wide_kp = |sd: f64| CompartmentalPriors {
+            k_p: PositivePrior::LogNormal { median: 1.0, sd },
+            ..CompartmentalPriors::gesmann_morris()
+        };
+        let model = |fitted: Fitted, priors: CompartmentalPriors| Compartmental {
+            fitted,
+            rate_order: RateOrder::Ordered,
+            ..Compartmental::new(priors)
+        };
+        // The diffuse preset (sd 1) is refused, with the reason in the message.
+        let err = model(Fitted::IncurredOnly, CompartmentalPriors::diffuse())
+            .validate()
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("does not identify the payment rate") && err.contains("at most 0.5"),
+            "{err}"
+        );
+        // Just over the bound is refused; the bound itself, and the paper's
+        // preset (0.1), are accepted.
+        assert!(
+            model(Fitted::IncurredOnly, wide_kp(0.5 + 1e-9))
+                .validate()
+                .is_err()
+        );
+        model(Fitted::IncurredOnly, wide_kp(MAX_INCURRED_ONLY_KP_SD))
+            .validate()
+            .unwrap();
+        model(Fitted::IncurredOnly, CompartmentalPriors::gesmann_morris())
+            .validate()
+            .unwrap();
+        // The rule is on k_p only, and only for incurred alone.
+        let wide_rest = CompartmentalPriors {
+            k_p: PositivePrior::LogNormal {
+                median: 1.0,
+                sd: 0.3,
+            },
+            ..CompartmentalPriors::diffuse()
+        };
+        model(Fitted::IncurredOnly, wide_rest).validate().unwrap();
+        for fitted in [Fitted::PaidOnly, Fitted::PaidAndIncurred] {
+            model(fitted, CompartmentalPriors::diffuse())
+                .validate()
+                .unwrap();
+        }
+        // The prior check still runs on a refused set, so the user can see
+        // what it implies.
+        model(Fitted::IncurredOnly, CompartmentalPriors::diffuse())
+            .prior_predictive(&triangle(true), "premium", 100)
+            .unwrap();
     }
 
     #[test]

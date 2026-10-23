@@ -149,11 +149,15 @@ for \code{"paid_and_incurred"} and the paid column supplies each origin's
 latest paid only: the reserve is the expected paid at the last age less
 the latest paid, and the future paid cells are expected values, without
 noise, since no paid cell is fitted. Of the one-year views and the
-backtest candidates only Python and Rust take these settings. Use
-\code{\link[=compartmental_diffuse_priors]{compartmental_diffuse_priors()}} for a fit to one response alone: where the
-incurred does not pin the payment rate \code{k_p}, its prior sets the paid
-run-off (on company 337 the paper's narrow prior put the reserve 26\% above
-the fit to paid and outstanding).
+backtest candidates only Python and Rust take these settings.
+\code{\link[=compartmental_diffuse_priors]{compartmental_diffuse_priors()}} is the starting point for \code{"paid_only"}.
+Under \code{"incurred_only"} the incurred does not identify the payment rate
+\code{k_p}, so its prior sets the paid run-off and the reserve at every width
+(on company 337 the paper's narrow prior put the reserve 26\% above the fit
+to paid and outstanding): the fit refuses a \code{k_p} prior with a log-scale sd
+above 0.5, so the diffuse preset is an error there, and you give a \code{k_p}
+prior you believe, for example from the book's paid history or from a
+paid-and-incurred fit of a similar book.
 
 \code{compartmental_model_2()} is \code{compartmental()} with model 2's
 likelihood, scale and paid response, and a longer, finer sampler: four

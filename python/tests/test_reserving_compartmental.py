@@ -145,6 +145,23 @@ def test_one_response_needs_ordered_rates(tri, fitted):
         m.fit(tri, "paid", "premium", incurred="incurred")
 
 
+def test_incurred_only_needs_a_payment_rate_prior_you_believe(tri):
+    # Incurred alone does not identify k_p, so a k_p prior with a log-scale sd
+    # above 0.5 is refused (the diffuse preset's is 1), before any data are
+    # read (decision 12, the user's decision of 2026-10-23).
+    d = CompartmentalPriors.diffuse()
+    m = Compartmental(d, fitted="incurred_only", rate_order="ordered", chains=2, tune=50, draws=50)
+    with pytest.raises(ValueError, match="at most 0.5"):
+        m.fit(tri, "paid", "premium", incurred="incurred")
+    with pytest.raises(ValueError, match="does not identify the payment rate"):
+        m.fit(tri, "paid", "premium", incurred="incurred")
+    # The prior check still runs on the refused set.
+    assert m.prior_predictive(tri, "premium", n_sims=50) is not None
+    # Paid alone takes the diffuse preset.
+    Compartmental(d, fitted="paid_only", rate_order="ordered").prior_predictive(
+        tri, "premium", n_sims=50)
+
+
 def test_paid_only(tri):
     # Paid alone: the second column is not read, the fit has one sigma and
     # no outstanding cells.
