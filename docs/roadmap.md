@@ -419,8 +419,14 @@ what it is aiming for by v1.0.
     fully selected age with no link ratio is missing instead of an error,
     so a bordereau's one value per origin is projected by the chain ladder
     and the expected-loss family; Mack and both bootstraps reject it by
-    name. A dedicated diagonal type, development fitted on one triangle
-    and applied to another, and the bindings are the issue's next PRs.
+    name. Development fitted on one triangle and applied to another, and
+    the bindings, are the issue's next PRs.
+  - The latest diagonal as a type of its own (`reserving-v02.md`,
+    decision 16; branch `claude/diagonal-pr2`, issue #544, in Rust):
+    `LatestDiagonal` and `fit_diagonal` on the chain ladder and the
+    expected-loss family, on a grid of the diagonal's and the pattern's
+    ages, so off-grid ages are read log-linearly; parity with
+    chainladder-python's `DevelopmentConstant` on the latest diagonal.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

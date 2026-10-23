@@ -64,6 +64,27 @@ Do these once, before the first release.
    use. Adding yourself as a required reviewer on each (*Settings →
    Environments*) makes every publish wait for your approval.
 
+## Scope of the next release
+
+What goes into a release is the user's decision. The chosen issues and PRs
+carry the GitHub milestone of that version; an issue without one waits for a
+later release. The label `P4` marks an issue the user does not plan for any
+upcoming release.
+
+**0.0.6** (the user's decision of 2026-10-23): the work in flight and small
+fixes. Already on `main` since v0.0.5: #533, #540, #541 (breaking), #542,
+#543, #571.
+
+| Lane | In flight | Small fixes |
+|---|---|---|
+| Reserving | #606 (#544, PR 2), #538 (Compartmental PR H), #539 (PR I, if ready) | #551, #602, #610 |
+| Aggregate | quote extras (premium side and tax, then the whole tower) | #587, #595, #601, #608, #609 |
+| Guides | #597, #607 | #605 |
+| Shared | | #573, #574 |
+
+Everything else waits for 0.0.7 or later, including the M-sized P1s #545,
+#546, #552 and #572. #553 (IFRS 17) is `P4`.
+
 ## Each release
 
 1. On `main`, set `workspace.package.version` and the `prospicio-*`

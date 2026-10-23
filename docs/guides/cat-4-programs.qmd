@@ -1,0 +1,466 @@
+---
+title: "Property catastrophe 4: stacked covers, and who keeps what"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+A cedent rarely buys one layer. It buys a program: several layers stacked on
+the same losses, sometimes behind a quota share, sometimes with a peril left
+out. A reinsurer rarely writes the whole of a layer. It signs a line, a share
+of each layer, next to other markets. And the reinsurer may buy its own cover,
+a retro, on what it has written. Each party looks at the same years of losses
+from a different seat.
+
+This page builds those views on the Larkspur Re book. It applies Alder
+Mutual's two layers together, puts Corran General's quota share ahead of a cat
+cover, splits Bracken's losses by what its aggregate cover can and cannot
+reach, and buys Larkspur a small retro. Larkspur's contract terms come from
+`examples/data/cat_book_contracts.csv`; the page does not type them in. The
+covers Larkspur does not write (Corran's cat cover and Larkspur's retro) are
+hypothetical and stated where they appear. The story, the files and the
+notation are on [the overview](cat-0-overview.qmd); for how a single layer,
+the hours clause and reinstatements work, read
+[page 3](cat-3-contract-terms.qmd) first.
+
+This is the R twin of the Python guide [`cat-4-programs.md`](cat-4-programs.md):
+the same sections, the same files and the same numbers. Each R chunk is
+followed by the text it prints, and `R/prospicio/tests/test-guides.R` requires
+each one to print exactly that text, the same text as the Python guide's. The
+whole page runs in a few seconds.
+
+## 1. The book and the helpers
+
+The year event loss table (YELT) has one row per cedent per event piece. The
+helper below turns one cedent's rows into an `event_set` with event times and
+a peril label. `contract_layer()` turns a row of the contracts file into an
+`xol_layer`, and `subject()` applies the contract's peril scope and hours
+clause. `ceded_of()` reads one layer's ceded loss from a tower's result (the
+name `ceded` is taken by prospicio's own function for one year's losses).
+
+```{r}
+# The data files, found from the repository root (CI) or from docs/guides (Quarto).
+find_data <- function(name, dir = getwd()) {
+  repeat {
+    path <- file.path(dir, "examples", "data", name)
+    if (file.exists(path)) return(path)
+    parent <- dirname(dir)
+    if (identical(parent, dir)) stop("examples/data/", name, " not found", call. = FALSE)
+    dir <- parent
+  }
+}
+read_text <- function(name) {
+  utils::read.csv(find_data(name), colClasses = "character", na.strings = character())
+}
+
+yelt <- utils::read.csv(find_data("cat_book_yelt.csv"), stringsAsFactors = FALSE)
+contracts <- read_text("cat_book_contracts.csv")
+contracts <- stats::setNames(split(contracts, seq_len(nrow(contracts))), contracts$contract)
+cedents <- read_text("cat_book_cedents.csv")
+n_years <- 2000
+
+# One cedent's years of losses, with times (fraction of the year) and peril labels.
+cedent_events <- function(cedent, perils = "all") {
+  rows <- yelt[yelt$cedent == cedent, ]
+  if (perils != "all") rows <- rows[rows$peril %in% strsplit(perils, "+", fixed = TRUE)[[1]], ]
+  year <- factor(rows$year, levels = seq_len(n_years))
+  time <- ((rows$day - 1) * 24 + rows$hour) / 8760
+  ev <- events_from_years(unname(split(rows$loss, year)), times = unname(split(time, year)))
+  with_labels(ev, list(peril = rows$peril))
+}
+
+num <- function(x, default = NULL) if (nzchar(x)) as.numeric(x) else default
+
+# A row of the contracts file as a layer: Larkspur's line, premium and terms.
+contract_layer <- function(c) {
+  share <- num(c$share)
+  if (c$kind == "occurrence_xl") {
+    limit <- num(c$limit)
+    return(xol_layer(c$contract, limit, num(c$attachment), share = share,
+                     premium = num(c$rate_on_line) * limit * share,
+                     reinstatement_rates = rep(num(c$reinstatement_rate), as.integer(c$reinstatements))))
+  }
+  if (c$kind == "aggregate_xl") {
+    agg_limit <- num(c$aggregate_limit)
+    return(xol_layer(c$contract, Inf, 0, share = share,
+                     aggregate_deductible = num(c$aggregate_deductible), aggregate_limit = agg_limit,
+                     premium = num(c$rate_on_line) * agg_limit * share))
+  }
+  premium <- share * as.numeric(cedents$cat_premium[cedents$cedent == c$cedent])
+  with_ceding_commission(
+    xol_layer(c$contract, num(c$limit), 0, share = share,
+              aggregate_limit = num(c$aggregate_limit, Inf), premium = premium),
+    num(c$ceding_commission))
+}
+
+# The losses a contract sees: its perils, grouped by its hours clause.
+subject <- function(c) {
+  e <- cedent_events(c$cedent, c$perils)
+  if (nzchar(c$hours)) hours_clause(e, as.numeric(c$hours)) else e
+}
+
+# One layer's ceded loss from a tower result.
+ceded_of <- function(res, name) {
+  marginal(aggregate(res, keep = c("kind", "layer")), list(kind = "ceded", layer = name))
+}
+
+for (c in contracts) {
+  cat(sprintf("%-12s %-14s perils %-5s share %s\n", c$contract, c$kind, c$perils, c$share))
+}
+```
+
+```text
+alder_cat_1  occurrence_xl  perils all   share 0.3
+alder_cat_2  occurrence_xl  perils all   share 0.2
+bracken_cat  occurrence_xl  perils all   share 0.25
+bracken_agg  aggregate_xl   perils CS+FL share 0.25
+corran_qs    quota_share    perils all   share 0.1
+```
+
+## 2. A program: two layers on one subject
+
+Alder buys 40 xs 30 and 100 xs 70. The layers touch: the first exhausts where
+the second attaches. A `reinsurance_tower()` applies both to the same
+occurrences in one pass, so each year's events are cut into the pieces every
+layer takes, and the reinstatements of each layer are used up in event order.
+
+Both of Alder's contracts carry a 72 hour clause and cover all perils, so they
+share one subject. `aggregate(res, keep = "kind")` adds the layers up and
+leaves four components: the gross loss, the ceded loss, the net loss and the
+reinstatement premium.
+
+```{r}
+alder <- subject(contracts$alder_cat_1)
+cat_1 <- contract_layer(contracts$alder_cat_1)
+cat_2 <- contract_layer(contracts$alder_cat_2)
+program <- reinsurance_tower(list(cat_1, cat_2))
+res <- apply_tower(program, alder)
+
+by_kind <- aggregate(res, keep = "kind")
+for (kind in by_kind@keys$kind) {
+  cat(sprintf("%-22s mean %8.4f\n", kind, mean(marginal(by_kind, list(kind = kind)))))
+}
+for (name in program@layer_names) {
+  cat(sprintf("ceded %-16s mean %8.4f\n", name, mean(ceded_of(res, name))))
+}
+```
+
+```text
+gross                  mean  16.7784
+ceded                  mean   1.2392
+net                    mean  15.5392
+reinstatement_premium  mean   0.1410
+ceded alder_cat_1      mean   0.8230
+ceded alder_cat_2      mean   0.4163
+```
+
+Gross is ceded plus net, in every year and so in the mean. The ceded line here
+is Larkspur's line on each layer (30% and 20%), not the whole layer. Section 4
+comes back to that. The net is net of recoveries only: the reinstatement
+premium of 0.1410 is a cost Alder pays on top (page 5).
+
+## 3. What adds up and what does not
+
+Expected losses add across layers: 0.8230 and 0.4163 make the 1.2392 above
+(the last digit is rounding). Tail measures do not. The TVaR at 99% of a sum
+is at most the sum of the TVaRs, and it is smaller whenever the worst years of
+the parts are not all the same years.
+
+For two layers stacked on one subject the worst years overlap a lot, because
+a large occurrence fills both. They do not overlap fully. A year can fill the
+first layer with two moderate events and leave the second untouched.
+
+```{r}
+c1 <- ceded_of(res, "alder_cat_1")
+c2 <- ceded_of(res, "alder_cat_2")
+both <- sampled(c1@draws + c2@draws)
+cat(sprintf("TVaR 99 alder_cat_1      %7.3f\n", TVaR(c1, 0.99)))
+cat(sprintf("TVaR 99 alder_cat_2      %7.3f\n", TVaR(c2, 0.99)))
+cat(sprintf("sum of the two           %7.3f\n", TVaR(c1, 0.99) + TVaR(c2, 0.99)))
+cat(sprintf("TVaR 99 of the program   %7.3f\n", TVaR(both, 0.99)))
+```
+
+```text
+TVaR 99 alder_cat_1       13.843
+TVaR 99 alder_cat_2       20.998
+sum of the two            34.841
+TVaR 99 of the program    33.983
+```
+
+The gap, 0.858, is a small diversification credit inside one cedent's
+program. Across cedents and perils it is much larger; page 7
+([the portfolio](cat-7-portfolio.qmd)) measures it on the whole book.
+
+## 4. Whose line? Participation
+
+The `share` of an `xol_layer()` is the line the modelled party signs. With
+`share = 0.3` the tower reports 30% of the layer's loss as ceded and
+everything else as net. That "net" is then the cedent's loss less Larkspur's
+part only, not the cedent's true retention: the other 70% of the layer is
+placed with other reinsurers, who do not appear in this model.
+
+To see the program from Alder's seat, model each layer at 100%. Because a
+share scales a layer's loss in every year, the 100% layer is the line divided
+by the share, and the cedent's retention follows.
+
+```{r}
+# The whole layer: the contract's terms without Larkspur's share.
+at_100 <- function(c) {
+  xol_layer(c$contract, num(c$limit), num(c$attachment),
+            reinstatement_rates = rep(num(c$reinstatement_rate), as.integer(c$reinstatements)))
+}
+
+full <- reinsurance_tower(list(at_100(contracts$alder_cat_1), at_100(contracts$alder_cat_2)))
+alder_view <- aggregate(apply_tower(full, alder), keep = "kind")
+for (kind in c("gross", "ceded", "net")) {
+  cat(sprintf("Alder's %-6s mean %8.4f\n", kind, mean(marginal(alder_view, list(kind = kind)))))
+}
+line <- sum(vapply(program@layer_names, function(n) {
+  mean(ceded_of(res, n)) / num(contracts[[n]]$share)
+}, numeric(1)))
+cat(sprintf("Larkspur's lines grossed up to 100%%: %.4f\n", line))
+```
+
+```text
+Alder's gross  mean  16.7784
+Alder's ceded  mean   4.8246
+Alder's net    mean  11.9538
+Larkspur's lines grossed up to 100%: 4.8246
+```
+
+So Alder keeps about 12.0 of its 16.8 a year, and Larkspur carries 1.24 of
+the 4.82 that Alder places. When a page later rolls up Larkspur's deals, it is
+always Larkspur's lines that add up, never the 100% layers.
+
+## 5. Inuring: a quota share ahead of a cat cover
+
+Corran General cedes 10% of every occurrence to Larkspur under the quota share
+`corran_qs`, with an event limit of 150 and an annual limit of 300. Suppose
+Corran also buys a cat cover of 60 xs 20 for its own retention. The quota
+share inures to the benefit of the cat cover: the cat layer sees each
+occurrence after the quota share has taken its part.
+
+In symbols, for one occurrence of size `X`, with the quota share's cession
+`Q(X)`, the cat layer cedes
+
+```
+C = min(max(X - Q(X) - 20, 0), 60)
+```
+
+Here `Q(X)` is what the quota share actually ceded on that occurrence: 10% of
+`X` capped at the event limit, and nothing once the quota share's annual limit
+is used up, so `Q` depends on the earlier occurrences of the year too.
+
+`inuring_tower()` takes the stages in order. Each stage sees the losses net of
+all earlier stages, event by event, and annual limits are used up in event
+order.
+
+```{r}
+corran <- subject(contracts$corran_qs)
+qs <- contract_layer(contracts$corran_qs)
+inuring <- apply_tower(inuring_tower(list(list(qs), list(xol_layer("corran_cat", 60, 20)))), corran)
+keys <- inuring@keys
+for (i in seq_len(nrow(keys))) {
+  m <- mean(marginal(inuring, list(kind = keys$kind[i], layer = keys$layer[i])))
+  cat(sprintf("%-18s %-10s mean %8.4f\n", keys$kind[i], keys$layer[i], m))
+}
+alone <- apply_tower(reinsurance_tower(list(xol_layer("corran_cat", 60, 20))), corran)
+cat(sprintf("cat cover on the gross, no quota share ahead: %.4f\n",
+            mean(ceded_of(alone, "corran_cat"))))
+```
+
+```text
+gross              ground_up  mean  13.0490
+ceded              corran_qs  mean   1.2025
+ceded              corran_cat mean   2.6164
+net                retained   mean   9.2301
+ceding_commission  corran_qs  mean   0.7500
+cat cover on the gross, no quota share ahead: 2.9890
+```
+
+The quota share takes slightly less than 10% of the gross (1.2025 against
+1.3049) because of its event and annual limits. With the quota share ahead,
+the cat cover's expected loss falls from 2.989 to 2.616, so the cat reinsurer
+should charge less. The ceding commission is 25% of the quota share premium of
+3.0, a fixed 0.75 in every year.
+
+## 6. What Bracken's aggregate cover can reach
+
+From Bracken's seat, its aggregate cover `bracken_agg` splits the gross loss
+into four amounts:
+
+- **Gross**: everything Bracken loses.
+- **Subject**: the losses the contract applies to (page 3, section 5): here
+  convective storm and flood only.
+- **Ceded**: what the whole contract pays, at 100%.
+- **Retained**: subject less ceded, what Bracken keeps of the losses the
+  contract could have paid.
+
+The gross less the subject is outside the contract's scope: windstorm and
+earthquake are excluded perils for this cover, and no change to its
+deductible or limit would reach them. As in section 4, the contract is
+modelled at 100% so that "retained" is what Bracken keeps, not the subject
+less Larkspur's line.
+
+```{r}
+bc <- contracts$bracken_agg
+gross_mean <- mean(total(cedent_events("bracken")))
+subj <- subject(bc)
+whole <- xol_layer(bc$contract, Inf, 0, aggregate_deductible = num(bc$aggregate_deductible),
+                   aggregate_limit = num(bc$aggregate_limit))
+agg <- apply_tower(reinsurance_tower(list(whole)), subj)
+subject_mean <- mean(total(subj))
+ceded_mean <- mean(ceded_of(agg, "bracken_agg"))
+cat(sprintf("gross                    %7.4f\n", gross_mean))
+cat(sprintf("subject                  %7.4f\n", subject_mean))
+cat(sprintf("ceded, 100%%              %7.4f\n", ceded_mean))
+cat(sprintf("retained                 %7.4f\n", subject_mean - ceded_mean))
+cat(sprintf("outside the scope        %7.4f\n", gross_mean - subject_mean))
+cat(sprintf("Larkspur's 25%% of ceded  %7.4f\n", ceded_mean * num(bc$share)))
+```
+
+```text
+gross                    15.3765
+subject                   7.1642
+ceded, 100%               0.6484
+retained                  6.5158
+outside the scope         8.2122
+Larkspur's 25% of ceded   0.1621
+```
+
+More than half of Bracken's loss is windstorm and earthquake, outside this
+contract's scope. Those losses are for `bracken_cat`, the occurrence layer,
+to cover.
+
+## 7. Splitting a program by peril
+
+With peril labels on the events, a tower's result carries a third dimension,
+`peril`, next to `kind` and `layer`. That is how to answer "how much of the
+ceded loss is windstorm?". `hours_clause()` drops the labels, so this section
+uses the `grouped_by_peril()` helper of page 3, section 2, repeated here so
+that the page runs on its own.
+
+```{r}
+grouped_by_peril <- function(cedent, hours) {
+  out <- NULL
+  for (p in c("WS", "EQ", "FL", "CS")) {
+    g <- hours_clause(cedent_events(cedent, p), hours)
+    g <- with_labels(g, list(peril = rep(p, sum(event_counts(g)))))
+    out <- if (is.null(out)) g else merge_event_sets(out, g)
+  }
+  out
+}
+
+by_peril <- aggregate(apply_tower(program, grouped_by_peril("alder", 72)), keep = c("kind", "peril"))
+for (p in c("WS", "EQ", "FL", "CS")) {
+  cat(sprintf("%s  gross %8.4f   ceded %7.4f\n", p,
+              mean(marginal(by_peril, list(kind = "gross", peril = p))),
+              mean(marginal(by_peril, list(kind = "ceded", peril = p)))))
+}
+cat(sprintf("ceded, all perils: %.4f\n",
+            mean(marginal(aggregate(by_peril, keep = "kind"), list(kind = "ceded")))))
+```
+
+```text
+WS  gross   9.9146   ceded  0.8825
+EQ  gross   2.4733   ceded  0.2800
+FL  gross   3.0416   ceded  0.0759
+CS  gross   1.3489   ceded  0.0000
+ceded, all perils: 1.2385
+```
+
+Windstorm drives the program. No convective storm occurrence for Alder
+reaches the attachment of 30, even after grouping.
+
+The ceded total, 1.2385, is not quite section 2's 1.2392, because here a
+windstorm and a flood in the same three days stay two occurrences. Page 3,
+section 2 explains why the track prices with the all-perils clause and uses
+the per-peril grouping only for splits like this one.
+
+## 8. Retro as an aggregate cover
+
+Larkspur can protect its own book. The simplest retro is an aggregate stop
+loss on the annual total of what Larkspur has written. Here Larkspur buys
+10 xs 8 on the annual total of two deals, its lines on `alder_cat_1` and
+`bracken_cat`.
+
+A **deal** is one contract as Larkspur has written it: its line's premium,
+losses and other flows, year by year. `deal_run_from_tower()` records one
+layer of a tower result as a deal, and
+`deal_book()` lines the deals up year by year. `book_amounts()` holds every
+item of every deal and also a `"total"` deal; select the deals by name so the
+total is not counted twice. `apply_tower()` on a predictive distribution then
+treats each year's total of the selection as one aggregate loss.
+
+```{r}
+bc <- contracts$bracken_cat
+bracken_tower <- reinsurance_tower(list(contract_layer(bc)))
+alder_tower <- reinsurance_tower(list(cat_1))
+deals <- c("alder_cat_1", "bracken_cat")
+book <- deal_book(list(
+  deal_run_from_tower("alder_cat_1", alder_tower, apply_tower(alder_tower, alder), "alder_cat_1"),
+  deal_run_from_tower("bracken_cat", bracken_tower, apply_tower(bracken_tower, subject(bc)), "bracken_cat")
+))
+losses <- select_components(select_components(book_amounts(book), "item", "loss"), "deal", deals)
+annual <- total(losses)
+cat(sprintf("book loss mean %.4f, P(loss > 8) %.4f\n", mean(annual), sum(annual@draws > 8) / n_years))
+retro <- apply_tower(reinsurance_tower(list(aggregate_stop_loss("retro", 10, 8))), losses)
+cat(sprintf("retro 10 xs 8 ceded mean %.4f\n", mean(ceded_of(retro, "retro"))))
+```
+
+```text
+book loss mean 1.5077, P(loss > 8) 0.0835
+retro 10 xs 8 ceded mean 0.4565
+```
+
+The two deals lose 1.51 a year on average, and in about one year in twelve
+they lose more than 8, where the retro starts to pay. Its expected recovery is
+0.4565 a year, close to a third of the deals' mean loss, because the cover sits
+exactly where these thin, volatile lines put their losses.
+
+An occurrence retro, a per-event cover on Larkspur's own ceded losses, needs
+the ceded amount of every event, across deals, in time order. A tower result
+gives each layer's annual totals, not its losses by event, so prospicio cannot
+yet feed one book's ceded events into another tower (#590). `ceded_by_event()` gives the
+split for one list of losses by hand.
+
+## 9. Summary
+
+- `reinsurance_tower()` and `apply_tower()` apply a program in one pass;
+  `aggregate(res, keep = "kind")` gives gross, ceded and net, and they add up
+  year by year.
+- Means add across layers and deals. TVaR does not.
+- `share` is the modelled party's line. Model at 100% for the cedent's view.
+- `inuring_tower()` puts a quota share ahead of a cat cover; the order changes
+  the cat layer's loss.
+- Gross less subject is outside the contract's scope, and no deductible or
+  limit reaches it.
+- To split a grouped subject by peril, group each peril, label it and merge.
+- A retro on the book's annual total is `apply_tower()` on the deals' loss as a
+  predictive distribution.
+
+## What is missing
+
+- the ceded loss of each event as an event set, to feed an occurrence retro
+  (#590)
+- in R only, a deal book's names, as Python's `DealBook.names`; this page
+  writes them out (#596)
+
+## In Python
+
+The Python guide, [cat-4-programs.md](cat-4-programs.md), runs the same steps
+with `Tower`, `Tower.inuring`, `Tower.apply`, `EventSet.merge`,
+`DealRun.from_tower`, `DealBook`, `DealBook.amounts` and `Layer.stop_loss`.
+
+## Further reading
+
+[Page 5](cat-5-beyond-loss.qmd) adds the flows other than loss: reinstatement
+premium, commissions and brokerage. [reinsurance.dev](https://reinsurance.dev)
+by Oliver Baltzer is another introduction to property catastrophe
+reinsurance.

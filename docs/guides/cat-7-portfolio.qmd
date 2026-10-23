@@ -1,0 +1,497 @@
+---
+title: "Property catastrophe 7: Larkspur's whole book"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+  output: false
+---
+
+The earlier pages of this track price one contract at a time. A reinsurer does
+not hold one contract. Larkspur Re holds five, on three cedents, and the same
+windstorm can hit all of them in the same year. This page adds the five
+contracts into one book, measures the book's tail, splits the book's capital
+back to the contracts, and asks which contracts earn their keep.
+
+This is the R twin of the Python guide
+[`cat-7-portfolio.md`](cat-7-portfolio.md): the same sections, the same files
+and the same numbers. Each R chunk is followed by the text it prints, and
+`R/prospicio/tests/test-guides.R` requires each one to print exactly that text.
+
+The story, the files and the notation are on
+[the overview](cat-0-overview.qmd). Nothing here is typed in by hand: every
+attachment, limit and share comes from `cat_book_contracts.csv`.
+
+## 1. The idea
+
+Each row of the year event loss table belongs to one simulated year, and every
+contract sees the same 2,000 years. So the book's loss in a year is the sum of
+the five contracts' losses in that year. No copula and no reordering are
+needed for the dependence that the events carry: one event in the catalog
+lands on several cedents at once. That is the only dependence in this book,
+though. The script that wrote it draws each cedent's loss from an event
+independently, so the correlated part of secondary uncertainty (page 1) is
+not correlated across cedents here. A real model that shares it would give
+the book a heavier tail than this page shows.
+
+Three questions follow from that sum.
+
+- **How bad is the book's bad year?** A tail measure of the summed loss, here
+  TVaR at 99%: the mean of the worst 1% of years.
+- **Who is responsible for it?** A split of the book's TVaR back to the
+  contracts. The Euler split gives each contract its mean loss in the years
+  that make the book's tail; [price allocation](pir-price-allocation.qmd)
+  compares it with the other ways to split.
+- **Does each contract pay for the capital it uses?** A price or a return on
+  that allocated capital, set against the premium the contract actually
+  charges.
+
+## 2. The book
+
+The chunk below repeats the reader helpers of the earlier pages (each guide
+runs on its own), builds each contract's tower on its own subject loss, and
+wraps each result in a `deal_run_from_tower()`. A `deal_book()` lines the runs
+up year by year.
+
+```{r}
+library(prospicio)
+
+# The data files, found from the repository root (CI) or from docs/guides (Quarto).
+find_data <- function(name, dir = getwd()) {
+  repeat {
+    path <- file.path(dir, "examples", "data", name)
+    if (file.exists(path)) return(path)
+    parent <- dirname(dir)
+    if (identical(parent, dir)) stop("examples/data/", name, " not found", call. = FALSE)
+    dir <- parent
+  }
+}
+
+read_text <- function(name) read.csv(find_data(name), colClasses = "character")
+YELT <- read_text("cat_book_yelt.csv")
+CONTRACTS <- read_text("cat_book_contracts.csv")
+CEDENTS <- read_text("cat_book_cedents.csv")
+N_YEARS <- 2000
+
+# One cedent's years of losses, with times (fraction of the year) and peril labels.
+cedent_events <- function(cedent, perils = "all") {
+  rows <- YELT[YELT$cedent == cedent, ]
+  if (perils != "all") rows <- rows[rows$peril %in% strsplit(perils, "+", fixed = TRUE)[[1]], ]
+  year <- factor(as.integer(rows$year), levels = seq_len(N_YEARS))
+  time <- ((as.integer(rows$day) - 1) * 24 + as.integer(rows$hour)) / 8760
+  ev <- events_from_years(unname(split(as.double(rows$loss), year)),
+                          times = unname(split(time, year)))
+  with_labels(ev, list(peril = rows$peril[order(year)]))
+}
+
+num <- function(x, default = NULL) if (x != "") as.double(x) else default
+
+# The contract's terms from cat_book_contracts.csv as a layer.
+contract_layer <- function(c) {
+  share <- num(c$share)
+  if (c$kind == "occurrence_xl") {
+    limit <- num(c$limit)
+    return(xol_layer(c$contract, limit, num(c$attachment), share = share,
+                     premium = num(c$rate_on_line) * limit * share,
+                     reinstatement_rates = rep(num(c$reinstatement_rate),
+                                               as.integer(c$reinstatements))))
+  }
+  if (c$kind == "aggregate_xl") {
+    agg_limit <- num(c$aggregate_limit)
+    return(xol_layer(c$contract, Inf, 0, share = share,
+                     aggregate_deductible = num(c$aggregate_deductible),
+                     aggregate_limit = agg_limit,
+                     premium = num(c$rate_on_line) * agg_limit * share))
+  }
+  premium <- share * as.double(CEDENTS$cat_premium[CEDENTS$cedent == c$cedent])
+  with_ceding_commission(
+    xol_layer(c$contract, num(c$limit), 0, share = share,
+              aggregate_limit = num(c$aggregate_limit), premium = premium),
+    num(c$ceding_commission))
+}
+
+# The contract's subject loss: its cedent and perils, grouped by its hours clause.
+subject <- function(c) {
+  e <- cedent_events(c$cedent, c$perils)
+  if (c$hours != "") hours_clause(e, as.double(c$hours)) else e
+}
+
+deals <- CONTRACTS$contract
+towers <- list()
+results <- list()
+for (i in seq_len(nrow(CONTRACTS))) {
+  c <- CONTRACTS[i, ]
+  towers[[c$contract]] <- reinsurance_tower(list(contract_layer(c)))
+  results[[c$contract]] <- apply_tower(towers[[c$contract]], subject(c))
+}
+runs <- lapply(deals, function(d) deal_run_from_tower(d, towers[[d]], results[[d]], d))
+book <- deal_book(runs)
+amounts <- book_amounts(book)
+cat(sprintf("%d deals, %d years\n", length(runs), as.integer(amounts@n_sims)))
+cat("items:", paste(unique(amounts@keys$item), collapse = ", "), "\n")
+```
+
+```text
+5 deals, 2000 years
+items: premium, loss, ceding_commission, total_deductions, nmbf, margin
+```
+
+`book_summary()` gives the mean of every item by deal and for the book, with
+its ratio to the mean premium. The margin here is premium less loss less the
+deductions (only `corran_qs` has one, its ceding commission). Larkspur's own
+expenses are not in the data, so the margin is before them.
+
+```{r}
+s <- book_summary(book)
+item_mean <- function(s, d, i) s$mean[s$deal == d & s$item == i]
+item_ratio <- function(s, d, i) s$ratio[s$deal == d & s$item == i]
+cat(sprintf("%-12s%9s%8s%8s%8s%7s\n", "deal", "premium", "loss", "deduct", "margin", "LR"))
+for (d in c(deals, "total")) {
+  cat(sprintf("%-12s%9.3f%8.3f%8.3f%8.3f%7.3f\n", d, item_mean(s, d, "premium"),
+              item_mean(s, d, "loss"), item_mean(s, d, "total_deductions") + 0,
+              item_mean(s, d, "margin"), item_ratio(s, d, "loss")))
+}
+```
+
+```text
+deal          premium    loss  deduct  margin     LR
+alder_cat_1     1.800   0.823   0.000   0.977  0.457
+alder_cat_2     1.000   0.416   0.000   0.584  0.416
+bracken_cat     1.750   0.685   0.000   1.065  0.391
+bracken_agg     0.450   0.162   0.000   0.288  0.360
+corran_qs       3.000   1.202   0.750   1.048  0.401
+total           8.000   3.289   0.750   3.961  0.411
+```
+
+## 3. Reinstatement premium is not in the book
+
+`deal_run_from_tower()` takes a layer's deposit premium. The reinstatement
+premium that the tower computes for the two Alder layers and `bracken_cat`
+stays behind: `alder_cat_1`'s premium is the same 1.8 in every year, although
+a year that reaches the layer pays more (#595).
+
+Until then, build those runs by hand from the tower's result: premium in year
+`j` is the deposit plus that year's reinstatement premium. Losses do not
+change, so the capital below does not change either. Only the premium and the
+margin do.
+
+```{r}
+deposit <- marginal(amounts, c("premium", "alder_cat_1"))@draws
+cat(sprintf("alder_cat_1 book premium: min %.3f, max %.3f\n", min(deposit), max(deposit)))
+
+# The deal's run with each year's reinstatement premium added to its deposit.
+with_reinstatement_premium <- function(name) {
+  by_kind <- aggregate(results[[name]], keep = c("kind", "layer"))
+  rip <- marginal(by_kind, c("reinstatement_premium", name))
+  if (is.null(rip)) return(deal_run_from_tower(name, towers[[name]], results[[name]], name))
+  loss <- marginal(by_kind, c("ceded", name))@draws
+  c <- CONTRACTS[CONTRACTS$contract == name, ]
+  deal_run(name, contract_layer(c)@premium + rip@draws, loss)
+}
+
+book_rip <- deal_book(lapply(deals, with_reinstatement_premium))
+s_rip <- book_summary(book_rip)
+for (d in deals) {
+  added <- item_mean(s_rip, d, "premium") - item_mean(s, d, "premium")
+  cat(sprintf("%-12s reinstatement premium %.4f\n", d, added))
+}
+```
+
+```text
+alder_cat_1 book premium: min 1.800, max 1.800
+alder_cat_1  reinstatement premium 0.1207
+alder_cat_2  reinstatement premium 0.0203
+bracken_cat  reinstatement premium 0.0959
+bracken_agg  reinstatement premium 0.0000
+corran_qs    reinstatement premium 0.0000
+```
+
+## 4. The book's tail
+
+`book_distribution(book, "loss", ...)` gives three views of each deal at once.
+
+- `total`: the book's own statistics.
+- `contribution`: the deal's mean loss in the years that make the book's
+  statistic. For TVaR this is the Euler split, and the contributions add up to
+  the book's TVaR.
+- `marginal`: the book's statistic less the same statistic of the book
+  without that deal. It answers "what would we save by not writing this?".
+
+The stand-alone TVaR of each deal comes from `capital_allocation()` below.
+Here it is the first column, for comparison.
+
+```{r}
+dist <- book_distribution(book, "loss", 99, tvar_levels = 99)
+loss <- select_components(select_components(amounts, "item", "loss"), "deal", deals)
+alloc <- capital_allocation(loss, distortion("tvar", 0.99))
+cat(sprintf("book: mean %.3f, VaR 99 %.3f, TVaR 99 %.3f\n", dist$total[["Mean"]],
+            dist$total[["Percentile 99"]], dist$total[["TVaR 99"]]))
+cat(sprintf("%-12s%8s%9s%10s\n", "deal", "alone", "contrib", "marginal"))
+for (k in seq_along(deals)) {
+  d <- deals[k]
+  cat(sprintf("%-12s%8.3f%9.3f%10.3f\n", d, alloc$by_component$standalone[k],
+              dist$contribution["TVaR 99", d], dist$marginal["TVaR 99", d]))
+}
+cat(sprintf("sum of contributions %.3f\n", sum(dist$contribution["TVaR 99", deals])))
+```
+
+```text
+book: mean 3.289, VaR 99 46.505, TVaR 99 55.096
+deal           alone  contrib  marginal
+alder_cat_1   13.843   13.195    12.728
+alder_cat_2   20.998   19.026    14.560
+bracken_cat   14.136    9.397     8.840
+bracken_agg    7.500    0.262     0.193
+corran_qs     16.363   13.216    12.609
+sum of contributions 55.096
+```
+
+Read the table one row at a time.
+
+- `alder_cat_2` is the high Alder layer. On its own its TVaR is the largest of
+  the five, and it keeps most of that in the book, because the years that
+  exhaust it are the big coastal windstorms that drive the whole book.
+- `bracken_agg` looks risky alone: in its worst 1% of years it pays its whole
+  share of the aggregate limit. Those are mostly years of one large flood or
+  storm outbreak on the plains (page 3, section 5), not the book's worst
+  years, so it adds little to the book's tail.
+- Contributions add up to the book's TVaR. Marginals do not: removing one deal
+  changes which years are the worst, so the marginals add up to less.
+
+## 5. A trap: the total row
+
+`book_amounts()` holds every item for each deal *and* a `"total"` deal. A
+selection on the item alone keeps that total, and `capital_allocation()` then
+adds it to the deals as if it were a sixth contract. The book's TVaR doubles.
+
+```{r}
+wrong <- capital_allocation(select_components(amounts, "item", "loss"), distortion("tvar", 0.99))
+right <- capital_allocation(loss, distortion("tvar", 0.99))
+cat(sprintf("item only: total %.3f, components %d\n", wrong$total, nrow(wrong$by_component)))
+cat(sprintf("item and deals: total %.3f, components %d\n", right$total,
+            nrow(right$by_component)))
+```
+
+```text
+item only: total 110.192, components 6
+item and deals: total 55.096, components 5
+```
+
+Select the deals by name, `select_components(..., "deal", deals)`, every time.
+
+## 6. Capital and diversification
+
+`capital_allocation(loss, distortion("tvar", 0.99))` allocates the book's TVaR
+by Euler, so the allocated amounts are the contributions above.
+Diversification is the sum of the stand-alone TVaRs less the book's TVaR:
+
+```
+diversification = sum over deals i of TVaR(X_i) - TVaR(X_1 + ... + X_5)
+```
+
+TVaR is subadditive, so this is never negative.
+
+```{r}
+bc <- alloc$by_component
+cat(sprintf("%-12s%8s%11s%8s\n", "deal", "alone", "allocated", "saved"))
+for (k in seq_along(deals)) {
+  cat(sprintf("%-12s%8.3f%11.3f%8.3f\n", deals[k], bc$standalone[k], bc$allocated[k],
+              bc$diversification[k]))
+}
+cat(sprintf("sum alone %.3f, book %.3f, benefit %.3f\n", sum(bc$standalone), alloc$total,
+            alloc$diversification_benefit))
+```
+
+```text
+deal           alone  allocated   saved
+alder_cat_1   13.843     13.195   0.648
+alder_cat_2   20.998     19.026   1.973
+bracken_cat   14.136      9.397   4.738
+bracken_agg    7.500      0.262   7.238
+corran_qs     16.363     13.216   3.147
+sum alone 72.840, book 55.096, benefit 17.744
+```
+
+## 7. The book priced on its capital
+
+`price_portfolio()` prices the book as page 6, section 2 prices one contract,
+`P = (EL + r A) / (1 + r)`, with the assets `A` now the book's TVaR. It then
+splits that premium to the deals by the same Euler weights
+([portfolio pricing](pir-portfolio-pricing.qmd) has the theory), and prices
+each deal alone as well. The premium to compare with is what Larkspur keeps:
+the premium charged, plus the expected reinstatement premium of section 3,
+less the deductions (Corran's ceding commission).
+
+```{r}
+pp <- price_portfolio(loss, distortion("tvar", 0.99), cost_of_capital = 0.10)
+cat(sprintf("book: EL %.3f, premium %.3f, capital %.3f\n", pp$total$expected_loss,
+            pp$total$premium, pp$total$capital))
+kept <- function(d) item_mean(s_rip, d, "premium") - item_mean(s_rip, d, "total_deductions")
+cat(sprintf("%-12s%9s%8s%9s%8s\n", "deal", "charged", "kept", "in book", "alone"))
+for (k in seq_along(deals)) {
+  cat(sprintf("%-12s%9.3f%8.3f%9.3f%8.3f\n", deals[k], item_mean(s, deals[k], "premium"), kept(deals[k]),
+              pp$by_component$premium[k], pp$by_component$standalone_premium[k]))
+}
+cat(sprintf("%-12s%9.3f%8.3f%9.3f\n", "book", item_mean(s, "total", "premium"), kept("total"),
+            pp$total$premium))
+cat(sprintf("premium saved by diversification %.3f\n", pp$diversification))
+```
+
+```text
+book: EL 3.289, premium 7.998, capital 47.097
+deal          charged    kept  in book   alone
+alder_cat_1     1.800   1.921    1.948   2.007
+alder_cat_2     1.000   1.020    2.108   2.287
+bracken_cat     1.750   1.846    1.477   1.908
+bracken_agg     0.450   0.450    0.171   0.829
+corran_qs       3.000   2.250    2.295   2.581
+book            8.000   7.487    7.998
+premium saved by diversification 1.613
+```
+
+Stand-alone, `alder_cat_1` needs the 2.007 of page 6. In the book it needs
+less. The book charges 8.000, which looks like the 7.998 that a 10% return on
+TVaR capital asks for, but it keeps less: 7.487 after the reinstatement
+premium comes in and Corran's ceding commission goes out. So the book as a
+whole falls short of the target, which section 9 confirms as a 9.0% return.
+Both Alder layers keep less than their share, `alder_cat_2` about half of it.
+The two Bracken contracts keep more than theirs. Corran's quota share charges
+3.000 but keeps 2.250, a little under its 2.295.
+
+## 8. The marginal price of a new contract
+
+The allocated price shares the book's price among deals already written. A
+new contract is a different question: what must it charge so that the book's
+return does not fall? Take the extra assets `dA` it needs (its marginal TVaR,
+the book with it less the book without it) and its expected loss `EL`. With
+the same convention as above:
+
+```
+P = EL + r * (dA - P),   so   P = (EL + r * dA) / (1 + r)
+```
+
+Below, each deal is treated in turn as the last one written. The library has
+no call for this, so it is done by hand from `marginal` (#588).
+
+```{r}
+r <- 0.10
+cat(sprintf("%-12s%7s%8s%12s%9s\n", "deal", "EL", "dA", "marginal P", "charged"))
+for (d in deals) {
+  el <- dist$marginal["Mean", d]
+  da <- dist$marginal["TVaR 99", d]
+  p <- (el + r * da) / (1 + r)
+  cat(sprintf("%-12s%7.3f%8.3f%12.3f%9.3f\n", d, el, da, p, item_mean(s, d, "premium")))
+}
+```
+
+```text
+deal             EL      dA  marginal P  charged
+alder_cat_1   0.823  12.728       1.905    1.800
+alder_cat_2   0.416  14.560       1.702    1.000
+bracken_cat   0.685   8.840       1.426    1.750
+bracken_agg   0.162   0.193       0.165    0.450
+corran_qs     1.202  12.609       2.239    3.000
+```
+
+The marginal price is lower than the allocated price for every deal, because
+each deal's marginal TVaR is at most its Euler contribution: TVaR is
+subadditive, so adding a deal to a book raises the book's TVaR by no more than
+the deal's share of the new book's tail. Price the next contract on its
+marginal and the book's TVaR return holds. Price every contract on its
+marginal and the book falls short.
+
+## 9. A return on allocated capital
+
+A risk-adjusted return on capital (RAROC) sets each deal's margin against the
+capital allocated to it. Here capital is allocated assets less the deal's premium, as above, and the
+margin includes the reinstatement premium from the hand-built runs. There is
+no expense line, so this is a return before Larkspur's own costs. The library
+has no output for this (#589).
+
+```{r}
+cat(sprintf("%-12s%8s%9s%8s\n", "deal", "margin", "capital", "return"))
+for (k in seq_along(deals)) {
+  d <- deals[k]
+  a <- bc$allocated[k]
+  margin <- item_mean(s_rip, d, "margin")
+  premium <- item_mean(s_rip, d, "premium")
+  ret <- if (a > premium) sprintf("%.1f%%", 100 * margin / (a - premium)) else "none"
+  cat(sprintf("%-12s%8.3f%9.3f%8s\n", d, margin, a - premium, ret))
+}
+margin <- item_mean(s_rip, "total", "margin")
+premium <- item_mean(s_rip, "total", "premium")
+cat(sprintf("%-12s%8.3f%9.3f%8s\n", "book", margin, alloc$total - premium,
+            sprintf("%.1f%%", 100 * margin / (alloc$total - premium))))
+```
+
+```text
+deal          margin  capital  return
+alder_cat_1    1.098   11.274    9.7%
+alder_cat_2    0.604   18.005    3.4%
+bracken_cat    1.161    7.552   15.4%
+bracken_agg    0.288   -0.188    none
+corran_qs      1.048   10.216   10.3%
+book           4.198   46.859    9.0%
+```
+
+Against a 10% target, `alder_cat_2` is the weak contract: it uses more than a
+third of the book's capital and returns a few percent on it. `bracken_agg` has
+no return to show. Its premium is larger than the assets allocated to it, so
+in this book it needs no shareholder capital at all, and a ratio over a
+negative capital means nothing.
+
+## 10. Reproducibility
+
+The book's VaR above is the default inverted-cdf quantile; page 2, section 2
+compares it with the other conventions, and the `k`-th largest year has no
+switch yet (#582).
+
+Every number on this page follows from four committed files and one seed.
+
+- `examples/data/make_cat_book.py` writes the files with a fixed seed, and a
+  test checks that the committed files are what it writes.
+- No step on this page draws a random number: the book adds the same 2,000
+  years for every contract.
+- `read_ylt()` stamps the event set with a hash of the file it read, so a
+  result can be traced to its input. The rebuild by `cedent_events()` drops
+  that hash, so record it from `read_ylt()` once.
+
+```{r}
+ylt <- read_ylt(find_data("cat_book_yelt.csv"), year = "year", loss = "loss", slot = "slot",
+                labels = c("peril", "region", "cedent"))
+cat(strsplit(ylt@input_hash, ":", fixed = TRUE)[[1]][1], ylt@n_sims, "\n")
+```
+
+```text
+blake3 2000
+```
+
+The hash itself is not printed here: it depends on the file's bytes, and a
+checkout that turns line endings into CRLF gives a different one.
+
+## What is missing
+
+- reinstatement premium in `deal_run_from_tower()` (#595)
+- the marginal price of a new contract in one call (#588)
+- a deal's and the book's return on allocated or marginal capital
+  (#589)
+- in R only, a deal book's names, number of years and items, as Python's
+  `DealBook.names`, `n_sims` and `items`; this page reads them from the
+  contracts table and `book_amounts()` (#596)
+
+## In Python
+
+The Python guide, [cat-7-portfolio.md](cat-7-portfolio.md), runs the same
+steps with `DealRun.from_tower`, `DealBook`, `book.summary()`,
+`book.distribution()`, `capital` and `price_portfolio`.
+
+## Further reading
+
+[Price allocation](pir-price-allocation.qmd) and
+[portfolio pricing](pir-portfolio-pricing.qmd) cover allocation and pricing on
+a book in depth. [reinsurance.dev](https://reinsurance.dev) by Oliver Baltzer
+is another introduction to property catastrophe reinsurance.
