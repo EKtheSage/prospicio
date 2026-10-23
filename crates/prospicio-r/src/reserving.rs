@@ -4905,9 +4905,15 @@ impl CompartmentalFits {
         }
     }
 
-    fn outstanding(&self) -> PredictiveDistribution {
-        PredictiveDistribution {
-            inner: self.inner.outstanding.clone(),
+    /// The future outstanding (or incurred) cells, or `NULL` for a fit of
+    /// paid alone.
+    fn outstanding(&self) -> Robj {
+        match &self.inner.outstanding {
+            Some(inner) => PredictiveDistribution {
+                inner: inner.clone(),
+            }
+            .into(),
+            None => ().into(),
         }
     }
 
@@ -5027,9 +5033,15 @@ impl CompartmentalFit {
         }
     }
 
-    fn outstanding(&self) -> PredictiveDistribution {
-        PredictiveDistribution {
-            inner: self.inner.outstanding.clone(),
+    /// The future outstanding (or incurred) cells, or `NULL` for a fit of
+    /// paid alone.
+    fn outstanding(&self) -> Robj {
+        match &self.inner.outstanding {
+            Some(inner) => PredictiveDistribution {
+                inner: inner.clone(),
+            }
+            .into(),
+            None => ().into(),
         }
     }
 

@@ -11146,6 +11146,11 @@ fn replace_effect(
 /// them silently. ``CompartmentalPriors.gesmann_morris()`` is the paper's
 /// model 1 and ``CompartmentalPriors.gesmann_morris_2()`` its model 2;
 /// check any set with ``Compartmental.prior_predictive`` before fitting.
+/// ``CompartmentalPriors.diffuse()`` is the starting point for a fit to paid alone
+/// (``fitted="paid_only"``): it leaves the rates to the data. A fit to incurred alone
+/// (``fitted="incurred_only"``) refuses a ``k_p`` prior with a log-scale sd above 0.5,
+/// so give it a prior you believe, such as the paper's. Use a narrower prior than the
+/// preset also when you hold information about the rates that is not in the data.
 ///
 /// Each positive parameter ``θ`` (``k_er``, ``k_p``, ``rlr``, ``rrf``) is
 /// ``median * exp(sd * o)`` with ``o ~ N(0, 1)``: a log-normal prior with
@@ -11271,6 +11276,31 @@ impl PyCompartmentalPriors {
     fn gesmann_morris() -> Self {
         Self {
             inner: CompartmentalPriors::gesmann_morris(),
+        }
+    }
+
+    /// A diffuse set for model 1: the paper's medians (``k_er`` 3, ``k_p`` 1,
+    /// ``rlr`` 0.7, ``rrf`` 0.8) with a log-scale sd of 1 on each of the four,
+    /// 5 to 10 times the paper's, and its effect sds and ``log sigma`` priors.
+    /// Use it as the starting point for a fit to paid alone
+    /// (``fitted="paid_only"``), where the paid cells pin the rates. It is
+    /// refused for a fit to incurred alone (``fitted="incurred_only"``): no
+    /// paid cell is fitted there, so the payment rate ``k_p`` and with it the
+    /// paid run-off and the reserve follow the prior on ``k_p`` at every width
+    /// (on company 337 -51,000 with an sd of about 150,000 at a log-scale sd of
+    /// 1, 203,000 at 0.3), and a ``k_p`` prior with a log-scale sd above 0.5 is
+    /// an error. For incurred alone replace ``k_p`` with a prior you believe
+    /// (``replace``), for example one from the book's paid history or from a
+    /// paid-and-incurred fit of a similar book; the paper's narrow prior put
+    /// the reserve on company 337 26% above the fit to paid and outstanding.
+    ///
+    /// Returns
+    /// -------
+    /// CompartmentalPriors
+    #[staticmethod]
+    fn diffuse() -> Self {
+        Self {
+            inner: CompartmentalPriors::diffuse(),
         }
     }
 
@@ -11576,8 +11606,26 @@ const STARTS: [(&str, CompartmentalStart); 2] = [
 /// under ``paid_response="incremental"``, and ``log_sigma_os`` is the incurred sigma.
 /// Give the incurred column as ``incurred=``, or an outstanding column as
 /// ``outstanding=`` and the incurred is outstanding plus paid where both are observed.
-/// The fit's ``outstanding`` then holds the future incurred cells. ``"paid_only"`` and
-/// ``"incurred_only"`` are not yet built.
+/// The fit's ``outstanding`` then holds the future incurred cells.
+///
+/// ``fitted="paid_only"`` and ``fitted="incurred_only"`` fit one response alone and need
+/// ``rate_order="ordered"`` (``ValueError`` under ``"free"``): from one response the means
+/// do not change under the rate swap below, and from paid alone only ``RLR x RRF`` is
+/// identified, so the priors carry the split of ``RLR`` and ``RRF``. The model then has one
+/// sigma, ``sigma_pd`` or ``sigma_os``. Under ``"paid_only"`` the second column is not read
+/// (``outstanding=`` and ``incurred=`` may both be left out) and the fit has no
+/// ``outstanding`` (``None``). Under ``"incurred_only"`` the incurred is given as for
+/// ``"paid_and_incurred"`` and the paid column supplies each origin's latest paid only: the
+/// reserve is the expected paid at the last age less the latest paid, and the future paid
+/// cells are expected values, without noise, since no paid cell is fitted.
+///
+/// ``CompartmentalPriors.diffuse()`` is the starting point for ``"paid_only"``. Under
+/// ``"incurred_only"`` no paid cell is fitted, so the incurred does not identify the payment
+/// rate ``k_p`` and its prior sets the paid run-off and the reserve at every width (on company
+/// 337 the paper's narrow prior put the reserve 26% above the fit to paid and outstanding):
+/// the fit refuses a ``k_p`` prior with a log-scale sd above 0.5, so the diffuse preset is an
+/// error there, and you give a ``k_p`` prior you believe, for example from the book's paid
+/// history or from a paid-and-incurred fit of a similar book.
 ///
 /// An origin with a premium and no observed cell (the papers' training
 /// triangle has one) draws its effects from the population in each
@@ -11617,14 +11665,15 @@ const STARTS: [(&str, CompartmentalStart); 2] = [
 /// paid_response : str
 ///     ``"cumulative"`` (model 1) or ``"incremental"`` (model 2).
 /// fitted : str
-///     ``"paid_and_outstanding"`` or ``"paid_and_incurred"`` (incurred replaces
-///     outstanding as the second response, as above); ``"paid_only"`` and
-///     ``"incurred_only"`` are not yet built.
+///     ``"paid_and_outstanding"``, ``"paid_and_incurred"`` (incurred replaces
+///     outstanding as the second response, as above), ``"paid_only"`` or
+///     ``"incurred_only"`` (one response alone, with ``rate_order="ordered"``).
 /// rate_order : str
 ///     ``"free"`` or ``"ordered"``, as above.
 /// start : str
 ///     Where the pilot run starts: ``"data"``, a least-squares fit of the
-///     population curve (the prior centre if that fit fails), or
+///     population curve (the prior centre if that fit fails, and under one
+///     response if its log posterior is below the prior centre's), or
 ///     ``"prior_centre"``.
 /// chains, tune, draws : int
 ///     NUTS chains, warm-up draws per chain and kept draws per chain.
@@ -11915,7 +11964,8 @@ impl PyCompartmental {
     /// the reserves. Outstanding comes from ``outstanding``, a column of
     /// outstanding amounts, or from ``incurred``, a column of incurred
     /// amounts less paid cell by cell (the papers' outstanding on company
-    /// 337 is incurred with bulk and IBNR less paid); give exactly one.
+    /// 337 is incurred with bulk and IBNR less paid); give exactly one, or
+    /// neither under ``fitted="paid_only"``, which does not read it.
     /// Raises one ``UserWarning`` listing the failed diagnostics and any
     /// rate swap.
     ///
@@ -11939,8 +11989,10 @@ impl PyCompartmental {
     /// Raises
     /// ------
     /// ValueError
-    ///     If a setting of the model (``"paid_only"`` or ``"incurred_only"``) is not yet built; if not exactly one
-    ///     of ``outstanding`` and ``incurred`` is given; if a column is
+    ///     If ``fitted`` is ``"paid_only"`` or ``"incurred_only"`` and
+    ///     ``rate_order`` is not ``"ordered"``; if not exactly one of
+    ///     ``outstanding`` and ``incurred`` is given (at most one under
+    ///     ``"paid_only"``); if a column is
     ///     missing, the triangle has several segments, a premium is missing
     ///     or not positive, or the origin and development grains differ; if
     ///     a prior or sampler setting is invalid; or if there are no more
@@ -11955,7 +12007,7 @@ impl PyCompartmental {
         outstanding: Option<&str>,
         incurred: Option<&str>,
     ) -> PyResult<PyCompartmentalFit> {
-        let os = compartmental_outstanding(outstanding, incurred)?;
+        let os = compartmental_outstanding(self.inner.fitted, outstanding, incurred)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.fit(tri, paid, os, premium))
@@ -12038,7 +12090,7 @@ impl PyCompartmental {
         outstanding: Option<&str>,
         incurred: Option<&str>,
     ) -> PyResult<PyCompartmentalFits> {
-        let os = compartmental_outstanding(outstanding, incurred)?;
+        let os = compartmental_outstanding(self.inner.fitted, outstanding, incurred)?;
         let (model, tri) = (&self.inner, &triangle.inner);
         let inner = py
             .detach(|| model.fit_segments(tri, paid, os, premium))
@@ -12191,7 +12243,7 @@ impl PyCompartmental {
         n_sims: Option<usize>,
         light_refit: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyCompartmentalOneYearFit> {
-        let os = compartmental_outstanding(outstanding, incurred)?;
+        let os = compartmental_outstanding(self.inner.fitted, outstanding, incurred)?;
         let mut settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
         (settings.light_refit, settings.no_light_refit) = light_refit_arg(light_refit)?;
         let (model, tri) = (&self.inner, &triangle.inner);
@@ -12315,7 +12367,7 @@ impl PyCompartmental {
         n_sims: Option<usize>,
         light_refit: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyCompartmentalOneYearFits> {
-        let os = compartmental_outstanding(outstanding, incurred)?;
+        let os = compartmental_outstanding(self.inner.fitted, outstanding, incurred)?;
         let mut settings = one_year_settings(k_threshold, refit, max_refits, n_sims)?;
         (settings.light_refit, settings.no_light_refit) = light_refit_arg(light_refit)?;
         let (model, tri) = (&self.inner, &triangle.inner);
@@ -12419,7 +12471,8 @@ impl PyCompartmental {
     /// Raises
     /// ------
     /// ValueError
-    ///     If not exactly one of ``outstanding`` and ``incurred`` is given.
+    ///     If not exactly one of ``outstanding`` and ``incurred`` is given
+    ///     (at most one under ``fitted="paid_only"``).
     #[pyo3(signature = (triangle, paid, premium, *, outstanding = None, incurred = None))]
     fn candidate(
         &self,
@@ -12429,7 +12482,7 @@ impl PyCompartmental {
         outstanding: Option<&str>,
         incurred: Option<&str>,
     ) -> PyResult<PyCompartmentalCandidate> {
-        let os = compartmental_outstanding(outstanding, incurred)?;
+        let os = compartmental_outstanding(self.inner.fitted, outstanding, incurred)?;
         Ok(PyCompartmentalCandidate {
             inner: CompartmentalCandidate::new(
                 self.inner.clone(),
@@ -12605,17 +12658,22 @@ impl PyCompartmentalCandidate {
 }
 
 /// Where a compartmental fit's outstanding comes from: exactly one of a
-/// column of outstanding amounts and a column of incurred amounts.
+/// column of outstanding amounts and a column of incurred amounts, or
+/// under ``fitted="paid_only"``, which does not read it, at most one.
 fn compartmental_outstanding<'a>(
+    fitted: Fitted,
     outstanding: Option<&'a str>,
     incurred: Option<&'a str>,
 ) -> PyResult<Outstanding<'a>> {
     match (outstanding, incurred) {
         (Some(c), None) => Ok(Outstanding::Column(c)),
         (None, Some(c)) => Ok(Outstanding::FromIncurred(c)),
+        // Not read under paid alone.
+        (None, None) if fitted == Fitted::PaidOnly => Ok(Outstanding::Column("")),
         _ => Err(PyValueError::new_err(
             "give exactly one of outstanding (a column of outstanding amounts) and \
-             incurred (a column of incurred amounts)",
+             incurred (a column of incurred amounts); under fitted=\"paid_only\" neither \
+             is needed",
         )),
     }
 }
@@ -12839,13 +12897,15 @@ impl PyCompartmentalFit {
         }
     }
 
-    /// Posterior predictive outstanding of each future cell of the square,
-    /// laid out as ``paid``.
+    /// Posterior predictive outstanding (or incurred, the second response)
+    /// of each future cell of the square, laid out as ``paid``; ``None``
+    /// under ``fitted="paid_only"``.
     #[getter]
-    fn outstanding(&self) -> PyPredictiveDistribution {
-        PyPredictiveDistribution {
-            inner: self.inner.outstanding.clone(),
-        }
+    fn outstanding(&self) -> Option<PyPredictiveDistribution> {
+        self.inner
+            .outstanding
+            .clone()
+            .map(|inner| PyPredictiveDistribution { inner })
     }
 
     /// Each origin's posterior mean ultimate loss ratio ``RLR_i RRF_i``,
@@ -13001,6 +13061,11 @@ impl PyCompartmentalFit {
     /// Returns
     /// -------
     /// pandas.DataFrame
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     Under ``fitted="paid_only"``, which has no outstanding cells.
     fn outstanding_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         table_frame(py, self.inner.outstanding_table().map_err(err)?)
     }
@@ -13109,13 +13174,15 @@ impl PyCompartmentalFits {
         }
     }
 
-    /// Posterior predictive outstanding of each future cell of every
-    /// segment, laid out as ``paid``.
+    /// Posterior predictive outstanding (or incurred) of each future cell of
+    /// every segment, laid out as ``paid``; ``None`` under
+    /// ``fitted="paid_only"``.
     #[getter]
-    fn outstanding(&self) -> PyPredictiveDistribution {
-        PyPredictiveDistribution {
-            inner: self.inner.outstanding.clone(),
-        }
+    fn outstanding(&self) -> Option<PyPredictiveDistribution> {
+        self.inner
+            .outstanding
+            .clone()
+            .map(|inner| PyPredictiveDistribution { inner })
     }
 
     /// The number of posterior draws with ``k_er <= k_p`` in each segment,
@@ -13249,6 +13316,11 @@ impl PyCompartmentalFits {
     /// Returns
     /// -------
     /// pandas.DataFrame
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     Under ``fitted="paid_only"``, which has no outstanding cells.
     fn outstanding_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         table_frame(py, self.inner.outstanding_table().map_err(err)?)
     }

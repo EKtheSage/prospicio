@@ -73,7 +73,8 @@ amounts over the origin's premium (model 2).}
 \item{rate_order}{\code{"free"} or \code{"ordered"}, as above.}
 
 \item{start}{Where the pilot run starts: \code{"data"}, a least-squares fit
-of the population curve (the prior centre if that fit fails), or
+of the population curve (the prior centre if that fit fails, and under
+one response if its log posterior is below the prior centre's), or
 \code{"prior_centre"}.}
 
 \item{chains, tune, draws}{NUTS chains, warm-up draws per chain and kept
