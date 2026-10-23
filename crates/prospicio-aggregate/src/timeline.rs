@@ -435,8 +435,91 @@ impl Tower {
                 "the tower has no cover basis: set losses occurring or risks attaching".into(),
             )
         })?;
-        self.apply_term(&timeline.years(basis, exposure)?)
+        if !(self.interlocking && basis == CoverBasis::RisksAttaching) {
+            return self.apply_term(&timeline.years(basis, exposure)?);
+        }
+        let (years, sources) = timeline.years_with_sources(basis, exposure)?;
+        let factors = interlocking_factors(&years, &sources);
+        self.apply_term_with(&years, Some(&factors))
     }
+
+    /// The tower with its contracts interlocking (`true`) or not, as the
+    /// programme's interlocking clause says; off by default.
+    ///
+    /// Under risks attaching an event in a month that several underwriting
+    /// years write falls to each of them by its share. Without
+    /// interlocking each year's contracts apply their full limits to their
+    /// share, so the event can use a limit in each year. With it each
+    /// contract's limit is cut, for that event, by the factor (the loss
+    /// the year's contract covers) / (the event's loss across the
+    /// programme's underwriting years in the term): with shares `s_u` of
+    /// a month, year `u`'s factor is `s_u / Σ_v s_v`. Retentions are not
+    /// cut, and each year's annual terms (its aggregate deductible and
+    /// limit, reinstatements and their premiums) apply to its recoveries
+    /// as usual. Under losses occurring an event falls to one year, so
+    /// interlocking changes nothing.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{EventSet, Layer, Tower};
+    /// use prospicio_aggregate::timeline::{CoverBasis, Exposure, Timeline};
+    ///
+    /// // An event of 100 written 25/75 by two years, on a 50 xs 20 layer.
+    /// let events = EventSet::from_years(vec![vec![100.0]], 0)
+    ///     .unwrap().with_times(vec![13.5 / 24.0]).unwrap();
+    /// let timeline = Timeline::new(events, 24).unwrap();
+    /// let mut shares = vec![vec![0.0; 24]; 2];
+    /// shares[0][13] = 0.25;
+    /// shares[1][13] = 0.75;
+    /// let exposure = Exposure::new(shares).unwrap();
+    /// let tower = Tower::new(vec![Layer::xol("XL", 50.0, 20.0).unwrap()])
+    ///     .unwrap()
+    ///     .cover_basis(CoverBasis::RisksAttaching)
+    ///     .interlocking(true);
+    /// let rad = tower.apply_timeline(&timeline, &exposure).unwrap();
+    /// let ceded = |year: i64| {
+    ///     use prospicio_prob::KeyValue;
+    ///     let key = vec![KeyValue::from("ceded"), KeyValue::from("XL"), KeyValue::Int(year)];
+    ///     prospicio_prob::Empirical::draws(&rad.marginal(&key).unwrap())[0]
+    /// };
+    /// // Year 1: 25 - 20 = 5 within its limit 12.5; year 2: 75 - 20 = 55
+    /// // cut to its limit 37.5. Without interlocking, 5 and 50.
+    /// assert_eq!((ceded(1), ceded(2)), (5.0, 37.5));
+    /// ```
+    pub fn interlocking(mut self, on: bool) -> Self {
+        self.interlocking = on;
+        self
+    }
+}
+
+/// Each loss's interlocking factor: its share of its event's losses across
+/// all the years, in the order of each year's losses.
+fn interlocking_factors(years: &[EventSet], sources: &[Vec<usize>]) -> Vec<Vec<f64>> {
+    let flat = |e: &EventSet| -> Vec<f64> {
+        (0..e.n_sims())
+            .flat_map(|j| e.events(j).iter().copied())
+            .collect()
+    };
+    let losses: Vec<Vec<f64>> = years.iter().map(flat).collect();
+    let mut totals = std::collections::HashMap::<usize, f64>::new();
+    for (l, s) in losses.iter().zip(sources) {
+        for (&x, &k) in l.iter().zip(s) {
+            *totals.entry(k).or_default() += x;
+        }
+    }
+    losses
+        .iter()
+        .zip(sources)
+        .map(|(l, s)| {
+            l.iter()
+                .zip(s)
+                .map(|(&x, k)| {
+                    let total = totals[k];
+                    // A loss of zero takes no limit; keep it whole.
+                    if total > 0.0 { x / total } else { 1.0 }
+                })
+                .collect()
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -630,5 +713,128 @@ mod tests {
         assert!(Exposure::new(vec![vec![-0.1]]).is_err());
         assert!(Exposure::uniform(0, 12).is_err());
         assert!(Exposure::uniform(1, 0).is_err());
+    }
+
+    fn column(result: &PredictiveDistribution, kind: &str, layer: &str, year: i64) -> Vec<f64> {
+        use prospicio_prob::KeyValue;
+        let key = vec![
+            KeyValue::from(kind),
+            KeyValue::from(layer),
+            KeyValue::Int(year),
+        ];
+        prospicio_prob::Empirical::draws(&result.marginal(&key).unwrap()).to_vec()
+    }
+
+    fn straddling(shares: (f64, f64)) -> (Timeline, Exposure) {
+        let events = EventSet::from_years(vec![vec![100.0]], 0)
+            .unwrap()
+            .with_times(vec![13.5 / 24.0])
+            .unwrap();
+        let mut rows = vec![vec![0.0; 24]; 2];
+        rows[0][13] = shares.0;
+        rows[1][13] = shares.1;
+        (
+            Timeline::new(events, 24).unwrap(),
+            Exposure::new(rows).unwrap(),
+        )
+    }
+
+    #[test]
+    fn interlocking_cuts_each_years_limit_by_its_share() {
+        let xl = Layer::xol("XL", 50.0, 20.0)
+            .unwrap()
+            .paid_reinstatements(10.0, vec![1.0])
+            .unwrap();
+        let tower = Tower::new(vec![xl])
+            .unwrap()
+            .cover_basis(CoverBasis::RisksAttaching);
+        let (timeline, exposure) = straddling((0.25, 0.75));
+        let at = |t: &Tower, kind: &str| -> Vec<f64> {
+            let r = t.apply_timeline(&timeline, &exposure).unwrap();
+            (1..=2).map(|y| column(&r, kind, "XL", y)[0]).collect()
+        };
+        assert_eq!(at(&tower, "ceded"), [5.0, 50.0]);
+        let on = tower.clone().interlocking(true);
+        // Limits 12.5 and 37.5; the retention of 20 stays whole.
+        assert_eq!(at(&on, "ceded"), [5.0, 37.5]);
+        // Each year's reinstatement premium is on its own recoveries.
+        assert_eq!(at(&on, "reinstatement_premium"), [1.0, 7.5]);
+
+        // Shares of 0.2 and 0.6: the rest is outside the term, so the
+        // factors are still 0.25 and 0.75 of the programme's 80.
+        let (timeline, exposure) = straddling((0.2, 0.6));
+        let r = on.apply_timeline(&timeline, &exposure).unwrap();
+        assert_eq!(column(&r, "ceded", "XL", 1)[0], 0.0);
+        assert_eq!(column(&r, "ceded", "XL", 2)[0], 37.5);
+    }
+
+    #[test]
+    fn interlocking_changes_nothing_when_one_year_takes_each_event() {
+        let book = book(400, 9);
+        let timeline = Timeline::new(book, 24).unwrap();
+        let tower = Tower::new(vec![
+            Layer::xol("XL", 15.0, 10.0)
+                .unwrap()
+                .paid_reinstatements(3.0, vec![1.0])
+                .unwrap(),
+        ])
+        .unwrap();
+        let same = |basis: CoverBasis, exposure: &Exposure| {
+            let off = tower
+                .clone()
+                .cover_basis(basis)
+                .apply_timeline(&timeline, exposure)
+                .unwrap();
+            let on = tower
+                .clone()
+                .cover_basis(basis)
+                .interlocking(true)
+                .apply_timeline(&timeline, exposure)
+                .unwrap();
+            assert_eq!(off.draw_matrix(), on.draw_matrix());
+        };
+        let uniform = Exposure::uniform(2, 12).unwrap();
+        same(CoverBasis::LossesOccurring, &uniform);
+        // Each month written by one year only, at 60%.
+        let rows = (0..2)
+            .map(|u| {
+                (0..24)
+                    .map(|m| if m / 12 == u { 0.6 } else { 0.0 })
+                    .collect()
+            })
+            .collect();
+        same(CoverBasis::RisksAttaching, &Exposure::new(rows).unwrap());
+    }
+
+    #[test]
+    fn an_interlocked_event_uses_at_most_one_limit() {
+        // One event a path, at a uniform time over 36 months.
+        let n = 300;
+        let losses: Vec<Vec<f64>> = (0..n).map(|j| vec![5.0 + j as f64]).collect();
+        let times: Vec<f64> = (0..n).map(|j| (j as f64 + 0.5) / n as f64).collect();
+        let events = EventSet::from_years(losses.clone(), 0)
+            .unwrap()
+            .with_times(times)
+            .unwrap();
+        let timeline = Timeline::new(events, 36).unwrap();
+        let exposure = Exposure::uniform(2, 12).unwrap();
+        let tower = Tower::new(vec![Layer::xol("XL", 50.0, 20.0).unwrap()])
+            .unwrap()
+            .cover_basis(CoverBasis::RisksAttaching);
+        let off = tower.apply_timeline(&timeline, &exposure).unwrap();
+        let on = tower
+            .clone()
+            .interlocking(true)
+            .apply_timeline(&timeline, &exposure)
+            .unwrap();
+        let sum = |r: &PredictiveDistribution| -> Vec<f64> {
+            let (a, b) = (column(r, "ceded", "XL", 1), column(r, "ceded", "XL", 2));
+            a.iter().zip(&b).map(|(x, y)| x + y).collect()
+        };
+        let (off, on) = (sum(&off), sum(&on));
+        assert!(on.iter().all(|&c| c <= 50.0 + 1e-9));
+        assert!(on.iter().zip(&off).all(|(a, b)| a <= &(b + 1e-9)));
+        // Some events do straddle the years and lose limit.
+        assert!(off.iter().any(|&c| c > 50.0 + 1e-9));
     }
 }

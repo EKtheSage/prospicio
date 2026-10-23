@@ -867,6 +867,27 @@ for row in by.iter_rows(min_row=25, max_row=43, min_col=2, max_col=9):
 by.column_dimensions["A"].width = 20
 for col in "BCDEFGHIJKL":
     by.column_dimensions[col].width = 13
+# The Bayesian Bornhuetter-Ferguson on the Expected loss sheet's GenIns and premium:
+# a gamma prior on each ultimate at the a priori LR times premium (decision 38).
+EG, EP, EO = "'Expected loss'!$B$4:$K$13", "'Expected loss'!$L$4:$L$13", "'Expected loss'!$A$4:$A$13"
+by["A46"] = "Bayesian Bornhuetter-Ferguson on GenIns (Expected loss sheet), prior CV below"; by["A46"].font = bold
+by["A47"] = "Prior CV"; by["B47"] = 0.1; by["B47"].fill = inp
+bfargs = EG + "," + EP + ",'Expected loss'!$O$3,$B$47,{out},B3,B4,B5,,,,," + EO
+by["A49"] = "Diagnostics"; by["A49"].font = bold
+by["A50"] = ArrayFormula("A50:B57", "=PRO.BAYES.BF(" + bfargs.format(out='"diagnostics"') + ")")
+by["D49"] = "Prior and posterior ultimates"; by["D49"].font = bold
+by["D50"] = ArrayFormula("D50:I61", "=PRO.BAYES.BF(" + bfargs.format(out='"ultimates"') + ")")
+by["K49"] = "Prior total = LR x premium"
+by["K50"] = "=ABS(INDEX(D50:I61,12,4)-'Expected loss'!$O$3*SUM(" + EP + "))<1E-6"
+by["K51"] = "R-hat under 1.01"; by["K52"] = "=B50<1.01"
+by["A63"] = "Reserves: chain ladder, posterior mean, SD, CV and percentiles"; by["A63"].font = bold
+by["A64"] = ArrayFormula("A64:I75", "=PRO.BAYES.BF(" + bfargs.format(out='"reserves"') + ")")
+for row in by.iter_rows(min_row=51, max_row=61, min_col=5, max_col=9):
+    for c in row:
+        c.number_format = "0.000" if c.column == 9 else "#,##0"
+for row in by.iter_rows(min_row=65, max_row=75, min_col=2, max_col=9):
+    for c in row:
+        c.number_format = "0.000" if c.column == 5 else "#,##0"
 # The twelve functions the sheets above leave out, each beside a check.
 ly["A70"] = "Distribution and survival functions (lognormal mean 50,000, CV 3)"; ly["A70"].font = bold
 for h, col in zip(["x", "CDF", "Survival", "Sum is 1"], "ABCD"):

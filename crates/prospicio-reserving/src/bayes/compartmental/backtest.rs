@@ -355,6 +355,7 @@ impl CompartmentalCandidate {
             &self.paid,
             self.outstanding(),
             &self.premium,
+            self.model.fitted,
         )?;
         let full_outstanding: Outstandings = data
             .outstanding
@@ -850,8 +851,12 @@ impl Model {
     /// The log density of an outstanding amount `y` at cell `(i, k)`,
     /// given a natural-scale draw.
     fn outstanding_log_density(&self, nat: &[f64], i: usize, k: usize, y: f64) -> Option<f64> {
-        let (th, (os, _), _) = self.closed_cell(nat, i, k)?;
-        let mean = self.premium[i] * th[RLR] * os;
+        let (th, (os, pd), _) = self.closed_cell(nat, i, k)?;
+        let mean = if self.response.incurred {
+            self.premium[i] * th[RLR] * (os + th[RRF] * pd)
+        } else {
+            self.premium[i] * th[RLR] * os
+        };
         Some(self.response_log_density(y, mean, nat[4], i))
     }
 }
@@ -859,9 +864,9 @@ impl Model {
 #[cfg(test)]
 mod tests {
     use super::super::tests::{
-        INCURRED, PAID, PREMIUM, incurred, model, model_2, points, quick, triangle,
+        INCURRED, PAID, PREMIUM, incurred, model, model_2, model_incurred, points, quick, triangle,
     };
-    use super::super::{Compartmental, CompartmentalPriors};
+    use super::super::{Compartmental, CompartmentalPriors, Fitted, Response};
     use super::*;
     use crate::backtest::diagonal_backtest;
     use crate::triangle::Long;
@@ -913,7 +918,22 @@ mod tests {
     /// incremental paid, development effects by cell).
     #[test]
     fn the_closed_forms_are_the_densities_of_the_simulation() {
-        for (m, log_normal) in [(model(false), false), (model_2(false), true)] {
+        let incurred_1 = model_incurred(
+            CompartmentalPriors::gesmann_morris(),
+            false,
+            Response::MODEL_1,
+        );
+        let incurred_2 = model_incurred(
+            CompartmentalPriors::gesmann_morris_2(),
+            false,
+            Response::MODEL_2,
+        );
+        for (m, log_normal) in [
+            (model(false), false),
+            (model_2(false), true),
+            (incurred_1, false),
+            (incurred_2, true),
+        ] {
             let nat = m.natural(&points(&m)[0]);
             // Origin 1991 (index 3) has paid to age 6; its next age is 7.
             let (i, k) = (3, 6);
@@ -955,7 +975,10 @@ mod tests {
                         .collect()
                 };
                 let (mass, got_mean, got_sd) = moments(density, &grid);
-                let what = format!("log_normal {log_normal}, paid {paid}");
+                let what = format!(
+                    "log_normal {log_normal}, incurred {}, paid {paid}",
+                    m.response.incurred
+                );
                 assert!((mass - 1.0).abs() < 2e-3, "{what}: mass {mass}");
                 let se = sd / (draws.len() as f64).sqrt();
                 assert!(
@@ -1187,6 +1210,34 @@ mod tests {
     /// The closed-form log density of the backtest's rows is that of the
     /// simulation they are drawn from, and the paid and outstanding tables
     /// share one fit.
+    /// Under paid and incurred the second table scores the held-out
+    /// incurred diagonals, from the same fit as the paid table.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn the_backtest_scores_paid_and_incurred_on_one_fit() {
+        let tri = triangle(false);
+        let cells = TriangleFrame::new(&tri, "paid", None).unwrap();
+        let m = Compartmental {
+            fitted: Fitted::PaidAndIncurred,
+            ..quick(5)
+        };
+        let c = candidate(m, &tri);
+        let bt = diagonal_backtest(&cells, &[&c], 1, 500, 5, 0.9).unwrap();
+        let inc = c.outstanding_backtest(&cells, 1, 500, 5, 0.9).unwrap();
+        assert_eq!(inc.scored_rows(), bt.scored_rows());
+        assert_eq!(c.fits.lock().unwrap().len(), 1);
+        for t in [&bt, &inc] {
+            for metric in 0..METRICS.len() {
+                assert!(t.mean(0, metric).is_finite(), "{metric}");
+            }
+            let lpd = t.log_densities()[0].as_ref().unwrap();
+            assert!(lpd.iter().all(|v| v.is_finite()));
+        }
+    }
+
     #[test]
     #[cfg_attr(
         not(feature = "slow-tests"),

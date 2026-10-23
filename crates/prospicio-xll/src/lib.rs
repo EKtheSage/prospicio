@@ -1501,6 +1501,46 @@ pub static FUNCTIONS: &[Function] = &[
         run: bayes::bayes_odp,
     },
     Function {
+        symbol: "pro_bayes_bf",
+        name: "PRO.BAYES.BF",
+        help: "Bayesian Bornhuetter-Ferguson by MCMC (NUTS): a gamma prior on each ultimate, a normalised pattern; reserves, ultimates, posterior or diagnostics.",
+        args: &[
+            TRIANGLE,
+            EXPOSURE,
+            APRIORI,
+            Arg {
+                name: "cv",
+                help: "CV of the gamma prior on each origin's ultimate (0.1 if omitted); small holds the a priori firmly (classical BF), \"flat\" is the Bayesian chain ladder",
+            },
+            Arg {
+                name: "output",
+                help: "\"reserves\" (default), \"ultimates\" (prior and posterior), \"params\" (posterior with R-hat and ESS) or \"diagnostics\"",
+            },
+            Arg {
+                name: "draws",
+                help: "Kept draws per chain, after as many warm-up draws (1000 if omitted, at most 20000)",
+            },
+            Arg {
+                name: "chains",
+                help: "Number of chains, run in parallel (4 if omitted, at most 8)",
+            },
+            SEED,
+            SIMS,
+            PERCENTILES,
+            Arg {
+                name: "prior_sd",
+                help: "SD of the normal priors on the pattern's log share ratios to the first age (10 if omitted)",
+            },
+            PROCESS,
+            ORIGINS,
+            Arg {
+                name: "common_cv",
+                help: "CV of one multiplier common to all origins' prior ultimates (omitted for none); needs a numeric cv",
+            },
+        ],
+        run: bayes::bayes_bf,
+    },
+    Function {
         symbol: "pro_sev_fit",
         name: "PRO.SEV.FIT",
         help: "Maximum likelihood severity fit to large losses with reporting thresholds and censoring: parameters, fit against the data, or the body families compared.",

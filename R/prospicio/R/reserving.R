@@ -4749,8 +4749,14 @@ compartmental_prior_values <- function(priors, call) {
 #' built. Under `likelihood = "lognormal"` every response must be
 #' positive, and under `paid_response = "incremental"` each paid cell needs
 #' the paid at the age before; the fit stops with an error naming the cell
-#' otherwise. `fitted` other than `"paid_and_outstanding"` is accepted, but
-#' the fit stops with an error saying it is not yet built.
+#' otherwise. `fitted = "paid_and_incurred"` fits paid and incurred, with incurred in place of
+#' outstanding as the second response: the mean of an incurred cell is `RLR_i (OS(t) +
+#' RRF_i PD(t))` times premium (or as a loss ratio), with the cumulative `PD` even
+#' under `paid_response = "incremental"`, and `log_sigma_os` is the incurred sigma.
+#' Give the incurred column as `incurred`, or an outstanding column as `outstanding`
+#' and the incurred is outstanding plus paid where both are observed. The fit's
+#' `outstanding` then holds the future incurred cells. `"paid_only"` and
+#' `"incurred_only"` are not yet built.
 #'
 #' `compartmental_model_2()` is `compartmental()` with model 2's
 #' likelihood, scale and paid response, and a longer, finer sampler: four
@@ -4814,7 +4820,7 @@ compartmental_prior_values <- function(priors, call) {
 #' (with its `-log y` term), as brms' `log_lik`, on the response's scale
 #' (compare it only with fits of the same responses), plus `n_outstanding`, `elpd_outstanding` and `elpd_paid`.
 #'
-#' Errors: if `fitted` is not yet built; if a response is not positive
+#' Errors: if `fitted` is `"paid_only"` or `"incurred_only"`, not yet built; if a response is not positive
 #' under the log-normal, or a paid cell has no paid at the age before
 #' under incremental paid; if not exactly one of
 #' `outstanding` and `incurred` is given; if a column is missing, the
@@ -4837,8 +4843,9 @@ compartmental_prior_values <- function(priors, call) {
 #'   amounts over the origin's premium (model 2).
 #' @param paid_response `"cumulative"` (model 1) or `"incremental"` (model
 #'   2).
-#' @param fitted `"paid_and_outstanding"`; `"paid_and_incurred"`,
-#'   `"paid_only"` and `"incurred_only"` are not yet built.
+#' @param fitted `"paid_and_outstanding"` or `"paid_and_incurred"` (incurred
+#'   replaces outstanding as the second response, as above); `"paid_only"` and
+#'   `"incurred_only"` are not yet built.
 #' @param rate_order `"free"` or `"ordered"`, as above.
 #' @param start Where the pilot run starts: `"data"`, a least-squares fit
 #'   of the population curve (the prior centre if that fit fails), or

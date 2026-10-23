@@ -1064,13 +1064,13 @@ impl Layer {
     /// Ceded loss for one year's losses (NaN for a surplus, which needs
     /// [`ceded_with_sums_insured`](Self::ceded_with_sums_insured)).
     pub fn ceded(&self, losses: &[f64]) -> f64 {
-        self.share * self.layer_loss(losses, None)
+        self.share * self.layer_loss(losses, None, None)
     }
 
     /// Ceded loss for one year's losses on risks with the given sums
     /// insured, one per loss.
     pub fn ceded_with_sums_insured(&self, losses: &[f64], sums_insured: &[f64]) -> f64 {
-        self.share * self.layer_loss(losses, Some(sums_insured))
+        self.share * self.layer_loss(losses, Some(sums_insured), None)
     }
 
     /// Reinstatement premium for one year's losses: with layer loss `L`
@@ -1085,7 +1085,7 @@ impl Layer {
     /// NaN when they are pro rata as to time, which needs
     /// [`reinstatement_premium_dated`](Self::reinstatement_premium_dated).
     pub fn reinstatement_premium(&self, losses: &[f64]) -> f64 {
-        self.reinstatement_premium_at(losses, None, None)
+        self.reinstatement_premium_at(losses, None, None, None)
     }
 
     /// Reinstatement premium for one year's losses at the given times (the
@@ -1093,7 +1093,7 @@ impl Layer {
     /// to time, the limit an event uses up is charged at `1 − t`; otherwise
     /// the times are ignored.
     pub fn reinstatement_premium_dated(&self, losses: &[f64], times: &[f64]) -> f64 {
-        self.reinstatement_premium_at(losses, None, Some(times))
+        self.reinstatement_premium_at(losses, None, Some(times), None)
     }
 
     fn reinstatement_premium_at(
@@ -1101,20 +1101,21 @@ impl Layer {
         losses: &[f64],
         si: Option<&[f64]>,
         times: Option<&[f64]>,
+        lf: Option<&[f64]>,
     ) -> f64 {
         if self.reinstatement_rates.is_empty() {
             return 0.0;
         }
         let used = |a: f64, b: f64| self.reinstated(a, b);
         if !self.pro_rata_time {
-            return self.premium * used(0.0, self.layer_loss(losses, si)) / self.limit;
+            return self.premium * used(0.0, self.layer_loss(losses, si, lf)) / self.limit;
         }
         let Some(times) = times else {
             return f64::NAN;
         };
         let mut before = 0.0;
         let total: f64 = self
-            .cumulative_layer_loss(losses, si)
+            .cumulative_layer_loss(losses, si, lf)
             .into_iter()
             .zip(times)
             .map(|(after, t)| {
@@ -1127,30 +1128,36 @@ impl Layer {
     }
 
     /// Layer loss at 100%, after annual terms, up to and including each
-    /// event in turn.
-    fn cumulative_layer_loss(&self, losses: &[f64], si: Option<&[f64]>) -> Vec<f64> {
+    /// event in turn. `lf`, when given, scales each event's limit (an
+    /// interlocking factor, [`Tower::interlocking`]).
+    fn cumulative_layer_loss(
+        &self,
+        losses: &[f64],
+        si: Option<&[f64]>,
+        lf: Option<&[f64]>,
+    ) -> Vec<f64> {
         let mut recovery = 0.0;
         losses
             .iter()
             .enumerate()
             .map(|(e, &x)| {
-                recovery += self.recovery_at(x, si.map(|s| s[e]));
+                recovery += self.recovery_at(x, si.map(|s| s[e]), factor(lf, e));
                 self.after_terms(recovery)
             })
             .collect()
     }
 
     /// Annual layer loss at 100%, after annual terms.
-    fn layer_loss(&self, losses: &[f64], si: Option<&[f64]>) -> f64 {
-        self.after_terms(self.before_terms(losses, si))
+    fn layer_loss(&self, losses: &[f64], si: Option<&[f64]>, lf: Option<&[f64]>) -> f64 {
+        self.after_terms(self.before_terms(losses, si, lf))
     }
 
     /// Annual layer loss at 100%, before annual terms.
-    fn before_terms(&self, losses: &[f64], si: Option<&[f64]>) -> f64 {
+    fn before_terms(&self, losses: &[f64], si: Option<&[f64]>, lf: Option<&[f64]>) -> f64 {
         losses
             .iter()
             .enumerate()
-            .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e])))
+            .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e]), factor(lf, e)))
             .sum()
     }
 
@@ -1174,15 +1181,20 @@ impl Layer {
     /// assert_eq!(layer.ceded_by_event(&[8.0, 20.0, 12.0]), [0.0, 9.0, 6.0]);
     /// ```
     pub fn ceded_by_event(&self, losses: &[f64]) -> Vec<f64> {
-        self.ceded_by_event_si(losses, None)
+        self.ceded_by_event_si(losses, None, None)
     }
 
-    fn ceded_by_event_si(&self, losses: &[f64], si: Option<&[f64]>) -> Vec<f64> {
+    fn ceded_by_event_si(
+        &self,
+        losses: &[f64],
+        si: Option<&[f64]>,
+        lf: Option<&[f64]>,
+    ) -> Vec<f64> {
         if self.allocation == LimitAllocation::ProRata {
             let recoveries: Vec<f64> = losses
                 .iter()
                 .enumerate()
-                .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e])))
+                .map(|(e, &x)| self.recovery_at(x, si.map(|s| s[e]), factor(lf, e)))
                 .collect();
             let total: f64 = recoveries.iter().sum();
             // No recovery, nothing to share; the factor is 1 by convention.
@@ -1197,7 +1209,7 @@ impl Layer {
                 .collect();
         }
         let mut before = 0.0;
-        self.cumulative_layer_loss(losses, si)
+        self.cumulative_layer_loss(losses, si, lf)
             .into_iter()
             .map(|cum| {
                 let after = self.share * cum;
@@ -1211,7 +1223,7 @@ impl Layer {
     /// Per-occurrence recovery at 100%, before annual terms, of a layer on
     /// the loss basis.
     pub(crate) fn recovery(&self, loss: f64) -> f64 {
-        self.recovery_at(loss, None)
+        self.recovery_at(loss, None, 1.0)
     }
 
     /// Rate-weighted limits used between annual layer losses `a` and `b`
@@ -1238,14 +1250,15 @@ impl Layer {
     }
 
     /// Per-occurrence recovery at 100%, before annual terms, for a loss on
-    /// a risk with sum insured `si`.
-    fn recovery_at(&self, loss: f64, si: Option<f64>) -> f64 {
+    /// a risk with sum insured `si`, with the limit scaled by `lf` (1
+    /// without interlocking).
+    fn recovery_at(&self, loss: f64, si: Option<f64>, lf: f64) -> f64 {
         let amount = self.basis.amount(loss, si);
         if amount.is_nan() {
             // A surplus without a sum insured: `max` would turn NaN into 0.
             return f64::NAN;
         }
-        (amount - self.attachment).max(0.0).min(self.limit)
+        (amount - self.attachment).max(0.0).min(self.limit * lf)
     }
 
     /// Annual terms applied to an annual recovery total at 100%: the
@@ -1290,6 +1303,9 @@ pub struct Tower {
     /// [`Tower::apply_timeline`]: `None` until set with
     /// [`Tower::cover_basis`].
     pub cover_basis: Option<CoverBasis>,
+    /// Whether the programme's contracts interlock under risks attaching
+    /// ([`Tower::interlocking`]); off by default.
+    pub interlocking: bool,
 }
 
 impl Tower {
@@ -1335,6 +1351,7 @@ impl Tower {
             stages: stage_of,
             deals: Vec::new(),
             cover_basis: None,
+            interlocking: false,
         })
     }
 
@@ -1373,7 +1390,7 @@ impl Tower {
         si: Option<&[f64]>,
         times: Option<&[f64]>,
     ) -> Vec<(f64, f64)> {
-        self.year_by_event(&[], losses, si, times, None, None)
+        self.year_by_event(&[], losses, si, times, None, None, None)
     }
 
     /// [`year`](Self::year) with an aggregate part `aggregate` beside the
@@ -1384,12 +1401,14 @@ impl Tower {
     /// With `keys` each layer's scale key: the ceded loss, or for a layer
     /// with [`scales_before_annual_terms`](Layer::scales_before_annual_terms)
     /// its share of the year's recoveries before the annual terms.
+    #[allow(clippy::too_many_arguments)]
     fn year_by_event(
         &self,
         aggregate: &[f64],
         losses: &[f64],
         si: Option<&[f64]>,
         times: Option<&[f64]>,
+        lf: Option<&[f64]>,
         mut by_event: Option<&mut Vec<Vec<f64>>>,
         mut keys: Option<&mut Vec<f64>>,
     ) -> Vec<(f64, f64)> {
@@ -1407,6 +1426,16 @@ impl Tower {
                 })
             })
             .flatten();
+        // The aggregate part is not an event, so its limit is not scaled.
+        let all_lf: Option<Vec<f64>> = (n_agg > 0)
+            .then(|| {
+                lf.map(|f| {
+                    std::iter::repeat_n(1.0, n_agg)
+                        .chain(f.iter().copied())
+                        .collect()
+                })
+            })
+            .flatten();
         let last_stage = self.stages.last().copied().unwrap_or(0);
         let mut i = 0;
         while i < self.layers.len() {
@@ -1415,22 +1444,22 @@ impl Tower {
             let mut stage_by_event = vec![0.0; seen.len()];
             for layer in &self.layers[i..end] {
                 let sees = n_agg > 0 && layer.sees_aggregate_part();
-                let (x, s, t) = if sees {
-                    (&seen[..], None, all_times.as_deref())
+                let (x, s, t, f) = if sees {
+                    (&seen[..], None, all_times.as_deref(), all_lf.as_deref())
                 } else {
-                    (&seen[n_agg..], si, times)
+                    (&seen[n_agg..], si, times, lf)
                 };
-                let layer_ceded = layer.share * layer.layer_loss(x, s);
-                ceded.push((layer_ceded, layer.reinstatement_premium_at(x, s, t)));
+                let layer_ceded = layer.share * layer.layer_loss(x, s, f);
+                ceded.push((layer_ceded, layer.reinstatement_premium_at(x, s, t, f)));
                 if let Some(keys) = keys.as_deref_mut() {
                     keys.push(if layer.scales_before_annual_terms {
-                        layer.share * layer.before_terms(x, s)
+                        layer.share * layer.before_terms(x, s, f)
                     } else {
                         layer_ceded
                     });
                 }
                 if stage < last_stage || by_event.is_some() {
-                    let mut layer_by_event = layer.ceded_by_event_si(x, s);
+                    let mut layer_by_event = layer.ceded_by_event_si(x, s, f);
                     if !sees && n_agg > 0 {
                         layer_by_event.splice(0..0, std::iter::repeat_n(0.0, n_agg));
                     }
@@ -1651,6 +1680,7 @@ impl Tower {
                 losses,
                 si,
                 times,
+                None,
                 Some(&mut by_event),
                 Some(&mut keys),
             );
@@ -1771,6 +1801,7 @@ impl Tower {
                 losses,
                 si,
                 times,
+                None,
                 0,
                 &mut carried,
             );
@@ -1798,13 +1829,14 @@ impl Tower {
         losses: &[f64],
         si: Option<&[f64]>,
         times: Option<&[f64]>,
+        lf: Option<&[f64]>,
         t: usize,
         carried: &mut [Carried],
     ) {
         let gross: f64 = aggregate.iter().chain(losses).sum();
         draws.push(gross);
         let mut keys = Vec::with_capacity(self.layers.len());
-        let year = self.year_by_event(aggregate, losses, si, times, None, Some(&mut keys));
+        let year = self.year_by_event(aggregate, losses, si, times, lf, None, Some(&mut keys));
         let ceded_total: f64 = year.iter().map(|(c, _)| c).sum();
         draws.extend(year.iter().map(|(c, _)| c));
         draws.push(gross - ceded_total);
@@ -1971,6 +2003,11 @@ impl Tower {
         }
         provenance
     }
+}
+
+/// Event `e`'s limit factor: 1 without interlocking.
+fn factor(lf: Option<&[f64]>, e: usize) -> f64 {
+    lf.map_or(1.0, |f| f[e])
 }
 
 /// Year `t`'s amount on a scale over `premium` read at the loss `key`,

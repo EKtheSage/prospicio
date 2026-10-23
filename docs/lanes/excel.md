@@ -9,7 +9,6 @@ This lane wraps other lanes' crates and changes none of them
 ## Next
 
 - [excel-more-functions] further functions as the user asks
-- `PRO.BAYES.BF` waits on the Reserving lane (#410: `BayesBf`'s a-priori level is nearly inert)
 - [code-signing-certificate] a code-signing certificate is the user's to buy
 
 ## Done
@@ -56,3 +55,4 @@ This lane wraps other lanes' crates and changes none of them
 - [excel-odp-glm] the ODP GLM on a sheet: `PRO.ODP.GLM` (Taylor and McGuire's Table 5-4: reserves, process and parameter SE, RMSEP), `PRO.ODP.GLM.PARAMS` (coefficients, SEs, dispersion), `PRO.ODP.GLM.RESIDUALS` (by cell, or grouped by origin, development or calendar period); R `glm` parity on GenIns and ABC (decision 35)
 - [excel-severity-fits-2] the newer severity fits: the Lomax in `PRO.SEV.FIT` and the severity functions, truncation from above (`upper`), `PRO.SEV.FIT.GROUPED` (maximum likelihood or minimum chi-square on size bands) and `PRO.SEV.FIT.LEV` (minimum limited-mean distance); Bahnemann parity (decision 36)
 - [excel-workbook-coverage] the test workbook calls all 96 functions with a check beside each (the twelve it left out added, the ODP sheet's P95 checks fixed); `PRO.EXPOSURE.CURVE` and `.QUANTILE` tabulate one curve per c (or b, g) in a row or column (decision 37)
+- [excel-bayes-bf] the Bayesian Bornhuetter-Ferguson by MCMC (`PRO.BAYES.BF`: `BayesBfNormalised`, a gamma prior on each origin's ultimate at apriori times exposure, `cv` or `"flat"`, `common_cv`; reserves, ultimates, posterior and diagnostics of one kept fit; the flat limit at `PRO.BAYES.ODP`, the tight one at `PRO.BF`; decision 38)
