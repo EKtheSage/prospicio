@@ -582,7 +582,8 @@ impl ReinsuranceTower {
     /// Gross, ceded and net annual distributions on the grid, by FFT:
     /// `list(gross, ceded, net, expected_reinstatement_premium,
     /// expected_premium, expected_ceding_commission,
-    /// expected_profit_commission, on_points)`, with `stage_ceded` one
+    /// expected_profit_commission, expected_deal_ceding_commission,
+    /// expected_deal_brokerage, deal_names, on_points)`, with `stage_ceded` one
     /// grid (or NULL) per stage,
     /// with `net` NULL when it is not one compound total.
     fn on_grid(&self, frequency: Robj, severity: Robj, points: f64) -> Result<List> {
@@ -627,6 +628,14 @@ impl ReinsuranceTower {
             expected_premium = r.expected_premium,
             expected_ceding_commission = r.expected_ceding_commission,
             expected_profit_commission = r.expected_profit_commission,
+            expected_deal_ceding_commission = r.expected_deal_ceding_commission,
+            expected_deal_brokerage = r.expected_deal_brokerage,
+            deal_names = self
+                .inner
+                .deals
+                .iter()
+                .map(|d| d.name.clone())
+                .collect::<Vec<_>>(),
             on_points = r.on_points
         ))
     }
@@ -634,7 +643,8 @@ impl ReinsuranceTower {
     /// The tower on an annual loss grid, each year's total as one loss:
     /// `list(gross, ceded, net, expected_reinstatement_premium,
     /// expected_premium, expected_ceding_commission,
-    /// expected_profit_commission, on_points)`.
+    /// expected_profit_commission, expected_deal_ceding_commission,
+    /// expected_deal_brokerage, deal_names, on_points)`.
     fn on_annual_grid(&self, annual: Robj) -> Result<List> {
         let annual = <&Grid>::try_from(&annual)
             .map_err(|_| Error::Other("annual must be a grid_distribution".into()))?;
@@ -648,6 +658,14 @@ impl ReinsuranceTower {
             expected_premium = r.expected_premium,
             expected_ceding_commission = r.expected_ceding_commission,
             expected_profit_commission = r.expected_profit_commission,
+            expected_deal_ceding_commission = r.expected_deal_ceding_commission,
+            expected_deal_brokerage = r.expected_deal_brokerage,
+            deal_names = self
+                .inner
+                .deals
+                .iter()
+                .map(|d| d.name.clone())
+                .collect::<Vec<_>>(),
             on_points = r.on_points
         ))
     }

@@ -342,6 +342,18 @@ class AnnualGrids:
         Expected ceding commission (flat or sliding) of each layer.
         """
     @property
+    def expected_deal_brokerage(self, /) -> dict[str, float]:
+        """
+        Expected brokerage of each deal, by its name; 0 without one.
+        """
+    @property
+    def expected_deal_ceding_commission(self, /) -> dict[str, float]:
+        """
+        Expected ceding commission of each deal (``Tower.deal_scale``), by
+        its name, read on its sections' loss ratio together; 0 for a deal
+        without one.
+        """
+    @property
     def expected_premium(self, /) -> list[float]:
         """
         Expected premium of each layer: the swing-rated premium's mean, or
@@ -25448,8 +25460,10 @@ class Tower:
         section pays on its own. Results gain ``("ceding_commission",
         name)``, ``("brokerage", name)`` and, when a section reads its
         scales before annual terms, ``("loss_before_terms", name)``;
-        ``deal_ratios`` takes the deal's name. The grid methods and the P&L
-        ledger refuse a tower with a deal.
+        ``deal_ratios`` takes the deal's name. ``on_annual_grid`` gives each
+        deal's expected commission and brokerage, ``on_grid`` too when no
+        section has annual terms, and the cedant's P&L ledger books the
+        deal's commission.
         
         Parameters
         ----------
@@ -25553,6 +25567,18 @@ class TowerGrids:
     def expected_ceding_commission(self, /) -> list[float]:
         """
         Expected ceding commission (flat or sliding) of each layer.
+        """
+    @property
+    def expected_deal_brokerage(self, /) -> dict[str, float]:
+        """
+        Expected brokerage of each deal, by its name; 0 without one.
+        """
+    @property
+    def expected_deal_ceding_commission(self, /) -> dict[str, float]:
+        """
+        Expected ceding commission of each deal (``Tower.deal_scale``), by
+        its name, read on its sections' loss ratio together; 0 for a deal
+        without one.
         """
     @property
     def expected_premium(self, /) -> list[float]:
