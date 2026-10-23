@@ -31,15 +31,25 @@ pytest tests/test_guides.py
 
 Looking for the guide that follows a particular text (a CAS monograph, a book)? See [`reading-list.md`](reading-list.md), which maps each source to its guides, its knowledge file and the open issues.
 
-Want to run something before you read? [`examples/reading_path.ipynb`](../../examples/reading_path.ipynb) carries one small book through seven stations (severity and counts, the aggregate distribution, layer pricing, the indication, reserving, risk loads and allocation, and the Bayesian and GLM guides) and names the guides to read at each. Its R twin is [`examples/reading_path.qmd`](../../examples/reading_path.qmd).
+Start here, in this order:
 
-Start here: [`choosing-a-method.md`](choosing-a-method.md). It maps each
-situation (a rate indication, a per-risk or casualty layer, a catastrophe cover,
-a quota share, a stop loss, a reserve, capital) to the method and the calls,
-and sends you to the guide that goes deeper.
+1. [`a-first-course.md`](a-first-course.md), a first course for a student or
+   new analyst: the ideas from a loss distribution to allocation, two worked
+   decisions and a ten-step checklist.
+2. [`examples/reading_path.ipynb`](../../examples/reading_path.ipynb), the same
+   ideas on a realistic book: it carries one small book through seven stations
+   (severity and counts, the aggregate distribution, layer pricing, the
+   indication, reserving, risk loads and allocation, and the Bayesian and GLM
+   guides) and names the guides to read at each. Its R twin is
+   [`examples/reading_path.qmd`](../../examples/reading_path.qmd).
+3. [`choosing-a-method.md`](choosing-a-method.md), which maps each situation (a
+   rate indication, a per-risk or casualty layer, a catastrophe cover, a quota
+   share, a stop loss, a reserve, capital) to the method and the calls, and
+   sends you to the guide that goes deeper.
 
 | Guide | What it answers |
 |---|---|
+| [`a-first-course.md`](a-first-course.md) | A first course, from premium and losses to a priced book: a loss as a distribution, the aggregate loss by FFT, why a price exceeds the mean, distortions, diversification and the allocation methods; then two decisions on small books (whether to write a new unit, which treaty a cedant should buy) and a ten-step checklist with a template for your own data |
 | [`choosing-a-method.md`](choosing-a-method.md) | Which prospicio tool for which job: a decision table over the situations an actuary meets, the calls, the traps and where the library stops |
 
 **Pricing**
@@ -95,6 +105,7 @@ twins in [`examples/`](../../examples/README.md):
 
 | R twin | Python guide |
 |---|---|
+| [`a-first-course.qmd`](a-first-course.qmd) | `a-first-course.md` |
 | [`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) | `prospicio-for-aggregate-users.md` |
 | [`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) | `capital-modeling-monograph-15.md` |
 | [`capital-modeling-monograph-15-theory.qmd`](capital-modeling-monograph-15-theory.qmd) | `capital-modeling-monograph-15-theory.md` |
