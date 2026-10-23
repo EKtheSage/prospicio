@@ -28,6 +28,9 @@
 //! * D. Errors: ages outside the source's, the errors of `from_triangle`, the
 //!   expected-loss methods without an exposure, a carried tail too small to
 //!   spread and a source with one age.
+//! * E. The doctests of `ChainLadderFit::to_chain_ladder` and
+//!   `LatestDiagonal::from_triangle`, with exact numbers, run by
+//!   `cargo test -p prospicio-reserving --doc`.
 
 use std::collections::HashMap;
 
