@@ -4,8 +4,8 @@ name: CI
 # Pull requests run Ubuntu only; Windows runs on the weekly schedule and on
 # demand. A pull request runs the python and r jobs unless it touches only
 # docs, knowledge, change fragments or lane status (DOCS_ONLY below), and
-# the jobs that run a slow suite in a release build (bayes, fremtpl2) only
-# when it touches their inputs. A push to main runs the Rust job's checks
+# the jobs that run a slow suite in a release build (bayes, fremtpl2) and
+# cargo deny (deny) only when it touches their inputs. A push to main runs the Rust job's checks
 # and, in every other job but docs, only builds what that job's cache is
 # missing (the cache's key changes with Cargo.lock and the toolchain), so
 # that pull requests, which can read main's caches but not each other's,
@@ -38,7 +38,7 @@ env:
   # Paths a pull request can change without running the python and r jobs:
   # nothing in them is built or read by the bindings' tests (the guides in
   # docs/guides and the notebooks in examples/ are).
-  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|fold_changes)\.py$)'
+  DOCS_ONLY: '^(knowledge/|changes/|docs/(lanes|design)/|docs/[^/]+\.md$|[^/]+\.md$|crates/prospicio-xll/|xtask/|\.github/workflows/(xll|release|pages)\.yml$|validation/scripts/(check_okf|check_lanes|fold_changes)\.py$|deny\.toml$)'
 
 jobs:
   rust:
@@ -424,3 +424,32 @@ jobs:
       - if: steps.changes.outputs.run == 'true' && github.event_name != 'push'
         name: Run the NUTS unit tests in release
         run: cargo test --release -p prospicio-reserving --features slow-tests --lib
+
+  # Licences, RustSec advisories, duplicate versions and sources of the
+  # dependency tree (deny.toml, #573). Pull requests run it when they touch
+  # the dependencies or the rules; the weekly and manual runs always do, so
+  # a new advisory on an unchanged lock file still shows up.
+  deny:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether the dependencies changed
+        id: changes
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" \
+              | grep -qE '(^|/)Cargo\.(toml|lock)$|^deny\.toml$|^\.github/workflows/ci\.yml$'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No dependency changes; skipping cargo deny."
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
