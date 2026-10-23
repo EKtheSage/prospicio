@@ -435,9 +435,12 @@ the unrounded factors (2.1879 at 15 months rather than 2.19) give a total
 
 Appendix A's Loss Development exhibit does the same on reported losses and
 paid ALAE for accident years 2009 to 2015, and selects the straight average
-excluding the highest and lowest link ratio. prospicio has no "excluding high
-and low" average, so the selection is a line of Python fed to `ChainLadder` as
-a selected pattern:
+excluding the highest and lowest link ratio. That average is built in:
+`ChainLadder(average="simple", drop_high=1, drop_low=1)`, whose `n_links`
+shows how many link ratios each factor kept. The book, though, averages link
+ratios rounded to four places and chains its selections rounded to four
+places, so its factors to ultimate come from that rounded selection, passed as
+a selected pattern. The block prints both:
 
 ```python
 ta = triangle(2009, [15, 27, 39, 51, 63], [
@@ -453,10 +456,13 @@ all_year = ChainLadder(average="simple").fit(ta, "reported").ldf
 print("all-year average, exact ", [f"{f:.4f}" for f in all_year])
 print("all-year, rounded links ", [f"{half_up(sum(c) / len(c), 4):.4f}" for c in links])
 print("book all-year average   ", ["1.0704", "1.0380", "1.0113", "0.9898"])
+exact = ChainLadder(average="simple", drop_high=1, drop_low=1).fit(ta, "reported")
+print("high/low out, exact     ", [f"{f:.4f}" for f in exact.ldf], " n_links", exact.n_links)
 hi_lo = [half_up((sum(c) - max(c) - min(c)) / (len(c) - 2), 4) for c in links]
-print("excluding high and low  ", [f"{f:.4f}" for f in hi_lo], " book", ["1.0665", "1.0279", "1.0208", "0.9799"])
+print("high/low out, rounded   ", [f"{f:.4f}" for f in hi_lo], " book", ["1.0665", "1.0279", "1.0208", "0.9799"])
 fit = ChainLadder(ldf=dict(zip([15, 27, 39, 51], hi_lo)), ldf_kind="ldf").fit(ta, "reported")
-print("age to ultimate         ", [f"{c:.4f}" for c in fit.cdf], " book", ["1.0966", "1.0282", "1.0003", "0.9799", "1.0000"])
+print("to ultimate, exact      ", [f"{c:.4f}" for c in exact.cdf])
+print("to ultimate, rounded    ", [f"{c:.4f}" for c in fit.cdf], " book", ["1.0966", "1.0282", "1.0003", "0.9799", "1.0000"])
 a_development = [half_up(c, 4) for c in fit.cdf][::-1]  # accident years 2011 to 2015
 ```
 
@@ -464,11 +470,19 @@ a_development = [half_up(c, 4) for c in fit.cdf][::-1]  # accident years 2011 to
 all-year average, exact  ['1.0703', '1.0380', '1.0113', '0.9898']
 all-year, rounded links  ['1.0704', '1.0380', '1.0113', '0.9898']
 book all-year average    ['1.0704', '1.0380', '1.0113', '0.9898']
-excluding high and low   ['1.0665', '1.0279', '1.0208', '0.9799']  book ['1.0665', '1.0279', '1.0208', '0.9799']
-age to ultimate          ['1.0966', '1.0282', '1.0003', '0.9799', '1.0000']  book ['1.0966', '1.0282', '1.0003', '0.9799', '1.0000']
+high/low out, exact      ['1.0665', '1.0279', '1.0208', '0.9799']  n_links [4, 3, 2, 1]
+high/low out, rounded    ['1.0665', '1.0279', '1.0208', '0.9799']  book ['1.0665', '1.0279', '1.0208', '0.9799']
+to ultimate, exact       ['1.0965', '1.0281', '1.0002', '0.9799', '1.0000']
+to ultimate, rounded     ['1.0966', '1.0282', '1.0003', '0.9799', '1.0000']  book ['1.0966', '1.0282', '1.0003', '0.9799', '1.0000']
 ```
 
-The selected factors and the factors to ultimate agree with the exhibit; the
+Dropping the highest and lowest leaves 4, 3, 2 and 1 of the 6, 5, 4 and 3 link
+ratios (`n_links`). The library's exact average agrees with the book's
+selection to four places at every age, but chained unrounded it gives factors
+to ultimate 1 lower in the fourth place at 15, 27 and 39 months (1.0965 against
+the book's 1.0966); chaining the rounded selection, as the book does,
+reproduces the exhibit. The selected factors and the factors to ultimate then
+agree with the exhibit; the
 last five accident years' factors (1.0000, 0.9799, 1.0003, 1.0282, 1.0966)
 are the development column of the indication in section 8. The 15-to-27
 straight average is 1.07035 on the rounded link ratios and prints as 1.0704;

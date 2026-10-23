@@ -348,8 +348,9 @@ it against a burning cost on developed, trended large losses
 
 - Prepare losses before fitting or burning: trend them to the treaty period and
   develop open claims one by one with `LargeLossExperience.prepare(rate=, to=,
-  development=)`. Development of the excess layer itself (excess LDFs, benchmark
-  blending) is not in the library (issue #192). Decide how
+  development=)`. Development of the excess layer itself (layer factors from
+  the ground-up triangle and a severity, blended with the layer's own) is
+  `ExcessPattern`, in [`reserving-excess-layers.md`](reserving-excess-layers.md). Decide how
   allocated loss adjustment expense (ALAE) enters the layer, pro rata with the
   loss or added to it within the limit, and treat the losses and the severity
   curve the same way.
@@ -973,7 +974,6 @@ The honest list.
 
 | Gap | Effect on this map | Issue |
 |---|---|---|
-| Development of excess layers (excess LDFs, benchmark blending) | Layer development is a chain ladder on layer losses, or judgement | #192 |
 | Clash across more than two lines | `fft_bivariate` and `Clash` hit two lines with the same events (coupled within an event by a copula if you like); three or more lines share events only by simulation | none (`docs/design/cat-inputs.md`) |
 
 ## See also

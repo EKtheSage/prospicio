@@ -397,6 +397,7 @@ articles:
       - articles/reserving-taylor-mcguire
       - articles/reserving-meyers
       - articles/reserving-compartmental
+      - articles/reserving-excess-layers
       - starts_with("articles/reserving-")
   - title: Worked examples
     navbar: Worked examples

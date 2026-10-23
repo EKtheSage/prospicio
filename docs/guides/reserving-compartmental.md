@@ -771,10 +771,14 @@ good to about 0.4 sds, not as a refit-quality number.
 * **Model 3 and the extensions.** The market-cycle model, the multistage
   exposure and time-varying rates are outside prospicio's `Compartmental`
   for now (the design note lists them as later work).
-* **Several triangles at once and the backtest.** `Compartmental` fits one
-  triangle. Fitting several segments jointly (`fit_segments`) and the
-  diagonal backtest, which other Bayesian models in prospicio have, are not
-  yet built for it (the Reserving lane's next step).
+* **Several triangles at once and the backtest** are built but not run in
+  this guide. `Compartmental.fit_segments` fits segments on their own seeds,
+  independent or rank-correlated (`one_year_segments` does the same for the
+  one-year view), and `Compartmental.candidate(...)` puts the model in
+  `diagonal_backtest` next to the other Bayesian models, with
+  `CompartmentalCandidate.outstanding_backtest` scoring the held-out
+  outstanding diagonals as well as the paid ones. This guide fits one
+  triangle.
 * **Exact digits.** The checked blocks hold on every platform; the recorded
   `no-run` values are Windows', and another platform prints others within
   the stated Monte Carlo errors.

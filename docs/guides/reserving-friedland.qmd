@@ -121,15 +121,14 @@ XYZ_PAID <- list(
 XYZ_PREMIUM <- c(20000, 31500, 45000, 50000, 61183, 69175, 99322, 138151, 107578, 62438, 47797)
 
 # A triangle from rows of cumulative values; exposures are repeated on every
-# cell. With `diagonals = n`, only the latest n calendar diagonals are kept.
+# cell.
 make_triangle <- function(years, columns, exposures = list(),
-                          first_age = rep(12, length(years)), diagonals = NULL) {
+                          first_age = rep(12, length(years))) {
   rows <- columns[[1]]
   long <- NULL
   for (i in seq_along(years)) {
     for (k in seq_along(rows[[i]])) {
       months <- first_age[i] + 12 * (k - 1)
-      if (!is.null(diagonals) && years[i] + months %/% 12 - 1 <= max(years) - diagonals) next
       cell <- data.frame(origin = years[i], age = months)
       for (name in names(columns)) cell[[name]] <- columns[[name]][[i]][k]
       for (name in names(exposures)) cell[[name]] <- exposures[[name]][i]
@@ -168,43 +167,27 @@ keeps them as missing, not zero, so they take no part in any factor.
 Friedland's averages of the link ratios run over the **latest** few accident
 years: simple averages of the latest 5 and 3, a medial average of the latest 5
 without the highest and lowest, volume-weighted averages of the latest 5 and 3,
-and a geometric average of the latest 4. `chain_ladder()` averages all years
-(`average = "volume"`, `"simple"` or `"regression"`) and has no option for the
-latest n years or for medial and geometric averages, so the helper computes
-them from `link_ratios()` and the cells:
+and a geometric average of the latest 4. All of them are arguments of
+`chain_ladder()`: `average` picks the mean (`"volume"`, `"simple"`,
+`"regression"` or `"geometric"`), `n_periods = n` keeps only the link ratios
+that start in the latest n calendar diagonals, and `drop_high` and `drop_low`
+leave out the highest and lowest of those, so a medial average is a simple one
+with one of each dropped. A fit's `n_links` says how many link ratios each
+factor averaged:
 
 ```{r}
 #| label: averages
-links <- function(tri, column) {
-  lr <- link_ratios(tri)@values[1, column, , , drop = FALSE][1, 1, , ]
-  lapply(seq_len(ncol(lr)), function(k) lr[!is.na(lr[, k]), k])
-}
-
-averages <- function(tri, column) {
-  cells <- tri@values[1, column, , ]
-  volume <- function(k, n) {
-    ok <- which(!is.na(cells[, k + 1]))
-    ok <- tail(ok, n)
-    sum(cells[ok, k + 1]) / sum(cells[ok, k])
-  }
-  medial <- function(x) {
-    x <- sort(tail(x, 5))
-    if (length(x) > 2) mean(x[2:(length(x) - 1)]) else mean(x)
-  }
-  lr <- links(tri, column)
-  ks <- seq_along(lr)
-  list(
-    "simple, latest 5" = sapply(lr, function(x) mean(tail(x, 5))),
-    "simple, latest 3" = sapply(lr, function(x) mean(tail(x, 3))),
-    "medial, latest 5x1" = sapply(lr, medial),
-    "volume, latest 5" = sapply(ks, volume, n = 5),
-    "volume, latest 3" = sapply(ks, volume, n = 3),
-    "geometric, latest 4" = sapply(lr, function(x) exp(mean(log(tail(x, 4)))))
-  )
-}
-
-av <- averages(us, "reported")
-for (name in names(av)) cat(sprintf("%-20s", name), f3(av[[name]]), "\n")
+fits <- list(
+  "simple, latest 5" = chain_ladder(us, "reported", average = "simple", n_periods = 5),
+  "simple, latest 3" = chain_ladder(us, "reported", average = "simple", n_periods = 3),
+  "medial, latest 5x1" = chain_ladder(us, "reported", average = "simple", n_periods = 5,
+                                      drop_high = 1, drop_low = 1),
+  "volume, latest 5" = chain_ladder(us, "reported", n_periods = 5),
+  "volume, latest 3" = chain_ladder(us, "reported", n_periods = 3),
+  "geometric, latest 4" = chain_ladder(us, "reported", average = "geometric", n_periods = 4)
+)
+for (name in names(fits)) cat(sprintf("%-20s", name), f3(fits[[name]]@ldf), "\n")
+cat(sprintf("%-20s", "n_links, medial 5x1"), sprintf("%5d", fits[["medial, latest 5x1"]]@n_links), "\n")
 ```
 
 ```text
@@ -214,21 +197,20 @@ medial, latest 5x1   1.165 1.057 1.027 1.010 1.004 1.003 1.002 1.001 1.000
 volume, latest 5     1.168 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
 volume, latest 3     1.164 1.056 1.027 1.012 1.005 1.003 1.002 1.001 1.000
 geometric, latest 4  1.164 1.057 1.027 1.011 1.004 1.003 1.002 1.001 1.000
+n_links, medial 5x1      3     3     3     3     3     2     1     2     1
 ```
 
-Each row equals the corresponding row of chapter 7, Exhibit I, sheet 1, part 3,
-to the three decimals printed (12-24 at the left); the paid averages on sheet 2
-agree in the same way. The book's medial average of two values is their simple
-average and of one value the value itself, as the helper does.
-
-A volume-weighted average over the latest n years also comes out of prospicio
-itself: keep the latest `n + 1` calendar diagonals and fit the ordinary
-volume-weighted chain ladder. The all-year averages are not what the book uses:
+Each factor row equals the corresponding row of chapter 7, Exhibit I, sheet 1,
+part 3, to the three decimals printed (12-24 at the left); the paid averages on
+sheet 2 agree in the same way. The book's medial average of two values is their
+simple average and of one value the value itself, and prospicio skips a drop
+that would leave no link ratio: the last line shows 3 of 5 kept at 12-24, 2 of
+4 at 72-84 and 1 of 3 at 84-96, and all of the two at 96-108 and the one at
+108-120. The all-year averages are not what the book uses:
 
 ```{r}
 #| label: recent
-recent <- make_triangle(US_YEARS, list(reported = US_REPORTED), diagonals = 4)
-cat("volume, latest 3 ", f3(chain_ladder(recent, "reported")@ldf), "\n")
+cat("volume, latest 3 ", f3(chain_ladder(us, "reported", n_periods = 3)@ldf), "\n")
 cat("volume, all years", f3(chain_ladder(us, "reported")@ldf), "\n")
 cat("simple, all years", f3(chain_ladder(us, "reported", average = "simple")@ldf), "\n")
 ```
@@ -361,17 +343,14 @@ fitted tail 1.0011, book's selection 1.002
 ### XYZ Insurer: unstable factors and a pattern below 1
 
 For XYZ, Friedland selects the volume-weighted average of the latest 2 years at
-every age, with no reported tail and a paid tail of 1.010. The latest 3
-diagonals reproduce her selected factors (chapter 7, Exhibit II, sheets 1 and
-2, part 4):
+every age, with no reported tail and a paid tail of 1.010. `n_periods = 2`
+reproduces her selected factors (chapter 7, Exhibit II, sheets 1 and 2, part
+4):
 
 ```{r}
 #| label: xyz-factors
 for (column in c("reported", "paid")) {
-  rows <- if (column == "reported") XYZ_REPORTED else XYZ_PAID
-  last2 <- make_triangle(XYZ_YEARS, stats::setNames(list(rows), column),
-                         first_age = XYZ_FIRST_AGE, diagonals = 3)
-  cat(sprintf("%-8s", column), f3(chain_ladder(last2, column)@ldf), "\n")
+  cat(sprintf("%-8s", column), f3(chain_ladder(xyz, column, n_periods = 2)@ldf), "\n")
 }
 ```
 
@@ -381,17 +360,16 @@ paid     3.349 2.079 1.574 1.316 1.203 1.136 1.059 1.022 1.017 1.004
 ```
 
 The book prints the same factors. Its reported CDFs at 96 and 108 months are
-0.992, below 1, which `ldf_kind = "cdf"` refuses, so they go in as ratios of
-consecutive CDFs with `ldf_kind = "ldf"`; the paid CDFs go in directly:
+0.992, below 1. A pattern with `ldf_kind = "cdf"` needs only positive factors
+to ultimate, in any order, so the reported CDFs go in directly, as the paid
+ones do:
 
 ```{r}
 #| label: xyz-dev
 XYZ_AGES <- xyz@development
 CDF_XYZ_REPORTED <- c(2.551, 1.512, 1.196, 1.085, 1.064, 1.013, 1.003, 0.992, 0.992, 0.999, 1.000)
 CDF_XYZ_PAID <- c(21.999, 6.569, 3.160, 2.007, 1.525, 1.268, 1.116, 1.054, 1.031, 1.014, 1.010)
-n <- length(XYZ_AGES)
-ratios <- named(CDF_XYZ_REPORTED[-n] / CDF_XYZ_REPORTED[-1], XYZ_AGES)
-xdev_r <- chain_ladder(xyz, "reported", ldf = ratios, ldf_kind = "ldf")
+xdev_r <- chain_ladder(xyz, "reported", ldf = named(CDF_XYZ_REPORTED, XYZ_AGES), ldf_kind = "cdf")
 xdev_p <- chain_ladder(xyz, "paid", ldf = named(CDF_XYZ_PAID, XYZ_AGES), ldf_kind = "cdf")
 
 BOOK_XDEV <- list(  # chapter 7, Exhibit II, sheet 3, columns (7) and (8)
@@ -747,10 +725,7 @@ prospicio does not make.
 
 ## 8. What prospicio does not cover
 
-As in the Python guide: averages over the latest n years, medial and geometric
-averages as options of `chain_ladder()` (issue #336; the workarounds are
-above), CDFs below 1 as a `"cdf"` pattern (#336), the frequency-severity
-techniques (chapter 11), the case outstanding development technique (chapter
+As in the Python guide: the frequency-severity techniques (chapter 11), the case outstanding development technique (chapter
 12), Berquist-Sherman adjustments (chapter 13), the ALAE and ULAE methods
 (chapters 16 and 17) and the trend, rate-level and tort adjustments of the
 expected claims method, which are inputs prepared by hand. Every R function
