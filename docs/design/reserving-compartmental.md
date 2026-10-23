@@ -1695,6 +1695,8 @@ on `claude/compartmental-paid-incurred`.
     `knowledge/findings/compartmental-one-response.md`.
 * **Unequal grain (PR I).** Built as decision 13.
 
+A check of what the priors imply for the reserve, in particular the incurred-only `k_p` prior, is noted but not planned in `reserving-bayes.md`, "Prior predictive checks (a note, not planned)".
+
 ### 13. Unequal origin and development grain (PR I)
 
 Decided by the user on 2026-10-22: unequal grain is in scope. The
