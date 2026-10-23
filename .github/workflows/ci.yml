@@ -244,6 +244,7 @@ jobs:
       - run: R CMD INSTALL R/prospicio
       - name: Render the R twins
         run: |
+          mkdir -p "$RUNNER_TEMP/r-twins"
           for f in one_year_view reinsurance_pricing; do
             quarto render "examples/$f.qmd" --to gfm --output-dir "$RUNNER_TEMP/r-twins"
           done
@@ -254,7 +255,11 @@ jobs:
         working-directory: python
         env:
           PROSPICIO_R_TWINS: ${{ runner.temp }}/r-twins
-        run: uv run pytest tests/test_examples.py -k r_twin -v -rs
+        # The r_twin tests skip without the renders, so check they are there.
+        run: |
+          test -f "$PROSPICIO_R_TWINS/one_year_view.md"
+          test -f "$PROSPICIO_R_TWINS/reinsurance_pricing.md"
+          uv run pytest tests/test_examples.py -k r_twin -v -rs
 
   # Builds both bindings through `cargo xtask docs`, which regenerates their
   # docs, and fails if a committed generated file (the Python stub, R's man/
