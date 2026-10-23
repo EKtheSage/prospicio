@@ -1,7 +1,7 @@
 ---
 type: Environment Fact
 title: The dependency tree under cargo deny
-description: What cargo deny 0.20.2 found on main on 2026-10-23 (two unmaintained crates, two crates under MPL-2.0 and CC0-1.0, no vulnerabilities, every source crates.io) and why each is an exception in deny.toml.
+description: What cargo deny 0.20.2 found on main on 2026-10-23 (two unmaintained crates, two crates under MPL-2.0 and CC0-1.0, no vulnerabilities, every source crates.io), why each is an exception in deny.toml, and the two breaks cargo semver-checks reports against 0.0.5.
 tags: [environment, dependencies, licences, advisories, release]
 status: stable
 generated: { by: claude-code/cloud-session, at: 2026-10-23T20:00:00Z }
@@ -43,3 +43,19 @@ before any exception, found:
 Installing the tool takes about four minutes in a cloud session
 (`cargo install cargo-deny --locked`); CI uses
 `EmbarkStudios/cargo-deny-action@v2` instead.
+
+## cargo semver-checks against 0.0.5
+
+`cargo semver-checks check-release --workspace --release-type minor`
+(0.51.0, about 3 minutes in a cloud session after a 6-minute install) on
+`main` the same day reported two breaks against the published 0.0.5,
+both already in change fragments marked breaking: new public fields on
+`TowerGrids` and `AnnualGrids` (`expected_deal_ceding_commission`,
+`expected_deal_brokerage`; `constructible_struct_adds_field`) and the new
+variant `prospicio_reserving::Error::LatestDiagonalOnly`
+(`enum_variant_added`). Removing a public method (`Month::months_since`)
+on a scratch copy fails with `inherent_method_missing` and exit code 100.
+`--release-type minor` is needed before 1.0: under Cargo's rules every
+0.0.x bump may break anything, so the default reports nothing. Both kinds
+of break are avoidable for later additions with `#[non_exhaustive]` on
+public structs and enums that will grow.
