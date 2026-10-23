@@ -1038,3 +1038,37 @@ def test_deal_book_cashflows_and_calendar():
     # written over twelve months from July 2027: half in each year
     assert cal.marginal(keys[0]).draws[0] == pytest.approx(50.0)
     assert sum(cal.marginal(k).draws[0] for k in keys) == pytest.approx(100.0)
+
+
+def test_tower_quote_layers_and_total():
+    """A tower quoted layer by layer and as one (item 11, PR B)."""
+    from prospicio.distributions import Grid, Poisson
+    from prospicio.pricing import TowerQuote
+    from prospicio.reinsurance import Layer, Tower
+    from prospicio.risk import Distortion
+
+    sev = Grid(1.0, [0.0, 0.3, 0.3, 0.2, 0.1, 0.1])
+    second = Layer("2x2", 2.0, 2.0, premium=1.0).with_ceding_commission(0.1)
+    tower = Tower([Layer("1x1", 1.0, 1.0), second])
+    grids = tower.on_grid(Poisson(2.0), sev, 256)
+    assert grids.total_ceded is not None
+    q = TowerQuote.technical(
+        tower, grids, Distortion.tvar(0.99), cost_of_capital=0.12, brokerage=0.1
+    )
+    a, b = q.layers
+    assert abs(q.total.expected_loss - a.expected_loss - b.expected_loss) < 1e-9
+    assert abs(q.diversification - (a.premium + b.premium - q.total.premium)) < 1e-12
+    assert q.diversification > 0
+    for x in (a, b, q.total):
+        assert abs(x.return_on_capital - 0.12) < 1e-9
+    w = b.premium / (a.premium + b.premium)
+    assert abs(q.total.commission - 0.1 * w * q.total.premium) < 1e-12
+
+    paid = Tower([
+        Layer("1x1", 1.0, 1.0, premium=1.0, reinstatement_rates=[1.0]),
+        Layer("2x2", 2.0, 2.0, premium=1.0, reinstatement_rates=[1.0]),
+    ])
+    paid_grids = paid.on_grid(Poisson(2.0), sev, 256)
+    assert paid_grids.total_ceded is None
+    with pytest.raises(ValueError, match="not one compound total"):
+        TowerQuote.technical(paid, paid_grids, Distortion.tvar(0.99), cost_of_capital=0.12)

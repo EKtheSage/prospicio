@@ -1323,7 +1323,8 @@ calibrate_classical <- function(x, principle, premium, q = 2) {
 #'   `net_premium` (net of brokerage), `assets`, `capital`, `income_tax`,
 #'   `pre_tax_return_on_capital`, `return_on_capital` (after tax),
 #'   `loss_ratio` and `multiple` (on all the premium), `rate_on_line` and
-#'   `payback` (on the deposit, `NaN` without a limit), and the inputs
+#'   `payback` (on the deposit, `NaN` without a limit),
+#'   `reinstatement_rate` and `commission_rate` (the terms), and the inputs
 #'   `implied_quote()` needs.
 #' @export
 #' @examples
@@ -1363,6 +1364,72 @@ quote_with <- function(l, premium, commission) {
     l$brokerage_on_reinstatements, premium, commission
   ))
   c(q, list(loads = l))
+}
+
+#' A tower quoted layer by layer and as one
+#'
+#' Each layer of [tower_on_grid()]'s result priced on its own ceded grid by
+#' [risk_loaded_price()] and quoted by [technical_quote()], with its
+#' reinstatement rate (the grid's expected reinstatement premium over the
+#' layer's deposit premium), its flat ceding commission and its limit at the
+#' placed share; and the total cession quoted the same way, its
+#' reinstatement and commission rates the layers' weighted by their
+#' technical deposits, without a limit. The diversification is the layers'
+#' deposits less the total's: what writing them together saves. Nothing is
+#' allocated to the layers.
+#'
+#' The total needs one compound total cession (`total_ceded` of
+#' [tower_on_grid()]): it fails for several layers with annual terms
+#' (reinstatements, aggregate limits or deductibles) or an aggregate cover
+#' after per-occurrence stages; quote those layers one by one.
+#'
+#' @param tower The [reinsurance_tower] the grids are of.
+#' @param grids The result of [tower_on_grid()].
+#' @param assets The assets' distortion, as in [risk_loaded_price()].
+#' @param cost_of_capital,distortion The premium rule: give exactly one, as
+#'   in [risk_loaded_price()].
+#' @inheritParams technical_quote
+#' @returns A list with `layers` (a named list of quotes as
+#'   [technical_quote()]'s, each usable in [implied_quote()]), `total` (the
+#'   total cession's quote) and `diversification`.
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.3, 0.3, 0.2, 0.1, 0.1))
+#' tw <- reinsurance_tower(list(xol_layer("1x1", 1, 1), xol_layer("2x2", 2, 2)))
+#' g <- tower_on_grid(tw, poisson_count(2), sev, points = 256)
+#' q <- tower_quote(tw, g, distortion("tvar", 0.99), cost_of_capital = 0.1,
+#'                  brokerage = 0.1)
+#' q$layers[["2x2"]]$premium
+#' q$total$premium
+#' q$diversification
+tower_quote <- function(tower, grids, assets, cost_of_capital = NULL, distortion = NULL,
+                        expenses = 0, brokerage = 0, fixed = 0, premium_tax = 0,
+                        income_tax = 0, brokerage_on_reinstatements = TRUE) {
+  r <- rust_result(pricing_tower_quote(
+    tower@ptr, lapply(grids$ceded, function(g) g@ptr),
+    as.double(grids$expected_reinstatement_premium),
+    if (is.null(grids$total_ceded)) NULL else grids$total_ceded@ptr,
+    assets@ptr, rate_arg(cost_of_capital), pricing_arg(distortion), as.double(expenses), as.double(brokerage),
+    as.double(fixed), as.double(premium_tax), as.double(income_tax),
+    isTRUE(brokerage_on_reinstatements)
+  ))
+  with_loads <- function(q, limit) {
+    loads <- list(price = list(expected_loss = q$expected_loss, premium = q$risk_premium,
+                               assets = q$assets),
+                  expenses = as.double(expenses), brokerage = as.double(brokerage),
+                  fixed = as.double(fixed), limit = limit,
+                  premium_tax = as.double(premium_tax), income_tax = as.double(income_tax),
+                  reinstatement_rate = q$reinstatement_rate, commission = q$commission_rate,
+                  brokerage_on_reinstatements = isTRUE(brokerage_on_reinstatements))
+    c(q, list(loads = loads))
+  }
+  layers <- lapply(r$layers, function(q) {
+    limit <- if (is.nan(q$rate_on_line)) NaN else q$premium / q$rate_on_line
+    with_loads(q, limit)
+  })
+  list(layers = stats::setNames(layers, tower@layer_names),
+       total = with_loads(r$total, NaN),
+       diversification = r$diversification)
 }
 
 #' Large losses trended to the prospective period

@@ -25855,6 +25855,14 @@ class TowerGrids:
         cession ``aggregate`` reports as ``Ceded``. ``None`` for a stage of
         several layers one of which has annual terms.
         """
+    @property
+    def total_ceded(self, /) -> Grid |None:
+        """
+        Annual ceded loss of the whole tower, every layer together, or
+        ``None`` when it is not a single compound total: several layers
+        with annual terms (reinstatements, aggregate limits or deductibles),
+        or an aggregate cover after per-occurrence stages.
+        """
 
 @final
 class TowerModel:
@@ -25943,6 +25951,85 @@ class TowerPrice:
     def stages(self, /) -> list[ViewPrice |None]:
         """
         Each stage's total cession, ``None`` where ``stage_ceded`` is.
+        """
+
+@final
+class TowerQuote:
+    """
+    A whole tower quoted at once: each layer standalone from its own ceded
+    grid, and the total cession, every layer together, as one cover.
+    
+    Each standalone price holds capital for its layer alone, so the layers'
+    premiums add up to more than the total's; ``diversification`` is the
+    difference. No share of the total is allocated to the layers.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Grid, Poisson
+    >>> from prospicio.pricing import TowerQuote
+    >>> from prospicio.reinsurance import Layer, Tower
+    >>> from prospicio.risk import Distortion
+    >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+    >>> tower = Tower([Layer("1x1", 1.0, 1.0), Layer("2x2", 2.0, 2.0)])
+    >>> grids = tower.on_grid(Poisson(3.0), sev, 256)
+    >>> q = TowerQuote.technical(tower, grids, Distortion.tvar(0.99), cost_of_capital=0.1,
+    ...                          expenses=0.03, brokerage=0.10)
+    >>> len(q.layers), q.diversification > 0
+    (2, True)
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def diversification(self, /) -> float:
+        """
+        The layers' technical deposits added up less the total's.
+        """
+    @property
+    def layers(self, /) -> list[Quote]:
+        """
+        Each layer's standalone quote, in tower order.
+        """
+    @staticmethod
+    def technical(tower: Tower, grids: TowerGrids, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None, expenses: float = 0.0, brokerage: float = 0.0, fixed: float = 0.0, premium_tax: float = 0.0, income_tax: float = 0.0, brokerage_on_reinstatements: bool = True) -> TowerQuote:
+        """
+        The technical quote of each layer and of the total cession.
+        
+        Each layer is priced on its ceded grid with the reinstatement rate
+        and flat ceding commission its grid and terms give, and its limit at
+        the placed share for the rate on line. The total is priced on
+        ``grids.total_ceded``, with the layers' reinstatement rates and
+        commissions weighted by their technical deposits and no limit.
+        
+        Parameters
+        ----------
+        tower : Tower
+        grids : TowerGrids
+            ``tower.on_grid(...)``.
+        assets : Distortion
+        cost_of_capital : float, optional
+        distortion : Distortion, optional
+            Exactly one of ``cost_of_capital`` and ``distortion``, as in
+            ``price``.
+        expenses, brokerage, fixed, premium_tax, income_tax : float
+            The loads, as in ``Quote.technical``.
+        brokerage_on_reinstatements : bool, default True
+        
+        Returns
+        -------
+        TowerQuote
+        
+        Raises
+        ------
+        ValueError
+            If ``grids.total_ceded`` is ``None``: several layers with annual
+            terms (reinstatements, aggregate limits or deductibles), or an
+            aggregate cover after per-occurrence stages, cede a sum of
+            dependent annual totals. Quote the layers one by one with
+            ``Quote.technical`` instead.
+        """
+    @property
+    def total(self, /) -> Quote:
+        """
+        The quote of the total cession.
         """
 
 @final

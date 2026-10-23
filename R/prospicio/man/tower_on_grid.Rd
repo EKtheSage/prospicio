@@ -22,7 +22,10 @@ describes the compound calculation), \code{ceded} (a named list of
 \code{c * step}), \code{stage_ceded} (one \link{grid_distribution} per stage, its
 layers' total cession, or \code{NULL} for a stage of several layers one of
 which has annual terms) with \code{stage_sizes} (the layers in each), \code{net}
-(a \link{grid_distribution} or \code{NULL}),
+(a \link{grid_distribution} or \code{NULL}), \code{total_ceded} (the whole tower's
+cession, a \link{grid_distribution}, or \code{NULL} when it is not one compound
+total: several layers with annual terms, or an aggregate cover after
+per-occurrence stages; see \code{\link[=tower_quote]{tower_quote()}}),
 \code{expected_reinstatement_premium} (named, 0 without paid reinstatements),
 \code{expected_premium} (the swing-rated premium's mean, or else the fixed
 premium), \code{expected_ceding_commission}, \code{expected_profit_commission}

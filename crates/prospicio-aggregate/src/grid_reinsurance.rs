@@ -36,6 +36,14 @@ pub struct TowerGrids {
     /// function of a single compound total; `None` otherwise (see
     /// [`Tower::on_grid`]).
     pub net: Option<Grid>,
+    /// Annual ceded loss of the whole tower, every layer together, gross
+    /// less net, when it is a function of a single compound total: when no
+    /// layer has annual terms (the cession is a function of each loss), or
+    /// the tower is one stage whose cession is one compound (one layer, or
+    /// several without annual terms). `None` otherwise: with an aggregate
+    /// cover after per-occurrence stages, say, the total is the sum of
+    /// dependent cessions.
+    pub total_ceded: Option<Grid>,
     /// Expected reinstatement premium of each layer; zero without paid
     /// reinstatements.
     pub expected_reinstatement_premium: Vec<f64>,
@@ -284,6 +292,21 @@ impl Tower {
             });
         }
 
+        let total_ceded = if !self.layers.iter().any(Layer::has_annual_terms) {
+            let all = self.layers.len();
+            let (cession, exact) = severity.map(|x| x - seen(x, all))?;
+            on_points &= exact;
+            Some(
+                fft(frequency, &cession, points)?
+                    .0
+                    .remove_fuzz(f64::EPSILON),
+            )
+        } else if stages.len() == 1 {
+            stage_ceded[0].clone()
+        } else {
+            None
+        };
+
         let net = if !self.layers.iter().any(Layer::has_annual_terms) {
             let all = self.layers.len();
             let (net_severity, exact) = severity.map(|x| seen(x, all))?;
@@ -342,6 +365,7 @@ impl Tower {
             ceded_reports,
             stage_ceded,
             net,
+            total_ceded,
             expected_reinstatement_premium: premiums,
             expected_premium: premium,
             expected_ceding_commission: commission,
@@ -679,6 +703,24 @@ mod tests {
             let d = ks(net, &component("net", "retained"), points);
             assert!(d < critical, "net KS {d}");
         }
+        if let Some(total) = &r.total_ceded {
+            let columns: Vec<_> = tower
+                .layers
+                .iter()
+                .map(|l| {
+                    sim.component_index(&vec!["ceded".into(), l.name.as_str().into()])
+                        .unwrap()
+                })
+                .collect();
+            let sums = (0..n_sims)
+                .map(|i| {
+                    let row = sim.row(i).unwrap();
+                    columns.iter().map(|&j| row[j]).sum()
+                })
+                .collect();
+            let d = ks(total, &prospicio_prob::Sampled::new(sums).unwrap(), points);
+            assert!(d < critical, "total ceded KS {d}");
+        }
     }
 
     #[test]
@@ -706,8 +748,10 @@ mod tests {
         let r = tower
             .on_grid(&Poisson::new(3.0).unwrap(), &severity(), 400)
             .unwrap();
-        // One layer with annual terms: no net grid.
+        // One layer with annual terms: no net grid, but the total cession is
+        // the layer's.
         assert!(r.net.is_none());
+        assert_eq!(r.total_ceded.as_ref(), Some(&r.ceded[0]));
         matches_simulation(&tower, &Poisson::new(3.0).unwrap());
     }
 
@@ -774,6 +818,9 @@ mod tests {
         let net = r.net.as_ref().unwrap();
         let ceded: f64 = r.ceded.iter().map(|g| g.mean()).sum();
         assert!((r.gross.mean() - ceded - net.mean()).abs() < 1e-10);
+        // The stop-loss's cession and the per-occurrence layer's are
+        // dependent: their total is not one compound.
+        assert!(r.total_ceded.is_none());
         matches_simulation(&tower, &Poisson::new(3.0).unwrap());
     }
 

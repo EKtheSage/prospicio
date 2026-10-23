@@ -1023,7 +1023,10 @@ S7::method(print, reinsurance_tower) <- function(x, ...) {
 #'   `c * step`), `stage_ceded` (one [grid_distribution] per stage, its
 #'   layers' total cession, or `NULL` for a stage of several layers one of
 #'   which has annual terms) with `stage_sizes` (the layers in each), `net`
-#'   (a [grid_distribution] or `NULL`),
+#'   (a [grid_distribution] or `NULL`), `total_ceded` (the whole tower's
+#'   cession, a [grid_distribution], or `NULL` when it is not one compound
+#'   total: several layers with annual terms, or an aggregate cover after
+#'   per-occurrence stages; see [tower_quote()]),
 #'   `expected_reinstatement_premium` (named, 0 without paid reinstatements),
 #'   `expected_premium` (the swing-rated premium's mean, or else the fixed
 #'   premium), `expected_ceding_commission`, `expected_profit_commission`
@@ -1047,6 +1050,7 @@ tower_on_grid <- function(tower, frequency, severity, points) {
     stage_ceded = lapply(r$stage_ceded, function(p) if (is.null(p)) NULL else grid_distribution(ptr = p)),
     stage_sizes = r$stage_sizes,
     net = if (is.null(r$net)) NULL else grid_distribution(ptr = r$net),
+    total_ceded = if (is.null(r$total_ceded)) NULL else grid_distribution(ptr = r$total_ceded),
     expected_reinstatement_premium = stats::setNames(r$expected_reinstatement_premium, names),
     expected_premium = stats::setNames(r$expected_premium, names),
     expected_ceding_commission = stats::setNames(r$expected_ceding_commission, names),

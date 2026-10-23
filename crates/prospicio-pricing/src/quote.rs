@@ -40,9 +40,10 @@
 
 use prospicio_core::{Error, Result};
 
-use prospicio_aggregate::{Commission, Layer};
+use prospicio_aggregate::{Commission, Layer, Tower, TowerGrids};
+use prospicio_prob::{Distortion, Grid};
 
-use crate::risk_load::Price;
+use crate::risk_load::{PremiumRule, Price, price_grid};
 
 /// The loads between the risk premium and the premium charged.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -465,6 +466,155 @@ impl Quote {
     }
 }
 
+/// A whole tower quoted at once: each layer standalone from its own ceded
+/// grid, and the total cession, every layer together, as one cover. Each
+/// standalone price holds capital for its layer alone, so the layers'
+/// premiums add up to more than the total's: the difference is the
+/// [diversification](Self::diversification) of writing the tower as one
+/// placement. No share of the total is allocated to the layers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TowerQuote {
+    /// Each layer's standalone quote, in tower order.
+    pub layers: Vec<Quote>,
+    /// The quote of the total cession.
+    pub total: Quote,
+}
+
+impl TowerQuote {
+    /// The technical quote of each layer and of the total cession. Each
+    /// layer is priced on `grids.ceded`, with the reinstatement rate and
+    /// flat ceding commission its grid and terms give
+    /// ([`PremiumTerms::from_layer`]) and its limit at the placed share for
+    /// the rate on line. The total is priced on `grids.total_ceded`, with
+    /// the layers' reinstatement rates and commissions weighted by their
+    /// technical deposits and no limit. Sliding-scale and profit
+    /// commissions are read back layer by layer with
+    /// [`Quote::at_with_commission`].
+    ///
+    /// Fails when the total cession is not one compound total
+    /// (`grids.total_ceded` is `None`): several layers with annual terms
+    /// (paid reinstatements, which cap each layer's year, aggregate limits
+    /// or deductibles), or an aggregate cover after per-occurrence stages,
+    /// cede a sum of dependent annual totals, which needs simulated events
+    /// ([`Tower::apply`]) to price. A single layer with annual terms, or
+    /// any number without, has a total.
+    ///
+    /// ```
+    /// use prospicio_aggregate::{Layer, Tower};
+    /// use prospicio_pricing::quote::{Loads, TowerQuote};
+    /// use prospicio_pricing::risk_load::PremiumRule;
+    /// use prospicio_prob::{Distortion, Grid, Poisson};
+    ///
+    /// let sev = Grid::new(1.0, vec![0.0, 0.4, 0.3, 0.2, 0.1]).unwrap();
+    /// let tower = Tower::new(vec![
+    ///     Layer::xol("1x1", 1.0, 1.0).unwrap(),
+    ///     Layer::xol("2x2", 2.0, 2.0).unwrap(),
+    /// ]).unwrap();
+    /// let grids = tower.on_grid(&Poisson::new(3.0).unwrap(), &sev, 256).unwrap();
+    /// let q = TowerQuote::technical(
+    ///     &tower, &grids, &PremiumRule::cost_of_capital(0.1).unwrap(),
+    ///     &Distortion::tvar(0.99).unwrap(), Loads::new(0.03, 0.1, 0.0).unwrap(), true,
+    /// ).unwrap();
+    /// // Writing the layers together needs less capital than one by one.
+    /// assert!(q.diversification() > 0.0);
+    /// let el: f64 = q.layers.iter().map(|l| l.expected_loss).sum();
+    /// assert!((q.total.expected_loss - el).abs() < 1e-9);
+    /// ```
+    pub fn technical(
+        tower: &Tower,
+        grids: &TowerGrids,
+        rule: &PremiumRule,
+        assets: &Distortion,
+        loads: Loads,
+        brokerage_on_reinstatements: bool,
+    ) -> Result<Self> {
+        Self::from_parts(
+            &tower.layers,
+            &grids.ceded,
+            &grids.expected_reinstatement_premium,
+            grids.total_ceded.as_ref(),
+            rule,
+            assets,
+            loads,
+            brokerage_on_reinstatements,
+        )
+    }
+
+    /// [`technical`](Self::technical) from the pieces of a tower's grid
+    /// result: its layers, their ceded grids and expected reinstatement
+    /// premiums, and the total cession (`None` fails, as there).
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        layers: &[Layer],
+        ceded: &[Grid],
+        expected_reinstatement_premium: &[f64],
+        total_ceded: Option<&Grid>,
+        rule: &PremiumRule,
+        assets: &Distortion,
+        loads: Loads,
+        brokerage_on_reinstatements: bool,
+    ) -> Result<Self> {
+        if ceded.len() != layers.len() || expected_reinstatement_premium.len() != layers.len() {
+            return Err(Error::InvalidParameter {
+                name: "ceded",
+                value: ceded.len() as f64,
+                reason: "must hold one ceded grid and reinstatement premium per layer",
+            });
+        }
+        let total_grid = total_ceded.ok_or(Error::InvalidParameter {
+            name: "total_ceded",
+            value: f64::NAN,
+            reason: "the total cession is not one compound total: several layers with \
+                     annual terms (reinstatements, aggregate limits or deductibles), or an \
+                     aggregate cover after per-occurrence stages, cede a sum of dependent \
+                     annual totals; quote the layers one by one, or the total on simulated \
+                     events",
+        })?;
+        let with_brokerage = |t: PremiumTerms| {
+            if brokerage_on_reinstatements {
+                t
+            } else {
+                t.without_brokerage_on_reinstatements()
+            }
+        };
+        let quotes = layers
+            .iter()
+            .zip(ceded)
+            .zip(expected_reinstatement_premium)
+            .map(|((layer, grid), &rp)| {
+                let price = price_grid(grid, rule, assets)?;
+                let terms = with_brokerage(PremiumTerms::from_layer(layer, rp)?);
+                let limit = layer.limit.is_finite().then_some(layer.limit * layer.share);
+                Quote::technical_with(&price, loads, terms, limit)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let deposits: f64 = quotes.iter().map(|q| q.premium).sum();
+        let weighted = |f: fn(&PremiumTerms) -> f64| {
+            if deposits > 0.0 {
+                quotes.iter().map(|q| f(&q.terms) * q.premium).sum::<f64>() / deposits
+            } else {
+                0.0
+            }
+        };
+        let terms = with_brokerage(PremiumTerms::new(
+            weighted(|t| t.reinstatement_rate),
+            weighted(|t| t.commission),
+        )?);
+        let total =
+            Quote::technical_with(&price_grid(total_grid, rule, assets)?, loads, terms, None)?;
+        Ok(Self {
+            layers: quotes,
+            total,
+        })
+    }
+
+    /// The layers' technical deposits added up less the total's: what
+    /// quoting the tower as one placement saves the cedant.
+    pub fn diversification(&self) -> f64 {
+        self.layers.iter().map(|q| q.premium).sum::<f64>() - self.total.premium
+    }
+}
+
 /// The risk premium kept per unit of deposit before the fixed expense,
 /// `(1 + κ)(1 − e − τ) − b (1 + κ or 1) − c`.
 fn keep_per_deposit(loads: &Loads, terms: &PremiumTerms) -> Result<f64> {
@@ -695,5 +845,81 @@ mod tests {
                 .with_income_tax(1.0)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn a_tower_is_quoted_layer_by_layer_and_as_one() {
+        use prospicio_prob::Poisson;
+        let sev = Grid::new(1.0, vec![0.0, 0.3, 0.3, 0.2, 0.1, 0.1]).unwrap();
+        let freq = Poisson::new(2.0).unwrap();
+        let rule = PremiumRule::cost_of_capital(0.12).unwrap();
+        let assets = Distortion::tvar(0.99).unwrap();
+        let loads = Loads::new(0.03, 0.1, 0.0).unwrap();
+        // One layer: the total is the layer.
+        let one = Tower::new(vec![
+            Layer::xol("2x2", 2.0, 2.0)
+                .unwrap()
+                .paid_reinstatements(0.5, vec![1.0])
+                .unwrap(),
+        ])
+        .unwrap();
+        let g = one.on_grid(&freq, &sev, 256).unwrap();
+        let q = TowerQuote::technical(&one, &g, &rule, &assets, loads, true).unwrap();
+        assert!((q.total.premium - q.layers[0].premium).abs() < 1e-12);
+        assert!(q.diversification().abs() < 1e-12);
+        assert!(q.layers[0].terms.reinstatement_rate > 0.0);
+        assert_eq!(q.layers[0].limit, Some(2.0));
+        // Two layers without annual terms, one with a flat commission.
+        let two = Tower::new(vec![
+            Layer::xol("1x1", 1.0, 1.0)
+                .unwrap()
+                .deposit_premium(1.0)
+                .unwrap()
+                .ceding_commission(0.1)
+                .unwrap(),
+            Layer::xol("2x2", 2.0, 2.0).unwrap(),
+        ])
+        .unwrap();
+        let g = two.on_grid(&freq, &sev, 256).unwrap();
+        let q = TowerQuote::technical(&two, &g, &rule, &assets, loads, true).unwrap();
+        let el: f64 = q.layers.iter().map(|l| l.expected_loss).sum();
+        assert!((q.total.expected_loss - el).abs() < 1e-9);
+        assert!(q.diversification() > 0.0);
+        for l in &q.layers {
+            assert!((l.return_on_capital() - 0.12).abs() < 1e-12);
+        }
+        assert!((q.total.return_on_capital() - 0.12).abs() < 1e-12);
+        // The total's terms are the layers' weighted by their deposits.
+        let d: f64 = q.layers.iter().map(|l| l.premium).sum();
+        let k: f64 = q
+            .layers
+            .iter()
+            .map(|l| l.terms.reinstatement_rate * l.premium)
+            .sum();
+        assert!((q.total.terms.reinstatement_rate - k / d).abs() < 1e-12);
+        assert!((q.total.terms.commission - 0.1 * q.layers[0].premium / d).abs() < 1e-12);
+        // Two layers with paid reinstatements: their annual totals are
+        // dependent, so there is no total to quote on the grid.
+        let reinstated = Tower::new(vec![
+            Layer::xol("1x1", 1.0, 1.0)
+                .unwrap()
+                .paid_reinstatements(1.0, vec![1.0])
+                .unwrap(),
+            Layer::xol("2x2", 2.0, 2.0)
+                .unwrap()
+                .paid_reinstatements(0.5, vec![1.0])
+                .unwrap(),
+        ])
+        .unwrap();
+        let g = reinstated.on_grid(&freq, &sev, 256).unwrap();
+        assert!(TowerQuote::technical(&reinstated, &g, &rule, &assets, loads, true).is_err());
+        // A stop-loss after a per-occurrence layer: no total either.
+        let inuring = Tower::inuring(vec![
+            vec![Layer::xol("2x2", 2.0, 2.0).unwrap()],
+            vec![Layer::stop_loss("SL", 5.0, 4.0).unwrap()],
+        ])
+        .unwrap();
+        let g = inuring.on_grid(&freq, &sev, 256).unwrap();
+        assert!(TowerQuote::technical(&inuring, &g, &rule, &assets, loads, true).is_err());
     }
 }
