@@ -16,7 +16,7 @@ This is the second part of a guide to Goldburd, Khare, Tevet and Guller's
 edition, 2025 revision) with prospicio's R package. The first part,
 [`glm-ratemaking-goldburd.qmd`](glm-ratemaking-goldburd.qmd), explains the GLM
 as a multiplicative rating plan, offsets and weights, the choice of
-distribution and the F-test, and lists what prospicio does not support. This
+distribution and the F-test, and maps the monograph's steps to prospicio. This
 part follows the monograph's model refinement and validation: continuous
 variables (section 5.4), interactions (5.6), deviance and residuals (6.1 and
 6.3), validation on held-out data with lift, double lift and loss ratio
@@ -28,9 +28,8 @@ where it can be and the workflow runs on the repository's synthetic portfolio
 authors'; what follows explains them in new words, and section numbers in
 parentheses are the monograph's. The whole part runs in about a second.
 
-The setup repeats the first part's: the 600 policies, the F distribution
-function from prospicio's `beta_distribution()`, and the claim count model
-with region that section 2 compares against. Besides `claims` (Poisson with a log-linear age effect and
+The setup repeats the first part's: the 600 policies and the claim count
+model with region that section 2 compares against. Besides `claims` (Poisson with a log-linear age effect and
 region factors 1.0, 1.2, 0.8 and 1.5 for A to D), this part uses
 `wavy_claims`, a Poisson count whose true age effect is the non-linear
 `0.8 sin(age / 8)`:
@@ -51,8 +50,6 @@ find_data <- function(name, dir = getwd()) {
 
 d <- read.csv(find_data("glm_policies.csv"))
 n <- nrow(d)
-
-f_cdf <- function(f, d1, d2) cdf(beta_distribution(d1 / 2, d2 / 2), d1 * f / (d1 * f + d2))
 
 big <- glm_fit(claims ~ age + region + offset(log(exposure)), d, family = "poisson", dispersion = "pearson")
 cat(n, "policies,", sum(d$claims), "claims,", sum(d$wavy_claims), "wavy_claims\n")
@@ -75,23 +72,24 @@ is enough, section 5.4.1 plots partial residuals: the working residual
 `(y - mu) / mu` (log link) plus the predictor's own term `b x`, against `x`.
 Plotting thousands of points hides the pattern, so they are binned, averaged
 with the working weights (`mu` times the prior weight for a Poisson on the log
-link, section 6.3.2). We do this for the `wavy_claims` count, whose true age
-effect is `0.8 sin(age / 8)`, fitted with a straight line in age:
+link, section 6.3.2); `glm_diagnostics()` returns both. We do this for the
+`wavy_claims` count, whose true age effect is `0.8 sin(age / 8)`, fitted with
+a straight line in age:
 
 ```{r}
 ages <- d$age
 y <- d$wavy_claims
 linear <- glm_fit(wavy_claims ~ age + offset(log(exposure)), d, family = "poisson")
 b_age <- linear@coefficients[["age"]]
-mu <- linear@fitted
-partial <- (y - mu) / mu + b_age * ages
+diag <- glm_diagnostics(linear)
+partial <- diag$working + b_age * ages
 cat(sprintf("linear age slope %+.4f\n", b_age))
 cat("age band   mean age  binned partial residual  fitted b*age  true 0.8 sin(age/8), centred\n")
 true_c <- mean(0.8 * sin(ages / 8))
 ord <- order(ages)
 for (k in 0:7) {
   idx <- ord[(k * n %/% 8 + 1):((k + 1) * n %/% 8)]
-  ww <- mu[idx]
+  ww <- diag$working_weights[idx]
   pr <- sum(partial[idx] * ww) / sum(ww)
   age <- sum(ages[idx] * ww) / sum(ww)
   cat(sprintf("%4.1f-%4.1f  %8.1f  %23.3f  %12.3f  %+.3f\n", ages[idx[1]], ages[idx[length(idx)]], age, pr,
@@ -117,8 +115,8 @@ fall to a trough in the thirties and forties, peak around 60 and fall again:
 the true sine, shifted by a constant of about 0.6 (partial residuals carry the
 intercept's share of the fit). The monograph offers four fixes, and prospicio
 fits all of them; in R the bins, polynomials and hinges are terms of the
-formula (`factor()`, `I(z^2)`, `pmax(0, age - k)`), which Python's `Terms`
-cannot express:
+formula (`factor()`, `I(z^2)`, `pmax(0, age - k)`), as they are terms of
+Python's `Terms`:
 
 - **bins** (5.4.2): a factor of age bands of about equal counts; each band
   floats freely, at the cost of many parameters and possible reversals;
@@ -129,8 +127,8 @@ cannot express:
 40 and the peak near 60: knots at 38 and 62);
 - **splines** (5.4.5 and 10.3): `gam_fit()` fits a penalized P-spline with
   the smoothness chosen by UBRE, the GAM of section 10.3; a natural cubic
-  spline (`splines::ns(age, df)` in the formula) also works in R but has no
-  Python counterpart, so the guide uses the GAM in both.
+  spline (`splines::ns(age, df)` in the formula, `Terms.natural_spline` in
+  Python) also works, but the guide uses the GAM in both.
 
 Each is scored three ways: training deviance, AIC (with the GAM's effective
 degrees of freedom), and the mean Poisson deviance on held-out folds from
@@ -253,16 +251,17 @@ The 0.0004 and 0.0003 gaps come from the four-decimal slopes multiplied by
 0.0006, so both tables are consistent.
 
 In R the interaction is a formula term, `region:ac` with `ac` the centred
-age (Python builds the product columns by hand). The true model has no
-interaction, and the F-test agrees; centring age at 40 also makes the region
-main effects the relativities of a 40-year-old, as in Table 12:
+age (Python's `Terms.interaction`), and `f_test()` compares the models with
+and without it. The true model has no interaction, and the F-test agrees;
+centring age at 40 also makes the region main effects the relativities of a
+40-year-old, as in Table 12:
 
 ```{r}
 d$ac <- d$age - 40
 mains <- glm_fit(claims ~ ac + region + offset(log(exposure)), d, family = "poisson", dispersion = "pearson")
 inter <- glm_fit(claims ~ ac + region + region:ac + offset(log(exposure)), d, family = "poisson", dispersion = "pearson")
-f_stat <- (mains@deviance - inter@deviance) / (3 * inter@dispersion)
-cat(sprintf("region x age: F = %.3f, percentile %.1f%%\n", f_stat, 100 * f_cdf(f_stat, 3, inter@df_resid)))
+test <- f_test(mains, inter)
+cat(sprintf("region x age: F = %.3f, percentile %.1f%%\n", test$statistic, 100 * (1 - test$p_value)))
 cat("same fit as uncentred age:", abs(mains@deviance - big@deviance) < 1e-8,
     sprintf("; base rate at age 40 %.4f (true %.4f)\n", exp(mains@coefficients[[1]]), exp(-1)))
 ```
@@ -340,13 +339,39 @@ GAM           -0.01 +0.05 -0.09 +0.03 +0.05 -0.09 +0.08 +0.02 -0.01 -0.04   sum 
 The straight line's binned residuals follow the sine, far beyond their
 standard deviation of 0.12. The GAM's show no pattern; their sum of squares is
 even below what chance gives, as expected in the training data for a model
-that adapted its shape to them. Section 6.3.1 also notes
-that deviance residuals of counts cluster and do not look normal, and suggests
-randomized quantile residuals (Dunn and Smyth) instead; prospicio has them as
-`quantile_residuals()`, and `pit_values()` gives the randomized probability
-integral transform they are built from. Section 6.4's Cook's distance and hat
-values come from `glm_diagnostics()` and `hatvalues()` and `cooks.distance()`
-on a `glm_model` (issue #334).
+that adapted its shape to them.
+
+Section 6.3.1 also notes that deviance residuals of counts cluster and do not
+look normal, and suggests randomized quantile residuals (Dunn and Smyth)
+instead: each count's residual is drawn at random within the normal scores of
+its probability step, so that under the right model they are exactly standard
+normal. prospicio has them as `residuals(type = "quantile")` on a `glm_fit()`
+model (and `quantile_residuals()` for any family, built on the randomized
+probability integral transform of `pit_values()`). On the claim count model,
+whose form is the true one:
+
+```{r}
+moments <- function(r) {
+  m <- mean(r)
+  skew <- mean((r - m)^3) / mean((r - m)^2)^1.5
+  sprintf("mean %+.2f, sd %.2f, skewness %+.2f, beyond 1.96: %.1f%%", m, sd(r), skew, 100 * mean(abs(r) > 1.96))
+}
+
+claims_fit <- glm_fit(claims ~ age + region + offset(log(exposure)), d, family = "poisson")
+claims_diag <- glm_diagnostics(claims_fit)
+cat("deviance residuals:", moments(claims_diag$deviance), "\n")
+cat("quantile residuals:", moments(residuals(claims_fit, type = "quantile", seed = 1)), "\n")
+```
+
+```text
+deviance residuals: mean -0.26, sd 0.82, skewness +1.45, beyond 1.96: 1.3%
+quantile residuals: mean -0.05, sd 1.03, skewness +0.05, beyond 1.96: 4.5%
+```
+
+With about a quarter of a claim expected per policy, the deviance residuals
+fall into two clusters (no claim and one claim), skewed and too narrow for a
+normal; the quantile residuals have the mean, spread, symmetry and tails of a
+standard normal, so a departure from those would point at the model.
 
 ## 4. Validation on held-out data (sections 4.3 and 7)
 
@@ -390,31 +415,16 @@ predictions, so the end bands hold the risks on which they disagree most, and
 asks which model's predictions the actuals follow. The loss ratio chart
 (section 7.2.3) sorts by the proposed model over the current premium, and a
 plan the proposed model improves on shows loss ratios that rise across the
-bands. prospicio has `lift_table()` but neither of these charts, so both are
-a few lines over its banding:
+bands. prospicio's `double_lift_table()` and `loss_ratio_table()` draw both,
+in bands of about equal exposure as `lift_table()` does:
 
 ```{r}
-bands_by <- function(key, cols, m = 5) {
-  idx <- order(key)
-  total <- sum(et); cum <- 0
-  out <- matrix(0, m, length(cols))
-  for (i in idx) {
-    b <- min(floor((cum + 0.5 * et[i]) / total * m), m - 1) + 1
-    cum <- cum + et[i]
-    out[b, ] <- out[b, ] + vapply(cols, function(col) col[i], 0)
-  }
-  out
-}
-
-ratio <- proposed / current
-dl <- bands_by(ratio, list(et, current, proposed, yt))
-tot <- colSums(dl)
+dl <- double_lift_table(yt, proposed, current, et, bands = 5)
 cat("double lift, band average over overall average:\n")
-for (j in 2:4) {
-  cat(sprintf("  %-9s", c("", "current", "proposed", "actual")[j]), sprintf("%.2f", (dl[, j] / dl[, 1]) / (tot[j] / tot[1])), "\n")
-}
-lr <- bands_by(ratio, list(yt, current))
-cat("loss ratio (actual / current premium):", sprintf("%.2f", lr[, 1] / lr[, 2]), "\n")
+relativity <- c(current = "b_relativity", proposed = "a_relativity", actual = "actual_relativity")
+for (name in names(relativity)) cat(sprintf("  %-9s", name), sprintf("%.2f", dl[[relativity[[name]]]]), "\n")
+lr <- loss_ratio_table(yt, proposed, current, et, bands = 5)
+cat("loss ratio (actual / current premium):", sprintf("%.2f", lr$loss_ratio), "\n")
 rate <- function(pred) round(pred / et, 10) # equal ages tie exactly
 cat(sprintf("Gini on the test set: current %.3f, proposed %.3f
 ",
@@ -451,8 +461,9 @@ matrices give the rates the monograph quotes, and footnote 17 states that the
 area under the ROC curve is `0.5 x normalized Gini + 0.5`, with the normalized
 Gini the model's Gini over that of a perfect model (each row predicted by its
 own outcome). We check the identity with a logistic model of whether a policy
-had a claim, computing the area under the curve by ranks
-(Mann-Whitney) and the Gini with `gini_index()`:
+had a claim, taking the area under the curve from `roc_curve()` (which counts
+ties as half, as the Mann-Whitney statistic does) and the normalized Gini from
+`normalized_gini()`:
 
 ```{r}
 cat(sprintf("threshold 50%%: sensitivity %.3f, specificity %.3f, false positive rate %.3f   (monograph 0.358, 0.956, 0.044)\n",
@@ -463,17 +474,14 @@ cat(sprintf("threshold 25%%: sensitivity %.1f%%, false positive rate %.1f%%   (m
 d$had_claim <- as.numeric(d$wavy_claims > 0)
 prob <- glm_fit(had_claim ~ age + pmax(0, age - 38) + pmax(0, age - 62) + log(exposure), d,
                 family = "binomial", link = "logit")@fitted
-pos <- prob[d$had_claim == 1]
-neg <- prob[d$had_claim == 0]
-auc <- mean(outer(pos, neg, ">") + 0.5 * outer(pos, neg, "=="))
-normalized <- gini_index(d$had_claim, prob) / gini_index(d$had_claim, d$had_claim)
-cat(sprintf("AUROC by ranks %.6f; 0.5 x normalized Gini + 0.5 = %.6f\n", auc, 0.5 * normalized + 0.5))
+auc <- roc_curve(d$had_claim, prob)$auc
+cat(sprintf("AUROC %.6f; 0.5 x normalized Gini + 0.5 = %.6f\n", auc, 0.5 * normalized_gini(d$had_claim, prob) + 0.5))
 ```
 
 ```text
 threshold 50%: sensitivity 0.358, specificity 0.956, false positive rate 0.044   (monograph 0.358, 0.956, 0.044)
 threshold 25%: sensitivity 68.8%, false positive rate 14.6%   (monograph 68.8%, 14.6%)
-AUROC by ranks 0.743339; 0.5 x normalized Gini + 0.5 = 0.743339
+AUROC 0.743339; 0.5 x normalized Gini + 0.5 = 0.743339
 ```
 
 The two agree to the last digit printed: for a binary outcome the Lorenz curve
@@ -508,6 +516,37 @@ fold  age      B       C       D
 The age slope stays between -0.009 and -0.013 while the region coefficients
 move by up to 0.3, about their standard errors: 155 claims leave them
 unsettled.
+
+Section 6.4 also looks for single records with an outsized pull on the
+coefficients. Cook's distance measures how far all the coefficients move,
+scaled by their covariance, when one row is left out; it is large for a row
+with both a large residual and a high leverage (hat value).
+`cooks.distance()` and `hatvalues()` return them for the claim count model of
+section 3:
+
+```{r}
+cook <- cooks.distance(claims_fit)
+top <- order(-cook)[1:3]
+cat("claims  expected  region   age  leverage  Cook's D\n")
+cat(sprintf("%6.0f %9.2f  %6s %5.1f %9.4f %9.4f\n", d$claims[top], claims_fit@fitted[top], d$region[top], d$age[top],
+            hatvalues(claims_fit)[top], cook[top]), sep = "")
+refit <- glm_fit(claims ~ age + region + offset(log(exposure)), d[-top[1], ], family = "poisson")
+cat(sprintf("region B coefficient %+.3f, without that policy %+.3f\n", claims_fit@coefficients[[3]], refit@coefficients[[3]]))
+```
+
+```text
+claims  expected  region   age  leverage  Cook's D
+     3      0.32       B  69.9    0.0116    0.0522
+     2      0.34       C  22.2    0.0201    0.0334
+     2      0.31       C  33.7    0.0151    0.0292
+region B coefficient +0.078, without that policy +0.018
+```
+
+The most influential policy had three claims in 0.9 years where 0.32
+were expected; leaving it out alone moves the region B coefficient from +0.078
+to +0.018. No leverage is high (the average is 5/600, 0.008), so the pull
+comes from the residual: with 155 claims in all, one policy can shift a thin
+level's relativity by several points, which is the monograph's reason to look.
 
 The elastic net (section 10.5) minimizes the deviance plus a penalty on the
 size of the coefficients, `lambda` times a mix of their absolute values (the
@@ -550,5 +589,5 @@ everything. At a small `lambda` the lasso is close to the unpenalized GLM,
 which gives the two noise columns small but non-zero coefficients. The shrinkage of the thin
 levels towards zero is the credibility-like behaviour the monograph points to.
 
-What prospicio does not do (yet) for this workflow is listed in the first
-part's last section, with the issues filed for the Models lane.
+The first part's last section maps each step of the monograph's workflow to
+where it lives in prospicio.

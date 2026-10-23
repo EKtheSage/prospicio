@@ -23,7 +23,7 @@ This is the R twin of the Python guide
 [`reserving-taylor-mcguire.md`](reserving-taylor-mcguire.md): the same
 sections, the same models and the same numbers. The R package calls the same
 Rust code as the Python one, and the designs below have the same columns in
-the same order, so the estimates and even the seeded simulations agree with
+the same order as the Python guide's, so the estimates and even the seeded simulations agree with
 the Python guide to every digit printed.
 
 The text of the monograph is the authors'; what follows explains it in new
@@ -33,11 +33,14 @@ reserving method to pick in general, read
 [`reserving-methods.md`](reserving-methods.md).
 
 Two parts of prospicio carry the work: `triangle()`, `chain_ladder()`,
-`mack()` and `odp_bootstrap()` on the triangle, and `glm_fit()` for the
-monograph's models cell by cell, with any design you write down. The Rust
-crate also has the cross-classified ODP as a ready-made model, `odp_glm()` in
-R (with `odp_glm_cells()` for a custom design, an analytic prediction error and
-residual diagnostics; section 10), but here the design is built by hand.
+`mack()`, `odp_bootstrap()` and `odp_glm()` on the triangle, and `glm_fit()`
+for the one model that is not on the triangle's cells, the ODP Mack model of
+section 2. `odp_glm()` fits the monograph's models to the incremental cells and
+gives their analytic prediction error, simulated reserves and residual
+diagnostics. By default it fits the cross-classified model; its `formula`
+argument takes any other design written on the cells of `odp_glm_cells()`, so
+every model in the monograph's chapter 7 is the same call with another
+formula.
 
 Each R chunk is followed by the text it prints.
 `R/prospicio/tests/test-guides.R` runs the chunks in order and requires each
@@ -106,31 +109,20 @@ over-dispersed Poisson with mean `a[k] * b[j]` and variance `phi` times the
 mean: a GLM with a log link and one indicator column per accident year and per
 development year, with `ln b[1] = 0` to make the design full rank.
 
-The design is written as a list of functions of the 1-based accident year `k`
-and development year `j`, turned into a data frame with one column per
-function, so that every model of the monograph is the same `glm_fit()` call
-with another list.
+`odp_glm(tri, "paid")` fits this model as it stands, coded with an intercept
+and origin and development factors measured from the first of each. To print
+the monograph's coding, one `ln a[k]` per accident year and no intercept, the
+formula says so. `odp_glm_cells()` gives the triangle's 100 cells, the 55
+observed and the 45 to forecast, in the order the formula is evaluated on, with
+each cell's accident and development year as a 0-based index. A formula looks
+up the variables it does not find in the cells in its own environment, so the
+1-based `k` and `j` are defined once here:
 
 ```{r}
-cells <- do.call(rbind, lapply(1:K, function(k) data.frame(k = k, j = seq_len(K - k + 1))))
-future <- do.call(rbind, lapply(2:K, function(k) data.frame(k = k, j = (K - k + 2):K)))
-y <- unlist(INCREMENTS)
-
-frame <- function(columns, at) {
-  as.data.frame(lapply(columns, function(f) mapply(f, at$k, at$j)))
-}
-fit_glm <- function(columns, family = "poisson", ...) {
-  d <- frame(columns, cells)
-  d$y <- y
-  form <- stats::as.formula(paste("y ~ 0 +", paste(names(columns), collapse = " + ")))
-  glm_fit(form, d, family = family, link = "log", ...)
-}
-row <- function(a) function(k, j) as.numeric(k == a)
-col <- function(b) function(k, j) as.numeric(j == b)
-
-CROSS <- c(stats::setNames(lapply(1:K, row), paste0("lna", 1:K)),
-           stats::setNames(lapply(2:K, col), paste0("lnb", 2:K)))
-cc <- fit_glm(CROSS, dispersion = "pearson")
+cells <- odp_glm_cells(tri, "paid")
+k <- cells$origin_index + 1 # accident year, 1 to 10
+j <- cells$development_index + 1 # development year, 1 to 10
+cc <- odp_glm(tri, "paid", formula = ~ 0 + factor(k) + factor(j))
 est <- cc@coefficients
 se <- cc@std_errors
 cat(" j or k   ln a    s.e.    ln b    s.e.\n")
@@ -138,7 +130,7 @@ cat(sprintf("%6d %7.3f %7.4f   0.000\n", 1, est[1], se[1]))
 for (i in 2:K) {
   cat(sprintf("%6d %7.3f %7.4f %7.3f %7.4f\n", i, est[i], se[i], est[K + i - 1], se[K + i - 1]))
 }
-cat(sprintf("phi %.1f on %.0f degrees of freedom\n", cc@dispersion, cc@df_resid))
+cat(sprintf("phi %.1f on %.0f degrees of freedom\n", cc@dispersion, sum(cells$observed) - length(est)))
 ```
 
 ```text
@@ -158,8 +150,7 @@ phi 114.5 on 36 degrees of freedom
 
 This is Table 5-1 (and the first columns of Table 3-5) digit for digit, and
 the monograph's scale parameter of 114.5: Pearson's chi-square over the
-55 - 19 = 36 residual degrees of freedom, which `dispersion = "pearson"`
-selects. Rescaled so the `b[j]` sum to 1, `a[k]` is the ultimate and `b[j]` the
+55 - 19 = 36 residual degrees of freedom, which `odp_glm()` uses. Rescaled so the `b[j]` sum to 1, `a[k]` is the ultimate and `b[j]` the
 payment pattern (Table 3-3), and the future cells summed by year are the chain
 ladder's reserves:
 
@@ -168,11 +159,8 @@ a <- exp(est[1:K])
 b <- exp(c(0, est[(K + 1):(2 * K - 1)]))
 cat("a (ultimates)", round(a * sum(b)), "\n")
 cat("b (pattern)  ", sprintf("%.3f", b / sum(b)), "\n")
-fitted_future <- predict(cc, frame(CROSS, future))
-origin_of <- future$k
-by_year <- tapply(fitted_future, origin_of, sum)
-cat("GLM reserves ", round(by_year), round(sum(fitted_future)), "\n")
-cat("largest gap to the chain ladder below 1e-6:", max(abs(by_year - cl@reserve[-1])) < 1e-6, "\n")
+cat("GLM reserves ", round(cc@reserves[-1]), round(cc@total_reserve), "\n")
+cat("largest gap to the chain ladder below 1e-6:", max(abs(cc@reserves[-1] - cl@reserve[-1])) < 1e-6, "\n")
 ```
 
 ```text
@@ -187,7 +175,10 @@ under the ODP equates the fitted and actual total of every row and column,
 which is what the chain ladder preserves too (the monograph's chapter 3).
 
 The *ODP Mack* model works on the age-to-age factors: each `f[k, j] - 1` is
-ODP with mean `f[j] - 1` and prior weight the cumulative paid `X[k, j]`.
+ODP with mean `f[j] - 1` and prior weight the cumulative paid `X[k, j]`. Its
+cells are the age-to-age links, not the triangle's increments, so it is fitted
+with `glm_fit()`, where `dispersion = "pearson"` makes the Poisson
+over-dispersed.
 
 ```{r}
 links <- do.call(rbind, lapply(1:(K - 1), function(k) data.frame(k = k, j = seq_len(K - k))))
@@ -210,16 +201,12 @@ same forecast but not the same prediction error (section 4).
 
 The MSEP of a sum of future cells is process error, `phi` times their mean,
 plus parameter error `g' Sigma g`, with `g = sum of mu * x` over the cells and
-`Sigma` the coefficients' covariance (the monograph's (5-11) to (5-13)).
+`Sigma` the coefficients' covariance (the monograph's (5-11) to (5-13)). The
+fit's `prediction_error` does it for each accident year and the total,
+whatever the design.
 
 ```{r}
-X <- as.matrix(frame(CROSS, future))
-Sigma <- cc@covariance
-phi <- cc@dispersion
-msep <- function(mu, X, Sigma, phi, mask) {
-  g <- colSums(X[mask, , drop = FALSE] * mu[mask])
-  phi * sum(mu[mask]) + drop(g %*% Sigma %*% g)
-}
+pe <- cc@prediction_error[-1, ] # a row per accident year 1989 to 1997, then Total
 TABLE_5_4 <- rbind( # forecast, RMSEP, CVP %
   c(3398, 924, 27.2), c(8155, 1363, 16.7), c(14579, 1775, 12.2), c(22645, 2169, 9.6),
   c(31865, 2523, 7.9), c(45753, 3036, 6.6), c(60093, 3577, 6.0), c(80983, 4538, 5.6),
@@ -227,11 +214,8 @@ TABLE_5_4 <- rbind( # forecast, RMSEP, CVP %
 )
 cat("year    forecast  RMSEP   CVP |  book: forecast  RMSEP   CVP\n")
 for (i in 1:K) {
-  mask <- if (i < K) origin_of == i + 1 else rep(TRUE, length(origin_of))
-  r <- sum(fitted_future[mask])
-  rmsep <- sqrt(msep(fitted_future, X, Sigma, phi, mask))
-  cat(sprintf("%-6s %9s %6s %5.1f |  %12s %6s %5.1f\n", if (i < K) YEARS[i + 1] else "Total",
-              comma(r), comma(rmsep), 100 * rmsep / r,
+  cat(sprintf("%-6s %9s %6s %5.1f |  %12s %6s %5.1f\n", pe$origin[i],
+              comma(pe$reserve[i]), comma(pe$rmsep[i]), 100 * pe$cv[i],
               comma(TABLE_5_4[i, 1]), comma(TABLE_5_4[i, 2]), TABLE_5_4[i, 3]))
 }
 ```
@@ -254,11 +238,9 @@ Every number in Table 5-4 matches. The split, and the total if the years were
 independent:
 
 ```{r}
-everything <- rep(TRUE, length(origin_of))
-g_total <- colSums(X * fitted_future)
-cat(sprintf("process   %7s\n", comma(sqrt(phi * sum(fitted_future)))))
-cat(sprintf("parameter %7s\n", comma(sqrt(drop(g_total %*% Sigma %*% g_total)))))
-by_year_msep <- sapply(2:K, function(k) msep(fitted_future, X, Sigma, phi, origin_of == k))
+cat(sprintf("process   %7s\n", comma(pe$process_se[K])))
+cat(sprintf("parameter %7s\n", comma(pe$parameter_se[K])))
+by_year_msep <- pe$rmsep[-K]^2
 cat(sprintf("total if the years were independent %7s  (book 10,275)\n", comma(sqrt(sum(by_year_msep)))))
 ```
 
@@ -275,15 +257,15 @@ share the development-year parameters.
 
 The monograph's parametric bootstrap (section 5.4.2) draws the coefficients
 from their normal approximation and adds process error, 10,000 times.
-`predict_distribution()` with `parameters = "normal"` does that, with process
-error `phi * Poisson(mu / phi)`.
+`predict_distribution()` of an `odp_glm()` fit with `parameters = "normal"`
+does that, with process error `phi * Poisson(mu / phi)`; its columns are the
+future cells of the fit's `future`, summed here by accident year.
 
 ```{r}
-by_year_draws <- function(fit, columns, seed, n_sims = 10000) {
-  pd <- predict_distribution(fit, frame(columns, future), n_sims = n_sims, seed = seed,
-                             parameters = "normal")
+by_year_draws <- function(fit, seed, n_sims = 10000) {
+  pd <- predict_distribution(fit, n_sims = n_sims, seed = seed, parameters = "normal")
   m <- draw_matrix(pd) # one row per draw, one column per future cell
-  sapply(2:K, function(k) rowSums(m[, origin_of == k, drop = FALSE]))
+  sapply(split(seq_len(ncol(m)), fit@future$origin), function(i) rowSums(m[, i, drop = FALSE]))
 }
 show <- function(sims, book) {
   cat("year    mean    RMSEP   CVP |  book: mean   RMSEP   CVP\n")
@@ -300,7 +282,7 @@ TABLE_5_5 <- rbind(
   c(32043, 2525, 7.9), c(45963, 3057, 6.7), c(60273, 3608, 6.0), c(81249, 4589, 5.6),
   c(106204, 6831, 6.4), c(374992, 14286, 3.8)
 )
-show(by_year_draws(cc, CROSS, seed = 1), TABLE_5_5)
+show(by_year_draws(cc, seed = 1), TABLE_5_5)
 ```
 
 ```text
@@ -321,12 +303,12 @@ The results agree with Table 5-5 within simulation noise (a standard deviation
 from 10,000 draws carries a relative error of about 0.7%). Both sets of means
 sit above the chain ladder: drawing `beta` from a normal and taking
 `exp(x' beta)` gives each cell the mean `mu * exp(v / 2)`, with `v = x' Sigma x`,
-the lognormal bias:
+the lognormal bias. The fit's `future` has it cell by cell, as
+`predictive_mean`:
 
 ```{r}
-v <- rowSums((X %*% Sigma) * X)
-cat(sprintf("chain ladder %9s\n", comma(sum(fitted_future))))
-cat(sprintf("E[simulated] %9s   (book's bootstrap mean 374,992)\n", comma(sum(fitted_future * exp(v / 2)))))
+cat(sprintf("chain ladder %9s\n", comma(cc@total_reserve)))
+cat(sprintf("E[simulated] %9s   (book's bootstrap mean 374,992)\n", comma(sum(cc@future$predictive_mean))))
 ```
 
 ```text
@@ -367,48 +349,40 @@ one `phi`. Same forecast, different prediction error.
 ## 5. Residual diagnostics
 
 The standardized deviance residual divides a cell's deviance residual by
-`sqrt(phi * (1 - h))`, with `h` its leverage. `glm_fit()` returns neither
-(section 10), so they are computed from the fitted means: for a Poisson GLM
-with a log link a cell's IRLS weight is its mean.
+`sqrt(phi * (1 - h))`, with `h` its leverage. The fit's `residuals` has them
+for every observed cell, and `residual_summary()` groups them by development
+year, accident year or calendar year:
 
 ```{r}
-standardized_deviance <- function(fit, columns) {
-  Xo <- as.matrix(frame(columns, cells))
-  mu <- fit@fitted
-  wx <- Xo * sqrt(mu)
-  h <- rowSums((wx %*% solve(crossprod(wx))) * wx)
-  d <- 2 * (y * log(y / mu) - (y - mu))
-  r <- sign(y - mu) * sqrt(pmax(d, 0) / (fit@dispersion * (1 - h)))
-  ifelse(h > 1 - 1e-9, NA, r) # a corner cell fits exactly
-}
-res <- standardized_deviance(cc, CROSS)
+dev <- residual_summary(cc, "development")
+cal <- residual_summary(cc, "calendar")
 cat("by development year 1 to 8, spread (sd) of the residuals\n")
-cat(sprintf("%.2f", sapply(1:8, function(j) {
-  x <- res[cells$j == j & !is.na(res)]
-  sqrt(mean((x - mean(x))^2))
-})), "\n")
+cat(sprintf("%.2f", dev$sd[1:8]), "\n")
 cat("by calendar year 1988 to 1997, mean residual\n")
-cat(sprintf("%+.2f", sapply(1:K, function(c) mean(res[cells$k + cells$j - 1 == c], na.rm = TRUE))), "\n")
+cat(sprintf("%+.2f", cal$mean), "\n")
 ```
 
 ```text
 by development year 1 to 8, spread (sd) of the residuals
-1.34 1.59 0.88 0.62 0.83 0.77 0.65 0.40
+1.42 1.68 0.94 0.67 0.91 0.86 0.75 0.49
 by calendar year 1988 to 1997, mean residual
 -0.38 -0.13 -0.40 +0.56 +0.42 -0.43 +0.23 -0.27 -0.26 +0.32
 ```
 
-The two corner cells (1988's last year, 1997's first) have leverage one and no
-residual. Development years 1 and 2 scatter more than the later ones (the
+The spreads are sample standard deviations, divisor `n - 1`; an earlier
+version of this guide divided by `n`, which printed each 6% to 18% lower (1.34
+for development year 1, 0.40 for year 8). The residuals and the calendar-year
+means are unchanged. The two corner cells (1988's last year, 1997's first)
+have leverage one and no residual. Development years 1 and 2 scatter more than the later ones (the
 monograph's Figure 6-19) and the calendar-year means swing from negative to
 positive (its Figure 6-20). The ratio of actual to fitted by cell is the
 monograph's heat map, Figure 6-22:
 
 ```{r}
 heat_map <- function(fit) {
-  ratio <- y / fit@fitted
-  for (k in 1:K) {
-    cat(YEARS[k], sprintf("%4d", round(100 * ratio[cells$k == k])), "\n")
+  r <- fit@residuals
+  for (year in YEARS) {
+    cat(year, sprintf("%4d", round(100 * r$actual_to_fitted[r$origin == year])), "\n")
   }
 }
 heat_map(cc)
@@ -436,12 +410,10 @@ shifted, an interaction the cross-classified model cannot express.
 Chapter 7 replaces the ten `ln a[k]` by a quadratic in `k` (model 7-2), then
 the development effects by a straight line in `j` with a kink at 7.5 plus a
 term for development year 2 (model 7-10), and adds the interactions the heat
-map pointed to (model 7-14). Each is the same call with another design:
+map pointed to (model 7-14). Each is the same call with another formula:
 
 ```{r}
-QUAD <- c(list(a1 = function(k, j) k, a2 = function(k, j) k * k),
-          stats::setNames(lapply(1:K, col), paste0("lnb", 1:K)))
-quad <- fit_glm(QUAD, dispersion = "pearson")
+quad <- odp_glm(tri, "paid", formula = ~ 0 + k + I(k^2) + factor(j))
 q <- quad@coefficients
 level <- q[[3]]
 cat(sprintf("accident year effect %.3f + %.4f k %.4f k^2  (book 10.471 + 0.2001 k - 0.0179 k^2)\n",
@@ -457,15 +429,10 @@ book         -0.206 -0.750 -1.015 -1.452 -1.830 -2.142 -2.353 -2.514 -2.661
 ```
 
 ```{r}
-early <- function(k) as.numeric(k <= 6)
-SMOOTH <- list(a0 = function(k, j) 1, a1 = function(k, j) k, a2 = function(k, j) k * k,
-               b1 = function(k, j) j - 1, b2 = function(k, j) max(0, j - 7.5), c = col(2))
-INTERACT <- c(SMOOTH[1:5], list(c1 = col(2), c2 = col(4),
-                                d1 = function(k, j) (j == 1) * early(k),
-                                d2 = function(k, j) (j == 2) * early(k),
-                                d3 = function(k, j) (j == 3) * k))
-smooth <- fit_glm(SMOOTH, dispersion = "pearson")
-interact <- fit_glm(INTERACT, dispersion = "pearson")
+early <- as.numeric(k <= 6) # accident years 1 to 6
+smooth <- odp_glm(tri, "paid", formula = ~ k + I(k^2) + I(j - 1) + I(pmax(0, j - 7.5)) + I(1 * (j == 2)))
+interact <- odp_glm(tri, "paid", formula = ~ k + I(k^2) + I(j - 1) + I(pmax(0, j - 7.5)) + I(1 * (j == 2)) +
+                      I(1 * (j == 4)) + I((j == 1) * early) + I((j == 2) * early) + I((j == 3) * k))
 cat("model 7-10  ", sprintf("%7.4f", smooth@coefficients), "\n")
 cat("Table 7-3   ", sprintf("%7.3f", c(10.469, 0.200, -0.018, -0.358, 0.236, 0.155)), "\n")
 cat("model 7-14  ", sprintf("%7.4f", interact@coefficients), "\n")
@@ -506,22 +473,20 @@ heat_map(smooth)
 
 ## 7. Forecasts and prediction error of the smaller models
 
-The delta method of section 3 applies to any design; the parametric bootstrap
-is the monograph's Tables 7-2, 7-4 and 7-6.
+The delta method of section 3 applies to any design (the `Total` row of
+`prediction_error`); the parametric bootstrap is the monograph's Tables 7-2,
+7-4 and 7-6.
 
 ```{r}
 BOOK <- list("7-2 quadratic" = c(373641, 13086), "7-10 smooth" = c(373403, 13248),
              "7-14 interactions" = c(371559, 10907))
-models <- list(list(quad, QUAD), list(smooth, SMOOTH), list(interact, INTERACT))
+models <- list(quad, smooth, interact)
 cat("model              delta: forecast  RMSEP | bootstrap: mean  RMSEP |  book: mean  RMSEP\n")
 for (i in seq_along(BOOK)) {
-  fit <- models[[i]][[1]]
-  columns <- models[[i]][[2]]
-  Xm <- as.matrix(frame(columns, future))
-  mu <- predict(fit, frame(columns, future))
-  rmsep <- sqrt(msep(mu, Xm, fit@covariance, fit@dispersion, everything))
-  total <- rowSums(by_year_draws(fit, columns, seed = 1))
-  cat(sprintf("%-18s %15s %6s | %15s %6s | %10s %6s\n", names(BOOK)[i], comma(sum(mu)), comma(rmsep),
+  fit <- models[[i]]
+  delta <- fit@prediction_error[K + 1, ] # the Total row
+  total <- rowSums(by_year_draws(fit, seed = 1))
+  cat(sprintf("%-18s %15s %6s | %15s %6s | %10s %6s\n", names(BOOK)[i], comma(delta$reserve), comma(delta$rmsep),
               comma(mean(total)), comma(stats::sd(total)), comma(BOOK[[i]][1]), comma(BOOK[[i]][2])))
 }
 ```
@@ -539,7 +504,7 @@ TABLE_7_6 <- rbind(
   c(32505, 1677, 5.2), c(45771, 2018, 4.4), c(62998, 2459, 3.9), c(79601, 3079, 3.9),
   c(101742, 4094, 4.0), c(371559, 10907, 2.9)
 )
-show(by_year_draws(interact, INTERACT, seed = 1), TABLE_7_6)
+show(by_year_draws(interact, seed = 1), TABLE_7_6)
 ```
 
 ```text
@@ -568,6 +533,7 @@ Table 7-7's AIC and BIC use the Poisson kernel `sum(y log(mu) - mu) / phi` with
 raw residuals.
 
 ```{r}
+y <- cc@residuals$actual # the 55 observed increments
 n <- length(y)
 phi_fixed <- interact@dispersion
 TABLE_7_7 <- rbind(c(-509392, -509354, 6685428), c(-509400, -509376, 5075351),
@@ -576,7 +542,7 @@ labels <- c("chain ladder", "7-2 quadratic", "7-10 smooth", "7-14 interactions")
 cat("model                  AIC        BIC       GCV |  book:  AIC        BIC       GCV\n")
 for (i in 1:4) {
   fit <- list(cc, quad, smooth, interact)[[i]]
-  mu <- fit@fitted
+  mu <- fit@residuals$fitted
   p <- length(fit@coefficients)
   loglik <- sum(y * log(mu) - mu) / phi_fixed
   gcv <- n * sum((y - mu)^2) / (n - p)^2
@@ -602,14 +568,15 @@ the ranking is the monograph's.
 ## 9. A gamma cross-classified model
 
 A gamma error, variance proportional to the mean squared, is one argument
-away. The monograph prints no gamma results for this triangle.
+away, `family = "gamma"` (or `"tweedie"` with a `power` between 1 and 2), here
+on the default cross-classified design. The monograph prints no gamma results
+for this triangle.
 
 ```{r}
-gamma <- fit_glm(CROSS, family = "gamma")
-gamma_future <- predict(gamma, frame(CROSS, future))
+gamma <- odp_glm(tri, "paid", family = "gamma")
 cat(sprintf("gamma phi %.4f\n", gamma@dispersion))
-cat("gamma reserves", round(tapply(gamma_future, origin_of, sum)), "\n")
-cat(sprintf("gamma total %s  (chain ladder %s)\n", comma(sum(gamma_future)), comma(sum(fitted_future))))
+cat("gamma reserves", round(gamma@reserves[-1]), "\n")
+cat(sprintf("gamma total %s  (chain ladder %s)\n", comma(gamma@total_reserve), comma(cc@total_reserve)))
 ```
 
 ```text
@@ -619,7 +586,8 @@ gamma total 373,466  (chain ladder 373,346)
 ```
 
 The gamma fit no longer preserves the row and column totals, so its forecasts
-are close to, but not, the chain ladder's.
+are close to, but not, the chain ladder's. Its `prediction_error` uses the
+process variance `phi * mu^2`.
 
 ## 10. What matched, and what the R package cannot do yet
 
@@ -627,15 +595,20 @@ The matches and differences are those of the Python guide: Tables 3-1 to 3-5,
 5-1, 5-4, 7-1, 7-3 and 7-5 and the heat maps exactly; the bootstraps within
 noise, with means raised by the lognormal bias; Table 7-7 within about one unit.
 
-**Gaps closed since this guide was written**, in the library now:
-
-- *Reserving lane* (#333): `odp_glm()` fits the cross-classified ODP on a
-  `triangle`; `odp_glm_cells()` and `odp_glm(formula = ~ ...)` take a custom design
-  (parameter reduction, calendar-year terms, interactions), the fit carries the
-  analytic prediction error by origin and in total, `residual_summary()` gives the
-  standardized residuals by development, accident or calendar period, and
-  `family =` and `power =` fit a gamma or Tweedie error.
-- *Models lane* (#334): `glm_diagnostics()` gives residuals, hat values and
-  Cook's distances, `prediction_se()` and `sum_prediction_error()` the standard
-  errors of a prediction and of a sum of predictions, and a `glm_model` has
-  `residuals()`, `hatvalues()`, `rstandard()` and `cooks.distance()`.
+**Gaps closed since this guide was first written.** Earlier versions built
+the design matrices, the delta-method MSEP, the standardized residuals and the
+heat map by hand. The library now does all of them, and the guide uses it:
+`odp_glm()` fits the cross-classified ODP and, through `formula` on the cells
+of `odp_glm_cells()`, any other design (models 7-2, 7-10 and 7-14); the fit's
+`prediction_error` gives the delta-method MSEP by accident year and in total
+(Table 5-4); `predict_distribution()` and the `future` cells'
+`predictive_mean` the parametric bootstrap and its lognormal bias; the
+`residuals` and `residual_summary()` the standardized residuals and the heat
+maps; and `family =` and `power =` a gamma or Tweedie error. What is still
+written out here is only the monograph's own: each model's formula, the ODP
+Mack model of section 2 (a `glm_fit()` on the age-to-age factors, which are
+not the triangle's cells) and the information criteria of Table 7-7, whose
+log-likelihood the monograph defines with a fixed `phi`. For a `glm_fit()`
+model, `glm_diagnostics()` gives residuals, hat values and Cook's distances,
+and `prediction_se()` and `sum_prediction_error()` the standard errors of a
+prediction and of a sum of predictions.

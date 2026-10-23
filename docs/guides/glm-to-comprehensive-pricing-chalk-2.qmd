@@ -32,7 +32,8 @@ The chunk below rebuilds what part 1 built and this part uses, in one go: the
 simulated portfolio with its known truth (20,000 policies, folds from the
 policy number, folds 7 to 9 for testing), the pseudo-R2 helper and
 cross-validation loop, the baseline GLM and boosting formulas, the age steps
-the lasso keeps, and the make's out-of-fold target encoding. Part 1 explains
+the lasso keeps, and the make's out-of-fold target encoding (`target_encode()`,
+with `encode_target()` for rows outside the training folds). Part 1 explains
 each piece.
 
 ```{r}
@@ -106,30 +107,19 @@ for (j in 0:6) {
 }
 expected[!train] <- predict(glm_fit(f_base, pf[train, ]), pf[!train, ])
 
-# Sums by make, one per make 0 to 299.
-by_make <- function(rows, v) {
-  out <- numeric(300)
-  s <- rowsum(v[rows], pf$make[rows])
-  out[as.integer(rownames(s)) + 1] <- s
-  out
-}
+make_level <- as.character(pf$make)
 
-# Each make's shrunk actual-to-expected ratio from the rows in `source`.
-encode <- function(source, K) {
-  actual <- by_make(source, pf$claims)
-  exp_ <- by_make(source, expected)
-  z <- by_make(source, pf$exposure) / (by_make(source, pf$exposure) + K)
-  1 - z + z * ifelse(exp_ > 0, actual / exp_, 1)
-}
-
-# Per policy: a training row in fold j is encoded from the training folds other than j
-# (and other than the held-out fold); every other row from all training folds but the held-out one.
+# Per policy, the log of the make's shrunk actual-to-expected ratio: a training row in fold j is
+# encoded from the training folds other than j (and other than the held-out fold), every other row
+# from all training folds but the held-out one.
 make_feature <- function(K, held_out = -1) {
-  te <- encode(train & pf$fold != held_out, K)[pf$make + 1]
-  for (j in setdiff(0:6, held_out)) {
-    in_j <- pf$fold == j
-    te[in_j] <- encode(train & pf$fold != j & pf$fold != held_out, K)[pf$make[in_j] + 1]
-  }
+  src <- which(train & pf$fold != held_out)
+  splits <- lapply(setdiff(0:6, held_out), function(j) {
+    list(train = which(pf$fold[src] != j), test = which(pf$fold[src] == j))
+  })
+  enc <- target_encode(make_level[src], pf$claims[src], expected[src], splits, K, pf$exposure[src])
+  te <- encode_target(enc$encoding, make_level)
+  te[src] <- enc$rows
   log(te)
 }
 
@@ -377,55 +367,45 @@ of section 9.2 about correlated features) and the same make encoding, as the
 monograph does: it notes that the two models would share one encoding but for
 its boosting library's built-in one. As in section 9.5.1, each importance is
 computed on the held-out fold of each of the seven cross-validation models and
-averaged, as the loss of pseudo-R2 when the feature is shuffled. The loop also
-keeps what the next two sections need: the losses from shuffling pairs and the
-partial dependence on age.
-
-The shuffle of each fold is the Python guide's (numpy's generator seeded with
-the fold number), read from the `shuffle` column of the data file: row `i` of
-fold `k` takes the values of the fold's row `shuffle[i] + 1`.
+averaged, as the loss of pseudo-R2 when the feature is shuffled;
+`permutation_importance()` takes a score to minimize, so the pseudo-R2 goes in
+as its negative. Its `splits` argument would fit the models itself, but the
+make encoding here is rebuilt for each held-out fold, so the loop fits the two
+models on each fold, explains them on the fold's held-out rows (seeding the
+shuffle with the fold) and averages the seven results. The same loop runs what
+the next two sections need: `partial_dependence()` on age and the pairwise
+`interaction_screen()`. The shuffles come from prospicio's `permutation()`, so
+they are the Python guide's and so are the numbers.
 
 ```{r}
 veh_knots <- c(2, 4, 6, 8, 10)
 features <- c("age", "veh_age", "region", "power", "log_te", "noise")
 ages <- c(18, 21, 25, 40, 60, 75)
 
-# The step columns and the interaction are rebuilt from the frame's own (possibly shuffled) columns.
-glm_frame <- function(f) {
-  for (a in kept) f[[paste0("age_stp_", a)]] <- as.numeric(f$age >= a)
-  for (v in veh_knots) f[[paste0("veh_stp_", v)]] <- as.numeric(f$veh_age >= v)
-  f$young_high <- as.numeric(f$age < 25 & f$power == "high")
-  f
-}
+# The formula builds the step columns and the interaction from the frame's own columns, so
+# predict() rebuilds them on whatever frame the helpers pass (shuffled, or with age set to one value).
 glm_formula <- function(interaction = FALSE) {
-  reformulate(c(paste0("age_stp_", kept), paste0("veh_stp_", veh_knots), "region", "power", "log_te",
-                if (interaction) "young_high", "offset(log(exposure))"), "claims")
+  reformulate(c(sprintf("I(as.numeric(age >= %d))", kept), sprintf("I(as.numeric(veh_age >= %d))", veh_knots),
+                "region", "power", "log_te", if (interaction) "I(as.numeric(age < 25 & power == 'high'))",
+                "offset(log(exposure))"), "claims")
 }
 f_gbm <- claims ~ age + veh_age + region_code + power_code + log_te + noise + offset(log(exposure))
 
 frame <- function(mask, log_te) {
-  f <- pf[mask, c("age", "veh_age", "region", "power", "noise", "exposure", "claims", "shuffle")]
+  f <- pf[mask, c("age", "veh_age", "region", "power", "region_code", "power_code", "noise", "exposure",
+                  "claims")]
   f$log_te <- log_te[mask]
   f
 }
 
-shuffled <- function(f, names) {
-  for (x in names) f[[x]] <- f[[x]][f$shuffle + 1]
-  f
-}
-
-fit_model <- list(
-  GLM = function(f) glm_fit(glm_formula(), glm_frame(f)),
-  GBM = function(f) gbm_fit(f_gbm, tree_codes(f))
-)
-predict_model <- list(
-  GLM = function(m, f) predict(m, glm_frame(f)),
-  GBM = function(m, f) predict(m, tree_codes(f))
-)
-score_full <- list(GLM = numeric(), GBM = numeric())
-loss <- list(GLM = list(), GBM = list())
-pair_loss <- list()
-pd_by_age <- list(GLM = list(), GBM = list())
+# Region and power are shuffled together with the trees' codes for them.
+groups <- list(age = "age", veh_age = "veh_age", region = c("region", "region_code"),
+               power = c("power", "power_code"), log_te = "log_te", noise = "noise")
+neg_r2 <- function(model, f) -pseudo_r2(f$claims, predict(model, f), f$exposure)
+fit_model <- list(GLM = function(f) glm_fit(glm_formula(), f), GBM = function(f) gbm_fit(f_gbm, f))
+imp_by <- list(GLM = list(), GBM = list())
+pd_by <- list(GLM = list(), GBM = list())
+screen_by <- list()
 glm_with_interaction <- numeric()
 for (k in 0:6) {
   log_te_k <- make_feature(64, held_out = k)
@@ -433,31 +413,20 @@ for (k in 0:6) {
   val_f <- frame(pf$fold == k, log_te_k)
   for (m in c("GLM", "GBM")) {
     model <- fit_model[[m]](fit_f)
-    score <- function(f) pseudo_r2(val_f$claims, predict_model[[m]](model, f), f$exposure)
-    full <- score(val_f)
-    score_full[[m]] <- c(score_full[[m]], full)
-    for (x in features) loss[[m]][[x]] <- c(loss[[m]][[x]], full - score(shuffled(val_f, x)))
-    if (m == "GBM") {
-      for (i in seq_along(features)) {
-        for (b in features[-seq_len(i)]) {
-          pair <- paste(features[i], b)
-          pair_loss[[pair]] <- c(pair_loss[[pair]], full - score(shuffled(val_f, c(features[i], b))))
-        }
-      }
-    }
-    pd_by_age[[m]][[k + 1]] <- vapply(ages, function(v) {
-      f <- val_f
-      f$age <- v
-      mean(predict_model[[m]](model, f))
-    }, double(1))
+    imp_by[[m]][[k + 1]] <- permutation_importance(model, val_f, neg_r2, groups, seed = k)
+    pd_by[[m]][[k + 1]] <- partial_dependence(model, val_f, "age", ages)$mean
+    if (m == "GBM") screen_by[[k + 1]] <- interaction_screen(model, val_f, neg_r2, groups, seed = k)
   }
-  with_i <- glm_fit(glm_formula(TRUE), glm_frame(fit_f))
+  with_i <- glm_fit(glm_formula(TRUE), fit_f)
   glm_with_interaction <- c(glm_with_interaction,
-                            pseudo_r2(val_f$claims, predict(with_i, glm_frame(val_f)), val_f$exposure))
+                            pseudo_r2(val_f$claims, predict(with_i, val_f), val_f$exposure))
 }
 
-mean_loss <- lapply(loss, function(l) vapply(l, mean, double(1)))
-cat(sprintf("cv pseudo-R2: GLM %.3f, GBM %.3f\n", mean(score_full$GLM), mean(score_full$GBM)))
+score_full <- lapply(imp_by, function(v) -mean(vapply(v, attr, double(1), "base")))
+mean_loss <- lapply(imp_by, function(v) {
+  setNames(rowMeans(sapply(v, function(imp) imp$importance)), v[[1]]$feature)
+})
+cat(sprintf("cv pseudo-R2: GLM %.3f, GBM %.3f\n", score_full$GLM, score_full$GBM))
 cat(sprintf("%-8s %9s %9s\n", "feature", "GLM loss", "GBM loss"))
 for (x in features[order(-mean_loss$GLM[features])]) {
   cat(sprintf("%-8s %9.3f %9.3f\n", x, mean_loss$GLM[[x]], mean_loss$GBM[[x]]))
@@ -467,12 +436,12 @@ for (x in features[order(-mean_loss$GLM[features])]) {
 ```text
 cv pseudo-R2: GLM 0.055, GBM 0.048
 feature   GLM loss  GBM loss
-log_te       0.037     0.032
-age          0.036     0.035
-power        0.017     0.017
-veh_age      0.010     0.008
-region       0.010     0.004
-noise        0.000    -0.001
+log_te       0.039     0.033
+age          0.037     0.034
+power        0.019     0.019
+veh_age      0.011     0.009
+region       0.008     0.003
+noise        0.000    -0.000
 ```
 
 The two models agree on which features matter and roughly in which order, and
@@ -514,7 +483,7 @@ the interaction):
 
 ```{r}
 true_age <- exp(0.9 * exp(-(ages - 18) / 6) + 0.0015 * pmax(ages - 60, 0)^1.5)
-pd_mean <- lapply(pd_by_age, function(v) colMeans(do.call(rbind, v)))
+pd_mean <- lapply(pd_by, function(v) colMeans(do.call(rbind, v)))
 for (i in seq_along(ages)) {
   cat(sprintf("age %d: GLM %.2f  GBM %.2f  true (low power) %.2f\n", ages[i],
               pd_mean$GLM[i] / pd_mean$GLM[4], pd_mean$GBM[i] / pd_mean$GBM[4], true_age[i] / true_age[4]))
@@ -568,27 +537,25 @@ cross-validated score with and without one more column for the pair it puts
 first:
 
 ```{r}
-strength <- vapply(names(pair_loss), function(pair) {
-  ab <- strsplit(pair, " ")[[1]]
-  mean_loss$GBM[[ab[1]]] + mean_loss$GBM[[ab[2]]] - mean(pair_loss[[pair]])
-}, double(1))
-for (pair in names(sort(strength, decreasing = TRUE))[1:3]) {
-  ab <- strsplit(pair, " ")[[1]]
-  cat(sprintf("%-8s x %-8s %.4f\n", ab[1], ab[2], strength[[pair]]))
-}
+screen <- screen_by[[1]][c("a", "b")]
+screen$strength <- rowMeans(sapply(screen_by, function(s) s$strength))
+screen <- screen[order(-screen$strength), ]
+for (i in 1:3) cat(sprintf("%-8s x %-8s %.4f\n", screen$a[i], screen$b[i], screen$strength[i]))
 cat(sprintf("GLM cv pseudo-R2 %.3f, with a young-driver high-power term %.3f\n",
-            mean(score_full$GLM), mean(glm_with_interaction)))
+            score_full$GLM, mean(glm_with_interaction)))
 ```
 
 ```text
-age      x power    0.0044
-age      x log_te   0.0025
-region   x log_te   0.0010
+age      x power    0.0051
+age      x log_te   0.0012
+veh_age  x noise    0.0006
 GLM cv pseudo-R2 0.055, with a young-driver high-power term 0.058
 ```
 
 Age and power come first, which is the interaction that was planted, and the
-GLM gains when given it. In the monograph, the leaves of a decision tree fitted
+GLM gains when given it. The pairs after it are a quarter of its strength or
+less and their order moves with the shuffle (the third here involves the noise
+feature, which interacts with nothing). In the monograph, the leaves of a decision tree fitted
 to the ratio of boosting to GLM predictions played this role and lifted the
 cross-validated pseudo-R2 from 0.151 to 0.156; prospicio has no decision tree,
 but a `booster_fit()` with one tree and a few leaves is one, and the hand-made
@@ -606,9 +573,9 @@ fit_all <- frame(train, log_te_all)
 test_all <- frame(!train, log_te_all)
 final <- list(
   "baseline GLM" = predict(glm_fit(f_base, pf[train, ]), pf[!train, ]),
-  "our GLM" = predict(glm_fit(glm_formula(), glm_frame(fit_all)), glm_frame(test_all)),
-  "our GLM + interaction" = predict(glm_fit(glm_formula(TRUE), glm_frame(fit_all)), glm_frame(test_all)),
-  "GBM" = predict(gbm_fit(f_gbm, tree_codes(fit_all)), tree_codes(test_all)),
+  "our GLM" = predict(glm_fit(glm_formula(), fit_all), test_all),
+  "our GLM + interaction" = predict(glm_fit(glm_formula(TRUE), fit_all), test_all),
+  "GBM" = predict(gbm_fit(f_gbm, fit_all), test_all),
   "truth" = truth[!train]
 )
 for (name in names(final)) {
@@ -650,15 +617,15 @@ closed, which hold for R too, since both packages call the same Rust code:
 
 - Model-agnostic explanations (#355), now in the package:
   `permutation_importance()`, `partial_dependence()` and `interaction_screen()`
-  take any fitted model and new data. The loops written out by hand above are
-  the same computations.
+  take any fitted model and new data; sections 3.2 to 3.4 use them.
 - Bounds on elastic net coefficients (glmnet's `lower.limits` and
   `upper.limits`), the relaxed lasso and speed on hinge bases (#356, now in the
   package): `elastic_net_fit(lower_limits, upper_limits, relax)` and
   `elastic_net_cv(relax = TRUE)`.
 - Step and hinge bases and MARS knot selection (section 5.5; `mars_knots()` and
   `mars_formula()`), and out-of-fold target encoding with a credibility constant
-  (chapter 6; `target_encode()`) (#357, #465, now in the package).
+  (chapter 6; `target_encode()`, which builds the make feature above) (#357,
+  #465, now in the package).
 - Generalized linear mixed models (section 6.5; #358, now in the package):
   `glmm_fit()` with lme4's `(1 | g)` and `(1 + x | g)` terms, and
   `bayes_glmm_fit()` for a NUTS fit.

@@ -5,7 +5,7 @@ This is the second part of a guide to Goldburd, Khare, Tevet and Guller's
 edition, 2025 revision) with prospicio's Python API. The first part,
 [`glm-ratemaking-goldburd.md`](glm-ratemaking-goldburd.md), explains the GLM
 as a multiplicative rating plan, offsets and weights, the choice of
-distribution and the F-test, and lists what prospicio does not support. This
+distribution and the F-test, and maps the monograph's steps to prospicio. This
 part follows the monograph's model refinement and validation: continuous
 variables (section 5.4), interactions (5.6), deviance and residuals (6.1 and
 6.3), validation on held-out data with lift, double lift and loss ratio
@@ -18,9 +18,8 @@ authors'; what follows explains them in new words, and section numbers in
 parentheses are the monograph's. The whole part runs in about a second.
 
 The setup repeats the first part's: the 600 policies, the log of exposure as
-the claim count offset, a helper for the region factor, the Poisson and
-overdispersed Poisson families, and the F distribution function from
-prospicio's `Beta`. Besides `claims` (Poisson with a log-linear age effect and
+the claim count offset, a helper for the region factor, and the Poisson and
+overdispersed Poisson families. Besides `claims` (Poisson with a log-linear age effect and
 region factors 1.0, 1.2, 0.8 and 1.5 for A to D), this part uses
 `wavy_claims`, a Poisson count whose true age effect is the non-linear
 `0.8 sin(age / 8)`:
@@ -30,7 +29,6 @@ import csv
 import math
 from pathlib import Path
 
-from prospicio.distributions import Beta
 from prospicio.models import Design, Glm, Terms
 
 rows = list(csv.DictReader(open(Path("../../validation/data/glm_policies.csv"))))
@@ -46,11 +44,6 @@ def coding(*terms, reference=None):
     for name in terms:
         t = t.numeric(name)
     return t.factor("region", reference=reference).fit(data)
-
-
-def f_cdf(f, d1, d2):
-    """F distribution function as a regularized incomplete beta."""
-    return Beta(d1 / 2, d2 / 2).cdf(d1 * f / (d1 * f + d2))
 
 
 poisson = Glm("poisson", "log")
@@ -71,22 +64,23 @@ is enough, section 5.4.1 plots partial residuals: the working residual
 `(y - mu) / mu` (log link) plus the predictor's own term `b x`, against `x`.
 Plotting thousands of points hides the pattern, so they are binned, averaged
 with the working weights (`mu` times the prior weight for a Poisson on the log
-link, section 6.3.2). We do this for the `wavy_claims` count, whose true age
-effect is `0.8 sin(age / 8)`, fitted with a straight line in age:
+link, section 6.3.2); `GlmFit.diagnostics` returns both. We do this for the
+`wavy_claims` count, whose true age effect is `0.8 sin(age / 8)`, fitted with
+a straight line in age:
 
 ```python
 order = sorted(range(n), key=lambda i: data["age"][i])
-linear = poisson.fit(age_only.design(data, offset=log_e), data["wavy_claims"])
-b_age = linear.coefficients[1]
-mu = linear.fitted
 y = data["wavy_claims"]
-partial = [(y[i] - mu[i]) / mu[i] + b_age * data["age"][i] for i in range(n)]
+linear = poisson.fit(age_only.design(data, offset=log_e), y)
+b_age = linear.coefficients[1]
+diag = linear.diagnostics(age_only.design(data, offset=log_e), y)
+partial = [r + b_age * a for r, a in zip(diag["working"], data["age"])]
 print(f"linear age slope {b_age:+.4f}")
 print("age band   mean age  binned partial residual  fitted b*age  true 0.8 sin(age/8), centred")
 true_c = sum(0.8 * math.sin(a / 8) for a in data["age"]) / n
 for k in range(8):
     idx = order[k * n // 8:(k + 1) * n // 8]
-    ww = [mu[i] for i in idx]
+    ww = [diag["working_weights"][i] for i in idx]
     pr = sum(partial[i] * w for i, w in zip(idx, ww)) / sum(ww)
     age = sum(data["age"][i] * w for i, w in zip(idx, ww)) / sum(ww)
     lo, hi = data["age"][idx[0]], data["age"][idx[-1]]
@@ -109,9 +103,8 @@ age band   mean age  binned partial residual  fitted b*age  true 0.8 sin(age/8),
 The fitted line rises gently while the binned partial residuals start high,
 fall to a trough in the thirties and forties, peak around 60 and fall again:
 the true sine, shifted by a constant of about 0.6 (partial residuals carry the
-intercept's share of the fit). The monograph offers four fixes, and prospicio fits all of them,
-though the bins, polynomials and hinges are design columns built by hand since
-`Terms` has only numeric columns and factors:
+intercept's share of the fit). The monograph offers four fixes, and prospicio fits all of them;
+`Terms` builds the bins, polynomials and hinges as model terms:
 
 - **bins** (5.4.2): a factor of age bands of about equal counts; each band
   floats freely, at the cost of many parameters and possible reversals;
@@ -122,7 +115,7 @@ though the bins, polynomials and hinges are design columns built by hand since
 40 and the peak near 60: knots at 38 and 62);
 - **splines** (5.4.5 and 10.3): prospicio's `Gam` fits a penalized P-spline
   with the smoothness chosen by UBRE, the GAM of section 10.3, in place of the
-  natural cubic spline, which the Python bindings do not build.
+  natural cubic spline (`Terms.natural_spline`).
 
 Each is scored three ways: training deviance, AIC (with the GAM's effective
 degrees of freedom), and the mean Poisson deviance on held-out folds from
@@ -135,14 +128,14 @@ from prospicio.models import Gam, cross_validate, deviance, deviance_score, k_fo
 ages = data["age"]
 cuts = [sorted(ages)[k * n // 8] for k in range(1, 8)]
 band = [str(sum(a >= c for c in cuts)) for a in ages]
-z = [(a - 50) / 20 for a in ages]
-designs = {
-    "linear": Design([[1.0] * n, ages], ["(Intercept)", "age"], offset=log_e),
-    "8 bins": Terms().intercept().factor("band").fit({"band": band}).design({"band": band}, offset=log_e),
-    "cubic": Design([[1.0] * n, z, [v ** 2 for v in z], [v ** 3 for v in z]], ["(Intercept)", "z", "z2", "z3"], offset=log_e),
-    "hinges 38, 62": Design([[1.0] * n, ages, [max(0.0, a - 38) for a in ages], [max(0.0, a - 62) for a in ages]],
-                            ["(Intercept)", "age", "h38", "h62"], offset=log_e),
+cols = {"age": ages, "band": band, "z": [(a - 50) / 20 for a in ages]}
+terms = {
+    "linear": Terms().intercept().numeric("age"),
+    "8 bins": Terms().intercept().factor("band"),
+    "cubic": Terms().intercept().poly("z", 3),
+    "hinges 38, 62": Terms().intercept().numeric("age").hinges("age", [38, 62]),
 }
+designs = {name: t.fit(cols).design(cols, offset=log_e) for name, t in terms.items()}
 folds = k_fold(n, 5, 2025)
 score = deviance_score("poisson")
 print("model           parameters  deviance     AIC  CV deviance")
@@ -244,21 +237,21 @@ The 0.0004 and 0.0003 gaps come from the four-decimal slopes multiplied by
 `ln 200,000 = 12.2`: a rounding of 0.00005 in a slope moves the product by
 0.0006, so both tables are consistent.
 
-`Terms` has no interaction term, so on our portfolio the interaction columns
-are products built by hand: region times centred age. The true model has no
+On our portfolio `Terms.interaction` adds region times centred age, and
+`f_test` compares the models with and without it. The true model has no
 interaction, and the F-test agrees; centring age at 40 also makes the region
 main effects the relativities of a 40-year-old, as in Table 12:
 
 ```python
-ac = [a - 40 for a in data["age"]]
-dummies = {g: [1.0 if r == g else 0.0 for r in data["region"]] for g in "BCD"}
-main_cols = [[1.0] * n, ac] + [dummies[g] for g in "BCD"]
-main_names = ["(Intercept)", "age-40", "B", "C", "D"]
-inter_cols = [[d * a for d, a in zip(dummies[g], ac)] for g in "BCD"]
-mains = quasi.fit(Design(main_cols, main_names, offset=log_e), data["claims"])
-inter = quasi.fit(Design(main_cols + inter_cols, main_names + ["B:age", "C:age", "D:age"], offset=log_e), data["claims"])
-F = (mains.deviance - inter.deviance) / (3 * inter.dispersion)
-print(f"region x age: F = {F:.3f}, percentile {f_cdf(F, 3, inter.df_resid):.1%}")
+from prospicio.models import f_test
+
+data["ac"] = [a - 40 for a in data["age"]]
+main_terms = Terms().intercept().numeric("ac").factor("region")
+mains = quasi.fit(main_terms.fit(data).design(data, offset=log_e), data["claims"])
+inter_terms = main_terms.interaction("region", "ac").fit(data)
+inter = quasi.fit(inter_terms.design(data, offset=log_e), data["claims"])
+test = f_test(mains, inter)
+print(f"region x age: F = {test['statistic']:.3f}, percentile {1 - test['p_value']:.1%}")
 print("same fit as uncentred age:", abs(mains.deviance - big.deviance) < 1e-8,
       f"; base rate at age 40 {math.exp(mains.coefficients[0]):.4f} (true {math.exp(-1):.4f})")
 ```
@@ -333,13 +326,42 @@ GAM           -0.01 +0.05 -0.09 +0.03 +0.05 -0.09 +0.08 +0.02 -0.01 -0.04   sum 
 The straight line's binned residuals follow the sine, far beyond their
 standard deviation of 0.12. The GAM's show no pattern; their sum of squares is
 even below what chance gives, as expected in the training data for a model
-that adapted its shape to them. Section 6.3.1 also notes
-that deviance residuals of counts cluster and do not look normal, and suggests
-randomized quantile residuals (Dunn and Smyth) instead; prospicio has them as
-`GlmFit.quantile_residuals` (and `prospicio.models.quantile_residuals` for any
-family), and `prospicio.models.pit` gives the randomized probability integral
-transform they are built from. Section 6.4's Cook's distance and hat values come
-from `GlmFit.diagnostics` (issue #334).
+that adapted its shape to them.
+
+Section 6.3.1 also notes that deviance residuals of counts cluster and do not
+look normal, and suggests randomized quantile residuals (Dunn and Smyth)
+instead: each count's residual is drawn at random within the normal scores of
+its probability step, so that under the right model they are exactly standard
+normal. prospicio has them as `GlmFit.quantile_residuals` (and
+`prospicio.models.quantile_residuals` for any family, built on the randomized
+probability integral transform of `prospicio.models.pit`). On the claim count
+model, whose form is the true one:
+
+```python
+def moments(r):
+    """Mean, standard deviation, skewness and share beyond 1.96 in absolute value."""
+    m = sum(r) / len(r)
+    sd = math.sqrt(sum((x - m) ** 2 for x in r) / (len(r) - 1))
+    skew = sum((x - m) ** 3 for x in r) / len(r) / (sum((x - m) ** 2 for x in r) / len(r)) ** 1.5
+    return f"mean {m:+.2f}, sd {sd:.2f}, skewness {skew:+.2f}, beyond 1.96: {sum(abs(x) > 1.96 for x in r) / len(r):.1%}"
+
+
+claims_design = coding("age").design(data, offset=log_e)
+claims_fit = poisson.fit(claims_design, data["claims"])
+claims_diag = claims_fit.diagnostics(claims_design, data["claims"])
+print("deviance residuals:", moments(claims_diag["deviance"]))
+print("quantile residuals:", moments(claims_fit.quantile_residuals(claims_design, data["claims"], seed=1)))
+```
+
+```text
+deviance residuals: mean -0.26, sd 0.82, skewness +1.45, beyond 1.96: 1.3%
+quantile residuals: mean -0.05, sd 1.03, skewness +0.05, beyond 1.96: 4.5%
+```
+
+With about a quarter of a claim expected per policy, the deviance residuals
+fall into two clusters (no claim and one claim), skewed and too narrow for a
+normal; the quantile residuals have the mean, spread, symmetry and tails of a
+standard normal, so a departure from those would point at the model.
 
 ## 4. Validation on held-out data (sections 4.3 and 7)
 
@@ -382,30 +404,18 @@ predictions, so the end bands hold the risks on which they disagree most, and
 asks which model's predictions the actuals follow. The loss ratio chart
 (section 7.2.3) sorts by the proposed model over the current premium, and a
 plan the proposed model improves on shows loss ratios that rise across the
-bands. prospicio has `lift` but neither of these charts, so both are a few
-lines over `lift`'s banding:
+bands. prospicio's `double_lift` and `loss_ratio_chart` draw both, in bands
+of about equal exposure as `lift` does:
 
 ```python
-def bands_by(key, cols, m=5):
-    """Sum each column in m bands of about equal exposure after sorting by key."""
-    idx = sorted(range(len(key)), key=lambda i: key[i])
-    total, cum, out = sum(et), 0.0, [[0.0] * len(cols) for _ in range(m)]
-    for i in idx:
-        b = min(int((cum + 0.5 * et[i]) / total * m), m - 1)
-        cum += et[i]
-        for j, col in enumerate(cols):
-            out[b][j] += col[i]
-    return out
+from prospicio.models import double_lift, loss_ratio_chart
 
-
-ratio = [p / c for p, c in zip(proposed, current)]
-dl = bands_by(ratio, [et, current, proposed, yt])
-tot = [sum(col) for col in (et, current, proposed, yt)]
+dl = double_lift(yt, proposed, current, et, bands=5)
 print("double lift, band average over overall average:")
-for name, j in [("current", 1), ("proposed", 2), ("actual", 3)]:
-    print(f"  {name:9s}", " ".join(f"{(band[j] / band[0]) / (tot[j] / tot[0]):.2f}" for band in dl))
-lr = bands_by(ratio, [yt, current])
-print("loss ratio (actual / current premium):", " ".join(f"{a / c:.2f}" for a, c in lr))
+for name, key in [("current", "b_relativity"), ("proposed", "a_relativity"), ("actual", "actual_relativity")]:
+    print(f"  {name:9s}", " ".join(f"{band[key]:.2f}" for band in dl))
+lr = loss_ratio_chart(yt, proposed, current, et, bands=5)
+print("loss ratio (actual / current premium):", " ".join(f"{band['loss_ratio']:.2f}" for band in lr))
 rate = lambda pred: [round(p / e, 10) for p, e in zip(pred, et)]  # equal ages tie exactly
 print(f"Gini on the test set: current {gini(yt, rate(current), et):.3f}, proposed {gini(yt, rate(proposed), et):.3f}")
 ```
@@ -440,10 +450,13 @@ matrices give the rates the monograph quotes, and footnote 17 states that the
 area under the ROC curve is `0.5 x normalized Gini + 0.5`, with the normalized
 Gini the model's Gini over that of a perfect model (each row predicted by its
 own outcome). We check the identity with a logistic model of whether a policy
-had a claim, computing the area under the curve by ranks
-(Mann-Whitney) and the Gini with `gini`:
+had a claim, taking the area under the curve from `roc` (which counts ties
+as half, as the Mann-Whitney statistic does) and the normalized Gini from
+`normalized_gini`:
 
 ```python
+from prospicio.models import normalized_gini, roc
+
 print(f"threshold 50%: sensitivity {39 / 109:.3f}, specificity {673 / 704:.3f}, false positive rate {1 - 673 / 704:.3f}"
       "   (monograph 0.358, 0.956, 0.044)")
 print(f"threshold 25%: sensitivity {75 / 109:.1%}, false positive rate {103 / 704:.1%}   (monograph 68.8%, 14.6%)")
@@ -452,17 +465,14 @@ had_claim = [1.0 if k > 0 else 0.0 for k in data["wavy_claims"]]
 logit_design = Design([[1.0] * n, ages, [max(0.0, a - 38) for a in ages], [max(0.0, a - 62) for a in ages], log_e],
                       ["(Intercept)", "age", "h38", "h62", "log exposure"])
 prob = Glm("binomial", "logit").fit(logit_design, had_claim).fitted
-pos = [p for p, h in zip(prob, had_claim) if h]
-neg = [p for p, h in zip(prob, had_claim) if not h]
-auc = sum((p > q) + 0.5 * (p == q) for p in pos for q in neg) / (len(pos) * len(neg))
-normalized = gini(had_claim, prob) / gini(had_claim, had_claim)
-print(f"AUROC by ranks {auc:.6f}; 0.5 x normalized Gini + 0.5 = {0.5 * normalized + 0.5:.6f}")
+auc = roc(had_claim, prob)["auc"]
+print(f"AUROC {auc:.6f}; 0.5 x normalized Gini + 0.5 = {0.5 * normalized_gini(had_claim, prob) + 0.5:.6f}")
 ```
 
 ```text
 threshold 50%: sensitivity 0.358, specificity 0.956, false positive rate 0.044   (monograph 0.358, 0.956, 0.044)
 threshold 25%: sensitivity 68.8%, false positive rate 14.6%   (monograph 68.8%, 14.6%)
-AUROC by ranks 0.743339; 0.5 x normalized Gini + 0.5 = 0.743339
+AUROC 0.743339; 0.5 x normalized Gini + 0.5 = 0.743339
 ```
 
 The two agree to the last digit printed: for a binary outcome the Lorenz curve
@@ -497,6 +507,38 @@ The age slope stays between -0.009 and -0.013 while the region coefficients
 move by up to 0.3, about their standard errors: 155 claims leave them
 unsettled.
 
+Section 6.4 also looks for single records with an outsized pull on the
+coefficients. Cook's distance measures how far all the coefficients move,
+scaled by their covariance, when one row is left out; it is large for a row
+with both a large residual and a high leverage (hat value). `GlmFit.diagnostics`
+returns both for the claim count model of section 3:
+
+```python
+cook = claims_diag["cooks_distance"]
+top = sorted(range(n), key=lambda i: -cook[i])[:3]
+print("claims  expected  region   age  leverage  Cook's D")
+for i in top:
+    print(f"{data['claims'][i]:6.0f} {claims_fit.fitted[i]:9.2f}  {data['region'][i]:>6s} {data['age'][i]:5.1f}"
+          f" {claims_diag['leverage'][i]:9.4f} {cook[i]:9.4f}")
+rest = [i for i in range(n) if i != top[0]]
+refit = poisson.fit(claims_design.select(rest), [data["claims"][i] for i in rest])
+print(f"region B coefficient {claims_fit.coefficients[2]:+.3f}, without that policy {refit.coefficients[2]:+.3f}")
+```
+
+```text
+claims  expected  region   age  leverage  Cook's D
+     3      0.32       B  69.9    0.0116    0.0522
+     2      0.34       C  22.2    0.0201    0.0334
+     2      0.31       C  33.7    0.0151    0.0292
+region B coefficient +0.078, without that policy +0.018
+```
+
+The most influential policy had three claims in 0.9 years where 0.32
+were expected; leaving it out alone moves the region B coefficient from +0.078
+to +0.018. No leverage is high (the average is 5/600, 0.008), so the pull
+comes from the residual: with 155 claims in all, one policy can shift a thin
+level's relativity by several points, which is the monograph's reason to look.
+
 The elastic net (section 10.5) minimizes the deviance plus a penalty on the
 size of the coefficients, `lambda` times a mix of their absolute values (the
 lasso) and squares (ridge), on standardized columns with the intercept
@@ -510,6 +552,7 @@ the claim count model age, region and two columns unrelated to claims
 ```python
 from prospicio.models import ElasticNet
 
+dummies = {g: [1.0 if r == g else 0.0 for r in data["region"]] for g in "BCD"}
 cols = ["age", "trials", "n_sev"]
 names = ["(Intercept)"] + cols + ["B", "C", "D"]
 X = Design([[1.0] * n] + [data[k] for k in cols] + [dummies[g] for g in "BCD"], names, offset=log_e)
@@ -538,5 +581,5 @@ everything. At a small `lambda` the lasso is close to the unpenalized GLM,
 which gives the two noise columns small but non-zero coefficients. The shrinkage of the thin
 levels towards zero is the credibility-like behaviour the monograph points to.
 
-What prospicio does not do (yet) for this workflow is listed in the first
-part's last section, with the issues filed for the Models lane.
+The first part's last section maps each step of the monograph's workflow to
+where it lives in prospicio.
