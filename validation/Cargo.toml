@@ -80,6 +80,10 @@ name = "reserving_compartmental"
 required-features = ["slow-bayes"]
 
 [[test]]
+name = "reserving_compartmental_incurred"
+required-features = ["slow-bayes"]
+
+[[test]]
 name = "reserving_compartmental_gm2"
 required-features = ["slow-bayes"]
 

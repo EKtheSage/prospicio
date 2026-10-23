@@ -58,8 +58,9 @@ amounts over the origin's premium (model 2).}
 \item{paid_response}{\code{"cumulative"} (model 1) or \code{"incremental"} (model
 2).}
 
-\item{fitted}{\code{"paid_and_outstanding"}; \code{"paid_and_incurred"},
-\code{"paid_only"} and \code{"incurred_only"} are not yet built.}
+\item{fitted}{\code{"paid_and_outstanding"} or \code{"paid_and_incurred"} (incurred
+replaces outstanding as the second response, as above); \code{"paid_only"} and
+\code{"incurred_only"} are not yet built.}
 
 \item{rate_order}{\code{"free"} or \code{"ordered"}, as above.}
 

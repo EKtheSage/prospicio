@@ -129,7 +129,6 @@ def test_settings_and_defaults():
 
 
 @pytest.mark.parametrize("setting", [
-    dict(fitted="paid_and_incurred"),
     dict(fitted="paid_only"),
     dict(fitted="incurred_only"),
 ])
@@ -138,6 +137,22 @@ def test_settings_not_yet_built(tri, setting):
     assert getattr(m, next(iter(setting))) == next(iter(setting.values()))
     with pytest.raises(ValueError, match="not yet built"):
         m.fit(tri, "paid", "premium", incurred="incurred")
+
+
+def test_paid_and_incurred(tri):
+    # Incurred replaces outstanding as the second response, from the
+    # incurred column or from outstanding plus paid (the same data).
+    short = dict(chains=2, tune=100, draws=100, n_sims=200, seed=5)
+    m = Compartmental(GM, fitted="paid_and_incurred", **short)
+    assert m.fitted == "paid_and_incurred"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        a = m.fit(tri, "paid", "premium", incurred="incurred")
+    assert a.reserves.provenance()["model"] == "compartmental"
+    assert a.reserves.n_components == 10
+    # the future incurred cells are above the future paid in the mean
+    inc = a.outstanding.marginal(("1990", 120)).mean()
+    assert inc > 0.9 * a.paid.marginal(("1990", 120)).mean()
 
 
 def test_fit_errors(tri):
