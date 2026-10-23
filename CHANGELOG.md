@@ -247,6 +247,16 @@ under "Unreleased" until then.
   96 functions with a check beside it; the ODP sheet's P95 checks read
   the P95 column (#509).
 
+### Examples
+
+- The notebook tests check the numbers and claims the notebooks' prose states
+  (`reinsurance_pricing`, the "Reading the result" bullets of `one_year_view`)
+  and run the chart cells under matplotlib's Agg backend; stale skewness,
+  quantile-tie and density-deficit figures in `reinsurance_pricing` and its R
+  twin are corrected. A notebook
+  opened outside the repository now raises a `FileNotFoundError` that says
+  where to run it, not a bare `StopIteration` (#269, #531).
+
 ## 0.0.4 (2026-10-21)
 
 ### Breaking changes
