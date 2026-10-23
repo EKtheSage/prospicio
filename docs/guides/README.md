@@ -13,6 +13,9 @@ their results show there (the repository keeps the notebooks without outputs).
 `cargo xtask python` builds that User Guide from this folder: every `.md` file
 here but this README becomes a page, its first `#` heading the page's title,
 and a link to a notebook in `examples/` points to the notebook's page.
+Pages go under "Guides" in the sidebar, except a track's, which get a section
+of their own (`GUIDE_SECTIONS` in `xtask/src/main.rs`: the `cat-` guides under
+"Property catastrophe reinsurance", in the order of their names).
 The R twins (the `.qmd` files) are pages too, under "Articles" on the R site:
 `cargo xtask r` stages each one as a pkgdown article, grouped as in the
 [reading list](reading-list.md).
