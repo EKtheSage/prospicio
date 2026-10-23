@@ -1697,7 +1697,12 @@ on `claude/compartmental-paid-incurred`.
 
 ### 13. Unequal origin and development grain (PR I)
 
-Decided by the user on 2026-10-22: unequal grain is in scope. Built in
+Decided by the user on 2026-10-22: unequal grain is in scope. The
+user confirmed time in years the same day, "for now": how to fit
+quarterly or monthly data well (rate priors that suit sub-annual
+development, grouping development effects by year, seasonality, and
+a calibration check on sub-annual books) is open, the lane's Next
+item `[compartmental-subannual]`. Built in
 Rust, Python and R on `claude/compartmental-grain`, stacked on PR H. The
 choices:
 

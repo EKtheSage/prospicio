@@ -6,6 +6,7 @@
 
 ## Next
 
+- [compartmental-subannual] fitting `Compartmental` well to quarterly or monthly data (rate priors for sub-annual development, development effects grouped by year, seasonality, a calibration check on sub-annual books; `reserving-compartmental.md` decision 13, the user's note of 2026-10-22)
 
 ## Done
 
