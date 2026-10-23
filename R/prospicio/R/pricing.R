@@ -1289,7 +1289,8 @@ calibrate_classical <- function(x, principle, premium, q = 2) {
 #' (brokerage on the deposit alone when `brokerage_on_reinstatements` is
 #' `FALSE`). With an income tax `t` on the margin the price's return on
 #' capital is the return after tax: the risk premium is raised to give it,
-#' which for a cost-of-capital price at `r` is the price at `r / (1 - t)`.
+#' which for a cost-of-capital price at `cost_of_capital` is the price at
+#' `cost_of_capital / (1 - t)`.
 #'
 #' `implied_quote()` reads a quoted deposit the other way: the reinsurer
 #' keeps what is left after the loads and commissions as its risk premium,

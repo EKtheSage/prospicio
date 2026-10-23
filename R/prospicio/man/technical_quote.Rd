@@ -72,7 +72,8 @@ deposit is \code{D = (R + f) / ((1 + kappa)(1 - e - tau) - b (1 + kappa) - c)}
 (brokerage on the deposit alone when \code{brokerage_on_reinstatements} is
 \code{FALSE}). With an income tax \code{t} on the margin the price's return on
 capital is the return after tax: the risk premium is raised to give it,
-which for a cost-of-capital price at \code{r} is the price at \code{r / (1 - t)}.
+which for a cost-of-capital price at \code{cost_of_capital} is the price at
+\code{cost_of_capital / (1 - t)}.
 }
 \details{
 \code{implied_quote()} reads a quoted deposit the other way: the reinsurer
