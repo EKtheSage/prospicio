@@ -1284,8 +1284,26 @@ the repo).
    6. *Sums insured* are scaled by the share with the loss, so the degree
       of damage an exposure curve reads is unchanged. Labels are kept.
    7. *An aggregate part* (attritional losses with no event or time) is
-      refused on a timeline for now: its split by accident month is not
-      decided.
+      spread over the months of its accident period by a monthly weight
+      pattern the user supplies, uniform by default (the user's decision
+      of 2026-10-23, option (b) of three: uniform only, a pattern, or the
+      events' own monthly profile). The timeline keeps the part by
+      accident period: each accident year of `Timeline::from_years`, the
+      whole term of `Timeline::new`. `Timeline::with_aggregate_pattern`
+      takes twelve non-negative weights, one for each month of an accident
+      year (they need not add to 1); month `m` of a period gets
+      `pattern[m mod 12]` over the period's sum, and a pattern with a
+      negative or non-finite weight, a zero sum, or no weight in a
+      period's months is refused. Each month's amount then falls to the
+      contract years as an event in that month would: under LOD whole to
+      its accident year, under RAD by the month's shares. So year `u`
+      gets `Σ_p c[u][p] · A_p` of each period's amount `A_p`, with
+      `c[u][p] = Σ_m w(p, m) · share(u, m)`, and each contract year's
+      event set carries its own part, seen only by covers without
+      per-occurrence terms. LOD gives each accident year back its part; RAD
+      with shares adding to 1 in every month conserves the part. Python
+      `aggregate_pattern=` on `Timeline` and `Timeline.from_years`, R
+      `aggregate_pattern =` on `timeline()` and `timeline_from_years()`.
    8. *The basis is set on the `Tower`*, as the reference model sets it on
       a programme: a `Tower` is the layers on one loss source, as a
       programme is, and a deal of several programmes is several towers in
@@ -1323,7 +1341,8 @@ the repo).
       adding to 1 in every month, the years' totals add to the timeline's
       total in each simulation; a timeline stitched from correlated years
       keeps their correlation under LOD.
-   11. *Bindings.* Python has `Timeline(events, months)`,
+   11. *Bindings.* Python has `Timeline(events, months,
+      aggregate_pattern=None)`,
       `Timeline.from_years`, `years` and `years_with_sources`,
       `Exposure(shares)` and `Exposure.uniform`, and on `Tower`
       `with_cover_basis`, `cover_basis` and `apply_timeline`; a basis is

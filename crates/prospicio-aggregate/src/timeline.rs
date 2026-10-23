@@ -10,7 +10,11 @@
 //! underwriting year `u` takes its [`Exposure`] share of each event in the
 //! months its policies are in force, so one event can fall to two years.
 //! Each year's losses keep the index of the event they came from
-//! ([`Timeline::years_with_sources`]). A tower's basis is set with
+//! ([`Timeline::years_with_sources`]). An aggregate part (attritional
+//! losses with no event or time) is spread over its accident year's months
+//! by a monthly pattern, uniform unless set
+//! ([`Timeline::with_aggregate_pattern`]), and falls to the years as an
+//! event in that month would. A tower's basis is set with
 //! [`Tower::cover_basis`] and applied with [`Tower::apply_timeline`].
 
 use prospicio_core::{Error, Result};
@@ -158,17 +162,43 @@ impl Exposure {
 /// path, each event stored once with its time as a fraction of the term.
 /// An event at time `x` is in accident month `⌊x·M⌋` (the last month for
 /// `x = 1`) of the term's `M`.
+///
+/// An aggregate part of the events has no time. It is held by accident
+/// period (each accident year's amounts from
+/// [`from_years`](Self::from_years), the whole term's from
+/// [`new`](Self::new)) and spread over the period's months by the
+/// aggregate pattern, `pattern[i]` the weight of the `i`-th month of each
+/// accident year, uniform unless set
+/// ([`with_aggregate_pattern`](Self::with_aggregate_pattern)). Each month's
+/// amount then falls to the contract years as an event in that month would:
+/// whole to its accident year under [`CoverBasis::LossesOccurring`], by the
+/// exposure shares under [`CoverBasis::RisksAttaching`].
 #[derive(Debug, Clone)]
 pub struct Timeline {
+    /// The events, without their aggregate part.
     events: EventSet,
     months: usize,
+    part: Option<TimelinePart>,
+    pattern: [f64; MONTHS_PER_YEAR],
+}
+
+/// A timeline's aggregate part, by accident period.
+#[derive(Debug, Clone)]
+struct TimelinePart {
+    /// Each column's combination, an index into the events' labels.
+    of_column: Vec<usize>,
+    /// Each period's first accident month and number of months.
+    periods: Vec<(usize, usize)>,
+    /// `amounts[(sim * periods + p) * columns + j]`.
+    amounts: Vec<f64>,
 }
 
 impl Timeline {
     /// A timeline of `months` accident months from events whose times
-    /// ([`EventSet::with_times`]) are fractions of the whole term. Fails
-    /// without times, with an aggregate part (its split by accident month
-    /// is not decided) or with no months.
+    /// ([`EventSet::with_times`]) are fractions of the whole term. An
+    /// aggregate part of the events is the whole term's, spread over all
+    /// its months by the aggregate pattern. Fails without times or with no
+    /// months.
     pub fn new(events: EventSet, months: usize) -> Result<Self> {
         if months == 0 {
             return Err(Error::Data("a timeline needs at least one month".into()));
@@ -178,13 +208,101 @@ impl Timeline {
                 "a timeline needs each event's time: set times on the events".into(),
             ));
         }
-        if events.has_aggregate_part() {
+        let (events, part) = events.without_aggregate_part();
+        let part = part.map(|p| TimelinePart {
+            of_column: p.of_column,
+            periods: vec![(0, months)],
+            amounts: p.amounts,
+        });
+        Ok(Self {
+            events,
+            months,
+            part,
+            pattern: [1.0; MONTHS_PER_YEAR],
+        })
+    }
+
+    /// The same timeline with the aggregate part spread over each accident
+    /// year's months by `pattern`, twelve non-negative weights (they need
+    /// not add to 1), `pattern[i]` for the `i`-th month of each year: a
+    /// seasonal book's attritional losses, say. The default is uniform.
+    /// Fails on a weight that is negative or not finite, on all weights 0,
+    /// or when an accident period's months all have weight 0.
+    ///
+    /// ```
+    /// use prospicio_aggregate::EventSet;
+    /// use prospicio_aggregate::timeline::{CoverBasis, Exposure, Timeline};
+    /// use prospicio_prob::{PredictiveDistribution, Provenance};
+    ///
+    /// // One accident year with no events and attritional losses of 120.
+    /// let part = PredictiveDistribution::from_draws(
+    ///     vec![], vec![vec![]], vec![120.0], Provenance::new("attritional"),
+    /// )
+    /// .unwrap();
+    /// let year = EventSet::from_years(vec![vec![]], 0)
+    ///     .unwrap().with_times(vec![]).unwrap()
+    ///     .with_aggregate_part(&part).unwrap();
+    /// let timeline = Timeline::from_years(&[year]).unwrap();
+    /// // The first underwriting year covers January to June, the second
+    /// // July to December.
+    /// let first_half: Vec<f64> = (0..12).map(|m| if m < 6 { 1.0 } else { 0.0 }).collect();
+    /// let second_half = first_half.iter().map(|s| 1.0 - s).collect();
+    /// let exposure = Exposure::new(vec![first_half, second_half]).unwrap();
+    /// let uniform = timeline.years(CoverBasis::RisksAttaching, &exposure).unwrap();
+    /// assert_eq!(uniform[0].aggregate_part(0), Some(&[60.0][..]));
+    /// assert_eq!(uniform[1].aggregate_part(0), Some(&[60.0][..]));
+    /// // All of it in December: it falls to the second year.
+    /// let mut december = [0.0; 12];
+    /// december[11] = 1.0;
+    /// let seasonal = timeline.with_aggregate_pattern(&december).unwrap();
+    /// let late = seasonal.years(CoverBasis::RisksAttaching, &exposure).unwrap();
+    /// assert_eq!(late[0].aggregate_part(0), Some(&[0.0][..]));
+    /// assert_eq!(late[1].aggregate_part(0), Some(&[120.0][..]));
+    /// ```
+    pub fn with_aggregate_pattern(mut self, pattern: &[f64]) -> Result<Self> {
+        if pattern.len() != MONTHS_PER_YEAR {
+            return Err(Error::Data(format!(
+                "an aggregate pattern needs {MONTHS_PER_YEAR} monthly weights, got {}",
+                pattern.len()
+            )));
+        }
+        if let Some(&bad) = pattern.iter().find(|w| !(w.is_finite() && **w >= 0.0)) {
+            return Err(Error::InvalidParameter {
+                name: "pattern",
+                value: bad,
+                reason: "must be finite and non-negative",
+            });
+        }
+        if pattern.iter().sum::<f64>() <= 0.0 {
             return Err(Error::Data(
-                "a timeline cannot carry an aggregate part: its split by accident month is not decided"
-                    .into(),
+                "an aggregate pattern needs a positive weight".into(),
             ));
         }
-        Ok(Self { events, months })
+        let pattern: [f64; MONTHS_PER_YEAR] = pattern.try_into().expect("twelve weights");
+        if let Some(part) = &self.part {
+            for &(start, len) in &part.periods {
+                if (start..start + len).all(|m| pattern[m % MONTHS_PER_YEAR] == 0.0) {
+                    return Err(Error::Data(format!(
+                        "the aggregate pattern gives accident months {} to {} no weight",
+                        start + 1,
+                        start + len
+                    )));
+                }
+            }
+        }
+        self.pattern = pattern;
+        Ok(self)
+    }
+
+    /// The aggregate pattern: the weight of each month of an accident year,
+    /// as set (uniform by default).
+    pub fn aggregate_pattern(&self) -> &[f64; MONTHS_PER_YEAR] {
+        &self.pattern
+    }
+
+    /// Whether the timeline carries an aggregate part.
+    pub fn has_aggregate_part(&self) -> bool {
+        self.part.is_some()
     }
 
     /// A timeline stitched from one event set per accident year, each with
@@ -192,7 +310,9 @@ impl Timeline {
     /// `t`'s event at time `τ` is at `(t + τ) / T` of the term, in path
     /// `j` for its simulation `j`. The years can come from
     /// [`EventSet::term_years`] or [`EventSet::correlated_years`]. Labels
-    /// and sums insured are kept as [`EventSet::merge`] keeps them.
+    /// and sums insured are kept as [`EventSet::merge`] keeps them. Each
+    /// year's aggregate part stays its accident year's, spread over its
+    /// twelve months by the aggregate pattern; a year without one has none.
     ///
     /// ```
     /// use prospicio_aggregate::EventSet;
@@ -244,11 +364,67 @@ impl Timeline {
                 Some(m) => m.merge(&shifted)?,
             });
         }
-        let events = merged.expect("at least one year");
-        Self::new(events, MONTHS_PER_YEAR * years.len())
+        let merged = merged.expect("at least one year");
+        // Every year's part on the merged set's columns, matched by labels.
+        let columns: Option<Vec<Vec<String>>> = merged
+            .aggregate_part_labels()
+            .map(|c| c.into_iter().map(<[String]>::to_vec).collect());
+        let dims = merged.label_dims().to_vec();
+        let (events, merged_part) = merged.without_aggregate_part();
+        let part = match (columns, merged_part) {
+            (Some(columns), Some(merged_part)) => {
+                let of_column = merged_part.of_column;
+                let (n, p, m) = (first.n_sims(), years.len(), columns.len());
+                let mut amounts = vec![0.0; n * p * m];
+                for (k, year) in years.iter().enumerate() {
+                    let Some(labels) = year.aggregate_part_labels() else {
+                        continue;
+                    };
+                    let own = year.label_dims();
+                    let at: Vec<usize> = labels
+                        .iter()
+                        .map(|values| {
+                            let in_merged: Vec<String> = dims
+                                .iter()
+                                .map(|d| {
+                                    own.iter()
+                                        .position(|x| x == d)
+                                        .map_or_else(String::new, |i| values[i].clone())
+                                })
+                                .collect();
+                            columns
+                                .iter()
+                                .position(|c| *c == in_merged)
+                                .expect("merge keeps every year's columns")
+                        })
+                        .collect();
+                    for sim in 0..n {
+                        let row = year.aggregate_part(sim).expect("the year has a part");
+                        for (j, &x) in row.iter().enumerate() {
+                            amounts[(sim * p + k) * m + at[j]] += x;
+                        }
+                    }
+                }
+                Some(TimelinePart {
+                    of_column,
+                    periods: (0..p)
+                        .map(|k| (MONTHS_PER_YEAR * k, MONTHS_PER_YEAR))
+                        .collect(),
+                    amounts,
+                })
+            }
+            _ => None,
+        };
+        Ok(Self {
+            events,
+            months: MONTHS_PER_YEAR * years.len(),
+            part,
+            pattern: [1.0; MONTHS_PER_YEAR],
+        })
     }
 
-    /// The events, with times as fractions of the term.
+    /// The events, with times as fractions of the term, without the
+    /// aggregate part.
     pub fn events(&self) -> &EventSet {
         &self.events
     }
@@ -275,6 +451,9 @@ impl Timeline {
     /// scaled alike), at its time from the first month in which the year
     /// has a share to the end of the last, as a fraction of that span; the
     /// timeline must run at least the exposure's months. Labels are kept.
+    /// An aggregate part falls to the years month by month in the same
+    /// way, after the aggregate pattern spreads each accident period's
+    /// amount over its months, and each year carries its own.
     ///
     /// ```
     /// use prospicio_aggregate::EventSet;
@@ -376,7 +555,62 @@ impl Timeline {
                 row.push(pick);
             }
         }
-        let years = rows.iter().map(|r| self.events.rebuilt(r)).collect();
+        let mut years: Vec<EventSet> = rows.iter().map(|r| self.events.rebuilt(r)).collect();
+        if let Some(part) = &self.part {
+            // Year u's share of accident period p's amount: the pattern's
+            // weight of each of p's months times the year's share of it.
+            let share = |u: usize, month: usize| match basis {
+                CoverBasis::LossesOccurring => {
+                    if month / MONTHS_PER_YEAR == u {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                CoverBasis::RisksAttaching => {
+                    if month < exposure.months() {
+                        exposure.shares[u][month]
+                    } else {
+                        0.0
+                    }
+                }
+            };
+            let coefficients: Vec<Vec<f64>> = (0..n_years)
+                .map(|u| {
+                    part.periods
+                        .iter()
+                        .map(|&(start, len)| {
+                            let w = |m: usize| self.pattern[m % MONTHS_PER_YEAR];
+                            let total: f64 = (start..start + len).map(w).sum();
+                            (start..start + len)
+                                .map(|m| w(m) * share(u, m))
+                                .sum::<f64>()
+                                / total
+                        })
+                        .collect()
+                })
+                .collect();
+            let (n, p, m) = (self.n_sims(), part.periods.len(), part.of_column.len());
+            years = years
+                .into_iter()
+                .zip(&coefficients)
+                .map(|(year, c)| {
+                    let mut amounts = vec![0.0; n * m];
+                    for sim in 0..n {
+                        for (k, &ck) in c.iter().enumerate() {
+                            if ck == 0.0 {
+                                continue;
+                            }
+                            let from = &part.amounts[(sim * p + k) * m..(sim * p + k + 1) * m];
+                            for (to, &x) in amounts[sim * m..(sim + 1) * m].iter_mut().zip(from) {
+                                *to += ck * x;
+                            }
+                        }
+                    }
+                    year.with_aggregate_columns(part.of_column.clone(), amounts)
+                })
+                .collect();
+        }
         Ok((years, sources))
     }
 }
@@ -713,6 +947,230 @@ mod tests {
         assert!(Exposure::new(vec![vec![-0.1]]).is_err());
         assert!(Exposure::uniform(0, 12).is_err());
         assert!(Exposure::uniform(1, 0).is_err());
+    }
+
+    /// An aggregate part of `amounts`, one row a simulation, in the
+    /// dimension `peril` with `perils` as its columns (no dimension when
+    /// `perils` is empty).
+    fn part(perils: &[&str], amounts: Vec<f64>) -> PredictiveDistribution {
+        use prospicio_prob::{KeyValue, Provenance};
+        let (dims, components): (Vec<String>, Vec<Vec<KeyValue>>) = if perils.is_empty() {
+            (vec![], vec![vec![]])
+        } else {
+            (
+                vec!["peril".into()],
+                perils.iter().map(|p| vec![KeyValue::from(*p)]).collect(),
+            )
+        };
+        PredictiveDistribution::from_draws(dims, components, amounts, Provenance::new("part"))
+            .unwrap()
+    }
+
+    fn close(a: &[f64], b: &[f64]) {
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b) {
+            assert!(
+                (x - y).abs() < 1e-9 * (1.0 + y.abs()),
+                "{a:?} against {b:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn losses_occurring_gives_each_year_its_own_aggregate_part() {
+        // Year 1 by peril, year 2 wind only, year 3 none.
+        let one = book(4, 1)
+            .with_aggregate_part(&part(&["flood", "wind"], (0..8).map(f64::from).collect()))
+            .unwrap();
+        let two = book(4, 2)
+            .with_aggregate_part(&part(&["wind"], vec![10.0, 20.0, 30.0, 40.0]))
+            .unwrap();
+        let three = book(4, 3);
+        let timeline = Timeline::from_years(&[one.clone(), two.clone(), three.clone()]).unwrap();
+        assert!(timeline.has_aggregate_part());
+        assert!(!timeline.events().has_aggregate_part());
+        // Any pattern: under LOD an accident year's amount stays whole.
+        let pattern: Vec<f64> = (1..=12).map(f64::from).collect();
+        let timeline = timeline.with_aggregate_pattern(&pattern).unwrap();
+        let years = timeline
+            .years(
+                CoverBasis::LossesOccurring,
+                &Exposure::uniform(3, 12).unwrap(),
+            )
+            .unwrap();
+        let labels: Vec<Vec<String>> = years[0]
+            .aggregate_part_labels()
+            .unwrap()
+            .into_iter()
+            .map(<[String]>::to_vec)
+            .collect();
+        assert_eq!(
+            labels,
+            [vec!["flood".to_string()], vec!["wind".to_string()]]
+        );
+        for sim in 0..4 {
+            let s = sim as f64;
+            close(
+                years[0].aggregate_part(sim).unwrap(),
+                &[2.0 * s, 2.0 * s + 1.0],
+            );
+            close(
+                years[1].aggregate_part(sim).unwrap(),
+                &[0.0, 10.0 * (s + 1.0)],
+            );
+            close(years[2].aggregate_part(sim).unwrap(), &[0.0, 0.0]);
+        }
+        // The events are the accident years' own, as before.
+        for (year, own) in years.iter().zip([&one, &two, &three]) {
+            close(&totals(year), &totals(own));
+        }
+    }
+
+    #[test]
+    fn risks_attaching_conserves_the_aggregate_part() {
+        // Three accident years; two underwriting years of 12-month
+        // policies, the rest of each month outside the term.
+        let years: Vec<EventSet> = (0..3)
+            .map(|k| {
+                book(5, 10 + k)
+                    .with_aggregate_part(&part(&[], (0..5).map(|s| 100.0 + f64::from(s)).collect()))
+                    .unwrap()
+            })
+            .collect();
+        let exposure = Exposure::uniform(2, 12).unwrap();
+        for pattern in [
+            [1.0; 12],
+            [0.0, 0.0, 1.0, 2.0, 3.0, 0.0, 0.0, 5.0, 1.0, 1.0, 0.0, 4.0],
+        ] {
+            let timeline = Timeline::from_years(&years)
+                .unwrap()
+                .with_aggregate_pattern(&pattern)
+                .unwrap();
+            let rad = timeline
+                .years(CoverBasis::RisksAttaching, &exposure)
+                .unwrap();
+            // Each month's part falls to the years by their shares, as an
+            // event in that month does.
+            let w: f64 = pattern.iter().sum();
+            for sim in 0..5 {
+                let a = 100.0 + sim as f64;
+                for (u, year) in rad.iter().enumerate() {
+                    let expected: f64 = (0..exposure.months())
+                        .map(|m| a * pattern[m % 12] / w * exposure.share(u, m))
+                        .sum();
+                    close(year.aggregate_part(sim).unwrap(), &[expected]);
+                }
+            }
+            // Shares that add to 1 in every month and cover the term keep
+            // every amount.
+            let all = Exposure::new(vec![vec![0.4; 36], vec![0.6; 36]]).unwrap();
+            let both = timeline.years(CoverBasis::RisksAttaching, &all).unwrap();
+            for sim in 0..5 {
+                let sum = both[0].aggregate_part(sim).unwrap()[0]
+                    + both[1].aggregate_part(sim).unwrap()[0];
+                close(&[sum], &[3.0 * (100.0 + sim as f64)]);
+            }
+        }
+    }
+
+    #[test]
+    fn a_term_part_is_spread_over_every_month() {
+        // A part on a term-level set: 240 over 24 months.
+        let events = EventSet::from_years(vec![vec![]], 0)
+            .unwrap()
+            .with_times(vec![])
+            .unwrap()
+            .with_aggregate_part(&part(&[], vec![240.0]))
+            .unwrap();
+        let timeline = Timeline::new(events, 24).unwrap();
+        let two = Exposure::uniform(2, 1).unwrap();
+        let lod = timeline.years(CoverBasis::LossesOccurring, &two).unwrap();
+        close(lod[0].aggregate_part(0).unwrap(), &[120.0]);
+        close(lod[1].aggregate_part(0).unwrap(), &[120.0]);
+        // Weight on the first month of each year alone.
+        let mut january = [0.0; 12];
+        january[0] = 1.0;
+        let lod = timeline
+            .with_aggregate_pattern(&january)
+            .unwrap()
+            .years(CoverBasis::LossesOccurring, &two)
+            .unwrap();
+        close(lod[0].aggregate_part(0).unwrap(), &[120.0]);
+    }
+
+    #[test]
+    fn a_quota_share_cedes_the_part_and_an_xl_does_not() {
+        let (one, two) = (
+            book(50, 7)
+                .with_aggregate_part(&part(&[], vec![30.0; 50]))
+                .unwrap(),
+            book(50, 8)
+                .with_aggregate_part(&part(&[], vec![40.0; 50]))
+                .unwrap(),
+        );
+        let timeline = Timeline::from_years(&[one.clone(), two.clone()]).unwrap();
+        let exposure = Exposure::uniform(2, 12).unwrap();
+        let tower = Tower::new(vec![
+            Layer::xol("XL", 20.0, 10.0).unwrap(),
+            Layer::quota_share("QS", 0.5).unwrap(),
+        ])
+        .unwrap()
+        .cover_basis(CoverBasis::LossesOccurring);
+        let r = tower.apply_timeline(&timeline, &exposure).unwrap();
+        // Under LOD each contract year is its accident year, part and all.
+        for (y, own) in [(1, &one), (2, &two)] {
+            let alone = tower.apply(own).unwrap();
+            let year = |kind: &str, layer: &str| column(&r, kind, layer, y);
+            let plain = |kind: &str, layer: &str| {
+                use prospicio_prob::KeyValue;
+                let key = vec![KeyValue::from(kind), KeyValue::from(layer)];
+                prospicio_prob::Empirical::draws(&alone.marginal(&key).unwrap()).to_vec()
+            };
+            close(&year("ceded", "QS"), &plain("ceded", "QS"));
+            close(&year("ceded", "XL"), &plain("ceded", "XL"));
+        }
+        // Without the part the XL cedes the same and the QS less.
+        let bare = Timeline::from_years(&[book(50, 7), book(50, 8)]).unwrap();
+        let r0 = tower.apply_timeline(&bare, &exposure).unwrap();
+        close(
+            &column(&r0, "ceded", "XL", 1),
+            &column(&r, "ceded", "XL", 1),
+        );
+        let qs: Vec<f64> = column(&r0, "ceded", "QS", 2)
+            .iter()
+            .map(|x| x + 20.0)
+            .collect();
+        close(&qs, &column(&r, "ceded", "QS", 2));
+    }
+
+    #[test]
+    fn aggregate_pattern_errors() {
+        let timeline = Timeline::from_years(&[book(3, 1)
+            .with_aggregate_part(&part(&[], vec![1.0, 2.0, 3.0]))
+            .unwrap()])
+        .unwrap();
+        assert!(timeline.clone().with_aggregate_pattern(&[1.0; 11]).is_err());
+        assert!(timeline.clone().with_aggregate_pattern(&[0.0; 12]).is_err());
+        let mut bad = [1.0; 12];
+        bad[3] = -1.0;
+        assert!(timeline.clone().with_aggregate_pattern(&bad).is_err());
+        bad[3] = f64::NAN;
+        assert!(timeline.clone().with_aggregate_pattern(&bad).is_err());
+        // A one-month period whose month has no weight.
+        let short = Timeline::new(
+            EventSet::from_years(vec![vec![]], 0)
+                .unwrap()
+                .with_times(vec![])
+                .unwrap()
+                .with_aggregate_part(&part(&[], vec![5.0]))
+                .unwrap(),
+            1,
+        )
+        .unwrap();
+        let mut late = [0.0; 12];
+        late[11] = 1.0;
+        assert!(short.with_aggregate_pattern(&late).is_err());
+        assert_eq!(timeline.aggregate_pattern(), &[1.0; 12]);
     }
 
     fn column(result: &PredictiveDistribution, kind: &str, layer: &str, year: i64) -> Vec<f64> {

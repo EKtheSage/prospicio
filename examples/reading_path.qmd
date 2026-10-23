@@ -223,6 +223,7 @@ Mack and the bootstrap tell a similar story: a reserve of about 15 with a CV nea
 * [Reserving methods](../docs/guides/reserving-methods.md): which method when (chain ladder, Bornhuetter-Ferguson, Cape Cod, Mack, the bootstraps, tails and the one-year view), with the reserve's uncertainty as a distribution.
 * [Reserving with Friedland's techniques](../docs/guides/reserving-friedland.md): development, expected claims, Bornhuetter-Ferguson, Benktander and Cape Cod on the CAS text's own data.
 * [Taylor and McGuire's ODP GLM](../docs/guides/reserving-taylor-mcguire.md): the chain ladder as an over-dispersed Poisson GLM, its prediction error and the bootstrap, and the reduced models (CAS Monograph 3).
+* [Excess-layer loss development](../docs/guides/reserving-excess-layers.md): layer factors derived from the dense ground-up triangle and a claim size distribution, blended with the layer's own data by credibility, and the layer share as a Bayesian Bornhuetter-Ferguson prior.
 
 ## 6. Risk loads, distortions and capital allocation
 

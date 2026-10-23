@@ -853,15 +853,29 @@ year_correlation_for_ratio <- function(n_years, ratio) {
 #' months the year has a share; the same event can fall to several years.
 #' [apply_tower_timeline()] does both steps under a tower's basis.
 #'
+#' An aggregate part of the events ([with_aggregate_part()]) has no time.
+#' The timeline keeps it by accident period (each accident year of
+#' `timeline_from_years()`, the whole term of `timeline()`) and spreads it
+#' over the period's months by `aggregate_pattern`: a month's weight over
+#' the period's weights. Each month's amount falls to the contract years
+#' as an event in that month would, so a quota share or stop loss in each
+#' year sees its part.
+#'
 #' `uniform_exposure()` writes each of `n_years` underwriting years evenly
 #' over its twelve months, each policy in force for `policy_months` from
 #' the middle of its month: a year's share of a month is its policies' time
 #' in force there over `policy_months`, so a month in mid-term has shares
 #' adding to 1 and the exposure runs `12 * n_years + policy_months` months.
 #'
-#' @param events An [event_set] with times and no aggregate part.
+#' @param events An [event_set] with times. An aggregate part is the
+#'   whole term's.
 #' @param months The number of accident months.
-#' @param years A list of [event_set]s, one per accident year.
+#' @param aggregate_pattern Twelve non-negative weights, one for each month
+#'   of an accident year, that spread the aggregate part over the months
+#'   (they need not add to 1); `NULL` for uniform.
+#' @param ptr Internal: the Rust timeline.
+#' @param years A list of [event_set]s, one per accident year; each one's
+#'   aggregate part stays its accident year's.
 #' @param timeline A `timeline`.
 #' @param basis `"losses_occurring"` or `"risks_attaching"`.
 #' @param exposure A matrix of shares in `[0, 1]`, one row per underwriting
@@ -871,7 +885,8 @@ year_correlation_for_ratio <- function(n_years, ratio) {
 #' @param n_years,policy_months The number of underwriting years and each
 #'   policy's months in force.
 #' @returns `timeline()` and `timeline_from_years()` a `timeline` with
-#'   properties `events`, `months` and `n_sims`; `timeline_years()` a list
+#'   properties `events` (without the aggregate part), `months`, `n_sims`,
+#'   `aggregate_pattern` and `has_aggregate_part`; `timeline_years()` a list
 #'   of [event_set]s, one per contract year, or with `sources` a list of
 #'   `years` and `sources`; `uniform_exposure()` a matrix.
 #' @export
@@ -889,30 +904,42 @@ timeline <- S7::new_class(
   "timeline",
   package = "prospicio",
   properties = list(
-    events = event_set,
-    months = S7::class_double,
-    n_sims = S7::new_property(S7::class_double, getter = function(self) self@events@n_sims)
+    ptr = S7::new_S3_class("Timeline"),
+    events = S7::new_property(event_set, getter = function(self) event_set(self@ptr$events())),
+    months = S7::new_property(S7::class_double, getter = function(self) self@ptr$months()),
+    n_sims = S7::new_property(S7::class_double, getter = function(self) self@events@n_sims),
+    aggregate_pattern = S7::new_property(
+      S7::class_double,
+      getter = function(self) self@ptr$aggregate_pattern()
+    ),
+    has_aggregate_part = S7::new_property(
+      S7::class_logical,
+      getter = function(self) self@ptr$has_aggregate_part()
+    )
   ),
-  constructor = function(events, months) {
-    rust_result(events@ptr$timeline_check(as.double(months)))
-    S7::new_object(S7::S7_object(), events = events, months = as.double(months))
+  constructor = function(events, months, aggregate_pattern = NULL, ptr = NULL) {
+    if (is.null(ptr)) {
+      ptr <- rust_result(Timeline$new(events@ptr, as.double(months), pattern_or_null(aggregate_pattern)))
+    }
+    S7::new_object(S7::S7_object(), ptr = ptr)
   }
 )
 
+pattern_or_null <- function(pattern) if (is.null(pattern)) NULL else as.double(pattern)
+
 #' @rdname timeline
 #' @export
-timeline_from_years <- function(years) {
-  r <- rust_result(timeline_from_years_rust(lapply(years, function(y) y@ptr)))
-  timeline(event_set(r$events), r$months)
+timeline_from_years <- function(years, aggregate_pattern = NULL) {
+  ptr <- rust_result(Timeline$from_years(lapply(years, function(y) y@ptr), pattern_or_null(aggregate_pattern)))
+  timeline(ptr = ptr)
 }
 
 #' @rdname timeline
 #' @export
 timeline_years <- function(timeline, basis, exposure, sources = FALSE) {
   exposure <- as.matrix(exposure)
-  r <- rust_result(timeline@events@ptr$timeline_years(
-    timeline@months, as.character(basis), as.double(t(exposure)), as.double(nrow(exposure)),
-    isTRUE(sources)
+  r <- rust_result(timeline@ptr$years(
+    as.character(basis), as.double(t(exposure)), as.double(nrow(exposure)), isTRUE(sources)
   ))
   if (isTRUE(sources)) {
     r$years <- lapply(r$years, event_set)

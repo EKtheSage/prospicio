@@ -479,7 +479,6 @@ but several steps were done by hand. These are the gaps, with the issues filed f
 | Negative binomial `k` estimated with the model (2.7.2) | `theta` is an input; profiled by hand | #352 |
 | Tweedie power by profile likelihood (2.7.3) | in Rust (`prospicio_glm::tweedie`), not in Python or R | #352 |
 | Double lift chart, loss ratio chart, ROC curve and AUROC (7.2, 7.3) | `lift_table()` and `gini_index()` only | #351 |
-| A deviance scorer for `cross_validate()`, and the GAM's log-likelihood and AIC | R has no `deviance_score()` (Python does), so the scorer is written with `family_deviance()`; a `gam_fit()` model has no log-likelihood or AIC, computed by hand from `@fitted` and `@edf` | #360 |
 | GLMMs, double GLMs (dispersion modelling), MARS (10.1, 10.2, 10.4) | none; a one-way random effect has a Bayesian counterpart in the credibility functions, and the double GLM's iterative scheme of section 10.2 can be run with `glm_fit()` weights | #353 |
 
 Beyond the monograph's list, prospicio has GAMs with P-spline, cyclic,

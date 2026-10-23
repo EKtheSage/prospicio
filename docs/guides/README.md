@@ -31,15 +31,25 @@ pytest tests/test_guides.py
 
 Looking for the guide that follows a particular text (a CAS monograph, a book)? See [`reading-list.md`](reading-list.md), which maps each source to its guides, its knowledge file and the open issues.
 
-Want to run something before you read? [`examples/reading_path.ipynb`](../../examples/reading_path.ipynb) carries one small book through seven stations (severity and counts, the aggregate distribution, layer pricing, the indication, reserving, risk loads and allocation, and the Bayesian and GLM guides) and names the guides to read at each. Its R twin is [`examples/reading_path.qmd`](../../examples/reading_path.qmd).
+Start here, in this order:
 
-Start here: [`choosing-a-method.md`](choosing-a-method.md). It maps each
-situation (a rate indication, a per-risk or casualty layer, a catastrophe cover,
-a quota share, a stop loss, a reserve, capital) to the method and the calls,
-and sends you to the guide that goes deeper.
+1. [`a-first-course.md`](a-first-course.md), a first course for a student or
+   new analyst: the ideas from a loss distribution to allocation, two worked
+   decisions and a ten-step checklist.
+2. [`examples/reading_path.ipynb`](../../examples/reading_path.ipynb), the same
+   ideas on a realistic book: it carries one small book through seven stations
+   (severity and counts, the aggregate distribution, layer pricing, the
+   indication, reserving, risk loads and allocation, and the Bayesian and GLM
+   guides) and names the guides to read at each. Its R twin is
+   [`examples/reading_path.qmd`](../../examples/reading_path.qmd).
+3. [`choosing-a-method.md`](choosing-a-method.md), which maps each situation (a
+   rate indication, a per-risk or casualty layer, a catastrophe cover, a quota
+   share, a stop loss, a reserve, capital) to the method and the calls, and
+   sends you to the guide that goes deeper.
 
 | Guide | What it answers |
 |---|---|
+| [`a-first-course.md`](a-first-course.md) | A first course, from premium and losses to a priced book: a loss as a distribution, the aggregate loss by FFT, why a price exceeds the mean, distortions, diversification and the allocation methods; then two decisions on small books (whether to write a new unit, which treaty a cedant should buy) and a ten-step checklist with a template for your own data |
 | [`choosing-a-method.md`](choosing-a-method.md) | Which prospicio tool for which job: a decision table over the situations an actuary meets, the calls, the traps and where the library stops |
 
 **Pricing**
@@ -85,6 +95,7 @@ and sends you to the guide that goes deeper.
 | [`reserving-compartmental.md`](reserving-compartmental.md) | Gesmann and Morris' hierarchical compartmental models 1 and 2 on company 337: paid and outstanding as two compartments with reporting and payment rates, the prior predictive check, both fits with the paper's printed posteriors beside prospicio's, the fitted development and test diagonal, the reserve against the outcome, why their elpd_loo values do not compare, and the one-year view |
 | [`reserving-friedland.md`](reserving-friedland.md) | Friedland's *Estimating Unpaid Claims Using Basic Techniques* (CAS) reproduced on its own data: age-to-age averages and selected factors, the development, expected claims, Bornhuetter-Ferguson, Benktander and Cape Cod techniques on U.S. Industry Auto and XYZ Insurer, and the book's reasonableness checks, with its printed ultimates and IBNR beside prospicio's and the rounding conventions that explain every difference |
 | [`reserving-taylor-mcguire.md`](reserving-taylor-mcguire.md) | CAS Monograph 3 (Taylor and McGuire) reproduced: the chain ladder as an over-dispersed Poisson GLM, its prediction error by the delta method and the parametric bootstrap, residual diagnostics and heat maps, and the reduced models with accident-year and development-year curves and interactions, with the monograph's printed numbers beside prospicio's |
+| [`reserving-excess-layers.md`](reserving-excess-layers.md) | Excess-layer loss development: why a layer develops slowly and its own triangle is sparse, layer factors from the ground-up triangle and a severity (scale shift, Pareto shape drift) with Bloom and Patrik's, Pinto and Gogol's and Bear's printed factors beside prospicio's, the derived pattern in the chain ladder, Mack, BF and Cape Cod, credibility blending with the layer's own development, and a BF prior from the layer share, Bayesian with `LayerSharePrior` |
 
 ## R versions
 
@@ -94,6 +105,7 @@ twins in [`examples/`](../../examples/README.md):
 
 | R twin | Python guide |
 |---|---|
+| [`a-first-course.qmd`](a-first-course.qmd) | `a-first-course.md` |
 | [`prospicio-for-aggregate-users.qmd`](prospicio-for-aggregate-users.qmd) | `prospicio-for-aggregate-users.md` |
 | [`capital-modeling-monograph-15.qmd`](capital-modeling-monograph-15.qmd) | `capital-modeling-monograph-15.md` |
 | [`capital-modeling-monograph-15-theory.qmd`](capital-modeling-monograph-15-theory.qmd) | `capital-modeling-monograph-15-theory.md` |
@@ -117,6 +129,7 @@ twins in [`examples/`](../../examples/README.md):
 | [`pir-portfolio-pricing.qmd`](pir-portfolio-pricing.qmd) | `pir-portfolio-pricing.md` |
 | [`pir-risk-measures.qmd`](pir-risk-measures.qmd) | `pir-risk-measures.md` |
 | [`reserving-compartmental.qmd`](reserving-compartmental.qmd) | `reserving-compartmental.md` |
+| [`reserving-excess-layers.qmd`](reserving-excess-layers.qmd) | `reserving-excess-layers.md` |
 
 Each R chunk is followed by the text it prints, and
 `R/prospicio/tests/test-guides.R` (run by CI's R job with the other R tests) runs

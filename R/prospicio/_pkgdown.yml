@@ -352,6 +352,12 @@ reference:
 # a line here; until it has one, `cargo xtask r` shows it under "More articles"
 # (pkgdown itself fails on an article missing from this index).
 articles:
+  - title: Start here
+    navbar: Start here
+    desc: >
+      A first course for a student or new analyst: the ideas from a loss distribution to allocation, two worked decisions and a ten-step checklist.
+    contents:
+      - articles/a-first-course
   - title: Pricing and capital
     navbar: Pricing and capital
     desc: >
@@ -397,6 +403,7 @@ articles:
       - articles/reserving-taylor-mcguire
       - articles/reserving-meyers
       - articles/reserving-compartmental
+      - articles/reserving-excess-layers
       - starts_with("articles/reserving-")
   - title: Worked examples
     navbar: Worked examples
