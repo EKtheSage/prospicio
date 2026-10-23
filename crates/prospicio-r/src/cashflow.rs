@@ -107,6 +107,7 @@ impl Cashflow {
         commutation_floor: f64,
         commutation_limit: &[f64],
         collected_rate: f64,
+        deduct_commission: bool,
         lag: f64,
         adjustment_month: &[f64],
         adjustment_rate: &[f64],
@@ -183,6 +184,7 @@ impl Cashflow {
             .collect::<Result<_>>()?;
         t.premium_flow = PremiumFlow {
             collected_rate,
+            deduct_commission,
             lag: whole(lag, "lag")? as usize,
             adjustments,
         };
@@ -296,7 +298,8 @@ impl Cashflow {
             released = out.released().to_vec(),
             distributed = out.distributed().to_vec(),
             fee = out.fee().to_vec(),
-            commutation = out.commutation().to_vec()
+            commutation = out.commutation().to_vec(),
+            paid_first = out.paid_first()
         ))
     }
 

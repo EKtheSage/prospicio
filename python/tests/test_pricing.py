@@ -849,6 +849,8 @@ def test_cashflow_terms_hand_case():
     assert out.flows[1] == pytest.approx([50.0, -50.0, -50.0], abs=1e-9)
     assert out.funded == pytest.approx([40.0, 100.0], abs=1e-9)
     assert out.month_offsets == [0.0, 1.0, 2.0]
+    # A reserve rule alone pays the investor first (#608).
+    assert out.paid_first == [True, True]
     # The flows discounted monthly at an annual rate, as `npv` with months.
     want = P.npv(out.flows, out.month_offsets, 0.05, unit="months")
     assert out.npv(0.05) == pytest.approx(want, rel=1e-12)
@@ -857,6 +859,23 @@ def test_cashflow_terms_hand_case():
     assert tr["investor"] == pytest.approx(out.flows[1], abs=1e-9)
     assert tr["funding_investor"] == pytest.approx([0.0, 50.0, 50.0], abs=1e-9)
     assert abs(tr["conservation_error"]) < 1e-9
+
+
+def test_cashflow_deducted_commission():
+    """Each simulation's commission off the premium paid in (#609)."""
+    ramp = lambda m: [min((t + 1) / m, 1.0) for t in range(40)]
+    req = P.CollateralRequirement({"unearned-premium": 0.3, "outstanding": 1.25})
+    u, c = [0.5, 0.8], [0.2, 0.3]
+    on = P.CashflowTerms(100.0, 30, ramp(12), ramp(24), ramp(36), req, deduct_commission=True)
+    out = on.run(u, c)
+    for j in range(2):
+        flat = P.CashflowTerms(
+            100.0, 30, ramp(12), ramp(24), ramp(36), req, collected_rate=1 - c[j]
+        )
+        assert out.flows[j] == pytest.approx(flat.run([u[j]], [c[j]]).flows[0], abs=1e-9)
+    assert out.paid_first == [False, False]
+    off = P.CashflowTerms(100.0, 30, ramp(12), ramp(24), ramp(36), req)
+    assert off.run(u, c).flows[0] != pytest.approx(out.flows[0], abs=1.0)
 
 
 def test_cashflow_terms_every_rule():
