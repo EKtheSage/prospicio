@@ -5,6 +5,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::CollectiveModel as CollectiveInner;
+use prospicio_pricing::cashflow::MonthlyPatterns;
 use prospicio_pricing::classical::{self, Kind, Principle};
 use prospicio_pricing::experience::{
     ClaimValuation, Development, DevelopmentPattern, Experience, Fx, IndexClause, IndexKind,
@@ -18,7 +19,7 @@ use prospicio_pricing::natural::{
     Allocation, AtomAtAssets, BottomLayer, Pentagon, Portfolio as NaturalInner, PriceSettings,
     Quantity, Target,
 };
-use prospicio_pricing::payout::{self, PaymentPattern};
+use prospicio_pricing::payout::{self, Interpolation as PaidInterpolation, PaymentPattern};
 use prospicio_pricing::quote::{Loads, PremiumTerms, Quote, TowerQuote};
 use prospicio_pricing::returns::{self, IrrOptions, TieredFee, TimeUnit};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
@@ -1416,6 +1417,54 @@ fn pricing_pattern_unpaid(times: &[f64], shares: &[f64], age: f64) -> Result<Lis
     ))
 }
 
+fn interpolation_arg(s: &str) -> Result<PaidInterpolation> {
+    match s {
+        "step" => Ok(PaidInterpolation::Step),
+        "linear" => Ok(PaidInterpolation::Linear),
+        "log-linear" => Ok(PaidInterpolation::LogLinear),
+        other => Err(Error::Other(format!(
+            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log-linear\""
+        ))),
+    }
+}
+
+/// The cumulative share paid at the end of each of `months` months.
+#[extendr]
+fn pricing_pattern_monthly(
+    times: &[f64],
+    shares: &[f64],
+    months: f64,
+    interpolation: &str,
+) -> Result<Vec<f64>> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    p.to_monthly(
+        whole(months, "months")? as usize,
+        interpolation_arg(interpolation)?,
+    )
+    .map_err(to_r)
+}
+
+/// The monthly written, earned and paid patterns from a written pattern, a
+/// policy term and a payment pattern: `list(written, earned, paid)`.
+#[extendr]
+fn pricing_patterns_from_annual(
+    written: Vec<f64>,
+    times: &[f64],
+    shares: &[f64],
+    policy_months: f64,
+    interpolation: &str,
+) -> Result<List> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    let m = MonthlyPatterns::from_annual(
+        written,
+        whole(policy_months, "policy_months")? as usize,
+        &p,
+        interpolation_arg(interpolation)?,
+    )
+    .map_err(to_r)?;
+    Ok(list!(written = m.written, earned = m.earned, paid = m.paid))
+}
+
 /// A pattern's discount factor and capital years at `rate`, and the share
 /// outstanding at each of `t`.
 #[extendr]
@@ -1750,6 +1799,8 @@ extendr_module! {
     fn pricing_payment_pattern;
     fn pricing_pattern_values;
     fn pricing_pattern_unpaid;
+    fn pricing_pattern_monthly;
+    fn pricing_patterns_from_annual;
     fn pricing_price_over_payout;
     fn pricing_npv;
     fn pricing_irr;
