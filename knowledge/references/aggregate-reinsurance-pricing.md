@@ -6,7 +6,7 @@ resource: https://github.com/mynl/aggregate/blob/v0.22.0/docs/2_user_guides/2_x_
 tags: [reinsurance, pricing, aggregate, parity, fft, contract-terms, distortions]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-12T16:00:00Z }
-verified: { by: process:ci, at: 2026-10-12T23:54:56Z }
+verified: { by: process:ci, at: 2026-10-22T16:00:00Z }
 sources:
   - id: docs
     resource: https://github.com/mynl/aggregate/blob/v0.22.0/docs/2_user_guides/2_x_re_pricing.rst
@@ -106,17 +106,26 @@ sources:
   `*_skew_central`, with `*_density_deficit`); the notebook compares
   prospicio's skewness with `*_skew_central`, to `2e-5`.
 * **FFT noise at the top of the grid moves skewness.** prospicio's FFT leaves
-  nonnegative noise of up to `5.6e-16` on points out to the grid's top. Cubed
-  distance makes it count: the 250 xs 250 layer's skewness differs from
-  aggregate's density by `1.2e-5`, and by `3.6e-11` once the probability
-  beyond 10,000 (`1.6e-14` in all) is dropped. Means, standard deviations and
-  CVs agree to `1e-6` or better.
+  noise out to the grid's top, and cubed distance makes it count. The 250 xs
+  250 layer's skewness differs from aggregate's density by about `2e-6`
+  (observed `1.5e-6` Windows, `1.8e-6` Linux, on 2026-10-22: the noise depends
+  on the platform), and by under `1e-13` once the probability beyond 10,000 is
+  dropped. It was `1.2e-5` when this note was first written; the round-off
+  removed from `Tower::on_grid`'s grids by #367 is the likely cause of the
+  change, an inference that no test checks. The worst skewness difference is
+  the 50% stop-loss share's `9.5e-6`, where aggregate's re-bucketing adds to
+  it; the 80% share's is `1.5e-6`. Means and standard deviations agree to
+  better than `1e-7`. What CI checks (`test_reinsurance_pricing`, #269): the
+  layer's difference lies between `5e-7` and `2.5e-6` and the prose says
+  "about 2e-6", the `1e-13`, the two share figures as the prose prints them,
+  the 50% share being the worst, and the `1e-7` on means and standard
+  deviations. The per-platform values are observations, not checked.
 * **A share off the grid is re-bucketed, adding variance.** An 80% share of
   1,000 xs 1,000 has ceded values at multiples of 3.2 on a step-4 grid;
   aggregate splits them, prospicio keeps a step `0.8 * 4`. Means agree to
   `1e-11`, the standard deviation to `3e-6` (`7.4e-6` for a 50% stop-loss
   share), and quantiles by at most half a bucket. Every on-grid quantile is the
-  same grid point in both: the cdf at each compared quantile is at least `7e-8`
+  same grid point in both: the cdf at each compared quantile is at least `6.7e-8`
   from the probability, so none is near a tie.
 * **The tail beyond the grid.** aggregate with `normalize=False` drops the
   mass beyond the grid; prospicio puts it on the last point. A stop loss
