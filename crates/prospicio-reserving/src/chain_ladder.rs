@@ -2,6 +2,7 @@
 
 use crate::development::{Development, DevelopmentFit, cumulative_factors};
 use crate::error::{Error, Result};
+use crate::pattern::{PatternKind, PatternWeight, SelectedPattern};
 use crate::segments::{SegmentFits, fit_each};
 use crate::tail::{Tail, TailFit};
 use crate::triangle::{Segment, Triangle};
@@ -200,6 +201,102 @@ impl ChainLadderFit {
     /// age `k` to `k + 1`.
     pub fn ldf(&self) -> &[f64] {
         &self.tail.ldf[..self.development.ldf.len()]
+    }
+
+    /// The development this fit projects with, frozen as a chain ladder to
+    /// apply to another book or to a latest diagonal (`reserving-v02.md`,
+    /// decision 17): chainladder-python's
+    /// `Chainladder().fit(source).predict(target)`.
+    ///
+    /// It holds a fully selected pattern of age-to-age factors, the factors
+    /// in use ([`ldf`](Self::ldf)) at the fit's ages: estimated or blended
+    /// with a selection under the fit's average and exclusions, and an
+    /// estimated tail's own factors from its attachment age on. Its tail is
+    /// the fit's tail factor as a constant at the oldest age
+    /// (`Tail::from(self.tail.factor)`). Its other settings are the
+    /// defaults, with no `n_periods` and no drops, as
+    /// [`ChainLadder::fit_diagonal`] requires.
+    ///
+    /// Apply it to a latest diagonal with [`ChainLadder::fit_diagonal`], and
+    /// to another triangle through its latest diagonal,
+    /// [`LatestDiagonal::from_triangle`](crate::LatestDiagonal::from_triangle).
+    /// For the expected-loss methods, put it in their `chain_ladder` field:
+    /// Bornhuetter-Ferguson and Benktander apply their own apriori to the
+    /// target's exposure, and Cape Cod estimates its apriori on the target.
+    /// The tail is never refitted on the target.
+    ///
+    /// On the fit's own ages its link factors are the fit's to the bit; the
+    /// tail is spread again by the constant tail's decay, so the factors to
+    /// ultimate and the ultimates agree to about 1e-15 relative, and to the
+    /// bit when the tail factor is 1. It does not carry sigma, the standard
+    /// errors or an estimated tail's form, and a fit applied with it has no
+    /// standard error. A tail factor below about 0.472 cannot be spread at
+    /// the constant tail's decay of 0.5, and a fit with one age has no
+    /// factors, so fitting the result is then an error.
+    ///
+    /// The plain triangle path (`fit`) reads each factor from its age to the
+    /// target's next age, so it suits a target at the fit's ages only; on a
+    /// target with a finer development grain use the latest diagonal, which
+    /// reads ages between the fit's by its log-linear rule.
+    ///
+    /// ```
+    /// use prospicio_reserving::{
+    ///     ChainLadder, DevelopmentColumn, Grain, LatestDiagonal, Long, Month, PatternKind, Tail,
+    ///     Triangle,
+    /// };
+    ///
+    /// // A source book with a factor of 1.5 from 12 to 24 months.
+    /// let origin = [2020, 2020, 2021].map(Month::january);
+    /// let source = Triangle::from_long(&Long {
+    ///     keys: &[],
+    ///     origin: &origin,
+    ///     development: DevelopmentColumn::Age(&[12, 24, 12]),
+    ///     values: &[("paid", &[100.0, 150.0, 200.0])],
+    ///     origin_grain: Grain::Year,
+    ///     development_grain: Grain::Year,
+    ///     cumulative: true,
+    /// })
+    /// .unwrap();
+    /// let fit = ChainLadder { tail: 1.1.into(), ..Default::default() }
+    ///     .fit(&source, "paid")
+    ///     .unwrap();
+    /// let frozen = fit.to_chain_ladder();
+    /// let pattern = frozen.development.pattern.as_ref().unwrap();
+    /// assert_eq!(pattern.kind, PatternKind::AgeToAge);
+    /// assert_eq!(pattern.values, [(12, 1.5)]);
+    /// assert_eq!(frozen.tail, Tail::from(1.1));
+    ///
+    /// // Another book's diagonal at 31 December 2024.
+    /// let diagonal = LatestDiagonal::new(
+    ///     Grain::Year,
+    ///     &[2023, 2024].map(Month::january),
+    ///     &[24, 12],
+    ///     &[400.0, 300.0],
+    /// )
+    /// .unwrap();
+    /// let applied = frozen.fit_diagonal(&diagonal).unwrap();
+    /// assert_eq!(applied.ldf(), [1.5]);
+    /// // 400 × 1.1 and 300 × 1.5 × 1.1, each spread over the tail's periods.
+    /// assert!((applied.ultimate[0] - 440.0).abs() < 1e-9);
+    /// assert!((applied.ultimate[1] - 495.0).abs() < 1e-9);
+    /// ```
+    pub fn to_chain_ladder(&self) -> ChainLadder {
+        let ages = &self.development.development;
+        ChainLadder {
+            development: Development {
+                pattern: Some(SelectedPattern {
+                    kind: PatternKind::AgeToAge,
+                    values: ages
+                        .iter()
+                        .copied()
+                        .zip(self.ldf().iter().copied())
+                        .collect(),
+                    weight: PatternWeight::All(1.0),
+                }),
+                ..Default::default()
+            },
+            tail: Tail::from(self.tail.factor),
+        }
     }
 
     /// Reserve (ultimate minus latest) per origin, often labelled IBNR.
