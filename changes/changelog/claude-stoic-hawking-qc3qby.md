@@ -8,4 +8,4 @@
   the contract years as an event in that month would, so each year's quota
   share or stop loss sees its part. Python `aggregate_pattern=` on
   `Timeline` and `Timeline.from_years`, R `aggregate_pattern =` on
-  `timeline()` and `timeline_from_years()`.
+  `timeline()` and `timeline_from_years()` (#540).
