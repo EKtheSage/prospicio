@@ -149,7 +149,11 @@ for \code{"paid_and_incurred"} and the paid column supplies each origin's
 latest paid only: the reserve is the expected paid at the last age less
 the latest paid, and the future paid cells are expected values, without
 noise, since no paid cell is fitted. Of the one-year views and the
-backtest candidates only Python and Rust take these settings.
+backtest candidates only Python and Rust take these settings. Use
+\code{\link[=compartmental_diffuse_priors]{compartmental_diffuse_priors()}} for a fit to one response alone: where the
+incurred does not pin the payment rate \code{k_p}, its prior sets the paid
+run-off (on company 337 the paper's narrow prior put the reserve 26\% above
+the fit to paid and outstanding).
 
 \code{compartmental_model_2()} is \code{compartmental()} with model 2's
 likelihood, scale and paid response, and a longer, finer sampler: four

@@ -140,7 +140,28 @@ fn moments(fit: &CompartmentalFit, name: &str) -> Option<(f64, f64)> {
     Some((mean, var.sqrt()))
 }
 
+/// The posterior sd of `log k_p`.
+fn log_kp_sd(fit: &CompartmentalFit) -> f64 {
+    let j = fit
+        .posterior
+        .names()
+        .iter()
+        .position(|n| n == "k_p")
+        .unwrap();
+    let logs: Vec<f64> = fit
+        .posterior
+        .parameter(j)
+        .concat()
+        .iter()
+        .map(|v| v.ln())
+        .collect();
+    let n = logs.len() as f64;
+    let m = logs.iter().sum::<f64>() / n;
+    (logs.iter().map(|v| (v - m).powi(2)).sum::<f64>() / (n - 1.0)).sqrt()
+}
+
 fn report(label: &str, fit: &CompartmentalFit, elapsed: std::time::Duration) {
+    eprintln!("sd(log k_p) {:.3}", log_kp_sd(fit));
     let total = fit.reserves.total();
     let mean = |name: &str| moments(fit, name).map_or(f64::NAN, |m| m.0);
     eprintln!(
@@ -301,7 +322,10 @@ fn converged(fitted: Fitted, d: &Diagnostics) {
         );
     } else {
         assert!(
-            d.warnings.is_empty() && d.divergences == 0,
+            d.warnings
+                .iter()
+                .all(|w| w.contains("does not identify the payment rate"))
+                && d.divergences == 0,
             "{fitted:?}: {d:?}"
         );
     }
@@ -477,4 +501,148 @@ fn seed_sweep() {
     )
     .unwrap();
     eprintln!("wrote {dir}/compartmental_one_response_sweep.csv");
+}
+
+fn diffuse_model(fitted: Fitted, seed: u64) -> Compartmental {
+    Compartmental {
+        seed,
+        fitted,
+        rate_order: RateOrder::Ordered,
+        ..Compartmental::new(CompartmentalPriors::diffuse())
+    }
+}
+
+/// The diffuse preset on each variant over a few seeds, recorded in
+/// `knowledge/findings/compartmental-one-response.md`. Run in a release build:
+/// `cargo test --release -p prospicio-validation --features slow-bayes --test
+/// reserving_compartmental_one_response diffuse_sweep -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn diffuse_sweep() {
+    for (fitted, _) in MODES {
+        for seed in 0..5 {
+            let start = Instant::now();
+            let fit = run(&diffuse_model(fitted, seed));
+            report(
+                &format!("{fitted:?} diffuse seed {seed}"),
+                &fit,
+                start.elapsed(),
+            );
+            let sd = |name: &str| moments(&fit, name).map_or(f64::NAN, |m| m.1);
+            eprintln!(
+                "  sd k_er {:.3} k_p {:.3} RLR {:.3} RRF {:.3}",
+                sd("k_er"),
+                sd("k_p"),
+                sd("RLR"),
+                sd("RRF")
+            );
+        }
+    }
+}
+
+/// Incurred alone under log-scale sds between the paper's and the diffuse
+/// preset's, for `DIFFUSE_SDS` (comma separated, default 0.3,0.5,0.7), on
+/// all four rate and ratio priors, seeds 0 to 2.
+#[test]
+#[ignore]
+fn incurred_sd_ladder() {
+    let sds: Vec<f64> = std::env::var("DIFFUSE_SDS")
+        .unwrap_or_else(|_| "0.3,0.5,0.7".into())
+        .split(',')
+        .map(|s| s.parse().unwrap())
+        .collect();
+    for sd in sds {
+        let wide =
+            |median: f64| prospicio_reserving::bayes::PositivePrior::LogNormal { median, sd };
+        let priors = CompartmentalPriors {
+            k_er: wide(3.0),
+            k_p: wide(1.0),
+            rlr: wide(0.7),
+            rrf: wide(0.8),
+            ..CompartmentalPriors::gesmann_morris()
+        };
+        for seed in 0..3 {
+            let start = Instant::now();
+            let m = Compartmental {
+                seed,
+                fitted: Fitted::IncurredOnly,
+                rate_order: RateOrder::Ordered,
+                ..Compartmental::new(priors)
+            };
+            let fit = run(&m);
+            report(
+                &format!("IncurredOnly sd {sd} seed {seed}"),
+                &fit,
+                start.elapsed(),
+            );
+            let s = |name: &str| moments(&fit, name).map_or(f64::NAN, |m| m.1);
+            eprintln!(
+                "  sd k_er {:.3} k_p {:.3} RLR {:.3} RRF {:.3}",
+                s("k_er"),
+                s("k_p"),
+                s("RLR"),
+                s("RRF")
+            );
+        }
+    }
+}
+
+/// The diffuse preset, paid alone (decision 12, the user's decision of
+/// 2026-10-22): the data pin `k_p` (the posterior sd of its log is 5% of the
+/// prior's), the fit converges, and the total reserve is 181,550 within 1%,
+/// the range of 5 seeds being 181,425 to 181,690 (sd 12,100 to 12,700), 2.9%
+/// above the paper's preset on paid alone (176,448) and 4.7% above paid and
+/// outstanding (173,390).
+#[test]
+fn diffuse_priors_on_paid_alone() {
+    let fit = run(&diffuse_model(Fitted::PaidOnly, 0));
+    report("PaidOnly diffuse", &fit, std::time::Duration::ZERO);
+    converged(Fitted::PaidOnly, &fit.diagnostics);
+    let total = fit.reserves.total();
+    assert!(
+        (total.mean() / 181_550.0 - 1.0).abs() < 0.01,
+        "{}",
+        total.mean()
+    );
+    assert!(total.std_dev() > 11_000.0 && total.std_dev() < 14_000.0);
+    assert!(log_kp_sd(&fit) < 0.1, "{}", log_kp_sd(&fit));
+}
+
+/// The diffuse preset, incurred alone: a finding, not a fit to rely on. The
+/// incurred does not identify `k_p` (the posterior sd of its log is about 60%
+/// of the prior's), so the paid run-off and the reserve come from the prior:
+/// the mean total reserve is -44,000 to -61,000 over 5 seeds (the sd
+/// 145,000 to 156,000), against 219,051 under the paper's preset and
+/// 173,390 with paid and outstanding. The fit says so in its warnings.
+#[test]
+fn diffuse_priors_on_incurred_alone_are_not_identified() {
+    let fit = run(&diffuse_model(Fitted::IncurredOnly, 0));
+    report("IncurredOnly diffuse", &fit, std::time::Duration::ZERO);
+    let share = log_kp_sd(&fit);
+    assert!(share > 0.5 && share < 0.8, "{share}");
+    assert!(
+        fit.diagnostics
+            .warnings
+            .iter()
+            .any(|w| w.contains("does not identify the payment rate")),
+        "{:?}",
+        fit.diagnostics.warnings
+    );
+    let total = fit.reserves.total();
+    assert!(total.std_dev() > 100_000.0, "{}", total.std_dev());
+    assert!(total.mean() < 100_000.0, "{}", total.mean());
+}
+
+/// Under the paper's preset the same warning fires on incurred alone (the
+/// posterior sd of `log k_p` is 99% of its prior's) and not on paid alone.
+#[test]
+fn the_paper_preset_warns_on_incurred_alone_only() {
+    let warns = |fit: &CompartmentalFit| {
+        fit.diagnostics
+            .warnings
+            .iter()
+            .any(|w| w.contains("does not identify the payment rate"))
+    };
+    assert!(warns(fit(Fitted::IncurredOnly)));
+    assert!(!warns(fit(Fitted::PaidOnly)));
 }

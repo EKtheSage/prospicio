@@ -88,6 +88,15 @@ def test_the_preset_and_replace():
     assert built == p
 
 
+def test_the_diffuse_preset():
+    d = CompartmentalPriors.diffuse()
+    assert (d.k_er, d.k_p, d.rlr, d.rrf) == ((3.0, 1.0), (1.0, 1.0), (0.7, 1.0), (0.8, 1.0))
+    # Everything but the four rate and ratio priors is the paper's.
+    assert d == GM.replace(k_er=(3.0, 1.0), k_p=(1.0, 1.0), rlr=(0.7, 1.0), rrf=(0.8, 1.0))
+    assert d.replace(k_p=(1.0, 0.1)).k_p == GM.k_p
+    assert Compartmental(d, rate_order="ordered", fitted="incurred_only").priors == d
+
+
 def test_bad_priors():
     with pytest.raises(TypeError):
         CompartmentalPriors(k_er=(3.0, 0.1))  # every prior is required
@@ -166,9 +175,11 @@ def test_incurred_only(tri):
     # future paid cells are expected values.
     short = dict(chains=2, tune=200, draws=200, n_sims=200, seed=3)
     m = Compartmental(GM, fitted="incurred_only", rate_order="ordered", **short)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         a = m.fit(tri, "paid", "premium", incurred="incurred")
+    # The paper's tight prior on k_p sets the paid run-off, and the fit says so.
+    assert any("does not identify the payment rate" in str(w.message) for w in caught)
     assert a.outstanding is not None and len(a.outstanding.components()) == 55
     names = a.parameter_names
     assert names[:5] == ["k_er", "k_p", "RLR", "RRF", "sigma_os"]

@@ -4552,6 +4552,20 @@ S7::method(print, cape_cod_fit) <- function(x, ...) print_expected_loss(x, "cape
 #' `rrf`; and `normal(log 0.2, 0.2)` on each `log sigma` (the text gives a
 #' median of 0.1). Use it with [compartmental_model_2()].
 #'
+#' `compartmental_diffuse_priors()` is the default for a fit to one response
+#' alone (`fitted = "incurred_only"` or `"paid_only"`): the paper's medians for
+#' model 1 with a log-scale sd of 1 on `k_er`, `k_p`, `rlr` and `rrf`, 5 to 10
+#' times the paper's, and its effect sds and `log sigma` priors, so the data
+#' and not the prior set the rates. Under incurred alone no paid cell is
+#' fitted, so where the incurred does not pin the payment rate `k_p` its prior
+#' sets the paid run-off: the paper's narrow prior on `k_p` put the reserve on
+#' company 337 26% above the fit to paid and outstanding. Use a narrower
+#' prior, such as the paper's, when you hold information about the rates that
+#' is not in the data, for example a payment pattern from a similar book.
+#' On company 337 it fits paid alone well, but incurred alone is not
+#' identified (the reserve's sd is about 150,000), and the fit then
+#' warns that the reserve comes from the prior.
+#'
 #' Each positive parameter `theta` (`k_er`, `k_p`, `rlr`, `rrf`) is
 #' `median * exp(sd * o)` with `o ~ N(0, 1)`: a log-normal prior with that
 #' median and log-scale sd. The effects live on that `o` scale.
@@ -4695,6 +4709,17 @@ gesmann_morris_2_priors <- function() {
                                  rrf = half(0.5)))
 }
 
+#' @rdname compartmental_priors
+#' @export
+compartmental_diffuse_priors <- function() {
+  p <- gesmann_morris_priors()
+  p$k_er <- c(median = 3, sd = 1)
+  p$k_p <- c(median = 1, sd = 1)
+  p$rlr <- c(median = 0.7, sd = 1)
+  p$rrf <- c(median = 0.8, sd = 1)
+  p
+}
+
 # The priors as the Rust side reads them: 31 numbers and 10 family names.
 compartmental_prior_values <- function(priors, call) {
   if (!inherits(priors, "compartmental_priors")) {
@@ -4769,7 +4794,11 @@ compartmental_prior_values <- function(priors, call) {
 #' latest paid only: the reserve is the expected paid at the last age less
 #' the latest paid, and the future paid cells are expected values, without
 #' noise, since no paid cell is fitted. Of the one-year views and the
-#' backtest candidates only Python and Rust take these settings.
+#' backtest candidates only Python and Rust take these settings. Use
+#' [compartmental_diffuse_priors()] for a fit to one response alone: where the
+#' incurred does not pin the payment rate `k_p`, its prior sets the paid
+#' run-off (on company 337 the paper's narrow prior put the reserve 26% above
+#' the fit to paid and outstanding).
 #'
 #' `compartmental_model_2()` is `compartmental()` with model 2's
 #' likelihood, scale and paid response, and a longer, finer sampler: four

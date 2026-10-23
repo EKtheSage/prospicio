@@ -127,6 +127,12 @@ pub enum Fitted {
     /// has no outstanding distribution
     /// ([`CompartmentalFit::outstanding`] is `None`): the outstanding
     /// depends on `RLR` alone, which only its prior pins.
+    ///
+    /// Fit it with [`CompartmentalPriors::diffuse`] unless you hold
+    /// information about the rates that is not in the data. On company 337
+    /// the paid pins `k_p` (the posterior sd of its log is 5% of the diffuse
+    /// prior's) and the diffuse prior gives a total reserve 2.9% above the
+    /// paper's preset.
     PaidOnly,
     /// Incurred alone (decision 12): each incurred cell's mean as under
     /// [`PaidAndIncurred`](Self::PaidAndIncurred), the second column giving
@@ -139,6 +145,17 @@ pub enum Fitted {
     /// cells are those expected values, without observation noise, since no
     /// paid cell is fitted. The fit's `outstanding` holds the future
     /// incurred cells, drawn with the incurred `σ`.
+    ///
+    /// The incurred alone does not identify the payment rate `k_p`, so the
+    /// paid run-off and the reserve come from its prior. The user's decision
+    /// of 2026-10-22 is [`CompartmentalPriors::diffuse`] as the default prior
+    /// and a narrower one as the option of a user who holds information about
+    /// the rates that is not in the data. On company 337 the diffuse prior
+    /// leaves the reserve unidentified (a mean of about -50,000 and an sd of
+    /// about 150,000, against 219,051 under the paper's preset and 173,390
+    /// with paid and outstanding), and the fit warns, here and under any
+    /// prior, when the posterior sd of `log k_p` is more than half its
+    /// prior's. Prefer a fit with paid, or a prior on `k_p` you believe.
     IncurredOnly,
 }
 
@@ -203,6 +220,12 @@ pub enum RealPrior {
 /// settled as (a)): the rates and ratios are specific to a line and a book,
 /// so the library does not choose them silently. Check a set with
 /// [`Compartmental::prior_predictive`] before fitting.
+///
+/// [`diffuse`](Self::diffuse) is the set to use for a fit to one response
+/// alone ([`Fitted::PaidOnly`], [`Fitted::IncurredOnly`]), where the data
+/// should set the rates: a narrow prior, such as
+/// [`gesmann_morris`](Self::gesmann_morris)'s, is the option of a user who
+/// holds information about the rates that is not in the data.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CompartmentalPriors {
     /// The reporting rate `k_er`.
@@ -281,6 +304,36 @@ impl CompartmentalPriors {
             ker_effect_sd: None,
             kp_effect_sd: None,
             development_effect_sd: [None; 4],
+        }
+    }
+
+    /// A diffuse set for model 1 (decision 12, the user's decision of
+    /// 2026-10-22): the paper's medians (`k_er` 3, `k_p` 1, `RLR` 0.7, `RRF`
+    /// 0.8) with a log-scale sd of 1 on each of the four, 5 to 10 times the
+    /// paper's, so each prior spans about a factor of 7 either side of its
+    /// median at two sds and the data, not the prior, set the rates. The
+    /// origin effect sds and the priors on `log σ` are
+    /// [`gesmann_morris`](Self::gesmann_morris)'s.
+    ///
+    /// Use it as the default for a fit to one response alone
+    /// ([`Fitted::IncurredOnly`], [`Fitted::PaidOnly`]). Under incurred
+    /// alone no paid cell is fitted, so the payment rate `k_p`, and with it
+    /// the paid run-off, is set by its prior where the incurred does not pin
+    /// it: the paper's `k_p` prior (sd 0.1) is a belief, not a default, and
+    /// on company 337 it put the reserve 26% above the fit to paid and
+    /// outstanding. Use a narrower prior (a struct update on this one, or
+    /// [`gesmann_morris`](Self::gesmann_morris)) when you hold information
+    /// about the rates that is not in the data, for example a payment
+    /// pattern from a similar book. Check either with
+    /// [`Compartmental::prior_predictive`].
+    pub fn diffuse() -> Self {
+        let wide = |median: f64| PositivePrior::LogNormal { median, sd: 1.0 };
+        Self {
+            k_er: wide(3.0),
+            k_p: wide(1.0),
+            rlr: wide(0.7),
+            rrf: wide(0.8),
+            ..Self::gesmann_morris()
         }
     }
 
@@ -455,6 +508,37 @@ fn ordered_rates(pr: CompartmentalPriors, rng: &mut StreamRng) -> (f64, f64) {
     let z = -norm_quantile(norm_cdf(-a) * rng.next_open01());
     let y = norm_quantile(rng.next_open01());
     ((s_er * z + s_p * y) / s, (s_er * y - s_p * z) / s)
+}
+
+/// Under [`Fitted::IncurredOnly`] the fit warns when the posterior sd of
+/// `log k_p` is more than this share of the prior's (decision 12): the data
+/// have then told the payment rate little and the paid run-off is the
+/// prior's. On company 337 the share is 0.99 under the paper's preset, 0.6
+/// under the diffuse one and 0.9 to 0.7 in between (log-scale sds 0.3 to
+/// 0.7 on the four priors), against 0.05 to 0.4 when paid is fitted, alone
+/// or with outstanding
+/// (`knowledge/findings/compartmental-one-response.md`).
+const PRIOR_SHARE_WARNING: f64 = 0.5;
+
+/// The posterior sd of `log k_p` over its prior's log-scale sd, `None` for
+/// fewer than two finite draws.
+fn payment_rate_prior_share(
+    posterior: &PosteriorDraws,
+    priors: CompartmentalPriors,
+) -> Option<f64> {
+    let (_, prior_sd) = lognormal(priors.k_p);
+    let logs: Vec<f64> = posterior
+        .values()
+        .chunks_exact(posterior.dim())
+        .map(|d| d[1].ln())
+        .collect();
+    if logs.len() < 2 || !logs.iter().all(|v| v.is_finite()) {
+        return None;
+    }
+    let n = logs.len() as f64;
+    let mean = logs.iter().sum::<f64>() / n;
+    let var = logs.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
+    Some(var.sqrt() / prior_sd)
 }
 
 /// `(median, sd)` of a [`PositivePrior`].
@@ -820,6 +904,19 @@ impl Compartmental {
                  rate swap; check the rate priors, or set rate_order to Ordered",
                 posterior.n_draws()
             ));
+        }
+        if self.fitted == Fitted::IncurredOnly {
+            if let Some(share) = payment_rate_prior_share(&posterior, self.priors) {
+                if share > PRIOR_SHARE_WARNING {
+                    diagnostics.warnings.push(format!(
+                        "the posterior sd of log k_p is {:.0}% of its prior's: the incurred \
+                         does not identify the payment rate, so the paid run-off and the \
+                         reserve come from the prior on k_p (no paid cell is fitted); use \
+                         a prior you believe, or fit paid as well",
+                        100.0 * share
+                    ));
+                }
+            }
         }
         let cell_rate_swaps = model.cell_rate_swaps(&posterior);
 
@@ -5286,6 +5383,91 @@ mod tests {
             preset().prior_predictive(&tri, "premium", 0),
             Err(Error::InvalidSetting { name: "n_sims", .. })
         ));
+    }
+
+    /// Incurred alone under the paper's tight `k_p` prior: the incurred does
+    /// not move the payment rate, the fit says so, and paid alone (which
+    /// pins `k_p`) is silent.
+    #[test]
+    #[cfg_attr(
+        not(feature = "slow-tests"),
+        ignore = "samples with NUTS; needs --features slow-tests"
+    )]
+    fn incurred_alone_warns_when_the_payment_rate_is_the_priors() {
+        let tri = triangle(true);
+        let fit = |fitted| {
+            Compartmental {
+                fitted,
+                rate_order: RateOrder::Ordered,
+                ..quick(5)
+            }
+            .fit(&tri, "paid", incurred(), "premium")
+            .unwrap()
+        };
+        let warned = |f: &CompartmentalFit| {
+            f.diagnostics
+                .warnings
+                .iter()
+                .any(|w| w.contains("does not identify the payment rate"))
+        };
+        let incurred_alone = fit(Fitted::IncurredOnly);
+        assert!(warned(&incurred_alone), "{:?}", incurred_alone.diagnostics);
+        assert!(!warned(&fit(Fitted::PaidOnly)));
+        assert!(!warned(&fit(Fitted::PaidAndIncurred)));
+    }
+
+    #[test]
+    fn the_diffuse_preset() {
+        let d = CompartmentalPriors::diffuse();
+        let g = CompartmentalPriors::gesmann_morris();
+        // The paper's medians, a log-scale sd of 1 on the four, and
+        // everything else as model 1's.
+        for (diffuse, paper, median) in [
+            (d.k_er, g.k_er, 3.0),
+            (d.k_p, g.k_p, 1.0),
+            (d.rlr, g.rlr, 0.7),
+            (d.rrf, g.rrf, 0.8),
+        ] {
+            let PositivePrior::LogNormal { median: m, sd } = diffuse;
+            let PositivePrior::LogNormal {
+                median: pm,
+                sd: psd,
+            } = paper;
+            assert_eq!((m, sd, pm), (median, 1.0, median));
+            assert!(psd <= 0.2);
+        }
+        assert_eq!(
+            (d.rlr_effect_sd, d.rrf_effect_sd, d.lkj_eta, d.log_sigma),
+            (g.rlr_effect_sd, g.rrf_effect_sd, g.lkj_eta, g.log_sigma)
+        );
+        assert!(d.ker_effect_sd.is_none() && d.development_effect_sd.iter().all(Option::is_none));
+        d.validate().unwrap();
+        // The prior predictive check, free and ordered: paid at the last
+        // age as a share of the 1988 premium, 5th, 50th and 95th percentiles. The
+        // paper's preset gives 0.39, 0.56 and 0.81 (the same under both rate
+        // orders); the diffuse one 0.06, 0.53 and 5.5, with the same median.
+        // The diffuse one spans the plausible range and beyond without ruling
+        // any of it out.
+        let tri = triangle(true);
+        let band = |priors, rate_order| {
+            let paths = Compartmental {
+                rate_order,
+                ..Compartmental::new(priors)
+            }
+            .prior_predictive(&tri, "premium", 4_000)
+            .unwrap();
+            let key = vec![Period::year(1988).into(), KeyValue::Int(120)];
+            let paid = paths.paid.marginal(&key).unwrap();
+            let q = |p| paid.quantile(p).unwrap() / PREMIUM[0];
+            (q(0.05), q(0.5), q(0.95))
+        };
+        for rate_order in [RateOrder::Free, RateOrder::Ordered] {
+            let (lo, mid, hi) = band(g, rate_order);
+            let (dlo, dmid, dhi) = band(d, rate_order);
+            assert!(hi / lo < 2.5, "{lo} {hi}");
+            assert!((mid - dmid).abs() < 0.1, "{mid} {dmid}");
+            assert!(dlo < 0.2 && dhi > 1.5 && dhi / dlo > 15.0, "{dlo} {dhi}");
+        }
     }
 
     #[test]
