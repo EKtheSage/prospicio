@@ -72,6 +72,7 @@ def assert_says(text, *quotes):
     ("one_year_view.ipynb", "DATA = next("),
     ("reinsurance_pricing.ipynb", "REFERENCE = next("),
     ("submission_evaluation.ipynb", "DATA = next("),
+    ("ils_deal_analysis.ipynb", "DATA = next("),
 ])
 def test_data_folder_missing_is_a_clear_error(name, lookup, monkeypatch, tmp_path):
     # A reader who copies a notebook out of the repository gets an error that says what is missing and
@@ -595,3 +596,61 @@ def test_reinsurance_pricing_r_twin_passes_every_comparison(monkeypatch, capsys)
     comparisons = ns["COMPARISONS"]
     assert (int(independent), int(checks)) == (sum(not c["check"] for c in comparisons),
                                                sum(c["check"] for c in comparisons)), r[0].group(0)
+
+
+def test_ils_deal_analysis(monkeypatch, capsys):
+    monkeypatch.setitem(os.environ, "PROSPICIO_EXAMPLE_SIMS", "2000")
+    monkeypatch.chdir(EXAMPLES)
+    ns = run_notebook(EXAMPLES / "ils_deal_analysis.ipynb")
+    out = capsys.readouterr().out
+    assert "inputs used below" in out
+    n = ns["N_SIMS"]
+
+    # The industry prior is a positive level and cv, and the 2026 draws have the mean and cv the cell targets.
+    assert 0.2 < ns["M_PRIOR"] < 0.9 and 0.0 < ns["CV_PRIOR"] < 0.5
+    assert len(ns["LR"]) == n
+    assert sum(ns["LR"]) / n == pytest.approx(ns["MU_2026"], rel=0.03)
+    assert ns["sd"](ns["LR"]) / ns["mean"](ns["LR"]) == pytest.approx(ns["CV_2026"], rel=0.10)
+
+    # The fit: every year has a positive ultimate, and the pattern is a distribution over the ages.
+    assert all(m > 0 for m in ns["post_mean"].values())
+    assert sum(ns["fit"].pattern) == pytest.approx(1.0, abs=1e-9)
+    assert ns["fit"].diagnostics["max_rhat"] < 1.05
+
+    # The structure: the deal's loss ratio is the book's, both structures cede the same loss, the flat one
+    # pays its stated commission and the sliding one pays more when the loss ratio is low.
+    flat, sliding = ns["deals"]["A_flat"], ns["deals"]["B_sliding"]
+    assert flat["loss"] == pytest.approx(sliding["loss"], rel=1e-9)
+    assert ns["mean"](flat["loss"]) == pytest.approx(ns["mean"](ns["LR"]), rel=1e-6)
+    assert ns["mean"](flat["commission"]) == pytest.approx(0.32 + ns["BROKERAGE"], abs=1e-9)
+    order = sorted(range(n), key=lambda i: flat["loss"][i])
+    commission = [sliding["commission"][i] for i in order]
+    assert all(a >= b - 1e-12 for a, b in zip(commission, commission[1:]))
+    assert commission[0] > commission[-1]
+
+    # The cash flows: money is conserved in the engine, the fund posts capital in every simulation, and
+    # the return is positive at these terms and falls when the loss ratio rises.
+    trace = ns["make_terms"](0.345).trace(flat["loss"][0])
+    assert abs(trace["conservation_error"]) < 1e-6
+    for deal in (flat, sliding):
+        assert all(f > 0 for f in deal["funded"])
+        assert len(deal["rate"]) == n and len(deal["moic"]) == n
+        assert sum(r != r for r in deal["rate"]) <= 0.01 * n  # NaN: no root found
+        assert ns["mean"](deal["moic"]) > 1.0
+    by_loss = sorted(range(n), key=lambda i: flat["loss"][i])
+    low = [flat["moic"][i] for i in by_loss[: n // 10]]
+    high = [flat["moic"][i] for i in by_loss[-n // 10:]]
+    assert ns["mean"](low) > ns["mean"](high)
+    # The book's MOIC is one plus the summed flows over the capital posted (the engine's own definition).
+    i = by_loss[n // 2]
+    posted = flat["funded"][i] + flat["opening"][i]
+    assert flat["moic"][i] == pytest.approx(1 + sum(flat["flows"][i]) / posted, rel=1e-9)
+
+    # Monitoring: a percentile, and the one-year view's spread is positive.
+    assert 0.0 <= ns["percentile"] <= 1.0
+    assert ns["sd"](ns["cdr"].draws) > 0
+
+    # The prose names the eight gaps with their issues.
+    text = prose(EXAMPLES / "ils_deal_analysis.ipynb")
+    for gap, issue in zip(range(1, 9), range(598, 606)):
+        assert re.search(rf"\| G{gap} \|.*\| #{issue} \|", text), gap
