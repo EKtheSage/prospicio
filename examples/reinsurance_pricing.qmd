@@ -763,7 +763,7 @@ ggplot() +
 
 `aggregate` does this with `Aggregate.calibrate_distortions(0.10, p=0.99, reins_view=...)`. These examples are designed: its pricing pages hold no worked example for this book.
 
-**In R.** CCoC is itself a distortion, `g(s) = (r + s) / (1 + r)` for `s > 0`, so `risk_measure(min(X, a), distortion("ccoc", 0.10))` is the premium, and `lev(grid, a)` is `L`. `calibrate_distortion(family, dist, premium, assets = a)` finds the parameter whose price of `min(X, a)` is the premium; `risk_measure()` prices a grid. `aggregate` takes `a` as the lower 99% quantile on the grid, and so does `quantile()` on a grid, so `F(a)` is a little above 99%. The parameters are not read off the objects. They are compared through the distortion function `g(s)` at two survival probabilities, evaluated with `aggregate`'s own parameter.
+**In R.** CCoC is itself a distortion, `g(s) = (r + s) / (1 + r)` for `s > 0`, so `risk_measure(min(X, a), distortion("ccoc", 0.10))` is the premium, and `lev(grid, a)` is `L`. `calibrate_distortion(family, dist, premium, assets = a)` finds the parameter whose price of `min(X, a)` is the premium; `risk_measure()` prices a grid. `aggregate` takes `a` as the lower 99% quantile on the grid, and so does `quantile()` on a grid, so `F(a)` is a little above 99%. `d@parameters` (the parameters by name) and `d@parameter` (the one parameter of a family with one) read the calibrated parameter off the object, so each parameter is compared with the one `aggregate` calibrated. The distortion function `g(s)` is compared too, at two survival probabilities, with `aggregate`'s parameter put into `aggregate`'s formula: that checks that the two packages define each family the same way, which the parameter alone cannot.
 
 **Reading the table.** "price of min(X, a)" is the premium each calibrated distortion charges at the capital standard, so it equals `P` by construction. "unlimited" is the same distortion applied to `X` with no cap: the premium it would charge if the reinsurer's liability were not limited to the assets. The gap between the two is the load the distortion puts on the tail beyond the 99% standard. CCoC shows n/a, because its jump at `s = 0` charges the cost of capital on the largest possible loss, so the cap is part of its definition.
 
@@ -821,6 +821,10 @@ for (view in list(list("ceded", "risk_pricing_ceded", program_ceded), list("gros
       record(s, sprintf("%s: g(%s) at aggregate's parameter", family, sv), agg_g, distortion_g(d, sv),
              abs(distortion_g(d, sv) - agg_g) / agg_g, "mean", FALSE, family == "ccoc")
     }
+    # The calibrated parameter, read off the distortion, against the one aggregate calibrated.
+    stopifnot(length(d@parameters) == 1)  # each of these families has one parameter
+    compare(s, sprintf("%s: parameter %s", family, names(d@parameters)), example, paste0("param_", family),
+            d@parameter, check = family == "ccoc")
     # Calibrated to the premium, so its price of min(X, a) is the premium: a consistency check.
     compare(s, paste0(family, ": price of min(X, a)"), example, paste0("price_ask_", family),
             risk_measure(capped, d), check = TRUE)
@@ -832,7 +836,8 @@ for (view in list(list("ceded", "risk_pricing_ceded", program_ceded), list("gros
     }
     priced[[paste(name, family)]] <- d
     calibrated <- rbind(calibrated, data.frame(
-      family = family, `g(0.05)` = distortion_g(d, 0.05), `price of min(X, a)` = risk_measure(capped, d),
+      family = family, parameter = sprintf("%s=%.6f", names(d@parameters), d@parameter),
+      `g(0.05)` = distortion_g(d, 0.05), `price of min(X, a)` = risk_measure(capped, d),
       unlimited = unlimited, check.names = FALSE
     ))
   }
@@ -845,9 +850,9 @@ for (view in list(list("ceded", "risk_pricing_ceded", program_ceded), list("gros
 }
 ```
 
-The CCoC premium agrees to rounding, and so do the calibrated distortions: their parameters are reproduced, checked through `g(s)` at `aggregate`'s parameter. Those `g` rows, the unlimited prices and the fixed-parameter prices are the independent comparisons in this section. The other rows hold by construction and are counted as consistency checks: each calibrated price of `min(X, a)` is the premium it was calibrated to, the capital is `a - P`, the return on capital is the 10% the premium was built from, and the calibrated and fixed CCoC reproduce that 10%.
+The CCoC premium agrees to rounding, and so do the calibrated distortions: their parameters, read off with `d@parameter`, are reproduced, and so is `g(s)` at `aggregate`'s parameter. The parameter and `g` rows, the unlimited prices and the fixed-parameter prices are the independent comparisons in this section. The other rows hold by construction and are counted as consistency checks: each calibrated price of `min(X, a)` is the premium it was calibrated to, the capital is `a - P`, the return on capital is the 10% the premium was built from, and the calibrated and fixed CCoC reproduce that 10%.
 
-`aggregate` stops its Newton iteration at a premium error (4.3e-6 for the gross view's TVaR), where `prospicio` bisects to rounding. The TVaR premium moves by over a thousand per unit of its parameter, so that error moves the parameter, and `g`, only at the 1e-9 level: the TVaR `g` rows differ by 4.9e-9 on the gross view and 1.0e-9 on the ceded view, inside the same 1e-6 as the other families. It shows in `aggregate`'s TVaR price of `min(X, a)`, which is off the target premium in the ninth digit where `prospicio`'s is not.
+`aggregate` stops its Newton iteration at a premium error (4.3e-6 for the gross view's TVaR), where `prospicio` bisects to rounding, so a few calibrated parameters differ at the 1e-9 level rather than to rounding. TVaR is the clearest case: its premium moves by over a thousand per unit of its parameter, so that error moves the parameter, and `g`, only at the 1e-9 level. The TVaR parameter differs by 8.0e-9 on the gross view and 1.4e-9 on the ceded view, and its `g` rows by 4.9e-9 and 1.0e-9. The ceded view's proportional hazard is at the same level, from the same stopping rule: its parameter differs by 1.3e-9 and its `g(0.05)` by 2.8e-9. All of these are inside the same 1e-6 as the other families. It shows in `aggregate`'s price of `min(X, a)` for these distortions, which is off the target premium in the ninth digit where `prospicio`'s is not.
 
 ## Summary of every comparison
 
