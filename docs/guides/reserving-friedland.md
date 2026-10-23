@@ -32,8 +32,6 @@ The triangles below are typed from chapter 7, Exhibits I and II (sheets 1 and
 2), and the premiums from chapter 8, Exhibits II and III:
 
 ```python
-import math
-
 from prospicio.reserving import (
     Benktander, BornhuetterFerguson, CapeCod, ChainLadder, ExpectedLoss, TailCurve, Triangle,
 )
@@ -97,11 +95,8 @@ XYZ_PAID = [
 XYZ_PREMIUM = [20000, 31500, 45000, 50000, 61183, 69175, 99322, 138151, 107578, 62438, 47797]
 
 
-def triangle(years, columns, exposures=None, first_age=None, diagonals=None):
-    """A Triangle from rows of cumulative values; exposures are repeated on every cell.
-
-    With `diagonals=n`, only the latest n calendar diagonals are kept.
-    """
+def triangle(years, columns, exposures=None, first_age=None):
+    """A Triangle from rows of cumulative values; exposures are repeated on every cell."""
     exposures = exposures or {}
     first_age = first_age or [12] * len(years)
     origin, age = [], []
@@ -110,8 +105,6 @@ def triangle(years, columns, exposures=None, first_age=None, diagonals=None):
     for i, year in enumerate(years):
         for k in range(len(rows[i])):
             months = first_age[i] + 12 * k
-            if diagonals and year + months // 12 - 1 <= years[-1] - diagonals:
-                continue
             origin.append(year)
             age.append(months)
             for name, table in columns.items():
@@ -155,42 +148,26 @@ column side by side and selects one factor per age. Her averages run over the
 average of the latest 5 without the highest and lowest, volume-weighted
 averages of the latest 5 and 3, and a geometric average of the latest 4.
 
-prospicio gives the link ratios (`Triangle.link_ratios`) and, in `ChainLadder`,
-the all-year simple, volume-weighted and regression averages. It has no option
-for "the latest n years" or for medial and geometric averages, so the helper
-below computes them from the link ratios and the cells in a few lines:
+All of them are options of `ChainLadder`: `average=` picks the mean
+(`"volume"`, `"simple"`, `"regression"` or `"geometric"`), `n_periods=n` keeps
+only the link ratios that start in the latest n calendar diagonals (the latest
+n accident years at each age), and `drop_high=` and `drop_low=` leave out the
+highest and lowest of those, so a medial average is a simple one with one of
+each dropped. A fit's `n_links` says how many link ratios each factor averaged:
 
 ```python
-def links(tri, column):
-    """The observed link ratios of each age, oldest accident year first."""
-    lr = tri.link_ratios().values[0][tri.columns.index(column)]
-    return [[row[k] for row in lr if not math.isnan(row[k])] for k in range(len(tri.development) - 1)]
-
-
-def averages(tri, column):
-    cells = tri.values[0][tri.columns.index(column)]
-
-    def volume(k, n):
-        pairs = [(row[k], row[k + 1]) for row in cells if not math.isnan(row[k + 1])][-n:]
-        return sum(b for _, b in pairs) / sum(a for a, _ in pairs)
-
-    def medial(x):
-        x = sorted(x[-5:])
-        return sum(x[1:-1]) / (len(x) - 2) if len(x) > 2 else sum(x) / len(x)
-
-    lr = links(tri, column)
-    return {
-        "simple, latest 5": [sum(x[-5:]) / len(x[-5:]) for x in lr],
-        "simple, latest 3": [sum(x[-3:]) / len(x[-3:]) for x in lr],
-        "medial, latest 5x1": [medial(x) for x in lr],
-        "volume, latest 5": [volume(k, 5) for k in range(len(lr))],
-        "volume, latest 3": [volume(k, 3) for k in range(len(lr))],
-        "geometric, latest 4": [math.exp(sum(map(math.log, x[-4:])) / len(x[-4:])) for x in lr],
-    }
-
-
-for name, factors in averages(us, "reported").items():
-    print(f"{name:20s}", " ".join(f"{f:.3f}" for f in factors))
+AVERAGES = {
+    "simple, latest 5": ChainLadder(average="simple", n_periods=5),
+    "simple, latest 3": ChainLadder(average="simple", n_periods=3),
+    "medial, latest 5x1": ChainLadder(average="simple", n_periods=5, drop_high=1, drop_low=1),
+    "volume, latest 5": ChainLadder(n_periods=5),
+    "volume, latest 3": ChainLadder(n_periods=3),
+    "geometric, latest 4": ChainLadder(average="geometric", n_periods=4),
+}
+fits = {name: method.fit(us, "reported") for name, method in AVERAGES.items()}
+for name, fit in fits.items():
+    print(f"{name:20s}", " ".join(f"{f:.3f}" for f in fit.ldf))
+print(f"{'n_links, medial 5x1':20s}", " ".join(f"{n:5d}" for n in fits["medial, latest 5x1"].n_links))
 ```
 
 ```text
@@ -200,24 +177,23 @@ medial, latest 5x1   1.165 1.057 1.027 1.010 1.004 1.003 1.002 1.001 1.000
 volume, latest 5     1.168 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
 volume, latest 3     1.164 1.056 1.027 1.012 1.005 1.003 1.002 1.001 1.000
 geometric, latest 4  1.164 1.057 1.027 1.011 1.004 1.003 1.002 1.001 1.000
+n_links, medial 5x1      3     3     3     3     3     2     1     2     1
 ```
 
-Each row equals the corresponding row of chapter 7, Exhibit I, sheet 1, part 3,
-to the three decimals printed there (12-24 at the left, 108-120 at the right);
-the paid averages on sheet 2 agree in the same way. Two conventions in the
-book matter here. Its medial average of two values is their simple average and
-of one value the value itself, as the helper does. And when only a few years
-exist, "latest 5" quietly uses all of them.
+Each factor row equals the corresponding row of chapter 7, Exhibit I, sheet 1,
+part 3, to the three decimals printed there (12-24 at the left, 108-120 at the
+right); the paid averages on sheet 2 agree in the same way. Two conventions in
+the book matter here, and prospicio follows both. When only a few years exist,
+"latest 5" quietly uses all of them. And its medial average of two values is
+their simple average and of one value the value itself: prospicio skips a drop
+that would leave no link ratio. The last line shows it: the five link ratios at
+12-24 keep 3, the four at 72-84 keep 2 and the three at 84-96 keep 1, while the
+two at 96-108 and the one at 108-120 keep them all.
 
-For a volume-weighted average over the latest n years there is also a way
-through prospicio itself: keep only the latest `n + 1` calendar diagonals and
-fit the ordinary volume-weighted chain ladder. Each link then uses only the
-latest n link ratios. The all-year averages, by contrast, are not what the book
-uses:
+The all-year averages, by contrast, are not what the book uses:
 
 ```python
-recent = triangle(US_YEARS, {"reported": US_REPORTED}, diagonals=4)
-print("volume, latest 3 ", " ".join(f"{f:.3f}" for f in ChainLadder().fit(recent, "reported").ldf))
+print("volume, latest 3 ", " ".join(f"{f:.3f}" for f in ChainLadder(n_periods=3).fit(us, "reported").ldf))
 print("volume, all years", " ".join(f"{f:.3f}" for f in ChainLadder().fit(us, "reported").ldf))
 print("simple, all years", " ".join(f"{f:.3f}" for f in ChainLadder(average="simple").fit(us, "reported").ldf))
 ```
@@ -355,14 +331,12 @@ does, rather than as the answer.
 ### XYZ Insurer: unstable factors and a pattern below 1
 
 For XYZ, Friedland selects the volume-weighted average of the latest 2 years at
-every age, with no reported tail and a paid tail of 1.010. The diagonal trick
-reproduces her selected factors (chapter 7, Exhibit II, sheets 1 and 2, part 4)
-from the latest 3 diagonals:
+every age, with no reported tail and a paid tail of 1.010. `n_periods=2`
+reproduces her selected factors (chapter 7, Exhibit II, sheets 1 and 2, part 4):
 
 ```python
-for column, rows in [("reported", XYZ_REPORTED), ("paid", XYZ_PAID)]:
-    last2 = triangle(XYZ_YEARS, {column: rows}, first_age=XYZ_FIRST_AGE, diagonals=3)
-    print(f"{column:8s}", " ".join(f"{f:.3f}" for f in ChainLadder().fit(last2, column).ldf))
+for column in ("reported", "paid"):
+    print(f"{column:8s}", " ".join(f"{f:.3f}" for f in ChainLadder(n_periods=2).fit(xyz, column).ldf))
 ```
 
 ```text
@@ -374,17 +348,15 @@ The book prints 1.687 1.265 1.102 1.020 1.050 1.010 1.011 1.000 0.993 0.999
 for reported and 3.349 2.079 1.574 1.316 1.203 1.136 1.059 1.022 1.017 1.004
 for paid: all equal. Reported claims fall after 96 months (case reserves set too
 high and then released), so the reported CDFs at 96 and 108 months are 0.992,
-below 1. prospicio's `ldf_kind="cdf"` refuses a CDF below 1 (a factor to
-ultimate cannot shrink, by its contract), so the book's rounded CDFs go in as
-age-to-age ratios of consecutive CDFs instead, which chain back to the same
-CDFs. The paid CDFs are all above 1 and go in directly:
+below 1. A selected pattern with `ldf_kind="cdf"` needs only positive
+factors to ultimate, in any order, so the book's rounded CDFs go in directly,
+the reported ones as well as the paid:
 
 ```python
 XYZ_AGES = xyz.development
 CDF_XYZ_REPORTED = [2.551, 1.512, 1.196, 1.085, 1.064, 1.013, 1.003, 0.992, 0.992, 0.999, 1.000]
 CDF_XYZ_PAID = [21.999, 6.569, 3.160, 2.007, 1.525, 1.268, 1.116, 1.054, 1.031, 1.014, 1.010]
-ratios = {a: CDF_XYZ_REPORTED[k] / CDF_XYZ_REPORTED[k + 1] for k, a in enumerate(XYZ_AGES[:-1])}
-xdev_r = ChainLadder(ldf=ratios, ldf_kind="ldf").fit(xyz, "reported")
+xdev_r = ChainLadder(ldf=dict(zip(XYZ_AGES, CDF_XYZ_REPORTED)), ldf_kind="cdf").fit(xyz, "reported")
 xdev_p = ChainLadder(ldf=dict(zip(XYZ_AGES, CDF_XYZ_PAID)), ldf_kind="cdf").fit(xyz, "paid")
 
 BOOK_XDEV = {  # chapter 7, Exhibit II, sheet 3, columns (7) and (8)
@@ -776,15 +748,6 @@ make.
 
 The book's techniques that this guide could not run, and why:
 
-- **Averages over the latest n years, medial and geometric averages.**
-  `ChainLadder` averages all years (`average="volume"`, `"simple"`,
-  `"regression"`). The latest-n volume-weighted average can be had by keeping
-  the latest `n + 1` diagonals (section 2); the others need the few lines of
-  the `averages` helper. Selected factors then go in through `ldf=`. Filed
-  as issue #336 for the Reserving lane.
-- **CDFs below 1 as a selected pattern.** `ldf_kind="cdf"` requires factors to
-  ultimate of at least 1, so XYZ's reported pattern goes in as age-to-age
-  ratios (section 2); also in #336.
 - **Frequency-severity techniques (chapter 11).** Claim counts and severities
   projected separately, with trend, disposal rates and the claims closure
   model. prospicio can develop a counts triangle with `ChainLadder` like any
