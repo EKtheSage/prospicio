@@ -588,11 +588,10 @@ def test_reinsurance_pricing_r_twin_passes_every_comparison(monkeypatch, capsys)
     r = [m for m in r if m]
     assert len(r) == 1, "the R twin printed no summary line, or more than one"
     passed, total, independent, checks, outside = r[0].groups()
-    # Every comparison passes in R.
+    # Every comparison passes in R, and the total is the sum of its parts.
     assert int(passed) == int(total) > 300 and outside == "", r[0].group(0)
-    # R makes the notebook's comparisons, but for one difference its section 6 states: it does not read the
-    # calibrated parameters off the distortions (R has no reader for them), so it has no "<family>: parameter"
-    # rows and checks the parameters through g(s) instead.
-    kept = [c for c in ns["COMPARISONS"] if not re.match(r"\w+: parameter \w+$", c["name"])]
-    assert len(ns["COMPARISONS"]) - len(kept) == 10  # five families, gross and ceded
-    assert (int(independent), int(checks)) == (sum(not c["check"] for c in kept), sum(c["check"] for c in kept))
+    assert int(total) == int(independent) + int(checks), r[0].group(0)
+    # R makes the notebook's comparisons, the calibrated distortion parameters (`d@parameter`) included.
+    comparisons = ns["COMPARISONS"]
+    assert (int(independent), int(checks)) == (sum(not c["check"] for c in comparisons),
+                                               sum(c["check"] for c in comparisons)), r[0].group(0)

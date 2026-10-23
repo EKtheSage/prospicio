@@ -45,15 +45,14 @@ sources:
   consistency checks that hold by construction (a calibrated price equal to its
   target premium, the CCoC return on capital, a maximum reinstatement premium).
   CI runs the notebook (`test_reinsurance_pricing`).[^notebook][^test]
-* Its R twin, `examples/reinsurance_pricing.qmd`, compares 343 (321 and 22).
-  The ten it lacks are the calibrated parameters of the five distortions in
-  each view (`<family>: parameter <name>`, the CCoC one a consistency check):
-  the R package has no reader for a distortion's parameters, so the twin checks
-  them through `g(s)` at aggregate's parameter instead, as its section 6 says.
-  The weekly and manual CI runs render the twin and check that every
-  comparison passes and that the counts are the notebook's less those ten
-  (the `examples-r` job, `test_reinsurance_pricing_r_twin_passes_every_comparison`;
-  #271).[^test]
+* Its R twin, `examples/reinsurance_pricing.qmd`, makes the same 353 (329 and
+  24). It reads each calibrated distortion's parameter off the object with
+  `d@parameter` (`d@parameters` names it), as the notebook does with
+  `Distortion.parameters`, and checks `g(s)` at aggregate's parameter beside
+  it. The weekly and manual CI runs render the twin and check that every
+  comparison passes, that the summary's total is the sum of its parts and that
+  the counts equal the notebook's (the `examples-r` job,
+  `test_reinsurance_pricing_r_twin_passes_every_comparison`; #271).[^test]
 * The guide's Treaty 1 table gives the subject premiums as 3,000 and 6,000,
   but its code uses `[9000 3000]` at `[0.04 0.03]`, which gives the 450 (3.75%
   of 12,000) its Treaty 4 text states; the script and notebook follow the
