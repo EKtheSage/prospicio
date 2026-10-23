@@ -1,7 +1,7 @@
 ### Breaking changes
 
 - Rust: `prospicio_reserving::Error` has the variant `Diagonal`, so an
-  exhaustive `match` on it needs an arm for it (#544).
+  exhaustive `match` on it needs an arm for it (#544, #606).
 
 ### Reserving
 
@@ -11,4 +11,4 @@
   `Benktander` and `CapeCod` projects it with a fully selected pattern
   from elsewhere. Ages between the pattern's are read log-linearly, so
   monthly or half-year ages work with an annual pattern; ages outside the
-  pattern are an error. Rust only for now (#544).
+  pattern are an error. Rust only for now (#544, #606).
