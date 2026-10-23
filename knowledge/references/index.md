@@ -6,6 +6,7 @@
 * [BayesBlend](bayesblend.md) - Ledger Investing's BayesBlend 0.0.8 (MIT), whose Stan models prospicio_bayes::stacking follows, including partial pooling and adaptive priors.
 * [R Pareto](r-pareto.md) - The R package Pareto 2.4.5 (GPL), used only for reference values; where its tower matching departs from Riegel (2018).
 * [nuts-rs](nuts-rs.md) - nutpie's Rust core, nuts-rs 0.19 (MIT), the sampler behind prospicio_bayes::nuts, BayesGlm and stacking; how prospicio-bayes drives it.
+* [CmdStan CSV and posterior](stan-csv.md) - CmdStan 2.36.0's sample CSV as prospicio_bayes::stan_csv reads it, and posterior 1.7.0's and loo 2.10.1's conventions on external draws: loo's r_eff defaults to 1, relative_eff is on exp(log_lik).
 * [R ChainLadder CDR](r-chainladder-cdr.md) - R ChainLadder 0.2.21's CDR.MackChainLadder, the reference for Merz-Wuthrich's claims development result; its conventions, and where it and the 2008 paper differ.
 * [Tails in R ChainLadder and chainladder-python](chainladder-tails.md) - R's tail = TRUE rule and tail_SE, chainladder-python's TailConstant, TailCurve and TailBondy; the quirks prospicio_reserving::Tail reproduces or avoids.
 * [LightGBM and XGBoost](lightgbm-xgboost.md) - The engines behind prospicio.boosting; how offsets, starting scores and precision behave, and which wheels to install.

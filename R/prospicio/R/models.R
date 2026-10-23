@@ -2101,6 +2101,102 @@ elpd_waic <- function(log_lik) {
   elpd_result(rust_result(elpd_waic_rust(as.double(t(log_lik)), as.double(ncol(log_lik)))))
 }
 
+#' Draws from another sampler
+#'
+#' Brings posterior draws from Stan, PyMC, nutpie or any other sampler into
+#' prospicio's diagnostics (#395). `read_stan_csv()` reads CmdStan's CSV
+#' output, one file per chain: comments skipped, saved warmup draws dropped,
+#' `theta.1.2` named `theta[1,2]`, `lp__` kept, the sampler's other `__`
+#' columns and each chain's divergent transitions kept as attributes.
+#' `mcmc_draws()` takes draws already in R. `draws_summary()` and
+#' `draws_loo()` then give the summary, R-hat and ESS as
+#' `posterior::summarise_draws()` and PSIS-LOO as
+#' `loo::loo(log_lik, r_eff = loo::relative_eff(exp(log_lik)))`.
+#'
+#' @param files CmdStan CSV files, one per chain.
+#' @param x For `mcmc_draws()`: a 3-D array iteration x chain x variable
+#'   with the variable names as its third dimnames (the layout of
+#'   `posterior::draws_array`), any `posterior` draws object (converted with
+#'   `posterior::as_draws_array()`), an rstan `stanfit` (`as.array()`) or a
+#'   cmdstanr fit (`$draws()`, with its divergences). For `draws_summary()`
+#'   and `draws_loo()`: draws from `read_stan_csv()` or `mcmc_draws()`, or
+#'   anything `mcmc_draws()` takes.
+#' @param divergences Divergent transitions in each chain, if known.
+#' @param log_lik The name of the pointwise log-likelihood variable, held as
+#'   `log_lik[1]`, `log_lik[2]`, ...
+#' @returns `read_stan_csv()` and `mcmc_draws()`: a 3-D array iteration x
+#'   chain x variable, with attributes `divergences` (per chain) and, from
+#'   `read_stan_csv()`, `sampler` (the sampler's columns as another such
+#'   array) and `warmup_dropped`. `draws_summary()`: a data frame with
+#'   `variable`, `mean`, `sd`, `q05`, `q50`, `q95`, `rhat`, `ess_bulk` and
+#'   `ess_tail`. `draws_loo()`: a list as [elpd_loo()]'s, with `r_eff` per
+#'   observation.
+#' @name external_draws
+#' @examples
+#' set.seed(1)
+#' x <- array(rnorm(4 * 200 * 2), c(200, 4, 2),
+#'            dimnames = list(NULL, NULL, c("mu", "sigma")))
+#' draws_summary(mcmc_draws(x))
+NULL
+
+#' @rdname external_draws
+#' @export
+read_stan_csv <- function(files) {
+  r <- rust_result(read_stan_csv_rust(as.character(files)))
+  out <- array(r$values, c(r$n_iter, r$n_chain, length(r$names)),
+               dimnames = list(NULL, NULL, r$names))
+  attr(out, "divergences") <- r$divergences
+  if (length(r$sampler_names) > 0) {
+    attr(out, "sampler") <- array(r$sampler_values, c(r$n_iter, r$n_chain, length(r$sampler_names)),
+                                  dimnames = list(NULL, NULL, r$sampler_names))
+  }
+  attr(out, "warmup_dropped") <- r$warmup_dropped
+  out
+}
+
+#' @rdname external_draws
+#' @export
+mcmc_draws <- function(x, divergences = NULL) {
+  if (inherits(x, "CmdStanMCMC")) {
+    if (is.null(divergences)) divergences <- x$diagnostic_summary(quiet = TRUE)$num_divergent
+    x <- x$draws()
+  } else if (inherits(x, "stanfit")) {
+    x <- as.array(x)
+  }
+  if (inherits(x, "draws")) {
+    if (!requireNamespace("posterior", quietly = TRUE)) {
+      stop("converting posterior draws needs the posterior package")
+    }
+    x <- posterior::as_draws_array(x)
+  }
+  if (is.null(divergences)) divergences <- attr(x, "divergences")
+  x <- unclass(x)
+  if (!is.numeric(x) || length(dim(x)) != 3 || is.null(dimnames(x)[[3]])) {
+    stop("draws must be a 3-D array iteration x chain x variable with variable names")
+  }
+  out <- array(as.double(x), dim(x), dimnames = list(NULL, NULL, dimnames(x)[[3]]))
+  attr(out, "divergences") <- if (is.null(divergences)) NULL else as.double(divergences)
+  for (a in c("sampler", "warmup_dropped")) attr(out, a) <- attr(x, a)
+  out
+}
+
+#' @rdname external_draws
+#' @export
+draws_summary <- function(x) {
+  x <- mcmc_draws(x)
+  d <- dim(x)
+  r <- rust_result(draws_summary_rust(as.double(x), d[1], d[2], dimnames(x)[[3]]))
+  as.data.frame(r)
+}
+
+#' @rdname external_draws
+#' @export
+draws_loo <- function(x, log_lik = "log_lik") {
+  x <- mcmc_draws(x)
+  d <- dim(x)
+  elpd_result(rust_result(draws_loo_rust(as.double(x), d[1], d[2], dimnames(x)[[3]], log_lik)))
+}
+
 # The random terms `(1 + x | g)` of a formula, in lme4's syntax: the
 # formula without them and each grouping factor as a list of its
 # expression (`g`, `a:b`; `a/b` is `a` and `a:b`), whether it has an
