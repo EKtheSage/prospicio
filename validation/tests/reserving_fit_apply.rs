@@ -804,14 +804,38 @@ fn a_book_with_fewer_ages_is_applied_through_its_diagonal() {
     let fit = frozen.fit_diagonal(&d).unwrap();
     assert_eq!(fit.origins, source.origins[5..]);
     assert_eq!(fit.ultimate, source.ultimate[5..]);
-    // The plain triangle path needs every source age in the book.
-    match frozen.fit(&book, "values").unwrap_err() {
-        Error::Pattern {
-            age: Some(72),
-            reason,
-        } => assert!(reason.contains("not a development age"), "{reason}"),
-        other => panic!("{other} is not a pattern error at 72 months"),
+    // The plain triangle path reads the factors past the book's oldest age
+    // as one constant tail there (decision 18), so it projects as the
+    // diagonal does.
+    let plain = frozen.fit(&book, "values").unwrap();
+    assert_eq!(plain.origins, source.origins[5..]);
+    assert_close(&plain.ultimate, &source.ultimate[5..], 1e-14, "plain path");
+    let folded: f64 = source.ldf()[4..].iter().product();
+    assert!(close_to(plain.pattern_tail.unwrap(), folded, 1e-14));
+    // And with a tail carried from the source, which follows the pattern's
+    // end.
+    let tailed = ChainLadder {
+        tail: Tail::from(1.05),
+        ..Default::default()
     }
+    .fit(&triangle("genins"), "values")
+    .unwrap();
+    let frozen = tailed.to_chain_ladder();
+    let diagonal = frozen.fit_diagonal(&d).unwrap();
+    assert_close(
+        &diagonal.ultimate,
+        &tailed.ultimate[5..],
+        1e-14,
+        "diagonal, tail",
+    );
+    let plain = frozen.fit(&book, "values").unwrap();
+    assert_close(
+        &plain.ultimate,
+        &tailed.ultimate[5..],
+        1e-14,
+        "plain path, tail",
+    );
+    assert!(close_to(plain.pattern_tail.unwrap(), folded * 1.05, 1e-14));
 }
 
 #[test]

@@ -19,6 +19,9 @@ sources:
   - id: diagonal
     resource: ../validation/tests/reserving_latest_diagonal.rs
     title: Validation test of a latest diagonal with a selected pattern, against chainladder-python (from validation/scripts/reserving_latest_diagonal_python.py)
+  - id: basis
+    resource: ../validation/tests/reserving_pattern_basis.rs
+    title: Validation test of a pattern on another origin basis and of ages off or past the pattern, by hand since no reference does either
 ---
 
 # Use
@@ -76,6 +79,14 @@ Checked on 2026-10-14 with chainladder-python 0.10.1 and R ChainLadder
   tail); there is no `predict`. So there
   is no reference for off-grid ages, and prospicio's log-linear reading
   of them is checked by hand.
+* **No origin basis.** `DevelopmentConstant(patterns, style, callable_axis,
+  groupby)` in 0.10.1 has no argument for the origin basis of the pattern,
+  and its docstring says only the grain of the existing triangle is
+  retained (checked with uv on 2026-10-23), so an accident-month pattern
+  cannot be applied to accident years there; prospicio's
+  `SelectedPattern::averaged_over_origins` and the plain path's reading of
+  a pattern off the triangle's ages (decision 18 of `reserving-v02.md`)
+  are checked by hand and on a synthetic book.[^basis]
 * **Mack.** `MackChainladder().fit(DevelopmentConstant(...).fit_transform(tri))`
   fails with "Triangle not compatible with MackChainladder", so there is no
   reference for Mack with a selected pattern.
@@ -90,3 +101,4 @@ Checked on 2026-10-14 with chainladder-python 0.10.1 and R ChainLadder
 [^script]: chainladder-python reference generator for selected patterns
 [^test]: Validation test of selected patterns against chainladder-python and R
 [^diagonal]: Validation test of a latest diagonal with a selected pattern, against chainladder-python (from validation/scripts/reserving_latest_diagonal_python.py)
+[^basis]: Validation test of a pattern on another origin basis and of ages off or past the pattern, by hand since no reference does either

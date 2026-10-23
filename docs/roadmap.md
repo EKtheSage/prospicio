@@ -436,6 +436,16 @@ what it is aiming for by v1.0.
     expected-loss family; parity with chainladder-python's
     `fit(source).predict(target)`. `LatestDiagonal` over segments and the
     bindings are the issue's next PRs.
+  - A pattern on another origin basis, and ages past its end
+    (`reserving-v02.md`, decision 18; branch `claude/diagonal-basis`, issue
+    #544, in Rust): `SelectedPattern::averaged_over_origins` turns an
+    accident-month pattern into an accident-year or accident-quarter one,
+    the plain triangle path reads a pattern off the triangle's ages and
+    folds what runs past its oldest age into a constant tail, and
+    `LatestDiagonal::with_past_pattern_end` develops an origin older than
+    the pattern's end with a factor of 1 or the tail spread from the end;
+    no external reference implements these readings, so they are checked
+    by hand and on a synthetic book.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

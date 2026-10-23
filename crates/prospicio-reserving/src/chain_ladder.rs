@@ -2,7 +2,7 @@
 
 use crate::development::{Development, DevelopmentFit, cumulative_factors};
 use crate::error::{Error, Result};
-use crate::pattern::{PatternKind, PatternWeight, SelectedPattern};
+use crate::pattern::{PatternKind, PatternWeight, Resolved, SelectedPattern, tail_on_own_ages};
 use crate::segments::{SegmentFits, fit_each};
 use crate::tail::{Tail, TailFit};
 use crate::triangle::{Segment, Triangle};
@@ -88,10 +88,19 @@ pub struct ChainLadderFit {
     /// oldest age (1 over its percent developed there), a constant
     /// ([`TailConstant`](crate::TailConstant) at the oldest age) with no
     /// parameter error: [`tail`](Self::tail)'s `std_err` is 0, its `sigma`
-    /// extrapolated as a constant tail's. `None` with a tail (the level is
-    /// rescaled to it), for a pattern that stops before the oldest age (its
-    /// level is rescaled to the estimated factors after it), for an
-    /// age-to-age pattern, or without a pattern.
+    /// extrapolated as a constant tail's.
+    ///
+    /// A pattern read off the triangle's ages that runs past the oldest age
+    /// (`reserving-v02.md`, decision 18) sets it too, with or without a
+    /// tail and of any kind: the development the pattern gives from the
+    /// oldest age to its end, times the tail after its end (its level, with
+    /// no tail; the constant's factor; or an estimated tail fitted on the
+    /// pattern's own ages), the same constant with no parameter error.
+    ///
+    /// `None` otherwise with a tail (the level is rescaled to it), for a
+    /// pattern that stops before the oldest age (its level is rescaled to
+    /// the estimated factors after it), for an age-to-age pattern, or
+    /// without a pattern.
     pub pattern_tail: Option<f64>,
 }
 
@@ -112,20 +121,65 @@ impl ChainLadder {
         fit_each(triangle, column, |s| self.fit_segment(s, &s.ages))
     }
 
-    /// The tail in use on a segment with development `ages`: the given
-    /// one, or with none the constant one a cumulative pattern to the
-    /// oldest age implies ([`ChainLadderFit::pattern_tail`]).
+    /// The tail in use on a segment with development `ages`: the constant
+    /// one a pattern that runs past the oldest age folds into
+    /// (`reserving-v02.md`, decision 18), the given one, or with none the
+    /// constant one a cumulative pattern to the oldest age implies
+    /// ([`ChainLadderFit::pattern_tail`]).
     pub(crate) fn tail_in_use(&self, ages: &[Lag]) -> Result<Tail> {
-        if !self.tail.is_none() {
+        let Some(p) = &self.development.pattern else {
             return Ok(self.tail);
+        };
+        let resolved = p.resolve(ages)?;
+        Ok(self
+            .pattern_tail_of(&resolved, ages)?
+            .map_or(self.tail, Tail::from))
+    }
+
+    /// The constant tail the pattern, `resolved` on `ages`, puts in place
+    /// of the given one: the development a pattern that runs past the
+    /// oldest age gives there, times the tail after its end (decision 18),
+    /// or with no tail a cumulative pattern's level at the oldest age
+    /// (decision 12). `None` when the given tail is used.
+    pub(crate) fn pattern_tail_of(&self, resolved: &Resolved, ages: &[Lag]) -> Result<Option<f64>> {
+        let Some(beyond) = &resolved.beyond else {
+            return Ok(if self.tail.is_none() {
+                resolved.implied_tail(ages)
+            } else {
+                None
+            });
+        };
+        if self.tail.is_none() {
+            // The level is the tail: the pattern's factor to ultimate at
+            // the oldest age, its level included.
+            return Ok(Some(beyond.oldest));
         }
-        Ok(match &self.development.pattern {
-            Some(p) => p
-                .resolve(ages)?
-                .implied_tail(ages)
-                .map_or(self.tail, Tail::from),
-            None => self.tail,
-        })
+        let after = match self.tail {
+            Tail::Constant(t) => {
+                if let Some(attach) = t.attachment_age {
+                    return Err(Error::Pattern {
+                        age: Some(attach),
+                        reason: "a pattern that runs past the oldest age takes the tail at its \
+                                 end: leave the tail's attachment age unset",
+                    });
+                }
+                if !t.factor.is_finite() || t.factor <= 0.0 {
+                    return Err(Error::InvalidTail(t.factor));
+                }
+                t.factor
+            }
+            tail => {
+                let pattern = self
+                    .development
+                    .pattern
+                    .as_ref()
+                    .expect("a resolved pattern");
+                // A single age-to-age factor off the triangle's ages is an
+                // error before this, so its span needs no step.
+                tail_on_own_ages(pattern, &self.development, tail, 0)?
+            }
+        };
+        Ok(Some(beyond.ratio() * after))
     }
 
     pub(crate) fn fit_segment(&self, segment: &Segment, ages: &[Lag]) -> Result<ChainLadderFit> {
@@ -136,12 +190,14 @@ impl ChainLadder {
             None => None,
         };
         // With no tail, a cumulative pattern to the oldest age keeps its
-        // level there as the tail: a constant factor, which carries no
-        // parameter error (its sigma is extrapolated as a constant tail's).
-        let pattern_tail = resolved
-            .as_ref()
-            .filter(|_| self.tail.is_none())
-            .and_then(|r| r.implied_tail(ages));
+        // level there as the tail, and a pattern past the oldest age folds
+        // what it gives there, with the tail after its end, into one: a
+        // constant factor, which carries no parameter error (its sigma is
+        // extrapolated as a constant tail's).
+        let pattern_tail = match &resolved {
+            Some(r) => self.pattern_tail_of(r, ages)?,
+            None => None,
+        };
         let mut tail = pattern_tail
             .map_or(self.tail, Tail::from)
             .fit(&development)?;
@@ -236,15 +292,20 @@ impl ChainLadderFit {
     ///
     /// Apply it to any book other than the fit's own through that book's
     /// latest diagonal, which reads ages between the fit's by its
-    /// log-linear rule and refuses ages outside them. The plain triangle path
-    /// (`fit`) is right only on a target whose development ages are the
-    /// fit's, and has two hazards that give no error: it reads each factor
+    /// log-linear rule and refuses ages outside them unless told how to
+    /// develop an origin older than the fit's oldest age
+    /// ([`LatestDiagonal::with_past_pattern_end`](crate::LatestDiagonal::with_past_pattern_end):
+    /// a factor of 1, or the fit's tail spread from its oldest age). The
+    /// plain triangle path (`fit`) is right on a target whose development
+    /// ages are the fit's, and on a target with fewer of them (a younger
+    /// book): the factors past the target's oldest age, with the tail, fold
+    /// into one constant tail there, as the diagonal projects it (decision
+    /// 18). It has two hazards that give no error: it reads each factor
     /// from its age to the target's next age, so a target with a finer
     /// development grain is misread, and on a target with ages past the
     /// fit's oldest it estimates the target's own factors there and attaches
     /// the fit's tail at the target's oldest age, which mixes the target's
-    /// development into the fit's. A target without one of the fit's ages
-    /// is an error ([`Error::Pattern`]).
+    /// development into the fit's (decision 17, item 11).
     ///
     /// ```
     /// use prospicio_reserving::{
