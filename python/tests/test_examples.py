@@ -9,6 +9,7 @@ import csv
 import json
 import math
 import os
+import re
 import subprocess
 import warnings
 from pathlib import Path
@@ -87,14 +88,25 @@ def test_data_folder_missing_is_a_clear_error(name, lookup, monkeypatch, tmp_pat
 
 def test_one_year_view(monkeypatch, capsys):
     # At the published count of simulations (20,000, a few seconds) and the notebook's seeds, so the claims
-    # are checked on the numbers the docs site shows. Every inequality below also holds, with wide margins,
-    # at 4,000 simulations, so none rests on simulation noise.
+    # are checked on the numbers the docs site shows. Every inequality below also holds, with margins, at
+    # 4,000 simulations, so none rests on simulation noise.
     monkeypatch.delenv("PROSPICIO_EXAMPLE_SIMS", raising=False)
     monkeypatch.chdir(EXAMPLES)
     ns = run_notebook(EXAMPLES / "one_year_view.ipynb")
     assert "reinsurance cuts the company's TVaR" in capsys.readouterr().out
     assert ns["N_SIMS"] == 20000
     text = prose(EXAMPLES / "one_year_view.ipynb")
+
+    # Reserve risk is the one-year view (#266): the loss is minus the claims development result of the
+    # re-reserving bootstrap, one draw per simulation, and it is narrower than the run-off view.
+    reserve, run_off, cdr = ns["reserve"], ns["run_off"], ns["cdr"]
+    assert ns["one_year"].model == "odp"
+    assert len(reserve.draws) == len(cdr.draws) == ns["N_SIMS"]
+    assert reserve.draws == [-x for x in cdr.draws]
+    assert abs(reserve.mean()) < 0.1 * math.sqrt(reserve.variance())
+    assert math.sqrt(reserve.variance()) < 0.9 * math.sqrt(run_off.variance())
+    assert reserve.quantile(0.995) < run_off.quantile(0.995) - run_off.mean()
+
     # Simulation agrees with exposure rating; the allocation adds up.
     assert_says(text, "The simulated cessions agree with exposure rating")
     surplus = ns["surplus_loss"].mean()
@@ -111,27 +123,49 @@ def test_one_year_view(monkeypatch, capsys):
              .apply(ns["events"]).marginal(("net", "retained")).quantile(0.995) for more in [4.0, 8.0, 12.0]]
     assert tails == sorted(tails, reverse=True) and tails[0] > 1.5 * tails[-1], tails
 
+    # The XL carries the premium the notebook prices (#268): deposit plus expected reinstatements is the
+    # risk-loaded premium, in one step, and the reinstatements are the measured rate times the deposit.
+    assert_says(text, "This is exact in one step, with no iteration")
+    xl, xl_price, reinstated = ns["xl"], ns["xl_price"], ns["reinstated"]
+    assert xl.premium + reinstated.mean() == pytest.approx(xl_price.premium, rel=1e-9)
+    assert reinstated.mean() == pytest.approx(ns["reinstatement_rate"] * xl.premium, rel=1e-9)
+    assert xl.premium > ns["xl_cost"] / 0.7
+
+    # The net view pays for the cover (#267): surplus premium less commission, the XL's deposit and each
+    # year's reinstatement premium, so its mean exceeds the gross mean by premiums less recoveries.
+    assert_says(text, "the original business runs at a 60% loss ratio, and the treaty pays a 35% ceding commission")
+    assert (ns["original_loss_ratio"], ns["ceding_commission"]) == (0.60, 0.35)
+    commission = ns["commission"]
+    assert ns["surplus"].premium == pytest.approx(ns["profile"].expected_surplus_loss(2e6, 4.0) / 0.6, rel=1e-12)
+    assert commission.mean() == pytest.approx(0.35 * ns["surplus"].premium, rel=1e-9)
+    paid = ns["surplus"].premium - commission.mean() + xl.premium + reinstated.mean()
+    cost = ns["reinsurance_cost"]
+    assert cost == pytest.approx(paid - ns["recovered"], rel=1e-6)
+    assert ns["net_of_cost"].mean() == pytest.approx(ns["net"].mean() + paid, rel=1e-9)
+    assert cost > 0
+
     # "Reading the result". The allocations are by line: reserve, motor, property.
     gross, net = ns["allocations"]["gross"], ns["allocations"]["net"]
     assert [k[0] for k in ns["companies"]["gross"].components()] == ["reserve", "motor", "property"]
     (g_reserve, g_motor, g_property), (n_reserve, n_motor, n_property) = gross.allocated, net.allocated
-    # Reserve and motor dominate the tail: together they take most of TVaR gross and net, and they are the
-    # larger risks, correlated with each other (0.4, against 0.1 with property). Gross, property's CoTVaR is
-    # above reserve's alone, so the claim holds for the two together.
-    assert_says(text, "Reserve and motor dominate the tail. They are larger and correlated with each other.")
-    assert g_reserve + g_motor > 0.6 * gross.total and n_reserve + n_motor > 0.8 * net.total
-    assert min(ns["reserve"].mean(), ns["motor"].mean()) > 2 * ns["gross"].mean()
-    assert ns["corr"][0][1] > max(ns["corr"][0][2], ns["corr"][1][2])
-    # Reinsurance cuts property's share sharply, and the company's TVaR falls by less than property's.
-    assert_says(text, "Reinsurance cuts property's share of TVaR sharply. The company's TVaR falls by less than that")
-    assert n_property / net.total < 0.5 * g_property / gross.total
+    assert_says(text, "Motor dominates the tail, gross and net")
+    assert g_motor > max(g_reserve, g_property) and n_motor > 0.5 * net.total
+    assert_says(text, "The reserve's one-year risk is small beside it.")
+    assert g_reserve < 0.1 * gross.total and n_reserve < 0.15 * net.total
+    assert_says(text, "Reinsurance cuts property's CoTVaR by about half, even after its cost. "
+                      "The company's TVaR falls by less than that")
+    assert 0.4 < n_property / g_property < 0.6
     assert ns["saved"] == pytest.approx(gross.total - net.total, rel=1e-12)
     assert ns["saved"] < g_property - n_property
-    # Reserve and motor take more of the net TVaR than of the gross, as shares and as amounts. This rests on
-    # how the notebook models reserve risk and the reinsurance, which #266 to #268 may change.
     assert_says(text, "Reserve and motor take *more* of the net TVaR than of the gross.")
     assert n_reserve / net.total > g_reserve / gross.total and n_motor / net.total > g_motor / gross.total
     assert n_reserve > g_reserve and n_motor > g_motor
+    # The cost against the TVaR it saves, and what leaving the cost out would show.
+    assert_says(text, "its expected cost is about 6% of the TVaR it removes, below the 10% cost of capital")
+    assert round(100 * cost / ns["saved"]) == 6
+    assert_says(text, "Leaving the cost out would overstate the saving by about what the cedant pays")
+    overstated = gross.total - ns["retained_only"] - ns["saved"]
+    assert overstated == pytest.approx(paid, rel=0.15)
 
 
 def test_reinsurance_pricing(monkeypatch, capsys):
@@ -479,3 +513,85 @@ def test_notebooks_are_committed_without_outputs():
         assert all(c["outputs"] == [] for c in code), f"{path.name} is committed with outputs"
         assert all(c["execution_count"] is None for c in code), f"{path.name} has execution counts"
         assert "version" not in nb["metadata"].get("language_info", {}), path.name
+
+
+# The R twins (#271). The weekly and manual CI runs render examples/one_year_view.qmd and
+# examples/reinsurance_pricing.qmd with Quarto to GitHub markdown (`--to gfm`) in one folder, point
+# PROSPICIO_R_TWINS at it and run these tests with the same PROSPICIO_EXAMPLE_SIMS. The notebooks run here,
+# at that count, so what the R documents print is compared with what the notebooks print now: no stored
+# reference values to keep current. Elsewhere, including the pull requests' python job, these tests skip.
+R_TWINS = os.environ.get("PROSPICIO_R_TWINS")
+needs_r_twins = pytest.mark.skipif(not R_TWINS, reason="PROSPICIO_R_TWINS is not set (the weekly CI run sets it)")
+
+
+def r_outputs(name):
+    """The lines an R document's chunks printed, from its GitHub markdown render, whitespace collapsed.
+
+    Quarto writes a chunk's output as a block indented by four spaces right after the chunk's closing
+    fence, so prose (whose list items are indented too) is never taken for output.
+    """
+    lines = (Path(R_TWINS) / name).read_text(encoding="utf-8").splitlines()
+    out, in_code, in_output, closed = [], False, False, False
+    for line in lines:
+        if line.startswith("```"):
+            in_code, in_output = not in_code, False
+            closed = not in_code
+            continue
+        if in_code:
+            continue
+        if not line.strip():
+            in_output = in_output or closed
+            continue
+        if in_output and line.startswith("    "):
+            out.append(re.sub(r"\s+", " ", line.strip()))
+        else:
+            in_output = closed = False
+    return out
+
+
+def printed(capsys):
+    return [re.sub(r"\s+", " ", line.strip()) for line in capsys.readouterr().out.splitlines() if line.strip()]
+
+
+@needs_r_twins
+def test_one_year_view_r_twin_prints_the_notebooks_numbers(monkeypatch, capsys):
+    monkeypatch.chdir(EXAMPLES)
+    run_notebook(EXAMPLES / "one_year_view.ipynb")
+    py = printed(capsys)
+    r = r_outputs("one_year_view.md")
+    # data.frame rows carry R's row number; the notebook's table has none.
+    r = [re.sub(r"^\d+ (?=(reserve|motor|property|total|diversif\.) )", "", line) for line in r]
+    # Every line that states a result, in both languages: the reserve, motor and property lines, the XL's
+    # price, what the reinsurance costs, the allocation table and the TVaR saved.
+    keys = [
+        r"opening reserve ", r"one-year: adverse development ", r"run-off: ", r"mean claim ", r"claims \d",
+        r"mean loss ", r"gross mean ", r"surplus cedes ", r"per-risk XL ", r"reinstatement premium ",
+        r"net mean ", r"\d+ lines: net 99\.5% ", r"risk-loaded premium ", r"deposit ", r"\(exposure-rated cost ",
+        r"surplus premium ", r"XL deposit ", r"paid ", r"reserve ", r"motor ", r"property ", r"total ",
+        r"diversif\. ", r"reinsurance cuts ", r"it costs ", r"\(leaving its cost out",
+    ]
+    for key in keys:
+        in_py = [line for line in py if re.match(key, line)]
+        in_r = [line for line in r if re.match(key, line)]
+        assert in_py, f"the notebook printed no line matching {key!r}"
+        assert in_r == in_py, f"{key!r}: the R twin printed {in_r}, the notebook {in_py}"
+
+
+@needs_r_twins
+def test_reinsurance_pricing_r_twin_passes_every_comparison(monkeypatch, capsys):
+    monkeypatch.chdir(EXAMPLES)
+    ns = run_notebook(EXAMPLES / "reinsurance_pricing.ipynb")
+    capsys.readouterr()
+    summary = re.compile(r"(\d+) of (\d+) comparisons are inside their tolerance: (\d+) independent comparisons "
+                         r"and (\d+) consistency checks that hold by construction(.*)$")
+    r = [summary.match(line) for line in r_outputs("reinsurance_pricing.md")]
+    r = [m for m in r if m]
+    assert len(r) == 1, "the R twin printed no summary line, or more than one"
+    passed, total, independent, checks, outside = r[0].groups()
+    # Every comparison passes in R, and the total is the sum of its parts.
+    assert int(passed) == int(total) > 300 and outside == "", r[0].group(0)
+    assert int(total) == int(independent) + int(checks), r[0].group(0)
+    # R makes the notebook's comparisons, the calibrated distortion parameters (`d@parameter`) included.
+    comparisons = ns["COMPARISONS"]
+    assert (int(independent), int(checks)) == (sum(not c["check"] for c in comparisons),
+                                               sum(c["check"] for c in comparisons)), r[0].group(0)
