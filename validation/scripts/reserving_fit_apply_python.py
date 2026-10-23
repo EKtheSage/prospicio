@@ -11,27 +11,37 @@ source is always the full triangle; `method` names the source's settings and,
 after `target=`, the book the fit is applied to:
 
 * genins (value), the chain ladder with no tail, `TailConstant(1.05)`,
-  `TailCurve()` and `TailCurve(curve='inverse_power')`, applied to
-  `diagonal` (its own latest diagonal), `perturbed` (every value times
-  1 + 0.01 (origin - 2000)), `double` (every value times 2), `from_2006` and
-  `to_2004` (the origins from 2006 and to 2004), `shifted` (the origins
-  moved 10 years later) and `early` (the cells valued before 2008);
+  `TailCurve()` and `TailCurve(curve='inverse_power')`, each applied to
+  `diagonal` (its own latest diagonal) and `perturbed` (every value times
+  1 + 0.01 (origin - 2000)); the source with no tail also to `double`
+  (every value times 2), `from_2006` and `to_2004` (the origins from 2006
+  and to 2004), `shifted` (the origins moved 10 years later) and `early`
+  (the cells valued before 2008);
 * clrd_wkcomp (paid, exposure the latest premium), Bornhuetter-Ferguson,
   Benktander and Cape Cod, applied to `diagonal`, `perturbed` (paid and
   premium times 1 + 0.01 (origin - 1987), and the latest premium times 1.1
-  more), `shifted` and `from_1993`.
+  more) and `shifted`; Cape Cod also to `from_1993` and `diagonal_raw`.
 
-Three of predict's results are not what is wanted, so they are taken
-another way:
+Three of predict's results are not what is wanted. The script asserts each
+(it raises if chainladder-python stops behaving so) and takes the wanted
+result another way:
 
 * Cape Cod on a latest diagonal: `predict(diagonal)` aligns every origin to
-  the first factor to ultimate, so the diagonal is given with
-  `.val_to_dev()`;
-* `early`: predict values the target at the source's valuation and gives NaN,
-  so the expected values are `DevelopmentConstant(<source cdf_>,
-  style='cdf')` on the target, with the chain ladder;
-* a target with a missing latest cell is not here: predict gives that origin
-  NaN, and the Rust tests check it by hand.
+  the first factor to ultimate, so `diagonal` is given with `.val_to_dev()`;
+  the rows of `diagonal_raw` record the apriori of predict on the diagonal
+  as it is, which the Rust tests reproduce with every origin at the first
+  age;
+* `early`: predict values the target at the source's valuation and gives NaN
+  for every origin, so the expected values are
+  `DevelopmentConstant(<source cdf_>, style='cdf')` on the target, with the
+  chain ladder;
+* a target with GenIns' 2005 cell at 72 months removed: predict gives that
+  origin NaN and the others their ultimates, so it has no rows, and the
+  Rust tests check it by hand.
+
+The curve tails are not refitted on the target: quantity
+`refitted_tail_perturbed` is the tail factor of the same pipeline fitted on
+`perturbed` itself, which differs from the source's.
 
 Rows with quantity `pattern` are the source's `cdf_` at its ages (the last one
 the tail factor), and `tail` its tail factor. `arg` is the age in months for
@@ -70,11 +80,13 @@ EXPOSURE_METHODS = [
 ]
 
 
-def read_triangle(name, columns, scale=None, shift=0):
+def read_triangle(name, columns, scale=None, shift=0, drop=None):
     """The triangle of `name`, with every value of `columns` times
-    `1 + scale (origin - first origin + 1)` and the origins `shift` years
-    later when asked."""
+    `1 + scale (origin - first origin + 1)`, the origins `shift` years
+    later and the cell `drop` (origin, age) removed when asked."""
     df = pd.read_csv(f"validation/data/{name}.csv", comment="#")
+    if drop is not None:
+        df = df[~((df["origin"] == drop[0]) & (df["development"] == drop[1]))].copy()
     if scale is not None:
         k = df["origin"] - df["origin"].min() + 1
         for c in columns:
@@ -132,6 +144,21 @@ def main():
         for age, c in zip(ages, cdf):
             emit("genins", method, "pattern", age, c, f"chainladder-python {VER}: {name}, cdf_")
         emit("genins", method, "tail", "", cdf[-1], f"chainladder-python {VER}: {name}, cdf_ at 120")
+        if label.startswith("tail=curve"):
+            # The same pipeline fitted on the perturbed book has a tail of its
+            # own, which predict does not use.
+            steps = [("dev", cl.Development()), ("tail", make()), ("cl", cl.Chainladder())]
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                refit = cl.Pipeline(steps).fit(targets["perturbed"][0]).named_steps.cl
+            emit(
+                "genins",
+                method,
+                "refitted_tail_perturbed",
+                "",
+                refit.cdf_.values[0, 0, 0, len(ages) - 1],
+                f"chainladder-python {VER}: Pipeline(Development(), {name}, Chainladder()).fit(<perturbed>), cdf_ at 120",
+            )
         src = f"chainladder-python {VER}: Pipeline(Development(), {name}, Chainladder()).fit(genins)"
         chosen = targets if make is None else {k: targets[k] for k in ["diagonal", "perturbed"]}
         for target, (tri, what) in chosen.items():
@@ -140,6 +167,18 @@ def main():
                 fitted = pipe.predict(tri)
             ultimates("genins", f"{method};target={target}", fitted, f"{src}.predict({what})")
         if make is None:
+            # The traps of predict: a missing latest cell and an earlier
+            # valuation give NaN.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                missing = pipe.predict(read_triangle("genins", ["value"], drop=(2005, 72)))
+                early_predict = pipe.predict(early)
+            ult = missing.ultimate_.values[0, 0, :, 0]
+            nan = [o for o, u in zip(years(missing.ultimate_), ult) if math.isnan(u)]
+            if nan != ["2005"]:
+                raise AssertionError(f"predict with 2005 at 72 months removed: NaN for {nan}, not 2005 alone")
+            if not np.isnan(early_predict.ultimate_.values[0, 0, :, 0]).all():
+                raise AssertionError("predict on the book valued before 2008 is no longer NaN")
             # predict values `early` at the source's valuation (NaN), so the
             # source's factors to ultimate are given to DevelopmentConstant.
             given = dict(zip(ages, [float(c) for c in cdf]))
@@ -162,6 +201,7 @@ def main():
     shifted = read_triangle(name, ["paid", "premium"], shift=10)
     targets = {
         "diagonal": (paid.latest_diagonal, premium, "paid.latest_diagonal"),
+        "diagonal_raw": (paid.latest_diagonal, premium, "paid.latest_diagonal"),
         "perturbed": (
             perturbed["paid"],
             perturbed["premium"].latest_diagonal * 1.1,
@@ -189,21 +229,29 @@ def main():
         for age, c in zip(ages, cdf):
             emit(name, label, "pattern", age, c, src + ".cdf_")
         cape_cod = label.startswith("cape_cod")
+        aprioris = {}
         for target, (x, w, what) in targets.items():
-            if target == "from_1993" and not cape_cod:
+            if target in ["from_1993", "diagonal_raw"] and not cape_cod:
                 continue
             if cape_cod and target == "diagonal":
-                # Otherwise every origin is aligned to the first cdf.
+                # Otherwise every origin is aligned to the first cdf
+                # (`diagonal_raw`).
                 x, what = x.val_to_dev(), what + ".val_to_dev()"
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 fitted = model.predict(x, sample_weight=w)
             method = f"{label};target={target}"
-            ultimates(name, method, fitted, f"{src}.predict({what})")
+            if target != "diagonal_raw":
+                # Only the apriori of the raw diagonal is recorded: the Rust
+                # tests reproduce it, not its ultimates.
+                ultimates(name, method, fitted, f"{src}.predict({what})")
             if cape_cod:
                 apriori = fitted.apriori_.values[0, 0, :, 0]
                 for i, o in enumerate(years(fitted.apriori_)):
                     emit(name, method, "apriori", o, apriori[i], f"{src}.predict({what}).apriori_")
+                aprioris[target] = apriori
+        if cape_cod and np.allclose(aprioris["diagonal"], aprioris["diagonal_raw"]):
+            raise AssertionError(f"{label}: predict on the raw latest diagonal now reads each origin's age")
 
     with open(OUT, "w", newline="") as f:
         f.write(

@@ -1,7 +1,7 @@
 ---
 type: Reference Implementation
 title: chainladder-python's predict, a development fitted on one book and applied to another
-description: In chainladder-python 0.10.1, fit(source).predict(target) gives each origin of the target its latest value times the source's cdf_ at its age, the tail carried as fitted, Bornhuetter-Ferguson and Benktander their apriori on the target's exposure and Cape Cod its apriori estimated again on the target. It is the parity reference for prospicio_reserving's ChainLadderFit::to_chain_ladder with LatestDiagonal::from_triangle. A hand probe found three traps; a missing latest cell and an earlier valuation give NaN, and Cape Cod on a latest_diagonal aligns every origin to the first factor to ultimate unless val_to_dev() is called first.
+description: In chainladder-python 0.10.1, fit(source).predict(target) gives each origin of the target its latest value times the source's cdf_ at its age, the tail carried as fitted (a curve refitted on the target would differ), Bornhuetter-Ferguson and Benktander their apriori on the target's exposure and Cape Cod its apriori estimated again on the target; on a raw latest_diagonal Cape Cod's apriori reads every origin at the first factor to ultimate. It is the parity reference for prospicio_reserving's ChainLadderFit::to_chain_ladder with LatestDiagonal::from_triangle. Its NaN traps are in chainladder-python-predict-traps.md.
 resource: https://github.com/casact/chainladder-python
 tags: [reserving, development, chain-ladder, expected-loss, cape-cod, latest-diagonal, parity, python]
 status: stable
@@ -28,16 +28,26 @@ another triangle or to a `latest_diagonal`. It is the reference for
 `ChainLadderFit::to_chain_ladder` applied through `fit_diagonal` to
 `LatestDiagonal::from_triangle(target, ...)` (decision 17 of
 `reserving-v02.md`).[^design] The generator records it with
-chainladder-python 0.10.1 on GenIns (the chain ladder with no tail,
-`TailConstant(1.05)`, `TailCurve()` and `TailCurve(curve='inverse_power')`)
-and on the CAS workers' compensation triangle (Bornhuetter-Ferguson,
-Benktander and two Cape Cods, exposure the latest premium), each applied
-to the source's own diagonal and to books made from it: perturbed by
-origin, doubled, shifted ten years, cut to some of its origins and, on
-GenIns, valued before 2008.[^script] The test reproduces every origin and
-total at 1e-9 relative in two arms: prospicio's own source fit through
-`to_chain_ladder`, and the reference's own `cdf_` given as a pattern of
-factors to ultimate.[^test]
+chainladder-python 0.10.1:[^script]
+
+* on GenIns, the chain ladder with no tail, `TailConstant(1.05)`,
+  `TailCurve()` and `TailCurve(curve='inverse_power')`, each applied to
+  the source's own diagonal and to GenIns perturbed by origin; the source
+  with no tail also applied to GenIns doubled, shifted ten years and cut to
+  the origins from 2006 and to 2004;
+* on the CAS workers' compensation triangle, Bornhuetter-Ferguson,
+  Benktander and two Cape Cods (exposure the latest premium), each applied
+  to the source's own diagonal, a perturbed book with 10% more premium and
+  the book shifted ten years, and the Cape Cods also to the origins from
+  1993 and to the raw `latest_diagonal`. There is no doubled book here.
+
+The test reproduces every origin and total at 1e-9 relative in two arms:
+prospicio's own source fit through `to_chain_ladder`, and the reference's
+own `cdf_` given as a pattern of factors to ultimate. The GenIns targets
+whose development ages are the source's (the diagonal, the perturbed,
+doubled and shifted books and the origins to 2004) also go through the
+plain triangle path, `to_chain_ladder().fit(...)`, against the same
+rows.[^test]
 
 # Behaviour
 
@@ -45,16 +55,20 @@ These are backed by the generator and the test:
 
 * **Latest times the source's factors to ultimate.** The second arm, the
   source's `cdf_` with nothing estimated on the target, gives predict's
-  ultimates on every target, so predict re-estimates no development on the
-  target: each origin's latest value times the source's `cdf_` at its age.
-  A book shifted ten years later gives the same ultimates; one cut to the
-  origins from 2006 (at most 60 months old) or to 2004 gives those
-  origins' ultimates.
+  ultimates on every predict target, so predict re-estimates no
+  development on the target: each origin's latest value times the source's
+  `cdf_` at its age. A book shifted ten years later gives the same
+  ultimates; one cut to the origins from 2006 (at most 60 months old) or
+  to 2004 gives those origins' ultimates.
 * **The tail is carried, not refitted.** With `TailConstant(1.05)` or a
   `TailCurve` in the source's pipeline, the source's `cdf_` (the tail
   factor at the oldest age, 1.0294991710529173 for the exponential curve
   on GenIns and 1.2924303115436933 for the inverse power) gives predict's
-  ultimates on a perturbed GenIns, whose own curve would differ.
+  ultimates on the perturbed GenIns. The same pipelines fitted on the
+  perturbed GenIns itself have tails of 1.0294941502734942 and
+  1.2923593825173993 (rows `refitted_tail_perturbed`, which prospicio's own
+  refit reproduces), each more than the tolerance from the source's, so
+  this target tells a carried tail from a refitted one.
 * **Expected-loss methods.** Bornhuetter-Ferguson and Benktander apply
   their apriori to the target's exposure (`sample_weight` in predict).
   Cape Cod estimates its apriori again on the target, with the source's
@@ -62,35 +76,25 @@ These are backed by the generator and the test:
   0.5805161561534887 on the perturbed book with 10% more premium, with no
   trend and no decay; on the origins from 1993 alone it is estimated on
   those origins only.
-* **The earlier-valued book.** The generator does not use predict for
-  GenIns valued before 2008 (see below) but `DevelopmentConstant` with the
-  source's `cdf_` on that book, which prospicio's `LatestDiagonal` reads at
-  each origin's own age.
+* **Cape Cod on a raw latest diagonal.** Given `paid.latest_diagonal` as it
+  is, without `.val_to_dev()`, `CapeCod.predict`'s apriori is the one of
+  every origin read at the first factor to ultimate: 2.0633214031618854 on
+  every origin with no trend and no decay, against 0.6404940442771272 with
+  `.val_to_dev()`. The rows of target `diagonal_raw` record it, for both
+  Cape Cods, and the test reproduces it with every origin at 12 months.
+  Only the apriori is recorded, not those ultimates. prospicio's
+  `from_triangle` reads each origin at its own age.
+* **The earlier-valued book.** For GenIns valued before 2008 the generator
+  records not predict but `DevelopmentConstant` with the source's `cdf_`
+  on that book, which prospicio's `LatestDiagonal` reproduces at each
+  origin's own age.
 
-A hand probe of chainladder-python 0.10.1 on 2026-10-23, not kept in a
-script, found three traps, which the generator steps around and prospicio
-does not share:
-
-* **A missing latest cell.** With GenIns' 2005 cell at 72 months removed,
-  predict gives that origin NaN. prospicio projects it from its last
-  observed cell (60 months), checked by hand in the test.
-* **An earlier valuation.** On GenIns valued before 2008, predict values
-  the target at the source's valuation and gives NaN. prospicio projects
-  each origin at its own age.
-* **Cape Cod on a latest diagonal.** `CapeCod.predict(latest_diagonal)`
-  aligns every origin to the first factor to ultimate (on the workers'
-  compensation diagonal its apriori was 2.063321) unless the diagonal is
-  given with `.val_to_dev()`, which the generator does. prospicio reads
-  each origin's own age.
-
-The same probe found that GenIns perturbed by origin, fitted on its own,
-has an exponential curve tail of 1.0294941502734942, not the source's, so
-the perturbed target does tell a carried tail from a refitted one.
-
-chainladder-python cannot read an age between the source's (18 months
-against an annual pattern) or a quarterly target, so prospicio's
-log-linear reading of them on the diagonal has no reference and is checked
-by hand.
+Predict has no rows for two targets, GenIns valued before 2008 and GenIns
+with its 2005 cell at 72 months removed, nor for ages between the
+source's; [the traps](chainladder-python-predict-traps.md) say why.
+prospicio projects the missing cell's origin from its last observed cell
+(60 months) and the earlier book at each origin's own age, both checked by
+hand in the test.
 
 [^design]: Design note, reserving v0.2, decision 17, a fitted development applied to another book
 [^script]: chainladder-python reference generator for a fitted development applied to another book

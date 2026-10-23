@@ -167,6 +167,14 @@ impl LatestDiagonal {
     /// ([`ChainLadderFit::to_chain_ladder`]). An origin whose cell on the
     /// latest diagonal is missing is projected from its last observed cell.
     ///
+    /// The diagonal is valued at `column`'s own latest month, so Cape Cod's
+    /// `fit_diagonal` trends to it, where [`CapeCod::fit`] on the triangle
+    /// trends to the triangle's valuation, the latest month of any column.
+    /// When another column (a premium) runs later than `column`, the trended
+    /// aprioris differ by the trend over the gap; the detrended aprioris and
+    /// the ultimates agree as long as every origin ends by `column`'s
+    /// valuation.
+    ///
     /// Errors: [`Error::MultipleSegments`] for a triangle with several index
     /// positions, [`Error::UnknownColumn`] for a column it does not have,
     /// [`Error::EmptyOrigin`] for an origin with no observed cell and
@@ -186,7 +194,7 @@ impl LatestDiagonal {
     ///     development: DevelopmentColumn::Age(&[12, 24, 12]),
     ///     values: &[
     ///         ("paid", &[100.0, 150.0, 200.0]),
-    ///         ("premium", &[400.0, 400.0, 500.0]),
+    ///         ("premium", &[400.0, 450.0, 500.0]),
     ///     ],
     ///     origin_grain: Grain::Year,
     ///     development_grain: Grain::Year,
@@ -196,18 +204,21 @@ impl LatestDiagonal {
     /// let diagonal = LatestDiagonal::from_triangle(&book, "paid", Some("premium")).unwrap();
     /// assert_eq!(diagonal.ages(), [24, 12]);
     /// assert_eq!(diagonal.latest(), [150.0, 200.0]);
-    /// assert_eq!(diagonal.exposure(), Some([400.0, 500.0].as_slice()));
+    /// // Each origin's last observed premium: 450 at 24 months for 2020.
+    /// assert_eq!(diagonal.exposure(), Some([450.0, 500.0].as_slice()));
     ///
     /// // The book's own development, applied to its diagonal.
     /// let own = ChainLadder::default().fit(&book, "paid").unwrap();
     /// let cl = own.to_chain_ladder().fit_diagonal(&diagonal).unwrap();
     /// assert_eq!(cl.ultimate, own.ultimate);
     /// assert_eq!(cl.ultimate, [150.0, 300.0]);
-    /// let bf = BornhuetterFerguson { apriori: 0.6, chain_ladder: own.to_chain_ladder() }
+    /// let bf = BornhuetterFerguson { apriori: 0.5, chain_ladder: own.to_chain_ladder() }
     ///     .fit_diagonal(&diagonal)
     ///     .unwrap();
-    /// // 200 + 0.6 × 500 × (1 - 1/1.5)
-    /// assert!((bf.ultimate[1] - 300.0).abs() < 1e-9);
+    /// assert_eq!(bf.exposure, [450.0, 500.0]);
+    /// // 150 + 0.5 × 450 × (1 - 1) and 200 + 0.5 × 500 × (1 - 1/1.5).
+    /// assert_eq!(bf.ultimate[0], 150.0);
+    /// assert!((bf.ultimate[1] - (200.0 + 250.0 / 3.0)).abs() < 1e-9);
     /// ```
     pub fn from_triangle(
         triangle: &Triangle,

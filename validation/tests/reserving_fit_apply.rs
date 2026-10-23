@@ -7,27 +7,41 @@
 //!   each tail (an early attachment too), then applied to their own latest
 //!   diagonal and to their own triangle, give the same factors to the bit
 //!   and the same factors to ultimate and ultimates within 1e-14 (to the bit
-//!   with no tail); the expected-loss methods on the CAS workers'
-//!   compensation triangle give the same fit within 1e-12, and a fit made
-//!   on a diagonal applies again to it.
+//!   with no tail), and so do the segments of a `ChainLadder::fit_segments`;
+//!   the expected-loss methods on the CAS workers' compensation triangle
+//!   give the same development and exposure to the bit and the same
+//!   ultimates within 1e-12 (Cape Cod's aprioris too, its premium running no
+//!   later than its paid), and a fit made on a diagonal applies again to it.
 //! * B. chainladder-python's `fit(source).predict(target)`
 //!   (`reference/reserving_fit_apply_python.csv`, from
 //!   `scripts/reserving_fit_apply_python.py`) in two arms: (i) our own source
 //!   fit through `to_chain_ladder`, and (ii) the reference's own `cdf_` as a
 //!   pattern of factors to ultimate, which checks the apply path apart from
-//!   the source fit. GenIns with the chain ladder and its tails applied to
-//!   its diagonal, a perturbed, doubled, shifted, earlier-valued book and
-//!   subsets of its origins; the CAS workers' compensation triangle with
+//!   the source fit. GenIns with the chain ladder and each tail applied to
+//!   its diagonal and a perturbed book, whose own curve tails (refitted in
+//!   arm (i)) differ from the carried ones by more than the tolerance; the
+//!   source with no tail also applied to a doubled and a shifted book and
+//!   two subsets of its origins, and to a book valued before 2008, whose
+//!   reference is `DevelopmentConstant` with the source's `cdf_`, not
+//!   predict. The CAS workers' compensation triangle with
 //!   Bornhuetter-Ferguson, Benktander and Cape Cod (its apriori estimated
-//!   again on the target).
+//!   again on the target) applied to its diagonal, a perturbed and a shifted
+//!   book; Cape Cod also to the origins from 1993 and to the raw latest
+//!   diagonal, whose apriori predict reads with every origin at the first
+//!   age, reproduced so. The GenIns targets at the source's ages are also
+//!   fitted by the plain triangle path, against the same rows.
 //! * C. By hand, where chainladder-python has no reference: ages between the
 //!   source's (18 months, accident quarters) by the log-linear rule, a target
 //!   with fewer ages through the diagonal and its error through the plain
-//!   triangle path, an origin with its latest diagonal cell missing (where
-//!   chainladder-python gives NaN), and the applied fit's selection.
+//!   triangle path, a target with more ages through the plain path (its own
+//!   factors past the source's oldest age, pinned), an origin with its
+//!   latest diagonal cell missing (where chainladder-python gives NaN), the
+//!   applied fit's selection, and Cape Cod on a diagonal trended to the
+//!   fitted column's own valuation when the premium runs later.
 //! * D. Errors: ages outside the source's, the errors of `from_triangle`, the
-//!   expected-loss methods without an exposure, a carried tail too small to
-//!   spread and a source with one age.
+//!   expected-loss methods without an exposure, a carried tail below the
+//!   floor of exp(-0.75) (one just above it is spread) and a source with one
+//!   age.
 //! * E. The doctests of `ChainLadderFit::to_chain_ladder` and
 //!   `LatestDiagonal::from_triangle`, with exact numbers, run by
 //!   `cargo test -p prospicio-reserving --doc`.
@@ -276,8 +290,9 @@ fn the_expected_loss_methods_carry_the_development() {
         frozen.fit_diagonal(&diagonal).unwrap(),
         frozen.fit(&tri, "paid", "premium").unwrap(),
     ] {
+        assert_same_projection(&applied.chain_ladder, &source.chain_ladder, "BF");
+        assert_eq!(applied.exposure, source.exposure, "BF exposure");
         assert_close(&applied.ultimate, &source.ultimate, rel, "BF ultimates");
-        assert_eq!(applied.apriori, source.apriori, "BF apriori");
     }
 
     let bk = Benktander {
@@ -294,6 +309,8 @@ fn the_expected_loss_methods_carry_the_development() {
         frozen.fit_diagonal(&diagonal).unwrap(),
         frozen.fit(&tri, "paid", "premium").unwrap(),
     ] {
+        assert_same_projection(&applied.chain_ladder, &source.chain_ladder, "Benktander");
+        assert_eq!(applied.exposure, source.exposure, "Benktander exposure");
         assert_close(&applied.ultimate, &source.ultimate, rel, "Benktander");
     }
 
@@ -314,6 +331,8 @@ fn the_expected_loss_methods_carry_the_development() {
         ] {
             let what = format!("Cape Cod at trend {trend} and decay {decay}");
             let (a, s) = (&applied.expected_loss, &source.expected_loss);
+            assert_same_projection(&a.chain_ladder, &s.chain_ladder, &what);
+            assert_eq!(a.exposure, s.exposure, "{what}: exposure");
             assert_close(&a.ultimate, &s.ultimate, rel, &what);
             assert_close(&a.apriori, &s.apriori, rel, &what);
             assert_close(
@@ -323,6 +342,61 @@ fn the_expected_loss_methods_carry_the_development() {
                 &what,
             );
         }
+    }
+}
+
+#[test]
+fn a_segment_of_fit_segments_applies_as_it_fitted() {
+    // GenIns and the perturbed GenIns as two lines of one keyed triangle.
+    let books = [
+        ("a", triangle("genins")),
+        ("b", target("genins", "perturbed")),
+    ];
+    let (mut lob, mut origin, mut age, mut values) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (label, tri) in &books {
+        for (o, p) in tri.origins().iter().enumerate() {
+            for (d, &a) in tri.development().iter().enumerate() {
+                if let Some(v) = tri.get(0, 0, o, d) {
+                    lob.push(*label);
+                    origin.push(p.start());
+                    age.push(a);
+                    values.push(v);
+                }
+            }
+        }
+    }
+    let keyed = Triangle::from_long(&Long {
+        keys: &[("lob", lob.as_slice())],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&age),
+        values: &[("values", values.as_slice())],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap();
+    let fits = ChainLadder {
+        tail: TailCurve::default().into(),
+        ..Default::default()
+    }
+    .fit_segments(&keyed, "values")
+    .unwrap();
+    assert_ne!(fits.fits[0].ldf(), fits.fits[1].ldf());
+    for (label, book) in &books {
+        let source = &fits.fits[fits.position(&[("lob", label)]).unwrap()];
+        let frozen = source.to_chain_ladder();
+        let d = LatestDiagonal::from_triangle(book, "values", None).unwrap();
+        assert_same_projection(
+            &frozen.fit_diagonal(&d).unwrap(),
+            source,
+            &format!("segment {label}, on the diagonal"),
+        );
+        assert_same_projection(
+            &frozen.fit(book, "values").unwrap(),
+            source,
+            &format!("segment {label}, on the triangle"),
+        );
     }
 }
 
@@ -379,7 +453,7 @@ fn target(dataset: &str, name: &str) -> Triangle {
     }
     let tri = triangle_columns(dataset, &["paid", "premium"]);
     match name {
-        "diagonal" => tri,
+        "diagonal" | "diagonal_raw" => tri,
         // Paid and premium times 1 + 0.01 (origin - 1987), and the premium
         // times 1.1 more.
         "perturbed" => remake(&tri, 0, all, |c, year, v| {
@@ -425,7 +499,17 @@ enum Arm {
     Reference,
 }
 
-fn parity(arm: Arm) {
+/// How the frozen chain ladder reaches a target: through its latest
+/// diagonal (`LatestDiagonal::from_triangle` and `fit_diagonal`), or by the
+/// plain triangle path (`fit`), which is checked on the GenIns targets at
+/// the source's ages only.
+#[derive(Clone, Copy, PartialEq)]
+enum Route {
+    Diagonal,
+    Triangle,
+}
+
+fn parity(arm: Arm, route: Route) {
     let cases = reference("reserving_fit_apply_python.csv");
     let mut patterns: HashMap<(String, String), Vec<(Lag, f64)>> = HashMap::new();
     for case in cases.iter().filter(|c| c.get("quantity") == "pattern") {
@@ -443,6 +527,35 @@ fn parity(arm: Arm) {
         .into_iter()
         .filter(|c| arm == Arm::Own || c.get("method").contains(";target="))
         .collect();
+    // The plain triangle path reads the GenIns targets whose development
+    // ages are the source's.
+    let cases: Vec<Case> = match route {
+        Route::Diagonal => cases,
+        Route::Triangle => {
+            let ages = triangle("genins").development().to_vec();
+            let cases: Vec<Case> = cases
+                .into_iter()
+                .filter(|c| {
+                    c.get("dataset") == "genins"
+                        && matches!(c.get("quantity"), "ultimate" | "total_ultimate")
+                        && c.get("method")
+                            .split_once(";target=")
+                            .is_some_and(|(_, t)| target("genins", t).development() == ages)
+                })
+                .collect();
+            let mut names: Vec<&str> = cases
+                .iter()
+                .filter_map(|c| c.get("method").split_once(";target=").map(|(_, t)| t))
+                .collect();
+            names.sort_unstable();
+            names.dedup();
+            assert_eq!(
+                names,
+                ["diagonal", "double", "perturbed", "shifted", "to_2004"]
+            );
+            cases
+        }
+    };
     let mut sources: HashMap<(String, String), (ChainLadderFit, ChainLadder)> = HashMap::new();
     let mut applied: HashMap<(String, String), Applied> = HashMap::new();
     check(&cases, |case: &Case| {
@@ -486,6 +599,25 @@ fn parity(arm: Arm) {
                     Some(source.cdf[d])
                 }
                 "tail" => Some(source.tail.factor),
+                // The source's tail refitted on the perturbed book, which
+                // predict does not use: it must differ from the carried tail
+                // by more than the tolerance, so the perturbed target tells
+                // the two apart.
+                "refitted_tail_perturbed" => {
+                    let refit = ChainLadder {
+                        tail: genins_tail(case),
+                        ..Default::default()
+                    }
+                    .fit(&target(dataset, "perturbed"), "values")
+                    .unwrap();
+                    let (carried, refitted) = (source.tail.factor, refit.tail.factor);
+                    let rel = case.number("rel_tol")?;
+                    assert!(
+                        (refitted - carried).abs() > rel * carried,
+                        "{method}: the refitted tail {refitted} is the carried {carried}"
+                    );
+                    Some(refitted)
+                }
                 _ => None,
             };
         };
@@ -495,15 +627,30 @@ fn parity(arm: Arm) {
             .or_insert_with(|| {
                 let book = target(dataset, target_name);
                 if dataset == "genins" {
-                    let d = LatestDiagonal::from_triangle(&book, "values", None).unwrap();
-                    let fit = frozen.fit_diagonal(&d).unwrap();
+                    let fit = match route {
+                        Route::Diagonal => frozen.fit_diagonal(
+                            &LatestDiagonal::from_triangle(&book, "values", None).unwrap(),
+                        ),
+                        Route::Triangle => frozen.fit(&book, "values"),
+                    }
+                    .unwrap();
                     return Applied {
                         origins: fit.origins,
                         ultimate: fit.ultimate,
                         apriori: None,
                     };
                 }
-                let d = LatestDiagonal::from_triangle(&book, "paid", Some("premium")).unwrap();
+                let mut d = LatestDiagonal::from_triangle(&book, "paid", Some("premium")).unwrap();
+                if target_name == "diagonal_raw" {
+                    // chainladder-python's Cape Cod on a latest diagonal not
+                    // given with `val_to_dev()` reads every origin at the
+                    // first age.
+                    let first = vec![source.development.development[0]; d.origins().len()];
+                    d = LatestDiagonal::new(d.origin_grain(), d.origins(), &first, d.latest())
+                        .unwrap()
+                        .with_exposure(d.exposure().unwrap())
+                        .unwrap();
+                }
                 let param = |name| case.param("method", name);
                 let (fit, apriori) = match base.split(';').next().unwrap() {
                     "bornhuetter_ferguson" => (
@@ -557,18 +704,27 @@ fn parity(arm: Arm) {
 }
 
 /// Arm (i): our own source fit, carried by `to_chain_ladder`. The source's
-/// factors to ultimate and tails are checked too; the curve tails rest on
-/// the tail parity of `reserving_tails.rs`.
+/// factors to ultimate and tails, and its curve tails refitted on the
+/// perturbed book, are checked too; the curve tails rest on the tail parity
+/// of `reserving_tails.rs`.
 #[test]
 fn a_fit_applied_to_another_book_matches_chainladder_python() {
-    parity(Arm::Own);
+    parity(Arm::Own, Route::Diagonal);
 }
 
 /// Arm (ii): the reference's own factors to ultimate as the pattern, so the
 /// applied fits are checked apart from the source fit.
 #[test]
 fn the_reference_pattern_applied_matches_chainladder_python() {
-    parity(Arm::Reference);
+    parity(Arm::Reference, Route::Diagonal);
+}
+
+/// The plain triangle path (`fit`) in both arms, on the GenIns targets
+/// whose development ages are the source's.
+#[test]
+fn the_plain_triangle_path_matches_chainladder_python_at_the_sources_ages() {
+    parity(Arm::Own, Route::Triangle);
+    parity(Arm::Reference, Route::Triangle);
 }
 
 // C. By hand.
@@ -659,6 +815,37 @@ fn a_book_with_fewer_ages_is_applied_through_its_diagonal() {
 }
 
 #[test]
+fn the_plain_path_on_an_older_book_mixes_in_its_own_factors() {
+    // A source at most 60 months old with a tail of 1.05, applied to the
+    // full GenIns by the plain triangle path: no error, but the factors from
+    // 60 months on are GenIns' own and the tail attaches at 120 months, which
+    // neither predict nor `fit_diagonal` (an error here, see
+    // `an_age_outside_the_sources_is_an_error`) gives. This pins today's
+    // behaviour; a guard (decision 17, item 11) would change it on purpose.
+    let young = ChainLadder {
+        tail: Tail::from(1.05),
+        ..Default::default()
+    }
+    .fit(&target("genins", "from_2006"), "values")
+    .unwrap();
+    assert_eq!(young.ldf().len(), 4);
+    let full = triangle("genins");
+    let fit = young.to_chain_ladder().fit(&full, "values").unwrap();
+    let own = genins_source();
+    assert_eq!(fit.development.development, full.development());
+    assert_eq!(fit.ldf()[..4], *young.ldf());
+    assert_eq!(fit.ldf()[4..], own.ldf()[4..]);
+    assert!(fit.development.selected[..4].iter().all(Option::is_some));
+    assert!(fit.development.selected[4..].iter().all(Option::is_none));
+    assert_eq!(fit.tail.attachment, 9);
+    assert!(
+        close_to(fit.tail.factor, 1.05, 1e-14),
+        "{}",
+        fit.tail.factor
+    );
+}
+
+#[test]
 fn an_origin_without_its_latest_cell_is_projected_from_its_last() {
     // 2005 at 72 months removed: it is projected from 60 months, where
     // chainladder-python gives NaN.
@@ -698,6 +885,56 @@ fn a_book_valued_earlier_is_projected_at_its_own_ages() {
             "origin {o}"
         );
     }
+}
+
+#[test]
+fn cape_cod_on_a_diagonal_trends_to_the_fitted_columns_valuation() {
+    // Premium for 2021 at 24 months with no paid there: the triangle is
+    // valued at December 2022, the paid diagonal at December 2021.
+    let origin = [2020, 2020, 2021, 2021].map(Month::january);
+    let book = Triangle::from_long(&Long {
+        keys: &[],
+        origin: &origin,
+        development: DevelopmentColumn::Age(&[12, 24, 12, 24]),
+        values: &[
+            ("paid", &[100.0, 150.0, 200.0, f64::NAN]),
+            ("premium", &[400.0, 450.0, 500.0, 520.0]),
+        ],
+        origin_grain: Grain::Year,
+        development_grain: Grain::Year,
+        cumulative: true,
+    })
+    .unwrap();
+    assert_eq!(book.valuation(), Month::new(2022, 12).unwrap());
+    let cc = CapeCod {
+        trend: 0.1,
+        decay: 0.75,
+        chain_ladder: ChainLadder::default(),
+    };
+    let on_triangle = cc.fit(&book, "paid", "premium").unwrap();
+    let frozen = CapeCod {
+        chain_ladder: on_triangle.expected_loss.chain_ladder.to_chain_ladder(),
+        ..cc
+    };
+    let d = LatestDiagonal::from_triangle(&book, "paid", Some("premium")).unwrap();
+    assert_eq!(d.exposure(), Some([450.0, 520.0].as_slice()));
+    let on_diagonal = frozen.fit_diagonal(&d).unwrap();
+    // One year less of trend on every origin: the trended aprioris differ by
+    // 1.1, the detrended aprioris and the ultimates agree.
+    let (t, g) = (&on_triangle.expected_loss, &on_diagonal.expected_loss);
+    assert_close(&g.ultimate, &t.ultimate, 1e-13, "Cape Cod ultimates");
+    assert_close(&g.apriori, &t.apriori, 1e-13, "Cape Cod aprioris");
+    let lifted: Vec<f64> = on_diagonal
+        .trended_apriori
+        .iter()
+        .map(|a| a * 1.1)
+        .collect();
+    assert_close(
+        &lifted,
+        &on_triangle.trended_apriori,
+        1e-13,
+        "trended aprioris",
+    );
 }
 
 #[test]
@@ -822,26 +1059,41 @@ fn the_expected_loss_methods_need_the_exposure() {
 }
 
 #[test]
-fn a_carried_tail_too_small_to_spread_is_an_error() {
-    // At a decay of 0.9 the source spreads a tail of 0.45; the carried tail
-    // is spread at 0.5, where it cannot be.
+fn a_carried_tail_is_spread_down_to_its_floor() {
+    // The carried tail is spread at decay 0.5, where a factor below
+    // exp(-0.75), about 0.4724, cannot be (chainladder-python's seed has no
+    // real root there); the source spreads each at 0.9.
     let tri = triangle("genins");
-    let source = ChainLadder {
-        tail: TailConstant {
-            factor: 0.45,
-            decay: 0.9,
-            attachment_age: None,
-        }
-        .into(),
-        ..Default::default()
-    }
-    .fit(&tri, "values")
-    .unwrap();
-    assert!((source.tail.factor - 0.45).abs() < 1e-12);
     let d = LatestDiagonal::from_triangle(&tri, "values", None).unwrap();
-    match source.to_chain_ladder().fit_diagonal(&d).unwrap_err() {
-        Error::Tail(why) => assert!(why.contains("too small to spread"), "{why}"),
-        other => panic!("{other} is not a tail error"),
+    let floor = (-0.75f64).exp();
+    for factor in [0.45, 0.4723, 0.4724, 0.48] {
+        let source = ChainLadder {
+            tail: TailConstant {
+                factor,
+                decay: 0.9,
+                attachment_age: None,
+            }
+            .into(),
+            ..Default::default()
+        }
+        .fit(&tri, "values")
+        .unwrap();
+        assert!((source.tail.factor - factor).abs() < 1e-12);
+        let applied = source.to_chain_ladder().fit_diagonal(&d);
+        if factor < floor {
+            match applied.unwrap_err() {
+                Error::Tail(why) => assert!(why.contains("too small to spread"), "{why}"),
+                other => panic!("{other} is not a tail error"),
+            }
+        } else {
+            let fit = applied.unwrap();
+            assert!(
+                close_to(fit.tail.factor, source.tail.factor, 1e-14),
+                "tail {factor}: {}",
+                fit.tail.factor
+            );
+            assert_close(&fit.ultimate, &source.ultimate, 1e-14, "above the floor");
+        }
     }
 }
 

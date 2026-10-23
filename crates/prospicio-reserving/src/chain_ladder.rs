@@ -230,14 +230,21 @@ impl ChainLadderFit {
     /// ultimate and the ultimates agree to about 1e-15 relative, and to the
     /// bit when the tail factor is 1. It does not carry sigma, the standard
     /// errors or an estimated tail's form, and a fit applied with it has no
-    /// standard error. A tail factor below about 0.472 cannot be spread at
-    /// the constant tail's decay of 0.5, and a fit with one age has no
-    /// factors, so fitting the result is then an error.
+    /// standard error. A tail factor below exp(-0.75), about 0.4724, cannot
+    /// be spread at the constant tail's decay of 0.5, and a fit with one age
+    /// has no factors, so fitting the result is then an error.
     ///
-    /// The plain triangle path (`fit`) reads each factor from its age to the
-    /// target's next age, so it suits a target at the fit's ages only; on a
-    /// target with a finer development grain use the latest diagonal, which
-    /// reads ages between the fit's by its log-linear rule.
+    /// Apply it to any book other than the fit's own through that book's
+    /// latest diagonal, which reads ages between the fit's by its
+    /// log-linear rule and refuses ages outside them. The plain triangle path
+    /// (`fit`) is right only on a target whose development ages are the
+    /// fit's, and has two hazards that give no error: it reads each factor
+    /// from its age to the target's next age, so a target with a finer
+    /// development grain is misread, and on a target with ages past the
+    /// fit's oldest it estimates the target's own factors there and attaches
+    /// the fit's tail at the target's oldest age, which mixes the target's
+    /// development into the fit's. A target without one of the fit's ages
+    /// is an error ([`Error::Pattern`]).
     ///
     /// ```
     /// use prospicio_reserving::{

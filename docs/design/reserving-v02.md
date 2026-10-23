@@ -2868,7 +2868,7 @@ not fit it. `LatestDiagonal` holds the bordereau as it is, and
 Status: **Built** (2026-10-23), issue #544, branch `claude/diagonal-pr3`,
 in Rust. This is the issue's third PR. Items 2 to 9 answer the issue's
 open questions; they are proposals for the user to accept, and the PR
-lists them.
+lists them. Item 11 is an open proposal.
 
 A reserving actuary often fits a development on one book (a mature line,
 an industry triangle, last year's study) and applies it to another: a
@@ -2903,50 +2903,67 @@ the two.
 3. **Age-to-age factors, not factors to ultimate.** They are exact on the
    links. On the diagonal route the two kinds are the same, since decision
    16 turns factors into factors to ultimate on a finer grid. On the plain
-   triangle path (`to_chain_ladder().fit(&other, column)`) an age-to-age
-   factor runs to the target's next age, so a target with a finer
-   development grain is misread with no error; this hazard came with
-   decision 12, and this PR adds no guard. Factors to ultimate (from
-   `cdf`) would read either path correctly, at about 1 ulp a link, and
-   would set `pattern_tail` and `pattern_rescale`. Neither kind avoids the
-   tail floor of item 5.
+   triangle path an age-to-age factor runs to the target's next age, so a
+   target with a finer development grain is misread (item 4). Factors to
+   ultimate (from `cdf`) would read such a target correctly on that path
+   too, at about 1 ulp a link, and would set `pattern_tail` and
+   `pattern_rescale`. Neither kind avoids the tail floor of item 5.
 4. **Another triangle means its latest diagonal.**
    `LatestDiagonal::from_triangle(triangle, column, exposure)` takes each
    origin of a single-segment triangle at the age of its last observed
    cell, with an optional exposure column read as the expected-loss
    methods read it on a triangle. This is chainladder-python's predict:
    each origin's latest value times the source's factor to ultimate at its
-   age. The plain triangle path works only when every source age is a
-   development age of the target, and fails with `Error::Pattern` (not a
-   development age of the triangle) otherwise.
+   age. Apply a fit to any book other than its own this way. The plain
+   triangle path (`to_chain_ladder().fit(&other, column)`) is right only
+   on a target whose development ages are the source's, and has two
+   hazards that give no error: a target with a finer development grain is
+   misread, since an age-to-age factor runs to the target's next age (this
+   came with decision 12); and on a target with ages past the source's
+   oldest, the target's own factors are estimated there and the source's
+   tail attaches at the target's oldest age, which mixes the target's
+   development into the source's and is not what predict gives. A target
+   without one of the source's ages fails with `Error::Pattern` (not a
+   development age of the triangle). This PR adds no guard (item 11).
 5. **The tail is carried as a constant, not refitted.** It attaches at
    the source's oldest age and is spread at decay 0.5; chainladder-python's
    predict also carries the source's tail factor. A tail factor below
-   about 0.472 cannot be spread at that decay, so applying it is an error
-   (`Error::Tail`).
+   exp(-0.75), about 0.4724, cannot be spread at that decay (the seed's
+   quadratic `a x^2 + b x - ln f = 0`, with `a = 4/3` and `b = 2` at
+   decay 0.5, has no real root when `b^2 + 4 a ln f < 0`), so applying it
+   is an error (`Error::Tail`); a factor just above it is spread.
 6. **No extrapolation.** The grid is decision 16's: the source's ages, the
    end of the factors' span and the target's ages, at the coarsest grain
    they share. An origin younger than the source's first age or older than
    its oldest is `Error::Diagonal`, naming the origin, its age and the
-   range. A target with fewer or later ages than the source works, since
-   the grid keeps the source's ages. A fit's ages are evenly spaced (a
-   triangle's development axis, or decision 16's grid), so the factors'
-   span ends at the source's oldest age.
+   range. A target with later origins, and so fewer ages than the source
+   (GenIns from 2006), works, since the grid keeps the source's ages. A
+   fit's ages are evenly spaced (a triangle's development axis, or
+   decision 16's grid), so the factors' span ends at the source's oldest
+   age.
 7. **Expected-loss methods.** They take the frozen chain ladder in their
    `chain_ladder` field. Bornhuetter-Ferguson and Benktander apply their
    own apriori to the target's exposure. Cape Cod estimates its apriori on
    the target's exposure and latest values with the source's pattern, and
    trends it to the diagonal's valuation, as chainladder-python's
-   `CapeCod.predict` does. To carry the source's apriori instead, use
-   `BornhuetterFerguson` with it; that is exact at a trend of 0 only.
+   `CapeCod.predict` does. From a triangle, `from_triangle`'s diagonal
+   holds the fitted column alone, so the trend runs to that column's own
+   latest diagonal, where `CapeCod::fit` trends to the triangle's
+   valuation, the latest month of any column: when another column (a
+   premium) runs later, the trended aprioris differ by the trend over the
+   gap, and the detrended aprioris and the ultimates agree as long as
+   every origin ends by the fitted column's valuation. To carry the
+   source's apriori instead, use `BornhuetterFerguson` with it; that is
+   exact at a trend of 0 only.
 8. **Where it departs from chainladder-python.** An origin whose cell on
    the latest diagonal is missing is projected from its last observed cell,
    where chainladder-python gives NaN. A target valued earlier than the
    source is projected at its own ages, where chainladder-python values it
    at the source's valuation and gives NaN. Cape Cod on a diagonal reads
    each origin's own age, where chainladder-python's `CapeCod.predict` on
-   a `latest_diagonal` aligns every origin to the first factor to ultimate
-   unless `val_to_dev()` is called first.
+   a `latest_diagonal` reads every origin's apriori at the first factor to
+   ultimate unless `val_to_dev()` is called first
+   (`knowledge/references/chainladder-python-predict-traps.md`).
 9. **A single segment and no standard error.** `from_triangle` takes one
    segment (`Error::MultipleSegments` otherwise). A map from source
    segments to target segments, `LatestDiagonal` over segments and the
@@ -2963,25 +2980,51 @@ the two.
     attachment too), applied to their own latest diagonal and their own
     triangle, give the source's factors to the bit and its tail factor,
     factors to ultimate and ultimates within 1e-14 relative (to the bit
-    with no tail); the expected-loss methods on the CAS workers'
-    compensation triangle give the source fit within 1e-12, Cape Cod's
-    aprioris included; chainladder-python 0.10.1's
-    `fit(source).predict(target)` at 1e-9 relative
-    (`reference/reserving_fit_apply_python.csv`, from
+    with no tail), and so do both segments of a `ChainLadder::fit_segments`
+    (GenIns and a perturbed GenIns, with a curve tail); the expected-loss
+    methods on the CAS workers' compensation triangle give the source's
+    development and exposure to the bit and its ultimates within 1e-12,
+    and Cape Cod's aprioris too, since that triangle's premium runs no
+    later than its paid (item 7). chainladder-python 0.10.1 at 1e-9
+    relative (`reference/reserving_fit_apply_python.csv`, from
     `scripts/reserving_fit_apply_python.py`) in two arms, our own source
     fit through `to_chain_ladder` and the reference's own `cdf_` as a
-    pattern of factors to ultimate, on GenIns with no tail,
-    `TailConstant(1.05)` and both curves, applied to its diagonal and to a
-    perturbed, doubled, shifted and earlier-valued book and two subsets
-    of its origins, and on the CAS workers' compensation triangle with
-    Bornhuetter-Ferguson, Benktander and two Cape Cods applied to its
-    diagonal, a perturbed book with 10% more premium, a shifted book and
-    the origins from 1993; by hand, ages between the source's (18 and 30
-    months, accident quarters), a target with fewer ages and its plain
-    triangle error, a missing latest cell, an earlier valuation and the
-    applied selection; and the errors above. The interpolated, quarterly
-    and truncated cases and the departures of item 8 have no
-    chainladder-python reference (the earlier-valued book's reference is
-    `DevelopmentConstant` with the source's `cdf_`); the targets are
-    GenIns and the workers' compensation triangle scaled, sliced or
-    shifted, not a second real book.
+    pattern of factors to ultimate. On GenIns, `fit(source).predict(target)`
+    for the sources with no tail, `TailConstant(1.05)` and both curves
+    applied to the diagonal and a perturbed book, whose own curve tails,
+    refitted in the first arm, differ from the carried ones by more than
+    the tolerance; the source with no tail also applied to a doubled and a
+    shifted book and the origins from 2006 and to 2004; and for a book
+    valued before 2008, `DevelopmentConstant` with the source's `cdf_`,
+    not predict (item 8). On the CAS workers' compensation triangle, predict
+    for Bornhuetter-Ferguson, Benktander and two Cape Cods applied to the
+    diagonal, a perturbed book with 10% more premium and a shifted book
+    (there is no doubled book), and for the Cape Cods also the origins from
+    1993 and the apriori on the raw latest diagonal, which predict reads
+    with every origin at the first age and the test reproduces so (item
+    8). The GenIns targets at the source's ages (the diagonal, the
+    perturbed, doubled and shifted books and the origins to 2004) also go
+    through the plain triangle path against the same rows. By hand: ages
+    between the source's (18 and 30 months, accident quarters), a target
+    with fewer ages and its plain triangle error, a target with more ages
+    through the plain path (its own factors past the source's oldest age
+    and the tail at its oldest, pinned; item 11), a missing latest cell, an
+    earlier valuation, the applied selection, Cape Cod on a diagonal
+    trended to the paid's valuation when the premium runs a year later
+    (item 7), and the errors above, the tail floor from both sides. The
+    interpolated, quarterly and truncated cases and the missing cell and
+    earlier valuation of item 8 have no chainladder-python reference; the
+    generator asserts that predict gives NaN on those two and misreads the
+    raw diagonal, and raises if chainladder-python stops doing so. The
+    targets are GenIns and the workers' compensation triangle scaled,
+    sliced or shifted, not a second real book.
+11. **Open: a guard on the plain triangle path.** A proposal for the user:
+    `to_chain_ladder().fit(&other, column)` could refuse a target whose
+    development ages are not the source's (a finer grain, or ages past the
+    source's oldest), with an error that points to `from_triangle` and
+    `fit_diagonal`. The frozen chain ladder would then have to carry its
+    source's ages, which a `ChainLadder` with a selected pattern does not,
+    so the guard touches decision 12's selected patterns too. Until it is
+    decided the hazards stand as item 4 states them, and
+    `the_plain_path_on_an_older_book_mixes_in_its_own_factors` pins
+    today's behaviour so that a guard changes it on purpose.
