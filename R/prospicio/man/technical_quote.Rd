@@ -5,9 +5,20 @@
 \alias{implied_quote}
 \title{A cover's quote}
 \usage{
-technical_quote(price, expenses = 0, brokerage = 0, fixed = 0, limit = NULL)
+technical_quote(
+  price,
+  expenses = 0,
+  brokerage = 0,
+  fixed = 0,
+  limit = NULL,
+  premium_tax = 0,
+  income_tax = 0,
+  reinstatement_rate = 0,
+  commission = 0,
+  brokerage_on_reinstatements = TRUE
+)
 
-implied_quote(quote, premium)
+implied_quote(quote, premium, commission = 0)
 }
 \arguments{
 \item{price}{A risk-loaded price, from \code{\link[=risk_loaded_price]{risk_loaded_price()}}.}
@@ -21,26 +32,55 @@ implied_quote(quote, premium)
 \item{limit}{The cover's limit at the placed share, for the rate on line;
 \code{NULL} for a cover without one, such as a quota share.}
 
+\item{premium_tax}{Premium tax, a fraction of all the premium.}
+
+\item{income_tax}{Income tax on the margin.}
+
+\item{reinstatement_rate}{Expected reinstatement premium per unit of
+deposit: the tower grid's expected reinstatement premium for the layer
+over its deposit premium.}
+
+\item{commission}{In \code{technical_quote()}, a flat ceding commission, a
+fraction of the deposit; in \code{implied_quote()}, further expected
+commissions read back at the quoted deposit, an amount.}
+
+\item{brokerage_on_reinstatements}{Whether brokerage is charged on
+reinstatement premium too.}
+
 \item{quote}{A quote from \code{technical_quote()}.}
 
-\item{premium}{A quoted premium.}
+\item{premium}{A quoted deposit.}
 }
 \value{
 A list with \code{expected_loss}, \code{margin}, \code{risk_premium},
-\code{expenses}, \code{brokerage} (amounts), \code{premium}, \code{net_premium} (net of
-brokerage), \code{assets}, \code{capital}, \code{return_on_capital}, \code{loss_ratio},
-\code{multiple}, \code{rate_on_line} and \code{payback} (\code{NaN} without a limit), and
-the inputs \code{implied_quote()} needs.
+\code{expenses}, \code{brokerage}, \code{premium_tax}, \code{commission} (amounts),
+\code{premium} (the deposit), \code{reinstatement_premium}, \code{premium_in_all},
+\code{net_premium} (net of brokerage), \code{assets}, \code{capital}, \code{income_tax},
+\code{pre_tax_return_on_capital}, \code{return_on_capital} (after tax),
+\code{loss_ratio} and \code{multiple} (on all the premium), \code{rate_on_line} and
+\code{payback} (on the deposit, \code{NaN} without a limit), and the inputs
+\code{implied_quote()} needs.
 }
 \description{
-\code{technical_quote()} grosses a risk-loaded price up to the premium the
+\code{technical_quote()} grosses a risk-loaded price up to the deposit the
 cedant pays. The risk premium \code{R} (the expected loss plus the margin for
 capital, from \code{\link[=risk_loaded_price]{risk_loaded_price()}}) is grossed up for internal expenses
-\code{e} and brokerage \code{b}, both fractions of the premium, and a fixed expense
-\code{f}: \code{P = (R + f) / (1 - e - b)}. \code{implied_quote()} reads a quoted
-premium the other way: the reinsurer keeps \code{P (1 - e - b) - f} as its
-risk premium, and the margin and return on capital follow with the same
-expected loss and assets.
+\code{e}, brokerage \code{b} and premium tax \code{tau}, fractions of the premium, and a
+fixed expense \code{f}: \code{D = (R + f) / (1 - e - b - tau)}. With an expected
+reinstatement premium \verb{kappa D} and a flat ceding commission \verb{c D} the
+deposit is \code{D = (R + f) / ((1 + kappa)(1 - e - tau) - b (1 + kappa) - c)}
+(brokerage on the deposit alone when \code{brokerage_on_reinstatements} is
+\code{FALSE}). With an income tax \code{t} on the margin the price's return on
+capital is the return after tax: the risk premium is raised to give it,
+which for a cost-of-capital price at \code{r} is the price at \code{r / (1 - t)}.
+}
+\details{
+\code{implied_quote()} reads a quoted deposit the other way: the reinsurer
+keeps what is left after the loads and commissions as its risk premium,
+and the margin and return on capital follow with the same expected loss
+and assets. A sliding-scale or profit commission is read back there as
+an amount, from the layer's tower grid at that deposit; for a
+swing-rated layer pass its expected premium as the deposit.
 }
 \examples{
 p <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
@@ -49,4 +89,7 @@ q <- technical_quote(p, expenses = 0.03, brokerage = 0.10, limit = 10)
 q$premium
 q$rate_on_line
 implied_quote(q, 3)$return_on_capital
+# Half a reinstatement expected per unit of deposit, and a 21\% income tax.
+t <- technical_quote(p, brokerage = 0.10, income_tax = 0.21, reinstatement_rate = 0.5)
+c(t$return_on_capital, t$pre_tax_return_on_capital)
 }

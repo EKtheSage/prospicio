@@ -1279,14 +1279,24 @@ calibrate_classical <- function(x, principle, premium, q = 2) {
 
 #' A cover's quote
 #'
-#' `technical_quote()` grosses a risk-loaded price up to the premium the
+#' `technical_quote()` grosses a risk-loaded price up to the deposit the
 #' cedant pays. The risk premium `R` (the expected loss plus the margin for
 #' capital, from [risk_loaded_price()]) is grossed up for internal expenses
-#' `e` and brokerage `b`, both fractions of the premium, and a fixed expense
-#' `f`: `P = (R + f) / (1 - e - b)`. `implied_quote()` reads a quoted
-#' premium the other way: the reinsurer keeps `P (1 - e - b) - f` as its
-#' risk premium, and the margin and return on capital follow with the same
-#' expected loss and assets.
+#' `e`, brokerage `b` and premium tax `tau`, fractions of the premium, and a
+#' fixed expense `f`: `D = (R + f) / (1 - e - b - tau)`. With an expected
+#' reinstatement premium `kappa D` and a flat ceding commission `c D` the
+#' deposit is `D = (R + f) / ((1 + kappa)(1 - e - tau) - b (1 + kappa) - c)`
+#' (brokerage on the deposit alone when `brokerage_on_reinstatements` is
+#' `FALSE`). With an income tax `t` on the margin the price's return on
+#' capital is the return after tax: the risk premium is raised to give it,
+#' which for a cost-of-capital price at `r` is the price at `r / (1 - t)`.
+#'
+#' `implied_quote()` reads a quoted deposit the other way: the reinsurer
+#' keeps what is left after the loads and commissions as its risk premium,
+#' and the margin and return on capital follow with the same expected loss
+#' and assets. A sliding-scale or profit commission is read back there as
+#' an amount, from the layer's tower grid at that deposit; for a
+#' swing-rated layer pass its expected premium as the deposit.
 #'
 #' @param price A risk-loaded price, from [risk_loaded_price()].
 #' @param expenses Internal expenses, a fraction of the premium.
@@ -1294,13 +1304,26 @@ calibrate_classical <- function(x, principle, premium, q = 2) {
 #' @param fixed A fixed expense per contract, an amount.
 #' @param limit The cover's limit at the placed share, for the rate on line;
 #'   `NULL` for a cover without one, such as a quota share.
+#' @param premium_tax Premium tax, a fraction of all the premium.
+#' @param income_tax Income tax on the margin.
+#' @param reinstatement_rate Expected reinstatement premium per unit of
+#'   deposit: the tower grid's expected reinstatement premium for the layer
+#'   over its deposit premium.
+#' @param commission In `technical_quote()`, a flat ceding commission, a
+#'   fraction of the deposit; in `implied_quote()`, further expected
+#'   commissions read back at the quoted deposit, an amount.
+#' @param brokerage_on_reinstatements Whether brokerage is charged on
+#'   reinstatement premium too.
 #' @param quote A quote from `technical_quote()`.
-#' @param premium A quoted premium.
+#' @param premium A quoted deposit.
 #' @returns A list with `expected_loss`, `margin`, `risk_premium`,
-#'   `expenses`, `brokerage` (amounts), `premium`, `net_premium` (net of
-#'   brokerage), `assets`, `capital`, `return_on_capital`, `loss_ratio`,
-#'   `multiple`, `rate_on_line` and `payback` (`NaN` without a limit), and
-#'   the inputs `implied_quote()` needs.
+#'   `expenses`, `brokerage`, `premium_tax`, `commission` (amounts),
+#'   `premium` (the deposit), `reinstatement_premium`, `premium_in_all`,
+#'   `net_premium` (net of brokerage), `assets`, `capital`, `income_tax`,
+#'   `pre_tax_return_on_capital`, `return_on_capital` (after tax),
+#'   `loss_ratio` and `multiple` (on all the premium), `rate_on_line` and
+#'   `payback` (on the deposit, `NaN` without a limit), and the inputs
+#'   `implied_quote()` needs.
 #' @export
 #' @examples
 #' p <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
@@ -1309,23 +1332,34 @@ calibrate_classical <- function(x, principle, premium, q = 2) {
 #' q$premium
 #' q$rate_on_line
 #' implied_quote(q, 3)$return_on_capital
-technical_quote <- function(price, expenses = 0, brokerage = 0, fixed = 0, limit = NULL) {
-  loads <- list(expenses = as.double(expenses), brokerage = as.double(brokerage),
-                fixed = as.double(fixed), limit = if (is.null(limit)) NaN else as.double(limit))
-  q <- rust_result(pricing_quote(
-    price$expected_loss, price$premium, price$assets, loads$expenses, loads$brokerage,
-    loads$fixed, loads$limit, NaN
-  ))
-  c(q, list(loads = loads))
+#' # Half a reinstatement expected per unit of deposit, and a 21% income tax.
+#' t <- technical_quote(p, brokerage = 0.10, income_tax = 0.21, reinstatement_rate = 0.5)
+#' c(t$return_on_capital, t$pre_tax_return_on_capital)
+technical_quote <- function(price, expenses = 0, brokerage = 0, fixed = 0, limit = NULL,
+                            premium_tax = 0, income_tax = 0, reinstatement_rate = 0,
+                            commission = 0, brokerage_on_reinstatements = TRUE) {
+  loads <- list(price = price[c("expected_loss", "premium", "assets")],
+                expenses = as.double(expenses), brokerage = as.double(brokerage),
+                fixed = as.double(fixed), limit = if (is.null(limit)) NaN else as.double(limit),
+                premium_tax = as.double(premium_tax), income_tax = as.double(income_tax),
+                reinstatement_rate = as.double(reinstatement_rate),
+                commission = as.double(commission),
+                brokerage_on_reinstatements = isTRUE(brokerage_on_reinstatements))
+  quote_with(loads, NaN, 0)
 }
 
 #' @rdname technical_quote
 #' @export
-implied_quote <- function(quote, premium) {
-  l <- quote$loads
+implied_quote <- function(quote, premium, commission = 0) {
+  quote_with(quote$loads, as.double(premium), as.double(commission))
+}
+
+quote_with <- function(l, premium, commission) {
+  p <- l$price
   q <- rust_result(pricing_quote(
-    quote$expected_loss, quote$risk_premium, quote$assets, l$expenses, l$brokerage, l$fixed,
-    l$limit, as.double(premium)
+    p$expected_loss, p$premium, p$assets, l$expenses, l$brokerage, l$fixed, l$limit,
+    l$premium_tax, l$income_tax, l$reinstatement_rate, l$commission,
+    l$brokerage_on_reinstatements, premium, commission
   ))
   c(q, list(loads = l))
 }

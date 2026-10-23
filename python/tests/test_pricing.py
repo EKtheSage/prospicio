@@ -482,6 +482,38 @@ def test_quote_reproduces_the_reinsurance_price_guide():
         Quote.technical(p, expenses=0.5, brokerage=0.5)
 
 
+def test_quote_premium_side_and_taxes():
+    """Reinstatement premium, a flat commission and both taxes (item 11)."""
+    from prospicio.distributions import Sampled
+    from prospicio.pricing import Quote, price
+    from prospicio.risk import Distortion
+
+    p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.1)
+    plain = Quote.technical(p, expenses=0.03, brokerage=0.10, limit=10.0)
+    same = Quote.technical(p, expenses=0.03, brokerage=0.10, limit=10.0, reinstatement_rate=0.0)
+    assert plain.to_dict() == same.to_dict()
+    q = Quote.technical(
+        p, expenses=0.03, brokerage=0.10, limit=10.0, premium_tax=0.02, income_tax=0.21,
+        reinstatement_rate=0.4, commission=0.05,
+    )
+    parts = q.expected_loss + q.margin + q.expenses + q.brokerage + q.premium_tax + q.commission
+    assert parts == pytest.approx(q.premium_in_all, abs=1e-12)
+    assert q.reinstatement_premium == pytest.approx(0.4 * q.premium, abs=1e-15)
+    assert q.return_on_capital == pytest.approx(0.1, abs=1e-12)
+    assert q.pre_tax_return_on_capital > 0.1
+    assert q.income_tax == pytest.approx(0.21 * q.margin, abs=1e-15)
+    assert q.rate_on_line == pytest.approx(q.premium / 10.0, abs=1e-15)
+    assert q.loss_ratio == pytest.approx(q.expected_loss / q.premium_in_all, abs=1e-15)
+    back = q.at(q.premium, commission=0.01)
+    assert back.risk_premium == pytest.approx(q.risk_premium - 0.01, abs=1e-12)
+    no_rp_brokerage = Quote.technical(
+        p, brokerage=0.10, reinstatement_rate=0.4, brokerage_on_reinstatements=False
+    )
+    assert no_rp_brokerage.premium < Quote.technical(p, brokerage=0.10, reinstatement_rate=0.4).premium
+    with pytest.raises(ValueError):
+        Quote.technical(p, income_tax=1.0)
+
+
 # Clark, Basics of Reinsurance Pricing (CAS study note), per-risk experience
 # rating: (accident date, untrended loss, printed trend factor).
 _CLARK_LOSSES = [

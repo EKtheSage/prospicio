@@ -22938,7 +22938,8 @@ class Price:
     @property
     def return_on_capital(self, /) -> float:
         """
-        Return on capital, margin over capital.
+        Return on capital after income tax, the margin less the tax over
+        capital.
         """
 
 @final
@@ -23158,14 +23159,21 @@ class Quote:
         """
         Assets backing the loss.
         """
-    def at(self, /, premium: float) -> Quote:
+    def at(self, /, premium: float, *, commission: float = 0.0) -> Quote:
         """
-        The same cover at a quoted premium: what the quote leaves after the
-        loads is the risk premium.
+        The same cover at a quoted deposit: what the quote leaves after the
+        loads and commissions is the risk premium.
         
         Parameters
         ----------
         premium : float
+            The deposit; for a swing-rated layer, the expected premium from
+            its tower grid (``expected_premium``).
+        commission : float, default 0.0
+            Expected commissions beyond the flat one, an amount: a sliding
+            scale or profit commission read off the layer's tower grid at
+            this deposit (``expected_ceding_commission``,
+            ``expected_profit_commission``).
         
         Returns
         -------
@@ -23187,6 +23195,11 @@ class Quote:
         Capital, assets less the risk premium.
         """
     @property
+    def commission(self, /) -> float:
+        """
+        Commissions paid back to the cedant, an amount.
+        """
+    @property
     def expected_loss(self, /) -> float:
         """
         Expected loss.
@@ -23197,6 +23210,11 @@ class Quote:
         Internal expenses, an amount.
         """
     @property
+    def income_tax(self, /) -> float:
+        """
+        Income tax on the margin, an amount.
+        """
+    @property
     def limit(self, /) -> float |None:
         """
         The limit, or ``None``.
@@ -23204,7 +23222,7 @@ class Quote:
     @property
     def loss_ratio(self, /) -> float:
         """
-        Expected loss over the premium.
+        Expected loss over all the premium.
         """
     @property
     def margin(self, /) -> float:
@@ -23214,7 +23232,7 @@ class Quote:
     @property
     def multiple(self, /) -> float:
         """
-        Premium over expected loss.
+        All the premium over expected loss.
         """
     @property
     def net_premium(self, /) -> float:
@@ -23224,22 +23242,43 @@ class Quote:
     @property
     def payback(self, /) -> float |None:
         """
-        Limit over premium, or ``None`` without a limit.
+        Limit over the deposit, or ``None`` without a limit.
+        """
+    @property
+    def pre_tax_return_on_capital(self, /) -> float:
+        """
+        Return on capital before income tax, margin over capital.
         """
     @property
     def premium(self, /) -> float:
         """
-        The premium the cedant pays.
+        The deposit premium the cedant pays upfront.
+        """
+    @property
+    def premium_in_all(self, /) -> float:
+        """
+        The deposit plus the expected reinstatement premium.
+        """
+    @property
+    def premium_tax(self, /) -> float:
+        """
+        Premium tax, an amount.
         """
     @property
     def rate_on_line(self, /) -> float |None:
         """
-        Premium over the limit, or ``None`` without a limit.
+        The deposit over the limit, or ``None`` without a limit.
+        """
+    @property
+    def reinstatement_premium(self, /) -> float:
+        """
+        Expected reinstatement premium.
         """
     @property
     def return_on_capital(self, /) -> float:
         """
-        Return on capital, margin over capital.
+        Return on capital after income tax, the margin less the tax over
+        capital.
         """
     @property
     def risk_premium(self, /) -> float:
@@ -23247,7 +23286,7 @@ class Quote:
         The risk premium: what the reinsurer keeps for the loss and capital.
         """
     @staticmethod
-    def technical(price: Price, *, expenses: float = 0.0, brokerage: float = 0.0, fixed: float = 0.0, limit: float |None = None) -> Quote:
+    def technical(price: Price, *, expenses: float = 0.0, brokerage: float = 0.0, fixed: float = 0.0, limit: float |None = None, premium_tax: float = 0.0, income_tax: float = 0.0, reinstatement_rate: float = 0.0, commission: float = 0.0, brokerage_on_reinstatements: bool = True) -> Quote:
         """
         The technical premium of a risk-loaded price.
         
@@ -23265,6 +23304,20 @@ class Quote:
         limit : float, optional
             The cover's limit at the placed share, for the rate on line;
             omit it for a cover without one, such as a quota share.
+        premium_tax : float, default 0.0
+            Premium tax, a fraction of all the premium (deposit and
+            reinstatement premium), grossed up as brokerage is.
+        income_tax : float, default 0.0
+            Income tax on the margin. The price's return on capital is then
+            the return after tax, and the risk premium is raised to give it.
+        reinstatement_rate : float, default 0.0
+            Expected reinstatement premium per unit of deposit: a tower
+            grid's ``expected_reinstatement_premium`` for the layer over its
+            deposit premium (reinstatement premium is proportional to it).
+        commission : float, default 0.0
+            A flat ceding commission, a fraction of the deposit.
+        brokerage_on_reinstatements : bool, default True
+            Whether brokerage is charged on reinstatement premium too.
         
         Returns
         -------
@@ -23273,8 +23326,20 @@ class Quote:
         Raises
         ------
         ValueError
-            If a load is negative, ``expenses + brokerage`` reaches 1, or the
-            limit is not positive.
+            If a load or rate is negative or not below 1, the loads and
+            commission leave no premium, or the limit is not positive.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Sampled
+        >>> from prospicio.pricing import Quote, price
+        >>> from prospicio.risk import Distortion
+        >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.1)
+        >>> q = Quote.technical(p, brokerage=0.10, income_tax=0.21, reinstatement_rate=0.5)
+        >>> round(q.return_on_capital, 6), q.pre_tax_return_on_capital > 0.1
+        (0.1, True)
+        >>> round(q.premium_in_all / q.premium, 6)
+        1.5
         """
     def to_dict(self, /) -> dict:
         """

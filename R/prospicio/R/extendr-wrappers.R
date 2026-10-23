@@ -230,7 +230,7 @@ pricing_pattern_at <- function(ages, factors, x) .Call(wrap__pricing_pattern_at,
 
 pricing_count_development <- function(ages, factors, years, valuation) .Call(wrap__pricing_count_development, ages, factors, years, valuation)
 
-pricing_quote <- function(expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium) .Call(wrap__pricing_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium)
+pricing_quote <- function(expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium_tax, income_tax, reinstatement_rate, ceding_commission, brokerage_on_reinstatements, premium, commission) .Call(wrap__pricing_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium_tax, income_tax, reinstatement_rate, ceding_commission, brokerage_on_reinstatements, premium, commission)
 
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 

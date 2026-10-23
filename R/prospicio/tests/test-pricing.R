@@ -254,6 +254,19 @@ stopifnot(abs(q$premium * 0.87 - p$premium) < 1e-12, abs(q$return_on_capital - 0
           implied_quote(q, 3)$return_on_capital > 0.1,
           is.nan(technical_quote(p)$rate_on_line))
 
+# The premium side and taxes: the parts add up to all the premium, and the
+# return after income tax is the price's.
+t <- technical_quote(p, expenses = 0.03, brokerage = 0.10, limit = 10, premium_tax = 0.02,
+                     income_tax = 0.21, reinstatement_rate = 0.4, commission = 0.05)
+stopifnot(abs(t$expected_loss + t$margin + t$expenses + t$brokerage + t$premium_tax +
+                t$commission - t$premium_in_all) < 1e-12,
+          abs(t$return_on_capital - 0.1) < 1e-12, t$pre_tax_return_on_capital > 0.1,
+          abs(implied_quote(t, t$premium)$risk_premium - t$risk_premium) < 1e-12,
+          abs(implied_quote(t, t$premium, commission = 0.01)$risk_premium -
+                (t$risk_premium - 0.01)) < 1e-12,
+          identical(technical_quote(p, expenses = 0.03, limit = 10)$premium,
+                    technical_quote(p, expenses = 0.03, limit = 10, reinstatement_rate = 0)$premium))
+
 # Experience rating from large losses reproduces Clark's study note (#190).
 clark <- data.frame(
   id = as.character(1:14),
