@@ -7624,21 +7624,6 @@ class CompartmentalPriors:
         effect.
         """
     @staticmethod
-    def gesmann_morris() -> CompartmentalPriors:
-        """
-        Gesmann and Morris' (2020) case study, model 1: ``k_er`` (3, 0.1),
-        ``k_p`` (1, 0.1), ``rlr`` (0.7, 0.2), ``rrf`` (0.8, 0.1), half
-        Student-t(10) effect sds with scales 0.2 and 0.1, LKJ(1), and
-        Student-t(1, 0, 1000) on each ``log sigma`` (effectively flat), with
-        no effect on the rates and no development effect. On company 337 the
-        data pull the rates 5 to 9 prior sds from these medians: the
-        posterior is a compromise with the preset.
-        
-        Returns
-        -------
-        CompartmentalPriors
-        """
-    @staticmethod
     def diffuse() -> CompartmentalPriors:
         """
         A diffuse set for model 1: the paper's medians (``k_er`` 3, ``k_p`` 1,
@@ -7655,6 +7640,21 @@ class CompartmentalPriors:
         (``replace``), for example one from the book's paid history or from a
         paid-and-incurred fit of a similar book; the paper's narrow prior put
         the reserve on company 337 26% above the fit to paid and outstanding.
+        
+        Returns
+        -------
+        CompartmentalPriors
+        """
+    @staticmethod
+    def gesmann_morris() -> CompartmentalPriors:
+        """
+        Gesmann and Morris' (2020) case study, model 1: ``k_er`` (3, 0.1),
+        ``k_p`` (1, 0.1), ``rlr`` (0.7, 0.2), ``rrf`` (0.8, 0.1), half
+        Student-t(10) effect sds with scales 0.2 and 0.1, LKJ(1), and
+        Student-t(1, 0, 1000) on each ``log sigma`` (effectively flat), with
+        no effect on the rates and no development effect. On company 337 the
+        data pull the rates 5 to 9 prior sds from these medians: the
+        posterior is a compromise with the preset.
         
         Returns
         -------
