@@ -12,14 +12,14 @@ execute:
 
 This document uses `prospicio` end to end from R. It is the R twin of
 [`one_year_view.ipynb`](one_year_view.ipynb): same data, same seeds, same
-model, and the numbers agree with the notebook's. It models three risks, each
-where it lives, then puts them together:
+model, and the numbers agree with the notebook's. It models three risks over the
+coming year, each where it lives, then puts them together:
 
-1. **Reserve risk**: an ODP bootstrap of the GenIns paid triangle.
+1. **Reserve risk**: the one-year view of the GenIns paid triangle, the claims development result over the coming year, by re-reserving inside an ODP bootstrap.
 2. **Fleet motor premium risk**: a Poisson GLM for claim frequency and a gamma GLM for severity on a policy file, into a collective model that carries the GLM's parameter uncertainty.
 3. **Property per-risk**: a risk profile by sum-insured band, with a surplus treaty inuring to a per-risk excess of loss that has a paid reinstatement, pro rata as to time.
 
-Then it prices the per-risk XL from its simulated losses, joins the three risks with a rank correlation, and sets and allocates capital at TVaR 99%, gross and net of reinsurance.
+Then it prices the per-risk XL from its simulated losses and places it at that price, joins the three risks with a rank correlation, and sets and allocates capital at TVaR 99%, gross and net of reinsurance, the net view paying what the reinsurance costs.
 
 To run it, clone the repository, install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`) and `ggplot2`, then render from anywhere in the repository with `quarto render examples/one_year_view.qmd`. Set the environment variable `PROSPICIO_EXAMPLE_SIMS` to run fewer simulations.
 
@@ -50,7 +50,9 @@ money <- function(x) sprintf("%.2fm", x / 1e6)
 
 ## 1. Reserve risk
 
-GenIns is a cumulative paid triangle, ten origin years by ten ages. The ODP bootstrap resamples its scaled Pearson residuals and adds process noise. The result is a **joint** distribution of the reserve by origin, so the total keeps the dependence between origins.
+GenIns is a cumulative paid triangle, ten origin years by ten ages. The insurer already holds a reserve for these years, so what one-year capital must cover is how far that reserve can deteriorate over the coming year: the **claims development result** (CDR), the estimate of the ultimate now less the estimate a year from now. This is Merz and Wüthrich's one-year view, the one a one-year capital standard such as Solvency II measures reserve risk on. Development after the year is reserved for at the end of the year, with that year's capital.
+
+`odp_one_year()` simulates the year by re-reserving: each simulation resamples the triangle's scaled Pearson residuals, draws the next diagonal with process noise, appends it and fits the chain ladder again. A negative CDR is an adverse development, so the reserve line's loss is minus the CDR. The bootstrap's run-off view (`odp_bootstrap()`), the reserve until everything is paid, is printed beside it: it is wider, because it holds the development of every future year and not only the next.
 
 ```{r}
 #| label: reserve
@@ -59,9 +61,16 @@ tri <- triangle(
   data.frame(origin = genins$origin, age = genins$development, paid = genins$value),
   origin = "origin", development = "age", columns = "paid"
 )
-boot <- odp_bootstrap(tri, "paid", n_sims = N_SIMS, seed = 1)
-reserve <- total(boot@reserves)
-cat(sprintf("mean reserve %s, 99.5%% %s\n", money(mean(reserve)), money(quantile(reserve, 0.995))))
+one_year <- odp_one_year(tri, "paid", method = "chain_ladder", n_sims = N_SIMS, seed = 1)
+cdr <- total(one_year@cdr)
+reserve <- sampled(-cdr@draws)  # adverse development is the loss
+run_off <- total(odp_bootstrap(tri, "paid", n_sims = N_SIMS, seed = 1)@reserves)
+
+cat(sprintf("opening reserve %s\n", money(sum(one_year@opening_reserve))))
+cat(sprintf("one-year: adverse development mean %s, sd %s, 99.5%% %s\n", money(mean(reserve)),
+            money(sqrt(variance(reserve))), money(quantile(reserve, 0.995))))
+cat(sprintf("run-off:  reserve sd %s, 99.5%% %s above its mean\n", money(sqrt(variance(run_off))),
+            money(quantile(run_off, 0.995) - mean(run_off))))
 ```
 
 ## 2. Fleet motor premium risk
@@ -103,7 +112,9 @@ The reinsurance has two stages:
 - a **surplus treaty** with a 2m retention line and 4 lines (8m capacity);
 - inuring to it, a **per-risk XL** of 3m xs 1m with one paid reinstatement at 100%, pro rata as to time.
 
-The XL's upfront premium is its exposure-rated cost over a 70% loss ratio. Simulated losses are dated uniformly over the year, so each reinstatement is charged for the part of the year left after the loss.
+Two assumptions price the surplus: the original business runs at a 60% loss ratio, and the treaty pays a 35% ceding commission. A surplus treaty takes the same share of each risk's premium as of its losses, so its ceded premium is its exposure-rated loss over 0.6.
+
+The XL's premium is set below from its own simulated losses. Its ceded losses do not depend on its premium, and its reinstatement premium is proportional to it, so this first run carries a deposit premium of 1 and reports the reinstatement premium per unit of deposit. Simulated losses are dated uniformly over the year, so each reinstatement is charged for the part of the year left after the loss.
 
 ```{r}
 #| label: property
@@ -117,24 +128,31 @@ retention <- 2e6
 lines <- 4
 xl_limit <- 3e6
 xl_attachment <- 1e6
+original_loss_ratio <- 0.60  # assumptions
+ceding_commission <- 0.35
 xl_cost <- profile_layer_loss(profile, xl_limit, xl_attachment, retention, lines)
-xl <- xol_layer("per_risk_xl", xl_limit, xl_attachment, premium = xl_cost / 0.7,
-                reinstatement_rates = 1, pro_rata_time = TRUE)
-tower <- inuring_tower(list(list(surplus_treaty("surplus", retention, lines)), list(xl)))
+surplus <- surplus_treaty("surplus", retention, lines) |>
+  with_premium_rate(1, profile_surplus_loss(profile, retention, lines) / original_loss_ratio) |>
+  with_ceding_commission(ceding_commission)
+
+per_risk_xl <- function(premium) {
+  xol_layer("per_risk_xl", xl_limit, xl_attachment, premium = premium,
+            reinstatement_rates = 1, pro_rata_time = TRUE)
+}
 
 events <- with_uniform_times(profile_simulate(profile, N_SIMS, 4))
-result <- apply_tower(tower, events)
+result <- apply_tower(inuring_tower(list(list(surplus), list(per_risk_xl(1)))), events)
 gross <- marginal(result, c("gross", "ground_up"))
 net <- marginal(result, c("net", "retained"))
 surplus_loss <- marginal(result, c("ceded", "surplus"))
 xl_loss <- marginal(result, c("ceded", "per_risk_xl"))
-reinstated <- marginal(result, c("reinstatement_premium", "per_risk_xl"))
+reinstatement_rate <- mean(marginal(result, c("reinstatement_premium", "per_risk_xl")))
 
 cat(sprintf("gross mean %s\n", money(mean(gross))))
 cat(sprintf("surplus cedes %s  (exposure rating %s)\n", money(mean(surplus_loss)),
             money(profile_surplus_loss(profile, retention, lines))))
 cat(sprintf("per-risk XL   %s  (exposure rating %s)\n", money(mean(xl_loss)), money(xl_cost)))
-cat(sprintf("reinstatement premium %s\n", money(mean(reinstated))))
+cat(sprintf("reinstatement premium %.4f per unit of deposit\n", reinstatement_rate))
 cat(sprintf("net mean %s, 99.5%% %s\n", money(mean(net)), money(quantile(net, 0.995))))
 ```
 
@@ -144,25 +162,47 @@ The simulated cessions agree with exposure rating, which checks the simulation. 
 #| label: more-lines
 for (more in c(4, 8, 12)) {
   alt <- apply_tower(
-    inuring_tower(list(list(surplus_treaty("surplus", retention, more)), list(xl))), events
+    inuring_tower(list(list(surplus_treaty("surplus", retention, more)), list(per_risk_xl(1)))), events
   )
   cat(sprintf("%4.0f lines: net 99.5%% %s\n", more,
               money(quantile(marginal(alt, c("net", "retained")), 0.995))))
 }
 ```
 
-**Pricing the XL** from its simulated losses: assets at TVaR 99% and a 10% cost of capital on the capital above the premium. The reinstatement premium the reinsurer expects to collect comes off.
+**Pricing the XL** from its simulated losses: assets at TVaR 99% and a 10% cost of capital on the capital above the premium. That risk-loaded premium is what the reinsurer should collect in all: the deposit plus the reinstatement premiums it expects. Those are the deposit times the rate per unit the run above measured, so the deposit is the risk-loaded premium over one plus that rate. This is exact in one step, with no iteration: the price depends only on the ceded losses, and they do not depend on the premium. The tower is then applied again with that deposit, so the reinstatement premiums the cedant pays follow the premium the document prices. The exposure-rated cost over a 70% loss ratio is printed for comparison.
 
 ```{r}
 #| label: xl-price
 xl_price <- risk_loaded_price(xl_loss, distortion("tvar", 0.99), cost_of_capital = 0.10)
+xl <- per_risk_xl(xl_price$premium / (1 + reinstatement_rate))
+tower <- inuring_tower(list(list(surplus), list(xl)))
+result <- apply_tower(tower, events)
+reinstated <- marginal(result, c("reinstatement_premium", "per_risk_xl"))
+
 cat(sprintf("risk-loaded premium %s, capital %s\n", money(xl_price$premium), money(xl_price$capital)))
-cat(sprintf("net of expected reinstatements %s\n", money(xl_price$premium - mean(reinstated))))
+cat(sprintf("deposit %s + expected reinstatements %s\n", money(xl@premium), money(mean(reinstated))))
+cat(sprintf("(exposure-rated cost over a 70%% loss ratio: %s)\n", money(xl_cost / 0.7)))
+```
+
+**What the reinsurance costs.** In each simulated year the cedant pays the surplus's ceded premium less its ceding commission, the XL's deposit, and the reinstatement premiums that year's losses trigger. The property line net of reinsurance is the retained loss plus that cost. What the cedant pays exceeds what it recovers on average by the reinsurers' margin: the expected cost of the cover.
+
+```{r}
+#| label: reinsurance-cost
+commission <- marginal(result, c("ceding_commission", "surplus"))
+paid <- surplus@premium - commission@draws + xl@premium + reinstated@draws
+net_of_cost <- sampled(net@draws + paid)
+recovered <- mean(surplus_loss) + mean(xl_loss)
+reinsurance_cost <- mean(net_of_cost) - mean(gross)
+
+cat(sprintf("surplus premium %s less commission %s\n", money(surplus@premium), money(mean(commission))))
+cat(sprintf("XL deposit %s and reinstatements %s\n", money(xl@premium), money(mean(reinstated))))
+cat(sprintf("paid %s, recovered %s, expected cost %s\n", money(mean(paid)), money(recovered),
+            money(reinsurance_cost)))
 ```
 
 ## 4. The company
 
-The three lines are joined into one `predictive_distribution`. Each was simulated on its own, so Iman-Conover reorders the draws to a rank correlation: 0.4 between reserve and motor (shared claims inflation), 0.1 for property. TVaR 99% of the year's losses is then allocated by Euler (each line's CoTVaR), gross and net of the property reinsurance.
+The three lines are joined into one `predictive_distribution`. Each was simulated on its own, so Iman-Conover reorders the draws to a rank correlation: 0.4 between reserve and motor (shared claims inflation), 0.1 for property. TVaR 99% of the year's losses is then allocated by Euler (each line's CoTVaR), gross and net of the property reinsurance, the net view with its cost. Premium income is left out of both views: next year's premiums are the same gross and net, so the premium lines carry their losses, and the reserve, already held, carries only its one-year change.
 
 ```{r}
 #| label: company
@@ -179,7 +219,7 @@ company <- function(property_line) {
 }
 
 tvar <- distortion("tvar", 0.99)
-companies <- list(gross = company(gross), net = company(net))
+companies <- list(gross = company(gross), net = company(net_of_cost))
 allocations <- lapply(companies, capital_allocation, distortion = tvar)
 
 by_line <- data.frame(
@@ -197,7 +237,12 @@ summary_table[c("gross", "net")] <- lapply(summary_table[c("gross", "net")], mon
 summary_table
 
 saved <- allocations$gross$total - allocations$net$total
-cat(sprintf("reinsurance cuts the company's TVaR by %s\n", money(saved)))
+retained_only <- capital_allocation(company(net), distortion = tvar)$total
+cat(sprintf("reinsurance cuts the company's TVaR by %s, net of its cost\n", money(saved)))
+cat(sprintf("it costs %s a year, %.1f%% of the TVaR it saves\n", money(reinsurance_cost),
+            100 * reinsurance_cost / saved))
+cat(sprintf("(leaving its cost out, the cut would read %s)\n",
+            money(allocations$gross$total - retained_only)))
 ```
 
 The charts below show the distribution of the company's total, gross and net, and each line's share of TVaR 99%.
@@ -226,6 +271,8 @@ ggplot(allocated, aes(risk, cotvar, fill = view)) +
 
 ## Reading the result
 
-- Reserve and motor dominate the tail. They are larger and correlated with each other.
-- Reinsurance cuts property's share of TVaR sharply. The company's TVaR falls by less than that, because property's tail was partly diversified already.
+- Motor dominates the tail, gross and net: it carries a whole year of claims and their uncertainty.
+- The reserve's one-year risk is small beside it. The opening reserve is already held, so only its deterioration over the year needs capital, and that is narrower than the run-off view's spread.
+- Reinsurance cuts property's CoTVaR by about half, even after its cost. The company's TVaR falls by less than that, because property's tail was partly diversified already.
 - Reserve and motor take *more* of the net TVaR than of the gross. Once property's extreme years are reinsured, the worst company years are the ones driven by reserve and motor.
+- The reinsurance costs less than the capital it saves: its expected cost is about 6% of the TVaR it removes, below the 10% cost of capital the XL is priced at. Leaving the cost out would overstate the saving by about what the cedant pays for the cover, since a fixed premium adds in full to TVaR.

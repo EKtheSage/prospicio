@@ -87,14 +87,25 @@ def test_data_folder_missing_is_a_clear_error(name, lookup, monkeypatch, tmp_pat
 
 def test_one_year_view(monkeypatch, capsys):
     # At the published count of simulations (20,000, a few seconds) and the notebook's seeds, so the claims
-    # are checked on the numbers the docs site shows. Every inequality below also holds, with wide margins,
-    # at 4,000 simulations, so none rests on simulation noise.
+    # are checked on the numbers the docs site shows. Every inequality below also holds, with margins, at
+    # 4,000 simulations, so none rests on simulation noise.
     monkeypatch.delenv("PROSPICIO_EXAMPLE_SIMS", raising=False)
     monkeypatch.chdir(EXAMPLES)
     ns = run_notebook(EXAMPLES / "one_year_view.ipynb")
     assert "reinsurance cuts the company's TVaR" in capsys.readouterr().out
     assert ns["N_SIMS"] == 20000
     text = prose(EXAMPLES / "one_year_view.ipynb")
+
+    # Reserve risk is the one-year view (#266): the loss is minus the claims development result of the
+    # re-reserving bootstrap, one draw per simulation, and it is narrower than the run-off view.
+    reserve, run_off, cdr = ns["reserve"], ns["run_off"], ns["cdr"]
+    assert ns["one_year"].model == "odp"
+    assert len(reserve.draws) == len(cdr.draws) == ns["N_SIMS"]
+    assert reserve.draws == [-x for x in cdr.draws]
+    assert abs(reserve.mean()) < 0.1 * math.sqrt(reserve.variance())
+    assert math.sqrt(reserve.variance()) < 0.9 * math.sqrt(run_off.variance())
+    assert reserve.quantile(0.995) < run_off.quantile(0.995) - run_off.mean()
+
     # Simulation agrees with exposure rating; the allocation adds up.
     assert_says(text, "The simulated cessions agree with exposure rating")
     surplus = ns["surplus_loss"].mean()
@@ -111,27 +122,47 @@ def test_one_year_view(monkeypatch, capsys):
              .apply(ns["events"]).marginal(("net", "retained")).quantile(0.995) for more in [4.0, 8.0, 12.0]]
     assert tails == sorted(tails, reverse=True) and tails[0] > 1.5 * tails[-1], tails
 
+    # The XL carries the premium the notebook prices (#268): deposit plus expected reinstatements is the
+    # risk-loaded premium, in one step, and the reinstatements are the measured rate times the deposit.
+    assert_says(text, "This is exact in one step, with no iteration")
+    xl, xl_price, reinstated = ns["xl"], ns["xl_price"], ns["reinstated"]
+    assert xl.premium + reinstated.mean() == pytest.approx(xl_price.premium, rel=1e-9)
+    assert reinstated.mean() == pytest.approx(ns["reinstatement_rate"] * xl.premium, rel=1e-9)
+    assert xl.premium > ns["xl_cost"] / 0.7
+
+    # The net view pays for the cover (#267): surplus premium less commission, the XL's deposit and each
+    # year's reinstatement premium, so its mean exceeds the gross mean by premiums less recoveries.
+    commission = ns["commission"]
+    assert ns["surplus"].premium == pytest.approx(ns["profile"].expected_surplus_loss(2e6, 4.0) / 0.6, rel=1e-12)
+    assert commission.mean() == pytest.approx(0.35 * ns["surplus"].premium, rel=1e-9)
+    paid = ns["surplus"].premium - commission.mean() + xl.premium + reinstated.mean()
+    cost = ns["reinsurance_cost"]
+    assert cost == pytest.approx(paid - ns["recovered"], rel=1e-6)
+    assert ns["net_of_cost"].mean() == pytest.approx(ns["net"].mean() + paid, rel=1e-9)
+    assert cost > 0
+
     # "Reading the result". The allocations are by line: reserve, motor, property.
     gross, net = ns["allocations"]["gross"], ns["allocations"]["net"]
     assert [k[0] for k in ns["companies"]["gross"].components()] == ["reserve", "motor", "property"]
     (g_reserve, g_motor, g_property), (n_reserve, n_motor, n_property) = gross.allocated, net.allocated
-    # Reserve and motor dominate the tail: together they take most of TVaR gross and net, and they are the
-    # larger risks, correlated with each other (0.4, against 0.1 with property). Gross, property's CoTVaR is
-    # above reserve's alone, so the claim holds for the two together.
-    assert_says(text, "Reserve and motor dominate the tail. They are larger and correlated with each other.")
-    assert g_reserve + g_motor > 0.6 * gross.total and n_reserve + n_motor > 0.8 * net.total
-    assert min(ns["reserve"].mean(), ns["motor"].mean()) > 2 * ns["gross"].mean()
-    assert ns["corr"][0][1] > max(ns["corr"][0][2], ns["corr"][1][2])
-    # Reinsurance cuts property's share sharply, and the company's TVaR falls by less than property's.
-    assert_says(text, "Reinsurance cuts property's share of TVaR sharply. The company's TVaR falls by less than that")
-    assert n_property / net.total < 0.5 * g_property / gross.total
+    assert_says(text, "Motor dominates the tail, gross and net")
+    assert g_motor > max(g_reserve, g_property) and n_motor > 0.5 * net.total
+    assert_says(text, "The reserve's one-year risk is small beside it.")
+    assert g_reserve < 0.1 * gross.total and n_reserve < 0.15 * net.total
+    assert_says(text, "Reinsurance cuts property's CoTVaR by about half, even after its cost. "
+                      "The company's TVaR falls by less than that")
+    assert 0.4 < n_property / g_property < 0.6
     assert ns["saved"] == pytest.approx(gross.total - net.total, rel=1e-12)
     assert ns["saved"] < g_property - n_property
-    # Reserve and motor take more of the net TVaR than of the gross, as shares and as amounts. This rests on
-    # how the notebook models reserve risk and the reinsurance, which #266 to #268 may change.
     assert_says(text, "Reserve and motor take *more* of the net TVaR than of the gross.")
     assert n_reserve / net.total > g_reserve / gross.total and n_motor / net.total > g_motor / gross.total
     assert n_reserve > g_reserve and n_motor > g_motor
+    # The cost against the TVaR it saves, and what leaving the cost out would show.
+    assert_says(text, "its expected cost is about 6% of the TVaR it removes, below the 10% cost of capital")
+    assert round(100 * cost / ns["saved"]) == 6
+    assert_says(text, "Leaving the cost out would overstate the saving by about what the cedant pays")
+    overstated = gross.total - ns["retained_only"] - ns["saved"]
+    assert overstated == pytest.approx(paid, rel=0.15)
 
 
 def test_reinsurance_pricing(monkeypatch, capsys):
