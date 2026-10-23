@@ -9,6 +9,7 @@ import csv
 import json
 import math
 import os
+import re
 import subprocess
 import warnings
 from pathlib import Path
@@ -512,3 +513,86 @@ def test_notebooks_are_committed_without_outputs():
         assert all(c["outputs"] == [] for c in code), f"{path.name} is committed with outputs"
         assert all(c["execution_count"] is None for c in code), f"{path.name} has execution counts"
         assert "version" not in nb["metadata"].get("language_info", {}), path.name
+
+
+# The R twins (#271). The weekly and manual CI runs render examples/one_year_view.qmd and
+# examples/reinsurance_pricing.qmd with Quarto to GitHub markdown (`--to gfm`) in one folder, point
+# PROSPICIO_R_TWINS at it and run these tests with the same PROSPICIO_EXAMPLE_SIMS. The notebooks run here,
+# at that count, so what the R documents print is compared with what the notebooks print now: no stored
+# reference values to keep current. Elsewhere, including the pull requests' python job, these tests skip.
+R_TWINS = os.environ.get("PROSPICIO_R_TWINS")
+needs_r_twins = pytest.mark.skipif(not R_TWINS, reason="PROSPICIO_R_TWINS is not set (the weekly CI run sets it)")
+
+
+def r_outputs(name):
+    """The lines an R document's chunks printed, from its GitHub markdown render, whitespace collapsed.
+
+    Quarto writes a chunk's output as a block indented by four spaces right after the chunk's closing
+    fence, so prose (whose list items are indented too) is never taken for output.
+    """
+    lines = (Path(R_TWINS) / name).read_text(encoding="utf-8").splitlines()
+    out, in_code, in_output, closed = [], False, False, False
+    for line in lines:
+        if line.startswith("```"):
+            in_code, in_output = not in_code, False
+            closed = not in_code
+            continue
+        if in_code:
+            continue
+        if not line.strip():
+            in_output = in_output or closed
+            continue
+        if in_output and line.startswith("    "):
+            out.append(re.sub(r"\s+", " ", line.strip()))
+        else:
+            in_output = closed = False
+    return out
+
+
+def printed(capsys):
+    return [re.sub(r"\s+", " ", line.strip()) for line in capsys.readouterr().out.splitlines() if line.strip()]
+
+
+@needs_r_twins
+def test_one_year_view_r_twin_prints_the_notebooks_numbers(monkeypatch, capsys):
+    monkeypatch.chdir(EXAMPLES)
+    run_notebook(EXAMPLES / "one_year_view.ipynb")
+    py = printed(capsys)
+    r = r_outputs("one_year_view.md")
+    # data.frame rows carry R's row number; the notebook's table has none.
+    r = [re.sub(r"^\d+ (?=(reserve|motor|property|total|diversif\.) )", "", line) for line in r]
+    # Every line that states a result, in both languages: the reserve, motor and property lines, the XL's
+    # price, what the reinsurance costs, the allocation table and the TVaR saved.
+    keys = [
+        r"opening reserve ", r"one-year: adverse development ", r"run-off: ", r"mean claim ", r"claims \d",
+        r"mean loss ", r"gross mean ", r"surplus cedes ", r"per-risk XL ", r"reinstatement premium ",
+        r"net mean ", r"\d+ lines: net 99\.5% ", r"risk-loaded premium ", r"deposit ", r"\(exposure-rated cost ",
+        r"surplus premium ", r"XL deposit ", r"paid ", r"reserve ", r"motor ", r"property ", r"total ",
+        r"diversif\. ", r"reinsurance cuts ", r"it costs ", r"\(leaving its cost out",
+    ]
+    for key in keys:
+        in_py = [line for line in py if re.match(key, line)]
+        in_r = [line for line in r if re.match(key, line)]
+        assert in_py, f"the notebook printed no line matching {key!r}"
+        assert in_r == in_py, f"{key!r}: the R twin printed {in_r}, the notebook {in_py}"
+
+
+@needs_r_twins
+def test_reinsurance_pricing_r_twin_passes_every_comparison(monkeypatch, capsys):
+    monkeypatch.chdir(EXAMPLES)
+    ns = run_notebook(EXAMPLES / "reinsurance_pricing.ipynb")
+    capsys.readouterr()
+    summary = re.compile(r"(\d+) of (\d+) comparisons are inside their tolerance: (\d+) independent comparisons "
+                         r"and (\d+) consistency checks that hold by construction(.*)$")
+    r = [summary.match(line) for line in r_outputs("reinsurance_pricing.md")]
+    r = [m for m in r if m]
+    assert len(r) == 1, "the R twin printed no summary line, or more than one"
+    passed, total, independent, checks, outside = r[0].groups()
+    # Every comparison passes in R.
+    assert int(passed) == int(total) > 300 and outside == "", r[0].group(0)
+    # R makes the notebook's comparisons, but for one difference its section 6 states: it does not read the
+    # calibrated parameters off the distortions (R has no reader for them), so it has no "<family>: parameter"
+    # rows and checks the parameters through g(s) instead.
+    kept = [c for c in ns["COMPARISONS"] if not re.match(r"\w+: parameter \w+$", c["name"])]
+    assert len(ns["COMPARISONS"]) - len(kept) == 10  # five families, gross and ceded
+    assert (int(independent), int(checks)) == (sum(not c["check"] for c in kept), sum(c["check"] for c in kept))

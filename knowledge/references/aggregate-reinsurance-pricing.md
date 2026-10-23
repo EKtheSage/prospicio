@@ -40,11 +40,20 @@ sources:
 * Every build uses `normalize=False`, and the grid (`bs`, `log2`) is recorded
   per example. Regenerate with `aggregate==1.0.1` in its own environment
   (`validation/scripts/aggregate_re_pricing.py`, 15 seconds).[^script]
-* `examples/reinsurance_pricing.ipynb` compares 343 of them with prospicio, all
-  inside their stated tolerances: 321 independent comparisons and 22
+* `examples/reinsurance_pricing.ipynb` compares 353 of them with prospicio, all
+  inside their stated tolerances: 329 independent comparisons and 24
   consistency checks that hold by construction (a calibrated price equal to its
   target premium, the CCoC return on capital, a maximum reinstatement premium).
   CI runs the notebook (`test_reinsurance_pricing`).[^notebook][^test]
+* Its R twin, `examples/reinsurance_pricing.qmd`, compares 343 (321 and 22).
+  The ten it lacks are the calibrated parameters of the five distortions in
+  each view (`<family>: parameter <name>`, the CCoC one a consistency check):
+  the R package has no reader for a distortion's parameters, so the twin checks
+  them through `g(s)` at aggregate's parameter instead, as its section 6 says.
+  The weekly and manual CI runs render the twin and check that every
+  comparison passes and that the counts are the notebook's less those ten
+  (the `examples-r` job, `test_reinsurance_pricing_r_twin_passes_every_comparison`;
+  #271).[^test]
 * The guide's Treaty 1 table gives the subject premiums as 3,000 and 6,000,
   but its code uses `[9000 3000]` at `[0.04 0.03]`, which gives the 450 (3.75%
   of 12,000) its Treaty 4 text states; the script and notebook follow the

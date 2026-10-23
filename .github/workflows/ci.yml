@@ -218,6 +218,44 @@ jobs:
             -e "stopifnot(normalizePath(dirname(find.package('prospicio')), '/') == normalizePath('$tmp/rlib', '/'))" \
             -e "source('R/prospicio/tests/test-distributions.R')"
 
+  # The R twins of the example notebooks (examples/one_year_view.qmd and
+  # examples/reinsurance_pricing.qmd, #271), on the weekly and manual runs
+  # only (the user's decision of 2026-10-22), Ubuntu only: rendered with
+  # Quarto to GitHub markdown at 4,000 simulations, then the notebooks run
+  # at the same count and test_examples.py's r_twin tests compare what both
+  # print (the one-year view's results line by line, the reinsurance
+  # pricing comparisons' summary line). Pull requests skip the job.
+  examples-r:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      PROSPICIO_EXAMPLE_SIMS: "4000"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - run: >-
+          Rscript -e "pkgs <- c('S7', 'ggplot2', 'knitr', 'rmarkdown'); install.packages(pkgs);
+          for (p in pkgs) if (!requireNamespace(p, quietly = TRUE)) stop(p, ' did not install')"
+      - run: R CMD INSTALL R/prospicio
+      - name: Render the R twins
+        run: |
+          for f in one_year_view reinsurance_pricing; do
+            quarto render "examples/$f.qmd" --to gfm --output-dir "$RUNNER_TEMP/r-twins"
+          done
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+        working-directory: python
+      - name: Compare the R twins with the notebooks
+        working-directory: python
+        env:
+          PROSPICIO_R_TWINS: ${{ runner.temp }}/r-twins
+        run: uv run pytest tests/test_examples.py -k r_twin -v -rs
+
   # Builds both bindings through `cargo xtask docs`, which regenerates their
   # docs, and fails if a committed generated file (the Python stub, R's man/
   # and NAMESPACE) was stale. The python and r jobs run the test suites, so
