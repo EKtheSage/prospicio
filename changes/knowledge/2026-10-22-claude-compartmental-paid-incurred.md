@@ -1,0 +1,1 @@
+* **Creation**: [Compartmental fitted to paid and incurred matches its own Stan reference](/findings/compartmental-paid-incurred.md), from building Fitted::PaidAndIncurred (branch claude/compartmental-paid-incurred): all 3,040 reference-row comparisons of a 20-seed sweep pass; total reserve 175,318 against Stan's 175,570 and the paid and outstanding fit's 173,341.

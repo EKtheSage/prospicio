@@ -86,8 +86,7 @@ expect_error_like(compartmental(tri, "paid", "premium", list(), incurred = "incu
                   "priors must be a compartmental_priors list")
 
 # The other settings are named but not yet built.
-for (setting in list(list(fitted = "paid_and_incurred"),
-                     list(fitted = "paid_only"), list(fitted = "incurred_only"))) {
+for (setting in list(list(fitted = "paid_only"), list(fitted = "incurred_only"))) {
   expect_error_like(do.call(compartmental, c(list(tri, "paid", "premium", gm,
                                                   incurred = "incurred"), setting)),
                     "not yet built")
@@ -269,6 +268,13 @@ stopifnot(abs(s2$mean[s2$parameter == "b_kp"] - (-5.064)) < 0.5)
 loo2 <- bayes_loo(fit2)
 stopifnot(abs(loo2$estimates[["elpd"]] - 204.29) < 3, length(loo2$pointwise) == 90)
 stopifnot(nrow(as.data.frame(fit2)) == 10, nrow(fit2@paid_table) == 55)
+
+# Paid and incurred: incurred replaces outstanding as the second response.
+inc <- suppressWarnings(compartmental(tri, "paid", "premium", gm, incurred = "incurred",
+                                      fitted = "paid_and_incurred", chains = 2, tune = 100,
+                                      draws = 100, n_sims = 200, seed = 5))
+stopifnot(all(is.finite(draw_matrix(inc@reserves)[1, ])), nrow(inc@outstanding@keys) == 55,
+          provenance(inc@reserves)$model == "compartmental")
 
 # Every combination of likelihood, scale and paid response is built.
 for (setting in list(list(scale = "loss_ratio"), list(paid_response = "incremental"),
