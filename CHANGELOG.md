@@ -7,6 +7,245 @@ under "Unreleased" until then.
 
 ## Unreleased
 
+## 0.0.5 (2026-10-23)
+
+### Breaking changes
+
+- Rust: `Layer` gains the public fields `brokerage`, `deductions`,
+  `scales_before_annual_terms` and `brokerage_within_commission_range`;
+  code that builds a `Layer` in full adds them (`None`, an empty `Vec`,
+  `false`, `false`) or uses the builders (#511).
+- Rust: `Tower` gains the public fields `deals`, `cover_basis` and
+  `interlocking`; code that builds a `Tower` in full adds them (an empty
+  `Vec`, `None`, `false`) or uses `Tower::new` and the builders (#512,
+  #527, #532).
+- Rust: `BayesOneYear` gains the public fields `light_refit` and
+  `no_light_refit`; code that builds it in full adds them or starts from
+  `BayesOneYear::default()` (#499).
+- Rust: `prospicio_reserving::Error` has the variant `Excess`, so an
+  exhaustive `match` on it needs a new arm (#507).
+- Default change: Compartmental model 2's one-year view refits its
+  flagged simulations with a light refit by default, so it is slower and
+  more accurate than in 0.0.4; see the Reserving item below for how to
+  turn it off (#499).
+- Towers saved with brokerage or deductions, a deal scale, a cover basis
+  or interlocking are JSON format versions 3 to 6, which 0.0.4 cannot
+  read; towers without them are saved as before (#511, #512, #527, #532).
+
+### Reserving
+
+- The Bayesian Bornhuetter-Ferguson with a normalised development
+  pattern, `BayesBfNormalised` (behind the `bayes` feature): the
+  expected ultimate of each origin has the gamma prior (mean `apriori`
+  times the exposure, coefficient of variation `cv`) and the pattern is a
+  set of shares summing to 1, so `apriori` is the expected ultimate loss
+  ratio and moves the reserve, where `BayesBf`'s (EVW's Model 3.1,
+  unchanged) barely does. A flat prior is the Bayesian chain ladder; a
+  tight prior at the chain ladder's own ultimates is the classical
+  Bornhuetter-Ferguson reserve (at other loss ratios the pattern is
+  re-estimated given the ultimates). It has the one-year view
+  (`BayesBfNormalised::one_year`) through the generic engine. In Python
+  `BayesBfNormalised` and `BayesBfNormalisedFit` (`pattern`,
+  `expected_ultimate`) with `.one_year()`, and in R `bayes_bf_normalised()`,
+  `bayes_bf_normalised_fit` and `bayes_bf_normalised_one_year()`; the fit
+  of a one-year view is the new fit class (#410, #498).
+- Excess-layer development, PR 1 (Rust only; issue #192, `docs/design/reserving-excess.md`):
+  `ExcessPattern::from_ground_up` derives a layer's age-to-age factors from a
+  ground-up incurred triangle, an optional claim count column, the ground-up
+  tail and the ultimate severity by a scale shift of the severity, reproducing
+  Bloom and Patrik's worked example exactly; `ExcessPattern::selected` turns it
+  into a `SelectedPattern`. `layer_share` and `layer_exposure` give the layer
+  share of a severity and a layer exposure column for a BF or Cape Cod prior.
+  A paid basis is an error. Python, R and the credibility blending follow (#507).
+- A fully selected age whose own factor cannot be estimated (every earlier value
+  zero, as in the early ages of a sparse layer) is no longer an error in
+  `Development`: its own factor is missing (NaN) and the selected factor is used.
+  Every result that was an estimate before is unchanged; Merz and Wuthrich's closed
+  form and the bootstraps reject such a fit (#507).
+- Excess-layer development, PR 2 (Rust only; issue #192, `docs/design/reserving-excess.md`):
+  `ExcessPattern::credibility_weights` gives the weight on the derived layer
+  pattern for a blend with the layer triangle's own factors, `1 - n/(n + k)`
+  with `n` the layer claims (or origins with a positive value) and `k`
+  required, capped so that removing one origin moves the blended factor by at
+  most `max_influence` of it, and exactly 1 where the own factor cannot be
+  estimated. `SeverityByMaturity::ParetoShape` with `ShapeBase` derives layer
+  factors from Pinto and Gogol's Pareto shape drift and a base development
+  (the counts above the threshold or a base layer's losses), reproducing their
+  and Bear's examples. A 500-book simulation study checks the derived pattern
+  and the blend against the layer's own chain ladder (#510).
+- Excess-layer development, PR 3 (Python and R; issue #192, `docs/design/reserving-excess.md`):
+  `prospicio.reserving` has `ExcessLayer`, `ScaleShift`, `ParetoShape`,
+  `ExcessPattern.from_ground_up` (with `selected`, `tail`, `ldf` and
+  `credibility_weights`), `layer_share`, `layer_exposure` and `layer_at_shift`;
+  R has `excess_layer()`, `scale_shift()`, `pareto_shape()`, `excess_pattern()`,
+  `excess_selected()`, `excess_credibility_weights()`, `layer_share()`,
+  `layer_exposure()` and `layer_at_shift()`. A layer's development pattern
+  derived from the ground-up triangle goes into `ChainLadder`, `Mack` and the
+  expected-loss methods through their `ldf`, `ldf_kind`, `ldf_weight` and `tail`
+  arguments. Bloom and Patrik's, Pinto and Gogol's and Bear's examples are
+  reproduced in both languages (#513).
+- Excess-layer development, PR 4 (#192): `LayerSharePrior` (Rust, Python and R:
+  `layer_share_prior()`, `bayes_bf_layer()`, `bayes_bf_layer_one_year()`) turns
+  a layer share and its uncertainty into the gamma prior of the normalised
+  Bayesian Bornhuetter-Ferguson, centred on the ground-up loss ratio times the
+  share, with the coefficient of variation of a product of independent
+  variables. A wider share cv widens the layer's predictive interval (#516).
+- The excess-layer BF prior (`LayerSharePrior`,
+  Python `LayerSharePrior`, R `layer_share_prior()`) treats the share's
+  error as one error common to all origins (#518, `reserving-excess.md`
+  decision 23(a), PR #522). `BayesBfNormalised` gets an optional multiplier `s` (Rust
+  `common_cv`, Python `common_cv=`, R `common_cv =`, a draw named `log_share`)
+  with mean 1 and the share's cv, sampled jointly with the other parameters so
+  the data update the share for every origin. The total's prior interval is
+  about three times as wide as with independent priors, but its posterior
+  interval is narrower on the test layer (the origins pool what they say about
+  the share), and the fitted total interval narrows on well-developed triangles (where
+  the data cannot identify the share it stays wider). Pass
+  `share_dependence="per_origin"` (R `share_dependence = "per_origin"`, Rust
+  `ShareDependence::PerOrigin`) for independent priors by origin. A common
+  share error needs `apriori_cv > 0`; `LayerSharePrior::model` returns a
+  `Result` in Rust. New: `prior_total` (Python `prior_total()`, R
+  `layer_prior_total()`), the closed-form mean and sd of the layer's total
+  prior ultimate. Models without `common_cv` are unchanged bit for bit.
+  (`LayerSharePrior` is new in this release, so no released default changes.)
+- **Behaviour change:** compartmental model 2's one-year view (`Compartmental::one_year`, `one_year_segments`; Python `Compartmental.one_year`, `one_year_segments`; R `compartmental_one_year()`, `compartmental_model_2_one_year()`, `compartmental_one_year_segments()`) now refits its flagged simulations with a light refit by default, so it is slower and accurate by default. `BayesOneYear::light_refit` (`LightRefit`; Python `light_refit=` and R `light_refit =`) is a shorter NUTS run scaled by the opening posterior: model 2's totals come within about 0.03 sd of full refits on company 337 at about a thirtieth of their cost, but 2,000 simulations take about 31 minutes on 16 threads, against 85 s when reweighted only, which was the default before (about 0.4 sd off a refit). Turn it off with `BayesOneYear::no_light_refit`, Python `light_refit=False` or R `light_refit = FALSE` (reweight only, with the approximate warning), or set `n_sims` or `max_refits` to bound the time. Model 1 and the other Bayesian models are unchanged (#394, #499).
+
+### Distributions and probability
+
+- Bootstrap standard errors of a statistics grid
+  (`StatisticsGrid::bootstrap_se`): each replicate resamples the
+  simulations once for every column, so the items' errors share their
+  resamples, and is read off counts on each column sorted once;
+  `bootstrap_se_holding` keeps a fixed part of each simulation and
+  resamples only the rest. Python `bootstrap_se` (with `hold_fixed`), R
+  `bootstrap_se()` (with `fixed`) (#488, #503).
+- Where each simulation came from in a reorder:
+  `PredictiveDistribution::reorder_groups_indexed` and
+  `reorder_groups_by_copula_indexed` return each group's source
+  simulations beside the result (Python `return_index=True`, R
+  `index = TRUE`), so anything simulated with a group follows it without
+  matching values (#483, #504).
+- `Grid::normalized` rescales probabilities that do not sum to 1, which
+  `Grid::new` rejects (Python `Grid(..., normalize=True)`, R
+  `grid_distribution(..., normalize = TRUE)`), and
+  `Distortion::parameter` gives a one-parameter family's parameter (Python
+  `Distortion.parameter`, R `@parameter`) (#214, #519).
+
+### Aggregate and reinsurance
+
+- `EventSet::permute` takes a set's years in another order, losses, sums
+  insured, times and labels together: with a group's index from a reorder
+  it keeps a class's large events with its reordered totals (Python
+  `EventSet.permute`, R `permute_events()`) (#483, #504).
+- An aggregate part on an `EventSet` (`EventSet::with_aggregate_part`):
+  amounts a year with no event or time, attritional losses by peril or
+  class, which quota shares and stop losses cede from
+  (`Layer::sees_aggregate_part`) and per-occurrence layers skip; it comes
+  before the events in the year under annual terms, and gross, net and
+  `totals` include it (Python `EventSet.with_aggregate_part`,
+  `aggregate_part`, `Layer.sees_aggregate_part`; R `with_aggregate_part()`,
+  `aggregate_part()`) (#483, #505).
+- A deal's deductions on a layer: brokerage, flat (`Layer::brokerage`) or
+  on a loss-ratio scale (`brokerage_scale`), and `Deduction`s (a TPA fee,
+  tax, reinsurance cost, fronting, a manager's fee) on the premium, the
+  ceded loss or an amount, inside or outside NMBF, each its own component
+  of a tower's results. `Tower::deal_ratios` gives each simulation's loss
+  ratio, each deduction, the total, the combined ratio, NMBF and the
+  margin, by year over a term. `Layer::scales_before_annual_terms` keys the
+  commission and brokerage scales on the loss ratio before the annual terms
+  and adds `loss_before_terms` to the results.
+  `brokerage_within_commission_range` holds the brokerage key in the
+  commission scale's range. Towers with them are JSON format version 3
+  (Python `with_brokerage`, `with_brokerage_scale`, `with_deduction`,
+  `with_scales_before_annual_terms`, `Tower.deal_ratios`; R
+  `with_brokerage()`, `with_deduction()`, `deal_ratios()`) (#485, #477, #511).
+- A deal-level scale on several layers together (`Tower::deal_scale` with a
+  `DealScale`): a sliding-scale commission and a brokerage read on the sum
+  of the sections' keys over the sum of their premiums, paid on that
+  premium and added to each section's own, with its own carry over a term.
+  The results gain `(ceding_commission, <deal>)` and `(brokerage,
+  <deal>)`, and `Tower::deal_ratios` takes a deal's name. Towers with a deal
+  are JSON format version 4; the grids and the P&L ledger refuse them
+  (Python `Tower.with_deal_scale`, `Tower.deals`; R `with_deal_scale()`)
+  (#477, #512).
+- The reinsurer's P&L ledger of a layer or a deal (`Tower::deal_ledger`):
+  one sell group over the annual gross losses with the premium, the ceded
+  loss, the commissions, the brokerage and each deduction as legs, the
+  amounts `deal_ratios` divides by the premium (Python `Tower.deal_ledger`;
+  R `deal_ledger()`) (#477, #514).
+- A monthly cash-flow engine for collateralised deals
+  (`prospicio_pricing::cashflow`): a trust account and an investor's
+  operating account per simulation, from its ultimate loss ratio and
+  commission, with every rule a setting (the collateral requirement as
+  loads on named bases with a floor and a switch to the limit, a
+  commutation requirement, premium collection and adjustments, funding
+  dates, rule and source, release timing, interest, opening capital,
+  expenses, a buffer and a tiered performance fee); `CashflowTerms::run`
+  gives the investor's monthly flows for `npv_rows` and `irr_rows`, and
+  `trace` every account line of one simulation (#479, #515, #517); in Python (`prospicio.pricing.CashflowTerms`, `CollateralRequirement`,
+  `PremiumAdjustment`, `Cashflows`) and R (`cashflow_terms()`,
+  `cashflow_requirement()`, `cashflow_adjustment()`, `cashflow_run()`,
+  `cashflow_trace()`).
+- `PaymentPattern::unpaid_from(age)`: the pattern of what is unpaid at an
+  age, times from the age and shares over the outstanding (Python
+  `PaymentPattern.unpaid_from`, R `payment_pattern_unpaid()`), and
+  Pentagon's loss under Price's name, `expected_loss`, in Python (#214, #519).
+- A book of deals on one shared simulation (`prospicio_pricing::book`):
+  `DealRun` holds a deal's premium, loss and deductions in each
+  simulation (from `Tower::deal_columns`, the amounts behind
+  `deal_ratios`, or from arrays), its inception in months and its
+  investor's flows; `DealBook` selects and shifts deals and gives every
+  amount by deal and in total with ratios as sums over sums, the
+  distribution of an item with each deal's contribution and marginal
+  effect on either tail, the investors' flows on one calendar with the
+  book's IRR, NPV and MOIC on the summed flows, and premium, paid loss
+  and flows by calendar year (#490, #521, #523); in Python (`DealRun`, `DealBook`,
+  `BookCashflows`) and R (`deal_run()`, `deal_book()` and the `book_*()`
+  functions).
+- Underwriting years with a rank correlation for multi-year terms:
+  `EventSet::correlated_years` reorders whole simulated years so their
+  totals have a Spearman or normal-score correlation, every year keeping the
+  one-year distribution, and `calibrate_year_correlation` finds the
+  correlation for a target ratio of the term's spread to one year's (#489, #524);
+  in Python (`EventSet.correlated_years`, `.calibrate_year_correlation`,
+  `year_correlation_for_ratio`) and R (`correlated_years()`,
+  `calibrate_year_correlation()`, `year_correlation_for_ratio()`).
+- One accident-period timeline shared by the underwriting years of a term
+  (`prospicio_aggregate::timeline`): `Timeline` holds each event once over
+  the term's accident months, `Exposure` gives each underwriting year's
+  share of each month, and `Timeline::years` splits it into contract years
+  for `Tower::apply_term` on a losses-occurring or risks-attaching basis
+  (#489, #525; Rust).
+- A tower's cover basis (`Tower::cover_basis`, losses occurring or risks
+  attaching) and `Tower::apply_timeline`, which applies the tower over the
+  contract years that basis gives on a `Timeline`; a tower with a basis is
+  JSON format version 5 (#489, #527; Rust).
+- The shared timeline and a tower's cover basis in Python (`Timeline`,
+  `Exposure`, `Tower.with_cover_basis`, `Tower.apply_timeline`) and R
+  (`timeline()`, `timeline_from_years()`, `timeline_years()`,
+  `uniform_exposure()`, `with_cover_basis()`, `apply_tower_timeline()`)
+  (#489, #528).
+- Interlocking contracts under risks attaching (`Tower::interlocking`,
+  off by default): an event that several underwriting years write cuts
+  each year's contract limits by that year's share of the event; a tower
+  with interlocking is JSON format version 6 (Rust, Python
+  `Tower.with_interlocking`, R `with_interlocking()`) (#532).
+
+### Excel
+
+- `PRO.BAYES.BF`: the Bayesian Bornhuetter-Ferguson by MCMC on a
+  triangle and a premium column, with a gamma prior on each origin's
+  ultimate (mean `apriori` times exposure, CV `cv`, or `"flat"`) and an
+  optional multiplier common to all origins (`common_cv`). Views:
+  reserves, prior and posterior ultimates, the posterior and the
+  sampler's diagnostics, as `PRO.BAYES.ODP`'s (#410, #529).
+- `PRO.EXPOSURE.CURVE` and `PRO.EXPOSURE.QUANTILE` tabulate several
+  curves at once: a column of x against a row of Swiss Re c values (or
+  MBBEFD b or g) gives one column per curve (#509).
+- The test workbook (`harness/make_workbook.py`) calls every one of the
+  96 functions with a check beside it; the ODP sheet's P95 checks read
+  the P95 column (#509).
+
 ## 0.0.4 (2026-10-21)
 
 ### Breaking changes
