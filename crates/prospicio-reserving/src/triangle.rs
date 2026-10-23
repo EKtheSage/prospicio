@@ -1060,6 +1060,27 @@ pub(crate) struct Segment {
 }
 
 impl Segment {
+    /// A segment of `origins` × `ages` with `cells` laid out row by row,
+    /// not cut from a triangle: a latest diagonal on the grid of its
+    /// pattern, whose ages a triangle would trim to the observed ones
+    /// (`reserving-v02.md`, decision 16).
+    pub(crate) fn from_cells(
+        origins: Vec<Period>,
+        ages: Vec<Lag>,
+        cells: Vec<Option<f64>>,
+    ) -> Self {
+        debug_assert_eq!(cells.len(), origins.len() * ages.len());
+        Self {
+            cells,
+            n_origins: origins.len(),
+            n_dev: ages.len(),
+            origins,
+            ages,
+            origin_offset: 0,
+            dev_offset: 0,
+        }
+    }
+
     pub(crate) fn get(&self, origin: usize, dev: usize) -> Option<f64> {
         self.cells[origin * self.n_dev + dev]
     }

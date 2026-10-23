@@ -1,7 +1,7 @@
 ---
 type: Reference Implementation
 title: Selected development patterns in chainladder-python and R ChainLadder
-description: chainladder-python 0.10.1's DevelopmentConstant (style ldf or cdf, no blend) is the parity reference for prospicio_reserving's SelectedPattern; a partial pattern gets factors of 1, a cdf pattern's level at the oldest age stays on as a tail unless a TailConstant replaces it (prospicio does the same since 2026-10-15), and MackChainladder rejects its output. R ChainLadder 0.2.21's MackChainLadder takes no factors.
+description: chainladder-python 0.10.1's DevelopmentConstant (style ldf or cdf, no blend) is the parity reference for prospicio_reserving's SelectedPattern; a partial pattern gets factors of 1, a cdf pattern's level at the oldest age stays on as a tail unless a TailConstant replaces it (prospicio does the same since 2026-10-15), MackChainladder rejects its output, and on a latest diagonal it matches the full triangle but gives an unlisted age a factor of 1. R ChainLadder 0.2.21's MackChainLadder takes no factors.
 resource: https://github.com/casact/chainladder-python
 tags: [reserving, development, pattern, chain-ladder, mack, parity, python, r]
 status: stable
@@ -16,6 +16,9 @@ sources:
   - id: test
     resource: ../validation/tests/reserving_patterns.rs
     title: Validation test of selected patterns against chainladder-python and R
+  - id: diagonal
+    resource: ../validation/tests/reserving_latest_diagonal.rs
+    title: Validation test of a latest diagonal with a selected pattern, against chainladder-python (from validation/scripts/reserving_latest_diagonal_python.py)
 ---
 
 # Use
@@ -54,6 +57,25 @@ Checked on 2026-10-14 with chainladder-python 0.10.1 and R ChainLadder
   level above 1.
 * **Per segment.** `callable_axis` gives a pattern per index level through
   a callable; prospicio applies one pattern to every segment.
+* **On a latest diagonal.** `DevelopmentConstant` runs on a triangle's
+  `latest_diagonal` (one valuation, one cell per origin), and the
+  generator records the chain ladder on GenIns and Bornhuetter-Ferguson,
+  Benktander and Cape Cod on the CAS workers' compensation triangle there,
+  which prospicio's `LatestDiagonal` reproduces. With `style="ldf"` the pattern needs a factor of 1 at the oldest
+  age, or the oldest origin's ultimate is NaN; prospicio's `LatestDiagonal`
+  reads that factor as running one spacing past the oldest age, so the
+  same pattern gives the same ultimates (decision 16 of
+  `reserving-v02.md`).[^diagonal] The rest was a hand probe of 0.10.1 on
+  2026-10-23, not kept in a script. chainladder-python has no ragged diagonal: a
+  triangle has one valuation, so each origin's age is the valuation less
+  its start; an age the pattern does not give (18 months against an
+  annual pattern on a half-year grain) silently gets a factor of 1, with
+  no interpolation or regrain, and a diagonal with a gap in its origins
+  drops an origin. `Development().fit(full).transform(diagonal)` applies
+  a fitted development to the diagonal (the oldest origin is NaN with no
+  tail); there is no `predict`. So there
+  is no reference for off-grid ages, and prospicio's log-linear reading
+  of them is checked by hand.
 * **Mack.** `MackChainladder().fit(DevelopmentConstant(...).fit_transform(tri))`
   fails with "Triangle not compatible with MackChainladder", so there is no
   reference for Mack with a selected pattern.
@@ -67,3 +89,4 @@ Checked on 2026-10-14 with chainladder-python 0.10.1 and R ChainLadder
 [^design]: Design note, reserving v0.2, decision 12, selected development patterns
 [^script]: chainladder-python reference generator for selected patterns
 [^test]: Validation test of selected patterns against chainladder-python and R
+[^diagonal]: Validation test of a latest diagonal with a selected pattern, against chainladder-python (from validation/scripts/reserving_latest_diagonal_python.py)
