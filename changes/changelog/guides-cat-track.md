@@ -6,4 +6,4 @@
   `examples/data/cat_book_*.csv`, written by `make_cat_book.py`) carried
   from loss tables and risk metrics through contract terms, programs,
   reinstatement premium and commissions to the price of one layer and the
-  whole book's capital; the gaps it found are #581 to #596.
+  whole book's capital; the gaps it found are #581 to #596 (#597).
