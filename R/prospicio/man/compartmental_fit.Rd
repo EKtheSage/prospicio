@@ -130,8 +130,7 @@ built. Under \code{likelihood = "lognormal"} every response must be
 positive, and under \code{paid_response = "incremental"} each paid cell needs
 the paid at the age before; the fit stops with an error naming the cell
 otherwise. \code{fitted = "paid_and_incurred"} fits paid and incurred, with incurred in place of
-outstanding as the second response: the mean of an incurred cell is \code{RLR_i (OS(t) +
-RRF_i PD(t))} times premium (or as a loss ratio), with the cumulative \code{PD} even
+outstanding as the second response: the mean of an incurred cell is \verb{RLR_i (OS(t) + RRF_i PD(t))} times premium (or as a loss ratio), with the cumulative \code{PD} even
 under \code{paid_response = "incremental"}, and \code{log_sigma_os} is the incurred sigma.
 Give the incurred column as \code{incurred}, or an outstanding column as \code{outstanding}
 and the incurred is outstanding plus paid where both are observed. The fit's
