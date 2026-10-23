@@ -278,6 +278,7 @@ reference:
       - compare_models
       - actual_vs_expected
       - mcmc_diagnostics
+      - external_draws
       - elpd
       - model_weights
       - bayesian_stacking

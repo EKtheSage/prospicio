@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from datetime import date
+from os import PathLike
 from typing import Any, final
 
 @final
@@ -9440,6 +9441,144 @@ class DoubleGlmFit:
         """
     @property
     def standard_errors(self, /) -> list[float]: ...
+
+@final
+class Draws:
+    """
+    Posterior draws from any sampler (Stan, PyMC, nutpie or another), so
+    that the summary, R-hat, ESS and PSIS-LOO run on them as on our own
+    fits.
+    
+    Build one with ``read_stan_csv`` (CmdStan output),
+    ``draws_from_arrays`` (a dict of arrays shaped ``(chain, draw, ...)``)
+    or ``draws_from_inference_data`` (an arviz ``InferenceData``, as PyMC
+    and nutpie return), or directly from named variables and chains.
+    
+    Parameters
+    ----------
+    names : list of str
+        Distinct variable names; a container's elements are separate names
+        such as ``theta[1]``.
+    chains : list of list of list of float
+        One list per chain, each a list of draws, each draw one value per
+        name. Every chain has the same number of draws.
+    divergences : list of int, optional
+        Divergent transitions in each chain, if the sampler reports them.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Draws
+    >>> d = Draws(["mu"], [[[float((i * 37) % 101)] for i in range(400)],
+    ...                    [[float((i * 53 + 7) % 101)] for i in range(400)]])
+    >>> d.diagnostics("mu")["rhat"] < 1.01
+    True
+    """
+    def __new__(cls, /, names: Sequence[str], chains: Sequence[Sequence[Sequence[float]]], divergences: Sequence[int] |None = None) -> Draws: ...
+    def __repr__(self, /) -> str: ...
+    def chains(self, /, name: str) -> list[list[float]]:
+        """
+        One variable's draws, one list per chain.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    def diagnostics(self, /, name: str) -> dict[str, float]:
+        """
+        One variable's diagnostics, as ``mcmc_diagnostics`` gives them.
+        
+        Returns
+        -------
+        dict
+            ``rhat``, ``ess_bulk``, ``ess_tail``, ``ess_mean``, ``mcse_mean``.
+        """
+    @property
+    def divergences(self, /) -> list[int]:
+        """
+        Divergent transitions in each chain (zeros when none were given).
+        """
+    @property
+    def draws_per_chain(self, /) -> int:
+        """
+        Draws in each chain.
+        """
+    def log_likelihood(self, /, prefix: str = "log_lik") -> list[list[float]]:
+        """
+        The pointwise log-likelihood held as the variables ``prefix`` or
+        ``prefix[...]``, one row per draw (chain by chain), for
+        ``elpd_loo`` or ``elpd_waic``.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    def loo(self, /, prefix: str = "log_lik") -> Elpd:
+        """
+        PSIS-LOO from the pointwise log-likelihood ``prefix[...]``, with
+        ``r_eff`` from the chains, as R's
+        ``loo(log_lik, r_eff = relative_eff(exp(log_lik), chain_id))``.
+        
+        Returns
+        -------
+        Elpd
+        """
+    @property
+    def n_chains(self, /) -> int:
+        """
+        Number of chains.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        Variable names.
+        """
+    @staticmethod
+    def read_stan_csv(paths: Sequence[str |PathLike[str]]) -> Draws:
+        """
+        Reads CmdStan CSV output, one file per chain: comments skipped,
+        saved warmup draws dropped, ``theta.1.2`` named ``theta[1,2]``,
+        ``lp__`` kept as a variable, the sampler's other ``__`` columns in
+        ``sampler`` and the ``divergent__`` draws counted per chain.
+        
+        Parameters
+        ----------
+        paths : list of str or path
+        
+        Returns
+        -------
+        Draws
+        """
+    def relative_efficiency(self, /, prefix: str = "log_lik") -> list[float]:
+        """
+        Each observation's relative efficiency from the chains, as R's
+        ``loo::relative_eff(exp(log_lik), chain_id)``.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def sampler(self, /) -> Draws |None:
+        """
+        The sampler's columns from ``read_stan_csv`` (``accept_stat__``,
+        ``treedepth__``, ``divergent__``, ``energy__`` and the others) as
+        draws in the same chains; ``None`` otherwise.
+        """
+    def summary(self, /) -> list[dict]:
+        """
+        Posterior summary: one dict per variable with ``name``, ``mean``,
+        ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``, ``ess_bulk`` and
+        ``ess_tail``, as R's ``posterior::summarise_draws``.
+        
+        Returns
+        -------
+        list of dict
+        """
+    @property
+    def warmup_dropped(self, /) -> int:
+        """
+        Warmup draws dropped from each chain by ``read_stan_csv``.
+        """
 
 @final
 class ElasticNet:

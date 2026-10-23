@@ -36,6 +36,7 @@ pub mod glmm;
 pub mod nuts;
 pub mod ppc;
 pub mod stacking;
+pub mod stan_csv;
 
 use prospicio_core::{Error, Result};
 use prospicio_math::special::norm_quantile;

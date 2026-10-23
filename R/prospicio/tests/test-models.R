@@ -700,4 +700,47 @@ refit <- glm_fit(stats::as.formula(paste("freq ~", rhs)), cbind(chalk_x, freq = 
                  family = "gaussian", weights = chalk$exposure)
 near(refit@deviance, mkw$rss, 1e-8)
 
+# Draws from another sampler (#395): real CmdStan output against posterior
+# and loo on the same files (validation/scripts/r_stan_csv.R).
+root <- if (dir.exists("validation")) "validation" else file.path("..", "..", "..", "validation")
+sd8 <- read_stan_csv(file.path(root, "data", "stan_eight_schools", sprintf("chain-%d.csv", 1:4)))
+stopifnot(identical(dim(sd8), c(250L, 4L, 19L)), attr(sd8, "warmup_dropped") == 150,
+          "divergent__" %in% dimnames(attr(sd8, "sampler"))[[3]])
+sref <- utils::read.csv(file.path(root, "reference", "stan_csv_posterior.csv"), stringsAsFactors = FALSE)
+ssum <- draws_summary(sd8)
+sloo <- draws_loo(sd8)
+est <- c(elpd_loo = "elpd", p_loo = "p", looic = "ic", se_elpd_loo = "se")
+for (i in seq_len(nrow(sref))) {
+  v <- sref$variable[i]; q <- sref$quantity[i]; want8 <- sref$expected[i]
+  tol <- max(sref$abs_tol[i], sref$rel_tol[i] * abs(want8))
+  got <- if (startsWith(v, "chain ")) {
+    attr(sd8, "divergences")[as.integer(sub("chain ", "", v))]
+  } else if (v == "log_lik") {
+    sloo$estimates[[est[[q]]]]
+  } else if (startsWith(v, "log_lik[") && q %in% c("r_eff", "elpd_loo", "pareto_k")) {
+    j <- as.integer(sub("log_lik\\[(\\d+)\\]", "\\1", v))
+    switch(q, r_eff = sloo$r_eff[j], elpd_loo = sloo$pointwise[j], pareto_k = sloo$pareto_k[j])
+  } else {
+    ssum[[q]][ssum$variable == v]
+  }
+  if (!(abs(got - want8) <= tol)) stop(sprintf("%s %s: got %.17g, want %.17g", v, q, got, want8))
+}
+# The existing chain fixture through mcmc_draws, against posterior.
+mc <- utils::read.csv(file.path(root, "data", "mcmc_chains.csv"))
+vars <- setdiff(names(mc), c("chain", "iteration"))
+arr <- array(NA_real_, c(1001, 4, length(vars)), dimnames = list(NULL, NULL, vars))
+for (c in 0:3) arr[, c + 1, ] <- as.matrix(mc[mc$chain == c, vars])
+mref <- utils::read.csv(file.path(root, "reference", "mcmc_posterior.csv"))
+msum <- draws_summary(mcmc_draws(arr))
+for (i in which(mref$quantity %in% c("rhat", "ess_bulk", "ess_tail"))) {
+  near(msum[[mref$quantity[i]]][msum$variable == mref$variable[i]], mref$expected[i], 1e-10)
+}
+if (requireNamespace("posterior", quietly = TRUE)) {
+  pd <- posterior::as_draws_array(arr)
+  near(draws_summary(pd)$ess_bulk, posterior::summarise_draws(pd, "ess_bulk")$ess_bulk, 1e-10)
+  near(draws_summary(posterior::as_draws_df(pd))$rhat,
+       posterior::summarise_draws(pd, "rhat")$rhat, 1e-10)
+}
+stopifnot(inherits(try(mcmc_draws(matrix(1:4, 2)), silent = TRUE), "try-error"))
+
 cat("prospicio R models tests passed\n")

@@ -180,6 +180,12 @@ elpd_loo_rust <- function(log_lik, n, r_eff) .Call(wrap__elpd_loo_rust, log_lik,
 
 elpd_waic_rust <- function(log_lik, n) .Call(wrap__elpd_waic_rust, log_lik, n)
 
+draws_summary_rust <- function(values, n_iter, n_chain, names) .Call(wrap__draws_summary_rust, values, n_iter, n_chain, names)
+
+draws_loo_rust <- function(values, n_iter, n_chain, names, prefix) .Call(wrap__draws_loo_rust, values, n_iter, n_chain, names, prefix)
+
+read_stan_csv_rust <- function(paths) .Call(wrap__read_stan_csv_rust, paths)
+
 dglm_fit_design <- function(x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method) .Call(wrap__dglm_fit_design, x, names, y, offset, weights, z, dispersion_names, dispersion_offset, family_name, link_name, power, link_power, method)
 
 glmm_fit_design <- function(x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes) .Call(wrap__glmm_fit_design, x, names, y, offset, weights, family_name, power, group_names, group_labels, intercepts, slope_factor, slope_names, slope_values, nodes)
