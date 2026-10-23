@@ -712,22 +712,20 @@ impl ReinsuranceTower {
         }
     }
 
-    /// The term on the timeline of `events` over `months`, with the
-    /// exposure's shares row-major over `n_years` rows.
+    /// The term on `timeline`, with the exposure's shares row-major over
+    /// `n_years` rows.
     fn apply_timeline(
         &self,
-        events: Robj,
-        months: f64,
+        timeline: Robj,
         shares: &[f64],
         n_years: f64,
     ) -> Result<PredictiveDistribution> {
-        let events = <&EventSet>::try_from(&events)
-            .map_err(|_| Error::Other("events must be an event_set".into()))?;
-        let timeline = crate::aggregate::timeline(&events.inner, months)?;
+        let timeline = <&crate::aggregate::Timeline>::try_from(&timeline)
+            .map_err(|_| Error::Other("timeline must be a timeline".into()))?;
         let exposure = crate::aggregate::exposure(shares, n_years)?;
         let inner = self
             .inner
-            .apply_timeline(&timeline, &exposure)
+            .apply_timeline(&timeline.inner, &exposure)
             .map_err(to_r)?;
         Ok(PredictiveDistribution { inner })
     }

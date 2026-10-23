@@ -672,48 +672,6 @@ impl EventSet {
         ))
     }
 
-    /// Checks that this event set can be a timeline of `months` months.
-    fn timeline_check(&self, months: f64) -> Result<()> {
-        timeline(&self.inner, months).map(|_| ())
-    }
-
-    /// The contract years of the timeline of this event set over `months`
-    /// under `basis`, with the exposure's shares row-major over `n_years`
-    /// rows; with `sources`, a list of `years` and `sources` (each loss's
-    /// index among the timeline's losses, from 1).
-    fn timeline_years(
-        &self,
-        months: f64,
-        basis: &str,
-        shares: &[f64],
-        n_years: f64,
-        sources: bool,
-    ) -> Result<Robj> {
-        let timeline = timeline(&self.inner, months)?;
-        let exposure = exposure(shares, n_years)?;
-        let basis = cover_basis(basis)?;
-        let (years, src) = if sources {
-            let (y, s) = timeline
-                .years_with_sources(basis, &exposure)
-                .map_err(to_r)?;
-            (y, Some(s))
-        } else {
-            (timeline.years(basis, &exposure).map_err(to_r)?, None)
-        };
-        let years = List::from_values(years.into_iter().map(|inner| Robj::from(Self { inner })));
-        Ok(match src {
-            None => years.into(),
-            Some(src) => list!(
-                years = years,
-                sources = List::from_values(
-                    src.into_iter()
-                        .map(|s| { s.into_iter().map(|i| i as f64 + 1.0).collect::<Vec<f64>>() })
-                )
-            )
-            .into(),
-        })
-    }
-
     /// A list of `n_years` event sets whose totals have the correlation
     /// `correlation` (one value or a row-major matrix).
     fn correlated_years(
@@ -1309,9 +1267,9 @@ extendr_module! {
     fn occurrence_pml_rust;
     fn ylt_file_hash_rust;
     fn year_correlation_for_ratio_rust;
-    fn timeline_from_years_rust;
     fn exposure_uniform_rust;
     impl EventSet;
+    impl Timeline;
     fn aggregate_elt_values;
     fn aggregate_elt_simulate;
 }
@@ -1379,14 +1337,6 @@ pub(crate) fn cover_basis(basis: &str) -> Result<prospicio_aggregate::timeline::
     }
 }
 
-pub(crate) fn timeline(
-    events: &EventSetInner,
-    months: f64,
-) -> Result<prospicio_aggregate::timeline::Timeline> {
-    prospicio_aggregate::timeline::Timeline::new(events.clone(), whole(months, "months")? as usize)
-        .map_err(to_r)
-}
-
 /// An exposure from its shares, row-major over `n_years` rows.
 pub(crate) fn exposure(
     shares: &[f64],
@@ -1406,25 +1356,107 @@ pub(crate) fn exposure(
     prospicio_aggregate::timeline::Exposure::new(rows).map_err(to_r)
 }
 
-/// A timeline stitched from one event set per accident year: its
-/// `events` and `months`.
+/// The events of a term once, in accident months, with the aggregate
+/// part by accident period.
 #[extendr]
-fn timeline_from_years_rust(years: List) -> Result<List> {
-    let years = years
-        .values()
-        .map(|y| {
-            <&EventSet>::try_from(&y)
-                .map(|e| e.inner.clone())
-                .map_err(|_| Error::Other("each year must be an event_set".into()))
+pub(crate) struct Timeline {
+    pub(crate) inner: prospicio_aggregate::timeline::Timeline,
+}
+
+#[extendr]
+impl Timeline {
+    /// The timeline of `events` over `months`, the aggregate part spread
+    /// by `pattern` (twelve weights, or `NULL` for uniform).
+    fn new(events: Robj, months: f64, pattern: Nullable<Vec<f64>>) -> Result<Self> {
+        let events = <&EventSet>::try_from(&events)
+            .map_err(|_| Error::Other("events must be an event_set".into()))?;
+        let inner = prospicio_aggregate::timeline::Timeline::new(
+            events.inner.clone(),
+            whole(months, "months")? as usize,
+        )
+        .map_err(to_r)?;
+        Self::patterned(inner, pattern)
+    }
+
+    /// A timeline stitched from one event set per accident year.
+    fn from_years(years: List, pattern: Nullable<Vec<f64>>) -> Result<Self> {
+        let years = years
+            .values()
+            .map(|y| {
+                <&EventSet>::try_from(&y)
+                    .map(|e| e.inner.clone())
+                    .map_err(|_| Error::Other("each year must be an event_set".into()))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let inner = prospicio_aggregate::timeline::Timeline::from_years(&years).map_err(to_r)?;
+        Self::patterned(inner, pattern)
+    }
+
+    /// The events, without the aggregate part.
+    fn events(&self) -> EventSet {
+        EventSet {
+            inner: self.inner.events().clone(),
+        }
+    }
+
+    fn months(&self) -> f64 {
+        self.inner.months() as f64
+    }
+
+    fn aggregate_pattern(&self) -> Vec<f64> {
+        self.inner.aggregate_pattern().to_vec()
+    }
+
+    fn has_aggregate_part(&self) -> bool {
+        self.inner.has_aggregate_part()
+    }
+
+    /// The contract years under `basis`, with the exposure's shares
+    /// row-major over `n_years` rows; with `sources`, a list of `years`
+    /// and `sources` (each loss's index among the timeline's losses, from
+    /// 1).
+    fn years(&self, basis: &str, shares: &[f64], n_years: f64, sources: bool) -> Result<Robj> {
+        let exposure = exposure(shares, n_years)?;
+        let basis = cover_basis(basis)?;
+        let (years, src) = if sources {
+            let (y, s) = self
+                .inner
+                .years_with_sources(basis, &exposure)
+                .map_err(to_r)?;
+            (y, Some(s))
+        } else {
+            (self.inner.years(basis, &exposure).map_err(to_r)?, None)
+        };
+        let years = List::from_values(
+            years
+                .into_iter()
+                .map(|inner| Robj::from(EventSet { inner })),
+        );
+        Ok(match src {
+            None => years.into(),
+            Some(src) => list!(
+                years = years,
+                sources = List::from_values(
+                    src.into_iter()
+                        .map(|s| { s.into_iter().map(|i| i as f64 + 1.0).collect::<Vec<f64>>() })
+                )
+            )
+            .into(),
         })
-        .collect::<Result<Vec<_>>>()?;
-    let timeline = prospicio_aggregate::timeline::Timeline::from_years(&years).map_err(to_r)?;
-    Ok(list!(
-        events = EventSet {
-            inner: timeline.events().clone()
-        },
-        months = timeline.months() as f64
-    ))
+    }
+}
+
+impl Timeline {
+    fn patterned(
+        inner: prospicio_aggregate::timeline::Timeline,
+        pattern: Nullable<Vec<f64>>,
+    ) -> Result<Self> {
+        let inner = match pattern {
+            Nullable::NotNull(p) => inner.with_aggregate_pattern(&p).map_err(to_r)?,
+            Nullable::Null => inner,
+        };
+        Ok(Self { inner })
+    }
 }
 
 /// `Exposure::uniform`'s shares, row-major, with its `months`.
