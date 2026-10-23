@@ -3,7 +3,7 @@
 - Rust: `TowerGrids` and `AnnualGrids` gain the public fields
   `expected_deal_ceding_commission` and `expected_deal_brokerage`; code
   that builds either in full adds them (empty `Vec`s for a tower without
-  deals).
+  deals) (#541).
 
 ### Aggregate and reinsurance
 
@@ -18,4 +18,4 @@
   `TowerGrids.expected_deal_ceding_commission` and
   `expected_deal_brokerage` (by deal name), R `tower_on_grid()` and
   `tower_on_annual_grid()`'s `expected_deal_ceding_commission` and
-  `expected_deal_brokerage`.
+  `expected_deal_brokerage` (#541).
