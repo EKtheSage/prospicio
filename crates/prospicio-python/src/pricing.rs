@@ -7,7 +7,7 @@ use prospicio_pricing::exposure::{
     ExposureCurve, Interpolation, Mbbefd, SeverityCurve, TabulatedCurve,
 };
 use prospicio_pricing::layer::XsLayer;
-use prospicio_pricing::quote::{Loads, Quote};
+use prospicio_pricing::quote::{Loads, PremiumTerms, Quote};
 use prospicio_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel};
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -725,7 +725,8 @@ impl PyPrice {
         self.inner.loss_ratio()
     }
 
-    /// Return on capital, margin over capital.
+    /// Return on capital after income tax, the margin less the tax over
+    /// capital.
     #[getter]
     fn return_on_capital(&self) -> f64 {
         self.inner.return_on_capital()
@@ -1721,6 +1722,20 @@ impl PyQuote {
     /// limit : float, optional
     ///     The cover's limit at the placed share, for the rate on line;
     ///     omit it for a cover without one, such as a quota share.
+    /// premium_tax : float, default 0.0
+    ///     Premium tax, a fraction of all the premium (deposit and
+    ///     reinstatement premium), grossed up as brokerage is.
+    /// income_tax : float, default 0.0
+    ///     Income tax on the margin. The price's return on capital is then
+    ///     the return after tax, and the risk premium is raised to give it.
+    /// reinstatement_rate : float, default 0.0
+    ///     Expected reinstatement premium per unit of deposit: a tower
+    ///     grid's ``expected_reinstatement_premium`` for the layer over its
+    ///     deposit premium (reinstatement premium is proportional to it).
+    /// commission : float, default 0.0
+    ///     A flat ceding commission, a fraction of the deposit.
+    /// brokerage_on_reinstatements : bool, default True
+    ///     Whether brokerage is charged on reinstatement premium too.
     ///
     /// Returns
     /// -------
@@ -1729,29 +1744,65 @@ impl PyQuote {
     /// Raises
     /// ------
     /// ValueError
-    ///     If a load is negative, ``expenses + brokerage`` reaches 1, or the
-    ///     limit is not positive.
+    ///     If a load or rate is negative or not below 1, the loads and
+    ///     commission leave no premium, or the limit is not positive.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Sampled
+    /// >>> from prospicio.pricing import Quote, price
+    /// >>> from prospicio.risk import Distortion
+    /// >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.1)
+    /// >>> q = Quote.technical(p, brokerage=0.10, income_tax=0.21, reinstatement_rate=0.5)
+    /// >>> round(q.return_on_capital, 6), q.pre_tax_return_on_capital > 0.1
+    /// (0.1, True)
+    /// >>> round(q.premium_in_all / q.premium, 6)
+    /// 1.5
     #[staticmethod]
-    #[pyo3(signature = (price, *, expenses = 0.0, brokerage = 0.0, fixed = 0.0, limit = None))]
+    #[pyo3(signature = (
+        price, *, expenses = 0.0, brokerage = 0.0, fixed = 0.0, limit = None,
+        premium_tax = 0.0, income_tax = 0.0, reinstatement_rate = 0.0, commission = 0.0,
+        brokerage_on_reinstatements = true,
+    ))]
+    #[allow(clippy::too_many_arguments)]
     fn technical(
         price: PyRef<'_, PyPrice>,
         expenses: f64,
         brokerage: f64,
         fixed: f64,
         limit: Option<f64>,
+        premium_tax: f64,
+        income_tax: f64,
+        reinstatement_rate: f64,
+        commission: f64,
+        brokerage_on_reinstatements: bool,
     ) -> PyResult<Self> {
-        let loads = Loads::new(expenses, brokerage, fixed).map_err(to_py)?;
+        let loads = Loads::new(expenses, brokerage, fixed)
+            .and_then(|l| l.with_premium_tax(premium_tax))
+            .and_then(|l| l.with_income_tax(income_tax))
+            .map_err(to_py)?;
+        let mut terms = PremiumTerms::new(reinstatement_rate, commission).map_err(to_py)?;
+        if !brokerage_on_reinstatements {
+            terms = terms.without_brokerage_on_reinstatements();
+        }
         Ok(Self {
-            inner: Quote::technical(&price.inner, loads, limit).map_err(to_py)?,
+            inner: Quote::technical_with(&price.inner, loads, terms, limit).map_err(to_py)?,
         })
     }
 
-    /// The same cover at a quoted premium: what the quote leaves after the
-    /// loads is the risk premium.
+    /// The same cover at a quoted deposit: what the quote leaves after the
+    /// loads and commissions is the risk premium.
     ///
     /// Parameters
     /// ----------
     /// premium : float
+    ///     The deposit; for a swing-rated layer, the expected premium from
+    ///     its tower grid (``expected_premium``).
+    /// commission : float, default 0.0
+    ///     Expected commissions beyond the flat one, an amount: a sliding
+    ///     scale or profit commission read off the layer's tower grid at
+    ///     this deposit (``expected_ceding_commission``,
+    ///     ``expected_profit_commission``).
     ///
     /// Returns
     /// -------
@@ -1761,16 +1812,56 @@ impl PyQuote {
     /// ------
     /// ValueError
     ///     If the risk premium the quote leaves reaches the assets.
-    fn at(&self, premium: f64) -> PyResult<Self> {
+    #[pyo3(signature = (premium, *, commission = 0.0))]
+    fn at(&self, premium: f64, commission: f64) -> PyResult<Self> {
         Ok(Self {
-            inner: self.inner.at(premium).map_err(to_py)?,
+            inner: self
+                .inner
+                .at_with_commission(premium, commission)
+                .map_err(to_py)?,
         })
     }
 
-    /// The premium the cedant pays.
+    /// The deposit premium the cedant pays upfront.
     #[getter]
     fn premium(&self) -> f64 {
         self.inner.premium
+    }
+
+    /// Expected reinstatement premium.
+    #[getter]
+    fn reinstatement_premium(&self) -> f64 {
+        self.inner.reinstatement_premium()
+    }
+
+    /// The deposit plus the expected reinstatement premium.
+    #[getter]
+    fn premium_in_all(&self) -> f64 {
+        self.inner.premium_in_all()
+    }
+
+    /// Premium tax, an amount.
+    #[getter]
+    fn premium_tax(&self) -> f64 {
+        self.inner.premium_tax()
+    }
+
+    /// Commissions paid back to the cedant, an amount.
+    #[getter]
+    fn commission(&self) -> f64 {
+        self.inner.commission()
+    }
+
+    /// Income tax on the margin, an amount.
+    #[getter]
+    fn income_tax(&self) -> f64 {
+        self.inner.income_tax()
+    }
+
+    /// Return on capital before income tax, margin over capital.
+    #[getter]
+    fn pre_tax_return_on_capital(&self) -> f64 {
+        self.inner.pre_tax_return_on_capital()
     }
 
     /// Expected loss.
@@ -1803,7 +1894,8 @@ impl PyQuote {
         self.inner.capital()
     }
 
-    /// Return on capital, margin over capital.
+    /// Return on capital after income tax, the margin less the tax over
+    /// capital.
     #[getter]
     fn return_on_capital(&self) -> f64 {
         self.inner.return_on_capital()
@@ -1827,25 +1919,25 @@ impl PyQuote {
         self.inner.net_premium()
     }
 
-    /// Expected loss over the premium.
+    /// Expected loss over all the premium.
     #[getter]
     fn loss_ratio(&self) -> f64 {
         self.inner.loss_ratio()
     }
 
-    /// Premium over expected loss.
+    /// All the premium over expected loss.
     #[getter]
     fn multiple(&self) -> f64 {
         self.inner.multiple()
     }
 
-    /// Premium over the limit, or ``None`` without a limit.
+    /// The deposit over the limit, or ``None`` without a limit.
     #[getter]
     fn rate_on_line(&self) -> Option<f64> {
         self.inner.rate_on_line()
     }
 
-    /// Limit over premium, or ``None`` without a limit.
+    /// Limit over the deposit, or ``None`` without a limit.
     #[getter]
     fn payback(&self) -> Option<f64> {
         self.inner.payback()
@@ -1870,10 +1962,16 @@ impl PyQuote {
         d.set_item("risk_premium", q.risk_premium)?;
         d.set_item("expenses", q.expenses())?;
         d.set_item("brokerage", q.brokerage())?;
+        d.set_item("premium_tax", q.premium_tax())?;
+        d.set_item("commission", q.commission())?;
         d.set_item("premium", q.premium)?;
+        d.set_item("reinstatement_premium", q.reinstatement_premium())?;
+        d.set_item("premium_in_all", q.premium_in_all())?;
         d.set_item("net_premium", q.net_premium())?;
         d.set_item("assets", q.assets)?;
         d.set_item("capital", q.capital())?;
+        d.set_item("income_tax", q.income_tax())?;
+        d.set_item("pre_tax_return_on_capital", q.pre_tax_return_on_capital())?;
         d.set_item("return_on_capital", q.return_on_capital())?;
         d.set_item("loss_ratio", q.loss_ratio())?;
         d.set_item("multiple", q.multiple())?;

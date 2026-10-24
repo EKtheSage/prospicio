@@ -578,10 +578,34 @@ underwriter builds from a risk-loaded price, as the Guides lane's
   the risk premium, so the margin, capital and return on capital at a
   market quote follow. A quote that leaves no capital is an error, as the
   funding check.
-- **Not yet:** reinstatement and swing premium and commissions on the
-  premium side (brokerage on reinstatement premium), tax, and the quote of
-  a whole tower at once; a tower's layers are quoted one by one from
-  `TowerGrids::ceded` and `price_grid`.
+- **The premium side, decided by the user on 2026-10-23.** What is
+  linear in the deposit `D` is solved for: an expected reinstatement
+  premium `κ D` (`PremiumTerms::reinstatement_rate`, which
+  `PremiumTerms::from_layer` reads off a tower grid's
+  `expected_reinstatement_premium` over the layer's deposit, since
+  reinstatement premium is proportional to it), with expenses, premium
+  tax and, by default, brokerage on it; and a flat ceding commission
+  `c D` on the deposit, as `Layer::ceding_commission_for` charges it. The
+  reinsurer keeps `D [(1 + κ)(1 − e − τ) − b (1 + κ) − c] − f`, so
+  `Quote::technical_with` gives `D = (R + f) / [...]`. A sliding scale, a
+  profit commission and a swing-rated premium are read back, not solved
+  for: `Quote::at_with_commission(D, amount)` takes the grid's expected
+  commissions at a quoted deposit, and a swing's expected premium is the
+  deposit to quote at. A fixed-point solve for those is a follow-up.
+  Ratios on the premium are on all of it, `(1 + κ) D` (loss ratio,
+  multiple); rate on line and payback stay on the deposit.
+- **Tax, both kinds (2026-10-23).** A premium tax `τ` is a fraction of all
+  the premium, grossed up as brokerage is. An income tax `t` is on the
+  margin: the price's return on capital `ρ` is then the return after tax,
+  and the risk premium is raised to `R = (ρ a + (1 − t) E[X]) / (1 − t +
+  ρ)`, which for a cost-of-capital price at `r` is the price at `r / (1 −
+  t)`. `return_on_capital` is after tax, `pre_tax_return_on_capital`
+  before. With no terms and no taxes every quote is as before.
+- **Not yet:** the quote of a whole tower at once (each layer standalone
+  plus the total cession, by the user's decision of 2026-10-23, next);
+  today a tower's layers are quoted one by one from `TowerGrids::ceded`
+  and `price_grid`. A distortion price whose assets count the
+  reinstatement premium, `P = price(X − P g)`, is #587.
 
 Validated by identities (zero loads give the risk premium; the loads net
 back to it; at the technical premium the return is the rate asked for;

@@ -19,7 +19,7 @@ use prospicio_pricing::natural::{
     Quantity, Target,
 };
 use prospicio_pricing::payout::{self, PaymentPattern};
-use prospicio_pricing::quote::{Loads, Quote};
+use prospicio_pricing::quote::{Loads, PremiumTerms, Quote};
 use prospicio_pricing::returns::{self, IrrOptions, TieredFee, TimeUnit};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
@@ -1107,8 +1107,9 @@ fn distortion_envelope_rust(x: Robj, premium: f64, s: &[f64], assets: f64) -> Re
     Ok(list!(lower = lower, upper = upper))
 }
 
-/// A quote: the technical premium of a risk-loaded price (`premium` NaN),
-/// or the same cover at a quoted `premium`. `limit` NaN for none.
+/// A quote: the technical deposit of a risk-loaded price (`premium` NaN),
+/// or the same cover at a quoted deposit with `commission` read back.
+/// `limit` NaN for none.
 #[extendr]
 #[allow(clippy::too_many_arguments)]
 fn pricing_quote(
@@ -1119,18 +1120,31 @@ fn pricing_quote(
     brokerage: f64,
     fixed: f64,
     limit: f64,
+    premium_tax: f64,
+    income_tax: f64,
+    reinstatement_rate: f64,
+    ceding_commission: f64,
+    brokerage_on_reinstatements: bool,
     premium: f64,
+    commission: f64,
 ) -> Result<List> {
     let price = Price {
         expected_loss,
         premium: risk_premium,
         assets,
     };
-    let loads = Loads::new(expenses, brokerage, fixed).map_err(to_r)?;
+    let loads = Loads::new(expenses, brokerage, fixed)
+        .and_then(|l| l.with_premium_tax(premium_tax))
+        .and_then(|l| l.with_income_tax(income_tax))
+        .map_err(to_r)?;
+    let mut terms = PremiumTerms::new(reinstatement_rate, ceding_commission).map_err(to_r)?;
+    if !brokerage_on_reinstatements {
+        terms = terms.without_brokerage_on_reinstatements();
+    }
     let limit = (!limit.is_nan()).then_some(limit);
-    let mut q = Quote::technical(&price, loads, limit).map_err(to_r)?;
+    let mut q = Quote::technical_with(&price, loads, terms, limit).map_err(to_r)?;
     if !premium.is_nan() {
-        q = q.at(premium).map_err(to_r)?;
+        q = q.at_with_commission(premium, commission).map_err(to_r)?;
     }
     let na = |x: Option<f64>| x.unwrap_or(f64::NAN);
     Ok(list!(
@@ -1139,10 +1153,16 @@ fn pricing_quote(
         risk_premium = q.risk_premium,
         expenses = q.expenses(),
         brokerage = q.brokerage(),
+        premium_tax = q.premium_tax(),
+        commission = q.commission(),
         premium = q.premium,
+        reinstatement_premium = q.reinstatement_premium(),
+        premium_in_all = q.premium_in_all(),
         net_premium = q.net_premium(),
         assets = q.assets,
         capital = q.capital(),
+        income_tax = q.income_tax(),
+        pre_tax_return_on_capital = q.pre_tax_return_on_capital(),
         return_on_capital = q.return_on_capital(),
         loss_ratio = q.loss_ratio(),
         multiple = q.multiple(),
