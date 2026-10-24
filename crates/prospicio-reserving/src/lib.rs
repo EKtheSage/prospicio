@@ -88,7 +88,7 @@ pub use expected_loss::{
     Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
 };
 pub use frame::TriangleFrame;
-pub use latest_diagonal::LatestDiagonal;
+pub use latest_diagonal::{LatestDiagonal, PastPatternEnd};
 pub use mack::{Mack, MackFit};
 pub use mack_bootstrap::{
     MackBootstrap, MackBootstrapFit, MackBootstrapFits, MackBootstrapSegment, MackProcess,

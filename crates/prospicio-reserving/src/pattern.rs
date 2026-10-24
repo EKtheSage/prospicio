@@ -1,13 +1,19 @@
 //! Selected development patterns: benchmark factors that replace, or blend
 //! with, the factors estimated from the triangle
-//! (`docs/design/reserving-v02.md`, decision 12).
+//! (`docs/design/reserving-v02.md`, decisions 12 and 18).
 //!
 //! A [`SelectedPattern`] is given as age-to-age factors, factors to
 //! ultimate or percents developed, by age. It is converted to age-to-age
 //! factors on the triangle's development ages; each selected factor is then
 //! blended with the triangle's estimate as `w * selected + (1 - w) *
 //! estimated`, `w` its [`PatternWeight`]. Factors it does not select stay
-//! estimated.
+//! estimated. A pattern at ages the triangle does not have (a monthly
+//! pattern on an annual triangle, ages between the triangle's, ages past
+//! its oldest) is read on its own ages, and what it gives past the oldest
+//! age folds into a constant tail there (decision 18).
+//! [`SelectedPattern::averaged_over_origins`] turns a pattern measured on
+//! one origin basis (accident months) into the pattern of a coarser one
+//! (accident years or quarters).
 //!
 //! A selected factor carries no parameter error: Mack's standard errors and
 //! the bootstraps charge a blended factor `(1 - w)` times the estimate's
@@ -19,9 +25,11 @@
 //! 73% of the unblended standard deviation, with no process error). Mack's
 //! bootstrap projects from the observed latest value and keeps none.
 
-use prospicio_core::Lag;
+use prospicio_core::{Grain, Lag, Month, Period};
 
 use crate::error::{Error, Result};
+use crate::triangle::Segment;
+use crate::{ChainLadder, Development, Tail};
 
 /// How the values of a [`SelectedPattern`] are expressed. The user names
 /// it: age-to-age factors and factors to ultimate are both at least 1 in
@@ -30,7 +38,9 @@ use crate::error::{Error, Result};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PatternKind {
     /// `f(a)`: the factor from age `a` to the next development age of the
-    /// triangle. Any value that is finite and positive; below 1 is negative
+    /// triangle; for a pattern with an age that is not one, to the next age
+    /// the pattern gives, the last by the spacing before it (decision 18).
+    /// Any value that is finite and positive; below 1 is negative
     /// development.
     AgeToAge,
     /// `CDF(a)`: the factor from age `a` to ultimate. Any value that is
@@ -137,6 +147,38 @@ impl Default for PatternWeight {
 /// next to the selection and gives Mack's sigma). A selected factor at or
 /// after the age where the [`Tail`](crate::Tail) takes over is an error.
 ///
+/// **Ages off the triangle's** (`reserving-v02.md`, decision 18). When every
+/// age the pattern gives is a development age of the triangle, the rules
+/// above apply as they are. Otherwise the pattern is read on its own ages,
+/// as [`LatestDiagonal`](crate::LatestDiagonal) reads it: a cumulative
+/// pattern ends at its last age, an age-to-age factor runs to the next age
+/// given (the last by the spacing before it, and 1 at the end of that
+/// span), and `ln CDF` is linear in the age between the pattern's own ages.
+/// A link of the triangle within the pattern's span is selected: the
+/// product of the age-to-age factors given over it, or the ratio of the
+/// factors to ultimate at its ends. So a monthly pattern selects the annual
+/// factors of an annual triangle, and a pattern at 6, 18 and 30 months is
+/// read between its ages. Links outside the span stay estimated, and a
+/// cumulative pattern's level is the factor to ultimate at the triangle's
+/// last age within the span. A single age-to-age factor off the triangle's
+/// ages is still an error. Adding one off-grid age to a sparse age-to-age
+/// pattern changes how its other factors are read, from each running to the
+/// triangle's next age to each running to the pattern's next, with no
+/// warning: `{12: 1.5, 36: 1.2}` on an annual triangle selects 1.5 from 12
+/// to 24 months, and `{12: 1.5, 18: 1.1, 36: 1.2}` selects 1.5484 there,
+/// since 1.5 then runs from 12 to 18 months.
+///
+/// **Past the oldest age** (decision 18). What such a pattern gives from
+/// the triangle's oldest age to its end folds into a constant tail at the
+/// oldest age ([`ChainLadderFit::pattern_tail`](crate::ChainLadderFit::pattern_tail)):
+/// with no tail, the pattern's factor to ultimate there, its level
+/// included; with a [`TailConstant`](crate::TailConstant) (its attachment
+/// age unset), the pattern's development to its end times the constant,
+/// spread at the constant's decay; with an estimated tail, times the tail
+/// fitted on the pattern's own ages. The fold takes the pattern at full
+/// weight, so such a pattern must be fully selected: any weight below 1 is
+/// an error (cut the pattern at the oldest age to blend it).
+///
 /// ```
 /// use prospicio_reserving::{ChainLadder, Development, PatternKind, SelectedPattern};
 /// # use prospicio_reserving::{DevelopmentColumn, Grain, Long, Month, Triangle};
@@ -185,8 +227,7 @@ impl Default for PatternWeight {
 pub struct SelectedPattern {
     /// How `values` are expressed.
     pub kind: PatternKind,
-    /// `(age in months, value)`, in any order; each age a development age
-    /// of the triangle.
+    /// `(age in months, value)`, in any order.
     pub values: Vec<(Lag, f64)>,
     /// The weight on the selected factors; the default selects them fully.
     pub weight: PatternWeight,
@@ -219,6 +260,11 @@ impl SelectedPattern {
         }
         let mut values = self.values.clone();
         values.sort_by_key(|&(age, _)| age);
+        // A pattern with an age off the triangle's is read on its own ages
+        // (decision 18); one on them by decision 12, as it always was.
+        if values.iter().any(|(age, _)| !ages.contains(age)) {
+            return self.resolve_off_grid(&values, ages);
+        }
         let mut positions = Vec::with_capacity(values.len());
         for (i, &(age, _)) in values.iter().enumerate() {
             if i > 0 && values[i - 1].0 == age {
@@ -292,7 +338,85 @@ impl SelectedPattern {
                 level = Some((positions[last], cdf[last]));
             }
         }
+        let weight = self.weights(&selected, ages)?;
+        Ok(Resolved {
+            selected,
+            weight,
+            level,
+            beyond: None,
+        })
+    }
 
+    /// Decision 18: a pattern with an age that is not a development age of
+    /// the triangle, read on its own ages as decision 16 reads it. `values`
+    /// are sorted by age.
+    fn resolve_off_grid(&self, values: &[(Lag, f64)], ages: &[Lag]) -> Result<Resolved> {
+        check_unique(values)?;
+        if self.kind == PatternKind::AgeToAge && values.len() == 1 {
+            return Err(Error::Pattern {
+                age: Some(values[0].0),
+                reason: "not a development age of the triangle",
+            });
+        }
+        check_values(values, self.kind)?;
+        let end = span_end(self.kind, values, 0)?;
+        let own = own_cdf(self.kind, values, end);
+        let (first, end) = (own[0].0, own[own.len() - 1].0);
+        let at = |age: Lag| log_linear_at(&own, age);
+        let is_own = |age: Lag| own.binary_search_by_key(&age, |&(a, _)| a).is_ok();
+        let n_links = ages.len().saturating_sub(1);
+        let mut selected = vec![None; n_links];
+        for (k, s) in selected.iter_mut().enumerate() {
+            let (a, b) = (ages[k], ages[k + 1]);
+            if a < first || b > end {
+                continue;
+            }
+            // Factors given from a to b are the link's to the bit; any
+            // other link is the ratio of the factors to ultimate at its
+            // ends, given or read between the pattern's ages.
+            *s = Some(
+                if self.kind == PatternKind::AgeToAge && is_own(a) && is_own(b) {
+                    values
+                        .iter()
+                        .filter(|&&(v, _)| a <= v && v < b)
+                        .map(|&(_, f)| f)
+                        .product()
+                } else {
+                    at(a) / at(b)
+                },
+            );
+        }
+        let oldest = ages.last().copied().unwrap_or(0);
+        let level = match self.kind {
+            PatternKind::AgeToAge => None,
+            _ => ages
+                .iter()
+                .rposition(|&a| first <= a && a <= end.min(oldest))
+                .map(|j| (j, at(ages[j]))),
+        };
+        let beyond = (end > oldest && first <= oldest).then(|| Beyond {
+            oldest: at(oldest),
+            level: at(end),
+        });
+        if beyond.is_none() && selected.iter().all(Option::is_none) {
+            return Err(Error::Pattern {
+                age: Some(first),
+                reason: "the pattern selects no factor of the triangle",
+            });
+        }
+        let weight = self.weights(&selected, ages)?;
+        Ok(Resolved {
+            selected,
+            weight,
+            level,
+            beyond,
+        })
+    }
+
+    /// The weight on each `selected` link on `ages`, 0 where none is.
+    fn weights(&self, selected: &[Option<f64>], ages: &[Lag]) -> Result<Vec<f64>> {
+        let n_links = selected.len();
+        let err = |age: Option<Lag>, reason: &'static str| Err(Error::Pattern { age, reason });
         let check_weight = |age: Option<Lag>, w: f64| {
             if w.is_finite() && (0.0..=1.0).contains(&w) {
                 Ok(w)
@@ -338,12 +462,404 @@ impl SelectedPattern {
                 }
             }
         }
-        Ok(Resolved {
-            selected,
-            weight,
-            level,
+        Ok(weight)
+    }
+
+    /// This pattern, measured on origin periods of `pattern_origin` (an
+    /// accident-month pattern is `Grain::Month`), as the pattern of origin
+    /// periods of `origin`, a whole multiple of it, with the exposure even
+    /// through the period (`reserving-v02.md`, decision 18). An origin of
+    /// `n = origin / pattern_origin` sub-periods of `s` months is at age
+    /// `a` when its `q`-th sub-period from the start (`q = 0` the earliest)
+    /// is at age `a - q s`, so
+    ///
+    /// ```text
+    /// P(a) = (1/n) * sum_{q=0}^{n-1} p(a - q s)
+    /// ```
+    ///
+    /// with `p` this pattern's percent developed read at any age:
+    ///
+    /// * 0 at an age of 0 or less (a sub-period that has not begun);
+    /// * linear in `p` from 0 at age 0 to `p(first)` between 0 and the
+    ///   first age;
+    /// * decision 12's rule between the given ages (`ln CDF` linear in the
+    ///   age; an age-to-age pattern is first turned into factors to
+    ///   ultimate, 1 at the end of its span, decision 16 item 3);
+    /// * held at its value at the end, past the end.
+    ///
+    /// The result is a [`PatternKind::PercentDeveloped`] pattern at every
+    /// month from this pattern's first age to its end plus `(n - 1) s`
+    /// months, where every sub-period is past the end and `P` is this
+    /// pattern's level (1 for age-to-age factors). Development past the
+    /// result's end is the tail's, for the whole period. An origin still in
+    /// progress (an accident year at June, 6 months) projects to the whole
+    /// period's ultimate. For origins up to this pattern's end the
+    /// ultimates are exact when the exposure is even; between its end and
+    /// the result's, `P` holds this pattern's level for the sub-periods past
+    /// the end, so any development a tail gives there is deferred to the
+    /// period's last age, which slightly overstates the ultimate.
+    ///
+    /// The default origin basis, read at the origin's age, is the pattern
+    /// as given, with no call. An estimated tail on the result is fitted on
+    /// its monthly factors; a constant tail taken from this pattern's own
+    /// tail is the safer choice.
+    ///
+    /// A weight `All(w)` carries over. With `n = 1` the pattern comes back
+    /// unchanged. Errors ([`Error::Pattern`]): `origin` not a whole multiple
+    /// of `pattern_origin`; a `ByAge` weight (weight the result with
+    /// [`with_weight`](Self::with_weight)); a single age-to-age factor,
+    /// which has no span; a result longer than 2,400 months; and any error
+    /// the pattern has on its own ages (no values, an age given twice, a
+    /// value that is not finite and positive, one cumulative value).
+    ///
+    /// ```
+    /// use prospicio_reserving::{Grain, PatternKind, SelectedPattern};
+    ///
+    /// // An accident month reports t/12 of its ultimate at t months, fully
+    /// // at 12.
+    /// let month = SelectedPattern::new(
+    ///     PatternKind::PercentDeveloped,
+    ///     (1..=12).map(|t| (t, f64::from(t) / 12.0)).collect(),
+    /// );
+    /// let year = month.averaged_over_origins(Grain::Month, Grain::Year).unwrap();
+    /// assert_eq!(year.kind, PatternKind::PercentDeveloped);
+    /// let at = |age| year.values.iter().find(|v| v.0 == age).unwrap().1;
+    /// // An accident year at December: (12 + 11 + ... + 1) / 12 / 12.
+    /// assert!((at(12) - 78.0 / 144.0).abs() < 1e-15);
+    /// // At June, its first six months: (6 + ... + 1) / 12 / 12.
+    /// assert!((at(6) - 21.0 / 144.0).abs() < 1e-15);
+    /// // Every month is fully developed 11 months after the pattern's end.
+    /// assert_eq!(year.values.last(), Some(&(23, 1.0)));
+    /// ```
+    pub fn averaged_over_origins(
+        &self,
+        pattern_origin: Grain,
+        origin: Grain,
+    ) -> Result<SelectedPattern> {
+        let err = |age: Option<Lag>, reason: &'static str| Err(Error::Pattern { age, reason });
+        if !origin.is_multiple_of(pattern_origin) {
+            return err(
+                None,
+                "the origin grain must be a whole multiple of the pattern's origin grain",
+            );
+        }
+        let n = origin.months() / pattern_origin.months();
+        if n == 1 {
+            return Ok(self.clone());
+        }
+        let s = pattern_origin.months();
+        if let PatternWeight::ByAge(_) = self.weight {
+            return err(
+                None,
+                "weights by age do not carry over to another origin basis: weight the result \
+                 with with_weight",
+            );
+        }
+        if self.values.is_empty() {
+            return err(None, "the pattern has no values");
+        }
+        let mut values = self.values.clone();
+        values.sort_by_key(|&(age, _)| age);
+        check_unique(&values)?;
+        if self.kind == PatternKind::AgeToAge && values.len() == 1 {
+            return err(
+                Some(values[0].0),
+                "a single age-to-age factor has no span to average: give two or more, or \
+                 factors to ultimate",
+            );
+        }
+        check_values(&values, self.kind)?;
+        // Percents developed on the pattern's own ages, the given value
+        // itself where one is given.
+        let points: Vec<(Lag, f64)> = match self.kind {
+            PatternKind::PercentDeveloped => values,
+            PatternKind::AgeToUltimate => values.iter().map(|&(a, c)| (a, 1.0 / c)).collect(),
+            PatternKind::AgeToAge => {
+                let end = span_end(self.kind, &values, 0)?;
+                own_cdf(self.kind, &values, end)
+                    .into_iter()
+                    .map(|(a, c)| (a, 1.0 / c))
+                    .collect()
+            }
+        };
+        let (first, end) = (points[0], points[points.len() - 1]);
+        let last = (n - 1)
+            .checked_mul(s)
+            .and_then(|extra| end.0.checked_add(extra))
+            .ok_or(Error::Pattern {
+                age: Some(end.0),
+                reason: "the age is too large",
+            })?;
+        if last - first.0 >= MAX_GRID {
+            return err(
+                None,
+                "the averaged pattern needs more than 2,400 monthly ages",
+            );
+        }
+        let p = |age: i64| -> f64 {
+            if age <= 0 {
+                0.0
+            } else if age < i64::from(first.0) {
+                first.1 * age as f64 / f64::from(first.0)
+            } else if age > i64::from(end.0) {
+                end.1
+            } else {
+                log_linear_at(&points, age as Lag)
+            }
+        };
+        let averaged = (first.0..=last)
+            .map(|a| {
+                let sum: f64 = (0..n).map(|q| p(i64::from(a) - i64::from(q * s))).sum();
+                (a, sum / f64::from(n))
+            })
+            .collect();
+        Ok(SelectedPattern {
+            kind: PatternKind::PercentDeveloped,
+            values: averaged,
+            weight: self.weight.clone(),
         })
     }
+}
+
+/// Each age of the sorted `values` given once.
+fn check_unique(values: &[(Lag, f64)]) -> Result<()> {
+    match values.windows(2).find(|w| w[0].0 == w[1].0) {
+        Some(w) => Err(Error::Pattern {
+            age: Some(w[0].0),
+            reason: "the age is given twice",
+        }),
+        None => Ok(()),
+    }
+}
+
+/// Each value of a pattern of `kind` finite and positive, and a cumulative
+/// pattern with two or more ages, with decision 12's texts.
+fn check_values(values: &[(Lag, f64)], kind: PatternKind) -> Result<()> {
+    let reason = match kind {
+        PatternKind::AgeToAge => "an age-to-age factor must be finite and positive",
+        PatternKind::AgeToUltimate => "a factor to ultimate must be finite and positive",
+        PatternKind::PercentDeveloped => "a percent developed must be finite and positive",
+    };
+    if let Some(&(age, _)) = values.iter().find(|&&(_, v)| !(v.is_finite() && v > 0.0)) {
+        return Err(Error::Pattern {
+            age: Some(age),
+            reason,
+        });
+    }
+    if kind != PatternKind::AgeToAge && values.len() < 2 {
+        return Err(Error::Pattern {
+            age: Some(values[0].0),
+            reason: "a cumulative pattern needs two or more ages: one value selects no factor",
+        });
+    }
+    Ok(())
+}
+
+/// The end of an age-to-age pattern's span (decision 16 item 3): each
+/// factor runs to the next age given, and the last one by the spacing
+/// before it, or by `single` for a single factor. `None` for a cumulative
+/// pattern, which ends at its last age. `values` are sorted.
+pub(crate) fn span_end(
+    kind: PatternKind,
+    values: &[(Lag, f64)],
+    single: Lag,
+) -> Result<Option<Lag>> {
+    if kind != PatternKind::AgeToAge {
+        return Ok(None);
+    }
+    let n = values.len();
+    let step = if n > 1 {
+        values[n - 1].0 - values[n - 2].0
+    } else {
+        single
+    };
+    values[n - 1]
+        .0
+        .checked_add(step)
+        .map(Some)
+        .ok_or(Error::Pattern {
+            age: Some(values[n - 1].0),
+            reason: "the age is too large",
+        })
+}
+
+/// The factors to ultimate of a pattern of `kind` on its own ages, sorted:
+/// a cumulative pattern's values (1 over a percent developed), or an
+/// age-to-age pattern's products from each age to `end`, the end of its
+/// span, with 1 there.
+pub(crate) fn own_cdf(
+    kind: PatternKind,
+    values: &[(Lag, f64)],
+    end: Option<Lag>,
+) -> Vec<(Lag, f64)> {
+    match (kind, end) {
+        (PatternKind::AgeToAge, Some(end)) => {
+            let mut cdf = vec![(end, 1.0)];
+            for &(age, f) in values.iter().rev() {
+                let next = cdf[cdf.len() - 1].1;
+                cdf.push((age, next * f));
+            }
+            cdf.reverse();
+            cdf
+        }
+        (PatternKind::PercentDeveloped, _) => values.iter().map(|&(a, p)| (a, 1.0 / p)).collect(),
+        _ => values.to_vec(),
+    }
+}
+
+/// The value at `age` of a curve given at the sorted `points`, `ln` of it
+/// linear in the age between two of them: the given value itself at one of
+/// them. `age` lies within the points' span.
+fn log_linear_at(points: &[(Lag, f64)], age: Lag) -> f64 {
+    match points.binary_search_by_key(&age, |&(a, _)| a) {
+        Ok(i) => points[i].1,
+        Err(i) => {
+            let ((b, vb), (c, vc)) = (points[i - 1], points[i]);
+            let share = f64::from(age - b) / f64::from(c - b);
+            (vb.ln() + share * (vc.ln() - vb.ln())).exp()
+        }
+    }
+}
+
+/// The grid that holds `ages`: from the earliest to the latest, at the
+/// coarsest grain that divides `origin_grain` and every gap.
+pub(crate) fn grid(ages: &[Lag], origin_grain: Grain) -> Result<Vec<Lag>> {
+    let mut sorted = ages.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let step = grain_of(&sorted, origin_grain).months();
+    let (first, last) = (sorted[0], sorted[sorted.len() - 1]);
+    if (last - first) / step >= MAX_GRID {
+        return Err(Error::Diagonal(format!(
+            "the ages from {first} to {last} months need more than {MAX_GRID} development periods of {step} months",
+        )));
+    }
+    Ok((first..=last).step_by(step as usize).collect())
+}
+
+/// The most development periods a diagonal's grid may have: 200 years by
+/// month.
+pub(crate) const MAX_GRID: Lag = 2400;
+
+/// An age-to-age pattern's factors and weights checked as the pattern's
+/// resolution checks them, before they are turned into factors to
+/// ultimate, so that an error names the factor that was given.
+pub(crate) fn check_factors(values: &[(Lag, f64)], weight: &PatternWeight) -> Result<()> {
+    if let Some(w) = values.windows(2).find(|w| w[0].0 == w[1].0) {
+        return Err(Error::Pattern {
+            age: Some(w[0].0),
+            reason: "the age is given twice",
+        });
+    }
+    if let Some(&(age, _)) = values.iter().find(|&&(_, f)| !(f.is_finite() && f > 0.0)) {
+        return Err(Error::Pattern {
+            age: Some(age),
+            reason: "an age-to-age factor must be finite and positive",
+        });
+    }
+    if let PatternWeight::ByAge(by_age) = weight {
+        for (k, &(age, _)) in by_age.iter().enumerate() {
+            if by_age[..k].iter().any(|&(a, _)| a == age) {
+                return Err(Error::Pattern {
+                    age: Some(age),
+                    reason: "the weight's age is given twice",
+                });
+            }
+            if !values.iter().any(|&(a, _)| a == age) {
+                return Err(Error::Pattern {
+                    age: Some(age),
+                    reason: "a weight is given at an age with no selected factor",
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `pattern` (its `values` sorted) to resolve on the `grid` ages, and
+/// whether it was turned into factors to ultimate: on a grid finer than
+/// the factors' spacing an age-to-age factor would run to the next grid
+/// age, so the factors are given as factors to ultimate (their products,
+/// 1 at `end`), which the log-linear rule spreads over the ages between.
+pub(crate) fn on_ages(
+    pattern: &SelectedPattern,
+    values: &[(Lag, f64)],
+    end: Option<Lag>,
+    grid: &[Lag],
+) -> (SelectedPattern, bool) {
+    match end {
+        Some(end) if values.len() + 1 < grid.len() => {
+            let pattern = SelectedPattern {
+                kind: PatternKind::AgeToUltimate,
+                values: own_cdf(PatternKind::AgeToAge, values, Some(end)),
+                weight: PatternWeight::All(1.0),
+            };
+            (pattern, true)
+        }
+        _ => (pattern.clone(), false),
+    }
+}
+
+/// The coarsest development grain that divides `origin_grain` and every
+/// gap between the sorted `ages`.
+pub(crate) fn grain_of(ages: &[Lag], origin_grain: Grain) -> Grain {
+    [Grain::Year, Grain::Semester, Grain::Quarter, Grain::Month]
+        .into_iter()
+        .find(|g| {
+            origin_grain.is_multiple_of(*g)
+                && ages.windows(2).all(|w| (w[1] - w[0]) % g.months() == 0)
+        })
+        .unwrap_or(Grain::Month)
+}
+
+/// The factor an estimated `tail` gives from the end of `pattern` on, fitted
+/// on the pattern's own ages (decision 16 item 3): a one-origin fit on the
+/// grid of the pattern's ages (and the end of an age-to-age pattern's span,
+/// by `single` months for a single factor), with the pattern fully selected
+/// there, as a triangle at the pattern's ages would fit the tail.
+/// `development`'s average and sigma settings carry over; its `n_periods`
+/// and drops, which choose link ratios, do not.
+pub(crate) fn tail_on_own_ages(
+    pattern: &SelectedPattern,
+    development: &Development,
+    tail: Tail,
+    single: Lag,
+) -> Result<f64> {
+    let mut values = pattern.values.clone();
+    values.sort_by_key(|&(age, _)| age);
+    if values.is_empty() {
+        return Err(Error::Pattern {
+            age: None,
+            reason: "the pattern has no values",
+        });
+    }
+    if pattern.kind == PatternKind::AgeToAge {
+        check_factors(&values, &PatternWeight::All(1.0))?;
+    }
+    let end = span_end(pattern.kind, &values, single)?;
+    let own: Vec<Lag> = values.iter().map(|&(a, _)| a).chain(end).collect();
+    let own_ages = grid(&own, Grain::Year)?;
+    let (own_pattern, _) = on_ages(pattern, &values, end, &own_ages);
+    let cells = (0..own_ages.len())
+        .map(|d| (d == 0).then_some(1.0))
+        .collect();
+    let one = Segment::from_cells(
+        vec![Period::containing(Month::january(2000), Grain::Year)],
+        own_ages.clone(),
+        cells,
+    );
+    let fit = ChainLadder {
+        development: Development {
+            pattern: Some(own_pattern.with_weight(PatternWeight::All(1.0))),
+            n_periods: None,
+            drop_high: 0,
+            drop_low: 0,
+            ..development.clone()
+        },
+        tail,
+    }
+    .fit_segment(&one, &own_ages)?;
+    Ok(fit.tail.factor)
 }
 
 impl SelectedPattern {
@@ -379,8 +895,30 @@ pub(crate) struct Resolved {
     /// Per link, the weight on it; 0 where none is selected.
     pub(crate) weight: Vec<f64>,
     /// For a cumulative pattern, the position of its last age and its
-    /// factor to ultimate there.
+    /// factor to ultimate there; for one read off the triangle's ages
+    /// (decision 18), of the last development age within its span.
     pub(crate) level: Option<(usize, f64)>,
+    /// For a pattern read off the triangle's ages that runs past the
+    /// oldest age (decision 18), its factors to ultimate there and at its
+    /// end, which fold into a constant tail at the oldest age.
+    pub(crate) beyond: Option<Beyond>,
+}
+
+/// A pattern past the triangle's oldest age `a_n`, to its end `E`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Beyond {
+    /// `C(a_n)`, the pattern's factor to ultimate at the oldest age.
+    pub(crate) oldest: f64,
+    /// `C(E)`, its level at its end (1 for age-to-age factors).
+    pub(crate) level: f64,
+}
+
+impl Beyond {
+    /// `C(a_n) / C(E)`: the pattern's development from the oldest age to
+    /// its end.
+    pub(crate) fn ratio(&self) -> f64 {
+        self.oldest / self.level
+    }
 }
 
 impl Resolved {
@@ -400,8 +938,18 @@ impl SelectedPattern {
     /// bootstrap reads the pattern it takes from a re-reserving method that
     /// has a tail of its own, as the method reads it (the method rescales
     /// the level to its tail).
+    ///
+    /// A pattern that runs past the oldest age is an error: what it gives
+    /// there folds into the method's tail (decision 18), which a bootstrap
+    /// with no tail of its own does not have.
     pub(crate) fn without_level(&self, ages: &[Lag]) -> Result<Self> {
         let resolved = self.resolve(ages)?;
+        if resolved.beyond.is_some() {
+            return Err(Error::Bootstrap(
+                "a pattern that runs past the oldest age carries the re-reserving method's tail \
+                 into it: give the bootstrap the method's tail",
+            ));
+        }
         let links: Vec<(Lag, f64, f64)> = resolved
             .selected
             .iter()
@@ -728,6 +1276,76 @@ mod tests {
         let cdf = pattern(AgeToUltimate, &[(12, 2.0), (24, 1.2)])
             .with_weight(PatternWeight::ByAge(vec![(24, 0.5)]));
         assert_eq!(reason(&cdf).0, Some(24));
+    }
+
+    #[test]
+    fn a_pattern_off_the_triangles_ages_is_read_on_its_own() {
+        use PatternKind::*;
+        // Factors to ultimate at 6, 18 and 30 months: 12 to 24 is read
+        // between them, 24 to 36 ends past the pattern and is estimated.
+        let r = pattern(AgeToUltimate, &[(6, 4.0), (18, 2.0), (30, 1.25)])
+            .resolve(&AGES)
+            .unwrap();
+        close(&r.selected, &[Some(3.2f64.sqrt()), None, None]);
+        assert_eq!(r.weight, [1.0, 0.0, 0.0]);
+        assert_eq!(r.level.map(|l| l.0), Some(1));
+        assert!((r.level.unwrap().1 - 2.5f64.sqrt()).abs() < 1e-15);
+        assert_eq!(r.beyond, None);
+        // Monthly factors from 1 to 59 months end at 60, past the oldest
+        // age: each annual link is twelve of them, and the rest folds.
+        let monthly: Vec<(Lag, f64)> = (1..=59).map(|t| (t, 1.01)).collect();
+        let r = pattern(AgeToAge, &monthly).resolve(&AGES).unwrap();
+        let year = 1.01f64.powi(12);
+        close(&r.selected, &[Some(year), Some(year), Some(year)]);
+        assert_eq!(r.level, None);
+        let beyond = r.beyond.unwrap();
+        assert_eq!(beyond.level, 1.0);
+        assert!((beyond.ratio() - year).abs() < 1e-14);
+        // A cumulative pattern past the oldest age keeps its level there.
+        let r = pattern(PercentDeveloped, &[(12, 0.5), (36, 0.8), (60, 0.9)])
+            .resolve(&AGES)
+            .unwrap();
+        assert_eq!(r.level.map(|l| l.0), Some(3));
+        let beyond = r.beyond.unwrap();
+        assert!((beyond.level - 1.0 / 0.9).abs() < 1e-15);
+        assert!((r.level.unwrap().1 - beyond.oldest).abs() < 1e-15);
+        // The errors of the off-grid reading.
+        assert_eq!(
+            reason(&pattern(AgeToUltimate, &[(13, 1.5), (23, 1.2)])),
+            (Some(13), "the pattern selects no factor of the triangle")
+        );
+        assert_eq!(
+            reason(&pattern(AgeToAge, &[(18, 2.0), (18, 2.0), (30, 1.0)])),
+            (Some(18), "the age is given twice")
+        );
+        assert_eq!(
+            reason(&pattern(AgeToAge, &[(18, 2.0), (30, f64::NAN)])),
+            (Some(30), "an age-to-age factor must be finite and positive")
+        );
+    }
+
+    #[test]
+    fn averaging_over_origins_spreads_each_period_over_its_months() {
+        // A pattern by accident quarter averaged to accident half years:
+        // P(a) = (p(a) + p(a - 3)) / 2, with p linear from 0 below its first
+        // age and held at 1 past its end.
+        let quarter = pattern(
+            PatternKind::PercentDeveloped,
+            &[(3, 0.3), (6, 0.6), (9, 1.0)],
+        );
+        let half = quarter
+            .averaged_over_origins(Grain::Quarter, Grain::Semester)
+            .unwrap();
+        assert_eq!(half.values.first().unwrap().0, 3);
+        assert_eq!(half.values.last(), Some(&(12, 1.0)));
+        let at = |age: Lag| half.values.iter().find(|v| v.0 == age).unwrap().1;
+        assert!((at(3) - 0.15).abs() < 1e-15);
+        assert!((at(6) - 0.45).abs() < 1e-15);
+        assert!((at(9) - 0.8).abs() < 1e-15);
+        // Between 6 and 9 months p is ln-linear: p(7) = 0.6^(2/3).
+        let p7 = (0.6f64.ln() * 2.0 / 3.0).exp();
+        assert!((at(10) - (1.0 + p7) / 2.0).abs() < 1e-15);
+        assert_eq!(half.weight, PatternWeight::All(1.0));
     }
 }
 

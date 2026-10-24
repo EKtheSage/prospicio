@@ -1,6 +1,6 @@
 //! A latest diagonal on its own: one value per origin at its own age, as a
 //! bordereau holds it, projected with a selected pattern from elsewhere
-//! (`reserving-v02.md`, decisions 15 and 16).
+//! (`reserving-v02.md`, decisions 15, 16 and 18).
 //!
 //! [`LatestDiagonal`] places one observed cell per origin on a grid and
 //! runs the triangle methods on it through the fully selected path of
@@ -9,16 +9,18 @@
 //! ages are the diagonal's and the pattern's together, at the coarsest
 //! development grain they share, so an age off the pattern's grid (18
 //! months against an annual pattern) is read by the pattern's log-linear
-//! rule between its ages.
+//! rule between its ages. An origin older than the pattern's end is an
+//! error unless [`PastPatternEnd`] says how to develop it (decision 18).
 
 use prospicio_core::{Grain, Lag, Month, Period};
 
 use crate::expected_loss::origin_exposure;
+use crate::pattern::{check_factors, grid, on_ages, own_cdf, span_end, tail_on_own_ages};
 use crate::triangle::Segment;
 use crate::{
     Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit, Development,
     Error, ExpectedLoss, ExpectedLossFit, PatternKind, PatternWeight, Result, SelectedPattern,
-    Tail, Triangle,
+    Tail, TailConstant, Triangle,
 };
 
 /// The exposure column named in errors.
@@ -72,6 +74,77 @@ pub struct LatestDiagonal {
     ages: Vec<Lag>,
     latest: Vec<f64>,
     exposure: Option<Vec<f64>>,
+    past_pattern_end: PastPatternEnd,
+}
+
+/// How `fit_diagonal` develops an origin older than the pattern's end (its
+/// last age; for age-to-age factors, the end of their span),
+/// `reserving-v02.md` decision 18. Set it with
+/// [`LatestDiagonal::with_past_pattern_end`].
+///
+/// ```
+/// use prospicio_reserving::{
+///     ChainLadder, Development, Grain, LatestDiagonal, Month, PastPatternEnd, PatternKind,
+///     SelectedPattern, Tail,
+/// };
+///
+/// // Age-to-age factors from 12 to 36 months, and an origin at 48 months.
+/// let pattern = SelectedPattern::new(PatternKind::AgeToAge, vec![(12, 1.5), (24, 1.2)]);
+/// let diagonal = LatestDiagonal::new(
+///     Grain::Year,
+///     &[2021, 2022, 2023, 2024].map(Month::january),
+///     &[48, 36, 24, 12],
+///     &[100.0, 100.0, 100.0, 100.0],
+/// )
+/// .unwrap();
+/// let chain_ladder = |tail: Tail| ChainLadder {
+///     development: Development { pattern: Some(pattern.clone()), ..Default::default() },
+///     tail,
+/// };
+/// // By default the origin at 48 months is an error.
+/// assert!(chain_ladder(Tail::default()).fit_diagonal(&diagonal).is_err());
+/// // A factor of 1 past the pattern's end.
+/// let none = diagonal.clone().with_past_pattern_end(PastPatternEnd::NoDevelopment);
+/// let cl = chain_ladder(Tail::default()).fit_diagonal(&none).unwrap();
+/// assert!((cl.ultimate[0] - 100.0).abs() < 1e-12);
+/// // A tail of 1.05 from 36 months, spread at one step per origin year:
+/// // the origin at 48 months takes what remains of it after a year.
+/// let tailed = diagonal.with_past_pattern_end(PastPatternEnd::Tail);
+/// let cl = chain_ladder(Tail::from(1.05)).fit_diagonal(&tailed).unwrap();
+/// assert!((cl.ultimate[0] - 102.53798721500054).abs() < 1e-9);
+/// assert!((cl.ultimate[1] - 105.0).abs() < 1e-9);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PastPatternEnd {
+    /// An error that names the origin, its age, the pattern's ages and the
+    /// two other settings. The default.
+    #[default]
+    Reject,
+    /// No development past the pattern's end: a factor of 1 there. The
+    /// method's tail must be none. A cumulative pattern's level at its end
+    /// is rescaled to 100% for every origin, as a given tail rescales it
+    /// (decision 12 item 5), and reported as
+    /// [`pattern_rescale`](crate::ChainLadderFit::pattern_rescale). So with
+    /// a level other than 100% every origin's ultimate moves, the young
+    /// ones too and also when no origin is past the end: a level of 95%
+    /// cuts each factor to ultimate by 5%, where
+    /// [`Reject`](Self::Reject) keeps the level as the implied tail.
+    NoDevelopment,
+    /// The method's tail continues the pattern from its end: an a-priori
+    /// [`TailConstant`] (factor and decay, `attachment_age` unset) or a
+    /// `TailCurve`, `TailBondy` or `Tail::LogLinear` fitted on the
+    /// pattern's own ages (decision 16 item 3) and carried as a constant at
+    /// decay 0.5. The factor is spread from the end at one step per origin
+    /// period, so an origin one origin period past the end takes the tail's
+    /// factor less its first period's development, whatever the pattern's
+    /// grain; an origin past the end takes the remaining development from
+    /// its own age. The decay is per origin period, so the same tail runs
+    /// off over fewer months for accident quarters than for accident years
+    /// (a quarter one quarter past the end and a year one year past it
+    /// both take 1.02538 of a tail of 1.05), as decided (decision 18 item
+    /// 11). An error with no tail: a factor of 1 is
+    /// [`NoDevelopment`](Self::NoDevelopment).
+    Tail,
 }
 
 fn invalid(why: impl Into<String>) -> Error {
@@ -128,7 +201,22 @@ impl LatestDiagonal {
             ages: ages.to_vec(),
             latest: latest.to_vec(),
             exposure: None,
+            past_pattern_end: PastPatternEnd::Reject,
         })
+    }
+
+    /// The diagonal with `rule` for origins older than the pattern's end
+    /// (decision 18). [`new`](Self::new), [`at_valuation`](Self::at_valuation)
+    /// and [`from_triangle`](Self::from_triangle) start at
+    /// [`PastPatternEnd::Reject`].
+    pub fn with_past_pattern_end(mut self, rule: PastPatternEnd) -> Self {
+        self.past_pattern_end = rule;
+        self
+    }
+
+    /// The rule for origins older than the pattern's end.
+    pub fn past_pattern_end(&self) -> PastPatternEnd {
+        self.past_pattern_end
     }
 
     /// A diagonal valued at `valuation`: each origin's age is the months
@@ -346,11 +434,13 @@ impl LatestDiagonal {
             },
             tail: gridded.tail,
             converted: gridded.converted,
+            rescale: gridded.rescale,
         })
     }
 
     /// The pattern's span checked against the diagonal's ages, the grid
-    /// ages, the pattern to resolve on them and the tail (decision 16).
+    /// ages, the pattern to resolve on them and the tail (decisions 16 and
+    /// 18).
     fn on_grid(
         &self,
         development: &Development,
@@ -370,41 +460,77 @@ impl LatestDiagonal {
         // the last one by the spacing before it (or the origin grain, for a
         // single factor), so a pattern of factors spans one age more than
         // it gives.
-        let end = match pattern.kind {
-            PatternKind::AgeToAge => {
-                check_factors(&values, &pattern.weight)?;
-                let n = pattern_ages.len();
-                let step = if n > 1 {
-                    pattern_ages[n - 1] - pattern_ages[n - 2]
-                } else {
-                    self.origin_grain.months()
-                };
-                Some(
-                    pattern_ages[n - 1]
-                        .checked_add(step)
-                        .ok_or(Error::Pattern {
-                            age: Some(pattern_ages[n - 1]),
-                            reason: "the age is too large",
-                        })?,
-                )
-            }
-            _ => None,
-        };
+        if pattern.kind == PatternKind::AgeToAge {
+            check_factors(&values, &pattern.weight)?;
+        }
+        let single = self.origin_grain.months();
+        let end = span_end(pattern.kind, &values, single)?;
         let first = pattern_ages[0];
         let last = end.unwrap_or(pattern_ages[pattern_ages.len() - 1]);
+        match (self.past_pattern_end, tail) {
+            (PastPatternEnd::NoDevelopment, t) if !t.is_none() => {
+                return Err(invalid(
+                    "PastPatternEnd::NoDevelopment is a factor of 1 past the pattern's end: \
+                     give no tail, or use PastPatternEnd::Tail",
+                ));
+            }
+            (PastPatternEnd::Tail, t) if t.is_none() => {
+                return Err(invalid(
+                    "PastPatternEnd::Tail needs a tail: for a factor of 1 use \
+                     PastPatternEnd::NoDevelopment",
+                ));
+            }
+            (PastPatternEnd::Tail, Tail::Constant(t)) if t.attachment_age.is_some() => {
+                return Err(invalid(
+                    "a tail past the pattern's end attaches at the pattern's end: leave \
+                     attachment_age unset",
+                ));
+            }
+            _ => {}
+        }
+        let mut oldest = None;
         for (o, &age) in self.ages.iter().enumerate() {
-            if age < first || age > last {
-                return Err(invalid(format!(
+            let outside = || {
+                format!(
                     "origin {} is at {age} months, outside the pattern's ages from {first} to {last} months",
                     Period::containing(self.origins[o], self.origin_grain)
-                )));
+                )
+            };
+            if age < first {
+                return Err(invalid(outside()));
+            }
+            if age > last {
+                if self.past_pattern_end == PastPatternEnd::Reject {
+                    return Err(invalid(format!(
+                        "{}: an origin older than the pattern's end needs \
+                         LatestDiagonal::with_past_pattern_end with PastPatternEnd::NoDevelopment \
+                         (a factor of 1), or PastPatternEnd::Tail with an a-priori tail (a \
+                         TailConstant) or a tail estimated on the pattern's own factors \
+                         (TailCurve, TailBondy, Tail::LogLinear)",
+                        outside()
+                    )));
+                }
+                oldest = oldest.max(Some(age));
             }
         }
+        if let Some(oldest) = oldest {
+            return self.past_end(development, pattern, &values, end, tail, oldest);
+        }
+        // No origin is past the end: decision 16's grid. With no
+        // development past the end, the tail is a factor of 1 that attaches
+        // there, so a cumulative pattern's level is rescaled to 100%.
+        let tail = match self.past_pattern_end {
+            PastPatternEnd::NoDevelopment => Tail::Constant(TailConstant {
+                factor: 1.0,
+                attachment_age: Some(last),
+                ..Default::default()
+            }),
+            _ => tail,
+        };
         let own: Vec<Lag> = pattern_ages.iter().chain(&end).copied().collect();
         let all: Vec<Lag> = own.iter().chain(&self.ages).copied().collect();
         let ages = grid(&all, self.origin_grain)?;
-        let on = |grid: &[Lag]| on_ages(pattern, &values, end, grid);
-        let (pattern_here, converted) = on(&ages);
+        let (pattern_here, converted) = on_ages(pattern, &values, end, &ages);
         // An estimated tail is fitted to the factors in use, and on a grid
         // finer than the pattern's own those are the interpolated factors
         // of the shorter periods. So it is fitted on the pattern's own
@@ -413,24 +539,7 @@ impl LatestDiagonal {
         // The pattern's own grid follows its ages alone, not the origins.
         let own_ages = grid(&own, Grain::Year)?;
         let tail = if !matches!(tail, Tail::Constant(_)) && own_ages != ages {
-            let (own_pattern, _) = on(&own_ages);
-            let cells = (0..own_ages.len())
-                .map(|d| (d == 0).then_some(1.0))
-                .collect();
-            let one = Segment::from_cells(
-                vec![Period::containing(self.origins[0], self.origin_grain)],
-                own_ages.clone(),
-                cells,
-            );
-            let fit = ChainLadder {
-                development: Development {
-                    pattern: Some(own_pattern),
-                    ..development.clone()
-                },
-                tail,
-            }
-            .fit_segment(&one, &own_ages)?;
-            Tail::from(fit.tail.factor)
+            Tail::from(tail_on_own_ages(pattern, development, tail, single)?)
         } else {
             tail
         };
@@ -439,6 +548,78 @@ impl LatestDiagonal {
             ages,
             tail,
             converted,
+            rescale: None,
+        })
+    }
+
+    /// Decision 18: the pattern with its tail spread past its end `E` to
+    /// the `oldest` origin's age, at one step per origin period. The tail's
+    /// factor `T` is spread from `E` as a constant tail attached there, the
+    /// factor to ultimate at `E + k g` being what is left of it after `k`
+    /// steps, and the pattern's own factors to ultimate are rescaled to `T`
+    /// at `E`; together they are one pattern of factors to ultimate.
+    fn past_end(
+        &self,
+        development: &Development,
+        pattern: &SelectedPattern,
+        values: &[(Lag, f64)],
+        end: Option<Lag>,
+        tail: Tail,
+        oldest: Lag,
+    ) -> Result<Gridded> {
+        let own = own_cdf(pattern.kind, values, end);
+        let (e, level) = own[own.len() - 1];
+        let (factor, decay) = match (self.past_pattern_end, tail) {
+            (PastPatternEnd::NoDevelopment, _) => (1.0, 0.5),
+            (_, Tail::Constant(t)) => (t.factor, t.decay),
+            (_, estimated) => (
+                tail_on_own_ages(pattern, development, estimated, self.origin_grain.months())?,
+                0.5,
+            ),
+        };
+        let g = self.origin_grain.months();
+        let steps = (oldest - e).div_ceil(g) as usize;
+        let ext: Vec<Lag> = (0..=steps).map(|k| e + k as Lag * g).collect();
+        let (_, spread, _) = Tail::Constant(TailConstant {
+            factor,
+            decay,
+            attachment_age: Some(e),
+        })
+        .select(&vec![1.0; steps], &ext)?;
+        // What is left of the tail after k steps; all of it at the end.
+        let left = |k: usize| -> f64 {
+            if k == 0 {
+                factor
+            } else {
+                spread[k..].iter().product()
+            }
+        };
+        let mut cdf: Vec<(Lag, f64)> = own.iter().map(|&(a, c)| (a, c / level * factor)).collect();
+        cdf.extend((1..=steps).map(|k| (ext[k], left(k))));
+        let all: Vec<Lag> = cdf
+            .iter()
+            .map(|&(a, _)| a)
+            .chain(self.ages.iter().copied())
+            .collect();
+        let ages = grid(&all, self.origin_grain)?;
+        let rescale = match pattern.kind {
+            PatternKind::AgeToAge => None,
+            _ => Some(level / factor),
+        };
+        Ok(Gridded {
+            pattern: SelectedPattern {
+                kind: PatternKind::AgeToUltimate,
+                values: cdf,
+                weight: PatternWeight::All(1.0),
+            },
+            ages,
+            tail: Tail::Constant(TailConstant {
+                factor: left(steps),
+                decay,
+                attachment_age: None,
+            }),
+            converted: false,
+            rescale: Some(rescale),
         })
     }
 
@@ -476,6 +657,11 @@ struct Gridded {
     tail: Tail,
     /// Whether an age-to-age pattern was turned into factors to ultimate.
     converted: bool,
+    /// For a pattern with its tail spread past its end (decision 18), the
+    /// `pattern_rescale` to report: the given level at the end over the
+    /// tail, `None` for age-to-age factors. The fit reports no
+    /// `pattern_tail` then.
+    rescale: Option<Option<f64>>,
     /// The grid's ages, from the earliest age of the diagonal and the
     /// pattern to the latest, at the coarsest grain that holds them all.
     ages: Vec<Lag>,
@@ -489,103 +675,21 @@ struct Prepared {
     development: Development,
     tail: Tail,
     converted: bool,
+    rescale: Option<Option<f64>>,
 }
 
-/// The grid that holds `ages`: from the earliest to the latest, at the
-/// coarsest grain that divides `origin_grain` and every gap.
-fn grid(ages: &[Lag], origin_grain: Grain) -> Result<Vec<Lag>> {
-    let mut sorted = ages.to_vec();
-    sorted.sort_unstable();
-    sorted.dedup();
-    let step = grain_of(&sorted, origin_grain).months();
-    let (first, last) = (sorted[0], sorted[sorted.len() - 1]);
-    if (last - first) / step >= MAX_GRID {
-        return Err(invalid(format!(
-            "the ages from {first} to {last} months need more than {MAX_GRID} development periods of {step} months",
-        )));
+/// What a fit reports of the pattern as given: an age-to-age pattern
+/// `converted` into factors to ultimate carries no tail of its own, and one
+/// with its tail spread past its end reports the `rescale` of its own
+/// level and no pattern tail.
+fn report(converted: bool, rescale: Option<Option<f64>>, fit: &mut ChainLadderFit) {
+    if converted {
+        unconverted(fit);
     }
-    Ok((first..=last).step_by(step as usize).collect())
-}
-
-/// The most development periods a diagonal's grid may have: 200 years by
-/// month.
-const MAX_GRID: Lag = 2400;
-
-/// An age-to-age pattern's factors and weights checked as the pattern's
-/// resolution checks them, before they are turned into factors to
-/// ultimate, so that an error names the factor that was given.
-fn check_factors(values: &[(Lag, f64)], weight: &PatternWeight) -> Result<()> {
-    if let Some(w) = values.windows(2).find(|w| w[0].0 == w[1].0) {
-        return Err(Error::Pattern {
-            age: Some(w[0].0),
-            reason: "the age is given twice",
-        });
+    if let Some(rescale) = rescale {
+        fit.pattern_tail = None;
+        fit.pattern_rescale = rescale;
     }
-    if let Some(&(age, _)) = values.iter().find(|&&(_, f)| !(f.is_finite() && f > 0.0)) {
-        return Err(Error::Pattern {
-            age: Some(age),
-            reason: "an age-to-age factor must be finite and positive",
-        });
-    }
-    if let PatternWeight::ByAge(by_age) = weight {
-        for (k, &(age, _)) in by_age.iter().enumerate() {
-            if by_age[..k].iter().any(|&(a, _)| a == age) {
-                return Err(Error::Pattern {
-                    age: Some(age),
-                    reason: "the weight's age is given twice",
-                });
-            }
-            if !values.iter().any(|&(a, _)| a == age) {
-                return Err(Error::Pattern {
-                    age: Some(age),
-                    reason: "a weight is given at an age with no selected factor",
-                });
-            }
-        }
-    }
-    Ok(())
-}
-
-/// `pattern` (its `values` sorted) to resolve on the `grid` ages, and
-/// whether it was turned into factors to ultimate: on a grid finer than
-/// the factors' spacing an age-to-age factor would run to the next grid
-/// age, so the factors are given as factors to ultimate (their products,
-/// 1 at `end`), which the log-linear rule spreads over the ages between.
-fn on_ages(
-    pattern: &SelectedPattern,
-    values: &[(Lag, f64)],
-    end: Option<Lag>,
-    grid: &[Lag],
-) -> (SelectedPattern, bool) {
-    match end {
-        Some(end) if values.len() + 1 < grid.len() => {
-            let mut cdf = vec![(end, 1.0)];
-            for &(age, f) in values.iter().rev() {
-                let next = cdf[cdf.len() - 1].1;
-                cdf.push((age, next * f));
-            }
-            cdf.reverse();
-            let pattern = SelectedPattern {
-                kind: PatternKind::AgeToUltimate,
-                values: cdf,
-                weight: PatternWeight::All(1.0),
-            };
-            (pattern, true)
-        }
-        _ => (pattern.clone(), false),
-    }
-}
-
-/// The coarsest development grain that divides `origin_grain` and every
-/// gap between the sorted `ages`.
-fn grain_of(ages: &[Lag], origin_grain: Grain) -> Grain {
-    [Grain::Year, Grain::Semester, Grain::Quarter, Grain::Month]
-        .into_iter()
-        .find(|g| {
-            origin_grain.is_multiple_of(*g)
-                && ages.windows(2).all(|w| (w[1] - w[0]) % g.months() == 0)
-        })
-        .unwrap_or(Grain::Month)
 }
 
 impl ChainLadder {
@@ -597,6 +701,10 @@ impl ChainLadder {
     /// oldest first over every period from the earliest to the latest. The
     /// average and sigma settings have no effect, since there are no link
     /// ratios; an estimated tail is fitted to the pattern on its own ages.
+    /// An origin older than the pattern's end is developed as the diagonal's
+    /// [`PastPatternEnd`] says (decision 18): an error by default, a factor
+    /// of 1, or the tail spread from the pattern's end at one step per
+    /// origin period.
     pub fn fit_diagonal(&self, diagonal: &LatestDiagonal) -> Result<ChainLadderFit> {
         let p = diagonal.prepare(&self.development, self.tail, false)?;
         let mut fit = ChainLadder {
@@ -604,9 +712,7 @@ impl ChainLadder {
             tail: p.tail,
         }
         .fit_segment(&p.segment, &p.segment.ages)?;
-        if p.converted {
-            unconverted(&mut fit);
-        }
+        report(p.converted, p.rescale, &mut fit);
         Ok(fit)
     }
 }
@@ -648,9 +754,7 @@ impl Benktander {
             ..self.clone()
         }
         .fit_segment(&p.segment, &p.exposure.expect("asked for"), EXPOSURE)?;
-        if p.converted {
-            unconverted(&mut fit.chain_ladder);
-        }
+        report(p.converted, p.rescale, &mut fit.chain_ladder);
         Ok(fit)
     }
 }
@@ -674,9 +778,7 @@ impl CapeCod {
             EXPOSURE,
             p.valuation,
         )?;
-        if p.converted {
-            unconverted(&mut fit.expected_loss.chain_ladder);
-        }
+        report(p.converted, p.rescale, &mut fit.expected_loss.chain_ladder);
         Ok(fit)
     }
 }

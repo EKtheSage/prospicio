@@ -542,9 +542,10 @@ fn a_fully_selected_age_emptied_by_n_periods_keeps_its_error() {
 }
 
 #[test]
-fn a_pattern_age_before_the_youngest_origin_is_off_the_grid() {
-    // The youngest origin is at 24 months, so the grid starts there and a
-    // pattern from 12 months does not fit it.
+fn a_pattern_age_before_the_youngest_origin_is_read() {
+    // The youngest origin is at 24 months, so the triangle's ages start
+    // there; the pattern's age of 12 months is off them, and the pattern is
+    // read on its own ages (decision 18), as the diagonal type reads it.
     let h = hand();
     let tri = rows(&[
         (2019, 72, h.latest[0]),
@@ -553,8 +554,17 @@ fn a_pattern_age_before_the_youngest_origin_is_off_the_grid() {
         (2022, 36, h.latest[3]),
         (2023, 24, h.latest[4]),
     ]);
-    let e = selected(hand_pattern(&h)).fit(&tri, "paid").unwrap_err();
-    assert!(matches!(e, Error::Pattern { age: Some(12), .. }), "{e}");
+    let fit = selected(hand_pattern(&h)).fit(&tri, "paid").unwrap();
+    let want: Vec<f64> = (0..5).map(|o| h.latest[o] * h.cdf[o]).collect();
+    assert_close(&fit.ultimate, &want, "the triangle path");
+    let origins = (2019..=2023).map(Month::january).collect::<Vec<_>>();
+    let d =
+        LatestDiagonal::new(Grain::Year, &origins, &[72, 60, 48, 36, 24], &h.latest[..5]).unwrap();
+    let diagonal = selected(hand_pattern(&h)).fit_diagonal(&d).unwrap();
+    for (f, e) in fit.ultimate.iter().zip(&diagonal.ultimate) {
+        assert!((f - e).abs() <= 1e-14 * e.abs(), "{f} against {e}");
+    }
+    assert_eq!(fit.pattern_tail, Some(1.0));
 }
 
 // The dedicated type (decision 16).
