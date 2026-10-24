@@ -1774,6 +1774,60 @@ pattern_values <- function(pattern, rate = 0, t = double()) {
                                      as.double(t)))
 }
 
+#' Monthly patterns from a payment pattern
+#'
+#' `payment_pattern_monthly()` reads a [payment_pattern()] at the end of
+#' each of `months` months, the share paid by `(m + 1) / 12` years: at month
+#' `12 k - 1` (the `12 k`-th value) it is the pattern's share at `k` years.
+#' Between the pattern's times the share paid runs as `interpolation` says:
+#' `"step"` (each share paid at its time, as the pattern discounts),
+#' `"linear"` (evenly over the period ending at it, the usual assumption)
+#' or `"log-linear"` (the unpaid share falling geometrically). After the
+#' last time all is paid, as the shares, any tail included, sum to 1.
+#'
+#' `cashflow_patterns_from_annual()` gives the monthly written, earned and
+#' paid patterns of [cashflow_terms()] from a written pattern: the premium
+#' written in month `s` is written at its start and earned evenly over the
+#' `policy_months` months from it; losses occur as premium is earned, in
+#' the middle of their month, and are paid by `pattern` measured from the
+#' accident date. All premium written at once is a single policy; written
+#' evenly over a year, policies written through it.
+#'
+#' @param pattern A [payment_pattern()], by age from the accident date for
+#'   `cashflow_patterns_from_annual()`.
+#' @param months The number of months.
+#' @param interpolation `"linear"`, `"step"` or `"log-linear"`.
+#' @param written The cumulative share written by the end of each month; its
+#'   length is the patterns'.
+#' @param policy_months The policy term in months.
+#' @returns `payment_pattern_monthly()` a numeric vector;
+#'   `cashflow_patterns_from_annual()` a list of `written`, `earned` and
+#'   `paid`.
+#' @export
+#' @examples
+#' p <- payment_pattern_from_development(c(1, 2, 3), c(4, 1.25, 1))
+#' m <- payment_pattern_monthly(p, 36)
+#' m[c(12, 24, 36)]
+#' even <- payment_pattern(c(1, 2, 3), rep(1 / 3, 3))
+#' pats <- cashflow_patterns_from_annual(rep(1, 60), even)
+#' pats$earned[c(6, 12)]
+#' terms <- cashflow_terms(100, 48, pats$written, pats$earned, pats$paid,
+#'                         cashflow_requirement(c(outstanding = 1)))
+#' round(cashflow_run(terms, 1.3)$funded, 6)
+payment_pattern_monthly <- function(pattern, months,
+                                    interpolation = c("linear", "step", "log-linear")) {
+  rust_result(pricing_pattern_monthly(pattern$times, pattern$shares, as.double(months),
+                                      match.arg(interpolation)))
+}
+
+#' @rdname payment_pattern_monthly
+#' @export
+cashflow_patterns_from_annual <- function(written, pattern, policy_months = 12,
+                                          interpolation = c("linear", "step", "log-linear")) {
+  rust_result(pricing_patterns_from_annual(as.double(written), pattern$times, pattern$shares,
+                                           as.double(policy_months), match.arg(interpolation)))
+}
+
 #' Price over a payout
 #'
 #' A one-period price restated over a payout. With a cost of capital `r`,

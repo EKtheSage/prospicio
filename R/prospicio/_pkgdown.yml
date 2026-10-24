@@ -172,6 +172,7 @@ reference:
       - technical_quote
       - tower_quote
       - payment_pattern
+      - payment_pattern_monthly
       - price_over_payout
       - npv
       - cashflow_terms

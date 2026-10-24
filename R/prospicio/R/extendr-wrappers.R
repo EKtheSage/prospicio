@@ -212,6 +212,10 @@ pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_p
 
 pricing_pattern_unpaid <- function(times, shares, age) .Call(wrap__pricing_pattern_unpaid, times, shares, age)
 
+pricing_pattern_monthly <- function(times, shares, months, interpolation) .Call(wrap__pricing_pattern_monthly, times, shares, months, interpolation)
+
+pricing_patterns_from_annual <- function(written, times, shares, policy_months, interpolation) .Call(wrap__pricing_patterns_from_annual, written, times, shares, policy_months, interpolation)
+
 pricing_price_over_payout <- function(expected_loss, premium, assets, times, shares, rate, coc) .Call(wrap__pricing_price_over_payout, expected_loss, premium, assets, times, shares, rate, coc)
 
 pricing_npv <- function(flows, times, rate, unit) .Call(wrap__pricing_npv, flows, times, rate, unit)
