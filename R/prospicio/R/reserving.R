@@ -1081,12 +1081,18 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   (`SelectedPattern::averaged_over_origins`), exact up to the pattern's
 #'   end, with development deferred past it; a constant tail from the
 #'   monthly pattern is the safer choice there. Equal to the target's
-#'   grain, it changes nothing. It needs a weight on every factor, not by
-#'   age.
+#'   grain, it changes nothing. It needs one `ldf_weight` for every
+#'   factor, not one by age, and the averaged pattern cannot be weighted by
+#'   age from R.
 #' @param development For a [bordereau] only: a [chain_ladder_fit] (or a
 #'   fit with `@chain_ladder`) whose development projects each segment, as
 #'   [to_chain_ladder()] freezes it. The method then takes no `ldf`, no
-#'   `tail` other than 1 and no link ratio exclusions.
+#'   `tail` other than 1 and no link ratio exclusions. The source's factors
+#'   are read at each origin's own age, as fitted, with no `ldf_origin`: a
+#'   source fitted on another origin grain (accident quarters for a
+#'   bordereau of accident years, say) goes through [to_chain_ladder()]
+#'   instead, with `ldf_origin` added to the arguments it returns, one
+#'   segment at a time.
 #' @param segment_map With `development`: `NULL` to take each segment's
 #'   development from the source segment of the same label (a source of
 #'   one segment serves every segment), or a named character vector from a
@@ -1609,8 +1615,13 @@ cape_cod <- function(triangle, column = NULL, exposure = NULL, trend = 0, decay 
 #' fit reads them on the pattern's own ages, `log(cdf)` linear between
 #' them. An origin older than the pattern's end is an error unless
 #' `past_pattern_end` says how to develop it: `"no_development"` (a factor
-#' of 1 past the end, with no tail) or `"tail"` (the given constant tail
-#' spread over the periods past the end).
+#' of 1 past the end, with no `tail`; a cumulative pattern whose level at
+#' its end is not 100% is then rescaled to 100% for every origin, so the
+#' young origins move too) or `"tail"` (the method's `tail` continued from
+#' the pattern's end at one step per origin period: a number or a
+#' [tail_constant()] with no `attachment_age`, or a [tail_curve()],
+#' [tail_bondy()] or [tail_log_linear()] estimated on the pattern's own
+#' factors).
 #'
 #' Segments are named by key columns, as a [triangle]'s are, and sorted by
 #' label; within a segment the origins keep the order given. Rows run
@@ -1861,8 +1872,8 @@ segment_map_arg <- function(segment_map) {
 bordereau_fit <- function(x, method, head, args, tail, pattern, development, segment_map,
                           column_given) {
   if (column_given) {
-    stop("a bordereau carries its exposure: give column and exposure only for a triangle",
-         call. = FALSE)
+    stop("a bordereau holds its own latest values (and exposure): give column and exposure ",
+         "only for a triangle", call. = FALSE)
   }
   development <- if (is.null(development)) NULL else development_ptr(development)
   call_args <- c(head, list(args$average, args$sigma, args$excl, tail_ptr(tail), pattern,

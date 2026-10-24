@@ -8,6 +8,7 @@
 
 - [compartmental-one-response] `Fitted::PaidOnly` and `Fitted::IncurredOnly` for `Compartmental`, which require `RateOrder::Ordered` because from one response only RLR x RRF is identified (`reserving-compartmental.md` decisions 2 and 12, PR H)
 - [compartmental-grain] unequal origin and development grain for `Compartmental` (`reserving-compartmental.md` decision 12, PR I)
+- [diagonal-bindings-decisions] #544 decision 19 items 1 to 12 (`reserving-v02.md`: the `LatestDiagonals` type, segment order, Cape Cod's common valuation, the map, the method's settings under a development, Python's single-segment `to_chain_ladder`, `ldf_origin`, R naming and dispatch, dates as valuations, error wording, `development=` only on diagonals) waiting on the user; the Excel functions for #544 are the Excel lane's, not yet planned there
 
 ## Done
 

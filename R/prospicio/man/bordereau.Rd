@@ -81,8 +81,13 @@ may be off the pattern's grid (18 months against an annual pattern): the
 fit reads them on the pattern's own ages, \code{log(cdf)} linear between
 them. An origin older than the pattern's end is an error unless
 \code{past_pattern_end} says how to develop it: \code{"no_development"} (a factor
-of 1 past the end, with no tail) or \code{"tail"} (the given constant tail
-spread over the periods past the end).
+of 1 past the end, with no \code{tail}; a cumulative pattern whose level at
+its end is not 100\% is then rescaled to 100\% for every origin, so the
+young origins move too) or \code{"tail"} (the method's \code{tail} continued from
+the pattern's end at one step per origin period: a number or a
+\code{\link[=tail_constant]{tail_constant()}} with no \code{attachment_age}, or a \code{\link[=tail_curve]{tail_curve()}},
+\code{\link[=tail_bondy]{tail_bondy()}} or \code{\link[=tail_log_linear]{tail_log_linear()}} estimated on the pattern's own
+factors).
 
 Segments are named by key columns, as a \link{triangle}'s are, and sorted by
 label; within a segment the origins keep the order given. Rows run

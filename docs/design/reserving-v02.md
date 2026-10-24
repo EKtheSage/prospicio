@@ -3414,6 +3414,10 @@ developments whose segments are not the diagonals'.
   `CapeCod`. `development` is a `ChainLadderFit` (another method's fit
   passes its `.chain_ladder`); `segment_map` is a dict from a segment of the
   diagonal to one of the development, labelled as `index` labels them.
+  The source's factors are read at each origin's own age, with no
+  `ldf_origin`: a source fitted on another origin grain goes through
+  `to_chain_ladder()` with `ldf_origin` added, one segment at a time, and
+  the help of `development` says so in Python and R.
 - `ChainLadderFit.to_chain_ladder()`, for a single-segment fit: a
   `ChainLadder` whose `ldf` (a dict), `ldf_kind == "ldf"` and `tail` (a
   float) unpack into any method's arguments with the same projection, to
@@ -3501,7 +3505,17 @@ constructors.
 10. **A valuation must be a date** in Python and R; valuations per row are
     supported (`DiagonalAge::Valuations`).
 11. **Error wording:** Rust messages pass through unchanged, so a
-    `"reject"` error names `LatestDiagonal::with_past_pattern_end`. The
-    alternative is to reword the Rust text in binding-neutral terms.
+    `"reject"` error names `LatestDiagonal::with_past_pattern_end`, the
+    errors of a tail under `"no_development"` or none under `"tail"` name
+    `PastPatternEnd::NoDevelopment` and `PastPatternEnd::Tail`
+    (`past_pattern_end` in Python and R), and a map by label between
+    different key names ends "map the segments with SegmentMap::Pairs"
+    (`segment_map` in Python and R). The alternative is
+    to reword the Rust text in binding-neutral terms. The binding tests
+    match only the neutral part of these messages, so either choice keeps
+    them. One message is reworded here already, since its advice could not
+    be followed from the bindings: a weight by age under `ldf_origin`
+    (`averaged_over_origins`) now ends "give one weight for every factor"
+    instead of naming `with_weight`.
 12. **`development=` only on diagonals.** The plain triangle path keeps
     decision 17 item 11 open.

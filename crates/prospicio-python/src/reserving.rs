@@ -2601,8 +2601,10 @@ fn diagonal_development(
 ///     estimated tail is then fitted on monthly factors, so a constant tail
 ///     taken from the monthly pattern's own tail is the safer choice. The
 ///     triangle's origin grain must be a whole multiple of it; a weight by
-///     age and a single age-to-age factor are errors; the triangle's own
-///     grain leaves the pattern as given. Requires ``ldf``.
+///     age (``ldf_weight`` a dict, applied before the averaging; the
+///     averaged pattern cannot be weighted by age here) and a single
+///     age-to-age factor are errors; the triangle's own grain leaves the
+///     pattern as given. Requires ``ldf``.
 ///
 /// A selected factor carries no parameter error, and a blended one
 /// ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the
@@ -2806,8 +2808,14 @@ impl PyChainLadder {
     ///     the source segment of the same label (a single-segment source
     ///     develops every segment): chainladder-python's
     ///     ``fit(source).predict(target)``. For another method's fit, pass
-    ///     its ``.chain_ladder``. The method itself then takes no ``ldf``
-    ///     and no ``tail``.
+    ///     its ``.chain_ladder``. The method itself then takes no ``ldf``,
+    ///     no ``tail`` other than 1 and no ``n_periods``, ``drop_high`` or
+    ///     ``drop_low``. The source's factors are read at each origin's own
+    ///     age, as fitted, with no ``ldf_origin``: a source fitted on
+    ///     another origin grain (accident quarters for a diagonal of
+    ///     accident years, say) goes through ``to_chain_ladder()`` instead,
+    ///     with ``ldf_origin`` added to the arguments it gives, one segment
+    ///     at a time.
     /// segment_map : dict, optional
     ///     With ``development``, the source segment of each segment of the
     ///     diagonal, as ``{target: source}`` with labels written as
@@ -5071,9 +5079,9 @@ impl PyCapeCod {
     }
 
     /// ``CapeCod`` on a latest diagonal with its exposure, in every
-    /// segment, as ``ChainLadder.fit_diagonal`` projects one: its apriori is estimated on the diagonal and
-    /// trended to one valuation, the latest month any origin of any
-    /// segment is valued at.
+    /// segment, as ``ChainLadder.fit_diagonal`` projects one: its apriori
+    /// is estimated on the diagonal and trended to one valuation, the
+    /// latest month any origin of any segment is valued at.
     ///
     /// Parameters
     /// ----------

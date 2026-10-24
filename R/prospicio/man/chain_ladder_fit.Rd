@@ -79,8 +79,9 @@ period with exposure even through it
 (\code{SelectedPattern::averaged_over_origins}), exact up to the pattern's
 end, with development deferred past it; a constant tail from the
 monthly pattern is the safer choice there. Equal to the target's
-grain, it changes nothing. It needs a weight on every factor, not by
-age.}
+grain, it changes nothing. It needs one \code{ldf_weight} for every
+factor, not one by age, and the averaged pattern cannot be weighted by
+age from R.}
 
 \item{n_periods, drop_high, drop_low}{Which link ratios the factor at each
 age averages. \code{n_periods} keeps the latest \code{n_periods} calendar
@@ -97,7 +98,12 @@ rejects any of them, even one that removes nothing. The fit's
 \item{development}{For a \link{bordereau} only: a \link{chain_ladder_fit} (or a
 fit with \verb{@chain_ladder}) whose development projects each segment, as
 \code{\link[=to_chain_ladder]{to_chain_ladder()}} freezes it. The method then takes no \code{ldf}, no
-\code{tail} other than 1 and no link ratio exclusions.}
+\code{tail} other than 1 and no link ratio exclusions. The source's factors
+are read at each origin's own age, as fitted, with no \code{ldf_origin}: a
+source fitted on another origin grain (accident quarters for a
+bordereau of accident years, say) goes through \code{\link[=to_chain_ladder]{to_chain_ladder()}}
+instead, with \code{ldf_origin} added to the arguments it returns, one
+segment at a time.}
 
 \item{segment_map}{With \code{development}: \code{NULL} to take each segment's
 development from the source segment of the same label (a source of

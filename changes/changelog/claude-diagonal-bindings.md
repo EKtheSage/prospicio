@@ -23,3 +23,7 @@
 - The `ldf` help in Python and R no longer says every age must be a
   development age of the triangle, and warns that one off-grid age changes
   how a sparse age-to-age pattern's other factors are read (#544).
+- `SelectedPattern::averaged_over_origins` with a weight by age (and
+  `ldf_origin` with an `ldf_weight` by age in Python and R) is still an
+  error, now ending "give one weight for every factor" rather than naming
+  `with_weight` (#544).

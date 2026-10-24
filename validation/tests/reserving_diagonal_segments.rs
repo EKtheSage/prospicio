@@ -508,6 +508,32 @@ fn a_development_replaces_the_methods_own() {
         ..Default::default()
     };
     assert!(message(patterned).contains("give the method no pattern"));
+    // Link ratio exclusions would be ignored silently, so they are refused
+    // too (decision 19 item 5).
+    let latest = ChainLadder {
+        development: Development {
+            n_periods: Some(3),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(message(latest).contains("no link ratio exclusions"));
+    let dropped = ChainLadder {
+        development: Development {
+            drop_high: 1,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(message(dropped).contains("no link ratio exclusions"));
+    let dropped_low = ChainLadder {
+        development: Development {
+            drop_low: 1,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(message(dropped_low).contains("no link ratio exclusions"));
     // A tail of exactly 1 is no tail.
     let one = ChainLadder {
         tail: Tail::from(1.0),

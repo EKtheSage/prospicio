@@ -117,7 +117,7 @@ near(fit@ultimate[3], 250, 1e-14)
 near(fit@pattern_tail, 1 / 0.95, 1e-14)
 near(fit@pattern_rescale, 1, 1e-15)
 expect_error_like(chain_ladder(past("no_development"), ldf = short, ldf_kind = "ldf", tail = 1.05),
-                  "PastPatternEnd::NoDevelopment")
+                  "is a factor of 1 past the pattern's end")
 expect_error_like(chain_ladder(past("tail"), ldf = short, ldf_kind = "ldf"), "tail")
 expect_error_like(chain_ladder(past("tail"), ldf = short, ldf_kind = "ldf",
                                tail = tail_constant(1.05, attachment_age = 36)), "attachment")
@@ -145,6 +145,42 @@ expect_error_like(chain_ladder(quarters, ldf = c("12" = 2, "24" = 1), ldf_kind =
                                ldf_origin = "Y"), "whole multiple")
 expect_error_like(chain_ladder(small, ldf_origin = "M"), "ldf_origin is given without ldf")
 expect_error_like(mack(small, ldf_origin = "M"), "ldf_origin is given without ldf")
+
+# ldf_origin in an expected-loss method, a bootstrap and a one-year view:
+# each equals the same call with the averaged pattern given directly
+# (13/48 and 37/48 developed at 12 and 24 months, where it ends).
+four <- triangle(data.frame(year = c(rep(2021, 4), rep(2022, 3), rep(2023, 2), 2024),
+                            age = c(12, 24, 36, 48, 12, 24, 36, 12, 24, 12),
+                            paid = c(100, 280, 380, 400, 110, 300, 400, 120, 330, 130),
+                            premium = c(rep(500, 4), rep(520, 3), rep(540, 2), 560)),
+                 "year", "age", c("paid", "premium"))
+direct <- c("12" = 48 / 13, "24" = 48 / 37)
+near_draws <- function(a, b) {
+  stopifnot(identical(dim(a), dim(b)), all(abs(a - b) <= 1e-9 + 1e-10 * abs(b)))
+}
+bf_on <- function(x, ...) bornhuetter_ferguson(x, apriori = 0.8, ...)
+near(bf_on(four, column = "paid", exposure = "premium", ldf = monthly,
+           ldf_kind = "percent_developed", ldf_origin = "M")@ultimate,
+     bf_on(four, column = "paid", exposure = "premium", ldf = direct, ldf_kind = "cdf")@ultimate)
+young <- bordereau(data.frame(year = 2023:2024, age = c(24, 12), paid = c(330, 130),
+                              premium = c(540, 560)), "year", "paid", age = "age",
+                   exposure = "premium")
+near(bf_on(young, ldf = monthly, ldf_kind = "percent_developed", ldf_origin = "M")@ultimate,
+     bf_on(young, ldf = direct, ldf_kind = "cdf")@ultimate)
+near_draws(draw_matrix(odp_bootstrap(four, "paid", n_sims = 200, seed = 11, ldf = monthly,
+                                     ldf_kind = "percent_developed",
+                                     ldf_origin = "M")@reserves),
+           draw_matrix(odp_bootstrap(four, "paid", n_sims = 200, seed = 11, ldf = direct,
+                                     ldf_kind = "cdf")@reserves))
+near_draws(draw_matrix(odp_one_year(four, "paid", n_sims = 200, seed = 11, ldf = monthly,
+                                    ldf_kind = "percent_developed", ldf_origin = "M")@cdr),
+           draw_matrix(odp_one_year(four, "paid", n_sims = 200, seed = 11, ldf = direct,
+                                    ldf_kind = "cdf")@cdr))
+unaveraged <- odp_bootstrap(four, "paid", n_sims = 200, seed = 11, ldf = monthly,
+                            ldf_kind = "percent_developed")
+stopifnot(abs(mean(unaveraged@reserves) -
+                mean(odp_bootstrap(four, "paid", n_sims = 200, seed = 11, ldf = direct,
+                                   ldf_kind = "cdf")@reserves)) > 1)
 
 # 6. Off-grid reading on RAA.
 raa <- triangle(raa_long, "origin", "development", "value")
@@ -356,20 +392,41 @@ bf <- bornhuetter_ferguson(as_bordereau(wkcomp, "paid", exposure = "premium"), a
                            development = chain_ladder(wkcomp, "paid"))
 bf_fit <- bornhuetter_ferguson(wkcomp, "paid", "premium", apriori = 0.6)
 near(bf@ultimate, bf_fit@ultimate, 1e-12)
+# Another method's fit passes its @chain_ladder, segment by segment.
+keyed_wk <- triangle(rbind(transform(wkcomp_long, lob = "a"),
+                           transform(wkcomp_long, lob = "b", paid = paid * 1.1)),
+                     "origin", "development", c("paid", "premium"), keys = "lob")
+d_wk <- as_bordereau(keyed_wk, "paid", exposure = "premium")
+bf_keyed <- bornhuetter_ferguson(keyed_wk, "paid", "premium", apriori = 0.6, tail = tail_curve())
+cl_keyed <- chain_ladder(keyed_wk, "paid", tail = tail_curve())
+for (via in list(bf_keyed, bf_keyed@chain_ladder)) {
+  for (method in list(chain_ladder, function(x, ...) bornhuetter_ferguson(x, apriori = 0.6, ...))) {
+    found <- method(d_wk, development = via)
+    want <- method(d_wk, development = cl_keyed)
+    for (lob in c("a", "b")) {
+      stopifnot(identical(segment(found, lob = lob)@ultimate, segment(want, lob = lob)@ultimate))
+    }
+  }
+}
 plain <- chain_ladder(keyed)
 expect_error_like(chain_ladder(d, development = plain, segment_map = c(a = "a")), "no source")
 two <- triangle(data.frame(year = rep(c(2001, 2001, 2002), 2), age = rep(c(12, 24, 12), 2),
                            value = rep(c(1, 2, 1), 2), line = rep(c("x", "y"), each = 3)),
                 "year", "age", "value", keys = "line")
-expect_error_like(chain_ladder(d, development = chain_ladder(two)), "SegmentMap::Pairs")
+# The match leaves out the message's hint, whose wording is decision 19
+# item 11's to settle.
+expect_error_like(chain_ladder(d, development = chain_ladder(two)), "the source has keys")
 expect_error_like(chain_ladder(d, ldf = c("12" = 1.5), ldf_kind = "ldf", development = plain),
                   "the development comes from the source fit")
 expect_error_like(chain_ladder(d, tail = 1.05, development = plain),
                   "the development comes from the source fit")
+# Link ratio exclusions are refused too, rather than ignored.
+expect_error_like(chain_ladder(d, n_periods = 3, development = plain), "no link ratio exclusions")
+expect_error_like(chain_ladder(d, drop_high = 1, development = plain), "no link ratio exclusions")
 expect_error_like(to_chain_ladder(plain), "segment()")
 expect_error_like(chain_ladder(d, segment_map = c(a = "a")), "segment_map is given without")
 expect_error_like(chain_ladder(keyed, development = plain), "as_bordereau()")
-expect_error_like(chain_ladder(d, "value"), "a bordereau carries its exposure")
+expect_error_like(chain_ladder(d, "value"), "give column and exposure only for a triangle")
 expect_error_like(mack(d), "a bordereau has no link ratios")
 expect_error_like(odp_bootstrap(d), "a bordereau has no link ratios")
 expect_error_like(chain_ladder(d, development = "fit"), "development must be a chain_ladder_fit")

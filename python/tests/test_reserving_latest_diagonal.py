@@ -295,6 +295,81 @@ def test_ldf_origin_errors():
             method(ldf_origin="M")
 
 
+# MONTHLY averaged over accident years is 13/48 developed at 12 months and
+# 37/48 at 24, where it ends: factors to ultimate 48/13 and 48/37, the
+# development past 24 months the triangle's own.
+AVERAGED = dict(ldf=MONTHLY, ldf_kind="percent_developed", ldf_origin="M")
+DIRECT = dict(ldf={12: 48.0 / 13.0, 24: 48.0 / 37.0}, ldf_kind="cdf")
+
+
+def four_years():
+    return Triangle.from_long(
+        [2021] * 4 + [2022] * 3 + [2023] * 2 + [2024],
+        [12, 24, 36, 48, 12, 24, 36, 12, 24, 12],
+        {
+            "paid": [100.0, 280.0, 380.0, 400.0, 110.0, 300.0, 400.0, 120.0, 330.0, 130.0],
+            "premium": [500.0] * 4 + [520.0] * 3 + [540.0] * 2 + [560.0],
+        },
+    )
+
+
+def close_draws(found, expected, rel=1e-10):
+    assert len(found) == len(expected)
+    for f, e in zip(found, expected):
+        close(f, e, rel=rel, abs_=1e-9)
+
+
+def test_ldf_origin_reaches_every_method():
+    # Each method's own path applies ldf_origin: its result equals the same
+    # method given the averaged pattern directly, and differs from the
+    # monthly pattern read as if it were annual.
+    tri = four_years()
+    cl = ChainLadder(**AVERAGED).fit(tri, "paid")
+    direct = ChainLadder(**DIRECT).fit(tri, "paid")
+    assert cl.selected_ldf[0] == pytest.approx(37.0 / 13.0, rel=1e-14)
+    close(cl.ldf, direct.ldf)
+    close(cl.ultimate, direct.ultimate)
+    unaveraged = ChainLadder(ldf=MONTHLY, ldf_kind="percent_developed").fit(tri, "paid")
+    assert unaveraged.selected_ldf[0] != pytest.approx(cl.selected_ldf[0], rel=1e-3)
+
+    mack, mack_direct = Mack(**AVERAGED).fit(tri, "paid"), Mack(**DIRECT).fit(tri, "paid")
+    close(mack.selected_ldf[:1], mack_direct.selected_ldf[:1])
+    close(mack.ultimate, mack_direct.ultimate)
+    close(mack.standard_error, mack_direct.standard_error)
+    close(mack.cdr.one_year_standard_error, mack_direct.cdr.one_year_standard_error)
+
+    # The averaged pattern runs to 35 months, so the diagonal keeps to the
+    # origins within 24 months, where the direct pattern ends.
+    d = LatestDiagonal([2023, 2024], [24, 12], [330.0, 130.0], exposure=[540.0, 560.0])
+    for method in (
+        lambda p: ExpectedLoss(apriori=0.8, **p),
+        lambda p: BornhuetterFerguson(apriori=0.8, **p),
+        lambda p: Benktander(apriori=0.8, n_iters=2, **p),
+        lambda p: CapeCod(trend=0.02, **p),
+    ):
+        close(method(AVERAGED).fit(tri, "paid", "premium").ultimate,
+              method(DIRECT).fit(tri, "paid", "premium").ultimate)
+        close(method(AVERAGED).fit_diagonal(d).ultimate, method(DIRECT).fit_diagonal(d).ultimate)
+
+    for boot in (OdpBootstrap, MackBootstrap):
+        found = boot(n_sims=200, seed=11, **AVERAGED).fit(tri, "paid").reserves.draw_matrix()
+        want = boot(n_sims=200, seed=11, **DIRECT).fit(tri, "paid").reserves.draw_matrix()
+        close_draws(found, want)
+        # The re-reserving method's ldf_origin in a one-year view, and the
+        # bootstrap's own.
+        for view, method in (
+            (boot(n_sims=200, seed=11), lambda p: ChainLadder(**p)),
+            (boot(n_sims=200, seed=11), lambda p: BornhuetterFerguson(apriori=0.8, **p)),
+        ):
+            exposure = None if isinstance(method({}), ChainLadder) else "premium"
+            found = view.one_year(tri, "paid", method(AVERAGED), exposure=exposure)
+            want = view.one_year(tri, "paid", method(DIRECT), exposure=exposure)
+            close_draws(found.cdr.draw_matrix(), want.cdr.draw_matrix())
+        own = boot(n_sims=200, seed=11, **AVERAGED).one_year(tri, "paid", ChainLadder(**AVERAGED))
+        own_direct = boot(n_sims=200, seed=11, **DIRECT).one_year(tri, "paid", ChainLadder(**DIRECT))
+        close_draws(own.cdr.draw_matrix(), own_direct.cdr.draw_matrix())
+
+
 # 6. Off-grid reading on RAA.
 def test_an_off_grid_age_changes_how_the_other_factors_read():
     rows, columns = long_rows("raa")
@@ -518,6 +593,38 @@ def test_each_segment_takes_its_source_segment():
         bf.fit_diagonal(d, development=bf)
 
 
+def keyed_wkcomp():
+    lob, origin, age, paid, premium = [], [], [], [], []
+    for label, scale in (("a", 1.0), ("b", 1.1)):
+        for y, a, v in WKCOMP:
+            lob.append(label)
+            origin.append(y)
+            age.append(a)
+            paid.append(v[0] * scale * (1.0 + 0.01 * (y - 1988) * (label == "b")))
+            premium.append(v[1])
+    return Triangle.from_long(origin, age, {"paid": paid, "premium": premium}, keys={"lob": lob})
+
+
+def test_another_methods_fit_passes_its_chain_ladder():
+    tri = keyed_wkcomp()
+    d = LatestDiagonal.from_triangle(tri, "paid", exposure="premium")
+    plain = ChainLadder(tail=TailCurve()).fit(tri, "paid")
+    bf_fits = BornhuetterFerguson(apriori=0.6, tail=TailCurve()).fit(tri, "paid", "premium")
+    via_bf = bf_fits.chain_ladder
+    assert via_bf.index == plain.index
+    for method in (ChainLadder(), BornhuetterFerguson(apriori=0.6)):
+        from_bf = method.fit_diagonal(d, development=via_bf)
+        from_plain = method.fit_diagonal(d, development=plain)
+        for lob in ("a", "b"):
+            assert from_bf.segment(lob=lob).ultimate == from_plain.segment(lob=lob).ultimate
+    # A single-segment fit's .chain_ladder serves every segment.
+    one = BornhuetterFerguson(apriori=0.6).fit(wkcomp(), "paid", "premium").chain_ladder
+    broadcast = ChainLadder().fit_diagonal(d, development=one)
+    for lob in ("a", "b"):
+        alone = one.to_chain_ladder().fit_diagonal(d.segment(lob=lob))
+        assert broadcast.segment(lob=lob).ultimate == alone.ultimate
+
+
 def test_segment_errors():
     tri = keyed_genins()
     fits = ChainLadder().fit(tri, "value")
@@ -527,12 +634,19 @@ def test_segment_errors():
     # Two segments under another key name.
     two = Triangle.from_long([2001, 2001, 2002] * 2, [12, 24, 12] * 2, {"value": [1.0, 2.0, 1.0] * 2},
                              keys={"line": ["x"] * 3 + ["y"] * 3})
-    with pytest.raises(ValueError, match="SegmentMap::Pairs"):
+    # The match leaves out the message's hint, whose wording is decision 19
+    # item 11's to settle.
+    with pytest.raises(ValueError, match="the source has keys"):
         ChainLadder().fit_diagonal(d, development=ChainLadder().fit(two, "value"))
     with pytest.raises(ValueError, match="the development comes from the source fit"):
         ChainLadder(ldf={12: 1.5}, ldf_kind="ldf").fit_diagonal(d, development=fits)
     with pytest.raises(ValueError, match="the development comes from the source fit"):
         ChainLadder(tail=1.05).fit_diagonal(d, development=fits)
+    # Link ratio exclusions are refused too, rather than ignored.
+    for method in (ChainLadder(n_periods=3), ChainLadder(drop_high=1),
+                   BornhuetterFerguson(apriori=0.6, drop_low=1)):
+        with pytest.raises(ValueError, match="no link ratio exclusions"):
+            method.fit_diagonal(d, development=fits)
     with pytest.raises(ValueError, match="segment"):
         fits.to_chain_ladder()
     with pytest.raises(ValueError, match="segment_map is given without development"):

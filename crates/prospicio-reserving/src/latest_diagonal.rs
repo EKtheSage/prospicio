@@ -407,8 +407,9 @@ impl LatestDiagonal {
     }
 
     /// What the methods fit: the diagonal on its grid, the exposure there
-    /// when `exposure` asks for it (it must then be given), `development` with the pattern as it resolves on the grid, and the
-    /// tail to use there.
+    /// when `exposure` asks for it (it must then be given), `development`
+    /// with the pattern as it resolves on the grid, and the tail to use
+    /// there.
     fn prepare(&self, development: &Development, tail: Tail, exposure: bool) -> Result<Prepared> {
         if development.n_periods.is_some() || development.drop_high > 0 || development.drop_low > 0
         {

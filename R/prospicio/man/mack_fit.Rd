@@ -85,8 +85,9 @@ period with exposure even through it
 (\code{SelectedPattern::averaged_over_origins}), exact up to the pattern's
 end, with development deferred past it; a constant tail from the
 monthly pattern is the safer choice there. Equal to the target's
-grain, it changes nothing. It needs a weight on every factor, not by
-age.}
+grain, it changes nothing. It needs one \code{ldf_weight} for every
+factor, not one by age, and the averaged pattern cannot be weighted by
+age from R.}
 
 \item{n_periods, drop_high, drop_low}{Which link ratios the factor at each
 age averages. \code{n_periods} keeps the latest \code{n_periods} calendar
