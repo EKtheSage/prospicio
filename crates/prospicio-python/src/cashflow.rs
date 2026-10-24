@@ -101,6 +101,14 @@ fn timing(spec: &Bound<'_, PyAny>, name: &str) -> PyResult<Timing> {
 /// ``"written"`` (``W``), ``"earned"`` (``E``) and ``"fixed"`` (1, so the
 /// load is an amount).
 ///
+/// The reserve on earned premium is small early in the term: a requirement
+/// on it alone releases the premium collected ahead of earning to the
+/// investor at once, who then pays the claims later, so the flows start
+/// positive (``Cashflows.paid_first``), can have several internal rates of
+/// return (``irr``'s ``sign_changes``) and the one found is usually
+/// meaningless. A collateralised fund usually wants ``"outstanding"``,
+/// with ``"unearned-premium"`` beside it.
+///
 /// Parameters
 /// ----------
 /// terms : dict of str to float, or list of (str, float)
@@ -318,6 +326,12 @@ impl PyPremiumAdjustment {
 ///     What the trust pays at commutation; by default ``requirement``.
 /// collected_rate : float, default 1
 ///     The share of written premium paid into the trust.
+/// deduct_commission : bool, default False
+///     Take each simulation's commission rate (``run``'s ``commission``)
+///     off ``collected_rate``. Without it the commission does not reduce
+///     the premium paid in and is read only by adjustments with
+///     ``less_commission`` and by the fee: a flat commission ``c`` is then
+///     ``collected_rate = 1 - c``, and a sliding scale needs this option.
 /// lag : int, default 0
 ///     The months between writing and collection.
 /// adjustments : list of PremiumAdjustment, optional
@@ -375,7 +389,8 @@ impl PyCashflowTerms {
     #[new]
     #[pyo3(signature = (
         premium, commutation_month, written, earned, paid, requirement, *,
-        commutation_requirement = None, collected_rate = 1.0, lag = 0, adjustments = None,
+        commutation_requirement = None, collected_rate = 1.0, deduct_commission = false, lag = 0,
+        adjustments = None,
         funding_dates = None, funding_rule = "shortfall", premium_offset = 1.0,
         reference = "previous-date", funding_source = "investor", collateral_release = None,
         annual_yield = 0.0, interest_basis = "average", opening_fixed = 0.0,
@@ -392,6 +407,7 @@ impl PyCashflowTerms {
         requirement: PyCollateralRequirement,
         commutation_requirement: Option<PyCollateralRequirement>,
         collected_rate: f64,
+        deduct_commission: bool,
         lag: usize,
         adjustments: Option<Vec<PyPremiumAdjustment>>,
         funding_dates: Option<&Bound<'_, PyAny>>,
@@ -420,6 +436,7 @@ impl PyCashflowTerms {
         }
         t.premium_flow = PremiumFlow {
             collected_rate,
+            deduct_commission,
             lag,
             adjustments: adjustments
                 .unwrap_or_default()
@@ -715,6 +732,16 @@ impl PyCashflows {
     #[getter]
     fn commutation(&self) -> Vec<f64> {
         self.inner.commutation().to_vec()
+    }
+
+    /// Whether each simulation's first nonzero investor flow is positive:
+    /// the investor is paid before putting money in, so its flows can have
+    /// several internal rates of return (``irr``'s ``sign_changes``) and the
+    /// one found is usually meaningless. A requirement on the reserve alone
+    /// does this; a collateralised fund usually wants ``"outstanding"``.
+    #[getter]
+    fn paid_first(&self) -> Vec<bool> {
+        self.inner.paid_first()
     }
 
     /// Each simulation's net present value at an annual rate.

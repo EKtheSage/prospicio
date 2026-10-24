@@ -4686,6 +4686,12 @@ class CashflowTerms:
         What the trust pays at commutation; by default ``requirement``.
     collected_rate : float, default 1
         The share of written premium paid into the trust.
+    deduct_commission : bool, default False
+        Take each simulation's commission rate (``run``'s ``commission``)
+        off ``collected_rate``. Without it the commission does not reduce
+        the premium paid in and is read only by adjustments with
+        ``less_commission`` and by the fee: a flat commission ``c`` is then
+        ``collected_rate = 1 - c``, and a sliding scale needs this option.
     lag : int, default 0
         The months between writing and collection.
     adjustments : list of PremiumAdjustment, optional
@@ -4734,7 +4740,7 @@ class CashflowTerms:
     >>> [round(x, 9) for x in out.funded]
     [40.0, 100.0]
     """
-    def __new__(cls, /, premium: float, commutation_month: int, written: Sequence[float], earned: Sequence[float], paid: Sequence[float], requirement: CollateralRequirement, *, commutation_requirement: CollateralRequirement |None = None, collected_rate: float = 1.0, lag: int = 0, adjustments: Sequence[PremiumAdjustment] |None = None, funding_dates: Any |None = None, funding_rule: str = "shortfall", premium_offset: float = 1.0, reference: str = "previous-date", funding_source: str = "investor", collateral_release: Any |None = None, annual_yield: float = 0.0, interest_basis: str = "average", opening_fixed: float = 0.0, opening_share: float = 0.0, expense_rate: float = 0.0, buffer_months: int = 0, buffer_paid: bool = False, buffer_expenses: bool = False, equity_release: Any |None = None, fee: tuple[Sequence[float], Sequence[float]] |None = None, fee_basis: str = "profit") -> CashflowTerms: ...
+    def __new__(cls, /, premium: float, commutation_month: int, written: Sequence[float], earned: Sequence[float], paid: Sequence[float], requirement: CollateralRequirement, *, commutation_requirement: CollateralRequirement |None = None, collected_rate: float = 1.0, deduct_commission: bool = False, lag: int = 0, adjustments: Sequence[PremiumAdjustment] |None = None, funding_dates: Any |None = None, funding_rule: str = "shortfall", premium_offset: float = 1.0, reference: str = "previous-date", funding_source: str = "investor", collateral_release: Any |None = None, annual_yield: float = 0.0, interest_basis: str = "average", opening_fixed: float = 0.0, opening_share: float = 0.0, expense_rate: float = 0.0, buffer_months: int = 0, buffer_paid: bool = False, buffer_expenses: bool = False, equity_release: Any |None = None, fee: tuple[Sequence[float], Sequence[float]] |None = None, fee_basis: str = "profit") -> CashflowTerms: ...
     def __repr__(self, /) -> str: ...
     @property
     def commutation_month(self, /) -> int:
@@ -4850,6 +4856,15 @@ class Cashflows:
     def opening(self, /) -> list[float]:
         """
         The opening capital each investor paid in.
+        """
+    @property
+    def paid_first(self, /) -> list[bool]:
+        """
+        Whether each simulation's first nonzero investor flow is positive:
+        the investor is paid before putting money in, so its flows can have
+        several internal rates of return (``irr``'s ``sign_changes``) and the
+        one found is usually meaningless. A requirement on the reserve alone
+        does this; a collateralised fund usually wants ``"outstanding"``.
         """
     @property
     def released(self, /) -> list[float]:
@@ -6197,6 +6212,14 @@ class CollateralRequirement:
     ``"reserve"`` (``u E - C``), ``"outstanding"`` (``u P - C``),
     ``"written"`` (``W``), ``"earned"`` (``E``) and ``"fixed"`` (1, so the
     load is an amount).
+    
+    The reserve on earned premium is small early in the term: a requirement
+    on it alone releases the premium collected ahead of earning to the
+    investor at once, who then pays the claims later, so the flows start
+    positive (``Cashflows.paid_first``), can have several internal rates of
+    return (``irr``'s ``sign_changes``) and the one found is usually
+    meaningless. A collateralised fund usually wants ``"outstanding"``,
+    with ``"unearned-premium"`` beside it.
     
     Parameters
     ----------

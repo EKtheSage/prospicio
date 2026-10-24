@@ -196,7 +196,7 @@ data frame), `book_distribution()` (matrices with a column a deal),
     both offered since the issue does not say which, or the trust's
     shortfall. The source is the investor or the operating account first.
 17. **The trust's month**: opening balance, plus the call, the premium
-    collected (`collected_rate × ΔW_{t−lag}`) and any adjustment
+    collected (`collected_rate × ΔW_{t−lag}`, less `c` under decision 28) and any adjustment
     (`written_rate × W − c × E`, read at the patterns' last month or at
     the adjustment's month), less the claims paid; interest at
     `yield / 12` on the average, opening or closing balance; then the
@@ -259,6 +259,21 @@ data frame), `book_distribution()` (matrices with a column a deal),
     risk (a loss), `Tail::Lower` low ones (a margin) by reading the
     item's negative and turning the values back, so `"TVaR 99"` of a
     margin is the mean of its lowest 1%.
+28. **A simulation's commission can come off the premium collected**
+    (#609): under `PremiumFlow::deduct_commission`, off by default so
+    every result stays as it was, the premium paid in is
+    `(collected_rate − c) × ΔW_{t−lag}` with `c` the simulation's
+    commission rate, so a sliding scale runs in one call; it equals a run
+    at `collected_rate − c` simulation by simulation. Without it `c` is
+    read only by adjustments with `less_commission` and by the fee.
+29. **A reserve rule that pays the investor first is flagged, not
+    refused** (#608): the reserve on earned premium is small early on, so
+    a requirement on it alone releases premium collected ahead of earning
+    and the investor's flows start positive, with several or no internal
+    rates of return. It is the base as documented, so it stays;
+    `Cashflows::paid_first` marks such runs, `irr`'s `sign_changes` was
+    already in Python and R, and the docs point a collateralised fund to
+    the outstanding loss.
 
 ## Conventions left as settings (cash-flow engine)
 

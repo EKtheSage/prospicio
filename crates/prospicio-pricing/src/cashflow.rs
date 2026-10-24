@@ -104,8 +104,18 @@ pub enum Base {
     /// The unearned premium `W − E`.
     UnearnedPremium,
     /// The reserve on earned premium `u E − C`.
+    ///
+    /// Early in the term it is small, since little premium is earned: a
+    /// requirement on it alone releases the premium collected ahead of
+    /// earning to the investor at once, who then pays the claims later, so
+    /// the investor's flows start positive, can have several internal rates
+    /// of return ([`Irr::sign_changes`] above 1) and the one found is
+    /// usually meaningless ([`Cashflows::paid_first`] flags such runs). A
+    /// collateralised fund usually wants [`Outstanding`](Self::Outstanding),
+    /// with [`UnearnedPremium`](Self::UnearnedPremium) beside it.
     Reserve,
-    /// The outstanding ultimate loss `u P − C`.
+    /// The outstanding ultimate loss `u P − C`, the usual base of a
+    /// collateralised fund's requirement.
     Outstanding,
     /// The premium written `W`.
     Written,
@@ -404,11 +414,22 @@ pub struct Adjustment {
 }
 
 /// The premium paid into the trust: `collected_rate × ΔW_{t−lag}` each
-/// month, and the adjustments.
+/// month, or `(collected_rate − c) × ΔW_{t−lag}` with `c` the simulation's
+/// commission rate when `deduct_commission`, and the adjustments.
+///
+/// Without `deduct_commission` the commission rate given to
+/// [`CashflowTerms::run`] does not reduce the premium paid in: it is read
+/// only by adjustments with `less_commission` and by the fee. A flat
+/// commission `c` is then `collected_rate = 1 − c`; a commission that
+/// differs by simulation, such as a sliding scale's, needs
+/// `deduct_commission`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PremiumFlow {
     /// The share of each month's written premium paid in.
     pub collected_rate: f64,
+    /// Whether each simulation's commission rate is taken off the share
+    /// collected.
+    pub deduct_commission: bool,
     /// Months from writing to collection.
     pub lag: usize,
     /// Adjustments at given months.
@@ -420,6 +441,7 @@ impl Default for PremiumFlow {
     fn default() -> Self {
         PremiumFlow {
             collected_rate: 1.0,
+            deduct_commission: false,
             lag: 0,
             adjustments: Vec::new(),
         }
@@ -666,7 +688,8 @@ impl CashflowTerms {
     }
 
     /// Each simulation's cash flows, from its ultimate loss ratio `u[j]`
-    /// and commission rate `commission[j]`.
+    /// and commission rate `commission[j]`. The commission reduces the
+    /// premium paid in only under [`PremiumFlow::deduct_commission`].
     pub fn run(&self, u: &[f64], commission: &[f64]) -> Result<Cashflows> {
         self.check()?;
         check_sims(u, commission)?;
@@ -780,7 +803,13 @@ impl CashflowTerms {
                 requirement[t]
             };
             let start = collateral;
-            let premium_in = self.premium_flow.collected_rate * written_inc(t as isize - lag);
+            let flow = &self.premium_flow;
+            let collected = if flow.deduct_commission {
+                flow.collected_rate - c
+            } else {
+                flow.collected_rate
+            };
+            let premium_in = collected * written_inc(t as isize - lag);
             let adjustment: f64 = self
                 .premium_flow
                 .adjustments
@@ -1039,6 +1068,20 @@ impl Cashflows {
         &self.commutation
     }
 
+    /// Whether each simulation's first nonzero investor flow is positive:
+    /// the investor is paid before putting money in, so the flows can have
+    /// several internal rates of return and the one found is usually
+    /// meaningless (see [`Base::Reserve`]).
+    pub fn paid_first(&self) -> Vec<bool> {
+        if self.months == 0 {
+            return vec![false; self.len()];
+        }
+        self.flows
+            .chunks(self.months)
+            .map(|row| row.iter().find(|&&x| x != 0.0).is_some_and(|&x| x > 0.0))
+            .collect()
+    }
+
     /// Each simulation's net present value at the annual `rate`, the months
     /// read as twelfths of a year.
     pub fn npv(&self, rate: f64) -> Result<Vec<f64>> {
@@ -1155,6 +1198,7 @@ mod tests {
         ]);
         t.premium_flow = PremiumFlow {
             collected_rate: 0.7,
+            deduct_commission: false,
             lag: 2,
             adjustments: vec![Adjustment {
                 month: 18,
@@ -1432,5 +1476,54 @@ mod tests {
         assert!(full().run(&[0.5], &[]).is_err());
         assert!(full().run(&[f64::NAN], &[0.0]).is_err());
         assert!(MonthlyPatterns::new(vec![1.0], vec![1.0, 1.0], vec![1.0]).is_err());
+    }
+
+    #[test]
+    fn a_reserve_rule_alone_pays_the_investor_first() {
+        // The module example's terms: the trust releases the premium
+        // collected ahead of earning at once.
+        let p = MonthlyPatterns::new(
+            vec![1.0, 1.0, 1.0],
+            vec![1.0 / 3.0, 2.0 / 3.0, 1.0],
+            vec![1.0 / 3.0, 2.0 / 3.0, 1.0],
+        )
+        .unwrap();
+        let reserve = Requirement::new(vec![Term::new(Base::Reserve, 1.0)]);
+        let mut terms = CashflowTerms::new(100.0, 3, p.clone(), reserve).unwrap();
+        terms.commutation_requirement = Requirement::new(vec![Term::new(Base::Outstanding, 1.0)]);
+        let run = terms.run(&[0.6, 1.5], &[0.0, 0.0]).unwrap();
+        // The doc example's flows, unchanged: [80, -20, -20] and [50, -50, -50].
+        assert!((run.flows()[0] - 80.0).abs() < 1e-9);
+        assert!((run.flows()[3] - 50.0).abs() < 1e-9);
+        assert_eq!(run.paid_first(), [true, true]);
+        // On the outstanding loss the investor puts money in first.
+        let outstanding = Requirement::new(vec![Term::new(Base::Outstanding, 1.0)]);
+        let terms = CashflowTerms::new(100.0, 3, p, outstanding).unwrap();
+        assert!(!terms.run(&[1.2], &[0.0]).unwrap().paid_first()[0]);
+    }
+
+    #[test]
+    fn a_deducted_commission_is_a_lower_collected_rate() {
+        let base = full();
+        let mut deducted = base.clone();
+        deducted.premium_flow.deduct_commission = true;
+        let u = [0.4, 0.7, 1.1];
+        let c = [0.2, 0.25, 0.3];
+        let with = deducted.run(&u, &c).unwrap();
+        for j in 0..u.len() {
+            let mut flat = base.clone();
+            flat.premium_flow.collected_rate = base.premium_flow.collected_rate - c[j];
+            // The commission still reaches the adjustment and the fee, so
+            // the comparison run keeps it.
+            let one = flat.run(&u[j..=j], &c[j..=j]).unwrap();
+            let m = one.months();
+            for (a, b) in with.flows()[j * m..(j + 1) * m].iter().zip(one.flows()) {
+                assert!((a - b).abs() < 1e-9, "{a} against {b}");
+            }
+        }
+        // The default leaves every result as it was.
+        assert!(!PremiumFlow::default().deduct_commission);
+        let plain = base.run(&u, &c).unwrap();
+        assert!(plain.flows() != with.flows());
     }
 }

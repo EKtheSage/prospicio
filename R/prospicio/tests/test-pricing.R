@@ -584,3 +584,25 @@ local({
                   error = function(e) conditionMessage(e))
   stopifnot(grepl("not one compound total", err))
 })
+
+# A commission deducted from the premium paid in (#609) and runs that pay
+# the investor first (#608).
+local({
+  ramp <- function(m) pmin((1:40) / m, 1)
+  req <- cashflow_requirement(c("unearned-premium" = 0.3, outstanding = 1.25))
+  u <- c(0.5, 0.8)
+  c_ <- c(0.2, 0.3)
+  on <- cashflow_terms(100, 30, ramp(12), ramp(24), ramp(36), req, deduct_commission = TRUE)
+  r <- cashflow_run(on, u, c_)
+  for (j in 1:2) {
+    flat <- cashflow_terms(100, 30, ramp(12), ramp(24), ramp(36), req, collected_rate = 1 - c_[j])
+    stopifnot(max(abs(r$flows[j, ] - cashflow_run(flat, u[j], c_[j])$flows[1, ])) < 1e-9)
+  }
+  stopifnot(!any(r$paid_first))
+  off <- cashflow_terms(100, 30, ramp(12), ramp(24), ramp(36), req)
+  stopifnot(max(abs(cashflow_run(off, u, c_)$flows - r$flows)) > 1)
+  reserve <- cashflow_terms(100, 3, rep(1, 3), (1:3) / 3, (1:3) / 3,
+                            cashflow_requirement(c(reserve = 1)),
+                            commutation_requirement = cashflow_requirement(c(outstanding = 1)))
+  stopifnot(identical(cashflow_run(reserve, c(0.6, 1.5))$paid_first, c(TRUE, TRUE)))
+})
