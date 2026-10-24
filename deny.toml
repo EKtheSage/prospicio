@@ -1,0 +1,59 @@
+# cargo-deny (https://embarkstudios.github.io/cargo-deny/): licences,
+# RustSec advisories, duplicate versions and crate sources (#573). CI's
+# `deny` job runs `cargo deny check` on pull requests that touch
+# Cargo.toml, Cargo.lock or this file, and on the weekly and manual runs.
+# An exception names its crate and the reason.
+
+[graph]
+all-features = true
+
+[advisories]
+# Every RustSec advisory that affects a crate in Cargo.lock fails the
+# check, as does a yanked version.
+yanked = "deny"
+ignore = [
+    # Unmaintained, no vulnerability: bincode 2 serializes Burn's records
+    # (burn-core, under prospicio-nn); prospicio's network artifacts are
+    # JSON and do not use it.
+    { id = "RUSTSEC-2025-0141", reason = "bincode is unmaintained, not vulnerable; pulled in by burn-core only" },
+    # Unmaintained, no vulnerability: paste is a proc macro of burn-ndarray
+    # and gemm (faer, under nuts-rs) and runs only at compile time.
+    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained, not vulnerable; a compile-time macro of burn-ndarray and gemm" },
+]
+
+[licenses]
+# The workspace crates are MIT OR Apache-2.0; what they depend on must be
+# compatible with that and with CRAN's list of free licences.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "Zlib",
+    "Unicode-3.0",
+]
+confidence-threshold = 0.9
+# Two dependencies under other free licences, each allowed for that crate
+# alone so that a new one is reviewed.
+exceptions = [
+    # MPL-2.0, file-level copyleft: used unmodified as a dependency of
+    # burn-tensor (prospicio-nn), which leaves prospicio's own files
+    # MIT OR Apache-2.0. CRAN lists MPL-2.0 as free.
+    { allow = ["MPL-2.0"], crate = "colored" },
+    # CC0-1.0, public domain: via const-random and ahash (arrow, under
+    # prospicio-prob).
+    { allow = ["CC0-1.0"], crate = "tiny-keccak" },
+]
+
+[bans]
+# Two versions of one crate are common in a dependency tree this size;
+# they are reported, not refused.
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

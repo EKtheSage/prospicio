@@ -108,7 +108,8 @@ what it is aiming for by v1.0.
     likelihood or minimum chi-square with the minimum limited-mean
     distance (`grouped_fit`; Bahnemann's printed fits).
   - A severity from a size-of-loss table (`SizeOfLoss`, #338).
-- **Next:** the Guides lane's remaining issues for the Probability lane.
+- **Next:** nothing planned; the Guides lane's issues for this lane
+  (#328 to #331, #365 to #369, #373 and #375) are closed.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
@@ -203,8 +204,9 @@ what it is aiming for by v1.0.
     layers priced by any distortion (#368).
   - Increased limits and deductibles from size-of-loss tables, with the
     censored layer-by-layer LAS over several policy limits (#338).
-- **Next:** the Guides lane's remaining issues of 2026-10-17 and 18 (a
-  grid audit, shared mixing across units).
+- **Next:** nothing planned beyond the open issues in the Aggregate
+  lane's milestone (the grid audit, #317, and shared mixing, #316, are
+  done).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)

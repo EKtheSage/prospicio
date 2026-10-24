@@ -254,6 +254,19 @@ stopifnot(abs(q$premium * 0.87 - p$premium) < 1e-12, abs(q$return_on_capital - 0
           implied_quote(q, 3)$return_on_capital > 0.1,
           is.nan(technical_quote(p)$rate_on_line))
 
+# The premium side and taxes: the parts add up to all the premium, and the
+# return after income tax is the price's.
+t <- technical_quote(p, expenses = 0.03, brokerage = 0.10, limit = 10, premium_tax = 0.02,
+                     income_tax = 0.21, reinstatement_rate = 0.4, commission = 0.05)
+stopifnot(abs(t$expected_loss + t$margin + t$expenses + t$brokerage + t$premium_tax +
+                t$commission - t$premium_in_all) < 1e-12,
+          abs(t$return_on_capital - 0.1) < 1e-12, t$pre_tax_return_on_capital > 0.1,
+          abs(implied_quote(t, t$premium)$risk_premium - t$risk_premium) < 1e-12,
+          abs(implied_quote(t, t$premium, commission = 0.01)$risk_premium -
+                (t$risk_premium - 0.01)) < 1e-12,
+          identical(technical_quote(p, expenses = 0.03, limit = 10)$premium,
+                    technical_quote(p, expenses = 0.03, limit = 10, reinstatement_rate = 0)$premium))
+
 # Experience rating from large losses reproduces Clark's study note (#190).
 clark <- data.frame(
   id = as.character(1:14),
@@ -539,3 +552,35 @@ stopifnot(identical(as.integer(k$year[w]), c(2027L, 2028L)))
 near(draw_matrix(cal)[1, w], c(100 / 3, 200 / 3), rel = 1e-12)
 
 cat("prospicio R pricing tests passed\n")
+
+# A tower quoted layer by layer and as one: two layers without annual terms.
+local({
+  sev <- grid_distribution(1, c(0, 0.3, 0.3, 0.2, 0.1, 0.1))
+  l2 <- with_ceding_commission(with_deposit_premium(xol_layer("2x2", 2, 2), 1), 0.1)
+  tw <- reinsurance_tower(list(xol_layer("1x1", 1, 1), l2))
+  g <- tower_on_grid(tw, poisson_count(2), sev, points = 256)
+  stopifnot(!is.null(g$total_ceded))
+  q <- tower_quote(tw, g, distortion("tvar", 0.99), cost_of_capital = 0.12, brokerage = 0.1)
+  stopifnot(identical(names(q$layers), c("1x1", "2x2")))
+  el <- q$layers[["1x1"]]$expected_loss + q$layers[["2x2"]]$expected_loss
+  stopifnot(abs(q$total$expected_loss - el) < 1e-9)
+  stopifnot(abs(q$diversification -
+    (q$layers[["1x1"]]$premium + q$layers[["2x2"]]$premium - q$total$premium)) < 1e-12)
+  stopifnot(q$diversification > 0)
+  for (x in c(q$layers, list(q$total))) stopifnot(abs(x$return_on_capital - 0.12) < 1e-9)
+  # The commission of the second layer, weighted by the technical deposits.
+  w <- q$layers[["2x2"]]$premium / (q$layers[["1x1"]]$premium + q$layers[["2x2"]]$premium)
+  stopifnot(abs(q$total$commission_rate - 0.1 * w) < 1e-12)
+  # A layer's quote reads back at its own deposit.
+  back <- implied_quote(q$layers[["2x2"]], q$layers[["2x2"]]$premium)
+  stopifnot(abs(back$return_on_capital - 0.12) < 1e-9)
+  # Paid reinstatements on both layers: no compound total.
+  tr <- reinsurance_tower(list(
+    xol_layer("1x1", 1, 1, premium = 1, reinstatement_rates = 1),
+    xol_layer("2x2", 2, 2, premium = 1, reinstatement_rates = 1)))
+  gr <- tower_on_grid(tr, poisson_count(2), sev, points = 256)
+  stopifnot(is.null(gr$total_ceded))
+  err <- tryCatch(tower_quote(tr, gr, distortion("tvar", 0.99), cost_of_capital = 0.12),
+                  error = function(e) conditionMessage(e))
+  stopifnot(grepl("not one compound total", err))
+})

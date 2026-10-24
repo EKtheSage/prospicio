@@ -1978,7 +1978,7 @@ impl PyTower {
 /// ``c * h``.
 #[pyclass(name = "TowerGrids", module = "prospicio.reinsurance", frozen)]
 pub(crate) struct PyTowerGrids {
-    inner: TowerGrids,
+    pub(crate) inner: TowerGrids,
     deal_names: Vec<String>,
 }
 
@@ -2037,6 +2037,15 @@ impl PyTowerGrids {
     #[getter]
     fn net(&self) -> Option<PyGrid> {
         self.inner.net.clone().map(|inner| PyGrid { inner })
+    }
+
+    /// Annual ceded loss of the whole tower, every layer together, or
+    /// ``None`` when it is not a single compound total: several layers
+    /// with annual terms (reinstatements, aggregate limits or deductibles),
+    /// or an aggregate cover after per-occurrence stages.
+    #[getter]
+    fn total_ceded(&self) -> Option<PyGrid> {
+        self.inner.total_ceded.clone().map(|inner| PyGrid { inner })
     }
 
     /// Expected reinstatement premium of each layer; 0 without paid
