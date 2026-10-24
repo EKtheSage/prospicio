@@ -1171,3 +1171,35 @@ fn input_errors_name_their_argument() {
         "pattern_origin and grain are the same: the pattern is used as given, with nothing to average"
     );
 }
+
+/// Under kind "ldf" an age-to-age factor runs from its age to the next age
+/// given (`reserving-v02.md` decisions 16 and 18 item 4), so an interior
+/// blank widens the factor before it: 1.5, blank, 1.2 at 12, 24, 36 months
+/// is 1.5 from 12 to 36, the same as ages {12, 36}, not a factor of 1 from
+/// 24 to 36 (which the pattern 1.5, 1, 1.2 gives).
+#[test]
+fn an_interior_blank_widens_the_age_to_age_factor_before_it() {
+    let base = Diag::new(&years(2022, 3), &[100.0; 3], &[1.0]).ages(&[36.0, 24.0, 12.0]);
+    let mut blank = base.clone();
+    blank.pattern = Grid::from_rows(vec![vec![
+        Value::Number(1.5),
+        Value::Empty,
+        Value::Number(1.2),
+    ]]);
+    let mut sparse = base.clone();
+    sparse.pattern = row(&[1.5, 1.2]);
+    sparse.pattern_ages = row(&[12.0, 36.0]);
+    let mut unit = base;
+    unit.pattern = row(&[1.5, 1.0, 1.2]);
+    let (blank, sparse, unit) = (blank.cl(), sparse.cl(), unit.cl());
+    assert_eq!(blank, sparse);
+    let (b, u) = (cdfs(&blank), cdfs(&unit));
+    // 36 months: 1.2 to ultimate either way; 12 months: 1.5 x 1.2.
+    assert_rel(b[0], 1.2, 1e-12, "36 months");
+    assert_rel(b[2], 1.8, 1e-12, "12 months");
+    assert_rel(u[2], 1.8, 1e-12, "12 months, factor of 1");
+    // 24 months: inside the widened 12-to-36 factor, so above 1.2; with a
+    // factor of 1 from 24 to 36 it is 1.2.
+    assert_rel(u[1], 1.2, 1e-12, "24 months, factor of 1");
+    assert!(b[1] > 1.2 + 1e-6, "24 months, widened: {}", b[1]);
+}

@@ -180,7 +180,10 @@ Ctrl+Alt+F9 to recalculate.
   `"month"`); give `ages` (months, one per origin) or `valuation` (one
   Excel date), not both; `latest`: 0 for nothing reported, never blank.
   `pattern`: the selected values, such as a row of `PRO.CL.LDF`, read as
-  `kind` at `pattern_ages` (12, 24, ... if omitted). `pattern_origin`:
+  `kind` at `pattern_ages` (12, 24, ... if omitted). A blank value is
+  skipped, and an age-to-age factor runs to the next age given, so a
+  blank widens the factor before it (unlike `selected` on `PRO.CL`, where
+  a blank keeps the estimate); give 1 for no development. `pattern_origin`:
   the origin basis the pattern was measured on (`"month"` for accident
   months), averaged to `grain`; prefer a constant tail with it.
   `past_end`: an origin older than the pattern's end is an error

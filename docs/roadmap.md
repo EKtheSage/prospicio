@@ -603,9 +603,9 @@ what it is aiming for by v1.0.
   origin periods and origins past the pattern's end (#544).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): all eight groups done (the eighth,
-     what the other lanes had built since); further functions as the
-     user asks.
+     form (`xll.md`, parity plan): all nine groups done (the eighth,
+     what the other lanes had built since; the ninth, the latest
+     diagonal of #544); further functions as the user asks.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

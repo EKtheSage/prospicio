@@ -1030,11 +1030,12 @@ for k in range(9):
 dg["A66"] = ArrayFormula("A66:F72", '=PRO.DIAG.CL(A60:A64,B60:B64,C60:C64,F59:N59,,,1.05,,,"tail")')
 
 # An accident month's pattern t/12 averaged to accident years.
-dg["H59"] = "An accident month's t/12 at 1 to 12 months, averaged to accident years"; dg["H59"].font = bold
+# Right of the past-end exhibit's LDF row (F59:N59), so no input lands in it.
+dg["P59"] = "An accident month's t/12 at 1 to 12 months, averaged to accident years"; dg["P59"].font = bold
 for k in range(12):
-    dg.cell(row=60 + k, column=8, value=k + 1).fill = inp
-    dg.cell(row=60 + k, column=9, value=(k + 1) / 12).fill = inp
-dg["K60"] = ArrayFormula("K60:M83", '=PRO.PATTERN.AVERAGE(H60:H71,I60:I71,"month","year","percent")')
+    dg.cell(row=60 + k, column=16, value=k + 1).fill = inp
+    dg.cell(row=60 + k, column=17, value=(k + 1) / 12).fill = inp
+dg["S60"] = ArrayFormula("S60:U83", '=PRO.PATTERN.AVERAGE(P60:P71,Q60:Q71,"month","year","percent")')
 
 # The RAA sheet's chain ladder frozen in PRO.CL.LDF and applied to its own diagonal.
 dg["A75"] = "RAA's own factors (the RAA sheet's PRO.CL.LDF row) applied to its latest diagonal"; dg["A75"].font = bold
@@ -1053,14 +1054,14 @@ for i, (name, f, x, tol) in enumerate([
         ("Quarters, 2024Q1 ultimate", "=R51", 800, 1e-9),
         ("Quarters, 2024Q4 ultimate", "=R54", 400, 1e-9),
         ("132 months: CDF past the end", "=D68", 1.0253798721500054, 1e-12),
-        ("Averaged: percent at 12 months (78/144)", "=L72", 78 / 144, 1e-12),
+        ("Averaged: percent at 12 months (78/144)", "=T72", 78 / 144, 1e-12),
         ("RAA frozen: total ultimate against PRO.CL", "=E87", "=RAA!P14", 1e-12)]):
     row = 88 + i
     dg[f"H{row}"] = name; dg[f"I{row}"] = f; dg[f"J{row}"] = x
     dg[f"K{row}"] = f"=ABS(I{row}-J{row})<{tol}*MAX(1,ABS(J{row}))"
 dg.column_dimensions["A"].width = 12
 dg.column_dimensions["H"].width = 40
-for col in "BCDEFGIJKLMOPQRS":
+for col in "BCDEFGIJKLMOPQRSTU":
     dg.column_dimensions[col].width = 12
 
 wb.save(out)

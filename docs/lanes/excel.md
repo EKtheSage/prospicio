@@ -10,6 +10,7 @@ This lane wraps other lanes' crates and changes none of them
 
 - [excel-more-functions] further functions as the user asks
 - [code-signing-certificate] a code-signing certificate is the user's to buy
+- [excel-triangle-pattern-ages] pattern ages on PRO.CL, PRO.MACK and the expected-loss functions so a monthly pattern reaches a triangle (#544; reserving-v02.md decision 18 item 4; xll.md decision 39)
 
 ## Done
 

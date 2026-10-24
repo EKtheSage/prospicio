@@ -176,7 +176,7 @@ const DIAG_EXPOSURE: Arg = Arg {
 };
 const DIAG_PATTERN: Arg = Arg {
     name: "pattern",
-    help: "The selected pattern's values, a row or column, such as PRO.CL.LDF's; a blank value is skipped",
+    help: "The selected pattern's values, a row or column, such as PRO.CL.LDF's; a blank value is skipped, so an age-to-age factor before it runs to the next age given (give 1 for no development)",
 };
 const PATTERN_AGES: Arg = Arg {
     name: "pattern_ages",
@@ -184,7 +184,7 @@ const PATTERN_AGES: Arg = Arg {
 };
 const PATTERN_KIND: Arg = Arg {
     name: "kind",
-    help: "How pattern is expressed: \"ldf\" (age-to-age, default), \"cdf\" (to ultimate) or \"percent\" (developed)",
+    help: "How pattern is expressed: \"ldf\" (age-to-age to the next age given, default), \"cdf\" (to ultimate) or \"percent\" (developed)",
 };
 const DIAG_TAIL: Arg = Arg {
     name: "tail",

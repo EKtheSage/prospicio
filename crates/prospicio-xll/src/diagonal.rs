@@ -185,7 +185,10 @@ fn exposure(grid: &Grid, n: usize) -> Result<Vec<f64>> {
 /// The `pattern`, `pattern_ages` and `kind` arguments as a fully selected
 /// pattern: each value at its age in months (12, 24, ... by cell when
 /// `pattern_ages` is omitted). A pair with a blank value is skipped; a
-/// value needs an age.
+/// value needs an age. An age-to-age factor runs from its age to the next
+/// age given (`reserving-v02.md` decisions 16 and 18 item 4), so a skipped
+/// value widens the factor before it: 1.5, blank, 1.2 at 12, 24, 36 is 1.5
+/// from 12 to 36 months.
 fn pattern(values: &Grid, ages_arg: &Grid, kind: &Grid) -> Result<SelectedPattern> {
     let kind = pattern_kind(kind)?;
     let Some(cells) = vector(values, "pattern")? else {

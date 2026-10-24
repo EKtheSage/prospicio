@@ -735,7 +735,12 @@ real Excel.
     two ranges, values and ages, as `PRO.PAYOUT.PATTERN` takes times and
     values; its ages default to 12, 24, ... by cell, as `selected`
     reads them, so a row of `PRO.CL.LDF` feeds in directly. A blank
-    value skips its pair; a value with a blank age is an error. A blank
+    value skips its pair; a value with a blank age is an error. An
+    age-to-age factor runs from its age to the next age given (decision
+    16 and item 4 of decision 18 in `reserving-v02.md`), so a skipped
+    value widens the factor before it: 1.5, blank, 1.2 under kind
+    `"ldf"` is 1.5 from 12 to 36 months, not a factor of 1 from 24 to
+    36 (and not `selected`'s blank, which keeps the estimate). A blank
     `latest` is an error (0 is a valid latest value, and a blank is
     more often a range drawn too long). Origins are numbers (years or
     dates); labels such as `"2024Q1"` are not read. The exhibit's
@@ -756,6 +761,16 @@ real Excel.
     conversion on the sheet (Age, Percent developed and CDF for every
     month of the result); fed back as `pattern_ages` and `pattern` with
     kind `"percent"`, it gives exactly what `pattern_origin` gives.
+    Its `grain` is optional and defaults to `"year"`, as on the diagonal
+    functions. A `pattern_origin` equal to `grain` is an error there
+    (the crate returns the pattern unchanged, and an exhibit that only
+    repeats its input is more likely a slip), while on the diagonal
+    functions the same pair uses the pattern as given. Every grain
+    argument accepts `"semester"` as a synonym for `"half"`, the crate's
+    name for it. A tail of exactly 1 is read as no tail, as the crate
+    reads it, so `past_end` `"none"` accepts it and `"tail"` rejects it.
+    These four were built without a decision of the user's (Open,
+    below).
     Decision 17's frozen pattern needs no function: `PRO.CL.LDF`
     already gives what `ChainLadderFit::to_chain_ladder` holds (the
     factors in use, then the tail factor), and the pattern stays in
@@ -768,8 +783,8 @@ real Excel.
     date gives a full triangle's ages, `PRO.TRI.LATEST` its latest
     values. Pattern ages on `PRO.CL`, `PRO.MACK` and the expected-loss
     functions on a triangle, so that a monthly pattern reaches them
-    (decision 18 item 4), are a follow-up: `selected` still reads 12,
-    24, ... by column.
+    (decision 18 item 4), are a follow-up (`[excel-triangle-pattern-ages]`
+    in the lane's Next): `selected` still reads 12, 24, ... by column.
 
 ## Parity plan
 
@@ -839,6 +854,13 @@ an XLL function (decision 4: no state) does not hold.
   functions as the user asks (nested
   Archimedean copulas and vines, and the expected multi-year commission
   on the grid, are the nearest left out).
+- **Decision 39's four details**, built without a decision of the
+  user's: `PRO.PATTERN.AVERAGE`'s `grain` defaults to `"year"`, and a
+  `pattern_origin` equal to `grain` is an error there rather than the
+  pattern returned unchanged; `"semester"` is accepted for `"half"`;
+  a tail of exactly 1 counts as no tail, so `past_end` `"none"` accepts
+  it and `"tail"` rejects it. Accept them as built, or say which to
+  change.
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and
