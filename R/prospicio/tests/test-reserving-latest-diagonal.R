@@ -1,12 +1,13 @@
 suppressMessages(library(prospicio))
 
-# The latest diagonal (a bordereau) projected with a pattern from elsewhere
-# (docs/design/reserving-v02.md, decisions 16 to 19, issue #544):
-# bordereau(), as_bordereau(), the five methods on a bordereau,
-# to_chain_ladder(), ldf_origin and the rule past a pattern's end. The Rust
-# core is checked in validation/tests/reserving_latest_diagonal.rs,
-# reserving_fit_apply.rs and reserving_diagonal_segments.rs; these tests
-# reproduce their numbers through the binding, as the Python tests do.
+# The latest diagonal on its own (a latest valuation) projected with a
+# pattern from elsewhere (docs/design/reserving-v02.md, decisions 16 to 19,
+# issue #544): latest_valuation(), as_latest_valuation(), the five methods
+# on a latest valuation, to_chain_ladder(), ldf_origin and the rule past a
+# pattern's end. The Rust core is checked in
+# validation/tests/reserving_latest_diagonal.rs, reserving_fit_apply.rs and
+# reserving_diagonal_segments.rs; these tests reproduce their numbers
+# through the binding, as the Python tests do.
 
 near <- function(a, b, rel = 1e-12) {
   a <- unname(a)
@@ -41,8 +42,8 @@ cdf_of <- function(ages, values) stats::setNames(values, ages)
 
 # 1. Three accident years at December 2024.
 dec_2024 <- as.Date("2024-12-31")
-three <- bordereau(data.frame(year = 2022:2024, paid = c(900, 600, 150), premium = 1000),
-                   "year", "paid", valuation = dec_2024, exposure = "premium")
+three <- latest_valuation(data.frame(year = 2022:2024, paid = c(900, 600, 150), premium = 1000),
+                          "year", "paid", valuation = dec_2024, exposure = "premium")
 stopifnot(identical(three@ages, c(36L, 24L, 12L)))
 annual <- c("12" = 2, "24" = 1.25, "36" = 1)
 stopifnot(identical(unname(chain_ladder(three, ldf = annual, ldf_kind = "cdf")@ultimate),
@@ -54,8 +55,8 @@ near(bornhuetter_ferguson(three, apriori = 0.7, ldf = annual, ldf_kind = "cdf")@
 hand_latest <- c(980, 860, 700, 520, 400, 150)
 hand_cdf <- c(1, 1.02, 1.07, 1.15, 1.3, 12 / 7)
 hand_ages <- c(72, 60, 48, 36, 24, 12)
-hand <- bordereau(data.frame(year = 2019:2024, age = hand_ages, paid = hand_latest,
-                             premium = 200), "year", "paid", age = "age", exposure = "premium")
+hand <- latest_valuation(data.frame(year = 2019:2024, age = hand_ages, paid = hand_latest,
+                                    premium = 200), "year", "paid", age = "age", exposure = "premium")
 pattern <- cdf_of(hand_ages, hand_cdf)
 reported <- 1 / hand_cdf
 cl <- chain_ladder(hand, ldf = pattern, ldf_kind = "cdf")
@@ -74,10 +75,10 @@ near(expected_loss(hand, apriori = 0.7, ldf = 1 / pattern,
                    ldf_kind = "percent_developed")@ultimate, rep(140, 6))
 
 # 3. Half-year origins with the annual pattern.
-half <- bordereau(data.frame(origin = as.Date(c("2023-01-01", "2023-07-01", "2024-01-01")),
-                             paid = c(500, 300, 100), premium = 800),
-                  "origin", "paid", valuation = dec_2024, exposure = "premium",
-                  origin_grain = "S")
+half <- latest_valuation(data.frame(origin = as.Date(c("2023-01-01", "2023-07-01", "2024-01-01")),
+                                    paid = c(500, 300, 100), premium = 800),
+                         "origin", "paid", valuation = dec_2024, exposure = "premium",
+                         origin_grain = "S")
 stopifnot(identical(half@ages, c(24L, 18L, 12L)), half@origin_grain == "S")
 cdf18 <- sqrt(2 * 1.25)
 cl <- chain_ladder(half, ldf = annual, ldf_kind = "cdf")
@@ -91,8 +92,8 @@ near(chain_ladder(half, ldf = ldf, ldf_kind = "ldf", tail = 1.05)@ultimate, cl@u
 
 # 4. Past the pattern's end.
 past <- function(rule) {
-  bordereau(data.frame(year = 2021:2024, age = c(48, 36, 24, 12), paid = 100), "year", "paid",
-            age = "age", past_pattern_end = rule)
+  latest_valuation(data.frame(year = 2021:2024, age = c(48, 36, 24, 12), paid = 100), "year",
+                   "paid", age = "age", past_pattern_end = rule)
 }
 short <- c("12" = 1.5, "24" = 1.2)
 expect_error_like(chain_ladder(past("reject"), ldf = short, ldf_kind = "ldf"),
@@ -101,13 +102,13 @@ stopifnot(chain_ladder(past("no_development"), ldf = short, ldf_kind = "ldf")@ul
 near(chain_ladder(past("tail"), ldf = short, ldf_kind = "ldf", tail = 1.05)@ultimate[1:2],
      c(102.53798721500054, 105))
 ten <- stats::setNames(rep(1.1, 9), seq(12, 108, by = 12))
-d <- bordereau(data.frame(year = 2000:2004, age = c(144, 132, 120, 108, 12), paid = 100),
-               "year", "paid", age = "age", past_pattern_end = "tail")
+d <- latest_valuation(data.frame(year = 2000:2004, age = c(144, 132, 120, 108, 12), paid = 100),
+                      "year", "paid", age = "age", past_pattern_end = "tail")
 fit <- chain_ladder(d, ldf = ten, ldf_kind = "ldf", tail = 1.05)
 near(fit@ultimate[1:4] / 100, c(1.0132158418990078, 1.0253798721500054, 1.05, 1.155), 1e-14)
 level <- c("12" = 0.4, "60" = 0.8, "120" = 0.95)
-d <- bordereau(data.frame(year = 2000:2002, age = c(120, 108, 12), paid = 100), "year", "paid",
-               age = "age", past_pattern_end = "no_development")
+d <- latest_valuation(data.frame(year = 2000:2002, age = c(120, 108, 12), paid = 100), "year",
+                      "paid", age = "age", past_pattern_end = "no_development")
 fit <- chain_ladder(d, ldf = level, ldf_kind = "percent_developed")
 near(fit@pattern_rescale, 1.0526315789473684, 1e-15)
 near(fit@ultimate[3], 237.5, 1e-14)
@@ -125,8 +126,8 @@ expect_error_like(with_past_pattern_end(past("reject"), "hold"), "past_pattern_e
 
 # 5. ldf_origin.
 monthly <- stats::setNames((1:24) / 24, 1:24)
-book <- bordereau(data.frame(year = 2023:2024, age = c(24, 12), paid = c(37, 13)), "year",
-                  "paid", age = "age")
+book <- latest_valuation(data.frame(year = 2023:2024, age = c(24, 12), paid = c(37, 13)), "year",
+                         "paid", age = "age")
 near(chain_ladder(book, ldf = monthly, ldf_kind = "percent_developed",
                   ldf_origin = "M")@ultimate, c(48, 48), 1e-13)
 small <- triangle(data.frame(year = c(2023, 2023, 2024), age = c(12, 24, 12),
@@ -138,9 +139,9 @@ plain <- chain_ladder(small, ldf = c("12" = 1.5), ldf_kind = "ldf")
 stopifnot(identical(same@ultimate, plain@ultimate))
 expect_error_like(chain_ladder(small, ldf = monthly, ldf_kind = "percent_developed",
                                ldf_weight = c("12" = 0.5), ldf_origin = "M"), "weight")
-quarters <- bordereau(data.frame(origin = as.Date(c("2024-01-01", "2024-04-01")), age = c(6, 3),
-                                 paid = c(10, 5)), "origin", "paid", age = "age",
-                      origin_grain = "Q")
+quarters <- latest_valuation(data.frame(origin = as.Date(c("2024-01-01", "2024-04-01")),
+                                        age = c(6, 3), paid = c(10, 5)), "origin", "paid",
+                             age = "age", origin_grain = "Q")
 expect_error_like(chain_ladder(quarters, ldf = c("12" = 2, "24" = 1), ldf_kind = "cdf",
                                ldf_origin = "Y"), "whole multiple")
 expect_error_like(chain_ladder(small, ldf_origin = "M"), "ldf_origin is given without ldf")
@@ -162,9 +163,9 @@ bf_on <- function(x, ...) bornhuetter_ferguson(x, apriori = 0.8, ...)
 near(bf_on(four, column = "paid", exposure = "premium", ldf = monthly,
            ldf_kind = "percent_developed", ldf_origin = "M")@ultimate,
      bf_on(four, column = "paid", exposure = "premium", ldf = direct, ldf_kind = "cdf")@ultimate)
-young <- bordereau(data.frame(year = 2023:2024, age = c(24, 12), paid = c(330, 130),
-                              premium = c(540, 560)), "year", "paid", age = "age",
-                   exposure = "premium")
+young <- latest_valuation(data.frame(year = 2023:2024, age = c(24, 12), paid = c(330, 130),
+                                     premium = c(540, 560)), "year", "paid", age = "age",
+                          exposure = "premium")
 near(bf_on(young, ldf = monthly, ldf_kind = "percent_developed", ldf_origin = "M")@ultimate,
      bf_on(young, ldf = direct, ldf_kind = "cdf")@ultimate)
 near_draws(draw_matrix(odp_bootstrap(four, "paid", n_sims = 200, seed = 11, ldf = monthly,
@@ -277,8 +278,8 @@ for (k in which(rows$quantity != "pattern")) {
   key <- paste(r$dataset, r$method)
   if (is.null(fits[[key]])) {
     kind <- if (grepl("style=ldf", r$method, fixed = TRUE)) "ldf" else "cdf"
-    d <- if (r$dataset == "genins") as_bordereau(genins) else
-      as_bordereau(wkcomp, "paid", exposure = "premium")
+    d <- if (r$dataset == "genins") as_latest_valuation(genins) else
+      as_latest_valuation(wkcomp, "paid", exposure = "premium")
     fits[[key]] <- expected_method(r$method, d, list(ldf = patterns[[key]], ldf_kind = kind))
   }
   check_row(r, read_fit(r, fits[[key]]))
@@ -330,13 +331,13 @@ for (arm in c("own", "reference")) {
     akey <- paste(r$dataset, r$method)
     if (is.null(applied[[akey]])) {
       book <- target(r$dataset, target_name)
-      d <- if (r$dataset == "genins") as_bordereau(book) else
-        as_bordereau(book, "paid", exposure = "premium")
+      d <- if (r$dataset == "genins") as_latest_valuation(book) else
+        as_latest_valuation(book, "paid", exposure = "premium")
       if (target_name == "diagonal_raw") {
         frame <- as.data.frame(d)
         frame$age <- source@development[1]
         frame$year <- as.integer(frame$origin)
-        d <- bordereau(frame, "year", "latest", age = "age", exposure = "exposure")
+        d <- latest_valuation(frame, "year", "latest", age = "age", exposure = "exposure")
       }
       if (arm == "own") {
         fit <- expected_method(base, d, to_chain_ladder(source))
@@ -358,7 +359,7 @@ source <- chain_ladder(genins, tail = tail_curve())
 frozen <- to_chain_ladder(source)
 stopifnot(frozen$ldf_kind == "ldf", length(frozen$tail) == 1,
           identical(as.integer(names(frozen$ldf)), utils::head(source@development, -1)))
-d <- as_bordereau(genins)
+d <- as_latest_valuation(genins)
 a <- do.call(chain_ladder, c(list(d), frozen))
 stopifnot(identical(unname(a@ldf), unname(source@ldf)))
 near(a@ultimate, source@ultimate, 1e-14)
@@ -368,7 +369,7 @@ perturbed <- transform(genins_long, value = value * (1 + 0.01 * (origin - 2000))
 keyed <- triangle(rbind(transform(genins_long, lob = "a"), transform(perturbed, lob = "b")),
                   "origin", "development", "value", keys = "lob")
 fits <- chain_ladder(keyed, tail = tail_curve())
-d <- as_bordereau(keyed)
+d <- as_latest_valuation(keyed)
 stopifnot(identical(d@keys, "lob"), identical(d@index$lob, c("a", "b")))
 applied <- chain_ladder(d, development = fits)
 for (lob in c("a", "b")) {
@@ -378,17 +379,17 @@ for (lob in c("a", "b")) {
   near(f@ultimate, s@ultimate, 1e-14)
 }
 mapped <- chain_ladder(d, development = fits, segment_map = c(a = "a", b = "a"))
-by_hand <- do.call(chain_ladder, c(list(segment(as_bordereau(keyed), lob = "b")),
+by_hand <- do.call(chain_ladder, c(list(segment(as_latest_valuation(keyed), lob = "b")),
                                    to_chain_ladder(segment(fits, lob = "a"))))
 stopifnot(identical(unname(segment(mapped, lob = "b")@ultimate), unname(by_hand@ultimate)))
 one <- chain_ladder(genins, tail = tail_curve())
 broadcast <- chain_ladder(d, development = one)
 for (lob in c("a", "b")) {
-  alone <- do.call(chain_ladder, c(list(segment(as_bordereau(keyed), lob = lob)),
+  alone <- do.call(chain_ladder, c(list(segment(as_latest_valuation(keyed), lob = lob)),
                                    to_chain_ladder(one)))
   stopifnot(identical(unname(segment(broadcast, lob = lob)@ultimate), unname(alone@ultimate)))
 }
-bf <- bornhuetter_ferguson(as_bordereau(wkcomp, "paid", exposure = "premium"), apriori = 0.6,
+bf <- bornhuetter_ferguson(as_latest_valuation(wkcomp, "paid", exposure = "premium"), apriori = 0.6,
                            development = chain_ladder(wkcomp, "paid"))
 bf_fit <- bornhuetter_ferguson(wkcomp, "paid", "premium", apriori = 0.6)
 near(bf@ultimate, bf_fit@ultimate, 1e-12)
@@ -396,7 +397,7 @@ near(bf@ultimate, bf_fit@ultimate, 1e-12)
 keyed_wk <- triangle(rbind(transform(wkcomp_long, lob = "a"),
                            transform(wkcomp_long, lob = "b", paid = paid * 1.1)),
                      "origin", "development", c("paid", "premium"), keys = "lob")
-d_wk <- as_bordereau(keyed_wk, "paid", exposure = "premium")
+d_wk <- as_latest_valuation(keyed_wk, "paid", exposure = "premium")
 bf_keyed <- bornhuetter_ferguson(keyed_wk, "paid", "premium", apriori = 0.6, tail = tail_curve())
 cl_keyed <- chain_ladder(keyed_wk, "paid", tail = tail_curve())
 for (via in list(bf_keyed, bf_keyed@chain_ladder)) {
@@ -425,50 +426,55 @@ expect_error_like(chain_ladder(d, n_periods = 3, development = plain), "no link 
 expect_error_like(chain_ladder(d, drop_high = 1, development = plain), "no link ratio exclusions")
 expect_error_like(to_chain_ladder(plain), "segment()")
 expect_error_like(chain_ladder(d, segment_map = c(a = "a")), "segment_map is given without")
-expect_error_like(chain_ladder(keyed, development = plain), "as_bordereau()")
+expect_error_like(chain_ladder(keyed, development = plain), "as_latest_valuation()")
 expect_error_like(chain_ladder(d, "value"), "give column and exposure only for a triangle")
-expect_error_like(mack(d), "a bordereau has no link ratios")
-expect_error_like(odp_bootstrap(d), "a bordereau has no link ratios")
+expect_error_like(mack(d), "a latest valuation has no link ratios")
+expect_error_like(odp_bootstrap(d), "a latest valuation has no link ratios")
 expect_error_like(chain_ladder(d, development = "fit"), "development must be a chain_ladder_fit")
 
 # Cape Cod trends every segment to one valuation: b a year older.
 both <- rbind(transform(wkcomp_long, lob = "a"), transform(wkcomp_long, lob = "b",
                                                             origin = origin - 1))
 both <- triangle(both, "origin", "development", c("paid", "premium"), keys = "lob")
-d <- as_bordereau(both, "paid", exposure = "premium")
+d <- as_latest_valuation(both, "paid", exposure = "premium")
 own <- chain_ladder(wkcomp, "paid")
 cdf <- stats::setNames(own@cdf, own@development)
 together <- cape_cod(d, trend = 0.05, ldf = cdf, ldf_kind = "cdf")
-alone <- cape_cod(segment(as_bordereau(both, "paid", exposure = "premium"), lob = "b"),
+alone <- cape_cod(segment(as_latest_valuation(both, "paid", exposure = "premium"), lob = "b"),
                   trend = 0.05, ldf = cdf, ldf_kind = "cdf")
 near(segment(together, lob = "b")@trended_apriori, alone@trended_apriori * 1.05)
 near(segment(together, lob = "b")@apriori, alone@apriori)
 near(segment(together, lob = "b")@ultimate, alone@ultimate)
 
 # 10. Constructors.
-d <- as_bordereau(keyed)
+d <- as_latest_valuation(keyed)
 frame <- as.data.frame(d)
 stopifnot(identical(names(frame), c("lob", "origin", "age", "latest")))
 frame$valuation <- as.Date(sprintf("%d-12-01", as.integer(frame$origin) + frame$age %/% 12 - 1))
 frame$year <- as.integer(frame$origin)
-again <- bordereau(frame, "year", "latest", valuation = "valuation", keys = "lob")
+again <- latest_valuation(frame, "year", "latest", valuation = "valuation", keys = "lob")
 stopifnot(identical(again@ages, d@ages), identical(again@latest, d@latest),
           identical(again@origins, d@origins), identical(again@index, d@index))
-by_age <- bordereau(frame, "year", "latest", age = "age", keys = "lob")
+by_age <- latest_valuation(frame, "year", "latest", age = "age", keys = "lob")
 stopifnot(identical(by_age@ages, d@ages))
 exposure <- as.double(seq_len(nrow(frame)))
 with_e <- with_exposure(d, exposure)
 stopifnot(identical(with_e@exposure, exposure), identical(as.data.frame(with_e)$exposure, exposure))
 n_a <- sum(frame$lob == "a")
-stopifnot(identical(segment(as_bordereau(keyed), lob = "b")@latest, frame$latest[-seq_len(n_a)]))
-expect_error_like(bordereau(frame, "year", "latest", keys = "lob"), "exactly one of age")
-expect_error_like(bordereau(frame, "year", "latest", valuation = 2024), "as a Date")
-expect_error_like(bordereau(frame, "year", "latest", age = "age", past_pattern_end = "hold"),
+stopifnot(identical(segment(as_latest_valuation(keyed), lob = "b")@latest,
+                    frame$latest[-seq_len(n_a)]))
+expect_error_like(latest_valuation(frame, "year", "latest", keys = "lob"), "exactly one of age")
+expect_error_like(latest_valuation(frame, "year", "latest", valuation = 2024), "as a Date")
+expect_error_like(latest_valuation(frame, "year", "latest", age = "age", past_pattern_end = "hold"),
                   "past_pattern_end must be")
-plain_d <- bordereau(data.frame(year = 2023:2024, age = c(24, 12), paid = c(1, 2)), "year",
-                     "paid", age = "age", past_pattern_end = "tail")
+plain_d <- latest_valuation(data.frame(year = 2023:2024, age = c(24, 12), paid = c(1, 2)), "year",
+                            "paid", age = "age", past_pattern_end = "tail")
 stopifnot(plain_d@past_pattern_end == "tail", is.null(plain_d@exposure),
           length(plain_d@keys) == 0)
-invisible(utils::capture.output(print(plain_d)))
+printed <- utils::capture.output(print(plain_d))
+stopifnot(startsWith(printed[1], "<latest_valuation> 2 origins"),
+          S7::S7_inherits(plain_d, latest_valuation),
+          !exists("bordereau", envir = asNamespace("prospicio"), inherits = FALSE))
+expect_error_like(with_exposure(genins, 1), "x must be a latest valuation")
 
 cat("test-reserving-latest-diagonal.R: ok\n")

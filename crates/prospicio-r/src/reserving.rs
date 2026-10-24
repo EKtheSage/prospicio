@@ -5277,8 +5277,8 @@ fn label_from_r(text: &str, n_keys: usize) -> Label {
 
 /// A latest diagonal in one or several segments: each origin's latest
 /// cumulative value at its own age, as a bordereau holds it
-/// (`docs/design/reserving-v02.md`, decisions 15 to 19). R's `bordereau()`
-/// and `as_bordereau()`.
+/// (`docs/design/reserving-v02.md`, decisions 15 to 19). R's `latest_valuation()`
+/// and `as_latest_valuation()`.
 #[extendr]
 pub(crate) struct LatestDiagonals {
     inner: LatestDiagonalsInner,
@@ -5678,7 +5678,7 @@ impl LatestDiagonals {
             let sources = segment_map.as_string_vector().ok_or_else(|| {
                 Error::Other(
                     "segment_map must be a named character vector: names are segments of the \
-                     bordereau, values segments of the development"
+                     latest valuation, values segments of the development"
                         .into(),
                 )
             })?;
@@ -5688,7 +5688,7 @@ impl LatestDiagonals {
                 .filter(|n| n.len() == sources.len())
                 .ok_or_else(|| {
                     Error::Other(
-                        "segment_map needs a name (a segment of the bordereau) on every value"
+                        "segment_map needs a name (a segment of the latest valuation) on every value"
                             .into(),
                     )
                 })?;

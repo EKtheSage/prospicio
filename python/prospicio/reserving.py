@@ -5,7 +5,7 @@ ODP bootstrap with its simulated one-year view of the chain
 ladder and the expected-loss methods, Mack's bootstrap for the lifetime and
 one-year views under Mack's process, and the Bayesian ODP chain ladder, the Bayesian
 Bornhuetter-Ferguson, Meyers' CRC, CSR and CAY models and Gesmann and Morris'
-compartmental model sampled with NUTS, a latest diagonal (a bordereau)
+compartmental model sampled with NUTS, a latest diagonal on its own
 projected with a pattern from elsewhere, and excess-layer development
 patterns derived from a ground-up triangle
 (docs/design/triangle.md, docs/design/reserving-v02.md,

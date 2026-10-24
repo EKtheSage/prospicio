@@ -455,8 +455,8 @@ what it is aiming for by v1.0.
     expected-loss family fit each segment, with each segment's development
     taken from a source fit by label, by a map, or from a single-segment
     source for every segment; Python's `LatestDiagonal` with
-    `fit_diagonal(..., development=)`, R's `bordereau()` and
-    `as_bordereau()` taken by the five functions, `to_chain_ladder` and
+    `fit_diagonal(..., development=)`, R's `latest_valuation()` and
+    `as_latest_valuation()` taken by the five functions, `to_chain_ladder` and
     `ldf_origin` in both, reproducing the Rust validation's numbers and
     the chainladder-python parity rows. The Excel functions are the next
     PR.

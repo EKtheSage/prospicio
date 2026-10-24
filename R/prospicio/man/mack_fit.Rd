@@ -28,10 +28,10 @@ mack(
 \item{ptr}{A \code{ChainLadderFit} pointer; used internally.}
 
 \item{triangle}{A \link{triangle}, with any number of segments, or, for
-\code{chain_ladder()}, a \link{bordereau} (a latest diagonal on its own).}
+\code{chain_ladder()}, a \link{latest_valuation} (a latest diagonal on its own).}
 
 \item{column}{Name of the column to fit; by default the only one. Not
-given for a bordereau.}
+given for a latest valuation.}
 
 \item{average}{\code{"volume"}, \code{"simple"}, \code{"regression"} or \code{"geometric"}.
 \code{"geometric"} is the geometric mean of the link ratios: it gives the
@@ -56,7 +56,7 @@ extrapolate it. Unused when the tail factor is 1.}
 \item{ldf}{A selected development pattern (above): a numeric vector
 named by age in months, or a data.frame with columns \code{age} and
 \code{value}. \code{NULL} (the default) estimates every factor. Ages off the
-triangle's (or bordereau's) ages are read on the pattern's own ages,
+triangle's (or latest valuation's) ages are read on the pattern's own ages,
 \code{log(cdf)} linear between them, and what the pattern gives past the
 oldest age folds into a constant tail at full weight
 (\code{docs/design/reserving-v02.md}, decision 18). Adding one off-grid
@@ -79,7 +79,7 @@ the factor's link), the others fully selected.}
 
 \item{ldf_origin}{\code{NULL} (the default), or the grain (\code{"M"}, \code{"Q"}, \code{"S"}
 or \code{"Y"}) of the origin periods \code{ldf} was measured on, when it differs
-from the triangle's or bordereau's: a pattern of accident months read
+from the triangle's or latest valuation's: a pattern of accident months read
 for accident years, say. The pattern is averaged over the origin
 period with exposure even through it
 (\code{SelectedPattern::averaged_over_origins}), exact up to the pattern's

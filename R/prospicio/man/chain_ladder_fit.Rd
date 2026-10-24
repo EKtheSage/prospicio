@@ -28,10 +28,10 @@ chain_ladder(
 \item{ptr}{A \code{ChainLadderFit} pointer; used internally.}
 
 \item{triangle}{A \link{triangle}, with any number of segments, or, for
-\code{chain_ladder()}, a \link{bordereau} (a latest diagonal on its own).}
+\code{chain_ladder()}, a \link{latest_valuation} (a latest diagonal on its own).}
 
 \item{column}{Name of the column to fit; by default the only one. Not
-given for a bordereau.}
+given for a latest valuation.}
 
 \item{average}{\code{"volume"}, \code{"simple"}, \code{"regression"} or \code{"geometric"}.
 \code{"geometric"} is the geometric mean of the link ratios: it gives the
@@ -50,7 +50,7 @@ the oldest age to ultimate (1 means no tail), or a \code{\link[=tail_constant]{t
 \item{ldf}{A selected development pattern (above): a numeric vector
 named by age in months, or a data.frame with columns \code{age} and
 \code{value}. \code{NULL} (the default) estimates every factor. Ages off the
-triangle's (or bordereau's) ages are read on the pattern's own ages,
+triangle's (or latest valuation's) ages are read on the pattern's own ages,
 \code{log(cdf)} linear between them, and what the pattern gives past the
 oldest age folds into a constant tail at full weight
 (\code{docs/design/reserving-v02.md}, decision 18). Adding one off-grid
@@ -73,7 +73,7 @@ the factor's link), the others fully selected.}
 
 \item{ldf_origin}{\code{NULL} (the default), or the grain (\code{"M"}, \code{"Q"}, \code{"S"}
 or \code{"Y"}) of the origin periods \code{ldf} was measured on, when it differs
-from the triangle's or bordereau's: a pattern of accident months read
+from the triangle's or latest valuation's: a pattern of accident months read
 for accident years, say. The pattern is averaged over the origin
 period with exposure even through it
 (\code{SelectedPattern::averaged_over_origins}), exact up to the pattern's
@@ -95,20 +95,20 @@ the observed triangle keeps), and \code{\link[=claims_development_result]{claims
 rejects any of them, even one that removes nothing. The fit's
 \code{n_links} and \code{excluded} report what was used.}
 
-\item{development}{For a \link{bordereau} only: a \link{chain_ladder_fit} (or a
+\item{development}{For a \link{latest_valuation} only: a \link{chain_ladder_fit} (or a
 fit with \verb{@chain_ladder}) whose development projects each segment, as
 \code{\link[=to_chain_ladder]{to_chain_ladder()}} freezes it. The method then takes no \code{ldf}, no
 \code{tail} other than 1 and no link ratio exclusions. The source's factors
 are read at each origin's own age, as fitted, with no \code{ldf_origin}: a
 source fitted on another origin grain (accident quarters for a
-bordereau of accident years, say) goes through \code{\link[=to_chain_ladder]{to_chain_ladder()}}
+latest valuation of accident years, say) goes through \code{\link[=to_chain_ladder]{to_chain_ladder()}}
 instead, with \code{ldf_origin} added to the arguments it returns, one
 segment at a time.}
 
 \item{segment_map}{With \code{development}: \code{NULL} to take each segment's
 development from the source segment of the same label (a source of
 one segment serves every segment), or a named character vector from a
-segment of the bordereau to one of the source, each label its key
+segment of the latest valuation to one of the source, each label its key
 values joined by \code{" / "}.}
 }
 \value{

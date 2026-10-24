@@ -3,30 +3,30 @@
 \name{with_exposure}
 \alias{with_exposure}
 \alias{with_past_pattern_end}
-\title{Exposure and the rule past the pattern's end of a bordereau}
+\title{Exposure and the rule past the pattern's end of a latest valuation}
 \usage{
 with_exposure(x, exposure)
 
 with_past_pattern_end(x, rule)
 }
 \arguments{
-\item{x}{A \link{bordereau}.}
+\item{x}{A \link{latest_valuation}.}
 
 \item{exposure}{Finite positive numbers, one per row.}
 
 \item{rule}{\code{"reject"}, \code{"no_development"} or \code{"tail"}.}
 }
 \value{
-A \link{bordereau}.
+A \link{latest_valuation}.
 }
 \description{
-\code{with_exposure()} gives a \link{bordereau} its exposure, one value per row in
+\code{with_exposure()} gives a \link{latest_valuation} its exposure, one value per row in
 the order of \code{as.data.frame()}; \code{with_past_pattern_end()} sets how an
 origin older than the pattern's end develops, for every segment.
 }
 \examples{
-d <- bordereau(data.frame(year = 2023:2024, age = c(24, 12), paid = c(37, 13)),
-               "year", "paid", age = "age")
+d <- latest_valuation(data.frame(year = 2023:2024, age = c(24, 12), paid = c(37, 13)),
+                      "year", "paid", age = "age")
 with_exposure(d, c(60, 60))@exposure
 with_past_pattern_end(d, "tail")@past_pattern_end
 }

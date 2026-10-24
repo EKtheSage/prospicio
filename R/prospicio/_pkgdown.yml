@@ -322,7 +322,7 @@ reference:
       - tail_log_linear
       - expected_loss_fit
       - cape_cod_fit
-      - bordereau
+      - latest_valuation
       - with_exposure
       - to_chain_ladder
       - odp_bootstrap_fit

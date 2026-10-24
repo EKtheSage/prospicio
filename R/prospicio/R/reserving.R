@@ -406,10 +406,10 @@ S7::method(aggregate, triangle) <- function(x, keep = character(), ...) {
 }
 
 check_triangle <- function(x) {
-  if (is_bordereau(x)) {
-    stop("a bordereau has no link ratios: this needs a triangle; chain_ladder(), ",
+  if (is_latest_valuation(x)) {
+    stop("a latest valuation has no link ratios: this needs a triangle; chain_ladder(), ",
          "expected_loss(), bornhuetter_ferguson(), benktander() and cape_cod() project a ",
-         "bordereau", call. = FALSE)
+         "latest valuation", call. = FALSE)
   }
   if (!S7::S7_inherits(x, triangle)) stop("x must be a triangle", call. = FALSE)
 }
@@ -1038,9 +1038,9 @@ S7::method(print, tail_log_linear) <- tail_print
 #' one per segment.
 #'
 #' @param triangle A [triangle], with any number of segments, or, for
-#'   `chain_ladder()`, a [bordereau] (a latest diagonal on its own).
+#'   `chain_ladder()`, a [latest_valuation] (a latest diagonal on its own).
 #' @param column Name of the column to fit; by default the only one. Not
-#'   given for a bordereau.
+#'   given for a latest valuation.
 #' @param average `"volume"`, `"simple"`, `"regression"` or `"geometric"`.
 #'   `"geometric"` is the geometric mean of the link ratios: it gives the
 #'   factors only, with no sigma or standard error, so [mack()] and the
@@ -1055,7 +1055,7 @@ S7::method(print, tail_log_linear) <- tail_print
 #' @param ldf A selected development pattern (above): a numeric vector
 #'   named by age in months, or a data.frame with columns `age` and
 #'   `value`. `NULL` (the default) estimates every factor. Ages off the
-#'   triangle's (or bordereau's) ages are read on the pattern's own ages,
+#'   triangle's (or latest valuation's) ages are read on the pattern's own ages,
 #'   `log(cdf)` linear between them, and what the pattern gives past the
 #'   oldest age folds into a constant tail at full weight
 #'   (`docs/design/reserving-v02.md`, decision 18). Adding one off-grid
@@ -1075,7 +1075,7 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   the factor's link), the others fully selected.
 #' @param ldf_origin `NULL` (the default), or the grain (`"M"`, `"Q"`, `"S"`
 #'   or `"Y"`) of the origin periods `ldf` was measured on, when it differs
-#'   from the triangle's or bordereau's: a pattern of accident months read
+#'   from the triangle's or latest valuation's: a pattern of accident months read
 #'   for accident years, say. The pattern is averaged over the origin
 #'   period with exposure even through it
 #'   (`SelectedPattern::averaged_over_origins`), exact up to the pattern's
@@ -1084,19 +1084,19 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   grain, it changes nothing. It needs one `ldf_weight` for every
 #'   factor, not one by age, and the averaged pattern cannot be weighted by
 #'   age from R.
-#' @param development For a [bordereau] only: a [chain_ladder_fit] (or a
+#' @param development For a [latest_valuation] only: a [chain_ladder_fit] (or a
 #'   fit with `@chain_ladder`) whose development projects each segment, as
 #'   [to_chain_ladder()] freezes it. The method then takes no `ldf`, no
 #'   `tail` other than 1 and no link ratio exclusions. The source's factors
 #'   are read at each origin's own age, as fitted, with no `ldf_origin`: a
 #'   source fitted on another origin grain (accident quarters for a
-#'   bordereau of accident years, say) goes through [to_chain_ladder()]
+#'   latest valuation of accident years, say) goes through [to_chain_ladder()]
 #'   instead, with `ldf_origin` added to the arguments it returns, one
 #'   segment at a time.
 #' @param segment_map With `development`: `NULL` to take each segment's
 #'   development from the source segment of the same label (a source of
 #'   one segment serves every segment), or a named character vector from a
-#'   segment of the bordereau to one of the source, each label its key
+#'   segment of the latest valuation to one of the source, each label its key
 #'   values joined by `" / "`.
 #' @param n_periods,drop_high,drop_low Which link ratios the factor at each
 #'   age averages. `n_periods` keeps the latest `n_periods` calendar
@@ -1158,10 +1158,10 @@ chain_ladder <- function(triangle, column = NULL, average = "volume",
                          drop_high = 0, drop_low = 0, development = NULL, segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
-  if (is_bordereau(triangle)) {
-    return(chain_ladder_fit(ptr = bordereau_fit(triangle, "chain_ladder", list(), args, tail,
-                                                pattern, development, segment_map,
-                                                !is.null(column))))
+  if (is_latest_valuation(triangle)) {
+    return(chain_ladder_fit(ptr = latest_valuation_fit(triangle, "chain_ladder", list(), args, tail,
+                                                       pattern, development, segment_map,
+                                                       !is.null(column))))
   }
   no_development(development, segment_map)
   column <- fit_column(triangle, column)
@@ -1377,13 +1377,13 @@ expected_loss_properties <- function(el, cl) {
 #' `Benktander`, whose `fit()` returns an `ExpectedLossFit`.
 #'
 #' @param triangle A [triangle], with any number of segments, or a
-#'   [bordereau] (a latest diagonal on its own, which carries its
+#'   [latest_valuation] (a latest diagonal on its own, which carries its
 #'   exposure).
 #' @param column Name of the loss column to project; not given for a
-#'   bordereau.
+#'   latest valuation.
 #' @param exposure Name of the exposure column; each origin's latest
-#'   observed value is its exposure. Not given for a bordereau.
-#' @param development,segment_map For a bordereau only: the development
+#'   observed value is its exposure. Not given for a latest valuation.
+#' @param development,segment_map For a latest valuation only: the development
 #'   of another fit, segment by segment, as in [chain_ladder()].
 #' @param apriori Expected loss ratio: the expected ultimate per unit of
 #'   exposure; positive.
@@ -1435,8 +1435,8 @@ expected_loss <- function(triangle, column = NULL, exposure = NULL, apriori = 1,
                           segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
-  if (is_bordereau(triangle)) {
-    return(expected_loss_fit(ptr = bordereau_fit(
+  if (is_latest_valuation(triangle)) {
+    return(expected_loss_fit(ptr = latest_valuation_fit(
       triangle, "expected_loss", list(single_number(apriori, "apriori")), args, tail, pattern,
       development, segment_map, !is.null(column) || !is.null(exposure)
     )))
@@ -1459,8 +1459,8 @@ bornhuetter_ferguson <- function(triangle, column = NULL, exposure = NULL, aprio
                                  drop_low = 0, development = NULL, segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
-  if (is_bordereau(triangle)) {
-    return(expected_loss_fit(ptr = bordereau_fit(
+  if (is_latest_valuation(triangle)) {
+    return(expected_loss_fit(ptr = latest_valuation_fit(
       triangle, "bornhuetter_ferguson", list(single_number(apriori, "apriori")), args, tail,
       pattern, development, segment_map, !is.null(column) || !is.null(exposure)
     )))
@@ -1483,8 +1483,8 @@ benktander <- function(triangle, column = NULL, exposure = NULL, apriori = 1, n_
                        segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
-  if (is_bordereau(triangle)) {
-    return(expected_loss_fit(ptr = bordereau_fit(
+  if (is_latest_valuation(triangle)) {
+    return(expected_loss_fit(ptr = latest_valuation_fit(
       triangle, "benktander",
       list(single_number(apriori, "apriori"), single_number(n_iters, "n_iters")), args, tail,
       pattern, development, segment_map, !is.null(column) || !is.null(exposure)
@@ -1579,8 +1579,8 @@ cape_cod <- function(triangle, column = NULL, exposure = NULL, trend = 0, decay 
                      segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
-  if (is_bordereau(triangle)) {
-    return(cape_cod_fit(ptr = bordereau_fit(
+  if (is_latest_valuation(triangle)) {
+    return(cape_cod_fit(ptr = latest_valuation_fit(
       triangle, "cape_cod",
       list(single_number(trend, "trend"), single_number(decay, "decay")), args, tail, pattern,
       development, segment_map, !is.null(column) || !is.null(exposure)
@@ -1595,9 +1595,9 @@ cape_cod <- function(triangle, column = NULL, exposure = NULL, trend = 0, decay 
   cape_cod_fit(ptr = ptr)
 }
 
-#' Bordereau: a latest diagonal on its own
+#' Latest valuation: each origin's latest value on its own
 #'
-#' A bordereau holds one value per origin at its own age: each origin's
+#' A latest valuation holds one value per origin at its own age: each origin's
 #' latest cumulative value, in one or several segments, with an exposure
 #' when the expected-loss methods need one. [chain_ladder()],
 #' [expected_loss()], [bornhuetter_ferguson()], [benktander()] and
@@ -1628,7 +1628,7 @@ cape_cod <- function(triangle, column = NULL, exposure = NULL, trend = 0, decay 
 #' segment by segment in that order, as `as.data.frame()` lists them, and
 #' `with_exposure()` takes its values in that order.
 #'
-#' A bordereau has no link ratios, so [mack()], the bootstraps and the
+#' A latest valuation has no link ratios, so [mack()], the bootstraps and the
 #' one-year views need a triangle.
 #'
 #' @param data A data.frame, one row per origin and segment.
@@ -1646,22 +1646,22 @@ cape_cod <- function(triangle, column = NULL, exposure = NULL, trend = 0, decay 
 #' @param past_pattern_end `"reject"` (the default), `"no_development"` or
 #'   `"tail"`.
 #' @param ptr A `LatestDiagonals` pointer; used internally.
-#' @returns A `bordereau` object, with properties `keys`, `index` (one row
+#' @returns A `latest_valuation` object, with properties `keys`, `index` (one row
 #'   per segment), `origin_grain`, `origins`, `ages`, `latest`, `exposure`
 #'   (`NULL` when none was given) and `past_pattern_end`.
-#' @seealso [as_bordereau()] for a triangle's latest diagonal,
+#' @seealso [as_latest_valuation()] for a triangle's latest diagonal,
 #'   [with_exposure()], [to_chain_ladder()].
 #' @export
 #' @examples
 #' book <- data.frame(year = 2022:2024, paid = c(900, 600, 150), premium = 1000)
-#' d <- bordereau(book, "year", "paid", valuation = as.Date("2024-12-31"),
-#'                exposure = "premium")
+#' d <- latest_valuation(book, "year", "paid", valuation = as.Date("2024-12-31"),
+#'                       exposure = "premium")
 #' d@ages
 #' chain_ladder(d, ldf = c("12" = 2, "24" = 1.25, "36" = 1), ldf_kind = "cdf")@ultimate
 #' bornhuetter_ferguson(d, apriori = 0.7, ldf = c("12" = 2, "24" = 1.25, "36" = 1),
 #'                      ldf_kind = "cdf")@ultimate
-bordereau <- S7::new_class(
-  "bordereau",
+latest_valuation <- S7::new_class(
+  "latest_valuation",
   package = "prospicio",
   properties = list(
     ptr = S7::new_S3_class("LatestDiagonals"),
@@ -1748,57 +1748,58 @@ past_pattern_end_arg <- function(rule) {
   rule
 }
 
-is_bordereau <- function(x) S7::S7_inherits(x, bordereau)
+is_latest_valuation <- function(x) S7::S7_inherits(x, latest_valuation)
 
-#' @rdname bordereau
+#' @rdname latest_valuation
 #' @param triangle A [triangle], with any number of segments.
-#' @param column Name of the column whose latest values the bordereau
+#' @param column Name of the column whose latest values the latest valuation
 #'   holds; by default the only one.
-#' @details `as_bordereau()` takes a triangle's latest diagonal in every
+#' @details `as_latest_valuation()` takes a triangle's latest diagonal in every
 #'   segment: each origin at the age of its last observed cell, with its
 #'   cumulative value there, and with `exposure` that column's last
-#'   observed value. `chain_ladder(as_bordereau(book, "paid"), development
+#'   observed value. `chain_ladder(as_latest_valuation(book, "paid"), development
 #'   = fit)` is chainladder-python's `fit(source).predict(book)`.
 #' @export
-as_bordereau <- function(triangle, column = NULL, exposure = NULL, past_pattern_end = "reject") {
+as_latest_valuation <- function(triangle, column = NULL, exposure = NULL,
+                                past_pattern_end = "reject") {
   column <- fit_column(triangle, column)
   ptr <- rust_result(LatestDiagonals$from_triangle(
     triangle@ptr, column, if (is.null(exposure)) NULL else as.character(exposure),
     past_pattern_end_arg(past_pattern_end)
   ))
-  bordereau(ptr = ptr)
+  latest_valuation(ptr = ptr)
 }
 
-#' Exposure and the rule past the pattern's end of a bordereau
+#' Exposure and the rule past the pattern's end of a latest valuation
 #'
-#' `with_exposure()` gives a [bordereau] its exposure, one value per row in
+#' `with_exposure()` gives a [latest_valuation] its exposure, one value per row in
 #' the order of `as.data.frame()`; `with_past_pattern_end()` sets how an
 #' origin older than the pattern's end develops, for every segment.
 #'
-#' @param x A [bordereau].
+#' @param x A [latest_valuation].
 #' @param exposure Finite positive numbers, one per row.
 #' @param rule `"reject"`, `"no_development"` or `"tail"`.
-#' @returns A [bordereau].
+#' @returns A [latest_valuation].
 #' @export
 #' @examples
-#' d <- bordereau(data.frame(year = 2023:2024, age = c(24, 12), paid = c(37, 13)),
-#'                "year", "paid", age = "age")
+#' d <- latest_valuation(data.frame(year = 2023:2024, age = c(24, 12), paid = c(37, 13)),
+#'                       "year", "paid", age = "age")
 #' with_exposure(d, c(60, 60))@exposure
 #' with_past_pattern_end(d, "tail")@past_pattern_end
 with_exposure <- function(x, exposure) {
-  if (!is_bordereau(x)) stop("x must be a bordereau", call. = FALSE)
+  if (!is_latest_valuation(x)) stop("x must be a latest valuation", call. = FALSE)
   if (!is.numeric(exposure)) stop("exposure must be numeric", call. = FALSE)
-  bordereau(ptr = rust_result(x@ptr$with_exposure(as.double(exposure))))
+  latest_valuation(ptr = rust_result(x@ptr$with_exposure(as.double(exposure))))
 }
 
 #' @rdname with_exposure
 #' @export
 with_past_pattern_end <- function(x, rule) {
-  if (!is_bordereau(x)) stop("x must be a bordereau", call. = FALSE)
-  bordereau(ptr = rust_result(x@ptr$with_past_pattern_end(past_pattern_end_arg(rule))))
+  if (!is_latest_valuation(x)) stop("x must be a latest valuation", call. = FALSE)
+  latest_valuation(ptr = rust_result(x@ptr$with_past_pattern_end(past_pattern_end_arg(rule))))
 }
 
-S7::method(as.data.frame, bordereau) <- function(x, ...) {
+S7::method(as.data.frame, latest_valuation) <- function(x, ...) {
   out <- x@ptr$row_keys()
   out$origin <- x@origins
   out$age <- x@ages
@@ -1807,9 +1808,9 @@ S7::method(as.data.frame, bordereau) <- function(x, ...) {
   as.data.frame(out, stringsAsFactors = FALSE, optional = TRUE)
 }
 
-S7::method(print, bordereau) <- function(x, ...) {
+S7::method(print, latest_valuation) <- function(x, ...) {
   n <- x@ptr$n_segments()
-  cat(sprintf("<bordereau> %d origins%s, origin grain %s, past the pattern's end: %s\n",
+  cat(sprintf("<latest_valuation> %d origins%s, origin grain %s, past the pattern's end: %s\n",
               length(x@ages), if (n > 1) sprintf(" in %d segments", n) else "",
               x@origin_grain, x@past_pattern_end))
   print(as.data.frame(x), row.names = FALSE)
@@ -1825,7 +1826,7 @@ S7::method(print, bordereau) <- function(x, ...) {
 #' the fit's own factors to the bit; this is `ChainLadderFit::to_chain_ladder`
 #' (`docs/design/reserving-v02.md`, decision 17). For a fit of several
 #' segments, pick one with [segment()], or pass the whole fit as
-#' `development` to project a [bordereau] segment by segment.
+#' `development` to project a [latest_valuation] segment by segment.
 #'
 #' @param fit A [chain_ladder_fit], or a fit with `@chain_ladder`.
 #' @returns A list of `ldf`, `ldf_kind` and `tail`.
@@ -1834,7 +1835,8 @@ S7::method(print, bordereau) <- function(x, ...) {
 #' long <- data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12), paid = c(100, 150, 110))
 #' fit <- chain_ladder(triangle(long, "year", "age", "paid"), tail = 1.1)
 #' to_chain_ladder(fit)
-#' book <- bordereau(data.frame(year = 2024, age = 12, paid = 50), "year", "paid", age = "age")
+#' book <- latest_valuation(data.frame(year = 2024, age = 12, paid = 50), "year", "paid",
+#'                          age = "age")
 #' do.call(chain_ladder, c(list(book), to_chain_ladder(fit)))@ultimate
 to_chain_ladder <- function(fit) {
   ptr <- development_ptr(fit)
@@ -1854,25 +1856,25 @@ development_ptr <- function(fit) {
 }
 
 # The segment_map argument as the binding takes it: NULL, or a named
-# character vector from a segment of the bordereau to one of the
+# character vector from a segment of the latest valuation to one of the
 # development, each label its key values joined by " / " ("Total" without
 # keys).
 segment_map_arg <- function(segment_map) {
   if (is.null(segment_map)) return(NULL)
   if (!is.character(segment_map) || is.null(names(segment_map)) ||
       any(!nzchar(names(segment_map))) || anyNA(segment_map)) {
-    stop("segment_map must be a named character vector: names are segments of the bordereau, ",
-         "values segments of the development", call. = FALSE)
+    stop("segment_map must be a named character vector: names are segments of the latest ",
+         "valuation, values segments of the development", call. = FALSE)
   }
   segment_map
 }
 
-# A fit of the bordereau `x` by `method` (a LatestDiagonals method name),
+# A fit of the latest valuation `x` by `method` (a LatestDiagonals method name),
 # with the method's own arguments `head` and the development arguments.
-bordereau_fit <- function(x, method, head, args, tail, pattern, development, segment_map,
+latest_valuation_fit <- function(x, method, head, args, tail, pattern, development, segment_map,
                           column_given) {
   if (column_given) {
-    stop("a bordereau holds its own latest values (and exposure): give column and exposure ",
+    stop("a latest valuation holds its own latest values (and exposure): give column and exposure ",
          "only for a triangle", call. = FALSE)
   }
   development <- if (is.null(development)) NULL else development_ptr(development)
@@ -1884,8 +1886,8 @@ bordereau_fit <- function(x, method, head, args, tail, pattern, development, seg
 # The plain triangle path takes no development.
 no_development <- function(development, segment_map) {
   if (!is.null(development) || !is.null(segment_map)) {
-    stop("development and segment_map project a bordereau: use as_bordereau() on the ",
-         "triangle", call. = FALSE)
+    stop("development and segment_map project a latest valuation: use as_latest_valuation() ",
+         "on the triangle", call. = FALSE)
   }
 }
 
@@ -4582,8 +4584,8 @@ check_fit <- function(fit) {
 #' matches several segments is an error. For the bootstraps, the segment
 #' keeps its part of the joint `reserves` (and [meyers_fits] of the joint
 #' `ultimates`), and for the one-year view its
-#' part of the joint `cdr`, with the same dimensions. On a [bordereau],
-#' `segment()` returns the bordereau of one segment.
+#' part of the joint `cdr`, with the same dimensions. On a [latest_valuation],
+#' `segment()` returns the latest valuation of one segment.
 #'
 #' These are Python's `to_frame()`, `totals_frame()`,
 #' `development_frame()` and `segment(**keys)`.
@@ -4595,7 +4597,7 @@ check_fit <- function(fit) {
 #'   [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit] or
 #'   [compartmental_one_year_fits] (a [clark_fit] or
 #'   a compartmental fit not for `development_frame()`); for `segment()`,
-#'   also a [bordereau].
+#'   also a [latest_valuation].
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
 #' @name fit_frames
@@ -4639,7 +4641,7 @@ development_frame <- function(fit) {
 #' @rdname fit_frames
 #' @export
 segment <- function(fit, ...) {
-  if (!is_bordereau(fit)) check_fit(fit)
+  if (!is_latest_valuation(fit)) check_fit(fit)
   call <- sys.call()
   conditions <- list(...)
   keys <- names(conditions)

@@ -14,12 +14,14 @@
   methods, `ChainLadderFit.to_chain_ladder()`, and `ldf_origin` on every
   method that takes `ldf` for a pattern measured on another origin basis
   (#544, #622).
-- R: `bordereau()` and `as_bordereau()`, taken by `chain_ladder()`,
+- R: `latest_valuation()` and `as_latest_valuation()`, each origin's
+  latest valuation in one or several segments, taken by `chain_ladder()`,
   `expected_loss()`, `bornhuetter_ferguson()`, `benktander()` and
   `cape_cod()` with `development` and `segment_map`; `with_exposure()`,
-  `with_past_pattern_end()`, `segment()` on a bordereau, `to_chain_ladder()`
-  and `ldf_origin`. The expected-loss functions' `column` and `exposure` now
-  default to `NULL` (still required for a triangle) (#544, #622).
+  `with_past_pattern_end()`, `segment()` on a latest valuation,
+  `to_chain_ladder()` and `ldf_origin`. The expected-loss functions'
+  `column` and `exposure` now default to `NULL` (still required for a
+  triangle) (#544, #622).
 - The `ldf` help in Python and R no longer says every age must be a
   development age of the triangle, and warns that one off-grid age changes
   how a sparse age-to-age pattern's other factors are read (#544, #622).

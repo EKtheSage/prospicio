@@ -21,7 +21,7 @@ segment(fit, ...)
 \link{compartmental_fit}, \link{compartmental_fits}, \link{compartmental_one_year_fit} or
 \link{compartmental_one_year_fits} (a \link{clark_fit} or
 a compartmental fit not for \code{development_frame()}); for \code{segment()},
-also a \link{bordereau}.}
+also a \link{latest_valuation}.}
 
 \item{...}{Key conditions as \code{key = value}, one value each.}
 }
@@ -71,8 +71,8 @@ take any value, so a fit with one segment needs none; a choice that
 matches several segments is an error. For the bootstraps, the segment
 keeps its part of the joint \code{reserves} (and \link{meyers_fits} of the joint
 \code{ultimates}), and for the one-year view its
-part of the joint \code{cdr}, with the same dimensions. On a \link{bordereau},
-\code{segment()} returns the bordereau of one segment.
+part of the joint \code{cdr}, with the same dimensions. On a \link{latest_valuation},
+\code{segment()} returns the latest valuation of one segment.
 
 These are Python's \code{to_frame()}, \code{totals_frame()},
 \code{development_frame()} and \verb{segment(**keys)}.

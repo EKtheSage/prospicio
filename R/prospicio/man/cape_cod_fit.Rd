@@ -31,14 +31,14 @@ cape_cod(
 \item{ptr}{A \code{CapeCodFit} pointer; used internally.}
 
 \item{triangle}{A \link{triangle}, with any number of segments, or a
-\link{bordereau} (a latest diagonal on its own, which carries its
+\link{latest_valuation} (a latest diagonal on its own, which carries its
 exposure).}
 
 \item{column}{Name of the loss column to project; not given for a
-bordereau.}
+latest valuation.}
 
 \item{exposure}{Name of the exposure column; each origin's latest
-observed value is its exposure. Not given for a bordereau.}
+observed value is its exposure. Not given for a latest valuation.}
 
 \item{trend}{Annual trend rate of the losses, above -1.}
 
@@ -55,7 +55,7 @@ gives, so \code{cdf} and the share developed \code{1 / cdf} follow it.}
 \item{n_periods, drop_high, drop_low}{Which link ratios the factors average,
 as in \code{\link[=chain_ladder]{chain_ladder()}}.}
 
-\item{development, segment_map}{For a bordereau only: the development
+\item{development, segment_map}{For a latest valuation only: the development
 of another fit, segment by segment, as in \code{\link[=chain_ladder]{chain_ladder()}}.}
 }
 \value{

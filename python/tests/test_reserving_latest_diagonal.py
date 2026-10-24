@@ -1,4 +1,4 @@
-"""The latest diagonal (a bordereau) projected with a pattern from elsewhere
+"""The latest diagonal on its own projected with a pattern from elsewhere
 (``docs/design/reserving-v02.md``, decisions 16 to 19, issue #544): the
 ``LatestDiagonal`` type, ``fit_diagonal`` on the chain ladder and the
 expected-loss methods, ``ChainLadderFit.to_chain_ladder``, ``ldf_origin``

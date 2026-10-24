@@ -3336,8 +3336,11 @@ Status: **Built** (2026-10-24), issue #544, branch `claude/diagonal-bindings`,
 in Rust, Python and R. This is the issue's fifth PR. It carries decisions
 15 to 18 into the bindings and adds what decision 17 item 9 left for later:
 latest diagonals over segments and a source fit applied segment by segment.
-Items 1 to 12 below are proposals for the user. The Excel functions are a
-later PR.
+Of items 1 to 12 below, the user decided four on 2026-10-24: items 3, 5
+and 11 accepted as built, and item 8 with other names (R's
+`latest_valuation()` and `as_latest_valuation()`, not `bordereau()` and
+`as_bordereau()`). Items 1, 2, 4, 6, 7, 9, 10 and 12 are still proposals
+for the user. The Excel functions are a later PR.
 
 **Rust** (`crates/prospicio-reserving/src/latest_diagonal.rs`, re-exported
 from `lib.rs`):
@@ -3438,26 +3441,27 @@ developments whose segments are not the diagonals'.
 
 **R** (`crates/prospicio-r/src/reserving.rs`, `R/prospicio/R/reserving.R`):
 
-- An S7 class `bordereau` over `LatestDiagonals`: `bordereau(data, origin,
-  latest, age = NULL, valuation = NULL, exposure = NULL, keys = NULL,
-  origin_grain = "Y", past_pattern_end = "reject")`, `as_bordereau(triangle,
-  column = NULL, exposure = NULL, past_pattern_end = "reject")`,
+- An S7 class `latest_valuation` over `LatestDiagonals`, each origin's
+  latest valuation: `latest_valuation(data, origin, latest, age = NULL,
+  valuation = NULL, exposure = NULL, keys = NULL, origin_grain = "Y",
+  past_pattern_end = "reject")`, `as_latest_valuation(triangle, column =
+  NULL, exposure = NULL, past_pattern_end = "reject")`,
   `with_exposure()`, `with_past_pattern_end()`, `segment()`,
   `as.data.frame()` and `print()`, with the same properties as Python's.
 - `chain_ladder()`, `expected_loss()`, `bornhuetter_ferguson()`,
-  `benktander()` and `cape_cod()` take a bordereau as their first argument
-  (with no `column` or `exposure`), and `development` (a `chain_ladder_fit`
-  or a fit with `@chain_ladder`) and `segment_map` (a named character
-  vector, target to source, each label its key values joined by `" / "`).
-  `development` with a triangle is an error that points to `as_bordereau()`.
-  `column` and `exposure` of the expected-loss methods now default to
-  `NULL`, so that a bordereau can leave them out; with a triangle they are
-  still required.
+  `benktander()` and `cape_cod()` take a latest valuation as their first
+  argument (with no `column` or `exposure`), and `development` (a
+  `chain_ladder_fit` or a fit with `@chain_ladder`) and `segment_map` (a
+  named character vector, target to source, each label its key values
+  joined by `" / "`). `development` with a triangle is an error that
+  points to `as_latest_valuation()`. `column` and `exposure` of the
+  expected-loss methods now default to `NULL`, so that a latest valuation
+  can leave them out; with a triangle they are still required.
 - `to_chain_ladder(fit)` returns `list(ldf, ldf_kind = "ldf", tail)`, `ldf`
   named by the age that starts each link, for `do.call()`.
 - `ldf_origin = NULL` on every function that takes `ldf`.
-- `mack()`, the bootstraps and the one-year views reject a bordereau with
-  a message naming the five functions that take one.
+- `mack()`, the bootstraps and the one-year views reject a latest
+  valuation with a message naming the five functions that take one.
 
 **Checks.** `validation/tests/reserving_diagonal_segments.rs` (Rust): each
 segment takes the source segment of its label, to the bit for the factors
@@ -3475,20 +3479,23 @@ reading, every row of `reserving_latest_diagonal_python.csv` and of
 equal to the unpacked route to the bit), the segments and the
 constructors.
 
-**Decision items** (proposals for the user):
+**Decision items** (proposals for the user; items 3, 5, 8 and 11 decided
+by the user on 2026-10-24):
 
 1. **A separate `LatestDiagonals` type**, rather than keys on
    `LatestDiagonal`, whose per-origin accessors would change meaning.
 2. **Segment order** sorted by label, as `Triangle` sorts it.
 3. **Cape Cod across segments trends to one common valuation** (the latest
-   of all segments), as `CapeCod::fit_segments` does. The alternative is
+   of all segments), as `CapeCod::fit_segments` does (decided by the user
+   on 2026-10-24: one common valuation, as built). The alternative is
    each segment's own valuation.
 4. **The map:** by label, with a source of one segment broadcast; unused
    source segments ignored and an unmatched target an error; explicit
    `Pairs` from target to source.
-5. **A development source and the method's own settings:** the method's
-   pattern, tail and link ratio exclusions must be unset, an error rather
-   than silently overridden; the apriori, `n_iters`, `trend` and `decay`
+5. **A development source and the method's own settings** (decided by
+   the user on 2026-10-24: as built): the method's pattern, tail and link
+   ratio exclusions must be unset, an error rather than silently
+   overridden; the apriori, `n_iters`, `trend` and `decay`
    stay the method's. The exclusions are refused too, beyond the design's
    pattern and tail, since they would otherwise be ignored silently.
 6. **Python `to_chain_ladder()` needs a single segment.** Per-segment
@@ -3497,15 +3504,21 @@ constructors.
    method with `ldf` and applied at fit time with the target's grain. The
    alternative is a module function that returns arguments to unpack,
    which touches no method.
-8. **R naming:** `bordereau()` and `as_bordereau()`, because
-   `latest_diagonal()` is taken. Alternatives: `diagonal_data()`, or
-   extending `latest_diagonal()`.
+8. **R naming** (decided by the user on 2026-10-24: `latest_valuation()`
+   and `as_latest_valuation()`, the S7 class `latest_valuation`). The
+   proposal was `bordereau()` and `as_bordereau()`, because
+   `latest_diagonal()` is taken. The user declined it: a bordereau (bdx)
+   is the data extract a cedant sends, not a latest diagonal, so the name
+   should say each origin's latest valuation. `latest_diagonal()` keeps
+   its name and meaning (a triangle's latest values). The other
+   alternatives were `diagonal_data()`, or extending `latest_diagonal()`.
 9. **R dispatch:** inside the existing five functions, rather than
    `*_diagonal()` twin functions.
 10. **A valuation must be a date** in Python and R; valuations per row are
     supported (`DiagonalAge::Valuations`).
-11. **Error wording:** Rust messages pass through unchanged, so a
-    `"reject"` error names `LatestDiagonal::with_past_pattern_end`, the
+11. **Error wording** (decided by the user on 2026-10-24, as built):
+    Rust messages pass through unchanged, so a `"reject"` error names
+    `LatestDiagonal::with_past_pattern_end`, the
     errors of a tail under `"no_development"` or none under `"tail"` name
     `PastPatternEnd::NoDevelopment` and `PastPatternEnd::Tail`
     (`past_pattern_end` in Python and R), and a map by label between

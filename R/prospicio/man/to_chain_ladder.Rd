@@ -20,12 +20,13 @@ factors, named by the age that starts each link), \code{ldf_kind = "ldf"} and
 the fit's own factors to the bit; this is \code{ChainLadderFit::to_chain_ladder}
 (\code{docs/design/reserving-v02.md}, decision 17). For a fit of several
 segments, pick one with \code{\link[=segment]{segment()}}, or pass the whole fit as
-\code{development} to project a \link{bordereau} segment by segment.
+\code{development} to project a \link{latest_valuation} segment by segment.
 }
 \examples{
 long <- data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12), paid = c(100, 150, 110))
 fit <- chain_ladder(triangle(long, "year", "age", "paid"), tail = 1.1)
 to_chain_ladder(fit)
-book <- bordereau(data.frame(year = 2024, age = 12, paid = 50), "year", "paid", age = "age")
+book <- latest_valuation(data.frame(year = 2024, age = 12, paid = 50), "year", "paid",
+                         age = "age")
 do.call(chain_ladder, c(list(book), to_chain_ladder(fit)))@ultimate
 }
