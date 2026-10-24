@@ -753,17 +753,17 @@ int main(int argc, char **argv) {
     static wchar_t cdf_s[] = L"\x03" L"cdf";
     dg_kind.xltype = xltypeStr;
     dg_kind.val.str = cdf_s;
-    XLOPER12 *dg = ((Fn11)GetProcAddress(xll, "pro_diag_cl"))(&dg_origins, &dg_ages, &dg_lat, &dg_pat, &missing,
+    XLOPER12 *dgl_fit = ((Fn11)GetProcAddress(xll, "pro_diag_cl"))(&dg_origins, &dg_ages, &dg_lat, &dg_pat, &missing,
                                                                 &dg_kind, &missing, &missing, &missing, &missing,
                                                                 &missing);
-    print_result("PRO.DIAG.CL(years, ages, latest, cdf pattern,, \"cdf\")", dg);
-    check("PRO.DIAG.CL is 8 x 6", (dg->xltype & 0xFFF) == xltypeMulti && dg->val.array.rows == 8 &&
-                                      dg->val.array.columns == 6);
+    print_result("PRO.DIAG.CL(years, ages, latest, cdf pattern,, \"cdf\")", dgl_fit);
+    check("PRO.DIAG.CL is 8 x 6", (dgl_fit->xltype & 0xFFF) == xltypeMulti && dgl_fit->val.array.rows == 8 &&
+                                      dgl_fit->val.array.columns == 6);
     check("PRO.DIAG.CL 2024 ultimate 150 x 12/7",
-          fabs(dg->val.array.lparray[6 * 6 + 4].val.num - 1800.0 / 7.0) < 1e-9);
+          fabs(dgl_fit->val.array.lparray[6 * 6 + 4].val.num - 1800.0 / 7.0) < 1e-9);
     check("PRO.DIAG.CL total ultimate 3981.342857",
-          fabs(dg->val.array.lparray[7 * 6 + 4].val.num - 3981.342857142857) < 1e-9);
-    free12(dg);
+          fabs(dgl_fit->val.array.lparray[7 * 6 + 4].val.num - 3981.342857142857) < 1e-9);
+    free12(dgl_fit);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;
