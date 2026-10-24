@@ -47,6 +47,14 @@ sources:
   off-grid reading (1.5484201731845508), and every row of
   `reserving_latest_diagonal_python.csv` and `reserving_fit_apply_python.csv`
   in both arms.
+* An accident-month pattern to 24 months (`t / 24` developed at month
+  `t`) averaged onto accident years by `ldf_origin = "M"` runs to 35
+  months, the last month of the year at 24: on a triangle with ages 12 to
+  48 it selects only the link 12 to 24 (37/13), and the later factors stay
+  the triangle's; on a diagonal an origin at 48 months is past its end.
+  Every method that takes `ldf`, both bootstraps and their one-year views
+  then equal the same call with `{12: 48/13, 24: 48/37}` as factors to
+  ultimate, within 1e-12 (seeded draws within 1e-10).
 * No new external fact: the chainladder-python references are those of
   decisions 16 and 17; segments are checked against each segment fitted
   alone, not against chainladder-python's groupby.
