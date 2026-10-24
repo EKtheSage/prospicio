@@ -7,4 +7,4 @@
   with the origin grain, a tail, `past_end` for origins older than the
   pattern's end and `pattern_origin` for a pattern of accident months;
   `PRO.PATTERN.AVERAGE` shows a pattern averaged to a coarser origin
-  basis (#544).
+  basis (#544, #620).
