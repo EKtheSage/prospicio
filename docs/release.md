@@ -95,7 +95,21 @@ Everything else waits for 0.0.7 or later, including the M-sized P1s #545,
    version (breaking changes first, each item with its PR number), in a PR.
 2. After it merges, run the **Release** workflow by hand (*Actions →
    Release → Run workflow* on `main`). Without a tag it builds and tests
-   every wheel, the sdist and the crates, and publishes nothing.
+   every wheel, the sdist and the crates, and publishes nothing. Its
+   `semver` job runs `cargo semver-checks check-release --workspace
+   --release-type minor` against each crate's last version on crates.io
+   (locally: `cargo install cargo-semver-checks --locked`, then the same
+   command). Until 1.0 it reports and does not block: every break it
+   lists must match an item under "Breaking changes" in the new
+   `CHANGELOG.md` section, from a change fragment marked breaking
+   (`changes/README.md`); a break with no such item gets one before the
+   tag. From 1.0 a break fails the release.
+
+   Licences, RustSec advisories and crate sources are checked on every
+   pull request that changes the dependencies and on the weekly run
+   (`cargo deny check`, `deny.toml`). An advisory found by the weekly run
+   is fixed, or ignored in `deny.toml` with its reason, before a
+   release.
 3. Tag the merge commit and push the tag:
 
    ```sh
