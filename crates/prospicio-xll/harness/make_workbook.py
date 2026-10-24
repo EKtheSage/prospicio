@@ -970,6 +970,100 @@ md.column_dimensions["N"].width = 30
 for col in "ABCDEFGHIJKO":
     md.column_dimensions[col].width = 11
 
+# A latest diagonal (a bordereau) projected with a selected pattern (decision 39).
+dg = wb.create_sheet("Diagonal")
+dg["A1"] = "prospicio XLL test: a latest diagonal projected with a selected pattern (PRO.DIAG.*)"; dg["A1"].font = Font(bold=True, size=13)
+dg["A2"] = "Six accident years at 31 December 2024, factors to ultimate from a prior study, premium 200 each."; dg["A2"].font = note
+for h, col in zip(["AY", "Age", "Latest", "Premium"], "ABCD"):
+    dg[f"{col}3"] = h; dg[f"{col}3"].font = bold
+for r, (y, age, x) in enumerate(zip(range(2019, 2025), [72, 60, 48, 36, 24, 12], [980, 860, 700, 520, 400, 150])):
+    dg.cell(row=4 + r, column=1, value=y).font = bold
+    for c, v in enumerate([age, x, 200]):
+        dg.cell(row=4 + r, column=2 + c, value=v).fill = inp
+dg["F3"] = "Pattern age"; dg["F4"] = "CDF"; dg["F3"].font = dg["F4"].font = bold
+for k, (age, cdf) in enumerate(zip(range(12, 84, 12), [12 / 7, 1.3, 1.15, 1.07, 1.02, 1])):
+    dg.cell(row=3, column=7 + k, value=age).font = bold
+    dg.cell(row=4, column=7 + k, value=cdf).fill = inp
+O_, A_, L_, P_, PAT, PAGES = "$A$4:$A$9", "$B$4:$B$9", "$C$4:$C$9", "$D$4:$D$9", "$G$4:$L$4", "$G$3:$L$3"
+dg["A11"] = "Chain ladder"; dg["A11"].font = bold
+dg["A12"] = ArrayFormula("A12:F19", f'=PRO.DIAG.CL({O_},{A_},{L_},{PAT},{PAGES},"cdf")')
+dg["H11"] = "Bornhuetter-Ferguson, a priori 0.7"; dg["H11"].font = bold
+dg["H12"] = ArrayFormula("H12:O19", f'=PRO.DIAG.BF({O_},{A_},{L_},{P_},0.7,{PAT},{PAGES},"cdf")')
+dg["A21"] = "Benktander, 2 iterations"; dg["A21"].font = bold
+dg["A22"] = ArrayFormula("A22:H29", f'=PRO.DIAG.BENKTANDER({O_},{A_},{L_},{P_},0.7,{PAT},2,{PAGES},"cdf")')
+dg["J21"] = "Cape Cod, ages from the valuation date 31 December 2024"; dg["J21"].font = bold
+dg["J22"] = ArrayFormula("J22:Q29", f'=PRO.DIAG.CAPECOD({O_},,{L_},{P_},{PAT},,,{PAGES},"cdf",,,45657)')
+dg["A31"] = "Expected loss method, a priori 0.7"; dg["A31"].font = bold
+dg["A32"] = ArrayFormula("A32:H39", f'=PRO.DIAG.EL({O_},{A_},{L_},{P_},0.7,{PAT},{PAGES},"cdf")')
+
+# GenIns's diagonal (the Expected loss sheet's triangle) with its own volume-weighted
+# factors to ultimate, against chainladder-python 0.10.1's DevelopmentConstant.
+GENINS_CDF = [14.4465768672924, 4.138701016260354, 2.3685822129924685, 1.6251964813646196, 1.3844989689503577,
+              1.2542756414472627, 1.1546635507833156, 1.0956368230729214, 1.017724725219544, 1.0]
+dg["A42"] = "GenIns's latest diagonal with its own factors to ultimate, valued 31 December 2010"; dg["A42"].font = bold
+dg["A43"] = "CDF"; dg["A43"].font = bold
+for k, x in enumerate(GENINS_CDF):
+    dg.cell(row=43, column=2 + k, value=x).fill = inp
+dg["A45"] = ArrayFormula("A45:F56", "=PRO.DIAG.CL('Expected loss'!$A$4:$A$13,,PRO.TRI.LATEST('Expected loss'!$B$4:$K$13),$B$43:$K$43,,\"cdf\",,,40543)")
+
+# Accident quarters of 2024 at December 2024, a pattern at 3, 12, 24 and 36 months.
+dg["N42"] = "Accident quarters of 2024 (Excel dates), a pattern at 3, 12, 24, 36 months"; dg["N42"].font = bold
+for h, col in zip(["Quarter", "Latest", "Pattern age", "CDF"], "NOQR"):
+    dg[f"{col}43"] = h; dg[f"{col}43"].font = bold
+for k, (m, x) in enumerate(zip([1, 4, 7, 10], [400, 300, 200, 100])):
+    c = dg.cell(row=44 + k, column=14, value=datetime.date(2024, m, 1)); c.number_format = "yyyy-mm-dd"; c.fill = inp
+    dg.cell(row=44 + k, column=15, value=x).fill = inp
+for k, (age, cdf) in enumerate(zip([3, 12, 24, 36], [4, 2, 1.25, 1])):
+    dg.cell(row=44 + k, column=17, value=age).fill = inp
+    dg.cell(row=44 + k, column=18, value=cdf).fill = inp
+dg["N50"] = ArrayFormula("N50:S55", '=PRO.DIAG.CL(N44:N47,,O44:O47,R44:R47,Q44:Q47,"cdf",,"quarter",45657)')
+
+# Past the pattern's end: nine factors of 1.1 from 12 to 108 months and a tail of 1.05.
+dg["A59"] = "Past the pattern's end: factors 1.1 from 12 to 108 months, tail 1.05 spread one step per year"; dg["A59"].font = bold
+for k, age in enumerate([144, 132, 120, 108, 12]):
+    dg.cell(row=60 + k, column=1, value=2000 + k).font = bold
+    dg.cell(row=60 + k, column=2, value=age).fill = inp
+    dg.cell(row=60 + k, column=3, value=100).fill = inp
+dg["E59"] = "LDF"; dg["E59"].font = bold
+for k in range(9):
+    dg.cell(row=59, column=6 + k, value=1.1).fill = inp
+dg["A66"] = ArrayFormula("A66:F72", '=PRO.DIAG.CL(A60:A64,B60:B64,C60:C64,F59:N59,,,1.05,,,"tail")')
+
+# An accident month's pattern t/12 averaged to accident years.
+# Right of the past-end exhibit's LDF row (F59:N59), so no input lands in it.
+dg["P59"] = "An accident month's t/12 at 1 to 12 months, averaged to accident years"; dg["P59"].font = bold
+for k in range(12):
+    dg.cell(row=60 + k, column=16, value=k + 1).fill = inp
+    dg.cell(row=60 + k, column=17, value=(k + 1) / 12).fill = inp
+dg["S60"] = ArrayFormula("S60:U83", '=PRO.PATTERN.AVERAGE(P60:P71,Q60:Q71,"month","year","percent")')
+
+# The RAA sheet's chain ladder frozen in PRO.CL.LDF and applied to its own diagonal.
+dg["A75"] = "RAA's own factors (the RAA sheet's PRO.CL.LDF row) applied to its latest diagonal"; dg["A75"].font = bold
+dg["A76"] = ArrayFormula("A76:F87", "=PRO.DIAG.CL(RAA!$A$4:$A$13,,PRO.TRI.LATEST(RAA!$B$4:$K$13),RAA!$B$14:$J$14,,,RAA!$K$14,,DATE(1990,12,31))")
+
+dg["H86"] = "Checks"; dg["H86"].font = bold
+for h, col in zip(["Quantity", "prospicio", "Expected", "Match"], "HIJK"):
+    dg[f"{col}87"] = h; dg[f"{col}87"].font = bold
+for i, (name, f, x, tol) in enumerate([
+        ("CL, 2024 ultimate (150 x 12/7)", "=E18", 257.142857142857, 1e-9),
+        ("BF, 2024 ultimate", "=N18", 208.333333333333, 1e-9),
+        ("Benktander, total ultimate", "=G29", 3930.086950714278, 1e-9),
+        ("Cape Cod, total ultimate", "=P29", 4216.385925423543, 1e-9),
+        ("EL, total ultimate", "=G39", 840, 1e-9),
+        ("GenIns total, chainladder-python", "=E56", 53038945.61192431, 1e-9),
+        ("Quarters, 2024Q1 ultimate", "=R51", 800, 1e-9),
+        ("Quarters, 2024Q4 ultimate", "=R54", 400, 1e-9),
+        ("132 months: CDF past the end", "=D68", 1.0253798721500054, 1e-12),
+        ("Averaged: percent at 12 months (78/144)", "=T72", 78 / 144, 1e-12),
+        ("RAA frozen: total ultimate against PRO.CL", "=E87", "=RAA!P14", 1e-12)]):
+    row = 88 + i
+    dg[f"H{row}"] = name; dg[f"I{row}"] = f; dg[f"J{row}"] = x
+    dg[f"K{row}"] = f"=ABS(I{row}-J{row})<{tol}*MAX(1,ABS(J{row}))"
+dg.column_dimensions["A"].width = 12
+dg.column_dimensions["H"].width = 40
+for col in "BCDEFGIJKLMOPQRSTU":
+    dg.column_dimensions[col].width = 12
+
 wb.save(out)
 
 METADATA = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
