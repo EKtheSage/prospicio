@@ -419,8 +419,8 @@ what it is aiming for by v1.0.
   - A latest diagonal with a selected pattern (`reserving-v02.md`,
     decision 15; branch `claude/diagonal-pr1`, issue #544, in Rust): a
     fully selected age with no link ratio is missing instead of an error,
-    so a bordereau's one value per origin is projected by the chain ladder
-    and the expected-loss family; Mack and both bootstraps reject it by
+    so one latest value per origin on its own is projected by the chain
+    ladder and the expected-loss family; Mack and both bootstraps reject it by
     name. Development fitted on one triangle and applied to another, and
     the bindings, are the issue's next PRs.
   - The latest diagonal as a type of its own (`reserving-v02.md`,
@@ -434,8 +434,8 @@ what it is aiming for by v1.0.
     `ChainLadderFit::to_chain_ladder` freezes a fit as a fully selected
     pattern and a constant tail, and `LatestDiagonal::from_triangle` takes
     another triangle's latest diagonal, so a development fitted on one
-    book projects another book or a bordereau, by the chain ladder and the
-    expected-loss family; parity with chainladder-python's
+    book projects another book or a latest diagonal on its own, by the
+    chain ladder and the expected-loss family; parity with chainladder-python's
     `fit(source).predict(target)`. `LatestDiagonal` over segments and the
     bindings are the issue's next PRs.
   - A pattern on another origin basis, and ages past its end

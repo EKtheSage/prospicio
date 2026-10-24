@@ -2702,9 +2702,9 @@ in Rust. This is the issue's first PR; the rest (a dedicated diagonal
 type, development fitted on one triangle and applied to another, the
 bindings) is planned in the issue and listed in the lane's Next.
 
-Bordereaux hold one latest value per origin with its age, not a triangle,
-and the pattern comes from elsewhere (a prior study, an industry triangle,
-a benchmark). `Triangle::from_long` already builds a triangle from such
+A cedant's data, summarised by origin, often gives one latest value per
+origin with its age, not a triangle, and the pattern comes from elsewhere
+(a prior study, an industry triangle, a benchmark). `Triangle::from_long` already builds a triangle from such
 rows: one observed cell per origin. The chain ladder and the expected-loss
 methods then failed even with a fully selected pattern, with "factor from
 development index 0: no origin is observed at both ages", because
@@ -2783,11 +2783,11 @@ open questions; they are proposals for the user to accept, and the PR
 lists them.
 
 Decision 15 lets a triangle that holds only a latest diagonal reach the
-chain ladder and the expected-loss methods. A bordereau is not a triangle,
-though: its ages need not lie on one grid, the pattern's ages need not be
-the diagonal's, and a triangle trims its development axis to the ages it
+chain ladder and the expected-loss methods. A latest diagonal on its own
+is not a triangle, though: its ages need not lie on one grid, the
+pattern's ages need not be the diagonal's, and a triangle trims its development axis to the ages it
 observes, so a pattern that starts before the youngest origin's age does
-not fit it. `LatestDiagonal` holds the bordereau as it is, and
+not fit it. `LatestDiagonal` holds the latest values as they are, and
 `fit_diagonal` on `ChainLadder`, `ExpectedLoss`, `BornhuetterFerguson`,
 `Benktander` and `CapeCod` projects it, returning the same fit types.
 
@@ -2883,8 +2883,8 @@ and the Python and R arguments.
 
 A reserving actuary often fits a development on one book (a mature line,
 an industry triangle, last year's study) and applies it to another: a
-younger book, a bordereau, the same book cut differently.
-chainladder-python does it with `Chainladder().fit(source).predict(target)`.
+younger book, a cedant's latest values by origin, the same book cut
+differently. chainladder-python does it with `Chainladder().fit(source).predict(target)`.
 Decisions 15 and 16 already project a latest diagonal with a fully
 selected pattern, so a fit only has to become such a pattern, and another
 triangle only has to give its latest diagonal.
