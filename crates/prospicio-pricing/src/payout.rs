@@ -23,6 +23,21 @@ use prospicio_core::{Error, Result};
 
 use crate::risk_load::{PremiumRule, Price};
 
+/// How a [`PaymentPattern`]'s cumulative share paid runs between its
+/// times ([`PaymentPattern::paid_by`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Interpolation {
+    /// Each share is paid at its time, as the pattern discounts.
+    Step,
+    /// Each share is paid evenly over the period that ends at its time,
+    /// from the previous time (or 0): the usual assumption.
+    #[default]
+    Linear,
+    /// The share unpaid falls geometrically over each period; linear in a
+    /// period that ends with nothing unpaid.
+    LogLinear,
+}
+
 /// The share of the ultimate loss paid at each time, in years from the
 /// treaty's inception.
 #[derive(Debug, Clone, PartialEq)]
@@ -210,6 +225,74 @@ impl PaymentPattern {
             .map(|(_, s)| s)
             .sum();
         (1.0 - paid).max(0.0)
+    }
+
+    /// The share paid by time `t` in years, read between the pattern's
+    /// times as `how` says: 0 at time 0 (unless a share is paid at 0) and
+    /// 1 from the last time on, since the shares, any tail included, sum
+    /// to 1.
+    ///
+    /// ```
+    /// use prospicio_pricing::payout::{Interpolation, PaymentPattern};
+    ///
+    /// let p = PaymentPattern::new(vec![1.0, 2.0], vec![0.6, 0.4]).unwrap();
+    /// assert_eq!(p.paid_by(0.5, Interpolation::Step), 0.0);
+    /// assert!((p.paid_by(0.5, Interpolation::Linear) - 0.3).abs() < 1e-15);
+    /// assert!((p.paid_by(1.5, Interpolation::Linear) - 0.8).abs() < 1e-15);
+    /// // Unpaid 1 to 0.4 over the first year falls by sqrt(0.4) in half of it.
+    /// let half = 1.0 - 0.4_f64.sqrt();
+    /// assert!((p.paid_by(0.5, Interpolation::LogLinear) - half).abs() < 1e-15);
+    /// assert_eq!(p.paid_by(2.0, Interpolation::Step), 1.0);
+    /// ```
+    pub fn paid_by(&self, t: f64, how: Interpolation) -> f64 {
+        let mut a = 0.0;
+        let mut fa = 0.0;
+        for (&b, &s) in self.times.iter().zip(&self.shares) {
+            let fb = (fa + s).min(1.0);
+            if t < b {
+                let w = (t - a) / (b - a);
+                return match how {
+                    Interpolation::Step => fa,
+                    Interpolation::Linear => fa + (fb - fa) * w,
+                    Interpolation::LogLinear if fb < 1.0 => {
+                        1.0 - (1.0 - fa) * ((1.0 - fb) / (1.0 - fa)).powf(w)
+                    }
+                    Interpolation::LogLinear => fa + (fb - fa) * w,
+                };
+            }
+            a = b;
+            fa = fb;
+        }
+        1.0
+    }
+
+    /// The cumulative share paid at the end of each of `months` months from
+    /// time 0, `paid_by((m + 1) / 12)` for `m = 0, 1, ...`: a paid pattern
+    /// for the cash-flow engine ([`crate::cashflow::MonthlyPatterns`]), or
+    /// a pattern measured from the accident date for
+    /// [`MonthlyPatterns::from_annual`](crate::cashflow::MonthlyPatterns::from_annual).
+    /// At month `12k − 1` it is the pattern's cumulative share at `k` years.
+    ///
+    /// ```
+    /// use prospicio_pricing::payout::{Interpolation, PaymentPattern};
+    ///
+    /// let p = PaymentPattern::from_development(&[1.0, 2.0, 3.0], &[4.0, 1.25, 1.0]).unwrap();
+    /// let m = p.to_monthly(36, Interpolation::Linear).unwrap();
+    /// assert!((m[11] - 0.25).abs() < 1e-15 && (m[23] - 0.8).abs() < 1e-15);
+    /// assert!((m[0] - 0.25 / 12.0).abs() < 1e-15);
+    /// assert_eq!(m[35], 1.0);
+    /// ```
+    pub fn to_monthly(&self, months: usize, how: Interpolation) -> Result<Vec<f64>> {
+        if months == 0 {
+            return Err(Error::InvalidParameter {
+                name: "months",
+                value: 0.0,
+                reason: "must be at least 1",
+            });
+        }
+        Ok((0..months)
+            .map(|m| self.paid_by((m + 1) as f64 / 12.0, how))
+            .collect())
     }
 
     /// The present value at inception of a unit of ultimate loss, at an
@@ -437,5 +520,44 @@ mod tests {
         assert!(PaymentPattern::new(vec![1.0, 1.0], vec![0.5, 0.5]).is_err());
         assert!(PaymentPattern::new(vec![1.0], vec![0.9]).is_err());
         assert!(PaymentPattern::new(vec![-1.0], vec![1.0]).is_err());
+    }
+
+    #[test]
+    fn a_monthly_pattern_meets_the_annual_one_at_whole_years() {
+        let p = PaymentPattern::from_development(&[1.0, 2.0, 3.0, 5.0], &[5.0, 2.0, 1.25, 1.0])
+            .unwrap();
+        for how in [
+            Interpolation::Step,
+            Interpolation::Linear,
+            Interpolation::LogLinear,
+        ] {
+            let m = p.to_monthly(72, how).unwrap();
+            for (k, f) in [(1, 0.2), (2, 0.5), (3, 0.8), (5, 1.0)] {
+                assert!((m[12 * k - 1] - f).abs() < 1e-12, "{how:?} at {k}");
+            }
+            assert!(m[0] >= 0.0 && m.windows(2).all(|w| w[1] >= w[0] - 1e-15));
+            assert_eq!(m[71], 1.0);
+        }
+        // Log-linear lies above linear where the unpaid share falls.
+        let lin = p.to_monthly(12, Interpolation::Linear).unwrap();
+        let log = p.to_monthly(12, Interpolation::LogLinear).unwrap();
+        assert!(log[5] > lin[5]);
+        assert!(p.to_monthly(0, Interpolation::Linear).is_err());
+    }
+
+    #[test]
+    fn monthly_steps_discount_as_the_pattern() {
+        // Times on month ends: the step pattern's increments, discounted at
+        // their month ends, are the pattern's discount factor.
+        let p = PaymentPattern::new(vec![0.25, 1.0, 2.5], vec![0.3, 0.5, 0.2]).unwrap();
+        let m = p.to_monthly(36, Interpolation::Step).unwrap();
+        let rate: f64 = 0.06;
+        let pv: f64 = (0..m.len())
+            .map(|t| {
+                let inc = m[t] - if t == 0 { 0.0 } else { m[t - 1] };
+                inc * (1.0 + rate).powf(-((t + 1) as f64) / 12.0)
+            })
+            .sum();
+        assert!((pv - p.discount_factor(rate)).abs() < 1e-14);
     }
 }

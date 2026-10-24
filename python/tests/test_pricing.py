@@ -1091,3 +1091,23 @@ def test_tower_quote_layers_and_total():
     assert paid_grids.total_ceded is None
     with pytest.raises(ValueError, match="not one compound total"):
         TowerQuote.technical(paid, paid_grids, Distortion.tvar(0.99), cost_of_capital=0.12)
+
+
+def test_monthly_patterns_from_a_payment_pattern():
+    """Monthly patterns from a pattern by development age (#601)."""
+    p = P.PaymentPattern.from_development([1.0, 2.0, 3.0, 5.0], [5.0, 2.0, 1.25, 1.0])
+    for how in ("step", "linear", "log-linear"):
+        m = p.to_monthly(72, how)
+        for k, f in [(1, 0.2), (2, 0.5), (3, 0.8), (5, 1.0)]:
+            assert m[12 * k - 1] == pytest.approx(f, abs=1e-12)
+        assert all(b >= a - 1e-15 for a, b in zip(m, m[1:]))
+    with pytest.raises(ValueError):
+        p.to_monthly(12, "cubic")
+    written = [min((t + 1) / 12, 1.0) for t in range(72)]
+    w, e, paid = P.monthly_patterns(written, p)
+    assert e[0] == pytest.approx(1 / 144, abs=1e-15)
+    assert e[22] == pytest.approx(1.0, abs=1e-15)
+    terms = P.CashflowTerms(
+        100.0, 60, w, e, paid, P.CollateralRequirement({"outstanding": 1.0})
+    )
+    assert len(terms.run([0.7])) == 1

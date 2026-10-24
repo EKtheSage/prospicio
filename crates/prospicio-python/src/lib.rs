@@ -131,8 +131,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::payout::{
-        PyIrrResult, PyPaymentPattern, PyPayoutPrice, irr, leverage, moic, npv, price_over_payout,
-        tiered_fee,
+        PyIrrResult, PyPaymentPattern, PyPayoutPrice, irr, leverage, moic, monthly_patterns, npv,
+        price_over_payout, tiered_fee,
     };
     #[pymodule_export]
     use super::pnl::{
