@@ -8,7 +8,7 @@ use prospicio_pricing::exposure::{
 };
 use prospicio_pricing::layer::XsLayer;
 use prospicio_pricing::quote::{Loads, PremiumTerms, Quote, TowerQuote};
-use prospicio_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price};
+use prospicio_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price, ReinstatementPrice};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -871,6 +871,131 @@ pub(crate) fn price(
     }
     .map_err(to_py)?;
     Ok(PyPrice { inner })
+}
+
+/// The upfront premium of a cover whose reinstatement premium counts in
+/// its own price, from ``price_with_reinstatements``.
+#[pyclass(name = "ReinstatementPrice", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyReinstatementPrice {
+    inner: ReinstatementPrice,
+}
+
+#[pymethods]
+impl PyReinstatementPrice {
+    /// The upfront (deposit) premium ``P``.
+    #[getter]
+    fn upfront(&self) -> f64 {
+        self.inner.upfront
+    }
+
+    /// The expected reinstatement premium ``P E[g]``.
+    #[getter]
+    fn expected_reinstatement_premium(&self) -> f64 {
+        self.inner.expected_reinstatement_premium
+    }
+
+    /// The expected premium in all, ``P (1 + E[g])``.
+    #[getter]
+    fn expected_premium(&self) -> f64 {
+        self.inner.expected_premium()
+    }
+
+    /// The expected ceded loss ``E[X]``.
+    #[getter]
+    fn expected_loss(&self) -> f64 {
+        self.inner.expected_loss
+    }
+
+    /// The price of the net outcome ``X - P g`` at the solution.
+    #[getter]
+    fn net(&self) -> PyPrice {
+        PyPrice {
+            inner: self.inner.net,
+        }
+    }
+
+    /// The margin on all the premium, ``P (1 + E[g]) - E[X]``.
+    #[getter]
+    fn margin(&self) -> f64 {
+        self.inner.margin()
+    }
+
+    /// The capital: the net outcome's assets less ``P``.
+    #[getter]
+    fn capital(&self) -> f64 {
+        self.inner.capital()
+    }
+
+    /// The return on capital.
+    #[getter]
+    fn return_on_capital(&self) -> f64 {
+        self.inner.return_on_capital()
+    }
+
+    /// The bisection steps taken.
+    #[getter]
+    fn iterations(&self) -> usize {
+        self.inner.iterations
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ReinstatementPrice(upfront={}, expected_reinstatement_premium={}, expected_loss={})",
+            self.inner.upfront, self.inner.expected_reinstatement_premium, self.inner.expected_loss
+        )
+    }
+}
+
+/// The upfront premium of a cover whose reinstatement premium counts in
+/// its own price (#587).
+///
+/// The reinsurer's net outcome is ``X - P g``, with ``X`` the year's ceded
+/// loss and ``g`` its reinstatement premium per unit of upfront premium
+/// (a tower's reinstatement premium at a unit deposit, for example), so
+/// its assets and price depend on ``P``; the upfront premium solves
+/// ``P = price(X - P g)``. With ``g = 0`` this is ``price``, with a
+/// constant ``g`` it is ``price(X) / (1 + g)``, and under the identity
+/// distortion it is Sundt's ``E[X] / (1 + E[g])``.
+///
+/// Parameters
+/// ----------
+/// losses : array_like
+///     The ceded loss in each simulation.
+/// g : array_like
+///     The reinstatement premium per unit of upfront premium in each
+///     simulation, finite and non-negative.
+/// assets : Distortion
+/// cost_of_capital : float, optional
+/// distortion : Distortion, optional
+///     Exactly one of ``cost_of_capital`` and ``distortion``, as in
+///     ``price``.
+///
+/// Returns
+/// -------
+/// ReinstatementPrice
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import price_with_reinstatements
+/// >>> from prospicio.risk import Distortion
+/// >>> x = [0.0, 0.0, 2.0, 6.0]
+/// >>> r = price_with_reinstatements(x, [l / 6 for l in x], Distortion.tvar(0.5),
+/// ...                               cost_of_capital=0.25)
+/// >>> r.upfront < 2.4, round(r.return_on_capital, 9)
+/// (True, 0.25)
+#[pyfunction]
+#[pyo3(signature = (losses, g, assets, *, cost_of_capital = None, distortion = None))]
+pub(crate) fn price_with_reinstatements(
+    losses: Vec<f64>,
+    g: Vec<f64>,
+    assets: PyRef<'_, PyDistortion>,
+    cost_of_capital: Option<f64>,
+    distortion: Option<PyRef<'_, PyDistortion>>,
+) -> PyResult<PyReinstatementPrice> {
+    let rule = premium_rule(cost_of_capital, distortion)?;
+    let inner =
+        risk_load::price_with_reinstatements(&losses, &g, &rule, &assets.inner).map_err(to_py)?;
+    Ok(PyReinstatementPrice { inner })
 }
 
 /// Prices a portfolio and allocates the price to its components.

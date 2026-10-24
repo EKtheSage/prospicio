@@ -23540,6 +23540,59 @@ class RateLevel:
         """
 
 @final
+class ReinstatementPrice:
+    """
+    The upfront premium of a cover whose reinstatement premium counts in
+    its own price, from ``price_with_reinstatements``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def capital(self, /) -> float:
+        """
+        The capital: the net outcome's assets less ``P``.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        The expected ceded loss ``E[X]``.
+        """
+    @property
+    def expected_premium(self, /) -> float:
+        """
+        The expected premium in all, ``P (1 + E[g])``.
+        """
+    @property
+    def expected_reinstatement_premium(self, /) -> float:
+        """
+        The expected reinstatement premium ``P E[g]``.
+        """
+    @property
+    def iterations(self, /) -> int:
+        """
+        The bisection steps taken.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        The margin on all the premium, ``P (1 + E[g]) - E[X]``.
+        """
+    @property
+    def net(self, /) -> Price:
+        """
+        The price of the net outcome ``X - P g`` at the solution.
+        """
+    @property
+    def return_on_capital(self, /) -> float:
+        """
+        The return on capital.
+        """
+    @property
+    def upfront(self, /) -> float:
+        """
+        The upfront (deposit) premium ``P``.
+        """
+
+@final
 class RelaxedCv:
     """
     Cross-validated relaxed fits, from ``ElasticNet.cross_validate_relaxed``.
@@ -30618,6 +30671,47 @@ def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_c
     [3.5, 0.681818]
     >>> p.allocated[1].margin < 0  # the second cover hedges the first
     True
+    """
+
+def price_with_reinstatements(losses: Sequence[float], g: Sequence[float], assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> ReinstatementPrice:
+    """
+    The upfront premium of a cover whose reinstatement premium counts in
+    its own price (#587).
+    
+    The reinsurer's net outcome is ``X - P g``, with ``X`` the year's ceded
+    loss and ``g`` its reinstatement premium per unit of upfront premium
+    (a tower's reinstatement premium at a unit deposit, for example), so
+    its assets and price depend on ``P``; the upfront premium solves
+    ``P = price(X - P g)``. With ``g = 0`` this is ``price``, with a
+    constant ``g`` it is ``price(X) / (1 + g)``, and under the identity
+    distortion it is Sundt's ``E[X] / (1 + E[g])``.
+    
+    Parameters
+    ----------
+    losses : array_like
+        The ceded loss in each simulation.
+    g : array_like
+        The reinstatement premium per unit of upfront premium in each
+        simulation, finite and non-negative.
+    assets : Distortion
+    cost_of_capital : float, optional
+    distortion : Distortion, optional
+        Exactly one of ``cost_of_capital`` and ``distortion``, as in
+        ``price``.
+    
+    Returns
+    -------
+    ReinstatementPrice
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import price_with_reinstatements
+    >>> from prospicio.risk import Distortion
+    >>> x = [0.0, 0.0, 2.0, 6.0]
+    >>> r = price_with_reinstatements(x, [l / 6 for l in x], Distortion.tvar(0.5),
+    ...                               cost_of_capital=0.25)
+    >>> r.upfront < 2.4, round(r.return_on_capital, 9)
+    (True, 0.25)
     """
 
 def product_limit(losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> dict[str, list[float]]:

@@ -69,6 +69,21 @@ stopifnot(isTRUE(all.equal(one$premium, 2.4)), isTRUE(all.equal(one$return_on_ca
 w <- risk_loaded_price(pd, assets, distortion = distortion("wang", 0.2))
 stopifnot(w$expected_loss < w$premium, w$premium < w$assets)
 stopifnot(inherits(try(risk_loaded_price(pd, assets), silent = TRUE), "try-error"))
+# Reinstatement premium in its own price (#587).
+x <- c(0, 1, 0, 3, 8, 0.5, 12, 0)
+plain <- risk_loaded_price(sampled(x), assets, cost_of_capital = 0.15)
+cst <- price_with_reinstatements(x, rep(0.4, 8), assets, cost_of_capital = 0.15)
+stopifnot(isTRUE(all.equal(cst$upfront, plain$premium / 1.4, tolerance = 1e-10)))
+g <- pmin(x / 10, 1)
+id <- price_with_reinstatements(x, g, assets, distortion = distortion("proportional_hazard", 1))
+stopifnot(isTRUE(all.equal(id$upfront, mean(x) / (1 + mean(g)), tolerance = 1e-10)))
+r <- price_with_reinstatements(x, g, assets, cost_of_capital = 0.15)
+stopifnot(
+  r$upfront < plain$premium,
+  isTRUE(all.equal(r$return_on_capital, 0.15, tolerance = 1e-9)),
+  isTRUE(all.equal(r$expected_premium, r$upfront * (1 + mean(g)))),
+  r$iterations > 0
+)
 
 # MBBEFD exposure curves.
 c3 <- swiss_re_curve(3)

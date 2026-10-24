@@ -240,6 +240,8 @@ pricing_tower_quote <- function(tower, ceded, expected_reinstatement_premium, to
 
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 
+pricing_price_with_reinstatements <- function(losses, g, assets, rate, pricing) .Call(wrap__pricing_price_with_reinstatements, losses, g, assets, rate, pricing)
+
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
 pricing_bounds_rust <- function(x, risks, premium, assets) .Call(wrap__pricing_bounds_rust, x, risks, premium, assets)

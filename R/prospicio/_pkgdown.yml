@@ -160,6 +160,7 @@ reference:
       - layer_cv
       - censored_las
       - risk_loaded_price
+      - price_with_reinstatements
       - capital_portfolio
       - natural_price
       - calibrate_portfolio

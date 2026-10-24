@@ -420,6 +420,41 @@ risk_loaded_price <- function(x, assets, cost_of_capital = NULL, distortion = NU
   rust_result(pricing_price(x@ptr, assets@ptr, rate_arg(cost_of_capital), pricing_arg(distortion)))
 }
 
+#' Upfront premium with reinstatement premium in the price
+#'
+#' The reinsurer's net outcome is `X - P g`, with `X` the year's ceded loss
+#' and `g` its reinstatement premium per unit of upfront premium (a
+#' tower's reinstatement premium at a unit deposit, for example), so its
+#' assets and price depend on the upfront premium `P`, which solves
+#' `P = price(X - P g)` under the rule of [risk_loaded_price()]. With
+#' `g = 0` this is [risk_loaded_price()], with a constant `g` it is
+#' `price(X) / (1 + g)`, and under the identity distortion it is Sundt's
+#' `E[X] / (1 + E[g])` (#587).
+#'
+#' @param losses The ceded loss in each simulation.
+#' @param g The reinstatement premium per unit of upfront premium in each
+#'   simulation, finite and non-negative.
+#' @inheritParams risk_loaded_price
+#' @returns A list with `upfront`, `expected_reinstatement_premium`,
+#'   `expected_premium` (`P (1 + E[g])`), `expected_loss`, `margin`,
+#'   `capital`, `return_on_capital`, `net`, the price of `X - P g` as
+#'   [risk_loaded_price()] returns it, and `iterations`, the bisection
+#'   steps taken.
+#' @examples
+#' x <- c(0, 0, 2, 6)
+#' r <- price_with_reinstatements(x, x / 6, distortion("tvar", 0.5),
+#'                                cost_of_capital = 0.25)
+#' r$upfront
+#' round(r$return_on_capital, 9)
+#' @export
+price_with_reinstatements <- function(losses, g, assets, cost_of_capital = NULL,
+                                      distortion = NULL) {
+  rust_result(pricing_price_with_reinstatements(
+    as.double(losses), as.double(g), assets@ptr, rate_arg(cost_of_capital),
+    pricing_arg(distortion)
+  ))
+}
+
 #' @rdname risk_loaded_price
 #' @export
 price_portfolio <- function(x, assets, cost_of_capital = NULL, distortion = NULL) {
