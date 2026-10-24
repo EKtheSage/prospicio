@@ -60,12 +60,15 @@ impl BookDeal {
         result: Robj,
         layer: &str,
         inception: f64,
+        reinstatement_premium: bool,
     ) -> Result<Self> {
         let tower = <&ReinsuranceTower>::try_from(&tower)
             .map_err(|_| Error::Other("tower must be a reinsurance_tower".into()))?;
         let pd = <&PredictiveDistribution>::try_from(&result)
             .map_err(|_| Error::Other("result must be a predictive_distribution".into()))?;
-        let run = DealRun::from_tower(name, &tower.inner, &pd.inner, layer).map_err(to_r)?;
+        let run =
+            DealRun::from_tower_with(name, &tower.inner, &pd.inner, layer, reinstatement_premium)
+                .map_err(to_r)?;
         Ok(BookDeal {
             inner: run.inception(month(inception, "inception")?),
         })
@@ -117,6 +120,14 @@ impl BookDeal {
 
     fn inception(&self) -> i32 {
         self.inner.inception_month() as i32
+    }
+
+    fn premium(&self) -> Vec<f64> {
+        self.inner.premium().to_vec()
+    }
+
+    fn loss(&self) -> Vec<f64> {
+        self.inner.loss().to_vec()
     }
 }
 

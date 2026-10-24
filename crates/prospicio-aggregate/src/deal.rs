@@ -813,6 +813,7 @@ impl Tower {
         // term's columns.
         struct Cols {
             ceded: Vec<usize>,
+            reinstatement: Vec<usize>,
             before: Option<usize>,
             swing: Option<usize>,
             terms: Vec<Vec<usize>>,
@@ -825,6 +826,11 @@ impl Tower {
                     ceded: sections
                         .iter()
                         .map(|l| column("ceded", &l.name, y))
+                        .collect::<Result<_>>()?,
+                    reinstatement: sections
+                        .iter()
+                        .filter(|l| !l.reinstatement_rates.is_empty())
+                        .map(|l| column("reinstatement_premium", &l.name, y))
                         .collect::<Result<_>>()?,
                     before: keyed
                         .then(|| column("loss_before_terms", layer, y))
@@ -852,6 +858,7 @@ impl Tower {
                 years_amounts.push(YearAmounts {
                     premium: c.swing.map_or(fixed, |k| row[k]),
                     ceded: c.ceded.iter().map(|&k| row[k]).sum(),
+                    reinstatement: c.reinstatement.iter().map(|&k| row[k]).sum(),
                     before: c.before.map(|k| row[k]),
                     terms: c
                         .terms
@@ -984,8 +991,10 @@ impl Tower {
 
 impl Tower {
     /// The amounts behind [`deal_ratios`](Self::deal_ratios), one value a
-    /// simulation: the premium, the ceded loss, and each commission,
-    /// brokerage and deduction with whether NMBF leaves it out. A portfolio
+    /// simulation: the premium, the ceded loss, the reinstatement premium
+    /// (which [`deal_ratios`](Self::deal_ratios) leaves out of its
+    /// premium), and each commission, brokerage and deduction with whether
+    /// NMBF leaves it out. A portfolio
     /// of deals adds these up, so that its ratios are sums over sums
     /// (`prospicio_pricing::book`).
     ///
@@ -1004,6 +1013,7 @@ impl Tower {
     /// let a = tower.deal_columns(&result, "cover").unwrap();
     /// assert_eq!(a.premium, [100.0, 100.0, 100.0]);
     /// assert_eq!(a.loss, [40.0, 70.0, 120.0]);
+    /// assert_eq!(a.reinstatement_premium, [0.0, 0.0, 0.0]);
     /// assert_eq!(a.deductions[0].name, "brokerage");
     /// assert_eq!(a.deductions[0].values, [2.5, 2.5, 2.5]);
     /// ```
@@ -1031,9 +1041,11 @@ impl Tower {
             .collect();
         let mut premium = Vec::with_capacity(a.amounts.len());
         let mut loss = Vec::with_capacity(a.amounts.len());
+        let mut reinstatement_premium = Vec::with_capacity(a.amounts.len());
         for y in &a.amounts {
             premium.push(y.premium);
             loss.push(y.ceded);
+            reinstatement_premium.push(y.reinstatement);
             for (d, &x) in deductions.iter_mut().zip(&y.terms) {
                 d.values.push(x);
             }
@@ -1041,6 +1053,7 @@ impl Tower {
         Ok(DealColumns {
             premium,
             loss,
+            reinstatement_premium,
             deductions,
         })
     }
@@ -1050,10 +1063,14 @@ impl Tower {
 /// [`Tower::deal_columns`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct DealColumns {
-    /// The year's premium for the placed share.
+    /// The year's premium for the placed share, the fixed premium or the
+    /// swing-rated one, without the reinstatement premium.
     pub premium: Vec<f64>,
     /// The ceded loss.
     pub loss: Vec<f64>,
+    /// The year's reinstatement premium, summed over the sections with
+    /// paid reinstatements (zero where none has them).
+    pub reinstatement_premium: Vec<f64>,
     /// The commissions, brokerage and deductions, in the order of
     /// [`Tower::deal_ratios`].
     pub deductions: Vec<DealColumn>,
@@ -1085,11 +1102,13 @@ struct DealAmounts {
     provenance: prospicio_prob::Provenance,
 }
 
-/// One year's amounts: the premium, the ceded loss, the scales' key where
+/// One year's amounts: the premium, the ceded loss, the reinstatement
+/// premium, the scales' key where
 /// it is not the ceded loss, and each term of [`DealAmounts::names`].
 struct YearAmounts {
     premium: f64,
     ceded: f64,
+    reinstatement: f64,
     before: Option<f64>,
     terms: Vec<f64>,
 }

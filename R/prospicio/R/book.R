@@ -6,7 +6,9 @@
 #' `deal_run()` holds one deal's premium, loss and deductions in each
 #' simulation of a shared simulation, and its inception in months from 1
 #' January of the book's first year; `deal_run_from_tower()` takes them
-#' from a result of a tower, the amounts behind [deal_ratios()].
+#' from a result of a tower, the amounts behind [deal_ratios()], with each
+#' year's reinstatement premium added to the deposit (or swing-rated)
+#' premium unless `reinstatement_premium = FALSE`.
 #' `deal_book()` holds several deals: simulation `j` of every deal is the
 #' same year, so the book adds them without reordering.
 #'
@@ -31,6 +33,10 @@
 #' @param tower A [reinsurance_tower].
 #' @param result A [predictive_distribution] from `tower`.
 #' @param layer The layer's or deal's name in `tower`.
+#' @param reinstatement_premium Whether each year's premium includes the
+#'   reinstatement premium the tower computes for the year, pro rata as to
+#'   amount and, where the layer says so, as to time (`TRUE`, the default),
+#'   or is the deposit alone (`FALSE`, as [deal_ratios()] reads it).
 #' @param cashflows `NULL`, or a [cashflow_run()] of `terms`, one
 #'   simulation for each of the deal's; the deal takes its flows and the
 #'   terms' patterns.
@@ -101,9 +107,10 @@ deal_run <- function(name, premium, loss, deductions = list(), outside_nmbf = ch
 #' @export
 deal_run_from_tower <- function(name, tower, result, layer, inception = 0, cashflows = NULL,
                                 terms = NULL, flows = NULL, funded = NULL, opening = NULL,
-                                patterns = NULL) {
+                                patterns = NULL, reinstatement_premium = TRUE) {
   ptr <- rust_result(BookDeal$from_tower(as.character(name), tower@ptr, result@ptr,
-                                         as.character(layer), as.double(inception)))
+                                         as.character(layer), as.double(inception),
+                                         isTRUE(reinstatement_premium)))
   deal_extras(structure(list(ptr = ptr), class = "deal_run"), cashflows, terms, flows,
               funded, opening, patterns)
 }
