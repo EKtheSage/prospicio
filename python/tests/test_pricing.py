@@ -1059,6 +1059,28 @@ def test_deal_book_cashflows_and_calendar():
     assert sum(cal.marginal(k).draws[0] for k in keys) == pytest.approx(100.0)
 
 
+def test_deal_run_from_tower_takes_the_reinstatement_premium():
+    """Each year's premium is the deposit plus the tower's reinstatement premium (#595)."""
+    from prospicio.aggregate import EventSet
+    from prospicio.reinsurance import Layer, Tower
+
+    cat = Layer("cat", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0, 0.5])
+    qs = Layer.quota_share("qs", 0.5).with_premium_rate(1.0, 40.0)
+    tower = Tower([cat, qs])
+    result = tower.apply(EventSet.from_years([[5.0], [15.0], [22.0, 12.0], [40.0, 40.0, 40.0]]))
+    run = P.DealRun.from_tower("cat", tower, result, "cat")
+    rip = result.aggregate(["kind", "layer"]).marginal(["reinstatement_premium", "cat"]).draws
+    assert run.premium == pytest.approx([2.0 + r for r in rip], rel=1e-15)
+    assert run.premium == pytest.approx([2.0, 3.0, 4.2, 5.0], rel=1e-15)
+    deposit = P.DealRun.from_tower("cat", tower, result, "cat", reinstatement_premium=False)
+    assert deposit.premium == [2.0] * 4
+    assert deposit.loss == run.loss
+    assert P.DealRun.from_tower("qs", tower, result, "qs").premium == [20.0] * 4
+    book = P.DealBook([run])
+    margin = book.amounts().marginal(["margin", "cat"]).draws
+    assert margin == pytest.approx([2.0, -2.0, -7.8, -25.0], rel=1e-14)
+
+
 def test_tower_quote_layers_and_total():
     """A tower quoted layer by layer and as one (item 11, PR B)."""
     from prospicio.distributions import Grid, Poisson

@@ -39,7 +39,8 @@ deal_run_from_tower(
   flows = NULL,
   funded = NULL,
   opening = NULL,
-  patterns = NULL
+  patterns = NULL,
+  reinstatement_premium = TRUE
 )
 
 deal_book(deals)
@@ -111,6 +112,11 @@ cumulative shares from inception, for \code{book_calendar()}.}
 
 \item{layer}{The layer's or deal's name in \code{tower}.}
 
+\item{reinstatement_premium}{Whether each year's premium includes the
+reinstatement premium the tower computes for the year, pro rata as to
+amount and, where the layer says so, as to time (\code{TRUE}, the default),
+or is the deposit alone (\code{FALSE}, as \code{\link[=deal_ratios]{deal_ratios()}} reads it).}
+
 \item{deals}{A list of \code{deal_run()}s.}
 
 \item{book}{A \code{deal_book()}.}
@@ -150,7 +156,9 @@ matrix, a column a deal), \code{irr} (a data frame as \code{\link[=irr]{irr()}})
 \code{deal_run()} holds one deal's premium, loss and deductions in each
 simulation of a shared simulation, and its inception in months from 1
 January of the book's first year; \code{deal_run_from_tower()} takes them
-from a result of a tower, the amounts behind \code{\link[=deal_ratios]{deal_ratios()}}.
+from a result of a tower, the amounts behind \code{\link[=deal_ratios]{deal_ratios()}}, with each
+year's reinstatement premium added to the deposit (or swing-rated)
+premium unless \code{reinstatement_premium = FALSE}.
 \code{deal_book()} holds several deals: simulation \code{j} of every deal is the
 same year, so the book adds them without reordering.
 }
