@@ -12,7 +12,6 @@ This lane writes about the library and does not change crates; a gap it finds be
 
 - [guides-open] open, waiting on the user
 - [guides-current] keep the guides and notebooks current as the library changes
-- [guides-straight-prose-2] the same rewrite for the guides not done yet: `distributions-for-actuaries-claim-size` (from its section 6 on, and its R twin), `distributions-for-actuaries-counts-aggregates`, `glm-ratemaking-goldburd`, `glm-ratemaking-goldburd-validation` and `prospicio-for-aggregate-users`, each with its R twin
 
 ## Done
 

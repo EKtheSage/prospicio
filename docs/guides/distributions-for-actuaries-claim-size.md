@@ -771,9 +771,9 @@ P5.22 loss trend, layer to 8,000, %      book         10.2   prospicio         1
 ```
 
 A layer with an upper limit has less leverage than an unlimited excess cover.
-A narrower layer has less leverage again, because the limit caps the growth of
-the claims that were already in it. Compare P5.22's 9.5% with P5.21's 8.9%
-count growth alone.
+A narrower layer has less again, because the limit caps the growth of the claims
+that are already in the layer. Compare P5.22's 9.5% with the 8.9% count growth
+of P5.21 alone.
 
 With a Poisson count, the moments of the aggregate layer loss follow from the
 layer's limited moments. Ex 5.13 takes 15 expected ground-up claims and the
@@ -794,20 +794,21 @@ Ex 5.13 E[S]                             book        5,775   prospicio        5,
         expected layer claims            book       1.9536   prospicio       1.9536
 ```
 
-The monograph again calculates the mean and variance from the rounded limited
+The monograph again computes the mean and variance from the rounded limited
 values of Ex 5.8: 15 × (1,276 − 891) = 5,775. The expected count needs no
 difference, and it agrees.
 
 ## 8. Increased limit factors
 
-An increased limit factor I(l) is the premium for a limit l over the premium for
-the basic limit b. Without expenses and risk load it is E[X; l]/E[X; b], which
-`prospicio.pricing.ilf` returns. The monograph adds allocated loss adjustment
-expense (ALAE) two ways: a fixed amount e per claim, giving
-(E[X; l] + e)/(E[X; b] + e), or a proportion u of the indemnity, which cancels
-out of the ratio. Ex 6.3 uses a lognormal (7.000; 2.400), a basic limit of
-100,000, e = 2,200 or u = 20%, a frequency giving 0.2 expected claims and a 35%
-variable expense ratio; Ex 6.4 prices the layers between limits:
+An increased limit factor I(l) is the premium for a limit l divided by the
+premium for the basic limit b. Without expenses and risk load, it is
+E[X; l]/E[X; b]. `prospicio.pricing.ilf` returns this value. The monograph adds
+allocated loss adjustment expense (ALAE) in two ways. The first is a fixed
+amount e per claim, which gives (E[X; l] + e)/(E[X; b] + e). The second is a
+proportion u of the indemnity, which cancels out of the ratio. Ex 6.3 uses a
+lognormal (7.000; 2.400) and a basic limit of 100,000. It sets e = 2,200 or
+u = 20%, a frequency of 0.2 expected claims and a 35% variable expense ratio.
+Ex 6.4 prices the layers between limits:
 
 ```python
 ln = Lognormal(7.0, 2.4)
@@ -847,12 +848,12 @@ Ex 6.4  layer 3M to 4M premium, e        book          121   prospicio          
 Ex 6.4  layer 4M to 5M premium, e        book           82   prospicio           82
 ```
 
-The fourth decimals that differ come from the monograph forming its factors
-from limited means rounded to whole units; the 2M layer's premium of 428
-against 429 is the factor 0.1255 rounded before multiplying. P6.5 is the same
-exercise for a lognormal (6.8; 2.6) with e = 2,500 or u = 25%, and P6.7 a hybrid
-ALAE, 20% of each claim up to 750,000 and a flat 150,000 above it, so that
-E_l[Y] = E[X; l] + 0.2 E[X; min(l, 750,000)]:
+The fourth decimals differ because the monograph forms its factors from limited
+means that it rounds to whole units. The 2M layer's premium of 428 against 429
+comes from the factor 0.1255, which the monograph rounds before it multiplies.
+P6.5 is the same exercise for a lognormal (6.8; 2.6) with e = 2,500 or u = 25%.
+P6.7 uses a hybrid ALAE: 20% of each claim up to 750,000 and a flat 150,000
+above it. Then E_l[Y] = E[X; l] + 0.2 E[X; min(l, 750,000)]:
 
 ```python
 ln2 = Lognormal(6.8, 2.6)
@@ -887,13 +888,13 @@ P6.7  I(l)      book  [1.0, 1.5317, 1.6488, 1.7122, 1.8427, 1.9038, 1.9405, 1.96
 
 ## 9. Risk loads
 
-Higher limits carry more uncertainty per unit of expected loss, and the
-monograph loads each limit's premium with a risk load ρ(l) built from the
-variance of the aggregate loss per expected claim, E[X²; l] + δ E[X; l]², where
-δ = Var[N]/E[N] − 1 is zero for a Poisson count. Two forms: k times its square
-root (the standard deviation method) and k times itself (the variance method).
-Ex 6.5 takes the standard deviation method with k = 0.0277 and δ = 0 on the
-lognormal of Ex 6.3 with u = 20%, and averages the factors over a mix of
+Higher limits carry more uncertainty per unit of expected loss. The monograph
+adds a risk load ρ(l) to the premium of each limit. The load uses the variance
+of the aggregate loss per expected claim, E[X²; l] + δ E[X; l]². Here
+δ = Var[N]/E[N] − 1, which is zero for a Poisson count. There are two forms: k times
+its square root (the standard deviation method) and k times itself (the variance
+method). Ex 6.5 uses the standard deviation method with k = 0.0277 and δ = 0 on
+the lognormal of Ex 6.3 with u = 20%. It averages the factors over a mix of
 policies by limit:
 
 ```python
@@ -930,10 +931,10 @@ Ex 6.5  rho(l)     book  [627, 1473, 2013, 2663, 3090, 3410, 3668]
         the load's effect, %             book          6.0   prospicio          6.0
 ```
 
-P6.8 repeats it for a Pareto (3; 6,000) with k = 0.5 and δ = 0.1. P6.10 takes the
-variance method (k = 0.0000005, δ = 0) on a Pareto with α = 0.78, so heavy that
-its mean is infinite, from a basic limit of 1,000,000, and asks for the factor
-of each additional million of limit:
+P6.8 repeats it for a Pareto (3; 6,000) with k = 0.5 and δ = 0.1. P6.10 uses the
+variance method (k = 0.0000005, δ = 0) on a Pareto with α = 0.78. This Pareto is
+so heavy that its mean is infinite. The basic limit is 1,000,000. The problem
+asks for the factor of each additional million of limit:
 
 ```python
 p = shifted_pareto(3.0, 6000.0)
@@ -970,25 +971,26 @@ P6.10  I(l)        book  [1.0, 1.3858, 1.7458, 2.1014, 2.4585, 2.8194, 3.1849, 3
 ```
 
 P6.10's last printed factor, 3.4114, is a misprint for 4.3114 (its own layer
-factor of 0.3806 on top of 3.9309 gives 4.3115). The point of the problem is in
-the last row: the variance load grows so fast with the limit that each
-additional million costs more than the one below it. A layer higher up should
-never cost more than a layer of the same width below it (fewer claims reach
-it), so the factors are inconsistent, a known weakness of the variance method
-for heavy tails.
+factor of 0.3806 on top of 3.9309 gives 4.3115). The last row shows the point of
+the problem. The variance load grows so fast with the limit that each additional
+million costs more than the one below it. A higher layer should never cost more
+than a layer of the same width below it, because fewer claims reach it. So the
+factors are inconsistent. This is a known weakness of the variance method for
+heavy tails.
 
 ## 10. Deductibles
 
 A straight deductible d removes min(X, d) from every claim. The monograph's
-**credit** C(d) is the share of the basic-limit premium it eliminates:
-(E[X; d] + e F(d)) / (E[X; b] + e), with e = 0 when ALAE is a proportion. It is
-a loss elimination ratio measured against the basic limit, where prospicio's
-`loss_elimination_ratio(sev, d)` measures against the unlimited mean
-E[X; d]/E[X]. A **franchise** deductible pays the whole claim once it exceeds
-d, so it eliminates only the claims below d; a **diminishing** deductible
-shrinks from d at a claim of d to nothing at a claim of D, eliminating
-E[X; d] − d (E[X; D] − E[X; d])/(D − d) per claim. Ex 6.7 to 6.9 use the
-lognormal of Ex 6.3, u = 20%, a frequency of 0.0005 per exposure and D = d + 1,000:
+**credit** C(d) is the share of the basic-limit premium that the deductible
+eliminates. Its formula is (E[X; d] + e F(d)) / (E[X; b] + e), with e = 0 when
+ALAE is a proportion. It is a loss elimination ratio measured against the basic limit.
+prospicio's `loss_elimination_ratio(sev, d)` measures against the unlimited
+mean, E[X; d]/E[X]. A **franchise** deductible pays the whole claim once the
+claim exceeds d, so it eliminates only the claims below d. A **diminishing**
+deductible shrinks from d at a claim of d to nothing at a claim of D. It
+eliminates E[X; d] − d (E[X; D] − E[X; d])/(D − d) per claim. Ex 6.7 to 6.9 use
+the lognormal of Ex 6.3, u = 20%, a frequency of 0.0005 per exposure and
+D = d + 1,000:
 
 ```python
 base = ln.lev(b)
@@ -1027,18 +1029,18 @@ Ex 6.7  1M limit, 2,000 deductible       book        5,527   prospicio        5,
 prospicio's loss_elimination_ratio(2,000) = E[X; 2,000] / E[X] = 0.0569
 ```
 
-The last line shows that the two ratios differ by the factor E[X]/E[X; b],
-here more than two, for a distribution this heavy. Table 6.7
-prints the franchise credit at 5,000 as 0.0864 where Table 6.6 has 0.0846;
-prospicio's 0.0846 settles it. The diminishing credits that differ in the
-fourth decimal are rounding again: the formula multiplies a difference of
-limited means by d, so the monograph's whole-unit rounding of E[X; d] is
-magnified up to fourfold at d = 4,000.
+The last line shows that the two ratios differ by the factor E[X]/E[X; b]. For a
+distribution this heavy, the factor is more than two. Table 6.7 prints the
+franchise credit at 5,000 as 0.0864, but Table 6.6 has 0.0846. prospicio gives
+0.0846. The diminishing credits that differ in the fourth decimal are rounding
+again. The formula multiplies a difference of limited means by d. So the
+whole-unit rounding of E[X; d] in the monograph grows up to fourfold at
+d = 4,000.
 
 P6.13 and P6.14 do the same with twelve actual losses, a 20,000 or 12,000 limit
-and a 2,000 deductible. The monograph's loss elimination ratio here is the
-share of the unlimited losses that the insurer does not pay, so with the lower
-limit it counts the limit's elimination too:
+and a 2,000 deductible. The monograph's loss elimination ratio here is the share
+of the unlimited losses that the insurer does not pay. With the lower limit, it
+also counts the elimination by the limit:
 
 ```python
 losses = [1000, 1550, 1700, 2200, 2500, 3000, 5200, 9000, 11000, 12500, 15000, 19800]
@@ -1064,10 +1066,10 @@ P6.14 franchise: insurer pays            book       68,900   prospicio       68,
 P6.14 franchise: LER                     book       0.1841   prospicio       0.1841
 ```
 
-With a fixed ALAE per claim the credit grows: a deductible removes the claims
+With a fixed ALAE per claim, the credit grows. A deductible removes the claims
 below it, and their expense with them. P6.16 reruns Ex 6.7 and 6.8 with e = 500
-and u = 0; P6.17 uses a Pareto (3; 10,000), a basic limit of 5,000, a frequency
-of 0.005 and e = 250; P6.21 counts the claims of 500 that the deductibles of
+and u = 0. P6.17 uses a Pareto (3; 10,000), a basic limit of 5,000, a frequency
+of 0.005 and e = 250. P6.21 counts the claims of 500 that the deductibles of
 Ex 6.7 eliminate, now and after 10% inflation:
 
 ```python
@@ -1123,14 +1125,15 @@ P6.21  claims removed   book  [242, 299, 331, 353, 368]
                         ours  [7.1, 12.0, 16.1, 19.5, 22.6]
 ```
 
-P6.16's printed pure premium at 3,000, 3.973, is out of sequence (it would make
-the 3,000 deductible cheaper than the 2,000 by almost nothing and the 4,000 far
-cheaper again); prospicio's 3.794 fits the pattern, and the printed figure is
-its middle digits transposed. Inflation erodes a fixed deductible: it
-removes fewer claims and a smaller share of the loss each year, which is the
-leveraging effect of section 7 seen from below. Ex 6.10 measures it for a
-Pareto (2; 8,000), a 500 deductible, a frequency of 0.25, e = 50 and 5%
-inflation (of the claims and of e), without a limit and with a 5,000 limit:
+P6.16's printed pure premium at 3,000, 3.973, is out of sequence. It makes the
+3,000 deductible almost no cheaper than the 2,000 one, and the 4,000 one far
+cheaper again. prospicio's 3.794 fits the pattern. The printed figure has two
+middle digits transposed. Inflation erodes a fixed deductible. Each year it
+removes fewer claims and a smaller share of the loss. This is the leveraging
+effect of section 7, seen from below. Ex 6.10 measures it for a Pareto
+(2; 8,000), a 500 deductible, a frequency of 0.25 and e = 50. Inflation is 5%
+(of the claims and of e). The block runs without a limit and with a 5,000
+limit:
 
 ```python
 def pure_premium(sev, top, d, e, phi=0.25):
@@ -1156,58 +1159,38 @@ Ex 6.10 5,000 limit: pure premium        book        662.7   prospicio        66
         effective trend, %               book          2.2   prospicio          2.2
 ```
 
-The deductible raises the 5% trend to 5.3%; a limit on top cuts it to 2.2%,
+The deductible raises the 5% trend to 5.3%. A limit on top cuts it to 2.2%,
 because the limit absorbs more inflation than the deductible adds.
 
-## 11. What agreed, what did not, and what prospicio does not do
+## 11. What agreed and what did not
 
-Every printed number this guide recomputes agrees with prospicio to its printed
-digits, or differs for a reason found in the monograph itself:
+Every printed number that this guide recomputes agrees with prospicio to its
+printed digits, or differs for a reason found in the monograph itself:
 
 - **Rounding carried into differences** (Ex 5.8's excess mean and layer CV,
-  Ex 5.10's 2,701, Ex 5.13, the fourth decimal of some ILFs, Ex 6.4's 428):
-  the monograph forms differences of limited means rounded to whole units.
-  Feeding its rounded inputs to the same formula reproduces its figures.
+  Ex 5.10's 2,701, Ex 5.13, the fourth decimal of some ILFs, Ex 6.4's 428): the
+  monograph forms differences of limited means that it rounds to whole units.
+  Feed its rounded inputs to the same formula and you reproduce its figures.
 - **Arithmetic or typesetting slips**: Ex 2.7's scale 397.931 (618,850 / 1,555
-  is 397.974; the tables use the printed value), P6.10's 3.4114 (4.3114),
+  is 397.974, and the tables use the printed value), P6.10's 3.4114 (4.3114),
   Table 6.7's franchise 0.0864 (0.0846), P6.16's 3.973 (3.794).
 - **Solver results**: Ex 2.8's chi-square of 1.828 (1.020 at its own
-  parameters, and the true minimum is 0.614 elsewhere); Ex 5.3's 1.6610 (1.806
-  at its parameters, minimum 1.790) and P5.23's parameters. Ex 2.10, 2.11,
-  P2.16, P2.39 and P2.43 reproduce to four decimals by the same methods.
+  parameters, and the true minimum is 0.614 elsewhere). Ex 5.3's 1.6610 (1.806
+  at its parameters, minimum 1.790) and P5.23's parameters. Ex 2.10, 2.11, P2.16,
+  P2.39 and P2.43 reproduce to four decimals by the same methods.
 
-What these chapters use that prospicio does not provide:
+`loss_elimination_ratio` measures against the unlimited mean, not a basic limit.
+Section 10 shows the difference.
 
-- **Grouped-data estimators.** Minimum chi-square, minimum limited-mean
-  distance and the mean-excess regression are not in the library; the blocks
-  above build them from prospicio's `cdf` and `lev` and SciPy's optimizer.
-  prospicio's `fit_severity` (lognormal, gamma, Weibull, Burr) and
-  `Pareto.fit` fit individual claims by maximum likelihood, with left
-  truncation and censoring but not right truncation (P2.43's kind of data)
-  and not interval-grouped counts.
-- **The shifted (Lomax) Pareto by name**, and fitting it: it is a
-  `GeneralizedPareto` or a `Burr` with δ = 1, but `fit_severity` has no
-  Pareto family of this form (`GeneralizedPareto.fit_riegel` fits Riegel's
-  form above a threshold).
-- **Limited moments above the second.** `layer_second_moment` exists for most
-  families (for the lognormal through `Truncated`), but not E[X³; l], which
-  Ex 2.4 and the skewness of Ex 5.13 use.
-- **Premium formulas.** Increased limit factors with ALAE, risk loads,
-  deductible credits and the franchise and diminishing deductibles are a line
-  each on top of `lev`; `ilf` and `loss_elimination_ratio` cover the plain
-  ratios only, and `loss_elimination_ratio` measures against the unlimited
-  mean, not a basic limit.
-- **Empirical limited means**: `Sampled` has no `lev`, so the twelve losses of
-  P6.13 are summed directly.
-- **Chapter 1**, the probability background, has nothing to compute that
-  prospicio adds to.
+Where to go next:
 
-Where to go next: [severity and frequency](severity-and-frequency.md) for
-choosing and fitting a severity in practice (maximum likelihood with
-thresholds and limits, the Pareto family, splicing),
-[aggregate distributions](aggregate-distributions.md) for the compound
-distributions of the companion guide, and
-[experience and exposure rating](experience-and-exposure-rating.md) for
-increased limit factors, exposure curves and layer rating in reinsurance. The
-companion guide, [claim counts and aggregate claims](distributions-for-actuaries-counts-aggregates.md),
-covers the monograph's chapters 3 and 4 and its aggregate limits.
+- [Severity and frequency](severity-and-frequency.md): choose and fit a
+  severity in practice (maximum likelihood with thresholds and limits, the
+  Pareto family, splicing).
+- [Aggregate distributions](aggregate-distributions.md): the compound
+  distributions of the companion guide.
+- [Experience and exposure rating](experience-and-exposure-rating.md):
+  increased limit factors, exposure curves and layer rating in reinsurance.
+- [Claim counts and aggregate claims](distributions-for-actuaries-counts-aggregates.md):
+  the companion guide for chapters 3 and 4 of the monograph and its aggregate
+  limits.
