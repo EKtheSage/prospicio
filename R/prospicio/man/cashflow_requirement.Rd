@@ -26,6 +26,15 @@ date, \code{u} the ultimate loss ratio and \code{P} the premium, the bases are
 (\verb{u P - C}), \code{"written"} (\code{W}), \code{"earned"} (\code{E}) and \code{"fixed"} (1, so the
 load is an amount).
 }
+\details{
+The reserve on earned premium is small early in the term: a requirement
+on it alone releases the premium collected ahead of earning to the
+investor at once, who then pays the claims later, so the flows start
+positive (\code{\link[=cashflow_run]{cashflow_run()}}'s \code{paid_first}), can have several internal
+rates of return (\code{\link[=irr]{irr()}}'s \code{sign_changes}) and the one found is usually
+meaningless. A collateralised fund usually wants \code{"outstanding"}, with
+\code{"unearned-premium"} beside it.
+}
 \examples{
 cashflow_requirement(c("unearned-premium" = 0.3, reserve = 1.2), limit = c(1.2, 1.5))
 }

@@ -15,6 +15,7 @@ cashflow_terms(
   requirement,
   commutation_requirement = requirement,
   collected_rate = 1,
+  deduct_commission = FALSE,
   lag = 0,
   adjustments = list(),
   funding_dates = "monthly",
@@ -55,6 +56,13 @@ least \code{T} plus \code{buffer_months}.}
 \item{commutation_requirement}{What the trust pays at commutation.}
 
 \item{collected_rate}{The share of written premium paid into the trust.}
+
+\item{deduct_commission}{Take each simulation's commission rate
+(\code{cashflow_run()}'s \code{commission}) off \code{collected_rate}. Without it the
+commission does not reduce the premium paid in and is read only by
+adjustments with \code{less_commission} and by the fee: a flat commission
+\code{c} is then \code{collected_rate = 1 - c}, and a sliding scale needs this
+option.}
 
 \item{lag}{The months between writing and collection.}
 
@@ -111,7 +119,11 @@ requirement is still read from its terms.}
 \value{
 \code{cashflow_terms()} a \code{cashflow_terms}; \code{cashflow_run()} a list
 of \code{flows} (a matrix), \code{months} and, a value a simulation, \code{funded},
-\code{opening}, \code{released}, \code{distributed}, \code{fee} and \code{commutation};
+\code{opening}, \code{released}, \code{distributed}, \code{fee}, \code{commutation} and
+\code{paid_first} (whether the first nonzero investor flow is positive: the
+investor is paid before putting money in, so its flows can have
+several internal rates of return and the one \code{\link[=irr]{irr()}} finds is usually
+meaningless; a requirement on the reserve alone does this);
 \code{cashflow_trace()} a list of \code{accounts} (a data frame, a row a month),
 \code{commutation_paid}, \code{fee} and \code{conservation_error} (the cash created or
 lost over the deal, 0 up to rounding).
