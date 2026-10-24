@@ -1,54 +1,53 @@
 # Basic ratemaking: Werner and Modlin reproduced
 
-Geoff Werner and Claudine Modlin's *Basic Ratemaking* (5th edition, CAS, 2016)
-is the CAS study note on the overall rate level indication for personal and
-small commercial lines. Its chapters 5 to 8 and 12 build the indication step by
-step (premium at current rates, loss development and trend, expenses and
-profit, credibility), and Appendices A to C run it end to end on an auto, a
-homeowners and a medical malpractice book. This guide follows those exhibits
-in prospicio's Python API (`prospicio.pricing`, with `prospicio.credibility`
-and `prospicio.reserving` for two steps) and prints the book's numbers next to
-prospicio's, so you can see what each step computes and where the book's
-rounding moves a digit. This guide covers the steps; its companion,
-[`ratemaking-werner-modlin-indications.md`](ratemaking-werner-modlin-indications.md),
-runs Appendices A to C end to end, reproduces chapter 11's increased limits
-and deductible figures, and lists what prospicio does not cover.
+Geoff Werner and Claudine Modlin wrote *Basic Ratemaking* (5th edition, CAS,
+2016). It is the CAS study note on the overall rate level indication for
+personal and small commercial lines. Chapters 5 to 8 and 12 build the
+indication step by step: premium at current rates, loss development and trend,
+expenses and profit, and credibility. Appendices A to C apply the full
+indication to an auto book, a homeowners book and a medical malpractice book.
 
-The book's text and exhibits are the authors'; what follows explains them in
-new words with the numbers recomputed. Read the book for the reasoning and
-this guide for the mechanics. Table and exhibit names below are the book's,
-money is in dollars as in the book, and the full parity suite behind the
-library is `validation/tests/pricing.rs` (modules `ratemaking` and
-`indication`). Rating a reinsurance layer from experience or exposure is a
-different job, covered in
+This guide follows those exhibits in prospicio's Python API
+(`prospicio.pricing`, with `prospicio.credibility` and `prospicio.reserving`
+for two steps). Each block prints the book's numbers next to prospicio's. The
+companion guide,
+[`ratemaking-werner-modlin-indications.md`](ratemaking-werner-modlin-indications.md),
+runs Appendices A to C end to end and reproduces chapter 11's increased limits
+and deductible figures.
+
+The book's text and exhibits are the authors'. This guide explains them in new
+words and recomputes the numbers. Table and exhibit names are the book's, and
+money is in dollars, as in the book. The parity suite of the library is
+`validation/tests/pricing.rs` (modules `ratemaking` and `indication`). For the
+rating of a reinsurance layer from experience or exposure, see
 [`experience-and-exposure-rating.md`](experience-and-exposure-rating.md).
 
-Every block below runs in well under a second in total. The book behaves like a
-spreadsheet that rounds each cell to its printed precision, half up, and
-carries the rounded value on. prospicio never rounds, so where the book's
-rounding changes a printed digit the code below shows both: the exact value,
-and the value with the book's rounding applied by hand. The rounding rules are
-collected in `knowledge/references/werner-modlin-ratemaking.md`.
+The book rounds each cell half up to its printed precision and uses the
+rounded value in the next step. prospicio does not round. Where the book's
+rounding changes a printed digit, the code shows the exact value and also
+applies the book's rounding by hand.
+`knowledge/references/werner-modlin-ratemaking.md` lists the rounding rules.
 
 ## 1. The process, its data and its dates
 
-An indication compares the premium the current rates will bring in with the
-losses, expenses and profit they must pay for, during the period the new rates
-will be in effect. The ingredients (chapters 3 and 4) are exposures (car-years,
-house-years), premium (written, earned, in force) and losses with loss
-adjustment expense (LAE), each aggregated by calendar year, accident year or
-policy year. The indication then needs three adjustments to the historical
-data: premium to the current rate level, losses to their ultimate value, and
-both to the cost level of the future period (trend).
+An indication compares two amounts for the period when the new rates are in
+effect. The first is the premium from the current rates. The second is the
+losses, expenses and profit that this premium must pay. The data (chapters 3
+and 4) are exposures (car-years, house-years), premium (written, earned, in
+force) and losses. The losses include loss adjustment expense (LAE). The book
+aggregates each of them by calendar year, accident year or policy year. The
+indication makes three adjustments to the historical data. It brings premium
+to the current rate level and losses to their ultimate value. It trends both
+to the cost level of the future period.
 
-Trend needs the length of time between two average dates, and the book never
-counts days: it puts every date on a half-month grid, so June 30 and July 1
-are the same point and November 15 is ten and a half months into the year.
-`year_fraction` does the same, and a `Period` (a calendar window of premium
-earned or losses occurring, or a policy window of policies written) knows its
-average written and average accident ("earned") dates for a policy term.
-`half_up` below is the book's rounding, used wherever an exhibit rounds a
-cell:
+Trend needs the time between two average dates. The book does not count days.
+It puts each date on a half-month grid. Thus June 30 and July 1 are the same
+point, and November 15 is ten and a half months into the year. `year_fraction`
+uses the same grid. A `Period` is a calendar window (premium earned or losses
+that occur in it) or a policy window (policies written in it). For a policy
+term, it gives its average written date and its average accident ("earned")
+date. `half_up` below is the book's rounding. The code uses it wherever an
+exhibit rounds a cell:
 
 ```python
 from decimal import Decimal, ROUND_HALF_UP
@@ -88,32 +87,28 @@ losses,  AY2011 to rates of 1/1/2015, 6-month  : 4.25 (book 4.25)
 losses,  PY2011 to rates of 1/1/2015, annual   : 4.0 (book 4.0)
 ```
 
-These are the trend lengths of Tables 5.26 to 5.28 and 6.15 to 6.18. Premium
-is trended between average written dates and losses between average accident
-dates; a calendar year's premium was written on average half a term before its
-midpoint, and a policy year's losses occur on average half a term after its
-midpoint. The future period is a policy period (the policies written while
-the new rates are in effect), so the book's rule "effective date plus half the
-rate period, plus half the term for losses" needs no special case.
-
-prospicio does not aggregate exposures or premium from individual policies
-(chapter 4's written, earned, unearned and in-force exposures, and chapter 5's
-Tables 5.1 to 5.14 are arithmetic on policy dates); it starts from the
-aggregated figures an exhibit would show.
+These are the trend lengths of Tables 5.26 to 5.28 and 6.15 to 6.18. The book
+trends premium between average written dates and losses between average
+accident dates. On average, the premium of a calendar year was written half a
+term before the midpoint of the year. The losses of a policy year occur on
+average half a term after its midpoint. The future period is a policy period
+(the policies written while the new rates are in effect). Thus the book's rule
+"effective date plus half the rate period, plus half the term for losses"
+needs no special case.
 
 ## 2. Premium at the current rate level: the parallelogram method
 
-Historical premium was written at the rates of its day. To ask what it would
-be at today's rates, the book's parallelogram method (Tables 5.15 to 5.23)
-assumes policies are written evenly over time, draws each rate change as a
-diagonal line in the square of written date against earned date, and measures
-the share of a year's earned premium in each region of constant rate level.
-The on-level factor is the current cumulative level divided by the year's
-average level.
+Historical premium was written at the rates of its time. The book's
+parallelogram method (Tables 5.15 to 5.23) restates that premium at the
+current rates. The method assumes that policies are written evenly over time.
+It draws each rate change as a diagonal line in the square of written date
+against earned date. Then it measures the share of a year's earned premium in
+each region of constant rate level. The on-level factor is the current
+cumulative level divided by the average level of the year.
 
-`RateHistory` takes the effective dates and changes, and `rate_level` returns
-the shares, the average level and the factor for a period and a policy term.
-Chapter 5's example has +5% on 7/1/2010, +10% on 1/1/2011 and -1% on
+`RateHistory` takes the effective dates and the changes. For a period and a
+policy term, `rate_level` returns the shares, the average level and the
+factor. Chapter 5's example has +5% on 7/1/2010, +10% on 1/1/2011 and -1% on
 4/1/2012:
 
 ```python
@@ -141,14 +136,14 @@ PY2012, annual policies  (Table 5.21)       shares [0.25, 0.75]
     average 1.14634 (book 1.1464)  factor 0.9975 (book 0.9975)
 ```
 
-Each share, average and factor agrees with the book. Two averages sit exactly
-on a rounding boundary (1.09625 and 1.12875), which is why they are printed to
-five places here; the book rounds them up. The book also rounds the
-cumulative index to 1.1435 (exact 1.14345) before dividing; the policy-year
-average of 1.1464 uses that rounded index and is 1.14634 from the exact one.
+Each share, average and factor agrees with the book. Two averages (1.09625 and
+1.12875) are exactly on a rounding boundary, so the code prints them to five
+places. The book rounds them up. The book also rounds the cumulative index to
+1.1435 (exact 1.14345) before it divides. The policy-year average of 1.1464
+uses that rounded index. From the exact index, the average is 1.14634.
 
-A law change (Tables 5.22 and 5.23) applies to every policy in force on its
-date, not only to new ones, so its line in the square is vertical rather than
+A law change (Tables 5.22 and 5.23) applies to all policies in force on its
+date, not only to new policies. Thus its line in the square is vertical, not
 diagonal. Add the book's -5% benefit change on 7/1/2011 as an `in_force`
 change:
 
@@ -170,21 +165,25 @@ levels [1.0, 1.05, 0.9975, 1.155, 1.0973]  current 1.0863
 factor 1.017084  (book 1.0171)
 ```
 
-The five cells of 2011 and their levels are Table 5.23's (1.0000, 1.0500,
-0.9975, 1.1550, 1.0973), the current level is its 1.0863, and the factor
-rounds to the printed 1.0171.
+The five cells of 2011 and their levels are those of Table 5.23 (1.0000,
+1.0500, 0.9975, 1.1550, 1.0973). The current level is its 1.0863, and the
+factor rounds to the printed 1.0171.
 
 ### Appendix A: six-month auto policies
 
+Appendix A's Current Rate Level exhibits apply six changes to six-month
+policies, by calendar year. The changes are -5% on 4/1/2011, +10% on 7/1/2012,
++5% on 10/1/2013, -2% on 7/1/2014, +5% on 10/1/2015 and +5% on 1/1/2016. The
+book calculates each factor in three steps:
 
-Appendix A's Current Rate Level exhibits apply six changes (-5% on 4/1/2011,
-+10% on 7/1/2012, +5% on 10/1/2013, -2% on 7/1/2014, +5% on 10/1/2015 and +5%
-on 1/1/2016) to six-month policies, by calendar year. The book rounds the
-cumulative index to four places at every step (it ends at 1.1857; the exact
-chain is 1.18552), then the average level to four places, then divides.
-`RateHistory.from_levels` takes the printed cumulative indices, so the book's
-chain is reproduced exactly, and `RateHistory` with the changes gives the
-exact chain for comparison:
+1. It rounds the cumulative index to four places at each change. The index
+   ends at 1.1857, where the exact chain gives 1.18552.
+2. It rounds the average level to four places.
+3. It divides the current level by the average level.
+
+`RateHistory.from_levels` takes the printed cumulative indices, so it gives
+the book's chain exactly. `RateHistory` with the changes gives the exact chain
+for comparison:
 
 ```python
 eff = [2011.25, 2012.5, 2013.75, 2014.5, 2015.75, 2016.0]
@@ -217,19 +216,19 @@ year  average  book    factor  book    exact factor
 2015  1.07876  1.0788  1.0991  1.0991  1.0991
 ```
 
-Every average and factor matches. The 2012 average is 0.97375 exactly, a
-half-up boundary the book rounds to 0.9738; in binary floating point it may
-come out a hair below, which is why `half_up` first rounds to ten places.
-The last column is the exact answer: rounding the
-index at each step moves the factors by up to 0.0002 (2012's 1.2176 is 1.2175
-exactly).
+Each average and factor agrees with the book. The 2012 average is exactly
+0.97375, a half-up boundary that the book rounds to 0.9738. In binary floating
+point the value can be a very small amount below 0.97375, so `half_up` first
+rounds to ten places. The last column is the exact answer. Rounding the index
+at each change moves the factors by up to 0.0002 (the exact 2012 factor is
+1.2175, not 1.2176).
 
 ### Appendix C: annual medical malpractice policies
 
 Appendix C's changes are -7.6% on 10/1/2011, +14.6% on 3/1/2014 and +13.6% on
-7/1/2015 on annual policies. Its cumulative indices 0.9240, 1.0589 and 1.2029
-are the exact chain rounded, and its factors divide rounded figures, so the
-code rounds the current and average levels to four places before dividing:
+7/1/2015, on annual policies. Its cumulative indices 0.9240, 1.0589 and 1.2029
+are the exact chain, rounded. Its factors divide rounded figures, so the code
+rounds the current and average levels to four places before it divides:
 
 ```python
 mm = RateHistory([2011.75, 2014 + 2 / 12, 2015.5], [-0.076, 0.146, 0.136])
@@ -252,22 +251,23 @@ for year, book in book_factor.items():
 2015  1.1190  (book 1.1190)  exact 1.1190  shares 1.389% 86.111% 12.500%
 ```
 
-The shares are the exhibit's (65.278% and 34.722% in 2014, where the 3/1
-change does not fall on a quarter), and every factor agrees to the printed
-four places. Without the rounding of the two levels, 2013 and 2014 would move
-by 0.0001.
+The shares are those of the exhibit. In 2014 they are 65.278% and 34.722%,
+because the 3/1 change is not on a quarter. Each factor agrees to the printed
+four places. Without the rounding of the two levels, the 2013 and 2014 factors
+move by 0.0001.
 
 ## 3. Premium trend
 
-Beyond rate changes, the average premium drifts as the mix of business shifts
-(newer cars, higher amounts of insurance). The book measures that drift on
-average written premium at current rate level and projects it with an
-exponential trend, `(1 + trend) ** years`; `trend_factor` is that formula.
+Apart from rate changes, the average premium changes when the mix of business
+changes (newer cars, higher amounts of insurance). The book measures this
+change on average written premium at current rate level. It projects the
+change with an exponential trend, `(1 + trend) ** years`. `trend_factor` is
+that formula.
 
 Two-step trending (Table 5.29) first moves the historical average to the
-latest observed average written premium (the current step), then projects
-from there. The book rounds the average earned premium to the cent and each
-factor to four places before multiplying:
+latest observed average written premium (the current step). Then it projects
+from that point. The book rounds the average earned premium to the cent and
+each factor to four places before it multiplies:
 
 ```python
 print(f"one step, 2% for 2.5 years: {trend_factor(0.02, 2.5):.4f} (book 1.0508)")
@@ -288,14 +288,14 @@ total 1.0011 (book 1.0011)  projected premium 1,442,373 (book 1,442,373)
 unrounded total 1.001078
 ```
 
-Without any rounding the total is 1.001078, which also rounds to 1.0011.
+Without rounding, the total is 1.001078, which also rounds to 1.0011.
 
-Appendix A selects its premium trend from exponential fits to the average
-written premium at current rate level over the 12 months ending each quarter
-(Premium Trend-1). `TrendFit.exponential` takes times in years, so quarterly
-points are a quarter apart and the annual change comes out directly (the book
-regresses on a quarter index and annualizes with the fourth power, which is
-the same fit):
+Appendix A selects its premium trend from exponential fits (Premium Trend-1).
+The data are the average written premium at current rate level over the 12
+months that end at each quarter. `TrendFit.exponential` takes times in years,
+so quarterly points are a quarter apart and the fit gives the annual change
+directly. The book regresses on a quarter index and annualizes with the fourth
+power, which gives the same fit:
 
 ```python
 awp = [
@@ -317,12 +317,13 @@ for n, pct in book.items():
  4 points  1.947%  (book 1.9%)
 ```
 
-Each fit rounds to the printed tenth. The book selects 2.0% and, in Premium
-Trend-3, trends each calendar year's average earned premium at current rate
-level to the latest 115.35, then 2.0% for two years: from 6/30/2015, the
-average written date of the latest 12 months, to 6/30/2017. (The exhibit's
-footnote reads "06/30/2017 to 06/30/2017", a typo; the 2.0 years printed
-beside it and the text agree with 6/30/2015.)
+Each fit rounds to the printed tenth. The book selects 2.0%. In Premium
+Trend-3, it first trends the average earned premium at current rate level of
+each calendar year to the latest 115.35. Then it trends at 2.0% a year for two
+years, from 6/30/2015 to 6/30/2017. 6/30/2015 is the average written date of
+the latest 12 months. The footnote of the exhibit gives "06/30/2017 to
+06/30/2017", which is a typo. The 2.0 years printed next to it and the text
+agree with 6/30/2015.
 
 ```python
 ep_crl = [1_364_916.59, 1_405_728.94, 1_448_424.45, 1_492_177.86, 1_536_267.03]
@@ -350,11 +351,11 @@ projected period 2.0 years, factor 1.0404
 
 ## 4. Loss development
 
-Losses of recent accident years are not yet at their ultimate value. The book's
-chapter 6 develops them by the chain ladder: link ratios between successive
-ages, an average per age, a selected factor, and the product of the selected
-factors from each age to ultimate. Development is outside
-`prospicio.pricing` (the indication takes developed losses as an input), but
+The losses of recent accident years are not yet at their ultimate value. The
+book's chapter 6 develops them by the chain ladder. It calculates the link
+ratios between successive ages and an average for each age. It selects a
+factor for each age and multiplies the selected factors from each age to
+ultimate. The indication takes developed losses as an input, and
 `prospicio.reserving` runs the chain ladder. Table 6.11's triangle is in
 thousands, by accident year 2002 to 2007 at 15 to 75 months:
 
@@ -400,14 +401,15 @@ volume weighted            ['1.50', '1.29', '1.10', '1.02', '1.00']
 book ratio of totals       ['1.50', '1.29', '1.10', '1.02', '1.00']
 ```
 
-The book averages link ratios already rounded to two places. At 27 to 39
-months that gives 1.295, rounded up to 1.30, where the average of the exact
+The book averages link ratios that it first rounds to two places. At 27 to 39
+months this gives 1.295, which rounds up to 1.30. The average of the exact
 link ratios is 1.2932, which rounds to 1.29. The book's "ratio of total
-losses" is the volume-weighted average over the same pairs, which is what the
-chain ladder estimates by default. With the book's selections (the rounded
-arithmetic averages) as a selected pattern, `ChainLadder` gives the factors to
-ultimate and the ultimate losses of Table 6.13; the book rounds the factors
-to two places before multiplying:
+losses" is the volume-weighted average over the same pairs. This average is
+the default estimate of the chain ladder.
+
+With the book's selections (the rounded arithmetic averages) as a selected
+pattern, `ChainLadder` gives the factors to ultimate and the ultimate losses
+of Table 6.13. The book rounds the factors to two places before it multiplies:
 
 ```python
 selected = ChainLadder(ldf={15: 1.50, 27: 1.30, 39: 1.10, 51: 1.02, 63: 1.00}, ldf_kind="ldf")
@@ -429,18 +431,18 @@ book               ['2,188', '2,240', '2,322', '2,380', '2,427', '2,538'] total 
 exact chain ladder total 14,093.7
 ```
 
-Table 6.13 reproduces exactly once the factors are rounded the book's way;
-the unrounded factors (2.1879 at 15 months rather than 2.19) give a total
-2.5 thousand lower.
+Table 6.13 agrees exactly when the code rounds the factors as the book does.
+The unrounded factors (2.1879 at 15 months, not 2.19) give a total of 14,093.7
+thousand.
 
-Appendix A's Loss Development exhibit does the same on reported losses and
-paid ALAE for accident years 2009 to 2015, and selects the straight average
-excluding the highest and lowest link ratio. That average is built in:
-`ChainLadder(average="simple", drop_high=1, drop_low=1)`, whose `n_links`
-shows how many link ratios each factor kept. The book, though, averages link
-ratios rounded to four places and chains its selections rounded to four
-places, so its factors to ultimate come from that rounded selection, passed as
-a selected pattern. The block prints both:
+Appendix A's Loss Development exhibit applies the same method to reported
+losses and paid ALAE for accident years 2009 to 2015. It selects the straight
+average without the highest and lowest link ratio.
+`ChainLadder(average="simple", drop_high=1, drop_low=1)` calculates this
+average, and its `n_links` shows how many link ratios each factor keeps. The
+book averages link ratios rounded to four places and chains its selections
+rounded to four places. Thus its factors to ultimate come from that rounded
+selection, which the code gives as a selected pattern. The block prints both:
 
 ```python
 ta = triangle(2009, [15, 27, 39, 51, 63], [
@@ -476,25 +478,26 @@ to ultimate, exact       ['1.0965', '1.0281', '1.0002', '0.9799', '1.0000']
 to ultimate, rounded     ['1.0966', '1.0282', '1.0003', '0.9799', '1.0000']  book ['1.0966', '1.0282', '1.0003', '0.9799', '1.0000']
 ```
 
-Dropping the highest and lowest leaves 4, 3, 2 and 1 of the 6, 5, 4 and 3 link
-ratios (`n_links`). The library's exact average agrees with the book's
-selection to four places at every age, but chained unrounded it gives factors
-to ultimate 1 lower in the fourth place at 15, 27 and 39 months (1.0965 against
-the book's 1.0966); chaining the rounded selection, as the book does,
-reproduces the exhibit. The selected factors and the factors to ultimate then
-agree with the exhibit; the
-last five accident years' factors (1.0000, 0.9799, 1.0003, 1.0282, 1.0966)
-are the development column of the indication in section 8. The 15-to-27
-straight average is 1.07035 on the rounded link ratios and prints as 1.0704;
-on the exact ratios it is 1.0703. Factors below 1 at 51 months are real here:
-property damage claims develop downward as salvage and subrogation come in.
+Without the highest and lowest, 4, 3, 2 and 1 of the 6, 5, 4 and 3 link ratios
+remain (`n_links`). The library's exact average agrees with the book's
+selection to four places at each age. Chained without rounding, it gives
+factors to ultimate 0.0001 lower at 15, 27 and 39 months (1.0965, not the
+book's 1.0966). The chain of the rounded selection, as in the book, gives the
+factors of the exhibit. The factors of the last five accident years (1.0000,
+0.9799, 1.0003, 1.0282, 1.0966) are the development column of the companion
+guide's Appendix A indication.
+
+The 15-to-27 straight average is 1.07035 on the rounded link ratios and prints
+as 1.0704. On the exact ratios it is 1.0703. The factors below 1 at 51 months
+are valid: property damage claims develop downward when the insurer recovers
+salvage and subrogation.
 
 ## 5. Loss trend
 
 Claim frequency and severity change over time with inflation, safety, law and
 behaviour. The book fits exponential trends to quarterly frequency, severity
-and pure premium (Table 6.14, 12 months ending each quarter) over the latest
-20, 16, 12, 8, 6 and 4 points:
+and pure premium (Table 6.14, 12 months that end at each quarter). It uses the
+latest 20, 16, 12, 8, 6 and 4 points:
 
 ```python
 freq = [0.0587, 0.0587, 0.0593, 0.0587, 0.0582, 0.0578, 0.0565, 0.0555, 0.0552, 0.0553,
@@ -529,16 +532,16 @@ pure premium  prosp   -1.19   -1.39   -0.91   -0.07    1.59    1.91
 linear fit to 20 pure premiums: -0.75 a year (book -0.75)
 ```
 
-Every fit is within half a unit of the printed tenth. The frequencies must be
-the printed four-place values: the book fits what it prints, and the
-unrounded counts over exposures move the 8-point frequency fit from -1.24% to
--1.30%.
+Each fit is within half a unit of the printed tenth. The frequencies must be
+the printed four-place values, because the book fits the values that it
+prints. The unrounded counts over exposures move the 8-point frequency fit
+from -1.24% to -1.30%.
 
-The loss trend runs from the average accident date of each experience period
-to the average accident date of the future policies (Tables 6.15 to 6.18,
-checked in section 1). Appendix A trends in two steps: -0.5% a year from each
-accident year's midpoint to 6/30/2015, then +0.5% for the 2.25 years from
-there to 9/30/2017 (six-month policies written in 2017):
+The loss trend goes from the average accident date of each experience period
+to that of the future policies. Section 1 checks these lengths (Tables 6.15 to
+6.18). Appendix A trends in two steps. First it applies -0.5% a year from the
+midpoint of each accident year to 6/30/2015. Then it applies +0.5% for the
+2.25 years from 6/30/2015 to 9/30/2017 (six-month policies written in 2017):
 
 ```python
 years = (Period.policy(2017.0, 2018.0).average_earned_date(0.5)
@@ -562,11 +565,12 @@ projected period 2.25 years, factor 1.0113
 2015 1.0113  (book 1.0113)
 ```
 
-Appendix C, a long-tailed line with few claims, fits severity and an adjusted
-frequency on annual points by accident year (Net Trend-1 and -2) and selects
-one net trend of 8.9% for losses relative to premium; it rounds each trend
-length to two places (6.83 years from accident year 2010 to 5/1/2017, the
-average accident date of annual policies written from 5/1/2016):
+Appendix C is a long-tailed line with few claims. It fits severity and an
+adjusted frequency on annual points by accident year (Net Trend-1 and -2). It
+selects one net trend of 8.9% for losses relative to premium. It rounds each
+trend length to two places. For example, the length from accident year 2010 to
+5/1/2017 is 6.83 years. 5/1/2017 is the average accident date of annual
+policies written from 5/1/2016:
 
 ```python
 severity = [91_032, 56_271, 49_372, 100_052, 69_625, 166_764, 169_710, 78_630, 217_319, 299_634]
@@ -599,23 +603,24 @@ AY2010 trend length 6.8333, book 6.83: factor 1.7902 (book 1.7902), unrounded 1.
   2.83 years: 1.2729 (book 1.2729)
 ```
 
-The fits round to the printed tenths. Rounding the trend length to 6.83 is
-what makes the book's 1.7902; the exact 6.8333 years give 1.7907.
+The fits round to the printed tenths. The book's 1.7902 comes from the trend
+length rounded to 6.83. The exact 6.8333 years give 1.7907.
 
-Chapter 6 also explains why a constant trend in ground-up severity is
-leveraged in an excess layer and damped under a basic limit (Tables 6.20 and
-6.21); that is a property of the severity distribution, and
+Chapter 6 also explains the effect of a constant trend in ground-up severity
+(Tables 6.20 and 6.21). The trend is leveraged in an excess layer and damped
+under a basic limit. This is a property of the severity distribution.
 [`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md)
 computes it with prospicio's severities.
 
 ## 6. Expenses, profit and the permissible loss ratio
 
-Chapter 7 splits the cost of a policy into losses and LAE, fixed expenses
-(the same per policy), variable expenses (a share of premium) and the profit
-provision (a share of premium). The fundamental insurance equation then
-gives the rate per exposure as the pure premium plus fixed expense, divided
-by one minus the variable expense and profit ratios. `Provisions(variable,
-profit)` holds `V` and `Q`, and `pure_premium_rate` applies the equation:
+Chapter 7 divides the cost of a policy into four parts: losses and LAE, fixed
+expenses, variable expenses and the profit provision. Fixed expenses are the
+same for each policy. Variable expenses and the profit provision are shares of
+premium. The fundamental insurance equation gives the rate per exposure. The
+rate is the pure premium plus the fixed expense, divided by one minus the
+variable expense and profit ratios. `Provisions(variable, profit)` holds `V`
+and `Q`, and `pure_premium_rate` applies the equation:
 
 ```python
 from prospicio.pricing import Provisions, premium_based_expenses
@@ -640,23 +645,24 @@ Table 7.3 loss 225: 306.25 (book 306.25)  all variable 312.50 (book 312.50)  +2.
 Table 7.4: 5.9% general expense, 75% fixed: fixed 4.425% (book 4.4%), variable 1.475% (book 1.5%)
 ```
 
-Both parts are 4.425% and 1.475% before the book rounds them to a tenth.
-Table 7.3 is the book's warning about the all variable expense method:
-treating a fixed $20 as 8% of premium undercharges small risks and
-overcharges large ones. The premium-based projection method (Table 7.4)
-splits each historical expense ratio into a fixed and a variable part by a
-fixed share, which is what `premium_based_expenses` does with several
-categories at once. (Table 7.5, the exposure-based projection, divides fixed
-dollars by exposures and trends them, plain arithmetic with `trend_factor`.
-Its printed 1.4% uses 2015 earned premium of 545,250,000 where Table 7.4 shows
-530,000,000.)
+Before the book rounds them to a tenth, the two parts are 4.425% and 1.475%.
+Table 7.3 shows the problem of the all variable expense method. If the method
+treats a fixed $20 as 8% of premium, it undercharges small risks and
+overcharges large risks. The premium-based projection method (Table 7.4)
+divides each historical expense ratio into a fixed part and a variable part by
+a fixed share. `premium_based_expenses` does this for several categories at
+once.
 
-Chapter 8 turns this into the two methods of the indication. The pure premium
-method computes the indicated rate per exposure from the projected pure
-premium and fixed expense per exposure. The loss ratio method computes the
-change to the current rates: the projected loss and LAE ratio plus the fixed
-expense ratio, over the variable permissible loss ratio `1 - V - Q`, minus 1.
-On consistent data the two agree:
+Table 7.5, the exposure-based projection, divides fixed dollars by exposures
+and trends them. This is arithmetic with `trend_factor`. Its printed 1.4% uses
+2015 earned premium of 545,250,000, but Table 7.4 shows 530,000,000.
+
+Chapter 8 gives the two methods of the indication. The pure premium method
+calculates the indicated rate per exposure from the projected pure premium and
+fixed expense per exposure. The loss ratio method calculates the change to the
+current rates. This change is the projected loss and LAE ratio plus the fixed
+expense ratio, divided by the variable permissible loss ratio `1 - V - Q`,
+minus 1. On consistent data the two methods agree:
 
 ```python
 p = Provisions(0.25, 0.10)
@@ -680,19 +686,19 @@ permissible loss ratios: variable 0.65, with 6.5% fixed 0.585
 same book both ways: 454.0541 and 454.0541
 ```
 
-The last two lines use made-up figures to show the identity the book proves
-in chapter 8: the loss ratio method's indicated factor times the current rate
-is the pure premium method's indicated rate, as long as premium at current
-rates is the exposure times the current average rate.
+The last two lines use made-up figures to show the identity that the book
+proves in chapter 8. The indicated factor of the loss ratio method, times the
+current rate, is the indicated rate of the pure premium method. This is true
+when premium at current rates is the exposure times the current average rate.
 
 ## 7. Credibility
 
-Chapter 12 weights the indication with a complement when the experience is
-too thin to stand alone. Its classical (limited fluctuation) method asks for
-the number of claims at which the observed frequency is within `k` of its
-mean with probability `p`, under a Poisson count: `(z / k) ** 2` with
-`z` the normal quantile at `(1 + p) / 2`. Below the standard the credibility
-is the square root rule. Table 12.1:
+Chapter 12 weights the indication with a complement when the experience is too
+thin to use alone. The classical (limited fluctuation) method assumes a
+Poisson count. It finds the number of claims at which the observed frequency
+is within `k` of its mean with probability `p`. This number is `(z / k) ** 2`,
+with `z` the normal quantile at `(1 + p) / 2`. Below the standard, the
+credibility follows the square root rule. Table 12.1:
 
 ```python
 from prospicio.credibility import LimitedFluctuation
@@ -721,21 +727,21 @@ print(f"100 claims: Z {z:.4f} (book 0.30); {credibility_weighted(200, round(z, 2
 ```
 
 Five rows round to the printed standards. The 99% rows use the book's
-three-figure z of 2.575; the exact quantile is 2.5758, which gives 2,654
-claims for k = 5% where the book prints 2,652 (and still 663 for k = 10%).
-The exposure standards in the table's last column are these claim counts over
-a 5% frequency. `LimitedFluctuation` also has severity and pure premium
-standards (the book's formula with the severity's coefficient of variation),
-not used in the appendices.
+three-figure z of 2.575. The exact quantile is 2.5758. For k = 5% it gives
+2,654 claims, where the book prints 2,652. For k = 10% it still gives 663. The
+exposure standards in the last column of the table are these claim counts
+divided by a 5% frequency. `LimitedFluctuation` also has severity and pure
+premium standards (the book's formula with the coefficient of variation of the
+severity). The appendices do not use them.
 
-The book's second method is Bühlmann (least squares) credibility,
-`Z = N / (N + K)` with `K` the expected process variance over the variance of
-the hypothetical means. The book gives both variances and leaves their
-estimation out of scope: with 21 observations, EVPV 2.00, VHM 0.50 and a
+The book's second method is Bühlmann (least squares) credibility. Its formula
+is `Z = N / (N + K)`. `K` is the expected process variance (EVPV) divided by
+the variance of the hypothetical means (VHM). The book gives both variances
+and does not estimate them. With 21 observations, EVPV 2.00, VHM 0.50 and a
 prior mean of $225, an observed $200 becomes $204. `credibility_premiums`
-computes the Bühlmann-Straub premium at given variances; a tight prior on the
-collective mean fixes it at the book's $225 (the function needs at least two
-groups, so a second, arbitrary group is added):
+calculates the Bühlmann-Straub premium at given variances. A tight prior on
+the collective mean sets it at the book's $225. The function needs at least
+two groups, so the code adds a second, arbitrary group:
 
 ```python
 from prospicio.credibility import buhlmann_straub, credibility_premiums
@@ -751,11 +757,11 @@ print(f"K {2.00 / 0.50:.2f}  Z {cp['credibility'][0]:.2f} (book 0.84)"
 K 4.00  Z 0.84 (book 0.84)  estimate 204.00 (book 204)
 ```
 
-Where the book stops, `buhlmann_straub` goes on: it estimates both variances
-from a panel of groups observed over several periods with weights (exposures),
-as R's `actuar::cm`, so `K` comes from the data. On made-up pure premiums for
-three territories over four years, each territory's credibility is its total
-exposure over that exposure plus `K`:
+`buhlmann_straub` estimates both variances from a panel of groups observed
+over several periods, as R's `actuar::cm` does. The weights are exposures.
+Thus `K` comes from the data. The example uses made-up pure premiums for three
+territories over four years. The credibility of each territory is its total
+exposure divided by that exposure plus `K`:
 
 ```python
 pure_premiums = [[310.0, 240.0, 365.0, 290.0], [262.0, 330.0, 228.0, 301.0], [402.0, 296.0, 348.0, 441.0]]
@@ -775,14 +781,14 @@ C: exposure 121  Z 0.2590 = 0.2590  mean 371.46  premium 323.81
 collective mean 307.15
 ```
 
-So the two approaches differ in what they need, as the book says: classical
-credibility needs only a claim count and a full standard and reaches 1, while
-Bühlmann credibility needs the two variances, never reaches 1, and gives
-`Z = 0` if the risks are assumed identical (VHM of 0). prospicio has both,
-and Bayesian hierarchical credibility besides (`hierarchical_credibility`).
+The two methods need different inputs, as the book says. Classical credibility
+needs only a claim count and a full standard, and it reaches 1. Bühlmann
+credibility needs the two variances and never reaches 1. It gives `Z = 0` if
+the risks are assumed identical (VHM of 0). prospicio also has Bayesian
+hierarchical credibility (`hierarchical_credibility`).
 
-The complement matters as much as `Z`. For an overall indication the book
-favours trended present rates: the change indicated last time but not taken,
+The complement is as important as `Z`. For an overall indication, the book
+prefers trended present rates: the change indicated last time but not taken,
 trended forward. Chapter 12's example has a prior indication of +10%, +6%
 taken and a 5% loss trend over two years:
 
@@ -797,8 +803,8 @@ complement +14.41%, on a $200 rate: 229  (book 229)
 
 ## Next
 
-With every factor in hand, the companion guide
+The companion guide
 [`ratemaking-werner-modlin-indications.md`](ratemaking-werner-modlin-indications.md)
-puts them together into the book's three overall indications (Appendices A to
-C), and ends with the parts of the book prospicio does not cover and a table
-of every place where the book's rounding moves a printed digit.
+combines these factors into the book's three overall indications (Appendices A
+to C). It ends with a table of each place where the book's rounding moves a
+printed digit.

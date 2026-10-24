@@ -3,33 +3,33 @@
 Jacqueline Friedland's *Estimating Unpaid Claims Using Basic Techniques*
 (Casualty Actuarial Society, version 3, 2010) is the CAS syllabus text on
 reserving. It applies each technique to the same few data sets, so the results
-of one chapter feed the next: the development factors of chapter 7 become the
-reporting pattern of chapters 9 and 10, and the expected claims of chapter 8 the
-prior of chapter 9. This guide follows that path in prospicio with the book's
-own data, and prints the book's printed figures next to prospicio's.
+of one chapter feed the next. The development factors of chapter 7 become the
+reporting pattern of chapters 9 and 10. The expected claims of chapter 8 become
+the prior of chapter 9. This guide follows that path in prospicio with the
+book's data, and prints the book's figures next to prospicio's.
 
-The text and exhibits are Friedland's; what follows explains them in new words
-and recomputes the numbers. Exhibit numbers are the book's, and they restart in
+The text and exhibits are Friedland's. This guide explains them in new words
+and recomputes the numbers. Exhibit numbers are the book's. They restart in
 every chapter, so "Exhibit II" always comes with its chapter. Money is in
-thousands of dollars, as in the exhibits. For the choice between methods on your
-own data, read [`reserving-methods.md`](reserving-methods.md); this guide does
-not repeat it.
+thousands of dollars, as in the exhibits. For the choice between methods on
+your own data, read [`reserving-methods.md`](reserving-methods.md).
 
 ## 1. The two data sets
 
-The book's chapters 7 to 10 work through two examples.
+Chapters 7 to 10 of the book use two examples.
 
 - **U.S. Industry Auto**: reported and paid claims of the whole U.S. private
-  passenger auto industry, accident years 1998 to 2007, valued at December 31,
-  2007, with earned premium. Large and stable: every method should agree.
-- **XYZ Insurer, Auto BI**: a small insurer's bodily injury book, accident
+  passenger auto industry, with earned premium. The accident years are 1998 to
+  2007, valued at December 31, 2007. The data is large and stable, so every
+  method should agree.
+- **XYZ Insurer, Auto BI**: the bodily injury book of a small insurer, accident
   years 1998 to 2008, valued at December 31, 2008. Its case reserving, its
-  settlement speed and a tort reform all changed, so the methods disagree, which
-  is the point of the example. Only calendar years 2000 to 2008 exist, so the
-  two oldest rows start at 36 and 24 months.
+  settlement speed and a tort reform all changed. Thus the methods disagree,
+  which is the purpose of the example. The data has only calendar years 2000
+  to 2008, so the two oldest rows start at 36 and 24 months.
 
-The triangles below are typed from chapter 7, Exhibits I and II (sheets 1 and
-2), and the premiums from chapter 8, Exhibits II and III:
+The triangles come from chapter 7, Exhibits I and II (sheets 1 and 2). The
+premiums come from chapter 8, Exhibits II and III:
 
 ```python
 from prospicio.reserving import (
@@ -134,26 +134,34 @@ origin
 2000         15676.0  18749.0  21900.0  27144.0  29488.0
 ```
 
-The XYZ rows for 1998 and 1999 begin with unobserved cells (`NaN`). prospicio
-keeps them as missing, not zero, so they take no part in any factor.
+The XYZ rows for 1998 and 1999 start with unobserved cells (`NaN`). prospicio
+keeps them as missing, not zero, so they do not enter any factor.
 
 ## 2. The development technique (chapter 7)
 
 ### Age-to-age factors and their averages
 
-The development technique starts from the link ratios: each cell divided by
-the one before it in the same row. Friedland then lays several averages of each
-column side by side and selects one factor per age. Her averages run over the
-**latest** few accident years: simple averages of the latest 5 and 3, a medial
-average of the latest 5 without the highest and lowest, volume-weighted
-averages of the latest 5 and 3, and a geometric average of the latest 4.
+The development technique starts from the link ratios. A link ratio is a cell
+divided by the cell before it in the same row. Friedland shows several averages
+of each column side by side and selects one factor for each age. Her averages
+use only the **latest** few accident years:
 
-All of them are options of `ChainLadder`: `average=` picks the mean
-(`"volume"`, `"simple"`, `"regression"` or `"geometric"`), `n_periods=n` keeps
-only the link ratios that start in the latest n calendar diagonals (the latest
-n accident years at each age), and `drop_high=` and `drop_low=` leave out the
-highest and lowest of those, so a medial average is a simple one with one of
-each dropped. A fit's `n_links` says how many link ratios each factor averaged:
+- simple averages of the latest 5 and 3
+- a medial average of the latest 5, without the highest and lowest
+- volume-weighted averages of the latest 5 and 3
+- a geometric average of the latest 4.
+
+Each of them is an option of `ChainLadder`:
+
+- `average=` selects the mean (`"volume"`, `"simple"`, `"regression"` or
+  `"geometric"`).
+- `n_periods=n` keeps only the link ratios that start in the latest n calendar
+  diagonals (the latest n accident years at each age).
+- `drop_high=` and `drop_low=` remove the highest and lowest of those. A medial
+  average is a simple average with one of each removed.
+
+The `n_links` of a fit gives the number of link ratios in the average of each
+factor:
 
 ```python
 AVERAGES = {
@@ -180,17 +188,24 @@ geometric, latest 4  1.164 1.057 1.027 1.011 1.004 1.003 1.002 1.001 1.000
 n_links, medial 5x1      3     3     3     3     3     2     1     2     1
 ```
 
-Each factor row equals the corresponding row of chapter 7, Exhibit I, sheet 1,
-part 3, to the three decimals printed there (12-24 at the left, 108-120 at the
-right); the paid averages on sheet 2 agree in the same way. Two conventions in
-the book matter here, and prospicio follows both. When only a few years exist,
-"latest 5" quietly uses all of them. And its medial average of two values is
-their simple average and of one value the value itself: prospicio skips a drop
-that would leave no link ratio. The last line shows it: the five link ratios at
-12-24 keep 3, the four at 72-84 keep 2 and the three at 84-96 keep 1, while the
-two at 96-108 and the one at 108-120 keep them all.
+Each factor row equals the related row of chapter 7, Exhibit I, sheet 1,
+part 3, to the three printed decimals. The 12-24 factor is at the left and the
+108-120 factor is at the right. The paid averages on sheet 2 agree in the same
+way.
 
-The all-year averages, by contrast, are not what the book uses:
+The book uses two conventions here, and prospicio follows both:
+
+- When fewer years exist, "latest 5" uses all of them.
+- The medial average of two values is their simple average. The medial average
+  of one value is the value itself. prospicio skips a drop that leaves no link
+  ratio.
+
+The last line shows this. Of the five link ratios at 12-24, 3 remain. Of the
+four at 72-84, 2 remain, and of the three at 84-96, 1 remains. The two at
+96-108 and the one at 108-120 all remain.
+
+The book does not use the all-year averages. This block compares them with
+the latest-3 average:
 
 ```python
 print("volume, latest 3 ", " ".join(f"{f:.3f}" for f in ChainLadder(n_periods=3).fit(us, "reported").ldf))
@@ -204,18 +219,19 @@ volume, all years 1.175 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
 simple, all years 1.175 1.058 1.027 1.011 1.004 1.003 1.002 1.001 1.000
 ```
 
-The first line is the book's volume-weighted latest 3 again; the all-year
-factors at 12-24 (1.175) are well above the book's selection of
-1.164, because the early accident years developed more in their first year.
+The first line is the book's volume-weighted latest-3 average again. The
+all-year factor at 12-24 (1.175) is much higher than the book's selection of
+1.164. The cause is that the early accident years developed more in their first
+year.
 
 ### Selected factors, factors to ultimate, and rounding
 
 For U.S. Industry Auto, Friedland selects the latest-3 averages, rounded to
-three decimals, with no tail for reported claims and a tail of 1.002 for paid.
-Multiplying the selected factors gives the factor to ultimate (CDF), which she
-also rounds to three decimals before multiplying it into the latest diagonal.
-In prospicio the selected factors go in as a pattern with `ldf=` and
-`ldf_kind="ldf"`, and a constant tail as `tail=`:
+three decimals. She uses no tail for reported claims and a tail of 1.002 for
+paid claims. The product of the selected factors is the factor to ultimate
+(CDF). She also rounds the CDF to three decimals before she multiplies it into
+the latest diagonal. In prospicio, give the selected factors as a pattern with
+`ldf=` and `ldf_kind="ldf"`, and a constant tail with `tail=`:
 
 ```python
 AGES = us.development
@@ -236,12 +252,12 @@ total ultimate: reported 569,136,323 (book 569,172,456)
                 paid     572,052,982 (book 572,041,099)
 ```
 
-The totals miss the book by 36,133 and 11,883 (thousands). The cause is the
-rounding of the CDF: the product of the reported factors from 12 months is
-1.29163, which the book prints and uses as 1.292. To reproduce the book, give
-its rounded CDFs as the pattern instead, with `ldf_kind="cdf"`. A pattern given
-to the oldest age with no `tail=` keeps its last value as the tail, so the
-paid CDF of 1.002 at 120 months is the tail:
+The totals differ from the book by 36,133 and 11,883 (thousands). The cause is
+the rounding of the CDF. The product of the reported factors from 12 months is
+1.29163, but the book prints and uses 1.292. To reproduce the book, give its
+rounded CDFs as the pattern, with `ldf_kind="cdf"`. A pattern that reaches the
+oldest age with no `tail=` keeps its last value as the tail. Thus the paid CDF
+of 1.002 at 120 months is the tail:
 
 ```python
 CDF_REPORTED = [1.292, 1.110, 1.051, 1.023, 1.011, 1.006, 1.003, 1.001, 1.000, 1.000]
@@ -282,10 +298,14 @@ year     reported         book         paid         book
  all  569,172,456  569,172,456  572,041,099  572,041,099
 ```
 
-Every ultimate now equals sheet 3 to the thousand dollars. The unpaid claim
-estimate follows the book's sheet 4: IBNR is ultimate less reported, and the
-total unpaid is ultimate less paid, which is IBNR plus case outstanding.
-prospicio's `reserve` is ultimate less the column's latest value, so on the
+Each ultimate now equals sheet 3 to the thousand dollars. The unpaid claim
+estimate follows sheet 4 of the book:
+
+- IBNR is ultimate less reported claims.
+- The total unpaid is ultimate less paid claims, which is IBNR plus case
+  outstanding.
+
+prospicio's `reserve` is ultimate less the latest value of the column. On the
 reported triangle it is IBNR, and on the paid triangle it is the total unpaid:
 
 ```python
@@ -309,11 +329,11 @@ paid reserve = total unpaid: 73,990,731
 
 ### The tail factor
 
-Friedland's tail of 1.002 for paid claims is a judgment that the paid
-development after 120 months matches the reported claims still open then (the
-reported pattern has reached 1.000). prospicio can also extrapolate a tail from
-the factors; on this triangle a fitted exponential curve gives a factor close to
-hers:
+Friedland's tail of 1.002 for paid claims is a judgment. It sets the paid
+development after 120 months equal to the reported claims still open at that
+age (the reported pattern is at 1.000). prospicio can also extrapolate a tail
+from the factors. On this triangle, a fitted exponential curve gives a factor
+near hers:
 
 ```python
 curve = ChainLadder(tail=TailCurve()).fit(us, "paid")
@@ -324,15 +344,15 @@ print(f"fitted tail {curve.tail:.4f}, book's selection 1.002")
 fitted tail 1.0011, book's selection 1.002
 ```
 
-A curve fitted to all ages is pulled by the early factors, so look at it as a
-second opinion beside a benchmark such as the reported pattern, as the book
-does, rather than as the answer.
+The early factors pull a curve fitted to all ages. Thus use the curve
+as a second opinion beside a benchmark such as the reported pattern, as the
+book does. Do not use it as the answer.
 
 ### XYZ Insurer: unstable factors and a pattern below 1
 
 For XYZ, Friedland selects the volume-weighted average of the latest 2 years at
-every age, with no reported tail and a paid tail of 1.010. `n_periods=2`
-reproduces her selected factors (chapter 7, Exhibit II, sheets 1 and 2, part 4):
+every age. She uses no reported tail and a paid tail of 1.010. `n_periods=2`
+gives her selected factors (chapter 7, Exhibit II, sheets 1 and 2, part 4):
 
 ```python
 for column in ("reported", "paid"):
@@ -344,13 +364,12 @@ reported 1.687 1.265 1.102 1.020 1.050 1.010 1.011 1.000 0.993 0.999
 paid     3.349 2.079 1.574 1.316 1.203 1.136 1.059 1.022 1.017 1.004
 ```
 
-The book prints 1.687 1.265 1.102 1.020 1.050 1.010 1.011 1.000 0.993 0.999
-for reported and 3.349 2.079 1.574 1.316 1.203 1.136 1.059 1.022 1.017 1.004
-for paid: all equal. Reported claims fall after 96 months (case reserves set too
-high and then released), so the reported CDFs at 96 and 108 months are 0.992,
-below 1. A selected pattern with `ldf_kind="cdf"` needs only positive
-factors to ultimate, in any order, so the book's rounded CDFs go in directly,
-the reported ones as well as the paid:
+The book prints the same reported and paid factors. Reported claims fall after
+96 months, because the insurer set case reserves too high and then released
+them. Thus the reported CDFs at 96 and 108 months are 0.992, less than 1. A
+selected pattern with `ldf_kind="cdf"` needs only positive CDFs, in any order.
+Thus the book's rounded CDFs go in directly, for reported claims as well as
+for paid claims:
 
 ```python
 XYZ_AGES = xyz.development
@@ -393,27 +412,29 @@ year reported     book     paid     book
  all  514,929  514,929  605,028  605,030
 ```
 
-The reported total equals the book's 514,929 and the paid total is 2 below
-605,030. Single years differ by 1 (reported 2001, 2002 and 2004, paid 2001 and
-2005), in both directions. That is the rounding of the data, not of the method:
-the book's spreadsheet holds claims with decimals and prints them in whole
-thousands. For example, 38,798 times 0.992 is 38,487.6, which rounds to 38,488,
-but a latest value of 38,797.5 (printed as 38,798) gives the book's 38,487.
-Section 3 shows the same effect in a printed column total.
+The reported total equals the book's 514,929, and the paid total is 2 less than
+605,030. Some single years differ by 1, in both directions (reported 2001, 2002
+and 2004, paid 2001 and 2005). The cause is the rounding of the data, not the
+method. The book's spreadsheet holds claims with decimals and prints them in
+whole thousands.
 
-The two projections tell different stories for the latest years (paid 74,995
-against reported 47,530 for 2008), because the speed-up in settlement inflates
-the paid factors and the stronger case reserves inflate the reported ones. The
-book returns to this in chapter 13; see section 8 below.
+For example, 38,798 times 0.992 is 38,487.6, which rounds to 38,488. But a
+latest value of 38,797.5 (printed as 38,798) gives the book's 38,487. Section 3
+shows the same effect in a printed column total.
+
+The two projections differ for the latest years (paid 74,995 against reported
+47,530 for 2008). The faster settlement increases the paid factors, and the
+stronger case reserves increase the reported factors. The book returns to this
+in chapter 13.
 
 ## 3. The expected claims technique (chapter 8)
 
-The expected claims technique ignores the claims to date: ultimate is an
+The expected claims technique ignores the claims to date. The ultimate is an
 expected claim ratio times earned premium. For U.S. Industry Auto, Friedland
 selects 75% for 1998 to 2002 and 65% for 2003 to 2007 (chapter 8, Exhibit II,
-sheet 1). When the ratio differs by year, put the expected claims themselves in
-a column and fit with `apriori=1.0`, as [`reserving-methods.md`](reserving-methods.md)
-section 4 explains:
+sheet 1). When the ratio changes by year, put the expected claims in a column
+and fit with `apriori=1.0`. Section 4 of
+[`reserving-methods.md`](reserving-methods.md) explains this:
 
 ```python
 US_RATIO = [0.75] * 5 + [0.65] * 5
@@ -433,14 +454,14 @@ IBNR 25,800,252 (book 25,800,252), total unpaid 71,231,471 (book 71,231,471)
 IBNR 2000: -3,156,946 (book -3,156,946)
 ```
 
-All three totals equal the book's sheet 2. The expected claims method can give
-negative IBNR, as in 2000, where the 75% ratio is below what is already
-reported; the book keeps such values to show the method's weakness on mature
-years.
+All three totals equal sheet 2 of the book. The expected claims method can give
+negative IBNR, as in 2000. In that year, the 75% ratio is less than the claims
+already reported. The book keeps such values to show the weakness of the method
+on mature years.
 
-For XYZ the selected ratios come from a long adjustment for trend, rate changes
-and tort reform (chapter 8, Exhibit III, sheet 2); the guide takes them as
-printed in sheet 1, column (11):
+For XYZ, the selected ratios come from a long adjustment for trend, rate
+changes and tort reform (chapter 8, Exhibit III, sheet 2). This guide uses them
+as printed in sheet 1, column (11):
 
 ```python
 XYZ_RATIO = [0.783] * 6 + [0.871, 0.783, 0.658, 0.638, 0.825]
@@ -458,16 +479,16 @@ expected claims 561,516 (book 561,516)
 IBNR 111,890 (book 111,890), total unpaid 230,889 (book 230,887)
 ```
 
-The expected claims and the IBNR agree. The total unpaid is 2 above the book's
-because it subtracts paid claims: the book's paid total at December 31, 2008 is
-330,629, while its eleven printed paid values add to 330,627. This is the
+The expected claims and the IBNR agree. The total unpaid is 2 more than the
+book's because it subtracts paid claims. The book's paid total at December 31,
+2008 is 330,629, but its eleven printed paid values add to 330,627. This is the
 clearest evidence that the exhibits hold claims with decimals and print them
 rounded.
 
 ## 4. The Bornhuetter-Ferguson technique (chapter 9)
 
-Bornhuetter-Ferguson keeps the claims to date and adds expected claims times
-the share still unreported (or unpaid), `1 - 1 / CDF`. With the expected claims
+Bornhuetter-Ferguson (BF) keeps the claims to date. It adds expected claims
+times the unreported (or unpaid) share, `1 - 1 / CDF`. With the expected claims
 of chapter 8 and the rounded CDFs of chapter 7, prospicio reproduces chapter 9,
 Exhibit I:
 
@@ -506,10 +527,9 @@ reported IBNR  25,609,761 (book  25,609,761)  total unpaid  71,040,980 (book  71
 paid     IBNR  27,086,611 (book  27,086,611)  total unpaid  72,517,830 (book  72,517,830)
 ```
 
-Every figure agrees. For XYZ the book adds one convention: in chapter 9,
-Exhibit II the CDFs are **capped at a minimum of 1.00**, so that a year whose
-reported claims are expected to fall gets no negative unreported claims. The
-capped pattern is a valid `ldf_kind="cdf"`:
+All figures agree. For XYZ, the book adds one convention: chapter 9, Exhibit II
+**caps the CDFs at a minimum of 1.00**. Thus a year with a CDF below 1 gets no
+negative unreported claims. The capped pattern is a valid `ldf_kind="cdf"`:
 
 ```python
 capped = [max(c, 1.0) for c in CDF_XYZ_REPORTED]
@@ -542,19 +562,19 @@ year reported     book     paid     book
  all  513,207  513,207  554,469  554,471
 ```
 
-Every year agrees for both. The paid total is 2 below the book's 554,471, which
-is also 2 above the sum of the book's own eleven paid rows: the spreadsheet adds
-unrounded values, as in section 2.
+Every year agrees for both columns. The paid total is 2 less than the book's
+554,471. The book's total is also 2 more than the sum of its own eleven paid
+rows. The spreadsheet adds unrounded values, as in section 2.
 
 ## 5. The Benktander technique (chapter 9)
 
-Benktander's method runs Bornhuetter-Ferguson twice: the first BF ultimate
-becomes the expected claims of the second. The book shows it only on its
-synthetic "changing conditions" scenarios (chapter 9, Exhibits V and VI), whose
-triangles this guide does not transcribe. Its formula, Exhibit V's column (11),
-is reported claims plus the BF ultimate times the percentage unreported. Fed
-with the book's printed U.S. Industry BF ultimates, that formula is a check on
-prospicio's `Benktander(n_iters=2)`:
+Benktander's method applies Bornhuetter-Ferguson two times. The first BF
+ultimate becomes the expected claims of the second. The book shows the method
+only on its synthetic "changing conditions" scenarios (chapter 9, Exhibits V
+and VI). Thus this guide checks the formula of Exhibit V, column (11): reported
+claims plus the BF ultimate times the percentage unreported. With the book's
+printed U.S. Industry BF ultimates as input, the formula checks prospicio's
+`Benktander(n_iters=2)`:
 
 ```python
 gb = Benktander(apriori=1.0, n_iters=2, ldf=US_CDF["reported"], ldf_kind="cdf").fit(us, "reported", "expected")
@@ -583,16 +603,16 @@ largest difference under 0.5: True
 ```
 
 The two columns agree in every year, within the rounding of the printed BF
-ultimates. Each Benktander ultimate lies between the BF and the
-development ultimates, closer to development where the year is mature, which is
-the book's description of the method as a credibility weighting that always
-gives more weight to development than BF does.
+ultimates. Each Benktander ultimate is between the BF ultimate and the
+development ultimate. It is nearer to development where the year is mature.
+The book describes the method as a credibility weighting that always gives more
+weight to development than BF does.
 
 ## 6. The Cape Cod technique (chapter 10)
 
-Cape Cod is Bornhuetter-Ferguson with an expected claim ratio estimated from
-the data: reported claims over "used-up" premium, the premium times the
-percentage reported. For U.S. Industry Auto (chapter 10, Exhibit I):
+Cape Cod is Bornhuetter-Ferguson with an expected claim ratio from the data.
+The ratio is reported claims divided by "used-up" premium, which is the premium
+times the percentage reported. For U.S. Industry Auto (chapter 10, Exhibit I):
 
 ```python
 cc = CapeCod(ldf=US_CDF["reported"], ldf_kind="cdf").fit(us, "reported", "premium")
@@ -611,19 +631,23 @@ IBNR 27,319,090 (book 27,319,090), total unpaid 72,750,309 (book 72,750,309)
 BF at exactly 69.5%: ultimate 570,783,246
 ```
 
-The totals agree to the unit. The ratio the book prints as 69.5% is 69.544%
-in its spreadsheet, which the last line shows: at exactly 69.5% the ultimate
-would be 17,431 lower.
+The totals agree to the unit. The book prints the ratio as 69.5%, but its
+spreadsheet holds 69.544%. The last line shows the effect: at exactly 69.5%,
+the ultimate is 17,431 lower.
 
-For XYZ (chapter 10, Exhibit II) Friedland first puts every year on the 2008
-basis: premium at current rate levels (column (4), typed below), claims trended
-at 3.425% a year to 2008 and adjusted for the tort reform (column (8)). The
-ratio of adjusted reported claims to used-up on-level premium is 70.8%, and
-each year's expected claim ratio is that ratio taken back to the year's own
-cost level, tort environment and rate level. prospicio's `CapeCod(trend=...)`
-applies a trend of this kind, with the ratio of the latest origin as the
-reference; the tort factor and the rate level are put in by hand. The ratio is
-estimated on the adjusted claims, and the expected claims are then used in a
+For XYZ (chapter 10, Exhibit II), Friedland first puts every year on the 2008
+basis:
+
+- premium at current rate levels (column (4), typed below)
+- claims trended at 3.425% a year to 2008 and adjusted for the tort reform
+  (column (8)).
+
+The ratio of adjusted reported claims to used-up on-level premium is 70.8%.
+Each year's expected claim ratio is that ratio, taken back to the cost level,
+tort environment and rate level of the year. prospicio's `CapeCod(trend=...)`
+applies a trend of this type, with the ratio of the latest origin as the
+reference. The code applies the tort factor and the rate level by hand. It
+estimates the ratio on the adjusted claims, then uses the expected claims in a
 BF fit on the actual claims:
 
 ```python
@@ -660,18 +684,19 @@ year Cape Cod     book
  all  504,300  504,300
 ```
 
-The adjusted ratio, the unadjusted ratios by year (the book's column (15):
-74.6%, 75.7%, ... 70.8%) and the total ultimate of 504,300 all agree; 2003 is 1
-above, the rounding of the printed data again. The tort factor has to multiply
-the claims, not divide the premium: the ratio is a ratio of sums, and the two
-are not the same once the years have different factors.
+The adjusted ratio, the unadjusted ratios by year and the total ultimate of
+504,300 all agree. The unadjusted ratios are column (15) of the book: 74.6%,
+75.7%, ... 70.8%. The 2003 value is 1 more, again from the rounding of the
+printed data. The tort factor must multiply the claims, not divide the premium.
+The ratio is a ratio of sums, so the two methods differ when the years have
+different factors.
 
 ## 7. Reasonableness checks (chapters 8 and 15)
 
-The book's last step is to read the results outside the frame that produced
-them: claim ratios, severities, and how far the methods agree. For U.S. Industry
-Auto, chapter 15 summarizes the unpaid claims of each method in billions of
-dollars. prospicio's fits from the sections above give the same table:
+The last step of the book is to examine the results outside the frame that made
+them. It looks at claim ratios, severities, and how much the methods agree. For U.S.
+Industry Auto, chapter 15 gives the unpaid claims of each method in billions of
+dollars. The fits from the sections above give the same table:
 
 ```python
 book_billions = {  # chapter 15, IBNR and total unpaid, $ billions
@@ -696,15 +721,13 @@ B-F, paid                 27    27     73    73
 Cape Cod                  27    27     73    73
 ```
 
-All twelve figures agree (the book's row for the case outstanding development
-technique of chapter 12 is not reproduced; see section 8). The spread across
-methods is small, about 4% of the unpaid estimate, as one expects of a whole
-industry.
+All twelve figures agree. The spread across methods is small, about 4% of the
+unpaid estimate. This is the expected result for a whole industry.
 
 For XYZ the methods disagree, and the claim ratios show why. Chapter 8,
 Exhibit III, sheet 1, column (10) prints the claim ratio of the average of the
-reported and paid development ultimates; beside it, the ratio implied by each
-method:
+reported and paid development ultimates. The table shows it beside the claim
+ratio of each method:
 
 ```python
 BOOK_AVG_RATIO = [79.5, 79.8, 83.2, 79.1, 80.0, 68.5, 78.2, 56.8, 60.6, 100.8, 128.2]
@@ -735,47 +758,20 @@ year  avg dev   book  dev rep dev paid       EC   BF rep  BF paid       CC
 ```
 
 The average-of-development column equals the book's to the tenth of a percent.
-The development ratios for 2007 and 2008 (77% and 99% reported, 125% and 157%
-paid) are out of line with every earlier year, while the expected claims, BF
-and Cape Cod methods keep them near the history. Chapter 15 also divides
-ultimates by ultimate claim counts (severity) and divides IBNR plus case by the
-open and unreported counts; with a counts triangle those are the same one-line
-divisions of `fit.ultimate` and `fit.reserve`. The book's conclusion for XYZ
-rests on the Berquist-Sherman adjusted projections, which prospicio does not
-make.
+The development ratios for 2007 and 2008 are very different from all earlier
+years (77% and 99% reported, 125% and 157% paid). The expected claims, BF and
+Cape Cod methods keep these years near the history.
 
-## 8. What prospicio does not cover
-
-The book's techniques that this guide could not run, and why:
-
-- **Frequency-severity techniques (chapter 11).** Claim counts and severities
-  projected separately, with trend, disposal rates and the claims closure
-  model. prospicio can develop a counts triangle with `ChainLadder` like any
-  other column, but it has no severity trend fit, disposal-rate projection or
-  closure model.
-- **Case outstanding development technique (chapter 12).** Projecting unpaid
-  claims from case outstanding with report-year or self-insurer benchmarks is
-  not a prospicio method.
-- **Berquist-Sherman adjustments (chapter 13).** Restating case outstanding
-  for a change in case adequacy (by trending average case reserves) and paid
-  claims for a change in settlement speed (by disposal rates) is not built in;
-  an adjusted triangle prepared by hand can then be developed with any method
-  here.
-- **Recoveries (chapter 14) and claim adjustment expenses (chapters 16 and
-  17).** Salvage, subrogation and reinsurance are separate triangles developed
-  the same way, which works; the ratio approaches to ALAE and the paid-to-paid
-  and Kittel methods for ULAE are not methods of the library.
-- **Adjustments for trend, rate level and tort reform** in the expected claims
-  method are inputs prepared outside prospicio (section 3). `CapeCod(trend=)`
-  and `decay=` cover the Cape Cod trend only.
-- **Monitoring between reviews** (chapter 15's actual against expected for DC
-  Insurer) is close to prospicio's diagonal backtest, which is described in
-  [`reserving-methods.md`](reserving-methods.md) section 9.
+Chapter 15 also divides ultimates by ultimate claim counts (severity). It
+divides IBNR plus case by the open and unreported counts. With a counts
+triangle, these are one-line divisions of `fit.ultimate` and `fit.reserve`. The
+book's conclusion for XYZ uses the Berquist-Sherman adjusted projections of
+chapter 13.
 
 ## See also
 
 - [`reserving-methods.md`](reserving-methods.md): which reserving method to use
   when, with Mack, the bootstraps, Clark, the Bayesian models and the one-year
-  view, none of which are in Friedland's basic text.
-- `docs/design/triangle.md` and `docs/design/reserving-v02.md`: the triangle
-  and the expected-loss methods as designed, including selected patterns.
+  view.
+- `docs/design/triangle.md` and `docs/design/reserving-v02.md`: the design of
+  the triangle and the expected-loss methods, with selected patterns.

@@ -1,33 +1,38 @@
 # Pricing Insurance Risk: the case studies in prospicio
 
 Stephen Mildenhall and John Major's book *Pricing Insurance Risk* (Wiley, 2022)
-runs one method through a handful of small portfolios, its case studies: build
-the distribution of a book's total from its units, choose a capital standard,
-price the total with a spectral risk measure calibrated to a target return, and
-split the price over the units by the natural allocation. The book's exhibits
-were produced with Mildenhall's Python package `aggregate`, and version 0.30.1
-still ships the code (`aggregate.extensions.case_studies`) and the case studies
-as DecL programs in its test suite.
+applies one method to a small number of portfolios, its case studies. The method
+has four steps:
 
-This guide runs the four case studies in prospicio and prints, next to each
-number, what `aggregate` 0.30.1 returns for the same program. It does not
-reproduce the book's text or tables: the comparisons are with `aggregate` run on
-the settings of `case_studies.py` (a 10% return on capital, the capital standard
-and grid of each case), and what each case study is for is read here from its
-programs and results. Read the book for the theory; read
-[CAS Monograph 15 reproduced](capital-modeling-monograph-15.md) first if the
-words distortion, natural allocation or lifted capital are new.
+1. Build the distribution of the total of a book from its units.
+2. Select a capital standard.
+3. Price the total with a spectral risk measure calibrated to a target return.
+4. Split the price over the units by the natural allocation.
+
+Mildenhall's Python package `aggregate` made the exhibits of the book. Version
+0.30.1 still contains the code (`aggregate.extensions.case_studies`) and the
+case studies as DecL programs in its test suite.
+
+This guide runs the four case studies in prospicio. Next to each number, it
+prints the value that `aggregate` 0.30.1 returns for the same program. The
+comparisons use the settings of `case_studies.py`: a 10% return on capital, and
+the capital standard and grid of each case. The guide reads the purpose of each
+case study from its programs and results. For the theory, read the book. If the
+words distortion, natural allocation or lifted capital are new, read
+[CAS Monograph 15 reproduced](capital-modeling-monograph-15.md) first.
 
 ## 1. The method in one function
 
-Each case study has two independent units. Their distributions go on one grid,
-`Portfolio.from_independent` combines them and keeps each unit's expected loss
-given the total, and the assets are the total's quantile at the capital
-standard `p`. The constant cost of capital (CCoC) at 10% sets the premium of the
-total: `P = v E[min(X, a)] + d a` with `v = 1 / 1.1` and `d = 1 - v`, which earns
-exactly 10% on the capital `a - P`. The four other distortions, proportional
-hazard (PH), Wang, dual power and TVaR, are then calibrated so that they charge
-the same premium for the total. They differ only in how they split it.
+Each case study has two independent units, and their distributions go on one
+grid. `Portfolio.from_independent` combines them and keeps the expected loss of
+each unit given the total. The assets are the quantile of the total at the
+capital standard `p`.
+
+The constant cost of capital (CCoC) at 10% sets the premium of the total,
+`P = v E[min(X, a)] + d a`, with `v = 1 / 1.1` and `d = 1 - v`. This premium
+earns exactly 10% on the capital `a - P`. The code then calibrates the four
+other distortions (proportional hazard (PH), Wang, dual power and TVaR) to the
+same premium for the total. They differ only in how they split it.
 
 ```python
 import math
@@ -80,15 +85,16 @@ def show(book, p, distortions, aggregate_030):
 ```
 
 `calibrate` uses one shortcut. The premium of the total depends only on the
-total capped at the assets, so the distortions are calibrated on that capped
-total, a one-unit portfolio of a few thousand points, rather than on the
-portfolio's full grid; the parameters are the same, and on the half million
-points of section 6 it is much faster. `discretize` matches the way `aggregate`
-puts a severity on a grid: the mass of each cell goes to its midpoint, and the
-probability above the grid's top is spread over the grid by renormalizing
-(`aggregate`'s default `normalize=True`). prospicio's own `Grid.rounding` keeps
-that probability on the last point instead; section 6 shows why that matters
-for a thick tail.
+total capped at the assets. So the code calibrates the distortions on that
+capped total, not on the full grid of the portfolio. The capped total is a
+one-unit portfolio of a few thousand points. The parameters are the same, and on
+the half million points of section 6 this is much faster.
+
+`discretize` puts a severity on a grid in the same way as `aggregate`. The mass
+of each cell goes to its midpoint. Renormalization spreads the probability above
+the top of the grid over the grid (the `aggregate` default `normalize=True`).
+`Grid.rounding` of prospicio keeps that probability on the last point. Section 6
+shows why this is important for a thick tail.
 
 ## 2. Discrete: a book you can price by hand
 
@@ -100,10 +106,10 @@ port Discrete
     agg X2 1 claim dsev [0 1 90] [1/2 1/4 1/4] fixed
 ```
 
-There are nine joint outcomes, each with a total of its own, so every number
-below can be checked with a pencil. Unit X2's 90 makes the tail; X1 never loses more
-than 10. `case_studies.py` prices it at the standard `p = 1`, so the assets are
-the largest total, 100, and nothing defaults.
+The nine joint outcomes each have a different total, so you can check each
+number below with a pencil. The 90 of unit X2 makes the tail, and X1 never loses
+more than 10. `case_studies.py` prices the book at the standard `p = 1`, so the
+assets are the largest total, 100, and no outcome defaults.
 
 ```python
 x1 = Grid(1.0, [0.5] + [0.0] * 7 + [0.25, 0.0, 0.25])
@@ -136,19 +142,20 @@ tvar   0.1953 (0.1953)     5.592 (  5.592)    28.271 ( 28.271)    33.864 ( 33.86
 largest difference in a premium: 0.0000
 ```
 
-The parameters and all fifteen premiums agree. The book's total premium is
-`27.25 / 1.1 + 100 / 11 = 33.864`, and the distortions disagree about X1: the
-CCoC charges it 5.000 and TVaR 5.592. The CCoC reading is the simplest to
-follow. It discounts every unit's expected loss by `v` and adds `d` times the
-unit's share of the assets in the worst outcome. In the one outcome where the
-total is 100, X1 loses 10 and X2 90, so X1 pays
-`4.5 / 1.1 + 10 / 11 = 5.000`. TVaR at 0.195 instead weights every outcome above
-the 19.5% quantile equally, and X1 contributes to many of them.
+The parameters and all fifteen premiums agree. The total premium of the book is
+`27.25 / 1.1 + 100 / 11 = 33.864`. The distortions disagree about X1: the CCoC
+charges it 5.000 and TVaR 5.592. The CCoC result is the easiest to follow. It
+discounts the expected loss of each unit by `v`, and adds `d` times the share of
+the unit in the assets in the worst outcome.
+
+In the one outcome where the total is 100, X1 loses 10 and X2 loses 90, so X1
+pays `4.5 / 1.1 + 10 / 11 = 5.000`. TVaR at 0.195 gives equal weight to each
+outcome above the 19.5% quantile, and X1 contributes to many of these outcomes.
 
 ## 3. Tame: when the choice hardly matters
 
-The Tame case study is two gamma units with the same mean of 50 and small
-coefficients of variation, 0.10 and 0.15, at a 99.9% standard:
+The Tame case study has two gamma units with the same mean of 50, at a 99.9%
+standard. Their coefficients of variation are small, 0.10 and 0.15:
 
 ```text
 port Tame
@@ -156,9 +163,9 @@ port Tame
     agg B 1 claim sev gamma 50 cv 0.15 fixed
 ```
 
-(`aggregate`'s `tame.py` sets the standard at 99.99%; this guide uses 99.9%, as
-the other continuous cases do, and runs `aggregate` at 99.9% too.) The grid is
-`aggregate`'s, a step of 1/64 and 2^16 points:
+The `tame.py` file of `aggregate` sets the standard at 99.99%. This guide uses
+99.9%, as in the other continuous cases, and also runs `aggregate` at 99.9%. The
+grid is the `aggregate` grid, a step of 1/64 and 2^16 points:
 
 ```python
 STEP, POINTS = 1 / 64, 2**16
@@ -188,17 +195,18 @@ tvar   0.1793 (0.1793)    50.896 ( 50.896)    51.881 ( 51.881)   102.777 (102.77
 largest difference in a premium: 0.0003
 ```
 
-Everything agrees to the third decimal. B, the more volatile unit, pays the
-larger margin under every distortion, and the five distortions move A's premium
-over a range of 0.21 and B's by the same amount the other way. With two thin,
-similar tails there is little for the distortions to disagree about: this is the
-baseline the next two case studies depart from.
+All values agree to the third decimal. B, the more volatile unit, pays the
+larger margin under each distortion. The five distortions move the premium of A
+over a range of 0.21. They move the premium of B by the same amount in the
+opposite direction. With two thin, similar tails, the distortions have little to
+disagree about. This case is the baseline for the next two case studies.
 
 ## 4. Cat and non-cat: who pays depends on the distortion
 
 The Cat/Non-Cat case study puts a large, steady unit next to a small, volatile
-one. NonCat is a gamma with mean 80 and CV 0.15, Cat a lognormal with mean 20
-and CV 1; the total's mean is 100, as in Tame, but with a real tail:
+unit. NonCat is a gamma with mean 80 and CV 0.15, and Cat is a lognormal with
+mean 20 and CV 1. The mean of the total is 100, as in Tame, but the total has a
+real tail:
 
 ```text
 port CNC.Gross
@@ -233,16 +241,16 @@ tvar   0.4816 (0.4816)    86.456 ( 86.456)    28.695 ( 28.695)   115.151 (115.15
 largest difference in a premium: 0.0025
 ```
 
-The parameters and the expected losses agree, and the premiums to within
-0.003. The largest gap is in the CCoC row, and it is `aggregate`'s: 0.30.1's
-linear allocation adds up to 115.149 there, 0.002 short of the premium it
-calibrated (115.151, which its lifted allocation does reach), while
-prospicio's units add up to the calibrated premium.
+The parameters and the expected losses agree, and the premiums agree to within
+0.003. The largest difference is in the CCoC row, and its cause is in
+`aggregate`. The linear allocation of 0.30.1 adds up to 115.149 there, 0.002
+less than the premium that it calibrated (115.151, which its lifted allocation
+does reach). The units of prospicio add up to the calibrated premium.
 
-Now the split matters. The CCoC charges Cat 35.95 for an expected loss of 19.96,
-and charges NonCat less than its expected loss: its margin is negative. TVaR
-charges Cat 28.69 and NonCat 86.46. The margins, and the assets each unit holds
-in the linear allocation, show why:
+Now the split is important. The CCoC charges Cat 35.95 for an expected loss of
+19.96. It charges NonCat less than its expected loss, so the NonCat margin is
+negative. TVaR charges Cat 28.69 and NonCat 86.46. The margins, and the assets
+of each unit in the linear allocation, show why:
 
 ```python
 print(f"{'':5s} {'NonCat M':>9s} {'Cat M':>7s}   NonCat's assets")
@@ -260,16 +268,18 @@ dual       5.49    9.72    143.91
 tvar       6.47    8.74    149.64
 ```
 
-Under the CCoC a unit pays `v` times its expected loss plus `d` times its share
-of the assets in the outcomes at or above them. NonCat's share there, 71.34, is
-below its mean of 80: when the book is at its 99.9% quantile it is because the
-cat was large. So the CCoC hands nearly all of the margin to Cat. The other
-distortions put weight on the whole upper part of the distribution, where
-NonCat's own variation counts, and TVaR at 0.48, which weights everything above
-the median equally, gives NonCat a margin of 6.47 and Cat 8.74. The case study
-is built so that one premium for the book can be split in very different ways;
-which distortion is right is a statement about what the capital providers are
-paid for, the question of [Risk loads and distortions](risk-loads-and-distortions.md).
+Under the CCoC a unit pays `v` times its expected loss, plus `d` times its share
+of the assets in the outcomes at or above the assets. The NonCat share there,
+71.34, is below its mean of 80. When the book is at its 99.9% quantile, the
+cause is a large cat loss. So the CCoC gives almost all of the margin to Cat.
+
+The other distortions put weight on the whole upper part of the distribution,
+where the variation of NonCat itself counts. TVaR at 0.48 gives equal weight to
+all outcomes above the median, and it gives NonCat a margin of 6.47 and Cat
+8.74. The case study shows that one premium for the book can have very different
+splits. The correct distortion depends on what the capital providers get paid
+for, the question of
+[Risk loads and distortions](risk-loads-and-distortions.md).
 
 ## 5. Cat and non-cat, net of an aggregate cover
 
@@ -280,10 +290,10 @@ The net version buys an aggregate stop loss on the cat unit, 79.64 excess of
 agg CNC.Net.Cat 1 claim sev lognorm 20 cv 1.00 fixed aggregate net of 79.64 xs 41.11
 ```
 
-The numbers are read off the cat distribution: the cover attaches at its 90%
-quantile and exhausts at its 99.5% quantile, 120.75. The net book is priced with
-the distortions calibrated on the gross book, at the net book's own 99.9%
-assets, which is how `case_studies.py` compares gross and net.
+The numbers come from the cat distribution: the cover attaches at its 90%
+quantile and exhausts at its 99.5% quantile, 120.75. The code prices the net
+book with the distortions calibrated on the gross book, at the 99.9% assets of
+the net book. This is how `case_studies.py` compares gross and net.
 
 ```python
 print(f"cat quantiles: 90% {cat.quantile(0.9):.3f}, 99.5% {cat.quantile(0.995):.3f}")
@@ -315,16 +325,16 @@ tvar     86.489 ( 86.489)    24.394 ( 24.397)   110.884 (110.886)
 largest difference in a premium: 0.0035
 ```
 
-The net cat's mean is 17.7856 in prospicio and 17.7870 in `aggregate`, 0.0014
-apart. The attachment 41.11 falls between two grid points (41.109375 and
-41.125): prospicio's `Tower` splits each recovery between neighbouring points so
-that the mean is exact on the grid, and `aggregate` places the cover on the grid
-in its own way. That moves the net premiums by up to 0.004; the assets,
+The mean of the net cat is 17.7856 in prospicio and 17.7870 in `aggregate`, a
+difference of 0.0014. The attachment 41.11 is between two grid points (41.109375
+and 41.125). `Tower` of prospicio splits each recovery between adjacent points,
+so that the mean is exact on the grid. `aggregate` puts the cover on the grid in
+a different way. This moves the net premiums by up to 0.004, and the assets,
 187.578, agree.
 
-The cover takes 2.21 of expected loss out of the book and 79.6 out of its
-assets. With the distortions held at their gross calibration, the premium the
-book needs falls by different amounts:
+The cover removes 2.21 of expected loss from the book and 79.6 from its assets.
+With the distortions at their gross calibration, the premium that the book needs
+decreases by different amounts:
 
 ```python
 print(f"{'':5s} {'gross P':>8s} {'net P':>8s} {'saving':>7s}  (ceded expected loss {cover.ceded[0].mean():.2f})")
@@ -342,19 +352,20 @@ dual    115.15   110.13    5.02
 tvar    115.15   110.88    4.27
 ```
 
-Under the CCoC the book's premium falls by 9.25, four times the expected
-recovery, because the CCoC prices the tail that the cover removes; under TVaR it
-falls by 4.27. Read that as the most the cedent would pay for the cover under
-each yardstick (the cover's expected loss plus the margin it releases): the
-distortion that matters to the cedent is a business choice, not a technicality.
+Under the CCoC the premium of the book decreases by 9.25, four times the
+expected recovery. The cause is that the CCoC prices the tail that the cover
+removes. Under TVaR the premium decreases by 4.27. Read each saving as the
+maximum price that the cedent can pay for the cover under that measure. This
+price is the expected loss of the cover plus the margin that it releases. The
+distortion that the cedent uses is a business decision, not a technical detail.
 
 ## 6. Hurricane and severe convective storm
 
-The last case study has two catastrophe perils with a frequency and a severity
-each. SCS (severe convective storm) has 70 events a year, lognormal severity
-with mean 1 and shape 1.9; Hu (hurricane) has 2 a year, lognormal with mean 15
-and shape 2.5, a much thicker tail. Both counts are Poisson, and the grid is a
-step of 1/4 and 2^19 points:
+The last case study has two catastrophe perils, each with a frequency and a
+severity. SCS (severe convective storm) has 70 events a year, with a lognormal
+severity of mean 1 and shape 1.9. Hu (hurricane) has 2 events a year, with a
+lognormal severity of mean 15 and shape 2.5, a much thicker tail. Both counts
+are Poisson, and the grid has a step of 1/4 and 2^19 points:
 
 ```text
 port HuSCS.Gross
@@ -362,11 +373,11 @@ port HuSCS.Gross
     agg Hu   2 claims sev 0.65905 * lognorm 2.5 poisson
 ```
 
-The scale of each lognormal is `m exp(-sigma^2 / 2)` for its mean `m`.
-`aggregate`'s test suite writes it `exp(-1.9**2 / 2)`, and 0.30.1's DecL parser
-reads `-1.9**2` as `(-1.9)**2`, so that program gives SCS events a mean of 36.97,
-not 1; `hs.py`, which builds the program in Python, gets 1. The comparison here
-uses the numbers.
+The scale of each lognormal is `m exp(-sigma^2 / 2)` for its mean `m`. The test
+suite of `aggregate` writes it as `exp(-1.9**2 / 2)`. The DecL parser of 0.30.1
+reads `-1.9**2` as `(-1.9)**2`, so that program gives SCS events a mean of
+36.97, not 1. `hs.py` builds the program in Python and gets 1. The comparison
+here uses the numbers.
 
 ```python
 HU_STEP, HU_POINTS = 0.25, 2**19
@@ -400,16 +411,18 @@ tvar   0.8990 (0.8990)   135.756 (135.756)   185.558 (185.558)   321.314 (321.31
 largest difference in a premium: 0.0012
 ```
 
-The parameters agree, and the premiums to within 0.0012, which is again
-`aggregate` 0.30.1's CCoC total falling short of its calibrated premium
-(321.3136 against 321.3140). The annual means are below 70 and 30 because
-the grid stops at 131,072 and, as in `aggregate`, the severity is renormalized
-there; Hu loses 0.27 of its mean of 30 that way. With 2 hurricanes a year the
-99.9% assets are 2,583, twenty-six times the expected loss, and the premium of
-321.31 is a loss ratio of 30%. CCoC puts 251.34 of it on Hu, and TVaR, at the 90%
-level, 185.56. The tail is thick enough that the top of the grid shows in the
-answer: with `Grid.rounding`'s convention, which keeps the probability above the
-grid on its last point, the 99.9% assets move:
+The parameters agree, and the premiums agree to within 0.0012. This difference
+is again the CCoC total of `aggregate` 0.30.1, which is less than its calibrated
+premium (321.3136 against 321.3140). The annual means are below 70 and 30
+because the grid stops at 131,072. There the code renormalizes the severity, as
+`aggregate` does, and Hu loses 0.27 of its mean of 30.
+
+With 2 hurricanes a year, the 99.9% assets are 2,583, twenty-six times the
+expected loss. The premium of 321.31 is a loss ratio of 30%. The CCoC puts
+251.34 of it on Hu, and TVaR at the 90% level puts 185.56 on Hu. The tail is so
+thick that the top of the grid changes the answer. With the convention of
+`Grid.rounding`, which keeps the probability above the grid on its last point,
+the 99.9% assets move:
 
 ```python
 lumped = Grid.rounding(Lognormal(math.log(15.0) - 2.5**2 / 2, 2.5), HU_STEP, HU_POINTS)[0]
@@ -422,13 +435,13 @@ print(f"Hu mean {hu_lumped.mean():.4f}, assets at 99.9% {hs_lumped.assets(0.999)
 Hu mean 29.8662, assets at 99.9% 2584.75
 ```
 
-Neither convention is the true distribution: the first loses the hurricanes
-above 131,072, the second piles them at 131,072. For a severity this thick, check
-how the answer moves with the grid before quoting it.
+Neither convention gives the true distribution. The first loses the hurricanes
+above 131,072, and the second puts them all at 131,072. For a severity this
+thick, check how the answer changes with the grid before you quote it.
 
 The net version buys a per-occurrence cover on hurricanes, 372.4 excess of
-40.25, roughly the band between the hurricane severity's 95% and 99.5%
-quantiles:
+40.25. This is approximately the band between the 95% and 99.5% quantiles of the
+hurricane severity:
 
 ```text
 agg Net.Hu 2 claims sev 0.65905 * lognorm 2.5 occurrence net of 372.4 xs 40.25 poisson
@@ -463,21 +476,23 @@ tvar    155.421 (155.421)    83.301 ( 83.301)   238.722 (238.722)
 largest difference in a premium: 0.0012
 ```
 
-The net book agrees to within 0.0012 too. The cover takes a third of the hurricane loss (10.1 of
-29.7) but only 371 of the 2,583 of assets: the 99.9% outcome is driven by
-hurricanes larger than the cover's top of 412.65, which the cedent keeps. Under
-the CCoC the book's premium falls from 321.31 to 278.37; under the dual power
-and TVaR, which load the SCS unit more, Hu's premium falls by more than half.
+The net book also agrees to within 0.0012. The cover removes a third of the
+hurricane loss (10.1 of 29.7), but only 371 of the 2,583 of assets. Hurricanes
+larger than the top of the cover, 412.65, cause the 99.9% outcome, and the
+cedent keeps them. Under the CCoC the premium of the book decreases from 321.31
+to 278.37. Under the dual power and TVaR, which load the SCS unit more, the Hu
+premium decreases by more than half.
 
 ## 7. Lifted capital: the version difference again
 
-The tables above use the linear allocation, prospicio's default. With
-`allocation="lifted"` the capital, and in one case the premium, of each unit
-differ between `aggregate` 0.30.1 and prospicio in the way
+The tables above use the linear allocation, the default of prospicio. With
+`allocation="lifted"`, the capital of each unit, and in one case the premium,
+differ between `aggregate` 0.30.1 and prospicio.
 [CAS Monograph 15 reproduced](capital-modeling-monograph-15.md#5-capital-by-unit-if-you-must)
-describes for InsCo, where the cause was traced to a change in `aggregate`
-between 0.30.1 and 1.0.1, the version prospicio's natural allocation is tested
-against (1.0.1 is not run in this guide). On the gross Cat/Non-Cat book:
+shows the same difference for InsCo. It traces the cause to a change in
+`aggregate` between 0.30.1 and 1.0.1. The tests of the natural allocation of
+prospicio use `aggregate` 1.0.1. The code below compares the two on the gross
+Cat/Non-Cat book:
 
 ```python
 LIFTED_030 = {  # aggregate 0.30.1, lifted: (P NonCat, Q NonCat, P Cat, Q Cat)
@@ -503,33 +518,19 @@ dual    85.48 (  85.48)   63.04 (  63.04)   29.68 (  29.68)   89.01 (  89.01)
 tvar    86.46 (  86.46)   63.18 (  63.19)   28.69 (  28.69)   88.87 (  88.87)
 ```
 
-The table is printed to two decimals because the CCoC row of the lifted
-allocation is sensitive to round-off: it moves in the fourth decimal when the
-CCoC's `r` changes in its last bit. Wang, the dual power and TVaR agree to
-about 0.004. Under PH the premiums agree
-and the capital does not (NonCat 48.80 against 48.54). Under the CCoC even the
-lifted premiums differ (NonCat 75.43 against 74.64), and both programs give
-NonCat a negative capital. The totals agree in every row. As in the monograph
-guide, use the premiums and margins of the linear allocation, which agree, and
-treat capital by unit under the CCoC and PH as version dependent.
+The table shows two decimals because the CCoC row of the lifted allocation is
+sensitive to round-off. That row moves in the fourth decimal when the `r` of the
+CCoC changes in its last bit. Wang, the dual power and TVaR agree to about
+0.004. Under PH the premiums agree and the capital does not (NonCat 48.80
+against 48.54).
 
-## 8. What this guide leaves out
+Under the CCoC the lifted premiums also differ (NonCat 75.43 against 74.64), and
+both programs give NonCat a negative capital. The totals agree in each row. As
+in the monograph guide, use the premiums and margins of the linear allocation,
+which agree. Treat capital by unit under the CCoC and PH as dependent on the
+version.
 
-- **The classical premium principles** and the "blend" distortions that
-  `case_studies.py` calibrates to three spreads (`calibrate_blends`); prospicio
-  has the classical principles (see
-  [Risk loads and distortions](risk-loads-and-distortions.md)) and the bitvar
-  and weighted TVaR families, but this guide does not reproduce those exhibits.
-- **The Tame case's net** (an aggregate cover between B's 80% and 99%
-  quantiles in `tame.py`) and the equal-points variant of Discrete (X1's 8
-  becomes 9), which run the same way.
-- **Bounds on the premiums** (`Portfolio.premium_bounds`), the Bodoff
-  allocation (`Portfolio.bodoff`) and the stand-alone prices
-  (`Portfolio.price_stand_alone`), which exist in prospicio and are compared
-  with `aggregate` in CI on the Discrete case.
-- **The book's figures** and its reasoning, for which read the book.
-
-Where to go next: [prospicio for aggregate users](prospicio-for-aggregate-users.md)
-for the DecL clauses used above, and
-[What a reinsurance price is](reinsurance-price.md) for pricing the covers of
-sections 5 and 6 from the reinsurer's side.
+Where to go next:
+[prospicio for aggregate users](prospicio-for-aggregate-users.md) for the DecL
+clauses used above. [What a reinsurance price is](reinsurance-price.md) for how
+a reinsurer prices the covers of sections 5 and 6.

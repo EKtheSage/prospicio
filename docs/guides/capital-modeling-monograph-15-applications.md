@@ -1,26 +1,29 @@
 # Applications and the choice of a distortion: CAS Monograph 15, chapters 5 and 6
 
-Chapters 5 and 6 of CAS Monograph 15, *Introduction to Capital Modeling and
-Portfolio Management* (John Major and Stephen Mildenhall, 2026), put the
-natural allocation to work on the InsCo example: judging units against a
-profit target, deciding on a reinsurance cover, pricing new business and an
-acquisition, rebalancing the portfolio, and choosing the distortion that does
-the allocating. This guide recomputes each of their tables with prospicio and
-prints the monograph's value beside prospicio's. It continues
-[Capital adequacy and the natural allocation](capital-modeling-monograph-15-theory.md),
-which builds the method in chapters 3 and 4; the monograph's code, chapter 9,
-is reproduced in
-[Capital modeling and portfolio pricing](capital-modeling-monograph-15.md).
-The reasoning is the authors'; what follows explains it in new words and
+CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
+Management* (John Major and Stephen Mildenhall, 2026). Its chapters 5 and 6
+apply the natural allocation to the InsCo example. They judge units against a
+profit target and decide on a reinsurance cover. They price new business and
+an acquisition, rebalance the portfolio and choose the distortion that does
+the allocation. This guide recomputes each of their tables with prospicio and
+prints the monograph's value beside prospicio's.
+
+[Capital adequacy and the natural
+allocation](capital-modeling-monograph-15-theory.md) builds the method in
+chapters 3 and 4. [Capital modeling and portfolio
+pricing](capital-modeling-monograph-15.md) reproduces chapter 9, the
+monograph's code.
+
+The reasoning is the authors'. This guide explains it in new words and
 recomputes the numbers. Table numbers are the monograph's.
 
 ## 1. The book and its target
 
 InsCo has three units over ten equally likely years, plan premiums of 13.9,
-18.7 and 19.6, and assets of 100. Investors want 15% on capital, which needs
-a premium of 53.565 against a plan of 52.2. Chapter 5 allocates that
-requirement with a Wang distortion calibrated to it, and chapter 6 with all
-five representative families:
+18.7 and 19.6, and assets of 100. Investors want a return of 15% on capital.
+That return needs a premium of 53.565, against a plan of 52.2. Chapter 5
+allocates the required premium with a Wang distortion calibrated to it.
+Chapter 6 uses all five representative families:
 
 ```python
 from prospicio.distributions import Sampled
@@ -52,10 +55,10 @@ Wang by unit [14.109, 18.637, 20.819]  (book 14.109, 18.637, 20.819)
 
 ## 2. Performance assessment
 
-Section 5.1 asks which units meet the target. The shortfall of 1.365 for the
-book does not depend on the distortion, since every calibrated distortion
-charges 53.565 in total; how it splits over the units does. With Wang
-(Table 5.2):
+Section 5.1 asks which units meet the target. The portfolio's shortfall of
+1.365 does not depend on the distortion, because every calibrated distortion
+charges 53.565 in total. The split of the shortfall over the units does depend
+on it. With Wang (Table 5.2):
 
 ```python
 BOOK_52 = {  # Table 5.2: excess margin, as % of plan margin, excess loss ratio
@@ -82,21 +85,23 @@ C    19.6  20.819  -1.219   -25.9%     -4.45%   book -1.219 -25.9% -4.45%
 book total: excess -1.365 (book -1.365), -24.4% of plan margin (book -24.4%)
 ```
 
-Only unit B's plan covers its target, and by 0.063. Unit C carries most of
-the deficit in money (1.219), while unit A is furthest off relative to its
-own margin: its plan margin of 0.5 would have to rise by 42%. The loss ratio
-gap is the target loss ratio less the plan's, so a negative value means the
-plan runs too high. All of this is conditional on Wang; section 7 shows how
-much the verdict moves with the distortion.
+Only the plan for unit B covers its target, by 0.063. Unit C has most of the
+deficit in money (1.219). Unit A is furthest off relative to its own margin:
+its plan margin of 0.5 must increase by 42%. The loss ratio gap is the target
+loss ratio less the plan loss ratio. A negative gap means that the plan loss
+ratio is too high. These results apply to Wang only, and section 8 shows how
+the verdict changes with the distortion.
 
 ## 3. Reinsurance decision-making
 
-Section 5.2 considers an aggregate stop loss of 35 excess of 65 offered for a
-premium of 6.5. It pays 35 in the worst year only, an expected 3.5. Two ways
-to judge it give opposite answers. The first prices the net book alone with
-the pentagon: with the cover, the assets needed fall from 100 to 65, and at
-15% the net book needs a premium of 45.956, 7.609 less than gross. The cover
-saves more than its 6.5, so buy it:
+Section 5.2 considers an aggregate stop loss of 35 excess of 65 at a premium
+of 6.5. It pays 35 in the worst year only, an expected loss of 3.5. Two
+methods of judging it give opposite answers.
+
+The first method prices the net portfolio alone with the pentagon. The cover
+reduces the assets needed from 100 to 65. At 15%, the net portfolio then needs
+a premium of 45.956, which is 7.609 less than gross. The cover saves more than
+its cost of 6.5, so buy it:
 
 ```python
 gross = Pentagon.solve(loss=46.6, assets=100.0, return_on_capital=0.15)
@@ -111,15 +116,15 @@ net premium 45.9565 (book 45.956), saving 7.609 (book 7.609), cover costs 6.5
 cover: loss on line 10%, rate on line 18.6% (book 10%, 18.6%)
 ```
 
-The book's 45.956 comes from discount factors rounded to five decimals
-(0.86956 and 0.13043); unrounded, the premium is 45.9565, a hair above the
-rounding point.
+The monograph's 45.956 comes from discount factors rounded to five decimals
+(0.86956 and 0.13043). Without rounding, the premium is 45.9565, just above
+the rounding point.
 
-That argument assumes the net book still costs 15% of its capital, but the
-cover removes the top layer of capital, the cheapest under any distortion but
-the CCoC, so the remaining capital is dearer. The second way prices the
-cover and the net book as two units of the same book, with the same Wang
-distortion:
+That method assumes that the net portfolio still costs 15% of its capital. But
+the cover removes the top layer of capital, which is the cheapest layer under
+every distortion except the CCoC. The remaining capital is therefore more
+expensive. The second method prices the cover and the net portfolio as two
+units of the same portfolio, with the same Wang distortion:
 
 ```python
 def stop_loss(t, attach=65.0, limit=35.0):
@@ -140,20 +145,20 @@ ceded: loss 3.500, Wang premium 6.087 (book 6.087), quoted 6.5
 net: premium 47.478 (book 47.478), return on 65 of assets 25.0% (book 25%)
 ```
 
-The cover is worth 6.087 to InsCo under Wang and costs 6.5, so do not buy.
-The net book, keeping 47.478 of the premium on 65 of assets, earns 25% on its
-remaining capital, more than 15%, because what is left is the capital most
-likely to be used, and that is the most expensive kind. Section 7 gives the
-range of the cover's value over all five distortions.
+Under Wang the cover is worth 6.087 to InsCo and costs 6.5, so do not buy it.
+The net portfolio keeps 47.478 of the premium on 65 of assets and earns 25% on
+its remaining capital. That is more than 15%, because the remaining capital is
+the capital most likely to be used, which is the most expensive. Section 9
+gives the range of the cover's value over all five distortions.
 
 ## 4. New business pricing
 
-Section 5.3 prices a small new account from a surrogate model. The
-monograph regresses the account's simulated losses on the portfolio total
-(LOWESS) and reads off its expected loss at each of the seven totals. The
-account is too small to reorder the years, so it is priced as a fourth unit
-with the existing Wang weights. Starting from those conditional means (Table
-5.3):
+Section 5.3 prices a small new account from a surrogate model. The monograph
+regresses the account's simulated losses on the portfolio total (LOWESS) and
+reads its expected loss at each of the seven totals. The account is too small
+to change the order of the years. So the monograph prices it as a fourth unit
+with the current Wang weights. The monograph does not print the simulated
+losses, so this guide starts from the conditional means of Table 5.3:
 
 ```python
 NEW = [0.02028, 0.01965, 0.01849, 0.01855, 0.02402, 0.02910, 0.06339]  # Table 5.3, at each total
@@ -186,19 +191,19 @@ new business: loss 0.02491 (book 0.02491), premium 0.02858 (book 0.02858), margi
 as a fourth unit: premium 0.02858
 ```
 
-The two calculations agree because adding the account does not change the
-order of the totals; on a large simulation it would reorder a few years, by
-too little to matter. The account's premium is its reservation price: the
-least that keeps the book on target.
+The two calculations agree because the account does not change the order of
+the totals. On a large simulation the account can reorder a few years, by too
+little to matter. The account's premium is its reservation price: the lowest
+premium that keeps the portfolio on target.
 
 ## 5. Mergers and acquisitions
 
 An acquisition is too large to price with the current weights. Section 5.4
-scales the new account up about 2,000 times (a mean of 48.35) and represents
-its loss at each portfolio total by two points, the conditional mean plus and
-minus one conditional standard deviation, each with half the probability.
-The merged book has fourteen scenarios (Table 5.4), and the same Wang
-distortion prices it at assets equal to its worst total:
+scales the new account up about 2,000 times, to a mean of 48.35. At each
+portfolio total, two points represent the acquired loss, each with half the
+probability. They are the conditional mean plus and minus one conditional
+standard deviation. The merged portfolio has fourteen scenarios (Table 5.4).
+The same Wang distortion prices it, with assets equal to its worst total:
 
 ```python
 MERGER = [  # (probability, InsCo total, acquired loss), Table 5.4
@@ -230,28 +235,29 @@ assets 298.30 (book 298.30), capital 186.466 (book 186.46), return 9.06% (book 9
 added capital 140.03 (book 140.03), added margin 9.92 (book 9.92), return on it 7.08% (book 7.08%)
 ```
 
-Everything agrees with the printed solution to its two decimals except the
-premium needed (58.269 against 58.26) and the capital (186.466 against
-186.46): the book subtracts the rounded 53.57 from 111.83, and its capital is
-the unrounded figure cut off rather than rounded. The acquired losses are
-themselves printed to two decimals, so no closer agreement is possible.
+All values agree with the printed solution to two decimals, with two
+exceptions. The premium needed is 58.269 here and 58.26 in the monograph,
+because the monograph subtracts the rounded 53.57 from 111.83. The capital is
+186.466 here and 186.46 in the monograph, which truncates the unrounded value.
+The monograph prints the acquired losses to two decimals only, so closer
+agreement is not possible.
 
-The split of the merged premium between the two books (52.74 and 59.09) is
-beside the point: the acquisition changes the weights for both. What InsCo
-needs from the acquired business is the increase in the book's premium,
-58.26. The return on the merged book falls to about 9%, below the 15% that
-fixed the Wang parameter, because the extra assets sit far in the tail, where
-capital is cheap under Wang; the monograph keeps the distortion, as a
-statement of what investors charge for risk, rather than the return.
+The split of the merged premium between the two parts (52.74 and 59.09) is not
+relevant, because the acquisition changes the weights for both. InsCo needs
+the acquired business to supply the increase in the portfolio premium, 58.26.
+The return on the merged portfolio falls to about 9%, below the 15% that set
+the Wang parameter. The extra assets are far in the tail, where capital is
+cheap under Wang. The monograph keeps the distortion fixed, as a statement of
+what investors charge for risk, and lets the return change.
 
 ## 6. Portfolio optimization
 
-Section 5.5 turns the question around: given the prices, which mix of
-business is best? The objective is economic value added (EVA), plan premium
-less required premium, the parameters are a scale for each unit between -50%
-and +50%, plan premium scales with volume, and capital (assets less plan
-premium) must stay at 47.8. If assets and premiums scaled linearly, each
-unit's allocated quantities would be its marginal ones (Table 5.5):
+Section 5.5 asks the reverse question: at the given prices, which mix of
+business is best? The objective is economic value added (EVA), which is plan
+premium less required premium. The parameters are a scale for each unit
+between -50% and +50%. Plan premium scales with volume, and capital (assets
+less plan premium) must stay at 47.8. If assets and premiums scaled linearly,
+the allocated quantities of each unit would be its marginal ones (Table 5.5):
 
 ```python
 eva = [plan - u.premium for plan, u in zip(PLAN, required.allocated)]
@@ -269,13 +275,14 @@ C: EVA  -1.2186  plan capital 44.4000  EVA per capital  -0.0274
 book: EVA -1.3652 (book -1.3652), capital 47.8000 (book 47.8000)
 ```
 
-These are Table 5.5's -0.2092, 0.0625 and -1.2186, and the ratios -0.0996,
-0.0481 and -0.0274. A linear step takes the best ratios to their limits:
-shrink A by 50%, grow B by 50%, then grow C just enough to use the freed
-capital, 0.4 / 44.4 = 0.9%, predicting an EVA of -1.2403 (Table 5.6). Rerun
-the model at those scales, with the same Wang distortion (not recalibrated:
-it describes investors' appetite, and the target return is an output now) and
-assets at the new worst year:
+These are the values of Table 5.5: EVA of -0.2092, 0.0625 and -1.2186, and
+ratios of -0.0996, 0.0481 and -0.0274. A linear step takes the best ratios to
+their limits. It shrinks A by 50%, grows B by 50%, and grows C only enough to
+use the released capital (0.4 / 44.4 = 0.9%). The predicted EVA is -1.2403
+(Table 5.6). The code reruns the model at those scales, with assets at the new
+worst year. It keeps the same Wang distortion without a new calibration,
+because the distortion describes investors' appetite and the target return is
+now an output:
 
 ```python
 def rescale(scales):
@@ -309,12 +316,13 @@ book        6.8115   28.6040   20.8271  total 56.2426
 EVA -1.4660, assets 102.5766, capital 47.8000
 ```
 
-The linear prediction is -1.2404 here and -1.2403 in Table 5.6, which adds
-the four-decimal steps (0.1046, 0.0313, -0.0110) rather than the unrounded
-ones. The rerun (Table 5.8) agrees to every printed digit and has an EVA of -1.466, worse than where it started.
-Scaling the units reorders the years (Table 5.7), so the Wang distortion
-weights different years than the linear prediction assumed. Holding A at -50%
-and moving B shows how uneven the surface is (Figure 5.4):
+The linear prediction is -1.2404 here and -1.2403 in Table 5.6. The table adds
+the steps rounded to four decimals (0.1046, 0.0313, -0.0110), not the
+unrounded steps. The rerun (Table 5.8) agrees to every printed digit, and its
+EVA of -1.466 is worse than the start. Scaling the units changes the order of
+the years (Table 5.7), so the Wang distortion weights different years than the
+linear prediction assumed. With A held at -50%, a change in B shows how uneven
+the surface is (Figure 5.4):
 
 ```python
 def eva_at(sa, sb):
@@ -339,9 +347,11 @@ B +0.25: EVA -1.4058
 B +0.50: EVA -1.4660
 ```
 
-The monograph's Nelder-Mead search ends at A -0.478165 and B -0.209790. A
-plain grid over both scales, in steps of 0.01 and then 0.0005 around the
-best, needs nothing but `price` in a loop:
+The Nelder-Mead search of the monograph ends at A -0.478165 and B -0.209790.
+This guide searches a grid over both scales, in steps of 0.01 and then 0.0005
+around the best point. `scipy.optimize.minimize` with `method="Nelder-Mead"`
+on `eva_at` also works, but on this kinked surface its end point depends on
+the start and the implementation. The grid needs only `price` in a loop:
 
 ```python
 coarse = max((eva_at(a / 100, b / 100), a / 100, b / 100)
@@ -368,24 +378,25 @@ book        7.334042   14.607535   21.597550  total 43.539127
 EVA -1.3451, assets 89.9940, capital 47.8000
 ```
 
-The grid lands next to the monograph's optimum with an EVA of about -1.3451,
-a small improvement on the start of -1.3652, and at the monograph's own point
-the EVA agrees to about 2e-5. Two near-identical scales for B, 0.000005
-apart, give the same EVA for the book and very different allocations to the
-units (Tables 5.9 and 5.10): two years almost tie for their place in the
-order, and which comes first decides which unit the Wang weight lands on. Units A
-and B agree to the six decimals printed, or within 1e-6; unit C's premium is
-2e-5 higher here, within what the unprinted digits of the scales and of the
-book's calibrated Wang parameter can move. The monograph's conclusion stands: the
-optimum is flat, kinked and sensitive, so read it as a direction rather than
-a target.
+The grid ends next to the monograph's optimum, with an EVA of about -1.3451.
+That is a small improvement on the start of -1.3652. At the monograph's own
+point, the EVA agrees to about 2e-5. Two scales for B only 0.000005 apart give
+the same portfolio EVA and very different allocations to the units (Tables 5.9
+and 5.10). Two years almost tie for their place in the order, and the year
+that comes first decides which unit gets the Wang weight.
+
+Units A and B agree to the six printed decimals, or within 1e-6. The premium
+for unit C is 2e-5 higher here. The unprinted digits of the scales and of the
+monograph's calibrated Wang parameter can move it by that much. The
+monograph's conclusion holds: the optimum is flat, kinked and sensitive, so
+read it as a direction, not a target.
 
 ## 7. The range of possible prices
 
 Chapter 6 asks which distortion to use. Section 6.1 starts from the extremes:
-the mean, TVaR at 0, and the maximum, TVaR at 1. Any blend of TVaRs is again a
-spectral measure, and the CCoC is the blend that puts weight `d = 0.15 / 1.15`
-on the maximum and the rest on the mean (Table 6.1):
+the mean (TVaR at 0) and the maximum (TVaR at 1). Any blend of TVaRs is also a
+spectral measure. The CCoC is the blend that puts weight `d = 0.15 / 1.15` on
+the maximum and the remainder on the mean (Table 6.1):
 
 ```python
 ccoc = distortions["ccoc"]
@@ -399,11 +410,12 @@ q CCoC  [0.087, 0.087, 0.087, 0.348, 0.087, 0.087, 0.217]
 q blend [0.087, 0.087, 0.087, 0.348, 0.087, 0.087, 0.217]
 ```
 
-Infinitely many distortions price the book at 53.565, and they disagree about
-the units. The monograph spans them with its five representatives;
-`Portfolio.premium_bounds` finds the true extremes, the lowest and highest
-premium each unit can be charged by any distortion that prices the book at
-53.565, which are always bi-TVaRs (Section 11.2 of *Pricing Insurance Risk*):
+An infinite number of distortions price the portfolio at 53.565, and they
+disagree about the units. The monograph spans them with its five
+representatives. `Portfolio.premium_bounds` finds the true extremes: the
+lowest and highest premium for each unit from any distortion that prices the
+portfolio at 53.565. These extremes are always bi-TVaRs (Section 11.2 of
+*Pricing Insurance Risk*):
 
 ```python
 target = required.total.premium
@@ -422,18 +434,18 @@ B   17.466     18.349      20.412   20.412
 C   19.255     19.371      21.304   22.098
 ```
 
-The five representatives cover most of each unit's range but not all of it:
-unit B's highest possible premium is the TVaR's, while unit A can be priced
-as low as 13.098 by a distortion outside the five. The monograph's warning
-applies: unless one distortion lies above another everywhere, they will rank
-some pair of risks in opposite orders, so there is no single ordering of
+The five representatives cover most of the range of each unit, but not all of
+it. The highest possible premium for unit B is the TVaR premium. But a
+distortion outside the five can price unit A as low as 13.098. The monograph
+gives a warning: unless one distortion lies above another everywhere, the two
+rank some pair of risks in opposite orders. So there is no single order of
 distortions by price.
 
 ## 8. Required premium by distortion
 
-Section 6.2 tabulates the required premium and loss ratio for each unit
-under each distortion (Table 6.2), and section 6.3 which distortion is
-cheapest for each unit (Table 6.3):
+Section 6.2 tabulates the required premium and loss ratio for each unit under
+each distortion (Table 6.2). Section 6.3 shows which distortion is cheapest
+for each unit (Table 6.3):
 
 ```python
 BOOK_62 = {  # Table 6.2, premium by unit
@@ -466,20 +478,23 @@ B: cheapest ph, plan meets at least one distortion: True
 C: cheapest tvar, plan meets at least one distortion: True
 ```
 
-The dual power premium for unit C is 20.32158 here; the book prints the same
-quantity as 20.321 in Table 6.2 and 20.322 in Table 9.8 (its dual parameter,
-a few millionths lower, gives 20.3215, on the rounding point), and Wang's is 20.81858, printed
-20.818 in Table 6.2 and 20.819 in Table 5.1: the same values rounded
-differently, not a difference between the programs. The cheapest distortion
-is CCoC for A, PH for B and TVaR for C, and each unit's plan meets at least
-one of them, but no one distortion is met by all three.
+The dual power premium for unit C is 20.32158 here. The monograph prints the
+same value as 20.321 in Table 6.2 and as 20.322 in Table 9.8. Its dual
+parameter is a few millionths lower and gives 20.3215, on the rounding point.
+The Wang premium for unit C is 20.81858, printed as 20.818 in Table 6.2 and as
+20.819 in Table 5.1. These are the same values with different rounding, not a
+difference between the programs.
+
+The cheapest distortion is CCoC for A, PH for B and TVaR for C. The plan for
+each unit meets at least one of them, but no single distortion is met by all
+three plans.
 
 ## 9. Zeroing in, or embracing the range
 
-Section 6.3 suggests calibrating to the market where possible. If InsCo's Baa
-bonds have a real default probability of 1.5% to 2% and are priced as if it
-were 2.5% to 4%, a candidate distortion should map the first range into the
-second:
+Section 6.3 suggests calibration to the market where possible. Suppose InsCo's
+Baa bonds have a real default probability of 1.5% to 2%, and the market prices
+them as if it were 2.5% to 4%. Then a candidate distortion should map the
+first range into the second:
 
 ```python
 print(f"{'':5s} {'g(1.5%)':>8s} {'g(2%)':>7s}  overlaps 2.5% to 4%")
@@ -497,13 +512,13 @@ dual     2.38%   3.17%  True
 tvar     2.06%   2.74%  True
 ```
 
-Wang and the dual power fit the bond; TVaR touches the window only at its
-top, and PH and the CCoC overprice the bond's risk. This is the monograph's
-"Dual and Wang, with TVaR a distant third".
+Wang and the dual power fit the bond. TVaR touches the window only at its top,
+and PH and the CCoC overprice the bond's risk. This agrees with the
+monograph's "Dual and Wang, with TVaR a distant third".
 
-Section 6.4 takes the other path: no distortion is right, but the range
-teaches something. The stop loss of section 3 is worth 7.6 to InsCo under
-the CCoC and 4.8 under TVaR, a range as wide as the reinsurance cycle:
+Section 6.4 takes the other path: no distortion is right, but the range gives
+information. The stop loss of section 3 is worth 7.6 to InsCo under the CCoC
+and 4.8 under TVaR. That range is as wide as the reinsurance cycle:
 
 ```python
 for f, g in distortions.items():
@@ -520,26 +535,14 @@ dual  cover worth 5.415, loss ratio 65%, buy at 6.5: False
 tvar  cover worth 4.803, loss ratio 73%, buy at 6.5: False
 ```
 
-A CCoC view buys the cover at 6.5, as would PH; Wang, the dual power and TVaR
-do not (the monograph quotes the ends, 7.6 at a 46% loss ratio and 4.8 at
-73%). A plan inside a unit's range, as all three are here, is consistent with
-some risk appetite; a plan outside the range of every distortion, which
-`premium_bounds` would show, is inconsistent with any and needs scrutiny.
+With the CCoC or PH, InsCo buys the cover at 6.5. With Wang, the dual power or
+TVaR, it does not. The monograph quotes the two ends: 7.6 at a 46% loss ratio
+and 4.8 at 73%. A plan inside the range of a unit, as all three plans are
+here, is consistent with some risk appetite. A plan outside the range of every
+distortion is consistent with none and needs scrutiny.
+`Portfolio.premium_bounds` shows such a plan.
 
-## 10. What this guide leaves out
-
-- **The surrogate and LOWESS steps** of sections 5.3 and 5.4: the scatter of
-  simulated losses behind Figures 5.1 to 5.3 is not printed, so the guide
-  starts from the conditional means and the two-point samples the monograph
-  tabulates. prospicio has no LOWESS smoother; any regression of a unit's
-  losses on the total gives the same input.
-- **Nelder-Mead**: section 6 searches by grid; `scipy.optimize.minimize`
-  with `method="Nelder-Mead"` on `eva_at` works too, but its end point
-  depends on the start and the implementation, which on this kinked surface
-  matters.
-- **Capital by unit** (section 8.3): see section 5 of
-  [the chapter 9 guide](capital-modeling-monograph-15.md); chapters 5 and 6
-  allocate premium and margin only.
-
-For which distortion to use and how to calibrate it to quotes, see
-[Risk loads and distortions](risk-loads-and-distortions.md).
+For which distortion to use and how to calibrate it to quotes, see [Risk loads
+and distortions](risk-loads-and-distortions.md). For capital by unit (section
+8.3 of the monograph), see section 5 of [the chapter 9
+guide](capital-modeling-monograph-15.md).

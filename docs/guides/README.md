@@ -178,3 +178,15 @@ Money in the guides is in millions of a synthetic currency, and every example is
 synthetic. The guides write about the library and do not change it; a gap found
 while writing one becomes an issue for the lane that owns the code
 (`AGENTS.md`).
+
+## Writing style
+
+A guide tells what prospicio does and how to use it.
+
+- Do not write about what prospicio does not do.
+- Put a gap in an issue for the lane that owns the code. Do not put the gap in a guide.
+- Keep a limit in a guide only when it prevents a wrong result. Write it as one plain fact.
+- Write explanatory text in ASD-STE100 Simplified Technical English, in its flavored mode. Use short sentences, the active voice and one instruction in each sentence.
+- Do not change code blocks or the output blocks that the test harnesses check.
+
+An optional local check is `ste-lint.py` from the user's `asd-ste100` skill. CI does not run it.

@@ -1,20 +1,20 @@
 # Iman-Conover, uncertainty and capital by layer: CAS Monograph 15, chapter 8
 
-Chapter 8 of CAS Monograph 15 (John Major and Stephen Mildenhall, *Introduction
-to Capital Modeling and Portfolio Management*, 2026) collects four advanced
-topics: parameter uncertainty, the Iman-Conover method for correlating
-simulated units, capital allocation layer by layer, and Bodoff's layer
-allocation. This guide runs each of them in prospicio, with the monograph's
-printed numbers beside prospicio's.
+CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
+Management* (John Major and Stephen Mildenhall, 2026). Its chapter 8 covers
+four advanced topics: parameter uncertainty, the Iman-Conover method to
+correlate simulated units, capital allocation by layer, and Bodoff's layer
+allocation. This guide runs each topic in prospicio and prints the monograph's
+numbers beside prospicio's.
 
-Two kinds of number appear in the chapter. Some are exact, such as the
-regional means and percentiles of Example 2 (computed by FFT) and every table
-of InsCo in sections 8.3 and 8.4; those should agree with prospicio to the
-digits printed. Others come from one random sample of 1,000 simulations,
-such as the achieved correlations of Examples 1 and 2; prospicio draws its own
-sample, so those can only agree within sampling error, and the guide shows how
-large that error is. The explanations are in new words; read the monograph for
-the argument. Table numbers are the monograph's.
+The chapter has two kinds of number. Some are exact, for example the regional
+means and percentiles of Example 2 (computed by FFT) and every InsCo table in
+sections 8.3 and 8.4. These should agree with prospicio to the printed digits.
+Others come from one random sample of 1,000 simulations, for example the
+achieved correlations of Examples 1 and 2. prospicio draws its own sample, so
+these numbers agree only within sampling error, and the guide shows the size
+of that error. The explanations are in new words, and the table numbers are
+the monograph's.
 
 Companion guides: [chapter 9](capital-modeling-monograph-15.md),
 [chapters 3 and 4](capital-modeling-monograph-15-theory.md),
@@ -23,13 +23,13 @@ Companion guides: [chapter 9](capital-modeling-monograph-15.md),
 
 ## 1. Parameter uncertainty
 
-Section 8.1 separates process risk (the randomness of a loss whose
-distribution is known) from parameter uncertainty (not knowing the
-distribution), and lists four responses: ignore it, report a range, absorb it
-into a predictive distribution, or isolate a credible worst case. Take a
-lognormal severity with a shape `sigma` of 1.2 and an expected value of about
-100, whose log-scale location is known only to within 0.3 either way, and
-see what each response does to its 99.5% quantile:
+Section 8.1 separates process risk (the randomness of a loss with a known
+distribution) from parameter uncertainty (an unknown distribution). It gives
+four responses: ignore the uncertainty, report a range, absorb it into a
+predictive distribution, or isolate a credible worst case. Take a lognormal
+severity with a shape `sigma` of 1.2 and an expected value of about 100. Its
+log-scale location is known only to within 0.3 in each direction. The code
+shows what each response does to the 99.5% quantile:
 
 ```python
 import math
@@ -66,19 +66,20 @@ isolate it:                    99.5% quantile 1445.4
 ```
 
 Reporting gives a range, here from about 790 to 1,450. Absorbing the
-uncertainty, by weighting the three locations equally, gives a single answer
-about 6% above the best estimate's: the quantile of a mixture is pulled up by
-its wider spread, which is the downward bias of a quantile that ignores
-parameter uncertainty that the monograph mentions. Isolating a worst case
-gives the highest answer. In prospicio the same mixing of whole simulations
-is `PredictiveDistribution.blend`, which takes each simulation from one of
-several models with given weights, and the Bayesian models (for example
-`BayesOdp` in reserving) return predictive distributions with the parameter
-uncertainty already in them.
+uncertainty, with equal weights on the three locations, gives one answer about
+6% above the best estimate. The wider spread of the mixture increases its
+quantile. This is the downward bias that the monograph mentions in a quantile
+that ignores parameter uncertainty. Isolating a worst case gives the highest
+answer.
+
+In prospicio, `PredictiveDistribution.blend` does the same mixing of whole
+simulations: it takes each simulation from one of several models with given
+weights. The Bayesian models (for example `BayesOdp` in reserving) return
+predictive distributions that already include parameter uncertainty.
 
 ## 2. Example 1: three units
 
-Section 8.2.2 correlates three units, Auto, GL and Property. Each has a
+Section 8.2.2 correlates three units: Auto, GL and Property. Each unit has a
 lognormal severity limited per occurrence and a gamma-mixed Poisson count:
 
 | Unit | Expected loss | Limit | Severity mean | Severity CV | Mixing CV |
@@ -87,7 +88,7 @@ lognormal severity limited per occurrence and a gamma-mixed Poisson count:
 | GL | 2,000 | 5,000 | 50 | 5 | 0.3 |
 | Property | 7,000 | 10,000 | 100 | 5 | 0.1 |
 
-prospicio compounds each unit by FFT, then draws 1,000 independent years
+prospicio compounds each unit by FFT. Then it draws 1,000 independent years
 from the three distributions, as the monograph does:
 
 ```python
@@ -130,16 +131,18 @@ Property     7000.0   0.465       7017.0  0.454   (7117.8, 0.467)
 ```
 
 The FFT means are the requested 5,000, 2,000 and 7,000, and the CVs are those
-of the model. The monograph's Table 8.1 describes its own sample (means of
-5,011.7, 2,092.4 and 7,117.8, CVs of 0.257, 0.660 and 0.467), and prospicio's
-sample differs from it by about as much as either differs from the model:
-sampling differences of a few percent, not model differences.
+of the model. Table 8.1 of the monograph describes its own sample, with means
+of 5,011.7, 2,092.4 and 7,117.8 and CVs of 0.257, 0.660 and 0.467. The
+prospicio sample differs from it by about as much as each sample differs from
+the model. These are sampling differences of a few percent, not model
+differences.
 
 ## 3. The target and the achieved correlation
 
-The target (Table 8.2) has Auto and GL at -0.3, GL and Property at 0.8, and
-Auto and Property uncorrelated. A target must be a correlation matrix, that
-is, symmetric and positive definite; prospicio refuses one that is not:
+The target (Table 8.2) has a correlation of -0.3 between Auto and GL, 0.8
+between GL and Property, and 0 between Auto and Property. A target must be a
+correlation matrix, that is, symmetric and positive definite. prospicio
+refuses a target that is not:
 
 ```python
 TARGET = [[1.0, -0.3, 0.0], [-0.3, 1.0, 0.8], [0.0, 0.8, 1.0]]
@@ -155,9 +158,9 @@ eigenvalues of the target: [0.146 1.    1.854]
 not positive definite: ValueError
 ```
 
-`iman_conover` reorders each column of the sample. Every unit keeps exactly
-its own 1,000 values; only which values share a year changes. The
-correlations achieved are those of Table 8.3:
+`iman_conover` reorders each column of the sample. Each unit keeps exactly its
+own 1,000 values, and only the grouping of the values into years changes. The
+code computes the achieved correlations of Table 8.3:
 
 ```python
 PAIRS = [(0, 1), (0, 2), (1, 2)]
@@ -193,9 +196,10 @@ GL-Property        0.8    0.773   0.772     0.784   0.779
 ```
 
 The pattern is the monograph's: Auto-GL and GL-Property land a little inside
-the target and Auto-Property stays near zero. The digits differ because the
-sample and the shuffles differ. To see how far a sample of 1,000 moves them,
-repeat with 100 different samples and shuffles:
+the target, and Auto-Property stays near zero. The digits differ because the
+samples and the shuffles differ. To show how much a sample of 1,000 moves
+them, the code repeats the calculation with 100 different samples and
+shuffles:
 
 ```python
 runs = []
@@ -222,19 +226,19 @@ GL-Property          0.752   0.773   0.791        0.778   0.787   0.795
 Gaussian Spearman (6/pi) asin(r/2): [-0.288, 0.0, 0.786]
 ```
 
-Every value of Table 8.3 lies inside these 90% ranges, so the monograph's
-sample and prospicio's agree as far as a sample of 1,000 can tell. Two things
-are not sampling error:
+Every value of Table 8.3 is inside these 90% ranges. So the monograph's sample
+and the prospicio sample agree as far as a sample of 1,000 can show. Two
+results are not sampling error:
 
-- **The rank correlation is the target's Gaussian rank correlation.** prospicio
-  gives the reference scores exactly the target correlation, and Iman-Conover
-  copies their ranks, so Spearman's rho sits near `(6/pi) asin(r/2)`, the rank
-  correlation of a bivariate normal with correlation `r`: -0.288 and 0.786 for
-  -0.3 and 0.8. The monograph's -0.287 and 0.779 are within a sample's
-  distance of those values.
-- **The linear correlation falls short of the target.** Pearson's correlation
-  depends on the marginals, and skewed marginals cannot reach a high linear
-  correlation even when ranked perfectly together. The ceiling for GL and
+- **The rank correlation is the Gaussian rank correlation of the target.**
+  prospicio gives the reference scores exactly the target correlation, and
+  Iman-Conover copies their ranks. So Spearman's rho is near `(6/pi)
+  asin(r/2)`, the rank correlation of a bivariate normal with correlation `r`.
+  That gives -0.288 for -0.3 and 0.786 for 0.8. The monograph's -0.287 and
+  0.779 are within sampling distance of these values.
+- **The linear correlation is less than the target.** Pearson's correlation
+  depends on the marginals. Skewed marginals cannot reach a high linear
+  correlation, even when their ranks agree perfectly. The maximum for GL and
   Property is the correlation of the two samples sorted together:
 
 ```python
@@ -254,18 +258,18 @@ GL-Property: at most 0.997, at least -0.779
 Auto-GL:     at most 0.963, at least -0.890
 ```
 
-The monograph's warning that a request for very high correlation may
-disappoint is this ceiling. When Pearson's correlation is what matters, aim
-the input a little above the output you need, or work with the rank
-correlation, which Iman-Conover controls directly.
+This maximum is the reason for the monograph's warning that a request for a
+very high correlation can disappoint. When Pearson's correlation is important,
+set the input a little above the output you need. Or use the rank correlation,
+which Iman-Conover controls directly.
 
 ## 4. The output's row order
 
-Item 6 of the monograph's comparison in section 8.2.5 warns that an
-Iman-Conover sample must be used whole, because some implementations return
-the rows in a systematic order. prospicio's does: the first column of its
-reference holds the scores in increasing order, so the first unit comes back
-sorted:
+Section 8.2.5 of the monograph compares methods. Its item 6 warns that some
+implementations return the rows of an Iman-Conover sample in a systematic
+order, so you must use the sample whole. The prospicio implementation does
+this. The first column of its reference holds the scores in increasing order,
+so prospicio returns the first unit sorted:
 
 ```python
 print("Auto sorted ascending:", bool(np.all(np.diff(Y[:, 0]) >= 0)))
@@ -281,22 +285,25 @@ mean of the first 100 years: Auto  2965.4  (all 1,000:  4998.8)
 after a random row order:     Auto  4856.5
 ```
 
-The first 100 rows of the output are therefore not a random sample of 100
-years. Statistics over all rows (means, quantiles, a `Portfolio` built from
-them) do not depend on the row order and are unaffected. Shuffle the rows, as
-above, before taking a subset or pairing the output row by row with another
-simulation.
+So the first 100 rows of the output are not a random sample of 100 years.
+Statistics over all rows (means, quantiles, a `Portfolio` built from them) do
+not depend on the row order. Shuffle the rows, as above, before you take a
+subset or pair the output row by row with another simulation.
 
 ## 5. The algorithm by hand
 
-Section 8.2.8 derives the method. Take `n` scores with mean 0 and variance 1
-(the monograph prefers the evenly spaced normal quantiles
-`Phi^-1(i / (n + 1))`), put an independently permuted copy in each of `m`
-columns to make `M`, and note that `M'M / n` is close to the identity. If
-`S = C'C` is the target's Cholesky factorization and `M'M / n = F'F` that of
-the actual correlation of `M`, then `T = M F^-1 C` has correlation exactly
-`S`. Finally give each column of the input the rank order of the matching
-column of `T`. In a dozen lines:
+Section 8.2.8 derives the method in four steps:
+
+1. Take `n` scores with mean 0 and variance 1. The monograph prefers the
+   evenly spaced normal quantiles `Phi^-1(i / (n + 1))`.
+2. Put an independently permuted copy of the scores in each of `m` columns to
+   make `M`. Then `M'M / n` is close to the identity.
+3. Let `S = C'C` be the Cholesky factorization of the target, and `M'M / n =
+   F'F` that of the actual correlation of `M`. Then `T = M F^-1 C` has
+   correlation exactly `S`.
+4. Give each column of the input the rank order of the matching column of `T`.
+
+The code does this in a dozen lines:
 
 ```python
 from statistics import NormalDist
@@ -331,19 +338,18 @@ prospicio, Spearman: [-0.27, 0.003, 0.784]
 ```
 
 The random permutations alone leave errors of a few hundredths in the
-correlation of `M`; the `F^-1` step removes them. The two results are not
-equal row by row, since the permutations differ, but both have the
+correlation of `M`, and the `F^-1` step removes them. The two results are not
+equal row by row, because the permutations differ. But both have the
 correlation structure of a normal reference with the target correlation.
 
 ## 6. Other reference distributions and copulas
 
-Section 8.2.3 replaces the normal scores by Student t scores, which put more
-weight on joint extremes. The monograph's `aggregate` takes a `dof` argument
-for this; prospicio's `iman_conover` uses normal scores only. The function
-above takes any scores, and the t distribution with 2 degrees of freedom,
-the monograph's extreme example, has the closed-form quantile
-`(2u - 1) / sqrt(2 u (1 - u))`. Compare how often GL and Property are both in
-their worst 1% of 10,000 years under each reference:
+Section 8.2.3 replaces the normal scores with Student t scores, which put more
+weight on joint extremes. The function `iman_conover_by_hand` above takes any
+scores. The t distribution with 2 degrees of freedom is the extreme example of
+the monograph. Its quantile has the closed form `(2u - 1) / sqrt(2 u (1 -
+u))`. The code counts how often GL and Property are both in their worst 1% of
+10,000 years under each reference:
 
 ```python
 n = 10_000
@@ -366,28 +372,28 @@ t, 2 dof  GL-Property Spearman 0.714, years in both worst 1%: 68
 if independent, about 1
 ```
 
-With t scores the joint extremes are about twice as frequent, even though the
-overall rank correlation is lower: the pinched scatter of the monograph's Figure 8.3. The
-monograph also warns that this flexibility is no reason to use it.
+With t scores the joint extremes are about twice as frequent, although the
+overall rank correlation is lower. This is the pinched scatter of Figure 8.3
+of the monograph. The monograph also warns that this flexibility is not a
+reason to use it.
 
-Section 8.2.4 asks whether a copula could serve as the reference. A
-multivariate Archimedean copula has a single parameter and cannot match a
-correlation matrix, as the monograph says. prospicio's copulas can instead be
-used to simulate directly (`simulate` with a `GaussianCopula`,
-`StudentTCopula`, `ArchimedeanCopula`, `NestedArchimedeanCopula` or
-`VineCopula`). The nested Archimedean copulas and the C- and D-vines are the
-ways around the single parameter: a vine builds the joint law from one
-bivariate copula per edge, so it can carry a different strength and tail for
-each pair.
+Section 8.2.4 asks if a copula can be the reference. A multivariate
+Archimedean copula has a single parameter and cannot match a correlation
+matrix, as the monograph says. You can instead use the prospicio copulas to
+simulate directly (`simulate` with a `GaussianCopula`, `StudentTCopula`,
+`ArchimedeanCopula`, `NestedArchimedeanCopula` or `VineCopula`). The nested
+Archimedean copulas and the C- and D-vines avoid the limit of a single
+parameter. A vine builds the joint distribution from one bivariate copula per
+edge, so it can have a different strength and tail for each pair.
 
 ## 7. Iman-Conover against the normal copula
 
-The normal copula method (section 8.2.5) simulates each year by drawing
-correlated normals and transforming each to its unit's distribution through
-the quantile function. With normal scores, Iman-Conover does the same to a
-sample that already exists, with one difference: it corrects the reference to
-the exact correlation. Repeating both 100 times on the same units shows what
-that buys:
+The normal copula method (section 8.2.5) simulates each year. It draws
+correlated normals and transforms each one to the distribution of its unit
+through the quantile function. With normal scores, Iman-Conover does the same
+to a sample that already exists, with one difference: it corrects the
+reference to the exact correlation. The code repeats both methods 100 times on
+the same units to show the effect of that correction:
 
 ```python
 normal_copula = GaussianCopula(TARGET)
@@ -406,22 +412,26 @@ Iman-Conover   GL-Property Spearman: mean 0.787, sd 0.0052
 normal copula  GL-Property Spearman: mean 0.787, sd 0.0142
 ```
 
-Both centre on the Gaussian rank correlation of about 0.786. The normal copula's
-correlation varies from sample to sample as any sample statistic does;
-Iman-Conover's varies much less, because only the small gap between the
-normal reference's rank and linear correlation is left. In exchange the
-normal copula produces one independent year at a time, so its output can be
-split, subset or extended freely, while an Iman-Conover sample is made in one
-piece from inputs that already exist (and needs the care of section 4).
+Both methods centre on the Gaussian rank correlation of about 0.786. The
+correlation of the normal copula varies from sample to sample, as any sample
+statistic does. The correlation of Iman-Conover varies much less, because only
+the small gap between the rank and linear correlations of the normal reference
+remains. But the normal copula makes one independent year at a time, so you
+can split, subset or extend its output freely. An Iman-Conover sample is made
+in one piece from inputs that already exist, and it needs the care of section
+4.
 
 ## 8. Example 2: block Iman-Conover
 
-A large correlation matrix estimated from data is mostly noise. Section 8.2.6's
-block Iman-Conover uses what can be estimated: a correlation between lines
-within each region and a correlation between the regions' totals. Example 2
-(section 8.2.7) has four regions, each with Auto (AL), GL and Property (Pr),
-each line the same model as in Example 1 except GL's severity CV of 4. First
-the regions' totals with independent lines, by FFT, as in Table 8.4:
+A large correlation matrix estimated from data is mostly noise. The block
+Iman-Conover of section 8.2.6 uses the correlations that data can estimate.
+These are a correlation between lines within each region and a correlation
+between the region totals.
+
+Example 2 (section 8.2.7) has four regions, each with Auto (AL), GL and
+Property (Pr). Each line has the same model as in Example 1, except that the
+GL severity CV is 4. The first step computes the region totals with
+independent lines, by FFT, as in Table 8.4:
 
 ```python
 from prospicio.pricing import Portfolio
@@ -450,17 +460,22 @@ South   14000.0  0.266     25737   (14000, 0.266, 25737)
 West     9000.0  0.276     17330   (9000, 0.276, 17331)
 ```
 
-Means and CVs agree to the digits printed. The 99th percentiles agree within
-1.5 in 16,000 to 26,000; they move by that much with the discretization step
-(a step of 0.5 gives 16,236.5, 15,920.5, 25,737 and 17,329.5), so what is
-left is the grid, not the model.
+The means and CVs agree to the printed digits. The 99th percentiles agree
+within 1.5 in 16,000 to 26,000. They move by that much with the discretization
+step (a step of 0.5 gives 16,236.5, 15,920.5, 25,737 and 17,329.5). So the
+remaining difference comes from the grid, not the model.
 
-The block method then has three steps. Correlate the lines within each
-region by ordinary Iman-Conover (the same 3 x 3 matrix in every region here,
-Table 8.6 (e)), stack the regions into one `PredictiveDistribution` with a
-`region` dimension, and correlate the regions' totals by moving each region's
-years as whole rows, which keeps the structure within the region. prospicio's
-`reorder_groups` is that last step:
+The block method then has three steps:
+
+1. Correlate the lines within each region by ordinary Iman-Conover. Here every
+   region has the same 3 x 3 matrix (Table 8.6 (e)), but each region can have
+   its own matrix.
+2. Stack the regions into one `PredictiveDistribution` with a `region`
+   dimension.
+3. Correlate the region totals: move the years of each region as whole rows,
+   which keeps the structure within the region.
+
+The prospicio function `reorder_groups` does the last step:
 
 ```python
 INTRA = [[1.0, 0.6, 0.2], [0.6, 1.0, 0.4], [0.2, 0.4, 1.0]]
@@ -495,10 +510,10 @@ East-West        0.2     0.187   0.197
 South-West       0.8     0.786   0.799
 ```
 
-The correlations between regions land close to the target, as in Table 8.5,
-and within sampling error of the monograph's. Within each region the lines
-keep the correlation set in the first step, because the reordering moves a
-region's three lines together (Table 8.6):
+The correlations between regions are close to the target, as in Table 8.5, and
+within sampling error of the monograph's values. Within each region the lines
+keep the correlation from the first step, because the reordering moves the
+three lines of a region together (Table 8.6):
 
 ```python
 C12 = np.corrcoef(B.T)
@@ -523,24 +538,26 @@ North AL with the other regions' lines: [0.4, 0.33, 0.4, 0.11, 0.14, 0.12, -0.04
 book (Table 8.7):                        [0.32, 0.29, 0.42, 0.07, 0.04, 0.12, -0.01, -0.07, 0.01]
 ```
 
-The full 12 x 12 matrix (Table 8.7) has the block structure of the
-monograph's Figure 8.4: lines in regions that are correlated with each other
-are correlated across regions too (North and East at 0.7), and lines in
-regions that are not (North and West) are not. Nine numbers set all 66
-correlations, which is the point of the method.
+The full 12 x 12 matrix (Table 8.7) has the block structure of Figure 8.4 of
+the monograph. Lines in correlated regions are also correlated across regions
+(North and East at 0.7). Lines in uncorrelated regions (North and West) are
+not. Nine numbers set all 66 correlations, and that is the purpose of the
+method.
 
 ## 9. Capital by layer, if you must
 
 Section 8.3 returns to InsCo (ten equally likely years, three units) and its
 Wang distortion calibrated to a 15% return with assets of 100. It divides the
-assets into layers between consecutive distinct totals. In each layer the
-expected loss is shared between units by `alpha`, each unit's expected share
-of the total in the years that reach the layer, and the premium by `beta`, the
-same share under the distorted probabilities. A layer's margin is its premium
-less its loss, its capital is the part of its width not funded by premium,
-and its cost of capital `iota = (g(S) - S) / (1 - g(S))` is the same for every
-unit. So a unit's capital in a layer is its margin there divided by `iota`
-(equation 8.5).
+assets into layers between consecutive distinct totals. In each layer, `alpha`
+shares the expected loss between units. `alpha` is the expected share of each
+unit in the total, in the years that reach the layer. `beta` shares the
+premium in the same way, under the distorted probabilities. A layer's margin
+is its premium less its loss, and its capital is the part of its width that
+premium does not fund.
+
+The cost of capital in a layer, `iota = (g(S) - S) / (1 - g(S))`, is the same
+for every unit. So the capital of a unit in a layer is its margin there
+divided by `iota` (equation 8.5).
 
 ```python
 from prospicio.risk import Distortion
@@ -588,13 +605,13 @@ for x, dx, s, g, iota, aS, bG, margin, capital in layers(insco, wang):
   65  35  0.1  0.174  0.089  0.012  0.015  0.047    0.132  0.165  0.529
 ```
 
-These are Table 8.10 (with `g(S)` from Table 8.9), per unit of layer width,
-and agree with it to the digits printed; `alpha S` and `beta g(S)`, the
-columns of Tables 8.8 and 8.9, are kept for section 10. The bottom layer,
-from 0 to 22, is paid for by losses in every year, so it needs no capital and
-`iota` is undefined; its unit margins sum to zero and are cross-subsidies
-between the units. Summing each column times the layer width gives each
-unit's margin and capital:
+These values are Table 8.10 (with `g(S)` from Table 8.9), per unit of layer
+width, and agree with it to the printed digits. The code keeps `alpha S` and
+`beta g(S)`, the columns of Tables 8.8 and 8.9, for section 10. Losses in
+every year pay for the bottom layer, from 0 to 22. So that layer needs no
+capital, and `iota` is undefined there. Its unit margins sum to zero and are
+cross-subsidies between the units. The sum of each column times the layer
+width gives the margin and capital of each unit:
 
 ```python
 def by_unit(port, g):
@@ -620,20 +637,20 @@ Portfolio [8.411, 8.691, 29.333]
 return    ['8.4%', '3.9%', '20.2%'] total 15.0%  book 8.4%, 3.9%, 20.2%, 15.0%
 ```
 
-The returns differ by unit (A earns 8.4%, C 20.2%) although every layer pays
-the same return to every unit, because the units draw on different layers:
-the low layers are expensive but mostly funded by premium, the high ones
-cheap but mostly capital. `Portfolio.price(..., allocation="lifted")` gives
-the same capital.
+The returns differ by unit (A earns 8.4%, C 20.2%), although every layer pays
+the same return to every unit. The reason is that the units use different
+layers. The low layers are expensive but mostly funded by premium, and the
+high layers are cheap but mostly capital. `Portfolio.price(...,
+allocation="lifted")` gives the same capital.
 
-Table 8.11 sets this against the CCoC distortion, and there the numbers
-depend on what the bottom layer gets. By equation 8.5 as written, the bottom
-layer carries no capital. prospicio (like `aggregate` 1.0.1) instead converts
-the bottom layer's margins at the limit of `iota` as `S` rises to 1, which is
-`r = 0.15` for the CCoC and `(1 - rho) / rho` for the proportional hazard;
-for the Wang, dual power and TVaR distortions that limit is infinite and the
-two conventions agree. The monograph's printed capital for these two
-families, from an earlier `aggregate`, matches neither:
+Table 8.11 compares this result with the CCoC distortion, where the numbers
+depend on the treatment of the bottom layer. Equation 8.5 as written gives the
+bottom layer no capital. prospicio, like `aggregate` 1.0.1, converts the
+margins of the bottom layer at the limit of `iota` as `S` rises to 1. That
+limit is `r = 0.15` for the CCoC and `(1 - rho) / rho` for the proportional
+hazard. For the Wang, dual power and TVaR distortions the limit is infinite,
+and the two conventions agree. The printed capital of the monograph for these
+two families comes from an earlier `aggregate` and matches neither convention:
 
 ```python
 BOOK_Q = {"ccoc": (4.874, 5.288, 36.273), "ph": (7.074, 6.565, 32.796)}
@@ -650,17 +667,18 @@ ccoc equation 8.5 [5.419, 6.082, 34.934]  prospicio [2.261, 1.478, 42.696]  book
 ph   equation 8.5 [7.765, 7.694, 30.975]  prospicio [6.481, 5.597, 34.356]  book [7.074, 6.565, 32.796]
 ```
 
-All three add up to the same total capital of 46.435; they differ only in how
-the bottom layer's cross-subsidies, which sum to zero, are spread. Under
-prospicio's convention every unit earns exactly 15% under the CCoC, which is
-what a constant cost of capital means (see section 5 of the
-[chapter 9 guide](capital-modeling-monograph-15.md)). The monograph's advice
-is not to allocate capital at all; this is one more reason.
+All three sum to the same total capital of 46.435. They differ only in how
+they spread the cross-subsidies of the bottom layer, which sum to zero. Under
+the prospicio convention, every unit earns exactly 15% under the CCoC. That is
+what a constant cost of capital means (see section 5 of the [chapter 9
+guide](capital-modeling-monograph-15.md)). The monograph advises against any
+allocation of capital, and this result is one more reason.
 
 ## 10. Bodoff's layer allocation
 
-Section 8.4 compares the natural allocation with Bodoff's (2007): share every
-layer of the assets, not only its expected loss, by `alpha`. Table 8.12:
+Section 8.4 compares the natural allocation with the allocation of Bodoff
+(2007). Bodoff shares every layer of the assets by `alpha`, not only its
+expected loss. Table 8.12:
 
 ```python
 bodoff = insco.bodoff(assets=100)
@@ -676,10 +694,10 @@ book          [24.159, 29.756, 46.086]  total 100.0
 layer 0 to 22: [7.152, 9.694, 5.154]  book [7.152, 9.694, 5.154]
 ```
 
-Bodoff's allocation splits the assets but not the premium. The monograph
-fills the gap with a CCoC: in each layer, expected loss plus a margin of
-`d = r / (1 + r)` on the unfunded part, `alpha (S + d (1 - S))`, which is the
-CCoC's `g(S)` shared by the loss shares:
+Bodoff's allocation splits the assets but not the premium. The monograph adds
+a CCoC to get a premium. In each layer the premium is the expected loss plus a
+margin of `d = r / (1 + r)` on the unfunded part, `alpha (S + d (1 - S))`.
+This is the CCoC `g(S)` shared by the loss shares:
 
 ```python
 ccoc = Distortion.ccoc(0.15)
@@ -695,25 +713,9 @@ Bodoff with CCoC [14.803, 19.794, 18.968] 53.565
 natural CCoC     [13.739, 18.522, 21.304] 53.565
 ```
 
-The totals are the same 53.565, but the split is not: Bodoff's shares are the
-expected loss shares in every layer, the natural allocation's the distorted
-ones, which move premium toward the unit that dominates the years the
-distortion weights up (C). Another distortion in place of the CCoC gives
-other splits, which is the monograph's point that Bodoff's method needs a
-further assumption before it prices anything.
-
-## 11. What prospicio does not do here
-
-- **Other reference scores.** `iman_conover` uses normal scores only; the
-  monograph's `aggregate` also takes t scores (`dof`). Section 6 does it by
-  hand. Filed as #378, with the row order below.
-- **A block Iman-Conover function.** There is none by that name, but
-  `iman_conover` within groups, `PredictiveDistribution.join` and
-  `reorder_groups` compose it (section 8), with a different correlation
-  matrix per region if wanted.
-- **Row order.** The output's first component comes back sorted (section 4);
-  shuffle before taking a subset.
-- **Capital by unit under the CCoC and PH** depends on the bottom-layer
-  convention (section 9): prospicio follows `aggregate` 1.0.1, not the
-  monograph's table or equation 8.5 as written. Filed as #379, to document
-  the convention or offer equation 8.5's.
+The totals are the same 53.565, but the splits differ. Bodoff's shares are the
+expected loss shares in every layer. The natural allocation uses the distorted
+shares, which move premium toward the unit that dominates the years to which
+the distortion gives more weight (C). A different distortion in place of the
+CCoC gives different splits. This is the monograph's point: Bodoff's method
+needs one more assumption before it can price anything.

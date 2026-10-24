@@ -1,37 +1,40 @@
 # Stochastic loss reserving with GLMs: Taylor and McGuire reproduced
 
-CAS Monograph 3, *Stochastic Loss Reserving Using Generalized Linear Models*
-(Greg Taylor and Gráinne McGuire, 2016), shows that the chain ladder is a
-generalized linear model, uses that fact to put a prediction error on the
-reserve, checks the model with residuals, and then improves on it with fewer
-parameters and a few interactions. Every example runs on one triangle. This
-guide runs those examples in prospicio and prints the monograph's numbers next
-to prospicio's, so you can see how each step is done in code and where the two
-agree.
+CAS Monograph 3 is *Stochastic Loss Reserving Using Generalized Linear Models*
+(Greg Taylor and Gráinne McGuire, 2016). It shows that the chain ladder is a
+generalized linear model (GLM). It uses this fact to put a prediction error on
+the reserve. Then it checks the model with residuals and improves it with fewer
+parameters and some interactions. All examples use one triangle. This guide
+runs the examples in prospicio and prints the monograph's numbers next to
+prospicio's.
 
-The text of the monograph is the authors'; what follows explains it in new words
-with the numbers recomputed. Table and figure numbers are the monograph's.
-Money is in thousands of dollars, as in the monograph. For which reserving
-method to pick in general, read [`reserving-methods.md`](reserving-methods.md);
-this guide does not repeat it.
+The text of the monograph is the authors'. This guide explains it in new words
+and recomputes the numbers. Table and figure numbers are the monograph's. Money
+is in thousands of dollars, as in the monograph. To select a reserving method
+in general, read [`reserving-methods.md`](reserving-methods.md).
 
-Two parts of prospicio carry the work. `prospicio.reserving` has the chain
-ladder, Mack, the ODP bootstrap and the ODP GLM (`OdpGlm`) on a `Triangle`.
-`OdpGlm` fits the monograph's models to the triangle's incremental cells and
-gives their analytic prediction error, simulated reserves and residual
-diagnostics. By default it fits the cross-classified model; `OdpGlm.cells` lists
-the triangle's cells, so any other design can be written on them and passed to
-`fit(..., design=)`. Every model in the monograph's chapter 7 is the same call
-with another design. `prospicio.models` has the general GLM (`Glm`, `Design`):
-`Design` holds those columns, and `Glm` fits the one model that is not on the
-cells, the ODP Mack model of section 2.
+Two modules do the work:
+
+- `prospicio.reserving` has the chain ladder, Mack, the ODP bootstrap and the
+  ODP GLM (`OdpGlm`) on a `Triangle`. `OdpGlm` fits the monograph's models to
+  the incremental cells of the triangle. It gives the analytic prediction
+  error, simulated reserves and residual diagnostics.
+- `prospicio.models` has the general GLM (`Glm`, `Design`). `Design` holds the
+  design columns. `Glm` fits the ODP Mack model of section 2, which is the one
+  model that does not use the cells of the triangle.
+
+By default, `OdpGlm` fits the cross-classified model. `OdpGlm.cells` lists the
+cells of the triangle. You can write any other design on these cells and give
+it to `fit(..., design=)`. Each model in chapter 7 of the monograph is the same
+call with a different design.
 
 ## 1. The data and the chain ladder
 
-The monograph's example (Table 1-1) is the incremental paid loss triangle of a
-New Jersey workers compensation insurer, accident years 1988 to 1997, from
-Meyers and Shi's (2011) database. The authors chose it because its age-to-age
-factors are nearly constant down each column, so the chain ladder fits it well.
+The example of the monograph (Table 1-1) is the incremental paid loss triangle
+of a New Jersey workers compensation insurer. It has accident years 1988 to
+1997 and comes from the database of Meyers and Shi (2011). The authors chose it
+because its age-to-age factors are almost constant down each column. Thus the
+chain ladder fits it well.
 
 ```python
 import math
@@ -74,28 +77,30 @@ total    373346
 ```
 
 The volume-weighted factors are Table 3-1 (1.815, 1.261, 1.158, 1.088, 1.055,
-1.039, 1.030, 1.025, 1.021) and the reserves by accident year are the last
-column of Table 3-2, 3,398 for 1989 up to 105,874 for 1997, with a total of
-373,346. They match to the unit.
+1.039, 1.030, 1.025, 1.021). The reserves by accident year are the last column
+of Table 3-2: 3,398 for 1989 up to 105,874 for 1997, with a total of 373,346.
+They agree to the unit.
 
 ## 2. The chain ladder as a GLM
 
-The monograph's chapter 3 writes down two models that both reproduce the chain
-ladder's forecasts. The one used from then on is the *cross-classified* ODP
-model: each incremental payment `Y[k, j]` is over-dispersed Poisson with mean
-`a[k] * b[j]`, a row effect times a column effect, and variance `phi` times the
-mean. On the log scale the mean is `ln a[k] + ln b[j]`, a GLM with a log link
-and one indicator column per accident year and per development year. One
-column effect has to be dropped to make the design full rank; the monograph sets
+Chapter 3 of the monograph gives two models that both reproduce the forecasts
+of the chain ladder. The monograph uses the *cross-classified* ODP model from
+then on. In this model, each incremental payment `Y[k, j]` is over-dispersed
+Poisson (ODP). Its mean is `a[k] * b[j]`, a row effect times a column effect.
+Its variance is `phi` times the mean.
+
+On the log scale the mean is `ln a[k] + ln b[j]`. This is a GLM with a log link
+and one indicator column for each accident year and each development year. The
+design must drop one column effect to be full rank. The monograph sets
 `ln b[1] = 0`, so its accident-year terms carry the level.
 
-`OdpGlm().fit(tri, "paid")` fits this model as it stands, coded with an
-intercept and origin and development factors measured from the first of each.
-To print the monograph's coding, one `ln a[k]` per accident year and no
-intercept, write that design on the cells and pass it to `fit`. `OdpGlm.cells`
-gives the triangle's 100 cells, the 55 observed and the 45 to forecast, in the
-order a design's rows must follow, with each cell's accident and development
-year as a 0-based index:
+`OdpGlm().fit(tri, "paid")` fits this model with an intercept, and with origin
+and development factors measured from the first of each. The monograph codes
+the model with one `ln a[k]` for each accident year and no intercept. To print
+this coding, write that design on the cells and give it to `fit`. `OdpGlm.cells` gives the 100
+cells of the triangle: 55 observed cells and 45 cells to forecast. The cells
+are in the order that the rows of a design must follow. Each cell has its
+accident year and development year as a 0-based index:
 
 ```python
 cells = OdpGlm.cells(tri, "paid")
@@ -135,18 +140,19 @@ print(f"phi {cc.dispersion:.1f} on {cc.glm.df_resid:.0f} degrees of freedom")
 phi 114.5 on 36 degrees of freedom
 ```
 
-This is Table 5-1 (and the first two columns of Table 3-5) digit for digit:
-`ln a` from 10.657 to 10.691, `ln b` from -0.205 to -2.664, and standard errors
-from 0.0316 and 0.0228 up to 0.0510 and 0.1993. The scale parameter is the
-monograph's 114.5 (section 5.4.2). `OdpGlm` makes the Poisson over-dispersed
-with Pearson's dispersion: `phi` is Pearson's chi-square over the 55 - 19 = 36
-residual degrees of freedom, as SAS's GENMOD reports with its `PSCALE` option.
-`cc.glm` is the underlying GLM fit, with the coefficients in the design's
-order.
+This is Table 5-1 (and the first two columns of Table 3-5) digit for digit.
+`ln a` goes from 10.657 to 10.691 and `ln b` from -0.205 to -2.664. The
+standard errors go from 0.0316 and 0.0228 up to 0.0510 and 0.1993. The scale
+parameter is the 114.5 of the monograph (section 5.4.2).
 
-The monograph rescales the effects so the `b[j]` add up to 1 (Table 3-3). Then
-`b[j]` is the share of the ultimate paid in development year `j`, and `a[k]` is
-the ultimate of accident year `k`:
+`OdpGlm` makes the Poisson over-dispersed with the Pearson dispersion. `phi` is
+the Pearson chi-square divided by the 55 - 19 = 36 residual degrees of freedom.
+SAS GENMOD gives the same value with its `PSCALE` option. `cc.glm` is the
+underlying GLM fit, with the coefficients in the order of the design.
+
+The monograph rescales the effects so that the `b[j]` add to 1 (Table 3-3).
+Then `b[j]` is the share of the ultimate paid in development year `j`, and
+`a[k]` is the ultimate of accident year `k`:
 
 ```python
 a = np.exp(est[:K])
@@ -164,23 +170,25 @@ GLM reserves  [3398, 8155, 14579, 22645, 31865, 45753, 60093, 80983, 105874] 373
 largest gap to the chain ladder below 1e-6: True
 ```
 
-The ultimates are Table 3-3's `a` column (144,781, 166,301, ..., 149,836, with
-Table 3-5's last column off by one unit in four places, from the monograph's
-own rounding) and the pattern is its `b` column (0.293, 0.239, 0.139, ...,
-0.020). The forecasts of the 45 future cells, summed by accident year (the
-fit's `reserves`), are the chain ladder's reserves to rounding noise: the GLM and the chain ladder are
-the same estimator here. That is the equivalence the monograph's chapter 3
-proves: maximum likelihood under the ODP equates the fitted and the actual
-total of every row and every column, and those marginal sums are what the
-chain ladder preserves too.
+The ultimates are the `a` column of Table 3-3 (144,781, 166,301, ...,
+149,836). The last column of Table 3-5 is one unit different in four places,
+because the monograph rounds. The pattern is the `b` column (0.293, 0.239,
+0.139, ..., 0.020).
 
-The other model of chapter 3, the *ODP Mack* model, works on the age-to-age
-factors instead. Each observed factor minus one, `f[k, j] - 1`, is ODP with mean
-`f[j] - 1` and a weight equal to the cumulative paid `X[k, j]` it starts from.
-That is also a GLM, with one column per development year, a log link and
-prior weights. Its cells are the age-to-age links, not the triangle's
-increments, so it is fitted with the general `Glm`, where
-`dispersion="pearson"` makes the Poisson over-dispersed:
+The fit's `reserves` are the forecasts of the 45 future cells, added by
+accident year. They are equal to the reserves of the chain ladder, to rounding
+noise. Thus the GLM and the chain ladder are the same estimator here. Chapter 3
+of the monograph proves this equivalence. Maximum likelihood under the ODP makes
+the fitted total equal to the actual total for each row and each column. The
+chain ladder keeps the same marginal totals.
+
+The other model of chapter 3 is the *ODP Mack* model. It uses the age-to-age
+factors. Each observed factor minus one, `f[k, j] - 1`, is ODP with mean
+`f[j] - 1`. Its weight is the cumulative paid `X[k, j]` at the start of the
+link. This is also a GLM, with one column for each development year, a log link
+and prior weights. Its cells are the age-to-age links, not the increments of
+the triangle. Thus the general `Glm` fits it, and `dispersion="pearson"` makes
+the Poisson over-dispersed:
 
 ```python
 links = [(k, j) for k in range(K - 1) for j in range(K - 1 - k)]
@@ -199,23 +207,28 @@ print("f - 1", " ".join(f"{math.exp(c):.3f}" for c in odp_mack.coefficients))
 f - 1 0.815 0.261 0.158 0.088 0.055 0.039 0.030 0.025 0.021
 ```
 
-These are Table 3-4 (0.815, 0.261, 0.158, ..., 0.021), the chain-ladder factors
-less one: a weighted mean of the factors with the cumulative values as weights
-is the volume-weighted factor. Both models give the same forecast. They do not
-give the same prediction error, because their variance assumptions differ
-(section 4).
+These are Table 3-4 (0.815, 0.261, 0.158, ..., 0.021): the chain-ladder
+factors minus one. A mean of the factors, weighted by the cumulative values, is
+the volume-weighted factor. The two models give the same forecast. They do not
+give the same prediction error, because their variance assumptions are
+different (section 4).
 
 ## 3. Prediction error by the delta method
 
 Chapter 5 puts a prediction error on the reserve. The mean square error of
-prediction (MSEP) of a sum of future cells has two parts. Process error is the
-cells' own variance, `phi` times their mean under the ODP. Parameter error comes
-from the estimated coefficients: to first order (the delta method), a reserve
-`R = sum of exp(x' beta)` moves by `g' (beta_hat - beta)` with gradient
-`g = sum of mu * x` over its cells, so its variance is `g' Sigma g`, with `Sigma`
-the coefficients' covariance that the GLM reports. The monograph's (5-11) to
-(5-13) are this calculation in matrix form, and `OdpGlmFit.prediction_error()`
-does it for each accident year and the total, whatever the design.
+prediction (MSEP) of a sum of future cells has two parts:
+
+- Process error is the variance of the cells. Under the ODP it is `phi` times
+  their mean.
+- Parameter error comes from the estimated coefficients. To first order (the
+  delta method), a reserve `R = sum of exp(x' beta)` moves by
+  `g' (beta_hat - beta)`, with gradient `g = sum of mu * x` over its cells.
+  Its variance is `g' Sigma g`, where `Sigma` is the covariance of the
+  coefficients from the GLM.
+
+Equations (5-11) to (5-13) of the monograph do this calculation in matrix form.
+`OdpGlmFit.prediction_error()` does it for each accident year and for the
+total, for any design.
 
 ```python
 pe = cc.prediction_error()  # a row per accident year, then "Total"
@@ -245,8 +258,8 @@ year    forecast  RMSEP   CVP |  book: forecast  RMSEP   CVP
 Total    373,346 14,076   3.8 |       373,346 14,076   3.8
 ```
 
-Every number in Table 5-4 matches. The total's RMSEP, 14,076, is a CV of 3.8%.
-Split it and the parameter error dominates:
+All numbers in Table 5-4 agree. The RMSEP of the total, 14,076, is a CV of
+3.8%. The parameter error is the larger part:
 
 ```python
 print(f"process   {pe['process_se'][-1]:7,.0f}")
@@ -261,21 +274,27 @@ parameter  12,465
 total if the years were independent  10,275  (book 10,275)
 ```
 
-The monograph notes that adding the accident years' MSEPs, as if they were
-independent, would give 10,275 instead of 14,076, and so does prospicio. The gap is the
-positive correlation between years: they share the development-year
-parameters, and an error in a `b[j]` moves every year's forecast the same way.
+The monograph adds the MSEPs of the accident years as if the years were
+independent. This gives 10,275 instead of 14,076, and prospicio gives the same
+value. The difference is the positive correlation between years. The years
+share the development-year parameters, so an error in a `b[j]` moves the
+forecasts of all years in the same direction.
 
 ## 4. Prediction error by simulation
 
-Section 5.4.2 checks the delta method with a parametric bootstrap: draw the
-coefficients from their estimated normal distribution, forecast the future cells
-with them, add process error, and repeat 10,000 times. `OdpGlmFit.predict_distribution`
-does exactly that, with process error `phi * Poisson(mu / phi)` on each cell
-(the monograph does not say which process distribution it used), and
-`aggregate(["origin"])` sums its cells by accident year. `"normal"` asks for the
-plain normal draws of the coefficients, as the monograph makes them. The seed
-fixes the draws.
+Section 5.4.2 checks the delta method with a parametric bootstrap. The
+procedure is:
+
+1. Draw the coefficients from their estimated normal distribution.
+2. Forecast the future cells with these coefficients.
+3. Add process error.
+4. Do steps 1 to 3 10,000 times.
+
+`OdpGlmFit.predict_distribution` does this procedure. Its process error on each
+cell is `phi * Poisson(mu / phi)`. The monograph does not state which process
+distribution it used. `aggregate(["origin"])` adds the cells by accident year.
+`"normal"` gives plain normal draws of the coefficients, as in the monograph.
+The seed sets the draws.
 
 ```python
 def by_year_draws(fit, seed, n_sims=10_000):
@@ -315,18 +334,18 @@ year    mean    RMSEP   CVP |  book: mean   RMSEP   CVP
 Total   374,883  14,432   3.8 |    374,992  14,286   3.8
 ```
 
-The means and RMSEPs agree with Table 5-5 within simulation noise: with 10,000
-draws a standard deviation carries a relative error of about 0.7%, so the
-total's 14,286 against prospicio's 14,432 (1.0% apart) is a difference of the
-size two runs with different seeds would show. Both RMSEPs sit slightly above the delta
-method's.
+The means and RMSEPs agree with Table 5-5 within simulation noise. With 10,000
+draws, a standard deviation has a relative error of about 0.7%. The total RMSEP
+is 14,286 in the monograph and 14,432 in prospicio (1.0% apart). Two runs with
+different seeds show a difference of this size. Both RMSEPs are slightly above
+the delta method.
 
-Notice that both sets of means are *above* the chain ladder's forecasts
-(374,992 in the monograph against 373,346). That is not noise. Drawing `beta`
-from a normal and taking `exp(x' beta)` gives cells whose mean is
-`mu * exp(v / 2)`, with `v = x' Sigma x` the variance of the linear
-predictor: the lognormal bias. The expected value of the simulation can be
-computed exactly; `predictive_means()` gives it cell by cell:
+Both sets of means are *above* the forecasts of the chain ladder (374,992 in
+the monograph against 373,346). This is not noise. When you draw `beta` from a
+normal and calculate `exp(x' beta)`, each cell has the mean `mu * exp(v / 2)`.
+Here `v = x' Sigma x` is the variance of the linear predictor. This is the
+lognormal bias. You can calculate the expected value of the simulation exactly.
+`predictive_means()` gives it for each cell:
 
 ```python
 print(f"chain ladder {cc.total_reserve:9,.0f}")
@@ -338,16 +357,18 @@ chain ladder   373,346
 E[simulated]   374,994   (book's bootstrap mean 374,992)
 ```
 
-The monograph attributes the higher means to sampling error; in fact the bias
-accounts for the whole 1,646 gap, to two units, and its bootstrap's mean is
-within noise of that expectation. To simulate around the chain
-ladder's forecast instead, pass `"mean_preserving"`, which shifts each cell's
-linear predictor by `-v / 2` so its draws average its fitted mean.
+The monograph says that the higher means come from sampling error. But the bias
+accounts for all of the 1,646 difference, to two units. The mean of the
+bootstrap in the monograph is within noise of this expectation. To simulate
+around the forecast of the chain ladder, use `"mean_preserving"`. It moves the
+linear predictor of each cell by `-v / 2`, so that the draws of the cell
+average to its fitted mean.
 
-**Other ways to the same question.** The ODP bootstrap of England and Verrall,
-`OdpBootstrap`, resamples the model's adjusted Pearson residuals instead of
-drawing parameters from a normal, and adds gamma process error. Mack's model is
-the distribution-free cousin of the ODP Mack model of section 2:
+**Other methods for the same question.** The ODP bootstrap of England and
+Verrall (`OdpBootstrap`) resamples the adjusted Pearson residuals of the model.
+It does not draw parameters from a normal, and it adds gamma process error.
+Mack's model is the distribution-free equivalent of the ODP Mack model of
+section 2:
 
 ```python
 ob = OdpBootstrap(n_sims=10_000, seed=1).fit(tri, "paid")
@@ -366,25 +387,27 @@ Mack total                 373,346  RMSEP  10,939
 Mack by year [39, 44, 410, 850, 1364, 1959, 2308, 3179, 9192]
 ```
 
-The ODP bootstrap's scale is the same Pearson `phi`, and its total RMSEP is
-close to the parametric bootstrap's. Mack's total standard error is about a
-quarter lower, and its spread across years is very different: tiny for the
-older years, larger for 1997. Mack's variance is driven by how much the
-age-to-age factors scatter in each column, and on this triangle, picked for its
-stable factors, they scatter very little in the later columns. The ODP ties the
-variance of every payment to its size through one `phi`. The monograph's point
-(section 5.4.1) is that two models with the same forecast can carry different
-prediction errors; this triangle shows how far apart they can be.
+The scale of the ODP bootstrap is the same Pearson `phi`. Its total RMSEP is
+near the RMSEP of the parametric bootstrap. The total standard error of Mack is
+approximately a quarter lower. Its spread across years is also very different:
+very small for the older years and larger for 1997.
+
+The variance of Mack comes from the scatter of the age-to-age factors in each
+column. The authors chose this triangle for its stable factors, and the factors
+in the later columns have very little scatter. The ODP connects the variance of
+each payment to its size through one `phi`. The monograph (section 5.4.1) shows
+that two models with the same forecast can have different prediction errors.
+This triangle shows how large that difference can be.
 
 ## 5. Residual diagnostics
 
-Chapter 6 checks the fit with residuals. The standardized deviance residual of a
-cell divides its deviance residual by `sqrt(phi * (1 - h))`, where `h` is the
-cell's leverage, the diagonal of the GLM's hat matrix. `OdpGlmFit.residuals()`
-returns them for every observed cell, with the deviance and Pearson residuals,
-the leverages and the actual-to-fitted ratio, and `residual_summary` groups the
-standardized deviance residuals by development year, accident year or calendar
-year:
+Chapter 6 checks the fit with residuals. The standardized deviance residual of
+a cell is its deviance residual divided by `sqrt(phi * (1 - h))`. Here `h` is
+the leverage of the cell, the diagonal of the hat matrix of the GLM.
+`OdpGlmFit.residuals()` gives these residuals for each observed cell. It also
+gives the deviance and Pearson residuals, the leverages and the ratio of actual
+to fitted. `residual_summary` groups the standardized deviance residuals by
+development year, accident year or calendar year:
 
 ```python
 dev = cc.residual_summary("development")
@@ -402,20 +425,20 @@ by calendar year 1988 to 1997, mean residual
 -0.38 -0.13 -0.40 +0.56 +0.42 -0.43 +0.23 -0.27 -0.26 +0.32
 ```
 
-The spreads are sample standard deviations, with divisor `n - 1`; an earlier
-version of this guide computed the residuals by hand and divided by `n`, which
-printed each spread 6% to 18% lower (1.34 for development year 1, 0.40 for
-year 8). The residuals themselves, and so the calendar-year means, are
-unchanged. Two cells, 1988's last year and 1997's first, have leverage one:
-each is the only observation of its own parameter, so its fitted value equals
-the actual and its residual is undefined (development year 10 is left with no
-residual and year 9 with two, too few to measure a spread). Among the rest, development years 1 and 2 scatter
-more than the later ones, the pattern the monograph reads off Figure 6-19, and
-the calendar-year means swing from negative to positive, the pattern of its
-Figure 6-20. Because the model has a parameter for every row and column, the
-actual and fitted totals agree on every row and column by construction, so
-those one-way comparisons cannot show a problem; the cell-by-cell ratio of
-actual to fitted can:
+The spreads are sample standard deviations, with divisor `n - 1`. Two cells
+have leverage one: the last year of 1988 and the first year of 1997. Each of
+these cells is the only observation of its parameter. Thus its fitted value is
+equal to its actual value, and its residual is not defined. Development year 10
+has no residual, and year 9 has two, which is not sufficient to measure a
+spread.
+
+In the other cells, development years 1 and 2 have more scatter than the later
+years. The monograph shows this pattern in Figure 6-19. The calendar-year means
+change from negative to positive, which is the pattern of Figure 6-20.
+
+The model has a parameter for each row and each column. Thus the actual and
+fitted totals agree on each row and column, and these one-way comparisons
+cannot show a problem. The ratio of actual to fitted for each cell can show it:
 
 ```python
 def heat_map(fit):
@@ -441,18 +464,20 @@ heat_map(cc)
 1997  100
 ```
 
-These are the percentages of the monograph's heat map, Figure 6-22. Read down
-the first two columns: in development year 1 the early accident years are below
-100% and the later ones above, and development year 2 runs the other way. The
-payment pattern has shifted over the accident years, an interaction between
-row and column that a cross-classified model cannot express. Chapter 7 adds it.
+These are the percentages of the heat map of the monograph, Figure 6-22. Read
+down the first two columns. In development year 1, the early accident years are
+below 100% and the later years are above 100%. Development year 2 shows the
+opposite. The payment pattern changed over the accident years. This is an
+interaction between row and column, which a cross-classified model cannot
+show. Chapter 7 adds it.
 
 ## 6. Fewer parameters
 
-Chapter 7 starts from Figure 7-1: the ten `ln a[k]` of section 2 trace a
-parabola in `k`. Replacing them with `a1 * k + a2 * k**2` (the monograph's model
-7-2, with all ten `ln b[j]` now free) leaves 12 parameters instead of 19. In
-prospicio that is the same `fit` with other columns:
+Chapter 7 starts from Figure 7-1: the ten `ln a[k]` of section 2 follow a
+parabola in `k`. Model 7-2 of the monograph replaces them with
+`a1 * k + a2 * k**2` and keeps all ten `ln b[j]` free. This model has 12
+parameters instead of 19. In prospicio it is the same `fit` with different
+columns:
 
 ```python
 quad = fit([k, k * k] + [j == b for b in range(1, K + 1)], ["a1", "a2"] + [f"ln b{b}" for b in range(1, K + 1)])
@@ -470,13 +495,16 @@ ln b - ln b1 -0.206 -0.750 -1.015 -1.452 -1.830 -2.142 -2.353 -2.514 -2.661
 book         -0.206 -0.750 -1.015 -1.452 -1.830 -2.142 -2.353 -2.514 -2.661
 ```
 
-The quadratic and the development pattern are those of Table 7-1. Section 7.4
-then replaces the development effects by a straight line in `j` with a kink at
-7.5, plus a separate term for development year 2 (model 7-10, six parameters);
-section 7.6 adds the interactions the heat map pointed to: development years 1
-and 2 shifted for accident years 1 to 6, a trend in accident year for
-development year 3, and a term for development year 4 (model 7-14, ten
-parameters).
+The quadratic and the development pattern are those of Table 7-1. The next two
+models are:
+
+- Model 7-10 (section 7.4, six parameters) replaces the development effects
+  with a straight line in `j` with a kink at 7.5. It adds a separate term for
+  development year 2.
+- Model 7-14 (section 7.6, ten parameters) adds the interactions that the heat
+  map showed. It shifts development years 1 and 2 for accident years 1 to 6. It
+  adds a trend in accident year for development year 3 and a term for
+  development year 4.
 
 ```python
 early = k <= 6  # accident years 1 to 6
@@ -501,15 +529,18 @@ Table 7-5    10.4900  0.2066 -0.0183 -0.3685  0.2720  0.0375  0.0528 -0.0671  0.
 phi: 7-2 102.6, 7-10 107.3, 7-14 53.9
 ```
 
-Both match. Model 7-10's `c` is 0.1544995, a hair below 0.1545, so it rounds to
-0.154 where Table 7-3 prints 0.155: SAS's estimate needs to differ only in the
-seventh decimal. Table 7-5 prints 10.490 for `a0` with a trailing zero added. The 7-14 coefficients are in the monograph's order (`c1` for
-development year 2, `c2` for year 4, then `d1` to `d3`). The scale parameter
-falls from 114.5 for the chain ladder to about 54 once the interactions are in,
-which is the main reason the prediction error falls below.
+Both models agree. In model 7-10, `c` is 0.1544995, which is a very small
+amount below 0.1545. Thus it rounds to 0.154, but Table 7-3 prints 0.155. The
+estimate from SAS needs to be different only in the seventh decimal. Table 7-5
+prints 10.490 for `a0` with an added trailing zero.
 
-The heat map of the six-parameter model is the monograph's Figure 7-5, and it
-shows the pattern that motivated the interactions:
+The 7-14 coefficients are in the order of the monograph: `c1` for development
+year 2, `c2` for year 4, then `d1` to `d3`. The scale parameter decreases from
+114.5 for the chain ladder to approximately 54 with the interactions. This is
+the main cause of the lower prediction error below.
+
+The heat map of the six-parameter model is Figure 7-5 of the monograph. It
+shows the pattern that the interactions correct:
 
 ```python
 heat_map(smooth)
@@ -530,10 +561,10 @@ heat_map(smooth)
 
 ## 7. Forecasts and prediction error of the smaller models
 
-The monograph's Tables 7-2, 7-4 and 7-6 give the parametric bootstrap of each
-model, run as in section 4. The delta method of section 3 applies unchanged to
-any design, so it is printed too (`prediction_error()`'s total row): it costs
-nothing and has no simulation noise.
+Tables 7-2, 7-4 and 7-6 of the monograph give the parametric bootstrap of each
+model, run as in section 4. The delta method of section 3 applies to all
+designs, so the table also prints it (the total row of `prediction_error()`).
+It has no cost and no simulation noise.
 
 ```python
 BOOK = {  # total forecast and RMSEP of the parametric bootstrap
@@ -554,13 +585,16 @@ model              delta: forecast  RMSEP | bootstrap: mean  RMSEP |  book: mean
 7-14 interactions          370,493 11,021 |         370,965 11,135 |    371,559 10,907
 ```
 
-The bootstrap totals land within simulation noise of the monograph's, with the
-same lognormal bias in the means as in section 4. The story is the
-monograph's: the quadratic accident-year effect cuts the total RMSEP from about
-14,100 to 13,000 while hardly moving the forecast, the smooth development
-pattern costs a little of that back, and the interactions bring it down to
-about 11,000, a CV near 3%, because they absorb the shift in the payment
-pattern that the chain ladder had been treating as noise.
+The bootstrap totals are within simulation noise of the monograph. The means
+have the same lognormal bias as in section 4. The results are those of the
+monograph:
+
+- The quadratic accident-year effect decreases the total RMSEP from
+  approximately 14,100 to 13,000. It almost does not change the forecast.
+- The smooth development pattern increases the RMSEP a little.
+- The interactions decrease it to approximately 11,000, a CV near 3%. They
+  model the change in the payment pattern, which the chain ladder treats as
+  noise.
 
 ```python
 interact_by_year = by_year_draws(interact, seed=1)
@@ -587,20 +621,20 @@ year    mean    RMSEP   CVP |  book: mean   RMSEP   CVP
 Total   370,965  11,135   3.0 |    371,559  10,907   2.9
 ```
 
-Year by year the interaction model agrees with Table 7-6 within noise. Its
-forecasts differ from the chain ladder's where the interactions bite: 1997,
-whose only payment sits in development year 1 where the pattern changed, drops
-from 105,874 to about 101,300 here (101,742 in Table 7-6).
+For each year, the interaction model agrees with Table 7-6 within noise. Its
+forecasts are different from those of the chain ladder where the interactions
+apply. The only payment of 1997 is in development year 1, where the pattern
+changed. Its forecast decreases from 105,874 to approximately 101,300 here
+(101,742 in Table 7-6).
 
 ## 8. Choosing between the models
 
-Table 7-7 compares the four models by AIC, BIC and generalized
-cross-validation (GCV). The monograph's footnote defines its log-likelihood as
-the Poisson kernel `sum(y log(mu) - mu) / phi` with `phi` held at the
-interaction model's value for every model, so the comparison measures fit
-rather than a change of scale. GCV (its section 4.4) is
-`n * RSS / (n - p)**2`, with `RSS` the plain sum of squared differences between
-actual and fitted.
+Table 7-7 compares the four models by AIC, BIC and generalized cross-validation
+(GCV). A footnote of the monograph defines its log-likelihood as the Poisson
+kernel `sum(y log(mu) - mu) / phi`. It holds `phi` at the value of the
+interaction model for all models. Thus the comparison measures fit, not a
+change of scale. GCV (section 4.4) is `n * RSS / (n - p)**2`, where `RSS` is
+the plain sum of squared differences between actual and fitted.
 
 ```python
 yy = np.array(cc.residuals()["actual"])  # the 55 observed increments
@@ -627,25 +661,28 @@ chain ladder         -509,391   -509,353 6,685,459 |   -509,392   -509,354 6,685
 7-14 interactions    -509,440   -509,420 1,733,200 |   -509,441   -509,421 1,733,202
 ```
 
-GCV agrees to five significant figures, and the AIC and BIC are each between
-0.7 and 1.4 above the monograph's. That gap is in the level, not in the
-comparison: the differences between models agree to within the rounding of the
-printed values, so every criterion ranks the models as the monograph does,
-with the interaction model best. The level is fragile: the log-likelihood is
-about 254,700 in these units, so a relative difference of `2e-6` in `phi`, or
-in fitted values from software with a looser convergence test, moves the AIC by
-one. The criteria are computed by hand from each fit's GLM (`fit.glm.fitted`
-and `fit.glm.coefficients`) because the monograph's definition is its own; the
-GLM's `aic` is the ordinary Poisson AIC and answers a different question.
+GCV agrees to five significant figures. The AIC and BIC are each 0.7 to 1.4
+above the values of the monograph. This difference is in the level, not in the
+comparison. The differences between models agree within the rounding of the
+printed values. Thus all criteria rank the models as the monograph does, with
+the interaction model best.
+
+The level is sensitive. The log-likelihood is approximately 254,700 in these
+units. A relative difference of `2e-6` in `phi`, or in fitted values from
+software with a looser convergence test, moves the AIC by one. The code
+calculates the criteria from the GLM of each fit (`fit.glm.fitted` and
+`fit.glm.coefficients`), because the monograph uses its own definition. The
+`aic` of the GLM is the usual Poisson AIC, which answers a different question.
 
 ## 9. A gamma cross-classified model
 
-The monograph's chapter 2 sets the ODP inside the Tweedie family and notes
-(section 6.5) that a gamma error, variance proportional to the mean squared,
-is the alternative to try when the spread of the residuals grows with the
-fitted value. It prints no gamma results for this triangle, but the fit is one
-argument away, `family="gamma"` (or `family="tweedie"` with a `power` between
-1 and 2), here on the default cross-classified design:
+Chapter 2 of the monograph puts the ODP in the Tweedie family. Section 6.5
+gives a gamma error (variance proportional to the mean squared) as an
+alternative. It is the model to try when the spread of the residuals increases
+with the fitted value.
+The monograph prints no gamma results for this triangle. In prospicio the fit
+needs one argument, `family="gamma"` (or `family="tweedie"` with a `power`
+between 1 and 2). Here it uses the default cross-classified design:
 
 ```python
 gamma = OdpGlm(family="gamma").fit(tri, "paid")
@@ -660,48 +697,33 @@ gamma reserves [3423, 8134, 15086, 22667, 31820, 45434, 60216, 80829, 105857]
 gamma total 373,466  (chain ladder 373,346)
 ```
 
-The gamma fit weights every cell's relative error alike, so it no longer
-preserves the row and column totals, and its forecasts are no longer the chain
-ladder's, though on this stable triangle they are close. The delta method of
-section 3 carries over with process variance `phi * mu**2` instead of
-`phi * mu`, and `gamma.prediction_error()` uses it.
+The gamma fit gives the same weight to the relative error of each cell. Thus it
+does not keep the row and column totals, and its forecasts are not those of the
+chain ladder. On this stable triangle they are near. The delta method of
+section 3 applies with process variance `phi * mu**2` instead of `phi * mu`, and
+`gamma.prediction_error()` uses it.
 
-## 10. What matched, and what prospicio cannot do yet
+## 10. What matched
 
-**Matched exactly**: the chain-ladder factors and reserves (Tables 3-1 and 3-2),
-the cross-classified GLM's coefficients and standard errors (Tables 3-5 and
-5-1), its scale 114.5, the ultimates and payment pattern (Table 3-3), the ODP
-Mack model's factors (Table 3-4), every forecast, RMSEP and CVP of the delta
-method (Table 5-4), the coefficients of the three reduced models (Tables 7-1,
-7-3 and 7-5) and both heat maps (Figures 6-22 and 7-5).
+**Exact agreement**:
 
-**Matched within explained differences**: the independent-years RMSEP (one unit,
-from the monograph adding rounded values); the parametric bootstraps (Tables
-5-5, 7-2, 7-4 and 7-6; simulation noise, the process distribution, which the
-monograph does not state, and the same lognormal bias of the means); AIC and
-BIC of Table 7-7 (about one unit in 509,000, from `phi` or convergence) with GCV
-to five figures. Three of Table 3-5's renormalised ultimates are one unit off
-Table 3-3; that is the monograph's own rounding.
+- the chain-ladder factors and reserves (Tables 3-1 and 3-2)
+- the coefficients and standard errors of the cross-classified GLM (Tables 3-5
+  and 5-1), and its scale 114.5
+- the ultimates and payment pattern (Table 3-3)
+- the factors of the ODP Mack model (Table 3-4)
+- each forecast, RMSEP and CVP of the delta method (Table 5-4)
+- the coefficients of the three reduced models (Tables 7-1, 7-3 and 7-5)
+- the two heat maps (Figures 6-22 and 7-5)
 
-**Not reproduced**: the plots (P-P plot, scatter and spread plots) are not
-drawn here; their inputs, the standardized residuals of `residuals()`, are
-summarised in section 5.
+**Agreement with known differences**:
 
-**Gaps closed since this guide was first written.** Earlier versions built the
-design matrices, the delta-method MSEP, the standardized residuals and the heat
-map by hand in numpy. The library now does all of them, and the guide uses it:
-`OdpGlm` fits the cross-classified model and, through `OdpGlm.cells` and
-`fit(..., design=)`, any design on the cells (models 7-2, 7-10 and 7-14,
-Tables 7-1, 7-3 and 7-5); `prediction_error()` gives the delta-method MSEP by
-accident year and in total (Table 5-4); `predict_distribution` and
-`predictive_means()` the parametric bootstrap and its lognormal bias;
-`residuals()` and `residual_summary()` the standardized residuals and the heat
-maps (Figures 6-22 and 7-5); and `OdpGlm(family=, power=)` a gamma or Tweedie
-error. What is still written out here is only what is the monograph's own: the
-columns of each design (as arrays over the cells), the ODP Mack model of
-section 2 (a `Glm` on the age-to-age factors, which are not the triangle's
-cells) and the information criteria of Table 7-7, whose log-likelihood the
-monograph defines with a fixed `phi`. For a GLM fitted with `Glm`,
-`GlmFit.diagnostics` gives residuals, hat values and Cook's distances, and
-`prediction_se` and `sum_prediction_error` the standard error of a prediction
-and of a sum of predictions.
+- The independent-years RMSEP is one unit different, because the monograph
+  adds rounded values.
+- The parametric bootstraps (Tables 5-5, 7-2, 7-4 and 7-6) differ by
+  simulation noise and by the process distribution, which the monograph does
+  not state. Their means have the lognormal bias.
+- The AIC and BIC of Table 7-7 differ by approximately one unit in 509,000,
+  from `phi` or convergence. GCV agrees to five figures.
+- Three renormalised ultimates of Table 3-5 are one unit different from Table
+  3-3, because the monograph rounds.

@@ -1,27 +1,27 @@
 # Claim size, layers, limits and deductibles: Bahnemann's *Distributions for Actuaries* reproduced
 
 CAS Monograph 2, *Distributions for Actuaries* by David Bahnemann (2015), is the
-CAS's textbook on the probability behind pricing: the size of a claim, the number
-of claims, the total of a year, and what policy limits, deductibles and
-inflation do to each of them. Almost every section ends in a worked example
-with numbers, and the appendix prints answers to many of the problems. This
-guide follows the monograph's chapters 2, 5 and 6 (claim size, excess claims,
-limits and deductibles) and recomputes those numbers with prospicio, printing
-the monograph's value next to prospicio's. Its companion,
-[claim counts and aggregate claims](distributions-for-actuaries-counts-aggregates.md),
-does the same for chapters 3, 4 and the aggregate limits of section 6.4.
+CAS textbook on the probability behind pricing. It covers the size of a claim,
+the number of claims, the total of a year, and the effect of policy limits,
+deductibles and inflation on each. Most sections end in a worked example with
+numbers, and the appendix prints answers to many problems.
 
-The explanations here are new words, not the monograph's; read the monograph for
-the derivations and the full problem statements. Example and problem numbers are
-the monograph's ("Ex 2.7", "P6.13"), and so are its symbols where a formula is
-quoted. Where a printed number and prospicio disagree, the guide says so and
-gives the most likely reason; section 10 collects them.
+This guide follows chapters 2, 5 and 6 (claim size, excess claims, limits and
+deductibles). It recomputes the numbers with prospicio and prints the
+monograph's value next to prospicio's. The companion guide,
+[claim counts and aggregate claims](distributions-for-actuaries-counts-aggregates.md),
+does the same for chapters 3 and 4 and the aggregate limits of section 6.4.
+
+The explanations are new words. Read the monograph for the derivations and the
+full problem statements. Example and problem numbers ("Ex 2.7", "P6.13") and
+the symbols in quoted formulas are the monograph's. Where a printed number and
+prospicio disagree, the guide gives the most likely reason.
 
 ## 1. Translating the parameters
 
-The monograph and prospicio name and scale their distributions differently, and
-most apparent disagreements between a textbook and a library come from here, so
-it is worth fixing the dictionary first:
+The monograph and prospicio name and scale their distributions differently.
+Most apparent disagreements between a textbook and a library come from this
+difference. This table gives the translation:
 
 | Monograph | Its formula | prospicio |
 |---|---|---|
@@ -33,12 +33,12 @@ it is worth fixing the dictionary first:
 | classical Pareto (γ, α) | F = 1 − (γ/x)^α, from γ | `Pareto(t=γ, alpha=α)` |
 | Burr (α, β, δ) | F = 1 − (β/(x^δ+β))^α | `Burr(α, δ, β^(1/δ))` |
 
-The trap is the Pareto. The monograph's Pareto starts at zero (a Lomax), while
-prospicio's `Pareto` is the single-parameter one that starts at a threshold,
-the form reinsurance pricing uses above an attachment. The Lomax is a
+Be careful with the Pareto. The monograph's Pareto starts at zero (a Lomax).
+prospicio's `Pareto` is the single-parameter Pareto that starts at a threshold,
+the form that reinsurance pricing uses above an attachment. The Lomax is a
 generalized Pareto with shape 1/α and scale β/α. Every block below uses one
-helper for it, and checks it against the monograph's closed form for the
-limited mean of Ex 2.15:
+helper for it. This block checks the helper against the monograph's closed form
+for the limited mean of Ex 2.15:
 
 ```python
 import math
@@ -86,13 +86,13 @@ prospicio's, rounded the same way.
 
 ## 2. Limited expected values
 
-The limited expected value E[X; l], the average claim when every claim is capped
-at l, is the monograph's main tool: increased limit factors, layers, deductibles
-and trend effects are all differences or ratios of it. Every prospicio severity
-has it as `lev`, and `Truncated(sev).layer_second_moment` gives the limited
-second moment E[X²; l]. Ex 2.4 caps an exponential with mean 250 at 400;
-P2.1, P2.17 and P2.19 ask for the usual list of a classical Pareto, a lognormal
-and a shifted Pareto:
+The limited expected value E[X; l] is the average claim when a cap of l applies
+to every claim. It is the monograph's main tool. Increased limit factors,
+layers, deductibles and trend effects are all differences or ratios of it.
+Every prospicio severity has it as `lev`. `Truncated(sev).layer_second_moment`
+gives the limited second moment E[X²; l]. Ex 2.4 caps an exponential with mean
+250 at 400. P2.1, P2.17 and P2.19 ask for the usual list of values for a
+classical Pareto, a lognormal and a shifted Pareto:
 
 ```python
 x = Gamma(1.0, 250.0)
@@ -136,15 +136,16 @@ P2.19  E[X; 3,000]                       book        1,347   prospicio        1,
 P2.19  E[X | X > 3,000]                  book        6,500   prospicio        6,500
 ```
 
-All agree. Two things carry over to the rest of the guide. First, the mean of
-the claims above a point is the point plus the **mean excess**
-e(x) = E[(X − x)+] / Pr{X > x}, and `stop_loss(x)` is its numerator. Second, the
-average of claims above 3,000 is nearly ten times the overall lognormal mean
-(about 2,000 here): the tail, not the middle, decides excess prices.
+All values agree. Two facts apply to the rest of the guide:
 
-P2.25 shows how much the family matters when only the mean and standard
-deviation are known: with mean 1,000 and standard deviation 2,000, how many of
-5,000 claims exceed 1,000?
+- The mean of the claims above a point is the point plus the **mean excess**
+  e(x) = E[(X − x)+] / Pr{X > x}. `stop_loss(x)` is its numerator.
+- The average of the claims above 3,000 is nearly ten times the lognormal mean
+  (about 2,000 here). The tail, not the middle, sets excess prices.
+
+P2.25 shows the effect of the family when only the mean and standard deviation
+are known. The mean is 1,000 and the standard deviation is 2,000. How many of
+5,000 claims are more than 1,000?
 
 ```python
 book = {"gamma": 1_282, "lognormal": 1_315, "Pareto": 1_428}
@@ -166,15 +167,20 @@ P2.25  claims > 1,000, Pareto            book        1,428   prospicio        1,
 
 ## 3. Fitting grouped data
 
-The monograph's data come grouped: a count of claims in each size band, no
-individual amounts. It fits them three ways, the method of moments, minimum
-chi-square, and a minimum distance between the fitted and the empirical
-limited expected values, all on a spreadsheet's solver. prospicio fits by
-maximum likelihood on individual claims (section 4), so here its distributions
-supply the cdf and `lev`, and SciPy's Nelder–Mead does the minimizing.
+The monograph's data are grouped: a count of claims in each size band, with no
+individual amounts. The monograph fits them by three methods on a spreadsheet
+solver:
 
-The running sample of Ex 2.6 has 200 claims in nine bands. Its first two sample
-moments are M1 = 1,555 and M2 = 3,036,875, and Ex 2.7 matches a gamma to them:
+1. the method of moments,
+2. minimum chi-square,
+3. the minimum distance between the fitted and the empirical limited expected
+   values.
+
+The blocks below use prospicio's `cdf` and `lev` and minimize with SciPy's
+Nelder–Mead.
+
+The sample of Ex 2.6 has 200 claims in nine bands. Its first two sample moments
+are M1 = 1,555 and M2 = 3,036,875. Ex 2.7 matches a gamma to them:
 
 ```python
 M1, M2 = 1555.0, 3_036_875.0
@@ -189,12 +195,12 @@ Ex 2.7  alpha                            book     3.907288   prospicio     3.907
 Ex 2.7  beta                             book      397.931   prospicio      397.974
 ```
 
-The shape agrees to every printed digit and the scale does not:
+The shape agrees to every printed digit, but the scale does not.
 (3,036,875 − 1,555²) / 1,555 is 618,850 / 1,555 = 397.974, not 397.931. The
-monograph's own tables were computed with its 397.931 (its fitted tail
-probabilities match prospicio's with that scale, not with 397.974), so the
-slip is in the printed division, and the comparison below uses the printed
-scale. The fit is judged by a chi-square test on six cells:
+monograph's tables use its 397.931: its fitted tail probabilities match
+prospicio's with that scale, not with 397.974. Thus the slip is in the printed
+division, and the comparison below uses the printed scale. A chi-square test on
+six cells measures the fit:
 
 ```python
 CUTS = [0, 1000, 1500, 2000, 2500, 3000, math.inf]
@@ -231,9 +237,9 @@ Ex 2.7  chi-square                       book        3.096   prospicio        3.
 The chi-square differs in the third decimal because the monograph rounds the
 expected counts to two decimals before summing.
 
-Ex 2.8 fits a lognormal to the same cells by **minimum chi-square**: choose the
-parameters that make the chi-square statistic smallest. The monograph reports
-(7.274670, 0.442525) with a minimum of 1.828:
+Ex 2.8 fits a lognormal to the same cells by **minimum chi-square**, which
+selects the parameters that give the smallest chi-square statistic. The
+monograph reports (7.274670, 0.442525) with a minimum of 1.828:
 
 ```python
 def min_chi_square(make, start, **kw):
@@ -266,15 +272,17 @@ P2.16  gamma by min chi-square: a        book       4.7432   prospicio       4.7
 P2.16  b                                 book       337.31   prospicio       337.31
 ```
 
-The fitted lognormal's tail probabilities and limited means match the
-monograph's Table 2.3 exactly, so the parameters are the ones it used; but at
-those parameters the statistic is 1.020, not 1.828, and they are not the
-minimum: the solver stopped early, and the true minimum, 0.614, lies at
-(7.2857, 0.4570). The conclusion (a good fit, far under the 5% limit of 7.815)
-stands. For the gamma of P2.16 the same search lands on the printed answer.
+The tail probabilities and limited means of the fitted lognormal match the
+monograph's Table 2.3 exactly. Thus these are the parameters that it used. But
+at these parameters the statistic is 1.020, not 1.828, and they are not the
+minimum. The solver stopped early. The true minimum, 0.614, is at
+(7.2857, 0.4570). The conclusion does not change: the fit is good, far below
+the 5% limit of 7.815. For the gamma of P2.16, the same search gives the
+printed answer.
 
-Ex 2.9 fits the shifted Pareto to a heavier sample by the limited-mean distance,
-with α held at 6. With the printed parameters prospicio reproduces Table 2.4:
+Ex 2.9 fits the shifted Pareto to a heavier sample by the limited-mean
+distance, with α fixed at 6. With the printed parameters, prospicio gives the
+values of Table 2.4:
 
 ```python
 p = shifted_pareto(6.0, 34_355.3719)
@@ -294,18 +302,24 @@ Ex 2.9  Pr{X > x}  book  [0.7121, 0.5164, 0.3807, 0.2848, 0.2159]
 
 ## 4. Censored and truncated data
 
-Claims reach the actuary modified. A **policy limit censors** them: a claim
-recorded at the limit is known only to be at least that large. A **deductible
-truncates** them: claims below it never appear, and those above are reported
-net of it (or, added back, from the deductible up). Fitting the recorded claims
-as if they were the population understates the tail; the fix is to fit the
-ground-up distribution through the modification.
+Policy terms change the claims that the actuary sees:
 
-Ex 2.10 has 1,500 claims under a 300,000 limit, 23 of them at the limit,
-summarized as counts and totals below eight sizes. From those, the empirical
-limited mean at each size is exact even though the claims are grouped, and the
-monograph fits a lognormal by minimizing the squared distance between it and the
-lognormal's `lev`. P2.39 does the same for another censored sample:
+- A **policy limit censors** claims. A claim recorded at the limit is only
+  known to be at least that large.
+- A **deductible truncates** claims. Claims below it do not appear. Claims
+  above it are reported net of it, or from the deductible up when the
+  deductible is added back.
+
+A fit of the recorded claims as if they were the population understates the
+tail. To correct this, fit the ground-up distribution through the
+modification.
+
+Ex 2.10 has 1,500 claims under a 300,000 limit, and 23 of them are at the
+limit. The data are counts and totals below eight sizes. From these, the
+empirical limited mean at each size is exact, although the claims are grouped.
+The monograph fits a lognormal by minimizing the squared distance between this
+empirical value and the lognormal's `lev`. P2.39 does the same for another
+censored sample:
 
 ```python
 def min_distance(sizes, empirical, start):
@@ -349,11 +363,12 @@ P2.39 mu                                 book       9.7781   prospicio       9.7
 P2.39 sigma                              book       1.4448   prospicio       1.4448
 ```
 
-When a deductible truncates the data, each cell's probability is conditioned on
-exceeding it. Ex 2.11 has 770 claims above a 1,000 deductible (added back),
-censored at 200,000, fitted by minimum chi-square. P2.43's claims are truncated
-from above instead (only claims up to 50,000 were kept), and prospicio's
-`Truncated` gives the conditional distribution in both cases:
+When a deductible truncates the data, the probability of each cell is
+conditional on a claim above the deductible. Ex 2.11 has 770 claims above a
+1,000 deductible (added back), censored at 200,000, and fits them by minimum
+chi-square. P2.43 truncates its claims from above: it keeps only claims up to
+50,000. prospicio's `Truncated` gives the conditional distribution in both
+cases:
 
 ```python
 cuts = [1000, 5000, 10000, 25000, 50000, 75000, 100000, 125000, 150000, 175000,
@@ -388,13 +403,17 @@ P2.43 mu                                 book       9.4951   prospicio       9.4
 P2.43 sigma                              book       1.0842   prospicio       1.0842
 ```
 
-With individual claims, prospicio's `fit_severity` does the same job by maximum
-likelihood: each claim is conditioned on exceeding its own reporting threshold
-(`reporting_thresholds`, the truncation) and a claim at a limit enters as "at
-least this" (`censored`). The monograph prints no claim-level data, so the next
-block draws 20,000 ground-up claims from Ex 2.11's fitted lognormal, applies its
-deductible and limit, and fits three times: ignoring both modifications,
-handling the limit only, and handling both:
+With individual claims, prospicio's `fit_severity` does the same job by
+maximum likelihood. Each claim is conditional on a value above its own
+reporting threshold (`reporting_thresholds`, the truncation). A claim at a
+limit enters as "at least this value" (`censored`). The monograph prints no
+claim-level data. Thus the next block draws 20,000 ground-up claims from the
+fitted lognormal of Ex 2.11 and applies its deductible and limit. Then it fits
+three times:
+
+1. with no correction,
+2. with a correction for the limit only,
+3. with a correction for the limit and the deductible.
 
 ```python
 truth = Lognormal(6.6916, 2.6965)
@@ -423,18 +442,18 @@ truncation and censoring  mu  6.76 (se 0.15)  sigma 2.67
 ```
 
 Only the last fit recovers the population, (6.69, 2.70), within its standard
-errors; the other two describe the claims an insurer with this deductible and
-limit sees, with a far thinner tail. The first two are close because only a
-few percent of claims reach the limit; the deductible, which hides more than
-half of the population, does the damage.
+errors. The other two fits describe the claims that an insurer with this
+deductible and limit sees, with a much thinner tail. The first two fits are
+close because only a few percent of claims reach the limit. The deductible
+hides more than half of the population, and it causes the error.
 
 ## 5. Inflation and claim size
 
-A uniform inflation of t − 1 multiplies every claim by t, and each family stays
-in its family with its scale multiplied (a lognormal's μ moves by log t). The
-limited mean does not grow at the full rate, because the cap does not inflate:
-E[tX; l] = t E[X; l/t]. Ex 2.15 puts 10% and −5% on a Pareto (2; 3,000) capped
-at 8,000:
+A uniform inflation of t − 1 multiplies every claim by t. Each family stays in
+its family, with its scale multiplied by t (a lognormal's μ moves by log t).
+The limited mean grows more slowly than the inflation, because the cap does not
+inflate: E[tX; l] = t E[X; l/t]. Ex 2.15 applies 10% and −5% to a
+Pareto (2; 3,000) capped at 8,000:
 
 ```python
 p = shifted_pareto(2.0, 3000.0)
@@ -456,10 +475,10 @@ Ex 2.15 E[X; 8,000]                      book        2,182   prospicio        2,
         effective rate, %                book         -3.7   prospicio         -3.7
 ```
 
-A cap absorbs part of any inflation: a basic-limits rate trends more slowly
-than the ground-up severity. Ex 2.16 has inflation that rises with the size of
-the claim, t(x) = 0.96 x^0.0183. A power of a lognormal is lognormal, so the
-inflated claims are lognormal (1.0183 μ + log 0.96, 1.0183 σ):
+A cap absorbs part of any inflation. Thus a basic-limits rate trends more
+slowly than the ground-up severity. In Ex 2.16, inflation increases with the
+size of the claim: t(x) = 0.96 x^0.0183. A power of a lognormal is lognormal.
+Thus the inflated claims are lognormal (1.0183 μ + log 0.96, 1.0183 σ):
 
 ```python
 before = Lognormal(7.2, 0.476)
@@ -478,19 +497,24 @@ Ex 2.16 mean before                      book        1,500   prospicio        1,
 
 ## 6. Excess claims and layers
 
-Above an attachment a, the claims that pierce it, measured from a, are the
-**excess** claims X_a. Their mean is the mean excess
-e(a) = E[(X − a)+] / Pr{X > a}, and a layer of width l above a, per claim that
-reaches the layer, has mean (E[X; a + l] − E[X; a]) / Pr{X > a}. In prospicio
-the numerators are `stop_loss(a)` and `layer(l, a)`.
+The claims above an attachment a, measured from a, are the **excess** claims
+X_a. Their mean is the mean excess e(a) = E[(X − a)+] / Pr{X > a}. For each
+claim that reaches it, a layer of width l above a has the mean
+(E[X; a + l] − E[X; a]) / Pr{X > a}. In prospicio the numerators are
+`stop_loss(a)` and `layer(l, a)`.
 
-How e(x) moves with x tells families apart: constant for the exponential,
-falling for a gamma with shape above 1, rising in a straight line for the
-shifted Pareto (e(x) = (x + β)/(α − 1)), rising and bending for the lognormal.
-P2.39's sister question P5.2 takes five distributions with mean 2,000 and asks
-for e(3,000); the uniform on [0, 4,000] is prospicio's `Beta(1, 1, scale)`.
-Ex 5.4 fits a Pareto by regressing the empirical e(x) on x: a slope of 0.257335
-and an intercept of 1,208.50 give α − 1 = 1/slope and β = intercept · (α − 1):
+The shape of e(x) as a function of x identifies the family:
+
+- constant for the exponential,
+- decreasing for a gamma with shape above 1,
+- a straight line that increases for the shifted Pareto,
+  e(x) = (x + β)/(α − 1),
+- increasing and curved for the lognormal.
+
+P5.2 takes five distributions with mean 2,000 and asks for e(3,000). The
+uniform on [0, 4,000] is prospicio's `Beta(1, 1, scale)`. Ex 5.4 fits a Pareto
+by a regression of the empirical e(x) on x. A slope of 0.257335 and an
+intercept of 1,208.50 give α − 1 = 1/slope and β = intercept · (α − 1):
 
 ```python
 cases = [
@@ -530,9 +554,9 @@ Ex 5.4  F(x)     book  [0.39, 0.6106, 0.8233, 0.9711, 0.9962]
 ```
 
 Ex 5.7 prices a layer of 4,000 above 5,000 under a Pareto (2; 3,000). The
-excess of a shifted Pareto over d is again a shifted Pareto, (α; β + d), so
-the layer's mean per excess claim is the limited mean of a Pareto (2; 8,000)
-at 4,000, and prospicio's `layer` gives the same:
+excess of a shifted Pareto over d is also a shifted Pareto, (α; β + d). Thus
+the layer's mean for each excess claim is the limited mean of a
+Pareto (2; 8,000) at 4,000. prospicio's `layer` gives the same value:
 
 ```python
 p = shifted_pareto(2.0, 3000.0)
@@ -549,8 +573,8 @@ Ex 5.7  E[X; 5,000]                      book        1,875   prospicio        1,
         as Pareto (2; 8,000) at 4,000    book        2,667   prospicio        2,667
 ```
 
-Layers are where coefficients of variation explode. Ex 5.8 and P5.10 measure
-them for the lognormal (5.9809; 1.8), whose mean is 2,000:
+Coefficients of variation (CV) become very large in layers. Ex 5.8 and P5.10
+measure them for the lognormal (5.9809; 1.8), whose mean is 2,000:
 
 ```python
 ln = Lognormal(5.9809, 1.8)
@@ -589,18 +613,20 @@ P5.10   CV[X; 8,000]                     book       1.5959   prospicio       1.5
 ```
 
 The inputs agree to the printed digits. The derived numbers differ in the third
-or fourth figure, and the last line shows why: the monograph carries the
-rounded limited means (891 for 890.56, 1,276 for 1,276.24) into differences that
-cancel most of their size, which turns a rounding of half a unit into a
-percent of the layer's CV. Its excess mean of 8,515 is the same rounding: P5.2
-prints the same quantity as 8,518, prospicio's value. prospicio's `layer_cv` is
-the CV of the layer loss per ground-up claim, zeros included, a different
-quantity (2.90 here), suited to pricing the layer from ground-up counts.
+or fourth figure, and the last line shows the cause. The monograph uses the
+rounded limited means (891 for 890.56, 1,276 for 1,276.24) in differences that
+cancel most of their size. Thus a rounding of half a unit becomes one percent
+of the layer's CV. Its excess mean of 8,515 has the same cause: P5.2 prints the
+same quantity as 8,518, which is prospicio's value.
 
-P5.12 splits a policy with a 100 deductible and a 3,000 limit into three
-layers, for a Pareto (3; 5,000) with 5 ground-up claims expected: the share of
-claims that reach each layer, the expected count and severity in it, and its
-expected loss, which add up to the unlimited total:
+prospicio's `layer_cv` is a different quantity (2.90 here). It is the CV of the
+layer loss for each ground-up claim, zeros included. Use it to price the layer
+from ground-up counts.
+
+P5.12 divides a policy with a 100 deductible and a 3,000 limit into three
+layers. The severity is a Pareto (3; 5,000), with 5 ground-up claims expected.
+For each layer, the block gives the share of claims that reach it, the severity
+in it and its expected loss. The expected losses add up to the unlimited total:
 
 ```python
 p = shifted_pareto(3.0, 5000.0)
@@ -632,10 +658,10 @@ P5.12 total = 5 x mean                   book       12,500   prospicio       12,
 ```
 
 Deductibles truncate counts as well as amounts. Ex 5.3 fits a lognormal by
-minimum chi-square to 300 claims net of a 1,500 deductible and censored by a
-50,000 limit, then estimates how many claims the deductible hid; P5.23 does the
-same with a 500 deductible. From the printed parameters prospicio gives the
-printed counts:
+minimum chi-square to 300 claims, net of a 1,500 deductible and censored by a
+50,000 limit. Then it estimates the number of claims that the deductible hid.
+P5.23 does the same with a 500 deductible. From the printed parameters,
+prospicio gives the printed counts:
 
 ```python
 for name, book, (mu, sigma), n, d in [
@@ -651,22 +677,26 @@ Ex 5.3 claims hidden by the deductible   book           43   prospicio          
 P5.23 claims hidden by the deductible    book          125   prospicio          125
 ```
 
-The fits themselves do not reproduce. At Ex 5.3's printed parameters the
-chi-square statistic, as the monograph defines it, is 1.806 where it prints
-1.6610, and its minimum is 1.790 at (8.6869, 1.1684); for P5.23 the printed
-parameters are further from the minimum under every reading of the cells
-tried. Both are spreadsheet solver results (a footnote in the monograph warns
-they can vary); the estimates of hidden claims hardly move.
+The fits do not reproduce. At the printed parameters of Ex 5.3, the chi-square
+statistic as the monograph defines it is 1.806, not the printed 1.6610. Its
+minimum is 1.790 at (8.6869, 1.1684). For P5.23, the printed parameters are
+further from the minimum under every reading of the cells that we tried. Both
+are spreadsheet solver results, and a footnote in the monograph warns that they
+can vary. The estimates of hidden claims change very little.
 
 ## 7. Inflation above an attachment: the leveraging effect
 
-Inflation does more to an excess layer than to the ground-up loss. With a fixed
-attachment, inflation pushes claims that were below it into the layer (more
-excess claims) and makes those already above it larger (a larger excess
-severity), so the layer's loss grows faster than the inflation rate. The
-monograph splits the growth into a severity factor, a count factor and their
-product. Ex 5.10 to 5.12 use the Pareto (2; 3,000), an attachment of 5,000,
-10% inflation and, in Ex 5.12, 5% growth in the ground-up count:
+Inflation has a larger effect on an excess layer than on the ground-up loss.
+With a fixed attachment, inflation has two effects:
+
+- Claims that were below the attachment move into the layer (more excess
+  claims).
+- Claims that were already above it become larger (a larger excess severity).
+
+Thus the layer's loss grows faster than the inflation rate. The monograph
+divides the growth into a severity factor, a count factor and their product.
+Ex 5.10 to 5.12 use the Pareto (2; 3,000), an attachment of 5,000 and 10%
+inflation. Ex 5.12 adds 5% growth in the ground-up count:
 
 ```python
 p, t = shifted_pareto(2.0, 3000.0), 1.10
@@ -698,11 +728,13 @@ Ex 5.12 excess count trend, %            book        18.03   prospicio        18
         of which from claim size, %      book         16.6   prospicio         16.6
 ```
 
-A 10% inflation becomes 16.6% on the excess loss (22.5% with the count growth).
-The layer severity printed as 2,701 is computed from rounded limited means;
-prospicio's 2,699 is exact, and so its trend is 1.22% rather than 1.27%. The
-same decomposition for an exponential with mean 1,000 and a layer of 2,000
-above 1,000 (P5.1), and for the lognormal of Ex 5.8 (P5.21 and P5.22):
+A 10% inflation becomes 16.6% on the excess loss (22.5% with the count
+growth). The monograph calculates the layer severity of 2,701 from rounded
+limited means. prospicio's 2,699 is exact, and thus its trend is 1.22%, not
+1.27%. The next block applies the same decomposition to two cases:
+
+- an exponential with mean 1,000 and a layer of 2,000 above 1,000 (P5.1),
+- the lognormal of Ex 5.8 (P5.21 and P5.22).
 
 ```python
 x = Gamma(1.0, 1000.0)
@@ -738,9 +770,10 @@ P5.22 loss trend, layer to 5,000, %      book          9.5   prospicio          
 P5.22 loss trend, layer to 8,000, %      book         10.2   prospicio         10.2
 ```
 
-A layer with an upper limit leverages less than an unlimited excess cover, and
-less the narrower it is, because the limit caps the growth of the claims that
-were already in it (P5.22's 9.5% against P5.21's 8.9% count growth alone).
+A layer with an upper limit has less leverage than an unlimited excess cover.
+A narrower layer has less leverage again, because the limit caps the growth of
+the claims that were already in it. Compare P5.22's 9.5% with P5.21's 8.9%
+count growth alone.
 
 With a Poisson count, the moments of the aggregate layer loss follow from the
 layer's limited moments. Ex 5.13 takes 15 expected ground-up claims and the
@@ -761,9 +794,9 @@ Ex 5.13 E[S]                             book        5,775   prospicio        5,
         expected layer claims            book       1.9536   prospicio       1.9536
 ```
 
-Again the printed mean and variance are computed from the rounded limited
-values of Ex 5.8 (15 × (1,276 − 891) = 5,775); the expected count, which
-needs no difference, agrees.
+The monograph again calculates the mean and variance from the rounded limited
+values of Ex 5.8: 15 × (1,276 − 891) = 5,775. The expected count needs no
+difference, and it agrees.
 
 ## 8. Increased limit factors
 
