@@ -6,4 +6,4 @@
   allocation, with the pages of each in reading order. The notebooks sit in the
   section of their subject instead of a "Worked examples" section, and the
   reading list groups the source texts the same way. The build fails if a guide
-  or notebook is missing from the file.
+  or notebook is missing from the file (#621).
