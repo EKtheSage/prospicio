@@ -170,6 +170,7 @@ reference:
       - priority_ladder
       - price_stand_alone
       - technical_quote
+      - tower_quote
       - payment_pattern
       - price_over_payout
       - npv

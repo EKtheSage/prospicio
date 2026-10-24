@@ -19,7 +19,7 @@ use prospicio_pricing::natural::{
     Quantity, Target,
 };
 use prospicio_pricing::payout::{self, PaymentPattern};
-use prospicio_pricing::quote::{Loads, PremiumTerms, Quote};
+use prospicio_pricing::quote::{Loads, PremiumTerms, Quote, TowerQuote};
 use prospicio_pricing::returns::{self, IrrOptions, TieredFee, TimeUnit};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
@@ -1146,8 +1146,13 @@ fn pricing_quote(
     if !premium.is_nan() {
         q = q.at_with_commission(premium, commission).map_err(to_r)?;
     }
+    Ok(quote_list(&q))
+}
+
+/// A quote's amounts as an R list, with its terms' rates.
+fn quote_list(q: &Quote) -> List {
     let na = |x: Option<f64>| x.unwrap_or(f64::NAN);
-    Ok(list!(
+    list!(
         expected_loss = q.expected_loss,
         margin = q.margin(),
         risk_premium = q.risk_premium,
@@ -1167,7 +1172,70 @@ fn pricing_quote(
         loss_ratio = q.loss_ratio(),
         multiple = q.multiple(),
         rate_on_line = na(q.rate_on_line()),
-        payback = na(q.payback())
+        payback = na(q.payback()),
+        reinstatement_rate = q.terms.reinstatement_rate,
+        commission_rate = q.terms.commission
+    )
+}
+
+/// The technical quote of a tower's layers and of its total cession:
+/// `list(layers, total, diversification)`, each quote a list as
+/// `pricing_quote`'s. `ceded` holds the layers' grids, `total_ceded` the
+/// total cession's grid or NULL.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_tower_quote(
+    tower: Robj,
+    ceded: List,
+    expected_reinstatement_premium: Vec<f64>,
+    total_ceded: Robj,
+    assets: Robj,
+    rate: Option<f64>,
+    pricing: Robj,
+    expenses: f64,
+    brokerage: f64,
+    fixed: f64,
+    premium_tax: f64,
+    income_tax: f64,
+    brokerage_on_reinstatements: bool,
+) -> Result<List> {
+    let tower = <&ReinsuranceTower>::try_from(&tower)
+        .map_err(|_| Error::Other("tower must be a reinsurance_tower".into()))?;
+    let grid = |r: &Robj| {
+        <&Grid>::try_from(r)
+            .map(|g| g.inner.clone())
+            .map_err(|_| Error::Other("ceded grids must be grid_distributions".into()))
+    };
+    let ceded = ceded
+        .values()
+        .map(|r| grid(&r))
+        .collect::<Result<Vec<_>>>()?;
+    let total = if total_ceded.is_null() {
+        None
+    } else {
+        Some(grid(&total_ceded)?)
+    };
+    let rule = premium_rule(rate, &pricing)?;
+    let assets = distortion_arg(&assets, "assets")?;
+    let loads = Loads::new(expenses, brokerage, fixed)
+        .and_then(|l| l.with_premium_tax(premium_tax))
+        .and_then(|l| l.with_income_tax(income_tax))
+        .map_err(to_r)?;
+    let q = TowerQuote::from_parts(
+        &tower.inner.layers,
+        &ceded,
+        &expected_reinstatement_premium,
+        total.as_ref(),
+        &rule,
+        &assets,
+        loads,
+        brokerage_on_reinstatements,
+    )
+    .map_err(to_r)?;
+    Ok(list!(
+        layers = List::from_values(q.layers.iter().map(quote_list)),
+        total = quote_list(&q.total),
+        diversification = q.diversification()
     ))
 }
 
@@ -1691,6 +1759,7 @@ extendr_module! {
     fn pricing_pattern_at;
     fn pricing_count_development;
     fn pricing_quote;
+    fn pricing_tower_quote;
     fn pricing_bounds_rust;
     fn distortion_envelope_rust;
     impl NaturalPortfolio;

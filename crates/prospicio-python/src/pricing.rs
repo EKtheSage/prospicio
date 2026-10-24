@@ -7,7 +7,7 @@ use prospicio_pricing::exposure::{
     ExposureCurve, Interpolation, Mbbefd, SeverityCurve, TabulatedCurve,
 };
 use prospicio_pricing::layer::XsLayer;
-use prospicio_pricing::quote::{Loads, PremiumTerms, Quote};
+use prospicio_pricing::quote::{Loads, PremiumTerms, Quote, TowerQuote};
 use prospicio_pricing::risk_load::{self, PortfolioPrice, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel};
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -1986,6 +1986,138 @@ impl PyQuote {
             self.inner.premium,
             self.inner.expected_loss,
             self.inner.return_on_capital()
+        )
+    }
+}
+
+/// A whole tower quoted at once: each layer standalone from its own ceded
+/// grid, and the total cession, every layer together, as one cover.
+///
+/// Each standalone price holds capital for its layer alone, so the layers'
+/// premiums add up to more than the total's; ``diversification`` is the
+/// difference. No share of the total is allocated to the layers.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.distributions import Grid, Poisson
+/// >>> from prospicio.pricing import TowerQuote
+/// >>> from prospicio.reinsurance import Layer, Tower
+/// >>> from prospicio.risk import Distortion
+/// >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+/// >>> tower = Tower([Layer("1x1", 1.0, 1.0), Layer("2x2", 2.0, 2.0)])
+/// >>> grids = tower.on_grid(Poisson(3.0), sev, 256)
+/// >>> q = TowerQuote.technical(tower, grids, Distortion.tvar(0.99), cost_of_capital=0.1,
+/// ...                          expenses=0.03, brokerage=0.10)
+/// >>> len(q.layers), q.diversification > 0
+/// (2, True)
+#[pyclass(name = "TowerQuote", module = "prospicio.pricing", frozen)]
+pub(crate) struct PyTowerQuote {
+    inner: TowerQuote,
+}
+
+#[pymethods]
+impl PyTowerQuote {
+    /// The technical quote of each layer and of the total cession.
+    ///
+    /// Each layer is priced on its ceded grid with the reinstatement rate
+    /// and flat ceding commission its grid and terms give, and its limit at
+    /// the placed share for the rate on line. The total is priced on
+    /// ``grids.total_ceded``, with the layers' reinstatement rates and
+    /// commissions weighted by their technical deposits and no limit.
+    ///
+    /// Parameters
+    /// ----------
+    /// tower : Tower
+    /// grids : TowerGrids
+    ///     ``tower.on_grid(...)``.
+    /// assets : Distortion
+    /// cost_of_capital : float, optional
+    /// distortion : Distortion, optional
+    ///     Exactly one of ``cost_of_capital`` and ``distortion``, as in
+    ///     ``price``.
+    /// expenses, brokerage, fixed, premium_tax, income_tax : float
+    ///     The loads, as in ``Quote.technical``.
+    /// brokerage_on_reinstatements : bool, default True
+    ///
+    /// Returns
+    /// -------
+    /// TowerQuote
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If ``grids.total_ceded`` is ``None``: several layers with annual
+    ///     terms (reinstatements, aggregate limits or deductibles), or an
+    ///     aggregate cover after per-occurrence stages, cede a sum of
+    ///     dependent annual totals. Quote the layers one by one with
+    ///     ``Quote.technical`` instead.
+    #[staticmethod]
+    #[pyo3(signature = (
+        tower, grids, assets, *, cost_of_capital = None, distortion = None, expenses = 0.0,
+        brokerage = 0.0, fixed = 0.0, premium_tax = 0.0, income_tax = 0.0,
+        brokerage_on_reinstatements = true,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn technical(
+        tower: PyRef<'_, crate::reinsurance::PyTower>,
+        grids: PyRef<'_, crate::reinsurance::PyTowerGrids>,
+        assets: PyRef<'_, PyDistortion>,
+        cost_of_capital: Option<f64>,
+        distortion: Option<PyRef<'_, PyDistortion>>,
+        expenses: f64,
+        brokerage: f64,
+        fixed: f64,
+        premium_tax: f64,
+        income_tax: f64,
+        brokerage_on_reinstatements: bool,
+    ) -> PyResult<Self> {
+        let rule = premium_rule(cost_of_capital, distortion)?;
+        let loads = Loads::new(expenses, brokerage, fixed)
+            .and_then(|l| l.with_premium_tax(premium_tax))
+            .and_then(|l| l.with_income_tax(income_tax))
+            .map_err(to_py)?;
+        let inner = TowerQuote::technical(
+            &tower.inner,
+            &grids.inner,
+            &rule,
+            &assets.inner,
+            loads,
+            brokerage_on_reinstatements,
+        )
+        .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
+    /// Each layer's standalone quote, in tower order.
+    #[getter]
+    fn layers(&self) -> Vec<PyQuote> {
+        self.inner
+            .layers
+            .iter()
+            .map(|&inner| PyQuote { inner })
+            .collect()
+    }
+
+    /// The quote of the total cession.
+    #[getter]
+    fn total(&self) -> PyQuote {
+        PyQuote {
+            inner: self.inner.total,
+        }
+    }
+
+    /// The layers' technical deposits added up less the total's.
+    #[getter]
+    fn diversification(&self) -> f64 {
+        self.inner.diversification()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TowerQuote(layers={}, total={}, diversification={})",
+            self.inner.layers.len(),
+            self.inner.total.premium,
+            self.inner.diversification()
         )
     }
 }

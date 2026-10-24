@@ -58,7 +58,8 @@ A list with \code{expected_loss}, \code{margin}, \code{risk_premium},
 \code{net_premium} (net of brokerage), \code{assets}, \code{capital}, \code{income_tax},
 \code{pre_tax_return_on_capital}, \code{return_on_capital} (after tax),
 \code{loss_ratio} and \code{multiple} (on all the premium), \code{rate_on_line} and
-\code{payback} (on the deposit, \code{NaN} without a limit), and the inputs
+\code{payback} (on the deposit, \code{NaN} without a limit),
+\code{reinstatement_rate} and \code{commission_rate} (the terms), and the inputs
 \code{implied_quote()} needs.
 }
 \description{

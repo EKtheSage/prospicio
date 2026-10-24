@@ -232,6 +232,8 @@ pricing_count_development <- function(ages, factors, years, valuation) .Call(wra
 
 pricing_quote <- function(expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium_tax, income_tax, reinstatement_rate, ceding_commission, brokerage_on_reinstatements, premium, commission) .Call(wrap__pricing_quote, expected_loss, risk_premium, assets, expenses, brokerage, fixed, limit, premium_tax, income_tax, reinstatement_rate, ceding_commission, brokerage_on_reinstatements, premium, commission)
 
+pricing_tower_quote <- function(tower, ceded, expected_reinstatement_premium, total_ceded, assets, rate, pricing, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements) .Call(wrap__pricing_tower_quote, tower, ceded, expected_reinstatement_premium, total_ceded, assets, rate, pricing, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements)
+
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)

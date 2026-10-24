@@ -601,11 +601,24 @@ underwriter builds from a risk-loaded price, as the Guides lane's
   ρ)`, which for a cost-of-capital price at `r` is the price at `r / (1 −
   t)`. `return_on_capital` is after tax, `pre_tax_return_on_capital`
   before. With no terms and no taxes every quote is as before.
-- **Not yet:** the quote of a whole tower at once (each layer standalone
-  plus the total cession, by the user's decision of 2026-10-23, next);
-  today a tower's layers are quoted one by one from `TowerGrids::ceded`
-  and `price_grid`. A distortion price whose assets count the
-  reinstatement premium, `P = price(X − P g)`, is #587.
+- **A whole tower (2026-10-23).** `TowerQuote::technical` quotes each
+  layer standalone from its ceded grid (its reinstatement rate and flat
+  commission read off the grid and the layer, its limit at the placed
+  share) and the total cession as one cover from
+  `TowerGrids::total_ceded`, with the layers' reinstatement and
+  commission rates weighted by their technical deposits and no limit. The
+  diversification is the layers' deposits less the total's; nothing is
+  allocated back. `total_ceded` is one compound total when no layer has
+  annual terms (the severity ceded by every layer together), or the one
+  stage's total when the tower has a single stage that has one; several
+  layers with annual terms (reinstatements, aggregate limits or
+  deductibles) or an aggregate cover after per-occurrence stages cede a
+  sum of dependent annual totals, so the total is `None` and the quote is
+  refused. Such a tower's total can be quoted on simulated events
+  (`Tower::apply` and `price`). Python `TowerQuote.technical`, R
+  `tower_quote()`.
+- **Not yet:** a distortion price whose assets count the reinstatement
+  premium, `P = price(X − P g)`, is #587.
 
 Validated by identities (zero loads give the risk premium; the loads net
 back to it; at the technical premium the return is the rate asked for;

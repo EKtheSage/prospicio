@@ -585,7 +585,7 @@ impl ReinsuranceTower {
     /// expected_profit_commission, expected_deal_ceding_commission,
     /// expected_deal_brokerage, deal_names, on_points)`, with `stage_ceded` one
     /// grid (or NULL) per stage,
-    /// with `net` NULL when it is not one compound total.
+    /// with `net` and `total_ceded` NULL when they are not one compound total.
     fn on_grid(&self, frequency: Robj, severity: Robj, points: f64) -> Result<List> {
         let n = AnyCount::from_robj(&frequency)?;
         let sev = <&Grid>::try_from(&severity)
@@ -602,6 +602,10 @@ impl ReinsuranceTower {
             .map(|(g, report)| Grid::with_report(g, compound_list(report)).into())
             .collect();
         let net: Robj = match r.net {
+            Some(g) => Grid::wrap(g).into(),
+            None => ().into(),
+        };
+        let total_ceded: Robj = match r.total_ceded {
             Some(g) => Grid::wrap(g).into(),
             None => ().into(),
         };
@@ -624,6 +628,7 @@ impl ReinsuranceTower {
             stage_ceded = stage_ceded,
             stage_sizes = stage_sizes,
             net = net,
+            total_ceded = total_ceded,
             expected_reinstatement_premium = r.expected_reinstatement_premium,
             expected_premium = r.expected_premium,
             expected_ceding_commission = r.expected_ceding_commission,
