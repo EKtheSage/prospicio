@@ -1018,6 +1018,20 @@ for k, (age, cdf) in enumerate(zip([3, 12, 24, 36], [4, 2, 1.25, 1])):
     dg.cell(row=44 + k, column=18, value=cdf).fill = inp
 dg["N50"] = ArrayFormula("N50:S55", '=PRO.DIAG.CL(N44:N47,,O44:O47,R44:R47,Q44:Q47,"cdf",,"quarter",45657)')
 
+# Semiannual origins of 2023 and 2024 at December 2024 (24, 18 and 12
+# months), the annual pattern read log-linearly at 18 months.
+dg["W42"] = "Semiannual origins (Excel dates) at December 2024, CDF 2, 1.25, 1 at 12, 24, 36 months"; dg["W42"].font = bold
+for h, col in zip(["Origin", "Latest", "Pattern age", "CDF"], ["W", "X", "Z", "AA"]):
+    dg[f"{col}43"] = h; dg[f"{col}43"].font = bold
+for k, (d, x) in enumerate(zip([datetime.date(2023, 1, 1), datetime.date(2023, 7, 1), datetime.date(2024, 1, 1)],
+                               [500, 300, 100])):
+    c = dg.cell(row=44 + k, column=23, value=d); c.number_format = "yyyy-mm-dd"; c.fill = inp
+    dg.cell(row=44 + k, column=24, value=x).fill = inp
+for k, (age, cdf) in enumerate(zip([12, 24, 36], [2, 1.25, 1])):
+    dg.cell(row=44 + k, column=26, value=age).fill = inp
+    dg.cell(row=44 + k, column=27, value=cdf).fill = inp
+dg["W50"] = ArrayFormula("W50:AB54", '=PRO.DIAG.CL(W44:W46,,X44:X46,AA44:AA46,Z44:Z46,"cdf",,"semiannual",45657)')
+
 # Past the pattern's end: nine factors of 1.1 from 12 to 108 months and a tail of 1.05.
 dg["A59"] = "Past the pattern's end: factors 1.1 from 12 to 108 months, tail 1.05 spread one step per year"; dg["A59"].font = bold
 for k, age in enumerate([144, 132, 120, 108, 12]):
@@ -1053,6 +1067,7 @@ for i, (name, f, x, tol) in enumerate([
         ("GenIns total, chainladder-python", "=E56", 53038945.61192431, 1e-9),
         ("Quarters, 2024Q1 ultimate", "=R51", 800, 1e-9),
         ("Quarters, 2024Q4 ultimate", "=R54", 400, 1e-9),
+        ("Semiannual, 2023H2 ultimate (300 x sqrt(2.5))", "=AA52", 300 * 2.5 ** 0.5, 1e-9),
         ("132 months: CDF past the end", "=D68", 1.0253798721500054, 1e-12),
         ("Averaged: percent at 12 months (78/144)", "=T72", 78 / 144, 1e-12),
         ("RAA frozen: total ultimate against PRO.CL", "=E87", "=RAA!P14", 1e-12)]):
@@ -1061,7 +1076,7 @@ for i, (name, f, x, tol) in enumerate([
     dg[f"K{row}"] = f"=ABS(I{row}-J{row})<{tol}*MAX(1,ABS(J{row}))"
 dg.column_dimensions["A"].width = 12
 dg.column_dimensions["H"].width = 40
-for col in "BCDEFGIJKLMOPQRSTU":
+for col in [*"BCDEFGIJKLMOPQRSTUWXYZ", "AA", "AB"]:
     dg.column_dimensions[col].width = 12
 
 wb.save(out)

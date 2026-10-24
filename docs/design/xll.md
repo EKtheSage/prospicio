@@ -147,7 +147,7 @@ total row. On GenIns with R's `?ClarkCapeCod` premium all 28 totals in
 The diagonal functions (decision 39) wrap `LatestDiagonal` and the
 methods' `fit_diagonal` (`reserving-v02.md` decisions 15 to 18).
 `origins` is a year (a whole number below 10,000) or an Excel date per
-origin, floored to `grain` (`"year"`, the default, `"half"`,
+origin, floored to `grain` (`"year"`, the default, `"semiannual"`,
 `"quarter"` or `"month"`); exactly one of `ages` (months, one per
 origin) and `valuation` (one Excel date) is given. `latest` is the
 latest cumulative value per origin, 0 for nothing reported, and a blank
@@ -765,12 +765,15 @@ real Excel.
     functions. A `pattern_origin` equal to `grain` is an error there
     (the crate returns the pattern unchanged, and an exhibit that only
     repeats its input is more likely a slip), while on the diagonal
-    functions the same pair uses the pattern as given. Every grain
-    argument accepts `"semester"` as a synonym for `"half"`, the crate's
-    name for it. A tail of exactly 1 is read as no tail, as the crate
-    reads it, so `past_end` `"none"` accepts it and `"tail"` rejects it.
-    These four were built without a decision of the user's (Open,
-    below).
+    functions the same pair uses the pattern as given. The grain word
+    for six-month origins is `"semiannual"`, and `"semi-annual"` is
+    accepted for it (the user's decision of 2026-10-24); `"half"` and
+    `"semester"` are not grain words, since no released function took
+    a grain word before this decision (the grain arguments are new
+    here), so nothing older keeps them as aliases. A tail of exactly 1
+    is read as no tail, as the crate reads it, so `past_end` `"none"`
+    accepts it and `"tail"` rejects it. The other three details were
+    built without a decision of the user's (Open, below).
     Decision 17's frozen pattern needs no function: `PRO.CL.LDF`
     already gives what `ChainLadderFit::to_chain_ladder` holds (the
     factors in use, then the tail factor), and the pattern stays in
@@ -854,13 +857,15 @@ an XLL function (decision 4: no state) does not hold.
   functions as the user asks (nested
   Archimedean copulas and vines, and the expected multi-year commission
   on the grid, are the nearest left out).
-- **Decision 39's four details**, built without a decision of the
+- **Decision 39's details**, three built without a decision of the
   user's: `PRO.PATTERN.AVERAGE`'s `grain` defaults to `"year"`, and a
   `pattern_origin` equal to `grain` is an error there rather than the
-  pattern returned unchanged; `"semester"` is accepted for `"half"`;
-  a tail of exactly 1 counts as no tail, so `past_end` `"none"` accepts
-  it and `"tail"` rejects it. Accept them as built, or say which to
-  change.
+  pattern returned unchanged; a tail of exactly 1 counts as no tail, so
+  `past_end` `"none"` accepts it and `"tail"` rejects it. Accept them as
+  built, or say which to change. The fourth, the grain word for
+  six-month origins, was decided by the user on 2026-10-24:
+  `"semiannual"` (or `"semi-annual"`), with `"half"` and `"semester"`
+  dropped.
 - **A code-signing certificate**, if the add-in goes beyond a few
   testers (decision 16). A certificate from the organization's own CA,
   trusted on its machines by group policy, comes as a PKCS#12 file and

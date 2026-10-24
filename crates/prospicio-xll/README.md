@@ -176,7 +176,7 @@ Ctrl+Alt+F9 to recalculate.
 - The diagonal functions (`PRO.DIAG.*`) project one latest value per
   origin, as a bordereau holds it, with a pattern chosen elsewhere.
   `origins`: a year such as `2024` or an Excel date per origin, floored to
-  `grain` (`"year"`, the default, `"half"`, `"quarter"` or
+  `grain` (`"year"`, the default, `"semiannual"`, `"quarter"` or
   `"month"`); give `ages` (months, one per origin) or `valuation` (one
   Excel date), not both; `latest`: 0 for nothing reported, never blank.
   `pattern`: the selected values, such as a row of `PRO.CL.LDF`, read as

@@ -192,7 +192,7 @@ const DIAG_TAIL: Arg = Arg {
 };
 const DIAG_GRAIN: Arg = Arg {
     name: "grain",
-    help: "The origins' grain: \"year\" (default), \"half\", \"quarter\" or \"month\"",
+    help: "The origins' grain: \"year\" (default), \"semiannual\", \"quarter\" or \"month\"",
 };
 const DIAG_VALUATION: Arg = Arg {
     name: "valuation",
@@ -703,11 +703,11 @@ pub static FUNCTIONS: &[Function] = &[
             DIAG_PATTERN,
             Arg {
                 name: "pattern_origin",
-                help: "The origin basis pattern was measured on: \"month\", \"quarter\" or \"half\"",
+                help: "The origin basis pattern was measured on: \"month\", \"quarter\" or \"semiannual\"",
             },
             Arg {
                 name: "grain",
-                help: "The origin basis to average to, a whole multiple of pattern_origin: \"year\" (default), \"half\" or \"quarter\"",
+                help: "The origin basis to average to, a whole multiple of pattern_origin: \"year\" (default), \"semiannual\" or \"quarter\"",
             },
             PATTERN_KIND,
         ],

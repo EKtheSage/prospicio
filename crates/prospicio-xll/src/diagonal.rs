@@ -46,17 +46,17 @@ fn vector<'a>(grid: &'a Grid, name: &str) -> Result<Option<&'a [Value]>> {
     Ok(Some(&grid.cells))
 }
 
-/// A grain argument: "year", "half" (or "semester"), "quarter" or
-/// "month"; `None` when omitted.
+/// A grain argument: "year", "semiannual" (or "semi-annual"), "quarter"
+/// or "month"; `None` when omitted.
 fn grain_option(grid: &Grid, name: &str) -> Result<Option<Grain>> {
     match text_option(grid, name)?.as_deref() {
         None => Ok(None),
         Some("year") => Ok(Some(Grain::Year)),
-        Some("half" | "semester") => Ok(Some(Grain::Semester)),
+        Some("semiannual" | "semi-annual") => Ok(Some(Grain::Semester)),
         Some("quarter") => Ok(Some(Grain::Quarter)),
         Some("month") => Ok(Some(Grain::Month)),
         Some(other) => Err(format!(
-            "{name} must be \"year\", \"half\", \"quarter\" or \"month\", got {other:?}"
+            "{name} must be \"year\", \"semiannual\", \"quarter\" or \"month\", got {other:?}"
         )),
     }
 }

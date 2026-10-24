@@ -518,7 +518,7 @@ fn ages_off_the_patterns_grid_are_read_log_linearly() {
         &ANNUAL_CDF,
     )
     .kind("cdf")
-    .grain("half")
+    .grain("semiannual")
     .valuation(DEC_2024)
     .exposure(&[800.0; 3]);
     let cdf18 = (2.0f64 * 1.25).sqrt();
@@ -555,6 +555,22 @@ fn ages_off_the_patterns_grid_are_read_log_linearly() {
         Tail::default(),
     );
     same_cl(&g, &direct.fit_diagonal(&d).unwrap());
+    // "semi-annual" is the same grain, in any case; "half" and
+    // "semester" are not grain words (the user's decision of 2026-10-24).
+    for word in ["semi-annual", "SemiAnnual"] {
+        same_cl(
+            &half.clone().grain(word).cl(),
+            &direct.fit_diagonal(&d).unwrap(),
+        );
+    }
+    for word in ["half", "semester"] {
+        assert_eq!(
+            error(&half.clone().grain(word).cl()),
+            format!(
+                "grain must be \"year\", \"semiannual\", \"quarter\" or \"month\", got {word:?}"
+            )
+        );
+    }
     // Age-to-age factors 1.6 and 1.25 give the same ultimates, and a tail
     // of 1.05 multiplies them.
     let mut ldf = half.clone();
@@ -1112,7 +1128,7 @@ fn input_errors_name_their_argument() {
     assert!(e(no_exposure.bf(0.7)).starts_with("exposure is required"));
     assert_eq!(
         e(base().grain("week").cl()),
-        "grain must be \"year\", \"half\", \"quarter\" or \"month\", got \"week\""
+        "grain must be \"year\", \"semiannual\", \"quarter\" or \"month\", got \"week\""
     );
     assert_eq!(
         e(base().past_end("extend").cl()),
@@ -1124,11 +1140,11 @@ fn input_errors_name_their_argument() {
     );
     assert_eq!(
         e(base().pattern_origin("day").cl()),
-        "pattern_origin must be \"year\", \"half\", \"quarter\" or \"month\", got \"day\""
+        "pattern_origin must be \"year\", \"semiannual\", \"quarter\" or \"month\", got \"day\""
     );
     // An origin grain that is not a whole multiple of the pattern's.
     assert_eq!(
-        e(base().grain("quarter").pattern_origin("half").cl()),
+        e(base().grain("quarter").pattern_origin("semiannual").cl()),
         "selected pattern: the origin grain must be a whole multiple of the pattern's origin grain"
     );
     let mut twice = base();
