@@ -3,7 +3,7 @@
 //!
 //! The risk premium `R` is the expected loss plus the margin for the
 //! capital held, from [`risk_load::price`](crate::risk_load::price) or
-//! [`price_grid`](crate::risk_load::price_grid). Internal expenses `e`
+//! [`price_grid`]. Internal expenses `e`
 //! and brokerage `b` are fractions of the premium itself and a fixed
 //! expense `f` an amount, so they gross up rather than add:
 //!
