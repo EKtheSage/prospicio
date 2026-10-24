@@ -30,7 +30,7 @@ use crate::{
 const EXPOSURE: &str = "exposure";
 
 /// One latest value per origin at its own age, with an optional exposure
-/// (premium) per origin: a bordereau's diagonal. The chain ladder and the
+/// (premium) per origin, as a cedant's bordereau holds it. The chain ladder and the
 /// expected-loss methods project it with a fully selected pattern through
 /// their `fit_diagonal`; the methods that need link ratios (Mack, the
 /// bootstraps) have none to work with.
@@ -855,7 +855,7 @@ pub enum DiagonalAge<'a> {
     Valuations(&'a [Month]),
 }
 
-/// A bordereau as a long table: one row per segment and origin, with the
+/// Latest diagonals as a long table: one row per segment and origin, with the
 /// key values, the origin's start month, its age (or valuation) and its
 /// latest value, and an optional exposure.
 #[derive(Debug, Clone, Copy)]
