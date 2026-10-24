@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -2877,7 +2877,9 @@ open questions, and were accepted by the user on 2026-10-23 as built.
 Item 11 stays open: `the_plain_path_on_an_older_book_mixes_in_its_own_factors`
 still pins it, and decision 18 leaves the plain path's on-grid reading
 unchanged. Decision 18 revises items 4 and 6 where they meet ages off the
-source's or past its end.
+source's or past its end. Decision 19 builds what item 9 left for later:
+latest diagonals over segments, a source fit applied segment by segment,
+and the Python and R arguments.
 
 A reserving actuary often fits a development on one book (a mature line,
 an industry triangle, last year's study) and applies it to another: a
@@ -3048,8 +3050,8 @@ the two.
 ### 18. A pattern on another origin basis, and ages past its end
 
 Status: **Built** (2026-10-23), issue #544, branch `claude/diagonal-basis`,
-in Rust. This is the issue's fourth PR; the bindings come with the next
-one. It answers the user's decisions of 2026-10-23: (b) a monthly (or any
+in Rust. This is the issue's fourth PR; decision 19 brings it to Python
+and R. It answers the user's decisions of 2026-10-23: (b) a monthly (or any
 finer) pattern applies to yearly or quarterly origins on both the
 diagonal route and the plain triangle path, read at the origin's age or
 averaged over the origin period's months; (c) an origin older than the
@@ -3327,3 +3329,179 @@ keep their fields, and `LatestDiagonal`'s fields are private.
     the same under both. The user chose the build: the decay is per
     origin period (`PastPatternEnd::Tail`), as chainladder-python ties it
     to the development period.
+
+### 19. Latest diagonals over segments, and the bindings
+
+Status: **Built** (2026-10-24), issue #544, branch `claude/diagonal-bindings`,
+in Rust, Python and R. This is the issue's fifth PR. It carries decisions
+15 to 18 into the bindings and adds what decision 17 item 9 left for later:
+latest diagonals over segments and a source fit applied segment by segment.
+Items 1 to 12 below are proposals for the user. The Excel functions are a
+later PR.
+
+**Rust** (`crates/prospicio-reserving/src/latest_diagonal.rs`, re-exported
+from `lib.rs`):
+
+- `LatestDiagonals { key_names, labels, diagonals }`: one `LatestDiagonal`
+  per segment, the labels sorted as `Triangle` sorts them. `new(key_names,
+  segments)` checks the labels (one part per key, none given twice) and one
+  origin grain; `From<LatestDiagonal>` is one segment without keys.
+- `from_long(&LongDiagonal)`: key columns, origins, `DiagonalAge::Ages`,
+  `Valuation` (one month for every row) or `Valuations` (one per row), the
+  latest values, an optional exposure and the origin grain. The ages,
+  values and exposure are checked over the whole input first, so a row
+  number in `NonPositiveAge` or `NonFinite` is the input's row; then the
+  rows are grouped by key, and a repeated origin within a segment is an
+  error that names the segment.
+- `from_triangle(&Triangle, column, exposure)`: the latest diagonal of
+  every segment, over the trimmed `triangle.segments(column)`, through the
+  same private `LatestDiagonal::from_segment` as `LatestDiagonal::from_triangle`
+  (which still refuses several segments).
+- `with_exposure` (values in row order: the segments in index order, the
+  origins in the order given), `with_past_pattern_end` (every segment), and
+  `key_names`, `labels`, `diagonals`, `len`, `is_empty`, `get`, `iter`,
+  `position`, `segment`, `origin_grain` and `valuation` (the latest month
+  any origin of any segment is valued at). `LatestDiagonal::valuation` is
+  new and public too.
+- `developments(&SegmentFits<ChainLadderFit>, &SegmentMap)`: one frozen
+  `to_chain_ladder()` per segment of the diagonals, keyed by their labels.
+  `SegmentMap::ByLabel` (the default) takes the source segment of the same
+  label, or broadcasts a source of one segment to every segment;
+  `SegmentMap::Pairs(Vec<(target, source)>)` names each.
+- On `ChainLadder`, `ExpectedLoss`, `BornhuetterFerguson`, `Benktander` and
+  `CapeCod`: `fit_diagonal_segments(&LatestDiagonals)` and
+  `fit_diagonal_segments_from(&LatestDiagonals, &SegmentFits<ChainLadder>)`,
+  returning `SegmentFits` of each method's fit, the second with each
+  segment's chain ladder taken from the development.
+
+**Semantics.** Each segment runs the existing `fit_diagonal`, so one
+segment without keys gives exactly `LatestDiagonal`'s fit, to the bit. An
+error in a segment is wrapped in `Error::InSegment` when there are keys, as
+`fit_segments` wraps it (`segments::collect_labelled`, which `collect_fits`
+now calls). Cape Cod trends every segment to the one common valuation, as
+`CapeCod::fit_segments` trends every segment to the triangle's valuation
+(a private `fit_diagonal_at`). With a development, the method's own chain
+ladder must have no pattern, no tail (a constant of 1) and no link ratio
+exclusions; the apriori, `n_iters`, `trend` and `decay` stay the method's.
+The development's labels must be the diagonals'. The plain triangle path
+is unchanged (decision 17 item 11 stays open).
+
+**Errors**, each naming the label: a segment of the diagonals with no
+source segment of its label ("segment b of the diagonals has no segment of
+the same label in the source"), source and diagonals with different key
+names under `ByLabel` ("map the segments with SegmentMap::Pairs"), a map's
+target that is not a segment, a target listed twice, a source that is not
+a segment of the source, a segment the map gives no source; a method that
+sets its own development ("the development comes from the source fit: give
+the method no pattern, no tail and no link ratio exclusions"); and
+developments whose segments are not the diagonals'.
+
+**Python** (`crates/prospicio-python/src/reserving.rs`,
+`python/prospicio/reserving.py`):
+
+- `LatestDiagonal(origin, age, latest, exposure=None, keys=None,
+  origin_grain="Y", past_pattern_end="reject")`, `LatestDiagonal.at_valuation`
+  (the valuation a date: an integer is a `TypeError`, since a year would
+  read as January), `LatestDiagonal.from_frame` (exactly one of `age`, a
+  column, and `valuation`, a date or a column of dates) and
+  `LatestDiagonal.from_triangle` (any number of segments); `with_exposure`,
+  `with_past_pattern_end` (`"reject"`, `"no_development"` or `"tail"`),
+  `segment(**keys)`, `to_frame()`, and the properties `keys`, `index`,
+  `origin_grain`, `origins`, `ages`, `latest`, `exposure` and
+  `past_pattern_end`. It wraps `LatestDiagonals`.
+- `fit_diagonal(diagonal, development=None, segment_map=None)` on
+  `ChainLadder`, `ExpectedLoss`, `BornhuetterFerguson`, `Benktander` and
+  `CapeCod`. `development` is a `ChainLadderFit` (another method's fit
+  passes its `.chain_ladder`); `segment_map` is a dict from a segment of the
+  diagonal to one of the development, labelled as `index` labels them.
+- `ChainLadderFit.to_chain_ladder()`, for a single-segment fit: a
+  `ChainLadder` whose `ldf` (a dict), `ldf_kind == "ldf"` and `tail` (a
+  float) unpack into any method's arguments with the same projection, to
+  the bit (decision 17 item 9).
+- `ldf_origin` (`"M"`, `"Q"`, `"S"` or `"Y"`) on every method that takes
+  `ldf`: `ChainLadder`, `Mack`, `ExpectedLoss`, `BornhuetterFerguson`,
+  `Benktander`, `CapeCod`, `OdpBootstrap` and `MackBootstrap`. It is stored
+  on the method and applied at fit time with the triangle's or diagonal's
+  origin grain (`SelectedPattern::averaged_over_origins`), in `fit`,
+  `fit_diagonal`, the bootstraps and the one-year views. The `ldf` getter
+  returns the pattern as given.
+- The `ldf` help no longer says each age must be a development age of the
+  triangle: ages off the grid are read on the pattern's own ages and what
+  runs past the oldest age folds into a constant tail (decision 18). It
+  warns that one off-grid age changes how a sparse age-to-age pattern's
+  other factors are read (on RAA, `{12: 1.5, 18: 1.1, 36: 1.2}` selects
+  1.5484 from 12 to 24 months where `{12: 1.5, 36: 1.2}` selects 1.5).
+
+**R** (`crates/prospicio-r/src/reserving.rs`, `R/prospicio/R/reserving.R`):
+
+- An S7 class `bordereau` over `LatestDiagonals`: `bordereau(data, origin,
+  latest, age = NULL, valuation = NULL, exposure = NULL, keys = NULL,
+  origin_grain = "Y", past_pattern_end = "reject")`, `as_bordereau(triangle,
+  column = NULL, exposure = NULL, past_pattern_end = "reject")`,
+  `with_exposure()`, `with_past_pattern_end()`, `segment()`,
+  `as.data.frame()` and `print()`, with the same properties as Python's.
+- `chain_ladder()`, `expected_loss()`, `bornhuetter_ferguson()`,
+  `benktander()` and `cape_cod()` take a bordereau as their first argument
+  (with no `column` or `exposure`), and `development` (a `chain_ladder_fit`
+  or a fit with `@chain_ladder`) and `segment_map` (a named character
+  vector, target to source, each label its key values joined by `" / "`).
+  `development` with a triangle is an error that points to `as_bordereau()`.
+  `column` and `exposure` of the expected-loss methods now default to
+  `NULL`, so that a bordereau can leave them out; with a triangle they are
+  still required.
+- `to_chain_ladder(fit)` returns `list(ldf, ldf_kind = "ldf", tail)`, `ldf`
+  named by the age that starts each link, for `do.call()`.
+- `ldf_origin = NULL` on every function that takes `ldf`.
+- `mack()`, the bootstraps and the one-year views reject a bordereau with
+  a message naming the five functions that take one.
+
+**Checks.** `validation/tests/reserving_diagonal_segments.rs` (Rust): each
+segment takes the source segment of its label, to the bit for the factors
+and within 1e-14 for the ultimates; a map of pairs and a broadcast source
+are bit-equal to the per-segment application; the expected-loss methods
+over segments equal each segment fitted alone; Cape Cod with segment b
+valued a year before a trends b by `(1 + trend)^1`; `from_long` with keys
+and valuations equals `from_triangle`; and every error. The Python and R
+tests (`python/tests/test_reserving_latest_diagonal.py`,
+`R/prospicio/tests/test-reserving-latest-diagonal.R`) reproduce the Rust
+validation's numbers through each binding: the hand diagonals, half-year
+origins, the rule past the pattern's end, `ldf_origin`, RAA's off-grid
+reading, every row of `reserving_latest_diagonal_python.csv` and of
+`reserving_fit_apply_python.csv` (both arms, with the `development=` route
+equal to the unpacked route to the bit), the segments and the
+constructors.
+
+**Decision items** (proposals for the user):
+
+1. **A separate `LatestDiagonals` type**, rather than keys on
+   `LatestDiagonal`, whose per-origin accessors would change meaning.
+2. **Segment order** sorted by label, as `Triangle` sorts it.
+3. **Cape Cod across segments trends to one common valuation** (the latest
+   of all segments), as `CapeCod::fit_segments` does. The alternative is
+   each segment's own valuation.
+4. **The map:** by label, with a source of one segment broadcast; unused
+   source segments ignored and an unmatched target an error; explicit
+   `Pairs` from target to source.
+5. **A development source and the method's own settings:** the method's
+   pattern, tail and link ratio exclusions must be unset, an error rather
+   than silently overridden; the apriori, `n_iters`, `trend` and `decay`
+   stay the method's. The exclusions are refused too, beyond the design's
+   pattern and tail, since they would otherwise be ignored silently.
+6. **Python `to_chain_ladder()` needs a single segment.** Per-segment
+   application goes through `fit_diagonal(..., development=)`.
+7. **`averaged_over_origins` as an `ldf_origin` argument** stored on every
+   method with `ldf` and applied at fit time with the target's grain. The
+   alternative is a module function that returns arguments to unpack,
+   which touches no method.
+8. **R naming:** `bordereau()` and `as_bordereau()`, because
+   `latest_diagonal()` is taken. Alternatives: `diagonal_data()`, or
+   extending `latest_diagonal()`.
+9. **R dispatch:** inside the existing five functions, rather than
+   `*_diagonal()` twin functions.
+10. **A valuation must be a date** in Python and R; valuations per row are
+    supported (`DiagonalAge::Valuations`).
+11. **Error wording:** Rust messages pass through unchanged, so a
+    `"reject"` error names `LatestDiagonal::with_past_pattern_end`. The
+    alternative is to reword the Rust text in binding-neutral terms.
+12. **`development=` only on diagonals.** The plain triangle path keeps
+    decision 17 item 11 open.

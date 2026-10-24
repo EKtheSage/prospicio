@@ -18,6 +18,7 @@ mack(
   ldf = NULL,
   ldf_kind = NULL,
   ldf_weight = 1,
+  ldf_origin = NULL,
   n_periods = NULL,
   drop_high = 0,
   drop_low = 0
@@ -26,9 +27,11 @@ mack(
 \arguments{
 \item{ptr}{A \code{ChainLadderFit} pointer; used internally.}
 
-\item{triangle}{A \link{triangle}, with any number of segments.}
+\item{triangle}{A \link{triangle}, with any number of segments, or, for
+\code{chain_ladder()}, a \link{bordereau} (a latest diagonal on its own).}
 
-\item{column}{Name of the column to fit; by default the only one.}
+\item{column}{Name of the column to fit; by default the only one. Not
+given for a bordereau.}
 
 \item{average}{\code{"volume"}, \code{"simple"}, \code{"regression"} or \code{"geometric"}.
 \code{"geometric"} is the geometric mean of the link ratios: it gives the
@@ -52,8 +55,16 @@ extrapolate it. Unused when the tail factor is 1.}
 
 \item{ldf}{A selected development pattern (above): a numeric vector
 named by age in months, or a data.frame with columns \code{age} and
-\code{value}; each age a development age of the triangle. \code{NULL} (the
-default) estimates every factor.}
+\code{value}. \code{NULL} (the default) estimates every factor. Ages off the
+triangle's (or bordereau's) ages are read on the pattern's own ages,
+\code{log(cdf)} linear between them, and what the pattern gives past the
+oldest age folds into a constant tail at full weight
+(\code{docs/design/reserving-v02.md}, decision 18). Adding one off-grid
+age to a sparse age-to-age pattern changes how its other factors are
+read: each factor then runs to the pattern's next age, not the
+triangle's. On RAA, \code{c("12" = 1.5, "18" = 1.1, "36" = 1.2)} selects
+1.5484 from 12 to 24 months, where \code{c("12" = 1.5, "36" = 1.2)} selects
+1.5; nothing warns of this.}
 
 \item{ldf_kind}{How \code{ldf} is expressed: \code{"ldf"} (age-to-age factors),
 \code{"cdf"} (factors to ultimate)
@@ -65,6 +76,17 @@ cannot be told apart.}
 estimate) to 1 (the selection, the default): a number for every
 selected factor, or a numeric vector named by age (the age that starts
 the factor's link), the others fully selected.}
+
+\item{ldf_origin}{\code{NULL} (the default), or the grain (\code{"M"}, \code{"Q"}, \code{"S"}
+or \code{"Y"}) of the origin periods \code{ldf} was measured on, when it differs
+from the triangle's or bordereau's: a pattern of accident months read
+for accident years, say. The pattern is averaged over the origin
+period with exposure even through it
+(\code{SelectedPattern::averaged_over_origins}), exact up to the pattern's
+end, with development deferred past it; a constant tail from the
+monthly pattern is the safer choice there. Equal to the target's
+grain, it changes nothing. It needs a weight on every factor, not by
+age.}
 
 \item{n_periods, drop_high, drop_low}{Which link ratios the factor at each
 age averages. \code{n_periods} keeps the latest \code{n_periods} calendar

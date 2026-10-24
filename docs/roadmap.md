@@ -31,7 +31,7 @@ when from experience, and which pricing method fits which scenario.
 |---|---|---|
 | Phase 0: Foundation | Workspace, core traits, design notes, RNG streams, Python and R skeletons, parity harness | Done |
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
-| v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R) |
+| v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R); latest diagonals, a development applied to another book, in Rust, Python and R (decisions 15 to 19) |
 | v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C- and D-vine copulas (#261, #262) |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
@@ -448,6 +448,18 @@ what it is aiming for by v1.0.
     the pattern's end with a factor of 1 or the tail spread from the end;
     no external reference implements these readings, so they are checked
     by hand and on a synthetic book.
+  - Latest diagonals over segments, and the bindings (`reserving-v02.md`,
+    decision 19; branch `claude/diagonal-bindings`, issue #544, in Rust,
+    Python and R): `LatestDiagonals` holds a latest diagonal per segment,
+    built from a long table or any triangle, and the chain ladder and the
+    expected-loss family fit each segment, with each segment's development
+    taken from a source fit by label, by a map, or from a single-segment
+    source for every segment; Python's `LatestDiagonal` with
+    `fit_diagonal(..., development=)`, R's `bordereau()` and
+    `as_bordereau()` taken by the five functions, `to_chain_ladder` and
+    `ldf_origin` in both, reproducing the Rust validation's numbers and
+    the chainladder-python parity rows. The Excel functions are the next
+    PR.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
