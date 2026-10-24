@@ -12,15 +12,18 @@
 //! rule between its ages. An origin older than the pattern's end is an
 //! error unless [`PastPatternEnd`] says how to develop it (decision 18).
 
+use std::collections::BTreeMap;
+
 use prospicio_core::{Grain, Lag, Month, Period};
 
 use crate::expected_loss::origin_exposure;
 use crate::pattern::{check_factors, grid, on_ages, own_cdf, span_end, tail_on_own_ages};
+use crate::segments::{collect_labelled, find_segment, labelled};
 use crate::triangle::Segment;
 use crate::{
     Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit, Development,
-    Error, ExpectedLoss, ExpectedLossFit, PatternKind, PatternWeight, Result, SelectedPattern,
-    Tail, TailConstant, Triangle,
+    Error, ExpectedLoss, ExpectedLossFit, Label, PatternKind, PatternWeight, Result, SegmentFits,
+    SelectedPattern, Tail, TailConstant, Triangle,
 };
 
 /// The exposure column named in errors.
@@ -230,14 +233,11 @@ impl LatestDiagonal {
         valuation: Month,
         latest: &[f64],
     ) -> Result<Self> {
-        let mut ages = Vec::with_capacity(origins.len());
-        for (row, m) in origins.iter().enumerate() {
-            let age = valuation.months_since(m.floor(origin_grain)) + 1;
-            if age <= 0 {
-                return Err(Error::NonPositiveAge { row });
-            }
-            ages.push(age as Lag);
-        }
+        let ages = origins
+            .iter()
+            .enumerate()
+            .map(|(row, &m)| age_at(origin_grain, m, valuation, row))
+            .collect::<Result<Vec<_>>>()?;
         Self::new(origin_grain, origins, &ages, latest)
     }
 
@@ -314,6 +314,23 @@ impl LatestDiagonal {
         exposure: Option<&str>,
     ) -> Result<Self> {
         let segment = triangle.segment(column)?;
+        let exposure = exposure
+            .map(|e| Ok::<_, Error>((triangle.segment(e)?, e)))
+            .transpose()?;
+        Self::from_segment(
+            triangle.origin_grain(),
+            &segment,
+            exposure.as_ref().map(|(s, e)| (s, *e)),
+        )
+    }
+
+    /// The latest diagonal of one segment of a triangle, with the exposure
+    /// of the same index position's `(segment, column)` when given.
+    fn from_segment(
+        origin_grain: Grain,
+        segment: &Segment,
+        exposure: Option<(&Segment, &str)>,
+    ) -> Result<Self> {
         let mut origins = Vec::with_capacity(segment.n_origins);
         let mut ages = Vec::with_capacity(segment.n_origins);
         let mut latest = Vec::with_capacity(segment.n_origins);
@@ -323,11 +340,9 @@ impl LatestDiagonal {
             ages.push(segment.ages[d]);
             latest.push(v);
         }
-        let diagonal = Self::new(triangle.origin_grain(), &origins, &ages, &latest)?;
+        let diagonal = Self::new(origin_grain, &origins, &ages, &latest)?;
         match exposure {
-            Some(e) => {
-                diagonal.with_exposure(&origin_exposure(&segment, &triangle.segment(e)?, e)?)
-            }
+            Some((e, column)) => diagonal.with_exposure(&origin_exposure(segment, e, column)?),
             None => Ok(diagonal),
         }
     }
@@ -380,9 +395,19 @@ impl LatestDiagonal {
         self.exposure.as_deref()
     }
 
+    /// The diagonal's valuation: the latest month any origin is valued at,
+    /// to which Cape Cod's `fit_diagonal` trends.
+    pub fn valuation(&self) -> Month {
+        self.origins
+            .iter()
+            .zip(&self.ages)
+            .map(|(m, &a)| m.add_months(i64::from(a) - 1))
+            .max()
+            .expect("a diagonal has an origin")
+    }
+
     /// What the methods fit: the diagonal on its grid, the exposure there
-    /// when `exposure` asks for it (it must then be given), the valuation,
-    /// `development` with the pattern as it resolves on the grid, and the
+    /// when `exposure` asks for it (it must then be given), `development` with the pattern as it resolves on the grid, and the
     /// tail to use there.
     fn prepare(&self, development: &Development, tail: Tail, exposure: bool) -> Result<Prepared> {
         if development.n_periods.is_some() || development.drop_high > 0 || development.drop_low > 0
@@ -417,17 +442,9 @@ impl LatestDiagonal {
         let gridded = self.on_grid(development, pattern, tail)?;
         let segment = self.segment(&gridded, &self.latest);
         let exposure = exposure.map(|e| self.segment(&gridded, e));
-        let valuation = self
-            .origins
-            .iter()
-            .zip(&self.ages)
-            .map(|(m, &a)| m.add_months(i64::from(a) - 1))
-            .max()
-            .expect("a diagonal has an origin");
         Ok(Prepared {
             segment,
             exposure,
-            valuation,
             development: Development {
                 pattern: Some(gridded.pattern),
                 ..development.clone()
@@ -671,7 +688,6 @@ struct Gridded {
 struct Prepared {
     segment: Segment,
     exposure: Option<Segment>,
-    valuation: Month,
     development: Development,
     tail: Tail,
     converted: bool,
@@ -764,6 +780,11 @@ impl CapeCod {
     /// diagonal's valuation (the latest month any origin is valued at); see
     /// [`ChainLadder::fit_diagonal`].
     pub fn fit_diagonal(&self, diagonal: &LatestDiagonal) -> Result<CapeCodFit> {
+        self.fit_diagonal_at(diagonal, diagonal.valuation())
+    }
+
+    /// Cape Cod on a latest diagonal, trended to `valuation`.
+    fn fit_diagonal_at(&self, diagonal: &LatestDiagonal, valuation: Month) -> Result<CapeCodFit> {
         let p = diagonal.prepare(&self.chain_ladder.development, self.chain_ladder.tail, true)?;
         let mut fit = CapeCod {
             chain_ladder: ChainLadder {
@@ -776,9 +797,720 @@ impl CapeCod {
             &p.segment,
             &p.exposure.expect("asked for"),
             EXPOSURE,
-            p.valuation,
+            valuation,
         )?;
         report(p.converted, p.rescale, &mut fit.expected_loss.chain_ladder);
         Ok(fit)
+    }
+}
+
+/// Latest diagonals of several segments (lines of business, states, ...),
+/// each a [`LatestDiagonal`], labelled by key values as a triangle's
+/// segments are (`reserving-v02.md`, decision 19). The methods'
+/// `fit_diagonal_segments` project each segment on its own and return a
+/// [`SegmentFits`], as `fit_segments` does on a triangle; with
+/// `fit_diagonal_segments_from` each segment takes its development from a
+/// segment of a source fit, chosen by [`developments`](Self::developments).
+///
+/// The segments are kept sorted by label, as a triangle sorts its index. A
+/// diagonal without keys has one segment, labelled `"Total"`.
+///
+/// ```
+/// use prospicio_reserving::{
+///     ChainLadder, DiagonalAge, Grain, Label, LatestDiagonals, LongDiagonal, Month,
+/// };
+///
+/// // Two lines at December 2024, given line by line in any order.
+/// let origin = [2024, 2023, 2023, 2024].map(Month::january);
+/// let diagonals = LatestDiagonals::from_long(&LongDiagonal {
+///     keys: &[("lob", &["b", "b", "a", "a"])],
+///     origin: &origin,
+///     age: DiagonalAge::Valuation(Month::new(2024, 12).unwrap()),
+///     latest: &[50.0, 80.0, 400.0, 150.0],
+///     exposure: None,
+///     origin_grain: Grain::Year,
+/// })
+/// .unwrap();
+/// assert_eq!(diagonals.labels(), [Label::from("a"), Label::from("b")]);
+/// // Line b keeps its origins in the order given.
+/// assert_eq!(diagonals.diagonals()[1].ages(), [12, 24]);
+/// ```
+#[derive(Debug, Clone, PartialEq)]
+pub struct LatestDiagonals {
+    key_names: Vec<String>,
+    labels: Vec<Label>,
+    diagonals: Vec<LatestDiagonal>,
+}
+
+/// How a [`LongDiagonal`] gives each row's age.
+#[derive(Debug, Clone, Copy)]
+pub enum DiagonalAge<'a> {
+    /// Each row's age in months.
+    Ages(&'a [Lag]),
+    /// One valuation month for every row, ages as
+    /// [`LatestDiagonal::at_valuation`] gives them.
+    Valuation(Month),
+    /// Each row's own valuation month.
+    Valuations(&'a [Month]),
+}
+
+/// A bordereau as a long table: one row per segment and origin, with the
+/// key values, the origin's start month, its age (or valuation) and its
+/// latest value, and an optional exposure.
+#[derive(Debug, Clone, Copy)]
+pub struct LongDiagonal<'a> {
+    /// Key columns as `(name, values)`, one value per row; empty for a
+    /// single segment.
+    pub keys: &'a [(&'a str, &'a [&'a str])],
+    /// Each row's origin start month (floored to `origin_grain`).
+    pub origin: &'a [Month],
+    /// Each row's age, or the valuation it is read from.
+    pub age: DiagonalAge<'a>,
+    /// Each row's latest cumulative value.
+    pub latest: &'a [f64],
+    /// Each row's exposure (premium), for the expected-loss methods.
+    pub exposure: Option<&'a [f64]>,
+    /// The origins' grain.
+    pub origin_grain: Grain,
+}
+
+/// Which segment of a source fit develops each segment of the diagonals in
+/// [`LatestDiagonals::developments`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum SegmentMap {
+    /// The source segment of the same label, every source segment for a
+    /// source with one segment. The default.
+    #[default]
+    ByLabel,
+    /// `(target, source)` pairs: each segment of the diagonals listed once,
+    /// with the source segment that develops it.
+    Pairs(Vec<(Label, Label)>),
+}
+
+/// The age at `valuation` of an origin starting in `origin`, as
+/// [`LatestDiagonal::at_valuation`] reads it; `row` names the row in the
+/// error.
+fn age_at(origin_grain: Grain, origin: Month, valuation: Month, row: usize) -> Result<Lag> {
+    let age = valuation.months_since(origin.floor(origin_grain)) + 1;
+    if age <= 0 {
+        return Err(Error::NonPositiveAge { row });
+    }
+    Ok(age as Lag)
+}
+
+fn check_length(column: &str, expected: usize, found: usize) -> Result<()> {
+    if found == expected {
+        Ok(())
+    } else {
+        Err(Error::LengthMismatch {
+            column: column.into(),
+            expected,
+            found,
+        })
+    }
+}
+
+impl From<LatestDiagonal> for LatestDiagonals {
+    /// One segment without keys, labelled `"Total"`.
+    fn from(diagonal: LatestDiagonal) -> Self {
+        Self {
+            key_names: Vec::new(),
+            labels: vec![Label::default()],
+            diagonals: vec![diagonal],
+        }
+    }
+}
+
+impl LatestDiagonals {
+    /// Segments from their labels and diagonals, under `key_names`. Each
+    /// label has one value per key (none without keys, for one segment);
+    /// the labels differ and every diagonal has the same origin grain. The
+    /// segments are sorted by label.
+    pub fn new(key_names: Vec<String>, segments: Vec<(Label, LatestDiagonal)>) -> Result<Self> {
+        if segments.is_empty() {
+            return Err(Error::Empty);
+        }
+        for (k, name) in key_names.iter().enumerate() {
+            if key_names[..k].contains(name) {
+                return Err(Error::DuplicateKey(name.clone()));
+            }
+        }
+        let grain = segments[0].1.origin_grain;
+        let mut segments = segments;
+        segments.sort_by(|a, b| a.0.cmp(&b.0));
+        for (k, (label, diagonal)) in segments.iter().enumerate() {
+            if label.parts().len() != key_names.len() {
+                return Err(invalid(format!(
+                    "segment {label} has {} key values for {} keys",
+                    label.parts().len(),
+                    key_names.len()
+                )));
+            }
+            if k > 0 && segments[k - 1].0 == *label {
+                return Err(invalid(format!("segment {label} is given twice")));
+            }
+            if diagonal.origin_grain != grain {
+                return Err(invalid(format!(
+                    "segment {label} has origins of another grain: every segment's origins \
+                     are on one grain"
+                )));
+            }
+        }
+        let (labels, diagonals) = segments.into_iter().unzip();
+        Ok(Self {
+            key_names,
+            labels,
+            diagonals,
+        })
+    }
+
+    /// The diagonals of a long table, one row per segment and origin. The
+    /// ages, latest values and lengths are checked over the whole table, so
+    /// [`Error::NonPositiveAge`] and [`Error::NonFinite`] name the table's
+    /// row; then each segment is built as [`LatestDiagonal::new`] builds
+    /// it, its origins in the order of its rows, and an error there (an
+    /// origin given twice, an exposure that is not finite and positive) is
+    /// reported with the segment's label when there are keys.
+    pub fn from_long(long: &LongDiagonal<'_>) -> Result<Self> {
+        let n = long.origin.len();
+        if n == 0 {
+            return Err(Error::Empty);
+        }
+        let mut key_names: Vec<String> = Vec::with_capacity(long.keys.len());
+        for (name, values) in long.keys {
+            if key_names.iter().any(|k| k == name) {
+                return Err(Error::DuplicateKey(name.to_string()));
+            }
+            check_length(name, n, values.len())?;
+            key_names.push(name.to_string());
+        }
+        let grain = long.origin_grain;
+        let ages: Vec<Lag> = match long.age {
+            DiagonalAge::Ages(ages) => {
+                check_length("ages", n, ages.len())?;
+                if let Some(row) = ages.iter().position(|&a| a == 0) {
+                    return Err(Error::NonPositiveAge { row });
+                }
+                ages.to_vec()
+            }
+            DiagonalAge::Valuation(v) => (0..n)
+                .map(|row| age_at(grain, long.origin[row], v, row))
+                .collect::<Result<_>>()?,
+            DiagonalAge::Valuations(v) => {
+                check_length("valuation", n, v.len())?;
+                (0..n)
+                    .map(|row| age_at(grain, long.origin[row], v[row], row))
+                    .collect::<Result<_>>()?
+            }
+        };
+        check_length("latest", n, long.latest.len())?;
+        if let Some(e) = long.exposure {
+            check_length(EXPOSURE, n, e.len())?;
+        }
+        if let Some(row) = long.latest.iter().position(|v| !v.is_finite()) {
+            return Err(Error::NonFinite {
+                column: "latest".into(),
+                row,
+            });
+        }
+        let mut rows: BTreeMap<Label, Vec<usize>> = BTreeMap::new();
+        for row in 0..n {
+            let label = Label::new(long.keys.iter().map(|(_, values)| values[row]));
+            rows.entry(label).or_default().push(row);
+        }
+        let keyed = !key_names.is_empty();
+        let mut labels = Vec::with_capacity(rows.len());
+        let mut diagonals = Vec::with_capacity(rows.len());
+        for (label, rows) in rows {
+            let origins: Vec<Month> = rows.iter().map(|&r| long.origin[r]).collect();
+            let segment_ages: Vec<Lag> = rows.iter().map(|&r| ages[r]).collect();
+            let latest: Vec<f64> = rows.iter().map(|&r| long.latest[r]).collect();
+            let diagonal = LatestDiagonal::new(grain, &origins, &segment_ages, &latest)
+                .and_then(|d| match long.exposure {
+                    Some(e) => d.with_exposure(&rows.iter().map(|&r| e[r]).collect::<Vec<_>>()),
+                    None => Ok(d),
+                })
+                .map_err(|e| labelled(keyed, &label, e))?;
+            labels.push(label);
+            diagonals.push(diagonal);
+        }
+        Ok(Self {
+            key_names,
+            labels,
+            diagonals,
+        })
+    }
+
+    /// The latest diagonal of `column` in every segment of `triangle`, in
+    /// its index order, each taken as [`LatestDiagonal::from_triangle`]
+    /// takes a single segment's (on the segment's own trimmed range), with
+    /// the exposure from the same segment's `exposure` column. An error is
+    /// reported with the segment's label when the triangle has keys.
+    pub fn from_triangle(
+        triangle: &Triangle,
+        column: &str,
+        exposure: Option<&str>,
+    ) -> Result<Self> {
+        let segments = triangle.segments(column)?;
+        let exposures = exposure.map(|e| triangle.segments(e)).transpose()?;
+        let keyed = !triangle.key_names().is_empty();
+        let diagonals = segments
+            .iter()
+            .enumerate()
+            .zip(triangle.index())
+            .map(|((i, segment), label)| {
+                let exposure = exposures
+                    .as_ref()
+                    .zip(exposure)
+                    .map(|(segments, name)| (&segments[i], name));
+                LatestDiagonal::from_segment(triangle.origin_grain(), segment, exposure)
+                    .map_err(|e| labelled(keyed, label, e))
+            })
+            .collect::<Result<_>>()?;
+        Ok(Self {
+            key_names: triangle.key_names().to_vec(),
+            labels: triangle.index().to_vec(),
+            diagonals,
+        })
+    }
+
+    /// The diagonals with an exposure per row, in the order of the rows:
+    /// the segments in their (label) order and, within one, its origins in
+    /// the order given. Each finite and positive.
+    pub fn with_exposure(mut self, exposure: &[f64]) -> Result<Self> {
+        let n: usize = self.diagonals.iter().map(|d| d.origins.len()).sum();
+        check_length(EXPOSURE, n, exposure.len())?;
+        let keyed = !self.key_names.is_empty();
+        let mut start = 0;
+        let mut diagonals = Vec::with_capacity(self.diagonals.len());
+        for (diagonal, label) in self.diagonals.into_iter().zip(&self.labels) {
+            let end = start + diagonal.origins.len();
+            diagonals.push(
+                diagonal
+                    .with_exposure(&exposure[start..end])
+                    .map_err(|e| labelled(keyed, label, e))?,
+            );
+            start = end;
+        }
+        self.diagonals = diagonals;
+        Ok(self)
+    }
+
+    /// The diagonals with `rule` for origins older than the pattern's end,
+    /// in every segment (decision 18).
+    pub fn with_past_pattern_end(mut self, rule: PastPatternEnd) -> Self {
+        for d in &mut self.diagonals {
+            d.past_pattern_end = rule;
+        }
+        self
+    }
+
+    /// Names of the key columns; empty without keys.
+    pub fn key_names(&self) -> &[String] {
+        &self.key_names
+    }
+
+    /// Label of each segment, in order.
+    pub fn labels(&self) -> &[Label] {
+        &self.labels
+    }
+
+    /// Each segment's diagonal, following `labels`.
+    pub fn diagonals(&self) -> &[LatestDiagonal] {
+        &self.diagonals
+    }
+
+    /// Number of segments.
+    pub fn len(&self) -> usize {
+        self.diagonals.len()
+    }
+
+    /// Whether there are no segments (never, once built).
+    pub fn is_empty(&self) -> bool {
+        self.diagonals.is_empty()
+    }
+
+    /// The diagonal of the segment labelled `label`.
+    pub fn get(&self, label: &Label) -> Option<&LatestDiagonal> {
+        let i = self.labels.iter().position(|l| l == label)?;
+        Some(&self.diagonals[i])
+    }
+
+    /// Each segment's label and diagonal, in order.
+    pub fn iter(&self) -> impl Iterator<Item = (&Label, &LatestDiagonal)> {
+        self.labels.iter().zip(&self.diagonals)
+    }
+
+    /// Position of the one segment whose keys have the given values, as
+    /// [`SegmentFits::position`] chooses one.
+    pub fn position(&self, keys: &[(&str, &str)]) -> Result<usize> {
+        find_segment(&self.key_names, &self.labels, keys)
+    }
+
+    /// The one segment chosen as in [`position`](Self::position), with the
+    /// same key names.
+    pub fn segment(&self, keys: &[(&str, &str)]) -> Result<Self> {
+        let i = self.position(keys)?;
+        Ok(Self {
+            key_names: self.key_names.clone(),
+            labels: vec![self.labels[i].clone()],
+            diagonals: vec![self.diagonals[i].clone()],
+        })
+    }
+
+    /// The origins' grain, the same in every segment.
+    pub fn origin_grain(&self) -> Grain {
+        self.diagonals[0].origin_grain
+    }
+
+    /// The latest month any origin of any segment is valued at, to which
+    /// Cape Cod's `fit_diagonal_segments` trends every segment.
+    pub fn valuation(&self) -> Month {
+        self.diagonals
+            .iter()
+            .map(LatestDiagonal::valuation)
+            .max()
+            .expect("diagonals have a segment")
+    }
+
+    /// The development of each segment, from a segment of `source` frozen
+    /// by [`ChainLadderFit::to_chain_ladder`], keyed by the diagonals'
+    /// labels, for a method's `fit_diagonal_segments_from` (decision 19).
+    /// [`SegmentMap::ByLabel`] takes the source segment of the same label,
+    /// or the only one of a single-segment source for every segment; the
+    /// source's other segments are not used. [`SegmentMap::Pairs`] names
+    /// the source segment of each target. Each error names the label.
+    pub fn developments(
+        &self,
+        source: &SegmentFits<ChainLadderFit>,
+        map: &SegmentMap,
+    ) -> Result<SegmentFits<ChainLadder>> {
+        let find = |labels: &[Label], label: &Label| labels.iter().position(|l| l == label);
+        let positions: Vec<usize> = match map {
+            SegmentMap::ByLabel if source.len() == 1 => vec![0; self.len()],
+            SegmentMap::ByLabel => {
+                if source.key_names != self.key_names {
+                    return Err(invalid(format!(
+                        "the source has keys [{}] and the diagonals [{}]: map the segments \
+                         with SegmentMap::Pairs",
+                        source.key_names.join(", "),
+                        self.key_names.join(", ")
+                    )));
+                }
+                self.labels
+                    .iter()
+                    .map(|l| {
+                        find(&source.labels, l).ok_or_else(|| {
+                            invalid(format!(
+                                "segment {l} of the diagonals has no segment of the same \
+                                 label in the source"
+                            ))
+                        })
+                    })
+                    .collect::<Result<_>>()?
+            }
+            SegmentMap::Pairs(pairs) => {
+                let mut chosen: Vec<Option<usize>> = vec![None; self.len()];
+                for (target, from) in pairs {
+                    let t = find(&self.labels, target).ok_or_else(|| {
+                        invalid(format!(
+                            "the map's target {target} is not a segment of the diagonals"
+                        ))
+                    })?;
+                    if chosen[t].is_some() {
+                        return Err(invalid(format!("the map lists the target {target} twice")));
+                    }
+                    let s = find(&source.labels, from).ok_or_else(|| {
+                        invalid(format!(
+                            "the map's source {from} is not a segment of the source"
+                        ))
+                    })?;
+                    chosen[t] = Some(s);
+                }
+                chosen
+                    .iter()
+                    .zip(&self.labels)
+                    .map(|(c, l)| {
+                        c.ok_or_else(|| {
+                            invalid(format!(
+                                "the map gives segment {l} of the diagonals no source"
+                            ))
+                        })
+                    })
+                    .collect::<Result<_>>()?
+            }
+        };
+        Ok(SegmentFits {
+            key_names: self.key_names.clone(),
+            labels: self.labels.clone(),
+            fits: positions
+                .into_iter()
+                .map(|i| source.fits[i].to_chain_ladder())
+                .collect(),
+        })
+    }
+
+    /// `fit` of each segment, labelled as `fit_segments` labels a failure.
+    fn fit_each<T>(
+        &self,
+        mut fit: impl FnMut(&LatestDiagonal) -> Result<T>,
+    ) -> Result<SegmentFits<T>> {
+        collect_labelled(
+            &self.key_names,
+            &self.labels,
+            self.diagonals.iter().map(&mut fit),
+        )
+    }
+
+    /// `fit` of each segment with its chain ladder from `development`, when
+    /// the method's own `chain_ladder` sets no development of its own.
+    fn fit_each_from<T>(
+        &self,
+        chain_ladder: &ChainLadder,
+        development: &SegmentFits<ChainLadder>,
+        mut fit: impl FnMut(&ChainLadder, &LatestDiagonal) -> Result<T>,
+    ) -> Result<SegmentFits<T>> {
+        let d = &chain_ladder.development;
+        if d.pattern.is_some()
+            || !chain_ladder.tail.is_none()
+            || d.n_periods.is_some()
+            || d.drop_high > 0
+            || d.drop_low > 0
+        {
+            return Err(invalid(
+                "the development comes from the source fit: give the method no pattern, no \
+                 tail and no link ratio exclusions",
+            ));
+        }
+        if development.key_names != self.key_names || development.labels != self.labels {
+            return Err(invalid("the developments' segments are not the diagonals'"));
+        }
+        collect_labelled(
+            &self.key_names,
+            &self.labels,
+            self.diagonals
+                .iter()
+                .zip(&development.fits)
+                .map(|(diagonal, cl)| fit(cl, diagonal)),
+        )
+    }
+}
+
+impl ChainLadder {
+    /// [`fit_diagonal`](Self::fit_diagonal) on every segment (decision 19).
+    pub fn fit_diagonal_segments(
+        &self,
+        diagonals: &LatestDiagonals,
+    ) -> Result<SegmentFits<ChainLadderFit>> {
+        diagonals.fit_each(|d| self.fit_diagonal(d))
+    }
+
+    /// [`fit_diagonal`](Self::fit_diagonal) on every segment, each with its
+    /// development from `development` (from
+    /// [`LatestDiagonals::developments`]), whose segments must be the
+    /// diagonals'. The method itself must set no pattern, tail or link
+    /// ratio exclusion: the development is the source's.
+    pub fn fit_diagonal_segments_from(
+        &self,
+        diagonals: &LatestDiagonals,
+        development: &SegmentFits<ChainLadder>,
+    ) -> Result<SegmentFits<ChainLadderFit>> {
+        diagonals.fit_each_from(self, development, |cl, d| cl.fit_diagonal(d))
+    }
+}
+
+impl ExpectedLoss {
+    /// [`fit_diagonal`](Self::fit_diagonal) on every segment; see
+    /// [`ChainLadder::fit_diagonal_segments`].
+    pub fn fit_diagonal_segments(
+        &self,
+        diagonals: &LatestDiagonals,
+    ) -> Result<SegmentFits<ExpectedLossFit>> {
+        diagonals.fit_each(|d| self.fit_diagonal(d))
+    }
+
+    /// The expected loss method on every segment with each segment's
+    /// development from `development`, and this method's apriori; see
+    /// [`ChainLadder::fit_diagonal_segments_from`].
+    pub fn fit_diagonal_segments_from(
+        &self,
+        diagonals: &LatestDiagonals,
+        development: &SegmentFits<ChainLadder>,
+    ) -> Result<SegmentFits<ExpectedLossFit>> {
+        diagonals.fit_each_from(&self.chain_ladder, development, |cl, d| {
+            Self {
+                chain_ladder: cl.clone(),
+                ..self.clone()
+            }
+            .fit_diagonal(d)
+        })
+    }
+}
+
+impl BornhuetterFerguson {
+    /// [`fit_diagonal`](Self::fit_diagonal) on every segment; see
+    /// [`ChainLadder::fit_diagonal_segments`].
+    pub fn fit_diagonal_segments(
+        &self,
+        diagonals: &LatestDiagonals,
+    ) -> Result<SegmentFits<ExpectedLossFit>> {
+        diagonals.fit_each(|d| self.fit_diagonal(d))
+    }
+
+    /// Bornhuetter-Ferguson on every segment with each segment's
+    /// development from `development`, and this method's apriori; see
+    /// [`ChainLadder::fit_diagonal_segments_from`].
+    pub fn fit_diagonal_segments_from(
+        &self,
+        diagonals: &LatestDiagonals,
+        development: &SegmentFits<ChainLadder>,
+    ) -> Result<SegmentFits<ExpectedLossFit>> {
+        diagonals.fit_each_from(&self.chain_ladder, development, |cl, d| {
+            Self {
+                chain_ladder: cl.clone(),
+                ..self.clone()
+            }
+            .fit_diagonal(d)
+        })
+    }
+}
+
+impl Benktander {
+    /// [`fit_diagonal`](Self::fit_diagonal) on every segment; see
+    /// [`ChainLadder::fit_diagonal_segments`].
+    pub fn fit_diagonal_segments(
+        &self,
+        diagonals: &LatestDiagonals,
+    ) -> Result<SegmentFits<ExpectedLossFit>> {
+        diagonals.fit_each(|d| self.fit_diagonal(d))
+    }
+
+    /// Benktander on every segment with each segment's development from
+    /// `development`, and this method's apriori and `n_iters`; see
+    /// [`ChainLadder::fit_diagonal_segments_from`].
+    pub fn fit_diagonal_segments_from(
+        &self,
+        diagonals: &LatestDiagonals,
+        development: &SegmentFits<ChainLadder>,
+    ) -> Result<SegmentFits<ExpectedLossFit>> {
+        diagonals.fit_each_from(&self.chain_ladder, development, |cl, d| {
+            Self {
+                chain_ladder: cl.clone(),
+                ..self.clone()
+            }
+            .fit_diagonal(d)
+        })
+    }
+}
+
+impl CapeCod {
+    /// Cape Cod on every segment, each trended to one valuation, the latest
+    /// month any origin of any segment is valued at
+    /// ([`LatestDiagonals::valuation`]), as [`CapeCod::fit_segments`]
+    /// trends every segment to the triangle's valuation (decision 19). With
+    /// one segment this is [`fit_diagonal`](Self::fit_diagonal).
+    pub fn fit_diagonal_segments(
+        &self,
+        diagonals: &LatestDiagonals,
+    ) -> Result<SegmentFits<CapeCodFit>> {
+        let valuation = diagonals.valuation();
+        diagonals.fit_each(|d| self.fit_diagonal_at(d, valuation))
+    }
+
+    /// Cape Cod on every segment with each segment's development from
+    /// `development`, and this method's trend and decay, trended as
+    /// [`fit_diagonal_segments`](Self::fit_diagonal_segments) trends; see
+    /// [`ChainLadder::fit_diagonal_segments_from`].
+    pub fn fit_diagonal_segments_from(
+        &self,
+        diagonals: &LatestDiagonals,
+        development: &SegmentFits<ChainLadder>,
+    ) -> Result<SegmentFits<CapeCodFit>> {
+        let valuation = diagonals.valuation();
+        diagonals.fit_each_from(&self.chain_ladder, development, |cl, d| {
+            Self {
+                chain_ladder: cl.clone(),
+                ..self.clone()
+            }
+            .fit_diagonal_at(d, valuation)
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn diagonal(grain: Grain, latest: &[f64]) -> LatestDiagonal {
+        let origins: Vec<Month> = (0..latest.len())
+            .map(|k| Month::january(2024).add_months(-(k as i64) * i64::from(grain.months())))
+            .collect();
+        let ages: Vec<Lag> = (0..latest.len())
+            .map(|k| (k as Lag + 1) * grain.months())
+            .collect();
+        LatestDiagonal::new(grain, &origins, &ages, latest).unwrap()
+    }
+
+    #[test]
+    fn new_sorts_the_segments_and_checks_their_labels() {
+        let d = |v: f64| diagonal(Grain::Year, &[v, v]);
+        let diagonals = LatestDiagonals::new(
+            vec!["lob".into()],
+            vec![(Label::from("b"), d(2.0)), (Label::from("a"), d(1.0))],
+        )
+        .unwrap();
+        assert_eq!(diagonals.labels(), [Label::from("a"), Label::from("b")]);
+        assert_eq!(diagonals.diagonals()[0].latest(), [1.0, 1.0]);
+        assert_eq!(diagonals.position(&[("lob", "b")]), Ok(1));
+        let twice = LatestDiagonals::new(
+            vec!["lob".into()],
+            vec![(Label::from("a"), d(2.0)), (Label::from("a"), d(1.0))],
+        );
+        assert!(matches!(twice, Err(Error::Diagonal(m)) if m.contains("given twice")));
+        let parts = LatestDiagonals::new(vec!["lob".into()], vec![(Label::default(), d(1.0))]);
+        assert!(matches!(parts, Err(Error::Diagonal(m)) if m.contains("0 key values for 1 keys")));
+        let grains = LatestDiagonals::new(
+            vec!["lob".into()],
+            vec![
+                (Label::from("a"), d(1.0)),
+                (Label::from("b"), diagonal(Grain::Quarter, &[1.0])),
+            ],
+        );
+        assert!(matches!(grains, Err(Error::Diagonal(m)) if m.contains("another grain")));
+        assert_eq!(
+            LatestDiagonals::new(Vec::new(), Vec::new()),
+            Err(Error::Empty)
+        );
+    }
+
+    #[test]
+    fn exposure_and_the_rule_reach_every_segment() {
+        let one = LatestDiagonals::from(diagonal(Grain::Year, &[1.0, 2.0]));
+        assert_eq!(one.labels(), [Label::default()]);
+        assert!(one.key_names().is_empty());
+        let two = LatestDiagonals::new(
+            vec!["lob".into()],
+            vec![
+                (Label::from("a"), diagonal(Grain::Year, &[1.0, 2.0])),
+                (Label::from("b"), diagonal(Grain::Year, &[3.0])),
+            ],
+        )
+        .unwrap()
+        .with_past_pattern_end(PastPatternEnd::Tail);
+        assert!(
+            two.diagonals()
+                .iter()
+                .all(|d| d.past_pattern_end() == PastPatternEnd::Tail)
+        );
+        let set = two.clone().with_exposure(&[10.0, 20.0, 30.0]).unwrap();
+        assert_eq!(set.diagonals()[1].exposure(), Some([30.0].as_slice()));
+        assert!(matches!(
+            two.clone().with_exposure(&[10.0, 20.0]),
+            Err(Error::LengthMismatch { .. })
+        ));
+        assert!(matches!(
+            two.with_exposure(&[10.0, 20.0, -1.0]),
+            Err(Error::InSegment { label, .. }) if label == "b"
+        ));
     }
 }
