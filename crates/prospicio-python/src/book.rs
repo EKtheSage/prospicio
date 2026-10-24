@@ -79,6 +79,11 @@ impl PyDealRun {
     /// ceded loss, commissions, brokerage and deductions, the amounts
     /// behind ``Tower.deal_ratios``, under the name ``name``.
     ///
+    /// Each year's premium is the deposit (or swing-rated) premium plus the
+    /// year's reinstatement premium from the tower, pro rata as to amount
+    /// and, where the layer says so, as to time; ``reinstatement_premium=False``
+    /// leaves it out, so the premium is the deposit in every year.
+    ///
     /// >>> from prospicio.pricing import DealRun
     /// >>> from prospicio.reinsurance import Layer, Tower
     /// >>> cover = (Layer.stop_loss("cover", 120.0, 0.0)
@@ -87,18 +92,33 @@ impl PyDealRun {
     /// >>> run = DealRun.from_tower("cover", tower, tower.apply_annual([40.0, 150.0]), "cover")
     /// >>> run.n_sims
     /// 2
+    /// >>> from prospicio.aggregate import EventSet
+    /// >>> cat = Layer("cat", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0])
+    /// >>> tower = Tower([cat])
+    /// >>> result = tower.apply(EventSet.from_years([[5.0], [15.0]]))
+    /// >>> DealRun.from_tower("cat", tower, result, "cat").premium
+    /// [2.0, 3.0]
+    /// >>> DealRun.from_tower("cat", tower, result, "cat", reinstatement_premium=False).premium
+    /// [2.0, 2.0]
     #[staticmethod]
-    #[pyo3(signature = (name, tower, result, layer, *, inception = 0))]
+    #[pyo3(signature = (name, tower, result, layer, *, inception = 0, reinstatement_premium = true))]
     fn from_tower(
         name: &str,
         tower: PyRef<'_, PyTower>,
         result: PyRef<'_, PyPredictiveDistribution>,
         layer: &str,
         inception: usize,
+        reinstatement_premium: bool,
     ) -> PyResult<Self> {
-        let inner = DealRun::from_tower(name, &tower.inner, &result.inner, layer)
-            .map_err(to_py)?
-            .inception(inception);
+        let inner = DealRun::from_tower_with(
+            name,
+            &tower.inner,
+            &result.inner,
+            layer,
+            reinstatement_premium,
+        )
+        .map_err(to_py)?
+        .inception(inception);
         Ok(PyDealRun { inner })
     }
 
@@ -168,6 +188,18 @@ impl PyDealRun {
     #[getter]
     fn n_sims(&self) -> usize {
         self.inner.n_sims()
+    }
+
+    /// The premium in each simulation.
+    #[getter]
+    fn premium(&self) -> Vec<f64> {
+        self.inner.premium().to_vec()
+    }
+
+    /// The loss in each simulation.
+    #[getter]
+    fn loss(&self) -> Vec<f64> {
+        self.inner.loss().to_vec()
     }
 
     /// The inception month.

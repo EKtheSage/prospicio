@@ -8544,11 +8544,16 @@ class DealRun:
     def __new__(cls, /, name: str, premium: Sequence[float], loss: Sequence[float], *, deductions: dict |None = None, inception: int = 0) -> DealRun: ...
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0) -> DealRun:
+    def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0, reinstatement_premium: bool = True) -> DealRun:
         """
         A layer's or deal's run from a result of ``tower``: its premium,
         ceded loss, commissions, brokerage and deductions, the amounts
         behind ``Tower.deal_ratios``, under the name ``name``.
+        
+        Each year's premium is the deposit (or swing-rated) premium plus the
+        year's reinstatement premium from the tower, pro rata as to amount
+        and, where the layer says so, as to time; ``reinstatement_premium=False``
+        leaves it out, so the premium is the deposit in every year.
         
         >>> from prospicio.pricing import DealRun
         >>> from prospicio.reinsurance import Layer, Tower
@@ -8558,11 +8563,24 @@ class DealRun:
         >>> run = DealRun.from_tower("cover", tower, tower.apply_annual([40.0, 150.0]), "cover")
         >>> run.n_sims
         2
+        >>> from prospicio.aggregate import EventSet
+        >>> cat = Layer("cat", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0])
+        >>> tower = Tower([cat])
+        >>> result = tower.apply(EventSet.from_years([[5.0], [15.0]]))
+        >>> DealRun.from_tower("cat", tower, result, "cat").premium
+        [2.0, 3.0]
+        >>> DealRun.from_tower("cat", tower, result, "cat", reinstatement_premium=False).premium
+        [2.0, 2.0]
         """
     @property
     def inception(self, /) -> int:
         """
         The inception month.
+        """
+    @property
+    def loss(self, /) -> list[float]:
+        """
+        The loss in each simulation.
         """
     @property
     def n_sims(self, /) -> int:
@@ -8573,6 +8591,11 @@ class DealRun:
     def name(self, /) -> str:
         """
         The deal's name.
+        """
+    @property
+    def premium(self, /) -> list[float]:
+        """
+        The premium in each simulation.
         """
     def with_cashflows(self, /, terms: CashflowTerms, cashflows: Cashflows) -> DealRun:
         """

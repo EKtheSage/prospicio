@@ -3428,7 +3428,7 @@ BookDeal <- new.env(parent = emptyenv())
 
 BookDeal$new <- function(name, premium, loss, names, deductions, outside, inception) .Call(wrap__BookDeal__new, name, premium, loss, names, deductions, outside, inception)
 
-BookDeal$from_tower <- function(name, tower, result, layer, inception) .Call(wrap__BookDeal__from_tower, name, tower, result, layer, inception)
+BookDeal$from_tower <- function(name, tower, result, layer, inception, reinstatement_premium) .Call(wrap__BookDeal__from_tower, name, tower, result, layer, inception, reinstatement_premium)
 
 BookDeal$with_inception <- function(inception) .Call(wrap__BookDeal__with_inception, self, inception)
 
@@ -3441,6 +3441,10 @@ BookDeal$name <- function() .Call(wrap__BookDeal__name, self)
 BookDeal$n_sims <- function() .Call(wrap__BookDeal__n_sims, self)
 
 BookDeal$inception <- function() .Call(wrap__BookDeal__inception, self)
+
+BookDeal$premium <- function() .Call(wrap__BookDeal__premium, self)
+
+BookDeal$loss <- function() .Call(wrap__BookDeal__loss, self)
 
 #' @export
 `$.BookDeal` <- function (self, name) { func <- BookDeal[[name]]; environment(func) <- environment(); func }

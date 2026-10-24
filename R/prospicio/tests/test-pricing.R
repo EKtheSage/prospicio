@@ -524,6 +524,15 @@ stopifnot(inherits(try(deal_book(list(a, a)), silent = TRUE), "try-error"),
           inherits(try(book_distribution(book, "loss", 90, tail = "middle"), silent = TRUE),
                    "try-error"),
           identical(book_select(book, "b")$ptr$names(), "b"))
+# A run from a tower takes each year's reinstatement premium (#595).
+tw <- reinsurance_tower(list(xol_layer("cat", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))))
+res <- apply_tower(tw, event_set_from_long(c(1, 2, 3, 3, 4, 4, 4), c(5, 15, 22, 12, 40, 40, 40), 4))
+run <- deal_run_from_tower("cat", tw, res, "cat")
+near(run$ptr$premium(), c(2, 3, 4.2, 5))
+near(run$ptr$premium() - 2, draw_matrix(res)[, 4])
+deposit <- deal_run_from_tower("cat", tw, res, "cat", reinstatement_premium = FALSE)
+stopifnot(identical(deposit$ptr$premium(), rep(2, 4)),
+          identical(deposit$ptr$loss(), run$ptr$loss()))
 flows_a <- matrix(c(-10, 0, 10.1), 4, 3, byrow = TRUE)
 a <- deal_run("a", rep(100, 4), c(40, 80, 20, 160), flows = flows_a, funded = rep(0, 4),
               opening = rep(10, 4))

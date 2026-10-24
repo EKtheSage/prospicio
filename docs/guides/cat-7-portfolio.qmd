@@ -141,9 +141,11 @@ items: premium, loss, ceding_commission, total_deductions, nmbf, margin
 ```
 
 `book_summary()` gives the mean of every item by deal and for the book, with
-its ratio to the mean premium. The margin here is premium less loss less the
-deductions (only `corran_qs` has one, its ceding commission). Larkspur's own
-expenses are not in the data, so the margin is before them.
+its ratio to the mean premium. The premium is each year's deposit plus the
+reinstatement premium that year's losses pay (section 3). The margin is
+premium less loss less the deductions (only `corran_qs` has one, its ceding
+commission). Larkspur's own expenses are not in the data, so the margin is
+before them.
 
 ```{r}
 s <- book_summary(book)
@@ -159,50 +161,39 @@ for (d in c(deals, "total")) {
 
 ```text
 deal          premium    loss  deduct  margin     LR
-alder_cat_1     1.800   0.823   0.000   0.977  0.457
-alder_cat_2     1.000   0.416   0.000   0.584  0.416
-bracken_cat     1.750   0.685   0.000   1.065  0.391
+alder_cat_1     1.921   0.823   0.000   1.098  0.428
+alder_cat_2     1.020   0.416   0.000   0.604  0.408
+bracken_cat     1.846   0.685   0.000   1.161  0.371
 bracken_agg     0.450   0.162   0.000   0.288  0.360
 corran_qs       3.000   1.202   0.750   1.048  0.401
-total           8.000   3.289   0.750   3.961  0.411
+total           8.237   3.289   0.750   4.198  0.399
 ```
 
-## 3. Reinstatement premium is not in the book
+## 3. Reinstatement premium in the book
 
-`deal_run_from_tower()` takes a layer's deposit premium. The reinstatement
-premium that the tower computes for the two Alder layers and `bracken_cat`
-stays behind: `alder_cat_1`'s premium is the same 1.8 in every year, although
-a year that reaches the layer pays more (#595).
-
-Until then, build those runs by hand from the tower's result: premium in year
-`j` is the deposit plus that year's reinstatement premium. Losses do not
-change, so the capital below does not change either. Only the premium and the
-margin do.
+`deal_run_from_tower()` adds each year's reinstatement premium to the layer's
+deposit premium. The tower computes that premium for the two Alder layers and
+`bracken_cat`, pro rata as to amount, so `alder_cat_1`'s premium is 1.8 in a
+quiet year and more in a year that reaches the layer.
+`reinstatement_premium = FALSE` keeps the deposit alone, for comparison.
+Losses do not change, so the capital below does not change either. Only the
+premium and the margin do.
 
 ```{r}
-deposit <- marginal(amounts, c("premium", "alder_cat_1"))@draws
-cat(sprintf("alder_cat_1 book premium: min %.3f, max %.3f\n", min(deposit), max(deposit)))
-
-# The deal's run with each year's reinstatement premium added to its deposit.
-with_reinstatement_premium <- function(name) {
-  by_kind <- aggregate(results[[name]], keep = c("kind", "layer"))
-  rip <- marginal(by_kind, c("reinstatement_premium", name))
-  if (is.null(rip)) return(deal_run_from_tower(name, towers[[name]], results[[name]], name))
-  loss <- marginal(by_kind, c("ceded", name))@draws
-  c <- CONTRACTS[CONTRACTS$contract == name, ]
-  deal_run(name, contract_layer(c)@premium + rip@draws, loss)
-}
-
-book_rip <- deal_book(lapply(deals, with_reinstatement_premium))
-s_rip <- book_summary(book_rip)
+premium <- marginal(amounts, c("premium", "alder_cat_1"))@draws
+cat(sprintf("alder_cat_1 book premium: min %.3f, max %.3f\n", min(premium), max(premium)))
+deposit <- deal_book(lapply(deals, function(d) {
+  deal_run_from_tower(d, towers[[d]], results[[d]], d, reinstatement_premium = FALSE)
+}))
+s_dep <- book_summary(deposit)
 for (d in deals) {
-  added <- item_mean(s_rip, d, "premium") - item_mean(s, d, "premium")
+  added <- item_mean(s, d, "premium") - item_mean(s_dep, d, "premium")
   cat(sprintf("%-12s reinstatement premium %.4f\n", d, added))
 }
 ```
 
 ```text
-alder_cat_1 book premium: min 1.800, max 1.800
+alder_cat_1 book premium: min 1.800, max 3.600
 alder_cat_1  reinstatement premium 0.1207
 alder_cat_2  reinstatement premium 0.0203
 bracken_cat  reinstatement premium 0.0959
@@ -330,13 +321,13 @@ less the deductions (Corran's ceding commission).
 pp <- price_portfolio(loss, distortion("tvar", 0.99), cost_of_capital = 0.10)
 cat(sprintf("book: EL %.3f, premium %.3f, capital %.3f\n", pp$total$expected_loss,
             pp$total$premium, pp$total$capital))
-kept <- function(d) item_mean(s_rip, d, "premium") - item_mean(s_rip, d, "total_deductions")
+kept <- function(d) item_mean(s, d, "premium") - item_mean(s, d, "total_deductions")
 cat(sprintf("%-12s%9s%8s%9s%8s\n", "deal", "charged", "kept", "in book", "alone"))
 for (k in seq_along(deals)) {
-  cat(sprintf("%-12s%9.3f%8.3f%9.3f%8.3f\n", deals[k], item_mean(s, deals[k], "premium"), kept(deals[k]),
+  cat(sprintf("%-12s%9.3f%8.3f%9.3f%8.3f\n", deals[k], item_mean(s_dep, deals[k], "premium"), kept(deals[k]),
               pp$by_component$premium[k], pp$by_component$standalone_premium[k]))
 }
-cat(sprintf("%-12s%9.3f%8.3f%9.3f\n", "book", item_mean(s, "total", "premium"), kept("total"),
+cat(sprintf("%-12s%9.3f%8.3f%9.3f\n", "book", item_mean(s_dep, "total", "premium"), kept("total"),
             pp$total$premium))
 cat(sprintf("premium saved by diversification %.3f\n", pp$diversification))
 ```
@@ -384,7 +375,7 @@ for (d in deals) {
   el <- dist$marginal["Mean", d]
   da <- dist$marginal["TVaR 99", d]
   p <- (el + r * da) / (1 + r)
-  cat(sprintf("%-12s%7.3f%8.3f%12.3f%9.3f\n", d, el, da, p, item_mean(s, d, "premium")))
+  cat(sprintf("%-12s%7.3f%8.3f%12.3f%9.3f\n", d, el, da, p, item_mean(s_dep, d, "premium")))
 }
 ```
 
@@ -408,7 +399,7 @@ marginal and the book falls short.
 
 A risk-adjusted return on capital (RAROC) sets each deal's margin against the
 capital allocated to it. Here capital is allocated assets less the deal's premium, as above, and the
-margin includes the reinstatement premium from the hand-built runs. There is
+margin includes the reinstatement premium of section 3. There is
 no expense line, so this is a return before Larkspur's own costs. The library
 has no output for this (#589).
 
@@ -417,13 +408,13 @@ cat(sprintf("%-12s%8s%9s%8s\n", "deal", "margin", "capital", "return"))
 for (k in seq_along(deals)) {
   d <- deals[k]
   a <- bc$allocated[k]
-  margin <- item_mean(s_rip, d, "margin")
-  premium <- item_mean(s_rip, d, "premium")
+  margin <- item_mean(s, d, "margin")
+  premium <- item_mean(s, d, "premium")
   ret <- if (a > premium) sprintf("%.1f%%", 100 * margin / (a - premium)) else "none"
   cat(sprintf("%-12s%8.3f%9.3f%8s\n", d, margin, a - premium, ret))
 }
-margin <- item_mean(s_rip, "total", "margin")
-premium <- item_mean(s_rip, "total", "premium")
+margin <- item_mean(s, "total", "margin")
+premium <- item_mean(s, "total", "premium")
 cat(sprintf("%-12s%8.3f%9.3f%8s\n", "book", margin, alloc$total - premium,
             sprintf("%.1f%%", 100 * margin / (alloc$total - premium))))
 ```
@@ -475,7 +466,6 @@ checkout that turns line endings into CRLF gives a different one.
 
 ## What is missing
 
-- reinstatement premium in `deal_run_from_tower()` (#595)
 - the marginal price of a new contract in one call (#588)
 - a deal's and the book's return on allocated or marginal capital
   (#589)
