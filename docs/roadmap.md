@@ -597,7 +597,10 @@ what it is aiming for by v1.0.
   Iman–Conover); link-ratio exclusions (the latest periods, high and low
   dropped) and the geometric average; the ODP GLM (the analytic
   prediction error, coefficients and residual diagnostics); the Lomax,
-  truncation from above, grouped losses and minimum-distance fits.
+  truncation from above, grouped losses and minimum-distance fits; a
+  latest diagonal (a bordereau) projected with a selected pattern by the
+  chain ladder and the expected-loss methods, patterns averaged over
+  origin periods and origins past the pattern's end (#544).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
      form (`xll.md`, parity plan): all eight groups done (the eighth,

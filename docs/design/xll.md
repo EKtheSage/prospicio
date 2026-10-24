@@ -40,6 +40,11 @@ category of Insert Function:
 | `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson |
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander (iterated BF) |
 | `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod (Stanard-Buhlmann) |
+| `PRO.DIAG.CL(origins, ages, latest, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | A latest diagonal (a bordereau) projected with a selected pattern by the chain ladder: Origin, Age, Latest, CDF, Ultimate, Reserve, and a total row (decision 39) |
+| `PRO.DIAG.EL(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])`, `PRO.DIAG.BF(...)`, same arguments | The expected loss method and Bornhuetter-Ferguson on a latest diagonal: Origin, Age, Exposure, Latest, CDF, A priori, Ultimate, Reserve, and a total row |
+| `PRO.DIAG.BENKTANDER(origins, ages, latest, exposure, apriori, pattern, [iterations], [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Benktander on a latest diagonal |
+| `PRO.DIAG.CAPECOD(origins, ages, latest, exposure, pattern, [trend], [decay], [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Cape Cod on a latest diagonal, trended to its latest valuation |
+| `PRO.PATTERN.AVERAGE(pattern_ages, pattern, pattern_origin, [grain], [kind])` | A pattern measured on one origin basis averaged to a coarser one: Age, Percent developed and CDF for every month |
 | `PRO.VERSION()` | The prospicio version the add-in was built from |
 | `PRO.SEV.CDF(x, family, p1, p2, [p3])`, `PRO.SEV.SURVIVAL(...)` | A severity's distribution or survival function at each `x` |
 | `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Its quantile (VaR) at each probability |
@@ -138,6 +143,39 @@ ratio applied; Cape Cod's detrended estimate), Ultimate and Reserve, and a
 total row. On GenIns with R's `?ClarkCapeCod` premium all 28 totals in
 `validation/reference/reserving_expected_loss_python.csv`
 (chainladder-python 0.10.1) match.
+
+The diagonal functions (decision 39) wrap `LatestDiagonal` and the
+methods' `fit_diagonal` (`reserving-v02.md` decisions 15 to 18).
+`origins` is a year (a whole number below 10,000) or an Excel date per
+origin, floored to `grain` (`"year"`, the default, `"half"`,
+`"quarter"` or `"month"`); exactly one of `ages` (months, one per
+origin) and `valuation` (one Excel date) is given. `latest` is the
+latest cumulative value per origin, 0 for nothing reported, and a blank
+is an error. `pattern` holds the selected values, read as `kind`
+(`"ldf"`, the default, `"cdf"` or `"percent"`), at `pattern_ages`
+(12, 24, ... by cell if omitted); it is fully selected, so there is no
+`weight`, and no `average` or `sigma`, since a diagonal has no link
+ratios. `tail` is read as for the chain ladder, at decay 0.5.
+`pattern_origin` names the origin basis the pattern was measured on
+(`"month"` for a pattern of accident months) and averages it to
+`grain` (`SelectedPattern::averaged_over_origins`); an estimated tail on
+the averaged pattern is fitted on its monthly factors, so a constant tail
+is the safer choice there. `past_end` says how an origin older than the
+pattern's end is developed: `"reject"` (the default, an error),
+`"none"` (a factor of 1, with no tail; a cumulative level other than
+100% is then rescaled to 100% for every origin) or `"tail"` (the tail
+spread from the pattern's end at one step per origin period). The
+exhibit lists the origins oldest first over every period, whatever the
+input order, labelled by year for accident years and as text
+(`2024Q3`) for finer grains. The hand diagonal of
+`validation/tests/reserving_latest_diagonal.rs` under every method,
+chainladder-python 0.10.1's `DevelopmentConstant` on GenIns (the chain
+ladder) and the CAS workers' compensation triangle (Bornhuetter-Ferguson,
+Benktander, Cape Cod) in
+`validation/reference/reserving_latest_diagonal_python.csv` at 1e-9, the
+past-end, finer-grid and averaged-pattern cases of the Reserving lane's
+validation, and each exhibit against the direct `prospicio_reserving`
+fit to the bit are checked in `tests/latest_diagonal.rs`.
 
 The severity and pricing functions build a `prospicio_prob::Dist` (as a
 `SeverityDist`, so every family has exact limited moments) and wrap
@@ -646,7 +684,7 @@ real Excel.
     each, across the other direction from the x. Both directions the same
     way is ambiguous and is an error, and a tabulated curve stays one
     curve (its parameters are ranges by nature). `harness/make_workbook.py`
-    now calls all 96 functions (97 with decision 38's), each with a TRUE/FALSE check beside it;
+    now calls all 96 functions (97 with decision 38's, 103 with decision 39's), each with a TRUE/FALSE check beside it;
     the twelve it left out are on the sheets of their area and a new
     "Mack draws" sheet, and the two P95 checks on the ODP sheet read the
     P95 column, not P90.
@@ -679,6 +717,59 @@ real Excel.
     Monte Carlo error and the tight limit at the chain ladder's ultimates
     against `PRO.BF`'s reserve. `BayesBf` (EVW's Model 3.1) stays
     without a sheet form; its one use, EVW parity, is a library check.
+39. **A latest diagonal is projected by five functions, one per method**
+    (#544, the Excel part; `reserving-v02.md` decisions 15 to 18).
+    `PRO.DIAG.CL`, `PRO.DIAG.EL`, `PRO.DIAG.BF`, `PRO.DIAG.BENKTANDER`
+    and `PRO.DIAG.CAPECOD` follow the triangle functions, one function
+    per method, not one function with a `method` argument: each method
+    has its own arguments (`apriori`, `iterations`, `trend` and
+    `decay`), and decision 21's single function is for views of one fit,
+    not for different methods. The required arguments come first
+    (`origins, ages, latest`, then `exposure` and `apriori` where the
+    method takes them, then `pattern`), the method's own optional
+    arguments right after `pattern`, then the seven shared optional
+    arguments in one order: `pattern_ages, kind, tail, grain, valuation,
+    past_end, pattern_origin`. `ages` and `valuation` are two arguments,
+    exactly one given, rather than one argument read by decision 19's
+    rule, since an age of 10,000 months is not a date. The pattern is
+    two ranges, values and ages, as `PRO.PAYOUT.PATTERN` takes times and
+    values; its ages default to 12, 24, ... by cell, as `selected`
+    reads them, so a row of `PRO.CL.LDF` feeds in directly. A blank
+    value skips its pair; a value with a blank age is an error. A blank
+    `latest` is an error (0 is a valid latest value, and a blank is
+    more often a range drawn too long). Origins are numbers (years or
+    dates); labels such as `"2024Q1"` are not read. The exhibit's
+    origin column is the year for accident years, so a lookup against a
+    column of years finds it, and the period's text for finer grains;
+    there is no `origins` labels argument, since the rows are the
+    crate's order, not the input's. The tail's decay is not exposed and
+    stays at 0.5, as on every sheet tail. The crate's error for an
+    origin past the pattern's end names its Rust settings, so the
+    add-in keeps its opening (the origin, its age and the pattern's
+    ages) and replaces its ending with the sheet's `past_end` and
+    `tail`, matched on the crate's text and pinned by a test, so a
+    change of wording in the reserving crate fails the add-in's tests
+    on purpose; the two settings errors (`"none"` with a tail,
+    `"tail"` without one) are checked in the add-in before the fit,
+    on the same conditions as the crate. `PRO.PATTERN.AVERAGE(pattern_ages,
+    pattern, pattern_origin, [grain], [kind])` shows decision 18's
+    conversion on the sheet (Age, Percent developed and CDF for every
+    month of the result); fed back as `pattern_ages` and `pattern` with
+    kind `"percent"`, it gives exactly what `pattern_origin` gives.
+    Decision 17's frozen pattern needs no function: `PRO.CL.LDF`
+    already gives what `ChainLadderFit::to_chain_ladder` holds (the
+    factors in use, then the tail factor), and the pattern stays in
+    cells (decision 4). Its first n - 1 cells as `pattern` (ages 12 to
+    108 by default) and its last as `tail` give
+    `to_chain_ladder().fit_diagonal(&LatestDiagonal::from_triangle(..))`
+    to the bit; the whole row with no tail gives the same ultimates for
+    every origin up to the pattern's end (to about 1e-14 with a tail),
+    since a factor at the oldest age runs one more period. A valuation
+    date gives a full triangle's ages, `PRO.TRI.LATEST` its latest
+    values. Pattern ages on `PRO.CL`, `PRO.MACK` and the expected-loss
+    functions on a triangle, so that a monthly pattern reaches them
+    (decision 18 item 4), are a follow-up: `selected` still reads 12,
+    24, ... by column.
 
 ## Parity plan
 
@@ -731,6 +822,10 @@ order, one small PR each, those already done struck through:
    prediction error and residual diagnostics~~; ~~the newer severity
    fits (the Lomax, truncation from above, grouped losses and
    minimum-distance fits)~~.
+9. A latest diagonal (#544, user, 2026-10-24): ~~a bordereau's
+   diagonal projected with a selected pattern by the chain ladder and
+   the expected-loss methods, patterns averaged over origin periods,
+   origins past the pattern's end~~ (decision 39).
 
 Left out unless asked: model fitting and prediction (GLM, GAM, boosting;
 Bayesian reserving models other than the ODP chain ladder, decision 21),
@@ -740,7 +835,7 @@ an XLL function (decision 4: no state) does not hold.
 
 ## Open (for the user)
 
-- **Next functions:** the parity plan's eight groups are done; further
+- **Next functions:** the parity plan's nine groups are done; further
   functions as the user asks (nested
   Archimedean copulas and vines, and the expected multi-year commission
   on the grid, are the nearest left out).

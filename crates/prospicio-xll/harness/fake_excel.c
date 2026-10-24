@@ -54,6 +54,8 @@ typedef XLOPER12 *(*Fn15)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER
 typedef XLOPER12 *(*Fn14)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                            XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                            XLOPER12 *, XLOPER12 *);
+typedef XLOPER12 *(*Fn11)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
+                           XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn10)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
                           XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *);
 typedef XLOPER12 *(*Fn9)(XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *, XLOPER12 *,
@@ -159,7 +161,7 @@ int main(int argc, char **argv) {
     int (*open)(void) = (int (*)(void))GetProcAddress(xll, "xlAutoOpen");
     Free12 free12 = (Free12)GetProcAddress(xll, "xlAutoFree12");
     check("xlAutoOpen returns 1", open && open() == 1);
-    check("ninety-seven functions registered", registered == 97);
+    check("one hundred and three functions registered", registered == 103);
 
     /* RAA as a Q argument: a 10 x 10 multi with Nil below the diagonal. */
     XLOPER12 cells[100], tri, missing, simple, tail;
@@ -726,6 +728,42 @@ int main(int argc, char **argv) {
     check("PRO.PROFIT.COMMISSION(50, 100, 0.25, 0.1) is 10",
           (pcm->xltype & 0xFFF) == xltypeNum && fabs(pcm->val.num - 10) < 1e-12);
     free12(pcm);
+
+    /* A latest diagonal (PRO.DIAG.CL): accident years 2019 to 2024 at 72
+     * down to 12 months, factors to ultimate at 12 to 72 months; the 2024
+     * ultimate is 150 x 12/7 (validation/tests/reserving_latest_diagonal.rs). */
+    static const double dg_latest[6] = {980, 860, 700, 520, 400, 150};
+    static const double dg_cdf[6] = {12.0 / 7.0, 1.3, 1.15, 1.07, 1.02, 1};
+    XLOPER12 dg_o[6], dg_a[6], dg_l[6], dg_p[6], dg_origins, dg_ages, dg_lat, dg_pat, dg_kind;
+    for (int k = 0; k < 6; k++) {
+        dg_o[k].xltype = dg_a[k].xltype = dg_l[k].xltype = dg_p[k].xltype = xltypeNum;
+        dg_o[k].val.num = 2019 + k;
+        dg_a[k].val.num = 72 - 12 * k;
+        dg_l[k].val.num = dg_latest[k];
+        dg_p[k].val.num = dg_cdf[k];
+    }
+    XLOPER12 *dg_args[4] = {&dg_origins, &dg_ages, &dg_lat, &dg_pat};
+    XLOPER12 *dg_cells[4] = {dg_o, dg_a, dg_l, dg_p};
+    for (int k = 0; k < 4; k++) {
+        dg_args[k]->xltype = xltypeMulti;
+        dg_args[k]->val.array.lparray = dg_cells[k];
+        dg_args[k]->val.array.rows = k == 3 ? 1 : 6;
+        dg_args[k]->val.array.columns = k == 3 ? 6 : 1;
+    }
+    static wchar_t cdf_s[] = L"\x03" L"cdf";
+    dg_kind.xltype = xltypeStr;
+    dg_kind.val.str = cdf_s;
+    XLOPER12 *dg = ((Fn11)GetProcAddress(xll, "pro_diag_cl"))(&dg_origins, &dg_ages, &dg_lat, &dg_pat, &missing,
+                                                                &dg_kind, &missing, &missing, &missing, &missing,
+                                                                &missing);
+    print_result("PRO.DIAG.CL(years, ages, latest, cdf pattern,, \"cdf\")", dg);
+    check("PRO.DIAG.CL is 8 x 6", (dg->xltype & 0xFFF) == xltypeMulti && dg->val.array.rows == 8 &&
+                                      dg->val.array.columns == 6);
+    check("PRO.DIAG.CL 2024 ultimate 150 x 12/7",
+          fabs(dg->val.array.lparray[6 * 6 + 4].val.num - 1800.0 / 7.0) < 1e-9);
+    check("PRO.DIAG.CL total ultimate 3981.342857",
+          fabs(dg->val.array.lparray[7 * 6 + 4].val.num - 3981.342857142857) < 1e-9);
+    free12(dg);
 
     printf(failures ? "\n%d FAILED\n" : "\nall checks passed\n", failures);
     return failures ? 1 : 0;
