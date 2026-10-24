@@ -26,7 +26,7 @@ const FIRST_SERIAL: f64 = 10_000.0;
 /// The civil date of an Excel serial in the 1900 date system (serial 1
 /// is 1 January 1900; Excel's phantom 29 February 1900, serial 60, is not
 /// a date).
-fn civil(serial: f64) -> Result<(i32, u8, u8)> {
+pub(crate) fn civil(serial: f64) -> Result<(i32, u8, u8)> {
     if !(61.0..2_958_466.0).contains(&serial) {
         return Err(format!("{serial} is not an Excel date after February 1900"));
     }

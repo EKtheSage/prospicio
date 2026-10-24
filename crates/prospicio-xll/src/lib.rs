@@ -18,6 +18,7 @@ pub mod aggregate;
 pub mod bayes;
 pub mod copulas;
 pub mod credibility;
+pub mod diagonal;
 pub mod distortions;
 pub mod evt;
 pub mod experience;
@@ -155,6 +156,55 @@ const EXPOSURE: Arg = Arg {
 const APRIORI: Arg = Arg {
     name: "apriori",
     help: "The a priori expected loss ratio, ultimate per unit of exposure, such as 0.75",
+};
+
+const DIAG_ORIGINS: Arg = Arg {
+    name: "origins",
+    help: "Each origin's start, a row or column: a year such as 2024, or an Excel date (floored to grain); in any order, every period from the first to the last",
+};
+const DIAG_AGES: Arg = Arg {
+    name: "ages",
+    help: "Each origin's age in months (an accident year at its first year-end is 12); leave empty when valuation is given",
+};
+const DIAG_LATEST: Arg = Arg {
+    name: "latest",
+    help: "Each origin's latest cumulative value; 0 for an origin with nothing reported",
+};
+const DIAG_EXPOSURE: Arg = Arg {
+    name: "exposure",
+    help: "Exposure (premium) per origin, a row or column, one positive value per origin",
+};
+const DIAG_PATTERN: Arg = Arg {
+    name: "pattern",
+    help: "The selected pattern's values, a row or column, such as PRO.CL.LDF's; a blank value is skipped, so an age-to-age factor before it runs to the next age given (give 1 for no development)",
+};
+const PATTERN_AGES: Arg = Arg {
+    name: "pattern_ages",
+    help: "Each pattern value's age in months, such as 3, 6, 9, ...; omitted for 12, 24, ... by cell",
+};
+const PATTERN_KIND: Arg = Arg {
+    name: "kind",
+    help: "How pattern is expressed: \"ldf\" (age-to-age to the next age given, default), \"cdf\" (to ultimate) or \"percent\" (developed)",
+};
+const DIAG_TAIL: Arg = Arg {
+    name: "tail",
+    help: "A tail factor past the pattern's end, or \"exponential\", \"inverse_power\" or \"bondy\" fitted on its factors; omitted for none",
+};
+const DIAG_GRAIN: Arg = Arg {
+    name: "grain",
+    help: "The origins' grain: \"year\" (default), \"semiannual\", \"quarter\" or \"month\"",
+};
+const DIAG_VALUATION: Arg = Arg {
+    name: "valuation",
+    help: "The Excel date all origins are valued at, in place of ages: an accident year 2024 at 31 December 2024 is 12 months",
+};
+const PAST_END: Arg = Arg {
+    name: "past_end",
+    help: "An origin older than the pattern's end: \"reject\" (default, an error), \"none\" (a factor of 1; rescales a cumulative level to 100% for every origin) or \"tail\" (the tail spread on)",
+};
+const PATTERN_ORIGIN: Arg = Arg {
+    name: "pattern_origin",
+    help: "The origin basis pattern was measured on, such as \"month\", averaged to grain; omitted to read it as given. An estimated tail is then fitted on monthly factors: a constant tail is safer",
 };
 
 const CDR_PERCENTILES: Arg = Arg {
@@ -526,6 +576,142 @@ pub static FUNCTIONS: &[Function] = &[
             ORIGINS,
         ],
         run: reserving::cape_cod,
+    },
+    Function {
+        symbol: "pro_diag_cl",
+        name: "PRO.DIAG.CL",
+        help: "Chain ladder on a latest diagonal (a bordereau) with a selected pattern: each origin's age, latest, CDF, ultimate and reserve, oldest first, with a total.",
+        args: &[
+            DIAG_ORIGINS,
+            DIAG_AGES,
+            DIAG_LATEST,
+            DIAG_PATTERN,
+            PATTERN_AGES,
+            PATTERN_KIND,
+            DIAG_TAIL,
+            DIAG_GRAIN,
+            DIAG_VALUATION,
+            PAST_END,
+            PATTERN_ORIGIN,
+        ],
+        run: diagonal::chain_ladder,
+    },
+    Function {
+        symbol: "pro_diag_el",
+        name: "PRO.DIAG.EL",
+        help: "Expected loss method on a latest diagonal with a selected pattern: ultimate is exposure times the a priori loss ratio.",
+        args: &[
+            DIAG_ORIGINS,
+            DIAG_AGES,
+            DIAG_LATEST,
+            DIAG_EXPOSURE,
+            APRIORI,
+            DIAG_PATTERN,
+            PATTERN_AGES,
+            PATTERN_KIND,
+            DIAG_TAIL,
+            DIAG_GRAIN,
+            DIAG_VALUATION,
+            PAST_END,
+            PATTERN_ORIGIN,
+        ],
+        run: diagonal::expected_loss,
+    },
+    Function {
+        symbol: "pro_diag_bf",
+        name: "PRO.DIAG.BF",
+        help: "Bornhuetter-Ferguson on a latest diagonal with a selected pattern: latest plus the a priori ultimate's unreported share, per origin, with a total.",
+        args: &[
+            DIAG_ORIGINS,
+            DIAG_AGES,
+            DIAG_LATEST,
+            DIAG_EXPOSURE,
+            APRIORI,
+            DIAG_PATTERN,
+            PATTERN_AGES,
+            PATTERN_KIND,
+            DIAG_TAIL,
+            DIAG_GRAIN,
+            DIAG_VALUATION,
+            PAST_END,
+            PATTERN_ORIGIN,
+        ],
+        run: diagonal::bornhuetter_ferguson,
+    },
+    Function {
+        symbol: "pro_diag_benktander",
+        name: "PRO.DIAG.BENKTANDER",
+        help: "Benktander on a latest diagonal with a selected pattern: Bornhuetter-Ferguson iterated on its own ultimate (1 iteration is BF).",
+        args: &[
+            DIAG_ORIGINS,
+            DIAG_AGES,
+            DIAG_LATEST,
+            DIAG_EXPOSURE,
+            APRIORI,
+            DIAG_PATTERN,
+            Arg {
+                name: "iterations",
+                help: "Number of iterations, 1 (Bornhuetter-Ferguson) if omitted",
+            },
+            PATTERN_AGES,
+            PATTERN_KIND,
+            DIAG_TAIL,
+            DIAG_GRAIN,
+            DIAG_VALUATION,
+            PAST_END,
+            PATTERN_ORIGIN,
+        ],
+        run: diagonal::benktander,
+    },
+    Function {
+        symbol: "pro_diag_capecod",
+        name: "PRO.DIAG.CAPECOD",
+        help: "Cape Cod on a latest diagonal with a selected pattern: the a priori loss ratio estimated from the diagonal and exposure, trended to the latest valuation.",
+        args: &[
+            DIAG_ORIGINS,
+            DIAG_AGES,
+            DIAG_LATEST,
+            DIAG_EXPOSURE,
+            DIAG_PATTERN,
+            Arg {
+                name: "trend",
+                help: "Annual trend of the loss ratio between origins, 0 if omitted",
+            },
+            Arg {
+                name: "decay",
+                help: "Weight decay by distance between origins, 0 to 1; 1 if omitted",
+            },
+            PATTERN_AGES,
+            PATTERN_KIND,
+            DIAG_TAIL,
+            DIAG_GRAIN,
+            DIAG_VALUATION,
+            PAST_END,
+            PATTERN_ORIGIN,
+        ],
+        run: diagonal::cape_cod,
+    },
+    Function {
+        symbol: "pro_pattern_average",
+        name: "PRO.PATTERN.AVERAGE",
+        help: "A pattern measured on one origin basis (such as accident months) averaged to a coarser one: age, percent developed and CDF for every month.",
+        args: &[
+            Arg {
+                name: "pattern_ages",
+                help: "Each pattern value's age in months; omitted for 12, 24, ... by cell",
+            },
+            DIAG_PATTERN,
+            Arg {
+                name: "pattern_origin",
+                help: "The origin basis pattern was measured on: \"month\", \"quarter\" or \"semiannual\"",
+            },
+            Arg {
+                name: "grain",
+                help: "The origin basis to average to, a whole multiple of pattern_origin: \"year\" (default), \"semiannual\" or \"quarter\"",
+            },
+            PATTERN_KIND,
+        ],
+        run: diagonal::pattern_average,
     },
     Function {
         symbol: "pro_clark",

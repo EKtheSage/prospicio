@@ -101,6 +101,31 @@ pub fn genins() -> (Grid, Grid) {
     (Grid::from_rows(rows), premium)
 }
 
+/// The CAS workers' compensation triangle summed over companies
+/// (`validation/data/clrd_wkcomp.csv`, origins 1988 to 1997): each
+/// origin's latest paid value and its premium there, oldest first.
+pub fn clrd_wkcomp() -> (Vec<f64>, Vec<f64>) {
+    let mut latest: BTreeMap<i32, (u32, f64, f64)> = BTreeMap::new();
+    for line in validation("data/clrd_wkcomp.csv")
+        .lines()
+        .skip_while(|l| l.starts_with('#'))
+        .skip(1)
+    {
+        let f: Vec<&str> = line.split(',').collect();
+        let origin: i32 = f[0].parse().unwrap();
+        let age: u32 = f[1].parse().unwrap();
+        let cell = (age, f[2].parse().unwrap(), f[3].parse().unwrap());
+        let e = latest.entry(origin).or_insert(cell);
+        if age >= e.0 {
+            *e = cell;
+        }
+    }
+    latest
+        .values()
+        .map(|&(_, paid, premium)| (paid, premium))
+        .unzip()
+}
+
 /// The rows of a reference CSV under `validation/reference/`, comments
 /// and the header dropped, split on commas.
 pub fn reference(name: &str) -> Vec<Vec<String>> {

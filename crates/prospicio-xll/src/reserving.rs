@@ -274,18 +274,7 @@ fn selected(selected: &Grid, kind: &Grid, weight: &Grid) -> Result<Option<Select
     if selected.rows != 1 && selected.columns != 1 {
         return Err("selected must be a row or a column, one cell per triangle column".into());
     }
-    let kind = match text_option(kind, "kind")?.as_deref() {
-        None | Some("ldf" | "age-to-age") => PatternKind::AgeToAge,
-        Some("cdf" | "age-to-ultimate") => PatternKind::AgeToUltimate,
-        Some("percent" | "percent developed" | "percent_developed") => {
-            PatternKind::PercentDeveloped
-        }
-        Some(other) => {
-            return Err(format!(
-                "kind must be \"ldf\", \"cdf\" or \"percent\", got {other:?}"
-            ));
-        }
-    };
+    let kind = pattern_kind(kind)?;
     let mut values = Vec::new();
     for (c, v) in selected.cells.iter().enumerate() {
         match v {
@@ -304,6 +293,22 @@ fn selected(selected: &Grid, kind: &Grid, weight: &Grid) -> Result<Option<Select
         pattern.weight = PatternWeight::All(number(weight, "weight")?);
     }
     Ok(Some(pattern))
+}
+
+/// The `kind` argument: how a selected pattern's values are expressed,
+/// as age-to-age factors ("ldf", the default), factors to ultimate
+/// ("cdf") or percents developed ("percent").
+pub(crate) fn pattern_kind(kind: &Grid) -> Result<PatternKind> {
+    match text_option(kind, "kind")?.as_deref() {
+        None | Some("ldf" | "age-to-age") => Ok(PatternKind::AgeToAge),
+        Some("cdf" | "age-to-ultimate") => Ok(PatternKind::AgeToUltimate),
+        Some("percent" | "percent developed" | "percent_developed") => {
+            Ok(PatternKind::PercentDeveloped)
+        }
+        Some(other) => Err(format!(
+            "kind must be \"ldf\", \"cdf\" or \"percent\", got {other:?}"
+        )),
+    }
 }
 
 /// The development options of a chain-ladder function.
@@ -794,7 +799,7 @@ fn exposure(grid: &Grid, origins: usize) -> Result<Vec<f64>> {
 }
 
 /// A required number argument.
-fn number(grid: &Grid, name: &str) -> Result<f64> {
+pub(crate) fn number(grid: &Grid, name: &str) -> Result<f64> {
     match grid.as_scalar() {
         Some(Value::Number(x)) => Ok(*x),
         Some(v) if v.is_blank() => Err(format!("{name} is required")),
@@ -803,7 +808,7 @@ fn number(grid: &Grid, name: &str) -> Result<f64> {
 }
 
 /// An optional number argument with a default.
-fn number_or(grid: &Grid, name: &str, default: f64) -> Result<f64> {
+pub(crate) fn number_or(grid: &Grid, name: &str, default: f64) -> Result<f64> {
     match grid.as_scalar() {
         Some(v) if v.is_blank() => Ok(default),
         _ => number(grid, name),
