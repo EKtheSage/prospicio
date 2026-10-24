@@ -1,6 +1,6 @@
 ---
 type: Finding
-title: An accident-month pattern averaged over the months of an accident year projects even exposure exactly, and the tail past a pattern's end is best spread by the origin grain
+title: An accident-month pattern averaged over the months of an accident year projects even exposure exactly, and the tail past a pattern's end is spread by the origin grain
 description: Averaging percents developed over an origin period's months, P(a) = (1/n) sum p(a - q s), gives the exact ultimate of every origin up to the pattern's end when the exposure is even through the period, an accident year in progress included; between the end and the end plus the period it defers the tail's development. A tail spread from the pattern's end at one step per origin period gives an annual book chainladder-python's 1.02538 one year past the end, where a monthly step gives 1.00116. No reference implementation does either.
 tags: [reserving, development, pattern, latest-diagonal, tail]
 status: stable
@@ -20,8 +20,8 @@ sources:
 `SelectedPattern::averaged_over_origins` turns an accident-month pattern
 `p` into the pattern of origin periods of `n` sub-periods of `s` months
 (`reserving-v02.md`, decision 18).[^note] An origin at age `a` has its
-`q`-th youngest sub-period at age `a - q s`, so with the exposure even
-through the period its share reported is
+`q`-th sub-period from the start (`q = 0` the earliest) at age `a - q s`,
+so with the exposure even through the period its share reported is
 
 ```text
 P(a) = (1/n) * sum_{q=0}^{n-1} p(a - q s)
@@ -48,10 +48,11 @@ its end. The result runs from the pattern's first age to its end `E` plus
 * **Deferred after the end.** Between `E` and `E + (n - 1) s`, `P` holds
   the level for the sub-periods past the end, so a tail's development is
   taken to happen only at the period's last age: the ultimate is slightly
-  overstated there.
+  overstated there. This follows from the construction; no test exercises
+  it, since no origin of the synthetic book past the end has a tail.[^note]
 * **Uneven exposure is not exact.** With monthly ultimates `U_j`, an origin
-  projects to `sum U_j p(a - j) / P(a)`, not `sum U_j`; the test pins the
-  miss.[^test]
+  projects to `sum U_j p(a - j) / P(a)`, not `sum U_j`; the test computes
+  both by hand and pins the miss between them.[^test]
 * **The spread past the end steps by the origin grain.** An origin older
   than the pattern's end takes what is left of a tail `T` spread from the
   end as chainladder-python's constant tail at decay 0.5. Stepping by the
@@ -60,7 +61,12 @@ its end. The result runs from the pattern's first age to its end `E` plus
   1.0132158418990078 two years past it, and an accident quarter one quarter
   past the end gets the same 1.0253798721500054. Stepping by the month
   would leave 1.0011602413037541 one year past the end, so the spread would
-  depend on the pattern's grain.[^test]
+  depend on the pattern's grain. The decay is per origin period, so the
+  remaining development at an age depends on how the origins are grouped:
+  accident years valued at March, the oldest at 123 months, read
+  1.0437900950394003 there, a quarter of an annual step, where an accident
+  quarter at 123 months reads 1.0253798721500054. Whether to step by a
+  fixed 12 months instead is open (decision 18 item 11).[^test]
 
 No reference implementation averages a pattern over origin bases or reads
 one off a triangle's ages: chainladder-python 0.10.1's

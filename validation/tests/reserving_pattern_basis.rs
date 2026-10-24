@@ -319,13 +319,24 @@ fn the_conversion_keeps_its_kind_weight_and_errors() {
         (Some(3), "the age is given twice")
     );
     assert_eq!(
-        reason(percent(vec![(3, 0.5), (6, -1.0)]).averaged_over_origins(Grain::Month, Grain::Year))
-            .0,
-        Some(6)
+        reason(percent(vec![(3, 0.5), (6, -1.0)]).averaged_over_origins(Grain::Month, Grain::Year)),
+        (Some(6), "a percent developed must be finite and positive")
     );
     assert_eq!(
-        reason(percent(vec![(3, 0.5)]).averaged_over_origins(Grain::Month, Grain::Year)).0,
-        Some(3)
+        reason(percent(vec![(3, 0.5)]).averaged_over_origins(Grain::Month, Grain::Year)),
+        (
+            Some(3),
+            "a cumulative pattern needs two or more ages: one value selects no factor"
+        )
+    );
+    // The result's last age, the end plus eleven months, does not fit in
+    // a Lag.
+    assert_eq!(
+        reason(
+            percent(vec![(Lag::MAX - 5, 0.5), (Lag::MAX, 1.0)])
+                .averaged_over_origins(Grain::Month, Grain::Year)
+        ),
+        (Some(Lag::MAX), "the age is too large")
     );
 }
 
@@ -429,11 +440,18 @@ fn a_book_of_accident_months_projects_to_its_ultimates() {
         let age = 60 - 12 * o as Lag;
         let months = |f: &dyn Fn(u32) -> f64| (0..12u32).map(f).sum::<f64>();
         let reported = months(&|j| u(12 * o as u32 + j) * p(i64::from(age) - i64::from(j)));
-        assert_rel(ultimate, reported / at(&pattern, age), 1e-12, "uneven");
+        // The accident year's share reported, by hand: its months' shares
+        // over twelve, independent of the conversion.
+        let share = months(&|j| p(i64::from(age) - i64::from(j))) / 12.0;
+        assert_rel(ultimate, reported / share, 1e-12, "uneven");
+        // The miss against the sum of the months' ultimates, by hand.
         let truth = months(&|j| u(12 * o as u32 + j));
+        let miss = reported / share - truth;
+        assert!(miss.abs() > 1e-6 * truth, "{o}: the miss is {miss}");
         assert!(
-            (ultimate - truth).abs() > 1e-6 * truth,
-            "the miss is pinned"
+            ((ultimate - truth) - miss).abs() <= 1e-12 * truth,
+            "{o}: the miss {} against {miss}",
+            ultimate - truth
         );
     }
 }
@@ -731,7 +749,7 @@ fn a_pattern_past_the_oldest_age_folds_into_a_constant_tail() {
         values: past_raa().values[..10].to_vec(),
         ..past_raa()
     };
-    let truncated = chain_ladder(cut, Tail::default())
+    let truncated = chain_ladder(cut.clone(), Tail::default())
         .fit(&raa, "values")
         .unwrap();
     assert_all(&none.ultimate, &truncated.ultimate, 1e-15, "cut");
@@ -772,7 +790,109 @@ fn a_pattern_past_the_oldest_age_folds_into_a_constant_tail() {
                      the tail's attachment age unset"
         }
     );
+    // The fold keeps a constant's decay: the same as the pattern cut at
+    // the oldest age with the folded constant, 1.155, at that decay.
+    let decayed = |factor: f64, decay: f64| {
+        Tail::Constant(TailConstant {
+            factor,
+            decay,
+            attachment_age: None,
+        })
+    };
+    let folded = fit(decayed(1.05, 0.3)).unwrap();
+    let cut_at = |decay: f64| {
+        chain_ladder(cut.clone(), decayed(1.155, decay))
+            .fit(&raa, "values")
+            .unwrap()
+    };
+    assert_all(&folded.tail.ldf, &cut_at(0.3).tail.ldf, 1e-14, "decay 0.3");
+    assert_all(&folded.ultimate, &cut_at(0.3).ultimate, 1e-14, "decay 0.3");
+    let n = raa.development().len() - 1;
+    assert!(
+        (folded.tail.ldf[n] - cut_at(0.5).tail.ldf[n]).abs() > 1e-4,
+        "the decay is not the default's"
+    );
+    // The fold takes the pattern at full weight: any weight below 1 is an
+    // error, and weight 1 given explicitly is the default.
+    let weighted = |weight: PatternWeight| {
+        chain_ladder(past_raa().with_weight(weight), Tail::from(1.05)).fit(&raa, "values")
+    };
+    let full_weight = Error::Pattern {
+        age: Some(120),
+        reason: "a pattern that runs past the oldest age folds into the tail at full weight: \
+                 give it weight 1, or cut it at the oldest age to blend it",
+    };
+    for weight in [
+        PatternWeight::All(0.0),
+        PatternWeight::All(0.5),
+        PatternWeight::ByAge(vec![(12, 0.5)]),
+    ] {
+        assert_eq!(weighted(weight).unwrap_err(), full_weight);
+    }
+    assert_eq!(
+        chain_ladder(
+            past_raa().with_weight(PatternWeight::All(0.0)),
+            Tail::default()
+        )
+        .fit(&raa, "values")
+        .unwrap_err(),
+        full_weight
+    );
+    assert_eq!(weighted(PatternWeight::All(1.0)).unwrap(), constant);
+    assert_eq!(
+        weighted(PatternWeight::ByAge(vec![(12, 1.0)])).unwrap(),
+        constant
+    );
 }
+
+#[test]
+fn an_estimated_tail_on_a_finer_pattern_ending_at_the_oldest_age_depends_on_the_route() {
+    // RAA's own factors to ultimate times 1.1, spread monthly to 120
+    // months: on the plain path the curve is fitted on the annual links
+    // the pattern selects, on the diagonal on its monthly factors
+    // (decision 18 item 9).
+    let raa = triangle("raa");
+    let own = ChainLadder::default().fit(&raa, "values").unwrap();
+    let annual: Vec<(Lag, f64)> = own_cdfs(&own)
+        .into_iter()
+        .map(|(a, c)| (a, c * 1.1))
+        .collect();
+    let by_month = SelectedPattern::new(PatternKind::AgeToUltimate, monthly(&annual));
+    let curve = Tail::from(TailCurve::default());
+    let plain = chain_ladder(by_month.clone(), curve)
+        .fit(&raa, "values")
+        .unwrap();
+    let diagonal = chain_ladder(by_month, curve)
+        .fit_diagonal(&diagonal_of(&raa))
+        .unwrap();
+    // The plain path is the annual pattern's.
+    let annual_fit = chain_ladder(
+        SelectedPattern::new(PatternKind::AgeToUltimate, annual),
+        curve,
+    )
+    .fit(&raa, "values")
+    .unwrap();
+    assert_eq!(plain.tail.factor, annual_fit.tail.factor);
+    assert_eq!(plain.pattern_tail, None);
+    assert_rel(
+        plain.tail.factor,
+        PLAIN_CURVE,
+        1e-12,
+        "the plain path's curve",
+    );
+    assert_rel(
+        diagonal.tail.factor,
+        DIAGONAL_CURVE,
+        1e-12,
+        "the diagonal's curve",
+    );
+    assert!((plain.tail.factor - diagonal.tail.factor).abs() > 1e-3);
+}
+
+/// The curve tails of the monthly pattern to 120 months on RAA, recorded
+/// from this build (Windows, 2026-10-23).
+const PLAIN_CURVE: f64 = 1.009_435_751_581_231;
+const DIAGONAL_CURVE: f64 = 1.012_188_851_544_037_8;
 
 #[test]
 fn the_plain_paths_pattern_errors() {
@@ -829,6 +949,22 @@ fn the_seed_of_the_spread_is_chainladder_pythons() {
     // chainladder-python's TailConstant(1.05) on RAA: 1.02538 from 132
     // months.
     assert!((left(1.05, 1) - 1.02538).abs() < 5e-6);
+    // The counterfactuals of decision 18 item 7: a monthly step leaves
+    // this much of the tail one year past the end, and an origin a quarter
+    // of an annual step past the end reads ln-linearly between 1.05 and
+    // the first step's 1.02538.
+    assert_rel(
+        left(1.05, 12),
+        1.001_160_241_303_754_1,
+        1e-14,
+        "monthly step",
+    );
+    assert_rel(
+        1.05 * (1.0 + X).powf(-0.25),
+        1.043_790_095_039_400_3,
+        1e-15,
+        "a quarter of an annual step",
+    );
 }
 
 /// Ten age-to-age factors of 1.1 from 12 to 108 months, ending at 120.
@@ -931,6 +1067,21 @@ fn the_tail_is_spread_at_one_step_per_origin_period() {
     let fit = chain_ladder(quarterly, tail).fit_diagonal(&q).unwrap();
     assert_rel(cdfs(&fit)[0], 1.025_379_872_150_005_4, 1e-14, "123");
     assert_rel(cdfs(&fit)[1], 1.05, 1e-14, "120");
+    // Accident years valued at March, the oldest at 123 months: a quarter
+    // of an annual step past the end, read ln-linearly between 1.05 at 120
+    // months and the first step's 1.02538 at 132. The decay is per origin
+    // period, so the same age takes more of the tail than the accident
+    // quarter above (decision 18 items 7 and 11).
+    let march = years(&[123, 111, 99, 87, 75, 63, 51, 39, 27, 15])
+        .with_past_pattern_end(PastPatternEnd::Tail);
+    let fit = chain_ladder(to_120(), tail).fit_diagonal(&march).unwrap();
+    assert_rel(cdfs(&fit)[0], 1.043_790_095_039_400_3, 1e-14, "March 123");
+    assert_rel(
+        cdfs(&fit)[0],
+        1.05 * (1.0 + X).powf(-0.25),
+        1e-14,
+        "March 123 by hand",
+    );
     // A monthly pattern equal to the annual one gives the same ultimates
     // past the end, since the spread follows the origins.
     let annual: Vec<(Lag, f64)> = (0..10)
@@ -973,6 +1124,19 @@ fn no_development_past_the_end_is_a_factor_of_one() {
         let n = fit.ultimate.len();
         assert_rel(fit.ultimate[n - 1], 100.0 / 0.4 * 0.95, 1e-14, "youngest");
     }
+    // With no origin past the end, Reject keeps the level as the implied
+    // tail (decision 16), so NoDevelopment moves the young origins too.
+    let reject = chain_ladder(level, Tail::default())
+        .fit_diagonal(&years(&[120, 108, 12]))
+        .unwrap();
+    assert_rel(reject.ultimate[2], 250.0, 1e-14, "youngest under Reject");
+    assert_rel(
+        reject.pattern_tail.unwrap(),
+        1.0 / 0.95,
+        1e-15,
+        "the implied tail",
+    );
+    assert_eq!(reject.pattern_rescale, Some(1.0));
 }
 
 #[test]
@@ -1012,10 +1176,33 @@ fn an_estimated_tail_past_the_end_is_its_constant_spread() {
         assert_all(&estimated.ultimate, &constant.ultimate, 1e-14, "estimated");
         assert_rel(cdfs(&estimated)[1], left(fitted, 1), 1e-14, "132");
     }
+    // A single age-to-age factor spans one origin period, 12 to 24 months
+    // here, and its estimated tail is fitted on that one link: Bondy's is
+    // the factor itself, spread past 24 months; a curve needs two factors.
+    let single = SelectedPattern::new(PatternKind::AgeToAge, vec![(12, 1.5)]);
+    let d = years(&[36, 24, 12]).with_past_pattern_end(PastPatternEnd::Tail);
+    let bondy = chain_ladder(single.clone(), Tail::from(TailBondy::default()))
+        .fit_diagonal(&d)
+        .unwrap();
+    assert_all(
+        &cdfs(&bondy),
+        &[left(1.5, 1), 1.5, 2.25],
+        1e-14,
+        "a single factor's Bondy tail",
+    );
+    assert_eq!(
+        chain_ladder(single, Tail::from(TailCurve::default()))
+            .fit_diagonal(&d)
+            .unwrap_err(),
+        Error::Tail("a curve needs two factors above 1 in the fit period")
+    );
 }
 
+/// `Tail`, and `NoDevelopment` on age-to-age factors (or a level of 100%),
+/// change nothing when no origin is past the end; `NoDevelopment` on
+/// another level does (`no_development_past_the_end_is_a_factor_of_one`).
 #[test]
-fn with_no_origin_past_the_end_the_settings_change_nothing() {
+fn with_no_origin_past_the_end_the_settings_keep_an_age_to_age_fit() {
     let d = years(&[120, 108, 60, 12]);
     let reject = chain_ladder(to_120(), Tail::from(1.05))
         .fit_diagonal(&d)
@@ -1186,6 +1373,110 @@ fn a_younger_books_development_applies_to_older_origins() {
 // D. Mack, the bootstraps and the one-year views with a pattern past the
 // oldest age.
 
+/// `past_raa()` cut at RAA's oldest age, 120 months: its level there, 1.1,
+/// is the implied tail (decision 12), the same constant the full pattern
+/// folds into with no tail.
+fn cut_raa() -> SelectedPattern {
+    SelectedPattern {
+        values: past_raa().values[..10].to_vec(),
+        ..past_raa()
+    }
+}
+
+#[test]
+fn the_lifetime_views_keep_the_folded_tail_in_every_simulation() {
+    let raa = triangle("raa");
+    let odp = |pattern: SelectedPattern, tail: Tail, tail_std_err: Option<f64>| {
+        OdpBootstrap {
+            pattern: Some(pattern),
+            tail,
+            tail_std_err,
+            n_sims: 200,
+            seed: 11,
+            ..Default::default()
+        }
+        .fit(&raa, "values")
+    };
+    let mack_boot = |pattern: SelectedPattern, tail: Tail| {
+        MackBootstrap {
+            development: Development {
+                pattern: Some(pattern),
+                ..Default::default()
+            },
+            tail,
+            n_sims: 200,
+            seed: 11,
+            ..Default::default()
+        }
+        .fit(&raa, "values")
+    };
+    let draws = |r: Result<prospicio_prob::PredictiveDistribution, Error>| {
+        r.unwrap().draw_matrix().to_vec()
+    };
+    // No tail: the folded 1.1 against the cut pattern's implied 1.1, the
+    // same constant in every simulation, never refitted.
+    let folded = draws(odp(past_raa(), Tail::default(), None).map(|f| f.reserves));
+    let cut = draws(odp(cut_raa(), Tail::default(), None).map(|f| f.reserves));
+    assert_all(&folded, &cut, 1e-13, "ODP");
+    let folded = draws(mack_boot(past_raa(), Tail::default()).map(|f| f.reserves));
+    let cut = draws(mack_boot(cut_raa(), Tail::default()).map(|f| f.reserves));
+    assert_all(&folded, &cut, 1e-13, "Mack's bootstrap");
+    // A constant tail folds to 1.155: the same as the cut pattern under a
+    // constant tail of 1.155.
+    let folded = draws(odp(past_raa(), Tail::from(1.05), None).map(|f| f.reserves));
+    let cut = draws(odp(cut_raa(), Tail::from(1.155), None).map(|f| f.reserves));
+    assert_all(&folded, &cut, 1e-13, "ODP, a constant tail");
+    // Mack's bootstrap draws a given constant with Mack's extrapolated
+    // standard error, and the fold, whose standard error is 0, fixed.
+    let folded = draws(mack_boot(past_raa(), Tail::from(1.05)).map(|f| f.reserves));
+    let cut = draws(mack_boot(cut_raa(), Tail::from(1.155)).map(|f| f.reserves));
+    assert_ne!(folded, cut, "Mack's bootstrap draws the cut's tail error");
+    // Mack: the fold carries no parameter error, as the implied tail.
+    let mack = |pattern: SelectedPattern, tail: Tail| {
+        Mack {
+            development: Development {
+                pattern: Some(pattern),
+                ..Default::default()
+            },
+            tail,
+            ..Default::default()
+        }
+        .fit(&raa, "values")
+        .unwrap()
+    };
+    let (folded, cut) = (
+        mack(past_raa(), Tail::default()),
+        mack(cut_raa(), Tail::default()),
+    );
+    assert_eq!(folded.chain_ladder.tail.std_err, 0.0);
+    assert_eq!(cut.chain_ladder.tail.std_err, 0.0);
+    assert_all(&folded.standard_error, &cut.standard_error, 1e-13, "Mack");
+    assert_rel(
+        folded.total_standard_error,
+        cut.total_standard_error,
+        1e-13,
+        "Mack's total",
+    );
+    // A tail standard error is read against the tail given: an estimated
+    // tail's is still an error when the pattern folds it into a constant.
+    let curve = Tail::from(TailCurve::default());
+    assert_eq!(
+        odp(past_raa(), curve, Some(0.01)).unwrap_err(),
+        Error::Tail(
+            "an estimated tail's parameter error comes from refitting it on each simulation: a \
+             standard error is for a constant tail"
+        )
+    );
+    // A constant's standard error is its own: the folded factor is drawn at
+    // the constant's coefficient of variation, 0.02 / 1.05, which is the
+    // cut pattern's under 1.155 with a standard error of 0.022.
+    let folded = draws(odp(past_raa(), Tail::from(1.05), Some(0.02)).map(|f| f.reserves));
+    let cut = draws(odp(cut_raa(), Tail::from(1.155), Some(0.022)).map(|f| f.reserves));
+    assert_all(&folded, &cut, 1e-12, "ODP, the constant's standard error");
+    let fixed = draws(odp(past_raa(), Tail::from(1.05), None).map(|f| f.reserves));
+    assert_ne!(folded, fixed, "the standard error is drawn");
+}
+
 #[test]
 fn the_one_year_views_carry_the_folded_tail() {
     let raa = triangle("raa");
@@ -1213,6 +1504,15 @@ fn the_one_year_views_carry_the_folded_tail() {
         1e-15,
         "ODP",
     );
+    // Its draws are the cut pattern's, whose implied tail is the same 1.1.
+    let cut = OneYearMethod::ChainLadder(chain_ladder(cut_raa(), Tail::default()));
+    let twin = odp(Tail::default()).one_year(&raa, "values", &cut).unwrap();
+    assert_all(
+        one.cdr.draw_matrix(),
+        twin.cdr.draw_matrix(),
+        1e-12,
+        "ODP's claims development result",
+    );
     let one = mack(Tail::default())
         .one_year(&raa, "values", &method(Tail::default()))
         .unwrap();
@@ -1221,6 +1521,15 @@ fn the_one_year_views_carry_the_folded_tail() {
         1.1,
         1e-15,
         "Mack",
+    );
+    let twin = mack(Tail::default())
+        .one_year(&raa, "values", &cut)
+        .unwrap();
+    assert_all(
+        one.cdr.draw_matrix(),
+        twin.cdr.draw_matrix(),
+        1e-12,
+        "Mack's claims development result",
     );
     // A method tail and none on the bootstrap: the level-free reading
     // cannot carry the method's tail into the pattern.

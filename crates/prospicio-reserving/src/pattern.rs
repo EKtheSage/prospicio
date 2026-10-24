@@ -163,15 +163,21 @@ impl Default for PatternWeight {
 /// last age within the span. A single age-to-age factor off the triangle's
 /// ages is still an error. Adding one off-grid age to a sparse age-to-age
 /// pattern changes how its other factors are read, from each running to the
-/// triangle's next age to each running to the pattern's next.
+/// triangle's next age to each running to the pattern's next, with no
+/// warning: `{12: 1.5, 36: 1.2}` on an annual triangle selects 1.5 from 12
+/// to 24 months, and `{12: 1.5, 18: 1.1, 36: 1.2}` selects 1.5484 there,
+/// since 1.5 then runs from 12 to 18 months.
 ///
 /// **Past the oldest age** (decision 18). What such a pattern gives from
 /// the triangle's oldest age to its end folds into a constant tail at the
 /// oldest age ([`ChainLadderFit::pattern_tail`](crate::ChainLadderFit::pattern_tail)):
 /// with no tail, the pattern's factor to ultimate there, its level
 /// included; with a [`TailConstant`](crate::TailConstant) (its attachment
-/// age unset), the pattern's development to its end times the constant;
-/// with an estimated tail, times the tail fitted on the pattern's own ages.
+/// age unset), the pattern's development to its end times the constant,
+/// spread at the constant's decay; with an estimated tail, times the tail
+/// fitted on the pattern's own ages. The fold takes the pattern at full
+/// weight, so such a pattern must be fully selected: any weight below 1 is
+/// an error (cut the pattern at the oldest age to blend it).
 ///
 /// ```
 /// use prospicio_reserving::{ChainLadder, Development, PatternKind, SelectedPattern};
@@ -464,7 +470,8 @@ impl SelectedPattern {
     /// periods of `origin`, a whole multiple of it, with the exposure even
     /// through the period (`reserving-v02.md`, decision 18). An origin of
     /// `n = origin / pattern_origin` sub-periods of `s` months is at age
-    /// `a` when its `q`-th youngest sub-period is at age `a - q s`, so
+    /// `a` when its `q`-th sub-period from the start (`q = 0` the earliest)
+    /// is at age `a - q s`, so
     ///
     /// ```text
     /// P(a) = (1/n) * sum_{q=0}^{n-1} p(a - q s)

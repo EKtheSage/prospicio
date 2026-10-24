@@ -1678,7 +1678,9 @@ pub struct Development {
      level of the pattern, its value at its last age `a_{m+r}`, fixes no
      link; item 5 makes it the tail or rescales it.
    * A pattern with an age that is not a development age of the triangle
-     is read on its own ages instead (decision 18).
+     is read on its own ages instead (decision 18), except a single
+     age-to-age factor, which keeps the error "not a development age of
+     the triangle".
    * Links the pattern does not fix are estimated from the triangle, as
      now: those before its first age and those from its last age on. So a
      cumulative pattern for the immature ages only (CDFs at 12, 24 and 36)
@@ -2931,10 +2933,13 @@ the two.
    tail attaches at the target's oldest age, which mixes the target's
    development into the source's and is not what predict gives. A target
    without one of the source's ages failed with `Error::Pattern` (not a
-   development age of the triangle); since decision 18 the plain path
-   folds the source's factors past the target's oldest age into a
-   constant tail there and projects it as `fit_diagonal` does. This PR
-   adds no guard (item 11).
+   development age of the triangle); since decision 18 such a target has
+   the source's factors read as decision 18 item 4 reads them, on the
+   source's own ages, and the factors past the target's oldest age fold
+   into a constant tail there (decision 18 item 5), which projects as
+   `fit_diagonal` does. That covers a target with fewer ages and a target
+   whose grain is coarser than the source's (an annual book under a
+   quarterly fit). This PR adds no guard (item 11).
 5. **The tail is carried as a constant, not refitted.** It attaches at
    the source's oldest age and is spread at decay 0.5; chainladder-python's
    predict also carries the source's tail factor. A tail factor below
@@ -3052,7 +3057,7 @@ pattern's end takes a factor of 1, an a-priori tail or a tail estimated on
 the pattern's own factors, and with none chosen stays an error naming the
 three; (d) an origin at age 0 stays an error (`LatestDiagonal::new`
 rejects it with `NonPositiveAge`). Items 1 to 10 are proposals for the
-user to accept. It revises decision 12's rule 1 and item 4 (the "not a
+user to accept; item 11 is open, for the user to decide. It revises decision 12's rule 1 and item 4 (the "not a
 development age" check), decision 16's item 4 and decision 17's items 4
 and 6, and adds no breaking change: `SelectedPattern` and `ChainLadderFit`
 keep their fields, and `LatestDiagonal`'s fields are private.
@@ -3063,8 +3068,8 @@ keep their fields, and `LatestDiagonal`'s fields are private.
    accident-month pattern is `Grain::Month`) into the pattern of origin
    periods of `origin`, a whole multiple of it, with the exposure even
    through the period. An origin of `n = origin / pattern_origin`
-   sub-periods of `s` months is at age `a` when its `q`-th youngest
-   sub-period is at age `a - q s`, so
+   sub-periods of `s` months is at age `a` when its `q`-th sub-period
+   from the start (`q = 0` the earliest) is at age `a - q s`, so
 
    ```text
    P(a) = (1/n) * sum_{q=0}^{n-1} p(a - q s)
@@ -3106,7 +3111,8 @@ keep their fields, and `LatestDiagonal`'s fields are private.
    accident-month pattern's own tail is the safer choice, and the docs say
    so. Uneven exposure through the period projects each origin to the sum
    of its months' reported values over `P`, not to the sum of their
-   ultimates; the test pins the miss.
+   ultimates; the test computes both by hand and pins the miss, `sum_j
+   U_j p(a - j) / P(a) - sum_j U_j`.
 4. **The plain path has one gate.** In `SelectedPattern::resolve(ages)`,
    when every age the pattern gives is a development age of the triangle,
    decision 12 applies unchanged, to the bit: sparse age-to-age patterns,
@@ -3137,7 +3143,11 @@ keep their fields, and `LatestDiagonal`'s fields are private.
    age) to decision 16's (each to the pattern's next): `{12: 1.5, 18: 1.1,
    36: 1.2}` on RAA selects 12 to 24 at 1.5484, 24 to 36 at 1.0656 and 36
    to 48 at `1.2^(2/3)`, where `{12: 1.5, 36: 1.2}` selects 1.5 and 1.2.
-   The two routes already disagreed before this PR on sparse age-to-age
+   Nothing warns of this: `ChainLadderFit` has no warnings, and an error
+   would also refuse a monthly pattern, whose factor at 12 months runs to
+   13 rather than 24 just as 1.5 does to 18. The rustdoc says so, and the
+   Python and R help of PR 4 must say it next to `ldf`. The two routes
+   already disagreed before this PR on sparse age-to-age
    patterns on the grid: `{36, 96}` on RAA runs 36 to 48 and 96 to 108 on
    the plain path and 36 to 96 and 96 to 156 on the diagonal.
 5. **A pattern past the oldest age folds into the tail.** When the
@@ -3153,8 +3163,27 @@ keep their fields, and `LatestDiagonal`'s fields are private.
    unset". `pattern_tail` is the folded factor, set with or without a
    tail, `tail.std_err` is 0 and sigma is extrapolated as a constant
    tail's; for a cumulative pattern `pattern_rescale` is `C(E) / T` (1 with
-   no tail). The bootstraps keep it constant in every simulation, never
-   refitted. So the plain path now projects a target with fewer ages
+   no tail). The folded tail is a `TailConstant` at `a_n` that keeps the
+   given constant's decay, which spreads it over the periods past `a_n`
+   (the bootstraps' tail step and the one-year view's closing of origins,
+   decisions 9 and 11); a fold of an estimated tail takes decay 0.5, as the
+   diagonal route carries one. The fold takes the pattern at full weight,
+   so a pattern that folds must be fully selected: `All(w)` with `w < 1`,
+   or any `ByAge` weight below 1, is "a pattern that runs past the oldest
+   age folds into the tail at full weight: give it weight 1, or cut it at
+   the oldest age to blend it" (`Error::Pattern` at `a_n`). A blend of the
+   fold with the tail the triangle would give (`ln T = w ln(fold) + (1 -
+   w) ln T_triangle`) would need a weight for a span that no link of the
+   triangle starts, and a parameter error for the blended tail; neither is
+   designed, so it is an error until the user asks for it. On the diagonal
+   route every pattern is fully selected anyway (decision 16). The
+   bootstraps keep the fold constant in every simulation, never refitted.
+   A `tail_std_err` is read against the tail given: with an estimated tail
+   it is the error it always was, folded or not, and with a constant `T`
+   the folded factor is drawn with `T`'s coefficient of variation,
+   `tail_std_err / T`, since the pattern's development from `a_n` to `E`
+   is fixed. Mack's bootstrap draws no tail error on a fold, whose
+   `tail.std_err` is 0. So the plain path now projects a target with fewer ages
    (GenIns from 2006) as `fit_diagonal` does, which changes decision 17
    item 4's error.
 6. **`PastPatternEnd` on `LatestDiagonal`.**
@@ -3172,7 +3201,14 @@ keep their fields, and `LatestDiagonal`'s fields are private.
    today's fit to the bit, and `NoDevelopment` is a `TailConstant` of 1
    attached at `E`, the grid's oldest age: today's fit for age-to-age
    factors or a cumulative pattern at 100%, and another level rescaled to
-   100% at `E`. On the plain triangle path no setting applies: links past
+   100% at `E`. So with a level other than 100% `NoDevelopment` moves
+   every origin's ultimate, the young ones too, also when no origin is
+   past `E`: 95% at 120 months on accident years at 120, 108 and 12
+   months (40% at 12) gives the youngest 237.5 under `NoDevelopment`,
+   where `Reject` keeps the level as the implied tail and gives 250. It
+   is decision 12 item 5's rescale under a tail of 1, and the docs of
+   `NoDevelopment` say so; an error for a level other than 100% under
+   `NoDevelopment` is the alternative. On the plain triangle path no setting applies: links past
    a shorter pattern are estimated (decision 12), and a triangle that
    holds only a latest diagonal goes through `LatestDiagonal::from_triangle`
    to use the three choices.
@@ -3196,9 +3232,13 @@ keep their fields, and `LatestDiagonal`'s fields are private.
    RAA (`tail.rs`), and two years `1.0132158418990078`; accident quarters
    one quarter past the end get the same `1.0253798721500054`. Stepping by
    the pattern's grain instead would make the spread depend on it: a
-   monthly step gives `1.0011602413037541` one year past the end, and an
-   accident quarter at 123 months read off an annual step would get
-   `1.0437900950394003`. An estimated tail's own extrapolated factors are
+   monthly step gives `1.0011602413037541` one year past the end. An
+   origin between two steps reads `ln`-linearly, so accident years valued
+   at March, the oldest at 123 months, take `1.05 (1 + x)^(-1/4) =
+   1.0437900950394003` there, where an accident quarter at 123 months, one
+   step past the end, takes `1.0253798721500054`: the decay is per origin
+   period, and the remaining development at a given age depends on how the
+   origins are grouped (item 11). An estimated tail's own extrapolated factors are
    not used past `E`; it is carried as a constant, as decisions 16 and 17
    carry it. The floor `exp(-0.75) = 0.4723665527410147` at decay 0.5 is
    `Error::Tail`, from the spread's seed.
@@ -3235,25 +3275,53 @@ keep their fields, and `LatestDiagonal`'s fields are private.
     and quarters, whose chain ladder with the averaged pattern gives each
     origin the sum of its months' ultimates to 1e-12 on the plain path and
     through its diagonal, an accident year at June included, and with
-    uneven months the pinned miss; a monthly cumulative pattern on RAA and
+    uneven months the miss pinned against its value computed by hand; a
+    monthly cumulative pattern on RAA and
     GenIns equal to its annual values to the bit for the chain ladder,
     Mack (fully selected and blended), both bootstraps' draws and both
     one-year views; monthly age-to-age factors multiplying to the annual
     ones, GenIns's factors spread monthly giving its chain ladder; the
     misaligned and the sparse age-to-age readings above; RAA's own pattern
     times 1.1 past 120 months folded with no tail (1.1), a constant
-    (1.155), a curve (equal to the diagonal route to 1e-14) and the
-    attachment error; on the diagonal the spread's numbers above on annual,
-    half-year and quarterly grids, a monthly pattern equal to the annual
-    one past the end, `NoDevelopment` (a level of 95% rescaled by
-    1.0526315789473684), estimated tails equal to the constant spread of
-    their factor, the settings with no origin past the end changing nothing
-    to the bit, the errors and the floor, Bornhuetter-Ferguson, Benktander
-    and Cape Cod past the end, and a development fitted on GenIns from 2006
-    applied to the whole GenIns diagonal; the one-year views with the
-    folded tail and the level-free error, and Merz and Wüthrich's. No
+    (1.155), a constant's decay kept, a curve (equal to the diagonal route
+    to 1e-14), the attachment error and the weight error (`All(0)`,
+    `All(0.5)`, a `ByAge` weight); a monthly pattern ending at 120 months
+    with a curve tail, whose tail differs between the routes (item 9); on
+    the folded pattern, Mack and both bootstraps' lifetime and one-year
+    draws equal to the pattern cut at 120 months, whose implied tail is
+    the same 1.1, a curve tail with a `tail_std_err` the error again, and
+    a constant's `tail_std_err` drawn at its own coefficient of variation;
+    on the diagonal the spread's numbers above on annual, half-year and
+    quarterly grids, the March book's `1.0437900950394003`, a monthly
+    pattern equal to the annual one past the end, `NoDevelopment` (a
+    level of 95% rescaled by 1.0526315789473684, the youngest 237.5
+    against 250 under `Reject` with no origin past the end), estimated
+    tails equal to the constant spread of their factor, `Tail` and
+    `NoDevelopment` for age-to-age factors changing nothing to the bit with
+    no origin past the end, a single age-to-age factor with a curve tail
+    past the end, the errors and the floor, Bornhuetter-Ferguson,
+    Benktander and Cape Cod past the end, and a development fitted on
+    GenIns from 2006 applied to the whole GenIns diagonal; the one-year
+    views with the folded tail and the level-free error, and Merz and
+    Wüthrich's. No
     reference averages a pattern over origin bases: chainladder-python
     0.10.1's `DevelopmentConstant(patterns, style, callable_axis, groupby)`
     has no origin-basis argument and keeps the triangle's grain (confirmed
     with uv on 2026-10-23), so these checks are by hand or on synthetic
     books.
+11. **Open: the spread's step.** Item 7 steps the tail past `E` by the
+    origin grain, with the decay applied per step, so the run-off of the
+    tail in calendar time depends on how the origins are grouped: at `T =
+    1.05` and decay 0.5 an accident year one year past the end and an
+    accident quarter one quarter past it both take `1.0253798721500054`,
+    so a quarterly book releases in 3 months what an annual book releases
+    in 12. chainladder-python ties its decay to the development period,
+    which is the precedent for the choice as built. The user's decision
+    (c) asks for "the tail's remaining development from its own age",
+    which can also be read as a function of age alone. The alternative is
+    a fixed calendar step of 12 months, with origins between the steps
+    read `ln`-linearly: it depends on neither grain, and gives an accident
+    quarter at 123 months `1.0437900950394003`, the March book's value of
+    item 7, where the build gives `1.0253798721500054`. Annual books are
+    the same under both. For the user to choose; until then the decay is
+    documented as per origin period (`PastPatternEnd::Tail`).

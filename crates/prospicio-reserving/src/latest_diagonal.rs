@@ -124,7 +124,11 @@ pub enum PastPatternEnd {
     /// method's tail must be none. A cumulative pattern's level at its end
     /// is rescaled to 100% for every origin, as a given tail rescales it
     /// (decision 12 item 5), and reported as
-    /// [`pattern_rescale`](crate::ChainLadderFit::pattern_rescale).
+    /// [`pattern_rescale`](crate::ChainLadderFit::pattern_rescale). So with
+    /// a level other than 100% every origin's ultimate moves, the young
+    /// ones too and also when no origin is past the end: a level of 95%
+    /// cuts each factor to ultimate by 5%, where
+    /// [`Reject`](Self::Reject) keeps the level as the implied tail.
     NoDevelopment,
     /// The method's tail continues the pattern from its end: an a-priori
     /// [`TailConstant`] (factor and decay, `attachment_age` unset) or a
@@ -134,7 +138,11 @@ pub enum PastPatternEnd {
     /// period, so an origin one origin period past the end takes the tail's
     /// factor less its first period's development, whatever the pattern's
     /// grain; an origin past the end takes the remaining development from
-    /// its own age. An error with no tail: a factor of 1 is
+    /// its own age. The decay is per origin period, so the same tail runs
+    /// off over fewer months for accident quarters than for accident years
+    /// (a quarter one quarter past the end and a year one year past it
+    /// both take 1.02538 of a tail of 1.05); a fixed calendar step is open
+    /// (decision 18 item 11). An error with no tail: a factor of 1 is
     /// [`NoDevelopment`](Self::NoDevelopment).
     Tail,
 }
