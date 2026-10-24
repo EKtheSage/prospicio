@@ -6,7 +6,6 @@
 
 ## Next
 
-- [guides-issues-for-probability] the Guides lane's remaining issues for this lane
 
 ## Done
 
@@ -25,3 +24,4 @@
 - #487 items read at a driver's mean, percentiles and TVaRs (`StatisticsGrid::co_statistics`, `co_components`, `IndexRule` halves to even, floor or ceil; Python `co_statistics`, R `co_statistics()`)
 - #488 bootstrap standard errors of a statistics grid (`StatisticsGrid::bootstrap_se`, one draw per replicate shared by every column, read off resample counts on each column sorted once; `bootstrap_se_holding` resamples only what is not fixed; Python `bootstrap_se(..., hold_fixed=)`, R `bootstrap_se(fixed =)`)
 - [reorder-index] where each simulation came from in a reorder (#483, first part: `reorder_groups_indexed` and `reorder_groups_by_copula_indexed` return each group's source simulations; Python `return_index=True`, R `index = TRUE`)
+- [guides-issues-for-probability] the Guides lane's issues for this lane all closed (#328 to #331, #365 to #369, #373, #375); nothing planned in Next (#574)

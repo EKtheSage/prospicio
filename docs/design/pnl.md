@@ -239,9 +239,10 @@ Each PR is one type or method, with its parity tests, bindings and docs.
    coordinate, then each aggregate cover on `max(gross − ceded, 0)`, with
    the `Net of occurrence` block; the per-atom peel with one occurrence
    layer; the consolidated face over the net loss at each atom). A peel
-   through several occurrence layers is refused: the joint carries only
-   the total cession, and `aggregate`'s stitched route (each row its own
-   marginal, no `κ`) is not built. Occurrence layers may not carry annual
+   through several occurrence layers on the joint is refused, since the
+   joint carries only the total cession; `aggregate`'s stitched route
+   (each row its own marginal, no `κ`) is follow-up 7c,
+   `Book::occurrence_peel`. Occurrence layers may not carry annual
    terms. Parity: `validation/scripts/aggregate_pnl_occurrence.py`, 1,566
    values: example 4 walked and consolidated, the same with an aggregate
    cover 3 xs 5 on its net walked, consolidated and peeled top down, and

@@ -353,7 +353,8 @@ Decided 2026-10-12:
 - **Forwarding:** `Box`, `SeverityDist` (so `Dist` reaches every family),
   `CountDist`, `Mixture` and the bindings' count wrappers pass both
   through.
-- Rust only for now; the bindings expose it with the compound moments.
+- In the bindings through the compound moments: Python
+  `compound_moments`, R `compound_moments()`.
 
 ## Proposed trait layout
 

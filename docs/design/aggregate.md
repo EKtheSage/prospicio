@@ -1604,12 +1604,12 @@ copula, the t copula, a trigger outside `[0, 1]`).
    (`distributions.md`), the stand-alone price on a grid portfolio, the
    comonotonic allocation, and a reinstatement premium check against
    `aggregate`.)
-   Parked as large, and the candidates for what comes next: (done:
-   bivariate FFT aggregates, `clash`, and copula coupling of the two lines;
-   see "Two lines and clash"; renewal counts, see "Renewal counts");
-   eventual ruin for renewal claims, see "Eventual ruin for renewal
-   claims"); then the P&L ledger (`pnl` and `xpnl`), planned in
-   `pnl.md`.
+   The items parked as large are done too: bivariate FFT aggregates,
+   `clash` and copula coupling of the two lines (see "Two lines and
+   clash"), renewal counts (see "Renewal counts"), eventual ruin for
+   renewal claims (see "Eventual ruin for renewal claims") and the P&L
+   ledger (`pnl` and `xpnl`; `pnl.md`, PRs 1 to 6b and follow-ups 7a to
+   7c).
 2. (Done: deficit and credit carry-forward in profit commissions and
    sliding scales, over multi-year terms; see "Contract terms over
    several years".)
