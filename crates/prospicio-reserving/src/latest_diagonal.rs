@@ -141,8 +141,8 @@ pub enum PastPatternEnd {
     /// its own age. The decay is per origin period, so the same tail runs
     /// off over fewer months for accident quarters than for accident years
     /// (a quarter one quarter past the end and a year one year past it
-    /// both take 1.02538 of a tail of 1.05); a fixed calendar step is open
-    /// (decision 18 item 11). An error with no tail: a factor of 1 is
+    /// both take 1.02538 of a tail of 1.05), as decided (decision 18 item
+    /// 11). An error with no tail: a factor of 1 is
     /// [`NoDevelopment`](Self::NoDevelopment).
     Tail,
 }

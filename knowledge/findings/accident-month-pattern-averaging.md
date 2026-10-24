@@ -65,8 +65,8 @@ its end. The result runs from the pattern's first age to its end `E` plus
   remaining development at an age depends on how the origins are grouped:
   accident years valued at March, the oldest at 123 months, read
   1.0437900950394003 there, a quarter of an annual step, where an accident
-  quarter at 123 months reads 1.0253798721500054. Whether to step by a
-  fixed 12 months instead is open (decision 18 item 11).[^test]
+  quarter at 123 months reads 1.0253798721500054. The user kept this
+  step over a fixed 12 months on 2026-10-24 (decision 18 item 11).[^test]
 
 No reference implementation averages a pattern over origin bases or reads
 one off a triangle's ages: chainladder-python 0.10.1's

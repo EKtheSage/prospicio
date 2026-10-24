@@ -3056,8 +3056,8 @@ averaged over the origin period's months; (c) an origin older than the
 pattern's end takes a factor of 1, an a-priori tail or a tail estimated on
 the pattern's own factors, and with none chosen stays an error naming the
 three; (d) an origin at age 0 stays an error (`LatestDiagonal::new`
-rejects it with `NonPositiveAge`). Items 1 to 10 are proposals for the
-user to accept; item 11 is open, for the user to decide. It revises decision 12's rule 1 and item 4 (the "not a
+rejects it with `NonPositiveAge`). Items 1 to 10 were proposals, accepted by the user on 2026-10-24
+as built; item 11 was open, decided by the user on 2026-10-24 as built. It revises decision 12's rule 1 and item 4 (the "not a
 development age" check), decision 16's item 4 and decision 17's items 4
 and 6, and adds no breaking change: `SelectedPattern` and `ChainLadderFit`
 keep their fields, and `LatestDiagonal`'s fields are private.
@@ -3309,7 +3309,8 @@ keep their fields, and `LatestDiagonal`'s fields are private.
     has no origin-basis argument and keeps the triangle's grain (confirmed
     with uv on 2026-10-23), so these checks are by hand or on synthetic
     books.
-11. **Open: the spread's step.** Item 7 steps the tail past `E` by the
+11. **The spread's step** (decided by the user on 2026-10-24: per
+    origin period, as built). Item 7 steps the tail past `E` by the
     origin grain, with the decay applied per step, so the run-off of the
     tail in calendar time depends on how the origins are grouped: at `T =
     1.05` and decay 0.5 an accident year one year past the end and an
@@ -3323,5 +3324,6 @@ keep their fields, and `LatestDiagonal`'s fields are private.
     read `ln`-linearly: it depends on neither grain, and gives an accident
     quarter at 123 months `1.0437900950394003`, the March book's value of
     item 7, where the build gives `1.0253798721500054`. Annual books are
-    the same under both. For the user to choose; until then the decay is
-    documented as per origin period (`PastPatternEnd::Tail`).
+    the same under both. The user chose the build: the decay is per
+    origin period (`PastPatternEnd::Tail`), as chainladder-python ties it
+    to the development period.
