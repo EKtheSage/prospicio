@@ -606,3 +606,19 @@ local({
                             commutation_requirement = cashflow_requirement(c(outstanding = 1)))
   stopifnot(identical(cashflow_run(reserve, c(0.6, 1.5))$paid_first, c(TRUE, TRUE)))
 })
+
+# Monthly patterns from a payment pattern by development age (#601).
+local({
+  p <- payment_pattern_from_development(c(1, 2, 3, 5), c(5, 2, 1.25, 1))
+  for (how in c("step", "linear", "log-linear")) {
+    m <- payment_pattern_monthly(p, 72, how)
+    stopifnot(max(abs(m[12 * c(1, 2, 3, 5)] - c(0.2, 0.5, 0.8, 1))) < 1e-12)
+    stopifnot(all(diff(m) >= -1e-15), m[72] == 1)
+  }
+  pats <- cashflow_patterns_from_annual(pmin((1:72) / 12, 1), p)
+  stopifnot(abs(pats$earned[1] - 1 / 144) < 1e-15, abs(pats$earned[23] - 1) < 1e-15)
+  stopifnot(all(diff(pats$paid) >= -1e-15))
+  r <- cashflow_run(cashflow_terms(100, 60, pats$written, pats$earned, pats$paid,
+                                   cashflow_requirement(c(outstanding = 1))), 0.7)
+  stopifnot(length(r$funded) == 1)
+})

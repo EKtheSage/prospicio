@@ -20836,6 +20836,20 @@ class PaymentPattern:
         -------
         float
         """
+    def paid_by(self, /, t: float, interpolation: str = "step") -> float:
+        """
+        The share paid by time ``t`` in years, read between the pattern's
+        times by ``interpolation``: ``"step"`` (each share paid at its
+        time), ``"linear"`` (evenly over the period ending at it) or
+        ``"log-linear"`` (the unpaid share falling geometrically).
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import PaymentPattern
+        >>> p = PaymentPattern([1.0, 2.0], [0.6, 0.4])
+        >>> p.paid_by(0.5), round(p.paid_by(0.5, "linear"), 12)
+        (0.0, 0.3)
+        """
     @property
     def shares(self, /) -> list[float]:
         """
@@ -20857,6 +20871,20 @@ class PaymentPattern:
     def times(self, /) -> list[float]:
         """
         The times.
+        """
+    def to_monthly(self, /, months: int, interpolation: str = "linear") -> list[float]:
+        """
+        The cumulative share paid at the end of each of ``months`` months,
+        ``paid_by((m + 1) / 12)``: at month ``12 k - 1`` the pattern's share
+        at ``k`` years. The monthly paid pattern of ``CashflowTerms``.
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import PaymentPattern
+        >>> p = PaymentPattern.from_development([1.0, 2.0, 3.0], [4.0, 1.25, 1.0])
+        >>> m = p.to_monthly(36)
+        >>> round(m[11], 12), round(m[23], 12), m[35]
+        (0.25, 0.8, 1.0)
         """
     def unpaid_from(self, /, age: float) -> PaymentPattern:
         """
@@ -29894,6 +29922,41 @@ def moic(released: float, funded: float, opening: float) -> float:
     >>> from prospicio.pricing import moic
     >>> moic(30.0, 40.0, 60.0)
     1.3
+    """
+
+def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear") -> tuple[list[float], list[float], list[float]]:
+    """
+    The monthly written, earned and paid patterns of ``CashflowTerms`` from
+    a written pattern, a policy term and a payment pattern by development
+    age.
+    
+    The premium written in month ``s`` is written at its start and earned
+    evenly over the ``policy_months`` months from it. Losses occur as
+    premium is earned, in the middle of their month, and are paid by
+    ``pattern``, measured from the accident date and read between its times
+    by ``interpolation`` (as ``PaymentPattern.paid_by``).
+    
+    Parameters
+    ----------
+    written : list of float
+        The cumulative share written by the end of each month; its length
+        is the patterns' (at least the commutation month plus the buffer).
+    pattern : PaymentPattern
+    policy_months : int, default 12
+    interpolation : {"linear", "step", "log-linear"}, default "linear"
+    
+    Returns
+    -------
+    tuple of list of float
+        ``(written, earned, paid)``, to pass to ``CashflowTerms``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import PaymentPattern, monthly_patterns
+    >>> p = PaymentPattern([1.0, 2.0, 3.0], [1 / 3] * 3)
+    >>> w, e, paid = monthly_patterns([1.0] * 60, p)
+    >>> e[5], e[11], round(paid[59], 12)
+    (0.5, 1.0, 1.0)
     """
 
 def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:

@@ -274,6 +274,20 @@ data frame), `book_distribution()` (matrices with a column a deal),
     `Cashflows::paid_first` marks such runs, `irr`'s `sign_changes` was
     already in Python and R, and the docs point a collateralised fund to
     the outstanding loss.
+30. **Monthly patterns come from the patterns actuaries hold** (#601):
+    `PaymentPattern::to_monthly` reads a pattern by age at each month end,
+    `(m + 1) / 12` years, between its times as a step (paid at the
+    stated times, as the pattern discounts), linearly (evenly over each
+    period, the default) or log-linearly in the unpaid share; at month
+    `12k − 1` every rule gives the pattern's share at `k` years, and past
+    the last time all is paid (the shares, any tail included, sum to 1).
+    `MonthlyPatterns::from_annual` builds the engine's three patterns from
+    a written one: premium written in month `s` is written at its start
+    and earned evenly over the policy term from it, losses occur with
+    earning in the middle of their month and are paid by the pattern from
+    the accident date. A single inception and policies written through a
+    year are the same call with a different written pattern, so there is
+    no separate earning type.
 
 ## Conventions left as settings (cash-flow engine)
 
