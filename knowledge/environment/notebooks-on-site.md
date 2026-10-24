@@ -55,13 +55,22 @@ all worktrees) was not touched.
 
 * `cargo xtask python` syncs `python/` with the `docs` and `examples` groups,
   then, after the tests, stages the Python site's User Guide in
-  `target/user-guide` (`stage_user_guide`): each `docs/guides/*.md` but
-  `README.md` as `1-<name>.md` under the sidebar section "Guides", and each
-  `examples/*.ipynb` executed by `jupyter nbconvert --to markdown --execute`
-  (with `--ExecutePreprocessor.timeout=600`, since nbconvert's default stops
-  a cell after 30 s) as `2-<name>.md`, with its charts in `<name>_files/`, under "Worked
-  examples". The first `#` heading becomes the page's front matter `title`,
-  and a guide's link `../../examples/<name>.ipynb` becomes `<name>.md`.[^xtask]
+  `target/user-guide` (`stage_user_guide`) in the order of
+  `docs/guides/toc.yml`: each entry is a `docs/guides/*.md` guide (not
+  `README.md`) or an `examples/*.ipynb` notebook, executed by `jupyter
+  nbconvert --to markdown --execute` (with `--ExecutePreprocessor.timeout=600`,
+  since nbconvert's default stops a cell after 30 s), with its charts in
+  `<name>_files/`. Each page is written as `<NNN>-<name>.md`, NNN counting the
+  entries from 1 across all sections, with its section's title as the front
+  matter `guide-section`. The first `#` heading becomes the page's front matter
+  `title`, and a guide's link `../../examples/<name>.ipynb` becomes
+  `<name>.md`.[^xtask]
+* great-docs 0.17.0 (read in `core.py`, `_discover_user_guide` and
+  `_generate_user_guide_sidebar_auto`) sorts the pages by relative file name
+  and lists the sidebar sections in the order of their first page, with the
+  pages of a section in the sorted order; so a zero-padded global number in the
+  file name orders both. The toc's 46 pages came out in the toc's sections and
+  order through those two functions.
 * `python/great-docs.yml` sets `user_guide: ../target/user-guide`. great-docs
   strips the numeric prefix from each page's file name, so the pages are
   `python/user-guide/<name>.html` on the site, and copies `<name>_files/` as
