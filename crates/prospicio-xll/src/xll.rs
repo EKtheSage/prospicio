@@ -419,6 +419,12 @@ mod exports {
     udf!(pro_bf, triangle, exposure, apriori, average, tail, origins);
     udf!(pro_benktander, triangle, exposure, apriori, iterations, average, tail, origins);
     udf!(pro_capecod, triangle, exposure, trend, decay, average, tail, origins);
+    udf!(pro_diag_cl, origins, ages, latest, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_diag_el, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_diag_bf, origins, ages, latest, exposure, apriori, pattern, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_diag_benktander, origins, ages, latest, exposure, apriori, pattern, iterations, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_diag_capecod, origins, ages, latest, exposure, pattern, trend, decay, pattern_ages, kind, tail, grain, valuation, past_end, pattern_origin);
+    udf!(pro_pattern_average, pattern_ages, pattern, pattern_origin, grain, kind);
     udf!(pro_clark, triangle, exposure, curve, max_age, origins);
     udf!(pro_clark_params, triangle, exposure, curve, max_age);
     udf!(pro_odp_glm, triangle, origins);

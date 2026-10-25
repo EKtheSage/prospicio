@@ -2,7 +2,8 @@
 //! over `prospicio_pricing::payout`, and return metrics on simulated cash
 //! flows over `prospicio_pricing::returns` (`docs/design/time-value.md`).
 
-use prospicio_pricing::payout::{self, PaymentPattern, PayoutPrice};
+use prospicio_pricing::cashflow::MonthlyPatterns;
+use prospicio_pricing::payout::{self, Interpolation, PaymentPattern, PayoutPrice};
 use prospicio_pricing::returns::{self, IrrOptions, TieredFee, TimeUnit};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -10,6 +11,66 @@ use pyo3::prelude::*;
 use crate::pricing::{PyPrice, premium_rule};
 use crate::risk::PyDistortion;
 use crate::to_py;
+
+pub(crate) fn interpolation_arg(s: &str) -> PyResult<Interpolation> {
+    match s {
+        "step" => Ok(Interpolation::Step),
+        "linear" => Ok(Interpolation::Linear),
+        "log-linear" => Ok(Interpolation::LogLinear),
+        other => Err(PyValueError::new_err(format!(
+            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log-linear\""
+        ))),
+    }
+}
+
+/// The monthly written, earned and paid patterns of ``CashflowTerms`` from
+/// a written pattern, a policy term and a payment pattern by development
+/// age.
+///
+/// The premium written in month ``s`` is written at its start and earned
+/// evenly over the ``policy_months`` months from it. Losses occur as
+/// premium is earned, in the middle of their month, and are paid by
+/// ``pattern``, measured from the accident date and read between its times
+/// by ``interpolation`` (as ``PaymentPattern.paid_by``).
+///
+/// Parameters
+/// ----------
+/// written : list of float
+///     The cumulative share written by the end of each month; its length
+///     is the patterns' (at least the commutation month plus the buffer).
+/// pattern : PaymentPattern
+/// policy_months : int, default 12
+/// interpolation : {"linear", "step", "log-linear"}, default "linear"
+///
+/// Returns
+/// -------
+/// tuple of list of float
+///     ``(written, earned, paid)``, to pass to ``CashflowTerms``.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.pricing import PaymentPattern, monthly_patterns
+/// >>> p = PaymentPattern([1.0, 2.0, 3.0], [1 / 3] * 3)
+/// >>> w, e, paid = monthly_patterns([1.0] * 60, p)
+/// >>> e[5], e[11], round(paid[59], 12)
+/// (0.5, 1.0, 1.0)
+#[pyfunction]
+#[pyo3(signature = (written, pattern, policy_months = 12, interpolation = "linear"))]
+pub(crate) fn monthly_patterns(
+    written: Vec<f64>,
+    pattern: PyRef<'_, PyPaymentPattern>,
+    policy_months: usize,
+    interpolation: &str,
+) -> PyResult<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+    let p = MonthlyPatterns::from_annual(
+        written,
+        policy_months,
+        &pattern.inner,
+        interpolation_arg(interpolation)?,
+    )
+    .map_err(to_py)?;
+    Ok((p.written, p.earned, p.paid))
+}
 
 /// The share of the ultimate loss paid at each time, in years from the
 /// treaty's inception.
@@ -107,6 +168,40 @@ impl PyPaymentPattern {
         Ok(Self {
             inner: self.inner.unpaid_from(age).map_err(to_py)?,
         })
+    }
+
+    /// The share paid by time ``t`` in years, read between the pattern's
+    /// times by ``interpolation``: ``"step"`` (each share paid at its
+    /// time), ``"linear"`` (evenly over the period ending at it) or
+    /// ``"log-linear"`` (the unpaid share falling geometrically).
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import PaymentPattern
+    /// >>> p = PaymentPattern([1.0, 2.0], [0.6, 0.4])
+    /// >>> p.paid_by(0.5), round(p.paid_by(0.5, "linear"), 12)
+    /// (0.0, 0.3)
+    #[pyo3(signature = (t, interpolation = "step"))]
+    fn paid_by(&self, t: f64, interpolation: &str) -> PyResult<f64> {
+        Ok(self.inner.paid_by(t, interpolation_arg(interpolation)?))
+    }
+
+    /// The cumulative share paid at the end of each of ``months`` months,
+    /// ``paid_by((m + 1) / 12)``: at month ``12 k - 1`` the pattern's share
+    /// at ``k`` years. The monthly paid pattern of ``CashflowTerms``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.pricing import PaymentPattern
+    /// >>> p = PaymentPattern.from_development([1.0, 2.0, 3.0], [4.0, 1.25, 1.0])
+    /// >>> m = p.to_monthly(36)
+    /// >>> round(m[11], 12), round(m[23], 12), m[35]
+    /// (0.25, 0.8, 1.0)
+    #[pyo3(signature = (months, interpolation = "linear"))]
+    fn to_monthly(&self, months: usize, interpolation: &str) -> PyResult<Vec<f64>> {
+        self.inner
+            .to_monthly(months, interpolation_arg(interpolation)?)
+            .map_err(to_py)
     }
 
     /// The times.

@@ -94,7 +94,9 @@ they are built.
 
 - `DealRun`: one deal's premium, loss and deductions in each simulation
   (`new` and `deduction`, `from_tower` or `from_columns` over
-  `Tower::deal_columns`, the amounts behind `deal_ratios`), its inception
+  `Tower::deal_columns`, the amounts behind `deal_ratios`, with the
+  year's reinstatement premium in the premium by default, decision 31),
+  its inception
   in months from 1 January of the book's first year, its
   `MonthlyPatterns`, and its investor's flows (`cashflows` from a
   `CashflowTerms` and its `Cashflows`, or `flows` from any model).
@@ -110,7 +112,8 @@ they are built.
 
 In Python (`prospicio.pricing`): `DealRun(name, premium, loss,
 deductions=, inception=)` (a deduction NMBF leaves out given as
-`(amounts, True)`), `DealRun.from_tower`, and `with_inception`,
+`(amounts, True)`), `DealRun.from_tower(..., reinstatement_premium=True)`,
+the `premium` and `loss` it holds, and `with_inception`,
 `with_patterns`, `with_cashflows(terms, cashflows)` and `with_flows`, each
 returning a new run; `DealBook` with `select`, `shifted`, `amounts()` and
 `calendar(start_year)` as `PredictiveDistribution`s, `summary()` as
@@ -119,7 +122,8 @@ total and each deal's contribution and marginal cells, and `cashflows(rate)`
 as a `BookCashflows` (the book's `irr` an `IrrResult`, `irr_by_deal` and
 `mean_by_deal` by name). In R: `deal_run()` (deductions a named list,
 `outside_nmbf` their names NMBF leaves out, flows from a `cashflow_run()`
-with its `terms` or a matrix) and `deal_run_from_tower()`, `deal_book()`,
+with its `terms` or a matrix) and `deal_run_from_tower(...,
+reinstatement_premium = TRUE)`, `deal_book()`,
 `book_select()`, `book_shift()`, `book_amounts()`, `book_summary()` (a
 data frame), `book_distribution()` (matrices with a column a deal),
 `book_cashflows()` and `book_calendar()`.
@@ -274,6 +278,31 @@ data frame), `book_distribution()` (matrices with a column a deal),
     `Cashflows::paid_first` marks such runs, `irr`'s `sign_changes` was
     already in Python and R, and the docs point a collateralised fund to
     the outstanding loss.
+30. **Monthly patterns come from the patterns actuaries hold** (#601):
+    `PaymentPattern::to_monthly` reads a pattern by age at each month end,
+    `(m + 1) / 12` years, between its times as a step (paid at the
+    stated times, as the pattern discounts), linearly (evenly over each
+    period, the default) or log-linearly in the unpaid share; at month
+    `12k − 1` every rule gives the pattern's share at `k` years, and past
+    the last time all is paid (the shares, any tail included, sum to 1).
+    `MonthlyPatterns::from_annual` builds the engine's three patterns from
+    a written one: premium written in month `s` is written at its start
+    and earned evenly over the policy term from it, losses occur with
+    earning in the middle of their month and are paid by the pattern from
+    the accident date. A single inception and policies written through a
+    year are the same call with a different written pattern, so there is
+    no separate earning type.
+31. **A deal's premium includes its reinstatement premium** (#595, the
+    user's decision of 2026-10-24): `DealRun::from_tower` adds each year's
+    reinstatement premium, as the tower computes it (pro rata as to amount
+    and, where the layer says so, as to time), to the deposit or
+    swing-rated premium, so a book's premium, margin and returns count
+    what a year that reaches a layer pays back. `from_tower_with(...,
+    false)` keeps the deposit alone, as `deal_ratios` reads it.
+    `Tower::deal_columns` gives the two apart (`premium` and
+    `reinstatement_premium`), and `from_columns` adds them. It is added to
+    the premium rather than kept as a leg of its own, so the book's items
+    and ratios do not change shape.
 
 ## Conventions left as settings (cash-flow engine)
 

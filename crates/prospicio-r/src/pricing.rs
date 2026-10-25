@@ -5,6 +5,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::CollectiveModel as CollectiveInner;
+use prospicio_pricing::cashflow::MonthlyPatterns;
 use prospicio_pricing::classical::{self, Kind, Principle};
 use prospicio_pricing::experience::{
     ClaimValuation, Development, DevelopmentPattern, Experience, Fx, IndexClause, IndexKind,
@@ -18,7 +19,7 @@ use prospicio_pricing::natural::{
     Allocation, AtomAtAssets, BottomLayer, Pentagon, Portfolio as NaturalInner, PriceSettings,
     Quantity, Target,
 };
-use prospicio_pricing::payout::{self, PaymentPattern};
+use prospicio_pricing::payout::{self, Interpolation as PaidInterpolation, PaymentPattern};
 use prospicio_pricing::quote::{Loads, PremiumTerms, Quote, TowerQuote};
 use prospicio_pricing::returns::{self, IrrOptions, TieredFee, TimeUnit};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
@@ -711,6 +712,32 @@ fn pricing_price(losses: Robj, assets: Robj, rate: Option<f64>, pricing: Robj) -
     }
     .map_err(to_r)?;
     Ok(price_list(&p))
+}
+
+/// The upfront premium of a cover whose reinstatement premium counts in
+/// its own price (#587).
+#[extendr]
+fn pricing_price_with_reinstatements(
+    losses: &[f64],
+    g: &[f64],
+    assets: Robj,
+    rate: Option<f64>,
+    pricing: Robj,
+) -> Result<List> {
+    let rule = premium_rule(rate, &pricing)?;
+    let assets = distortion_arg(&assets, "assets")?;
+    let r = risk_load::price_with_reinstatements(losses, g, &rule, &assets).map_err(to_r)?;
+    Ok(list!(
+        upfront = r.upfront,
+        expected_reinstatement_premium = r.expected_reinstatement_premium,
+        expected_premium = r.expected_premium(),
+        expected_loss = r.expected_loss,
+        margin = r.margin(),
+        capital = r.capital(),
+        return_on_capital = r.return_on_capital(),
+        net = price_list(&r.net),
+        iterations = r.iterations as f64
+    ))
 }
 
 /// Portfolio price: `list(total, allocated, standalone)`, the last two
@@ -1416,6 +1443,54 @@ fn pricing_pattern_unpaid(times: &[f64], shares: &[f64], age: f64) -> Result<Lis
     ))
 }
 
+fn interpolation_arg(s: &str) -> Result<PaidInterpolation> {
+    match s {
+        "step" => Ok(PaidInterpolation::Step),
+        "linear" => Ok(PaidInterpolation::Linear),
+        "log-linear" => Ok(PaidInterpolation::LogLinear),
+        other => Err(Error::Other(format!(
+            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log-linear\""
+        ))),
+    }
+}
+
+/// The cumulative share paid at the end of each of `months` months.
+#[extendr]
+fn pricing_pattern_monthly(
+    times: &[f64],
+    shares: &[f64],
+    months: f64,
+    interpolation: &str,
+) -> Result<Vec<f64>> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    p.to_monthly(
+        whole(months, "months")? as usize,
+        interpolation_arg(interpolation)?,
+    )
+    .map_err(to_r)
+}
+
+/// The monthly written, earned and paid patterns from a written pattern, a
+/// policy term and a payment pattern: `list(written, earned, paid)`.
+#[extendr]
+fn pricing_patterns_from_annual(
+    written: Vec<f64>,
+    times: &[f64],
+    shares: &[f64],
+    policy_months: f64,
+    interpolation: &str,
+) -> Result<List> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    let m = MonthlyPatterns::from_annual(
+        written,
+        whole(policy_months, "policy_months")? as usize,
+        &p,
+        interpolation_arg(interpolation)?,
+    )
+    .map_err(to_r)?;
+    Ok(list!(written = m.written, earned = m.earned, paid = m.paid))
+}
+
 /// A pattern's discount factor and capital years at `rate`, and the share
 /// outstanding at each of `t`.
 #[extendr]
@@ -1750,6 +1825,8 @@ extendr_module! {
     fn pricing_payment_pattern;
     fn pricing_pattern_values;
     fn pricing_pattern_unpaid;
+    fn pricing_pattern_monthly;
+    fn pricing_patterns_from_annual;
     fn pricing_price_over_payout;
     fn pricing_npv;
     fn pricing_irr;
@@ -1773,6 +1850,7 @@ extendr_module! {
     impl RiskProfile;
     fn pricing_severity_exposure_curve;
     fn pricing_price;
+    fn pricing_price_with_reinstatements;
     fn pricing_price_portfolio;
     fn pricing_ilf;
     fn pricing_layer_cv;

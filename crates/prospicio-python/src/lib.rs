@@ -131,8 +131,8 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::payout::{
-        PyIrrResult, PyPaymentPattern, PyPayoutPrice, irr, leverage, moic, npv, price_over_payout,
-        tiered_fee,
+        PyIrrResult, PyPaymentPattern, PyPayoutPrice, irr, leverage, moic, monthly_patterns, npv,
+        price_over_payout, tiered_fee,
     };
     #[pymodule_export]
     use super::pnl::{
@@ -141,11 +141,11 @@ mod prospicio_native {
     };
     #[pymodule_export]
     use super::pricing::{
-        PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyRiskProfile,
-        PyTabulatedCurve, PyTowerModel, PyTowerQuote, alpha_between_frequencies,
+        PyCollectiveModel, PyMbbefd, PyPortfolioPrice, PyPrice, PyQuote, PyReinstatementPrice,
+        PyRiskProfile, PyTabulatedCurve, PyTowerModel, PyTowerQuote, alpha_between_frequencies,
         alpha_between_frequency_and_layer, alpha_between_layers, censored_las, fit_pml_curve,
         fit_references, ilf, layer_cv, loss_elimination_ratio, match_tower, pareto_extrapolation,
-        price, price_portfolio, severity_exposure_curve,
+        price, price_portfolio, price_with_reinstatements, severity_exposure_curve,
     };
     #[pymodule_export]
     use super::ratemaking::{

@@ -130,7 +130,7 @@ impl Default for PatternWeight {
 ///   are converted to CDFs first). Ages before the first and after the
 ///   last given age stay estimated.
 /// * A cumulative pattern's level at its last age selects no factor. With
-///   no [`Tail`](crate::Tail) (a constant 1 at the oldest age) and a last
+///   no [`Tail`] (a constant 1 at the oldest age) and a last
 ///   age that is the oldest, the level is the tail: the tail factor is the
 ///   pattern's CDF there (1 over its percent developed), a constant with no
 ///   parameter error, as chainladder-python's `DevelopmentConstant` keeps it
@@ -145,7 +145,7 @@ impl Default for PatternWeight {
 /// Factors the pattern does not select are estimated, as without one, and
 /// the triangle must still estimate every factor (the estimate is reported
 /// next to the selection and gives Mack's sigma). A selected factor at or
-/// after the age where the [`Tail`](crate::Tail) takes over is an error.
+/// after the age where the [`Tail`] takes over is an error.
 ///
 /// **Ages off the triangle's** (`reserving-v02.md`, decision 18). When every
 /// age the pattern gives is a development age of the triangle, the rules

@@ -8544,11 +8544,16 @@ class DealRun:
     def __new__(cls, /, name: str, premium: Sequence[float], loss: Sequence[float], *, deductions: dict |None = None, inception: int = 0) -> DealRun: ...
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0) -> DealRun:
+    def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0, reinstatement_premium: bool = True) -> DealRun:
         """
         A layer's or deal's run from a result of ``tower``: its premium,
         ceded loss, commissions, brokerage and deductions, the amounts
         behind ``Tower.deal_ratios``, under the name ``name``.
+        
+        Each year's premium is the deposit (or swing-rated) premium plus the
+        year's reinstatement premium from the tower, pro rata as to amount
+        and, where the layer says so, as to time; ``reinstatement_premium=False``
+        leaves it out, so the premium is the deposit in every year.
         
         >>> from prospicio.pricing import DealRun
         >>> from prospicio.reinsurance import Layer, Tower
@@ -8558,11 +8563,24 @@ class DealRun:
         >>> run = DealRun.from_tower("cover", tower, tower.apply_annual([40.0, 150.0]), "cover")
         >>> run.n_sims
         2
+        >>> from prospicio.aggregate import EventSet
+        >>> cat = Layer("cat", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0])
+        >>> tower = Tower([cat])
+        >>> result = tower.apply(EventSet.from_years([[5.0], [15.0]]))
+        >>> DealRun.from_tower("cat", tower, result, "cat").premium
+        [2.0, 3.0]
+        >>> DealRun.from_tower("cat", tower, result, "cat", reinstatement_premium=False).premium
+        [2.0, 2.0]
         """
     @property
     def inception(self, /) -> int:
         """
         The inception month.
+        """
+    @property
+    def loss(self, /) -> list[float]:
+        """
+        The loss in each simulation.
         """
     @property
     def n_sims(self, /) -> int:
@@ -8573,6 +8591,11 @@ class DealRun:
     def name(self, /) -> str:
         """
         The deal's name.
+        """
+    @property
+    def premium(self, /) -> list[float]:
+        """
+        The premium in each simulation.
         """
     def with_cashflows(self, /, terms: CashflowTerms, cashflows: Cashflows) -> DealRun:
         """
@@ -20836,6 +20859,20 @@ class PaymentPattern:
         -------
         float
         """
+    def paid_by(self, /, t: float, interpolation: str = "step") -> float:
+        """
+        The share paid by time ``t`` in years, read between the pattern's
+        times by ``interpolation``: ``"step"`` (each share paid at its
+        time), ``"linear"`` (evenly over the period ending at it) or
+        ``"log-linear"`` (the unpaid share falling geometrically).
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import PaymentPattern
+        >>> p = PaymentPattern([1.0, 2.0], [0.6, 0.4])
+        >>> p.paid_by(0.5), round(p.paid_by(0.5, "linear"), 12)
+        (0.0, 0.3)
+        """
     @property
     def shares(self, /) -> list[float]:
         """
@@ -20857,6 +20894,20 @@ class PaymentPattern:
     def times(self, /) -> list[float]:
         """
         The times.
+        """
+    def to_monthly(self, /, months: int, interpolation: str = "linear") -> list[float]:
+        """
+        The cumulative share paid at the end of each of ``months`` months,
+        ``paid_by((m + 1) / 12)``: at month ``12 k - 1`` the pattern's share
+        at ``k`` years. The monthly paid pattern of ``CashflowTerms``.
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import PaymentPattern
+        >>> p = PaymentPattern.from_development([1.0, 2.0, 3.0], [4.0, 1.25, 1.0])
+        >>> m = p.to_monthly(36)
+        >>> round(m[11], 12), round(m[23], 12), m[35]
+        (0.25, 0.8, 1.0)
         """
     def unpaid_from(self, /, age: float) -> PaymentPattern:
         """
@@ -23486,6 +23537,59 @@ class RateLevel:
     def written_changes(self, /) -> list[int]:
         """
         The number of written-policy changes in effect for each cell.
+        """
+
+@final
+class ReinstatementPrice:
+    """
+    The upfront premium of a cover whose reinstatement premium counts in
+    its own price, from ``price_with_reinstatements``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def capital(self, /) -> float:
+        """
+        The capital: the net outcome's assets less ``P``.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        The expected ceded loss ``E[X]``.
+        """
+    @property
+    def expected_premium(self, /) -> float:
+        """
+        The expected premium in all, ``P (1 + E[g])``.
+        """
+    @property
+    def expected_reinstatement_premium(self, /) -> float:
+        """
+        The expected reinstatement premium ``P E[g]``.
+        """
+    @property
+    def iterations(self, /) -> int:
+        """
+        The bisection steps taken.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        The margin on all the premium, ``P (1 + E[g]) - E[X]``.
+        """
+    @property
+    def net(self, /) -> Price:
+        """
+        The price of the net outcome ``X - P g`` at the solution.
+        """
+    @property
+    def return_on_capital(self, /) -> float:
+        """
+        The return on capital.
+        """
+    @property
+    def upfront(self, /) -> float:
+        """
+        The upfront (deposit) premium ``P``.
         """
 
 @final
@@ -29896,6 +30000,41 @@ def moic(released: float, funded: float, opening: float) -> float:
     1.3
     """
 
+def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear") -> tuple[list[float], list[float], list[float]]:
+    """
+    The monthly written, earned and paid patterns of ``CashflowTerms`` from
+    a written pattern, a policy term and a payment pattern by development
+    age.
+    
+    The premium written in month ``s`` is written at its start and earned
+    evenly over the ``policy_months`` months from it. Losses occur as
+    premium is earned, in the middle of their month, and are paid by
+    ``pattern``, measured from the accident date and read between its times
+    by ``interpolation`` (as ``PaymentPattern.paid_by``).
+    
+    Parameters
+    ----------
+    written : list of float
+        The cumulative share written by the end of each month; its length
+        is the patterns' (at least the commutation month plus the buffer).
+    pattern : PaymentPattern
+    policy_months : int, default 12
+    interpolation : {"linear", "step", "log-linear"}, default "linear"
+    
+    Returns
+    -------
+    tuple of list of float
+        ``(written, earned, paid)``, to pass to ``CashflowTerms``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import PaymentPattern, monthly_patterns
+    >>> p = PaymentPattern([1.0, 2.0, 3.0], [1 / 3] * 3)
+    >>> w, e, paid = monthly_patterns([1.0] * 60, p)
+    >>> e[5], e[11], round(paid[59], 12)
+    (0.5, 1.0, 1.0)
+    """
+
 def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
     """
     The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
@@ -30532,6 +30671,47 @@ def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_c
     [3.5, 0.681818]
     >>> p.allocated[1].margin < 0  # the second cover hedges the first
     True
+    """
+
+def price_with_reinstatements(losses: Sequence[float], g: Sequence[float], assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> ReinstatementPrice:
+    """
+    The upfront premium of a cover whose reinstatement premium counts in
+    its own price (#587).
+    
+    The reinsurer's net outcome is ``X - P g``, with ``X`` the year's ceded
+    loss and ``g`` its reinstatement premium per unit of upfront premium
+    (a tower's reinstatement premium at a unit deposit, for example), so
+    its assets and price depend on ``P``; the upfront premium solves
+    ``P = price(X - P g)``. With ``g = 0`` this is ``price``, with a
+    constant ``g`` it is ``price(X) / (1 + g)``, and under the identity
+    distortion it is Sundt's ``E[X] / (1 + E[g])``.
+    
+    Parameters
+    ----------
+    losses : array_like
+        The ceded loss in each simulation.
+    g : array_like
+        The reinstatement premium per unit of upfront premium in each
+        simulation, finite and non-negative.
+    assets : Distortion
+    cost_of_capital : float, optional
+    distortion : Distortion, optional
+        Exactly one of ``cost_of_capital`` and ``distortion``, as in
+        ``price``.
+    
+    Returns
+    -------
+    ReinstatementPrice
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import price_with_reinstatements
+    >>> from prospicio.risk import Distortion
+    >>> x = [0.0, 0.0, 2.0, 6.0]
+    >>> r = price_with_reinstatements(x, [l / 6 for l in x], Distortion.tvar(0.5),
+    ...                               cost_of_capital=0.25)
+    >>> r.upfront < 2.4, round(r.return_on_capital, 9)
+    (True, 0.25)
     """
 
 def product_limit(losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> dict[str, list[float]]:

@@ -69,6 +69,21 @@ stopifnot(isTRUE(all.equal(one$premium, 2.4)), isTRUE(all.equal(one$return_on_ca
 w <- risk_loaded_price(pd, assets, distortion = distortion("wang", 0.2))
 stopifnot(w$expected_loss < w$premium, w$premium < w$assets)
 stopifnot(inherits(try(risk_loaded_price(pd, assets), silent = TRUE), "try-error"))
+# Reinstatement premium in its own price (#587).
+x <- c(0, 1, 0, 3, 8, 0.5, 12, 0)
+plain <- risk_loaded_price(sampled(x), assets, cost_of_capital = 0.15)
+cst <- price_with_reinstatements(x, rep(0.4, 8), assets, cost_of_capital = 0.15)
+stopifnot(isTRUE(all.equal(cst$upfront, plain$premium / 1.4, tolerance = 1e-10)))
+g <- pmin(x / 10, 1)
+id <- price_with_reinstatements(x, g, assets, distortion = distortion("proportional_hazard", 1))
+stopifnot(isTRUE(all.equal(id$upfront, mean(x) / (1 + mean(g)), tolerance = 1e-10)))
+r <- price_with_reinstatements(x, g, assets, cost_of_capital = 0.15)
+stopifnot(
+  r$upfront < plain$premium,
+  isTRUE(all.equal(r$return_on_capital, 0.15, tolerance = 1e-9)),
+  isTRUE(all.equal(r$expected_premium, r$upfront * (1 + mean(g)))),
+  r$iterations > 0
+)
 
 # MBBEFD exposure curves.
 c3 <- swiss_re_curve(3)
@@ -524,6 +539,15 @@ stopifnot(inherits(try(deal_book(list(a, a)), silent = TRUE), "try-error"),
           inherits(try(book_distribution(book, "loss", 90, tail = "middle"), silent = TRUE),
                    "try-error"),
           identical(book_select(book, "b")$ptr$names(), "b"))
+# A run from a tower takes each year's reinstatement premium (#595).
+tw <- reinsurance_tower(list(xol_layer("cat", 10, 10, premium = 2, reinstatement_rates = c(1, 0.5))))
+res <- apply_tower(tw, event_set_from_long(c(1, 2, 3, 3, 4, 4, 4), c(5, 15, 22, 12, 40, 40, 40), 4))
+run <- deal_run_from_tower("cat", tw, res, "cat")
+near(run$ptr$premium(), c(2, 3, 4.2, 5))
+near(run$ptr$premium() - 2, draw_matrix(res)[, 4])
+deposit <- deal_run_from_tower("cat", tw, res, "cat", reinstatement_premium = FALSE)
+stopifnot(identical(deposit$ptr$premium(), rep(2, 4)),
+          identical(deposit$ptr$loss(), run$ptr$loss()))
 flows_a <- matrix(c(-10, 0, 10.1), 4, 3, byrow = TRUE)
 a <- deal_run("a", rep(100, 4), c(40, 80, 20, 160), flows = flows_a, funded = rep(0, 4),
               opening = rep(10, 4))
@@ -605,4 +629,20 @@ local({
                             cashflow_requirement(c(reserve = 1)),
                             commutation_requirement = cashflow_requirement(c(outstanding = 1)))
   stopifnot(identical(cashflow_run(reserve, c(0.6, 1.5))$paid_first, c(TRUE, TRUE)))
+})
+
+# Monthly patterns from a payment pattern by development age (#601).
+local({
+  p <- payment_pattern_from_development(c(1, 2, 3, 5), c(5, 2, 1.25, 1))
+  for (how in c("step", "linear", "log-linear")) {
+    m <- payment_pattern_monthly(p, 72, how)
+    stopifnot(max(abs(m[12 * c(1, 2, 3, 5)] - c(0.2, 0.5, 0.8, 1))) < 1e-12)
+    stopifnot(all(diff(m) >= -1e-15), m[72] == 1)
+  }
+  pats <- cashflow_patterns_from_annual(pmin((1:72) / 12, 1), p)
+  stopifnot(abs(pats$earned[1] - 1 / 144) < 1e-15, abs(pats$earned[23] - 1) < 1e-15)
+  stopifnot(all(diff(pats$paid) >= -1e-15))
+  r <- cashflow_run(cashflow_terms(100, 60, pats$written, pats$earned, pats$paid,
+                                   cashflow_requirement(c(outstanding = 1))), 0.7)
+  stopifnot(length(r$funded) == 1)
 })

@@ -127,9 +127,11 @@ items: premium, loss, ceding_commission, total_deductions, nmbf, margin
 ```
 
 `book.summary()` gives the mean of every item by deal and for the book, with its
-ratio to the mean premium. The margin here is premium less loss less the
-deductions. Only `corran_qs` has a deduction, its ceding commission. The data
-has no expenses of Larkspur, so the margin is before them.
+ratio to the mean premium. The premium is the deposit of each year plus the
+reinstatement premium that the losses of that year pay (section 3). The margin
+is the premium less the loss less the deductions. Only `corran_qs` has a
+deduction, its ceding commission. The data has no expenses of Larkspur, so the
+margin is before them.
 
 ```python
 s = book.summary()
@@ -142,52 +144,38 @@ for d in [*book.names, "total"]:
 
 ```text
 deal          premium    loss  deduct  margin     LR
-alder_cat_1     1.800   0.823   0.000   0.977  0.457
-alder_cat_2     1.000   0.416   0.000   0.584  0.416
-bracken_cat     1.750   0.685   0.000   1.065  0.391
+alder_cat_1     1.921   0.823   0.000   1.098  0.428
+alder_cat_2     1.020   0.416   0.000   0.604  0.408
+bracken_cat     1.846   0.685   0.000   1.161  0.371
 bracken_agg     0.450   0.162   0.000   0.288  0.360
 corran_qs       3.000   1.202   0.750   1.048  0.401
-total           8.000   3.289   0.750   3.961  0.411
+total           8.237   3.289   0.750   4.198  0.399
 ```
 
-## 3. Adding the reinstatement premium
+## 3. Reinstatement premium in the book
 
-`DealRun.from_tower` takes only the deposit premium of the layer (#595).
-Thus the premium of `alder_cat_1` is the same 1.8 in every year, although a
-year that reaches the layer pays more.
-
-The block below builds the runs of the two Alder layers and `bracken_cat` from
-the result of the tower. The premium in year `j` is the deposit plus the
-reinstatement premium of that year. The losses do not change, so the capital
-below does not change. Only the premium and the margin change.
+`DealRun.from_tower` adds the reinstatement premium of each year to the deposit
+premium of the layer. The tower computes that premium for the two Alder layers
+and `bracken_cat`, pro rata as to amount. Thus the premium of `alder_cat_1` is
+1.8 in a quiet year and more in a year that reaches the layer.
+`reinstatement_premium=False` keeps the deposit alone, for comparison. The losses do not
+change, so the capital below does not change. Only the premium and the margin
+change.
 
 ```python
 amounts = book.amounts()
-deposit = amounts.marginal(["premium", "alder_cat_1"]).draws
-print(f"alder_cat_1 book premium: min {min(deposit):.3f}, max {max(deposit):.3f}")
-
-
-def with_reinstatement_premium(name):
-    """The deal's run with each year's reinstatement premium added to its deposit."""
-    by_kind = results[name].aggregate(["kind", "layer"])
-    rip = by_kind.marginal(["reinstatement_premium", name])
-    if rip is None:
-        return DealRun.from_tower(name, towers[name], results[name], name)
-    loss = by_kind.marginal(["ceded", name]).draws
-    premium = [contract_layer(CONTRACTS[name]).premium + x for x in rip.draws]
-    return DealRun(name, premium, loss)
-
-
-book_rip = DealBook([with_reinstatement_premium(n) for n in book.names])
-s_rip = book_rip.summary()
-rows_rip = {(d, i): m for d, i, m in zip(s_rip["deal"], s_rip["item"], s_rip["mean"])}
+premium = amounts.marginal(["premium", "alder_cat_1"]).draws
+print(f"alder_cat_1 book premium: min {min(premium):.3f}, max {max(premium):.3f}")
+deposit = DealBook([DealRun.from_tower(n, towers[n], results[n], n, reinstatement_premium=False)
+                    for n in book.names])
+s_dep = deposit.summary()
+charged = {d: m for d, i, m in zip(s_dep["deal"], s_dep["item"], s_dep["mean"]) if i == "premium"}
 for d in book.names:
-    added = rows_rip[d, "premium"] - rows[d, "premium"][0]
-    print(f"{d:<12} reinstatement premium {added:.4f}")
+    print(f"{d:<12} reinstatement premium {rows[d, 'premium'][0] - charged[d]:.4f}")
 ```
 
 ```text
-alder_cat_1 book premium: min 1.800, max 1.800
+alder_cat_1 book premium: min 1.800, max 3.600
 alder_cat_1  reinstatement premium 0.1207
 alder_cat_2  reinstatement premium 0.0203
 bracken_cat  reinstatement premium 0.0959
@@ -310,11 +298,11 @@ deductions (the ceding commission of Corran).
 pp = price_portfolio(loss, Distortion.tvar(0.99), cost_of_capital=0.10)
 print(f"book: EL {pp.total.expected_loss:.3f}, premium {pp.total.premium:.3f}, "
       f"capital {pp.total.capital:.3f}")
-kept = {d: rows_rip[d, "premium"] - rows_rip[d, "total_deductions"] for d in [*book.names, "total"]}
+kept = {d: rows[d, "premium"][0] - rows[d, "total_deductions"][0] for d in [*book.names, "total"]}
 print(f"{'deal':<12}{'charged':>9}{'kept':>8}{'in book':>9}{'alone':>8}")
 for d, ab, al in zip(book.names, pp.allocated, pp.standalone):
-    print(f"{d:<12}{rows[d, 'premium'][0]:>9.3f}{kept[d]:>8.3f}{ab.premium:>9.3f}{al.premium:>8.3f}")
-print(f"{'book':<12}{rows['total', 'premium'][0]:>9.3f}{kept['total']:>8.3f}{pp.total.premium:>9.3f}")
+    print(f"{d:<12}{charged[d]:>9.3f}{kept[d]:>8.3f}{ab.premium:>9.3f}{al.premium:>8.3f}")
+print(f"{'book':<12}{charged['total']:>9.3f}{kept['total']:>8.3f}{pp.total.premium:>9.3f}")
 print(f"premium saved by diversification {pp.diversification():.3f}")
 ```
 
@@ -359,7 +347,7 @@ print(f"{'deal':<12}{'EL':>7}{'dA':>8}{'marginal P':>12}{'charged':>9}")
 for d in book.names:
     el, da = dist["marginal"][d]["Mean"], dist["marginal"][d]["TVaR 99"]
     p = (el + r * da) / (1 + r)
-    print(f"{d:<12}{el:>7.3f}{da:>8.3f}{p:>12.3f}{rows[d, 'premium'][0]:>9.3f}")
+    print(f"{d:<12}{el:>7.3f}{da:>8.3f}{p:>12.3f}{charged[d]:>9.3f}")
 ```
 
 ```text
@@ -382,17 +370,17 @@ and the book falls short.
 
 A risk-adjusted return on capital (RAROC) sets the margin of each deal against
 the capital allocated to it. Here the capital is the allocated assets less the
-premium of the deal, as above. The margin includes the reinstatement premium
-from the hand-built runs. The data has no expense line, so this is a return
-before the costs of Larkspur.
+premium of the deal, as above. The margin includes the reinstatement premium of
+section 3. The data has no expense line, so this is a return before the costs
+of Larkspur.
 
 ```python
 print(f"{'deal':<12}{'margin':>8}{'capital':>9}{'return':>8}")
 for d, a in zip(book.names, alloc.allocated):
-    margin, premium = rows_rip[d, "margin"], rows_rip[d, "premium"]
+    margin, premium = rows[d, "margin"][0], rows[d, "premium"][0]
     ret = f"{margin / (a - premium):.1%}" if a > premium else "none"
     print(f"{d:<12}{margin:>8.3f}{a - premium:>9.3f}{ret:>8}")
-margin, premium = rows_rip["total", "margin"], rows_rip["total", "premium"]
+margin, premium = rows["total", "margin"][0], rows["total", "premium"][0]
 print(f"{'book':<12}{margin:>8.3f}{alloc.total - premium:>9.3f}{margin / (alloc.total - premium):>8.1%}")
 ```
 

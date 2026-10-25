@@ -212,6 +212,10 @@ pricing_pattern_values <- function(times, shares, rate, t) .Call(wrap__pricing_p
 
 pricing_pattern_unpaid <- function(times, shares, age) .Call(wrap__pricing_pattern_unpaid, times, shares, age)
 
+pricing_pattern_monthly <- function(times, shares, months, interpolation) .Call(wrap__pricing_pattern_monthly, times, shares, months, interpolation)
+
+pricing_patterns_from_annual <- function(written, times, shares, policy_months, interpolation) .Call(wrap__pricing_patterns_from_annual, written, times, shares, policy_months, interpolation)
+
 pricing_price_over_payout <- function(expected_loss, premium, assets, times, shares, rate, coc) .Call(wrap__pricing_price_over_payout, expected_loss, premium, assets, times, shares, rate, coc)
 
 pricing_npv <- function(flows, times, rate, unit) .Call(wrap__pricing_npv, flows, times, rate, unit)
@@ -235,6 +239,8 @@ pricing_quote <- function(expected_loss, risk_premium, assets, expenses, brokera
 pricing_tower_quote <- function(tower, ceded, expected_reinstatement_premium, total_ceded, assets, rate, pricing, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements) .Call(wrap__pricing_tower_quote, tower, ceded, expected_reinstatement_premium, total_ceded, assets, rate, pricing, expenses, brokerage, fixed, premium_tax, income_tax, brokerage_on_reinstatements)
 
 pricing_price <- function(losses, assets, rate, pricing) .Call(wrap__pricing_price, losses, assets, rate, pricing)
+
+pricing_price_with_reinstatements <- function(losses, g, assets, rate, pricing) .Call(wrap__pricing_price_with_reinstatements, losses, g, assets, rate, pricing)
 
 pricing_price_portfolio <- function(pd, assets, rate, pricing) .Call(wrap__pricing_price_portfolio, pd, assets, rate, pricing)
 
@@ -3424,7 +3430,7 @@ BookDeal <- new.env(parent = emptyenv())
 
 BookDeal$new <- function(name, premium, loss, names, deductions, outside, inception) .Call(wrap__BookDeal__new, name, premium, loss, names, deductions, outside, inception)
 
-BookDeal$from_tower <- function(name, tower, result, layer, inception) .Call(wrap__BookDeal__from_tower, name, tower, result, layer, inception)
+BookDeal$from_tower <- function(name, tower, result, layer, inception, reinstatement_premium) .Call(wrap__BookDeal__from_tower, name, tower, result, layer, inception, reinstatement_premium)
 
 BookDeal$with_inception <- function(inception) .Call(wrap__BookDeal__with_inception, self, inception)
 
@@ -3437,6 +3443,10 @@ BookDeal$name <- function() .Call(wrap__BookDeal__name, self)
 BookDeal$n_sims <- function() .Call(wrap__BookDeal__n_sims, self)
 
 BookDeal$inception <- function() .Call(wrap__BookDeal__inception, self)
+
+BookDeal$premium <- function() .Call(wrap__BookDeal__premium, self)
+
+BookDeal$loss <- function() .Call(wrap__BookDeal__loss, self)
 
 #' @export
 `$.BookDeal` <- function (self, name) { func <- BookDeal[[name]]; environment(func) <- environment(); func }

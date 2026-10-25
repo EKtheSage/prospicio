@@ -420,6 +420,41 @@ risk_loaded_price <- function(x, assets, cost_of_capital = NULL, distortion = NU
   rust_result(pricing_price(x@ptr, assets@ptr, rate_arg(cost_of_capital), pricing_arg(distortion)))
 }
 
+#' Upfront premium with reinstatement premium in the price
+#'
+#' The reinsurer's net outcome is `X - P g`, with `X` the year's ceded loss
+#' and `g` its reinstatement premium per unit of upfront premium (a
+#' tower's reinstatement premium at a unit deposit, for example), so its
+#' assets and price depend on the upfront premium `P`, which solves
+#' `P = price(X - P g)` under the rule of [risk_loaded_price()]. With
+#' `g = 0` this is [risk_loaded_price()], with a constant `g` it is
+#' `price(X) / (1 + g)`, and under the identity distortion it is Sundt's
+#' `E[X] / (1 + E[g])` (#587).
+#'
+#' @param losses The ceded loss in each simulation.
+#' @param g The reinstatement premium per unit of upfront premium in each
+#'   simulation, finite and non-negative.
+#' @inheritParams risk_loaded_price
+#' @returns A list with `upfront`, `expected_reinstatement_premium`,
+#'   `expected_premium` (`P (1 + E[g])`), `expected_loss`, `margin`,
+#'   `capital`, `return_on_capital`, `net`, the price of `X - P g` as
+#'   [risk_loaded_price()] returns it, and `iterations`, the bisection
+#'   steps taken.
+#' @examples
+#' x <- c(0, 0, 2, 6)
+#' r <- price_with_reinstatements(x, x / 6, distortion("tvar", 0.5),
+#'                                cost_of_capital = 0.25)
+#' r$upfront
+#' round(r$return_on_capital, 9)
+#' @export
+price_with_reinstatements <- function(losses, g, assets, cost_of_capital = NULL,
+                                      distortion = NULL) {
+  rust_result(pricing_price_with_reinstatements(
+    as.double(losses), as.double(g), assets@ptr, rate_arg(cost_of_capital),
+    pricing_arg(distortion)
+  ))
+}
+
 #' @rdname risk_loaded_price
 #' @export
 price_portfolio <- function(x, assets, cost_of_capital = NULL, distortion = NULL) {
@@ -1772,6 +1807,60 @@ payment_pattern_unpaid <- function(pattern, age) {
 pattern_values <- function(pattern, rate = 0, t = double()) {
   rust_result(pricing_pattern_values(pattern$times, pattern$shares, as.double(rate),
                                      as.double(t)))
+}
+
+#' Monthly patterns from a payment pattern
+#'
+#' `payment_pattern_monthly()` reads a [payment_pattern()] at the end of
+#' each of `months` months, the share paid by `(m + 1) / 12` years: at month
+#' `12 k - 1` (the `12 k`-th value) it is the pattern's share at `k` years.
+#' Between the pattern's times the share paid runs as `interpolation` says:
+#' `"step"` (each share paid at its time, as the pattern discounts),
+#' `"linear"` (evenly over the period ending at it, the usual assumption)
+#' or `"log-linear"` (the unpaid share falling geometrically). After the
+#' last time all is paid, as the shares, any tail included, sum to 1.
+#'
+#' `cashflow_patterns_from_annual()` gives the monthly written, earned and
+#' paid patterns of [cashflow_terms()] from a written pattern: the premium
+#' written in month `s` is written at its start and earned evenly over the
+#' `policy_months` months from it; losses occur as premium is earned, in
+#' the middle of their month, and are paid by `pattern` measured from the
+#' accident date. All premium written at once is a single policy; written
+#' evenly over a year, policies written through it.
+#'
+#' @param pattern A [payment_pattern()], by age from the accident date for
+#'   `cashflow_patterns_from_annual()`.
+#' @param months The number of months.
+#' @param interpolation `"linear"`, `"step"` or `"log-linear"`.
+#' @param written The cumulative share written by the end of each month; its
+#'   length is the patterns'.
+#' @param policy_months The policy term in months.
+#' @returns `payment_pattern_monthly()` a numeric vector;
+#'   `cashflow_patterns_from_annual()` a list of `written`, `earned` and
+#'   `paid`.
+#' @export
+#' @examples
+#' p <- payment_pattern_from_development(c(1, 2, 3), c(4, 1.25, 1))
+#' m <- payment_pattern_monthly(p, 36)
+#' m[c(12, 24, 36)]
+#' even <- payment_pattern(c(1, 2, 3), rep(1 / 3, 3))
+#' pats <- cashflow_patterns_from_annual(rep(1, 60), even)
+#' pats$earned[c(6, 12)]
+#' terms <- cashflow_terms(100, 48, pats$written, pats$earned, pats$paid,
+#'                         cashflow_requirement(c(outstanding = 1)))
+#' round(cashflow_run(terms, 1.3)$funded, 6)
+payment_pattern_monthly <- function(pattern, months,
+                                    interpolation = c("linear", "step", "log-linear")) {
+  rust_result(pricing_pattern_monthly(pattern$times, pattern$shares, as.double(months),
+                                      match.arg(interpolation)))
+}
+
+#' @rdname payment_pattern_monthly
+#' @export
+cashflow_patterns_from_annual <- function(written, pattern, policy_months = 12,
+                                          interpolation = c("linear", "step", "log-linear")) {
+  rust_result(pricing_patterns_from_annual(as.double(written), pattern$times, pattern$shares,
+                                           as.double(policy_months), match.arg(interpolation)))
 }
 
 #' Price over a payout

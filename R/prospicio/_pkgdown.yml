@@ -160,6 +160,7 @@ reference:
       - layer_cv
       - censored_las
       - risk_loaded_price
+      - price_with_reinstatements
       - capital_portfolio
       - natural_price
       - calibrate_portfolio
@@ -172,6 +173,7 @@ reference:
       - technical_quote
       - tower_quote
       - payment_pattern
+      - payment_pattern_monthly
       - price_over_payout
       - npv
       - cashflow_terms
