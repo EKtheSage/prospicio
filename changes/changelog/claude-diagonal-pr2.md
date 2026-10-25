@@ -5,7 +5,7 @@
 
 ### Reserving
 
-- `LatestDiagonal` holds a bordereau's latest value per origin at its own
+- `LatestDiagonal` holds one latest value per origin at its own
   age (or from a valuation date) with an optional exposure, and
   `fit_diagonal` on `ChainLadder`, `ExpectedLoss`, `BornhuetterFerguson`,
   `Benktander` and `CapeCod` projects it with a fully selected pattern

@@ -184,27 +184,38 @@ fn collect_fits<T>(
     triangle: &Triangle,
     fits: impl Iterator<Item = Result<T>>,
 ) -> Result<SegmentFits<T>> {
-    let keyed = !triangle.key_names().is_empty();
+    collect_labelled(triangle.key_names(), triangle.index(), fits)
+}
+
+/// The fits of the segments `labels` under `key_names`, in that order, with
+/// a failure labelled by its segment when there are keys.
+pub(crate) fn collect_labelled<T>(
+    key_names: &[String],
+    labels: &[Label],
+    fits: impl Iterator<Item = Result<T>>,
+) -> Result<SegmentFits<T>> {
+    let keyed = !key_names.is_empty();
     let fits = fits
-        .zip(triangle.index())
-        .map(|(fit, label)| {
-            fit.map_err(|e| {
-                if keyed {
-                    Error::InSegment {
-                        label: label.to_string(),
-                        source: Box::new(e),
-                    }
-                } else {
-                    e
-                }
-            })
-        })
+        .zip(labels)
+        .map(|(fit, label)| fit.map_err(|e| labelled(keyed, label, e)))
         .collect::<Result<_>>()?;
     Ok(SegmentFits {
-        key_names: triangle.key_names().to_vec(),
-        labels: triangle.index().to_vec(),
+        key_names: key_names.to_vec(),
+        labels: labels.to_vec(),
         fits,
     })
+}
+
+/// `e` as raised in the segment `label`, when there are keys.
+pub(crate) fn labelled(keyed: bool, label: &Label, e: Error) -> Error {
+    if keyed {
+        Error::InSegment {
+            label: label.to_string(),
+            source: Box::new(e),
+        }
+    } else {
+        e
+    }
 }
 
 /// A per-segment fit built on a chain-ladder projection, whose results go
