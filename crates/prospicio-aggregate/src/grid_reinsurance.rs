@@ -12,7 +12,7 @@ use prospicio_prob::{Counting, Distortion, Distribution, Grid};
 
 use crate::compound::CompoundReport;
 use crate::fft::fft;
-use crate::reinsurance::{Layer, Tower};
+use crate::reinsurance::{Commission, Layer, Tower};
 
 /// A tower's annual distributions on the grid; see [`Tower::on_grid`].
 #[derive(Debug, Clone, PartialEq)]
@@ -105,6 +105,82 @@ pub struct TowerPrice {
     pub stages: Vec<Option<ViewPrice>>,
     /// `None` when the tower has no net grid.
     pub net: Option<ViewPrice>,
+}
+
+impl Layer {
+    /// The layer's expected loss-sensitive commissions if its premium were
+    /// `premium`: the sliding-scale ceding commission and the profit
+    /// commission, in that order, in expectation over `ceded`, the layer's
+    /// annual ceded loss at the placed share (its grid in
+    /// [`TowerGrids::ceded`]). A flat ceding commission is left out, since
+    /// it is linear in the premium; a layer with neither term gives
+    /// `(0, 0)`. The ceded loss does not depend on the premium, so one grid
+    /// serves every trial premium, which is what a quote that solves for its
+    /// deposit needs.
+    ///
+    /// Fails unless `premium` is finite and positive, for a swing-rated
+    /// layer, whose premium is not a deposit, and for a layer whose scale
+    /// reads its loss ratio before annual terms
+    /// ([`scales_before_annual_terms`](Layer::scales_before_annual_terms)),
+    /// a loss the ceded grid does not hold.
+    ///
+    /// ```
+    /// use prospicio_aggregate::Layer;
+    /// use prospicio_prob::Grid;
+    ///
+    /// // Ceded loss 0, 50 or 100 with probabilities 0.5, 0.3, 0.2.
+    /// let ceded = Grid::new(50.0, vec![0.5, 0.3, 0.2]).unwrap();
+    /// let qs = Layer::quota_share("QS", 0.5).unwrap()
+    ///     .premium_rate(1.0, 200.0).unwrap()
+    ///     .sliding_scale(vec![(0.45, 0.60), (0.25, 0.70)]).unwrap();
+    /// // At a premium of 100 the loss ratios are 0, 0.5 and 1: 45%, 45%, 25%.
+    /// let (cc, pc) = qs.expected_loss_sensitive_commissions(100.0, &ceded).unwrap();
+    /// assert!((cc - (0.8 * 45.0 + 0.2 * 25.0)).abs() < 1e-12);
+    /// assert_eq!(pc, 0.0);
+    /// // At 80 they are 0, 0.625 and 1.25: 45%, 40% and 25% of 80.
+    /// let (cc, _) = qs.expected_loss_sensitive_commissions(80.0, &ceded).unwrap();
+    /// assert!((cc - 80.0 * (0.5 * 0.45 + 0.3 * 0.40 + 0.2 * 0.25)).abs() < 1e-12);
+    /// ```
+    pub fn expected_loss_sensitive_commissions(
+        &self,
+        premium: f64,
+        ceded: &Grid,
+    ) -> Result<(f64, f64)> {
+        if !(premium.is_finite() && premium > 0.0) {
+            return Err(Error::InvalidParameter {
+                name: "premium",
+                value: premium,
+                reason: "must be finite and positive",
+            });
+        }
+        if self.swing.is_some() {
+            return Err(Error::InvalidParameter {
+                name: "swing",
+                value: f64::NAN,
+                reason: "a swing-rated layer's premium follows its loss, not a deposit",
+            });
+        }
+        if self.scales_before_annual_terms {
+            return Err(Error::InvalidParameter {
+                name: "scales_before_annual_terms",
+                value: 1.0,
+                reason: "the scale reads a loss before annual terms, which the ceded grid \
+                         does not hold",
+            });
+        }
+        let trial = Layer {
+            premium,
+            ..self.clone()
+        };
+        let sliding = match &self.commission {
+            Some(Commission::SlidingScale(_)) => {
+                expectation(ceded, |c| trial.ceding_commission_for(c))
+            }
+            _ => 0.0,
+        };
+        let profit = expectation(ceded, |c| trial.profit_commission_for(c));
+        Ok((sliding, profit))
+    }
 }
 
 impl TowerGrids {

@@ -591,7 +591,8 @@ underwriter builds from a risk-loaded price, as the Guides lane's
   profit commission and a swing-rated premium are read back, not solved
   for: `Quote::at_with_commission(D, amount)` takes the grid's expected
   commissions at a quoted deposit, and a swing's expected premium is the
-  deposit to quote at. A fixed-point solve for those is a follow-up.
+  deposit to quote at. The solve for a sliding scale and a profit
+  commission is built (2026-10-26, below); a swing is not.
   Ratios on the premium are on all of it, `(1 + κ) D` (loss ratio,
   multiple); rate on line and payback stay on the deposit.
 - **Tax, both kinds (2026-10-23).** A premium tax `τ` is a fraction of all
@@ -617,6 +618,31 @@ underwriter builds from a risk-loaded price, as the Guides lane's
   refused. Such a tower's total can be quoted on simulated events
   (`Tower::apply` and `price`). Python `TowerQuote.technical`, R
   `tower_quote()`.
+- **A deposit solved under loss-sensitive commissions (2026-10-26).** A
+  sliding scale and a profit commission depend on the deposit `D` through
+  the loss ratio, so `Quote::technical_for_layer` solves `D k − f − C(D)
+  = R`, with `k` the bracket above (flat commission included) and `C(D)`
+  the expected sliding-scale and profit commission at `D` over the
+  layer's ceded grid (`Layer::expected_loss_sensitive_commissions`; the
+  ceded loss does not depend on `D`, and neither term can be combined
+  with paid reinstatements, so `κ` stays fixed). The commission per unit
+  of deposit lies between the scale's lowest and highest rates, plus up
+  to `share (1 − allowance)` for a profit commission, which brackets the
+  root. Within a band `α − β LR` the kept amount is `D (k − α) + β E[X]`,
+  which falls as `D` rises when `α > k`, so a steep scale can meet the
+  risk premium at several deposits; the solve returns the lowest (a
+  64-point scan of the bracket for the first sign change, then bisection
+  to a relative `1e-12`). Plain fixed-point iteration is not a
+  contraction there and is not used. Refused when the highest rates leave
+  no premium, and for a scale read before annual terms. `TowerQuote`
+  solves each such layer; the total keeps the weighted flat terms, since
+  the layers' scales read each layer's own loss ratio. Open (for the
+  user): **a swing-rated layer** has no deposit, its premium being
+  `clip(basic + lcm x, minimum, maximum)`; solving for it means choosing
+  which term to scale (the basic premium, with the minimum moving with
+  it, or the loss conversion factor), so the solve refuses a swing and it
+  stays read back at its expected premium. Python
+  `Quote.technical_for_layer`, R `layer_quote()`.
 - **Reinstatement premium in its own price (#587).** With `g` the
   reinstatement premium per unit of upfront premium in each simulation,
   the reinsurer's net outcome is `X − P g`, so its assets and its price

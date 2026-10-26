@@ -1915,6 +1915,95 @@ impl PyQuote {
         })
     }
 
+    /// The technical deposit of a layer whose commissions follow its loss
+    /// ratio, solved for.
+    ///
+    /// A sliding-scale ceding commission and a profit commission depend on
+    /// the deposit through the loss ratio, so the deposit is the one at
+    /// which what the loads and the expected commissions leave is the
+    /// price's risk premium. The reinstatement rate, a flat commission and
+    /// the limit at the placed share are read off the layer. A layer with
+    /// neither term gets ``Quote.technical`` of those terms. A steep scale
+    /// can meet the risk premium at more than one deposit; the lowest is
+    /// returned.
+    ///
+    /// Parameters
+    /// ----------
+    /// price : Price
+    ///     The risk-loaded price of ``ceded``.
+    /// layer : Layer
+    ///     The layer, with its terms.
+    /// ceded : Grid
+    ///     The layer's ceded grid, as ``TowerGrids.ceded`` gives it.
+    /// expected_reinstatement_premium : float, default 0.0
+    ///     The grid's expected reinstatement premium at the layer's own
+    ///     premium; it scales with the deposit.
+    /// expenses, brokerage, fixed, premium_tax, income_tax : float
+    ///     The loads, as in ``Quote.technical``.
+    /// brokerage_on_reinstatements : bool, default True
+    ///
+    /// Returns
+    /// -------
+    /// Quote
+    ///     At the solved deposit, with the expected sliding-scale and
+    ///     profit commission in ``commission``.
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     For a swing-rated layer (its premium follows its loss, so it has
+    ///     no deposit to solve for: quote it with ``at``), a scale read
+    ///     before annual terms, or when the highest commission rates leave
+    ///     no premium after the loads.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.distributions import Grid
+    /// >>> from prospicio.pricing import Quote, price
+    /// >>> from prospicio.reinsurance import Layer
+    /// >>> from prospicio.risk import Distortion
+    /// >>> ceded = Grid(20.0, [0.05, 0.15, 0.3, 0.3, 0.15, 0.05])
+    /// >>> qs = (Layer.quota_share("QS", 0.5).with_premium_rate(1.0, 200.0)
+    /// ...       .with_sliding_scale([(0.35, 0.50), (0.20, 0.70)]))
+    /// >>> p = price(ceded, Distortion.tvar(0.99), cost_of_capital=0.1)
+    /// >>> q = Quote.technical_for_layer(p, qs, ceded, expenses=0.02)
+    /// >>> round(q.return_on_capital, 9)
+    /// 0.1
+    #[staticmethod]
+    #[pyo3(signature = (
+        price, layer, ceded, *, expected_reinstatement_premium = 0.0, expenses = 0.0,
+        brokerage = 0.0, fixed = 0.0, premium_tax = 0.0, income_tax = 0.0,
+        brokerage_on_reinstatements = true,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn technical_for_layer(
+        price: PyRef<'_, PyPrice>,
+        layer: PyRef<'_, crate::reinsurance::PyLayer>,
+        ceded: PyRef<'_, PyGrid>,
+        expected_reinstatement_premium: f64,
+        expenses: f64,
+        brokerage: f64,
+        fixed: f64,
+        premium_tax: f64,
+        income_tax: f64,
+        brokerage_on_reinstatements: bool,
+    ) -> PyResult<Self> {
+        let loads = Loads::new(expenses, brokerage, fixed)
+            .and_then(|l| l.with_premium_tax(premium_tax))
+            .and_then(|l| l.with_income_tax(income_tax))
+            .map_err(to_py)?;
+        let inner = Quote::technical_for_layer(
+            &price.inner,
+            loads,
+            &layer.inner,
+            &ceded.inner,
+            expected_reinstatement_premium,
+            brokerage_on_reinstatements,
+        )
+        .map_err(to_py)?;
+        Ok(Self { inner })
+    }
+
     /// The same cover at a quoted deposit: what the quote leaves after the
     /// loads and commissions is the risk premium.
     ///
@@ -2146,9 +2235,14 @@ impl PyTowerQuote {
     ///
     /// Each layer is priced on its ceded grid with the reinstatement rate
     /// and flat ceding commission its grid and terms give, and its limit at
-    /// the placed share for the rate on line. The total is priced on
-    /// ``grids.total_ceded``, with the layers' reinstatement rates and
-    /// commissions weighted by their technical deposits and no limit.
+    /// the placed share for the rate on line. A layer with a sliding-scale
+    /// or profit commission has its deposit solved for, as
+    /// ``Quote.technical_for_layer`` solves it; a swing-rated layer is
+    /// quoted without its swing (read it back with ``Quote.at``). The total
+    /// is priced on ``grids.total_ceded``, with the layers' reinstatement
+    /// rates and flat commissions weighted by their technical deposits and
+    /// no limit; the layers' sliding-scale and profit commissions are not
+    /// carried to the total.
     ///
     /// Parameters
     /// ----------

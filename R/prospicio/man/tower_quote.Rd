@@ -51,9 +51,12 @@ Each layer of \code{\link[=tower_on_grid]{tower_on_grid()}}'s result priced on i
 \code{\link[=risk_loaded_price]{risk_loaded_price()}} and quoted by \code{\link[=technical_quote]{technical_quote()}}, with its
 reinstatement rate (the grid's expected reinstatement premium over the
 layer's deposit premium), its flat ceding commission and its limit at the
-placed share; and the total cession quoted the same way, its
-reinstatement and commission rates the layers' weighted by their
-technical deposits, without a limit. The diversification is the layers'
+placed share. A layer with a sliding-scale or profit commission has its
+deposit solved for, as \code{\link[=layer_quote]{layer_quote()}} solves it; a swing-rated layer is
+quoted without its swing (read it back with \code{\link[=implied_quote]{implied_quote()}}). The total
+cession is quoted the same way, its reinstatement and flat commission
+rates the layers' weighted by their technical deposits, without a limit;
+the layers' sliding-scale and profit commissions are not carried to it. The diversification is the layers'
 deposits less the total's: what writing them together saves. Nothing is
 allocated to the layers.
 }

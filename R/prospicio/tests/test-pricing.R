@@ -609,6 +609,33 @@ local({
   stopifnot(grepl("not one compound total", err))
 })
 
+# A deposit solved under a sliding scale and a profit commission (item 11).
+local({
+  probs <- c(0.05, 0.15, 0.3, 0.3, 0.15, 0.05)
+  ceded <- grid_distribution(20, probs)
+  x <- 20 * (seq_along(probs) - 1)
+  p <- risk_loaded_price(ceded, distortion("tvar", 0.99), cost_of_capital = 0.1)
+  qs <- with_premium_rate(quota_share("QS", 0.5), 1, 200)
+  scale <- function(lr) pmin(0.35, pmax(0.20, 0.35 - 0.75 * (lr - 0.5)))
+  q <- layer_quote(p, with_sliding_scale(qs, c(0.35, 0.20), c(0.5, 0.7)), ceded,
+                   expenses = 0.02, income_tax = 0.21)
+  stopifnot(abs(q$commission - sum(probs * q$premium * scale(x / q$premium))) < 1e-9 * q$premium)
+  stopifnot(abs(q$return_on_capital - 0.1) < 1e-9)
+  stopifnot(q$premium > technical_quote(p, expenses = 0.02, income_tax = 0.21)$premium)
+  # The quote reads back at its own deposit with its commission.
+  back <- implied_quote(q, q$premium, q$commission)
+  stopifnot(abs(back$return_on_capital - 0.1) < 1e-9)
+  q <- layer_quote(p, with_profit_commission(qs, 0.2, 0.1), ceded, expenses = 0.02)
+  pc <- sum(probs * 0.2 * pmax(0.9 * q$premium - x, 0))
+  stopifnot(abs(q$commission - pc) < 1e-9 * q$premium)
+  flat <- layer_quote(p, with_ceding_commission(qs, 0.25), ceded, expenses = 0.02)
+  stopifnot(abs(flat$premium - technical_quote(p, expenses = 0.02, commission = 0.25)$premium) <
+              1e-12 * flat$premium)
+  sw <- with_swing_rating(xol_layer("10x0", 10, 0), 5, 1.1)
+  err <- tryCatch(layer_quote(p, sw, ceded), error = function(e) conditionMessage(e))
+  stopifnot(grepl("swing", err))
+})
+
 # A commission deducted from the premium paid in (#609) and runs that pay
 # the investor first (#608).
 local({
