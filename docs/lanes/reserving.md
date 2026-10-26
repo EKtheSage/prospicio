@@ -7,8 +7,6 @@
 ## Next
 
 - [compartmental-subannual] fitting `Compartmental` well to quarterly or monthly data (rate priors for sub-annual development, development effects grouped by year, seasonality, a calibration check on sub-annual books; `reserving-compartmental.md` decision 13, the user's note of 2026-10-22)
-- [compartmental-one-response] `Fitted::PaidOnly` and `Fitted::IncurredOnly` for `Compartmental`, which require `RateOrder::Ordered` because from one response only RLR x RRF is identified (`reserving-compartmental.md` decisions 2 and 12, PR H)
-- [compartmental-grain] unequal origin and development grain for `Compartmental` (`reserving-compartmental.md` decision 12, PR I)
 - [diagonal-bindings-decisions] #544 decision 19 items 1, 2, 4, 6, 7, 9, 10 and 12 (`reserving-v02.md`: the `LatestDiagonals` type, segment order, the map, Python's single-segment `to_chain_ladder`, `ldf_origin`, R dispatch, dates as valuations, `development=` only on diagonals) waiting on the user (items 3, 5, 8 and 11 decided by the user on 2026-10-24); the Excel functions for #544 are the Excel lane's, not yet planned there
 
 ## Done
