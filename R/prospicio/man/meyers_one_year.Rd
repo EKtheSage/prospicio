@@ -178,7 +178,8 @@ Failed MCMC diagnostics of the fit raise one \code{\link[=warning]{warning()}} l
 and refits that failed theirs raise another (each prefixed with its
 segment's label over segments). The result is a \link{bayes_one_year_fit}
 whose \code{fit} is the \link{meyers_fit} (its \code{as.data.frame()} adds each
-origin's \code{premium}), or a \link{bayes_one_year_fits} with \code{premium}.
+origin's \code{premium} and \code{opening_ulr}, the opening ultimate over the
+premium), or a \link{bayes_one_year_fits} with \code{premium}.
 
 Errors: as \code{\link[=meyers]{meyers()}} (or \code{\link[=meyers_segments]{meyers_segments()}}); a \code{k_threshold} that is
 \code{NaN}; a \code{one_year_sims} of 0.

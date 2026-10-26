@@ -116,7 +116,8 @@ and \code{beta[1]}, ..., \code{beta[m]} (\verb{log gamma[d]}). \code{\link[=baye
 PSIS-LOO of the observed increments, comparable with \code{\link[=bayes_odp]{bayes_odp()}}'s on
 the same column. \code{as.data.frame()}, \code{\link[=totals_frame]{totals_frame()}},
 \code{\link[=development_frame]{development_frame()}} and \code{\link[=segment]{segment()}} work as for \code{\link[=bayes_odp]{bayes_odp()}}, with the
-\code{exposure} and \code{prior_ultimate}.
+\code{exposure}, \code{prior_ultimate} and \code{ulr} (the chain ladder's ultimate over
+the exposure, a loss ratio only when the exposure is premium).
 
 Errors: as \code{\link[=bayes_odp]{bayes_odp()}}; if an origin has no observed, finite, positive
 exposure; if \code{apriori} is not positive and finite, \code{cv} is not positive
