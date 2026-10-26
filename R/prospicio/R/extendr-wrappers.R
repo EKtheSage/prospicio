@@ -300,6 +300,8 @@ aggregate_layer_statistics_rust <- function(annual, share, limit, attachment) .C
 
 occurrence_layer_statistics_rust <- function(frequency, severity, share, limit, attachment) .Call(wrap__occurrence_layer_statistics_rust, frequency, severity, share, limit, attachment)
 
+benchmark_curve_rust <- function(ages, values, kind, curve, weights, max_age, origin_width) .Call(wrap__benchmark_curve_rust, ages, values, kind, curve, weights, max_age, origin_width)
+
 statistics_rust <- function(draws, percentiles, tvar_levels, sd_multiples, quantile, tvar) .Call(wrap__statistics_rust, draws, percentiles, tvar_levels, sd_multiples, quantile, tvar)
 
 bootstrap_se_rust <- function(columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed) .Call(wrap__bootstrap_se_rust, columns, k, fixed, percentiles, tvar_levels, sd_multiples, quantile, tvar, replicates, seed)
@@ -3285,6 +3287,42 @@ ClarkFit$segment <- function(keys, values) .Call(wrap__ClarkFit__segment, self, 
 
 #' @export
 `[[.ClarkFit` <- `$.ClarkFit`
+
+BenchmarkCurveFit <- new.env(parent = emptyenv())
+
+BenchmarkCurveFit$curve <- function() .Call(wrap__BenchmarkCurveFit__curve, self)
+
+BenchmarkCurveFit$omega <- function() .Call(wrap__BenchmarkCurveFit__omega, self)
+
+BenchmarkCurveFit$theta <- function() .Call(wrap__BenchmarkCurveFit__theta, self)
+
+BenchmarkCurveFit$max_age <- function() .Call(wrap__BenchmarkCurveFit__max_age, self)
+
+BenchmarkCurveFit$origin_width <- function() .Call(wrap__BenchmarkCurveFit__origin_width, self)
+
+BenchmarkCurveFit$ages <- function() .Call(wrap__BenchmarkCurveFit__ages, self)
+
+BenchmarkCurveFit$observed <- function() .Call(wrap__BenchmarkCurveFit__observed, self)
+
+BenchmarkCurveFit$weights <- function() .Call(wrap__BenchmarkCurveFit__weights, self)
+
+BenchmarkCurveFit$fitted <- function() .Call(wrap__BenchmarkCurveFit__fitted, self)
+
+BenchmarkCurveFit$residuals <- function() .Call(wrap__BenchmarkCurveFit__residuals, self)
+
+BenchmarkCurveFit$sum_of_squares <- function() .Call(wrap__BenchmarkCurveFit__sum_of_squares, self)
+
+BenchmarkCurveFit$percent_developed <- function(age) .Call(wrap__BenchmarkCurveFit__percent_developed, self, age)
+
+BenchmarkCurveFit$cdf <- function(age) .Call(wrap__BenchmarkCurveFit__cdf, self, age)
+
+BenchmarkCurveFit$pattern <- function(ages) .Call(wrap__BenchmarkCurveFit__pattern, self, ages)
+
+#' @export
+`$.BenchmarkCurveFit` <- function (self, name) { func <- BenchmarkCurveFit[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.BenchmarkCurveFit` <- `$.BenchmarkCurveFit`
 
 EvtTail <- new.env(parent = emptyenv())
 
