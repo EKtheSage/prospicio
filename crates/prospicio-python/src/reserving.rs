@@ -1,5 +1,6 @@
 //! `prospicio.reserving` (Reserving lane): the loss triangle, the chain
 //! ladder, Mack's model, the expected-loss methods, Clark's growth curves
+//! (and a growth curve fitted to a benchmark pattern)
 //! and the ODP bootstrap over `prospicio_reserving` (`docs/design/triangle.md`,
 //! `docs/design/reserving-v02.md`).
 //!
@@ -9,7 +10,7 @@
 
 use prospicio_core::{Grain, Lag, Month, Period};
 use prospicio_reserving::{
-    Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit,
+    Average, BenchmarkCurve, BenchmarkCurveFit, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit,
     ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development,
     DevelopmentColumn, DiagonalAge, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label,
     LatestDiagonals, Long, LongDiagonal, Mack, MackBootstrap, MackBootstrapFits,
@@ -5643,6 +5644,348 @@ impl PyClarkLdf {
 
 fn max_age_repr(max_age: Option<f64>) -> String {
     max_age.map_or_else(|| "None".to_string(), |m| format!("{m:?}"))
+}
+
+/// `(age, value)` pairs of a dict from age in months (any positive number)
+/// to a number, in the dict's order.
+fn real_age_values(obj: &Bound<'_, PyAny>, what: &str) -> PyResult<Vec<(f64, f64)>> {
+    if obj.is_instance_of::<PyString>() || !obj.hasattr("items")? {
+        return Err(PyTypeError::new_err(format!(
+            "{what} must be a dict from age in months to a number, got {}",
+            py_repr(obj)
+        )));
+    }
+    let number = |x: &Bound<'_, PyAny>| -> Option<f64> {
+        if x.is_instance_of::<PyBool>() {
+            None
+        } else {
+            x.extract().ok()
+        }
+    };
+    let mut out = Vec::new();
+    for item in obj.call_method0("items")?.try_iter()? {
+        let (key, value): (Bound<'_, PyAny>, Bound<'_, PyAny>) = item?.extract()?;
+        let age = number(&key).ok_or_else(|| {
+            PyTypeError::new_err(format!(
+                "{what}: an age must be a number of months, got {}",
+                py_repr(&key)
+            ))
+        })?;
+        let value = number(&value).ok_or_else(|| {
+            PyTypeError::new_err(format!(
+                "{what}: the value at age {age} must be a number, got {}",
+                py_repr(&value)
+            ))
+        })?;
+        out.push((age, value));
+    }
+    Ok(out)
+}
+
+/// A growth curve fitted to a benchmark pattern (issue #637; design note
+/// ``reserving-v02.md``, decision 20): Clark's log-logistic or Weibull
+/// curve ``G`` by weighted least squares on the percents developed, which
+/// gives the pattern at any age, a smooth pattern between the benchmark's
+/// ages and a tail past its last.
+///
+/// The fitted percent developed at age ``a`` is ``G(c(a)) / G(c(max_age))``
+/// (``G(c(max_age)) = 1`` without ``max_age``), as Clark's LDF method
+/// develops a latest value; ``c(a)`` is the age itself, or with
+/// ``origin_width`` set Clark's age from the average date of loss, ``a -
+/// w / 2`` at or past the width ``w`` and ``a / 2`` before it. Benchmark
+/// ages are development ages from the start of the origin period, as a
+/// triangle's.
+///
+/// Parameters
+/// ----------
+/// curve : {"loglogistic", "weibull"}, default "loglogistic"
+///     The growth curve ``G``: ``x**omega / (x**omega + theta**omega)`` or
+///     ``1 - exp(-(x / theta)**omega)``.
+/// max_age : float, optional
+///     Age in months at which development stops, so the pattern is 100%
+///     there; at least the benchmark's last age. ``None`` develops to
+///     infinity. A benchmark that reaches 100% needs it.
+/// origin_width : float, optional
+///     Measure the curve's ages from the middle of an origin period of
+///     this many months (12 for accident years), as ``ClarkLdf`` does.
+///     ``None`` measures them from the origin period's start.
+///
+/// Raises
+/// ------
+/// ValueError
+///     If ``curve`` is unknown.
+///
+/// Examples
+/// --------
+/// >>> from prospicio.reserving import BenchmarkCurve, ChainLadder, Triangle
+/// >>> bench = {12: 0.30, 24: 0.62, 36: 0.80, 48: 0.89, 60: 0.94}
+/// >>> fit = BenchmarkCurve().fit(bench)
+/// >>> all(abs(r) < 0.02 for r in fit.residuals)
+/// True
+/// >>> fit.percent_developed(30) > fit.percent_developed(24)
+/// True
+/// >>> tri = Triangle.from_long(
+/// ...     [2020, 2020, 2020, 2021, 2021, 2022], [12, 24, 36, 12, 24, 12],
+/// ...     {"paid": [100.0, 150.0, 165.0, 110.0, 170.0, 120.0]},
+/// ... )
+/// >>> cl = ChainLadder(**fit.selected([12, 24, 36])).fit(tri, "paid")
+/// >>> abs(cl.pattern_tail - fit.cdf(36)) < 1e-12
+/// True
+#[pyclass(name = "BenchmarkCurve", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyBenchmarkCurve {
+    inner: BenchmarkCurve,
+}
+
+#[pymethods]
+impl PyBenchmarkCurve {
+    #[new]
+    #[pyo3(signature = (curve = "loglogistic", max_age = None, origin_width = None))]
+    fn new(curve: &str, max_age: Option<f64>, origin_width: Option<f64>) -> PyResult<Self> {
+        Ok(Self {
+            inner: BenchmarkCurve {
+                curve: growth_curve(curve)?,
+                max_age,
+                origin_width,
+            },
+        })
+    }
+
+    /// The growth curve.
+    #[getter]
+    fn curve(&self) -> &'static str {
+        growth_curve_name(self.inner.curve)
+    }
+
+    /// Age in months at which development stops; ``None`` for infinity.
+    #[getter]
+    fn max_age(&self) -> Option<f64> {
+        self.inner.max_age
+    }
+
+    /// The origin width of Clark's average-date shift; ``None`` for none.
+    #[getter]
+    fn origin_width(&self) -> Option<f64> {
+        self.inner.origin_width
+    }
+
+    /// Fits the curve to a benchmark pattern.
+    ///
+    /// Parameters
+    /// ----------
+    /// pattern : dict
+    ///     From development age in months (any positive number) to the
+    ///     benchmark's value there, finite and positive; at least two ages.
+    /// kind : {"percent_developed", "cdf"}, default "percent_developed"
+    ///     Whether the values are percents developed or factors to ultimate.
+    ///     Age-to-age factors (``"ldf"``) give no level to fit and are an
+    ///     error.
+    /// weights : dict, optional
+    ///     From age in months to the weight, finite and not negative, of
+    ///     that age's squared residual; an age not listed gets 1. ``None``
+    ///     weights every age 1.
+    ///
+    /// Returns
+    /// -------
+    /// BenchmarkCurveFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a value, age or weight is out of range, an age is given
+    ///     twice, a weight names an age the pattern does not give,
+    ///     ``max_age`` is before the last age, or the search does not
+    ///     converge.
+    #[pyo3(signature = (pattern, kind = "percent_developed", weights = None))]
+    fn fit(
+        &self,
+        pattern: &Bound<'_, PyAny>,
+        kind: &str,
+        weights: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<PyBenchmarkCurveFit> {
+        let kind = match kind {
+            "percent_developed" => PatternKind::PercentDeveloped,
+            "cdf" => PatternKind::AgeToUltimate,
+            "ldf" => {
+                return Err(PyValueError::new_err(
+                    "kind=\"ldf\": age-to-age factors give no level to fit; give percents \
+                     developed or factors to ultimate",
+                ));
+            }
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "kind must be \"percent_developed\" or \"cdf\", got {other:?}"
+                )));
+            }
+        };
+        let values = real_age_values(pattern, "pattern")?;
+        let weights = match weights.filter(|w| !w.is_none()) {
+            None => None,
+            Some(w) => {
+                let by_age = real_age_values(w, "weights")?;
+                if let Some(&(age, _)) = by_age
+                    .iter()
+                    .find(|(a, _)| !values.iter().any(|(b, _)| b == a))
+                {
+                    return Err(PyValueError::new_err(format!(
+                        "weights: age {age} is not an age of the pattern"
+                    )));
+                }
+                Some(
+                    values
+                        .iter()
+                        .map(|(a, _)| by_age.iter().find(|(b, _)| b == a).map_or(1.0, |w| w.1))
+                        .collect::<Vec<f64>>(),
+                )
+            }
+        };
+        let inner = self
+            .inner
+            .fit(kind, &values, weights.as_deref())
+            .map_err(err)?;
+        Ok(PyBenchmarkCurveFit { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "BenchmarkCurve(curve={:?}, max_age={}, origin_width={})",
+            self.curve(),
+            max_age_repr(self.inner.max_age),
+            max_age_repr(self.inner.origin_width)
+        )
+    }
+}
+
+/// A growth curve fitted to a benchmark pattern by ``BenchmarkCurve.fit``.
+///
+/// ``selected(ages)`` gives the fitted pattern at a triangle's ages as the
+/// ``ldf``, ``ldf_kind`` and ``ldf_weight`` arguments of ``ChainLadder``,
+/// ``Mack`` and the expected-loss methods. With no ``tail`` on the method
+/// and ages ending at the triangle's oldest, the pattern's level there is
+/// the tail: ``cdf(oldest)``, the curve's development past the oldest age.
+#[pyclass(name = "BenchmarkCurveFit", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyBenchmarkCurveFit {
+    inner: BenchmarkCurveFit,
+}
+
+#[pymethods]
+impl PyBenchmarkCurveFit {
+    /// The growth curve.
+    #[getter]
+    fn curve(&self) -> &'static str {
+        growth_curve_name(self.inner.curve)
+    }
+
+    /// Fitted shape of the curve.
+    #[getter]
+    fn omega(&self) -> f64 {
+        self.inner.omega
+    }
+
+    /// Fitted scale of the curve, in months of curve age.
+    #[getter]
+    fn theta(&self) -> f64 {
+        self.inner.theta
+    }
+
+    /// Age in months at which development stops; ``None`` for infinity.
+    #[getter]
+    fn max_age(&self) -> Option<f64> {
+        self.inner.max_age
+    }
+
+    /// The origin width of Clark's average-date shift; ``None`` for none.
+    #[getter]
+    fn origin_width(&self) -> Option<f64> {
+        self.inner.origin_width
+    }
+
+    /// The benchmark's ages in months, in increasing order.
+    #[getter]
+    fn ages(&self) -> Vec<f64> {
+        self.inner.ages.clone()
+    }
+
+    /// The benchmark's percents developed at ``ages``.
+    #[getter]
+    fn observed(&self) -> Vec<f64> {
+        self.inner.observed.clone()
+    }
+
+    /// The weight of each age in the least squares.
+    #[getter]
+    fn weights(&self) -> Vec<f64> {
+        self.inner.weights.clone()
+    }
+
+    /// The fitted percents developed at ``ages``.
+    #[getter]
+    fn fitted(&self) -> Vec<f64> {
+        self.inner.fitted.clone()
+    }
+
+    /// ``observed - fitted`` at ``ages``, unweighted.
+    #[getter]
+    fn residuals(&self) -> Vec<f64> {
+        self.inner.residuals.clone()
+    }
+
+    /// The weighted sum of squared residuals, the minimized objective.
+    #[getter]
+    fn sum_of_squares(&self) -> f64 {
+        self.inner.sum_of_squares
+    }
+
+    /// The curve age of a development age in months.
+    fn curve_age(&self, age: f64) -> f64 {
+        self.inner.curve_age(age)
+    }
+
+    /// The fitted percent developed at a development age in months: 1 at
+    /// ``max_age`` and after.
+    fn percent_developed(&self, age: f64) -> f64 {
+        self.inner.percent_developed(age)
+    }
+
+    /// The fitted factor from a development age in months to ultimate,
+    /// ``1 / percent_developed(age)``.
+    fn cdf(&self, age: f64) -> f64 {
+        self.inner.cdf(age)
+    }
+
+    /// The fitted pattern at development ``ages`` as the arguments of the
+    /// chain ladder, Mack and the expected-loss methods.
+    ///
+    /// Parameters
+    /// ----------
+    /// ages : list of int
+    ///     Development ages in months, usually the triangle's; each once
+    ///     and positive.
+    ///
+    /// Returns
+    /// -------
+    /// dict
+    ///     ``ldf`` (the percents developed by age), ``ldf_kind``
+    ///     (``"percent_developed"``) and ``ldf_weight`` (1.0), to be passed
+    ///     as keyword arguments. Give the method no ``tail``: the pattern's
+    ///     level at the oldest age is the curve's tail.
+    fn selected<'py>(&self, py: Python<'py>, ages: Vec<Lag>) -> PyResult<Bound<'py, PyDict>> {
+        let pattern = self.inner.pattern(&ages).map_err(err)?;
+        let d = PyDict::new(py);
+        d.set_item("ldf", age_dict(py, &pattern.values)?)?;
+        d.set_item("ldf_kind", pattern_kind_name(pattern.kind))?;
+        d.set_item("ldf_weight", 1.0)?;
+        Ok(d)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "BenchmarkCurveFit(curve={:?}, omega={}, theta={}, sum_of_squares={})",
+            self.curve(),
+            self.inner.omega,
+            self.inner.theta,
+            self.inner.sum_of_squares
+        )
+    }
 }
 
 /// Clark's Cape Cod method (Clark 2003), as R ChainLadder's

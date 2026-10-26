@@ -189,7 +189,7 @@ impl BenchmarkCurve {
         }
         let last = points[points.len() - 1].0;
         if let Some(m) = self.max_age
-            && !(m >= last)
+            && (m.is_nan() || m < last)
         {
             return Err(Error::InvalidSetting {
                 name: "max_age",
