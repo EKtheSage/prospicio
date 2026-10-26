@@ -1567,6 +1567,16 @@ fn the_bootstraps_take_a_one_value_pattern_as_its_tail() {
     .one_year(&raa, "values", &method)
     .unwrap();
     assert_eq!(year.bootstrap.mack.chain_ladder.pattern_tail, Some(1.05));
+    // With a tail of its own the method's pattern and tail conflict
+    // (decision 20 item 3), and the bootstrap, which reads the method's
+    // pattern without its level, names that conflict (item 5).
+    let tailed = OneYearMethod::ChainLadder(chain_ladder(one(), Tail::from(1.05)));
+    match odp(None, Tail::default()).one_year(&raa, "values", &tailed) {
+        Err(Error::Bootstrap(reason)) => {
+            assert!(reason.contains("give the method no tail"), "{reason}")
+        }
+        other => panic!("{:?} is not a bootstrap error", other.err()),
+    }
 }
 
 #[test]

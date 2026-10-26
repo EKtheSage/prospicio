@@ -3553,7 +3553,8 @@ Status: **Built** (2026-10-26), issue #632, branch
 `claude/one-value-pattern`, in Rust, Python and R. The user decided on
 2026-10-26 that a cumulative pattern with one value is valid and selects
 the factor from its age to ultimate, as the tail from that age. Items 2
-to 6 are how this PR reads that decision against the other settings, and
+to 6, and item 1's reading of a longer pattern that ends at the oldest
+age, are how this PR reads that decision against the other settings, and
 are proposed for the user's acceptance.
 
 A downstream pipeline fits small books: a diagonal-only triangle, and a
@@ -3571,7 +3572,20 @@ or more ages (which decision 18 reads past the oldest age since #614).
    or every origin at one age, a latest diagonal included) the oldest age
    is the only age, so the value is the whole projection: the issue's
    `{12: 3.0}` on an origin at 12 months with 200 paid gives 600. On a
-   full triangle it is the same fit as a constant tail of `CDF(a)`.
+   full triangle it is the same fit as a constant tail of `CDF(a)`. A
+   longer cumulative pattern that ends at the oldest age and selects no
+   link of the triangle is read the same way (proposed), as its level there: on a
+   triangle observed at one age the pattern's ages before it fix no link,
+   so the issue's full pattern from 12 to 60 months on an origin at 60
+   months gives the latest value (a factor of 1), and the pattern from 12
+   to 48 months on an origin at 48 months with 800 paid gives 896, as
+   `{48: 1.12}` does. Decision 18 had refused these as "the pattern
+   selects no factor of the triangle", while a pattern that runs past the
+   only age already folded into the tail. The same reading applies on a
+   longer triangle when the pattern's earlier ages all fall inside its
+   last link (`{30: x, 36: y}` on ages 12, 24, 36): the link from 24 to
+   36 is not fully covered, so it stays estimated as decision 18 leaves
+   any such link, and `y` is the tail.
 2. **At another age it is an error** (proposed): "a cumulative pattern
    with one value is the tail from its age: give it at the oldest age, or
    give two or more ages". Read by decision 12's rules it would select
@@ -3587,10 +3601,13 @@ or more ages (which decision 18 reads past the oldest age since #614).
    one value is the tail, and a tail is given: give no tail, or two or
    more ages". Decision 12 rescales a longer pattern's level to a given
    tail, which with one value would leave the pattern inert. On a latest
-   diagonal, `PastPatternEnd::NoDevelopment` with every origin at the
-   value's age is such a tail (a factor of 1 attached there), and gives
-   the same error; an origin older than the value's age is decision 18's
-   case, the level rescaled to the tail spread past the pattern's end.
+   diagonal, `PastPatternEnd::Tail` (which needs a tail) and
+   `PastPatternEnd::NoDevelopment` (a factor of 1 past the value's age)
+   are such tails, and give the same error whether or not an origin is
+   older than the value's age: decision 18 would rescale the one level to
+   the tail spread past the pattern's end, so nothing of the value would
+   be left (`{12: 3.0}` and `{12: 9.0}` on origins at 24 and 12 months
+   would give the same ultimates).
 4. **A weight below 1 is an error** (proposed): "a cumulative pattern
    with one value is the tail, taken at full weight: give it weight 1".
    No estimate past the oldest age is there to blend with, as for a
@@ -3599,9 +3616,12 @@ or more ages (which decision 18 reads past the oldest age since #614).
    age with no selected factor".
 5. **Bootstraps.** A bootstrap with no pattern of its own reads the
    method's pattern without its level when the method has a tail
-   (`OneYearPattern::Method`); a one-value pattern there is only its
-   level, and is an error naming the method's tail, as for a pattern past
-   the oldest age. Where the method has no tail the one value is the
+   (`OneYearPattern::Method`). A one-value pattern there is only its
+   level, so this happens only when the method's pattern and tail already
+   conflict by item 3, and the bootstrap's error names that conflict:
+   "the re-reserving method's pattern is only its level, its tail, and
+   the method has a tail of its own: give the method no tail, or two or
+   more ages". Where the method has no tail the one value is the
    method's implied tail and the bootstrap's, as any implied tail is.
    Comparing a bootstrap's pattern with the method's
    (`same_selection`) ignores levels, as before; the tails are compared
@@ -3618,10 +3638,16 @@ or more ages (which decision 18 reads past the oldest age since #614).
    method, Benktander's two iterations and Cape Cod (a diagonal-only
    triangle with the full pattern, one origin at 12 months with the full
    pattern, with `{12: 3.0}` and with `{12: 1/3}` percent developed, and
-   one origin at 48 months), and the one value through `LatestDiagonal`.
+   one origin at 48 months), a pattern that ends at the only age (the
+   full pattern on an origin at 60 months, the pattern to 48 months on an
+   origin at 48 months, `{6: 4.0, 12: 3.0}` on an origin at 12 months),
+   the one value through `LatestDiagonal`, and item 3's error on a
+   diagonal with an origin older than the value, under
+   `PastPatternEnd::Tail` and `NoDevelopment`.
    `validation/tests/reserving_pattern_basis.rs`: the errors of items 2
    to 4 on RAA, the one value at 120 months equal to a constant tail of
    1.05, item 5 (the ODP bootstrap with the one value draws as with a
    constant tail of 1.05, and both bootstraps' one-year views take it as
-   the method's implied tail) and item 6. The same cases in `python/tests/test_reserving_patterns.py`
+   the method's implied tail, and the bootstrap's error when the method
+   has a tail too) and item 6. The same cases in `python/tests/test_reserving_patterns.py`
    and `R/prospicio/tests/test-reserving-patterns.R`.

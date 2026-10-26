@@ -717,3 +717,13 @@ def test_constructor_errors():
     assert d.keys == []
     assert d.index == ["Total"]
     assert d.exposure is None
+
+
+def test_issue_632_one_value_with_a_tail_past_its_end():
+    # One value is the tail from its age: a tail past it, or no development
+    # past it, would rescale it away, whether or not an origin is older.
+    for rule, tail in [("tail", 1.5), ("no_development", None)]:
+        d = LatestDiagonal([2023, 2024], [24, 12], [400.0, 200.0], past_pattern_end=rule)
+        for ldf, kind in [({12: 3.0}, "cdf"), ({12: 1 / 3}, "percent_developed")]:
+            with pytest.raises(ValueError, match="a tail is given"):
+                ChainLadder(ldf=ldf, ldf_kind=kind, tail=tail).fit_diagonal(d)

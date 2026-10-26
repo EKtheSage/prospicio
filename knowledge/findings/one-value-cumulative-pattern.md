@@ -5,7 +5,6 @@ description: A cumulative selected pattern with one value fixes no link, so read
 tags: [reserving, development, pattern, latest-diagonal, tail]
 status: stable
 generated: { by: claude-code/local-session, at: 2026-10-26T12:00:00Z }
-verified: { by: process:ci, at: 2026-10-26T12:00:00Z }
 sources:
   - id: note
     resource: ../docs/design/reserving-v02.md
@@ -33,12 +32,18 @@ the triangle's oldest age, the level is the tail, so `{a: CDF(a)}` gives
   Benktander's two iterations 800 and Cape Cod 600, the same as the full
   pattern from 12 to 60 months, which decision 18 folds past the oldest
   age into the same tail.[^test]
+* **A longer pattern that ends at the only age.** On a triangle
+  observed at one age a pattern's earlier ages fix no link, so a pattern
+  that ends at that age is its level there, the same tail: the pattern
+  from 12 to 48 months on an origin at 48 months with 800 paid gives 896,
+  as `{48: 1.12}` does.[^test]
 * **A full triangle.** `{120: 1.05}` on RAA gives every origin the
   ultimate of the chain ladder with a constant tail of 1.05 to 1e-15.[^errors]
 * **Elsewhere it is inert.** At an age before the oldest, with a given
-  tail (including `PastPatternEnd::NoDevelopment`, a tail of 1 at the
-  value's age) or at a weight below 1, the value would select nothing and
-  only report `pattern_rescale`, so each is an error.
+  tail (on a latest diagonal also `PastPatternEnd::Tail` or
+  `NoDevelopment`, even with an origin older than the value, where the
+  level is rescaled to the tail spread past it) or at a weight below 1,
+  nothing of the value would be left, so each is an error.
 
 [^note]: Design note, reserving v0.2, decision 20, a cumulative pattern with one value
 [^test]: Validation test of a latest diagonal with a selected pattern, issue 632's cases, run in every cargo test

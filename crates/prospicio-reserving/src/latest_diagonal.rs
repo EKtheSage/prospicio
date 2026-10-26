@@ -506,6 +506,20 @@ impl LatestDiagonal {
             }
             _ => {}
         }
+        // One cumulative value is the tail from its age (decision 20 item
+        // 3): a tail past it, or no development past it, would rescale that
+        // level away, whether or not an origin is older than the value.
+        if pattern.kind != PatternKind::AgeToAge
+            && values.len() == 1
+            && (self.past_pattern_end != PastPatternEnd::Reject || !tail.is_none())
+        {
+            return Err(Error::Pattern {
+                age: Some(first),
+                reason: "a cumulative pattern with one value is the tail, and a tail is given \
+                         (a tail, PastPatternEnd::Tail or NoDevelopment): give no tail and \
+                         PastPatternEnd::Reject, or two or more ages",
+            });
+        }
         let mut oldest = None;
         for (o, &age) in self.ages.iter().enumerate() {
             let outside = || {

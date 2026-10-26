@@ -470,3 +470,26 @@ def test_issue_632_one_origin_at_one_age():
     close(fit.ultimate, [600.0])
     older = Triangle.from_long([2021], [48], {"paid": [800.0], "premium": [1500.0]})
     five_methods_by_hand(older, CDF_632, [800.0], [1.12])
+
+
+def test_issue_632_a_pattern_that_ends_at_the_only_age():
+    # A pattern that ends at an origin's only age selects no link and is
+    # its level there, the tail, as one value at that age is.
+    at_60 = Triangle.from_long([2020], [60], {"paid": [1000.0], "premium": [1500.0]})
+    five_methods_by_hand(at_60, CDF_632, [1000.0], [1.0])
+    to_48 = {a: c for a, c in CDF_632.items() if a <= 48}
+    at_48 = Triangle.from_long([2021], [48], {"paid": [800.0], "premium": [1500.0]})
+    five_methods_by_hand(at_48, to_48, [800.0], [1.12])
+    fit = ChainLadder(ldf=to_48, ldf_kind="cdf").fit(at_48, "paid")
+    close(fit.ultimate, [896.0])
+    assert fit.pattern_tail == pytest.approx(1.12)
+    at_12 = Triangle.from_long([2024], [12], {"paid": [200.0], "premium": [1500.0]})
+    five_methods_by_hand(at_12, {6: 4.0, 12: 3.0}, [200.0], [3.0])
+
+
+def test_issue_632_one_value_and_a_methods_tail_in_a_bootstrap(tri):
+    # The method's one value and its own tail conflict, and the bootstrap
+    # names that conflict.
+    method = ChainLadder(ldf={60: 1.05}, ldf_kind="cdf", tail=1.05)
+    with pytest.raises(ValueError, match="give the method no tail"):
+        OdpBootstrap(n_sims=20, seed=1).one_year(tri, "paid", method)

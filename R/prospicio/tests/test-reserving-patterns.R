@@ -278,3 +278,16 @@ near(chain_ladder(one_632, "paid", ldf = c("12" = 1 / 3),
 older_632 <- triangle(data.frame(year = 2021, age = 48, paid = 800, premium = 1500), "year",
                       "age", c("paid", "premium"))
 five_methods_by_hand(older_632, cdf_632, 800, 1.12)
+# A pattern that ends at an origin's only age is its level there, the tail.
+at_60 <- triangle(data.frame(year = 2020, age = 60, paid = 1000, premium = 1500), "year", "age",
+                  c("paid", "premium"))
+five_methods_by_hand(at_60, cdf_632, 1000, 1)
+five_methods_by_hand(older_632, cdf_632[1:4], 800, 1.12)
+to_48 <- chain_ladder(older_632, "paid", ldf = cdf_632[1:4], ldf_kind = "cdf")
+near(to_48@ultimate, 896)
+near(to_48@pattern_tail, 1.12)
+five_methods_by_hand(one_632, c("6" = 4, "12" = 3), 200, 3)
+# The method's one value and its own tail conflict, and the bootstrap
+# names that conflict.
+expect_error_like(odp_one_year(tri, "paid", n_sims = 20, seed = 1, tail = 1.05,
+                               ldf = c("60" = 1.05), ldf_kind = "cdf"), "give the method no tail")

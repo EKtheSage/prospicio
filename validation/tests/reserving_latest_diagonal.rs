@@ -1274,3 +1274,60 @@ fn issue_632_one_origin_at_one_age_fits_with_a_full_or_a_one_value_cdf() {
     let older = issue_632(&[2021], &[48], &[800.0]);
     the_five_methods_by_hand(&older, full, &[800.0], &[1.12]);
 }
+
+#[test]
+fn issue_632_a_pattern_that_ends_at_the_only_age_is_its_level() {
+    // A pattern that ends at an origin's only age selects no link and is
+    // its level there, the tail, as one value at that age is (decision 20
+    // item 1).
+    let full = SelectedPattern::new(PatternKind::AgeToUltimate, ISSUE_632_CDF.to_vec());
+    let at_60 = issue_632(&[2020], &[60], &[1000.0]);
+    the_five_methods_by_hand(&at_60, full, &[1000.0], &[1.0]);
+    let to_48 = SelectedPattern::new(PatternKind::AgeToUltimate, ISSUE_632_CDF[..4].to_vec());
+    let at_48 = issue_632(&[2021], &[48], &[800.0]);
+    the_five_methods_by_hand(&at_48, to_48.clone(), &[800.0], &[1.12]);
+    let fit = selected(to_48).fit(&at_48, "paid").unwrap();
+    assert!((fit.ultimate[0] - 896.0).abs() < 1e-9);
+    assert_eq!(fit.pattern_tail, Some(1.12));
+    let from_6 = SelectedPattern::new(PatternKind::AgeToUltimate, vec![(6, 4.0), (12, 3.0)]);
+    let at_12 = issue_632(&[2024], &[12], &[200.0]);
+    the_five_methods_by_hand(&at_12, from_6, &[200.0], &[3.0]);
+}
+
+#[test]
+fn issue_632_one_value_with_a_tail_past_its_end_is_an_error() {
+    // Decision 20 item 3: an origin older than the value's age, with a
+    // tail or no development past the end, would rescale the one value
+    // away, so it is the same error as with every origin at its age.
+    let d = LatestDiagonal::new(
+        Grain::Year,
+        &[Month::january(2023), Month::january(2024)],
+        &[24, 12],
+        &[400.0, 200.0],
+    )
+    .unwrap();
+    for kind in [PatternKind::AgeToUltimate, PatternKind::PercentDeveloped] {
+        let value = if kind == PatternKind::AgeToUltimate {
+            3.0
+        } else {
+            1.0 / 3.0
+        };
+        let one = SelectedPattern::new(kind, vec![(12, value)]);
+        for (rule, tail) in [
+            (PastPatternEnd::Tail, Tail::from(1.5)),
+            (PastPatternEnd::NoDevelopment, Tail::default()),
+        ] {
+            let cl = ChainLadder {
+                tail,
+                ..selected(one.clone())
+            };
+            match cl.fit_diagonal(&d.clone().with_past_pattern_end(rule)) {
+                Err(Error::Pattern { age, reason }) => {
+                    assert_eq!(age, Some(12));
+                    assert!(reason.contains("a tail is given"), "{reason}");
+                }
+                other => panic!("{rule:?}: {other:?} is not a pattern error"),
+            }
+        }
+    }
+}

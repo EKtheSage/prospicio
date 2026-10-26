@@ -147,7 +147,10 @@ impl Default for PatternWeight {
 ///   with no [`Tail`], and is the tail as above; on a triangle observed at
 ///   one age (one origin, or every origin at one age) it is the whole
 ///   projection. At another age, with a tail or with a weight below 1 it
-///   would select nothing, and it is an error.
+///   would select nothing, and it is an error. A longer pattern that ends
+///   at the oldest age and selects no link (on a triangle observed at one
+///   age, a pattern from 12 to 60 months on an origin observed at 60 months)
+///   is its level there, read the same way.
 ///
 /// Factors the pattern does not select are estimated, as without one, and
 /// the triangle must still estimate every factor (the estimate is reported
@@ -409,7 +412,11 @@ impl SelectedPattern {
             oldest: at(oldest),
             level: at(end),
         });
-        if beyond.is_none() && selected.iter().all(Option::is_none) {
+        // A cumulative pattern that ends at the oldest age and selects no
+        // link there is its level, the tail, as one value at that age is
+        // (decision 20 item 1): a triangle observed at one age has no link.
+        let tail_only = level.is_some_and(|(j, _)| j + 1 == ages.len());
+        if beyond.is_none() && !tail_only && selected.iter().all(Option::is_none) {
             return Err(Error::Pattern {
                 age: Some(first),
                 reason: "the pattern selects no factor of the triangle",
@@ -938,7 +945,8 @@ impl Resolved {
     }
 
     /// Whether the pattern is only a level, the tail: a cumulative pattern
-    /// with one value at the oldest age (decision 20). Any other pattern
+    /// with one value at the oldest age, or a longer one that ends there
+    /// and selects no link (decision 20 item 1). Any other pattern
     /// that resolves selects a link or runs past the oldest age.
     pub(crate) fn is_tail_only(&self) -> bool {
         self.level.is_some() && self.beyond.is_none() && self.selected.iter().all(Option::is_none)
@@ -964,9 +972,12 @@ impl SelectedPattern {
             ));
         }
         if resolved.is_tail_only() {
+            // Only a method with a tail of its own is read without its
+            // level, and then its pattern and tail conflict (decision 20
+            // items 3 and 5).
             return Err(Error::Bootstrap(
-                "a cumulative pattern with one value is the re-reserving method's tail: give \
-                 the bootstrap the method's tail",
+                "the re-reserving method's pattern is only its level, its tail, and the method \
+                 has a tail of its own: give the method no tail, or two or more ages",
             ));
         }
         let links: Vec<(Lag, f64, f64)> = resolved
