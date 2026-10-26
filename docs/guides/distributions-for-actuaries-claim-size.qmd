@@ -12,22 +12,22 @@ execute:
 ---
 
 This is the R twin of the Python guide
-[`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md),
-which recomputes the worked examples and problem answers of chapters 2, 5 and 6
-of CAS Monograph 2, *Distributions for Actuaries* by David Bahnemann (2015):
-the same sections, the same examples and the same numbers. The R package calls
-the same Rust code as the Python one, so every number printed below equals the
-Python guide's; read that guide for the full discussion of each result, and the
-monograph for the derivations. The companion R guide,
+[`distributions-for-actuaries-claim-size.md`](distributions-for-actuaries-claim-size.md).
+It recomputes the worked examples and problem answers of chapters 2, 5 and 6 of
+CAS Monograph 2, *Distributions for Actuaries* by David Bahnemann (2015). The
+sections, examples and numbers are the same. The R package calls the same Rust
+code as the Python package, so every number printed below equals the Python
+guide's. Read that guide for the discussion of each result, and the monograph
+for the derivations. The companion R guide,
 [`distributions-for-actuaries-counts-aggregates.qmd`](distributions-for-actuaries-counts-aggregates.qmd),
 covers chapters 3 and 4.
 
-Each R chunk is followed by the text it prints, and
+After each R chunk, a block shows the text that the chunk prints.
 `R/prospicio/tests/test-guides.R` requires each chunk to print exactly that
 text. The monograph's printed value is a literal in the code, printed next to
-prospicio's. Example and problem numbers are the monograph's ("Ex 2.7",
-"P6.13"). Where the Python guide uses SciPy's Nelder–Mead, this one uses R's
-`optim()`; both find the same minima to the digits printed.
+prospicio's. Example and problem numbers ("Ex 2.7", "P6.13") are the
+monograph's. The Python guide minimizes with SciPy's Nelder–Mead. This guide
+uses R's `optim()`. Both find the same minima to the printed digits.
 
 ## 1. Translating the parameters
 
@@ -40,11 +40,12 @@ prospicio's. Example and problem numbers are the monograph's ("Ex 2.7",
 | Pareto (α, β), the "shifted" one used in all examples | F = 1 − (β/(x+β))^α, from 0 | `generalized_pareto(1/α, β/α)`, or `burr_distribution(α, 1, β)` |
 | classical Pareto (γ, α) | F = 1 − (γ/x)^α, from γ | `pareto(γ, α)` |
 
-The monograph's Pareto starts at zero (a Lomax); prospicio's `pareto()` is the
-single-parameter Pareto above a threshold. The helpers below are used
-throughout; `limited_second_moment` builds E[X²; l] from `layer_variance` and
-`layer` of a `truncated_distribution()` with no bounds, which gives any
-severity layer moments.
+The monograph's Pareto starts at zero (a Lomax). prospicio's `pareto()` is the
+single-parameter Pareto above a threshold. The guide uses the helpers below
+throughout. `limited_second_moment` builds E[X²; l] as `layer_variance +
+layer^2` from a `truncated_distribution()` with no bounds. This gives layer
+moments for any severity. The survival function of the lognormal is
+`1 - cdf()`, and the standard deviation is `sqrt(variance())`.
 
 ```{r}
 #| label: setup
@@ -128,8 +129,8 @@ P2.19  E[X; 3,000]                       book        1,347   prospicio        1,
 P2.19  E[X | X > 3,000]                  book        6,500   prospicio        6,500
 ```
 
-P2.25: with mean 1,000 and standard deviation 2,000, how many of 5,000 claims
-exceed 1,000 under each family?
+P2.25: the mean is 1,000 and the standard deviation is 2,000. How many of 5,000
+claims are more than 1,000 under each family?
 
 ```{r}
 #| label: p225
@@ -149,10 +150,10 @@ P2.25  claims > 1,000, Pareto            book        1,428   prospicio        1,
 
 ## 3. Fitting grouped data
 
-The method of moments for the gamma of Ex 2.7, from the sample moments
-M1 = 1,555 and M2 = 3,036,875 of the 200 claims of Ex 2.6; the printed scale
-397.931 is a slip for 397.974, but the monograph's tables use it, so the table
-below does too:
+The method of moments for the gamma of Ex 2.7 uses the sample moments
+M1 = 1,555 and M2 = 3,036,875 of the 200 claims of Ex 2.6. The printed scale
+397.931 is a slip for 397.974. The monograph's tables use it. The table below
+uses it too:
 
 ```{r}
 #| label: ex27
@@ -190,8 +191,8 @@ Ex 2.7  Pr{X > x}  book  [0.7382, 0.4604, 0.2465, 0.1186, 0.0528]
 Ex 2.7  chi-square                       book        3.096   prospicio        3.095
 ```
 
-Minimum chi-square, Ex 2.8 and P2.16. At the monograph's lognormal the
-statistic is 1.020, not the printed 1.828, and the true minimum is lower:
+Minimum chi-square, Ex 2.8 and P2.16. At the monograph's lognormal, the
+statistic is 1.020, not the printed 1.828. The true minimum is lower:
 
 ```{r}
 #| label: ex28
@@ -285,8 +286,8 @@ P2.39 mu                                 book       9.7781   prospicio       9.7
 P2.39 sigma                              book       1.4448   prospicio       1.4448
 ```
 
-Truncation from below (Ex 2.11, a 1,000 deductible and a 200,000 limit) and
-from above (P2.43), with `truncated_distribution()`:
+Truncation from below (Ex 2.11, a 1,000 deductible and a 200,000 limit) and from
+above (P2.43), with `truncated_distribution()`:
 
 ```{r}
 #| label: truncated
@@ -319,9 +320,9 @@ P2.43 mu                                 book       9.4951   prospicio       9.4
 P2.43 sigma                              book       1.0842   prospicio       1.0842
 ```
 
-`severity_fit()` by maximum likelihood on individual claims, with the
-deductible as a reporting threshold and the limit as censoring; the same
-20,000 draws as the Python guide (the generator is shared):
+`severity_fit()` fits individual claims by maximum likelihood. The deductible is
+a reporting threshold and the limit is censoring. The 20,000 draws are the same
+as in the Python guide (both guides share the generator):
 
 ```{r}
 #| label: fit
@@ -435,8 +436,8 @@ Ex 5.7  E[X; 5,000]                      book        1,875   prospicio        1,
 ```
 
 Coefficients of variation of the lognormal (5.9809; 1.8) and its layers (Ex 5.8,
-P5.10); the monograph's differences of rounded limited means account for the
-third and fourth figures:
+P5.10). The monograph's differences of rounded limited means cause the
+differences in the third and fourth figures:
 
 ```{r}
 #| label: ex58
@@ -837,26 +838,16 @@ Ex 6.10 5,000 limit: pure premium        book        662.7   prospicio        66
         effective trend, %               book          2.2   prospicio          2.2
 ```
 
-## 11. What agreed, what did not, and what the R package does not do
+## 11. What agreed and what did not
 
-The comparisons, and the reasons for each disagreement (rounding carried into
-differences, misprints, spreadsheet solver results), are the Python guide's
-section 11, with the same numbers. What the R package lacks for these chapters,
-beyond what the Python package lacks there (grouped-data estimators, a Lomax
-family in the fits, third limited moments, premium formulas with ALAE, risk
-loads and deductible credits, a `lev` on sampled data):
+The comparisons are the same as in section 11 of the Python guide, with the same
+numbers. They cover rounding carried into differences, misprints and
+spreadsheet solver results. The reasons for each disagreement are in that
+section.
 
-- **`survival()` and `layer_variance()` on `lognormal()`**: the lognormal has
-  `cdf`, `lev`, `layer` and `stop_loss` but no `survival` and no layer
-  variance, so this guide uses `1 - cdf()` and wraps it in
-  `truncated_distribution()`. (Python's `Lognormal` has no `survival` or
-  `layer_second_moment` either.)
-- **No `layer_second_moment()`**: the R package exposes `layer_variance()`
-  only, so E[X²; l] is rebuilt as `layer_variance + layer^2`.
-- **No `std()`**: `sqrt(variance())`.
+Where to go next:
 
-Where to go next: the Python guides
-[severity and frequency](severity-and-frequency.md),
-[aggregate distributions](aggregate-distributions.md) and
-[experience and exposure rating](experience-and-exposure-rating.md), and the
-companion R guide on claim counts and aggregate claims.
+- [Severity and frequency](severity-and-frequency.md)
+- [Aggregate distributions](aggregate-distributions.md)
+- [Experience and exposure rating](experience-and-exposure-rating.md)
+- The companion R guide on claim counts and aggregate claims

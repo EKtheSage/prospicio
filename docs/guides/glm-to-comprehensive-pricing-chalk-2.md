@@ -1,22 +1,26 @@
 # Beyond the GLM, part 2: correlated features, two stages and black boxes
 
-The second part of the guide to CAS Monograph 16, *From GLMs to Comprehensive
-Insurance Pricing: Techniques and Challenges* (Chalk, Deacon, Guillen and
-Martinelli, 2025). The first part,
+This is the second part of the guide to CAS Monograph 16, *From GLMs to
+Comprehensive Insurance Pricing: Techniques and Challenges*. The authors are
+Chalk, Deacon, Guillen and Martinelli (2025). The first part,
 [`glm-to-comprehensive-pricing-chalk.md`](glm-to-comprehensive-pricing-chalk.md),
 covers chapters 3 to 6 (measuring performance, penalized regression, nonlinear
-effects, high cardinality factors) and explains what can and cannot be
-reproduced. This part covers chapters 7 to 10. The text is the authors'; what
-follows is an explanation in new words with the numbers recomputed, and table
-and section numbers are the monograph's.
+effects, high cardinality factors). It also tells which examples the guide
+reproduces. This part covers chapters 7 to 10. The explanations are in new
+words, the numbers are calculated again, and table and section numbers are the
+monograph's.
 
-The block below rebuilds what part 1 built and this part uses, in one go: the
-simulated portfolio with its known truth (20,000 policies, folds from the
-policy number, folds 7 to 9 for testing), the pseudo-R2 helper and
-cross-validation loop, the baseline GLM and boosting designs, the age steps the
-lasso keeps, and the make's out-of-fold target encoding (`target_encode`, with
-the encoding for rows outside the training folds from its returned
-`TargetEncoding`). Part 1 explains each piece.
+The block below rebuilds, in one step, what part 1 built and this part uses:
+
+- the simulated portfolio with its known truth (20,000 policies, folds from the
+  policy number, folds 7 to 9 for testing),
+- the pseudo-R2 helper and the cross-validation loop,
+- the baseline GLM and boosting designs,
+- the age steps that the lasso keeps,
+- the out-of-fold target encoding of make (`target_encode`), with the returned
+  `TargetEncoding` for rows outside the training folds.
+
+Part 1 explains each piece.
 
 ```python
 import math
@@ -166,13 +170,14 @@ print(f"{n} policies, {claims.sum():.0f} claims; age steps kept by the lasso at 
 
 ## 1. Highly correlated variables (chapter 7)
 
-When two features carry nearly the same information, a GLM can split their joint
-effect between them in many ways that fit almost equally well, so small changes
-in the data swing the coefficients (section 7.2). The portfolio's `exper` is
-driver age less 17 less a small random amount, correlated 0.997 with age, and has
-no effect of its own. Fitting age and experience together on each of the seven
-training sets of the cross-validation shows the swing, and what ridge and the
-lasso do with it (section 7.4):
+When two features carry almost the same information, a GLM can split their
+joint effect between them in many ways that fit almost equally well. Thus
+small changes in the data cause large changes in the coefficients (section
+7.2). The portfolio's `exper` is driver age less 17 less a small random amount.
+It has a correlation of 0.997 with age and no effect of its own. The block
+fits age and experience together on each of the seven cross-validation training
+sets. It shows the changes, and what ridge and the lasso do with them (section
+7.4):
 
 ```python
 X_corr = Design(columns(ones, age, exper), ["(Intercept)", "age", "exper"], offset=log_expo)
@@ -192,26 +197,28 @@ ridge age -0.0061 to -0.0052   exper -0.0016 to -0.0010   sum -0.0070
 lasso age -0.0074 to -0.0066   exper +0.0000 to +0.0000   sum -0.0070
 ```
 
-The unpenalized coefficients move a lot from one training set to the next while
-their sum, the effect of a year of age-and-experience together, barely moves.
-Ridge shares the effect between the two and holds both steady; the lasso keeps
-mostly one and drops the other, which is stable here but can flip between
-training sets when the two are closer still (section 7.5.3). Principal
-components (section 7.4.5) are not in prospicio; `numpy.linalg.svd` on the
-standardized columns gives them, and the components go into a `Design` like any
-other column.
+The unpenalized coefficients change much from one training set to the next.
+Their sum, the effect of one year of age and experience together, almost does
+not change. Ridge shares the effect between the two features and keeps both
+stable. The lasso keeps mostly one feature and removes the other. This is
+stable here, but it can flip between training sets when the two features are
+even closer (section 7.5.3).
+
+To use principal components (section 7.4.5), calculate them with
+`numpy.linalg.svd` on the standardized columns. Then put the components into a
+`Design` like any other column.
 
 ## 2. Modelling in two stages (chapter 8)
 
 ### 2.1 The marketing discount as an offset
 
-Chapter 8's example is the one fully specified data set in the monograph: a
-million simulated private auto policies, one year each, with age group (A to E)
-and no-claims bonus (NCB 0 to 4) strongly related. Table 8.2 prints the number
-of policies in each cell, Table 8.3 the true relativities, and section 8.1 a base
-frequency of 10% for age A and NCB 0. A Poisson GLM can be fitted to the 25
-cells with expected claims as the response, which gives the fit that the
-monograph's simulation estimates with noise:
+The example of chapter 8 is the only fully specified data set in the monograph.
+It has one million simulated private auto policies, one year each. Age group
+(A to E) and no-claims bonus (NCB 0 to 4) are strongly related. Table 8.2
+prints the number of policies in each cell, and Table 8.3 prints the true
+relativities. Section 8.1 gives a base frequency of 10% for age A and NCB 0. A
+Poisson GLM on the 25 cells, with expected claims as the response, gives the
+fit that the simulation of the monograph estimates with noise:
 
 ```python
 from prospicio.models import Terms
@@ -246,16 +253,19 @@ NCB offset at the marketing scale: intercept 0.1125 (printed 0.112)
   age B to E: ['0.8485', '0.9175', '0.9825', '1.0586'] printed [0.849, 0.925, 0.980, 1.057]
 ```
 
-With age and NCB both in the model the GLM returns the truth (intercept 0.10,
-then the age and NCB relativities of Table 8.3); the monograph's fit on its noisy
-simulation, Table 8.4, is within about 0.025 of it. Offsetting the marketing
-department's NCB scale and refitting age gives the intercept 0.112 that section
-8.1 prints (0.1125, printed as 0.112) and age relativities of 0.849, 0.918,
-0.983 and 1.059 against the printed 0.849, 0.925, 0.980 and 1.057. The differences are the monograph's
-simulation noise; the reversal (age relativities rising with age, because age
-now carries part of the NCB effect the marketing scale removed) is the same.
+With age and NCB both in the model, the GLM gives the truth: intercept 0.10,
+then the age and NCB relativities of Table 8.3. The monograph fit on its noisy
+simulation (Table 8.4) is within about 0.025 of it. The next fit uses the NCB
+scale of the marketing department as an offset and fits age again. It gives
+the intercept 0.112 that section 8.1 prints (0.1125, printed as 0.112). It gives age relativities of
+0.849, 0.918, 0.983 and 1.059, against the printed 0.849, 0.925, 0.980 and
+1.057.
 
-The risk premiums of the section follow, at a claim size of 10,000:
+The differences come from the simulation noise of the monograph. The reversal
+is the same: age relativities increase with age, because age now carries part
+of the NCB effect that the marketing scale removed.
+
+The section then gives risk premiums at a claim size of 10,000:
 
 ```python
 print(f"true A/0 {0.10 * 1.0 * 1.0 * 10000:.0f}, true E/4 {0.10 * 0.4 * 0.8 * 10000:.0f} (printed 1,000 and 320)")
@@ -274,12 +284,16 @@ offset model E/4: printed coefficients 237 (printed 237), recomputed 238
 
 ### 2.2 Offsets and residuals give the same second stage
 
-A second-stage model can start where a first stage stopped in two ways (sections
-8.3 to 8.5): an offset of the log of the first stage's predicted counts, or the
-residual (actual over predicted counts) as the response with the predicted
-counts as weights. Yan and others, and Shi, show the two are identical for a
-Poisson log-link model. On the portfolio, a first-stage GLM without region and a
-second stage that fits region alone:
+A second-stage model can continue from a first stage in two ways (sections 8.3
+to 8.5):
+
+- an offset of the log of the predicted counts from the first stage,
+- the residual (actual over predicted counts) as the response, with the
+  predicted counts as weights.
+
+Yan and others, and Shi, show that the two are identical for a Poisson log-link
+model. The block uses the portfolio with a first-stage GLM without region and
+a second stage that fits only region:
 
 ```python
 X_s1 = Design(columns(ones, age, veh_age, *power_d), ["(Intercept)", "age", "veh_age", "power[mid]", "power[high]"],
@@ -299,22 +313,24 @@ offset:   ['0.9301', '1.2148', '0.8598', '1.0619', '1.0436', '1.4061']
 residual: ['0.9301', '1.2148', '0.8598', '1.0619', '1.0436', '1.4061']
 ```
 
-The fitted second stage is the same to the printed digits. In section 8.4's
-summary by zip code the first rows have residuals 0 / 0.014 = 0 and 1 / 0.739 =
-1.353. Section 8.9.1 adds the caution that the first stage's predictions should
-be cross-fitted (each record predicted by a model that did not see it), as
-`expected` was in part 1's section 4.4: an overfitted first stage leaves the
-second nothing to find (Table 8.12), while cross-fitted predictions leave
-residuals such as 3 / 5 = 0.6 and 7 / 5 = 1.4 (Table 8.13). prospicio's `Gam`
-also takes tensor product smooths, so a spatial second stage of the kind in
-Figure 8.2 is a `Gam` with `tensors=[["lon", "lat"]]` and the first stage as
-offset.
+The two second stages are the same to the printed digits. In the summary by zip
+code of section 8.4, the first rows have residuals 0 / 0.014 = 0 and
+1 / 0.739 = 1.353.
+
+Section 8.9.1 adds a caution: cross-fit the first-stage predictions, as part 1
+did for `expected` in section 4.4. In a cross-fit, a model that did not see a
+record predicts it. An overfitted first stage leaves nothing for the second
+stage to find (Table 8.12). Cross-fitted predictions leave residuals such as
+3 / 5 = 0.6 and 7 / 5 = 1.4 (Table 8.13).
+
+For a spatial second stage like Figure 8.2, use a `Gam` with the tensor
+product smooth `tensors=[["lon", "lat"]]` and the first stage as offset.
 
 ### 2.3 Combining tables and area groups
 
 Section 8.7 multiplies the seven aircraft tables into one relativity for the
-Cessna 172M, and section 8.9.2 replaces 30,000 zip code relativities by 100
-area groups in equal multiplicative steps between the smallest (0.379) and
+Cessna 172M. Section 8.9.2 replaces 30,000 zip code relativities by 100 area
+groups, in equal multiplicative steps between the smallest (0.379) and the
 largest (1.851) relativity:
 
 ```python
@@ -333,18 +349,18 @@ range 4.884 (printed 4.884), exact step 1.01615, printed step 1.0162, 1.0162^99 
 groups 1, 2, 3, 22, 56: ['0.379', '0.385', '0.391', '0.531', '0.917'] printed [0.379, 0.385, 0.391, 0.531, 0.917]
 ```
 
-The printed step 1.0162 is the exact 1.01615 rounded up, which is why 99 steps
-of it overshoot the range (4.908 against 4.884); the group relativities of
-Table 8.15 are built from the rounded step.
+The printed step 1.0162 is the exact 1.01615 rounded up. Thus 99 steps of it go
+past the range (4.908 against 4.884). The monograph builds the group
+relativities of Table 8.15 from the rounded step.
 
 ## 3. Learning from black-box models (chapter 9)
 
 ### 3.1 The boosting model's variance
 
-The gradient boosting benchmark is, in the monograph's words, a very complicated
-GLM: thousands of steps and interactions. Its training performance keeps rising
-as trees are added while its validation performance stalls (Figure 9.1). On fold
-0 of the portfolio:
+The monograph calls the gradient boosting benchmark a very complicated GLM,
+with thousands of steps and interactions. Its training performance continues to
+increase as you add trees, but its validation performance stops increasing
+(Figure 9.1). The block shows this on fold 0 of the portfolio:
 
 ```python
 fit_rows, val = rows(train & (fold != 0)), rows(fold == 0)
@@ -365,11 +381,12 @@ for rounds in [50, 150, 600]:
 
 ### 3.2 Permutation feature importance
 
-Section 9.2 measures a feature's importance by how much worse the model predicts
-held-out data when that feature's column is shuffled, which breaks its link to
-the outcome and leaves everything else in place. It needs only predictions, so
-it works for any model. Tables 9.1 to 9.4: three insureds, frequency age / 100,
-a model that has learned exactly that, and the mean absolute error:
+Section 9.2 measures the importance of a feature by how much worse the model
+predicts held-out data when you shuffle the column of that feature. The shuffle
+breaks the link between the feature and the outcome, and keeps everything else
+the same. The method needs only predictions, so it works for any model. Tables
+9.1 to 9.4 use three insureds, frequency age / 100, a model that has learned
+exactly that, and the mean absolute error:
 
 ```python
 toy_age = np.array([20.0, 30.0, 40.0])
@@ -396,22 +413,27 @@ height increase in MAE 0.000, importance 0
 printed: age 0.133 and 100, height 0 and 0
 ```
 
-On the portfolio, "our GLM" for this chapter is the monograph's end point: the
-age steps the lasso kept, steps for vehicle age, region, power and the make
-encoding (at `K` = 64), with the noise and experience features left out (part 1, sections 3.2 and 4.4). The
-boosting model gets the raw features (less `exper`, whose near-copy of age would
-blur every comparison below, the caveat of section 9.2 about correlated
-features) and the same make encoding, as the monograph does: it notes that the
-two models would share one encoding but for its boosting library's built-in
-one. As in section 9.5.1, each importance is computed on the held-out fold of
-each of the seven cross-validation models and averaged, as the loss of
-pseudo-R2 when the feature is shuffled; `permutation_importance` takes a score
-to minimize, so the pseudo-R2 goes in as its negative. Its `splits` argument
-would fit the models itself, but the make encoding here is rebuilt for each
-held-out fold, so the loop fits the two models on each fold, explains them on
-the fold's held-out rows (seeding the shuffle with the fold), and `combine`
-pools the seven results. The same loop runs what the next two sections need:
-`partial_dependence` on age and the pairwise `interaction_screen`.
+On the portfolio, "our GLM" for this chapter is the end point of the
+monograph. It has the age steps that the lasso kept, steps for vehicle age,
+region, power and the make encoding (at `K` = 64). It does not have the noise
+and experience features (part 1, sections 3.2 and 4.4).
+
+The boosting model gets the raw features and the same make encoding, as in the
+monograph. The monograph notes that the two models would share one encoding if
+its boosting library did not have a built-in encoding. The boosting model does
+not get `exper`, because this near-copy of age would blur every comparison
+below. This is the caveat of section 9.2 about correlated features.
+
+As in section 9.5.1, each importance is the average over the seven
+cross-validation models, each on its held-out fold. The importance is the loss
+of pseudo-R2 when the feature is shuffled. `permutation_importance` takes a score to minimize, so
+the pseudo-R2 goes in with a negative sign.
+
+The `splits` argument of `permutation_importance` can fit the models itself. But here the make
+encoding changes for each held-out fold. Thus the loop fits the two models on
+each fold and explains them on the held-out rows of that fold. The fold number
+is the seed of the shuffle. Then `combine` pools the seven results. The same loop also runs what the next
+two sections need: `partial_dependence` on age and the pairwise `interaction_screen`.
 
 ```python
 veh_knots = [2, 4, 6, 8, 10]
@@ -485,24 +507,24 @@ region       0.008     0.003
 noise        0.000    -0.000
 ```
 
-The two models agree on which features matter and roughly in which order, and
-the GBM gives the noise feature next to nothing although it was allowed to use
-it. With the monograph's treatment of nonlinear effects and of the make, our
-GLM now scores above this (untuned) boosting model, which the raw-feature
-baseline GLM was far below in part 1's section 1.3.
+The two models agree on which features are important and approximately on their
+order. The GBM gives the noise feature almost no importance, although it can
+use it. With the monograph's treatment of nonlinear effects and of make, our
+GLM now scores above this untuned boosting model. In section 1.3 of part 1, the
+raw-feature baseline GLM was far below it.
 
-The GLM's loss for noise is exactly zero because the GLM does not use it;
-the monograph's GLM importances are never exactly zero because its lasso kept
+The GLM loss for noise is exactly zero because the GLM does not use noise. The
+GLM importances in the monograph are never exactly zero, because its lasso kept
 each feature in at least one fold.
 
 ### 3.3 Partial dependence
 
-Section 9.3 isolates a feature's effect in a black box by setting it to one value
-for every record, averaging the predictions, and repeating for another value.
-For a GLM without interactions the ratio of the two averages is exactly the
-ratio of the feature's relativities. The printed `nu_registered` steps give 1.107
-between 1 and 10, Tables 9.7 to 9.9 the same ratio from predictions, and the
-boosting model of Table 9.10 1.104:
+Section 9.3 isolates the effect of a feature in a black box. It sets the
+feature to one value for every record, calculates the average prediction, and
+repeats for another value. For a GLM without interactions, the ratio of the two
+averages is exactly the ratio of the relativities of the feature. The printed
+`nu_registered` steps give 1.107 between 1 and 10. Tables 9.7 to 9.9 give the
+same ratio from predictions, and the boosting model of Table 9.10 gives 1.104:
 
 ```python
 nu = lambda v: -0.0001407 * v + 0.02936 * (v >= 2) + 0.07342 * (v >= 7) - 0.15822 * (v >= 16) - 0.17117 * (v >= 35)
@@ -515,10 +537,11 @@ GLM relativity 10 vs 1 from the steps 1.107 (printed 1.107)
 Table 9.9 ratio of totals 1.107, Table 9.10 GBM 1.104 (printed 1.107, 1.104)
 ```
 
-On the portfolio, the partial dependence of each model on driver age, relative
-to age 40 and averaged over the seven held-out folds, next to the truth for a
-low-power car (the true young-driver effect is larger for high power, which is
-the interaction):
+On the portfolio, the block shows the partial dependence of each model on
+driver age. Each value is relative to age 40 and averaged over the seven
+held-out folds. The
+truth for a low-power car is next to it. The true young-driver effect is larger
+for high power, which is the interaction:
 
 ```python
 true_age = np.exp(0.9 * np.exp(-(np.array(ages) - 18) / 6) + 0.0015 * np.maximum(np.array(ages) - 60, 0) ** 1.5)
@@ -537,20 +560,20 @@ age 60: GLM 1.00  GBM 1.02  true (low power) 0.98
 age 75: GLM 1.18  GBM 1.09  true (low power) 1.07
 ```
 
-As section 9.3 cautions, a partial dependence is an average over the portfolio.
-Both models' young-driver figures blend high-power cars, where the effect is
-stronger, with the rest; the GLM's is the higher because, without an
-interaction term, it charges every young driver part of the high-power cars'
-extra load. The next section finds that interaction.
+Section 9.3 gives a caution: a partial dependence is an average over the
+portfolio. The young-driver figures of both models mix high-power cars, where
+the effect is stronger, with the other cars. The GLM figure is higher. Without
+an interaction term, the GLM charges every young driver part of the extra load
+of high-power cars. The next section finds that interaction.
 
 ### 3.4 Interactions from permutations
 
-Section 9.4's screen for interactions shuffles two features separately and
-together: with `L_A`, `L_B` and `L_AB` the losses, `L_A + L_B - L_AB` is zero if
-neither feature interacts with anything and positive if they interact with each
-other or with a common third feature. Table 9.11 prints the three losses for
-three pairs with aircraft age; its columns are, from the values, `L_AB`, `L_A`
-and `L_B`:
+The interaction screen of section 9.4 shuffles two features separately and
+together. Let `L_A`, `L_B` and `L_AB` be the losses. Then `L_A + L_B - L_AB` is
+zero if neither feature interacts with anything. It is positive if the two
+features interact with each other or with a common third feature. Table 9.11
+prints the three losses for three pairs with aircraft age. From the values, its
+columns are `L_AB`, `L_A` and `L_B`:
 
 ```python
 table_9_11 = [("region", 0.291, 0.253, 0.135, 0.096), ("nu_registered", 0.115, 0.016, 0.135, 0.037),
@@ -565,11 +588,11 @@ nu_registered   x aircraft age: 0.036 (printed 0.037)
 faa_eng_hp_char x aircraft age: 0.014 (printed 0.014)
 ```
 
-The recomputed values differ from the printed ones by 0.001, the rounding of the
-three inputs. The same screen on the boosting model, over every pair of the
-portfolio's features and averaged over the seven folds, and then the GLM's
-cross-validated score with and without one more column for the pair it puts
-first:
+The recalculated values differ from the printed values by 0.001, because the
+three inputs are rounded. The next block runs the same screen on the boosting
+model, over each pair of portfolio features, averaged over the seven folds.
+Then it gives the cross-validated GLM score with and without one more column
+for the first pair:
 
 ```python
 for row in screen.table()[:3]:
@@ -585,20 +608,22 @@ veh_age  x noise    0.0006
 GLM cv pseudo-R2 0.055, with a young-driver high-power term 0.058
 ```
 
-Age and power come first, which is the interaction that was planted, and the
-GLM gains when given it. The pairs after it are a quarter of its strength or
-less and their order moves with the shuffle (the third here involves the noise
-feature, which interacts with nothing). In the monograph, the leaves of a decision tree fitted
-to the ratio of boosting to GLM predictions played this role and lifted the
-cross-validated pseudo-R2 from 0.151 to 0.156; prospicio has no decision tree,
-but a `Booster` with one tree and a few leaves is one, and the hand-made column
-above is the same idea.
+Age and power come first, which is the planted interaction, and the GLM
+improves with it. The next pairs have a quarter of its strength or less, and
+their order changes with the shuffle. (The third pair includes the noise
+feature, which interacts with nothing.)
+
+In the monograph, the leaves of a decision tree fitted to the ratio of boosting
+to GLM predictions did this work. They increased the cross-validated pseudo-R2
+from 0.151 to 0.156. a `Booster` with one tree and a few leaves is a decision
+tree, and the hand-made column above uses the same idea.
 
 ### 3.5 The test data, once
 
-Everything above was decided on the training folds. Section 3.2's rule is that
-the test data is looked at once, at the end. Refitting each model on all seven
-training folds (the make encoding from all of them) and scoring on folds 7 to 9:
+All decisions above used only the training folds. The rule of section 3.2 is to
+look at the test data once, at the end. The block fits each model again on all
+seven training folds, with the make encoding from all of them. Then it scores
+each model on folds 7 to 9:
 
 ```python
 log_te_all = make_feature(64)
@@ -625,57 +650,31 @@ GBM                    0.064
 truth                  0.089
 ```
 
-The ranking on the test data is the one cross-validation promised: the truth
-on top, then our GLM with the interaction, our GLM, the boosting model and the
-baseline. The boosting model's last digit can move with the LightGBM version;
-the GLMs' cannot.
+The ranking on the test data is the one that cross-validation predicted. The
+truth is first, then our GLM with the interaction, our GLM, the boosting model
+and the baseline. The last digit of the boosting model can change with the LightGBM
+version. The last digits of the GLMs cannot.
 
 ## 4. Challenges in ratemaking models (chapter 10)
 
-The last chapter is a list of ways a good cross-validation score can still mislead:
-data whose meaning was misunderstood (the monograph's own aircraft age was the
-years since the registration certificate, not since manufacture), technical
-errors such as factor levels coded differently in training and production (a
-`Terms` coding fitted once and reused avoids this), data that breaks the model's
-assumptions, coefficients and business mix that drift over time, regulation,
-outliers and data quality. Cross-validation fails when the future differs from
-the folds, so a model in production is monitored: `actual_vs_expected` in
-`prospicio.models` compares actual and expected claims by period with a z-score
-for each period and a test for a trend in the ratio, the check that section 10.4
-asks for.
+The last chapter lists ways that a good cross-validation score can still
+mislead:
 
-## 5. What prospicio does not cover
+- data with a misunderstood meaning (the aircraft age of the monograph was the
+  years since the registration certificate, not since manufacture),
+- technical errors, such as factor levels coded differently in training and
+  production (a `Terms` coding that you fit once and use again prevents this),
+- data that breaks the assumptions of the model,
+- coefficients and business mix that drift over time,
+- regulation,
+- outliers and data quality.
 
-Gaps found while writing this guide, filed for the Models lane and since closed:
+Cross-validation fails when the future differs from the folds, so monitor a
+model in production. `actual_vs_expected` in `prospicio.models` compares actual and expected claims by period. It
+gives a z-score for each period and a test for a trend in the ratio, the check
+that section 10.4 asks for.
 
-- Model-agnostic explanations (#355), now in the library:
-  `permutation_importance`, `partial_dependence` and `interaction_screen` in
-  `prospicio.models` take any fitted model, a frame and a design builder;
-  sections 3.2 to 3.4 use them.
-- Bounds on elastic net coefficients (glmnet's `lower.limits` and
-  `upper.limits`), the relaxed lasso and its cross-validation, and an
-  active-set solve for hinge bases (#356, now in the library):
-  `ElasticNet(lower_limits=, upper_limits=)`, `ElasticNetFit.relax` and
-  `ElasticNet.cross_validate_relaxed`; a 20-hinge cross-validated path takes
-  under a second instead of 40.
-- Step, hinge and MARS bases as `Terms` (section 5.5; `Terms.steps`,
-  `Terms.hinges` and `mars()` for knot selection) and out-of-fold target encoding
-  with a credibility constant (chapter 6; `target_encode`, which builds the make
-  feature above) (#357, #465, now in the library).
-- Generalized linear mixed models (section 6.5; #358, now in the library):
-  `Glmm` with random intercepts and slopes, one, nested or crossed grouping
-  factors, and `BayesGlmm` for a NUTS fit.
-
-Not in prospicio and not filed, since general tools do them: principal
-components (section 7.4.5), word embeddings (section 6.4.4) and decision trees
-for interaction leaves (section 9.4; a one-tree `Booster` is one). The monograph
-mentions neural networks only through the universal approximation theorem
-(section 8.2); prospicio's `Cann`, a GLM offset plus a network correction, is
-the two-stage idea of chapter 8 with a network in the second stage, but the
-monograph has nothing to reproduce with it. Price optimization and demand
-modelling are outside the monograph.
-
-## 6. The printed numbers of chapters 8 and 9 and prospicio's
+## 5. The printed numbers of chapters 8 and 9 and prospicio's
 
 | Where | Printed | Recomputed | Note |
 |---|---|---|---|

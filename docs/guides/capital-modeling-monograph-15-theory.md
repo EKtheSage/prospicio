@@ -1,29 +1,29 @@
 # Capital adequacy and the natural allocation: CAS Monograph 15, chapters 3 and 4
 
-CAS Monograph 15, *Introduction to Capital Modeling and Portfolio Management*
-(John Major and Stephen Mildenhall, 2026), builds its theory on one small
-company, InsCo, and prints every step as a table. This guide follows its
-chapters 3 (capital adequacy) and 4 (pricing and allocation) in order,
-recomputes each table with prospicio and prints the monograph's value beside
-prospicio's. Its companion,
-[Applications and the choice of a distortion](capital-modeling-monograph-15-applications.md),
-does the same for chapters 5 and 6, and
+CAS Monograph 15 is *Introduction to Capital Modeling and Portfolio
+Management* (John Major and Stephen Mildenhall, 2026). It builds its theory on
+one small company, InsCo, and prints every step as a table. This guide follows
+chapter 3 (capital adequacy) and chapter 4 (pricing and allocation) in order.
+It recomputes each table with prospicio and prints the monograph's value
+beside prospicio's.
+
+[Applications and the choice of a distortion](capital-modeling-monograph-15-applications.md)
+does the same for chapters 5 and 6.
 [Capital modeling and portfolio pricing](capital-modeling-monograph-15.md)
 reproduces chapter 9, the monograph's code.
 
-The reasoning is the authors'; what follows explains it in new words and
-recomputes the numbers. For the theory behind spectral risk measures and the
-natural allocation at full length, read Mildenhall and Major's *Pricing
-Insurance Risk*; the
-[case studies guide](pricing-insurance-risk-case-studies.md) runs its
-examples. Table numbers below are the monograph's, and money is in its units.
+The reasoning is the authors'. This guide explains it in new words and
+recomputes the numbers. For the full theory of spectral risk measures and the
+natural allocation, read Mildenhall and Major's *Pricing Insurance Risk*. The
+[case studies guide](pricing-insurance-risk-case-studies.md) runs its examples.
+Table numbers are the monograph's, and money is in its units.
 
 ## 1. InsCo and the four adjustments
 
-InsCo writes three units, A, B and C, and its capital model is ten equally
-likely years. Each row below is a year (the monograph's Table 2.1 order) and
-each cell the unit's loss in it. The plan premiums by unit are 13.9, 18.7 and
-19.6:
+InsCo writes three units, A, B and C. Its capital model is ten equally likely
+years. Each row below is a year (in the order of Table 2.1 of the monograph),
+and each cell is the unit's loss in that year. The plan premiums by unit are
+13.9, 18.7 and 19.6:
 
 ```python
 from prospicio.distributions import Sampled
@@ -59,22 +59,29 @@ print(f"{'E[X]':>10s}  " + " ".join(f"{m:5.1f}" for m in insco.expected()))
       E[X]   13.4  18.3  14.9
 ```
 
-This is Table 4.2 without its zero row. Section 4.3 of the monograph asks for
-four changes to raw simulation output before any pricing: sort the years by
-total, start from a total of zero, cap losses at the assets, and make the
-totals distinct. A `Portfolio` makes all of them when it is built. It sorts;
-it does not need the zero row, which only makes the layer sums start at zero
-and carries no probability; there is nothing to cap because the assets of 100
-cover the worst year; and the four years that total 40 become one scenario of
-probability 0.4 in which each unit's loss is its average over those years, the
-conditional expectation `kappa`. With unequal losses at an equal total, the
-order of those years would otherwise be arbitrary, and the allocation would
-depend on it.
+This is Table 4.2 without its zero row. Section 4.3 of the monograph makes four
+changes to raw simulation output before pricing:
 
-The expected loss can be computed two ways on these seven totals (the
-monograph's algorithm 3.4.1): as the probability-weighted sum of the
-outcomes, or as the sum of the layers between consecutive totals, each
-weighted by its probability of being reached, the survival function.
+1. Sort the years by total.
+2. Start from a total of zero.
+3. Cap the losses at the assets.
+4. Make the totals distinct.
+
+`Portfolio` makes all four changes when you build it. It sorts the years. It
+does not need the zero row, which only starts the layer sums at zero and has
+no probability. It caps nothing, because the assets of 100 cover the worst
+year. The four years that total 40 become one scenario with probability 0.4.
+In that scenario, each unit's loss is its average over those years, the
+conditional expectation `kappa`.
+
+Without this step, the order of years with an equal total and unequal unit
+losses is arbitrary, and the allocation depends on that order.
+
+Algorithm 3.4.1 of the monograph calculates the expected loss on these seven
+totals in two ways. The first is the probability-weighted sum of the outcomes.
+The second is the sum of the layers between consecutive totals. The weight of
+each layer is the probability that the total reaches it, the survival
+function.
 
 ```python
 xs = [0.0] + insco.totals                       # pad with a zero outcome
@@ -91,10 +98,10 @@ E[X] by outcomes 46.6, by layers 46.6
 
 ## 2. Capital adequacy: what a loss level means
 
-Section 3.1 reads InsCo's balance sheet as a ladder of thresholds. With the
-plan premium of 52.2 and 100 of assets, made of 27.8 of equity and 20 of debt
-on which 0.6 of coupon is due, a year's loss crosses one threshold after
-another (Table 3.1):
+Section 3.1 reads InsCo's balance sheet as a ladder of thresholds. The plan
+premium is 52.2, and the assets are 100. The assets include 27.8 of equity and
+20 of debt, with 0.6 of coupon due on the debt. A year's loss crosses one
+threshold after another (Table 3.1):
 
 ```python
 LEVELS = [  # event, loss at which it happens, the book's probability
@@ -117,19 +124,19 @@ bonds not redeemed        100.0  probability 10% (book 10%)
 TVaR at 99%: 100.0 (book 100.0)
 ```
 
-Each threshold is a candidate VaR standard; regulators and rating agencies
-pick their own. All of them past 90% land on the worst year here, which is
-why the monograph can describe InsCo's 100 of assets as a TVaR 99% standard
-or as full collateral: there is no default in this example.
+Each threshold is a possible VaR standard. Regulators and rating agencies each
+choose their own. Here, all standards above 90% give the worst year. Thus the
+monograph describes InsCo's 100 of assets as a TVaR 99% standard or as full
+collateral. There is no default in this example.
 
 ## 3. VaR and TVaR
 
-VaR at level p is the smallest loss not exceeded with probability p; TVaR is
-the average of the worst 1 - p of outcomes, with a fraction of the boundary
-outcome when 1 - p of the years is not a whole number. The monograph's
-algorithms 3.4.2 and 3.4.3 do this on n equally likely outcomes by sorting
-and counting. Written out, they agree with `Sampled.quantile` and
-`Sampled.tvar`:
+VaR at level p is the smallest loss that is not exceeded with probability p.
+TVaR is the average of the worst 1 - p of outcomes. When 1 - p of the years is
+not a whole number, TVaR includes a fraction of the boundary outcome.
+Algorithms 3.4.2 and 3.4.3 of the monograph calculate these values on n
+equally likely outcomes by sorting and counting. Written out, they agree with
+`Sampled.quantile` and `Sampled.tvar`:
 
 ```python
 import math
@@ -170,18 +177,21 @@ for p in (0.0, 0.25, 0.5, 0.7, 0.75, 0.85, 0.9, 0.95):
  0.95  100.0    100.0  100.000  100.000
 ```
 
-The two agree except at p = 0.7 and 0.9, where `n p` is a whole number and
-falls exactly on a jump of the distribution: the total is at most 40 in
-exactly 70% of the years. The monograph's text defines VaR as the smallest
-p quantile, which is 40 at 0.7 and 65 at 0.9, and that is what `Sampled`
-returns; its algorithm, read literally, takes the next outcome up. Only at
-such levels do the two readings differ, and TVaR is the same under both.
+The two agree except at p = 0.7 and 0.9. At these levels, `n p` is a whole
+number and falls on a jump of the distribution. For example, the total is at
+most 40 in exactly 70% of the years. The monograph's text defines VaR as the smallest p
+quantile, which is 40 at 0.7 and 65 at 0.9. `Sampled` returns these values.
+The monograph's algorithm, read literally, takes the next outcome up. The two
+readings differ only at such levels, and TVaR is the same under both.
 
-TVaR at 0 is the mean and TVaR at 1 the largest outcome. The monograph's
-reason to prefer TVaR is subadditivity: the TVaR of a sum never exceeds the
-sum of the TVaRs, while VaR can. Its two examples, a discrete one with
-outcome probabilities 0.9, 0.05 and 0.05 (here as twenty equally likely
-years) and two independent standard exponentials at p = 0.7:
+TVaR at 0 is the mean, and TVaR at 1 is the largest outcome. The monograph
+prefers TVaR because it is subadditive: the TVaR of a sum is never more than
+the sum of the TVaRs. VaR does not have this property. The monograph gives two
+examples:
+
+- A discrete example with outcome probabilities 0.9, 0.05 and 0.05 (here as
+  twenty equally likely years).
+- Two independent standard exponentials at p = 0.7.
 
 ```python
 from prospicio.distributions import Gamma
@@ -205,24 +215,24 @@ sum    VaR(0.9)  0.0, by algorithm 3.4.2 10.0, at 0.91 10.0   TVaR(0.9) 10.0
 exponential VaR(0.7) 1.204 (book 1.204), twice 2.408 (book 2.408), of the sum 2.439 (book 2.439)
 ```
 
-In both cases the VaR of the sum is larger than the sum of the VaRs. The
-discrete example sits on a jump again: 90% of the years have a total of
-zero, so the smallest 90% quantile of the sum is 0, and the failure the
-monograph describes (0 for each unit, 10 in total) is the algorithm's reading
-at 0.9 and everyone's at any level just above it. TVaR
-adds up exactly in the first case and stays below in the second. Which one to
-use is a matter of taste on which the two authors disagree; what matters for
-the rest of the monograph is that the capital standard fixes the assets.
+In both examples, the VaR of the sum is more than the sum of the VaRs. The
+discrete example is again on a jump. In 90% of the years, the total is zero,
+so the smallest 90% quantile of the sum is 0. The monograph's failure case (0
+for each unit, 10 in total) is the algorithm's reading at 0.9. It is also the
+reading of every definition at any level just above 0.9.
+
+TVaR adds up exactly in the first example and is less than the sum in the
+second. The two authors disagree on which measure to use. For the rest of the
+monograph, the important point is that the capital standard sets the assets.
 
 ## 4. Risk analysis: marginal assets
 
-Section 3.3 asks how each unit drives the assets. For a TVaR standard the
-derivative of the assets with respect to a unit's volume, the coTVaR, is the
-unit's average loss in the tail that defines the TVaR. At 99% that tail is the
-worst year, so the coTVaRs are the unit losses in it, 16, 20 and 64. The
-linear natural allocation of the assets gives the same split, and
-subtracting the plan premium gives the capital each unit uses on plan (Table
-3.2):
+Section 3.3 asks how each unit drives the assets. For a TVaR standard, the
+coTVaR is the derivative of the assets with respect to a unit's volume. It is
+the unit's average loss in the tail that defines the TVaR. At 99%, that tail
+is the worst year, so the coTVaRs are the unit losses in that year: 16, 20 and
+64. The linear natural allocation of the assets gives the same split. Subtract
+the plan premium to get the capital that each unit uses on plan (Table 3.2):
 
 ```python
 priced = insco.price(Distortion.ccoc(0.15), assets=100)
@@ -242,21 +252,24 @@ total capital on plan 47.8 (book 47.8)
 VaR(0.85) by unit: [17.0, 8.0, 40.0]  (book 17, 8, 40)
 ```
 
-The last line is Table 3.3: the marginal split of the 85% VaR of 65 is the
-year that produced it. The monograph's point is that this is fragile. Unit B
-loses 8 in that year but 19 and 20 in the years either side, so a VaR
+The last line is Table 3.3. The marginal split of the 85% VaR of 65 is the
+year that produced it. The monograph shows that this split is fragile. Unit B
+loses 8 in that year, but 19 and 20 in the years on each side. Thus a VaR
 standard allocated this way rests on one simulated year and moves with the
-next run. Its remedies are the conditional expectations of section 1, which
-average over years with the same total, or a range VaR, an average between two
-levels. The other road out of the marginal analysis, risk-adjusted
-probabilities, is where chapter 4 starts.
+next run.
+
+The monograph gives two remedies. The first is the conditional expectations of
+section 1, which average over years with the same total. The second is a range
+VaR, an average between two levels. Chapter 4 takes the other way out of the
+marginal analysis, risk-adjusted probabilities.
 
 ## 5. Pricing the whole
 
-Chapter 4 prices from the top down. Investors want 15% on their capital, the
-assets are 100 and the expected loss 46.6, which fixes the premium. The
-monograph's pentagon of loss, margin, premium, capital and assets (Table 4.1)
-is `Pentagon` in prospicio, solved from any three of its quantities:
+Chapter 4 prices from the top down. Investors want 15% on their capital. The
+assets are 100 and the expected loss is 46.6, so these values set the premium.
+The monograph's pentagon of loss, margin, premium, capital and assets (Table
+4.1) is `Pentagon` in prospicio. `Pentagon` solves the pentagon from any three
+of its quantities:
 
 ```python
 whole = Pentagon.solve(loss=46.6, assets=100.0, return_on_capital=0.15)
@@ -276,21 +289,22 @@ loss ratio 0.870, premium to capital 1.154
 plan premium 52.2 against the required: EVA -1.365 (book -1.4)
 ```
 
-The premium is a weighted average of the expected loss and the assets, with
-the risk discount `d = r / (1 + r)` as the weight on the assets. The plan is
-1.365 short of what investors need; the companion guide asks which units
-cause the shortfall.
+The premium is a weighted average of the expected loss and the assets. The
+weight on the assets is the risk discount `d = r / (1 + r)`. The plan is 1.365
+short of what investors need. The companion guide finds the units that cause
+the shortfall.
 
 ## 6. Pricing layers in total
 
 Section 4.4 splits the 100 of assets into layers between consecutive totals:
-0 to 22, 22 to 28, and so on to 65 to 100. A layer pays out in full whenever
-the total exceeds its bottom, so it is a bet with one parameter, the
-exceedance probability `S`. If each layer's rate on line is `g(S)` for a
-distortion `g`, the premium is the sum of `g(S)` times the layer width, the
-distorted analogue of the layer sum for the expected loss in section 1. For
-the constant cost of capital (CCoC) at 15%, `g(s) = d + (1 - d) s` for any
-`s > 0` (Table 4.4):
+0 to 22, 22 to 28, and so on to 65 to 100. A layer pays in full when the total
+exceeds its bottom. Thus a layer is a bet with one parameter, the exceedance
+probability `S`.
+
+If each layer's rate on line is `g(S)` for a distortion `g`, the premium is the
+sum of `g(S)` times the layer width. This sum is the distorted form of the
+layer sum for the expected loss in section 1. For the constant cost of capital
+(CCoC) at 15%, `g(s) = d + (1 - d) s` for any `s > 0` (Table 4.4):
 
 ```python
 ccoc = Distortion.ccoc(0.15)
@@ -316,14 +330,14 @@ print(f"{'':12s} total {layer_loss:13.3f} {layer_premium:8.3f}   (book 46.6, 53.
              total        46.600   53.565   (book 46.6, 53.565)
 ```
 
-Every layer earns the same 15% on its capital under the CCoC, which is why
-this layer sum reproduces the pentagon's premium. The top layer, 35 wide and
-reached one year in ten, carries 7.609 of premium for 3.5 of expected loss.
+Under CCoC, every layer earns the same 15% on its capital. Thus this layer sum
+gives the premium of the pentagon. The top layer is 35 wide and the total
+reaches it one year in ten. It has 7.609 of premium for 3.5 of expected loss.
 
-The same sum can be rearranged by outcome: differencing the distorted
-survival gives risk-adjusted probabilities `q`, and the premium is the
-`q`-weighted average of the totals. Their ratio to the true probabilities,
-`Z = q / p`, is the monograph's likelihood ratio (Table 4.10):
+You can also arrange the same sum by outcome. The differences of the distorted
+survival are the risk-adjusted probabilities `q`. The premium is the
+`q`-weighted average of the totals. The ratio of `q` to the true
+probabilities, `Z = q / p`, is the monograph's likelihood ratio (Table 4.10):
 
 ```python
 def distorted_probs(g, probs):
@@ -347,16 +361,17 @@ Z [0.87, 0.87, 0.87, 0.87, 0.87, 0.87, 2.174]
 sum of q x = 53.565  (book 53.565)
 ```
 
-The CCoC scales every year down by `1 - d = 0.870` and gives the worst year
-alone the remaining weight: 0.1 of true probability becomes 0.217.
+CCoC multiplies the probability of every year by `1 - d = 0.870`. It gives the
+remaining weight to the worst year alone, so 0.1 of true probability becomes
+0.217.
 
 ## 7. Pricing units via layers
 
-Section 4.5 takes the step from the whole to the units: price each unit by
-the same risk-adjusted probabilities, `P_i = sum of q_j kappa_i(x_j)`. Because
-the conditional expectations add up to the total, the unit premiums add up to
-the portfolio's premium. Written out, this is the monograph's algorithm
-4.10.2, and it is what `Portfolio.price` computes:
+Section 4.5 goes from the whole to the units. It prices each unit with the
+same risk-adjusted probabilities, `P_i = sum of q_j kappa_i(x_j)`. The
+conditional expectations add up to the total, so the unit premiums add up to
+the portfolio's premium. Written out, this is algorithm 4.10.2 of the
+monograph. `Portfolio.price` calculates the same values:
 
 ```python
 def natural_allocation(rows, g):
@@ -382,12 +397,14 @@ by hand      [13.739, 18.522, 21.304]
 Portfolio    [13.739, 18.522, 21.304]
 ```
 
-Two properties make this allocation the natural one. It is the derivative of
-the portfolio premium with respect to each unit's volume whenever the totals
-are distinct (Delbaen's result, which is why the four adjustments insist on
-distinct totals), and it can be read as the expected loss plus a covariance,
-`P_i = E[X_i] + cov(X_i, Z)`: a unit pays a margin in proportion to how its
-losses line up with the years the distortion weights up.
+Two properties make this allocation the natural one:
+
+1. When the totals are distinct, it is the derivative of the portfolio premium
+   with respect to each unit's volume. This is Delbaen's result. It is the
+   reason that the four adjustments require distinct totals.
+2. It is the expected loss plus a covariance, `P_i = E[X_i] + cov(X_i, Z)`. A
+   unit pays a margin in proportion to how its losses align with the years
+   that the distortion weights up.
 
 ```python
 zs = [x / p for x, p in zip(q, insco.probs)]
@@ -406,9 +423,10 @@ C: E[X] 14.90 + cov(X, Z)  6.404 = 21.304
 
 ## 8. Five representative distortions
 
-Section 4.6 introduces the five families the monograph uses throughout: CCoC,
-proportional hazard (PH), Wang, dual power and TVaR, each with one parameter,
-calibrated so that the whole book earns 15% at assets of 100 (Table 4.5):
+Section 4.6 introduces the five families that the monograph uses throughout:
+CCoC, proportional hazard (PH), Wang, dual power and TVaR. Each has one
+parameter. The calibration gives the whole book a 15% return at assets of 100
+(Table 4.5):
 
 ```python
 FAMILIES = ["ccoc", "ph", "wang", "dual", "tvar"]
@@ -428,10 +446,11 @@ dual  beta    1.5952 (book 1.5951)  premium 53.565
 tvar  p       0.2713 (book 0.2713)  premium 53.565
 ```
 
-All five charge the same 53.565 for the book; they differ in where the
-probability weight goes. Tables 4.6 to 4.8 show the distorted survival, the
-distorted probabilities and the likelihood ratios by year. The last two,
-recomputed, for the median year (total 40) and the worst (total 100):
+All five charge the same 53.565 for the book. They differ in where they put
+the probability weight. Tables 4.6 to 4.8 show the distorted survival, the
+distorted probabilities and the likelihood ratios by year. The code below
+recomputes the last two tables for the median year (total 40) and the worst
+year (total 100):
 
 ```python
 BOOK_Z = {  # Table 4.8, likelihood ratio Z at the totals 40 and 100
@@ -455,19 +474,26 @@ dual   0.4196  0.1547  1.0490 (1.0490)  1.5470 (1.5470)
 tvar   0.5489  0.1372  1.3723 (1.3723)  1.3723 (1.3723)
 ```
 
-The orderings are opposite: the CCoC puts the most weight on the worst year
-and the least on the median one, TVaR the reverse, and the other three sit
-between in the order listed. That is the monograph's ranking from tail-centric
-to body-centric, and it decides who pays in chapter 6. The other entries of
-Tables 4.6 to 4.8 agree to the four decimals printed as well, except two: the
-PH ratio for the worst year, 1.9034 here and 1.9033 in the book, and the TVaR
-ratio for the year totalling 36, 0.3940 here and 0.3941 in the book. Like the
-dual power parameter above (1.5952 here, 1.5951 in Table 4.5), these last
-digits are where each program's calibration stopped, not a different method.
-prospicio solves for the premium of 53.565217 to about 1e-8 (its TVaR level,
-0.27128713, is the exact solution); a parameter a few millionths away, which
-prints the same to four decimals, leaves the premium at 53.565 to the three
-decimals printed and reproduces the book's digits:
+The orders are opposite. CCoC puts the most weight on the worst year and the
+least on the median year. TVaR does the reverse. The other three are between,
+in the order listed. This is the monograph's ranking from tail-centric to
+body-centric, and in chapter 6 it decides which unit pays.
+
+The other entries of Tables 4.6 to 4.8 also agree to the four decimals
+printed, with two exceptions:
+
+- The PH ratio for the worst year: 1.9034 here and 1.9033 in the book.
+- The TVaR ratio for the year with a total of 36: 0.3940 here and 0.3941 in
+  the book.
+
+These last digits, like the dual power parameter (1.5952 here, 1.5951 in
+Table 4.5), show where each program's calibration stopped. They do not show a
+different method. prospicio solves for the premium of 53.565217 to about
+1e-8, and its TVaR level, 0.27128713, is the exact solution.
+
+A parameter a few millionths away prints the same to four decimals. It keeps
+the premium at 53.565 to the three decimals printed, and it gives the book's
+digits:
 
 ```python
 p_tvar = distortions["tvar"].parameters["p"]
@@ -509,17 +535,18 @@ C: premium 20.819 (20.818)  margin 5.919 (5.918)  share 0.850 (0.850)
 total premium 53.565, margin 6.965  (book 53.565, 6.965)
 ```
 
-Unit C's premium is 20.81858, so it rounds to 20.819; Table 4.9 prints 20.818
-and Tables 5.1 and 5.2 print 20.819, the same number rounded two ways.
+Unit C's premium is 20.81858, so it rounds to 20.819. Table 4.9 prints 20.818,
+and Tables 5.1 and 5.2 print 20.819. These are the same number, rounded two
+ways.
 
 ## 9. The industry standard approach
 
-Section 4.7 explains how a constant cost of capital across units, the
-practice of the 1990s, turns out to be the CCoC distortion in the layer
-view: if every unit's margin is 15% of its capital and capital is allocated
-by marginal TVaR, the book's premium is the expected loss plus `d` times
-the excess of the maximum over it, which is a CCoC layer sum. The allocation
-it gives (Table 4.11):
+Section 4.7 shows that the practice of the 1990s, a constant cost of capital
+across units, is the CCoC distortion in the layer view. Each unit's margin is
+15% of its capital, and the marginal TVaR allocates the capital. Then the
+book's premium is the expected loss plus `d` times the excess of the maximum
+over the expected loss. This is a CCoC layer sum. It gives this allocation
+(Table 4.11):
 
 ```python
 BOOK_ISA = [(16, 2.261, 13.739, 0.339, 0.049), (20, 1.478, 18.522, 0.222, 0.032),
@@ -538,14 +565,17 @@ B    20   1.478  18.522  0.222  0.032  0.150   book (20, 1.478, 18.522, 0.222, 0
 C    64  42.696  21.304  6.404  0.919  0.150   book (64, 42.696, 21.304, 6.404, 0.919)
 ```
 
-Unit C takes 91.9% of the margin, against 85.0% under Wang: a thick-tailed
-unit gets nearly all the capital and margin under the industry standard, and
-the thin-tailed units almost none. The monograph's objections are that
-capital does not cost the same in every layer (bond spreads fall with
-seniority), that the CCoC weights only the worst outcome, and that it gives no
-credit for diversification: for independent risks the CCoC price is additive,
-because both the mean and the maximum are. A check on two independent coin
-flips, one paying 10 and one 6:
+Unit C takes 91.9% of the margin, against 85.0% under Wang. Under the industry
+standard, a thick-tailed unit gets almost all the capital and margin, and the
+thin-tailed units get almost none. The monograph makes three objections:
+
+1. Capital does not cost the same in every layer (bond spreads decrease with
+   seniority).
+2. CCoC weights only the worst outcome.
+3. CCoC gives no credit for diversification. For independent risks, the CCoC
+   price is additive, because both the mean and the maximum are additive.
+
+A check on two independent coin flips, one that pays 10 and one that pays 6:
 
 ```python
 flip1, flip2 = [0.0, 0.0, 10.0, 10.0], [0.0, 6.0, 0.0, 6.0]
@@ -563,12 +593,12 @@ wang: priced apart 10.146, pooled 9.829
 ## 10. Pricing events
 
 Section 4.8 warns against reading the risk-adjusted probabilities `q` as the
-prices of the years themselves; the prices of events are not unique, for
-reasons the monograph leaves to *Pricing Insurance Risk*. What does hold is
-that `q` prices consistently anything that moves with the total: a layer of
-the total gets the same price from `q` as from the distortion applied to it
-alone, and any unit's allocation is at most its stand-alone price. For the
-Wang distortion:
+prices of the years themselves. The prices of events are not unique, for
+reasons that the monograph leaves to *Pricing Insurance Risk*. But `q` gives
+consistent prices for anything that moves with the total. A layer of the
+total gets the same price from `q` as from the distortion applied to the layer
+alone. Each unit's allocation is at most its stand-alone price. For the Wang
+distortion:
 
 ```python
 gw, qw = distortions["wang"], qs["wang"]
@@ -587,22 +617,18 @@ B: allocated 18.637, stand-alone 20.792
 C: allocated 20.819, stand-alone 21.104
 ```
 
-The stand-alone prices add up to more than the book's 53.565; the gap is the
-diversification that pooling the units buys; the natural allocation
-shares it out and depends on the whole book, so a unit's price changes when
-the rest of the book does. That is the subject of chapter 5.
+The stand-alone prices add up to more than the book's 53.565. The difference
+is the diversification that pooling the units buys. The natural allocation
+shares it out and depends on the whole book. Thus a unit's price changes when
+the rest of the book changes. Chapter 5 is about this effect.
 
-## 11. What this guide leaves out
+## 11. Related guides
 
-- **Chapter 4's discounting**: the monograph's examples ignore the time value
-  of money; for payment patterns see `prospicio.pricing.PaymentPattern`.
-- **Capital by unit** (section 8.3): see section 5 of
-  [the chapter 9 guide](capital-modeling-monograph-15.md), where the lifted
-  capital under CCoC and PH depends on the `aggregate` version. Chapters 3 and
-  4 print no lifted capital, so nothing here depends on it.
-- **The figures** (the pentagon, the Lee diagrams, the distortion plots): the
-  numbers behind them are the tables above.
-
-Next: [chapters 5 and 6](capital-modeling-monograph-15-applications.md), and
-for which distortion to use and how to calibrate it to quotes,
-[Risk loads and distortions](risk-loads-and-distortions.md).
+- [Chapters 5 and 6](capital-modeling-monograph-15-applications.md): the
+  applications and the choice of a distortion.
+- Section 5 of [the chapter 9 guide](capital-modeling-monograph-15.md):
+  capital by unit (section 8.3 of the monograph).
+- [Risk loads and distortions](risk-loads-and-distortions.md): which
+  distortion to use, and how to calibrate it to quotes.
+- `prospicio.pricing.PaymentPattern`: payment patterns and discounting. The
+  examples of the monograph ignore the time value of money.

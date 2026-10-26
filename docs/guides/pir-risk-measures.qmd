@@ -12,29 +12,34 @@ execute:
 ---
 
 Part I of Stephen Mildenhall and John Major's *Pricing Insurance Risk: Theory
-and Practice* (Wiley, 2022), chapters 3 to 7, is about measuring risk before
-pricing it: how a risk is represented, what quantiles, value at risk (VaR) and
-tail value at risk (TVaR) are and how they behave, which properties a risk
-measure should have, and how spectral (distortion) risk measures tie these
-together. This guide works through those chapters in prospicio. Wherever the
-book prints a number, the code recomputes it and prints the book's value as a
-literal beside it, so you can see what agrees, what does not, and why.
+and Practice* (Wiley, 2022) is chapters 3 to 7. It measures risk before it
+prices risk, and it covers four topics:
 
-The book's text and tables are the authors'; what follows explains them in new
-words. Read the book for the theory and this guide for the mechanics. Table,
-example and exercise numbers are the book's. Part II, pricing a portfolio, is in
-[Pricing Insurance Risk, Part II](pir-portfolio-pricing.md); the book's case
-studies priced by five distortions and allocated to units are in
-[the case studies guide](pricing-insurance-risk-case-studies.md), and
-[CAS Monograph 15 reproduced](capital-modeling-monograph-15.md) covers the same
-method on a ten-year example.
+- how to represent a risk
+- what quantiles, value at risk (VaR) and tail value at risk (TVaR) are, and
+  how they behave
+- which properties a risk measure needs
+- how spectral (distortion) risk measures join these ideas
 
-This is the R twin of the Python guide [`pir-risk-measures.md`](pir-risk-measures.md):
-the same sections, examples and numbers. The R package calls the same Rust code
-as the Python one, so every number printed below equals the Python guide's.
-Each R chunk is followed by the text it prints, and
-`R/prospicio/tests/test-guides.R` runs the chunks in order and requires each one
-to print exactly that text. To render the page, install the R package
+This guide runs those chapters in prospicio. Where the book prints a number,
+the code computes it and prints the book's value beside it.
+
+The book's text and tables belong to the authors, and this guide explains them
+in new words. Table, example and exercise numbers are the book's. Related
+guides:
+
+- Part II, portfolio pricing: [Pricing Insurance Risk, Part II](pir-portfolio-pricing.md).
+- The book's case studies, priced by five distortions and allocated to units:
+  [the case studies guide](pricing-insurance-risk-case-studies.md).
+- The same method on a ten-year example:
+  [CAS Monograph 15 reproduced](capital-modeling-monograph-15.md).
+
+This is the R twin of the Python guide [`pir-risk-measures.md`](pir-risk-measures.md).
+It has the same sections, examples and numbers. The R package calls the same
+Rust code as the Python package, so every number below equals the number in the
+Python guide. The text under each R chunk is the output of that chunk.
+`R/prospicio/tests/test-guides.R` runs the chunks in order and requires each
+chunk to print exactly that text. To render the page, install the R package
 (`remotes::install_github`, see `R/prospicio/bootstrap.R`) and run
 `quarto render docs/guides/pir-risk-measures.qmd`.
 
@@ -45,14 +50,16 @@ library(prospicio)
 
 ## 1. Representing a risk: the Simple Discrete Example
 
-Chapter 3 represents a risk as a random variable on a sample space and computes
-its expected value in two ways: as a sum over outcomes weighted by their
-probabilities, and as the area under the survival function, a sum of horizontal
-slices (the Lee diagram). The book's running example, the Simple Discrete
-Example, is two independent policies. The first loses 0, 8 or 10, the second 0,
-1 or 90, each with probabilities 1/2, 1/4 and 1/4. The total takes nine values,
-and every probability is a multiple of 1/16, so sixteen equally likely draws
-represent it exactly:
+Chapter 3 represents a risk as a random variable on a sample space. It computes
+the expected value in two ways: as a sum of outcomes times their probabilities,
+and as the area under the survival function. The second form is a sum of
+horizontal slices (the Lee diagram).
+
+The book's running example, the Simple Discrete Example, has two independent
+policies. The first policy loses 0, 8 or 10, and the second loses 0, 1 or 90.
+Each has probabilities 1/2, 1/4 and 1/4. The total has nine values, and each
+probability is a multiple of 1/16. Thus sixteen equally likely draws represent
+the total exactly:
 
 ```{r}
 OUTCOMES <- c(0, 1, 8, 9, 10, 11, 90, 98, 100)
@@ -81,26 +88,28 @@ E[X + 100]  (127.25, 127.25)  book 127.25 (Table 3.3)
 prospicio mean 27.25 capped 23.625
 ```
 
-Both sums give the book's 27.25 (Table 3.2). Capping the loss at assets of 80
-changes only the outcome column; the survival probabilities stay the same, and
-the limited expected value is 23.625 (Table 3.4). Adding 100 to every outcome
-needs a zero outcome added first, which is the book's Step (1): the survival
-form integrates from zero, so it must see the slice from 0 to 100 (Table 3.3).
+Both sums give the book's 27.25 (Table 3.2). A cap at assets of 80 changes only
+the outcome column. The survival probabilities do not change, and the limited
+expected value is 23.625 (Table 3.4). To add 100 to every outcome, first add a
+zero outcome (the book's Step (1)). The survival form integrates from zero, so
+it must include the slice from 0 to 100 (Table 3.3).
 
-In prospicio a risk given by simulations or equally likely scenarios is a
-`sampled()`; one given by values and probabilities is a `discrete_distribution()`;
-one on an evenly spaced grid (the output of an FFT) is a `grid_distribution()`.
-All three have `mean()`, `quantile()` and `TVaR()`, and `risk_measure(x, d)`
-prices a `sampled()` or a `grid_distribution()` with a distortion `d`.
+In prospicio, a `sampled()` holds a risk given by simulations or equally likely
+scenarios. A `discrete_distribution()` holds a risk given by values and
+probabilities. A `grid_distribution()` holds a risk on an evenly spaced grid,
+such as the output of an FFT. All three have `mean()`, `quantile()` and
+`TVaR()`. `risk_measure(x, d)` prices a `sampled()` or a `grid_distribution()`
+with a distortion `d`.
 
 ## 2. Quantiles and VaR
 
-Chapter 4 defines the p quantile as any x with P(X < x) <= p <= P(X <= x). When
-the distribution function jumps there is one answer; when it is flat at p there
-is a range, and VaR is the lower end (the lower quantile). For a fair die,
-Exercise 38: the 0.1 quantile is 1, and at p = 1/6 every value in [1, 2] is a
-quantile. Exercise 49 has ten equally likely outcomes 0, 1, 1, 1, 2, 3, 4, 8, 12
-and 25, where the 0.4 quantiles are [1, 2] and VaR is 1:
+Chapter 4 defines the p quantile as any x with P(X < x) <= p <= P(X <= x).
+Where the distribution function jumps, there is one quantile. Where it is flat
+at p, there is a range of quantiles, and VaR is the lower end (the lower
+quantile). For a fair die (Exercise 38), the 0.1 quantile is 1, and at p = 1/6
+every value in [1, 2] is a quantile. Exercise 49 has ten equally likely
+outcomes 0, 1, 1, 1, 2, 3, 4, 8, 12 and 25. Its 0.4 quantiles are [1, 2], and
+its VaR is 1:
 
 ```{r}
 die <- discrete_distribution(1:6, rep(1 / 6, 6))
@@ -123,29 +132,32 @@ p 0.95: VaR 25.0  upper quantile 25.0
 book: 0.4 quantiles [1, 2] with VaR 1; 0.41 VaR 2; 25 for any p > 0.9
 ```
 
-`VaR()` is the lower quantile, VaR in the book's sense, and `quantile_upper()`
-the upper end of the range (it equals `VaR()` where the distribution function
-crosses p in a jump). `quantile()` returns the same lower quantile on every
-distribution, `sampled()` and `grid_distribution()` included, which is what VaR
-means throughout this guide. `VaR()` has no method yet for a grid or a
-parametric severity (issues #373 and #375), so later sections call
-`quantile()`.
-
-The book also reads VaR from grouped data with an ogive (Exercise 50).
-prospicio has no ogive constructor; interpolate the tabulated distribution
-function yourself, or put the losses on a grid.
+`VaR()` gives the lower quantile, which is VaR in the book's sense.
+`quantile_upper()` gives the upper end of the range. The two are equal where
+the distribution function jumps across p. `quantile()` gives the same lower
+quantile on every distribution, `sampled()` and `grid_distribution()`
+included. In this guide, VaR always means this lower quantile. Later sections
+call `quantile()` for VaR on grids and parametric severities.
 
 ## 3. Return periods and the PML of a hurricane model
 
-VaR at p is quoted as the 1 / (1 - p) year loss: the 99% VaR is the 100-year
-loss and the 99.6% VaR the 250-year loss (Table 4.1). A probable maximum loss
-(PML) can mean two things: the annual aggregate loss at that return period (an
-aggregate VaR) or the largest single event's loss (an occurrence PML). Example
-54 compares them for US hurricanes: a Poisson count of 1.74 landfalls a year and
-a lognormal severity with mean USD 5 billion and sigma 2.58. Table 4.3 prints,
-for each return period, the occurrence PML, the severity's own quantile, the
-aggregate VaR by FFT and the book's quick estimate of the aggregate VaR from
-the severity alone (Eq. (4.5): the severity quantile at 1 - (1 - p) / 1.74).
+VaR at p is also called the 1 / (1 - p) year loss. Thus the 99% VaR is the
+100-year loss, and the 99.6% VaR is the 250-year loss (Table 4.1). A probable
+maximum loss (PML) has two meanings:
+
+- the annual aggregate loss at that return period (an aggregate VaR)
+- the loss from the largest single event (an occurrence PML)
+
+Example 54 compares the two for US hurricanes. The count is Poisson with 1.74
+landfalls a year. The severity is lognormal with mean USD 5 billion and sigma
+2.58. For each return period, Table 4.3 prints four values:
+
+- the occurrence PML
+- the severity quantile
+- the aggregate VaR by FFT
+- the book's quick estimate of the aggregate VaR from the severity alone
+  (Eq. (4.5): the severity quantile at 1 - (1 - p) / 1.74)
+
 Amounts are in USD millions:
 
 ```{r}
@@ -189,28 +201,38 @@ years           occ PML           sev VaR           agg VaR          estimate
 ```
 
 Every occurrence PML, severity VaR and estimate agrees with Table 4.3 to the
-unit printed, and so does every aggregate VaR, computed here on a grid of 20
-(USD 20 million) with 2^21 points. The book's aggregate VaRs are all multiples
-of 20, which suggests the same bucket. One printed parameter does not fit: the
-book gives the lognormal mu as 21.315, while a mean of USD 5 billion with sigma
-2.58 needs mu = 19.005 in dollars, and the table's severity column (a median of
-179 million) is reproduced only by 19.005. The table is right and the printed mu is
-not; build the severity from its mean and sigma.
+printed unit. Every aggregate VaR agrees too. The code computes them on a grid
+with a step of 20 (USD 20 million) and 2^21 points. All the book's aggregate
+VaRs are multiples of 20, which suggests the same step.
 
-The occurrence PML is always below the aggregate VaR, and close to it at long
-return periods: a bad hurricane year is one bad hurricane. That is also why the
-quick estimate, which looks only at the severity, is good in the tail (an error
-of 2% at 1,000 years) and poor for frequent events (82% too high at 2 years).
+One printed parameter is wrong. The book gives the lognormal mu as 21.315. A
+mean of USD 5 billion with sigma 2.58 needs mu = 19.005 in dollars. Only
+mu = 19.005 reproduces the table's severity column (a median of 179 million).
+Thus the table is correct and the printed mu is not. Build the severity from
+its mean and sigma.
+
+The occurrence PML is always below the aggregate VaR. At long return periods
+the two are close, because a bad hurricane year is one bad hurricane. For the
+same reason, the quick estimate from the severity alone is good in the tail and
+poor for frequent events. Its error is 2% at 1,000 years, and it is 82% too
+high at 2 years.
 
 ## 4. VaR is not subadditive
 
-A risk measure is subadditive if the risk of a sum is never more than the sum of
-the risks, so that pooling never appears to add risk. The book gives three ways
-VaR fails it. The first is dependence: two risks arranged to be large in
-different scenarios can make the VaR of their sum exceed the sum of their VaRs.
-The second needs no dependence at all, only skewness: the sum of two independent
-exponentials with mean 1 is a gamma with shape 2, and below p = 0.7 its VaR is
-more than twice an exponential's (Table 4.4):
+A risk measure is subadditive if the risk of a sum is never more than the sum
+of the risks. Then pooling never seems to add risk. The book shows three ways
+in which VaR is not subadditive:
+
+1. Dependence. Two risks that are large in different scenarios can give a sum
+   whose VaR is more than the sum of their VaRs.
+2. Skewness, with no dependence. The sum of two independent exponentials with
+   mean 1 is a gamma with shape 2. Below p = 0.7, its VaR is more than twice
+   the VaR of one exponential (Table 4.4).
+3. A very thick tail. For a Pareto with tail index below 1 (no mean), VaR is
+   not subadditive at any p that is high enough. The reason is that one large
+   loss dominates the sum.
+
+The code checks the second way against Table 4.4:
 
 ```{r}
 one <- gamma_distribution(1, 1)
@@ -235,23 +257,24 @@ p 0.99 : 2 VaR(X1)  9.210  VaR(X1 + X2)  6.638  difference   2.5720  (book 2.572
 p 0.999: 2 VaR(X1) 13.816  VaR(X1 + X2)  9.233  difference   4.5821  (book 4.582)
 ```
 
-The differences match Table 4.4 to the four significant figures it prints (in
-the table as printed the 0.8 row's difference is set one line low, under 0.999;
-the columns to its left fix which value belongs where).
-The third way is a very thick tail: for a Pareto with tail index below 1 (no
-mean), VaR fails subadditivity at every high enough p, because one large loss
-dominates a sum.
+The differences agree with Table 4.4 to the four significant figures that it
+prints. In the printed table, the difference for the 0.8 row is one line too
+low, under 0.999. The columns to its left show which value belongs to which
+row.
 
 ### The worst VaR of a sum: the Rearrangement Algorithm
 
-When the marginal distributions are known and the dependence is not, the worst
-possible VaR of their sum is a useful bound. The book's Rearrangement Algorithm
-(RA, Puccetti and Rüschendorf) finds it numerically: take the top 1 - p of each
-marginal, and repeatedly reorder each column against the sum of the others
-until the smallest row sum stops rising. Exercise 59 asks for the worst 99% VaR
-of three lognormals with mean 10 and CVs 1, 2 and 3, from 40 points of each at and
-above its 99th percentile. prospicio has no RA, so a dozen lines of R do it,
-on prospicio's lognormal quantiles:
+If you know the marginal distributions but not the dependence, the worst
+possible VaR of the sum is a useful bound. The book's Rearrangement Algorithm
+(RA, Puccetti and Rüschendorf) finds this bound numerically:
+
+1. Take the top 1 - p of each marginal.
+2. Arrange each column in the opposite order to the sum of the other columns.
+3. Do step 2 again until the smallest row sum stops increasing.
+
+Exercise 59 asks for the worst 99% VaR of three lognormals with mean 10 and CVs
+1, 2 and 3. It uses 40 points of each lognormal at and above its 99th
+percentile. The code runs the RA in R on prospicio's lognormal quantiles:
 
 ```{r}
 STRATA <- 40
@@ -287,23 +310,25 @@ cat("worst VaR by RA, three starts:", sprintf("%.1f", sapply(c(7, 13, 19), funct
 worst VaR by RA, three starts: 353.8 353.6 352.9  (book 352.8)
 ```
 
-The VaRs of the three lognormals and their comonotonic sum, 242.5, are the
-book's. The worst-case VaR found is 352.9 to 353.8 depending on the start,
-against the book's 352.8: the algorithm is a heuristic, its answer depends on
-the starting arrangement, and the book does not give its start. The starts here
-are fixed rotations (column j shifted down by 7, 13 or 19 times j places) rather
-than random shuffles, so that the Python version of this guide prints the same
-numbers. None reaches the book's 352.8 exactly, though the best is within 0.1. Either way the conclusion is the
-book's: the worst arrangement raises the 99% VaR of the sum by 45% over
-perfect positive dependence, so comonotonic VaR is not a worst case.
+The VaRs of the three lognormals and their comonotonic sum, 242.5, agree with
+the book. The worst VaR found is 352.9 to 353.8, and it changes with the start.
+The book gives 352.8. The algorithm is a heuristic, its result depends on the
+start arrangement, and the book does not give its start.
+
+The starts here are fixed rotations: column j moves down by 7, 13 or 19 times j
+places. Fixed starts, not random shuffles, make the Python version of this guide
+print the same numbers. No start gives exactly 352.8, but the best is within
+0.1. The conclusion agrees with the book. The worst arrangement increases the
+99% VaR of the sum by 45% over perfect positive dependence, so comonotonic VaR
+is not a worst case.
 
 ## 5. TVaR
 
-TVaR at p is the average of the worst 1 - p of outcomes, the integral of VaR
-from p to 1 divided by 1 - p. For a normal it exceeds VaR by a fixed number of
-standard deviations, which the book quotes as 14.6% of the standard normal's VaR at
-p = 0.99, 9% at 0.999 and 6.4% at 0.9999. prospicio has no normal distribution
-for losses; base R's `qnorm()` and `dnorm()` give the check:
+TVaR at p is the average of the worst 1 - p of outcomes. It equals the integral
+of VaR from p to 1, divided by 1 - p. For a normal distribution, TVaR is above
+VaR by a fixed number of standard deviations. The book gives this excess as
+14.6% of the standard normal VaR at p = 0.99, 9% at 0.999 and 6.4% at 0.9999.
+Base R's `qnorm()` and `dnorm()` check these values:
 
 ```{r}
 for (p in c(0.99, 0.999, 0.9999)) {
@@ -319,11 +344,11 @@ p 0.999: TVaR / VaR - 1 = 0.0896  (book 0.09)
 p 0.9999: TVaR / VaR - 1 = 0.0644  (book 0.064)
 ```
 
-Exercise 63 is the book's case for TVaR over VaR. A restaurant bill is lognormal
-with mean 2,500 and CV 0.2. On a regular night you pay it; on a Pot Luck night
-one of 25 diners pays it, chosen at random, so you pay with probability 0.04.
-The 95% VaR of the Pot Luck bill is zero, and VaR cash is no cash. TVaR cash is
-the 95% TVaR, 0.04 / 0.05 of the mean:
+Exercise 63 shows why the book prefers TVaR to VaR. A restaurant bill is
+lognormal with mean 2,500 and CV 0.2. On a regular night you pay the bill. On a
+Pot Luck night, one of 25 diners pays it, chosen at random, so you pay with
+probability 0.04. The 95% VaR of the Pot Luck bill is zero, so VaR cash is no
+cash. TVaR cash is the 95% TVaR, which is 0.04 / 0.05 of the mean:
 
 ```{r}
 bill <- lognormal_from_mean_cv(2500, 0.2)
@@ -343,14 +368,14 @@ regular night: VaR 3,395 TVaR 3,699   (book 3,395 and 3,699)
 Pot Luck: TVaR 2,000, enough with probability 0.152, shortfall when not 624   (book 2,000, 0.152, 624)
 ```
 
-All six numbers agree. A `lognormal()` has no `TVaR()` method in prospicio;
-TVaR follows from its quantile and limited expected value (`lev()`) as above, or
-put it on a grid with `discretize()` and call `TVaR()` on the grid.
+All six numbers agree. The code computes TVaR from the quantile and the limited
+expected value (`lev()`): TVaR = VaR + E[(X - VaR)+] / (1 - p). You can also
+put the severity on a grid with `discretize()` and call `TVaR()` on the grid.
 
-For a discrete distribution TVaR takes a fraction of the observation at the
-quantile (the book's algorithm in Section 4.3.6), and it differs from the
-conditional tail expectation (CTE), E[X | X >= VaR], which takes the whole atom.
-Exercise 49 continued gives TVaR and CTE for the ten outcomes:
+For a discrete distribution, TVaR takes a fraction of the observation at the
+quantile (the book's algorithm in Section 4.3.6). The conditional tail
+expectation (CTE), E[X | X >= VaR], takes the whole atom, so the two are
+different. Exercise 49 continued gives TVaR and CTE for the ten outcomes:
 
 ```{r}
 ten <- c(0, 1, 1, 1, 2, 3, 4, 8, 12, 25)
@@ -371,19 +396,22 @@ p 0.9 : VaR 12.0  TVaR 25.000  CTE 18.500 (book 18.5)
 book's TVaR for 0.8 <= p < 0.9 at p = 0.85: 20.667
 ```
 
-TVaR is continuous in p and CTE jumps at each observation; they agree at the
-observations. Use TVaR: it is the one that is subadditive.
+TVaR is continuous in p, and CTE jumps at each observation. The two are equal
+at the observations. Use TVaR, because TVaR is subadditive.
 
 ## 6. VaR, TVaR and EPD in the case studies
 
-Section 4.3.7 tabulates VaR, TVaR and the EPD capital (the assets at which the
-expected policyholder deficit E[(X - a)+] is a given share of the expected loss)
-for the case studies, by unit, summed, and in total, gross and net of
-reinsurance. The Tame case is two gamma units with mean 50 and CVs 0.10 and
-0.15; the net book has an aggregate cover of 12.91 excess of 56.17 on unit B (its
-80% to 99% quantiles, Table 7.3). The grid is `aggregate`'s, a step of 1/64 and
-2^16 points, with the severity renormalized as in the
-[case studies guide](pricing-insurance-risk-case-studies.md):
+Section 4.3.7 tabulates three capital amounts for the case studies: VaR, TVaR
+and the EPD capital. The EPD capital is the assets at which the expected
+policyholder deficit E[(X - a)+] is a given share of the expected loss. The
+tables show each unit, the sum of the units and the total, gross and net of
+reinsurance.
+
+The Tame case has two gamma units with mean 50 and CVs 0.10 and 0.15. The net
+book has an aggregate cover of 12.91 excess of 56.17 on unit B (its 80% to 99%
+quantiles, Table 7.3). The code uses the grid of `aggregate`, with a step of
+1/64 and 2^16 points. It renormalizes the severity as the
+[case studies guide](pricing-insurance-risk-case-studies.md) does:
 
 ```{r}
 STEP <- 1 / 64
@@ -454,7 +482,8 @@ Net    VaR   108.9  111.4  113.5  115.9  118.2  121.2
        EPD    89.7   96.0  100.5  104.8  108.2  112.3
 ```
 
-Table 4.6 prints these to the unit (EPD rows by EPD ratio 10% down to 0.1%):
+Table 4.6 prints these values to the unit. Its EPD rows go from an EPD ratio of
+10% down to 0.1%:
 
 | Row | Book, gross A | B | Total | Book, net B | Net total |
 |---|---|---|---|---|---|
@@ -462,14 +491,16 @@ Table 4.6 prints these to the unit (EPD rows by EPD ratio 10% down to 0.1%):
 | TVaR | 59 61 62 64 66 69 | 64 67 69 72 75 79 | 117 120 123 126 129 134 | 58 59 59 59 62 66 | 112 114 116 118 120 123 |
 | EPD | 45 49 52 55 57 60 | 46 51 55 59 63 68 | 91 97 103 108 113 119 | 45 49 52 54 55 56 | 90 96 101 105 108 112 |
 
-Every entry agrees after rounding (a few of ours sit on .5, like the total's EPD
-at 0.1% of 118.5 against 119), with one exception: **the TVaR of net unit B at
-90%, 95% and 97.5%**, where the book prints 58, 59 and 59 and prospicio gives
-56.5, 56.8 and 57.5. prospicio's values are the right ones, and the book's own
-VaR row shows why. Net B is flat at 56.17 from its 80% to its 99% quantile (the
-cover absorbs everything in between), so TVaR at 90% is 56.17 plus the expected
-excess over 56.17 divided by 0.1, and that excess is only the part above the
-cover's exhaustion, 0.032:
+After rounding, every entry agrees except one group. Some of our values are on
+.5, for example the total EPD at 0.1%, 118.5 against 119. The exception is
+**the TVaR of net unit B at 90%, 95% and 97.5%**. There the book prints 58, 59
+and 59, and prospicio gives 56.5, 56.8 and 57.5.
+
+prospicio's values are correct, and the book's own VaR row shows why. Net B is
+flat at 56.17 from its 80% quantile to its 99% quantile, because the cover
+absorbs all loss between them. Thus TVaR at 90% is 56.17 plus the expected
+excess over 56.17, divided by 0.1. That excess is only the part above the
+exhaustion point of the cover, 0.032:
 
 ```{r}
 excess <- mean(b_net) - lev(b_net, 56.171875)
@@ -480,18 +511,19 @@ cat(sprintf("E[(B net - 56.17)+] = %.4f; TVaR 90%% = %.2f (book 58)\n", excess, 
 E[(B net - 56.17)+] = 0.0323; TVaR 90% = 56.50 (book 58)
 ```
 
-To print 58 the expected excess would have to be about 0.18. The net totals
-agree, so only the column for the net unit is affected. The same thing happens
-in Table 4.7 for net Cat in the Cat/Non-Cat case (below): the book's TVaR of a
-unit with a large probability mass under a stop loss is too high at the levels
-where VaR sits on that mass. We read it as a defect in the TVaR the book's code
-computed for such distributions, not a convention.
+For a printed 58, the expected excess must be approximately 0.18. The net
+totals agree, so the error is only in the column for the net unit. Table 4.7
+has the same error for net Cat in the Cat/Non-Cat case (below). The book's TVaR
+is too high for a unit with a large probability mass under a stop loss. The
+error occurs at the levels where VaR is on that mass. We read this as a defect in the TVaR that the
+book's code computed for such distributions, not as a different convention.
 
-The Cat/Non-Cat case is a gamma Non-Cat unit (mean 80, CV 0.15) and a lognormal
-Cat unit (mean 20, CV 1), with an aggregate cover of 79.64 excess of 41.11 on
-Cat (its 90% to 99.5% quantiles). Example 53's VaR heuristic says that when a
-thin-tailed unit is added to a thick-tailed one, the VaR of the total is about
-the thin unit's mean plus the thick unit's VaR (Table 4.2):
+The Cat/Non-Cat case has a gamma Non-Cat unit (mean 80, CV 0.15) and a
+lognormal Cat unit (mean 20, CV 1). An aggregate cover of 79.64 excess of 41.11
+applies to Cat (its 90% to 99.5% quantiles). Example 53 gives a VaR heuristic
+for a thin-tailed unit added to a thick-tailed unit. The VaR of the total is
+approximately the mean of the thin unit plus the VaR of the thick unit
+(Table 4.2):
 
 ```{r}
 non_cat <- discretize_renormalized(gamma_from_mean_cv(80, 0.15))
@@ -516,9 +548,9 @@ p  0.999: 80 + VaR(Cat)  265.3  VaR(total)  267.2 (book 267.2)  error -0.007
 p 0.9999: 80 + VaR(Cat)  392.7  VaR(total)  394.0 (book 394.0)  error -0.003
 ```
 
-The VaRs agree with Table 4.2, and the heuristic is within 2% from the 99% level up.
-Table 4.7's gross rows agree as well; for net Cat the VaR and the totals agree
-and three TVaRs do not, for the reason above:
+The VaRs agree with Table 4.2. From the 99% level up, the heuristic is within
+2%. The gross rows of Table 4.7 also agree. For net Cat, the VaR and the totals
+agree, but three TVaRs do not, for the reason above:
 
 ```{r}
 pylist <- function(x) paste0("[", paste(x, collapse = ", "), "]")
@@ -536,25 +568,32 @@ net TVaR     [131, 139, 146, 160, 181, 242]  book [131, 139, 146, 160, 181, 242]
 gross TVaR   [149, 167, 187, 218, 254, 321]  book [149, 167, 187, 218, 254, 321]
 ```
 
-Net Cat's TVaR at 95% cannot be 64 when its VaR is 41.1 all the way from 90% to
-99.5%: the integral of VaR from 0.95 to 1 is at most 0.045 times 41.1 plus the
-tail above the cover. The net book's total, which uses the same net Cat, agrees
-with the book at every level.
+Net Cat's TVaR at 95% cannot be 64 when its VaR is 41.1 from 90% to 99.5%. The
+integral of VaR from 0.95 to 1 is at most 0.045 times 41.1, plus the tail above
+the cover. The net book total uses the same net Cat, and it agrees with the
+book at every level.
 
 ## 7. Properties of risk measures
 
-Chapter 5 lists the properties a risk measure can have: monotone, translation
-invariant, positive homogeneous, subadditive (together: coherent), convex,
-comonotonic additive and law invariant. Three of the book's examples are
-worth running.
+Chapter 5 lists the properties that a risk measure can have:
+
+- monotone
+- translation invariant
+- positive homogeneous
+- subadditive (with the three properties above, this makes a measure coherent)
+- convex
+- comonotonic additive
+- law invariant
+
+The code runs four examples from the book.
 
 **Bid and ask: a sublinear price has a spread (Example 83).** Ins Co. sells a
-Hot August policy, paying 1 if August is hot (probability 0.1), and prices a
-Bernoulli risk with probability s at the square root of s, a proportional hazard
-distortion with rho 0.5. The Cold August policy pays in the other 90% of years.
-Both prices exceed the expected loss, and the price at which Ins Co. would take
-the Hot August risk off someone's hands (the bid, minus the price of minus the
-risk) is below it:
+Hot August policy that pays 1 if August is hot (probability 0.1). It prices a
+Bernoulli risk with probability s at the square root of s, which is a
+proportional hazard distortion with rho 0.5. The Cold August policy pays in the
+other 90% of years. Both prices are above the expected loss. The bid is the
+price at which Ins Co. takes the Hot August risk from another party. The bid is
+minus the price of minus the risk, and it is below the expected loss:
 
 ```{r}
 ph <- distortion("proportional_hazard", 0.5)
@@ -570,13 +609,15 @@ ask Hot 0.316, ask Cold 0.949   (book 0.316, 0.95)
 price of minus Hot -0.051  (book -0.05); bid 0.051 < 0.1 < ask
 ```
 
-`distortion_g_dual()` is the dual distortion 1 - g(1 - s), the bid side of the same price.
+`distortion_g_dual()` is the dual distortion 1 - g(1 - s), the bid side of the
+same price.
 The book rounds -0.0513 to -0.05.
 
 **First-order dominance is not state by state (Example 102, Bäuerle and
-Müller).** On two states with probabilities 1/3 and 2/3, X is 3 then 1 and Y is
-2 then 4. Every quantile of X is at most Y's, so every monotone, law-invariant
-risk measure ranks X below Y, yet X is larger than Y in the first state:
+Müller).** Two states have probabilities 1/3 and 2/3. X is 3 then 1, and Y is 2
+then 4. Each quantile of X is at most the same quantile of Y. Thus every
+monotone, law-invariant risk measure ranks X below Y, but X is larger than Y in
+the first state:
 
 ```{r}
 x_bm <- discrete_distribution(c(3, 1), c(1 / 3, 2 / 3))
@@ -593,15 +634,15 @@ VaR X [1, 1, 1, 3, 3]  VaR Y [2, 2, 4, 4, 4]
 TVaR X [1.741, 1.952, 2.333, 3, 3]  TVaR Y [3.481, 3.905, 4, 4, 4]
 ```
 
-A law-invariant measure sees only these distributions. That is why the book
-works with quantile functions rather than states when it compares risks.
+A law-invariant measure sees only these distributions. For this reason, the
+book compares risks by their quantile functions, not by their states.
 
-**Variance and the tail disagree (Exercise 103).** Risk can increase in the
-sense that every risk-averse agent dislikes it more (higher stop loss premiums at
-every retention, equivalently higher TVaR at every level) without the variance
-rising. A uniform on [0, 2] and a Pareto with tail index 4 rescaled to mean 1
-have the same mean; the uniform has the larger variance and the Pareto the
-larger tail:
+**Variance and the tail disagree (Exercise 103).** Risk can increase for every
+risk-averse agent while the variance does not increase. Here, an increase in
+risk means higher stop loss premiums at every retention, or equivalently higher
+TVaR at every level. A uniform on [0, 2] and a Pareto with tail index 4,
+rescaled to mean 1, have the same mean. The uniform has the larger variance,
+and the Pareto has the larger tail:
 
 ```{r}
 uniform <- sampled(((0:49999) + 0.5) / 50000 * 2)
@@ -618,14 +659,14 @@ TVaR 0.99: uniform 1.990, Pareto 3.162
 TVaR 0.999: uniform 1.999, Pareto 5.623
 ```
 
-Variance ranks the uniform as riskier; TVaR at 99% and above ranks the Pareto
-riskier. (Pareto TVaR is 4/3 of its VaR at tail index 4.) The book's point is
-that no single number is a universal ranking of risk.
+Variance ranks the uniform as riskier. TVaR at 99% and above ranks the Pareto
+as riskier. (At tail index 4, the Pareto TVaR is 4/3 of its VaR.) The book's
+point is that no single number ranks all risks.
 
 **A convex measure that is not coherent (Example 97).** The exponential
-(entropic) risk measure, log E[exp(theta X)] / theta, is convex and translation
-invariant but not positive homogeneous: doubling the risk more than doubles
-it.
+(entropic) risk measure is log E[exp(theta X)] / theta. It is convex and
+translation invariant, but it is not positive homogeneous. When you double the
+risk, the measure more than doubles.
 
 ```{r}
 x16 <- rep(OUTCOMES, SIXTEENTHS)
@@ -641,20 +682,27 @@ theta 0.05: rho(X)  67.96, rho(2X) 163.31, rho(X + 10)  77.96
 theta 0.2: rho(X)  89.45, rho(2X) 188.12, rho(X + 10)  99.45
 ```
 
-It is the classical exponential premium principle (Part II), and it is also
+It is the classical exponential premium principle (Part II). It is also
 unbounded for any loss with a thick tail.
 
 ## 8. Spectral risk measures and prospicio's `distortion()`
 
-The book's main object, introduced in Section 3.6 and developed in Chapters 10
-and 11, is the spectral risk measure (SRM): the expected loss after the survival
-function is distorted by a concave function g with g(0) = 0 and g(1) = 1,
-rho(X) = integral of g(S(x)) dx. SRMs are exactly the risk measures that are
-coherent, comonotonic additive and law invariant (Theorem 3), and they have six
-equivalent representations: as a distortion of the survival function, a
-weighted average of VaRs with increasing weights, a weighted average of TVaRs, a
-maximum over probability scenarios, and two integral forms. A prospicio
-`distortion()` is a g, and its functions are those representations:
+The book's main object is the spectral risk measure (SRM). Section 3.6
+introduces it, and Chapters 10 and 11 develop it. An SRM distorts the survival
+function by a concave function g with g(0) = 0 and g(1) = 1. The SRM is the
+expected loss under the distorted survival function: rho(X) = integral of
+g(S(x)) dx. The SRMs are exactly the risk measures that are coherent,
+comonotonic additive and law invariant (Theorem 3). They have six equivalent
+representations:
+
+- a distortion of the survival function
+- a weighted average of VaRs with increasing weights
+- a weighted average of TVaRs
+- a maximum over probability scenarios
+- two integral forms
+
+A prospicio `distortion()` is a g, and its functions give these
+representations:
 
 | Representation | prospicio |
 |---|---|
@@ -662,13 +710,13 @@ maximum over probability scenarios, and two integral forms. A prospicio
 | dual (bid) distortion 1 - g(1 - s) | `distortion_g_dual(d, s)` |
 | VaR weights: the weight on each sorted outcome | `distortion_weights(d, n)` |
 | a mass at zero (charge for the maximum) | `distortion_mass(d)` |
-| a mixture of TVaRs | `distortion()` kinds `"tvar"`, `"bitvar"`, `"weighted_tvar"`; `distortion_mixture()` |
+| a mixture of TVaRs | `distortion()` kinds `"tvar"`, `"bitvar"`, `"weighted_tvar"`, and `distortion_mixture()` |
 | a probability scenario for a given risk | `distortion_weights()` on the sorted sample, or the natural allocation, `natural_price()` on a `capital_portfolio()` |
 
 The proportional hazard distortion with rho 0.5 prices the Simple Discrete
 Example at 51.156 (Table 11.1). Its spectral weights are the risk-adjusted
-probabilities of the sixteen sorted draws, and they reproduce the price as a
-weighted average:
+probabilities of the sixteen sorted draws. The weighted average of the sorted
+draws gives the same price:
 
 ```{r}
 w <- distortion_weights(ph, 16)
@@ -685,14 +733,18 @@ weights on the four worst draws [0.067, 0.0795, 0.1036, 0.25] mass at zero 0
 TVaR(0.48732) 51.156 (book: the same 51.156, Exercise 183)
 ```
 
-TVaR at 0.48732 charges the same premium, as Exercise 183 states: two different
-SRMs, one price for this risk, and different prices for everything else.
+TVaR at 0.48732 charges the same premium, as Exercise 183 states. The two SRMs
+give one price for this risk and different prices for all other risks.
 
-A distortion built from others is still a distortion. Example 176 takes the
-minimum of the PH with rho 0.5 and a constant cost of capital (CCoC) of 50%, g(s) =
-(2 s + 1) / 3. They cross at s = 1/4: the PH below, the CCoC above. The book
-works out the TVaR representation: a mass of 2/3 on the mean (TVaR at 0), a mass
-of 1/12 at TVaR(0.75) and a density over the levels from 0.75 to 1:
+A distortion built from other distortions is also a distortion. Example 176
+takes the minimum of two distortions. The first is the PH with rho 0.5. The
+second is a constant cost of capital (CCoC) of 50%, g(s) = (2 s + 1) / 3. The two cross at s = 1/4. Below
+s = 1/4 the minimum is the PH, and above it the minimum is the CCoC. The book
+calculates the TVaR representation:
+
+- a mass of 2/3 on the mean (TVaR at 0)
+- a mass of 1/12 at TVaR(0.75)
+- a density over the levels from 0.75 to 1
 
 ```{r}
 mixed <- distortion_minimum(list(ph, distortion("ccoc", 0.5)))
@@ -711,50 +763,33 @@ slope at s = 1, the weight on the mean: 0.6667  (book 2/3)
 drop in slope at s = 1/4, times 1/4: 0.0833  (book 1/12, the weight on TVaR 0.75)
 ```
 
-`distortion("ccoc", r)` takes the cost of capital r, so `distortion("ccoc", 0.5)` is the book's
-(2 s + 1) / 3; `aggregate` builds the same function from the discount d = r /
-(1 + r).
+`distortion("ccoc", r)` takes the cost of capital r, so
+`distortion("ccoc", 0.5)` is the book's (2 s + 1) / 3. `aggregate` builds the same function from the discount
+d = r / (1 + r).
 
 ## 9. Choosing a risk measure
 
-Chapter 6 separates two uses: a **capital** risk measure sets the assets a
-company holds (VaR, TVaR or EPD, chosen by a regulator or rating agency and
-applied to the total), and a **pricing** risk measure sets the premium (an SRM,
-or a classical principle). Its compendium (Table 6.1) lists the measures and
-families. Where each one is in prospicio:
+Chapter 6 separates two uses of a risk measure:
+
+- A **capital** risk measure sets the assets that a company holds. It is VaR,
+  TVaR or EPD, chosen by a regulator or rating agency and applied to the total.
+- A **pricing** risk measure sets the premium. It is an SRM or a classical
+  principle.
+
+Table 6.1, the book's compendium, lists the measures and families. This table
+gives the prospicio name of each:
 
 | Measure | prospicio |
 |---|---|
 | mean, VaR, upper quantile | `mean()`, `quantile()` (`VaR()` on samples and discrete distributions), `quantile_upper()` |
-| TVaR | `TVaR()` on `sampled()`, `grid_distribution()`, `discrete_distribution()`; `distortion("tvar", p)` |
+| TVaR | `TVaR()` on `sampled()`, `grid_distribution()` and `discrete_distribution()`, and `distortion("tvar", p)` |
 | EPD and EPD capital | `epd_ratio(port, a)`, `assets_for_epd(port, ratio)` on a `capital_portfolio()` |
 | SRMs: CCoC, PH, Wang, dual, TVaR, bi-TVaR, beta, LEP and others | `distortion()` kinds |
 | exponential (entropic), Esscher | `entropic_risk()`, `esscher_premium()` |
 | classical premium principles | `classical_premium()`, `calibrate_classical()` |
 | CoVaR, marginal expected shortfall | `covar()`, `marginal_expected_shortfall()` |
-| worst VaR (Rearrangement Algorithm) | none: section 4's R code |
-| ogive VaR from grouped data | none: interpolate |
 
-The book's advice in practice: a capital measure should be simple and robust
-(VaR is both, and the regulator's choice); a pricing measure must be coherent
-and comonotonic additive so that layers and pieces of one risk add up, which
-points to an SRM. Part II takes it from there.
-
-## 10. What this guide leaves out
-
-- **Chapter 3's taxonomies of risk and Chapter 6's characterisation method**
-  (Wang and Zitikis' axioms): concepts with no computation.
-- **Exercises without printed answers** (56, 58, the PELVE estimates of Exercise
-  68): the tools are above.
-- **The representation theorem and Delbaen's differentiation theorem**
-  (Sections 5.4 and 5.5): the derivative of an SRM is the natural allocation,
-  which is Part III's subject and is in
-  [the case studies guide](pricing-insurance-risk-case-studies.md).
-- **Table 4.8 (Hu/SCS)**: its gross and net VaR and TVaR rows need the
-  2^19-point grid of the case studies guide, and its EPD rows as extracted do
-  not read as a table we could compare.
-- **Gaps in prospicio**: the Rearrangement Algorithm, an ogive from grouped
-  data, a normal distribution and a `TVaR()` on parametric severities such as
-  the lognormal (issue #366, for the Probability lane); in R, also `VaR()` on a
-  `grid_distribution()` (issue #373) and on parametric severities (issue #375),
-  where `quantile()` works.
+The book gives this advice for practice. A capital measure should be simple and
+robust. VaR is both, and it is the regulator's choice. A pricing measure must be
+coherent and comonotonic additive, so that the layers and parts of one risk add
+up. These conditions point to an SRM. Part II continues from here.

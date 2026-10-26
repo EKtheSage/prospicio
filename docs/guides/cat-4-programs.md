@@ -1,30 +1,32 @@
 # Property catastrophe 4: stacked covers, and who keeps what
 
-A cedent rarely buys one layer. It buys a program: several layers stacked on
-the same losses, sometimes behind a quota share, sometimes with a peril left
-out. A reinsurer rarely writes the whole of a layer. It signs a line, a share
-of each layer, next to other markets. And the reinsurer may buy its own cover,
-a retro, on what it has written. Each party looks at the same years of losses
-from a different seat.
+A cedent seldom buys one layer. It buys a program: several layers on the same
+losses, sometimes behind a quota share, sometimes with a peril excluded. A
+reinsurer seldom writes all of a layer. It signs a line, a share of each
+layer, next to other markets. The reinsurer can also buy its own cover, a
+retro, on what it wrote. Each party looks at the same years of losses from a
+different position.
 
-This page builds those views on the Larkspur Re book. It applies Alder
-Mutual's two layers together, puts Corran General's quota share ahead of a cat
-cover, splits Bracken's losses by what its aggregate cover can and cannot
-reach, and buys Larkspur a small retro. Larkspur's contract terms come from
-`examples/data/cat_book_contracts.csv`; the page does not type them in. The
-covers Larkspur does not write (Corran's cat cover and Larkspur's retro) are
-hypothetical and stated where they appear. The story, the files and the
-notation are on [the overview](cat-0-overview.md); for how a single layer,
-the hours clause and reinstatements work, read
-[page 3](cat-3-contract-terms.md) first.
+This page builds these views on the Larkspur Re book. It applies the two
+layers of Alder Mutual together. It puts the quota share of Corran General
+ahead of a cat cover. It splits the losses of Bracken by what its aggregate
+cover can reach. Then it buys a small retro for Larkspur.
+
+The contract terms of Larkspur come from
+`examples/data/cat_book_contracts.csv`. The page does not type them in.
+Larkspur does not write two covers on this page: the cat cover of Corran and
+the retro of Larkspur. They are hypothetical, and the page says so where they
+appear. The story, the files and the notation are on
+[the overview](cat-0-overview.md). Read [page 3](cat-3-contract-terms.md)
+first for a single layer, the hours clause and reinstatements.
 
 ## 1. The book and the helpers
 
 The year event loss table (YELT) has one row per cedent per event piece. The
-helper below turns one cedent's rows into an `EventSet` with event times and a
-peril label. `contract_layer` turns a row of the contracts file into a `Layer`,
-and `subject` applies the contract's peril scope and hours clause. The same
-helpers appear on every page of the track that needs times.
+helper `cedent_events` makes an `EventSet` from the rows of one cedent, with
+event times and a peril label. `contract_layer` makes a `Layer` from a row of
+the contracts file. `subject` applies the peril scope and the hours clause of
+the contract. Each page of the track that needs times uses the same helpers.
 
 ```python
 import csv
@@ -113,13 +115,13 @@ corran_qs    quota_share    perils all   share 0.1
 
 ## 2. A program: two layers on one subject
 
-Alder buys 40 xs 30 and 100 xs 70. The layers touch: the first exhausts where
-the second attaches. A `Tower` applies both to the same occurrences in one
-pass, so each year's events are cut into the pieces every layer takes, and the
-reinstatements of each layer are used up in event order.
+Alder buys 40 xs 30 and 100 xs 70. The layers touch: the first layer exhausts
+where the second attaches. A `Tower` applies both layers to the same
+occurrences in one pass. It cuts the events of each year into the pieces that
+each layer takes. It uses up the reinstatements of each layer in event order.
 
-Both of Alder's contracts carry a 72 hour clause and cover all perils, so they
-share one subject. `aggregate(["kind"])` adds the layers up and leaves four
+Both contracts of Alder have a 72 hour clause and cover all perils, so they
+share one subject. `aggregate(["kind"])` adds the layers and leaves four
 components: the gross loss, the ceded loss, the net loss and the reinstatement
 premium.
 
@@ -146,20 +148,21 @@ ceded alder_cat_1      mean   0.8230
 ceded alder_cat_2      mean   0.4163
 ```
 
-Gross is ceded plus net, in every year and so in the mean. The ceded line here
-is Larkspur's line on each layer (30% and 20%), not the whole layer. Section 4
-comes back to that. The net is net of recoveries only: the reinstatement
-premium of 0.1410 is a cost Alder pays on top (page 5).
+Gross is ceded plus net in every year, and thus also in the mean. The ceded
+loss here is the line of Larkspur on each layer (30% and 20%), not the whole
+layer. Section 4 shows the whole layer. The net is net of recoveries only.
+Alder also pays the reinstatement premium of 0.1410 (page 5).
 
 ## 3. What adds up and what does not
 
 Expected losses add across layers: 0.8230 and 0.4163 make the 1.2392 above
-(the last digit is rounding). Tail measures do not. The TVaR at 99% of a sum is at most the sum of the TVaRs, and it is
-smaller whenever the worst years of the parts are not all the same years.
+(the last digit is rounding). Tail measures do not add. The TVaR at 99% of a
+sum is at most the sum of the TVaRs. It is smaller when the worst years of the
+parts are not all the same years.
 
-For two layers stacked on one subject the worst years overlap a lot, because
-a large occurrence fills both. They do not overlap fully. A year can fill the
-first layer with two moderate events and leave the second untouched.
+For two layers on one subject, the worst years overlap a lot, because a large
+occurrence fills both layers. They do not overlap fully. A year can fill the
+first layer with two moderate events and not touch the second.
 
 ```python
 c1 = Sampled(ceded(res, "alder_cat_1").draws)
@@ -178,21 +181,21 @@ sum of the two            34.841
 TVaR 99 of the program    33.983
 ```
 
-The gap, 0.858, is a small diversification credit inside one cedent's
-program. Across cedents and perils it is much larger; page 7
+The gap, 0.858, is a small diversification credit inside the program of one
+cedent. Across cedents and perils it is much larger. Page 7
 ([`cat-7-portfolio.md`](cat-7-portfolio.md)) measures it on the whole book.
 
 ## 4. Whose line? Participation
 
-A `share=` on a `Layer` is the line the modelled party signs. With
-`share=0.3` the tower reports 30% of the layer's loss as ceded and everything
-else as net. That "net" is then the cedent's loss less Larkspur's part only,
-not the cedent's true retention: the other 70% of the layer is placed with
-other reinsurers, who do not appear in this model.
+The `share=` of a `Layer` is the line that the modelled party signs. With
+`share=0.3`, the tower reports 30% of the layer loss as ceded and all the rest
+as net. This "net" is the loss of the cedent less the part of Larkspur only.
+It is not the true retention of the cedent. Other reinsurers take the other
+70% of the layer, and they are not in this model.
 
-To see the program from Alder's seat, model each layer at 100%. Because a
-share scales a layer's loss in every year, the 100% layer is the line divided
-by the share, and the cedent's retention follows.
+To see the program as Alder sees it, model each layer at 100%. A share scales
+the layer loss in every year. Thus the 100% layer is the line divided by the
+share, and the retention of the cedent follows from it.
 
 ```python
 def at_100(c):
@@ -216,31 +219,32 @@ Alder's net    mean  11.9538
 Larkspur's lines grossed up to 100%: 4.8246
 ```
 
-So Alder keeps about 12.0 of its 16.8 a year, and Larkspur carries 1.24 of
-the 4.82 that Alder places. When a page later rolls up Larkspur's deals, it is
-always Larkspur's lines that add up, never the 100% layers.
+Alder keeps about 12.0 of its 16.8 a year. Larkspur carries 1.24 of the 4.82
+that Alder places. When a later page adds the deals of Larkspur, the lines of
+Larkspur add up, never the 100% layers.
 
 ## 5. Inuring: a quota share ahead of a cat cover
 
-Corran General cedes 10% of every occurrence to Larkspur under the quota share
-`corran_qs`, with an event limit of 150 and an annual limit of 300. Suppose
-Corran also buys a cat cover of 60 xs 20 for its own retention. The quota
-share inures to the benefit of the cat cover: the cat layer sees each
-occurrence after the quota share has taken its part.
+Corran General cedes 10% of each occurrence to Larkspur under the quota share
+`corran_qs`. The quota share has an event limit of 150 and an annual limit of
+300. Suppose that Corran also buys a cat cover of 60 xs 20 for its own
+retention. The quota share inures to the benefit of the cat cover. Thus the
+cat layer sees each occurrence after the quota share takes its part.
 
-In symbols, for one occurrence of size `X`, with the quota share's cession
-`Q(X)`, the cat layer cedes
+In symbols, for one occurrence of size `X` and the quota share cession `Q(X)`,
+the cat layer cedes
 
 ```
 C = min(max(X - Q(X) - 20, 0), 60)
 ```
 
-Here `Q(X)` is what the quota share actually ceded on that occurrence: 10% of
-`X` capped at the event limit, and nothing once the quota share's annual limit
-is used up, so `Q` depends on the earlier occurrences of the year too.
+Here `Q(X)` is what the quota share actually ceded on that occurrence. It is
+10% of `X`, capped at the event limit, and it is zero after the quota share
+uses up its annual limit. Thus `Q` also depends on the earlier occurrences of
+the year.
 
-`Tower.inuring` takes the stages in order. Each stage sees the losses net of
-all earlier stages, event by event, and annual limits are used up in event
+`Tower.inuring` takes the stages in order. Each stage sees the losses net of all
+earlier stages, event by event. The stages use up annual limits in event
 order.
 
 ```python
@@ -264,27 +268,27 @@ cat cover on the gross, no quota share ahead: 2.9890
 
 The quota share takes slightly less than 10% of the gross (1.2025 against
 1.3049) because of its event and annual limits. With the quota share ahead,
-the cat cover's expected loss falls from 2.989 to 2.616, so the cat reinsurer
-should charge less. The ceding commission is 25% of the quota share premium of
-3.0, a fixed 0.75 in every year.
+the expected loss of the cat cover falls from 2.989 to 2.616. Thus the cat
+reinsurer should charge less. The ceding commission is 25% of the quota share
+premium of 3.0, a fixed 0.75 in every year.
 
 ## 6. What Bracken's aggregate cover can reach
 
-From Bracken's seat, its aggregate cover `bracken_agg` splits the gross loss
-into four amounts:
+For Bracken, the aggregate cover `bracken_agg` splits the gross loss into four
+amounts:
 
-- **Gross**: everything Bracken loses.
-- **Subject**: the losses the contract applies to (page 3, section 5): here
-  convective storm and flood only.
+- **Gross**: all the losses of Bracken.
+- **Subject**: the losses that the contract applies to (page 3, section 5),
+  here convective storm and flood only.
 - **Ceded**: what the whole contract pays, at 100%.
-- **Retained**: subject less ceded, what Bracken keeps of the losses the
-  contract could have paid.
+- **Retained**: subject less ceded, what Bracken keeps of the losses that the
+  contract can pay.
 
-The gross less the subject is outside the contract's scope: windstorm and
-earthquake are excluded perils for this cover, and no change to its
-deductible or limit would reach them. As in section 4, the contract is
-modelled at 100% so that "retained" is what Bracken keeps, not the subject
-less Larkspur's line.
+The gross less the subject is outside the scope of the contract. Windstorm and
+earthquake are excluded perils for this cover, and no change to its deductible
+or limit can reach them. As in section 4, the page models the contract at
+100%. Thus "retained" is what Bracken keeps, not the subject less the line of
+Larkspur.
 
 ```python
 bc = CONTRACTS["bracken_agg"]
@@ -312,17 +316,17 @@ outside the scope         8.2122
 Larkspur's 25% of ceded   0.1621
 ```
 
-More than half of Bracken's loss is windstorm and earthquake, outside this
-contract's scope. Those losses are for `bracken_cat`, the occurrence layer,
-to cover.
+More than half of the loss of Bracken is windstorm and earthquake, outside the
+scope of this contract. The occurrence layer `bracken_cat` covers those
+losses.
 
 ## 7. Splitting a program by peril
 
-With peril labels on the events, a tower's result carries a third dimension,
-`peril`, next to `kind` and `layer`. That is how to answer "how much of the
-ceded loss is windstorm?". `grouped` drops the labels, so this section uses
-the `grouped_by_peril` helper of page 3, section 2, repeated here so that the
-page runs on its own.
+With peril labels on the events, the result of a tower has a third dimension,
+`peril`, next to `kind` and `layer`. This dimension answers the question "how
+much of the ceded loss is windstorm?". `grouped` removes the labels. Thus this
+section uses the `grouped_by_peril` helper of page 3, section 2. The page repeats it
+here so that the page runs on its own.
 
 ```python
 def grouped_by_peril(cedent, hours):
@@ -349,28 +353,27 @@ CS  gross   1.3489   ceded  0.0000
 ceded, all perils: 1.2385
 ```
 
-Windstorm drives the program. No convective storm occurrence for Alder
-reaches the attachment of 30, even after grouping.
+Windstorm drives the program. No convective storm occurrence of Alder reaches
+the attachment of 30, even after grouping.
 
-The ceded total, 1.2385, is not quite section 2's 1.2392, because here a
+The ceded total, 1.2385, is not quite the 1.2392 of section 2. Here a
 windstorm and a flood in the same three days stay two occurrences. Page 3,
-section 2 explains why the track prices with the all-perils clause and uses
-the per-peril grouping only for splits like this one.
+section 2 explains why the track prices with the all-perils clause. The track
+uses the per-peril grouping only for splits like this one.
 
 ## 8. Retro as an aggregate cover
 
 Larkspur can protect its own book. The simplest retro is an aggregate stop
-loss on the annual total of what Larkspur has written. Here Larkspur buys
-10 xs 8 on the annual total of two deals, its lines on `alder_cat_1` and
-`bracken_cat`.
+loss on the annual total of what Larkspur wrote. Here Larkspur buys 10 xs 8 on
+the annual total of two deals: its lines on `alder_cat_1` and `bracken_cat`.
 
-A **deal** is one contract as Larkspur has written it: its line's premium,
-losses and other flows, year by year. `DealRun.from_tower` records one layer
-of a tower result as a deal, and
-`DealBook` lines the deals up year by year. `book.amounts()` holds every item
-of every deal and also a `"total"` deal; select the deals by name so the total
-is not counted twice. `Tower.apply_aggregate` then treats each year's total of
-the selection as one aggregate loss.
+A **deal** is one contract as Larkspur wrote it: the premium, losses and other
+flows of its line, year by year. `DealRun.from_tower` records one layer of a
+tower result as a deal, and `DealBook` aligns the deals by year.
+`book.amounts()` holds each item of each deal and also a `"total"` deal.
+Select the deals by name, so that you do not count the total twice.
+`Tower.apply_aggregate` then treats the total of the selection in each year as
+one aggregate loss.
 
 ```python
 bc = CONTRACTS["bracken_cat"]
@@ -392,34 +395,13 @@ book loss mean 1.5077, P(loss > 8) 0.0835
 retro 10 xs 8 ceded mean 0.4565
 ```
 
-The two deals lose 1.51 a year on average, and in about one year in twelve
-they lose more than 8, where the retro starts to pay. Its expected recovery is
-0.4565 a year, close to a third of the deals' mean loss, because the cover sits
+The two deals lose 1.51 a year on average. In about one year in twelve they
+lose more than 8, where the retro starts to pay. Its expected recovery is
+0.4565 a year, close to a third of the mean loss of the deals. The cover sits
 exactly where these thin, volatile lines put their losses.
 
-An occurrence retro, a per-event cover on Larkspur's own ceded losses, needs
-the ceded amount of every event, across deals, in time order. A tower result
-gives each layer's annual totals, not its losses by event, so prospicio cannot
-yet feed one book's ceded events into another tower (#590). `Layer.ceded_by_event` gives the
-split for one list of losses by hand.
-
-## 9. Summary
-
-- A `Tower` applies a program in one pass; `aggregate(["kind"])` gives gross,
-  ceded and net, and they add up year by year.
-- Means add across layers and deals. TVaR does not.
-- `share=` is the modelled party's line. Model at 100% for the cedent's view.
-- `Tower.inuring` puts a quota share ahead of a cat cover; the order changes
-  the cat layer's loss.
-- Gross less subject is outside the contract's scope, and no deductible or
-  limit reaches it.
-- To split a grouped subject by peril, group each peril, label it and merge.
-- A retro on the book's annual total is `apply_aggregate` on the deals' loss.
-
-## What is missing
-
-- the ceded loss of each event as an event set, to feed an occurrence retro
-  (#590)
+For a per-occurrence retro, `Layer.ceded_by_event` gives the ceded amount of each event
+for one list of losses (#590).
 
 ## In R
 

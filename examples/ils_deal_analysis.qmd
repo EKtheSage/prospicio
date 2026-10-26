@@ -10,20 +10,28 @@ execute:
   warning: false
 ---
 
-An investment fund is offered a share of a cedant's 2026 premium as a **collateralised reinsurance** deal, the kind of transaction the insurance-linked securities (ILS) market writes: the fund posts collateral in a trust, the cedant pays premium into it, losses are paid out of it, and what is left goes back to the fund when the deal is commuted. The fund's question is "what return does this give my investors, how likely is a loss, and how do the alternative structures compare?" This document is the R twin of [`ils_deal_analysis.ipynb`](ils_deal_analysis.ipynb): same data, same seeds, same model, and the numbers agree with the notebook's. It answers the question end to end:
+An investment fund gets an offer of a share of a cedant's 2026 premium as a **collateralised reinsurance** deal. The insurance-linked securities (ILS) market writes this kind of deal. The fund puts collateral in a trust, and the cedant pays premium into the trust. The trust pays the losses, and the fund gets the remainder when the deal commutes.
 
-1. read a submission and build the cedant's loss triangle;
-2. show the historical exhibits and test how well a Bayesian model forecasts the cedant's own history;
-3. state an industry prior as an explicit input, and fit the cedant's ultimates against it;
-4. draw the 2026 loss ratio, pass it through the reinsurance structure, collateral and cash flows;
-5. read the investor's IRR, MOIC and downside from the simulations, and compare two structures;
+The fund asks about the return to its investors. What return does the deal give, how likely is a loss, and how do the alternative structures compare? This document is the R twin of [`ils_deal_analysis.ipynb`](ils_deal_analysis.ipynb), with the same data, seeds and model, and its numbers agree with the notebook's numbers. It answers the questions in six steps:
+
+1. read a submission and build the cedant's loss triangle,
+2. show the historical exhibits and test how well a Bayesian model forecasts the cedant's history,
+3. state an industry prior as an explicit input, and fit the cedant's ultimates against it,
+4. draw the 2026 loss ratio, and apply the reinsurance structure, the collateral and the cash flows to it,
+5. read the investor's IRR, MOIC and downside from the simulations, and compare two structures,
 6. after binding, compare the next diagonal of actual losses with the one-year forecast.
 
-Every step that `prospicio` does not yet cover is marked **workaround** where it occurs, and the closing section lists the gaps with their issues. The prose is shorter than the notebook's, which explains each step; read it alongside.
+The prose is shorter than the prose of the notebook, which explains each step. Read the two together.
 
-**The data.** The submission is the synthetic one of `submission_evaluation.ipynb`: `examples/data/make_submission.py` wrote it from known parameters. Here the cedant offers a **20% quota share** of its commercial property book for 2026, so the loss to the fund is a share of the cedant's whole-book loss ratio. Everything about the deal's terms below (the share, the commission, the collateral rule, the yield) is an assumption chosen for the demonstration, not a figure in the files.
+**The data.** The submission is the synthetic one of `submission_evaluation.ipynb`. `examples/data/make_submission.py` wrote it from known parameters. Here the cedant offers a **20% quota share** of its commercial property book for 2026. Thus the loss to the fund is a share of the loss ratio of the cedant's whole book. All the deal terms below (the share, the commission, the collateral rule, the yield) are assumptions for the demonstration, not values in the files.
 
-To run it, clone the repository, install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`), then render from anywhere in the repository with `quarto render examples/ils_deal_analysis.qmd`. Set the environment variable `PROSPICIO_EXAMPLE_SIMS` to run fewer simulations.
+To run the document:
+
+1. Clone the repository.
+2. Install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`).
+3. From any folder in the repository, render with `quarto render examples/ils_deal_analysis.qmd`.
+
+Set the environment variable `PROSPICIO_EXAMPLE_SIMS` to run fewer simulations.
 
 ```{r}
 #| label: setup
@@ -66,7 +74,7 @@ cat("submission files in", basename(dirname(DATA)), "/", basename(DATA), ";", N_
 
 ## 1. The submission and the cedant's triangle
 
-The files give the loss triangle (paid and incurred by accident year and age), the premium by year, and the rate changes, which let us restate every year's premium at the **current rate level** (the *on-level* premium). The loss ratio we forecast for 2026 is on the 2026 on-level premium.
+The files give the loss triangle (paid and incurred by accident year and age), the premium by year and the rate changes. The rate changes restate the premium of each year at the **current rate level** (the *on-level* premium). The 2026 loss ratio forecast is on the 2026 on-level premium.
 
 ```{r}
 #| label: data
@@ -95,7 +103,7 @@ cat(sprintf("estimated 2026 subject premium %s; triangle origins %s to %s, %d ag
 
 ## 2. Historical exhibits and a backtest
 
-The **paid chain ladder** gives the cedant's payment pattern, which the cash-flow step needs. The **loss ratio by accident year** at its latest age, on on-level premium, shows the level and the spread the prior will be compared with.
+The **paid chain ladder** gives the cedant's payment pattern, which the cash-flow step needs. The **loss ratio by accident year** at its latest age, on on-level premium, shows the level and the spread to compare with the prior.
 
 ```{r}
 #| label: exhibits
@@ -122,7 +130,7 @@ barplot(loss_ratio_now, names.arg = YEARS, las = 2, ylab = "incurred loss ratio 
 par(op)
 ```
 
-A **diagonal backtest** holds out the latest calendar diagonals, fits the model on what was known before each, and scores its forecast of the cells that then arrived. Here it is the Bayesian over-dispersed Poisson chain ladder on two diagonals, with a small sampler so the document stays quick.
+A **diagonal backtest** holds out the latest calendar diagonals. For each diagonal, it fits the model on the data known before that diagonal and scores the forecast of the cells that came next. Here the model is the Bayesian over-dispersed Poisson chain ladder on two diagonals, with a small sampler to keep the document fast.
 
 ```{r}
 #| label: backtest
@@ -135,9 +143,9 @@ if (nrow(backtest@warnings)) print(backtest@warnings)
 
 ## 3. The industry prior as an explicit input
 
-A prior for the ultimate loss ratio, with a stated strength, is written down as a **prior mean `m` and coefficient of variation `cv`**. `prospicio` estimates one from several programs with `hierarchical_credibility()` (Buhlmann-Straub with a normal prior on the collective mean).
+The analyst writes a prior for the ultimate loss ratio, with a stated strength, as a **prior mean `m` and coefficient of variation `cv`**. `prospicio` estimates them from several programs with `hierarchical_credibility()` (Buhlmann-Straub with a normal prior on the collective mean).
 
-**Workaround (gaps G2 and G7).** The library has no industry benchmark builder from published data, and no model of many programs' triangles with a shared hyperprior. So the peer programs below are **synthetic**, drawn from a fixed low-discrepancy sequence so that this document has the notebook's numbers: twelve programs with eight years of loss ratios and premium weights. What stays real is the method: the collective mean and the distribution of a program's expected loss ratio, which give `m` and `cv`. The prior on the collective mean (`collective_mean = c(0.50, 0.10)`) is the analyst's judgment about the line.
+The peer programs below are **synthetic** (#599, #604). A fixed low-discrepancy sequence draws them, so that this document has the numbers of the notebook. There are twelve programs with eight years of loss ratios and premium weights. The method is real. The collective mean and the distribution of the expected loss ratio of a program give `m` and `cv`. The prior on the collective mean (`collective_mean = c(0.50, 0.10)`) is the analyst's judgment about the line.
 
 ```{r}
 #| label: prior
@@ -163,7 +171,13 @@ cat(sprintf("inputs used below: m = %.3f, cv = %.3f\n", M_PRIOR, CV_PRIOR))
 
 ## 4. The cedant's ultimates against that prior
 
-`bayes_bf_normalised()` is the Bayesian Bornhuetter-Ferguson with the prior on each accident year's **expected ultimate**: `apriori` is the expected ultimate loss ratio and `cv` how firmly it is held. It is fitted to the **paid** triangle on on-level premium, so that its pattern is the payment pattern the cash flows need. The model has no tail beyond the last age; the oldest age is dropped, since only 2016 has it, the chain ladder shows no development there, and the model needs every column's increments to sum to more than zero.
+`bayes_bf_normalised()` is the Bayesian Bornhuetter-Ferguson with the prior on the **expected ultimate** of each accident year. `apriori` is the expected ultimate loss ratio, and `cv` sets how firmly the model holds it. The model fits the **paid** triangle on on-level premium, so that its pattern is the payment pattern that the cash flows need.
+
+The model has no tail beyond the last age. The chunk drops the oldest age for three reasons:
+
+* only 2016 has it,
+* the chain ladder shows no development there,
+* the model needs the increments of every column to sum to more than zero.
 
 ```{r}
 #| label: fit
@@ -192,7 +206,15 @@ cat("sampler diagnostics: max R-hat", format(fit@diagnostics$max_rhat), "\n")
 
 ## 5. The 2026 loss ratio
 
-**Workaround (gaps G1 and G5).** The model forecasts the cells of years the triangle already contains. It has no posterior predictive for a **new** accident year, and no function that turns reserve draws into a per-simulation loss ratio (done by hand above). For 2026 we therefore use a **lognormal** whose mean is the average of the last five years' posterior mean ultimate loss ratios (loss ratios drift up over the ten years and the model has no trend, so older years would understate 2026), and whose coefficient of variation combines three things: the spread of those five years' means, the average posterior cv of one year, and the industry prior's cv, as the uncertainty about the level in 2026. It is a stand-in for a proper predictive.
+The model forecasts the cells of the years in the triangle. Section 4 turns its reserve draws into a loss ratio for each simulation (#602). For 2026, a new accident year, the chunk below uses a **lognormal** (#598).
+
+The mean of the lognormal is the average of the posterior mean ultimate loss ratios of the last five years. Loss ratios increase over the ten years and the model has no trend, so older years would understate 2026. The coefficient of variation combines three parts:
+
+* the spread of the means of those five years,
+* the average posterior cv of one year,
+* the cv of the industry prior, as the uncertainty about the level in 2026.
+
+The lognormal is a substitute for a predictive distribution.
 
 ```{r}
 #| label: loss-ratio
@@ -212,7 +234,12 @@ cat("percentiles 5, 50, 95:", paste(sprintf("%.3f", sort(LR)[floor(N_SIMS * c(0.
 
 ## 6. The structure
 
-The fund takes 20% of the cedant's subject premium and of its losses: a **quota share**. Two commission terms are compared throughout: **A, flat**, a 32% ceding commission whatever happens, and **B, sliding scale**, falling from 36% at a loss ratio of 45% to 24% at 70%, passing 32% at 52%. `apply_tower()` applies the contract to the 2026 annual losses (the loss ratio times the premium), one per simulation, and `deal_ratios()` reads off the loss ratio, the commission, the brokerage and the margin of each simulation.
+The fund takes 20% of the cedant's subject premium and of its losses: a **quota share**. The document compares two commission terms:
+
+* **A, flat**: a 32% ceding commission in all outcomes.
+* **B, sliding scale**: the commission decreases as the loss ratio increases. It goes from 36% at a loss ratio of 45% to 24% at 70%, through 32% at 52%.
+
+`apply_tower()` applies the contract to the 2026 annual losses (the loss ratio times the premium), one for each simulation. `deal_ratios()` gives the loss ratio, the commission, the brokerage and the margin of each simulation.
 
 ```{r}
 #| label: structure
@@ -246,9 +273,14 @@ cat("ceded premium", money(CEDED_PREMIUM), "\n")
 
 ## 7. Collateral and cash flows
 
-The money moves monthly. The paid chain ladder's factors give the share of the ultimate loss paid by each age. **Workaround (gap G4):** `cashflow_terms()` wants cumulative *monthly* shares, and there is no converter, so the annual pattern is interpolated linearly by hand below. **Gap G3:** the pattern is the same in every simulation. Premium is written evenly over 2026 and collected as written, and earned over the following two years. The trust must hold 30% of the unearned premium plus 125% of the outstanding loss (the deal's ultimate loss less paid to date). The trust earns 3% a year, expenses are 0.5% a year of the requirement, and at month 60 the deal commutes.
+The money moves monthly. The parts:
 
-The cash-flow engine takes the ultimate loss ratio of the **deal** of each simulation and returns the investor's flows. **Workaround (a gap beyond G1 to G8):** the engine's premium into the trust is `collected_rate` times the premium, a number fixed in the terms, whereas the sliding scale makes the commission differ by simulation (its `commission` argument only feeds premium adjustments and the fee). So the simulations are grouped by their commission rate (to 0.1 percentage point), one engine run for each group with that group's `collected_rate`, and the flows are put back in simulation order.
+* **Payment pattern.** The factors of the paid chain ladder give the share of the ultimate loss paid by each age. `cashflow_terms()` takes cumulative *monthly* shares, so the chunk below interpolates the annual pattern linearly to months (#601). All simulations use the same pattern (#600).
+* **Premium.** The cedant writes premium evenly over 2026 and collects it as written. The premium earns over the following two years.
+* **Collateral.** The trust must hold 30% of the unearned premium plus 125% of the outstanding loss (the ultimate loss of the deal less paid to date).
+* **Yield, expenses and commutation.** The trust earns 3% a year, and expenses are 0.5% a year of the requirement. At month 60 the deal commutes.
+
+The cash-flow engine takes the ultimate loss ratio of the **deal** in each simulation and returns the investor's flows. The premium into the trust is `collected_rate` times the premium, a fixed value in the terms. The sliding scale makes the commission different in each simulation. Thus the chunk groups the simulations by commission rate, to 0.1 percentage point. It runs the engine once for each group with the `collected_rate` of that group, and puts the flows back in simulation order.
 
 ```{r}
 #| label: cashflows
@@ -318,7 +350,11 @@ cat("capital called from the fund over the term, summed (mean; it is recycled as
 
 ## 8. What the investor gets
 
-For each structure, the return per simulation: the **IRR** (a simulation with no root in the search range, -95% to 100%, is left out and counted), the **MOIC** (one plus the net flows over the capital called from the fund), and the downside: the chance of a negative IRR or a MOIC below 1 and the mean of the worst 5% of IRRs.
+For each structure, the chunk computes the return of each simulation:
+
+* the **IRR**. The chunk excludes and counts each simulation with no root in the search range, -95% to 100%.
+* the **MOIC**: one plus the net flows divided by the capital called from the fund.
+* the downside: the probability of a negative IRR or a MOIC below 1, and the mean of the worst 5% of IRRs.
 
 ```{r}
 #| label: investor
@@ -350,7 +386,7 @@ legend("topright", legend = names(deals), fill = colours, bty = "n")
 par(op)
 ```
 
-`risk_ratios()` takes the per-simulation margin, where large is good, and returns Sharpe, Sortino, Omega and the TVaR ratio about a threshold (here a target margin of 10%). The quantity is the deal's **margin** (one less the combined ratio) rather than the fund's return.
+`risk_ratios()` takes the margin of each simulation, where large is good. It returns Sharpe, Sortino, Omega and the TVaR ratio about a threshold (here a target margin of 10%). The quantity is the deal's **margin** (one less the combined ratio), not the fund's return.
 
 ```{r}
 #| label: risk-ratios
@@ -362,7 +398,7 @@ for (name in names(deals)) {
 
 ## 9. Comparing the structures
 
-`book_summary()` puts the structures' premium, loss and deductions side by side. (A `deal_book()` adds its deals on the same simulated years, so its **total** row would be a portfolio holding both; we read the per-structure rows only.)
+`book_summary()` shows the premium, loss and deductions of the structures side by side. A `deal_book()` adds its deals on the same simulated years, so its **total** row would be a portfolio that holds both structures. Read only the rows of each structure.
 
 ```{r}
 #| label: compare
@@ -374,9 +410,11 @@ print(data.frame(deal = summary_book$deal, item = summary_book$item, mean = mone
 
 ## 10. Monitoring after binding
 
-Each quarter brings a new diagonal of actual paid losses. The check holds the latest diagonal out, fits the model on what was known a year earlier, takes the **one-year view** (the distribution of the claims development result over the coming year), and compares it with what the diagonal did. The realised result is the opening reserve less what was paid in the year less the closing reserve, per accident year already in the triangle, with the closing reserve estimated by the model fitted to the full triangle.
+Each quarter brings a new diagonal of actual paid losses. The check holds out the latest diagonal and fits the model on the data known one year earlier. It takes the **one-year view** (the distribution of the claims development result over the next year) and compares it with the actual diagonal.
 
-**Gap G6:** this reads a result for the cedant's *history*. Re-running the *deal* from a valuation month is not in the library.
+The realised result is the opening reserve, less the amount paid in the year, less the closing reserve, for each accident year in the triangle. The model fitted to the full triangle estimates the closing reserve.
+
+This check is on the cedant's *history* (#603).
 
 ```{r}
 #| label: monitoring
@@ -402,7 +440,7 @@ cat(sprintf("valuation %d: one-year claims development result, forecast mean %s,
 
 ## 11. A summary for the investor
 
-**Gap G8:** there is no investor report template or submission schema, so this is a plain printout of the quantities above.
+One table of the results, as a plain printout of the quantities above (#605).
 
 ```{r}
 #| label: report
@@ -424,17 +462,15 @@ for (name in names(deals)) {
 print(report, row.names = FALSE)
 ```
 
-## What is missing
+## Issues for the workarounds
 
-Each gap below changes a workaround in this document into a function call. They are filed as issues.
-
-| Gap | What is missing | Where it showed up | Issue |
-|---|---|---|---|
-| G1 | A posterior predictive loss ratio for a **new** year | the lognormal in section 5 | #598 |
-| G2 | A hierarchical model over **several programs'** triangles with an industry hyperprior | the synthetic peers in section 3 | #599 |
-| G3 | A payment pattern **per simulation** in the cash-flow engine (slow large losses) | one pattern for all simulations in section 7 | #600 |
-| G4 | `payment_pattern` to the **monthly** cumulative patterns `cashflow_terms()` takes | the hand-written interpolation in section 7 | #601 |
-| G5 | **Reserve draws to the loss ratio** per simulation | the draws of `fit@reserves` in section 4 | #602 |
-| G6 | **Deal monitoring** from a valuation month (flows received, collateral posted) | section 10 | #603 |
-| G7 | An **industry-prior builder** from published data (Schedule P) | the prior inputs in section 3 | #604 |
-| G8 | A **submission schema** and an investor **report template** | sections 1 and 11 | #605 |
+| Ref | Step in this document | Issue |
+|---|---|---|
+| G1 | the lognormal for 2026 in section 5 | #598 |
+| G2 | the synthetic peers in section 3 | #599 |
+| G3 | one payment pattern for all simulations in section 7 | #600 |
+| G4 | the monthly interpolation of the pattern in section 7 | #601 |
+| G5 | the draws of `fit@reserves` in section 4 | #602 |
+| G6 | the monitoring in section 10 | #603 |
+| G7 | the prior inputs in section 3 | #604 |
+| G8 | the printout in sections 1 and 11 | #605 |
