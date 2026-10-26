@@ -28,6 +28,7 @@ from .prospicio_native import (
     Glm,
     GlmFit,
     DoubleGlm,
+    Draws,
     DoubleGlmFit,
     Glmm,
     GlmmFit,
@@ -149,6 +150,10 @@ __all__ = [
     "group_k_fold",
     "time_ordered",
     "mcmc_diagnostics",
+    "Draws",
+    "read_stan_csv",
+    "draws_from_arrays",
+    "draws_from_inference_data",
     "simulate_from_means",
     "elpd_loo",
     "elpd_waic",
@@ -393,6 +398,183 @@ def random_search(n, seed, draw, make, design, y, splits, score, n_jobs=None):
     """
     rng = random.Random(seed)
     return grid_search([draw(rng) for _ in range(n)], make, design, y, splits, score, n_jobs)
+
+
+def read_stan_csv(paths):
+    """Reads CmdStan CSV output, one file per chain, into ``Draws``.
+
+    Comments are skipped, saved warmup draws dropped, ``theta.1.2`` named
+    ``theta[1,2]``; ``lp__`` is kept as a variable, the sampler's other
+    ``__`` columns are in ``Draws.sampler`` and the ``divergent__`` draws
+    are counted per chain.
+
+    Parameters
+    ----------
+    paths : str, path or list of them
+        One CSV file per chain.
+
+    Returns
+    -------
+    Draws
+    """
+    if isinstance(paths, (str, bytes)) or hasattr(paths, "__fspath__"):
+        paths = [paths]
+    return Draws.read_stan_csv([str(p) for p in paths])
+
+
+def _as_lists(x):
+    """A nested list from an array-like (numpy, xarray, lists)."""
+    values = getattr(x, "values", x)
+    if hasattr(values, "tolist"):
+        values = values.tolist()
+    return values
+
+
+def _shape(x):
+    shape = []
+    while isinstance(x, (list, tuple)):
+        shape.append(len(x))
+        if not x:
+            break
+        x = x[0]
+    return shape
+
+
+def _flatten(x):
+    if isinstance(x, (list, tuple)):
+        for v in x:
+            yield from _flatten(v)
+    else:
+        yield float(x)
+
+
+def _element_names(name, shape):
+    """``name`` for a scalar, else ``name[i,j,...]`` (1-based, row-major)."""
+    if not shape:
+        return [name]
+    names = [()]
+    for n in shape:
+        names = [idx + (i,) for idx in names for i in range(1, n + 1)]
+    return [f"{name}[{','.join(str(i) for i in idx)}]" for idx in names]
+
+
+def _arrays_to_chains(arrays):
+    names, per_var = [], []
+    n_chains = n_draws = None
+    for name, value in arrays.items():
+        x = _as_lists(value)
+        shape = _shape(x)
+        if len(shape) < 2:
+            raise ValueError(f"{name}: an array needs the shape (chain, draw, ...)")
+        if n_chains is None:
+            n_chains, n_draws = shape[0], shape[1]
+        elif shape[:2] != [n_chains, n_draws]:
+            raise ValueError(
+                f"{name} has {shape[0]} chains of {shape[1]} draws, "
+                f"the first variable {n_chains} of {n_draws}"
+            )
+        elems = _element_names(name, shape[2:])
+        names.extend(elems)
+        per_var.append(
+            [[list(_flatten(x[c][d])) for d in range(n_draws)] for c in range(n_chains)]
+        )
+    if not names:
+        raise ValueError("no variables given")
+    chains = [
+        [[v for block in per_var for v in block[c][d]] for d in range(n_draws)]
+        for c in range(n_chains)
+    ]
+    return names, chains
+
+
+def draws_from_arrays(arrays, log_likelihood=None, divergences=None):
+    """``Draws`` from arrays shaped ``(chain, draw, ...)``.
+
+    A variable of shape ``(chain, draw)`` is one name; one of shape
+    ``(chain, draw, n, m, ...)`` becomes the names ``theta[1,1]``,
+    ``theta[1,2]``, ... (1-based, row-major, as ``posterior`` names them).
+
+    Parameters
+    ----------
+    arrays : dict
+        Variable name to an array-like (numpy array, nested lists).
+    log_likelihood : array-like, optional
+        The pointwise log-likelihood shaped ``(chain, draw, ...)``, held as
+        ``log_lik[...]`` for ``Draws.loo``.
+    divergences : array-like, optional
+        Either one count per chain or a ``(chain, draw)`` array of
+        divergent transitions (booleans or 0/1).
+
+    Returns
+    -------
+    Draws
+
+    Examples
+    --------
+    >>> from prospicio.models import draws_from_arrays
+    >>> d = draws_from_arrays({"mu": [[0.1, 0.3, 0.2, 0.0], [0.2, 0.1, 0.4, 0.3]]})
+    >>> d.n_chains, d.draws_per_chain
+    (2, 4)
+    """
+    arrays = dict(arrays)
+    if log_likelihood is not None:
+        if "log_lik" in arrays:
+            raise ValueError("arrays already hold a variable named log_lik")
+        arrays["log_lik"] = log_likelihood
+    names, chains = _arrays_to_chains(arrays)
+    div = None
+    if divergences is not None:
+        d = _as_lists(divergences)
+        div = [int(sum(bool(v) for v in c)) if isinstance(c, (list, tuple)) else int(c) for c in d]
+    return Draws(names, chains, div)
+
+
+def draws_from_inference_data(idata, var_names=None, log_likelihood=None):
+    """``Draws`` from an arviz ``InferenceData``, as PyMC, nutpie and
+    ``arviz.from_netcdf`` or ``arviz.from_zarr`` return it.
+
+    Reads the ``posterior`` group, the ``log_likelihood`` group (held as
+    ``log_lik[...]`` for ``Draws.loo``) and ``sample_stats.diverging``.
+    arviz itself is not imported: any object with those groups, each a
+    mapping of names to arrays shaped ``(chain, draw, ...)``, works.
+
+    Parameters
+    ----------
+    idata : arviz.InferenceData
+    var_names : list of str, optional
+        The posterior variables to keep; all of them by default.
+    log_likelihood : str, optional
+        Which variable of the ``log_likelihood`` group to take when it has
+        several (for a model with several observed variables).
+
+    Returns
+    -------
+    Draws
+    """
+    posterior = getattr(idata, "posterior", None)
+    if posterior is None:
+        raise ValueError("the InferenceData has no posterior group")
+    names = list(var_names) if var_names is not None else list(posterior.data_vars)
+    arrays = {n: posterior[n] for n in names}
+    ll = None
+    group = getattr(idata, "log_likelihood", None)
+    if group is not None:
+        observed = list(group.data_vars)
+        if log_likelihood is not None:
+            ll = group[log_likelihood]
+        elif len(observed) == 1:
+            ll = group[observed[0]]
+        elif observed:
+            raise ValueError(
+                f"the log_likelihood group has {observed}; name one with log_likelihood="
+            )
+    elif log_likelihood is not None:
+        raise ValueError("the InferenceData has no log_likelihood group")
+    stats = getattr(idata, "sample_stats", None)
+    diverging = None
+    if stats is not None and "diverging" in stats.data_vars:
+        diverging = stats["diverging"]
+    return draws_from_arrays(arrays, log_likelihood=ll, divergences=diverging)
 
 
 def _mean_se(values):

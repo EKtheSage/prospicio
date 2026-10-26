@@ -476,17 +476,17 @@ fn mcmc_diagnostics_match_posterior() {
     let rows: Vec<Vec<f64>> = lines
         .map(|l| l.split(',').map(|v| v.parse().unwrap()).collect())
         .collect();
-    let chains_of = |variable: &str| -> Vec<Vec<f64>> {
-        let col = header.iter().position(|h| *h == variable).unwrap();
-        let mut chains = vec![Vec::new(); 4];
-        for r in &rows {
-            chains[r[0] as usize].push(r[col]);
-        }
-        chains
-    };
+    // Through the common draws type (#395), as another sampler's draws
+    // would arrive: one row-major draws × variables block per chain.
+    let names: Vec<String> = header[2..].iter().map(|h| h.to_string()).collect();
+    let mut blocks = vec![Vec::new(); 4];
+    for r in &rows {
+        blocks[r[0] as usize].extend_from_slice(&r[2..]);
+    }
+    let draws = prospicio_bayes::nuts::PosteriorDraws::from_chains(names, blocks, vec![]).unwrap();
     let cases = reference("mcmc_posterior.csv");
     check(&cases, |c| {
-        let chains = chains_of(c.get("variable"));
+        let chains = draws.parameter(draws.index(c.get("variable"))?);
         let refs: Vec<&[f64]> = chains.iter().map(Vec::as_slice).collect();
         match c.get("quantity") {
             "rhat" => prospicio_bayes::rhat(&refs).ok(),
@@ -494,6 +494,64 @@ fn mcmc_diagnostics_match_posterior() {
             "ess_tail" => prospicio_bayes::ess_tail(&refs).ok(),
             "ess_mean" => prospicio_bayes::ess_mean(&refs).ok(),
             "mcse_mean" => prospicio_bayes::mcse_mean(&refs).ok(),
+            _ => None,
+        }
+    });
+}
+
+#[test]
+fn stan_csv_matches_posterior_and_loo() {
+    // Real CmdStan 2.36 output, four chains with their warmup saved
+    // (`validation/scripts/stan_csv_fixture.sh`), against `posterior` and
+    // `loo` reading the same files (`r_stan_csv.R`, #395).
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/stan_eight_schools");
+    let paths: Vec<_> = (1..=4)
+        .map(|c| dir.join(format!("chain-{c}.csv")))
+        .collect();
+    let fit = prospicio_bayes::stan_csv::read(&paths).unwrap();
+    let draws = &fit.draws;
+    assert_eq!(fit.warmup_dropped, 150);
+    assert_eq!(draws.draws_per_chain(), 250);
+    let summary = draws.summary().unwrap();
+    let loo = draws.loo("log_lik").unwrap();
+    let (ll, n) = draws.log_likelihood("log_lik").unwrap();
+    let r_eff = draws.relative_efficiency(&ll, n).unwrap();
+    let cases = reference("stan_csv_posterior.csv");
+    check(&cases, |c| {
+        let v = c.get("variable");
+        if let Some(chain) = v.strip_prefix("chain ") {
+            let k: usize = chain.parse().ok()?;
+            return Some(draws.divergences()[k - 1] as f64);
+        }
+        if v == "log_lik" {
+            let e = &loo.estimate;
+            return match c.get("quantity") {
+                "elpd_loo" => Some(e.elpd),
+                "p_loo" => Some(e.p),
+                "looic" => Some(e.ic),
+                "se_elpd_loo" => Some(e.se),
+                _ => None,
+            };
+        }
+        if let Some(i) = v.strip_prefix("log_lik[").and_then(|r| r.strip_suffix(']')) {
+            let i: usize = i.parse::<usize>().ok()? - 1;
+            match c.get("quantity") {
+                "r_eff" => return Some(r_eff[i]),
+                "elpd_loo" => return Some(loo.estimate.pointwise[i]),
+                "pareto_k" => return Some(loo.pareto_k[i]),
+                _ => {}
+            }
+        }
+        let s = &summary[draws.index(v)?];
+        match c.get("quantity") {
+            "mean" => Some(s.mean),
+            "sd" => Some(s.sd),
+            "q05" => Some(s.q05),
+            "q50" => Some(s.q50),
+            "q95" => Some(s.q95),
+            "rhat" => Some(s.rhat),
+            "ess_bulk" => Some(s.ess_bulk),
+            "ess_tail" => Some(s.ess_tail),
             _ => None,
         }
     });

@@ -5,6 +5,7 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_aggregate::CollectiveModel as CollectiveInner;
+use prospicio_pricing::cashflow::MonthlyPatterns;
 use prospicio_pricing::classical::{self, Kind, Principle};
 use prospicio_pricing::experience::{
     ClaimValuation, Development, DevelopmentPattern, Experience, Fx, IndexClause, IndexKind,
@@ -18,8 +19,8 @@ use prospicio_pricing::natural::{
     Allocation, AtomAtAssets, BottomLayer, Pentagon, Portfolio as NaturalInner, PriceSettings,
     Quantity, Target,
 };
-use prospicio_pricing::payout::{self, PaymentPattern};
-use prospicio_pricing::quote::{Loads, Quote};
+use prospicio_pricing::payout::{self, Interpolation as PaidInterpolation, PaymentPattern};
+use prospicio_pricing::quote::{Loads, PremiumTerms, Quote, TowerQuote};
 use prospicio_pricing::returns::{self, IrrOptions, TieredFee, TimeUnit};
 use prospicio_pricing::risk_load::{self, PremiumRule, Price};
 use prospicio_pricing::tower::{Reference, SelectionRule, TowerModel as TowerInner};
@@ -713,6 +714,32 @@ fn pricing_price(losses: Robj, assets: Robj, rate: Option<f64>, pricing: Robj) -
     Ok(price_list(&p))
 }
 
+/// The upfront premium of a cover whose reinstatement premium counts in
+/// its own price (#587).
+#[extendr]
+fn pricing_price_with_reinstatements(
+    losses: &[f64],
+    g: &[f64],
+    assets: Robj,
+    rate: Option<f64>,
+    pricing: Robj,
+) -> Result<List> {
+    let rule = premium_rule(rate, &pricing)?;
+    let assets = distortion_arg(&assets, "assets")?;
+    let r = risk_load::price_with_reinstatements(losses, g, &rule, &assets).map_err(to_r)?;
+    Ok(list!(
+        upfront = r.upfront,
+        expected_reinstatement_premium = r.expected_reinstatement_premium,
+        expected_premium = r.expected_premium(),
+        expected_loss = r.expected_loss,
+        margin = r.margin(),
+        capital = r.capital(),
+        return_on_capital = r.return_on_capital(),
+        net = price_list(&r.net),
+        iterations = r.iterations as f64
+    ))
+}
+
 /// Portfolio price: `list(total, allocated, standalone)`, the last two
 /// as lists of columns, one value per component.
 #[extendr]
@@ -1107,8 +1134,9 @@ fn distortion_envelope_rust(x: Robj, premium: f64, s: &[f64], assets: f64) -> Re
     Ok(list!(lower = lower, upper = upper))
 }
 
-/// A quote: the technical premium of a risk-loaded price (`premium` NaN),
-/// or the same cover at a quoted `premium`. `limit` NaN for none.
+/// A quote: the technical deposit of a risk-loaded price (`premium` NaN),
+/// or the same cover at a quoted deposit with `commission` read back.
+/// `limit` NaN for none.
 #[extendr]
 #[allow(clippy::too_many_arguments)]
 fn pricing_quote(
@@ -1119,35 +1147,122 @@ fn pricing_quote(
     brokerage: f64,
     fixed: f64,
     limit: f64,
+    premium_tax: f64,
+    income_tax: f64,
+    reinstatement_rate: f64,
+    ceding_commission: f64,
+    brokerage_on_reinstatements: bool,
     premium: f64,
+    commission: f64,
 ) -> Result<List> {
     let price = Price {
         expected_loss,
         premium: risk_premium,
         assets,
     };
-    let loads = Loads::new(expenses, brokerage, fixed).map_err(to_r)?;
-    let limit = (!limit.is_nan()).then_some(limit);
-    let mut q = Quote::technical(&price, loads, limit).map_err(to_r)?;
-    if !premium.is_nan() {
-        q = q.at(premium).map_err(to_r)?;
+    let loads = Loads::new(expenses, brokerage, fixed)
+        .and_then(|l| l.with_premium_tax(premium_tax))
+        .and_then(|l| l.with_income_tax(income_tax))
+        .map_err(to_r)?;
+    let mut terms = PremiumTerms::new(reinstatement_rate, ceding_commission).map_err(to_r)?;
+    if !brokerage_on_reinstatements {
+        terms = terms.without_brokerage_on_reinstatements();
     }
+    let limit = (!limit.is_nan()).then_some(limit);
+    let mut q = Quote::technical_with(&price, loads, terms, limit).map_err(to_r)?;
+    if !premium.is_nan() {
+        q = q.at_with_commission(premium, commission).map_err(to_r)?;
+    }
+    Ok(quote_list(&q))
+}
+
+/// A quote's amounts as an R list, with its terms' rates.
+fn quote_list(q: &Quote) -> List {
     let na = |x: Option<f64>| x.unwrap_or(f64::NAN);
-    Ok(list!(
+    list!(
         expected_loss = q.expected_loss,
         margin = q.margin(),
         risk_premium = q.risk_premium,
         expenses = q.expenses(),
         brokerage = q.brokerage(),
+        premium_tax = q.premium_tax(),
+        commission = q.commission(),
         premium = q.premium,
+        reinstatement_premium = q.reinstatement_premium(),
+        premium_in_all = q.premium_in_all(),
         net_premium = q.net_premium(),
         assets = q.assets,
         capital = q.capital(),
+        income_tax = q.income_tax(),
+        pre_tax_return_on_capital = q.pre_tax_return_on_capital(),
         return_on_capital = q.return_on_capital(),
         loss_ratio = q.loss_ratio(),
         multiple = q.multiple(),
         rate_on_line = na(q.rate_on_line()),
-        payback = na(q.payback())
+        payback = na(q.payback()),
+        reinstatement_rate = q.terms.reinstatement_rate,
+        commission_rate = q.terms.commission
+    )
+}
+
+/// The technical quote of a tower's layers and of its total cession:
+/// `list(layers, total, diversification)`, each quote a list as
+/// `pricing_quote`'s. `ceded` holds the layers' grids, `total_ceded` the
+/// total cession's grid or NULL.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn pricing_tower_quote(
+    tower: Robj,
+    ceded: List,
+    expected_reinstatement_premium: Vec<f64>,
+    total_ceded: Robj,
+    assets: Robj,
+    rate: Option<f64>,
+    pricing: Robj,
+    expenses: f64,
+    brokerage: f64,
+    fixed: f64,
+    premium_tax: f64,
+    income_tax: f64,
+    brokerage_on_reinstatements: bool,
+) -> Result<List> {
+    let tower = <&ReinsuranceTower>::try_from(&tower)
+        .map_err(|_| Error::Other("tower must be a reinsurance_tower".into()))?;
+    let grid = |r: &Robj| {
+        <&Grid>::try_from(r)
+            .map(|g| g.inner.clone())
+            .map_err(|_| Error::Other("ceded grids must be grid_distributions".into()))
+    };
+    let ceded = ceded
+        .values()
+        .map(|r| grid(&r))
+        .collect::<Result<Vec<_>>>()?;
+    let total = if total_ceded.is_null() {
+        None
+    } else {
+        Some(grid(&total_ceded)?)
+    };
+    let rule = premium_rule(rate, &pricing)?;
+    let assets = distortion_arg(&assets, "assets")?;
+    let loads = Loads::new(expenses, brokerage, fixed)
+        .and_then(|l| l.with_premium_tax(premium_tax))
+        .and_then(|l| l.with_income_tax(income_tax))
+        .map_err(to_r)?;
+    let q = TowerQuote::from_parts(
+        &tower.inner.layers,
+        &ceded,
+        &expected_reinstatement_premium,
+        total.as_ref(),
+        &rule,
+        &assets,
+        loads,
+        brokerage_on_reinstatements,
+    )
+    .map_err(to_r)?;
+    Ok(list!(
+        layers = List::from_values(q.layers.iter().map(quote_list)),
+        total = quote_list(&q.total),
+        diversification = q.diversification()
     ))
 }
 
@@ -1326,6 +1441,54 @@ fn pricing_pattern_unpaid(times: &[f64], shares: &[f64], age: f64) -> Result<Lis
         shares = p.shares().to_vec(),
         duration = p.duration()
     ))
+}
+
+fn interpolation_arg(s: &str) -> Result<PaidInterpolation> {
+    match s {
+        "step" => Ok(PaidInterpolation::Step),
+        "linear" => Ok(PaidInterpolation::Linear),
+        "log-linear" => Ok(PaidInterpolation::LogLinear),
+        other => Err(Error::Other(format!(
+            "unknown interpolation {other:?}; use \"step\", \"linear\" or \"log-linear\""
+        ))),
+    }
+}
+
+/// The cumulative share paid at the end of each of `months` months.
+#[extendr]
+fn pricing_pattern_monthly(
+    times: &[f64],
+    shares: &[f64],
+    months: f64,
+    interpolation: &str,
+) -> Result<Vec<f64>> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    p.to_monthly(
+        whole(months, "months")? as usize,
+        interpolation_arg(interpolation)?,
+    )
+    .map_err(to_r)
+}
+
+/// The monthly written, earned and paid patterns from a written pattern, a
+/// policy term and a payment pattern: `list(written, earned, paid)`.
+#[extendr]
+fn pricing_patterns_from_annual(
+    written: Vec<f64>,
+    times: &[f64],
+    shares: &[f64],
+    policy_months: f64,
+    interpolation: &str,
+) -> Result<List> {
+    let p = PaymentPattern::new(times.to_vec(), shares.to_vec()).map_err(to_r)?;
+    let m = MonthlyPatterns::from_annual(
+        written,
+        whole(policy_months, "policy_months")? as usize,
+        &p,
+        interpolation_arg(interpolation)?,
+    )
+    .map_err(to_r)?;
+    Ok(list!(written = m.written, earned = m.earned, paid = m.paid))
 }
 
 /// A pattern's discount factor and capital years at `rate`, and the share
@@ -1662,6 +1825,8 @@ extendr_module! {
     fn pricing_payment_pattern;
     fn pricing_pattern_values;
     fn pricing_pattern_unpaid;
+    fn pricing_pattern_monthly;
+    fn pricing_patterns_from_annual;
     fn pricing_price_over_payout;
     fn pricing_npv;
     fn pricing_irr;
@@ -1671,6 +1836,7 @@ extendr_module! {
     fn pricing_pattern_at;
     fn pricing_count_development;
     fn pricing_quote;
+    fn pricing_tower_quote;
     fn pricing_bounds_rust;
     fn distortion_envelope_rust;
     impl NaturalPortfolio;
@@ -1684,6 +1850,7 @@ extendr_module! {
     impl RiskProfile;
     fn pricing_severity_exposure_curve;
     fn pricing_price;
+    fn pricing_price_with_reinstatements;
     fn pricing_price_portfolio;
     fn pricing_ilf;
     fn pricing_layer_cv;

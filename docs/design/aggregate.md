@@ -1162,9 +1162,28 @@ pricing model (`knowledge/findings/deal-ratios-and-scale-keys.md`).
    `(loss_before_terms, <deal>)`. `deal_ratios` takes a deal's name and
    sums the sections' amounts with the deal's over their premium; a
    section's own ratios leave the deal out, since no allocation of the
-   deal's amounts to sections was decided. The grid methods and the P&L
-   ledger refuse a tower with a deal: they see one layer's ceded loss at
-   a time. JSON format version 4 carries `"deals"` beside the stages.
+   deal's amounts to sections was decided. JSON format version 4 carries
+   `"deals"` beside the stages. On the grid (`[deal-grid]`, item 10 of
+   the user's list of 2026-10-23) the key is the sum of the sections'
+   keys over their fixed premiums, so a grid is a function of the right
+   total. `Tower::on_annual_grid` reads each section's key at each annual
+   total, exactly as `apply_annual` does (a section's loss before annual
+   terms included), and gives `expected_deal_ceding_commission` and
+   `expected_deal_brokerage`, one per deal in the order added.
+   `Tower::on_grid` gives them when no section has annual terms: the
+   sections' cession is then a function of each loss, so their sum is one
+   more compound, each section seeing the loss net of the stages before
+   its own. A section with annual terms makes the sum of dependent annual
+   totals, which no single compound gives, so `on_grid` refuses that deal
+   and names the section. The cedant's P&L ledger (`Book::ledger`, and the
+   aggregate covers of `occurrence_ledger`) books each deal's commission
+   at each atom: on the walk and the peels as `<deal> commission` in the
+   group of the cover that buys the deal's last section (the deal is whole
+   only there), on the consolidated face inside its commission leg. The
+   deal's brokerage stays out of the cedant's ledger, as a layer's does.
+   The stitched peel (`occurrence_peel`) is guaranteed cost, so it refuses
+   a deal with a commission. A grid is one year: a deal's carry over a
+   term does not arise there.
 6. **Ratios.** `Tower::deal_ratios(result, layer)` reads a tower's result,
    annual or over a term (with a `year` dimension). Every amount is over
    the year's premium for the placed share (fixed or swing rated;
@@ -1585,12 +1604,12 @@ copula, the t copula, a trigger outside `[0, 1]`).
    (`distributions.md`), the stand-alone price on a grid portfolio, the
    comonotonic allocation, and a reinstatement premium check against
    `aggregate`.)
-   Parked as large, and the candidates for what comes next: (done:
-   bivariate FFT aggregates, `clash`, and copula coupling of the two lines;
-   see "Two lines and clash"; renewal counts, see "Renewal counts");
-   eventual ruin for renewal claims, see "Eventual ruin for renewal
-   claims"); then the P&L ledger (`pnl` and `xpnl`), planned in
-   `pnl.md`.
+   The items parked as large are done too: bivariate FFT aggregates,
+   `clash` and copula coupling of the two lines (see "Two lines and
+   clash"), renewal counts (see "Renewal counts"), eventual ruin for
+   renewal claims (see "Eventual ruin for renewal claims") and the P&L
+   ledger (`pnl` and `xpnl`; `pnl.md`, PRs 1 to 6b and follow-ups 7a to
+   7c).
 2. (Done: deficit and credit carry-forward in profit commissions and
    sliding scales, over multi-year terms; see "Contract terms over
    several years".)

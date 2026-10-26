@@ -86,6 +86,11 @@ pub enum Error {
         method: &'static str,
         reason: &'static str,
     },
+    /// The method needs link ratios and the triangle has none: every origin
+    /// is observed at one age only, a latest diagonal. `method` names it.
+    LatestDiagonalOnly { method: &'static str },
+    /// A latest diagonal cannot be built or fitted as given.
+    Diagonal(String),
     /// The bootstrap cannot run on this input or with these settings.
     Bootstrap(&'static str),
     /// A bootstrap's own link ratio exclusions (`n_periods`, `drop_high`
@@ -199,6 +204,13 @@ impl fmt::Display for Error {
                 method,
                 reason,
             } => write!(f, "{setting} is not supported by {method}: {reason}"),
+            Self::LatestDiagonalOnly { method } => write!(
+                f,
+                "{method} needs link ratios, and the triangle has none: every origin is observed \
+                 at one age only (a latest diagonal); the chain ladder and the expected-loss \
+                 methods project it with a fully selected pattern"
+            ),
+            Self::Diagonal(why) => write!(f, "latest diagonal: {why}"),
             Self::Bootstrap(why) => write!(f, "bootstrap: {why}"),
             Self::ExclusionsMismatch { bootstrap, method } => write!(
                 f,

@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from datetime import date
+from os import PathLike
 from typing import Any, final
 
 @final
@@ -340,6 +341,18 @@ class AnnualGrids:
     def expected_ceding_commission(self, /) -> list[float]:
         """
         Expected ceding commission (flat or sliding) of each layer.
+        """
+    @property
+    def expected_deal_brokerage(self, /) -> dict[str, float]:
+        """
+        Expected brokerage of each deal, by its name; 0 without one.
+        """
+    @property
+    def expected_deal_ceding_commission(self, /) -> dict[str, float]:
+        """
+        Expected ceding commission of each deal (``Tower.deal_scale``), by
+        its name, read on its sections' loss ratio together; 0 for a deal
+        without one.
         """
     @property
     def expected_premium(self, /) -> list[float]:
@@ -3012,7 +3025,7 @@ class Benktander:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -3028,7 +3041,7 @@ class Benktander:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 288.89]
     """
-    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> Benktander: ...
+    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> Benktander: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -3073,6 +3086,25 @@ class Benktander:
         ValueError
             As ``ExpectedLoss.fit``.
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> ExpectedLossFit:
+        """
+        ``Benktander`` on a latest diagonal with its exposure, in every
+        segment, as ``ChainLadder.fit_diagonal`` projects one.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+            With an exposure per origin.
+        development : ChainLadderFit, optional
+            As ``ChainLadder.fit_diagonal``; this method keeps its own
+            ``apriori`` and ``n_iters``.
+        segment_map : dict, optional
+            As ``ChainLadder.fit_diagonal``.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -3083,6 +3115,12 @@ class Benktander:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -3712,7 +3750,7 @@ class BornhuetterFerguson:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -3728,7 +3766,7 @@ class BornhuetterFerguson:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 266.67]
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> BornhuetterFerguson: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> BornhuetterFerguson: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -3773,6 +3811,25 @@ class BornhuetterFerguson:
         ValueError
             As ``ExpectedLoss.fit``.
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> ExpectedLossFit:
+        """
+        ``BornhuetterFerguson`` on a latest diagonal with its exposure, in every
+        segment, as ``ChainLadder.fit_diagonal`` projects one.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+            With an exposure per origin.
+        development : ChainLadderFit, optional
+            As ``ChainLadder.fit_diagonal``; this method keeps its own
+            ``apriori``.
+        segment_map : dict, optional
+            As ``ChainLadder.fit_diagonal``.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -3783,6 +3840,12 @@ class BornhuetterFerguson:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -4320,7 +4383,7 @@ class CapeCod:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -4336,7 +4399,7 @@ class CapeCod:
     >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
     ([0.6774, 0.6774], [150.0, 290.32])
     """
-    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> CapeCod: ...
+    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> CapeCod: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -4382,6 +4445,27 @@ class CapeCod:
             As ``ChainLadder.fit``, if ``trend`` or ``decay`` is out of
             range, or if an origin has no observed, finite, positive exposure.
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> CapeCodFit:
+        """
+        ``CapeCod`` on a latest diagonal with its exposure, in every
+        segment, as ``ChainLadder.fit_diagonal`` projects one: its apriori
+        is estimated on the diagonal and trended to one valuation, the
+        latest month any origin of any segment is valued at.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+            With an exposure per origin.
+        development : ChainLadderFit, optional
+            As ``ChainLadder.fit_diagonal``; this method keeps its own
+            ``trend`` and ``decay``.
+        segment_map : dict, optional
+            As ``ChainLadder.fit_diagonal``.
+        
+        Returns
+        -------
+        CapeCodFit
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -4392,6 +4476,12 @@ class CapeCod:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -4596,6 +4686,12 @@ class CashflowTerms:
         What the trust pays at commutation; by default ``requirement``.
     collected_rate : float, default 1
         The share of written premium paid into the trust.
+    deduct_commission : bool, default False
+        Take each simulation's commission rate (``run``'s ``commission``)
+        off ``collected_rate``. Without it the commission does not reduce
+        the premium paid in and is read only by adjustments with
+        ``less_commission`` and by the fee: a flat commission ``c`` is then
+        ``collected_rate = 1 - c``, and a sliding scale needs this option.
     lag : int, default 0
         The months between writing and collection.
     adjustments : list of PremiumAdjustment, optional
@@ -4644,7 +4740,7 @@ class CashflowTerms:
     >>> [round(x, 9) for x in out.funded]
     [40.0, 100.0]
     """
-    def __new__(cls, /, premium: float, commutation_month: int, written: Sequence[float], earned: Sequence[float], paid: Sequence[float], requirement: CollateralRequirement, *, commutation_requirement: CollateralRequirement |None = None, collected_rate: float = 1.0, lag: int = 0, adjustments: Sequence[PremiumAdjustment] |None = None, funding_dates: Any |None = None, funding_rule: str = "shortfall", premium_offset: float = 1.0, reference: str = "previous-date", funding_source: str = "investor", collateral_release: Any |None = None, annual_yield: float = 0.0, interest_basis: str = "average", opening_fixed: float = 0.0, opening_share: float = 0.0, expense_rate: float = 0.0, buffer_months: int = 0, buffer_paid: bool = False, buffer_expenses: bool = False, equity_release: Any |None = None, fee: tuple[Sequence[float], Sequence[float]] |None = None, fee_basis: str = "profit") -> CashflowTerms: ...
+    def __new__(cls, /, premium: float, commutation_month: int, written: Sequence[float], earned: Sequence[float], paid: Sequence[float], requirement: CollateralRequirement, *, commutation_requirement: CollateralRequirement |None = None, collected_rate: float = 1.0, deduct_commission: bool = False, lag: int = 0, adjustments: Sequence[PremiumAdjustment] |None = None, funding_dates: Any |None = None, funding_rule: str = "shortfall", premium_offset: float = 1.0, reference: str = "previous-date", funding_source: str = "investor", collateral_release: Any |None = None, annual_yield: float = 0.0, interest_basis: str = "average", opening_fixed: float = 0.0, opening_share: float = 0.0, expense_rate: float = 0.0, buffer_months: int = 0, buffer_paid: bool = False, buffer_expenses: bool = False, equity_release: Any |None = None, fee: tuple[Sequence[float], Sequence[float]] |None = None, fee_basis: str = "profit") -> CashflowTerms: ...
     def __repr__(self, /) -> str: ...
     @property
     def commutation_month(self, /) -> int:
@@ -4760,6 +4856,15 @@ class Cashflows:
     def opening(self, /) -> list[float]:
         """
         The opening capital each investor paid in.
+        """
+    @property
+    def paid_first(self, /) -> list[bool]:
+        """
+        Whether each simulation's first nonzero investor flow is positive:
+        the investor is paid before putting money in, so its flows can have
+        several internal rates of return (``irr``'s ``sign_changes``) and the
+        one found is usually meaningless. A requirement on the reserve alone
+        does this; a collateralised fund usually wants ``"outstanding"``.
         """
     @property
     def released(self, /) -> list[float]:
@@ -5013,16 +5118,28 @@ class ChainLadder:
         replaces (or, with ``ldf_weight``, blends with) the factors
         estimated from the triangle at the ages it gives; the other ages
         stay estimated, so a benchmark for the immature ages only is a
-        partial pattern. Each age must be a development age of the
-        triangle. As ``ldf_kind`` says, the values are age-to-age factors
-        (any ages but the oldest: development past it is the tail's), or
-        factors to ultimate or percents developed at two or more ages, which
-        select the factors between the first and the last (``cdf[a] /
-        cdf[next age]``). A development age they skip is interpolated:
-        between two given ages ``b < c``, ``log(cdf)`` is linear in the
-        age, so the factor from ``a`` to the next age ``a'`` is ``(cdf[b] /
-        cdf[c]) ** ((a' - a) / (c - b))`` (percents developed are converted
-        to factors to ultimate first). Their level at their last age selects
+        partial pattern. As ``ldf_kind`` says, the values are age-to-age
+        factors, or factors to ultimate or percents developed at two or more
+        ages, which select the factors between the first and the last
+        (``cdf[a] / cdf[next age]``). When every age given is a development
+        age of the triangle, an age-to-age factor links its age to the
+        triangle's next age (any age but the oldest: development past it is
+        the tail's), and a development age the cumulative values skip is
+        interpolated: between two given ages ``b < c``, ``log(cdf)`` is
+        linear in the age, so the factor from ``a`` to the next age ``a'``
+        is ``(cdf[b] / cdf[c]) ** ((a' - a) / (c - b))`` (percents
+        developed are converted to factors to ultimate first). Otherwise the
+        pattern is read on its own ages: an age-to-age factor runs to the
+        next age given (the last one by the spacing before it), a link of
+        the triangle within the pattern's span is selected with ``log(cdf)``
+        linear between the pattern's ages, and what the pattern gives past
+        the triangle's oldest age folds into a constant tail there, at full
+        weight. So a monthly pattern applies to an annual triangle. Adding
+        one off-grid age to a sparse age-to-age pattern changes how its
+        other factors are read: each then runs to the pattern's next age,
+        not the triangle's. On RAA, ``{12: 1.5, 18: 1.1, 36: 1.2}`` selects
+        1.5484 from 12 to 24, where ``{12: 1.5, 36: 1.2}`` selects 1.5, and
+        nothing warns of the change. Their level at their last age selects
         nothing. With no ``tail`` and a last age that is the oldest, the
         level is the tail: a constant tail factor equal to the factor to
         ultimate there (1 over the percent developed), with no parameter
@@ -5042,6 +5159,22 @@ class ChainLadder:
         starts the factor's link) to weight to those listed, the others
         fully selected. Not given, every selected factor is used as is
         (``w = 1``).
+    ldf_origin : {"M", "Q", "S", "Y"}, optional
+        The origin grain ``ldf`` was measured on, when it is not the
+        triangle's: an accident-month pattern is ``"M"``. At fit time the
+        pattern is averaged over the sub-periods of each origin period, with
+        the exposure even through the period, into percents developed at
+        every month (Rust's ``SelectedPattern::averaged_over_origins``). The
+        ultimates are exact for origins up to the pattern's last age; past
+        it the development of the period's later sub-periods is deferred to
+        the period's last age, which overstates the ultimate slightly. An
+        estimated tail is then fitted on monthly factors, so a constant tail
+        taken from the monthly pattern's own tail is the safer choice. The
+        triangle's origin grain must be a whole multiple of it; a weight by
+        age (``ldf_weight`` a dict, applied before the averaging; the
+        averaged pattern cannot be weighted by age here) and a single
+        age-to-age factor are errors; the triangle's own grain leaves the
+        pattern as given. Requires ``ldf``.
     
     A selected factor carries no parameter error, and a blended one
     ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the
@@ -5079,7 +5212,7 @@ class ChainLadder:
     >>> round(fit.pattern_tail, 4), round(fit.ultimate[2], 2)
     (1.0526, 240.0)
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> ChainLadder: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> ChainLadder: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -5119,6 +5252,63 @@ class ChainLadder:
             fewer than two factors above 1 to fit); with keys, the message
             names the segment.
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> ChainLadderFit:
+        """
+        Projects a latest diagonal, in every segment, with the fully
+        selected pattern ``ldf`` (``ldf_weight`` 1, no ``n_periods`` or
+        drops) or with the development of a fit (``development``):
+        ``docs/design/reserving-v02.md``, decisions 15 to 19. Each origin's
+        latest value is multiplied by the pattern's factor to ultimate at
+        its own age, read ``log(cdf)``-linearly between the pattern's ages,
+        and the tail. The fit's development axis is the grid the diagonal is
+        placed on, which spans the pattern's ages as well as the
+        diagonal's; its origins run oldest first over every period from the
+        earliest to the latest. An origin older than the pattern's end is
+        developed as the diagonal's ``past_pattern_end`` says.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+        development : ChainLadderFit, optional
+            A fit whose factors and tail develop the diagonal, each segment by
+            the source segment of the same label (a single-segment source
+            develops every segment): chainladder-python's
+            ``fit(source).predict(target)``. For another method's fit, pass
+            its ``.chain_ladder``. The method itself then takes no ``ldf``,
+            no ``tail`` other than 1 and no ``n_periods``, ``drop_high`` or
+            ``drop_low``. The source's factors are read at each origin's own
+            age, as fitted, with no ``ldf_origin``: a source fitted on
+            another origin grain (accident quarters for a diagonal of
+            accident years, say) goes through ``to_chain_ladder()`` instead,
+            with ``ldf_origin`` added to the arguments it gives, one segment
+            at a time.
+        segment_map : dict, optional
+            With ``development``, the source segment of each segment of the
+            diagonal, as ``{target: source}`` with labels written as
+            ``index`` writes them (``"Total"``, a str, or a tuple); every
+            segment of the diagonal listed once.
+        
+        Returns
+        -------
+        ChainLadderFit
+        
+        Raises
+        ------
+        ValueError
+            If there is no pattern, it is not fully selected, an origin is
+            younger than its first age, or older than its end with
+            ``past_pattern_end="reject"``; if the map leaves a segment
+            without a source; with keys, the message names the segment.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import ChainLadder, LatestDiagonal, Triangle
+        >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+        >>> own = ChainLadder().fit(tri, "paid")
+        >>> d = LatestDiagonal.from_triangle(tri, "paid")
+        >>> ChainLadder().fit_diagonal(d, development=own).ultimate
+        [150.0, 300.0]
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -5129,6 +5319,12 @@ class ChainLadder:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -5364,6 +5560,30 @@ class ChainLadderFit:
     def tail_std_err(self, /) -> float:
         """
         Standard error of the tail factor, extrapolated log-linearly.
+        """
+    def to_chain_ladder(self, /) -> ChainLadder:
+        """
+        The fit frozen as a ``ChainLadder``: its factors in use (``ldf``) as
+        fully selected age-to-age factors at its ages, and its tail factor
+        as a constant tail (``docs/design/reserving-v02.md``, decision 17).
+        Applied to the fit's own latest diagonal it projects as the fit did,
+        the factors to the bit; to another book's
+        (``LatestDiagonal.from_triangle``) it is chainladder-python's
+        ``fit(source).predict(book)``. Its ``ldf``, ``ldf_kind`` and ``tail``
+        unpack into any method's arguments, as
+        ``BornhuetterFerguson(apriori=0.6, ldf=cl.ldf, ldf_kind=cl.ldf_kind,
+        tail=cl.tail)``. It does not carry sigma, the standard errors or the
+        tail's form. Needs a single-segment fit: for several segments pass
+        the fit as ``development`` to ``fit_diagonal``, or use
+        ``segment(...)``.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import ChainLadder, LatestDiagonal, Triangle
+        >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+        >>> cl = ChainLadder(tail=1.1).fit(tri, "paid").to_chain_ladder()
+        >>> cl.ldf, cl.ldf_kind, cl.tail
+        ({12: 1.5}, 'ldf', 1.1)
         """
     def to_frame(self, /) -> Any:
         """
@@ -5992,6 +6212,14 @@ class CollateralRequirement:
     ``"reserve"`` (``u E - C``), ``"outstanding"`` (``u P - C``),
     ``"written"`` (``W``), ``"earned"`` (``E``) and ``"fixed"`` (1, so the
     load is an amount).
+    
+    The reserve on earned premium is small early in the term: a requirement
+    on it alone releases the premium collected ahead of earning to the
+    investor at once, who then pays the claims later, so the flows start
+    positive (``Cashflows.paid_first``), can have several internal rates of
+    return (``irr``'s ``sign_changes``) and the one found is usually
+    meaningless. A collateralised fund usually wants ``"outstanding"``,
+    with ``"unearned-premium"`` beside it.
     
     Parameters
     ----------
@@ -8570,11 +8798,16 @@ class DealRun:
     def __new__(cls, /, name: str, premium: Sequence[float], loss: Sequence[float], *, deductions: dict |None = None, inception: int = 0) -> DealRun: ...
     def __repr__(self, /) -> str: ...
     @staticmethod
-    def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0) -> DealRun:
+    def from_tower(name: str, tower: Tower, result: PredictiveDistribution, layer: str, *, inception: int = 0, reinstatement_premium: bool = True) -> DealRun:
         """
         A layer's or deal's run from a result of ``tower``: its premium,
         ceded loss, commissions, brokerage and deductions, the amounts
         behind ``Tower.deal_ratios``, under the name ``name``.
+        
+        Each year's premium is the deposit (or swing-rated) premium plus the
+        year's reinstatement premium from the tower, pro rata as to amount
+        and, where the layer says so, as to time; ``reinstatement_premium=False``
+        leaves it out, so the premium is the deposit in every year.
         
         >>> from prospicio.pricing import DealRun
         >>> from prospicio.reinsurance import Layer, Tower
@@ -8584,11 +8817,24 @@ class DealRun:
         >>> run = DealRun.from_tower("cover", tower, tower.apply_annual([40.0, 150.0]), "cover")
         >>> run.n_sims
         2
+        >>> from prospicio.aggregate import EventSet
+        >>> cat = Layer("cat", 10.0, 10.0, premium=2.0, reinstatement_rates=[1.0])
+        >>> tower = Tower([cat])
+        >>> result = tower.apply(EventSet.from_years([[5.0], [15.0]]))
+        >>> DealRun.from_tower("cat", tower, result, "cat").premium
+        [2.0, 3.0]
+        >>> DealRun.from_tower("cat", tower, result, "cat", reinstatement_premium=False).premium
+        [2.0, 2.0]
         """
     @property
     def inception(self, /) -> int:
         """
         The inception month.
+        """
+    @property
+    def loss(self, /) -> list[float]:
+        """
+        The loss in each simulation.
         """
     @property
     def n_sims(self, /) -> int:
@@ -8599,6 +8845,11 @@ class DealRun:
     def name(self, /) -> str:
         """
         The deal's name.
+        """
+    @property
+    def premium(self, /) -> list[float]:
+        """
+        The premium in each simulation.
         """
     def with_cashflows(self, /, terms: CashflowTerms, cashflows: Cashflows) -> DealRun:
         """
@@ -9490,6 +9741,144 @@ class DoubleGlmFit:
         """
     @property
     def standard_errors(self, /) -> list[float]: ...
+
+@final
+class Draws:
+    """
+    Posterior draws from any sampler (Stan, PyMC, nutpie or another), so
+    that the summary, R-hat, ESS and PSIS-LOO run on them as on our own
+    fits.
+    
+    Build one with ``read_stan_csv`` (CmdStan output),
+    ``draws_from_arrays`` (a dict of arrays shaped ``(chain, draw, ...)``)
+    or ``draws_from_inference_data`` (an arviz ``InferenceData``, as PyMC
+    and nutpie return), or directly from named variables and chains.
+    
+    Parameters
+    ----------
+    names : list of str
+        Distinct variable names; a container's elements are separate names
+        such as ``theta[1]``.
+    chains : list of list of list of float
+        One list per chain, each a list of draws, each draw one value per
+        name. Every chain has the same number of draws.
+    divergences : list of int, optional
+        Divergent transitions in each chain, if the sampler reports them.
+    
+    Examples
+    --------
+    >>> from prospicio.models import Draws
+    >>> d = Draws(["mu"], [[[float((i * 37) % 101)] for i in range(400)],
+    ...                    [[float((i * 53 + 7) % 101)] for i in range(400)]])
+    >>> d.diagnostics("mu")["rhat"] < 1.01
+    True
+    """
+    def __new__(cls, /, names: Sequence[str], chains: Sequence[Sequence[Sequence[float]]], divergences: Sequence[int] |None = None) -> Draws: ...
+    def __repr__(self, /) -> str: ...
+    def chains(self, /, name: str) -> list[list[float]]:
+        """
+        One variable's draws, one list per chain.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    def diagnostics(self, /, name: str) -> dict[str, float]:
+        """
+        One variable's diagnostics, as ``mcmc_diagnostics`` gives them.
+        
+        Returns
+        -------
+        dict
+            ``rhat``, ``ess_bulk``, ``ess_tail``, ``ess_mean``, ``mcse_mean``.
+        """
+    @property
+    def divergences(self, /) -> list[int]:
+        """
+        Divergent transitions in each chain (zeros when none were given).
+        """
+    @property
+    def draws_per_chain(self, /) -> int:
+        """
+        Draws in each chain.
+        """
+    def log_likelihood(self, /, prefix: str = "log_lik") -> list[list[float]]:
+        """
+        The pointwise log-likelihood held as the variables ``prefix`` or
+        ``prefix[...]``, one row per draw (chain by chain), for
+        ``elpd_loo`` or ``elpd_waic``.
+        
+        Returns
+        -------
+        list of list of float
+        """
+    def loo(self, /, prefix: str = "log_lik") -> Elpd:
+        """
+        PSIS-LOO from the pointwise log-likelihood ``prefix[...]``, with
+        ``r_eff`` from the chains, as R's
+        ``loo(log_lik, r_eff = relative_eff(exp(log_lik), chain_id))``.
+        
+        Returns
+        -------
+        Elpd
+        """
+    @property
+    def n_chains(self, /) -> int:
+        """
+        Number of chains.
+        """
+    @property
+    def names(self, /) -> list[str]:
+        """
+        Variable names.
+        """
+    @staticmethod
+    def read_stan_csv(paths: Sequence[str |PathLike[str]]) -> Draws:
+        """
+        Reads CmdStan CSV output, one file per chain: comments skipped,
+        saved warmup draws dropped, ``theta.1.2`` named ``theta[1,2]``,
+        ``lp__`` kept as a variable, the sampler's other ``__`` columns in
+        ``sampler`` and the ``divergent__`` draws counted per chain.
+        
+        Parameters
+        ----------
+        paths : list of str or path
+        
+        Returns
+        -------
+        Draws
+        """
+    def relative_efficiency(self, /, prefix: str = "log_lik") -> list[float]:
+        """
+        Each observation's relative efficiency from the chains, as R's
+        ``loo::relative_eff(exp(log_lik), chain_id)``.
+        
+        Returns
+        -------
+        list of float
+        """
+    @property
+    def sampler(self, /) -> Draws |None:
+        """
+        The sampler's columns from ``read_stan_csv`` (``accept_stat__``,
+        ``treedepth__``, ``divergent__``, ``energy__`` and the others) as
+        draws in the same chains; ``None`` otherwise.
+        """
+    def summary(self, /) -> list[dict]:
+        """
+        Posterior summary: one dict per variable with ``name``, ``mean``,
+        ``sd``, ``q05``, ``q50``, ``q95``, ``rhat``, ``ess_bulk`` and
+        ``ess_tail``, as R's ``posterior::summarise_draws``.
+        
+        Returns
+        -------
+        list of dict
+        """
+    @property
+    def warmup_dropped(self, /) -> int:
+        """
+        Warmup draws dropped from each chain by ``read_stan_csv``.
+        """
 
 @final
 class ElasticNet:
@@ -10791,7 +11180,7 @@ class ExpectedLoss:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -10807,7 +11196,7 @@ class ExpectedLoss:
     >>> fit.ultimate, fit.reserve
     ([125.0, 200.0], [-25.0, 0.0])
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> ExpectedLoss: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> ExpectedLoss: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -10854,6 +11243,25 @@ class ExpectedLoss:
             origin has no observed, finite, positive exposure (the message
             names it and, with keys, its segment).
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> ExpectedLossFit:
+        """
+        ``ExpectedLoss`` on a latest diagonal with its exposure, in every
+        segment, as ``ChainLadder.fit_diagonal`` projects one.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+            With an exposure per origin.
+        development : ChainLadderFit, optional
+            As ``ChainLadder.fit_diagonal``; this method keeps its own
+            ``apriori``.
+        segment_map : dict, optional
+            As ``ChainLadder.fit_diagonal``.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -10864,6 +11272,12 @@ class ExpectedLoss:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -14020,6 +14434,242 @@ class LargeLossExperience:
         """
 
 @final
+class LatestDiagonal:
+    """
+    A latest diagonal on its own, one value per origin at its own age, as a
+    bordereau holds it, in one or several segments; projected with a
+    selected pattern from elsewhere by the ``fit_diagonal`` of
+    ``ChainLadder``, ``ExpectedLoss``, ``BornhuetterFerguson``,
+    ``Benktander`` and ``CapeCod`` (``docs/design/reserving-v02.md``,
+    decisions 15 to 19).
+    
+    Each origin is given once per segment, at a positive age, with its
+    latest cumulative value (0 for an origin with nothing reported yet).
+    The ages may be off the pattern's grid (18 months against an annual
+    pattern): the fit reads them on the pattern's own ages, ``log(cdf)``
+    linear between them. An origin older than the pattern's end is an error
+    unless ``past_pattern_end`` says how to develop it.
+    
+    Segments are named by key columns, as a ``Triangle``'s are, and sorted
+    by label; within a segment the origins keep the order given. Rows run
+    segment by segment in that order, as ``to_frame()`` lists them.
+    
+    Parameters
+    ----------
+    origin : array-like
+        Any date in each row's origin period, or integer years.
+    age : array-like
+        Each row's age in months: from the start of the origin period to
+        the end of the valuation month (an accident year 2024 at December
+        2024 is 12 months).
+    latest : array-like
+        Each row's latest cumulative value.
+    exposure : array-like, optional
+        Each row's exposure (premium), for the expected-loss methods.
+    keys : dict of str to array-like, optional
+        Key columns by name, as ``Triangle.from_long`` takes them.
+    origin_grain : {"Y", "S", "Q", "M"}, default "Y"
+    past_pattern_end : {"reject", "no_development", "tail"}, default "reject"
+        How an origin older than the pattern's end (its last age; for
+        age-to-age factors, the end of their span) is developed:
+        ``"reject"`` is an error that names it; ``"no_development"`` a
+        factor of 1 there, with no ``tail`` (a cumulative pattern's level
+        at its end is then rescaled to 100% for every origin, so with a
+        level other than 100% the young origins move too); ``"tail"`` the
+        method's ``tail`` continued from the pattern's end at one step per
+        origin period, a constant (``attachment_age`` unset) or one
+        estimated on the pattern's own factors.
+    
+    Examples
+    --------
+    >>> import datetime
+    >>> from prospicio.reserving import BornhuetterFerguson, ChainLadder, LatestDiagonal
+    >>> d = LatestDiagonal.at_valuation(
+    ...     [2022, 2023, 2024], datetime.date(2024, 12, 31), [900.0, 600.0, 150.0],
+    ...     exposure=[1000.0, 1000.0, 1000.0],
+    ... )
+    >>> d.ages
+    [36, 24, 12]
+    >>> cl = ChainLadder(ldf={12: 2.0, 24: 1.25, 36: 1.0}, ldf_kind="cdf")
+    >>> cl.fit_diagonal(d).ultimate
+    [900.0, 750.0, 300.0]
+    >>> bf = BornhuetterFerguson(apriori=0.7, ldf={12: 2.0, 24: 1.25, 36: 1.0}, ldf_kind="cdf")
+    >>> round(bf.fit_diagonal(d).ultimate[2], 9)
+    500.0
+    """
+    def __new__(cls, /, origin: Any, age: Any, latest: Any, exposure: Any |None = None, keys: Any |None = None, origin_grain: str = "Y", past_pattern_end: str = "reject") -> LatestDiagonal: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        Age of each row in months.
+        """
+    @staticmethod
+    def at_valuation(origin: Any, valuation: Any, latest: Any, exposure: Any |None = None, keys: Any |None = None, origin_grain: str = "Y", past_pattern_end: str = "reject") -> LatestDiagonal:
+        """
+        A diagonal valued at one month: each origin's age is the months from
+        its start to the end of the valuation month (an accident year 2024
+        at June 2024 is six months).
+        
+        Parameters
+        ----------
+        origin : array-like
+            Any date in each row's origin period, or integer years.
+        valuation : date
+            Any date in the valuation month (``datetime.date``, a pandas
+            ``Timestamp`` or a numpy ``datetime64``); an integer is an error,
+            since a year would read as January.
+        latest, exposure, keys, origin_grain, past_pattern_end
+            As for the constructor.
+        
+        Returns
+        -------
+        LatestDiagonal
+        
+        Raises
+        ------
+        TypeError
+            If ``valuation`` is not a date.
+        ValueError
+            If the valuation is before an origin starts (naming the row), an
+            origin is given twice in a segment, or a column has another
+            length.
+        """
+    @property
+    def exposure(self, /) -> list[float] |None:
+        """
+        Exposure of each row; ``None`` when not given.
+        """
+    @staticmethod
+    def from_frame(data: Any, origin: str, latest: str, age: str |None = None, valuation: Any |None = None, exposure: str |None = None, keys: Any |None = None, origin_grain: str = "Y", past_pattern_end: str = "reject") -> LatestDiagonal:
+        """
+        A diagonal from a data frame, one row per segment and origin.
+        
+        Columns are looked up with ``data[name]``, so a pandas or Polars
+        DataFrame works, as does a dict of columns.
+        
+        Parameters
+        ----------
+        data : DataFrame or dict
+        origin : str
+            Name of the origin column (dates or integer years).
+        latest : str
+            Name of the latest-value column.
+        age : str, optional
+            Name of the age column, in months.
+        valuation : date or str, optional
+            The valuation month of every row (a date), or the name of a
+            column of each row's valuation date. Give exactly one of ``age``
+            and ``valuation``.
+        exposure : str, optional
+            Name of the exposure column.
+        keys : str or list of str, optional
+            Names of the key columns.
+        origin_grain, past_pattern_end
+            As for the constructor.
+        
+        Returns
+        -------
+        LatestDiagonal
+        
+        Examples
+        --------
+        >>> import datetime
+        >>> from prospicio.reserving import LatestDiagonal
+        >>> df = {
+        ...     "lob": ["b", "a", "a"],
+        ...     "year": [2024, 2023, 2024],
+        ...     "paid": [50.0, 400.0, 150.0],
+        ... }
+        >>> d = LatestDiagonal.from_frame(
+        ...     df, "year", "paid", valuation=datetime.date(2024, 12, 31), keys="lob"
+        ... )
+        >>> d.index, d.ages
+        (['a', 'b'], [24, 12, 12])
+        """
+    @staticmethod
+    def from_triangle(triangle: Triangle, column: str, exposure: str |None = None, past_pattern_end: str = "reject") -> LatestDiagonal:
+        """
+        The latest diagonal of a triangle column, in every segment: each
+        origin at the age of its last observed cell, with its cumulative
+        value there, as chainladder-python's ``latest_diagonal``. With
+        ``exposure``, each origin also takes that column's last observed
+        value. This is how a fit is applied to another book:
+        ``source.to_chain_ladder().fit_diagonal(LatestDiagonal.from_triangle(book, "paid"))``
+        is chainladder-python's ``fit(source).predict(book)``.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            With any number of segments.
+        column : str
+        exposure : str, optional
+        past_pattern_end : {"reject", "no_development", "tail"}, default "reject"
+        
+        Returns
+        -------
+        LatestDiagonal
+        
+        Raises
+        ------
+        ValueError
+            If a column is unknown, an origin has no observed cell, or an
+            exposure is not finite and positive; with keys, the message names
+            the segment.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest value of each row.
+        """
+    @property
+    def origin_grain(self, /) -> str:
+        """
+        Origin grain: ``"Y"``, ``"S"``, ``"Q"`` or ``"M"``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each row.
+        """
+    @property
+    def past_pattern_end(self, /) -> str:
+        """
+        The rule for origins older than the pattern's end.
+        """
+    def segment(self, /, **keys) -> LatestDiagonal:
+        """
+        The one segment whose keys have the given values, as
+        ``ChainLadderFit.segment``.
+        """
+    def to_frame(self, /) -> Any:
+        """
+        The rows as a pandas DataFrame: the key columns, then ``origin``,
+        ``age``, ``latest`` and, when given, ``exposure``.
+        """
+    def with_exposure(self, /, exposure: Any) -> LatestDiagonal:
+        """
+        The diagonal with an exposure per row, in the row order of
+        ``to_frame()``: the segments in order and, within one, its origins
+        in the order given.
+        """
+    def with_past_pattern_end(self, /, rule: str) -> LatestDiagonal:
+        """
+        The diagonal with another rule for origins older than the pattern's
+        end: ``"reject"``, ``"no_development"`` or ``"tail"``.
+        """
+
+@final
 class Layer:
     """
     A per-occurrence excess-of-loss layer: ``limit`` xs ``attachment`` on each
@@ -16394,7 +17044,7 @@ class Mack:
     tail_std_err : float, optional
         The tail factor's standard error (R's ``tail.se``); extrapolated if
         not given. Unused when the tail factor is 1.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``. A selected
         factor is taken as known: it has no parameter error, and a blended
         one ``(1 - w)`` times the estimate's standard error, so the
@@ -16420,7 +17070,7 @@ class Mack:
     >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
     True
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> Mack: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> Mack: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -16469,6 +17119,12 @@ class Mack:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -16599,7 +17255,7 @@ class MackBootstrap:
         order, symmetric with a unit diagonal. It is converted to the normal
         scores' correlation ``2 sin(pi rho / 6)``, which must be positive
         definite.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``. Mack's sigmas
         and residuals come from the triangle's own estimate; each simulation
         then uses ``w * selected + (1 - w) * pseudo`` at the selected ages,
@@ -16641,7 +17297,7 @@ class MackBootstrap:
     >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> MackBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> MackBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -16734,6 +17390,12 @@ class MackBootstrap:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -19015,7 +19677,7 @@ class OdpBootstrap:
         order, symmetric with a unit diagonal. It is converted to the normal
         scores' correlation ``2 sin(pi rho / 6)``, which must be positive
         definite.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``. The residuals
         and the scale come from the triangle's own volume-weighted factors;
         each simulation then uses ``w * selected + (1 - w) * pseudo`` at
@@ -19078,7 +19740,7 @@ class OdpBootstrap:
     >>> fit.reserves.mean() > 0
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> OdpBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> OdpBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def dependence(self, /) -> str:
@@ -19135,6 +19797,12 @@ class OdpBootstrap:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -20724,6 +21392,20 @@ class PaymentPattern:
         -------
         float
         """
+    def paid_by(self, /, t: float, interpolation: str = "step") -> float:
+        """
+        The share paid by time ``t`` in years, read between the pattern's
+        times by ``interpolation``: ``"step"`` (each share paid at its
+        time), ``"linear"`` (evenly over the period ending at it) or
+        ``"log-linear"`` (the unpaid share falling geometrically).
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import PaymentPattern
+        >>> p = PaymentPattern([1.0, 2.0], [0.6, 0.4])
+        >>> p.paid_by(0.5), round(p.paid_by(0.5, "linear"), 12)
+        (0.0, 0.3)
+        """
     @property
     def shares(self, /) -> list[float]:
         """
@@ -20745,6 +21427,20 @@ class PaymentPattern:
     def times(self, /) -> list[float]:
         """
         The times.
+        """
+    def to_monthly(self, /, months: int, interpolation: str = "linear") -> list[float]:
+        """
+        The cumulative share paid at the end of each of ``months`` months,
+        ``paid_by((m + 1) / 12)``: at month ``12 k - 1`` the pattern's share
+        at ``k`` years. The monthly paid pattern of ``CashflowTerms``.
+        
+        Examples
+        --------
+        >>> from prospicio.pricing import PaymentPattern
+        >>> p = PaymentPattern.from_development([1.0, 2.0, 3.0], [4.0, 1.25, 1.0])
+        >>> m = p.to_monthly(36)
+        >>> round(m[11], 12), round(m[23], 12), m[35]
+        (0.25, 0.8, 1.0)
         """
     def unpaid_from(self, /, age: float) -> PaymentPattern:
         """
@@ -22849,7 +23545,8 @@ class Price:
     @property
     def return_on_capital(self, /) -> float:
         """
-        Return on capital, margin over capital.
+        Return on capital after income tax, the margin less the tax over
+        capital.
         """
 
 @final
@@ -23069,14 +23766,21 @@ class Quote:
         """
         Assets backing the loss.
         """
-    def at(self, /, premium: float) -> Quote:
+    def at(self, /, premium: float, *, commission: float = 0.0) -> Quote:
         """
-        The same cover at a quoted premium: what the quote leaves after the
-        loads is the risk premium.
+        The same cover at a quoted deposit: what the quote leaves after the
+        loads and commissions is the risk premium.
         
         Parameters
         ----------
         premium : float
+            The deposit; for a swing-rated layer, the expected premium from
+            its tower grid (``expected_premium``).
+        commission : float, default 0.0
+            Expected commissions beyond the flat one, an amount: a sliding
+            scale or profit commission read off the layer's tower grid at
+            this deposit (``expected_ceding_commission``,
+            ``expected_profit_commission``).
         
         Returns
         -------
@@ -23098,6 +23802,11 @@ class Quote:
         Capital, assets less the risk premium.
         """
     @property
+    def commission(self, /) -> float:
+        """
+        Commissions paid back to the cedant, an amount.
+        """
+    @property
     def expected_loss(self, /) -> float:
         """
         Expected loss.
@@ -23108,6 +23817,11 @@ class Quote:
         Internal expenses, an amount.
         """
     @property
+    def income_tax(self, /) -> float:
+        """
+        Income tax on the margin, an amount.
+        """
+    @property
     def limit(self, /) -> float |None:
         """
         The limit, or ``None``.
@@ -23115,7 +23829,7 @@ class Quote:
     @property
     def loss_ratio(self, /) -> float:
         """
-        Expected loss over the premium.
+        Expected loss over all the premium.
         """
     @property
     def margin(self, /) -> float:
@@ -23125,7 +23839,7 @@ class Quote:
     @property
     def multiple(self, /) -> float:
         """
-        Premium over expected loss.
+        All the premium over expected loss.
         """
     @property
     def net_premium(self, /) -> float:
@@ -23135,22 +23849,43 @@ class Quote:
     @property
     def payback(self, /) -> float |None:
         """
-        Limit over premium, or ``None`` without a limit.
+        Limit over the deposit, or ``None`` without a limit.
+        """
+    @property
+    def pre_tax_return_on_capital(self, /) -> float:
+        """
+        Return on capital before income tax, margin over capital.
         """
     @property
     def premium(self, /) -> float:
         """
-        The premium the cedant pays.
+        The deposit premium the cedant pays upfront.
+        """
+    @property
+    def premium_in_all(self, /) -> float:
+        """
+        The deposit plus the expected reinstatement premium.
+        """
+    @property
+    def premium_tax(self, /) -> float:
+        """
+        Premium tax, an amount.
         """
     @property
     def rate_on_line(self, /) -> float |None:
         """
-        Premium over the limit, or ``None`` without a limit.
+        The deposit over the limit, or ``None`` without a limit.
+        """
+    @property
+    def reinstatement_premium(self, /) -> float:
+        """
+        Expected reinstatement premium.
         """
     @property
     def return_on_capital(self, /) -> float:
         """
-        Return on capital, margin over capital.
+        Return on capital after income tax, the margin less the tax over
+        capital.
         """
     @property
     def risk_premium(self, /) -> float:
@@ -23158,7 +23893,7 @@ class Quote:
         The risk premium: what the reinsurer keeps for the loss and capital.
         """
     @staticmethod
-    def technical(price: Price, *, expenses: float = 0.0, brokerage: float = 0.0, fixed: float = 0.0, limit: float |None = None) -> Quote:
+    def technical(price: Price, *, expenses: float = 0.0, brokerage: float = 0.0, fixed: float = 0.0, limit: float |None = None, premium_tax: float = 0.0, income_tax: float = 0.0, reinstatement_rate: float = 0.0, commission: float = 0.0, brokerage_on_reinstatements: bool = True) -> Quote:
         """
         The technical premium of a risk-loaded price.
         
@@ -23176,6 +23911,20 @@ class Quote:
         limit : float, optional
             The cover's limit at the placed share, for the rate on line;
             omit it for a cover without one, such as a quota share.
+        premium_tax : float, default 0.0
+            Premium tax, a fraction of all the premium (deposit and
+            reinstatement premium), grossed up as brokerage is.
+        income_tax : float, default 0.0
+            Income tax on the margin. The price's return on capital is then
+            the return after tax, and the risk premium is raised to give it.
+        reinstatement_rate : float, default 0.0
+            Expected reinstatement premium per unit of deposit: a tower
+            grid's ``expected_reinstatement_premium`` for the layer over its
+            deposit premium (reinstatement premium is proportional to it).
+        commission : float, default 0.0
+            A flat ceding commission, a fraction of the deposit.
+        brokerage_on_reinstatements : bool, default True
+            Whether brokerage is charged on reinstatement premium too.
         
         Returns
         -------
@@ -23184,8 +23933,20 @@ class Quote:
         Raises
         ------
         ValueError
-            If a load is negative, ``expenses + brokerage`` reaches 1, or the
-            limit is not positive.
+            If a load or rate is negative or not below 1, the loads and
+            commission leave no premium, or the limit is not positive.
+        
+        Examples
+        --------
+        >>> from prospicio.distributions import Sampled
+        >>> from prospicio.pricing import Quote, price
+        >>> from prospicio.risk import Distortion
+        >>> p = price(Sampled([0.0, 0.0, 2.0, 6.0]), Distortion.tvar(0.5), cost_of_capital=0.1)
+        >>> q = Quote.technical(p, brokerage=0.10, income_tax=0.21, reinstatement_rate=0.5)
+        >>> round(q.return_on_capital, 6), q.pre_tax_return_on_capital > 0.1
+        (0.1, True)
+        >>> round(q.premium_in_all / q.premium, 6)
+        1.5
         """
     def to_dict(self, /) -> dict:
         """
@@ -23309,6 +24070,59 @@ class RateLevel:
     def written_changes(self, /) -> list[int]:
         """
         The number of written-policy changes in effect for each cell.
+        """
+
+@final
+class ReinstatementPrice:
+    """
+    The upfront premium of a cover whose reinstatement premium counts in
+    its own price, from ``price_with_reinstatements``.
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def capital(self, /) -> float:
+        """
+        The capital: the net outcome's assets less ``P``.
+        """
+    @property
+    def expected_loss(self, /) -> float:
+        """
+        The expected ceded loss ``E[X]``.
+        """
+    @property
+    def expected_premium(self, /) -> float:
+        """
+        The expected premium in all, ``P (1 + E[g])``.
+        """
+    @property
+    def expected_reinstatement_premium(self, /) -> float:
+        """
+        The expected reinstatement premium ``P E[g]``.
+        """
+    @property
+    def iterations(self, /) -> int:
+        """
+        The bisection steps taken.
+        """
+    @property
+    def margin(self, /) -> float:
+        """
+        The margin on all the premium, ``P (1 + E[g]) - E[X]``.
+        """
+    @property
+    def net(self, /) -> Price:
+        """
+        The price of the net outcome ``X - P g`` at the solution.
+        """
+    @property
+    def return_on_capital(self, /) -> float:
+        """
+        The return on capital.
+        """
+    @property
+    def upfront(self, /) -> float:
+        """
+        The upfront (deposit) premium ``P``.
         """
 
 @final
@@ -25510,8 +26324,10 @@ class Tower:
         section pays on its own. Results gain ``("ceding_commission",
         name)``, ``("brokerage", name)`` and, when a section reads its
         scales before annual terms, ``("loss_before_terms", name)``;
-        ``deal_ratios`` takes the deal's name. The grid methods and the P&L
-        ledger refuse a tower with a deal.
+        ``deal_ratios`` takes the deal's name. ``on_annual_grid`` gives each
+        deal's expected commission and brokerage, ``on_grid`` too when no
+        section has annual terms, and the cedant's P&L ledger books the
+        deal's commission.
         
         Parameters
         ----------
@@ -25617,6 +26433,18 @@ class TowerGrids:
         Expected ceding commission (flat or sliding) of each layer.
         """
     @property
+    def expected_deal_brokerage(self, /) -> dict[str, float]:
+        """
+        Expected brokerage of each deal, by its name; 0 without one.
+        """
+    @property
+    def expected_deal_ceding_commission(self, /) -> dict[str, float]:
+        """
+        Expected ceding commission of each deal (``Tower.deal_scale``), by
+        its name, read on its sections' loss ratio together; 0 for a deal
+        without one.
+        """
+    @property
     def expected_premium(self, /) -> list[float]:
         """
         Expected premium of each layer: the swing-rated premium's mean, or
@@ -25686,6 +26514,14 @@ class TowerGrids:
         Annual ceded loss of each stage, its layers together: the total
         cession ``aggregate`` reports as ``Ceded``. ``None`` for a stage of
         several layers one of which has annual terms.
+        """
+    @property
+    def total_ceded(self, /) -> Grid |None:
+        """
+        Annual ceded loss of the whole tower, every layer together, or
+        ``None`` when it is not a single compound total: several layers
+        with annual terms (reinstatements, aggregate limits or deductibles),
+        or an aggregate cover after per-occurrence stages.
         """
 
 @final
@@ -25775,6 +26611,85 @@ class TowerPrice:
     def stages(self, /) -> list[ViewPrice |None]:
         """
         Each stage's total cession, ``None`` where ``stage_ceded`` is.
+        """
+
+@final
+class TowerQuote:
+    """
+    A whole tower quoted at once: each layer standalone from its own ceded
+    grid, and the total cession, every layer together, as one cover.
+    
+    Each standalone price holds capital for its layer alone, so the layers'
+    premiums add up to more than the total's; ``diversification`` is the
+    difference. No share of the total is allocated to the layers.
+    
+    Examples
+    --------
+    >>> from prospicio.distributions import Grid, Poisson
+    >>> from prospicio.pricing import TowerQuote
+    >>> from prospicio.reinsurance import Layer, Tower
+    >>> from prospicio.risk import Distortion
+    >>> sev = Grid(1.0, [0.0, 0.4, 0.3, 0.2, 0.1])
+    >>> tower = Tower([Layer("1x1", 1.0, 1.0), Layer("2x2", 2.0, 2.0)])
+    >>> grids = tower.on_grid(Poisson(3.0), sev, 256)
+    >>> q = TowerQuote.technical(tower, grids, Distortion.tvar(0.99), cost_of_capital=0.1,
+    ...                          expenses=0.03, brokerage=0.10)
+    >>> len(q.layers), q.diversification > 0
+    (2, True)
+    """
+    def __repr__(self, /) -> str: ...
+    @property
+    def diversification(self, /) -> float:
+        """
+        The layers' technical deposits added up less the total's.
+        """
+    @property
+    def layers(self, /) -> list[Quote]:
+        """
+        Each layer's standalone quote, in tower order.
+        """
+    @staticmethod
+    def technical(tower: Tower, grids: TowerGrids, assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None, expenses: float = 0.0, brokerage: float = 0.0, fixed: float = 0.0, premium_tax: float = 0.0, income_tax: float = 0.0, brokerage_on_reinstatements: bool = True) -> TowerQuote:
+        """
+        The technical quote of each layer and of the total cession.
+        
+        Each layer is priced on its ceded grid with the reinstatement rate
+        and flat ceding commission its grid and terms give, and its limit at
+        the placed share for the rate on line. The total is priced on
+        ``grids.total_ceded``, with the layers' reinstatement rates and
+        commissions weighted by their technical deposits and no limit.
+        
+        Parameters
+        ----------
+        tower : Tower
+        grids : TowerGrids
+            ``tower.on_grid(...)``.
+        assets : Distortion
+        cost_of_capital : float, optional
+        distortion : Distortion, optional
+            Exactly one of ``cost_of_capital`` and ``distortion``, as in
+            ``price``.
+        expenses, brokerage, fixed, premium_tax, income_tax : float
+            The loads, as in ``Quote.technical``.
+        brokerage_on_reinstatements : bool, default True
+        
+        Returns
+        -------
+        TowerQuote
+        
+        Raises
+        ------
+        ValueError
+            If ``grids.total_ceded`` is ``None``: several layers with annual
+            terms (reinstatements, aggregate limits or deductibles), or an
+            aggregate cover after per-occurrence stages, cede a sum of
+            dependent annual totals. Quote the layers one by one with
+            ``Quote.technical`` instead.
+        """
+    @property
+    def total(self, /) -> Quote:
+        """
+        The quote of the total cession.
         """
 
 @final
@@ -29618,6 +30533,41 @@ def moic(released: float, funded: float, opening: float) -> float:
     1.3
     """
 
+def monthly_patterns(written: Sequence[float], pattern: PaymentPattern, policy_months: int = 12, interpolation: str = "linear") -> tuple[list[float], list[float], list[float]]:
+    """
+    The monthly written, earned and paid patterns of ``CashflowTerms`` from
+    a written pattern, a policy term and a payment pattern by development
+    age.
+    
+    The premium written in month ``s`` is written at its start and earned
+    evenly over the ``policy_months`` months from it. Losses occur as
+    premium is earned, in the middle of their month, and are paid by
+    ``pattern``, measured from the accident date and read between its times
+    by ``interpolation`` (as ``PaymentPattern.paid_by``).
+    
+    Parameters
+    ----------
+    written : list of float
+        The cumulative share written by the end of each month; its length
+        is the patterns' (at least the commutation month plus the buffer).
+    pattern : PaymentPattern
+    policy_months : int, default 12
+    interpolation : {"linear", "step", "log-linear"}, default "linear"
+    
+    Returns
+    -------
+    tuple of list of float
+        ``(written, earned, paid)``, to pass to ``CashflowTerms``.
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import PaymentPattern, monthly_patterns
+    >>> p = PaymentPattern([1.0, 2.0, 3.0], [1 / 3] * 3)
+    >>> w, e, paid = monthly_patterns([1.0] * 60, p)
+    >>> e[5], e[11], round(paid[59], 12)
+    (0.5, 1.0, 1.0)
+    """
+
 def normalized_gini(y: Sequence[float], pred: Sequence[float], exposure: Sequence[float] |None = None) -> float:
     """
     The normalized Gini: ``gini`` over the Gini of a perfect ranking (rows
@@ -30254,6 +31204,47 @@ def price_portfolio(pd: PredictiveDistribution, assets: Distortion, *, cost_of_c
     [3.5, 0.681818]
     >>> p.allocated[1].margin < 0  # the second cover hedges the first
     True
+    """
+
+def price_with_reinstatements(losses: Sequence[float], g: Sequence[float], assets: Distortion, *, cost_of_capital: float |None = None, distortion: Distortion |None = None) -> ReinstatementPrice:
+    """
+    The upfront premium of a cover whose reinstatement premium counts in
+    its own price (#587).
+    
+    The reinsurer's net outcome is ``X - P g``, with ``X`` the year's ceded
+    loss and ``g`` its reinstatement premium per unit of upfront premium
+    (a tower's reinstatement premium at a unit deposit, for example), so
+    its assets and price depend on ``P``; the upfront premium solves
+    ``P = price(X - P g)``. With ``g = 0`` this is ``price``, with a
+    constant ``g`` it is ``price(X) / (1 + g)``, and under the identity
+    distortion it is Sundt's ``E[X] / (1 + E[g])``.
+    
+    Parameters
+    ----------
+    losses : array_like
+        The ceded loss in each simulation.
+    g : array_like
+        The reinstatement premium per unit of upfront premium in each
+        simulation, finite and non-negative.
+    assets : Distortion
+    cost_of_capital : float, optional
+    distortion : Distortion, optional
+        Exactly one of ``cost_of_capital`` and ``distortion``, as in
+        ``price``.
+    
+    Returns
+    -------
+    ReinstatementPrice
+    
+    Examples
+    --------
+    >>> from prospicio.pricing import price_with_reinstatements
+    >>> from prospicio.risk import Distortion
+    >>> x = [0.0, 0.0, 2.0, 6.0]
+    >>> r = price_with_reinstatements(x, [l / 6 for l in x], Distortion.tvar(0.5),
+    ...                               cost_of_capital=0.25)
+    >>> r.upfront < 2.4, round(r.return_on_capital, 9)
+    (True, 0.25)
     """
 
 def product_limit(losses: Sequence[float], reporting_thresholds: Sequence[float] |None = None, censored: Sequence[bool] |None = None, weights: Sequence[float] |None = None) -> dict[str, list[float]]:

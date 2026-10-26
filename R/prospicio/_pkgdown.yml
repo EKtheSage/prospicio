@@ -160,6 +160,7 @@ reference:
       - layer_cv
       - censored_las
       - risk_loaded_price
+      - price_with_reinstatements
       - capital_portfolio
       - natural_price
       - calibrate_portfolio
@@ -170,7 +171,9 @@ reference:
       - priority_ladder
       - price_stand_alone
       - technical_quote
+      - tower_quote
       - payment_pattern
+      - payment_pattern_monthly
       - price_over_payout
       - npv
       - cashflow_terms
@@ -278,6 +281,7 @@ reference:
       - compare_models
       - actual_vs_expected
       - mcmc_diagnostics
+      - external_draws
       - elpd
       - model_weights
       - bayesian_stacking
@@ -320,6 +324,9 @@ reference:
       - tail_log_linear
       - expected_loss_fit
       - cape_cod_fit
+      - latest_valuation
+      - with_exposure
+      - to_chain_ladder
       - odp_bootstrap_fit
       - mack_bootstrap_fit
       - bayes_odp_fit
@@ -381,6 +388,20 @@ articles:
       - starts_with("articles/pir-")
       - starts_with("articles/capital-")
       - starts_with("articles/ratemaking-")
+  - title: Property catastrophe reinsurance
+    navbar: Property catastrophe reinsurance
+    desc: >
+      A track on one synthetic book, read in order: loss tables, risk metrics, contract terms, programs, the money around the loss, pricing and the portfolio.
+    contents:
+      - articles/cat-0-overview
+      - articles/cat-1-loss-tables
+      - articles/cat-2-risk-metrics
+      - articles/cat-3-contract-terms
+      - articles/cat-4-programs
+      - articles/cat-5-beyond-loss
+      - articles/cat-6-pricing
+      - articles/cat-7-portfolio
+      - starts_with("articles/cat-")
   - title: Distributions and GLMs
     navbar: Distributions and GLMs
     desc: >
@@ -413,4 +434,5 @@ articles:
       - articles/one_year_view
       - articles/reading_path
       - articles/reinsurance_pricing
+      - articles/ils_deal_analysis
       - articles/reading_path

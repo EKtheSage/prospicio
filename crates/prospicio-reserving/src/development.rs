@@ -258,6 +258,11 @@ impl Development {
         let n_links = segment.n_dev.saturating_sub(1);
         let mut mask = vec![false; segment.n_origins * n_links];
         for age in 0..n_links {
+            // An age with no link ratio keeps none; whether that is an error
+            // is the fit's to say (a fully selected age, decision 15).
+            if segment.link_pairs_indexed(age).is_empty() {
+                continue;
+            }
             for (o, _, _) in self.kept_links(segment, age, cutoff)?.0 {
                 mask[o * n_links + age] = true;
             }
@@ -283,16 +288,25 @@ impl Development {
         let mut counts = Vec::with_capacity(n_links);
         let mut excluded = false;
         for age in 0..n_links {
+            // At an age whose selected factor has weight 1 the triangle's
+            // own factor is never used. Where it cannot be estimated (every
+            // earlier value zero: a sparse excess layer's early ages,
+            // `reserving-excess.md` decision 8; no origin observed at both
+            // ages: a latest diagonal, `reserving-v02.md` decision 15) it is
+            // left missing (NaN, no sigma, no volume) instead of an error;
+            // where it can, it is estimated as always, so no existing
+            // result changes.
+            let fully_selected = selected[age].is_some() && weight[age] == 1.0;
+            if fully_selected && segment.link_pairs_indexed(age).is_empty() {
+                counts.push(0);
+                ldf.push(f64::NAN);
+                sigma.push(None);
+                volume.push(f64::NAN);
+                continue;
+            }
             let (pairs, observed) = self.kept_links(segment, age, cutoff)?;
             excluded |= pairs.len() < observed;
             counts.push(pairs.len());
-            // At an age whose selected factor has weight 1 the triangle's
-            // own factor is never used. Where it cannot be estimated (every
-            // earlier value zero: a sparse excess layer's early ages) it is
-            // left missing (NaN, no sigma, no volume) instead of an error;
-            // where it can, it is estimated as always, so no existing
-            // result changes (`reserving-excess.md`, decision 8).
-            let fully_selected = selected[age].is_some() && weight[age] == 1.0;
             let (f, s, v) = match self.estimate_age(&pairs, age) {
                 Ok(estimate) => estimate,
                 Err(Error::Factor { .. }) if fully_selected => (f64::NAN, None, f64::NAN),

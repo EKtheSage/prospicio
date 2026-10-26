@@ -20,6 +20,7 @@ odp_bootstrap(
   ldf = NULL,
   ldf_kind = NULL,
   ldf_weight = 1,
+  ldf_origin = NULL,
   n_periods = NULL,
   drop_high = 0,
   drop_low = 0
@@ -81,7 +82,7 @@ diagonal and one row and column per segment in index order. It is
 converted to the normal scores' correlation \verb{2 sin(pi rho / 6)}, which
 must be positive definite.}
 
-\item{ldf, ldf_kind, ldf_weight}{A selected development pattern, as in
+\item{ldf, ldf_kind, ldf_weight, ldf_origin}{A selected development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}. The residuals and the scale come from the triangle's
 own volume-weighted factors; each simulation then uses
 \code{w * selected + (1 - w) * pseudo} at the selected ages, so a fully

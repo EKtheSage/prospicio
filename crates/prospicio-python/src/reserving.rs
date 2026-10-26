@@ -7,14 +7,15 @@
 //! Polars columns) and go out as dicts of lists; numpy and pandas are used
 //! when the caller passes them but are not required.
 
-use prospicio_core::{Grain, Lag, Month};
+use prospicio_core::{Grain, Lag, Month, Period};
 use prospicio_reserving::{
     Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ChainLadder, ChainLadderFit,
     ClaimsDevelopmentResult, ClarkCapeCod, ClarkFit, ClarkLdf, CurveShape, Development,
-    DevelopmentColumn, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label, Long, Mack,
-    MackBootstrap, MackBootstrapFits, MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap,
-    OdpBootstrapFits, OdpBootstrapSegment, OneYearFits, OneYearMethod, OneYearPattern, PatternKind,
-    PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits,
+    DevelopmentColumn, DiagonalAge, ExpectedLoss, ExpectedLossFit, FitTable, GrowthCurve, Label,
+    LatestDiagonals, Long, LongDiagonal, Mack, MackBootstrap, MackBootstrapFits,
+    MackBootstrapSegment, MackFit, MackProcess, OdpBootstrap, OdpBootstrapFits,
+    OdpBootstrapSegment, OneYearFits, OneYearMethod, OneYearPattern, PastPatternEnd, PatternKind,
+    PatternWeight, ProcessDistribution, ReserveFit, SegmentDependence, SegmentFits, SegmentMap,
     SelectedPattern, SigmaInterpolation, Tail, TailBondy, TailConstant, TailCurve, Triangle, view,
 };
 use pyo3::exceptions::{PyImportError, PyTypeError, PyValueError};
@@ -1823,6 +1824,699 @@ fn tail_arg_repr(tail: &Tail) -> String {
     plain_factor(tail).map_or_else(|| tail_repr(tail), |f| format!("{f:?}"))
 }
 
+// Latest diagonals (`reserving-v02.md`, decisions 15 to 19).
+
+/// The name of a grain, as ``origin_grain`` gives it.
+fn grain_name(g: Grain) -> &'static str {
+    match g {
+        Grain::Month => "M",
+        Grain::Quarter => "Q",
+        Grain::Semester => "S",
+        Grain::Year => "Y",
+    }
+}
+
+/// The ``ldf_origin`` argument: ``None``, or the origin grain the selected
+/// pattern was measured on, which needs ``ldf``.
+fn ldf_origin_arg(
+    ldf_origin: Option<&str>,
+    ldf: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<Grain>> {
+    let Some(name) = ldf_origin else {
+        return Ok(None);
+    };
+    if ldf.is_none_or(|l| l.is_none()) {
+        return Err(PyValueError::new_err("ldf_origin is given without ldf"));
+    }
+    match name {
+        "M" => Ok(Some(Grain::Month)),
+        "Q" => Ok(Some(Grain::Quarter)),
+        "S" => Ok(Some(Grain::Semester)),
+        "Y" => Ok(Some(Grain::Year)),
+        _ => Err(PyValueError::new_err(format!(
+            "ldf_origin must be \"M\", \"Q\", \"S\" or \"Y\", got {name:?}"
+        ))),
+    }
+}
+
+/// A selected pattern measured on origin periods of `ldf_origin`, averaged
+/// over the periods of `origin` (`SelectedPattern::averaged_over_origins`);
+/// unchanged without ``ldf_origin``.
+fn averaged(
+    pattern: &Option<SelectedPattern>,
+    ldf_origin: Option<Grain>,
+    origin: Grain,
+) -> PyResult<Option<SelectedPattern>> {
+    match (pattern, ldf_origin) {
+        (Some(p), Some(g)) => Ok(Some(p.averaged_over_origins(g, origin).map_err(err)?)),
+        _ => Ok(pattern.clone()),
+    }
+}
+
+/// A chain ladder with its pattern averaged as ``ldf_origin`` says.
+fn chain_ladder_on(
+    cl: &ChainLadder,
+    ldf_origin: Option<Grain>,
+    origin: Grain,
+) -> PyResult<ChainLadder> {
+    let mut cl = cl.clone();
+    cl.development.pattern = averaged(&cl.development.pattern, ldf_origin, origin)?;
+    Ok(cl)
+}
+
+/// A method's ``repr`` with ``ldf_origin`` before its closing parenthesis,
+/// when it is set.
+fn with_ldf_origin(repr: String, ldf_origin: Option<Grain>) -> String {
+    match ldf_origin {
+        Some(g) => match repr.strip_suffix(')') {
+            Some(head) => format!("{head}, ldf_origin={:?})", grain_name(g)),
+            None => repr,
+        },
+        None => repr,
+    }
+}
+
+fn past_pattern_end(name: &str) -> PyResult<PastPatternEnd> {
+    match name {
+        "reject" => Ok(PastPatternEnd::Reject),
+        "no_development" => Ok(PastPatternEnd::NoDevelopment),
+        "tail" => Ok(PastPatternEnd::Tail),
+        _ => Err(PyValueError::new_err(format!(
+            "past_pattern_end must be \"reject\", \"no_development\" or \"tail\", got {name:?}"
+        ))),
+    }
+}
+
+fn past_pattern_end_name(rule: PastPatternEnd) -> &'static str {
+    match rule {
+        PastPatternEnd::Reject => "reject",
+        PastPatternEnd::NoDevelopment => "no_development",
+        PastPatternEnd::Tail => "tail",
+    }
+}
+
+/// Key columns of a dict from key name to column, in its order.
+fn key_columns(keys: Option<&Bound<'_, PyAny>>) -> PyResult<Vec<(String, Vec<String>)>> {
+    let Some(keys) = keys.filter(|k| !k.is_none()) else {
+        return Ok(Vec::new());
+    };
+    let dict = keys
+        .cast::<PyDict>()
+        .map_err(|_| PyTypeError::new_err("keys must be a dict of key name to column"))?;
+    dict.iter()
+        .map(|(k, v)| {
+            let name: String = k
+                .extract()
+                .map_err(|_| PyTypeError::new_err("key names must be strings"))?;
+            let column = key_values(&v, &name)?;
+            Ok((name, column))
+        })
+        .collect()
+}
+
+/// One valuation month: a date (``datetime.date``, a pandas ``Timestamp``
+/// or a numpy ``datetime64``), not an integer year, which would read as
+/// January.
+fn valuation_month(obj: &Bound<'_, PyAny>) -> PyResult<Month> {
+    if obj.is_instance_of::<PyBool>()
+        || obj.is_instance_of::<PyInt>()
+        || (obj.hasattr("__index__")? && !obj.hasattr("dtype")?)
+    {
+        return Err(PyTypeError::new_err(format!(
+            "give the valuation month as a date, got {}: an integer year would read as January",
+            py_repr(obj)
+        )));
+    }
+    if obj.hasattr("dtype")? {
+        let flat = obj
+            .py()
+            .import("numpy")?
+            .call_method1("asarray", (obj,))?
+            .call_method1("reshape", (-1,))?;
+        let kind: String = flat.getattr("dtype")?.getattr("kind")?.extract()?;
+        if kind != "M" {
+            return Err(PyTypeError::new_err(format!(
+                "give the valuation month as a date, got {}",
+                py_repr(obj)
+            )));
+        }
+        let all = months(&flat, "valuation")?;
+        return match all.as_slice() {
+            [one] => Ok(*one),
+            _ => Err(PyValueError::new_err("valuation must be a single date")),
+        };
+    }
+    month_of(obj, "valuation")
+}
+
+/// What `LatestDiagonal`'s constructors read: the long table's columns.
+struct DiagonalArgs {
+    keys: Vec<(String, Vec<String>)>,
+    origin: Vec<Month>,
+    age: DiagonalArgAge,
+    latest: Vec<f64>,
+    exposure: Option<Vec<f64>>,
+    origin_grain: Grain,
+    past_pattern_end: PastPatternEnd,
+}
+
+enum DiagonalArgAge {
+    Ages(Vec<Lag>),
+    Valuation(Month),
+    Valuations(Vec<Month>),
+}
+
+impl DiagonalArgs {
+    fn build(&self, py: Python<'_>) -> PyResult<PyLatestDiagonal> {
+        let key_values: Vec<Vec<&str>> = self
+            .keys
+            .iter()
+            .map(|(_, v)| v.iter().map(String::as_str).collect())
+            .collect();
+        let keys: Vec<(&str, &[&str])> = self
+            .keys
+            .iter()
+            .zip(&key_values)
+            .map(|((n, _), v)| (n.as_str(), v.as_slice()))
+            .collect();
+        let long = LongDiagonal {
+            keys: &keys,
+            origin: &self.origin,
+            age: match &self.age {
+                DiagonalArgAge::Ages(a) => DiagonalAge::Ages(a),
+                DiagonalArgAge::Valuation(v) => DiagonalAge::Valuation(*v),
+                DiagonalArgAge::Valuations(v) => DiagonalAge::Valuations(v),
+            },
+            latest: &self.latest,
+            exposure: self.exposure.as_deref(),
+            origin_grain: self.origin_grain,
+        };
+        let rule = self.past_pattern_end;
+        let inner = py
+            .detach(|| LatestDiagonals::from_long(&long))
+            .map_err(err)?
+            .with_past_pattern_end(rule);
+        Ok(PyLatestDiagonal { inner })
+    }
+}
+
+/// A latest diagonal on its own, one value per origin at its own age, as a
+/// bordereau holds it, in one or several segments; projected with a
+/// selected pattern from elsewhere by the ``fit_diagonal`` of
+/// ``ChainLadder``, ``ExpectedLoss``, ``BornhuetterFerguson``,
+/// ``Benktander`` and ``CapeCod`` (``docs/design/reserving-v02.md``,
+/// decisions 15 to 19).
+///
+/// Each origin is given once per segment, at a positive age, with its
+/// latest cumulative value (0 for an origin with nothing reported yet).
+/// The ages may be off the pattern's grid (18 months against an annual
+/// pattern): the fit reads them on the pattern's own ages, ``log(cdf)``
+/// linear between them. An origin older than the pattern's end is an error
+/// unless ``past_pattern_end`` says how to develop it.
+///
+/// Segments are named by key columns, as a ``Triangle``'s are, and sorted
+/// by label; within a segment the origins keep the order given. Rows run
+/// segment by segment in that order, as ``to_frame()`` lists them.
+///
+/// Parameters
+/// ----------
+/// origin : array-like
+///     Any date in each row's origin period, or integer years.
+/// age : array-like
+///     Each row's age in months: from the start of the origin period to
+///     the end of the valuation month (an accident year 2024 at December
+///     2024 is 12 months).
+/// latest : array-like
+///     Each row's latest cumulative value.
+/// exposure : array-like, optional
+///     Each row's exposure (premium), for the expected-loss methods.
+/// keys : dict of str to array-like, optional
+///     Key columns by name, as ``Triangle.from_long`` takes them.
+/// origin_grain : {"Y", "S", "Q", "M"}, default "Y"
+/// past_pattern_end : {"reject", "no_development", "tail"}, default "reject"
+///     How an origin older than the pattern's end (its last age; for
+///     age-to-age factors, the end of their span) is developed:
+///     ``"reject"`` is an error that names it; ``"no_development"`` a
+///     factor of 1 there, with no ``tail`` (a cumulative pattern's level
+///     at its end is then rescaled to 100% for every origin, so with a
+///     level other than 100% the young origins move too); ``"tail"`` the
+///     method's ``tail`` continued from the pattern's end at one step per
+///     origin period, a constant (``attachment_age`` unset) or one
+///     estimated on the pattern's own factors.
+///
+/// Examples
+/// --------
+/// >>> import datetime
+/// >>> from prospicio.reserving import BornhuetterFerguson, ChainLadder, LatestDiagonal
+/// >>> d = LatestDiagonal.at_valuation(
+/// ...     [2022, 2023, 2024], datetime.date(2024, 12, 31), [900.0, 600.0, 150.0],
+/// ...     exposure=[1000.0, 1000.0, 1000.0],
+/// ... )
+/// >>> d.ages
+/// [36, 24, 12]
+/// >>> cl = ChainLadder(ldf={12: 2.0, 24: 1.25, 36: 1.0}, ldf_kind="cdf")
+/// >>> cl.fit_diagonal(d).ultimate
+/// [900.0, 750.0, 300.0]
+/// >>> bf = BornhuetterFerguson(apriori=0.7, ldf={12: 2.0, 24: 1.25, 36: 1.0}, ldf_kind="cdf")
+/// >>> round(bf.fit_diagonal(d).ultimate[2], 9)
+/// 500.0
+#[pyclass(name = "LatestDiagonal", module = "prospicio.reserving", frozen)]
+pub(crate) struct PyLatestDiagonal {
+    inner: LatestDiagonals,
+}
+
+#[pymethods]
+impl PyLatestDiagonal {
+    #[new]
+    #[pyo3(signature = (origin, age, latest, exposure = None, keys = None, origin_grain = "Y", past_pattern_end = "reject"))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        py: Python<'_>,
+        origin: &Bound<'_, PyAny>,
+        age: &Bound<'_, PyAny>,
+        latest: &Bound<'_, PyAny>,
+        exposure: Option<&Bound<'_, PyAny>>,
+        keys: Option<&Bound<'_, PyAny>>,
+        origin_grain: &str,
+        past_pattern_end: &str,
+    ) -> PyResult<Self> {
+        DiagonalArgs {
+            keys: key_columns(keys)?,
+            origin: months(origin, "origin")?,
+            age: DiagonalArgAge::Ages(ages(age)?),
+            latest: floats(latest, "latest")?,
+            exposure: exposure
+                .filter(|e| !e.is_none())
+                .map(|e| floats(e, "exposure"))
+                .transpose()?,
+            origin_grain: grain(origin_grain)?,
+            past_pattern_end: self::past_pattern_end(past_pattern_end)?,
+        }
+        .build(py)
+    }
+
+    /// A diagonal valued at one month: each origin's age is the months from
+    /// its start to the end of the valuation month (an accident year 2024
+    /// at June 2024 is six months).
+    ///
+    /// Parameters
+    /// ----------
+    /// origin : array-like
+    ///     Any date in each row's origin period, or integer years.
+    /// valuation : date
+    ///     Any date in the valuation month (``datetime.date``, a pandas
+    ///     ``Timestamp`` or a numpy ``datetime64``); an integer is an error,
+    ///     since a year would read as January.
+    /// latest, exposure, keys, origin_grain, past_pattern_end
+    ///     As for the constructor.
+    ///
+    /// Returns
+    /// -------
+    /// LatestDiagonal
+    ///
+    /// Raises
+    /// ------
+    /// TypeError
+    ///     If ``valuation`` is not a date.
+    /// ValueError
+    ///     If the valuation is before an origin starts (naming the row), an
+    ///     origin is given twice in a segment, or a column has another
+    ///     length.
+    #[staticmethod]
+    #[pyo3(signature = (origin, valuation, latest, exposure = None, keys = None, origin_grain = "Y", past_pattern_end = "reject"))]
+    #[allow(clippy::too_many_arguments)]
+    fn at_valuation(
+        py: Python<'_>,
+        origin: &Bound<'_, PyAny>,
+        valuation: &Bound<'_, PyAny>,
+        latest: &Bound<'_, PyAny>,
+        exposure: Option<&Bound<'_, PyAny>>,
+        keys: Option<&Bound<'_, PyAny>>,
+        origin_grain: &str,
+        past_pattern_end: &str,
+    ) -> PyResult<Self> {
+        DiagonalArgs {
+            keys: key_columns(keys)?,
+            origin: months(origin, "origin")?,
+            age: DiagonalArgAge::Valuation(valuation_month(valuation)?),
+            latest: floats(latest, "latest")?,
+            exposure: exposure
+                .filter(|e| !e.is_none())
+                .map(|e| floats(e, "exposure"))
+                .transpose()?,
+            origin_grain: grain(origin_grain)?,
+            past_pattern_end: self::past_pattern_end(past_pattern_end)?,
+        }
+        .build(py)
+    }
+
+    /// A diagonal from a data frame, one row per segment and origin.
+    ///
+    /// Columns are looked up with ``data[name]``, so a pandas or Polars
+    /// DataFrame works, as does a dict of columns.
+    ///
+    /// Parameters
+    /// ----------
+    /// data : DataFrame or dict
+    /// origin : str
+    ///     Name of the origin column (dates or integer years).
+    /// latest : str
+    ///     Name of the latest-value column.
+    /// age : str, optional
+    ///     Name of the age column, in months.
+    /// valuation : date or str, optional
+    ///     The valuation month of every row (a date), or the name of a
+    ///     column of each row's valuation date. Give exactly one of ``age``
+    ///     and ``valuation``.
+    /// exposure : str, optional
+    ///     Name of the exposure column.
+    /// keys : str or list of str, optional
+    ///     Names of the key columns.
+    /// origin_grain, past_pattern_end
+    ///     As for the constructor.
+    ///
+    /// Returns
+    /// -------
+    /// LatestDiagonal
+    ///
+    /// Examples
+    /// --------
+    /// >>> import datetime
+    /// >>> from prospicio.reserving import LatestDiagonal
+    /// >>> df = {
+    /// ...     "lob": ["b", "a", "a"],
+    /// ...     "year": [2024, 2023, 2024],
+    /// ...     "paid": [50.0, 400.0, 150.0],
+    /// ... }
+    /// >>> d = LatestDiagonal.from_frame(
+    /// ...     df, "year", "paid", valuation=datetime.date(2024, 12, 31), keys="lob"
+    /// ... )
+    /// >>> d.index, d.ages
+    /// (['a', 'b'], [24, 12, 12])
+    #[staticmethod]
+    #[pyo3(signature = (data, origin, latest, age = None, valuation = None, exposure = None, keys = None, origin_grain = "Y", past_pattern_end = "reject"))]
+    #[allow(clippy::too_many_arguments)]
+    fn from_frame(
+        py: Python<'_>,
+        data: &Bound<'_, PyAny>,
+        origin: &str,
+        latest: &str,
+        age: Option<&str>,
+        valuation: Option<&Bound<'_, PyAny>>,
+        exposure: Option<&str>,
+        keys: Option<&Bound<'_, PyAny>>,
+        origin_grain: &str,
+        past_pattern_end: &str,
+    ) -> PyResult<Self> {
+        let valuation = valuation.filter(|v| !v.is_none());
+        let age = match (age, valuation) {
+            (Some(name), None) => DiagonalArgAge::Ages(ages(&data.get_item(name)?)?),
+            (None, Some(v)) if v.is_instance_of::<PyString>() => {
+                let name: String = v.extract()?;
+                DiagonalArgAge::Valuations(months(&data.get_item(name)?, "valuation")?)
+            }
+            (None, Some(v)) => DiagonalArgAge::Valuation(valuation_month(v)?),
+            _ => {
+                return Err(PyValueError::new_err(
+                    "give exactly one of age (a column of ages) and valuation (a date, or a \
+                     column of valuation dates)",
+                ));
+            }
+        };
+        let keys = match keys.filter(|k| !k.is_none()) {
+            None => Vec::new(),
+            Some(keys) => names(keys)?
+                .into_iter()
+                .map(|name| {
+                    let column = key_values(&data.get_item(&name)?, &name)?;
+                    Ok((name, column))
+                })
+                .collect::<PyResult<_>>()?,
+        };
+        DiagonalArgs {
+            keys,
+            origin: months(&data.get_item(origin)?, "origin")?,
+            age,
+            latest: floats(&data.get_item(latest)?, latest)?,
+            exposure: exposure
+                .map(|e| floats(&data.get_item(e)?, e))
+                .transpose()?,
+            origin_grain: grain(origin_grain)?,
+            past_pattern_end: self::past_pattern_end(past_pattern_end)?,
+        }
+        .build(py)
+    }
+
+    /// The latest diagonal of a triangle column, in every segment: each
+    /// origin at the age of its last observed cell, with its cumulative
+    /// value there, as chainladder-python's ``latest_diagonal``. With
+    /// ``exposure``, each origin also takes that column's last observed
+    /// value. This is how a fit is applied to another book:
+    /// ``source.to_chain_ladder().fit_diagonal(LatestDiagonal.from_triangle(book, "paid"))``
+    /// is chainladder-python's ``fit(source).predict(book)``.
+    ///
+    /// Parameters
+    /// ----------
+    /// triangle : Triangle
+    ///     With any number of segments.
+    /// column : str
+    /// exposure : str, optional
+    /// past_pattern_end : {"reject", "no_development", "tail"}, default "reject"
+    ///
+    /// Returns
+    /// -------
+    /// LatestDiagonal
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If a column is unknown, an origin has no observed cell, or an
+    ///     exposure is not finite and positive; with keys, the message names
+    ///     the segment.
+    #[staticmethod]
+    #[pyo3(signature = (triangle, column, exposure = None, past_pattern_end = "reject"))]
+    fn from_triangle(
+        triangle: PyRef<'_, PyTriangle>,
+        column: &str,
+        exposure: Option<&str>,
+        past_pattern_end: &str,
+    ) -> PyResult<Self> {
+        let rule = self::past_pattern_end(past_pattern_end)?;
+        let inner = LatestDiagonals::from_triangle(&triangle.inner, column, exposure)
+            .map_err(err)?
+            .with_past_pattern_end(rule);
+        Ok(Self { inner })
+    }
+
+    /// The diagonal with an exposure per row, in the row order of
+    /// ``to_frame()``: the segments in order and, within one, its origins
+    /// in the order given.
+    fn with_exposure(&self, exposure: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let exposure = floats(exposure, "exposure")?;
+        let inner = self.inner.clone().with_exposure(&exposure).map_err(err)?;
+        Ok(Self { inner })
+    }
+
+    /// The diagonal with another rule for origins older than the pattern's
+    /// end: ``"reject"``, ``"no_development"`` or ``"tail"``.
+    fn with_past_pattern_end(&self, rule: &str) -> PyResult<Self> {
+        let rule = past_pattern_end(rule)?;
+        Ok(Self {
+            inner: self.inner.clone().with_past_pattern_end(rule),
+        })
+    }
+
+    /// The one segment whose keys have the given values, as
+    /// ``ChainLadderFit.segment``.
+    #[pyo3(signature = (**keys))]
+    fn segment(&self, keys: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
+        let keys = segment_keys(keys)?;
+        let keys: Vec<(&str, &str)> = keys.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        Ok(Self {
+            inner: self.inner.segment(&keys).map_err(err)?,
+        })
+    }
+
+    /// Names of the key columns; empty without keys.
+    #[getter]
+    fn keys(&self) -> Vec<String> {
+        self.inner.key_names().to_vec()
+    }
+
+    /// Label of each segment, as ``Triangle.index``.
+    #[getter]
+    fn index<'py>(&self, py: Python<'py>) -> PyResult<Vec<Bound<'py, PyAny>>> {
+        let n_keys = self.inner.key_names().len();
+        self.inner
+            .labels()
+            .iter()
+            .map(|l| label_to_py(py, n_keys, l))
+            .collect()
+    }
+
+    /// Origin grain: ``"Y"``, ``"S"``, ``"Q"`` or ``"M"``.
+    #[getter]
+    fn origin_grain(&self) -> &'static str {
+        grain_name(self.inner.origin_grain())
+    }
+
+    /// Origin period of each row.
+    #[getter]
+    fn origins(&self) -> Vec<String> {
+        let grain = self.inner.origin_grain();
+        self.inner
+            .diagonals()
+            .iter()
+            .flat_map(|d| d.origins().iter())
+            .map(|&m| Period::containing(m, grain).to_string())
+            .collect()
+    }
+
+    /// Age of each row in months.
+    #[getter]
+    fn ages(&self) -> Vec<Lag> {
+        self.inner
+            .diagonals()
+            .iter()
+            .flat_map(|d| d.ages().iter().copied())
+            .collect()
+    }
+
+    /// Latest value of each row.
+    #[getter]
+    fn latest(&self) -> Vec<f64> {
+        self.inner
+            .diagonals()
+            .iter()
+            .flat_map(|d| d.latest().iter().copied())
+            .collect()
+    }
+
+    /// Exposure of each row; ``None`` when not given.
+    #[getter]
+    fn exposure(&self) -> Option<Vec<f64>> {
+        self.inner
+            .diagonals()
+            .iter()
+            .map(|d| d.exposure().map(<[f64]>::to_vec))
+            .collect::<Option<Vec<_>>>()
+            .map(|e| e.concat())
+    }
+
+    /// The rule for origins older than the pattern's end.
+    #[getter]
+    fn past_pattern_end(&self) -> &'static str {
+        past_pattern_end_name(self.inner.diagonals()[0].past_pattern_end())
+    }
+
+    /// The rows as a pandas DataFrame: the key columns, then ``origin``,
+    /// ``age``, ``latest`` and, when given, ``exposure``.
+    fn to_frame<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let out = PyDict::new(py);
+        for (k, name) in self.inner.key_names().iter().enumerate() {
+            let values: Vec<String> = self
+                .inner
+                .iter()
+                .flat_map(|(l, d)| std::iter::repeat_n(l.parts()[k].clone(), d.origins().len()))
+                .collect();
+            out.set_item(name, values)?;
+        }
+        out.set_item("origin", self.origins())?;
+        out.set_item("age", self.ages())?;
+        out.set_item("latest", self.latest())?;
+        if let Some(e) = self.exposure() {
+            out.set_item("exposure", e)?;
+        }
+        py.import("pandas")?.call_method1("DataFrame", (out,))
+    }
+
+    fn __repr__(&self) -> String {
+        let segments = if self.inner.len() > 1 {
+            format!("segments={}, ", self.inner.len())
+        } else {
+            String::new()
+        };
+        format!(
+            "LatestDiagonal({segments}origins={}, origin_grain={:?}, exposure={}, past_pattern_end={:?})",
+            self.ages().len(),
+            self.origin_grain(),
+            if self.exposure().is_some() {
+                "True"
+            } else {
+                "False"
+            },
+            self.past_pattern_end()
+        )
+    }
+}
+
+/// A segment label as ``index`` writes it: ``"Total"`` without keys, a str
+/// with one key, a tuple with several.
+fn label_from_py(obj: &Bound<'_, PyAny>, n_keys: usize) -> PyResult<Label> {
+    if let Ok(tuple) = obj.cast::<PyTuple>() {
+        let parts: Vec<String> = tuple
+            .iter()
+            .map(|p| Ok(p.str()?.to_string()))
+            .collect::<PyResult<_>>()?;
+        return Ok(Label::new(parts));
+    }
+    let s = obj.str()?.to_string();
+    Ok(if n_keys == 0 && s == "Total" {
+        Label::default()
+    } else {
+        Label::from(s)
+    })
+}
+
+/// The development of each segment of `diagonal` from the ``development``
+/// and ``segment_map`` arguments of ``fit_diagonal``: ``None`` without
+/// ``development``.
+fn diagonal_development(
+    diagonal: &LatestDiagonals,
+    development: Option<&Bound<'_, PyAny>>,
+    segment_map: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Option<SegmentFits<ChainLadder>>> {
+    let segment_map = segment_map.filter(|m| !m.is_none());
+    let Some(development) = development.filter(|d| !d.is_none()) else {
+        if segment_map.is_some() {
+            return Err(PyValueError::new_err(
+                "segment_map is given without development",
+            ));
+        }
+        return Ok(None);
+    };
+    let source = development
+        .extract::<PyRef<'_, PyChainLadderFit>>()
+        .map_err(|_| {
+            PyTypeError::new_err(format!(
+                "development must be a ChainLadderFit; for another method's fit, pass its \
+                 .chain_ladder, got {}",
+                py_repr(development)
+            ))
+        })?;
+    let map = match segment_map {
+        None => SegmentMap::ByLabel,
+        Some(m) => {
+            let dict = m.cast::<PyDict>().map_err(|_| {
+                PyTypeError::new_err(
+                    "segment_map must be a dict from a segment of the diagonal to a segment of \
+                     the development",
+                )
+            })?;
+            let (n_target, n_source) = (diagonal.key_names().len(), source.inner.key_names.len());
+            SegmentMap::Pairs(
+                dict.iter()
+                    .map(|(t, s)| Ok((label_from_py(&t, n_target)?, label_from_py(&s, n_source)?)))
+                    .collect::<PyResult<_>>()?,
+            )
+        }
+    };
+    diagonal
+        .developments(&source.inner, &map)
+        .map(Some)
+        .map_err(err)
+}
+
 /// The chain-ladder method: each origin's latest value projected to
 /// ultimate with age-to-age factors estimated from the triangle and a tail.
 ///
@@ -1854,16 +2548,28 @@ fn tail_arg_repr(tail: &Tail) -> String {
 ///     replaces (or, with ``ldf_weight``, blends with) the factors
 ///     estimated from the triangle at the ages it gives; the other ages
 ///     stay estimated, so a benchmark for the immature ages only is a
-///     partial pattern. Each age must be a development age of the
-///     triangle. As ``ldf_kind`` says, the values are age-to-age factors
-///     (any ages but the oldest: development past it is the tail's), or
-///     factors to ultimate or percents developed at two or more ages, which
-///     select the factors between the first and the last (``cdf[a] /
-///     cdf[next age]``). A development age they skip is interpolated:
-///     between two given ages ``b < c``, ``log(cdf)`` is linear in the
-///     age, so the factor from ``a`` to the next age ``a'`` is ``(cdf[b] /
-///     cdf[c]) ** ((a' - a) / (c - b))`` (percents developed are converted
-///     to factors to ultimate first). Their level at their last age selects
+///     partial pattern. As ``ldf_kind`` says, the values are age-to-age
+///     factors, or factors to ultimate or percents developed at two or more
+///     ages, which select the factors between the first and the last
+///     (``cdf[a] / cdf[next age]``). When every age given is a development
+///     age of the triangle, an age-to-age factor links its age to the
+///     triangle's next age (any age but the oldest: development past it is
+///     the tail's), and a development age the cumulative values skip is
+///     interpolated: between two given ages ``b < c``, ``log(cdf)`` is
+///     linear in the age, so the factor from ``a`` to the next age ``a'``
+///     is ``(cdf[b] / cdf[c]) ** ((a' - a) / (c - b))`` (percents
+///     developed are converted to factors to ultimate first). Otherwise the
+///     pattern is read on its own ages: an age-to-age factor runs to the
+///     next age given (the last one by the spacing before it), a link of
+///     the triangle within the pattern's span is selected with ``log(cdf)``
+///     linear between the pattern's ages, and what the pattern gives past
+///     the triangle's oldest age folds into a constant tail there, at full
+///     weight. So a monthly pattern applies to an annual triangle. Adding
+///     one off-grid age to a sparse age-to-age pattern changes how its
+///     other factors are read: each then runs to the pattern's next age,
+///     not the triangle's. On RAA, ``{12: 1.5, 18: 1.1, 36: 1.2}`` selects
+///     1.5484 from 12 to 24, where ``{12: 1.5, 36: 1.2}`` selects 1.5, and
+///     nothing warns of the change. Their level at their last age selects
 ///     nothing. With no ``tail`` and a last age that is the oldest, the
 ///     level is the tail: a constant tail factor equal to the factor to
 ///     ultimate there (1 over the percent developed), with no parameter
@@ -1883,6 +2589,22 @@ fn tail_arg_repr(tail: &Tail) -> String {
 ///     starts the factor's link) to weight to those listed, the others
 ///     fully selected. Not given, every selected factor is used as is
 ///     (``w = 1``).
+/// ldf_origin : {"M", "Q", "S", "Y"}, optional
+///     The origin grain ``ldf`` was measured on, when it is not the
+///     triangle's: an accident-month pattern is ``"M"``. At fit time the
+///     pattern is averaged over the sub-periods of each origin period, with
+///     the exposure even through the period, into percents developed at
+///     every month (Rust's ``SelectedPattern::averaged_over_origins``). The
+///     ultimates are exact for origins up to the pattern's last age; past
+///     it the development of the period's later sub-periods is deferred to
+///     the period's last age, which overstates the ultimate slightly. An
+///     estimated tail is then fitted on monthly factors, so a constant tail
+///     taken from the monthly pattern's own tail is the safer choice. The
+///     triangle's origin grain must be a whole multiple of it; a weight by
+///     age (``ldf_weight`` a dict, applied before the averaging; the
+///     averaged pattern cannot be weighted by age here) and a single
+///     age-to-age factor are errors; the triangle's own grain leaves the
+///     pattern as given. Requires ``ldf``.
 ///
 /// A selected factor carries no parameter error, and a blended one
 /// ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the
@@ -1922,6 +2644,7 @@ fn tail_arg_repr(tail: &Tail) -> String {
 #[pyclass(name = "ChainLadder", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyChainLadder {
     inner: ChainLadder,
+    ldf_origin: Option<Grain>,
 }
 
 #[pymethods]
@@ -1937,6 +2660,7 @@ impl PyChainLadder {
         n_periods = None,
         drop_high = 0,
         drop_low = 0,
+        ldf_origin = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -1949,9 +2673,12 @@ impl PyChainLadder {
         n_periods: Option<usize>,
         drop_high: usize,
         drop_low: usize,
+        ldf_origin: Option<&str>,
     ) -> PyResult<Self> {
+        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
         let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
         Ok(Self {
+            ldf_origin,
             inner: ChainLadder {
                 development: development(
                     average,
@@ -2015,6 +2742,13 @@ impl PyChainLadder {
         pattern_kind_of(self.inner.development.pattern.as_ref())
     }
 
+    /// The origin grain ``ldf`` was measured on, averaged over the fitted
+    /// origins' periods at fit time; ``None`` reads it at the origin's age.
+    #[getter]
+    fn ldf_origin(&self) -> Option<&'static str> {
+        self.ldf_origin.map(grain_name)
+    }
+
     /// The weight on the selected factors: a number, a dict by age, or
     /// ``None`` without a pattern.
     #[getter]
@@ -2048,12 +2782,99 @@ impl PyChainLadder {
         triangle: PyRef<'_, PyTriangle>,
         column: &str,
     ) -> PyResult<PyChainLadderFit> {
-        let (cl, tri) = (self.inner.clone(), &triangle.inner);
+        let tri = &triangle.inner;
+        let cl = self.resolved(tri.origin_grain())?;
         let inner = py.detach(|| cl.fit_segments(tri, column)).map_err(err)?;
         Ok(PyChainLadderFit { inner })
     }
 
+    /// Projects a latest diagonal, in every segment, with the fully
+    /// selected pattern ``ldf`` (``ldf_weight`` 1, no ``n_periods`` or
+    /// drops) or with the development of a fit (``development``):
+    /// ``docs/design/reserving-v02.md``, decisions 15 to 19. Each origin's
+    /// latest value is multiplied by the pattern's factor to ultimate at
+    /// its own age, read ``log(cdf)``-linearly between the pattern's ages,
+    /// and the tail. The fit's development axis is the grid the diagonal is
+    /// placed on, which spans the pattern's ages as well as the
+    /// diagonal's; its origins run oldest first over every period from the
+    /// earliest to the latest. An origin older than the pattern's end is
+    /// developed as the diagonal's ``past_pattern_end`` says.
+    ///
+    /// Parameters
+    /// ----------
+    /// diagonal : LatestDiagonal
+    /// development : ChainLadderFit, optional
+    ///     A fit whose factors and tail develop the diagonal, each segment by
+    ///     the source segment of the same label (a single-segment source
+    ///     develops every segment): chainladder-python's
+    ///     ``fit(source).predict(target)``. For another method's fit, pass
+    ///     its ``.chain_ladder``. The method itself then takes no ``ldf``,
+    ///     no ``tail`` other than 1 and no ``n_periods``, ``drop_high`` or
+    ///     ``drop_low``. The source's factors are read at each origin's own
+    ///     age, as fitted, with no ``ldf_origin``: a source fitted on
+    ///     another origin grain (accident quarters for a diagonal of
+    ///     accident years, say) goes through ``to_chain_ladder()`` instead,
+    ///     with ``ldf_origin`` added to the arguments it gives, one segment
+    ///     at a time.
+    /// segment_map : dict, optional
+    ///     With ``development``, the source segment of each segment of the
+    ///     diagonal, as ``{target: source}`` with labels written as
+    ///     ``index`` writes them (``"Total"``, a str, or a tuple); every
+    ///     segment of the diagonal listed once.
+    ///
+    /// Returns
+    /// -------
+    /// ChainLadderFit
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If there is no pattern, it is not fully selected, an origin is
+    ///     younger than its first age, or older than its end with
+    ///     ``past_pattern_end="reject"``; if the map leaves a segment
+    ///     without a source; with keys, the message names the segment.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reserving import ChainLadder, LatestDiagonal, Triangle
+    /// >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+    /// >>> own = ChainLadder().fit(tri, "paid")
+    /// >>> d = LatestDiagonal.from_triangle(tri, "paid")
+    /// >>> ChainLadder().fit_diagonal(d, development=own).ultimate
+    /// [150.0, 300.0]
+    #[pyo3(signature = (diagonal, development = None, segment_map = None))]
+    fn fit_diagonal(
+        &self,
+        py: Python<'_>,
+        diagonal: PyRef<'_, PyLatestDiagonal>,
+        development: Option<&Bound<'_, PyAny>>,
+        segment_map: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<PyChainLadderFit> {
+        let d = &diagonal.inner;
+        let m = self.resolved(d.origin_grain())?;
+        let source = diagonal_development(d, development, segment_map)?;
+        let inner = py
+            .detach(|| match &source {
+                None => m.fit_diagonal_segments(d),
+                Some(s) => m.fit_diagonal_segments_from(d, s),
+            })
+            .map_err(err)?;
+        Ok(PyChainLadderFit { inner })
+    }
+
     fn __repr__(&self) -> String {
+        with_ldf_origin(self.base_repr(), self.ldf_origin)
+    }
+}
+
+impl PyChainLadder {
+    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// origins of `origin`.
+    fn resolved(&self, origin: Grain) -> PyResult<ChainLadder> {
+        chain_ladder_on(&self.inner, self.ldf_origin, origin)
+    }
+
+    fn base_repr(&self) -> String {
         format!(
             "ChainLadder(average={:?}, sigma_interpolation={:?}, tail={}{})",
             self.average(),
@@ -2233,6 +3054,35 @@ impl PyChainLadderFit {
     #[getter]
     fn development(&self) -> Vec<Lag> {
         self.inner.fits[0].development.development.clone()
+    }
+
+    /// The fit frozen as a ``ChainLadder``: its factors in use (``ldf``) as
+    /// fully selected age-to-age factors at its ages, and its tail factor
+    /// as a constant tail (``docs/design/reserving-v02.md``, decision 17).
+    /// Applied to the fit's own latest diagonal it projects as the fit did,
+    /// the factors to the bit; to another book's
+    /// (``LatestDiagonal.from_triangle``) it is chainladder-python's
+    /// ``fit(source).predict(book)``. Its ``ldf``, ``ldf_kind`` and ``tail``
+    /// unpack into any method's arguments, as
+    /// ``BornhuetterFerguson(apriori=0.6, ldf=cl.ldf, ldf_kind=cl.ldf_kind,
+    /// tail=cl.tail)``. It does not carry sigma, the standard errors or the
+    /// tail's form. Needs a single-segment fit: for several segments pass
+    /// the fit as ``development`` to ``fit_diagonal``, or use
+    /// ``segment(...)``.
+    ///
+    /// Examples
+    /// --------
+    /// >>> from prospicio.reserving import ChainLadder, LatestDiagonal, Triangle
+    /// >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+    /// >>> cl = ChainLadder(tail=1.1).fit(tri, "paid").to_chain_ladder()
+    /// >>> cl.ldf, cl.ldf_kind, cl.tail
+    /// ({12: 1.5}, 'ldf', 1.1)
+    fn to_chain_ladder(&self) -> PyResult<PyChainLadder> {
+        let f = single(&self.inner, "to_chain_ladder", "")?;
+        Ok(PyChainLadder {
+            inner: f.to_chain_ladder(),
+            ldf_origin: None,
+        })
     }
 
     /// Selected age-to-age factors, which the projection uses: the
@@ -2521,7 +3371,7 @@ impl PyChainLadderFit {
 /// tail_std_err : float, optional
 ///     The tail factor's standard error (R's ``tail.se``); extrapolated if
 ///     not given. Unused when the tail factor is 1.
-/// ldf, ldf_kind, ldf_weight : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
 ///     A selected development pattern, as in ``ChainLadder``. A selected
 ///     factor is taken as known: it has no parameter error, and a blended
 ///     one ``(1 - w)`` times the estimate's standard error, so the
@@ -2549,6 +3399,7 @@ impl PyChainLadderFit {
 #[pyclass(name = "Mack", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyMack {
     inner: Mack,
+    ldf_origin: Option<Grain>,
 }
 
 #[pymethods]
@@ -2566,6 +3417,7 @@ impl PyMack {
         n_periods = None,
         drop_high = 0,
         drop_low = 0,
+        ldf_origin = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -2580,9 +3432,12 @@ impl PyMack {
         n_periods: Option<usize>,
         drop_high: usize,
         drop_low: usize,
+        ldf_origin: Option<&str>,
     ) -> PyResult<Self> {
+        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
         let pattern = selected_pattern(ldf, ldf_kind, ldf_weight)?;
         Ok(Self {
+            ldf_origin,
             inner: Mack {
                 development: development(
                     average,
@@ -2661,6 +3516,13 @@ impl PyMack {
         pattern_kind_of(self.inner.development.pattern.as_ref())
     }
 
+    /// The origin grain ``ldf`` was measured on, averaged over the fitted
+    /// origins' periods at fit time; ``None`` reads it at the origin's age.
+    #[getter]
+    fn ldf_origin(&self) -> Option<&'static str> {
+        self.ldf_origin.map(grain_name)
+    }
+
     /// The weight on the selected factors: a number, a dict by age, or
     /// ``None`` without a pattern.
     #[getter]
@@ -2693,12 +3555,27 @@ impl PyMack {
         triangle: PyRef<'_, PyTriangle>,
         column: &str,
     ) -> PyResult<PyMackFit> {
-        let (mack, tri) = (self.inner.clone(), &triangle.inner);
+        let tri = &triangle.inner;
+        let mack = self.resolved(tri.origin_grain())?;
         let inner = py.detach(|| mack.fit_segments(tri, column)).map_err(err)?;
         Ok(PyMackFit { inner })
     }
 
     fn __repr__(&self) -> String {
+        with_ldf_origin(self.base_repr(), self.ldf_origin)
+    }
+}
+
+impl PyMack {
+    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// origins of `origin`.
+    fn resolved(&self, origin: Grain) -> PyResult<Mack> {
+        let mut m = self.inner.clone();
+        m.development.pattern = averaged(&m.development.pattern, self.ldf_origin, origin)?;
+        Ok(m)
+    }
+
+    fn base_repr(&self) -> String {
         let given =
             |name: &str, v: Option<f64>| v.map_or(String::new(), |v| format!(", {name}={v:?}"));
         format!(
@@ -3283,7 +4160,7 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 ///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
-/// ldf, ldf_kind, ldf_weight : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
 ///     A selected development pattern, as in ``ChainLadder``: the
 ///     development pattern's factors at the ages it gives, so ``cdf`` and
 ///     the share developed ``1 / cdf`` follow it.
@@ -3301,12 +4178,13 @@ fn pattern_repr(cl: &ChainLadder) -> String {
 #[pyclass(name = "ExpectedLoss", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyExpectedLoss {
     inner: ExpectedLoss,
+    ldf_origin: Option<Grain>,
 }
 
 #[pymethods]
 impl PyExpectedLoss {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0))]
+    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         apriori: f64,
@@ -3319,8 +4197,11 @@ impl PyExpectedLoss {
         n_periods: Option<usize>,
         drop_high: usize,
         drop_low: usize,
+        ldf_origin: Option<&str>,
     ) -> PyResult<Self> {
+        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
         Ok(Self {
+            ldf_origin,
             inner: ExpectedLoss {
                 apriori,
                 chain_ladder: pattern(
@@ -3393,6 +4274,13 @@ impl PyExpectedLoss {
         pattern_kind_of(self.inner.chain_ladder.development.pattern.as_ref())
     }
 
+    /// The origin grain ``ldf`` was measured on, averaged over the fitted
+    /// origins' periods at fit time; ``None`` reads it at the origin's age.
+    #[getter]
+    fn ldf_origin(&self) -> Option<&'static str> {
+        self.ldf_origin.map(grain_name)
+    }
+
     /// The weight on the selected factors: a number, a dict by age, or
     /// ``None`` without a pattern.
     #[getter]
@@ -3429,14 +4317,65 @@ impl PyExpectedLoss {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyExpectedLossFit> {
-        let (m, tri) = (self.inner.clone(), &triangle.inner);
+        let tri = &triangle.inner;
+        let m = self.resolved(tri.origin_grain())?;
         let inner = py
             .detach(|| m.fit_segments(tri, column, exposure))
             .map_err(err)?;
         Ok(PyExpectedLossFit { inner })
     }
 
+    /// ``ExpectedLoss`` on a latest diagonal with its exposure, in every
+    /// segment, as ``ChainLadder.fit_diagonal`` projects one.
+    ///
+    /// Parameters
+    /// ----------
+    /// diagonal : LatestDiagonal
+    ///     With an exposure per origin.
+    /// development : ChainLadderFit, optional
+    ///     As ``ChainLadder.fit_diagonal``; this method keeps its own
+    ///     ``apriori``.
+    /// segment_map : dict, optional
+    ///     As ``ChainLadder.fit_diagonal``.
+    ///
+    /// Returns
+    /// -------
+    /// ExpectedLossFit
+    #[pyo3(signature = (diagonal, development = None, segment_map = None))]
+    fn fit_diagonal(
+        &self,
+        py: Python<'_>,
+        diagonal: PyRef<'_, PyLatestDiagonal>,
+        development: Option<&Bound<'_, PyAny>>,
+        segment_map: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<PyExpectedLossFit> {
+        let d = &diagonal.inner;
+        let m = self.resolved(d.origin_grain())?;
+        let source = diagonal_development(d, development, segment_map)?;
+        let inner = py
+            .detach(|| match &source {
+                None => m.fit_diagonal_segments(d),
+                Some(s) => m.fit_diagonal_segments_from(d, s),
+            })
+            .map_err(err)?;
+        Ok(PyExpectedLossFit { inner })
+    }
+
     fn __repr__(&self) -> String {
+        with_ldf_origin(self.base_repr(), self.ldf_origin)
+    }
+}
+
+impl PyExpectedLoss {
+    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// origins of `origin`.
+    fn resolved(&self, origin: Grain) -> PyResult<ExpectedLoss> {
+        let mut m = self.inner.clone();
+        m.chain_ladder = chain_ladder_on(&m.chain_ladder, self.ldf_origin, origin)?;
+        Ok(m)
+    }
+
+    fn base_repr(&self) -> String {
         format!(
             "ExpectedLoss(apriori={:?}, {})",
             self.inner.apriori,
@@ -3465,7 +4404,7 @@ impl PyExpectedLoss {
 ///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
-/// ldf, ldf_kind, ldf_weight : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
 ///     A selected development pattern, as in ``ChainLadder``: the
 ///     development pattern's factors at the ages it gives, so ``cdf`` and
 ///     the share developed ``1 / cdf`` follow it.
@@ -3483,12 +4422,13 @@ impl PyExpectedLoss {
 #[pyclass(name = "BornhuetterFerguson", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBornhuetterFerguson {
     inner: BornhuetterFerguson,
+    ldf_origin: Option<Grain>,
 }
 
 #[pymethods]
 impl PyBornhuetterFerguson {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0))]
+    #[pyo3(signature = (apriori = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         apriori: f64,
@@ -3501,8 +4441,11 @@ impl PyBornhuetterFerguson {
         n_periods: Option<usize>,
         drop_high: usize,
         drop_low: usize,
+        ldf_origin: Option<&str>,
     ) -> PyResult<Self> {
+        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
         Ok(Self {
+            ldf_origin,
             inner: BornhuetterFerguson {
                 apriori,
                 chain_ladder: pattern(
@@ -3575,6 +4518,13 @@ impl PyBornhuetterFerguson {
         pattern_kind_of(self.inner.chain_ladder.development.pattern.as_ref())
     }
 
+    /// The origin grain ``ldf`` was measured on, averaged over the fitted
+    /// origins' periods at fit time; ``None`` reads it at the origin's age.
+    #[getter]
+    fn ldf_origin(&self) -> Option<&'static str> {
+        self.ldf_origin.map(grain_name)
+    }
+
     /// The weight on the selected factors: a number, a dict by age, or
     /// ``None`` without a pattern.
     #[getter]
@@ -3609,14 +4559,65 @@ impl PyBornhuetterFerguson {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyExpectedLossFit> {
-        let (m, tri) = (self.inner.clone(), &triangle.inner);
+        let tri = &triangle.inner;
+        let m = self.resolved(tri.origin_grain())?;
         let inner = py
             .detach(|| m.fit_segments(tri, column, exposure))
             .map_err(err)?;
         Ok(PyExpectedLossFit { inner })
     }
 
+    /// ``BornhuetterFerguson`` on a latest diagonal with its exposure, in every
+    /// segment, as ``ChainLadder.fit_diagonal`` projects one.
+    ///
+    /// Parameters
+    /// ----------
+    /// diagonal : LatestDiagonal
+    ///     With an exposure per origin.
+    /// development : ChainLadderFit, optional
+    ///     As ``ChainLadder.fit_diagonal``; this method keeps its own
+    ///     ``apriori``.
+    /// segment_map : dict, optional
+    ///     As ``ChainLadder.fit_diagonal``.
+    ///
+    /// Returns
+    /// -------
+    /// ExpectedLossFit
+    #[pyo3(signature = (diagonal, development = None, segment_map = None))]
+    fn fit_diagonal(
+        &self,
+        py: Python<'_>,
+        diagonal: PyRef<'_, PyLatestDiagonal>,
+        development: Option<&Bound<'_, PyAny>>,
+        segment_map: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<PyExpectedLossFit> {
+        let d = &diagonal.inner;
+        let m = self.resolved(d.origin_grain())?;
+        let source = diagonal_development(d, development, segment_map)?;
+        let inner = py
+            .detach(|| match &source {
+                None => m.fit_diagonal_segments(d),
+                Some(s) => m.fit_diagonal_segments_from(d, s),
+            })
+            .map_err(err)?;
+        Ok(PyExpectedLossFit { inner })
+    }
+
     fn __repr__(&self) -> String {
+        with_ldf_origin(self.base_repr(), self.ldf_origin)
+    }
+}
+
+impl PyBornhuetterFerguson {
+    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// origins of `origin`.
+    fn resolved(&self, origin: Grain) -> PyResult<BornhuetterFerguson> {
+        let mut m = self.inner.clone();
+        m.chain_ladder = chain_ladder_on(&m.chain_ladder, self.ldf_origin, origin)?;
+        Ok(m)
+    }
+
+    fn base_repr(&self) -> String {
         format!(
             "BornhuetterFerguson(apriori={:?}, {})",
             self.inner.apriori,
@@ -3647,7 +4648,7 @@ impl PyBornhuetterFerguson {
 ///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
-/// ldf, ldf_kind, ldf_weight : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
 ///     A selected development pattern, as in ``ChainLadder``: the
 ///     development pattern's factors at the ages it gives, so ``cdf`` and
 ///     the share developed ``1 / cdf`` follow it.
@@ -3665,12 +4666,13 @@ impl PyBornhuetterFerguson {
 #[pyclass(name = "Benktander", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyBenktander {
     inner: Benktander,
+    ldf_origin: Option<Grain>,
 }
 
 #[pymethods]
 impl PyBenktander {
     #[new]
-    #[pyo3(signature = (apriori = 1.0, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0))]
+    #[pyo3(signature = (apriori = 1.0, n_iters = 1, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         apriori: f64,
@@ -3684,8 +4686,11 @@ impl PyBenktander {
         n_periods: Option<usize>,
         drop_high: usize,
         drop_low: usize,
+        ldf_origin: Option<&str>,
     ) -> PyResult<Self> {
+        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
         Ok(Self {
+            ldf_origin,
             inner: Benktander {
                 apriori,
                 n_iters,
@@ -3765,6 +4770,13 @@ impl PyBenktander {
         pattern_kind_of(self.inner.chain_ladder.development.pattern.as_ref())
     }
 
+    /// The origin grain ``ldf`` was measured on, averaged over the fitted
+    /// origins' periods at fit time; ``None`` reads it at the origin's age.
+    #[getter]
+    fn ldf_origin(&self) -> Option<&'static str> {
+        self.ldf_origin.map(grain_name)
+    }
+
     /// The weight on the selected factors: a number, a dict by age, or
     /// ``None`` without a pattern.
     #[getter]
@@ -3799,14 +4811,65 @@ impl PyBenktander {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyExpectedLossFit> {
-        let (m, tri) = (self.inner.clone(), &triangle.inner);
+        let tri = &triangle.inner;
+        let m = self.resolved(tri.origin_grain())?;
         let inner = py
             .detach(|| m.fit_segments(tri, column, exposure))
             .map_err(err)?;
         Ok(PyExpectedLossFit { inner })
     }
 
+    /// ``Benktander`` on a latest diagonal with its exposure, in every
+    /// segment, as ``ChainLadder.fit_diagonal`` projects one.
+    ///
+    /// Parameters
+    /// ----------
+    /// diagonal : LatestDiagonal
+    ///     With an exposure per origin.
+    /// development : ChainLadderFit, optional
+    ///     As ``ChainLadder.fit_diagonal``; this method keeps its own
+    ///     ``apriori`` and ``n_iters``.
+    /// segment_map : dict, optional
+    ///     As ``ChainLadder.fit_diagonal``.
+    ///
+    /// Returns
+    /// -------
+    /// ExpectedLossFit
+    #[pyo3(signature = (diagonal, development = None, segment_map = None))]
+    fn fit_diagonal(
+        &self,
+        py: Python<'_>,
+        diagonal: PyRef<'_, PyLatestDiagonal>,
+        development: Option<&Bound<'_, PyAny>>,
+        segment_map: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<PyExpectedLossFit> {
+        let d = &diagonal.inner;
+        let m = self.resolved(d.origin_grain())?;
+        let source = diagonal_development(d, development, segment_map)?;
+        let inner = py
+            .detach(|| match &source {
+                None => m.fit_diagonal_segments(d),
+                Some(s) => m.fit_diagonal_segments_from(d, s),
+            })
+            .map_err(err)?;
+        Ok(PyExpectedLossFit { inner })
+    }
+
     fn __repr__(&self) -> String {
+        with_ldf_origin(self.base_repr(), self.ldf_origin)
+    }
+}
+
+impl PyBenktander {
+    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// origins of `origin`.
+    fn resolved(&self, origin: Grain) -> PyResult<Benktander> {
+        let mut m = self.inner.clone();
+        m.chain_ladder = chain_ladder_on(&m.chain_ladder, self.ldf_origin, origin)?;
+        Ok(m)
+    }
+
+    fn base_repr(&self) -> String {
         format!(
             "Benktander(apriori={:?}, n_iters={}, {})",
             self.inner.apriori,
@@ -3843,7 +4906,7 @@ impl PyBenktander {
 ///     the highest and lowest link ratios at each age.
 /// tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
 ///     As ``ChainLadder``; no tail by default.
-/// ldf, ldf_kind, ldf_weight : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
 ///     A selected development pattern, as in ``ChainLadder``: the
 ///     development pattern's factors at the ages it gives, so ``cdf`` and
 ///     the share developed ``1 / cdf`` follow it.
@@ -3861,12 +4924,13 @@ impl PyBenktander {
 #[pyclass(name = "CapeCod", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyCapeCod {
     inner: CapeCod,
+    ldf_origin: Option<Grain>,
 }
 
 #[pymethods]
 impl PyCapeCod {
     #[new]
-    #[pyo3(signature = (trend = 0.0, decay = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0))]
+    #[pyo3(signature = (trend = 0.0, decay = 1.0, average = "volume", sigma_interpolation = "log-linear", tail = None, ldf = None, ldf_kind = None, ldf_weight = None, n_periods = None, drop_high = 0, drop_low = 0, ldf_origin = None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         trend: f64,
@@ -3880,8 +4944,11 @@ impl PyCapeCod {
         n_periods: Option<usize>,
         drop_high: usize,
         drop_low: usize,
+        ldf_origin: Option<&str>,
     ) -> PyResult<Self> {
+        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
         Ok(Self {
+            ldf_origin,
             inner: CapeCod {
                 trend,
                 decay,
@@ -3961,6 +5028,13 @@ impl PyCapeCod {
         pattern_kind_of(self.inner.chain_ladder.development.pattern.as_ref())
     }
 
+    /// The origin grain ``ldf`` was measured on, averaged over the fitted
+    /// origins' periods at fit time; ``None`` reads it at the origin's age.
+    #[getter]
+    fn ldf_origin(&self) -> Option<&'static str> {
+        self.ldf_origin.map(grain_name)
+    }
+
     /// The weight on the selected factors: a number, a dict by age, or
     /// ``None`` without a pattern.
     #[getter]
@@ -3996,14 +5070,67 @@ impl PyCapeCod {
         column: &str,
         exposure: &str,
     ) -> PyResult<PyCapeCodFit> {
-        let (m, tri) = (self.inner.clone(), &triangle.inner);
+        let tri = &triangle.inner;
+        let m = self.resolved(tri.origin_grain())?;
         let inner = py
             .detach(|| m.fit_segments(tri, column, exposure))
             .map_err(err)?;
         Ok(PyCapeCodFit { inner })
     }
 
+    /// ``CapeCod`` on a latest diagonal with its exposure, in every
+    /// segment, as ``ChainLadder.fit_diagonal`` projects one: its apriori
+    /// is estimated on the diagonal and trended to one valuation, the
+    /// latest month any origin of any segment is valued at.
+    ///
+    /// Parameters
+    /// ----------
+    /// diagonal : LatestDiagonal
+    ///     With an exposure per origin.
+    /// development : ChainLadderFit, optional
+    ///     As ``ChainLadder.fit_diagonal``; this method keeps its own
+    ///     ``trend`` and ``decay``.
+    /// segment_map : dict, optional
+    ///     As ``ChainLadder.fit_diagonal``.
+    ///
+    /// Returns
+    /// -------
+    /// CapeCodFit
+    #[pyo3(signature = (diagonal, development = None, segment_map = None))]
+    fn fit_diagonal(
+        &self,
+        py: Python<'_>,
+        diagonal: PyRef<'_, PyLatestDiagonal>,
+        development: Option<&Bound<'_, PyAny>>,
+        segment_map: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<PyCapeCodFit> {
+        let d = &diagonal.inner;
+        let m = self.resolved(d.origin_grain())?;
+        let source = diagonal_development(d, development, segment_map)?;
+        let inner = py
+            .detach(|| match &source {
+                None => m.fit_diagonal_segments(d),
+                Some(s) => m.fit_diagonal_segments_from(d, s),
+            })
+            .map_err(err)?;
+        Ok(PyCapeCodFit { inner })
+    }
+
     fn __repr__(&self) -> String {
+        with_ldf_origin(self.base_repr(), self.ldf_origin)
+    }
+}
+
+impl PyCapeCod {
+    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// origins of `origin`.
+    fn resolved(&self, origin: Grain) -> PyResult<CapeCod> {
+        let mut m = self.inner.clone();
+        m.chain_ladder = chain_ladder_on(&m.chain_ladder, self.ldf_origin, origin)?;
+        Ok(m)
+    }
+
+    fn base_repr(&self) -> String {
         format!(
             "CapeCod(trend={:?}, decay={:?}, {})",
             self.inner.trend,
@@ -4972,7 +6099,7 @@ impl PyClarkFit {
 ///     order, symmetric with a unit diagonal. It is converted to the normal
 ///     scores' correlation ``2 sin(pi rho / 6)``, which must be positive
 ///     definite.
-/// ldf, ldf_kind, ldf_weight : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
 ///     A selected development pattern, as in ``ChainLadder``. The residuals
 ///     and the scale come from the triangle's own volume-weighted factors;
 ///     each simulation then uses ``w * selected + (1 - w) * pseudo`` at
@@ -5037,6 +6164,7 @@ impl PyClarkFit {
 #[pyclass(name = "OdpBootstrap", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyOdpBootstrap {
     inner: OdpBootstrap,
+    ldf_origin: Option<Grain>,
 }
 
 #[pymethods]
@@ -5056,6 +6184,7 @@ impl PyOdpBootstrap {
         n_periods = None,
         drop_high = 0,
         drop_low = 0,
+        ldf_origin = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -5072,11 +6201,14 @@ impl PyOdpBootstrap {
         n_periods: Option<usize>,
         drop_high: usize,
         drop_low: usize,
+        ldf_origin: Option<&str>,
     ) -> PyResult<Self> {
+        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
         }
         Ok(Self {
+            ldf_origin,
             inner: OdpBootstrap {
                 n_sims,
                 seed,
@@ -5136,6 +6268,13 @@ impl PyOdpBootstrap {
     #[getter]
     fn ldf_kind(&self) -> Option<&'static str> {
         pattern_kind_of(self.inner.pattern.as_ref())
+    }
+
+    /// The origin grain ``ldf`` was measured on, averaged over the fitted
+    /// origins' periods at fit time; ``None`` reads it at the origin's age.
+    #[getter]
+    fn ldf_origin(&self) -> Option<&'static str> {
+        self.ldf_origin.map(grain_name)
     }
 
     /// The weight on the selected factors: a number, a dict by age, or
@@ -5210,7 +6349,8 @@ impl PyOdpBootstrap {
         triangle: PyRef<'_, PyTriangle>,
         column: &str,
     ) -> PyResult<PyOdpBootstrapFit> {
-        let (boot, tri) = (&self.inner, &triangle.inner);
+        let tri = &triangle.inner;
+        let boot = &self.resolved(tri.origin_grain())?;
         let inner = py.detach(|| boot.fit_segments(tri, column)).map_err(err)?;
         Ok(PyOdpBootstrapFit { inner })
     }
@@ -5322,8 +6462,9 @@ impl PyOdpBootstrap {
         exposure: Option<String>,
         bootstrap_ldf: bool,
     ) -> PyResult<PyOneYearFit> {
-        let method = one_year_method(method, exposure)?;
-        let mut boot = self.inner.clone();
+        let origin = triangle.inner.origin_grain();
+        let method = one_year_method(method, exposure, origin)?;
+        let mut boot = self.resolved(origin)?;
         boot.one_year_pattern = one_year_pattern(boot.pattern.is_some(), bootstrap_ldf)?;
         let tri = &triangle.inner;
         let inner = py
@@ -5335,6 +6476,20 @@ impl PyOdpBootstrap {
     }
 
     fn __repr__(&self) -> String {
+        with_ldf_origin(self.base_repr(), self.ldf_origin)
+    }
+}
+
+impl PyOdpBootstrap {
+    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// origins of `origin`.
+    fn resolved(&self, origin: Grain) -> PyResult<OdpBootstrap> {
+        let mut m = self.inner.clone();
+        m.pattern = averaged(&m.pattern, self.ldf_origin, origin)?;
+        Ok(m)
+    }
+
+    fn base_repr(&self) -> String {
         let std_err = self
             .inner
             .tail_std_err
@@ -5534,14 +6689,18 @@ fn one_year_pattern(own: bool, bootstrap_ldf: bool) -> PyResult<OneYearPattern> 
 
 /// The method of ``OdpBootstrap.one_year``: a chain ladder without
 /// exposure, or an expected-loss method with its exposure column.
-fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyResult<OneYearMethod> {
+fn one_year_method(
+    method: &Bound<'_, PyAny>,
+    exposure: Option<String>,
+    origin: Grain,
+) -> PyResult<OneYearMethod> {
     if let Ok(m) = method.extract::<PyRef<'_, PyChainLadder>>() {
         if exposure.is_some() {
             return Err(PyValueError::new_err(
                 "ChainLadder takes no exposure column",
             ));
         }
-        return Ok(OneYearMethod::ChainLadder(m.inner.clone()));
+        return Ok(OneYearMethod::ChainLadder(m.resolved(origin)?));
     }
     let needs_exposure = |name: &str| {
         exposure.clone().ok_or_else(|| {
@@ -5552,25 +6711,25 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
     };
     if let Ok(m) = method.extract::<PyRef<'_, PyExpectedLoss>>() {
         return Ok(OneYearMethod::ExpectedLoss(
-            m.inner.clone(),
+            m.resolved(origin)?,
             needs_exposure("ExpectedLoss")?,
         ));
     }
     if let Ok(m) = method.extract::<PyRef<'_, PyBornhuetterFerguson>>() {
         return Ok(OneYearMethod::BornhuetterFerguson(
-            m.inner.clone(),
+            m.resolved(origin)?,
             needs_exposure("BornhuetterFerguson")?,
         ));
     }
     if let Ok(m) = method.extract::<PyRef<'_, PyBenktander>>() {
         return Ok(OneYearMethod::Benktander(
-            m.inner.clone(),
+            m.resolved(origin)?,
             needs_exposure("Benktander")?,
         ));
     }
     if let Ok(m) = method.extract::<PyRef<'_, PyCapeCod>>() {
         return Ok(OneYearMethod::CapeCod(
-            m.inner.clone(),
+            m.resolved(origin)?,
             needs_exposure("CapeCod")?,
         ));
     }
@@ -5674,7 +6833,7 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 ///     order, symmetric with a unit diagonal. It is converted to the normal
 ///     scores' correlation ``2 sin(pi rho / 6)``, which must be positive
 ///     definite.
-/// ldf, ldf_kind, ldf_weight : optional
+/// ldf, ldf_kind, ldf_weight, ldf_origin : optional
 ///     A selected development pattern, as in ``ChainLadder``. Mack's sigmas
 ///     and residuals come from the triangle's own estimate; each simulation
 ///     then uses ``w * selected + (1 - w) * pseudo`` at the selected ages,
@@ -5718,6 +6877,7 @@ fn one_year_method(method: &Bound<'_, PyAny>, exposure: Option<String>) -> PyRes
 #[pyclass(name = "MackBootstrap", module = "prospicio.reserving", frozen)]
 pub(crate) struct PyMackBootstrap {
     inner: MackBootstrap,
+    ldf_origin: Option<Grain>,
 }
 
 fn mack_process(name: &str) -> PyResult<MackProcess> {
@@ -5765,6 +6925,7 @@ impl PyMackBootstrap {
         n_periods = None,
         drop_high = 0,
         drop_low = 0,
+        ldf_origin = None,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -5785,11 +6946,14 @@ impl PyMackBootstrap {
         n_periods: Option<usize>,
         drop_high: usize,
         drop_low: usize,
+        ldf_origin: Option<&str>,
     ) -> PyResult<Self> {
+        let ldf_origin = ldf_origin_arg(ldf_origin, ldf)?;
         if n_sims == 0 {
             return Err(PyValueError::new_err("n_sims must be positive"));
         }
         Ok(Self {
+            ldf_origin,
             inner: MackBootstrap {
                 n_sims,
                 seed,
@@ -5900,6 +7064,13 @@ impl PyMackBootstrap {
         pattern_kind_of(self.inner.development.pattern.as_ref())
     }
 
+    /// The origin grain ``ldf`` was measured on, averaged over the fitted
+    /// origins' periods at fit time; ``None`` reads it at the origin's age.
+    #[getter]
+    fn ldf_origin(&self) -> Option<&'static str> {
+        self.ldf_origin.map(grain_name)
+    }
+
     /// The weight on the selected factors: a number, a dict by age, or
     /// ``None`` without a pattern.
     #[getter]
@@ -5979,7 +7150,8 @@ impl PyMackBootstrap {
         triangle: PyRef<'_, PyTriangle>,
         column: &str,
     ) -> PyResult<PyMackBootstrapFit> {
-        let (boot, tri) = (&self.inner, &triangle.inner);
+        let tri = &triangle.inner;
+        let boot = &self.resolved(tri.origin_grain())?;
         let inner = py.detach(|| boot.fit_segments(tri, column)).map_err(err)?;
         Ok(PyMackBootstrapFit { inner })
     }
@@ -6036,8 +7208,9 @@ impl PyMackBootstrap {
         exposure: Option<String>,
         bootstrap_ldf: bool,
     ) -> PyResult<PyOneYearFit> {
-        let method = one_year_method(method, exposure)?;
-        let mut boot = self.inner.clone();
+        let origin = triangle.inner.origin_grain();
+        let method = one_year_method(method, exposure, origin)?;
+        let mut boot = self.resolved(origin)?;
         boot.one_year_pattern =
             one_year_pattern(boot.development.pattern.is_some(), bootstrap_ldf)?;
         let tri = &triangle.inner;
@@ -6050,6 +7223,20 @@ impl PyMackBootstrap {
     }
 
     fn __repr__(&self) -> String {
+        with_ldf_origin(self.base_repr(), self.ldf_origin)
+    }
+}
+
+impl PyMackBootstrap {
+    /// The method with its pattern averaged as ``ldf_origin`` says, for
+    /// origins of `origin`.
+    fn resolved(&self, origin: Grain) -> PyResult<MackBootstrap> {
+        let mut m = self.inner.clone();
+        m.development.pattern = averaged(&m.development.pattern, self.ldf_origin, origin)?;
+        Ok(m)
+    }
+
+    fn base_repr(&self) -> String {
         let given =
             |name: &str, v: Option<f64>| v.map_or(String::new(), |v| format!(", {name}={v:?}"));
         format!(

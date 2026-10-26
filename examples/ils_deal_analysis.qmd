@@ -1,0 +1,440 @@
+---
+title: "An ILS deal analysis with prospicio"
+subtitle: "R version, with the prospicio R package"
+format:
+  html:
+    toc: true
+    code-tools: true
+    embed-resources: true
+execute:
+  warning: false
+---
+
+An investment fund is offered a share of a cedant's 2026 premium as a **collateralised reinsurance** deal, the kind of transaction the insurance-linked securities (ILS) market writes: the fund posts collateral in a trust, the cedant pays premium into it, losses are paid out of it, and what is left goes back to the fund when the deal is commuted. The fund's question is "what return does this give my investors, how likely is a loss, and how do the alternative structures compare?" This document is the R twin of [`ils_deal_analysis.ipynb`](ils_deal_analysis.ipynb): same data, same seeds, same model, and the numbers agree with the notebook's. It answers the question end to end:
+
+1. read a submission and build the cedant's loss triangle;
+2. show the historical exhibits and test how well a Bayesian model forecasts the cedant's own history;
+3. state an industry prior as an explicit input, and fit the cedant's ultimates against it;
+4. draw the 2026 loss ratio, pass it through the reinsurance structure, collateral and cash flows;
+5. read the investor's IRR, MOIC and downside from the simulations, and compare two structures;
+6. after binding, compare the next diagonal of actual losses with the one-year forecast.
+
+Every step that `prospicio` does not yet cover is marked **workaround** where it occurs, and the closing section lists the gaps with their issues. The prose is shorter than the notebook's, which explains each step; read it alongside.
+
+**The data.** The submission is the synthetic one of `submission_evaluation.ipynb`: `examples/data/make_submission.py` wrote it from known parameters. Here the cedant offers a **20% quota share** of its commercial property book for 2026, so the loss to the fund is a share of the cedant's whole-book loss ratio. Everything about the deal's terms below (the share, the commission, the collateral rule, the yield) is an assumption chosen for the demonstration, not a figure in the files.
+
+To run it, clone the repository, install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`), then render from anywhere in the repository with `quarto render examples/ils_deal_analysis.qmd`. Set the environment variable `PROSPICIO_EXAMPLE_SIMS` to run fewer simulations.
+
+```{r}
+#| label: setup
+library(prospicio)
+
+N_SIMS <- as.integer(Sys.getenv("PROSPICIO_EXAMPLE_SIMS", "10000"))
+N_ONE_YEAR <- min(N_SIMS, 1000L)  # one-year simulations for the monitoring section
+SAMPLER <- list(chains = 4, tune = 600, draws = 600)  # small on purpose: the demo runs in a few minutes
+SEED <- 20261023
+
+# The submission's folder, from wherever the document renders inside the repository.
+find_data <- function(start = getwd()) {
+  dir <- normalizePath(start, winslash = "/")
+  repeat {
+    for (sub in c("examples/data/submission", "data/submission")) {
+      candidate <- file.path(dir, sub)
+      if (dir.exists(candidate)) return(candidate)
+    }
+    parent <- dirname(dir)
+    if (identical(parent, dir)) stop("examples/data/submission not found above ", start)
+    dir <- parent
+  }
+}
+DATA <- find_data()
+read_csv <- function(name) read.csv(file.path(DATA, name), stringsAsFactors = FALSE)
+
+when <- function(text) {
+  p <- as.integer(strsplit(text, "-")[[1]])
+  year_fraction(p[1], p[2], p[3])
+}
+money <- function(x) sprintf("%.1fm", x / 1e6)
+
+# The i-th point of a low-discrepancy sequence on (0, 1): the same numbers as the notebook, with no generator to differ.
+uniform <- function(i) (0.5 + i * 0.6180339887498949) %% 1
+normal <- function(i) qnorm(uniform(i))
+sd_pop <- function(x) sqrt(mean((x - mean(x))^2))
+
+cat("submission files in", basename(dirname(DATA)), "/", basename(DATA), ";", N_SIMS, "simulations, seed", SEED, "\n")
+```
+
+## 1. The submission and the cedant's triangle
+
+The files give the loss triangle (paid and incurred by accident year and age), the premium by year, and the rate changes, which let us restate every year's premium at the **current rate level** (the *on-level* premium). The loss ratio we forecast for 2026 is on the 2026 on-level premium.
+
+```{r}
+#| label: data
+program_table <- read_csv("treaty_program.csv")
+program <- setNames(program_table$value, program_table$item)
+subject <- read_csv("subject_premium.csv")
+YEARS <- subject$calendar_year
+SUBJECT_PREMIUM <- setNames(subject$subject_premium, YEARS)
+P_2026 <- as.numeric(program[["estimated_subject_premium_income"]])
+
+rate_rows <- read_csv("rate_changes.csv")
+effective <- vapply(rate_rows$effective_date, when, numeric(1))
+onlevel <- setNames(vapply(YEARS, function(y) {
+  SUBJECT_PREMIUM[[as.character(y)]] *
+    rate_level(effective, rate_rows$average_rate_change, start = y, end = y + 1, term = 1)$on_level_factor
+}, numeric(1)), YEARS)
+
+tri_rows <- read_csv("triangle.csv")
+tri_rows$onlevel <- onlevel[as.character(tri_rows$accident_year)]
+triangle_all <- triangle(tri_rows, "accident_year", "development_months", c("paid", "incurred", "onlevel"))
+cat(sprintf("cedant %s; %s; treaty year %s to %s\n", program[["cedant"]], program[["line_of_business"]],
+            program[["period_start"]], program[["period_end"]]))
+cat(sprintf("estimated 2026 subject premium %s; triangle origins %s to %s, %d ages\n", money(P_2026),
+            triangle_all@origins[1], tail(triangle_all@origins, 1), length(triangle_all@development)))
+```
+
+## 2. Historical exhibits and a backtest
+
+The **paid chain ladder** gives the cedant's payment pattern, which the cash-flow step needs. The **loss ratio by accident year** at its latest age, on on-level premium, shows the level and the spread the prior will be compared with.
+
+```{r}
+#| label: exhibits
+chain <- chain_ladder(triangle_all, "paid")
+CDF <- as.numeric(chain@cdf)
+AGES <- 12 * seq_along(CDF)
+last_rows <- tri_rows[!duplicated(tri_rows$accident_year, fromLast = TRUE), ]
+latest_incurred <- setNames(last_rows$incurred, last_rows$accident_year)
+loss_ratio_now <- latest_incurred[as.character(YEARS)] / onlevel[as.character(YEARS)]
+
+cat("paid chain ladder: age (months), factor to ultimate, share paid\n")
+print(data.frame(age = AGES, cdf = round(CDF, 3), paid = sprintf("%.1f%%", 100 / CDF)), row.names = FALSE)
+print(data.frame(year = YEARS, on_level_premium = money(onlevel), incurred_now = money(latest_incurred),
+                 incurred_lr = sprintf("%.1f%%", 100 * loss_ratio_now)), row.names = FALSE)
+```
+
+```{r}
+#| label: exhibit-chart
+op <- par(mfrow = c(1, 2), mar = c(5, 4, 3, 1))
+plot(c(0, AGES / 12), c(0, 1 / CDF), type = "b", xlab = "years since the start of the accident year",
+     ylab = "share of ultimate paid", main = "Paid pattern (chain ladder)")
+barplot(loss_ratio_now, names.arg = YEARS, las = 2, ylab = "incurred loss ratio at latest age",
+        main = "Loss ratio by accident year")
+par(op)
+```
+
+A **diagonal backtest** holds out the latest calendar diagonals, fits the model on what was known before each, and scores its forecast of the cells that then arrived. Here it is the Bayesian over-dispersed Poisson chain ladder on two diagonals, with a small sampler so the document stays quick.
+
+```{r}
+#| label: backtest
+backtest <- diagonal_backtest(triangle_all, "paid", list(bayes_odp = do.call(bayes_odp_spec, SAMPLER)), 2,
+                              n_sims = 500, seed = SEED)
+cat("held-out diagonals:", paste(backtest@diagonals, collapse = ", "), "\n")
+print(backtest@mean, row.names = FALSE)
+if (nrow(backtest@warnings)) print(backtest@warnings)
+```
+
+## 3. The industry prior as an explicit input
+
+A prior for the ultimate loss ratio, with a stated strength, is written down as a **prior mean `m` and coefficient of variation `cv`**. `prospicio` estimates one from several programs with `hierarchical_credibility()` (Buhlmann-Straub with a normal prior on the collective mean).
+
+**Workaround (gaps G2 and G7).** The library has no industry benchmark builder from published data, and no model of many programs' triangles with a shared hyperprior. So the peer programs below are **synthetic**, drawn from a fixed low-discrepancy sequence so that this document has the notebook's numbers: twelve programs with eight years of loss ratios and premium weights. What stays real is the method: the collective mean and the distribution of a program's expected loss ratio, which give `m` and `cv`. The prior on the collective mean (`collective_mean = c(0.50, 0.10)`) is the analyst's judgment about the line.
+
+```{r}
+#| label: prior
+N_PEERS <- 12
+N_PEER_YEARS <- 8
+peer_mean <- 0.48 + 0.06 * normal(0:(N_PEERS - 1))
+peer_weight <- t(sapply(0:(N_PEERS - 1), function(i) 0.5 + 1.5 * uniform(100 + i * N_PEER_YEARS + 0:(N_PEER_YEARS - 1))))
+peer_ratio <- t(sapply(0:(N_PEERS - 1), function(i) {
+  j <- 0:(N_PEER_YEARS - 1)
+  peer_mean[i + 1] + 0.08 / sqrt(peer_weight[i + 1, j + 1]) * normal(1000 + i * N_PEER_YEARS + j)
+}))
+
+industry <- do.call(hierarchical_credibility,
+                    c(list(peer_ratio, peer_weight, collective_mean = c(0.50, 0.10), seed = SEED), SAMPLER))
+# The risk premiums of all groups pooled: the distribution of a program's expected loss ratio in this market.
+pooled <- as.numeric(draw_matrix(credibility_predictive(industry, n_sims = 2000, seed = SEED)))
+M_PRIOR <- mean(pooled)
+CV_PRIOR <- sd_pop(pooled) / M_PRIOR
+cat(sprintf("collective mean %.3f; a program's expected loss ratio: mean %.3f, sd %.3f, cv %.3f\n",
+            industry$collective_mean, M_PRIOR, sd_pop(pooled), CV_PRIOR))
+cat(sprintf("inputs used below: m = %.3f, cv = %.3f\n", M_PRIOR, CV_PRIOR))
+```
+
+## 4. The cedant's ultimates against that prior
+
+`bayes_bf_normalised()` is the Bayesian Bornhuetter-Ferguson with the prior on each accident year's **expected ultimate**: `apriori` is the expected ultimate loss ratio and `cv` how firmly it is held. It is fitted to the **paid** triangle on on-level premium, so that its pattern is the payment pattern the cash flows need. The model has no tail beyond the last age; the oldest age is dropped, since only 2016 has it, the chain ladder shows no development there, and the model needs every column's increments to sum to more than zero.
+
+```{r}
+#| label: fit
+fit_rows <- tri_rows[tri_rows$development_months <= 108, ]
+build <- function(rows) triangle(rows, "accident_year", "development_months", c("paid", "onlevel"))
+newest <- !duplicated(fit_rows$accident_year, fromLast = TRUE)
+latest_fit <- setNames(fit_rows$paid[newest], fit_rows$accident_year[newest])
+fit <- do.call(bayes_bf_normalised,
+               c(list(build(fit_rows), "paid", "onlevel", apriori = M_PRIOR, cv = CV_PRIOR, n_sims = N_SIMS,
+                      seed = SEED), SAMPLER))
+
+origins <- as.integer(fit@origins)
+exposure <- setNames(fit@exposure, origins)
+ultimate_lr <- lapply(setNames(origins, origins), function(o) {  # latest paid plus the reserve draws, over premium
+  (latest_fit[[as.character(o)]] + marginal(fit@reserves, as.character(o))@draws) / exposure[[as.character(o)]]
+})
+post_mean <- vapply(ultimate_lr, mean, numeric(1))
+post_cv <- vapply(ultimate_lr, sd_pop, numeric(1)) / post_mean
+
+cat("ultimate loss ratio, paid basis: posterior mean, cv, and the prior mean\n")
+print(data.frame(year = origins, posterior = sprintf("%.3f", post_mean), cv = sprintf("%.3f", post_cv),
+                 prior = sprintf("%.3f", M_PRIOR)), row.names = FALSE)
+cat("pattern (share paid at each age):", paste(sprintf("%.3f", fit@pattern), collapse = ", "), "\n")
+cat("sampler diagnostics: max R-hat", format(fit@diagnostics$max_rhat), "\n")
+```
+
+## 5. The 2026 loss ratio
+
+**Workaround (gaps G1 and G5).** The model forecasts the cells of years the triangle already contains. It has no posterior predictive for a **new** accident year, and no function that turns reserve draws into a per-simulation loss ratio (done by hand above). For 2026 we therefore use a **lognormal** whose mean is the average of the last five years' posterior mean ultimate loss ratios (loss ratios drift up over the ten years and the model has no trend, so older years would understate 2026), and whose coefficient of variation combines three things: the spread of those five years' means, the average posterior cv of one year, and the industry prior's cv, as the uncertainty about the level in 2026. It is a stand-in for a proper predictive.
+
+```{r}
+#| label: loss-ratio
+RECENT <- as.character(tail(origins, 5))
+MU_2026 <- mean(post_mean[RECENT])
+CV_BETWEEN <- sd_pop(post_mean[RECENT]) / MU_2026
+CV_WITHIN <- sqrt(mean(post_cv[RECENT]^2))
+CV_LEVEL <- CV_PRIOR
+CV_2026 <- sqrt(CV_BETWEEN^2 + CV_WITHIN^2 + CV_LEVEL^2)
+sigma <- sqrt(log(1 + CV_2026^2))
+mu <- log(MU_2026) - sigma^2 / 2
+LR <- exp(mu + sigma * normal(10000 + 0:(N_SIMS - 1)))  # the 2026 ultimate loss ratio, one per simulation
+cat(sprintf("2026 loss ratio: mean %.3f (target %.3f), cv %.3f (between years %.3f, within a year %.3f, level %.3f)\n",
+            mean(LR), MU_2026, sd_pop(LR) / mean(LR), CV_BETWEEN, CV_WITHIN, CV_LEVEL))
+cat("percentiles 5, 50, 95:", paste(sprintf("%.3f", sort(LR)[floor(N_SIMS * c(0.05, 0.5, 0.95)) + 1]), collapse = ", "), "\n")
+```
+
+## 6. The structure
+
+The fund takes 20% of the cedant's subject premium and of its losses: a **quota share**. Two commission terms are compared throughout: **A, flat**, a 32% ceding commission whatever happens, and **B, sliding scale**, falling from 36% at a loss ratio of 45% to 24% at 70%, passing 32% at 52%. `apply_tower()` applies the contract to the 2026 annual losses (the loss ratio times the premium), one per simulation, and `deal_ratios()` reads off the loss ratio, the commission, the brokerage and the margin of each simulation.
+
+```{r}
+#| label: structure
+CESSION <- 0.20
+BROKERAGE <- 0.025
+CEDED_PREMIUM <- CESSION * P_2026
+annual_loss <- LR * P_2026  # the cedant's whole-book loss, one per simulation
+
+flat <- quota_share("A_flat", CESSION)
+flat <- with_brokerage(with_ceding_commission(with_premium_rate(flat, 1, P_2026), 0.32), BROKERAGE)
+sliding <- quota_share("B_sliding", CESSION)
+sliding <- with_brokerage(with_sliding_scale(with_premium_rate(sliding, 1, P_2026),
+                                             c(0.36, 0.32, 0.24), c(0.45, 0.52, 0.70)), BROKERAGE)
+
+deals <- list()
+for (name in c("A_flat", "B_sliding")) {
+  tower <- reinsurance_tower(list(if (name == "A_flat") flat else sliding))
+  result <- apply_tower(tower, annual_loss)
+  ratios <- deal_ratios(tower, result, name)
+  column <- function(n) marginal(ratios, n)@draws
+  deals[[name]] <- list(tower = tower, result = result, loss = column("loss_ratio"),
+                        commission = column("ceding_commission") + column("brokerage"), margin = column("margin"))
+}
+print(data.frame(structure = names(deals),
+                 mean_LR = sprintf("%.3f", vapply(deals, function(d) mean(d$loss), 0)),
+                 mean_comm_brkg = sprintf("%.3f", vapply(deals, function(d) mean(d$commission), 0)),
+                 mean_margin = sprintf("%+.3f", vapply(deals, function(d) mean(d$margin), 0)),
+                 sd_margin = sprintf("%.3f", vapply(deals, function(d) sd_pop(d$margin), 0))), row.names = FALSE)
+cat("ceded premium", money(CEDED_PREMIUM), "\n")
+```
+
+## 7. Collateral and cash flows
+
+The money moves monthly. The paid chain ladder's factors give the share of the ultimate loss paid by each age. **Workaround (gap G4):** `cashflow_terms()` wants cumulative *monthly* shares, and there is no converter, so the annual pattern is interpolated linearly by hand below. **Gap G3:** the pattern is the same in every simulation. Premium is written evenly over 2026 and collected as written, and earned over the following two years. The trust must hold 30% of the unearned premium plus 125% of the outstanding loss (the deal's ultimate loss less paid to date). The trust earns 3% a year, expenses are 0.5% a year of the requirement, and at month 60 the deal commutes.
+
+The cash-flow engine takes the ultimate loss ratio of the **deal** of each simulation and returns the investor's flows. **Workaround (a gap beyond G1 to G8):** the engine's premium into the trust is `collected_rate` times the premium, a number fixed in the terms, whereas the sliding scale makes the commission differ by simulation (its `commission` argument only feeds premium adjustments and the fee). So the simulations are grouped by their commission rate (to 0.1 percentage point), one engine run for each group with that group's `collected_rate`, and the flows are put back in simulation order.
+
+```{r}
+#| label: cashflows
+T_MONTHS <- 60
+pattern <- payment_pattern_from_development(AGES / 12, c(pmax(1, CDF[-length(CDF)]), 1))
+cum_paid <- cumsum(pattern$shares)
+
+paid_share <- function(month) {
+  # Cumulative share of the ultimate paid by the end of `month`: the annual pattern, interpolated linearly.
+  t <- month / 12
+  lo <- floor(t)
+  a <- if (lo > 0) cum_paid[lo] else 0
+  b <- cum_paid[lo + 1]
+  a + (b - a) * (t - lo)
+}
+earned_share <- function(month) {
+  t <- month / 12
+  if (t <= 1) t * t / 2 else min(1, 1 - (2 - t)^2 / 2)
+}
+written <- pmin(1, seq_len(T_MONTHS) / 12)
+earned <- vapply(seq_len(T_MONTHS), earned_share, 0)
+paid <- vapply(seq_len(T_MONTHS), paid_share, 0)
+duration <- sum(pattern$times * pattern$shares)
+cat(sprintf("payment pattern: mean time to payment %.2f years; paid by month 12, 24, 60: %.1f%%, %.1f%%, %.1f%%\n",
+            duration, 100 * paid[12], 100 * paid[24], 100 * paid[60]))
+
+requirement <- cashflow_requirement(c("unearned-premium" = 0.30, outstanding = 1.25))
+make_terms <- function(commission) {
+  cashflow_terms(CEDED_PREMIUM, T_MONTHS, written, earned, paid, requirement,
+                 commutation_requirement = cashflow_requirement(c(outstanding = 1.0)),
+                 collected_rate = 1 - commission, annual_yield = 0.03, expense_rate = 0.005)
+}
+
+run_structure <- function(u, commission) {
+  # One engine run for each distinct commission rate, flows back in simulation order.
+  groups <- split(seq_along(u), round(commission, 3))
+  flows <- matrix(0, length(u), T_MONTHS)
+  funded <- numeric(length(u))
+  opening <- numeric(length(u))
+  for (g in names(groups)) {
+    index <- groups[[g]]
+    out <- cashflow_run(make_terms(as.numeric(g)), u[index])
+    flows[index, ] <- out$flows
+    funded[index] <- out$funded
+    opening[index] <- out$opening
+  }
+  list(flows = flows, funded = funded, opening = opening)
+}
+
+for (name in names(deals)) {
+  d <- deals[[name]]
+  run <- run_structure(d$loss, d$commission)
+  d$flows <- run$flows
+  d$funded <- run$funded
+  d$opening <- run$opening
+  d$run <- deal_run_from_tower(name, d$tower, d$result, name, flows = run$flows, funded = run$funded,
+                               opening = run$opening, patterns = list(written, earned, paid))
+  book_cf <- book_cashflows(deal_book(list(d$run)))  # a book of one deal: its IRR and MOIC in each simulation
+  d$rate <- book_cf$irr$rate
+  d$moic <- book_cf$moic
+  deals[[name]] <- d
+}
+cat(length(deals), "structures run,", N_SIMS, "simulations each,", T_MONTHS, "months\n")
+cat("capital called from the fund over the term, summed (mean; it is recycled as losses are paid):",
+    paste(names(deals), money(vapply(deals, function(d) mean(d$funded), 0)), collapse = ", "), "\n")
+```
+
+## 8. What the investor gets
+
+For each structure, the return per simulation: the **IRR** (a simulation with no root in the search range, -95% to 100%, is left out and counted), the **MOIC** (one plus the net flows over the capital called from the fund), and the downside: the chance of a negative IRR or a MOIC below 1 and the mean of the worst 5% of IRRs.
+
+```{r}
+#| label: investor
+rows <- lapply(names(deals), function(name) {
+  d <- deals[[name]]
+  rate <- d$rate[is.finite(d$rate)]
+  ordered <- sort(rate)
+  pct <- function(p) ordered[min(length(ordered), floor(p * length(ordered)) + 1)]
+  worst <- ordered[seq_len(max(1, length(ordered) %/% 20))]
+  data.frame(structure = name, mean_MOIC = sprintf("%.3f", mean(d$moic)), IRR_p5 = sprintf("%+.1f%%", 100 * pct(0.05)),
+             IRR_p50 = sprintf("%+.1f%%", 100 * pct(0.5)), IRR_p95 = sprintf("%+.1f%%", 100 * pct(0.95)),
+             P_IRR_neg = sprintf("%.1f%%", 100 * mean(rate < 0)), P_MOIC_lt_1 = sprintf("%.1f%%", 100 * mean(d$moic < 1)),
+             IRR_TVaR5 = sprintf("%+.1f%%", 100 * mean(worst)), no_root = length(d$rate) - length(rate))
+})
+print(do.call(rbind, rows), row.names = FALSE)
+```
+
+```{r}
+#| label: investor-chart
+op <- par(mfrow = c(1, 2), mar = c(5, 4, 3, 1))
+colours <- c(rgb(0.2, 0.4, 0.8, 0.5), rgb(0.9, 0.5, 0.1, 0.5))
+hist(deals$A_flat$rate[is.finite(deals$A_flat$rate)], breaks = seq(-0.95, 1, by = 0.025), col = colours[1],
+     xlim = c(-0.5, 0.6), main = "Investor IRR", xlab = "IRR (annual)")
+hist(deals$B_sliding$rate[is.finite(deals$B_sliding$rate)], breaks = seq(-0.95, 1, by = 0.025), col = colours[2],
+     add = TRUE)
+hist(deals$A_flat$moic, breaks = 60, col = colours[1], xlim = c(0.5, 1.6), main = "Investor MOIC", xlab = "MOIC")
+hist(deals$B_sliding$moic, breaks = 60, col = colours[2], add = TRUE)
+legend("topright", legend = names(deals), fill = colours, bty = "n")
+par(op)
+```
+
+`risk_ratios()` takes the per-simulation margin, where large is good, and returns Sharpe, Sortino, Omega and the TVaR ratio about a threshold (here a target margin of 10%). The quantity is the deal's **margin** (one less the combined ratio) rather than the fund's return.
+
+```{r}
+#| label: risk-ratios
+for (name in names(deals)) {
+  cat(name, "\n")
+  print(round(unlist(risk_ratios(deals[[name]]$margin, threshold = 0.10, tvar_levels = 95)), 3))
+}
+```
+
+## 9. Comparing the structures
+
+`book_summary()` puts the structures' premium, loss and deductions side by side. (A `deal_book()` adds its deals on the same simulated years, so its **total** row would be a portfolio holding both; we read the per-structure rows only.)
+
+```{r}
+#| label: compare
+summary_book <- book_summary(deal_book(lapply(deals, function(d) d$run)))
+summary_book <- summary_book[summary_book$deal != "total", ]
+print(data.frame(deal = summary_book$deal, item = summary_book$item, mean = money(summary_book$mean),
+                 ratio_to_premium = sprintf("%.3f", summary_book$ratio)), row.names = FALSE)
+```
+
+## 10. Monitoring after binding
+
+Each quarter brings a new diagonal of actual paid losses. The check holds the latest diagonal out, fits the model on what was known a year earlier, takes the **one-year view** (the distribution of the claims development result over the coming year), and compares it with what the diagonal did. The realised result is the opening reserve less what was paid in the year less the closing reserve, per accident year already in the triangle, with the closing reserve estimated by the model fitted to the full triangle.
+
+**Gap G6:** this reads a result for the cedant's *history*. Re-running the *deal* from a valuation month is not in the library.
+
+```{r}
+#| label: monitoring
+valuation_year <- function(rows) rows$accident_year + rows$development_months %/% 12 - 1
+last <- max(valuation_year(fit_rows))
+opening_rows <- fit_rows[valuation_year(fit_rows) < last, ]
+newest_open <- !duplicated(opening_rows$accident_year, fromLast = TRUE)
+paid_open <- setNames(opening_rows$paid[newest_open], opening_rows$accident_year[newest_open])
+
+view <- do.call(bayes_bf_normalised_one_year,
+                c(list(build(opening_rows), "paid", "onlevel", apriori = M_PRIOR, cv = CV_PRIOR, n_sims = N_ONE_YEAR,
+                       seed = SEED, one_year_sims = N_ONE_YEAR), SAMPLER))
+cdr <- total(view@cdr)@draws
+
+opening_reserve <- view@opening_reserve
+closing_reserve <- vapply(names(opening_reserve), function(o) mean(marginal(fit@reserves, o)@draws), 0)
+paid_in_year <- latest_fit[names(opening_reserve)] - paid_open[names(opening_reserve)]
+realised <- sum(opening_reserve - paid_in_year - closing_reserve)
+percentile <- mean(cdr <= realised)
+cat(sprintf("valuation %d: one-year claims development result, forecast mean %s, sd %s; realised %s, at the %.0f%% percentile of the forecast\n",
+            last, money(mean(cdr)), money(sd_pop(cdr)), money(realised), 100 * percentile))
+```
+
+## 11. A summary for the investor
+
+**Gap G8:** there is no investor report template or submission schema, so this is a plain printout of the quantities above.
+
+```{r}
+#| label: report
+report <- data.frame(item = c("2026 loss ratio, mean (cv)", "industry prior m (cv)", "ceded premium",
+                              "payment pattern, mean time to payment", "backtest sampler warnings",
+                              "monitoring: realised CDR percentile"),
+                     value = c(sprintf("%.1f%% (%.0f%%)", 100 * mean(LR), 100 * sd_pop(LR) / mean(LR)),
+                               sprintf("%.1f%% (%.0f%%)", 100 * M_PRIOR, 100 * CV_PRIOR), money(CEDED_PREMIUM),
+                               sprintf("%.2f years", duration), as.character(nrow(backtest@warnings)),
+                               sprintf("%.0f%%", 100 * percentile)))
+for (name in names(deals)) {
+  d <- deals[[name]]
+  rate <- d$rate[is.finite(d$rate)]
+  report <- rbind(report,
+                  data.frame(item = paste0(name, ": median IRR / mean MOIC"),
+                             value = sprintf("%+.1f%% / %.3f", 100 * sort(rate)[length(rate) %/% 2 + 1], mean(d$moic))),
+                  data.frame(item = paste0(name, ": P(IRR < 0)"), value = sprintf("%.1f%%", 100 * mean(rate < 0))))
+}
+print(report, row.names = FALSE)
+```
+
+## What is missing
+
+Each gap below changes a workaround in this document into a function call. They are filed as issues.
+
+| Gap | What is missing | Where it showed up | Issue |
+|---|---|---|---|
+| G1 | A posterior predictive loss ratio for a **new** year | the lognormal in section 5 | #598 |
+| G2 | A hierarchical model over **several programs'** triangles with an industry hyperprior | the synthetic peers in section 3 | #599 |
+| G3 | A payment pattern **per simulation** in the cash-flow engine (slow large losses) | one pattern for all simulations in section 7 | #600 |
+| G4 | `payment_pattern` to the **monthly** cumulative patterns `cashflow_terms()` takes | the hand-written interpolation in section 7 | #601 |
+| G5 | **Reserve draws to the loss ratio** per simulation | the draws of `fit@reserves` in section 4 | #602 |
+| G6 | **Deal monitoring** from a valuation month (flows received, collateral posted) | section 10 | #603 |
+| G7 | An **industry-prior builder** from published data (Schedule P) | the prior inputs in section 3 | #604 |
+| G8 | A **submission schema** and an investor **report template** | sections 1 and 11 | #605 |

@@ -228,6 +228,146 @@ pub struct PosteriorDraws {
 }
 
 impl PosteriorDraws {
+    /// Draws from any sampler (Stan, PyMC, nutpie or another), so that
+    /// the summary, R̂, ESS and PSIS-LOO run on them as on our own: one
+    /// row-major `draws × names.len()` block per chain, every chain the
+    /// same length, and the divergent transitions of each chain if the
+    /// sampler reports them (empty for none reported). Names must be
+    /// distinct; a vector or matrix parameter's elements are separate
+    /// names such as `theta[1]`, `theta[2]`.
+    ///
+    /// ```
+    /// use prospicio_bayes::nuts::PosteriorDraws;
+    ///
+    /// // Two chains of three draws of (mu, sigma).
+    /// let chains = vec![
+    ///     vec![0.1, 1.0, 0.2, 1.1, 0.0, 0.9],
+    ///     vec![0.3, 1.2, 0.1, 1.0, 0.2, 1.0],
+    /// ];
+    /// let d = PosteriorDraws::from_chains(vec!["mu".into(), "sigma".into()], chains, vec![])
+    ///     .unwrap();
+    /// assert_eq!(d.draws_per_chain(), 3);
+    /// assert_eq!(d.parameter(1)[1], vec![1.2, 1.0, 1.0]);
+    /// ```
+    pub fn from_chains(
+        names: Vec<String>,
+        chains: Vec<Vec<f64>>,
+        divergences: Vec<usize>,
+    ) -> Result<Self> {
+        let dim = names.len();
+        if dim == 0 {
+            return Err(Error::Data("draws need at least one variable".into()));
+        }
+        let mut seen = std::collections::HashSet::new();
+        if let Some(dup) = names.iter().find(|n| !seen.insert(n.as_str())) {
+            return Err(Error::Data(format!("variable {dup} appears twice")));
+        }
+        let len = chains.first().map_or(0, Vec::len);
+        if chains.is_empty() || len == 0 {
+            return Err(Error::Data(
+                "draws need at least one chain with one draw".into(),
+            ));
+        }
+        if len % dim != 0 {
+            return Err(Error::Data(format!(
+                "a chain of {len} values is not whole draws of {dim} variables"
+            )));
+        }
+        if chains.iter().any(|c| c.len() != len) {
+            return Err(Error::Data(
+                "chains must all have the same number of draws".into(),
+            ));
+        }
+        if !divergences.is_empty() && divergences.len() != chains.len() {
+            return Err(Error::Data(format!(
+                "{} divergence counts for {} chains",
+                divergences.len(),
+                chains.len()
+            )));
+        }
+        let n_chains = chains.len();
+        Ok(Self {
+            names,
+            dim,
+            chains: n_chains,
+            values: chains.concat(),
+            divergences: if divergences.is_empty() {
+                vec![0; n_chains]
+            } else {
+                divergences
+            },
+            seed: 0,
+        })
+    }
+
+    /// The position of the variable called `name`.
+    pub fn index(&self, name: &str) -> Option<usize> {
+        self.names.iter().position(|n| n == name)
+    }
+
+    /// The pointwise log-likelihood held as variables: those named
+    /// `prefix` or `prefix[...]`, in their order (Stan's `log_lik[1]`,
+    /// `log_lik[2]`, ..., as [`crate::stan_csv`] names them), as the
+    /// `S × N` row-major matrix [`crate::elpd`] takes (chain-major) and
+    /// `N`.
+    pub fn log_likelihood(&self, prefix: &str) -> Result<(Vec<f64>, usize)> {
+        let open = format!("{prefix}[");
+        let cols: Vec<usize> = (0..self.dim)
+            .filter(|&j| self.names[j] == prefix || self.names[j].starts_with(&open))
+            .collect();
+        if cols.is_empty() {
+            return Err(Error::Data(format!(
+                "no variable named {prefix} or {prefix}[...]"
+            )));
+        }
+        let n = cols.len();
+        let mut ll = Vec::with_capacity(self.n_draws() * n);
+        for d in self.values.chunks_exact(self.dim) {
+            ll.extend(cols.iter().map(|&j| d[j]));
+        }
+        Ok((ll, n))
+    }
+
+    /// Each observation's relative efficiency from the chains of its
+    /// likelihood, as `loo::relative_eff(exp(log_lik), chain_id)` gives it:
+    /// `ess_mean` of `exp(log_lik)` over the number of draws. `log_lik` is
+    /// `S × N` row-major in the draws' order, as from
+    /// [`log_likelihood`](Self::log_likelihood). An observation whose
+    /// likelihood is constant in the draws gets 1.
+    pub fn relative_efficiency(&self, log_lik: &[f64], n: usize) -> Result<Vec<f64>> {
+        let s = self.n_draws();
+        if n == 0 || log_lik.len() != s * n {
+            return Err(Error::Data(format!(
+                "a log-likelihood of {} values is not {s} draws by {n} observations",
+                log_lik.len()
+            )));
+        }
+        let k = self.draws_per_chain();
+        let sf = s as f64;
+        Ok((0..n)
+            .map(|i| {
+                let chains: Vec<Vec<f64>> = (0..self.chains)
+                    .map(|c| (0..k).map(|d| log_lik[(c * k + d) * n + i].exp()).collect())
+                    .collect();
+                let refs: Vec<&[f64]> = chains.iter().map(Vec::as_slice).collect();
+                match crate::ess_mean(&refs) {
+                    Ok(ess) if ess.is_finite() && ess > 0.0 => ess / sf,
+                    _ => 1.0,
+                }
+            })
+            .collect())
+    }
+
+    /// PSIS-LOO from the pointwise log-likelihood held as the variables
+    /// `prefix[...]` (see [`log_likelihood`](Self::log_likelihood)), with
+    /// each observation's `r_eff` from the chains, as R's
+    /// `loo(log_lik, r_eff = relative_eff(exp(log_lik), chain_id))`.
+    pub fn loo(&self, prefix: &str) -> Result<crate::elpd::Loo> {
+        let (ll, n) = self.log_likelihood(prefix)?;
+        let r_eff = self.relative_efficiency(&ll, n)?;
+        crate::elpd::loo(&ll, n, Some(&r_eff))
+    }
+
     /// Parameter names; `theta[0]`, `theta[1]`, … unless set with
     /// [`with_names`](Self::with_names) or [`transform`](Self::transform).
     pub fn names(&self) -> &[String] {

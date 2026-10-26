@@ -36,6 +36,14 @@ pub struct TowerGrids {
     /// function of a single compound total; `None` otherwise (see
     /// [`Tower::on_grid`]).
     pub net: Option<Grid>,
+    /// Annual ceded loss of the whole tower, every layer together, gross
+    /// less net, when it is a function of a single compound total: when no
+    /// layer has annual terms (the cession is a function of each loss), or
+    /// the tower is one stage whose cession is one compound (one layer, or
+    /// several without annual terms). `None` otherwise: with an aggregate
+    /// cover after per-occurrence stages, say, the total is the sum of
+    /// dependent cessions.
+    pub total_ceded: Option<Grid>,
     /// Expected reinstatement premium of each layer; zero without paid
     /// reinstatements.
     pub expected_reinstatement_premium: Vec<f64>,
@@ -47,6 +55,12 @@ pub struct TowerGrids {
     pub expected_ceding_commission: Vec<f64>,
     /// Expected profit commission of each layer; zero without one.
     pub expected_profit_commission: Vec<f64>,
+    /// Expected ceding commission of each deal ([`Tower::deal_scale`]), in
+    /// the order they were added, read on its sections' ceded losses
+    /// together; zero for a deal without one.
+    pub expected_deal_ceding_commission: Vec<f64>,
+    /// Expected brokerage of each deal, likewise; zero without one.
+    pub expected_deal_brokerage: Vec<f64>,
     /// `true` when every layer boundary, annual term and net loss fell on
     /// a grid point, so the grids are exact up to the reports' truncation
     /// and aliasing error. When `false`, losses between points were split
@@ -169,6 +183,22 @@ impl Tower {
         let stages = self.stage_ranges();
         let (last_start, last_end) = *stages.last().expect("a tower has a layer");
         self.check_scales_on_ceded("a compound distribution of the ceded loss")?;
+        // A deal's key is a function of each loss only when no section has
+        // annual terms; then its sections' cession is one more compound.
+        let deal_sections = self.deal_sections();
+        for (d, sections) in self.deals.iter().zip(&deal_sections) {
+            if let Some(&i) = sections
+                .iter()
+                .find(|&&i| self.layers[i].has_annual_terms())
+            {
+                return Err(Error::Data(format!(
+                    "deal {:?} reads its sections' annual ceded losses together, and section \
+                     {:?} has annual terms, so their sum is not one compound distribution; use \
+                     Tower::on_annual_grid or Tower::apply on simulated years",
+                    d.name, self.layers[i].name
+                )));
+            }
+        }
         if let Some(l) = self.layers.iter().find(|l| l.needs_sums_insured()) {
             return Err(Error::Data(format!(
                 "layer {:?} is a surplus treaty, which works risk by risk; a compound \
@@ -262,6 +292,21 @@ impl Tower {
             });
         }
 
+        let total_ceded = if !self.layers.iter().any(Layer::has_annual_terms) {
+            let all = self.layers.len();
+            let (cession, exact) = severity.map(|x| x - seen(x, all))?;
+            on_points &= exact;
+            Some(
+                fft(frequency, &cession, points)?
+                    .0
+                    .remove_fuzz(f64::EPSILON),
+            )
+        } else if stages.len() == 1 {
+            stage_ceded[0].clone()
+        } else {
+            None
+        };
+
         let net = if !self.layers.iter().any(Layer::has_annual_terms) {
             let all = self.layers.len();
             let (net_severity, exact) = severity.map(|x| seen(x, all))?;
@@ -283,6 +328,36 @@ impl Tower {
             None
         };
 
+        // Each deal on its sections' cession compounded together, each
+        // section seeing the loss net of the stages before its own.
+        let stage_of = |i: usize| {
+            stages
+                .iter()
+                .find(|(_, e)| i < *e)
+                .expect("a layer's stage")
+                .0
+        };
+        let (mut deal_commission, mut deal_brokerage) = (Vec::new(), Vec::new());
+        for (j, sections) in deal_sections.iter().enumerate() {
+            let (recoveries, exact) = severity.map(|x| {
+                sections
+                    .iter()
+                    .map(|&i| {
+                        let l = &self.layers[i];
+                        l.share * l.recovery(seen(x, stage_of(i)))
+                    })
+                    .sum()
+            })?;
+            on_points &= exact;
+            let (cession, _) = fft(frequency, &recoveries, points)?;
+            deal_commission.push(expectation(&cession, |c| {
+                self.deal_terms_at(j, sections, c).0
+            }));
+            deal_brokerage.push(expectation(&cession, |c| {
+                self.deal_terms_at(j, sections, c).1
+            }));
+        }
+
         Ok(TowerGrids {
             gross,
             gross_report,
@@ -290,10 +365,13 @@ impl Tower {
             ceded_reports,
             stage_ceded,
             net,
+            total_ceded,
             expected_reinstatement_premium: premiums,
             expected_premium: premium,
             expected_ceding_commission: commission,
             expected_profit_commission: profit,
+            expected_deal_ceding_commission: deal_commission,
+            expected_deal_brokerage: deal_brokerage,
             on_points,
         })
     }
@@ -336,6 +414,12 @@ pub struct AnnualGrids {
     pub expected_ceding_commission: Vec<f64>,
     /// Expected profit commission of each layer.
     pub expected_profit_commission: Vec<f64>,
+    /// Expected ceding commission of each deal ([`Tower::deal_scale`]), in
+    /// the order they were added, read on its sections' keys together;
+    /// zero for a deal without one.
+    pub expected_deal_ceding_commission: Vec<f64>,
+    /// Expected brokerage of each deal, likewise; zero without one.
+    pub expected_deal_brokerage: Vec<f64>,
     /// `true` when every ceded and net loss fell on a grid point; when
     /// `false`, means are exact and shapes smeared by up to a step. The
     /// expectations above are exact either way: they are taken at each
@@ -388,10 +472,15 @@ impl Tower {
         }
         let h = annual.step();
         let m = self.layers.len();
-        // Each layer's (ceded, reinstatement premium) at every point.
-        let years: Vec<Vec<(f64, f64)>> = (0..annual.len())
-            .map(|k| self.year(&[k as f64 * h], None, None))
-            .collect();
+        // Each layer's (ceded, reinstatement premium) and scale key at every
+        // point.
+        let mut years = Vec::with_capacity(annual.len());
+        let mut keys = Vec::with_capacity(annual.len());
+        for k in 0..annual.len() {
+            let (year, key) = self.year_keyed(&[k as f64 * h]);
+            years.push(year);
+            keys.push(key);
+        }
         let at = |x: f64| &years[((x / h).round() as usize).min(years.len() - 1)];
         let mut on_points = true;
         let mut ceded = Vec::with_capacity(m);
@@ -432,6 +521,21 @@ impl Tower {
         }
         let (net, exact) = annual.map(|x| x - at(x).iter().map(|(c, _)| c).sum::<f64>())?;
         on_points &= exact;
+        // Each deal at each year's sections' keys together, a year alone.
+        let (mut deal_commission, mut deal_brokerage) = (Vec::new(), Vec::new());
+        for (j, sections) in self.deal_sections().iter().enumerate() {
+            let (mut cc, mut bk) = (0.0, 0.0);
+            for (p, key) in annual.probs().iter().zip(&keys) {
+                if *p > 0.0 {
+                    let (c, b) =
+                        self.deal_terms_at(j, sections, sections.iter().map(|&i| key[i]).sum());
+                    cc += p * c;
+                    bk += p * b;
+                }
+            }
+            deal_commission.push(cc);
+            deal_brokerage.push(bk);
+        }
         Ok(AnnualGrids {
             gross: annual.clone(),
             ceded,
@@ -440,6 +544,8 @@ impl Tower {
             expected_premium: premium,
             expected_ceding_commission: commission,
             expected_profit_commission: profit,
+            expected_deal_ceding_commission: deal_commission,
+            expected_deal_brokerage: deal_brokerage,
             on_points,
         })
     }
@@ -597,6 +703,24 @@ mod tests {
             let d = ks(net, &component("net", "retained"), points);
             assert!(d < critical, "net KS {d}");
         }
+        if let Some(total) = &r.total_ceded {
+            let columns: Vec<_> = tower
+                .layers
+                .iter()
+                .map(|l| {
+                    sim.component_index(&vec!["ceded".into(), l.name.as_str().into()])
+                        .unwrap()
+                })
+                .collect();
+            let sums = (0..n_sims)
+                .map(|i| {
+                    let row = sim.row(i).unwrap();
+                    columns.iter().map(|&j| row[j]).sum()
+                })
+                .collect();
+            let d = ks(total, &prospicio_prob::Sampled::new(sums).unwrap(), points);
+            assert!(d < critical, "total ceded KS {d}");
+        }
     }
 
     #[test]
@@ -624,8 +748,10 @@ mod tests {
         let r = tower
             .on_grid(&Poisson::new(3.0).unwrap(), &severity(), 400)
             .unwrap();
-        // One layer with annual terms: no net grid.
+        // One layer with annual terms: no net grid, but the total cession is
+        // the layer's.
         assert!(r.net.is_none());
+        assert_eq!(r.total_ceded.as_ref(), Some(&r.ceded[0]));
         matches_simulation(&tower, &Poisson::new(3.0).unwrap());
     }
 
@@ -692,6 +818,9 @@ mod tests {
         let net = r.net.as_ref().unwrap();
         let ceded: f64 = r.ceded.iter().map(|g| g.mean()).sum();
         assert!((r.gross.mean() - ceded - net.mean()).abs() < 1e-10);
+        // The stop-loss's cession and the per-occurrence layer's are
+        // dependent: their total is not one compound.
+        assert!(r.total_ceded.is_none());
         matches_simulation(&tower, &Poisson::new(3.0).unwrap());
     }
 
@@ -806,6 +935,123 @@ mod tests {
         // The terms are not constant: the scale slides and the swing moves.
         assert!(r.expected_ceding_commission[0] < 0.4 * 15.0);
         assert!(r.expected_premium[1] > 0.5 * 2.0);
+    }
+
+    /// A deal of two 50% placements of one cover, its scale on both
+    /// together, is one 100% placement with that scale as its own.
+    #[test]
+    fn a_deal_of_two_halves_is_the_whole_layer() {
+        let scale = vec![(0.35, 0.3), (0.15, 0.9)];
+        let half = |name: &str, layer: Layer| {
+            Layer {
+                name: name.into(),
+                ..layer
+            }
+            .share(0.5)
+            .unwrap()
+            .deposit_premium(8.0)
+            .unwrap()
+        };
+        let whole = |layer: Layer| {
+            Tower::new(vec![
+                layer
+                    .deposit_premium(8.0)
+                    .unwrap()
+                    .sliding_scale(scale.clone())
+                    .unwrap()
+                    .brokerage_scale(vec![(0.01, 0.3), (0.03, 0.9)])
+                    .unwrap(),
+            ])
+            .unwrap()
+        };
+        let deal = |layer: Layer| {
+            Tower::new(vec![half("A", layer.clone()), half("B", layer)])
+                .unwrap()
+                .deal_scale(
+                    crate::DealScale::new("deal", ["A", "B"])
+                        .unwrap()
+                        .sliding_scale(scale.clone())
+                        .unwrap()
+                        .brokerage_scale(vec![(0.01, 0.3), (0.03, 0.9)])
+                        .unwrap(),
+                )
+                .unwrap()
+        };
+        let xl = Layer::xol("XL", 6.0, 2.0).unwrap();
+        let freq = Poisson::new(3.0).unwrap();
+        let (w, d) = (
+            whole(xl.clone()).on_grid(&freq, &severity(), 256).unwrap(),
+            deal(xl).on_grid(&freq, &severity(), 256).unwrap(),
+        );
+        assert!(w.expected_ceding_commission[0] > 0.0);
+        assert!(
+            (w.expected_ceding_commission[0] - d.expected_deal_ceding_commission[0]).abs() < 1e-12
+        );
+        // The whole layer's brokerage is not on the grid; the deal's is
+        // the same scale on the same key as its commission's.
+        assert!(d.expected_deal_brokerage[0] > 0.0);
+        // The sections' own terms are fixed, so they have no commission.
+        assert_eq!(d.expected_ceding_commission, [0.0, 0.0]);
+        // On an annual loss: a quota share and a stop loss.
+        let mut probs = vec![0.0; 13];
+        for (k, p) in [(4, 0.3), (7, 0.4), (12, 0.3)] {
+            probs[k] = p;
+        }
+        let annual = Grid::new(1.0, probs).unwrap();
+        for layer in [
+            Layer::quota_share("QS", 1.0).unwrap(),
+            Layer::stop_loss("SL", 6.0, 3.0).unwrap(),
+        ] {
+            let w = whole(layer.clone()).on_annual_grid(&annual).unwrap();
+            let d = deal(layer).on_annual_grid(&annual).unwrap();
+            assert!(
+                (w.expected_ceding_commission[0] - d.expected_deal_ceding_commission[0]).abs()
+                    < 1e-12
+            );
+        }
+    }
+
+    /// A deal over two stages on the compound grid, against simulation:
+    /// an excess layer and a quota share inuring behind it.
+    #[test]
+    fn a_deal_over_stages_matches_simulation() {
+        let xl = Layer::xol("XL", 4.0, 3.0)
+            .unwrap()
+            .deposit_premium(3.0)
+            .unwrap();
+        let qs = Layer::quota_share("QS", 0.4)
+            .unwrap()
+            .premium_rate(1.0, 20.0)
+            .unwrap();
+        let tower = Tower::inuring(vec![vec![xl], vec![qs]])
+            .unwrap()
+            .deal_scale(
+                crate::DealScale::new("deal", ["XL", "QS"])
+                    .unwrap()
+                    .sliding_scale(vec![(0.4, 0.3), (0.1, 1.2)])
+                    .unwrap()
+                    .brokerage_scale(vec![(0.01, 0.3), (0.05, 1.2)])
+                    .unwrap(),
+            )
+            .unwrap();
+        let freq = Poisson::new(3.0).unwrap();
+        let r = tower.on_grid(&freq, &severity(), 400).unwrap();
+        let n = 200_000;
+        let sim = tower
+            .apply(&simulate_events(&freq, &severity(), n, 11).unwrap())
+            .unwrap();
+        for (kind, expected) in [
+            ("ceding_commission", r.expected_deal_ceding_commission[0]),
+            ("brokerage", r.expected_deal_brokerage[0]),
+        ] {
+            let draws = sim.marginal(&vec![kind.into(), "deal".into()]).unwrap();
+            let se = (draws.variance() / n as f64).sqrt();
+            assert!(
+                (expected - draws.mean()).abs() < 4.0 * se,
+                "{kind}: {expected} vs {} (se {se})",
+                draws.mean()
+            );
+        }
     }
 
     #[test]

@@ -1,4 +1,5 @@
 import math
+import pathlib
 
 import pytest
 
@@ -24,6 +25,10 @@ from prospicio.models import (
     k_fold,
     lift,
     mcmc_diagnostics,
+    Draws,
+    draws_from_arrays,
+    draws_from_inference_data,
+    read_stan_csv,
     time_ordered,
 )
 
@@ -149,6 +154,130 @@ def test_mcmc_diagnostics():
     assert d["rhat"] < 1.01 and d["ess_bulk"] > 100
     shifted = [v + 200.0 for v in b]
     assert mcmc_diagnostics([a, shifted])["rhat"] > 1.5
+
+
+def _validation():
+    return pathlib.Path(__file__).resolve().parents[2] / "validation"
+
+
+def _reference_rows(name):
+    import csv
+
+    with open(_validation() / "reference" / name) as f:
+        return list(csv.DictReader(f))
+
+
+def _near(actual, row):
+    expected = float(row["expected"])
+    tol = max(float(row["abs_tol"]), float(row["rel_tol"]) * abs(expected))
+    assert abs(actual - expected) <= tol, (row, actual)
+
+
+def test_stan_csv_matches_posterior_and_loo():
+    # Real CmdStan output and the values posterior and loo give on it
+    # (validation/scripts/r_stan_csv.R, #395).
+    dirname = _validation() / "data" / "stan_eight_schools"
+    d = read_stan_csv([dirname / f"chain-{c}.csv" for c in range(1, 5)])
+    assert (d.n_chains, d.draws_per_chain, d.warmup_dropped) == (4, 250, 150)
+    assert "divergent__" in d.sampler.names
+    summary = {s["name"]: s for s in d.summary()}
+    loo = d.loo()
+    r_eff = d.relative_efficiency()
+    est = {"elpd_loo": loo.elpd, "p_loo": loo.p, "looic": loo.ic, "se_elpd_loo": loo.se}
+    for row in _reference_rows("stan_csv_posterior.csv"):
+        v, q = row["variable"], row["quantity"]
+        if v.startswith("chain "):
+            _near(d.divergences[int(v[6:]) - 1], row)
+        elif v == "log_lik":
+            _near(est[q], row)
+        elif v.startswith("log_lik[") and q in ("r_eff", "elpd_loo", "pareto_k"):
+            i = int(v[8:-1]) - 1
+            _near({"r_eff": r_eff, "elpd_loo": loo.pointwise, "pareto_k": loo.pareto_k}[q][i], row)
+        else:
+            _near(summary[v][q], row)
+
+
+def test_draws_from_arrays_match_posterior():
+    # The existing chain fixture through the common type: (chain, draw)
+    # arrays, as an InferenceData's variables arrive.
+    import csv
+
+    with open(_validation() / "data" / "mcmc_chains.csv") as f:
+        rows = list(csv.DictReader(f))
+    names = [k for k in rows[0] if k not in ("chain", "iteration")]
+    arrays = {n: [[float(r[n]) for r in rows if r["chain"] == str(c)] for c in range(4)] for n in names}
+    d = draws_from_arrays(arrays)
+    for row in _reference_rows("mcmc_posterior.csv"):
+        _near(d.diagnostics(row["variable"])[row["quantity"]], row)
+
+
+class _Group:
+    """A stand-in for an xarray Dataset: data_vars and item access."""
+
+    def __init__(self, **arrays):
+        self._arrays = arrays
+        self.data_vars = list(arrays)
+
+    def __getitem__(self, name):
+        return self._arrays[name]
+
+
+class _InferenceData:
+    def __init__(self, **groups):
+        for k, v in groups.items():
+            setattr(self, k, v)
+
+
+def test_draws_from_inference_data_and_containers():
+    chain = lambda c: [[0.1 * c + 0.01 * d, 1.0 + d] for d in range(6)]
+    theta = [chain(c) for c in range(2)]  # (chain, draw, 2)
+    mu = [[0.5 * c - 0.1 * d for d in range(6)] for c in range(2)]
+    ll = [[[-1.0 - 0.01 * d, -2.0 + 0.02 * c] for d in range(6)] for c in range(2)]
+    diverging = [[False, True, False, False, False, False], [False] * 6]
+    idata = _InferenceData(
+        posterior=_Group(mu=mu, theta=theta),
+        log_likelihood=_Group(y=ll),
+        sample_stats=_Group(diverging=diverging),
+    )
+    d = draws_from_inference_data(idata)
+    assert d.names == ["mu", "theta[1]", "theta[2]", "log_lik[1]", "log_lik[2]"]
+    assert d.divergences == [1, 0]
+    assert d.chains("theta[2]")[1] == [1.0 + i for i in range(6)]
+    assert d.log_likelihood()[0] == [-1.0, -2.0]
+    assert len(d.loo().pointwise) == 2
+    # Matrices name their elements row-major, 1-based.
+    m = draws_from_arrays({"b": [[[[1.0, 2.0], [3.0, 4.0]]] * 4] * 2})
+    assert m.names == ["b[1,1]", "b[1,2]", "b[2,1]", "b[2,2]"]
+    assert m.chains("b[2,1]") == [[3.0] * 4] * 2
+    with pytest.raises(ValueError):
+        draws_from_arrays({"a": [[1.0] * 4] * 2, "b": [[1.0] * 5] * 2})
+    with pytest.raises(ValueError):
+        draws_from_inference_data(_InferenceData(posterior=_Group(mu=mu), log_likelihood=_Group(y=ll, z=ll)))
+    with pytest.raises(ValueError):
+        Draws(["a", "a"], [[[1.0, 2.0]] * 4])
+
+
+def test_draws_from_arviz():
+    az = pytest.importorskip("arviz")
+    np = pytest.importorskip("numpy")
+    rng = np.random.default_rng(1)
+    groups = {
+        "posterior": {"mu": rng.normal(size=(4, 200)), "theta": rng.normal(size=(4, 200, 3))},
+        "log_likelihood": {"y": rng.normal(-1.0, 0.1, size=(4, 200, 5))},
+        "sample_stats": {"diverging": np.zeros((4, 200), dtype=bool)},
+    }
+    try:
+        idata = az.from_dict(groups)  # arviz 1.x: a DataTree
+    except TypeError:
+        idata = az.from_dict(**groups)  # arviz 0.x: an InferenceData
+    d = draws_from_inference_data(idata)
+    assert d.names[:4] == ["mu", "theta[1]", "theta[2]", "theta[3]"]
+    assert d.n_chains == 4 and d.draws_per_chain == 200
+    s = {r["name"]: r for r in d.summary()}
+    ref = az.summary(idata, var_names=["mu"], round_to="none")
+    assert abs(s["mu"]["mean"] - ref.loc["mu", "mean"]) < 1e-12
+    assert abs(s["mu"]["ess_bulk"] - ref.loc["mu", "ess_bulk"]) < 1e-6 * ref.loc["mu", "ess_bulk"]
+    assert len(d.loo().pointwise) == 5
 
 
 def test_elastic_net_path():

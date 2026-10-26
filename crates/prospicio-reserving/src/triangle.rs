@@ -1060,6 +1060,27 @@ pub(crate) struct Segment {
 }
 
 impl Segment {
+    /// A segment of `origins` × `ages` with `cells` laid out row by row,
+    /// not cut from a triangle: a latest diagonal on the grid of its
+    /// pattern, whose ages a triangle would trim to the observed ones
+    /// (`reserving-v02.md`, decision 16).
+    pub(crate) fn from_cells(
+        origins: Vec<Period>,
+        ages: Vec<Lag>,
+        cells: Vec<Option<f64>>,
+    ) -> Self {
+        debug_assert_eq!(cells.len(), origins.len() * ages.len());
+        Self {
+            cells,
+            n_origins: origins.len(),
+            n_dev: ages.len(),
+            origins,
+            ages,
+            origin_offset: 0,
+            dev_offset: 0,
+        }
+    }
+
     pub(crate) fn get(&self, origin: usize, dev: usize) -> Option<f64> {
         self.cells[origin * self.n_dev + dev]
     }
@@ -1097,6 +1118,20 @@ impl Segment {
         (0..self.n_origins)
             .filter_map(|o| Some((o, self.get(o, dev)?, self.get(o, dev + 1)?)))
             .collect()
+    }
+
+    /// Whether every origin is observed at one age at most, on a grid of
+    /// several ages: the segment holds a latest diagonal only, with no link
+    /// ratio (`reserving-v02.md`, decision 15). A row with holes is not
+    /// one, though it may have no link ratio either.
+    pub(crate) fn is_latest_diagonal_only(&self) -> bool {
+        self.n_dev > 1
+            && (0..self.n_origins).all(|o| {
+                (0..self.n_dev)
+                    .filter(|&d| self.get(o, d).is_some())
+                    .count()
+                    <= 1
+            })
     }
 
     /// Valuation month of the cell at `origin`, `dev`.

@@ -11,6 +11,14 @@
 #' (`u P - C`), `"written"` (`W`), `"earned"` (`E`) and `"fixed"` (1, so the
 #' load is an amount).
 #'
+#' The reserve on earned premium is small early in the term: a requirement
+#' on it alone releases the premium collected ahead of earning to the
+#' investor at once, who then pays the claims later, so the flows start
+#' positive ([cashflow_run()]'s `paid_first`), can have several internal
+#' rates of return ([irr()]'s `sign_changes`) and the one found is usually
+#' meaningless. A collateralised fund usually wants `"outstanding"`, with
+#' `"unearned-premium"` beside it.
+#'
 #' @param loads A named numeric vector, the load on each base.
 #' @param floor The least the requirement can be.
 #' @param limit `NULL`, or `c(trigger, cap)`: when `trigger * u >= cap` the
@@ -125,6 +133,12 @@ cashflow_dates <- function(x, name, commutation = FALSE) {
 #' @param requirement A [cashflow_requirement()].
 #' @param commutation_requirement What the trust pays at commutation.
 #' @param collected_rate The share of written premium paid into the trust.
+#' @param deduct_commission Take each simulation's commission rate
+#'   (`cashflow_run()`'s `commission`) off `collected_rate`. Without it the
+#'   commission does not reduce the premium paid in and is read only by
+#'   adjustments with `less_commission` and by the fee: a flat commission
+#'   `c` is then `collected_rate = 1 - c`, and a sliding scale needs this
+#'   option.
 #' @param lag The months between writing and collection.
 #' @param adjustments A list of [cashflow_adjustment()]s.
 #' @param funding_dates The months capital may be called.
@@ -153,7 +167,11 @@ cashflow_dates <- function(x, name, commutation = FALSE) {
 #'   `"profit-over-premium"` or `"profit-over-capital"`.
 #' @returns `cashflow_terms()` a `cashflow_terms`; `cashflow_run()` a list
 #'   of `flows` (a matrix), `months` and, a value a simulation, `funded`,
-#'   `opening`, `released`, `distributed`, `fee` and `commutation`;
+#'   `opening`, `released`, `distributed`, `fee`, `commutation` and
+#'   `paid_first` (whether the first nonzero investor flow is positive: the
+#'   investor is paid before putting money in, so its flows can have
+#'   several internal rates of return and the one [irr()] finds is usually
+#'   meaningless; a requirement on the reserve alone does this);
 #'   `cashflow_trace()` a list of `accounts` (a data frame, a row a month),
 #'   `commutation_paid`, `fee` and `conservation_error` (the cash created or
 #'   lost over the deal, 0 up to rounding).
@@ -173,7 +191,8 @@ cashflow_dates <- function(x, name, commutation = FALSE) {
 #' npv(run$flows, run$months, 0.05, unit = "months")
 #' cashflow_trace(terms, 1.5)$accounts
 cashflow_terms <- function(premium, commutation_month, written, earned, paid, requirement,
-                           commutation_requirement = requirement, collected_rate = 1, lag = 0,
+                           commutation_requirement = requirement, collected_rate = 1,
+                           deduct_commission = FALSE, lag = 0,
                            adjustments = list(), funding_dates = "monthly",
                            funding_rule = c("shortfall", "obligation-increase"),
                            premium_offset = 1, reference = c("previous-date", "running-max"),
@@ -205,7 +224,7 @@ cashflow_terms <- function(premium, commutation_month, written, earned, paid, re
   ptr <- rust_result(Cashflow$new(
     as.double(premium), as.double(commutation_month), as.double(written), as.double(earned),
     as.double(paid), r$bases, r$loads, r$floor, r$limit, cr$bases, cr$loads, cr$floor, cr$limit,
-    as.double(collected_rate), as.double(lag), adj("month", double(1)),
+    as.double(collected_rate), isTRUE(deduct_commission), as.double(lag), adj("month", double(1)),
     adj("written_rate", double(1)), as.double(adj("less_commission", logical(1))),
     adj("base", character(1)), funding$kind, funding$values, match.arg(funding_rule),
     as.double(premium_offset), match.arg(reference), match.arg(funding_source), release$kind,

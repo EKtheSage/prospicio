@@ -20,6 +20,7 @@ page that does not render, shows up first in that Pages run.
 | [`reinsurance_pricing.ipynb`](reinsurance_pricing.ipynb) | [On the site](https://ekthesage.github.io/prospicio/python/user-guide/reinsurance_pricing.html) | Six reinsurance contracts priced on the FFT grid and compared with Mildenhall's `aggregate` (321 independent comparisons against its reference file, `aggregate` not needed): an occurrence tower, a two-layer program and a share, an aggregate limit with reinstatements, stop loss and aggregate deductible, retro and swing premium with profit and sliding-scale commission, and risk-adjusted premiums from distortions at a capital standard |
 | [`reading_path.ipynb`](reading_path.ipynb) | [On the site](https://ekthesage.github.io/prospicio/python/user-guide/reading_path.html) | A map to the guides: one small synthetic book (a property line's claim count and severity, a casualty paid triangle) carried through seven stations, each running a few lines of prospicio and then naming the guides to read next and the question each answers: severity and claim count, the annual aggregate by FFT, a per-risk layer by exposure and experience rating blended by credibility and priced on a pentagon, a loss ratio indication, chain ladder, Mack and the ODP bootstrap, five distortions calibrated to the same return and their natural allocation, and pointers to the Bayesian and GLM guides. Runs in a few seconds |
 | [`submission_evaluation.ipynb`](submission_evaluation.ipynb) | [On the site](https://ekthesage.github.io/prospicio/python/user-guide/submission_evaluation.html) | A reinsurance submission evaluated end to end, from raw files to a quote decision: a synthetic commercial property per-risk program (premium and rate changes, a large-loss listing, a triangle, a risk profile, treaty terms in `data/submission/`, written by `data/make_submission.py` with the answer key in `data/answer_key.json`). On-level premium and trend, chain ladder and Cape Cod, development and trend of large losses, a Pareto fit with truncation and censoring, experience and exposure rating blended by credibility, the program on the grid, risk metrics, technical premium against the broker's rates on line, sensitivity and parameter uncertainty, and the estimates against the generator's true parameters |
+| [`ils_deal_analysis.ipynb`](ils_deal_analysis.ipynb) | [On the site](https://ekthesage.github.io/prospicio/python/user-guide/ils_deal_analysis.html) | A collateralised quota share analysed for an ILS investor, from the submission's triangle to the investor's IRR and MOIC: a diagonal backtest, an industry prior given as a mean and a cv (peer programs synthesised), the Bayesian Bornhuetter-Ferguson, a 2026 loss ratio, the structure with a flat and a sliding-scale commission, collateral and monthly cash flows, downside and risk ratios, the two structures compared, and monitoring against the one-year view. The steps the library does not cover yet are marked as workarounds, with their issues (#598 to #605). Runs in well under a minute |
 
 For explanations in prose, with runnable code and checked numbers, see the
 [guides](../docs/guides/README.md) (`reading_path.ipynb` is a route through them); the first, [What a reinsurance price is](../docs/guides/reinsurance-price.md),
@@ -28,15 +29,32 @@ The guides are on the docs site too, in the same User Guide.
 
 ## R versions
 
-`one_year_view.qmd`, `reinsurance_pricing.qmd` and `reading_path.qmd` are Quarto twins of the notebooks of the same names for the R package, with the same data, seeds and model. Rendered against the library they give the notebooks' numbers: `one_year_view.qmd` and `reading_path.qmd` every printed digit, `reinsurance_pricing.qmd` the same 343 comparisons (321 independent). Install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`) and `ggplot2`, then from anywhere in the repository:
+`one_year_view.qmd`, `reinsurance_pricing.qmd`, `reading_path.qmd` and `ils_deal_analysis.qmd` are Quarto twins of the notebooks of the same names for the R package, with the same data, seeds and model. Rendered against the library they give the notebooks' numbers: `one_year_view.qmd` and `reading_path.qmd` every printed digit, `reinsurance_pricing.qmd` the same 343 comparisons (321 independent). Install the R package (`remotes::install_github`, see `R/prospicio/bootstrap.R`) and `ggplot2`, then from anywhere in the repository:
 
 ```sh
 quarto render examples/one_year_view.qmd
 quarto render examples/reinsurance_pricing.qmd
 quarto render examples/reading_path.qmd
+quarto render examples/ils_deal_analysis.qmd
 ```
 
 They are also pages of the docs site, under "Articles", "Worked examples" on the R site: `cargo xtask r` stages them as pkgdown articles and runs them in full, and fails if `reinsurance_pricing.qmd` reports a comparison outside its tolerance. That build runs in CI's `docs` job when a pull request touches the bindings, `R/` or `xtask/`, and in the Pages run after a merge to `main`; a pull request that touches only `examples/` does not render them. Rendered `.html` is not committed.
+
+## Data for the guides
+
+Some guides read small synthetic data sets kept in `data/`, each written by a
+seeded script next to it, which a test in `python/tests/test_guides.py`
+checks the committed files against:
+
+- `chalk_portfolio.csv` and `chalk_toys.csv`, written by
+  `make_chalk_portfolio.py`, for the CAS Monograph 16 guides.
+- `cat_book_yelt.csv`, `cat_book_elt_alder.csv`, `cat_book_cedents.csv` and
+  `cat_book_contracts.csv`, written by `make_cat_book.py` (numpy only, seed
+  20261023), for the property-catastrophe track (`docs/guides/cat-*.md`): a
+  fictional reinsurer's contracts for three cedents, an event loss table and
+  2,000 simulated years of dated events, in millions of a synthetic currency.
+  The guide [`cat-0-overview.md`](../docs/guides/cat-0-overview.md) describes
+  them.
 
 ## Running a notebook
 

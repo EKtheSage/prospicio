@@ -420,6 +420,41 @@ risk_loaded_price <- function(x, assets, cost_of_capital = NULL, distortion = NU
   rust_result(pricing_price(x@ptr, assets@ptr, rate_arg(cost_of_capital), pricing_arg(distortion)))
 }
 
+#' Upfront premium with reinstatement premium in the price
+#'
+#' The reinsurer's net outcome is `X - P g`, with `X` the year's ceded loss
+#' and `g` its reinstatement premium per unit of upfront premium (a
+#' tower's reinstatement premium at a unit deposit, for example), so its
+#' assets and price depend on the upfront premium `P`, which solves
+#' `P = price(X - P g)` under the rule of [risk_loaded_price()]. With
+#' `g = 0` this is [risk_loaded_price()], with a constant `g` it is
+#' `price(X) / (1 + g)`, and under the identity distortion it is Sundt's
+#' `E[X] / (1 + E[g])` (#587).
+#'
+#' @param losses The ceded loss in each simulation.
+#' @param g The reinstatement premium per unit of upfront premium in each
+#'   simulation, finite and non-negative.
+#' @inheritParams risk_loaded_price
+#' @returns A list with `upfront`, `expected_reinstatement_premium`,
+#'   `expected_premium` (`P (1 + E[g])`), `expected_loss`, `margin`,
+#'   `capital`, `return_on_capital`, `net`, the price of `X - P g` as
+#'   [risk_loaded_price()] returns it, and `iterations`, the bisection
+#'   steps taken.
+#' @examples
+#' x <- c(0, 0, 2, 6)
+#' r <- price_with_reinstatements(x, x / 6, distortion("tvar", 0.5),
+#'                                cost_of_capital = 0.25)
+#' r$upfront
+#' round(r$return_on_capital, 9)
+#' @export
+price_with_reinstatements <- function(losses, g, assets, cost_of_capital = NULL,
+                                      distortion = NULL) {
+  rust_result(pricing_price_with_reinstatements(
+    as.double(losses), as.double(g), assets@ptr, rate_arg(cost_of_capital),
+    pricing_arg(distortion)
+  ))
+}
+
 #' @rdname risk_loaded_price
 #' @export
 price_portfolio <- function(x, assets, cost_of_capital = NULL, distortion = NULL) {
@@ -1279,14 +1314,25 @@ calibrate_classical <- function(x, principle, premium, q = 2) {
 
 #' A cover's quote
 #'
-#' `technical_quote()` grosses a risk-loaded price up to the premium the
+#' `technical_quote()` grosses a risk-loaded price up to the deposit the
 #' cedant pays. The risk premium `R` (the expected loss plus the margin for
 #' capital, from [risk_loaded_price()]) is grossed up for internal expenses
-#' `e` and brokerage `b`, both fractions of the premium, and a fixed expense
-#' `f`: `P = (R + f) / (1 - e - b)`. `implied_quote()` reads a quoted
-#' premium the other way: the reinsurer keeps `P (1 - e - b) - f` as its
-#' risk premium, and the margin and return on capital follow with the same
-#' expected loss and assets.
+#' `e`, brokerage `b` and premium tax `tau`, fractions of the premium, and a
+#' fixed expense `f`: `D = (R + f) / (1 - e - b - tau)`. With an expected
+#' reinstatement premium `kappa D` and a flat ceding commission `c D` the
+#' deposit is `D = (R + f) / ((1 + kappa)(1 - e - tau) - b (1 + kappa) - c)`
+#' (brokerage on the deposit alone when `brokerage_on_reinstatements` is
+#' `FALSE`). With an income tax `t` on the margin the price's return on
+#' capital is the return after tax: the risk premium is raised to give it,
+#' which for a cost-of-capital price at `cost_of_capital` is the price at
+#' `cost_of_capital / (1 - t)`.
+#'
+#' `implied_quote()` reads a quoted deposit the other way: the reinsurer
+#' keeps what is left after the loads and commissions as its risk premium,
+#' and the margin and return on capital follow with the same expected loss
+#' and assets. A sliding-scale or profit commission is read back there as
+#' an amount, from the layer's tower grid at that deposit; for a
+#' swing-rated layer pass its expected premium as the deposit.
 #'
 #' @param price A risk-loaded price, from [risk_loaded_price()].
 #' @param expenses Internal expenses, a fraction of the premium.
@@ -1294,13 +1340,27 @@ calibrate_classical <- function(x, principle, premium, q = 2) {
 #' @param fixed A fixed expense per contract, an amount.
 #' @param limit The cover's limit at the placed share, for the rate on line;
 #'   `NULL` for a cover without one, such as a quota share.
+#' @param premium_tax Premium tax, a fraction of all the premium.
+#' @param income_tax Income tax on the margin.
+#' @param reinstatement_rate Expected reinstatement premium per unit of
+#'   deposit: the tower grid's expected reinstatement premium for the layer
+#'   over its deposit premium.
+#' @param commission In `technical_quote()`, a flat ceding commission, a
+#'   fraction of the deposit; in `implied_quote()`, further expected
+#'   commissions read back at the quoted deposit, an amount.
+#' @param brokerage_on_reinstatements Whether brokerage is charged on
+#'   reinstatement premium too.
 #' @param quote A quote from `technical_quote()`.
-#' @param premium A quoted premium.
+#' @param premium A quoted deposit.
 #' @returns A list with `expected_loss`, `margin`, `risk_premium`,
-#'   `expenses`, `brokerage` (amounts), `premium`, `net_premium` (net of
-#'   brokerage), `assets`, `capital`, `return_on_capital`, `loss_ratio`,
-#'   `multiple`, `rate_on_line` and `payback` (`NaN` without a limit), and
-#'   the inputs `implied_quote()` needs.
+#'   `expenses`, `brokerage`, `premium_tax`, `commission` (amounts),
+#'   `premium` (the deposit), `reinstatement_premium`, `premium_in_all`,
+#'   `net_premium` (net of brokerage), `assets`, `capital`, `income_tax`,
+#'   `pre_tax_return_on_capital`, `return_on_capital` (after tax),
+#'   `loss_ratio` and `multiple` (on all the premium), `rate_on_line` and
+#'   `payback` (on the deposit, `NaN` without a limit),
+#'   `reinstatement_rate` and `commission_rate` (the terms), and the inputs
+#'   `implied_quote()` needs.
 #' @export
 #' @examples
 #' p <- risk_loaded_price(sampled(c(0, 0, 2, 6)), distortion("tvar", 0.5),
@@ -1309,25 +1369,102 @@ calibrate_classical <- function(x, principle, premium, q = 2) {
 #' q$premium
 #' q$rate_on_line
 #' implied_quote(q, 3)$return_on_capital
-technical_quote <- function(price, expenses = 0, brokerage = 0, fixed = 0, limit = NULL) {
-  loads <- list(expenses = as.double(expenses), brokerage = as.double(brokerage),
-                fixed = as.double(fixed), limit = if (is.null(limit)) NaN else as.double(limit))
-  q <- rust_result(pricing_quote(
-    price$expected_loss, price$premium, price$assets, loads$expenses, loads$brokerage,
-    loads$fixed, loads$limit, NaN
-  ))
-  c(q, list(loads = loads))
+#' # Half a reinstatement expected per unit of deposit, and a 21% income tax.
+#' t <- technical_quote(p, brokerage = 0.10, income_tax = 0.21, reinstatement_rate = 0.5)
+#' c(t$return_on_capital, t$pre_tax_return_on_capital)
+technical_quote <- function(price, expenses = 0, brokerage = 0, fixed = 0, limit = NULL,
+                            premium_tax = 0, income_tax = 0, reinstatement_rate = 0,
+                            commission = 0, brokerage_on_reinstatements = TRUE) {
+  loads <- list(price = price[c("expected_loss", "premium", "assets")],
+                expenses = as.double(expenses), brokerage = as.double(brokerage),
+                fixed = as.double(fixed), limit = if (is.null(limit)) NaN else as.double(limit),
+                premium_tax = as.double(premium_tax), income_tax = as.double(income_tax),
+                reinstatement_rate = as.double(reinstatement_rate),
+                commission = as.double(commission),
+                brokerage_on_reinstatements = isTRUE(brokerage_on_reinstatements))
+  quote_with(loads, NaN, 0)
 }
 
 #' @rdname technical_quote
 #' @export
-implied_quote <- function(quote, premium) {
-  l <- quote$loads
+implied_quote <- function(quote, premium, commission = 0) {
+  quote_with(quote$loads, as.double(premium), as.double(commission))
+}
+
+quote_with <- function(l, premium, commission) {
+  p <- l$price
   q <- rust_result(pricing_quote(
-    quote$expected_loss, quote$risk_premium, quote$assets, l$expenses, l$brokerage, l$fixed,
-    l$limit, as.double(premium)
+    p$expected_loss, p$premium, p$assets, l$expenses, l$brokerage, l$fixed, l$limit,
+    l$premium_tax, l$income_tax, l$reinstatement_rate, l$commission,
+    l$brokerage_on_reinstatements, premium, commission
   ))
   c(q, list(loads = l))
+}
+
+#' A tower quoted layer by layer and as one
+#'
+#' Each layer of [tower_on_grid()]'s result priced on its own ceded grid by
+#' [risk_loaded_price()] and quoted by [technical_quote()], with its
+#' reinstatement rate (the grid's expected reinstatement premium over the
+#' layer's deposit premium), its flat ceding commission and its limit at the
+#' placed share; and the total cession quoted the same way, its
+#' reinstatement and commission rates the layers' weighted by their
+#' technical deposits, without a limit. The diversification is the layers'
+#' deposits less the total's: what writing them together saves. Nothing is
+#' allocated to the layers.
+#'
+#' The total needs one compound total cession (`total_ceded` of
+#' [tower_on_grid()]): it fails for several layers with annual terms
+#' (reinstatements, aggregate limits or deductibles) or an aggregate cover
+#' after per-occurrence stages; quote those layers one by one.
+#'
+#' @param tower The [reinsurance_tower] the grids are of.
+#' @param grids The result of [tower_on_grid()].
+#' @param assets The assets' distortion, as in [risk_loaded_price()].
+#' @param cost_of_capital,distortion The premium rule: give exactly one, as
+#'   in [risk_loaded_price()].
+#' @inheritParams technical_quote
+#' @returns A list with `layers` (a named list of quotes as
+#'   [technical_quote()]'s, each usable in [implied_quote()]), `total` (the
+#'   total cession's quote) and `diversification`.
+#' @export
+#' @examples
+#' sev <- grid_distribution(1, c(0, 0.3, 0.3, 0.2, 0.1, 0.1))
+#' tw <- reinsurance_tower(list(xol_layer("1x1", 1, 1), xol_layer("2x2", 2, 2)))
+#' g <- tower_on_grid(tw, poisson_count(2), sev, points = 256)
+#' q <- tower_quote(tw, g, distortion("tvar", 0.99), cost_of_capital = 0.1,
+#'                  brokerage = 0.1)
+#' q$layers[["2x2"]]$premium
+#' q$total$premium
+#' q$diversification
+tower_quote <- function(tower, grids, assets, cost_of_capital = NULL, distortion = NULL,
+                        expenses = 0, brokerage = 0, fixed = 0, premium_tax = 0,
+                        income_tax = 0, brokerage_on_reinstatements = TRUE) {
+  r <- rust_result(pricing_tower_quote(
+    tower@ptr, lapply(grids$ceded, function(g) g@ptr),
+    as.double(grids$expected_reinstatement_premium),
+    if (is.null(grids$total_ceded)) NULL else grids$total_ceded@ptr,
+    assets@ptr, rate_arg(cost_of_capital), pricing_arg(distortion), as.double(expenses), as.double(brokerage),
+    as.double(fixed), as.double(premium_tax), as.double(income_tax),
+    isTRUE(brokerage_on_reinstatements)
+  ))
+  with_loads <- function(q, limit) {
+    loads <- list(price = list(expected_loss = q$expected_loss, premium = q$risk_premium,
+                               assets = q$assets),
+                  expenses = as.double(expenses), brokerage = as.double(brokerage),
+                  fixed = as.double(fixed), limit = limit,
+                  premium_tax = as.double(premium_tax), income_tax = as.double(income_tax),
+                  reinstatement_rate = q$reinstatement_rate, commission = q$commission_rate,
+                  brokerage_on_reinstatements = isTRUE(brokerage_on_reinstatements))
+    c(q, list(loads = loads))
+  }
+  layers <- lapply(r$layers, function(q) {
+    limit <- if (is.nan(q$rate_on_line)) NaN else q$premium / q$rate_on_line
+    with_loads(q, limit)
+  })
+  list(layers = stats::setNames(layers, tower@layer_names),
+       total = with_loads(r$total, NaN),
+       diversification = r$diversification)
 }
 
 #' Large losses trended to the prospective period
@@ -1670,6 +1807,60 @@ payment_pattern_unpaid <- function(pattern, age) {
 pattern_values <- function(pattern, rate = 0, t = double()) {
   rust_result(pricing_pattern_values(pattern$times, pattern$shares, as.double(rate),
                                      as.double(t)))
+}
+
+#' Monthly patterns from a payment pattern
+#'
+#' `payment_pattern_monthly()` reads a [payment_pattern()] at the end of
+#' each of `months` months, the share paid by `(m + 1) / 12` years: at month
+#' `12 k - 1` (the `12 k`-th value) it is the pattern's share at `k` years.
+#' Between the pattern's times the share paid runs as `interpolation` says:
+#' `"step"` (each share paid at its time, as the pattern discounts),
+#' `"linear"` (evenly over the period ending at it, the usual assumption)
+#' or `"log-linear"` (the unpaid share falling geometrically). After the
+#' last time all is paid, as the shares, any tail included, sum to 1.
+#'
+#' `cashflow_patterns_from_annual()` gives the monthly written, earned and
+#' paid patterns of [cashflow_terms()] from a written pattern: the premium
+#' written in month `s` is written at its start and earned evenly over the
+#' `policy_months` months from it; losses occur as premium is earned, in
+#' the middle of their month, and are paid by `pattern` measured from the
+#' accident date. All premium written at once is a single policy; written
+#' evenly over a year, policies written through it.
+#'
+#' @param pattern A [payment_pattern()], by age from the accident date for
+#'   `cashflow_patterns_from_annual()`.
+#' @param months The number of months.
+#' @param interpolation `"linear"`, `"step"` or `"log-linear"`.
+#' @param written The cumulative share written by the end of each month; its
+#'   length is the patterns'.
+#' @param policy_months The policy term in months.
+#' @returns `payment_pattern_monthly()` a numeric vector;
+#'   `cashflow_patterns_from_annual()` a list of `written`, `earned` and
+#'   `paid`.
+#' @export
+#' @examples
+#' p <- payment_pattern_from_development(c(1, 2, 3), c(4, 1.25, 1))
+#' m <- payment_pattern_monthly(p, 36)
+#' m[c(12, 24, 36)]
+#' even <- payment_pattern(c(1, 2, 3), rep(1 / 3, 3))
+#' pats <- cashflow_patterns_from_annual(rep(1, 60), even)
+#' pats$earned[c(6, 12)]
+#' terms <- cashflow_terms(100, 48, pats$written, pats$earned, pats$paid,
+#'                         cashflow_requirement(c(outstanding = 1)))
+#' round(cashflow_run(terms, 1.3)$funded, 6)
+payment_pattern_monthly <- function(pattern, months,
+                                    interpolation = c("linear", "step", "log-linear")) {
+  rust_result(pricing_pattern_monthly(pattern$times, pattern$shares, as.double(months),
+                                      match.arg(interpolation)))
+}
+
+#' @rdname payment_pattern_monthly
+#' @export
+cashflow_patterns_from_annual <- function(written, pattern, policy_months = 12,
+                                          interpolation = c("linear", "step", "log-linear")) {
+  rust_result(pricing_patterns_from_annual(as.double(written), pattern$times, pattern$shares,
+                                           as.double(policy_months), match.arg(interpolation)))
 }
 
 #' Price over a payout

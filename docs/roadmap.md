@@ -31,7 +31,7 @@ when from experience, and which pricing method fits which scenario.
 |---|---|---|
 | Phase 0: Foundation | Workspace, core traits, design notes, RNG streams, Python and R skeletons, parity harness | Done |
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
-| v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R) |
+| v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R); latest diagonals, a development applied to another book, in Rust, Python and R (decisions 15 to 19) |
 | v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C- and D-vine copulas (#261, #262) |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
@@ -108,7 +108,8 @@ what it is aiming for by v1.0.
     likelihood or minimum chi-square with the minimum limited-mean
     distance (`grouped_fit`; Bahnemann's printed fits).
   - A severity from a size-of-loss table (`SizeOfLoss`, #338).
-- **Next:** the Guides lane's remaining issues for the Probability lane.
+- **Next:** nothing planned; the Guides lane's issues for this lane
+  (#328 to #331, #365 to #369, #373 and #375) are closed.
 - **v1.0:** a stable distribution and `PredictiveDistribution` API that
   every other crate builds on.
 
@@ -203,8 +204,9 @@ what it is aiming for by v1.0.
     layers priced by any distortion (#368).
   - Increased limits and deductibles from size-of-loss tables, with the
     censored layer-by-layer LAS over several policy limits (#338).
-- **Next:** the Guides lane's remaining issues of 2026-10-17 and 18 (a
-  grid audit, shared mixing across units).
+- **Next:** nothing planned beyond the open issues in the Aggregate
+  lane's milestone (the grid audit, #317, and shared mixing, #316, are
+  done).
 - **v1.0:** treaty and primary pricing from data to a priced programme.
 
 ### `prospicio-reserving` (Reserving lane, local session)
@@ -421,6 +423,50 @@ what it is aiming for by v1.0.
     not zero under the exclusions. Merz and Wüthrich's closed form and the
     geometric average still reject them. Parity with chainladder-python's
     `BootstrapODPSample` on the deterministic steps.
+  - A latest diagonal with a selected pattern (`reserving-v02.md`,
+    decision 15; branch `claude/diagonal-pr1`, issue #544, in Rust): a
+    fully selected age with no link ratio is missing instead of an error,
+    so one latest value per origin on its own is projected by the chain
+    ladder and the expected-loss family; Mack and both bootstraps reject it by
+    name. Development fitted on one triangle and applied to another, and
+    the bindings, are the issue's next PRs.
+  - The latest diagonal as a type of its own (`reserving-v02.md`,
+    decision 16; branch `claude/diagonal-pr2`, issue #544, in Rust):
+    `LatestDiagonal` and `fit_diagonal` on the chain ladder and the
+    expected-loss family, on a grid of the diagonal's and the pattern's
+    ages, so off-grid ages are read log-linearly; parity with
+    chainladder-python's `DevelopmentConstant` on the latest diagonal.
+  - A fitted development applied to another book (`reserving-v02.md`,
+    decision 17; branch `claude/diagonal-pr3`, issue #544, in Rust):
+    `ChainLadderFit::to_chain_ladder` freezes a fit as a fully selected
+    pattern and a constant tail, and `LatestDiagonal::from_triangle` takes
+    another triangle's latest diagonal, so a development fitted on one
+    book projects another book or a latest diagonal on its own, by the
+    chain ladder and the expected-loss family; parity with chainladder-python's
+    `fit(source).predict(target)`. `LatestDiagonal` over segments and the
+    bindings are the issue's next PRs.
+  - A pattern on another origin basis, and ages past its end
+    (`reserving-v02.md`, decision 18; branch `claude/diagonal-basis`, issue
+    #544, in Rust): `SelectedPattern::averaged_over_origins` turns an
+    accident-month pattern into an accident-year or accident-quarter one,
+    the plain triangle path reads a pattern off the triangle's ages and
+    folds what runs past its oldest age into a constant tail, and
+    `LatestDiagonal::with_past_pattern_end` develops an origin older than
+    the pattern's end with a factor of 1 or the tail spread from the end;
+    no external reference implements these readings, so they are checked
+    by hand and on a synthetic book.
+  - Latest diagonals over segments, and the bindings (`reserving-v02.md`,
+    decision 19; branch `claude/diagonal-bindings`, issue #544, in Rust,
+    Python and R): `LatestDiagonals` holds a latest diagonal per segment,
+    built from a long table or any triangle, and the chain ladder and the
+    expected-loss family fit each segment, with each segment's development
+    taken from a source fit by label, by a map, or from a single-segment
+    source for every segment; Python's `LatestDiagonal` with
+    `fit_diagonal(..., development=)`, R's `latest_valuation()` and
+    `as_latest_valuation()` taken by the five functions, `to_chain_ladder` and
+    `ldf_origin` in both, reproducing the Rust validation's numbers and
+    the chainladder-python parity rows. The Excel functions are the next
+    PR.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental
@@ -570,12 +616,15 @@ what it is aiming for by v1.0.
   Iman–Conover); link-ratio exclusions (the latest periods, high and low
   dropped) and the geometric average; the ODP GLM (the analytic
   prediction error, coefficients and residual diagnostics); the Lomax,
-  truncation from above, grouped losses and minimum-distance fits.
+  truncation from above, grouped losses and minimum-distance fits; a
+  latest diagonal (a bordereau) projected with a selected pattern by the
+  chain ladder and the expected-loss methods, patterns averaged over
+  origin periods and origins past the pattern's end (#544).
 - **Next:**
   1. Parity with the Python and R packages where a function has a sheet
-     form (`xll.md`, parity plan): all eight groups done (the eighth,
-     what the other lanes had built since); further functions as the
-     user asks.
+     form (`xll.md`, parity plan): all nine groups done (the eighth,
+     what the other lanes had built since; the ninth, the latest
+     diagonal of #544); further functions as the user asks.
   2. Signing, once the owner has a code-signing certificate (`xll.md`,
      decision 16).
 

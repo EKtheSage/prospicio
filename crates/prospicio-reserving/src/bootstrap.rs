@@ -131,7 +131,11 @@ pub struct OdpBootstrap {
     /// deviation. `None` (or zero) keeps the factor fixed; the ODP has no
     /// estimate of its own, unlike Mack's extrapolated `tail.se`. Unused
     /// when the factor is 1, and an error with an estimated tail, whose
-    /// refit gives its parameter error.
+    /// refit gives its parameter error, also when a pattern past the oldest
+    /// age folds that tail into a constant (decision 18). When such a
+    /// pattern folds a constant tail, the standard error is the
+    /// constant's: the folded factor is drawn with the constant's
+    /// coefficient of variation, `tail_std_err / factor`.
     pub tail_std_err: Option<f64>,
     /// How the segments of [`fit_segments`](Self::fit_segments) and
     /// [`one_year_segments`](Self::one_year_segments) depend on each other;
@@ -153,7 +157,9 @@ pub struct OdpBootstrap {
     /// With no [`tail`](Self::tail), a cumulative pattern to the oldest age
     /// implies a constant tail, its level there
     /// ([`ChainLadderFit::pattern_tail`]), the same in every simulation
-    /// unless [`tail_std_err`](Self::tail_std_err) is given.
+    /// unless [`tail_std_err`](Self::tail_std_err) is given. A pattern past
+    /// the oldest age folds its development there, and the tail after its
+    /// end, into such a constant too, never refitted (decision 18).
     ///
     /// `None`, the default, re-estimates every factor; in the one-year view
     /// the bootstrap then takes the method's pattern, unless
@@ -739,31 +745,41 @@ impl TailDraw {
         cl: &ChainLadderFit,
         std_err: Option<f64>,
     ) -> Result<Option<Self>> {
-        // With no tail, the constant one a cumulative pattern implies.
-        let tail = cl.tail_in_use(tail);
-        if tail.is_none() {
+        // With no tail, the constant one a cumulative pattern implies; a
+        // pattern past the oldest age folds the given tail into a constant
+        // (decision 18).
+        let in_use = cl.tail_in_use(tail);
+        if in_use.is_none() {
             return Ok(None);
         }
         let factor = cl.tail.factor;
+        // The standard error is read against the tail given, not the one
+        // in use: an estimated tail folded into a constant is still an
+        // estimated tail, and a given constant's standard error is its
+        // own. The fold multiplies that constant by the pattern's fixed
+        // development past the oldest age, so the folded factor keeps the
+        // constant's coefficient of variation.
+        let folded = !tail.is_none() && cl.pattern_tail.is_some();
         let constant = match (tail, std_err) {
             (_, Some(se)) if !se.is_finite() || se < 0.0 => {
                 return Err(Error::Tail(
                     "a tail standard error must be finite and non-negative",
                 ));
             }
-            (Tail::Constant(_), Some(se)) if se > 0.0 && factor != 1.0 => {
-                Some(Lognormal::from_mean_cv(factor, se / factor)?)
-            }
-            (Tail::Constant(_), _) | (_, None) => None,
-            (_, Some(_)) => {
+            (Tail::Curve(_) | Tail::Bondy(_) | Tail::LogLinear, Some(_)) => {
                 return Err(Error::Tail(
                     "an estimated tail's parameter error comes from refitting it on each \
                      simulation: a standard error is for a constant tail",
                 ));
             }
+            (Tail::Constant(t), Some(se)) if se > 0.0 && factor != 1.0 => {
+                let cv = if folded { se / t.factor } else { se / factor };
+                Some(Lognormal::from_mean_cv(factor, cv)?)
+            }
+            _ => None,
         };
         Ok(Some(Self {
-            tail,
+            tail: in_use,
             ages: cl.development.development.clone(),
             estimated: cl.development.ldf.clone(),
             constant,
@@ -901,6 +917,11 @@ pub(crate) fn prepare_selected(
     exclusions: Exclusions,
 ) -> Result<(OdpBootstrapSegment, Vec<f64>)> {
     let (no, nd) = (segment.n_origins, segment.n_dev);
+    if segment.is_latest_diagonal_only() {
+        return Err(Error::LatestDiagonalOnly {
+            method: "the ODP bootstrap",
+        });
+    }
     let development = exclusions.development(pattern);
     let kept = development.kept_mask(segment)?;
     let chain_ladder = ChainLadder { tail, development }.fit_segment(segment, ages)?;

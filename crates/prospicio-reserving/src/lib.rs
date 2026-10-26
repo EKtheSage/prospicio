@@ -54,6 +54,7 @@ pub mod error;
 pub mod excess;
 pub mod expected_loss;
 pub mod frame;
+pub mod latest_diagonal;
 pub mod mack;
 pub mod mack_bootstrap;
 pub mod odp_glm;
@@ -87,6 +88,9 @@ pub use expected_loss::{
     Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
 };
 pub use frame::TriangleFrame;
+pub use latest_diagonal::{
+    DiagonalAge, LatestDiagonal, LatestDiagonals, LongDiagonal, PastPatternEnd, SegmentMap,
+};
 pub use mack::{Mack, MackFit};
 pub use mack_bootstrap::{
     MackBootstrap, MackBootstrapFit, MackBootstrapFits, MackBootstrapSegment, MackProcess,

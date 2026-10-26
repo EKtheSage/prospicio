@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -1677,6 +1677,10 @@ pub struct Development {
      are fixed: `f_k = CDF(a_k) / CDF(a_{k+1})` for `m <= k < m + r`. The
      level of the pattern, its value at its last age `a_{m+r}`, fixes no
      link; item 5 makes it the tail or rescales it.
+   * A pattern with an age that is not a development age of the triangle
+     is read on its own ages instead (decision 18), except a single
+     age-to-age factor, which keeps the error "not a development age of
+     the triangle".
    * Links the pattern does not fix are estimated from the triangle, as
      now: those before its first age and those from its last age on. So a
      cumulative pattern for the immature ages only (CDFs at 12, 24 and 36)
@@ -1730,7 +1734,8 @@ pub struct Development {
 
 4. **Validation**, each an `Error::Pattern` naming the age:
    * no values; an age given twice (values or weights);
-   * an age that is not a development age of the triangle (of the segment
+   * except as decision 18 reads a pattern off the triangle's ages: an
+     age that is not a development age of the triangle (of the segment
      being fitted, with segments);
    * `AgeToAge`: a value that is not finite and positive (below 1 is
      allowed: negative development); a value at the oldest age;
@@ -2689,3 +2694,841 @@ it:
 8. The geometric average stays rejected in the bootstraps and their
    one-year views, and the closed form's rejection now points to
    `MackBootstrap::one_year`.
+
+### 15. A latest diagonal with a selected pattern
+
+Status: **Built** (2026-10-23), issue #544, branch `claude/diagonal-pr1`,
+in Rust. This is the issue's first PR; the rest (a dedicated diagonal
+type, development fitted on one triangle and applied to another, the
+bindings) is planned in the issue and listed in the lane's Next.
+
+A cedant's data, summarised by origin, often gives one latest value per
+origin with its age, not a triangle, and the pattern comes from elsewhere
+(a prior study, an industry triangle, a benchmark). `Triangle::from_long` already builds a triangle from such
+rows: one observed cell per origin. The chain ladder and the expected-loss
+methods then failed even with a fully selected pattern, with "factor from
+development index 0: no origin is observed at both ages", because
+`Development::fit_segment` asked `kept_links` for the age's link ratios
+before it checked whether the age is fully selected. The excess-layer
+leniency (`reserving-excess.md`, decision 8) covered only the estimate's
+errors, which come later.
+
+1. **A fully selected age with no link ratio is missing, not an error.**
+   At an age whose selected factor has weight 1 and where no origin is
+   observed at both ages, the fit leaves the triangle's own factor
+   missing: `ldf` and `volume` NaN, no sigma, `n_links` 0, as the
+   excess-layer leniency does. The check comes before `kept_links`. An
+   age that is not fully selected keeps the old error with the same text,
+   and so does a fully selected age whose link ratios are all removed by
+   `n_periods` ("no link ratio is left after n_periods"): that is a
+   setting at odds with the data, not a diagonal.
+2. **The kept mask skips an age with no link ratio.** The bootstraps'
+   `Development::kept_mask` no longer errors at such an age; it keeps
+   none there, and the fit says whether the age is an error.
+3. **What works on a latest diagonal.** The chain ladder, the expected
+   loss method, Bornhuetter-Ferguson, Benktander and Cape Cod (with its
+   `trend` and `decay`), with the pattern as age-to-age factors, factors
+   to ultimate or percents developed, and any tail. An estimated tail
+   (`Tail::Curve`, `Tail::Bondy`, `Tail::LogLinear`) is fitted to the
+   factors in use, here the selected ones, so a diagonal takes the tail
+   its full triangle would. The results are the same fit types, so
+   `totals()`, `reserves()` and the long tables work unchanged. The
+   pattern's ages follow decision 12 unchanged: each must be on the
+   triangle's grid, which `from_long` builds from the youngest observed
+   age to the oldest (so a pattern from 12 months does not fit a diagonal
+   whose youngest origin is at 24 months), a cumulative pattern fills the
+   ages between two of its own, and an age-to-age pattern must give every
+   age the diagonal needs. Ages off the grid or before the youngest origin
+   are for the dedicated diagonal type of the issue's next PR.
+4. **What a latest diagonal is rejected by, by name.** Mack's model (and
+   with it Merz and Wüthrich's closed form), Mack's bootstrap and the ODP
+   bootstrap need link ratios for sigma, the scale and the residuals. A
+   segment where every origin is observed at one age at most
+   (`Segment::is_latest_diagonal_only`) gets the new
+   `Error::LatestDiagonalOnly { method }`, which says the triangle holds a
+   latest diagonal only and that the chain ladder and the expected-loss
+   methods project it with a fully selected pattern. Before, all three
+   failed with the chain ladder's link-ratio error ("factor from
+   development index 0: no origin is observed at both ages"), or Mack's
+   bootstrap with "every origin must be observed from the first age to
+   its latest". A triangle with holes and no link ratio, or with link
+   ratios at some ages and a fully selected age with none elsewhere, is
+   not a latest diagonal and gets the errors it had: Mack fills the
+   missing sigma where its interpolation can and otherwise says it
+   cannot, and the bootstraps reject the holes or the missing factor.
+5. **Checks** (`validation/tests/reserving_latest_diagonal.rs`): a
+   six-origin diagonal by hand for the chain ladder (also on percents
+   developed; the youngest origin's 150 at a factor to ultimate of 12/7
+   gives 257.14), Bornhuetter-Ferguson (208.33 at an ELR of 0.7 on a
+   premium of 200), Benktander, Cape Cod and the expected loss method;
+   the latest diagonal cut from GenIns and RAA, with the full triangle's
+   own factors selected as age-to-age factors and as factors to ultimate,
+   gives every origin the full triangle's chain ladder ultimate; the
+   diagonal cut from the CAS workers' compensation triangle gives the full
+   triangle's Bornhuetter-Ferguson, Benktander and Cape Cod ultimates
+   under the same selected pattern; the three estimated tails on GenIns's
+   diagonal equal the full triangle's; a partial pattern keeps the
+   link-ratio error at its first unselected age, and a fully selected age
+   whose link ratios `n_periods` removes keeps its error; Mack, Mack's
+   bootstrap and the ODP bootstrap return `LatestDiagonalOnly`, and a
+   triangle with holes and no link ratio does not. chainladder-python's
+   `DevelopmentConstant` on a latest diagonal is left for the dedicated
+   type's PR, with the fit-and-apply path it compares against.
+
+### 16. The latest diagonal as a type of its own
+
+Status: **Built** (2026-10-23), issue #544, branch `claude/diagonal-pr2`,
+in Rust. This is the issue's second PR. Items 2 to 6 answer the issue's
+open questions; they are proposals for the user to accept, and the PR
+lists them.
+
+Decision 15 lets a triangle that holds only a latest diagonal reach the
+chain ladder and the expected-loss methods. A latest diagonal on its own
+is not a triangle, though: its ages need not lie on one grid, the
+pattern's ages need not be the diagonal's, and a triangle trims its development axis to the ages it
+observes, so a pattern that starts before the youngest origin's age does
+not fit it. `LatestDiagonal` holds the latest values as they are, and
+`fit_diagonal` on `ChainLadder`, `ExpectedLoss`, `BornhuetterFerguson`,
+`Benktander` and `CapeCod` projects it, returning the same fit types.
+
+1. **One code path.** The type places the diagonal on a grid of its own
+   (the crate's `Segment`, built directly, since a triangle would trim
+   it) and calls the same `fit_segment` as the triangle methods, through
+   decision 15's fully selected path. On a diagonal whose ages are the
+   pattern's, the fits are exactly the triangle path's (checked to the
+   bit). The fit's development axis is the grid, which spans the
+   pattern's ages as well as the diagonal's.
+2. **The grid.** Its ages are the diagonal's and the pattern's together,
+   from the earliest to the latest, at the coarsest development grain
+   (year, half year, quarter, month) that divides the origin grain and
+   every gap between them. An age between two of the pattern's ages (18
+   months against an annual pattern) is read by decision 12's rule, `ln
+   CDF` linear in the age.
+3. **Age-to-age factors.** A factor runs from its age to the next age
+   the pattern gives, and the last one by the spacing before it (by the
+   origin grain for a single factor), so a pattern of factors at 12 to 108
+   months spans 12 to 120. On a grid finer than that spacing the factors
+   are turned into factors to ultimate (their products, 1 at the end of
+   the span), which the same rule spreads over the ages between. This
+   also reads chainladder-python's convention of a factor of 1 at the
+   oldest age as one more period of no development. The factors and any
+   weights by age are checked before they are turned, so an error names
+   the factor given, and the fit reports no pattern tail or rescaling,
+   since factors carry no tail of their own. An estimated tail (curve,
+   Bondy, log-linear) is fitted to the factors on the pattern's own ages,
+   as a triangle at those ages would fit it, and applied on the finer
+   grid as a constant; fitted to the interpolated factors of the shorter
+   periods it would be another tail.
+4. **Ages outside the pattern are an error** (open question 2), unless
+   `PastPatternEnd` says otherwise (decision 18): an origin
+   younger than the pattern's first age or older than its last (for
+   age-to-age factors, the end of their span) names the origin, its age
+   and the pattern's range. Development past the pattern is the tail's,
+   applied from the grid's last age: an origin at the end of the span
+   takes the tail alone.
+5. **Ages from a valuation** (open question 1): `LatestDiagonal::at_valuation`
+   gives each origin the months from its start to the valuation month
+   inclusive, as a triangle's valuation dates do, so an accident year
+   2024 valued at June 2024 is 6 months and an accident quarter in
+   progress is its months so far.
+6. **The rest of the open questions.** Every origin needs an exposure for
+   the expected-loss methods, Cape Cod included, finite and positive (an
+   error, not dropped; open question 4). The origins span every period
+   from the earliest to the latest, and a skipped one is an error
+   (`EmptyOrigin`); an origin with nothing reported is given as 0. An
+   origin given twice is an error, not summed. The pattern must be fully
+   selected (weight 1), since there is no estimate to blend with, and
+   `n_periods` and the drops are an error, since they choose link ratios.
+   There is no standard error (open question 3): no Mack, bootstrap or
+   one-year view on a diagonal, and no user-given pattern uncertainty until
+   asked for. Errors that only a diagonal has are the new
+   `Error::Diagonal`. The average and sigma settings have no effect,
+   since there are no link ratios. The fits list the origins oldest first
+   over every period from the earliest to the latest, not in the order
+   given. A grid of more than 2,400 development periods is an error.
+7. **Checks** (`validation/tests/reserving_latest_diagonal.rs`): the type
+   gives exactly the triangle path's ultimates on the diagonals of GenIns
+   and RAA (age-to-age factors, factors to ultimate and percents
+   developed) and of the CAS workers' compensation triangle (the expected
+   loss method, Bornhuetter-Ferguson, Benktander and Cape Cod, with its
+   trended apriori); chainladder-python 0.10.1's `DevelopmentConstant` on
+   the latest diagonal, every origin and the total, at 1e-9 relative
+   (`reference/reserving_latest_diagonal_python.csv`, from
+   `scripts/reserving_latest_diagonal_python.py`); by hand, an origin at
+   18 months on a half-year grid (`sqrt(2 × 1.25)`), accident quarters
+   from 3 months and accident years at 13 and 25 months on a monthly
+   grid, age-to-age factors on a finer grid equal to the same factors to
+   ultimate, with and without a tail, an origin at the end of the factors'
+   span taking the tail alone, an estimated tail on a half-year grid equal
+   to the one at the pattern's annual ages; ages from a valuation equal a
+   triangle's; and the errors above (`n_periods` and the drops, a blended
+   pattern, no pattern, ages outside it, no exposure or a non-finite one, a
+   repeated or skipped origin, an invalid factor or weight by age, a grid
+   too large). chainladder-python has no ragged
+   diagonal and gives an age its pattern does not list a factor of 1
+   (`knowledge/references/chainladder-python-development-constant.md`), so
+   the off-grid readings have no reference beyond the hand checks.
+
+### 17. A fitted development applied to another book
+
+Status: **Built** (2026-10-23), issue #544, branch `claude/diagonal-pr3`,
+in Rust. This is the issue's third PR. Items 2 to 9 answer the issue's
+open questions, and were accepted by the user on 2026-10-23 as built.
+Item 11 stays open: `the_plain_path_on_an_older_book_mixes_in_its_own_factors`
+still pins it, and decision 18 leaves the plain path's on-grid reading
+unchanged. Decision 18 revises items 4 and 6 where they meet ages off the
+source's or past its end. Decision 19 builds what item 9 left for later:
+latest diagonals over segments, a source fit applied segment by segment,
+and the Python and R arguments.
+
+A reserving actuary often fits a development on one book (a mature line,
+an industry triangle, last year's study) and applies it to another: a
+younger book, a cedant's latest values by origin, the same book cut
+differently. chainladder-python does it with `Chainladder().fit(source).predict(target)`.
+Decisions 15 and 16 already project a latest diagonal with a fully
+selected pattern, so a fit only has to become such a pattern, and another
+triangle only has to give its latest diagonal.
+`ChainLadderFit::to_chain_ladder` and `LatestDiagonal::from_triangle` do
+the two.
+
+1. **One code path.** A fit becomes a fully selected pattern and a
+   constant tail, and is applied through decision 16's `fit_diagonal`
+   and the shared `fit_segment`. There is no second projection kernel. The
+   source can be any `ChainLadderFit`: a triangle's, one segment of a
+   `SegmentFits`, the `chain_ladder` of an expected-loss fit or a fit made
+   by `fit_diagonal`.
+2. **The conversion.** `ChainLadderFit::to_chain_ladder()` returns a
+   `ChainLadder` whose pattern is the factors in use (`ldf()`) as
+   age-to-age factors at the fit's ages, with weight 1, and whose tail is
+   `Tail::from(tail.factor)`, a constant at the oldest age. Every source
+   setting is already in those two: the average and the exclusions, a
+   blend frozen at its blended value, a cumulative pattern's
+   interpolation and level, and an estimated tail, one attached inside
+   the triangle included. The other `Development` settings are the
+   defaults (no `n_periods`, no drops), as `fit_diagonal` requires. It
+   does not carry sigma, the standard errors or the tail's form. On the
+   fit's own ages the factors are the fit's to the bit; the tail is spread
+   again by the constant tail's decay, so the tail factor, the factors to
+   ultimate and the ultimates agree to about 1e-15 relative, and to the
+   bit with no tail.
+3. **Age-to-age factors, not factors to ultimate.** They are exact on the
+   links. On the diagonal route the two kinds are the same, since decision
+   16 turns factors into factors to ultimate on a finer grid. On the plain
+   triangle path an age-to-age factor runs to the target's next age, so a
+   target with a finer development grain is misread (item 4). Factors to
+   ultimate (from `cdf`) would read such a target correctly on that path
+   too, at about 1 ulp a link, and would set `pattern_tail` and
+   `pattern_rescale`. Neither kind avoids the tail floor of item 5.
+4. **Another triangle means its latest diagonal.**
+   `LatestDiagonal::from_triangle(triangle, column, exposure)` takes each
+   origin of a single-segment triangle at the age of its last observed
+   cell, with an optional exposure column read as the expected-loss
+   methods read it on a triangle. This is chainladder-python's predict:
+   each origin's latest value times the source's factor to ultimate at its
+   age. Apply a fit to any book other than its own this way. The plain
+   triangle path (`to_chain_ladder().fit(&other, column)`) is right only
+   on a target whose development ages are the source's, and has two
+   hazards that give no error: a target with a finer development grain is
+   misread, since an age-to-age factor runs to the target's next age (this
+   came with decision 12); and on a target with ages past the source's
+   oldest, the target's own factors are estimated there and the source's
+   tail attaches at the target's oldest age, which mixes the target's
+   development into the source's and is not what predict gives. A target
+   without one of the source's ages failed with `Error::Pattern` (not a
+   development age of the triangle); since decision 18 such a target has
+   the source's factors read as decision 18 item 4 reads them, on the
+   source's own ages, and the factors past the target's oldest age fold
+   into a constant tail there (decision 18 item 5), which projects as
+   `fit_diagonal` does. That covers a target with fewer ages and a target
+   whose grain is coarser than the source's (an annual book under a
+   quarterly fit). This PR adds no guard (item 11).
+5. **The tail is carried as a constant, not refitted.** It attaches at
+   the source's oldest age and is spread at decay 0.5; chainladder-python's
+   predict also carries the source's tail factor. A tail factor below
+   exp(-0.75), about 0.4724, cannot be spread at that decay (the seed's
+   quadratic `a x^2 + b x - ln f = 0`, with `a = 4/3` and `b = 2` at
+   decay 0.5, has no real root when `b^2 + 4 a ln f < 0`), so applying it
+   is an error (`Error::Tail`); a factor just above it is spread.
+6. **No extrapolation.** The grid is decision 16's: the source's ages, the
+   end of the factors' span and the target's ages, at the coarsest grain
+   they share. An origin younger than the source's first age or older than
+   its oldest is `Error::Diagonal`, naming the origin, its age and the
+   range (an older one can take a factor of 1 or the tail with
+   `PastPatternEnd`, decision 18). A target with later origins, and so fewer ages than the source
+   (GenIns from 2006), works, since the grid keeps the source's ages. A
+   fit's ages are evenly spaced (a triangle's development axis, or
+   decision 16's grid), so the factors' span ends at the source's oldest
+   age.
+7. **Expected-loss methods.** They take the frozen chain ladder in their
+   `chain_ladder` field. Bornhuetter-Ferguson and Benktander apply their
+   own apriori to the target's exposure. Cape Cod estimates its apriori on
+   the target's exposure and latest values with the source's pattern, and
+   trends it to the diagonal's valuation, as chainladder-python's
+   `CapeCod.predict` does. From a triangle, `from_triangle`'s diagonal
+   holds the fitted column alone, so the trend runs to that column's own
+   latest diagonal, where `CapeCod::fit` trends to the triangle's
+   valuation, the latest month of any column: when another column (a
+   premium) runs later, the trended aprioris differ by the trend over the
+   gap, and the detrended aprioris and the ultimates agree as long as
+   every origin ends by the fitted column's valuation. To carry the
+   source's apriori instead, use `BornhuetterFerguson` with it; that is
+   exact at a trend of 0 only.
+8. **Where it departs from chainladder-python.** An origin whose cell on
+   the latest diagonal is missing is projected from its last observed cell,
+   where chainladder-python gives NaN. A target valued earlier than the
+   source is projected at its own ages, where chainladder-python values it
+   at the source's valuation and gives NaN. Cape Cod on a diagonal reads
+   each origin's own age, where chainladder-python's `CapeCod.predict` on
+   a `latest_diagonal` reads every origin's apriori at the first factor to
+   ultimate unless `val_to_dev()` is called first
+   (`knowledge/references/chainladder-python-predict-traps.md`).
+9. **A single segment and no standard error.** `from_triangle` takes one
+   segment (`Error::MultipleSegments` otherwise). A map from source
+   segments to target segments, `LatestDiagonal` over segments and the
+   Python and R arguments come later; the bindings' PR unpacks
+   `to_chain_ladder`'s pattern and tail into their existing `ldf`,
+   `ldf_kind` and `tail` arguments. An applied fit reports the source's
+   selection, factors and tail and the target's ultimates; its estimated
+   factors, sigma and standard errors are the target's, NaN on a diagonal,
+   and there is no Mack, bootstrap or one-year view on it (decision 16,
+   item 6).
+10. **Checks** (`validation/tests/reserving_fit_apply.rs`): GenIns and RAA
+    fitted with each average, `n_periods`, the drops, a blended, a
+    cumulative and a percent-developed pattern and each tail (an early
+    attachment too), applied to their own latest diagonal and their own
+    triangle, give the source's factors to the bit and its tail factor,
+    factors to ultimate and ultimates within 1e-14 relative (to the bit
+    with no tail), and so do both segments of a `ChainLadder::fit_segments`
+    (GenIns and a perturbed GenIns, with a curve tail); the expected-loss
+    methods on the CAS workers' compensation triangle give the source's
+    development and exposure to the bit and its ultimates within 1e-12,
+    and Cape Cod's aprioris too, since that triangle's premium runs no
+    later than its paid (item 7). chainladder-python 0.10.1 at 1e-9
+    relative (`reference/reserving_fit_apply_python.csv`, from
+    `scripts/reserving_fit_apply_python.py`) in two arms, our own source
+    fit through `to_chain_ladder` and the reference's own `cdf_` as a
+    pattern of factors to ultimate. On GenIns, `fit(source).predict(target)`
+    for the sources with no tail, `TailConstant(1.05)` and both curves
+    applied to the diagonal and a perturbed book, whose own curve tails,
+    refitted in the first arm, differ from the carried ones by more than
+    the tolerance; the source with no tail also applied to a doubled and a
+    shifted book and the origins from 2006 and to 2004; and for a book
+    valued before 2008, `DevelopmentConstant` with the source's `cdf_`,
+    not predict (item 8). On the CAS workers' compensation triangle, predict
+    for Bornhuetter-Ferguson, Benktander and two Cape Cods applied to the
+    diagonal, a perturbed book with 10% more premium and a shifted book
+    (there is no doubled book), and for the Cape Cods also the origins from
+    1993 and the apriori on the raw latest diagonal, which predict reads
+    with every origin at the first age and the test reproduces so (item
+    8). The GenIns targets at the source's ages (the diagonal, the
+    perturbed, doubled and shifted books and the origins to 2004) also go
+    through the plain triangle path against the same rows. By hand: ages
+    between the source's (18 and 30 months, accident quarters), a target
+    with fewer ages and its plain triangle error, a target with more ages
+    through the plain path (its own factors past the source's oldest age
+    and the tail at its oldest, pinned; item 11), a missing latest cell, an
+    earlier valuation, the applied selection, Cape Cod on a diagonal
+    trended to the paid's valuation when the premium runs a year later
+    (item 7), and the errors above, the tail floor from both sides. The
+    interpolated, quarterly and truncated cases and the missing cell and
+    earlier valuation of item 8 have no chainladder-python reference; the
+    generator asserts that predict gives NaN on those two and misreads the
+    raw diagonal, and raises if chainladder-python stops doing so. The
+    targets are GenIns and the workers' compensation triangle scaled,
+    sliced or shifted, not a second real book.
+11. **Open: a guard on the plain triangle path.** A proposal for the user:
+    `to_chain_ladder().fit(&other, column)` could refuse a target whose
+    development ages are not the source's (a finer grain, or ages past the
+    source's oldest), with an error that points to `from_triangle` and
+    `fit_diagonal`. The frozen chain ladder would then have to carry its
+    source's ages, which a `ChainLadder` with a selected pattern does not,
+    so the guard touches decision 12's selected patterns too. Until it is
+    decided the hazards stand as item 4 states them, and
+    `the_plain_path_on_an_older_book_mixes_in_its_own_factors` pins
+    today's behaviour so that a guard changes it on purpose.
+
+### 18. A pattern on another origin basis, and ages past its end
+
+Status: **Built** (2026-10-23), issue #544, branch `claude/diagonal-basis`,
+in Rust. This is the issue's fourth PR; decision 19 brings it to Python
+and R. It answers the user's decisions of 2026-10-23: (b) a monthly (or any
+finer) pattern applies to yearly or quarterly origins on both the
+diagonal route and the plain triangle path, read at the origin's age or
+averaged over the origin period's months; (c) an origin older than the
+pattern's end takes a factor of 1, an a-priori tail or a tail estimated on
+the pattern's own factors, and with none chosen stays an error naming the
+three; (d) an origin at age 0 stays an error (`LatestDiagonal::new`
+rejects it with `NonPositiveAge`). Items 1 to 10 were proposals, accepted by the user on 2026-10-24
+as built; item 11 was open, decided by the user on 2026-10-24 as built. It revises decision 12's rule 1 and item 4 (the "not a
+development age" check), decision 16's item 4 and decision 17's items 4
+and 6, and adds no breaking change: `SelectedPattern` and `ChainLadderFit`
+keep their fields, and `LatestDiagonal`'s fields are private.
+
+1. **The origin basis is a conversion, not a field.**
+   `SelectedPattern::averaged_over_origins(pattern_origin, origin)` turns
+   a pattern measured on origin periods of `pattern_origin` (an
+   accident-month pattern is `Grain::Month`) into the pattern of origin
+   periods of `origin`, a whole multiple of it, with the exposure even
+   through the period. An origin of `n = origin / pattern_origin`
+   sub-periods of `s` months is at age `a` when its `q`-th sub-period
+   from the start (`q = 0` the earliest) is at age `a - q s`, so
+
+   ```text
+   P(a) = (1/n) * sum_{q=0}^{n-1} p(a - q s)
+   ```
+
+   on percents developed, never on CDFs or `ln CDF`. Ages follow
+   `at_valuation`: a sub-period at the end of its own months is at age
+   `s`. The result is a `PercentDeveloped` pattern at every month from the
+   input's first age to its end `E` plus `(n - 1) s`, `E'`, and goes into
+   `Development::pattern` like any other, so it reaches both routes, Mack,
+   both bootstraps and the one-year views. The default basis, read at the
+   origin's age, is the pattern as given, with no call. A field on
+   `SelectedPattern` or `ChainLadderFit` would break their struct
+   literals, which the crate itself builds. An origin still in progress
+   (an accident year at June, 6 months) projects to the whole period's
+   ultimate. `All(w)` carries over; `ByAge` weights do not (weight the
+   result); `n = 1` returns the pattern unchanged; a single age-to-age
+   factor has no span to average; a result of more than 2,400 months is an
+   error.
+2. **Below the first age the share is linear from 0.** `p` is 0 at an age
+   of 0 or less (a sub-period that has not begun), linear in `p` from
+   `(0, 0)` to `(first, p(first))` between, decision 12's rule between the
+   given ages (an age-to-age pattern first turned into factors to ultimate,
+   1 at the end of its span), and held at its value at the end past it.
+   `ln CDF` interpolation cannot start from `p = 0`, and an error would
+   forbid accident-month patterns that start at 3 or 12 months; the rule is
+   exact for a pattern linear from 0.
+3. **Exact to the pattern's end, deferred after it.** For origins at ages
+   up to `E` the ultimates are exact under even exposure, whatever the
+   tail, since every sub-period reaches ultimate the same way and the
+   average is linear. Between `E` and `E'`, `P` holds `p(E)` for the
+   sub-periods past the end, so the input's own tail is taken to develop
+   nothing until the period's last age: development is deferred and the
+   ultimate slightly overstated. With a tail `T` on the result, decision
+   12's rescale reports `pattern_rescale = P(E') / T`, which is `1 / T` for
+   an age-to-age input. An estimated tail on an averaged pattern is fitted
+   on its monthly factors (decision 16 item 3), so `TailCurve`'s default
+   100 extrapolated periods are 100 months; a constant tail taken from the
+   accident-month pattern's own tail is the safer choice, and the docs say
+   so. Uneven exposure through the period projects each origin to the sum
+   of its months' reported values over `P`, not to the sum of their
+   ultimates; the test computes both by hand and pins the miss, `sum_j
+   U_j p(a - j) / P(a) - sum_j U_j`.
+4. **The plain path has one gate.** In `SelectedPattern::resolve(ages)`,
+   when every age the pattern gives is a development age of the triangle,
+   decision 12 applies unchanged, to the bit: sparse age-to-age patterns,
+   the error for an age-to-age value at the oldest age, and decision 17
+   item 11's misreading of a finer-grained or older target included.
+   Otherwise the pattern is read on its own ages as decision 16 reads it,
+   where every such pattern was an error before: the value checks first,
+   with their texts (an age given twice, a value that is not finite and
+   positive, one cumulative value); a single age-to-age factor off the
+   triangle's ages keeps "not a development age of the triangle"; a
+   cumulative pattern ends at its last age, an age-to-age factor runs to
+   the next age given and the last one by the spacing before it, and `C`
+   is `ln`-linear between the pattern's own ages (its given value at one).
+   A link `a_k` to `a_{k+1}` is selected when `f0 <= a_k` and `a_{k+1} <=
+   E`: the product of the age-to-age factors over it when both ends are
+   the pattern's own (a link of one factor is that factor to the bit), and
+   `C(a_k) / C(a_{k+1})` otherwise. Links that start before `f0`, or end
+   past `E` while `E <= a_n`, stay estimated. A cumulative pattern's level
+   is `C` at the last triangle age in `[f0, min(E, a_n)]`, the implied tail
+   when that is `a_n`; an age-to-age pattern has none. A pattern that
+   selects no link and does not fold is "the pattern selects no factor of
+   the triangle". `ByAge` weights stay keyed by the triangle's link ages.
+   So a monthly cumulative pattern on an annual triangle is its annual
+   values to the bit, and a pattern at 6, 18 and 30 months on 12, 24 and
+   36 is read between its ages (12 to 24 is `sqrt(C(6) / C(30))`).
+   Adding one off-grid age to a sparse age-to-age pattern changes how its
+   other factors are read, from decision 12's (each to the triangle's next
+   age) to decision 16's (each to the pattern's next): `{12: 1.5, 18: 1.1,
+   36: 1.2}` on RAA selects 12 to 24 at 1.5484, 24 to 36 at 1.0656 and 36
+   to 48 at `1.2^(2/3)`, where `{12: 1.5, 36: 1.2}` selects 1.5 and 1.2.
+   Nothing warns of this: `ChainLadderFit` has no warnings, and an error
+   would also refuse a monthly pattern, whose factor at 12 months runs to
+   13 rather than 24 just as 1.5 does to 18. The rustdoc says so, and the
+   Python and R help of PR 4 must say it next to `ldf`. The two routes
+   already disagreed before this PR on sparse age-to-age
+   patterns on the grid: `{36, 96}` on RAA runs 36 to 48 and 96 to 108 on
+   the plain path and 36 to 96 and 96 to 156 on the diagonal.
+5. **A pattern past the oldest age folds into the tail.** When the
+   off-grid reading's end `E` is past the triangle's oldest age `a_n` (and
+   `f0 <= a_n`), what the pattern gives from `a_n` to `E`, and the tail
+   after `E`, become one constant tail at `a_n`: with no tail, `C(a_n)`,
+   the level included (decision 12 item 5's "the level is the tail" carried
+   to `a_n`, the same as the pattern cut at `a_n`); with a `TailConstant`
+   `T` (its attachment age unset), `C(a_n) / C(E) * T`; with an estimated
+   tail, `T` fitted on the pattern's own ages as decision 16 fits it; a
+   `TailConstant` with an attachment age is "a pattern that runs past the
+   oldest age takes the tail at its end: leave the tail's attachment age
+   unset". `pattern_tail` is the folded factor, set with or without a
+   tail, `tail.std_err` is 0 and sigma is extrapolated as a constant
+   tail's; for a cumulative pattern `pattern_rescale` is `C(E) / T` (1 with
+   no tail). The folded tail is a `TailConstant` at `a_n` that keeps the
+   given constant's decay, which spreads it over the periods past `a_n`
+   (the bootstraps' tail step and the one-year view's closing of origins,
+   decisions 9 and 11); a fold of an estimated tail takes decay 0.5, as the
+   diagonal route carries one. The fold takes the pattern at full weight,
+   so a pattern that folds must be fully selected: `All(w)` with `w < 1`,
+   or any `ByAge` weight below 1, is "a pattern that runs past the oldest
+   age folds into the tail at full weight: give it weight 1, or cut it at
+   the oldest age to blend it" (`Error::Pattern` at `a_n`). A blend of the
+   fold with the tail the triangle would give (`ln T = w ln(fold) + (1 -
+   w) ln T_triangle`) would need a weight for a span that no link of the
+   triangle starts, and a parameter error for the blended tail; neither is
+   designed, so it is an error until the user asks for it. On the diagonal
+   route every pattern is fully selected anyway (decision 16). The
+   bootstraps keep the fold constant in every simulation, never refitted.
+   A `tail_std_err` is read against the tail given: with an estimated tail
+   it is the error it always was, folded or not, and with a constant `T`
+   the folded factor is drawn with `T`'s coefficient of variation,
+   `tail_std_err / T`, since the pattern's development from `a_n` to `E`
+   is fixed. Mack's bootstrap draws no tail error on a fold, whose
+   `tail.std_err` is 0. So the plain path now projects a target with fewer ages
+   (GenIns from 2006) as `fit_diagonal` does, which changes decision 17
+   item 4's error.
+6. **`PastPatternEnd` on `LatestDiagonal`.**
+   `LatestDiagonal::with_past_pattern_end(PastPatternEnd)`, with
+   `Reject` (the default), `NoDevelopment` and `Tail`, and the getter
+   `past_pattern_end()`. On the data rather than the method, because it is
+   the only home that breaks nothing; the bindings must expose it on the
+   diagonal. `Reject` keeps decision 16's message and adds a suffix that
+   names the two other settings and the tails `Tail` takes (an a-priori
+   `TailConstant`, or `TailCurve`, `TailBondy` or `Tail::LogLinear`
+   estimated on the pattern's own factors); an origin younger than the
+   first age keeps its message unchanged. `NoDevelopment` with a tail,
+   `Tail` with none, and `Tail` with a `TailConstant` whose attachment age
+   is set are `Error::Diagonal`. With no origin past `E`, `Tail` is
+   today's fit to the bit, and `NoDevelopment` is a `TailConstant` of 1
+   attached at `E`, the grid's oldest age: today's fit for age-to-age
+   factors or a cumulative pattern at 100%, and another level rescaled to
+   100% at `E`. So with a level other than 100% `NoDevelopment` moves
+   every origin's ultimate, the young ones too, also when no origin is
+   past `E`: 95% at 120 months on accident years at 120, 108 and 12
+   months (40% at 12) gives the youngest 237.5 under `NoDevelopment`,
+   where `Reject` keeps the level as the implied tail and gives 250. It
+   is decision 12 item 5's rescale under a tail of 1, and the docs of
+   `NoDevelopment` say so; an error for a level other than 100% under
+   `NoDevelopment` is the alternative. On the plain triangle path no setting applies: links past
+   a shorter pattern are estimated (decision 12), and a triangle that
+   holds only a latest diagonal goes through `LatestDiagonal::from_triangle`
+   to use the three choices.
+7. **The spread steps by the origin grain.** With some origin past `E`,
+   the tail's factor `T` (1 for `NoDevelopment`; the constant's factor and
+   decay; an estimated tail's factor from the pattern's own ages at decay
+   0.5) is spread from `E` as a `TailConstant` attached there over `ext =
+   [E, E + g, ..., E + K g]`, `g` the origin grain in months and `K` the
+   least integer with `E + K g` at or past the oldest origin's age;
+   `R(k)`, the product of the spread's factors from step `k`, is what is
+   left of `T` after `k` steps (`R(0) = T`). The pattern on the grid is
+   one pattern of factors to ultimate: `C(v) / C(E) * T` at the pattern's
+   own ages and `R(k)` at `E + k g`, with `Tail::from(R(K))` at the grid's
+   oldest age; an origin between two of those ages reads `ln`-linearly
+   (half a year past the end, `T / sqrt(1 + x)`). The fit reports
+   `tail.factor = R(K)`, `pattern_rescale = C(E) / T` for a cumulative
+   pattern (`None` for age-to-age factors) and no `pattern_tail`. At decay
+   0.5, `T = 1.05` and `x = 0.02401073837969081` (the root of `(4/3) x^2 +
+   2 x - ln 1.05 = 0`), an annual book one year past the end gets
+   `1.0253798721500054`, chainladder-python's 1.02538 at 132 months on
+   RAA (`tail.rs`), and two years `1.0132158418990078`; accident quarters
+   one quarter past the end get the same `1.0253798721500054`. Stepping by
+   the pattern's grain instead would make the spread depend on it: a
+   monthly step gives `1.0011602413037541` one year past the end. An
+   origin between two steps reads `ln`-linearly, so accident years valued
+   at March, the oldest at 123 months, take `1.05 (1 + x)^(-1/4) =
+   1.0437900950394003` there, where an accident quarter at 123 months, one
+   step past the end, takes `1.0253798721500054`: the decay is per origin
+   period, and the remaining development at a given age depends on how the
+   origins are grouped (item 11). An estimated tail's own extrapolated factors are
+   not used past `E`; it is carried as a constant, as decisions 16 and 17
+   carry it. The floor `exp(-0.75) = 0.4723665527410147` at decay 0.5 is
+   `Error::Tail`, from the spread's seed.
+8. **The level-free one-year view refuses a fold.** A bootstrap with no
+   tail that takes the method's pattern while the method has a tail reads
+   the pattern without its level (`inherits_level_free`, decision 12).
+   That cannot carry the method's tail into a pattern past the oldest age,
+   so it is `Error::Bootstrap("a pattern that runs past the oldest age
+   carries the re-reserving method's tail into it: give the bootstrap the
+   method's tail")`, raised where the level-free pattern is built on the
+   segment's ages, in both bootstraps (the bootstraps' `for_method` has no
+   segment). With no tail on either side, or the same tail on both, each
+   folds the same constant and the tail check passes. A follow-up could
+   hand the bootstrap the method's tail instead. Merz and Wüthrich's
+   closed form rejects a folded tail other than 1 ("needs no tail
+   factor") with no new code, and `same_selection` compares resolved
+   forms, so a monthly cumulative bootstrap pattern equals an annual method
+   pattern of the same values.
+9. **Estimated tails differ between the routes in one case.** On the
+   triangle path a pattern that ends at or before `a_n` has its estimated
+   tail fitted on the blended factors at the triangle's ages (decision 12,
+   unchanged), and one that runs past `a_n` on the pattern's own ages
+   (item 5); on the diagonal route always on the pattern's own ages
+   (decision 16). So a finer pattern that ends exactly at `a_n` gets a tail
+   fitted on annual products on the triangle path and on monthly factors
+   on the diagonal. Constant tails agree.
+10. **Checks** (`validation/tests/reserving_pattern_basis.rs`, unit tests in
+    `pattern.rs`, and the changed tests of `reserving_fit_apply.rs` and
+    `reserving_latest_diagonal.rs`): averaging `x/24`, `t/12`, `t/60` and
+    `1 - 0.9^t` against their closed forms to 1e-15 (1e-14 for the
+    exponential), the rule below the first age, the age-to-age input equal
+    to its factors-to-ultimate twin, the errors; a synthetic book of
+    accident months reported along `1 - 0.9^t`, summed to accident years
+    and quarters, whose chain ladder with the averaged pattern gives each
+    origin the sum of its months' ultimates to 1e-12 on the plain path and
+    through its diagonal, an accident year at June included, and with
+    uneven months the miss pinned against its value computed by hand; a
+    monthly cumulative pattern on RAA and
+    GenIns equal to its annual values to the bit for the chain ladder,
+    Mack (fully selected and blended), both bootstraps' draws and both
+    one-year views; monthly age-to-age factors multiplying to the annual
+    ones, GenIns's factors spread monthly giving its chain ladder; the
+    misaligned and the sparse age-to-age readings above; RAA's own pattern
+    times 1.1 past 120 months folded with no tail (1.1), a constant
+    (1.155), a constant's decay kept, a curve (equal to the diagonal route
+    to 1e-14), the attachment error and the weight error (`All(0)`,
+    `All(0.5)`, a `ByAge` weight); a monthly pattern ending at 120 months
+    with a curve tail, whose tail differs between the routes (item 9); on
+    the folded pattern, Mack and both bootstraps' lifetime and one-year
+    draws equal to the pattern cut at 120 months, whose implied tail is
+    the same 1.1, a curve tail with a `tail_std_err` the error again, and
+    a constant's `tail_std_err` drawn at its own coefficient of variation;
+    on the diagonal the spread's numbers above on annual, half-year and
+    quarterly grids, the March book's `1.0437900950394003`, a monthly
+    pattern equal to the annual one past the end, `NoDevelopment` (a
+    level of 95% rescaled by 1.0526315789473684, the youngest 237.5
+    against 250 under `Reject` with no origin past the end), estimated
+    tails equal to the constant spread of their factor, `Tail` and
+    `NoDevelopment` for age-to-age factors changing nothing to the bit with
+    no origin past the end, a single age-to-age factor with a curve tail
+    past the end, the errors and the floor, Bornhuetter-Ferguson,
+    Benktander and Cape Cod past the end, and a development fitted on
+    GenIns from 2006 applied to the whole GenIns diagonal; the one-year
+    views with the folded tail and the level-free error, and Merz and
+    Wüthrich's. No
+    reference averages a pattern over origin bases: chainladder-python
+    0.10.1's `DevelopmentConstant(patterns, style, callable_axis, groupby)`
+    has no origin-basis argument and keeps the triangle's grain (confirmed
+    with uv on 2026-10-23), so these checks are by hand or on synthetic
+    books.
+11. **The spread's step** (decided by the user on 2026-10-24: per
+    origin period, as built). Item 7 steps the tail past `E` by the
+    origin grain, with the decay applied per step, so the run-off of the
+    tail in calendar time depends on how the origins are grouped: at `T =
+    1.05` and decay 0.5 an accident year one year past the end and an
+    accident quarter one quarter past it both take `1.0253798721500054`,
+    so a quarterly book releases in 3 months what an annual book releases
+    in 12. chainladder-python ties its decay to the development period,
+    which is the precedent for the choice as built. The user's decision
+    (c) asks for "the tail's remaining development from its own age",
+    which can also be read as a function of age alone. The alternative is
+    a fixed calendar step of 12 months, with origins between the steps
+    read `ln`-linearly: it depends on neither grain, and gives an accident
+    quarter at 123 months `1.0437900950394003`, the March book's value of
+    item 7, where the build gives `1.0253798721500054`. Annual books are
+    the same under both. The user chose the build: the decay is per
+    origin period (`PastPatternEnd::Tail`), as chainladder-python ties it
+    to the development period.
+
+### 19. Latest diagonals over segments, and the bindings
+
+Status: **Built** (2026-10-24), issue #544, branch `claude/diagonal-bindings`,
+in Rust, Python and R. This is the issue's fifth PR. It carries decisions
+15 to 18 into the bindings and adds what decision 17 item 9 left for later:
+latest diagonals over segments and a source fit applied segment by segment.
+Of items 1 to 12 below, the user decided four on 2026-10-24: items 3, 5
+and 11 accepted as built, and item 8 with other names (R's
+`latest_valuation()` and `as_latest_valuation()`, not `bordereau()` and
+`as_bordereau()`). Items 1, 2, 4, 6, 7, 9, 10 and 12 are still proposals
+for the user. The Excel functions are a later PR.
+
+**Rust** (`crates/prospicio-reserving/src/latest_diagonal.rs`, re-exported
+from `lib.rs`):
+
+- `LatestDiagonals { key_names, labels, diagonals }`: one `LatestDiagonal`
+  per segment, the labels sorted as `Triangle` sorts them. `new(key_names,
+  segments)` checks the labels (one part per key, none given twice) and one
+  origin grain; `From<LatestDiagonal>` is one segment without keys.
+- `from_long(&LongDiagonal)`: key columns, origins, `DiagonalAge::Ages`,
+  `Valuation` (one month for every row) or `Valuations` (one per row), the
+  latest values, an optional exposure and the origin grain. The ages,
+  values and exposure are checked over the whole input first, so a row
+  number in `NonPositiveAge` or `NonFinite` is the input's row; then the
+  rows are grouped by key, and a repeated origin within a segment is an
+  error that names the segment.
+- `from_triangle(&Triangle, column, exposure)`: the latest diagonal of
+  every segment, over the trimmed `triangle.segments(column)`, through the
+  same private `LatestDiagonal::from_segment` as `LatestDiagonal::from_triangle`
+  (which still refuses several segments).
+- `with_exposure` (values in row order: the segments in index order, the
+  origins in the order given), `with_past_pattern_end` (every segment), and
+  `key_names`, `labels`, `diagonals`, `len`, `is_empty`, `get`, `iter`,
+  `position`, `segment`, `origin_grain` and `valuation` (the latest month
+  any origin of any segment is valued at). `LatestDiagonal::valuation` is
+  new and public too.
+- `developments(&SegmentFits<ChainLadderFit>, &SegmentMap)`: one frozen
+  `to_chain_ladder()` per segment of the diagonals, keyed by their labels.
+  `SegmentMap::ByLabel` (the default) takes the source segment of the same
+  label, or broadcasts a source of one segment to every segment;
+  `SegmentMap::Pairs(Vec<(target, source)>)` names each.
+- On `ChainLadder`, `ExpectedLoss`, `BornhuetterFerguson`, `Benktander` and
+  `CapeCod`: `fit_diagonal_segments(&LatestDiagonals)` and
+  `fit_diagonal_segments_from(&LatestDiagonals, &SegmentFits<ChainLadder>)`,
+  returning `SegmentFits` of each method's fit, the second with each
+  segment's chain ladder taken from the development.
+
+**Semantics.** Each segment runs the existing `fit_diagonal`, so one
+segment without keys gives exactly `LatestDiagonal`'s fit, to the bit. An
+error in a segment is wrapped in `Error::InSegment` when there are keys, as
+`fit_segments` wraps it (`segments::collect_labelled`, which `collect_fits`
+now calls). Cape Cod trends every segment to the one common valuation, as
+`CapeCod::fit_segments` trends every segment to the triangle's valuation
+(a private `fit_diagonal_at`). With a development, the method's own chain
+ladder must have no pattern, no tail (a constant of 1) and no link ratio
+exclusions; the apriori, `n_iters`, `trend` and `decay` stay the method's.
+The development's labels must be the diagonals'. The plain triangle path
+is unchanged (decision 17 item 11 stays open).
+
+**Errors**, each naming the label: a segment of the diagonals with no
+source segment of its label ("segment b of the diagonals has no segment of
+the same label in the source"), source and diagonals with different key
+names under `ByLabel` ("map the segments with SegmentMap::Pairs"), a map's
+target that is not a segment, a target listed twice, a source that is not
+a segment of the source, a segment the map gives no source; a method that
+sets its own development ("the development comes from the source fit: give
+the method no pattern, no tail and no link ratio exclusions"); and
+developments whose segments are not the diagonals'.
+
+**Python** (`crates/prospicio-python/src/reserving.rs`,
+`python/prospicio/reserving.py`):
+
+- `LatestDiagonal(origin, age, latest, exposure=None, keys=None,
+  origin_grain="Y", past_pattern_end="reject")`, `LatestDiagonal.at_valuation`
+  (the valuation a date: an integer is a `TypeError`, since a year would
+  read as January), `LatestDiagonal.from_frame` (exactly one of `age`, a
+  column, and `valuation`, a date or a column of dates) and
+  `LatestDiagonal.from_triangle` (any number of segments); `with_exposure`,
+  `with_past_pattern_end` (`"reject"`, `"no_development"` or `"tail"`),
+  `segment(**keys)`, `to_frame()`, and the properties `keys`, `index`,
+  `origin_grain`, `origins`, `ages`, `latest`, `exposure` and
+  `past_pattern_end`. It wraps `LatestDiagonals`.
+- `fit_diagonal(diagonal, development=None, segment_map=None)` on
+  `ChainLadder`, `ExpectedLoss`, `BornhuetterFerguson`, `Benktander` and
+  `CapeCod`. `development` is a `ChainLadderFit` (another method's fit
+  passes its `.chain_ladder`); `segment_map` is a dict from a segment of the
+  diagonal to one of the development, labelled as `index` labels them.
+  The source's factors are read at each origin's own age, with no
+  `ldf_origin`: a source fitted on another origin grain goes through
+  `to_chain_ladder()` with `ldf_origin` added, one segment at a time, and
+  the help of `development` says so in Python and R.
+- `ChainLadderFit.to_chain_ladder()`, for a single-segment fit: a
+  `ChainLadder` whose `ldf` (a dict), `ldf_kind == "ldf"` and `tail` (a
+  float) unpack into any method's arguments with the same projection, to
+  the bit (decision 17 item 9).
+- `ldf_origin` (`"M"`, `"Q"`, `"S"` or `"Y"`) on every method that takes
+  `ldf`: `ChainLadder`, `Mack`, `ExpectedLoss`, `BornhuetterFerguson`,
+  `Benktander`, `CapeCod`, `OdpBootstrap` and `MackBootstrap`. It is stored
+  on the method and applied at fit time with the triangle's or diagonal's
+  origin grain (`SelectedPattern::averaged_over_origins`), in `fit`,
+  `fit_diagonal`, the bootstraps and the one-year views. The `ldf` getter
+  returns the pattern as given.
+- The `ldf` help no longer says each age must be a development age of the
+  triangle: ages off the grid are read on the pattern's own ages and what
+  runs past the oldest age folds into a constant tail (decision 18). It
+  warns that one off-grid age changes how a sparse age-to-age pattern's
+  other factors are read (on RAA, `{12: 1.5, 18: 1.1, 36: 1.2}` selects
+  1.5484 from 12 to 24 months where `{12: 1.5, 36: 1.2}` selects 1.5).
+
+**R** (`crates/prospicio-r/src/reserving.rs`, `R/prospicio/R/reserving.R`):
+
+- An S7 class `latest_valuation` over `LatestDiagonals`, each origin's
+  latest valuation: `latest_valuation(data, origin, latest, age = NULL,
+  valuation = NULL, exposure = NULL, keys = NULL, origin_grain = "Y",
+  past_pattern_end = "reject")`, `as_latest_valuation(triangle, column =
+  NULL, exposure = NULL, past_pattern_end = "reject")`,
+  `with_exposure()`, `with_past_pattern_end()`, `segment()`,
+  `as.data.frame()` and `print()`, with the same properties as Python's.
+- `chain_ladder()`, `expected_loss()`, `bornhuetter_ferguson()`,
+  `benktander()` and `cape_cod()` take a latest valuation as their first
+  argument (with no `column` or `exposure`), and `development` (a
+  `chain_ladder_fit` or a fit with `@chain_ladder`) and `segment_map` (a
+  named character vector, target to source, each label its key values
+  joined by `" / "`). `development` with a triangle is an error that
+  points to `as_latest_valuation()`. `column` and `exposure` of the
+  expected-loss methods now default to `NULL`, so that a latest valuation
+  can leave them out; with a triangle they are still required.
+- `to_chain_ladder(fit)` returns `list(ldf, ldf_kind = "ldf", tail)`, `ldf`
+  named by the age that starts each link, for `do.call()`.
+- `ldf_origin = NULL` on every function that takes `ldf`.
+- `mack()`, the bootstraps and the one-year views reject a latest
+  valuation with a message naming the five functions that take one.
+
+**Checks.** `validation/tests/reserving_diagonal_segments.rs` (Rust): each
+segment takes the source segment of its label, to the bit for the factors
+and within 1e-14 for the ultimates; a map of pairs and a broadcast source
+are bit-equal to the per-segment application; the expected-loss methods
+over segments equal each segment fitted alone; Cape Cod with segment b
+valued a year before a trends b by `(1 + trend)^1`; `from_long` with keys
+and valuations equals `from_triangle`; and every error. The Python and R
+tests (`python/tests/test_reserving_latest_diagonal.py`,
+`R/prospicio/tests/test-reserving-latest-diagonal.R`) reproduce the Rust
+validation's numbers through each binding: the hand diagonals, half-year
+origins, the rule past the pattern's end, `ldf_origin`, RAA's off-grid
+reading, every row of `reserving_latest_diagonal_python.csv` and of
+`reserving_fit_apply_python.csv` (both arms, with the `development=` route
+equal to the unpacked route to the bit), the segments and the
+constructors.
+
+**Decision items** (proposals for the user; items 3, 5, 8 and 11 decided
+by the user on 2026-10-24):
+
+1. **A separate `LatestDiagonals` type**, rather than keys on
+   `LatestDiagonal`, whose per-origin accessors would change meaning.
+2. **Segment order** sorted by label, as `Triangle` sorts it.
+3. **Cape Cod across segments trends to one common valuation** (the latest
+   of all segments), as `CapeCod::fit_segments` does (decided by the user
+   on 2026-10-24: one common valuation, as built). The alternative is
+   each segment's own valuation.
+4. **The map:** by label, with a source of one segment broadcast; unused
+   source segments ignored and an unmatched target an error; explicit
+   `Pairs` from target to source.
+5. **A development source and the method's own settings** (decided by
+   the user on 2026-10-24: as built): the method's pattern, tail and link
+   ratio exclusions must be unset, an error rather than silently
+   overridden; the apriori, `n_iters`, `trend` and `decay`
+   stay the method's. The exclusions are refused too, beyond the design's
+   pattern and tail, since they would otherwise be ignored silently.
+6. **Python `to_chain_ladder()` needs a single segment.** Per-segment
+   application goes through `fit_diagonal(..., development=)`.
+7. **`averaged_over_origins` as an `ldf_origin` argument** stored on every
+   method with `ldf` and applied at fit time with the target's grain. The
+   alternative is a module function that returns arguments to unpack,
+   which touches no method.
+8. **R naming** (decided by the user on 2026-10-24: `latest_valuation()`
+   and `as_latest_valuation()`, the S7 class `latest_valuation`). The
+   proposal was `bordereau()` and `as_bordereau()`, because
+   `latest_diagonal()` is taken. The user declined it: a bordereau (bdx)
+   is the data extract a cedant sends, not a latest diagonal, so the name
+   should say each origin's latest valuation. `latest_diagonal()` keeps
+   its name and meaning (a triangle's latest values). The other
+   alternatives were `diagonal_data()`, or extending `latest_diagonal()`.
+9. **R dispatch:** inside the existing five functions, rather than
+   `*_diagonal()` twin functions.
+10. **A valuation must be a date** in Python and R; valuations per row are
+    supported (`DiagonalAge::Valuations`).
+11. **Error wording** (decided by the user on 2026-10-24, as built):
+    Rust messages pass through unchanged, so a `"reject"` error names
+    `LatestDiagonal::with_past_pattern_end`, the
+    errors of a tail under `"no_development"` or none under `"tail"` name
+    `PastPatternEnd::NoDevelopment` and `PastPatternEnd::Tail`
+    (`past_pattern_end` in Python and R), and a map by label between
+    different key names ends "map the segments with SegmentMap::Pairs"
+    (`segment_map` in Python and R). The alternative is
+    to reword the Rust text in binding-neutral terms. The binding tests
+    match only the neutral part of these messages, so either choice keeps
+    them. One message is reworded here already, since its advice could not
+    be followed from the bindings: a weight by age under `ldf_origin`
+    (`averaged_over_origins`) now ends "give one weight for every factor"
+    instead of naming `with_weight`.
+12. **`development=` only on diagonals.** The plain triangle path keeps
+    decision 17 item 11 open.

@@ -730,6 +730,13 @@ impl Book {
         }
         if let Some(t) = aggregate {
             check_tower(t)?;
+            if let Some(d) = t.deals.iter().find(|d| d.commission.is_some()) {
+                return Err(Error::Data(format!(
+                    "deal {:?} has a sliding-scale commission; the stitched peel is guaranteed \
+                     cost, as aggregate's",
+                    d.name
+                )));
+            }
             if let Some(l) = t.layers.iter().find(|l| {
                 l.swing.is_some()
                     || matches!(l.commission, Some(Commission::SlidingScale(_)))
@@ -1103,6 +1110,10 @@ impl Book {
             None => xs.to_vec(),
         };
         let agg_ceded = agg.map(|t| ceded_at(t, &subject));
+        // Each deal's ceding commission at each atom, on its sections' keys.
+        let deal_commissions = agg
+            .map(|t| deal_commissions(t, &subject))
+            .unwrap_or_default();
         if face == Face::Consolidated {
             let net: Vec<f64> = (0..xs.len())
                 .map(|k| {
@@ -1116,7 +1127,14 @@ impl Book {
             }
             if let (Some(t), Some(ceded)) = (agg, &agg_ceded) {
                 let all: Vec<usize> = (0..t.layers.len()).collect();
-                covers.push(Flows::of(t, &all, ceded));
+                let mut f = Flows::of(t, &all, ceded);
+                for (_, _, v) in &deal_commissions {
+                    let sliding = f.sliding.get_or_insert_with(|| vec![0.0; v.len()]);
+                    for (s, c) in sliding.iter_mut().zip(v) {
+                        *s += c;
+                    }
+                }
+                covers.push(f);
             }
             return self.consolidated(source, net, &covers);
         }
@@ -1159,12 +1177,25 @@ impl Book {
                 ));
             }
             let first = groups.len();
-            for (label, idx) in &covers {
-                groups.push(cover_group(
-                    label.clone(),
-                    Flows::of(t, idx, ceded),
-                    &mut taken,
-                ));
+            // A deal's commission is booked with the cover that buys the
+            // last of its sections, when the deal is whole.
+            let mut last = vec![None; deal_commissions.len()];
+            for (c, (_, idx)) in covers.iter().enumerate() {
+                for (d, (_, sections, _)) in deal_commissions.iter().enumerate() {
+                    if idx.iter().any(|i| sections.contains(i)) {
+                        last[d] = Some(c);
+                    }
+                }
+            }
+            for (c, (label, idx)) in covers.iter().enumerate() {
+                let mut g = cover_group(label.clone(), Flows::of(t, idx, ceded), &mut taken);
+                for (d, (name, _, v)) in deal_commissions.iter().enumerate() {
+                    if last[d] == Some(c) {
+                        let key = free_label(&format!("{name} commission"), label, &mut taken);
+                        g = g.obligation(Leg::values(key, v.clone()).kind(LegKind::Commission));
+                    }
+                }
+                groups.push(g);
             }
             spans.push(("All aggregate", first, first + covers.len()));
         }
@@ -1610,6 +1641,30 @@ fn ceded_at(tower: &Tower, totals: &[f64]) -> Vec<Vec<f64>> {
         .collect()
 }
 
+/// Each deal with a ceding commission: its name, its sections and its
+/// commission at each annual total, read on the sections' scale keys
+/// together for the year alone. Brokerage stays out of the cedant's ledger.
+fn deal_commissions(tower: &Tower, totals: &[f64]) -> Vec<(String, Vec<usize>, Vec<f64>)> {
+    let keys: Vec<Vec<f64>> = totals.iter().map(|&x| tower.year_keyed(&[x]).1).collect();
+    tower
+        .deals
+        .iter()
+        .zip(tower.deal_sections())
+        .enumerate()
+        .filter(|(_, (d, _))| d.commission.is_some())
+        .map(|(j, (d, sections))| {
+            let v = keys
+                .iter()
+                .map(|k| {
+                    let key = sections.iter().map(|&i| k[i]).sum();
+                    tower.deal_terms_at(j, &sections, key).0
+                })
+                .collect();
+            (d.name.clone(), sections, v)
+        })
+        .collect()
+}
+
 /// A layer's flat ceding commission on its premium.
 fn flat_commission(layer: &Layer) -> f64 {
     match &layer.commission {
@@ -1719,6 +1774,74 @@ mod tests {
         assert!((m.result().mean() - c.result().mean()).abs() < 1e-12);
         assert_eq!(m.row("expense").unwrap().sd(), 0.0);
         assert!(c.row("expense").unwrap().sd() > 0.0);
+    }
+
+    /// The cedant's ledger books a deal's commission, on its sections'
+    /// loss ratio together, with the cover that buys its last section:
+    /// two 50% quota shares in one deal are one 100% quota share with the
+    /// deal's scale as its own.
+    #[test]
+    fn a_deal_commission_is_booked_with_its_last_section() {
+        let scale = vec![(0.35, 0.3), (0.15, 0.9)];
+        let half = |name: &str| {
+            Layer::quota_share(name, 0.5)
+                .unwrap()
+                .premium_rate(1.0, 10.0)
+                .unwrap()
+        };
+        let deal = Tower::new(vec![half("A"), half("B")])
+            .unwrap()
+            .deal_scale(
+                crate::DealScale::new("deal", ["A", "B"])
+                    .unwrap()
+                    .sliding_scale(scale.clone())
+                    .unwrap()
+                    .brokerage(0.02)
+                    .unwrap(),
+            )
+            .unwrap();
+        let whole = Tower::new(vec![
+            Layer::quota_share("QS", 1.0)
+                .unwrap()
+                .premium_rate(1.0, 10.0)
+                .unwrap()
+                .sliding_scale(scale)
+                .unwrap(),
+        ])
+        .unwrap();
+        let book = Book::new("B", 10.0);
+        let walk = book.ledger(&gross(), Some(&deal), Face::Walk).unwrap();
+        // At each atom, the commission apply_annual gives the deal.
+        let sims = deal.apply_annual(gross().values()).unwrap();
+        let key = vec!["ceding_commission".into(), "deal".into()];
+        let expected = prospicio_prob::Empirical::draws(&sims.marginal(&key).unwrap()).to_vec();
+        let row = walk.row("deal commission").unwrap();
+        assert!(
+            row.values()
+                .iter()
+                .zip(&expected)
+                .all(|(a, b)| (a - b).abs() < 1e-12)
+        );
+        assert!(row.values()[0] != row.values()[5]);
+        // Brokerage comes out of what the reinsurer receives: not booked.
+        assert!(walk.rows().iter().all(|r| !r.label.contains("brokerage")));
+        // The peel books it on the last section too; every face agrees.
+        let w = book.ledger(&gross(), Some(&whole), Face::Walk).unwrap();
+        for face in [
+            Face::Walk,
+            Face::PeelTopDown,
+            Face::PeelBottomUp,
+            Face::Consolidated,
+        ] {
+            let l = book.ledger(&gross(), Some(&deal), face).unwrap();
+            for q in [0.01, 0.3, 0.6, 0.99] {
+                let (a, b) = (
+                    l.result().quantile(q).unwrap(),
+                    w.result().quantile(q).unwrap(),
+                );
+                assert!((a - b).abs() < 1e-12, "{face:?} {q}: {a} {b}");
+            }
+        }
     }
 
     #[test]

@@ -9,8 +9,8 @@ cape_cod_fit(ptr)
 
 cape_cod(
   triangle,
-  column,
-  exposure,
+  column = NULL,
+  exposure = NULL,
   trend = 0,
   decay = 1,
   average = "volume",
@@ -19,20 +19,26 @@ cape_cod(
   ldf = NULL,
   ldf_kind = NULL,
   ldf_weight = 1,
+  ldf_origin = NULL,
   n_periods = NULL,
   drop_high = 0,
-  drop_low = 0
+  drop_low = 0,
+  development = NULL,
+  segment_map = NULL
 )
 }
 \arguments{
 \item{ptr}{A \code{CapeCodFit} pointer; used internally.}
 
-\item{triangle}{A \link{triangle}, with any number of segments.}
+\item{triangle}{A \link{triangle}, with any number of segments, or a
+\link{latest_valuation} (a latest diagonal on its own, which carries its
+exposure).}
 
-\item{column}{Name of the loss column to project.}
+\item{column}{Name of the loss column to project; not given for a
+latest valuation.}
 
 \item{exposure}{Name of the exposure column; each origin's latest
-observed value is its exposure.}
+observed value is its exposure. Not given for a latest valuation.}
 
 \item{trend}{Annual trend rate of the losses, above -1.}
 
@@ -42,12 +48,15 @@ apriori, between 0 and 1.}
 \item{average, sigma_interpolation, tail}{The development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}.}
 
-\item{ldf, ldf_kind, ldf_weight}{A selected development pattern, as in
+\item{ldf, ldf_kind, ldf_weight, ldf_origin}{A selected development pattern, as in
 \code{\link[=chain_ladder]{chain_ladder()}}: the development pattern's factors at the ages it
 gives, so \code{cdf} and the share developed \code{1 / cdf} follow it.}
 
 \item{n_periods, drop_high, drop_low}{Which link ratios the factors average,
 as in \code{\link[=chain_ladder]{chain_ladder()}}.}
+
+\item{development, segment_map}{For a latest valuation only: the development
+of another fit, segment by segment, as in \code{\link[=chain_ladder]{chain_ladder()}}.}
 }
 \value{
 A \code{cape_cod_fit} object.

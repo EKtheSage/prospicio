@@ -316,6 +316,7 @@ reference:
       - reserving.CapeCod
       - reserving.ExpectedLossFit
       - reserving.CapeCodFit
+      - reserving.LatestDiagonal
       - reserving.OdpBootstrap
       - reserving.OdpBootstrapFit
       - reserving.MackBootstrap

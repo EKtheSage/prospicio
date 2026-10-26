@@ -74,6 +74,12 @@ Ctrl+Alt+F9 to recalculate.
 | `PRO.BF(triangle, exposure, apriori, [average], [tail], [origins])` | Bornhuetter-Ferguson exhibit |
 | `PRO.BENKTANDER(triangle, exposure, apriori, [iterations], [average], [tail], [origins])` | Benktander exhibit |
 | `PRO.CAPECOD(triangle, exposure, [trend], [decay], [average], [tail], [origins])` | Cape Cod exhibit |
+| `PRO.DIAG.CL(origins, ages, latest, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Chain ladder on a latest diagonal (a bordereau) with a selected pattern |
+| `PRO.DIAG.EL(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Expected loss method on a latest diagonal |
+| `PRO.DIAG.BF(origins, ages, latest, exposure, apriori, pattern, [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Bornhuetter-Ferguson on a latest diagonal |
+| `PRO.DIAG.BENKTANDER(origins, ages, latest, exposure, apriori, pattern, [iterations], [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Benktander on a latest diagonal |
+| `PRO.DIAG.CAPECOD(origins, ages, latest, exposure, pattern, [trend], [decay], [pattern_ages], [kind], [tail], [grain], [valuation], [past_end], [pattern_origin])` | Cape Cod on a latest diagonal |
+| `PRO.PATTERN.AVERAGE(pattern_ages, pattern, pattern_origin, [grain], [kind])` | A pattern averaged from one origin basis (accident months) to a coarser one |
 | `PRO.VERSION()` | Version |
 | `PRO.SEV.CDF(x, family, p1, p2, [p3])`, `PRO.SEV.SURVIVAL(...)` | Distribution or survival function at each x |
 | `PRO.SEV.QUANTILE(p, family, p1, p2, [p3])` | Quantile (VaR) at each probability |
@@ -167,6 +173,27 @@ Ctrl+Alt+F9 to recalculate.
   gives the same table), `percentiles` (a row or column such as
   `{0.75,0.95,0.995}`), `process` (`"gamma"` or `"none"`; Mack's
   bootstrap also takes `"lognormal"`, `"normal"` and `"residuals"`).
+- The diagonal functions (`PRO.DIAG.*`) project one latest value per
+  origin, as a bordereau holds it, with a pattern chosen elsewhere.
+  `origins`: a year such as `2024` or an Excel date per origin, floored to
+  `grain` (`"year"`, the default, `"semiannual"`, `"quarter"` or
+  `"month"`); give `ages` (months, one per origin) or `valuation` (one
+  Excel date), not both; `latest`: 0 for nothing reported, never blank.
+  `pattern`: the selected values, such as a row of `PRO.CL.LDF`, read as
+  `kind` at `pattern_ages` (12, 24, ... if omitted). A blank value is
+  skipped, and an age-to-age factor runs to the next age given, so a
+  blank widens the factor before it (unlike `selected` on `PRO.CL`, where
+  a blank keeps the estimate); give 1 for no development. `pattern_origin`:
+  the origin basis the pattern was measured on (`"month"` for accident
+  months), averaged to `grain`; prefer a constant tail with it.
+  `past_end`: an origin older than the pattern's end is an error
+  (`"reject"`, the default), takes a factor of 1 (`"none"`, which
+  also rescales a cumulative level below 100% for every origin) or the
+  tail spread one step per origin period (`"tail"`). To apply a
+  triangle's own chain ladder to another book, pass the first cells of
+  its `PRO.CL.LDF` row as `pattern` and its last cell as `tail`.
+  `PRO.PATTERN.AVERAGE` shows the averaged pattern that
+  `pattern_origin` uses.
 
 - `family` and `p1`, `p2`, `p3`: `"pareto"` (t, alpha, optional
   truncation), `"lognormal"` (meanlog, sdlog), `"lognormal_cv"` (mean,

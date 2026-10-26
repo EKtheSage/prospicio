@@ -58,7 +58,9 @@ on that summed premium and added to what each section pays on its own.
 Results gain \verb{("ceding_commission", name)}, \verb{("brokerage", name)} and,
 when a section reads its scales before annual terms,
 \verb{("loss_before_terms", name)}; \code{\link[=deal_ratios]{deal_ratios()}} takes the deal's name.
-The grid functions and the P&L ledger refuse a tower with a deal.
+\code{\link[=tower_on_annual_grid]{tower_on_annual_grid()}} gives each deal's expected commission and
+brokerage, \code{\link[=tower_on_grid]{tower_on_grid()}} too when no section has annual terms, and
+the cedant's P&L ledger books the deal's commission.
 }
 \examples{
 a <- with_premium_rate(aggregate_stop_loss("A", 50, 0), 1, 100)

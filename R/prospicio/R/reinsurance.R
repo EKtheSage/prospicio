@@ -388,7 +388,9 @@ premium_for <- function(layer, ceded) {
 #' Results gain `("ceding_commission", name)`, `("brokerage", name)` and,
 #' when a section reads its scales before annual terms,
 #' `("loss_before_terms", name)`; [deal_ratios()] takes the deal's name.
-#' The grid functions and the P&L ledger refuse a tower with a deal.
+#' [tower_on_annual_grid()] gives each deal's expected commission and
+#' brokerage, [tower_on_grid()] too when no section has annual terms, and
+#' the cedant's P&L ledger books the deal's commission.
 #'
 #' @param tower A [reinsurance_tower].
 #' @param name The deal's name, not a layer's or another deal's.
@@ -1021,11 +1023,17 @@ S7::method(print, reinsurance_tower) <- function(x, ...) {
 #'   `c * step`), `stage_ceded` (one [grid_distribution] per stage, its
 #'   layers' total cession, or `NULL` for a stage of several layers one of
 #'   which has annual terms) with `stage_sizes` (the layers in each), `net`
-#'   (a [grid_distribution] or `NULL`),
+#'   (a [grid_distribution] or `NULL`), `total_ceded` (the whole tower's
+#'   cession, a [grid_distribution], or `NULL` when it is not one compound
+#'   total: several layers with annual terms, or an aggregate cover after
+#'   per-occurrence stages; see [tower_quote()]),
 #'   `expected_reinstatement_premium` (named, 0 without paid reinstatements),
 #'   `expected_premium` (the swing-rated premium's mean, or else the fixed
 #'   premium), `expected_ceding_commission`, `expected_profit_commission`
-#'   (each named, 0 without the term) and `on_points`.
+#'   (each named, 0 without the term), `expected_deal_ceding_commission`
+#'   and `expected_deal_brokerage` (each deal's, by its name, read on its
+#'   sections' loss ratio together; a deal whose section has annual terms
+#'   is an error here, as their sum is not one compound) and `on_points`.
 #' @export
 #' @examples
 #' sev <- grid_distribution(1, c(0, 0.4, 0.3, 0.2, 0.1))
@@ -1042,10 +1050,13 @@ tower_on_grid <- function(tower, frequency, severity, points) {
     stage_ceded = lapply(r$stage_ceded, function(p) if (is.null(p)) NULL else grid_distribution(ptr = p)),
     stage_sizes = r$stage_sizes,
     net = if (is.null(r$net)) NULL else grid_distribution(ptr = r$net),
+    total_ceded = if (is.null(r$total_ceded)) NULL else grid_distribution(ptr = r$total_ceded),
     expected_reinstatement_premium = stats::setNames(r$expected_reinstatement_premium, names),
     expected_premium = stats::setNames(r$expected_premium, names),
     expected_ceding_commission = stats::setNames(r$expected_ceding_commission, names),
     expected_profit_commission = stats::setNames(r$expected_profit_commission, names),
+    expected_deal_ceding_commission = stats::setNames(r$expected_deal_ceding_commission, r$deal_names),
+    expected_deal_brokerage = stats::setNames(r$expected_deal_brokerage, r$deal_names),
     on_points = r$on_points
   )
 }
@@ -1066,7 +1077,9 @@ tower_on_grid <- function(tower, frequency, severity, points) {
 #' @returns A list as [tower_on_grid()]'s, without `stage_ceded`: `gross`,
 #'   `ceded` (named), `net`, `expected_reinstatement_premium`,
 #'   `expected_premium`, `expected_ceding_commission`,
-#'   `expected_profit_commission` (each named) and `on_points`.
+#'   `expected_profit_commission` (each named),
+#'   `expected_deal_ceding_commission`, `expected_deal_brokerage` (by deal)
+#'   and `on_points`.
 #' @export
 #' @examples
 #' probs <- numeric(81)
@@ -1086,6 +1099,8 @@ tower_on_annual_grid <- function(tower, annual) {
     expected_premium = stats::setNames(r$expected_premium, names),
     expected_ceding_commission = stats::setNames(r$expected_ceding_commission, names),
     expected_profit_commission = stats::setNames(r$expected_profit_commission, names),
+    expected_deal_ceding_commission = stats::setNames(r$expected_deal_ceding_commission, r$deal_names),
+    expected_deal_brokerage = stats::setNames(r$expected_deal_brokerage, r$deal_names),
     on_points = r$on_points
   )
 }
