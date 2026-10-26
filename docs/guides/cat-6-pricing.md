@@ -28,7 +28,7 @@ import csv
 
 from prospicio.aggregate import EventSet
 from prospicio.distributions import Sampled
-from prospicio.pricing import Quote, price
+from prospicio.pricing import Quote, price, price_with_reinstatements
 from prospicio.reinsurance import Layer, Tower
 from prospicio.risk import Distortion
 
@@ -213,27 +213,16 @@ tail of the net outcome `X_t - P g_t`. The assets then depend on `P`, and the
 upfront premium solves `P = price(X - P g)`, one equation in one unknown.
 Sundt (1991) and Mata (2000) study premiums with reinstatements in this way.
 
-The block below finds the root by bisection (#587). The price of the net
-outcome falls as `P` increases. Thus `price(X - P g) - P` changes sign once
-between 0 and the price without reinstatement premium.
+`price_with_reinstatements` finds the root (#587). The price of the net outcome
+falls as `P` increases. Thus `price(X - P g) - P` changes sign once between 0
+and the price without reinstatement premium, and the call finds that root by
+bisection.
 
 ```python
 g = [b / layer.premium for b in rip.draws]  # reinstatement premium per unit of upfront premium
-
-
-def gap(P):
-    net = Sampled([x - P * gi for x, gi in zip(loss.draws, g)])
-    return price(net, Distortion.tvar(0.99), cost_of_capital=0.10).premium - P
-
-
-lo, hi = 0.0, p.premium
-while hi - lo > 1e-10:
-    mid = (lo + hi) / 2
-    lo, hi = (mid, hi) if gap(mid) > 0 else (lo, mid)
-P = (lo + hi) / 2
-p_net = price(Sampled([x - P * gi for x, gi in zip(loss.draws, g)]), Distortion.tvar(0.99), cost_of_capital=0.10)
-print(f"upfront premium {P:.4f}, assets of the net outcome {p_net.assets:.4f}")
-print(f"quoted with 5% expenses and 10% brokerage {P / (1 - 0.05 - 0.10):.4f}")
+ri = price_with_reinstatements(loss.draws, g, Distortion.tvar(0.99), cost_of_capital=0.10)
+print(f"upfront premium {ri.upfront:.4f}, assets of the net outcome {ri.net.assets:.4f}")
+print(f"quoted with 5% expenses and 10% brokerage {ri.upfront / (1 - 0.05 - 0.10):.4f}")
 ```
 
 ```text
