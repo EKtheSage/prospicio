@@ -1,6 +1,6 @@
 # Design note: Reserving v0.2 (expected-loss methods, tails, Clark, one-year view, dependence between lines)
 
-Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
+Status: **Implemented** (PRs #131–#137, #150, #156, #157, #159, #160, #163, #171 for decision 10, #172 for decision 9; decision 11 on branch `one-year-tail`; decision 12 built on branch `claude/selected-patterns`, in Rust, Python and R; decision 13 built on branch `claude/development-averages`, in Rust, Python and R; decision 14 built on branch `claude/bootstrap-exclusions`, in Rust, Python and R; decision 15 built on branch `claude/diagonal-pr1`, in Rust; decision 16 built on branch `claude/diagonal-pr2`, in Rust; decision 17 built on branch `claude/diagonal-pr3`, in Rust; decision 18 built on branch `claude/diagonal-basis`, in Rust; decisions 15 to 18 in Python and R and decision 19 built on branch `claude/diagonal-bindings`, in Rust, Python and R; decision 20 built on branch `claude/ulr-column`, in Rust, Python and R) · Lane: Reserving · Depends on: `triangle.md`, `docs/architecture.md` (v0.2 row of the roadmap)
 
 ## Goal
 
@@ -3544,3 +3544,52 @@ constructors.
     diagonal (`LatestDiagonal.from_triangle`, R `as_latest_valuation()`)
     and fit that with `development=`. The plain triangle path keeps
     decision 17 item 11 open.
+
+### 20. A `ulr` column in the long tables of the methods with an exposure
+
+Issue #636 asked for each origin's ultimate over its exposure in the
+expected-loss fits' frames, so that a pipeline need not divide two columns
+itself. Built on branch `claude/ulr-column`.
+
+1. **One rule in the table, not a column per method.** `ReserveFit` has a
+   default `exposure()` (`None`); a fit that has an exposure returns it,
+   and `SegmentFits::to_long` and `totals` then end the method's own
+   columns with `ulr`: the same row's `ultimate` over the exposure, and in
+   the totals the total ultimate over the total exposure. So `ulr` always
+   equals `ultimate / exposure` of its own row, and the Python `to_frame`,
+   `totals_frame` and R `as.data.frame()`, `totals_frame()` carry it with
+   no binding code.
+2. **Which fits.** The expected-loss methods (`ExpectedLossFit`, and
+   `CapeCodFit` delegating to it), Clark's Cape Cod form (the LDF form has
+   no exposure and no column), `BayesBf` and `BayesBfNormalised` (their
+   exposure) and Meyers' CRC, CSR and CAY (their premium), alone and over
+   segments. Compartmental keeps its own `ultimate_loss_ratio` and is not
+   changed.
+3. **A loss ratio only on premium.** The column is named `ulr` as the issue
+   asks, and the docs in Rust, Python and R say that it is a loss ratio
+   only when the exposure is premium (with exposure in car years it is a
+   pure premium). A NaN or zero exposure gives NaN or an infinite `ulr`,
+   with no special case.
+4. **The Bayesian tables' `ulr` is the chain ladder's** (proposed, for the
+   user's acceptance). Their `ultimate` column is the plug-in chain
+   ladder's, so their `ulr` is too; the posterior mean ultimate over the
+   exposure is `(latest + mean) / exposure` (Meyers: `ultimate_mean /
+   premium`). A posterior `ulr_mean` was left out to keep the PR small; it
+   would be one line for Meyers, which already has `ultimate_mean`, and
+   needs an ultimate column first for the two Bayesian BFs.
+5. **The one-year views name it `opening_ulr`** (proposed, for the user's
+   acceptance). A Bayesian one-year view's table has the opening ultimate,
+   which `opening_names` renames from `ultimate`; the ratio follows it as
+   `opening_ulr`, the opening ultimate over the exposure. The bootstrap
+   one-year views of the expected-loss methods keep no exposure in their
+   tables, so they have no column.
+6. **Name** (proposed, for the user's acceptance): `ulr` as in the issue,
+   next to the Clark Cape Cod total's fitted `elr` (the expected loss
+   ratio of the prior, not of the ultimate) and Compartmental's
+   `ultimate_loss_ratio`. The alternative is to call every one
+   `ultimate_loss_ratio`.
+7. **Checks.** Unit tests in `expected_loss.rs`, `clark.rs`, `bayes/bf.rs`
+   (lifetime and one-year view) and `bayes/meyers.rs` assert the column
+   equal to the ultimate over the exposure, per origin and in total; the
+   Python and R tests that list exact column names take the new column and
+   check its values.

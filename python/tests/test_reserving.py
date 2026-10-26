@@ -1221,9 +1221,14 @@ def test_expected_loss_every_segment_at_once():
         assert list(frame["ultimate"]) == fit.ultimate
         assert list(frame["reserve"]) == fit.reserve
         assert list(frame["apriori"]) == fit.apriori
+        # The ulr is the ultimate over the exposure, a loss ratio on premium.
+        assert list(frame["ulr"]) == [u / e for u, e in zip(fit.ultimate, fit.exposure)]
         totals = fit.totals_frame()
         assert totals["reserve"].iloc[0] == pytest.approx(alone.total_reserve, rel=1e-12)
         assert totals["exposure"].iloc[0] == sum(alone.exposure)
+        assert totals["ulr"].iloc[0] == pytest.approx(
+            alone.total_ultimate / sum(alone.exposure), rel=1e-12
+        )
         assert len(fit.development_frame()) == 20
         with pytest.raises(ValueError, match="2 segments; use development_frame"):
             fit.ldf
@@ -1231,6 +1236,7 @@ def test_expected_loss_every_segment_at_once():
     cc = CapeCod().fit(both, "paid", "premium")
     assert list(cc.to_frame().columns) == [
         "lob", "origin", "latest", "ultimate", "reserve", "exposure", "apriori", "trended_apriori",
+        "ulr",
     ]
     # The chain ladder's ultimate is not the method's.
     assert cc.chain_ladder.ultimate != cc.ultimate
@@ -1411,9 +1417,11 @@ def test_clark_every_segment_at_once():
     cc = ClarkCapeCod().fit(both, "paid", "premium")
     assert list(cc.to_frame().columns) == [
         "lob", "origin", "latest", "ultimate", "reserve", "exposure", "expected_ultimate",
-        "process_risk", "parameter_risk", "standard_error",
+        "process_risk", "parameter_risk", "standard_error", "ulr",
     ]
-    assert "elr" in cc.totals_frame().columns
+    assert {"elr", "ulr"} <= set(cc.totals_frame().columns)
+    # The LDF form has no exposure, so no ulr.
+    assert "ulr" not in ClarkLdf(max_age=240).fit(both, "paid").to_frame().columns
 
 
 def test_clark_errors(triangles):

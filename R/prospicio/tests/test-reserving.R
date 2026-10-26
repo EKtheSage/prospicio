@@ -830,7 +830,8 @@ stopifnot(cc@method == "cape_cod", cc@curve == "weibull", cc@exposure[[1]] == 1e
           cc@elr > 0)
 near(cc@expected_ultimate, cc@elr * cc@exposure)
 stopifnot(identical(names(as.data.frame(cc))[5:6], c("exposure", "expected_ultimate")),
-          "elr" %in% names(totals_frame(cc)))
+          all(c("elr", "ulr") %in% names(totals_frame(cc))),
+          identical(as.data.frame(cc)$ulr, unname(cc@ultimate / cc@exposure)))
 weibull <- clark_ldf(raa, curve = "weibull", max_age = 240)
 stopifnot(weibull@max_age == 240, identical(clark_ldf(raa, max_age = NULL)@reserve, clark@reserve))
 invisible(utils::capture.output(print(clark), print(cc), print(weibull)))
@@ -956,10 +957,12 @@ expect_error_like(expected_loss(wk, "paid", "premium", tail = "a"), "tail must b
 stopifnot(!identical(cape_cod(wk, "paid", "premium", decay = 0.5)@ultimate,
                      cape_cod(wk, "paid", "premium")@ultimate))
 el_df <- as.data.frame(bf)
-stopifnot(identical(names(el_df), c("origin", "latest", "ultimate", "reserve", "exposure", "apriori")),
+stopifnot(identical(names(el_df), c("origin", "latest", "ultimate", "reserve", "exposure", "apriori",
+                                   "ulr")),
           identical(el_df$ultimate, unname(bf@ultimate)),
+          identical(el_df$ulr, unname(bf@ultimate / bf@exposure)),
           identical(names(as.data.frame(cc)), c("origin", "latest", "ultimate", "reserve", "exposure",
-                                               "apriori", "trended_apriori")),
+                                               "apriori", "trended_apriori", "ulr")),
           identical(totals_frame(bf)$exposure, sum(bf@exposure)),
           identical(development_frame(bf), development_frame(wk_cl)))
 invisible(utils::capture.output(print(bf), print(cc)))

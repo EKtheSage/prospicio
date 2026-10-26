@@ -570,8 +570,9 @@ impl BayesBfFit {
     }
 
     /// One row per origin: the chain ladder's `latest`, `ultimate` and
-    /// `reserve`, the `exposure` and `prior_ultimate`, and the `mean` and
-    /// `std_dev` of the posterior predictive reserve.
+    /// `reserve`, the `exposure`, `prior_ultimate` and `ulr` (the chain
+    /// ladder's ultimate over the exposure), and the `mean` and `std_dev`
+    /// of the posterior predictive reserve.
     pub fn to_long(&self) -> FitTable {
         let mut table = self.plug_in().to_long();
         push_moments(&mut table, "", &component_sums(&self.reserves));
@@ -579,8 +580,8 @@ impl BayesBfFit {
     }
 
     /// One row: the chain ladder's totals, the total `exposure` and
-    /// `prior_ultimate`, the `scale`, and the `mean` and `std_dev` of the
-    /// posterior predictive total reserve.
+    /// `prior_ultimate`, the `scale`, the total `ulr`, and the `mean` and
+    /// `std_dev` of the posterior predictive total reserve.
     pub fn totals(&self) -> FitTable {
         let fits = self.plug_in();
         let mut table = fits.totals();
@@ -611,6 +612,10 @@ impl BayesBfFit {
 impl ReserveFit for BayesBfFit {
     fn chain_ladder(&self) -> &ChainLadderFit {
         &self.chain_ladder
+    }
+
+    fn exposure(&self) -> Option<&[f64]> {
+        Some(&self.exposure)
     }
 
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
@@ -653,6 +658,10 @@ pub(super) struct PlugIn {
 impl ReserveFit for PlugIn {
     fn chain_ladder(&self) -> &ChainLadderFit {
         &self.chain_ladder
+    }
+
+    fn exposure(&self) -> Option<&[f64]> {
+        Some(&self.exposure)
     }
 
     fn origin_columns(&self) -> Vec<(&'static str, Vec<f64>)> {
@@ -1415,9 +1424,19 @@ mod tests {
         assert_eq!(long.n_rows(), 10);
         assert_eq!(long.column("prior_ultimate").unwrap(), fit.prior_ultimate);
         assert!(long.column("mean").is_some() && long.column("std_dev").is_some());
+        // The table's ultimate, the chain ladder's, over the exposure.
+        let ulr: Vec<f64> = (long.column("ultimate").unwrap().iter())
+            .zip(&fit.exposure)
+            .map(|(u, e)| u / e)
+            .collect();
+        assert_eq!(long.column("ulr").unwrap(), ulr);
         let totals = fit.totals();
         assert_eq!(totals.column("scale").unwrap(), [fit.scale]);
         assert_eq!(totals.column("exposure").unwrap(), [118e6]);
+        assert_eq!(
+            totals.column("ulr").unwrap(),
+            [totals.column("ultimate").unwrap()[0] / 118e6]
+        );
         assert_eq!(fit.development_table().n_rows(), 10);
         assert_eq!(fit.summary().unwrap().len(), 20);
         let provenance = fit.reserves.provenance();
@@ -1551,6 +1570,13 @@ mod tests {
         assert_eq!(long.n_rows(), 10);
         assert_eq!(long.column("prior_ultimate").unwrap(), fit.prior_ultimate);
         assert!(long.column("opening_reserve").is_some());
+        // The ulr is the opening ultimate's, under its name.
+        assert!(long.column("ulr").is_none());
+        let ulr: Vec<f64> = (view.opening_ultimate.iter())
+            .zip(&fit.exposure)
+            .map(|(u, e)| u / e)
+            .collect();
+        assert_eq!(long.column("opening_ulr").unwrap(), ulr);
         let totals = view.totals();
         assert_eq!(totals.column("exposure").unwrap(), [118e6]);
         assert_eq!(
