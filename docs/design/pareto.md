@@ -592,7 +592,8 @@ underwriter builds from a risk-loaded price, as the Guides lane's
   for: `Quote::at_with_commission(D, amount)` takes the grid's expected
   commissions at a quoted deposit, and a swing's expected premium is the
   deposit to quote at. The solve for a sliding scale and a profit
-  commission is built (2026-10-26, below); a swing is not.
+  commission is built (2026-10-26, below); a swing is not (decided by
+  the user on 2026-10-26, below).
   Ratios on the premium are on all of it, `(1 + κ) D` (loss ratio,
   multiple); rate on line and payback stay on the deposit.
 - **Tax, both kinds (2026-10-23).** A premium tax `τ` is a fraction of all
@@ -636,13 +637,24 @@ underwriter builds from a risk-loaded price, as the Guides lane's
   contraction there and is not used. Refused when the highest rates leave
   no premium, and for a scale read before annual terms. `TowerQuote`
   solves each such layer; the total keeps the weighted flat terms, since
-  the layers' scales read each layer's own loss ratio. Open (for the
-  user): **a swing-rated layer** has no deposit, its premium being
-  `clip(basic + lcm x, minimum, maximum)`; solving for it means choosing
-  which term to scale (the basic premium, with the minimum moving with
-  it, or the loss conversion factor), so the solve refuses a swing and it
-  stays read back at its expected premium. Python
-  `Quote.technical_for_layer`, R `layer_quote()`.
+  the layers' scales read each layer's own loss ratio. Python
+  `Quote.technical_for_layer`, R `layer_quote()`. Decided by the user on
+  2026-10-26:
+  - **A swing-rated layer stays refused.** Its premium is
+    `clip(basic + lcm x, minimum, maximum)` and has no deposit; it stays
+    read back at its expected premium. When a deal needs it, the solve
+    finds the loss conversion factor `lcm` with the basic premium, the
+    minimum and the maximum fixed, since the loading is the term the
+    market negotiates; it fails, saying so, when the maximum leaves no
+    `lcm` that meets the price. Scaling the basic premium has no market
+    convention and is not built.
+  - **A scale read before annual terms stays an error.** It reads the
+    loss ratio before the layer's annual limit or deductible, and the
+    ceded grid holds only the loss after them, so its commission cannot
+    be read there. Quoting the layer as if it had no scale, as
+    `TowerQuote` did before, understates the deposit without a warning.
+    Support needs the loss before annual terms passed to the solve, and
+    waits for a deal quoted on the grid that needs it.
 - **Reinstatement premium in its own price (#587).** With `g` the
   reinstatement premium per unit of upfront premium in each simulation,
   the reinsurer's net outcome is `X − P g`, so its assets and its price
