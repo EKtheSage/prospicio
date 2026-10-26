@@ -459,7 +459,7 @@ pub fn chain_ladder(args: &[Grid]) -> Result<Grid> {
 pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 5, 6)?;
     let fit = ExpectedLoss {
-        apriori: number(&args[4], "apriori")?,
+        apriori: number(&args[4], "apriori")?.into(),
         chain_ladder: p.chain_ladder,
     }
     .fit_diagonal(&p.diagonal)
@@ -472,7 +472,7 @@ pub fn expected_loss(args: &[Grid]) -> Result<Grid> {
 pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 5, 6)?;
     let fit = BornhuetterFerguson {
-        apriori: number(&args[4], "apriori")?,
+        apriori: number(&args[4], "apriori")?.into(),
         chain_ladder: p.chain_ladder,
     }
     .fit_diagonal(&p.diagonal)
@@ -485,7 +485,7 @@ pub fn bornhuetter_ferguson(args: &[Grid]) -> Result<Grid> {
 pub fn benktander(args: &[Grid]) -> Result<Grid> {
     let p = prepare(args, Some(&args[3]), 5, 7)?;
     let fit = Benktander {
-        apriori: number(&args[4], "apriori")?,
+        apriori: number(&args[4], "apriori")?.into(),
         n_iters: count(&args[6], "iterations", 1, 10_000)?,
         chain_ladder: p.chain_ladder,
     }

@@ -41,7 +41,7 @@ fn fit(dataset: &str, case: &Case) -> Fitted {
     let (fit, trended_apriori) = match method.split(';').next().unwrap() {
         "expected_loss" => {
             let m = ExpectedLoss {
-                apriori: param("apriori"),
+                apriori: param("apriori").into(),
                 chain_ladder,
             };
             (
@@ -51,7 +51,7 @@ fn fit(dataset: &str, case: &Case) -> Fitted {
         }
         "bornhuetter_ferguson" => {
             let m = BornhuetterFerguson {
-                apriori: param("apriori"),
+                apriori: param("apriori").into(),
                 chain_ladder,
             };
             (
@@ -61,7 +61,7 @@ fn fit(dataset: &str, case: &Case) -> Fitted {
         }
         "benktander" => {
             let m = Benktander {
-                apriori: param("apriori"),
+                apriori: param("apriori").into(),
                 n_iters: param("n_iters") as usize,
                 chain_ladder,
             };

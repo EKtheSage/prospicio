@@ -11,11 +11,12 @@
 use extendr_api::prelude::*;
 use extendr_api::{Error, Result};
 use prospicio_reserving::{
-    Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner, ChainLadder,
-    ChainLadderFit as ChainLadderInner, ClaimsDevelopmentResult as ClaimsDevelopmentInner,
-    ClarkCapeCod, ClarkFit as ClarkInner, ClarkLdf, CurveShape, Development, DevelopmentColumn,
-    DiagonalAge, ExpectedLoss, ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve,
-    Label, Lag, LatestDiagonals as LatestDiagonalsInner, Long, LongDiagonal, Mack, MackBootstrap,
+    Apriori, Average, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit as CapeCodInner,
+    ChainLadder, ChainLadderFit as ChainLadderInner,
+    ClaimsDevelopmentResult as ClaimsDevelopmentInner, ClarkCapeCod, ClarkFit as ClarkInner,
+    ClarkLdf, CurveShape, Development, DevelopmentColumn, DiagonalAge, ExpectedLoss,
+    ExpectedLossFit as ExpectedLossInner, FitTable, Grain, GrowthCurve, Label, Lag,
+    LatestDiagonals as LatestDiagonalsInner, Long, LongDiagonal, Mack, MackBootstrap,
     MackBootstrapFits, MackBootstrapSegment, MackFit as MackInner, MackProcess, Month,
     OdpBootstrap, OdpBootstrapFits, OneYearFits, OneYearMethod, OneYearPattern, PastPatternEnd,
     PatternKind, PatternWeight, Period, ProcessDistribution, ReserveFit, SegmentDependence,
@@ -224,12 +225,30 @@ fn pattern(
     })
 }
 
+/// An `apriori` argument from R: one number for every origin, an unnamed
+/// vector of one per origin in origin order (oldest first), or a vector
+/// named by origin label (`"2021"`, `"2021Q3"`), as `apriori_arg()` in
+/// `reserving.R` passes it.
+fn apriori_arg(apriori: &Robj) -> Result<Apriori> {
+    let values = apriori
+        .as_real_vector()
+        .ok_or_else(|| Error::Other("apriori must be a number or a numeric vector".into()))?;
+    match apriori.names() {
+        Some(names) => {
+            let names: Vec<String> = names.map(str::to_string).collect();
+            Apriori::from_labels(names.iter().zip(values)).map_err(to_r)
+        }
+        None if values.len() == 1 => Ok(Apriori::All(values[0])),
+        None => Ok(Apriori::InOrder(values)),
+    }
+}
+
 /// The method of `odp_one_year()` and `mack_one_year()`, by name, with
 /// the settings it reads and `chain_ladder` its development pattern.
 fn one_year_method(
     method: &str,
     exposure: Nullable<String>,
-    apriori: f64,
+    apriori: Robj,
     n_iters: f64,
     trend: f64,
     decay: f64,
@@ -257,14 +276,14 @@ fn one_year_method(
         }
         "expected_loss" => OneYearMethod::ExpectedLoss(
             ExpectedLoss {
-                apriori,
+                apriori: apriori_arg(&apriori)?,
                 chain_ladder,
             },
             needs(exposure)?,
         ),
         "bornhuetter_ferguson" => OneYearMethod::BornhuetterFerguson(
             BornhuetterFerguson {
-                apriori,
+                apriori: apriori_arg(&apriori)?,
                 chain_ladder,
             },
             needs(exposure)?,
@@ -274,7 +293,7 @@ fn one_year_method(
                 .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
             OneYearMethod::Benktander(
                 Benktander {
-                    apriori,
+                    apriori: apriori_arg(&apriori)?,
                     n_iters,
                     chain_ladder,
                 },
@@ -881,7 +900,7 @@ impl Triangle {
         &self,
         column: &str,
         exposure: &str,
-        apriori: f64,
+        apriori: Robj,
         average: &str,
         sigma_interpolation: &str,
         excl: Robj,
@@ -889,7 +908,7 @@ impl Triangle {
         ldf: Robj,
     ) -> Result<ExpectedLossFit> {
         let inner = ExpectedLoss {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             chain_ladder: pattern(
                 average,
                 sigma_interpolation,
@@ -909,7 +928,7 @@ impl Triangle {
         &self,
         column: &str,
         exposure: &str,
-        apriori: f64,
+        apriori: Robj,
         average: &str,
         sigma_interpolation: &str,
         excl: Robj,
@@ -917,7 +936,7 @@ impl Triangle {
         ldf: Robj,
     ) -> Result<ExpectedLossFit> {
         let inner = BornhuetterFerguson {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             chain_ladder: pattern(
                 average,
                 sigma_interpolation,
@@ -937,7 +956,7 @@ impl Triangle {
         &self,
         column: &str,
         exposure: &str,
-        apriori: f64,
+        apriori: Robj,
         n_iters: f64,
         average: &str,
         sigma_interpolation: &str,
@@ -948,7 +967,7 @@ impl Triangle {
         let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
             .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
         let inner = Benktander {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             n_iters,
             chain_ladder: pattern(
                 average,
@@ -1845,7 +1864,7 @@ impl Triangle {
         column: &str,
         method: &str,
         exposure: Nullable<String>,
-        apriori: f64,
+        apriori: Robj,
         n_iters: f64,
         trend: f64,
         decay: f64,
@@ -1912,7 +1931,7 @@ impl Triangle {
         column: &str,
         method: &str,
         exposure: Nullable<String>,
-        apriori: f64,
+        apriori: Robj,
         n_iters: f64,
         trend: f64,
         decay: f64,
@@ -5531,7 +5550,7 @@ impl LatestDiagonals {
     #[allow(clippy::too_many_arguments)]
     fn expected_loss(
         &self,
-        apriori: f64,
+        apriori: Robj,
         average: &str,
         sigma_interpolation: &str,
         excl: Robj,
@@ -5541,7 +5560,7 @@ impl LatestDiagonals {
         segment_map: Robj,
     ) -> Result<ExpectedLossFit> {
         let m = ExpectedLoss {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             chain_ladder: pattern(
                 average,
                 sigma_interpolation,
@@ -5562,7 +5581,7 @@ impl LatestDiagonals {
     #[allow(clippy::too_many_arguments)]
     fn bornhuetter_ferguson(
         &self,
-        apriori: f64,
+        apriori: Robj,
         average: &str,
         sigma_interpolation: &str,
         excl: Robj,
@@ -5572,7 +5591,7 @@ impl LatestDiagonals {
         segment_map: Robj,
     ) -> Result<ExpectedLossFit> {
         let m = BornhuetterFerguson {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             chain_ladder: pattern(
                 average,
                 sigma_interpolation,
@@ -5593,7 +5612,7 @@ impl LatestDiagonals {
     #[allow(clippy::too_many_arguments)]
     fn benktander(
         &self,
-        apriori: f64,
+        apriori: Robj,
         n_iters: f64,
         average: &str,
         sigma_interpolation: &str,
@@ -5606,7 +5625,7 @@ impl LatestDiagonals {
         let n_iters = usize::try_from(whole(n_iters, "n_iters")?)
             .map_err(|_| Error::Other(format!("n_iters {n_iters} is too large")))?;
         let m = Benktander {
-            apriori,
+            apriori: apriori_arg(&apriori)?,
             n_iters,
             chain_ladder: pattern(
                 average,

@@ -85,7 +85,7 @@ pub use diagnostics::Diagnostics;
 pub use error::{Error, Result};
 pub use excess::{Basis, ExcessPattern, Layer, SeverityByMaturity, layer_exposure, layer_share};
 pub use expected_loss::{
-    Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
+    Apriori, Benktander, BornhuetterFerguson, CapeCod, CapeCodFit, ExpectedLoss, ExpectedLossFit,
 };
 pub use frame::TriangleFrame;
 pub use latest_diagonal::{

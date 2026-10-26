@@ -1288,7 +1288,7 @@ fn the_expected_loss_methods_take_the_spread() {
     assert_rel(cdf[0], 1.025_379_872_150_005_4, 1e-14, "132");
     let elr = 0.7;
     let bf = BornhuetterFerguson {
-        apriori: elr,
+        apriori: elr.into(),
         chain_ladder: chain_ladder.clone(),
     }
     .fit_diagonal(&d)
@@ -1304,7 +1304,7 @@ fn the_expected_loss_methods_take_the_spread() {
         "Bornhuetter-Ferguson at 132",
     );
     let bk = Benktander {
-        apriori: elr,
+        apriori: elr.into(),
         n_iters: 2,
         chain_ladder: chain_ladder.clone(),
     }

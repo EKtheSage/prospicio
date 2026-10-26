@@ -98,7 +98,7 @@
 
 use std::sync::Mutex;
 
-use prospicio_core::{Lag, Month, StreamRng};
+use prospicio_core::{Lag, Month, Period, StreamRng};
 use prospicio_prob::{InputHasher, KeyValue, PredictiveDistribution, Provenance};
 
 use crate::bootstrap::{
@@ -123,7 +123,7 @@ use crate::triangle::{Segment, Triangle};
 /// let cl = OneYearMethod::ChainLadder(ChainLadder::default());
 /// assert_eq!(cl.exposure(), None);
 /// let bf = OneYearMethod::BornhuetterFerguson(
-///     BornhuetterFerguson { apriori: 0.7, ..Default::default() },
+///     BornhuetterFerguson { apriori: 0.7.into(), ..Default::default() },
 ///     "premium".into(),
 /// );
 /// assert_eq!(bf.exposure(), Some("premium"));
@@ -181,6 +181,29 @@ impl OneYearMethod {
     /// ```
     pub fn pattern(&self) -> Option<&SelectedPattern> {
         self.chain_ladder().development.pattern.as_ref()
+    }
+
+    /// The method with its apriori keyed against the triangle's `origins`
+    /// (see [`Apriori`](crate::Apriori)), once before the simulations.
+    pub(crate) fn keyed(&self, origins: &[Period]) -> Result<Self> {
+        Ok(match self {
+            Self::ExpectedLoss(m, e) => Self::ExpectedLoss(
+                ExpectedLoss {
+                    apriori: m.apriori.keyed(origins)?,
+                    ..m.clone()
+                },
+                e.clone(),
+            ),
+            Self::BornhuetterFerguson(m, e) => Self::BornhuetterFerguson(
+                BornhuetterFerguson {
+                    apriori: m.apriori.keyed(origins)?,
+                    ..m.clone()
+                },
+                e.clone(),
+            ),
+            Self::Benktander(m, e) => Self::Benktander(m.on_origins(origins)?, e.clone()),
+            Self::ChainLadder(_) | Self::CapeCod(..) => self.clone(),
+        })
     }
 
     /// The method's chain ladder.
@@ -359,7 +382,7 @@ impl<B: ReserveFit> ReserveFit for OneYearSegment<B> {
 ///     development_grain: Grain::Year,
 ///     cumulative: true,
 /// })?;
-/// let bf = BornhuetterFerguson { apriori: 0.8, ..Default::default() };
+/// let bf = BornhuetterFerguson { apriori: 0.8.into(), ..Default::default() };
 /// let method = OneYearMethod::BornhuetterFerguson(bf, "premium".into());
 /// let fits = OdpBootstrap { n_sims: 500, seed: 3, ..Default::default() }
 ///     .one_year_segments(&tri, "paid", &method)?;
@@ -873,6 +896,7 @@ impl Sims {
         provenance: impl FnOnce(InputHasher) -> Provenance,
     ) -> Result<OneYearFit<B>> {
         self.check(method)?;
+        let method = &method.keyed(&triangle.origins())?;
         let (opening, closing) = valuations(triangle)?;
         let segment = triangle.segment(column)?;
         let exposure = method.exposure().map(|e| triangle.segment(e)).transpose()?;
@@ -930,6 +954,7 @@ impl Sims {
         provenance: impl FnOnce(InputHasher) -> Provenance,
     ) -> Result<OneYearFits<B>> {
         self.check(method)?;
+        let method = &method.keyed(&triangle.origins())?;
         let (opening, closing) = valuations(triangle)?;
         let tailed = self.tail;
         let pattern = self.pattern.as_ref();
@@ -1321,7 +1346,7 @@ mod tests {
         // CDR = (f - 1) * (a * E / cdf - latest), the same in every
         // simulation. 2021 is at 36 months: f = 1.25, cdf = 1.25.
         let bf = BornhuetterFerguson {
-            apriori: 0.5,
+            apriori: 0.5.into(),
             ..Default::default()
         };
         let method = OneYearMethod::BornhuetterFerguson(bf.clone(), "premium".into());
@@ -1391,7 +1416,7 @@ mod tests {
         });
         let bf = OneYearMethod::BornhuetterFerguson(
             BornhuetterFerguson {
-                apriori: 0.8,
+                apriori: 0.8.into(),
                 ..Default::default()
             },
             "premium".into(),
@@ -1409,7 +1434,7 @@ mod tests {
     fn expected_loss_methods_open_on_their_own_ultimate() {
         let tri = raa_premium();
         let el = ExpectedLoss {
-            apriori: 0.8,
+            apriori: 0.8.into(),
             ..Default::default()
         };
         let fit = boot(100, 4)
@@ -1424,7 +1449,7 @@ mod tests {
         assert!(fit.cdr.draw_matrix().iter().all(|&x| x == 0.0));
 
         let bk = Benktander {
-            apriori: 0.8,
+            apriori: 0.8.into(),
             n_iters: 2,
             ..Default::default()
         };
@@ -1702,7 +1727,7 @@ mod tests {
         // the year: for 2021, lagging at 24 months, its two factors to 48
         // (F = cdf = 1.875), not the one to 36 alone.
         let bf = BornhuetterFerguson {
-            apriori: 0.5,
+            apriori: 0.5.into(),
             ..Default::default()
         };
         let method = OneYearMethod::BornhuetterFerguson(bf, "premium".into());
@@ -2649,6 +2674,57 @@ mod tests {
         assert!(matches!(
             odp_excluding(10, 1, Some(0), 0, 0).fit(&raa(), "values"),
             Err(Error::InvalidSetting { .. })
+        ));
+    }
+
+    #[test]
+    fn an_apriori_by_origin_moves_each_origin_by_its_own() {
+        // As `exact_pattern_bornhuetter_ferguson_moves_by_hand`, with each
+        // origin's own loss ratio: CDR = (f - 1) * (a[o] * E / cdf - latest).
+        let a = [0.4, 0.5, 0.6, 0.7];
+        let origins = exact().origins();
+        let keyed = crate::Apriori::by_origin(origins.iter().copied().zip(a));
+        let bf = BornhuetterFerguson {
+            apriori: crate::Apriori::InOrder(a.to_vec()),
+            ..Default::default()
+        };
+        let method = OneYearMethod::BornhuetterFerguson(bf.clone(), "premium".into());
+        let fit = boot(50, 2).one_year(&exact(), "paid", &method).unwrap();
+        let (latest, cdf, f) = (
+            [15.0, 24.0, 24.0, 16.0],
+            [1.0, 1.25, 1.875, 3.75],
+            [1.0, 1.25, 1.5, 2.0],
+        );
+        let exposure = [20.0, 40.0, 50.0, 80.0];
+        for o in 0..4 {
+            let want = (f[o] - 1.0) * (a[o] * exposure[o] / cdf[o] - latest[o]);
+            for x in column(&fit.cdr, o) {
+                assert!((x - want).abs() < 1e-9, "origin {o}: {x} vs {want}");
+            }
+        }
+        let opening = bf.fit(&exact(), "paid", "premium").unwrap();
+        assert_eq!(fit.opening_ultimate, opening.ultimate);
+        // Keyed by origin, the same view to the bit.
+        let by_origin = OneYearMethod::BornhuetterFerguson(
+            BornhuetterFerguson {
+                apriori: keyed,
+                ..Default::default()
+            },
+            "premium".into(),
+        );
+        let same = boot(50, 2).one_year(&exact(), "paid", &by_origin).unwrap();
+        assert_eq!(same.cdr.draw_matrix(), fit.cdr.draw_matrix());
+        // A mismatch is an error before any simulation.
+        let short = OneYearMethod::Benktander(
+            crate::Benktander {
+                apriori: crate::Apriori::InOrder(a[..3].to_vec()),
+                ..Default::default()
+            },
+            "premium".into(),
+        );
+        assert!(matches!(
+            boot(50, 2).one_year(&exact(), "paid", &short),
+            Err(Error::Apriori(_))
         ));
     }
 }

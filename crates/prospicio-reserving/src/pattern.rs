@@ -1567,7 +1567,7 @@ mod fits {
             vec![(12, 0.4), (24, 0.8), (36, 1.0)],
         );
         let bf = BornhuetterFerguson {
-            apriori: 0.75,
+            apriori: 0.75.into(),
             chain_ladder: chain_ladder(p, Tail::default()),
         }
         .fit(&t, "paid", "premium")

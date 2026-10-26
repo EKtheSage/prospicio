@@ -341,7 +341,7 @@ fn the_hand_diagonal_under_every_method() {
             "BF total",
         );
         let direct = BornhuetterFerguson {
-            apriori: 0.7,
+            apriori: 0.7.into(),
             chain_ladder: cl.clone(),
         };
         same_el(&bf, &direct.fit_diagonal(&d).unwrap());
@@ -350,7 +350,7 @@ fn the_hand_diagonal_under_every_method() {
         assert_rel(column(&bk, "Ultimate")[5], 236.80555555555554, 1e-12, "BK");
         assert_rel(total(&bk, "Ultimate"), 3930.086950714278, 1e-12, "BK total");
         let direct = Benktander {
-            apriori: 0.7,
+            apriori: 0.7.into(),
             n_iters: 2,
             chain_ladder: cl.clone(),
         };
@@ -370,7 +370,7 @@ fn the_hand_diagonal_under_every_method() {
         assert_all(&column(&el, "Ultimate"), &[140.0; 6], 1e-14, "EL");
         assert_rel(total(&el, "Ultimate"), 840.0, 1e-14, "EL total");
         let direct = ExpectedLoss {
-            apriori: 0.7,
+            apriori: 0.7.into(),
             chain_ladder: cl.clone(),
         };
         same_el(&el, &direct.fit_diagonal(&d).unwrap());
@@ -771,12 +771,12 @@ fn origins_past_the_patterns_end() {
     .with_past_pattern_end(PastPatternEnd::Tail);
     let chain_ladder = selected(PatternKind::AgeToAge, ldf, Tail::from(1.05));
     let direct = BornhuetterFerguson {
-        apriori: 0.7,
+        apriori: 0.7.into(),
         chain_ladder: chain_ladder.clone(),
     };
     same_el(&bf, &direct.fit_diagonal(&d).unwrap());
     let direct = Benktander {
-        apriori: 0.7,
+        apriori: 0.7.into(),
         n_iters: 2,
         chain_ladder: chain_ladder.clone(),
     };

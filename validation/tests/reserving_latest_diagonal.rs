@@ -179,7 +179,7 @@ fn a_diagonal_is_projected_by_hand() {
     assert!(cl.development.has_missing_factor());
 
     let bf = BornhuetterFerguson {
-        apriori: elr,
+        apriori: elr.into(),
         chain_ladder: chain_ladder.clone(),
     }
     .fit(&h.tri, "paid", "premium")
@@ -194,7 +194,7 @@ fn a_diagonal_is_projected_by_hand() {
     assert!((bf.ultimate[5] - 208.333_333_333_333).abs() < 1e-9);
 
     let bk = Benktander {
-        apriori: elr,
+        apriori: elr.into(),
         n_iters: 2,
         chain_ladder: chain_ladder.clone(),
     }
@@ -251,7 +251,7 @@ fn a_diagonal_takes_percents_developed_and_the_expected_loss_method() {
     );
 
     let el = ExpectedLoss {
-        apriori: 0.7,
+        apriori: 0.7.into(),
         chain_ladder,
     }
     .fit(&h.tri, "paid", "premium")
@@ -289,7 +289,7 @@ fn a_diagonal_cut_from_a_triangle_keeps_its_expected_loss_ultimates() {
         both(
             &|t| {
                 BornhuetterFerguson {
-                    apriori: 0.6,
+                    apriori: 0.6.into(),
                     chain_ladder: chain_ladder.clone(),
                 }
                 .fit(t, "paid", "premium")
@@ -301,7 +301,7 @@ fn a_diagonal_cut_from_a_triangle_keeps_its_expected_loss_ultimates() {
         both(
             &|t| {
                 Benktander {
-                    apriori: 0.6,
+                    apriori: 0.6.into(),
                     n_iters: 3,
                     chain_ladder: chain_ladder.clone(),
                 }
@@ -629,7 +629,7 @@ fn the_type_gives_exactly_the_triangle_path() {
     for pattern in [ldf, cdf, percent] {
         let chain_ladder = selected(pattern);
         let el = ExpectedLoss {
-            apriori: 0.6,
+            apriori: 0.6.into(),
             chain_ladder: chain_ladder.clone(),
         };
         assert_eq!(
@@ -637,7 +637,7 @@ fn the_type_gives_exactly_the_triangle_path() {
             el.fit(&cut, "paid", "premium").unwrap().ultimate
         );
         let bf = BornhuetterFerguson {
-            apriori: 0.6,
+            apriori: 0.6.into(),
             chain_ladder: chain_ladder.clone(),
         };
         assert_eq!(
@@ -645,7 +645,7 @@ fn the_type_gives_exactly_the_triangle_path() {
             bf.fit(&cut, "paid", "premium").unwrap().ultimate
         );
         let bk = Benktander {
-            apriori: 0.6,
+            apriori: 0.6.into(),
             n_iters: 3,
             chain_ladder: chain_ladder.clone(),
         };
@@ -712,12 +712,12 @@ fn the_type_matches_chainladder_python() {
             let d = diagonal_type(&full, "paid", Some("premium"));
             let fit = match method.split(';').next().unwrap() {
                 "bornhuetter_ferguson" => BornhuetterFerguson {
-                    apriori: param("apriori"),
+                    apriori: param("apriori").into(),
                     chain_ladder,
                 }
                 .fit_diagonal(&d),
                 "benktander" => Benktander {
-                    apriori: param("apriori"),
+                    apriori: param("apriori").into(),
                     n_iters: param("n_iters") as usize,
                     chain_ladder,
                 }
@@ -781,7 +781,7 @@ fn an_age_between_the_patterns_is_read_log_linearly() {
         "semester chain ladder",
     );
     let bf = BornhuetterFerguson {
-        apriori: 0.5,
+        apriori: 0.5.into(),
         chain_ladder: selected(annual_cdf()),
     }
     .fit_diagonal(&d)
@@ -934,7 +934,7 @@ fn the_types_errors_name_their_cause() {
     diag(
         "need an exposure",
         BornhuetterFerguson {
-            apriori: 0.7,
+            apriori: 0.7.into(),
             chain_ladder: selected(hand_pattern(&h)),
         }
         .fit_diagonal(&d)

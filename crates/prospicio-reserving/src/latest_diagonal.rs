@@ -64,7 +64,7 @@ const EXPOSURE: &str = "exposure";
 /// };
 /// let cl = chain_ladder.fit_diagonal(&diagonal).unwrap();
 /// assert_eq!(cl.ultimate, vec![900.0, 750.0, 300.0]);
-/// let bf = BornhuetterFerguson { apriori: 0.7, chain_ladder }
+/// let bf = BornhuetterFerguson { apriori: 0.7.into(), chain_ladder }
 ///     .fit_diagonal(&diagonal)
 ///     .unwrap();
 /// // 150 + 0.7 × 1000 × (1 - 1/2)
@@ -300,7 +300,7 @@ impl LatestDiagonal {
     /// let cl = own.to_chain_ladder().fit_diagonal(&diagonal).unwrap();
     /// assert_eq!(cl.ultimate, own.ultimate);
     /// assert_eq!(cl.ultimate, [150.0, 300.0]);
-    /// let bf = BornhuetterFerguson { apriori: 0.5, chain_ladder: own.to_chain_ladder() }
+    /// let bf = BornhuetterFerguson { apriori: 0.5.into(), chain_ladder: own.to_chain_ladder() }
     ///     .fit_diagonal(&diagonal)
     ///     .unwrap();
     /// assert_eq!(bf.exposure, [450.0, 500.0]);
@@ -744,7 +744,8 @@ fn unconverted(fit: &mut ChainLadderFit) {
 
 impl ExpectedLoss {
     /// The expected loss method on a latest diagonal with its exposure; see
-    /// [`ChainLadder::fit_diagonal`].
+    /// [`ChainLadder::fit_diagonal`]. A keyed [`Apriori`](crate::Apriori)
+    /// is matched to the diagonal's origins, oldest first.
     pub fn fit_diagonal(&self, diagonal: &LatestDiagonal) -> Result<ExpectedLossFit> {
         self.as_benktander().fit_diagonal(diagonal)
     }
@@ -762,6 +763,13 @@ impl Benktander {
     /// Benktander on a latest diagonal with its exposure; see
     /// [`ChainLadder::fit_diagonal`].
     pub fn fit_diagonal(&self, diagonal: &LatestDiagonal) -> Result<ExpectedLossFit> {
+        self.on_origins(&diagonal_origins([diagonal]))?
+            .fit_diagonal_keyed(diagonal)
+    }
+
+    /// [`fit_diagonal`](Self::fit_diagonal) with the apriori already keyed
+    /// (against several diagonals' origins, say).
+    fn fit_diagonal_keyed(&self, diagonal: &LatestDiagonal) -> Result<ExpectedLossFit> {
         let p = diagonal.prepare(&self.chain_ladder.development, self.chain_ladder.tail, true)?;
         let mut fit = Benktander {
             chain_ladder: ChainLadder {
@@ -1327,7 +1335,7 @@ impl ExpectedLoss {
         &self,
         diagonals: &LatestDiagonals,
     ) -> Result<SegmentFits<ExpectedLossFit>> {
-        diagonals.fit_each(|d| self.fit_diagonal(d))
+        self.as_benktander().fit_diagonal_segments(diagonals)
     }
 
     /// The expected loss method on every segment with each segment's
@@ -1338,13 +1346,8 @@ impl ExpectedLoss {
         diagonals: &LatestDiagonals,
         development: &SegmentFits<ChainLadder>,
     ) -> Result<SegmentFits<ExpectedLossFit>> {
-        diagonals.fit_each_from(&self.chain_ladder, development, |cl, d| {
-            Self {
-                chain_ladder: cl.clone(),
-                ..self.clone()
-            }
-            .fit_diagonal(d)
-        })
+        self.as_benktander()
+            .fit_diagonal_segments_from(diagonals, development)
     }
 }
 
@@ -1355,7 +1358,7 @@ impl BornhuetterFerguson {
         &self,
         diagonals: &LatestDiagonals,
     ) -> Result<SegmentFits<ExpectedLossFit>> {
-        diagonals.fit_each(|d| self.fit_diagonal(d))
+        self.as_benktander().fit_diagonal_segments(diagonals)
     }
 
     /// Bornhuetter-Ferguson on every segment with each segment's
@@ -1366,24 +1369,22 @@ impl BornhuetterFerguson {
         diagonals: &LatestDiagonals,
         development: &SegmentFits<ChainLadder>,
     ) -> Result<SegmentFits<ExpectedLossFit>> {
-        diagonals.fit_each_from(&self.chain_ladder, development, |cl, d| {
-            Self {
-                chain_ladder: cl.clone(),
-                ..self.clone()
-            }
-            .fit_diagonal(d)
-        })
+        self.as_benktander()
+            .fit_diagonal_segments_from(diagonals, development)
     }
 }
 
 impl Benktander {
     /// [`fit_diagonal`](Self::fit_diagonal) on every segment; see
-    /// [`ChainLadder::fit_diagonal_segments`].
+    /// [`ChainLadder::fit_diagonal_segments`]. A keyed
+    /// [`Apriori`](crate::Apriori) is matched to the origins of every
+    /// segment together, oldest first, and each segment takes its own.
     pub fn fit_diagonal_segments(
         &self,
         diagonals: &LatestDiagonals,
     ) -> Result<SegmentFits<ExpectedLossFit>> {
-        diagonals.fit_each(|d| self.fit_diagonal(d))
+        let m = self.on_origins(&diagonal_origins(diagonals.diagonals()))?;
+        diagonals.fit_each(|d| m.fit_diagonal_keyed(d))
     }
 
     /// Benktander on every segment with each segment's development from
@@ -1394,14 +1395,30 @@ impl Benktander {
         diagonals: &LatestDiagonals,
         development: &SegmentFits<ChainLadder>,
     ) -> Result<SegmentFits<ExpectedLossFit>> {
+        let m = self.on_origins(&diagonal_origins(diagonals.diagonals()))?;
         diagonals.fit_each_from(&self.chain_ladder, development, |cl, d| {
             Self {
                 chain_ladder: cl.clone(),
-                ..self.clone()
+                ..m.clone()
             }
-            .fit_diagonal(d)
+            .fit_diagonal_keyed(d)
         })
     }
+}
+
+/// The origins of `diagonals` together, oldest first, without repeats.
+fn diagonal_origins<'a>(diagonals: impl IntoIterator<Item = &'a LatestDiagonal>) -> Vec<Period> {
+    let mut origins: Vec<Period> = diagonals
+        .into_iter()
+        .flat_map(|d| {
+            d.origins
+                .iter()
+                .map(|&m| Period::containing(m, d.origin_grain))
+        })
+        .collect();
+    origins.sort();
+    origins.dedup();
+    origins
 }
 
 impl CapeCod {
@@ -1513,5 +1530,91 @@ mod tests {
             two.with_exposure(&[10.0, 20.0, -1.0]),
             Err(Error::InSegment { label, .. }) if label == "b"
         ));
+    }
+
+    #[test]
+    fn an_apriori_by_origin_follows_the_origins_not_the_rows() {
+        // Rows newest first (2024 at 12 months, 2023 at 24, 2022 at 36),
+        // and the fit's origins oldest first.
+        let rows = diagonal(Grain::Year, &[100.0, 100.0, 100.0])
+            .with_exposure(&[200.0, 300.0, 400.0])
+            .unwrap();
+        let pattern = SelectedPattern::new(PatternKind::AgeToAge, vec![(12, 1.6), (24, 1.25)]);
+        let chain_ladder = ChainLadder {
+            development: Development {
+                pattern: Some(pattern),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let bf = |apriori| BornhuetterFerguson {
+            apriori,
+            chain_ladder: chain_ladder.clone(),
+        };
+        let keyed =
+            crate::Apriori::from_labels([("2024", 0.7), ("2022", 0.5), ("2023", 0.6)]).unwrap();
+        let fit = bf(keyed.clone()).fit_diagonal(&rows).unwrap();
+        assert_eq!(fit.apriori, [0.5, 0.6, 0.7]);
+        assert_eq!(fit.exposure, [400.0, 300.0, 200.0]);
+        // 100 + (1 - 1/1.25) * 0.6 * 300 and 100 + (1 - 1/2) * 0.7 * 200.
+        let want = [100.0, 136.0, 170.0];
+        for (got, want) in fit.ultimate.iter().zip(want) {
+            assert!((got - want).abs() < 1e-9, "{got} vs {want}");
+        }
+        let in_order = bf(crate::Apriori::InOrder(vec![0.5, 0.6, 0.7]))
+            .fit_diagonal(&rows)
+            .unwrap();
+        assert_eq!(in_order.ultimate, fit.ultimate);
+
+        // Over segments, each takes its own origins: b has 2024 alone.
+        let set = LatestDiagonals::new(
+            vec!["lob".into()],
+            vec![
+                (
+                    Label::from("a"),
+                    diagonal(Grain::Year, &[100.0, 100.0, 100.0]),
+                ),
+                (Label::from("b"), diagonal(Grain::Year, &[50.0])),
+            ],
+        )
+        .unwrap()
+        .with_exposure(&[200.0, 300.0, 400.0, 100.0])
+        .unwrap();
+        let fits = bf(keyed).fit_diagonal_segments(&set).unwrap();
+        let b = fits.get(&Label::from("b")).unwrap();
+        assert_eq!(b.apriori, [0.7]);
+        assert!((b.ultimate[0] - (50.0 + 0.5 * 0.7 * 100.0)).abs() < 1e-9);
+        assert_eq!(fits.get(&Label::from("a")).unwrap().ultimate, fit.ultimate);
+        let source = set
+            .developments(
+                &chain_ladder.fit_diagonal_segments(&set).unwrap(),
+                &crate::SegmentMap::ByLabel,
+            )
+            .unwrap();
+        let plain = |apriori| BornhuetterFerguson {
+            apriori,
+            ..Default::default()
+        };
+        let from = plain(crate::Apriori::InOrder(vec![0.5, 0.6, 0.7]))
+            .fit_diagonal_segments_from(&set, &source)
+            .unwrap();
+        assert_eq!(from.get(&Label::from("b")).unwrap().apriori, [0.7]);
+        // An origin of no diagonal is an error, in every path.
+        let extra = crate::Apriori::from_labels([
+            ("2021", 0.5),
+            ("2022", 0.5),
+            ("2023", 0.6),
+            ("2024", 0.7),
+        ])
+        .unwrap();
+        for result in [
+            bf(extra.clone()).fit_diagonal(&rows).map(|_| ()),
+            bf(extra.clone()).fit_diagonal_segments(&set).map(|_| ()),
+            plain(extra)
+                .fit_diagonal_segments_from(&set, &source)
+                .map(|_| ()),
+        ] {
+            assert!(matches!(result, Err(Error::Apriori(m)) if m.contains("2021")));
+        }
     }
 }
