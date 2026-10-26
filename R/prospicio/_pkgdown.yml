@@ -324,6 +324,9 @@ reference:
       - tail_log_linear
       - expected_loss_fit
       - cape_cod_fit
+      - latest_valuation
+      - with_exposure
+      - to_chain_ladder
       - odp_bootstrap_fit
       - mack_bootstrap_fit
       - bayes_odp_fit
@@ -350,86 +353,6 @@ reference:
       - fit_frames
 # Articles: the R twins of the guides (docs/guides/*.qmd) and of the
 # notebooks (examples/*.qmd), staged into vignettes/articles by
-# `cargo xtask r` (gitignored). Grouped as in docs/guides/reading-list.md;
-# the names give the reading order, and the starts_with() lines take in a
-# new guide of an existing family. A guide whose name starts otherwise needs
-# a line here; until it has one, `cargo xtask r` shows it under "More articles"
-# (pkgdown itself fails on an article missing from this index).
-articles:
-  - title: Start here
-    navbar: Start here
-    desc: >
-      A first course for a student or new analyst: the ideas from a loss distribution to allocation, two worked decisions and a ten-step checklist.
-    contents:
-      - articles/a-first-course
-  - title: Pricing and capital
-    navbar: Pricing and capital
-    desc: >
-      Guides that follow the pricing and capital texts. The code is shown with the output it prints, which CI checks.
-    contents:
-      - articles/prospicio-for-aggregate-users
-      - articles/pricing-insurance-risk-case-studies
-      - articles/pir-risk-measures
-      - articles/pir-portfolio-pricing
-      - articles/pir-price-allocation
-      - articles/pir-price-allocation-practice
-      - articles/capital-modeling-monograph-15
-      - articles/capital-modeling-monograph-15-theory
-      - articles/capital-modeling-monograph-15-applications
-      - articles/capital-modeling-monograph-15-practice
-      - articles/capital-modeling-monograph-15-iman-conover
-      - articles/ratemaking-werner-modlin
-      - articles/ratemaking-werner-modlin-indications
-      - starts_with("articles/prospicio-")
-      - starts_with("articles/pricing-")
-      - starts_with("articles/pir-")
-      - starts_with("articles/capital-")
-      - starts_with("articles/ratemaking-")
-  - title: Property catastrophe reinsurance
-    navbar: Property catastrophe reinsurance
-    desc: >
-      A track on one synthetic book, read in order: loss tables, risk metrics, contract terms, programs, the money around the loss, pricing and the portfolio.
-    contents:
-      - articles/cat-0-overview
-      - articles/cat-1-loss-tables
-      - articles/cat-2-risk-metrics
-      - articles/cat-3-contract-terms
-      - articles/cat-4-programs
-      - articles/cat-5-beyond-loss
-      - articles/cat-6-pricing
-      - articles/cat-7-portfolio
-      - starts_with("articles/cat-")
-  - title: Distributions and GLMs
-    navbar: Distributions and GLMs
-    desc: >
-      Guides that follow the texts on claim size and count distributions and on GLM rating.
-    contents:
-      - articles/distributions-for-actuaries-claim-size
-      - articles/distributions-for-actuaries-counts-aggregates
-      - articles/glm-ratemaking-goldburd
-      - articles/glm-ratemaking-goldburd-validation
-      - articles/glm-to-comprehensive-pricing-chalk
-      - articles/glm-to-comprehensive-pricing-chalk-2
-      - starts_with("articles/distributions-")
-      - starts_with("articles/glm-")
-  - title: Reserving
-    navbar: Reserving
-    desc: >
-      Guides that follow the reserving texts.
-    contents:
-      - articles/reserving-friedland
-      - articles/reserving-taylor-mcguire
-      - articles/reserving-meyers
-      - articles/reserving-compartmental
-      - articles/reserving-excess-layers
-      - starts_with("articles/reserving-")
-  - title: Worked examples
-    navbar: Worked examples
-    desc: >
-      The notebooks' R twins, run in full each time the site is built.
-    contents:
-      - articles/one_year_view
-      - articles/reading_path
-      - articles/reinsurance_pricing
-      - articles/ils_deal_analysis
-      - articles/reading_path
+# `cargo xtask r` (gitignored). The `articles:` index is not written here:
+# `cargo xtask r` generates it from docs/guides/toc.yml, which orders both
+# docs sites, and adds it to this file for the build only.

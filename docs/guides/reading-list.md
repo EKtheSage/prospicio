@@ -19,26 +19,24 @@ read before the others, from a loss distribution to a priced book, with two
 worked decisions and a checklist. Its sources are the texts below, chiefly
 *Pricing Insurance Risk*, Monograph 15 and Clark.
 
-## Pricing and capital
+Sections follow the docs sites' table of contents (`toc.yml` in this folder); the Python and R sites list the guides in this order.
 
 | Source | Guides | Knowledge | Open issues |
 |---|---|---|---|
 | Mildenhall's `aggregate` package, documentation 1.2.0 | [prospicio for aggregate users](prospicio-for-aggregate-users.md) | [coverage map](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/aggregate-docs-coverage.md), [aggregate reference](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/aggregate-mildenhall.md) | none open |
-| Mildenhall and Major, *Pricing Insurance Risk* (2022): case studies | [the case studies](pricing-insurance-risk-case-studies.md) | [aggregate reinsurance pricing](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/aggregate-reinsurance-pricing.md) | none open |
-| *Pricing Insurance Risk*: Parts I to III (risk measures, portfolio pricing, price allocation) | [risk measures](pir-risk-measures.md), [portfolio pricing](pir-portfolio-pricing.md), [price allocation](pir-price-allocation.md), [allocation practice](pir-price-allocation-practice.md) | [Parts I and II](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/pricing-insurance-risk-parts-1-2.md), [Part III](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/pir-price-allocation.md) | none open |
-| Major and Mildenhall, CAS Monograph 15, *Introduction to Capital Modeling and Portfolio Management* (2026) | [chapter 9, the `aggregate` code](capital-modeling-monograph-15.md); [chapters 3 and 4](capital-modeling-monograph-15-theory.md); [chapters 5 and 6](capital-modeling-monograph-15-applications.md); [chapters 1, 2 and 7](capital-modeling-monograph-15-practice.md); [chapter 8, Iman-Conover and capital by layer](capital-modeling-monograph-15-iman-conover.md) | [chapters 3 to 6](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/major-mildenhall-monograph-15-chapters-3-6.md) | none open |
-| Werner and Modlin, *Basic Ratemaking* (CAS, 5th ed. 2016) | [the steps](ratemaking-werner-modlin.md), [the indications and increased limits](ratemaking-werner-modlin-indications.md) | [parity and rounding](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/werner-modlin-ratemaking.md), [guides note](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/werner-modlin-guides.md) | none open |
-| Clark, *Basics of Reinsurance Pricing* (CAS) | [experience and exposure rating](experience-and-exposure-rating.md) | [Clark note](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/clark-reinsurance-pricing.md) | none open |
-| Riegel, *Matching tower information with piecewise Pareto*; the local Pareto distribution | [severity and frequency](severity-and-frequency.md), [experience and exposure rating](experience-and-exposure-rating.md) | [R Pareto](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/r-pareto.md) | none open |
-| No single text: a property-catastrophe reinsurance track on a synthetic book (Larkspur Re), its order of topics inspired by [reinsurance.dev](https://reinsurance.dev) (Oliver Baltzer), with original text and data | [overview](cat-0-overview.md), [page 1](cat-1-loss-tables.md), [page 2](cat-2-risk-metrics.md), [page 3](cat-3-contract-terms.md), [page 4](cat-4-programs.md), [page 5](cat-5-beyond-loss.md), [page 6](cat-6-pricing.md), [page 7](cat-7-portfolio.md) | [the synthetic cat book](https://github.com/EKtheSage/prospicio/blob/main/knowledge/datasets/synthetic-cat-book.md) | #581 to #596, #570 |
 
-## Distributions and GLMs
+## Basics
+
+| Source | Guides | Knowledge | Open issues |
+|---|---|---|---|
+| *Pricing Insurance Risk*: Part I (risk measures) | [risk measures](pir-risk-measures.md) | [Parts I and II](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/pricing-insurance-risk-parts-1-2.md) | none open |
+
+## Fitting distributions
 
 | Source | Guides | Knowledge | Open issues |
 |---|---|---|---|
 | Bahnemann, CAS Monograph 2, *Distributions for Actuaries* (2015) | [claim size, excess claims, limits and deductibles](distributions-for-actuaries-claim-size.md), [claim counts and aggregates](distributions-for-actuaries-counts-aggregates.md) | [Bahnemann note](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/bahnemann-distributions-for-actuaries.md), [R API map](https://github.com/EKtheSage/prospicio/blob/main/knowledge/findings/bahnemann-r-api-map.md) | none open |
-| Goldburd, Khare, Tevet and Guller, CAS Monograph 5, *GLMs for Insurance Rating* (2nd ed.) | [the rating plan](glm-ratemaking-goldburd.md), [validation](glm-ratemaking-goldburd-validation.md) | [Monograph 5 note](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/goldburd-glm-monograph-5.md) | none open |
-| Chalk, Deacon, Guillen and others, CAS Monograph 16, *From GLMs to Comprehensive Insurance Pricing* | [chapters 3 to 6](glm-to-comprehensive-pricing-chalk.md), [chapters 7 to 10](glm-to-comprehensive-pricing-chalk-2.md) | [Monograph 16 note](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/chalk-monograph-16.md), [R API map](https://github.com/EKtheSage/prospicio/blob/main/knowledge/findings/chalk-monograph-16-r-api-map.md) | none open |
+| Riegel, *Matching tower information with piecewise Pareto*; the local Pareto distribution | [severity and frequency](severity-and-frequency.md), [experience and exposure rating](experience-and-exposure-rating.md) | [R Pareto](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/r-pareto.md) | none open |
 
 ## Reserving
 
@@ -49,6 +47,29 @@ worked decisions and a checklist. Its sources are the texts below, chiefly
 | Meyers, CAS Monograph 8, *Stochastic Loss Reserving Using Bayesian MCMC Models* (2nd ed.) | [Meyers' models reproduced](reserving-meyers.md) | [Monograph 8 parity](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/meyers-monograph-8.md), [reproduced](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/meyers-monograph-8-reproduced.md) | none open |
 | Gesmann and Morris (2020), compartmental reserving; England, Verrall and Wuthrich (2012) | [compartmental models reproduced](reserving-compartmental.md), [reserving methods](reserving-methods.md) | [Gesmann and Morris](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/gesmann-morris-2020.md), [EVW 2012](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/evw-2012-bayesian-bf.md) | none open |
 | Bloom and Patrik (CAS E-Forum, 2013), Pinto and Gogol (PCAS 1987) and Bear's discussion (PCAS 1992), excess loss development | [excess-layer loss development](reserving-excess-layers.md) | [excess development literature](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/excess-development-literature.md), [simulation study](https://github.com/EKtheSage/prospicio/blob/main/knowledge/findings/excess-simulation-study.md), [Bayesian prior](https://github.com/EKtheSage/prospicio/blob/main/knowledge/findings/excess-bayes-prior.md) | none open |
+
+## Pricing
+
+| Source | Guides | Knowledge | Open issues |
+|---|---|---|---|
+| Werner and Modlin, *Basic Ratemaking* (CAS, 5th ed. 2016) | [the steps](ratemaking-werner-modlin.md), [the indications and increased limits](ratemaking-werner-modlin-indications.md) | [parity and rounding](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/werner-modlin-ratemaking.md), [guides note](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/werner-modlin-guides.md) | none open |
+| Clark, *Basics of Reinsurance Pricing* (CAS) | [experience and exposure rating](experience-and-exposure-rating.md) | [Clark note](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/clark-reinsurance-pricing.md) | none open |
+| Goldburd, Khare, Tevet and Guller, CAS Monograph 5, *GLMs for Insurance Rating* (2nd ed.) | [the rating plan](glm-ratemaking-goldburd.md), [validation](glm-ratemaking-goldburd-validation.md) | [Monograph 5 note](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/goldburd-glm-monograph-5.md) | none open |
+| Chalk, Deacon, Guillen and others, CAS Monograph 16, *From GLMs to Comprehensive Insurance Pricing* | [chapters 3 to 6](glm-to-comprehensive-pricing-chalk.md), [chapters 7 to 10](glm-to-comprehensive-pricing-chalk-2.md) | [Monograph 16 note](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/chalk-monograph-16.md), [R API map](https://github.com/EKtheSage/prospicio/blob/main/knowledge/findings/chalk-monograph-16-r-api-map.md) | none open |
+
+## Property catastrophe reinsurance
+
+| Source | Guides | Knowledge | Open issues |
+|---|---|---|---|
+| No single text: a property-catastrophe reinsurance track on a synthetic book (Larkspur Re), its order of topics inspired by [reinsurance.dev](https://reinsurance.dev) (Oliver Baltzer), with original text and data | [overview](cat-0-overview.md), [page 1](cat-1-loss-tables.md), [page 2](cat-2-risk-metrics.md), [page 3](cat-3-contract-terms.md), [page 4](cat-4-programs.md), [page 5](cat-5-beyond-loss.md), [page 6](cat-6-pricing.md), [page 7](cat-7-portfolio.md) | [the synthetic cat book](https://github.com/EKtheSage/prospicio/blob/main/knowledge/datasets/synthetic-cat-book.md) | #581 to #596, #570 |
+
+## Capital modelling and allocation
+
+| Source | Guides | Knowledge | Open issues |
+|---|---|---|---|
+| Mildenhall and Major, *Pricing Insurance Risk* (2022): case studies | [the case studies](pricing-insurance-risk-case-studies.md) | [aggregate reinsurance pricing](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/aggregate-reinsurance-pricing.md) | none open |
+| *Pricing Insurance Risk*: Parts II and III (portfolio pricing, price allocation) | [portfolio pricing](pir-portfolio-pricing.md), [price allocation](pir-price-allocation.md), [allocation practice](pir-price-allocation-practice.md) | [Parts I and II](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/pricing-insurance-risk-parts-1-2.md), [Part III](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/pir-price-allocation.md) | none open |
+| Major and Mildenhall, CAS Monograph 15, *Introduction to Capital Modeling and Portfolio Management* (2026) | [chapter 9, the `aggregate` code](capital-modeling-monograph-15.md); [chapters 3 and 4](capital-modeling-monograph-15-theory.md); [chapters 5 and 6](capital-modeling-monograph-15-applications.md); [chapters 1, 2 and 7](capital-modeling-monograph-15-practice.md); [chapter 8, Iman-Conover and capital by layer](capital-modeling-monograph-15-iman-conover.md) | [chapters 3 to 6](https://github.com/EKtheSage/prospicio/blob/main/knowledge/references/major-mildenhall-monograph-15-chapters-3-6.md) | none open |
 
 ## How the texts agree with the library
 

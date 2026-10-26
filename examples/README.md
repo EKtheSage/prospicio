@@ -6,7 +6,9 @@ outputs, so GitHub shows the code and not the results. The results (the
 printed numbers, tables and charts) are on the
 [docs site](https://ekthesage.github.io/prospicio/), which runs every
 notebook in full each time it is built and publishes it in the Python
-site's User Guide, under "Worked examples". CI also runs each notebook's
+site's User Guide, each in the section of its subject (listed in
+[`docs/guides/toc.yml`](../docs/guides/toc.yml), which orders the guides and
+notebooks of both sites). CI also runs each notebook's
 code with fewer simulations (`python/tests/test_examples.py`), so a change
 that breaks one fails its pull request. The full run and the site build
 happen only after a merge to `main` (`.github/workflows/pages.yml`): a pull
@@ -38,7 +40,7 @@ quarto render examples/reading_path.qmd
 quarto render examples/ils_deal_analysis.qmd
 ```
 
-They are also pages of the docs site, under "Articles", "Worked examples" on the R site: `cargo xtask r` stages them as pkgdown articles and runs them in full, and fails if `reinsurance_pricing.qmd` reports a comparison outside its tolerance. That build runs in CI's `docs` job when a pull request touches the bindings, `R/` or `xtask/`, and in the Pages run after a merge to `main`; a pull request that touches only `examples/` does not render them. Rendered `.html` is not committed.
+They are also pages of the docs site, under "Articles" on the R site, in the same sections: `cargo xtask r` stages them as pkgdown articles and runs them in full, and fails if `reinsurance_pricing.qmd` reports a comparison outside its tolerance. That build runs in CI's `docs` job when a pull request touches the bindings, `R/` or `xtask/`, and in the Pages run after a merge to `main`; a pull request that touches only `examples/` does not render them. Rendered `.html` is not committed.
 
 ## Data for the guides
 

@@ -551,8 +551,8 @@ impl SelectedPattern {
         if let PatternWeight::ByAge(_) = self.weight {
             return err(
                 None,
-                "weights by age do not carry over to another origin basis: weight the result \
-                 with with_weight",
+                "weights by age do not carry over to another origin basis: give one weight \
+                 for every factor",
             );
         }
         if self.values.is_empty() {

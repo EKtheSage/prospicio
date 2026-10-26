@@ -2359,6 +2359,56 @@ Triangle$clark_cape_cod <- function(column, exposure, curve, max_age) .Call(wrap
 #' @export
 `[[.Triangle` <- `$.Triangle`
 
+LatestDiagonals <- new.env(parent = emptyenv())
+
+LatestDiagonals$from_long <- function(key_names, keys, origin_year, origin_month, ages, by_valuation, valuation_year, valuation_month, latest, exposure, origin_grain, past_pattern_end) .Call(wrap__LatestDiagonals__from_long, key_names, keys, origin_year, origin_month, ages, by_valuation, valuation_year, valuation_month, latest, exposure, origin_grain, past_pattern_end)
+
+LatestDiagonals$from_triangle <- function(triangle, column, exposure, past_pattern_end) .Call(wrap__LatestDiagonals__from_triangle, triangle, column, exposure, past_pattern_end)
+
+LatestDiagonals$with_exposure <- function(exposure) .Call(wrap__LatestDiagonals__with_exposure, self, exposure)
+
+LatestDiagonals$with_past_pattern_end <- function(rule) .Call(wrap__LatestDiagonals__with_past_pattern_end, self, rule)
+
+LatestDiagonals$n_segments <- function() .Call(wrap__LatestDiagonals__n_segments, self)
+
+LatestDiagonals$keys <- function() .Call(wrap__LatestDiagonals__keys, self)
+
+LatestDiagonals$index <- function() .Call(wrap__LatestDiagonals__index, self)
+
+LatestDiagonals$row_keys <- function() .Call(wrap__LatestDiagonals__row_keys, self)
+
+LatestDiagonals$row_segments <- function() .Call(wrap__LatestDiagonals__row_segments, self)
+
+LatestDiagonals$origin_grain <- function() .Call(wrap__LatestDiagonals__origin_grain, self)
+
+LatestDiagonals$origins <- function() .Call(wrap__LatestDiagonals__origins, self)
+
+LatestDiagonals$ages <- function() .Call(wrap__LatestDiagonals__ages, self)
+
+LatestDiagonals$latest <- function() .Call(wrap__LatestDiagonals__latest, self)
+
+LatestDiagonals$exposure <- function() .Call(wrap__LatestDiagonals__exposure, self)
+
+LatestDiagonals$past_pattern_end <- function() .Call(wrap__LatestDiagonals__past_pattern_end, self)
+
+LatestDiagonals$segment <- function(keys, values) .Call(wrap__LatestDiagonals__segment, self, keys, values)
+
+LatestDiagonals$chain_ladder <- function(average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__chain_ladder, self, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+LatestDiagonals$expected_loss <- function(apriori, average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__expected_loss, self, apriori, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+LatestDiagonals$bornhuetter_ferguson <- function(apriori, average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__bornhuetter_ferguson, self, apriori, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+LatestDiagonals$benktander <- function(apriori, n_iters, average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__benktander, self, apriori, n_iters, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+LatestDiagonals$cape_cod <- function(trend, decay, average, sigma_interpolation, excl, tail, ldf, development, segment_map) .Call(wrap__LatestDiagonals__cape_cod, self, trend, decay, average, sigma_interpolation, excl, tail, ldf, development, segment_map)
+
+#' @export
+`$.LatestDiagonals` <- function (self, name) { func <- LatestDiagonals[[name]]; environment(func) <- environment(); func }
+
+#' @export
+`[[.LatestDiagonals` <- `$.LatestDiagonals`
+
 ReservingTail <- new.env(parent = emptyenv())
 
 ReservingTail$constant <- function(factor, decay, attachment_age) .Call(wrap__ReservingTail__constant, factor, decay, attachment_age)
@@ -2447,6 +2497,8 @@ ChainLadderFit$totals_table <- function() .Call(wrap__ChainLadderFit__totals_tab
 ChainLadderFit$development_table <- function() .Call(wrap__ChainLadderFit__development_table, self)
 
 ChainLadderFit$segment <- function(keys, values) .Call(wrap__ChainLadderFit__segment, self, keys, values)
+
+ChainLadderFit$to_chain_ladder <- function() .Call(wrap__ChainLadderFit__to_chain_ladder, self)
 
 #' @export
 `$.ChainLadderFit` <- function (self, name) { func <- ChainLadderFit[[name]]; environment(func) <- environment(); func }

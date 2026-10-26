@@ -31,13 +31,13 @@ when from experience, and which pricing method fits which scenario.
 |---|---|---|
 | Phase 0: Foundation | Workspace, core traits, design notes, RNG streams, Python and R skeletons, parity harness | Done |
 | v0.1: Reserving core | Distributions, `Triangle`, Chain Ladder, Mack, ODP bootstrap with a joint `PredictiveDistribution` | Done; parity on RAA, GenIns and ABC |
-| v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R) |
+| v0.2: Reserving breadth | BF, Cape Cod, Benktander, ELR, Clark, tails, one-year view (Merz–Wüthrich) | Done (#131–#136); selected development patterns (`reserving-v02.md` decision 12, in Rust, Python and R); latest diagonals, a development applied to another book, in Rust, Python and R (decisions 15 to 19) |
 | v0.3: Aggregate and reinsurance | Frequency-severity; FFT, Panjer, Monte Carlo; XOL, stop loss, reinstatements, towers, gross/ceded/net | Done, and more: surplus treaties, inuring stages, exact towers on the grid, risk profiles, exposure curves, reinstatements pro rata as to time, loss corridors, contract terms (ceding, sliding-scale and profit commissions, swing and retro rating) |
 | v0.4: Risk and capital | VaR, TVaR, CoTVaR, distortions, copulas, Iman–Conover, allocation, EVT tails | Done, with nested Archimedean and C- and D-vine copulas (#261, #262) |
 | ◆ Gate | Bootstrap reserve and tower results feed capital allocation end to end | Shown by `examples/one_year_view.ipynb`, whose code CI runs (`python/tests/test_examples.py`) |
 | v0.5: GLM | IRLS, Tweedie, NB, regularization, GLM reserving, R parity | Done (statsmodels and glmnet parity, freMTPL2) |
 | v0.6: GAM and pricing | P-splines, tensor smooths, GCV/REML; rate indication, ILF, MBBEFD, credibility | Done: P-splines, tensor product, cyclic and monotone smooths with GCV, UBRE or REML (#263), ILF, layer rating, MBBEFD and exposure curves, classical credibility (limited fluctuation, Bühlmann–Straub), rate indication with trend and on-level premium |
-| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust, Python and R, with each fit's sampler diagnostics), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R) and its twin with a normalised pattern and the prior on the ultimate (`BayesBfNormalised`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R, also fitted to paid and incurred) over segments (Rust, Python and R) and in the diagonal backtest with a held-out outstanding table (Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
+| v0.7: Bayesian | Specs and diagnostics, sampling with `nuts-rs` (nutpie's Rust core), Bayesian reserving and credibility | Part done: NUTS (nuts-rs), Bayesian GLM, stacking, ELPD, the Bayesian ODP chain ladder (`BayesOdp`, Rust, Python and R), Meyers' CRC, CSR and CAY (`Meyers`, Rust, Python and R), `BayesOdp` and `Meyers` over segments (Rust, Python and R) and in the diagonal backtest (Rust, Python and R, with each fit's sampler diagnostics), the Bayesian Bornhuetter–Ferguson (`BayesBf`, Rust, Python and R) and its twin with a normalised pattern and the prior on the ultimate (`BayesBfNormalised`, Rust, Python and R), Bayesian hierarchical credibility (Rust, Python and R), Gesmann and Morris' compartmental models 1 and 2 (`Compartmental`, Rust, Python and R, also fitted to paid and incurred, or to paid or incurred alone) over segments (Rust, Python and R) and in the diagonal backtest with a held-out outstanding table (Rust, Python and R), the one-year view of `BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers` and `Compartmental` by PSIS reweighting with moment matching by default (reweighting only for `Compartmental` model 2) and a refit budget, one generic engine with a conformance suite that every Bayesian model with a one-year view passes (`BayesOdp`, `BayesBf`, `BayesBfNormalised`, `Meyers`, `Compartmental`; Rust, Python and R). Still to do: the rest of Bayesian reserving (`docs/design/reserving-bayes.md`) |
 | v0.8: Claim-level reserving | Event histories, payment and closure hazards, severity, ultimate | **Parked** (2026-10-06): large, and the design needs the user's thinking first. No lane works on it until the user picks it up |
 | v0.9: Integrations | LightGBM and XGBoost adapters, PyTorch through ONNX, WASM build | Part done: the boosting adapters (Python and R), ONNX import (`prospicio_nn::onnx`, Rust). Still to do: WASM |
 | ◆ Gate | API review and deprecation pass | — |
@@ -301,8 +301,15 @@ what it is aiming for by v1.0.
     or from outstanding plus paid, at parity with the same model in Stan on
     company 337; with the one-year view, segments and the backtest; in
     Python (`fitted="paid_and_incurred"`) and R (`fitted =
-    "paid_and_incurred"`). `PaidOnly` and `IncurredOnly` (ordered rates
-    required) and unequal grain are the next PRs.
+    "paid_and_incurred"`). Unequal grain is the next PR.
+  - One response alone for `Compartmental` (`reserving-compartmental.md`
+    PR H, decision 12, the user's decision of 2026-10-22): paid alone or
+    incurred alone, with ordered rates required (from one response only
+    `RLR x RRF` is identified), one sigma, no outstanding cells under paid
+    alone and noiseless future paid under incurred alone, at parity with
+    the same models in Stan on company 337; with the one-year view,
+    segments and the backtest; in Python (`fitted="paid_only"`,
+    `"incurred_only"`) and R (`fitted = "paid_only"`, `"incurred_only"`).
   - The one-year view of `BayesOdp` by Pareto smoothed importance
     sampling (`reserving-bayes.md` PR 8, decision 16): each simulated
     year reweights the posterior draws, and a simulation whose Pareto
@@ -419,8 +426,8 @@ what it is aiming for by v1.0.
   - A latest diagonal with a selected pattern (`reserving-v02.md`,
     decision 15; branch `claude/diagonal-pr1`, issue #544, in Rust): a
     fully selected age with no link ratio is missing instead of an error,
-    so a bordereau's one value per origin is projected by the chain ladder
-    and the expected-loss family; Mack and both bootstraps reject it by
+    so one latest value per origin on its own is projected by the chain
+    ladder and the expected-loss family; Mack and both bootstraps reject it by
     name. Development fitted on one triangle and applied to another, and
     the bindings, are the issue's next PRs.
   - The latest diagonal as a type of its own (`reserving-v02.md`,
@@ -434,8 +441,8 @@ what it is aiming for by v1.0.
     `ChainLadderFit::to_chain_ladder` freezes a fit as a fully selected
     pattern and a constant tail, and `LatestDiagonal::from_triangle` takes
     another triangle's latest diagonal, so a development fitted on one
-    book projects another book or a bordereau, by the chain ladder and the
-    expected-loss family; parity with chainladder-python's
+    book projects another book or a latest diagonal on its own, by the
+    chain ladder and the expected-loss family; parity with chainladder-python's
     `fit(source).predict(target)`. `LatestDiagonal` over segments and the
     bindings are the issue's next PRs.
   - A pattern on another origin basis, and ages past its end
@@ -448,6 +455,18 @@ what it is aiming for by v1.0.
     the pattern's end with a factor of 1 or the tail spread from the end;
     no external reference implements these readings, so they are checked
     by hand and on a synthetic book.
+  - Latest diagonals over segments, and the bindings (`reserving-v02.md`,
+    decision 19; branch `claude/diagonal-bindings`, issue #544, in Rust,
+    Python and R): `LatestDiagonals` holds a latest diagonal per segment,
+    built from a long table or any triangle, and the chain ladder and the
+    expected-loss family fit each segment, with each segment's development
+    taken from a source fit by label, by a map, or from a single-segment
+    source for every segment; Python's `LatestDiagonal` with
+    `fit_diagonal(..., development=)`, R's `latest_valuation()` and
+    `as_latest_valuation()` taken by the five functions, `to_chain_ladder` and
+    `ldf_origin` in both, reproducing the Rust validation's numbers and
+    the chainladder-python parity rows. The Excel functions are the next
+    PR.
 - **Next (from that lane):** Bayesian reserving with `prospicio-bayes`
   (v0.7), by the PRs of `reserving-bayes.md`:
   in the user's order (2026-10-13, open decision 9): the compartmental

@@ -3025,7 +3025,7 @@ class Benktander:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -3041,7 +3041,7 @@ class Benktander:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 288.89]
     """
-    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> Benktander: ...
+    def __new__(cls, /, apriori: float = 1.0, n_iters: int = 1, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> Benktander: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -3086,6 +3086,25 @@ class Benktander:
         ValueError
             As ``ExpectedLoss.fit``.
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> ExpectedLossFit:
+        """
+        ``Benktander`` on a latest diagonal with its exposure, in every
+        segment, as ``ChainLadder.fit_diagonal`` projects one.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+            With an exposure per origin.
+        development : ChainLadderFit, optional
+            As ``ChainLadder.fit_diagonal``; this method keeps its own
+            ``apriori`` and ``n_iters``.
+        segment_map : dict, optional
+            As ``ChainLadder.fit_diagonal``.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -3096,6 +3115,12 @@ class Benktander:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -3725,7 +3750,7 @@ class BornhuetterFerguson:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -3741,7 +3766,7 @@ class BornhuetterFerguson:
     >>> [round(u, 2) for u in fit.ultimate]
     [150.0, 266.67]
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> BornhuetterFerguson: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> BornhuetterFerguson: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -3786,6 +3811,25 @@ class BornhuetterFerguson:
         ValueError
             As ``ExpectedLoss.fit``.
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> ExpectedLossFit:
+        """
+        ``BornhuetterFerguson`` on a latest diagonal with its exposure, in every
+        segment, as ``ChainLadder.fit_diagonal`` projects one.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+            With an exposure per origin.
+        development : ChainLadderFit, optional
+            As ``ChainLadder.fit_diagonal``; this method keeps its own
+            ``apriori``.
+        segment_map : dict, optional
+            As ``ChainLadder.fit_diagonal``.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -3796,6 +3840,12 @@ class BornhuetterFerguson:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -4333,7 +4383,7 @@ class CapeCod:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -4349,7 +4399,7 @@ class CapeCod:
     >>> [round(a, 4) for a in fit.apriori], [round(u, 2) for u in fit.ultimate]
     ([0.6774, 0.6774], [150.0, 290.32])
     """
-    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> CapeCod: ...
+    def __new__(cls, /, trend: float = 0.0, decay: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> CapeCod: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -4395,6 +4445,27 @@ class CapeCod:
             As ``ChainLadder.fit``, if ``trend`` or ``decay`` is out of
             range, or if an origin has no observed, finite, positive exposure.
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> CapeCodFit:
+        """
+        ``CapeCod`` on a latest diagonal with its exposure, in every
+        segment, as ``ChainLadder.fit_diagonal`` projects one: its apriori
+        is estimated on the diagonal and trended to one valuation, the
+        latest month any origin of any segment is valued at.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+            With an exposure per origin.
+        development : ChainLadderFit, optional
+            As ``ChainLadder.fit_diagonal``; this method keeps its own
+            ``trend`` and ``decay``.
+        segment_map : dict, optional
+            As ``ChainLadder.fit_diagonal``.
+        
+        Returns
+        -------
+        CapeCodFit
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -4405,6 +4476,12 @@ class CapeCod:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -5041,16 +5118,28 @@ class ChainLadder:
         replaces (or, with ``ldf_weight``, blends with) the factors
         estimated from the triangle at the ages it gives; the other ages
         stay estimated, so a benchmark for the immature ages only is a
-        partial pattern. Each age must be a development age of the
-        triangle. As ``ldf_kind`` says, the values are age-to-age factors
-        (any ages but the oldest: development past it is the tail's), or
-        factors to ultimate or percents developed at two or more ages, which
-        select the factors between the first and the last (``cdf[a] /
-        cdf[next age]``). A development age they skip is interpolated:
-        between two given ages ``b < c``, ``log(cdf)`` is linear in the
-        age, so the factor from ``a`` to the next age ``a'`` is ``(cdf[b] /
-        cdf[c]) ** ((a' - a) / (c - b))`` (percents developed are converted
-        to factors to ultimate first). Their level at their last age selects
+        partial pattern. As ``ldf_kind`` says, the values are age-to-age
+        factors, or factors to ultimate or percents developed at two or more
+        ages, which select the factors between the first and the last
+        (``cdf[a] / cdf[next age]``). When every age given is a development
+        age of the triangle, an age-to-age factor links its age to the
+        triangle's next age (any age but the oldest: development past it is
+        the tail's), and a development age the cumulative values skip is
+        interpolated: between two given ages ``b < c``, ``log(cdf)`` is
+        linear in the age, so the factor from ``a`` to the next age ``a'``
+        is ``(cdf[b] / cdf[c]) ** ((a' - a) / (c - b))`` (percents
+        developed are converted to factors to ultimate first). Otherwise the
+        pattern is read on its own ages: an age-to-age factor runs to the
+        next age given (the last one by the spacing before it), a link of
+        the triangle within the pattern's span is selected with ``log(cdf)``
+        linear between the pattern's ages, and what the pattern gives past
+        the triangle's oldest age folds into a constant tail there, at full
+        weight. So a monthly pattern applies to an annual triangle. Adding
+        one off-grid age to a sparse age-to-age pattern changes how its
+        other factors are read: each then runs to the pattern's next age,
+        not the triangle's. On RAA, ``{12: 1.5, 18: 1.1, 36: 1.2}`` selects
+        1.5484 from 12 to 24, where ``{12: 1.5, 36: 1.2}`` selects 1.5, and
+        nothing warns of the change. Their level at their last age selects
         nothing. With no ``tail`` and a last age that is the oldest, the
         level is the tail: a constant tail factor equal to the factor to
         ultimate there (1 over the percent developed), with no parameter
@@ -5070,6 +5159,22 @@ class ChainLadder:
         starts the factor's link) to weight to those listed, the others
         fully selected. Not given, every selected factor is used as is
         (``w = 1``).
+    ldf_origin : {"M", "Q", "S", "Y"}, optional
+        The origin grain ``ldf`` was measured on, when it is not the
+        triangle's: an accident-month pattern is ``"M"``. At fit time the
+        pattern is averaged over the sub-periods of each origin period, with
+        the exposure even through the period, into percents developed at
+        every month (Rust's ``SelectedPattern::averaged_over_origins``). The
+        ultimates are exact for origins up to the pattern's last age; past
+        it the development of the period's later sub-periods is deferred to
+        the period's last age, which overstates the ultimate slightly. An
+        estimated tail is then fitted on monthly factors, so a constant tail
+        taken from the monthly pattern's own tail is the safer choice. The
+        triangle's origin grain must be a whole multiple of it; a weight by
+        age (``ldf_weight`` a dict, applied before the averaging; the
+        averaged pattern cannot be weighted by age here) and a single
+        age-to-age factor are errors; the triangle's own grain leaves the
+        pattern as given. Requires ``ldf``.
     
     A selected factor carries no parameter error, and a blended one
     ``(1 - w)`` times the estimate's, in ``Mack`` and the bootstraps; the
@@ -5107,7 +5212,7 @@ class ChainLadder:
     >>> round(fit.pattern_tail, 4), round(fit.ultimate[2], 2)
     (1.0526, 240.0)
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> ChainLadder: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> ChainLadder: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -5147,6 +5252,63 @@ class ChainLadder:
             fewer than two factors above 1 to fit); with keys, the message
             names the segment.
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> ChainLadderFit:
+        """
+        Projects a latest diagonal, in every segment, with the fully
+        selected pattern ``ldf`` (``ldf_weight`` 1, no ``n_periods`` or
+        drops) or with the development of a fit (``development``):
+        ``docs/design/reserving-v02.md``, decisions 15 to 19. Each origin's
+        latest value is multiplied by the pattern's factor to ultimate at
+        its own age, read ``log(cdf)``-linearly between the pattern's ages,
+        and the tail. The fit's development axis is the grid the diagonal is
+        placed on, which spans the pattern's ages as well as the
+        diagonal's; its origins run oldest first over every period from the
+        earliest to the latest. An origin older than the pattern's end is
+        developed as the diagonal's ``past_pattern_end`` says.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+        development : ChainLadderFit, optional
+            A fit whose factors and tail develop the diagonal, each segment by
+            the source segment of the same label (a single-segment source
+            develops every segment): chainladder-python's
+            ``fit(source).predict(target)``. For another method's fit, pass
+            its ``.chain_ladder``. The method itself then takes no ``ldf``,
+            no ``tail`` other than 1 and no ``n_periods``, ``drop_high`` or
+            ``drop_low``. The source's factors are read at each origin's own
+            age, as fitted, with no ``ldf_origin``: a source fitted on
+            another origin grain (accident quarters for a diagonal of
+            accident years, say) goes through ``to_chain_ladder()`` instead,
+            with ``ldf_origin`` added to the arguments it gives, one segment
+            at a time.
+        segment_map : dict, optional
+            With ``development``, the source segment of each segment of the
+            diagonal, as ``{target: source}`` with labels written as
+            ``index`` writes them (``"Total"``, a str, or a tuple); every
+            segment of the diagonal listed once.
+        
+        Returns
+        -------
+        ChainLadderFit
+        
+        Raises
+        ------
+        ValueError
+            If there is no pattern, it is not fully selected, an origin is
+            younger than its first age, or older than its end with
+            ``past_pattern_end="reject"``; if the map leaves a segment
+            without a source; with keys, the message names the segment.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import ChainLadder, LatestDiagonal, Triangle
+        >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+        >>> own = ChainLadder().fit(tri, "paid")
+        >>> d = LatestDiagonal.from_triangle(tri, "paid")
+        >>> ChainLadder().fit_diagonal(d, development=own).ultimate
+        [150.0, 300.0]
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -5157,6 +5319,12 @@ class ChainLadder:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -5392,6 +5560,30 @@ class ChainLadderFit:
     def tail_std_err(self, /) -> float:
         """
         Standard error of the tail factor, extrapolated log-linearly.
+        """
+    def to_chain_ladder(self, /) -> ChainLadder:
+        """
+        The fit frozen as a ``ChainLadder``: its factors in use (``ldf``) as
+        fully selected age-to-age factors at its ages, and its tail factor
+        as a constant tail (``docs/design/reserving-v02.md``, decision 17).
+        Applied to the fit's own latest diagonal it projects as the fit did,
+        the factors to the bit; to another book's
+        (``LatestDiagonal.from_triangle``) it is chainladder-python's
+        ``fit(source).predict(book)``. Its ``ldf``, ``ldf_kind`` and ``tail``
+        unpack into any method's arguments, as
+        ``BornhuetterFerguson(apriori=0.6, ldf=cl.ldf, ldf_kind=cl.ldf_kind,
+        tail=cl.tail)``. It does not carry sigma, the standard errors or the
+        tail's form. Needs a single-segment fit: for several segments pass
+        the fit as ``development`` to ``fit_diagonal``, or use
+        ``segment(...)``.
+        
+        Examples
+        --------
+        >>> from prospicio.reserving import ChainLadder, LatestDiagonal, Triangle
+        >>> tri = Triangle.from_long([2020, 2020, 2021], [12, 24, 12], {"paid": [100.0, 150.0, 200.0]})
+        >>> cl = ChainLadder(tail=1.1).fit(tri, "paid").to_chain_ladder()
+        >>> cl.ldf, cl.ldf_kind, cl.tail
+        ({12: 1.5}, 'ldf', 1.1)
         """
     def to_frame(self, /) -> Any:
         """
@@ -6209,8 +6401,26 @@ class Compartmental:
     under ``paid_response="incremental"``, and ``log_sigma_os`` is the incurred sigma.
     Give the incurred column as ``incurred=``, or an outstanding column as
     ``outstanding=`` and the incurred is outstanding plus paid where both are observed.
-    The fit's ``outstanding`` then holds the future incurred cells. ``"paid_only"`` and
-    ``"incurred_only"`` are not yet built.
+    The fit's ``outstanding`` then holds the future incurred cells.
+    
+    ``fitted="paid_only"`` and ``fitted="incurred_only"`` fit one response alone and need
+    ``rate_order="ordered"`` (``ValueError`` under ``"free"``): from one response the means
+    do not change under the rate swap below, and from paid alone only ``RLR x RRF`` is
+    identified, so the priors carry the split of ``RLR`` and ``RRF``. The model then has one
+    sigma, ``sigma_pd`` or ``sigma_os``. Under ``"paid_only"`` the second column is not read
+    (``outstanding=`` and ``incurred=`` may both be left out) and the fit has no
+    ``outstanding`` (``None``). Under ``"incurred_only"`` the incurred is given as for
+    ``"paid_and_incurred"`` and the paid column supplies each origin's latest paid only: the
+    reserve is the expected paid at the last age less the latest paid, and the future paid
+    cells are expected values, without noise, since no paid cell is fitted.
+    
+    ``CompartmentalPriors.diffuse()`` is the starting point for ``"paid_only"``. Under
+    ``"incurred_only"`` no paid cell is fitted, so the incurred does not identify the payment
+    rate ``k_p`` and its prior sets the paid run-off and the reserve at every width (on company
+    337 the paper's narrow prior put the reserve 26% above the fit to paid and outstanding):
+    the fit refuses a ``k_p`` prior with a log-scale sd above 0.5, so the diffuse preset is an
+    error there, and you give a ``k_p`` prior you believe, for example from the book's paid
+    history or from a paid-and-incurred fit of a similar book.
     
     An origin with a premium and no observed cell (the papers' training
     triangle has one) draws its effects from the population in each
@@ -6250,14 +6460,15 @@ class Compartmental:
     paid_response : str
         ``"cumulative"`` (model 1) or ``"incremental"`` (model 2).
     fitted : str
-        ``"paid_and_outstanding"`` or ``"paid_and_incurred"`` (incurred replaces
-        outstanding as the second response, as above); ``"paid_only"`` and
-        ``"incurred_only"`` are not yet built.
+        ``"paid_and_outstanding"``, ``"paid_and_incurred"`` (incurred replaces
+        outstanding as the second response, as above), ``"paid_only"`` or
+        ``"incurred_only"`` (one response alone, with ``rate_order="ordered"``).
     rate_order : str
         ``"free"`` or ``"ordered"``, as above.
     start : str
         Where the pilot run starts: ``"data"``, a least-squares fit of the
-        population curve (the prior centre if that fit fails), or
+        population curve (the prior centre if that fit fails, and under one
+        response if its log posterior is below the prior centre's), or
         ``"prior_centre"``.
     chains, tune, draws : int
         NUTS chains, warm-up draws per chain and kept draws per chain.
@@ -6335,7 +6546,8 @@ class Compartmental:
         Raises
         ------
         ValueError
-            If not exactly one of ``outstanding`` and ``incurred`` is given.
+            If not exactly one of ``outstanding`` and ``incurred`` is given
+            (at most one under ``fitted="paid_only"``).
         """
     @property
     def chains(self, /) -> int:
@@ -6362,7 +6574,8 @@ class Compartmental:
         the reserves. Outstanding comes from ``outstanding``, a column of
         outstanding amounts, or from ``incurred``, a column of incurred
         amounts less paid cell by cell (the papers' outstanding on company
-        337 is incurred with bulk and IBNR less paid); give exactly one.
+        337 is incurred with bulk and IBNR less paid); give exactly one, or
+        neither under ``fitted="paid_only"``, which does not read it.
         Raises one ``UserWarning`` listing the failed diagnostics and any
         rate swap.
         
@@ -6386,8 +6599,10 @@ class Compartmental:
         Raises
         ------
         ValueError
-            If a setting of the model (``"paid_only"`` or ``"incurred_only"``) is not yet built; if not exactly one
-            of ``outstanding`` and ``incurred`` is given; if a column is
+            If ``fitted`` is ``"paid_only"`` or ``"incurred_only"`` and
+            ``rate_order`` is not ``"ordered"``; if not exactly one of
+            ``outstanding`` and ``incurred`` is given (at most one under
+            ``"paid_only"``); if a column is
             missing, the triangle has several segments, a premium is missing
             or not positive, or the origin and development grains differ; if
             a prior or sampler setting is invalid; or if there are no more
@@ -6942,10 +7157,11 @@ class CompartmentalFit:
         Origin period of each component, those of the premium column.
         """
     @property
-    def outstanding(self, /) -> PredictiveDistribution:
+    def outstanding(self, /) -> PredictiveDistribution |None:
         """
-        Posterior predictive outstanding of each future cell of the square,
-        laid out as ``paid``.
+        Posterior predictive outstanding (or incurred, the second response)
+        of each future cell of the square, laid out as ``paid``; ``None``
+        under ``fitted="paid_only"``.
         """
     def outstanding_frame(self, /) -> Any:
         """
@@ -6954,6 +7170,11 @@ class CompartmentalFit:
         Returns
         -------
         pandas.DataFrame
+        
+        Raises
+        ------
+        ValueError
+            Under ``fitted="paid_only"``, which has no outstanding cells.
         """
     @property
     def paid(self, /) -> PredictiveDistribution:
@@ -7130,10 +7351,11 @@ class CompartmentalFits:
         segment's premium column.
         """
     @property
-    def outstanding(self, /) -> PredictiveDistribution:
+    def outstanding(self, /) -> PredictiveDistribution |None:
         """
-        Posterior predictive outstanding of each future cell of every
-        segment, laid out as ``paid``.
+        Posterior predictive outstanding (or incurred) of each future cell of
+        every segment, laid out as ``paid``; ``None`` under
+        ``fitted="paid_only"``.
         """
     def outstanding_frame(self, /) -> Any:
         """
@@ -7142,6 +7364,11 @@ class CompartmentalFits:
         Returns
         -------
         pandas.DataFrame
+        
+        Raises
+        ------
+        ValueError
+            Under ``fitted="paid_only"``, which has no outstanding cells.
         """
     @property
     def paid(self, /) -> PredictiveDistribution:
@@ -7551,6 +7778,11 @@ class CompartmentalPriors:
     them silently. ``CompartmentalPriors.gesmann_morris()`` is the paper's
     model 1 and ``CompartmentalPriors.gesmann_morris_2()`` its model 2;
     check any set with ``Compartmental.prior_predictive`` before fitting.
+    ``CompartmentalPriors.diffuse()`` is the starting point for a fit to paid alone
+    (``fitted="paid_only"``): it leaves the rates to the data. A fit to incurred alone
+    (``fitted="incurred_only"``) refuses a ``k_p`` prior with a log-scale sd above 0.5,
+    so give it a prior you believe, such as the paper's. Use a narrower prior than the
+    preset also when you hold information about the rates that is not in the data.
     
     Each positive parameter ``θ`` (``k_er``, ``k_p``, ``rlr``, ``rrf``) is
     ``median * exp(sd * o)`` with ``o ~ N(0, 1)``: a log-normal prior with
@@ -7618,6 +7850,28 @@ class CompartmentalPriors:
         Priors on the sds of the development-year effects on ``k_er``,
         ``k_p``, ``rlr`` and ``rrf``, each ``None`` when there is no such
         effect.
+        """
+    @staticmethod
+    def diffuse() -> CompartmentalPriors:
+        """
+        A diffuse set for model 1: the paper's medians (``k_er`` 3, ``k_p`` 1,
+        ``rlr`` 0.7, ``rrf`` 0.8) with a log-scale sd of 1 on each of the four,
+        5 to 10 times the paper's, and its effect sds and ``log sigma`` priors.
+        Use it as the starting point for a fit to paid alone
+        (``fitted="paid_only"``), where the paid cells pin the rates. It is
+        refused for a fit to incurred alone (``fitted="incurred_only"``): no
+        paid cell is fitted there, so the payment rate ``k_p`` and with it the
+        paid run-off and the reserve follow the prior on ``k_p`` at every width
+        (on company 337 -51,000 with an sd of about 150,000 at a log-scale sd of
+        1, 203,000 at 0.3), and a ``k_p`` prior with a log-scale sd above 0.5 is
+        an error. For incurred alone replace ``k_p`` with a prior you believe
+        (``replace``), for example one from the book's paid history or from a
+        paid-and-incurred fit of a similar book; the paper's narrow prior put
+        the reserve on company 337 26% above the fit to paid and outstanding.
+        
+        Returns
+        -------
+        CompartmentalPriors
         """
     @staticmethod
     def gesmann_morris() -> CompartmentalPriors:
@@ -10926,7 +11180,7 @@ class ExpectedLoss:
         the highest and lowest link ratios at each age.
     tail : float, TailConstant, TailCurve, TailBondy or TailLogLinear, optional
         As ``ChainLadder``; no tail by default.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``: the
         development pattern's factors at the ages it gives, so ``cdf`` and
         the share developed ``1 / cdf`` follow it.
@@ -10942,7 +11196,7 @@ class ExpectedLoss:
     >>> fit.ultimate, fit.reserve
     ([125.0, 200.0], [-25.0, 0.0])
     """
-    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> ExpectedLoss: ...
+    def __new__(cls, /, apriori: float = 1.0, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> ExpectedLoss: ...
     def __repr__(self, /) -> str: ...
     @property
     def apriori(self, /) -> float:
@@ -10989,6 +11243,25 @@ class ExpectedLoss:
             origin has no observed, finite, positive exposure (the message
             names it and, with keys, its segment).
         """
+    def fit_diagonal(self, /, diagonal: LatestDiagonal, development: Any |None = None, segment_map: Any |None = None) -> ExpectedLossFit:
+        """
+        ``ExpectedLoss`` on a latest diagonal with its exposure, in every
+        segment, as ``ChainLadder.fit_diagonal`` projects one.
+        
+        Parameters
+        ----------
+        diagonal : LatestDiagonal
+            With an exposure per origin.
+        development : ChainLadderFit, optional
+            As ``ChainLadder.fit_diagonal``; this method keeps its own
+            ``apriori``.
+        segment_map : dict, optional
+            As ``ChainLadder.fit_diagonal``.
+        
+        Returns
+        -------
+        ExpectedLossFit
+        """
     @property
     def ldf(self, /) -> dict |None:
         """
@@ -10999,6 +11272,12 @@ class ExpectedLoss:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -14155,6 +14434,242 @@ class LargeLossExperience:
         """
 
 @final
+class LatestDiagonal:
+    """
+    A latest diagonal on its own, one value per origin at its own age, as a
+    bordereau holds it, in one or several segments; projected with a
+    selected pattern from elsewhere by the ``fit_diagonal`` of
+    ``ChainLadder``, ``ExpectedLoss``, ``BornhuetterFerguson``,
+    ``Benktander`` and ``CapeCod`` (``docs/design/reserving-v02.md``,
+    decisions 15 to 19).
+    
+    Each origin is given once per segment, at a positive age, with its
+    latest cumulative value (0 for an origin with nothing reported yet).
+    The ages may be off the pattern's grid (18 months against an annual
+    pattern): the fit reads them on the pattern's own ages, ``log(cdf)``
+    linear between them. An origin older than the pattern's end is an error
+    unless ``past_pattern_end`` says how to develop it.
+    
+    Segments are named by key columns, as a ``Triangle``'s are, and sorted
+    by label; within a segment the origins keep the order given. Rows run
+    segment by segment in that order, as ``to_frame()`` lists them.
+    
+    Parameters
+    ----------
+    origin : array-like
+        Any date in each row's origin period, or integer years.
+    age : array-like
+        Each row's age in months: from the start of the origin period to
+        the end of the valuation month (an accident year 2024 at December
+        2024 is 12 months).
+    latest : array-like
+        Each row's latest cumulative value.
+    exposure : array-like, optional
+        Each row's exposure (premium), for the expected-loss methods.
+    keys : dict of str to array-like, optional
+        Key columns by name, as ``Triangle.from_long`` takes them.
+    origin_grain : {"Y", "S", "Q", "M"}, default "Y"
+    past_pattern_end : {"reject", "no_development", "tail"}, default "reject"
+        How an origin older than the pattern's end (its last age; for
+        age-to-age factors, the end of their span) is developed:
+        ``"reject"`` is an error that names it; ``"no_development"`` a
+        factor of 1 there, with no ``tail`` (a cumulative pattern's level
+        at its end is then rescaled to 100% for every origin, so with a
+        level other than 100% the young origins move too); ``"tail"`` the
+        method's ``tail`` continued from the pattern's end at one step per
+        origin period, a constant (``attachment_age`` unset) or one
+        estimated on the pattern's own factors.
+    
+    Examples
+    --------
+    >>> import datetime
+    >>> from prospicio.reserving import BornhuetterFerguson, ChainLadder, LatestDiagonal
+    >>> d = LatestDiagonal.at_valuation(
+    ...     [2022, 2023, 2024], datetime.date(2024, 12, 31), [900.0, 600.0, 150.0],
+    ...     exposure=[1000.0, 1000.0, 1000.0],
+    ... )
+    >>> d.ages
+    [36, 24, 12]
+    >>> cl = ChainLadder(ldf={12: 2.0, 24: 1.25, 36: 1.0}, ldf_kind="cdf")
+    >>> cl.fit_diagonal(d).ultimate
+    [900.0, 750.0, 300.0]
+    >>> bf = BornhuetterFerguson(apriori=0.7, ldf={12: 2.0, 24: 1.25, 36: 1.0}, ldf_kind="cdf")
+    >>> round(bf.fit_diagonal(d).ultimate[2], 9)
+    500.0
+    """
+    def __new__(cls, /, origin: Any, age: Any, latest: Any, exposure: Any |None = None, keys: Any |None = None, origin_grain: str = "Y", past_pattern_end: str = "reject") -> LatestDiagonal: ...
+    def __repr__(self, /) -> str: ...
+    @property
+    def ages(self, /) -> list[int]:
+        """
+        Age of each row in months.
+        """
+    @staticmethod
+    def at_valuation(origin: Any, valuation: Any, latest: Any, exposure: Any |None = None, keys: Any |None = None, origin_grain: str = "Y", past_pattern_end: str = "reject") -> LatestDiagonal:
+        """
+        A diagonal valued at one month: each origin's age is the months from
+        its start to the end of the valuation month (an accident year 2024
+        at June 2024 is six months).
+        
+        Parameters
+        ----------
+        origin : array-like
+            Any date in each row's origin period, or integer years.
+        valuation : date
+            Any date in the valuation month (``datetime.date``, a pandas
+            ``Timestamp`` or a numpy ``datetime64``); an integer is an error,
+            since a year would read as January.
+        latest, exposure, keys, origin_grain, past_pattern_end
+            As for the constructor.
+        
+        Returns
+        -------
+        LatestDiagonal
+        
+        Raises
+        ------
+        TypeError
+            If ``valuation`` is not a date.
+        ValueError
+            If the valuation is before an origin starts (naming the row), an
+            origin is given twice in a segment, or a column has another
+            length.
+        """
+    @property
+    def exposure(self, /) -> list[float] |None:
+        """
+        Exposure of each row; ``None`` when not given.
+        """
+    @staticmethod
+    def from_frame(data: Any, origin: str, latest: str, age: str |None = None, valuation: Any |None = None, exposure: str |None = None, keys: Any |None = None, origin_grain: str = "Y", past_pattern_end: str = "reject") -> LatestDiagonal:
+        """
+        A diagonal from a data frame, one row per segment and origin.
+        
+        Columns are looked up with ``data[name]``, so a pandas or Polars
+        DataFrame works, as does a dict of columns.
+        
+        Parameters
+        ----------
+        data : DataFrame or dict
+        origin : str
+            Name of the origin column (dates or integer years).
+        latest : str
+            Name of the latest-value column.
+        age : str, optional
+            Name of the age column, in months.
+        valuation : date or str, optional
+            The valuation month of every row (a date), or the name of a
+            column of each row's valuation date. Give exactly one of ``age``
+            and ``valuation``.
+        exposure : str, optional
+            Name of the exposure column.
+        keys : str or list of str, optional
+            Names of the key columns.
+        origin_grain, past_pattern_end
+            As for the constructor.
+        
+        Returns
+        -------
+        LatestDiagonal
+        
+        Examples
+        --------
+        >>> import datetime
+        >>> from prospicio.reserving import LatestDiagonal
+        >>> df = {
+        ...     "lob": ["b", "a", "a"],
+        ...     "year": [2024, 2023, 2024],
+        ...     "paid": [50.0, 400.0, 150.0],
+        ... }
+        >>> d = LatestDiagonal.from_frame(
+        ...     df, "year", "paid", valuation=datetime.date(2024, 12, 31), keys="lob"
+        ... )
+        >>> d.index, d.ages
+        (['a', 'b'], [24, 12, 12])
+        """
+    @staticmethod
+    def from_triangle(triangle: Triangle, column: str, exposure: str |None = None, past_pattern_end: str = "reject") -> LatestDiagonal:
+        """
+        The latest diagonal of a triangle column, in every segment: each
+        origin at the age of its last observed cell, with its cumulative
+        value there, as chainladder-python's ``latest_diagonal``. With
+        ``exposure``, each origin also takes that column's last observed
+        value. This is how a fit is applied to another book:
+        ``source.to_chain_ladder().fit_diagonal(LatestDiagonal.from_triangle(book, "paid"))``
+        is chainladder-python's ``fit(source).predict(book)``.
+        
+        Parameters
+        ----------
+        triangle : Triangle
+            With any number of segments.
+        column : str
+        exposure : str, optional
+        past_pattern_end : {"reject", "no_development", "tail"}, default "reject"
+        
+        Returns
+        -------
+        LatestDiagonal
+        
+        Raises
+        ------
+        ValueError
+            If a column is unknown, an origin has no observed cell, or an
+            exposure is not finite and positive; with keys, the message names
+            the segment.
+        """
+    @property
+    def index(self, /) -> list[Any]:
+        """
+        Label of each segment, as ``Triangle.index``.
+        """
+    @property
+    def keys(self, /) -> list[str]:
+        """
+        Names of the key columns; empty without keys.
+        """
+    @property
+    def latest(self, /) -> list[float]:
+        """
+        Latest value of each row.
+        """
+    @property
+    def origin_grain(self, /) -> str:
+        """
+        Origin grain: ``"Y"``, ``"S"``, ``"Q"`` or ``"M"``.
+        """
+    @property
+    def origins(self, /) -> list[str]:
+        """
+        Origin period of each row.
+        """
+    @property
+    def past_pattern_end(self, /) -> str:
+        """
+        The rule for origins older than the pattern's end.
+        """
+    def segment(self, /, **keys) -> LatestDiagonal:
+        """
+        The one segment whose keys have the given values, as
+        ``ChainLadderFit.segment``.
+        """
+    def to_frame(self, /) -> Any:
+        """
+        The rows as a pandas DataFrame: the key columns, then ``origin``,
+        ``age``, ``latest`` and, when given, ``exposure``.
+        """
+    def with_exposure(self, /, exposure: Any) -> LatestDiagonal:
+        """
+        The diagonal with an exposure per row, in the row order of
+        ``to_frame()``: the segments in order and, within one, its origins
+        in the order given.
+        """
+    def with_past_pattern_end(self, /, rule: str) -> LatestDiagonal:
+        """
+        The diagonal with another rule for origins older than the pattern's
+        end: ``"reject"``, ``"no_development"`` or ``"tail"``.
+        """
+
+@final
 class Layer:
     """
     A per-occurrence excess-of-loss layer: ``limit`` xs ``attachment`` on each
@@ -16529,7 +17044,7 @@ class Mack:
     tail_std_err : float, optional
         The tail factor's standard error (R's ``tail.se``); extrapolated if
         not given. Unused when the tail factor is 1.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``. A selected
         factor is taken as known: it has no parameter error, and a blended
         one ``(1 - w)`` times the estimate's standard error, so the
@@ -16555,7 +17070,7 @@ class Mack:
     >>> fit.total_standard_error > 0 and fit.standard_error[0] == 0
     True
     """
-    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> Mack: ...
+    def __new__(cls, /, average: str = "volume", sigma_interpolation: str = "log-linear", tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> Mack: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -16604,6 +17119,12 @@ class Mack:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -16734,7 +17255,7 @@ class MackBootstrap:
         order, symmetric with a unit diagonal. It is converted to the normal
         scores' correlation ``2 sin(pi rho / 6)``, which must be positive
         definite.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``. Mack's sigmas
         and residuals come from the triangle's own estimate; each simulation
         then uses ``w * selected + (1 - w) * pseudo`` at the selected ages,
@@ -16776,7 +17297,7 @@ class MackBootstrap:
     >>> fit.cdr.variance() ** 0.5 < Mack().fit(tri, "values").total_standard_error
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> MackBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", average: str = "volume", sigma_interpolation: str = "log-linear", centre_residuals: bool = True, tail: Any |None = None, tail_sigma: float |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> MackBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def average(self, /) -> str:
@@ -16869,6 +17390,12 @@ class MackBootstrap:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:
@@ -19150,7 +19677,7 @@ class OdpBootstrap:
         order, symmetric with a unit diagonal. It is converted to the normal
         scores' correlation ``2 sin(pi rho / 6)``, which must be positive
         definite.
-    ldf, ldf_kind, ldf_weight : optional
+    ldf, ldf_kind, ldf_weight, ldf_origin : optional
         A selected development pattern, as in ``ChainLadder``. The residuals
         and the scale come from the triangle's own volume-weighted factors;
         each simulation then uses ``w * selected + (1 - w) * pseudo`` at
@@ -19213,7 +19740,7 @@ class OdpBootstrap:
     >>> fit.reserves.mean() > 0
     True
     """
-    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0) -> OdpBootstrap: ...
+    def __new__(cls, /, n_sims: int = 10000, seed: int = 0, process: str = "gamma", tail: Any |None = None, tail_std_err: float |None = None, dependence: str = "independent", spearman: Sequence[Sequence[float]] |None = None, ldf: Any |None = None, ldf_kind: str |None = None, ldf_weight: Any |None = None, n_periods: int |None = None, drop_high: int = 0, drop_low: int = 0, ldf_origin: str |None = None) -> OdpBootstrap: ...
     def __repr__(self, /) -> str: ...
     @property
     def dependence(self, /) -> str:
@@ -19270,6 +19797,12 @@ class OdpBootstrap:
         """
         How ``ldf`` is expressed: ``"ldf"``, ``"cdf"`` or
         ``"percent_developed"``; ``None`` without a pattern.
+        """
+    @property
+    def ldf_origin(self, /) -> str |None:
+        """
+        The origin grain ``ldf`` was measured on, averaged over the fitted
+        origins' periods at fit time; ``None`` reads it at the origin's age.
         """
     @property
     def ldf_weight(self, /) -> Any |None:

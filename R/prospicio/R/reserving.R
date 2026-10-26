@@ -406,6 +406,11 @@ S7::method(aggregate, triangle) <- function(x, keep = character(), ...) {
 }
 
 check_triangle <- function(x) {
+  if (is_latest_valuation(x)) {
+    stop("a latest valuation has no link ratios: this needs a triangle; chain_ladder(), ",
+         "expected_loss(), bornhuetter_ferguson(), benktander() and cape_cod() project a ",
+         "latest valuation", call. = FALSE)
+  }
   if (!S7::S7_inherits(x, triangle)) stop("x must be a triangle", call. = FALSE)
 }
 
@@ -633,16 +638,18 @@ development_args <- function(average, sigma_interpolation, n_periods = NULL, dro
 
 # A selected pattern as the binding takes it: NULL without `ldf`, or a list
 # of `kind`, `ages`, `values`, `weight_ages` (NULL for one weight) and
-# `weights`. `ldf` is a named numeric vector (names are ages in months) or
+# `weights`, and `origin` (`ldf_origin`: NULL, or the grain of the origin
+# periods the pattern was measured on). `ldf` is a named numeric vector (names are ages in months) or
 # a data.frame with columns `age` and `value`; `ldf_weight` a number or a
 # named numeric vector. The kind is required: age-to-age factors and factors
 # to ultimate cannot be told apart.
-ldf_pattern <- function(ldf, ldf_kind, ldf_weight) {
+ldf_pattern <- function(ldf, ldf_kind, ldf_weight, ldf_origin = NULL) {
   default_weight <- is.numeric(ldf_weight) && length(ldf_weight) == 1 &&
     is.null(names(ldf_weight)) && isTRUE(ldf_weight == 1)
   if (is.null(ldf)) {
     if (!is.null(ldf_kind)) stop("ldf_kind is given without ldf", call. = FALSE)
     if (!default_weight) stop("ldf_weight is given without ldf", call. = FALSE)
+    if (!is.null(ldf_origin)) stop("ldf_origin is given without ldf", call. = FALSE)
     return(NULL)
   }
   kinds <- c("ldf", "cdf", "percent_developed")
@@ -663,7 +670,12 @@ ldf_pattern <- function(ldf, ldf_kind, ldf_weight) {
     w <- age_values(ldf_weight, "ldf_weight")
     weight <- list(weight_ages = w$ages, weights = w$values)
   }
-  c(list(kind = ldf_kind, ages = values$ages, values = values$values), weight)
+  if (!is.null(ldf_origin) && (!is.character(ldf_origin) || length(ldf_origin) != 1 ||
+                               is.na(ldf_origin))) {
+    stop('ldf_origin must be NULL or one of "M", "Q", "S" and "Y"', call. = FALSE)
+  }
+  c(list(kind = ldf_kind, ages = values$ages, values = values$values), weight,
+    list(origin = ldf_origin))
 }
 
 # Ages and values of a named numeric vector (names are ages in months) or a
@@ -1025,8 +1037,10 @@ S7::method(print, tail_log_linear) <- tail_print
 #' `as.data.frame()` gives one row per segment and origin, [totals_frame()]
 #' one per segment.
 #'
-#' @param triangle A [triangle], with any number of segments.
-#' @param column Name of the column to fit; by default the only one.
+#' @param triangle A [triangle], with any number of segments, or, for
+#'   `chain_ladder()`, a [latest_valuation] (a latest diagonal on its own).
+#' @param column Name of the column to fit; by default the only one. Not
+#'   given for a latest valuation.
 #' @param average `"volume"`, `"simple"`, `"regression"` or `"geometric"`.
 #'   `"geometric"` is the geometric mean of the link ratios: it gives the
 #'   factors only, with no sigma or standard error, so [mack()] and the
@@ -1040,8 +1054,16 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   [tail_curve()], [tail_bondy()] or [tail_log_linear()].
 #' @param ldf A selected development pattern (above): a numeric vector
 #'   named by age in months, or a data.frame with columns `age` and
-#'   `value`; each age a development age of the triangle. `NULL` (the
-#'   default) estimates every factor.
+#'   `value`. `NULL` (the default) estimates every factor. Ages off the
+#'   triangle's (or latest valuation's) ages are read on the pattern's own ages,
+#'   `log(cdf)` linear between them, and what the pattern gives past the
+#'   oldest age folds into a constant tail at full weight
+#'   (`docs/design/reserving-v02.md`, decision 18). Adding one off-grid
+#'   age to a sparse age-to-age pattern changes how its other factors are
+#'   read: each factor then runs to the pattern's next age, not the
+#'   triangle's. On RAA, `c("12" = 1.5, "18" = 1.1, "36" = 1.2)` selects
+#'   1.5484 from 12 to 24 months, where `c("12" = 1.5, "36" = 1.2)` selects
+#'   1.5; nothing warns of this.
 #' @param ldf_kind How `ldf` is expressed: `"ldf"` (age-to-age factors),
 #'   `"cdf"` (factors to ultimate)
 #'   or `"percent_developed"`, each finite and positive and in any order.
@@ -1051,6 +1073,31 @@ S7::method(print, tail_log_linear) <- tail_print
 #'   estimate) to 1 (the selection, the default): a number for every
 #'   selected factor, or a numeric vector named by age (the age that starts
 #'   the factor's link), the others fully selected.
+#' @param ldf_origin `NULL` (the default), or the grain (`"M"`, `"Q"`, `"S"`
+#'   or `"Y"`) of the origin periods `ldf` was measured on, when it differs
+#'   from the triangle's or latest valuation's: a pattern of accident months read
+#'   for accident years, say. The pattern is averaged over the origin
+#'   period with exposure even through it
+#'   (`SelectedPattern::averaged_over_origins`), exact up to the pattern's
+#'   end, with development deferred past it; a constant tail from the
+#'   monthly pattern is the safer choice there. Equal to the target's
+#'   grain, it changes nothing. It needs one `ldf_weight` for every
+#'   factor, not one by age, and the averaged pattern cannot be weighted by
+#'   age from R.
+#' @param development For a [latest_valuation] only: a [chain_ladder_fit] (or a
+#'   fit with `@chain_ladder`) whose development projects each segment, as
+#'   [to_chain_ladder()] freezes it. The method then takes no `ldf`, no
+#'   `tail` other than 1 and no link ratio exclusions. The source's factors
+#'   are read at each origin's own age, as fitted, with no `ldf_origin`: a
+#'   source fitted on another origin grain (accident quarters for a
+#'   latest valuation of accident years, say) goes through [to_chain_ladder()]
+#'   instead, with `ldf_origin` added to the arguments it returns, one
+#'   segment at a time.
+#' @param segment_map With `development`: `NULL` to take each segment's
+#'   development from the source segment of the same label (a source of
+#'   one segment serves every segment), or a named character vector from a
+#'   segment of the latest valuation to one of the source, each label its key
+#'   values joined by `" / "`.
 #' @param n_periods,drop_high,drop_low Which link ratios the factor at each
 #'   age averages. `n_periods` keeps the latest `n_periods` calendar
 #'   diagonals (`NULL`, the default, keeps every one; an age with fewer
@@ -1107,12 +1154,19 @@ chain_ladder_fit <- S7::new_class(
 #' @export
 chain_ladder <- function(triangle, column = NULL, average = "volume",
                          sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
-                         ldf_kind = NULL, ldf_weight = 1, n_periods = NULL, drop_high = 0,
-                         drop_low = 0) {
-  column <- fit_column(triangle, column)
+                         ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL, n_periods = NULL,
+                         drop_high = 0, drop_low = 0, development = NULL, segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
-  ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, args$excl, tail_ptr(tail),
-                                               ldf_pattern(ldf, ldf_kind, ldf_weight)))
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  if (is_latest_valuation(triangle)) {
+    return(chain_ladder_fit(ptr = latest_valuation_fit(triangle, "chain_ladder", list(), args, tail,
+                                                       pattern, development, segment_map,
+                                                       !is.null(column))))
+  }
+  no_development(development, segment_map)
+  column <- fit_column(triangle, column)
+  ptr <- rust_result(triangle@ptr$chain_ladder(column, args$average, args$sigma, args$excl,
+                                               tail_ptr(tail), pattern))
   chain_ladder_fit(ptr = ptr)
 }
 
@@ -1215,13 +1269,13 @@ mack_fit <- S7::new_class(
 #' @export
 mack <- function(triangle, column = NULL, average = "volume", sigma_interpolation = "log-linear",
                  tail = 1, tail_sigma = NULL, tail_std_err = NULL, ldf = NULL, ldf_kind = NULL,
-                 ldf_weight = 1, n_periods = NULL, drop_high = 0, drop_low = 0) {
+                 ldf_weight = 1, ldf_origin = NULL, n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
   ptr <- rust_result(triangle@ptr$mack(
     column, args$average, args$sigma, args$excl, tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
-    ldf_pattern(ldf, ldf_kind, ldf_weight)
+    ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
   ))
   mack_fit(ptr = ptr)
 }
@@ -1322,15 +1376,20 @@ expected_loss_properties <- function(el, cl) {
 #' These are Python's `ExpectedLoss`, `BornhuetterFerguson` and
 #' `Benktander`, whose `fit()` returns an `ExpectedLossFit`.
 #'
-#' @param triangle A [triangle], with any number of segments.
-#' @param column Name of the loss column to project.
+#' @param triangle A [triangle], with any number of segments, or a
+#'   [latest_valuation] (a latest diagonal on its own, which carries its
+#'   exposure).
+#' @param column Name of the loss column to project; not given for a
+#'   latest valuation.
 #' @param exposure Name of the exposure column; each origin's latest
-#'   observed value is its exposure.
+#'   observed value is its exposure. Not given for a latest valuation.
+#' @param development,segment_map For a latest valuation only: the development
+#'   of another fit, segment by segment, as in [chain_ladder()].
 #' @param apriori Expected loss ratio: the expected ultimate per unit of
 #'   exposure; positive.
 #' @param n_iters Number of Bornhuetter-Ferguson steps; a non-negative whole
 #'   number.
-#' @param ldf,ldf_kind,ldf_weight A selected development pattern, as in
+#' @param ldf,ldf_kind,ldf_weight,ldf_origin A selected development pattern, as in
 #'   [chain_ladder()]: the development pattern's factors at the ages it
 #'   gives, so `cdf` and the share developed `1 / cdf` follow it.
 #' @param average,sigma_interpolation,tail The development pattern, as in
@@ -1369,45 +1428,73 @@ expected_loss_fit <- S7::new_class(
 
 #' @rdname expected_loss_fit
 #' @export
-expected_loss <- function(triangle, column, exposure, apriori = 1, average = "volume",
-                          sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
-                          ldf_kind = NULL, ldf_weight = 1, n_periods = NULL, drop_high = 0,
-                          drop_low = 0) {
-  cols <- exposure_columns(triangle, column, exposure)
+expected_loss <- function(triangle, column = NULL, exposure = NULL, apriori = 1,
+                          average = "volume", sigma_interpolation = "log-linear", tail = 1,
+                          ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                          n_periods = NULL, drop_high = 0, drop_low = 0, development = NULL,
+                          segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  if (is_latest_valuation(triangle)) {
+    return(expected_loss_fit(ptr = latest_valuation_fit(
+      triangle, "expected_loss", list(single_number(apriori, "apriori")), args, tail, pattern,
+      development, segment_map, !is.null(column) || !is.null(exposure)
+    )))
+  }
+  no_development(development, segment_map)
+  cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$expected_loss(
     cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma, args$excl,
-    tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
+    tail_ptr(tail), pattern
   ))
   expected_loss_fit(ptr = ptr)
 }
 
 #' @rdname expected_loss_fit
 #' @export
-bornhuetter_ferguson <- function(triangle, column, exposure, apriori = 1, average = "volume",
-                                 sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
-                                 ldf_kind = NULL, ldf_weight = 1, n_periods = NULL, drop_high = 0,
-                                 drop_low = 0) {
-  cols <- exposure_columns(triangle, column, exposure)
+bornhuetter_ferguson <- function(triangle, column = NULL, exposure = NULL, apriori = 1,
+                                 average = "volume", sigma_interpolation = "log-linear",
+                                 tail = 1, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
+                                 ldf_origin = NULL, n_periods = NULL, drop_high = 0,
+                                 drop_low = 0, development = NULL, segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  if (is_latest_valuation(triangle)) {
+    return(expected_loss_fit(ptr = latest_valuation_fit(
+      triangle, "bornhuetter_ferguson", list(single_number(apriori, "apriori")), args, tail,
+      pattern, development, segment_map, !is.null(column) || !is.null(exposure)
+    )))
+  }
+  no_development(development, segment_map)
+  cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$bornhuetter_ferguson(
     cols[1], cols[2], single_number(apriori, "apriori"), args$average, args$sigma, args$excl,
-    tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
+    tail_ptr(tail), pattern
   ))
   expected_loss_fit(ptr = ptr)
 }
 
 #' @rdname expected_loss_fit
 #' @export
-benktander <- function(triangle, column, exposure, apriori = 1, n_iters = 1, average = "volume",
-                       sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
-                       ldf_kind = NULL, ldf_weight = 1, n_periods = NULL, drop_high = 0,
-                       drop_low = 0) {
-  cols <- exposure_columns(triangle, column, exposure)
+benktander <- function(triangle, column = NULL, exposure = NULL, apriori = 1, n_iters = 1,
+                       average = "volume", sigma_interpolation = "log-linear", tail = 1,
+                       ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                       n_periods = NULL, drop_high = 0, drop_low = 0, development = NULL,
+                       segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  if (is_latest_valuation(triangle)) {
+    return(expected_loss_fit(ptr = latest_valuation_fit(
+      triangle, "benktander",
+      list(single_number(apriori, "apriori"), single_number(n_iters, "n_iters")), args, tail,
+      pattern, development, segment_map, !is.null(column) || !is.null(exposure)
+    )))
+  }
+  no_development(development, segment_map)
+  cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$benktander(
     cols[1], cols[2], single_number(apriori, "apriori"), single_number(n_iters, "n_iters"),
-    args$average, args$sigma, args$excl, tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
+    args$average, args$sigma, args$excl, tail_ptr(tail), pattern
   ))
   expected_loss_fit(ptr = ptr)
 }
@@ -1485,17 +1572,323 @@ cape_cod_fit <- S7::new_class(
 
 #' @rdname cape_cod_fit
 #' @export
-cape_cod <- function(triangle, column, exposure, trend = 0, decay = 1, average = "volume",
-                     sigma_interpolation = "log-linear", tail = 1, ldf = NULL,
-                     ldf_kind = NULL, ldf_weight = 1, n_periods = NULL, drop_high = 0,
-                     drop_low = 0) {
-  cols <- exposure_columns(triangle, column, exposure)
+cape_cod <- function(triangle, column = NULL, exposure = NULL, trend = 0, decay = 1,
+                     average = "volume", sigma_interpolation = "log-linear", tail = 1,
+                     ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
+                     n_periods = NULL, drop_high = 0, drop_low = 0, development = NULL,
+                     segment_map = NULL) {
   args <- development_args(average, sigma_interpolation, n_periods, drop_high, drop_low)
+  pattern <- ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
+  if (is_latest_valuation(triangle)) {
+    return(cape_cod_fit(ptr = latest_valuation_fit(
+      triangle, "cape_cod",
+      list(single_number(trend, "trend"), single_number(decay, "decay")), args, tail, pattern,
+      development, segment_map, !is.null(column) || !is.null(exposure)
+    )))
+  }
+  no_development(development, segment_map)
+  cols <- exposure_columns(triangle, column, exposure)
   ptr <- rust_result(triangle@ptr$cape_cod(
     cols[1], cols[2], single_number(trend, "trend"), single_number(decay, "decay"),
-    args$average, args$sigma, args$excl, tail_ptr(tail), ldf_pattern(ldf, ldf_kind, ldf_weight)
+    args$average, args$sigma, args$excl, tail_ptr(tail), pattern
   ))
   cape_cod_fit(ptr = ptr)
+}
+
+#' Latest valuation: each origin's latest value on its own
+#'
+#' A latest valuation holds one value per origin at its own age: each origin's
+#' latest cumulative value, in one or several segments, with an exposure
+#' when the expected-loss methods need one. [chain_ladder()],
+#' [expected_loss()], [bornhuetter_ferguson()], [benktander()] and
+#' [cape_cod()] project it with a selected pattern (`ldf`) or with the
+#' development of another fit (`development`), as chainladder-python's
+#' `fit(source).predict(book)` does (`docs/design/reserving-v02.md`,
+#' decisions 15 to 19). This is Python's `LatestDiagonal`; the name keeps
+#' [latest_diagonal()], which returns a triangle's latest values, as it is.
+#'
+#' Each origin is given once per segment, at a positive age in months (from
+#' the start of the origin period to the end of the valuation month: an
+#' accident year 2024 at December 2024 is 12 months), with its latest
+#' cumulative value (0 for an origin with nothing reported yet). The ages
+#' may be off the pattern's grid (18 months against an annual pattern): the
+#' fit reads them on the pattern's own ages, `log(cdf)` linear between
+#' them. An origin older than the pattern's end is an error unless
+#' `past_pattern_end` says how to develop it: `"no_development"` (a factor
+#' of 1 past the end, with no `tail`; a cumulative pattern whose level at
+#' its end is not 100% is then rescaled to 100% for every origin, so the
+#' young origins move too) or `"tail"` (the method's `tail` continued from
+#' the pattern's end at one step per origin period: a number or a
+#' [tail_constant()] with no `attachment_age`, or a [tail_curve()],
+#' [tail_bondy()] or [tail_log_linear()] estimated on the pattern's own
+#' factors).
+#'
+#' Segments are named by key columns, as a [triangle]'s are, and sorted by
+#' label; within a segment the origins keep the order given. Rows run
+#' segment by segment in that order, as `as.data.frame()` lists them, and
+#' `with_exposure()` takes its values in that order.
+#'
+#' A latest valuation has no link ratios, so [mack()], the bootstraps and the
+#' one-year views need a triangle.
+#'
+#' @param data A data.frame, one row per origin and segment.
+#' @param origin Name of the origin column: Dates (any day in the origin
+#'   period) or whole-number years.
+#' @param latest Name of the column of latest cumulative values.
+#' @param age Name of the column of ages in months. Give exactly one of
+#'   `age` and `valuation`.
+#' @param valuation The valuation month: one Date for every row, or the
+#'   name of a column of Dates. A year alone is not accepted, since it
+#'   would read as January.
+#' @param exposure Name of the exposure column, or `NULL`.
+#' @param keys Names of the key columns, or `NULL` for one segment.
+#' @param origin_grain `"M"`, `"Q"`, `"S"` or `"Y"`.
+#' @param past_pattern_end `"reject"` (the default), `"no_development"` or
+#'   `"tail"`.
+#' @param ptr A `LatestDiagonals` pointer; used internally.
+#' @returns A `latest_valuation` object, with properties `keys`, `index` (one row
+#'   per segment), `origin_grain`, `origins`, `ages`, `latest`, `exposure`
+#'   (`NULL` when none was given) and `past_pattern_end`.
+#' @seealso [as_latest_valuation()] for a triangle's latest diagonal,
+#'   [with_exposure()], [to_chain_ladder()].
+#' @export
+#' @examples
+#' book <- data.frame(year = 2022:2024, paid = c(900, 600, 150), premium = 1000)
+#' d <- latest_valuation(book, "year", "paid", valuation = as.Date("2024-12-31"),
+#'                       exposure = "premium")
+#' d@ages
+#' chain_ladder(d, ldf = c("12" = 2, "24" = 1.25, "36" = 1), ldf_kind = "cdf")@ultimate
+#' bornhuetter_ferguson(d, apriori = 0.7, ldf = c("12" = 2, "24" = 1.25, "36" = 1),
+#'                      ldf_kind = "cdf")@ultimate
+latest_valuation <- S7::new_class(
+  "latest_valuation",
+  package = "prospicio",
+  properties = list(
+    ptr = S7::new_S3_class("LatestDiagonals"),
+    keys = S7::new_property(S7::class_character, getter = function(self) self@ptr$keys()),
+    index = S7::new_property(S7::class_data.frame, getter = function(self) {
+      parts <- self@ptr$index()
+      if (!length(parts)) return(data.frame(matrix(nrow = 1L, ncol = 0L)))
+      as.data.frame(parts, stringsAsFactors = FALSE, optional = TRUE)
+    }),
+    origin_grain = S7::new_property(S7::class_character, getter = function(self) {
+      self@ptr$origin_grain()
+    }),
+    origins = S7::new_property(S7::class_character, getter = function(self) self@ptr$origins()),
+    ages = S7::new_property(S7::class_integer, getter = function(self) self@ptr$ages()),
+    latest = S7::new_property(S7::class_double, getter = function(self) self@ptr$latest()),
+    exposure = S7::new_property(NULL | S7::class_double, getter = function(self) {
+      self@ptr$exposure()
+    }),
+    past_pattern_end = S7::new_property(S7::class_character, getter = function(self) {
+      self@ptr$past_pattern_end()
+    })
+  ),
+  constructor = function(data, origin, latest, age = NULL, valuation = NULL, exposure = NULL,
+                         keys = NULL, origin_grain = "Y",
+                         past_pattern_end = c("reject", "no_development", "tail"), ptr = NULL) {
+    if (!is.null(ptr)) return(S7::new_object(S7::S7_object(), ptr = ptr))
+    if (!is.data.frame(data)) stop("data must be a data.frame", call. = FALSE)
+    past_pattern_end <- past_pattern_end_arg(past_pattern_end)
+    keys <- as.character(keys)
+    named <- c(origin, latest, if (is.character(age)) age, if (is.character(valuation)) valuation,
+               exposure, keys)
+    missing_cols <- setdiff(named, names(data))
+    if (length(missing_cols)) {
+      stop("no columns named ", toString(missing_cols), " in data", call. = FALSE)
+    }
+    numeric_column <- function(name) {
+      x <- data[[name]]
+      if (!is.numeric(x)) {
+        stop(sprintf("column %s must be numeric, not %s", name, class(x)[1]), call. = FALSE)
+      }
+      as.double(x)
+    }
+    if (is.null(age) == is.null(valuation)) {
+      stop("give exactly one of age (a column of ages) and valuation (a Date, or a column of ",
+           "Dates)", call. = FALSE)
+    }
+    o <- year_month(data[[origin]], "origin", 1L)
+    if (!is.null(age)) {
+      ages <- numeric_column(age)
+      v <- list(year = integer(), month = integer())
+    } else {
+      dates <- if (is.character(valuation)) data[[valuation]] else valuation
+      if (!(inherits(dates, "Date") || inherits(dates, "POSIXt"))) {
+        stop("give the valuation month as a Date (a year alone would read as January)",
+             call. = FALSE)
+      }
+      if (!is.character(valuation) && length(dates) != 1) {
+        stop("valuation must be one Date or the name of a column of Dates", call. = FALSE)
+      }
+      v <- year_month(dates, "valuation", 12L)
+      ages <- double()
+    }
+    key_values <- lapply(keys, function(k) {
+      v <- as.character(data[[k]])
+      if (anyNA(v)) stop(sprintf("key column %s has missing values", k), call. = FALSE)
+      v
+    })
+    ptr <- rust_result(LatestDiagonals$from_long(
+      keys, as.character(unlist(key_values)), o$year, o$month, ages, is.null(age), v$year,
+      v$month, numeric_column(latest), if (is.null(exposure)) NULL else numeric_column(exposure),
+      as.character(origin_grain), past_pattern_end
+    ))
+    S7::new_object(S7::S7_object(), ptr = ptr)
+  }
+)
+
+past_pattern_end_arg <- function(rule) {
+  rules <- c("reject", "no_development", "tail")
+  if (identical(rule, rules)) return("reject")
+  if (!is.character(rule) || length(rule) != 1 || !rule %in% rules) {
+    stop(sprintf('past_pattern_end must be "reject", "no_development" or "tail", got %s',
+                 paste(deparse(rule), collapse = " ")), call. = FALSE)
+  }
+  rule
+}
+
+is_latest_valuation <- function(x) S7::S7_inherits(x, latest_valuation)
+
+#' @rdname latest_valuation
+#' @param triangle A [triangle], with any number of segments.
+#' @param column Name of the column whose latest values the latest valuation
+#'   holds; by default the only one.
+#' @details `as_latest_valuation()` takes a triangle's latest diagonal in every
+#'   segment: each origin at the age of its last observed cell, with its
+#'   cumulative value there, and with `exposure` that column's last
+#'   observed value. `chain_ladder(as_latest_valuation(book, "paid"), development
+#'   = fit)` is chainladder-python's `fit(source).predict(book)`.
+#' @export
+as_latest_valuation <- function(triangle, column = NULL, exposure = NULL,
+                                past_pattern_end = "reject") {
+  column <- fit_column(triangle, column)
+  ptr <- rust_result(LatestDiagonals$from_triangle(
+    triangle@ptr, column, if (is.null(exposure)) NULL else as.character(exposure),
+    past_pattern_end_arg(past_pattern_end)
+  ))
+  latest_valuation(ptr = ptr)
+}
+
+#' Exposure and the rule past the pattern's end of a latest valuation
+#'
+#' `with_exposure()` gives a [latest_valuation] its exposure, one value per row in
+#' the order of `as.data.frame()`; `with_past_pattern_end()` sets how an
+#' origin older than the pattern's end develops, for every segment.
+#'
+#' @param x A [latest_valuation].
+#' @param exposure Finite positive numbers, one per row.
+#' @param rule `"reject"`, `"no_development"` or `"tail"`.
+#' @returns A [latest_valuation].
+#' @export
+#' @examples
+#' d <- latest_valuation(data.frame(year = 2023:2024, age = c(24, 12), paid = c(37, 13)),
+#'                       "year", "paid", age = "age")
+#' with_exposure(d, c(60, 60))@exposure
+#' with_past_pattern_end(d, "tail")@past_pattern_end
+with_exposure <- function(x, exposure) {
+  if (!is_latest_valuation(x)) stop("x must be a latest valuation", call. = FALSE)
+  if (!is.numeric(exposure)) stop("exposure must be numeric", call. = FALSE)
+  latest_valuation(ptr = rust_result(x@ptr$with_exposure(as.double(exposure))))
+}
+
+#' @rdname with_exposure
+#' @export
+with_past_pattern_end <- function(x, rule) {
+  if (!is_latest_valuation(x)) stop("x must be a latest valuation", call. = FALSE)
+  latest_valuation(ptr = rust_result(x@ptr$with_past_pattern_end(past_pattern_end_arg(rule))))
+}
+
+S7::method(as.data.frame, latest_valuation) <- function(x, ...) {
+  out <- x@ptr$row_keys()
+  out$origin <- x@origins
+  out$age <- x@ages
+  out$latest <- x@latest
+  if (!is.null(x@exposure)) out$exposure <- x@exposure
+  as.data.frame(out, stringsAsFactors = FALSE, optional = TRUE)
+}
+
+S7::method(print, latest_valuation) <- function(x, ...) {
+  n <- x@ptr$n_segments()
+  cat(sprintf("<latest_valuation> %d origins%s, origin grain %s, past the pattern's end: %s\n",
+              length(x@ages), if (n > 1) sprintf(" in %d segments", n) else "",
+              x@origin_grain, x@past_pattern_end))
+  print(as.data.frame(x), row.names = FALSE)
+  invisible(x)
+}
+
+#' A fit frozen as a chain ladder
+#'
+#' The development of a single-segment [chain_ladder_fit] as arguments of
+#' [chain_ladder()] and the expected-loss methods: `ldf` (its age-to-age
+#' factors, named by the age that starts each link), `ldf_kind = "ldf"` and
+#' `tail` (its tail factor, a constant). Projected with them, a book gets
+#' the fit's own factors to the bit; this is `ChainLadderFit::to_chain_ladder`
+#' (`docs/design/reserving-v02.md`, decision 17). For a fit of several
+#' segments, pick one with [segment()], or pass the whole fit as
+#' `development` to project a [latest_valuation] segment by segment.
+#'
+#' @param fit A [chain_ladder_fit], or a fit with `@chain_ladder`.
+#' @returns A list of `ldf`, `ldf_kind` and `tail`.
+#' @export
+#' @examples
+#' long <- data.frame(year = c(2020, 2020, 2021), age = c(12, 24, 12), paid = c(100, 150, 110))
+#' fit <- chain_ladder(triangle(long, "year", "age", "paid"), tail = 1.1)
+#' to_chain_ladder(fit)
+#' book <- latest_valuation(data.frame(year = 2024, age = 12, paid = 50), "year", "paid",
+#'                          age = "age")
+#' do.call(chain_ladder, c(list(book), to_chain_ladder(fit)))@ultimate
+to_chain_ladder <- function(fit) {
+  ptr <- development_ptr(fit)
+  parts <- rust_result(ptr$to_chain_ladder())
+  list(ldf = stats::setNames(parts$values, parts$ages), ldf_kind = "ldf", tail = parts$tail)
+}
+
+# The ChainLadderFit pointer of a development source: a chain_ladder_fit or
+# a fit with @chain_ladder.
+development_ptr <- function(fit) {
+  if (S7::S7_inherits(fit, chain_ladder_fit)) return(fit@ptr)
+  if (S7::S7_inherits(fit) && "chain_ladder" %in% S7::prop_names(fit) &&
+      S7::S7_inherits(fit@chain_ladder, chain_ladder_fit)) {
+    return(fit@chain_ladder@ptr)
+  }
+  stop("development must be a chain_ladder_fit, or a fit with @chain_ladder", call. = FALSE)
+}
+
+# The segment_map argument as the binding takes it: NULL, or a named
+# character vector from a segment of the latest valuation to one of the
+# development, each label its key values joined by " / " ("Total" without
+# keys).
+segment_map_arg <- function(segment_map) {
+  if (is.null(segment_map)) return(NULL)
+  if (!is.character(segment_map) || is.null(names(segment_map)) ||
+      any(!nzchar(names(segment_map))) || anyNA(segment_map)) {
+    stop("segment_map must be a named character vector: names are segments of the latest ",
+         "valuation, values segments of the development", call. = FALSE)
+  }
+  segment_map
+}
+
+# A fit of the latest valuation `x` by `method` (a LatestDiagonals method name),
+# with the method's own arguments `head` and the development arguments.
+latest_valuation_fit <- function(x, method, head, args, tail, pattern, development, segment_map,
+                          column_given) {
+  if (column_given) {
+    stop("a latest valuation holds its own latest values (and exposure): give column and exposure ",
+         "only for a triangle", call. = FALSE)
+  }
+  development <- if (is.null(development)) NULL else development_ptr(development)
+  call_args <- c(head, list(args$average, args$sigma, args$excl, tail_ptr(tail), pattern,
+                            development, segment_map_arg(segment_map)))
+  rust_result(do.call(x@ptr[[method]], call_args))
+}
+
+# The plain triangle path takes no development.
+no_development <- function(development, segment_map) {
+  if (!is.null(development) || !is.null(segment_map)) {
+    stop("development and segment_map project a latest valuation: use as_latest_valuation() ",
+         "on the triangle", call. = FALSE)
+  }
 }
 
 #' Claims development result: the one-year view of a Mack fit
@@ -1679,7 +2072,7 @@ S7::method(print, claims_development_result) <- function(x, ...) {
 #'   diagonal and one row and column per segment in index order. It is
 #'   converted to the normal scores' correlation `2 sin(pi rho / 6)`, which
 #'   must be positive definite.
-#' @param ldf,ldf_kind,ldf_weight A selected development pattern, as in
+#' @param ldf,ldf_kind,ldf_weight,ldf_origin A selected development pattern, as in
 #'   [chain_ladder()]. The residuals and the scale come from the triangle's
 #'   own volume-weighted factors; each simulation then uses
 #'   `w * selected + (1 - w) * pseudo` at the selected ages, so a fully
@@ -1766,7 +2159,7 @@ origin_matrix <- function(fit, flat) {
 odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                           process = c("gamma", "none"), tail = 1, tail_std_err = NULL,
                           dependence = c("independent", "synchronized", "rank_correlation"),
-                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
+                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
                           n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
@@ -1777,7 +2170,7 @@ odp_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                                                 tail_ptr(tail),
                                                 optional_number(tail_std_err, "tail_std_err"),
                                                 dependence, spearman_arg(spearman),
-                                                ldf_pattern(ldf, ldf_kind, ldf_weight), excl))
+                                                ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin), excl))
   odp_bootstrap_fit(ptr = ptr)
 }
 
@@ -3512,7 +3905,7 @@ bayes_bf_normalised_one_year <- function(triangle, column, exposure, apriori = 1
 #'   and an error with an estimated tail.
 #' @param dependence,spearman How the segments depend on each other, as in
 #'   [odp_bootstrap()].
-#' @param ldf,ldf_kind,ldf_weight A selected development pattern, as in
+#' @param ldf,ldf_kind,ldf_weight,ldf_origin A selected development pattern, as in
 #'   [chain_ladder()]. Mack's sigmas and residuals come from the triangle's
 #'   own estimate; each simulation then uses `w * selected + (1 - w) *
 #'   pseudo` at the selected ages, so a fully selected factor has no
@@ -3580,7 +3973,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
                            centre_residuals = TRUE, tail = 1, tail_sigma = NULL,
                            tail_std_err = NULL,
                            dependence = c("independent", "synchronized", "rank_correlation"),
-                           spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
+                           spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
                            n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   process <- match.arg(process)
@@ -3590,7 +3983,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
     column, single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
     model$average, model$sigma, model$excl, isTRUE(centre_residuals), tail_ptr(tail),
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
-    dependence, spearman_arg(spearman), ldf_pattern(ldf, ldf_kind, ldf_weight)
+    dependence, spearman_arg(spearman), ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin)
   ))
   mack_bootstrap_fit(ptr = ptr)
 }
@@ -3734,7 +4127,7 @@ mack_bootstrap <- function(triangle, column = NULL, n_sims = 10000, seed = 0,
 #' @param trend,decay As in [cape_cod()].
 #' @param average,sigma_interpolation,tail The chain ladder or development
 #'   pattern of `method`, as in [chain_ladder()].
-#' @param ldf,ldf_kind,ldf_weight A selected development pattern of
+#' @param ldf,ldf_kind,ldf_weight,ldf_origin A selected development pattern of
 #'   `method`, as in [chain_ladder()].
 #' @param bootstrap_ldf Whether the bootstrap takes `method`'s selected
 #'   pattern too (the default), so that its simulations blend the pseudo
@@ -3854,7 +4247,7 @@ odp_one_year <- function(triangle, column = NULL,
                          bootstrap_tail = FALSE, tail_std_err = NULL,
                          n_sims = 10000, seed = 0, process = c("gamma", "none"),
                          dependence = c("independent", "synchronized", "rank_correlation"),
-                         spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
+                         spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
                          bootstrap_ldf = TRUE, n_periods = NULL, drop_high = 0, drop_low = 0) {
   column <- fit_column(triangle, column)
   method <- match.arg(method)
@@ -3871,7 +4264,7 @@ odp_one_year <- function(triangle, column = NULL,
     tail_ptr(tail), isTRUE(bootstrap_tail),
     optional_number(tail_std_err, "tail_std_err"), single_number(n_sims, "n_sims"),
     single_number(seed, "seed"), process, dependence, spearman_arg(spearman),
-    ldf_pattern(ldf, ldf_kind, ldf_weight), isTRUE(bootstrap_ldf)
+    ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin), isTRUE(bootstrap_ldf)
   ))
   one_year_fit(ptr = ptr)
 }
@@ -3890,7 +4283,7 @@ mack_one_year <- function(triangle, column = NULL,
                           mack_average = "volume", mack_sigma_interpolation = "log-linear",
                           centre_residuals = TRUE,
                           dependence = c("independent", "synchronized", "rank_correlation"),
-                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1,
+                          spearman = NULL, ldf = NULL, ldf_kind = NULL, ldf_weight = 1, ldf_origin = NULL,
                           bootstrap_ldf = TRUE, n_periods = NULL, drop_high = 0, drop_low = 0,
                           mack_n_periods = NULL, mack_drop_high = 0, mack_drop_low = 0) {
   column <- fit_column(triangle, column)
@@ -3913,7 +4306,7 @@ mack_one_year <- function(triangle, column = NULL,
     optional_number(tail_sigma, "tail_sigma"), optional_number(tail_std_err, "tail_std_err"),
     single_number(n_sims, "n_sims"), single_number(seed, "seed"), process,
     model$average, model$sigma, model$excl, isTRUE(centre_residuals), dependence, spearman_arg(spearman),
-    ldf_pattern(ldf, ldf_kind, ldf_weight), isTRUE(bootstrap_ldf)
+    ldf_pattern(ldf, ldf_kind, ldf_weight, ldf_origin), isTRUE(bootstrap_ldf)
   ))
   one_year_fit(ptr = ptr)
 }
@@ -4191,7 +4584,8 @@ check_fit <- function(fit) {
 #' matches several segments is an error. For the bootstraps, the segment
 #' keeps its part of the joint `reserves` (and [meyers_fits] of the joint
 #' `ultimates`), and for the one-year view its
-#' part of the joint `cdr`, with the same dimensions.
+#' part of the joint `cdr`, with the same dimensions. On a [latest_valuation],
+#' `segment()` returns the latest valuation of one segment.
 #'
 #' These are Python's `to_frame()`, `totals_frame()`,
 #' `development_frame()` and `segment(**keys)`.
@@ -4202,7 +4596,8 @@ check_fit <- function(fit) {
 #'   [meyers_fit], [meyers_fits], [one_year_fit], [bayes_one_year_fit], [bayes_one_year_fits], [clark_fit],
 #'   [compartmental_fit], [compartmental_fits], [compartmental_one_year_fit] or
 #'   [compartmental_one_year_fits] (a [clark_fit] or
-#'   a compartmental fit not for `development_frame()`).
+#'   a compartmental fit not for `development_frame()`); for `segment()`,
+#'   also a [latest_valuation].
 #' @param ... Key conditions as `key = value`, one value each.
 #' @returns A data.frame, or for `segment()` a fit of the same class.
 #' @name fit_frames
@@ -4246,7 +4641,7 @@ development_frame <- function(fit) {
 #' @rdname fit_frames
 #' @export
 segment <- function(fit, ...) {
-  check_fit(fit)
+  if (!is_latest_valuation(fit)) check_fit(fit)
   call <- sys.call()
   conditions <- list(...)
   keys <- names(conditions)
@@ -4552,6 +4947,20 @@ S7::method(print, cape_cod_fit) <- function(x, ...) print_expected_loss(x, "cape
 #' `rrf`; and `normal(log 0.2, 0.2)` on each `log sigma` (the text gives a
 #' median of 0.1). Use it with [compartmental_model_2()].
 #'
+#' `compartmental_diffuse_priors()` is the starting point for a fit to paid
+#' alone (`fitted = "paid_only"`): the paper's medians for model 1 with a
+#' log-scale sd of 1 on `k_er`, `k_p`, `rlr` and `rrf`, 5 to 10 times the
+#' paper's, and its effect sds and `log sigma` priors, so the data and not the
+#' prior set the rates. It is refused for a fit to incurred alone
+#' (`fitted = "incurred_only"`): no paid cell is fitted there, so the incurred
+#' does not identify the payment rate `k_p` and its prior sets the paid
+#' run-off and the reserve at every width (on company 337 -51,000 with an sd
+#' of about 150,000 at a log-scale sd of 1, 203,000 at 0.3), and a `k_p` prior
+#' with a log-scale sd above 0.5 is an error. For incurred alone give a `k_p`
+#' prior you believe, for example one from the book's paid history or from a
+#' paid-and-incurred fit of a similar book; the paper's narrow prior put the
+#' reserve on company 337 26% above the fit to paid and outstanding.
+#'
 #' Each positive parameter `theta` (`k_er`, `k_p`, `rlr`, `rrf`) is
 #' `median * exp(sd * o)` with `o ~ N(0, 1)`: a log-normal prior with that
 #' median and log-scale sd. The effects live on that `o` scale.
@@ -4695,6 +5104,17 @@ gesmann_morris_2_priors <- function() {
                                  rrf = half(0.5)))
 }
 
+#' @rdname compartmental_priors
+#' @export
+compartmental_diffuse_priors <- function() {
+  p <- gesmann_morris_priors()
+  p$k_er <- c(median = 3, sd = 1)
+  p$k_p <- c(median = 1, sd = 1)
+  p$rlr <- c(median = 0.7, sd = 1)
+  p$rrf <- c(median = 0.8, sd = 1)
+  p
+}
+
 # The priors as the Rust side reads them: 31 numbers and 10 family names.
 compartmental_prior_values <- function(priors, call) {
   if (!inherits(priors, "compartmental_priors")) {
@@ -4755,8 +5175,29 @@ compartmental_prior_values <- function(priors, call) {
 #' under `paid_response = "incremental"`, and `log_sigma_os` is the incurred sigma.
 #' Give the incurred column as `incurred`, or an outstanding column as `outstanding`
 #' and the incurred is outstanding plus paid where both are observed. The fit's
-#' `outstanding` then holds the future incurred cells. `"paid_only"` and
-#' `"incurred_only"` are not yet built.
+#' `outstanding` then holds the future incurred cells.
+#'
+#' `fitted = "paid_only"` and `fitted = "incurred_only"` fit one response
+#' alone and need `rate_order = "ordered"` (an error under `"free"`): from
+#' one response the means do not change under the rate swap below, and from
+#' paid alone only `RLR x RRF` is identified, so the priors carry the split
+#' of `RLR` and `RRF`. The model then has one sigma, `sigma_pd` or
+#' `sigma_os`. Under `"paid_only"` the second column is not read
+#' (`outstanding` and `incurred` may both be left out) and the fit's
+#' `outstanding` is `NULL`. Under `"incurred_only"` the incurred is given as
+#' for `"paid_and_incurred"` and the paid column supplies each origin's
+#' latest paid only: the reserve is the expected paid at the last age less
+#' the latest paid, and the future paid cells are expected values, without
+#' noise, since no paid cell is fitted. Of the one-year views and the
+#' backtest candidates only Python and Rust take these settings.
+#' [compartmental_diffuse_priors()] is the starting point for `"paid_only"`.
+#' Under `"incurred_only"` the incurred does not identify the payment rate
+#' `k_p`, so its prior sets the paid run-off and the reserve at every width
+#' (on company 337 the paper's narrow prior put the reserve 26% above the fit
+#' to paid and outstanding): the fit refuses a `k_p` prior with a log-scale sd
+#' above 0.5, so the diffuse preset is an error there, and you give a `k_p`
+#' prior you believe, for example from the book's paid history or from a
+#' paid-and-incurred fit of a similar book.
 #'
 #' `compartmental_model_2()` is `compartmental()` with model 2's
 #' likelihood, scale and paid response, and a longer, finer sampler: four
@@ -4820,10 +5261,12 @@ compartmental_prior_values <- function(priors, call) {
 #' (with its `-log y` term), as brms' `log_lik`, on the response's scale
 #' (compare it only with fits of the same responses), plus `n_outstanding`, `elpd_outstanding` and `elpd_paid`.
 #'
-#' Errors: if `fitted` is `"paid_only"` or `"incurred_only"`, not yet built; if a response is not positive
+#' Errors: if `fitted` is `"paid_only"` or `"incurred_only"` and
+#' `rate_order` is not `"ordered"`; if a response is not positive
 #' under the log-normal, or a paid cell has no paid at the age before
 #' under incremental paid; if not exactly one of
-#' `outstanding` and `incurred` is given; if a column is missing, the
+#' `outstanding` and `incurred` is given (at most one under `"paid_only"`);
+#' if a column is missing, the
 #' triangle has several segments, a premium is missing or not positive, or
 #' the origin and development grains differ; if a prior or sampler setting
 #' is invalid; or if there are no more observed cells than parameters.
@@ -4837,18 +5280,19 @@ compartmental_prior_values <- function(priors, call) {
 #' @param incurred Name of a column of incurred amounts: outstanding is
 #'   incurred less paid, cell by cell (the papers' outstanding on company
 #'   337 is incurred with bulk and IBNR less paid). Give exactly one of
-#'   `outstanding` and `incurred`.
+#'   `outstanding` and `incurred`, or neither under `fitted = "paid_only"`.
 #' @param likelihood `"normal"` (model 1) or `"lognormal"` (model 2).
 #' @param scale The response scale: `"amount"` (model 1) or `"loss_ratio"`,
 #'   amounts over the origin's premium (model 2).
 #' @param paid_response `"cumulative"` (model 1) or `"incremental"` (model
 #'   2).
-#' @param fitted `"paid_and_outstanding"` or `"paid_and_incurred"` (incurred
-#'   replaces outstanding as the second response, as above); `"paid_only"` and
-#'   `"incurred_only"` are not yet built.
+#' @param fitted `"paid_and_outstanding"`, `"paid_and_incurred"` (incurred
+#'   replaces outstanding as the second response, as above), `"paid_only"` or
+#'   `"incurred_only"` (one response alone, with `rate_order = "ordered"`).
 #' @param rate_order `"free"` or `"ordered"`, as above.
 #' @param start Where the pilot run starts: `"data"`, a least-squares fit
-#'   of the population curve (the prior centre if that fit fails), or
+#'   of the population curve (the prior centre if that fit fails, and under
+#'   one response if its log posterior is below the prior centre's), or
 #'   `"prior_centre"`.
 #' @param chains,tune,draws NUTS chains, warm-up draws per chain and kept
 #'   draws per chain.
@@ -4906,7 +5350,7 @@ compartmental_fit <- S7::new_class(
     }),
     reserves = predictive_distribution,
     paid = predictive_distribution,
-    outstanding = predictive_distribution,
+    outstanding = NULL | predictive_distribution,
     ultimate_loss_ratio = S7::new_property(S7::class_double, getter = function(self) {
       self@ptr$ultimate_loss_ratio()
     }),
@@ -4937,9 +5381,15 @@ compartmental_fit <- S7::new_class(
     S7::new_object(S7::S7_object(), ptr = ptr,
                    reserves = predictive_distribution(ptr = ptr$reserves()),
                    paid = predictive_distribution(ptr = ptr$paid()),
-                   outstanding = predictive_distribution(ptr = ptr$outstanding()))
+                   outstanding = compartmental_outstanding_cells(ptr))
   }
 )
+
+# A fit's future outstanding cells, or NULL for a fit of paid alone.
+compartmental_outstanding_cells <- function(ptr) {
+  cells <- ptr$outstanding()
+  if (is.null(cells)) NULL else predictive_distribution(ptr = cells)
+}
 
 # The settings and run of compartmental() and compartmental_prior_predictive().
 compartmental_run <- function(chains, tune, draws, n_sims, seed, target_accept, max_depth) {
@@ -4960,9 +5410,11 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
                           chains = 4, tune = 1000, draws = 2000, n_sims = 10000, seed = 0,
                           target_accept = 0.99, max_depth = 10) {
   call <- sys.call()
-  inputs <- compartmental_inputs(triangle, paid, premium, priors, outstanding, incurred, call)
+  fitted <- match.arg(fitted)
+  inputs <- compartmental_inputs(triangle, paid, premium, priors, outstanding, incurred, call,
+                                 fitted)
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                match.arg(fitted), match.arg(rate_order), match.arg(start))
+                fitted, match.arg(rate_order), match.arg(start))
   ptr <- rust_result(triangle@ptr$compartmental(
     paid, inputs$os, inputs$from, premium, inputs$p$values, inputs$p$families,
     settings, compartmental_run(chains, tune, draws, n_sims, seed, target_accept, max_depth)),
@@ -4978,7 +5430,9 @@ compartmental <- function(triangle, paid, premium, priors, outstanding = NULL, i
 
 # The checked inputs shared by compartmental() and compartmental_candidate():
 # the priors' wire form, the outstanding or incurred column, and which it is.
-compartmental_inputs <- function(triangle, paid, premium, priors, outstanding, incurred, call) {
+# Under fitted = "paid_only" the column is not read, so neither may be given.
+compartmental_inputs <- function(triangle, paid, premium, priors, outstanding, incurred, call,
+                                 fitted = "paid_and_outstanding") {
   check_triangle(triangle)
   for (arg in c("paid", "premium")) {
     value <- get(arg)
@@ -4992,16 +5446,27 @@ compartmental_inputs <- function(triangle, paid, premium, priors, outstanding, i
          call. = FALSE)
   }
   p <- compartmental_prior_values(priors, call)
+  os <- compartmental_second_column(outstanding, incurred, fitted)
+  list(p = p, os = os, from = if (is.null(incurred)) "column" else "incurred")
+}
+
+# The outstanding or incurred column: exactly one of them, or at most one
+# under fitted = "paid_only", which does not read it ("" when neither).
+compartmental_second_column <- function(outstanding, incurred, fitted) {
+  if (fitted == "paid_only" && is.null(outstanding) && is.null(incurred)) {
+    return("")
+  }
   if (is.null(outstanding) == is.null(incurred)) {
     stop(paste0("give exactly one of outstanding (a column of outstanding amounts) and ",
-                "incurred (a column of incurred amounts)"), call. = FALSE)
+                "incurred (a column of incurred amounts); under fitted = \"paid_only\" ",
+                "neither is needed"), call. = FALSE)
   }
   os <- if (is.null(incurred)) outstanding else incurred
   if (!is.character(os) || length(os) != 1 || is.na(os)) {
     stop(sprintf("%s must be the name of a column",
                  if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
   }
-  list(p = p, os = os, from = if (is.null(incurred)) "column" else "incurred")
+  os
 }
 
 #' @rdname compartmental_fit
@@ -5108,7 +5573,7 @@ compartmental_fits <- S7::new_class(
     }),
     reserves = predictive_distribution,
     paid = predictive_distribution,
-    outstanding = predictive_distribution,
+    outstanding = NULL | predictive_distribution,
     rate_swaps = S7::new_property(S7::class_integer, getter = function(self) {
       as.integer(self@ptr$rate_swaps())
     }),
@@ -5138,7 +5603,7 @@ compartmental_fits <- S7::new_class(
     S7::new_object(S7::S7_object(), ptr = ptr,
                    reserves = predictive_distribution(ptr = ptr$reserves()),
                    paid = predictive_distribution(ptr = ptr$paid()),
-                   outstanding = predictive_distribution(ptr = ptr$outstanding()))
+                   outstanding = compartmental_outstanding_cells(ptr))
   }
 )
 
@@ -5171,17 +5636,10 @@ compartmental_segments <- function(triangle, paid, premium, priors, outstanding 
          call. = FALSE)
   }
   p <- compartmental_prior_values(priors, call)
-  if (is.null(outstanding) == is.null(incurred)) {
-    stop(paste0("give exactly one of outstanding (a column of outstanding amounts) and ",
-                "incurred (a column of incurred amounts)"), call. = FALSE)
-  }
-  os <- if (is.null(incurred)) outstanding else incurred
-  if (!is.character(os) || length(os) != 1 || is.na(os)) {
-    stop(sprintf("%s must be the name of a column",
-                 if (is.null(incurred)) "outstanding" else "incurred"), call. = FALSE)
-  }
+  fitted <- match.arg(fitted)
+  os <- compartmental_second_column(outstanding, incurred, fitted)
   settings <- c(match.arg(likelihood), match.arg(scale), match.arg(paid_response),
-                match.arg(fitted), match.arg(rate_order), match.arg(start))
+                fitted, match.arg(rate_order), match.arg(start))
   dependence <- match.arg(dependence)
   ptr <- rust_result(triangle@ptr$compartmental_segments(
     paid, os, if (is.null(incurred)) "column" else "incurred", premium, p$values, p$families,

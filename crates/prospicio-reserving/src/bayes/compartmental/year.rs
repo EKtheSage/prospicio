@@ -10,7 +10,12 @@
 //! origin that lags the valuation catches up. Given a posterior draw the
 //! response of each cell (the amount or loss ratio, the paid cumulative or
 //! incremental, as the fit's settings say) is normal or log-normal about
-//! its mean, independently, as in the fit.
+//! its mean, independently, as in the fit. With one response fitted
+//! (decision 12) the year holds that type's cells alone: under paid alone
+//! no outstanding cell, under incurred alone no paid cell, so its paid in
+//! the year is 0 and the reserve after it runs from the latest observed
+//! paid (the claims development result is the same as with the expected
+//! paid of the year's cells, which would cancel).
 //!
 //! The draws are those of the model with a level for every origin of the
 //! premium column and every age of the square ([`Model::full`]): an
@@ -145,9 +150,16 @@ impl<'a> CompartmentalYear<'a> {
                 paid,
             }
         };
+        // Only the fitted types have cells in the year. Under incurred alone
+        // the year has no paid cell, so its paid is 0 and the reserve after
+        // it is measured from the latest observed paid: the claims
+        // development result is then the change in the expected paid at the
+        // last age that the year's incurred cells make, as with paid cells
+        // in the year (whose expected values would cancel).
         let mut cells = Vec::new();
         let mut last_paid = vec![None; n];
-        for (i, last) in last_paid.iter_mut().enumerate() {
+        let paid_origins = if full.response.paid { n } else { 0 };
+        for (i, last) in last_paid.iter_mut().enumerate().take(paid_origins) {
             let latest = data.latest_paid[i];
             for k in ages(i, latest.map(|(k, _)| k)) {
                 let obs = template(i, k, true);
@@ -165,7 +177,8 @@ impl<'a> CompartmentalYear<'a> {
             }
         }
         let n_paid = cells.len();
-        for i in 0..n {
+        let second_origins = if full.response.second { n } else { 0 };
+        for i in 0..second_origins {
             for k in ages(i, data.latest_outstanding[i]) {
                 cells.push(YearCell {
                     obs: template(i, k, false),
@@ -406,10 +419,21 @@ impl<'a> CompartmentalYear<'a> {
         )
     }
 
-    /// `σ_OS` and `σ_PD` of `theta`.
-    fn sigmas(&self, theta: &[f64]) -> [f64; 2] {
+    /// `log σ_OS` and `log σ_PD` of `theta`; `-inf` (a `σ` of 0) for a type
+    /// not fitted, which has no cell in the year.
+    fn log_sigmas(&self, theta: &[f64]) -> [f64; 2] {
         let ls = self.full.log_sigma0();
-        [theta[ls].exp(), theta[ls + 1].exp()]
+        [false, true].map(|paid| {
+            self.full
+                .response
+                .sigma_slot(paid)
+                .map_or(f64::NEG_INFINITY, |s| theta[ls + s])
+        })
+    }
+
+    /// `σ_OS` and `σ_PD` of `theta`, 0 for a type not fitted.
+    fn sigmas(&self, theta: &[f64]) -> [f64; 2] {
+        self.log_sigmas(theta).map(f64::exp)
     }
 }
 
@@ -447,8 +471,8 @@ fn embed(observed: &Model, full: &Model, theta: &[f64], rng: &mut StreamRng) -> 
             }
         }
     }
-    let (ls, lsf) = (observed.log_sigma0(), full.log_sigma0());
-    x[lsf..lsf + 2].copy_from_slice(&theta[ls..ls + 2]);
+    let (ls, lsf, ns) = (observed.log_sigma0(), full.log_sigma0(), lf.n_sigma);
+    x[lsf..lsf + ns].copy_from_slice(&theta[ls..ls + ns]);
     x
 }
 
@@ -497,8 +521,7 @@ impl YearModel for CompartmentalYear<'_> {
     /// with `r` the residual on the likelihood's scale.
     fn year_log_likelihood(&self, theta: &[f64], year: &[f64]) -> f64 {
         let p = self.parameters(theta);
-        let ls = self.full.log_sigma0();
-        let log_sigma = [theta[ls], theta[ls + 1]];
+        let log_sigma = self.log_sigmas(theta);
         let inv = log_sigma.map(|l| (-l).exp());
         let mut ll = 0.0;
         for (j, cell) in self.cells.iter().enumerate() {

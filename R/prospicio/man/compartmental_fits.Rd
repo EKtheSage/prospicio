@@ -48,7 +48,7 @@ value); the fit's origins are this column's.}
 \item{incurred}{Name of a column of incurred amounts: outstanding is
 incurred less paid, cell by cell (the papers' outstanding on company
 337 is incurred with bulk and IBNR less paid). Give exactly one of
-\code{outstanding} and \code{incurred}.}
+\code{outstanding} and \code{incurred}, or neither under \code{fitted = "paid_only"}.}
 
 \item{likelihood}{\code{"normal"} (model 1) or \code{"lognormal"} (model 2).}
 
@@ -58,14 +58,15 @@ amounts over the origin's premium (model 2).}
 \item{paid_response}{\code{"cumulative"} (model 1) or \code{"incremental"} (model
 2).}
 
-\item{fitted}{\code{"paid_and_outstanding"} or \code{"paid_and_incurred"} (incurred
-replaces outstanding as the second response, as above); \code{"paid_only"} and
-\code{"incurred_only"} are not yet built.}
+\item{fitted}{\code{"paid_and_outstanding"}, \code{"paid_and_incurred"} (incurred
+replaces outstanding as the second response, as above), \code{"paid_only"} or
+\code{"incurred_only"} (one response alone, with \code{rate_order = "ordered"}).}
 
 \item{rate_order}{\code{"free"} or \code{"ordered"}, as above.}
 
 \item{start}{Where the pilot run starts: \code{"data"}, a least-squares fit
-of the population curve (the prior centre if that fit fails), or
+of the population curve (the prior centre if that fit fails, and under
+one response if its log posterior is below the prior centre's), or
 \code{"prior_centre"}.}
 
 \item{chains, tune, draws}{NUTS chains, warm-up draws per chain and kept

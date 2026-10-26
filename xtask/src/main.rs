@@ -144,74 +144,196 @@ fn python(opts: Options) -> Result {
 /// python/great-docs.yml points here.
 const USER_GUIDE: &str = "target/user-guide";
 
-/// The sidebar sections of the Python site's user guide other than "Guides":
-/// a guide whose name starts with the prefix goes under the title. A track's
-/// pages are ordered by name, so its overview comes first.
-const GUIDE_SECTIONS: &[(&str, &str)] = &[("cat-", "Property catastrophe reinsurance")];
-
-/// The sidebar section of the guide `name` (a file stem in docs/guides).
-fn guide_section(name: &str) -> &'static str {
-    GUIDE_SECTIONS
-        .iter()
-        .find(|(prefix, _)| name.starts_with(prefix))
-        .map_or("Guides", |(_, section)| section)
+/// One page of the table of contents (docs/guides/toc.yml): a guide
+/// (`docs/guides/<name>.md`) or a notebook (`examples/<name>.ipynb`).
+#[derive(Debug, PartialEq)]
+struct TocPage {
+    name: String,
+    notebook: bool,
 }
 
-/// Stages the Python site's user guide: each guide in docs/guides under
-/// "Guides" or its track's section (`GUIDE_SECTIONS`), then each notebook in examples/, executed and exported to
-/// Markdown with its outputs and charts, under "Worked examples". The
-/// notebooks are committed without outputs (.gitattributes), so this is where
-/// their results are published. A numeric prefix orders the pages, and
-/// great-docs strips it from their URLs: `user-guide/<name>.html`.
+/// One section of the table of contents: a title, a line for the R site's
+/// article index and the pages in reading order.
+#[derive(Debug, PartialEq)]
+struct TocSection {
+    title: String,
+    description: String,
+    pages: Vec<TocPage>,
+}
+
+/// Parses docs/guides/toc.yml, a small subset of YAML (see the file's header):
+/// `- section:` starts a section, `description:` sets its line, and
+/// `- guide:` or `- notebook:` adds a page.
+fn parse_toc(text: &str) -> Result<Vec<TocSection>> {
+    let value = |v: &str| v.trim().trim_matches(|c| c == '"' || c == '\'').to_owned();
+    let mut sections: Vec<TocSection> = Vec::new();
+    for (i, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') || line == "pages:" {
+            continue;
+        }
+        let at = format!("toc.yml line {}", i + 1);
+        if let Some(title) = line.strip_prefix("- section:") {
+            sections.push(TocSection {
+                title: value(title),
+                description: String::new(),
+                pages: Vec::new(),
+            });
+        } else if let Some(d) = line.strip_prefix("description:") {
+            let section = sections
+                .last_mut()
+                .ok_or(format!("{at}: before any section"))?;
+            section.description = value(d);
+        } else if let Some((notebook, name)) = line
+            .strip_prefix("- guide:")
+            .map(|n| (false, n))
+            .or_else(|| line.strip_prefix("- notebook:").map(|n| (true, n)))
+        {
+            let section = sections
+                .last_mut()
+                .ok_or(format!("{at}: before any section"))?;
+            section.pages.push(TocPage {
+                name: value(name),
+                notebook,
+            });
+        } else {
+            return Err(format!("{at}: not understood: {raw}"));
+        }
+    }
+    Ok(sections)
+}
+
+/// Checks the table of contents against the files: every guide (but the
+/// README) and every notebook is listed once, and every entry names a file.
+fn check_toc(sections: &[TocSection], guides: &[String], notebooks: &[String]) -> Result {
+    let mut problems = Vec::new();
+    let mut seen: Vec<(&str, bool)> = Vec::new();
+    for section in sections {
+        if section.pages.is_empty() {
+            problems.push(format!("section \"{}\" has no pages", section.title));
+        }
+        for page in &section.pages {
+            let (kind, known) = if page.notebook {
+                ("notebook examples/", notebooks)
+            } else {
+                ("guide docs/guides/", guides)
+            };
+            if !known.contains(&page.name) {
+                problems.push(format!("{kind}{} is listed but does not exist", page.name));
+            }
+            if seen.contains(&(page.name.as_str(), page.notebook)) {
+                problems.push(format!("{kind}{} is listed twice", page.name));
+            }
+            seen.push((page.name.as_str(), page.notebook));
+        }
+    }
+    for (kind, names, notebook) in [
+        ("guide docs/guides/", guides, false),
+        ("notebook examples/", notebooks, true),
+    ] {
+        for name in names {
+            if !seen.contains(&(name.as_str(), notebook)) {
+                problems.push(format!("{kind}{name} is not listed"));
+            }
+        }
+    }
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "docs/guides/toc.yml does not match the files:\n  {}",
+            problems.join("\n  ")
+        ))
+    }
+}
+
+/// The guides in docs/guides (file stems, without the README) and the
+/// notebooks in examples/.
+fn guide_and_notebook_names(root: &Path) -> Result<(Vec<String>, Vec<String>)> {
+    let guides = files(&root.join("docs/guides"), "md")?
+        .iter()
+        .map(|p| file_stem(p))
+        .filter(|s| s != "README")
+        .collect();
+    let notebooks = files(&root.join("examples"), "ipynb")?
+        .iter()
+        .map(|p| file_stem(p))
+        .collect();
+    Ok((guides, notebooks))
+}
+
+/// Reads docs/guides/toc.yml and checks it against the files. Both sites'
+/// sections and page order come from it.
+fn load_toc(root: &Path) -> Result<Vec<TocSection>> {
+    let sections = parse_toc(&read(&root.join("docs/guides/toc.yml"))?)?;
+    let (guides, notebooks) = guide_and_notebook_names(root)?;
+    check_toc(&sections, &guides, &notebooks)?;
+    Ok(sections)
+}
+
+/// The staged file name of the `n`th page (from 1) of the Python site's user
+/// guide. great-docs sorts the pages by file name and strips the number from
+/// the page's URL, and lists the sidebar sections in the order of their first
+/// page, so a zero-padded global number gives both orders.
+fn staged_name(n: usize, name: &str) -> String {
+    format!("{n:03}-{name}.md")
+}
+
+/// Stages the Python site's user guide in the order of docs/guides/toc.yml:
+/// each page is a guide in docs/guides or a notebook in examples/, executed
+/// and exported to Markdown with its outputs and charts. The notebooks are
+/// committed without outputs (.gitattributes), so this is where their results
+/// are published. Each page's `guide-section` front matter is its section of
+/// the table of contents, and a numeric prefix orders the pages, which
+/// great-docs strips from their URLs: `user-guide/<name>.html`.
 fn stage_user_guide(uv: &dyn Fn() -> Command) -> Result {
     let root = root();
+    let toc = load_toc(&root)?;
     let stage = root.join(USER_GUIDE);
     if stage.exists() {
         fs::remove_dir_all(&stage).map_err(|e| format!("clearing {}: {e}", stage.display()))?;
     }
     fs::create_dir_all(&stage).map_err(|e| format!("creating {}: {e}", stage.display()))?;
-    let notebooks = files(&root.join("examples"), "ipynb")?;
-    let stems: Vec<String> = notebooks.iter().map(|p| file_stem(p)).collect();
-    for guide in files(&root.join("docs/guides"), "md")? {
-        let name = file_stem(&guide);
-        if name == "README" {
-            continue;
+    let (_, notebooks) = guide_and_notebook_names(&root)?;
+    let mut n = 0;
+    for section in &toc {
+        for entry in &section.pages {
+            n += 1;
+            let name = &entry.name;
+            let target = stage.join(staged_name(n, name));
+            if !entry.notebook {
+                // A guide links to a notebook on GitHub; on the site, to its page.
+                let mut text = read(&root.join(format!("docs/guides/{name}.md")))?;
+                for s in &notebooks {
+                    text =
+                        text.replace(&format!("](../../examples/{s}.ipynb"), &format!("]({s}.md"));
+                }
+                write(&target, &page(&text, &section.title))?;
+                continue;
+            }
+            // nbconvert runs the kernel in the notebook's directory, as Jupyter does.
+            // Its default limit of 30 s per cell could stop a heavy cell on a slow
+            // runner; 600 s still stops a hung kernel before the job's timeout.
+            run(uv()
+                .args([
+                    "run",
+                    "jupyter",
+                    "nbconvert",
+                    "--to",
+                    "markdown",
+                    "--execute",
+                    "--ExecutePreprocessor.timeout=600",
+                ])
+                .arg("--output-dir")
+                .arg(&stage)
+                .args(["--output", name])
+                .arg(root.join(format!("examples/{name}.ipynb"))))?;
+            let exported = stage.join(format!("{name}.md"));
+            let text = read(&exported)?.replace("](../docs/guides/", "](");
+            write(&target, &page(&text, &section.title))?;
+            fs::remove_file(&exported)
+                .map_err(|e| format!("removing {}: {e}", exported.display()))?;
         }
-        // A guide links to a notebook on GitHub; on the site, to its page.
-        let mut text = read(&guide)?;
-        for s in &stems {
-            text = text.replace(&format!("](../../examples/{s}.ipynb"), &format!("]({s}.md"));
-        }
-        write(
-            &stage.join(format!("1-{name}.md")),
-            &page(&text, guide_section(&name)),
-        )?;
-    }
-    for (notebook, s) in notebooks.iter().zip(&stems) {
-        // nbconvert runs the kernel in the notebook's directory, as Jupyter does.
-        // Its default limit of 30 s per cell could stop a heavy cell on a slow
-        // runner; 600 s still stops a hung kernel before the job's timeout.
-        run(uv()
-            .args([
-                "run",
-                "jupyter",
-                "nbconvert",
-                "--to",
-                "markdown",
-                "--execute",
-                "--ExecutePreprocessor.timeout=600",
-            ])
-            .arg("--output-dir")
-            .arg(&stage)
-            .args(["--output", s])
-            .arg(notebook))?;
-        let exported = stage.join(format!("{s}.md"));
-        let text = read(&exported)?.replace("](../docs/guides/", "](");
-        write(
-            &stage.join(format!("2-{s}.md")),
-            &page(&text, "Worked examples"),
-        )?;
-        fs::remove_file(&exported).map_err(|e| format!("removing {}: {e}", exported.display()))?;
     }
     Ok(())
 }
@@ -319,7 +441,7 @@ fn r(opts: Options) -> Result {
             cmd.env("RSTUDIO_PANDOC", pandoc);
         }
     }
-    let built = with_loose_articles(&root, &mut cmd);
+    let built = with_generated_articles(&root, &mut cmd);
     built?;
     check_r_examples()?;
     if opts.check {
@@ -328,34 +450,67 @@ fn r(opts: Options) -> Result {
     Ok(())
 }
 
-/// Runs the pkgdown build. pkgdown aborts on an article that `_pkgdown.yml`
-/// does not list, so a staged article that no group takes in is added to a
-/// last group, "More articles", in `_pkgdown.yml` for this build only (the
-/// file is restored afterwards, whether or not the build succeeds). A new
-/// guide can then never break the site; list it in its group to place it.
-fn with_loose_articles(root: &Path, cmd: &mut Command) -> Result {
-    let loose = uncovered_articles()?;
-    if loose.is_empty() {
-        return run(cmd);
+/// Runs the pkgdown build with the `articles:` index generated from
+/// docs/guides/toc.yml. `_pkgdown.yml` holds the rest of the site's
+/// configuration and no `articles:` key; the generated block is added to it
+/// for this build only (the file is restored afterwards, whether or not the
+/// build succeeds). pkgdown aborts on a staged article that the index does
+/// not list, so a staged article that the table of contents does not place
+/// (an R twin with no guide or notebook entry) is added to a last group,
+/// "More articles".
+fn with_generated_articles(root: &Path, cmd: &mut Command) -> Result {
+    let toc = load_toc(root)?;
+    let guide_twins: Vec<String> = files(&root.join("docs/guides"), "qmd")?
+        .iter()
+        .map(|p| file_stem(p))
+        .collect();
+    let example_twins: Vec<String> = files(&root.join("examples"), "qmd")?
+        .iter()
+        .map(|p| file_stem(p))
+        .collect();
+    let (block, listed) = r_articles_block(&toc, &guide_twins, &example_twins);
+    let mut staged = Vec::new();
+    for entry in
+        fs::read_dir(root.join(R_ARTICLES)).map_err(|e| format!("reading articles: {e}"))?
+    {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if path.extension().is_some_and(|e| e == "Rmd") {
+            staged.push(file_stem(&path));
+        }
     }
-    println!(
-        "r: not listed in _pkgdown.yml, shown under \"More articles\": {}",
-        loose.join(", ")
-    );
+    staged.sort();
+    let loose: Vec<&String> = staged.iter().filter(|n| !listed.contains(n)).collect();
     let path = root.join("R/prospicio/_pkgdown.yml");
     let original = read(&path)?;
+    if original.lines().any(|l| l.starts_with("articles:")) {
+        return Err(
+            "R/prospicio/_pkgdown.yml has an `articles:` key; the index is generated from docs/guides/toc.yml"
+                .into(),
+        );
+    }
     let mut text = original.clone();
     if !text.ends_with('\n') {
         text.push('\n');
     }
-    text.push_str(concat!(
-        "  - title: More articles\n",
-        "    navbar: More articles\n",
-        "    desc: Articles not yet placed in a group of _pkgdown.yml.\n",
-        "    contents:\n",
-    ));
-    for name in &loose {
-        text.push_str(&format!("      - articles/{name}\n"));
+    text.push_str(&block);
+    if !loose.is_empty() {
+        println!(
+            "r: not placed by docs/guides/toc.yml, shown under \"More articles\": {}",
+            loose
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        text.push_str(concat!(
+            "  - title: More articles\n",
+            "    navbar: More articles\n",
+            "    desc: Articles that docs/guides/toc.yml does not place.\n",
+            "    contents:\n",
+        ));
+        for name in &loose {
+            text.push_str(&format!("      - articles/{name}\n"));
+        }
     }
     write(&path, &text)?;
     let built = run(cmd);
@@ -363,56 +518,49 @@ fn with_loose_articles(root: &Path, cmd: &mut Command) -> Result {
     built
 }
 
-/// The staged articles that no group of `_pkgdown.yml` lists, by name or by a
-/// `starts_with("articles/<prefix>")` line.
-fn uncovered_articles() -> Result<Vec<String>> {
-    let yml = read(&root().join("R/prospicio/_pkgdown.yml"))?;
-    let mut names = Vec::new();
-    for entry in
-        fs::read_dir(root().join(R_ARTICLES)).map_err(|e| format!("reading articles: {e}"))?
-    {
-        let path = entry.map_err(|e| e.to_string())?.path();
-        if path.extension().is_some_and(|e| e == "Rmd") {
-            names.push(file_stem(&path));
-        }
-    }
-    names.sort();
-    Ok(uncovered(&yml, &names))
-}
-
-fn uncovered(yml: &str, names: &[String]) -> Vec<String> {
+/// The `articles:` block of `_pkgdown.yml` for the table of contents: a group
+/// for each section, holding the pages that have an R twin (a guide's
+/// `.qmd` in docs/guides, a notebook's in examples/), in order. A section
+/// with no such page is left out. Also returns the article names listed.
+fn r_articles_block(
+    toc: &[TocSection],
+    guide_twins: &[String],
+    example_twins: &[String],
+) -> (String, Vec<String>) {
+    let quote = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+    let mut block = String::from("articles:\n");
     let mut listed = Vec::new();
-    let mut prefixes = Vec::new();
-    for line in yml.lines() {
-        let line = line.trim();
-        if line.starts_with('#') {
+    for section in toc {
+        let names: Vec<&String> = section
+            .pages
+            .iter()
+            .filter(|p| {
+                if p.notebook {
+                    example_twins.contains(&p.name)
+                } else {
+                    guide_twins.contains(&p.name)
+                }
+            })
+            .map(|p| &p.name)
+            .collect();
+        if names.is_empty() {
             continue;
         }
-        let Some(item) = line.strip_prefix("- ") else {
-            continue;
-        };
-        let item = item.trim().trim_matches(|c| c == '"' || c == '\'');
-        if let Some(rest) = item.strip_prefix("starts_with(") {
-            let prefix = rest
-                .trim_end_matches(')')
-                .trim_matches(|c| c == '"' || c == '\'');
-            if let Some(p) = prefix.strip_prefix("articles/") {
-                prefixes.push(p.to_owned());
-            }
-        } else if let Some(name) = item.strip_prefix("articles/") {
-            listed.push(name.to_owned());
+        block.push_str(&format!("  - title: {}\n", quote(&section.title)));
+        block.push_str(&format!("    navbar: {}\n", quote(&section.title)));
+        block.push_str(&format!("    desc: {}\n", quote(&section.description)));
+        block.push_str("    contents:\n");
+        for name in names {
+            block.push_str(&format!("      - articles/{name}\n"));
+            listed.push(name.clone());
         }
     }
-    names
-        .iter()
-        .filter(|n| !listed.contains(n) && !prefixes.iter().any(|p| n.starts_with(p.as_str())))
-        .cloned()
-        .collect()
+    (block, listed)
 }
 
 /// Where the R site's articles are staged: pkgdown renders each `.Rmd` in
 /// `vignettes/articles` as `articles/<name>.html`. Gitignored and kept out of
-/// the package tarball (.Rbuildignore); `_pkgdown.yml` groups the pages.
+/// the package tarball (.Rbuildignore); docs/guides/toc.yml groups the pages.
 const R_ARTICLES: &str = "R/prospicio/vignettes/articles";
 
 /// Where the repository's files are on GitHub, for the links in a guide to
@@ -822,29 +970,86 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{guide_section, uncovered};
+    use super::{TocPage, TocSection, check_toc, parse_toc, r_articles_block, staged_name};
 
-    #[test]
-    fn a_track_guide_goes_under_its_section() {
-        let cat = "Property catastrophe reinsurance";
-        assert_eq!(guide_section("cat-0-overview"), cat);
-        assert_eq!(guide_section("cat-7-portfolio"), cat);
-        assert_eq!(guide_section("capital-modeling-monograph-15"), "Guides");
-        assert_eq!(guide_section("reinsurance-price"), "Guides");
+    const TOC: &str = "# comment
+- section: One
+  description: The first.
+  pages:
+    - guide: a
+    - notebook: n
+
+- section: Two
+  description: \"The second\"
+  pages:
+    - guide: b
+";
+
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
-    fn a_staged_article_no_group_lists_is_uncovered() {
-        let yml = "articles:
-  - title: A
+    fn the_toc_is_parsed_in_order() {
+        let toc = parse_toc(TOC).unwrap();
+        assert_eq!(toc.len(), 2);
+        assert_eq!(toc[0].title, "One");
+        assert_eq!(toc[1].description, "The second");
+        let page = |name: &str, notebook| TocPage {
+            name: name.into(),
+            notebook,
+        };
+        assert_eq!(toc[0].pages, vec![page("a", false), page("n", true)]);
+        assert!(parse_toc("- guide: a\n").is_err());
+        assert!(parse_toc("- section: A\n  nonsense\n").is_err());
+    }
+
+    #[test]
+    fn the_toc_must_match_the_files() {
+        let toc = parse_toc(TOC).unwrap();
+        assert!(check_toc(&toc, &names(&["a", "b"]), &names(&["n"])).is_ok());
+        let err = check_toc(&toc, &names(&["a", "b", "c"]), &names(&["n", "m"])).unwrap_err();
+        assert!(err.contains("guide docs/guides/c is not listed"), "{err}");
+        assert!(err.contains("notebook examples/m is not listed"), "{err}");
+        let err = check_toc(&toc, &names(&["a"]), &names(&["n"])).unwrap_err();
+        assert!(
+            err.contains("guide docs/guides/b is listed but does not exist"),
+            "{err}"
+        );
+        let twice = parse_toc("- section: S\n  pages:\n    - guide: a\n    - guide: a\n").unwrap();
+        let err = check_toc(&twice, &names(&["a"]), &[]).unwrap_err();
+        assert!(err.contains("is listed twice"), "{err}");
+    }
+
+    #[test]
+    fn the_committed_toc_matches_the_files() {
+        super::load_toc(&super::root()).unwrap();
+    }
+
+    #[test]
+    fn staged_names_sort_in_toc_order() {
+        let mut staged: Vec<String> = (1..=120).map(|n| staged_name(n, "x")).collect();
+        let sorted = staged.clone();
+        staged.sort();
+        assert_eq!(staged, sorted);
+        assert_eq!(staged_name(7, "cat-0-overview"), "007-cat-0-overview.md");
+    }
+
+    #[test]
+    fn the_r_index_lists_pages_with_a_twin_in_order() {
+        let toc: Vec<TocSection> = parse_toc(TOC).unwrap();
+        let (block, listed) = r_articles_block(&toc, &names(&["a"]), &names(&["n"]));
+        assert_eq!(listed, vec!["a", "n"]);
+        assert_eq!(
+            block,
+            "articles:
+  - title: \"One\"
+    navbar: \"One\"
+    desc: \"The first.\"
     contents:
-      - articles/one
-      - starts_with(\"articles/pir-\")
-    # - articles/commented
-";
-        let names: Vec<String> = ["one", "pir-x", "two", "commented"]
-            .map(String::from)
-            .to_vec();
-        assert_eq!(uncovered(yml, &names), vec!["two", "commented"]);
+      - articles/a
+      - articles/n
+"
+        );
     }
 }
