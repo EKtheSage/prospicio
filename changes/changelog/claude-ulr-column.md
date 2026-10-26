@@ -9,4 +9,4 @@
   chain ladder's ultimate over the exposure, as their `ultimate` column is,
   and their one-year views name it `opening_ulr`. `ReserveFit` gains a
   default `exposure()` method. Tables that list columns by position see
-  one more column (#636).
+  one more column (#636, #643).
