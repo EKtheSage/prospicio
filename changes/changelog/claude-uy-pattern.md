@@ -8,4 +8,4 @@
   `ldf_underwriting` in R. The underwriting year's share developed is the
   accident pattern convolved with its exposure over accident months; the
   default is even writing over 12 months and 12-month policies, the
-  parallelogram (#633).
+  parallelogram (#633, #639).
