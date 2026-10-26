@@ -3339,8 +3339,9 @@ latest diagonals over segments and a source fit applied segment by segment.
 Of items 1 to 12 below, the user decided four on 2026-10-24: items 3, 5
 and 11 accepted as built, and item 8 with other names (R's
 `latest_valuation()` and `as_latest_valuation()`, not `bordereau()` and
-`as_bordereau()`). Items 1, 2, 4, 6, 7, 9, 10 and 12 are still proposals
-for the user. The Excel functions are a later PR.
+`as_bordereau()`). The other eight, items 1, 2, 4, 6, 7, 9, 10 and 12,
+were accepted by the user on 2026-10-25 as built. The Excel functions
+are xll.md decision 39.
 
 **Rust** (`crates/prospicio-reserving/src/latest_diagonal.rs`, re-exported
 from `lib.rs`):
@@ -3479,29 +3480,37 @@ reading, every row of `reserving_latest_diagonal_python.csv` and of
 equal to the unpacked route to the bit), the segments and the
 constructors.
 
-**Decision items** (proposals for the user; items 3, 5, 8 and 11 decided
-by the user on 2026-10-24):
+**Decision items** (all decided: items 3, 5, 8 and 11 by the user on
+2026-10-24, the others accepted by the user on 2026-10-25 as built):
 
-1. **A separate `LatestDiagonals` type**, rather than keys on
-   `LatestDiagonal`, whose per-origin accessors would change meaning.
-2. **Segment order** sorted by label, as `Triangle` sorts it.
+1. **A separate `LatestDiagonals` type** (accepted by the user on 2026-10-25 as built), rather than
+   keys on `LatestDiagonal`, whose per-origin accessors would change
+   meaning. Python's `LatestDiagonal` and R's `latest_valuation` wrap it,
+   so one segment without keys is the plain case.
+2. **Segment order** (accepted by the user on 2026-10-25 as built): sorted by label, as `Triangle`
+   sorts it, not the input's order.
 3. **Cape Cod across segments trends to one common valuation** (the latest
    of all segments), as `CapeCod::fit_segments` does (decided by the user
    on 2026-10-24: one common valuation, as built). The alternative is
    each segment's own valuation.
-4. **The map:** by label, with a source of one segment broadcast; unused
-   source segments ignored and an unmatched target an error; explicit
-   `Pairs` from target to source.
+4. **The map** (accepted by the user on 2026-10-25 as built): by label, with a source of one segment
+   broadcast; unused source segments ignored and an unmatched target an
+   error; explicit `Pairs` from target to source, which in the bindings
+   must name every target. An unmatched target does not fall back to a
+   broadcast, and a partial map is not filled by label.
 5. **A development source and the method's own settings** (decided by
    the user on 2026-10-24: as built): the method's pattern, tail and link
    ratio exclusions must be unset, an error rather than silently
    overridden; the apriori, `n_iters`, `trend` and `decay`
    stay the method's. The exclusions are refused too, beyond the design's
    pattern and tail, since they would otherwise be ignored silently.
-6. **Python `to_chain_ladder()` needs a single segment.** Per-segment
-   application goes through `fit_diagonal(..., development=)`.
-7. **`averaged_over_origins` as an `ldf_origin` argument** stored on every
-   method with `ldf` and applied at fit time with the target's grain. The
+6. **Python `to_chain_ladder()` needs a single segment** (accepted by the user on 2026-10-25 as built).
+   Per-segment application goes through `fit_diagonal(..., development=)`.
+   A dict of chain ladders by segment can be added later without breaking
+   this.
+7. **`averaged_over_origins` as an `ldf_origin` argument** (accepted by the user on 2026-10-25 as built),
+   stored on every method with `ldf` and applied at fit time with the
+   target's grain. The
    alternative is a module function that returns arguments to unpack,
    which touches no method.
 8. **R naming** (decided by the user on 2026-10-24: `latest_valuation()`
@@ -3512,10 +3521,10 @@ by the user on 2026-10-24):
    should say each origin's latest valuation. `latest_diagonal()` keeps
    its name and meaning (a triangle's latest values). The other
    alternatives were `diagonal_data()`, or extending `latest_diagonal()`.
-9. **R dispatch:** inside the existing five functions, rather than
-   `*_diagonal()` twin functions.
-10. **A valuation must be a date** in Python and R; valuations per row are
-    supported (`DiagonalAge::Valuations`).
+9. **R dispatch** (accepted by the user on 2026-10-25 as built): inside the existing five functions,
+   rather than `*_diagonal()` twin functions.
+10. **A valuation must be a date** (accepted by the user on 2026-10-25 as built) in Python and R;
+    valuations per row are supported (`DiagonalAge::Valuations`).
 11. **Error wording** (decided by the user on 2026-10-24, as built):
     Rust messages pass through unchanged, so a `"reject"` error names
     `LatestDiagonal::with_past_pattern_end`, the
@@ -3530,5 +3539,8 @@ by the user on 2026-10-24):
     be followed from the bindings: a weight by age under `ldf_origin`
     (`averaged_over_origins`) now ends "give one weight for every factor"
     instead of naming `with_weight`.
-12. **`development=` only on diagonals.** The plain triangle path keeps
+12. **`development=` only on diagonals** (accepted by the user on 2026-10-25 as built). To apply
+    another fit's pattern to a triangle, take the triangle's latest
+    diagonal (`LatestDiagonal.from_triangle`, R `as_latest_valuation()`)
+    and fit that with `development=`. The plain triangle path keeps
     decision 17 item 11 open.
